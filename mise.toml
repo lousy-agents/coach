@@ -1,0 +1,37 @@
+min_version = "2026.7.0"
+
+[settings]
+experimental = true
+
+[tools]
+go = "1.25.0"
+
+[tasks.gofmt]
+description = "Check Go formatting"
+run = "gofmt -l ."
+
+[tasks.go-vet]
+description = "Run go vet on all packages"
+run = "go vet ./..."
+
+[tasks.test]
+description = "Run all unit tests with race detection"
+run = "go test -race ./..."
+
+[tasks.test-examples]
+description = "Run Go example tests"
+run = "go test -run Example ./..."
+
+[tasks.tidy-check]
+description = "Check that go.mod and go.sum are tidy"
+run = "go mod tidy && git diff --exit-code go.mod go.sum"
+
+[tasks.ci]
+description = "Run all CI verifications"
+run = [
+  { task = "gofmt" },
+  { task = "go-vet" },
+  { task = "tidy-check" },
+  { task = "test" },
+  { task = "test-examples" },
+]
