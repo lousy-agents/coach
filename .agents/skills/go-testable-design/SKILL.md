@@ -40,6 +40,16 @@ Do not use this skill for non-Go projects, generic CI setup, or broad architectu
 - Do not hide meaningful errors from tests; assert them.
 - Avoid sleeps in tests unless the behavior is explicitly timing-based. Prefer fake clocks, channels, contexts, or retry helpers.
 
+### Acceptance-criteria-first helpers (Given/When/Then)
+
+- Prefer encoding acceptance criteria as small named helper functions or descriptive subtests rather than only leaving AC-* comments in tests. Helpers make the contract executable and refactor-tolerant.
+- Naming convention suggestions: use explicit subtest names (t.Run) for the case and helper names that read like Given/When/Then, e.g. `givenValidConfig()`, `whenReadingFile()`, `thenReturnsContent(t, want)` or `t.Run("rejects overdraft withdrawals", func(t *testing.T){ givenAccount := givenAnAccount(20); whenWithdraw(t, givenAccount, 25); thenErrorIs(t, ErrInsufficientFunds) })`.
+- Helpers should be minimal, clearly documented (short comment), and marked with `t.Helper()` so failure locations point at the test intent instead of the helper internals.
+- Prefer subtests named as behavioral sentences ("cancels in-flight work when the context ends") over inline comment blocks like "AC-1.8: ..."; preserve AC metadata in test source only if required for traceability (e.g., at top of file) but rely on test structure for executable intent.
+- When converting an AC- comment into code, extract the observable outcomes into `then` helpers that assert the contract (errors, side-effects, persisted records, emitted events) rather than asserting internal call order.
+- Examples and recommended patterns live in `references/go-test-patterns.md` (add a short conversion example there).
+
+- These acceptance-criteria helpers are optional guidance — use where they clarify the contract and improve refactor tolerance. Avoid over-extracting helpers that obscure expected values at the call site.
 ## Mandatory Test Quality Bar
 
 Before finalizing any Go test, check it against these requirements:

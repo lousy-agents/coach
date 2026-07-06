@@ -38,6 +38,47 @@ agent infer the intended production behavior from the failure output.
 
 Use this shape:
 
+### Example: converting an AC- comment into Given/When/Then helpers
+
+Before (AC- style comment explaining intent):
+
+```go
+// AC-1.8: AnalyzeBytes must re-check ctx.Err() between parsing and feature
+// extraction, not just at validate's entry check.
+func TestAnalyzeBytes_ChecksCancellationBetweenParseAndFeatureExtraction(t *testing.T) {
+    // ... test body using inline comments to explain the guard
+}
+```
+
+After (extract small helpers that read like the acceptance criteria):
+
+```go
+func givenCancelledContextAfterNCalls(n int) context.Context { /* ... */ }
+
+func whenAnalyzeBytes(ctx context.Context, src []byte) (*semantics.Result, error) {
+    a := mustNewAnalyzer(t)
+    return a.AnalyzeBytes(ctx, semantics.FileInput{Path: "main.go", Language: LanguageGo, Content: src})
+}
+
+func thenCancellationObserved(t *testing.T, err error) {
+    t.Helper()
+    if !errors.Is(err, context.Canceled) {
+        t.Fatalf("AnalyzeBytes cancelled between parse and feature extraction: got err %v, want errors.Is(err, context.Canceled)", err)
+    }
+}
+
+func TestAnalyzeBytes_CancelsBetweenParseAndFeatureExtraction(t *testing.T) {
+    ctx := givenCancelledContextAfterNCalls(2)
+    _, err := whenAnalyzeBytes(ctx, []byte("package main\nfunc main() {}\n"))
+    thenCancellationObserved(t, err)
+}
+```
+
+This pattern preserves the acceptance criterion as executable code, keeps the
+assertion focused on observable outcomes, and makes the test tolerant to
+refactors of internals because the contract is expressed through helpers and
+subtest names rather than comments.
+
 ```go
 func TestWithdraw(t *testing.T) {
     t.Run("rejects withdrawals that would overdraw the account", func(t *testing.T) {
