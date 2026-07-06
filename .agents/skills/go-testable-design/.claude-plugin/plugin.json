@@ -1,0 +1,10 @@
+{
+  "name": "go-testable-design",
+  "displayName": "Go Testable Design",
+  "description": "Guide Go development with tests: small behavior first, executable examples, clear boundaries, and incremental refactoring",
+  "license": "BSD-2-Clause",
+  "repository": "https://github.com/lousy-agents/skills",
+  "homepage": "https://github.com/lousy-agents/skills#readme",
+  "skills": "./",
+  "keywords": ["Go", "TDD", "testing", "refactoring", "test-first"]
+}
