@@ -61,6 +61,87 @@ if errors.Is(err, semantics.ErrSyntax) {
 
 Other sentinels: `ErrEmptyContent`, `ErrUnsupportedLanguage`, `ErrFileTooLarge`, `ErrBinaryContent`, `ErrParseFailure`. See `pkg/semantics/example_test.go` (`ExampleAnalyzer_AnalyzeBytes_syntaxError`) for a runnable version.
 
+## Run locally: analyze a local repository
+
+There is no `coach` CLI yet — `pkg/semantics` is a library today. To analyze the Go files in a local checkout, write a small program that walks the tree and calls `AnalyzeBytes` yourself:
+
+```go
+// main.go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+
+	"github.com/lousy-agents/coach/pkg/semantics"
+)
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: analyze <path-to-repo>")
+		os.Exit(1)
+	}
+	root := os.Args[1]
+
+	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || filepath.Ext(path) != ".go" {
+			return nil
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+			Path:     path,
+			Language: semantics.LanguageGo,
+			Content:  content,
+		})
+		if err != nil && result == nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", path, err)
+			return nil
+		}
+
+		out, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(out))
+		return nil
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+```
+
+Then, with a C toolchain available (see [CGO requirement](#cgo-requirement) above):
+
+```sh
+mkdir coach-analyze && cd coach-analyze
+go mod init coach-analyze
+go get github.com/lousy-agents/coach/pkg/semantics
+# save the program above as main.go, then:
+go run . /path/to/your/repo
+```
+
+This prints one JSON `Result` object per `.go` file found under `/path/to/your/repo`, in the shape documented under [JSON stability](#json-stability) below. Files that fail to parse still print a partial result (`parse_status: "syntax_errors"`) rather than being skipped.
+
 ## `pkg/githubingest` quickstart
 
 ```go
