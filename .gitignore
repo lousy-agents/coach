@@ -30,3 +30,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Local Claude Code agent state (skill symlinks, worktrees, scheduler locks)
+.claude/
