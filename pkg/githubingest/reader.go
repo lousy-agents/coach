@@ -1,6 +1,3 @@
-// Package githubingest reads individual file contents from a GitHub
-// repository via the GitHub Contents API, authenticated as a GitHub App
-// installation.
 package githubingest
 
 import (
