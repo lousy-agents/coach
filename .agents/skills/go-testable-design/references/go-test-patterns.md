@@ -85,6 +85,85 @@ specific fields and make each failure name the contract being checked. If
 the repository already uses a diff package, include the diff in the failure
 message with behavior context.
 
+## Acceptance Criteria as Given/When/Then Helpers
+
+When a test exists to satisfy a specific acceptance criterion (from a spec,
+issue, or review comment), prefer expressing that criterion through the
+test's own structure rather than only through a comment. Extract small
+`given`/`when`/`then` helpers, or use a descriptive subtest name, so the
+criterion is legible from the code itself.
+
+Before — the comment carries all the meaning, and the test body must be read
+line-by-line to reconstruct the rule:
+
+```go
+// AC-1.8: FetchFile must re-check ctx.Err() after decoding and before
+// returning, so a context canceled mid-decode is still honored.
+func TestFetchFile_ChecksCancellationAfterDecode(t *testing.T) {
+    ctx := &cancelAfterNCallsContext{Context: context.Background(), n: 1}
+    client := newTestClient(t, canned200Response)
+
+    _, _, err := client.FetchFile(ctx, someRef)
+
+    if !errors.Is(err, context.Canceled) {
+        t.Fatalf("got err %v, want errors.Is(err, context.Canceled)", err)
+    }
+}
+```
+
+After — `given`/`when`/`then` helpers make the criterion executable; the
+comment becomes optional traceability metadata instead of the sole
+explanation:
+
+```go
+// AC-1.8
+func TestFetchFile_ChecksCancellationAfterDecode(t *testing.T) {
+    ctx := givenContextCanceledAfter(1, "the decode step")
+    client := givenClientReturning(t, canned200Response)
+
+    _, _, err := whenFetchFile(ctx, client, someRef)
+
+    thenErrorIs(t, err, context.Canceled, "FetchFile must honor cancellation observed after decoding")
+}
+
+// givenContextCanceledAfter returns a context that reports nil from Err()
+// for the first n calls, then context.Canceled, isolating exactly the check
+// under test (labeled by where) from any earlier cancellation checks.
+func givenContextCanceledAfter(n int, where string) context.Context { /* ... */ }
+
+func givenClientReturning(t *testing.T, respond responseFunc) *FileClient {
+    t.Helper()
+    return newTestClient(t, respond)
+}
+
+func whenFetchFile(ctx context.Context, c *FileClient, ref FileRef) ([]byte, FileMetadata, error) {
+    return c.FetchFile(ctx, ref)
+}
+
+func thenErrorIs(t *testing.T, err, target error, why string) {
+    t.Helper()
+    if !errors.Is(err, target) {
+        t.Fatalf("%s: got err %v, want errors.Is(err, %v)", why, err, target)
+    }
+}
+```
+
+Guidance for applying this:
+
+- Reach for this pattern when a comment is doing work that naming and
+  structure should do instead — typically when the comment restates a rule
+  that the test body doesn't otherwise make obvious.
+- Keep `given`/`when`/`then` helpers small and single-purpose. For helpers
+  that accept `*testing.T`/`testing.TB` — typically `then`/`assert`
+  helpers — call `t.Helper()` so failures point at the calling test, not the
+  helper; pure `given`/`when` builders that don't take `t` don't need it.
+- A short traceability comment (an acceptance-criteria ID, issue link) above
+  the test is still fine — it should stop being the *only* place the
+  behavior is explained.
+- Don't force this shape on every test. A short, already-legible
+  straight-line test does not need extraction; only convert when the comment
+  is compensating for unclear structure.
+
 ## Implementation-Coupling Anti-Patterns
 
 Avoid tests that cement current production structure instead of behavior:

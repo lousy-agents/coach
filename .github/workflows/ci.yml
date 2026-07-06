@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CGO_ENABLED: "1"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          diff <(gofmt -l .) <(printf '')
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go mod tidy (no diff)
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: go test -race
+        run: go test -race ./...
+
+      - name: go test examples
+        run: go test -run Example ./...

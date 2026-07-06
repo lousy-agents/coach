@@ -33,12 +33,21 @@ Do not use this skill for non-Go projects, generic CI setup, or broad architectu
 - Write the smallest failing test that names the behavior.
 - Make the smallest production change that passes.
 - Refactor only after behavior is covered.
-- Keep test helpers small and mark them with `t.Helper()`.
+- Keep test helpers small; mark helpers that accept `*testing.T`/`testing.TB` with `t.Helper()`.
 - Prefer constructor injection for dependencies that touch external state.
 - Use interfaces at boundaries, not everywhere.
 - Keep production APIs zero-value friendly where practical.
 - Do not hide meaningful errors from tests; assert them.
 - Avoid sleeps in tests unless the behavior is explicitly timing-based. Prefer fake clocks, channels, contexts, or retry helpers.
+
+### Acceptance-Criteria-First Helpers (Given/When/Then)
+
+- Prefer capturing acceptance criteria in the test's structure — named `given`/`when`/`then` helpers or descriptive `t.Run` subtests — instead of explaining them only in a comment (e.g. an `// AC-1.8: ...` annotation). The test should demonstrate the criterion; the comment should not be the only place it is recorded.
+- Suggested shape: `given...` builds the starting state or fixture, `when...` performs the action under test, and `then...`/`assert...` checks the observable outcome. Keep each helper small and focused on one concern; for helpers that accept `*testing.T`/`testing.TB` (typically `then`/`assert` helpers), call `t.Helper()` so failures point at the caller — pure `given`/`when` builders that don't take `t` don't need it.
+- Subtest names should read as the behavioral rule itself (`"rejects overdraft withdrawals"`, `"cancels in-flight work when the context ends"`) so the test file reads like a spec without needing the comment to translate intent.
+- It is fine to keep a short traceability comment (e.g. referencing an acceptance-criteria ID from a spec) above a test, but it must not be the only description of the behavior — the extracted `given`/`when`/`then` structure should independently make the criterion legible.
+- Do not over-extract: a single straight-line test with clear variable names can already satisfy this if it reads like the criterion. Reach for `given`/`when`/`then` helpers when a comment is currently doing the work that structure and naming should do instead.
+- See [`references/go-test-patterns.md`](./references/go-test-patterns.md) for a before/after example converting an AC comment into Given/When/Then helpers.
 
 ## Mandatory Test Quality Bar
 
@@ -50,6 +59,7 @@ Before finalizing any Go test, check it against these requirements:
 - **Diagnostic failure:** Each assertion failure identifies what behavior was expected, the important input or state, and the observed value. Avoid failures that only say `expected true`, `not equal`, or `wrong result`.
 - **Legitimate interaction checks:** Spy/mock assertions are reserved for observable boundary contracts, such as command arguments, repository writes, emitted events, cancellation calls, or external requests. Avoid verifying incidental call order or helper calls.
 - **No duplicate algorithms:** Do not compute `want` by reimplementing the production algorithm in the test. Use concrete examples, fixtures, properties, or independent invariants.
+- **Structure over comments for acceptance criteria:** When a test exists to satisfy a specific acceptance criterion, prefer expressing it through `given`/`when`/`then` helpers or a descriptive subtest name rather than relying on a comment to explain the mapping.
 
 ## Procedure
 
@@ -163,6 +173,7 @@ Read [`references/go-test-patterns.md`](./references/go-test-patterns.md) when t
 - Existing Go projects with established handwritten test conventions.
 - Constructor injection for testable business logic, handlers, CLIs, process execution, filesystem access, or other external boundaries.
 - Preserving simple local test style while improving isolation and test hygiene.
+- Converting acceptance-criteria comments into Given/When/Then-style helpers or subtests.
 
 ## Output Expectations
 

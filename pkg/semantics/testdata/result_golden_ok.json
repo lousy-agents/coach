@@ -1,0 +1,42 @@
+{
+  "path": "example.go",
+  "language": "go",
+  "parse_status": "ok",
+  "imports": [
+    {
+      "path": "fmt",
+      "location": {
+        "start_byte": 20,
+        "end_byte": 25,
+        "start_row": 2,
+        "start_col": 1,
+        "end_row": 2,
+        "end_col": 6
+      }
+    }
+  ],
+  "metrics": {
+    "ifs": 1,
+    "fors": 2,
+    "expr_switches": 0,
+    "type_switches": 0,
+    "selects": 0,
+    "functions": 1,
+    "methods": 0,
+    "max_nesting_depth": 2
+  },
+  "findings": [
+    {
+      "kind": "constructor_func",
+      "name": "NewThing",
+      "location": {
+        "start_byte": 30,
+        "end_byte": 45,
+        "start_row": 3,
+        "start_col": 0,
+        "end_row": 3,
+        "end_col": 15
+      }
+    }
+  ]
+}
