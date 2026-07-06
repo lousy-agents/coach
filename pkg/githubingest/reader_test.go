@@ -115,7 +115,9 @@ func TestReadFile_ReturnsDecodedContentAndMetadataOnSuccess(t *testing.T) {
 		"content": "aGVsbG8gd29ybGQ="
 	}`
 
+	var gotContentsURL string
 	reader := newTestReader(t, func(req *http.Request) *http.Response {
+		gotContentsURL = req.URL.String()
 		return jsonResponse(req, http.StatusOK, canned)
 	})
 
@@ -130,6 +132,15 @@ func TestReadFile_ReturnsDecodedContentAndMetadataOnSuccess(t *testing.T) {
 	wantMeta := githubingest.FileMetadata{Path: "dir/hello.txt", Ref: "main", SHA: "abc123sha", Size: 11}
 	if meta != wantMeta {
 		t.Fatalf("ReadFile(%+v) metadata: got %+v, want %+v", ref, meta, wantMeta)
+	}
+
+	// Regression guard raised by review: assert the outbound request's
+	// owner/repo/path and ref query, not just the canned response body, so
+	// a bug that requests the wrong endpoint (wrong owner, repo, path, or
+	// ref) fails locally instead of silently passing against canned data.
+	const wantContentsPath = "/repos/acme/widgets/contents/dir/hello.txt"
+	if !strings.HasSuffix(gotContentsURL, wantContentsPath+"?ref=main") {
+		t.Fatalf("ReadFile(%+v) request URL: got %q, want it to end with %q", ref, gotContentsURL, wantContentsPath+"?ref=main")
 	}
 }
 
@@ -356,5 +367,77 @@ func TestReadFile_DecodesBase64ContentContainingEmbeddedNewlines(t *testing.T) {
 	}
 	if string(content) != "hello world" {
 		t.Fatalf("ReadFile(%+v) for newline-split base64 content: got %q, want %q", ref, content, "hello world")
+	}
+}
+
+// urlRecordingEnterpriseTransport records every outbound request URL (in
+// order) while answering both the ghinstallation token-mint request and the
+// Contents API request, so a test can assert they share the same normalized
+// Enterprise API base.
+type urlRecordingEnterpriseTransport struct {
+	seen []string
+}
+
+func (u *urlRecordingEnterpriseTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	u.seen = append(u.seen, req.URL.String())
+	if strings.HasSuffix(req.URL.Path, "/access_tokens") {
+		return mintInstallationTokenResponse(req), nil
+	}
+	const canned = `{
+		"type": "file",
+		"encoding": "base64",
+		"size": 5,
+		"name": "hello.txt",
+		"path": "hello.txt",
+		"sha": "deadbeef",
+		"content": "aGVsbG8="
+	}`
+	return jsonResponse(req, http.StatusOK, canned), nil
+}
+
+// AC-5.3 regression: go-github's WithEnterpriseURLs and ghinstallation's
+// Transport.BaseURL normalize a bare Enterprise host differently -- go-github
+// appends "api/v3/" to the path, ghinstallation does not. Passing the raw
+// caller-supplied BaseURL straight to ghinstallation (as the code previously
+// did) sends the installation-token-mint request to the wrong path
+// (".../app/installations/.../access_tokens" instead of
+// ".../api/v3/app/installations/.../access_tokens"), so real Enterprise auth
+// fails before ReadFile ever reaches the contents endpoint, even though the
+// contents request URL alone looks correct.
+func TestReadFile_EnterpriseBaseURLNormalizesTokenAndContentsRequestsToSameAPIBase(t *testing.T) {
+	transport := &urlRecordingEnterpriseTransport{}
+
+	reader, err := githubingest.NewGitHubFileReader(githubingest.GitHubAppConfig{
+		AppID:          1,
+		InstallationID: 2,
+		PrivateKey:     generateTestRSAPrivateKeyPEM(t),
+		BaseURL:        "https://ghe.example.com/",
+		Transport:      transport,
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubFileReader: unexpected error: %v", err)
+	}
+
+	ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "hello.txt"}
+	if _, _, err := reader.ReadFile(context.Background(), ref); err != nil {
+		t.Fatalf("ReadFile(%+v): unexpected error: %v", ref, err)
+	}
+
+	if len(transport.seen) != 2 {
+		t.Fatalf("ReadFile(%+v): got %d outbound requests %v, want exactly 2 (token mint, then contents)", ref, len(transport.seen), transport.seen)
+	}
+
+	tokenURL, contentsURL := transport.seen[0], transport.seen[1]
+	const wantAPIBase = "https://ghe.example.com/api/v3/"
+	if !strings.HasPrefix(tokenURL, wantAPIBase) {
+		t.Fatalf("token-mint request URL: got %q, want it to start with %q (the same normalized Enterprise API base go-github uses)", tokenURL, wantAPIBase)
+	}
+	if !strings.HasPrefix(contentsURL, wantAPIBase) {
+		t.Fatalf("contents request URL: got %q, want it to start with %q", contentsURL, wantAPIBase)
+	}
+
+	const wantContentsSuffix = "/repos/acme/widgets/contents/hello.txt?ref=main"
+	if !strings.HasSuffix(contentsURL, wantContentsSuffix) {
+		t.Fatalf("contents request URL: got %q, want it to end with %q (owner/repo/path and ref query)", contentsURL, wantContentsSuffix)
 	}
 }

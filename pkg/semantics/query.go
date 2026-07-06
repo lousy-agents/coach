@@ -3,6 +3,7 @@ package semantics
 import (
 	"fmt"
 	"sort"
+	"strconv"
 
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_go "github.com/tree-sitter/tree-sitter-go/bindings/go"
@@ -17,7 +18,9 @@ const importQuerySource = `(import_spec path: (_) @import.path)`
 // extractImports finds every import path under root (single or grouped
 // import declarations) using importQuerySource, and returns one
 // ImportFeature per path found, ordered by Location.StartByte ascending
-// (AC-1.10). Path has surrounding quotes/backticks stripped.
+// (AC-1.10). Path is the interpreted string value (via strconv.Unquote),
+// not the raw delimited source text, so escape sequences are resolved the
+// same way the Go compiler resolves them.
 func extractImports(root *tree_sitter.Node, source []byte) ([]ImportFeature, error) {
 	lang := tree_sitter.NewLanguage(tree_sitter_go.Language())
 	query, queryErr := tree_sitter.NewQuery(lang, importQuerySource)
@@ -38,8 +41,20 @@ func extractImports(root *tree_sitter.Node, source []byte) ([]ImportFeature, err
 		}
 		for _, capture := range match.Captures {
 			pathNode := capture.Node
+			path, unquoteErr := strconv.Unquote(pathNode.Utf8Text(source))
+			if unquoteErr != nil {
+				// The tree is already known to be free of syntax errors by
+				// the time extractImports runs (see AC-2.1's HasError gate),
+				// so every import_spec path node's text is a valid Go string
+				// literal; strconv.Unquote failing here means our
+				// grammar/query assumptions are wrong, not that the source
+				// is malformed. Surface it rather than silently falling back
+				// to naive delimiter stripping, which would mask the bug by
+				// returning wrong data instead of an error.
+				return nil, fmt.Errorf("semantics: unquoting import path %q: %w", pathNode.Utf8Text(source), unquoteErr)
+			}
 			imports = append(imports, ImportFeature{
-				Path:     stripImportQuotes(pathNode.Utf8Text(source)),
+				Path:     path,
 				Alias:    importAlias(&pathNode, source),
 				Location: locationFromNode(&pathNode),
 			})
@@ -51,18 +66,6 @@ func extractImports(root *tree_sitter.Node, source []byte) ([]ImportFeature, err
 	})
 
 	return imports, nil
-}
-
-// stripImportQuotes removes the surrounding double quotes or backticks from
-// an import path's raw source text.
-func stripImportQuotes(text string) string {
-	if len(text) >= 2 {
-		first, last := text[0], text[len(text)-1]
-		if (first == '"' && last == '"') || (first == '`' && last == '`') {
-			return text[1 : len(text)-1]
-		}
-	}
-	return text
 }
 
 // importAlias reads the alias token from pathNode's parent import_spec's

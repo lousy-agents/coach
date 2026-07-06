@@ -320,3 +320,90 @@ func TestAnalyzer_HasNoExportedCloseMethod(t *testing.T) {
 		t.Errorf("AC-6.3: (*Analyzer).Close must not exist, want ok == false, got ok == true")
 	}
 }
+
+// Regression guard raised by review: AC-1.4 through AC-1.7 were previously
+// exercised only against the unexported validate function (parser_test.go),
+// never through the public AnalyzeBytes facade that wires validate in as
+// its first pipeline step. A regression that stopped calling validate, or
+// called it with the wrong arguments, would not have been caught by any
+// test. This drives each precondition through AnalyzeBytes itself.
+func TestAnalyzeBytes_RejectsInvalidInputThroughPublicFacade(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      FileInput
+		wantErr error
+	}{
+		{
+			name:    "AC-1.4: empty content",
+			in:      FileInput{Language: LanguageGo, Content: []byte{}},
+			wantErr: ErrEmptyContent,
+		},
+		{
+			name:    "AC-1.5: unsupported language",
+			in:      FileInput{Language: "python", Content: []byte("package main\n")},
+			wantErr: ErrUnsupportedLanguage,
+		},
+		{
+			name:    "AC-1.7: content containing a NUL byte",
+			in:      FileInput{Language: LanguageGo, Content: []byte("package main\x00\n")},
+			wantErr: ErrBinaryContent,
+		},
+	}
+
+	a := mustNewAnalyzer(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := a.AnalyzeBytes(context.Background(), tt.in)
+
+			if result != nil {
+				t.Errorf("AnalyzeBytes(%+v): got non-nil result %+v, want nil", tt.in, result)
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("AnalyzeBytes(%+v): got err %v, want errors.Is(err, %v) to hold", tt.in, err, tt.wantErr)
+			}
+		})
+	}
+
+	t.Run("AC-1.6: content over MaxFileBytes", func(t *testing.T) {
+		small, err := NewAnalyzer(AnalyzerOptions{MaxFileBytes: 4})
+		if err != nil {
+			t.Fatalf("NewAnalyzer(MaxFileBytes: 4): got err %v, want nil", err)
+		}
+
+		in := FileInput{Language: LanguageGo, Content: []byte("package main\n")}
+		result, err := small.AnalyzeBytes(context.Background(), in)
+
+		if result != nil {
+			t.Errorf("AnalyzeBytes(%+v) with MaxFileBytes=4: got non-nil result %+v, want nil", in, result)
+		}
+		if !errors.Is(err, ErrFileTooLarge) {
+			t.Errorf("AnalyzeBytes(%+v) with MaxFileBytes=4: got err %v, want errors.Is(err, ErrFileTooLarge) to hold", in, err)
+		}
+	})
+}
+
+// Regression guard raised by review: TestAnalyzeBytes_OrdersEverySliceByStartByteAscending
+// only exercises a clean parse, so result.SyntaxErrors is always empty and
+// its ordering assertion is vacuously true (the loop body never runs for an
+// empty slice). This drives a fixture with multiple real syntax issues so
+// AC-1.10 is actually exercised for SyntaxErrors.
+func TestAnalyzeBytes_OrdersSyntaxErrorsByStartByteAscendingWithMultipleIssues(t *testing.T) {
+	a := mustNewAnalyzer(t)
+	// Two separate unclosed-brace functions, each producing at least one
+	// ERROR/MISSING node, so SyntaxErrors has more than one entry to order.
+	source := []byte("package main\nfunc f() {\nfunc g() {\n")
+
+	result, err := a.AnalyzeBytes(context.Background(), FileInput{
+		Path:     "main.go",
+		Language: LanguageGo,
+		Content:  source,
+	})
+	if !errors.Is(err, ErrSyntax) {
+		t.Fatalf("AnalyzeBytes for %q: got err %v, want errors.Is(err, ErrSyntax) to hold", source, err)
+	}
+	if len(result.SyntaxErrors) < 2 {
+		t.Fatalf("AnalyzeBytes for %q: SyntaxErrors = %+v, want at least 2 to exercise ordering", source, result.SyntaxErrors)
+	}
+
+	assertAscendingByStartByte(t, "SyntaxErrors", len(result.SyntaxErrors), func(i int) uint { return result.SyntaxErrors[i].Location.StartByte })
+}

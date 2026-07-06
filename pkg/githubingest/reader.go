@@ -65,13 +65,22 @@ func NewGitHubFileReader(cfg GitHubAppConfig) (*GitHubFileReader, error) {
 
 	opts := []github.ClientOptionsFunc{github.WithTransport(itr)}
 	if cfg.BaseURL != "" {
-		itr.BaseURL = cfg.BaseURL
 		opts = append(opts, github.WithEnterpriseURLs(cfg.BaseURL, cfg.BaseURL))
 	}
 
 	client, err := github.NewClient(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("githubingest: building GitHub client: %w", err)
+	}
+
+	if cfg.BaseURL != "" {
+		// go-github's WithEnterpriseURLs and ghinstallation's Transport.BaseURL
+		// normalize a bare Enterprise host differently (go-github appends
+		// "api/v3/" to the path; ghinstallation does not). Read back
+		// go-github's normalized API base and hand ghinstallation that exact
+		// value, so the installation-token-mint request and the Contents API
+		// request hit the same host and path prefix.
+		itr.BaseURL = client.BaseURL()
 	}
 
 	return &GitHubFileReader{client: client}, nil

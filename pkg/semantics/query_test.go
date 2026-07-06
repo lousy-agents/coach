@@ -199,3 +199,29 @@ func TestExtractImports_RawStringBacktickPath(t *testing.T) {
 		t.Errorf("extractImports for raw-string import %q: Location = %+v, want a non-zero-width span", source, got.Location)
 	}
 }
+
+// Regression guard raised by review: stripping only the leading/trailing
+// delimiter leaves escape sequences (e.g. \x2f) in Path as raw source text
+// instead of interpreting them the way the Go compiler would. Path must be
+// the interpreted string value.
+func TestExtractImports_InterpretedStringPathWithEscapeSequence(t *testing.T) {
+	source := []byte(`package main
+
+import "example.com/foo\x2fbar"
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	imports, err := extractImports(root, source)
+	if err != nil {
+		t.Fatalf("extractImports for escaped import path %q: got err %v, want nil", source, err)
+	}
+	if len(imports) != 1 {
+		t.Fatalf("extractImports for escaped import path %q: got %d imports (%+v), want exactly 1", source, len(imports), imports)
+	}
+	got := imports[0]
+	want := "example.com/foo/bar"
+	if got.Path != want {
+		t.Errorf("extractImports for escaped import path %q: Path = %q, want %q (interpreted, not raw escape text)", source, got.Path, want)
+	}
+}
