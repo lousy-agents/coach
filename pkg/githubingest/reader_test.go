@@ -305,3 +305,56 @@ func TestReadFile_UndecodableContentReturnsErrorNotMatchingAnySentinel(t *testin
 		}
 	}
 }
+
+// Regression guard raised by review: a response reporting encoding "base64"
+// but omitting the content field entirely (Content == nil) must return a
+// wrapped, non-panicking error rather than dereferencing a nil pointer.
+func TestReadFile_NilContentReturnsErrorWithoutPanicking(t *testing.T) {
+	const canned = `{
+		"type": "file",
+		"encoding": "base64",
+		"size": 0,
+		"name": "nil.txt",
+		"path": "dir/nil.txt",
+		"sha": "nilsha"
+	}`
+
+	reader := newTestReader(t, func(req *http.Request) *http.Response {
+		return jsonResponse(req, http.StatusOK, canned)
+	})
+
+	ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "dir/nil.txt"}
+	_, _, err := reader.ReadFile(context.Background(), ref)
+	if err == nil {
+		t.Fatalf("ReadFile(%+v): got nil error, want a wrapped error for a response with no content field", ref)
+	}
+}
+
+// GitHub's Contents API returns base64 payloads split across lines with
+// embedded newlines; Go's base64.StdEncoding.DecodeString already ignores
+// \r and \n per its documented contract, so ReadFile must decode such
+// payloads without alteration rather than treating them as malformed.
+func TestReadFile_DecodesBase64ContentContainingEmbeddedNewlines(t *testing.T) {
+	const canned = `{
+		"type": "file",
+		"encoding": "base64",
+		"size": 11,
+		"name": "split.txt",
+		"path": "dir/split.txt",
+		"sha": "splitsha",
+		"content": "aGVs\nbG8g\nd29y\nbGQ="
+	}`
+
+	reader := newTestReader(t, func(req *http.Request) *http.Response {
+		return jsonResponse(req, http.StatusOK, canned)
+	})
+
+	ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "dir/split.txt"}
+	content, _, err := reader.ReadFile(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("ReadFile(%+v) for newline-split base64 content: got err %v, want nil", ref, err)
+	}
+	if string(content) != "hello world" {
+		t.Fatalf("ReadFile(%+v) for newline-split base64 content: got %q, want %q", ref, content, "hello world")
+	}
+}

@@ -105,6 +105,10 @@ func (r *GitHubFileReader) ReadFile(ctx context.Context, ref GitHubFileRef) ([]b
 		return nil, FileMetadata{}, fmt.Errorf("githubingest: %s at ref %s is %d bytes, exceeding the %d byte limit: %w", ref.Path, ref.Ref, fileContent.GetSize(), maxContentSize, ErrTooLarge)
 	}
 
+	if fileContent.Content == nil {
+		return nil, FileMetadata{}, fmt.Errorf("githubingest: %s at ref %s: response had no content field", ref.Path, ref.Ref)
+	}
+
 	decoded, err := base64.StdEncoding.DecodeString(*fileContent.Content)
 	if err != nil {
 		return nil, FileMetadata{}, fmt.Errorf("githubingest: decoding content for %s at ref %s: %w", ref.Path, ref.Ref, err)
