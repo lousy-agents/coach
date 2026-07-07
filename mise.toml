@@ -5,6 +5,7 @@ experimental = true
 
 [tools]
 go = "1.25.0"
+node = "22"
 
 [tasks.gofmt]
 description = "Check Go formatting"
@@ -26,6 +27,34 @@ run = "go test -run Example ./..."
 description = "Check that go.mod and go.sum are tidy"
 run = "go mod tidy && git diff --exit-code go.mod go.sum"
 
+[tasks.backend-build]
+description = "Build the Go stdio backend binary consumed by js/semantics"
+run = "go build -o js/semantics/bin/coach-semantics-json ./cmd/semantics-json"
+
+[tasks.js-install]
+description = "Install js/semantics dev dependencies (scripts skipped; js-build compiles explicitly)"
+run = "npm ci --ignore-scripts"
+dir = "js/semantics"
+
+[tasks.js-build]
+description = "Typecheck and compile the TS package"
+run = "npm run build"
+dir = "js/semantics"
+depends = ["js-install", "backend-build"]
+
+[tasks.js-test]
+description = "Run js/semantics tests (fake-backend, CLI lifecycle, and Go/JS parity suites)"
+run = [
+  "npm run build:test",
+  "node --test \"dist-test/**/*.test.js\"",
+]
+dir = "js/semantics"
+depends = ["js-build"]
+
+[tasks.js-ci]
+description = "All JS-side verifications"
+depends = ["js-test"]
+
 [tasks.ci]
 description = "Run all CI verifications"
 run = [
@@ -34,4 +63,5 @@ run = [
   { task = "tidy-check" },
   { task = "test" },
   { task = "test-examples" },
+  { task = "js-ci" },
 ]

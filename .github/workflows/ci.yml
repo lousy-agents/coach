@@ -34,3 +34,15 @@ jobs:
 
       - name: go test examples
         run: go test -run Example ./...
+
+  js-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installs go and node from mise.toml [tools], so CI and local builds
+      # share one tool-version source of truth.
+      - uses: jdx/mise-action@v2
+
+      - name: js/semantics build + tests
+        run: mise run js-ci

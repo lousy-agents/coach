@@ -142,6 +142,55 @@ go run . /path/to/your/repo
 
 This prints one JSON `Result` object per `.go` file found under `/path/to/your/repo`, in the shape documented under [JSON stability](#json-stability) below. Files that fail to parse still print a partial result (`parse_status: "syntax_errors"`) rather than being skipped.
 
+## JS/TS usage (`js/semantics`)
+
+[`js/semantics`](./js/semantics) packages `pkg/semantics` for Node.js as `@lousy-agents/coach-semantics` — a typed, ESM-only npm package. It is not published to npm: consume it by cloning this repository and building locally.
+
+Under the hood the package talks newline-delimited JSON to a small Go binary (`cmd/semantics-json`) over stdin/stdout. A WebAssembly transport was the preferred design, but `pkg/semantics` requires CGO for Tree-sitter and standard `GOOS=js GOARCH=wasm` does not support CGO; the transport is an implementation detail behind the package's `Backend` seam, so a future TinyGo/WASM backend can replace the child process without changing the API.
+
+Prerequisites: Node.js ≥ 20, plus the Go + C toolchain described under [CGO requirement](#cgo-requirement) (the backend binary is compiled from this repo).
+
+```sh
+git clone https://github.com/lousy-agents/coach.git
+cd coach/js/semantics
+npm install   # builds the Go backend binary and the TS package (prepare script)
+```
+
+Then depend on the directory from your app (`npm link`, or a `file:` dependency):
+
+```sh
+cd ~/your-app
+npm install /path/to/coach/js/semantics
+```
+
+```ts
+import { readFile } from "node:fs/promises";
+import { createAnalyzer, SemanticsSyntaxError } from "@lousy-agents/coach-semantics";
+
+const analyzer = await createAnalyzer();
+try {
+  const result = await analyzer.analyzeBytes({
+    path: "widget.go",
+    language: "go", // or "typescript" / "tsx"
+    content: await readFile("widget.go"),
+  });
+  console.log(result.parse_status, result.metrics, result.findings);
+} catch (err) {
+  if (err instanceof SemanticsSyntaxError) {
+    // Mirrors Go's double return: the partial Result rides on the error.
+    console.log(err.partialResult.syntax_errors);
+  } else {
+    throw err;
+  }
+} finally {
+  analyzer.dispose();
+}
+```
+
+Results use the exact frozen `snake_case` JSON shape documented under [JSON stability](#json-stability); a parity test suite replays shared fixtures through both the Go API and the JS package to keep the two byte-identical. In place of `errors.Is`, thrown `SemanticsError`s carry a `kind` string (`"syntax"`, `"empty_content"`, `"unsupported_language"`, `"file_too_large"`, `"binary_content"`, `"parse_failure"`, `"invalid_options"`, `"canceled"`, `"internal"`, `"backend_unavailable"`).
+
+Repo-side build/test tasks: `mise run backend-build`, `mise run js-build`, `mise run js-test` (all part of `mise run ci`).
+
 ## `pkg/githubingest` quickstart
 
 ```go
