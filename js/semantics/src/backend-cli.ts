@@ -130,7 +130,10 @@ export class CliBackend implements Backend {
     child.on("exit", (code, signal) => {
       onGone(`exited (code ${code ?? "null"}, signal ${signal ?? "null"})`);
     });
-    child.unref();
+    // Deliberately not unref()ed: the child must keep the event loop alive
+    // while calls are in flight (as of Node 22.23, unref() detaches the
+    // stdio pipes from the loop too, letting the process exit mid-call).
+    // dispose() is the documented way to let the process exit.
     this.child = child;
     return child;
   }
