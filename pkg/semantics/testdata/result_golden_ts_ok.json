@@ -1,0 +1,42 @@
+{
+  "path": "example.ts",
+  "language": "typescript",
+  "parse_status": "ok",
+  "imports": [
+    {
+      "path": "./http",
+      "location": {
+        "start_byte": 27,
+        "end_byte": 35,
+        "start_row": 0,
+        "start_col": 27,
+        "end_row": 0,
+        "end_col": 35
+      }
+    }
+  ],
+  "metrics": {
+    "ifs": 0,
+    "fors": 0,
+    "expr_switches": 0,
+    "type_switches": 0,
+    "selects": 0,
+    "functions": 0,
+    "methods": 1,
+    "max_nesting_depth": 1
+  },
+  "findings": [
+    {
+      "kind": "tight_coupling",
+      "name": "HttpClient",
+      "location": {
+        "start_byte": 87,
+        "end_byte": 103,
+        "start_row": 4,
+        "start_col": 16,
+        "end_row": 4,
+        "end_col": 32
+      }
+    }
+  ]
+}

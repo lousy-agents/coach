@@ -8,8 +8,9 @@ import (
 // AnalyzerOptions configures a new Analyzer.
 type AnalyzerOptions struct {
 	// Languages restricts AnalyzeBytes to this set of grammars. Empty means
-	// "all supported" (LanguageGo only, in v1). Any entry that is not a
-	// recognized Language makes NewAnalyzer return an error.
+	// "all supported" (LanguageGo, LanguageTypeScript, and LanguageTSX).
+	// Any entry that is not a recognized Language makes NewAnalyzer return
+	// an error.
 	Languages []Language
 	// MaxFileBytes caps the size of content AnalyzeBytes will parse. 0 uses
 	// the package default (2 MiB); negative values make NewAnalyzer return

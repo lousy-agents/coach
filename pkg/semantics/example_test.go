@@ -74,3 +74,41 @@ func ExampleAnalyzer_AnalyzeBytes_syntaxError() {
 	// true
 	// true
 }
+
+// ExampleAnalyzer_AnalyzeBytes_typeScript shows analyzing valid TypeScript
+// source, producing exactly one deterministic tight_coupling finding
+// (AC-R6.3).
+func ExampleAnalyzer_AnalyzeBytes_typeScript() {
+	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	source := []byte(`import { HttpClient } from "./http";
+
+class Greeter {
+	constructor() {
+		this.client = new HttpClient();
+	}
+}
+`)
+
+	result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+		Path:     "greeter.ts",
+		Language: semantics.LanguageTypeScript,
+		Content:  source,
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println(result.ParseStatus)
+	for _, f := range result.Findings {
+		fmt.Println(f.Kind, f.Name)
+	}
+	// Output:
+	// ok
+	// tight_coupling HttpClient
+}
