@@ -36,6 +36,8 @@ type ImportFeature struct {
 }
 
 // StructuralMetrics counts branching/declaration constructs across a file.
+// TypeSwitches and Selects have no TypeScript/TSX analog and are always 0
+// for those languages (Go-only fields).
 type StructuralMetrics struct {
 	Ifs             int `json:"ifs"`
 	Fors            int `json:"fors"`
@@ -50,7 +52,7 @@ type StructuralMetrics struct {
 // Finding describes one detected pattern of interest, such as a
 // constructor-like function.
 type Finding struct {
-	Kind     string   `json:"kind"` // "constructor_func" | "pointer_return"
+	Kind     string   `json:"kind"` // "constructor_func" | "pointer_return" (Go); "tight_coupling" (TS/TSX)
 	Name     string   `json:"name"`
 	Location Location `json:"location"`
 }

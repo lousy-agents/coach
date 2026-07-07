@@ -1,0 +1,28 @@
+{
+  "path": "broken.ts",
+  "language": "typescript",
+  "parse_status": "syntax_errors",
+  "syntax_errors": [
+    {
+      "kind": "error",
+      "location": {
+        "start_byte": 8,
+        "end_byte": 9,
+        "start_row": 0,
+        "start_col": 8,
+        "end_row": 0,
+        "end_col": 9
+      }
+    }
+  ],
+  "metrics": {
+    "ifs": 0,
+    "fors": 0,
+    "expr_switches": 0,
+    "type_switches": 0,
+    "selects": 0,
+    "functions": 0,
+    "methods": 0,
+    "max_nesting_depth": 0
+  }
+}

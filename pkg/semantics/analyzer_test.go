@@ -254,6 +254,50 @@ func TestAnalyzeBytes_SafeForConcurrentCallers(t *testing.T) {
 	}
 }
 
+// AC-R7.2: a single *Analyzer must be safe for concurrent callers analyzing
+// different languages (Go and TypeScript) at once, since each AnalyzeBytes
+// call creates and closes its own per-language Parser/Tree/Query/
+// QueryCursor. Run with -race to confirm no data race.
+func TestAnalyzeBytes_SafeForConcurrentGoAndTSCallers(t *testing.T) {
+	a := mustNewAnalyzer(t)
+	inputs := []FileInput{
+		{Path: "main.go", Language: LanguageGo, Content: []byte("package main\nfunc main() {}\n")},
+		{Path: "main.ts", Language: LanguageTypeScript, Content: []byte("function f(x: number) { if (x) {} }\n")},
+	}
+
+	const rounds = 4
+	total := rounds * len(inputs)
+	results := make([]*Result, total)
+	errs := make([]error, total)
+
+	var wg sync.WaitGroup
+	wg.Add(total)
+	for i := 0; i < total; i++ {
+		go func(i int) {
+			defer wg.Done()
+			in := inputs[i%len(inputs)]
+			results[i], errs[i] = a.AnalyzeBytes(context.Background(), in)
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < total; i++ {
+		in := inputs[i%len(inputs)]
+		if errs[i] != nil {
+			t.Errorf("AC-R7.2: concurrent AnalyzeBytes call %d (%s): got err %v, want nil", i, in.Language, errs[i])
+		}
+		if results[i] == nil {
+			t.Fatalf("AC-R7.2: concurrent AnalyzeBytes call %d (%s): got nil result, want non-nil", i, in.Language)
+		}
+		if results[i].Language != in.Language {
+			t.Errorf("AC-R7.2: concurrent AnalyzeBytes call %d: Language = %q, want %q", i, results[i].Language, in.Language)
+		}
+		if results[i].ParseStatus != ParseStatus("ok") {
+			t.Errorf("AC-R7.2: concurrent AnalyzeBytes call %d (%s): ParseStatus = %q, want %q", i, in.Language, results[i].ParseStatus, "ok")
+		}
+	}
+}
+
 // AC-1.8 (mid-pipeline): AnalyzeBytes must re-check ctx.Err() between
 // parsing and running import/feature extraction, not just at validate's
 // entry check.
@@ -400,6 +444,169 @@ func TestAnalyzeBytes_RejectsInvalidInputThroughPublicFacade(t *testing.T) {
 			t.Errorf("AnalyzeBytes(%+v) with MaxFileBytes=4: got err %v, want errors.Is(err, ErrFileTooLarge) to hold", in, err)
 		}
 	})
+}
+
+// AC-R2.1, AC-R2.2: NewAnalyzer must accept LanguageTypeScript, and
+// AnalyzeBytes on valid TS source must route to the TypeScript grammar and
+// extractors, reporting ParseStatus "ok" and Result.Language "typescript".
+func TestAnalyzeBytes_RoutesTypeScriptLanguageToTSGrammar(t *testing.T) {
+	a, err := NewAnalyzer(AnalyzerOptions{Languages: []Language{LanguageTypeScript}})
+	if err != nil {
+		t.Fatalf("NewAnalyzer with Languages: []Language{LanguageTypeScript}: got err %v, want nil", err)
+	}
+
+	source := []byte(`import { A } from "./a";
+
+function f(x: number) {
+	if (x > 0) {
+	}
+}
+`)
+	result, err := a.AnalyzeBytes(context.Background(), FileInput{
+		Path:     "f.ts",
+		Language: LanguageTypeScript,
+		Content:  source,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeBytes for valid TS source %q: got err %v, want nil", source, err)
+	}
+	if result.ParseStatus != ParseStatus("ok") {
+		t.Errorf("AnalyzeBytes for valid TS source %q: ParseStatus = %q, want %q", source, result.ParseStatus, "ok")
+	}
+	if result.Language != LanguageTypeScript {
+		t.Errorf("AnalyzeBytes for valid TS source %q: Language = %q, want %q", source, result.Language, LanguageTypeScript)
+	}
+	if len(result.Imports) != 1 || result.Imports[0].Path != "./a" {
+		t.Errorf("AnalyzeBytes for valid TS source %q: Imports = %+v, want one import with Path %q", source, result.Imports, "./a")
+	}
+	if result.Metrics.Ifs != 1 || result.Metrics.Functions != 1 {
+		t.Errorf("AnalyzeBytes for valid TS source %q: Metrics = %+v, want Ifs=1 Functions=1", source, result.Metrics)
+	}
+}
+
+// AC-R2.3: AnalyzeBytes with Language "tsx" on valid TSX source (containing
+// at least one import and one metric-bearing construct) must report
+// ParseStatus "ok", Result.Language "tsx", and the same import/metric
+// extraction the TS path produces -- verifying the shared extractors work
+// across both grammars end-to-end.
+func TestAnalyzeBytes_RoutesTSXLanguageToTSXGrammar(t *testing.T) {
+	a := mustNewAnalyzer(t)
+	source := []byte(`import React from "react";
+
+const App = () => {
+	if (true) {
+		return <div>hi</div>;
+	}
+	return null;
+};
+`)
+	result, err := a.AnalyzeBytes(context.Background(), FileInput{
+		Path:     "App.tsx",
+		Language: LanguageTSX,
+		Content:  source,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeBytes for valid TSX source %q: got err %v, want nil", source, err)
+	}
+	if result.ParseStatus != ParseStatus("ok") {
+		t.Errorf("AnalyzeBytes for valid TSX source %q: ParseStatus = %q, want %q", source, result.ParseStatus, "ok")
+	}
+	if result.Language != LanguageTSX {
+		t.Errorf("AnalyzeBytes for valid TSX source %q: Language = %q, want %q", source, result.Language, LanguageTSX)
+	}
+	if len(result.Imports) != 1 || result.Imports[0].Path != "react" {
+		t.Errorf("AnalyzeBytes for valid TSX source %q: Imports = %+v, want one import with Path %q", source, result.Imports, "react")
+	}
+	if result.Metrics.Functions != 1 || result.Metrics.Ifs != 1 {
+		t.Errorf("AnalyzeBytes for valid TSX source %q: Metrics = %+v, want Functions=1 Ifs=1", source, result.Metrics)
+	}
+}
+
+// AC-R2.4: a Language not in languageRegistry (e.g. "javascript", which is
+// explicitly out of scope) must return ErrUnsupportedLanguage and a nil
+// *Result, unchanged from the pre-existing contract.
+func TestAnalyzeBytes_RejectsJavaScriptAsUnsupported(t *testing.T) {
+	a := mustNewAnalyzer(t)
+
+	result, err := a.AnalyzeBytes(context.Background(), FileInput{
+		Language: "javascript",
+		Content:  []byte(`const x = 1;`),
+	})
+
+	if result != nil {
+		t.Errorf("AnalyzeBytes with Language \"javascript\": got non-nil result %+v, want nil", result)
+	}
+	if !errors.Is(err, ErrUnsupportedLanguage) {
+		t.Errorf("AnalyzeBytes with Language \"javascript\": got err %v, want errors.Is(err, ErrUnsupportedLanguage)", err)
+	}
+}
+
+// AC-R2.6: the language-agnostic preconditions in validate (empty content,
+// binary content, oversized content) apply identically to TS, confirming
+// validate needs no per-language change to support the new grammar.
+func TestAnalyzeBytes_TSPreconditionsMatchGoPreconditions(t *testing.T) {
+	a := mustNewAnalyzer(t)
+
+	t.Run("empty content", func(t *testing.T) {
+		result, err := a.AnalyzeBytes(context.Background(), FileInput{Language: LanguageTypeScript, Content: []byte{}})
+		thenResultIsNil(t, result, "AnalyzeBytes for TS with empty content")
+		thenErrorIs(t, err, ErrEmptyContent, "AnalyzeBytes for TS with empty content")
+	})
+
+	t.Run("binary content", func(t *testing.T) {
+		result, err := a.AnalyzeBytes(context.Background(), FileInput{Language: LanguageTypeScript, Content: []byte("const x\x00 = 1;")})
+		thenResultIsNil(t, result, "AnalyzeBytes for TS with a NUL byte")
+		thenErrorIs(t, err, ErrBinaryContent, "AnalyzeBytes for TS with a NUL byte")
+	})
+
+	t.Run("content over MaxFileBytes", func(t *testing.T) {
+		small, err := NewAnalyzer(AnalyzerOptions{MaxFileBytes: 4})
+		if err != nil {
+			t.Fatalf("NewAnalyzer(MaxFileBytes: 4): got err %v, want nil", err)
+		}
+		result, err := small.AnalyzeBytes(context.Background(), FileInput{Language: LanguageTypeScript, Content: []byte("const x = 1;")})
+		thenResultIsNil(t, result, "AnalyzeBytes for TS over MaxFileBytes")
+		thenErrorIs(t, err, ErrFileTooLarge, "AnalyzeBytes for TS over MaxFileBytes")
+	})
+}
+
+// AC-R5.1, AC-R5.2: malformed TS must produce the same partial-Result +
+// errors.Is(err, ErrSyntax) + errors.As(err, &SyntaxError) contract Go gets,
+// through the same collectSyntaxIssues/HasError code path (R5.3: no
+// TS-specific syntax code exists to test separately).
+func TestAnalyzeBytes_TSEndToEndSyntaxErrorContract(t *testing.T) {
+	a := mustNewAnalyzer(t)
+	source := []byte("const x = ;")
+
+	result, err := a.AnalyzeBytes(context.Background(), FileInput{
+		Path:     "broken.ts",
+		Language: LanguageTypeScript,
+		Content:  source,
+	})
+
+	if result == nil {
+		t.Fatalf("AnalyzeBytes for TS source with a syntax error %q: got nil result, want a partial *Result", source)
+	}
+	if result.ParseStatus != ParseStatus("syntax_errors") {
+		t.Errorf("AnalyzeBytes for TS source with a syntax error %q: ParseStatus = %q, want %q", source, result.ParseStatus, "syntax_errors")
+	}
+	if len(result.SyntaxErrors) == 0 {
+		t.Errorf("AnalyzeBytes for TS source with a syntax error %q: SyntaxErrors is empty, want at least one issue", source)
+	}
+	if len(result.Imports) != 0 || len(result.Findings) != 0 {
+		t.Errorf("AnalyzeBytes for TS source with a syntax error %q: Imports/Findings = %+v/%+v, want empty", source, result.Imports, result.Findings)
+	}
+
+	if !errors.Is(err, ErrSyntax) {
+		t.Errorf("AnalyzeBytes for TS source with a syntax error %q: errors.Is(err, ErrSyntax) = false, want true (err = %v)", source, err)
+	}
+	var syntaxErr *SyntaxError
+	if !errors.As(err, &syntaxErr) {
+		t.Fatalf("AnalyzeBytes for TS source with a syntax error %q: errors.As(err, &SyntaxError{}) = false, want true (err = %v)", source, err)
+	}
+	if len(syntaxErr.Issues) != len(result.SyntaxErrors) {
+		t.Errorf("AnalyzeBytes for TS source with a syntax error %q: SyntaxError.Issues length = %d, want %d to match result.SyntaxErrors", source, len(syntaxErr.Issues), len(result.SyntaxErrors))
+	}
 }
 
 // Regression guard raised by review: TestAnalyzeBytes_OrdersEverySliceByStartByteAscending

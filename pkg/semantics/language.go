@@ -1,17 +1,23 @@
 package semantics
 
 import (
+	"strings"
 	"unsafe"
 
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_go "github.com/tree-sitter/tree-sitter-go/bindings/go"
+	tree_sitter_typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 )
 
 // Language identifies the source language a Result was produced from.
 type Language string
 
-// LanguageGo is the only supported Language in v1.
-const LanguageGo Language = "go"
+// Supported Language values.
+const (
+	LanguageGo         Language = "go"
+	LanguageTypeScript Language = "typescript"
+	LanguageTSX        Language = "tsx"
+)
 
 // ParseStatus summarizes whether Tree-sitter found any syntax errors while
 // parsing the source. The only values that exist in v1 are "ok" and
@@ -24,11 +30,10 @@ type ParseStatus string
 // metrics/findings.
 //
 // This is deliberately unexported and internal-only, not a public
-// LanguageSupport interface: only one language (Go) exists to inform its
-// shape. Adding a second language is expected to extend languageRegistry
-// (and add its own extract*/compute* implementation, mirroring
-// extractGoImports/computeGoFeatures) rather than change the pipeline code
-// in parser.go or analyzer.go.
+// LanguageSupport interface. Adding a language extends languageRegistry
+// (and adds its own extract*/compute* implementation, mirroring
+// extractGoImports/computeGoFeatures or extractTSImports/computeTSFeatures)
+// rather than changing the pipeline code in parser.go or analyzer.go.
 type languageSpec struct {
 	// grammar loads the Tree-sitter grammar for this language, matching the
 	// signature every tree-sitter-<language> binding exposes (e.g.
@@ -53,4 +58,34 @@ var languageRegistry = map[Language]languageSpec{
 		extractImports:  extractGoImports,
 		computeFeatures: computeGoFeatures,
 	},
+	LanguageTypeScript: {
+		grammar:         tree_sitter_typescript.LanguageTypescript,
+		extractImports:  extractTSImports,
+		computeFeatures: computeTSFeatures,
+	},
+	LanguageTSX: {
+		grammar:         tree_sitter_typescript.LanguageTSX,
+		extractImports:  extractTSXImports,
+		computeFeatures: computeTSFeatures,
+	},
+}
+
+// LanguageForExtension maps a file extension (including the leading dot, as
+// returned by filepath.Ext, e.g. ".go") to the Language it corresponds to.
+// Matching is case-insensitive. It returns ("", false) for any extension
+// with no known mapping. This is an additive convenience for callers that
+// want to select a Language from a file path; AnalyzeBytes itself never
+// calls it and continues to route purely on the caller-supplied
+// FileInput.Language.
+func LanguageForExtension(ext string) (Language, bool) {
+	switch strings.ToLower(ext) {
+	case ".go":
+		return LanguageGo, true
+	case ".ts":
+		return LanguageTypeScript, true
+	case ".tsx":
+		return LanguageTSX, true
+	default:
+		return "", false
+	}
 }
