@@ -231,6 +231,52 @@ class Second {
 	}
 }
 
+// Regression guard raised by review (Copilot): tight_coupling must only
+// match assignments to a property of `this` (this.<prop> or
+// this[<expr>]), not a plain variable or another object's property, even
+// though both also have a new_expression on the right inside a
+// constructor.
+func TestComputeTSFeatures_ExcludesNonThisAssignments(t *testing.T) {
+	source := []byte(`class C {
+	constructor() {
+		x = new X();
+		other.y = new Y();
+	}
+}
+`)
+	root, closeTree := mustParseTS(t, source)
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, source)
+
+	if len(findings) != 0 {
+		t.Errorf("computeTSFeatures for %q: got %d findings (%+v), want 0 (assignments not targeting `this` are not tight coupling)", source, len(findings), findings)
+	}
+}
+
+// Regression guard raised by review (Copilot): `this[<expr>] = new Y()`
+// (a subscript_expression on `this`) must still be matched, not just the
+// member_expression form `this.<prop> = new Y()`.
+func TestComputeTSFeatures_IncludesThisSubscriptAssignment(t *testing.T) {
+	source := []byte(`class C {
+	constructor() {
+		this['svc'] = new HttpClient();
+	}
+}
+`)
+	root, closeTree := mustParseTS(t, source)
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, source)
+
+	if len(findings) != 1 {
+		t.Fatalf("computeTSFeatures for %q: got %d findings (%+v), want exactly 1", source, len(findings), findings)
+	}
+	if findings[0].Name != "HttpClient" {
+		t.Errorf("computeTSFeatures for %q: Finding.Name = %q, want %q", source, findings[0].Name, "HttpClient")
+	}
+}
+
 // Regression guard raised by review: a class declared inside a constructor
 // body, with its own constructor doing `this.x = new Y()`, must be
 // reported exactly once (by its own method_definition visit), not also by
