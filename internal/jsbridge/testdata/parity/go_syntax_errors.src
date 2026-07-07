@@ -1,0 +1,5 @@
+package broken
+
+func oops( {
+	if true {
+}

@@ -1,0 +1,74 @@
+[
+  {
+    "name": "go_ok",
+    "src": "go_ok.src",
+    "path": "example/widget.go",
+    "language": "go",
+    "expected": "go_ok.expected.json"
+  },
+  {
+    "name": "go_syntax_errors",
+    "src": "go_syntax_errors.src",
+    "path": "example/broken.go",
+    "language": "go",
+    "expected": "go_syntax_errors.expected.json"
+  },
+  {
+    "name": "ts_ok",
+    "src": "ts_ok.src",
+    "path": "example/greet.ts",
+    "language": "typescript",
+    "expected": "ts_ok.expected.json"
+  },
+  {
+    "name": "ts_syntax_errors",
+    "src": "ts_syntax_errors.src",
+    "path": "example/broken.ts",
+    "language": "typescript",
+    "expected": "ts_syntax_errors.expected.json"
+  },
+  {
+    "name": "tsx_ok",
+    "src": "tsx_ok.src",
+    "path": "example/panel.tsx",
+    "language": "tsx",
+    "expected": "tsx_ok.expected.json"
+  },
+  {
+    "name": "binary_content",
+    "src": "binary.src",
+    "path": "example/blob.go",
+    "language": "go",
+    "expected": "binary_content.expected.json"
+  },
+  {
+    "name": "empty_content",
+    "src": "empty.src",
+    "path": "example/empty.go",
+    "language": "go",
+    "expected": "empty_content.expected.json"
+  },
+  {
+    "name": "file_too_large",
+    "src": "go_ok.src",
+    "path": "example/widget.go",
+    "language": "go",
+    "options": { "max_file_bytes": 8 },
+    "expected": "file_too_large.expected.json"
+  },
+  {
+    "name": "unsupported_language",
+    "src": "go_ok.src",
+    "path": "example/widget.py",
+    "language": "python",
+    "expected": "unsupported_language.expected.json"
+  },
+  {
+    "name": "invalid_options",
+    "src": "go_ok.src",
+    "path": "example/widget.go",
+    "language": "go",
+    "options": { "max_file_bytes": -1 },
+    "expected": "invalid_options.expected.json"
+  }
+]

@@ -1,0 +1,23 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
+export async function greet(name: string): Promise<string> {
+  if (!name) {
+    return "hello";
+  }
+  for (const c of name) {
+    if (c === "!") {
+      return "excited";
+    }
+  }
+  switch (name) {
+    case "world":
+      return "hello world";
+    default:
+      return `hello ${path.basename(name)}`;
+  }
+}
+
+export async function load(p: string): Promise<string> {
+  return (await readFile(p)).toString();
+}
