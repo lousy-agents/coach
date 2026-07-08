@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
 	github.com/google/go-github/v88 v88.0.0
+	github.com/odvcencio/gotreesitter v0.21.0
 	github.com/tree-sitter/go-tree-sitter v0.25.0
 	github.com/tree-sitter/tree-sitter-go v0.25.0
 	github.com/tree-sitter/tree-sitter-typescript v0.23.2
