@@ -46,3 +46,34 @@ jobs:
 
       - name: js/semantics build + tests
         run: mise run js-ci
+
+  # Additive, sibling to verify/js-verify (unchanged): proves pkg/semantics
+  # actually compiles for GOOS=js GOARCH=wasm via the pure-Go gotreesitter
+  # engine, with no CGO and no TinyGo. The CGO path stays the zero-risk
+  # default everywhere else; this job doesn't touch it.
+  wasm-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # jdx/mise-action (not actions/setup-go) so `mise run wasm-build`
+      # resolves, keeping the exact build flags (grammar-subset tags,
+      # GOOS/GOARCH/CGO_ENABLED) defined once in mise.toml rather than
+      # duplicated here.
+      - uses: jdx/mise-action@v2
+
+      - name: GOOS=js GOARCH=wasm build (pure-Go engine)
+        run: mise run wasm-build
+
+  # Additive: runs the dual-backend (CGO vs pure-Go) conformance suite.
+  # Requires CGO (inherited from the top-level env) so both engines are
+  # compiled in simultaneously.
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+
+      - name: dual-backend conformance suite
+        run: mise run conformance-test

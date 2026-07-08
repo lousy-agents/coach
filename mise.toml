@@ -55,6 +55,14 @@ depends = ["js-build"]
 description = "All JS-side verifications"
 depends = ["js-test"]
 
+[tasks.wasm-build]
+description = "Prove pkg/semantics compiles for GOOS=js GOARCH=wasm via the pure-Go gotreesitter engine (no CGO, no TinyGo)"
+run = "GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -tags 'grammar_subset grammar_subset_go grammar_subset_typescript grammar_subset_tsx' ./pkg/semantics/..."
+
+[tasks.conformance-test]
+description = "Run the dual-backend conformance suite (CGO go-tree-sitter vs pure-Go gotreesitter) against the grammar subset the wasm build ships"
+run = "go test -tags 'grammar_subset grammar_subset_go grammar_subset_typescript grammar_subset_tsx' -run TestBackendConformance -v ./pkg/semantics/..."
+
 [tasks.ci]
 description = "Run all CI verifications"
 run = [
