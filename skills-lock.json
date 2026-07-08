@@ -1,11 +1,35 @@
 {
   "version": 1,
   "skills": {
+    "feature-to-plan": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/feature-to-plan/SKILL.md",
+      "computedHash": "f9312e3b09af89cbdbf3502e6b7a84f8cec676ec1facf8817ff0d5b16b46570b"
+    },
     "go-testable-design": {
       "source": "lousy-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/go-testable-design/SKILL.md",
       "computedHash": "4285b6f229578ee58aa63026e27d7dbf8a2b515eb2ddba1f90e4eb174bbe7958"
+    },
+    "mutation-hunter": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/mutation-hunter/SKILL.md",
+      "computedHash": "f984497e3f617a178b8ad76abc30e271e429b76565f9dba1e09afa47f1c3bfba"
+    },
+    "spec-auditor": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/spec-auditor/SKILL.md",
+      "computedHash": "a545042c851fce94300865dd7fd1101964b174e93d21678174a8b4e544d8d086"
+    },
+    "triaging-pr-reviews": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/triaging-pr-reviews/SKILL.md",
+      "computedHash": "49e4ad641b94d51c66e02c49401db6fad81634cba9e8d41beff50d9f0fbaf87d"
     }
   }
 }
