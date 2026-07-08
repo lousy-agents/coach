@@ -2,11 +2,8 @@ package semantics
 
 import (
 	"strings"
-	"unsafe"
 
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
-	tree_sitter_go "github.com/tree-sitter/tree-sitter-go/bindings/go"
-	tree_sitter_typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
+	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
 // Language identifies the source language a Result was produced from.
@@ -25,7 +22,7 @@ const (
 type ParseStatus string
 
 // languageSpec bundles everything the analyzer pipeline needs to parse and
-// analyze one Language's source: which Tree-sitter grammar to load, and
+// analyze one Language's source: a backend-bound grammar handle, and
 // language-specific extraction logic for imports and structural
 // metrics/findings.
 //
@@ -34,40 +31,21 @@ type ParseStatus string
 // (and adds its own extract*/compute* implementation, mirroring
 // extractGoImports/computeGoFeatures or extractTSImports/computeTSFeatures)
 // rather than changing the pipeline code in parser.go or analyzer.go.
+//
+// languageRegistry itself -- the map[Language]languageSpec populating these
+// fields -- lives in language_cgo.go or language_gotreesitter.go, whichever
+// is compiled in for a given build (see those files' build tags): exactly
+// one of them is ever part of any single binary, so there is exactly one
+// languageRegistry.
 type languageSpec struct {
-	// grammar loads the Tree-sitter grammar for this language, matching the
-	// signature every tree-sitter-<language> binding exposes (e.g.
-	// tree_sitter_go.Language).
-	grammar func() unsafe.Pointer
+	// engineLang is the backend-bound grammar handle for this language.
+	engineLang engine.Language
 	// extractImports extracts this language's import declarations from a
 	// parsed, syntax-error-free tree.
-	extractImports func(root *tree_sitter.Node, source []byte) ([]ImportFeature, error)
+	extractImports func(lang engine.Language, root engine.Node, source []byte) ([]ImportFeature, error)
 	// computeFeatures computes this language's structural metrics and
 	// findings from a parsed, syntax-error-free tree.
-	computeFeatures func(root *tree_sitter.Node, source []byte) (StructuralMetrics, []Finding)
-}
-
-// languageRegistry is the single source of truth for which Language values
-// are supported and how to parse/analyze each one. NewAnalyzer and validate
-// both check language support by membership in this map; syntaxParser.parse
-// and Analyzer.AnalyzeBytes both dispatch to a language's extraction logic
-// through the matching languageSpec.
-var languageRegistry = map[Language]languageSpec{
-	LanguageGo: {
-		grammar:         tree_sitter_go.Language,
-		extractImports:  extractGoImports,
-		computeFeatures: computeGoFeatures,
-	},
-	LanguageTypeScript: {
-		grammar:         tree_sitter_typescript.LanguageTypescript,
-		extractImports:  extractTSImports,
-		computeFeatures: computeTSFeatures,
-	},
-	LanguageTSX: {
-		grammar:         tree_sitter_typescript.LanguageTSX,
-		extractImports:  extractTSXImports,
-		computeFeatures: computeTSFeatures,
-	},
+	computeFeatures func(root engine.Node, source []byte) (StructuralMetrics, []Finding)
 }
 
 // LanguageForExtension maps a file extension (including the leading dot, as

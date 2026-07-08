@@ -3,7 +3,7 @@ package semantics
 import (
 	"regexp"
 
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
 // constructorFuncNameRe matches function names that look like Go
@@ -18,7 +18,7 @@ var constructorFuncNameRe = regexp.MustCompile(`^New([A-Z0-9_]|$)`)
 // because nesting depth cannot be expressed as a Tree-sitter query -- doing
 // metrics and findings together keeps results deterministic and cheap
 // (avoids re-walking the tree per concern).
-func computeGoFeatures(root *tree_sitter.Node, source []byte) (StructuralMetrics, []Finding) {
+func computeGoFeatures(root engine.Node, source []byte) (StructuralMetrics, []Finding) {
 	c := &featureCollector{}
 	c.walk(root, source, 0, false)
 	return c.metrics, c.findings
@@ -37,7 +37,7 @@ type featureCollector struct {
 // outside any body); inFunc reports whether the walk is currently inside a
 // function_declaration or method_declaration, since nesting depth (AC-3.4)
 // is only measured inside those bodies.
-func (c *featureCollector) walk(n *tree_sitter.Node, source []byte, blockDepth int, inFunc bool) {
+func (c *featureCollector) walk(n engine.Node, source []byte, blockDepth int, inFunc bool) {
 	if n == nil {
 		return
 	}
@@ -74,14 +74,14 @@ func (c *featureCollector) walk(n *tree_sitter.Node, source []byte, blockDepth i
 	}
 
 	count := n.ChildCount()
-	for i := uint(0); i < count; i++ {
+	for i := 0; i < count; i++ {
 		c.walk(n.Child(i), source, blockDepth, inFunc)
 	}
 }
 
 // checkConstructorFunc emits a "constructor_func" Finding (AC-3.5) if decl's
 // name field matches constructorFuncNameRe.
-func (c *featureCollector) checkConstructorFunc(decl *tree_sitter.Node, source []byte) {
+func (c *featureCollector) checkConstructorFunc(decl engine.Node, source []byte) {
 	nameNode := decl.ChildByFieldName("name")
 	if nameNode == nil {
 		return
@@ -101,7 +101,7 @@ func (c *featureCollector) checkConstructorFunc(decl *tree_sitter.Node, source [
 // result field contains a pointer_type, either directly (a single unnamed
 // pointer return value) or among a parameter_list's parameter_declaration
 // types (multiple and/or named return values).
-func (c *featureCollector) checkPointerReturn(decl *tree_sitter.Node, source []byte) {
+func (c *featureCollector) checkPointerReturn(decl engine.Node, source []byte) {
 	nameNode := decl.ChildByFieldName("name")
 	if nameNode == nil {
 		return
@@ -125,12 +125,12 @@ func (c *featureCollector) checkPointerReturn(decl *tree_sitter.Node, source []b
 // element (e.g. []*T, map[string]*T, chan *T). A full descendant search is
 // used rather than checking only the direct result/type node, since Go
 // permits pointer_type at any depth within a composite result type.
-func resultHasPointerType(result *tree_sitter.Node) bool {
+func resultHasPointerType(result engine.Node) bool {
 	if result.Kind() == "pointer_type" {
 		return true
 	}
 	count := result.ChildCount()
-	for i := uint(0); i < count; i++ {
+	for i := 0; i < count; i++ {
 		if resultHasPointerType(result.Child(i)) {
 			return true
 		}

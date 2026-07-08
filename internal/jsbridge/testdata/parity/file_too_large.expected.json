@@ -1,0 +1,7 @@
+{
+  "id": 0,
+  "error": {
+    "kind": "file_too_large",
+    "message": "semantics: file too large: content is 507 bytes, exceeds max 8 bytes"
+  }
+}

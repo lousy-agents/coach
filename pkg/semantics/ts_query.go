@@ -3,10 +3,8 @@ package semantics
 import (
 	"fmt"
 	"sort"
-	"unsafe"
 
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
-	tree_sitter_typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
+	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
 // tsImportQuerySource finds the module-specifier string of every static
@@ -21,8 +19,8 @@ const tsImportQuerySource = `(import_statement source: (string) @import.path)`
 // ImportFeature per specifier found, ordered by Location.StartByte
 // ascending. Alias is always "" for TS imports in v1 (D4): TS import
 // bindings (named/default/namespace) are out of scope.
-func extractTSImports(root *tree_sitter.Node, source []byte) ([]ImportFeature, error) {
-	return extractTSImportsForGrammar(tree_sitter_typescript.LanguageTypescript, root, source)
+func extractTSImports(lang engine.Language, root engine.Node, source []byte) ([]ImportFeature, error) {
+	return extractTSImportsForGrammar(lang, root, source)
 }
 
 // extractTSXImports is extractTSImports's TSX-grammar counterpart. A
@@ -36,22 +34,21 @@ func extractTSImports(root *tree_sitter.Node, source []byte) ([]ImportFeature, e
 // entries the way computeFeatures is (computeTSFeatures matches on
 // Node.Kind() strings alone, which every Node resolves against its own
 // tree's language and so needs no query); it is shared logic parameterized
-// by grammar instead.
-func extractTSXImports(root *tree_sitter.Node, source []byte) ([]ImportFeature, error) {
-	return extractTSImportsForGrammar(tree_sitter_typescript.LanguageTSX, root, source)
+// by grammar instead -- here, by which engine.Language the caller passes.
+func extractTSXImports(lang engine.Language, root engine.Node, source []byte) ([]ImportFeature, error) {
+	return extractTSImportsForGrammar(lang, root, source)
 }
 
 // extractTSImportsForGrammar is the grammar-parameterized implementation
 // shared by extractTSImports and extractTSXImports.
-func extractTSImportsForGrammar(grammar func() unsafe.Pointer, root *tree_sitter.Node, source []byte) ([]ImportFeature, error) {
-	lang := tree_sitter.NewLanguage(grammar())
-	query, queryErr := tree_sitter.NewQuery(lang, tsImportQuerySource)
+func extractTSImportsForGrammar(lang engine.Language, root engine.Node, source []byte) ([]ImportFeature, error) {
+	query, queryErr := lang.NewQuery(tsImportQuerySource)
 	if queryErr != nil {
 		return nil, fmt.Errorf("semantics: compiling TS import query: %w", queryErr)
 	}
 	defer query.Close()
 
-	cursor := tree_sitter.NewQueryCursor()
+	cursor := lang.NewQueryCursor()
 	defer cursor.Close()
 
 	var imports []ImportFeature
@@ -65,7 +62,7 @@ func extractTSImportsForGrammar(grammar func() unsafe.Pointer, root *tree_sitter
 			pathNode := capture.Node
 			imports = append(imports, ImportFeature{
 				Path:     tsUnquoteString(pathNode.Utf8Text(source)),
-				Location: locationFromNode(&pathNode),
+				Location: locationFromNode(pathNode),
 			})
 		}
 	}

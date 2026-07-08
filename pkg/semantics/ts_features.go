@@ -1,7 +1,7 @@
 package semantics
 
 import (
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
 // computeTSFeatures walks root exactly once, producing both the structural
@@ -11,7 +11,7 @@ import (
 // language, so it needs no grammar-specific Query the way import
 // extraction does). TypeSwitches and Selects have no TypeScript analog and
 // are always 0 (D2).
-func computeTSFeatures(root *tree_sitter.Node, source []byte) (StructuralMetrics, []Finding) {
+func computeTSFeatures(root engine.Node, source []byte) (StructuralMetrics, []Finding) {
 	c := &tsFeatureCollector{}
 	c.walk(root, source, 0, false, false)
 	return c.metrics, c.findings
@@ -60,7 +60,7 @@ var tsFunctionLikeKinds = map[string]bool{
 // misattribute its own `this.x = new Y()` to the enclosing constructor.
 // Arrow functions do not rebind `this`, so descending into one preserves
 // the enclosing inCtorBody value.
-func (c *tsFeatureCollector) walk(n *tree_sitter.Node, source []byte, blockDepth int, inFunc bool, inCtorBody bool) {
+func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, inFunc bool, inCtorBody bool) {
 	if n == nil {
 		return
 	}
@@ -96,7 +96,7 @@ func (c *tsFeatureCollector) walk(n *tree_sitter.Node, source []byte, blockDepth
 	}
 
 	count := n.ChildCount()
-	for i := uint(0); i < count; i++ {
+	for i := 0; i < count; i++ {
 		c.walk(n.Child(i), source, blockDepth, inFunc, inCtorBody)
 	}
 }
@@ -104,7 +104,7 @@ func (c *tsFeatureCollector) walk(n *tree_sitter.Node, source []byte, blockDepth
 // isConstructorMethod reports whether method is a constructor: a
 // method_definition whose name field is a property_identifier with source
 // text exactly "constructor".
-func isConstructorMethod(method *tree_sitter.Node, source []byte) bool {
+func isConstructorMethod(method engine.Node, source []byte) bool {
 	nameNode := method.ChildByFieldName("name")
 	return nameNode != nil && nameNode.Kind() == "property_identifier" && nameNode.Utf8Text(source) == "constructor"
 }
@@ -119,7 +119,7 @@ func isConstructorMethod(method *tree_sitter.Node, source []byte) bool {
 // instance and are excluded. variable_declarator initializers
 // (`const c = new X()`) are never passed here (only assignment_expression
 // nodes trigger this call).
-func (c *tsFeatureCollector) checkTightCouplingAssignment(n *tree_sitter.Node, source []byte) {
+func (c *tsFeatureCollector) checkTightCouplingAssignment(n engine.Node, source []byte) {
 	left := n.ChildByFieldName("left")
 	if left == nil || (left.Kind() != "member_expression" && left.Kind() != "subscript_expression") {
 		return

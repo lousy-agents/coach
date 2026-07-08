@@ -1,0 +1,32 @@
+package widget
+
+import (
+	"fmt"
+	str "strings"
+)
+
+// Widget holds a name.
+type Widget struct {
+	name string
+}
+
+// NewWidget is a constructor-like function returning a pointer.
+func NewWidget(name string) *Widget {
+	if name == "" {
+		name = "default"
+	}
+	return &Widget{name: name}
+}
+
+// Describe renders the widget.
+func (w *Widget) Describe() string {
+	for i := 0; i < 3; i++ {
+		fmt.Println(str.Repeat("-", i))
+	}
+	switch w.name {
+	case "default":
+		return "unnamed widget"
+	default:
+		return w.name
+	}
+}

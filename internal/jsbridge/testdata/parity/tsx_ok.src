@@ -1,0 +1,20 @@
+import React from "react";
+import { Service } from "./service";
+
+class Panel extends React.Component<{}, {}> {
+  private service: Service;
+
+  constructor(props: {}) {
+    super(props);
+    this.service = new Service();
+  }
+
+  render() {
+    if (!this.service) {
+      return <div>missing service</div>;
+    }
+    return <div>{this.service.run()}</div>;
+  }
+}
+
+export default Panel;

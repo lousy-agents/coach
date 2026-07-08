@@ -1,0 +1,33 @@
+{
+  "name": "@lousy-agents/coach-semantics",
+  "version": "0.1.0",
+  "description": "TypeScript bindings for coach's pkg/semantics structural source analyzer. Consumed from a clone of the monorepo; not published to npm.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "bin",
+    "dist",
+    "vendor"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:backend": "go build -C ../.. -o js/semantics/bin/coach-semantics-json ./cmd/semantics-json",
+    "build:test": "tsc -p tsconfig.test.json",
+    "test": "npm run build:backend && npm run build && npm run build:test && node --test \"dist-test/**/*.test.js\"",
+    "prepare": "npm run build:backend && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.0"
+  }
+}

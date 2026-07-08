@@ -1,0 +1,69 @@
+{
+  "id": 0,
+  "result": {
+    "path": "example/widget.go",
+    "language": "go",
+    "parse_status": "ok",
+    "imports": [
+      {
+        "path": "fmt",
+        "location": {
+          "start_byte": 26,
+          "end_byte": 31,
+          "start_row": 3,
+          "start_col": 1,
+          "end_row": 3,
+          "end_col": 6
+        }
+      },
+      {
+        "path": "strings",
+        "alias": "str",
+        "location": {
+          "start_byte": 37,
+          "end_byte": 46,
+          "start_row": 4,
+          "start_col": 5,
+          "end_row": 4,
+          "end_col": 14
+        }
+      }
+    ],
+    "metrics": {
+      "ifs": 1,
+      "fors": 1,
+      "expr_switches": 1,
+      "type_switches": 0,
+      "selects": 0,
+      "functions": 1,
+      "methods": 1,
+      "max_nesting_depth": 2
+    },
+    "findings": [
+      {
+        "kind": "constructor_func",
+        "name": "NewWidget",
+        "location": {
+          "start_byte": 176,
+          "end_byte": 282,
+          "start_row": 13,
+          "start_col": 0,
+          "end_row": 18,
+          "end_col": 1
+        }
+      },
+      {
+        "kind": "pointer_return",
+        "name": "NewWidget",
+        "location": {
+          "start_byte": 176,
+          "end_byte": 282,
+          "start_row": 13,
+          "start_col": 0,
+          "end_row": 18,
+          "end_col": 1
+        }
+      }
+    ]
+  }
+}

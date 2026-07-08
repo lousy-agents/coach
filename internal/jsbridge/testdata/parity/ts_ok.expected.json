@@ -1,0 +1,42 @@
+{
+  "id": 0,
+  "result": {
+    "path": "example/greet.ts",
+    "language": "typescript",
+    "parse_status": "ok",
+    "imports": [
+      {
+        "path": "node:fs/promises",
+        "location": {
+          "start_byte": 25,
+          "end_byte": 43,
+          "start_row": 0,
+          "start_col": 25,
+          "end_row": 0,
+          "end_col": 43
+        }
+      },
+      {
+        "path": "node:path",
+        "location": {
+          "start_byte": 62,
+          "end_byte": 73,
+          "start_row": 1,
+          "start_col": 17,
+          "end_row": 1,
+          "end_col": 28
+        }
+      }
+    ],
+    "metrics": {
+      "ifs": 2,
+      "fors": 1,
+      "expr_switches": 1,
+      "type_switches": 0,
+      "selects": 0,
+      "functions": 2,
+      "methods": 0,
+      "max_nesting_depth": 3
+    }
+  }
+}

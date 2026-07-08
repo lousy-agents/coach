@@ -33,3 +33,11 @@ go.work.sum
 
 # Local Claude Code agent state (skill symlinks, worktrees, scheduler locks)
 .claude/
+
+# JS package build outputs (js/semantics)
+js/semantics/node_modules/
+js/semantics/dist/
+js/semantics/dist-test/
+js/semantics/bin/
+js/semantics/vendor/wasm_exec.js
+*.wasm

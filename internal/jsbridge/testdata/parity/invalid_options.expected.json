@@ -1,0 +1,7 @@
+{
+  "id": 0,
+  "error": {
+    "kind": "invalid_options",
+    "message": "semantics: MaxFileBytes must be \u003e= 0, got -1"
+  }
+}

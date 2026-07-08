@@ -1,0 +1,56 @@
+{
+  "id": 0,
+  "result": {
+    "path": "example/panel.tsx",
+    "language": "tsx",
+    "parse_status": "ok",
+    "imports": [
+      {
+        "path": "react",
+        "location": {
+          "start_byte": 18,
+          "end_byte": 25,
+          "start_row": 0,
+          "start_col": 18,
+          "end_row": 0,
+          "end_col": 25
+        }
+      },
+      {
+        "path": "./service",
+        "location": {
+          "start_byte": 51,
+          "end_byte": 62,
+          "start_row": 1,
+          "start_col": 24,
+          "end_row": 1,
+          "end_col": 35
+        }
+      }
+    ],
+    "metrics": {
+      "ifs": 1,
+      "fors": 0,
+      "expr_switches": 0,
+      "type_switches": 0,
+      "selects": 0,
+      "functions": 0,
+      "methods": 2,
+      "max_nesting_depth": 2
+    },
+    "findings": [
+      {
+        "kind": "tight_coupling",
+        "name": "Service",
+        "location": {
+          "start_byte": 204,
+          "end_byte": 217,
+          "start_row": 8,
+          "start_col": 19,
+          "end_row": 8,
+          "end_col": 32
+        }
+      }
+    ]
+  }
+}
