@@ -223,10 +223,41 @@ func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcNam
 			}
 		}
 	}
+	if n.Kind() == "func_literal" {
+		if params := n.ChildByFieldName("parameters"); params != nil {
+			mutableParams = shadowParamTypes(mutableParams, params, source)
+		}
+	}
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
 		c.findAssignments(n.Child(i), source, funcName, mutableParams, seen)
 	}
+}
+
+// shadowParamTypes returns a copy of outer with any entries shadowed by
+// literalParams (a func_literal's own "parameters" field) removed, so that
+// a closure declaring its own parameter with the same name as an outer
+// function's parameter (e.g. an outer `cfg` shadowed by a closure's own
+// `func(cfg *Config){ ... }`) is never misattributed to the outer
+// parameter: the closure's binding is a distinct variable per normal Go
+// scoping, and this single-pass walk has no separate owner name to
+// attribute the closure's own mutations to, so those are simply not
+// reported rather than being reported against the wrong (outer) name.
+// Outer parameters not redeclared by the literal are left untouched, since
+// the walk is still inside their scope.
+func shadowParamTypes(outer map[string]bool, literalParams engine.Node, source []byte) map[string]bool {
+	ownParams := mutableParamTypes(literalParams, source)
+	if len(ownParams) == 0 {
+		return outer
+	}
+	shadowed := make(map[string]bool, len(outer))
+	for name, mutable := range outer {
+		if _, redeclared := ownParams[name]; redeclared {
+			continue
+		}
+		shadowed[name] = mutable
+	}
+	return shadowed
 }
 
 // checkAssignmentTarget inspects a single assignment target (one of an
@@ -277,26 +308,41 @@ func (c *featureCollector) checkAssignmentTarget(target engine.Node, source []by
 }
 
 // selectorBaseIdentifier resolves a selector_expression's operand down to
-// the identifier it ultimately reads: either the operand itself, when it is
-// already a plain identifier (cfg.Name), or the identifier wrapped by a
-// dereference, when the operand is a parenthesized unary "*" expression
-// ((*cfg).Name). Any other operand shape (e.g. a nested selector like
-// a.b.Name) is not resolved to a single base identifier and returns nil.
+// the root identifier it ultimately reads, walking through any chain of
+// nested selector_expression/index_expression operands (cfg.Sub.Name,
+// cfg.Items[0].Name) and the parenthesized-unary-dereference case
+// ((*cfg).Name, (*cfg.Sub).Name), iterating until it reaches a plain
+// identifier -- the root -- or determines there is no such root (e.g. the
+// chain bottoms out in a function call like f().Name), in which case it
+// returns nil.
 func selectorBaseIdentifier(operand engine.Node) engine.Node {
-	if operand.Kind() == "identifier" {
-		return operand
+	for operand != nil {
+		switch operand.Kind() {
+		case "identifier":
+			return operand
+		case "selector_expression", "index_expression":
+			operand = operand.ChildByFieldName("operand")
+		case "parenthesized_expression":
+			operand = derefOperand(operand)
+		default:
+			return nil
+		}
 	}
-	if operand.Kind() != "parenthesized_expression" {
-		return nil
-	}
-	count := operand.ChildCount()
+	return nil
+}
+
+// derefOperand returns the operand of the parenthesized unary "*"
+// expression nested directly inside a parenthesized_expression ((*cfg) ->
+// cfg, (*cfg.Sub) -> cfg.Sub), or nil if paren does not wrap exactly that
+// shape (e.g. a parenthesized expression that isn't a dereference at all).
+func derefOperand(paren engine.Node) engine.Node {
+	count := paren.ChildCount()
 	for i := 0; i < count; i++ {
-		child := operand.Child(i)
+		child := paren.Child(i)
 		if child.Kind() != "unary_expression" {
 			continue
 		}
-		inner := child.ChildByFieldName("operand")
-		if inner != nil && inner.Kind() == "identifier" {
+		if inner := child.ChildByFieldName("operand"); inner != nil {
 			return inner
 		}
 	}

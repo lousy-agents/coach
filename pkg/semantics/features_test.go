@@ -572,6 +572,69 @@ func (t *T) Method() {
 	}
 }
 
+// Copilot review fix: a nested selector write (cfg.Sub.Name = "x", where
+// cfg is a pointer parameter) is still a caller-visible write through cfg
+// one field deeper, and must resolve to the root identifier cfg rather than
+// being silently missed because the selector's own operand is itself a
+// selector_expression rather than a bare identifier.
+func TestGoMutatesInput_NestedSelectorWrite(t *testing.T) {
+	source := []byte(`package main
+
+type Sub struct {
+	Name string
+}
+
+type Config struct {
+	Sub Sub
+}
+
+func f(cfg *Config) {
+	cfg.Sub.Name = "x"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	got := mutatesInputFinding(findings, "f:cfg")
+	if got == nil {
+		t.Fatalf("computeGoFeatures findings for nested selector write %q: want a mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+	if got.Evidence != "cfg.Sub.Name" {
+		t.Errorf("mutates_input Evidence: got %q, want %q", got.Evidence, "cfg.Sub.Name")
+	}
+}
+
+// Copilot review fix: a func_literal that declares its own parameter with
+// the same name as an outer function's mutable parameter (both named cfg,
+// both *Config) introduces a distinct binding per normal Go scoping. The
+// closure's own mutation of its cfg must not be misattributed to the outer
+// function f's cfg.
+func TestGoMutatesInput_FuncLiteralShadowsOuterParameter(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	g := func(cfg *Config) {
+		cfg.Name = "shadowed"
+	}
+	g(cfg)
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for closure-shadowed parameter %q: want no mutates_input finding named %q (closure's cfg is a distinct binding), got %+v", source, "f:cfg", findings)
+	}
+}
+
 // AC-6: computeGoFeatures is only reached from AnalyzeBytes on a clean parse
 // (analyzer.go returns a partial Result on root.HasError() before ever
 // calling spec.computeFeatures), so a file with syntax errors can never

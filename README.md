@@ -82,7 +82,7 @@ produces a finding shaped like:
   "kind": "mutates_input",
   "name": "ApplyDefaults:cfg",
   "confidence": "medium",
-  "evidence": "cfg.Timeout = 30 * time.Second",
+  "evidence": "cfg.Timeout",
   "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
   "suggested_skill": "refactor-hidden-mutation"
 }

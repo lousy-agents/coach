@@ -316,9 +316,11 @@ func (c *tsFeatureCollector) checkMutatesInputDelete(n engine.Node, source []byt
 
 // checkMutatesInputCall emits a "mutates_input" Finding (Story 2) if n (a
 // call_expression) calls one of mutatingTSMethodNames on a receiver
-// rooted at some enclosing scope's identifier-bound parameter (`p.push(x)`,
-// `arr.sort()`, `m.set(k, v)`, ...). Arbitrary custom method calls
-// (`user.setName()`) are not in mutatingTSMethodNames and so never match.
+// rooted at some enclosing scope's identifier-bound parameter, either
+// directly (`p.push(x)`, `arr.sort()`, `m.set(k, v)`) or through a chain of
+// nested member/subscript accesses (`p.items.push(1)`). Arbitrary custom
+// method calls (`user.setName()`) are not in mutatingTSMethodNames and so
+// never match.
 func (c *tsFeatureCollector) checkMutatesInputCall(n engine.Node, source []byte, scopes []tsParamScope) {
 	fn := n.ChildByFieldName("function")
 	if fn == nil || fn.Kind() != "member_expression" {
@@ -329,20 +331,23 @@ func (c *tsFeatureCollector) checkMutatesInputCall(n engine.Node, source []byte,
 		return
 	}
 	object := fn.ChildByFieldName("object")
-	if object == nil || object.Kind() != "identifier" {
+	base := tsResolveRootIdentifier(object)
+	if base == nil {
 		return
 	}
-	c.recordMutatesInput(object, n, source, scopes)
+	c.recordMutatesInput(base, n, source, scopes)
 }
 
-// tsMutationBase resolves expr (a candidate mutation target/argument/
-// receiver) down to the identifier it is rooted at, when expr is a
-// member_expression or subscript_expression whose own "object" field is a
-// plain identifier (`p.x`, `p[...]`) -- or nil for any other shape,
-// including a bare identifier (handled separately, since a bare identifier
-// as an assignment's left-hand side is a rebind, not a write-through) and
-// a nested/computed object (`p.x.y`, `f().x`), which this first slice does
-// not resolve.
+// tsMutationBase resolves expr (a candidate mutation target/argument) down
+// to the root identifier it is ultimately rooted at, when expr is a
+// member_expression or subscript_expression -- either directly (`p.x`,
+// `p[...]`) or through a chain of nested member_expression/
+// subscript_expression "object" fields (`p.x.y`, `p.items[0].name`) -- or
+// nil for any other shape, including a bare identifier (handled
+// separately, since a bare identifier as an assignment's left-hand side is
+// a rebind, not a write-through) and a chain that bottoms out in something
+// other than a plain identifier (e.g. `f().x`), which is not resolved to a
+// root.
 func tsMutationBase(expr engine.Node) engine.Node {
 	if expr == nil {
 		return nil
@@ -350,11 +355,29 @@ func tsMutationBase(expr engine.Node) engine.Node {
 	if expr.Kind() != "member_expression" && expr.Kind() != "subscript_expression" {
 		return nil
 	}
-	object := expr.ChildByFieldName("object")
-	if object == nil || object.Kind() != "identifier" {
-		return nil
+	return tsResolveRootIdentifier(expr.ChildByFieldName("object"))
+}
+
+// tsResolveRootIdentifier walks a chain of nested member_expression/
+// subscript_expression "object" fields, starting at expr, until it reaches
+// a plain identifier -- the root -- or determines there is no such root
+// (e.g. the chain bottoms out in a call_expression like `f().x`), in which
+// case it returns nil. Used by both tsMutationBase (assignment/delete
+// targets) and checkMutatesInputCall (method-call receivers) so nested
+// mutation targets/receivers rooted at a tracked parameter (`p.x.y = 1`,
+// `p.items.push(1)`) are resolved the same way.
+func tsResolveRootIdentifier(expr engine.Node) engine.Node {
+	for expr != nil {
+		switch expr.Kind() {
+		case "identifier":
+			return expr
+		case "member_expression", "subscript_expression":
+			expr = expr.ChildByFieldName("object")
+		default:
+			return nil
+		}
 	}
-	return object
+	return nil
 }
 
 // recordMutatesInput resolves base's identifier name against scopes

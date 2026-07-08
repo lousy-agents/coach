@@ -693,6 +693,56 @@ func TestTSMutatesInput_NonIdentifierParametersAreIgnored(t *testing.T) {
 	}
 }
 
+// Copilot review fix: a nested member write (p.x.y = 1, where p is an
+// identifier-bound parameter) is still a caller-visible write through p one
+// property deeper, and must resolve to the root identifier p rather than
+// being missed because the assignment's own object is itself a
+// member_expression rather than a bare identifier.
+func TestTSMutatesInput_NestedPropertyAssignment(t *testing.T) {
+	source := `function f(p) {
+	p.x.y = 1;
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	got := mustFindTSMutatesInput(t, source, findings)
+
+	if got.Name != "f:p" {
+		t.Errorf("Finding.Name = %q, want %q", got.Name, "f:p")
+	}
+	gotText := source[got.Location.StartByte:got.Location.EndByte]
+	if gotText != "p.x.y = 1" {
+		t.Errorf("Finding.Location text = %q, want %q", gotText, "p.x.y = 1")
+	}
+}
+
+// Copilot review fix: a mutating method call on a nested receiver
+// (p.items.push(1), where p is an identifier-bound parameter) is still a
+// caller-visible mutation rooted at p, and must be detected even though
+// the call's receiver object is itself a member_expression rather than a
+// bare identifier.
+func TestTSMutatesInput_MutatingMethodCallOnNestedReceiver(t *testing.T) {
+	source := `function f(p) {
+	p.items.push(1);
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	got := mustFindTSMutatesInput(t, source, findings)
+
+	if got.Name != "f:p" {
+		t.Errorf("Finding.Name = %q, want %q", got.Name, "f:p")
+	}
+	gotText := source[got.Location.StartByte:got.Location.EndByte]
+	if gotText != "p.items.push(1)" {
+		t.Errorf("Finding.Location text = %q, want %q", gotText, "p.items.push(1)")
+	}
+}
+
 // Regression guard: existing tight_coupling behavior must remain
 // unaffected by mutates_input detection sharing the same walk -- a
 // constructor's `this.x = new Y()` still yields exactly one tight_coupling
