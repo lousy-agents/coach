@@ -16,7 +16,9 @@ go get github.com/lousy-agents/coach/pkg/githubingest # only if you need GitHub 
 
 ### CGO requirement
 
-`pkg/semantics` binds to Tree-sitter's C runtime via `github.com/tree-sitter/go-tree-sitter`. It requires `CGO_ENABLED=1` and a C toolchain (e.g. `gcc`) at build time — `CGO_ENABLED=0` builds of `pkg/semantics` are not possible. `pkg/githubingest` has no such requirement.
+By default `pkg/semantics` binds to Tree-sitter's C runtime via `github.com/tree-sitter/go-tree-sitter`. It requires `CGO_ENABLED=1` and a C toolchain (e.g. `gcc`) at build time. `pkg/githubingest` has no such requirement.
+
+When CGO is unavailable — `CGO_ENABLED=0`, or `GOOS=js GOARCH=wasm`, which cannot use CGO at all — `pkg/semantics` automatically falls back to a pure-Go engine ([`github.com/odvcencio/gotreesitter`](https://github.com/odvcencio/gotreesitter)), with no code or flag changes required. This fallback is newer than the CGO engine and is verified against the fixture corpus in `pkg/semantics/backend_conformance_test.go`, not proven identical to the CGO engine on every possible malformed input — see that file and `pkg/semantics/doc.go` for details. A `coach_gotreesitter` build tag forces the pure-Go engine on a native (CGO-capable) build, for testing or comparison. `mise run wasm-build` proves a real `GOOS=js GOARCH=wasm` build compiles; `mise run conformance-test` runs the dual-backend suite.
 
 ## `pkg/semantics` quickstart
 
@@ -146,7 +148,7 @@ This prints one JSON `Result` object per `.go` file found under `/path/to/your/r
 
 [`js/semantics`](./js/semantics) packages `pkg/semantics` for Node.js as `@lousy-agents/coach-semantics` — a typed, ESM-only npm package. It is not published to npm: consume it by cloning this repository and building locally.
 
-Under the hood the package talks newline-delimited JSON to a small Go binary (`cmd/semantics-json`) over stdin/stdout. A WebAssembly transport was the preferred design, but `pkg/semantics` requires CGO for Tree-sitter and standard `GOOS=js GOARCH=wasm` does not support CGO; the transport is an implementation detail behind the package's `Backend` seam, so a future TinyGo/WASM backend can replace the child process without changing the API.
+Under the hood the package talks newline-delimited JSON to a small Go binary (`cmd/semantics-json`) over stdin/stdout. A WebAssembly transport was the preferred design; it was originally blocked because `pkg/semantics` required CGO for Tree-sitter and standard `GOOS=js GOARCH=wasm` does not support CGO. `pkg/semantics` now also builds against a pure-Go engine (see [CGO requirement](#cgo-requirement) above and `pkg/semantics/doc.go`), so a real `GOOS=js GOARCH=wasm` build compiles and runs (`mise run wasm-build`, `cmd/semantics-wasm-smoke` for a runnable proof) — but `js/semantics` does not consume it yet. Wiring an actual WASM `Backend` implementation (`backend-wasm.ts`) to replace or complement the stdio child process is a separate, later decision; the transport is an implementation detail behind the package's `Backend` seam either way, so that swap won't change the public API.
 
 Prerequisites: Node.js ≥ 20, plus the Go + C toolchain described under [CGO requirement](#cgo-requirement) (the backend binary is compiled from this repo).
 
