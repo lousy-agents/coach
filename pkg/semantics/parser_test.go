@@ -1,3 +1,5 @@
+//go:build cgo
+
 package semantics
 
 import (
@@ -5,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
 // parseAndDetectSyntax is test-only scaffolding retained from Task 3's
@@ -182,7 +184,7 @@ func TestParse_ReturnsCleanTreeForValidSource(t *testing.T) {
 	defer tree.Close()
 
 	if tree.RootNode().HasError() {
-		t.Errorf("parse of valid source %q: RootNode().HasError() = true, want false; S-expression: %s", source, tree.RootNode().ToSexp())
+		t.Errorf("parse of valid source %q: RootNode().HasError() = true, want false", source)
 	}
 }
 
@@ -193,8 +195,8 @@ func TestParse_ReturnsCleanTreeForValidSource(t *testing.T) {
 // forced-nil parseFunc via the syntaxParser seam built for this purpose.
 func TestParse_ReturnsParseFailureErrorOnNilTreeWithoutDereferencing(t *testing.T) {
 	sp := newSyntaxParser()
-	sp.parseFunc = func(p *tree_sitter.Parser, content []byte) *tree_sitter.Tree {
-		return nil
+	sp.parseFunc = func(p engine.Parser, content []byte) (engine.Tree, error) {
+		return nil, nil
 	}
 
 	tree, err := sp.parse(context.Background(), []byte("package main\n"), LanguageGo)

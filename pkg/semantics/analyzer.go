@@ -98,7 +98,7 @@ func (a *Analyzer) AnalyzeBytes(ctx context.Context, in FileInput) (*Result, err
 	// validate has already confirmed in.Language is registered, so this
 	// lookup cannot miss.
 	spec := languageRegistry[in.Language]
-	imports, err := spec.extractImports(root, in.Content)
+	imports, err := spec.extractImports(spec.engineLang, root, in.Content)
 	if err != nil {
 		return nil, err
 	}

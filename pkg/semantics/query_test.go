@@ -1,18 +1,19 @@
+//go:build cgo
+
 package semantics
 
 import (
 	"context"
 	"testing"
 
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
-	tree_sitter_go "github.com/tree-sitter/tree-sitter-go/bindings/go"
+	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
 // mustParseGo parses source as Go and returns its root node plus a cleanup
 // function that closes the underlying tree. It reuses the syntaxParser seam
 // already exercised by parser_test.go rather than duplicating Tree-sitter
 // setup here.
-func mustParseGo(t *testing.T, source []byte) (*tree_sitter.Node, func()) {
+func mustParseGo(t *testing.T, source []byte) (engine.Node, func()) {
 	t.Helper()
 
 	sp := newSyntaxParser()
@@ -28,9 +29,7 @@ func mustParseGo(t *testing.T, source []byte) (*tree_sitter.Node, func()) {
 // on top, so a bad query surfaces as its own failure rather than being
 // buried inside a fixture test.
 func TestImportQuerySource_CompilesAgainstGoGrammar(t *testing.T) {
-	lang := tree_sitter.NewLanguage(tree_sitter_go.Language())
-
-	query, queryErr := tree_sitter.NewQuery(lang, goImportQuerySource)
+	query, queryErr := languageRegistry[LanguageGo].engineLang.NewQuery(goImportQuerySource)
 	if queryErr != nil {
 		t.Fatalf("compiling import query %q against the Go grammar: got err %v, want nil", goImportQuerySource, queryErr)
 	}
@@ -44,7 +43,7 @@ func TestExtractImports_SingleImport(t *testing.T) {
 	root, closeTree := mustParseGo(t, source)
 	defer closeTree()
 
-	imports, err := extractGoImports(root, source)
+	imports, err := extractGoImports(languageRegistry[LanguageGo].engineLang, root, source)
 	if err != nil {
 		t.Fatalf("extractGoImports for single import %q: got err %v, want nil", source, err)
 	}
@@ -72,7 +71,7 @@ func TestExtractImports_GroupedImports(t *testing.T) {
 	root, closeTree := mustParseGo(t, source)
 	defer closeTree()
 
-	imports, err := extractGoImports(root, source)
+	imports, err := extractGoImports(languageRegistry[LanguageGo].engineLang, root, source)
 	if err != nil {
 		t.Fatalf("extractGoImports for grouped imports %q: got err %v, want nil", source, err)
 	}
@@ -103,7 +102,7 @@ func TestExtractImports_AliasedImport(t *testing.T) {
 	root, closeTree := mustParseGo(t, source)
 	defer closeTree()
 
-	imports, err := extractGoImports(root, source)
+	imports, err := extractGoImports(languageRegistry[LanguageGo].engineLang, root, source)
 	if err != nil {
 		t.Fatalf("extractGoImports for aliased import %q: got err %v, want nil", source, err)
 	}
@@ -129,7 +128,7 @@ func TestExtractImports_DotImport(t *testing.T) {
 	root, closeTree := mustParseGo(t, source)
 	defer closeTree()
 
-	imports, err := extractGoImports(root, source)
+	imports, err := extractGoImports(languageRegistry[LanguageGo].engineLang, root, source)
 	if err != nil {
 		t.Fatalf("extractGoImports for dot import %q: got err %v, want nil", source, err)
 	}
@@ -155,7 +154,7 @@ func TestExtractImports_BlankImport(t *testing.T) {
 	root, closeTree := mustParseGo(t, source)
 	defer closeTree()
 
-	imports, err := extractGoImports(root, source)
+	imports, err := extractGoImports(languageRegistry[LanguageGo].engineLang, root, source)
 	if err != nil {
 		t.Fatalf("extractGoImports for blank import %q: got err %v, want nil", source, err)
 	}
@@ -181,7 +180,7 @@ func TestExtractImports_RawStringBacktickPath(t *testing.T) {
 	root, closeTree := mustParseGo(t, source)
 	defer closeTree()
 
-	imports, err := extractGoImports(root, source)
+	imports, err := extractGoImports(languageRegistry[LanguageGo].engineLang, root, source)
 	if err != nil {
 		t.Fatalf("extractGoImports for raw-string import %q: got err %v, want nil", source, err)
 	}
@@ -212,7 +211,7 @@ import "example.com/foo\x2fbar"
 	root, closeTree := mustParseGo(t, source)
 	defer closeTree()
 
-	imports, err := extractGoImports(root, source)
+	imports, err := extractGoImports(languageRegistry[LanguageGo].engineLang, root, source)
 	if err != nil {
 		t.Fatalf("extractGoImports for escaped import path %q: got err %v, want nil", source, err)
 	}

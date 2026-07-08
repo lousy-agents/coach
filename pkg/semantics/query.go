@@ -5,8 +5,7 @@ import (
 	"sort"
 	"strconv"
 
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
-	tree_sitter_go "github.com/tree-sitter/tree-sitter-go/bindings/go"
+	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
 // goImportQuerySource is the Tree-sitter query used to find import paths in
@@ -21,15 +20,14 @@ const goImportQuerySource = `(import_spec path: (_) @import.path)`
 // (AC-1.10). Path is the interpreted string value (via strconv.Unquote),
 // not the raw delimited source text, so escape sequences are resolved the
 // same way the Go compiler resolves them.
-func extractGoImports(root *tree_sitter.Node, source []byte) ([]ImportFeature, error) {
-	lang := tree_sitter.NewLanguage(tree_sitter_go.Language())
-	query, queryErr := tree_sitter.NewQuery(lang, goImportQuerySource)
+func extractGoImports(lang engine.Language, root engine.Node, source []byte) ([]ImportFeature, error) {
+	query, queryErr := lang.NewQuery(goImportQuerySource)
 	if queryErr != nil {
 		return nil, fmt.Errorf("semantics: compiling import query: %w", queryErr)
 	}
 	defer query.Close()
 
-	cursor := tree_sitter.NewQueryCursor()
+	cursor := lang.NewQueryCursor()
 	defer cursor.Close()
 
 	var imports []ImportFeature
@@ -55,8 +53,8 @@ func extractGoImports(root *tree_sitter.Node, source []byte) ([]ImportFeature, e
 			}
 			imports = append(imports, ImportFeature{
 				Path:     path,
-				Alias:    importAlias(&pathNode, source),
-				Location: locationFromNode(&pathNode),
+				Alias:    importAlias(pathNode, source),
+				Location: locationFromNode(pathNode),
 			})
 		}
 	}
@@ -71,7 +69,7 @@ func extractGoImports(root *tree_sitter.Node, source []byte) ([]ImportFeature, e
 // importAlias reads the alias token from pathNode's parent import_spec's
 // "name" field, if present: an identifier for `f "fmt"`, "." for dot
 // imports, "_" for blank imports, or "" when the import has no alias.
-func importAlias(pathNode *tree_sitter.Node, source []byte) string {
+func importAlias(pathNode engine.Node, source []byte) string {
 	spec := pathNode.Parent()
 	if spec == nil {
 		return ""

@@ -1,16 +1,17 @@
+//go:build cgo
+
 package semantics
 
 import (
 	"context"
 	"testing"
 
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
-	tree_sitter_typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
+	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
 // mustParseTS parses source as TypeScript and returns its root node plus a
 // cleanup function that closes the underlying tree.
-func mustParseTS(t *testing.T, source []byte) (*tree_sitter.Node, func()) {
+func mustParseTS(t *testing.T, source []byte) (engine.Node, func()) {
 	t.Helper()
 
 	sp := newSyntaxParser()
@@ -23,7 +24,7 @@ func mustParseTS(t *testing.T, source []byte) (*tree_sitter.Node, func()) {
 
 // mustParseTSX parses source as TSX and returns its root node plus a
 // cleanup function that closes the underlying tree.
-func mustParseTSX(t *testing.T, source []byte) (*tree_sitter.Node, func()) {
+func mustParseTSX(t *testing.T, source []byte) (engine.Node, func()) {
 	t.Helper()
 
 	sp := newSyntaxParser()
@@ -37,9 +38,7 @@ func mustParseTSX(t *testing.T, source []byte) (*tree_sitter.Node, func()) {
 // Smoke check (not itself an AC): the TS import query must compile against
 // the real TypeScript grammar.
 func TestTSImportQuerySource_CompilesAgainstTSGrammar(t *testing.T) {
-	lang := tree_sitter.NewLanguage(tree_sitter_typescript.LanguageTypescript())
-
-	query, queryErr := tree_sitter.NewQuery(lang, tsImportQuerySource)
+	query, queryErr := languageRegistry[LanguageTypeScript].engineLang.NewQuery(tsImportQuerySource)
 	if queryErr != nil {
 		t.Fatalf("compiling TS import query %q against the TypeScript grammar: got err %v, want nil", tsImportQuerySource, queryErr)
 	}
@@ -60,7 +59,7 @@ func TestExtractTSImports_DoesNotMatchAgainstATSXParsedTree(t *testing.T) {
 	root, closeTree := mustParseTSX(t, source)
 	defer closeTree()
 
-	imports, err := extractTSImports(root, source)
+	imports, err := extractTSImports(languageRegistry[LanguageTypeScript].engineLang, root, source)
 	if err != nil {
 		t.Fatalf("extractTSImports against a TSX-parsed tree %q: got err %v, want nil", source, err)
 	}
@@ -81,7 +80,7 @@ import type { T } from "./t";
 	root, closeTree := mustParseTS(t, source)
 	defer closeTree()
 
-	imports, err := extractTSImports(root, source)
+	imports, err := extractTSImports(languageRegistry[LanguageTypeScript].engineLang, root, source)
 	if err != nil {
 		t.Fatalf("extractTSImports for %q: got err %v, want nil", source, err)
 	}
@@ -111,7 +110,7 @@ func TestExtractTSImports_SingleQuotedSpecifier(t *testing.T) {
 	root, closeTree := mustParseTS(t, source)
 	defer closeTree()
 
-	imports, err := extractTSImports(root, source)
+	imports, err := extractTSImports(languageRegistry[LanguageTypeScript].engineLang, root, source)
 	if err != nil {
 		t.Fatalf("extractTSImports for single-quoted specifier %q: got err %v, want nil", source, err)
 	}
@@ -140,7 +139,7 @@ func TestExtractTSImports_OutOfScopeFormsProduceNoImports(t *testing.T) {
 			root, closeTree := mustParseTS(t, []byte(tt.source))
 			defer closeTree()
 
-			imports, err := extractTSImports(root, []byte(tt.source))
+			imports, err := extractTSImports(languageRegistry[LanguageTypeScript].engineLang, root, []byte(tt.source))
 			if err != nil {
 				t.Fatalf("extractTSImports for %s %q: got err %v, want nil", tt.name, tt.source, err)
 			}
@@ -157,7 +156,7 @@ func TestExtractTSImports_NoImportsYieldsEmptySlice(t *testing.T) {
 	root, closeTree := mustParseTS(t, source)
 	defer closeTree()
 
-	imports, err := extractTSImports(root, source)
+	imports, err := extractTSImports(languageRegistry[LanguageTypeScript].engineLang, root, source)
 	if err != nil {
 		t.Fatalf("extractTSImports for %q: got err %v, want nil", source, err)
 	}
@@ -176,7 +175,7 @@ const App = () => <div>hi</div>;
 	root, closeTree := mustParseTSX(t, source)
 	defer closeTree()
 
-	imports, err := extractTSXImports(root, source)
+	imports, err := extractTSXImports(languageRegistry[LanguageTSX].engineLang, root, source)
 	if err != nil {
 		t.Fatalf("extractTSXImports for %q: got err %v, want nil", source, err)
 	}
