@@ -698,6 +698,85 @@ func f(cfg *Config) {
 	}
 }
 
+// Copilot review fix: mutableParamTypes previously collapsed pointer/map/
+// slice parameters into a single bool, so a DIRECT index write on a
+// pointer parameter (cfg[0] = x, valid Go only for a pointer-to-array) was
+// treated the same as a direct index write on a map/slice parameter, even
+// though the acceptance criteria scope index writes to map/slice
+// parameters specifically. A direct index target's root kind must now
+// match exactly.
+func TestGoMutatesInput_DirectIndexWriteOnPointerParamNoFinding(t *testing.T) {
+	source := []byte(`package main
+
+func f(cfg *[5]int) {
+	cfg[0] = 1
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for direct index write on pointer parameter %q: want no mutates_input finding, got %+v", source, findings)
+	}
+}
+
+// Copilot review fix: the same collapse also let a DIRECT selector write
+// on a map/slice parameter pass the (bool) mutability check even though
+// only pointer parameters are in scope for selector/dereference writes.
+// This is not valid Go (a slice type has no fields) but this detector
+// never type-checks the file, only its own syntax shape -- Tree-sitter
+// parses "items.Foo = x" as a selector_expression assignment target
+// regardless of whether Foo is a real field, so the fix must reject it at
+// the syntax level rather than relying on the parameter merely being
+// "mutable at all".
+func TestGoMutatesInput_DirectSelectorWriteOnSliceParamNoFinding(t *testing.T) {
+	source := []byte(`package main
+
+func f(items []int) {
+	items.Foo = "x"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:items") {
+		t.Errorf("computeGoFeatures findings for direct selector write on slice parameter %q: want no mutates_input finding, got %+v", source, findings)
+	}
+}
+
+// Copilot review fix: derefOperand previously unwrapped any
+// unary_expression inside parentheses without checking its operator, so a
+// parenthesized non-dereference unary expression like (&cfg) could be
+// mis-resolved as if it were (*cfg) and misattribute the write to cfg
+// (Tree-sitter parses this syntactically even though it would not
+// type-check: &cfg is **Config, which does not have a Name field the way
+// *Config's (*cfg) does -- this detector never type-checks the file, only
+// its own syntax shape, so the fix must reject this at the syntax level).
+func TestGoMutatesInput_ParenthesizedAddressOfIsNotADereference(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	(&cfg).Name = "y"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for parenthesized address-of (not a dereference) %q: want no mutates_input finding, got %+v", source, findings)
+	}
+}
+
 // AC-3.7: Finding's grammar-node facts (Kind, Name, Location) are required
 // and must stay first, in this order; the remaining fields are optional
 // coaching metadata (Confidence, Evidence, Recommendation, SuggestedSkill)

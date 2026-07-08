@@ -174,13 +174,34 @@ type mutatesInputKey struct {
 	endByte   uint
 }
 
-// mutableParamTypes maps each declared parameter identifier to whether its
-// syntactic type is a pointer_type, map_type, or slice_type. Go allows a
-// single parameter_declaration to bind multiple names to one shared type
-// (func f(a, b *T)), so every identifier child of each parameter_declaration
-// is collected, not just the first.
-func mutableParamTypes(params engine.Node, source []byte) map[string]bool {
-	result := map[string]bool{}
+// paramMutKind classifies a declared parameter's syntactic type for
+// mutates_input purposes. Selector/dereference writes (cfg.Name = x,
+// (*cfg).Name = x) are only caller-visible through a pointer, and index
+// writes (values[k] = x, items[i] = x) are only caller-visible through a
+// map or slice -- collapsing these into a single bool would let a
+// selector write on a map/slice parameter, or an index write on a
+// (non-array) pointer parameter, be misreported as mutates_input even
+// though neither is a caller-visible write for that parameter's actual
+// type.
+type paramMutKind uint8
+
+const (
+	// paramNotMutable is also the zero value, so a parameter absent from
+	// a paramMutKind map (or explicitly recorded as such) is never
+	// mistaken for a pointer/collection parameter.
+	paramNotMutable paramMutKind = iota
+	paramMutPointer
+	paramMutCollection
+)
+
+// mutableParamTypes maps each declared parameter identifier to its
+// paramMutKind, derived from whether its syntactic type is a pointer_type
+// (paramMutPointer) or a map_type/slice_type (paramMutCollection). Go
+// allows a single parameter_declaration to bind multiple names to one
+// shared type (func f(a, b *T)), so every identifier child of each
+// parameter_declaration is collected, not just the first.
+func mutableParamTypes(params engine.Node, source []byte) map[string]paramMutKind {
+	result := map[string]paramMutKind{}
 	count := params.ChildCount()
 	for i := 0; i < count; i++ {
 		decl := params.Child(i)
@@ -188,8 +209,15 @@ func mutableParamTypes(params engine.Node, source []byte) map[string]bool {
 			continue
 		}
 		typeNode := decl.ChildByFieldName("type")
-		mutable := typeNode != nil &&
-			(typeNode.Kind() == "pointer_type" || typeNode.Kind() == "map_type" || typeNode.Kind() == "slice_type")
+		kind := paramNotMutable
+		if typeNode != nil {
+			switch typeNode.Kind() {
+			case "pointer_type":
+				kind = paramMutPointer
+			case "map_type", "slice_type":
+				kind = paramMutCollection
+			}
+		}
 
 		declCount := decl.ChildCount()
 		for j := 0; j < declCount; j++ {
@@ -197,7 +225,7 @@ func mutableParamTypes(params engine.Node, source []byte) map[string]bool {
 			if nameChild.Kind() != "identifier" {
 				continue
 			}
-			result[nameChild.Utf8Text(source)] = mutable
+			result[nameChild.Utf8Text(source)] = kind
 		}
 	}
 	return result
@@ -210,7 +238,7 @@ func mutableParamTypes(params engine.Node, source []byte) map[string]bool {
 // a closure's own mutation of an outer mutable parameter is still a
 // caller-visible mutation of that parameter and is deliberately still
 // reported.
-func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcName string, mutableParams map[string]bool, seen map[mutatesInputKey]bool) {
+func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcName string, mutableParams map[string]paramMutKind, seen map[mutatesInputKey]bool) {
 	if n == nil {
 		return
 	}
@@ -245,17 +273,17 @@ func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcNam
 // reported rather than being reported against the wrong (outer) name.
 // Outer parameters not redeclared by the literal are left untouched, since
 // the walk is still inside their scope.
-func shadowParamTypes(outer map[string]bool, literalParams engine.Node, source []byte) map[string]bool {
+func shadowParamTypes(outer map[string]paramMutKind, literalParams engine.Node, source []byte) map[string]paramMutKind {
 	ownParams := mutableParamTypes(literalParams, source)
 	if len(ownParams) == 0 {
 		return outer
 	}
-	shadowed := make(map[string]bool, len(outer))
-	for name, mutable := range outer {
+	shadowed := make(map[string]paramMutKind, len(outer))
+	for name, kind := range outer {
 		if _, redeclared := ownParams[name]; redeclared {
 			continue
 		}
-		shadowed[name] = mutable
+		shadowed[name] = kind
 	}
 	return shadowed
 }
@@ -263,41 +291,59 @@ func shadowParamTypes(outer map[string]bool, literalParams engine.Node, source [
 // checkAssignmentTarget inspects a single assignment target (one of an
 // assignment_statement's possibly-multiple left-hand-side expressions) and
 // emits a "mutates_input" Finding if it writes through a mutable parameter.
-func (c *featureCollector) checkAssignmentTarget(target engine.Node, source []byte, funcName string, mutableParams map[string]bool, seen map[mutatesInputKey]bool) {
+func (c *featureCollector) checkAssignmentTarget(target engine.Node, source []byte, funcName string, mutableParams map[string]paramMutKind, seen map[mutatesInputKey]bool) {
 	if target == nil {
 		return
 	}
 
+	// requiredKind is the only paramMutKind that makes a DIRECT selector or
+	// index target (the parameter itself, optionally through one "(*p)"
+	// dereference hop -- exactly the shapes the acceptance criteria name:
+	// cfg.Name, (*cfg).Name, values[k], items[i]) a caller-visible write:
+	// selector/dereference is only caller-visible through a pointer
+	// parameter, and index is only caller-visible through a map/slice
+	// parameter. A map/slice parameter's direct selector write, or a
+	// pointer parameter's direct index write, is not detected.
+	//
+	// A NESTED target (reached through at least one additional
+	// selector/index hop beyond the direct base, e.g. cfg.Sub.Name or
+	// cfg.Items[0]) is checked more permissively -- any mutable root kind
+	// is accepted regardless of the target's own shape -- because the
+	// intermediate field/element's own type (e.g. that Items is a slice)
+	// is not visible without resolving another type's declaration
+	// elsewhere in the file, which is out of scope for this syntax-only
+	// detector; the root parameter being a pointer (or map/slice) at all
+	// already establishes that state reachable through it is
+	// caller-visible.
 	var paramName string
+	var requiredKind paramMutKind
 	switch target.Kind() {
 	case "selector_expression":
-		operand := target.ChildByFieldName("operand")
-		if operand == nil {
-			return
-		}
-		base := selectorBaseIdentifier(operand)
-		if base == nil {
-			return
-		}
-		paramName = base.Utf8Text(source)
+		requiredKind = paramMutPointer
 	case "index_expression":
-		operand := target.ChildByFieldName("operand")
-		if operand == nil {
-			return
-		}
-		base := selectorBaseIdentifier(operand)
-		if base == nil {
-			return
-		}
-		paramName = base.Utf8Text(source)
+		requiredKind = paramMutCollection
 	default:
 		// Plain identifier targets (cfg = other) rebind the local
 		// parameter variable rather than writing through it, and any
 		// other target kind is out of scope for this detector.
 		return
 	}
+	operand := target.ChildByFieldName("operand")
+	if operand == nil {
+		return
+	}
+	base, nested := selectorBaseIdentifier(operand, source)
+	if base == nil {
+		return
+	}
+	paramName = base.Utf8Text(source)
 
-	if !mutableParams[paramName] {
+	kind := mutableParams[paramName]
+	if nested {
+		if kind == paramNotMutable {
+			return
+		}
+	} else if kind != requiredKind {
 		return
 	}
 
@@ -317,33 +363,62 @@ func (c *featureCollector) checkAssignmentTarget(target engine.Node, source []by
 // cfg.Items[0].Name) and the parenthesized-unary-dereference case
 // ((*cfg).Name, (*cfg.Sub).Name), iterating until it reaches a plain
 // identifier -- the root -- or determines there is no such root (e.g. the
-// chain bottoms out in a function call like f().Name), in which case it
-// returns nil.
-func selectorBaseIdentifier(operand engine.Node) engine.Node {
+// chain bottoms out in a function call like f().Name), in which case base
+// is nil.
+//
+// nested reports whether reaching that root required stepping through at
+// least one selector_expression/index_expression hop beyond the "direct"
+// shapes the acceptance criteria name explicitly: a bare identifier
+// (cfg.Name, where operand IS the parameter) or a single parenthesized
+// dereference of one ((*cfg).Name). Those two direct shapes report
+// nested == false; anything requiring an additional hop (cfg.Sub.Name,
+// cfg.Items[0]) reports nested == true. checkAssignmentTarget uses this to
+// require an exact selector<->pointer / index<->collection kind match only
+// for direct targets, where the acceptance criteria pin down the required
+// parameter kind precisely -- a nested target's intermediate field/element
+// type is not visible to this syntax-only detector, so it is checked more
+// permissively (see checkAssignmentTarget's comment).
+func selectorBaseIdentifier(operand engine.Node, source []byte) (base engine.Node, nested bool) {
+	switch operand.Kind() {
+	case "identifier":
+		return operand, false
+	case "parenthesized_expression":
+		if inner := derefOperand(operand, source); inner != nil && inner.Kind() == "identifier" {
+			return inner, false
+		}
+	}
 	for operand != nil {
 		switch operand.Kind() {
 		case "identifier":
-			return operand
+			return operand, true
 		case "selector_expression", "index_expression":
 			operand = operand.ChildByFieldName("operand")
 		case "parenthesized_expression":
-			operand = derefOperand(operand)
+			operand = derefOperand(operand, source)
 		default:
-			return nil
+			return nil, false
 		}
 	}
-	return nil
+	return nil, false
 }
 
 // derefOperand returns the operand of the parenthesized unary "*"
-// expression nested directly inside a parenthesized_expression ((*cfg) ->
-// cfg, (*cfg.Sub) -> cfg.Sub), or nil if paren does not wrap exactly that
-// shape (e.g. a parenthesized expression that isn't a dereference at all).
-func derefOperand(paren engine.Node) engine.Node {
+// (dereference) expression nested directly inside a parenthesized_expression
+// ((*cfg) -> cfg, (*cfg.Sub) -> cfg.Sub), or nil if paren does not wrap
+// exactly that shape. A unary_expression's "operator" field must be checked
+// by source text, not just by the presence of a unary_expression node: Go's
+// grammar uses the same unary_expression node for "*", "&", "!", "-", "+",
+// "^", and "<-", so a parenthesized non-dereference unary expression like
+// (-x), (!x), or (&x) must not be mis-resolved as if it were (*x).
+func derefOperand(paren engine.Node, source []byte) engine.Node {
 	count := paren.ChildCount()
 	for i := 0; i < count; i++ {
 		child := paren.Child(i)
 		if child.Kind() != "unary_expression" {
+			continue
+		}
+		op := child.ChildByFieldName("operator")
+		if op == nil || op.Utf8Text(source) != "*" {
 			continue
 		}
 		if inner := child.ChildByFieldName("operand"); inner != nil {
