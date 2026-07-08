@@ -202,6 +202,15 @@ test("dispose runs onDispose once and blocks further calls", async () => {
   assert.equal(err.kind, "internal");
 });
 
+test("dispose falls through to backend.dispose() when no onDispose is given", async () => {
+  const backend = fakeBackend(() => ({ result: okResult }));
+  const analyzer = createAnalyzerWithBackend(backend);
+  assert.equal(backend.disposed, false);
+  analyzer.dispose();
+  analyzer.dispose();
+  assert.equal(backend.disposed, true);
+});
+
 test("languageForExtension mirrors semantics.LanguageForExtension", () => {
   assert.equal(languageForExtension(".go"), "go");
   assert.equal(languageForExtension(".TS"), "typescript");

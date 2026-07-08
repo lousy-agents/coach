@@ -17,6 +17,13 @@ const BINARY_URL = new URL("../bin/coach-semantics-json", import.meta.url);
 /** Grace period past the Go-side timeout before we assume the child is stuck. */
 const BACKSTOP_SLACK_MS = 500;
 
+/**
+ * Node clamps setTimeout delays to a 32-bit signed int and fires
+ * immediately on overflow; cap the backstop delay here so a large
+ * caller-supplied timeoutMs can't trigger a premature kill.
+ */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
 interface PendingCall {
   resolve: (responseJson: string) => void;
   reject: (err: Error) => void;
@@ -69,12 +76,13 @@ export class CliBackend implements Backend {
         // Backstop for the Go-side context timeout: a C parse cannot be
         // interrupted mid-flight, so a child stuck past the deadline gets
         // killed and lazily respawned. Killing rejects every pending call.
+        const delayMs = Math.min(timeoutMs + BACKSTOP_SLACK_MS, MAX_TIMER_MS);
         call.timer = setTimeout(() => {
           this.failAllPending(
             new SemanticsError("canceled", `backend did not respond within ${timeoutMs}ms; child killed`),
           );
           this.killChild();
-        }, timeoutMs + BACKSTOP_SLACK_MS);
+        }, delayMs);
         call.timer.unref?.();
       }
       this.pending.set(id, call);

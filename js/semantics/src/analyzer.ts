@@ -55,7 +55,10 @@ export function validateOptions(opts: AnalyzerOptions): void {
 /**
  * Build an Analyzer on an explicit Backend. The public createAnalyzer wires
  * in the default backend; this seam exists so tests (and unusual embeddings)
- * can supply their own transport. onDispose runs once on the first dispose.
+ * can supply their own transport. On dispose, onDispose runs if given —
+ * createAnalyzer passes a refcounted release so a shared backend outlives
+ * any one analyzer — otherwise dispose() falls through to backend.dispose()
+ * directly, so a caller-supplied Backend is never leaked. Runs once.
  */
 export function createAnalyzerWithBackend(
   backend: Backend,
@@ -96,7 +99,11 @@ export function createAnalyzerWithBackend(
         return;
       }
       disposed = true;
-      onDispose?.();
+      if (onDispose) {
+        onDispose();
+      } else {
+        backend.dispose();
+      }
     },
   };
 }

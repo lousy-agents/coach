@@ -77,6 +77,24 @@ test("go-side timeout surfaces as canceled", async () => {
   }
 });
 
+// Node clamps setTimeout delays to a 32-bit signed int and fires overflowing
+// ones almost immediately. A timeoutMs past that threshold must not make the
+// backstop kill the child before a fast, valid call can complete.
+test("backstop timer does not fire early for a timeoutMs exceeding the 32-bit setTimeout limit", async () => {
+  const backend = new CliBackend();
+  try {
+    const analyzer = createAnalyzerWithBackend(backend);
+    const result = await analyzer.analyzeBytes({
+      language: "go",
+      content: "package main\n",
+      timeoutMs: 2 ** 31, // one past Node's signed 32-bit setTimeout cap
+    });
+    assert.equal(result.parse_status, "ok");
+  } finally {
+    backend.dispose();
+  }
+});
+
 test("dispose ends the child and blocks further calls", async () => {
   const backend = new CliBackend();
   const analyzer = createAnalyzerWithBackend(backend);
