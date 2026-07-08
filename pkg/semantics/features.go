@@ -282,10 +282,14 @@ func (c *featureCollector) checkAssignmentTarget(target engine.Node, source []by
 		paramName = base.Utf8Text(source)
 	case "index_expression":
 		operand := target.ChildByFieldName("operand")
-		if operand == nil || operand.Kind() != "identifier" {
+		if operand == nil {
 			return
 		}
-		paramName = operand.Utf8Text(source)
+		base := selectorBaseIdentifier(operand)
+		if base == nil {
+			return
+		}
+		paramName = base.Utf8Text(source)
 	default:
 		// Plain identifier targets (cfg = other) rebind the local
 		// parameter variable rather than writing through it, and any

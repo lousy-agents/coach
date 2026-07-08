@@ -668,6 +668,36 @@ func f(cfg *Config) {
 	}
 }
 
+// Copilot review fix: an index_expression target's operand can itself be a
+// nested selector/index chain (cfg.Items[0], not just a bare identifier
+// like items[0]), and must resolve to its root identifier the same way
+// selector_expression targets already do, so a caller-visible index write
+// reached through a pointer-typed parameter's field is still detected.
+func TestGoMutatesInput_NestedIndexWrite(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Items []int
+}
+
+func f(cfg *Config) {
+	cfg.Items[0] = 1
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	got := mutatesInputFinding(findings, "f:cfg")
+	if got == nil {
+		t.Fatalf("computeGoFeatures findings for nested index write %q: want a mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+	if got.Evidence != "cfg.Items[0]" {
+		t.Errorf("mutates_input Evidence: got %q, want %q", got.Evidence, "cfg.Items[0]")
+	}
+}
+
 // AC-3.7: Finding's grammar-node facts (Kind, Name, Location) are required
 // and must stay first, in this order; the remaining fields are optional
 // coaching metadata (Confidence, Evidence, Recommendation, SuggestedSkill)

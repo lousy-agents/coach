@@ -81,6 +81,7 @@ produces a finding shaped like:
 {
   "kind": "mutates_input",
   "name": "ApplyDefaults:cfg",
+  "location": { "start_byte": 26, "end_byte": 36, "start_row": 1, "start_col": 4, "end_row": 1, "end_col": 14 },
   "confidence": "medium",
   "evidence": "cfg.Timeout",
   "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
