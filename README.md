@@ -4,7 +4,7 @@ experimental ai coach for humans making software with agents
 
 ## Packages
 
-- [`pkg/semantics`](./pkg/semantics) — deterministic structural analysis of raw Go source bytes (syntax validity, imports, branching metrics, constructor-like patterns) via Tree-sitter, plus coaching findings like `mutates_input` (see [Coaching findings](#coaching-findings) below). No GitHub dependency.
+- [`pkg/semantics`](./pkg/semantics) — deterministic structural analysis of raw Go/TypeScript/TSX source bytes (syntax validity, imports, branching metrics, constructor-like patterns) via Tree-sitter, plus coaching findings like `mutates_input` (see [Coaching findings](#coaching-findings) below). No GitHub dependency.
 - [`pkg/githubingest`](./pkg/githubingest) — optional GitHub App-authenticated file reader. Never imported by `pkg/semantics`, and never imports it back.
 
 ## Install
