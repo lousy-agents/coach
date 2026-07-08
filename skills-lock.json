@@ -19,6 +19,12 @@
       "skillPath": "skills/mutation-hunter/SKILL.md",
       "computedHash": "f984497e3f617a178b8ad76abc30e271e429b76565f9dba1e09afa47f1c3bfba"
     },
+    "rugged-evil-tester": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/rugged-evil-tester/SKILL.md",
+      "computedHash": "6a5e425f3a6712d5c041cb04f3f0bfdfd1181b7c9fa622e591ca6a83ec3924ec"
+    },
     "skill-reviewer": {
       "source": "lousy-agents/skills",
       "sourceType": "github",

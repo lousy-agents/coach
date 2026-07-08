@@ -1,0 +1,11 @@
+{
+  "targetHarnesses": [
+    "claude",
+    "codex"
+  ],
+  "desiredCapabilities": [],
+  "confirmedAnswers": {
+    "intended-multi-harness": true
+  },
+  "intentSource": "pre-committed"
+}
