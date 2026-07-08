@@ -1,0 +1,10 @@
+interface Config {
+  name: string;
+}
+
+export function updateName(cfg: Config, name: string): void {
+  if (!name) {
+    name = "default";
+  }
+  cfg.name = name;
+}

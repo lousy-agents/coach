@@ -1,6 +1,9 @@
 package semantics
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 // AC-R4.1: computeTSFeatures must count exactly one StructuralMetrics field
 // per tracked node kind, with TypeSwitches/Selects always 0 (no TS analog).
@@ -383,5 +386,369 @@ func TestComputeTSFeatures_WorksOnTSXParsedTree(t *testing.T) {
 	}
 	if metrics.MaxNestingDepth != 2 {
 		t.Errorf("computeTSFeatures on TSX tree for %q: MaxNestingDepth = %d, want 2", source, metrics.MaxNestingDepth)
+	}
+}
+
+// mustFindTSMutatesInput asserts findings contains exactly one
+// "mutates_input" Finding and returns it.
+func mustFindTSMutatesInput(t *testing.T, source string, findings []Finding) Finding {
+	t.Helper()
+	var got []Finding
+	for _, f := range findings {
+		if f.Kind == "mutates_input" {
+			got = append(got, f)
+		}
+	}
+	if len(got) != 1 {
+		t.Fatalf("computeTSFeatures for %q: got %d mutates_input findings (%+v), want exactly 1", source, len(got), findings)
+	}
+	return got[0]
+}
+
+// Story 2/3, property assignment: `p.x = 1` inside a function body whose
+// `p` is an identifier-bound parameter must yield one mutates_input
+// Finding with the full Story 3 field shape.
+func TestTSMutatesInput_PropertyAssignment(t *testing.T) {
+	source := `function f(p) {
+	p.x = 1;
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	got := mustFindTSMutatesInput(t, source, findings)
+
+	if got.Name != "f:p" {
+		t.Errorf("Finding.Name = %q, want %q", got.Name, "f:p")
+	}
+	gotText := source[got.Location.StartByte:got.Location.EndByte]
+	if gotText != "p.x = 1" {
+		t.Errorf("Finding.Location text = %q, want %q", gotText, "p.x = 1")
+	}
+	if got.Confidence != "medium" {
+		t.Errorf("Finding.Confidence = %q, want %q", got.Confidence, "medium")
+	}
+	if got.Evidence != "p.x = 1" {
+		t.Errorf("Finding.Evidence = %q, want %q", got.Evidence, "p.x = 1")
+	}
+	if got.SuggestedSkill != "refactor-hidden-mutation" {
+		t.Errorf("Finding.SuggestedSkill = %q, want %q", got.SuggestedSkill, "refactor-hidden-mutation")
+	}
+	if got.Recommendation == "" {
+		t.Errorf("Finding.Recommendation is empty, want a non-empty sentence")
+	}
+}
+
+// Story 2, index assignment: both `arr[0] = 1` (numeric index) and
+// `obj['k'] = 1` (string index) on an identifier-bound parameter must each
+// yield a mutates_input Finding.
+func TestTSMutatesInput_IndexAssignment(t *testing.T) {
+	tests := []struct {
+		name       string
+		source     string
+		wantParam  string
+		wantSuffix string
+	}{
+		{
+			name:       "numeric index",
+			source:     "function f(arr) {\n\tarr[0] = 1;\n}\n",
+			wantParam:  "arr",
+			wantSuffix: "arr[0] = 1",
+		},
+		{
+			name:       "string index",
+			source:     "function f(obj) {\n\tobj['k'] = 1;\n}\n",
+			wantParam:  "obj",
+			wantSuffix: "obj['k'] = 1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+			got := mustFindTSMutatesInput(t, tt.source, findings)
+
+			if got.Name != "f:"+tt.wantParam {
+				t.Errorf("Finding.Name = %q, want %q", got.Name, "f:"+tt.wantParam)
+			}
+			gotText := tt.source[got.Location.StartByte:got.Location.EndByte]
+			if gotText != tt.wantSuffix {
+				t.Errorf("Finding.Location text = %q, want %q", gotText, tt.wantSuffix)
+			}
+		})
+	}
+}
+
+// Story 2, delete: `delete p.x` on an identifier-bound parameter must
+// yield a mutates_input Finding spanning the whole delete expression.
+func TestTSMutatesInput_Delete(t *testing.T) {
+	source := `function f(p) {
+	delete p.x;
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	got := mustFindTSMutatesInput(t, source, findings)
+
+	if got.Name != "f:p" {
+		t.Errorf("Finding.Name = %q, want %q", got.Name, "f:p")
+	}
+	gotText := source[got.Location.StartByte:got.Location.EndByte]
+	if gotText != "delete p.x" {
+		t.Errorf("Finding.Location text = %q, want %q", gotText, "delete p.x")
+	}
+	if got.Evidence != "delete p.x" {
+		t.Errorf("Finding.Evidence = %q, want %q", got.Evidence, "delete p.x")
+	}
+}
+
+// Story 2, known mutating method calls: each representative method
+// (push, sort, set, delete-as-a-method) called on an identifier-bound
+// parameter must yield a mutates_input Finding; an arbitrary custom method
+// (setName) must not.
+func TestTSMutatesInput_MutatingMethodCalls(t *testing.T) {
+	tests := []struct {
+		name      string
+		source    string
+		wantCount int
+	}{
+		{name: "push", source: "function f(arr) {\n\tarr.push(1);\n}\n", wantCount: 1},
+		{name: "sort", source: "function f(arr) {\n\tarr.sort();\n}\n", wantCount: 1},
+		{name: "set", source: "function f(m) {\n\tm.set('k', 1);\n}\n", wantCount: 1},
+		{name: "delete method", source: "function f(m) {\n\tm.delete('k');\n}\n", wantCount: 1},
+		{name: "custom method excluded", source: "function f(user) {\n\tuser.setName('x');\n}\n", wantCount: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+			var got []Finding
+			for _, f := range findings {
+				if f.Kind == "mutates_input" {
+					got = append(got, f)
+				}
+			}
+			if len(got) != tt.wantCount {
+				t.Fatalf("computeTSFeatures for %q: got %d mutates_input findings (%+v), want %d", tt.source, len(got), findings, tt.wantCount)
+			}
+		})
+	}
+}
+
+// Story 2/AC4: reassigning the parameter binding itself (`p = other`) is a
+// rebind, not a write-through, and must not yield a mutates_input Finding.
+func TestTSMutatesInput_ParameterRebindingIsNotFlagged(t *testing.T) {
+	source := `function f(p) {
+	p = other;
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	for _, f := range findings {
+		if f.Kind == "mutates_input" {
+			t.Fatalf("computeTSFeatures for %q: got mutates_input finding %+v, want none (plain rebind is not a write-through)", source, f)
+		}
+	}
+}
+
+// AC6, nested attribution: a nested arrow function that mutates the outer
+// function's parameter (without itself declaring a same-named parameter)
+// must have the finding attributed to the OUTER function's name.
+func TestTSMutatesInput_NestedFunctionAttributesToOuterOwner(t *testing.T) {
+	source := `function outer(p) {
+	const helper = () => {
+		p.x = 1;
+	};
+	helper();
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	got := mustFindTSMutatesInput(t, source, findings)
+
+	if got.Name != "outer:p" {
+		t.Errorf("Finding.Name = %q, want %q (nested arrow's mutation of outer's parameter attributes to outer)", got.Name, "outer:p")
+	}
+}
+
+// AC6, shadowing: a nested function that redeclares a parameter with the
+// same name as an outer function's parameter, and mutates its OWN
+// parameter, must have the finding attributed to the INNER function, not
+// the outer one.
+func TestTSMutatesInput_ShadowedParameterAttributesToInnerOwner(t *testing.T) {
+	source := `function outer(p) {
+	function inner(p) {
+		p.z = 3;
+	}
+	inner(p);
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	got := mustFindTSMutatesInput(t, source, findings)
+
+	if got.Name != "inner:p" {
+		t.Errorf("Finding.Name = %q, want %q (inner function's own parameter shadows outer's same-named parameter)", got.Name, "inner:p")
+	}
+}
+
+// Story 3, anonymous naming: an anonymous function expression whose
+// identifier-bound parameter is mutated must use "anonymous@<start_byte>"
+// for the Name's function half, not borrow a name from an enclosing
+// variable_declarator.
+func TestTSMutatesInput_AnonymousFunctionExpressionUsesStartByteName(t *testing.T) {
+	source := `const f = function (p) {
+	p.x = 1;
+};
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	got := mustFindTSMutatesInput(t, source, findings)
+
+	funcStart := len("const f = ")
+	wantName := fmt.Sprintf("anonymous@%d:p", funcStart)
+	if got.Name != wantName {
+		t.Errorf("Finding.Name = %q, want %q", got.Name, wantName)
+	}
+}
+
+// Story 3, anonymous naming (arrow variant): an arrow function assigned to
+// a variable, whose identifier-bound parameter is mutated, must also use
+// "anonymous@<start_byte>", since arrow functions never have a syntactic
+// name field of their own.
+func TestTSMutatesInput_AnonymousArrowFunctionUsesStartByteName(t *testing.T) {
+	source := `const f = (p) => {
+	p.x = 1;
+};
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	got := mustFindTSMutatesInput(t, source, findings)
+
+	funcStart := len("const f = ")
+	wantName := fmt.Sprintf("anonymous@%d:p", funcStart)
+	if got.Name != wantName {
+		t.Errorf("Finding.Name = %q, want %q", got.Name, wantName)
+	}
+}
+
+// D5, non-identifier parameters: destructured object/array patterns, rest
+// patterns, and defaulted parameters are never tracked, so a body that
+// looks like it mutates the pattern's inner bindings must not yield any
+// mutates_input finding.
+func TestTSMutatesInput_NonIdentifierParametersAreIgnored(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name:   "object pattern",
+			source: "function f({x}) {\n\tx.y = 1;\n}\n",
+		},
+		{
+			name:   "array pattern",
+			source: "function f([a, b]) {\n\ta.y = 1;\n}\n",
+		},
+		{
+			name:   "rest pattern",
+			source: "function f(...rest) {\n\trest[0].y = 1;\n}\n",
+		},
+		{
+			name:   "defaulted parameter",
+			source: "function f(x = {}) {\n\tx.y = 1;\n}\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+			for _, f := range findings {
+				if f.Kind == "mutates_input" {
+					t.Fatalf("computeTSFeatures for %q: got mutates_input finding %+v, want none (non-identifier-bound parameter must never be tracked)", tt.source, f)
+				}
+			}
+		})
+	}
+}
+
+// Regression guard: existing tight_coupling behavior must remain
+// unaffected by mutates_input detection sharing the same walk -- a
+// constructor's `this.x = new Y()` still yields exactly one tight_coupling
+// finding and no mutates_input finding, even though the constructor also
+// has an identifier-bound parameter.
+func TestTSMutatesInput_DoesNotInterfereWithTightCoupling(t *testing.T) {
+	source := `class C {
+	constructor(cfg) {
+		this.svc = new HttpClient(cfg);
+	}
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+
+	var tightCoupling, mutatesInput int
+	for _, f := range findings {
+		switch f.Kind {
+		case "tight_coupling":
+			tightCoupling++
+		case "mutates_input":
+			mutatesInput++
+		}
+	}
+	if tightCoupling != 1 {
+		t.Errorf("tight_coupling findings = %d, want 1", tightCoupling)
+	}
+	if mutatesInput != 0 {
+		t.Errorf("mutates_input findings = %d, want 0 (constructor body only reads cfg, never writes through it)", mutatesInput)
+	}
+}
+
+// TSX variant of the property-assignment case, proving mutates_input works
+// against a TSX-parsed tree the same way it does for TS (same pattern as
+// TestComputeTSFeatures_WorksOnTSXParsedTree for the metrics half).
+func TestTSXMutatesInput_PropertyAssignment(t *testing.T) {
+	source := `const Widget = (props) => {
+	props.value = 1;
+	return null;
+};
+`
+	root, closeTree := mustParseTSX(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	got := mustFindTSMutatesInput(t, source, findings)
+
+	funcStart := len("const Widget = ")
+	wantName := fmt.Sprintf("anonymous@%d:props", funcStart)
+	if got.Name != wantName {
+		t.Errorf("Finding.Name = %q, want %q", got.Name, wantName)
+	}
+	gotText := source[got.Location.StartByte:got.Location.EndByte]
+	if gotText != "props.value = 1" {
+		t.Errorf("Finding.Location text = %q, want %q", gotText, "props.value = 1")
 	}
 }

@@ -1,0 +1,36 @@
+{
+  "id": 0,
+  "result": {
+    "path": "example/mutate.go",
+    "language": "go",
+    "parse_status": "ok",
+    "metrics": {
+      "ifs": 1,
+      "fors": 0,
+      "expr_switches": 0,
+      "type_switches": 0,
+      "selects": 0,
+      "functions": 1,
+      "methods": 0,
+      "max_nesting_depth": 2
+    },
+    "findings": [
+      {
+        "kind": "mutates_input",
+        "name": "UpdateName:cfg",
+        "location": {
+          "start_byte": 254,
+          "end_byte": 262,
+          "start_row": 13,
+          "start_col": 1,
+          "end_row": 13,
+          "end_col": 9
+        },
+        "confidence": "medium",
+        "evidence": "cfg.Name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      }
+    ]
+  }
+}

@@ -4,7 +4,7 @@ experimental ai coach for humans making software with agents
 
 ## Packages
 
-- [`pkg/semantics`](./pkg/semantics) — deterministic structural analysis of raw Go source bytes (syntax validity, imports, branching metrics, constructor-like patterns) via Tree-sitter. No GitHub dependency.
+- [`pkg/semantics`](./pkg/semantics) — deterministic structural analysis of raw Go source bytes (syntax validity, imports, branching metrics, constructor-like patterns) via Tree-sitter, plus coaching findings like `mutates_input` (see [Coaching findings](#coaching-findings) below). No GitHub dependency.
 - [`pkg/githubingest`](./pkg/githubingest) — optional GitHub App-authenticated file reader. Never imported by `pkg/semantics`, and never imports it back.
 
 ## Install
@@ -62,6 +62,44 @@ if errors.Is(err, semantics.ErrSyntax) {
 ```
 
 Other sentinels: `ErrEmptyContent`, `ErrUnsupportedLanguage`, `ErrFileTooLarge`, `ErrBinaryContent`, `ErrParseFailure`. See `pkg/semantics/example_test.go` (`ExampleAnalyzer_AnalyzeBytes_syntaxError`) for a runnable version.
+
+### Coaching findings
+
+Beyond raw metrics, `result.Findings` can carry coaching-oriented findings: `constructor_func` and `pointer_return` (Go), `tight_coupling` (TS/TSX), and `mutates_input` (Go, TS, TSX).
+
+`mutates_input` flags a function/method writing through its own parameter in a way that's visible to the caller after the call returns — a common source of confusing "spooky action at a distance" bugs. For Go, this means a selector or dereference write through a pointer-typed parameter (`cfg.Name = x`, `(*cfg).Name = x`) or an index write on a map/slice-typed parameter (`values[k] = x`, `items[i] = x`). For TS/TSX, this means a property/index assignment or `delete` on an identifier-bound parameter, or a call to one of a fixed set of known in-place-mutating methods (`copyWithin`, `fill`, `pop`, `push`, `reverse`, `shift`, `sort`, `splice`, `unshift`, `set`, `add`, `delete`, `clear`) on one.
+
+```go
+func ApplyDefaults(cfg *Config) {
+    cfg.Timeout = 30 * time.Second // mutates the caller's Config in place
+}
+```
+
+produces a finding shaped like:
+
+```json
+{
+  "kind": "mutates_input",
+  "name": "ApplyDefaults:cfg",
+  "confidence": "medium",
+  "evidence": "cfg.Timeout = 30 * time.Second",
+  "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+  "suggested_skill": "refactor-hidden-mutation"
+}
+```
+
+vs. the caller-safe alternative, which returns a new value instead of writing through the parameter:
+
+```go
+func WithDefaults(cfg Config) Config {
+    cfg.Timeout = 30 * time.Second
+    return cfg
+}
+```
+
+`mutates_input` is deliberately conservative and purely syntactic: it does not do whole-program alias analysis, does not track aliases assigned to local variables, does not infer types beyond a parameter's own syntactic declaration, does not follow values across function calls (no interprocedural dataflow), and — for TS/TSX — only recognizes the fixed built-in method list above, not arbitrary custom mutating methods, and does not track destructured, rest, or defaulted parameters at all.
+
+The `confidence`, `evidence`, `recommendation`, and `suggested_skill` `Finding` fields are additive and `omitempty`; they're populated on `mutates_input` findings but absent (and unaffected) on the pre-existing `constructor_func`, `pointer_return`, and `tight_coupling` findings.
 
 ## Run locally: analyze a local repository
 

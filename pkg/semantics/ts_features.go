@@ -1,27 +1,73 @@
 package semantics
 
 import (
+	"fmt"
+
 	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
 // computeTSFeatures walks root exactly once, producing both the structural
-// metrics and the tight_coupling findings for a TypeScript or TSX file
-// (shared by both languageSpec entries: the walk matches on Node.Kind()
-// strings alone, which every Node resolves against its own tree's
-// language, so it needs no grammar-specific Query the way import
+// metrics and the tight_coupling/mutates_input findings for a TypeScript or
+// TSX file (shared by both languageSpec entries: the walk matches on
+// Node.Kind() strings alone, which every Node resolves against its own
+// tree's language, so it needs no grammar-specific Query the way import
 // extraction does). TypeSwitches and Selects have no TypeScript analog and
 // are always 0 (D2).
 func computeTSFeatures(root engine.Node, source []byte) (StructuralMetrics, []Finding) {
 	c := &tsFeatureCollector{}
-	c.walk(root, source, 0, false, false)
+	c.walk(root, source, 0, false, false, nil)
 	return c.metrics, c.findings
 }
 
 // tsFeatureCollector accumulates StructuralMetrics and Findings during a
 // single pre-order walk of a TS/TSX tree.
 type tsFeatureCollector struct {
-	metrics  StructuralMetrics
-	findings []Finding
+	metrics          StructuralMetrics
+	findings         []Finding
+	mutatesInputSeen map[tsMutatesInputKey]bool
+}
+
+// mutatingTSMethodNames is the exact set of built-in Array/Map/Set method
+// names whose call on a parameter-rooted receiver is treated as an
+// in-place mutation of that parameter (Story 2). Arbitrary custom methods
+// (e.g. `user.setName()`) are deliberately not in this set and so are
+// never flagged.
+var mutatingTSMethodNames = map[string]bool{
+	"copyWithin": true,
+	"fill":       true,
+	"pop":        true,
+	"push":       true,
+	"reverse":    true,
+	"shift":      true,
+	"sort":       true,
+	"splice":     true,
+	"unshift":    true,
+	"set":        true,
+	"add":        true,
+	"delete":     true,
+	"clear":      true,
+}
+
+// tsParamScope is one function-like construct's Finding-name half
+// ("<function_or_method_name>") plus the set of its identifier-bound
+// parameter names. Only plain-identifier parameter bindings are ever
+// recorded here (D5): object/array/rest/assignment-pattern parameters are
+// skipped entirely when a scope is built, so a mutation expression rooted
+// at one of them never resolves to any scope.
+type tsParamScope struct {
+	ownerName string
+	params    map[string]bool
+}
+
+// tsMutatesInputKey dedupes mutates_input findings by (owning function,
+// parameter, mutation-expression location), mirroring the Go detector's
+// dedup rule: repeated mutation of the same parameter through the same
+// source location must not produce duplicate findings.
+type tsMutatesInputKey struct {
+	ownerName string
+	paramName string
+	startByte uint
+	endByte   uint
 }
 
 // tsFunctionLikeKinds is the D2a "function-like-but-not-method" set:
@@ -60,7 +106,17 @@ var tsFunctionLikeKinds = map[string]bool{
 // misattribute its own `this.x = new Y()` to the enclosing constructor.
 // Arrow functions do not rebind `this`, so descending into one preserves
 // the enclosing inCtorBody value.
-func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, inFunc bool, inCtorBody bool) {
+//
+// scopes is the stack of enclosing function-like constructs' tsParamScope
+// entries (mutates_input, Story 2/3), innermost last. Entering a
+// method_definition or tsFunctionLikeKinds node pushes its own scope (name
+// plus identifier-bound parameters) so that a mutation expression found
+// anywhere in its subtree -- including inside a more deeply nested
+// function/arrow that does not itself bind a same-named parameter --
+// resolves to the correct owning construct by walking scopes innermost to
+// outermost and matching the first one whose parameter set contains the
+// mutated identifier (lexical shadowing, not just nearest-enclosing-node).
+func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, inFunc bool, inCtorBody bool, scopes []tsParamScope) {
 	if n == nil {
 		return
 	}
@@ -77,6 +133,7 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 		inFunc = true
 		blockDepth = 0
 		inCtorBody = isConstructorMethod(n, source)
+		scopes = append(scopes, newTSParamScope(n, source))
 	case tsFunctionLikeKinds[n.Kind()]:
 		c.metrics.Functions++
 		inFunc = true
@@ -84,6 +141,7 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 		if n.Kind() != "arrow_function" {
 			inCtorBody = false
 		}
+		scopes = append(scopes, newTSParamScope(n, source))
 	case n.Kind() == "statement_block":
 		if inFunc {
 			blockDepth++
@@ -95,10 +153,92 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 		c.checkTightCouplingAssignment(n, source)
 	}
 
+	if len(scopes) > 0 {
+		switch n.Kind() {
+		case "assignment_expression":
+			c.checkMutatesInputAssignment(n, source, scopes)
+		case "unary_expression":
+			c.checkMutatesInputDelete(n, source, scopes)
+		case "call_expression":
+			c.checkMutatesInputCall(n, source, scopes)
+		}
+	}
+
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
-		c.walk(n.Child(i), source, blockDepth, inFunc, inCtorBody)
+		c.walk(n.Child(i), source, blockDepth, inFunc, inCtorBody, scopes)
 	}
+}
+
+// newTSParamScope builds decl's tsParamScope: its Finding-name half (own
+// "name" field's text, or "anonymous@<start_byte>" if it has none) and its
+// identifier-bound parameter set (tsIdentifierParams).
+func newTSParamScope(decl engine.Node, source []byte) tsParamScope {
+	return tsParamScope{
+		ownerName: tsFunctionOwnerName(decl, source),
+		params:    tsIdentifierParams(decl, source),
+	}
+}
+
+// tsFunctionOwnerName resolves decl's own Finding-name half: the source
+// text of its syntactic "name" field (function_declaration,
+// function_expression, generator_function[_declaration], and
+// method_definition all expose one when named) or, when decl has no name
+// field at all -- always true for arrow_function, and true for an
+// anonymous function_expression -- "anonymous@<start_byte>". Per the
+// issue spec this deliberately does not borrow a name from an enclosing
+// variable_declarator (`const f = () => {}` still counts as anonymous):
+// only decl's own syntactic name field counts.
+func tsFunctionOwnerName(decl engine.Node, source []byte) string {
+	if nameNode := decl.ChildByFieldName("name"); nameNode != nil {
+		return nameNode.Utf8Text(source)
+	}
+	return fmt.Sprintf("anonymous@%d", decl.StartByte())
+}
+
+// tsIdentifierParams collects decl's plain-identifier-bound parameter
+// names (D5). arrow_function has two mutually exclusive parameter shapes:
+// a bare single identifier (`p => ...`, field "parameter") or a
+// parenthesized formal_parameters list (field "parameters"); every other
+// function-like kind and method_definition only ever have "parameters".
+// Each formal_parameters child is a required_parameter or
+// optional_parameter wrapping a "pattern" field, which is a plain
+// identifier only for a non-destructured, non-rest binding; a "value"
+// field present alongside it means the parameter has a default
+// (`q = 1`), which -- per D5 -- is excluded just like the destructured and
+// rest forms, not treated as identifier-bound.
+func tsIdentifierParams(decl engine.Node, source []byte) map[string]bool {
+	params := map[string]bool{}
+
+	if decl.Kind() == "arrow_function" {
+		if bare := decl.ChildByFieldName("parameter"); bare != nil {
+			if bare.Kind() == "identifier" {
+				params[bare.Utf8Text(source)] = true
+			}
+			return params
+		}
+	}
+
+	formal := decl.ChildByFieldName("parameters")
+	if formal == nil {
+		return params
+	}
+	count := formal.ChildCount()
+	for i := 0; i < count; i++ {
+		p := formal.Child(i)
+		if p.Kind() != "required_parameter" && p.Kind() != "optional_parameter" {
+			continue
+		}
+		if p.ChildByFieldName("value") != nil {
+			continue
+		}
+		pattern := p.ChildByFieldName("pattern")
+		if pattern == nil || pattern.Kind() != "identifier" {
+			continue
+		}
+		params[pattern.Utf8Text(source)] = true
+	}
+	return params
 }
 
 // isConstructorMethod reports whether method is a constructor: a
@@ -140,5 +280,121 @@ func (c *tsFeatureCollector) checkTightCouplingAssignment(n engine.Node, source 
 		Kind:     "tight_coupling",
 		Name:     name,
 		Location: locationFromNode(right),
+	})
+}
+
+// checkMutatesInputAssignment emits a "mutates_input" Finding (Story 2) if
+// n's left-hand side writes through a property or index rooted at some
+// enclosing scope's identifier-bound parameter -- `p.x = ...`
+// (member_expression) or `p[...] = ...` (subscript_expression), each with
+// an "object" field resolving to a tracked parameter identifier. A plain
+// identifier left-hand side (`p = other`) rebinds the local parameter
+// variable rather than writing through it and is deliberately excluded.
+func (c *tsFeatureCollector) checkMutatesInputAssignment(n engine.Node, source []byte, scopes []tsParamScope) {
+	base := tsMutationBase(n.ChildByFieldName("left"))
+	if base == nil {
+		return
+	}
+	c.recordMutatesInput(base, n, source, scopes)
+}
+
+// checkMutatesInputDelete emits a "mutates_input" Finding (Story 2) if n
+// (a unary_expression) is a `delete` of a property or index rooted at some
+// enclosing scope's identifier-bound parameter (`delete p.x`,
+// `delete p['x']`).
+func (c *tsFeatureCollector) checkMutatesInputDelete(n engine.Node, source []byte, scopes []tsParamScope) {
+	operator := n.ChildByFieldName("operator")
+	if operator == nil || operator.Utf8Text(source) != "delete" {
+		return
+	}
+	base := tsMutationBase(n.ChildByFieldName("argument"))
+	if base == nil {
+		return
+	}
+	c.recordMutatesInput(base, n, source, scopes)
+}
+
+// checkMutatesInputCall emits a "mutates_input" Finding (Story 2) if n (a
+// call_expression) calls one of mutatingTSMethodNames on a receiver
+// rooted at some enclosing scope's identifier-bound parameter (`p.push(x)`,
+// `arr.sort()`, `m.set(k, v)`, ...). Arbitrary custom method calls
+// (`user.setName()`) are not in mutatingTSMethodNames and so never match.
+func (c *tsFeatureCollector) checkMutatesInputCall(n engine.Node, source []byte, scopes []tsParamScope) {
+	fn := n.ChildByFieldName("function")
+	if fn == nil || fn.Kind() != "member_expression" {
+		return
+	}
+	property := fn.ChildByFieldName("property")
+	if property == nil || !mutatingTSMethodNames[property.Utf8Text(source)] {
+		return
+	}
+	object := fn.ChildByFieldName("object")
+	if object == nil || object.Kind() != "identifier" {
+		return
+	}
+	c.recordMutatesInput(object, n, source, scopes)
+}
+
+// tsMutationBase resolves expr (a candidate mutation target/argument/
+// receiver) down to the identifier it is rooted at, when expr is a
+// member_expression or subscript_expression whose own "object" field is a
+// plain identifier (`p.x`, `p[...]`) -- or nil for any other shape,
+// including a bare identifier (handled separately, since a bare identifier
+// as an assignment's left-hand side is a rebind, not a write-through) and
+// a nested/computed object (`p.x.y`, `f().x`), which this first slice does
+// not resolve.
+func tsMutationBase(expr engine.Node) engine.Node {
+	if expr == nil {
+		return nil
+	}
+	if expr.Kind() != "member_expression" && expr.Kind() != "subscript_expression" {
+		return nil
+	}
+	object := expr.ChildByFieldName("object")
+	if object == nil || object.Kind() != "identifier" {
+		return nil
+	}
+	return object
+}
+
+// recordMutatesInput resolves base's identifier name against scopes
+// (innermost to outermost, so a nested function's own same-named parameter
+// shadows an outer one -- D6) and, if it is a tracked identifier-bound
+// parameter of some scope, records a deduplicated "mutates_input" Finding
+// attributing the mutation at evidence's own source span to that scope's
+// owner name.
+func (c *tsFeatureCollector) recordMutatesInput(base engine.Node, evidence engine.Node, source []byte, scopes []tsParamScope) {
+	name := base.Utf8Text(source)
+	var owner string
+	found := false
+	for i := len(scopes) - 1; i >= 0; i-- {
+		if scopes[i].params[name] {
+			owner = scopes[i].ownerName
+			found = true
+			break
+		}
+	}
+	if !found {
+		return
+	}
+
+	loc := locationFromNode(evidence)
+	key := tsMutatesInputKey{ownerName: owner, paramName: name, startByte: loc.StartByte, endByte: loc.EndByte}
+	if c.mutatesInputSeen == nil {
+		c.mutatesInputSeen = map[tsMutatesInputKey]bool{}
+	}
+	if c.mutatesInputSeen[key] {
+		return
+	}
+	c.mutatesInputSeen[key] = true
+
+	c.findings = append(c.findings, Finding{
+		Kind:           "mutates_input",
+		Name:           owner + ":" + name,
+		Location:       loc,
+		Confidence:     "medium",
+		Evidence:       evidence.Utf8Text(source),
+		Recommendation: "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+		SuggestedSkill: "refactor-hidden-mutation",
 	})
 }

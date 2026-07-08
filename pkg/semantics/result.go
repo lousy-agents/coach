@@ -50,9 +50,16 @@ type StructuralMetrics struct {
 }
 
 // Finding describes one detected pattern of interest, such as a
-// constructor-like function.
+// constructor-like function. Confidence, Evidence, Recommendation, and
+// SuggestedSkill are optional coaching metadata used by findings like
+// "mutates_input"; they're omitted (via omitempty) for findings that don't
+// set them (e.g. "constructor_func", "pointer_return", "tight_coupling").
 type Finding struct {
-	Kind     string   `json:"kind"` // "constructor_func" | "pointer_return" (Go); "tight_coupling" (TS/TSX)
-	Name     string   `json:"name"`
-	Location Location `json:"location"`
+	Kind           string   `json:"kind"` // "constructor_func" | "pointer_return" | "mutates_input" (Go); "tight_coupling" | "mutates_input" (TS/TSX)
+	Name           string   `json:"name"`
+	Location       Location `json:"location"`
+	Confidence     string   `json:"confidence,omitempty"`
+	Evidence       string   `json:"evidence,omitempty"`
+	Recommendation string   `json:"recommendation,omitempty"`
+	SuggestedSkill string   `json:"suggested_skill,omitempty"`
 }

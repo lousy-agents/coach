@@ -1,0 +1,16 @@
+import React from "react";
+
+interface Config {
+  name: string;
+}
+
+function updateName(cfg: Config, name: string): void {
+  cfg.name = name;
+}
+
+function Panel({ cfg }: { cfg: Config }) {
+  updateName(cfg, "updated");
+  return <div>{cfg.name}</div>;
+}
+
+export default Panel;

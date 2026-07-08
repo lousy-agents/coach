@@ -1,0 +1,36 @@
+{
+  "id": 0,
+  "result": {
+    "path": "example/mutate.ts",
+    "language": "typescript",
+    "parse_status": "ok",
+    "metrics": {
+      "ifs": 1,
+      "fors": 0,
+      "expr_switches": 0,
+      "type_switches": 0,
+      "selects": 0,
+      "functions": 1,
+      "methods": 0,
+      "max_nesting_depth": 2
+    },
+    "findings": [
+      {
+        "kind": "mutates_input",
+        "name": "updateName:cfg",
+        "location": {
+          "start_byte": 143,
+          "end_byte": 158,
+          "start_row": 8,
+          "start_col": 2,
+          "end_row": 8,
+          "end_col": 17
+        },
+        "confidence": "medium",
+        "evidence": "cfg.name = name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      }
+    ]
+  }
+}

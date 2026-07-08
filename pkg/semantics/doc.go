@@ -1,6 +1,6 @@
 // Package semantics extracts deterministic structural facts from raw source
 // bytes (syntax validity, imports, branching metrics, constructor-like
-// patterns) using Tree-sitter grammars.
+// patterns, mutates_input) using Tree-sitter grammars.
 //
 // This package never imports pkg/githubingest, go-github, or ghinstallation:
 // consumers that only analyze raw source bytes never need to build or
@@ -21,6 +21,21 @@
 // engines agree exactly on every clean parse in the conformance suite. The
 // coach_gotreesitter build tag forces the pure-Go engine on a native build
 // (CGO available) for testing or comparison.
+//
+// The "mutates_input" finding is a syntax-based, conservative first-slice
+// detector: it flags caller-visible writes through a function/method's own
+// parameters without any whole-program alias analysis or type inference
+// beyond that parameter's own syntactic declaration. Go and TS/TSX fire on
+// the same underlying idea — a parameter mutated in place is a hidden side
+// effect on the caller's value — but each language's detection is
+// necessarily different: Go parameter types are explicit in the source
+// (pointer_type/map_type/slice_type), so mutableParamTypes reads them
+// directly (features.go), while TS/TSX has no required type annotations, so
+// tsParamScope instead tracks which identifiers are bound to (non-
+// destructured, non-rest, non-defaulted) parameters and matches writes
+// against a fixed list of known mutating collection methods
+// (ts_features.go). Neither detector tracks aliases assigned to local
+// variables or follows values across function calls.
 //
 // Concurrency: an *Analyzer holds no backend-held resources between calls —
 // AnalyzeBytes creates and closes its own Parser, Tree, Query, and

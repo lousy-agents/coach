@@ -1,7 +1,9 @@
 package semantics
 
 import (
+	"context"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -331,20 +333,294 @@ func (r *Recv) Items() []*T {
 	}
 }
 
-// AC-3.7: Finding must carry only grammar-node facts (Kind, Name, Location)
-// -- no severity, smell, or advice-shaped fields -- so findings stay
-// free of qualitative judgments. Checked structurally via reflection rather
+// mutatesInputFinding returns a pointer to the first "mutates_input" Finding
+// in findings matching name, or nil if there is none.
+func mutatesInputFinding(findings []Finding, name string) *Finding {
+	for i := range findings {
+		if findings[i].Kind == "mutates_input" && findings[i].Name == name {
+			return &findings[i]
+		}
+	}
+	return nil
+}
+
+// countMutatesInputFindings reports how many "mutates_input" findings with
+// the given name are present in findings.
+func countMutatesInputFindings(findings []Finding, name string) int {
+	n := 0
+	for _, f := range findings {
+		if f.Kind == "mutates_input" && f.Name == name {
+			n++
+		}
+	}
+	return n
+}
+
+// Story 1/3: a selector write through a syntactically pointer-typed
+// parameter (cfg.Name = "x", cfg *Config) must emit exactly one
+// "mutates_input" Finding, with Name "<func>:<param>", Location pointing at
+// the mutation expression (not the function declaration), and the coaching
+// metadata fields set as specified.
+func TestGoMutatesInput_PointerSelectorWrite(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	cfg.Name = "x"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	got := mutatesInputFinding(findings, "f:cfg")
+	if got == nil {
+		t.Fatalf("computeGoFeatures findings for %q: want a mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+	if got.Evidence != "cfg.Name" {
+		t.Errorf("mutates_input Evidence: got %q, want %q", got.Evidence, "cfg.Name")
+	}
+	if got.Confidence != "medium" {
+		t.Errorf("mutates_input Confidence: got %q, want %q", got.Confidence, "medium")
+	}
+	if got.Recommendation == "" {
+		t.Errorf("mutates_input Recommendation: got empty, want a non-empty recommendation")
+	}
+	if got.SuggestedSkill != "refactor-hidden-mutation" {
+		t.Errorf("mutates_input SuggestedSkill: got %q, want %q", got.SuggestedSkill, "refactor-hidden-mutation")
+	}
+	wantExprStart := uint(strings.Index(string(source), `cfg.Name = "x"`))
+	if got.Location.StartByte != wantExprStart {
+		t.Errorf("mutates_input Location.StartByte: got %d, want %d (start of mutation expression, not the function declaration)", got.Location.StartByte, wantExprStart)
+	}
+}
+
+// Story 1: a dereference write through a pointer-typed parameter
+// ((*cfg).Name = "x") must also emit a mutates_input finding.
+func TestGoMutatesInput_DereferenceWrite(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	(*cfg).Name = "x"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if !hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for dereference write %q: want a mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+}
+
+// Story 1: an index write on a map-typed parameter (values[key] = x,
+// values map[string]int) must emit a mutates_input finding.
+func TestGoMutatesInput_MapIndexWrite(t *testing.T) {
+	source := []byte(`package main
+
+func f(values map[string]int) {
+	values["k"] = 1
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if !hasFinding(findings, "mutates_input", "f:values") {
+		t.Errorf("computeGoFeatures findings for map index write %q: want a mutates_input finding named %q, got %+v", source, "f:values", findings)
+	}
+}
+
+// Story 1: an index write on a slice-typed parameter (items[i] = x,
+// items []int) must emit a mutates_input finding.
+func TestGoMutatesInput_SliceIndexWrite(t *testing.T) {
+	source := []byte(`package main
+
+func f(items []int) {
+	items[0] = 2
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if !hasFinding(findings, "mutates_input", "f:items") {
+		t.Errorf("computeGoFeatures findings for slice index write %q: want a mutates_input finding named %q, got %+v", source, "f:items", findings)
+	}
+}
+
+// AC-5: multiple writes through the same parameter at distinct source
+// locations must produce one finding per distinct location, and writing to
+// the exact same expression location must never be double-counted.
+func TestGoMutatesInput_DuplicateWritesDeduped(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+	Age  int
+}
+
+func f(cfg *Config) {
+	cfg.Name = "x"
+	cfg.Age = 1
+	cfg.Name = "y"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	got := countMutatesInputFindings(findings, "f:cfg")
+	if got != 3 {
+		t.Errorf("computeGoFeatures findings for %q: got %d mutates_input findings named %q (one per distinct mutation-expression location), want 3; findings=%+v", source, got, "f:cfg", findings)
+	}
+
+	seenLocations := map[uint]bool{}
+	for _, f := range findings {
+		if f.Kind != "mutates_input" || f.Name != "f:cfg" {
+			continue
+		}
+		if seenLocations[f.Location.StartByte] {
+			t.Errorf("computeGoFeatures findings for %q: duplicate mutates_input finding at the same Location.StartByte %d", source, f.Location.StartByte)
+		}
+		seenLocations[f.Location.StartByte] = true
+	}
+}
+
+// AC-4: a selector write on a plain (non-pointer/map/slice) value parameter
+// mutates only a local copy, not caller-visible state, and must not emit a
+// finding.
+func TestGoMutatesInput_ValueParameterSelectorWriteNoFinding(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg Config) {
+	cfg.Name = "x"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for value-parameter selector write %q: want no mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+}
+
+// AC-3: reassigning the parameter variable itself (cfg = other) rebinds the
+// local variable rather than writing through it, and must not emit a
+// finding, even though cfg's declared type is a pointer.
+func TestGoMutatesInput_PlainParameterReassignmentNoFinding(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct{}
+
+func f(cfg *Config, other *Config) {
+	cfg = other
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for plain parameter reassignment %q: want no mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+}
+
+// A pointer-typed receiver mutated through a selector is not a declared
+// parameter (the issue explicitly scopes this feature to parameters, not
+// receivers), so a method mutating only its receiver must not emit a
+// mutates_input finding.
+func TestGoMutatesInput_ReceiverMutationIsNotAParameter(t *testing.T) {
+	source := []byte(`package main
+
+type T struct {
+	Name string
+}
+
+func (t *T) Method() {
+	t.Name = "x"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	for _, f := range findings {
+		if f.Kind == "mutates_input" {
+			t.Errorf("computeGoFeatures findings for receiver-only mutation %q: want no mutates_input findings (receiver is not a parameter), got %+v", source, findings)
+		}
+	}
+}
+
+// AC-6: computeGoFeatures is only reached from AnalyzeBytes on a clean parse
+// (analyzer.go returns a partial Result on root.HasError() before ever
+// calling spec.computeFeatures), so a file with syntax errors can never
+// produce mutates_input findings. Verified at the AnalyzeBytes level,
+// matching the existing syntax-error test pattern used elsewhere in this
+// package.
+func TestGoMutatesInput_SyntaxErrorEmitsNoFindings(t *testing.T) {
+	source := []byte(`package main
+
+func f(cfg *Config) {
+	cfg.Name =
+}
+`)
+	a := mustNewAnalyzer(t)
+	result, err := a.AnalyzeBytes(context.Background(), FileInput{
+		Path:     "f.go",
+		Language: LanguageGo,
+		Content:  source,
+	})
+	if err == nil {
+		t.Fatalf("AnalyzeBytes for syntactically invalid source %q: got nil err, want a syntax error", source)
+	}
+	if result == nil {
+		t.Fatalf("AnalyzeBytes for syntactically invalid source %q: got nil result, want a partial Result", source)
+	}
+	if result.ParseStatus != ParseStatus("syntax_errors") {
+		t.Errorf("AnalyzeBytes for syntactically invalid source %q: ParseStatus = %q, want %q", source, result.ParseStatus, "syntax_errors")
+	}
+	if len(result.Findings) != 0 {
+		t.Errorf("AnalyzeBytes for syntactically invalid source %q: Findings = %+v, want empty", source, result.Findings)
+	}
+}
+
+// AC-3.7: Finding's grammar-node facts (Kind, Name, Location) are required
+// and must stay first, in this order; the remaining fields are optional
+// coaching metadata (Confidence, Evidence, Recommendation, SuggestedSkill)
+// used by findings like "mutates_input" and omitted via omitempty for
+// findings that don't set them. Checked structurally via reflection rather
 // than by code review, so a future field addition fails this test loudly.
 func TestFinding_StructCarriesOnlyDataFields(t *testing.T) {
 	typ := reflect.TypeOf(Finding{})
 
-	wantFields := []string{"Kind", "Name", "Location"}
+	wantFields := []string{"Kind", "Name", "Location", "Confidence", "Evidence", "Recommendation", "SuggestedSkill"}
 	if typ.NumField() != len(wantFields) {
 		t.Fatalf("Finding field count: got %d fields, want exactly %d (%v)", typ.NumField(), len(wantFields), wantFields)
 	}
 	for i, want := range wantFields {
 		if got := typ.Field(i).Name; got != want {
-			t.Errorf("Finding field %d: got %q, want %q (Finding must carry only data fields, no severity/smell/advice)", i, got, want)
+			t.Errorf("Finding field %d: got %q, want %q", i, got, want)
 		}
 	}
 }
