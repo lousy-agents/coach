@@ -245,7 +245,12 @@ func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcNam
 	}
 
 	if n.Kind() == "type_switch_statement" {
-		mutableParams = shadowLocalDeclarations(mutableParams, n, source)
+		// The type-switch alias (e.g. `cfg` in `switch cfg := v.(type)`) is
+		// scoped only to this switch statement's own subtree, so it must
+		// shadow mutableParams for the recursive descent below but must not
+		// leak into the shadowing applied to the enclosing block's later
+		// siblings at the bottom of this function.
+		mutableParams = shadowNames(mutableParams, identifiersInNodeField(n, "alias", source))
 	}
 
 	if n.Kind() == "assignment_statement" {
@@ -308,8 +313,6 @@ func shadowLocalDeclarations(outer map[string]paramMutKind, n engine.Node, sourc
 		names = identifiersDeclaredInSubtree(n, source)
 	case "range_clause":
 		names = identifiersInNodeField(n, "left", source)
-	case "type_switch_statement":
-		names = identifiersInNodeField(n, "alias", source)
 	case "type_switch_header", "type_switch_guard":
 		names = typeSwitchGuardIdentifiers(n, source)
 	case "var_declaration":
@@ -317,7 +320,13 @@ func shadowLocalDeclarations(outer map[string]paramMutKind, n engine.Node, sourc
 	default:
 		return outer
 	}
-	if len(names) == 0 {
+	return shadowNames(outer, names)
+}
+
+// shadowNames returns a copy of outer with any entries whose name appears in
+// names removed.
+func shadowNames(outer map[string]paramMutKind, names map[string]bool) map[string]paramMutKind {
+	if len(outer) == 0 || len(names) == 0 {
 		return outer
 	}
 

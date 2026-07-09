@@ -842,6 +842,35 @@ func f(cfg *Config, value any) {
 	}
 }
 
+// TestGoMutatesInput_TypeSwitchAliasDoesNotShadowAfterSwitch guards against a
+// regression where a type-switch alias's shadowing leaked past the end of
+// the switch statement, causing later mutations of the outer parameter in
+// the same enclosing block to go undetected.
+func TestGoMutatesInput_TypeSwitchAliasDoesNotShadowAfterSwitch(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config, value any) {
+	switch cfg := value.(type) {
+	case *Config:
+		cfg.Name = "local"
+	}
+	cfg.Name = "mutated"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if !hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for %q: want mutates_input finding for %q (mutation after type switch refers to outer parameter), got %+v", source, "f:cfg", findings)
+	}
+}
+
 // AC-6: computeGoFeatures is only reached from AnalyzeBytes on a clean parse
 // (analyzer.go returns a partial Result on root.HasError() before ever
 // calling spec.computeFeatures), so a file with syntax errors can never
