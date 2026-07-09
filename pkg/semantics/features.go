@@ -2,6 +2,7 @@ package semantics
 
 import (
 	"regexp"
+	"strings"
 
 	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
@@ -242,6 +243,11 @@ func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcNam
 	if n == nil {
 		return
 	}
+
+	if n.Kind() == "type_switch_statement" {
+		mutableParams = shadowLocalDeclarations(mutableParams, n, source)
+	}
+
 	if n.Kind() == "assignment_statement" {
 		left := n.ChildByFieldName("left")
 		if left != nil {
@@ -258,7 +264,169 @@ func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcNam
 	}
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
-		c.findAssignments(n.Child(i), source, funcName, mutableParams, seen)
+		child := n.Child(i)
+		c.findAssignments(child, source, funcName, mutableParams, seen)
+		mutableParams = shadowLocalDeclarations(mutableParams, child, source)
+	}
+}
+
+// shadowLocalDeclarations returns a copy of outer with any entries shadowed by
+// local declarations or direct parameter rebindings in n removed. It is
+// applied while walking child nodes in source order so a short variable
+// declaration such as `cfg := &Config{}` or a parameter rebind such as
+// `cfg = other` shadows an outer parameter only for subsequent source nodes.
+func shadowLocalDeclarations(outer map[string]paramMutKind, n engine.Node, source []byte) map[string]paramMutKind {
+	if len(outer) == 0 || n == nil {
+		return outer
+	}
+
+	var names map[string]bool
+	switch n.Kind() {
+	case "short_var_declaration":
+		names = identifiersInNodeField(n, "left", source)
+	case "assignment_statement":
+		names = reboundIdentifiersInAssignment(n, source)
+	case "for_clause":
+		names = identifiersDeclaredInSubtree(n, source)
+	case "range_clause":
+		names = identifiersInNodeField(n, "left", source)
+	case "type_switch_statement":
+		names = identifiersInNodeField(n, "alias", source)
+	case "type_switch_header", "type_switch_guard":
+		names = typeSwitchGuardIdentifiers(n, source)
+	case "var_declaration":
+		names = identifiersInVarDeclaration(n, source)
+	default:
+		return outer
+	}
+	if len(names) == 0 {
+		return outer
+	}
+
+	shadowed := make(map[string]paramMutKind, len(outer))
+	for name, kind := range outer {
+		if names[name] {
+			continue
+		}
+		shadowed[name] = kind
+	}
+	return shadowed
+}
+
+func reboundIdentifiersInAssignment(n engine.Node, source []byte) map[string]bool {
+	left := n.ChildByFieldName("left")
+	if left == nil {
+		return nil
+	}
+	names := map[string]bool{}
+	count := left.ChildCount()
+	for i := 0; i < count; i++ {
+		child := left.Child(i)
+		if child.Kind() == "identifier" {
+			names[child.Utf8Text(source)] = true
+		}
+	}
+	return names
+}
+
+func identifiersDeclaredInSubtree(n engine.Node, source []byte) map[string]bool {
+	names := map[string]bool{}
+	var collect func(engine.Node)
+	collect = func(node engine.Node) {
+		if node == nil {
+			return
+		}
+		switch node.Kind() {
+		case "short_var_declaration":
+			for name := range identifiersInNodeField(node, "left", source) {
+				names[name] = true
+			}
+			return
+		case "var_declaration":
+			for name := range identifiersInVarDeclaration(node, source) {
+				names[name] = true
+			}
+			return
+		}
+		count := node.ChildCount()
+		for i := 0; i < count; i++ {
+			collect(node.Child(i))
+		}
+	}
+	collect(n)
+	return names
+}
+
+func typeSwitchGuardIdentifiers(n engine.Node, source []byte) map[string]bool {
+	if n == nil {
+		return nil
+	}
+	if n.Kind() == "type_switch_guard" {
+		text := n.Utf8Text(source)
+		if !strings.Contains(text, ":=") {
+			return nil
+		}
+		count := n.ChildCount()
+		for i := 0; i < count; i++ {
+			child := n.Child(i)
+			if child.Kind() == "identifier" {
+				return map[string]bool{child.Utf8Text(source): true}
+			}
+		}
+		return nil
+	}
+	count := n.ChildCount()
+	for i := 0; i < count; i++ {
+		if names := typeSwitchGuardIdentifiers(n.Child(i), source); len(names) > 0 {
+			return names
+		}
+	}
+	return nil
+}
+
+func identifiersInNodeField(n engine.Node, field string, source []byte) map[string]bool {
+	child := n.ChildByFieldName(field)
+	if child == nil {
+		return nil
+	}
+	names := map[string]bool{}
+	collectIdentifiers(child, source, names)
+	return names
+}
+
+func identifiersInVarDeclaration(n engine.Node, source []byte) map[string]bool {
+	names := map[string]bool{}
+	var collect func(engine.Node)
+	collect = func(node engine.Node) {
+		if node == nil {
+			return
+		}
+		if node.Kind() == "var_spec" {
+			if name := node.ChildByFieldName("name"); name != nil {
+				collectIdentifiers(name, source, names)
+			}
+			return
+		}
+		count := node.ChildCount()
+		for i := 0; i < count; i++ {
+			collect(node.Child(i))
+		}
+	}
+	collect(n)
+	return names
+}
+
+func collectIdentifiers(n engine.Node, source []byte, names map[string]bool) {
+	if n == nil {
+		return
+	}
+	if n.Kind() == "identifier" {
+		names[n.Utf8Text(source)] = true
+		return
+	}
+	count := n.ChildCount()
+	for i := 0; i < count; i++ {
+		collectIdentifiers(n.Child(i), source, names)
 	}
 }
 
@@ -322,6 +490,27 @@ func (c *featureCollector) checkAssignmentTarget(target engine.Node, source []by
 		requiredKind = paramMutPointer
 	case "index_expression":
 		requiredKind = paramMutCollection
+	case "unary_expression":
+		op := target.ChildByFieldName("operator")
+		if op == nil || op.Utf8Text(source) != "*" {
+			return
+		}
+		operand := target.ChildByFieldName("operand")
+		if operand == nil || operand.Kind() != "identifier" {
+			return
+		}
+		paramName = operand.Utf8Text(source)
+		if mutableParams[paramName] != paramMutPointer {
+			return
+		}
+		loc := locationFromNode(target)
+		key := mutatesInputKey{paramName: paramName, startByte: loc.StartByte, endByte: loc.EndByte}
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		c.findings = append(c.findings, newMutatesInputFinding(funcName, paramName, target, source))
+		return
 	default:
 		// Plain identifier targets (cfg = other) rebind the local
 		// parameter variable rather than writing through it, and any
@@ -386,6 +575,9 @@ func selectorBaseIdentifier(operand engine.Node, source []byte) (base engine.Nod
 		if inner := derefOperand(operand, source); inner != nil && inner.Kind() == "identifier" {
 			return inner, false
 		}
+		if inner := parenthesizedInner(operand); inner != nil && inner.Kind() == "identifier" {
+			return inner, false
+		}
 	}
 	for operand != nil {
 		switch operand.Kind() {
@@ -394,12 +586,27 @@ func selectorBaseIdentifier(operand engine.Node, source []byte) (base engine.Nod
 		case "selector_expression", "index_expression":
 			operand = operand.ChildByFieldName("operand")
 		case "parenthesized_expression":
-			operand = derefOperand(operand, source)
+			if inner := derefOperand(operand, source); inner != nil {
+				operand = inner
+			} else {
+				operand = parenthesizedInner(operand)
+			}
 		default:
 			return nil, false
 		}
 	}
 	return nil, false
+}
+
+func parenthesizedInner(paren engine.Node) engine.Node {
+	count := paren.ChildCount()
+	for i := 0; i < count; i++ {
+		child := paren.Child(i)
+		if child.Kind() != "(" && child.Kind() != ")" {
+			return child
+		}
+	}
+	return nil
 }
 
 // derefOperand returns the operand of the parenthesized unary "*"

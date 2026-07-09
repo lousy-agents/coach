@@ -10,7 +10,7 @@
       "expr_switches": 0,
       "type_switches": 0,
       "selects": 0,
-      "functions": 1,
+      "functions": 3,
       "methods": 0,
       "max_nesting_depth": 2
     },
@@ -28,6 +28,38 @@
         },
         "confidence": "medium",
         "evidence": "cfg.name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateWrapped:cfg",
+        "location": {
+          "start_byte": 217,
+          "end_byte": 227,
+          "start_row": 12,
+          "start_col": 2,
+          "end_row": 12,
+          "end_col": 12
+        },
+        "confidence": "medium",
+        "evidence": "(cfg).name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateWrapped:cfg",
+        "location": {
+          "start_byte": 243,
+          "end_byte": 252,
+          "start_row": 13,
+          "start_col": 2,
+          "end_row": 13,
+          "end_col": 11
+        },
+        "confidence": "medium",
+        "evidence": "cfg!.name",
         "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
         "suggested_skill": "refactor-hidden-mutation"
       }

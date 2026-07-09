@@ -8,3 +8,15 @@ export function updateName(cfg: Config, name: string): void {
   }
   cfg.name = name;
 }
+
+export function updateWrapped(cfg?: Config): void {
+  (cfg).name = "wrapped";
+  cfg!.name = "asserted";
+}
+
+export function ignoreShadowed(cfg: Config): void {
+  {
+    const cfg = { name: "local" };
+    cfg.name = "local-update";
+  }
+}

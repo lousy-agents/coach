@@ -8,6 +8,18 @@ function updateName(cfg: Config, name: string): void {
   cfg.name = name;
 }
 
+function updateWrapped(cfg?: Config): void {
+  (cfg).name = "wrapped";
+  cfg!.name = "asserted";
+}
+
+function ignoreShadowed(cfg: Config): void {
+  {
+    let cfg = { name: "local" };
+    cfg.name = "local-update";
+  }
+}
+
 function Panel({ cfg }: { cfg: Config }) {
   updateName(cfg, "updated");
   return <div>{cfg.name}</div>;

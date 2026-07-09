@@ -10,7 +10,7 @@
       "expr_switches": 0,
       "type_switches": 0,
       "selects": 0,
-      "functions": 1,
+      "functions": 4,
       "methods": 0,
       "max_nesting_depth": 2
     },
@@ -28,6 +28,54 @@
         },
         "confidence": "medium",
         "evidence": "cfg.Name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "ReplaceConfig:cfg",
+        "location": {
+          "start_byte": 308,
+          "end_byte": 312,
+          "start_row": 17,
+          "start_col": 1,
+          "end_row": 17,
+          "end_col": 5
+        },
+        "confidence": "medium",
+        "evidence": "*cfg",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "UpdateParenthesized:cfg",
+        "location": {
+          "start_byte": 400,
+          "end_byte": 410,
+          "start_row": 21,
+          "start_col": 1,
+          "end_row": 21,
+          "end_col": 11
+        },
+        "confidence": "medium",
+        "evidence": "(cfg).Name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "UpdateParenthesized:items",
+        "location": {
+          "start_byte": 424,
+          "end_byte": 434,
+          "start_row": 22,
+          "start_col": 1,
+          "end_row": 22,
+          "end_col": 11
+        },
+        "confidence": "medium",
+        "evidence": "(items)[0]",
         "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
         "suggested_skill": "refactor-hidden-mutation"
       }

@@ -13,3 +13,19 @@ func UpdateName(cfg *Config, name string) {
 	}
 	cfg.Name = name
 }
+
+func ReplaceConfig(cfg *Config) {
+	*cfg = Config{Name: "replacement"}
+}
+
+func UpdateParenthesized(cfg *Config, items []int) {
+	(cfg).Name = "wrapped"
+	(items)[0] = 1
+}
+
+func IgnoreShadowed(cfg *Config) {
+	{
+		cfg := &Config{}
+		cfg.Name = "local"
+	}
+}

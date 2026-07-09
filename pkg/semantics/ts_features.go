@@ -49,14 +49,13 @@ var mutatingTSMethodNames = map[string]bool{
 }
 
 // tsParamScope is one function-like construct's Finding-name half
-// ("<function_or_method_name>") plus the set of its identifier-bound
-// parameter names. Only plain-identifier parameter bindings are ever
-// recorded here (D5): object/array/rest/assignment-pattern parameters are
-// skipped entirely when a scope is built, so a mutation expression rooted
-// at one of them never resolves to any scope.
+// ("<function_or_method_name>") plus the set of identifier bindings visible
+// in that scope. A binding value of true means the identifier is a parameter
+// eligible for mutates_input; false means the identifier is a local binding
+// that shadows an outer parameter but is not itself reportable here.
 type tsParamScope struct {
 	ownerName string
-	params    map[string]bool
+	bindings  map[string]bool
 }
 
 // tsMutatesInputKey dedupes mutates_input findings by (owning function,
@@ -121,6 +120,15 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 		return
 	}
 
+	if n.Kind() == "catch_clause" {
+		if names := tsCatchBindingNames(n, source); len(names) > 0 {
+			scopes = appendTSLocalBindings(scopes, names)
+		}
+	}
+	if names := tsControlFlowBindingNames(n, source); len(names) > 0 {
+		scopes = appendTSLocalBindings(scopes, names)
+	}
+
 	switch {
 	case n.Kind() == "if_statement":
 		c.metrics.Ifs++
@@ -164,6 +172,18 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 		}
 	}
 
+	if n.Kind() == "statement_block" {
+		count := n.ChildCount()
+		for i := 0; i < count; i++ {
+			child := n.Child(i)
+			c.walk(child, source, blockDepth, inFunc, inCtorBody, scopes)
+			scopes = appendTSLocalBindings(scopes, tsLocalBindingNames(child, source))
+			scopes = appendTSLocalBindings(scopes, tsReboundParameterNames(child, source))
+			scopes = appendTSLocalBindings(scopes, tsVarBindingNames(child, source))
+		}
+		return
+	}
+
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
 		c.walk(n.Child(i), source, blockDepth, inFunc, inCtorBody, scopes)
@@ -176,7 +196,7 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 func newTSParamScope(decl engine.Node, source []byte) tsParamScope {
 	return tsParamScope{
 		ownerName: tsFunctionOwnerName(decl, source),
-		params:    tsIdentifierParams(decl, source),
+		bindings:  tsIdentifierParams(decl, source),
 	}
 }
 
@@ -239,6 +259,182 @@ func tsIdentifierParams(decl engine.Node, source []byte) map[string]bool {
 		params[pattern.Utf8Text(source)] = true
 	}
 	return params
+}
+
+func appendTSLocalBindings(scopes []tsParamScope, names map[string]bool) []tsParamScope {
+	if len(names) == 0 || len(scopes) == 0 {
+		return scopes
+	}
+	next := make([]tsParamScope, len(scopes), len(scopes)+1)
+	copy(next, scopes)
+	next = append(next, tsParamScope{bindings: map[string]bool{}})
+	for name := range names {
+		next[len(next)-1].bindings[name] = false
+	}
+	return next
+}
+
+func tsLocalBindingNames(n engine.Node, source []byte) map[string]bool {
+	if n == nil {
+		return nil
+	}
+	switch n.Kind() {
+	case "lexical_declaration", "variable_declaration":
+		names := map[string]bool{}
+		count := n.ChildCount()
+		for i := 0; i < count; i++ {
+			collectTSVariableDeclaratorNames(n.Child(i), source, names)
+		}
+		return names
+	case "function_declaration", "generator_function_declaration":
+		if name := n.ChildByFieldName("name"); name != nil {
+			return map[string]bool{name.Utf8Text(source): true}
+		}
+		return nil
+	case "class_declaration":
+		if name := n.ChildByFieldName("name"); name != nil {
+			return map[string]bool{name.Utf8Text(source): true}
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func collectTSVariableDeclaratorNames(n engine.Node, source []byte, names map[string]bool) {
+	if n == nil {
+		return
+	}
+	if n.Kind() == "variable_declarator" {
+		if name := n.ChildByFieldName("name"); name != nil {
+			collectTSBindingPatternNames(name, source, names)
+		}
+		return
+	}
+	count := n.ChildCount()
+	for i := 0; i < count; i++ {
+		collectTSVariableDeclaratorNames(n.Child(i), source, names)
+	}
+}
+
+func collectTSBindingPatternNames(n engine.Node, source []byte, names map[string]bool) {
+	if n == nil {
+		return
+	}
+	switch n.Kind() {
+	case "identifier", "shorthand_property_identifier_pattern":
+		names[n.Utf8Text(source)] = true
+		return
+	case "pair_pattern":
+		if value := n.ChildByFieldName("value"); value != nil {
+			collectTSBindingPatternNames(value, source, names)
+		}
+		return
+	case "rest_pattern":
+		if arg := n.ChildByFieldName("argument"); arg != nil {
+			collectTSBindingPatternNames(arg, source, names)
+		}
+		return
+	case "assignment_pattern":
+		if left := n.ChildByFieldName("left"); left != nil {
+			collectTSBindingPatternNames(left, source, names)
+		}
+		return
+	default:
+		count := n.ChildCount()
+		for i := 0; i < count; i++ {
+			collectTSBindingPatternNames(n.Child(i), source, names)
+		}
+	}
+}
+
+func tsControlFlowBindingNames(n engine.Node, source []byte) map[string]bool {
+	if n == nil || (n.Kind() != "for_statement" && n.Kind() != "for_in_statement") {
+		return nil
+	}
+	names := map[string]bool{}
+	if left := n.ChildByFieldName("left"); left != nil {
+		collectTSBindingPatternNames(left, source, names)
+	}
+	count := n.ChildCount()
+	for i := 0; i < count; i++ {
+		child := n.Child(i)
+		switch child.Kind() {
+		case "statement_block":
+			return names
+		case "lexical_declaration", "variable_declaration":
+			for j := 0; j < child.ChildCount(); j++ {
+				collectTSVariableDeclaratorNames(child.Child(j), source, names)
+			}
+		}
+	}
+	return names
+}
+
+func tsReboundParameterNames(n engine.Node, source []byte) map[string]bool {
+	if n == nil {
+		return nil
+	}
+	names := map[string]bool{}
+	var collect func(engine.Node)
+	collect = func(node engine.Node) {
+		if node == nil {
+			return
+		}
+		if tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition" {
+			return
+		}
+		if node.Kind() == "assignment_expression" {
+			if left := node.ChildByFieldName("left"); left != nil && left.Kind() == "identifier" {
+				names[left.Utf8Text(source)] = true
+			}
+			return
+		}
+		count := node.ChildCount()
+		for i := 0; i < count; i++ {
+			collect(node.Child(i))
+		}
+	}
+	collect(n)
+	return names
+}
+
+func tsVarBindingNames(n engine.Node, source []byte) map[string]bool {
+	if n == nil {
+		return nil
+	}
+	names := map[string]bool{}
+	var collect func(engine.Node)
+	collect = func(node engine.Node) {
+		if node == nil {
+			return
+		}
+		if node.Kind() == "variable_declaration" {
+			count := node.ChildCount()
+			for i := 0; i < count; i++ {
+				collectTSVariableDeclaratorNames(node.Child(i), source, names)
+			}
+			return
+		}
+		if tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition" {
+			return
+		}
+		count := node.ChildCount()
+		for i := 0; i < count; i++ {
+			collect(node.Child(i))
+		}
+	}
+	collect(n)
+	return names
+}
+
+func tsCatchBindingNames(n engine.Node, source []byte) map[string]bool {
+	if p := n.ChildByFieldName("parameter"); p != nil {
+		names := map[string]bool{}
+		collectTSBindingPatternNames(p, source, names)
+		return names
+	}
+	return nil
 }
 
 // isConstructorMethod reports whether method is a constructor: a
@@ -390,8 +586,29 @@ func tsResolveRootIdentifier(expr engine.Node) engine.Node {
 			return expr
 		case "member_expression", "subscript_expression":
 			expr = expr.ChildByFieldName("object")
+		case "parenthesized_expression", "non_null_expression":
+			expr = tsWrappedExpressionInner(expr)
 		default:
 			return nil
+		}
+	}
+	return nil
+}
+
+func tsWrappedExpressionInner(expr engine.Node) engine.Node {
+	for _, field := range []string{"expression", "operand", "argument"} {
+		if child := expr.ChildByFieldName(field); child != nil {
+			return child
+		}
+	}
+	count := expr.ChildCount()
+	for i := 0; i < count; i++ {
+		child := expr.Child(i)
+		switch child.Kind() {
+		case "(", ")", "!":
+			continue
+		default:
+			return child
 		}
 	}
 	return nil
@@ -408,11 +625,16 @@ func (c *tsFeatureCollector) recordMutatesInput(base engine.Node, evidence engin
 	var owner string
 	found := false
 	for i := len(scopes) - 1; i >= 0; i-- {
-		if scopes[i].params[name] {
-			owner = scopes[i].ownerName
-			found = true
-			break
+		isParam, ok := scopes[i].bindings[name]
+		if !ok {
+			continue
 		}
+		if !isParam {
+			return
+		}
+		owner = scopes[i].ownerName
+		found = true
+		break
 	}
 	if !found {
 		return
@@ -428,13 +650,5 @@ func (c *tsFeatureCollector) recordMutatesInput(base engine.Node, evidence engin
 	}
 	c.mutatesInputSeen[key] = true
 
-	c.findings = append(c.findings, Finding{
-		Kind:           "mutates_input",
-		Name:           owner + ":" + name,
-		Location:       loc,
-		Confidence:     "medium",
-		Evidence:       evidence.Utf8Text(source),
-		Recommendation: "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
-		SuggestedSkill: "refactor-hidden-mutation",
-	})
+	c.findings = append(c.findings, newMutatesInputFinding(owner, name, evidence, source))
 }

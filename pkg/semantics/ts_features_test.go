@@ -562,6 +562,242 @@ func TestTSMutatesInput_ParameterRebindingIsNotFlagged(t *testing.T) {
 	}
 }
 
+func TestTSMutatesInput_ReboundParameterIsNotTrackedForLaterWrites(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "assignment rebinding",
+			source: `function f(p) {
+	p = {};
+	p.x = 1;
+}
+`,
+		},
+		{
+			name: "for-of rebinding",
+			source: `function f(p, items) {
+	for (p of items) {
+		p.x = 1;
+	}
+}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+
+			for _, f := range findings {
+				if f.Kind == "mutates_input" {
+					t.Fatalf("computeTSFeatures for %q: got mutates_input finding %+v, want none after parameter rebinding", tt.source, f)
+				}
+			}
+		})
+	}
+}
+
+// Review finding #3: a lexical binding declared inside a block shadows the
+// function parameter. Mutating the local binding is not a mutation of the
+// caller's input parameter and must not be attributed to f:p.
+func TestTSMutatesInput_BlockLocalBindingShadowsParameter(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "let binding",
+			source: `function f(p) {
+	{
+		let p = {};
+		p.x = 1;
+	}
+}
+`,
+		},
+		{
+			name: "const binding",
+			source: `function f(p) {
+	{
+		const p = {};
+		p.x = 1;
+	}
+}
+`,
+		},
+		{
+			name: "var binding",
+			source: `function f(p) {
+	{
+		var p = {};
+		p.x = 1;
+	}
+}
+`,
+		},
+		{
+			name: "catch binding",
+			source: `function f(p) {
+	try {
+		throw new Error();
+	} catch (p) {
+		p.x = 1;
+	}
+}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+
+			for _, f := range findings {
+				if f.Kind == "mutates_input" {
+					t.Fatalf("computeTSFeatures for %q: got mutates_input finding %+v, want none because the write targets a block-local binding", tt.source, f)
+				}
+			}
+		})
+	}
+}
+
+func TestTSMutatesInput_ControlFlowAndFunctionBindingsShadowParameter(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "for-of lexical binding",
+			source: `function f(p, items) {
+	for (const p of items) {
+		p.x = 1;
+	}
+}
+`,
+		},
+		{
+			name: "for initializer lexical binding",
+			source: `function f(p) {
+	for (let p = {}; p; p = null) {
+		p.x = 1;
+	}
+}
+`,
+		},
+		{
+			name: "function declaration binding",
+			source: `function f(p) {
+	function p() {}
+	p.x = 1;
+}
+`,
+		},
+		{
+			name: "destructured lexical binding",
+			source: `function f(p, source) {
+	const { p } = source;
+	p.x = 1;
+}
+`,
+		},
+		{
+			name: "var binding shadows for the rest of the function body",
+			source: `function f(p) {
+	{
+		var p = {};
+	}
+	p.x = 1;
+}
+`,
+		},
+		{
+			name: "class declaration binding",
+			source: `function f(p) {
+	{
+		class p {}
+		p.x = 1;
+	}
+}
+`,
+		},
+		{
+			name: "destructured catch binding",
+			source: `function f(p) {
+	try {
+		throw {};
+	} catch ({ p }) {
+		p.x = 1;
+	}
+}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+
+			for _, f := range findings {
+				if f.Kind == "mutates_input" {
+					t.Fatalf("computeTSFeatures for %q: got mutates_input finding %+v, want none because the write targets a binding that shadows the parameter", tt.source, f)
+				}
+			}
+		})
+	}
+}
+
+func TestTSMutatesInput_DestructuringAliasDoesNotShadowParameter(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "object pattern alias",
+			source: `function f(p, source) {
+	const { p: q } = source;
+	p.x = 1;
+}
+`,
+		},
+		{
+			name: "catch object pattern alias",
+			source: `function f(p) {
+	try {
+		throw {};
+	} catch ({ p: q }) {
+		p.x = 1;
+	}
+}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+			got := mustFindTSMutatesInput(t, tt.source, findings)
+
+			if got.Name != "f:p" {
+				t.Errorf("Finding.Name for %q = %q, want %q", tt.source, got.Name, "f:p")
+			}
+		})
+	}
+}
+
 // AC6, nested attribution: a nested arrow function that mutates the outer
 // function's parameter (without itself declaring a same-named parameter)
 // must have the finding attributed to the OUTER function's name.
@@ -740,6 +976,55 @@ func TestTSMutatesInput_MutatingMethodCallOnNestedReceiver(t *testing.T) {
 	gotText := source[got.Location.StartByte:got.Location.EndByte]
 	if gotText != "p.items.push" {
 		t.Errorf("Finding.Location text = %q, want %q", gotText, "p.items.push")
+	}
+}
+
+// Review finding #4: wrapper expressions around a parameter root do not
+// change the write-through target. Parentheses and TypeScript non-null
+// assertions must still resolve to the parameter being mutated.
+func TestTSMutatesInput_WrappedParameterRoots(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		wantName string
+		evidence string
+	}{
+		{
+			name: "parenthesized property root",
+			source: `function f(p) {
+	(p).x = 1;
+}
+`,
+			wantName: "f:p",
+			evidence: "(p).x",
+		},
+		{
+			name: "non-null assertion property root",
+			source: `function g(p?: { x: number }) {
+	p!.x = 1;
+}
+`,
+			wantName: "g:p",
+			evidence: "p!.x",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+			got := mustFindTSMutatesInput(t, tt.source, findings)
+
+			if got.Name != tt.wantName {
+				t.Errorf("Finding.Name = %q, want %q", got.Name, tt.wantName)
+			}
+			gotText := tt.source[got.Location.StartByte:got.Location.EndByte]
+			if gotText != tt.evidence {
+				t.Errorf("Finding.Location text = %q, want %q", gotText, tt.evidence)
+			}
+		})
 	}
 }
 
