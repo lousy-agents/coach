@@ -20,14 +20,14 @@
         "name": "updateName:cfg",
         "location": {
           "start_byte": 143,
-          "end_byte": 158,
+          "end_byte": 151,
           "start_row": 8,
           "start_col": 2,
           "end_row": 8,
-          "end_col": 17
+          "end_col": 10
         },
         "confidence": "medium",
-        "evidence": "cfg.name = name",
+        "evidence": "cfg.name",
         "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
         "suggested_skill": "refactor-hidden-mutation"
       }

@@ -423,14 +423,14 @@ func TestTSMutatesInput_PropertyAssignment(t *testing.T) {
 		t.Errorf("Finding.Name = %q, want %q", got.Name, "f:p")
 	}
 	gotText := source[got.Location.StartByte:got.Location.EndByte]
-	if gotText != "p.x = 1" {
-		t.Errorf("Finding.Location text = %q, want %q", gotText, "p.x = 1")
+	if gotText != "p.x" {
+		t.Errorf("Finding.Location text = %q, want %q", gotText, "p.x")
 	}
 	if got.Confidence != "medium" {
 		t.Errorf("Finding.Confidence = %q, want %q", got.Confidence, "medium")
 	}
-	if got.Evidence != "p.x = 1" {
-		t.Errorf("Finding.Evidence = %q, want %q", got.Evidence, "p.x = 1")
+	if got.Evidence != "p.x" {
+		t.Errorf("Finding.Evidence = %q, want %q", got.Evidence, "p.x")
 	}
 	if got.SuggestedSkill != "refactor-hidden-mutation" {
 		t.Errorf("Finding.SuggestedSkill = %q, want %q", got.SuggestedSkill, "refactor-hidden-mutation")
@@ -454,13 +454,13 @@ func TestTSMutatesInput_IndexAssignment(t *testing.T) {
 			name:       "numeric index",
 			source:     "function f(arr) {\n\tarr[0] = 1;\n}\n",
 			wantParam:  "arr",
-			wantSuffix: "arr[0] = 1",
+			wantSuffix: "arr[0]",
 		},
 		{
 			name:       "string index",
 			source:     "function f(obj) {\n\tobj['k'] = 1;\n}\n",
 			wantParam:  "obj",
-			wantSuffix: "obj['k'] = 1",
+			wantSuffix: "obj['k']",
 		},
 	}
 
@@ -713,8 +713,8 @@ func TestTSMutatesInput_NestedPropertyAssignment(t *testing.T) {
 		t.Errorf("Finding.Name = %q, want %q", got.Name, "f:p")
 	}
 	gotText := source[got.Location.StartByte:got.Location.EndByte]
-	if gotText != "p.x.y = 1" {
-		t.Errorf("Finding.Location text = %q, want %q", gotText, "p.x.y = 1")
+	if gotText != "p.x.y" {
+		t.Errorf("Finding.Location text = %q, want %q", gotText, "p.x.y")
 	}
 }
 
@@ -738,9 +738,47 @@ func TestTSMutatesInput_MutatingMethodCallOnNestedReceiver(t *testing.T) {
 		t.Errorf("Finding.Name = %q, want %q", got.Name, "f:p")
 	}
 	gotText := source[got.Location.StartByte:got.Location.EndByte]
-	if gotText != "p.items.push(1)" {
-		t.Errorf("Finding.Location text = %q, want %q", gotText, "p.items.push(1)")
+	if gotText != "p.items.push" {
+		t.Errorf("Finding.Location text = %q, want %q", gotText, "p.items.push")
 	}
+}
+
+// Copilot review fix: Evidence/Location for both an assignment and a
+// mutating method call must stay bounded to the mutated target/receiver,
+// not grow with an arbitrarily long right-hand side or argument list, so
+// evidence stays short and consistent with the Go detector's target-only
+// evidence.
+func TestTSMutatesInput_EvidenceExcludesLongRHSAndArguments(t *testing.T) {
+	source := `function f(p) {
+	p.x = someVeryLargeExpressionThatShouldNotAppearInEvidence();
+	p.items.push(anotherVeryLargeExpressionThatShouldNotAppearInEvidence());
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+
+	assignment := mutatesInputFindingNamed(findings, "f:p", "p.x")
+	if assignment == nil {
+		t.Fatalf("computeTSFeatures for %q: want a mutates_input finding with Evidence %q, got %+v", source, "p.x", findings)
+	}
+
+	call := mutatesInputFindingNamed(findings, "f:p", "p.items.push")
+	if call == nil {
+		t.Fatalf("computeTSFeatures for %q: want a mutates_input finding with Evidence %q, got %+v", source, "p.items.push", findings)
+	}
+}
+
+// mutatesInputFindingNamed returns the first mutates_input Finding in
+// findings matching both name and evidence, or nil if none matches.
+func mutatesInputFindingNamed(findings []Finding, name, evidence string) *Finding {
+	for i := range findings {
+		if findings[i].Kind == "mutates_input" && findings[i].Name == name && findings[i].Evidence == evidence {
+			return &findings[i]
+		}
+	}
+	return nil
 }
 
 // Regression guard: existing tight_coupling behavior must remain
@@ -798,7 +836,7 @@ func TestTSXMutatesInput_PropertyAssignment(t *testing.T) {
 		t.Errorf("Finding.Name = %q, want %q", got.Name, wantName)
 	}
 	gotText := source[got.Location.StartByte:got.Location.EndByte]
-	if gotText != "props.value = 1" {
-		t.Errorf("Finding.Location text = %q, want %q", gotText, "props.value = 1")
+	if gotText != "props.value" {
+		t.Errorf("Finding.Location text = %q, want %q", gotText, "props.value")
 	}
 }

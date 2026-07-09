@@ -290,18 +290,30 @@ func (c *tsFeatureCollector) checkTightCouplingAssignment(n engine.Node, source 
 // an "object" field resolving to a tracked parameter identifier. A plain
 // identifier left-hand side (`p = other`) rebinds the local parameter
 // variable rather than writing through it and is deliberately excluded.
+// Evidence/Location are taken from the target (left-hand side) alone, not
+// the whole assignment_expression: an assignment's right-hand side can be
+// arbitrarily long (`p.x = someVeryLargeExpression()`), which would
+// conflict with Evidence staying short, and would also diverge from the Go
+// detector, whose evidence is likewise just the mutated selector/index
+// target (e.g. cfg.Name), never including the assigned value.
 func (c *tsFeatureCollector) checkMutatesInputAssignment(n engine.Node, source []byte, scopes []tsParamScope) {
-	base := tsMutationBase(n.ChildByFieldName("left"))
+	left := n.ChildByFieldName("left")
+	base := tsMutationBase(left)
 	if base == nil {
 		return
 	}
-	c.recordMutatesInput(base, n, source, scopes)
+	c.recordMutatesInput(base, left, source, scopes)
 }
 
 // checkMutatesInputDelete emits a "mutates_input" Finding (Story 2) if n
 // (a unary_expression) is a `delete` of a property or index rooted at some
 // enclosing scope's identifier-bound parameter (`delete p.x`,
-// `delete p['x']`).
+// `delete p['x']`). Unlike checkMutatesInputAssignment/checkMutatesInputCall,
+// Evidence/Location are taken from n itself (the whole "delete ..."
+// expression) rather than just the target: a delete unary_expression has no
+// extra unbounded content beyond its "delete" keyword and target argument,
+// so it is already short and bounded, and keeping the keyword makes the
+// evidence self-explanatory as a deletion rather than a read.
 func (c *tsFeatureCollector) checkMutatesInputDelete(n engine.Node, source []byte, scopes []tsParamScope) {
 	operator := n.ChildByFieldName("operator")
 	if operator == nil || operator.Utf8Text(source) != "delete" {
@@ -320,7 +332,12 @@ func (c *tsFeatureCollector) checkMutatesInputDelete(n engine.Node, source []byt
 // directly (`p.push(x)`, `arr.sort()`, `m.set(k, v)`) or through a chain of
 // nested member/subscript accesses (`p.items.push(1)`). Arbitrary custom
 // method calls (`user.setName()`) are not in mutatingTSMethodNames and so
-// never match.
+// never match. Evidence/Location are taken from fn (the receiver.method
+// member_expression, e.g. "p.items.push"), not the whole call_expression:
+// a call's arguments can be arbitrarily long or complex
+// (`p.items.push(someVeryLargeExpression())`), which would conflict with
+// Evidence staying short, and would also diverge from the Go detector's
+// bounded, target-only evidence.
 func (c *tsFeatureCollector) checkMutatesInputCall(n engine.Node, source []byte, scopes []tsParamScope) {
 	fn := n.ChildByFieldName("function")
 	if fn == nil || fn.Kind() != "member_expression" {
@@ -335,7 +352,7 @@ func (c *tsFeatureCollector) checkMutatesInputCall(n engine.Node, source []byte,
 	if base == nil {
 		return
 	}
-	c.recordMutatesInput(base, n, source, scopes)
+	c.recordMutatesInput(base, fn, source, scopes)
 }
 
 // tsMutationBase resolves expr (a candidate mutation target/argument) down
