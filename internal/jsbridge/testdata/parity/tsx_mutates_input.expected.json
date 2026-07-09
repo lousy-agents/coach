@@ -1,0 +1,113 @@
+{
+  "id": 0,
+  "result": {
+    "path": "example/mutate.tsx",
+    "language": "tsx",
+    "parse_status": "ok",
+    "imports": [
+      {
+        "path": "react",
+        "location": {
+          "start_byte": 18,
+          "end_byte": 25,
+          "start_row": 0,
+          "start_col": 18,
+          "end_row": 0,
+          "end_col": 25
+        }
+      }
+    ],
+    "metrics": {
+      "ifs": 0,
+      "fors": 0,
+      "expr_switches": 0,
+      "type_switches": 0,
+      "selects": 0,
+      "functions": 7,
+      "methods": 0,
+      "max_nesting_depth": 2
+    },
+    "findings": [
+      {
+        "kind": "mutates_input",
+        "name": "updateName:cfg",
+        "location": {
+          "start_byte": 123,
+          "end_byte": 131,
+          "start_row": 7,
+          "start_col": 2,
+          "end_row": 7,
+          "end_col": 10
+        },
+        "confidence": "medium",
+        "evidence": "cfg.name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateWrapped:cfg",
+        "location": {
+          "start_byte": 190,
+          "end_byte": 200,
+          "start_row": 11,
+          "start_col": 2,
+          "end_row": 11,
+          "end_col": 12
+        },
+        "confidence": "medium",
+        "evidence": "(cfg).name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateWrapped:cfg",
+        "location": {
+          "start_byte": 216,
+          "end_byte": 225,
+          "start_row": 12,
+          "start_col": 2,
+          "end_row": 12,
+          "end_col": 11
+        },
+        "confidence": "medium",
+        "evidence": "cfg!.name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateCollection:arr",
+        "location": {
+          "start_byte": 294,
+          "end_byte": 300,
+          "start_row": 16,
+          "start_col": 2,
+          "end_row": 16,
+          "end_col": 8
+        },
+        "confidence": "medium",
+        "evidence": "arr[0]",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateCollection:arr",
+        "location": {
+          "start_byte": 306,
+          "end_byte": 317,
+          "start_row": 17,
+          "start_col": 2,
+          "end_row": 17,
+          "end_col": 13
+        },
+        "confidence": "medium",
+        "evidence": "arr[\"push\"]",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      }
+    ]
+  }
+}

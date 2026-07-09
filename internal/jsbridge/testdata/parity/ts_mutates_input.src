@@ -1,0 +1,33 @@
+interface Config {
+  name: string;
+}
+
+export function updateName(cfg: Config, name: string): void {
+  if (!name) {
+    name = "default";
+  }
+  cfg.name = name;
+}
+
+export function updateWrapped(cfg?: Config): void {
+  (cfg).name = "wrapped";
+  cfg!.name = "asserted";
+}
+
+export function updateCollection(arr: number[], bucket: Set<number>): void {
+  arr[0]++;
+  arr["push"](1);
+  bucket["add"](2);
+}
+
+export function ignoreShadowed(cfg: Config): void {
+  {
+    const cfg = { name: "local" };
+    cfg.name = "local-update";
+  }
+}
+
+export function detectVarRebind(cfg: Config): void {
+  cfg.name = "not-the-parameter";
+  var cfg = { name: "local" };
+}

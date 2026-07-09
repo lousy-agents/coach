@@ -1,0 +1,38 @@
+import React from "react";
+
+interface Config {
+  name: string;
+}
+
+function updateName(cfg: Config, name: string): void {
+  cfg.name = name;
+}
+
+function updateWrapped(cfg?: Config): void {
+  (cfg).name = "wrapped";
+  cfg!.name = "asserted";
+}
+
+function updateCollection(arr: number[]): void {
+  arr[0]++;
+  arr["push"](1);
+}
+
+function ignoreShadowed(cfg: Config): void {
+  {
+    let cfg = { name: "local" };
+    cfg.name = "local-update";
+  }
+}
+
+function ignorePredeclaredShadow(cfg: Config): void {
+  cfg.name = "not-the-parameter";
+  function cfg() {}
+}
+
+function Panel({ cfg }: { cfg: Config }) {
+  updateName(cfg, "updated");
+  return <div>{cfg.name}</div>;
+}
+
+export default Panel;

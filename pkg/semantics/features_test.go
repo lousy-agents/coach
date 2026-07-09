@@ -1,7 +1,9 @@
 package semantics
 
 import (
+	"context"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -331,20 +333,836 @@ func (r *Recv) Items() []*T {
 	}
 }
 
-// AC-3.7: Finding must carry only grammar-node facts (Kind, Name, Location)
-// -- no severity, smell, or advice-shaped fields -- so findings stay
-// free of qualitative judgments. Checked structurally via reflection rather
+// mutatesInputFinding returns a pointer to the first "mutates_input" Finding
+// in findings matching name, or nil if there is none.
+func mutatesInputFinding(findings []Finding, name string) *Finding {
+	for i := range findings {
+		if findings[i].Kind == "mutates_input" && findings[i].Name == name {
+			return &findings[i]
+		}
+	}
+	return nil
+}
+
+// countMutatesInputFindings reports how many "mutates_input" findings with
+// the given name are present in findings.
+func countMutatesInputFindings(findings []Finding, name string) int {
+	n := 0
+	for _, f := range findings {
+		if f.Kind == "mutates_input" && f.Name == name {
+			n++
+		}
+	}
+	return n
+}
+
+// Story 1/3: a selector write through a syntactically pointer-typed
+// parameter (cfg.Name = "x", cfg *Config) must emit exactly one
+// "mutates_input" Finding, with Name "<func>:<param>", Location pointing at
+// the mutation expression (not the function declaration), and the coaching
+// metadata fields set as specified.
+func TestGoMutatesInput_PointerSelectorWrite(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	cfg.Name = "x"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	got := mutatesInputFinding(findings, "f:cfg")
+	if got == nil {
+		t.Fatalf("computeGoFeatures findings for %q: want a mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+	if got.Evidence != "cfg.Name" {
+		t.Errorf("mutates_input Evidence: got %q, want %q", got.Evidence, "cfg.Name")
+	}
+	if got.Confidence != "medium" {
+		t.Errorf("mutates_input Confidence: got %q, want %q", got.Confidence, "medium")
+	}
+	if got.Recommendation == "" {
+		t.Errorf("mutates_input Recommendation: got empty, want a non-empty recommendation")
+	}
+	if got.SuggestedSkill != "refactor-hidden-mutation" {
+		t.Errorf("mutates_input SuggestedSkill: got %q, want %q", got.SuggestedSkill, "refactor-hidden-mutation")
+	}
+	wantExprStart := uint(strings.Index(string(source), `cfg.Name = "x"`))
+	if got.Location.StartByte != wantExprStart {
+		t.Errorf("mutates_input Location.StartByte: got %d, want %d (start of mutation expression, not the function declaration)", got.Location.StartByte, wantExprStart)
+	}
+}
+
+// Story 1: a dereference write through a pointer-typed parameter
+// ((*cfg).Name = "x") must also emit a mutates_input finding.
+func TestGoMutatesInput_DereferenceWrite(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	(*cfg).Name = "x"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if !hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for dereference write %q: want a mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+}
+
+// Review finding #1: assigning directly through a pointer-typed parameter's
+// dereference (*cfg = Config{...}) mutates the caller-visible value and must
+// emit mutates_input, even though the assignment target is not a selector.
+func TestGoMutatesInput_DirectPointerDereferenceAssignment(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	*cfg = Config{Name: "x"}
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	got := mutatesInputFinding(findings, "f:cfg")
+	if got == nil {
+		t.Fatalf("computeGoFeatures findings for direct pointer dereference assignment %q: want a mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+	if got.Evidence != "*cfg" {
+		t.Errorf("mutates_input Evidence: got %q, want %q", got.Evidence, "*cfg")
+	}
+}
+
+// Story 1: an index write on a map-typed parameter (values[key] = x,
+// values map[string]int) must emit a mutates_input finding.
+func TestGoMutatesInput_MapIndexWrite(t *testing.T) {
+	source := []byte(`package main
+
+func f(values map[string]int) {
+	values["k"] = 1
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if !hasFinding(findings, "mutates_input", "f:values") {
+		t.Errorf("computeGoFeatures findings for map index write %q: want a mutates_input finding named %q, got %+v", source, "f:values", findings)
+	}
+}
+
+// Story 1: an index write on a slice-typed parameter (items[i] = x,
+// items []int) must emit a mutates_input finding.
+func TestGoMutatesInput_SliceIndexWrite(t *testing.T) {
+	source := []byte(`package main
+
+func f(items []int) {
+	items[0] = 2
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if !hasFinding(findings, "mutates_input", "f:items") {
+		t.Errorf("computeGoFeatures findings for slice index write %q: want a mutates_input finding named %q, got %+v", source, "f:items", findings)
+	}
+}
+
+// AC-5: multiple writes through the same parameter at distinct source
+// locations must produce one finding per distinct location, and writing to
+// the exact same expression location must never be double-counted.
+func TestGoMutatesInput_DuplicateWritesDeduped(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+	Age  int
+}
+
+func f(cfg *Config) {
+	cfg.Name = "x"
+	cfg.Age = 1
+	cfg.Name = "y"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	got := countMutatesInputFindings(findings, "f:cfg")
+	if got != 3 {
+		t.Errorf("computeGoFeatures findings for %q: got %d mutates_input findings named %q (one per distinct mutation-expression location), want 3; findings=%+v", source, got, "f:cfg", findings)
+	}
+
+	seenLocations := map[uint]bool{}
+	for _, f := range findings {
+		if f.Kind != "mutates_input" || f.Name != "f:cfg" {
+			continue
+		}
+		if seenLocations[f.Location.StartByte] {
+			t.Errorf("computeGoFeatures findings for %q: duplicate mutates_input finding at the same Location.StartByte %d", source, f.Location.StartByte)
+		}
+		seenLocations[f.Location.StartByte] = true
+	}
+}
+
+// AC-4: a selector write on a plain (non-pointer/map/slice) value parameter
+// mutates only a local copy, not caller-visible state, and must not emit a
+// finding.
+func TestGoMutatesInput_ValueParameterSelectorWriteNoFinding(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg Config) {
+	cfg.Name = "x"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for value-parameter selector write %q: want no mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+}
+
+// AC-3: reassigning the parameter variable itself (cfg = other) rebinds the
+// local variable rather than writing through it, and must not emit a
+// finding, even though cfg's declared type is a pointer.
+func TestGoMutatesInput_PlainParameterReassignmentNoFinding(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct{}
+
+func f(cfg *Config, other *Config) {
+	cfg = other
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for plain parameter reassignment %q: want no mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+}
+
+func TestGoMutatesInput_ReboundParameterIsNotTrackedForLaterWrites(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	cfg = &Config{}
+	cfg.Name = "local"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for rebound parameter %q: want no mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+}
+
+// A pointer-typed receiver mutated through a selector is not a declared
+// parameter (the issue explicitly scopes this feature to parameters, not
+// receivers), so a method mutating only its receiver must not emit a
+// mutates_input finding.
+func TestGoMutatesInput_ReceiverMutationIsNotAParameter(t *testing.T) {
+	source := []byte(`package main
+
+type T struct {
+	Name string
+}
+
+func (t *T) Method() {
+	t.Name = "x"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	for _, f := range findings {
+		if f.Kind == "mutates_input" {
+			t.Errorf("computeGoFeatures findings for receiver-only mutation %q: want no mutates_input findings (receiver is not a parameter), got %+v", source, findings)
+		}
+	}
+}
+
+// Copilot review fix: a nested selector write (cfg.Sub.Name = "x", where
+// cfg is a pointer parameter) is still a caller-visible write through cfg
+// one field deeper, and must resolve to the root identifier cfg rather than
+// being silently missed because the selector's own operand is itself a
+// selector_expression rather than a bare identifier.
+func TestGoMutatesInput_NestedSelectorWrite(t *testing.T) {
+	source := []byte(`package main
+
+type Sub struct {
+	Name string
+}
+
+type Config struct {
+	Sub Sub
+}
+
+func f(cfg *Config) {
+	cfg.Sub.Name = "x"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	got := mutatesInputFinding(findings, "f:cfg")
+	if got == nil {
+		t.Fatalf("computeGoFeatures findings for nested selector write %q: want a mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+	if got.Evidence != "cfg.Sub.Name" {
+		t.Errorf("mutates_input Evidence: got %q, want %q", got.Evidence, "cfg.Sub.Name")
+	}
+}
+
+// Copilot review fix: a func_literal that declares its own parameter with
+// the same name as an outer function's mutable parameter (both named cfg,
+// both *Config) introduces a distinct binding per normal Go scoping. The
+// closure's own mutation of its cfg must not be misattributed to the outer
+// function f's cfg.
+func TestGoMutatesInput_FuncLiteralShadowsOuterParameter(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "ordinary parameter",
+			source: `package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	g := func(cfg *Config) {
+		cfg.Name = "shadowed"
+	}
+	g(cfg)
+}
+`,
+		},
+		{
+			name: "variadic parameter",
+			source: `package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	g := func(cfg ...*Config) {
+		cfg[0].Name = "shadowed"
+	}
+	g(cfg)
+}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := []byte(tt.source)
+			root, closeTree := mustParseGo(t, source)
+			defer closeTree()
+
+			_, findings := computeGoFeatures(root, source)
+
+			if hasFinding(findings, "mutates_input", "f:cfg") {
+				t.Errorf("computeGoFeatures findings for closure-shadowed parameter %q: want no mutates_input finding named %q (closure's cfg is a distinct binding), got %+v", source, "f:cfg", findings)
+			}
+		})
+	}
+}
+
+// Review finding #2: a block-local binding introduced with := shadows an
+// outer mutable parameter. Mutating that local binding is not a mutation of
+// the caller's input parameter and must not be attributed to f:cfg.
+func TestGoMutatesInput_BlockLocalShortVarShadowsOuterParameter(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	{
+		cfg := &Config{}
+		cfg.Name = "local"
+	}
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for block-local shadowed parameter %q: want no mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+}
+
+func TestGoMutatesInput_ControlFlowInitializerBindingsShadowOuterParameter(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "range loop variable shadows outer parameter",
+			source: `package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config, configs []*Config) {
+	for _, cfg := range configs {
+		cfg.Name = "local"
+	}
+}
+`,
+		},
+		{
+			name: "if initializer shadows outer parameter",
+			source: `package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	if cfg := (&Config{}); cfg != nil {
+		cfg.Name = "local"
+	}
+}
+`,
+		},
+		{
+			name: "for initializer shadows outer parameter",
+			source: `package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	for cfg := (&Config{}); cfg != nil; {
+		cfg.Name = "local"
+		break
+	}
+}
+`,
+		},
+		{
+			name: "switch initializer shadows outer parameter",
+			source: `package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	switch cfg := (&Config{}); {
+	case cfg != nil:
+		cfg.Name = "local"
+	}
+}
+`,
+		},
+		{
+			name: "type switch guard shadows outer parameter",
+			source: `package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config, value any) {
+	switch cfg := value.(type) {
+	case *Config:
+		cfg.Name = "local"
+	}
+}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := []byte(tt.source)
+			root, closeTree := mustParseGo(t, source)
+			defer closeTree()
+
+			_, findings := computeGoFeatures(root, source)
+
+			if hasFinding(findings, "mutates_input", "f:cfg") {
+				t.Errorf("computeGoFeatures findings for %q: want no mutates_input finding for shadowed parameter %q, got %+v", tt.source, "f:cfg", findings)
+			}
+		})
+	}
+}
+
+// TestGoMutatesInput_TypeSwitchAliasDoesNotShadowAfterSwitch guards against a
+// regression where a type-switch alias's shadowing leaked past the end of
+// the switch statement, causing later mutations of the outer parameter in
+// the same enclosing block to go undetected.
+func TestGoMutatesInput_TypeSwitchAliasDoesNotShadowAfterSwitch(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config, value any) {
+	switch cfg := value.(type) {
+	case *Config:
+		cfg.Name = "local"
+	}
+	cfg.Name = "mutated"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if !hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for %q: want mutates_input finding for %q (mutation after type switch refers to outer parameter), got %+v", source, "f:cfg", findings)
+	}
+}
+
+// AC-6: computeGoFeatures is only reached from AnalyzeBytes on a clean parse
+// (analyzer.go returns a partial Result on root.HasError() before ever
+// calling spec.computeFeatures), so a file with syntax errors can never
+// produce mutates_input findings. Verified at the AnalyzeBytes level,
+// matching the existing syntax-error test pattern used elsewhere in this
+// package.
+func TestGoMutatesInput_SyntaxErrorEmitsNoFindings(t *testing.T) {
+	source := []byte(`package main
+
+func f(cfg *Config) {
+	cfg.Name =
+}
+`)
+	a := mustNewAnalyzer(t)
+	result, err := a.AnalyzeBytes(context.Background(), FileInput{
+		Path:     "f.go",
+		Language: LanguageGo,
+		Content:  source,
+	})
+	if err == nil {
+		t.Fatalf("AnalyzeBytes for syntactically invalid source %q: got nil err, want a syntax error", source)
+	}
+	if result == nil {
+		t.Fatalf("AnalyzeBytes for syntactically invalid source %q: got nil result, want a partial Result", source)
+	}
+	if result.ParseStatus != ParseStatus("syntax_errors") {
+		t.Errorf("AnalyzeBytes for syntactically invalid source %q: ParseStatus = %q, want %q", source, result.ParseStatus, "syntax_errors")
+	}
+	if len(result.Findings) != 0 {
+		t.Errorf("AnalyzeBytes for syntactically invalid source %q: Findings = %+v, want empty", source, result.Findings)
+	}
+}
+
+// Copilot review fix: an index_expression target's operand can itself be a
+// nested selector/index chain (cfg.Items[0], not just a bare identifier
+// like items[0]), and must resolve to its root identifier the same way
+// selector_expression targets already do, so a caller-visible index write
+// reached through a pointer-typed parameter's field is still detected.
+func TestGoMutatesInput_NestedIndexWrite(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Items []int
+}
+
+func f(cfg *Config) {
+	cfg.Items[0] = 1
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	got := mutatesInputFinding(findings, "f:cfg")
+	if got == nil {
+		t.Fatalf("computeGoFeatures findings for nested index write %q: want a mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+	if got.Evidence != "cfg.Items[0]" {
+		t.Errorf("mutates_input Evidence: got %q, want %q", got.Evidence, "cfg.Items[0]")
+	}
+}
+
+// Review finding #4: ordinary parentheses around the parameter root do not
+// change the write-through target. Selector and index writes rooted at
+// parenthesized pointer/map/slice parameters must still be detected.
+func TestGoMutatesInput_ParenthesizedRootWrites(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		wantName string
+		evidence string
+	}{
+		{
+			name: "selector on parenthesized pointer parameter",
+			source: `package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	(cfg).Name = "x"
+}
+`,
+			wantName: "f:cfg",
+			evidence: "(cfg).Name",
+		},
+		{
+			name: "index on parenthesized slice parameter",
+			source: `package main
+
+func g(items []int) {
+	(items)[0] = 1
+}
+`,
+			wantName: "g:items",
+			evidence: "(items)[0]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseGo(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeGoFeatures(root, []byte(tt.source))
+
+			got := mutatesInputFinding(findings, tt.wantName)
+			if got == nil {
+				t.Fatalf("computeGoFeatures findings for %q: want a mutates_input finding named %q, got %+v", tt.source, tt.wantName, findings)
+			}
+			if got.Evidence != tt.evidence {
+				t.Errorf("mutates_input Evidence: got %q, want %q", got.Evidence, tt.evidence)
+			}
+		})
+	}
+}
+
+// Copilot review fix: mutableParamTypes previously collapsed pointer/map/
+// slice parameters into a single bool, so a DIRECT index write on a
+// pointer parameter (cfg[0] = x, valid Go only for a pointer-to-array) was
+// treated the same as a direct index write on a map/slice parameter, even
+// though the acceptance criteria scope index writes to map/slice
+// parameters specifically. A direct index target's root kind must now
+// match exactly.
+func TestGoMutatesInput_DirectIndexWriteOnPointerParamNoFinding(t *testing.T) {
+	source := []byte(`package main
+
+func f(cfg *[5]int) {
+	cfg[0] = 1
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for direct index write on pointer parameter %q: want no mutates_input finding, got %+v", source, findings)
+	}
+}
+
+// Copilot review fix: the same collapse also let a DIRECT selector write
+// on a map/slice parameter pass the (bool) mutability check even though
+// only pointer parameters are in scope for selector/dereference writes.
+// This is not valid Go (a slice type has no fields) but this detector
+// never type-checks the file, only its own syntax shape -- Tree-sitter
+// parses "items.Foo = x" as a selector_expression assignment target
+// regardless of whether Foo is a real field, so the fix must reject it at
+// the syntax level rather than relying on the parameter merely being
+// "mutable at all".
+func TestGoMutatesInput_DirectSelectorWriteOnSliceParamNoFinding(t *testing.T) {
+	source := []byte(`package main
+
+func f(items []int) {
+	items.Foo = "x"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:items") {
+		t.Errorf("computeGoFeatures findings for direct selector write on slice parameter %q: want no mutates_input finding, got %+v", source, findings)
+	}
+}
+
+// Copilot review fix: derefOperand previously unwrapped any
+// unary_expression inside parentheses without checking its operator, so a
+// parenthesized non-dereference unary expression like (&cfg) could be
+// mis-resolved as if it were (*cfg) and misattribute the write to cfg
+// (Tree-sitter parses this syntactically even though it would not
+// type-check: &cfg is **Config, which does not have a Name field the way
+// *Config's (*cfg) does -- this detector never type-checks the file, only
+// its own syntax shape, so the fix must reject this at the syntax level).
+func TestGoMutatesInput_ParenthesizedAddressOfIsNotADereference(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	(&cfg).Name = "y"
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	if hasFinding(findings, "mutates_input", "f:cfg") {
+		t.Errorf("computeGoFeatures findings for parenthesized address-of (not a dereference) %q: want no mutates_input finding, got %+v", source, findings)
+	}
+}
+
+func TestGoMutatesInput_UpdateExpressionsMutateParameterRoots(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		wantName string
+		evidence string
+	}{
+		{
+			name: "pointer selector increment",
+			source: `package main
+
+type Config struct {
+	Count int
+}
+
+func f(cfg *Config) {
+	cfg.Count++
+}
+`,
+			wantName: "f:cfg",
+			evidence: "cfg.Count",
+		},
+		{
+			name: "slice index decrement",
+			source: `package main
+
+func f(items []int) {
+	items[0]--
+}
+`,
+			wantName: "f:items",
+			evidence: "items[0]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseGo(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeGoFeatures(root, []byte(tt.source))
+
+			got := mutatesInputFinding(findings, tt.wantName)
+			if got == nil {
+				t.Fatalf("computeGoFeatures findings for update expression %q: want a mutates_input finding named %q, got %+v", tt.source, tt.wantName, findings)
+			}
+			if got.Evidence != tt.evidence {
+				t.Errorf("mutates_input Evidence for update expression: got %q, want %q", got.Evidence, tt.evidence)
+			}
+		})
+	}
+}
+
+func TestGoMutatesInput_ParenthesizedDirectDereferenceAssignment(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	(*cfg) = Config{}
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	got := mutatesInputFinding(findings, "f:cfg")
+	if got == nil {
+		t.Fatalf("computeGoFeatures findings for parenthesized dereference assignment %q: want a mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+	if got.Evidence != "*cfg" {
+		t.Errorf("mutates_input Evidence for parenthesized dereference assignment: got %q, want %q", got.Evidence, "*cfg")
+	}
+}
+
+// AC-3.7: Finding's grammar-node facts (Kind, Name, Location) are required
+// and must stay first, in this order; the remaining fields are optional
+// coaching metadata (Confidence, Evidence, Recommendation, SuggestedSkill)
+// used by findings like "mutates_input" and omitted via omitempty for
+// findings that don't set them. Checked structurally via reflection rather
 // than by code review, so a future field addition fails this test loudly.
 func TestFinding_StructCarriesOnlyDataFields(t *testing.T) {
 	typ := reflect.TypeOf(Finding{})
 
-	wantFields := []string{"Kind", "Name", "Location"}
+	wantFields := []string{"Kind", "Name", "Location", "Confidence", "Evidence", "Recommendation", "SuggestedSkill"}
 	if typ.NumField() != len(wantFields) {
 		t.Fatalf("Finding field count: got %d fields, want exactly %d (%v)", typ.NumField(), len(wantFields), wantFields)
 	}
 	for i, want := range wantFields {
 		if got := typ.Field(i).Name; got != want {
-			t.Errorf("Finding field %d: got %q, want %q (Finding must carry only data fields, no severity/smell/advice)", i, got, want)
+			t.Errorf("Finding field %d: got %q, want %q", i, got, want)
 		}
 	}
 }

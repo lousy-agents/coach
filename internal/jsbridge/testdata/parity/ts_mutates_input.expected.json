@@ -1,0 +1,132 @@
+{
+  "id": 0,
+  "result": {
+    "path": "example/mutate.ts",
+    "language": "typescript",
+    "parse_status": "ok",
+    "metrics": {
+      "ifs": 1,
+      "fors": 0,
+      "expr_switches": 0,
+      "type_switches": 0,
+      "selects": 0,
+      "functions": 5,
+      "methods": 0,
+      "max_nesting_depth": 2
+    },
+    "findings": [
+      {
+        "kind": "mutates_input",
+        "name": "updateName:cfg",
+        "location": {
+          "start_byte": 143,
+          "end_byte": 151,
+          "start_row": 8,
+          "start_col": 2,
+          "end_row": 8,
+          "end_col": 10
+        },
+        "confidence": "medium",
+        "evidence": "cfg.name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateWrapped:cfg",
+        "location": {
+          "start_byte": 217,
+          "end_byte": 227,
+          "start_row": 12,
+          "start_col": 2,
+          "end_row": 12,
+          "end_col": 12
+        },
+        "confidence": "medium",
+        "evidence": "(cfg).name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateWrapped:cfg",
+        "location": {
+          "start_byte": 243,
+          "end_byte": 252,
+          "start_row": 13,
+          "start_col": 2,
+          "end_row": 13,
+          "end_col": 11
+        },
+        "confidence": "medium",
+        "evidence": "cfg!.name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateCollection:arr",
+        "location": {
+          "start_byte": 349,
+          "end_byte": 355,
+          "start_row": 17,
+          "start_col": 2,
+          "end_row": 17,
+          "end_col": 8
+        },
+        "confidence": "medium",
+        "evidence": "arr[0]",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateCollection:arr",
+        "location": {
+          "start_byte": 361,
+          "end_byte": 372,
+          "start_row": 18,
+          "start_col": 2,
+          "end_row": 18,
+          "end_col": 13
+        },
+        "confidence": "medium",
+        "evidence": "arr[\"push\"]",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateCollection:bucket",
+        "location": {
+          "start_byte": 379,
+          "end_byte": 392,
+          "start_row": 19,
+          "start_col": 2,
+          "end_row": 19,
+          "end_col": 15
+        },
+        "confidence": "medium",
+        "evidence": "bucket[\"add\"]",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "detectVarRebind:cfg",
+        "location": {
+          "start_byte": 584,
+          "end_byte": 592,
+          "start_row": 30,
+          "start_col": 2,
+          "end_row": 30,
+          "end_col": 10
+        },
+        "confidence": "medium",
+        "evidence": "cfg.name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      }
+    ]
+  }
+}

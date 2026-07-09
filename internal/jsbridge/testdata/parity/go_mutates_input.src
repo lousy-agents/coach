@@ -1,0 +1,36 @@
+package widget
+
+// Config holds a name.
+type Config struct {
+	Name string
+}
+
+// UpdateName mutates cfg through its pointer parameter instead of
+// returning a new value.
+func UpdateName(cfg *Config, name string) {
+	if name == "" {
+		name = "default"
+	}
+	cfg.Name = name
+}
+
+func ReplaceConfig(cfg *Config) {
+	*cfg = Config{Name: "replacement"}
+}
+
+func UpdateParenthesized(cfg *Config, items []int) {
+	(cfg).Name = "wrapped"
+	(items)[0] = 1
+}
+
+func UpdateCounters(cfg *Config, items []int) {
+	cfg.Count++
+	items[0]--
+}
+
+func IgnoreShadowed(cfg *Config) {
+	{
+		cfg := &Config{}
+		cfg.Name = "local"
+	}
+}

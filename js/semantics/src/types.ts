@@ -52,10 +52,15 @@ export interface StructuralMetrics {
 
 /** One detected pattern of interest, such as a constructor-like function. */
 export interface Finding {
-  /** "constructor_func" | "pointer_return" (Go); "tight_coupling" (TS/TSX). */
+  /** "constructor_func" | "pointer_return" | "mutates_input" (Go); "tight_coupling" | "mutates_input" (TS/TSX). */
   kind: string;
   name: string;
   location: Location;
+  /** Present only on findings that carry coaching metadata (e.g. "mutates_input"). */
+  confidence?: string;
+  evidence?: string;
+  recommendation?: string;
+  suggested_skill?: string;
 }
 
 /** Top-level output of analyzing one source file. */
