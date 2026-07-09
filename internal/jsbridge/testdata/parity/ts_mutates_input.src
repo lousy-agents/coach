@@ -27,7 +27,7 @@ export function ignoreShadowed(cfg: Config): void {
   }
 }
 
-export function ignorePredeclaredShadow(cfg: Config): void {
+export function detectVarRebind(cfg: Config): void {
   cfg.name = "not-the-parameter";
   var cfg = { name: "local" };
 }

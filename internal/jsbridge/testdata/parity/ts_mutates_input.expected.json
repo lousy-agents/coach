@@ -110,6 +110,22 @@
         "evidence": "bucket[\"add\"]",
         "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
         "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "detectVarRebind:cfg",
+        "location": {
+          "start_byte": 584,
+          "end_byte": 592,
+          "start_row": 30,
+          "start_col": 2,
+          "end_row": 30,
+          "end_col": 10
+        },
+        "confidence": "medium",
+        "evidence": "cfg.name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
       }
     ]
   }

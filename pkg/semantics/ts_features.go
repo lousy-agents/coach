@@ -142,8 +142,9 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 		inFunc = true
 		blockDepth = 0
 		inCtorBody = isConstructorMethod(n, source)
-		scopes = append(scopes, newTSParamScope(n, source))
-		scopes = appendTSLocalBindings(scopes, tsFunctionScopedBindingNames(n, source))
+		scope := newTSParamScope(n, source)
+		scopes = append(scopes, scope)
+		scopes = appendTSLocalBindings(scopes, tsFunctionScopedBindingNames(n, source, scope.bindings))
 	case tsFunctionLikeKinds[n.Kind()]:
 		c.metrics.Functions++
 		inFunc = true
@@ -151,8 +152,9 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 		if n.Kind() != "arrow_function" {
 			inCtorBody = false
 		}
-		scopes = append(scopes, newTSParamScope(n, source))
-		scopes = appendTSLocalBindings(scopes, tsFunctionScopedBindingNames(n, source))
+		scope := newTSParamScope(n, source)
+		scopes = append(scopes, scope)
+		scopes = appendTSLocalBindings(scopes, tsFunctionScopedBindingNames(n, source, scope.bindings))
 	case n.Kind() == "statement_block":
 		if inFunc {
 			blockDepth++
@@ -267,7 +269,7 @@ func tsIdentifierParams(decl engine.Node, source []byte) map[string]bool {
 	return params
 }
 
-func tsFunctionScopedBindingNames(n engine.Node, source []byte) map[string]bool {
+func tsFunctionScopedBindingNames(n engine.Node, source []byte, params map[string]bool) map[string]bool {
 	names := map[string]bool{}
 	var collect func(engine.Node)
 	collect = func(node engine.Node) {
@@ -290,9 +292,15 @@ func tsFunctionScopedBindingNames(n engine.Node, source []byte) map[string]bool 
 			}
 			return
 		case "variable_declaration":
+			varNames := map[string]bool{}
 			count := node.ChildCount()
 			for i := 0; i < count; i++ {
-				collectTSVariableDeclaratorNames(node.Child(i), source, names)
+				collectTSVariableDeclaratorNames(node.Child(i), source, varNames)
+			}
+			for name := range varNames {
+				if !params[name] {
+					names[name] = true
+				}
 			}
 			return
 		case "lexical_declaration":
@@ -330,13 +338,11 @@ func appendTSLocalBindings(scopes []tsParamScope, names map[string]bool) []tsPar
 	if len(names) == 0 || len(scopes) == 0 {
 		return scopes
 	}
-	next := make([]tsParamScope, len(scopes), len(scopes)+1)
-	copy(next, scopes)
-	next = append(next, tsParamScope{bindings: map[string]bool{}})
+	bindings := make(map[string]bool, len(names))
 	for name := range names {
-		next[len(next)-1].bindings[name] = false
+		bindings[name] = false
 	}
-	return next
+	return append(scopes, tsParamScope{bindings: bindings})
 }
 
 func tsLocalBindingNames(n engine.Node, source []byte) map[string]bool {

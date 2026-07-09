@@ -1102,18 +1102,19 @@ func TestTSMutatesInput_PredeclaredLocalBindingsShadowParameterForWholeScope(t *
 `,
 		},
 		{
-			name: "function scoped var binding shadows before declaration",
-			source: `function f(p) {
-	p.x = 1;
-	var p = {};
-}
-`,
-		},
-		{
 			name: "function declaration shadows before declaration",
 			source: `function f(p) {
 	p.x = 1;
 	function p() {}
+}
+`,
+		},
+		{
+			name: "same-name var does not cancel function declaration shadow",
+			source: `function f(p) {
+	p.x = 1;
+	function p() {}
+	var p = {};
 }
 `,
 		},
@@ -1132,6 +1133,41 @@ func TestTSMutatesInput_PredeclaredLocalBindingsShadowParameterForWholeScope(t *
 				}
 			}
 		})
+	}
+}
+
+func TestTSMutatesInput_VarParameterRebindDoesNotSuppressEarlierMutation(t *testing.T) {
+	source := `function f(p) {
+	p.x = 1;
+	var p = {};
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	got := mutatesInputFindingNamed(findings, "f:p", "p.x")
+	if got == nil {
+		t.Fatalf("computeTSFeatures for %q: want mutates_input before same-name var rebind, got %+v", source, findings)
+	}
+}
+
+func TestTSMutatesInput_InnerVarBindingShadowsOuterParameterBeforeDeclaration(t *testing.T) {
+	source := `function outer(p) {
+	function inner() {
+		p.x = 1;
+		var p = {};
+	}
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	for _, f := range findings {
+		if f.Kind == "mutates_input" {
+			t.Fatalf("computeTSFeatures for %q: got mutates_input finding %+v, want none because inner var shadows the outer parameter", source, f)
+		}
 	}
 }
 
