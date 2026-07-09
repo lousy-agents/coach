@@ -2,6 +2,7 @@ package semantics
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
@@ -142,6 +143,7 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 		blockDepth = 0
 		inCtorBody = isConstructorMethod(n, source)
 		scopes = append(scopes, newTSParamScope(n, source))
+		scopes = appendTSLocalBindings(scopes, tsFunctionScopedBindingNames(n, source))
 	case tsFunctionLikeKinds[n.Kind()]:
 		c.metrics.Functions++
 		inFunc = true
@@ -150,6 +152,7 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 			inCtorBody = false
 		}
 		scopes = append(scopes, newTSParamScope(n, source))
+		scopes = appendTSLocalBindings(scopes, tsFunctionScopedBindingNames(n, source))
 	case n.Kind() == "statement_block":
 		if inFunc {
 			blockDepth++
@@ -169,10 +172,13 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 			c.checkMutatesInputDelete(n, source, scopes)
 		case "call_expression":
 			c.checkMutatesInputCall(n, source, scopes)
+		case "update_expression":
+			c.checkMutatesInputUpdate(n, source, scopes)
 		}
 	}
 
 	if n.Kind() == "statement_block" {
+		scopes = appendTSLocalBindings(scopes, tsBlockScopedBindingNames(n, source))
 		count := n.ChildCount()
 		for i := 0; i < count; i++ {
 			child := n.Child(i)
@@ -259,6 +265,65 @@ func tsIdentifierParams(decl engine.Node, source []byte) map[string]bool {
 		params[pattern.Utf8Text(source)] = true
 	}
 	return params
+}
+
+func tsFunctionScopedBindingNames(n engine.Node, source []byte) map[string]bool {
+	names := map[string]bool{}
+	var collect func(engine.Node)
+	collect = func(node engine.Node) {
+		if node == nil {
+			return
+		}
+		if node != n && (tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition") {
+			return
+		}
+		switch node.Kind() {
+		case "function_declaration", "generator_function_declaration":
+			if node != n {
+				if name := node.ChildByFieldName("name"); name != nil {
+					names[name.Utf8Text(source)] = true
+				}
+			}
+			count := node.ChildCount()
+			for i := 0; i < count; i++ {
+				collect(node.Child(i))
+			}
+			return
+		case "variable_declaration":
+			count := node.ChildCount()
+			for i := 0; i < count; i++ {
+				collectTSVariableDeclaratorNames(node.Child(i), source, names)
+			}
+			return
+		case "lexical_declaration":
+			return
+		}
+		count := node.ChildCount()
+		for i := 0; i < count; i++ {
+			collect(node.Child(i))
+		}
+	}
+	collect(n)
+	return names
+}
+
+func tsBlockScopedBindingNames(n engine.Node, source []byte) map[string]bool {
+	names := map[string]bool{}
+	count := n.ChildCount()
+	for i := 0; i < count; i++ {
+		child := n.Child(i)
+		switch child.Kind() {
+		case "lexical_declaration":
+			for j := 0; j < child.ChildCount(); j++ {
+				collectTSVariableDeclaratorNames(child.Child(j), source, names)
+			}
+		case "function_declaration", "generator_function_declaration", "class_declaration":
+			if name := child.ChildByFieldName("name"); name != nil {
+				names[name.Utf8Text(source)] = true
+			}
+		}
+	}
+	return names
 }
 
 func appendTSLocalBindings(scopes []tsParamScope, names map[string]bool) []tsParamScope {
@@ -522,6 +587,15 @@ func (c *tsFeatureCollector) checkMutatesInputDelete(n engine.Node, source []byt
 	c.recordMutatesInput(base, n, source, scopes)
 }
 
+func (c *tsFeatureCollector) checkMutatesInputUpdate(n engine.Node, source []byte, scopes []tsParamScope) {
+	target := n.ChildByFieldName("argument")
+	base := tsMutationBase(target)
+	if base == nil {
+		return
+	}
+	c.recordMutatesInput(base, target, source, scopes)
+}
+
 // checkMutatesInputCall emits a "mutates_input" Finding (Story 2) if n (a
 // call_expression) calls one of mutatingTSMethodNames on a receiver
 // rooted at some enclosing scope's identifier-bound parameter, either
@@ -536,19 +610,49 @@ func (c *tsFeatureCollector) checkMutatesInputDelete(n engine.Node, source []byt
 // bounded, target-only evidence.
 func (c *tsFeatureCollector) checkMutatesInputCall(n engine.Node, source []byte, scopes []tsParamScope) {
 	fn := n.ChildByFieldName("function")
-	if fn == nil || fn.Kind() != "member_expression" {
+	if fn == nil {
 		return
 	}
-	property := fn.ChildByFieldName("property")
-	if property == nil || !mutatingTSMethodNames[property.Utf8Text(source)] {
+	object, methodName := tsMutatingMethodReceiver(fn, source)
+	if object == nil || !mutatingTSMethodNames[methodName] {
 		return
 	}
-	object := fn.ChildByFieldName("object")
 	base := tsResolveRootIdentifier(object)
 	if base == nil {
 		return
 	}
 	c.recordMutatesInput(base, fn, source, scopes)
+}
+
+func tsMutatingMethodReceiver(fn engine.Node, source []byte) (engine.Node, string) {
+	switch fn.Kind() {
+	case "member_expression":
+		property := fn.ChildByFieldName("property")
+		if property == nil {
+			return nil, ""
+		}
+		return fn.ChildByFieldName("object"), property.Utf8Text(source)
+	case "subscript_expression":
+		index := fn.ChildByFieldName("index")
+		methodName, ok := tsStringLiteralText(index, source)
+		if !ok {
+			return nil, ""
+		}
+		return fn.ChildByFieldName("object"), methodName
+	default:
+		return nil, ""
+	}
+}
+
+func tsStringLiteralText(n engine.Node, source []byte) (string, bool) {
+	if n == nil || n.Kind() != "string" {
+		return "", false
+	}
+	value, err := strconv.Unquote(n.Utf8Text(source))
+	if err != nil {
+		return "", false
+	}
+	return value, true
 }
 
 // tsMutationBase resolves expr (a candidate mutation target/argument) down

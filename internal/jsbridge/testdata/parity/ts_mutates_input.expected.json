@@ -10,7 +10,7 @@
       "expr_switches": 0,
       "type_switches": 0,
       "selects": 0,
-      "functions": 3,
+      "functions": 5,
       "methods": 0,
       "max_nesting_depth": 2
     },
@@ -60,6 +60,54 @@
         },
         "confidence": "medium",
         "evidence": "cfg!.name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateCollection:arr",
+        "location": {
+          "start_byte": 349,
+          "end_byte": 355,
+          "start_row": 17,
+          "start_col": 2,
+          "end_row": 17,
+          "end_col": 8
+        },
+        "confidence": "medium",
+        "evidence": "arr[0]",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateCollection:arr",
+        "location": {
+          "start_byte": 361,
+          "end_byte": 372,
+          "start_row": 18,
+          "start_col": 2,
+          "end_row": 18,
+          "end_col": 13
+        },
+        "confidence": "medium",
+        "evidence": "arr[\"push\"]",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateCollection:bucket",
+        "location": {
+          "start_byte": 379,
+          "end_byte": 392,
+          "start_row": 19,
+          "start_col": 2,
+          "end_row": 19,
+          "end_col": 15
+        },
+        "confidence": "medium",
+        "evidence": "bucket[\"add\"]",
         "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
         "suggested_skill": "refactor-hidden-mutation"
       }

@@ -23,6 +23,11 @@ func UpdateParenthesized(cfg *Config, items []int) {
 	(items)[0] = 1
 }
 
+func UpdateCounters(cfg *Config, items []int) {
+	cfg.Count++
+	items[0]--
+}
+
 func IgnoreShadowed(cfg *Config) {
 	{
 		cfg := &Config{}

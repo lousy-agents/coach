@@ -25,15 +25,17 @@
 // The "mutates_input" finding is a syntax-based, conservative first-slice
 // detector: it flags caller-visible writes through a function/method's own
 // parameters without any whole-program alias analysis or type inference
-// beyond that parameter's own syntactic declaration. Go and TS/TSX fire on
+// beyond that parameter's own syntactic declaration. Go detects assignment
+// and update writes rooted at pointer/map/slice parameters. TS/TSX fires on
 // the same underlying idea — a parameter mutated in place is a hidden side
 // effect on the caller's value — but each language's detection is
 // necessarily different: Go parameter types are explicit in the source
 // (pointer_type/map_type/slice_type), so mutableParamTypes reads them
 // directly (features.go), while TS/TSX has no required type annotations, so
 // tsParamScope instead tracks which identifiers are bound to (non-
-// destructured, non-rest, non-defaulted) parameters and matches writes
-// against a fixed list of known mutating collection methods
+// destructured, non-rest, non-defaulted) parameters and matches property/
+// index assignments, update expressions, deletes, and a fixed list of known
+// mutating collection methods (including bracket notation such as arr["push"])
 // (ts_features.go). Neither detector tracks aliases assigned to local
 // variables or follows values across function calls.
 //

@@ -14,9 +14,20 @@ export function updateWrapped(cfg?: Config): void {
   cfg!.name = "asserted";
 }
 
+export function updateCollection(arr: number[], bucket: Set<number>): void {
+  arr[0]++;
+  arr["push"](1);
+  bucket["add"](2);
+}
+
 export function ignoreShadowed(cfg: Config): void {
   {
     const cfg = { name: "local" };
     cfg.name = "local-update";
   }
+}
+
+export function ignorePredeclaredShadow(cfg: Config): void {
+  cfg.name = "not-the-parameter";
+  var cfg = { name: "local" };
 }

@@ -23,7 +23,7 @@
       "expr_switches": 0,
       "type_switches": 0,
       "selects": 0,
-      "functions": 4,
+      "functions": 7,
       "methods": 0,
       "max_nesting_depth": 2
     },
@@ -73,6 +73,38 @@
         },
         "confidence": "medium",
         "evidence": "cfg!.name",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateCollection:arr",
+        "location": {
+          "start_byte": 294,
+          "end_byte": 300,
+          "start_row": 16,
+          "start_col": 2,
+          "end_row": 16,
+          "end_col": 8
+        },
+        "confidence": "medium",
+        "evidence": "arr[0]",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "updateCollection:arr",
+        "location": {
+          "start_byte": 306,
+          "end_byte": 317,
+          "start_row": 17,
+          "start_col": 2,
+          "end_row": 17,
+          "end_col": 13
+        },
+        "confidence": "medium",
+        "evidence": "arr[\"push\"]",
         "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
         "suggested_skill": "refactor-hidden-mutation"
       }

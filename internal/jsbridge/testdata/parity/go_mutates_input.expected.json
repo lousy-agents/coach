@@ -10,7 +10,7 @@
       "expr_switches": 0,
       "type_switches": 0,
       "selects": 0,
-      "functions": 4,
+      "functions": 5,
       "methods": 0,
       "max_nesting_depth": 2
     },
@@ -76,6 +76,38 @@
         },
         "confidence": "medium",
         "evidence": "(items)[0]",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "UpdateCounters:cfg",
+        "location": {
+          "start_byte": 491,
+          "end_byte": 500,
+          "start_row": 26,
+          "start_col": 1,
+          "end_row": 26,
+          "end_col": 10
+        },
+        "confidence": "medium",
+        "evidence": "cfg.Count",
+        "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+        "suggested_skill": "refactor-hidden-mutation"
+      },
+      {
+        "kind": "mutates_input",
+        "name": "UpdateCounters:items",
+        "location": {
+          "start_byte": 504,
+          "end_byte": 512,
+          "start_row": 27,
+          "start_col": 1,
+          "end_row": 27,
+          "end_col": 9
+        },
+        "confidence": "medium",
+        "evidence": "items[0]",
         "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
         "suggested_skill": "refactor-hidden-mutation"
       }

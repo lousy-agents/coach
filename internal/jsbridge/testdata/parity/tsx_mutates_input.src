@@ -13,11 +13,21 @@ function updateWrapped(cfg?: Config): void {
   cfg!.name = "asserted";
 }
 
+function updateCollection(arr: number[]): void {
+  arr[0]++;
+  arr["push"](1);
+}
+
 function ignoreShadowed(cfg: Config): void {
   {
     let cfg = { name: "local" };
     cfg.name = "local-update";
   }
+}
+
+function ignorePredeclaredShadow(cfg: Config): void {
+  cfg.name = "not-the-parameter";
+  function cfg() {}
 }
 
 function Panel({ cfg }: { cfg: Config }) {

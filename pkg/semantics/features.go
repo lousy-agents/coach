@@ -257,6 +257,9 @@ func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcNam
 			}
 		}
 	}
+	if n.Kind() == "inc_statement" || n.Kind() == "dec_statement" {
+		c.checkAssignmentTarget(updateStatementTarget(n), source, funcName, mutableParams, seen)
+	}
 	if n.Kind() == "func_literal" {
 		if params := n.ChildByFieldName("parameters"); params != nil {
 			mutableParams = shadowParamTypes(mutableParams, params, source)
@@ -268,6 +271,21 @@ func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcNam
 		c.findAssignments(child, source, funcName, mutableParams, seen)
 		mutableParams = shadowLocalDeclarations(mutableParams, child, source)
 	}
+}
+
+func updateStatementTarget(n engine.Node) engine.Node {
+	if n == nil {
+		return nil
+	}
+	count := n.ChildCount()
+	for i := 0; i < count; i++ {
+		child := n.Child(i)
+		switch child.Kind() {
+		case "selector_expression", "index_expression", "unary_expression":
+			return child
+		}
+	}
+	return nil
 }
 
 // shadowLocalDeclarations returns a copy of outer with any entries shadowed by

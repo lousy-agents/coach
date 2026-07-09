@@ -1028,6 +1028,113 @@ func TestTSMutatesInput_WrappedParameterRoots(t *testing.T) {
 	}
 }
 
+func TestTSMutatesInput_UpdateExpressionsMutateParameterRoots(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		wantName string
+		evidence string
+	}{
+		{
+			name: "postfix property increment",
+			source: `function f(p) {
+	p.x++;
+}
+`,
+			wantName: "f:p",
+			evidence: "p.x",
+		},
+		{
+			name: "prefix index decrement",
+			source: `function f(arr) {
+	--arr[0];
+}
+`,
+			wantName: "f:arr",
+			evidence: "arr[0]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+
+			got := mutatesInputFindingNamed(findings, tt.wantName, tt.evidence)
+			if got == nil {
+				t.Fatalf("computeTSFeatures for update expression %q: want a mutates_input finding named %q with evidence %q, got %+v", tt.source, tt.wantName, tt.evidence, findings)
+			}
+		})
+	}
+}
+
+func TestTSMutatesInput_BracketNotationMutatingMethodCall(t *testing.T) {
+	source := `function f(arr) {
+	arr["push"](1);
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+
+	got := mutatesInputFindingNamed(findings, "f:arr", `arr["push"]`)
+	if got == nil {
+		t.Fatalf("computeTSFeatures for bracket-notation mutating method call %q: want a mutates_input finding named %q with evidence %q, got %+v", source, "f:arr", `arr["push"]`, findings)
+	}
+}
+
+func TestTSMutatesInput_PredeclaredLocalBindingsShadowParameterForWholeScope(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "block lexical binding shadows before declaration",
+			source: `function f(p) {
+	{
+		p.x = 1;
+		let p = {};
+	}
+}
+`,
+		},
+		{
+			name: "function scoped var binding shadows before declaration",
+			source: `function f(p) {
+	p.x = 1;
+	var p = {};
+}
+`,
+		},
+		{
+			name: "function declaration shadows before declaration",
+			source: `function f(p) {
+	p.x = 1;
+	function p() {}
+}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+
+			for _, f := range findings {
+				if f.Kind == "mutates_input" {
+					t.Fatalf("computeTSFeatures for predeclared local shadowing %q: got mutates_input finding %+v, want none because the write targets a local binding, not the parameter", tt.source, f)
+				}
+			}
+		})
+	}
+}
+
 // Copilot review fix: Evidence/Location for both an assignment and a
 // mutating method call must stay bounded to the mutated target/receiver,
 // not grow with an arbitrarily long right-hand side or argument list, so
