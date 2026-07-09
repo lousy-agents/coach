@@ -483,6 +483,57 @@ func TestTSMutatesInput_IndexAssignment(t *testing.T) {
 	}
 }
 
+func TestTSMutatesInput_CompoundAssignment(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		wantName string
+		evidence string
+	}{
+		{
+			name: "property plus-equals",
+			source: `function f(p) {
+	p.x += 1;
+}
+`,
+			wantName: "f:p",
+			evidence: "p.x",
+		},
+		{
+			name: "index logical-or assignment",
+			source: `function f(p) {
+	p["x"] ||= 1;
+}
+`,
+			wantName: "f:p",
+			evidence: `p["x"]`,
+		},
+		{
+			name: "nested nullish assignment",
+			source: `function f(p) {
+	p.items[0].name ??= "x";
+}
+`,
+			wantName: "f:p",
+			evidence: "p.items[0].name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+
+			got := mutatesInputFindingNamed(findings, tt.wantName, tt.evidence)
+			if got == nil {
+				t.Fatalf("computeTSFeatures for compound assignment %q: want mutates_input named %q with evidence %q, got %+v", tt.source, tt.wantName, tt.evidence, findings)
+			}
+		})
+	}
+}
+
 // Story 2, delete: `delete p.x` on an identifier-bound parameter must
 // yield a mutates_input Finding spanning the whole delete expression.
 func TestTSMutatesInput_Delete(t *testing.T) {
@@ -518,10 +569,19 @@ func TestTSMutatesInput_MutatingMethodCalls(t *testing.T) {
 		source    string
 		wantCount int
 	}{
+		{name: "copyWithin", source: "function f(arr) {\n\tarr.copyWithin(0, 1);\n}\n", wantCount: 1},
+		{name: "fill", source: "function f(arr) {\n\tarr.fill(1);\n}\n", wantCount: 1},
+		{name: "pop", source: "function f(arr) {\n\tarr.pop();\n}\n", wantCount: 1},
 		{name: "push", source: "function f(arr) {\n\tarr.push(1);\n}\n", wantCount: 1},
+		{name: "reverse", source: "function f(arr) {\n\tarr.reverse();\n}\n", wantCount: 1},
+		{name: "shift", source: "function f(arr) {\n\tarr.shift();\n}\n", wantCount: 1},
 		{name: "sort", source: "function f(arr) {\n\tarr.sort();\n}\n", wantCount: 1},
+		{name: "splice", source: "function f(arr) {\n\tarr.splice(0, 1);\n}\n", wantCount: 1},
+		{name: "unshift", source: "function f(arr) {\n\tarr.unshift(1);\n}\n", wantCount: 1},
 		{name: "set", source: "function f(m) {\n\tm.set('k', 1);\n}\n", wantCount: 1},
+		{name: "add", source: "function f(s) {\n\ts.add(1);\n}\n", wantCount: 1},
 		{name: "delete method", source: "function f(m) {\n\tm.delete('k');\n}\n", wantCount: 1},
+		{name: "clear", source: "function f(m) {\n\tm.clear();\n}\n", wantCount: 1},
 		{name: "custom method excluded", source: "function f(user) {\n\tuser.setName('x');\n}\n", wantCount: 0},
 	}
 
@@ -581,6 +641,30 @@ func TestTSMutatesInput_ReboundParameterIsNotTrackedForLaterWrites(t *testing.T)
 	for (p of items) {
 		p.x = 1;
 	}
+}
+`,
+		},
+		{
+			name: "augmented assignment rebinding",
+			source: `function f(p) {
+	p += other;
+	p.x = 1;
+}
+`,
+		},
+		{
+			name: "object destructuring rebinding",
+			source: `function f(p, source) {
+	({ p } = source);
+	p.x = 1;
+}
+`,
+		},
+		{
+			name: "array destructuring rebinding",
+			source: `function f(p, source) {
+	[p] = source;
+	p.x = 1;
 }
 `,
 		},
@@ -734,6 +818,30 @@ func TestTSMutatesInput_ControlFlowAndFunctionBindingsShadowParameter(t *testing
 	try {
 		throw {};
 	} catch ({ p }) {
+		p.x = 1;
+	}
+}
+`,
+		},
+		{
+			name: "switch case lexical binding",
+			source: `function f(p, x) {
+	switch (x) {
+	case 1:
+		let p = {};
+		p.x = 1;
+	}
+}
+`,
+		},
+		{
+			name: "switch case lexical binding shadows sibling cases",
+			source: `function f(p, x) {
+	switch (x) {
+	case 1:
+		let p = {};
+		break;
+	case 2:
 		p.x = 1;
 	}
 }
@@ -1152,6 +1260,22 @@ func TestTSMutatesInput_VarParameterRebindDoesNotSuppressEarlierMutation(t *test
 	}
 }
 
+func TestTSMutatesInput_NoInitializerVarParameterDoesNotSuppressLaterMutation(t *testing.T) {
+	source := `function f(p) {
+	var p;
+	p.x = 1;
+}
+`
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	got := mutatesInputFindingNamed(findings, "f:p", "p.x")
+	if got == nil {
+		t.Fatalf("computeTSFeatures for %q: want mutates_input after no-initializer var parameter declaration, got %+v", source, findings)
+	}
+}
+
 func TestTSMutatesInput_InnerVarBindingShadowsOuterParameterBeforeDeclaration(t *testing.T) {
 	source := `function outer(p) {
 	function inner() {
@@ -1195,6 +1319,83 @@ func TestTSMutatesInput_EvidenceExcludesLongRHSAndArguments(t *testing.T) {
 	call := mutatesInputFindingNamed(findings, "f:p", "p.items.push")
 	if call == nil {
 		t.Fatalf("computeTSFeatures for %q: want a mutates_input finding with Evidence %q, got %+v", source, "p.items.push", findings)
+	}
+}
+
+func TestTSMutatesInput_DestructuringAssignmentTargets(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		wantName string
+		evidence string
+	}{
+		{
+			name: "object pattern property target",
+			source: `function f(p, src) {
+	({ x: p.x } = src);
+}
+`,
+			wantName: "f:p",
+			evidence: "p.x",
+		},
+		{
+			name: "array pattern index target",
+			source: `function f(p, src) {
+	[p[0]] = src;
+}
+`,
+			wantName: "f:p",
+			evidence: "p[0]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+			got := mutatesInputFindingNamed(findings, tt.wantName, tt.evidence)
+			if got == nil {
+				t.Fatalf("computeTSFeatures for destructuring assignment %q: want mutates_input named %q with evidence %q, got %+v", tt.source, tt.wantName, tt.evidence, findings)
+			}
+		})
+	}
+}
+
+func TestTSMutatesInput_DestructuringAssignmentReadsDoNotCountAsTargets(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "computed object key reads parameter property",
+			source: `function f(p, src) {
+	({ [p.x]: local } = src);
+}
+`,
+		},
+		{
+			name: "default initializer reads parameter property",
+			source: `function f(p, src) {
+	({ x: local = p.x } = src);
+}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root, closeTree := mustParseTS(t, []byte(tt.source))
+			defer closeTree()
+
+			_, findings := computeTSFeatures(root, []byte(tt.source))
+			for _, f := range findings {
+				if f.Kind == "mutates_input" {
+					t.Fatalf("computeTSFeatures for destructuring read %q: got mutates_input finding %+v, want none because p.x is read but not assigned", tt.source, f)
+				}
+			}
+		})
 	}
 }
 
@@ -1266,5 +1467,21 @@ func TestTSXMutatesInput_PropertyAssignment(t *testing.T) {
 	gotText := source[got.Location.StartByte:got.Location.EndByte]
 	if gotText != "props.value" {
 		t.Errorf("Finding.Location text = %q, want %q", gotText, "props.value")
+	}
+}
+
+func TestTSXMutatesInput_CompoundAssignment(t *testing.T) {
+	source := `const Widget = (props) => {
+	props.value += 1;
+	return null;
+};
+`
+	root, closeTree := mustParseTSX(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+	got := mutatesInputFindingNamed(findings, "anonymous@15:props", "props.value")
+	if got == nil {
+		t.Fatalf("computeTSFeatures for TSX compound assignment %q: want mutates_input named %q with evidence %q, got %+v", source, "anonymous@15:props", "props.value", findings)
 	}
 }

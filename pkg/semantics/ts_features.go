@@ -168,7 +168,7 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 
 	if len(scopes) > 0 {
 		switch n.Kind() {
-		case "assignment_expression":
+		case "assignment_expression", "augmented_assignment_expression":
 			c.checkMutatesInputAssignment(n, source, scopes)
 		case "unary_expression":
 			c.checkMutatesInputDelete(n, source, scopes)
@@ -181,13 +181,42 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 
 	if n.Kind() == "statement_block" {
 		scopes = appendTSLocalBindings(scopes, tsBlockScopedBindingNames(n, source))
+		currentParams := tsCurrentFunctionParamNames(scopes)
 		count := n.ChildCount()
 		for i := 0; i < count; i++ {
 			child := n.Child(i)
 			c.walk(child, source, blockDepth, inFunc, inCtorBody, scopes)
-			scopes = appendTSLocalBindings(scopes, tsLocalBindingNames(child, source))
+			scopes = appendTSLocalBindings(scopes, tsLocalBindingNames(child, source, currentParams))
 			scopes = appendTSLocalBindings(scopes, tsReboundParameterNames(child, source))
-			scopes = appendTSLocalBindings(scopes, tsVarBindingNames(child, source))
+			scopes = appendTSLocalBindings(scopes, tsVarBindingNames(child, source, currentParams))
+		}
+		return
+	}
+
+	if n.Kind() == "switch_body" {
+		scopes = appendTSLocalBindings(scopes, tsSwitchBodyBindingNames(n, source))
+		currentParams := tsCurrentFunctionParamNames(scopes)
+		count := n.ChildCount()
+		for i := 0; i < count; i++ {
+			child := n.Child(i)
+			c.walk(child, source, blockDepth, inFunc, inCtorBody, scopes)
+			scopes = appendTSLocalBindings(scopes, tsLocalBindingNames(child, source, currentParams))
+			scopes = appendTSLocalBindings(scopes, tsReboundParameterNames(child, source))
+			scopes = appendTSLocalBindings(scopes, tsVarBindingNames(child, source, currentParams))
+		}
+		return
+	}
+
+	if n.Kind() == "switch_case" || n.Kind() == "switch_default" {
+		scopes = appendTSLocalBindings(scopes, tsBlockScopedBindingNames(n, source))
+		currentParams := tsCurrentFunctionParamNames(scopes)
+		count := n.ChildCount()
+		for i := 0; i < count; i++ {
+			child := n.Child(i)
+			c.walk(child, source, blockDepth, inFunc, inCtorBody, scopes)
+			scopes = appendTSLocalBindings(scopes, tsLocalBindingNames(child, source, currentParams))
+			scopes = appendTSLocalBindings(scopes, tsReboundParameterNames(child, source))
+			scopes = appendTSLocalBindings(scopes, tsVarBindingNames(child, source, currentParams))
 		}
 		return
 	}
@@ -334,6 +363,21 @@ func tsBlockScopedBindingNames(n engine.Node, source []byte) map[string]bool {
 	return names
 }
 
+func tsSwitchBodyBindingNames(n engine.Node, source []byte) map[string]bool {
+	names := map[string]bool{}
+	count := n.ChildCount()
+	for i := 0; i < count; i++ {
+		child := n.Child(i)
+		if child.Kind() != "switch_case" && child.Kind() != "switch_default" {
+			continue
+		}
+		for name := range tsBlockScopedBindingNames(child, source) {
+			names[name] = true
+		}
+	}
+	return names
+}
+
 func appendTSLocalBindings(scopes []tsParamScope, names map[string]bool) []tsParamScope {
 	if len(names) == 0 || len(scopes) == 0 {
 		return scopes
@@ -345,17 +389,37 @@ func appendTSLocalBindings(scopes []tsParamScope, names map[string]bool) []tsPar
 	return append(scopes, tsParamScope{bindings: bindings})
 }
 
-func tsLocalBindingNames(n engine.Node, source []byte) map[string]bool {
+func tsCurrentFunctionParamNames(scopes []tsParamScope) map[string]bool {
+	for i := len(scopes) - 1; i >= 0; i-- {
+		if scopes[i].ownerName == "" {
+			continue
+		}
+		names := map[string]bool{}
+		for name, isParam := range scopes[i].bindings {
+			if isParam {
+				names[name] = true
+			}
+		}
+		return names
+	}
+	return nil
+}
+
+func tsLocalBindingNames(n engine.Node, source []byte, currentParams map[string]bool) map[string]bool {
 	if n == nil {
 		return nil
 	}
 	switch n.Kind() {
-	case "lexical_declaration", "variable_declaration":
+	case "lexical_declaration":
 		names := map[string]bool{}
 		count := n.ChildCount()
 		for i := 0; i < count; i++ {
 			collectTSVariableDeclaratorNames(n.Child(i), source, names)
 		}
+		return names
+	case "variable_declaration":
+		names := map[string]bool{}
+		collectTSVariableDeclaratorNamesAfterStatement(n, source, currentParams, names)
 		return names
 	case "function_declaration", "generator_function_declaration":
 		if name := n.ChildByFieldName("name"); name != nil {
@@ -385,6 +449,39 @@ func collectTSVariableDeclaratorNames(n engine.Node, source []byte, names map[st
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
 		collectTSVariableDeclaratorNames(n.Child(i), source, names)
+	}
+}
+
+func collectTSVariableDeclaratorNamesAfterStatement(n engine.Node, source []byte, currentParams map[string]bool, names map[string]bool) {
+	if n == nil {
+		return
+	}
+	if n.Kind() == "variable_declarator" {
+		name := n.ChildByFieldName("name")
+		if name == nil {
+			return
+		}
+		if n.ChildByFieldName("value") == nil {
+			collectTSBindingPatternNamesExcept(name, source, currentParams, names)
+			return
+		}
+		collectTSBindingPatternNames(name, source, names)
+		return
+	}
+	count := n.ChildCount()
+	for i := 0; i < count; i++ {
+		collectTSVariableDeclaratorNamesAfterStatement(n.Child(i), source, currentParams, names)
+	}
+}
+
+func collectTSBindingPatternNamesExcept(n engine.Node, source []byte, except map[string]bool, names map[string]bool) {
+	all := map[string]bool{}
+	collectTSBindingPatternNames(n, source, all)
+	for name := range all {
+		if except[name] {
+			continue
+		}
+		names[name] = true
 	}
 }
 
@@ -455,9 +552,9 @@ func tsReboundParameterNames(n engine.Node, source []byte) map[string]bool {
 		if tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition" {
 			return
 		}
-		if node.Kind() == "assignment_expression" {
-			if left := node.ChildByFieldName("left"); left != nil && left.Kind() == "identifier" {
-				names[left.Utf8Text(source)] = true
+		if node.Kind() == "assignment_expression" || node.Kind() == "augmented_assignment_expression" {
+			if left := node.ChildByFieldName("left"); left != nil {
+				collectTSReboundTargetNames(left, source, names)
 			}
 			return
 		}
@@ -470,7 +567,28 @@ func tsReboundParameterNames(n engine.Node, source []byte) map[string]bool {
 	return names
 }
 
-func tsVarBindingNames(n engine.Node, source []byte) map[string]bool {
+func collectTSReboundTargetNames(n engine.Node, source []byte, names map[string]bool) {
+	if n == nil {
+		return
+	}
+	switch n.Kind() {
+	case "identifier", "shorthand_property_identifier_pattern":
+		names[n.Utf8Text(source)] = true
+	case "pair_pattern":
+		collectTSReboundTargetNames(n.ChildByFieldName("value"), source, names)
+	case "assignment_pattern":
+		collectTSReboundTargetNames(n.ChildByFieldName("left"), source, names)
+	case "rest_pattern":
+		collectTSReboundTargetNames(n.ChildByFieldName("argument"), source, names)
+	case "object_pattern", "array_pattern", "parenthesized_expression":
+		count := n.ChildCount()
+		for i := 0; i < count; i++ {
+			collectTSReboundTargetNames(n.Child(i), source, names)
+		}
+	}
+}
+
+func tsVarBindingNames(n engine.Node, source []byte, currentParams map[string]bool) map[string]bool {
 	if n == nil {
 		return nil
 	}
@@ -483,7 +601,7 @@ func tsVarBindingNames(n engine.Node, source []byte) map[string]bool {
 		if node.Kind() == "variable_declaration" {
 			count := node.ChildCount()
 			for i := 0; i < count; i++ {
-				collectTSVariableDeclaratorNames(node.Child(i), source, names)
+				collectTSVariableDeclaratorNamesAfterStatement(node.Child(i), source, currentParams, names)
 			}
 			return
 		}
@@ -566,10 +684,11 @@ func (c *tsFeatureCollector) checkTightCouplingAssignment(n engine.Node, source 
 func (c *tsFeatureCollector) checkMutatesInputAssignment(n engine.Node, source []byte, scopes []tsParamScope) {
 	left := n.ChildByFieldName("left")
 	base := tsMutationBase(left)
-	if base == nil {
+	if base != nil {
+		c.recordMutatesInput(base, left, source, scopes)
 		return
 	}
-	c.recordMutatesInput(base, left, source, scopes)
+	c.recordMutatesInputAssignmentTargets(left, source, scopes)
 }
 
 // checkMutatesInputDelete emits a "mutates_input" Finding (Story 2) if n
@@ -600,6 +719,31 @@ func (c *tsFeatureCollector) checkMutatesInputUpdate(n engine.Node, source []byt
 		return
 	}
 	c.recordMutatesInput(base, target, source, scopes)
+}
+
+func (c *tsFeatureCollector) recordMutatesInputAssignmentTargets(n engine.Node, source []byte, scopes []tsParamScope) {
+	if n == nil {
+		return
+	}
+	if base := tsMutationBase(n); base != nil {
+		c.recordMutatesInput(base, n, source, scopes)
+		return
+	}
+	switch n.Kind() {
+	case "parenthesized_expression":
+		c.recordMutatesInputAssignmentTargets(tsWrappedExpressionInner(n), source, scopes)
+	case "pair_pattern":
+		c.recordMutatesInputAssignmentTargets(n.ChildByFieldName("value"), source, scopes)
+	case "assignment_pattern":
+		c.recordMutatesInputAssignmentTargets(n.ChildByFieldName("left"), source, scopes)
+	case "rest_pattern":
+		c.recordMutatesInputAssignmentTargets(n.ChildByFieldName("argument"), source, scopes)
+	case "object_pattern", "array_pattern":
+		count := n.ChildCount()
+		for i := 0; i < count; i++ {
+			c.recordMutatesInputAssignmentTargets(n.Child(i), source, scopes)
+		}
+	}
 }
 
 // checkMutatesInputCall emits a "mutates_input" Finding (Story 2) if n (a

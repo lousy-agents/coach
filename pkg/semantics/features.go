@@ -460,18 +460,51 @@ func collectIdentifiers(n engine.Node, source []byte, names map[string]bool) {
 // Outer parameters not redeclared by the literal are left untouched, since
 // the walk is still inside their scope.
 func shadowParamTypes(outer map[string]paramMutKind, literalParams engine.Node, source []byte) map[string]paramMutKind {
-	ownParams := mutableParamTypes(literalParams, source)
+	ownParams := parameterNames(literalParams, source)
 	if len(ownParams) == 0 {
 		return outer
 	}
 	shadowed := make(map[string]paramMutKind, len(outer))
 	for name, kind := range outer {
-		if _, redeclared := ownParams[name]; redeclared {
+		if ownParams[name] {
 			continue
 		}
 		shadowed[name] = kind
 	}
 	return shadowed
+}
+
+func parameterNames(params engine.Node, source []byte) map[string]bool {
+	names := map[string]bool{}
+	if params == nil {
+		return names
+	}
+	count := params.ChildCount()
+	for i := 0; i < count; i++ {
+		collectParameterNames(params.Child(i), source, names)
+	}
+	return names
+}
+
+func collectParameterNames(n engine.Node, source []byte, names map[string]bool) {
+	if n == nil {
+		return
+	}
+	switch n.Kind() {
+	case "parameter_declaration", "variadic_parameter_declaration":
+		count := n.ChildCount()
+		for i := 0; i < count; i++ {
+			child := n.Child(i)
+			if child.Kind() == "identifier" {
+				names[child.Utf8Text(source)] = true
+			}
+		}
+		return
+	}
+	count := n.ChildCount()
+	for i := 0; i < count; i++ {
+		collectParameterNames(n.Child(i), source, names)
+	}
 }
 
 // checkAssignmentTarget inspects a single assignment target (one of an
@@ -504,6 +537,13 @@ func (c *featureCollector) checkAssignmentTarget(target engine.Node, source []by
 	var paramName string
 	var requiredKind paramMutKind
 	switch target.Kind() {
+	case "parenthesized_expression":
+		inner := parenthesizedInner(target)
+		if inner == nil {
+			return
+		}
+		c.checkAssignmentTarget(inner, source, funcName, mutableParams, seen)
+		return
 	case "selector_expression":
 		requiredKind = paramMutPointer
 	case "index_expression":

@@ -662,7 +662,13 @@ func f(cfg *Config) {
 // closure's own mutation of its cfg must not be misattributed to the outer
 // function f's cfg.
 func TestGoMutatesInput_FuncLiteralShadowsOuterParameter(t *testing.T) {
-	source := []byte(`package main
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "ordinary parameter",
+			source: `package main
 
 type Config struct {
 	Name string
@@ -674,14 +680,38 @@ func f(cfg *Config) {
 	}
 	g(cfg)
 }
-`)
-	root, closeTree := mustParseGo(t, source)
-	defer closeTree()
+`,
+		},
+		{
+			name: "variadic parameter",
+			source: `package main
 
-	_, findings := computeGoFeatures(root, source)
+type Config struct {
+	Name string
+}
 
-	if hasFinding(findings, "mutates_input", "f:cfg") {
-		t.Errorf("computeGoFeatures findings for closure-shadowed parameter %q: want no mutates_input finding named %q (closure's cfg is a distinct binding), got %+v", source, "f:cfg", findings)
+func f(cfg *Config) {
+	g := func(cfg ...*Config) {
+		cfg[0].Name = "shadowed"
+	}
+	g(cfg)
+}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := []byte(tt.source)
+			root, closeTree := mustParseGo(t, source)
+			defer closeTree()
+
+			_, findings := computeGoFeatures(root, source)
+
+			if hasFinding(findings, "mutates_input", "f:cfg") {
+				t.Errorf("computeGoFeatures findings for closure-shadowed parameter %q: want no mutates_input finding named %q (closure's cfg is a distinct binding), got %+v", source, "f:cfg", findings)
+			}
+		})
 	}
 }
 
@@ -1060,6 +1090,31 @@ func f(items []int) {
 				t.Errorf("mutates_input Evidence for update expression: got %q, want %q", got.Evidence, tt.evidence)
 			}
 		})
+	}
+}
+
+func TestGoMutatesInput_ParenthesizedDirectDereferenceAssignment(t *testing.T) {
+	source := []byte(`package main
+
+type Config struct {
+	Name string
+}
+
+func f(cfg *Config) {
+	(*cfg) = Config{}
+}
+`)
+	root, closeTree := mustParseGo(t, source)
+	defer closeTree()
+
+	_, findings := computeGoFeatures(root, source)
+
+	got := mutatesInputFinding(findings, "f:cfg")
+	if got == nil {
+		t.Fatalf("computeGoFeatures findings for parenthesized dereference assignment %q: want a mutates_input finding named %q, got %+v", source, "f:cfg", findings)
+	}
+	if got.Evidence != "*cfg" {
+		t.Errorf("mutates_input Evidence for parenthesized dereference assignment: got %q, want %q", got.Evidence, "*cfg")
 	}
 }
 
