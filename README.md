@@ -1,82 +1,135 @@
 # coach
 
-experimental ai coach for humans making software with agents
+`coach` is an experimental AI coach designed to help software engineers and autonomous agents build better software. It parses source code syntactically and flags code smells, design issues, and structural metrics.
 
 ## Packages
 
-- [`pkg/semantics`](./pkg/semantics) — deterministic structural analysis of raw Go/TypeScript/TSX source bytes (syntax validity, imports, branching metrics, constructor-like patterns) via Tree-sitter, plus coaching findings like `mutates_input` (see [Coaching findings](#coaching-findings) below). No GitHub dependency.
-- [`pkg/githubingest`](./pkg/githubingest) — optional GitHub App-authenticated file reader. Never imported by `pkg/semantics`, and never imports it back.
+- [`pkg/semantics`](./pkg/semantics) — Deterministic structural analysis of Go, TypeScript, and TSX source bytes (validates syntax, extracts imports, computes branching metrics, and detects constructor-like patterns).
 
-## Install
+---
+
+## Installation
+
+### Go Packages
+To install the core static analysis library:
 
 ```sh
 go get github.com/lousy-agents/coach/pkg/semantics
-go get github.com/lousy-agents/coach/pkg/githubingest # only if you need GitHub App file fetching
 ```
 
-### CGO requirement
+### JavaScript / TypeScript Bindings (`@lousy-agents/coach-semantics`)
+The JS/TS bindings are currently packaged for Node.js (ESM-only). 
 
-By default `pkg/semantics` binds to Tree-sitter's C runtime via `github.com/tree-sitter/go-tree-sitter`. It requires `CGO_ENABLED=1` and a C toolchain (e.g. `gcc`) at build time. `pkg/githubingest` has no such requirement.
+> [!NOTE]
+> Because `coach` is in an active experimental phase, the npm package is not yet published to the public npm registry. To consume it, you must clone the repository and build the library locally:
 
-When CGO is unavailable — `CGO_ENABLED=0`, or `GOOS=js GOARCH=wasm`, which cannot use CGO at all — `pkg/semantics` automatically falls back to a pure-Go engine ([`github.com/odvcencio/gotreesitter`](https://github.com/odvcencio/gotreesitter)), with no code or flag changes required. This fallback is newer than the CGO engine and is verified against the fixture corpus in `pkg/semantics/backend_conformance_test.go`, not proven identical to the CGO engine on every possible malformed input — see that file and `pkg/semantics/doc.go` for details. A `coach_gotreesitter` build tag forces the pure-Go engine on a native (CGO-capable) build, for testing or comparison. `mise run wasm-build` proves a real `GOOS=js GOARCH=wasm` build compiles; `mise run conformance-test` runs the dual-backend suite.
+> [!IMPORTANT]
+> **Build Prerequisites:** Because the package compiles its underlying parser engine locally during installation, you must have Go (>= 1.25.0) installed on your system.
 
-## `pkg/semantics` quickstart
+1. **Clone and Build:**
+   ```sh
+   git clone https://github.com/lousy-agents/coach.git
+   cd coach/js/semantics
+   npm install   # Compiles the underlying parser engine and packages TS code
+   ```
+
+2. **Link or Reference the Package:**
+   In your client application, add the local path as a dependency:
+   ```sh
+   cd ~/your-app
+   npm install /path/to/coach/js/semantics
+   ```
+
+---
+
+## `pkg/semantics` Quickstart
+
+`pkg/semantics` operates purely on raw bytes, meaning you don't need a file system to analyze code.
 
 ```go
-analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
-if err != nil {
-    // ...
-}
+package main
 
-result, err := analyzer.AnalyzeBytes(ctx, semantics.FileInput{
-    Path:     "greeter.go",
-    Language: semantics.LanguageGo,
-    Content:  sourceBytes,
-})
-if err != nil {
-    // handle below
-}
+import (
+	"context"
+	"fmt"
 
-fmt.Println(result.ParseStatus) // "ok" or "syntax_errors"
-for _, f := range result.Findings {
-    fmt.Println(f.Kind, f.Name)
+	"github.com/lousy-agents/coach/pkg/semantics"
+)
+
+func main() {
+	// Initialize the analyzer
+	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
+	if err != nil {
+		panic(err)
+	}
+
+	sourceBytes := []byte(`
+		package main
+		func Hello() string {
+			return "world"
+		}
+	`)
+
+	result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+		Path:     "hello.go",
+		Language: semantics.LanguageGo,
+		Content:  sourceBytes,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Status:", result.ParseStatus) // "ok"
+	for _, f := range result.Findings {
+		fmt.Printf("Finding: %s (Location: %v)\n", f.Kind, f.Location)
+	}
 }
 ```
 
-See `pkg/semantics/example_test.go` (`ExampleAnalyzer_AnalyzeBytes`) for a runnable version of this snippet.
+### Error Handling
 
-### Error matching
-
-Syntax errors return a partial `*Result` (`ParseStatus == "syntax_errors"`) alongside an error you can match with `errors.Is`/`errors.As`:
+If a file has syntax errors, `AnalyzeBytes` returns a partial `*Result` along with an error wrapped as `ErrSyntax`. You can extract detailed syntax issues using `errors.As`:
 
 ```go
-result, err := analyzer.AnalyzeBytes(ctx, in)
+import "errors"
+
+// ...
+
+result, err := analyzer.AnalyzeBytes(ctx, input)
 if errors.Is(err, semantics.ErrSyntax) {
-    var syntaxErr *semantics.SyntaxError
-    if errors.As(err, &syntaxErr) {
-        for _, issue := range syntaxErr.Issues {
-            fmt.Println(issue.Kind, issue.Location)
-        }
-    }
+	var syntaxErr *semantics.SyntaxError
+	if errors.As(err, &syntaxErr) {
+		for _, issue := range syntaxErr.Issues {
+			fmt.Printf("Syntax issue: %s at %v\n", issue.Kind, issue.Location)
+		}
+	}
 }
 ```
 
-Other sentinels: `ErrEmptyContent`, `ErrUnsupportedLanguage`, `ErrFileTooLarge`, `ErrBinaryContent`, `ErrParseFailure`. See `pkg/semantics/example_test.go` (`ExampleAnalyzer_AnalyzeBytes_syntaxError`) for a runnable version.
+Other sentinel errors:
+- `ErrEmptyContent` — The provided input content is empty.
+- `ErrUnsupportedLanguage` — The file extension or language is not supported.
+- `ErrFileTooLarge` — The source file exceeds limits.
+- `ErrBinaryContent` — The file appears to be binary.
+- `ErrParseFailure` — General Tree-sitter parsing failure.
 
-### Coaching findings
+---
 
-Beyond raw metrics, `result.Findings` can carry coaching-oriented findings: `constructor_func` and `pointer_return` (Go), `tight_coupling` (TS/TSX), and `mutates_input` (Go, TS, TSX).
+## Coaching Findings
 
-`mutates_input` flags a function/method writing through its own parameter in a way that's visible to the caller after the call returns — a common source of confusing "spooky action at a distance" bugs. For Go, this means a selector, dereference, or update write through a pointer-typed parameter (`cfg.Name = x`, `(*cfg).Name = x`, `cfg.Count++`) or an index/update write on a map/slice-typed parameter (`values[k] = x`, `items[i] = x`, `items[i]++`). For TS/TSX, this means a property/index assignment, update expression, or `delete` on an identifier-bound parameter, or a call to one of a fixed set of known in-place-mutating methods (`copyWithin`, `fill`, `pop`, `push`, `reverse`, `shift`, `sort`, `splice`, `unshift`, `set`, `add`, `delete`, `clear`) on one, including bracket notation such as `arr["push"](x)`.
+Beyond parsing metrics, `coach` analyzes code constructs to flag specific design issues. The most common is `mutates_input`.
 
+### `mutates_input` Finding
+`mutates_input` flags functions or methods that mutate a parameter in place. This can lead to hard-to-debug "spooky action at a distance" bugs.
+
+For example, this Go function mutates its input in place:
 ```go
 func ApplyDefaults(cfg *Config) {
-    cfg.Timeout = 30 * time.Second // mutates the caller's Config in place
+    cfg.Timeout = 30 * time.Second // Mutates the caller's Config
 }
 ```
 
-produces a finding shaped like:
-
+This generates a finding detailing the mutation:
 ```json
 {
   "kind": "mutates_input",
@@ -89,8 +142,7 @@ produces a finding shaped like:
 }
 ```
 
-vs. the caller-safe alternative, which returns a new value instead of writing through the parameter:
-
+A safer alternative returns the updated value:
 ```go
 func WithDefaults(cfg Config) Config {
     cfg.Timeout = 30 * time.Second
@@ -98,165 +150,57 @@ func WithDefaults(cfg Config) Config {
 }
 ```
 
-`mutates_input` is deliberately conservative and purely syntactic: it does not do whole-program alias analysis, does not track aliases assigned to local variables, does not infer types beyond a parameter's own syntactic declaration, does not follow values across function calls (no interprocedural dataflow), and — for TS/TSX — only recognizes the fixed built-in method list above, not arbitrary custom mutating methods, and does not track destructured, rest, or defaulted parameters at all.
+> [!TIP]
+> **Syntactic Constraint:** The `mutates_input` checker is purely syntactic and conservative. It does not perform interprocedural analysis or follow reference aliases across scopes.
 
-The `confidence`, `evidence`, `recommendation`, and `suggested_skill` `Finding` fields are additive and `omitempty`; they're populated on `mutates_input` findings but absent (and unaffected) on the pre-existing `constructor_func`, `pointer_return`, and `tight_coupling` findings.
+### Other Supported Findings
+- `constructor_func` (Go) — Flags factory or constructor functions.
+- `pointer_return` (Go) — Flags functions returning a pointer to a struct.
+- `tight_coupling` (TS/TSX) — Flags class/object patterns with high coupling.
 
-## Run locally: analyze a local repository
+---
 
-There is no `coach` CLI yet — `pkg/semantics` is a library today. To analyze the Go files in a local checkout, write a small program that walks the tree and calls `AnalyzeBytes` yourself:
+## JavaScript / TypeScript Quickstart
 
-```go
-// main.go
-package main
-
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-
-	"github.com/lousy-agents/coach/pkg/semantics"
-)
-
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: analyze <path-to-repo>")
-		os.Exit(1)
-	}
-	root := os.Args[1]
-
-	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || filepath.Ext(path) != ".go" {
-			return nil
-		}
-
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
-			Path:     path,
-			Language: semantics.LanguageGo,
-			Content:  content,
-		})
-		if err != nil && result == nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", path, err)
-			return nil
-		}
-
-		out, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(out))
-		return nil
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
-```
-
-Then, with a C toolchain available (see [CGO requirement](#cgo-requirement) above):
-
-```sh
-mkdir coach-analyze && cd coach-analyze
-go mod init coach-analyze
-go get github.com/lousy-agents/coach/pkg/semantics
-# save the program above as main.go, then:
-go run . /path/to/your/repo
-```
-
-This prints one JSON `Result` object per `.go` file found under `/path/to/your/repo`, in the shape documented under [JSON stability](#json-stability) below. Files that fail to parse still print a partial result (`parse_status: "syntax_errors"`) rather than being skipped.
-
-## JS/TS usage (`js/semantics`)
-
-[`js/semantics`](./js/semantics) packages `pkg/semantics` for Node.js as `@lousy-agents/coach-semantics` — a typed, ESM-only npm package. It is not published to npm: consume it by cloning this repository and building locally.
-
-Under the hood the package talks newline-delimited JSON to a small Go binary (`cmd/semantics-json`) over stdin/stdout. A WebAssembly transport was the preferred design; it was originally blocked because `pkg/semantics` required CGO for Tree-sitter and standard `GOOS=js GOARCH=wasm` does not support CGO. `pkg/semantics` now also builds against a pure-Go engine (see [CGO requirement](#cgo-requirement) above and `pkg/semantics/doc.go`), so a real `GOOS=js GOARCH=wasm` build compiles and runs (`mise run wasm-build`, `cmd/semantics-wasm-smoke` for a runnable proof) — but `js/semantics` does not consume it yet. Wiring an actual WASM `Backend` implementation (`backend-wasm.ts`) to replace or complement the stdio child process is a separate, later decision; the transport is an implementation detail behind the package's `Backend` seam either way, so that swap won't change the public API.
-
-Prerequisites: Node.js ≥ 20, plus the Go + C toolchain described under [CGO requirement](#cgo-requirement) (the backend binary is compiled from this repo).
-
-```sh
-git clone https://github.com/lousy-agents/coach.git
-cd coach/js/semantics
-npm install   # builds the Go backend binary and the TS package (prepare script)
-```
-
-Then depend on the directory from your app (`npm link`, or a `file:` dependency):
-
-```sh
-cd ~/your-app
-npm install /path/to/coach/js/semantics
-```
+Here is how you can perform syntactic analysis in a Node.js project:
 
 ```ts
 import { readFile } from "node:fs/promises";
 import { createAnalyzer, SemanticsSyntaxError } from "@lousy-agents/coach-semantics";
 
+// Initialize the analyzer child process
 const analyzer = await createAnalyzer();
+
 try {
+  const content = await readFile("widget.ts");
   const result = await analyzer.analyzeBytes({
-    path: "widget.go",
-    language: "go", // or "typescript" / "tsx"
-    content: await readFile("widget.go"),
+    path: "widget.ts",
+    language: "typescript", // "go", "typescript", or "tsx"
+    content: content,
   });
-  console.log(result.parse_status, result.metrics, result.findings);
+
+  console.log("Status:", result.parse_status);
+  console.log("Metrics:", result.metrics);
+  console.log("Findings:", result.findings);
 } catch (err) {
   if (err instanceof SemanticsSyntaxError) {
-    // Mirrors Go's double return: the partial Result rides on the error.
-    console.log(err.partialResult.syntax_errors);
+    // Access the partial Result containing syntax errors
+    console.log("Syntax Errors:", err.partialResult.syntax_errors);
   } else {
-    throw err;
+    console.error("Analysis failed:", err);
   }
 } finally {
+  // Always clean up the analyzer process when finished
   analyzer.dispose();
 }
 ```
 
-Results use the exact frozen `snake_case` JSON shape documented under [JSON stability](#json-stability); a parity test suite replays shared fixtures through both the Go API and the JS package to keep the two byte-identical. In place of `errors.Is`, thrown `SemanticsError`s carry a `kind` string (`"syntax"`, `"empty_content"`, `"unsupported_language"`, `"file_too_large"`, `"binary_content"`, `"parse_failure"`, `"invalid_options"`, `"canceled"`, `"internal"`, `"backend_unavailable"`).
+Thrown errors inherit from `SemanticsError` and carry a `kind` string:
+- `"syntax"`, `"empty_content"`, `"unsupported_language"`, `"file_too_large"`, `"binary_content"`, `"parse_failure"`, `"invalid_options"`, `"canceled"`, `"internal"`, `"backend_unavailable"`.
 
-Repo-side build/test tasks: `mise run backend-build`, `mise run js-build`, `mise run js-test` (all part of `mise run ci`).
 
-## `pkg/githubingest` quickstart
 
-```go
-reader, err := githubingest.NewGitHubFileReader(githubingest.GitHubAppConfig{
-    AppID:          123,
-    InstallationID: 456,
-    PrivateKey:     appPrivateKeyPEM, // as issued by GitHub, PKCS#1 PEM
-})
-if err != nil {
-    // ...
-}
+## Stability Guarantees
 
-content, meta, err := reader.ReadFile(ctx, githubingest.GitHubFileRef{
-    Owner: "lousy-agents", Repo: "coach", Ref: "main", Path: "go.mod",
-})
-```
-
-`ReadFile` maps API failures to sentinels: `ErrNotFound` (404), `ErrAuth` (401/403), `ErrUnsupportedContent` (directory/symlink/submodule), `ErrTooLarge` (>1 MiB), `ErrEmptyContent`. See `pkg/githubingest/example_test.go` (`ExampleNewGitHubFileReader`) for a runnable version.
-
-Each `ReadFile` call issues two Contents API requests: the file fetch itself, plus a listing of its parent directory so an in-repo symlink (which GitHub's Contents API otherwise resolves transparently, reporting it as a plain file) is still detected and rejected. The second request is scoped to one directory, not a whole-repository tree, so its cost stays constant regardless of repository size. That listing is capped at GitHub's documented limit of 1,000 entries per directory; a symlink in a larger directory can go undetected, since the Contents API gives no truncation signal to check for.
-
-## JSON stability
-
-`Result` and its nested types carry frozen, `snake_case` JSON field names (see `pkg/semantics/result.go`). A golden-file test (`pkg/semantics/result_test.go`) locks the shape byte-for-byte.
-
-## API stability
-
-Both packages are pre-1.0. JSON field names and error identities (the sentinel `Err*` values and `*SyntaxError`) are treated as stable; other API surface may still change.
+- **JSON Stability:** The output structure and its `snake_case` JSON field names are completely frozen.
+- **API Stability:** Because `coach` is currently pre-1.0, the core JSON structure and sentinel errors are stable, but other parts of the API surface may evolve.
