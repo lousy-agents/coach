@@ -5,16 +5,20 @@
 ## Packages
 
 - [`pkg/semantics`](./pkg/semantics) — Deterministic structural analysis of Go, TypeScript, and TSX source bytes (validates syntax, extracts imports, computes branching metrics, and detects constructor-like patterns).
+- [`pkg/githubingest`](./pkg/githubingest) — Optional GitHub App-authenticated single-file reader via the GitHub Contents API.
 
 ---
 
 ## Installation
 
 ### Go Packages
-To install the core static analysis library:
+To install the Go packages:
 
 ```sh
 go get github.com/lousy-agents/coach/pkg/semantics
+
+# Optional: for GitHub App content ingestion
+go get github.com/lousy-agents/coach/pkg/githubingest
 ```
 
 ### JavaScript / TypeScript Bindings (`@lousy-agents/coach-semantics`)
@@ -24,7 +28,10 @@ The JS/TS bindings are currently packaged for Node.js (ESM-only).
 > Because `coach` is in an active experimental phase, the npm package is not yet published to the public npm registry. To consume it, you must clone the repository and build the library locally:
 
 > [!IMPORTANT]
-> **Build Prerequisites:** Because the package compiles its underlying parser engine locally during installation, you must have Go (>= 1.25.0) installed on your system.
+> **Build Prerequisites:** Because the package compiles its underlying parser engine locally during installation, you must have:
+> - **Node.js** (>= 20)
+> - **Go** (>= 1.25.0)
+> - **C Toolchain** (e.g., GCC or Clang): The Go parser engine compiles with CGO enabled by default. If a C toolchain is not available on your system, you can disable CGO by setting `CGO_ENABLED=0` (e.g., `CGO_ENABLED=0 npm install`) to build using the pure-Go engine fallback automatically.
 
 1. **Clone and Build:**
    ```sh
@@ -188,6 +195,7 @@ try {
     console.log("Syntax Errors:", err.partialResult.syntax_errors);
   } else {
     console.error("Analysis failed:", err);
+    throw err;
   }
 } finally {
   // Always clean up the analyzer process when finished
