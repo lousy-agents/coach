@@ -413,16 +413,18 @@ flowchart TB
 
 `core+agent` works offline without model weights or network using the deterministic stub. Observability is off by default. Optional llama.cpp runs natively to use Metal and avoid Docker overhead, with serial inference, 2–4K context, bounded KV cache, and measured memory-pressure/latency acceptance. Profiles: `core`, `agent`, optional `real-inference`, and optional `observability`.
 
+Use `mise` and versioned `mise.toml` tasks as the developer interface. Tasks encapsulate the Compose profiles and other local commands so the workflow stays consistent across macOS, CI, and future ECS/AWS integration gates.
+
 ```text
-make bootstrap
-docker compose --profile core up -d
-docker compose --profile agent up -d
-make db-migrate
-make replay FIXTURE=testdata/webhooks/pull_request_opened.json
-make workflow-watch
-make test-contract
-make test-integration
-make ecs-iac-test
+mise run bootstrap
+mise run up-core
+mise run up-agent
+mise run db-migrate
+mise run replay -- testdata/webhooks/pull_request_opened.json
+mise run workflow-watch
+mise run test-contract
+mise run test-integration
+mise run test-ecs-iac
 ```
 
 llama.cpp is used only behind the production gateway contract and supports quantized GGUF loading, constrained/schema-validated output, cancellation, budgets, and prompt/KV caching where available. Tests verify canonical-prefix identity and invalidation when policy, workflow, tools, analyzer, or model changes. They do not claim to reproduce SGLang RadixAttention or GPU batching. Running untrusted repository tests locally is explicit opt-in and must occur in a disposable VM; Compose is not a hostile-code security boundary.
