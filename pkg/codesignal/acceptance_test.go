@@ -58,13 +58,27 @@ var _ = Describe("CodeSignal report generation", func() {
 			Expect(signal.Path).To(Equal("state.go"))
 			Expect(signal.Subject).To(Equal("Update"))
 			Expect(signal.Evidence).To(Equal("input.value = 1"))
-			Expect(signal.Recommendation).NotTo(BeEmpty())
+			Expect(signal.Recommendation).To(Equal("Return the updated value instead of mutating caller-owned state, or make the in-place behavior explicit through the API name and documentation."))
 			Expect(signal.SuggestedSkill).To(Equal("go-testable-design"))
 			Expect(signal.ID).NotTo(BeEmpty())
 			Expect(signal.Fingerprint).NotTo(BeEmpty())
-			Expect(signal.WhyItMatters).NotTo(BeEmpty())
+			Expect(signal.WhyItMatters).To(Equal("Mutating a caller-owned input can create behavior that is not visible from the function signature, make outcomes dependent on call ordering, introduce temporal coupling, make tests and local reasoning more difficult, and surprise callers that expect an input to remain unchanged."))
 			Expect(signal.Location).To(Equal(finding.Location))
 			Expect(signal.Provenance).To(Equal(codesignal.Provenance{Producer: "semantics", FindingKind: "mutates_input"}))
+		})
+	})
+
+	When("a mutation finding provides optional coaching metadata", func() {
+		It("preserves its recommendation and defaults an absent confidence to medium", func() {
+			finding := mutation("Update", 4)
+			finding.Recommendation = "copy the input before updating it"
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "state.go", Status: "modified", Head: cleanResult("state.go", finding),
+			}}})
+
+			Expect(report.Signals).To(HaveLen(1))
+			Expect(report.Signals[0].Confidence).To(Equal(codesignal.Confidence("medium")))
+			Expect(report.Signals[0].Recommendation).To(Equal("copy the input before updating it"))
 		})
 	})
 
@@ -94,6 +108,14 @@ var _ = Describe("Lifecycle classification", func() {
 
 	It("marks a signal removed from a deleted file resolved", func() {
 		report := build(codesignal.Options{IncludeResolved: true}, codesignal.Input{Files: []codesignal.FileChange{{Path: "gone.go", Status: "removed", Base: cleanResult("gone.go", mutation("Update", 1))}}})
+		Expect(report.Signals).To(HaveLen(1))
+		Expect(report.Signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("resolved")))
+	})
+
+	It("marks a base-only signal resolved when the file remains present", func() {
+		report := build(codesignal.Options{IncludeResolved: true}, codesignal.Input{Files: []codesignal.FileChange{{
+			Path: "f.go", Status: "modified", Base: cleanResult("f.go", mutation("Update", 1)), Head: cleanResult("f.go"),
+		}}})
 		Expect(report.Signals).To(HaveLen(1))
 		Expect(report.Signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("resolved")))
 	})
@@ -135,6 +157,18 @@ var _ = Describe("Changed-line relevance", func() {
 		Expect(diagnostic(report, "invalid_changed_range", "f.go")).NotTo(BeNil())
 		Expect(report.Signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
 		Expect(report.Signals[0].Changed).To(BeFalse())
+	})
+
+	It("keeps changed-line relevance independent from an existing lifecycle", func() {
+		report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+			Path:          "f.go",
+			Status:        "modified",
+			Base:          cleanResult("f.go", mutation("Update", 1)),
+			Head:          cleanResult("f.go", mutation("Update", 10)),
+			ChangedRanges: []codesignal.LineRange{{StartRow: 10, EndRow: 10}},
+		}}})
+		Expect(report.Signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("existing")))
+		Expect(report.Signals[0].Changed).To(BeTrue())
 	})
 })
 
@@ -201,5 +235,76 @@ var _ = Describe("Deterministic report output", func() {
 		Expect(report.Signals[1].Subject).To(Equal("Later"))
 		Expect(report.Diagnostics[0].Path).To(Equal("a.go"))
 		Expect(report.Diagnostics[1].Path).To(Equal("z.go"))
+	})
+
+	It("orders every lifecycle and changed priority group deterministically", func() {
+		introducedChanged := mutation("introduced changed", 1)
+		introducedOutside := mutation("introduced outside", 2)
+		existingChanged := mutation("existing changed", 3)
+		existingOutside := mutation("existing outside", 4)
+		resolved := mutation("resolved", 5)
+		unknown := mutation("unknown", 6)
+		report := build(codesignal.Options{IncludeResolved: true}, codesignal.Input{Files: []codesignal.FileChange{
+			{Path: "introduced.go", Status: "modified", Base: cleanResult("introduced.go"), Head: cleanResult("introduced.go", introducedChanged, introducedOutside), ChangedRanges: []codesignal.LineRange{{StartRow: 1, EndRow: 1}}},
+			{Path: "existing.go", Status: "modified", Base: cleanResult("existing.go", existingChanged, existingOutside), Head: cleanResult("existing.go", existingChanged, existingOutside), ChangedRanges: []codesignal.LineRange{{StartRow: 3, EndRow: 3}}},
+			{Path: "resolved.go", Status: "removed", Base: cleanResult("resolved.go", resolved)},
+			{Path: "unknown.go", Status: "modified", Head: cleanResult("unknown.go", unknown)},
+		}})
+		Expect(report.Signals).To(HaveLen(6))
+		Expect([]string{
+			report.Signals[0].Subject,
+			report.Signals[1].Subject,
+			report.Signals[2].Subject,
+			report.Signals[3].Subject,
+			report.Signals[4].Subject,
+			report.Signals[5].Subject,
+		}).To(Equal([]string{"introduced changed", "existing changed", "introduced outside", "existing outside", "resolved", "unknown"}))
+	})
+
+	It("orders equally prioritized signals by confidence, path, row, and column", func() {
+		high := mutation("high confidence", 10)
+		high.Confidence = "high"
+		low := mutation("low confidence", 0)
+		low.Confidence = "low"
+		earlierRow := mutation("earlier row", 1)
+		laterColumn := mutation("later column", 2)
+		laterColumn.Location.StartCol = 4
+		earlierColumn := mutation("earlier column", 2)
+		earlierColumn.Location.StartCol = 1
+		otherPath := mutation("other path", 0)
+		report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{
+			{Path: "z.go", Status: "modified", Base: cleanResult("z.go"), Head: cleanResult("z.go", high)},
+			{Path: "a.go", Status: "modified", Base: cleanResult("a.go"), Head: cleanResult("a.go", laterColumn, earlierColumn, earlierRow)},
+			{Path: "b.go", Status: "modified", Base: cleanResult("b.go"), Head: cleanResult("b.go", otherPath)},
+			{Path: "low.go", Status: "modified", Base: cleanResult("low.go"), Head: cleanResult("low.go", low)},
+		}})
+		Expect([]string{
+			report.Signals[0].Subject,
+			report.Signals[1].Subject,
+			report.Signals[2].Subject,
+			report.Signals[3].Subject,
+			report.Signals[4].Subject,
+			report.Signals[5].Subject,
+		}).To(Equal([]string{"high confidence", "earlier row", "earlier column", "later column", "other path", "low confidence"}))
+	})
+
+	It("sorts diagnostics by path, kind, location, and message", func() {
+		atRowOne := semantics.Location{StartRow: 1}
+		atRowTwo := semantics.Location{StartRow: 2}
+		report := build(codesignal.Options{}, codesignal.Input{Diagnostics: []codesignal.Diagnostic{
+			{Path: "b.go", Kind: "z", Message: "last"},
+			{Path: "a.go", Kind: "z", Message: "later location", Location: &atRowTwo},
+			{Path: "a.go", Kind: "z", Message: "earlier location", Location: &atRowOne},
+			{Path: "a.go", Kind: "a", Message: "kind first"},
+			{Path: "a.go", Kind: "z", Message: "no location first"},
+		}})
+		Expect(report.Diagnostics).To(HaveLen(5))
+		Expect([]string{
+			report.Diagnostics[0].Message,
+			report.Diagnostics[1].Message,
+			report.Diagnostics[2].Message,
+			report.Diagnostics[3].Message,
+			report.Diagnostics[4].Message,
+		}).To(Equal([]string{"kind first", "no location first", "earlier location", "later location", "last"}))
 	})
 })

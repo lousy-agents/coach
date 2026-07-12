@@ -61,6 +61,7 @@ var _ = Describe("codesignal-report command", func() {
 			}, "\n")
 			report, status, _ := runCommand(input)
 			Expect(status).To(Equal(0))
+			Expect(report.SchemaVersion).To(Equal("1"))
 			Expect(report.Scope).To(Equal(codesignal.Scope{Repository: "example/repo", Revision: "abc123", Base: "main"}))
 			Expect(report.Summary.FilesAnalyzed).To(Equal(1))
 			Expect(report.Signals).To(HaveLen(1))
