@@ -46,7 +46,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	DeferCleanup(os.RemoveAll, directory)
 	commandPath = filepath.Join(directory, "codesignal-report")
-	build := exec.Command("mise", "x", "--", "go", "build", "-o", commandPath, ".")
+	build := exec.Command("go", "build", "-o", commandPath, ".")
 	output, err := build.CombinedOutput()
 	Expect(err).NotTo(HaveOccurred(), "building the command: %s", output)
 })
