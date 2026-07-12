@@ -1,5 +1,3 @@
-// Package codesignal derives coaching signals from pkg/semantics analysis
-// results across a set of changed files.
 package codesignal
 
 import "context"
