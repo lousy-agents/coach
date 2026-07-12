@@ -29,9 +29,11 @@ func New(options Options) (*Builder, error) {
 
 // Build analyzes input and produces a Report. Diagnostics/Summary counts
 // come from validateFileChange and the per-file head-result handling below;
-// Signals come from mapping each Head Finding to a rule-defined Signal.
-// Lifecycle classification (introduced/existing/resolved) against Base is a
-// later task's job -- Signals here carry no Lifecycle/ID/Fingerprint yet.
+// Signals come from mapping each Head Finding to a rule-defined Signal and
+// then classifying it (and any base-only signal) against Base via
+// classifyFileSignals, which also computes Fingerprint and ID. Sorting and
+// filtering Report.Signals and populating the lifecycle-count Summary
+// fields are a later task's job.
 func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -47,7 +49,7 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 
 		fileDiagnostics, fileSignals := processHeadResult(fc)
 		diagnostics = append(diagnostics, fileDiagnostics...)
-		signals = append(signals, fileSignals...)
+		signals = append(signals, classifyFileSignals(fc.Base != nil, fileSignals, extractBaseSignals(fc))...)
 	}
 
 	sortDiagnostics(diagnostics)
@@ -68,11 +70,12 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 
 // processHeadResult derives diagnostics and signals from fc.Head. A nil
 // Head on a "modified" or "added" file is itself a diagnostic (there is
-// nothing to analyze); a nil Head otherwise (e.g. "removed") is left to
-// Task 3's base-only lifecycle handling. A non-nil Head with ParseStatus
-// "ok" maps its "mutates_input" Findings to Signals; "syntax_errors"
-// surfaces one diagnostic per issue; any other ParseStatus is an
-// unsupported-status diagnostic.
+// nothing to analyze); a nil Head otherwise (e.g. "removed") produces no
+// head signals, leaving classifyFileSignals to turn any base-only findings
+// into "resolved" signals. A non-nil Head with ParseStatus "ok" maps its
+// "mutates_input" Findings to Signals; "syntax_errors" surfaces one
+// diagnostic per issue; any other ParseStatus is an unsupported-status
+// diagnostic.
 func processHeadResult(fc FileChange) ([]Diagnostic, []Signal) {
 	if fc.Head == nil {
 		if fc.Status == "modified" || fc.Status == "added" {
@@ -114,6 +117,23 @@ func processHeadResult(fc FileChange) ([]Diagnostic, []Signal) {
 			Message: "head analysis result has unsupported parse status \"" + string(fc.Head.ParseStatus) + "\"",
 		}}, nil
 	}
+}
+
+// extractBaseSignals maps fc.Base.Findings the same way processHeadResult
+// maps fc.Head.Findings, but never emits diagnostics -- Base is reference
+// data for lifecycle comparison only.
+func extractBaseSignals(fc FileChange) []Signal {
+	if fc.Base == nil || fc.Base.ParseStatus != "ok" {
+		return nil
+	}
+	var signals []Signal
+	for _, finding := range fc.Base.Findings {
+		if finding.Kind != "mutates_input" {
+			continue
+		}
+		signals = append(signals, newHiddenInputMutationSignal(fc.Path, finding))
+	}
+	return signals
 }
 
 // validateFileChange checks that fc.Base/fc.Head, when present with a
