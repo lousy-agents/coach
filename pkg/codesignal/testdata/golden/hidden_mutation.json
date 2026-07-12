@@ -1,0 +1,48 @@
+{
+  "schema_version": "1",
+  "scope": {
+    "repository": "example/repo",
+    "revision": "abc123",
+    "base": "main"
+  },
+  "summary": {
+    "files_analyzed": 1,
+    "files_with_diagnostics": 0,
+    "active_signals": 1,
+    "introduced_signals": 0,
+    "existing_signals": 0,
+    "resolved_signals": 0
+  },
+  "signals": [
+    {
+      "id": "sig_12a0c7b30ddcfe49174693306be008b9ef800e8f7c9448bd267c04262354616d",
+      "fingerprint": "fp_e6d226a6cc0362850beef4e447fd2e0ea1a75591209fe7b9494dd11847c025f4",
+      "rule_id": "state.hidden_input_mutation",
+      "rule_version": "1",
+      "kind": "hidden_input_mutation",
+      "category": "state_management",
+      "severity": "medium",
+      "confidence": "high",
+      "lifecycle": "unknown",
+      "changed": true,
+      "path": "pkg/example/service.go",
+      "subject": "ApplyDefaults",
+      "location": {
+        "start_byte": 120,
+        "end_byte": 180,
+        "start_row": 10,
+        "start_col": 0,
+        "end_row": 12,
+        "end_col": 1
+      },
+      "evidence": "cfg.Timeout = defaultTimeout",
+      "why_it_matters": "Mutating a caller-owned input can create behavior that is not visible from the function signature, make outcomes dependent on call ordering, introduce temporal coupling, make tests and local reasoning more difficult, and surprise callers that expect an input to remain unchanged.",
+      "recommendation": "Return a new Config instead of mutating cfg in place.",
+      "suggested_skill": "go-testable-design",
+      "provenance": {
+        "producer": "semantics",
+        "finding_kind": "mutates_input"
+      }
+    }
+  ]
+}
