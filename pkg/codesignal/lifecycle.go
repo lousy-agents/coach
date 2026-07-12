@@ -73,10 +73,12 @@ func sortedKeys(groups map[signalKey][]Signal) []signalKey {
 // base-only signal that has no matching head occurrence (lifecycle
 // "resolved").
 //
-// hasBase is true iff the FileChange's Base result was present at all
-// (fc.Base != nil), regardless of its ParseStatus -- a present Base with a
-// non-"ok" ParseStatus still means "base results are not absent", it just
-// means baseSignals is empty for lifecycle purposes.
+// hasBase is caller-determined: true iff the caller judges the
+// FileChange's Base result to be a trustworthy lifecycle baseline (see
+// Build's baseUsableForLifecycle -- present, and not already flagged as
+// path-mismatched), regardless of Base's ParseStatus. A present-but-
+// untrusted or present-but-non-"ok" Base still means baseSignals is empty
+// for lifecycle purposes, not that base results are absent.
 func classifyFileSignals(hasBase bool, headSignals, baseSignals []Signal) []Signal {
 	headGroups := groupAndOrder(headSignals)
 	baseGroups := groupAndOrder(baseSignals)
