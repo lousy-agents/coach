@@ -7,10 +7,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// validateChangedRanges splits fc.ChangedRanges into diagnostics for
-// invalid ranges (StartRow > EndRow) and the remaining valid ranges. An
-// invalid range is dropped from the returned valid slice so downstream
-// overlap checks never see it.
 func validateChangedRanges(fc FileChange) ([]Diagnostic, []LineRange) {
 	var diagnostics []Diagnostic
 	valid := make([]LineRange, 0, len(fc.ChangedRanges))
@@ -31,8 +27,6 @@ func validateChangedRanges(fc FileChange) ([]Diagnostic, []LineRange) {
 	return diagnostics, valid
 }
 
-// overlapsAny reports whether loc's row span intersects any of ranges,
-// treating both as 0-based inclusive.
 func overlapsAny(loc semantics.Location, ranges []LineRange) bool {
 	for _, r := range ranges {
 		if loc.StartRow <= r.EndRow && r.StartRow <= loc.EndRow {
@@ -42,12 +36,6 @@ func overlapsAny(loc semantics.Location, ranges []LineRange) bool {
 	return false
 }
 
-// markChanged sets Changed on each signal in place (signals is this file's
-// own classified slice, safe to mutate). "resolved" signals carry a Base
-// location, which cannot be meaningfully compared against head-revision
-// changed-line ranges, so Changed is always false for them; every other
-// Lifecycle comes from a genuine head-derived location and is checked
-// against validRanges.
 func markChanged(signals []Signal, validRanges []LineRange) {
 	for i := range signals {
 		if signals[i].Lifecycle == "resolved" {
@@ -58,8 +46,6 @@ func markChanged(signals []Signal, validRanges []LineRange) {
 	}
 }
 
-// signalPriorityGroup returns the sort priority group for sig, per the
-// canonical order documented on sortSignals.
 func signalPriorityGroup(sig Signal) int {
 	switch sig.Lifecycle {
 	case "introduced":
@@ -79,8 +65,6 @@ func signalPriorityGroup(sig Signal) int {
 	}
 }
 
-// severityRank ranks Severity high-to-low; unrecognized/empty values rank
-// lowest (0) so they sort last among descending comparisons.
 func severityRank(s Severity) int {
 	switch s {
 	case "high":
@@ -94,8 +78,6 @@ func severityRank(s Severity) int {
 	}
 }
 
-// confidenceRank ranks Confidence high-to-low; unrecognized/empty values
-// rank lowest (0) so they sort last among descending comparisons.
 func confidenceRank(c Confidence) int {
 	switch c {
 	case "high":
@@ -109,12 +91,8 @@ func confidenceRank(c Confidence) int {
 	}
 }
 
-// sortSignals sorts signals in place using the report's canonical priority
-// order: lifecycle/changed group first (introduced+changed, existing+changed,
-// introduced+unchanged, existing+unchanged, resolved, everything else), then
-// within a group by severity descending, confidence descending, Path
-// ascending, Location.StartRow ascending, Location.StartCol ascending,
-// RuleID ascending, ID ascending.
+// sortSignals sorts signals by priority group, severity, confidence,
+// path, location, rule, and ID.
 func sortSignals(signals []Signal) {
 	sort.SliceStable(signals, func(i, j int) bool {
 		a, b := signals[i], signals[j]

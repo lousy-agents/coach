@@ -8,10 +8,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// mustAnalyzeFixture reads a testdata fixture used by internal/jsbridge's
-// parity suite and runs it through the real semantics.Analyzer, producing
-// the actual Findings that back the hidden-input-mutation Signals under
-// test here.
 func mustAnalyzeFixture(t *testing.T, srcPath, resultPath string, lang semantics.Language) *semantics.Result {
 	t.Helper()
 
@@ -37,10 +33,6 @@ func mustAnalyzeFixture(t *testing.T, srcPath, resultPath string, lang semantics
 	return result
 }
 
-// TestHiddenInputMutation_EndToEndPerLanguage runs the real Go, TypeScript,
-// and TSX mutates_input fixtures through Builder.Build and checks that at
-// least one hidden_input_mutation Signal comes out with the fields the rule
-// promises, for each language.
 func TestHiddenInputMutation_EndToEndPerLanguage(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -162,9 +154,6 @@ func TestHiddenInputMutation_EndToEndPerLanguage(t *testing.T) {
 	}
 }
 
-// TestHiddenInputMutation_ConfidenceDefaultsToMedium proves that empty and
-// unrecognized Finding.Confidence values both default to "medium" rather
-// than being propagated verbatim.
 func TestHiddenInputMutation_ConfidenceDefaultsToMedium(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -187,8 +176,6 @@ func TestHiddenInputMutation_ConfidenceDefaultsToMedium(t *testing.T) {
 	}
 }
 
-// TestHiddenInputMutation_ConfidencePropagatesValidValues proves that
-// "low", "medium", and "high" Finding.Confidence values are used verbatim.
 func TestHiddenInputMutation_ConfidencePropagatesValidValues(t *testing.T) {
 	for _, confidence := range []string{"low", "medium", "high"} {
 		t.Run(confidence, func(t *testing.T) {
@@ -203,8 +190,6 @@ func TestHiddenInputMutation_ConfidencePropagatesValidValues(t *testing.T) {
 	}
 }
 
-// TestHiddenInputMutation_RecommendationDefaultsWhenEmpty proves that an
-// empty Finding.Recommendation falls back to the rule's default text.
 func TestHiddenInputMutation_RecommendationDefaultsWhenEmpty(t *testing.T) {
 	finding := semantics.Finding{Kind: "mutates_input", Recommendation: ""}
 
@@ -215,9 +200,6 @@ func TestHiddenInputMutation_RecommendationDefaultsWhenEmpty(t *testing.T) {
 	}
 }
 
-// TestHiddenInputMutation_RecommendationPreservedWhenPresent proves that a
-// non-empty Finding.Recommendation is used verbatim, not replaced by the
-// rule default.
 func TestHiddenInputMutation_RecommendationPreservedWhenPresent(t *testing.T) {
 	finding := semantics.Finding{Kind: "mutates_input", Recommendation: "custom text"}
 
@@ -228,9 +210,6 @@ func TestHiddenInputMutation_RecommendationPreservedWhenPresent(t *testing.T) {
 	}
 }
 
-// TestHiddenInputMutation_OtherFindingKindsProduceNoSignals proves that
-// Build only maps "mutates_input" Findings to Signals: "constructor_func",
-// "pointer_return", and an invented unknown kind must all be skipped.
 func TestHiddenInputMutation_OtherFindingKindsProduceNoSignals(t *testing.T) {
 	b, err := New(Options{})
 	if err != nil {

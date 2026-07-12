@@ -8,10 +8,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// richImmutabilityInput builds an Input with multiple FileChange entries,
-// populated Base/Head *semantics.Result pointers (Findings, Imports,
-// SyntaxErrors, Metrics all set), ChangedRanges, and Input.Diagnostics --
-// everything Build reads from that could plausibly be mutated in place.
 func richImmutabilityInput() Input {
 	return Input{
 		Scope: Scope{Repository: "example/repo", Revision: "rev1", Base: "main"},
@@ -79,9 +75,6 @@ func richImmutabilityInput() Input {
 	}
 }
 
-// snapshotResult deep-copies a *semantics.Result's slice fields so later
-// comparison against the live pointer can detect in-place mutation. A nil
-// Result snapshots to nil.
 func snapshotResult(r *semantics.Result) *semantics.Result {
 	if r == nil {
 		return nil
@@ -93,14 +86,6 @@ func snapshotResult(r *semantics.Result) *semantics.Result {
 	return &cp
 }
 
-// TestInputImmutability_BuildDoesNotMutateInput is a comprehensive
-// input-immutability test going beyond the narrower
-// TestBuild_DoesNotMutateInput (which only covers Input.Diagnostics): it
-// snapshots every mutable part of a rich Input -- FileChange values
-// (including ChangedRanges sub-slices), the pointee contents of every
-// Base/Head *semantics.Result, and Input.Diagnostics -- calls Build, and
-// asserts nothing was mutated in place, plus that the returned Report does
-// not alias the same backing arrays as the input.
 func TestInputImmutability_BuildDoesNotMutateInput(t *testing.T) {
 	b, err := New(Options{IncludeResolved: true})
 	if err != nil {
@@ -109,8 +94,6 @@ func TestInputImmutability_BuildDoesNotMutateInput(t *testing.T) {
 
 	input := richImmutabilityInput()
 
-	// Snapshot Base/Head pointer identities and their pointee contents
-	// before Build runs.
 	type resultSnapshot struct {
 		basePtr, headPtr   *semantics.Result
 		baseSnap, headSnap *semantics.Result
@@ -125,8 +108,6 @@ func TestInputImmutability_BuildDoesNotMutateInput(t *testing.T) {
 		}
 	}
 
-	// Snapshot Input.Files (value copies, including ChangedRanges
-	// sub-slices) and Input.Diagnostics before Build runs.
 	filesSnapshot := make([]FileChange, len(input.Files))
 	for i, fc := range input.Files {
 		cp := fc
@@ -145,8 +126,6 @@ func TestInputImmutability_BuildDoesNotMutateInput(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 
-	// 1. Every *semantics.Result pointer in Input.Files[i].Base/.Head is
-	// unchanged: same pointer AND same field values.
 	for i, fc := range input.Files {
 		want := perFile[i]
 		if fc.Base != want.basePtr {
@@ -163,8 +142,6 @@ func TestInputImmutability_BuildDoesNotMutateInput(t *testing.T) {
 		}
 	}
 
-	// 2. Input.Files slice contents (each FileChange value, including
-	// ChangedRanges sub-slices) are unchanged.
 	if len(input.Files) != len(filesSnapshot) {
 		t.Fatalf("Input.Files length changed: got %d, want %d", len(input.Files), len(filesSnapshot))
 	}
@@ -178,8 +155,6 @@ func TestInputImmutability_BuildDoesNotMutateInput(t *testing.T) {
 		}
 	}
 
-	// 3. Input.Diagnostics is unchanged (length/cap/first-element-address
-	// and contents).
 	if len(input.Diagnostics) != diagnosticsLen || cap(input.Diagnostics) != diagnosticsCap {
 		t.Errorf("Input.Diagnostics len/cap changed: got %d/%d, want %d/%d", len(input.Diagnostics), cap(input.Diagnostics), diagnosticsLen, diagnosticsCap)
 	}
@@ -190,9 +165,6 @@ func TestInputImmutability_BuildDoesNotMutateInput(t *testing.T) {
 		t.Errorf("Input.Diagnostics contents mutated: got %+v, want %+v", input.Diagnostics, diagnosticsSnapshot)
 	}
 
-	// 4. The returned *Report's Signals/Diagnostics do not alias the same
-	// backing arrays as the input: mutating report.Diagnostics[0].Message
-	// after Build returns must not change Input.Diagnostics.
 	if len(report.Diagnostics) == 0 {
 		t.Fatalf("report.Diagnostics must be non-empty for this scenario to exercise aliasing")
 	}

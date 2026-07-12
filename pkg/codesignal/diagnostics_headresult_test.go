@@ -7,10 +7,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// TestDiagnostics_SyntaxErrorsProduceOneDiagnosticPerIssue proves that a
-// Head with ParseStatus "syntax_errors" and multiple SyntaxErrors entries
-// produces exactly one "syntax_errors" diagnostic per issue, each carrying
-// that issue's Location, and no signals for the file.
 func TestDiagnostics_SyntaxErrorsProduceOneDiagnosticPerIssue(t *testing.T) {
 	b, err := New(Options{})
 	if err != nil {
@@ -73,9 +69,6 @@ func TestDiagnostics_SyntaxErrorsProduceOneDiagnosticPerIssue(t *testing.T) {
 	}
 }
 
-// TestDiagnostics_UnsupportedParseStatusProducesOneDiagnostic proves that a
-// Head with an unrecognized ParseStatus produces exactly one
-// "unsupported_parse_status" diagnostic and no signals.
 func TestDiagnostics_UnsupportedParseStatusProducesOneDiagnostic(t *testing.T) {
 	b, err := New(Options{})
 	if err != nil {
@@ -118,9 +111,6 @@ func TestDiagnostics_UnsupportedParseStatusProducesOneDiagnostic(t *testing.T) {
 	}
 }
 
-// TestDiagnostics_MissingHeadResultOnModifiedOrAdded proves that a nil Head
-// on a "modified" or "added" FileChange produces exactly one
-// "missing_head_result" diagnostic with the right Path.
 func TestDiagnostics_MissingHeadResultOnModifiedOrAdded(t *testing.T) {
 	for _, status := range []ChangeStatus{"modified", "added"} {
 		t.Run(string(status), func(t *testing.T) {
@@ -154,9 +144,6 @@ func TestDiagnostics_MissingHeadResultOnModifiedOrAdded(t *testing.T) {
 	}
 }
 
-// TestDiagnostics_NoMissingHeadResultWhenNotModifiedOrAdded proves that a
-// nil Head on a "removed", "unknown", or empty-status FileChange produces
-// no "missing_head_result" diagnostic.
 func TestDiagnostics_NoMissingHeadResultWhenNotModifiedOrAdded(t *testing.T) {
 	for _, status := range []ChangeStatus{"removed", "unknown", ""} {
 		t.Run("status="+string(status), func(t *testing.T) {

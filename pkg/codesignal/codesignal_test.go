@@ -70,7 +70,7 @@ func TestBuild_InvalidFileChangeEmitsDiagnostic(t *testing.T) {
 			},
 			{
 				Path: "c.go",
-				Base: &semantics.Result{Path: "c.go"}, // matches, no diagnostic
+				Base: &semantics.Result{Path: "c.go"},
 			},
 		},
 	}

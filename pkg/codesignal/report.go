@@ -21,24 +21,15 @@ type Summary struct {
 	ResolvedSignals      int `json:"resolved_signals"`
 }
 
-// Category classifies the kind of concern a Signal represents. The only
-// value that exists in v1 is "state_management".
 type Category string
 
-// Severity is how impactful a Signal is judged to be. The only values that
-// exist in v1 are "low", "medium", and "high".
 type Severity string
 
-// Confidence is how certain the rule that produced a Signal is. The only
-// values that exist in v1 are "low", "medium", and "high".
 type Confidence string
 
-// Lifecycle classifies a Signal relative to Base/Head. The only values
-// that exist in v1 are "introduced", "existing", "resolved", and
-// "unknown".
 type Lifecycle string
 
-// Signal is one coaching-relevant observation derived from a FileChange.
+// Signal is one observation derived from a FileChange.
 type Signal struct {
 	ID             string             `json:"id"`
 	Fingerprint    string             `json:"fingerprint"`

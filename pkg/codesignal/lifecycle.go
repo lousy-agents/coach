@@ -2,22 +2,16 @@ package codesignal
 
 import "sort"
 
-// signalKey groups signals for occurrence-ordinal assignment and lifecycle
-// matching: (RuleID, normalized path, Subject, normalized evidence).
 type signalKey struct {
 	ruleID, path, subject, evidence string
 }
 
-// keyOf derives the signalKey a Signal belongs to.
 func keyOf(sig Signal) signalKey {
 	return signalKey{sig.RuleID, normalizePath(sig.Path), sig.Subject, normalizeEvidence(sig.Evidence)}
 }
 
-// groupAndOrder groups signals by keyOf and, within each group, sorts a
-// copy of the signals by (Location.StartRow, Location.StartCol,
-// Location.StartByte) ascending -- the index after sorting is the
-// occurrence ordinal for that signal within its key. signals is not
-// mutated.
+// groupAndOrder groups signals by key and sorts each group by location to
+// assign occurrence ordinals.
 func groupAndOrder(signals []Signal) map[signalKey][]Signal {
 	groups := make(map[signalKey][]Signal)
 	for _, sig := range signals {
@@ -44,8 +38,6 @@ func groupAndOrder(signals []Signal) map[signalKey][]Signal {
 	return groups
 }
 
-// sortedKeys returns the keys of groups sorted by their field values, so
-// callers iterating a map get a deterministic order.
 func sortedKeys(groups map[signalKey][]Signal) []signalKey {
 	keys := make([]signalKey, 0, len(groups))
 	for k := range groups {
@@ -68,17 +60,7 @@ func sortedKeys(groups map[signalKey][]Signal) []signalKey {
 }
 
 // classifyFileSignals computes Fingerprint, ID, and Lifecycle for every
-// signal derived from one FileChange, and returns the final signal set
-// for that file: every head signal (lifecycle-classified) plus any
-// base-only signal that has no matching head occurrence (lifecycle
-// "resolved").
-//
-// hasBase is caller-determined: true iff the caller judges the
-// FileChange's Base result to be a trustworthy lifecycle baseline (see
-// Build's baseUsableForLifecycle -- present, and not already flagged as
-// path-mismatched), regardless of Base's ParseStatus. A present-but-
-// untrusted or present-but-non-"ok" Base still means baseSignals is empty
-// for lifecycle purposes, not that base results are absent.
+// signal derived from one FileChange.
 func classifyFileSignals(hasBase bool, headSignals, baseSignals []Signal) []Signal {
 	headGroups := groupAndOrder(headSignals)
 	baseGroups := groupAndOrder(baseSignals)

@@ -27,9 +27,6 @@ func lifecyclesFor(t *testing.T, signals []Signal, subject string, lifecycle Lif
 	return count
 }
 
-// TestLifecycle_ClassifyFileSignals_MoreBaseThanHeadResolvesExcess reproduces the
-// first worked example: Nb=3, Nh=2, hasBase=true -- head ordinals 0,1 are
-// existing, base ordinal 2 is resolved.
 func TestLifecycle_ClassifyFileSignals_MoreBaseThanHeadResolvesExcess(t *testing.T) {
 	base := []Signal{
 		sig("r", "f.go", "X", "ev", 1, 0),
@@ -66,10 +63,6 @@ func TestLifecycle_ClassifyFileSignals_MoreBaseThanHeadResolvesExcess(t *testing
 	}
 }
 
-// TestLifecycle_ClassifyFileSignals_NewKeyWithBasePresentIsIntroduced reproduces the
-// second worked example: Nb=0 for this key but hasBase=true (the file did
-// have a Base result, just no occurrences of this key), Nh=3 -- all three
-// head ordinals are introduced, not unknown.
 func TestLifecycle_ClassifyFileSignals_NewKeyWithBasePresentIsIntroduced(t *testing.T) {
 	head := []Signal{
 		sig("r", "f.go", "Y", "ev", 1, 0),
@@ -90,10 +83,6 @@ func TestLifecycle_ClassifyFileSignals_NewKeyWithBasePresentIsIntroduced(t *test
 	}
 }
 
-// TestLifecycle_ClassifyFileSignals_ExcessBeyondNonZeroBaseIsUnknown reproduces the
-// third worked example: Nb=1, Nh=3, hasBase=true -- head ordinal 0 is
-// existing, ordinals 1 and 2 are unknown (excess beyond Nb=1, but Nb>0 so
-// not introduced).
 func TestLifecycle_ClassifyFileSignals_ExcessBeyondNonZeroBaseIsUnknown(t *testing.T) {
 	base := []Signal{
 		sig("r", "f.go", "Z", "ev", 1, 0),
@@ -120,9 +109,6 @@ func TestLifecycle_ClassifyFileSignals_ExcessBeyondNonZeroBaseIsUnknown(t *testi
 	}
 }
 
-// TestLifecycle_ClassifyFileSignals_NoBaseAtAllMeansUnknown reproduces the fourth
-// worked example: hasBase=false (fc.Base == nil entirely) -- every head
-// signal is unknown regardless of grouping, and nothing is resolved.
 func TestLifecycle_ClassifyFileSignals_NoBaseAtAllMeansUnknown(t *testing.T) {
 	head := []Signal{
 		sig("r", "f.go", "W", "ev", 1, 0),
@@ -142,10 +128,6 @@ func TestLifecycle_ClassifyFileSignals_NoBaseAtAllMeansUnknown(t *testing.T) {
 	}
 }
 
-// TestLifecycle_ClassifyFileSignals_FingerprintIsLocationIndependent proves that two
-// solo (each the only occurrence in its key group) signals differing only
-// in Location.StartRow get identical Fingerprints, since Fingerprint
-// deliberately excludes location -- unlike ID, which is location-sensitive.
 func TestLifecycle_ClassifyFileSignals_FingerprintIsLocationIndependent(t *testing.T) {
 	a := sig("r", "f.go", "Moved", "ev", 1, 0)
 	b := sig("r", "f.go", "Moved", "ev", 50, 0)
@@ -168,9 +150,6 @@ func TestLifecycle_ClassifyFileSignals_FingerprintIsLocationIndependent(t *testi
 	}
 }
 
-// TestLifecycle_ClassifyFileSignals_DoesNotMutateInputSlices proves that
-// classifyFileSignals doesn't mutate the caller's headSignals/baseSignals
-// slices in place.
 func TestLifecycle_ClassifyFileSignals_DoesNotMutateInputSlices(t *testing.T) {
 	head := []Signal{sig("r", "f.go", "M", "ev", 1, 0)}
 	base := []Signal{sig("r", "f.go", "M", "ev", 1, 0)}

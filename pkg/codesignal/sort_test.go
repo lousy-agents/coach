@@ -7,17 +7,14 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// TestChangedRangeOverlap_ValidateChangedRangesSplitsInvalidFromValid proves
-// validateChangedRanges drops StartRow > EndRow ranges into diagnostics
-// (one per invalid range) and preserves the rest, in input order.
 func TestChangedRangeOverlap_ValidateChangedRangesSplitsInvalidFromValid(t *testing.T) {
 	fc := FileChange{
 		Path: "f.go",
 		ChangedRanges: []LineRange{
 			{StartRow: 1, EndRow: 3},
-			{StartRow: 5, EndRow: 2}, // invalid
+			{StartRow: 5, EndRow: 2},
 			{StartRow: 10, EndRow: 10},
-			{StartRow: 8, EndRow: 4}, // invalid
+			{StartRow: 8, EndRow: 4},
 		},
 	}
 
@@ -52,8 +49,6 @@ func TestChangedRangeOverlap_ValidateChangedRangesSplitsInvalidFromValid(t *test
 	}
 }
 
-// TestChangedRangeOverlap_OverlapsAny proves the inclusive interval
-// intersection semantics, including boundary touches.
 func TestChangedRangeOverlap_OverlapsAny(t *testing.T) {
 	ranges := []LineRange{{StartRow: 10, EndRow: 20}}
 
@@ -77,10 +72,6 @@ func TestChangedRangeOverlap_OverlapsAny(t *testing.T) {
 	}
 }
 
-// TestChangedRangeOverlap_MarkChangedNeverMarksResolvedSignals proves the
-// deliberately-skipped case: a "resolved" signal's Changed stays false even
-// when its Location numerically overlaps a valid range, since a resolved
-// signal's Location comes from Base, not Head.
 func TestChangedRangeOverlap_MarkChangedNeverMarksResolvedSignals(t *testing.T) {
 	ranges := []LineRange{{StartRow: 0, EndRow: 100}}
 	signals := []Signal{
@@ -98,8 +89,6 @@ func TestChangedRangeOverlap_MarkChangedNeverMarksResolvedSignals(t *testing.T) 
 	}
 }
 
-// TestChangedRangeOverlap_MarkChangedOutsideAllRanges proves a signal
-// outside every valid range gets Changed=false.
 func TestChangedRangeOverlap_MarkChangedOutsideAllRanges(t *testing.T) {
 	ranges := []LineRange{{StartRow: 10, EndRow: 20}}
 	signals := []Signal{
@@ -113,8 +102,6 @@ func TestChangedRangeOverlap_MarkChangedOutsideAllRanges(t *testing.T) {
 	}
 }
 
-// sortableSignal builds a Signal with the fields sortSignals cares about,
-// for use in table-driven ordering tests.
 func sortableSignal(id, ruleID, path string, lifecycle Lifecycle, changed bool, severity Severity, confidence Confidence, startRow, startCol uint) Signal {
 	return Signal{
 		ID:         id,
@@ -128,9 +115,6 @@ func sortableSignal(id, ruleID, path string, lifecycle Lifecycle, changed bool, 
 	}
 }
 
-// TestSortSignals_PriorityGroupsInOrder proves the six priority groups sort
-// in the documented order, including an unrecognized Lifecycle value
-// falling into group 5 alongside "unknown".
 func TestSortSignals_PriorityGroupsInOrder(t *testing.T) {
 	introducedChanged := sortableSignal("1", "r", "f.go", "introduced", true, "medium", "medium", 0, 0)
 	existingChanged := sortableSignal("2", "r", "f.go", "existing", true, "medium", "medium", 0, 0)
@@ -148,11 +132,6 @@ func TestSortSignals_PriorityGroupsInOrder(t *testing.T) {
 		gotIDs = append(gotIDs, s.ID)
 	}
 
-	// Groups 0-4 have a fixed single member each, so their relative order
-	// is fully determined. Group 5 ("unknown" and "bogus") only has a
-	// relative order among themselves via the tiebreakers below (both have
-	// ID "6"/"7", Path "f.go", RuleID "r", equal severity/confidence/loc)
-	// so ID ascending decides: "6" before "7".
 	want := []string{"1", "2", "3", "4", "5", "6", "7"}
 	if len(gotIDs) != len(want) {
 		t.Fatalf("sorted IDs: got %v, want %v", gotIDs, want)
@@ -165,9 +144,6 @@ func TestSortSignals_PriorityGroupsInOrder(t *testing.T) {
 	}
 }
 
-// TestSortSignals_TiebreakersInOrder proves each tiebreaker (severity desc,
-// confidence desc, path asc, StartRow asc, StartCol asc, RuleID asc, ID
-// asc) takes effect when earlier tiebreakers are held equal.
 func TestSortSignals_TiebreakersInOrder(t *testing.T) {
 	t.Run("severity", func(t *testing.T) {
 		low := sortableSignal("a", "r", "f.go", "existing", false, "low", "medium", 0, 0)
@@ -240,9 +216,6 @@ func TestSortSignals_TiebreakersInOrder(t *testing.T) {
 	})
 }
 
-// TestSortSignals_UnrecognizedSeverityAndConfidenceDoNotPanicAndSortLast
-// proves an unrecognized Severity/Confidence value ranks below any of
-// high/medium/low without panicking.
 func TestSortSignals_UnrecognizedSeverityAndConfidenceDoNotPanicAndSortLast(t *testing.T) {
 	bogusSeverity := sortableSignal("a", "r", "f.go", "existing", false, Severity("bogus"), "medium", 0, 0)
 	low := sortableSignal("b", "r", "f.go", "existing", false, "low", "medium", 0, 0)
@@ -265,10 +238,6 @@ func TestSortSignals_UnrecognizedSeverityAndConfidenceDoNotPanicAndSortLast(t *t
 	}
 }
 
-// TestBuild_IncludeResolvedFalseHidesResolvedButCountsThem proves the
-// default Options{} (IncludeResolved: false) hides "resolved" signals from
-// Report.Signals while Summary.ResolvedSignals still counts them, and
-// ActiveSignals reflects the filtered length.
 func TestBuild_IncludeResolvedFalseHidesResolvedButCountsThem(t *testing.T) {
 	b, err := New(Options{})
 	if err != nil {
@@ -316,9 +285,6 @@ func TestBuild_IncludeResolvedFalseHidesResolvedButCountsThem(t *testing.T) {
 	}
 }
 
-// TestBuild_IncludeResolvedTrueKeepsResolvedInSignals proves
-// IncludeResolved: true keeps resolved signals in Report.Signals and
-// ActiveSignals reflects the larger unfiltered count.
 func TestBuild_IncludeResolvedTrueKeepsResolvedInSignals(t *testing.T) {
 	b, err := New(Options{IncludeResolved: true})
 	if err != nil {
@@ -361,9 +327,6 @@ func TestBuild_IncludeResolvedTrueKeepsResolvedInSignals(t *testing.T) {
 	}
 }
 
-// TestBuild_ChangedSignalsSortBeforeUnchangedWithinSameLifecycleGroup
-// proves, end to end through Build, that a Changed=true signal sorts
-// before a Changed=false signal that shares the same Lifecycle.
 func TestBuild_ChangedSignalsSortBeforeUnchangedWithinSameLifecycleGroup(t *testing.T) {
 	b, err := New(Options{})
 	if err != nil {
@@ -374,9 +337,7 @@ func TestBuild_ChangedSignalsSortBeforeUnchangedWithinSameLifecycleGroup(t *test
 		Path:        "f.go",
 		ParseStatus: semantics.ParseStatus("ok"),
 		Findings: []semantics.Finding{
-			// Outside any changed range -- introduced, unchanged.
 			{Kind: "mutates_input", Name: "Unchanged", Location: semantics.Location{StartRow: 100}},
-			// Inside the changed range -- introduced, changed.
 			{Kind: "mutates_input", Name: "Changed", Location: semantics.Location{StartRow: 5}},
 		},
 	}

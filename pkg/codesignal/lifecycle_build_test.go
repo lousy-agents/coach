@@ -7,8 +7,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// findByLifecycleAndSubject returns the one Signal in signals matching
-// subject and lifecycle, failing the test if there isn't exactly one.
 func findByLifecycleAndSubject(t *testing.T, signals []Signal, subject string, lifecycle Lifecycle) Signal {
 	t.Helper()
 	var matches []Signal
@@ -23,15 +21,7 @@ func findByLifecycleAndSubject(t *testing.T, signals []Signal, subject string, l
 	return matches[0]
 }
 
-// TestBuild_LifecycleClassificationAcrossBaseAndHead proves that a file
-// with both Base and Head results produces existing/introduced/resolved
-// Signals in Report.Signals for a multi-finding scenario: "Existing" is in
-// both, "GoneNow" is base-only (resolved), "NewOne" is head-only
-// (introduced).
 func TestBuild_LifecycleClassificationAcrossBaseAndHead(t *testing.T) {
-	// IncludeResolved: true so the "resolved" signal this test asserts on
-	// isn't filtered out of Report.Signals -- filtering is a separate
-	// concern covered by sort_test.go.
 	b, err := New(Options{IncludeResolved: true})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -81,21 +71,12 @@ func TestBuild_LifecycleClassificationAcrossBaseAndHead(t *testing.T) {
 	if resolved.Fingerprint == "" || resolved.ID == "" {
 		t.Errorf("resolved signal must have non-empty Fingerprint and ID: %+v", resolved)
 	}
-	// The resolved signal's Location comes from Base, since Head has no
-	// occurrence of this key -- proves Base data (not a zero value) is
-	// what's carried through.
 	if resolved.Location.StartRow != 2 {
 		t.Errorf("resolved signal Location.StartRow: got %d, want 2 (Base's finding location)", resolved.Location.StartRow)
 	}
 }
 
-// TestBuild_RemovedFileEmitsResolvedSignalsFromBase proves Story 4's
-// removed-file rule: a FileChange with Head == nil and a Base result
-// carrying findings produces "resolved" Signals in Report.Signals.
 func TestBuild_RemovedFileEmitsResolvedSignalsFromBase(t *testing.T) {
-	// IncludeResolved: true so the "resolved" signal this test asserts on
-	// isn't filtered out of Report.Signals -- filtering is a separate
-	// concern covered by sort_test.go.
 	b, err := New(Options{IncludeResolved: true})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -131,8 +112,6 @@ func TestBuild_RemovedFileEmitsResolvedSignalsFromBase(t *testing.T) {
 		t.Errorf("resolved signal must have non-empty Fingerprint and ID: %+v", report.Signals[0])
 	}
 
-	// A "removed" status with a nil Head must not produce a
-	// missing_head_result diagnostic (that's for "modified"/"added" only).
 	for _, d := range report.Diagnostics {
 		if d.Kind == "missing_head_result" {
 			t.Errorf("unexpected missing_head_result diagnostic for a removed file: %+v", d)
@@ -140,8 +119,6 @@ func TestBuild_RemovedFileEmitsResolvedSignalsFromBase(t *testing.T) {
 	}
 }
 
-// hasDiagnosticKind reports whether diagnostics contains one with Kind ==
-// kind.
 func hasDiagnosticKind(diagnostics []Diagnostic, kind string) bool {
 	for _, d := range diagnostics {
 		if d.Kind == kind {
@@ -151,15 +128,7 @@ func hasDiagnosticKind(diagnostics []Diagnostic, kind string) bool {
 	return false
 }
 
-// TestBuild_SyntaxErrorsHeadEmitsNoResolvedSignals proves that a "modified"
-// file whose Head has ParseStatus "syntax_errors" contributes zero Signals
-// even when its Base carries a real finding -- the file couldn't be
-// analyzed this time, so Base's finding must not be synthesized into a
-// spurious "resolved" signal.
 func TestBuild_SyntaxErrorsHeadEmitsNoResolvedSignals(t *testing.T) {
-	// IncludeResolved: true so a spuriously-synthesized "resolved" signal
-	// would not be filtered out of Report.Signals -- matching the style of
-	// the tests above.
 	b, err := New(Options{IncludeResolved: true})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -197,10 +166,6 @@ func TestBuild_SyntaxErrorsHeadEmitsNoResolvedSignals(t *testing.T) {
 	}
 }
 
-// TestBuild_MissingHeadEmitsNoResolvedSignals proves that a "modified" file
-// with a nil Head contributes zero Signals even when its Base carries a
-// real finding -- missing_head_result is the only thing this should
-// produce, not a spurious "resolved" signal manufactured from Base.
 func TestBuild_MissingHeadEmitsNoResolvedSignals(t *testing.T) {
 	b, err := New(Options{IncludeResolved: true})
 	if err != nil {
@@ -232,9 +197,6 @@ func TestBuild_MissingHeadEmitsNoResolvedSignals(t *testing.T) {
 	}
 }
 
-// TestBuild_UnsupportedParseStatusEmitsNoResolvedSignals proves that a file
-// whose Head has an unsupported ParseStatus contributes zero Signals even
-// when its Base carries a real finding.
 func TestBuild_UnsupportedParseStatusEmitsNoResolvedSignals(t *testing.T) {
 	b, err := New(Options{IncludeResolved: true})
 	if err != nil {
@@ -270,12 +232,6 @@ func TestBuild_UnsupportedParseStatusEmitsNoResolvedSignals(t *testing.T) {
 	}
 }
 
-// TestBuild_MismatchedBasePathYieldsUnknownLifecycleNotDropped proves that
-// when Head is fine but Base.Path disagrees with FileChange.Path, the
-// head-derived signal is still emitted (Head is trustworthy) but with
-// Lifecycle "unknown" rather than being classified against the untrusted
-// Base -- and that the mismatch is separately surfaced as an
-// invalid_file_change diagnostic.
 func TestBuild_MismatchedBasePathYieldsUnknownLifecycleNotDropped(t *testing.T) {
 	b, err := New(Options{IncludeResolved: true})
 	if err != nil {

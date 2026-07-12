@@ -43,10 +43,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// maxLineBytes bounds one stdin line. Mirrors cmd/semantics-json's
-// rationale: the analyzer's default content cap is 2 MiB, which base64
-// inflates by 4/3; 8 MiB leaves generous slack for the JSON envelope and
-// larger caller-configured max_file_bytes.
 const maxLineBytes = 8 * 1024 * 1024
 
 func main() {
@@ -56,23 +52,17 @@ func main() {
 	}
 }
 
-// scopeHeader is the JSON shape of the required first non-blank stdin line.
 type scopeHeader struct {
 	Repository string `json:"repository"`
 	Revision   string `json:"revision"`
 	Base       string `json:"base"`
 }
 
-// lineRangeRequest is the JSON shape of one changed_ranges entry.
 type lineRangeRequest struct {
 	StartRow uint `json:"start_row"`
 	EndRow   uint `json:"end_row"`
 }
 
-// fileRequest is the JSON shape of one file-request stdin line.
-// HeadContent/BaseContent use *string so a present-but-empty key is
-// distinguishable from an absent key, since ChangeStatus derivation depends
-// on presence, not decoded-content truthiness.
 type fileRequest struct {
 	Path          string             `json:"path"`
 	Language      string             `json:"language"`
@@ -81,11 +71,6 @@ type fileRequest struct {
 	ChangedRanges []lineRangeRequest `json:"changed_ranges"`
 }
 
-// run reads the whole in stream, accumulates one codesignal.Input, calls
-// Build exactly once at EOF, and writes exactly one JSON Report to out. The
-// only errors run returns are adapter-level I/O failures or ctx
-// cancellation; malformed input produces diagnostics in the final Report
-// instead.
 func run(ctx context.Context, in io.Reader, out io.Writer) error {
 	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
 	if err != nil {
@@ -145,11 +130,6 @@ func run(ctx context.Context, in io.Reader, out io.Writer) error {
 	return writer.Flush()
 }
 
-// readScopeHeader scans forward to the first non-blank line (if any) and
-// parses it as a scopeHeader. A missing or malformed header line yields a
-// zero-valued Scope plus a "malformed_scope_header" diagnostic; the
-// offending line is consumed either way and never reprocessed as a
-// file-request line.
 func readScopeHeader(scanner *bufio.Scanner) (codesignal.Scope, []codesignal.Diagnostic) {
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -177,14 +157,6 @@ func readScopeHeader(scanner *bufio.Scanner) (codesignal.Scope, []codesignal.Dia
 	}}
 }
 
-// processFileRequestLine parses one file-request line and, if well-formed,
-// derives its ChangeStatus and decodes/analyzes any present content. A line
-// that fails to unmarshal or is missing path/language yields a single
-// "malformed_file_request" diagnostic and a nil FileChange (the line is
-// dropped, not appended to Input.Files). A well-formed line always yields a
-// non-nil FileChange, even if content decoding or analysis failed for one
-// or both of head/base -- those failures are reported as their own
-// diagnostics instead.
 func processFileRequestLine(ctx context.Context, analyzer *semantics.Analyzer, line []byte) ([]codesignal.Diagnostic, *codesignal.FileChange) {
 	var req fileRequest
 	if err := json.Unmarshal(line, &req); err != nil {
@@ -225,8 +197,6 @@ func processFileRequestLine(ctx context.Context, analyzer *semantics.Analyzer, l
 	return diagnostics, &fc
 }
 
-// deriveChangeStatus maps presence of head/base content pointers to a
-// ChangeStatus, independent of whether decoding or analysis later succeeds.
 func deriveChangeStatus(head, base *string) codesignal.ChangeStatus {
 	switch {
 	case head != nil && base != nil:
@@ -240,10 +210,6 @@ func deriveChangeStatus(head, base *string) codesignal.ChangeStatus {
 	}
 }
 
-// convertChangedRanges converts the wire lineRangeRequest shape to
-// codesignal.LineRange without validating StartRow <= EndRow --
-// codesignal.Build already emits "invalid_changed_range" diagnostics for
-// that.
 func convertChangedRanges(ranges []lineRangeRequest) []codesignal.LineRange {
 	if len(ranges) == 0 {
 		return nil
@@ -255,13 +221,6 @@ func convertChangedRanges(ranges []lineRangeRequest) []codesignal.LineRange {
 	return converted
 }
 
-// decodeAndAnalyze base64-decodes encoded and, on success, runs it through
-// analyzer. A decode failure yields an "invalid_content_encoding"
-// diagnostic and a nil Result. An analysis failure that is not a syntax
-// error yields an "analysis_failed" diagnostic and a nil Result. A syntax
-// error is not itself a failure: AnalyzeBytes's partial Result is returned
-// with no diagnostic, matching the codesignal.Build contract that a
-// "syntax_errors" ParseStatus is handled downstream.
 func decodeAndAnalyze(ctx context.Context, analyzer *semantics.Analyzer, path, language, encoded string) (*codesignal.Diagnostic, *semantics.Result) {
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {

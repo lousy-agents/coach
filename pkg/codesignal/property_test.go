@@ -9,10 +9,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// reorderingScenarioInput builds an Input with 3+ FileChange entries (mixed
-// added/modified/removed), multiple Findings per Result, and a duplicate
-// (same key: RuleID/path/subject/evidence) pair within one file, so
-// occurrence-ordinal grouping is exercised alongside plain sorting.
 func reorderingScenarioInput() Input {
 	return Input{
 		Scope: Scope{Repository: "example/repo", Revision: "rev1", Base: "main"},
@@ -67,10 +63,6 @@ func reorderingScenarioInput() Input {
 	}
 }
 
-// reverseFileChanges returns a copy of files with the outer slice reversed
-// and each FileChange's Base/Head Findings slice internally reversed too --
-// files/Findings are deep-enough-copied that mutating the copy's Findings
-// order can't alias the original.
 func reverseFileChanges(files []FileChange) []FileChange {
 	out := make([]FileChange, len(files))
 	for i, fc := range files {
@@ -101,10 +93,6 @@ func reverseFindings(findings []semantics.Finding) []semantics.Finding {
 	return out
 }
 
-// TestProperty_ReorderingInputDoesNotChangeReportJSON proves grouping,
-// occurrence-ordinal assignment, fingerprinting, and sorting don't depend on
-// input insertion order: reversing Input.Files and each Result.Findings
-// slice must produce byte-identical Report JSON.
 func TestProperty_ReorderingInputDoesNotChangeReportJSON(t *testing.T) {
 	b, err := New(Options{IncludeResolved: true})
 	if err != nil {
@@ -138,11 +126,6 @@ func TestProperty_ReorderingInputDoesNotChangeReportJSON(t *testing.T) {
 	}
 }
 
-// TestProperty_RangeOverlapNeverPanics feeds LineRange/Location values at
-// extremes through Build via FileChange.ChangedRanges combined with a real
-// signal-producing Head, and asserts Build completes without panicking. A
-// panic fails the test naturally via the Go test runner, so no explicit
-// recover() is needed.
 func TestProperty_RangeOverlapNeverPanics(t *testing.T) {
 	const maxUint = uint(math.MaxUint32)
 
@@ -161,7 +144,7 @@ func TestProperty_RangeOverlapNeverPanics(t *testing.T) {
 		{"many ranges", []LineRange{
 			{StartRow: 0, EndRow: 0},
 			{StartRow: maxUint, EndRow: maxUint},
-			{StartRow: 5, EndRow: 3}, // invalid, must be dropped without panicking
+			{StartRow: 5, EndRow: 3},
 			{StartRow: 1000000, EndRow: 2000000},
 		}, semantics.Location{StartRow: 1500000, EndRow: 1500000}},
 	}
@@ -196,11 +179,6 @@ func TestProperty_RangeOverlapNeverPanics(t *testing.T) {
 	}
 }
 
-// TestProperty_ArbitraryEvidenceProducesValidJSON runs Finding.Evidence
-// values containing embedded double quotes, backslashes, unicode (including
-// multi-byte and an emoji), control characters, and a very long string
-// through Build, then through json.Marshal and json.Unmarshal into a generic
-// map[string]any, asserting both round-trip without error.
 func TestProperty_ArbitraryEvidenceProducesValidJSON(t *testing.T) {
 	longEvidence := ""
 	for i := 0; i < 10000; i++ {

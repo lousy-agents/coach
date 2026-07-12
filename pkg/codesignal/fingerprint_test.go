@@ -93,10 +93,6 @@ func TestFingerprint_ComputeSignalID_DifferentOrdinalDiffers(t *testing.T) {
 	}
 }
 
-// TestFingerprint_ComputeFingerprint_LengthPrefixingPreventsFieldBoundaryCollisions
-// constructs an adversarial pair of inputs that would collide under naive
-// string concatenation without length-prefixing ("ab"+"c" == "a"+"bc") and
-// asserts the fingerprints differ.
 func TestFingerprint_ComputeFingerprint_LengthPrefixingPreventsFieldBoundaryCollisions(t *testing.T) {
 	a := computeFingerprint("ab", "c", "subject", "evidence", 0)
 	b := computeFingerprint("a", "bc", "subject", "evidence", 0)
@@ -106,8 +102,6 @@ func TestFingerprint_ComputeFingerprint_LengthPrefixingPreventsFieldBoundaryColl
 	}
 }
 
-// TestFingerprint_ComputeSignalID_LengthPrefixingPreventsFieldBoundaryCollisions
-// is the computeSignalID analog of the fingerprint collision test above.
 func TestFingerprint_ComputeSignalID_LengthPrefixingPreventsFieldBoundaryCollisions(t *testing.T) {
 	a := computeSignalID("ab", "c", "subject", "evidence", 0, 0, 0)
 	b := computeSignalID("a", "bc", "subject", "evidence", 0, 0, 0)
@@ -117,9 +111,6 @@ func TestFingerprint_ComputeSignalID_LengthPrefixingPreventsFieldBoundaryCollisi
 	}
 }
 
-// TestFingerprint_ComputeFingerprint_EmbeddedNullByteDoesNotCollide proves a
-// field containing an embedded null byte doesn't collapse two
-// otherwise-distinct inputs onto the same fingerprint.
 func TestFingerprint_ComputeFingerprint_EmbeddedNullByteDoesNotCollide(t *testing.T) {
 	a := computeFingerprint("rule", "path", "sub\x00ject", "evidence", 0)
 	b := computeFingerprint("rule", "path", "subject", "evidence", 0)
