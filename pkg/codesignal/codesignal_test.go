@@ -66,7 +66,7 @@ func TestBuild_InvalidFileChangeEmitsDiagnostic(t *testing.T) {
 			},
 			{
 				Path: "a.go",
-				Head: &semantics.Result{Path: "a-head.go"},
+				Head: &semantics.Result{Path: "a-head.go", ParseStatus: semantics.ParseStatus("ok")},
 			},
 			{
 				Path: "c.go",
