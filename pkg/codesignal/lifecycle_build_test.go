@@ -29,7 +29,10 @@ func findByLifecycleAndSubject(t *testing.T, signals []Signal, subject string, l
 // both, "GoneNow" is base-only (resolved), "NewOne" is head-only
 // (introduced).
 func TestBuild_LifecycleClassificationAcrossBaseAndHead(t *testing.T) {
-	b, err := New(Options{})
+	// IncludeResolved: true so the "resolved" signal this test asserts on
+	// isn't filtered out of Report.Signals -- filtering is a separate
+	// concern covered by sort_test.go.
+	b, err := New(Options{IncludeResolved: true})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -90,7 +93,10 @@ func TestBuild_LifecycleClassificationAcrossBaseAndHead(t *testing.T) {
 // removed-file rule: a FileChange with Head == nil and a Base result
 // carrying findings produces "resolved" Signals in Report.Signals.
 func TestBuild_RemovedFileEmitsResolvedSignalsFromBase(t *testing.T) {
-	b, err := New(Options{})
+	// IncludeResolved: true so the "resolved" signal this test asserts on
+	// isn't filtered out of Report.Signals -- filtering is a separate
+	// concern covered by sort_test.go.
+	b, err := New(Options{IncludeResolved: true})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

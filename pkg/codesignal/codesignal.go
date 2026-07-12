@@ -31,9 +31,11 @@ func New(options Options) (*Builder, error) {
 // come from validateFileChange and the per-file head-result handling below;
 // Signals come from mapping each Head Finding to a rule-defined Signal and
 // then classifying it (and any base-only signal) against Base via
-// classifyFileSignals, which also computes Fingerprint and ID. Sorting and
-// filtering Report.Signals and populating the lifecycle-count Summary
-// fields are a later task's job.
+// classifyFileSignals, which also computes Fingerprint and ID. Changed is
+// computed per file against its ChangedRanges (markChanged), lifecycle
+// counts in Summary are tallied over the full unfiltered signal set, and
+// Report.Signals is filtered by Options.IncludeResolved and sorted
+// (sortSignals) before ActiveSignals is set to its final length.
 func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -49,20 +51,53 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 
 		fileDiagnostics, fileSignals := processHeadResult(fc)
 		diagnostics = append(diagnostics, fileDiagnostics...)
-		signals = append(signals, classifyFileSignals(fc.Base != nil, fileSignals, extractBaseSignals(fc))...)
+
+		fileClassifiedSignals := classifyFileSignals(fc.Base != nil, fileSignals, extractBaseSignals(fc))
+
+		rangeDiagnostics, validRanges := validateChangedRanges(fc)
+		diagnostics = append(diagnostics, rangeDiagnostics...)
+		markChanged(fileClassifiedSignals, validRanges)
+
+		signals = append(signals, fileClassifiedSignals...)
 	}
 
 	sortDiagnostics(diagnostics)
 
+	summary := Summary{
+		FilesAnalyzed:        len(input.Files),
+		FilesWithDiagnostics: countFilesWithDiagnostics(input.Files, diagnostics),
+	}
+	for _, sig := range signals {
+		switch sig.Lifecycle {
+		case "introduced":
+			summary.IntroducedSignals++
+		case "existing":
+			summary.ExistingSignals++
+		case "resolved":
+			summary.ResolvedSignals++
+		}
+	}
+
+	if !b.options.IncludeResolved {
+		filtered := signals[:0]
+		for _, sig := range signals {
+			if sig.Lifecycle == "resolved" {
+				continue
+			}
+			filtered = append(filtered, sig)
+		}
+		signals = filtered
+	}
+
+	sortSignals(signals)
+	summary.ActiveSignals = len(signals)
+
 	report := &Report{
 		SchemaVersion: "1",
 		Scope:         input.Scope,
-		Summary: Summary{
-			FilesAnalyzed:        len(input.Files),
-			FilesWithDiagnostics: countFilesWithDiagnostics(input.Files, diagnostics),
-		},
-		Signals:     signals,
-		Diagnostics: diagnostics,
+		Summary:       summary,
+		Signals:       signals,
+		Diagnostics:   diagnostics,
 	}
 
 	return report, nil
