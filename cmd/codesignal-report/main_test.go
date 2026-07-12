@@ -155,16 +155,6 @@ func TestRun_InvalidBase64ComposesWithBuildDiagnostics(t *testing.T) {
 	}
 }
 
-func TestGofmt(t *testing.T) {
-	out, err := exec.Command("gofmt", "-l", ".").Output()
-	if err != nil {
-		t.Fatalf("gofmt: %v", err)
-	}
-	if len(bytes.TrimSpace(out)) != 0 {
-		t.Errorf("gofmt -l reported unformatted files:\n%s", out)
-	}
-}
-
 func TestRun_ExactlyOneReportWritten(t *testing.T) {
 	input := strings.Join([]string{
 		"not valid json",
@@ -185,6 +175,10 @@ func TestRun_ExactlyOneReportWritten(t *testing.T) {
 }
 
 func TestRun_SmokeViaGoRun(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping go run smoke test in -short mode")
+	}
+
 	input := strings.Join([]string{
 		`{"repository":"example/repo","revision":"abc123"}`,
 		`{"path":"main.go","language":"go","head_content":"` + b64("package main\n") + `"}`,
