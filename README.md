@@ -49,6 +49,113 @@ The JS/TS bindings are currently packaged for Node.js (ESM-only).
 
 ---
 
+## `coach codesignal` CLI Preview
+
+`cmd/coach` provides a `codesignal` subcommand: a local, deterministic preview of `pkg/codesignal` you can run directly against a Git checkout, without any GitHub App, worker, or model/LLM configuration.
+
+> [!NOTE]
+> `coach` is not yet a tagged/published module, so `go install github.com/lousy-agents/coach/cmd/coach@latest` does not work today. From a local clone, build/install it with:
+> ```sh
+> go install ./cmd/coach
+> ```
+
+**Prerequisites:** a local Git checkout, the `git` executable in `PATH`, and Go 1.25+ (matching `go.mod`).
+
+### Usage
+
+Run it from inside a Git worktree, pointing `--base` at the revision you want to diff against:
+
+```sh
+coach codesignal --base <ref>
+```
+
+- `--base` is required; it can be any ref Git can resolve to a commit (a branch, tag, or SHA).
+- `--format` defaults to `text`; pass `--format=json` for machine-readable output.
+
+**Text example** (`coach codesignal --base <ref>`), after a commit adds a function that mutates a caller-owned pointer:
+
+```
+files analyzed: 1, active signals: 1, diagnostics: 0
+path: config.go
+line: 12
+lifecycle: introduced
+changed: true
+evidence: cfg.Timeout
+why it matters: Mutating a caller-owned input can create behavior that is not visible from the function signature, make outcomes dependent on call ordering, introduce temporal coupling, make tests and local reasoning more difficult, and surprise callers that expect an input to remain unchanged.
+recommendation: Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.
+```
+
+**JSON example** (`coach codesignal --base <ref> --format=json`), for the same change:
+
+```json
+{
+  "schema_version": "1",
+  "scope": { "revision": "3474e2c...", "base": "ece3690..." },
+  "summary": {
+    "files_analyzed": 1,
+    "files_with_diagnostics": 0,
+    "active_signals": 1,
+    "introduced_signals": 1,
+    "existing_signals": 0,
+    "resolved_signals": 0
+  },
+  "signals": [
+    {
+      "id": "sig_88ec28c6...",
+      "fingerprint": "fp_dcf2afc2...",
+      "rule_id": "state.hidden_input_mutation",
+      "rule_version": "1",
+      "kind": "hidden_input_mutation",
+      "category": "state_management",
+      "severity": "medium",
+      "confidence": "medium",
+      "lifecycle": "introduced",
+      "changed": true,
+      "path": "config.go",
+      "subject": "ApplyDefaults:cfg",
+      "location": { "start_byte": 137, "end_byte": 148, "start_row": 11, "start_col": 1, "end_row": 11, "end_col": 12 },
+      "evidence": "cfg.Timeout",
+      "why_it_matters": "Mutating a caller-owned input can create behavior that is not visible from the function signature, make outcomes dependent on call ordering, introduce temporal coupling, make tests and local reasoning more difficult, and surprise callers that expect an input to remain unchanged.",
+      "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
+      "suggested_skill": "refactor-hidden-mutation",
+      "provenance": { "producer": "semantics", "finding_kind": "mutates_input" }
+    }
+  ]
+}
+```
+
+### Exit status
+
+- `0` — the CLI completed its analysis, regardless of whether any signals or diagnostics were reported. A quiet report with only diagnostics and zero signals is still a normal, exit-0 outcome.
+- `1` — an operational failure: the working directory is not a Git worktree, `--base` cannot be resolved, `git` is not found in `PATH`, or an internal analysis step fails. One actionable message goes to stderr; nothing is written to stdout.
+- `2` — a usage error: `--base` is missing, or `--format` is not `text` or `json`. Usage guidance goes to stderr; nothing is written to stdout.
+
+### Scope and limitations
+
+- **Advisory only.** It surfaces deterministic structural signals; it does not judge correctness or block anything on its own.
+- **Go, TypeScript, and TSX only.** Changed files in other languages are skipped (with an `unsupported_language` diagnostic).
+- **Does not execute code.** All analysis is static, over source bytes read via `git show`.
+- **No runtime proof, no cross-file analysis.** It cannot prove a defect exists or trace causality across files; each file is analyzed independently.
+- **Local-only, zero external configuration.** It never contacts GitHub, a model/LLM API, or any other network service — see `internal/codesignalcli/dependencies_test.go`'s `TestNoExternalDependencies` for the enforced boundary (no `net/http`, no GitHub client, anywhere in its dependency graph).
+- **Renames and copies are not analyzed for lifecycle continuity.** A renamed or copied file produces an `unsupported_change_type` diagnostic instead of being diffed against its old path.
+
+### Signal lifecycle and `changed`
+
+Every signal carries a `lifecycle`, computed by comparing HEAD against the resolved merge-base:
+
+- `introduced` — present at HEAD, not present at the merge-base.
+- `existing` — present at both HEAD and the merge-base.
+- `resolved` — present at the merge-base, not present at HEAD.
+- `unknown` — the merge-base side of the file could not be analyzed (e.g. it had a syntax error), so lifecycle can't be determined.
+
+`changed` is a separate boolean: it's `true` when the signal's HEAD location overlaps a line the diff marks as changed, independent of `lifecycle` — an untouched, pre-existing signal in a file that had other lines changed is `changed: false`.
+
+### Locations: 0-based JSON vs 1-based text
+
+JSON output reports `Location` fields (`start_row`, `start_col`, etc., see `pkg/semantics/result.go`) as 0-based, matching Tree-sitter's own convention. Text-mode output's `line:` field adds 1 to `start_row` for a human-friendly 1-based display line.
+
+---
+
 ## `pkg/semantics` Quickstart
 
 `pkg/semantics` operates purely on raw bytes, meaning you don't need a file system to analyze code.
