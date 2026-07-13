@@ -4,10 +4,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+)
+
+var commitEnv = append(os.Environ(),
+	"GIT_AUTHOR_NAME=coach-acceptance",
+	"GIT_AUTHOR_EMAIL=coach-acceptance@example.com",
+	"GIT_COMMITTER_NAME=coach-acceptance",
+	"GIT_COMMITTER_EMAIL=coach-acceptance@example.com",
 )
 
 var commandPath string
@@ -38,4 +46,29 @@ func newTempGitRepo() string {
 	Expect(err).NotTo(HaveOccurred(), "git init: %s", output)
 
 	return directory
+}
+
+// commitFile writes name with contents into repo, commits it, and returns
+// the resulting commit's full SHA.
+func commitFile(repo, name, contents string) string {
+	err := os.WriteFile(filepath.Join(repo, name), []byte(contents), 0o644)
+	Expect(err).NotTo(HaveOccurred())
+
+	addCmd := exec.Command("git", "add", name)
+	addCmd.Dir = repo
+	output, err := addCmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "git add: %s", output)
+
+	commitCmd := exec.Command("git", "commit", "-m", "commit "+name)
+	commitCmd.Dir = repo
+	commitCmd.Env = commitEnv
+	output, err = commitCmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "git commit: %s", output)
+
+	revCmd := exec.Command("git", "rev-parse", "HEAD")
+	revCmd.Dir = repo
+	output, err = revCmd.Output()
+	Expect(err).NotTo(HaveOccurred())
+
+	return strings.TrimSpace(string(output))
 }
