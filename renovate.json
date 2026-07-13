@@ -1,0 +1,82 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": [
+        "config:recommended",
+        "helpers:pinGitHubActionDigestsToSemver",
+        "security:openssf-scorecard"
+    ],
+    "automerge": true,
+    "platformAutomerge": true,
+    "lockFileMaintenance": {
+        "enabled": true,
+        "automergeType": "branch"
+    },
+    "semanticCommitType": "fix",
+    "semanticCommitScope": "deps",
+    "pinDigests": true,
+    "packageRules": [
+        {
+            "description": "Disable native mise manager due to untrusted config errors",
+            "matchManagers": ["mise"],
+            "enabled": false
+        },
+        {
+            "description": "Pin all npm dependencies to exact versions",
+            "matchManagers": ["npm"],
+            "rangeStrategy": "pin"
+        },
+        {
+            "description": "Group all Tree-sitter related Go packages",
+            "matchManagers": ["gomod"],
+            "matchPackageNames": [
+                "github.com/tree-sitter/go-tree-sitter",
+                "github.com/tree-sitter/tree-sitter-go",
+                "github.com/tree-sitter/tree-sitter-typescript"
+            ],
+            "groupName": "tree-sitter"
+        },
+        {
+            "description": "Group Onsi test packages",
+            "matchManagers": ["gomod"],
+            "matchPackageNames": [
+                "github.com/onsi/ginkgo/v2",
+                "github.com/onsi/gomega"
+            ],
+            "groupName": "onsi-test"
+        },
+        {
+            "description": "Group golang.org/x modules",
+            "matchManagers": ["gomod"],
+            "matchPackagePatterns": ["^golang\\.org/x/"],
+            "groupName": "golang-x"
+        }
+    ],
+    "customManagers": [
+        {
+            "description": "Track Go version in mise.toml",
+            "customType": "regex",
+            "managerFilePatterns": ["/(^|/)mise\\.toml$/"],
+            "matchStrings": ["(?:^|\\n)go\\s*=\\s*\"(?<currentValue>[^\"]+)\""],
+            "depNameTemplate": "golang/go",
+            "datasourceTemplate": "github-tags",
+            "extractVersionTemplate": "^go(?<version>.*)$"
+        },
+        {
+            "description": "Track Node.js version in mise.toml",
+            "customType": "regex",
+            "managerFilePatterns": ["/(^|/)mise\\.toml$/"],
+            "matchStrings": ["(?:^|\\n)node\\s*=\\s*\"(?<currentValue>[^\"]+)\""],
+            "depNameTemplate": "nodejs/node",
+            "datasourceTemplate": "github-tags",
+            "versioningTemplate": "node"
+        },
+        {
+            "description": "Track mise minimum version requirement",
+            "customType": "regex",
+            "managerFilePatterns": ["/(^|/)mise\\.toml$/"],
+            "matchStrings": ["min_version\\s*=\\s*\"(?<currentValue>[^\"]+)\""],
+            "depNameTemplate": "jdx/mise",
+            "datasourceTemplate": "github-releases"
+        }
+    ]
+}
