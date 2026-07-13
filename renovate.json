@@ -47,8 +47,10 @@
         {
             "description": "Group golang.org/x modules",
             "matchManagers": ["gomod"],
-            "matchPackagePatterns": ["^golang\\.org/x/"],
-            "groupName": "golang-x"
+            "groupName": "golang-x",
+            "matchPackageNames": [
+                "/^golang\\.org/x//"
+            ]
         }
     ],
     "customManagers": [
