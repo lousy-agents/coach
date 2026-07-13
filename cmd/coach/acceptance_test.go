@@ -13,6 +13,27 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
+// runCoachCodesignalRaw runs `coach codesignal --base <base> [extraArgs...]`
+// in repo, returning raw stdout/stderr without assuming success or a
+// particular --format.
+func runCoachCodesignalRaw(repo, base string, extraArgs ...string) (stdout, stderr []byte, exitCode int) {
+	args := append([]string{"codesignal", "--base", base}, extraArgs...)
+	command := exec.Command(commandPath, args...)
+	command.Dir = repo
+	var outBuf, errBuf bytes.Buffer
+	command.Stdout = &outBuf
+	command.Stderr = &errBuf
+
+	err := command.Run()
+	if err == nil {
+		return outBuf.Bytes(), errBuf.Bytes(), 0
+	}
+
+	var exitErr *exec.ExitError
+	Expect(errors.As(err, &exitErr)).To(BeTrue(), "expected an ExitError, got: %s (stderr: %s)", err, errBuf.String())
+	return outBuf.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
+}
+
 // removeFile deletes name from repo and commits the removal, returning the
 // resulting commit's full SHA.
 func removeFile(repo, name string) string {
@@ -38,7 +59,7 @@ func removeFile(repo, name string) string {
 // runCoachCodesignal builds and runs `coach codesignal --base <base>` in
 // repo, decoding stdout as one codesignal.Report.
 func runCoachCodesignal(repo, base string) (*codesignal.Report, string) {
-	command := exec.Command(commandPath, "codesignal", "--base", base)
+	command := exec.Command(commandPath, "codesignal", "--base", base, "--format=json")
 	command.Dir = repo
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
@@ -281,6 +302,96 @@ var _ = Describe("coach codesignal", func() {
 			signals := signalsForPath(report, "healthy.go")
 			Expect(signals).To(HaveLen(1))
 			Expect(signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
+		})
+	})
+
+	When("--format is omitted and an introduced signal is present", func() {
+		It("renders a text report with all required labels and no ANSI escapes", func() {
+			repo := newTempGitRepo()
+			base := "package a\n\nfunc Get(input *int) int {\n\treturn *input\n}\n"
+			head := base + "\nfunc Update(input *int) {\n\t*input = 1\n}\n"
+			initialSHA := commitFile(repo, "a.go", base)
+			commitFile(repo, "a.go", head)
+
+			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA)
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			text := string(stdout)
+			Expect(text).To(ContainSubstring("files analyzed"))
+			Expect(text).To(ContainSubstring("active signals"))
+			Expect(text).To(ContainSubstring("diagnostics"))
+			Expect(text).To(ContainSubstring("path: a.go"))
+			Expect(text).To(ContainSubstring("line: 8"))
+			Expect(text).To(ContainSubstring("lifecycle: introduced"))
+			Expect(text).To(ContainSubstring("changed: true"))
+			Expect(text).To(ContainSubstring("evidence"))
+			Expect(text).To(ContainSubstring("why it matters"))
+			Expect(text).To(ContainSubstring("recommendation"))
+			Expect(text).NotTo(ContainSubstring("\x1b["))
+		})
+	})
+
+	When("--format=text and there are no active signals but there is a diagnostic", func() {
+		It("renders the diagnostics section and the exact no-findings sentence", func() {
+			repo := newTempGitRepo()
+			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
+			commitFile(repo, "a.go", "package a\n\n// updated\nfunc A() {}\n")
+			commitFile(repo, "empty.go", "")
+
+			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--format=text")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			text := string(stdout)
+			Expect(text).To(ContainSubstring("No active CodeSignal findings."))
+			Expect(text).To(ContainSubstring("empty.go"))
+			Expect(text).To(ContainSubstring("empty_content"))
+		})
+	})
+
+	When("--format=json", func() {
+		It("writes exactly one JSON document followed by exactly one newline", func() {
+			repo := newTempGitRepo()
+			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
+			commitFile(repo, "b.go", "package a\n\nfunc B() {}\n")
+
+			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			Expect(bytes.Count(stdout, []byte("\n"))).To(Equal(1))
+
+			var report codesignal.Report
+			decoder := json.NewDecoder(bytes.NewReader(stdout))
+			Expect(decoder.Decode(&report)).To(Succeed())
+			Expect(decoder.More()).To(BeFalse())
+		})
+	})
+
+	When("--format is an unrecognized value", func() {
+		It("exits 2, prints usage guidance to stderr, and writes nothing to stdout", func() {
+			repo := newTempGitRepo()
+			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
+
+			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--format=xml")
+
+			Expect(exitCode).To(Equal(2))
+			Expect(stdout).To(BeEmpty())
+			Expect(stderr).NotTo(BeEmpty())
+		})
+	})
+
+	When("the same two commits are analyzed in two independent temp worktrees", func() {
+		It("produces byte-identical JSON output", func() {
+			repo := newTempGitRepo()
+			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc Get(input *int) int {\n\treturn *input\n}\n")
+			commitFile(repo, "a.go", "package a\n\nfunc Get(input *int) int {\n\treturn *input\n}\n\nfunc Update(input *int) {\n\t*input = 1\n}\n")
+
+			firstRun, stderr1, exitCode1 := runCoachCodesignalRaw(repo, initialSHA, "--format=json")
+			Expect(exitCode1).To(Equal(0), "stderr: %s", stderr1)
+
+			secondRun, stderr2, exitCode2 := runCoachCodesignalRaw(repo, initialSHA, "--format=json")
+			Expect(exitCode2).To(Equal(0), "stderr: %s", stderr2)
+
+			Expect(firstRun).To(Equal(secondRun))
 		})
 	})
 })
