@@ -71,7 +71,11 @@ type SelectedFile struct {
 // scope (renames/copies, other unsupported statuses, unsupported
 // languages). A malformed diff stream is returned as an *OperationalError.
 func SelectChangedFiles(dir, mergeBaseSHA string) ([]SelectedFile, []codesignal.Diagnostic, error) {
-	output, err := runGitBytes(dir, "diff", "--name-status", "-z", mergeBaseSHA, "HEAD")
+	// Request both rename and copy detection. Git enables rename detection by
+	// default in many configurations, but copy detection requires an explicit
+	// option (and --find-copies-harder lets an unchanged source be recognized).
+	// Both change types are deliberately excluded from lifecycle analysis.
+	output, err := runGitBytes(dir, "diff", "--name-status", "-z", "--find-renames", "--find-copies-harder", mergeBaseSHA, "HEAD")
 	if err != nil {
 		return nil, nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: git diff failed: %s", err)}
 	}
