@@ -47,6 +47,9 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 
 		if eligibleForLifecycleClassification(fc) {
 			fileClassifiedSignals := classifyFileSignals(baseUsableForLifecycle(fc), fileSignals, extractBaseSignals(fc))
+			for i := range fileClassifiedSignals {
+				fileClassifiedSignals[i].SourceScope = fc.SourceScope
+			}
 			markChanged(fileClassifiedSignals, validRanges)
 			signals = append(signals, fileClassifiedSignals...)
 		}
