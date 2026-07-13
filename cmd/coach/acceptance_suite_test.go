@@ -51,6 +51,7 @@ func newTempGitRepo() string {
 // commitFile writes name with contents into repo, commits it, and returns
 // the resulting commit's full SHA.
 func commitFile(repo, name, contents string) string {
+	Expect(os.MkdirAll(filepath.Dir(filepath.Join(repo, name)), 0o755)).To(Succeed())
 	err := os.WriteFile(filepath.Join(repo, name), []byte(contents), 0o644)
 	Expect(err).NotTo(HaveOccurred())
 
