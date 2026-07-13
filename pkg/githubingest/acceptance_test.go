@@ -15,9 +15,9 @@ import (
 	"github.com/lousy-agents/coach/pkg/githubingest"
 )
 
-// ginkgoRSAKey returns a freshly generated, locally generated RSA private
-// key, PKCS#1-PEM-encoded the same way GitHub issues App private keys. It
-// never touches the network or any real credentials. Ginkgo-local variant of
+// ginkgoRSAKey returns a freshly generated RSA private key, PKCS#1-PEM-
+// encoded the same way GitHub issues App private keys. It never touches the
+// network or any real credentials. Ginkgo-local variant of
 // testhelpers_test.go's generateTestRSAPrivateKeyPEM, which takes a concrete
 // *testing.T that a Ginkgo spec (running under GinkgoT(), a testing.TB) does
 // not have.

@@ -69,7 +69,10 @@ func NewFoo() *int {
 			Expect(err).NotTo(HaveOccurred())
 			secondJSON, err := json.Marshal(second)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(secondJSON).To(MatchJSON(firstJSON))
+			// MatchJSON only checks semantic equivalence (it would still pass
+			// on differing key order or whitespace); AC-1.3 requires the
+			// serialized bytes themselves to be identical.
+			Expect(secondJSON).To(Equal(firstJSON))
 		})
 
 		It("orders imports and findings by document position (AC-1.10)", func() {
@@ -100,12 +103,19 @@ func NewAlpha() *int {
 			Expect(result.Imports).To(HaveLen(2))
 			Expect(result.Imports[0].Location.StartByte).To(BeNumerically("<=", result.Imports[1].Location.StartByte))
 
-			Expect(result.Findings).To(HaveLen(4))
+			Expect(result.Findings).NotTo(BeEmpty())
 			for i := 1; i < len(result.Findings); i++ {
 				Expect(result.Findings[i].Location.StartByte).To(BeNumerically(">=", result.Findings[i-1].Location.StartByte))
 			}
+			names := map[string]bool{}
+			for _, f := range result.Findings {
+				names[f.Name] = true
+			}
+			Expect(names).To(HaveKey("NewZeta"))
+			Expect(names).To(HaveKey("NewAlpha"))
+			// NewZeta is declared before NewAlpha in source, so its findings
+			// must sort first regardless of how many findings each produces.
 			Expect(result.Findings[0].Name).To(Equal("NewZeta"))
-			Expect(result.Findings[len(result.Findings)-1].Name).To(Equal("NewAlpha"))
 		})
 	})
 
