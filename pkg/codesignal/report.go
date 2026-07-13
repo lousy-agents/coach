@@ -42,6 +42,7 @@ type Signal struct {
 	Lifecycle      Lifecycle          `json:"lifecycle"`
 	Changed        bool               `json:"changed"`
 	Path           string             `json:"path"`
+	SourceScope    string             `json:"source_scope,omitempty"`
 	Subject        string             `json:"subject,omitempty"`
 	Location       semantics.Location `json:"location"`
 	Evidence       string             `json:"evidence,omitempty"`

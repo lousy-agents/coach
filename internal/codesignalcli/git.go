@@ -61,9 +61,10 @@ func ResolveRevisions(dir, base string) (headSHA, mergeBaseSHA string, err error
 // SelectedFile identifies one file changed between a merge-base and HEAD
 // that is eligible for CodeSignal analysis.
 type SelectedFile struct {
-	Path     string
-	Status   codesignal.ChangeStatus
-	Language semantics.Language
+	Path        string
+	Status      codesignal.ChangeStatus
+	Language    semantics.Language
+	SourceScope string
 }
 
 // SelectChangedFiles diffs mergeBaseSHA against HEAD in dir and returns the

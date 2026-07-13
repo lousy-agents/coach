@@ -73,7 +73,7 @@ func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyze
 		return nil, []codesignal.Diagnostic{mapSemanticsError(sf.Path, headErr)}
 	}
 
-	fc := codesignal.FileChange{Path: sf.Path, Status: sf.Status, Head: headResult}
+	fc := codesignal.FileChange{Path: sf.Path, Status: sf.Status, SourceScope: sf.SourceScope, Head: headResult}
 	var diagnostics []codesignal.Diagnostic
 
 	if sf.Status == "modified" {
@@ -131,7 +131,7 @@ func analyzeRemovedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, 
 	baseResult, baseErr := analyzer.AnalyzeBytes(ctx, semantics.FileInput{Path: sf.Path, Language: sf.Language, Content: baseBytes})
 	switch {
 	case baseErr == nil:
-		return &codesignal.FileChange{Path: sf.Path, Status: sf.Status, Base: baseResult}, nil
+		return &codesignal.FileChange{Path: sf.Path, Status: sf.Status, SourceScope: sf.SourceScope, Base: baseResult}, nil
 	case errors.Is(baseErr, semantics.ErrSyntax):
 		return nil, baseSyntaxDiagnostics(sf.Path, baseErr)
 	default:

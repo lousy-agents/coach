@@ -22,6 +22,7 @@ type ChangeStatus string
 type FileChange struct {
 	Path          string            `json:"path"`
 	Status        ChangeStatus      `json:"status,omitempty"`
+	SourceScope   string            `json:"source_scope,omitempty"`
 	Base          *semantics.Result `json:"base,omitempty"`
 	Head          *semantics.Result `json:"head,omitempty"`
 	ChangedRanges []LineRange       `json:"changed_ranges,omitempty"`
