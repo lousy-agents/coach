@@ -6,9 +6,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli"
 )
 
 func main() {
@@ -46,6 +49,33 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 	}
 
 	_ = format
-	fmt.Fprintln(stderr, "coach codesignal: not yet implemented")
-	return 2
+
+	dir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(stderr, "coach codesignal: cannot determine working directory: %s\n", err)
+		return 1
+	}
+
+	_, mergeBaseSHA, err := codesignalcli.ResolveRevisions(dir, *base)
+	if err != nil {
+		return reportOperationalError(err, stderr)
+	}
+
+	selected, _, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA)
+	if err != nil {
+		return reportOperationalError(err, stderr)
+	}
+	_ = selected
+
+	return 0
+}
+
+func reportOperationalError(err error, stderr *os.File) int {
+	var opErr *codesignalcli.OperationalError
+	if errors.As(err, &opErr) {
+		fmt.Fprintln(stderr, opErr.Message)
+		return 1
+	}
+	fmt.Fprintln(stderr, err)
+	return 1
 }
