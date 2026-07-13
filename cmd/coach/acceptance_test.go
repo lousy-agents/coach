@@ -2,13 +2,75 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/lousy-agents/coach/pkg/codesignal"
 )
+
+// removeFile deletes name from repo and commits the removal, returning the
+// resulting commit's full SHA.
+func removeFile(repo, name string) string {
+	rmCmd := exec.Command("git", "rm", name)
+	rmCmd.Dir = repo
+	output, err := rmCmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "git rm: %s", output)
+
+	commitCmd := exec.Command("git", "commit", "-m", "remove "+name)
+	commitCmd.Dir = repo
+	commitCmd.Env = commitEnv
+	output, err = commitCmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "git commit: %s", output)
+
+	revCmd := exec.Command("git", "rev-parse", "HEAD")
+	revCmd.Dir = repo
+	output, err = revCmd.Output()
+	Expect(err).NotTo(HaveOccurred())
+
+	return string(bytes.TrimSpace(output))
+}
+
+// runCoachCodesignal builds and runs `coach codesignal --base <base>` in
+// repo, decoding stdout as one codesignal.Report.
+func runCoachCodesignal(repo, base string) (*codesignal.Report, string) {
+	command := exec.Command(commandPath, "codesignal", "--base", base)
+	command.Dir = repo
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+
+	err := command.Run()
+	Expect(err).NotTo(HaveOccurred(), "stderr: %s", stderr.String())
+
+	var report codesignal.Report
+	Expect(json.Unmarshal(stdout.Bytes(), &report)).To(Succeed(), "stdout should be one JSON report: %s", stdout.String())
+
+	return &report, stderr.String()
+}
+
+func signalsForPath(report *codesignal.Report, path string) []codesignal.Signal {
+	var matches []codesignal.Signal
+	for _, sig := range report.Signals {
+		if sig.Path == path {
+			matches = append(matches, sig)
+		}
+	}
+	return matches
+}
+
+func hasDiagnostic(report *codesignal.Report, kind, path string) bool {
+	for _, d := range report.Diagnostics {
+		if d.Kind == kind && d.Path == path {
+			return true
+		}
+	}
+	return false
+}
 
 var _ = Describe("coach codesignal", func() {
 	When("--base is not provided", func() {
@@ -93,6 +155,132 @@ var _ = Describe("coach codesignal", func() {
 			err := command.Run()
 
 			Expect(err).NotTo(HaveOccurred(), "stderr: %s", stderr.String())
+		})
+	})
+
+	When("head introduces a hidden-input-mutation finding not present at base", func() {
+		It("reports exactly one introduced signal", func() {
+			repo := newTempGitRepo()
+			base := "package a\n\nfunc Get(input *int) int {\n\treturn *input\n}\n"
+			head := base + "\nfunc Update(input *int) {\n\t*input = 1\n}\n"
+			initialSHA := commitFile(repo, "a.go", base)
+			commitFile(repo, "a.go", head)
+
+			report, _ := runCoachCodesignal(repo, initialSHA)
+
+			signals := signalsForPath(report, "a.go")
+			Expect(signals).To(HaveLen(1))
+			Expect(signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
+		})
+	})
+
+	When("the same hidden-input-mutation finding is present at base and head", func() {
+		It("reports the signal as existing", func() {
+			repo := newTempGitRepo()
+			base := "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n"
+			head := "package a\n\n// note\nfunc Update(input *int) {\n\t*input = 1\n}\n"
+			initialSHA := commitFile(repo, "a.go", base)
+			commitFile(repo, "a.go", head)
+
+			report, _ := runCoachCodesignal(repo, initialSHA)
+
+			signals := signalsForPath(report, "a.go")
+			Expect(signals).To(HaveLen(1))
+			Expect(signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("existing")))
+		})
+	})
+
+	When("a file with a hidden-input-mutation finding is removed at head", func() {
+		It("reports the signal as resolved", func() {
+			repo := newTempGitRepo()
+			base := "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n"
+			initialSHA := commitFile(repo, "a.go", base)
+			removeFile(repo, "a.go")
+
+			report, _ := runCoachCodesignal(repo, initialSHA)
+
+			signals := signalsForPath(report, "a.go")
+			Expect(signals).To(HaveLen(1))
+			Expect(signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("resolved")))
+		})
+	})
+
+	When("a change inserts a new function alongside an untouched one", func() {
+		It("marks the inserted finding changed and the untouched finding unchanged", func() {
+			repo := newTempGitRepo()
+			base := "package a\n\nfunc A(input *int) {\n\t*input = 1\n}\n\nfunc B(input *int) {\n\t*input = 2\n}\n"
+			head := "package a\n\nfunc A(input *int) {\n\t*input = 1\n}\n\nfunc C(input *int) {\n\t*input = 3\n}\n\nfunc B(input *int) {\n\t*input = 2\n}\n"
+			initialSHA := commitFile(repo, "a.go", base)
+			commitFile(repo, "a.go", head)
+
+			report, _ := runCoachCodesignal(repo, initialSHA)
+
+			signals := signalsForPath(report, "a.go")
+			Expect(signals).To(HaveLen(3))
+
+			var aSignal, bSignal, cSignal *codesignal.Signal
+			for i := range signals {
+				switch signals[i].Subject {
+				case "A:input":
+					aSignal = &signals[i]
+				case "B:input":
+					bSignal = &signals[i]
+				case "C:input":
+					cSignal = &signals[i]
+				}
+			}
+			Expect(aSignal).NotTo(BeNil())
+			Expect(bSignal).NotTo(BeNil())
+			Expect(cSignal).NotTo(BeNil())
+
+			Expect(aSignal.Changed).To(BeFalse())
+			Expect(bSignal.Changed).To(BeFalse())
+			Expect(cSignal.Changed).To(BeTrue())
+			Expect(cSignal.Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
+		})
+	})
+
+	When("head content has a syntax error", func() {
+		It("reports a syntax_errors diagnostic and no signals for that file", func() {
+			repo := newTempGitRepo()
+			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
+			commitFile(repo, "a.go", "package a\n\nfunc B(\n")
+
+			report, _ := runCoachCodesignal(repo, initialSHA)
+
+			Expect(hasDiagnostic(report, "syntax_errors", "a.go")).To(BeTrue())
+			Expect(signalsForPath(report, "a.go")).To(BeEmpty())
+		})
+	})
+
+	When("base content has a syntax error but head is clean", func() {
+		It("reports the head signals as unknown lifecycle plus a base_syntax_errors diagnostic", func() {
+			repo := newTempGitRepo()
+			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc B(\n")
+			commitFile(repo, "a.go", "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n")
+
+			report, _ := runCoachCodesignal(repo, initialSHA)
+
+			Expect(hasDiagnostic(report, "base_syntax_errors", "a.go")).To(BeTrue())
+			signals := signalsForPath(report, "a.go")
+			Expect(signals).To(HaveLen(1))
+			Expect(signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
+		})
+	})
+
+	When("one selected file fails analysis alongside a healthy file", func() {
+		It("still analyzes the healthy file and reports a diagnostic for the failed one", func() {
+			repo := newTempGitRepo()
+			initialSHA := commitFile(repo, "healthy.go", "package a\n\nfunc Get(input *int) int { return *input }\n")
+			commitFile(repo, "healthy.go", "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n")
+			commitFile(repo, "empty.go", "")
+
+			report, _ := runCoachCodesignal(repo, initialSHA)
+
+			Expect(hasDiagnostic(report, "empty_content", "empty.go")).To(BeTrue())
+			signals := signalsForPath(report, "healthy.go")
+			Expect(signals).To(HaveLen(1))
+			Expect(signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
 		})
 	})
 })
