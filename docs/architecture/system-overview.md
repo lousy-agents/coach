@@ -6,7 +6,7 @@ AI Coach is a GitHub-native, policy-driven workflow and trust layer for AI-assis
 
 The architecture separates reliable GitHub event handling, a Go state machine that owns product policy, deterministic `pkg/semantics` and `pkg/codesignal` analysis, bounded `adk-go` agents and tools, and provider-neutral inference. SGLang with Qwen3.5-4B is the intended production inference path after evaluation; llama.cpp provides a lightweight local path behind the same model-gateway contract.
 
-The recommended AWS v1 uses ECS/Fargate for the Go control plane and task-per-job isolated execution, ECS on EC2 GPU capacity for SGLang, SQS for work notification, DynamoDB plus transactional outboxes for idempotency/dispatch intent, Aurora PostgreSQL for workflow state, and S3 for immutable payloads/evidence. EKS is a later inference-plane option, not a co-equal v1 target. Docker Compose is the daily local default; the default core profile needs no model weights, while optional llama.cpp runs natively on macOS to use Metal/unified memory.
+The recommended AWS v1 uses ECS/Fargate for the Go control plane and task-per-job isolated execution, ECS on EC2 GPU capacity for SGLang, SQS for work notification, DynamoDB plus transactional outboxes for idempotency/dispatch intent, Aurora PostgreSQL for workflow state, and S3 for immutable payloads/evidence. EKS is a later inference-plane option, not a co-equal v1 target. For proof of value, the self-hosted inference cell may scale to zero between scheduled pilot windows; the webhook/control plane never does. Docker Compose is the daily local default; the default core profile needs no model weights, while optional llama.cpp runs natively on macOS to use Metal/unified memory.
 
 ## 2. Goals, non-goals, constraints, and principles
 
@@ -50,8 +50,9 @@ The recommended AWS v1 uses ECS/Fargate for the Go control plane and task-per-jo
 | Initial model | Adopt Qwen3.5-4B only after task evaluation | Measure structured-output validity, review precision, test quality, latency, and cost |
 | Prefix reuse | Canonicalize stable policy, workflow, and tool-schema prefixes | Measure cacheable-prefix length and cache-hit rate without logging private prompts |
 | Local model | Quantized 4B-class GGUF with llama.cpp | Benchmark memory, time to first token, and schema compliance on M4/16 GB |
+| Pilot inference | One private SGLang/Qwen3.5-4B ECS-on-EC2 Spot cell may scale to zero; scheduled warm windows reduce cold-start disruption | Benchmark GPU fit, warm latency, Spot availability/interruption recovery, and pilot feedback delay before expanding tenants |
 
-Still requiring validation: retention periods, exact GitHub permissions for system-owned advisory feedback, pilot tenancy, hosted-provider fallback policy, and regional recovery targets. Repository-content mutation is explicitly out of v1.
+Still requiring validation: retention periods, exact GitHub permissions for system-owned advisory feedback, pilot tenancy, hosted-provider fallback policy, regional recovery targets, and the complete incremental cost of the pilot environment. Repository-content mutation is explicitly out of v1.
 
 ## 4. C4 Level 1: System Context
 
@@ -103,7 +104,9 @@ flowchart TB
         Redis["Redis<br/>rate budgets and short cache"]
         Audit["Telemetry and audit pipeline"]
     end
-    subgraph Inference["Inference boundary"]
+    subgraph Inference["Private inference boundary"]
+        Capacity["Pilot Capacity Controller<br/>Go/Lambda"]
+        ModelALB["Internal ALB<br/>pilot only"]
         SGLang["SGLang + Qwen3.5-4B"]
         External["Approved external provider"]
     end
@@ -123,7 +126,9 @@ flowchart TB
     ToolBroker --> S3
     S3 --> ToolBroker
     ToolBroker --> Workflow
-    Gateway --> SGLang
+    Gateway --> Capacity
+    Gateway --> ModelALB --> SGLang
+    Capacity -->|desired count 0 or 1| SGLang
     Gateway --> External
     Workflow --> Delivery --> GHBroker
     Workflow --> PG
@@ -145,13 +150,15 @@ flowchart TB
 | CodeSignal Worker | Checkout immutable snapshot and run deterministic diff/semantic analysis | S3 artifacts, PostgreSQL metadata | CPU queue workers |
 | Agent Runner | Execute bounded ADK jobs and typed Go tools | Evidence and receipts | Active jobs and token demand |
 | Model Gateway | Provider policy, schema validation, budgets, timeouts, cache metadata | Non-authoritative cache/metrics | Concurrent requests |
+| Pilot Capacity Controller | Idempotently request or observe inference-cell readiness; report `WARMING` without holding a client request | Short-lived readiness lease and ECS desired-state audit | One active wake per model cell |
+| Pilot inference cell | One SGLang/Qwen3.5-4B task behind an internal ALB on ECS/EC2 GPU Spot capacity | Immutable serving image and ephemeral runtime cache | Zero or one task during proof of value |
 | Feedback Publisher | Render and deduplicate checks/comments while coordinating GitHub limits | Effect records | Delivery queue/rate budget |
 | Tool Broker/Execution Scheduler | Validate typed job intents, schedule isolated tasks, and broker content-addressed artifacts/receipts | PostgreSQL receipts/leases; S3 artifacts | Tenant-aware job pools |
 | GitHub Credential/API Broker | Sole holder of App signing key and sole caller using installation tokens; resolve grants and execute fenced reads/effects | Secrets Manager key; grant/effect metadata | Installation-aware quotas |
 | Execution Plane | Run hostile tests/builds in disposable credential-free task-per-job isolation | Disposable encrypted workspace; brokered artifact exchange | ECS task concurrency and tenant quotas |
 | Policy/Admin Plane | Version and approve tenant/repository policies; no developer scoring | PostgreSQL policy snapshots | Low-volume, separately authorized |
 
-Only webhook ingress is public. All GitHub API traffic from Snapshotter and Feedback Publisher traverses the GitHub Credential/API Broker; those callers never hold installation tokens. Agents cannot directly call GitHub, AWS, the model backend, or sandboxes: they produce structured recommendations or invoke typed read/proposal tools, while the Go orchestrator authorizes jobs and feedback effects. Inference and execution receive no GitHub/control-plane credentials. Tenant identifiers scope every data, cache, trace, queue, prompt-cache, and effect key.
+Only webhook ingress is public. All GitHub API traffic from Snapshotter and Feedback Publisher traverses the GitHub Credential/API Broker; those callers never hold installation tokens. Agents cannot directly call GitHub, AWS, the model backend, or sandboxes: they produce structured recommendations or invoke typed read/proposal tools, while the Go orchestrator authorizes jobs and feedback effects. Inference and execution receive no GitHub/control-plane credentials. Tenant identifiers scope every data, cache, trace, queue, prompt-cache, and effect key. Pilot scale-to-zero is confined to the private inference cell; ingress, queues, workflow persistence, and deterministic analysis remain continuously available.
 
 ## 6. C4 Level 3: Critical components
 
@@ -241,6 +248,29 @@ flowchart LR
 ```
 
 Requests contain task type, stable/cacheable prefix identity, structured-output schema, budgets, data policy, and trace IDs. Responses contain validated output, provider/model identity, usage, finish reason, latency, and cache metadata. Stable workflow/policy/tool-schema content precedes request-specific content. Cache keys include every prompt-affecting version. Fallback is allowed only by tenant data policy. The gateway never decides workflow completion.
+
+#### Pilot scale-to-zero behavior
+
+The pilot uses an internal capacity controller, called only by the Go model gateway, to set the GPU service desired count from `0` to `1` idempotently and to observe its health. A cold cell produces a typed `WARMING` result; the orchestrator checkpoints and requeues the authorized agent job with bounded backoff. It does **not** rewrite an inference request to `202`, and it never changes the GitHub webhook response path. This matches the Coach's asynchronous workflow contract: the developer receives deterministic feedback immediately where available and a clearly deferred private digest when agent reasoning is waiting for the model.
+
+```mermaid
+sequenceDiagram
+    participant A as Agent Runner
+    participant G as Model Gateway
+    participant C as Capacity Controller
+    participant E as ECS GPU service
+    participant O as Orchestrator
+    A->>G: Authorized inference request
+    G->>C: Ensure model cell is ready
+    alt Cell is cold
+        C->>E: Idempotent desiredCount = 1
+        C-->>G: WARMING
+        G-->>O: Checkpoint and defer agent job
+        O->>O: Requeue after readiness/backoff
+    else Cell is healthy
+        G-->>A: Structured inference response
+    end
+```
 
 ### C4 Level 3F: Developer feedback
 
@@ -384,6 +414,18 @@ Long work uses fenced leases, bounded heartbeats, and checkpointed commands rath
 - Coordinate GitHub rate limits per installation from response headers. Secondary limits cause installation-specific backoff. Coalesce feedback and reserve capacity for recovery.
 - Enable PITR for Aurora/DynamoDB, S3 versioning/lifecycle, infrastructure as code, restore drills, and idempotent replay. S3 payloads and PG/DDB command/outbox state—not SQS—are recovery sources. **Assumption:** v1 regional-outage recovery is best-effort until measured restore drills and optional S3 cross-region replication/Aurora cross-region backups establish a supported RPO/RTO. Regional replay rebuilds queues from durable undispatched commands and may delay feedback but cannot bypass idempotency.
 
+### Proof-of-value AWS inference profile
+
+This profile incorporates the cost-conscious pilot proposal without promoting pilot shortcuts into platform-wide reliability claims.
+
+- Keep the Go control plane, signed-webhook ingestion, SQS, persistence, and deterministic CodeSignal path available. Only the self-hosted inference cell scales to zero; GitHub deliveries must still receive their durable `202` response on time.
+- Run one private SGLang/Qwen3.5-4B task on an ECS EC2 GPU capacity provider with a Spot-first Auto Scaling group whose minimum is zero. Treat `g4dn.xlarge` as a benchmark candidate, not a committed sizing decision: validate model/runtime overhead, supported context length, and cache headroom before adoption. During defined pilot hours, use scheduled warming and an idle timeout; outside those windows, jobs are queued and resume after the cell is healthy. Do not promise a fixed warm-up ETA.
+- Use an internal ALB only between the Go model gateway and the private SGLang task. Do not introduce Envoy AI Gateway or a Lua `503`-to-`202` interceptor in the proof-of-value path: it duplicates the existing Go gateway and would blur a deferred model job with a successful synchronous inference response. Reconsider Envoy only after the pilot demonstrates a concrete need for data-plane policy, streaming mediation, or gateway telemetry beyond the Go gateway.
+- The capacity controller may be a small Lambda or a Go-owned AWS adapter, but must use a stable model-cell key, a short lease, and audit records so concurrent jobs cause one wake request. It reports readiness through health checks; it never receives GitHub credentials or prompt/source content.
+- For the single pilot model, prefer an immutable serving image containing the reviewed model/tokenizer only if its measured pull-and-load time is better than an approved internal artifact cache. Record the model, tokenizer, configuration, serving image, and build provenance digests; disable remote-code execution; scan/sign the image; and use ECR/VPC endpoints. Never download model artifacts dynamically at runtime.
+- The proposal's roughly `$25.50/month` is an **inference-only directional estimate** under its stated assumptions: one Spot `g4dn.xlarge`, 40 hours/week, and already-paid shared ALB/NAT infrastructure. It excludes the Coach control plane, data stores, observability, shared-network allocation, Spot unavailability, and regional pricing. Track actual incremental cost per admitted workflow and per useful private digest; set a pilot budget/alert rather than treating that estimate as an all-in platform price.
+- If Spot capacity is unavailable or interrupted, the capacity controller marks the model unavailable, the orchestrator pauses/requeues only agent stages, and deterministic feedback continues. Escalate to scheduled On-Demand capacity only if the pilot's measured feedback-delay target requires it; do not silently fall back to an external provider without tenant data-policy approval.
+
 ## 9. Local development on M4/16 GB
 
 ### Default: Docker Compose; ECS/AWS integration gates
@@ -508,6 +550,8 @@ During inference outage, ingestion and deterministic feedback continue. Agent st
 
 Measure signature failures, duplicates, enqueue/ack latency, queue age/depth/DLQs, workflow dwell/retries/pauses, analyzer latency/errors, agent outcomes/tool denials/schema failures, model TTFT/tokens/cache hits/fallbacks, GitHub rate budgets, duplicate-effect suppression, and evidence integrity.
 
+For the proof-of-value inference profile also measure cold-start p50/p95, time from wake request to healthy target, scheduled-warm hit rate, Spot fulfillment/interruption rate, deferred-agent-job age, model-cell idle hours, ECR/image load time, GPU memory/cache headroom, and incremental cost per admitted workflow and per useful private digest. These measurements—not an assumed monthly price—decide whether to retain Spot-only scale-to-zero, add scheduled On-Demand coverage, or keep inference external.
+
 Page on acceptance-SLO burn, queue age threatening feedback, multi-tenant DLQ growth, database/evidence integrity failure, suspicious signature spikes, or tenant isolation/credential signals. Ticket tenant-specific throttling, model-quality drift, low cache reuse, and oversized repositories. Use multi-window burn-rate alerts.
 
 ## 13. Testing and validation
@@ -518,6 +562,7 @@ Page on acceptance-SLO burn, queue age threatening feedback, multi-tenant DLQ gr
 - Isolated AWS tests cover real SQS visibility, DynamoDB conditions, S3/KMS, IAM, and Secrets Manager. A staging GitHub App covers redelivery, suspension, transfer/rename, token expiry, checks, and limits.
 - Load test 1,000 webhook/s bursts, downstream outage/drain, hot installations, large repositories/diffs, repeated-prefix model mixes, and comment coalescing.
 - Chaos tests kill workers after effects but before ack, reorder/duplicate messages, expire tokens, degrade/malform models, remove evidence, suspend installations, and restart dependencies.
+- Pilot-environment tests verify that a cold inference cell checkpoints and resumes an agent job without affecting webhook acknowledgment, that concurrent requests produce one fenced wake, that a Spot interruption leaves no duplicated effect, and that the immutable serving image/model digests match the approved manifest.
 - Promotion gates: unit/behavior tests; supply-chain/provenance checks; Compose integration; contract compatibility; ECS IaC/task-definition validation; AWS staging/migrations; kind only for an adopted EKS path; model-quality gate; canary tenant; human feedback-quality review.
 
 ## 14. Phased implementation
@@ -531,7 +576,8 @@ Page on acceptance-SLO burn, queue age threatening feedback, multi-tenant DLQ gr
 5. Add ADK Go agents for understanding, planning, test derivation, adversarial review, and ephemeral sandbox proposals. Agents cannot initiate GitHub writes; Go policy schedules advisory feedback.
 6. Build the model gateway/local llama.cpp adapter and evaluate Qwen3.5-4B.
 7. Deploy SGLang only after evaluation and publish visible provenance/evidence.
-8. Support Compose daily, ECS/IaC integration tests, and kind only if EKS inference is adopted.
+8. Run the proof-of-value inference profile: one private ECS/EC2 Spot cell, scheduled warm windows, scale-to-zero only for inference, and cost/latency/quality measurement tied to private-digest value.
+9. Support Compose daily, ECS/IaC integration tests, and kind only if EKS inference is adopted.
 
 ### Next
 
@@ -557,6 +603,9 @@ Page on acceptance-SLO burn, queue age threatening feedback, multi-tenant DLQ gr
 | Model interface | Go provider gateway | Provider isolation and policy | Direct provider calls; measure overhead |
 | Model | Qwen3.5-4B after evaluation | Intended small footprint | Other open/hosted model |
 | Serving | SGLang | Structured repeated-prefix fit | vLLM/llama.cpp/managed; benchmark value |
+| Proof-of-value inference | One private ECS/EC2 Spot SGLang cell that can scale to zero | Limits idle GPU burn while retaining the production provider contract | Always-on GPU, external provider; validate warm delay, Spot availability, and incremental cost |
+| Pilot wake path | Go gateway/controller returns typed `WARMING` and requeues the agent job | Preserves durable async workflow semantics | Envoy/Lua `503` translation; revisit only for a measured data-plane need |
+| Model artifact delivery | Benchmark immutable reviewed serving image versus approved internal artifact cache | One model may justify baked layers, but provenance and cold-start data decide | Runtime internet download; prohibited |
 | vLLM | Not default | Smaller supply-chain surface | Add only for measured capability gap |
 | Local topology | Compose daily; ECS/IaC and AWS-account integration | Matches ECS control plane within a 5–6 GB VM cap | kind/native default |
 | kind | Use only for an adopted EKS path | It is not ECS parity | Always-on kind |
@@ -578,4 +627,6 @@ Cycle 1 found material durability, security, scale, and parity gaps. It changed 
 
 Cycle 2 removed remaining contradictions. It separated system-owned advisory feedback writes from prohibited v1 repository-content mutations; completed the fail-then-pass proposal chain using separate test/implementation patch hashes and a result-tree hash; required a fresh-context review job; split the tool/execution and GitHub credential/API brokers in every C4 path; made the GitHub broker the sole token user; replaced the over-specific sandbox claim with a reviewed Fargate per-task or microVM-equivalent gate; simplified persisted ingress states to `DURABLE -> DISPATCHED`; required an SQS receipt before `202` while retaining a recoverable dispatch intent; moved verified raw bodies to app-scoped quarantine and prohibited persistence of invalid signatures; routed sandbox artifacts only through the broker; and repaired artifact/trust-boundary diagram paths.
 
-No further material P0/P1 contradiction remains after cycle 2. Open validation risks are unmeasured event/payload/repository distributions, unproven Qwen3.5-4B quality, uncertain SGLang cache economics, security benchmarking of the selected execution isolation, GitHub secondary-limit fidelity, managed-store cost, unsettled retention/provider privacy policies, and best-effort regional recovery until restore tests establish targets.
+The evolutionary pilot update confines cost optimization to the private inference cell. It adds a Spot-first, scale-to-zero ECS/EC2 profile with scheduled warming, a Go-owned typed `WARMING` path, image/artifact provenance gates, and cost-per-useful-digest measurements. It intentionally does not adopt an Envoy/Lua response rewrite or let any cold-start behavior affect GitHub ingress, durable workflow handling, or deterministic feedback.
+
+No further material P0/P1 contradiction remains after cycle 2. Open validation risks are unmeasured event/payload/repository distributions, unproven Qwen3.5-4B quality, uncertain SGLang cache economics, security benchmarking of the selected execution isolation, GitHub secondary-limit fidelity, managed-store cost, pilot cold-start and Spot availability, unsettled retention/provider privacy policies, and best-effort regional recovery until restore tests establish targets.
