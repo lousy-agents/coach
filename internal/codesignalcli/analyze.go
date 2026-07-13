@@ -77,7 +77,18 @@ func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyze
 	var diagnostics []codesignal.Diagnostic
 
 	if sf.Status == "modified" {
-		if baseBytes, ok := readBaseBytes(dir, mergeBaseSHA, sf.Path); ok {
+		baseBytes, err := runGitBytes(dir, "show", mergeBaseSHA+":"+sf.Path)
+		if err != nil {
+			// A "modified" status means Git already knows this path existed at
+			// mergeBaseSHA, so a failed read here is a real problem (e.g. a
+			// corrupted object), not an added-file's expected absence -- it
+			// must be surfaced, not silently treated as "no base".
+			diagnostics = append(diagnostics, codesignal.Diagnostic{
+				Path:    sf.Path,
+				Kind:    "base_read_failed",
+				Message: fmt.Sprintf("reading base content for %q: %s", sf.Path, err),
+			})
+		} else {
 			baseResult, baseErr := analyzer.AnalyzeBytes(ctx, semantics.FileInput{Path: sf.Path, Language: sf.Language, Content: baseBytes})
 			switch {
 			case baseErr == nil:
@@ -169,17 +180,6 @@ func mapSemanticsError(path string, err error) codesignal.Diagnostic {
 		kind = "unsupported_language"
 	}
 	return codesignal.Diagnostic{Path: path, Kind: kind, Message: err.Error()}
-}
-
-// readBaseBytes reads path at mergeBaseSHA. A failure is treated as "the
-// path did not exist at that revision" (e.g. an added file) rather than as
-// an operational error: ok is false and content is nil.
-func readBaseBytes(dir, mergeBaseSHA, path string) ([]byte, bool) {
-	content, err := runGitBytes(dir, "show", mergeBaseSHA+":"+path)
-	if err != nil {
-		return nil, false
-	}
-	return content, true
 }
 
 // computeChangedRanges runs `git diff --unified=0` for path between

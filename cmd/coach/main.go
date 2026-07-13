@@ -83,11 +83,17 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 			fmt.Fprintf(stderr, "coach codesignal: encoding report: %s\n", err)
 			return 1
 		}
-		stdout.Write(encoded)
+		if _, err := stdout.Write(encoded); err != nil {
+			fmt.Fprintf(stderr, "coach codesignal: writing report: %s\n", err)
+			return 1
+		}
 		return 0
 	}
 
-	fmt.Fprint(stdout, codesignalcli.RenderText(report))
+	if _, err := fmt.Fprint(stdout, codesignalcli.RenderText(report)); err != nil {
+		fmt.Fprintf(stderr, "coach codesignal: writing report: %s\n", err)
+		return 1
+	}
 	return 0
 }
 

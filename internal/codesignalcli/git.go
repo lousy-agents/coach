@@ -34,7 +34,8 @@ func ResolveRevisions(dir, base string) (headSHA, mergeBaseSHA string, err error
 		return "", "", &OperationalError{Message: "coach codesignal: git executable not found in PATH"}
 	}
 
-	if _, runErr := runGit(dir, "rev-parse", "--is-inside-work-tree"); runErr != nil {
+	worktreeOutput, runErr := runGit(dir, "rev-parse", "--is-inside-work-tree")
+	if runErr != nil || strings.TrimSpace(worktreeOutput) != "true" {
 		return "", "", &OperationalError{Message: fmt.Sprintf("coach codesignal: %s is not inside a Git worktree", dir)}
 	}
 

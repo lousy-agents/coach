@@ -212,6 +212,27 @@ func TestResolveRevisions(t *testing.T) {
 			t.Errorf("ResolveRevisions error = %v, want *OperationalError", err)
 		}
 	})
+
+	t.Run("bare repository", func(t *testing.T) {
+		// `git rev-parse --is-inside-work-tree` exits 0 and prints "false" in
+		// a bare repository, so the check must inspect its output, not just
+		// its exit status.
+		dir := t.TempDir()
+		cmd := exec.Command("git", "init", "--bare")
+		cmd.Dir = dir
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git init --bare: %v: %s", err, output)
+		}
+
+		_, _, err := ResolveRevisions(dir, "HEAD")
+		if err == nil {
+			t.Fatal("ResolveRevisions: want error for bare repository, got nil")
+		}
+		var opErr *OperationalError
+		if !isOperationalError(err, &opErr) {
+			t.Errorf("ResolveRevisions error = %v, want *OperationalError", err)
+		}
+	})
 }
 
 func joinNUL(fields ...string) []byte {
