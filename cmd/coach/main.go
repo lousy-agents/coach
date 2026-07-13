@@ -6,6 +6,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -56,16 +58,28 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return 1
 	}
 
-	_, mergeBaseSHA, err := codesignalcli.ResolveRevisions(dir, *base)
+	headSHA, mergeBaseSHA, err := codesignalcli.ResolveRevisions(dir, *base)
 	if err != nil {
 		return reportOperationalError(err, stderr)
 	}
 
-	selected, _, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA)
+	selected, diagnostics, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA)
 	if err != nil {
 		return reportOperationalError(err, stderr)
 	}
-	_ = selected
+
+	report, err := codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics)
+	if err != nil {
+		fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
+		return 1
+	}
+
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		fmt.Fprintf(stderr, "coach codesignal: encoding report: %s\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, string(encoded))
 
 	return 0
 }
