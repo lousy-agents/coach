@@ -7,7 +7,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -50,7 +49,11 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return 2
 	}
 
-	_ = format
+	if *format != "text" && *format != "json" {
+		fmt.Fprintln(stderr, "usage: coach codesignal --base <ref> [--format text|json]")
+		fmt.Fprintf(stderr, "coach: invalid --format value %q: must be \"text\" or \"json\"\n", *format)
+		return 2
+	}
 
 	dir, err := os.Getwd()
 	if err != nil {
@@ -74,13 +77,17 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return 1
 	}
 
-	encoded, err := json.Marshal(report)
-	if err != nil {
-		fmt.Fprintf(stderr, "coach codesignal: encoding report: %s\n", err)
-		return 1
+	if *format == "json" {
+		encoded, err := codesignalcli.RenderJSON(report)
+		if err != nil {
+			fmt.Fprintf(stderr, "coach codesignal: encoding report: %s\n", err)
+			return 1
+		}
+		stdout.Write(encoded)
+		return 0
 	}
-	fmt.Fprintln(stdout, string(encoded))
 
+	fmt.Fprint(stdout, codesignalcli.RenderText(report))
 	return 0
 }
 
