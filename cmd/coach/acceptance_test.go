@@ -262,15 +262,20 @@ var _ = Describe("coach codesignal", func() {
 	})
 
 	When("head content has a syntax error", func() {
-		It("reports a syntax_errors diagnostic and no signals for that file", func() {
+		It("reports a syntax_errors diagnostic, no signals for that file, and exits 0", func() {
 			repo := newTempGitRepo()
 			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
 			commitFile(repo, "a.go", "package a\n\nfunc B(\n")
 
-			report, _ := runCoachCodesignal(repo, initialSHA)
+			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 
-			Expect(hasDiagnostic(report, "syntax_errors", "a.go")).To(BeTrue())
-			Expect(signalsForPath(report, "a.go")).To(BeEmpty())
+			var report codesignal.Report
+			Expect(json.Unmarshal(stdout, &report)).To(Succeed())
+
+			Expect(hasDiagnostic(&report, "syntax_errors", "a.go")).To(BeTrue())
+			Expect(signalsForPath(&report, "a.go")).To(BeEmpty())
+			Expect(report.Signals).To(BeEmpty(), "a report with only diagnostics and zero signals is a normal, exit-0 outcome")
 		})
 	})
 
@@ -289,17 +294,21 @@ var _ = Describe("coach codesignal", func() {
 		})
 	})
 
-	When("one selected file fails analysis alongside a healthy file", func() {
-		It("still analyzes the healthy file and reports a diagnostic for the failed one", func() {
+	When("one selected file fails analysis alongside a healthy file that introduces a signal", func() {
+		It("exits 0, continues analyzing the healthy file, and reports a diagnostic for the failed one", func() {
 			repo := newTempGitRepo()
 			initialSHA := commitFile(repo, "healthy.go", "package a\n\nfunc Get(input *int) int { return *input }\n")
 			commitFile(repo, "healthy.go", "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n")
 			commitFile(repo, "empty.go", "")
 
-			report, _ := runCoachCodesignal(repo, initialSHA)
+			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 
-			Expect(hasDiagnostic(report, "empty_content", "empty.go")).To(BeTrue())
-			signals := signalsForPath(report, "healthy.go")
+			var report codesignal.Report
+			Expect(json.Unmarshal(stdout, &report)).To(Succeed())
+
+			Expect(hasDiagnostic(&report, "empty_content", "empty.go")).To(BeTrue())
+			signals := signalsForPath(&report, "healthy.go")
 			Expect(signals).To(HaveLen(1))
 			Expect(signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
 		})
@@ -376,6 +385,55 @@ var _ = Describe("coach codesignal", func() {
 			Expect(exitCode).To(Equal(2))
 			Expect(stdout).To(BeEmpty())
 			Expect(stderr).NotTo(BeEmpty())
+		})
+	})
+
+	When("run with no GitHub token, no model/LLM API key, and no other external service config", func() {
+		It("still exits 0 with a valid report, proving zero external service configuration is required", func() {
+			repo := newTempGitRepo()
+			base := "package a\n\nfunc Get(input *int) int {\n\treturn *input\n}\n"
+			head := base + "\nfunc Update(input *int) {\n\t*input = 1\n}\n"
+			initialSHA := commitFile(repo, "a.go", base)
+			commitFile(repo, "a.go", head)
+
+			command := exec.Command(commandPath, "codesignal", "--base", initialSHA, "--format=json")
+			command.Dir = repo
+			command.Env = []string{
+				"PATH=" + os.Getenv("PATH"),
+				"HOME=" + os.Getenv("HOME"),
+				"GIT_AUTHOR_NAME=coach-acceptance",
+				"GIT_AUTHOR_EMAIL=coach-acceptance@example.com",
+				"GIT_COMMITTER_NAME=coach-acceptance",
+				"GIT_COMMITTER_EMAIL=coach-acceptance@example.com",
+			}
+			var stdout, stderr bytes.Buffer
+			command.Stdout = &stdout
+			command.Stderr = &stderr
+
+			err := command.Run()
+			Expect(err).NotTo(HaveOccurred(), "stderr: %s", stderr.String())
+
+			var report codesignal.Report
+			Expect(json.Unmarshal(stdout.Bytes(), &report)).To(Succeed(), "stdout should be one JSON report: %s", stdout.String())
+
+			signals := signalsForPath(&report, "a.go")
+			Expect(signals).To(HaveLen(1))
+			Expect(signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
+		})
+	})
+
+	When("a file is renamed with no content change", func() {
+		It("emits an unsupported_change_type diagnostic and never attaches the old path's history to the new path", func() {
+			repo := newTempGitRepo()
+			oldContent := "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n"
+			initialSHA := commitFile(repo, "old.go", oldContent)
+			renameFile(repo, "old.go", "new.go")
+
+			report, _ := runCoachCodesignal(repo, initialSHA)
+
+			Expect(hasDiagnostic(report, "unsupported_change_type", "new.go")).To(BeTrue())
+			Expect(signalsForPath(report, "new.go")).To(BeEmpty(), "a renamed file is not analyzed, so it must not inherit any lifecycle from old.go")
+			Expect(signalsForPath(report, "old.go")).To(BeEmpty(), "the old path no longer exists at HEAD and must not appear in the report")
 		})
 	})
 

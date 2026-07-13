@@ -72,3 +72,25 @@ func commitFile(repo, name, contents string) string {
 
 	return strings.TrimSpace(string(output))
 }
+
+// renameFile renames from to to in repo via `git mv` and commits the
+// rename, returning the resulting commit's full SHA.
+func renameFile(repo, from, to string) string {
+	mvCmd := exec.Command("git", "mv", from, to)
+	mvCmd.Dir = repo
+	output, err := mvCmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "git mv: %s", output)
+
+	commitCmd := exec.Command("git", "commit", "-m", "rename "+from+" to "+to)
+	commitCmd.Dir = repo
+	commitCmd.Env = commitEnv
+	output, err = commitCmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "git commit: %s", output)
+
+	revCmd := exec.Command("git", "rev-parse", "HEAD")
+	revCmd.Dir = repo
+	output, err = revCmd.Output()
+	Expect(err).NotTo(HaveOccurred())
+
+	return strings.TrimSpace(string(output))
+}
