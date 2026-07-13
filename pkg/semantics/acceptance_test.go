@@ -117,6 +117,25 @@ func NewAlpha() *int {
 			// must sort first regardless of how many findings each produces.
 			Expect(result.Findings[0].Name).To(Equal("NewZeta"))
 		})
+
+		It("orders syntax errors by document position (AC-1.10)", func() {
+			// Two separate unclosed-brace functions, each producing at least
+			// one ERROR/MISSING node, so SyntaxErrors has more than one entry
+			// to order.
+			source := []byte("package main\nfunc f() {\nfunc g() {\n")
+
+			result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+				Path:     "main.go",
+				Language: semantics.LanguageGo,
+				Content:  source,
+			})
+			Expect(errors.Is(err, semantics.ErrSyntax)).To(BeTrue())
+
+			Expect(len(result.SyntaxErrors)).To(BeNumerically(">=", 2))
+			for i := 1; i < len(result.SyntaxErrors); i++ {
+				Expect(result.SyntaxErrors[i].Location.StartByte).To(BeNumerically(">=", result.SyntaxErrors[i-1].Location.StartByte))
+			}
+		})
 	})
 
 	Context("when the input violates a documented precondition", func() {

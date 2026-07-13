@@ -16,8 +16,8 @@ import (
 )
 
 // ginkgoRSAKey returns a freshly generated RSA private key, PKCS#1-PEM-
-// encoded the same way GitHub issues App private keys. It never touches the
-// network or any real credentials. Ginkgo-local variant of
+// encoded the same way GitHub encodes App private keys it issues. It never
+// touches the network or any real credentials. Ginkgo-local variant of
 // testhelpers_test.go's generateTestRSAPrivateKeyPEM, which takes a concrete
 // *testing.T that a Ginkgo spec (running under GinkgoT(), a testing.TB) does
 // not have.
