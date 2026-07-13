@@ -40,6 +40,25 @@ func TestTSConfigExplicitEmptyFilesSelectsNoFiles(t *testing.T) {
 	}
 }
 
+func TestApplySourceScopeExcludesGoTestFilesWithoutBuildTarget(t *testing.T) {
+	repo := newScopeTestRepo(t, map[string]string{
+		"shipping/shipping.go":      "package shipping\n\nfunc Update() {}\n",
+		"shipping/shipping_test.go": "package shipping\n\nfunc TestUpdate() {}\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "shipping/shipping.go", Status: "modified", Language: semantics.LanguageGo},
+		{Path: "shipping/shipping_test.go", Status: "modified", Language: semantics.LanguageGo},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 1 || files[0].Path != "shipping/shipping.go" || files[0].SourceScope != SourceScopeUnknown {
+		t.Fatalf("production scope without a build target should retain only non-test Go files as unknown: got %#v", files)
+	}
+}
+
 func TestApplySourceScopeResolvesGoTargetFromInvocationSubdirectory(t *testing.T) {
 	repo := newScopeTestRepo(t, map[string]string{
 		"go.mod":              "module example.com/scope-test\n\ngo 1.24\n",

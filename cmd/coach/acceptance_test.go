@@ -248,6 +248,23 @@ var _ = Describe("coach codesignal", func() {
 	})
 
 	When("a Go build target has changed production, test-only, unreachable, and build-tag-excluded files", func() {
+		It("excludes test-only findings from default production scope without requiring a build target", func() {
+			repo := newTempGitRepo()
+			initialSHA := commitFile(repo, "shipping/shipping.go", "package shipping\n\nfunc Update(input *int) {}\n")
+			commitFile(repo, "shipping/shipping_test.go", "package shipping\n\nfunc TestUpdate(input *int) {}\n")
+
+			commitFile(repo, "shipping/shipping.go", "package shipping\n\nfunc Update(input *int) {\n\t*input = 1\n}\n")
+			commitFile(repo, "shipping/shipping_test.go", "package shipping\n\nfunc TestUpdate(input *int) {\n\t*input = 1\n}\n")
+
+			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--format=json")
+			Expect(exitCode).To(Equal(0), "default production scope should complete without a build target; stderr: %s", stderr)
+
+			var report codesignal.Report
+			Expect(json.Unmarshal(stdout, &report)).To(Succeed())
+			Expect(signalsForPath(&report, "shipping/shipping.go")).To(HaveLen(1), "a non-test Go file must remain visible when production membership is unknown")
+			Expect(signalsForPath(&report, "shipping/shipping_test.go")).To(BeEmpty(), "default production scope must not report a test-only Go finding when no build target is supplied")
+		})
+
 		It("defaults to production scope and reports only findings that ship in the selected build target", func() {
 			repo := newTempGitRepo()
 			initialSHA := commitFile(repo, "go.mod", "module example.com/scopefixture\n\ngo 1.25.0\n")

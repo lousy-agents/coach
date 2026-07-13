@@ -79,11 +79,11 @@ func classifySourceFile(file SelectedFile, goProduction map[string]bool, buildTa
 		if goProduction[file.Path] {
 			return SourceScopeProduction
 		}
-		if buildTarget == "" {
-			return SourceScopeUnknown
-		}
 		if strings.HasSuffix(file.Path, "_test.go") {
 			return SourceScopeTestOnly
+		}
+		if buildTarget == "" {
+			return SourceScopeUnknown
 		}
 		return SourceScopeExcluded
 	case semantics.LanguageTypeScript, semantics.LanguageTSX:
