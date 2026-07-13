@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "scope": {},
+  "summary": {
+    "files_analyzed": 0,
+    "files_with_diagnostics": 0,
+    "active_signals": 0,
+    "introduced_signals": 0,
+    "existing_signals": 0,
+    "resolved_signals": 0
+  }
+}

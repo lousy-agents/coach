@@ -1,0 +1,106 @@
+{
+  "schema_version": "1",
+  "scope": {
+    "repository": "example/repo",
+    "revision": "def456",
+    "base": "main"
+  },
+  "summary": {
+    "files_analyzed": 1,
+    "files_with_diagnostics": 0,
+    "active_signals": 3,
+    "introduced_signals": 1,
+    "existing_signals": 1,
+    "resolved_signals": 1
+  },
+  "signals": [
+    {
+      "id": "sig_6896b035a6cdcb6237b5d88c0c0d2c8018d56371bf080c1a1e728116a851c503",
+      "fingerprint": "fp_a8bb441af94aa8132057390fad190ffcf16a565286e45fcc87e53278da96f143",
+      "rule_id": "state.hidden_input_mutation",
+      "rule_version": "1",
+      "kind": "hidden_input_mutation",
+      "category": "state_management",
+      "severity": "medium",
+      "confidence": "high",
+      "lifecycle": "introduced",
+      "changed": true,
+      "path": "pkg/example/state.go",
+      "subject": "NewOne",
+      "location": {
+        "start_byte": 0,
+        "end_byte": 0,
+        "start_row": 20,
+        "start_col": 0,
+        "end_row": 20,
+        "end_col": 24
+      },
+      "evidence": "s.Cache[k] = v",
+      "why_it_matters": "Mutating a caller-owned input can create behavior that is not visible from the function signature, make outcomes dependent on call ordering, introduce temporal coupling, make tests and local reasoning more difficult, and surprise callers that expect an input to remain unchanged.",
+      "recommendation": "Return an updated cache instead of mutating s.Cache in place.",
+      "suggested_skill": "go-testable-design",
+      "provenance": {
+        "producer": "semantics",
+        "finding_kind": "mutates_input"
+      }
+    },
+    {
+      "id": "sig_82658786f02c01b28430b6b10bcf0d46a9ede862a780854e2977fdf08880009b",
+      "fingerprint": "fp_088d4e902b89e48eefbcc8aa5da7adee5bc7f5f5020621ea13da557b6378aaba",
+      "rule_id": "state.hidden_input_mutation",
+      "rule_version": "1",
+      "kind": "hidden_input_mutation",
+      "category": "state_management",
+      "severity": "medium",
+      "confidence": "medium",
+      "lifecycle": "existing",
+      "changed": true,
+      "path": "pkg/example/state.go",
+      "subject": "Existing",
+      "location": {
+        "start_byte": 0,
+        "end_byte": 0,
+        "start_row": 10,
+        "start_col": 0,
+        "end_row": 10,
+        "end_col": 20
+      },
+      "evidence": "s.Count = s.Count + 1",
+      "why_it_matters": "Mutating a caller-owned input can create behavior that is not visible from the function signature, make outcomes dependent on call ordering, introduce temporal coupling, make tests and local reasoning more difficult, and surprise callers that expect an input to remain unchanged.",
+      "recommendation": "Return the updated value instead of mutating caller-owned state, or make the in-place behavior explicit through the API name and documentation.",
+      "provenance": {
+        "producer": "semantics",
+        "finding_kind": "mutates_input"
+      }
+    },
+    {
+      "id": "sig_420a74723e3c66ffdb07f2aba223b69dccceb0688d0a4768f57e99ef5caeb9ff",
+      "fingerprint": "fp_2f8a58dc0b135cd2d7953136f0a91e459d1f4f34d87e6f929502900990d67374",
+      "rule_id": "state.hidden_input_mutation",
+      "rule_version": "1",
+      "kind": "hidden_input_mutation",
+      "category": "state_management",
+      "severity": "medium",
+      "confidence": "low",
+      "lifecycle": "resolved",
+      "changed": false,
+      "path": "pkg/example/state.go",
+      "subject": "GoneNow",
+      "location": {
+        "start_byte": 0,
+        "end_byte": 0,
+        "start_row": 2,
+        "start_col": 0,
+        "end_row": 2,
+        "end_col": 20
+      },
+      "evidence": "s.Stale = true",
+      "why_it_matters": "Mutating a caller-owned input can create behavior that is not visible from the function signature, make outcomes dependent on call ordering, introduce temporal coupling, make tests and local reasoning more difficult, and surprise callers that expect an input to remain unchanged.",
+      "recommendation": "Return the updated value instead of mutating caller-owned state, or make the in-place behavior explicit through the API name and documentation.",
+      "provenance": {
+        "producer": "semantics",
+        "finding_kind": "mutates_input"
+      }
+    }
+  ]
+}
