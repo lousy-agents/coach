@@ -2,7 +2,7 @@
 //
 // Usage:
 //
-//	coach codesignal --base <ref> [--format text|json]
+//	coach codesignal --base <ref> [--format text|json] [--scope production|all] [--build-target <package>]
 package main
 
 import (
@@ -21,7 +21,7 @@ func main() {
 
 func run(args []string, stdout, stderr *os.File) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: coach codesignal --base <ref> [--format text|json]")
+		fmt.Fprintln(stderr, "usage: coach codesignal --base <ref> [--format text|json] [--scope production|all] [--build-target <package>]")
 		return 2
 	}
 
@@ -29,7 +29,7 @@ func run(args []string, stdout, stderr *os.File) int {
 	case "codesignal":
 		return runCodesignal(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "usage: coach codesignal --base <ref> [--format text|json]\ncoach: unknown command %q\n", args[0])
+		fmt.Fprintf(stderr, "usage: coach codesignal --base <ref> [--format text|json] [--scope production|all] [--build-target <package>]\ncoach: unknown command %q\n", args[0])
 		return 2
 	}
 }
@@ -39,19 +39,26 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 	flags.SetOutput(stderr)
 	base := flags.String("base", "", "git ref to diff against (required)")
 	format := flags.String("format", "text", "output format: text or json")
+	scope := flags.String("scope", "production", "source scope: production or all")
+	buildTarget := flags.String("build-target", "", "Go package pattern used to determine production reachability")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
 
 	if *base == "" {
-		fmt.Fprintln(stderr, "usage: coach codesignal --base <ref> [--format text|json]")
+		fmt.Fprintln(stderr, "usage: coach codesignal --base <ref> [--format text|json] [--scope production|all] [--build-target <package>]")
 		fmt.Fprintln(stderr, "coach: missing required --base flag")
 		return 2
 	}
 
 	if *format != "text" && *format != "json" {
-		fmt.Fprintln(stderr, "usage: coach codesignal --base <ref> [--format text|json]")
+		fmt.Fprintln(stderr, "usage: coach codesignal --base <ref> [--format text|json] [--scope production|all] [--build-target <package>]")
 		fmt.Fprintf(stderr, "coach: invalid --format value %q: must be \"text\" or \"json\"\n", *format)
+		return 2
+	}
+	if *scope != "production" && *scope != "all" {
+		fmt.Fprintln(stderr, "usage: coach codesignal --base <ref> [--format text|json] [--scope production|all] [--build-target <package>]")
+		fmt.Fprintf(stderr, "coach: invalid --scope value %q: must be \"production\" or \"all\"\n", *scope)
 		return 2
 	}
 
@@ -67,6 +74,10 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 	}
 
 	selected, diagnostics, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA)
+	if err != nil {
+		return reportOperationalError(err, stderr)
+	}
+	selected, err = codesignalcli.ApplySourceScope(dir, headSHA, *buildTarget, *scope, selected)
 	if err != nil {
 		return reportOperationalError(err, stderr)
 	}
