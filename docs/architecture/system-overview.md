@@ -220,6 +220,21 @@ flowchart LR
 
 Results include analyzer/rule version, repository and commit identities, file hashes, stable fingerprint, location, reproducible inputs, and `source=deterministic`. An agent may contextualize or propose a governed suppression, but cannot overwrite a deterministic result; its separate record uses `source=agent`.
 
+#### CLI preview
+
+`coach codesignal` (`cmd/coach`, `internal/codesignalcli`) is a local-only, deterministic validation surface over the same `pkg/semantics` -> `pkg/codesignal` pipeline, run directly against a checked-out Git revision instead of through the worker/queue path above. It exists to make this fast path usable and testable before the broader delivery infrastructure (job worker, queue, GitHub App integration) is adopted. It does not replace the CodeSignal Worker described elsewhere in this document, and it never contacts a queue or GitHub: it reads two Git revisions from the local worktree with `git show`/`git diff`, analyzes each changed file, and prints (or emits as JSON) the resulting report.
+
+```mermaid
+flowchart LR
+    Dev["Developer"] --> Git["Local Git checkout"]
+    Git --> CLI["coach codesignal"]
+    CLI --> Sem2["pkg/semantics"]
+    Sem2 --> CS2["pkg/codesignal"]
+    CS2 --> Report["Report (text or JSON) to stdout"]
+```
+
+Contrast with the flow above: the worker path consumes an immutable snapshot through a queue and produces a governed evidence artifact as part of a larger workflow; the CLI path is a developer running one command against their own worktree, printing a report to their own terminal. Both share the same deterministic `pkg/semantics`/`pkg/codesignal` core, but the CLI path stays local and advisory — it does not execute code, does not perform cross-file analysis, does not prove a defect, and does not publish GitHub feedback or block CI on its own.
+
 ### C4 Level 3D: Agent and tool-execution boundary
 
 ```mermaid
