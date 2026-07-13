@@ -165,8 +165,6 @@ func baseSyntaxDiagnostics(path string, baseErr error) []codesignal.Diagnostic {
 	return diagnostics
 }
 
-// mapSemanticsError maps a non-ErrSyntax semantics error to its CLI
-// diagnostic kind.
 func mapSemanticsError(path string, err error) codesignal.Diagnostic {
 	kind := "analysis_failed"
 	switch {

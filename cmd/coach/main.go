@@ -1,8 +1,4 @@
 // Command coach is the composition-root CLI for the coach project.
-//
-// Usage:
-//
-//	coach codesignal --base <ref> [--format text|json] [--scope production|all] [--build-target <package>]
 package main
 
 import (
