@@ -53,13 +53,25 @@ The JS/TS bindings are currently packaged for Node.js (ESM-only).
 
 `cmd/coach` provides a `codesignal` subcommand: a local, deterministic preview of `pkg/codesignal` you can run directly against a Git checkout, without any GitHub App, worker, or model/LLM configuration.
 
+Download the latest `coach` binary for macOS from the [GitHub Releases page](https://github.com/lousy-agents/coach/releases). Each tagged release publishes separate archives for Apple silicon (`darwin_arm64`) and x86-64 Intel Macs (`darwin_x86_64`).
+
+```sh
+# Apple silicon
+curl -L https://github.com/lousy-agents/coach/releases/latest/download/coach_darwin_arm64.tar.gz | tar -xz
+
+# x86-64 Intel Macs
+curl -L https://github.com/lousy-agents/coach/releases/latest/download/coach_darwin_x86_64.tar.gz | tar -xz
+```
+
+Move the extracted `coach` binary somewhere on your `PATH`.
+
 > [!NOTE]
-> `coach` is not yet a tagged/published module, so `go install github.com/lousy-agents/coach/cmd/coach@latest` does not work today. From a local clone, build/install it with:
+> From a local clone, you can still build/install it with:
 > ```sh
 > go install ./cmd/coach
 > ```
 
-**Prerequisites:** a local Git checkout, the `git` executable in `PATH`, and Go 1.25+ (matching `go.mod`).
+**Prerequisites:** a local Git checkout and the `git` executable in `PATH`. Building from source also requires Go 1.25+ (matching `go.mod`).
 
 ### Usage
 
