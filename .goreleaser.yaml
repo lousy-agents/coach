@@ -31,6 +31,7 @@ signs:
     artifacts: checksum
     signature: "${artifact}.sig"
     certificate: "${artifact}.pem"
+    skip: "{{ .IsSnapshot }}"
     args:
       - sign-blob
       - --output-signature=${signature}
