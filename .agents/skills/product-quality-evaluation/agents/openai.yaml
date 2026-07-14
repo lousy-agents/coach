@@ -1,0 +1,4 @@
+interface:
+  display_name: "Product Quality Evaluation"
+  short_description: "Assess release readiness through a customer lens"
+  default_prompt: "Use $product-quality-evaluation to assess the current product as a prospective customer: is it useful, releasable, and lovable yet?"
