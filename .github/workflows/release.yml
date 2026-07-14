@@ -5,6 +5,8 @@ on:
     paths:
       - .goreleaser.yaml
       - .github/workflows/release.yml
+      - LICENSE
+      - README.md
       - cmd/coach/**
       - internal/**
       - pkg/**
