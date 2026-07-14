@@ -29,12 +29,10 @@ archives:
 signs:
   - cmd: cosign
     artifacts: checksum
-    signature: "${artifact}.sig"
-    certificate: "${artifact}.pem"
+    signature: "${artifact}.bundle"
     args:
       - sign-blob
-      - --output-signature=${signature}
-      - --output-certificate=${certificate}
+      - --bundle=${signature}
       - ${artifact}
       - --yes
 
