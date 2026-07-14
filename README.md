@@ -53,14 +53,29 @@ The JS/TS bindings are currently packaged for Node.js (ESM-only).
 
 `cmd/coach` provides a `codesignal` subcommand: a local, deterministic preview of `pkg/codesignal` you can run directly against a Git checkout, without any GitHub App, worker, or model/LLM configuration.
 
-Download the latest `coach` binary for macOS from the [GitHub Releases page](https://github.com/lousy-agents/coach/releases). Each tagged release publishes separate archives for Apple silicon (`darwin_arm64`) and x86-64 Intel Macs (`darwin_x86_64`).
+Download the latest `coach` binary for macOS from the [GitHub Releases page](https://github.com/lousy-agents/coach/releases). Each tagged release publishes separate archives for Apple silicon (`darwin_arm64`) and x86-64 Intel Macs (`darwin_x86_64`), a `checksums.txt` file, and cosign signature/certificate files.
 
 ```sh
-# Apple silicon
-curl -L https://github.com/lousy-agents/coach/releases/latest/download/coach_darwin_arm64.tar.gz | tar -xz
+ARCH=darwin_arm64  # or darwin_x86_64
 
-# x86-64 Intel Macs
-curl -L https://github.com/lousy-agents/coach/releases/latest/download/coach_darwin_x86_64.tar.gz | tar -xz
+curl -LO https://github.com/lousy-agents/coach/releases/latest/download/coach_${ARCH}.tar.gz
+curl -LO https://github.com/lousy-agents/coach/releases/latest/download/checksums.txt
+curl -LO https://github.com/lousy-agents/coach/releases/latest/download/checksums.txt.sig
+curl -LO https://github.com/lousy-agents/coach/releases/latest/download/checksums.txt.pem
+
+# Verify the checksums file was signed by this repository's release workflow
+cosign verify-blob \
+  --signature checksums.txt.sig \
+  --certificate checksums.txt.pem \
+  --certificate-identity-regexp '^https://github.com/lousy-agents/coach/.github/workflows/release.yml@refs/tags/v.*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+
+# Verify the archive against the signed checksums
+shasum -a 256 -c --ignore-missing checksums.txt
+
+# Extract the binary
+tar -xzf coach_${ARCH}.tar.gz
 ```
 
 Move the extracted `coach` binary somewhere on your `PATH`.
