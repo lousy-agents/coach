@@ -1,6 +1,7 @@
 package semantics
 
 import (
+	"sort"
 	"strings"
 	"testing"
 
@@ -27,6 +28,7 @@ func dumpKinds(kinds map[string]bool) string {
 	for k := range kinds {
 		all = append(all, k)
 	}
+	sort.Strings(all)
 	return strings.Join(all, ", ")
 }
 

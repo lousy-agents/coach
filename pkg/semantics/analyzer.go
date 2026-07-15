@@ -88,6 +88,15 @@ func (a *Analyzer) AnalyzeBytes(ctx context.Context, in FileInput) (*Result, err
 		return result, &SyntaxError{Issues: issues}
 	}
 
+	// AC-1.8 (mid-pipeline): re-check cancellation between parsing and
+	// running import/feature extraction, since validate and parse only
+	// check at their own entry points. Checked before the TS/TSX fallback
+	// below too, since that walks the whole tree and shouldn't run once the
+	// caller has already given up.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// gotreesitter's TypeScript/TSX error recovery for a missing
 	// right-hand-side expression (e.g. "const x = ;") discards the
 	// malformed declaration entirely rather than emitting an ERROR/MISSING
@@ -104,13 +113,6 @@ func (a *Analyzer) AnalyzeBytes(ctx context.Context, in FileInput) (*Result, err
 			}
 			return result, &SyntaxError{Issues: issues}
 		}
-	}
-
-	// AC-1.8 (mid-pipeline): re-check cancellation between parsing and
-	// running import/feature extraction, since validate and parse only
-	// check at their own entry points.
-	if err := ctx.Err(); err != nil {
-		return nil, err
 	}
 
 	// validate has already confirmed in.Language is registered, so this
