@@ -20,9 +20,20 @@ There is no `coach` CLI yet.
 - `go-testable-design` — guidance for writing/refactoring testable Go (table tests, constructor injection, boundaries, concurrency tests).
 - `mutation-hunter` — find TypeScript test-coverage gaps via semantic mutation testing.
 - `rugged-evil-tester` — generate adversarial/negative/chaos tests for TypeScript code.
+- `product-quality-evaluation` — get a candid, evidence-grounded product/release-readiness assessment via the `product-sme` subagent.
 - `skill-reviewer` — lint and review Agent Skills `SKILL.md` files across harnesses.
 - `spec-auditor` — adversarially review specs/PRDs/plans before coding.
 - `triaging-pr-reviews` — classify and triage PR review comments, including automated reviewer (e.g. Copilot) suggestions.
+
+## Custom subagents
+
+Some skills delegate to a named subagent rather than doing the work inline. Each harness defines subagents in its own format, so a subagent a skill relies on needs one definition per harness that uses it:
+
+- `.codex/agents/*.toml` — Codex custom subagents (`name`, `description`, `sandbox_mode`, `developer_instructions`).
+- `.claude/agents/*.md` — Claude Code subagents (YAML frontmatter + markdown body as the system prompt). `task-implementer`/`task-reviewer` back the `implement-issue` command; `product-sme` backs `product-quality-evaluation`.
+- `.agents/skills/*/agents/<harness>.yaml` — optional, separate from subagent definitions: a per-harness "interface" declaration (e.g. `display_name`/`default_prompt`) for how a skill surfaces in that harness's UI. Only add one if the harness actually reads it — Claude Code has no such mechanism today.
+
+Neither TOML nor Claude's subagent Markdown supports importing another file's instructions at runtime, so a subagent needed by more than one harness means its instruction text is necessarily duplicated. Pick one file as canonical, mirror the text verbatim into the other(s), and mark both with a one-line comment pointing at their counterpart — don't build codegen/sync tooling for a two- or three-file mirror.
 
 ## Commands
 
