@@ -1,6 +1,8 @@
 ---
 name: product-quality-evaluation
 description: Obtain candid, customer-centered functional feedback on the current product through the configured product-sme subagent. Use when asking whether the product is useful, releasable, lovable, ready for customers, or what product gaps most threaten adoption; use for an evidence-grounded product assessment rather than an implementation plan or code review.
+argument-hint: "Optional: evaluation question, release decision, or target audience"
+allowed-tools: Read, Grep, Glob, Agent
 ---
 
 # Product Quality Evaluation
