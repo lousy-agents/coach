@@ -171,7 +171,7 @@ func DiscoverTrackedFiles(dir, revisionSHA string) ([]SelectedFile, codesignal.C
 		ext := filepath.Ext(path)
 		lang, ok := semantics.LanguageForExtension(ext)
 		if !ok {
-			unsupportedCounts[ext]++
+			unsupportedCounts[coverageLanguageLabel(ext)]++
 			continue
 		}
 
@@ -192,6 +192,17 @@ func DiscoverTrackedFiles(dir, revisionSHA string) ([]SelectedFile, codesignal.C
 	}
 
 	return files, coverage, nil
+}
+
+// coverageLanguageLabel returns a stable, non-empty label for a
+// CoverageGroup.Language so an extensionless file (LICENSE, Makefile;
+// filepath.Ext returns "") never produces an empty, JSON-omitted label that
+// renders as a blank in text output.
+func coverageLanguageLabel(ext string) string {
+	if ext == "" {
+		return "(no extension)"
+	}
+	return ext
 }
 
 func statusToChangeStatus(status string) codesignal.ChangeStatus {

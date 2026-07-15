@@ -347,6 +347,33 @@ func TestDiscoverTrackedFilesTalliesUnsupportedByExtension(t *testing.T) {
 	}
 }
 
+// TestDiscoverTrackedFilesLabelsExtensionlessFiles proves an extensionless
+// tracked file (e.g. LICENSE, Makefile) -- for which filepath.Ext returns ""
+// -- is tallied under a stable, non-empty CoverageGroup.Language rather than
+// an empty string that would be omitted from JSON and render as a blank in
+// text output.
+func TestDiscoverTrackedFilesLabelsExtensionlessFiles(t *testing.T) {
+	dir := newTempGitRepoT(t)
+	commitFileT(t, dir, "a.go", "package a\n")
+	headSHA := commitFileT(t, dir, "LICENSE", "MIT\n")
+
+	_, coverage, err := DiscoverTrackedFiles(dir, headSHA)
+	if err != nil {
+		t.Fatalf("DiscoverTrackedFiles: unexpected error: %v", err)
+	}
+
+	if len(coverage.Unsupported) != 1 {
+		t.Fatalf("coverage.Unsupported = %#v, want exactly one group", coverage.Unsupported)
+	}
+	group := coverage.Unsupported[0]
+	if group.Language == "" {
+		t.Errorf("group.Language is empty, want a stable non-empty label for an extensionless file")
+	}
+	if group.Count != 1 {
+		t.Errorf("group.Count = %d, want 1", group.Count)
+	}
+}
+
 func joinNUL(fields ...string) []byte {
 	return []byte(strings.Join(fields, "\x00") + "\x00")
 }
