@@ -11,12 +11,21 @@ import (
 // RenderText renders report as deterministic, ANSI-free plain text: a
 // one-line summary, then either "No active CodeSignal findings." or one
 // block per signal (in report.Signals order), then a diagnostics section
-// when report.Diagnostics is non-empty.
+// when report.Diagnostics is non-empty. A Repository Baseline report
+// (report.Scope.Baseline) renders a distinct summary line that identifies
+// the analyzed revision and states plainly that the result is not a diff
+// comparison, plus a Coverage section summarizing unsupported/excluded
+// files by reason and language rather than one line per file; everything
+// else (signal blocks, diagnostics section) is unchanged.
 func RenderText(report *codesignal.Report) string {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "files analyzed: %d, active signals: %d, diagnostics: %d\n",
-		report.Summary.FilesAnalyzed, report.Summary.ActiveSignals, len(report.Diagnostics))
+	if report.Scope.Baseline {
+		renderBaselineSummary(&b, report)
+	} else {
+		fmt.Fprintf(&b, "files analyzed: %d, active signals: %d, diagnostics: %d\n",
+			report.Summary.FilesAnalyzed, report.Summary.ActiveSignals, len(report.Diagnostics))
+	}
 
 	if len(report.Signals) == 0 {
 		b.WriteString("No active CodeSignal findings.\n")
@@ -36,7 +45,61 @@ func RenderText(report *codesignal.Report) string {
 		}
 	}
 
+	if report.Scope.Baseline {
+		renderCoverageSection(&b, report.Coverage)
+	}
+
 	return b.String()
+}
+
+// renderBaselineSummary writes the Repository Baseline summary line: the
+// analyzed revision, an explicit statement that this is not a diff
+// comparison, and file-discovery/coverage counts. report.Coverage is
+// nil-checked defensively -- a nil Coverage falls back to treating every
+// count as 0 rather than panicking.
+func renderBaselineSummary(b *strings.Builder, report *codesignal.Report) {
+	fmt.Fprintf(b, "Repository Baseline for revision %s (not a diff comparison)\n", report.Scope.Revision)
+
+	var tracked, analyzed, unanalyzable, unsupported, excluded int
+	if report.Coverage != nil {
+		tracked = report.Coverage.TrackedFilesDiscovered
+		analyzed = report.Coverage.FilesAnalyzed
+		unanalyzable = report.Coverage.FilesUnanalyzable
+		unsupported = sumCoverageGroups(report.Coverage.Unsupported)
+		excluded = sumCoverageGroups(report.Coverage.Excluded)
+	}
+
+	fmt.Fprintf(b, "tracked files discovered: %d, analyzed: %d, unsupported: %d, excluded: %d, unanalyzable: %d, active signals: %d, diagnostics: %d\n",
+		tracked, analyzed, unsupported, excluded, unanalyzable, report.Summary.ActiveSignals, len(report.Diagnostics))
+}
+
+// sumCoverageGroups totals CoverageGroup.Count across groups so the
+// top-line summary can report a single count per bucket without printing
+// one line per group there.
+func sumCoverageGroups(groups []codesignal.CoverageGroup) int {
+	total := 0
+	for _, g := range groups {
+		total += g.Count
+	}
+	return total
+}
+
+// renderCoverageSection writes one line per CoverageGroup in
+// coverage.Unsupported and coverage.Excluded, staying proportional to the
+// number of distinct reason/language combinations rather than the number of
+// files. Writes nothing when coverage is nil or has no groups.
+func renderCoverageSection(b *strings.Builder, coverage *codesignal.Coverage) {
+	if coverage == nil || (len(coverage.Unsupported) == 0 && len(coverage.Excluded) == 0) {
+		return
+	}
+
+	b.WriteString("\nCoverage:\n")
+	for _, g := range coverage.Unsupported {
+		fmt.Fprintf(b, "  unsupported: %d %s files\n", g.Count, g.Language)
+	}
+	for _, g := range coverage.Excluded {
+		fmt.Fprintf(b, "  excluded: %d %s %s files\n", g.Count, g.Reason, g.Language)
+	}
 }
 
 func renderSignal(b *strings.Builder, signal codesignal.Signal) {

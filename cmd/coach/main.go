@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
 func main() {
@@ -17,7 +18,7 @@ func main() {
 
 func run(args []string, stdout, stderr *os.File) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: coach codesignal --base <ref> [--format text|json] [--scope production|all] [--build-target <package>]")
+		fmt.Fprintln(stderr, codesignalUsage)
 		return 2
 	}
 
@@ -25,15 +26,18 @@ func run(args []string, stdout, stderr *os.File) int {
 	case "codesignal":
 		return runCodesignal(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "usage: coach codesignal --base <ref> [--format text|json] [--scope production|all] [--build-target <package>]\ncoach: unknown command %q\n", args[0])
+		fmt.Fprintf(stderr, "%s\ncoach: unknown command %q\n", codesignalUsage, args[0])
 		return 2
 	}
 }
 
+const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>]"
+
 func runCodesignal(args []string, stdout, stderr *os.File) int {
 	flags := flag.NewFlagSet("codesignal", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	base := flags.String("base", "", "git ref to diff against (required)")
+	base := flags.String("base", "", "git ref to diff against (mutually exclusive with --baseline)")
+	baseline := flags.Bool("baseline", false, "scan every tracked file at HEAD instead of diffing against --base")
 	format := flags.String("format", "text", "output format: text or json")
 	scope := flags.String("scope", "production", "source scope: production or all")
 	buildTarget := flags.String("build-target", "", "Go package pattern used to determine production reachability")
@@ -41,19 +45,25 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return 2
 	}
 
-	if *base == "" {
-		fmt.Fprintln(stderr, "usage: coach codesignal --base <ref> [--format text|json] [--scope production|all] [--build-target <package>]")
+	if *baseline && *base != "" {
+		fmt.Fprintln(stderr, codesignalUsage)
+		fmt.Fprintln(stderr, "coach: --baseline and --base are mutually exclusive: choose a Repository Baseline scan (--baseline) or a diff comparison (--base), not both")
+		return 2
+	}
+
+	if !*baseline && *base == "" {
+		fmt.Fprintln(stderr, codesignalUsage)
 		fmt.Fprintln(stderr, "coach: missing required --base flag")
 		return 2
 	}
 
 	if *format != "text" && *format != "json" {
-		fmt.Fprintln(stderr, "usage: coach codesignal --base <ref> [--format text|json] [--scope production|all] [--build-target <package>]")
+		fmt.Fprintln(stderr, codesignalUsage)
 		fmt.Fprintf(stderr, "coach: invalid --format value %q: must be \"text\" or \"json\"\n", *format)
 		return 2
 	}
 	if *scope != "production" && *scope != "all" {
-		fmt.Fprintln(stderr, "usage: coach codesignal --base <ref> [--format text|json] [--scope production|all] [--build-target <package>]")
+		fmt.Fprintln(stderr, codesignalUsage)
 		fmt.Fprintf(stderr, "coach: invalid --scope value %q: must be \"production\" or \"all\"\n", *scope)
 		return 2
 	}
@@ -64,24 +74,46 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return 1
 	}
 
-	headSHA, mergeBaseSHA, err := codesignalcli.ResolveRevisions(dir, *base)
-	if err != nil {
-		return reportOperationalError(err, stderr)
-	}
+	var report *codesignal.Report
+	if *baseline {
+		revisionSHA, err := codesignalcli.ResolveBaselineRevision(dir)
+		if err != nil {
+			return reportOperationalError(err, stderr)
+		}
+		discovered, coverage, err := codesignalcli.DiscoverTrackedFiles(dir, revisionSHA)
+		if err != nil {
+			return reportOperationalError(err, stderr)
+		}
+		kept, excluded, err := codesignalcli.ApplyBaselineSourceScope(dir, revisionSHA, *buildTarget, *scope, discovered)
+		if err != nil {
+			return reportOperationalError(err, stderr)
+		}
+		coverage.Excluded = excluded
+		report, err = codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, nil, coverage)
+		if err != nil {
+			fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
+			return 1
+		}
+	} else {
+		headSHA, mergeBaseSHA, err := codesignalcli.ResolveRevisions(dir, *base)
+		if err != nil {
+			return reportOperationalError(err, stderr)
+		}
 
-	selected, diagnostics, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA)
-	if err != nil {
-		return reportOperationalError(err, stderr)
-	}
-	selected, err = codesignalcli.ApplySourceScope(dir, headSHA, *buildTarget, *scope, selected)
-	if err != nil {
-		return reportOperationalError(err, stderr)
-	}
+		selected, diagnostics, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA)
+		if err != nil {
+			return reportOperationalError(err, stderr)
+		}
+		selected, err = codesignalcli.ApplySourceScope(dir, headSHA, *buildTarget, *scope, selected)
+		if err != nil {
+			return reportOperationalError(err, stderr)
+		}
 
-	report, err := codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics)
-	if err != nil {
-		fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
-		return 1
+		report, err = codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics)
+		if err != nil {
+			fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
+			return 1
+		}
 	}
 
 	if *format == "json" {
