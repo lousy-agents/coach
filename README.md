@@ -53,13 +53,38 @@ The JS/TS bindings are currently packaged for Node.js (ESM-only).
 
 `cmd/coach` provides a `codesignal` subcommand: a local, deterministic preview of `pkg/codesignal` you can run directly against a Git checkout, without any GitHub App, worker, or model/LLM configuration.
 
+Download the latest `coach` binary for macOS from the [GitHub Releases page](https://github.com/lousy-agents/coach/releases). Each tagged release publishes separate archives for Apple silicon (`darwin_arm64`) and x86-64 Intel Macs (`darwin_x86_64`), a `checksums.txt` file, and a cosign signature bundle.
+
+```sh
+ARCH=darwin_arm64  # or darwin_x86_64
+
+curl -LO https://github.com/lousy-agents/coach/releases/latest/download/coach_${ARCH}.tar.gz
+curl -LO https://github.com/lousy-agents/coach/releases/latest/download/checksums.txt
+curl -LO https://github.com/lousy-agents/coach/releases/latest/download/checksums.txt.bundle
+
+# Verify the checksums file was signed by this repository's release workflow
+cosign verify-blob \
+  --bundle checksums.txt.bundle \
+  --certificate-identity-regexp '^https://github.com/lousy-agents/coach/.github/workflows/release.yml@refs/tags/v.*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+
+# Verify the archive against the signed checksums
+shasum -a 256 -c --ignore-missing checksums.txt
+
+# Extract the binary
+tar -xzf coach_${ARCH}.tar.gz
+```
+
+Move the extracted `coach` binary somewhere on your `PATH`.
+
 > [!NOTE]
-> `coach` is not yet a tagged/published module, so `go install github.com/lousy-agents/coach/cmd/coach@latest` does not work today. From a local clone, build/install it with:
+> From a local clone, you can still build/install it with:
 > ```sh
 > go install ./cmd/coach
 > ```
 
-**Prerequisites:** a local Git checkout, the `git` executable in `PATH`, and Go 1.25+ (matching `go.mod`).
+**Prerequisites:** a local Git checkout and the `git` executable in `PATH`. Building from source also requires Go 1.25+ (matching `go.mod`).
 
 ### Usage
 
