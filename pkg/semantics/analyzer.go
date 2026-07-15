@@ -88,6 +88,24 @@ func (a *Analyzer) AnalyzeBytes(ctx context.Context, in FileInput) (*Result, err
 		return result, &SyntaxError{Issues: issues}
 	}
 
+	// gotreesitter's TypeScript/TSX error recovery for a missing
+	// right-hand-side expression (e.g. "const x = ;") discards the
+	// malformed declaration entirely rather than emitting an ERROR/MISSING
+	// node, so HasError() alone misses it (issue #33). This narrow,
+	// TS/TSX-only fallback catches that specific shape when the grammar
+	// itself reported a clean parse.
+	if in.Language == LanguageTypeScript || in.Language == LanguageTSX {
+		if issues := detectTSBareStatementTokens(root); len(issues) > 0 {
+			result := &Result{
+				Path:         in.Path,
+				Language:     in.Language,
+				ParseStatus:  ParseStatus("syntax_errors"),
+				SyntaxErrors: issues,
+			}
+			return result, &SyntaxError{Issues: issues}
+		}
+	}
+
 	// AC-1.8 (mid-pipeline): re-check cancellation between parsing and
 	// running import/feature extraction, since validate and parse only
 	// check at their own entry points.

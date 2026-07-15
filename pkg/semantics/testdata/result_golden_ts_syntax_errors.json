@@ -6,6 +6,17 @@
     {
       "kind": "error",
       "location": {
+        "start_byte": 0,
+        "end_byte": 5,
+        "start_row": 0,
+        "start_col": 0,
+        "end_row": 0,
+        "end_col": 5
+      }
+    },
+    {
+      "kind": "error",
+      "location": {
         "start_byte": 8,
         "end_byte": 9,
         "start_row": 0,

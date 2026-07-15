@@ -1,11 +1,5 @@
-// The pure-Go backend: adapts github.com/odvcencio/gotreesitter (a
-// from-scratch, CGO-free reimplementation of the Tree-sitter runtime) to
-// the engine interfaces. This file carries no build tag -- it is always
-// compiled, at negligible cost when unused, which lets a conformance build
-// (see pkg/semantics/backend_conformance_test.go) import both this file
-// and cgo.go simultaneously without needing a separate tag on this one.
-// Whether this backend is actually selected as languageRegistry's default
-// is decided in language_gotreesitter.go.
+// Adapts github.com/odvcencio/gotreesitter (a from-scratch, CGO-free
+// reimplementation of the Tree-sitter runtime) to the engine interfaces.
 package engine
 
 import (
@@ -19,7 +13,7 @@ import (
 // registered name (e.g. "go", "typescript", "tsx"), into a Language. name
 // must be registered in github.com/odvcencio/gotreesitter/grammars --
 // typically via a matching grammar_subset_<name> build tag (see
-// mise.toml's wasm-build/conformance-test tasks). An unregistered name is a
+// mise.toml's wasm-build task). An unregistered name is a
 // build configuration error, not a runtime condition callers should need to
 // handle, so this panics rather than returning an error: it is only ever
 // called from package-init-time languageRegistry construction with names
@@ -28,6 +22,17 @@ func GoTreeSitterLanguage(name string) Language {
 	entry := grammars.DetectLanguageByName(name)
 	if entry == nil {
 		panic(fmt.Sprintf("engine: no gotreesitter grammar registered for %q (missing a grammar_subset_%s build tag?)", name, name))
+	}
+	if name == "typescript" || name == "tsx" {
+		// gotreesitter's plain parse path misparses plain-identifier default
+		// parameters (e.g. `function f(x = 1) {}`) and array-destructuring
+		// defaults (e.g. `const [a = 2] = z;`) as syntax errors. WantsForest
+		// is gotreesitter's own documented opt-in (see gotreesitter's
+		// language.go) that routes parsing through its GSS-forest GLR path,
+		// which handles these shapes correctly and falls back to the
+		// existing parser automatically on any forest failure or error node,
+		// so it's a strict improvement with no regression risk.
+		entry.Language().WantsForest = true
 	}
 	return &gtsLanguage{entry: entry}
 }

@@ -37,14 +37,12 @@ mise run test              # go test -race ./...
 mise run test-examples     # go test -run Example ./...
 mise run js-ci              # -> js-test -> js-build -> backend-build/js-install
 mise run wasm-build         # proves GOOS=js GOARCH=wasm compiles (pure-Go engine, grammar-subset tags)
-mise run conformance-test   # dual-backend (CGO vs pure-Go) suite, requires CGO
 ```
 
 Single test, Go side:
 
 ```sh
 go test ./pkg/semantics/... -run TestName -v
-go test -tags 'grammar_subset grammar_subset_go grammar_subset_typescript grammar_subset_tsx' -run TestBackendConformance -v ./pkg/semantics/...
 ```
 
 Single test, JS side (from `js/semantics/`):
@@ -54,16 +52,16 @@ npm run build:backend && npm run build && npm run build:test
 node --test "dist-test/**/*.test.js"
 ```
 
-### CGO requirement
+### Parsing engine
 
-`pkg/semantics` binds to Tree-sitter's C runtime by default (`github.com/tree-sitter/go-tree-sitter`), needing `CGO_ENABLED=1` and a C toolchain. When CGO is unavailable (`CGO_ENABLED=0`, or `GOOS=js GOARCH=wasm`) it falls back automatically to a pure-Go engine (`github.com/odvcencio/gotreesitter`) — no code or flag changes required by callers. The pure-Go engine is newer and verified only against the fixture corpus in `backend_conformance_test.go`, not proven identical to the CGO engine on every adversarial malformed input. A `coach_gotreesitter` build tag forces the pure-Go engine on an otherwise CGO-capable native build, for testing/comparison.
+`pkg/semantics` parses purely in Go via `github.com/odvcencio/gotreesitter` — no CGO, no C toolchain, and no dual-backend selection required.
 
 ## Architecture: `pkg/semantics`
 
 Pipeline (`analyzer.go`): `AnalyzeBytes` = validate -> parse -> syntax-check -> extract imports -> compute metrics/findings -> `Result`.
 
-- **Backend seam** (`internal/engine/engine.go`): a deliberately narrow interface (`Node`, `Tree`, `Parser`, `Query`, `QueryCursor`, `Language`) exposing only the Tree-sitter operations the package actually uses (no `NamedChild`, no `TreeCursor`, no query predicates, no incremental parsing). This package is `internal`, so it's only importable from within `pkg/semantics`. Two implementations exist: `internal/engine/cgo.go` (wraps `go-tree-sitter`) and `internal/engine/gotreesitter.go` (pure-Go, always compiled, no build tag).
-- **Registry selection** (`language.go` + `language_cgo.go` / `language_gotreesitter.go`): `languageSpec` bundles a backend-bound `engine.Language` handle with language-specific `extractImports`/`computeFeatures` functions. `languageRegistry` (`map[Language]languageSpec`) is defined in exactly one of `language_cgo.go` or `language_gotreesitter.go`, selected by build tags — never both in the same binary. Adding a language means extending the registry plus its own `extract*Imports`/`compute*Features` pair (mirroring the Go or TS implementations), not touching `parser.go`/`analyzer.go`.
+- **Backend seam** (`internal/engine/engine.go`): a deliberately narrow interface (`Node`, `Tree`, `Parser`, `Query`, `QueryCursor`, `Language`) exposing only the Tree-sitter operations the package actually uses (no `NamedChild`, no `TreeCursor`, no query predicates, no incremental parsing). This package is `internal`, so it's only importable from within `pkg/semantics`. There is exactly one implementation: `internal/engine/gotreesitter.go` (pure-Go, always compiled, no build tag).
+- **Registry selection** (`language.go`): `languageSpec` bundles a backend-bound `engine.Language` handle with language-specific `extractImports`/`computeFeatures` functions. `languageRegistry` (`map[Language]languageSpec`) is defined unconditionally in `language.go` — no build tags, no per-backend variants. Adding a language means extending the registry plus its own `extract*Imports`/`compute*Features` pair (mirroring the Go or TS implementations), not touching `parser.go`/`analyzer.go`.
 - **Concurrency**: `*Analyzer` holds no backend resources between calls — every `AnalyzeBytes` call creates and closes its own `Parser`/`Tree`/`Query`/`QueryCursor` — so a single `*Analyzer` is safe for concurrent use regardless of engine backend.
 - **Error contract**: syntax errors return a partial `*Result` (`ParseStatus == "syntax_errors"`) *and* a non-nil error satisfying `errors.Is(err, ErrSyntax)` (use `errors.As` for `*SyntaxError.Issues`). Other sentinels: `ErrEmptyContent`, `ErrUnsupportedLanguage`, `ErrFileTooLarge`, `ErrBinaryContent`, `ErrParseFailure`.
 - **JSON stability**: `Result` and nested types use frozen `snake_case` JSON field names, locked by a golden-file test (`result_test.go`). Field names and error identities (`Err*` sentinels, `*SyntaxError`) are treated as stable pre-1.0 API surface; other surface may still change.
@@ -71,7 +69,7 @@ Pipeline (`analyzer.go`): `AnalyzeBytes` = validate -> parse -> syntax-check -> 
 
 ## Architecture: `js/semantics`
 
-TypeScript package with a `Backend` seam (`src/backend.ts`) abstracting the transport; `src/backend-cli.ts`/`backend-default.ts` spawn the compiled `coach-semantics-json` Go binary and speak the jsbridge protocol over stdio. A WASM backend (`backend-wasm.ts`) is not yet wired up even though `pkg/semantics` now builds for `GOOS=js GOARCH=wasm` (see `wasm-build`/`cmd/semantics-wasm-smoke`) — swapping transports is meant to stay behind the `Backend` seam without changing the public API. `npm install`/`prepare` builds the Go backend binary and the TS package, so a C toolchain + Go are required even for JS-only work.
+TypeScript package with a `Backend` seam (`src/backend.ts`) abstracting the transport; `src/backend-cli.ts`/`backend-default.ts` spawn the compiled `coach-semantics-json` Go binary and speak the jsbridge protocol over stdio. A WASM backend (`backend-wasm.ts`) is not yet wired up even though `pkg/semantics` now builds for `GOOS=js GOARCH=wasm` (see `wasm-build`/`cmd/semantics-wasm-smoke`) — swapping transports is meant to stay behind the `Backend` seam without changing the public API. `npm install`/`prepare` builds the Go backend binary and the TS package, so Go is required even for JS-only work.
 
 ## Architecture: `pkg/githubingest`
 
@@ -91,14 +89,13 @@ go test -race ./...
 go test -run Example ./...
 mise run js-ci
 mise run wasm-build
-mise run conformance-test
 ```
 
-`mise run ci` runs all of the Go-side checks (not `js-ci`/`wasm-build`/`conformance-test`, which are separate CI jobs — run those explicitly when touching `js/semantics`, WASM build tags, or the engine backends).
+`mise run ci` runs all of the Go-side checks (not `js-ci`/`wasm-build`, which are separate CI jobs — run those explicitly when touching `js/semantics` or WASM build tags).
 
 ### Verification
 
-Passing checks proves nothing broke; it doesn't prove new behavior is correct. For a `pkg/semantics` extraction/metric change, add or extend a case in the relevant `*_test.go` (`features_test.go`, `ts_features_test.go`, `query_test.go`, …) with a concrete before/after `Result`, not just a "does it run" assertion. For anything touching both engine backends, add the case to `backend_conformance_test.go` fixtures so CGO and pure-Go are checked to agree. For `js/semantics` changes, extend `parity.test.ts` so the Go and JS outputs are checked byte-identical, not just independently plausible.
+Passing checks proves nothing broke; it doesn't prove new behavior is correct. For a `pkg/semantics` extraction/metric change, add or extend a case in the relevant `*_test.go` (`features_test.go`, `ts_features_test.go`, `query_test.go`, …) with a concrete before/after `Result`, not just a "does it run" assertion. For `js/semantics` changes, extend `parity.test.ts` so the Go and JS outputs are checked byte-identical, not just independently plausible.
 
 ### Feedback Loop
 
@@ -106,4 +103,4 @@ After a failing check, fix and rerun that specific command rather than the whole
 
 ## CI shape (`.github/workflows/ci.yml`)
 
-Four independent jobs: `verify` (gofmt/vet/tidy/test/examples, CGO), `js-verify` (`mise run js-ci`), `wasm-build` (proves the `GOOS=js GOARCH=wasm` pure-Go build compiles), `conformance` (dual-backend CGO-vs-pure-Go suite). The wasm and conformance jobs are additive siblings that don't change the CGO-by-default path used everywhere else.
+Three independent jobs: `verify` (gofmt/vet/tidy/test/examples), `js-verify` (`mise run js-ci`), `wasm-build` (proves the `GOOS=js GOARCH=wasm` grammar-subset build compiles under the sole pure-Go engine).

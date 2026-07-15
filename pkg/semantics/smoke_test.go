@@ -1,33 +1,56 @@
-//go:build cgo
-
 package semantics
 
 import (
 	"strings"
 	"testing"
 
-	tree_sitter "github.com/tree-sitter/go-tree-sitter"
-	tree_sitter_go "github.com/tree-sitter/tree-sitter-go/bindings/go"
-	tree_sitter_typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
+	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
-func TestSmoke_ParsesMinimalProgramWithNoErrors(t *testing.T) {
-	parser := tree_sitter.NewParser()
-	defer parser.Close()
+// collectKinds walks n and all its descendants, collecting every node kind
+// string it encounters. It stands in for go-tree-sitter's ToSexp() (not part
+// of the engine seam gotreesitter's Node satisfies): the discovery-gate
+// tests below only need to prove a given node kind string exists somewhere
+// in the parsed tree, not reproduce ToSexp()'s exact textual format.
+func collectKinds(n engine.Node, kinds map[string]bool) {
+	if n == nil {
+		return
+	}
+	kinds[n.Kind()] = true
+	for i := 0; i < n.ChildCount(); i++ {
+		collectKinds(n.Child(i), kinds)
+	}
+}
 
-	if err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_go.Language())); err != nil {
-		t.Fatalf("toolchain proof: setting the Go grammar language failed: %v", err)
+func dumpKinds(kinds map[string]bool) string {
+	all := make([]string, 0, len(kinds))
+	for k := range kinds {
+		all = append(all, k)
+	}
+	return strings.Join(all, ", ")
+}
+
+func TestSmoke_ParsesMinimalProgramWithNoErrors(t *testing.T) {
+	lang := engine.GoTreeSitterLanguage("go")
+	parser, err := lang.NewParser()
+	if err != nil {
+		t.Fatalf("toolchain proof: creating the Go grammar parser failed: %v", err)
 	}
 
 	source := []byte("package main\nfunc main() {}\n")
-	tree := parser.Parse(source, nil)
+	tree, err := parser.Parse(source)
+	if err != nil {
+		t.Fatalf("toolchain proof: Parse returned an error for minimal valid source %q: %v", source, err)
+	}
 	if tree == nil {
 		t.Fatalf("toolchain proof: Parse returned a nil tree for minimal valid source %q", source)
 	}
 	defer tree.Close()
 
 	if tree.RootNode().HasError() {
-		t.Fatalf("toolchain proof: minimal valid source %q should parse without errors, root S-expression: %s", source, tree.RootNode().ToSexp())
+		kinds := map[string]bool{}
+		collectKinds(tree.RootNode(), kinds)
+		t.Fatalf("toolchain proof: minimal valid source %q should parse without errors, node kinds seen: %s", source, dumpKinds(kinds))
 	}
 }
 
@@ -35,14 +58,13 @@ func TestSmoke_ParsesMinimalProgramWithNoErrors(t *testing.T) {
 // gate: it verifies the exact grammar node kind strings the spec's
 // structural-metrics traversal (Task 5) depends on. Per the issue's stop
 // conditions, if any expected kind is absent here, implementation must stop
-// and report the actual S-expression rather than adjusting the expected
+// and report the actual node kinds rather than adjusting the expected
 // names to match reality.
 func TestSmoke_GrammarExposesExpectedStatementNodeKinds(t *testing.T) {
-	parser := tree_sitter.NewParser()
-	defer parser.Close()
-
-	if err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_go.Language())); err != nil {
-		t.Fatalf("AC-3.3 discovery: setting the Go grammar language failed: %v", err)
+	lang := engine.GoTreeSitterLanguage("go")
+	parser, err := lang.NewParser()
+	if err != nil {
+		t.Fatalf("AC-3.3 discovery: creating the Go grammar parser failed: %v", err)
 	}
 
 	source := []byte(`package main
@@ -64,18 +86,22 @@ func f(x int) {
 	}
 }
 `)
-	tree := parser.Parse(source, nil)
+	tree, err := parser.Parse(source)
+	if err != nil {
+		t.Fatalf("AC-3.3 discovery: Parse returned an error for fixture %q: %v", source, err)
+	}
 	if tree == nil {
 		t.Fatalf("AC-3.3 discovery: Parse returned a nil tree for fixture %q", source)
 	}
 	defer tree.Close()
 
 	root := tree.RootNode()
+	kinds := map[string]bool{}
+	collectKinds(root, kinds)
 	if root.HasError() {
-		t.Fatalf("AC-3.3 discovery: fixture must parse cleanly to trust node-kind names, root S-expression: %s", root.ToSexp())
+		t.Fatalf("AC-3.3 discovery: fixture must parse cleanly to trust node-kind names, node kinds seen: %s", dumpKinds(kinds))
 	}
 
-	sexp := root.ToSexp()
 	wantKinds := []string{
 		"if_statement",
 		"for_statement",
@@ -84,55 +110,62 @@ func f(x int) {
 		"select_statement",
 	}
 	for _, kind := range wantKinds {
-		if !strings.Contains(sexp, kind) {
-			t.Fatalf("AC-3.3 discovery: expected grammar node kind %q not found in root S-expression; STOP per issue constraint #3 and report actual S-expression instead of adjusting the expected kind name.\nactual S-expression: %s", kind, sexp)
+		if !kinds[kind] {
+			t.Fatalf("AC-3.3 discovery: expected grammar node kind %q not found; STOP per issue constraint #3 and report actual node kinds instead of adjusting the expected kind name.\nnode kinds seen: %s", kind, dumpKinds(kinds))
 		}
 	}
 }
 
 // AC-R1.3: a minimal valid .ts source must parse to a non-nil tree with no
-// syntax errors under the pinned tree-sitter-typescript grammar, proving
-// the grammar is ABI-compatible with go-tree-sitter v0.25.0 rather than
-// asserted blind.
+// syntax errors under the pinned TypeScript grammar, proving the grammar is
+// wired up correctly rather than asserted blind.
 func TestSmoke_TSParsesMinimalProgramWithNoErrors(t *testing.T) {
-	parser := tree_sitter.NewParser()
-	defer parser.Close()
-
-	if err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_typescript.LanguageTypescript())); err != nil {
-		t.Fatalf("AC-R1.3: setting the TypeScript grammar language failed: %v", err)
+	lang := engine.GoTreeSitterLanguage("typescript")
+	parser, err := lang.NewParser()
+	if err != nil {
+		t.Fatalf("AC-R1.3: creating the TypeScript grammar parser failed: %v", err)
 	}
 
 	source := []byte("const x: number = 1;\n")
-	tree := parser.Parse(source, nil)
+	tree, err := parser.Parse(source)
+	if err != nil {
+		t.Fatalf("AC-R1.3: Parse returned an error for minimal valid TS source %q: %v", source, err)
+	}
 	if tree == nil {
 		t.Fatalf("AC-R1.3: Parse returned a nil tree for minimal valid TS source %q", source)
 	}
 	defer tree.Close()
 
 	if tree.RootNode().HasError() {
-		t.Fatalf("AC-R1.3: minimal valid TS source %q should parse without errors, root S-expression: %s", source, tree.RootNode().ToSexp())
+		kinds := map[string]bool{}
+		collectKinds(tree.RootNode(), kinds)
+		t.Fatalf("AC-R1.3: minimal valid TS source %q should parse without errors, node kinds seen: %s", source, dumpKinds(kinds))
 	}
 }
 
 // AC-R1.3 (TSX variant): a minimal valid .tsx source (containing JSX) must
 // parse to a non-nil tree with no syntax errors under the TSX grammar.
 func TestSmoke_TSXParsesMinimalProgramWithNoErrors(t *testing.T) {
-	parser := tree_sitter.NewParser()
-	defer parser.Close()
-
-	if err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_typescript.LanguageTSX())); err != nil {
-		t.Fatalf("AC-R1.3: setting the TSX grammar language failed: %v", err)
+	lang := engine.GoTreeSitterLanguage("tsx")
+	parser, err := lang.NewParser()
+	if err != nil {
+		t.Fatalf("AC-R1.3: creating the TSX grammar parser failed: %v", err)
 	}
 
 	source := []byte("const el = <div>hi</div>;\n")
-	tree := parser.Parse(source, nil)
+	tree, err := parser.Parse(source)
+	if err != nil {
+		t.Fatalf("AC-R1.3: Parse returned an error for minimal valid TSX source %q: %v", source, err)
+	}
 	if tree == nil {
 		t.Fatalf("AC-R1.3: Parse returned a nil tree for minimal valid TSX source %q", source)
 	}
 	defer tree.Close()
 
 	if tree.RootNode().HasError() {
-		t.Fatalf("AC-R1.3: minimal valid TSX source %q should parse without errors, root S-expression: %s", source, tree.RootNode().ToSexp())
+		kinds := map[string]bool{}
+		collectKinds(tree.RootNode(), kinds)
+		t.Fatalf("AC-R1.3: minimal valid TSX source %q should parse without errors, node kinds seen: %s", source, dumpKinds(kinds))
 	}
 }
 
@@ -140,15 +173,14 @@ func TestSmoke_TSXParsesMinimalProgramWithNoErrors(t *testing.T) {
 // for TypeScript: it verifies the exact grammar node kind strings
 // computeTSFeatures depends on (statement kinds, the full function-like
 // set, method_definition, and statement_block for nesting) against the
-// pinned tree-sitter-typescript grammar, rather than trusting the issue
-// spec's node-kind list blind. If any expected kind is absent, the actual
-// S-expression is reported instead of silently adjusting the expected name.
+// pinned TypeScript grammar, rather than trusting the issue spec's
+// node-kind list blind. If any expected kind is absent, the actual node
+// kinds are reported instead of silently adjusting the expected name.
 func TestSmoke_TSGrammarExposesExpectedNodeKinds(t *testing.T) {
-	parser := tree_sitter.NewParser()
-	defer parser.Close()
-
-	if err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_typescript.LanguageTypescript())); err != nil {
-		t.Fatalf("D2a/D2b discovery: setting the TypeScript grammar language failed: %v", err)
+	lang := engine.GoTreeSitterLanguage("typescript")
+	parser, err := lang.NewParser()
+	if err != nil {
+		t.Fatalf("D2a/D2b discovery: creating the TypeScript grammar parser failed: %v", err)
 	}
 
 	source := []byte(`function f(x: number) {
@@ -172,18 +204,22 @@ class C {
 	method() {}
 }
 `)
-	tree := parser.Parse(source, nil)
+	tree, err := parser.Parse(source)
+	if err != nil {
+		t.Fatalf("D2a/D2b discovery: Parse returned an error for fixture %q: %v", source, err)
+	}
 	if tree == nil {
 		t.Fatalf("D2a/D2b discovery: Parse returned a nil tree for fixture %q", source)
 	}
 	defer tree.Close()
 
 	root := tree.RootNode()
+	kinds := map[string]bool{}
+	collectKinds(root, kinds)
 	if root.HasError() {
-		t.Fatalf("D2a/D2b discovery: fixture must parse cleanly to trust node-kind names, root S-expression: %s", root.ToSexp())
+		t.Fatalf("D2a/D2b discovery: fixture must parse cleanly to trust node-kind names, node kinds seen: %s", dumpKinds(kinds))
 	}
 
-	sexp := root.ToSexp()
 	wantKinds := []string{
 		"if_statement",
 		"for_statement",
@@ -199,8 +235,8 @@ class C {
 		"property_identifier",
 	}
 	for _, kind := range wantKinds {
-		if !strings.Contains(sexp, kind) {
-			t.Fatalf("D2a/D2b discovery: expected grammar node kind %q not found in root S-expression; STOP and report actual S-expression instead of adjusting the expected kind name.\nactual S-expression: %s", kind, sexp)
+		if !kinds[kind] {
+			t.Fatalf("D2a/D2b discovery: expected grammar node kind %q not found; STOP and report actual node kinds instead of adjusting the expected kind name.\nnode kinds seen: %s", kind, dumpKinds(kinds))
 		}
 	}
 }
@@ -211,11 +247,10 @@ class C {
 // shape for a `this.x = new Y()` inside a constructor, against the pinned
 // grammar.
 func TestSmoke_TSGrammarExposesExpectedTightCouplingNodeKinds(t *testing.T) {
-	parser := tree_sitter.NewParser()
-	defer parser.Close()
-
-	if err := parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_typescript.LanguageTypescript())); err != nil {
-		t.Fatalf("D3 discovery: setting the TypeScript grammar language failed: %v", err)
+	lang := engine.GoTreeSitterLanguage("typescript")
+	parser, err := lang.NewParser()
+	if err != nil {
+		t.Fatalf("D3 discovery: creating the TypeScript grammar parser failed: %v", err)
 	}
 
 	source := []byte(`class C {
@@ -224,21 +259,43 @@ func TestSmoke_TSGrammarExposesExpectedTightCouplingNodeKinds(t *testing.T) {
 	}
 }
 `)
-	tree := parser.Parse(source, nil)
+	tree, err := parser.Parse(source)
+	if err != nil {
+		t.Fatalf("D3 discovery: Parse returned an error for fixture %q: %v", source, err)
+	}
 	if tree == nil {
 		t.Fatalf("D3 discovery: Parse returned a nil tree for fixture %q", source)
 	}
 	defer tree.Close()
 
 	root := tree.RootNode()
+	kinds := map[string]bool{}
+	collectKinds(root, kinds)
 	if root.HasError() {
-		t.Fatalf("D3 discovery: fixture must parse cleanly to trust node-kind names, root S-expression: %s", root.ToSexp())
+		t.Fatalf("D3 discovery: fixture must parse cleanly to trust node-kind names, node kinds seen: %s", dumpKinds(kinds))
 	}
 
-	sexp := root.ToSexp()
-	for _, kind := range []string{"assignment_expression", "new_expression", "constructor:"} {
-		if !strings.Contains(sexp, kind) {
-			t.Fatalf("D3 discovery: expected grammar node kind/field %q not found in root S-expression; STOP and report actual S-expression instead of adjusting the expected name.\nactual S-expression: %s", kind, sexp)
+	var hasConstructorField bool
+	var walkFields func(n engine.Node)
+	walkFields = func(n engine.Node) {
+		if n == nil {
+			return
 		}
+		if n.Kind() == "new_expression" && n.ChildByFieldName("constructor") != nil {
+			hasConstructorField = true
+		}
+		for i := 0; i < n.ChildCount(); i++ {
+			walkFields(n.Child(i))
+		}
+	}
+	walkFields(root)
+
+	for _, kind := range []string{"assignment_expression", "new_expression"} {
+		if !kinds[kind] {
+			t.Fatalf("D3 discovery: expected grammar node kind %q not found; STOP and report actual node kinds instead of adjusting the expected name.\nnode kinds seen: %s", kind, dumpKinds(kinds))
+		}
+	}
+	if !hasConstructorField {
+		t.Fatalf("D3 discovery: expected new_expression to expose a \"constructor\" field; STOP and report actual node kinds instead of adjusting the expected name.\nnode kinds seen: %s", dumpKinds(kinds))
 	}
 }
