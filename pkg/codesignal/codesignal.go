@@ -7,6 +7,7 @@ import "context"
 // options exist.
 type Options struct {
 	IncludeResolved bool `json:"include_resolved"`
+	Baseline        bool `json:"baseline"`
 }
 
 // Builder produces Reports from Input. It holds no mutable state after
@@ -36,6 +37,11 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 
 	var signals []Signal
 
+	noBaseLifecycle := Lifecycle("unknown")
+	if b.options.Baseline {
+		noBaseLifecycle = Lifecycle("baseline")
+	}
+
 	for _, fc := range input.Files {
 		diagnostics = append(diagnostics, validateFileChange(fc)...)
 
@@ -46,7 +52,7 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 		diagnostics = append(diagnostics, rangeDiagnostics...)
 
 		if eligibleForLifecycleClassification(fc) {
-			fileClassifiedSignals := classifyFileSignals(baseUsableForLifecycle(fc), fileSignals, extractBaseSignals(fc))
+			fileClassifiedSignals := classifyFileSignals(baseUsableForLifecycle(fc), fileSignals, extractBaseSignals(fc), noBaseLifecycle)
 			for i := range fileClassifiedSignals {
 				fileClassifiedSignals[i].SourceScope = fc.SourceScope
 			}
@@ -69,6 +75,8 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 			summary.ExistingSignals++
 		case "resolved":
 			summary.ResolvedSignals++
+		case "baseline":
+			summary.BaselineSignals++
 		}
 	}
 
@@ -86,12 +94,16 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 	sortSignals(signals)
 	summary.ActiveSignals = len(signals)
 
+	scope := input.Scope
+	scope.Baseline = b.options.Baseline
+
 	report := &Report{
 		SchemaVersion: "1",
-		Scope:         input.Scope,
+		Scope:         scope,
 		Summary:       summary,
 		Signals:       signals,
 		Diagnostics:   diagnostics,
+		Coverage:      input.Coverage,
 	}
 
 	return report, nil

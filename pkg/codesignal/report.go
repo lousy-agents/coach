@@ -9,6 +9,7 @@ type Report struct {
 	Summary       Summary      `json:"summary"`
 	Signals       []Signal     `json:"signals,omitempty"`
 	Diagnostics   []Diagnostic `json:"diagnostics,omitempty"`
+	Coverage      *Coverage    `json:"coverage,omitempty"`
 }
 
 // Summary counts files and signals across a Report.
@@ -19,6 +20,7 @@ type Summary struct {
 	IntroducedSignals    int `json:"introduced_signals"`
 	ExistingSignals      int `json:"existing_signals"`
 	ResolvedSignals      int `json:"resolved_signals"`
+	BaselineSignals      int `json:"baseline_signals"`
 }
 
 type Category string

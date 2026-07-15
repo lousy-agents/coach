@@ -38,7 +38,7 @@ func TestLifecycle_ClassifyFileSignals_MoreBaseThanHeadResolvesExcess(t *testing
 		sig("r", "f.go", "X", "ev", 2, 0),
 	}
 
-	got := classifyFileSignals(true, head, base)
+	got := classifyFileSignals(true, head, base, "unknown")
 
 	if len(got) != 3 {
 		t.Fatalf("classifyFileSignals result length: got %d, want 3: %+v", len(got), got)
@@ -70,7 +70,7 @@ func TestLifecycle_ClassifyFileSignals_NewKeyWithBasePresentIsIntroduced(t *test
 		sig("r", "f.go", "Y", "ev", 3, 0),
 	}
 
-	got := classifyFileSignals(true, head, nil)
+	got := classifyFileSignals(true, head, nil, "unknown")
 
 	if len(got) != 3 {
 		t.Fatalf("classifyFileSignals result length: got %d, want 3: %+v", len(got), got)
@@ -93,7 +93,7 @@ func TestLifecycle_ClassifyFileSignals_ExcessBeyondNonZeroBaseIsUnknown(t *testi
 		sig("r", "f.go", "Z", "ev", 3, 0),
 	}
 
-	got := classifyFileSignals(true, head, base)
+	got := classifyFileSignals(true, head, base, "unknown")
 
 	if n := lifecyclesFor(t, got, "Z", "existing"); n != 1 {
 		t.Errorf("existing signals: got %d, want 1: %+v", n, got)
@@ -115,7 +115,7 @@ func TestLifecycle_ClassifyFileSignals_NoBaseAtAllMeansUnknown(t *testing.T) {
 		sig("r", "f.go", "W", "ev", 2, 0),
 	}
 
-	got := classifyFileSignals(false, head, nil)
+	got := classifyFileSignals(false, head, nil, "unknown")
 
 	if len(got) != 2 {
 		t.Fatalf("classifyFileSignals result length: got %d, want 2: %+v", len(got), got)
@@ -128,12 +128,31 @@ func TestLifecycle_ClassifyFileSignals_NoBaseAtAllMeansUnknown(t *testing.T) {
 	}
 }
 
+func TestClassifyFileSignals_BaselineLifecycle(t *testing.T) {
+	head := []Signal{
+		sig("r", "f.go", "V", "ev", 1, 0),
+		sig("r", "f.go", "V", "ev", 2, 0),
+	}
+
+	got := classifyFileSignals(false, head, nil, "baseline")
+
+	if len(got) != 2 {
+		t.Fatalf("classifyFileSignals result length: got %d, want 2: %+v", len(got), got)
+	}
+	if n := lifecyclesFor(t, got, "V", "baseline"); n != 2 {
+		t.Errorf("baseline signals: got %d, want 2: %+v", n, got)
+	}
+	if n := lifecyclesFor(t, got, "V", "unknown"); n != 0 {
+		t.Errorf("unknown signals: got %d, want 0: %+v", n, got)
+	}
+}
+
 func TestLifecycle_ClassifyFileSignals_FingerprintIsLocationIndependent(t *testing.T) {
 	a := sig("r", "f.go", "Moved", "ev", 1, 0)
 	b := sig("r", "f.go", "Moved", "ev", 50, 0)
 
-	gotA := classifyFileSignals(false, []Signal{a}, nil)
-	gotB := classifyFileSignals(false, []Signal{b}, nil)
+	gotA := classifyFileSignals(false, []Signal{a}, nil, "unknown")
+	gotB := classifyFileSignals(false, []Signal{b}, nil, "unknown")
 
 	if len(gotA) != 1 || len(gotB) != 1 {
 		t.Fatalf("classifyFileSignals result lengths: got %d and %d, want 1 and 1", len(gotA), len(gotB))
@@ -157,7 +176,7 @@ func TestLifecycle_ClassifyFileSignals_DoesNotMutateInputSlices(t *testing.T) {
 	headCopy := append([]Signal(nil), head...)
 	baseCopy := append([]Signal(nil), base...)
 
-	classifyFileSignals(true, head, base)
+	classifyFileSignals(true, head, base, "unknown")
 
 	if head[0].Lifecycle != headCopy[0].Lifecycle || head[0].Fingerprint != headCopy[0].Fingerprint {
 		t.Errorf("classifyFileSignals must not mutate the caller's headSignals slice in place: got %+v, want %+v", head[0], headCopy[0])

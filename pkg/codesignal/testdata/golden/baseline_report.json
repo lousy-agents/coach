@@ -1,9 +1,8 @@
 {
   "schema_version": "1",
   "scope": {
-    "repository": "example/repo",
     "revision": "abc123",
-    "base": "main"
+    "baseline": true
   },
   "summary": {
     "files_analyzed": 1,
@@ -12,7 +11,7 @@
     "introduced_signals": 0,
     "existing_signals": 0,
     "resolved_signals": 0,
-    "baseline_signals": 0
+    "baseline_signals": 1
   },
   "signals": [
     {
@@ -24,7 +23,7 @@
       "category": "state_management",
       "severity": "medium",
       "confidence": "high",
-      "lifecycle": "unknown",
+      "lifecycle": "baseline",
       "changed": true,
       "path": "pkg/example/service.go",
       "subject": "ApplyDefaults",
@@ -45,5 +44,23 @@
         "finding_kind": "mutates_input"
       }
     }
-  ]
+  ],
+  "coverage": {
+    "tracked_files_discovered": 12,
+    "files_analyzed": 10,
+    "files_unanalyzable": 2,
+    "unsupported": [
+      {
+        "reason": "unsupported_language",
+        "language": "python",
+        "count": 1
+      }
+    ],
+    "excluded": [
+      {
+        "reason": "vendored",
+        "count": 1
+      }
+    ]
+  }
 }

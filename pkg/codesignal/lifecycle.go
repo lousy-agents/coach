@@ -60,8 +60,10 @@ func sortedKeys(groups map[signalKey][]Signal) []signalKey {
 }
 
 // classifyFileSignals computes Fingerprint, ID, and Lifecycle for every
-// signal derived from one FileChange.
-func classifyFileSignals(hasBase bool, headSignals, baseSignals []Signal) []Signal {
+// signal derived from one FileChange. noBaseLifecycle is the Lifecycle
+// assigned to head-only signals when hasBase is false (e.g. "unknown" for
+// a base-diff Report, "baseline" for a Repository Baseline Report).
+func classifyFileSignals(hasBase bool, headSignals, baseSignals []Signal, noBaseLifecycle Lifecycle) []Signal {
 	headGroups := groupAndOrder(headSignals)
 	baseGroups := groupAndOrder(baseSignals)
 
@@ -74,7 +76,7 @@ func classifyFileSignals(hasBase bool, headSignals, baseSignals []Signal) []Sign
 		for i, sig := range headGroup {
 			switch {
 			case !hasBase:
-				sig.Lifecycle = "unknown"
+				sig.Lifecycle = noBaseLifecycle
 			case i < nb:
 				sig.Lifecycle = "existing"
 			case nb == 0:

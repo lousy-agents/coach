@@ -11,7 +11,8 @@
     "active_signals": 0,
     "introduced_signals": 0,
     "existing_signals": 0,
-    "resolved_signals": 0
+    "resolved_signals": 0,
+    "baseline_signals": 0
   },
   "diagnostics": [
     {

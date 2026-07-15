@@ -7,6 +7,7 @@ type Input struct {
 	Scope       Scope        `json:"scope"`
 	Files       []FileChange `json:"files,omitempty"`
 	Diagnostics []Diagnostic `json:"diagnostics,omitempty"`
+	Coverage    *Coverage    `json:"coverage,omitempty"`
 }
 
 // Scope identifies the repository and revision range an Input covers.
@@ -14,6 +15,7 @@ type Scope struct {
 	Repository string `json:"repository,omitempty"`
 	Revision   string `json:"revision,omitempty"`
 	Base       string `json:"base,omitempty"`
+	Baseline   bool   `json:"baseline,omitempty"`
 }
 
 type ChangeStatus string
