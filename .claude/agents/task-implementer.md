@@ -25,12 +25,21 @@ guessing.
 
 Steps:
 1. Read the in-scope files before changing anything.
-2. Make the smallest change that satisfies the task's acceptance criteria. Follow
-   the repo's existing conventions and patterns — match what is already there.
-3. Run the repo's lint and test commands. Fix anything you broke.
-4. Report back: the files you changed, a one-line rationale per change, and the
-   lint/test output. If you could not satisfy a criterion, say so explicitly
-   rather than expanding scope to force it.
+2. Write a failing acceptance test for the task's acceptance criteria, at the
+   most meaningful public boundary (not merely a unit test, unless that unit is
+   itself the public contract). Run it and confirm it fails for the expected
+   reason — a compile error or missing fixture doesn't count. This is required
+   by AGENTS.md's acceptance-test-first policy and applies even to small
+   tasks. If a covering acceptance test already exists and already passes,
+   stop and tell the orchestrator instead of proceeding.
+3. Make the smallest change that turns that test green and otherwise satisfies
+   the task's acceptance criteria. Follow the repo's existing conventions and
+   patterns — match what is already there.
+4. Run the repo's lint and test commands. Fix anything you broke.
+5. Report back: the files you changed, a one-line rationale per change, the
+   failing-test output from step 2, and the final lint/test output. If you
+   could not satisfy a criterion, say so explicitly rather than expanding
+   scope to force it.
 
 Do not touch files outside your scope. Do not refactor adjacent code. Do not
 create commits or open PRs — the orchestrator owns git.

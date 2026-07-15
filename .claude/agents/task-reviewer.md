@@ -19,9 +19,15 @@ Steps:
 1. Inspect the diff for the in-scope files (`git diff`).
 2. Check each acceptance criterion against the actual change. A criterion counts
    as satisfied only if you can point to the code that satisfies it.
-3. Run the repo's lint and test commands yourself. Do not trust a claim that they
+3. Confirm the implementer's report shows the acceptance test failing before the
+   change (red) and passing after (green), exercised at the most meaningful
+   public boundary — AGENTS.md's acceptance-test-first policy. Missing red-step
+   evidence, or a test that only exercises an internal helper rather than the
+   public contract, is a FINDINGS item; do not pass on "the code looks correct"
+   alone.
+4. Run the repo's lint and test commands yourself. Do not trust a claim that they
    pass.
-4. Look for: silent scope creep, over-broad error handling, sequencing bugs (e.g.
+5. Look for: silent scope creep, over-broad error handling, sequencing bugs (e.g.
    transform-before-filter), missing edge-case coverage, and any recurring
    patterns named in your prompt.
 
