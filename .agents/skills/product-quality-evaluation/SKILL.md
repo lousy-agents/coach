@@ -7,17 +7,29 @@ description: Obtain candid, customer-centered functional feedback on the current
 
 Use the configured `product-sme` subagent as an independent customer-facing evaluator. Keep its assessment separate from implementation work: do not make code changes, create tickets, or convert every observation into a roadmap commitment unless the user asks.
 
-## Evaluation workflow
+## When to use
 
-1. Give `product-sme` the user's evaluation question and ask it to assess the repository's current state as a prospective customer. Ask for a release recommendation, not a status recap.
-2. Preserve the agent's evidence boundary. It must distinguish implemented, acceptance-test-supported behavior from documented-but-unverified capability and planned PRD work. It may read the PRD, README, and relevant acceptance tests according to its configured instructions.
-3. Ask it to judge the customer journey, not merely individual features:
+Use this skill for a customer-centered assessment of the product as it exists now, including requests to:
+
+- decide whether to ship, launch, release, or expose it to an early audience;
+- assess whether it is useful, lovable, credible, or ready for customers;
+- identify the product gaps most likely to prevent evaluation, adoption, or repeat use; or
+- get a candid go/no-go recommendation grounded in repository evidence.
+
+Do not use it to create an implementation plan, review code, write a PRD, or turn feedback into tickets. Those requests need their own workflow; this skill supplies an independent product assessment first.
+
+## Procedure
+
+1. Confirm that the configured `product-sme` evaluator is available. If it is unavailable, tell the user that an independent product-quality evaluation cannot be performed in this environment; do not silently replace it with your own assessment.
+2. Delegate the user's evaluation question and the [default brief](#default-brief) to `product-sme`. Ask for a release recommendation, not a status recap. If the user supplies a narrower brief, use it in place of the default while retaining the evidence boundary below.
+3. Preserve the evaluator's evidence boundary. It must distinguish implemented, acceptance-test-supported behavior from documented-but-unverified capability and planned PRD work. It may read the PRD, README, and relevant acceptance tests according to its configured instructions.
+4. Ask it to judge the customer journey, not merely individual features:
    - Who gets value now, and what concrete job can they complete?
    - What would stop evaluation, adoption, or repeat use?
    - Are the product boundaries and integration path understandable?
    - What is the smallest credible release audience, if any?
    - Is the experience lovable, merely useful, or not yet useful? Explain why.
-4. Return the subagent's conclusion faithfully. Clearly label inference and uncertainty. Do not claim a planned or documented feature is shipped.
+5. Return the evaluator's conclusion faithfully in the [response shape](#response-shape) below. Clearly label inference and uncertainty. Do not claim a planned or documented feature is shipped.
 
 ## Default brief
 
