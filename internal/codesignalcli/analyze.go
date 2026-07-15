@@ -55,6 +55,65 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 	})
 }
 
+// AnalyzeBaseline reads revisionSHA content for each selected file via
+// `git show` and analyzes it with semantics.Analyzer. Unlike AnalyzeChanges,
+// there is no base content and no changed-ranges computation: a Repository
+// Baseline is not a comparison against anything, just every tracked file at
+// one revision. A per-file failure (an unreadable path, a semantics error)
+// is reported as a diagnostic and tallied into coverage.FilesUnanalyzable;
+// it never stops analysis of the remaining files. A file that parses,
+// including one whose ParseStatus is "syntax_errors", still gets a
+// codesignal.FileChange so Build's existing processHeadResult emits its own
+// syntax_errors diagnostic -- callers must not duplicate that here.
+func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, coverage codesignal.Coverage) (*codesignal.Report, error) {
+	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
+	if err != nil {
+		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
+	}
+
+	var fileChanges []codesignal.FileChange
+	diagnostics := append([]codesignal.Diagnostic(nil), extraDiagnostics...)
+
+	for _, sf := range files {
+		headBytes, err := runGitBytes(dir, "show", revisionSHA+":"+sf.Path)
+		if err != nil {
+			diagnostics = append(diagnostics, codesignal.Diagnostic{
+				Path:    sf.Path,
+				Kind:    "head_read_failed",
+				Message: fmt.Sprintf("reading head content for %q: %s", sf.Path, err),
+			})
+			coverage.FilesUnanalyzable++
+			continue
+		}
+
+		headResult, headErr := analyzer.AnalyzeBytes(ctx, semantics.FileInput{Path: sf.Path, Language: sf.Language, Content: headBytes})
+		if headErr != nil && !errors.Is(headErr, semantics.ErrSyntax) {
+			diagnostics = append(diagnostics, mapSemanticsError(sf.Path, headErr))
+			coverage.FilesUnanalyzable++
+			continue
+		}
+
+		fileChanges = append(fileChanges, codesignal.FileChange{Path: sf.Path, SourceScope: sf.SourceScope, Head: headResult})
+		if headResult.ParseStatus == "ok" {
+			coverage.FilesAnalyzed++
+		} else {
+			coverage.FilesUnanalyzable++
+		}
+	}
+
+	builder, err := codesignal.New(codesignal.Options{Baseline: true})
+	if err != nil {
+		return nil, err
+	}
+
+	return builder.Build(ctx, codesignal.Input{
+		Scope:       codesignal.Scope{Revision: revisionSHA},
+		Files:       fileChanges,
+		Diagnostics: diagnostics,
+		Coverage:    &coverage,
+	})
+}
+
 // analyzeAddedOrModifiedFile handles "added" and "modified" SelectedFiles:
 // HEAD content is mandatory, base content is read (and analyzed) only when
 // the file already existed at mergeBaseSHA.
