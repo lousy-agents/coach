@@ -10,7 +10,7 @@ import (
 )
 
 // revisionFileReader streams git object contents for a single fixed
-// revision from one long-lived `git cat-file --batch` process, replacing
+// revision from one long-lived `git cat-file --batch -Z` process, replacing
 // the one-`git show`-subprocess-per-file approach AnalyzeBaseline used to
 // take. `git cat-file --batch` is a strict one-request-one-response
 // protocol: next must be called exactly once per file, in the same order
@@ -18,6 +18,15 @@ import (
 // synchronously (write one request line, then read that request's single
 // response) before the next call -- there is no need for, and this
 // deliberately avoids, concurrent writer/reader goroutines.
+//
+// The -Z flag makes both stdin requests and stdout responses NUL-terminated
+// instead of newline-terminated: a tracked Git path may itself contain a
+// literal newline (this package's own AnalyzeChanges/DiscoverTrackedFiles
+// callers already have to handle that), and a newline-delimited protocol
+// would silently split such a path into two separate requests, desyncing
+// every response after it for the rest of the batch. NUL cannot appear in a
+// Git path or a `revision:path` object identifier, so it is the only safe
+// delimiter here.
 type revisionFileReader struct {
 	revisionSHA string
 	cmd         *exec.Cmd
@@ -31,7 +40,7 @@ type revisionFileReader struct {
 // returned as a plain error; callers in this package wrap it into an
 // *OperationalError the same way other git-executable-missing failures are.
 func newRevisionFileReader(dir, revisionSHA string) (*revisionFileReader, error) {
-	cmd := exec.Command("git", "-C", dir, "cat-file", "--batch")
+	cmd := exec.Command("git", "-C", dir, "cat-file", "--batch", "-Z")
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -60,15 +69,15 @@ func newRevisionFileReader(dir, revisionSHA string) (*revisionFileReader, error)
 // the same way a failed `git show` used to be treated, and to keep calling
 // next for the remaining files rather than aborting the whole scan.
 func (r *revisionFileReader) next(path string) ([]byte, error) {
-	if _, err := io.WriteString(r.stdin, r.revisionSHA+":"+path+"\n"); err != nil {
+	if _, err := io.WriteString(r.stdin, r.revisionSHA+":"+path+"\x00"); err != nil {
 		return nil, fmt.Errorf("writing cat-file request for %q: %w", path, err)
 	}
 
-	header, err := r.stdout.ReadString('\n')
+	header, err := r.stdout.ReadString('\x00')
 	if err != nil {
 		return nil, fmt.Errorf("reading cat-file response header for %q: %w", path, err)
 	}
-	header = strings.TrimSuffix(header, "\n")
+	header = strings.TrimSuffix(header, "\x00")
 
 	fields := strings.Fields(header)
 	if len(fields) == 2 && fields[1] == "missing" {
@@ -88,10 +97,10 @@ func (r *revisionFileReader) next(path string) ([]byte, error) {
 		return nil, fmt.Errorf("reading cat-file content for %q: %w", path, err)
 	}
 
-	// Each response ends with exactly one trailing newline after the
-	// object's content, regardless of the object's own bytes.
+	// Each response ends with exactly one trailing NUL after the object's
+	// content (per -Z), regardless of the object's own bytes.
 	if _, err := r.stdout.Discard(1); err != nil {
-		return nil, fmt.Errorf("reading cat-file trailing newline for %q: %w", path, err)
+		return nil, fmt.Errorf("reading cat-file trailing NUL for %q: %w", path, err)
 	}
 
 	return content, nil
