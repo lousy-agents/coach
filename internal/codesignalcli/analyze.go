@@ -55,8 +55,10 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 	})
 }
 
-// AnalyzeBaseline reads revisionSHA content for each selected file via
-// `git show` and analyzes it with semantics.Analyzer. Unlike AnalyzeChanges,
+// AnalyzeBaseline reads revisionSHA content for each selected file via a
+// single long-lived `git cat-file --batch` process (see
+// revisionFileReader) rather than one `git show` subprocess per file, and
+// analyzes each file's content with semantics.Analyzer. Unlike AnalyzeChanges,
 // there is no base content and no changed-ranges computation: a Repository
 // Baseline is not a comparison against anything, just every tracked file at
 // one revision. A per-file failure (an unreadable path, a semantics error)
@@ -71,11 +73,17 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []Selec
 		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
 	}
 
+	reader, err := newRevisionFileReader(dir, revisionSHA)
+	if err != nil {
+		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: starting git cat-file --batch failed: %s", err)}
+	}
+	defer func() { _ = reader.close() }()
+
 	var fileChanges []codesignal.FileChange
 	diagnostics := append([]codesignal.Diagnostic(nil), extraDiagnostics...)
 
 	for _, sf := range files {
-		headBytes, err := runGitBytes(dir, "show", revisionSHA+":"+sf.Path)
+		headBytes, err := reader.next(sf.Path)
 		if err != nil {
 			diagnostics = append(diagnostics, codesignal.Diagnostic{
 				Path:    sf.Path,
