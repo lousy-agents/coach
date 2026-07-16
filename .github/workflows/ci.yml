@@ -4,9 +4,6 @@ on:
   push:
   pull_request:
 
-env:
-  CGO_ENABLED: "1"
-
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -47,10 +44,8 @@ jobs:
       - name: js/semantics build + tests
         run: mise run js-ci
 
-  # Additive, sibling to verify/js-verify (unchanged): proves pkg/semantics
-  # actually compiles for GOOS=js GOARCH=wasm via the pure-Go gotreesitter
-  # engine, with no CGO and no TinyGo. The CGO path stays the zero-risk
-  # default everywhere else; this job doesn't touch it.
+  # Proves pkg/semantics compiles for GOOS=js GOARCH=wasm via the pure-Go
+  # gotreesitter engine, with no TinyGo.
   wasm-build:
     runs-on: ubuntu-latest
     steps:
@@ -64,16 +59,3 @@ jobs:
 
       - name: GOOS=js GOARCH=wasm build (pure-Go engine)
         run: mise run wasm-build
-
-  # Additive: runs the dual-backend (CGO vs pure-Go) conformance suite.
-  # Requires CGO (inherited from the top-level env) so both engines are
-  # compiled in simultaneously.
-  conformance:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-
-      - name: dual-backend conformance suite
-        run: mise run conformance-test

@@ -31,7 +31,6 @@ The JS/TS bindings are currently packaged for Node.js (ESM-only).
 > **Build Prerequisites:** Because the package compiles its underlying parser engine locally during installation, you must have:
 > - **Node.js** (>= 20)
 > - **Go** (>= 1.25.0)
-> - **C Toolchain** (e.g., GCC or Clang): The Go parser engine compiles with CGO enabled by default. If a C toolchain is not available on your system, you can disable CGO by setting `CGO_ENABLED=0` (e.g., `CGO_ENABLED=0 npm install`) to build using the pure-Go engine fallback automatically.
 
 1. **Clone and Build:**
    ```sh

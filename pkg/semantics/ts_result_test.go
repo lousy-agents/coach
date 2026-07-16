@@ -71,6 +71,13 @@ func TestTSResult_MarshalMatchesGoldenFile(t *testing.T) {
 				Language: LanguageTypeScript,
 				Content:  []byte(tsGoldenSyntaxErrorSource),
 			},
+			// Exact TS syntax-error byte positions/counts are
+			// backend-implementation-defined and not frozen across the
+			// CGO-vs-gotreesitter transition (issue #33): only
+			// parse_status == "syntax_errors" and len(SyntaxErrors) >= 1,
+			// asserted by checkRoundTripped below, are the frozen
+			// contract here -- this golden file just pins the actual
+			// gotreesitter output so drift is visible, not a spec.
 			goldenFile: "testdata/result_golden_ts_syntax_errors.json",
 			wantErr:    true,
 			checkRoundTripped: func(t *testing.T, r Result) {

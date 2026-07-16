@@ -44,6 +44,13 @@ func loadManifest(t *testing.T) []parityCase {
 // TestParityFixtures ./internal/jsbridge -update` regenerates them from
 // whatever Handle actually emits, and this test fails on any drift, so the
 // JS parity suite always compares against Go-canonical bytes.
+//
+// Exception: testdata/parity/ts_syntax_errors.expected.json's exact
+// syntax_errors byte positions/count are backend-implementation-defined and
+// not frozen across the CGO-vs-gotreesitter transition (issue #33) -- only
+// parse_status == "syntax_errors" with len(syntax_errors) >= 1 is the
+// frozen contract for that one case; the checked-in bytes just pin
+// gotreesitter's current actual output so drift is visible, not a spec.
 func TestParityFixtures(t *testing.T) {
 	for _, tc := range loadManifest(t) {
 		t.Run(tc.Name, func(t *testing.T) {

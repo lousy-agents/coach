@@ -8,12 +8,23 @@
       {
         "kind": "error",
         "location": {
+          "start_byte": 0,
+          "end_byte": 77,
+          "start_row": 0,
+          "start_col": 0,
+          "end_row": 5,
+          "end_col": 0
+        }
+      },
+      {
+        "kind": "error",
+        "location": {
           "start_byte": 34,
-          "end_byte": 76,
+          "end_byte": 40,
           "start_row": 2,
           "start_col": 0,
-          "end_row": 4,
-          "end_col": 1
+          "end_row": 2,
+          "end_col": 6
         }
       }
     ],
@@ -30,6 +41,6 @@
   },
   "error": {
     "kind": "syntax",
-    "message": "semantics: 1 syntax issue(s)"
+    "message": "semantics: 2 syntax issue(s)"
   }
 }

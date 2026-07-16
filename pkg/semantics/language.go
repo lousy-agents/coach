@@ -31,12 +31,6 @@ type ParseStatus string
 // (and adds its own extract*/compute* implementation, mirroring
 // extractGoImports/computeGoFeatures or extractTSImports/computeTSFeatures)
 // rather than changing the pipeline code in parser.go or analyzer.go.
-//
-// languageRegistry itself -- the map[Language]languageSpec populating these
-// fields -- lives in language_cgo.go or language_gotreesitter.go, whichever
-// is compiled in for a given build (see those files' build tags): exactly
-// one of them is ever part of any single binary, so there is exactly one
-// languageRegistry.
 type languageSpec struct {
 	// engineLang is the backend-bound grammar handle for this language.
 	engineLang engine.Language
@@ -66,4 +60,25 @@ func LanguageForExtension(ext string) (Language, bool) {
 	default:
 		return "", false
 	}
+}
+
+// languageRegistry is the single source of truth for which Language values
+// are supported and how to parse/analyze each one, backed by the pure-Go
+// gotreesitter engine (see pkg/semantics/internal/engine/gotreesitter.go).
+var languageRegistry = map[Language]languageSpec{
+	LanguageGo: {
+		engineLang:      engine.GoTreeSitterLanguage("go"),
+		extractImports:  extractGoImports,
+		computeFeatures: computeGoFeatures,
+	},
+	LanguageTypeScript: {
+		engineLang:      engine.GoTreeSitterLanguage("typescript"),
+		extractImports:  extractTSImports,
+		computeFeatures: computeTSFeatures,
+	},
+	LanguageTSX: {
+		engineLang:      engine.GoTreeSitterLanguage("tsx"),
+		extractImports:  extractTSXImports,
+		computeFeatures: computeTSFeatures,
+	},
 }
