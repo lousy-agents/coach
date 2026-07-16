@@ -56,7 +56,7 @@ Download the latest `coach` binary for your platform from the [GitHub Releases p
 
 ```sh
 ARCH=darwin_arm64  # or darwin_x86_64, linux_x86_64, windows_x86_64
-EXT=tar.gz  # windows_x86_64 ships as a .zip instead
+EXT=tar.gz; [ "$ARCH" = windows_x86_64 ] && EXT=zip
 
 curl -LO https://github.com/lousy-agents/coach/releases/latest/download/coach_${ARCH}.${EXT}
 curl -LO https://github.com/lousy-agents/coach/releases/latest/download/checksums.txt
@@ -72,8 +72,12 @@ cosign verify-blob \
 # Verify the archive against the signed checksums
 shasum -a 256 -c --ignore-missing checksums.txt
 
-# Extract the binary (use `unzip` instead of `tar` for the windows_x86_64 .zip)
-tar -xzf coach_${ARCH}.${EXT}
+# Extract the binary
+if [ "$EXT" = zip ]; then
+  unzip coach_${ARCH}.${EXT}
+else
+  tar -xzf coach_${ARCH}.${EXT}
+fi
 ```
 
 Move the extracted `coach` binary somewhere on your `PATH`.
