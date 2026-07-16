@@ -10,8 +10,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
+	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -23,10 +25,81 @@ const (
 )
 
 // ApplySourceScope labels each selected file according to the source set it
-// belongs to. Production mode removes files known not to ship; unknown files
-// are deliberately retained so an incomplete project configuration cannot
-// silently hide a finding.
+// belongs to, then removes files known not to ship when scope is not "all".
+// Unknown files are deliberately retained so an incomplete project
+// configuration cannot silently hide a finding.
 func ApplySourceScope(dir, headSHA, buildTarget, scope string, files []SelectedFile) ([]SelectedFile, error) {
+	classified, err := classifySourceFiles(dir, headSHA, buildTarget, scope, files)
+	if err != nil {
+		return nil, err
+	}
+	if scope == "all" {
+		return classified, nil
+	}
+
+	kept := make([]SelectedFile, 0, len(classified))
+	for _, file := range classified {
+		if file.SourceScope != SourceScopeTestOnly && file.SourceScope != SourceScopeExcluded {
+			kept = append(kept, file)
+		}
+	}
+	return kept, nil
+}
+
+// ApplyBaselineSourceScope labels each selected file according to the
+// source set it belongs to, same as ApplySourceScope, but instead of
+// silently dropping test_only/excluded files it tallies them into excluded,
+// grouped by (SourceScope reason, Language) pair, so a Repository Baseline
+// report can record what was left out and why. When scope is "all",
+// nothing is excluded, matching ApplySourceScope's "all" semantics.
+func ApplyBaselineSourceScope(dir, revisionSHA, buildTarget, scope string, files []SelectedFile) (kept []SelectedFile, excluded []codesignal.CoverageGroup, err error) {
+	classified, err := classifySourceFiles(dir, revisionSHA, buildTarget, scope, files)
+	if err != nil {
+		return nil, nil, err
+	}
+	if scope == "all" {
+		return classified, nil, nil
+	}
+
+	type groupKey struct{ reason, language string }
+	counts := make(map[groupKey]int)
+
+	kept = make([]SelectedFile, 0, len(classified))
+	for _, file := range classified {
+		if file.SourceScope == SourceScopeTestOnly || file.SourceScope == SourceScopeExcluded {
+			counts[groupKey{reason: file.SourceScope, language: string(file.Language)}]++
+			continue
+		}
+		kept = append(kept, file)
+	}
+
+	keys := make([]groupKey, 0, len(counts))
+	for key := range counts {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].reason != keys[j].reason {
+			return keys[i].reason < keys[j].reason
+		}
+		return keys[i].language < keys[j].language
+	})
+
+	for _, key := range keys {
+		excluded = append(excluded, codesignal.CoverageGroup{
+			Reason:   key.reason,
+			Language: key.language,
+			Count:    counts[key],
+		})
+	}
+
+	return kept, excluded, nil
+}
+
+// classifySourceFiles labels each selected file's SourceScope without
+// filtering any of them out, so ApplySourceScope and
+// ApplyBaselineSourceScope can share the classification logic while
+// applying different policies for what happens to test_only/excluded files.
+func classifySourceFiles(dir, headSHA, buildTarget, scope string, files []SelectedFile) ([]SelectedFile, error) {
 	if scope == "all" {
 		for i := range files {
 			files[i].SourceScope = classifyFilename(files[i])
@@ -39,8 +112,9 @@ func ApplySourceScope(dir, headSHA, buildTarget, scope string, files []SelectedF
 		return nil, err
 	}
 
-	// Analysis reads only committed objects from HEAD. Build source scope from
-	// the same snapshot so local edits cannot affect which findings appear.
+	// Analysis reads only committed objects from headSHA. Build source scope
+	// from the same snapshot so local edits cannot affect which findings
+	// appear.
 	snapshotDir, err := createSnapshot(repositoryRoot, headSHA)
 	if err != nil {
 		return nil, err
@@ -56,14 +130,12 @@ func ApplySourceScope(dir, headSHA, buildTarget, scope string, files []SelectedF
 		return nil, err
 	}
 
-	kept := make([]SelectedFile, 0, len(files))
-	for _, file := range files {
+	classified := make([]SelectedFile, len(files))
+	for i, file := range files {
 		file.SourceScope = classifySourceFile(file, goProduction, buildTarget, config, hasTSConfig)
-		if file.SourceScope != SourceScopeTestOnly && file.SourceScope != SourceScopeExcluded {
-			kept = append(kept, file)
-		}
+		classified[i] = file
 	}
-	return kept, nil
+	return classified, nil
 }
 
 func classifyFilename(file SelectedFile) string {

@@ -209,3 +209,52 @@ func TestGolden_Diagnostics(t *testing.T) {
 	got := buildAndMarshal(t, diagnosticsInput(), Options{})
 	assertMatchesGolden(t, "testdata/golden/diagnostics.json", got)
 }
+
+func baselineScenarioInput() Input {
+	return Input{
+		Scope: Scope{Revision: "abc123"},
+		Coverage: &Coverage{
+			TrackedFilesDiscovered: 12,
+			FilesAnalyzed:          10,
+			FilesUnanalyzable:      2,
+			Unsupported: []CoverageGroup{
+				{Reason: "unsupported_language", Language: "python", Count: 1},
+			},
+			Excluded: []CoverageGroup{
+				{Reason: "vendored", Count: 1},
+			},
+		},
+		Files: []FileChange{
+			{
+				Path:   "pkg/example/service.go",
+				Status: "added",
+				Head: &semantics.Result{
+					Path:        "pkg/example/service.go",
+					Language:    semantics.LanguageGo,
+					ParseStatus: semantics.ParseStatus("ok"),
+					Findings: []semantics.Finding{
+						{
+							Kind: "mutates_input",
+							Name: "ApplyDefaults",
+							Location: semantics.Location{
+								StartByte: 120, EndByte: 180,
+								StartRow: 10, StartCol: 0,
+								EndRow: 12, EndCol: 1,
+							},
+							Confidence:     "high",
+							Evidence:       "cfg.Timeout = defaultTimeout",
+							Recommendation: "Return a new Config instead of mutating cfg in place.",
+							SuggestedSkill: "go-testable-design",
+						},
+					},
+				},
+				ChangedRanges: []LineRange{{StartRow: 0, EndRow: 20}},
+			},
+		},
+	}
+}
+
+func TestGolden_Baseline(t *testing.T) {
+	got := buildAndMarshal(t, baselineScenarioInput(), Options{Baseline: true})
+	assertMatchesGolden(t, "testdata/golden/baseline_report.json", got)
+}

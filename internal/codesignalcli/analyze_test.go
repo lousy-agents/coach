@@ -172,6 +172,144 @@ func TestAnalyzeChangesSurvivesUnreadableFile(t *testing.T) {
 	}
 }
 
+// TestAnalyzeBaseline verifies AnalyzeBaseline's per-file coverage
+// accounting: an unreadable file yields a head_read_failed diagnostic and
+// counts toward FilesUnanalyzable, a file with a syntax error still
+// produces a FileChange (so Build emits its own syntax_errors diagnostic)
+// but does not count toward FilesAnalyzed, and a clean file increments
+// FilesAnalyzed. The resulting Report is scoped as a baseline with
+// "baseline"-lifecycle signals.
+func TestAnalyzeBaseline(t *testing.T) {
+	dir := newTempGitRepoT(t)
+	commitFileT(t, dir, "clean.go", "package clean\n\nfunc Update(input *int) { *input = 1 }\n")
+	headSHA := commitFileT(t, dir, "broken.go", "package broken\n\nfunc F( {\n")
+
+	files := []SelectedFile{
+		{Path: "clean.go", Language: semantics.LanguageGo},
+		{Path: "broken.go", Language: semantics.LanguageGo},
+		{Path: "missing.go", Language: semantics.LanguageGo},
+	}
+
+	report, err := AnalyzeBaseline(context.Background(), dir, headSHA, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 3})
+	if err != nil {
+		t.Fatalf("AnalyzeBaseline: unexpected error: %v", err)
+	}
+
+	if !report.Scope.Baseline {
+		t.Errorf("report.Scope.Baseline = false, want true")
+	}
+
+	foundHeadReadFailed := false
+	for _, d := range report.Diagnostics {
+		if d.Path == "missing.go" && d.Kind == "head_read_failed" {
+			foundHeadReadFailed = true
+		}
+	}
+	if !foundHeadReadFailed {
+		t.Errorf("report.Diagnostics = %#v, want a head_read_failed diagnostic for missing.go", report.Diagnostics)
+	}
+
+	foundSyntaxErrors := false
+	for _, d := range report.Diagnostics {
+		if d.Path == "broken.go" && d.Kind == "syntax_errors" {
+			foundSyntaxErrors = true
+		}
+	}
+	if !foundSyntaxErrors {
+		t.Errorf("report.Diagnostics = %#v, want a syntax_errors diagnostic for broken.go", report.Diagnostics)
+	}
+
+	if report.Coverage == nil {
+		t.Fatal("report.Coverage = nil, want non-nil")
+	}
+	if report.Coverage.FilesAnalyzed != 1 {
+		t.Errorf("report.Coverage.FilesAnalyzed = %d, want 1 (only clean.go)", report.Coverage.FilesAnalyzed)
+	}
+	if report.Coverage.FilesUnanalyzable != 2 {
+		t.Errorf("report.Coverage.FilesUnanalyzable = %d, want 2 (missing.go and broken.go)", report.Coverage.FilesUnanalyzable)
+	}
+
+	foundBaselineSignal := false
+	for _, sig := range report.Signals {
+		if sig.Path == "clean.go" {
+			if sig.Lifecycle != "baseline" {
+				t.Errorf("signal for clean.go has Lifecycle = %q, want %q", sig.Lifecycle, "baseline")
+			}
+			foundBaselineSignal = true
+		}
+	}
+	if !foundBaselineSignal {
+		t.Errorf("report.Signals = %#v, want a signal for clean.go", report.Signals)
+	}
+}
+
+// TestAnalyzeBaselineInterleavedReadFailures is the acceptance test for
+// AnalyzeBaseline's switch from one `git show` subprocess per file to a
+// single streamed `git cat-file --batch` reader. It exists to catch the new
+// failure mode a shared streaming reader can introduce that per-file `git
+// show` subprocesses never could: a failed/missing file's response
+// misaligning the stream so a later file's content is attributed to the
+// wrong path. Each successful file has a distinctive function name that
+// trips the hidden_input_mutation rule, so a misaligned read would show up
+// as a Signal.Subject that doesn't match the path it's attached to. Missing
+// files are interleaved between them (not just trailing, as in
+// TestAnalyzeBaseline) so a state leak from a mid-batch failure would have
+// somewhere to manifest.
+func TestAnalyzeBaselineInterleavedReadFailures(t *testing.T) {
+	dir := newTempGitRepoT(t)
+	commitFileT(t, dir, "a.go", "package a\n\nfunc UpdateA(input *int) { *input = 1 }\n")
+	commitFileT(t, dir, "b.go", "package b\n\nfunc UpdateB(input *int) { *input = 2 }\n")
+	headSHA := commitFileT(t, dir, "c.go", "package c\n\nfunc UpdateC(input *int) { *input = 3 }\n")
+
+	files := []SelectedFile{
+		{Path: "a.go", Language: semantics.LanguageGo},
+		{Path: "missing1.go", Language: semantics.LanguageGo},
+		{Path: "b.go", Language: semantics.LanguageGo},
+		{Path: "missing2.go", Language: semantics.LanguageGo},
+		{Path: "c.go", Language: semantics.LanguageGo},
+	}
+
+	report, err := AnalyzeBaseline(context.Background(), dir, headSHA, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 5})
+	if err != nil {
+		t.Fatalf("AnalyzeBaseline: unexpected error: %v", err)
+	}
+
+	wantSubjectByPath := map[string]string{"a.go": "UpdateA:input", "b.go": "UpdateB:input", "c.go": "UpdateC:input"}
+	foundSubjectByPath := map[string]string{}
+	for _, sig := range report.Signals {
+		if sig.RuleID == "state.hidden_input_mutation" {
+			foundSubjectByPath[sig.Path] = sig.Subject
+		}
+	}
+	for path, wantSubject := range wantSubjectByPath {
+		if got := foundSubjectByPath[path]; got != wantSubject {
+			t.Errorf("hidden_input_mutation signal for %q has Subject = %q, want %q (content misaligned across the batch read)", path, got, wantSubject)
+		}
+	}
+
+	for _, missing := range []string{"missing1.go", "missing2.go"} {
+		found := false
+		for _, d := range report.Diagnostics {
+			if d.Path == missing && d.Kind == "head_read_failed" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("report.Diagnostics = %#v, want a head_read_failed diagnostic for %q", report.Diagnostics, missing)
+		}
+	}
+
+	if report.Coverage == nil {
+		t.Fatal("report.Coverage = nil, want non-nil")
+	}
+	if report.Coverage.FilesAnalyzed != 3 {
+		t.Errorf("report.Coverage.FilesAnalyzed = %d, want 3 (a.go, b.go, c.go)", report.Coverage.FilesAnalyzed)
+	}
+	if report.Coverage.FilesUnanalyzable != 2 {
+		t.Errorf("report.Coverage.FilesUnanalyzable = %d, want 2 (missing1.go, missing2.go)", report.Coverage.FilesUnanalyzable)
+	}
+}
+
 // TestAnalyzeChangesBaseReadFailureForModifiedFile verifies that a "modified"
 // SelectedFile whose base content cannot be read (Git already told us the
 // path existed at both revisions, so this always indicates a real read

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -26,24 +27,35 @@ func (e *OperationalError) Error() string {
 	return e.Message
 }
 
-// ResolveRevisions verifies dir is a Git worktree, resolves HEAD and base
-// to full commit SHAs, and returns HEAD's SHA plus the merge-base of base
-// and HEAD. Any failure is returned as an *OperationalError.
-func ResolveRevisions(dir, base string) (headSHA, mergeBaseSHA string, err error) {
+// resolveHEAD verifies dir is a Git worktree and resolves HEAD to a full
+// commit SHA. It backs both ResolveRevisions and ResolveBaselineRevision so
+// the two share identical operational-error messages for the checks they
+// have in common.
+func resolveHEAD(dir string) (string, error) {
 	if _, lookErr := exec.LookPath("git"); lookErr != nil {
-		return "", "", &OperationalError{Message: "coach codesignal: git executable not found in PATH"}
+		return "", &OperationalError{Message: "coach codesignal: git executable not found in PATH"}
 	}
 
 	worktreeOutput, runErr := runGit(dir, "rev-parse", "--is-inside-work-tree")
 	if runErr != nil || strings.TrimSpace(worktreeOutput) != "true" {
-		return "", "", &OperationalError{Message: fmt.Sprintf("coach codesignal: %s is not inside a Git worktree", dir)}
+		return "", &OperationalError{Message: fmt.Sprintf("coach codesignal: %s is not inside a Git worktree", dir)}
 	}
 
 	headOutput, runErr := runGit(dir, "rev-parse", "HEAD")
 	if runErr != nil {
-		return "", "", &OperationalError{Message: "coach codesignal: HEAD is not readable (does the repository have any commits?)"}
+		return "", &OperationalError{Message: "coach codesignal: HEAD is not readable (does the repository have any commits?)"}
 	}
-	headSHA = strings.TrimSpace(headOutput)
+	return strings.TrimSpace(headOutput), nil
+}
+
+// ResolveRevisions verifies dir is a Git worktree, resolves HEAD and base
+// to full commit SHAs, and returns HEAD's SHA plus the merge-base of base
+// and HEAD. Any failure is returned as an *OperationalError.
+func ResolveRevisions(dir, base string) (headSHA, mergeBaseSHA string, err error) {
+	headSHA, err = resolveHEAD(dir)
+	if err != nil {
+		return "", "", err
+	}
 
 	if _, runErr := runGit(dir, "rev-parse", "--verify", base+"^{commit}"); runErr != nil {
 		return "", "", &OperationalError{Message: fmt.Sprintf("coach codesignal: --base %q cannot be resolved to a commit", base)}
@@ -56,6 +68,14 @@ func ResolveRevisions(dir, base string) (headSHA, mergeBaseSHA string, err error
 	mergeBaseSHA = strings.TrimSpace(mergeBaseOutput)
 
 	return headSHA, mergeBaseSHA, nil
+}
+
+// ResolveBaselineRevision verifies dir is a Git worktree and resolves HEAD
+// to a full commit SHA for a Repository Baseline run, which has no base or
+// merge-base to resolve. Any failure is returned as an *OperationalError,
+// with the same messages ResolveRevisions uses for the checks they share.
+func ResolveBaselineRevision(dir string) (revisionSHA string, err error) {
+	return resolveHEAD(dir)
 }
 
 // SelectedFile identifies one file changed between a merge-base and HEAD
@@ -126,6 +146,65 @@ func SelectChangedFiles(dir, mergeBaseSHA string) ([]SelectedFile, []codesignal.
 	return selected, diagnostics, nil
 }
 
+// DiscoverTrackedFiles lists every file tracked by Git at revisionSHA (via
+// `git ls-tree -r -z --name-only`), independent of any diff or history --
+// this is what lets a Repository Baseline scan see a file that was
+// committed once and never touched again, which a diff against that same
+// revision would never surface. Unsupported-language files are not turned
+// into per-file diagnostics (that would flood the report with one entry per
+// file in a large tree); instead they are tallied into
+// coverage.Unsupported, grouped by extension. A git failure (bad revision,
+// missing git executable, etc.) is returned as an *OperationalError.
+func DiscoverTrackedFiles(dir, revisionSHA string) ([]SelectedFile, codesignal.Coverage, error) {
+	output, err := runGitBytes(dir, "ls-tree", "-r", "-z", "--name-only", revisionSHA)
+	if err != nil {
+		return nil, codesignal.Coverage{}, &OperationalError{Message: fmt.Sprintf("coach codesignal: git ls-tree failed: %s", err)}
+	}
+
+	var coverage codesignal.Coverage
+	var files []SelectedFile
+	unsupportedCounts := make(map[string]int)
+
+	for _, path := range splitNULPaths(output) {
+		coverage.TrackedFilesDiscovered++
+
+		ext := filepath.Ext(path)
+		lang, ok := semantics.LanguageForExtension(ext)
+		if !ok {
+			unsupportedCounts[coverageLanguageLabel(ext)]++
+			continue
+		}
+
+		files = append(files, SelectedFile{Path: path, Language: lang})
+	}
+
+	extensions := make([]string, 0, len(unsupportedCounts))
+	for ext := range unsupportedCounts {
+		extensions = append(extensions, ext)
+	}
+	sort.Strings(extensions)
+	for _, ext := range extensions {
+		coverage.Unsupported = append(coverage.Unsupported, codesignal.CoverageGroup{
+			Reason:   "unsupported_language",
+			Language: ext,
+			Count:    unsupportedCounts[ext],
+		})
+	}
+
+	return files, coverage, nil
+}
+
+// coverageLanguageLabel returns a stable, non-empty label for a
+// CoverageGroup.Language so an extensionless file (LICENSE, Makefile;
+// filepath.Ext returns "") never produces an empty, JSON-omitted label that
+// renders as a blank in text output.
+func coverageLanguageLabel(ext string) string {
+	if ext == "" {
+		return "(no extension)"
+	}
+	return ext
+}
+
 func statusToChangeStatus(status string) codesignal.ChangeStatus {
 	switch status {
 	case "A":
@@ -183,6 +262,23 @@ func parseNameStatusZ(data []byte) ([]nameStatusRecord, error) {
 	}
 
 	return records, nil
+}
+
+// splitNULPaths splits the NUL-delimited output of a git command like
+// `ls-tree -z --name-only` into individual paths. It never invokes a shell
+// and never interprets path bytes beyond splitting on NUL, so paths
+// containing spaces, quotes, newlines, or non-ASCII bytes round-trip
+// exactly (mirroring parseNameStatusZ's approach for the same reason).
+func splitNULPaths(data []byte) []string {
+	fields := bytes.Split(bytes.TrimSuffix(data, []byte{0}), []byte{0})
+	if len(fields) == 1 && len(fields[0]) == 0 {
+		return nil
+	}
+	paths := make([]string, len(fields))
+	for i, field := range fields {
+		paths[i] = string(field)
+	}
+	return paths
 }
 
 func runGit(dir string, args ...string) (string, error) {
