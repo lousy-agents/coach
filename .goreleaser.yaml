@@ -13,6 +13,16 @@ builds:
     goarch:
       - amd64
       - arm64
+  - id: coach-amd64
+    main: ./cmd/coach
+    binary: coach
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+    goarch:
+      - amd64
 
 archives:
   - id: coach
@@ -20,6 +30,20 @@ archives:
       - coach
     formats:
       - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+  - id: coach-amd64
+    ids:
+      - coach-amd64
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
     name_template: >-
       {{ .ProjectName }}_{{ .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}
     files:
