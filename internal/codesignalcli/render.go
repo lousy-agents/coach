@@ -23,8 +23,7 @@ func RenderText(report *codesignal.Report) string {
 	if report.Scope.Baseline {
 		renderBaselineSummary(&b, report)
 	} else {
-		fmt.Fprintf(&b, "files analyzed: %d, active signals: %d, diagnostics: %d\n",
-			report.Summary.FilesAnalyzed, report.Summary.ActiveSignals, len(report.Diagnostics))
+		renderDiffSummary(&b, report)
 	}
 
 	if len(report.Signals) == 0 {
@@ -71,6 +70,33 @@ func renderBaselineSummary(b *strings.Builder, report *codesignal.Report) {
 
 	fmt.Fprintf(b, "tracked files discovered: %d, analyzed: %d, unsupported: %d, excluded: %d, unanalyzable: %d, active signals: %d, diagnostics: %d\n",
 		tracked, analyzed, unsupported, excluded, unanalyzable, report.Summary.ActiveSignals, len(report.Diagnostics))
+}
+
+// renderDiffSummary writes the non-baseline (base-diff) summary line. When
+// report.Scope.AppliedScope was actually populated by the diff flow ("all" or
+// "production"), it prepends a scope clause disclosing the applied scope and,
+// for "production", the number of files filtered out by that scope
+// (report.Coverage.Excluded, nil-safe) -- distinguishing "scope: production,
+// filtered: 0" (scoped, nothing happened to match) from "all" (no scope
+// filtering applied at all). When AppliedScope is empty (not populated by the
+// diff flow, e.g. an older/unrelated caller), the line is left in its
+// original format with no scope clause.
+func renderDiffSummary(b *strings.Builder, report *codesignal.Report) {
+	switch report.Scope.AppliedScope {
+	case "all":
+		fmt.Fprintf(b, "scope: all (no scope filtering applied), ")
+	case "":
+		// No scope clause: AppliedScope was never populated.
+	default:
+		var filtered int
+		if report.Coverage != nil {
+			filtered = sumCoverageGroups(report.Coverage.Excluded)
+		}
+		fmt.Fprintf(b, "scope: %s, filtered: %d, ", report.Scope.AppliedScope, filtered)
+	}
+
+	fmt.Fprintf(b, "files analyzed: %d, active signals: %d, diagnostics: %d\n",
+		report.Summary.FilesAnalyzed, report.Summary.ActiveSignals, len(report.Diagnostics))
 }
 
 // sumCoverageGroups totals CoverageGroup.Count across groups so the
