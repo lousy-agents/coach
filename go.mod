@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
 	github.com/google/go-github/v88 v88.0.0
-	github.com/odvcencio/gotreesitter v0.37.0
+	github.com/odvcencio/gotreesitter v0.39.0
 	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.1
 )
