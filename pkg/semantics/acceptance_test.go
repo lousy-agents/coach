@@ -497,4 +497,31 @@ var _ = Describe("Vitest importOriginal callback pattern in TSX", func() {
 		Expect(result.ParseStatus).To(Equal(semantics.ParseStatus("ok")))
 		Expect(result.SyntaxErrors).To(BeEmpty())
 	})
+
+	// This is the typed/generic-call form of the importOriginal pattern --
+	// `importOriginal<typeof import("some-module")>()` -- distinct from the
+	// untyped form above. It fails today because of an external grammar
+	// limitation in github.com/odvcencio/gotreesitter, tracked in issue #59.
+	//
+	// This test intentionally asserts the CURRENT FAILING behavior. If a
+	// future gotreesitter upgrade fixes the grammar gap, this assertion will
+	// start failing in CI -- that failure is the signal to flip the
+	// assertion to expect a successful parse and close issue #59.
+	It("documents a known parser gap for the typed generic-call form (tracked in issue #59) -- flip this assertion if it starts failing after a gotreesitter upgrade", func() {
+		analyzer := mustAnalyzer()
+		source := []byte(`vi.mock("some-module", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("some-module")>();
+  return { ...actual, mockedThing: vi.fn() };
+});
+`)
+
+		result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+			Path:     "module.test.tsx",
+			Language: semantics.LanguageTSX,
+			Content:  source,
+		})
+
+		Expect(err).To(HaveOccurred())
+		Expect(result.ParseStatus).To(Equal(semantics.ParseStatus("syntax_errors")))
+	})
 })
