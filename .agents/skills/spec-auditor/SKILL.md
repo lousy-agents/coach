@@ -25,7 +25,7 @@ Use this skill when:
 Do NOT use when:
 
 - The user wants to **draft or scaffold a new spec** from a feature idea — use `feature-to-plan`.
-- The user wants to convert an approved spec into Beads epics/tasks or issues — use `plan-to-graph`.
+- The user wants to convert an approved spec into GitHub sub-issues — use `plan-to-graph`.
 - The user wants to triage PR review comments or automated (Copilot) review feedback — use `triaging-pr-reviews`.
 
 ## Quick Start
