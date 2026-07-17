@@ -473,3 +473,28 @@ var _ = Describe("consumer-facing lifecycle and safety", func() {
 		Expect(ok).To(BeFalse())
 	})
 })
+
+var _ = Describe("Vitest importOriginal callback pattern in TSX", func() {
+	// This validates a previously-reported parser-gap concern for Vitest's
+	// typed importOriginal() callback pattern in TSX tests. It is expected to
+	// already pass -- a resolved report mismatch, not a regression test for a
+	// real bug.
+	It("parses without a syntax diagnostic", func() {
+		analyzer := mustAnalyzer()
+		source := []byte(`vi.mock("some-module", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, mockedThing: vi.fn() };
+});
+`)
+
+		result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+			Path:     "module.test.tsx",
+			Language: semantics.LanguageTSX,
+			Content:  source,
+		})
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.ParseStatus).To(Equal(semantics.ParseStatus("ok")))
+		Expect(result.SyntaxErrors).To(BeEmpty())
+	})
+})
