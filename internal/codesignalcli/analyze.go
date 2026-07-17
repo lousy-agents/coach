@@ -20,7 +20,7 @@ import (
 // builds one codesignal.Report. A per-file failure (an unreadable path, a
 // semantics error, an unparsable diff) is reported as a diagnostic; it never
 // stops analysis of the remaining files.
-func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic) (*codesignal.Report, error) {
+func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, appliedScope string, excluded []codesignal.CoverageGroup) (*codesignal.Report, error) {
 	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
 	if err != nil {
 		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
@@ -48,10 +48,16 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 		return nil, err
 	}
 
+	var coverage *codesignal.Coverage
+	if len(excluded) > 0 {
+		coverage = &codesignal.Coverage{Excluded: excluded}
+	}
+
 	return builder.Build(ctx, codesignal.Input{
-		Scope:       codesignal.Scope{Repository: "", Revision: headSHA, Base: mergeBaseSHA},
+		Scope:       codesignal.Scope{Repository: "", Revision: headSHA, Base: mergeBaseSHA, AppliedScope: appliedScope},
 		Files:       fileChanges,
 		Diagnostics: diagnostics,
+		Coverage:    coverage,
 	})
 }
 
