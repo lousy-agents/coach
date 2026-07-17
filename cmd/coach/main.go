@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -12,24 +13,41 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
+// version identifies the coach binary. There is no build-time ldflags wiring
+// yet; that is intentionally out of scope for this issue.
+var version = "dev"
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func run(args []string, stdout, stderr *os.File) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, codesignalUsage)
+		fmt.Fprintln(stderr, topLevelUsage)
 		return 2
 	}
 
 	switch args[0] {
+	case "--help", "-h":
+		fmt.Fprintln(stdout, topLevelUsage)
+		return 0
+	case "--version":
+		fmt.Fprintln(stdout, version)
+		return 0
 	case "codesignal":
 		return runCodesignal(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "%s\ncoach: unknown command %q\n", codesignalUsage, args[0])
+		fmt.Fprintf(stderr, "%s\ncoach: unknown command %q\n", topLevelUsage, args[0])
 		return 2
 	}
 }
+
+const topLevelUsage = `usage: coach <command> [flags]
+
+commands:
+  codesignal   analyze production-code readiness signals in a Git diff or baseline
+
+run "coach codesignal --help" for command-specific help.`
 
 const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>]"
 
@@ -41,6 +59,19 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 	format := flags.String("format", "text", "output format: text or json")
 	scope := flags.String("scope", "production", "source scope: production or all")
 	buildTarget := flags.String("build-target", "", "Go package pattern used to determine production reachability")
+
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			var buffer bytes.Buffer
+			flags.SetOutput(&buffer)
+			flags.PrintDefaults()
+			flags.SetOutput(stderr)
+			fmt.Fprintln(stdout, codesignalUsage)
+			fmt.Fprint(stdout, buffer.String())
+			return 0
+		}
+	}
+
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}

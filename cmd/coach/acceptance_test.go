@@ -763,3 +763,95 @@ var _ = Describe("coach codesignal", func() {
 		})
 	})
 })
+
+// runCoachRaw runs `coach <args...>` with no working directory requirement,
+// returning raw stdout/stderr and exit code.
+func runCoachRaw(args ...string) (stdout, stderr []byte, exitCode int) {
+	command := exec.Command(commandPath, args...)
+	var outBuf, errBuf bytes.Buffer
+	command.Stdout = &outBuf
+	command.Stderr = &errBuf
+
+	err := command.Run()
+	if err == nil {
+		return outBuf.Bytes(), errBuf.Bytes(), 0
+	}
+
+	var exitErr *exec.ExitError
+	Expect(errors.As(err, &exitErr)).To(BeTrue(), "expected an ExitError, got: %s (stderr: %s)", err, errBuf.String())
+	return outBuf.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
+}
+
+var _ = Describe("coach top-level discoverability", func() {
+	When("--help is requested", func() {
+		It("exits 0 and writes top-level usage to stdout naming codesignal and its help flag", func() {
+			stdout, stderr, exitCode := runCoachRaw("--help")
+
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			Expect(stdout).NotTo(BeEmpty())
+			Expect(string(stdout)).To(ContainSubstring("codesignal"))
+			Expect(string(stdout)).To(ContainSubstring("coach codesignal --help"))
+		})
+	})
+
+	When("-h is requested", func() {
+		It("exits 0 and writes top-level usage to stdout naming codesignal and its help flag", func() {
+			stdout, stderr, exitCode := runCoachRaw("-h")
+
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			Expect(stdout).NotTo(BeEmpty())
+			Expect(string(stdout)).To(ContainSubstring("codesignal"))
+			Expect(string(stdout)).To(ContainSubstring("coach codesignal --help"))
+		})
+	})
+
+	When("--version is requested", func() {
+		It("exits 0 and writes exactly one non-empty version line to stdout", func() {
+			stdout, stderr, exitCode := runCoachRaw("--version")
+
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			lines := strings.Split(strings.TrimRight(string(stdout), "\n"), "\n")
+			Expect(lines).To(HaveLen(1))
+			Expect(lines[0]).NotTo(BeEmpty())
+		})
+	})
+
+	When("coach codesignal --help is requested", func() {
+		It("exits 0 and writes flag documentation to stdout", func() {
+			stdout, stderr, exitCode := runCoachRaw("codesignal", "--help")
+
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			text := string(stdout)
+			Expect(text).To(ContainSubstring("--base"))
+			Expect(text).To(ContainSubstring("--baseline"))
+			Expect(text).To(ContainSubstring("--format"))
+			Expect(text).To(ContainSubstring("--scope"))
+			Expect(text).To(ContainSubstring("--build-target"))
+		})
+	})
+
+	When("coach codesignal -h is requested", func() {
+		It("exits 0 and writes flag documentation to stdout", func() {
+			stdout, stderr, exitCode := runCoachRaw("codesignal", "-h")
+
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			text := string(stdout)
+			Expect(text).To(ContainSubstring("--base"))
+			Expect(text).To(ContainSubstring("--baseline"))
+			Expect(text).To(ContainSubstring("--format"))
+			Expect(text).To(ContainSubstring("--scope"))
+			Expect(text).To(ContainSubstring("--build-target"))
+		})
+	})
+
+	When("an unsupported top-level command is supplied", func() {
+		It("exits 2 and writes actionable usage guidance to stderr", func() {
+			stdout, stderr, exitCode := runCoachRaw("bogus")
+
+			Expect(exitCode).To(Equal(2))
+			Expect(stdout).To(BeEmpty())
+			Expect(string(stderr)).To(ContainSubstring("bogus"))
+			Expect(string(stderr)).To(ContainSubstring("codesignal"))
+		})
+	})
+})
