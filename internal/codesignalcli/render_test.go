@@ -167,6 +167,59 @@ func TestRenderTextSummaryLineScopeDisclosure(t *testing.T) {
 	})
 }
 
+func TestRenderTextCoverageSection(t *testing.T) {
+	t.Run("baseline report with excluded files shows Coverage section", func(t *testing.T) {
+		report := &codesignal.Report{
+			Scope:   codesignal.Scope{Baseline: true, Revision: "abc123"},
+			Summary: codesignal.Summary{FilesAnalyzed: 3, ActiveSignals: 0},
+			Coverage: &codesignal.Coverage{
+				Excluded: []codesignal.CoverageGroup{{Reason: "test_file", Language: "go", Count: 2}},
+			},
+		}
+
+		got := RenderText(report)
+
+		if !strings.Contains(got, "Coverage:") {
+			t.Errorf("expected Coverage section for baseline report with excluded files; got:\n%s", got)
+		}
+		if !strings.Contains(got, "excluded: 2 test_file go files") {
+			t.Errorf("expected excluded coverage line; got:\n%s", got)
+		}
+	})
+
+	t.Run("non-baseline report with excluded files shows Coverage section", func(t *testing.T) {
+		report := &codesignal.Report{
+			Scope:   codesignal.Scope{AppliedScope: "production"},
+			Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
+			Coverage: &codesignal.Coverage{
+				Excluded: []codesignal.CoverageGroup{{Reason: "test_file", Language: "go", Count: 2}},
+			},
+		}
+
+		got := RenderText(report)
+
+		if !strings.Contains(got, "Coverage:") {
+			t.Errorf("expected Coverage section for non-baseline (diff) report with excluded files; got:\n%s", got)
+		}
+		if !strings.Contains(got, "excluded: 2 test_file go files") {
+			t.Errorf("expected excluded coverage line; got:\n%s", got)
+		}
+	})
+
+	t.Run("non-baseline report with nil Coverage omits Coverage section", func(t *testing.T) {
+		report := &codesignal.Report{
+			Scope:   codesignal.Scope{AppliedScope: "all"},
+			Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
+		}
+
+		got := RenderText(report)
+
+		if strings.Contains(got, "Coverage:") {
+			t.Errorf("expected no Coverage section when nothing was filtered; got:\n%s", got)
+		}
+	})
+}
+
 func TestRenderTextNoActiveSignals(t *testing.T) {
 	report := &codesignal.Report{Summary: codesignal.Summary{FilesAnalyzed: 1}}
 

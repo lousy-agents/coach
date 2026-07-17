@@ -11,12 +11,14 @@ import (
 // RenderText renders report as deterministic, ANSI-free plain text: a
 // one-line summary, then either "No active CodeSignal findings." or one
 // block per signal (in report.Signals order), then a diagnostics section
-// when report.Diagnostics is non-empty. A Repository Baseline report
+// when report.Diagnostics is non-empty, then a Coverage section summarizing
+// unsupported/excluded files by reason and language rather than one line per
+// file (written only when report.Coverage has groups to show, for both
+// baseline and non-baseline reports). A Repository Baseline report
 // (report.Scope.Baseline) renders a distinct summary line that identifies
 // the analyzed revision and states plainly that the result is not a diff
-// comparison, plus a Coverage section summarizing unsupported/excluded
-// files by reason and language rather than one line per file; everything
-// else (signal blocks, diagnostics section) is unchanged.
+// comparison; everything else (signal blocks, diagnostics section) is
+// unchanged.
 func RenderText(report *codesignal.Report) string {
 	var b strings.Builder
 
@@ -44,9 +46,7 @@ func RenderText(report *codesignal.Report) string {
 		}
 	}
 
-	if report.Scope.Baseline {
-		renderCoverageSection(&b, report.Coverage)
-	}
+	renderCoverageSection(&b, report.Coverage)
 
 	return b.String()
 }
