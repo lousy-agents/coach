@@ -33,7 +33,7 @@ so that **I understand what gets filtered by default and how to see everything i
 
 ### Story 2: Document `--build-target` and Go reachability filtering
 
-As a **adopter targeting a Go repository**,
+As an **adopter targeting a Go repository**,
 I want **`--build-target` documented with a usage example**,
 so that **I know how to get accurate Go production-file reachability instead of relying on the `_test.go`-suffix heuristic alone**.
 
@@ -45,7 +45,7 @@ so that **I know how to get accurate Go production-file reachability instead of 
 
 ### Story 3: Document `--baseline` mode and its Coverage output
 
-As a **adopter deciding between a diff scan and a full-repository scan**,
+As an **adopter deciding between a diff scan and a full-repository scan**,
 I want **`--baseline` documented alongside `--base`, including its distinct output shape**,
 so that **I can choose the right mode and interpret the Coverage section it prints**.
 
