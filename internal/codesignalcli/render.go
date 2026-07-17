@@ -132,6 +132,7 @@ func renderSignal(b *strings.Builder, signal codesignal.Signal) {
 	fmt.Fprintf(b, "path: %s\n", signal.Path)
 	fmt.Fprintf(b, "line: %d\n", signal.Location.StartRow+1)
 	fmt.Fprintf(b, "lifecycle: %s\n", signal.Lifecycle)
+	fmt.Fprintf(b, "source_scope: %s\n", signal.SourceScope)
 	fmt.Fprintf(b, "changed: %t\n", signal.Changed)
 	fmt.Fprintf(b, "evidence: %s\n", signal.Evidence)
 	fmt.Fprintf(b, "why it matters: %s\n", signal.WhyItMatters)

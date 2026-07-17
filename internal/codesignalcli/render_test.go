@@ -15,6 +15,7 @@ func TestRenderTextSignalLabels(t *testing.T) {
 		Signals: []codesignal.Signal{
 			{
 				Path:           "a.go",
+				SourceScope:    "production",
 				Location:       semantics.Location{StartRow: 4},
 				Lifecycle:      codesignal.Lifecycle("introduced"),
 				Changed:        true,
@@ -31,6 +32,7 @@ func TestRenderTextSignalLabels(t *testing.T) {
 		"path: a.go",
 		"line: 5",
 		"lifecycle: introduced",
+		"source_scope: production",
 		"changed: true",
 		"evidence: func Update mutates input",
 		"why it matters: callers may not expect their argument to be mutated",
