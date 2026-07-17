@@ -46,7 +46,6 @@
             "description": "Go modules use semantic import versioning, so a major bump changes the import path (e.g. .../v88/github -> .../v89/github) in every importing .go file. Renovate only updates go.mod/go.sum, not source imports, so an unattended major PR leaves the new require unused and go mod tidy strips it back out, failing CI forever. Require manual review/import-path updates for these instead of letting Renovate open an unresolvable PR.",
             "matchManagers": ["gomod"],
             "matchUpdateTypes": ["major"],
-            "automerge": false,
             "enabled": false
         }
     ],
