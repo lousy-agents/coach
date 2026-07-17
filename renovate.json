@@ -14,6 +14,7 @@
     "semanticCommitType": "fix",
     "semanticCommitScope": "deps",
     "pinDigests": true,
+    "dependencyDashboard": true,
     "packageRules": [
         {
             "description": "Disable native mise manager due to untrusted config errors",
@@ -41,9 +42,36 @@
             "matchPackageNames": [
                 "/^golang\\.org/x//"
             ]
+        },
+        {
+            "description": "Go modules use semantic import versioning, so a major bump changes the import path (e.g. .../v88/github -> .../v89/github) in every importing .go file. Renovate only updates go.mod/go.sum, not source imports, so an unattended major PR leaves the new require unused and go mod tidy strips it back out, failing CI on every rebase. Gate major gomod bumps behind the Dependency Dashboard instead of disabling them outright, so they still surface for someone to trigger deliberately (and do the import-path rewrite) rather than opening a PR that can never pass CI unattended.",
+            "matchManagers": ["gomod"],
+            "matchUpdateTypes": ["major"],
+            "dependencyDashboardApproval": true
+        },
+        {
+            "description": "The native gomod manager reports this dependency's packageName with its version suffix (e.g. github.com/google/go-github/v88), while the customManager below (which rewrites the import path in .go files) reports the bare, unversioned name. Group both under one branch so the go.mod bump and the source import-path rewrite land in a single PR, and skip the dashboard gate above since this package's import path is now kept in sync automatically.",
+            "matchManagers": ["gomod", "custom.regex"],
+            "matchPackageNames": [
+                "/^github\\.com/google/go-github(/v\\d+)?$/"
+            ],
+            "groupName": "go-github (major, import-path synced)",
+            "dependencyDashboardApproval": false
         }
     ],
     "customManagers": [
+        {
+            "description": "Keep github.com/google/go-github's semantic-import-versioned path (the /vNN/ segment) in sync with go.mod across .go source files, since Go's semantic import versioning encodes the major version in the import path itself and Renovate's gomod manager only updates go.mod/go.sum.",
+            "customType": "regex",
+            "managerFilePatterns": ["/\\.go$/"],
+            "matchStrings": [
+                "\"github\\.com/google/go-github/v(?<currentValue>\\d+)/github\""
+            ],
+            "depNameTemplate": "github.com/google/go-github",
+            "packageNameTemplate": "github.com/google/go-github",
+            "datasourceTemplate": "go",
+            "extractVersionTemplate": "^v(?<version>\\d+)\\."
+        },
         {
             "description": "Track Go version in mise.toml",
             "customType": "regex",
