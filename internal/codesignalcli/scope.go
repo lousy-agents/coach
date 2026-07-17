@@ -334,12 +334,103 @@ func loadTSConfig(dir string) (tsConfig, bool, error) {
 		return tsConfig{}, false, fmt.Errorf("reading tsconfig.json: %w", err)
 	}
 	var config tsConfig
-	if err := json.Unmarshal(data, &config); err != nil {
-		// A tsconfig permits comments, which encoding/json cannot parse. Treat a
-		// config we cannot establish as unknown rather than excluding findings.
+	if err := json.Unmarshal(stripJSONCComments(data), &config); err != nil {
+		// A tsconfig permits comments and trailing commas (JSONC), which
+		// encoding/json cannot parse on its own. stripJSONCComments handles
+		// those; any error surviving it means the file is genuinely
+		// malformed for some other reason, so treat the config as
+		// unestablished rather than excluding findings.
 		return tsConfig{}, false, nil
 	}
 	return config, true, nil
+}
+
+// stripJSONCComments removes "//" line comments and "/* */" block comments
+// from JSONC-flavored input, and drops trailing commas before a closing "}"
+// or "]", so the result can be handed to encoding/json.Unmarshal. It tracks
+// whether it is inside a double-quoted JSON string (honoring "\"" escapes)
+// so a comment-like sequence inside a string value is never mistaken for a
+// real comment.
+func stripJSONCComments(data []byte) []byte {
+	var out bytes.Buffer
+	inString := false
+	escaped := false
+	for i := 0; i < len(data); i++ {
+		b := data[i]
+		if inString {
+			out.WriteByte(b)
+			switch {
+			case escaped:
+				escaped = false
+			case b == '\\':
+				escaped = true
+			case b == '"':
+				inString = false
+			}
+			continue
+		}
+		switch {
+		case b == '"':
+			inString = true
+			out.WriteByte(b)
+		case b == '/' && i+1 < len(data) && data[i+1] == '/':
+			for i < len(data) && data[i] != '\n' {
+				i++
+			}
+			if i < len(data) {
+				out.WriteByte('\n')
+			}
+		case b == '/' && i+1 < len(data) && data[i+1] == '*':
+			i += 2
+			for i+1 < len(data) && !(data[i] == '*' && data[i+1] == '/') {
+				i++
+			}
+			i++ // land on the closing '/'
+		default:
+			out.WriteByte(b)
+		}
+	}
+	return stripTrailingCommas(out.Bytes())
+}
+
+// stripTrailingCommas removes a comma that is followed (ignoring whitespace)
+// only by a closing "}" or "]", which encoding/json otherwise rejects. It is
+// string-literal-aware for the same reason as stripJSONCComments.
+func stripTrailingCommas(data []byte) []byte {
+	var out bytes.Buffer
+	inString := false
+	escaped := false
+	for i := 0; i < len(data); i++ {
+		b := data[i]
+		if inString {
+			out.WriteByte(b)
+			switch {
+			case escaped:
+				escaped = false
+			case b == '\\':
+				escaped = true
+			case b == '"':
+				inString = false
+			}
+			continue
+		}
+		if b == '"' {
+			inString = true
+			out.WriteByte(b)
+			continue
+		}
+		if b == ',' {
+			j := i + 1
+			for j < len(data) && (data[j] == ' ' || data[j] == '\t' || data[j] == '\n' || data[j] == '\r') {
+				j++
+			}
+			if j < len(data) && (data[j] == '}' || data[j] == ']') {
+				continue // drop the trailing comma
+			}
+		}
+		out.WriteByte(b)
+	}
+	return out.Bytes()
 }
 
 func (c tsConfig) matchesInclude(path string) bool {
