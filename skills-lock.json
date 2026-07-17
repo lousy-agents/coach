@@ -19,6 +19,12 @@
       "skillPath": "skills/mutation-hunter/SKILL.md",
       "computedHash": "f984497e3f617a178b8ad76abc30e271e429b76565f9dba1e09afa47f1c3bfba"
     },
+    "plan-to-graph": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/plan-to-graph/SKILL.md",
+      "computedHash": "9b847c23b28c0ea7640e1bea1f25b8d61d9336176819f842e705ee09117bd2c2"
+    },
     "rugged-evil-tester": {
       "source": "lousy-agents/skills",
       "sourceType": "github",
@@ -35,7 +41,7 @@
       "source": "lousy-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/spec-auditor/SKILL.md",
-      "computedHash": "a545042c851fce94300865dd7fd1101964b174e93d21678174a8b4e544d8d086"
+      "computedHash": "9ce75f527bc3977fa2b2951ee5f1fecde6442f0096a79d1d538d3cafdf62e864"
     },
     "triaging-pr-reviews": {
       "source": "lousy-agents/skills",
