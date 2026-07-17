@@ -39,7 +39,7 @@ jobs:
 
       # Installs go and node from mise.toml [tools], so CI and local builds
       # share one tool-version source of truth.
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
 
       - name: js/semantics build + tests
         run: mise run js-ci
@@ -55,7 +55,7 @@ jobs:
       # resolves, keeping the exact build flags (grammar-subset tags,
       # GOOS/GOARCH/CGO_ENABLED) defined once in mise.toml rather than
       # duplicated here.
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
 
       - name: GOOS=js GOARCH=wasm build (pure-Go engine)
         run: mise run wasm-build
