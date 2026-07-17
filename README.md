@@ -52,12 +52,13 @@ The JS/TS bindings are currently packaged for Node.js (ESM-only).
 
 `cmd/coach` provides a `codesignal` subcommand: a local, deterministic preview of `pkg/codesignal` you can run directly against a Git checkout, without any GitHub App, worker, or model/LLM configuration.
 
-Download the latest `coach` binary for macOS from the [GitHub Releases page](https://github.com/lousy-agents/coach/releases). Each tagged release publishes separate archives for Apple silicon (`darwin_arm64`) and x86-64 Intel Macs (`darwin_x86_64`), a `checksums.txt` file, and a cosign signature bundle.
+Download the latest `coach` binary for your platform from the [GitHub Releases page](https://github.com/lousy-agents/coach/releases). Each tagged release publishes archives for macOS (Apple silicon `darwin_arm64` and Intel `darwin_x86_64`), Linux (`linux_x86_64`), and Windows (`windows_x86_64`), a `checksums.txt` file, and a cosign signature bundle.
 
 ```sh
-ARCH=darwin_arm64  # or darwin_x86_64
+ARCH=darwin_arm64  # or darwin_x86_64, linux_x86_64, windows_x86_64
+EXT=tar.gz; [ "$ARCH" = windows_x86_64 ] && EXT=zip
 
-curl -LO https://github.com/lousy-agents/coach/releases/latest/download/coach_${ARCH}.tar.gz
+curl -LO https://github.com/lousy-agents/coach/releases/latest/download/coach_${ARCH}.${EXT}
 curl -LO https://github.com/lousy-agents/coach/releases/latest/download/checksums.txt
 curl -LO https://github.com/lousy-agents/coach/releases/latest/download/checksums.txt.bundle
 
@@ -72,7 +73,11 @@ cosign verify-blob \
 shasum -a 256 -c --ignore-missing checksums.txt
 
 # Extract the binary
-tar -xzf coach_${ARCH}.tar.gz
+if [ "$EXT" = zip ]; then
+  unzip coach_${ARCH}.${EXT}
+else
+  tar -xzf coach_${ARCH}.${EXT}
+fi
 ```
 
 Move the extracted `coach` binary somewhere on your `PATH`.
