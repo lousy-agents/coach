@@ -100,6 +100,105 @@ func TestApplySourceScopeTreatsGenuinelyInvalidTSConfigAsUnknown(t *testing.T) {
 	}
 }
 
+func TestApplySourceScopeAppliesExtendedBaseTSConfig(t *testing.T) {
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json":      `{"extends": "./base/tsconfig.json"}`,
+		"base/tsconfig.json": `{"exclude": ["test/**/*.ts"]}`,
+		"src/app.ts":         "export const app = 1\n",
+		"test/app.ts":        "export const test = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 1 || files[0].Path != "src/app.ts" || files[0].SourceScope != SourceScopeProduction {
+		t.Fatalf("ApplySourceScope() = %#v, want only production src/app.ts (base config's exclude should apply)", files)
+	}
+}
+
+func TestApplySourceScopeChildTSConfigOverridesExtendedBaseInclude(t *testing.T) {
+	// The child specifies its own "include" (which must entirely replace, not
+	// merge with, the base's "include") but omits "exclude" (which must
+	// still be inherited from the base).
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json":           `{"extends": "./base/tsconfig.json", "include": ["src/**/*.ts"]}`,
+		"base/tsconfig.json":      `{"include": ["other/**/*.ts"], "exclude": ["src/excluded/**/*.ts"]}`,
+		"src/app.ts":              "export const app = 1\n",
+		"other/app.ts":            "export const other = 1\n",
+		"src/excluded/fixture.ts": "export const fixture = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "other/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "src/excluded/fixture.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 1 || files[0].Path != "src/app.ts" || files[0].SourceScope != SourceScopeProduction {
+		t.Fatalf("ApplySourceScope() = %#v, want only production src/app.ts: "+
+			"child's own include must override (not merge with) the base's include (other/app.ts), "+
+			"while the base's exclude must still apply since the child omits its own (src/excluded/fixture.ts)", files)
+	}
+}
+
+func TestApplySourceScopeTSConfigExtendsEscapingSnapshotFailsOpen(t *testing.T) {
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json": `{"extends": "../../../../../../etc/passwd"}`,
+		"src/app.ts":    "export const app = 1\n",
+		"test/app.ts":   "export const test = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("ApplySourceScope() = %#v, want both files retained as unknown when extends escapes the snapshot directory", files)
+	}
+	for _, file := range files {
+		if file.SourceScope != SourceScopeUnknown {
+			t.Errorf("%s source scope = %q, want %q (extends escaping the snapshot must fail open, same as no tsconfig.json)", file.Path, file.SourceScope, SourceScopeUnknown)
+		}
+	}
+}
+
+func TestApplySourceScopeTSConfigExtendsAbsolutePathOutsideSnapshotFailsOpen(t *testing.T) {
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json": `{"extends": "/etc/passwd"}`,
+		"src/app.ts":    "export const app = 1\n",
+		"test/app.ts":   "export const test = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("ApplySourceScope() = %#v, want both files retained as unknown when extends is an absolute path outside the snapshot", files)
+	}
+	for _, file := range files {
+		if file.SourceScope != SourceScopeUnknown {
+			t.Errorf("%s source scope = %q, want %q (extends outside the snapshot must fail open, same as no tsconfig.json)", file.Path, file.SourceScope, SourceScopeUnknown)
+		}
+	}
+}
+
 func TestTSConfigExplicitEmptyFilesSelectsNoFiles(t *testing.T) {
 	emptyFiles := []string{}
 	config := tsConfig{Files: &emptyFiles}

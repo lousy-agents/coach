@@ -318,6 +318,10 @@ func extractTar(dir string, archive []byte) error {
 }
 
 type tsConfig struct {
+	// Extends names a base config this one inherits from. Only relative or
+	// absolute file paths are resolved (bare npm-style specifiers, e.g.
+	// "@tsconfig/node18/tsconfig.json", are not).
+	Extends string   `json:"extends"`
 	Include []string `json:"include"`
 	Exclude []string `json:"exclude"`
 	// A non-nil Files distinguishes an explicit empty "files": [] (which
@@ -325,13 +329,94 @@ type tsConfig struct {
 	Files *[]string `json:"files"`
 }
 
+// loadTSConfig reads dir's tsconfig.json and, if it has an "extends" field
+// naming a relative or absolute base config, resolves and applies it.
+// TypeScript's "extends" semantics override, rather than merge, each of
+// include/exclude/files: a field the child specifies replaces the base's
+// value for that field entirely, and only an omitted field falls back to the
+// base. Only a single level of extends is resolved here (no chained bases,
+// no cycle detection, no npm-package-specifier resolution) — those are
+// handled by later work; anything beyond a single, in-bounds, path-shaped
+// extends target fails open the same as a missing tsconfig.json.
 func loadTSConfig(dir string) (tsConfig, bool, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "tsconfig.json"))
+	config, ok, err := readTSConfigFile(filepath.Join(dir, "tsconfig.json"))
+	if err != nil {
+		return tsConfig{}, false, err
+	}
+	if !ok {
+		return tsConfig{}, false, nil
+	}
+	if config.Extends == "" {
+		return config, true, nil
+	}
+
+	base, ok := resolveExtendedTSConfig(dir, config.Extends)
+	if !ok {
+		// The extends target is missing, unreadable, malformed, an npm-style
+		// specifier, or escapes the snapshot directory. tsconfig.json is
+		// attacker-influenced input (e.g. a fork's PR diff), so any of these
+		// fail open rather than reading an arbitrary path or erroring out.
+		return tsConfig{}, false, nil
+	}
+
+	if config.Include == nil {
+		config.Include = base.Include
+	}
+	if config.Exclude == nil {
+		config.Exclude = base.Exclude
+	}
+	if config.Files == nil {
+		config.Files = base.Files
+	}
+	return config, true, nil
+}
+
+// resolveExtendedTSConfig resolves extends relative to dir (the directory
+// containing the config that references it), refusing to read anything
+// outside dir. It mirrors extractTar's boundary check: after computing the
+// path relative to dir, an escape shows up as ".." or a ".."-prefixed
+// relative path.
+func resolveExtendedTSConfig(dir, extends string) (tsConfig, bool) {
+	if !isTSConfigPathSpecifier(extends) {
+		return tsConfig{}, false
+	}
+	target := extends
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(dir, target)
+	}
+	rel, err := filepath.Rel(dir, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return tsConfig{}, false
+	}
+	base, ok, err := readTSConfigFile(target)
+	if err != nil || !ok {
+		return tsConfig{}, false
+	}
+	return base, true
+}
+
+// isTSConfigPathSpecifier reports whether extends names a relative or
+// absolute file path rather than a bare npm-style package specifier (e.g.
+// "@tsconfig/node18/tsconfig.json"), which this task does not resolve.
+func isTSConfigPathSpecifier(extends string) bool {
+	return strings.HasPrefix(extends, "./") ||
+		strings.HasPrefix(extends, "../") ||
+		strings.HasPrefix(extends, `.\`) ||
+		strings.HasPrefix(extends, `..\`) ||
+		filepath.IsAbs(extends)
+}
+
+// readTSConfigFile reads and parses a single tsconfig.json-shaped file at
+// path, without following its own "extends" field. A missing or genuinely
+// malformed file reports ok=false with a nil error; only an I/O error other
+// than "not exist" is surfaced as an error.
+func readTSConfigFile(path string) (tsConfig, bool, error) {
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return tsConfig{}, false, nil
 	}
 	if err != nil {
-		return tsConfig{}, false, fmt.Errorf("reading tsconfig.json: %w", err)
+		return tsConfig{}, false, fmt.Errorf("reading %s: %w", path, err)
 	}
 	var config tsConfig
 	if err := json.Unmarshal(stripJSONCComments(data), &config); err != nil {
