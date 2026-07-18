@@ -25,25 +25,22 @@ const (
 )
 
 // ApplySourceScope labels each selected file according to the source set it
-// belongs to, then removes files known not to ship when scope is not "all".
-// Unknown files are deliberately retained so an incomplete project
-// configuration cannot silently hide a finding.
-func ApplySourceScope(dir, headSHA, buildTarget, scope string, files []SelectedFile) ([]SelectedFile, error) {
+// belongs to, then splits out files known not to ship when scope is not
+// "all" into excluded, grouped by (SourceScope reason, Language) pair, so
+// the diff flow can record what was left out and why. Unknown files are
+// deliberately retained in kept so an incomplete project configuration
+// cannot silently hide a finding.
+func ApplySourceScope(dir, headSHA, buildTarget, scope string, files []SelectedFile) (kept []SelectedFile, excluded []codesignal.CoverageGroup, err error) {
 	classified, err := classifySourceFiles(dir, headSHA, buildTarget, scope, files)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if scope == "all" {
-		return classified, nil
+		return classified, nil, nil
 	}
 
-	kept := make([]SelectedFile, 0, len(classified))
-	for _, file := range classified {
-		if file.SourceScope != SourceScopeTestOnly && file.SourceScope != SourceScopeExcluded {
-			kept = append(kept, file)
-		}
-	}
-	return kept, nil
+	kept, excluded = tallyClassified(classified)
+	return kept, excluded, nil
 }
 
 // ApplyBaselineSourceScope labels each selected file according to the
@@ -61,6 +58,16 @@ func ApplyBaselineSourceScope(dir, revisionSHA, buildTarget, scope string, files
 		return classified, nil, nil
 	}
 
+	kept, excluded = tallyClassified(classified)
+	return kept, excluded, nil
+}
+
+// tallyClassified splits classified (files already labeled by
+// classifySourceFiles) into files that ship (kept) and files that don't
+// (excluded), grouped by (SourceScope reason, Language) pair. It is shared
+// by ApplySourceScope and ApplyBaselineSourceScope, whose only difference is
+// what they do with the two results.
+func tallyClassified(classified []SelectedFile) (kept []SelectedFile, excluded []codesignal.CoverageGroup) {
 	type groupKey struct{ reason, language string }
 	counts := make(map[groupKey]int)
 
@@ -92,7 +99,7 @@ func ApplyBaselineSourceScope(dir, revisionSHA, buildTarget, scope string, files
 		})
 	}
 
-	return kept, excluded, nil
+	return kept, excluded
 }
 
 // classifySourceFiles labels each selected file's SourceScope without

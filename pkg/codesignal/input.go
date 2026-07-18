@@ -12,10 +12,11 @@ type Input struct {
 
 // Scope identifies the repository and revision range an Input covers.
 type Scope struct {
-	Repository string `json:"repository,omitempty"`
-	Revision   string `json:"revision,omitempty"`
-	Base       string `json:"base,omitempty"`
-	Baseline   bool   `json:"baseline,omitempty"`
+	Repository   string `json:"repository,omitempty"`
+	Revision     string `json:"revision,omitempty"`
+	Base         string `json:"base,omitempty"`
+	AppliedScope string `json:"applied_scope,omitempty"`
+	Baseline     bool   `json:"baseline,omitempty"`
 }
 
 type ChangeStatus string

@@ -3,6 +3,7 @@ package codesignalcli
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -146,7 +147,7 @@ func TestAnalyzeChangesSurvivesUnreadableFile(t *testing.T) {
 		{Path: "does-not-exist.go", Status: "modified", Language: semantics.LanguageGo},
 	}
 
-	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil)
+	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "", nil)
 	if err != nil {
 		t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
 	}
@@ -170,6 +171,52 @@ func TestAnalyzeChangesSurvivesUnreadableFile(t *testing.T) {
 	if !foundHealthySignal {
 		t.Errorf("report.Signals = %#v, want a signal for healthy.go", report.Signals)
 	}
+}
+
+// TestAnalyzeChangesThreadsScopeAndCoverage verifies that AnalyzeChanges
+// propagates its appliedScope and excluded parameters into the returned
+// Report: a non-empty appliedScope becomes report.Scope.AppliedScope, a
+// non-empty excluded becomes report.Coverage.Excluded, and an empty/nil
+// excluded leaves report.Coverage nil (rather than a non-nil Coverage with an
+// empty Excluded slice).
+func TestAnalyzeChangesThreadsScopeAndCoverage(t *testing.T) {
+	dir := newTempGitRepoT(t)
+	initialSHA := commitFileT(t, dir, "healthy.go", "package healthy\n")
+	headSHA := commitFileT(t, dir, "healthy.go", "package healthy\n\nfunc Update(input *int) { *input = 1 }\n")
+
+	files := []SelectedFile{
+		{Path: "healthy.go", Status: "modified", Language: semantics.LanguageGo},
+	}
+
+	t.Run("non-empty scope and excluded", func(t *testing.T) {
+		excluded := []codesignal.CoverageGroup{{Reason: "test_only", Language: "go", Count: 1}}
+
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "production", excluded)
+		if err != nil {
+			t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
+		}
+
+		if report.Scope.AppliedScope != "production" {
+			t.Errorf("report.Scope.AppliedScope = %q, want %q", report.Scope.AppliedScope, "production")
+		}
+		if report.Coverage == nil {
+			t.Fatal("report.Coverage = nil, want non-nil")
+		}
+		if !reflect.DeepEqual(report.Coverage.Excluded, excluded) {
+			t.Errorf("report.Coverage.Excluded = %#v, want %#v", report.Coverage.Excluded, excluded)
+		}
+	})
+
+	t.Run("nil excluded leaves Coverage nil", func(t *testing.T) {
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "", nil)
+		if err != nil {
+			t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
+		}
+
+		if report.Coverage != nil {
+			t.Errorf("report.Coverage = %#v, want nil", report.Coverage)
+		}
+	})
 }
 
 // TestAnalyzeBaseline verifies AnalyzeBaseline's per-file coverage
@@ -328,7 +375,7 @@ func TestAnalyzeChangesBaseReadFailureForModifiedFile(t *testing.T) {
 	// emptySHA predates a.go's existence, so `git show emptySHA:a.go` fails
 	// even though Status claims "modified" -- simulating a base-read failure
 	// for a path Git already told us existed at base.
-	report, err := AnalyzeChanges(context.Background(), dir, headSHA, emptySHA, files, nil)
+	report, err := AnalyzeChanges(context.Background(), dir, headSHA, emptySHA, files, nil, "", nil)
 	if err != nil {
 		t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
 	}

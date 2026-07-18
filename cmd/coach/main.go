@@ -135,12 +135,13 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		if err != nil {
 			return reportOperationalError(err, stderr)
 		}
-		selected, err = codesignalcli.ApplySourceScope(dir, headSHA, *buildTarget, *scope, selected)
+		var excluded []codesignal.CoverageGroup
+		selected, excluded, err = codesignalcli.ApplySourceScope(dir, headSHA, *buildTarget, *scope, selected)
 		if err != nil {
 			return reportOperationalError(err, stderr)
 		}
 
-		report, err = codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics)
+		report, err = codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, *scope, excluded)
 		if err != nil {
 			fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
 			return 1

@@ -15,6 +15,7 @@ func TestRenderTextSignalLabels(t *testing.T) {
 		Signals: []codesignal.Signal{
 			{
 				Path:           "a.go",
+				SourceScope:    "production",
 				Location:       semantics.Location{StartRow: 4},
 				Lifecycle:      codesignal.Lifecycle("introduced"),
 				Changed:        true,
@@ -31,6 +32,7 @@ func TestRenderTextSignalLabels(t *testing.T) {
 		"path: a.go",
 		"line: 5",
 		"lifecycle: introduced",
+		"source_scope: production",
 		"changed: true",
 		"evidence: func Update mutates input",
 		"why it matters: callers may not expect their argument to be mutated",
@@ -89,6 +91,135 @@ func TestRenderTextSummaryLine(t *testing.T) {
 	if !strings.Contains(got, "diagnostics: 1") {
 		t.Errorf("expected diagnostics count 1; got:\n%s", got)
 	}
+}
+
+func TestRenderTextSummaryLineScopeDisclosure(t *testing.T) {
+	t.Run("production scope with filtered files", func(t *testing.T) {
+		report := &codesignal.Report{
+			Scope:   codesignal.Scope{AppliedScope: "production"},
+			Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
+			Coverage: &codesignal.Coverage{
+				Excluded: []codesignal.CoverageGroup{{Reason: SourceScopeTestOnly, Language: "go", Count: 2}},
+			},
+		}
+
+		got := RenderText(report)
+
+		if !strings.Contains(got, "scope: production") {
+			t.Errorf("expected summary to disclose applied scope; got:\n%s", got)
+		}
+		if !strings.Contains(got, "filtered: 2") {
+			t.Errorf("expected summary to disclose filtered count 2; got:\n%s", got)
+		}
+	})
+
+	t.Run("production scope with nothing filtered", func(t *testing.T) {
+		report := &codesignal.Report{
+			Scope:   codesignal.Scope{AppliedScope: "production"},
+			Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
+		}
+
+		got := RenderText(report)
+
+		if !strings.Contains(got, "scope: production") {
+			t.Errorf("expected summary to disclose applied scope; got:\n%s", got)
+		}
+		if !strings.Contains(got, "filtered: 0") {
+			t.Errorf("expected summary to disclose filtered count 0; got:\n%s", got)
+		}
+		if strings.Contains(got, "no scope filtering") {
+			t.Errorf("zero filtered files must not read as if no scope was applied; got:\n%s", got)
+		}
+	})
+
+	t.Run("all scope discloses no filtering applied", func(t *testing.T) {
+		report := &codesignal.Report{
+			Scope:   codesignal.Scope{AppliedScope: "all"},
+			Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
+		}
+
+		got := RenderText(report)
+
+		if !strings.Contains(got, "scope: all") {
+			t.Errorf("expected summary to disclose applied scope; got:\n%s", got)
+		}
+		if !strings.Contains(got, "no scope filtering applied") {
+			t.Errorf("expected summary to state no scope filtering was applied; got:\n%s", got)
+		}
+		if strings.Contains(got, "filtered:") {
+			t.Errorf("scope=all must not show a filtered count as if scope were active; got:\n%s", got)
+		}
+	})
+
+	t.Run("unset applied scope keeps original summary line unchanged", func(t *testing.T) {
+		report := &codesignal.Report{
+			Summary:     codesignal.Summary{FilesAnalyzed: 3, ActiveSignals: 2},
+			Diagnostics: []codesignal.Diagnostic{{Path: "a.go", Kind: "k", Message: "m"}},
+		}
+
+		got := RenderText(report)
+
+		wantLine := "files analyzed: 3, active signals: 2, diagnostics: 1\n"
+		if !strings.HasPrefix(got, wantLine) {
+			t.Errorf("expected original summary line format unchanged as first line; got:\n%s", got)
+		}
+		if strings.Contains(got, "scope:") {
+			t.Errorf("expected no scope clause when AppliedScope is unset; got:\n%s", got)
+		}
+	})
+}
+
+func TestRenderTextCoverageSection(t *testing.T) {
+	t.Run("baseline report with excluded files shows Coverage section", func(t *testing.T) {
+		report := &codesignal.Report{
+			Scope:   codesignal.Scope{Baseline: true, Revision: "abc123"},
+			Summary: codesignal.Summary{FilesAnalyzed: 3, ActiveSignals: 0},
+			Coverage: &codesignal.Coverage{
+				Excluded: []codesignal.CoverageGroup{{Reason: SourceScopeTestOnly, Language: "go", Count: 2}},
+			},
+		}
+
+		got := RenderText(report)
+
+		if !strings.Contains(got, "Coverage:") {
+			t.Errorf("expected Coverage section for baseline report with excluded files; got:\n%s", got)
+		}
+		if !strings.Contains(got, "excluded: 2 test_only go files") {
+			t.Errorf("expected excluded coverage line; got:\n%s", got)
+		}
+	})
+
+	t.Run("non-baseline report with excluded files shows Coverage section", func(t *testing.T) {
+		report := &codesignal.Report{
+			Scope:   codesignal.Scope{AppliedScope: "production"},
+			Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
+			Coverage: &codesignal.Coverage{
+				Excluded: []codesignal.CoverageGroup{{Reason: SourceScopeTestOnly, Language: "go", Count: 2}},
+			},
+		}
+
+		got := RenderText(report)
+
+		if !strings.Contains(got, "Coverage:") {
+			t.Errorf("expected Coverage section for non-baseline (diff) report with excluded files; got:\n%s", got)
+		}
+		if !strings.Contains(got, "excluded: 2 test_only go files") {
+			t.Errorf("expected excluded coverage line; got:\n%s", got)
+		}
+	})
+
+	t.Run("non-baseline report with nil Coverage omits Coverage section", func(t *testing.T) {
+		report := &codesignal.Report{
+			Scope:   codesignal.Scope{AppliedScope: "all"},
+			Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
+		}
+
+		got := RenderText(report)
+
+		if strings.Contains(got, "Coverage:") {
+			t.Errorf("expected no Coverage section when nothing was filtered; got:\n%s", got)
+		}
+	})
 }
 
 func TestRenderTextNoActiveSignals(t *testing.T) {
