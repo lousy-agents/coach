@@ -317,6 +317,110 @@ func TestApplySourceScopeTSConfigExtendsEscapingSnapshotFailsOpen(t *testing.T) 
 	}
 }
 
+func TestApplySourceScopeTSConfigExtendsScopedNpmSpecifierFailsOpen(t *testing.T) {
+	// A real, resolvable tsconfig.json is planted AT the npm-specifier-shaped
+	// path itself (resolveExtendedTSConfig would join dir with the bare
+	// extends value and read that path directly, with no "append
+	// tsconfig.json" step for a bare/scoped specifier). If
+	// isTSConfigPathSpecifier's guard were ever removed, this file would be
+	// found and read, its "files" setting would apply, and the assertion
+	// below would fail (src/app.ts would become production and test/app.ts
+	// would be dropped) — proving the guard, not a missing file, is what
+	// makes this fail open.
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json":                  `{"extends": "@tsconfig/node18/tsconfig.json"}`,
+		"@tsconfig/node18/tsconfig.json": `{"files": ["src/app.ts"]}`,
+		"src/app.ts":                     "export const app = 1\n",
+		"test/app.ts":                    "export const test = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("ApplySourceScope() = %#v, want both files retained as unknown when extends is a scoped npm package specifier", files)
+	}
+	for _, file := range files {
+		if file.SourceScope != SourceScopeUnknown {
+			t.Errorf("%s source scope = %q, want %q (a scoped npm-package extends target must fail open, same as no tsconfig.json)", file.Path, file.SourceScope, SourceScopeUnknown)
+		}
+	}
+}
+
+func TestApplySourceScopeTSConfigExtendsBareNpmSpecifierFailsOpen(t *testing.T) {
+	// As above: a real, resolvable tsconfig-shaped file lives at the literal
+	// path "some-base-config" (resolveExtendedTSConfig treats a bare extends
+	// value as the config file itself, not a directory to search within), so
+	// this test can only pass because isTSConfigPathSpecifier rejects the
+	// bare specifier before ever trying to read it — not because the path
+	// happens to not exist.
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json":    `{"extends": "some-base-config"}`,
+		"some-base-config": `{"files": ["src/app.ts"]}`,
+		"src/app.ts":       "export const app = 1\n",
+		"test/app.ts":      "export const test = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("ApplySourceScope() = %#v, want both files retained as unknown when extends is a bare, unscoped npm-style package specifier", files)
+	}
+	for _, file := range files {
+		if file.SourceScope != SourceScopeUnknown {
+			t.Errorf("%s source scope = %q, want %q (a bare npm-package extends target must fail open, same as no tsconfig.json)", file.Path, file.SourceScope, SourceScopeUnknown)
+		}
+	}
+}
+
+func TestApplySourceScopeTSConfigExtendsChainHittingNpmSpecifierMidChainFailsOpen(t *testing.T) {
+	// The root config extends a subdirectory config with no issue of its own;
+	// that subdirectory config in turn extends an npm-package specifier. The
+	// npm specifier must fail the whole chain open, not just the hop that
+	// encountered it, even though the first hop (root -> sub) is a perfectly
+	// resolvable path-shaped extends. As in the two tests above, a real
+	// tsconfig-shaped file is planted at the mid-chain hop's
+	// npm-specifier-shaped path (resolved relative to sub/, i.e.
+	// "sub/@tsconfig/node18/tsconfig.json") so this test can only pass
+	// because the guard rejects the specifier, not because nothing was
+	// there to read.
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json":                      `{"extends": "./sub/tsconfig.json"}`,
+		"sub/tsconfig.json":                  `{"extends": "@tsconfig/node18/tsconfig.json"}`,
+		"sub/@tsconfig/node18/tsconfig.json": `{"files": ["src/app.ts"]}`,
+		"src/app.ts":                         "export const app = 1\n",
+		"test/app.ts":                        "export const test = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("ApplySourceScope() = %#v, want both files retained as unknown when an npm-package specifier appears mid-chain", files)
+	}
+	for _, file := range files {
+		if file.SourceScope != SourceScopeUnknown {
+			t.Errorf("%s source scope = %q, want %q (an npm-package extends target mid-chain must fail the whole chain open)", file.Path, file.SourceScope, SourceScopeUnknown)
+		}
+	}
+}
+
 func TestApplySourceScopeTSConfigExtendsAbsolutePathOutsideSnapshotFailsOpen(t *testing.T) {
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json": `{"extends": "/etc/passwd"}`,
