@@ -20,7 +20,7 @@ func TestApplySourceScopeUsesHEADSnapshotAndTSConfigFiles(t *testing.T) {
 
 	// A live config must not alter the report for the committed range.
 	writeScopeTestFile(t, repo, "tsconfig.json", "not valid json")
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -357,7 +357,7 @@ func TestApplySourceScopeExcludesGoTestFilesWithoutBuildTarget(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "shipping/shipping.go", Status: "modified", Language: semantics.LanguageGo},
 		{Path: "shipping/shipping_test.go", Status: "modified", Language: semantics.LanguageGo},
 	})
@@ -369,6 +369,30 @@ func TestApplySourceScopeExcludesGoTestFilesWithoutBuildTarget(t *testing.T) {
 	}
 }
 
+func TestApplySourceScopeTalliesExcludedFiles(t *testing.T) {
+	repo := newScopeTestRepo(t, map[string]string{
+		"shipping/shipping.go":      "package shipping\n\nfunc Update() {}\n",
+		"shipping/shipping_test.go": "package shipping\n\nfunc TestUpdate() {}\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	kept, excluded, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "shipping/shipping.go", Status: "modified", Language: semantics.LanguageGo},
+		{Path: "shipping/shipping_test.go", Status: "modified", Language: semantics.LanguageGo},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+
+	if len(kept) != 1 || kept[0].Path != "shipping/shipping.go" || kept[0].SourceScope != SourceScopeUnknown {
+		t.Fatalf("ApplySourceScope() kept = %#v, want only shipping.go", kept)
+	}
+
+	if len(excluded) != 1 || excluded[0].Reason != SourceScopeTestOnly || excluded[0].Language != string(semantics.LanguageGo) || excluded[0].Count != 1 {
+		t.Fatalf("ApplySourceScope() excluded = %#v, want one test_only/go group of count 1", excluded)
+	}
+}
+
 func TestApplySourceScopeResolvesGoTargetFromInvocationSubdirectory(t *testing.T) {
 	repo := newScopeTestRepo(t, map[string]string{
 		"go.mod":              "module example.com/scope-test\n\ngo 1.24\n",
@@ -377,7 +401,7 @@ func TestApplySourceScopeResolvesGoTargetFromInvocationSubdirectory(t *testing.T
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(filepath.Join(repo, "cmd", "app"), head, ".", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(filepath.Join(repo, "cmd", "app"), head, ".", "production", []SelectedFile{
 		{Path: "cmd/app/main.go", Status: "modified", Language: semantics.LanguageGo},
 		{Path: "internal/app/app.go", Status: "modified", Language: semantics.LanguageGo},
 	})

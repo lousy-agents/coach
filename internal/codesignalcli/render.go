@@ -11,20 +11,21 @@ import (
 // RenderText renders report as deterministic, ANSI-free plain text: a
 // one-line summary, then either "No active CodeSignal findings." or one
 // block per signal (in report.Signals order), then a diagnostics section
-// when report.Diagnostics is non-empty. A Repository Baseline report
+// when report.Diagnostics is non-empty, then a Coverage section summarizing
+// unsupported/excluded files by reason and language rather than one line per
+// file (written only when report.Coverage has groups to show, for both
+// baseline and non-baseline reports). A Repository Baseline report
 // (report.Scope.Baseline) renders a distinct summary line that identifies
 // the analyzed revision and states plainly that the result is not a diff
-// comparison, plus a Coverage section summarizing unsupported/excluded
-// files by reason and language rather than one line per file; everything
-// else (signal blocks, diagnostics section) is unchanged.
+// comparison; everything else (signal blocks, diagnostics section) is
+// unchanged.
 func RenderText(report *codesignal.Report) string {
 	var b strings.Builder
 
 	if report.Scope.Baseline {
 		renderBaselineSummary(&b, report)
 	} else {
-		fmt.Fprintf(&b, "files analyzed: %d, active signals: %d, diagnostics: %d\n",
-			report.Summary.FilesAnalyzed, report.Summary.ActiveSignals, len(report.Diagnostics))
+		renderDiffSummary(&b, report)
 	}
 
 	if len(report.Signals) == 0 {
@@ -45,9 +46,7 @@ func RenderText(report *codesignal.Report) string {
 		}
 	}
 
-	if report.Scope.Baseline {
-		renderCoverageSection(&b, report.Coverage)
-	}
+	renderCoverageSection(&b, report.Coverage)
 
 	return b.String()
 }
@@ -71,6 +70,33 @@ func renderBaselineSummary(b *strings.Builder, report *codesignal.Report) {
 
 	fmt.Fprintf(b, "tracked files discovered: %d, analyzed: %d, unsupported: %d, excluded: %d, unanalyzable: %d, active signals: %d, diagnostics: %d\n",
 		tracked, analyzed, unsupported, excluded, unanalyzable, report.Summary.ActiveSignals, len(report.Diagnostics))
+}
+
+// renderDiffSummary writes the non-baseline (base-diff) summary line. When
+// report.Scope.AppliedScope was actually populated by the diff flow ("all" or
+// "production"), it prepends a scope clause disclosing the applied scope and,
+// for "production", the number of files filtered out by that scope
+// (report.Coverage.Excluded, nil-safe) -- distinguishing "scope: production,
+// filtered: 0" (scoped, nothing happened to match) from "all" (no scope
+// filtering applied at all). When AppliedScope is empty (not populated by the
+// diff flow, e.g. an older/unrelated caller), the line is left in its
+// original format with no scope clause.
+func renderDiffSummary(b *strings.Builder, report *codesignal.Report) {
+	switch report.Scope.AppliedScope {
+	case "all":
+		fmt.Fprintf(b, "scope: all (no scope filtering applied), ")
+	case "":
+		// No scope clause: AppliedScope was never populated.
+	default:
+		var filtered int
+		if report.Coverage != nil {
+			filtered = sumCoverageGroups(report.Coverage.Excluded)
+		}
+		fmt.Fprintf(b, "scope: %s, filtered: %d, ", report.Scope.AppliedScope, filtered)
+	}
+
+	fmt.Fprintf(b, "files analyzed: %d, active signals: %d, diagnostics: %d\n",
+		report.Summary.FilesAnalyzed, report.Summary.ActiveSignals, len(report.Diagnostics))
 }
 
 // sumCoverageGroups totals CoverageGroup.Count across groups so the
@@ -106,6 +132,7 @@ func renderSignal(b *strings.Builder, signal codesignal.Signal) {
 	fmt.Fprintf(b, "path: %s\n", signal.Path)
 	fmt.Fprintf(b, "line: %d\n", signal.Location.StartRow+1)
 	fmt.Fprintf(b, "lifecycle: %s\n", signal.Lifecycle)
+	fmt.Fprintf(b, "source_scope: %s\n", signal.SourceScope)
 	fmt.Fprintf(b, "changed: %t\n", signal.Changed)
 	fmt.Fprintf(b, "evidence: %s\n", signal.Evidence)
 	fmt.Fprintf(b, "why it matters: %s\n", signal.WhyItMatters)
