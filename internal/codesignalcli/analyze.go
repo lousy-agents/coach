@@ -48,6 +48,9 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 		return nil, err
 	}
 
+	// Only Excluded is meaningful on a diff-flow report; TrackedFilesDiscovered/
+	// FilesAnalyzed/FilesUnanalyzable are baseline-only accounting fields and
+	// are deliberately left zero here (see codesignal.Coverage's doc comment).
 	var coverage *codesignal.Coverage
 	if len(excluded) > 0 {
 		coverage = &codesignal.Coverage{Excluded: excluded}
