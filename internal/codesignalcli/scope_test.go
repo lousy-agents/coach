@@ -200,6 +200,98 @@ func TestApplySourceScopeChildTSConfigOverridesExtendedBaseInclude(t *testing.T)
 	}
 }
 
+func TestApplySourceScopeAppliesTwoLevelExtendedBaseTSConfig(t *testing.T) {
+	// tsconfig.json -> mid/tsconfig.json -> mid/root/tsconfig.json, where
+	// only the outermost base (root) sets "exclude". Neither the package
+	// config nor the middle config specifies include/exclude/files of its
+	// own, so the root's exclude must still apply all the way through the
+	// chain. root is nested under mid (rather than a sibling of it) so each
+	// hop stays within the directory containing the config that references
+	// it, per the existing extends security boundary.
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json":          `{"extends": "./mid/tsconfig.json"}`,
+		"mid/tsconfig.json":      `{"extends": "./root/tsconfig.json"}`,
+		"mid/root/tsconfig.json": `{"exclude": ["test/**/*.ts"]}`,
+		"src/app.ts":             "export const app = 1\n",
+		"test/app.ts":            "export const test = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 1 || files[0].Path != "src/app.ts" || files[0].SourceScope != SourceScopeProduction {
+		t.Fatalf("ApplySourceScope() = %#v, want only production src/app.ts (root base's exclude should apply through a two-level extends chain)", files)
+	}
+}
+
+func TestApplySourceScopeExtendsDescendingThenAscendingWithinSnapshotRootSucceeds(t *testing.T) {
+	// A common monorepo pattern: the package's tsconfig.json extends a
+	// config one directory DOWN (packages/foo), which in turn extends a
+	// shared base config back UP at the snapshot root
+	// ("../../tsconfig.base.json"). The final target is the snapshot root's
+	// own tsconfig.base.json, which never actually leaves the snapshot, so
+	// this must resolve successfully even though the second hop's own
+	// directory (packages/foo) is not itself an ancestor of the target —
+	// the escape check must be relative to the snapshot root, not to
+	// whichever subdirectory happens to contain the current hop's config.
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json":              `{"extends": "./packages/foo/tsconfig.json"}`,
+		"packages/foo/tsconfig.json": `{"extends": "../../tsconfig.base.json"}`,
+		"tsconfig.base.json":         `{"exclude": ["test/**/*.ts"]}`,
+		"src/app.ts":                 "export const app = 1\n",
+		"test/app.ts":                "export const test = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 1 || files[0].Path != "src/app.ts" || files[0].SourceScope != SourceScopeProduction {
+		t.Fatalf("ApplySourceScope() = %#v, want only production src/app.ts (the snapshot-root base's exclude should apply even though the chain descends then ascends)", files)
+	}
+}
+
+func TestApplySourceScopeCircularExtendsChainFailsOpen(t *testing.T) {
+	// Two configs in the same directory extend each other directly, forming
+	// a genuine cycle that stays entirely in-bounds (same directory as each
+	// other and as the snapshot root) at every hop, so only the
+	// cycle-detection guard — not the per-hop security boundary check — can
+	// stop resolution here. Without cycle detection this would recurse
+	// between tsconfig.json and base.json indefinitely.
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json": `{"extends": "./base.json", "exclude": ["test/**/*.ts"]}`,
+		"base.json":     `{"extends": "./tsconfig.json"}`,
+		"src/app.ts":    "export const app = 1\n",
+		"test/app.ts":   "export const test = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("ApplySourceScope() = %#v, want both files retained as unknown when the extends chain is circular", files)
+	}
+	for _, file := range files {
+		if file.SourceScope != SourceScopeUnknown {
+			t.Errorf("%s source scope = %q, want %q (a circular extends chain must fail open, same as no tsconfig.json)", file.Path, file.SourceScope, SourceScopeUnknown)
+		}
+	}
+}
+
 func TestApplySourceScopeTSConfigExtendsEscapingSnapshotFailsOpen(t *testing.T) {
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json": `{"extends": "../../../../../../etc/passwd"}`,

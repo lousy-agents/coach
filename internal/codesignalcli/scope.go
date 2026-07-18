@@ -330,14 +330,22 @@ type tsConfig struct {
 }
 
 // loadTSConfig reads dir's tsconfig.json and, if it has an "extends" field
-// naming a relative or absolute base config, resolves and applies it.
-// TypeScript's "extends" semantics override, rather than merge, each of
-// include/exclude/files: a field the child specifies replaces the base's
-// value for that field entirely, and only an omitted field falls back to the
-// base. Only a single level of extends is resolved here (no chained bases,
-// no cycle detection, no npm-package-specifier resolution) — those are
-// handled by later work; anything beyond a single, in-bounds, path-shaped
-// extends target fails open the same as a missing tsconfig.json.
+// naming a relative or absolute base config, resolves and applies the full
+// chain of bases (extends chains may be more than one level deep: A extends
+// B, B extends C, and so on). TypeScript's "extends" semantics override,
+// rather than merge, each of include/exclude/files: walking from the
+// outermost base inward, a field a given config specifies replaces the
+// next-outer config's value for that field entirely, and only an omitted
+// field falls back to the outer config. A circular chain (a config that,
+// directly or transitively, extends itself) is detected and fails open
+// rather than looping indefinitely; npm-package-specifier resolution is not
+// handled here (that's separate follow-up work). Anything beyond a chain of
+// in-bounds, path-shaped extends targets fails open the same as a missing
+// tsconfig.json. "In-bounds" is judged against dir itself (the snapshot
+// root passed into this call), not against whichever subdirectory happens
+// to contain the current hop's config: a nested package extending a shared
+// base config back up at dir (a common monorepo layout) never actually
+// leaves the snapshot and must still resolve.
 func loadTSConfig(dir string) (tsConfig, bool, error) {
 	config, ok, err := readTSConfigFile(filepath.Join(dir, "tsconfig.json"))
 	if err != nil {
@@ -350,49 +358,76 @@ func loadTSConfig(dir string) (tsConfig, bool, error) {
 		return config, true, nil
 	}
 
-	base, ok := resolveExtendedTSConfig(dir, config.Extends)
-	if !ok {
-		// The extends target is missing, unreadable, malformed, an npm-style
-		// specifier, or escapes the snapshot directory. tsconfig.json is
-		// attacker-influenced input (e.g. a fork's PR diff), so any of these
-		// fail open rather than reading an arbitrary path or erroring out.
-		return tsConfig{}, false, nil
-	}
+	// Track visited base config paths (cleaned to an absolute form so
+	// "./a.json" and "a.json" naming the same file are recognized as the
+	// same node) to fail open on a circular extends chain instead of
+	// looping indefinitely.
+	visited := map[string]bool{filepath.Clean(filepath.Join(dir, "tsconfig.json")): true}
 
-	if config.Include == nil {
-		config.Include = base.Include
-	}
-	if config.Exclude == nil {
-		config.Exclude = base.Exclude
-	}
-	if config.Files == nil {
-		config.Files = base.Files
+	snapshotRoot, currentDir, extends := dir, dir, config.Extends
+	for extends != "" {
+		base, baseDir, basePath, ok := resolveExtendedTSConfig(snapshotRoot, currentDir, extends)
+		if !ok {
+			// The extends target is missing, unreadable, malformed, an
+			// npm-style specifier, or escapes the snapshot root. tsconfig.json
+			// is attacker-influenced input (e.g. a fork's PR diff), so any of
+			// these fail open rather than reading an arbitrary path or
+			// erroring out.
+			return tsConfig{}, false, nil
+		}
+		if visited[basePath] {
+			// A circular extends chain: fail open the same as any other
+			// unresolvable chain rather than looping indefinitely.
+			return tsConfig{}, false, nil
+		}
+		visited[basePath] = true
+
+		if config.Include == nil {
+			config.Include = base.Include
+		}
+		if config.Exclude == nil {
+			config.Exclude = base.Exclude
+		}
+		if config.Files == nil {
+			config.Files = base.Files
+		}
+
+		currentDir, extends = baseDir, base.Extends
 	}
 	return config, true, nil
 }
 
 // resolveExtendedTSConfig resolves extends relative to dir (the directory
 // containing the config that references it), refusing to read anything
-// outside dir. It mirrors extractTar's boundary check: after computing the
-// path relative to dir, an escape shows up as ".." or a ".."-prefixed
-// relative path.
-func resolveExtendedTSConfig(dir, extends string) (tsConfig, bool) {
+// outside snapshotRoot (the directory originally passed into loadTSConfig,
+// fixed for the whole chain). Resolution of a relative extends value still
+// uses dir, the current hop's own directory, so "../foo.json" means what it
+// says relative to the config that wrote it; only the escape check is
+// anchored to snapshotRoot instead, so a chain that descends into a
+// subdirectory and then back up — as long as it never leaves snapshotRoot —
+// is not mistaken for an escape. It mirrors extractTar's boundary check:
+// after computing the path relative to snapshotRoot, an escape shows up as
+// ".." or a ".."-prefixed relative path. On success it also returns the
+// resolved base config's directory (so a further extends in the base
+// resolves relative to the base's own location, not the original child's)
+// and its cleaned absolute path (for cycle detection).
+func resolveExtendedTSConfig(snapshotRoot, dir, extends string) (config tsConfig, baseDir, basePath string, ok bool) {
 	if !isTSConfigPathSpecifier(extends) {
-		return tsConfig{}, false
+		return tsConfig{}, "", "", false
 	}
 	target := extends
 	if !filepath.IsAbs(target) {
 		target = filepath.Join(dir, target)
 	}
-	rel, err := filepath.Rel(dir, target)
+	rel, err := filepath.Rel(snapshotRoot, target)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return tsConfig{}, false
+		return tsConfig{}, "", "", false
 	}
-	base, ok, err := readTSConfigFile(target)
-	if err != nil || !ok {
-		return tsConfig{}, false
+	base, found, err := readTSConfigFile(target)
+	if err != nil || !found {
+		return tsConfig{}, "", "", false
 	}
-	return base, true
+	return base, filepath.Dir(target), filepath.Clean(target), true
 }
 
 // isTSConfigPathSpecifier reports whether extends names a relative or
