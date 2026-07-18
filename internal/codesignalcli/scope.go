@@ -435,7 +435,13 @@ func readTSConfigFile(path string) (tsConfig, bool, error) {
 // or "]", so the result can be handed to encoding/json.Unmarshal. It tracks
 // whether it is inside a double-quoted JSON string (honoring "\"" escapes)
 // so a comment-like sequence inside a string value is never mistaken for a
-// real comment.
+// real comment. If a "/*" block comment is never closed before EOF, the
+// input is genuinely malformed JSONC; rather than silently dropping
+// everything from the unterminated "/*" onward (which could turn otherwise
+// valid JSON into a truncated document that happens to parse), the original,
+// unmodified data is returned so the bare "/" reliably fails
+// json.Unmarshal and the caller's existing malformed-config fallback
+// applies.
 func stripJSONCComments(data []byte) []byte {
 	var out bytes.Buffer
 	inString := false
@@ -469,6 +475,11 @@ func stripJSONCComments(data []byte) []byte {
 			i += 2
 			for i+1 < len(data) && !(data[i] == '*' && data[i+1] == '/') {
 				i++
+			}
+			if i+1 >= len(data) {
+				// Ran out of input without finding the closing "*/": an
+				// unterminated block comment, not a real one.
+				return data
 			}
 			i++ // land on the closing '/'
 		default:
