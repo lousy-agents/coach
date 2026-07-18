@@ -43,7 +43,7 @@ func TestApplySourceScopeToleratesTSConfigComments(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -63,7 +63,7 @@ func TestApplySourceScopeToleratesTSConfigTrailingComma(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -83,7 +83,7 @@ func TestApplySourceScopeTreatsGenuinelyInvalidTSConfigAsUnknown(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -108,7 +108,7 @@ func TestApplySourceScopeTreatsUnterminatedBlockCommentAsUnknown(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -139,7 +139,7 @@ func TestApplySourceScopePreservesCommentMarkersInsideStrings(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -160,7 +160,7 @@ func TestApplySourceScopeAppliesExtendedBaseTSConfig(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -185,7 +185,7 @@ func TestApplySourceScopeChildTSConfigOverridesExtendedBaseInclude(t *testing.T)
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "other/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "src/excluded/fixture.ts", Status: "modified", Language: semantics.LanguageTypeScript},
@@ -217,7 +217,7 @@ func TestApplySourceScopeAppliesTwoLevelExtendedBaseTSConfig(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -248,7 +248,7 @@ func TestApplySourceScopeExtendsDescendingThenAscendingWithinSnapshotRootSucceed
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -275,7 +275,7 @@ func TestApplySourceScopeCircularExtendsChainFailsOpen(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -300,7 +300,7 @@ func TestApplySourceScopeTSConfigExtendsEscapingSnapshotFailsOpen(t *testing.T) 
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -325,7 +325,7 @@ func TestApplySourceScopeTSConfigExtendsAbsolutePathOutsideSnapshotFailsOpen(t *
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
