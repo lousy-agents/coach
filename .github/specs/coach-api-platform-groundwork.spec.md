@@ -39,7 +39,7 @@ so that I can **get Coach feedback without running any local tooling**.
 
 #### Notes
 
-Async submit/poll only in v1 — no webhooks, no streaming. Report retrieval is `GET /v1/jobs/{id}/report`. Pilot authentication is a static set of provisioned bearer tokens, each bound to a GitHub login in configuration (the binding is what makes Story 2's self-serve constraint enforceable); `403` is reserved for authenticated-but-not-permitted requests.
+Async submit/poll only in v1 — no webhooks, no streaming. Report retrieval is `GET /v1/jobs/{id}/report`. Pilot authentication is a static set of provisioned bearer tokens, each bound to a GitHub login in configuration (the binding is what makes Story 2's self-serve author constraint enforceable); `403` is reserved for authenticated-but-not-permitted requests. **Deferred (solve later):** job-ownership on status/report reads (any provisioned token can read any job id today), and per-principal repository allowlists on submit — see Open Questions.
 
 ### Story 2: Scan my last 10 pull requests
 
@@ -49,8 +49,8 @@ so that I can **see recurring code-quality signals across my recent work**.
 
 #### Acceptance Criteria
 
-- When a `pr_history_scan` job runs, the system shall list at most the 10 most recent pull requests authored by the requested GitHub login in the requested repository and analyze each PR's changed files (base and head sides) through the `pkg/semantics` → `pkg/codesignal` pipeline.
-- When per-PR deterministic analysis completes, the system shall evaluate the results against the configured LLM-as-judge rubrics and record the judgments alongside — never in place of — the deterministic findings.
+- When a `pr_history_scan` job runs, the system shall list at most the 10 most recent pull requests that (a) were authored by the requested GitHub login in the requested repository and (b) are either **open** or **merged** (closed-unmerged PRs are excluded), ordered by most recently updated (`updated_at` descending), and analyze each PR's changed files (base and head sides) through the `pkg/semantics` → `pkg/codesignal` pipeline, with tool invocations going through `internal/agentloop` (see Design).
+- When per-PR deterministic analysis completes, the system shall evaluate the results against the configured LLM-as-judge rubrics (via the model gateway / agent loop) and record the judgments alongside — never in place of — the deterministic findings.
 - The coach-api shall accept a `pr_history_scan` only when the requested `author_login` equals the GitHub login bound to the presenting bearer token; if they differ, then the coach-api shall respond `403` (self-serve scans). The API shall provide no endpoint to enumerate or scan arbitrary third-party authors.
 - If GitHub returns fewer than 10 matching pull requests, then the system shall analyze the available set and note the actual count in the report.
 - If an individual PR's analysis fails (fetch error, unsupported language, oversized file), then the system shall record a per-PR diagnostic and continue with the remaining PRs rather than failing the whole job.
@@ -67,8 +67,9 @@ so that I can **see the repo's current code-quality signal surface before making
 
 #### Acceptance Criteria
 
-- When a `repo_baseline_scan` job runs, the system shall obtain the repository's tree at the requested (or default) ref and produce a baseline report over all files with extensions supported by the `pkg/semantics` language registry (currently `.go`, `.ts`, `.tsx`), reusing the existing baseline analysis path.
+- When a `repo_baseline_scan` job runs, the system shall obtain the repository's tree at the requested (or default) ref — via GitHub Contents/git tree APIs for `repo_owner`+`repo_name`, or via a shallow clone only when the worker is configured with an operator-trusted local fixture path for credential-free smoke (never from a client-supplied clone URL) — and produce a baseline report over all files with extensions supported by the `pkg/semantics` language registry (currently `.go`, `.ts`, `.tsx`), reusing the existing baseline analysis path, with analysis/rubric tool invocations going through `internal/agentloop`.
 - When baseline deterministic analysis completes, the system shall run the configured rubric judgments over the aggregated signals and include them in the report with `source=agent` provenance.
+- The coach-api shall reject any job params that include a client-supplied clone URL (`git_url` or equivalent) with `400`; clone URLs are not part of the public params schema.
 - If the repository cannot be fetched (not found, auth failure, too large per configured budget), then the system shall fail the job with a sentinel-mapped, actionable error message.
 
 ### Story 4: Run the whole platform locally
@@ -81,7 +82,7 @@ so that I can **validate the entire flow on a laptop before investing in SGLang 
 
 - When the operator runs the core compose profile, the system shall start coach-api, coach-worker, and Postgres with no model weights required, using the deterministic model stub.
 - Where the `llm` profile is enabled, the system shall route agent judgments through a llama.cpp server speaking its OpenAI-compatible API, selected purely by configuration — no code change.
-- When the end-to-end smoke task runs against the core profile, the system shall complete a submitted job through the full API → queue → worker → report path and exit non-zero on any failure.
+- When the end-to-end smoke task runs against the core profile, the system shall complete a submitted job through the full API → queue → worker → agent tool loop → model gateway (stub) → report path and exit non-zero on any failure.
 - The system shall expose all compose lifecycle and smoke commands as `mise` tasks (the repo's single command interface).
 
 ### Story 5: Trustworthy provenance
@@ -116,7 +117,7 @@ This groundwork deliberately trims the architecture doc's v1 platform to what an
 - `cmd/coach-worker/` — **new**: job-claiming worker binary running the analysis pipeline and agent loop.
 - `internal/coachapi/` — **new**: domain types, HTTP handlers, `JobStore` seam with Postgres and in-memory implementations, migrations.
 - `internal/modelgateway/` — **new**: gateway interface, deterministic stub (default), llama.cpp OpenAI-compatible client.
-- `internal/agentloop/` — **new**: minimal bounded tool loop + typed tool registry (semantics/codesignal/github tools).
+- `internal/agentloop/` — **new**: minimal bounded tool loop + typed tool registry (semantics/codesignal/github tools). **Required path** for v1 job handlers (Tasks 7–8): listing, fetch, analysis, and rubric judgment tools run only through the registry/loop, not as ad-hoc direct calls from the handler.
 - `internal/rubrics/` — **new**: versioned rubric definitions, judge prompt assembly, output JSON schemas.
 - `pkg/githubingest/` — **extended**: PR listing by author and PR changed-file content retrieval, same GitHub App auth and sentinel-error conventions as `ReadFile`.
 - `internal/codesignalcli/` — **reused**: baseline and diff analysis paths invoked by the worker (import is allowed; both live in this module).
@@ -133,16 +134,23 @@ This groundwork deliberately trims the architecture doc's v1 platform to what an
 
 New Postgres schema (owned by `internal/coachapi`):
 
-- `jobs`: `id (uuid pk)`, `kind (pr_history_scan | repo_baseline_scan)`, `params (jsonb)`, `status`, `error`, `created_at`, `started_at`, `finished_at`, `claimed_by`, `heartbeat_at`.
-- `job_findings`: `id`, `job_id (fk)`, `source (deterministic | agent)`, `rubric_id`, `rubric_version`, `model_identity`, `payload (jsonb, frozen snake_case)`, `created_at`.
-- `job_diagnostics`: `id`, `job_id (fk)`, `scope` (e.g., `pr:123`, `file:path`), `message`, `created_at`.
+- `jobs`: `id (uuid pk)`, `kind (pr_history_scan | repo_baseline_scan)`, `params (jsonb)`, `status`, `error`, `created_at`, `started_at`, `finished_at`, `claimed_by`, `heartbeat_at`, `attempt` (int, not null, default 0 — incremented each time the job is claimed or re-queued after a stale heartbeat).
+- `job_findings`: `id`, `job_id (fk)`, `attempt` (int, not null — matches the `jobs.attempt` that produced the row), `source (deterministic | agent)`, `rubric_id`, `rubric_version`, `model_identity`, `payload (jsonb, frozen snake_case)`, `created_at`. Unique constraint on `(job_id, attempt, source, rubric_id, payload_hash)` or equivalent so a single attempt cannot double-insert the same finding; prior attempts' rows are discarded on reclaim (see Task 3).
+- `job_diagnostics`: `id`, `job_id (fk)`, `attempt` (int, not null), `scope` (e.g., `pr:123`, `file:path`), `message`, `created_at`. Same attempt-scoping rules as findings.
+
+**Idempotency under at-least-once claim** (Task 3): when a stale `running` job is returned to `queued`, the re-claim shall (in one transaction) increment `jobs.attempt`, delete all `job_findings` and `job_diagnostics` rows for that `job_id` with `attempt < jobs.attempt` (or delete all prior rows for the job), then run the handler. Handlers always write findings/diagnostics tagged with the current `jobs.attempt`. Report assembly reads only rows for the final successful attempt. Acceptance tests must cover crash-after-partial-persist-then-reclaim without duplicate findings in the completed report.
 
 Per-kind `params` schemas (validated at submit; violations → `400`, nothing persisted):
 
 - `pr_history_scan`: `repo_owner` (string, required), `repo_name` (string, required), `author_login` (string, required; must equal the token-bound login per Story 2), `pr_limit` (int, optional, default 10, max 10 in v1).
-- `repo_baseline_scan`: exactly one of `repo_owner`+`repo_name` (GitHub fetch) or `git_url` (direct clone URL — how the credential-free smoke targets a bundled fixture repo), plus `ref` (string, optional, default: remote default branch).
+- `repo_baseline_scan`: `repo_owner` (string, required) + `repo_name` (string, required) for normal GitHub fetch, plus `ref` (string, optional, default: remote default branch). **No client-supplied clone URL field.** Credential-free compose smoke uses an operator-configured worker setting (e.g. env `COACH_SMOKE_FIXTURE_PATH` or compose-mounted path) that the baseline handler consults only when a dedicated smoke job kind or internal flag is set by the smoke task — never from request params. Any `git_url` / `clone_url` key in params → `400`.
 
 Top-level report shape (frozen snake_case, locked by the Task 1 golden-file test, mirroring `pkg/semantics/result_test.go`): `report_version`, `job_id`, `kind`, `params` (echo), `summary` (finding counts by `source` and rule/rubric id), `findings` (array; each carries the provenance fields from `job_findings`), `diagnostics` (array), `versions` (analyzer, rubric ids/versions), `generated_at`.
+
+**Orchestration split (agent loop vs fixed handler code):**
+
+- **Model-selected via `internal/agentloop`**: tool calls the model is allowed to issue — `github_list_prs`, `github_pr_files`, `semantics_analyze`, `codesignal_report`, and rubric-judgment tools registered for the job. Unknown tools and over-budget loops are typed errors (architecture doc §6.3D).
+- **Deterministically owned by the job handler** (not model-selected): claim/lifecycle, attempt-scoped persistence, which rubrics run, open/merged PR filter policy, self-serve author check at submit, smoke fixture path resolution, size budgets, and terminal status transitions. The handler starts the loop with a job brief and registered tools; it does not bypass the registry to call those packages for the analysis path.
 
 ### Diagrams
 
@@ -163,8 +171,8 @@ flowchart LR
     Eng -->|POST /v1/jobs, GET status/report| API
     API --> PG
     W -->|claim FOR UPDATE SKIP LOCKED| PG
-    W -->|list PRs, fetch files| GH
-    W -->|semantics -> codesignal| W
+    W -->|agentloop tools| GH
+    W -->|agentloop tools| W
     W --> GW
     GW --> Stub
     GW -.-> Llama
@@ -177,21 +185,23 @@ sequenceDiagram
     participant A as coach-api
     participant P as Postgres
     participant W as coach-worker
+    participant L as agentloop
     participant G as GitHub
     participant M as Model gateway
     E->>A: POST /v1/jobs {kind: pr_history_scan, repo, author}
     A->>P: insert job (queued)
     A-->>E: 202 {job_id}
     W->>P: claim job (running)
-    W->>G: list last 10 PRs by author
-    loop each PR
-        W->>G: fetch changed files (base + head)
-        W->>W: pkg/semantics -> pkg/codesignal
-        W->>P: deterministic findings / diagnostics
+    W->>L: run job brief + registered tools
+    loop tool calls (model-selected, schema-validated)
+        L->>M: next step / tool request
+        M-->>L: tool call or final judgment
+        L->>G: github_list_prs / github_pr_files (when selected)
+        L->>L: semantics_analyze / codesignal_report (when selected)
+        L->>P: deterministic findings / diagnostics (current attempt)
     end
-    W->>M: rubric judgment (deterministic evidence attached)
-    M-->>W: schema-validated judgment
-    W->>P: agent findings (source=agent), job completed
+    L->>P: agent findings (source=agent)
+    W->>P: job completed
     E->>A: GET /v1/jobs/{id}/report
     A-->>E: report (deterministic + agent, provenance-tagged)
 ```
@@ -200,6 +210,8 @@ sequenceDiagram
 
 - [ ] **GitHub credential mode for the pilot**: reuse the GitHub App installation auth from `pkg/githubingest`, or also accept a plain PAT for lower setup friction? (Spec assumes the App path works; a PAT `http.RoundTripper` fallback is a small addition.)
 - [ ] **Identity for self-serve scans**: pilot phase enforces self-serve via statically provisioned bearer-token→GitHub-login bindings (Story 1/2); when does verified identity (OAuth) replace static bindings?
+- [ ] **Job ownership and cross-requester reads** (deferred): today any provisioned token can GET any job id. When to persist `created_by_login` and reject cross-requester status/report reads?
+- [ ] **Per-principal repository authorization** (deferred): today any provisioned token may submit scans for any App-visible repo. When to add `allowed_repos` (or user-scoped installs) and cross-repo denial tests?
 - [ ] **Qwen GGUF variant and license review** for the `llm` profile (architecture doc requires provenance recording before adoption).
 - [ ] **Rubric seed set**: this spec assumes two seed rubrics (hidden-mutation contextualization; change-cohesion). Confirm or replace before Task 9.
 - [ ] **Report retention**: pilot keeps everything; define retention before any multi-tenant use.
@@ -224,7 +236,7 @@ sequenceDiagram
 
 **Requirements**:
 
-- Story 1 criteria (job kinds, statuses); Story 5 provenance fields on findings.
+- Story 1 criteria (job kinds, statuses, attempt-scoped findings); Story 5 provenance fields on findings.
 - Frozen snake_case JSON locked by a golden-file test.
 
 **Verification**:
@@ -255,7 +267,7 @@ sequenceDiagram
 
 **Requirements**:
 
-- Story 1 acceptance criteria, exercised at the HTTP boundary with `httptest` against the in-memory store.
+- Story 1 acceptance criteria, exercised at the HTTP boundary with `httptest` against the in-memory store — including reject client-supplied clone URL params with `400`.
 - Postgres store covered by an integration test gated on a `COACH_PG_DSN` env var (runs in compose CI job, skipped otherwise).
 
 **Verification**:
@@ -276,7 +288,7 @@ sequenceDiagram
 
 **Objective**: Implement `cmd/coach-worker` claiming queued jobs via `FOR UPDATE SKIP LOCKED`, with heartbeat, bounded retry, and terminal failure recording.
 
-**Context**: Postgres-as-queue avoids SQS/LocalStack for the pilot while keeping at-least-once semantics with idempotent job handlers.
+**Context**: Postgres-as-queue avoids SQS/LocalStack for the pilot while keeping at-least-once semantics with attempt-scoped, reclaim-idempotent job handlers (Data Model Changes).
 
 **Affected files**:
 
@@ -286,17 +298,19 @@ sequenceDiagram
 **Requirements**:
 
 - While a job is `running`, the worker shall update `heartbeat_at` every heartbeat interval (configurable, default 15s); a `running` job whose heartbeat is older than the stale threshold (configurable, default 60s, must be ≥ 3× the interval) shall be returned to `queued` (crash recovery). Both durations are injected (clock and config) so crash-recovery tests are deterministic without real waiting.
+- On reclaim after stale heartbeat (and on every successful claim), the claim transaction shall increment `jobs.attempt` and delete prior `job_findings`/`job_diagnostics` for that job so a handler that crashed after partial persist cannot leave duplicate rows in the completed report (Data Model Changes — Idempotency under at-least-once claim).
 - If a job handler fails permanently, then the job records `failed` with the error (Story 3 sentinel mapping).
 
 **Verification**:
 
 - [ ] `mise run test` (in-memory store) and DSN-gated Postgres test pass; red first
 - [ ] Two concurrent workers never double-claim a job (race-tested; `go test -race`)
+- [ ] Crash-after-partial-findings-persist then reclaim yields a completed report with no duplicate findings (single final attempt only)
 
 **Done when**:
 
 - [ ] All verification steps pass
-- [ ] Crash-recovery behavior covered by a test
+- [ ] Crash-recovery and reclaim-idempotency behavior covered by tests
 
 ---
 
@@ -331,9 +345,9 @@ sequenceDiagram
 
 **Depends on**: Task 4
 
-**Objective**: Implement a bounded tool-call loop (max iterations, per-job budget) over a typed tool registry: `semantics_analyze`, `codesignal_report`, `github_list_prs`, `github_pr_files`.
+**Objective**: Implement a bounded tool-call loop (max iterations, per-job budget) over a typed tool registry: `semantics_analyze`, `codesignal_report`, `github_list_prs`, `github_pr_files` (plus rubric-judgment tools used by Tasks 7–9).
 
-**Context**: The "basic agentic capabilities" the platform grows from; tools wrap existing packages, the loop stays dumb and auditable.
+**Context**: The investment-gate path runs analysis through this loop (Problem Statement; Tasks 7–8). Tools wrap existing packages; the loop stays dumb and auditable. Fixed handler code owns claim/lifecycle, budgets, and policy; the model may only act via registered tools (Design — Orchestration split).
 
 **Affected files**:
 
@@ -343,6 +357,7 @@ sequenceDiagram
 
 - The loop shall execute only registered, schema-validated tool calls; unknown tools or over-budget loops end the run with a typed error (model text never becomes an arbitrary action — architecture doc §6.3D).
 - Acceptance tests drive the loop with a scripted stub gateway (tool-call sequences), no live model.
+- Task 7 and Task 8 acceptance tests shall require a successful job path that executes through `internal/agentloop` (not a bypass that calls the underlying packages directly for the analysis path).
 
 **Verification**:
 
@@ -368,12 +383,14 @@ sequenceDiagram
 
 **Requirements**:
 
-- Story 2: at most `limit` most recent PRs by the given author; fewer available → return what exists.
+- Story 2: at most `limit` most recent **open or merged** PRs by the given author, ordered by `updated_at` descending; closed-unmerged PRs must not appear; fewer eligible → return what exists.
+- Acceptance tests include a mixed-state fixture (open, merged, closed-unmerged) proving closed-unmerged exclusion and ordering.
 - Errors map to the package's existing sentinels (`ErrNotFound`, `ErrAuth`, `ErrTooLarge`, …); no import of `pkg/semantics` (dependency rule).
 
 **Verification**:
 
 - [ ] `mise run test` and `mise run test-examples` pass; red first against an `httptest` GitHub fake
+- [ ] Mixed-state fixture asserts closed-unmerged exclusion
 - [ ] `mise run tidy-check` clean
 
 **Done when**:
@@ -385,11 +402,11 @@ sequenceDiagram
 
 ### Task 7: `pr_history_scan` job handler
 
-**Depends on**: Tasks 3, 5, 6
+**Depends on**: Tasks 3, 5, 6, 9
 
-**Objective**: Orchestrate list-PRs → fetch changed files → per-PR semantics/codesignal analysis → rubric judgment → persisted provenance-tagged report.
+**Objective**: Run list open-or-merged PRs → fetch changed files → per-PR semantics/codesignal analysis → rubric judgment → attempt-scoped provenance-tagged report **through `internal/agentloop`** (registered tools + stub gateway sequences).
 
-**Context**: The first end-user capability; proves the whole platform loop.
+**Context**: The first end-user capability; proves the investment-gate path (API → queue → agent tool loop → model → report).
 
 **Affected files**:
 
@@ -397,12 +414,15 @@ sequenceDiagram
 
 **Requirements**:
 
-- Story 2 acceptance criteria end-to-end with fake GitHub + stub gateway, including per-PR diagnostic-and-continue and the self-serve author constraint.
+- Story 2 acceptance criteria end-to-end with fake GitHub + scripted stub gateway driving the agent loop, including per-PR diagnostic-and-continue, open/merged filter, and self-serve author constraint at submit.
+- Acceptance test asserts the analysis path executes via `internal/agentloop` (tool registry), not by the handler calling `pkg/semantics` / `pkg/githubingest` / rubrics directly for that path.
 
 **Verification**:
 
 - [ ] `mise run test` passes; the full-flow acceptance test was red first
 - [ ] Report golden fixture shows deterministic and agent findings side by side
+- [ ] Mixed-state PR set excludes closed-unmerged
+- [ ] Agent-loop path asserted (no analysis bypass)
 
 **Done when**:
 
@@ -413,11 +433,11 @@ sequenceDiagram
 
 ### Task 8: `repo_baseline_scan` job handler
 
-**Depends on**: Tasks 3, 5
+**Depends on**: Tasks 3, 5, 9
 
-**Objective**: Fetch a repository tree at a ref (shallow clone in a disposable worker directory), run the existing baseline analysis path, then rubric judgments.
+**Objective**: Fetch a repository tree at a ref (GitHub APIs for normal jobs; operator-configured local fixture path only for smoke), run baseline analysis and rubric judgments **through `internal/agentloop`**.
 
-**Context**: Second capability; reuses `internal/codesignalcli`'s baseline mode rather than reimplementing it.
+**Context**: Second capability; reuses `internal/codesignalcli`'s baseline mode via registered tools rather than reimplementing it. Required by the compose smoke (Task 10).
 
 **Affected files**:
 
@@ -425,17 +445,21 @@ sequenceDiagram
 
 **Requirements**:
 
-- Story 3 acceptance criteria; clone failures map to actionable sentinel errors; configurable size budget.
+- Story 3 acceptance criteria; fetch/clone failures map to actionable sentinel errors; configurable size budget.
+- No request-params clone URL: public params are `repo_owner`+`repo_name`+optional `ref` only. Smoke fixture path is worker config (`COACH_SMOKE_FIXTURE_PATH` or equivalent), exercised by an acceptance test that refuses client-supplied `git_url` at the API and still completes a baseline against the configured fixture.
+- Acceptance test asserts the analysis path executes via `internal/agentloop`.
 
 **Verification**:
 
-- [ ] `mise run test` passes; red first against a local fixture repo
+- [ ] `mise run test` passes; red first against a local fixture repo (config-injected path)
 - [ ] Oversized-repo budget path covered
+- [ ] Client-supplied clone URL rejected at API (`400`)
+- [ ] Agent-loop path asserted (no analysis bypass)
 
 **Done when**:
 
 - [ ] All verification steps pass
-- [ ] No duplication of baseline logic (imports `internal/codesignalcli`)
+- [ ] No duplication of baseline logic (tools wrap `internal/codesignalcli`)
 
 ---
 
@@ -443,7 +467,7 @@ sequenceDiagram
 
 **Depends on**: Tasks 4, 5
 
-**Objective**: Define two versioned rubrics (hidden-mutation contextualization; change-cohesion) with output JSON schemas, prompt assembly that attaches deterministic evidence, and golden stub-driven outputs.
+**Objective**: Define two versioned rubrics (hidden-mutation contextualization; change-cohesion) with output JSON schemas, prompt assembly that attaches deterministic evidence, and golden stub-driven outputs; expose as agent-loop tools.
 
 **Context**: Makes "static analysis + LLM-as-judge" concrete; rubric versioning enables later comparison across models (llama.cpp vs SGLang).
 
@@ -469,11 +493,11 @@ sequenceDiagram
 
 ### Task 10: Docker Compose stack, mise tasks, and E2E smoke
 
-**Depends on**: Tasks 2, 3, 7 (Task 8 optional for smoke)
+**Depends on**: Tasks 2, 3, 5, 8
 
 **Objective**: Ship `compose.yaml` (profiles: `core` = api + worker + postgres + stub; `llm` adds llama.cpp), `mise` lifecycle tasks, and an end-to-end smoke task; wire a CI job running the smoke against the core profile.
 
-**Context**: Story 4 — the operator's acceptance surface and the gate for the SGLang/AWS investment decision.
+**Context**: Story 4 — the operator's acceptance surface and the gate for the SGLang/AWS investment decision. Depends on Task 8 because the smoke job kind is `repo_baseline_scan`, and on Task 5 because that job runs through the agent loop.
 
 **Affected files**:
 
@@ -482,7 +506,7 @@ sequenceDiagram
 **Requirements**:
 
 - Story 4 acceptance criteria; smoke submits a job, polls to completion, asserts a provenance-tagged report, exits non-zero on failure.
-- Single credential-free smoke strategy: the smoke submits a `repo_baseline_scan` whose `git_url` points at a small fixture repository bundled into the worker image (no network, no model weights, no GitHub credentials). The `pr_history_scan` flow is exercised by Task 7's fake-GitHub acceptance tests, not by the compose smoke.
+- Single credential-free smoke strategy: compose mounts a small fixture repository into the worker and sets `COACH_SMOKE_FIXTURE_PATH` (or equivalent); the smoke task submits a `repo_baseline_scan` for a configured fixture owner/name that the worker resolves to that path (no network, no model weights, no GitHub credentials, **no client-supplied clone URL**). The `pr_history_scan` flow is exercised by Task 7's fake-GitHub acceptance tests, not by the compose smoke.
 
 **Verification**:
 
