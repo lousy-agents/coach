@@ -38,3 +38,6 @@ js/semantics/dist-test/
 js/semantics/bin/
 js/semantics/vendor/wasm_exec.js
 *.wasm
+
+tmp
+
