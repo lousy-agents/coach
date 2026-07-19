@@ -8,6 +8,8 @@ The architecture separates reliable GitHub event handling, a Go state machine th
 
 The recommended AWS v1 uses ECS/Fargate for the Go control plane and task-per-job isolated execution, ECS on EC2 GPU capacity for SGLang, SQS for work notification, DynamoDB plus transactional outboxes for idempotency/dispatch intent, Aurora PostgreSQL for workflow state, and S3 for immutable payloads/evidence. EKS is a later inference-plane option, not a co-equal v1 target. For proof of value, the self-hosted inference cell may scale to zero between scheduled pilot windows; the webhook/control plane never does. Docker Compose is the daily local default; the default core profile needs no model weights, while optional llama.cpp runs natively on macOS to use Metal/unified memory.
 
+An intermediate **platform groundwork phase** (see `.github/specs/coach-api-platform-groundwork.spec.md` and `docs/product/prd.md`) precedes the webhook-driven platform above. It decouples end-user consumption from the feedback platform: an authenticated, versioned Coach HTTP API triggers asynchronous analysis jobs (self-serve PR-history scans, repository baseline scans) executed by a worker over Postgres-as-queue, with agent judgment behind the same model-gateway contract served locally by llama.cpp. This phase validates the deterministic-plus-rubric flow end to end in Docker Compose before any SGLang or AWS investment; the webhook ingestion plane, SQS/DynamoDB machinery, and GitHub feedback writes remain deferred until it succeeds. Groundwork-phase reports are retrieved only by the requesting user through the API — there are no GitHub writes at all in that phase.
+
 ## 2. Goals, non-goals, constraints, and principles
 
 ### Goals
@@ -53,6 +55,8 @@ The recommended AWS v1 uses ECS/Fargate for the Go control plane and task-per-jo
 | Pilot inference | One private SGLang/Qwen3.5-4B ECS-on-EC2 Spot cell may scale to zero; scheduled warm windows reduce cold-start disruption | Benchmark GPU fit, warm latency, Spot availability/interruption recovery, and pilot feedback delay before expanding tenants |
 
 Still requiring validation: retention periods, exact GitHub permissions for system-owned advisory feedback, pilot tenancy, hosted-provider fallback policy, regional recovery targets, and the complete incremental cost of the pilot environment. Repository-content mutation is explicitly out of v1.
+
+One open product tension must be resolved before adopting advisory check/comment delivery: GitHub checks and PR comments are visible to everyone with repository read access, so they cannot carry feedback promised as "private" to the author. During the groundwork phase, privacy holds by construction (authenticated API pull only, no GitHub writes). Any later "private digest" delivered through GitHub needs either an author-only channel or an explicit downgrade of the privacy promise — this is a product decision, not an implementation detail.
 
 ## 4. C4 Level 1: System Context
 
@@ -581,6 +585,18 @@ Page on acceptance-SLO burn, queue age threatening feedback, multi-tenant DLQ gr
 - Promotion gates: unit/behavior tests; supply-chain/provenance checks; Compose integration; contract compatibility; ECS IaC/task-definition validation; AWS staging/migrations; kind only for an adopted EKS path; model-quality gate; canary tenant; human feedback-quality review.
 
 ## 14. Phased implementation
+
+### Groundwork (current)
+
+Full scope and task breakdown: `.github/specs/coach-api-platform-groundwork.spec.md`. Sequenced before the v1 platform below; its E2E validation is the investment gate for SGLang and AWS.
+
+1. Coach HTTP API (`/v1`): async job submit/status/report, static bearer tokens bound to GitHub logins (self-serve enforcement).
+2. Worker over Postgres-as-queue (`FOR UPDATE SKIP LOCKED`), heartbeat/crash recovery.
+3. Model gateway seam with deterministic stub (default) and llama.cpp OpenAI-compatible client; SGLang slots in later behind the same contract.
+4. Minimal bounded agent tool loop over typed tools (semantics, codesignal, GitHub reads); model text never becomes an arbitrary action.
+5. PR listing/file retrieval in `pkg/githubingest`; `pr_history_scan` and `repo_baseline_scan` job kinds.
+6. Two seed LLM-as-judge rubrics, versioned and schema-validated, with strict deterministic/agent provenance separation.
+7. Docker Compose stack (core profile credential- and weights-free; `llm` profile adds llama.cpp) plus an end-to-end smoke in CI.
 
 ### v1
 
