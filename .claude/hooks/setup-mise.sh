@@ -7,6 +7,10 @@ fi
 
 cd "$CLAUDE_PROJECT_DIR"
 
+# Cloud env setup installs mise under ~/.local/bin and caches the binary on
+# disk, but does not persist PATH. Prefer that location before probing.
+export PATH="$HOME/.local/bin:$PATH"
+
 mise_version="$(sed -n 's/^min_version = "\([^"]*\)".*/\1/p' mise.toml)"
 
 if [[ ! "$mise_version" =~ ^[0-9]{4}\.[0-9]+\.[0-9]+$ ]]; then
@@ -35,7 +39,9 @@ needs_install=false
 if ! command -v mise >/dev/null 2>&1; then
   needs_install=true
 else
-  installed_version="$(mise --version 2>/dev/null | grep -oE '[0-9]{4}\.[0-9]+\.[0-9]+' | head -n1)"
+  # grep exits 1 when no version token matches; keep that non-fatal so the
+  # empty-version branch below can trigger a reinstall under pipefail.
+  installed_version="$(mise --version 2>/dev/null | grep -oE '[0-9]{4}\.[0-9]+\.[0-9]+' | head -n1 || true)"
   if [[ -z "$installed_version" ]] || ! mise_version_ge "$installed_version" "$mise_version"; then
     needs_install=true
   fi
@@ -50,7 +56,6 @@ if [[ "$needs_install" == true ]]; then
     --no-audit \
     --no-fund \
     "mise@$mise_version" >&2
-  export PATH="$HOME/.local/bin:$PATH"
 fi
 
 mise trust mise.toml >/dev/null

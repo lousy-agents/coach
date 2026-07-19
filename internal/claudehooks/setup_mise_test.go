@@ -16,23 +16,6 @@ import (
 // setup script, but we can guarantee that the copy-paste template does not
 // drift.
 func TestCloudEnvSetup_ParityWithMiseToml(t *testing.T) {
-	tmp := t.TempDir()
-	project := filepath.Join(tmp, "project")
-	if err := os.MkdirAll(project, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	miseToml := `min_version = "2026.7.7"
-[settings]
-experimental = true
-[tools]
-go = "1.26.5"
-node = "24"
-`
-	if err := os.WriteFile(filepath.Join(project, "mise.toml"), []byte(miseToml), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	setupScript, err := filepath.Abs(filepath.Join("..", "..", ".claude", "cloud-env-setup.sh"))
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +41,15 @@ node = "24"
 	assertEqual(t, "node", parseMiseValue("node", mise), parseShellVar("node_version", setup))
 }
 
+func TestParseMiseValue_MinVersionNotOnlyAtFileStart(t *testing.T) {
+	// A leading comment/blank line must not prevent extracting min_version.
+	text := "# pinned toolchain\n\nmin_version = \"2026.7.7\"\n[tools]\ngo = \"1.26.5\"\n"
+	got := parseMiseValue("min_version", text)
+	if got != "2026.7.7" {
+		t.Fatalf("parseMiseValue(min_version) = %q, want 2026.7.7", got)
+	}
+}
+
 func assertEqual(t *testing.T, name, fromMise, fromScript string) {
 	t.Helper()
 	if fromMise == "" {
@@ -72,14 +64,6 @@ func assertEqual(t *testing.T, name, fromMise, fromScript string) {
 }
 
 func parseMiseValue(key, text string) string {
-	if key == "min_version" {
-		re := regexp.MustCompile(`^min_version\s*=\s*"([^"]+)"`)
-		m := re.FindStringSubmatch(text)
-		if len(m) < 2 {
-			return ""
-		}
-		return m[1]
-	}
 	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(key) + `\s*=\s*"([^"]+)"`)
 	m := re.FindStringSubmatch(text)
 	if len(m) < 2 {
@@ -331,6 +315,62 @@ func TestSetupMise_LocalNoOp(t *testing.T) {
 		t.Fatalf("CLAUDE_ENV_FILE should not be touched when CLAUDE_CODE_REMOTE is unset")
 	}
 	_ = localBin
+}
+
+// TestSetupMise_UnparseableVersionTriggersInstall verifies that when mise is on
+// PATH but --version output has no YYYY.M.PATCH token, the hook does not abort
+// under set -o pipefail (grep exit 1) and instead falls through to npm install.
+func TestSetupMise_UnparseableVersionTriggersInstall(t *testing.T) {
+	tmp, home, project, bin, npmDir, localBin := setupTestDirs(t)
+
+	// mise exists but reports a version string the hook cannot parse.
+	weirdMise := filepath.Join(bin, "mise")
+	if err := os.WriteFile(weirdMise, []byte(fakeMiseScript("not-a-semver-build", "/old/bin")), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	npmCalled := filepath.Join(tmp, "npm-called")
+	newMise := filepath.Join(localBin, "mise")
+	npmBin := filepath.Join(npmDir, "npm")
+	if err := os.WriteFile(npmBin, []byte(fakeNpmScript(npmCalled, newMise, localBin)), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	envFile := filepath.Join(tmp, "env")
+	runHook(t, home, project, envFile, npmDir+":"+bin)
+
+	if _, err := os.Stat(npmCalled); err != nil {
+		t.Fatalf("npm was not invoked after unparseable mise --version: %v", err)
+	}
+}
+
+// TestSetupMise_FindsMiseInHomeLocalBin verifies that a previous install under
+// $HOME/.local/bin is detected even when that directory is not already on PATH.
+// Cloud setup caches the binary on disk but does not persist PATH; without an
+// early PATH prepend the hook would re-run npm install every SessionStart.
+func TestSetupMise_FindsMiseInHomeLocalBin(t *testing.T) {
+	tmp, home, project, bin, npmDir, localBin := setupTestDirs(t)
+
+	// Current mise lives only under ~/.local/bin (not on the initial PATH).
+	currentMise := filepath.Join(localBin, "mise")
+	if err := os.WriteFile(currentMise, []byte(fakeMiseScript("2026.7.7", localBin)), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	npmCalled := filepath.Join(tmp, "npm-called")
+	npmBin := filepath.Join(npmDir, "npm")
+	if err := os.WriteFile(npmBin, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > "+npmCalled+"\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	envFile := filepath.Join(tmp, "env")
+	// PATH deliberately omits localBin and bin (no other mise).
+	runHook(t, home, project, envFile, npmDir)
+
+	if _, err := os.Stat(npmCalled); err == nil {
+		t.Fatalf("npm was invoked even though a current mise already exists in $HOME/.local/bin")
+	}
+	_ = bin
 }
 
 // TestSetupMise_InstallsWhenMissing verifies that the hook installs mise via npm
