@@ -28,15 +28,18 @@ so that I can **get Coach feedback without running any local tooling**.
 
 #### Acceptance Criteria
 
+- The coach-api shall require a bearer token on every `/v1` request; if the token is missing or not provisioned, then the coach-api shall respond `401`.
 - When a client POSTs a valid job request to `/v1/jobs`, the coach-api shall persist the job with status `queued` and respond `202` with the job id.
 - When a client GETs `/v1/jobs/{id}`, the coach-api shall return the job's current status (`queued`, `running`, `completed`, `failed`) and, when completed, a link to its report.
-- If a job request names an unsupported job kind or fails schema validation, then the coach-api shall respond `400` with a machine-readable error and persist nothing.
+- If a job request names an unsupported job kind or fails params-schema validation (see Data Model Changes), then the coach-api shall respond `400` and persist nothing.
 - If a requested job id does not exist, then the coach-api shall respond `404`.
+- If a report is requested for a job that is not yet `completed`, then the coach-api shall respond `409` including the job's current status.
+- The coach-api shall return every error response in a stable JSON envelope `{"error": {"code": "<machine_readable>", "message": "<human_readable>"}}`, locked by the Task 1 golden-file test.
 - The coach-api shall serve all endpoints under a versioned `/v1` prefix.
 
 #### Notes
 
-Async submit/poll only in v1 — no webhooks, no streaming. Report retrieval is `GET /v1/jobs/{id}/report`.
+Async submit/poll only in v1 — no webhooks, no streaming. Report retrieval is `GET /v1/jobs/{id}/report`. Pilot authentication is a static set of provisioned bearer tokens, each bound to a GitHub login in configuration (the binding is what makes Story 2's self-serve constraint enforceable); `403` is reserved for authenticated-but-not-permitted requests.
 
 ### Story 2: Scan my last 10 pull requests
 
@@ -48,13 +51,13 @@ so that I can **see recurring code-quality signals across my recent work**.
 
 - When a `pr_history_scan` job runs, the system shall list at most the 10 most recent pull requests authored by the requested GitHub login in the requested repository and analyze each PR's changed files (base and head sides) through the `pkg/semantics` → `pkg/codesignal` pipeline.
 - When per-PR deterministic analysis completes, the system shall evaluate the results against the configured LLM-as-judge rubrics and record the judgments alongside — never in place of — the deterministic findings.
-- The system shall accept a `pr_history_scan` only for the author login declared in the job request itself (self-serve scans); the API shall provide no endpoint to enumerate or scan arbitrary third-party authors in bulk.
+- The coach-api shall accept a `pr_history_scan` only when the requested `author_login` equals the GitHub login bound to the presenting bearer token; if they differ, then the coach-api shall respond `403` (self-serve scans). The API shall provide no endpoint to enumerate or scan arbitrary third-party authors.
 - If GitHub returns fewer than 10 matching pull requests, then the system shall analyze the available set and note the actual count in the report.
 - If an individual PR's analysis fails (fetch error, unsupported language, oversized file), then the system shall record a per-PR diagnostic and continue with the remaining PRs rather than failing the whole job.
 
 #### Notes
 
-The self-serve constraint encodes the no-surveillance principle (PRD §11, architecture doc §11 "no developer scoring") into the API shape itself. Pilot-phase identity is declared, not verified — see Open Questions.
+The self-serve constraint encodes the no-surveillance principle (PRD §11, architecture doc §11 "no developer scoring") into the API shape itself. Enforcement rests on the token→GitHub-login binding provisioned by the Platform Operator (Story 1 Notes); replacing static bindings with verified OAuth identity is an Open Question for post-pilot.
 
 ### Story 3: Baseline-scan a repository
 
@@ -64,7 +67,7 @@ so that I can **see the repo's current code-quality signal surface before making
 
 #### Acceptance Criteria
 
-- When a `repo_baseline_scan` job runs, the system shall obtain the repository's tree at the requested (or default) ref and produce a baseline report over all supported source files, reusing the existing baseline analysis path.
+- When a `repo_baseline_scan` job runs, the system shall obtain the repository's tree at the requested (or default) ref and produce a baseline report over all files with extensions supported by the `pkg/semantics` language registry (currently `.go`, `.ts`, `.tsx`), reusing the existing baseline analysis path.
 - When baseline deterministic analysis completes, the system shall run the configured rubric judgments over the aggregated signals and include them in the report with `source=agent` provenance.
 - If the repository cannot be fetched (not found, auth failure, too large per configured budget), then the system shall fail the job with a sentinel-mapped, actionable error message.
 
@@ -134,7 +137,12 @@ New Postgres schema (owned by `internal/coachapi`):
 - `job_findings`: `id`, `job_id (fk)`, `source (deterministic | agent)`, `rubric_id`, `rubric_version`, `model_identity`, `payload (jsonb, frozen snake_case)`, `created_at`.
 - `job_diagnostics`: `id`, `job_id (fk)`, `scope` (e.g., `pr:123`, `file:path`), `message`, `created_at`.
 
-Report JSON reuses the frozen snake_case convention and is locked by a golden-file test, mirroring `pkg/semantics/result_test.go`.
+Per-kind `params` schemas (validated at submit; violations → `400`, nothing persisted):
+
+- `pr_history_scan`: `repo_owner` (string, required), `repo_name` (string, required), `author_login` (string, required; must equal the token-bound login per Story 2), `pr_limit` (int, optional, default 10, max 10 in v1).
+- `repo_baseline_scan`: exactly one of `repo_owner`+`repo_name` (GitHub fetch) or `git_url` (direct clone URL — how the credential-free smoke targets a bundled fixture repo), plus `ref` (string, optional, default: remote default branch).
+
+Top-level report shape (frozen snake_case, locked by the Task 1 golden-file test, mirroring `pkg/semantics/result_test.go`): `report_version`, `job_id`, `kind`, `params` (echo), `summary` (finding counts by `source` and rule/rubric id), `findings` (array; each carries the provenance fields from `job_findings`), `diagnostics` (array), `versions` (analyzer, rubric ids/versions), `generated_at`.
 
 ### Diagrams
 
@@ -191,7 +199,7 @@ sequenceDiagram
 ### Open Questions
 
 - [ ] **GitHub credential mode for the pilot**: reuse the GitHub App installation auth from `pkg/githubingest`, or also accept a plain PAT for lower setup friction? (Spec assumes the App path works; a PAT `http.RoundTripper` fallback is a small addition.)
-- [ ] **Identity for self-serve scans**: pilot phase trusts the declared author login plus a static API bearer token per pilot user; when does verified identity (OAuth) become required?
+- [ ] **Identity for self-serve scans**: pilot phase enforces self-serve via statically provisioned bearer-token→GitHub-login bindings (Story 1/2); when does verified identity (OAuth) replace static bindings?
 - [ ] **Qwen GGUF variant and license review** for the `llm` profile (architecture doc requires provenance recording before adoption).
 - [ ] **Rubric seed set**: this spec assumes two seed rubrics (hidden-mutation contextualization; change-cohesion). Confirm or replace before Task 9.
 - [ ] **Report retention**: pilot keeps everything; define retention before any multi-tenant use.
@@ -253,7 +261,7 @@ sequenceDiagram
 **Verification**:
 
 - [ ] `mise run test` passes; new handler acceptance tests were red first
-- [ ] `400`/`404` paths asserted per Story 1
+- [ ] `400`/`401`/`403`/`404`/`409` paths and the error envelope asserted per Stories 1–2
 
 **Done when**:
 
@@ -277,7 +285,7 @@ sequenceDiagram
 
 **Requirements**:
 
-- While a job is `running`, the worker shall heartbeat it; stale-heartbeat jobs return to `queued` (crash recovery).
+- While a job is `running`, the worker shall update `heartbeat_at` every heartbeat interval (configurable, default 15s); a `running` job whose heartbeat is older than the stale threshold (configurable, default 60s, must be ≥ 3× the interval) shall be returned to `queued` (crash recovery). Both durations are injected (clock and config) so crash-recovery tests are deterministic without real waiting.
 - If a job handler fails permanently, then the job records `failed` with the error (Story 3 sentinel mapping).
 
 **Verification**:
@@ -474,7 +482,7 @@ sequenceDiagram
 **Requirements**:
 
 - Story 4 acceptance criteria; smoke submits a job, polls to completion, asserts a provenance-tagged report, exits non-zero on failure.
-- Core profile requires no model weights and no GitHub credentials (uses the baseline scan of a bundled fixture repo or a fake-GitHub-backed PR scan).
+- Single credential-free smoke strategy: the smoke submits a `repo_baseline_scan` whose `git_url` points at a small fixture repository bundled into the worker image (no network, no model weights, no GitHub credentials). The `pr_history_scan` flow is exercised by Task 7's fake-GitHub acceptance tests, not by the compose smoke.
 
 **Verification**:
 
