@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -152,43 +153,54 @@ func TestApplySourceScopePreservesCommentMarkersInsideStrings(t *testing.T) {
 }
 
 func TestApplySourceScopeAppliesExtendedBaseTSConfig(t *testing.T) {
+	// The base's exclude pattern ("test/**/*.ts") is resolved relative to the
+	// base config's OWN directory (base/), so the file it must reach lives at
+	// base/test/app.ts, not a root-level test/app.ts (real TypeScript never
+	// rebases a root-level file into a subdirectory-declared base's scope).
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json":      `{"extends": "./base/tsconfig.json"}`,
 		"base/tsconfig.json": `{"exclude": ["test/**/*.ts"]}`,
 		"src/app.ts":         "export const app = 1\n",
-		"test/app.ts":        "export const test = 1\n",
+		"base/test/app.ts":   "export const test = 1\n",
 	})
 	head := scopeTestCommit(t, repo)
 
 	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
-		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "base/test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
 	if err != nil {
 		t.Fatalf("ApplySourceScope() error = %v", err)
 	}
 	if len(files) != 1 || files[0].Path != "src/app.ts" || files[0].SourceScope != SourceScopeProduction {
-		t.Fatalf("ApplySourceScope() = %#v, want only production src/app.ts (base config's exclude should apply)", files)
+		t.Fatalf("ApplySourceScope() = %#v, want only production src/app.ts (base config's exclude, rebased to its own directory, should apply)", files)
 	}
 }
 
 func TestApplySourceScopeChildTSConfigOverridesExtendedBaseInclude(t *testing.T) {
 	// The child specifies its own "include" (which must entirely replace, not
 	// merge with, the base's "include") but omits "exclude" (which must
-	// still be inherited from the base).
+	// still be inherited from the base). The base's exclude pattern
+	// ("src/excluded/**/*.ts") is resolved relative to the base's OWN
+	// directory (base/), so the file it must reach lives at
+	// base/src/excluded/fixture.ts, not a root-level src/excluded/fixture.ts.
+	// The child's own include is widened to also reach under base/ so that
+	// file is a candidate for inclusion at all, isolating the assertion to
+	// whether the base's inherited-and-rebased exclude, specifically,
+	// removes it.
 	repo := newScopeTestRepo(t, map[string]string{
-		"tsconfig.json":           `{"extends": "./base/tsconfig.json", "include": ["src/**/*.ts"]}`,
-		"base/tsconfig.json":      `{"include": ["other/**/*.ts"], "exclude": ["src/excluded/**/*.ts"]}`,
-		"src/app.ts":              "export const app = 1\n",
-		"other/app.ts":            "export const other = 1\n",
-		"src/excluded/fixture.ts": "export const fixture = 1\n",
+		"tsconfig.json":                `{"extends": "./base/tsconfig.json", "include": ["src/**/*.ts", "base/**/*.ts"]}`,
+		"base/tsconfig.json":           `{"include": ["other/**/*.ts"], "exclude": ["src/excluded/**/*.ts"]}`,
+		"src/app.ts":                   "export const app = 1\n",
+		"other/app.ts":                 "export const other = 1\n",
+		"base/src/excluded/fixture.ts": "export const fixture = 1\n",
 	})
 	head := scopeTestCommit(t, repo)
 
 	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "other/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
-		{Path: "src/excluded/fixture.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "base/src/excluded/fixture.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
 	if err != nil {
 		t.Fatalf("ApplySourceScope() error = %v", err)
@@ -196,7 +208,7 @@ func TestApplySourceScopeChildTSConfigOverridesExtendedBaseInclude(t *testing.T)
 	if len(files) != 1 || files[0].Path != "src/app.ts" || files[0].SourceScope != SourceScopeProduction {
 		t.Fatalf("ApplySourceScope() = %#v, want only production src/app.ts: "+
 			"child's own include must override (not merge with) the base's include (other/app.ts), "+
-			"while the base's exclude must still apply since the child omits its own (src/excluded/fixture.ts)", files)
+			"while the base's exclude must still apply (rebased to its own directory) since the child omits its own (base/src/excluded/fixture.ts)", files)
 	}
 }
 
@@ -207,25 +219,28 @@ func TestApplySourceScopeAppliesTwoLevelExtendedBaseTSConfig(t *testing.T) {
 	// own, so the root's exclude must still apply all the way through the
 	// chain. root is nested under mid (rather than a sibling of it) so each
 	// hop stays within the directory containing the config that references
-	// it, per the existing extends security boundary.
+	// it, per the existing extends security boundary. The root's exclude
+	// pattern ("test/**/*.ts") is resolved relative to the root config's own
+	// directory (mid/root/), so the file it must reach lives at
+	// mid/root/test/app.ts, not a root-level test/app.ts.
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json":          `{"extends": "./mid/tsconfig.json"}`,
 		"mid/tsconfig.json":      `{"extends": "./root/tsconfig.json"}`,
 		"mid/root/tsconfig.json": `{"exclude": ["test/**/*.ts"]}`,
 		"src/app.ts":             "export const app = 1\n",
-		"test/app.ts":            "export const test = 1\n",
+		"mid/root/test/app.ts":   "export const test = 1\n",
 	})
 	head := scopeTestCommit(t, repo)
 
 	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
-		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "mid/root/test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
 	if err != nil {
 		t.Fatalf("ApplySourceScope() error = %v", err)
 	}
 	if len(files) != 1 || files[0].Path != "src/app.ts" || files[0].SourceScope != SourceScopeProduction {
-		t.Fatalf("ApplySourceScope() = %#v, want only production src/app.ts (root base's exclude should apply through a two-level extends chain)", files)
+		t.Fatalf("ApplySourceScope() = %#v, want only production src/app.ts (root base's exclude, rebased to its own directory, should apply through a two-level extends chain)", files)
 	}
 }
 
@@ -443,6 +458,211 @@ func TestApplySourceScopeTSConfigExtendsAbsolutePathOutsideSnapshotFailsOpen(t *
 		if file.SourceScope != SourceScopeUnknown {
 			t.Errorf("%s source scope = %q, want %q (extends outside the snapshot must fail open, same as no tsconfig.json)", file.Path, file.SourceScope, SourceScopeUnknown)
 		}
+	}
+}
+
+func TestApplySourceScopeTSConfigExtendsSymlinkEscapingSnapshotFailsOpen(t *testing.T) {
+	// The literal extends target ("./base.json") is lexically in-bounds, but
+	// it is committed as a symlink pointing outside the snapshot entirely.
+	// The escape check must resolve symlinks before judging containment, and
+	// must read the resolved path rather than following the symlink
+	// transparently via a raw os.ReadFile on the pre-resolution path.
+	outside := t.TempDir()
+	secretPath := filepath.Join(outside, "secret.json")
+	if err := os.WriteFile(secretPath, []byte(`{"files": ["src/app.ts"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json": `{"extends": "./base.json"}`,
+		"src/app.ts":    "export const app = 1\n",
+		"test/app.ts":   "export const test = 1\n",
+	})
+	if err := os.Symlink(secretPath, filepath.Join(repo, "base.json")); err != nil {
+		t.Fatal(err)
+	}
+	head := scopeTestCommit(t, repo)
+
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("ApplySourceScope() = %#v, want both files retained as unknown when the extends target is a symlink escaping the snapshot", files)
+	}
+	for _, file := range files {
+		if file.SourceScope != SourceScopeUnknown {
+			t.Errorf("%s source scope = %q, want %q (a symlinked extends target escaping the snapshot must fail open rather than reading through it)", file.Path, file.SourceScope, SourceScopeUnknown)
+		}
+	}
+}
+
+func TestApplySourceScopeRebasesInheritedExcludeToBaseDirectory(t *testing.T) {
+	// The base config's exclude pattern is resolved relative to the base's
+	// OWN directory (packages/shared/), so it must reach
+	// packages/shared/test/fixture.ts but must NOT reach a root-level
+	// test/root.ts that merely happens to share the pattern's relative
+	// suffix ("test/**/*.ts").
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json":                   `{"extends": "./packages/shared/tsconfig.json"}`,
+		"packages/shared/tsconfig.json":   `{"exclude": ["test/**/*.ts"]}`,
+		"src/app.ts":                      "export const app = 1\n",
+		"packages/shared/test/fixture.ts": "export const fixture = 1\n",
+		"test/root.ts":                    "export const root = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "packages/shared/test/fixture.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/root.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	paths := map[string]bool{}
+	for _, file := range files {
+		paths[file.Path] = true
+	}
+	if !paths["src/app.ts"] {
+		t.Errorf("src/app.ts should remain production")
+	}
+	if !paths["test/root.ts"] {
+		t.Errorf("test/root.ts should remain production: the base's exclude, rebased to its own directory (packages/shared/), must not reach a root-level file merely sharing the pattern's relative suffix")
+	}
+	if paths["packages/shared/test/fixture.ts"] {
+		t.Errorf("packages/shared/test/fixture.ts should not be production: the base's exclude, rebased to its own directory, must reach it")
+	}
+	if len(files) != 2 {
+		t.Fatalf("ApplySourceScope() = %#v, want exactly src/app.ts and test/root.ts kept", files)
+	}
+}
+
+func TestApplySourceScopeIncludeAndFilesAreAdditive(t *testing.T) {
+	// Real TypeScript combines "files" and "include": the effective file set
+	// is the union of explicit "files" entries and files matched by
+	// "include" patterns, not an either/or choice between the two.
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json":         `{"files": ["src/explicit.ts"], "include": ["src/included/**/*.ts"]}`,
+		"src/explicit.ts":       "export const explicit = 1\n",
+		"src/included/extra.ts": "export const extra = 1\n",
+		"src/other.ts":          "export const other = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/explicit.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "src/included/extra.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "src/other.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	paths := map[string]bool{}
+	for _, file := range files {
+		paths[file.Path] = true
+	}
+	if !paths["src/explicit.ts"] {
+		t.Errorf("src/explicit.ts should be production via the explicit files entry")
+	}
+	if !paths["src/included/extra.ts"] {
+		t.Errorf("src/included/extra.ts should be production via the include pattern, even though files is also set")
+	}
+	if paths["src/other.ts"] {
+		t.Errorf("src/other.ts should not be production: it matches neither files nor include")
+	}
+	if len(files) != 2 {
+		t.Fatalf("ApplySourceScope() = %#v, want exactly the files+include union", files)
+	}
+}
+
+func TestApplySourceScopeArrayExtendsPreservesChildOwnSettings(t *testing.T) {
+	// TypeScript 5.0+'s multi-base array-form "extends" is out of scope for
+	// v1 (no merging of multiple bases), but an array-valued extends must not
+	// regress to discarding the CHILD's own settings: before Extends existed
+	// as a typed field, an array-valued extends was just an unrecognized
+	// field encoding/json silently ignored, so the child's own include/
+	// exclude/files still worked.
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json": `{"extends": ["./a.json", "./b.json"], "exclude": ["test/**/*.ts"]}`,
+		"a.json":        `{}`,
+		"b.json":        `{}`,
+		"src/app.ts":    "export const app = 1\n",
+		"test/app.ts":   "export const test = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 1 || files[0].Path != "src/app.ts" || files[0].SourceScope != SourceScopeProduction {
+		t.Fatalf("ApplySourceScope() = %#v, want only production src/app.ts: an array-valued (multi-base) extends should be treated as absent, "+
+			"not discard the child's own exclude", files)
+	}
+}
+
+func TestApplySourceScopeExtendsExtensionlessPathResolves(t *testing.T) {
+	// TypeScript resolves an extensionless relative extends target by trying
+	// the literal path, then retrying with ".json" appended.
+	repo := newScopeTestRepo(t, map[string]string{
+		"tsconfig.json":      `{"extends": "./tsconfig.base"}`,
+		"tsconfig.base.json": `{"exclude": ["test/**/*.ts"]}`,
+		"src/app.ts":         "export const app = 1\n",
+		"test/app.ts":        "export const test = 1\n",
+	})
+	head := scopeTestCommit(t, repo)
+
+	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
+	})
+	if err != nil {
+		t.Fatalf("ApplySourceScope() error = %v", err)
+	}
+	if len(files) != 1 || files[0].Path != "src/app.ts" || files[0].SourceScope != SourceScopeProduction {
+		t.Fatalf("ApplySourceScope() = %#v, want only production src/app.ts (an extensionless extends target should retry with .json appended)", files)
+	}
+}
+
+func TestLoadTSConfigRebasesExtendsPatternsWhenDirIsASymlink(t *testing.T) {
+	// dir passed to loadTSConfig is the raw snapshot directory (ultimately
+	// os.MkdirTemp's result), which on some platforms (notably macOS, where
+	// /var is a symlink to /private/var) may itself contain a symlink
+	// component. resolveExtendedTSConfig always returns a symlink-resolved
+	// baseDir, so snapshotRoot must be resolved the same way before it is
+	// used as the other half of the filepath.Rel(snapshotRoot, baseDir) math
+	// in rebaseTSConfigPatterns -- otherwise the rebased pattern is computed
+	// between an unresolved root and a resolved baseDir and comes out
+	// nonsensical, silently defeating the inherited exclude pattern. This
+	// reproduces that interaction directly, without needing a genuinely
+	// symlinked OS temp directory: dir itself is a symlink pointing at a
+	// real sibling directory.
+	real := t.TempDir()
+	writeScopeTestFile(t, real, "tsconfig.json", `{"extends": "./packages/shared/tsconfig.json"}`)
+	writeScopeTestFile(t, real, "packages/shared/tsconfig.json", `{"exclude": ["test/**/*.ts"]}`)
+
+	linked := filepath.Join(t.TempDir(), "linked")
+	if err := os.Symlink(real, linked); err != nil {
+		t.Fatal(err)
+	}
+
+	config, ok, err := loadTSConfig(linked)
+	if err != nil {
+		t.Fatalf("loadTSConfig() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("loadTSConfig() ok = false, want true")
+	}
+	want := []string{"packages/shared/test/**/*.ts"}
+	if !reflect.DeepEqual(config.Exclude, want) {
+		t.Fatalf("loadTSConfig() Exclude = %v, want %v (the base's exclude pattern must be rebased relative to the resolved snapshot root, not the raw symlinked dir)", config.Exclude, want)
 	}
 }
 

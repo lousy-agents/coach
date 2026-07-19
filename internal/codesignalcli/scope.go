@@ -327,13 +327,44 @@ func extractTar(dir string, archive []byte) error {
 type tsConfig struct {
 	// Extends names a base config this one inherits from. Only relative or
 	// absolute file paths are resolved (bare npm-style specifiers, e.g.
-	// "@tsconfig/node18/tsconfig.json", are not).
+	// "@tsconfig/node18/tsconfig.json", are not). TypeScript 5.0+ also
+	// permits an array of base configs, but multi-base merging is out of
+	// scope for v1 (see UnmarshalJSON): an array-valued (or otherwise
+	// non-string) "extends" is treated the same as an absent one, leaving
+	// Extends "" rather than failing to parse the whole file.
 	Extends string   `json:"extends"`
 	Include []string `json:"include"`
 	Exclude []string `json:"exclude"`
 	// A non-nil Files distinguishes an explicit empty "files": [] (which
 	// selects no source files) from an omitted files setting.
 	Files *[]string `json:"files"`
+}
+
+// UnmarshalJSON decodes extends via an intermediate json.RawMessage so a
+// non-string "extends" (e.g. TypeScript 5.0+'s multi-base array form, which
+// this package does not merge) doesn't fail the whole config's parse the way
+// a plain `Extends string` field would. Before this field existed at all, an
+// array-valued "extends" was just an unrecognized field encoding/json
+// silently ignored, so the config's own include/exclude/files still parsed;
+// this preserves that behavior instead of discarding the whole file. Any
+// other, genuinely malformed JSON still fails to unmarshal as before.
+func (c *tsConfig) UnmarshalJSON(data []byte) error {
+	type tsConfigAlias tsConfig
+	var aux struct {
+		Extends json.RawMessage `json:"extends"`
+		tsConfigAlias
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*c = tsConfig(aux.tsConfigAlias)
+	if len(aux.Extends) > 0 {
+		var extends string
+		if err := json.Unmarshal(aux.Extends, &extends); err == nil {
+			c.Extends = extends
+		}
+	}
+	return nil
 }
 
 // loadTSConfig reads dir's tsconfig.json and, if it has an "extends" field
@@ -343,16 +374,22 @@ type tsConfig struct {
 // rather than merge, each of include/exclude/files: walking from the
 // outermost base inward, a field a given config specifies replaces the
 // next-outer config's value for that field entirely, and only an omitted
-// field falls back to the outer config. A circular chain (a config that,
-// directly or transitively, extends itself) is detected and fails open
-// rather than looping indefinitely; npm-package-specifier resolution is not
-// handled here (that's separate follow-up work). Anything beyond a chain of
-// in-bounds, path-shaped extends targets fails open the same as a missing
-// tsconfig.json. "In-bounds" is judged against dir itself (the snapshot
-// root passed into this call), not against whichever subdirectory happens
-// to contain the current hop's config: a nested package extending a shared
-// base config back up at dir (a common monorepo layout) never actually
-// leaves the snapshot and must still resolve.
+// field falls back to the outer config. Because TypeScript resolves each
+// config's own include/exclude/files patterns relative to that config's own
+// directory, an inherited field is rebased (each pattern prefixed with the
+// declaring base's directory, expressed relative to dir) before being
+// merged in, so it keeps matching the same files it matched in the base's
+// own directory rather than being reinterpreted from dir. A circular chain
+// (a config that, directly or transitively, extends itself) is detected and
+// fails open rather than looping indefinitely; npm-package-specifier
+// resolution is not handled here (that's separate follow-up work).
+// Anything beyond a chain of in-bounds, path-shaped extends targets fails
+// open the same as a missing tsconfig.json. "In-bounds" is judged against
+// dir itself (the snapshot root passed into this call), not against
+// whichever subdirectory happens to contain the current hop's config: a
+// nested package extending a shared base config back up at dir (a common
+// monorepo layout) never actually leaves the snapshot and must still
+// resolve.
 func loadTSConfig(dir string) (tsConfig, bool, error) {
 	config, ok, err := readTSConfigFile(filepath.Join(dir, "tsconfig.json"))
 	if err != nil {
@@ -371,7 +408,23 @@ func loadTSConfig(dir string) (tsConfig, bool, error) {
 	// looping indefinitely.
 	visited := map[string]bool{filepath.Clean(filepath.Join(dir, "tsconfig.json")): true}
 
-	snapshotRoot, currentDir, extends := dir, dir, config.Extends
+	// snapshotRoot is resolved through symlinks once, up front, so it stays
+	// in the same "resolved" path space as baseDir (resolveExtendedTSConfig
+	// always returns a symlink-resolved directory). Rebasing patterns via
+	// filepath.Rel(snapshotRoot, baseDir) between an unresolved root and a
+	// resolved baseDir would otherwise produce a nonsensical relative path
+	// whenever dir itself contains a symlink component (e.g. a symlinked
+	// temp directory), silently defeating inherited include/exclude/files
+	// patterns. dir failing to resolve here is not expected in practice (it
+	// is a snapshot directory this same call chain just created), but fails
+	// open the same as any other unresolvable tsconfig input rather than
+	// surfacing an error or crashing.
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return tsConfig{}, false, nil
+	}
+
+	snapshotRoot, currentDir, extends := resolvedDir, dir, config.Extends
 	for extends != "" {
 		base, baseDir, basePath, ok := resolveExtendedTSConfig(snapshotRoot, currentDir, extends)
 		if !ok {
@@ -390,13 +443,14 @@ func loadTSConfig(dir string) (tsConfig, bool, error) {
 		visited[basePath] = true
 
 		if config.Include == nil {
-			config.Include = base.Include
+			config.Include = rebaseTSConfigPatterns(snapshotRoot, baseDir, base.Include)
 		}
 		if config.Exclude == nil {
-			config.Exclude = base.Exclude
+			config.Exclude = rebaseTSConfigPatterns(snapshotRoot, baseDir, base.Exclude)
 		}
-		if config.Files == nil {
-			config.Files = base.Files
+		if config.Files == nil && base.Files != nil {
+			rebased := rebaseTSConfigPatterns(snapshotRoot, baseDir, *base.Files)
+			config.Files = &rebased
 		}
 
 		currentDir, extends = baseDir, base.Extends
@@ -412,12 +466,27 @@ func loadTSConfig(dir string) (tsConfig, bool, error) {
 // says relative to the config that wrote it; only the escape check is
 // anchored to snapshotRoot instead, so a chain that descends into a
 // subdirectory and then back up — as long as it never leaves snapshotRoot —
-// is not mistaken for an escape. It mirrors extractTar's boundary check:
-// after computing the path relative to snapshotRoot, an escape shows up as
-// ".." or a ".."-prefixed relative path. On success it also returns the
-// resolved base config's directory (so a further extends in the base
-// resolves relative to the base's own location, not the original child's)
-// and its cleaned absolute path (for cycle detection).
+// is not mistaken for an escape.
+//
+// Like TypeScript itself, an extensionless target is retried with ".json"
+// appended if the literal path doesn't exist as a file
+// (resolveTSConfigExtendsTarget), before any symlink resolution or boundary
+// check.
+//
+// tsconfig.json is attacker-influenced input (e.g. a fork's PR diff), and
+// extractTar preserves symlinks verbatim from the git archive, so the
+// escape check resolves symlinks (via filepath.EvalSymlinks, the same
+// pattern repositoryRoot and snapshotBuildTarget already use) for both the
+// computed target and snapshotRoot before judging containment, and reads
+// the resolved path rather than the pre-resolution one — otherwise a
+// same-named symlink whose target lies outside snapshotRoot would pass a
+// purely lexical check and then be read straight through by
+// readTSConfigFile's os.ReadFile. An unresolvable target (missing, a
+// dangling symlink, etc.) fails open the same as any other unresolvable
+// extends target. On success this also returns the resolved base config's
+// directory (so a further extends in the base resolves relative to the
+// base's own location, not the original child's) and its cleaned absolute
+// path (for cycle detection).
 func resolveExtendedTSConfig(snapshotRoot, dir, extends string) (config tsConfig, baseDir, basePath string, ok bool) {
 	if !isTSConfigPathSpecifier(extends) {
 		return tsConfig{}, "", "", false
@@ -426,15 +495,64 @@ func resolveExtendedTSConfig(snapshotRoot, dir, extends string) (config tsConfig
 	if !filepath.IsAbs(target) {
 		target = filepath.Join(dir, target)
 	}
-	rel, err := filepath.Rel(snapshotRoot, target)
+	target = resolveTSConfigExtendsTarget(target)
+
+	resolvedRoot, err := filepath.EvalSymlinks(snapshotRoot)
+	if err != nil {
+		return tsConfig{}, "", "", false
+	}
+	resolvedTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return tsConfig{}, "", "", false
+	}
+	rel, err := filepath.Rel(resolvedRoot, resolvedTarget)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return tsConfig{}, "", "", false
 	}
-	base, found, err := readTSConfigFile(target)
+	base, found, err := readTSConfigFile(resolvedTarget)
 	if err != nil || !found {
 		return tsConfig{}, "", "", false
 	}
-	return base, filepath.Dir(target), filepath.Clean(target), true
+	return base, filepath.Dir(resolvedTarget), filepath.Clean(resolvedTarget), true
+}
+
+// resolveTSConfigExtendsTarget applies TypeScript's ".json" fallback for a
+// relative/absolute extends target with no extension: if the literal path
+// doesn't exist as a file and doesn't already end in ".json", retry with
+// ".json" appended.
+func resolveTSConfigExtendsTarget(target string) string {
+	if strings.HasSuffix(target, ".json") {
+		return target
+	}
+	if info, err := os.Stat(target); err == nil && !info.IsDir() {
+		return target
+	}
+	return target + ".json"
+}
+
+// rebaseTSConfigPatterns rewrites each of patterns, declared by a base
+// config living in baseDir, so it is expressed relative to snapshotRoot
+// instead — the same directory every classified file's path is already
+// relative to. TypeScript resolves include/exclude/files patterns relative
+// to the declaring config's own directory, so an inherited pattern must be
+// rebased this way before being matched against snapshot-root-relative file
+// paths, or a base in a different directory than the child that inherits it
+// would silently match the wrong files. A nil patterns (field omitted
+// entirely) stays nil so the nil-vs-non-nil-empty distinction used for
+// Files is preserved.
+func rebaseTSConfigPatterns(snapshotRoot, baseDir string, patterns []string) []string {
+	if patterns == nil {
+		return nil
+	}
+	relBaseDir, err := filepath.Rel(snapshotRoot, baseDir)
+	if err != nil {
+		return patterns
+	}
+	rebased := make([]string, len(patterns))
+	for i, pattern := range patterns {
+		rebased[i] = filepath.ToSlash(filepath.Join(relBaseDir, pattern))
+	}
+	return rebased
 }
 
 // isTSConfigPathSpecifier reports whether extends names a relative or
@@ -571,14 +689,21 @@ func stripTrailingCommas(data []byte) []byte {
 	return out.Bytes()
 }
 
+// matchesInclude reports whether path is selected by files/include, which
+// real TypeScript combines additively (the effective file set is the union
+// of explicit files entries and files matched by include patterns) rather
+// than treating as mutually exclusive. The implicit "match everything"
+// default applies only when both files and include are entirely absent; if
+// files is specified at all, there is no such fallback even when include is
+// also empty.
 func (c tsConfig) matchesInclude(path string) bool {
-	if c.Files != nil {
-		return matchesAny(path, *c.Files)
-	}
-	if len(c.Include) == 0 {
+	if c.Files != nil && matchesAny(path, *c.Files) {
 		return true
 	}
-	return matchesAny(path, c.Include)
+	if len(c.Include) > 0 {
+		return matchesAny(path, c.Include)
+	}
+	return c.Files == nil
 }
 
 func (c tsConfig) matchesExclude(path string) bool { return matchesAny(path, c.Exclude) }
