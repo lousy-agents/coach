@@ -46,8 +46,8 @@ if [[ "$needs_install" == true ]]; then
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
-mise trust mise.toml
-mise install
+mise trust mise.toml >/dev/null
+mise install >/dev/null
 
 if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
   bin_paths="$(mise bin-paths | paste -sd: -)"
