@@ -42,7 +42,14 @@ else
 fi
 
 if [[ "$needs_install" == true ]]; then
-  npm install     --global     --prefix "$HOME/.local"     --no-audit     --no-fund     "mise@$mise_version"
+  # SessionStart stdout is injected into the conversation context, so npm's
+  # progress output goes to stderr.
+  npm install \
+    --global \
+    --prefix "$HOME/.local" \
+    --no-audit \
+    --no-fund \
+    "mise@$mise_version" >&2
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
@@ -50,6 +57,12 @@ mise trust mise.toml >/dev/null
 mise install >/dev/null
 
 if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
+  # An empty PATH element resolves to the current working directory, so only
+  # emit tool bin paths when mise actually reports some.
   bin_paths="$(mise bin-paths | paste -sd: -)"
-  printf 'export PATH=%q:%q:$PATH\n'     "$HOME/.local/bin"     "$bin_paths"     >> "$CLAUDE_ENV_FILE"
+  if [[ -n "$bin_paths" ]]; then
+    printf 'export PATH=%q:%q:$PATH\n' "$HOME/.local/bin" "$bin_paths" >> "$CLAUDE_ENV_FILE"
+  else
+    printf 'export PATH=%q:$PATH\n' "$HOME/.local/bin" >> "$CLAUDE_ENV_FILE"
+  fi
 fi

@@ -201,6 +201,75 @@ func TestSetupMise_PersistsToolBinPaths(t *testing.T) {
 	}
 }
 
+// TestSetupMise_StdoutSilentDuringInstall verifies that the hook stays silent on
+// stdout on the fresh-install path, where npm is actually invoked. This is the
+// path a first cloud session takes, so npm's progress output must not reach
+// stdout and get injected into the conversation context.
+func TestSetupMise_StdoutSilentDuringInstall(t *testing.T) {
+	tmp, home, project, bin, npmDir, localBin := setupTestDirs(t)
+
+	// No mise on PATH, so the hook must install it via npm.
+	npmCalled := filepath.Join(tmp, "npm-called")
+	newMise := filepath.Join(localBin, "mise")
+	npmBin := filepath.Join(npmDir, "npm")
+	noisyNpm := fakeNpmScript(npmCalled, newMise, localBin) +
+		"echo 'added 1 package in 3s'\necho 'npm notice: something' >&2\n"
+	if err := os.WriteFile(npmBin, []byte(noisyNpm), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	envFile := filepath.Join(tmp, "env")
+	stdout, stderr, err := runHookSplit(t, home, project, envFile, npmDir+":"+bin)
+	if err != nil {
+		t.Fatalf("setup-mise.sh failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+
+	if _, err := os.Stat(npmCalled); err != nil {
+		t.Fatalf("expected npm to be invoked on the fresh-install path: %v", err)
+	}
+	if len(bytes.TrimSpace(stdout)) != 0 {
+		t.Fatalf("expected empty stdout while installing mise; got: %q", stdout)
+	}
+}
+
+// TestSetupMise_NoEmptyPathElement verifies that the hook never writes an empty
+// element into PATH. An empty element resolves to the current working
+// directory, which would let a file in the repo shadow a real command for every
+// later Bash call.
+func TestSetupMise_NoEmptyPathElement(t *testing.T) {
+	tmp, home, project, bin, npmDir, localBin := setupTestDirs(t)
+
+	// A current mise that reports no tool bin paths at all.
+	currentMise := filepath.Join(bin, "mise")
+	if err := os.WriteFile(currentMise, []byte(fakeMiseScript("2026.7.7", "")), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	npmBin := filepath.Join(npmDir, "npm")
+	if err := os.WriteFile(npmBin, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	envFile := filepath.Join(tmp, "env")
+	runHook(t, home, project, envFile, npmDir+":"+bin)
+
+	data, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("expected CLAUDE_ENV_FILE to be written: %v", err)
+	}
+	exported := strings.TrimSpace(string(data))
+	if !strings.Contains(exported, localBin) {
+		t.Fatalf("expected CLAUDE_ENV_FILE to prepend user local bin path; got:\n%s", exported)
+	}
+
+	value := strings.TrimPrefix(exported, "export PATH=")
+	for _, elem := range strings.Split(value, ":") {
+		if elem == "" || elem == "''" || elem == `""` {
+			t.Fatalf("PATH contains an empty element (resolves to cwd); got:\n%s", exported)
+		}
+	}
+}
+
 // TestSetupMise_StdoutSilentOnSuccess verifies that the hook produces no stdout
 // on success. SessionStart stdout is injected into the conversation context, so
 // install progress output must be redirected to stderr or discarded.
