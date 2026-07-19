@@ -308,11 +308,14 @@ func TestSetupMise_LocalNoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// No CLAUDE_CODE_REMOTE set.
+	// CLAUDE_CODE_REMOTE explicitly cleared: os.Environ() may already carry
+	// CLAUDE_CODE_REMOTE=true when this test itself runs inside a Claude Code
+	// cloud session, which would otherwise mask the local no-op path.
 	envFile := filepath.Join(tmp, "env")
 	cmd := exec.Command("bash", absScript(t))
 	cmd.Env = append(os.Environ(),
 		"HOME="+home,
+		"CLAUDE_CODE_REMOTE=",
 		"CLAUDE_PROJECT_DIR="+project,
 		"CLAUDE_ENV_FILE="+envFile,
 	)
