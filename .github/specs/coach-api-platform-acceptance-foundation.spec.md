@@ -96,7 +96,7 @@ so that I can **prove recovery and provenance behavior without arbitrary sleeps 
 #### Acceptance Criteria
 
 - The platform shall inject clocks and durations for heartbeats, stale-job recovery, queue redelivery, and reconciliation. Acceptance tests shall advance a controlled clock or wait on named observable conditions; they shall not rely on arbitrary sleeps.
-- The queue conformance contract shall exercise actual broker redelivery, acknowledgement, duplicate delivery, poison-task handling, multi-worker behavior, and graceful shutdown through real Redis Streams and LocalStack-backed SQS. Explicitly, the harness shall prove: (1) two concurrent workers never process the same job attempt at the same time; (2) a worker can be terminated after partial handler-side persistence of work associated with an attempt; (3) after reclaim/redelivery, the completed outcome for that job is a single successful completion with no duplicate handler effects observable at the harness boundary. Feature Zero owns these reusable harness capabilities; Baseline Task 3 owns the job-specific fenced-write and attempt-cleanup assertions (increment `attempt`, delete prior findings/diagnostics, report reads final attempt only).
+- The queue conformance contract shall be defined and harness-capable of exercising actual broker redelivery, acknowledgement, duplicate delivery, poison-task handling, multi-worker behavior, and graceful shutdown against real Redis Streams and LocalStack-backed SQS; executing those real-broker legs is required once Baseline Scan Task 3a's provider adapters exist, not as a Feature Zero closure condition. Explicitly, the harness contract shall specify that: (1) two concurrent workers never process the same job attempt at the same time; (2) a worker can be terminated after partial handler-side persistence of work associated with an attempt; (3) after reclaim/redelivery, the completed outcome for that job is a single successful completion with no duplicate handler effects observable at the harness boundary. Feature Zero owns defining these reusable harness capabilities and, where a trivial reference adapter or the harness's own self-test makes it possible without inventing production adapter code, exercising them; Baseline Task 3 owns the job-specific fenced-write and attempt-cleanup assertions (increment `attempt`, delete prior findings/diagnostics, report reads final attempt only).
 - Agent-loop acceptance shall use a scripted deterministic model gateway and a recording tool registry. It shall prove that handler-driven analysis and rubric paths execute through `internal/agentloop`, rather than handlers bypassing the loop with direct package calls.
 - The report contract shall have golden, versioned fixtures that distinguish `source=deterministic` from `source=agent` and prove additive report evolution without changing prior report-version fixtures.
 
@@ -177,7 +177,7 @@ This proof shall not require nonexistent `coach-api` or `coach-worker` binaries.
 
 **Done when**:
 
-- [ ] No acceptance task can silently inherit a developer credential or public-network route
+- [ ] The ambient-credential guard rejects/scrubs known ambient-credential sources and makes a simulated public GitHub request observable and failing, so that no acceptance test built on this guard can silently inherit a developer credential or reach the public network undetected; full Compose-level network isolation is verified once Task 0.3's offline Compose topology exists, not by Task 0.1 alone.
 - [ ] Controlled clock and fixture/recording conventions are reusable by later tasks
 
 ### Task 0.2: Implement the Coach-owned fake GitHub service
@@ -190,7 +190,7 @@ This proof shall not require nonexistent `coach-api` or `coach-worker` binaries.
 
 - Start with a failing public-boundary acceptance test for OAuth authorization-code/token/`/user`, GitHub App installation-token flow, repo-to-installation resolution, effective permissions, and repository tree/content reads.
 - Support deterministic named not-found, authorization, transient, and oversized scenarios.
-- Run in-process for fast tests and as an internal-network Compose service for workflow tests using the same fixture schema and recorder contract.
+- Implement the fake GitHub service as an in-process HTTP server (e.g., `httptest`-style) usable by fast, Docker-free acceptance tests. Task 0.2's own Verification and Done-when criteria are satisfied by this in-process form alone; packaging and running the same fake as an internal-network Compose service, using the same fixture schema and recorder contract, is Task 0.3's Docker-dependent deliverable, not Task 0.2's.
 - Assert no public GitHub request and no OAuth token repository read via the recorder. Provide recording/fixtures sufficient for Baseline to assert `/v1` rejects GitHub OAuth tokens as bearers once `coach-api` exists; do not invent that API in Feature Zero.
 
 **Verification**:
@@ -203,6 +203,7 @@ This proof shall not require nonexistent `coach-api` or `coach-worker` binaries.
 
 - [ ] One Coach-owned fake supports all shared GitHub contracts needed by Baseline Scan
 - [ ] The fake is clearly constrained, versioned, and not positioned as a generic emulator
+- [ ] The fake's in-process form requires no Docker daemon to build or verify
 
 ### Task 0.3: Establish the thin offline proof and Compose runner
 
@@ -213,6 +214,7 @@ This proof shall not require nonexistent `coach-api` or `coach-worker` binaries.
 **Requirements**:
 
 - Start with a failing Compose acceptance test proving fixture content is read through `pkg/githubingest`, analyzed through the existing CodeSignal path, and represented by a versioned deterministic report fixture.
+- Package the Task 0.2 in-process fake GitHub service as an internal-network Compose service (container image/Dockerfile) reusing the same fixture schema and recorder contract; this Compose-packaging step, not Task 0.2, is where a Docker daemon first becomes required.
 - Run fake GitHub as a Compose service on the internal network; mount/provide only fixture data and generated test credentials.
 - Prove the runner completes with outbound network disabled, ambient credentials rejected/scrubbed, no public GitHub requests, and no required platform API/worker binary.
 - Fail clearly when a required local image is missing; do not pull it.
@@ -237,6 +239,7 @@ This proof shall not require nonexistent `coach-api` or `coach-worker` binaries.
 **Requirements**:
 
 - Define (and, when adapters exist, execute) the portable queue behavior against real provider containers; do not satisfy provider conformance with queue fakes.
+- Do not implement production Redis Streams or SQS adapter code in this task; adapter implementation is Baseline Scan Task 3a's scope. Any Docker-dependent legs in this task exist only to self-validate the harness contract, not to validate a real adapter.
 - Harness requirements include dual-worker exclusion (same job attempt never processed concurrently), worker termination after partial persistence, and post-reclaim single-completion without duplicate handler effects at the harness boundary. Baseline Task 3 remains the owner of fenced writes and attempt-scoped findings/diagnostics cleanup assertions.
 - Make controlled clocks/durations available for heartbeats, stale reclaim, redelivery, and reconciliation assertions.
 - Make scripted model responses and tool-registry recordings available for Baseline/PR History to prove `internal/agentloop` execution and deterministic/agent provenance; Feature Zero need not run full agent-loop workflow without platform handlers.
