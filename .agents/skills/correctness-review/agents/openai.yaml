@@ -1,0 +1,4 @@
+interface:
+  display_name: "Correctness Review"
+  short_description: "Review a PR against issue and architecture"
+  default_prompt: "Use $correctness-review to assess this PR against its linked issue, architecture, and future consumers."
