@@ -4,7 +4,7 @@
 
 Coach's analysis capabilities (`pkg/semantics`, `pkg/codesignal`) are only reachable through a local CLI against a local git checkout, so nobody can consume Coach feedback without cloning the repo and running Go tooling themselves. There is no remote surface that can run asynchronous code-quality analysis — deterministic signals combined with LLM-as-judge rubric evaluation — over a whole repository. Before investing in SGLang serving and an AWS deployment, the platform's end-to-end flow (API → job queue → agent tool loop → local LLM → report) must be validated entirely locally.
 
-This spec covers the first vertical slice of that platform: GitHub OAuth identity, the async job API, worker lifecycle, model gateway, agent tool loop, seed rubrics, and the `repo_baseline_scan` capability, plus the local Docker Compose operator stack.
+This spec covers the first vertical slice of that platform: GitHub OAuth identity, the async job API, worker lifecycle, model gateway, agent tool loop, seed rubrics, and the `repo_baseline_scan` capability, plus the local Docker Compose operator stack. It consumes the sibling [Feature Zero: Offline Acceptance Foundation](coach-api-platform-acceptance-foundation.spec.md) for fake GitHub, offline Compose acceptance, deterministic test controls, and acceptance task conventions; it shall not recreate those facilities per task.
 
 ## Personas
 
@@ -108,6 +108,8 @@ so that I can **always tell reproducible evidence apart from model opinion**.
 ## Design
 
 > Engineering standards: `AGENTS.md` (inlined into `CLAUDE.md`). Binding constraints respected here: `pkg/semantics` never imports `pkg/githubingest` (or any GitHub client) and vice versa; acceptance-test-first policy applies to every task; all commands are `mise` tasks.
+>
+> **Feature Zero dependency (binding):** Before a Baseline task adds a platform-facing acceptance dependency, it shall consume the shared fake GitHub, ambient-credential/egress guard, controlled clocks/durations, golden report conventions, and `mise` acceptance task categories from [Feature Zero: Offline Acceptance Foundation](coach-api-platform-acceptance-foundation.spec.md). Component tests may retain in-process fakes; Compose workflow tests shall use Feature Zero's internal-network fake GitHub container. Redis and LocalStack SQS conformance shall use Feature Zero's real-provider harness, never hand-written queue fakes.
 
 ### Alignment with `docs/architecture/system-overview.md`
 
@@ -183,6 +185,7 @@ Both rubrics:
 
 ### Dependencies
 
+- [Feature Zero: Offline Acceptance Foundation](coach-api-platform-acceptance-foundation.spec.md) — prerequisite shared fake GitHub, offline Compose runner, generated test credentials, ambient-credential/egress guard, deterministic clock/duration controls, report goldens, and acceptance task conventions. Feature Zero's thin proof does not require `coach-api` or `coach-worker`; this spec is its first platform consumer.
 - llama.cpp server image (OpenAI-compatible `/v1/chat/completions`), model configurable; stub used everywhere models are unavailable (tests, CI, core profile).
 - Postgres 16 (jobs, results, auth sessions/tokens as needed); `database/sql` + `pgx` driver.
 - Existing `go-github`/`ghinstallation` (already dependencies of `pkg/githubingest`) for **installation** repo access.
@@ -320,7 +323,7 @@ flowchart LR
 
 ### Task 2a: GitHub OAuth App identity and Coach API tokens
 
-**Depends on**: Task 1
+**Depends on**: Task 1 and Feature Zero Tasks 0.1–0.2 (fake GitHub OAuth/recorder and offline credential guard)
 
 **Objective**: Implement GitHub OAuth App login, `Principal` resolution, Coach-signed JWT issue/validate/revoke (`jti` denylist), auth middleware, and a config-gated test-mint path for automated tests/smoke.
 
@@ -358,7 +361,7 @@ flowchart LR
 
 ### Task 2: coach-api HTTP service
 
-**Depends on**: Tasks 1, 2a, 3a (Redis adapter — API-side enqueue wiring is owned **here**, not in Task 3; until 3a lands, tests may use a fake `TaskQueue`)
+**Depends on**: Tasks 1, 2a, 3a (Redis adapter — API-side enqueue wiring is owned **here**, not in Task 3; until 3a lands, tests may use a fake `TaskQueue`) and Feature Zero Tasks 0.1–0.2 (shared fake GitHub/credential recording and deterministic HTTP acceptance controls)
 
 **Objective**: Implement `POST /v1/jobs`, `GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/report` over a `JobStore` seam with in-memory and Postgres implementations, behind auth middleware from Task 2a, with submit-time `RepoAuthorizer` and `TaskQueue` enqueue per Design — Submit durability.
 
@@ -396,7 +399,7 @@ flowchart LR
 
 ### Task 3a: `TaskQueue` / `EventBus` ports and Watermill adapters
 
-**Depends on**: Task 1
+**Depends on**: Task 1 and Feature Zero Task 0.4 (real-provider conformance harness and controlled recovery time)
 
 **Objective**: Implement application-owned `TaskQueue` and `EventBus` ports plus Watermill adapters for **Redis Streams** and **SQS**, with a black-box provider conformance suite (ADR-006). This is the architecture-grounded queue seam; job handlers never import Watermill or backend SDKs directly.
 
@@ -414,8 +417,8 @@ flowchart LR
 - `TaskQueue` promises from ADR-006: at-least-once delivery, no global ordering, possible duplicates, ack only after durable handler completion, crash → redelivery, stable idempotency key (job id), versioned payloads, permanent failures → poison-task destination.
 - `EventBus` interface exists; baseline may ship a no-op implementation (Design — EventBus port).
 - Capabilities model: fail startup when a required capability is unavailable (ADR-006).
-- Black-box conformance suite runs against real Redis and LocalStack-backed SQS: enqueue, multi-worker scaling, worker-kill mid-task, redelivery, duplicate injection, permanent failure / poison-task, graceful shutdown.
-- Clock/durations injected for deterministic recovery tests.
+- Black-box conformance suite runs through Feature Zero's harness against real Redis and LocalStack-backed SQS: enqueue, multi-worker scaling, worker-kill mid-task, redelivery, duplicate injection, permanent failure / poison-task, graceful shutdown.
+- Clock/durations injected through Feature Zero's deterministic controls for recovery tests.
 
 **Verification**:
 
@@ -432,7 +435,7 @@ flowchart LR
 
 ### Task 3: Worker job claiming and lifecycle
 
-**Depends on**: Tasks 2, 3a
+**Depends on**: Tasks 2, 3a and Feature Zero Tasks 0.1, 0.4 (controlled clock/duration and real-provider acceptance conventions)
 
 **Objective**: Implement `cmd/coach-worker` consuming jobs **only** through the `TaskQueue` port (Task 3a), with Postgres claim/heartbeat, bounded retry, and terminal failure recording.
 
@@ -470,7 +473,7 @@ flowchart LR
 
 ### Task 3b: Baseline repository tree listing in `pkg/githubingest`
 
-**Depends on**: none (package-level; unblocks Task 8)
+**Depends on**: Feature Zero Tasks 0.1–0.2 (shared fake GitHub fixture/recorder); package-level and unblocks Task 8
 
 **Objective**: Add tree/file enumeration so a `repo_baseline_scan` can discover supported-language paths at a ref without a local git clone. Today `pkg/githubingest` only exposes `ReadFile` — that is insufficient for whole-repo baseline.
 
@@ -499,7 +502,7 @@ flowchart LR
 
 ### Task 4: Model gateway seam with stub and llama.cpp client
 
-**Depends on**: Task 1
+**Depends on**: Task 1 and Feature Zero Task 0.4 (scripted gateway and recording tool registry)
 
 **Objective**: Define the `modelgateway.Gateway` interface (structured judgment request → schema-validated response), a deterministic stub, and a llama.cpp OpenAI-compatible client.
 
@@ -529,7 +532,7 @@ flowchart LR
 
 ### Task 5: Minimal agent tool loop
 
-**Depends on**: Task 4
+**Depends on**: Task 4 and Feature Zero Task 0.4 (scripted gateway and recording tool registry)
 
 **Objective**: Implement a bounded tool-call loop (max iterations, per-job budget) over a typed tool registry: `semantics_analyze`, `codesignal_report` (plus rubric-judgment tools used by Task 8).
 
@@ -561,7 +564,7 @@ flowchart LR
 
 ### Task 8: `repo_baseline_scan` job handler
 
-**Depends on**: Tasks 3, 3b, 5, 9
+**Depends on**: Tasks 3, 3b, 5, 9 and Feature Zero Tasks 0.1–0.3 (offline Compose runner, fake GitHub, deterministic report goldens)
 
 **Objective**: Fetch a repository tree at a ref (GitHub tree/Contents APIs via Task 3b for normal jobs; operator-configured local fixture path only for smoke), run baseline analysis and rubric judgments **through `internal/agentloop`**.
 
@@ -596,7 +599,7 @@ flowchart LR
 
 ### Task 9: Seed LLM-as-judge rubrics
 
-**Depends on**: Tasks 4, 5
+**Depends on**: Tasks 4, 5 and Feature Zero Task 0.4 (scripted gateway and versioned provenance goldens)
 
 **Objective**: Define two versioned rubrics (hidden-mutation contextualization; change-cohesion) with output JSON schemas, prompt assembly that attaches deterministic evidence, and golden stub-driven outputs; expose as agent-loop tools.
 
@@ -624,7 +627,7 @@ flowchart LR
 
 ### Task 10: Docker Compose stack, mise tasks, and E2E smoke
 
-**Depends on**: Tasks 2, 3, 3a, 5, 8, 9
+**Depends on**: Tasks 2, 3, 3a, 5, 8, 9 and Feature Zero Tasks 0.1–0.4 (offline Compose topology, fake GitHub container, no-egress guard, queue conformance, and acceptance task conventions)
 
 **Objective**: Ship `compose.yaml` (profiles: `core` = api + worker + postgres + Redis + stub; `llm` adds llama.cpp), `mise` lifecycle tasks, and an end-to-end smoke task; wire a CI job running the smoke against the core profile.
 
@@ -636,8 +639,8 @@ flowchart LR
 
 **Requirements**:
 
-- Story 4 acceptance criteria; smoke obtains a Coach token via the config-gated test mint (Story 1 / Task 2a), submits a job, polls to completion, asserts a provenance-tagged report, exits non-zero on failure.
-- Both binaries start in the smoke profile with **zero GitHub credentials** configured (no OAuth client id/secret, no App private key); the exact minimal environment for the credential-free smoke is documented and asserted.
+- Story 4 acceptance criteria; smoke obtains a Coach token via the config-gated test mint (Story 1 / Task 2a), submits a job, polls to completion, asserts a provenance-tagged report, exits non-zero on failure. This narrow operator smoke remains distinct from Feature Zero's richer offline workflow acceptance suite.
+- Both binaries start in the smoke profile with **zero GitHub credentials** configured (no OAuth client id/secret, no App private key); the exact minimal environment for the credential-free smoke is documented and asserted. The Feature Zero ambient-credential/egress guard applies so no developer credentials or public-network fallback can make the smoke pass.
 - Operator-run (non-CI) verification: the `llm` profile completes a `repo_baseline_scan` end to end with at least one schema-valid `source=agent` judgment produced by llama.cpp. This, together with the CI stub smoke, is the SGLang/AWS investment gate (PRD §12) — a stub-only smoke validates plumbing, not real-model rubric behavior.
 - Single credential-free smoke strategy: compose mounts a small fixture repository into the worker and sets `COACH_SMOKE_FIXTURE_PATH` (or equivalent); enables test mint only in the core/smoke profile; the smoke task submits a `repo_baseline_scan` for a configured fixture owner/name that the worker resolves to that path (no network, no model weights, no GitHub App or OAuth credentials, **no client-supplied clone URL**). The `pr_history_scan` flow is exercised by the sibling [PR History Scan spec](coach-api-platform-pr-history.spec.md)'s Task 7 acceptance tests, and the real OAuth exchange by this spec's Task 2a acceptance tests — both with fakes, not by the compose smoke.
 
