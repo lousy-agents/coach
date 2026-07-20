@@ -7,6 +7,8 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"net/http"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -140,11 +142,27 @@ var _ = Describe("fake GitHub repository content reads, via pkg/githubingest's p
 	})
 
 	Context("when the file is registered as ScenarioAuthFail", func() {
-		It("returns githubingest.ErrAuth", func() {
+		It("returns githubingest.ErrAuth, and the failure comes from the contents handler itself (not from an earlier token-mint failure)", func() {
 			ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "dir/authfail.txt"}
 			_, _, err := reader.ReadFile(context.Background(), ref)
 
 			Expect(errors.Is(err, githubingest.ErrAuth)).To(BeTrue(), "got err %v, want errors.Is(err, ErrAuth)", err)
+
+			// The above assertion alone can't distinguish "the contents
+			// handler rejected the read" from "token mint failed before the
+			// contents handler was ever reached" -- both surface as
+			// githubingest.ErrAuth from ReadFile's perspective. Require a
+			// recorded request against the contents-read path itself, with
+			// this scenario, so the spec can only pass once the real
+			// contents handler (not the installation-token-mint stub)
+			// produces the auth failure.
+			var sawContentsAuthFail bool
+			for _, rec := range server.Recorder().Records() {
+				if rec.Method == http.MethodGet && strings.Contains(rec.Path, "/contents/") && rec.Scenario == string(fakegithub.ScenarioAuthFail) {
+					sawContentsAuthFail = true
+				}
+			}
+			Expect(sawContentsAuthFail).To(BeTrue(), "expected a recorded GET request against a /contents/ path with scenario %q, got %+v", fakegithub.ScenarioAuthFail, server.Recorder().Records())
 		})
 	})
 

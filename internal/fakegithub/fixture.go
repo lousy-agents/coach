@@ -183,8 +183,14 @@ const (
 )
 
 // ClassifyToken reports which fixture-issued credential registry token
-// belongs to, if any.
+// belongs to, if any. An empty token never classifies as anything other
+// than TokenUnknown, even if a fixture-registered InstallationEntry has an
+// empty Token field (as auth-fail/transient entries deliberately do, since
+// those scenarios never successfully mint a real token).
 func (f *Fixture) ClassifyToken(token string) TokenKind {
+	if token == "" {
+		return TokenUnknown
+	}
 	if _, ok := f.OAuth.Tokens[token]; ok {
 		return TokenOAuth
 	}
