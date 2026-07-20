@@ -83,6 +83,12 @@ func (q *inMemoryQueue) Complete(ctx context.Context, claim Claim) error {
 	if !found {
 		return errUnknownTask
 	}
+	// A reclaim overwrites state.token with a fresh value, so a Complete
+	// carrying the pre-reclaim token proves the original worker was
+	// "killed" and must not be allowed to record a duplicate completion.
+	if state.token != claim.Token {
+		return errStaleClaim
+	}
 
 	state.completed = true
 	return nil
