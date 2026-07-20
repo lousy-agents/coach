@@ -36,7 +36,7 @@ Implementation rules:
 - The check is performed **synchronously at submit time** by `internal/authz.RepoAuthorizer`, before the job is persisted.
 - The check uses the GitHub App installation token.
 - If the principal lacks access, or the App installation cannot read the repo, the API responds `403` with code `repo_not_authorized` and persists nothing.
-- If GitHub returns `404` for the repo, the API may map it to `404` or `403 repo_not_authorization`.
+- If GitHub returns `404` for the repo, the API may map it to `404` or `403` with code `repo_not_authorized`.
 - Transient GitHub API failures during the check map to `503` or `internal_error`; the job is not persisted.
 - No caching in v1; repeated GitHub API calls on submit are acceptable for pilot volume.
 

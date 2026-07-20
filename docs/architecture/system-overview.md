@@ -451,6 +451,15 @@ This profile incorporates the cost-conscious pilot proposal without promoting pi
 
 Compose has lower memory/operational overhead, faster rebuild/debug loops, and preserves the important service, API, queue, and state-machine boundaries. Because the production control plane is ECS, its parity gates are ECS task-definition/IaC validation and an AWS integration account—not kind. Retain kind only if/when EKS inference is adopted.
 
+**Two local topologies (do not conflate):**
+
+| Phase | Compose contents | Queue | Auth | When |
+|---|---|---|---|---|
+| **Groundwork (current)** | `coach-api`, `coach-worker`, Postgres, Redis, model stub; optional llama.cpp | Watermill → Redis Streams (SQS adapter via conformance suite, not required in daily compose) | GitHub OAuth App + Coach-JWT; config-gated test mint for smoke | Daily pilot path; see Baseline Scan spec Story 4 |
+| **Webhook platform (v1+)** | Webhook ingestor, control-plane workers, Postgres, LocalStack (SQS/DynamoDB/S3), model stub; optional llama.cpp | SQS (+ DynamoDB delivery/outbox) | GitHub App webhooks + installation broker | After groundwork E2E validation |
+
+The groundwork stack does **not** require LocalStack, DynamoDB, S3 quarantine, or webhook replay. The diagram below is the **v1+ webhook-platform** local topology.
+
 ```mermaid
 flowchart TB
     Replay["Webhook replay CLI or tunnel"] --> Ingest["Go webhook ingestor"]
@@ -588,15 +597,15 @@ Page on acceptance-SLO burn, queue age threatening feedback, multi-tenant DLQ gr
 
 ### Groundwork (current)
 
-Full scope and task breakdown: `.github/specs/coach-api-platform-groundwork.spec.md`. Sequenced before the v1 platform below; its E2E validation is the investment gate for SGLang and AWS.
+Parent index: `.github/specs/coach-api-platform-groundwork.spec.md`. Vertical slices: [Baseline Scan](.github/specs/coach-api-platform-baseline.spec.md) (shared platform + `repo_baseline_scan`) then [PR History Scan](.github/specs/coach-api-platform-pr-history.spec.md) (`pr_history_scan`). Sequenced before the v1 platform below; Baseline E2E validation is the investment gate for SGLang and AWS. Binding groundwork ADRs: ADR-001 through ADR-006 in this directory.
 
-1. Coach HTTP API (`/v1`): async job submit/status/report, static bearer tokens bound to GitHub logins (self-serve enforcement).
-2. Worker over an application-owned `TaskQueue` port over Watermill, with Redis Streams and SQS adapters, heartbeat/crash recovery, and a black-box provider conformance suite. Job state, findings, diagnostics, and the JWT `jti` denylist remain in Postgres.
+1. Coach HTTP API (`/v1`): async job submit/status/report. Authentication is a **GitHub OAuth App** issuing Coach-signed JWTs bound to a verified `Principal` (ADR-001); self-serve enforcement uses principal identity plus repository role checks (ADR-003) and job-ownership isolation (ADR-004). Identity credentials are never used for repository reads (ADR-002). Submit persists the job in Postgres then enqueues on `TaskQueue` (job id idempotency key); full DynamoDB/outbox ingress remains deferred — see Baseline Scan Design — Submit durability.
+2. Worker over an application-owned `TaskQueue` port over Watermill, with Redis Streams and SQS adapters, heartbeat/crash recovery, and a black-box provider conformance suite (ADR-006). Job state, findings, diagnostics, and the JWT `jti` denylist remain in Postgres. DynamoDB and transactional outbox machinery stay deferred until the webhook-driven platform.
 3. Model gateway seam with deterministic stub (default) and llama.cpp OpenAI-compatible client; SGLang slots in later behind the same contract.
-4. Minimal bounded agent tool loop over typed tools (semantics, codesignal, GitHub reads); model text never becomes an arbitrary action.
-5. PR listing/file retrieval in `pkg/githubingest`; `pr_history_scan` and `repo_baseline_scan` job kinds.
+4. Minimal bounded agent tool loop over typed tools (semantics, codesignal; GitHub PR tools when the PR History slice lands); model text never becomes an arbitrary action (ADR-005). `adk-go` remains the later production agent runtime.
+5. `repo_baseline_scan` in the Baseline slice requires tree enumeration + file reads in `pkg/githubingest` (beyond today’s single-file `ReadFile`). PR listing/file retrieval and `pr_history_scan` in the PR History slice.
 6. Two seed LLM-as-judge rubrics, versioned and schema-validated, with strict deterministic/agent provenance separation.
-7. Docker Compose stack (core profile credential- and weights-free; `llm` profile adds llama.cpp) plus an end-to-end smoke in CI.
+7. Docker Compose stack for groundwork: `core` = coach-api + coach-worker + Postgres + Redis Streams + deterministic model stub (no weights, no LocalStack required); `llm` profile adds llama.cpp. End-to-end smoke in CI against `core`.
 
 ### v1
 
@@ -627,7 +636,8 @@ Full scope and task breakdown: `.github/specs/coach-api-platform-groundwork.spec
 | Agent orchestration | `adk-go` custom tools | Fits Go and capability boundary | Custom/Python; validate maturity/cancellation/tracing |
 | Control plane | ECS/Fargate first | Lower platform overhead | EKS/Lambda; validate scale/cost |
 | Inference plane | ECS/EC2 GPU capacity providers; EKS only on measured trigger | Fargate has no GPU; keeps v1 platform unambiguous | EKS day one/managed only |
-| Queue | SQS Standard plus idempotency | Burst absorption, low operations | Kafka/FIFO/direct RPC; validate ordering |
+| Queue (production webhook platform) | SQS Standard plus idempotency | Burst absorption, low operations | Kafka/FIFO/direct RPC; validate ordering |
+| Queue (groundwork) | Watermill `TaskQueue`/`EventBus` with Redis Streams + SQS adapters; job state in Postgres | Multi-deployment (Compose/self-hosted Redis and AWS SQS); no DynamoDB/outbox yet | See ADR-006; Postgres-only queue rejected |
 | Product DB | Aurora PostgreSQL | Transactional workflow/evidence model | DynamoDB-only; load-test |
 | Delivery dedup | DynamoDB conditional put/TTL | Burst-efficient first-writer semantics | PostgreSQL/Redis; validate retention |
 | Evidence | S3 plus hashed metadata | Durable/cost-effective | DB blobs; validate access/retention |

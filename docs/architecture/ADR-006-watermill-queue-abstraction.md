@@ -5,7 +5,7 @@
 | Status | Accepted for groundwork phase |
 | Date | 2026-07-19 |
 | Deciders | Platform groundwork spec review |
-| Expected successor | Watermill + SQS adapter, plus DynamoDB/outbox machinery, once AWS deployment begins |
+| Expected successor | Webhook-driven production path adds DynamoDB delivery/dispatch intent and transactional outbox machinery; Watermill Redis Streams + SQS adapters remain (already in groundwork) |
 
 ## Context
 

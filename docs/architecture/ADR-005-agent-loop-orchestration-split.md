@@ -18,12 +18,10 @@ Split control into three clearly separated layers inside `internal/agentloop`:
 
 ### 1. Model-selected tools
 
-The model may choose to call any registered tool from a fixed allowlist. v1 core tools:
+The model may choose to call any registered tool from a fixed allowlist. Tools are registered per job kind:
 
-- `github_list_prs`
-- `github_pr_files`
-- `semantics_analyze`
-- `codesignal_report`
+- **Baseline Scan (`repo_baseline_scan`)**: `semantics_analyze`, `codesignal_report`
+- **PR History Scan (`pr_history_scan`)**: the baseline tools plus `github_list_prs`, `github_pr_files`
 
 Unknown tools and over-budget loops are typed errors. Model text never becomes an arbitrary action.
 
