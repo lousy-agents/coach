@@ -9,6 +9,7 @@ package acceptanceharness
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -115,11 +116,14 @@ func NewGuardedTransport(allowedHosts []string, fake http.RoundTripper) *Guarded
 	return &GuardedTransport{allowed: allowed, fake: fake}
 }
 
-// BlockedRequests returns the full URL (as a string) of every request this
-// transport refused because its host was not on the allowlist, in the
-// order they were attempted, so a test can assert that an accidental
-// public request (e.g. to https://api.github.com/...) was observed and
-// blocked.
+// BlockedRequests returns a scrubbed, credential-free URL (as a string) of
+// every request this transport refused because its host was not on the
+// allowlist, in the order they were attempted, so a test can assert that an
+// accidental public request (e.g. to https://api.github.com/...) was
+// observed and blocked. Any userinfo, query string, or fragment embedded in
+// the original URL is stripped before recording, so this diagnostic never
+// leaks credentials accidentally embedded in a blocked URL; scheme, host,
+// and path are preserved.
 func (g *GuardedTransport) BlockedRequests() []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -136,13 +140,29 @@ func (g *GuardedTransport) BlockedRequests() []string {
 func (g *GuardedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	host := req.URL.Host
 	if !g.allowed[host] {
+		scrubbed := scrubURL(req.URL)
 		g.mu.Lock()
-		g.blocked = append(g.blocked, req.URL.String())
+		g.blocked = append(g.blocked, scrubbed)
 		g.mu.Unlock()
-		return nil, fmt.Errorf("acceptanceharness: blocked disallowed egress to %s (host %q is not in the allowlist)", req.URL, host)
+		return nil, fmt.Errorf("acceptanceharness: blocked disallowed egress to %s (host %q is not in the allowlist)", scrubbed, host)
 	}
 	if g.fake == nil {
 		return nil, fmt.Errorf("acceptanceharness: no fake transport configured for allowed host %q", host)
 	}
 	return g.fake.RoundTrip(req)
+}
+
+// scrubURL returns a credential-free string form of u: userinfo, query
+// string, and fragment are stripped, while scheme, host, and path are
+// preserved for diagnostics. This guards against a caller accidentally
+// embedding credentials in a blocked request's URL (e.g. userinfo or a
+// query-string access token) leaking into recorded diagnostics or error
+// messages.
+func scrubURL(u *url.URL) string {
+	scrubbed := *u
+	scrubbed.User = nil
+	scrubbed.RawQuery = ""
+	scrubbed.Fragment = ""
+	scrubbed.RawFragment = ""
+	return scrubbed.String()
 }

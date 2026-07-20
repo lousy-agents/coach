@@ -109,4 +109,29 @@ var _ = Describe("no-egress guard transport", func() {
 			Expect(transport.BlockedRequests()).To(ContainElement("https://api.github.com/repos/lousy-agents/coach"))
 		})
 	})
+
+	Context("when a request to a disallowed host has credentials embedded in the URL", func() {
+		It("scrubs userinfo and query values from BlockedRequests and the error message, while keeping scheme/host/path", func() {
+			fake := &fakeRoundTripper{resp: &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}}
+			transport := acceptanceharness.NewGuardedTransport([]string{"127.0.0.1:9999"}, fake)
+
+			req := httptest.NewRequest(http.MethodGet, "https://leaked-user:leaked-pass@api.github.com/repos/x?access_token=super-secret", nil)
+			resp, err := transport.RoundTrip(req)
+
+			Expect(err).To(HaveOccurred())
+			Expect(resp).To(BeNil())
+			Expect(fake.called).To(BeFalse(), "the fake transport must never be invoked for a blocked host")
+
+			blocked := transport.BlockedRequests()
+			Expect(blocked).To(HaveLen(1))
+
+			for _, secret := range []string{"leaked-user", "leaked-pass", "super-secret"} {
+				Expect(blocked[0]).NotTo(ContainSubstring(secret), "BlockedRequests entry must not leak credentials")
+				Expect(err.Error()).NotTo(ContainSubstring(secret), "error message must not leak credentials")
+			}
+
+			Expect(blocked[0]).To(ContainSubstring("https://api.github.com/repos/x"), "scrubbed URL must still identify scheme/host/path")
+			Expect(err.Error()).To(ContainSubstring("https://api.github.com/repos/x"), "error message must still identify scheme/host/path")
+		})
+	})
 })

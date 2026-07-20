@@ -120,11 +120,17 @@ var _ = Describe("controlled clock seam", func() {
 			advancer.Add(1)
 			go func() {
 				defer advancer.Done()
+				// Paced with a short ticker rather than a tight busy-loop: this
+				// still calls Advance many times, concurrently with the
+				// producer goroutines above, without burning CPU spinning on
+				// an unpaced default case.
+				ticker := time.NewTicker(200 * time.Microsecond)
+				defer ticker.Stop()
 				for {
 					select {
 					case <-stopAdvancing:
 						return
-					default:
+					case <-ticker.C:
 						clock.Advance(time.Millisecond)
 					}
 				}
