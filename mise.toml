@@ -25,7 +25,10 @@ run = "go test -run Example ./..."
 
 [tasks.test-acceptance-fast]
 description = "Run the fast, in-process Ginkgo/Gomega acceptance suites (public Go/CLI-boundary tests, offline, no real credentials) -- Feature Zero's runnable acceptance layer (see docs/architecture/acceptance-harness.md)"
-run = "go test -race ./... -run Acceptance"
+run = [
+  "go run ./cmd/acceptance-guard-preflight",
+  "go test -race ./... -run Acceptance",
+]
 
 [tasks.tidy-check]
 description = "Check that go.mod and go.sum are tidy"

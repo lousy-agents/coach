@@ -1,8 +1,11 @@
 package acceptanceharness_test
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -75,6 +78,90 @@ var _ = Describe("ambient-credential guard", func() {
 
 			Expect(scrubbed).To(ConsistOf(acceptanceharness.AmbientCredentialVars))
 			Expect(acceptanceharness.ScanProcessEnv().Rejected()).To(BeFalse())
+		})
+	})
+})
+
+var _ = Describe("default credential-file check", func() {
+	Context("when the injected exists func reports an AmbientCredentialFiles path present", func() {
+		It("includes that path in FoundFiles", func() {
+			home := "/fake/home"
+			present := filepath.Join(home, acceptanceharness.AmbientCredentialFiles[0])
+
+			found := acceptanceharness.ScanCredentialFiles(home, func(path string) bool {
+				return path == present
+			})
+
+			Expect(found).To(ContainElement(present))
+		})
+	})
+
+	Context("when the injected exists func reports nothing present", func() {
+		It("returns an empty result", func() {
+			found := acceptanceharness.ScanCredentialFiles("/fake/home", func(path string) bool {
+				return false
+			})
+
+			Expect(found).To(BeEmpty())
+		})
+	})
+
+	Context("when ScanProcessEnv is called with $HOME pointed at a temp dir containing a real .aws/credentials file", func() {
+		It("detects the file end-to-end via the real home-directory wiring", func() {
+			tmpHome := GinkgoT().TempDir()
+			awsDir := filepath.Join(tmpHome, ".aws")
+			Expect(os.MkdirAll(awsDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(awsDir, "credentials"), []byte("[default]\naws_access_key_id = placeholder-not-real\n"), 0o600)).To(Succeed())
+			GinkgoT().Setenv("HOME", tmpHome)
+
+			result := acceptanceharness.ScanProcessEnv()
+
+			Expect(result.Rejected()).To(BeTrue())
+			Expect(result.FoundFiles).To(ContainElement(filepath.Join(tmpHome, ".aws", "credentials")))
+		})
+	})
+
+	Context("when ScanProcessEnv is called with $HOME pointed at a clean temp dir", func() {
+		It("reports no file violations", func() {
+			tmpHome := GinkgoT().TempDir()
+			GinkgoT().Setenv("HOME", tmpHome)
+
+			result := acceptanceharness.ScanProcessEnv()
+
+			Expect(result.FoundFiles).To(BeEmpty())
+		})
+	})
+})
+
+var _ = Describe("RejectAmbientCredentials", func() {
+	Context("when a known ambient-credential variable is set in the real process environment", func() {
+		It("returns false and writes a diagnostic naming that variable", func() {
+			tmpHome := GinkgoT().TempDir()
+			GinkgoT().Setenv("HOME", tmpHome)
+			GinkgoT().Setenv("GITHUB_TOKEN", "ghp_totallyfake")
+
+			var out bytes.Buffer
+			ok := acceptanceharness.RejectAmbientCredentials(&out)
+
+			Expect(ok).To(BeFalse())
+			Expect(out.String()).To(ContainSubstring("GITHUB_TOKEN"))
+		})
+	})
+
+	Context("when the real process environment and default credential-file locations are clean", func() {
+		It("returns true and writes nothing", func() {
+			tmpHome := GinkgoT().TempDir()
+			GinkgoT().Setenv("HOME", tmpHome)
+			for _, name := range acceptanceharness.AmbientCredentialVars {
+				GinkgoT().Setenv(name, "")
+				Expect(os.Unsetenv(name)).To(Succeed())
+			}
+
+			var out bytes.Buffer
+			ok := acceptanceharness.RejectAmbientCredentials(&out)
+
+			Expect(ok).To(BeTrue())
+			Expect(out.String()).To(BeEmpty())
 		})
 	})
 })
