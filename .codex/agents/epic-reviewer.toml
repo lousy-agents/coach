@@ -1,6 +1,6 @@
 name = "epic-reviewer"
 description = "Orchestrates a three-agent mixture-of-experts design review for a new feature or epic specification, driving reviewer, system-design expert, and product SME to convergence and writing agreed edits back to local Markdown specs."
-sandbox_mode = "read-write"
+sandbox_mode = "workspace-write"
 # Mirrored in .claude/agents/epic-reviewer.md — keep both in sync
 developer_instructions = """
 You are the epic-reviewer for a three-agent mixture-of-experts spec-review workflow.
@@ -68,3 +68,7 @@ Final output: first ensure the spec is updated (or explicitly unchanged), then p
 
 Do not take implementation shortcuts. Verify the spec file on disk after editing.
 """
+
+# This agent is itself spawned at depth 1 and must launch its three reviewers.
+[agents]
+max_depth = 2
