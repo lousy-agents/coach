@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-The [Coach API Platform — Baseline Scan spec](coach-api-platform-baseline.spec.md) delivers the shared platform (GitHub OAuth identity, async job API, worker lifecycle, model gateway, agent tool loop, and seed rubrics) and the `repo_baseline_scan` capability. This spec adds the second vertical slice: a self-serve scan of the authenticated pilot engineer's recent pull requests in a repository they have access to.
+The [Coach API Platform — Baseline Scan spec](coach-api-platform-baseline.spec.md) delivers the shared platform (GitHub OAuth identity, async job API, worker lifecycle, model gateway, agent tool loop, and seed rubrics) and the `repo_baseline_scan` capability. The sibling [Feature Zero: Offline Acceptance Foundation](coach-api-platform-acceptance-foundation.spec.md) supplies the shared fake GitHub, offline Compose acceptance, deterministic controls, and task conventions. This spec adds the second vertical slice: a self-serve scan of the authenticated pilot engineer's recent pull requests in a repository they have access to.
 
 The PR-history scan is the richer customer-facing feature, but it adds the largest new GitHub-ingestion surface (PR listing by author, changed-file retrieval) and the strictest self-serve enforcement. It is intentionally split out so the baseline platform can be validated end-to-end first.
 
@@ -64,6 +64,8 @@ The full provenance rules are defined in [Baseline Scan spec Story 5](coach-api-
 > Engineering standards: `AGENTS.md` (inlined into `CLAUDE.md`). Binding constraints respected here: `pkg/semantics` never imports `pkg/githubingest` (or any GitHub client) and vice versa; acceptance-test-first policy applies to every task; all commands are `mise` tasks.
 >
 > Shared platform design (auth, data model, agent loop, gateway, rubrics, queue, tenant scoping, and diagrams) lives in the [Baseline Scan spec](coach-api-platform-baseline.spec.md#design). This section covers only the PR-history-specific additions and variations.
+>
+> **Feature Zero dependency (binding):** PR History extends Feature Zero's fixture-driven fake GitHub service with PR lists and changed files, and uses its credential recorder, controlled clocks/durations, golden report conventions, and acceptance task categories. It shall not create a second fake GitHub implementation, host-only Compose `httptest` dependency, or alternate queue/agent-loop acceptance approach.
 
 ### Components Affected
 
@@ -74,7 +76,7 @@ The full provenance rules are defined in [Baseline Scan spec Story 5](coach-api-
 
 ### Dependencies
 
-All infrastructure dependencies (Postgres, Redis, GitHub OAuth App, GitHub App installation, model gateway stub/llama.cpp) are inherited from the [Baseline Scan spec](coach-api-platform-baseline.spec.md#dependencies). No new infrastructure is introduced.
+All infrastructure dependencies (Postgres, Redis, GitHub OAuth App, GitHub App installation, model gateway stub/llama.cpp) are inherited from the [Baseline Scan spec](coach-api-platform-baseline.spec.md#dependencies). [Feature Zero: Offline Acceptance Foundation](coach-api-platform-acceptance-foundation.spec.md) is also a direct prerequisite: its fake-GitHub fixture schema is extended for PR lists/files, while its offline/no-real-credentials contract and Compose/queue/agent-loop harness remain shared. No separate test infrastructure is introduced.
 
 ### Data Model Changes
 
@@ -123,7 +125,9 @@ This spec inherits all decisions from the [Baseline Scan spec](coach-api-platfor
 
 **Objective**: Add `ListRecentPullRequestsByAuthor(owner, repo, login, limit)` and per-PR changed-file content retrieval (base and head), following the package's existing auth and sentinel-error conventions.
 
-**Context**: The largest missing ingestion capability; unblocks Story 2. Independent of the shared platform tasks, but depends on the baseline platform to exercise end-to-end.
+**Context**: The largest missing ingestion capability; unblocks Story 2. Independent of the shared platform tasks, but depends on Feature Zero's fake-GitHub fixture/recorder and the baseline platform to exercise end-to-end.
+
+**Depends on**: Feature Zero Tasks 0.1–0.2; Baseline Scan acceptance conventions
 
 **Affected files**:
 
@@ -133,12 +137,12 @@ This spec inherits all decisions from the [Baseline Scan spec](coach-api-platfor
 
 - Story 2: at most `limit` most recent **open or merged** PRs by the given author, ordered by `updated_at` descending; closed-unmerged PRs must not appear; fewer eligible → return what exists.
 - Configurable pagination lookback budget (default 200 recently-updated PRs scanned) with a typed truncation result the handler records as a diagnostic when the budget is reached before `limit` matches.
-- Acceptance tests include a mixed-state fixture (open, merged, closed-unmerged) proving closed-unmerged exclusion and ordering.
+- Acceptance tests extend Feature Zero's shared fake-GitHub fixture with a mixed-state fixture (open, merged, closed-unmerged) proving closed-unmerged exclusion and ordering; they do not create a second GitHub test approach.
 - Errors map to the package's existing sentinels (`ErrNotFound`, `ErrAuth`, `ErrTooLarge`, …); no import of `pkg/semantics` (dependency rule).
 
 **Verification**:
 
-- [ ] `mise run test` and `mise run test-examples` pass; red first against an `httptest` GitHub fake
+- [ ] `mise run test` and `mise run test-examples` pass; red first against Feature Zero's shared fake-GitHub fixture (in-process for package tests)
 - [ ] Mixed-state fixture asserts closed-unmerged exclusion
 - [ ] `mise run tidy-check` clean
 
@@ -151,7 +155,7 @@ This spec inherits all decisions from the [Baseline Scan spec](coach-api-platfor
 
 ### Task 6a: Register `pr_history_scan` on the shared API contract
 
-**Depends on**: Baseline Tasks 1–2 (job domain + HTTP service) and Baseline Task 3a (enqueue path).
+**Depends on**: Feature Zero Tasks 0.1–0.2; Baseline Tasks 1–2 (job domain + HTTP service) and Baseline Task 3a (enqueue path).
 
 **Objective**: Extend the frozen job/API contract so `POST /v1/jobs` accepts `kind=pr_history_scan` with its params schema, submit-time self-serve + repo authz checks, and report `summary.pr_count` — without implementing the worker handler yet.
 
@@ -178,7 +182,7 @@ This spec inherits all decisions from the [Baseline Scan spec](coach-api-platfor
 
 ### Task 7: `pr_history_scan` job handler
 
-**Depends on**: Baseline Tasks 1, 2a, 2, 3a, 3, 4, 5, and 9 (enumerated — letter-suffixed tasks included), plus Task 6 and Task 6a of this spec.
+**Depends on**: Feature Zero Tasks 0.1–0.4; Baseline Tasks 1, 2a, 2, 3a, 3, 4, 5, and 9 (enumerated — letter-suffixed tasks included), plus Task 6 and Task 6a of this spec.
 
 **Objective**: Run list open-or-merged PRs → fetch changed files → per-PR semantics/codesignal analysis → rubric judgment → attempt-scoped provenance-tagged report **through `internal/agentloop`** (registered tools + stub gateway sequences).
 
@@ -191,7 +195,7 @@ This spec inherits all decisions from the [Baseline Scan spec](coach-api-platfor
 
 **Requirements**:
 
-- Story 2 acceptance criteria end-to-end with authenticated principal + fake GitHub (installation API) + scripted stub gateway driving the agent loop, including per-PR diagnostic-and-continue, open/merged filter, and self-serve author constraint at submit (`principal.login`).
+- Story 2 acceptance criteria end-to-end with authenticated principal + Feature Zero fake GitHub (installation API) + scripted stub gateway/recording tool registry driving the agent loop, including per-PR diagnostic-and-continue, open/merged filter, and self-serve author constraint at submit (`principal.login`).
 - Acceptance test asserts the analysis path executes via `internal/agentloop` (tool registry), not by the handler calling `pkg/semantics` / `pkg/githubingest` / rubrics directly for that path.
 - Worker path uses GitHub App installation credentials only — not the user's OAuth token.
 - Open/merged filter policy remains handler-owned (not model-selected), matching ADR-005.
