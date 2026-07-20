@@ -79,6 +79,7 @@ var _ = Describe("ambient-credential guard", func() {
 			Entry("GitHub OAuth client secret", "GITHUB_CLIENT_SECRET", "fake-oauth-client-secret"),
 			Entry("OpenAI API key", "OPENAI_API_KEY", "sk-fake-openai-key"),
 			Entry("Anthropic API key", "ANTHROPIC_API_KEY", "sk-ant-fake-key"),
+			Entry("AWS shared config file override", "AWS_CONFIG_FILE", "/fake/home/.aws/config"),
 		)
 
 		It("is also flagged end-to-end by ScanProcessEnv against the real process environment", func() {
@@ -181,6 +182,42 @@ var _ = Describe("default credential-file check", func() {
 			result := acceptanceharness.ScanProcessEnv()
 
 			Expect(result.FoundFiles).To(BeEmpty())
+		})
+	})
+
+	Context("when the injected exists func reports only an .aws/config path present (no .aws/credentials)", func() {
+		// PR #80 review: ~/.aws/config can also hold static access keys and
+		// is consulted by the default AWS SDK provider chain, but the guard
+		// previously only scanned .aws/credentials. This spec proves the
+		// injectable ScanCredentialFiles path detects .aws/config the same
+		// way it detects .aws/credentials.
+		It("includes the .aws/config path in FoundFiles", func() {
+			home := "/fake/home"
+			present := filepath.Join(home, ".aws", "config")
+
+			found := acceptanceharness.ScanCredentialFiles(home, func(path string) bool {
+				return path == present
+			})
+
+			Expect(found).To(ContainElement(present))
+		})
+	})
+
+	Context("when ScanProcessEnv is called with $HOME pointed at a temp dir containing only .aws/config (no .aws/credentials)", func() {
+		// This is the specific "config only" gap the reviewer called out:
+		// an acceptance process with credentials only in .aws/config must
+		// still be detected/rejected.
+		It("detects the file end-to-end via the real home-directory wiring", func() {
+			tmpHome := GinkgoT().TempDir()
+			awsDir := filepath.Join(tmpHome, ".aws")
+			Expect(os.MkdirAll(awsDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(awsDir, "config"), []byte("[default]\nregion = us-east-1\naws_access_key_id = placeholder-not-real\n"), 0o600)).To(Succeed())
+			GinkgoT().Setenv("HOME", tmpHome)
+
+			result := acceptanceharness.ScanProcessEnv()
+
+			Expect(result.Rejected()).To(BeTrue())
+			Expect(result.FoundFiles).To(ContainElement(filepath.Join(tmpHome, ".aws", "config")))
 		})
 	})
 })
@@ -335,5 +372,29 @@ var _ = Describe("command-boundary: acceptance-guard-preflight binary (new crede
 			Entry("GitHub OAuth client secret", "GITHUB_CLIENT_SECRET", "fake-oauth-client-secret"),
 			Entry("OpenAI API key", "OPENAI_API_KEY", "sk-fake-openai-key"),
 		)
+	})
+
+	Context("when run with only an .aws/config file present (no .aws/credentials, no env var)", func() {
+		// PR #80 review, second round: the preflight command boundary must
+		// also reject when the only ambient-credential source is
+		// ~/.aws/config.
+		It("exits non-zero and writes a diagnostic naming the .aws/config file to stderr", func() {
+			home := GinkgoT().TempDir()
+			awsDir := filepath.Join(home, ".aws")
+			Expect(os.MkdirAll(awsDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(awsDir, "config"), []byte("[default]\nregion = us-east-1\naws_access_key_id = placeholder-not-real\n"), 0o600)).To(Succeed())
+
+			cmd := exec.Command(preflightCommandPath)
+			cmd.Env = cleanEnvironForPreflightCmd(home)
+			var stderr strings.Builder
+			cmd.Stderr = &stderr
+
+			err := cmd.Run()
+
+			Expect(err).To(HaveOccurred())
+			var exitErr *exec.ExitError
+			Expect(err).To(BeAssignableToTypeOf(exitErr))
+			Expect(stderr.String()).To(ContainSubstring(filepath.Join(home, ".aws", "config")))
+		})
 	})
 })

@@ -78,4 +78,29 @@ var _ = Describe("acceptance-guard-preflight command", func() {
 			Expect(stderr.String()).To(BeEmpty())
 		})
 	})
+
+	When("run with only an .aws/config file present (no .aws/credentials, no env var)", func() {
+		// PR #80 review, second round: ~/.aws/config can hold static access
+		// keys and is consulted by the default AWS SDK provider chain, so an
+		// acceptance process with credentials only there must still fail
+		// preflight rather than pass it.
+		It("exits non-zero and writes a diagnostic naming the .aws/config file to stderr", func() {
+			home := GinkgoT().TempDir()
+			awsDir := filepath.Join(home, ".aws")
+			Expect(os.MkdirAll(awsDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(awsDir, "config"), []byte("[default]\nregion = us-east-1\naws_access_key_id = placeholder-not-real\n"), 0o600)).To(Succeed())
+
+			cmd := exec.Command(commandPath)
+			cmd.Env = cleanEnviron(home)
+			var stderr strings.Builder
+			cmd.Stderr = &stderr
+
+			err := cmd.Run()
+
+			Expect(err).To(HaveOccurred())
+			var exitErr *exec.ExitError
+			Expect(err).To(BeAssignableToTypeOf(exitErr))
+			Expect(stderr.String()).To(ContainSubstring(filepath.Join(home, ".aws", "config")))
+		})
+	})
 })

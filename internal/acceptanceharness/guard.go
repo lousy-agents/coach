@@ -40,6 +40,7 @@ var AmbientCredentialVars = []string{
 	"AWS_SESSION_TOKEN",
 	"AWS_PROFILE",
 	"AWS_SHARED_CREDENTIALS_FILE",
+	"AWS_CONFIG_FILE",
 	"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
 	"AWS_CONTAINER_CREDENTIALS_FULL_URI",
 	// GitHub OAuth (Coach identity provider).
@@ -54,7 +55,12 @@ var AmbientCredentialVars = []string{
 // relative to a home directory, that indicate resolvable ambient
 // credentials even when no environment variable points at them (e.g. the
 // AWS SDK's default shared-credentials file, consulted regardless of
-// AWS_SHARED_CREDENTIALS_FILE/AWS_PROFILE being set).
+// AWS_SHARED_CREDENTIALS_FILE/AWS_PROFILE being set). This also includes the
+// AWS SDK's default shared-config file (~/.aws/config): the default
+// provider chain reads it too, and it can itself hold static access keys
+// (e.g. under a profile's aws_access_key_id/aws_secret_access_key), not just
+// non-secret settings like region -- so an acceptance process with
+// credentials only there must still be rejected.
 //
 // Known, deferred limitation: this package does not probe the cloud
 // instance-metadata endpoint (e.g. 169.254.169.254) as an ambient-credential
@@ -66,6 +72,7 @@ var AmbientCredentialVars = []string{
 // this guard.
 var AmbientCredentialFiles = []string{
 	filepath.Join(".aws", "credentials"),
+	filepath.Join(".aws", "config"),
 }
 
 // CredentialGuardResult records the ambient-credential guard's decision:

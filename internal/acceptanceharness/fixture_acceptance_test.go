@@ -14,6 +14,7 @@ var _ = Describe("shared fixture/recording contract", func() {
 	Context("when NewRequestRecord builds a RequestRecord", func() {
 		It("stamps SchemaVersion with the current FixtureSchemaVersion and sets the given fields", func() {
 			rec := acceptanceharness.NewRequestRecord(
+				"fixture-acme-widgets",
 				"repo-read-happy-path",
 				"GET",
 				"/repos/acme/widgets/contents/hello.txt",
@@ -21,6 +22,7 @@ var _ = Describe("shared fixture/recording contract", func() {
 			)
 
 			Expect(rec.SchemaVersion).To(Equal(acceptanceharness.FixtureSchemaVersion))
+			Expect(rec.FixtureID).To(Equal("fixture-acme-widgets"))
 			Expect(rec.Scenario).To(Equal("repo-read-happy-path"))
 			Expect(rec.Method).To(Equal("GET"))
 			Expect(rec.Path).To(Equal("/repos/acme/widgets/contents/hello.txt"))
@@ -31,6 +33,7 @@ var _ = Describe("shared fixture/recording contract", func() {
 	Context("schema-stability contract", func() {
 		It("marshals a RequestRecord built via NewRequestRecord to the exact expected JSON shape", func() {
 			rec := acceptanceharness.NewRequestRecord(
+				"fixture-acme-widgets",
 				"repo-read-happy-path",
 				"GET",
 				"/repos/acme/widgets/contents/hello.txt",
@@ -42,6 +45,7 @@ var _ = Describe("shared fixture/recording contract", func() {
 
 			Expect(got).To(MatchJSON(`{
 				"schema_version": 1,
+				"fixture_id": "fixture-acme-widgets",
 				"scenario": "repo-read-happy-path",
 				"method": "GET",
 				"path": "/repos/acme/widgets/contents/hello.txt",
@@ -59,13 +63,38 @@ var _ = Describe("shared fixture/recording contract", func() {
 		})
 	})
 
+	Context("when two fixtures share the same scenario name", func() {
+		// PR #80 review, second round: RequestRecord previously retained
+		// only Scenario, so two fixture files sharing a scenario name (e.g.
+		// both defining a "not-found" behavior) could not be told apart in
+		// a recorded request. FixtureID is what keeps them distinguishable.
+		It("remains distinguishable via FixtureID alone even though Scenario is identical", func() {
+			fromFixtureA := acceptanceharness.NewRequestRecord("fixture-a", "not-found", "GET", "/x", acceptanceharness.AuthModeInstallation)
+			fromFixtureB := acceptanceharness.NewRequestRecord("fixture-b", "not-found", "GET", "/x", acceptanceharness.AuthModeInstallation)
+
+			Expect(fromFixtureA.Scenario).To(Equal(fromFixtureB.Scenario))
+			Expect(fromFixtureA.FixtureID).NotTo(Equal(fromFixtureB.FixtureID))
+			Expect(fromFixtureA.FixtureID).To(Equal("fixture-a"))
+			Expect(fromFixtureB.FixtureID).To(Equal("fixture-b"))
+		})
+	})
+
+	Context("when NewFixtureHeader builds a FixtureHeader", func() {
+		It("stamps SchemaVersion with the current FixtureSchemaVersion and the given fixture ID", func() {
+			header := acceptanceharness.NewFixtureHeader("fixture-acme-widgets")
+
+			Expect(header.SchemaVersion).To(Equal(acceptanceharness.FixtureSchemaVersion))
+			Expect(header.FixtureID).To(Equal("fixture-acme-widgets"))
+		})
+	})
+
 	Context("when Recorder.Record is called for several requests", func() {
 		It("Records returns them in insertion order and as a defensive copy", func() {
 			var recorder acceptanceharness.Recorder
 
-			first := acceptanceharness.NewRequestRecord("scenario-a", "GET", "/one", acceptanceharness.AuthModeNone)
-			second := acceptanceharness.NewRequestRecord("scenario-b", "POST", "/two", acceptanceharness.AuthModeOAuth)
-			third := acceptanceharness.NewRequestRecord("scenario-c", "GET", "/three", acceptanceharness.AuthModeRejected)
+			first := acceptanceharness.NewRequestRecord("fixture-a", "scenario-a", "GET", "/one", acceptanceharness.AuthModeNone)
+			second := acceptanceharness.NewRequestRecord("fixture-a", "scenario-b", "POST", "/two", acceptanceharness.AuthModeOAuth)
+			third := acceptanceharness.NewRequestRecord("fixture-a", "scenario-c", "GET", "/three", acceptanceharness.AuthModeRejected)
 
 			recorder.Record(first)
 			recorder.Record(second)
@@ -98,6 +127,7 @@ var _ = Describe("shared fixture/recording contract", func() {
 					defer wg.Done()
 					for j := 0; j < iterationsPerWorker; j++ {
 						recorder.Record(acceptanceharness.NewRequestRecord(
+							"fixture-concurrent",
 							"concurrent-scenario",
 							"GET",
 							"/concurrent",
