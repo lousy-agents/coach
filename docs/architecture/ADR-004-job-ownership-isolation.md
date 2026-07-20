@@ -30,7 +30,7 @@ Rules:
 ## Consequences
 
 - **Positive**: Privacy by construction — reports are only visible to the requester.
-- **Positive**: Simple authorization model: exact principal match on three fields.
+- **Positive**: Simple authorization model: exact principal match on the stable `provider` + `subject` identifiers.
 - **Positive**: Aligns with the PRD's self-serve constraint and no-scoring principle.
 - **Negative**: No admin or support view of jobs in the groundwork phase.
 - **Negative**: Principal identity must be stable across token reissues (provider + subject; login may drift).
