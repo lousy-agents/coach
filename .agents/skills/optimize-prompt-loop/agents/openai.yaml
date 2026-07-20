@@ -1,0 +1,4 @@
+interface:
+  display_name: "Optimize Prompt Loop"
+  short_description: "Adapt fuzzy prompts to this runtime"
+  default_prompt: "Use $optimize-prompt-loop to optimize this request for the current model, harness, and effort level: [paste request]."
