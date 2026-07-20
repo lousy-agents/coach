@@ -6,11 +6,12 @@ This file is the parent index for the Coach API platform groundwork. The origina
 
 After consulting the `spec-review-agent`, `system-design-expert`, and `product-sme` subagents, we first establish the shared offline acceptance foundation, then split product behavior along two large-grain **vertical seams**:
 
-1. **Feature Zero: Offline Acceptance Foundation** — establishes the Coach-owned fake GitHub service, credential/egress guard, deterministic controls, real-provider conformance harness, and thin Compose proof that the later product slices consume. It does not implement the platform.
-2. **Baseline Scan Platform** — ships the shared platform (auth, async job API, worker lifecycle, model gateway, agent loop, rubrics) plus the `repo_baseline_scan` capability and the local Docker Compose operator stack. It consumes Feature Zero rather than recreating its test infrastructure.
-3. **PR History Scan** — adds the `pr_history_scan` capability on top of the validated platform. It extends Feature Zero's fake-GitHub fixtures for PR listing and changed-file retrieval rather than introducing a second test approach.
+- **Feature Zero: Offline Acceptance Foundation** — prerequisite (not a product seam). Establishes the Coach-owned fake GitHub service, credential/egress guard, deterministic controls, real-provider conformance harness, and thin Compose proof that the later product slices consume. It does not implement the platform.
 
-Both specs preserve the architecture doc's load-bearing principles: deterministic-before-inference, deterministic/agent provenance separation, model access only through the gateway contract, no developer scoring, and identity separate from repo reads.
+1. **Baseline Scan Platform** — ships the shared platform (auth, async job API, worker lifecycle, model gateway, agent loop, rubrics) plus the `repo_baseline_scan` capability and the local Docker Compose operator stack. It consumes Feature Zero rather than recreating its test infrastructure.
+2. **PR History Scan** — adds the `pr_history_scan` capability on top of the validated platform. It extends Feature Zero's fake-GitHub fixtures for PR listing and changed-file retrieval rather than introducing a second test approach.
+
+All three specs preserve the architecture doc's load-bearing principles: deterministic-before-inference, deterministic/agent provenance separation, model access only through the gateway contract, no developer scoring, and identity separate from repo reads.
 
 **Architecture anchors** (read with the child specs):
 
@@ -43,4 +44,4 @@ flowchart LR
 
 ## Why keep this file?
 
-This index remains the landing page for anyone looking for the overall platform direction. It explains the splitting decision and points to the authoritative child specs. If a future change affects both specs (e.g., a change to the shared report contract), update the Baseline Scan spec first and then reconcile the PR History spec.
+This index remains the landing page for anyone looking for the overall platform direction. It explains the splitting decision and points to the authoritative child specs. If a future change affects both product specs (e.g., a change to the shared report contract), update the Baseline Scan spec first and then reconcile the PR History spec.

@@ -142,7 +142,7 @@ This spec inherits all decisions from the [Baseline Scan spec](coach-api-platfor
 
 **Verification**:
 
-- [ ] `mise run test` and `mise run test-examples` pass; red first against an `httptest` GitHub fake
+- [ ] `mise run test` and `mise run test-examples` pass; red first against Feature Zero's shared fake-GitHub fixture (in-process for package tests)
 - [ ] Mixed-state fixture asserts closed-unmerged exclusion
 - [ ] `mise run tidy-check` clean
 
