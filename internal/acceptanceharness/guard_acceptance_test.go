@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -57,6 +59,46 @@ var _ = Describe("ambient-credential guard", func() {
 		})
 	})
 
+	Context("when a GitHub OAuth or model-provider credential variable is present in the scanned environment", func() {
+		// These categories (GitHub OAuth client id/secret, and well-known
+		// model-provider API keys) were reported missing from
+		// AmbientCredentialVars in PR #80 review: a synthetic
+		// OPENAI_API_KEY or GITHUB_CLIENT_SECRET passed ScanEnviron
+		// undetected even though a real acceptance suite must not inherit
+		// either ambiently.
+		DescribeTable("is flagged as a violation",
+			func(name, value string) {
+				environ := []string{name + "=" + value, "UNRELATED_VAR=hello"}
+
+				result := acceptanceharness.ScanEnviron(environ)
+
+				Expect(result.Rejected()).To(BeTrue())
+				Expect(result.Found).To(ContainElement(name))
+			},
+			Entry("GitHub OAuth client id", "GITHUB_CLIENT_ID", "fake-oauth-client-id"),
+			Entry("GitHub OAuth client secret", "GITHUB_CLIENT_SECRET", "fake-oauth-client-secret"),
+			Entry("OpenAI API key", "OPENAI_API_KEY", "sk-fake-openai-key"),
+			Entry("Anthropic API key", "ANTHROPIC_API_KEY", "sk-ant-fake-key"),
+		)
+
+		It("is also flagged end-to-end by ScanProcessEnv against the real process environment", func() {
+			// Isolate from whatever default credential file(s) may exist on
+			// the real host running this suite, the same way the
+			// file-check specs below do, so this assertion depends only on
+			// the env vars this spec sets.
+			tmpHome := GinkgoT().TempDir()
+			GinkgoT().Setenv("HOME", tmpHome)
+			GinkgoT().Setenv("GITHUB_CLIENT_SECRET", "fake-oauth-client-secret")
+			GinkgoT().Setenv("OPENAI_API_KEY", "sk-fake-openai-key")
+
+			result := acceptanceharness.ScanProcessEnv()
+
+			Expect(result.Rejected()).To(BeTrue())
+			Expect(result.Found).To(ContainElement("GITHUB_CLIENT_SECRET"))
+			Expect(result.Found).To(ContainElement("OPENAI_API_KEY"))
+		})
+	})
+
 	Context("when ScrubProcessEnv is called against the real process environment", func() {
 		It("unsets a previously-set ambient-credential var so it is no longer present in os.Environ()", func() {
 			// ScrubProcessEnv unsets every AmbientCredentialVars entry it
@@ -77,6 +119,16 @@ var _ = Describe("ambient-credential guard", func() {
 			scrubbed := acceptanceharness.ScrubProcessEnv()
 
 			Expect(scrubbed).To(ConsistOf(acceptanceharness.AmbientCredentialVars))
+
+			// ScanProcessEnv (called by ScrubProcessEnv, and again below)
+			// also checks $HOME/.aws/credentials. Without repointing HOME
+			// at a clean temp directory here, this assertion depends on
+			// whether the real host running this suite happens to have that
+			// file -- making mise run ci host-dependent (PR #80 review).
+			// Isolate the same way the file-check specs below do.
+			tmpHome := GinkgoT().TempDir()
+			GinkgoT().Setenv("HOME", tmpHome)
+
 			Expect(acceptanceharness.ScanProcessEnv().Rejected()).To(BeFalse())
 		})
 	})
@@ -220,5 +272,68 @@ var _ = Describe("no-egress guard transport", func() {
 			Expect(blocked[0]).To(ContainSubstring("https://api.github.com/repos/x"), "scrubbed URL must still identify scheme/host/path")
 			Expect(err.Error()).To(ContainSubstring("https://api.github.com/repos/x"), "error message must still identify scheme/host/path")
 		})
+	})
+})
+
+// preflightCommandPath is the built acceptance-guard-preflight binary path,
+// set once by the BeforeSuite below and reused by every command-boundary
+// spec in this file.
+var preflightCommandPath string
+
+var _ = BeforeSuite(func() {
+	directory, err := os.MkdirTemp("", "acceptanceharness-guard-preflight-cmd-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, directory)
+	preflightCommandPath = filepath.Join(directory, "acceptance-guard-preflight")
+	build := exec.Command("go", "build", "-o", preflightCommandPath, "github.com/lousy-agents/coach/cmd/acceptance-guard-preflight")
+	output, err := build.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "building acceptance-guard-preflight: %s", output)
+})
+
+// cleanEnvironForPreflightCmd returns the current process environment with
+// every known ambient-credential variable stripped and HOME repointed at
+// home, so a spawned acceptance-guard-preflight subprocess never observes
+// this test runner's own real ambient environment (or a real
+// ~/.aws/credentials on the host running this suite) regardless of what's
+// actually present. Mirrors cmd/acceptance-guard-preflight/acceptance_test.go's
+// cleanEnviron helper, duplicated locally so this file does not need to
+// import that internal test helper across package boundaries.
+func cleanEnvironForPreflightCmd(home string) []string {
+	ambient := make(map[string]bool, len(acceptanceharness.AmbientCredentialVars))
+	for _, name := range acceptanceharness.AmbientCredentialVars {
+		ambient[name] = true
+	}
+
+	var out []string
+	for _, kv := range os.Environ() {
+		name, _, ok := strings.Cut(kv, "=")
+		if !ok || ambient[name] || name == "HOME" {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, "HOME="+home)
+}
+
+var _ = Describe("command-boundary: acceptance-guard-preflight binary (new credential categories)", func() {
+	Context("when run with a new OAuth or model-provider ambient-credential variable set", func() {
+		DescribeTable("exits non-zero and writes a diagnostic naming that variable to stderr",
+			func(name, value string) {
+				home := GinkgoT().TempDir()
+				cmd := exec.Command(preflightCommandPath)
+				cmd.Env = append(cleanEnvironForPreflightCmd(home), name+"="+value)
+				var stderr strings.Builder
+				cmd.Stderr = &stderr
+
+				err := cmd.Run()
+
+				Expect(err).To(HaveOccurred())
+				var exitErr *exec.ExitError
+				Expect(err).To(BeAssignableToTypeOf(exitErr))
+				Expect(stderr.String()).To(ContainSubstring(name))
+			},
+			Entry("GitHub OAuth client secret", "GITHUB_CLIENT_SECRET", "fake-oauth-client-secret"),
+			Entry("OpenAI API key", "OPENAI_API_KEY", "sk-fake-openai-key"),
+		)
 	})
 })

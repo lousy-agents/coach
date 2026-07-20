@@ -1,6 +1,7 @@
 package acceptanceharness
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -86,8 +87,16 @@ func (c *FakeClock) After(d time.Duration) <-chan time.Time {
 
 // Advance moves the fake clock's Now() forward by d and fires, in deadline
 // order, every pending After channel whose deadline is now at or before the
-// new Now().
+// new Now(). Advance is forward-only: d must be zero or positive, matching
+// real wall-clock time, which never moves backward. A negative d is a
+// programmer error (test-author bug) and Advance panics rather than
+// silently rewinding Now(). A zero d is a valid no-op-on-Now() call that
+// still fires any waiter whose deadline has already been reached.
 func (c *FakeClock) Advance(d time.Duration) {
+	if d < 0 {
+		panic(fmt.Sprintf("acceptanceharness: FakeClock.Advance called with negative duration %s; time cannot move backward", d))
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

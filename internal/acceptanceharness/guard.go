@@ -18,17 +18,23 @@ import (
 )
 
 // AmbientCredentialVars lists the environment variable names that, if
-// present in a process's environment, indicate ambient GitHub or AWS
-// credentials that an offline acceptance suite must not rely on. The last
-// two AWS entries are the ECS/instance-metadata credential-source
-// indicators, not literal credential values, but their presence still
-// signals that ambient credentials would be resolvable.
+// present in a process's environment, indicate ambient credentials that an
+// offline acceptance suite must not rely on, across four categories: GitHub
+// App (server-to-server), AWS, GitHub OAuth App (the Coach identity
+// provider; see docs/architecture/ADR-001-coach-api-authentication.md), and
+// model-provider API keys (see docs/architecture/system-overview.md's model
+// gateway). The AWS_CONTAINER_CREDENTIALS_* entries are the ECS/
+// instance-metadata credential-source indicators, not literal credential
+// values, but their presence still signals that ambient credentials would be
+// resolvable.
 var AmbientCredentialVars = []string{
+	// GitHub App.
 	"GITHUB_TOKEN",
 	"GH_TOKEN",
 	"GITHUB_APP_ID",
 	"GITHUB_APP_PRIVATE_KEY",
 	"GITHUB_APP_INSTALLATION_ID",
+	// AWS.
 	"AWS_ACCESS_KEY_ID",
 	"AWS_SECRET_ACCESS_KEY",
 	"AWS_SESSION_TOKEN",
@@ -36,6 +42,12 @@ var AmbientCredentialVars = []string{
 	"AWS_SHARED_CREDENTIALS_FILE",
 	"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
 	"AWS_CONTAINER_CREDENTIALS_FULL_URI",
+	// GitHub OAuth (Coach identity provider).
+	"GITHUB_CLIENT_ID",
+	"GITHUB_CLIENT_SECRET",
+	// Model provider.
+	"OPENAI_API_KEY",
+	"ANTHROPIC_API_KEY",
 }
 
 // AmbientCredentialFiles lists default ambient-credential file locations,
