@@ -27,13 +27,12 @@ The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) currently ex
 
 ## Custom subagents
 
-Some skills delegate to a named subagent rather than doing the work inline. Each harness defines subagents in its own format, so a subagent a skill relies on needs one definition per harness that uses it:
+Some skills delegate to a named subagent rather than doing the work inline. Each harness defines subagents in its own format:
 
-- `.codex/agents/*.toml` — Codex custom subagents (`name`, `description`, `sandbox_mode`, `developer_instructions`).
-- `.claude/agents/*.md` — Claude Code subagents (YAML frontmatter + markdown body as the system prompt). `task-implementer`/`task-reviewer` back the `implement-issue` command; `product-sme` backs `product-quality-evaluation`.
+- `.claude/agents/*.md` — **canonical** Claude Code subagents (YAML frontmatter + markdown body as the system prompt). `task-implementer`/`task-reviewer` back the `implement-issue` command; `product-sme` backs `product-quality-evaluation`. Edit these files when changing agent instructions.
+- OpenCode — no separate agent mirrors. `.opencode/plugin/claude-agents.ts` loads `.claude/agents/*.md` at config time, maps Claude `tools` → OpenCode `permission`, `maxTurns` → `steps`, and injects them as `mode: subagent`. Explicit entries in `opencode.json` / `.opencode/agents/` win over the loader. Restart OpenCode after agent or plugin changes.
+- `.codex/agents/*.toml` — Codex custom subagents (`name`, `description`, `sandbox_mode`, `developer_instructions`). Codex cannot import Claude markdown, so instruction text is mirrored from `.claude/agents/` and marked with a one-line sync comment — don't build codegen for a two-file mirror.
 - `.agents/skills/*/agents/<harness>.yaml` — optional, separate from subagent definitions: a per-harness "interface" declaration (e.g. `display_name`/`default_prompt`) for how a skill surfaces in that harness's UI. Only add one if the harness actually reads it — Claude Code has no such mechanism today.
-
-Neither TOML nor Claude's subagent Markdown supports importing another file's instructions at runtime, so a subagent needed by more than one harness means its instruction text is necessarily duplicated. Pick one file as canonical, mirror the text verbatim into the other(s), and mark both with a one-line comment pointing at their counterpart — don't build codegen/sync tooling for a two- or three-file mirror.
 
 ## Commands
 
