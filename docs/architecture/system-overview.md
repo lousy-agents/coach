@@ -8,6 +8,8 @@ The architecture separates reliable GitHub event handling, a Go state machine th
 
 The recommended AWS v1 uses ECS/Fargate for the Go control plane and task-per-job isolated execution, ECS on EC2 GPU capacity for SGLang, SQS for work notification, DynamoDB plus transactional outboxes for idempotency/dispatch intent, Aurora PostgreSQL for workflow state, and S3 for immutable payloads/evidence. EKS is a later inference-plane option, not a co-equal v1 target. For proof of value, the self-hosted inference cell may scale to zero between scheduled pilot windows; the webhook/control plane never does. Docker Compose is the daily local default; the default core profile needs no model weights, while optional llama.cpp runs natively on macOS to use Metal/unified memory.
 
+An intermediate **platform groundwork phase** (see `.github/specs/coach-api-platform-groundwork.spec.md` and `docs/product/prd.md`) precedes the webhook-driven platform above. It decouples end-user consumption from the feedback platform: an authenticated, versioned Coach HTTP API triggers asynchronous analysis jobs (self-serve PR-history scans, repository baseline scans) executed by a worker through an application-owned `TaskQueue` port over Watermill, with adapters for Redis Streams (local Docker Compose and Redis-first customer deployments) and SQS (AWS-leaning customer deployments). Agent judgment sits behind the same model-gateway contract served locally by llama.cpp. Job state, findings, diagnostics, and the JWT `jti` denylist remain in Postgres. This phase validates the deterministic-plus-rubric flow end to end in Docker Compose before any SGLang or AWS investment; the webhook ingestion plane, DynamoDB/outbox machinery, and GitHub feedback writes remain deferred until it succeeds. Groundwork-phase reports are retrieved only by the requesting user through the API — there are no GitHub writes at all in that phase.
+
 ## 2. Goals, non-goals, constraints, and principles
 
 ### Goals
@@ -53,6 +55,8 @@ The recommended AWS v1 uses ECS/Fargate for the Go control plane and task-per-jo
 | Pilot inference | One private SGLang/Qwen3.5-4B ECS-on-EC2 Spot cell may scale to zero; scheduled warm windows reduce cold-start disruption | Benchmark GPU fit, warm latency, Spot availability/interruption recovery, and pilot feedback delay before expanding tenants |
 
 Still requiring validation: retention periods, exact GitHub permissions for system-owned advisory feedback, pilot tenancy, hosted-provider fallback policy, regional recovery targets, and the complete incremental cost of the pilot environment. Repository-content mutation is explicitly out of v1.
+
+One open product tension must be resolved before adopting advisory check/comment delivery: GitHub checks and PR comments are visible to everyone with repository read access, so they cannot carry feedback promised as "private" to the author. During the groundwork phase, privacy holds by construction (authenticated API pull only, no GitHub writes). Any later "private digest" delivered through GitHub needs either an author-only channel or an explicit downgrade of the privacy promise — this is a product decision, not an implementation detail.
 
 ## 4. C4 Level 1: System Context
 
@@ -447,6 +451,15 @@ This profile incorporates the cost-conscious pilot proposal without promoting pi
 
 Compose has lower memory/operational overhead, faster rebuild/debug loops, and preserves the important service, API, queue, and state-machine boundaries. Because the production control plane is ECS, its parity gates are ECS task-definition/IaC validation and an AWS integration account—not kind. Retain kind only if/when EKS inference is adopted.
 
+**Two local topologies (do not conflate):**
+
+| Phase | Compose contents | Queue | Auth | When |
+|---|---|---|---|---|
+| **Groundwork (current)** | `coach-api`, `coach-worker`, Postgres, Redis, model stub; optional llama.cpp | Watermill → Redis Streams (SQS adapter via conformance suite, not required in daily compose) | GitHub OAuth App + Coach-JWT; config-gated test mint for smoke | Daily pilot path; see Baseline Scan spec Story 4 |
+| **Webhook platform (v1+)** | Webhook ingestor, control-plane workers, Postgres, LocalStack (SQS/DynamoDB/S3), model stub; optional llama.cpp | SQS (+ DynamoDB delivery/outbox) | GitHub App webhooks + installation broker | After groundwork E2E validation |
+
+The groundwork stack does **not** require LocalStack, DynamoDB, S3 quarantine, or webhook replay. The diagram below is the **v1+ webhook-platform** local topology.
+
 ```mermaid
 flowchart TB
     Replay["Webhook replay CLI or tunnel"] --> Ingest["Go webhook ingestor"]
@@ -582,6 +595,18 @@ Page on acceptance-SLO burn, queue age threatening feedback, multi-tenant DLQ gr
 
 ## 14. Phased implementation
 
+### Groundwork (current)
+
+Parent index: `.github/specs/coach-api-platform-groundwork.spec.md`. Vertical slices: [Baseline Scan](../../.github/specs/coach-api-platform-baseline.spec.md) (shared platform + `repo_baseline_scan`) then [PR History Scan](../../.github/specs/coach-api-platform-pr-history.spec.md) (`pr_history_scan`). Sequenced before the v1 platform below; Baseline E2E validation is the investment gate for SGLang and AWS. Binding groundwork ADRs: ADR-001 through ADR-006 in this directory.
+
+1. Coach HTTP API (`/v1`): async job submit/status/report. Authentication is a **GitHub OAuth App** issuing Coach-signed JWTs bound to a verified `Principal` (ADR-001); self-serve enforcement uses principal identity plus repository role checks (ADR-003) and job-ownership isolation (ADR-004). Identity credentials are never used for repository reads (ADR-002). Submit persists the job in Postgres then enqueues on `TaskQueue` (job id idempotency key); full DynamoDB/outbox ingress remains deferred — see Baseline Scan Design — Submit durability.
+2. Worker over an application-owned `TaskQueue` port over Watermill, with Redis Streams and SQS adapters, heartbeat/crash recovery, and a black-box provider conformance suite (ADR-006). Job state, findings, diagnostics, and the JWT `jti` denylist remain in Postgres. DynamoDB and transactional outbox machinery stay deferred until the webhook-driven platform.
+3. Model gateway seam with deterministic stub (default) and llama.cpp OpenAI-compatible client; SGLang slots in later behind the same contract.
+4. Minimal bounded agent tool loop over typed tools (semantics, codesignal; GitHub PR tools when the PR History slice lands); model text never becomes an arbitrary action (ADR-005). `adk-go` remains the later production agent runtime.
+5. `repo_baseline_scan` in the Baseline slice requires tree enumeration + file reads in `pkg/githubingest` (beyond today’s single-file `ReadFile`). PR listing/file retrieval and `pr_history_scan` in the PR History slice.
+6. Two seed LLM-as-judge rubrics, versioned and schema-validated, with strict deterministic/agent provenance separation.
+7. Docker Compose stack for groundwork: `core` = coach-api + coach-worker + Postgres + Redis Streams + deterministic model stub (no weights, no LocalStack required); `llm` profile adds llama.cpp. End-to-end smoke in CI against `core`.
+
 ### v1
 
 1. Version the workflow contract, state machine, evidence model, and audit events.
@@ -611,7 +636,8 @@ Page on acceptance-SLO burn, queue age threatening feedback, multi-tenant DLQ gr
 | Agent orchestration | `adk-go` custom tools | Fits Go and capability boundary | Custom/Python; validate maturity/cancellation/tracing |
 | Control plane | ECS/Fargate first | Lower platform overhead | EKS/Lambda; validate scale/cost |
 | Inference plane | ECS/EC2 GPU capacity providers; EKS only on measured trigger | Fargate has no GPU; keeps v1 platform unambiguous | EKS day one/managed only |
-| Queue | SQS Standard plus idempotency | Burst absorption, low operations | Kafka/FIFO/direct RPC; validate ordering |
+| Queue (production webhook platform) | SQS Standard plus idempotency | Burst absorption, low operations | Kafka/FIFO/direct RPC; validate ordering |
+| Queue (groundwork) | Watermill `TaskQueue`/`EventBus` with Redis Streams + SQS adapters; job state in Postgres | Multi-deployment (Compose/self-hosted Redis and AWS SQS); no DynamoDB/outbox yet | See ADR-006; Postgres-only queue rejected |
 | Product DB | Aurora PostgreSQL | Transactional workflow/evidence model | DynamoDB-only; load-test |
 | Delivery dedup | DynamoDB conditional put/TTL | Burst-efficient first-writer semantics | PostgreSQL/Redis; validate retention |
 | Evidence | S3 plus hashed metadata | Durable/cost-effective | DB blobs; validate access/retention |
@@ -635,6 +661,19 @@ Page on acceptance-SLO burn, queue age threatening feedback, multi-tenant DLQ gr
 | GitHub effects | Fenced effect state machine plus marker reconciliation | API writes are not inherently idempotent | Blind retry |
 | Hostile execution | Credential-free task-per-job isolated plane | Rootless app containers are insufficient | Shared worker containers |
 | GitHub credentials | Dedicated broker resolves grants and mints tokens | Keeps keys/tokens away from agents/runners | Tokens in workers |
+
+### Groundwork-phase ADRs (detailed)
+
+The platform groundwork phase produced additional load-bearing decisions that are captured as standalone ADRs in this directory. These decisions refine the long-term architecture for the local pilot and will be reconciled with the production doc once validated.
+
+| ADR | Decision | Status |
+|---|---|---|
+| [ADR-001](ADR-001-coach-api-authentication.md) | Coach API authentication via GitHub OAuth App and Coach-JWT | Accepted |
+| [ADR-002](ADR-002-identity-separate-from-repo-reads.md) | Separate user identity from repository-read credentials | Accepted |
+| [ADR-003](ADR-003-repository-authorization-policy.md) | Repository authorization policy for self-serve scans | Accepted |
+| [ADR-004](ADR-004-job-ownership-isolation.md) | Job ownership and cross-principal read isolation | Accepted |
+| [ADR-005](ADR-005-agent-loop-orchestration-split.md) | Agent loop orchestration split | Accepted |
+| [ADR-006](ADR-006-watermill-queue-abstraction.md) | Watermill TaskQueue/EventBus ports with Redis Streams and SQS adapters | Accepted for groundwork phase |
 
 ## 16. Final adversarial-review summary
 
