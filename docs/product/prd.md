@@ -19,7 +19,7 @@ An async code-quality coach that combines deterministic structural analysis with
 
 ## 3. Target User (this era)
 
-The primary customer right now is the project owner and a small pool of like-minded engineers who want to experiment and give feedback. Everything is self-serve: an engineer scans **their own** recent PRs or a repository they choose. There is no team rollout, no manager view, and no anonymous audience to design for yet.
+The primary customer right now is the project owner and a small pool of like-minded engineers who want to experiment and give feedback. Everything is self-serve: an engineer scans **their own** recent PRs or a repository they have a role in per GitHub (the Coach GitHub App must also be installed for that repository — part of pilot onboarding). There is no team rollout, no manager view, and no anonymous audience to design for yet.
 
 This constraint is a feature: it keeps the trust posture simple (you see your own results), keeps feedback loops short, and defers every multi-tenant question until the analysis itself proves valuable.
 
@@ -38,16 +38,16 @@ Most AI review tools comment publicly on open PRs. Linters enforce rules. CI gat
 1. **Async and retrospective** — analysis over a person's recent history and repo baselines, not just the PR currently under review.
 2. **Provenance-separated** — every finding is tagged `deterministic` (reproducible, rule-versioned) or `agent` (rubric id + version + model identity); agent output can never overwrite or suppress a deterministic finding.
 3. **Self-serve and private** — results go only to the authenticated requester. The platform performs no GitHub writes: no comments, no checks, nothing a teammate can see.
-4. **Locally verifiable** — the entire stack (API, worker, Postgres, llama.cpp) runs on a laptop via Docker Compose before any cloud deployment exists.
+4. **Locally verifiable** — the entire stack (API, worker, Postgres, Redis queue, and a deterministic model stub — optionally native llama.cpp for real judgments) runs on a laptop via Docker Compose before any cloud deployment exists.
 
 ## 7. Product Surface (this era)
 
 The Coach API (`/v1`), fronting an async job platform:
 
-- `pr_history_scan` — analyze the last 10 PRs authored by the requester in a chosen repository.
-- `repo_baseline_scan` — analyze a whole repository at a ref.
+- `repo_baseline_scan` — analyze a whole repository at a ref. **Ships first**: it validates every load-bearing platform seam (auth, queue, worker, agent loop, gateway, rubrics, compose smoke) against the smallest GitHub-ingestion surface.
+- `pr_history_scan` — analyze the last 10 open-or-merged PRs authored by the requester in a repository they have a role in. **Ships second**, on the validated platform.
 
-Reports combine deterministic codesignal findings with LLM-as-judge rubric judgments. Full contract: `.github/specs/coach-api-platform-groundwork.spec.md`.
+Reports combine deterministic codesignal findings with LLM-as-judge rubric judgments. Full contracts: `.github/specs/coach-api-platform-baseline.spec.md` and `.github/specs/coach-api-platform-pr-history.spec.md` (index: `.github/specs/coach-api-platform-groundwork.spec.md`).
 
 Consumption is pull-only (submit, poll, fetch report). Harness hooks and a web UI are future consumers of this same API, not part of this era.
 
@@ -58,8 +58,10 @@ Consumption is pull-only (submit, poll, fetch report). Harness hooks and a web U
 | Deterministic structural analysis, Go/TS/TSX (`pkg/semantics`) | **Implemented** — metrics, imports, findings; frozen JSON contract |
 | Diff-aware signal reports with lifecycle (`pkg/codesignal` + `coach codesignal` CLI) | **Implemented** — one rule surfaced (`hidden_input_mutation`); merge-base diffing, scope filtering, baseline mode |
 | Single-file GitHub App ingestion (`pkg/githubingest`) | **Implemented** |
-| Coach API, worker, job model | **Specified** — see groundwork spec |
-| PR listing / PR file retrieval | **Specified** |
+| Coach API, worker, job model | **Specified** — see baseline spec |
+| GitHub OAuth identity → Coach-signed JWT (`Principal`, `jti` revocation, job ownership) | **Specified** — ADR-001/002/004 |
+| `TaskQueue` port over Watermill (Redis Streams + SQS adapters) | **Specified** — ADR-006 |
+| PR listing / PR file retrieval | **Specified** — see PR History spec |
 | Minimal agent tool loop + model gateway (stub, llama.cpp) | **Specified** |
 | LLM-as-judge rubrics (versioned, schema-validated) | **Specified** — two seed rubrics |
 | Docker Compose stack + E2E smoke | **Specified** |
@@ -79,7 +81,7 @@ Behavioral evidence remains the long-term differentiator. This era builds the pl
 
 ## 10. Non-Goals (unchanged in spirit from v1)
 
-- No management dashboard; no developer scoring; no per-person productivity metrics — ever. The API shape enforces self-serve scans (token-bound author identity) precisely so the platform cannot quietly become surveillance.
+- No management dashboard; no developer scoring; no per-person productivity metrics — ever. The API shape enforces self-serve scans (OAuth-verified author identity: scans are bound to the GitHub login Coach verified at sign-in, plus a GitHub-role check on the target repository) precisely so the platform cannot quietly become surveillance.
 - No auto-approval, no merge blocking, no CI replacement.
 - No GitHub writes of any kind in this era.
 - No style policing; no universal architecture enforcement.
@@ -87,7 +89,7 @@ Behavioral evidence remains the long-term differentiator. This era builds the pl
 
 ## 11. Trust Principles
 
-- **Self-serve by construction** — you scan yourself or a repo you name; the API refuses cross-author scans.
+- **Self-serve by construction** — you scan yourself or a repo you have a role in (per GitHub); the API refuses cross-author scans and unauthorized repositories.
 - **Provenance over polish** — deterministic evidence and model opinion are never blended.
 - **Behavior over style** — rubrics judge structural and behavioral quality, not formatting.
 - **Fewer, better findings** — a short, high-confidence report beats an exhaustive one.
@@ -95,14 +97,14 @@ Behavioral evidence remains the long-term differentiator. This era builds the pl
 
 ## 12. Success Signals (this era)
 
-- The compose stack's E2E smoke passes in CI and on the operator's machine — the gate for SGLang/AWS investment.
-- Pilot engineers run scans voluntarily more than once, and at least one rubric judgment per scan is rated useful by its requester.
-- Zero findings presented as deterministic that are not reproducible from the recorded analyzer/rule versions.
+- The compose stack's E2E smoke passes in CI against the core (stub) profile **and** on the operator's machine against the `llm` (llama.cpp) profile with at least one schema-valid agent judgment — together, the gate for SGLang/AWS investment. A stub-only smoke proves plumbing, not real-model rubric behavior.
+- Pilot engineers run scans voluntarily more than once, and at least one rubric judgment per scan is rated useful by its requester (collected out-of-band during pilot check-ins; no in-product feedback mechanism this era).
+- Zero findings presented as deterministic that are not reproducible from the recorded analyzer/rule versions and the report's pinned commit SHA (per-PR scans pin base/head SHAs).
 - The operator can add a new rubric or tool to the platform without touching the API contract or worker lifecycle (the groundwork seams hold).
 
 ## 13. Roadmap
 
-1. **Now — platform groundwork**: everything in `.github/specs/coach-api-platform-groundwork.spec.md` (API, worker, gateway, agent loop, two seed rubrics, compose stack, smoke).
+1. **Now — platform groundwork**: the Baseline Scan slice first (shared platform + `repo_baseline_scan` + compose smoke), then the PR History slice (`pr_history_scan`) — see the spec index at `.github/specs/coach-api-platform-groundwork.spec.md`.
 2. **Next**: more deterministic rules from existing semantics findings; more rubrics; SGLang/Qwen behind the same gateway; AWS deployment per the architecture doc; additional platform tools/skills.
 3. **Later**: harness hooks (e.g., an MCP surface over the API), web UI for viewing feedback, revisiting the review-readiness digest — including behavioral test-gap detection — on top of proven rubric infrastructure, and the GitHub-event-driven ingestion plane.
 

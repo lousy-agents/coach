@@ -16,23 +16,23 @@ A fully model-driven orchestrator would risk the model bypassing authz, choosing
 
 Split control into three clearly separated layers inside `internal/agentloop`:
 
-### 1. Model-selected tools
+### 1. Handler-driven tools (guaranteed coverage)
 
-The model may choose to call any registered tool from a fixed allowlist. Tools are registered per job kind:
+The job handler registers and **drives** tools through the registry/loop, before and independent of any model-selected activity:
 
-- **Baseline Scan (`repo_baseline_scan`)**: `semantics_analyze`, `codesignal_report`
-- **PR History Scan (`pr_history_scan`)**: the baseline tools plus `github_list_prs`, `github_pr_files`
+- The **full deterministic analysis pass**: `semantics_analyze`/`codesignal_report` over every in-scope file (for PR history, also `github_list_prs`/`github_pr_files` over each selected PR). Driving this from the handler — not the model — is what guarantees the deterministic report exists even if the model never issues a tool call or the gateway is down entirely ("determinism before inference"; the degrade-honestly guarantee in baseline Story 5 is otherwise unimplementable).
+- The **rubric-judgment tools**: `hidden_mutation_contextualization`, `change_cohesion`.
 
-Unknown tools and over-budget loops are typed errors. Model text never becomes an arbitrary action.
+The handler decides which of these run and when; the loop executes them, but the model does not choose whether they are invoked and cannot bypass them.
 
-### 2. Handler-driven tools
+### 2. Model-selected tools (supplemental evidence)
 
-The job handler registers job-specific tools at loop start, primarily the rubric-judgment tools:
+During rubric judgment the model may choose to call any registered tool from a fixed allowlist to gather additional evidence:
 
-- `hidden_mutation_contextualization`
-- `change_cohesion`
+- **Baseline Scan (`repo_baseline_scan`)**: `semantics_analyze`, `codesignal_report` (re-invocation on specific files)
+- **PR History Scan (`pr_history_scan`)**: the baseline tools plus `github_pr_files`
 
-The handler decides which rubrics run and when; the loop executes them, but the model does not choose whether they are invoked or bypass them.
+Unknown tools and over-budget loops are typed errors. Model text never becomes an arbitrary action. Model cooperation is never load-bearing for deterministic report content — only for the quality of agent judgments.
 
 ### 3. Deterministically owned by the handler / API layer
 
@@ -75,3 +75,4 @@ Budgets for v1:
 - Acceptance tests drive the loop with a scripted stub gateway and assert tool-call sequences.
 - Acceptance tests prove unknown tools and over-budget loops end with typed errors.
 - Task 7 and Task 8 acceptance tests assert the analysis path executes via `internal/agentloop`, not via direct package calls.
+- Acceptance tests prove a job completes with a deterministic-only report when the gateway is unavailable for the entire judgment phase.

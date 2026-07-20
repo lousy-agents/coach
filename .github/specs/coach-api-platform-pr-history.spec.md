@@ -35,6 +35,7 @@ so that I can **see recurring code-quality signals across my recent work**.
 - The coach-api shall accept a `pr_history_scan` only when the principal has a role in the requested repository according to GitHub. The authorization check shall consider both direct collaborator access and organization-derived access (e.g., org membership with team or base permissions). If the principal lacks access, or if the Coach GitHub App installation cannot read the repository, the coach-api shall respond `403` with code `repo_not_authorized` and persist nothing.
 - The API shall provide no endpoint to enumerate or scan arbitrary third-party authors or repositories.
 - If GitHub returns fewer than 10 matching pull requests, then the system shall analyze the available set and record the actual count in `summary.pr_count` in the report.
+- The PR listing shall page through at most a configurable lookback budget of recently-updated pull requests (default 200) while filtering by author — GitHub's list API cannot filter by author server-side — and if the budget is exhausted before `pr_limit` matches are found, the system shall record a diagnostic noting the truncated search and proceed with the matches found.
 - If an individual PR's analysis fails (fetch error, unsupported language, oversized file), then the system shall record a per-PR diagnostic and continue with the remaining PRs rather than failing the whole job.
 
 #### Notes
@@ -82,7 +83,8 @@ The `pr_history_scan` job kind extends the shared `jobs`, `job_findings`, and `j
 - `kind = pr_history_scan` in the `jobs` table (API + worker must accept this kind; baseline Task 1 may only define `repo_baseline_scan` until this slice lands).
 - `params` schema for `pr_history_scan` (see below).
 - `scope` values in `job_diagnostics` may include `pr:123` to identify the PR a diagnostic belongs to.
-- Report `summary.pr_count` (int) — actual number of PRs analyzed.
+- Report `summary.pr_count` (int) — the number of PRs **selected for analysis** after the open/merged + author filter; PRs whose analysis subsequently fails remain counted here and carry per-PR diagnostics. `summary.pr_failed_count` (int, omitted when zero) — the number of selected PRs whose analysis failed. (Both are optional named fields of the baseline `summary` struct per its freeze policy.)
+- Each analyzed PR's resolved **base and head commit SHAs** are recorded (in the finding payloads or the `pr:<n>` diagnostic/summary entries) so per-PR findings are reproducible after branches move.
 
 Per-kind `params` schemas (validated at submit; violations → `400`, nothing persisted):
 
@@ -99,8 +101,8 @@ The top-level report shape is identical to the baseline spec, with the addition 
 
 **Orchestration split (agent loop vs fixed handler code):**
 
-- **Model-selected via `internal/agentloop`**: `github_list_prs`, `github_pr_files`, `semantics_analyze`, `codesignal_report`. Unknown tools and over-budget loops are typed errors.
-- **Handler-driven via `internal/agentloop`**: rubric-judgment tools registered for the job by the handler (`hidden_mutation_contextualization`, `change_cohesion`).
+- **Handler-driven via `internal/agentloop`** (guaranteed coverage): the per-PR deterministic pass — `github_list_prs`, `github_pr_files`, `semantics_analyze`, `codesignal_report` over each selected PR — and the rubric-judgment tools (`hidden_mutation_contextualization`, `change_cohesion`). The handler drives these through the registry/loop before and independent of any model-selected activity, so the deterministic report survives total gateway failure (Baseline Story 5).
+- **Model-selected via `internal/agentloop`** (supplemental evidence): during rubric judgment the model may re-invoke `github_pr_files`, `semantics_analyze`, `codesignal_report` to gather additional evidence. Unknown tools and over-budget loops are typed errors.
 - **Deterministically owned by the job handler / API layer** (not model-selected): open/merged PR filter policy, self-serve author check at submit (`principal.login`), per-PR diagnostic-and-continue behavior, and terminal status transitions.
 
 ### Decisions
@@ -130,6 +132,7 @@ This spec inherits all decisions from the [Baseline Scan spec](coach-api-platfor
 **Requirements**:
 
 - Story 2: at most `limit` most recent **open or merged** PRs by the given author, ordered by `updated_at` descending; closed-unmerged PRs must not appear; fewer eligible → return what exists.
+- Configurable pagination lookback budget (default 200 recently-updated PRs scanned) with a typed truncation result the handler records as a diagnostic when the budget is reached before `limit` matches.
 - Acceptance tests include a mixed-state fixture (open, merged, closed-unmerged) proving closed-unmerged exclusion and ordering.
 - Errors map to the package's existing sentinels (`ErrNotFound`, `ErrAuth`, `ErrTooLarge`, …); no import of `pkg/semantics` (dependency rule).
 
@@ -175,7 +178,7 @@ This spec inherits all decisions from the [Baseline Scan spec](coach-api-platfor
 
 ### Task 7: `pr_history_scan` job handler
 
-**Depends on**: Baseline shared platform tasks (Tasks 1–5, 3a, 9), Task 6, and Task 6a of this spec.
+**Depends on**: Baseline Tasks 1, 2a, 2, 3a, 3, 4, 5, and 9 (enumerated — letter-suffixed tasks included), plus Task 6 and Task 6a of this spec.
 
 **Objective**: Run list open-or-merged PRs → fetch changed files → per-PR semantics/codesignal analysis → rubric judgment → attempt-scoped provenance-tagged report **through `internal/agentloop`** (registered tools + stub gateway sequences).
 

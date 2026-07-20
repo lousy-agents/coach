@@ -30,6 +30,7 @@ Rules:
 2. The worker reads repositories exclusively via `pkg/githubingest`'s GitHub App installation auth, deriving short-lived installation tokens from the App private key.
 3. `internal/authz.RepoAuthorizer` checks whether a `Principal` has a role in a repository using the GitHub App installation token, not the user's OAuth token.
 4. A future credential mode for low-friction local setups (e.g., user OAuth token or plain PAT) may be added behind a `Credential`/`CredentialResolver` seam without re-architecting the queue or API.
+5. Installation tokens are minted by exactly **one** credential seam (the `CredentialResolver` of rule 4, colocated with `pkg/githubingest`), consumed by both repository ingestion and `internal/authz`'s role checks. No other package loads the App private key — `cmd/coach-api` and `cmd/coach-worker` both reach installation tokens through this one seam, which is what the production credential broker (system-overview §5/§8) later replaces without a rewrite.
 
 ## Consequences
 

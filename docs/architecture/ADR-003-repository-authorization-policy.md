@@ -36,13 +36,16 @@ Implementation rules:
 - The check is performed **synchronously at submit time** by `internal/authz.RepoAuthorizer`, before the job is persisted.
 - The check uses the GitHub App installation token.
 - If the principal lacks access, or the App installation cannot read the repo, the API responds `403` with code `repo_not_authorized` and persists nothing.
-- If GitHub returns `404` for the repo, the API may map it to `404` or `403` with code `repo_not_authorized`.
+- If GitHub returns `404` for the repo, the API shall map it to `403` with code `repo_not_authorized` — a nonexistent repository is deliberately indistinguishable from an unauthorized one, and a deterministic contract keeps the acceptance tests stable.
+- The role check uses `GET /repos/{owner}/{repo}/collaborators/{username}/permission`, which returns the principal's *effective* permission including team- and org-derived access. The GitHub App manifest permission this endpoint requires must be verified against a real App installation during implementation and recorded here once confirmed; if it demands more than the intended minimal manifest, the fallback (org membership + team enumeration) needs org `Members` permission — a materially different manifest that would need a fresh decision.
+- Owner/repo → installation resolution uses `GET /repos/{owner}/{repo}/installation` with the App JWT. A pilot spanning more than one org or user account therefore requires per-repo installation resolution, not a single statically configured installation id.
 - Transient GitHub API failures during the check map to `503` or `internal_error`; the job is not persisted.
 - No caching in v1; repeated GitHub API calls on submit are acceptable for pilot volume.
 
 ## Consequences
 
-- **Positive**: Prevents scanning repositories the principal has no legitimate relationship with, including public repos they cannot access.
+- **Positive**: Prevents scanning repositories the principal has no legitimate relationship with.
+- **Deliberate**: public repositories where the principal has **no role** are also denied (`403` `repo_not_authorized`) — scan authorization is gated on relationship, not readability. The error message must state this actionably, or pilots will report "can't scan this OSS repo I read every day" as a bug. A rate-limited public-repo carve-out ("Option C-minus") exists in the baseline spec's Future Considerations, to be proposed only if pilot friction materializes.
 - **Positive**: Enforces the no-surveillance principle in the API shape itself.
 - **Positive**: Keeps the worker simple — it never starts a job the principal was not authorized to request.
 - **Negative**: Submit latency depends on a synchronous GitHub API round-trip.

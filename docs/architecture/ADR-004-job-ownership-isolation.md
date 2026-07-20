@@ -22,8 +22,8 @@ Rules:
    - `created_by_provider`
    - `created_by_subject`
    - `created_by_login`
-2. `GET /v1/jobs/{id}` returns the job status and metadata only if the authenticated principal matches all three `created_by_*` fields.
-3. `GET /v1/jobs/{id}/report` returns the report only if the authenticated principal matches all three `created_by_*` fields.
+2. `GET /v1/jobs/{id}` returns the job status and metadata only if the authenticated principal matches `created_by_provider` and `created_by_subject` — the stable identifiers. `created_by_login` is denormalized for audit/display only and is **not** part of the match, so a GitHub login rename cannot lock an owner out of their prior jobs.
+3. `GET /v1/jobs/{id}/report` returns the report under the same `provider` + `subject` match.
 4. On mismatch, the API responds `403` (the requester is authenticated but not permitted).
 5. There is no operator-facing multi-tenant view in the groundwork phase. A future `tenant_id` column or admin role can be added without redesigning the ownership check.
 
@@ -33,7 +33,8 @@ Rules:
 - **Positive**: Simple authorization model: exact principal match on three fields.
 - **Positive**: Aligns with the PRD's self-serve constraint and no-scoring principle.
 - **Negative**: No admin or support view of jobs in the groundwork phase.
-- **Negative**: Principal identity must be stable across token reissues (provider + subject + login).
+- **Negative**: Principal identity must be stable across token reissues (provider + subject; login may drift).
+- **Accepted**: because ownership mismatch returns `403` while a nonexistent id returns `404`, an authenticated principal can probe whether a job id exists. With UUIDv4 job ids, enumeration is impractical; this existence leak is an accepted consequence of the `403` decision. Status precedence is `401` → `404` → `403` → `409`, so job *status* never leaks to non-owners.
 - **Tradeoff**: Changing a GitHub login mid-flight could orphan jobs; `subject` (numeric user id) is the stable identifier and `login` is stored for audit/display.
 
 ## Alternatives considered

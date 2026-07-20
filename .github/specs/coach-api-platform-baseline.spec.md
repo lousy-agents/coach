@@ -33,13 +33,15 @@ so that I can **get Coach feedback without running any local tooling, under an i
 - The coach-api shall act as a **GitHub OAuth App** for end-user authentication: a browser (or equivalent) completes GitHub's OAuth authorization-code flow against Coach-configured client id/secret/callback; on success Coach verifies the GitHub user (at minimum stable numeric id + login) and issues a Coach-managed API credential.
 - After a successful OAuth login, the coach-api shall issue a Coach-signed **JWT** bearer access token whose claims carry a **Principal** (`provider=github`, verified GitHub `login`, and GitHub user id as `subject`), plus standard expiry (`exp`) and a unique token id (`jti`) for revocation. That JWT is the only credential accepted on protected `/v1` routes in the pilot.
 - The coach-api shall require a valid Coach-issued JWT bearer on every protected `/v1` request; if the token is missing, expired, revoked (denylisted `jti`), fails signature/issuer validation, or is not a Coach JWT, then the coach-api shall respond `401`.
-- When a client POSTs a valid job request to `/v1/jobs`, the coach-api shall persist the job with status `queued`, record the authenticated principal as the job creator (`created_by_provider`, `created_by_subject`, `created_by_login`), enqueue a dispatch message on the `TaskQueue` whose idempotency key is the job id, and respond `202` with the job id only after both the Postgres row and a successful enqueue (or a durable retryable enqueue path — see Design — Submit durability) are complete. If enqueue fails after persist, the API shall not return `202` as success without a recoverable path that will complete enqueue (return retriable `5xx` and rely on a reconciler/reaper, or delete/mark the row failed in the same request — pick one strategy and lock it in Task 2/3a tests).
-- When a client GETs `/v1/jobs/{id}`, the coach-api shall return the job's current status (`queued`, `running`, `completed`, `failed`) and, when completed, a link to its report, only if the authenticated principal matches the job's persisted `created_by_*` fields; otherwise the coach-api shall respond `403`.
-- When a client GETs `/v1/jobs/{id}/report`, the coach-api shall return the report only if the authenticated principal matches the job's persisted `created_by_*` fields; otherwise the coach-api shall respond `403`.
+- When a client POSTs a valid job request to `/v1/jobs`, the coach-api shall persist the job with status `queued`, record the authenticated principal as the job creator (`created_by_provider`, `created_by_subject`, `created_by_login`), enqueue a dispatch message on the `TaskQueue` whose idempotency key is the job id, and respond `202` with the job id only after both the Postgres row and a successful enqueue are complete. If enqueue fails after persist, the API shall return a retriable `5xx` and leave the row `queued`; the **requeue reconciler** (Design — Submit durability; built and red-first-tested in Task 3) re-enqueues it. This strategy is binding — the API shall not mark the job `failed` at submit, and there is no `202`-before-enqueue path in groundwork.
+- When a client GETs `/v1/jobs/{id}`, the coach-api shall return the job's current status (`queued`, `running`, `completed`, `failed`) and, when completed, a link to its report, only if the authenticated principal matches the job's persisted `created_by_provider` + `created_by_subject` (the stable identifiers; `created_by_login` is audit/display only, so a GitHub login rename cannot lock an owner out of prior jobs — ADR-004); otherwise the coach-api shall respond `403`.
+- When a client GETs `/v1/jobs/{id}/report`, the coach-api shall return the report only if the authenticated principal matches the job's persisted `created_by_provider` + `created_by_subject` (the stable identifiers; `created_by_login` is audit/display only, so a GitHub login rename cannot lock an owner out of prior jobs — ADR-004); otherwise the coach-api shall respond `403`.
 - If a job request names an unsupported job kind or fails params-schema validation (see Data Model Changes), then the coach-api shall respond `400` and persist nothing.
 - If a requested job id does not exist, then the coach-api shall respond `404`.
 - If a report is requested for a job that is not yet `completed`, then the coach-api shall respond `409` including the job's current status.
-- The coach-api shall return every error response in a stable JSON envelope `{"error": {"code": "<machine_readable>", "message": "<human_readable>"}}`, locked by the Task 1 golden-file test. Machine-readable codes for the pilot include at least: `unauthenticated`, `unauthorized`, `invalid_request`, `job_not_found`, `job_not_completed`, `unsupported_job_kind`, `repo_not_authorized`, and `internal_error`.
+- Status precedence for combined conditions is `401` → `404` (nonexistent id) → `403` (ownership) → `409` (not completed): a cross-principal read of an incomplete job returns `403`, never `409` — job status must not leak to non-owners. (`403` on existing foreign ids does reveal id existence; with UUIDv4 job ids this is an accepted consequence of ADR-004.)
+- If the JWT `jti` denylist lookup fails (store error, not a miss), then the coach-api shall reject the request with `503` rather than skip the revocation check — credentials fail closed (architecture doc §2).
+- The coach-api shall return every error response in a stable JSON envelope `{"error": {"code": "<machine_readable>", "message": "<human_readable>"}}`, locked by the Task 1 golden-file test. Machine-readable codes for the pilot include at least: `unauthenticated`, `unauthorized`, `invalid_request`, `job_not_found`, `job_not_completed`, `unsupported_job_kind`, `repo_not_authorized`, `not_found`, and `internal_error`. All unmatched routes — including the disabled test-mint path — return the envelope with code `not_found` via a custom NotFound handler.
 - The coach-api shall serve all protected API endpoints under a versioned `/v1` prefix. OAuth start/callback routes may live outside `/v1` (e.g. `/oauth/github/start`, `/oauth/github/callback`) and are unauthenticated by design.
 - If GitHub returns an `error` parameter to `/oauth/github/callback` (e.g., `access_denied`), the coach-api shall respond `400` with a stable error envelope and shall not issue a Coach token.
 - Automated tests and the compose smoke shall authenticate via an **injectable test principal / token-mint path** that is disabled unless explicitly enabled by operator configuration (e.g. `COACH_AUTH_TEST_MINT=1` in the core compose profile only). Production-like configurations shall not expose test minting. Acceptance tests must cover both: OAuth callback → Coach token → authenticated `/v1` call (against a fake GitHub OAuth), and `401` without a token.
@@ -72,7 +74,7 @@ so that I can **see the repo's current code-quality signal surface before making
 - When a `repo_baseline_scan` job runs, the system shall obtain the repository's tree at the requested (or default) ref — via GitHub Contents/git tree APIs for `repo_owner`+`repo_name`, or via a local fixture path only when the worker is configured with an operator-trusted local fixture path for credential-free smoke (never from a client-supplied clone URL) — and produce a baseline report over all files with extensions supported by the `pkg/semantics` language registry (currently `.go`, `.ts`, `.tsx`), reusing the existing baseline analysis path, with analysis/rubric tool invocations going through `internal/agentloop`.
 - When baseline deterministic analysis completes, the system shall run the configured rubric judgments over the aggregated signals and include them in the report with `source=agent` provenance.
 - The coach-api shall reject any job params that include a client-supplied clone URL (`git_url` or equivalent) with `400`; clone URLs are not part of the public params schema.
-- The coach-api shall accept a `repo_baseline_scan` only when the principal has a role in the requested repository according to GitHub. The authorization check shall consider both direct collaborator access and organization-derived access (e.g., org membership with team or base permissions). If the principal lacks access, or if the Coach GitHub App installation cannot read the repository, the coach-api shall respond `403` with code `repo_not_authorized` and persist nothing.
+- The coach-api shall accept a `repo_baseline_scan` only when the principal has a role in the requested repository according to GitHub. The authorization check shall consider both direct collaborator access and organization-derived access (e.g., org membership with team or base permissions). If the principal lacks access, or if the Coach GitHub App installation cannot read the repository, the coach-api shall respond `403` with code `repo_not_authorized` and persist nothing. A nonexistent repository is indistinguishable from an unauthorized one: it also returns `403` `repo_not_authorized`, never `404` (ADR-003). This deny includes public repositories where the principal has no role — deliberate per the no-surveillance principle — and the error message shall state that actionably so pilots don't report it as a bug.
 - **Credential-free smoke / test mint exception**: when the worker is configured with an operator-trusted smoke fixture path *and* the API is configured with an explicit authz bypass for that fixture `repo_owner`/`repo_name` (compose `core`/smoke profile only), submit may skip the live GitHub role check for that pair only. Production-like configs shall not enable the bypass. Acceptance tests must cover both the live-check path (fake GitHub) and the bypass-gated smoke path.
 - If the repository cannot be fetched (not found, auth failure, too large per configured budget), then the system shall fail the job with a sentinel-mapped, actionable error message.
 
@@ -85,7 +87,7 @@ so that I can **validate the entire flow on a laptop before investing in SGLang 
 #### Acceptance Criteria
 
 - When the operator runs the core compose profile, the system shall start coach-api, coach-worker, Postgres, and Redis with no model weights required, using the deterministic model stub (no llama.cpp container in `core`).
-- Where the `llm` profile is enabled, the system shall route agent judgments through a llama.cpp server speaking its OpenAI-compatible API, selected purely by configuration — no code change.
+- Where the `llm` profile is enabled, the system shall route agent judgments through a llama.cpp server speaking its OpenAI-compatible API — by default an operator-run **native** host process (macOS Metal, reached via `host.docker.internal`, per system-overview §9's Docker-overhead guidance), with a containerized llama.cpp service only as an explicit Linux fallback — selected purely by configuration, no code change.
 - When the end-to-end smoke task runs against the core profile, the system shall complete a submitted job through the full API → queue → worker → agent tool loop → model gateway (stub) → report path and exit non-zero on any failure.
 - The system shall expose all compose lifecycle and smoke commands as `mise` tasks (the repo's single command interface).
 
@@ -99,7 +101,7 @@ so that I can **always tell reproducible evidence apart from model opinion**.
 
 - The system shall tag every stored finding with `source=deterministic` or `source=agent`, and agent output shall never modify or suppress a deterministic finding.
 - The system shall record, for every agent judgment: the rubric id and version, the model identity reported by the gateway, and schema-validation status.
-- If a model response fails rubric schema validation after bounded retries, then the system shall store the failure as a diagnostic and deliver the deterministic portion of the report anyway.
+- If a model response fails rubric schema validation after bounded retries, **or the model gateway is unavailable or times out for the judgment phase**, then the system shall store the failure as a diagnostic and deliver the deterministic portion of the report anyway (job status `completed`, deterministic findings present, `source=agent` findings absent). The deterministic portion is guaranteed to exist because the handler drives the deterministic pass itself (Design — Orchestration split).
 
 ---
 
@@ -154,7 +156,7 @@ sequenceDiagram
 - `internal/authn/` (or under `internal/coachapi/auth`) — **new**: `Principal`, GitHub OAuth App adapter (authorize URL, code exchange, user fetch), Coach token issue/validate/revoke seam, config-gated test mint.
 - `internal/modelgateway/` — **new**: gateway interface, deterministic stub (default), llama.cpp OpenAI-compatible client.
 - `internal/agentloop/` — **new**: minimal bounded tool loop + typed tool registry. Baseline registers `semantics_analyze` and `codesignal_report` only; PR-listing tools land in the [PR History Scan spec](coach-api-platform-pr-history.spec.md). **Required path** for v1 job handlers: analysis and rubric judgment tools run only through the registry/loop, not as ad-hoc direct calls from the handler.
-- `internal/authz/` — **new**: repository authorization seam (`RepoAuthorizer`) that checks, via the GitHub App installation token, whether a `Principal` has a role in a requested repository. Used by `POST /v1/jobs` before persisting any job. Must support a config-gated bypass (or fake) for credential-free compose smoke and unit tests — never on by default in production-like configs.
+- `internal/authz/` — **new**: repository authorization seam (`RepoAuthorizer`) that checks, via the GitHub App installation token, whether a `Principal` has a role in a requested repository. Used by `POST /v1/jobs` before persisting any job. Must support a config-gated bypass (or fake) for credential-free compose smoke and unit tests — never on by default in production-like configs. Obtains installation tokens through the **same single credential seam** as `pkg/githubingest` (ADR-002's `CredentialResolver`); it does not load the App private key itself, so there is exactly one installation-token minter for both binaries — the seam the future v1 credential broker replaces.
 - `internal/rubrics/` — **new**: versioned rubric definitions, judge prompt assembly, output JSON schemas.
 - `pkg/githubingest/` — **extended** for baseline tree enumeration (list supported-language files at a ref via Contents/git tree APIs) and single-file reads; still no PR-listing APIs in this spec (those are PR History). Follow existing installation auth and sentinel-error conventions.
 - `internal/codesignalcli/` — **reused**: baseline analysis path invoked by the worker (import is allowed; both live in this module).
@@ -206,12 +208,12 @@ Per-kind `params` schemas (validated at submit; violations → `400`, nothing pe
 
 - `repo_baseline_scan`: `repo_owner` (string, required) + `repo_name` (string, required) for normal GitHub fetch, plus `ref` (string, optional, default: remote default branch). **No client-supplied clone URL field.** Credential-free compose smoke uses an operator-configured worker setting (e.g. env `COACH_SMOKE_FIXTURE_PATH` or compose-mounted path). The public job kind remains `repo_baseline_scan`; the worker resolves the configured `repo_owner`/`repo_name` pair to the fixture path only when the flag is set by the operator in the smoke compose profile — never from request params. Any `git_url` / `clone_url` key in params → `400`. Smoke authenticates with the config-gated test mint (Story 1), not with live GitHub OAuth.
 
-Top-level report shape (frozen snake_case, locked by the Task 1 golden-file test, mirroring `pkg/semantics/result_test.go`): `report_version`, `job_id`, `kind`, `params` (echo), `summary` (finding counts by `source` and rule/rubric id), `findings` (array; each carries the provenance fields from `job_findings`), `diagnostics` (array), `error` (string|null — populated when the job failed), `versions` (analyzer, rubric ids/versions), `generated_at`. The `report_version` for the groundwork era is `"1"`.
+Top-level report shape (frozen snake_case, locked by the Task 1 golden-file test, mirroring `pkg/semantics/result_test.go`): `report_version`, `job_id`, `kind`, `params` (echo), `commit_sha` (string, required — the resolved commit actually analyzed; without it a default-ref baseline is unreproducible once the branch advances), `summary` (a **struct with named fields, not a map**: `finding_counts` keyed by `source` then rule/rubric id, plus optional kind-specific fields such as `pr_count`/`pr_failed_count` that are omitted when absent — so kind-specific additions can never collide with rule ids), `findings` (array; each carries the provenance fields from `job_findings`), `diagnostics` (array), `error` (string|null — populated when the job failed), `versions` (analyzer, rubric ids/versions), `generated_at`. The `report_version` for the groundwork era is `"1"`. **Freeze policy for `report_version` "1"**: adding optional omit-when-empty fields is allowed and must not break existing golden fixtures; renaming, removing, or retyping existing fields is not.
 
 **Orchestration split (agent loop vs fixed handler code):**
 
-- **Model-selected via `internal/agentloop`**: tool calls the model is allowed to issue — `semantics_analyze`, `codesignal_report`. Unknown tools and over-budget loops are typed errors (architecture doc §6.3D).
-- **Handler-driven via `internal/agentloop`**: rubric-judgment tools registered for the job by the handler. The handler decides which rubrics run and when; the loop executes them, but the model does not choose whether they are invoked.
+- **Handler-driven via `internal/agentloop`** (guaranteed coverage): the full deterministic analysis pass — `semantics_analyze`/`codesignal_report` over every in-scope file — and the rubric-judgment tools. The handler drives these through the registry/loop *before and independent of* any model-selected activity, so the deterministic report exists even if the model never issues a tool call or the gateway is down entirely (Story 5, "determinism before inference"). The model does not choose whether they are invoked.
+- **Model-selected via `internal/agentloop`** (supplemental evidence): during rubric judgment the model may re-invoke `semantics_analyze`/`codesignal_report` on specific files to gather additional evidence. Unknown tools and over-budget loops are typed errors (architecture doc §6.3D).
 - **Deterministically owned by the job handler / API layer** (not model-selected): authentication/principal resolution, claim/lifecycle, attempt-scoped persistence, which rubrics run, smoke fixture path resolution, size budgets, and terminal status transitions. The handler starts the loop with a job brief and registered tools; it does not bypass the registry to call those packages for the analysis path.
 
 **Submit durability (API → queue dual-write, no DynamoDB outbox yet):**
@@ -221,7 +223,7 @@ Groundwork deliberately defers the production S3/DynamoDB/outbox ingress pattern
 1. Persist the `jobs` row in Postgres first (`status=queued`).
 2. Enqueue on `TaskQueue` with stable idempotency key = job id.
 3. Return `202` only when enqueue succeeds.
-4. If enqueue fails: return retriable `5xx` and either (a) leave the row `queued` for a periodic submit-reconciler that re-enqueues undelivered `queued` jobs older than a threshold with no corresponding in-flight consumer claim, or (b) mark the job `failed` with an actionable error in the same request. Strategy (a) is preferred so clients can safely retry `POST` only when they use a client-generated idempotency key (out of scope); without that, clients must `GET` status after a `5xx`. Document the chosen strategy in Task 2/3a acceptance tests.
+4. If enqueue fails: return retriable `5xx` and leave the row `queued`. **Binding strategy**: a periodic **requeue reconciler** (owned and red-first-tested in Task 3) re-enqueues any `queued` row older than a configurable threshold with no in-flight claim, using the job-id idempotency key (double-publish is safe under at-least-once delivery + fenced claims). The same reconciler also recovers a job that was reclaimed to `queued` after its queue message had already been acked — closing both stuck-job windows with one mechanism. Clients that receive `5xx` should `GET` status rather than blind-retry `POST` (client-generated idempotency keys are out of scope).
 5. Workers must treat duplicate deliveries of the same job id as at-least-once: claim + attempt scoping already provide handler idempotency (ADR-006).
 
 **`EventBus` port:** define the application-owned `EventBus` interface alongside `TaskQueue` (ADR-006) so domain code never imports Watermill types for future fan-out, but **no production publisher/subscriber is required in this baseline slice**. A no-op or in-memory test double is sufficient until a consumer exists.
@@ -301,7 +303,7 @@ flowchart LR
 
 - Story 1 criteria (job kinds, statuses, attempt-scoped findings, `created_by_provider` / `created_by_subject` / `created_by_login` on jobs); Story 5 provenance fields on findings.
 - `Principal` type (or equivalent) available to API layers: `provider`, `subject`, `login`.
-- A frozen snake_case JSON contract for the report type, including a nullable top-level `error` field, locked by a static golden-file test that serializes a hand-authored `Report` value. The end-to-end generated report golden fixtures are produced in Tasks 7–8.
+- A frozen snake_case JSON contract for the report type, including a nullable top-level `error` field, locked by a static golden-file test that serializes a hand-authored `Report` value. The end-to-end generated report golden fixtures are produced in Task 8 (this spec) and Task 7 of the PR History spec.
 
 **Verification**:
 
@@ -323,6 +325,8 @@ flowchart LR
 **Objective**: Implement GitHub OAuth App login, `Principal` resolution, Coach-signed JWT issue/validate/revoke (`jti` denylist), auth middleware, and a config-gated test-mint path for automated tests/smoke.
 
 **Context**: Story 1 — primary authentication. Separates **who the caller is** (OAuth App) from **how the worker reads GitHub** (App installation in `pkg/githubingest`). Leaves a provider-shaped seam so a future OIDC adapter can mint the same `Principal` without rewriting `/v1` policy.
+
+**Sequencing**: JWT issue/validate + middleware + config-gated test mint first — those are **demo-blocking** (the compose smoke depends only on them). The live GitHub OAuth exchange is **pilot-blocking** (friendly engineers cannot onboard without it, since mint is explicitly non-production) and may land second within this task.
 
 **Affected files**:
 
@@ -354,7 +358,7 @@ flowchart LR
 
 ### Task 2: coach-api HTTP service
 
-**Depends on**: Tasks 1, 2a (enqueue wiring completes with Task 3a; until then tests may use a fake `TaskQueue`)
+**Depends on**: Tasks 1, 2a, 3a (Redis adapter — API-side enqueue wiring is owned **here**, not in Task 3; until 3a lands, tests may use a fake `TaskQueue`)
 
 **Objective**: Implement `POST /v1/jobs`, `GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/report` over a `JobStore` seam with in-memory and Postgres implementations, behind auth middleware from Task 2a, with submit-time `RepoAuthorizer` and `TaskQueue` enqueue per Design — Submit durability.
 
@@ -370,7 +374,7 @@ flowchart LR
 
 - Story 1 job API acceptance criteria, exercised at the HTTP boundary with `httptest` against the in-memory store — including reject client-supplied clone URL params with `400`.
 - Persist `created_by_*` from the authenticated principal on submit; enqueue job id on `TaskQueue`; `202` only per submit-durability rules.
-- Story 3 `RepoAuthorizer` on `repo_baseline_scan` submit (fake GitHub); smoke bypass only when configured.
+- Story 3 `RepoAuthorizer` on `repo_baseline_scan` submit — the **production implementation**, not just the seam: ADR-003's validation matrix against an `httptest` GitHub installation fake (user-owned repo; direct collaborator; org/team-derived access; no-role principal; App-not-installed repo; nonexistent repo → `403` `repo_not_authorized`; transient GitHub failure → `503`, nothing persisted). Smoke bypass only when configured.
 - Postgres store covered by an integration test gated on a `COACH_PG_DSN` env var (runs in compose CI job, skipped otherwise).
 
 **Verification**:
@@ -378,6 +382,8 @@ flowchart LR
 - [ ] `mise run test` passes; new handler acceptance tests were red first
 - [ ] `400`/`401`/`403`/`404`/`409` paths and the error envelope asserted per Story 1
 - [ ] Unauthenticated `/v1` calls asserted `401`; cross-principal `GET /v1/jobs/{id}` and `GET /v1/jobs/{id}/report` asserted `403`
+- [ ] Cross-principal read of an *incomplete* job asserted `403`, not `409` (precedence order)
+- [ ] Denylist-store error asserted `503` (fail closed), distinct from denylisted-`jti` `401`
 - [ ] Enqueue failure path does not return bare success `202` without a recoverable strategy test
 - [ ] `repo_not_authorized` asserted for denied repo role
 
@@ -395,6 +401,8 @@ flowchart LR
 **Objective**: Implement application-owned `TaskQueue` and `EventBus` ports plus Watermill adapters for **Redis Streams** and **SQS**, with a black-box provider conformance suite (ADR-006). This is the architecture-grounded queue seam; job handlers never import Watermill or backend SDKs directly.
 
 **Context**: Architecture §1/§14 and ADR-006 require both adapters in groundwork. Local Compose uses Redis Streams; SQS is validated in CI via LocalStack (or equivalent) in the conformance suite — not required in the daily `core` compose profile.
+
+**Sequencing**: the Redis Streams adapter blocks Task 3 and the demo critical path; the SQS adapter and its LocalStack conformance leg may land in parallel afterward and must be green **before groundwork exit** (ADR-006's both-adapters requirement is scoped to the groundwork phase, not to the first demo).
 
 **Affected files**:
 
@@ -440,13 +448,17 @@ flowchart LR
 - While a job is `running`, the worker shall update `heartbeat_at` every heartbeat interval (configurable, default 15s); a `running` job whose heartbeat is older than the stale threshold (configurable, default 60s, must be ≥ 3× the interval) shall be returned to `queued` **and** left eligible for queue redelivery / re-dispatch (crash recovery). Both durations are injected (clock and config) so crash-recovery tests are deterministic without real waiting.
 - On reclaim after stale heartbeat (and on every successful claim), the claim transaction shall increment `jobs.attempt` and delete prior `job_findings`/`job_diagnostics` for that job so a handler that crashed after partial persist cannot leave duplicate rows in the completed report (Data Model Changes — Idempotency under at-least-once claim).
 - If a job handler fails permanently, then the job records `failed` with the error (Story 3 sentinel mapping) and the queue message is acked (or routed to poison-task per ADR-006) so it is not redelivered forever.
-- Wire `POST /v1/jobs` enqueue through the same `TaskQueue` port (submit durability rules in Design).
+- Implement the **requeue reconciler** (Design — Submit durability): periodically re-enqueue any `queued` row older than a configurable threshold with no in-flight claim. Red-first acceptance test: enqueue-failure injection → `5xx` → reconciler re-enqueues → job completes. (API-side enqueue wiring is owned by Task 2, not here.)
+- **Fenced writes**: every heartbeat update, findings/diagnostics insert, and terminal status transition shall be conditional on `(claimed_by, attempt)` matching the worker's own claim; a worker whose fenced write fails shall abandon the job without acking its queue message. This is the groundwork-scale equivalent of the architecture doc's fencing token (§7, §10).
+- **Duplicate-delivery disposition**: on receiving a queue message for a job that is `completed`/`failed` → ack; `running` with a live heartbeat → ack (the requeue reconciler covers any later recovery); `queued` → attempt claim.
 
 **Verification**:
 
 - [ ] `mise run test` (in-memory/`TaskQueue` fake + store) and DSN-gated Postgres test pass; red first
 - [ ] Two concurrent workers never double-claim a job (race-tested; `go test -race`)
 - [ ] Crash-after-partial-findings-persist then reclaim yields a completed report with no duplicate findings (single final attempt only)
+- [ ] Zombie-resume test (injected clock): worker A pauses, B reclaims (attempt+1); A's late heartbeat/findings/terminal writes are all rejected by the fence and A does not ack
+- [ ] Reconciler test: enqueue-failure injection leaves row `queued`; reconciler re-enqueues; job completes
 - [ ] Worker has no direct Redis/SQS client imports outside the queue adapter package
 
 **Done when**:
@@ -487,6 +499,8 @@ flowchart LR
 
 ### Task 4: Model gateway seam with stub and llama.cpp client
 
+**Depends on**: Task 1
+
 **Objective**: Define the `modelgateway.Gateway` interface (structured judgment request → schema-validated response), a deterministic stub, and a llama.cpp OpenAI-compatible client.
 
 **Context**: The architecture doc's core seam: llama.cpp now, SGLang later, no orchestration change. Independent of Tasks 2–3; can proceed in parallel after Task 1.
@@ -499,6 +513,7 @@ flowchart LR
 
 - Story 5: response carries model identity; schema-validation failures are typed errors after bounded retries.
 - Stub is the default everywhere; llama.cpp client tested against recorded HTTP fixtures (`httptest`), no live model in CI.
+- The **compose-run stub** has a defined behavior contract: for rubric-judgment requests it returns canned schema-valid judgments from a fixed fixture. It never needs per-repo tool-call scripts, because the deterministic pass is handler-driven (Design — Orchestration split); scripted tool-call sequences remain a test-only stub feature.
 
 **Verification**:
 
@@ -622,7 +637,9 @@ flowchart LR
 **Requirements**:
 
 - Story 4 acceptance criteria; smoke obtains a Coach token via the config-gated test mint (Story 1 / Task 2a), submits a job, polls to completion, asserts a provenance-tagged report, exits non-zero on failure.
-- Single credential-free smoke strategy: compose mounts a small fixture repository into the worker and sets `COACH_SMOKE_FIXTURE_PATH` (or equivalent); enables test mint only in the core/smoke profile; the smoke task submits a `repo_baseline_scan` for a configured fixture owner/name that the worker resolves to that path (no network, no model weights, no GitHub App or OAuth credentials, **no client-supplied clone URL**). The `pr_history_scan` flow and real OAuth exchange are exercised by the sibling [PR History Scan spec](coach-api-platform-pr-history.spec.md) and its Task 2a/7 acceptance tests with fakes, not by the compose smoke.
+- Both binaries start in the smoke profile with **zero GitHub credentials** configured (no OAuth client id/secret, no App private key); the exact minimal environment for the credential-free smoke is documented and asserted.
+- Operator-run (non-CI) verification: the `llm` profile completes a `repo_baseline_scan` end to end with at least one schema-valid `source=agent` judgment produced by llama.cpp. This, together with the CI stub smoke, is the SGLang/AWS investment gate (PRD §12) — a stub-only smoke validates plumbing, not real-model rubric behavior.
+- Single credential-free smoke strategy: compose mounts a small fixture repository into the worker and sets `COACH_SMOKE_FIXTURE_PATH` (or equivalent); enables test mint only in the core/smoke profile; the smoke task submits a `repo_baseline_scan` for a configured fixture owner/name that the worker resolves to that path (no network, no model weights, no GitHub App or OAuth credentials, **no client-supplied clone URL**). The `pr_history_scan` flow is exercised by the sibling [PR History Scan spec](coach-api-platform-pr-history.spec.md)'s Task 7 acceptance tests, and the real OAuth exchange by this spec's Task 2a acceptance tests — both with fakes, not by the compose smoke.
 
 **Verification**:
 
@@ -661,4 +678,5 @@ flowchart LR
 - Harness hooks (MCP server wrapping the API) and a web UI for viewing feedback (UI becomes the primary OAuth entrypoint).
 - Additional OAuth2/OIDC identity providers behind the same `Principal` adapter.
 - Optional per-principal repository allowlists or user-scoped GitHub App installs.
+- A rate-limited public-repo `repo_baseline_scan` carve-out ("Option C-minus": allow baseline scans of public repos the principal has no role in) — to be proposed **only if** pilot friction materializes; reopens ADR-003 and requires an owner decision.
 - Keep the PRD aligned with this decoupled consumption/platform split and GitHub-OAuth-primary identity as product language evolves (architecture §14 Groundwork and ADR-001–006 already match this spec).

@@ -35,6 +35,7 @@ We need an authentication architecture that:
    - Logout/revoke inserts the `jti` into the denylist.
    - Protected routes reject a token whose `jti` is denylisted, even if the token is not yet expired.
    - Denylist availability is therefore required for revocation checks.
+   - **Fail closed**: a denylist lookup error (store unavailable, query failure — as opposed to a miss) rejects the request with `503`; the revocation check is never skipped. This follows the architecture principle "fail closed for credentials", and costs little since Postgres also backs job state.
 
 4. **A config-gated test-mint path is provided for non-production use only.**
    - When enabled by operator configuration (e.g., `COACH_AUTH_TEST_MINT=1` in the local compose profile), an endpoint can mint a Coach JWT for a supplied login/subject.
@@ -65,3 +66,4 @@ We need an authentication architecture that:
 - Acceptance tests prove the fake-GitHub OAuth round-trip produces a token that authorizes a protected route.
 - Acceptance tests prove missing/invalid/expired/denylisted tokens return `401`.
 - Acceptance tests prove the test-mint path returns `404` when disabled.
+- Acceptance tests prove a denylist store error yields `503` (fail closed), distinct from the denylisted-`jti` `401`.
