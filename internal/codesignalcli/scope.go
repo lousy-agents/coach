@@ -325,38 +325,268 @@ func extractTar(dir string, archive []byte) error {
 }
 
 type tsConfig struct {
+	// Path-only; npm package extends are not resolved. Non-string (e.g. TS 5
+	// multi-base arrays) is ignored so the rest of the file still parses.
+	Extends string   `json:"extends"`
 	Include []string `json:"include"`
 	Exclude []string `json:"exclude"`
-	// A non-nil Files distinguishes an explicit empty "files": [] (which
-	// selects no source files) from an omitted files setting.
+	// Non-nil distinguishes explicit "files": [] (selects nothing) from omitted.
 	Files *[]string `json:"files"`
 }
 
+// UnmarshalJSON accepts only string extends; other shapes leave Extends empty
+// without failing the whole config.
+func (c *tsConfig) UnmarshalJSON(data []byte) error {
+	type tsConfigAlias tsConfig
+	var aux struct {
+		Extends json.RawMessage `json:"extends"`
+		tsConfigAlias
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*c = tsConfig(aux.tsConfigAlias)
+	if len(aux.Extends) > 0 {
+		var extends string
+		if err := json.Unmarshal(aux.Extends, &extends); err == nil {
+			c.Extends = extends
+		}
+	}
+	return nil
+}
+
+// loadTSConfig resolves path-shaped extends chains. Child fields override
+// base fields (no merge). Inherited patterns are rebased to the declaring
+// base's directory. Cycles, escapes, npm extends, and I/O failures fail open
+// (ok=false) — tsconfig is attacker-influenced (e.g. fork PR input).
 func loadTSConfig(dir string) (tsConfig, bool, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "tsconfig.json"))
+	config, ok, err := readTSConfigFile(filepath.Join(dir, "tsconfig.json"))
+	if err != nil {
+		return tsConfig{}, false, err
+	}
+	if !ok {
+		return tsConfig{}, false, nil
+	}
+	if config.Extends == "" {
+		return config, true, nil
+	}
+
+	visited := map[string]bool{filepath.Clean(filepath.Join(dir, "tsconfig.json")): true}
+
+	// EvalSymlinks so rebase math uses the same path space as baseDir.
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return tsConfig{}, false, nil
+	}
+
+	snapshotRoot, currentDir, extends := resolvedDir, dir, config.Extends
+	for extends != "" {
+		base, baseDir, basePath, ok := resolveExtendedTSConfig(snapshotRoot, currentDir, extends)
+		if !ok {
+			return tsConfig{}, false, nil
+		}
+		if visited[basePath] {
+			return tsConfig{}, false, nil
+		}
+		visited[basePath] = true
+
+		if config.Include == nil {
+			config.Include = rebaseTSConfigPatterns(snapshotRoot, baseDir, base.Include)
+		}
+		if config.Exclude == nil {
+			config.Exclude = rebaseTSConfigPatterns(snapshotRoot, baseDir, base.Exclude)
+		}
+		if config.Files == nil && base.Files != nil {
+			rebased := rebaseTSConfigPatterns(snapshotRoot, baseDir, *base.Files)
+			config.Files = &rebased
+		}
+
+		currentDir, extends = baseDir, base.Extends
+	}
+	return config, true, nil
+}
+
+// resolveExtendedTSConfig joins extends relative to dir, then enforces the
+// snapshotRoot boundary after EvalSymlinks (extractTar preserves symlinks;
+// a lexical-only check would read through an in-bounds symlink to a host
+// path). Boundary is snapshotRoot, not the current hop's directory.
+func resolveExtendedTSConfig(snapshotRoot, dir, extends string) (config tsConfig, baseDir, basePath string, ok bool) {
+	if !isTSConfigPathSpecifier(extends) {
+		return tsConfig{}, "", "", false
+	}
+	target := extends
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(dir, target)
+	}
+	target = resolveTSConfigExtendsTarget(target)
+
+	resolvedRoot, err := filepath.EvalSymlinks(snapshotRoot)
+	if err != nil {
+		return tsConfig{}, "", "", false
+	}
+	resolvedTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return tsConfig{}, "", "", false
+	}
+	rel, err := filepath.Rel(resolvedRoot, resolvedTarget)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return tsConfig{}, "", "", false
+	}
+	base, found, err := readTSConfigFile(resolvedTarget)
+	if err != nil || !found {
+		return tsConfig{}, "", "", false
+	}
+	return base, filepath.Dir(resolvedTarget), filepath.Clean(resolvedTarget), true
+}
+
+// resolveTSConfigExtendsTarget retries with ".json" when the literal path is missing.
+func resolveTSConfigExtendsTarget(target string) string {
+	if strings.HasSuffix(target, ".json") {
+		return target
+	}
+	if info, err := os.Stat(target); err == nil && !info.IsDir() {
+		return target
+	}
+	return target + ".json"
+}
+
+// rebaseTSConfigPatterns prefixes patterns with baseDir relative to snapshotRoot
+// (TS resolves them against the declaring config's directory). Nil stays nil.
+func rebaseTSConfigPatterns(snapshotRoot, baseDir string, patterns []string) []string {
+	if patterns == nil {
+		return nil
+	}
+	relBaseDir, err := filepath.Rel(snapshotRoot, baseDir)
+	if err != nil {
+		return patterns
+	}
+	rebased := make([]string, len(patterns))
+	for i, pattern := range patterns {
+		rebased[i] = filepath.ToSlash(filepath.Join(relBaseDir, pattern))
+	}
+	return rebased
+}
+
+// isTSConfigPathSpecifier is true for ./ ../ .\ ..\ or absolute paths only.
+func isTSConfigPathSpecifier(extends string) bool {
+	return strings.HasPrefix(extends, "./") ||
+		strings.HasPrefix(extends, "../") ||
+		strings.HasPrefix(extends, `.\`) ||
+		strings.HasPrefix(extends, `..\`) ||
+		filepath.IsAbs(extends)
+}
+
+// readTSConfigFile does not follow extends. Missing/malformed => ok=false;
+// other I/O errors are returned.
+func readTSConfigFile(path string) (tsConfig, bool, error) {
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return tsConfig{}, false, nil
 	}
 	if err != nil {
-		return tsConfig{}, false, fmt.Errorf("reading tsconfig.json: %w", err)
+		return tsConfig{}, false, fmt.Errorf("reading %s: %w", path, err)
 	}
 	var config tsConfig
-	if err := json.Unmarshal(data, &config); err != nil {
-		// A tsconfig permits comments, which encoding/json cannot parse. Treat a
-		// config we cannot establish as unknown rather than excluding findings.
+	if err := json.Unmarshal(stripJSONCComments(data), &config); err != nil {
 		return tsConfig{}, false, nil
 	}
 	return config, true, nil
 }
 
-func (c tsConfig) matchesInclude(path string) bool {
-	if c.Files != nil {
-		return matchesAny(path, *c.Files)
+// stripJSONCComments strips // and /* */ outside strings, then trailing commas.
+// Unterminated /* returns the original bytes so Unmarshal fails closed.
+func stripJSONCComments(data []byte) []byte {
+	var out bytes.Buffer
+	inString := false
+	escaped := false
+	for i := 0; i < len(data); i++ {
+		b := data[i]
+		if inString {
+			out.WriteByte(b)
+			switch {
+			case escaped:
+				escaped = false
+			case b == '\\':
+				escaped = true
+			case b == '"':
+				inString = false
+			}
+			continue
+		}
+		switch {
+		case b == '"':
+			inString = true
+			out.WriteByte(b)
+		case b == '/' && i+1 < len(data) && data[i+1] == '/':
+			for i < len(data) && data[i] != '\n' {
+				i++
+			}
+			if i < len(data) {
+				out.WriteByte('\n')
+			}
+		case b == '/' && i+1 < len(data) && data[i+1] == '*':
+			i += 2
+			for i+1 < len(data) && !(data[i] == '*' && data[i+1] == '/') {
+				i++
+			}
+			if i+1 >= len(data) {
+				return data
+			}
+			i++
+		default:
+			out.WriteByte(b)
+		}
 	}
-	if len(c.Include) == 0 {
+	return stripTrailingCommas(out.Bytes())
+}
+
+func stripTrailingCommas(data []byte) []byte {
+	var out bytes.Buffer
+	inString := false
+	escaped := false
+	for i := 0; i < len(data); i++ {
+		b := data[i]
+		if inString {
+			out.WriteByte(b)
+			switch {
+			case escaped:
+				escaped = false
+			case b == '\\':
+				escaped = true
+			case b == '"':
+				inString = false
+			}
+			continue
+		}
+		if b == '"' {
+			inString = true
+			out.WriteByte(b)
+			continue
+		}
+		if b == ',' {
+			j := i + 1
+			for j < len(data) && (data[j] == ' ' || data[j] == '\t' || data[j] == '\n' || data[j] == '\r') {
+				j++
+			}
+			if j < len(data) && (data[j] == '}' || data[j] == ']') {
+				continue
+			}
+		}
+		out.WriteByte(b)
+	}
+	return out.Bytes()
+}
+
+// matchesInclude is the union of files and include (TS semantics). Match-all
+// only when both are absent; explicit empty files selects nothing.
+func (c tsConfig) matchesInclude(path string) bool {
+	if c.Files != nil && matchesAny(path, *c.Files) {
 		return true
 	}
-	return matchesAny(path, c.Include)
+	if len(c.Include) > 0 {
+		return matchesAny(path, c.Include)
+	}
+	return c.Files == nil
 }
 
 func (c tsConfig) matchesExclude(path string) bool { return matchesAny(path, c.Exclude) }
