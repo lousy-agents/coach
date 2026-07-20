@@ -341,7 +341,7 @@ flowchart LR
 
 - Story 1 auth acceptance criteria: authorize URL + state/CSRF, code exchange against a fake GitHub OAuth/`httptest`, user id+login → `Principal{provider: "github", ...}`, Coach-signed JWT on subsequent requests.
 - JWT validation rejects missing/invalid signature/wrong issuer/expired/`jti` denylisted tokens with `401` on protected `/v1` routes. OAuth start/callback are not protected by the Coach JWT.
-- GitHub OAuth access tokens are not accepted as `/v1` credentials and are not forwarded to job handlers/workers.
+- GitHub OAuth access tokens are not accepted as `/v1` credentials and are not forwarded to job handlers/workers. Feature Zero supplies fake-GitHub recording for OAuth-token separation at the GitHub boundary; **this task** owns the `/v1` rejection assertion once the API exists.
 - Config-gated test mint (or equivalent) issues a Coach JWT for a supplied login/subject; disabled by default; acceptance test proves it is rejected when the gate is off. When disabled, the mint path is not registered and shall return `404`.
 - The OAuth authorize URL requests **no scope** (default empty scope). Acceptance tests assert that the exchanged token can retrieve the public `id` and `login` from the fake GitHub `/user` endpoint without any user-scope grant.
 - No static provisioned token→login configuration table as the primary auth path.
@@ -417,8 +417,9 @@ flowchart LR
 - `TaskQueue` promises from ADR-006: at-least-once delivery, no global ordering, possible duplicates, ack only after durable handler completion, crash → redelivery, stable idempotency key (job id), versioned payloads, permanent failures → poison-task destination.
 - `EventBus` interface exists; baseline may ship a no-op implementation (Design — EventBus port).
 - Capabilities model: fail startup when a required capability is unavailable (ADR-006).
-- Black-box conformance suite runs through Feature Zero's harness against real Redis and LocalStack-backed SQS: enqueue, multi-worker scaling, worker-kill mid-task, redelivery, duplicate injection, permanent failure / poison-task, graceful shutdown.
+- Black-box conformance suite runs through Feature Zero's harness against real Redis and LocalStack-backed SQS: enqueue, multi-worker scaling, dual-worker exclusion (same job attempt never concurrent), worker-kill mid-task, redelivery, duplicate injection, permanent failure / poison-task, graceful shutdown, and post-reclaim single-completion at the queue/port boundary.
 - Clock/durations injected through Feature Zero's deterministic controls for recovery tests.
+- Job-domain fenced writes and attempt-scoped findings/diagnostics cleanup are **not** claimed complete here — those remain Task 3 assertions that build on this harness.
 
 **Verification**:
 
@@ -449,7 +450,7 @@ flowchart LR
 **Requirements**:
 
 - While a job is `running`, the worker shall update `heartbeat_at` every heartbeat interval (configurable, default 15s); a `running` job whose heartbeat is older than the stale threshold (configurable, default 60s, must be ≥ 3× the interval) shall be returned to `queued` **and** left eligible for queue redelivery / re-dispatch (crash recovery). Both durations are injected (clock and config) so crash-recovery tests are deterministic without real waiting.
-- On reclaim after stale heartbeat (and on every successful claim), the claim transaction shall increment `jobs.attempt` and delete prior `job_findings`/`job_diagnostics` for that job so a handler that crashed after partial persist cannot leave duplicate rows in the completed report (Data Model Changes — Idempotency under at-least-once claim).
+- On reclaim after stale heartbeat (and on every successful claim), the claim transaction shall increment `jobs.attempt` and delete prior `job_findings`/`job_diagnostics` for that job so a handler that crashed after partial persist cannot leave duplicate rows in the completed report (Data Model Changes — Idempotency under at-least-once claim). Feature Zero's queue harness proves broker/port-level exclusivity and kill-mid-attempt reclaim; **this task** owns the job-specific fenced-write and attempt-cleanup acceptance (single completed report, no duplicate findings).
 - If a job handler fails permanently, then the job records `failed` with the error (Story 3 sentinel mapping) and the queue message is acked (or routed to poison-task per ADR-006) so it is not redelivered forever.
 - Implement the **requeue reconciler** (Design — Submit durability): periodically re-enqueue any `queued` row older than a configurable threshold with no in-flight claim. Red-first acceptance test: enqueue-failure injection → `5xx` → reconciler re-enqueues → job completes. (API-side enqueue wiring is owned by Task 2, not here.)
 - **Fenced writes**: every heartbeat update, findings/diagnostics insert, and terminal status transition shall be conditional on `(claimed_by, attempt)` matching the worker's own claim; a worker whose fenced write fails shall abandon the job without acking its queue message. This is the groundwork-scale equivalent of the architecture doc's fencing token (§7, §10).

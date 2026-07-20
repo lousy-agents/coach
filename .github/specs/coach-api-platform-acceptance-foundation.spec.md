@@ -68,7 +68,7 @@ so that I can **test identity, repository authorization, and ingestion without p
 - Given a fixture, the fake shall support GitHub OAuth authorization-code authorization, token exchange, and `GET /user`.
 - Given a fixture, the fake shall support GitHub App installation-token exchange, repository-to-installation resolution, effective collaborator permissions, repository tree/content reads, PR listing, and changed-file reads.
 - Given a fixture-defined scenario, the fake shall return deterministic not-found, authorization-failure, transient-failure, and oversized-response outcomes for every supported contract where the outcome is meaningful.
-- The fake shall record every request, its selected fixture/scenario, and its credential/authentication mode. Acceptance assertions shall prove that OAuth access tokens are used only for identity login; Coach-issued JWTs, not GitHub OAuth tokens, authorize `/v1`; and repository reads and repository authorization use GitHub App installation credentials.
+- The fake shall record every request, its selected fixture/scenario, and its credential/authentication mode. Feature Zero shall provide recording sufficient to prove OAuth-token separation at the GitHub boundary: OAuth access tokens appear only on identity login paths; repository reads and repository authorization use GitHub App installation credentials; and misuse (OAuth token on a repository endpoint, Coach JWT sent to GitHub, installation credential used where an OAuth token belongs) is a recorded test failure. The actual `/v1` rejection of GitHub OAuth tokens as bearer credentials is owned by Baseline Scan once `coach-api` exists; Feature Zero does not invent that API solely to host the assertion.
 - The fake shall expose a failing assertion/record when any request would reach the public GitHub API. A platform acceptance run shall assert that no such request occurred.
 - For fast component acceptance tests, packages may retain in-process fakes and custom transports, including the existing `pkg/githubingest` public-boundary style. For Compose-level acceptance tests, the fake GitHub service shall run as a container on the internal Compose network, not as a host-only `httptest` dependency.
 
@@ -83,9 +83,9 @@ so that I can **validate workflow behavior without substituting hand-written fak
 - Existing package and public-API acceptance suites shall remain fast and in-process, preserving their Ginkgo/Gomega public-boundary philosophy.
 - HTTP contract acceptance shall run at the public HTTP boundary with controlled fakes and deterministic state.
 - Platform workflow acceptance shall run against real local Compose services: API, worker when those binaries exist, Postgres, Redis Streams, deterministic model stub, fake GitHub, fixture repository, and an external test runner. Until Baseline Scan creates `coach-api` and `coach-worker`, Feature Zero shall not invent placeholder binaries merely to claim end-to-end coverage.
-- Queue-provider conformance shall run the same black-box contract against real Redis Streams and LocalStack-backed SQS. It shall not replace either provider with a hand-written queue fake.
-- Operator smoke shall remain a narrow credential-free Compose path and shall not substitute for the richer platform workflow acceptance suite.
-- Native llama.cpp validation shall be a separate operator-run check. It shall require schema-valid agent output while avoiding assertions on brittle natural-language wording; it is not a routine CI dependency.
+- Queue-provider conformance shall run the same black-box contract against real Redis Streams and LocalStack-backed SQS. It shall not replace either provider with a hand-written queue fake. The harness shall be capable of proving worker exclusivity and crash recovery at the broker/port boundary (see Story 0.4); job-row fenced writes and attempt-scoped findings cleanup remain Baseline Task 3 assertions that consume this harness.
+- Operator smoke shall remain a narrow credential-free Compose path and shall not substitute for the richer platform workflow acceptance suite. It becomes a runnable Baseline consumer when `coach-api` / `coach-worker` exist; Feature Zero defines the category only.
+- Native llama.cpp validation shall be a separate operator-run check. It shall require schema-valid agent output while avoiding assertions on brittle natural-language wording; it is not a routine CI dependency. It becomes runnable when Baseline's model path exists; Feature Zero defines the category only.
 
 ### Story 0.4: Make asynchronous behavior and reports deterministic
 
@@ -96,7 +96,7 @@ so that I can **prove recovery and provenance behavior without arbitrary sleeps 
 #### Acceptance Criteria
 
 - The platform shall inject clocks and durations for heartbeats, stale-job recovery, queue redelivery, and reconciliation. Acceptance tests shall advance a controlled clock or wait on named observable conditions; they shall not rely on arbitrary sleeps.
-- The queue conformance contract shall exercise actual broker redelivery, acknowledgement, duplicate delivery, poison-task handling, multi-worker behavior, and graceful shutdown through real Redis Streams and LocalStack-backed SQS.
+- The queue conformance contract shall exercise actual broker redelivery, acknowledgement, duplicate delivery, poison-task handling, multi-worker behavior, and graceful shutdown through real Redis Streams and LocalStack-backed SQS. Explicitly, the harness shall prove: (1) two concurrent workers never process the same job attempt at the same time; (2) a worker can be terminated after partial handler-side persistence of work associated with an attempt; (3) after reclaim/redelivery, the completed outcome for that job is a single successful completion with no duplicate handler effects observable at the harness boundary. Feature Zero owns these reusable harness capabilities; Baseline Task 3 owns the job-specific fenced-write and attempt-cleanup assertions (increment `attempt`, delete prior findings/diagnostics, report reads final attempt only).
 - Agent-loop acceptance shall use a scripted deterministic model gateway and a recording tool registry. It shall prove that handler-driven analysis and rubric paths execute through `internal/agentloop`, rather than handlers bypassing the loop with direct package calls.
 - The report contract shall have golden, versioned fixtures that distinguish `source=deterministic` from `source=agent` and prove additive report evolution without changing prior report-version fixtures.
 
@@ -108,26 +108,29 @@ so that I can **prove recovery and provenance behavior without arbitrary sleeps 
 
 The layers are distinct and composable. A lower layer is not evidence that a higher layer has run.
 
-| Layer | Boundary and dependencies | Required task category |
-| --- | --- | --- |
-| Fast acceptance | Existing public Go package/CLI boundaries, in-process fakes/transports | `test-acceptance-fast` |
-| HTTP contract acceptance | Public HTTP routes, controlled fakes, deterministic store/time | `test-acceptance-core` |
-| Platform workflow acceptance | Compose API + worker + Postgres + Redis Streams + deterministic model stub + fake GitHub + fixture repository + external runner | `test-acceptance` |
-| Queue-provider conformance | One black-box queue contract against real Redis Streams and LocalStack SQS | `test-queue-conformance` |
-| Operator smoke | Narrow credential-free Compose submission/poll path | a `platform-smoke`-style task retained for operators |
-| Native model validation | Operator-run Compose/native llama.cpp validation, schema-focused | an explicit `platform-llm-validate`-style task |
+Feature Zero **defines the full eventual taxonomy** below so later epics do not invent alternate task names. Only layers marked **runnable in Feature Zero** must have executable `mise` consumers at Feature Zero completion. Layers marked **defined; Baseline consumer** are named and reserved here; they become runnable when Baseline (or a later epic) creates the binaries/paths they require. Feature Zero shall not invent placeholder `coach-api` / `coach-worker` services merely to make a reserved category green.
 
-Exact task names may follow the repository's final `mise` naming convention, but their layer and responsibilities shall remain separate. `test-acceptance` shall compose the fast/core/workflow coverage appropriate to CI; it shall not silently omit a provider leg that the selected environment declares available.
+| Layer | Boundary and dependencies | Required task category | Runnable when |
+| --- | --- | --- | --- |
+| Fast acceptance | Existing public Go package/CLI boundaries, in-process fakes/transports | `test-acceptance-fast` | **Feature Zero** (existing suites + new harness unit contracts) |
+| Thin offline Compose proof | External runner + fake GitHub + `pkg/githubingest` + CodeSignal; no API/worker binaries | part of `test-acceptance` / dedicated thin-proof task | **Feature Zero** (Task 0.3) |
+| HTTP contract acceptance | Public HTTP routes, controlled fakes, deterministic store/time | `test-acceptance-core` | **Baseline** once `coach-api` exists |
+| Platform workflow acceptance | Compose API + worker + Postgres + Redis Streams + deterministic model stub + fake GitHub + fixture repository + external runner | `test-acceptance` (full workflow leg) | **Baseline** once API + worker exist |
+| Queue-provider conformance | One black-box queue contract against real Redis Streams and LocalStack SQS | `test-queue-conformance` | Harness **defined in Feature Zero**; executable legs green when Baseline Task 3a adapters exist |
+| Operator smoke | Narrow credential-free Compose submission/poll path | a `platform-smoke`-style task retained for operators | **Baseline** once smoke path exists |
+| Native model validation | Operator-run Compose/native llama.cpp validation, schema-focused | an explicit `platform-llm-validate`-style task | **Baseline** / operator once model path exists |
+
+Exact task names may follow the repository's final `mise` naming convention, but their layer and responsibilities shall remain separate. When a selected environment declares a provider or workflow leg available, `test-acceptance` shall not silently omit it; until those consumers exist, CI shall run the Feature Zero-runnable subset only.
 
 ### Fake GitHub boundary
 
 The fake GitHub service shall be fixture-driven and version its fixture schema. Fixtures shall define identities, OAuth codes/tokens, GitHub App/installation credentials, repository installation mappings, effective permissions, trees/files, pull requests/files, and named failure scenarios. The implementation shall keep OAuth identity and installation repository-read paths visibly separate, matching [ADR-001](../../docs/architecture/ADR-001-coach-api-authentication.md), [ADR-002](../../docs/architecture/ADR-002-identity-separate-from-repo-reads.md), and [ADR-003](../../docs/architecture/ADR-003-repository-authorization-policy.md).
 
-Request recording is part of the contract, not debug logging. The recorder shall allow a test to assert the exact sequence and authentication mode for OAuth authorization/token/`/user`, installation-token issuance, installation resolution, collaborator permissions, tree/content reads, PR listing, and changed-file reads. It shall make token leakage detectable: an OAuth token used for a repository endpoint, a Coach JWT sent to GitHub, or an App installation credential used as a `/v1` bearer is a test failure.
+Request recording is part of the contract, not debug logging. The recorder shall allow a test to assert the exact sequence and authentication mode for OAuth authorization/token/`/user`, installation-token issuance, installation resolution, collaborator permissions, tree/content reads, PR listing, and changed-file reads. It shall make GitHub-boundary token leakage detectable: an OAuth token used for a repository endpoint, or a Coach JWT sent to GitHub, is a test failure against the fake's record. Proving that `/v1` rejects a GitHub OAuth token as `Authorization` bearer is a Baseline Scan acceptance assertion once the API exists; the fake's recording capability must be sufficient for that consumer without Feature Zero hosting the route.
 
 ### Deterministic controls and real dependencies
 
-Fakes are allowed only at dependencies without a sufficiently representative local implementation. `TaskQueue` component tests may use an in-process fake to isolate an API or worker unit, but the portable queue contract is authoritative only when run against real containers. This implements [ADR-006](../../docs/architecture/ADR-006-watermill-queue-abstraction.md)'s conformance requirement through this harness; Redis/SQS adapter behavior itself remains work for the queue epic.
+Fakes are allowed only at dependencies without a sufficiently representative local implementation. `TaskQueue` component tests may use an in-process fake to isolate an API or worker unit, but the portable queue contract is authoritative only when run against real containers. This implements [ADR-006](../../docs/architecture/ADR-006-watermill-queue-abstraction.md)'s conformance requirement through this harness; Redis/SQS adapter behavior itself remains work for the queue epic. The harness must expose hooks (or equivalent observable controls) for dual-worker exclusion, worker-kill mid-attempt, and post-reclaim single-completion checks at the queue/port boundary. Job-domain attempt fencing and findings deduplication remain Baseline Task 3.
 
 The model stub shall be scripted for component/HTTP acceptance and deterministic for Compose workflow acceptance. A recording tool registry shall be injectable at the `internal/agentloop` boundary. It shall record handler-driven and model-selected calls, reject unregistered calls, and allow assertions that the deterministic path did not bypass the registry.
 
@@ -161,6 +164,7 @@ This proof shall not require nonexistent `coach-api` or `coach-worker` binaries.
 **Requirements**:
 
 - Preserve the existing Ginkgo/Gomega public-boundary suites and make their place in `test-acceptance-fast` explicit.
+- Document the full task-category taxonomy (fast, thin Compose proof, HTTP core, workflow, queue conformance, operator smoke, native-model) while wiring runnable `mise` consumers only for Feature Zero-runnable layers; reserve names for Baseline consumers without placeholder binaries.
 - Add a guard test that is red before implementation when a known GitHub/AWS ambient credential source or external request is attempted.
 - Document no-pull/offline Compose preflight behavior and the required local image acquisition step.
 - Define golden fixture versioning and normalization rules for generated identifiers.
@@ -187,7 +191,7 @@ This proof shall not require nonexistent `coach-api` or `coach-worker` binaries.
 - Start with a failing public-boundary acceptance test for OAuth authorization-code/token/`/user`, GitHub App installation-token flow, repo-to-installation resolution, effective permissions, and repository tree/content reads.
 - Support deterministic named not-found, authorization, transient, and oversized scenarios.
 - Run in-process for fast tests and as an internal-network Compose service for workflow tests using the same fixture schema and recorder contract.
-- Assert no public GitHub request, no OAuth token repository read, and no OAuth token accepted by `/v1` once the API consumer exists.
+- Assert no public GitHub request and no OAuth token repository read via the recorder. Provide recording/fixtures sufficient for Baseline to assert `/v1` rejects GitHub OAuth tokens as bearers once `coach-api` exists; do not invent that API in Feature Zero.
 
 **Verification**:
 
@@ -232,20 +236,23 @@ This proof shall not require nonexistent `coach-api` or `coach-worker` binaries.
 
 **Requirements**:
 
-- Start each executable consumer with a failing acceptance test for the portable queue behavior against the real provider containers; do not satisfy provider conformance with queue fakes.
+- Define (and, when adapters exist, execute) the portable queue behavior against real provider containers; do not satisfy provider conformance with queue fakes.
+- Harness requirements include dual-worker exclusion (same job attempt never processed concurrently), worker termination after partial persistence, and post-reclaim single-completion without duplicate handler effects at the harness boundary. Baseline Task 3 remains the owner of fenced writes and attempt-scoped findings/diagnostics cleanup assertions.
 - Make controlled clocks/durations available for heartbeats, stale reclaim, redelivery, and reconciliation assertions.
-- Make scripted model responses and tool-registry recordings available to prove `internal/agentloop` execution and deterministic/agent provenance.
-- Keep native llama.cpp validation an operator-only, schema-validity check rather than a wording golden or mandatory CI dependency.
+- Make scripted model responses and tool-registry recordings available for Baseline/PR History to prove `internal/agentloop` execution and deterministic/agent provenance; Feature Zero need not run full agent-loop workflow without platform handlers.
+- Keep native llama.cpp validation an operator-only, schema-validity category rather than a wording golden or mandatory CI dependency; runnable only when Baseline's model path exists.
 
 **Verification**:
 
+- [ ] Queue conformance harness contract documents dual-worker exclusion, kill-mid-attempt, and single-completion-after-reclaim; red-first executable legs when adapters exist
 - [ ] `mise run test-queue-conformance` (or final equivalent) selects real Redis Streams and LocalStack SQS when adapters exist
-- [ ] Scripted-model tests can prove a direct handler bypass would fail
+- [ ] Scripted-model / recording-tool seams are injectable for later consumers; full bypass proofs land with Baseline handlers
 - [ ] Goldens distinguish deterministic and agent findings and preserve prior report versions
 
 **Done when**:
 
 - [ ] Baseline Scan Task 3a can implement ADR-006 validation without inventing a separate harness
+- [ ] Baseline Task 3 can attach fenced-write / attempt-cleanup acceptance on top of the shared crash-recovery harness hooks
 - [ ] Baseline/PR History handlers can prove agent-loop routing without test-only production shortcuts
 
 ## Out of Scope
@@ -264,7 +271,7 @@ Feature Zero is complete only when:
 
 - [ ] The thin proof runs entirely offline after documented image/dependency acquisition and proves no real credential or public-network use.
 - [ ] A fixture-driven Coach-owned fake GitHub service and recorder support the shared OAuth, installation, authorization, and repository-read contracts.
-- [ ] Existing fast acceptance, HTTP contract, workflow, queue conformance, operator smoke, and native-model validation layers have distinct task categories and responsibilities.
-- [ ] The queue harness is ready to execute ADR-006's real Redis/LocalStack contract as adapters arrive; the adapter implementation itself is not claimed complete by this feature.
+- [ ] The full task taxonomy is defined; only Feature Zero-runnable layers (fast acceptance + thin offline Compose proof, plus harness definition for queue conformance) are required green; HTTP/workflow/smoke/native-model categories are reserved for Baseline consumers without placeholder services.
+- [ ] The queue harness is ready to execute ADR-006's real Redis/LocalStack contract—including dual-worker exclusion, kill-mid-attempt, and single-completion-after-reclaim—as adapters arrive; the adapter implementation and job-domain fencing assertions themselves are not claimed complete by this feature.
 - [ ] Golden/versioned report conventions prove deterministic-versus-agent provenance and additive report evolution.
 - [ ] The Baseline and PR History specs explicitly consume this foundation and retain acceptance-test-first requirements.
