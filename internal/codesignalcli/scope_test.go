@@ -153,10 +153,7 @@ func TestApplySourceScopePreservesCommentMarkersInsideStrings(t *testing.T) {
 }
 
 func TestApplySourceScopeAppliesExtendedBaseTSConfig(t *testing.T) {
-	// The base's exclude pattern ("test/**/*.ts") is resolved relative to the
-	// base config's OWN directory (base/), so the file it must reach lives at
-	// base/test/app.ts, not a root-level test/app.ts (real TypeScript never
-	// rebases a root-level file into a subdirectory-declared base's scope).
+	// Exclude is relative to base/, so the hit must live under base/.
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json":      `{"extends": "./base/tsconfig.json"}`,
 		"base/tsconfig.json": `{"exclude": ["test/**/*.ts"]}`,
@@ -178,16 +175,7 @@ func TestApplySourceScopeAppliesExtendedBaseTSConfig(t *testing.T) {
 }
 
 func TestApplySourceScopeChildTSConfigOverridesExtendedBaseInclude(t *testing.T) {
-	// The child specifies its own "include" (which must entirely replace, not
-	// merge with, the base's "include") but omits "exclude" (which must
-	// still be inherited from the base). The base's exclude pattern
-	// ("src/excluded/**/*.ts") is resolved relative to the base's OWN
-	// directory (base/), so the file it must reach lives at
-	// base/src/excluded/fixture.ts, not a root-level src/excluded/fixture.ts.
-	// The child's own include is widened to also reach under base/ so that
-	// file is a candidate for inclusion at all, isolating the assertion to
-	// whether the base's inherited-and-rebased exclude, specifically,
-	// removes it.
+	// Child include replaces base include; base exclude is still inherited (rebased).
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json":                `{"extends": "./base/tsconfig.json", "include": ["src/**/*.ts", "base/**/*.ts"]}`,
 		"base/tsconfig.json":           `{"include": ["other/**/*.ts"], "exclude": ["src/excluded/**/*.ts"]}`,
@@ -213,16 +201,7 @@ func TestApplySourceScopeChildTSConfigOverridesExtendedBaseInclude(t *testing.T)
 }
 
 func TestApplySourceScopeAppliesTwoLevelExtendedBaseTSConfig(t *testing.T) {
-	// tsconfig.json -> mid/tsconfig.json -> mid/root/tsconfig.json, where
-	// only the outermost base (root) sets "exclude". Neither the package
-	// config nor the middle config specifies include/exclude/files of its
-	// own, so the root's exclude must still apply all the way through the
-	// chain. root is nested under mid (rather than a sibling of it) so each
-	// hop stays within the directory containing the config that references
-	// it, per the existing extends security boundary. The root's exclude
-	// pattern ("test/**/*.ts") is resolved relative to the root config's own
-	// directory (mid/root/), so the file it must reach lives at
-	// mid/root/test/app.ts, not a root-level test/app.ts.
+	// Outermost base exclude must apply through the chain; hit under mid/root/.
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json":          `{"extends": "./mid/tsconfig.json"}`,
 		"mid/tsconfig.json":      `{"extends": "./root/tsconfig.json"}`,
@@ -245,15 +224,7 @@ func TestApplySourceScopeAppliesTwoLevelExtendedBaseTSConfig(t *testing.T) {
 }
 
 func TestApplySourceScopeExtendsDescendingThenAscendingWithinSnapshotRootSucceeds(t *testing.T) {
-	// A common monorepo pattern: the package's tsconfig.json extends a
-	// config one directory DOWN (packages/foo), which in turn extends a
-	// shared base config back UP at the snapshot root
-	// ("../../tsconfig.base.json"). The final target is the snapshot root's
-	// own tsconfig.base.json, which never actually leaves the snapshot, so
-	// this must resolve successfully even though the second hop's own
-	// directory (packages/foo) is not itself an ancestor of the target —
-	// the escape check must be relative to the snapshot root, not to
-	// whichever subdirectory happens to contain the current hop's config.
+	// Boundary is snapshot root, not the current hop dir (down then up stays in-bounds).
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json":              `{"extends": "./packages/foo/tsconfig.json"}`,
 		"packages/foo/tsconfig.json": `{"extends": "../../tsconfig.base.json"}`,
@@ -276,12 +247,7 @@ func TestApplySourceScopeExtendsDescendingThenAscendingWithinSnapshotRootSucceed
 }
 
 func TestApplySourceScopeCircularExtendsChainFailsOpen(t *testing.T) {
-	// Two configs in the same directory extend each other directly, forming
-	// a genuine cycle that stays entirely in-bounds (same directory as each
-	// other and as the snapshot root) at every hop, so only the
-	// cycle-detection guard — not the per-hop security boundary check — can
-	// stop resolution here. Without cycle detection this would recurse
-	// between tsconfig.json and base.json indefinitely.
+	// In-bounds cycle: only cycle detection (not the path boundary) stops this.
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json": `{"extends": "./base.json", "exclude": ["test/**/*.ts"]}`,
 		"base.json":     `{"extends": "./tsconfig.json"}`,
@@ -333,15 +299,7 @@ func TestApplySourceScopeTSConfigExtendsEscapingSnapshotFailsOpen(t *testing.T) 
 }
 
 func TestApplySourceScopeTSConfigExtendsScopedNpmSpecifierFailsOpen(t *testing.T) {
-	// A real, resolvable tsconfig.json is planted AT the npm-specifier-shaped
-	// path itself (resolveExtendedTSConfig would join dir with the bare
-	// extends value and read that path directly, with no "append
-	// tsconfig.json" step for a bare/scoped specifier). If
-	// isTSConfigPathSpecifier's guard were ever removed, this file would be
-	// found and read, its "files" setting would apply, and the assertion
-	// below would fail (src/app.ts would become production and test/app.ts
-	// would be dropped) — proving the guard, not a missing file, is what
-	// makes this fail open.
+	// Plant a real config at the specifier path so only the path-guard fails open.
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json":                  `{"extends": "@tsconfig/node18/tsconfig.json"}`,
 		"@tsconfig/node18/tsconfig.json": `{"files": ["src/app.ts"]}`,
@@ -368,12 +326,7 @@ func TestApplySourceScopeTSConfigExtendsScopedNpmSpecifierFailsOpen(t *testing.T
 }
 
 func TestApplySourceScopeTSConfigExtendsBareNpmSpecifierFailsOpen(t *testing.T) {
-	// As above: a real, resolvable tsconfig-shaped file lives at the literal
-	// path "some-base-config" (resolveExtendedTSConfig treats a bare extends
-	// value as the config file itself, not a directory to search within), so
-	// this test can only pass because isTSConfigPathSpecifier rejects the
-	// bare specifier before ever trying to read it — not because the path
-	// happens to not exist.
+	// Plant a real config at the bare name so only the path-guard fails open.
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json":    `{"extends": "some-base-config"}`,
 		"some-base-config": `{"files": ["src/app.ts"]}`,
@@ -400,16 +353,7 @@ func TestApplySourceScopeTSConfigExtendsBareNpmSpecifierFailsOpen(t *testing.T) 
 }
 
 func TestApplySourceScopeTSConfigExtendsChainHittingNpmSpecifierMidChainFailsOpen(t *testing.T) {
-	// The root config extends a subdirectory config with no issue of its own;
-	// that subdirectory config in turn extends an npm-package specifier. The
-	// npm specifier must fail the whole chain open, not just the hop that
-	// encountered it, even though the first hop (root -> sub) is a perfectly
-	// resolvable path-shaped extends. As in the two tests above, a real
-	// tsconfig-shaped file is planted at the mid-chain hop's
-	// npm-specifier-shaped path (resolved relative to sub/, i.e.
-	// "sub/@tsconfig/node18/tsconfig.json") so this test can only pass
-	// because the guard rejects the specifier, not because nothing was
-	// there to read.
+	// Mid-chain npm hop must fail the whole chain; plant a real file at the hop path.
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json":                      `{"extends": "./sub/tsconfig.json"}`,
 		"sub/tsconfig.json":                  `{"extends": "@tsconfig/node18/tsconfig.json"}`,
@@ -462,11 +406,7 @@ func TestApplySourceScopeTSConfigExtendsAbsolutePathOutsideSnapshotFailsOpen(t *
 }
 
 func TestApplySourceScopeTSConfigExtendsSymlinkEscapingSnapshotFailsOpen(t *testing.T) {
-	// The literal extends target ("./base.json") is lexically in-bounds, but
-	// it is committed as a symlink pointing outside the snapshot entirely.
-	// The escape check must resolve symlinks before judging containment, and
-	// must read the resolved path rather than following the symlink
-	// transparently via a raw os.ReadFile on the pre-resolution path.
+	// Lexically in-bounds symlink to a host path must fail open (not read through).
 	outside := t.TempDir()
 	secretPath := filepath.Join(outside, "secret.json")
 	if err := os.WriteFile(secretPath, []byte(`{"files": ["src/app.ts"]}`), 0o644); err != nil {
@@ -501,11 +441,7 @@ func TestApplySourceScopeTSConfigExtendsSymlinkEscapingSnapshotFailsOpen(t *test
 }
 
 func TestApplySourceScopeRebasesInheritedExcludeToBaseDirectory(t *testing.T) {
-	// The base config's exclude pattern is resolved relative to the base's
-	// OWN directory (packages/shared/), so it must reach
-	// packages/shared/test/fixture.ts but must NOT reach a root-level
-	// test/root.ts that merely happens to share the pattern's relative
-	// suffix ("test/**/*.ts").
+	// Rebased exclude hits packages/shared/test/, not root test/.
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json":                   `{"extends": "./packages/shared/tsconfig.json"}`,
 		"packages/shared/tsconfig.json":   `{"exclude": ["test/**/*.ts"]}`,
@@ -542,9 +478,6 @@ func TestApplySourceScopeRebasesInheritedExcludeToBaseDirectory(t *testing.T) {
 }
 
 func TestApplySourceScopeIncludeAndFilesAreAdditive(t *testing.T) {
-	// Real TypeScript combines "files" and "include": the effective file set
-	// is the union of explicit "files" entries and files matched by
-	// "include" patterns, not an either/or choice between the two.
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json":         `{"files": ["src/explicit.ts"], "include": ["src/included/**/*.ts"]}`,
 		"src/explicit.ts":       "export const explicit = 1\n",
@@ -580,12 +513,7 @@ func TestApplySourceScopeIncludeAndFilesAreAdditive(t *testing.T) {
 }
 
 func TestApplySourceScopeArrayExtendsPreservesChildOwnSettings(t *testing.T) {
-	// TypeScript 5.0+'s multi-base array-form "extends" is out of scope for
-	// v1 (no merging of multiple bases), but an array-valued extends must not
-	// regress to discarding the CHILD's own settings: before Extends existed
-	// as a typed field, an array-valued extends was just an unrecognized
-	// field encoding/json silently ignored, so the child's own include/
-	// exclude/files still worked.
+	// Array extends is ignored (not multi-merged); child exclude must still apply.
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json": `{"extends": ["./a.json", "./b.json"], "exclude": ["test/**/*.ts"]}`,
 		"a.json":        `{}`,
@@ -609,8 +537,6 @@ func TestApplySourceScopeArrayExtendsPreservesChildOwnSettings(t *testing.T) {
 }
 
 func TestApplySourceScopeExtendsExtensionlessPathResolves(t *testing.T) {
-	// TypeScript resolves an extensionless relative extends target by trying
-	// the literal path, then retrying with ".json" appended.
 	repo := newScopeTestRepo(t, map[string]string{
 		"tsconfig.json":      `{"extends": "./tsconfig.base"}`,
 		"tsconfig.base.json": `{"exclude": ["test/**/*.ts"]}`,
@@ -632,18 +558,7 @@ func TestApplySourceScopeExtendsExtensionlessPathResolves(t *testing.T) {
 }
 
 func TestLoadTSConfigRebasesExtendsPatternsWhenDirIsASymlink(t *testing.T) {
-	// dir passed to loadTSConfig is the raw snapshot directory (ultimately
-	// os.MkdirTemp's result), which on some platforms (notably macOS, where
-	// /var is a symlink to /private/var) may itself contain a symlink
-	// component. resolveExtendedTSConfig always returns a symlink-resolved
-	// baseDir, so snapshotRoot must be resolved the same way before it is
-	// used as the other half of the filepath.Rel(snapshotRoot, baseDir) math
-	// in rebaseTSConfigPatterns -- otherwise the rebased pattern is computed
-	// between an unresolved root and a resolved baseDir and comes out
-	// nonsensical, silently defeating the inherited exclude pattern. This
-	// reproduces that interaction directly, without needing a genuinely
-	// symlinked OS temp directory: dir itself is a symlink pointing at a
-	// real sibling directory.
+	// snapshotRoot and baseDir must share resolved path space for rebase math.
 	real := t.TempDir()
 	writeScopeTestFile(t, real, "tsconfig.json", `{"extends": "./packages/shared/tsconfig.json"}`)
 	writeScopeTestFile(t, real, "packages/shared/tsconfig.json", `{"exclude": ["test/**/*.ts"]}`)
