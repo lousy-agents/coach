@@ -82,7 +82,7 @@ func (r *RecordingToolRegistry) Call(ctx context.Context, source CallSource, nam
 	r.mu.Unlock()
 
 	if !ok {
-		rec := RecordedCall{Name: name, Source: source, Args: args, Err: ErrUnknownTool}
+		rec := RecordedCall{Name: name, Source: source, Args: cloneRawMessage(args), Err: ErrUnknownTool}
 		r.mu.Lock()
 		r.calls = append(r.calls, rec)
 		r.mu.Unlock()
@@ -91,7 +91,7 @@ func (r *RecordingToolRegistry) Call(ctx context.Context, source CallSource, nam
 
 	result, err := handler(ctx, args)
 
-	rec := RecordedCall{Name: name, Source: source, Args: args, Result: result, Err: err}
+	rec := RecordedCall{Name: name, Source: source, Args: cloneRawMessage(args), Result: cloneRawMessage(result), Err: err}
 	r.mu.Lock()
 	r.calls = append(r.calls, rec)
 	r.mu.Unlock()
@@ -109,5 +109,21 @@ func (r *RecordingToolRegistry) Calls() []RecordedCall {
 
 	out := make([]RecordedCall, len(r.calls))
 	copy(out, r.calls)
+	for i := range out {
+		out[i].Args = cloneRawMessage(out[i].Args)
+		out[i].Result = cloneRawMessage(out[i].Result)
+	}
+	return out
+}
+
+// cloneRawMessage returns an owned copy of m so neither the registry's
+// internal storage nor a caller's returned view can be mutated through the
+// other's reference to the same underlying byte array.
+func cloneRawMessage(m json.RawMessage) json.RawMessage {
+	if m == nil {
+		return nil
+	}
+	out := make(json.RawMessage, len(m))
+	copy(out, m)
 	return out
 }

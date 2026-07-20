@@ -59,7 +59,7 @@ var _ = Describe("report-fixture provenance/versioning golden fixtures", func() 
 			}
 		})
 
-		It("round-trips through NewReportFixture/NewFindingFixture to the exact committed golden bytes", func() {
+		It("round-trips through NewReportFixture to the exact committed golden bytes", func() {
 			rebuilt := acceptanceharness.NewReportFixture(v1.Findings)
 			got, err := json.MarshalIndent(rebuilt, "", "  ")
 			Expect(err).NotTo(HaveOccurred())
@@ -100,7 +100,7 @@ var _ = Describe("report-fixture provenance/versioning golden fixtures", func() 
 			Expect(sawAgent).To(BeTrue(), "report_fixture_v2.json must additively include at least one agent finding")
 		})
 
-		It("round-trips through NewReportFixture/NewFindingFixture to the exact committed golden bytes", func() {
+		It("round-trips through NewReportFixture to the exact committed golden bytes", func() {
 			rebuilt := acceptanceharness.NewReportFixture(v2.Findings)
 			got, err := json.MarshalIndent(rebuilt, "", "  ")
 			Expect(err).NotTo(HaveOccurred())

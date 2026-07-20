@@ -82,6 +82,33 @@ var _ = Describe("RecordingToolRegistry", func() {
 		})
 	})
 
+	Context("when the args/result byte slices are mutated after the fact", func() {
+		It("does not change what Calls() later observes, whether mutated via the original buffers or a prior Calls() result", func() {
+			registry := &agentloopharness.RecordingToolRegistry{}
+			registry.Register("tool_b", func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+				return json.RawMessage(`{"result":"orig"}`), nil
+			})
+
+			args := json.RawMessage(`{"arg":"orig"}`)
+			_, err := registry.Call(context.Background(), agentloopharness.CallSourceHandler, "tool_b", args)
+			Expect(err).NotTo(HaveOccurred())
+
+			args[2] = 'X'
+
+			calls := registry.Calls()
+			Expect(calls).To(HaveLen(1))
+			Expect(calls[0].Args).To(MatchJSON(`{"arg":"orig"}`))
+			Expect(calls[0].Result).To(MatchJSON(`{"result":"orig"}`))
+
+			calls[0].Args[2] = 'Y'
+			calls[0].Result[2] = 'Y'
+
+			callsAgain := registry.Calls()
+			Expect(callsAgain[0].Args).To(MatchJSON(`{"arg":"orig"}`))
+			Expect(callsAgain[0].Result).To(MatchJSON(`{"result":"orig"}`))
+		})
+	})
+
 	Context("when multiple goroutines call Call concurrently", func() {
 		It("is safe under -race and every call is recorded", func() {
 			registry := &agentloopharness.RecordingToolRegistry{}

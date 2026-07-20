@@ -72,7 +72,8 @@ func Run(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Cloc
 	t.Run("dual-worker exclusion", func(t *testing.T) {
 		clock := acceptanceharness.NewFakeClock(time.Unix(0, 0))
 		q := newQueue(t, clock)
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
 		if err := q.Enqueue(ctx, Task{ID: "task-1", Payload: []byte("payload")}); err != nil {
 			t.Fatalf("Enqueue: %v", err)
@@ -117,7 +118,8 @@ func Run(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Cloc
 	t.Run("kill-mid-attempt enables reclaim", func(t *testing.T) {
 		clock := acceptanceharness.NewFakeClock(time.Unix(0, 0))
 		q := newQueue(t, clock)
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
 		if err := q.Enqueue(ctx, Task{ID: "task-1", Payload: []byte("payload")}); err != nil {
 			t.Fatalf("Enqueue: %v", err)
@@ -154,7 +156,8 @@ func Run(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Cloc
 	t.Run("post-reclaim single completion", func(t *testing.T) {
 		clock := acceptanceharness.NewFakeClock(time.Unix(0, 0))
 		q := newQueue(t, clock)
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
 		if err := q.Enqueue(ctx, Task{ID: "task-1", Payload: []byte("payload")}); err != nil {
 			t.Fatalf("Enqueue: %v", err)
