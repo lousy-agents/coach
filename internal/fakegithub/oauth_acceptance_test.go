@@ -13,8 +13,6 @@ import (
 	"github.com/lousy-agents/coach/internal/fakegithub"
 )
 
-// noRedirectClient never follows a redirect, so a test can inspect the
-// Location header of a 3xx response directly.
 func noRedirectClient() *http.Client {
 	return &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -23,10 +21,6 @@ func noRedirectClient() *http.Client {
 	}
 }
 
-// newOAuthFixture builds a Fixture covering every scenario this file
-// exercises: a known identity, an authorization code per Scenario, and a
-// directly-registered OAuth access token for /user tests that don't need to
-// go through the full exchange flow.
 func newOAuthFixture() *fakegithub.Fixture {
 	fx := fakegithub.NewFixture("oauth-fixture")
 	fx.OAuth.ClientID = "test-client-id"

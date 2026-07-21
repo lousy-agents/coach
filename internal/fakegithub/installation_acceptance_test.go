@@ -12,10 +12,6 @@ import (
 	"github.com/lousy-agents/coach/internal/fakegithub"
 )
 
-// newInstallationFixture builds a Fixture covering every scenario this file
-// exercises: a known installation, a repo mapped to it, and an effective
-// permission for a known collaborator, plus one dedicated entry per
-// non-OK Scenario for each of the three endpoint families under test.
 func newInstallationFixture() *fakegithub.Fixture {
 	fx := fakegithub.NewFixture("installation-fixture")
 

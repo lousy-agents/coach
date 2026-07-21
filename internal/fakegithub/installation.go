@@ -8,18 +8,14 @@ import (
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
 )
 
-// installationTokenExpiresAt is the expiry timestamp the fake stamps onto
-// every successfully minted installation token. It's a fixed, far-future
-// RFC3339 timestamp rather than a computed one: the fake never actually
-// expires tokens, so a stable value keeps responses deterministic across
-// runs.
+// installationTokenExpiresAt is a fixed far-future RFC3339 expiry stamped on
+// minted installation tokens. The fake never expires tokens; a stable value
+// keeps responses deterministic.
 const installationTokenExpiresAt = "2999-01-01T00:00:00Z"
 
-// writeScenarioStatus maps a non-OK Scenario to the HTTP status that models
-// it, writes that status (with a JSON-decodable error body, mirroring
-// real GitHub's error response shape), and reports whether scenario was one
-// of the non-OK cases it handled. A false return means the caller should
-// proceed to write its own ScenarioOK response.
+// writeScenarioStatus maps a non-OK Scenario to its HTTP status and body
+// (GitHub-shaped JSON error). It reports whether scenario was handled; false
+// means the caller should write the success response.
 func writeScenarioStatus(w http.ResponseWriter, scenario Scenario) bool {
 	switch scenario {
 	case ScenarioNotFound:
@@ -36,22 +32,25 @@ func writeScenarioStatus(w http.ResponseWriter, scenario Scenario) bool {
 	}
 }
 
+// rejectKnownNonAppBearer rejects OAuth, installation, and RejectedTokens
+// bearers on App-JWT routes. The fake does not verify App JWT signatures
+// (no key pair); TokenUnknown — including a missing header or unverifiable
+// App JWT — is allowed through. That is an accepted simplification.
+func rejectKnownNonAppBearer(fx *Fixture, rec *acceptanceharness.Recorder, w http.ResponseWriter, r *http.Request) bool {
+	kind := fx.ClassifyToken(extractBearerToken(r))
+	if kind == TokenOAuth || kind == TokenInstallation || kind == TokenRejected {
+		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
+		http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+		return true
+	}
+	return false
+}
+
 // installationTokenHandler answers
-// POST /api/v3/app/installations/{id}/access_tokens. Does not
-// cryptographically verify the caller's "Authorization: Bearer <App JWT>"
-// header -- the fake doesn't hold the App's private/public key pair, so JWT
-// signature verification is an accepted, documented simplification for this
-// fake service -- but it does reject a bearer token this fake already knows
-// belongs to a different credential slot (a registered OAuth or installation
-// token, or a Fixture.RejectedTokens entry such as a Coach JWT stand-in),
-// consistent with the epic's token-separation contract. A token that
-// classifies as TokenUnknown (including no Authorization header at all, or
-// an unverifiable App JWT) proceeds exactly as before.
+// POST /api/v3/app/installations/{id}/access_tokens.
 func installationTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if kind := fx.ClassifyToken(extractBearerToken(r)); kind == TokenOAuth || kind == TokenInstallation || kind == TokenRejected {
-			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
-			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+		if rejectKnownNonAppBearer(fx, rec, w, r) {
 			return
 		}
 
@@ -85,22 +84,11 @@ func installationTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http
 }
 
 // installationResolutionHandler answers
-// GET /api/v3/repos/{owner}/{repo}/installation. Does not cryptographically
-// verify the caller's "Authorization: Bearer <App JWT>" header -- the fake
-// doesn't hold the App's private/public key pair, so JWT signature
-// verification is an accepted, documented simplification for this fake
-// service -- but it does reject a bearer token this fake already knows
-// belongs to a different credential slot (a registered OAuth or
-// installation token, or a Fixture.RejectedTokens entry such as a Coach JWT
-// stand-in), consistent with the epic's token-separation contract. A token
-// that classifies as TokenUnknown (including no Authorization header at
-// all, or an unverifiable App JWT) proceeds exactly as before: resolution
-// is a lookup keyed purely on owner/repo.
+// GET /api/v3/repos/{owner}/{repo}/installation. Resolution is keyed on
+// owner/repo only after the App-bearer check in rejectKnownNonAppBearer.
 func installationResolutionHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if kind := fx.ClassifyToken(extractBearerToken(r)); kind == TokenOAuth || kind == TokenInstallation || kind == TokenRejected {
-			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
-			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+		if rejectKnownNonAppBearer(fx, rec, w, r) {
 			return
 		}
 
@@ -128,18 +116,13 @@ func installationResolutionHandler(fx *Fixture, rec *acceptanceharness.Recorder)
 }
 
 // permissionHandler answers
-// GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission. It
-// requires an "Authorization: token <installation-token>" header classified
-// by fx.ClassifyToken as a GitHub App installation token; any other token
-// (including a misused OAuth access token) is rejected and recorded as
-// acceptanceharness.AuthModeRejected rather than treated as a valid
-// installation credential.
+// GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission.
+// Requires a classified installation token; any other credential is
+// AuthModeRejected.
 func permissionHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := extractBearerToken(r)
 
-		// TokenRejected (Coach JWT stand-in) and every non-installation
-		// credential fall through the same rejection path.
 		if fx.ClassifyToken(token) != TokenInstallation {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
 			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)

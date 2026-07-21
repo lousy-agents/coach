@@ -18,16 +18,9 @@ import (
 	"github.com/lousy-agents/coach/pkg/githubingest"
 )
 
-// oversizedContent is larger than the Contents API's 1 MiB inline-content
-// limit (see pkg/githubingest's maxContentSize), so a fixture File entry
-// built from it exercises the ScenarioOversized path end to end.
+// oversizedContent exceeds githubingest maxContentSize (1 MiB).
 var oversizedContent = make([]byte, 1<<20+1)
 
-// contentsFixtureRSAKey returns a freshly generated RSA private key,
-// PKCS#1-PEM-encoded the same way GitHub encodes App private keys it
-// issues. Ginkgo-local (mirrors pkg/githubingest's own ginkgoRSAKey, which
-// exists for the same reason: a Ginkgo spec has no *testing.T, and
-// GinkgoT() alone does not satisfy testing.TB).
 func contentsFixtureRSAKey() []byte {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	Expect(err).NotTo(HaveOccurred())
@@ -36,12 +29,6 @@ func contentsFixtureRSAKey() []byte {
 	return pem.EncodeToMemory(block)
 }
 
-// newContentsFixture builds a Fixture covering every scenario this file
-// exercises via pkg/githubingest.GitHubFileReader.ReadFile's public API: a
-// registered installation (so ghinstallation's automatic token mint against
-// this same fake server succeeds), a small readable file plus its parent
-// directory listing, an oversized file, and dedicated not-found/
-// auth-failure/transient file entries.
 func newContentsFixture() *fakegithub.Fixture {
 	fx := fakegithub.NewFixture("contents-fixture")
 
@@ -65,8 +52,7 @@ func newContentsFixture() *fakegithub.Fixture {
 
 	fx.Contents.Files["acme/widgets/main/dir/authfail.txt"] = fakegithub.FileEntry{Scenario: fakegithub.ScenarioAuthFail}
 	fx.Contents.Files["acme/widgets/main/dir/transient.txt"] = fakegithub.FileEntry{Scenario: fakegithub.ScenarioTransient}
-	// "dir/missing.txt" is deliberately never registered in Files, modeling
-	// ScenarioNotFound as the natural absence of a fixture entry.
+	// dir/missing.txt is omitted so ScenarioNotFound is natural absence.
 
 	return &fx
 }
@@ -176,14 +162,8 @@ var _ = Describe("fake GitHub repository content reads, via pkg/githubingest's p
 
 			Expect(errors.Is(err, githubingest.ErrAuth)).To(BeTrue(), "got err %v, want errors.Is(err, ErrAuth)", err)
 
-			// The above assertion alone can't distinguish "the contents
-			// handler rejected the read" from "token mint failed before the
-			// contents handler was ever reached" -- both surface as
-			// githubingest.ErrAuth from ReadFile's perspective. Require a
-			// recorded request against the contents-read path itself, with
-			// this scenario, so the spec can only pass once the real
-			// contents handler (not the installation-token-mint stub)
-			// produces the auth failure.
+			// ErrAuth alone is ambiguous (mint failure vs contents handler).
+			// Require a recorded /contents/ request with this scenario.
 			var sawContentsAuthFail bool
 			for _, rec := range server.Recorder().Records() {
 				if rec.Method == http.MethodGet && strings.Contains(rec.Path, "/contents/") && rec.Scenario == string(fakegithub.ScenarioAuthFail) {

@@ -29,11 +29,9 @@ const (
 	AuthModeInstallation AuthMode = "installation"
 	// AuthModeNone marks a request that carried no credential.
 	AuthModeNone AuthMode = "none"
-	// AuthModeRejected marks a request the fake/recorder refused --
-	// including misuses the epic calls out explicitly: an OAuth token
-	// used against a repository endpoint, an installation credential
-	// used where an OAuth token belongs, or a Coach JWT (or other
-	// non-GitHub credential) sent to GitHub.
+	// AuthModeRejected marks a refused credential: OAuth on a repo path,
+	// installation token on an OAuth path, or a non-GitHub credential
+	// (e.g. Coach JWT) sent to GitHub.
 	AuthModeRejected AuthMode = "rejected"
 )
 

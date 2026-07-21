@@ -11,12 +11,10 @@ import (
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
 )
 
-// oauthAuthorizeHandler answers GET /login/oauth/authorize. There's no real
-// browser login/consent step to simulate, so the fake-only "scenario_code"
-// query param lets a test pick which fixture-registered OAuthCodeEntry key
-// gets issued directly: on a matching client_id, it redirects to
-// redirect_uri with that code (echoed back verbatim) and the given state
-// appended.
+// oauthAuthorizeHandler answers GET /login/oauth/authorize. There is no
+// browser consent step; the fake-only query param scenario_code selects which
+// fixture OAuthCodeEntry key is issued. On a matching client_id it redirects
+// to redirect_uri with that code and state.
 func oauthAuthorizeHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -59,12 +57,10 @@ func oauthAuthorizeHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Ha
 	}
 }
 
-// oauthTokenHandler answers POST /login/oauth/access_token: it validates the
-// form-encoded client_id/client_secret against the fixture, looks up code in
-// fx.OAuth.Codes, and dispatches on the entry's Scenario. On ScenarioOK it
-// mints a fresh access token, registers it into fx.OAuth.Tokens, and --
-// mirroring real GitHub's single-use authorization codes -- deletes the
-// consumed code from fx.OAuth.Codes.
+// oauthTokenHandler answers POST /login/oauth/access_token. On ScenarioOK it
+// mints a token into fx.OAuth.Tokens and deletes the code from Codes
+// (single-use). Lookup and mutate run under fx.mu so concurrent exchanges of
+// the same code cannot both succeed.
 func oauthTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -83,13 +79,6 @@ func oauthTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handle
 			return
 		}
 
-		// Hold fx.mu across the whole read-then-mutate sequence -- the
-		// lookup, and (on ScenarioOK) the mint+delete -- so this exchange
-		// is atomic with respect to any other concurrent request touching
-		// fx.OAuth.Tokens/fx.OAuth.Codes, including a second concurrent
-		// exchange attempt for the very same code (which will then
-		// correctly see it already consumed). The lock is released
-		// before any response is written.
 		fx.mu.Lock()
 		entry, ok := fx.OAuth.Codes[code]
 		var token string
@@ -134,10 +123,9 @@ func oauthTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handle
 	}
 }
 
-// oauthUserHandler answers GET /user: it extracts a bearer token from either
-// the "token" or "Bearer" Authorization scheme, uses fx.ClassifyToken to
-// reject an installation credential or an unknown token as misuse, and
-// otherwise dispatches on the resolved OAuthTokenEntry's Scenario.
+// oauthUserHandler answers GET /user (and /api/v3/user). Installation,
+// unknown, and rejected tokens are AuthModeRejected; a registered OAuth
+// token dispatches on its Scenario.
 func oauthUserHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := extractBearerToken(r)
@@ -185,9 +173,8 @@ func oauthUserHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handler
 	}
 }
 
-// extractBearerToken extracts the credential from an Authorization header
-// using either the "token" (classic GitHub PAT/OAuth) or "Bearer" scheme,
-// returning "" if neither is present.
+// extractBearerToken returns the credential from Authorization using the
+// "token" or "Bearer" scheme, or "" if neither is present.
 func extractBearerToken(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
 	for _, scheme := range []string{"token ", "Bearer "} {
@@ -198,14 +185,11 @@ func extractBearerToken(r *http.Request) string {
 	return ""
 }
 
-// newFakeToken returns a fresh, non-guessable access token string, built
-// entirely from crypto/rand output.
+// newFakeToken returns a non-guessable access token from crypto/rand.
 func newFakeToken() string {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
-		// crypto/rand.Read failing is effectively unrecoverable; panicking
-		// here (rather than silently minting a predictable token) keeps the
-		// fake honest about the failure instead of masking it.
+		// Fail loud rather than mint a predictable token.
 		panic("fakegithub: crypto/rand failure: " + err.Error())
 	}
 	return "fake-oauth-" + hex.EncodeToString(buf)

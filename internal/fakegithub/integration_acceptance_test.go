@@ -14,14 +14,6 @@ import (
 	"github.com/lousy-agents/coach/internal/fakegithub"
 )
 
-// newIntegrationFixture builds a single Fixture spanning all five endpoint
-// families fakegithub implements (OAuth authorize/exchange/"/user", GitHub
-// App installation-token mint, repo-to-installation resolution, effective
-// permissions, and repository content reads), so this file's specs -- which
-// are cross-cutting by design, unlike the per-family fixtures in
-// oauth_acceptance_test.go/installation_acceptance_test.go/
-// contents_acceptance_test.go -- can drive a request against any of them
-// from one Fixture/Server pair.
 func newIntegrationFixture() *fakegithub.Fixture {
 	fx := fakegithub.NewFixture("integration-fixture")
 	fx.OAuth.ClientID = "integration-client-id"
@@ -43,12 +35,8 @@ func newIntegrationFixture() *fakegithub.Fixture {
 	return &fx
 }
 
-// mintInstallationToken drives the real POST
-// /api/v3/app/installations/{id}/access_tokens flow and returns the
-// genuinely minted token, rather than reaching for the fixture's Token field
-// directly -- this file's misuse specs exist specifically to prove a token
-// obtained through a real flow is rejected elsewhere, not merely that a
-// pre-registered constant is.
+// mintInstallationToken uses the real mint endpoint so misuse specs reject a
+// flow-issued token, not only a pre-registered constant.
 func mintInstallationToken(server *fakegithub.Server, installationID int64) string {
 	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", server.URL(), installationID), nil)
 	Expect(err).NotTo(HaveOccurred())
@@ -67,10 +55,8 @@ func mintInstallationToken(server *fakegithub.Server, installationID int64) stri
 	return body.Token
 }
 
-// mintOAuthToken drives the real GET /login/oauth/authorize -> POST
-// /login/oauth/access_token flow and returns the genuinely minted access
-// token, for the same "prove a real-flow token is rejected elsewhere"
-// reason as mintInstallationToken above.
+// mintOAuthToken uses the real authorize→token exchange for the same reason
+// as mintInstallationToken.
 func mintOAuthToken(server *fakegithub.Server) string {
 	authorizeURL := server.URL() + "/login/oauth/authorize?" + url.Values{
 		"client_id":     {"integration-client-id"},
@@ -194,11 +180,8 @@ var _ = Describe("fake GitHub service integration", func() {
 		})
 	})
 
-	// Epic Story 0.2 names "Coach JWT sent to GitHub" as a recorded misuse.
-	// Coach JWTs do not exist until Baseline's coach-api, so the fake accepts
-	// fixture-registered RejectedTokens (stand-ins for any non-GitHub
-	// credential, including a future Coach JWT) and must reject them on every
-	// route rather than treating them as an unverifiable App JWT.
+	// RejectedTokens stand in for Coach JWTs (and any non-GitHub credential)
+	// until coach-api exists; must reject on every route, not as App JWT.
 	Describe("fixture-registered non-GitHub credentials (Coach JWT stand-in)", func() {
 		const coachJWTStandIn = "coach-jwt-fixture-stand-in"
 
@@ -245,7 +228,6 @@ var _ = Describe("fake GitHub service integration", func() {
 
 	Describe("recorder sequence across all five endpoint families", func() {
 		It("records the full happy-path request sequence with correctly-classified AuthModes, in order", func() {
-			// 1: authorize (AuthModeNone).
 			authorizeURL := server.URL() + "/login/oauth/authorize?" + url.Values{
 				"client_id":     {"integration-client-id"},
 				"redirect_uri":  {"https://coach.example.com/callback"},
@@ -257,7 +239,6 @@ var _ = Describe("fake GitHub service integration", func() {
 			authorizeResp.Body.Close()
 			Expect(authorizeResp.StatusCode).To(Equal(http.StatusFound))
 
-			// 2: token exchange (AuthModeNone).
 			exchangeResp, err := http.PostForm(server.URL()+"/login/oauth/access_token", url.Values{
 				"client_id":     {"integration-client-id"},
 				"client_secret": {"integration-client-secret"},
@@ -270,16 +251,13 @@ var _ = Describe("fake GitHub service integration", func() {
 			decodeJSON(exchangeResp, &exchangeBody)
 			Expect(exchangeBody.AccessToken).NotTo(BeEmpty())
 
-			// 3: installation-token mint (AuthModeNone).
 			installationToken := mintInstallationToken(server, 123)
 
-			// 4: repo-to-installation resolution (AuthModeNone).
 			resolveResp, err := http.Get(server.URL() + "/api/v3/repos/acme/widgets/installation")
 			Expect(err).NotTo(HaveOccurred())
 			resolveResp.Body.Close()
 			Expect(resolveResp.StatusCode).To(Equal(http.StatusOK))
 
-			// 5: /user with the OAuth access token (AuthModeOAuth).
 			userReq, err := http.NewRequest(http.MethodGet, server.URL()+"/user", nil)
 			Expect(err).NotTo(HaveOccurred())
 			userReq.Header.Set("Authorization", "token "+exchangeBody.AccessToken)
@@ -288,8 +266,6 @@ var _ = Describe("fake GitHub service integration", func() {
 			userResp.Body.Close()
 			Expect(userResp.StatusCode).To(Equal(http.StatusOK))
 
-			// 6: collaborator-permission check with the installation token
-			// (AuthModeInstallation).
 			permReq, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/v3/repos/acme/widgets/collaborators/octocat/permission", server.URL()), nil)
 			Expect(err).NotTo(HaveOccurred())
 			permReq.Header.Set("Authorization", "token "+installationToken)
@@ -298,8 +274,6 @@ var _ = Describe("fake GitHub service integration", func() {
 			permResp.Body.Close()
 			Expect(permResp.StatusCode).To(Equal(http.StatusOK))
 
-			// 7: repository content read with the installation token
-			// (AuthModeInstallation).
 			contentsReq, err := http.NewRequest(http.MethodGet, server.URL()+"/api/v3/repos/acme/widgets/contents/dir/hello.txt?ref=main", nil)
 			Expect(err).NotTo(HaveOccurred())
 			contentsReq.Header.Set("Authorization", "token "+installationToken)
@@ -333,14 +307,7 @@ var _ = Describe("fake GitHub service integration", func() {
 	})
 
 	Describe("concurrent requests against one Server", func() {
-		// This spec exists to reproduce/guard against a data race on
-		// fx.OAuth.Tokens/fx.OAuth.Codes: httptest.NewServer (which Server
-		// wraps) serves each connection on its own goroutine, so N
-		// concurrent authorize->exchange->/user cycles hit the same
-		// *Fixture concurrently. Before the fakegithub.Fixture mutex fix,
-		// this reliably races under `go test -race` (and can crash the
-		// process outright with "fatal error: concurrent map read and map
-		// write" outside -race).
+		// Guards Fixture.mu on OAuth.Tokens/Codes under concurrent httptest handlers.
 		It("completes many concurrent authorize->exchange->/user cycles cleanly, with every identity resolved correctly", func() {
 			const concurrency = 50
 
@@ -454,11 +421,7 @@ var _ = Describe("fake GitHub service integration", func() {
 				Expect(out.id).To(Equal(int64(1)), "goroutine %d /user id", i)
 			}
 
-			// Every fixture-registered code was consumed exactly once
-			// (single-use codes stay single-use under concurrent
-			// exchange), and every minted token is present and correctly
-			// registered.
-			Expect(fx.OAuth.Tokens).To(HaveLen(concurrency + 1)) // +1 for the pre-registered "token-ok"
+			Expect(fx.OAuth.Tokens).To(HaveLen(concurrency + 1)) // +1 for pre-registered token-ok
 			for i := 0; i < concurrency; i++ {
 				Expect(fx.OAuth.Codes).NotTo(HaveKey(fmt.Sprintf("concurrent-code-%d", i)))
 			}
@@ -466,10 +429,7 @@ var _ = Describe("fake GitHub service integration", func() {
 	})
 })
 
-// jsonDecode decodes resp's JSON body into out, without closing resp.Body
-// (the caller owns that), for use from goroutines where the shared
-// decodeJSON helper's own Body.Close() would race with a caller-managed
-// defer.
+// jsonDecode decodes without closing Body (caller-owned; safe from goroutines).
 func jsonDecode(resp *http.Response, out any) error {
 	return json.NewDecoder(resp.Body).Decode(out)
 }

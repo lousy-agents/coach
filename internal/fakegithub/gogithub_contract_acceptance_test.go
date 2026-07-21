@@ -18,12 +18,8 @@ import (
 	"github.com/lousy-agents/coach/internal/fakegithub"
 )
 
-// This file is the continuous-delivery contract suite for internal/fakegithub:
-// every GitHub App / Contents / identity call Coach will make in production is
-// exercised through the same go-github + ghinstallation client stack, pointed
-// at the fake via WithEnterpriseURLs. Raw net/http acceptance specs still own
-// scenario matrices and AuthMode recording; these specs own "the production
-// client can decode and drive the fake without transport hacks."
+// go-github + ghinstallation CD contract: production client stack against the
+// fake via WithEnterpriseURLs. Raw HTTP suites own scenario/AuthMode matrices.
 
 const (
 	contractAppID          int64 = 12345
@@ -75,9 +71,7 @@ func newContractFixture() *fakegithub.Fixture {
 	return &fx
 }
 
-// newAppsClient is an App-JWT authenticated go-github client (ghinstallation
-// AppsTransport), matching how production mints installation tokens and
-// resolves repo installations before any installation token exists.
+// newAppsClient builds an App-JWT go-github client (ghinstallation AppsTransport).
 func newAppsClient(server *fakegithub.Server) *github.Client {
 	atr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, contractAppID, contractRSAKey())
 	Expect(err).NotTo(HaveOccurred())
@@ -87,13 +81,11 @@ func newAppsClient(server *fakegithub.Server) *github.Client {
 		github.WithTransport(atr),
 	)
 	Expect(err).NotTo(HaveOccurred())
-	// Same BaseURL normalization githubingest applies so mint + API share a host/path.
+	// Match githubingest: mint + API share BaseURL host/path.
 	atr.BaseURL = client.BaseURL()
 	return client
 }
 
-// newInstallationClient is an installation-token authenticated go-github
-// client (ghinstallation Transport auto-mints against the fake).
 func newInstallationClient(server *fakegithub.Server) *github.Client {
 	itr, err := ghinstallation.New(http.DefaultTransport, contractAppID, contractInstallationID, contractRSAKey())
 	Expect(err).NotTo(HaveOccurred())
@@ -107,8 +99,6 @@ func newInstallationClient(server *fakegithub.Server) *github.Client {
 	return client
 }
 
-// newOAuthClient authenticates as a GitHub OAuth user token against the fake
-// using the same Enterprise BaseURL shape production go-github clients use.
 func newOAuthClient(server *fakegithub.Server, token string) *github.Client {
 	client, err := github.NewClient(
 		github.WithEnterpriseURLs(server.URL(), server.URL()),
@@ -251,8 +241,7 @@ var _ = Describe("fakegithub go-github client contract", func() {
 			Expect(records).NotTo(BeEmpty())
 			last := records[len(records)-1]
 			Expect(last.AuthMode).To(Equal(acceptanceharness.AuthModeOAuth))
-			// Enterprise BaseURL prefixes api/v3; bare /user remains for raw HTTP tests.
-			Expect(last.Path).To(Equal("/api/v3/user"))
+			Expect(last.Path).To(Equal("/api/v3/user")) // Enterprise api/v3 prefix
 		})
 	})
 
@@ -262,8 +251,7 @@ var _ = Describe("fakegithub go-github client contract", func() {
 			tok, _, err := apps.Apps.CreateInstallationToken(ctx, contractInstallationID, nil)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Installation token client without ghinstallation auto-mint: proves
-			// the minted token string itself is accepted by contentsHandler.
+			// Direct token auth (no auto-mint) proves the minted string is accepted.
 			client, err := github.NewClient(
 				github.WithEnterpriseURLs(server.URL(), server.URL()),
 				github.WithAuthToken(tok.GetToken()),

@@ -28,8 +28,9 @@ Steps:
 4. Run the repo's lint and test commands yourself. Do not trust a claim that they
    pass.
 5. Look for: silent scope creep, over-broad error handling, sequencing bugs (e.g.
-   transform-before-filter), missing edge-case coverage, and any recurring
-   patterns named in your prompt.
+   transform-before-filter), missing edge-case coverage, Go comment bloat or
+   missing godoc on non-obvious exported contracts (AGENTS.md Go comments
+   policy), and any recurring patterns named in your prompt.
 
 Return EXACTLY one of:
 - `PASS` — with a one-line note on what you verified.

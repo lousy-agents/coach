@@ -1,24 +1,18 @@
 // Package fakegithub is a Coach-owned, fixture-driven fake GitHub HTTP
-// service for offline acceptance testing (GitHub issue #77, "Task 0.2:
-// Implement the Coach-owned fake GitHub service", epic #73 "Feature Zero:
-// Offline Acceptance Foundation").
+// service for offline acceptance testing.
 //
-// It implements only the GitHub contracts Coach actually consumes: OAuth
-// identity (authorization-code/token exchange, "/user" and
-// "/api/v3/user"), GitHub App
-// installation/authorization (installation-token minting, repo-to-
-// installation resolution, effective permissions), and repository content
-// reads (the Contents API, both a single-file fetch and the directory
-// listing pkg/githubingest also issues for symlink detection).
-// Fixture.RejectedTokens is the seam for non-GitHub credentials (Coach JWT
-// stand-ins) that must be recorded as AuthModeRejected on every route.
-// It is explicitly not a general-purpose GitHub API emulator, and it
-// explicitly does not yet cover pull-request listing or changed-file
-// reads -- those are deferred to the PR History Scan epic per the Feature
-// Zero epic doc.
+// It implements only the contracts Coach consumes: OAuth identity
+// (authorize/token exchange, /user and /api/v3/user), GitHub App
+// installation (token mint, repo→installation, effective permissions), and
+// repository content reads (Contents API file fetch plus directory listing
+// for pkg/githubingest symlink detection). Fixture.RejectedTokens is the
+// seam for non-GitHub credentials (Coach JWT stand-ins) that must record as
+// acceptanceharness.AuthModeRejected on every route.
 //
-// This package consumes internal/acceptanceharness's shared fixture and
-// request-recording contract (FixtureHeader, AuthMode, RequestRecord,
-// Recorder) rather than inventing a competing one -- see
-// docs/architecture/acceptance-harness.md section 5.
+// It is not a general-purpose GitHub emulator. Pull-request listing and
+// changed-file reads are deferred to the PR History Scan epic.
+//
+// The package consumes internal/acceptanceharness's shared fixture and
+// request-recording contract rather than inventing a competing one. See
+// docs/architecture/acceptance-harness.md section 6.
 package fakegithub

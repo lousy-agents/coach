@@ -10,19 +10,14 @@ import (
 )
 
 // contentsHandler answers GET /api/v3/repos/{owner}/{repo}/contents/{path...}.
-// pkg/githubingest.GitHubFileReader.ReadFile issues this same route for two
-// distinct purposes: a file-content read, and (only after that first read
-// succeeds and reports type "file") a parent-directory listing for symlink
-// detection. This handler tells the two apart purely by fixture lookup:
-// fx.Contents.Files wins if the request's key is registered there,
-// otherwise fx.Contents.Dirs is tried, otherwise the key models a natural
-// not-found (mirroring installationTokenHandler/permissionHandler's
-// dispatch shape in installation.go).
+// githubingest ReadFile hits this route twice: file content, then (after type
+// "file") parent-dir listing for symlink detection. Dispatch is fixture-only:
+// Files wins, else Dirs, else 404. Requires an installation token; other
+// credentials are AuthModeRejected. Scenario failures still record
+// AuthModeInstallation (credential was valid; resource outcome differs).
 func contentsHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := extractBearerToken(r)
-		// TokenRejected (Coach JWT stand-in) and every non-installation
-		// credential fall through the same rejection path.
 		if fx.ClassifyToken(token) != TokenInstallation {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
 			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
@@ -33,10 +28,6 @@ func contentsHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerF
 		key := contentsKey(r.PathValue("owner"), r.PathValue("repo"), r.URL.Query().Get("ref"), reqPath)
 
 		if entry, ok := fx.Contents.Files[key]; ok {
-			// The credential itself was valid and correctly used here; a
-			// scenario-driven 404/401/503 outcome below is about the
-			// requested resource, not the credential, so this always
-			// records AuthModeInstallation.
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, string(entry.Scenario), r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
 			if writeScenarioStatus(w, entry.Scenario) {
 				return
@@ -56,28 +47,16 @@ func contentsHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerF
 	}
 }
 
-// contentsKey builds the "owner/repo/ref/path" fixture-lookup key shared by
-// fx.Contents.Files and fx.Contents.Dirs, matching how
-// contents_acceptance_test.go's newContentsFixture registers entries (e.g.
-// "acme/widgets/main/dir/hello.txt"). path.Join drops empty path segments
-// and cleans the result, so a root-level path ("") collapses the key to
-// "owner/repo/ref" with no trailing separator -- an edge case no acceptance
-// spec exercises today, but one this keeps internally consistent between
-// the file lookup and the parent-directory lookup for a root-level file.
+// contentsKey builds the "owner/repo/ref/path" lookup key shared by Files and
+// Dirs. path.Join drops empty segments, so a root path collapses to
+// "owner/repo/ref".
 func contentsKey(owner, repo, ref, p string) string {
 	return path.Join(owner, repo, ref, p)
 }
 
-// writeContentsFileResponse writes entry as a single
-// github.RepositoryContent-shaped JSON object (a "type":"file" entry),
-// matching go-github's expected response shape for GET .../contents/{path}.
-// A ScenarioOversized entry is written with encoding "none" and an empty
-// content field, mirroring real GitHub's documented behavior for files
-// exceeding the Contents API's inline-content size limit: pkg/githubingest
-// checks size against that limit and returns ErrTooLarge before ever
-// looking at the content field, so its exact value has no functional
-// effect here -- and skipping the base64 encoding avoids needlessly
-// serializing a multi-megabyte payload for a value nothing decodes.
+// writeContentsFileResponse writes a github.RepositoryContent-shaped file
+// object. ScenarioOversized uses encoding "none" and empty content (real
+// GitHub oversize shape); githubingest checks size before decoding content.
 func writeContentsFileResponse(w http.ResponseWriter, reqPath string, entry FileEntry) {
 	encoding := "base64"
 	content := base64.StdEncoding.EncodeToString(entry.Content)
@@ -107,11 +86,9 @@ func writeContentsFileResponse(w http.ResponseWriter, reqPath string, entry File
 	})
 }
 
-// writeContentsDirResponse writes entries as a bare JSON array, never an
-// object wrapping an array: go-github's GetContents tries to unmarshal the
-// response body as a single RepositoryContent object first, only falling
-// back to a []*RepositoryContent array on that failure, so a directory
-// listing must be a bare array to be recognized as one at all.
+// writeContentsDirResponse writes a bare JSON array (not a wrapped object).
+// go-github GetContents tries a single RepositoryContent first and only then
+// a []*RepositoryContent; a bare array is required for directory recognition.
 func writeContentsDirResponse(w http.ResponseWriter, dirPath string, entries []DirEntry) {
 	type dirEntryJSON struct {
 		Type string `json:"type"`
