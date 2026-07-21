@@ -161,6 +161,28 @@ var _ = Describe("Rule registry dispatch", func() {
 		})
 	})
 
+	When("the underlying finding reports a non-medium Confidence", func() {
+		It("still hardcodes Confidence to medium for tight_coupling, constructor_density, and pointer_return_density", func() {
+			const highConfidence = "high"
+			tightCouplingHigh := semantics.Finding{Kind: "tight_coupling", Name: "NewThing", Confidence: highConfidence, Location: semantics.Location{StartRow: 1, EndRow: 1}}
+			constructorFuncHighA := semantics.Finding{Kind: "constructor_func", Name: "NewA", Confidence: highConfidence, Location: semantics.Location{StartRow: 2, EndRow: 2}}
+			constructorFuncHighB := semantics.Finding{Kind: "constructor_func", Name: "NewB", Confidence: highConfidence, Location: semantics.Location{StartRow: 3, EndRow: 3}}
+			pointerReturnHighA := semantics.Finding{Kind: "pointer_return", Name: "NewC", Confidence: highConfidence, Location: semantics.Location{StartRow: 4, EndRow: 4}}
+			pointerReturnHighB := semantics.Finding{Kind: "pointer_return", Name: "NewD", Confidence: highConfidence, Location: semantics.Location{StartRow: 5, EndRow: 5}}
+
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "multi.go", Status: "modified", Head: cleanResult("multi.go",
+					tightCouplingHigh, constructorFuncHighA, constructorFuncHighB, pointerReturnHighA, pointerReturnHighB,
+				),
+			}}})
+
+			Expect(report.Signals).To(HaveLen(5))
+			for _, signal := range report.Signals {
+				Expect(signal.Confidence).To(Equal(codesignal.Confidence("medium")), "RuleID=%s should always be medium confidence, got %s", signal.RuleID, signal.Confidence)
+			}
+		})
+	})
+
 	When("multiple rule kinds appear together in one file", func() {
 		It("emits a signal per recognized finding, gated independently by kind", func() {
 			findings := []semantics.Finding{

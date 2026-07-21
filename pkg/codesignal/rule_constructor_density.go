@@ -11,12 +11,6 @@ const constructorDensityWhyItMatters = "A high concentration of constructor-like
 // call this once the file's constructor_func count reaches the threshold);
 // this constructor does not re-check the count.
 func newConstructorDensitySignal(path string, finding semantics.Finding) Signal {
-	confidence := Confidence("medium")
-	switch finding.Confidence {
-	case "low", "medium", "high":
-		confidence = Confidence(finding.Confidence)
-	}
-
 	recommendation := finding.Recommendation
 	if recommendation == "" {
 		recommendation = defaultConstructorDensityRecommendation
@@ -28,7 +22,7 @@ func newConstructorDensitySignal(path string, finding semantics.Finding) Signal 
 		Kind:           "constructor_density",
 		Category:       "structure",
 		Severity:       "low",
-		Confidence:     confidence,
+		Confidence:     "medium",
 		Path:           path,
 		Subject:        finding.Name,
 		Location:       finding.Location,

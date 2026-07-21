@@ -11,12 +11,6 @@ const pointerReturnDensityWhyItMatters = "A high concentration of pointer-return
 // call this once the file's pointer_return count reaches the threshold);
 // this constructor does not re-check the count.
 func newPointerReturnDensitySignal(path string, finding semantics.Finding) Signal {
-	confidence := Confidence("medium")
-	switch finding.Confidence {
-	case "low", "medium", "high":
-		confidence = Confidence(finding.Confidence)
-	}
-
 	recommendation := finding.Recommendation
 	if recommendation == "" {
 		recommendation = defaultPointerReturnDensityRecommendation
@@ -28,7 +22,7 @@ func newPointerReturnDensitySignal(path string, finding semantics.Finding) Signa
 		Kind:           "pointer_return_density",
 		Category:       "structure",
 		Severity:       "low",
-		Confidence:     confidence,
+		Confidence:     "medium",
 		Path:           path,
 		Subject:        finding.Name,
 		Location:       finding.Location,

@@ -7,12 +7,6 @@ const defaultTightConstructorInitRecommendation = "Inject collaborators through 
 const tightConstructorInitWhyItMatters = "A constructor that directly instantiates its own collaborators hardwires those dependencies, making the type harder to test in isolation, harder to substitute alternative implementations for, and more prone to hidden coupling that only surfaces at runtime."
 
 func newTightCouplingSignal(path string, finding semantics.Finding) Signal {
-	confidence := Confidence("medium")
-	switch finding.Confidence {
-	case "low", "medium", "high":
-		confidence = Confidence(finding.Confidence)
-	}
-
 	recommendation := finding.Recommendation
 	if recommendation == "" {
 		recommendation = defaultTightConstructorInitRecommendation
@@ -24,7 +18,7 @@ func newTightCouplingSignal(path string, finding semantics.Finding) Signal {
 		Kind:           "tight_constructor_init",
 		Category:       "coupling",
 		Severity:       "medium",
-		Confidence:     confidence,
+		Confidence:     "medium",
 		Path:           path,
 		Subject:        finding.Name,
 		Location:       finding.Location,
