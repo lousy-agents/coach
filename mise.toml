@@ -34,6 +34,20 @@ run = [
 description = "Run the queue conformance harness's self-test (in-memory reference adapter); selects real Redis Streams / LocalStack SQS conformance legs once Baseline Task 3a's adapters exist (see docs/architecture/acceptance-harness.md)"
 run = "go test -race ./internal/acceptanceharness/queueconformance/... -run Acceptance -v"
 
+[tasks.thinproof-build]
+description = "Build local Docker images for issue #79's offline thin Compose proof (run once, online, before going offline)"
+run = [
+  "go mod vendor",
+  "docker compose -f deploy/compose/thinproof/docker-compose.yml build",
+]
+
+[tasks.test-acceptance-thin-proof]
+description = "Run the offline thin Compose proof: fake GitHub -> pkg/githubingest -> CodeSignal, no image pull, no egress (see docs/architecture/acceptance-harness.md section 2)"
+run = [
+  "go run ./cmd/thinproof-preflight",
+  "go test -race -tags thinproof ./internal/acceptanceharness/thinproof/... -run Acceptance -v -count=1",
+]
+
 [tasks.tidy-check]
 description = "Check that go.mod and go.sum are tidy"
 run = "go mod tidy && git diff --exit-code go.mod go.sum"
