@@ -19,6 +19,7 @@ func newInstallationFixture() *fakegithub.Fixture {
 	fx.Installation.Installations[401] = fakegithub.InstallationEntry{Scenario: fakegithub.ScenarioAuthFail}
 	fx.Installation.Installations[503] = fakegithub.InstallationEntry{Scenario: fakegithub.ScenarioTransient}
 	fx.Installation.Installations[404] = fakegithub.InstallationEntry{Scenario: fakegithub.ScenarioNotFound}
+	fx.Installation.Installations[500] = fakegithub.InstallationEntry{Token: "should-not-mint", Scenario: "ok "}
 
 	fx.Installation.RepoMappings["acme/widgets"] = fakegithub.RepoInstallationEntry{InstallationID: 123, Scenario: fakegithub.ScenarioOK}
 	fx.Installation.RepoMappings["acme/authfail-repo"] = fakegithub.RepoInstallationEntry{InstallationID: 123, Scenario: fakegithub.ScenarioAuthFail}
@@ -111,6 +112,13 @@ var _ = Describe("fake GitHub App installation and authorization", func() {
 			resp := mintToken(404)
 			defer resp.Body.Close()
 			Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+		})
+
+		It("fails loud with HTTP 500 for a typo Scenario rather than minting a token", func() {
+			resp := mintToken(500)
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
+			Expect(resp.Header.Get("Content-Type")).To(HavePrefix("application/json"))
 		})
 
 		It("records the mint with AuthModeNone (App-level JWT auth isn't in the oauth/installation vocab)", func() {

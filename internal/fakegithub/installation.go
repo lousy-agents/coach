@@ -13,22 +13,37 @@ import (
 // keeps responses deterministic.
 const installationTokenExpiresAt = "2999-01-01T00:00:00Z"
 
+// writeJSONError writes a GitHub-shaped JSON error body with application/json.
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(struct {
+		Message string `json:"message"`
+	}{Message: message})
+}
+
 // writeScenarioStatus maps a non-OK Scenario to its HTTP status and body
 // (GitHub-shaped JSON error). It reports whether scenario was handled; false
-// means the caller should write the success response.
+// means only ScenarioOK — the caller should write the success response.
+// Empty, typo, and route-inappropriate values (e.g. ScenarioOversized on
+// installation routes) fail loud with 500 so fixture mistakes cannot look
+// like success.
 func writeScenarioStatus(w http.ResponseWriter, scenario Scenario) bool {
 	switch scenario {
+	case ScenarioOK:
+		return false
 	case ScenarioNotFound:
-		http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "Not Found")
 		return true
 	case ScenarioAuthFail:
-		http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "Bad credentials")
 		return true
 	case ScenarioTransient:
-		http.Error(w, `{"message":"Service Unavailable"}`, http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "Service Unavailable")
 		return true
 	default:
-		return false
+		writeJSONError(w, http.StatusInternalServerError, "fakegithub: unknown scenario "+string(scenario))
+		return true
 	}
 }
 
@@ -40,7 +55,7 @@ func rejectKnownNonAppBearer(fx *Fixture, rec *acceptanceharness.Recorder, w htt
 	kind := fx.ClassifyToken(extractBearerToken(r))
 	if kind == TokenOAuth || kind == TokenInstallation || kind == TokenRejected {
 		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
-		http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+		writeJSONError(w, http.StatusUnauthorized, "Bad credentials")
 		return true
 	}
 	return false
@@ -57,14 +72,14 @@ func installationTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeNone))
-			http.Error(w, `{"message":"invalid installation id"}`, http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "invalid installation id")
 			return
 		}
 
 		entry, ok := fx.Installation.Installations[id]
 		if !ok {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeNone))
-			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+			writeJSONError(w, http.StatusNotFound, "Not Found")
 			return
 		}
 
@@ -97,7 +112,7 @@ func installationResolutionHandler(fx *Fixture, rec *acceptanceharness.Recorder)
 		entry, ok := fx.Installation.RepoMappings[key]
 		if !ok {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeNone))
-			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+			writeJSONError(w, http.StatusNotFound, "Not Found")
 			return
 		}
 
@@ -125,7 +140,7 @@ func permissionHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handle
 
 		if fx.ClassifyToken(token) != TokenInstallation {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
-			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+			writeJSONError(w, http.StatusUnauthorized, "Bad credentials")
 			return
 		}
 
@@ -134,7 +149,7 @@ func permissionHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handle
 		entry, ok := fx.Installation.Permissions[key]
 		if !ok {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
-			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+			writeJSONError(w, http.StatusNotFound, "Not Found")
 			return
 		}
 

@@ -98,28 +98,27 @@ func oauthTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handle
 		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, string(entry.Scenario), r.Method, r.URL.Path, acceptanceharness.AuthModeNone))
 
 		switch entry.Scenario {
+		case ScenarioOK:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(struct {
+				AccessToken string `json:"access_token"`
+				TokenType   string `json:"token_type"`
+				Scope       string `json:"scope"`
+			}{
+				AccessToken: token,
+				TokenType:   "bearer",
+				Scope:       "",
+			})
 		case ScenarioNotFound:
 			http.Error(w, "fakegithub: code not found", http.StatusNotFound)
-			return
 		case ScenarioAuthFail:
 			http.Error(w, "fakegithub: auth failure", http.StatusUnauthorized)
-			return
 		case ScenarioTransient:
 			http.Error(w, "fakegithub: transient upstream failure", http.StatusServiceUnavailable)
-			return
+		default:
+			http.Error(w, "fakegithub: unknown scenario "+string(entry.Scenario), http.StatusInternalServerError)
 		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(struct {
-			AccessToken string `json:"access_token"`
-			TokenType   string `json:"token_type"`
-			Scope       string `json:"scope"`
-		}{
-			AccessToken: token,
-			TokenType:   "bearer",
-			Scope:       "",
-		})
 	}
 }
 
@@ -144,32 +143,30 @@ func oauthUserHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handler
 		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, string(entry.Scenario), r.Method, r.URL.Path, acceptanceharness.AuthModeOAuth))
 
 		switch entry.Scenario {
+		case ScenarioOK:
+			identity, ok := fx.OAuth.Identities[entry.IdentityLogin]
+			if !ok {
+				http.Error(w, "fakegithub: token references an unregistered identity", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(struct {
+				ID    int64  `json:"id"`
+				Login string `json:"login"`
+			}{
+				ID:    identity.ID,
+				Login: identity.Login,
+			})
 		case ScenarioNotFound:
 			http.Error(w, "fakegithub: identity not found", http.StatusNotFound)
-			return
 		case ScenarioAuthFail:
 			http.Error(w, "fakegithub: auth failure", http.StatusUnauthorized)
-			return
 		case ScenarioTransient:
 			http.Error(w, "fakegithub: transient upstream failure", http.StatusServiceUnavailable)
-			return
+		default:
+			http.Error(w, "fakegithub: unknown scenario "+string(entry.Scenario), http.StatusInternalServerError)
 		}
-
-		identity, ok := fx.OAuth.Identities[entry.IdentityLogin]
-		if !ok {
-			http.Error(w, "fakegithub: token references an unregistered identity", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(struct {
-			ID    int64  `json:"id"`
-			Login string `json:"login"`
-		}{
-			ID:    identity.ID,
-			Login: identity.Login,
-		})
 	}
 }
 

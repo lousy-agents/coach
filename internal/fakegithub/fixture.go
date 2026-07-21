@@ -78,7 +78,8 @@ type InstallationFixture struct {
 }
 
 // FileEntry is file content keyed in [ContentsFixture.Files] by
-// "owner/repo/ref/path".
+// "owner/repo/ref/path". For ScenarioOversized, Content may be nil — the
+// wire size is forced above the Contents API 1 MiB limit.
 type FileEntry struct {
 	Content  []byte
 	SHA      string
@@ -96,9 +97,13 @@ type DirEntry struct {
 // ContentsFixture holds file contents and directory listings, both keyed by
 // repo/ref/path so one fixture can answer the file read and the parent-dir
 // listing githubingest ReadFile uses for symlink detection.
+//
+// A successful ReadFile needs both: Files[fileKey] and Dirs[parentKey].
+// Omitting the parent Dirs entry yields 404 on the symlink-check listing
+// and surfaces as githubingest.ErrNotFound even when the file Scenario is OK.
 type ContentsFixture struct {
 	Files map[string]FileEntry  // "owner/repo/ref/path" -> file
-	Dirs  map[string][]DirEntry // "owner/repo/ref/dirpath" ("" = repo root) -> listing
+	Dirs  map[string][]DirEntry // "owner/repo/ref/dirpath" (root path segment omitted) -> listing
 }
 
 // Fixture is the versioned dataset a [Server] answers from, stamped with the

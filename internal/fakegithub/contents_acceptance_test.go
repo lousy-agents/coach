@@ -18,9 +18,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/githubingest"
 )
 
-// oversizedContent exceeds githubingest maxContentSize (1 MiB).
-var oversizedContent = make([]byte, 1<<20+1)
-
 func contentsFixtureRSAKey() []byte {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	Expect(err).NotTo(HaveOccurred())
@@ -40,18 +37,19 @@ func newContentsFixture() *fakegithub.Fixture {
 		SHA:      "abc123sha",
 		Scenario: fakegithub.ScenarioOK,
 	}
+	// ScenarioOversized alone is enough — Content may be nil.
 	fx.Contents.Files["acme/widgets/main/dir/big.bin"] = fakegithub.FileEntry{
-		Content:  oversizedContent,
 		SHA:      "bigsha",
 		Scenario: fakegithub.ScenarioOversized,
 	}
 	fx.Contents.Dirs["acme/widgets/main/dir"] = []fakegithub.DirEntry{
 		{Name: "hello.txt", Type: "file", SHA: "abc123sha", Size: len("hello world")},
-		{Name: "big.bin", Type: "file", SHA: "bigsha", Size: len(oversizedContent)},
+		{Name: "big.bin", Type: "file", SHA: "bigsha", Size: 1<<20 + 1},
 	}
 
 	fx.Contents.Files["acme/widgets/main/dir/authfail.txt"] = fakegithub.FileEntry{Scenario: fakegithub.ScenarioAuthFail}
 	fx.Contents.Files["acme/widgets/main/dir/transient.txt"] = fakegithub.FileEntry{Scenario: fakegithub.ScenarioTransient}
+	fx.Contents.Files["acme/widgets/main/dir/typo-scenario.txt"] = fakegithub.FileEntry{Scenario: "ok "}
 	// dir/missing.txt is omitted so ScenarioNotFound is natural absence.
 
 	return &fx
@@ -124,7 +122,7 @@ var _ = Describe("fake GitHub repository content reads, via pkg/githubingest's p
 			}
 			fx.Contents.Dirs["acme/widgets/main/dir"] = []fakegithub.DirEntry{
 				{Name: "hello.txt", Type: "file", SHA: "abc123sha", Size: len("hello world")},
-				{Name: "big.bin", Type: "file", SHA: "bigsha", Size: len(oversizedContent)},
+				{Name: "big.bin", Type: "file", SHA: "bigsha", Size: 1<<20 + 1},
 				{Name: "link.txt", Type: "symlink", SHA: "linksha", Size: 0},
 			}
 
@@ -137,12 +135,27 @@ var _ = Describe("fake GitHub repository content reads, via pkg/githubingest's p
 	})
 
 	Context("when the file exceeds the Contents API's size limit (ScenarioOversized)", func() {
-		It("returns githubingest.ErrTooLarge and no bytes", func() {
+		It("returns githubingest.ErrTooLarge and no bytes, without requiring oversized Content bytes in the fixture", func() {
 			ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "dir/big.bin"}
 			data, _, err := reader.ReadFile(context.Background(), ref)
 
 			Expect(errors.Is(err, githubingest.ErrTooLarge)).To(BeTrue(), "got err %v, want errors.Is(err, ErrTooLarge)", err)
 			Expect(data).To(BeNil())
+		})
+	})
+
+	Context("when the file is registered with an unknown Scenario", func() {
+		It("fails loud with HTTP 500 rather than succeeding with empty content", func() {
+			req, err := http.NewRequest(http.MethodGet, server.URL()+"/api/v3/repos/acme/widgets/contents/dir/typo-scenario.txt?ref=main", nil)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "token contents-installation-token")
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
+			Expect(resp.Header.Get("Content-Type")).To(HavePrefix("application/json"))
 		})
 	})
 

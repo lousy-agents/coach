@@ -31,9 +31,12 @@ func newOAuthFixture() *fakegithub.Fixture {
 	fx.OAuth.Codes["code-notfound"] = fakegithub.OAuthCodeEntry{IdentityLogin: "octocat", Scenario: fakegithub.ScenarioNotFound}
 	fx.OAuth.Codes["code-authfail"] = fakegithub.OAuthCodeEntry{IdentityLogin: "octocat", Scenario: fakegithub.ScenarioAuthFail}
 	fx.OAuth.Codes["code-transient"] = fakegithub.OAuthCodeEntry{IdentityLogin: "octocat", Scenario: fakegithub.ScenarioTransient}
+	fx.OAuth.Codes["code-empty-scenario"] = fakegithub.OAuthCodeEntry{IdentityLogin: "octocat"}
+	fx.OAuth.Codes["code-typo-scenario"] = fakegithub.OAuthCodeEntry{IdentityLogin: "octocat", Scenario: "ok "}
 
 	fx.OAuth.Tokens["token-ok"] = fakegithub.OAuthTokenEntry{IdentityLogin: "octocat", Scenario: fakegithub.ScenarioOK}
 	fx.OAuth.Tokens["token-missing-identity"] = fakegithub.OAuthTokenEntry{IdentityLogin: "nobody-registered", Scenario: fakegithub.ScenarioOK}
+	fx.OAuth.Tokens["token-typo-scenario"] = fakegithub.OAuthTokenEntry{IdentityLogin: "octocat", Scenario: "ok "}
 
 	return &fx
 }
@@ -248,6 +251,18 @@ var _ = Describe("fake GitHub OAuth flow", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusServiceUnavailable))
 		})
 
+		It("fails loud with HTTP 500 for an empty Scenario rather than returning 200 with an empty access_token", func() {
+			resp := exchange("test-client-id", "test-client-secret", "code-empty-scenario")
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
+		})
+
+		It("fails loud with HTTP 500 for a typo Scenario rather than returning 200 with an empty access_token", func() {
+			resp := exchange("test-client-id", "test-client-secret", "code-typo-scenario")
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
+		})
+
 		It("records every exchange attempt with AuthModeNone (no bearer credential is presented)", func() {
 			resp := exchange("test-client-id", "test-client-secret", "code-ok")
 			resp.Body.Close()
@@ -325,6 +340,12 @@ var _ = Describe("fake GitHub OAuth flow", func() {
 			resp := doUserRequest("token token-missing-identity")
 			defer resp.Body.Close()
 			Expect(resp.StatusCode).NotTo(Equal(http.StatusOK))
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
+		})
+
+		It("fails loud with HTTP 500 for a typo Scenario rather than returning 200 with an empty identity", func() {
+			resp := doUserRequest("token token-typo-scenario")
+			defer resp.Body.Close()
 			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
 		})
 

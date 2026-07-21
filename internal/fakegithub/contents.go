@@ -5,9 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"path"
+	"strings"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
 )
+
+// oversizedWireSize is the Contents API size stamped for ScenarioOversized.
+// It must exceed pkg/githubingest's 1 MiB maxContentSize so ErrTooLarge trips
+// on size alone — Content may be nil/empty.
+const oversizedWireSize = 1<<20 + 1
 
 // contentsHandler answers GET /api/v3/repos/{owner}/{repo}/contents/{path...}.
 // githubingest ReadFile hits this route twice: file content, then (after type
@@ -20,7 +26,7 @@ func contentsHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerF
 		token := extractBearerToken(r)
 		if fx.ClassifyToken(token) != TokenInstallation {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
-			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+			writeJSONError(w, http.StatusUnauthorized, "Bad credentials")
 			return
 		}
 
@@ -29,6 +35,10 @@ func contentsHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerF
 
 		if entry, ok := fx.Contents.Files[key]; ok {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, string(entry.Scenario), r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
+			if entry.Scenario == ScenarioOversized {
+				writeContentsFileResponse(w, reqPath, entry)
+				return
+			}
 			if writeScenarioStatus(w, entry.Scenario) {
 				return
 			}
@@ -43,26 +53,40 @@ func contentsHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerF
 		}
 
 		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
-		http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "Not Found")
 	}
 }
 
 // contentsKey builds the "owner/repo/ref/path" lookup key shared by Files and
-// Dirs. path.Join drops empty segments, so a root path collapses to
+// Dirs. Segments are joined literally (no path.Clean), so ".." and empty
+// segments stay distinguishable from cleaned keys. A root path (p == "") is
 // "owner/repo/ref".
 func contentsKey(owner, repo, ref, p string) string {
-	return path.Join(owner, repo, ref, p)
+	var b strings.Builder
+	b.WriteString(owner)
+	b.WriteByte('/')
+	b.WriteString(repo)
+	b.WriteByte('/')
+	b.WriteString(ref)
+	if p != "" {
+		b.WriteByte('/')
+		b.WriteString(p)
+	}
+	return b.String()
 }
 
 // writeContentsFileResponse writes a github.RepositoryContent-shaped file
-// object. ScenarioOversized uses encoding "none" and empty content (real
-// GitHub oversize shape); githubingest checks size before decoding content.
+// object. ScenarioOversized uses encoding "none", empty content, and
+// oversizedWireSize (real GitHub oversize shape); githubingest checks size
+// before decoding content, so Content may be nil.
 func writeContentsFileResponse(w http.ResponseWriter, reqPath string, entry FileEntry) {
 	encoding := "base64"
 	content := base64.StdEncoding.EncodeToString(entry.Content)
+	size := len(entry.Content)
 	if entry.Scenario == ScenarioOversized {
 		encoding = "none"
 		content = ""
+		size = oversizedWireSize
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -78,7 +102,7 @@ func writeContentsFileResponse(w http.ResponseWriter, reqPath string, entry File
 	}{
 		Type:     "file",
 		Encoding: encoding,
-		Size:     len(entry.Content),
+		Size:     size,
 		Name:     path.Base(reqPath),
 		Path:     reqPath,
 		SHA:      entry.SHA,
