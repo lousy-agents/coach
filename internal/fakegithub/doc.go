@@ -8,10 +8,13 @@
 // installation/authorization (installation-token minting, repo-to-
 // installation resolution, effective permissions), and repository content
 // reads (the Contents API, both a single-file fetch and the directory
-// listing pkg/githubingest also issues for symlink detection). It is
-// explicitly not a general-purpose GitHub API emulator, and it explicitly
-// does not yet cover pull-request listing or changed-file reads -- those
-// are deferred to the PR History Scan epic per the Feature Zero epic doc.
+// listing pkg/githubingest also issues for symlink detection).
+// Fixture.RejectedTokens is the seam for non-GitHub credentials (Coach JWT
+// stand-ins) that must be recorded as AuthModeRejected on every route.
+// It is explicitly not a general-purpose GitHub API emulator, and it
+// explicitly does not yet cover pull-request listing or changed-file
+// reads -- those are deferred to the PR History Scan epic per the Feature
+// Zero epic doc.
 //
 // This package consumes internal/acceptanceharness's shared fixture and
 // request-recording contract (FixtureHeader, AuthMode, RequestRecord,

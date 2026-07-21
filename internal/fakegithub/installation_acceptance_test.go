@@ -82,6 +82,23 @@ var _ = Describe("fake GitHub App installation and authorization", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
 		})
 
+		It("records a request with a non-numeric installation id rather than leaving the recorder empty", func() {
+			req, err := http.NewRequest(http.MethodPost, server.URL()+"/api/v3/app/installations/not-a-number/access_tokens", nil)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer fake-app-jwt")
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+
+			records := server.Recorder().Records()
+			Expect(records).NotTo(BeEmpty(), "every request the fake handles must be recorded, including parse failures")
+			last := records[len(records)-1]
+			Expect(last.Method).To(Equal(http.MethodPost))
+			Expect(last.Path).To(ContainSubstring("/app/installations/"))
+			Expect(last.FixtureID).To(Equal("installation-fixture"))
+		})
+
 		It("models ScenarioAuthFail for an installation registered as auth-failure", func() {
 			resp := mintToken(401)
 			defer resp.Body.Close()

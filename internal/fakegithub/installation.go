@@ -43,12 +43,13 @@ func writeScenarioStatus(w http.ResponseWriter, scenario Scenario) bool {
 // signature verification is an accepted, documented simplification for this
 // fake service -- but it does reject a bearer token this fake already knows
 // belongs to a different credential slot (a registered OAuth or installation
-// token), consistent with the epic's token-separation contract. A token that
+// token, or a Fixture.RejectedTokens entry such as a Coach JWT stand-in),
+// consistent with the epic's token-separation contract. A token that
 // classifies as TokenUnknown (including no Authorization header at all, or
 // an unverifiable App JWT) proceeds exactly as before.
 func installationTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if kind := fx.ClassifyToken(extractBearerToken(r)); kind == TokenOAuth || kind == TokenInstallation {
+		if kind := fx.ClassifyToken(extractBearerToken(r)); kind == TokenOAuth || kind == TokenInstallation || kind == TokenRejected {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
 			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
 			return
@@ -56,6 +57,7 @@ func installationTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http
 
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
+			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeNone))
 			http.Error(w, `{"message":"invalid installation id"}`, http.StatusBadRequest)
 			return
 		}
@@ -89,13 +91,14 @@ func installationTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http
 // verification is an accepted, documented simplification for this fake
 // service -- but it does reject a bearer token this fake already knows
 // belongs to a different credential slot (a registered OAuth or
-// installation token), consistent with the epic's token-separation
-// contract. A token that classifies as TokenUnknown (including no
-// Authorization header at all, or an unverifiable App JWT) proceeds exactly
-// as before: resolution is a lookup keyed purely on owner/repo.
+// installation token, or a Fixture.RejectedTokens entry such as a Coach JWT
+// stand-in), consistent with the epic's token-separation contract. A token
+// that classifies as TokenUnknown (including no Authorization header at
+// all, or an unverifiable App JWT) proceeds exactly as before: resolution
+// is a lookup keyed purely on owner/repo.
 func installationResolutionHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if kind := fx.ClassifyToken(extractBearerToken(r)); kind == TokenOAuth || kind == TokenInstallation {
+		if kind := fx.ClassifyToken(extractBearerToken(r)); kind == TokenOAuth || kind == TokenInstallation || kind == TokenRejected {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
 			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
 			return
@@ -135,6 +138,8 @@ func permissionHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handle
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := extractBearerToken(r)
 
+		// TokenRejected (Coach JWT stand-in) and every non-installation
+		// credential fall through the same rejection path.
 		if fx.ClassifyToken(token) != TokenInstallation {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
 			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)

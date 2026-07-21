@@ -32,7 +32,7 @@ func oauthAuthorizeHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Ha
 		}
 
 		loc, err := url.Parse(redirectURI)
-		if err != nil {
+		if err != nil || redirectURI == "" || loc.Scheme == "" || loc.Host == "" {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
 			http.Error(w, "fakegithub: invalid redirect_uri", http.StatusBadRequest)
 			return
@@ -143,7 +143,7 @@ func oauthUserHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handler
 		token := extractBearerToken(r)
 
 		switch fx.ClassifyToken(token) {
-		case TokenInstallation, TokenUnknown:
+		case TokenInstallation, TokenUnknown, TokenRejected:
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
 			http.Error(w, "fakegithub: invalid or unknown token", http.StatusUnauthorized)
 			return

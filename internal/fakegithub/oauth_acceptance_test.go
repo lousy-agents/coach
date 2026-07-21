@@ -152,6 +152,27 @@ var _ = Describe("fake GitHub OAuth flow", func() {
 			Expect(last.FixtureID).To(Equal("oauth-fixture"))
 			Expect(last.Method).To(Equal(http.MethodGet))
 		})
+
+		It("rejects an empty redirect_uri without issuing a Location header", func() {
+			authorizeURL := server.URL() + "/login/oauth/authorize?" + url.Values{
+				"client_id":     {"test-client-id"},
+				"redirect_uri":  {""},
+				"state":         {"xyz-state"},
+				"scenario_code": {"code-ok"},
+			}.Encode()
+
+			resp, err := noRedirectClient().Get(authorizeURL)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).NotTo(Or(Equal(http.StatusFound), Equal(http.StatusMovedPermanently)))
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+			Expect(resp.Header.Get("Location")).To(BeEmpty())
+
+			records := server.Recorder().Records()
+			Expect(records).NotTo(BeEmpty())
+			Expect(records[len(records)-1].AuthMode).To(Equal(acceptanceharness.AuthModeRejected))
+		})
 	})
 
 	Describe("POST /login/oauth/access_token", func() {

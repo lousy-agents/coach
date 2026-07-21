@@ -21,6 +21,8 @@ import (
 func contentsHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := extractBearerToken(r)
+		// TokenRejected (Coach JWT stand-in) and every non-installation
+		// credential fall through the same rejection path.
 		if fx.ClassifyToken(token) != TokenInstallation {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
 			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)

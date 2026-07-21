@@ -100,7 +100,7 @@ var _ = Describe("fake GitHub repository content reads, via pkg/githubingest's p
 	})
 
 	Context("when the file exists and is within the size limit (ScenarioOK)", func() {
-		It("returns the decoded bytes and metadata, and records the read with AuthModeInstallation", func() {
+		It("returns the decoded bytes and metadata, and records both the file read and the parent-directory listing with AuthModeInstallation", func() {
 			ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "dir/hello.txt"}
 			data, meta, err := reader.ReadFile(context.Background(), ref)
 
@@ -110,15 +110,43 @@ var _ = Describe("fake GitHub repository content reads, via pkg/githubingest's p
 
 			records := server.Recorder().Records()
 			Expect(records).NotTo(BeEmpty())
+			Expect(records[0].FixtureID).To(Equal("contents-fixture"))
 
-			var sawInstallationRead bool
+			var sawFileRead, sawParentDirListing bool
 			for _, rec := range records {
-				if rec.AuthMode == acceptanceharness.AuthModeInstallation {
-					sawInstallationRead = true
+				if rec.AuthMode != acceptanceharness.AuthModeInstallation || rec.Method != http.MethodGet {
+					continue
+				}
+				if strings.HasSuffix(rec.Path, "/contents/dir/hello.txt") {
+					sawFileRead = true
+				}
+				if strings.HasSuffix(rec.Path, "/contents/dir") {
+					sawParentDirListing = true
 				}
 			}
-			Expect(sawInstallationRead).To(BeTrue(), "expected at least one recorded request with AuthModeInstallation, got %+v", records)
-			Expect(records[0].FixtureID).To(Equal("contents-fixture"))
+			Expect(sawFileRead).To(BeTrue(), "expected a recorded file contents GET, got %+v", records)
+			Expect(sawParentDirListing).To(BeTrue(), "expected a recorded parent-directory listing GET (symlink check), got %+v", records)
+		})
+	})
+
+	Context("when the parent directory listing marks the path as a symlink", func() {
+		It("returns githubingest.ErrUnsupportedContent via ReadFile's public API", func() {
+			fx.Contents.Files["acme/widgets/main/dir/link.txt"] = fakegithub.FileEntry{
+				Content:  []byte("resolved target bytes"),
+				SHA:      "linksha",
+				Scenario: fakegithub.ScenarioOK,
+			}
+			fx.Contents.Dirs["acme/widgets/main/dir"] = []fakegithub.DirEntry{
+				{Name: "hello.txt", Type: "file", SHA: "abc123sha", Size: len("hello world")},
+				{Name: "big.bin", Type: "file", SHA: "bigsha", Size: len(oversizedContent)},
+				{Name: "link.txt", Type: "symlink", SHA: "linksha", Size: 0},
+			}
+
+			ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "dir/link.txt"}
+			data, _, err := reader.ReadFile(context.Background(), ref)
+
+			Expect(errors.Is(err, githubingest.ErrUnsupportedContent)).To(BeTrue(), "got err %v, want errors.Is(err, ErrUnsupportedContent)", err)
+			Expect(data).To(BeNil())
 		})
 	})
 

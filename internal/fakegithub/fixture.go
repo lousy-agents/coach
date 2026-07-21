@@ -145,6 +145,15 @@ type Fixture struct {
 	Installation InstallationFixture
 	Contents     ContentsFixture
 
+	// RejectedTokens holds bearer credentials that must never be accepted
+	// on any fakegithub route (AuthModeRejected). Use this for non-GitHub
+	// credentials the epic requires the fake to catch as misuse -- notably
+	// a Coach-issued JWT stand-in -- without inventing coach-api or
+	// weakening the deliberate "unknown bearer ≈ unverifiable App JWT"
+	// simplification on installation mint/resolution. Empty string is
+	// never a rejected token.
+	RejectedTokens map[string]struct{}
+
 	// mu guards runtime access to OAuth.Tokens/OAuth.Codes, the only
 	// fixture maps mutated after construction (by oauthTokenHandler on a
 	// successful code exchange) -- every other fixture map is written once
@@ -174,6 +183,7 @@ func NewFixture(fixtureID string) Fixture {
 			Files: make(map[string]FileEntry),
 			Dirs:  make(map[string][]DirEntry),
 		},
+		RejectedTokens: make(map[string]struct{}),
 	}
 }
 
@@ -191,16 +201,26 @@ const (
 	// TokenInstallation means token is a registered GitHub App
 	// installation token.
 	TokenInstallation
+	// TokenRejected means token is in Fixture.RejectedTokens -- a
+	// non-GitHub credential (e.g. a Coach JWT stand-in) that must be
+	// refused on every route.
+	TokenRejected
 )
 
 // ClassifyToken reports which fixture-issued credential registry token
 // belongs to, if any. An empty token never classifies as anything other
 // than TokenUnknown, even if a fixture-registered InstallationEntry has an
 // empty Token field (as auth-fail/transient entries deliberately do, since
-// those scenarios never successfully mint a real token).
+// those scenarios never successfully mint a real token). RejectedTokens is
+// checked before OAuth/installation registries so a fixture cannot
+// accidentally mint a GitHub credential that collides with a rejected
+// stand-in and silently reclassify it.
 func (f *Fixture) ClassifyToken(token string) TokenKind {
 	if token == "" {
 		return TokenUnknown
+	}
+	if _, ok := f.RejectedTokens[token]; ok {
+		return TokenRejected
 	}
 	f.mu.Lock()
 	_, ok := f.OAuth.Tokens[token]

@@ -21,4 +21,12 @@ var _ = Describe("fakegithub.Fixture.ClassifyToken", func() {
 
 		Expect(fx.ClassifyToken("")).To(Equal(fakegithub.TokenUnknown))
 	})
+
+	It("classifies a RejectedTokens entry as TokenRejected ahead of OAuth/installation registries", func() {
+		fx := fakegithub.NewFixture("classify-token-fixture")
+		fx.RejectedTokens["coach-jwt-stand-in"] = struct{}{}
+		fx.OAuth.Tokens["coach-jwt-stand-in"] = fakegithub.OAuthTokenEntry{IdentityLogin: "octocat", Scenario: fakegithub.ScenarioOK}
+
+		Expect(fx.ClassifyToken("coach-jwt-stand-in")).To(Equal(fakegithub.TokenRejected))
+	})
 })

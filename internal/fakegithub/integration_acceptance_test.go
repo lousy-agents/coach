@@ -194,6 +194,55 @@ var _ = Describe("fake GitHub service integration", func() {
 		})
 	})
 
+	// Epic Story 0.2 names "Coach JWT sent to GitHub" as a recorded misuse.
+	// Coach JWTs do not exist until Baseline's coach-api, so the fake accepts
+	// fixture-registered RejectedTokens (stand-ins for any non-GitHub
+	// credential, including a future Coach JWT) and must reject them on every
+	// route rather than treating them as an unverifiable App JWT.
+	Describe("fixture-registered non-GitHub credentials (Coach JWT stand-in)", func() {
+		const coachJWTStandIn = "coach-jwt-fixture-stand-in"
+
+		BeforeEach(func() {
+			fx.RejectedTokens[coachJWTStandIn] = struct{}{}
+		})
+
+		assertRejected := func(method, path, authHeader string) {
+			GinkgoHelper()
+			req, err := http.NewRequest(method, server.URL()+path, nil)
+			Expect(err).NotTo(HaveOccurred())
+			if authHeader != "" {
+				req.Header.Set("Authorization", authHeader)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusUnauthorized), Equal(http.StatusForbidden)))
+			records := server.Recorder().Records()
+			Expect(records).NotTo(BeEmpty())
+			Expect(records[len(records)-1].AuthMode).To(Equal(acceptanceharness.AuthModeRejected))
+		}
+
+		It("rejects the stand-in against App-level installation-token mint (not as an unverifiable App JWT)", func() {
+			assertRejected(http.MethodPost, "/api/v3/app/installations/123/access_tokens", "Bearer "+coachJWTStandIn)
+		})
+
+		It("rejects the stand-in against repo-to-installation resolution", func() {
+			assertRejected(http.MethodGet, "/api/v3/repos/acme/widgets/installation", "Bearer "+coachJWTStandIn)
+		})
+
+		It("rejects the stand-in against collaborator-permission", func() {
+			assertRejected(http.MethodGet, "/api/v3/repos/acme/widgets/collaborators/octocat/permission", "token "+coachJWTStandIn)
+		})
+
+		It("rejects the stand-in against repository contents", func() {
+			assertRejected(http.MethodGet, "/api/v3/repos/acme/widgets/contents/dir/hello.txt?ref=main", "token "+coachJWTStandIn)
+		})
+
+		It("rejects the stand-in against OAuth /user", func() {
+			assertRejected(http.MethodGet, "/user", "token "+coachJWTStandIn)
+		})
+	})
+
 	Describe("recorder sequence across all five endpoint families", func() {
 		It("records the full happy-path request sequence with correctly-classified AuthModes, in order", func() {
 			// 1: authorize (AuthModeNone).

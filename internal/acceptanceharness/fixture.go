@@ -30,9 +30,10 @@ const (
 	// AuthModeNone marks a request that carried no credential.
 	AuthModeNone AuthMode = "none"
 	// AuthModeRejected marks a request the fake/recorder refused --
-	// including a misuse the epic calls out explicitly: an OAuth token
-	// used against a repository endpoint, or an installation credential
-	// used where an OAuth token belongs.
+	// including misuses the epic calls out explicitly: an OAuth token
+	// used against a repository endpoint, an installation credential
+	// used where an OAuth token belongs, or a Coach JWT (or other
+	// non-GitHub credential) sent to GitHub.
 	AuthModeRejected AuthMode = "rejected"
 )
 
