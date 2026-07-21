@@ -111,6 +111,33 @@ var _ = Describe("fake GitHub App installation and authorization", func() {
 			Expect(last.Method).To(Equal(http.MethodPost))
 			Expect(last.FixtureID).To(Equal("installation-fixture"))
 		})
+
+		Context("when an OAuth access token is misused against this App-level endpoint", func() {
+			It("rejects it and records AuthModeRejected, rather than treating it as an unverifiable App JWT", func() {
+				misuseFx := fakegithub.NewFixture("installation-misuse-fixture")
+				misuseFx.OAuth.ClientID = "test-client-id"
+				misuseFx.OAuth.ClientSecret = "test-client-secret"
+				misuseFx.OAuth.Tokens["oauth-token-xyz"] = fakegithub.OAuthTokenEntry{IdentityLogin: "octocat", Scenario: fakegithub.ScenarioOK}
+				misuseFx.Installation.Installations[123] = fakegithub.InstallationEntry{Token: "installation-token-abc", Scenario: fakegithub.ScenarioOK}
+
+				misuseServer := fakegithub.NewServer(&misuseFx)
+				defer misuseServer.Close()
+
+				req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", misuseServer.URL(), 123), nil)
+				Expect(err).NotTo(HaveOccurred())
+				req.Header.Set("Authorization", "token oauth-token-xyz")
+
+				resp, err := http.DefaultClient.Do(req)
+				Expect(err).NotTo(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusUnauthorized), Equal(http.StatusForbidden)))
+
+				records := misuseServer.Recorder().Records()
+				Expect(records).NotTo(BeEmpty())
+				Expect(records[len(records)-1].AuthMode).To(Equal(acceptanceharness.AuthModeRejected))
+			})
+		})
 	})
 
 	Describe("GET /api/v3/repos/{owner}/{repo}/installation", func() {
@@ -163,6 +190,34 @@ var _ = Describe("fake GitHub App installation and authorization", func() {
 			records := server.Recorder().Records()
 			Expect(records).NotTo(BeEmpty())
 			Expect(records[len(records)-1].AuthMode).To(Equal(acceptanceharness.AuthModeNone))
+		})
+
+		Context("when an OAuth access token is misused against this repo-installation-resolution endpoint", func() {
+			It("rejects it and records AuthModeRejected, rather than treating it as an unverifiable App JWT", func() {
+				misuseFx := fakegithub.NewFixture("installation-misuse-fixture")
+				misuseFx.OAuth.ClientID = "test-client-id"
+				misuseFx.OAuth.ClientSecret = "test-client-secret"
+				misuseFx.OAuth.Tokens["oauth-token-xyz"] = fakegithub.OAuthTokenEntry{IdentityLogin: "octocat", Scenario: fakegithub.ScenarioOK}
+				misuseFx.Installation.Installations[123] = fakegithub.InstallationEntry{Token: "installation-token-abc", Scenario: fakegithub.ScenarioOK}
+				misuseFx.Installation.RepoMappings["acme/widgets"] = fakegithub.RepoInstallationEntry{InstallationID: 123, Scenario: fakegithub.ScenarioOK}
+
+				misuseServer := fakegithub.NewServer(&misuseFx)
+				defer misuseServer.Close()
+
+				req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/v3/repos/acme/widgets/installation", misuseServer.URL()), nil)
+				Expect(err).NotTo(HaveOccurred())
+				req.Header.Set("Authorization", "token oauth-token-xyz")
+
+				resp, err := http.DefaultClient.Do(req)
+				Expect(err).NotTo(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusUnauthorized), Equal(http.StatusForbidden)))
+
+				records := misuseServer.Recorder().Records()
+				Expect(records).NotTo(BeEmpty())
+				Expect(records[len(records)-1].AuthMode).To(Equal(acceptanceharness.AuthModeRejected))
+			})
 		})
 	})
 

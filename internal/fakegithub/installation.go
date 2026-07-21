@@ -37,12 +37,23 @@ func writeScenarioStatus(w http.ResponseWriter, scenario Scenario) bool {
 }
 
 // installationTokenHandler answers
-// POST /api/v3/app/installations/{id}/access_tokens. Deliberately does not
-// verify the caller's "Authorization: Bearer <App JWT>" header: the fake
-// doesn't hold the App's private/public key pair, so JWT verification is an
-// accepted, documented simplification for this fake service.
+// POST /api/v3/app/installations/{id}/access_tokens. Does not
+// cryptographically verify the caller's "Authorization: Bearer <App JWT>"
+// header -- the fake doesn't hold the App's private/public key pair, so JWT
+// signature verification is an accepted, documented simplification for this
+// fake service -- but it does reject a bearer token this fake already knows
+// belongs to a different credential slot (a registered OAuth or installation
+// token), consistent with the epic's token-separation contract. A token that
+// classifies as TokenUnknown (including no Authorization header at all, or
+// an unverifiable App JWT) proceeds exactly as before.
 func installationTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if kind := fx.ClassifyToken(extractBearerToken(r)); kind == TokenOAuth || kind == TokenInstallation {
+			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
+			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+			return
+		}
+
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
 			http.Error(w, `{"message":"invalid installation id"}`, http.StatusBadRequest)
@@ -72,11 +83,24 @@ func installationTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http
 }
 
 // installationResolutionHandler answers
-// GET /api/v3/repos/{owner}/{repo}/installation. Deliberately requires no
-// credential: the fake models resolution as a lookup keyed purely on
-// owner/repo, independent of any credential presented (or absent).
+// GET /api/v3/repos/{owner}/{repo}/installation. Does not cryptographically
+// verify the caller's "Authorization: Bearer <App JWT>" header -- the fake
+// doesn't hold the App's private/public key pair, so JWT signature
+// verification is an accepted, documented simplification for this fake
+// service -- but it does reject a bearer token this fake already knows
+// belongs to a different credential slot (a registered OAuth or
+// installation token), consistent with the epic's token-separation
+// contract. A token that classifies as TokenUnknown (including no
+// Authorization header at all, or an unverifiable App JWT) proceeds exactly
+// as before: resolution is a lookup keyed purely on owner/repo.
 func installationResolutionHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if kind := fx.ClassifyToken(extractBearerToken(r)); kind == TokenOAuth || kind == TokenInstallation {
+			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
+			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+			return
+		}
+
 		key := r.PathValue("owner") + "/" + r.PathValue("repo")
 
 		entry, ok := fx.Installation.RepoMappings[key]

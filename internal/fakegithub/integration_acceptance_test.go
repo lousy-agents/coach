@@ -173,6 +173,23 @@ var _ = Describe("fake GitHub service integration", func() {
 			Expect(records).NotTo(BeEmpty())
 			Expect(records[len(records)-1].AuthMode).To(Equal(acceptanceharness.AuthModeRejected))
 		})
+
+		It("rejects a live-minted OAuth access token used against the installation-only repository-contents-read endpoint", func() {
+			oauthToken := mintOAuthToken(server)
+
+			req, err := http.NewRequest(http.MethodGet, server.URL()+"/api/v3/repos/acme/widgets/contents/dir/hello.txt?ref=main", nil)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "token "+oauthToken)
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusUnauthorized), Equal(http.StatusForbidden)))
+
+			records := server.Recorder().Records()
+			Expect(records).NotTo(BeEmpty())
+			Expect(records[len(records)-1].AuthMode).To(Equal(acceptanceharness.AuthModeRejected))
+		})
 	})
 
 	Describe("recorder sequence across all five endpoint families", func() {
