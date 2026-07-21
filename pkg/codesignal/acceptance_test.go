@@ -82,8 +82,8 @@ var _ = Describe("CodeSignal report generation", func() {
 		})
 	})
 
-	When("findings do not describe input mutation", func() {
-		It("does not raise a hidden-input-mutation signal", func() {
+	When("findings do not describe input mutation and gated kinds are below their density gate", func() {
+		It("does not raise any signal", func() {
 			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{Path: "state.go", Status: "modified", Head: cleanResult("state.go",
 				semantics.Finding{Kind: "constructor_func", Name: "NewState"},
 				semantics.Finding{Kind: "pointer_return", Name: "NewState"},
