@@ -13,7 +13,7 @@ if [ "$subagent_type" != "task-implementer" ]; then
   exit 0
 fi
 
-if echo "$prompt" | grep -qiE 'finding|re-?delegat|re-review'; then
+if echo "$prompt" | grep -qiE 'reviewer.{0,40}finding|re-?delegat|re-review'; then
   if ! echo "$prompt" | grep -qF '## Reviewer Findings'; then
     jq -n '{
       hookSpecificOutput: {

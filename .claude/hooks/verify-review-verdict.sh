@@ -17,6 +17,6 @@ fi
 
 jq -n '{
   decision: "block",
-  reason: "task-reviewer must return exactly PASS or FINDINGS, verbatim, per its system prompt. Re-emit a valid verdict in that exact shape."
+  reason: "task-reviewer must begin its reply with PASS or FINDINGS, verbatim, per its system prompt. Re-emit a valid verdict in that exact shape."
 }'
 exit 0
