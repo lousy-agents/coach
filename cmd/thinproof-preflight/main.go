@@ -22,6 +22,13 @@ var requiredImages = []string{
 }
 
 func main() {
+	if _, err := exec.LookPath("docker"); err != nil {
+		fmt.Fprintln(os.Stderr, "thinproof-preflight: refusing to run -- docker was not found on PATH:")
+		fmt.Fprintf(os.Stderr, "  %v\n", err)
+		fmt.Fprintln(os.Stderr, "install Docker (https://docs.docker.com/get-docker/), then rerun `mise run thinproof-build` once, online, before `mise run test-acceptance-thin-proof`.")
+		os.Exit(1)
+	}
+
 	var missing []string
 	for _, image := range requiredImages {
 		if !imageExists(image) {
