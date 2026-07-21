@@ -77,7 +77,7 @@ function parseFrontmatter(text: string): { data: Record<string, string>; body: s
   if (!endMatch || endMatch.index === undefined) return null
 
   const fm = rest.slice(0, endMatch.index)
-  const body = rest.slice(endMatch.index + endMatch[0].length).trim()
+  const body = rest.slice(endMatch.index + endMatch[0].length)
   const data: Record<string, string> = {}
   let key: string | null = null
   let buf: string[] = []
@@ -161,7 +161,7 @@ async function loadClaudeAgents(agentsDir: string): Promise<Record<string, Agent
   const out: Record<string, AgentConfig> = {}
   let entries: string[]
   try {
-    entries = await fs.readdir(agentsDir)
+    entries = (await fs.readdir(agentsDir)).sort()
   } catch {
     return out
   }
