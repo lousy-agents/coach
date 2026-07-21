@@ -20,32 +20,51 @@ type Server struct {
 	recorder *acceptanceharness.Recorder
 }
 
+// requireFixture panics with a caller-identifying message if fixture is nil,
+// so NewServer and Handler share one guard without duplicating the panic
+// message string.
+func requireFixture(caller string, fixture *Fixture) {
+	if fixture == nil {
+		panic("fakegithub: " + caller + " called with a nil Fixture")
+	}
+}
+
+// Handler builds the http.Handler and Recorder that answer fixture's OAuth,
+// installation, and contents routes -- the same route table NewServer wraps
+// in an httptest.Server. Callers that need the fake embedded in their own
+// server topology (e.g. a standalone process serving real HTTP, rather than
+// an in-process httptest.Server) can use Handler directly. fixture must
+// outlive the returned handler (it is not copied). Panics if fixture is nil.
+func Handler(fixture *Fixture) (http.Handler, *acceptanceharness.Recorder) {
+	requireFixture("Handler", fixture)
+
+	rec := &acceptanceharness.Recorder{}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /login/oauth/authorize", oauthAuthorizeHandler(fixture, rec))
+	mux.HandleFunc("POST /login/oauth/access_token", oauthTokenHandler(fixture, rec))
+	// /user is github.com's public path (raw net/http tests).
+	// /api/v3/user is what go-github emits with WithEnterpriseURLs (api/v3 prefix).
+	// OAuth authorize/token stay on bare paths; App/repos APIs use api/v3.
+	mux.HandleFunc("GET /user", oauthUserHandler(fixture, rec))
+	mux.HandleFunc("GET /api/v3/user", oauthUserHandler(fixture, rec))
+
+	mux.HandleFunc("POST /api/v3/app/installations/{id}/access_tokens", installationTokenHandler(fixture, rec))
+	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/installation", installationResolutionHandler(fixture, rec))
+	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission", permissionHandler(fixture, rec))
+	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/contents/{path...}", contentsHandler(fixture, rec))
+
+	return mux, rec
+}
+
 // NewServer starts a Server backed by fixture. fixture must outlive the
 // Server (it is not copied). Callers must Close when done. Panics if fixture
 // is nil.
 func NewServer(fixture *Fixture) *Server {
-	if fixture == nil {
-		panic("fakegithub: NewServer called with a nil Fixture")
-	}
+	requireFixture("NewServer", fixture)
 
-	s := &Server{fixture: fixture, recorder: &acceptanceharness.Recorder{}}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /login/oauth/authorize", oauthAuthorizeHandler(s.fixture, s.recorder))
-	mux.HandleFunc("POST /login/oauth/access_token", oauthTokenHandler(s.fixture, s.recorder))
-	// /user is github.com's public path (raw net/http tests).
-	// /api/v3/user is what go-github emits with WithEnterpriseURLs (api/v3 prefix).
-	// OAuth authorize/token stay on bare paths; App/repos APIs use api/v3.
-	mux.HandleFunc("GET /user", oauthUserHandler(s.fixture, s.recorder))
-	mux.HandleFunc("GET /api/v3/user", oauthUserHandler(s.fixture, s.recorder))
-
-	mux.HandleFunc("POST /api/v3/app/installations/{id}/access_tokens", installationTokenHandler(s.fixture, s.recorder))
-	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/installation", installationResolutionHandler(s.fixture, s.recorder))
-	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission", permissionHandler(s.fixture, s.recorder))
-	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/contents/{path...}", contentsHandler(s.fixture, s.recorder))
-
-	s.http = httptest.NewServer(mux)
-	return s
+	handler, rec := Handler(fixture)
+	return &Server{fixture: fixture, recorder: rec, http: httptest.NewServer(handler)}
 }
 
 // URL returns the Server base URL for BaseURL config or plain HTTP clients.
