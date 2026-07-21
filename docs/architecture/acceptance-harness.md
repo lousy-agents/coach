@@ -14,7 +14,7 @@ Feature Zero defines the **full eventual taxonomy** so later epics (Baseline Sca
 
 | Layer | Boundary | Task category | Status in this repo today |
 | --- | --- | --- | --- |
-| Fast acceptance | Existing public Go package/CLI boundaries, in-process fakes/transports | `mise run test-acceptance-fast` | **Runnable now** (the six existing `*Acceptance` suites plus `internal/acceptanceharness`'s own contract tests) |
+| Fast acceptance | Existing public Go package/CLI boundaries, in-process fakes/transports | `mise run test-acceptance-fast` | **Runnable now** (the eight existing `*Acceptance` suites, including `internal/acceptanceharness`'s and `internal/fakegithub`'s own contract tests) |
 | Thin offline Compose proof | External runner + fake GitHub + `pkg/githubingest` + CodeSignal; no API/worker binaries | part of `test-acceptance` / a dedicated thin-proof task | Reserved name; lands with Task 0.3 |
 | HTTP contract acceptance | Public HTTP routes, controlled fakes, deterministic store/time | `test-acceptance-core` | Reserved name; lands once `coach-api` exists (Baseline) |
 | Platform workflow acceptance | Compose API + worker + Postgres + Redis Streams + model stub + fake GitHub + fixture repo + external runner | `test-acceptance` (full workflow leg) | Reserved name; lands once API + worker exist (Baseline) |
@@ -41,7 +41,7 @@ run = [
 
 Before the suites run, `go run ./cmd/acceptance-guard-preflight` activates the ambient-credential guard: it calls `acceptanceharness.RejectAmbientCredentials(os.Stderr)`, which scans the real process environment and default ambient-credential file locations and, if anything is found, writes a diagnostic and exits non-zero -- this is a reject-only preflight (it never scrubs or otherwise mutates the environment or filesystem), so mise stops before the suites run rather than letting them run against a machine with real ambient credentials.
 
-The second step runs every Go test function in the repo matching the substring `Acceptance` — currently `TestCodeSignalAcceptance`, `TestGitHubIngestAcceptance`, `TestCodeSignalReportAcceptance`, `TestSemanticsAcceptance`, `TestCoachAcceptance`, `TestAcceptanceHarnessAcceptance`, and `TestAcceptanceGuardPreflightAcceptance` — without hardcoding package paths, so a future `*_test.go` naming a `TestXxxAcceptance` function is picked up automatically. These suites already run as part of `mise run test` (`go test -race ./...`); `test-acceptance-fast` doesn't add coverage, it names and scopes this layer explicitly per the taxonomy above. It is intentionally **not** added to `mise run ci`'s task list — Feature Zero's CI scope (gofmt/vet/tidy/test/examples/js-ci) is unchanged; `test-acceptance-fast` is a new, separately invocable task.
+The second step runs every Go test function in the repo matching the substring `Acceptance` — currently `TestCodeSignalAcceptance`, `TestGitHubIngestAcceptance`, `TestCodeSignalReportAcceptance`, `TestSemanticsAcceptance`, `TestCoachAcceptance`, `TestFakeGitHubAcceptance`, `TestAcceptanceHarnessAcceptance`, and `TestAcceptanceGuardPreflightAcceptance` — without hardcoding package paths, so a future `*_test.go` naming a `TestXxxAcceptance` function is picked up automatically. These suites already run as part of `mise run test` (`go test -race ./...`); `test-acceptance-fast` doesn't add coverage, it names and scopes this layer explicitly per the taxonomy above. It is intentionally **not** added to `mise run ci`'s task list — Feature Zero's CI scope (gofmt/vet/tidy/test/examples/js-ci) is unchanged; `test-acceptance-fast` is a new, separately invocable task.
 
 ## 2. No-pull/offline Compose preflight behavior (specified here, implemented by Task 0.3)
 
@@ -95,3 +95,19 @@ Issue #76's objective names "shared fixture/recording interfaces" as a Task 0.1 
 - **`Recorder`** (`fixture.go`): a minimal, concurrency-safe, append-only log of `RequestRecord`s that a fixture-driven fake service should embed or wrap, modeled on `GuardedTransport.BlockedRequests()`'s existing pattern. `Record(rec RequestRecord)` appends; `Records() []RequestRecord` returns a defensive copy in insertion order, so a consuming acceptance test can assert the exact sequence, fixture/scenario, and authentication mode of calls made against a fake without risking a caller mutating the recorder's internal state through the returned slice.
 
 Task 0.2's fake GitHub service, and Task 0.3's Compose packaging of it, must consume this contract directly rather than inventing their own fixture schema, `AuthMode`-equivalent vocabulary, or request-recording shape — this is the foundation those tasks are meant to consume, not reinvent.
+
+## 6. Fake GitHub service (`internal/fakegithub`, Task 0.2)
+
+`internal/fakegithub` is the Coach-owned, fixture-driven fake GitHub HTTP service issue #77 ("Task 0.2") delivers: an in-process `httptest.Server` (`Server`, built via `NewServer(*Fixture)`) answering only the GitHub contracts Coach actually consumes. It is not a general-purpose GitHub API emulator, and it explicitly does not yet cover pull-request listing or changed-file reads — those are deferred to the PR History Scan epic. See `internal/fakegithub/doc.go` and the package's own `*_acceptance_test.go` files for the authoritative shape; this section only orients a reader, it doesn't restate the API.
+
+It consumes section 5's shared fixture/recording contract directly rather than inventing a new one: every `Fixture` embeds `acceptanceharness.FixtureHeader`, and `Server` records every request it handles into an `acceptanceharness.Recorder`, classifying each with `acceptanceharness.AuthMode`.
+
+The five endpoint families it implements:
+
+- OAuth authorization-code flow — `GET /login/oauth/authorize`, `POST /login/oauth/access_token`.
+- OAuth identity — `GET /user`.
+- GitHub App installation-token minting — `POST /api/v3/app/installations/{id}/access_tokens`.
+- Repo-to-installation resolution — `GET /api/v3/repos/{owner}/{repo}/installation`.
+- Effective permissions and repository content reads — `GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission` and `GET /api/v3/repos/{owner}/{repo}/contents/{path...}`.
+
+`Fixture.ClassifyToken`, plus a misuse check in every credentialed handler, proves the epic's GitHub-boundary token-separation contract: an OAuth access token is rejected (`AuthModeRejected`) if presented against an installation-only endpoint, and a GitHub App installation token is rejected the same way if presented against `/user` — never silently accepted as the other kind of credential. The no-public-GitHub-request proof lives in `internal/fakegithub/integration_acceptance_test.go`, which drives requests through `acceptanceharness.GuardedTransport` (section 4) and asserts a request to a real, non-allowlisted host (e.g. `api.github.com`) fails and shows up in `BlockedRequests()`, and that same file's cross-cutting misuse specs use tokens genuinely minted by a real OAuth/installation flow (not pre-registered "misuse" fixtures) to prove the rejection holds end to end, not just against a synthetic input.
