@@ -182,7 +182,9 @@ async function loadClaudeAgents(agentsDir: string): Promise<Record<string, Agent
     const name = agentName(parsed.data, filePath)
     const tools = parseTools(parsed.data.tools)
     const blockGitWrites = hasGitWriteHook(parsed.data)
-    const maxTurns = parsed.data.maxTurns ? Number.parseInt(parsed.data.maxTurns, 10) : undefined
+    const maxTurnsRaw =
+      parsed.data.maxTurns ?? parsed.data.max_turns ?? parsed.data["max-turns"]
+    const maxTurns = maxTurnsRaw ? Number.parseInt(maxTurnsRaw, 10) : undefined
 
     const agent: AgentConfig = {
       description: parsed.data.description?.trim() || `Claude agent ${name}`,
