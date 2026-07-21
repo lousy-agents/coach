@@ -48,6 +48,7 @@ mise run tidy-check        # go mod tidy && diff go.mod/go.sum
 mise run test              # go test -race ./...
 mise run test-examples     # go test -run Example ./...
 mise run test-acceptance-fast # runs the fast, in-process Ginkgo/Gomega acceptance suites (offline, no real credentials)
+mise run test-queue-conformance # runs the queue conformance harness self-test; real Redis Streams/LocalStack SQS legs land with Baseline Task 3a
 mise run js-ci              # -> js-test -> js-build -> backend-build/js-install
 mise run wasm-build         # proves GOOS=js GOARCH=wasm compiles (pure-Go engine, grammar-subset tags)
 ```
