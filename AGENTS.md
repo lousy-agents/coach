@@ -24,6 +24,7 @@ The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) currently ex
 - `skill-reviewer` — lint and review Agent Skills `SKILL.md` files across harnesses.
 - `spec-auditor` — adversarially review specs/PRDs/plans before coding.
 - `triaging-pr-reviews` — classify and triage PR review comments, including automated reviewer (e.g. Copilot) suggestions.
+- `correctness-review` — perform an evidence-backed GitHub pull-request correctness review against its linked issue's acceptance criteria, repository architecture, and downstream specs.
 
 ## Custom subagents
 
@@ -45,6 +46,8 @@ mise run go-vet
 mise run tidy-check        # go mod tidy && diff go.mod/go.sum
 mise run test              # go test -race ./...
 mise run test-examples     # go test -run Example ./...
+mise run test-acceptance-fast # runs the fast, in-process Ginkgo/Gomega acceptance suites (offline, no real credentials)
+mise run test-queue-conformance # runs the queue conformance harness self-test; real Redis Streams/LocalStack SQS legs land with Baseline Task 3a
 mise run js-ci              # -> js-test -> js-build -> backend-build/js-install
 mise run wasm-build         # proves GOOS=js GOARCH=wasm compiles (pure-Go engine, grammar-subset tags)
 ```
