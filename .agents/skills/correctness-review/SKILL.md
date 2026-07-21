@@ -1,6 +1,8 @@
 ---
 name: correctness-review
 description: Perform an evidence-backed GitHub pull-request correctness review against its linked issue's acceptance criteria, repository architecture, and downstream specs. Use when asked to deeply review a PR for completeness, explore its parent/sibling/child issue scope, validate a change against the larger initiative, or post coding-agent-ready inline review feedback. Do not use to implement fixes or to review a standalone specification before coding.
+argument-hint: "PR number or URL to review (e.g., #123); optionally note review mode (explore/plan first, or full review) and whether to post to GitHub"
+allowed-tools: Read, Grep, Glob, Bash, Agent
 ---
 
 # Correctness Review
@@ -63,22 +65,17 @@ the required seam.
 ### 4. Consult custom reviewers selectively
 
 Use the repository's custom subagents only when they add an independent review
-surface:
+surface. See [./references/subagent-table.md](./references/subagent-table.md) for
+selection guidance; in this repo they are defined per harness under
+`.claude/agents/*.md` and `.codex/agents/*.toml`.
 
 Before delegating, capture the PR head SHA and put it in every reviewer prompt.
 Require each reviewer to verify that SHA before inspecting code. Re-fetch the PR
 after their reports return; if the head changed, discard or refresh every stale
 report before reconciling findings.
 
-| Agent | Use it when | Ask it to decide |
-| --- | --- | --- |
-| `spec-review-agent` | The PR implements a linked issue or canonical spec. | Whether the PR completes the specified task, preserves testable acceptance criteria, and leaves no required contract undefined for a dependent issue. |
-| `system-design-expert` | The PR changes a reusable boundary, security model, infrastructure, async behavior, or platform foundation. | Whether the diff is consistent with the system overview, relevant ADRs, and future consumers; distinguish defects from valid deferrals. |
-| `product-sme` | The PR changes product scope, claims customer value, establishes a foundation, or experts disagree about what belongs now. | Whether scope preserves intended customer value without scaffolding theater or premature platform work. |
-
-Do not use `epic-reviewer` for an implementation PR: it is a spec-editing
-convergence workflow. Reconcile every subagent concern with the current diff,
-tests, and canonical documents before reporting it as a finding.
+Reconcile every subagent concern with the current diff, tests, and canonical
+documents before reporting it as a finding.
 
 ### 5. Review and verify
 
