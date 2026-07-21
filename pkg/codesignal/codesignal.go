@@ -124,14 +124,8 @@ func processHeadResult(fc FileChange) ([]Diagnostic, []Signal) {
 
 	switch fc.Head.ParseStatus {
 	case "ok":
-		var signals []Signal
-		for _, finding := range fc.Head.Findings {
-			if finding.Kind != "mutates_input" {
-				continue
-			}
-			signals = append(signals, newHiddenInputMutationSignal(fc.Path, finding))
-		}
-		return nil, signals
+		counts := findingCountsByKind(fc.Head.Findings)
+		return nil, signalsFromFindings(fc.Path, fc.Head.Findings, counts)
 	case "syntax_errors":
 		diagnostics := make([]Diagnostic, 0, len(fc.Head.SyntaxErrors))
 		for _, issue := range fc.Head.SyntaxErrors {
@@ -159,14 +153,8 @@ func extractBaseSignals(fc FileChange) []Signal {
 	if !baseUsableForLifecycle(fc) || fc.Base.ParseStatus != "ok" {
 		return nil
 	}
-	var signals []Signal
-	for _, finding := range fc.Base.Findings {
-		if finding.Kind != "mutates_input" {
-			continue
-		}
-		signals = append(signals, newHiddenInputMutationSignal(fc.Path, finding))
-	}
-	return signals
+	counts := findingCountsByKind(fc.Base.Findings)
+	return signalsFromFindings(fc.Path, fc.Base.Findings, counts)
 }
 
 // baseUsableForLifecycle reports whether fc.Base can be trusted as a

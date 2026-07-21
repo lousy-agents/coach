@@ -258,3 +258,53 @@ func TestGolden_Baseline(t *testing.T) {
 	got := buildAndMarshal(t, baselineScenarioInput(), Options{Baseline: true})
 	assertMatchesGolden(t, "testdata/golden/baseline_report.json", got)
 }
+
+func multiRuleInput() Input {
+	return Input{
+		Scope: Scope{Repository: "example/repo", Revision: "jkl012", Base: "main"},
+		Files: []FileChange{
+			{
+				Path:   "pkg/example/factory.go",
+				Status: "modified",
+				Head: &semantics.Result{
+					Path:        "pkg/example/factory.go",
+					Language:    semantics.LanguageGo,
+					ParseStatus: semantics.ParseStatus("ok"),
+					Findings: []semantics.Finding{
+						{
+							Kind:     "tight_coupling",
+							Name:     "NewService",
+							Location: semantics.Location{StartRow: 1, StartCol: 0, EndRow: 3, EndCol: 1},
+						},
+						{
+							Kind:     "constructor_func",
+							Name:     "NewService",
+							Location: semantics.Location{StartRow: 1, StartCol: 0, EndRow: 3, EndCol: 1},
+						},
+						{
+							Kind:     "constructor_func",
+							Name:     "NewWidget",
+							Location: semantics.Location{StartRow: 5, StartCol: 0, EndRow: 7, EndCol: 1},
+						},
+						{
+							Kind: "mutates_input",
+							Name: "ApplyDefaults",
+							Location: semantics.Location{
+								StartRow: 10, StartCol: 0,
+								EndRow: 12, EndCol: 1,
+							},
+							Confidence: "high",
+							Evidence:   "cfg.Timeout = defaultTimeout",
+						},
+					},
+				},
+				ChangedRanges: []LineRange{{StartRow: 0, EndRow: 20}},
+			},
+		},
+	}
+}
+
+func TestGolden_MultiRule(t *testing.T) {
+	got := buildAndMarshal(t, multiRuleInput(), Options{})
+	assertMatchesGolden(t, "testdata/golden/multi_rule.json", got)
+}

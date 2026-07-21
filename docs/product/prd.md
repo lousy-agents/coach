@@ -56,7 +56,7 @@ Consumption is pull-only (submit, poll, fetch report). Harness hooks and a web U
 | Capability | Status (evidence standard: passing acceptance tests) |
 | --- | --- |
 | Deterministic structural analysis, Go/TS/TSX (`pkg/semantics`) | **Implemented** — metrics, imports, findings; frozen JSON contract |
-| Diff-aware signal reports with lifecycle (`pkg/codesignal` + `coach codesignal` CLI) | **Implemented** — one rule surfaced (`hidden_input_mutation`); merge-base diffing, scope filtering, baseline mode |
+| Diff-aware signal reports with lifecycle (`pkg/codesignal` + `coach codesignal` CLI) | **Implemented** — four rules surfaced (`hidden_input_mutation`, `tight_constructor_init`, `constructor_density`, `pointer_return_density`); merge-base diffing, scope filtering, baseline mode |
 | Single-file GitHub App ingestion (`pkg/githubingest`) | **Implemented** |
 | Coach API, worker, job model | **Specified** — see baseline spec |
 | GitHub OAuth identity → Coach-signed JWT (`Principal`, `jti` revocation, job ownership) | **Specified** — ADR-001/002/004 |
