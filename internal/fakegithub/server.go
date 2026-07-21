@@ -27,6 +27,10 @@ type Server struct {
 // Server (the Server does not copy it). Callers must Close the returned
 // Server when done.
 func NewServer(fixture *Fixture) *Server {
+	if fixture == nil {
+		panic("fakegithub: NewServer called with a nil Fixture")
+	}
+
 	s := &Server{fixture: fixture, recorder: &acceptanceharness.Recorder{}}
 
 	mux := http.NewServeMux()

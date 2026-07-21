@@ -39,6 +39,7 @@ func newOAuthFixture() *fakegithub.Fixture {
 	fx.OAuth.Codes["code-transient"] = fakegithub.OAuthCodeEntry{IdentityLogin: "octocat", Scenario: fakegithub.ScenarioTransient}
 
 	fx.OAuth.Tokens["token-ok"] = fakegithub.OAuthTokenEntry{IdentityLogin: "octocat", Scenario: fakegithub.ScenarioOK}
+	fx.OAuth.Tokens["token-missing-identity"] = fakegithub.OAuthTokenEntry{IdentityLogin: "nobody-registered", Scenario: fakegithub.ScenarioOK}
 
 	return &fx
 }
@@ -120,6 +121,29 @@ var _ = Describe("fake GitHub OAuth flow", func() {
 			defer resp.Body.Close()
 
 			Expect(resp.StatusCode).NotTo(Or(Equal(http.StatusFound), Equal(http.StatusMovedPermanently)))
+
+			records := server.Recorder().Records()
+			Expect(records).NotTo(BeEmpty())
+			last := records[len(records)-1]
+			Expect(last.AuthMode).To(Equal(acceptanceharness.AuthModeRejected))
+			Expect(last.FixtureID).To(Equal("oauth-fixture"))
+			Expect(last.Method).To(Equal(http.MethodGet))
+		})
+
+		It("rejects a scenario_code the fixture never registered, without redirecting", func() {
+			authorizeURL := server.URL() + "/login/oauth/authorize?" + url.Values{
+				"client_id":     {"test-client-id"},
+				"redirect_uri":  {"https://coach.example.com/callback"},
+				"state":         {"xyz-state"},
+				"scenario_code": {"never-registered-scenario-code"},
+			}.Encode()
+
+			resp, err := noRedirectClient().Get(authorizeURL)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).NotTo(Or(Equal(http.StatusFound), Equal(http.StatusMovedPermanently)))
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 
 			records := server.Recorder().Records()
 			Expect(records).NotTo(BeEmpty())
@@ -280,6 +304,13 @@ var _ = Describe("fake GitHub OAuth flow", func() {
 			records := server.Recorder().Records()
 			Expect(records).NotTo(BeEmpty())
 			Expect(records[len(records)-1].AuthMode).To(Equal(acceptanceharness.AuthModeRejected))
+		})
+
+		It("returns an error status, not a 200 with an empty identity, for a token pointing at a missing identity", func() {
+			resp := doUserRequest("token token-missing-identity")
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).NotTo(Equal(http.StatusOK))
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
 		})
 
 		It("records a successful call with AuthModeOAuth", func() {

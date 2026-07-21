@@ -38,12 +38,18 @@ func oauthAuthorizeHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Ha
 			return
 		}
 
+		entry, ok := fx.OAuth.Codes[scenarioCode]
+		if !ok {
+			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
+			http.Error(w, "fakegithub: unknown scenario_code", http.StatusBadRequest)
+			return
+		}
+
 		locQuery := loc.Query()
 		locQuery.Set("code", scenarioCode)
 		locQuery.Set("state", state)
 		loc.RawQuery = locQuery.Encode()
 
-		entry := fx.OAuth.Codes[scenarioCode]
 		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, string(entry.Scenario), r.Method, r.URL.Path, acceptanceharness.AuthModeNone))
 
 		w.Header().Set("Location", loc.String())
@@ -145,7 +151,11 @@ func oauthUserHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handler
 			return
 		}
 
-		identity := fx.OAuth.Identities[entry.IdentityLogin]
+		identity, ok := fx.OAuth.Identities[entry.IdentityLogin]
+		if !ok {
+			http.Error(w, "fakegithub: token references an unregistered identity", http.StatusInternalServerError)
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
