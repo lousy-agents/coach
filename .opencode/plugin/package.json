@@ -1,0 +1,7 @@
+{
+  "name": "@lousy-agents/claude-agents-loader",
+  "version": "0.0.0",
+  "description": "OpenCode plugin that loads Claude Code subagents from .claude/agents/*.md",
+  "main": "claude-agents.ts",
+  "type": "module"
+}
