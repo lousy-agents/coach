@@ -34,7 +34,8 @@ Steps:
    stop and tell the orchestrator instead of proceeding.
 3. Make the smallest change that turns that test green and otherwise satisfies
    the task's acceptance criteria. Follow the repo's existing conventions and
-   patterns — match what is already there.
+   patterns — match what is already there. For Go, comments only per AGENTS.md's
+   Go comments policy (useful godoc/contracts; no bloat or narration).
 4. Run the repo's lint and test commands. Fix anything you broke.
 5. Report back: the files you changed, a one-line rationale per change, the
    failing-test output from step 2, and the final lint/test output. If you

@@ -117,6 +117,32 @@ Every new feature and every bug fix **must begin with a failing acceptance test*
 
 For delegated work, the `task-implementer`/`task-reviewer` subagent pair (`.claude/agents/`) operationalizes this policy step-by-step: the implementer must write and fail the test before implementing, and the reviewer gates on seeing that red-then-green evidence.
 
+### Go comments (required policy)
+
+Default is **no comment** unless it helps a human or coding agent use or change the code correctly. This policy applies to Go only.
+
+**Keep / write** when the comment encodes a non-local contract:
+
+- Exported API behavior callers cannot infer from the name (errors, auth, zero value, concurrency, special cases)
+- Intentional simplifications and external wire quirks (e.g. go-github response shapes, GitHub API limits)
+- Invariants that tests or agents will otherwise “fix” wrongly (race guards, auth-mode recording, false-green traps)
+
+**Form (godoc):**
+
+- Doc comments sit immediately above the declaration; complete sentences; start with the symbol name (`Package foo…`, `ClassifyToken reports…`)
+- Prefer short paragraphs; use end-of-line comments for map keys / enum values when enough
+- Attach notes to a declaration (no orphan `// NOTE` blocks)
+- Follow [Go doc comments](https://go.dev/doc/comment); do not put epic/issue narrative in code — that belongs in `docs/`, the PR, or the commit message
+
+**Delete / never add:**
+
+- Restating the identifier or the next line of code
+- Step-by-step narration of obvious control flow
+- Long essays duplicated across handlers (factor one shared helper/doc or package comment)
+- Test comments that only paraphrase `It("…")` / subtest names — prefer structure and names (see `go-testable-design`); keep only subtle assertion traps
+
+**Unexported** symbols: comment only for the contracts/traps above, not routine helpers.
+
 ### Verification
 
 Passing checks proves nothing broke; it doesn't prove new behavior is correct. For a `pkg/semantics` extraction/metric change, add or extend a case in the relevant `*_test.go` (`features_test.go`, `ts_features_test.go`, `query_test.go`, …) with a concrete before/after `Result`, not just a "does it run" assertion. For `js/semantics` changes, extend `parity.test.ts` so the Go and JS outputs are checked byte-identical, not just independently plausible.
