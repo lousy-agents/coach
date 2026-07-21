@@ -36,10 +36,10 @@ Steps:
    the task's acceptance criteria. Follow the repo's existing conventions and
    patterns — match what is already there.
 4. Run the repo's lint and test commands. Fix anything you broke.
-5. Report back: the files you changed, a one-line rationale per change, the
-   failing-test output from step 2, and the final lint/test output. If you
-   could not satisfy a criterion, say so explicitly rather than expanding
-   scope to force it.
+5. Report back under a `## Implementer Report` heading: the files you changed,
+   a one-line rationale per change, the failing-test output from step 2, and
+   the final lint/test output. If you could not satisfy a criterion, say so
+   explicitly rather than expanding scope to force it.
 
 Do not touch files outside your scope. Do not refactor adjacent code. Do not
 create commits or open PRs — the orchestrator owns git.

@@ -38,8 +38,13 @@ to subagents.
      variant exists, prefer it for mechanical, single-file edits.
    - When it returns, delegate the task's diff to the `task-reviewer` subagent. Pass
      it the same acceptance criteria, scope, and conventions, plus any recurring bug
-     patterns to watch for. Do NOT start any dependent task until the reviewer
-     returns PASS. On FINDINGS, hand them to a fresh `task-implementer` and
+     patterns to watch for, plus the implementer's `## Implementer Report` block
+     forwarded verbatim — the reviewer's own instructions require it to check the
+     report's red-then-green test evidence, so never summarize or drop it. Do NOT
+     start any dependent task until the reviewer returns PASS. On FINDINGS, hand the
+     reviewer's `## Reviewer Findings` block to a fresh `task-implementer` verbatim
+     — that implementer shares no history with the one that ran before it, so
+     anything you paraphrase or drop while relaying is gone for good — and
      re-review. Repeat until PASS.
 
 5. When every task's reviewer has returned PASS and the full lint/test suite is

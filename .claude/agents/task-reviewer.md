@@ -33,7 +33,8 @@ Steps:
 
 Return EXACTLY one of:
 - `PASS` — with a one-line note on what you verified.
-- `FINDINGS` — a numbered list; each item has file:line and a concrete, minimal
-  fix the implementer can act on.
+- `FINDINGS` — on its own line, followed by a `## Reviewer Findings` heading
+  and a numbered list under it; each item has file:line and a concrete,
+  minimal fix the implementer can act on.
 
 Return nothing else. No praise, no summary, no commentary outside the verdict.
