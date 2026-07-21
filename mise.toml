@@ -44,6 +44,7 @@ run = [
 [tasks.test-acceptance-thin-proof]
 description = "Run the offline thin Compose proof: fake GitHub -> pkg/githubingest -> CodeSignal, no image pull, no egress (see docs/architecture/acceptance-harness.md section 2)"
 run = [
+  "go run ./cmd/acceptance-guard-preflight",
   "go run ./cmd/thinproof-preflight",
   "go test -race -tags thinproof ./internal/acceptanceharness/thinproof/... -run Acceptance -v -count=1",
 ]
