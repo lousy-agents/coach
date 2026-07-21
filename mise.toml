@@ -30,6 +30,10 @@ run = [
   "go test -race ./... -run Acceptance",
 ]
 
+[tasks.test-queue-conformance]
+description = "Run the queue conformance harness's self-test (in-memory reference adapter); selects real Redis Streams / LocalStack SQS conformance legs once Baseline Task 3a's adapters exist (see docs/architecture/acceptance-harness.md)"
+run = "go test -race ./internal/acceptanceharness/queueconformance/... -run Acceptance -v"
+
 [tasks.tidy-check]
 description = "Check that go.mod and go.sum are tidy"
 run = "go mod tidy && git diff --exit-code go.mod go.sum"
