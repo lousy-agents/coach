@@ -105,12 +105,14 @@ It consumes section 5's shared fixture/recording contract directly rather than i
 The five endpoint families it implements:
 
 - OAuth authorization-code flow — `GET /login/oauth/authorize`, `POST /login/oauth/access_token`.
-- OAuth identity — `GET /user`.
+- OAuth identity — `GET /user` and `GET /api/v3/user` (bare path for raw HTTP; `api/v3` for go-github + Enterprise BaseURL).
 - GitHub App installation-token minting — `POST /api/v3/app/installations/{id}/access_tokens`.
 - Repo-to-installation resolution — `GET /api/v3/repos/{owner}/{repo}/installation`.
 - Effective permissions and repository content reads — `GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission` and `GET /api/v3/repos/{owner}/{repo}/contents/{path...}`.
 
 `Fixture.ClassifyToken`, plus a misuse check in every credentialed handler, proves the epic's GitHub-boundary token-separation contract: an OAuth access token is rejected (`AuthModeRejected`) if presented against an installation-only endpoint, a GitHub App installation token is rejected the same way if presented against `/user`, and any token registered in `Fixture.RejectedTokens` (the Coach JWT stand-in seam — Baseline will put real minted Coach JWTs here once `coach-api` exists) is rejected on every route, including App-level installation mint/resolution, rather than being treated as an unverifiable App JWT. The no-public-GitHub-request proof lives in `internal/fakegithub/integration_acceptance_test.go`, which drives requests through `acceptanceharness.GuardedTransport` (section 4) and asserts a request to a real, non-allowlisted host (e.g. `api.github.com`) fails and shows up in `BlockedRequests()`, and that same file's cross-cutting misuse specs use tokens genuinely minted by a real OAuth/installation flow (not pre-registered "misuse" fixtures) to prove the rejection holds end to end, not just against a synthetic input.
+
+**go-github client contract** (`gogithub_contract_acceptance_test.go`): continuous-delivery trust that the production client stack can drive the fake. Specs call `go-github` + `ghinstallation` (App JWT transport, installation transport, OAuth `WithAuthToken`) against `WithEnterpriseURLs(server.URL())` for installation-token mint, repo→installation resolution, collaborator permission, Contents file/dir reads, and `Users.Get("")`. Raw `net/http` suites still own the scenario/`AuthMode` matrix; this suite owns decode/path/auth compatibility so CD does not depend on manual GitHub checks.
 
 ## 7. Queue conformance harness (Task 0.4)
 

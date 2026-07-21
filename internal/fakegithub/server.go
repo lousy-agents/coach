@@ -36,14 +36,17 @@ func NewServer(fixture *Fixture) *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /login/oauth/authorize", oauthAuthorizeHandler(s.fixture, s.recorder))
 	mux.HandleFunc("POST /login/oauth/access_token", oauthTokenHandler(s.fixture, s.recorder))
+	// Bare /user matches github.com's public path (raw net/http OAuth tests).
+	// /api/v3/user matches go-github pointed at a bare-host BaseURL via
+	// WithEnterpriseURLs, which prefixes API calls with api/v3/.
 	mux.HandleFunc("GET /user", oauthUserHandler(s.fixture, s.recorder))
+	mux.HandleFunc("GET /api/v3/user", oauthUserHandler(s.fixture, s.recorder))
 
 	// go-github's client, pointed at a bare-host BaseURL via
 	// github.WithEnterpriseURLs, prefixes every repos/app API request with
 	// "api/v3/" (see pkg/githubingest.NewGitHubFileReader's comment on
-	// itr.BaseURL = client.BaseURL()). "/user" and "/login/oauth/..." are
-	// never touched by go-github in this codebase, so they stay at the
-	// bare path, matching real github.com's shape.
+	// itr.BaseURL = client.BaseURL()). OAuth authorize/token exchange stay
+	// on the bare github.com-shaped paths (not under api/v3).
 	mux.HandleFunc("POST /api/v3/app/installations/{id}/access_tokens", installationTokenHandler(s.fixture, s.recorder))
 	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/installation", installationResolutionHandler(s.fixture, s.recorder))
 	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission", permissionHandler(s.fixture, s.recorder))

@@ -4,7 +4,8 @@
 // Offline Acceptance Foundation").
 //
 // It implements only the GitHub contracts Coach actually consumes: OAuth
-// identity (authorization-code/token exchange, "/user"), GitHub App
+// identity (authorization-code/token exchange, "/user" and
+// "/api/v3/user"), GitHub App
 // installation/authorization (installation-token minting, repo-to-
 // installation resolution, effective permissions), and repository content
 // reads (the Contents API, both a single-file fetch and the directory
