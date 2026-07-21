@@ -22,14 +22,17 @@ func newInstallationFixture() *fakegithub.Fixture {
 	fx.Installation.Installations[123] = fakegithub.InstallationEntry{Token: "installation-token-abc", Scenario: fakegithub.ScenarioOK}
 	fx.Installation.Installations[401] = fakegithub.InstallationEntry{Scenario: fakegithub.ScenarioAuthFail}
 	fx.Installation.Installations[503] = fakegithub.InstallationEntry{Scenario: fakegithub.ScenarioTransient}
+	fx.Installation.Installations[404] = fakegithub.InstallationEntry{Scenario: fakegithub.ScenarioNotFound}
 
 	fx.Installation.RepoMappings["acme/widgets"] = fakegithub.RepoInstallationEntry{InstallationID: 123, Scenario: fakegithub.ScenarioOK}
 	fx.Installation.RepoMappings["acme/authfail-repo"] = fakegithub.RepoInstallationEntry{InstallationID: 123, Scenario: fakegithub.ScenarioAuthFail}
 	fx.Installation.RepoMappings["acme/transient-repo"] = fakegithub.RepoInstallationEntry{InstallationID: 123, Scenario: fakegithub.ScenarioTransient}
+	fx.Installation.RepoMappings["acme/notfound-repo"] = fakegithub.RepoInstallationEntry{InstallationID: 123, Scenario: fakegithub.ScenarioNotFound}
 
 	fx.Installation.Permissions["acme/widgets/octocat"] = fakegithub.PermissionEntry{Level: "write", Scenario: fakegithub.ScenarioOK}
 	fx.Installation.Permissions["acme/widgets/authfail-user"] = fakegithub.PermissionEntry{Scenario: fakegithub.ScenarioAuthFail}
 	fx.Installation.Permissions["acme/widgets/transient-user"] = fakegithub.PermissionEntry{Scenario: fakegithub.ScenarioTransient}
+	fx.Installation.Permissions["acme/widgets/notfound-user"] = fakegithub.PermissionEntry{Scenario: fakegithub.ScenarioNotFound}
 
 	return &fx
 }
@@ -91,6 +94,12 @@ var _ = Describe("fake GitHub App installation and authorization", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusServiceUnavailable))
 		})
 
+		It("models ScenarioNotFound for an installation explicitly registered as not-found", func() {
+			resp := mintToken(404)
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+		})
+
 		It("records the mint with AuthModeNone (App-level JWT auth isn't in the oauth/installation vocab)", func() {
 			resp := mintToken(123)
 			resp.Body.Close()
@@ -141,6 +150,12 @@ var _ = Describe("fake GitHub App installation and authorization", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusServiceUnavailable))
 		})
 
+		It("models ScenarioNotFound for a repo explicitly mapped as not-found", func() {
+			resp := resolve("acme/notfound-repo")
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+		})
+
 		It("records the resolution with AuthModeNone", func() {
 			resp := resolve("acme/widgets")
 			resp.Body.Close()
@@ -189,6 +204,12 @@ var _ = Describe("fake GitHub App installation and authorization", func() {
 			resp := checkPermission("acme/widgets", "transient-user", "token installation-token-abc")
 			defer resp.Body.Close()
 			Expect(resp.StatusCode).To(Equal(http.StatusServiceUnavailable))
+		})
+
+		It("models ScenarioNotFound for a collaborator explicitly registered as not-found", func() {
+			resp := checkPermission("acme/widgets", "notfound-user", "token installation-token-abc")
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
 		})
 
 		It("records a successful check with AuthModeInstallation", func() {

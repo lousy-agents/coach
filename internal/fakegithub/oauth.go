@@ -43,6 +43,9 @@ func oauthAuthorizeHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Ha
 		locQuery.Set("state", state)
 		loc.RawQuery = locQuery.Encode()
 
+		entry := fx.OAuth.Codes[scenarioCode]
+		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, string(entry.Scenario), r.Method, r.URL.Path, acceptanceharness.AuthModeNone))
+
 		w.Header().Set("Location", loc.String())
 		w.WriteHeader(http.StatusFound)
 	}
@@ -57,6 +60,7 @@ func oauthAuthorizeHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Ha
 func oauthTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
+			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeNone))
 			http.Error(w, "fakegithub: invalid form body", http.StatusBadRequest)
 			return
 		}

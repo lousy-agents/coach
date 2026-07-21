@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -81,6 +82,29 @@ var _ = Describe("fake GitHub OAuth flow", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(loc.Query().Get("code")).To(Equal("code-ok"))
 			Expect(loc.Query().Get("state")).To(Equal("xyz-state"))
+		})
+
+		It("records the successful redirect, like every other path in this handler", func() {
+			authorizeURL := server.URL() + "/login/oauth/authorize?" + url.Values{
+				"client_id":     {"test-client-id"},
+				"redirect_uri":  {"https://coach.example.com/callback"},
+				"state":         {"xyz-state"},
+				"scenario_code": {"code-ok"},
+			}.Encode()
+
+			resp, err := noRedirectClient().Get(authorizeURL)
+			Expect(err).NotTo(HaveOccurred())
+			resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusFound))
+
+			records := server.Recorder().Records()
+			Expect(records).NotTo(BeEmpty())
+			last := records[len(records)-1]
+			Expect(last.AuthMode).To(Equal(acceptanceharness.AuthModeNone))
+			Expect(last.FixtureID).To(Equal("oauth-fixture"))
+			Expect(last.Method).To(Equal(http.MethodGet))
+			Expect(last.Path).To(Equal("/login/oauth/authorize"))
+			Expect(last.Scenario).To(Equal(string(fakegithub.ScenarioOK)))
 		})
 
 		It("rejects a client_id that doesn't match the fixture, without redirecting to the attacker-controlled redirect_uri", func() {
@@ -197,6 +221,24 @@ var _ = Describe("fake GitHub OAuth flow", func() {
 			Expect(last.Path).To(Equal("/login/oauth/access_token"))
 			Expect(last.FixtureID).To(Equal("oauth-fixture"))
 			Expect(last.Scenario).To(Equal(string(fakegithub.ScenarioOK)))
+		})
+
+		It("records a malformed request body that fails ParseForm, rather than leaving it unrecorded", func() {
+			req, err := http.NewRequest(http.MethodPost, server.URL()+"/login/oauth/access_token", strings.NewReader("code=code-ok"))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "bogus ;=")
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+
+			records := server.Recorder().Records()
+			Expect(records).NotTo(BeEmpty())
+			last := records[len(records)-1]
+			Expect(last.AuthMode).To(Equal(acceptanceharness.AuthModeNone))
+			Expect(last.Method).To(Equal(http.MethodPost))
+			Expect(last.Path).To(Equal("/login/oauth/access_token"))
 		})
 	})
 

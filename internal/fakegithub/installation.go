@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
 )
@@ -23,6 +22,9 @@ const installationTokenExpiresAt = "2999-01-01T00:00:00Z"
 // proceed to write its own ScenarioOK response.
 func writeScenarioStatus(w http.ResponseWriter, scenario Scenario) bool {
 	switch scenario {
+	case ScenarioNotFound:
+		http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+		return true
 	case ScenarioAuthFail:
 		http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
 		return true
@@ -107,7 +109,7 @@ func installationResolutionHandler(fx *Fixture, rec *acceptanceharness.Recorder)
 // installation credential.
 func permissionHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "token ")
+		token := extractBearerToken(r)
 
 		if fx.ClassifyToken(token) != TokenInstallation {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
