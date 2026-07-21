@@ -1,6 +1,10 @@
 package fakegithub
 
-import "github.com/lousy-agents/coach/internal/acceptanceharness"
+import (
+	"sync"
+
+	"github.com/lousy-agents/coach/internal/acceptanceharness"
+)
 
 // DefaultFixtureID is the FixtureID a caller can use when a test doesn't
 // care about distinguishing between multiple fixture files/datasets.
@@ -140,6 +144,13 @@ type Fixture struct {
 	OAuth        OAuthFixture
 	Installation InstallationFixture
 	Contents     ContentsFixture
+
+	// mu guards runtime access to OAuth.Tokens/OAuth.Codes, the only
+	// fixture maps mutated after construction (by oauthTokenHandler on a
+	// successful code exchange) -- every other fixture map is written once
+	// by test/fixture-author code before NewServer starts and never
+	// mutated again, so it needs no synchronization here.
+	mu sync.Mutex
 }
 
 // NewFixture returns an empty Fixture stamped with the current
@@ -191,7 +202,10 @@ func (f *Fixture) ClassifyToken(token string) TokenKind {
 	if token == "" {
 		return TokenUnknown
 	}
-	if _, ok := f.OAuth.Tokens[token]; ok {
+	f.mu.Lock()
+	_, ok := f.OAuth.Tokens[token]
+	f.mu.Unlock()
+	if ok {
 		return TokenOAuth
 	}
 	for _, entry := range f.Installation.Installations {

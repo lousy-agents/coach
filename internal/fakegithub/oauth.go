@@ -38,7 +38,9 @@ func oauthAuthorizeHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Ha
 			return
 		}
 
+		fx.mu.Lock()
 		entry, ok := fx.OAuth.Codes[scenarioCode]
+		fx.mu.Unlock()
 		if !ok {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
 			http.Error(w, "fakegithub: unknown scenario_code", http.StatusBadRequest)
@@ -81,7 +83,23 @@ func oauthTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handle
 			return
 		}
 
+		// Hold fx.mu across the whole read-then-mutate sequence -- the
+		// lookup, and (on ScenarioOK) the mint+delete -- so this exchange
+		// is atomic with respect to any other concurrent request touching
+		// fx.OAuth.Tokens/fx.OAuth.Codes, including a second concurrent
+		// exchange attempt for the very same code (which will then
+		// correctly see it already consumed). The lock is released
+		// before any response is written.
+		fx.mu.Lock()
 		entry, ok := fx.OAuth.Codes[code]
+		var token string
+		if ok && entry.Scenario == ScenarioOK {
+			token = newFakeToken()
+			fx.OAuth.Tokens[token] = OAuthTokenEntry{IdentityLogin: entry.IdentityLogin, Scenario: ScenarioOK}
+			delete(fx.OAuth.Codes, code)
+		}
+		fx.mu.Unlock()
+
 		if !ok {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeNone))
 			http.Error(w, "fakegithub: unknown code", http.StatusNotFound)
@@ -101,10 +119,6 @@ func oauthTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handle
 			http.Error(w, "fakegithub: transient upstream failure", http.StatusServiceUnavailable)
 			return
 		}
-
-		token := newFakeToken()
-		fx.OAuth.Tokens[token] = OAuthTokenEntry{IdentityLogin: entry.IdentityLogin, Scenario: ScenarioOK}
-		delete(fx.OAuth.Codes, code)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -135,7 +149,9 @@ func oauthUserHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handler
 			return
 		}
 
+		fx.mu.Lock()
 		entry := fx.OAuth.Tokens[token]
+		fx.mu.Unlock()
 
 		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, string(entry.Scenario), r.Method, r.URL.Path, acceptanceharness.AuthModeOAuth))
 

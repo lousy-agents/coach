@@ -1,9 +1,11 @@
 package fakegithub_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -280,4 +282,145 @@ var _ = Describe("fake GitHub service integration", func() {
 			}
 		})
 	})
+
+	Describe("concurrent requests against one Server", func() {
+		// This spec exists to reproduce/guard against a data race on
+		// fx.OAuth.Tokens/fx.OAuth.Codes: httptest.NewServer (which Server
+		// wraps) serves each connection on its own goroutine, so N
+		// concurrent authorize->exchange->/user cycles hit the same
+		// *Fixture concurrently. Before the fakegithub.Fixture mutex fix,
+		// this reliably races under `go test -race` (and can crash the
+		// process outright with "fatal error: concurrent map read and map
+		// write" outside -race).
+		It("completes many concurrent authorize->exchange->/user cycles cleanly, with every identity resolved correctly", func() {
+			const concurrency = 50
+
+			fx := newIntegrationFixture()
+			for i := 0; i < concurrency; i++ {
+				fx.OAuth.Codes[fmt.Sprintf("concurrent-code-%d", i)] = fakegithub.OAuthCodeEntry{
+					IdentityLogin: "octocat",
+					Scenario:      fakegithub.ScenarioOK,
+				}
+			}
+			server := fakegithub.NewServer(fx)
+			defer server.Close()
+
+			type outcome struct {
+				err       error
+				status    int
+				login     string
+				id        int64
+				authorize int
+				exchange  int
+			}
+			results := make([]outcome, concurrency)
+
+			var wg sync.WaitGroup
+			for i := 0; i < concurrency; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+
+					code := fmt.Sprintf("concurrent-code-%d", i)
+					out := outcome{}
+
+					authorizeURL := server.URL() + "/login/oauth/authorize?" + url.Values{
+						"client_id":     {"integration-client-id"},
+						"redirect_uri":  {"https://coach.example.com/callback"},
+						"state":         {"xyz-state"},
+						"scenario_code": {code},
+					}.Encode()
+					authorizeResp, err := noRedirectClient().Get(authorizeURL)
+					if err != nil {
+						out.err = fmt.Errorf("authorize: %w", err)
+						results[i] = out
+						return
+					}
+					authorizeResp.Body.Close()
+					out.authorize = authorizeResp.StatusCode
+
+					exchangeResp, err := http.PostForm(server.URL()+"/login/oauth/access_token", url.Values{
+						"client_id":     {"integration-client-id"},
+						"client_secret": {"integration-client-secret"},
+						"code":          {code},
+					})
+					if err != nil {
+						out.err = fmt.Errorf("exchange: %w", err)
+						results[i] = out
+						return
+					}
+					out.exchange = exchangeResp.StatusCode
+					var exchangeBody struct {
+						AccessToken string `json:"access_token"`
+					}
+					if err := func() error {
+						defer exchangeResp.Body.Close()
+						return jsonDecode(exchangeResp, &exchangeBody)
+					}(); err != nil {
+						out.err = fmt.Errorf("decode exchange body: %w", err)
+						results[i] = out
+						return
+					}
+
+					userReq, err := http.NewRequest(http.MethodGet, server.URL()+"/user", nil)
+					if err != nil {
+						out.err = fmt.Errorf("new /user request: %w", err)
+						results[i] = out
+						return
+					}
+					userReq.Header.Set("Authorization", "token "+exchangeBody.AccessToken)
+					userResp, err := http.DefaultClient.Do(userReq)
+					if err != nil {
+						out.err = fmt.Errorf("/user: %w", err)
+						results[i] = out
+						return
+					}
+					out.status = userResp.StatusCode
+					var user struct {
+						ID    int64  `json:"id"`
+						Login string `json:"login"`
+					}
+					if err := func() error {
+						defer userResp.Body.Close()
+						return jsonDecode(userResp, &user)
+					}(); err != nil {
+						out.err = fmt.Errorf("decode /user body: %w", err)
+						results[i] = out
+						return
+					}
+					out.login = user.Login
+					out.id = user.ID
+
+					results[i] = out
+				}(i)
+			}
+			wg.Wait()
+
+			for i, out := range results {
+				Expect(out.err).NotTo(HaveOccurred(), "goroutine %d", i)
+				Expect(out.authorize).To(Equal(http.StatusFound), "goroutine %d authorize", i)
+				Expect(out.exchange).To(Equal(http.StatusOK), "goroutine %d exchange", i)
+				Expect(out.status).To(Equal(http.StatusOK), "goroutine %d /user", i)
+				Expect(out.login).To(Equal("octocat"), "goroutine %d /user login", i)
+				Expect(out.id).To(Equal(int64(1)), "goroutine %d /user id", i)
+			}
+
+			// Every fixture-registered code was consumed exactly once
+			// (single-use codes stay single-use under concurrent
+			// exchange), and every minted token is present and correctly
+			// registered.
+			Expect(fx.OAuth.Tokens).To(HaveLen(concurrency + 1)) // +1 for the pre-registered "token-ok"
+			for i := 0; i < concurrency; i++ {
+				Expect(fx.OAuth.Codes).NotTo(HaveKey(fmt.Sprintf("concurrent-code-%d", i)))
+			}
+		})
+	})
 })
+
+// jsonDecode decodes resp's JSON body into out, without closing resp.Body
+// (the caller owns that), for use from goroutines where the shared
+// decodeJSON helper's own Body.Close() would race with a caller-managed
+// defer.
+func jsonDecode(resp *http.Response, out any) error {
+	return json.NewDecoder(resp.Body).Decode(out)
+}
