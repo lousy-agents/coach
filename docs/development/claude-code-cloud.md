@@ -24,35 +24,16 @@ makes every subsequent session start fast. Claude caches the setup script's
 filesystem output, while the repository hook remains a fallback and handles
 project-specific reconciliation.
 
-The setup script is committed at `.claude/cloud-env-setup.sh`. Paste its
-contents into the Claude Code cloud environment settings:
+The setup script is committed at `.claude/cloud-env-setup.sh`. Paste that
+file's contents into the Claude Code cloud environment settings — do not
+re-copy version pins from this page. The script is the paste source of truth;
+`mise.toml` is the pin source of truth. A CI parity test rejects PRs that
+update one without the other.
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-export PATH="$HOME/.local/bin:$PATH"
-
-mise_version="2026.7.7"
-go_version="1.26.5"
-node_version="24"
-
-npm install \
-  --global \
-  --prefix "$HOME/.local" \
-  --no-audit \
-  --no-fund \
-  "mise@${mise_version}"
-
-mise --version
-mise trust mise.toml
-mise install "go@${go_version}" "node@${node_version}"
-```
-
-Keep these versions aligned with `mise.toml`. A CI parity test rejects PRs that
-update one without the other. After changing versions here, rebuild the cloud
-environment cache by editing the setup script in the cloud UI (for example,
-changing the `mise_version` line triggers a cache rebuild on the next session).
+After Renovate (or a human) bumps versions in those two files, rebuild the
+cloud environment cache by re-pasting the updated script in the cloud UI (for
+example, changing the `mise_version` line triggers a cache rebuild on the next
+session).
 
 The default Trusted network policy permits npm registry access and the hosts
 mise uses for Go and Node downloads, so this does not require unrestricted
