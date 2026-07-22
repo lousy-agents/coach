@@ -158,6 +158,8 @@ type ReportVersions struct {
 
 // Report is the frozen snake_case job report contract (report_version "1").
 // Error is always present: JSON null when the job succeeded, a string when it failed.
+// Findings and Diagnostics always serialize as JSON arrays (never null); a nil
+// Summary.FindingCounts serializes as {}.
 type Report struct {
 	ReportVersion string          `json:"report_version"`
 	JobID         string          `json:"job_id"`
@@ -170,6 +172,24 @@ type Report struct {
 	Error         *string         `json:"error"`
 	Versions      ReportVersions  `json:"versions"`
 	GeneratedAt   time.Time       `json:"generated_at"`
+}
+
+// MarshalJSON keeps the frozen wire shape: nil slices become [] and a nil
+// finding_counts map becomes {}, so producers cannot accidentally emit null
+// for fields the contract documents as arrays/objects.
+func (r Report) MarshalJSON() ([]byte, error) {
+	type reportJSON Report
+	out := reportJSON(r)
+	if out.Findings == nil {
+		out.Findings = []Finding{}
+	}
+	if out.Diagnostics == nil {
+		out.Diagnostics = []Diagnostic{}
+	}
+	if out.Summary.FindingCounts == nil {
+		out.Summary.FindingCounts = map[string]map[string]int{}
+	}
+	return json.Marshal(out)
 }
 
 // APIError is the machine+human pair inside the stable error envelope.
