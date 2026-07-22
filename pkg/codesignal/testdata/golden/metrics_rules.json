@@ -1,0 +1,73 @@
+{
+  "schema_version": "1",
+  "scope": {
+    "repository": "example/repo",
+    "revision": "mno345",
+    "base": "main"
+  },
+  "summary": {
+    "files_analyzed": 1,
+    "files_with_diagnostics": 0,
+    "active_signals": 2,
+    "introduced_signals": 0,
+    "existing_signals": 0,
+    "resolved_signals": 0,
+    "baseline_signals": 0
+  },
+  "signals": [
+    {
+      "id": "sig_5e89a647497a30dc66f89e21c448c5e1c65559796b62571e3f05e28b458ddc80",
+      "fingerprint": "fp_0ae981a4bcac231c464c5f699eac7ad18486924083135081fe1c640e8fda703b",
+      "rule_id": "complexity.branch_density",
+      "rule_version": "1",
+      "kind": "branch_density",
+      "category": "complexity",
+      "severity": "medium",
+      "confidence": "medium",
+      "lifecycle": "unknown",
+      "changed": true,
+      "path": "pkg/example/tangled.go",
+      "location": {
+        "start_byte": 0,
+        "end_byte": 0,
+        "start_row": 0,
+        "start_col": 0,
+        "end_row": 0,
+        "end_col": 0
+      },
+      "evidence": "branch_sum=12",
+      "why_it_matters": "A large number of branching constructs concentrated in one file increases the number of paths a reader has to hold in mind at once and the number of cases tests need to cover.",
+      "recommendation": "Split this file's branching logic across smaller, single-purpose functions or files so each piece has fewer paths to reason about.",
+      "provenance": {
+        "producer": "codesignal"
+      }
+    },
+    {
+      "id": "sig_108d19bddb7d5c907c28b3d6aba415ecf6edb999452651dd42560c9183334f53",
+      "fingerprint": "fp_a323df5a5582172884b2d23b4f3bbeaa3a27a48c08cc59057df1001e0116ed4e",
+      "rule_id": "complexity.max_nesting_depth",
+      "rule_version": "1",
+      "kind": "max_nesting_depth",
+      "category": "complexity",
+      "severity": "medium",
+      "confidence": "medium",
+      "lifecycle": "unknown",
+      "changed": true,
+      "path": "pkg/example/tangled.go",
+      "location": {
+        "start_byte": 0,
+        "end_byte": 0,
+        "start_row": 0,
+        "start_col": 0,
+        "end_row": 0,
+        "end_col": 0
+      },
+      "evidence": "max_nesting_depth=5",
+      "why_it_matters": "Deeply nested control flow is harder to read, harder to test exhaustively, and hides the function's actual branching structure behind indentation, making it easy to miss an edge case.",
+      "recommendation": "Extract deeply nested blocks into named helper functions or invert conditionals with early returns to flatten the control flow.",
+      "provenance": {
+        "producer": "codesignal"
+      }
+    }
+  ]
+}

@@ -82,13 +82,17 @@ var _ = Describe("CodeSignal report generation", func() {
 		})
 	})
 
-	When("findings do not describe input mutation and gated kinds are below their density gate", func() {
+	When("findings do not describe input mutation, gated kinds are below their density gate, and metrics are below their complexity thresholds", func() {
 		It("does not raise any signal", func() {
-			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{Path: "state.go", Status: "modified", Head: cleanResult("state.go",
-				semantics.Finding{Kind: "constructor_func", Name: "NewState"},
-				semantics.Finding{Kind: "pointer_return", Name: "NewState"},
-				semantics.Finding{Kind: "unrelated", Name: "Elsewhere"},
-			)}}})
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{Path: "state.go", Status: "modified", Head: &semantics.Result{
+				Path: "state.go", Language: semantics.LanguageGo, ParseStatus: "ok",
+				Findings: []semantics.Finding{
+					{Kind: "constructor_func", Name: "NewState"},
+					{Kind: "pointer_return", Name: "NewState"},
+					{Kind: "unrelated", Name: "Elsewhere"},
+				},
+				Metrics: semantics.StructuralMetrics{MaxNestingDepth: 3, Ifs: 4, Fors: 3, ExprSwitches: 2, TypeSwitches: 1, Selects: 1},
+			}}}})
 			Expect(report.Signals).To(BeEmpty())
 		})
 	})
