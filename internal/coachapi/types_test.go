@@ -318,10 +318,43 @@ func TestInitMigration_DefinesJobTables(t *testing.T) {
 		"payload_hash",
 		"NULLS NOT DISTINCT",
 		"CREATE TABLE job_diagnostics",
+		// Claim/reclaim and report assembly access paths (Task 3 builds on these).
+		"CREATE INDEX job_findings_job_id_idx",
+		"CREATE INDEX job_diagnostics_job_id_idx",
+		"CREATE INDEX jobs_status_created_at_idx",
+		"CREATE INDEX jobs_running_heartbeat_at_idx",
+		// Story 5 provenance invariant at the DB boundary.
+		"job_findings_provenance_chk",
 	} {
 		if !strings.Contains(sql, frag) {
 			t.Errorf("migrations/0001_init.sql must contain %q", frag)
 		}
+	}
+}
+
+// GET /v1/jobs/{id} status body: error key is always present (null when unset),
+// matching Report.error — not omitempty — so clients share one nullability rule.
+func TestJobStatusResponse_ErrorSerializesAsNullWhenUnset(t *testing.T) {
+	raw, err := json.Marshal(JobStatusResponse{
+		ID:      "id",
+		Kind:    JobKindRepoBaselineScan,
+		Status:  JobStatusQueued,
+		Attempt: 0,
+		Error:   nil,
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var asMap map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &asMap); err != nil {
+		t.Fatalf("unmarshal map: %v", err)
+	}
+	errRaw, ok := asMap["error"]
+	if !ok {
+		t.Fatal(`JobStatusResponse JSON must include "error" key even when unset`)
+	}
+	if string(errRaw) != "null" {
+		t.Errorf(`JobStatusResponse.error must be JSON null when unset; got %s`, errRaw)
 	}
 }
 

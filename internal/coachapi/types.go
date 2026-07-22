@@ -74,12 +74,14 @@ type CreateJobResponse struct {
 }
 
 // JobStatusResponse is the body of GET /v1/jobs/{id}.
+// Error is always present (JSON null when unset), matching Report.Error so
+// clients use one nullability rule for job error fields.
 type JobStatusResponse struct {
 	ID        string    `json:"id"`
 	Kind      JobKind   `json:"kind"`
 	Status    JobStatus `json:"status"`
 	Attempt   int       `json:"attempt"`
-	Error     *string   `json:"error,omitempty"`
+	Error     *string   `json:"error"`
 	ReportURL string    `json:"report_url,omitempty"`
 }
 
