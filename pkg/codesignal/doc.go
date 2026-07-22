@@ -9,7 +9,9 @@
 // "structure.pointer_return_density" ("pointer_return"). The two structure
 // rules are density-gated: a file only surfaces them once its own
 // per-side count of that finding kind reaches a threshold. Unrecognized
-// finding kinds are ignored.
+// finding kinds are ignored. A third dispatch path, signalsFromImports,
+// derives "coupling.deep_relative_import" directly from a TypeScript/TSX
+// file's semantics.ImportFeature list rather than from Findings or Metrics.
 //
 // A Signal's Lifecycle classifies it relative to an optional Base result.
 // Signal.Changed is independent of Lifecycle: a pre-existing signal may sit
