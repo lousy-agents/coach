@@ -139,3 +139,80 @@ test("prompt body preserves leading and trailing blank lines", async () => {
 
   assert.strictEqual(cfg.agent?.spaces?.prompt, body)
 })
+
+async function makeCommandsDir() {
+  const base = await mkdtemp(path.join(os.tmpdir(), "claude-commands-"))
+  const commandsDir = path.join(base, ".claude", "commands")
+  await fs.mkdir(commandsDir, { recursive: true })
+  return { base, commandsDir }
+}
+
+function commandFile(name: string, description: string, body: string): string {
+  return `---\nname: ${name}\ndescription: ${description}\nargument-hint: [issue-number]\nmodel: inherit\n---\n${body}`
+}
+
+test("loads real .claude/commands/implement-issue.md", async () => {
+  const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
+  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
+  const plugin = await pluginModule.default({ directory: repoRoot, worktree: repoRoot })
+
+  const cfg: {
+    command?: Record<string, { description?: string; template?: string; subtask?: boolean }>
+  } = {}
+  await plugin.config(cfg)
+
+  const cmd = cfg.command?.["implement-issue"]
+  assert.ok(cmd, "implement-issue command missing")
+  assert.ok(cmd.description && cmd.description.length > 0, "missing description")
+  assert.ok(cmd.template && cmd.template.length > 0, "missing template")
+  assert.match(cmd.template, /task-implementer/)
+  assert.match(cmd.template, /task-reviewer/)
+  assert.match(cmd.template, /orchestrator|delegate/i)
+  assert.strictEqual(cmd.subtask, undefined, "implement-issue must not set subtask: true")
+})
+
+test("explicit pre-existing command is not overwritten", async () => {
+  const { base, commandsDir } = await makeCommandsDir()
+  await fs.writeFile(
+    path.join(commandsDir, "implement-issue.md"),
+    commandFile("implement-issue", "from claude", "Claude body with task-implementer"),
+  )
+
+  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
+  const plugin = await pluginModule.default({ directory: base, worktree: "" })
+
+  const explicit = {
+    description: "explicit opencode",
+    template: "Explicit template wins",
+  }
+  const cfg: {
+    command?: Record<string, { description?: string; template?: string }>
+  } = {
+    command: { "implement-issue": explicit },
+  }
+  await plugin.config(cfg)
+
+  await rm(base, { recursive: true, force: true })
+
+  assert.strictEqual(cfg.command?.["implement-issue"]?.description, "explicit opencode")
+  assert.strictEqual(cfg.command?.["implement-issue"]?.template, "Explicit template wins")
+})
+
+test("command body preserves leading and trailing blank lines", async () => {
+  const { base, commandsDir } = await makeCommandsDir()
+  const body = "\n\nOrchestrate $1.\n\n"
+  await fs.writeFile(
+    path.join(commandsDir, "spaces-cmd.md"),
+    commandFile("spaces-cmd", "d", body),
+  )
+
+  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
+  const plugin = await pluginModule.default({ directory: base, worktree: "" })
+
+  const cfg: { command?: Record<string, { template?: string }> } = {}
+  await plugin.config(cfg)
+
+  await rm(base, { recursive: true, force: true })
+
+  assert.strictEqual(cfg.command?.["spaces-cmd"]?.template, body)
+})

@@ -1,6 +1,6 @@
 /**
- * Loads Claude Code subagents from .claude/agents/*.md into OpenCode.
- * Canonical source: .claude/agents/ — do not mirror prompt bodies here.
+ * Loads Claude Code subagents and slash commands into OpenCode.
+ * Canonical sources: .claude/agents/ and .claude/commands/ — do not mirror bodies.
  */
 import fs from "node:fs/promises"
 import path from "node:path"
@@ -15,8 +15,18 @@ type AgentConfig = {
   [key: string]: unknown
 }
 
+type CommandConfig = {
+  description?: string
+  template?: string
+  agent?: string
+  model?: string
+  subtask?: boolean
+  [key: string]: unknown
+}
+
 type Config = {
   agent?: Record<string, AgentConfig>
+  command?: Record<string, CommandConfig>
   [key: string]: unknown
 }
 
@@ -200,6 +210,44 @@ async function loadClaudeAgents(agentsDir: string): Promise<Record<string, Agent
   return out
 }
 
+function commandName(data: Record<string, string>, filePath: string): string {
+  const fromFm = data.name?.trim()
+  if (fromFm) return fromFm
+  return path.basename(filePath, path.extname(filePath))
+}
+
+async function loadClaudeCommands(commandsDir: string): Promise<Record<string, CommandConfig>> {
+  const out: Record<string, CommandConfig> = {}
+  let entries: string[]
+  try {
+    entries = (await fs.readdir(commandsDir)).sort()
+  } catch {
+    return out
+  }
+
+  for (const entry of entries) {
+    if (!entry.endsWith(".md")) continue
+    const filePath = path.join(commandsDir, entry)
+    let text: string
+    try {
+      text = await fs.readFile(filePath, "utf8")
+    } catch {
+      continue
+    }
+
+    const parsed = parseFrontmatter(text)
+    if (!parsed) continue
+
+    const name = commandName(parsed.data, filePath)
+    // Ignore Claude-only frontmatter: argument-hint, model: inherit (omit model).
+    out[name] = {
+      description: parsed.data.description?.trim() || `Claude command ${name}`,
+      template: parsed.body,
+    }
+  }
+  return out
+}
+
 async function log(
   client: PluginInput["client"],
   level: "debug" | "info" | "warn" | "error",
@@ -219,36 +267,63 @@ export default async (input: PluginInput) => {
   return {
     config: async (cfg: Config) => {
       const roots = [input.worktree, input.directory].filter(Boolean)
-      const seen = new Set<string>()
-      const loaded: Record<string, AgentConfig> = {}
+      const seenAgents = new Set<string>()
+      const seenCommands = new Set<string>()
+      const loadedAgents: Record<string, AgentConfig> = {}
+      const loadedCommands: Record<string, CommandConfig> = {}
 
       for (const root of roots) {
         const agentsDir = path.join(root, ".claude", "agents")
-        if (seen.has(agentsDir)) continue
-        seen.add(agentsDir)
-        Object.assign(loaded, await loadClaudeAgents(agentsDir))
+        if (!seenAgents.has(agentsDir)) {
+          seenAgents.add(agentsDir)
+          Object.assign(loadedAgents, await loadClaudeAgents(agentsDir))
+        }
+        const commandsDir = path.join(root, ".claude", "commands")
+        if (!seenCommands.has(commandsDir)) {
+          seenCommands.add(commandsDir)
+          Object.assign(loadedCommands, await loadClaudeCommands(commandsDir))
+        }
       }
 
-      const names = Object.keys(loaded)
-      if (names.length === 0) {
+      const agentNames = Object.keys(loadedAgents)
+      if (agentNames.length === 0) {
         await log(input.client, "debug", "no Claude agents found under .claude/agents")
-        return
+      } else {
+        cfg.agent = cfg.agent ?? {}
+        let injected = 0
+        for (const [name, agent] of Object.entries(loadedAgents)) {
+          // Explicit OpenCode agent defs win over the Claude loader.
+          if (cfg.agent[name] !== undefined) continue
+          cfg.agent[name] = agent
+          injected++
+        }
+
+        await log(input.client, "info", "loaded Claude agents into OpenCode", {
+          found: agentNames.length,
+          injected,
+          names: agentNames,
+        })
       }
 
-      cfg.agent = cfg.agent ?? {}
-      let injected = 0
-      for (const [name, agent] of Object.entries(loaded)) {
-        // Explicit OpenCode agent defs win over the Claude loader.
-        if (cfg.agent[name] !== undefined) continue
-        cfg.agent[name] = agent
-        injected++
-      }
+      const commandNames = Object.keys(loadedCommands)
+      if (commandNames.length === 0) {
+        await log(input.client, "debug", "no Claude commands found under .claude/commands")
+      } else {
+        cfg.command = cfg.command ?? {}
+        let injected = 0
+        for (const [name, command] of Object.entries(loadedCommands)) {
+          // Explicit OpenCode command defs win over the Claude loader.
+          if (cfg.command[name] !== undefined) continue
+          cfg.command[name] = command
+          injected++
+        }
 
-      await log(input.client, "info", "loaded Claude agents into OpenCode", {
-        found: names.length,
-        injected,
-        names,
-      })
+        await log(input.client, "info", "loaded Claude commands into OpenCode", {
+          found: commandNames.length,
+          injected,
+          names: commandNames,
+        })
+      }
     },
   }
 }

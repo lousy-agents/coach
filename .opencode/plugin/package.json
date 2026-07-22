@@ -1,7 +1,7 @@
 {
   "name": "@lousy-agents/claude-agents-loader",
   "version": "0.0.0",
-  "description": "OpenCode plugin that loads Claude Code subagents from .claude/agents/*.md",
+  "description": "OpenCode plugins: load Claude agents/commands; implement-issue workflow gates",
   "main": "claude-agents.ts",
   "type": "module"
 }
