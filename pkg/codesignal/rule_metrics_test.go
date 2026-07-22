@@ -138,4 +138,24 @@ var _ = Describe("Metrics-derived rules", func() {
 			Expect(two.Signals[0].Fingerprint).To(Equal(one.Signals[0].Fingerprint))
 		})
 	})
+
+	Describe("caller-owned Metrics immutability", func() {
+		It("does not mutate Head/Base Metrics when both metrics rules fire", func() {
+			triggering := semantics.StructuralMetrics{
+				MaxNestingDepth: 5,
+				Ifs:             4, Fors: 3, ExprSwitches: 2, TypeSwitches: 2, Selects: 1,
+			}
+			base := resultWithMetrics("deep.go", triggering)
+			head := resultWithMetrics("deep.go", triggering)
+			baseBefore, headBefore := base.Metrics, head.Metrics
+
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "deep.go", Status: "modified", Base: base, Head: head,
+			}}})
+
+			Expect(report.Signals).To(HaveLen(2))
+			Expect(base.Metrics).To(Equal(baseBefore))
+			Expect(head.Metrics).To(Equal(headBefore))
+		})
+	})
 })
