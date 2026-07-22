@@ -21,7 +21,7 @@ var forbiddenDependencyPrefixes = []string{
 // isForbiddenDependency reports whether dep is exactly one of
 // forbiddenDependencyPrefixes or a subpackage of one of them (e.g.
 // "net/http/httptest" under "net/http", or
-// "github.com/google/go-github/v88/github" under
+// "github.com/google/go-github/v89/github" under
 // "github.com/google/go-github").
 func isForbiddenDependency(dep string) (string, bool) {
 	for _, prefix := range forbiddenDependencyPrefixes {

@@ -9,7 +9,7 @@ import (
 	"path"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/google/go-github/v88/github"
+	"github.com/google/go-github/v89/github"
 )
 
 // maxContentSize is the GitHub Contents API's file size limit: files larger
