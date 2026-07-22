@@ -125,7 +125,9 @@ func processHeadResult(fc FileChange) ([]Diagnostic, []Signal) {
 	switch fc.Head.ParseStatus {
 	case "ok":
 		counts := findingCountsByKind(fc.Head.Findings)
-		return nil, signalsFromFindings(fc.Path, fc.Head.Findings, counts)
+		signals := signalsFromFindings(fc.Path, fc.Head.Findings, counts)
+		signals = append(signals, signalsFromMetrics(fc.Path, fc.Head.Metrics)...)
+		return nil, signals
 	case "syntax_errors":
 		diagnostics := make([]Diagnostic, 0, len(fc.Head.SyntaxErrors))
 		for _, issue := range fc.Head.SyntaxErrors {
@@ -154,7 +156,9 @@ func extractBaseSignals(fc FileChange) []Signal {
 		return nil
 	}
 	counts := findingCountsByKind(fc.Base.Findings)
-	return signalsFromFindings(fc.Path, fc.Base.Findings, counts)
+	signals := signalsFromFindings(fc.Path, fc.Base.Findings, counts)
+	signals = append(signals, signalsFromMetrics(fc.Path, fc.Base.Metrics)...)
+	return signals
 }
 
 // baseUsableForLifecycle reports whether fc.Base can be trusted as a

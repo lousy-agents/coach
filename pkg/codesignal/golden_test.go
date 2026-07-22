@@ -308,3 +308,34 @@ func TestGolden_MultiRule(t *testing.T) {
 	got := buildAndMarshal(t, multiRuleInput(), Options{})
 	assertMatchesGolden(t, "testdata/golden/multi_rule.json", got)
 }
+
+func metricsRulesInput() Input {
+	return Input{
+		Scope: Scope{Repository: "example/repo", Revision: "mno345", Base: "main"},
+		Files: []FileChange{
+			{
+				Path:   "pkg/example/tangled.go",
+				Status: "modified",
+				Head: &semantics.Result{
+					Path:        "pkg/example/tangled.go",
+					Language:    semantics.LanguageGo,
+					ParseStatus: semantics.ParseStatus("ok"),
+					Metrics: semantics.StructuralMetrics{
+						Ifs:             4,
+						Fors:            3,
+						ExprSwitches:    2,
+						TypeSwitches:    2,
+						Selects:         1,
+						MaxNestingDepth: 5,
+					},
+				},
+				ChangedRanges: []LineRange{{StartRow: 0, EndRow: 40}},
+			},
+		},
+	}
+}
+
+func TestGolden_MetricsRules(t *testing.T) {
+	got := buildAndMarshal(t, metricsRulesInput(), Options{})
+	assertMatchesGolden(t, "testdata/golden/metrics_rules.json", got)
+}

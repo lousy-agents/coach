@@ -56,3 +56,25 @@ func signalsFromFindings(path string, findings []semantics.Finding, counts map[s
 	}
 	return signals
 }
+
+// metricsRuleRegistry lists Signal constructors derived from
+// semantics.StructuralMetrics rather than Findings. Each entry reports
+// ok=false when the metric doesn't cross that rule's threshold. This is the
+// single dispatch point signalsFromMetrics uses, mirroring ruleRegistry's
+// role for finding-backed rules.
+var metricsRuleRegistry = []func(path string, metrics semantics.StructuralMetrics) (Signal, bool){
+	newMaxNestingDepthSignal,
+	newBranchDensitySignal,
+}
+
+// signalsFromMetrics maps one side's StructuralMetrics to Signals via
+// metricsRuleRegistry.
+func signalsFromMetrics(path string, metrics semantics.StructuralMetrics) []Signal {
+	var signals []Signal
+	for _, newSignal := range metricsRuleRegistry {
+		if signal, ok := newSignal(path, metrics); ok {
+			signals = append(signals, signal)
+		}
+	}
+	return signals
+}
