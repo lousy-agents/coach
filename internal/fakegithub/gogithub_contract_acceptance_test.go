@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/google/go-github/v88/github"
+	"github.com/google/go-github/v89/github"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
