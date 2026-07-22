@@ -1,0 +1,34 @@
+# Issue #79 Task 0.3's thin offline Compose proof: fake GitHub -> pkg/githubingest
+# -> pkg/semantics -> pkg/codesignal, entirely on an internal (no-egress)
+# network, with no image implicitly pulled (pull_policy: never everywhere --
+# see docs/architecture/acceptance-harness.md section 2). Build once, online,
+# via `mise run thinproof-build`; run offline via
+# `mise run test-acceptance-thin-proof`.
+services:
+  fake-github:
+    build:
+      context: ../../..
+      dockerfile: deploy/compose/thinproof/fakegithub.Dockerfile
+    image: coach/fakegithub-thinproof:0.1.0
+    pull_policy: never
+    networks:
+      - internal
+
+  runner:
+    build:
+      context: ../../..
+      dockerfile: deploy/compose/thinproof/runner.Dockerfile
+    image: coach/thinproof-runner:0.1.0
+    pull_policy: never
+    depends_on:
+      - fake-github
+    environment:
+      - FAKE_GITHUB_BASE_URL=http://fake-github:8080
+    networks:
+      - internal
+    volumes:
+      - ./output:/output
+
+networks:
+  internal:
+    internal: true
