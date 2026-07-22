@@ -40,6 +40,47 @@ var _ = Describe("coupling.deep_relative_import", func() {
 		})
 	})
 
+	When("a TSX import climbs three or more directories", func() {
+		It("emits a signal just as it would for TS", func() {
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "src/a.tsx", Status: "modified",
+				Head: resultWithImports("src/a.tsx", semantics.LanguageTSX, semantics.ImportFeature{
+					Path: "../../../foo",
+				}),
+			}}})
+			Expect(report.Signals).To(HaveLen(1))
+			Expect(report.Signals[0].RuleID).To(Equal("coupling.deep_relative_import"))
+		})
+	})
+
+	When("a single file has multiple deep relative imports", func() {
+		It("emits one unaggregated signal per matching import, not a single file-level signal", func() {
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "src/a.ts", Status: "modified",
+				Head: resultWithImports("src/a.ts", semantics.LanguageTypeScript,
+					semantics.ImportFeature{Path: "../../../a"},
+					semantics.ImportFeature{Path: "../../../../b"},
+					semantics.ImportFeature{Path: "../../foo"},
+				),
+			}}})
+			Expect(report.Signals).To(HaveLen(2))
+			subjects := []string{report.Signals[0].Subject, report.Signals[1].Subject}
+			Expect(subjects).To(ConsistOf("../../../a", "../../../../b"))
+		})
+	})
+
+	When("the import path is empty", func() {
+		It("emits no deep_relative_import signal", func() {
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "src/a.ts", Status: "modified",
+				Head: resultWithImports("src/a.ts", semantics.LanguageTypeScript,
+					semantics.ImportFeature{Path: ""},
+				),
+			}}})
+			Expect(report.Signals).To(BeEmpty())
+		})
+	})
+
 	When("all relative imports climb at most two directories", func() {
 		It("emits no deep_relative_import signal", func() {
 			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
