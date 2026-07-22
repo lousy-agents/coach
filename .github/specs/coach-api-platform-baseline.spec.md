@@ -201,7 +201,7 @@ The groundwork phase is single-principal/self-serve: each job is owned by exactl
 New Postgres schema (owned by `internal/coachapi` / auth package):
 
 - `jobs`: `id (uuid pk)`, `kind (repo_baseline_scan)`, `params (jsonb)`, `status`, `error`, `created_at`, `started_at`, `finished_at`, `claimed_by`, `heartbeat_at`, `attempt` (int, not null, default 0 — incremented each time the job is claimed or re-queued after a stale heartbeat), `created_by_provider` (text, not null), `created_by_subject` (text, not null), `created_by_login` (text, not null) — denormalized principal at submit time for audit and ownership checks on status/report reads.
-- `job_findings`: `id`, `job_id (fk)`, `attempt` (int, not null — matches the `jobs.attempt` that produced the row), `source (deterministic | agent)`, `rubric_id`, `rubric_version`, `model_identity`, `payload (jsonb, frozen snake_case)`, `payload_hash (text, not null)`, `created_at`. `payload_hash` is a stable hash of the finding location/rule/rubric evidence within `payload`. For `source=deterministic`, `rubric_id` and `rubric_version` are `NULL`; for `source=agent`, they hold the rubric id and version that produced the judgment. `model_identity` is `NULL` for `source=deterministic`. Unique constraint on `(job_id, attempt, source, rubric_id, payload_hash)` where `payload_hash` is a stable fingerprint of the finding location/rule/rubric evidence so the same logical finding is stored only once within the same job attempt; prior attempts' rows are discarded on reclaim (see Task 3).
+- `job_findings`: `id`, `job_id (fk)`, `attempt` (int, not null — matches the `jobs.attempt` that produced the row), `source (deterministic | agent)`, `rubric_id`, `rubric_version`, `model_identity`, `payload (jsonb, frozen snake_case)`, `payload_hash (text, not null)`, `created_at`. `payload_hash` is a stable hash of the finding location/rule/rubric evidence within `payload`. For `source=deterministic`, `rubric_id` and `rubric_version` are `NULL`; for `source=agent`, they hold the rubric id and version that produced the judgment. `model_identity` is `NULL` for `source=deterministic`. Unique constraint on `(job_id, attempt, source, rubric_id, payload_hash)`, declared `NULLS NOT DISTINCT` (Postgres 16 supports this) — required because `rubric_id` is `NULL` on every `source=deterministic` row, and a default `UNIQUE` constraint treats `NULL` as distinct from `NULL`, so it would silently permit duplicate deterministic rows with the same `payload_hash` within one attempt. `payload_hash` is a stable fingerprint of the finding location/rule/rubric evidence so the same logical finding is stored only once within the same job attempt; prior attempts' rows are discarded on reclaim (see Task 3).
 - `job_diagnostics`: `id`, `job_id (fk)`, `attempt` (int, not null), `scope` (e.g., `file:path`), `message`, `created_at`. Same attempt-scoping rules as findings.
 - Auth persistence (exact table split is an implementation detail of Task 2a; minimum capabilities): OAuth `state` (CSRF) nonces with short TTL; a **JWT `jti` denylist** so revoke/logout invalidates tokens before `exp`. Protected routes validate the JWT cryptographically and then consult the denylist; revocation therefore depends on the denylist store's availability. Do not store GitHub refresh/access tokens longer than needed for the login exchange unless a later story requires GitHub user-token features (not in scope).
 
@@ -377,7 +377,7 @@ flowchart LR
 
 - Story 1 job API acceptance criteria, exercised at the HTTP boundary with `httptest` against the in-memory store — including reject client-supplied clone URL params with `400`.
 - Persist `created_by_*` from the authenticated principal on submit; enqueue job id on `TaskQueue`; `202` only per submit-durability rules.
-- Story 3 `RepoAuthorizer` on `repo_baseline_scan` submit — the **production implementation**, not just the seam: ADR-003's validation matrix against an `httptest` GitHub installation fake (user-owned repo; direct collaborator; org/team-derived access; no-role principal; App-not-installed repo; nonexistent repo → `403` `repo_not_authorized`; transient GitHub failure → `503`, nothing persisted). Smoke bypass only when configured.
+- Story 3 `RepoAuthorizer` on `repo_baseline_scan` submit — the **production implementation**, not just the seam: ADR-003's validation matrix against an `httptest` GitHub installation fake (user-owned repo; direct collaborator; org/team-derived access; no-role principal; App-not-installed repo; nonexistent repo → `403` `repo_not_authorized`; transient GitHub failure → `503`, nothing persisted). This task owns the submit-time authorization check in full, including the config-gated bypass for the smoke fixture `repo_owner`/`repo_name` pair (Story 3 — "Credential-free smoke / test mint exception"); no later task re-implements or re-tests this check.
 - Postgres store covered by an integration test gated on a `COACH_PG_DSN` env var (runs in compose CI job, skipped otherwise).
 
 **Verification**:
@@ -389,6 +389,7 @@ flowchart LR
 - [ ] Denylist-store error asserted `503` (fail closed), distinct from denylisted-`jti` `401`
 - [ ] Enqueue failure path does not return bare success `202` without a recoverable strategy test
 - [ ] `repo_not_authorized` asserted for denied repo role
+- [ ] Bypass-gated fixture `repo_owner`/`repo_name` pair skips the live GitHub role check only when the bypass is explicitly configured; when the bypass is unconfigured, submit still runs the full live-check matrix from the bullet above (`403` `repo_not_authorized` for denied roles, `503` for a transient GitHub failure) — red-first acceptance test for both states
 
 **Done when**:
 
@@ -574,13 +575,11 @@ flowchart LR
 **Affected files**:
 
 - `internal/coachapi/handler_baseline.go`, plus tests
-- `internal/authz/` wiring for Story 3 role check + smoke bypass
 
 **Requirements**:
 
-- Story 3 acceptance criteria; fetch failures map to actionable sentinel errors; configurable size budget.
+- Story 3 acceptance criteria (repository fetch and analysis only — submit-time `RepoAuthorizer` allow/deny and the smoke-bypass gate are Task 2's owned, fully-tested submit-time check per ADR-003; this task does not re-implement or re-test that matrix, since `POST /v1/jobs` enforces it before a job ever reaches this handler); fetch failures map to actionable sentinel errors; configurable size budget.
 - No request-params clone URL: public params are `repo_owner`+`repo_name`+optional `ref` only. Smoke fixture path is worker config (`COACH_SMOKE_FIXTURE_PATH` or equivalent), exercised by an acceptance test that refuses client-supplied `git_url` at the API and still completes a baseline against the configured fixture.
-- Submit-time `RepoAuthorizer` check (ADR-003) with tests for allow/deny; smoke bypass only when explicitly configured (Story 3).
 - Acceptance test asserts the analysis path executes via `internal/agentloop`.
 - Tree discovery uses Task 3b APIs (or local fixture walk), not ad-hoc `git clone`.
 
