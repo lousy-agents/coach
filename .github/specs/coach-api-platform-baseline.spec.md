@@ -389,7 +389,7 @@ flowchart LR
 - [ ] Denylist-store error asserted `503` (fail closed), distinct from denylisted-`jti` `401`
 - [ ] Enqueue failure path does not return bare success `202` without a recoverable strategy test
 - [ ] `repo_not_authorized` asserted for denied repo role
-- [ ] Bypass-gated fixture `repo_owner`/`repo_name` pair skips the live GitHub role check only when the bypass is explicitly configured, and submit still enforces the live check (or `403`s without a live-check dependency) when the bypass is unconfigured — red-first acceptance test for both states
+- [ ] Bypass-gated fixture `repo_owner`/`repo_name` pair skips the live GitHub role check only when the bypass is explicitly configured; when the bypass is unconfigured, submit still runs the full live-check matrix from the bullet above (`403` `repo_not_authorized` for denied roles, `503` for a transient GitHub failure) — red-first acceptance test for both states
 
 **Done when**:
 
