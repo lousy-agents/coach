@@ -53,6 +53,19 @@ var _ = Describe("coupling.deep_relative_import", func() {
 		})
 	})
 
+	When("a relative import mixes \".\" and \"..\" segments", func() {
+		It("counts only the \"..\" segments toward depth", func() {
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "src/a.ts", Status: "modified",
+				Head: resultWithImports("src/a.ts", semantics.LanguageTypeScript,
+					semantics.ImportFeature{Path: ".././../../x"},
+				),
+			}}})
+			Expect(report.Signals).To(HaveLen(1))
+			Expect(report.Signals[0].Subject).To(Equal(".././../../x"))
+		})
+	})
+
 	When("the import is an absolute/package import with many segments", func() {
 		It("emits no deep_relative_import signal", func() {
 			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
