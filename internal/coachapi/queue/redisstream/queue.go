@@ -302,13 +302,27 @@ func (q *Queue) Nack(ctx context.Context, claim queue.Claim, permanent bool) err
 	}
 
 	if permanent {
+		// Publish to the poison destination before acking the source
+		// message: if publishPoison fails, the source message stays
+		// pending (unacked) rather than being silently dropped, so a
+		// crash/retry can still recover the task instead of losing it.
+		if err := q.publishPoison(ctx, pc.taskID, pc.msg.Payload); err != nil {
+			q.mu.Lock()
+			q.pending[pc.token] = pc
+			q.mu.Unlock()
+			return err
+		}
 		pc.msg.Ack()
-		return q.publishPoison(ctx, pc.taskID, pc.msg.Payload)
+		return nil
 	}
 
 	pc.attempt++
 	pc.token = watermill.NewUUID()
-	pc.claimedAt = q.clock.Now()
+	// Back-date claimedAt past claimAfter so the retried task is
+	// immediately reclaimable by the next Claim, per TaskQueue's
+	// immediate-availability-after-retryable-Nack contract, instead of
+	// waiting out a fresh claimAfter window.
+	pc.claimedAt = q.clock.Now().Add(-q.claimAfter)
 
 	q.mu.Lock()
 	q.pending[pc.token] = pc
