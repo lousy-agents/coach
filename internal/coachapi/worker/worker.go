@@ -17,17 +17,23 @@ const (
 	defaultStaleAfter         = 60 * time.Second
 	defaultReconcileInterval  = 30 * time.Second
 	defaultQueuedAgeThreshold = 30 * time.Second
+	defaultMaxAttempts        = 5
 )
 
 // Config holds injectable worker timings and identity. Zero durations take
-// the package defaults (15s heartbeat, 60s stale, 30s reconcile/queued age).
-// StaleAfter must be at least 3× HeartbeatInterval after defaults are applied.
+// the package defaults (15s heartbeat, 60s stale, 30s reconcile/queued age,
+// 5 max attempts). StaleAfter must be at least 3× HeartbeatInterval after
+// defaults are applied. MaxAttempts must be >= 1 after defaults.
 type Config struct {
 	WorkerID           string
 	HeartbeatInterval  time.Duration
 	StaleAfter         time.Duration
 	ReconcileInterval  time.Duration
 	QueuedAgeThreshold time.Duration
+	// MaxAttempts is the maximum jobs.attempt value that may run a handler
+	// before a retryable failure is treated as exhausted (terminal + poison).
+	// Permanent handler errors are terminal on any attempt.
+	MaxAttempts int
 }
 
 func (c Config) withDefaults() (Config, error) {
@@ -46,6 +52,9 @@ func (c Config) withDefaults() (Config, error) {
 	if c.QueuedAgeThreshold <= 0 {
 		c.QueuedAgeThreshold = defaultQueuedAgeThreshold
 	}
+	if c.MaxAttempts <= 0 {
+		c.MaxAttempts = defaultMaxAttempts
+	}
 	if c.StaleAfter < 3*c.HeartbeatInterval {
 		return Config{}, fmt.Errorf(
 			"worker: StaleAfter (%s) must be >= 3× HeartbeatInterval (%s)",
@@ -54,6 +63,31 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	return c, nil
 }
+
+// Retryable marks err as a transient handler failure eligible for bounded
+// queue redelivery (Nack permanent=false) while lease.Attempt < MaxAttempts.
+// Plain errors and errors that do not unwrap to a Retryable marker are
+// permanent (FailJob + Nack permanent=true).
+func Retryable(err error) error {
+	if err == nil {
+		return nil
+	}
+	return retryableError{err: err}
+}
+
+// IsRetryable reports whether err (or any error in its unwrap chain) was
+// produced by Retryable.
+func IsRetryable(err error) bool {
+	var target retryableError
+	return errors.As(err, &target)
+}
+
+type retryableError struct {
+	err error
+}
+
+func (e retryableError) Error() string { return e.err.Error() }
+func (e retryableError) Unwrap() error { return e.err }
 
 // JobWriter is the fenced persistence surface a JobHandler uses while holding
 // a claim. Every method is conditional on the handler's ClaimLease.
@@ -65,9 +99,10 @@ type JobWriter interface {
 
 // JobHandler runs one claimed job attempt. On success it returns a non-nil
 // Completion (findings may already have been written via JobWriter). On
-// permanent failure it returns a non-nil error; the worker records failed and
-// acks the queue message. Returning an error wrapping coachapi.ErrClaimLost
-// causes the worker to abandon without ack.
+// failure it returns a non-nil error:
+//   - Retryable(err) below MaxAttempts → ReleaseClaim + Nack(false)
+//   - permanent error, or retryable at/above MaxAttempts → FailJob + Nack(true)
+//   - errors.Is(err, coachapi.ErrClaimLost) → abandon without ack/nack
 type JobHandler func(ctx context.Context, job coachapi.Job, w JobWriter) (*coachapi.Completion, error)
 
 // Worker consumes jobs only through queue.TaskQueue and persists claim
@@ -223,25 +258,10 @@ func (w *Worker) runClaimed(ctx context.Context, qclaim queue.Claim, job coachap
 			if errors.Is(out.err, coachapi.ErrClaimLost) {
 				return coachapi.ErrClaimLost
 			}
-			finishedAt := w.clock.Now()
-			if err := w.store.FailJob(ctx, lease.JobID, lease.WorkerID, lease.Attempt, out.err.Error(), finishedAt); err != nil {
-				if errors.Is(err, coachapi.ErrClaimLost) {
-					return coachapi.ErrClaimLost
-				}
-				return fmt.Errorf("worker: fail job %q: %w", lease.JobID, err)
-			}
-			return w.queue.Complete(ctx, qclaim)
+			return w.dispositionHandlerError(ctx, qclaim, lease, out.err)
 		}
 		if out.completion == nil {
-			finishedAt := w.clock.Now()
-			msg := "handler returned nil completion"
-			if err := w.store.FailJob(ctx, lease.JobID, lease.WorkerID, lease.Attempt, msg, finishedAt); err != nil {
-				if errors.Is(err, coachapi.ErrClaimLost) {
-					return coachapi.ErrClaimLost
-				}
-				return fmt.Errorf("worker: fail job %q: %w", lease.JobID, err)
-			}
-			return w.queue.Complete(ctx, qclaim)
+			return w.dispositionHandlerError(ctx, qclaim, lease, errors.New("handler returned nil completion"))
 		}
 		completion := *out.completion
 		if completion.Attempt == 0 {
@@ -266,6 +286,37 @@ func (w *Worker) runClaimed(ctx context.Context, qclaim queue.Claim, job coachap
 type handlerOutcome struct {
 	completion *coachapi.Completion
 	err        error
+}
+
+// dispositionHandlerError applies ADR-006 failure mapping:
+// retryable below MaxAttempts → ReleaseClaim + Nack(false);
+// permanent or exhausted → FailJob + Nack(true).
+func (w *Worker) dispositionHandlerError(ctx context.Context, qclaim queue.Claim, lease coachapi.ClaimLease, handlerErr error) error {
+	retryable := IsRetryable(handlerErr) && lease.Attempt < w.cfg.MaxAttempts
+	if retryable {
+		if err := w.store.ReleaseClaim(ctx, lease.JobID, lease.WorkerID, lease.Attempt); err != nil {
+			if errors.Is(err, coachapi.ErrClaimLost) {
+				return coachapi.ErrClaimLost
+			}
+			return fmt.Errorf("worker: release claim %q: %w", lease.JobID, err)
+		}
+		if err := w.queue.Nack(ctx, qclaim, false); err != nil {
+			return fmt.Errorf("worker: nack retryable %q: %w", lease.JobID, err)
+		}
+		return nil
+	}
+
+	finishedAt := w.clock.Now()
+	if err := w.store.FailJob(ctx, lease.JobID, lease.WorkerID, lease.Attempt, handlerErr.Error(), finishedAt); err != nil {
+		if errors.Is(err, coachapi.ErrClaimLost) {
+			return coachapi.ErrClaimLost
+		}
+		return fmt.Errorf("worker: fail job %q: %w", lease.JobID, err)
+	}
+	if err := w.queue.Nack(ctx, qclaim, true); err != nil {
+		return fmt.Errorf("worker: nack permanent %q: %w", lease.JobID, err)
+	}
+	return nil
 }
 
 func (w *Worker) heartbeatLoop(ctx context.Context, lease coachapi.ClaimLease, onFenceLost func()) {

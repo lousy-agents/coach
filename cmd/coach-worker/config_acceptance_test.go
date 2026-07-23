@@ -27,7 +27,7 @@ var _ = Describe("cmd/coach-worker config", func() {
 	})
 
 	When("required env vars are present", func() {
-		It("loads defaults for heartbeat (15s) and stale (60s)", func() {
+		It("loads defaults for heartbeat (15s), stale (60s), and max attempts (5)", func() {
 			setenv("COACH_WORKER_ID", "w1")
 			setenv("COACH_REDIS_ADDR", "127.0.0.1:6379")
 
@@ -36,9 +36,22 @@ var _ = Describe("cmd/coach-worker config", func() {
 			Expect(cfg.WorkerID).To(Equal("w1"))
 			Expect(cfg.HeartbeatInterval).To(Equal(15 * time.Second))
 			Expect(cfg.StaleAfter).To(Equal(60 * time.Second))
+			Expect(cfg.MaxAttempts).To(Equal(5))
 			Expect(cfg.RedisStream).To(Equal("coach-jobs"))
 			Expect(cfg.RedisConsumerGroup).To(Equal("coach-workers"))
 			Expect(cfg.RedisConsumer).To(Equal("w1"))
+		})
+	})
+
+	When("COACH_WORKER_MAX_ATTEMPTS is set below 1", func() {
+		It("fails fast rather than allowing unbounded or zero attempts", func() {
+			setenv("COACH_WORKER_ID", "w1")
+			setenv("COACH_REDIS_ADDR", "127.0.0.1:6379")
+			setenv("COACH_WORKER_MAX_ATTEMPTS", "0")
+
+			_, err := loadConfigFromEnv()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("COACH_WORKER_MAX_ATTEMPTS"))
 		})
 	})
 

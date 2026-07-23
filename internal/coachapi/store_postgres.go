@@ -527,6 +527,23 @@ func (s *PostgresStore) FailJob(ctx context.Context, jobID, workerID string, att
 	return nil
 }
 
+// ReleaseClaim implements WorkerJobStore.
+func (s *PostgresStore) ReleaseClaim(ctx context.Context, jobID, workerID string, attempt int) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE jobs
+		SET status = $1, claimed_by = NULL, heartbeat_at = NULL
+		WHERE id = $2 AND status = $3 AND claimed_by = $4 AND attempt = $5`,
+		string(JobStatusQueued), jobID, string(JobStatusRunning), workerID, attempt,
+	)
+	if err != nil {
+		return fmt.Errorf("coachapi: release claim %q: %w", jobID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return s.fenceFailure(ctx, jobID)
+	}
+	return nil
+}
+
 // ListQueuedOlderThan implements WorkerJobStore.
 func (s *PostgresStore) ListQueuedOlderThan(ctx context.Context, olderThan time.Time) ([]Job, error) {
 	rows, err := s.pool.Query(ctx, `

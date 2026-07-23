@@ -296,6 +296,25 @@ func (m *MemoryStore) FailJob(ctx context.Context, jobID, workerID string, attem
 	return nil
 }
 
+// ReleaseClaim implements WorkerJobStore.
+func (m *MemoryStore) ReleaseClaim(ctx context.Context, jobID, workerID string, attempt int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	record, ok := m.jobs[jobID]
+	if !ok {
+		return fmt.Errorf("coachapi: job %q: %w", jobID, ErrJobNotFound)
+	}
+	if !fenceMatches(record.job, workerID, attempt) {
+		return fmt.Errorf("coachapi: job %q: %w", jobID, ErrClaimLost)
+	}
+
+	record.job.Status = JobStatusQueued
+	record.job.ClaimedBy = nil
+	record.job.HeartbeatAt = nil
+	return nil
+}
+
 // ListQueuedOlderThan implements WorkerJobStore.
 func (m *MemoryStore) ListQueuedOlderThan(ctx context.Context, olderThan time.Time) ([]Job, error) {
 	m.mu.Lock()

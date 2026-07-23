@@ -129,6 +129,12 @@ func (q *fakeTaskQueue) enqueueCount() int {
 	return q.enqueueN
 }
 
+func (q *fakeTaskQueue) isPoisoned(taskID string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.poison[taskID]
+}
+
 var _ queue.TaskQueue = (*fakeTaskQueue)(nil)
 
 func newQueuedJob(id string) coachapi.Job {
@@ -460,7 +466,7 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 	})
 
 	When("the job handler fails permanently", func() {
-		It("records failed with the error and acks the queue message", func() {
+		It("records failed with the error and routes the queue message to poison", func() {
 			job := newQueuedJob("99999999-9999-9999-9999-999999999999")
 			job.CreatedAt = start
 			Expect(store.CreateJob(ctx, job)).To(Succeed())
@@ -475,14 +481,107 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 			ok, err := wkr.ProcessNext(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeTrue())
-			Expect(tq.completedCount()).To(Equal(1))
+			Expect(tq.completedCount()).To(Equal(0), "permanent failure must Nack(true), not Complete")
+			Expect(tq.isPoisoned(job.ID)).To(BeTrue())
 			Expect(tq.inFlightCount()).To(Equal(0))
+			Expect(tq.pendingCount()).To(Equal(0))
 
 			got, err := store.GetJob(ctx, job.ID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(got.Status).To(Equal(coachapi.JobStatusFailed))
 			Expect(got.Error).NotTo(BeNil())
 			Expect(*got.Error).To(Equal("clone failed: permanent"))
+		})
+	})
+
+	When("the job handler fails with a retryable error below MaxAttempts", func() {
+		It("releases the claim, Nacks for redelivery, and completes on a later attempt", func() {
+			job := newQueuedJob("aaaaaaaa-1111-2222-3333-444444444444")
+			job.CreatedAt = start
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+			Expect(tq.Enqueue(ctx, queue.Task{ID: job.ID})).To(Succeed())
+
+			var calls atomic.Int32
+			h := func(c context.Context, j coachapi.Job, w worker.JobWriter) (*coachapi.Completion, error) {
+				if calls.Add(1) == 1 {
+					return nil, worker.Retryable(errors.New("transient clone timeout"))
+				}
+				return successHandler(c, j, w)
+			}
+			wkr, err := worker.New(store, tq, clock, h, worker.Config{
+				WorkerID:    "w-retry",
+				MaxAttempts: 3,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			ok, err := wkr.ProcessNext(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(calls.Load()).To(Equal(int32(1)))
+			Expect(tq.isPoisoned(job.ID)).To(BeFalse())
+			Expect(tq.completedCount()).To(Equal(0))
+			Expect(tq.pendingCount()).To(Equal(1), "retryable Nack must re-enqueue the task")
+			Expect(tq.inFlightCount()).To(Equal(0))
+
+			mid, err := store.GetJob(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(mid.Status).To(Equal(coachapi.JobStatusQueued), "retryable failure must not mark the job failed")
+			Expect(mid.Attempt).To(Equal(1), "attempt stays until the next ClaimJob")
+
+			ok, err = wkr.ProcessNext(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(calls.Load()).To(Equal(int32(2)))
+			Expect(tq.completedCount()).To(Equal(1))
+			Expect(tq.isPoisoned(job.ID)).To(BeFalse())
+
+			got, err := store.GetJob(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Status).To(Equal(coachapi.JobStatusCompleted))
+			Expect(got.Attempt).To(Equal(2))
+		})
+	})
+
+	When("retryable failures exhaust MaxAttempts", func() {
+		It("records failed and routes the queue message to poison", func() {
+			job := newQueuedJob("bbbbbbbb-1111-2222-3333-444444444444")
+			job.CreatedAt = start
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+			Expect(tq.Enqueue(ctx, queue.Task{ID: job.ID})).To(Succeed())
+
+			var calls atomic.Int32
+			h := func(context.Context, coachapi.Job, worker.JobWriter) (*coachapi.Completion, error) {
+				calls.Add(1)
+				return nil, worker.Retryable(errors.New("upstream still warming"))
+			}
+			wkr, err := worker.New(store, tq, clock, h, worker.Config{
+				WorkerID:    "w-exhaust",
+				MaxAttempts: 2,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			ok, err := wkr.ProcessNext(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(calls.Load()).To(Equal(int32(1)))
+			Expect(tq.isPoisoned(job.ID)).To(BeFalse())
+			Expect(tq.pendingCount()).To(Equal(1))
+
+			ok, err = wkr.ProcessNext(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(calls.Load()).To(Equal(int32(2)))
+			Expect(tq.isPoisoned(job.ID)).To(BeTrue())
+			Expect(tq.completedCount()).To(Equal(0))
+			Expect(tq.pendingCount()).To(Equal(0))
+			Expect(tq.inFlightCount()).To(Equal(0))
+
+			got, err := store.GetJob(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Status).To(Equal(coachapi.JobStatusFailed))
+			Expect(got.Error).NotTo(BeNil())
+			Expect(*got.Error).To(ContainSubstring("upstream still warming"))
+			Expect(got.Attempt).To(Equal(2))
 		})
 	})
 

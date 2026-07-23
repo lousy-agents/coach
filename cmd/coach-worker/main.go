@@ -40,6 +40,7 @@ func main() {
 		StaleAfter:         cfg.StaleAfter,
 		ReconcileInterval:  cfg.ReconcileInterval,
 		QueuedAgeThreshold: cfg.QueuedAgeThreshold,
+		MaxAttempts:        cfg.MaxAttempts,
 	})
 	if err != nil {
 		log.Fatalf("coach-worker: %v", err)

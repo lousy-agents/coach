@@ -7,9 +7,9 @@ import (
 )
 
 // ErrClaimLost is returned by fenced worker writes (Heartbeat, InsertFindings,
-// InsertDiagnostics, CompleteJob, FailJob) when (claimed_by, attempt) no
-// longer match the caller's lease. The worker must abandon the job without
-// acking its queue message.
+// InsertDiagnostics, CompleteJob, FailJob, ReleaseClaim) when (claimed_by,
+// attempt) no longer match the caller's lease. The worker must abandon the
+// job without acking its queue message.
 var ErrClaimLost = errors.New("coachapi: claim lost")
 
 // ErrNotClaimable is returned by ClaimJob when the job exists but is not in a
@@ -64,6 +64,13 @@ type WorkerJobStore interface {
 	// FailJob fenced-terminal-transitions the job to failed.
 	// Returns ErrClaimLost on fence mismatch.
 	FailJob(ctx context.Context, jobID, workerID string, attempt int, errMsg string, finishedAt time.Time) error
+
+	// ReleaseClaim fenced-transitions a running job back to queued and clears
+	// claim fields so a retryable handler failure can Nack(false) and the next
+	// ClaimJob can take ownership. It does not increment attempt (ClaimJob
+	// does that on the next successful claim). Returns ErrClaimLost on fence
+	// mismatch.
+	ReleaseClaim(ctx context.Context, jobID, workerID string, attempt int) error
 
 	// ListQueuedOlderThan returns queued jobs with created_at strictly before
 	// olderThan, for the requeue reconciler.

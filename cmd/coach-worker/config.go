@@ -16,6 +16,7 @@ const (
 	defaultReconcileInterval  = 30 * time.Second
 	defaultQueuedAgeThreshold = 30 * time.Second
 	defaultIdlePollInterval   = time.Second
+	defaultMaxAttempts        = 5
 )
 
 // Config holds cmd/coach-worker environment-driven settings.
@@ -27,6 +28,7 @@ type Config struct {
 	ReconcileInterval  time.Duration
 	QueuedAgeThreshold time.Duration
 	IdlePollInterval   time.Duration
+	MaxAttempts        int
 
 	RedisAddr          string
 	RedisPassword      string
@@ -63,6 +65,7 @@ func loadConfigFromEnv() (Config, error) {
 		ReconcileInterval:  defaultReconcileInterval,
 		QueuedAgeThreshold: defaultQueuedAgeThreshold,
 		IdlePollInterval:   defaultIdlePollInterval,
+		MaxAttempts:        defaultMaxAttempts,
 		RedisAddr:          redisAddr,
 		RedisPassword:      os.Getenv("COACH_REDIS_PASSWORD"),
 		RedisStream:        valueOrDefault(os.Getenv("COACH_REDIS_STREAM"), defaultRedisStream),
@@ -97,6 +100,14 @@ func loadConfigFromEnv() (Config, error) {
 			}
 			*pair.dst = d
 		}
+	}
+
+	if raw := os.Getenv("COACH_WORKER_MAX_ATTEMPTS"); raw != "" {
+		var n int
+		if _, err := fmt.Sscanf(raw, "%d", &n); err != nil || n < 1 {
+			return Config{}, fmt.Errorf("coach-worker: invalid COACH_WORKER_MAX_ATTEMPTS %q (must be integer >= 1)", raw)
+		}
+		cfg.MaxAttempts = n
 	}
 
 	if cfg.StaleAfter < 3*cfg.HeartbeatInterval {
