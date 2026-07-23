@@ -154,6 +154,38 @@ var _ = Describe("TaskQueue port", func() {
 	})
 })
 
+var _ = Describe("NoOpEventBus", func() {
+	var bus queue.NoOpEventBus
+	var ctx context.Context
+
+	BeforeEach(func() {
+		bus = queue.NoOpEventBus{}
+		ctx = context.Background()
+	})
+
+	When("Publish is called", func() {
+		It("always succeeds without delivering anywhere", func() {
+			Expect(bus.Publish(ctx, "topic", []byte("payload"))).To(Succeed())
+		})
+	})
+
+	When("Subscribe is called", func() {
+		It("returns a non-nil, already-closed channel with no deliveries and a non-nil unsubscribe func", func() {
+			payloads, unsubscribe, err := bus.Subscribe(ctx, "topic")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(payloads).NotTo(BeNil())
+			Expect(unsubscribe).NotTo(BeNil())
+
+			Eventually(payloads).Should(BeClosed())
+
+			_, ok := <-payloads
+			Expect(ok).To(BeFalse(), "a closed channel must report ok=false on receive rather than blocking forever")
+
+			unsubscribe()
+		})
+	})
+})
+
 var _ = Describe("Capabilities fail-fast startup check", func() {
 	When("every capability the application requires is present", func() {
 		It("succeeds", func() {
@@ -183,6 +215,29 @@ var _ = Describe("Capabilities fail-fast startup check", func() {
 			err := queue.RequireCapabilities(have, want)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("NativeDeadLetterQueue"))
+		})
+	})
+
+	When("multiple required capabilities are unavailable on the configured backend", func() {
+		It("fails startup with an error naming every missing capability, not just the first", func() {
+			have := queue.Capabilities{
+				NativeDeadLetterQueue: false,
+				DelayedDelivery:       true,
+				OrderedDelivery:       false,
+				LeaseExtension:        false,
+			}
+			want := queue.Capabilities{
+				NativeDeadLetterQueue: true,
+				DelayedDelivery:       true,
+				OrderedDelivery:       true,
+				LeaseExtension:        true,
+			}
+
+			err := queue.RequireCapabilities(have, want)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("NativeDeadLetterQueue"))
+			Expect(err.Error()).To(ContainSubstring("OrderedDelivery"))
+			Expect(err.Error()).To(ContainSubstring("LeaseExtension"))
 		})
 	})
 })
