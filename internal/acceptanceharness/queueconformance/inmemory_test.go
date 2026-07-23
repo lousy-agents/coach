@@ -31,6 +31,14 @@ type inMemoryTaskState struct {
 	token         string
 	claimDeadline time.Time
 	completed     bool
+	poisoned      bool
+
+	// readyForClaim is set by a retryable Nack, whose attempt increment and
+	// re-tokening has already happened at Nack time (mirroring
+	// internal/coachapi/queue/redisstream's pendingClaim.readyForClaim): it
+	// tells Claim to hand this claim back on the very next call without
+	// bumping attempt/token a second time.
+	readyForClaim bool
 }
 
 var (
@@ -60,8 +68,14 @@ func (q *inMemoryQueue) Claim(ctx context.Context) (Claim, bool, error) {
 
 	now := q.clock.Now()
 	for _, state := range q.tasks {
-		if state.completed {
+		if state.completed || state.poisoned {
 			continue
+		}
+		if state.readyForClaim {
+			state.readyForClaim = false
+			state.claimed = true
+			state.claimDeadline = now.Add(q.visibilityTimeout)
+			return Claim{TaskID: state.task.ID, Attempt: state.attempt, Token: state.token}, true, nil
 		}
 		if state.claimed && now.Before(state.claimDeadline) {
 			continue
@@ -92,4 +106,47 @@ func (q *inMemoryQueue) Complete(ctx context.Context, claim Claim) error {
 
 	state.completed = true
 	return nil
+}
+
+func (q *inMemoryQueue) Nack(ctx context.Context, claim Claim, permanent bool) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	state, found := q.tasks[claim.TaskID]
+	if !found {
+		return errUnknownTask
+	}
+	if state.token != claim.Token {
+		return errStaleClaim
+	}
+
+	if permanent {
+		state.poisoned = true
+		state.claimed = false
+		return nil
+	}
+
+	// A retryable Nack invalidates the current token immediately, exactly
+	// like the redisstream and sqs adapters, rather than waiting for the
+	// next Claim: it bumps attempt and regenerates token right here, then
+	// marks the task readyForClaim so Claim's normal path hands out this
+	// already-bumped attempt/token without incrementing it a second time.
+	state.attempt++
+	state.token = fmt.Sprintf("%s-attempt-%d", state.task.ID, state.attempt)
+	state.readyForClaim = true
+	state.claimed = false
+	return nil
+}
+
+func (q *inMemoryQueue) PoisonTasks(ctx context.Context) ([]Task, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	var poisoned []Task
+	for _, state := range q.tasks {
+		if state.poisoned {
+			poisoned = append(poisoned, state.task)
+		}
+	}
+	return poisoned, nil
 }

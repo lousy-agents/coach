@@ -36,8 +36,12 @@ run = [
 ]
 
 [tasks.test-queue-conformance]
-description = "Run the queue conformance harness's self-test (in-memory reference adapter); selects real Redis Streams / LocalStack SQS conformance legs once Baseline Task 3a's adapters exist (see docs/architecture/acceptance-harness.md)"
-run = "go test -race ./internal/acceptanceharness/queueconformance/... -run Acceptance -v"
+description = "Run the queue conformance harness's self-test (in-memory reference adapter), plus the redisstream and sqs adapters' conformance tests against real Redis Streams / LocalStack SQS containers wherever Docker is available (skips gracefully otherwise; see docs/architecture/acceptance-harness.md)"
+run = [
+  "go test -race ./internal/acceptanceharness/queueconformance/... -run Acceptance -v",
+  "go test -race ./internal/coachapi/queue/redisstream/... -run Acceptance -v",
+  "go test -race ./internal/coachapi/queue/sqs/... -run Acceptance -v",
+]
 
 [tasks.thinproof-build]
 description = "Build local Docker images for issue #79's offline thin Compose proof (run once, online, before going offline)"

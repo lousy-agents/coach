@@ -137,7 +137,7 @@ Resource provisioning (queue/stream creation) is kept outside the worker whereve
 
 - Acceptance tests prove two concurrent workers never process the same job simultaneously (`go test -race`).
 - Acceptance tests prove crash-after-partial-findings-persist then reclaim yields a completed report with no duplicate findings.
-- Redis-backed integration tests run in the compose CI job.
-- LocalStack-backed SQS integration tests run in CI.
-- A black-box provider conformance suite runs against real Redis and LocalStack-backed SQS, exercising: enqueue, multi-worker scaling, worker-kill mid-task, redelivery, duplicate injection, permanent failure handling, poison-task delivery, and graceful shutdown.
+- Redis-backed integration tests run in the compose CI job (today: via the existing `verify` CI job's `go test -race ./...`, not a dedicated Compose job — Task 10 introduces Compose).
+- LocalStack-backed SQS integration tests run in CI (today: same `verify` job's `go test -race ./...`, not a dedicated LocalStack CI step).
+- A black-box provider conformance suite runs against real Redis and LocalStack-backed SQS, exercising: enqueue, multi-worker scaling, worker-kill mid-task, redelivery, duplicate injection, permanent failure handling, poison-task delivery, and graceful shutdown. (Delivered by Baseline Task 3a: `internal/acceptanceharness/queueconformance.Run`, exercised against real providers by `internal/coachapi/queue/redisstream` and `internal/coachapi/queue/sqs`, wired into `mise run test-queue-conformance`.)
 - The worker is specified to consume jobs only through the `TaskQueue` port, not via direct broker calls.
