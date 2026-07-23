@@ -12,7 +12,7 @@ set -euo pipefail
 
 export PATH="$HOME/.local/bin:$PATH"
 
-mise_version="2026.7.11"
+mise_version="2026.7.12"
 go_version="1.26.5"
 node_version="24"
 
