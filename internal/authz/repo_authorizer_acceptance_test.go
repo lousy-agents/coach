@@ -12,7 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/authz"
-	"github.com/lousy-agents/coach/internal/coachapi"
 	"github.com/lousy-agents/coach/internal/fakegithub"
 	"github.com/lousy-agents/coach/pkg/githubingest"
 )
@@ -50,10 +49,6 @@ func newAuthzFixture() *fakegithub.Fixture {
 	fx.Installation.Permissions["acme/widgets/transient-user"] = fakegithub.PermissionEntry{Scenario: fakegithub.ScenarioTransient}
 
 	return &fx
-}
-
-func principal(login string) coachapi.Principal {
-	return coachapi.Principal{Provider: "github", Subject: login, Login: login}
 }
 
 func newAuthzAuthorizer(server *fakegithub.Server) authz.RepoAuthorizer {
@@ -94,56 +89,56 @@ var _ = Describe("GitHubRepoAuthorizer (ADR-003 submit-time repository authoriza
 
 	When("the principal owns the repository", func() {
 		It("authorizes the scan", func() {
-			err := authorizer.Authorize(ctx, principal("octocat"), "octocat", "octocat-repo")
+			err := authorizer.Authorize(ctx, "octocat", "octocat", "octocat-repo")
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
 	When("the principal is a direct collaborator with a role", func() {
 		It("authorizes the scan", func() {
-			err := authorizer.Authorize(ctx, principal("collab-user"), "acme", "widgets")
+			err := authorizer.Authorize(ctx, "collab-user", "acme", "widgets")
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
 	When("the principal has org/team-derived access", func() {
 		It("authorizes the scan", func() {
-			err := authorizer.Authorize(ctx, principal("team-user"), "acme", "widgets")
+			err := authorizer.Authorize(ctx, "team-user", "acme", "widgets")
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
 	When("the principal has no role in the repository", func() {
 		It("denies with an error matching ErrNotAuthorized", func() {
-			err := authorizer.Authorize(ctx, principal("outsider"), "acme", "widgets")
+			err := authorizer.Authorize(ctx, "outsider", "acme", "widgets")
 			Expect(errors.Is(err, authz.ErrNotAuthorized)).To(BeTrue(), "got err %v, want errors.Is(err, ErrNotAuthorized)", err)
 		})
 	})
 
 	When("the GitHub App installation is not installed on the repository", func() {
 		It("denies with an error matching ErrNotAuthorized", func() {
-			err := authorizer.Authorize(ctx, principal("octocat"), "acme", "uninstalled-repo")
+			err := authorizer.Authorize(ctx, "octocat", "acme", "uninstalled-repo")
 			Expect(errors.Is(err, authz.ErrNotAuthorized)).To(BeTrue(), "got err %v, want errors.Is(err, ErrNotAuthorized)", err)
 		})
 	})
 
 	When("the repository does not exist", func() {
 		It("denies with the same ErrNotAuthorized outcome as an uninstalled repo -- GitHub gives no distinguishable signal", func() {
-			err := authorizer.Authorize(ctx, principal("octocat"), "ghost-org", "ghost-repo")
+			err := authorizer.Authorize(ctx, "octocat", "ghost-org", "ghost-repo")
 			Expect(errors.Is(err, authz.ErrNotAuthorized)).To(BeTrue(), "got err %v, want errors.Is(err, ErrNotAuthorized)", err)
 		})
 	})
 
 	When("the principal has no registered relationship with an installed repository (permission 404)", func() {
 		It("denies with an error matching ErrNotAuthorized", func() {
-			err := authorizer.Authorize(ctx, principal("ghost-user"), "acme", "widgets")
+			err := authorizer.Authorize(ctx, "ghost-user", "acme", "widgets")
 			Expect(errors.Is(err, authz.ErrNotAuthorized)).To(BeTrue(), "got err %v, want errors.Is(err, ErrNotAuthorized)", err)
 		})
 	})
 
 	When("GitHub fails transiently while resolving the installation", func() {
 		It("returns an error that does not match ErrNotAuthorized, for the caller to map to 503", func() {
-			err := authorizer.Authorize(ctx, principal("octocat"), "acme", "transient-repo")
+			err := authorizer.Authorize(ctx, "octocat", "acme", "transient-repo")
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, authz.ErrNotAuthorized)).To(BeFalse(), "transient failures must not collapse into repo_not_authorized")
 		})
@@ -151,7 +146,7 @@ var _ = Describe("GitHubRepoAuthorizer (ADR-003 submit-time repository authoriza
 
 	When("GitHub fails transiently while checking the principal's permission", func() {
 		It("returns an error that does not match ErrNotAuthorized, for the caller to map to 503", func() {
-			err := authorizer.Authorize(ctx, principal("transient-user"), "acme", "widgets")
+			err := authorizer.Authorize(ctx, "transient-user", "acme", "widgets")
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, authz.ErrNotAuthorized)).To(BeFalse(), "transient failures must not collapse into repo_not_authorized")
 		})
@@ -163,7 +158,7 @@ var _ = Describe("GitHubRepoAuthorizer (ADR-003 submit-time repository authoriza
 // live check without depending on GitHubRepoAuthorizer or the fake server.
 type stubAuthorizer struct{ err error }
 
-func (s stubAuthorizer) Authorize(context.Context, coachapi.Principal, string, string) error {
+func (s stubAuthorizer) Authorize(context.Context, string, string, string) error {
 	return s.err
 }
 
@@ -180,7 +175,7 @@ var _ = Describe("BypassAuthorizer (Story 3's credential-free smoke / test-mint 
 		It("authorizes without consulting inner", func() {
 			bypass := authz.NewBypassAuthorizer(inner, "acme", "widgets")
 
-			err := bypass.Authorize(context.Background(), principal("anyone"), "acme", "widgets")
+			err := bypass.Authorize(context.Background(), "anyone", "acme", "widgets")
 
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -190,7 +185,7 @@ var _ = Describe("BypassAuthorizer (Story 3's credential-free smoke / test-mint 
 		It("delegates to inner and surfaces inner's live decision", func() {
 			bypass := authz.NewBypassAuthorizer(inner, "acme", "widgets")
 
-			err := bypass.Authorize(context.Background(), principal("anyone"), "acme", "other-repo")
+			err := bypass.Authorize(context.Background(), "anyone", "acme", "other-repo")
 
 			Expect(errors.Is(err, authz.ErrNotAuthorized)).To(BeTrue(), "non-matching pairs must run the full live-check matrix via inner")
 		})
@@ -200,7 +195,7 @@ var _ = Describe("BypassAuthorizer (Story 3's credential-free smoke / test-mint 
 		It("does not bypass a differently-cased owner/repo", func() {
 			bypass := authz.NewBypassAuthorizer(inner, "acme", "widgets")
 
-			err := bypass.Authorize(context.Background(), principal("anyone"), "ACME", "Widgets")
+			err := bypass.Authorize(context.Background(), "anyone", "ACME", "Widgets")
 
 			Expect(errors.Is(err, authz.ErrNotAuthorized)).To(BeTrue(), "bypass must be exact and case-sensitive")
 		})

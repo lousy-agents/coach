@@ -7,8 +7,6 @@ package authz
 import (
 	"context"
 	"errors"
-
-	"github.com/lousy-agents/coach/internal/coachapi"
 )
 
 // ErrNotAuthorized indicates the principal has no legitimate relationship
@@ -17,7 +15,13 @@ import (
 // has no role all collapse to this single outcome.
 var ErrNotAuthorized = errors.New("authz: principal not authorized for repository")
 
-// RepoAuthorizer decides whether principal may submit a scan of owner/repo.
+// RepoAuthorizer decides whether the principal identified by login may
+// submit a scan of owner/repo. It takes a bare GitHub login rather than
+// coachapi.Principal so this package has no dependency on internal/coachapi
+// -- internal/coachapi/server.go depends on this package directly (to check
+// errors.Is(err, ErrNotAuthorized)), and internal/coachapi is what issues
+// Principal in the first place, so a Principal-typed parameter here would
+// create an import cycle.
 type RepoAuthorizer interface {
 	// Authorize returns nil if allowed. Returns an error satisfying
 	// errors.Is(err, ErrNotAuthorized) if the repo is nonexistent, the App
@@ -25,5 +29,5 @@ type RepoAuthorizer interface {
 	// three collapse to repo_not_authorized per ADR-003). Any other non-nil
 	// error is a transient/infrastructure failure (caller maps to 503) --
 	// never persist a job in that case either.
-	Authorize(ctx context.Context, principal coachapi.Principal, owner, repo string) error
+	Authorize(ctx context.Context, login, owner, repo string) error
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/go-github/v89/github"
 
-	"github.com/lousy-agents/coach/internal/coachapi"
 	"github.com/lousy-agents/coach/pkg/githubingest"
 )
 
@@ -50,7 +49,7 @@ func NewGitHubRepoAuthorizer(cfg GitHubRepoAuthorizerConfig) (*GitHubRepoAuthori
 // Authorize implements ADR-003's three-step algorithm: resolve the governing
 // installation, mint an installation token, then check the principal's
 // effective permission as that installation.
-func (a *GitHubRepoAuthorizer) Authorize(ctx context.Context, principal coachapi.Principal, owner, repo string) error {
+func (a *GitHubRepoAuthorizer) Authorize(ctx context.Context, login, owner, repo string) error {
 	installationID, err := a.credentials.ResolveInstallationID(ctx, owner, repo)
 	if err != nil {
 		if errors.Is(err, githubingest.ErrNotFound) {
@@ -72,17 +71,17 @@ func (a *GitHubRepoAuthorizer) Authorize(ctx context.Context, principal coachapi
 		return fmt.Errorf("authz: building permission-check client: %w", err)
 	}
 
-	level, resp, err := client.Repositories.GetPermissionLevel(ctx, owner, repo, principal.Login)
+	level, resp, err := client.Repositories.GetPermissionLevel(ctx, owner, repo, login)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			// The principal literally has no relationship with the repo.
-			return fmt.Errorf("authz: %s has no relationship with %s/%s: %w", principal.Login, owner, repo, ErrNotAuthorized)
+			return fmt.Errorf("authz: %s has no relationship with %s/%s: %w", login, owner, repo, ErrNotAuthorized)
 		}
-		return fmt.Errorf("authz: checking permission for %s on %s/%s: %w", principal.Login, owner, repo, err)
+		return fmt.Errorf("authz: checking permission for %s on %s/%s: %w", login, owner, repo, err)
 	}
 
 	if level.GetPermission() == "none" {
-		return fmt.Errorf("authz: %s has no role in %s/%s: %w", principal.Login, owner, repo, ErrNotAuthorized)
+		return fmt.Errorf("authz: %s has no role in %s/%s: %w", login, owner, repo, ErrNotAuthorized)
 	}
 	return nil
 }

@@ -2,8 +2,6 @@ package authz
 
 import (
 	"context"
-
-	"github.com/lousy-agents/coach/internal/coachapi"
 )
 
 // BypassAuthorizer wraps inner and skips the live authorization check only
@@ -25,9 +23,9 @@ func NewBypassAuthorizer(inner RepoAuthorizer, owner, repo string) RepoAuthorize
 
 // Authorize returns nil immediately for the configured bypass pair;
 // otherwise it delegates to inner.
-func (b *BypassAuthorizer) Authorize(ctx context.Context, principal coachapi.Principal, owner, repo string) error {
+func (b *BypassAuthorizer) Authorize(ctx context.Context, login, owner, repo string) error {
 	if owner == b.owner && repo == b.repo {
 		return nil
 	}
-	return b.inner.Authorize(ctx, principal, owner, repo)
+	return b.inner.Authorize(ctx, login, owner, repo)
 }
