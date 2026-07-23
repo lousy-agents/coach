@@ -305,6 +305,51 @@ var _ = Describe("coachapi.PostgresStore", func() {
 		})
 	})
 
+	When("multiple findings and diagnostics are recorded in one completion", func() {
+		It("preserves input order in GetReport by created_at, independent of id ordering", func() {
+			// Row ids are assigned in the REVERSE of insertion order, so a
+			// report assembly that (incorrectly) fell back to `ORDER BY id`
+			// once created_at values collided would produce the opposite
+			// order and fail this test -- unlike the report-shape-parity
+			// test above, whose two rows happen to have ascending ids that
+			// mask exactly this bug.
+			job := pgQueuedJob("88888888-8888-8888-8888-888888888888")
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+
+			generatedAt := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+			completion := coachapi.Completion{
+				Attempt:   1,
+				CommitSHA: "abc123def4567890abc123def4567890abc123de",
+				Findings: []coachapi.JobFinding{
+					{ID: "88888888-0000-0000-0000-000000000005", JobID: job.ID, Attempt: 1, Source: coachapi.FindingSourceDeterministic, Payload: json.RawMessage(`{"rule_id":"rule.a","n":1}`), PayloadHash: "hash-a"},
+					{ID: "88888888-0000-0000-0000-000000000004", JobID: job.ID, Attempt: 1, Source: coachapi.FindingSourceDeterministic, Payload: json.RawMessage(`{"rule_id":"rule.a","n":2}`), PayloadHash: "hash-b"},
+					{ID: "88888888-0000-0000-0000-000000000003", JobID: job.ID, Attempt: 1, Source: coachapi.FindingSourceDeterministic, Payload: json.RawMessage(`{"rule_id":"rule.a","n":3}`), PayloadHash: "hash-c"},
+				},
+				Diagnostics: []coachapi.JobDiagnostic{
+					{ID: "88888888-0000-0000-0000-000000000002", JobID: job.ID, Attempt: 1, Scope: "file:a.go", Message: "first"},
+					{ID: "88888888-0000-0000-0000-000000000001", JobID: job.ID, Attempt: 1, Scope: "file:b.go", Message: "second"},
+				},
+				Versions:    coachapi.ReportVersions{Analyzer: "codesignal@1"},
+				FinishedAt:  generatedAt,
+				GeneratedAt: generatedAt,
+			}
+			Expect(store.RecordCompletion(ctx, job.ID, completion)).To(Succeed())
+
+			report, err := store.GetReport(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(report.Findings).To(HaveLen(3))
+			Expect(report.Findings[0].Payload).To(MatchJSON(`{"rule_id":"rule.a","n":1}`))
+			Expect(report.Findings[1].Payload).To(MatchJSON(`{"rule_id":"rule.a","n":2}`))
+			Expect(report.Findings[2].Payload).To(MatchJSON(`{"rule_id":"rule.a","n":3}`))
+
+			Expect(report.Diagnostics).To(Equal([]coachapi.Diagnostic{
+				{Scope: "file:a.go", Message: "first"},
+				{Scope: "file:b.go", Message: "second"},
+			}))
+		})
+	})
+
 	When("job_findings' UNIQUE NULLS NOT DISTINCT constraint is violated", func() {
 		It("rejects a duplicate deterministic finding within (job_id, attempt, source, payload_hash) and rolls back the whole attempt", func() {
 			job := pgQueuedJob("77777777-7777-7777-7777-777777777777")

@@ -193,10 +193,14 @@ func (s *PostgresStore) diagnosticsForReport(ctx context.Context, jobID string) 
 // every finding/diagnostic insert happen in a single transaction, so a
 // caller never observes a completed job with a partially-written report.
 // created_at for inserted findings/diagnostics is derived from
-// completion.GeneratedAt plus a strictly increasing per-row offset (rather
-// than left to Postgres's now(), which returns one fixed value for the
-// whole transaction) so report assembly's created_at ordering matches
-// completion.Findings/Diagnostics input order deterministically.
+// completion.GeneratedAt plus a strictly increasing per-row microsecond
+// offset (rather than left to Postgres's now(), which returns one fixed
+// value for the whole transaction) so report assembly's created_at ordering
+// matches completion.Findings/Diagnostics input order deterministically.
+// The offset unit must be microseconds, not nanoseconds: Postgres's
+// TIMESTAMPTZ only stores microsecond precision, so a nanosecond offset is
+// silently truncated on write and rows can collide onto the same stored
+// value, breaking the intended ordering.
 func (s *PostgresStore) RecordCompletion(ctx context.Context, jobID string, completion Completion) error {
 	versionsRaw, err := json.Marshal(completion.Versions)
 	if err != nil {
@@ -226,7 +230,7 @@ func (s *PostgresStore) RecordCompletion(ctx context.Context, jobID string, comp
 
 	seq := 0
 	nextCreatedAt := func() time.Time {
-		t := completion.GeneratedAt.Add(time.Duration(seq) * time.Nanosecond)
+		t := completion.GeneratedAt.Add(time.Duration(seq) * time.Microsecond)
 		seq++
 		return t
 	}
