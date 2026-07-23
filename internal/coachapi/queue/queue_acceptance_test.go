@@ -17,17 +17,28 @@ import (
 // Complete/Nack contract is implementable and behaves as ADR-006 requires,
 // at the acceptance-test boundary. Real broker adapters (Redis Streams,
 // SQS) are separate follow-on tasks.
+// inFlightEntry is one claimed-but-not-yet-acknowledged task, keyed by
+// Claim.Token rather than Task.ID: ADR-006 permits duplicate delivery of the
+// same task id, and keying by TaskID would let a second Claim for that id
+// silently overwrite the first claim's bookkeeping (see
+// internal/coachapi/queue/sqs's inflightClaim, keyed identically for the
+// same reason). Storing the full Task (not just Claim) lets Nack's
+// retryable branch re-enqueue the original Payload instead of dropping it.
+type inFlightEntry struct {
+	task queue.Task
+}
+
 type fakeTaskQueue struct {
 	mu       sync.Mutex
 	pending  []queue.Task
-	inFlight map[string]queue.Claim
+	inFlight map[string]inFlightEntry // keyed by Claim.Token
 	poison   map[string]bool
 	attempts map[string]int
 }
 
 func newFakeTaskQueue() *fakeTaskQueue {
 	return &fakeTaskQueue{
-		inFlight: make(map[string]queue.Claim),
+		inFlight: make(map[string]inFlightEntry),
 		poison:   make(map[string]bool),
 		attempts: make(map[string]int),
 	}
@@ -49,36 +60,40 @@ func (q *fakeTaskQueue) Claim(_ context.Context) (queue.Claim, bool, error) {
 	task := q.pending[0]
 	q.pending = q.pending[1:]
 	q.attempts[task.ID]++
+	// attempts[task.ID] is a 1-based internal claim counter; the reported
+	// Attempt is 0-based, matching the redisstream and sqs adapters' first-
+	// claim convention.
+	attempt := q.attempts[task.ID] - 1
 	token := fmt.Sprintf("%s-attempt-%d", task.ID, q.attempts[task.ID])
-	claim := queue.Claim{TaskID: task.ID, Attempt: q.attempts[task.ID], Token: token}
-	q.inFlight[task.ID] = claim
+	claim := queue.Claim{TaskID: task.ID, Attempt: attempt, Token: token}
+	q.inFlight[token] = inFlightEntry{task: task}
 	return claim, true, nil
 }
 
 func (q *fakeTaskQueue) Complete(_ context.Context, claim queue.Claim) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	current, ok := q.inFlight[claim.TaskID]
-	if !ok || current.Token != claim.Token {
+	entry, ok := q.inFlight[claim.Token]
+	if !ok || entry.task.ID != claim.TaskID {
 		return errors.New("fakeTaskQueue: stale claim")
 	}
-	delete(q.inFlight, claim.TaskID)
+	delete(q.inFlight, claim.Token)
 	return nil
 }
 
 func (q *fakeTaskQueue) Nack(_ context.Context, claim queue.Claim, permanent bool) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	current, ok := q.inFlight[claim.TaskID]
-	if !ok || current.Token != claim.Token {
+	entry, ok := q.inFlight[claim.Token]
+	if !ok || entry.task.ID != claim.TaskID {
 		return errors.New("fakeTaskQueue: stale claim")
 	}
-	delete(q.inFlight, claim.TaskID)
+	delete(q.inFlight, claim.Token)
 	if permanent {
 		q.poison[claim.TaskID] = true
 		return nil
 	}
-	q.pending = append(q.pending, queue.Task{ID: claim.TaskID})
+	q.pending = append(q.pending, entry.task)
 	return nil
 }
 
@@ -86,6 +101,16 @@ func (q *fakeTaskQueue) isPoisoned(taskID string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.poison[taskID]
+}
+
+// payloadFor is a test-only accessor: Claim's queue.Claim return type is
+// deliberately payload-less (internal/coachapi/queue.Claim), so specs that
+// need to assert a claimed task's payload survived a retry go through this
+// instead.
+func (q *fakeTaskQueue) payloadFor(token string) []byte {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.inFlight[token].task.Payload
 }
 
 var _ queue.TaskQueue = (*fakeTaskQueue)(nil)
@@ -100,12 +125,13 @@ var _ = Describe("TaskQueue port", func() {
 	})
 
 	When("a retryable failure is reported via Nack", func() {
-		It("makes the task claimable again for another attempt", func() {
+		It("makes the task claimable again for another attempt, preserving the original payload", func() {
 			Expect(q.Enqueue(ctx, queue.Task{ID: "task-1", Payload: []byte("payload")})).To(Succeed())
 
 			first, ok, err := q.Claim(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeTrue())
+			Expect(first.Attempt).To(Equal(0), "the first claim of a task must report a 0-based Attempt, matching the real adapters")
 
 			Expect(q.Nack(ctx, first, false)).To(Succeed())
 
@@ -114,10 +140,30 @@ var _ = Describe("TaskQueue port", func() {
 			Expect(ok).To(BeTrue(), "a retryable Nack must leave the task claimable")
 			Expect(second.TaskID).To(Equal("task-1"))
 			Expect(second.Attempt).To(Equal(first.Attempt + 1))
+			Expect(q.payloadFor(second.Token)).To(Equal([]byte("payload")), "a retryable Nack must not drop the original task payload on re-enqueue")
 
 			// The pre-reclaim claim's token must be invalidated by the
 			// reclaim, not merely coincide with the fresh claim's token.
 			Expect(q.Complete(ctx, first)).To(HaveOccurred(), "a stale (pre-reclaim) claim must not be completable")
+		})
+	})
+
+	When("the same task id is delivered twice (duplicate enqueue or redelivery)", func() {
+		It("tracks each claim independently instead of one overwriting the other's bookkeeping", func() {
+			Expect(q.Enqueue(ctx, queue.Task{ID: "task-1", Payload: []byte("first")})).To(Succeed())
+			Expect(q.Enqueue(ctx, queue.Task{ID: "task-1", Payload: []byte("second")})).To(Succeed())
+
+			first, ok, err := q.Claim(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+
+			second, ok, err := q.Claim(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(second.Token).NotTo(Equal(first.Token), "two independently delivered claims for the same TaskID must get distinct tokens")
+
+			Expect(q.Complete(ctx, first)).To(Succeed(), "completing the first claim must succeed: the second claim must not have overwritten its bookkeeping")
+			Expect(q.Complete(ctx, second)).To(Succeed(), "completing the second claim must succeed: it must still be tracked after the first claim's Complete")
 		})
 	})
 

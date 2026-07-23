@@ -354,66 +354,7 @@ func Run(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Cloc
 	})
 
 	t.Run("multi-worker scaling claims and completes every task exactly once", func(t *testing.T) {
-		const taskCount = 20
-		const workerCount = 4
-
-		clock := acceptanceharness.NewFakeClock(time.Unix(0, 0))
-		q := newQueue(t, clock)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		for i := 0; i < taskCount; i++ {
-			id := fmt.Sprintf("task-%d", i)
-			if err := q.Enqueue(ctx, Task{ID: id, Payload: []byte("payload")}); err != nil {
-				t.Fatalf("Enqueue(%s): %v", id, err)
-			}
-		}
-
-		var mu sync.Mutex
-		completions := make(map[string]int)
-		var errs []error
-
-		var wg sync.WaitGroup
-		wg.Add(workerCount)
-		for w := 0; w < workerCount; w++ {
-			go func() {
-				defer wg.Done()
-				for {
-					claim, ok, err := q.Claim(ctx)
-					if err != nil {
-						mu.Lock()
-						errs = append(errs, fmt.Errorf("Claim: %w", err))
-						mu.Unlock()
-						return
-					}
-					if !ok {
-						return
-					}
-					if err := q.Complete(ctx, claim); err != nil {
-						mu.Lock()
-						errs = append(errs, fmt.Errorf("Complete(%s): %w", claim.TaskID, err))
-						mu.Unlock()
-						return
-					}
-					mu.Lock()
-					completions[claim.TaskID]++
-					mu.Unlock()
-				}
-			}()
-		}
-		wg.Wait()
-
-		for _, err := range errs {
-			t.Errorf("worker error: %v", err)
-		}
-		if len(completions) != taskCount {
-			t.Fatalf("completed %d distinct tasks, want %d: %v", len(completions), taskCount, completions)
-		}
-		for id, count := range completions {
-			if count != 1 {
-				t.Errorf("task %s completed %d times, want exactly 1", id, count)
-			}
-		}
+		runMultiWorkerScaling(t, newQueue)
 	})
 
 	t.Run("graceful shutdown does not lose or duplicate an in-flight claim", func(t *testing.T) {
@@ -460,4 +401,92 @@ func Run(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Cloc
 			t.Fatalf("Complete with the original held (pre-reclaim) claim: want error, got nil")
 		}
 	})
+}
+
+// runMultiWorkerScaling backs the "multi-worker scaling" subtest. Per
+// Queue.Claim's own doc comment, ok=false means only "nothing claimable
+// right now", not "the queue is fully drained" -- an adapter with any
+// asynchronous delivery latency could hand a worker a spurious empty claim
+// mid-drain while other workers still have completions to make. A worker
+// that exited its loop on the first ok=false would treat those as
+// equivalent and risk finishing early, so every worker instead keeps
+// retrying (with a short bounded backoff) until a shared completion count
+// reaches taskCount or ctx is done -- the latter remains the real safety
+// net against a genuinely broken adapter.
+func runMultiWorkerScaling(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Clock) Queue) {
+	const taskCount = 20
+	const workerCount = 4
+
+	clock := acceptanceharness.NewFakeClock(time.Unix(0, 0))
+	q := newQueue(t, clock)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	for i := 0; i < taskCount; i++ {
+		id := fmt.Sprintf("task-%d", i)
+		if err := q.Enqueue(ctx, Task{ID: id, Payload: []byte("payload")}); err != nil {
+			t.Fatalf("Enqueue(%s): %v", id, err)
+		}
+	}
+
+	var mu sync.Mutex
+	completions := make(map[string]int)
+	var errs []error
+	totalCompleted := 0
+
+	var wg sync.WaitGroup
+	wg.Add(workerCount)
+	for w := 0; w < workerCount; w++ {
+		go func() {
+			defer wg.Done()
+			for {
+				mu.Lock()
+				done := totalCompleted >= taskCount
+				mu.Unlock()
+				if done {
+					return
+				}
+
+				claim, ok, err := q.Claim(ctx)
+				if err != nil {
+					mu.Lock()
+					errs = append(errs, fmt.Errorf("Claim: %w", err))
+					mu.Unlock()
+					return
+				}
+				if !ok {
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(2 * time.Millisecond):
+					}
+					continue
+				}
+
+				if err := q.Complete(ctx, claim); err != nil {
+					mu.Lock()
+					errs = append(errs, fmt.Errorf("Complete(%s): %w", claim.TaskID, err))
+					mu.Unlock()
+					return
+				}
+				mu.Lock()
+				completions[claim.TaskID]++
+				totalCompleted++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+
+	for _, err := range errs {
+		t.Errorf("worker error: %v", err)
+	}
+	if len(completions) != taskCount {
+		t.Fatalf("completed %d distinct tasks, want %d: %v", len(completions), taskCount, completions)
+	}
+	for id, count := range completions {
+		if count != 1 {
+			t.Errorf("task %s completed %d times, want exactly 1", id, count)
+		}
+	}
 }

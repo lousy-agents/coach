@@ -140,11 +140,14 @@ func startLocalStack(t *testing.T) (endpoint, containerID string, ok bool) {
 	runCmd := exec.Command("docker", "run", "--rm", "-d",
 		"-p", "0:4566",
 		"-e", "SERVICES=sqs",
-		"localstack/localstack",
+		// Pinned (not :latest) so CI doesn't get a surprise behavior change
+		// from an upstream LocalStack release, mirroring redisstream's
+		// pinned redis:7-alpine.
+		"localstack/localstack:3.8",
 	)
 	out, err := runCmd.CombinedOutput()
 	if err != nil {
-		t.Skipf("docker run localstack/localstack failed (Docker daemon likely unreachable in this environment); skipping: %v\n%s", err, out)
+		t.Skipf("docker run localstack/localstack:3.8 failed (Docker daemon likely unreachable in this environment); skipping: %v\n%s", err, out)
 		return "", "", false
 	}
 	containerID = strings.TrimSpace(string(out))
