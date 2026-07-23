@@ -63,12 +63,20 @@ const claimPollWindow = 300 * time.Millisecond
 // intermediate reclaims (expiry or retryable Nack) never touch msg's
 // Ack/Nack channels, they only replace this Queue's own token/attempt
 // bookkeeping, which is what invalidates the previous claim's Token.
+//
+// readyForClaim is set by a retryable Nack, whose Attempt increment and
+// re-tokening has already happened at Nack time: it tells reclaimExpired
+// to hand this claim back on the very next Claim without incrementing
+// Attempt a second time. Expiry-driven reclaims (a claim nobody Nack'd or
+// Completed within claimAfter) never set it; they increment Attempt inside
+// reclaimExpired itself, exactly once per genuine timeout.
 type pendingClaim struct {
-	taskID    string
-	attempt   int
-	token     string
-	claimedAt time.Time
-	msg       *message.Message
+	taskID        string
+	attempt       int
+	token         string
+	claimedAt     time.Time
+	readyForClaim bool
+	msg           *message.Message
 }
 
 // Queue implements internal/coachapi/queue.TaskQueue against Redis
@@ -218,18 +226,24 @@ func (q *Queue) Claim(ctx context.Context) (queue.Claim, bool, error) {
 	}
 }
 
-// reclaimExpired looks for one pendingClaim whose claimAfter has elapsed
-// per q.clock.Now(), and if found, replaces it in place with a new token
-// and an incremented attempt count -- invalidating the old Token, per
-// TaskQueue.Complete/Nack's stale-token contract -- without touching the
-// underlying Watermill message's Ack/Nack channels (see pendingClaim's
-// doc comment).
+// reclaimExpired looks for one pendingClaim that is either readyForClaim
+// (a retryable Nack already incremented Attempt and re-tokened it; see
+// pendingClaim's doc comment) or whose claimAfter has elapsed per
+// q.clock.Now(), and if found, returns it -- for the expiry case,
+// replacing it in place with a new token and an incremented attempt count.
+// Either path invalidates the old Token, per TaskQueue.Complete/Nack's
+// stale-token contract, without touching the underlying Watermill
+// message's Ack/Nack channels (see pendingClaim's doc comment).
 func (q *Queue) reclaimExpired() (queue.Claim, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	now := q.clock.Now()
 	for token, pc := range q.pending {
+		if pc.readyForClaim {
+			pc.readyForClaim = false
+			return queue.Claim{TaskID: pc.taskID, Attempt: pc.attempt, Token: pc.token}, true
+		}
 		if now.Sub(pc.claimedAt) < q.claimAfter {
 			continue
 		}
@@ -318,11 +332,12 @@ func (q *Queue) Nack(ctx context.Context, claim queue.Claim, permanent bool) err
 
 	pc.attempt++
 	pc.token = watermill.NewUUID()
-	// Back-date claimedAt past claimAfter so the retried task is
-	// immediately reclaimable by the next Claim, per TaskQueue's
+	pc.claimedAt = q.clock.Now()
+	// readyForClaim makes the retried task immediately reclaimable by the
+	// next Claim (see pendingClaim's doc comment), per TaskQueue's
 	// immediate-availability-after-retryable-Nack contract, instead of
 	// waiting out a fresh claimAfter window.
-	pc.claimedAt = q.clock.Now().Add(-q.claimAfter)
+	pc.readyForClaim = true
 
 	q.mu.Lock()
 	q.pending[pc.token] = pc
