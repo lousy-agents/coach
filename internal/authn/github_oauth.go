@@ -62,7 +62,7 @@ func (s *Service) handleGitHubOAuthStart(w http.ResponseWriter, r *http.Request)
 	}
 	now := s.now()
 	if err := s.oauthState.Save(r.Context(), state, now.Add(s.oauthStateTTL)); err != nil {
-		writeAPIError(w, http.StatusInternalServerError, coachapi.ErrorCodeInternalError, "failed to start oauth")
+		writeAPIError(w, http.StatusServiceUnavailable, coachapi.ErrorCodeInternalError, "oauth state store unavailable")
 		return
 	}
 	authURL := s.authorizeURL(state)
@@ -88,7 +88,7 @@ func (s *Service) handleGitHubOAuthCallback(w http.ResponseWriter, r *http.Reque
 	}
 	ok, err := s.oauthState.Consume(r.Context(), state, s.now())
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, coachapi.ErrorCodeInternalError, "oauth state store unavailable")
+		writeAPIError(w, http.StatusServiceUnavailable, coachapi.ErrorCodeInternalError, "oauth state store unavailable")
 		return
 	}
 	if !ok {
@@ -132,23 +132,14 @@ func (s *Service) handleGitHubOAuthCallback(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Service) authorizeURL(state string) string {
-	base := strings.TrimRight(s.githubOAuth.BaseURL, "/")
-	u, err := url.Parse(base + "/login/oauth/authorize")
-	if err != nil {
-		// BaseURL was validated at New; fall back to string join.
-		return base + "/login/oauth/authorize?" + url.Values{
-			"client_id":    {s.githubOAuth.ClientID},
-			"redirect_uri": {s.githubOAuth.RedirectURI},
-			"state":        {state},
-		}.Encode()
-	}
-	q := u.Query()
-	q.Set("client_id", s.githubOAuth.ClientID)
-	q.Set("redirect_uri", s.githubOAuth.RedirectURI)
-	q.Set("state", state)
+	// BaseURL is absolute (validated in New); build query via Values for escaping.
 	// Intentionally no scope: public id/login only (ADR-001).
-	u.RawQuery = q.Encode()
-	return u.String()
+	base := strings.TrimRight(s.githubOAuth.BaseURL, "/")
+	return base + "/login/oauth/authorize?" + url.Values{
+		"client_id":    {s.githubOAuth.ClientID},
+		"redirect_uri": {s.githubOAuth.RedirectURI},
+		"state":        {state},
+	}.Encode()
 }
 
 func (s *Service) exchangeCode(ctx context.Context, code string) (string, error) {

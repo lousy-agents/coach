@@ -206,20 +206,12 @@ func TestProtectedRoute_RejectsBadTokensWith401(t *testing.T) {
 func TestProtectedRoute_DenylistStoreError_503FailClosed(t *testing.T) {
 	dl := &errDenylist{err: errors.New("denylist unavailable")}
 	svc := newTestService(t, authn.Options{Denylist: dl})
+	// Issue does not consult the denylist; only Validate/Revoke do.
 	tok, err := svc.Issue(context.Background(), coachapi.Principal{
 		Provider: "github", Subject: "1", Login: "octocat",
 	})
 	if err != nil {
-		// Issue may not need denylist; if it fails, mint via a healthy service
-		// with same key and validate against broken denylist service.
-		healthy := newTestService(t, authn.Options{})
-		tok, err = healthy.Issue(context.Background(), coachapi.Principal{
-			Provider: "github", Subject: "1", Login: "octocat",
-		})
-		if err != nil {
-			t.Fatalf("Issue: %v", err)
-		}
-		svc = newTestService(t, authn.Options{Denylist: dl})
+		t.Fatalf("Issue: %v", err)
 	}
 
 	code, body := doReq(t, svc.Handler(), http.MethodGet, "/v1/me", tok, nil)

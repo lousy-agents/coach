@@ -1,7 +1,9 @@
 package authn_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -666,4 +668,92 @@ func TestGitHubOAuth_Callback_AccessDenied_NoToken(t *testing.T) {
 	if strings.Contains(string(body), "access_token") {
 		t.Errorf("access_denied callback must not issue a token; body=%s", body)
 	}
+}
+
+// OAuth state store failures fail closed with 503 internal_error (same class as
+// denylist store unavailable on protected routes).
+func TestGitHubOAuth_StateStoreError_503FailClosed(t *testing.T) {
+	storeErr := errors.New("oauth state store unavailable")
+	base := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+
+	t.Run("start Save error", func(t *testing.T) {
+		svc, err := authn.New(authn.Options{
+			SigningKey: []byte(testSecret),
+			Issuer:     testIssuer,
+			TokenTTL:   time.Hour,
+			Now:        fixedNow(base),
+			Denylist:   authn.NewMemoryDenylist(),
+			GitHubOAuth: &authn.GitHubOAuthConfig{
+				ClientID:     oauthClientID,
+				ClientSecret: oauthClientSecret,
+				BaseURL:      "https://github.example",
+				RedirectURI:  oauthRedirectURI,
+			},
+			OAuthState:    &errOAuthState{saveErr: storeErr},
+			OAuthStateTTL: 10 * time.Minute,
+		})
+		if err != nil {
+			t.Fatalf("authn.New: %v", err)
+		}
+		code, body := doReq(t, svc.Handler(), http.MethodGet, "/oauth/github/start", "", nil)
+		if code != http.StatusServiceUnavailable {
+			t.Fatalf("start status: got %d want 503; body=%s", code, body)
+		}
+		env := decodeEnvelope(t, body)
+		if env.Error.Code != coachapi.ErrorCodeInternalError {
+			t.Errorf("error.code: got %q want %q", env.Error.Code, coachapi.ErrorCodeInternalError)
+		}
+	})
+
+	t.Run("callback Consume error", func(t *testing.T) {
+		svc, err := authn.New(authn.Options{
+			SigningKey: []byte(testSecret),
+			Issuer:     testIssuer,
+			TokenTTL:   time.Hour,
+			Now:        fixedNow(base),
+			Denylist:   authn.NewMemoryDenylist(),
+			GitHubOAuth: &authn.GitHubOAuthConfig{
+				ClientID:     oauthClientID,
+				ClientSecret: oauthClientSecret,
+				BaseURL:      "https://github.example",
+				RedirectURI:  oauthRedirectURI,
+			},
+			OAuthState:    &errOAuthState{consumeErr: storeErr},
+			OAuthStateTTL: 10 * time.Minute,
+		})
+		if err != nil {
+			t.Fatalf("authn.New: %v", err)
+		}
+		code, body := doReq(t, svc.Handler(), http.MethodGet, "/oauth/github/callback?"+url.Values{
+			"code":  {"any"},
+			"state": {"any-state"},
+		}.Encode(), "", nil)
+		if code != http.StatusServiceUnavailable {
+			t.Fatalf("callback status: got %d want 503; body=%s", code, body)
+		}
+		env := decodeEnvelope(t, body)
+		if env.Error.Code != coachapi.ErrorCodeInternalError {
+			t.Errorf("error.code: got %q want %q", env.Error.Code, coachapi.ErrorCodeInternalError)
+		}
+	})
+}
+
+// errOAuthState fails Save and/or Consume so handlers can prove fail-closed 503.
+type errOAuthState struct {
+	saveErr    error
+	consumeErr error
+}
+
+func (e *errOAuthState) Save(context.Context, string, time.Time) error {
+	if e.saveErr != nil {
+		return e.saveErr
+	}
+	return nil
+}
+
+func (e *errOAuthState) Consume(context.Context, string, time.Time) (bool, error) {
+	if e.consumeErr != nil {
+		return false, e.consumeErr
+	}
+	return true, nil
 }

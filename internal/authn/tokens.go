@@ -7,11 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/lousy-agents/coach/internal/coachapi"
 )
+
+// DefaultGitHubHTTPClientTimeout bounds outbound OAuth HTTP calls when
+// GitHubOAuthConfig.HTTPClient is nil.
+const DefaultGitHubHTTPClientTimeout = 10 * time.Second
 
 // Options configures Coach JWT auth, optional test-mint, and optional GitHub OAuth.
 type Options struct {
@@ -98,12 +103,17 @@ func New(opts Options) (*Service, error) {
 		if opts.GitHubOAuth.BaseURL == "" {
 			return nil, errors.New("authn: GitHubOAuth BaseURL is required")
 		}
+		if err := requireAbsoluteURL("GitHubOAuth.BaseURL", opts.GitHubOAuth.BaseURL); err != nil {
+			return nil, err
+		}
 		if opts.GitHubOAuth.RedirectURI == "" {
 			return nil, errors.New("authn: GitHubOAuth RedirectURI is required")
 		}
 		cp := *opts.GitHubOAuth
 		if cp.APIBaseURL == "" {
 			cp.APIBaseURL = cp.BaseURL
+		} else if err := requireAbsoluteURL("GitHubOAuth.APIBaseURL", cp.APIBaseURL); err != nil {
+			return nil, err
 		}
 		gh = &cp
 		oauthState = opts.OAuthState
@@ -115,7 +125,7 @@ func New(opts Options) (*Service, error) {
 		}
 		httpClient = opts.GitHubOAuth.HTTPClient
 		if httpClient == nil {
-			httpClient = http.DefaultClient
+			httpClient = &http.Client{Timeout: DefaultGitHubHTTPClientTimeout}
 		}
 	}
 	return &Service{
@@ -279,4 +289,12 @@ func newJTI() (string, error) {
 		return "", fmt.Errorf("authn: generate jti: %w", err)
 	}
 	return hex.EncodeToString(b[:]), nil
+}
+
+func requireAbsoluteURL(field, raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("authn: %s must be an absolute URL", field)
+	}
+	return nil
 }
