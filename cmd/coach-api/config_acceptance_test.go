@@ -93,6 +93,24 @@ var _ = Describe("loadConfigFromEnv", func() {
 		})
 	})
 
+	// A regression flipping the `== "1"` comparison to `!= ""` only changes
+	// behavior for a non-empty, non-"1" value, so the unset and "=1" specs
+	// above cannot catch it -- these entries are what actually distinguish
+	// the two conditions.
+	DescribeTable("keeps AuthTestMintEnabled false for any non-\"1\" value",
+		func(value string) {
+			setValidConfigEnv()
+			setEnv("COACH_AUTH_TEST_MINT", value)
+
+			cfg, err := loadConfigFromEnv()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.AuthTestMintEnabled).To(BeFalse())
+		},
+		Entry("COACH_AUTH_TEST_MINT=0", "0"),
+		Entry("COACH_AUTH_TEST_MINT=false", "false"),
+		Entry("COACH_AUTH_TEST_MINT=yes", "yes"),
+	)
+
 	DescribeTable("fails fast with the missing var named when a required var is absent",
 		func(missingVar string) {
 			setValidConfigEnv()
