@@ -226,19 +226,28 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 	})
 
 	When("an authenticated principal submits a valid repo_baseline_scan job and a nil-erroring authorizer allows it", func() {
-		It("returns 202 with an id, GET status shows queued, and the queue records a versioned payload with the job id", func() {
+		It("returns 202 with an id, persists created_by_* from the principal, GET status shows queued, and the queue records a versioned payload with the job id", func() {
 			store := newSpyJobStore()
 			az := &stubRepoAuthorizer{}
 			q := &stubTaskQueue{}
 			srv := newTestServer(store, az, q, serverFixedNow(time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)), sequentialJobIDs("happy"))
 			h := authnSvc.Middleware(srv.Handler())
 
-			tok := mustIssueToken(authnSvc, principalAlice())
+			owner := principalAlice()
+			tok := mustIssueToken(authnSvc, owner)
 			code, body := doServerReq(h, http.MethodPost, "/v1/jobs", tok, validRepoBaselineScanBody())
 			Expect(code).To(Equal(http.StatusAccepted), "body=%s", body)
 			var created coachapi.CreateJobResponse
 			Expect(json.Unmarshal(body, &created)).To(Succeed())
 			Expect(created.ID).NotTo(BeEmpty())
+
+			// Story 1 / #103: created_by_* must come from the authenticated
+			// principal at submit — not defaults, not request body fields.
+			job, err := store.GetJob(context.Background(), created.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(job.CreatedByProvider).To(Equal(owner.Provider), "created_by_provider must equal principal.provider")
+			Expect(job.CreatedBySubject).To(Equal(owner.Subject), "created_by_subject must equal principal.subject")
+			Expect(job.CreatedByLogin).To(Equal(owner.Login), "created_by_login must equal principal.login at submit (audit/display)")
 
 			code, body = doServerReq(h, http.MethodGet, "/v1/jobs/"+created.ID, tok, nil)
 			Expect(code).To(Equal(http.StatusOK), "body=%s", body)
@@ -332,6 +341,13 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 			expectEnvelope(code, respBody, http.StatusBadRequest, coachapi.ErrorCodeInvalidRequest)
 			Expect(store.createJobCalls()).To(Equal(0))
 		})
+
+		It("rejects a clone_url key present in params (client-supplied clone URL equivalent)", func() {
+			body := []byte(`{"kind":"repo_baseline_scan","params":{"repo_owner":"acme","repo_name":"widgets","clone_url":"https://evil.example/x.git"}}`)
+			code, respBody := doServerReq(h, http.MethodPost, "/v1/jobs", tok, body)
+			expectEnvelope(code, respBody, http.StatusBadRequest, coachapi.ErrorCodeInvalidRequest)
+			Expect(store.createJobCalls()).To(Equal(0))
+		})
 	})
 
 	When("the request names an unrecognized job kind", func() {
@@ -381,7 +397,7 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 	})
 
 	When("the configured RepoAuthorizer reports the principal is not authorized for the repo", func() {
-		It("returns 403 repo_not_authorized with an actionable message and persists nothing", func() {
+		It("returns 403 repo_not_authorized with Story 3's actionable public-repo message and persists nothing", func() {
 			store := newSpyJobStore()
 			az := &stubRepoAuthorizer{err: fmt.Errorf("stub: no role: %w", authz.ErrNotAuthorized)}
 			q := &stubTaskQueue{}
@@ -391,8 +407,59 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 
 			code, body := doServerReq(h, http.MethodPost, "/v1/jobs", tok, validRepoBaselineScanBody())
 			env := expectEnvelope(code, body, http.StatusForbidden, coachapi.ErrorCodeRepoNotAuthorized)
-			Expect(env.Error.Message).To(Or(ContainSubstring("no role"), ContainSubstring("not authorized"), ContainSubstring("denied")),
-				"message must be actionable, not a bare 'forbidden'")
+			// Story 3: pilots must not report public-repo denial as a bug.
+			Expect(env.Error.Message).To(ContainSubstring("no role"))
+			Expect(env.Error.Message).To(ContainSubstring("public repositories"))
+			Expect(env.Error.Message).To(ContainSubstring("deliberately denied"))
+			Expect(store.createJobCalls()).To(Equal(0))
+		})
+	})
+
+	When("submit-time authz uses Story 3's config-gated BypassAuthorizer at the HTTP boundary", func() {
+		It("returns 202 for the exact bypass pair without consulting the denying live authorizer", func() {
+			store := newSpyJobStore()
+			inner := &stubRepoAuthorizer{err: authz.ErrNotAuthorized}
+			az := authz.NewBypassAuthorizer(inner, "acme", "widgets")
+			q := &stubTaskQueue{}
+			srv := newTestServer(store, az, q, serverFixedNow(time.Now()), sequentialJobIDs("bypass-on"))
+			h := authnSvc.Middleware(srv.Handler())
+			tok := mustIssueToken(authnSvc, principalAlice())
+
+			code, body := doServerReq(h, http.MethodPost, "/v1/jobs", tok, validRepoBaselineScanBody())
+			Expect(code).To(Equal(http.StatusAccepted), "body=%s", body)
+			Expect(inner.callCount()).To(Equal(0), "exact bypass pair must skip the live authorizer")
+			Expect(store.createJobCalls()).To(Equal(1))
+		})
+
+		It("returns 403 repo_not_authorized for a non-matching pair and still runs the live authorizer", func() {
+			store := newSpyJobStore()
+			inner := &stubRepoAuthorizer{err: authz.ErrNotAuthorized}
+			az := authz.NewBypassAuthorizer(inner, "acme", "widgets")
+			q := &stubTaskQueue{}
+			srv := newTestServer(store, az, q, serverFixedNow(time.Now()), sequentialJobIDs("bypass-miss"))
+			h := authnSvc.Middleware(srv.Handler())
+			tok := mustIssueToken(authnSvc, principalAlice())
+
+			body := []byte(`{"kind":"repo_baseline_scan","params":{"repo_owner":"acme","repo_name":"other-repo"}}`)
+			code, respBody := doServerReq(h, http.MethodPost, "/v1/jobs", tok, body)
+			expectEnvelope(code, respBody, http.StatusForbidden, coachapi.ErrorCodeRepoNotAuthorized)
+			Expect(inner.callCount()).To(Equal(1), "non-matching pairs must run the full live-check via inner")
+			Expect(store.createJobCalls()).To(Equal(0))
+		})
+
+		It("returns 403 when bypass is unconfigured and the live authorizer denies (default-off)", func() {
+			store := newSpyJobStore()
+			// No BypassAuthorizer wrapper — production-like wiring when the
+			// smoke fixture pair is not configured.
+			az := &stubRepoAuthorizer{err: authz.ErrNotAuthorized}
+			q := &stubTaskQueue{}
+			srv := newTestServer(store, az, q, serverFixedNow(time.Now()), sequentialJobIDs("bypass-off"))
+			h := authnSvc.Middleware(srv.Handler())
+			tok := mustIssueToken(authnSvc, principalAlice())
+
+			code, body := doServerReq(h, http.MethodPost, "/v1/jobs", tok, validRepoBaselineScanBody())
+			expectEnvelope(code, body, http.StatusForbidden, coachapi.ErrorCodeRepoNotAuthorized)
+			Expect(az.callCount()).To(Equal(1))
 			Expect(store.createJobCalls()).To(Equal(0))
 		})
 	})
@@ -516,6 +583,70 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 			bobTok := mustIssueToken(authnSvc, principalBob())
 			code, body := doServerReq(h, http.MethodGet, "/v1/jobs/"+job.ID+"/report", bobTok, nil)
 			expectEnvelope(code, body, http.StatusForbidden, coachapi.ErrorCodeUnauthorized)
+		})
+	})
+
+	When("a different principal reads a completed job's status and report", func() {
+		It("returns 403 unauthorized on both routes (ADR-004 applies after completion too)", func() {
+			store := coachapi.NewMemoryStore()
+			az := &stubRepoAuthorizer{}
+			q := &stubTaskQueue{}
+			srv := newTestServer(store, az, q, serverFixedNow(time.Now()), sequentialJobIDs("crossdone"))
+			h := authnSvc.Middleware(srv.Handler())
+
+			owner := principalAlice()
+			jobID := "cross-completed-1"
+			Expect(store.CreateJob(context.Background(), coachapi.Job{
+				ID: jobID, Kind: coachapi.JobKindRepoBaselineScan,
+				Params: json.RawMessage(`{"repo_owner":"acme","repo_name":"widgets"}`),
+				Status: coachapi.JobStatusQueued, CreatedAt: time.Now(),
+				CreatedByProvider: owner.Provider, CreatedBySubject: owner.Subject, CreatedByLogin: owner.Login,
+			})).To(Succeed())
+			Expect(store.RecordCompletion(context.Background(), jobID, coachapi.Completion{
+				Attempt: 1, CommitSHA: "abc123def4567890abc123def4567890abc123de",
+				Versions:   coachapi.ReportVersions{Analyzer: "codesignal@1"},
+				FinishedAt: time.Now(), GeneratedAt: time.Date(2026, 7, 23, 13, 0, 0, 0, time.UTC),
+			})).To(Succeed())
+
+			bobTok := mustIssueToken(authnSvc, principalBob())
+			code, body := doServerReq(h, http.MethodGet, "/v1/jobs/"+jobID, bobTok, nil)
+			expectEnvelope(code, body, http.StatusForbidden, coachapi.ErrorCodeUnauthorized)
+
+			code, body = doServerReq(h, http.MethodGet, "/v1/jobs/"+jobID+"/report", bobTok, nil)
+			expectEnvelope(code, body, http.StatusForbidden, coachapi.ErrorCodeUnauthorized)
+		})
+	})
+
+	When("the owning principal's GitHub login has been renamed since submit (same provider+subject)", func() {
+		It("still authorizes GET status and report — ownership uses stable subject, not login (ADR-004)", func() {
+			store := coachapi.NewMemoryStore()
+			az := &stubRepoAuthorizer{}
+			q := &stubTaskQueue{}
+			srv := newTestServer(store, az, q, serverFixedNow(time.Now()), sequentialJobIDs("rename"))
+			h := authnSvc.Middleware(srv.Handler())
+
+			// Job was created under the old login; token now carries the new login.
+			jobID := "rename-job-1"
+			Expect(store.CreateJob(context.Background(), coachapi.Job{
+				ID: jobID, Kind: coachapi.JobKindRepoBaselineScan,
+				Params: json.RawMessage(`{"repo_owner":"acme","repo_name":"widgets"}`),
+				Status: coachapi.JobStatusQueued, CreatedAt: time.Now(),
+				CreatedByProvider: "github", CreatedBySubject: "1001", CreatedByLogin: "alice",
+			})).To(Succeed())
+			Expect(store.RecordCompletion(context.Background(), jobID, coachapi.Completion{
+				Attempt: 1, CommitSHA: "abc123def4567890abc123def4567890abc123de",
+				Versions:   coachapi.ReportVersions{Analyzer: "codesignal@1"},
+				FinishedAt: time.Now(), GeneratedAt: time.Date(2026, 7, 23, 13, 0, 0, 0, time.UTC),
+			})).To(Succeed())
+
+			renamed := coachapi.Principal{Provider: "github", Subject: "1001", Login: "alice-renamed"}
+			tok := mustIssueToken(authnSvc, renamed)
+
+			code, body := doServerReq(h, http.MethodGet, "/v1/jobs/"+jobID, tok, nil)
+			Expect(code).To(Equal(http.StatusOK), "body=%s", body)
+
+			code, body = doServerReq(h, http.MethodGet, "/v1/jobs/"+jobID+"/report", tok, nil)
+			Expect(code).To(Equal(http.StatusOK), "body=%s", body)
 		})
 	})
 
@@ -666,7 +797,128 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 			expectEnvelope(code, body, http.StatusUnauthorized, coachapi.ErrorCodeUnauthenticated)
 		})
 	})
+
+	Describe("JobStore dependency errors fail closed with 503 (not 404/500)", func() {
+		It("returns 503 internal_error on POST /v1/jobs when CreateJob fails", func() {
+			store := &errJobStore{createErr: errors.New("postgres: connection refused")}
+			az := &stubRepoAuthorizer{}
+			q := &stubTaskQueue{}
+			srv := newTestServer(store, az, q, serverFixedNow(time.Now()), sequentialJobIDs("store-create"))
+			h := authnSvc.Middleware(srv.Handler())
+			tok := mustIssueToken(authnSvc, principalAlice())
+
+			code, body := doServerReq(h, http.MethodPost, "/v1/jobs", tok, validRepoBaselineScanBody())
+			expectEnvelope(code, body, http.StatusServiceUnavailable, coachapi.ErrorCodeInternalError)
+			Expect(q.enqueuedTasks()).To(BeEmpty(), "failed CreateJob must not enqueue")
+		})
+
+		It("returns 503 internal_error on GET /v1/jobs/{id} when GetJob fails with a non-not-found error", func() {
+			store := &errJobStore{getErr: errors.New("postgres: connection refused")}
+			az := &stubRepoAuthorizer{}
+			q := &stubTaskQueue{}
+			srv := newTestServer(store, az, q, serverFixedNow(time.Now()), sequentialJobIDs("store-get"))
+			h := authnSvc.Middleware(srv.Handler())
+			tok := mustIssueToken(authnSvc, principalAlice())
+
+			code, body := doServerReq(h, http.MethodGet, "/v1/jobs/any-id", tok, nil)
+			expectEnvelope(code, body, http.StatusServiceUnavailable, coachapi.ErrorCodeInternalError)
+		})
+
+		It("returns 503 internal_error on GET /v1/jobs/{id}/report when GetJob fails with a non-not-found error", func() {
+			store := &errJobStore{getErr: errors.New("postgres: connection refused")}
+			az := &stubRepoAuthorizer{}
+			q := &stubTaskQueue{}
+			srv := newTestServer(store, az, q, serverFixedNow(time.Now()), sequentialJobIDs("store-report-get"))
+			h := authnSvc.Middleware(srv.Handler())
+			tok := mustIssueToken(authnSvc, principalAlice())
+
+			code, body := doServerReq(h, http.MethodGet, "/v1/jobs/any-id/report", tok, nil)
+			expectEnvelope(code, body, http.StatusServiceUnavailable, coachapi.ErrorCodeInternalError)
+		})
+
+		It("returns 503 internal_error on GET report when GetJob succeeds but GetReport fails", func() {
+			// Ownership and completed status pass; only report assembly fails.
+			// Must not collapse into 404 job_not_found or leak as a bare 500.
+			mem := coachapi.NewMemoryStore()
+			owner := principalAlice()
+			jobID := "store-report-fail-1"
+			Expect(mem.CreateJob(context.Background(), coachapi.Job{
+				ID: jobID, Kind: coachapi.JobKindRepoBaselineScan,
+				Params: json.RawMessage(`{"repo_owner":"acme","repo_name":"widgets"}`),
+				Status: coachapi.JobStatusQueued, CreatedAt: time.Now(),
+				CreatedByProvider: owner.Provider, CreatedBySubject: owner.Subject, CreatedByLogin: owner.Login,
+			})).To(Succeed())
+			Expect(mem.RecordCompletion(context.Background(), jobID, coachapi.Completion{
+				Attempt: 1, CommitSHA: "abc123def4567890abc123def4567890abc123de",
+				Versions:   coachapi.ReportVersions{Analyzer: "codesignal@1"},
+				FinishedAt: time.Now(), GeneratedAt: time.Date(2026, 7, 23, 13, 0, 0, 0, time.UTC),
+			})).To(Succeed())
+
+			store := &errJobStore{MemoryStore: mem, reportErr: errors.New("postgres: connection refused")}
+			az := &stubRepoAuthorizer{}
+			q := &stubTaskQueue{}
+			srv := newTestServer(store, az, q, serverFixedNow(time.Now()), sequentialJobIDs("store-report"))
+			h := authnSvc.Middleware(srv.Handler())
+			tok := mustIssueToken(authnSvc, owner)
+
+			code, body := doServerReq(h, http.MethodGet, "/v1/jobs/"+jobID+"/report", tok, nil)
+			expectEnvelope(code, body, http.StatusServiceUnavailable, coachapi.ErrorCodeInternalError)
+		})
+	})
 })
+
+// errJobStore is a JobStore double that injects store failures (not clean
+// misses) so HTTP acceptance can lock fail-closed 503 mapping.
+type errJobStore struct {
+	*coachapi.MemoryStore
+	createErr error
+	getErr    error
+	reportErr error
+}
+
+func (s *errJobStore) CreateJob(ctx context.Context, job coachapi.Job) error {
+	if s.createErr != nil {
+		return s.createErr
+	}
+	if s.MemoryStore == nil {
+		return errors.New("errJobStore: no backing MemoryStore for CreateJob")
+	}
+	return s.MemoryStore.CreateJob(ctx, job)
+}
+
+func (s *errJobStore) GetJob(ctx context.Context, id string) (coachapi.Job, error) {
+	if s.getErr != nil {
+		return coachapi.Job{}, s.getErr
+	}
+	if s.MemoryStore == nil {
+		return coachapi.Job{}, errors.New("errJobStore: no backing MemoryStore for GetJob")
+	}
+	return s.MemoryStore.GetJob(ctx, id)
+}
+
+func (s *errJobStore) GetReport(ctx context.Context, id string) (coachapi.Report, error) {
+	if s.reportErr != nil {
+		return coachapi.Report{}, s.reportErr
+	}
+	if s.MemoryStore == nil {
+		return coachapi.Report{}, errors.New("errJobStore: no backing MemoryStore for GetReport")
+	}
+	return s.MemoryStore.GetReport(ctx, id)
+}
+
+func (s *errJobStore) RecordCompletion(ctx context.Context, jobID string, completion coachapi.Completion) error {
+	if s.MemoryStore == nil {
+		return errors.New("errJobStore: no backing MemoryStore for RecordCompletion")
+	}
+	return s.MemoryStore.RecordCompletion(ctx, jobID, completion)
+}
+
+func (s *errJobStore) RecordFailure(ctx context.Context, jobID string, errMsg string, finishedAt time.Time) error {
+	if s.MemoryStore == nil {
+		return errors.New("errJobStore: no backing MemoryStore for RecordFailure")
+	}
+	return s.MemoryStore.RecordFailure(ctx, jobID, errMsg, finishedAt)
+}
 
 // serverErrDenylist always returns a store error from IsRevoked (fail-closed path).
 type serverErrDenylist struct {
