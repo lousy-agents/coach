@@ -1025,4 +1025,105 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 			Expect(handlerCalls.Load()).To(Equal(int32(1)))
 		})
 	})
+
+	When("the StartReconciler parent context is canceled", func() {
+		It("allows a subsequent StartReconciler call to run again", func() {
+			job := newQueuedJob("aaaaaaaa-bbbb-cccc-dddd-eeeeeeee0010")
+			job.CreatedAt = start.Add(-2 * time.Minute)
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+			Expect(tq.pendingCount()).To(Equal(0))
+
+			wkr, err := worker.New(store, tq, clock, successHandler, worker.Config{
+				WorkerID:           "w-rec-restart",
+				ReconcileInterval:  10 * time.Second,
+				QueuedAgeThreshold: 30 * time.Second,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			parent1, cancel1 := context.WithCancel(ctx)
+			wkr.StartReconciler(parent1)
+			cancel1()
+			// Parent cancel must tear down the live reconciler so a later
+			// StartReconciler is not a permanent no-op (StopReconciler not required).
+			time.Sleep(30 * time.Millisecond)
+
+			parent2, cancel2 := context.WithCancel(ctx)
+			defer cancel2()
+			wkr.StartReconciler(parent2)
+
+			advanceUntil(clock, time.Second, 15*time.Second, func() bool {
+				return tq.enqueueCount() >= 1
+			})
+			Expect(tq.enqueueCount()).To(BeNumerically(">=", 1),
+				"second StartReconciler after parent cancel must tick and re-enqueue")
+			wkr.StopReconciler()
+		})
+	})
+
+	When("store.Heartbeat returns context.Canceled while the job context is still live", func() {
+		It("does not surface ErrClaimLost and still completes the job", func() {
+			mem := coachapi.NewMemoryStore()
+			hbStore := &canceledHeartbeatStore{
+				MemoryStore: mem,
+				entered:     make(chan struct{}),
+			}
+			job := newQueuedJob("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0001")
+			job.CreatedAt = start
+			Expect(mem.CreateJob(ctx, job)).To(Succeed())
+			Expect(tq.Enqueue(ctx, queue.Task{ID: job.ID, Payload: []byte(job.ID)})).To(Succeed())
+
+			handlerEntered := make(chan struct{})
+			handlerRelease := make(chan struct{})
+			h := func(ctx context.Context, job coachapi.Job, w worker.JobWriter) (*coachapi.Completion, error) {
+				close(handlerEntered)
+				<-handlerRelease
+				return &coachapi.Completion{
+					Attempt: 1, CommitSHA: "c", FinishedAt: start, GeneratedAt: start,
+					Versions: coachapi.ReportVersions{Analyzer: "a"},
+				}, nil
+			}
+			wkr, err := worker.New(hbStore, tq, clock, h, worker.Config{
+				WorkerID:          "w-hb-canceled-err",
+				HeartbeatInterval: 15 * time.Second,
+				StaleAfter:        45 * time.Second,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			done := make(chan error, 1)
+			go func() {
+				_, err := wkr.ProcessNext(ctx)
+				done <- err
+			}()
+
+			Eventually(handlerEntered).Should(BeClosed())
+			clock.Advance(15 * time.Second)
+			Eventually(hbStore.entered).Should(BeClosed())
+
+			// Heartbeat returned context.Canceled; that must not be treated as fence loss.
+			Consistently(done, "80ms", "5ms").ShouldNot(Receive())
+			close(handlerRelease)
+
+			var got error
+			Eventually(done).Should(Receive(&got))
+			Expect(got).NotTo(HaveOccurred(), "canceled heartbeat must not abort as claim lost")
+			Expect(errors.Is(got, coachapi.ErrClaimLost)).To(BeFalse())
+			Expect(tq.completedCount()).To(Equal(1))
+		})
+	})
 })
+
+// canceledHeartbeatStore returns context.Canceled from Heartbeat while the
+// caller's ctx is still live — models a misclassified shutdown/timeout that
+// must not be treated as claim-fence loss.
+type canceledHeartbeatStore struct {
+	*coachapi.MemoryStore
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (s *canceledHeartbeatStore) Heartbeat(ctx context.Context, jobID, workerID string, attempt int, now time.Time) error {
+	s.once.Do(func() { close(s.entered) })
+	return context.Canceled
+}
+
+var _ coachapi.WorkerJobStore = (*canceledHeartbeatStore)(nil)

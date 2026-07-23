@@ -116,6 +116,7 @@ type Worker struct {
 
 	mu            sync.Mutex
 	stopReconcile context.CancelFunc
+	reconcileGen  uint64
 }
 
 // New constructs a Worker. clock may be nil (RealClock). handler is required.
@@ -333,8 +334,12 @@ func (w *Worker) heartbeatLoop(ctx context.Context, lease coachapi.ClaimLease, o
 		case <-w.clock.After(w.cfg.HeartbeatInterval):
 			now := w.clock.Now()
 			if err := w.store.Heartbeat(ctx, lease.JobID, lease.WorkerID, lease.Attempt, now); err != nil {
-				if errors.Is(err, coachapi.ErrClaimLost) || errors.Is(err, context.Canceled) {
+				if errors.Is(err, coachapi.ErrClaimLost) {
 					onFenceLost()
+					return
+				}
+				// Shutdown/timeout from the heartbeat ctx is not fence loss.
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return
 				}
 				// Transient store errors: keep trying until ctx cancels or fence loses.
@@ -346,6 +351,8 @@ func (w *Worker) heartbeatLoop(ctx context.Context, lease coachapi.ClaimLease, o
 
 // StartReconciler runs the requeue reconciler until ctx is cancelled. It is
 // safe to call once; subsequent calls are no-ops while a reconciler is live.
+// After the reconciler exits (parent cancel or StopReconciler), StartReconciler
+// may be called again.
 func (w *Worker) StartReconciler(ctx context.Context) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -353,8 +360,21 @@ func (w *Worker) StartReconciler(ctx context.Context) {
 		return
 	}
 	rctx, cancel := context.WithCancel(ctx)
+	w.reconcileGen++
+	gen := w.reconcileGen
 	w.stopReconcile = cancel
-	go w.reconcileLoop(rctx)
+	go func() {
+		defer func() {
+			w.mu.Lock()
+			defer w.mu.Unlock()
+			// Clear only if we still own the slot (StopReconciler / a newer
+			// StartReconciler may have replaced it under a new generation).
+			if w.reconcileGen == gen {
+				w.stopReconcile = nil
+			}
+		}()
+		w.reconcileLoop(rctx)
+	}()
 }
 
 // StopReconciler cancels a reconciler started by StartReconciler.
@@ -364,6 +384,7 @@ func (w *Worker) StopReconciler() {
 	if w.stopReconcile != nil {
 		w.stopReconcile()
 		w.stopReconcile = nil
+		w.reconcileGen++
 	}
 }
 
