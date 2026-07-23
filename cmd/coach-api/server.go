@@ -48,9 +48,7 @@ func buildDependencies(ctx context.Context, cfg InfraConfig) (Dependencies, erro
 	if err != nil {
 		return Dependencies{}, fmt.Errorf("coach-api: constructing repo authorizer: %w", err)
 	}
-	if cfg.AuthzBypassOwner != "" && cfg.AuthzBypassRepo != "" {
-		authorizer = authz.NewBypassAuthorizer(authorizer, cfg.AuthzBypassOwner, cfg.AuthzBypassRepo)
-	}
+	authorizer = wrapAuthorizerForBypass(authorizer, cfg)
 
 	taskQueue, err := redisstream.NewQueue(redisstream.Config{
 		Address:       cfg.RedisAddr,
@@ -77,6 +75,18 @@ func buildDependencies(ctx context.Context, cfg InfraConfig) (Dependencies, erro
 	}
 
 	return Dependencies{Store: store, Authorizer: authorizer, Queue: taskQueue}, nil
+}
+
+// wrapAuthorizerForBypass wraps authorizer in authz.NewBypassAuthorizer only
+// when both cfg.AuthzBypassOwner and cfg.AuthzBypassRepo are set (Story 3's
+// credential-free-smoke exception). A single one set alone must not
+// partially enable the bypass -- authorizer is returned unwrapped in that
+// case, so it still fails closed.
+func wrapAuthorizerForBypass(authorizer authz.RepoAuthorizer, cfg InfraConfig) authz.RepoAuthorizer {
+	if cfg.AuthzBypassOwner != "" && cfg.AuthzBypassRepo != "" {
+		return authz.NewBypassAuthorizer(authorizer, cfg.AuthzBypassOwner, cfg.AuthzBypassRepo)
+	}
+	return authorizer
 }
 
 // buildHandler composes internal/authn and internal/coachapi into one HTTP
