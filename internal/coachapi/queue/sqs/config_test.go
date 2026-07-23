@@ -55,6 +55,26 @@ func TestConfigValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "sub-second visibility timeout",
+			mutate:  func(cfg Config) Config { cfg.VisibilityTimeout = 500 * time.Millisecond; return cfg },
+			wantErr: true,
+		},
+		{
+			name:    "non-whole-second visibility timeout",
+			mutate:  func(cfg Config) Config { cfg.VisibilityTimeout = 1500 * time.Millisecond; return cfg },
+			wantErr: true,
+		},
+		{
+			name:    "exactly one second visibility timeout",
+			mutate:  func(cfg Config) Config { cfg.VisibilityTimeout = time.Second; return cfg },
+			wantErr: false,
+		},
+		{
+			name:    "larger whole-second visibility timeout",
+			mutate:  func(cfg Config) Config { cfg.VisibilityTimeout = 5 * time.Minute; return cfg },
+			wantErr: false,
+		},
+		{
 			name:    "missing credentials",
 			mutate:  func(cfg Config) Config { cfg.Credentials = nil; return cfg },
 			wantErr: true,

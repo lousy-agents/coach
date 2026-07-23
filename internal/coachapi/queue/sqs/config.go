@@ -49,8 +49,11 @@ func (cfg Config) Validate() error {
 	if strings.TrimSpace(cfg.QueueURL) == "" {
 		return fmt.Errorf("sqs: Config.QueueURL is required")
 	}
-	if cfg.VisibilityTimeout <= 0 {
-		return fmt.Errorf("sqs: Config.VisibilityTimeout must be positive, got %s", cfg.VisibilityTimeout)
+	if cfg.VisibilityTimeout < time.Second {
+		return fmt.Errorf("sqs: Config.VisibilityTimeout must be at least 1s (SQS's VisibilityTimeout is a whole number of seconds), got %s", cfg.VisibilityTimeout)
+	}
+	if cfg.VisibilityTimeout%time.Second != 0 {
+		return fmt.Errorf("sqs: Config.VisibilityTimeout must be a whole number of seconds (SQS truncates sub-second precision), got %s", cfg.VisibilityTimeout)
 	}
 	if cfg.Credentials == nil {
 		return fmt.Errorf("sqs: Config.Credentials is required (this package never resolves ambient AWS credentials)")

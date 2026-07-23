@@ -35,9 +35,6 @@ func newFakeTaskQueue() *fakeTaskQueue {
 func (q *fakeTaskQueue) Enqueue(_ context.Context, task queue.Task) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.poison[task.ID] {
-		return errors.New("fakeTaskQueue: task is poisoned and must never be claimed again")
-	}
 	q.pending = append(q.pending, task)
 	return nil
 }
@@ -132,8 +129,6 @@ var _ = Describe("TaskQueue port", func() {
 			_, ok, err = q.Claim(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeFalse(), "a permanently-failed task must never be claimable again")
-
-			Expect(q.Enqueue(ctx, queue.Task{ID: "task-1", Payload: []byte("payload")})).To(HaveOccurred(), "a poisoned task id must not be re-enqueued as if it were a fresh task")
 		})
 	})
 

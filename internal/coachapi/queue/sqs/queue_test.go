@@ -191,8 +191,8 @@ func TestQueueEnqueueClaimComplete(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("Claim: ok=%v err=%v", ok, err)
 	}
-	if claim.TaskID != "task-1" || claim.Attempt != 1 {
-		t.Fatalf("Claim = %+v, want TaskID=task-1 Attempt=1", claim)
+	if claim.TaskID != "task-1" || claim.Attempt != 0 {
+		t.Fatalf("Claim = %+v, want TaskID=task-1 Attempt=0", claim)
 	}
 
 	if err := q.Complete(ctx, claim); err != nil {
@@ -309,6 +309,50 @@ func TestQueueNackPermanentRoutesToPoisonQueue(t *testing.T) {
 	}
 	if len(poisonedAgain) != 1 {
 		t.Fatalf("second PoisonTasks() = %+v, want it to still report task-1", poisonedAgain)
+	}
+}
+
+// TestQueueDuplicateTaskIDClaimsAreTrackedIndependently proves the SQS
+// adapter tolerates duplicate delivery of the same Task.ID (ADR-006
+// explicitly permits this), which happens when a task is enqueued more
+// than once or SQS redelivers a message that also still has an earlier
+// in-flight copy. Before keying q.inflight by receipt handle, the second
+// Claim for the same TaskID silently overwrote the first claim's
+// bookkeeping, making the first claim's token permanently stale.
+func TestQueueDuplicateTaskIDClaimsAreTrackedIndependently(t *testing.T) {
+	ctx := context.Background()
+	api := newFakeSQS()
+	api.queues["https://fake.local/queues/main"] = nil
+	clock := acceptanceharness.NewFakeClock(time.Unix(0, 0))
+	q := newTestQueue(t, api, clock)
+
+	if err := q.Enqueue(ctx, queue.Task{ID: "task-1", Payload: []byte("first")}); err != nil {
+		t.Fatalf("Enqueue 1: %v", err)
+	}
+	if err := q.Enqueue(ctx, queue.Task{ID: "task-1", Payload: []byte("second")}); err != nil {
+		t.Fatalf("Enqueue 2: %v", err)
+	}
+
+	first, ok, err := q.Claim(ctx)
+	if err != nil || !ok {
+		t.Fatalf("first Claim: ok=%v err=%v", ok, err)
+	}
+	second, ok, err := q.Claim(ctx)
+	if err != nil || !ok {
+		t.Fatalf("second Claim: ok=%v err=%v", ok, err)
+	}
+	if first.TaskID != second.TaskID {
+		t.Fatalf("want both claims for the same TaskID, got %q and %q", first.TaskID, second.TaskID)
+	}
+	if first.Token == second.Token {
+		t.Fatalf("want distinct tokens for two independently delivered messages, got %q twice", first.Token)
+	}
+
+	if err := q.Complete(ctx, first); err != nil {
+		t.Fatalf("Complete(first) = %v, want success: the first claim's receipt handle must still be tracked", err)
+	}
+	if err := q.Complete(ctx, second); err != nil {
+		t.Fatalf("Complete(second) = %v, want success: completing the first claim must not evict the second", err)
 	}
 }
 

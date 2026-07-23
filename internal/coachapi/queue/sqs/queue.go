@@ -19,10 +19,11 @@ import (
 )
 
 // errStaleClaim is returned by Complete/Nack when the given claim's token
-// no longer matches this Queue's record of the current claim for that task
-// id -- either because it was never claimed, has already been
-// Complete/Nack-ed, or has been reclaimed after its visibility deadline
-// elapsed (see the package doc comment's "Reclaim mechanism" section).
+// is not a currently-tracked in-flight claim, or is tracked under a
+// different task id -- either because it was never claimed, has already
+// been Complete/Nack-ed, or has been reclaimed after its visibility
+// deadline elapsed (see the package doc comment's "Reclaim mechanism"
+// section).
 var errStaleClaim = errors.New("sqs: claim token is stale (already completed, nacked, or reclaimed)")
 
 // maxPoisonDrainRounds bounds PoisonTasks's ReceiveMessage loop so a
@@ -51,10 +52,15 @@ type wireTask struct {
 }
 
 // inflightClaim is Queue's own bookkeeping for one claimed-but-not-yet-
-// acknowledged message, keyed by task id. See the package doc comment's
-// "Reclaim mechanism" section for why this exists alongside SQS's native
-// visibility timeout.
+// acknowledged message, keyed by the SQS receipt handle (the Claim's
+// Token) rather than task id: SQS can deliver multiple messages sharing
+// the same Task.ID (ADR-006 permits duplicate delivery/enqueue), and each
+// delivered message gets its own receipt handle, so the receipt handle is
+// the only value that's actually unique per in-flight claim. See the
+// package doc comment's "Reclaim mechanism" section for why this exists
+// alongside SQS's native visibility timeout.
 type inflightClaim struct {
+	taskID        string
 	receiptHandle string
 	payload       []byte
 	attempt       int
@@ -73,7 +79,7 @@ type Queue struct {
 	clock             acceptanceharness.Clock
 
 	mu       sync.Mutex
-	inflight map[string]*inflightClaim
+	inflight map[string]*inflightClaim // keyed by receipt handle (Claim.Token)
 }
 
 var _ queue.TaskQueue = (*Queue)(nil)
@@ -176,15 +182,21 @@ func (q *Queue) Claim(ctx context.Context) (queue.Claim, bool, error) {
 		return queue.Claim{}, false, fmt.Errorf("sqs: decoding received message body: %w", err)
 	}
 
-	attempt := 1
+	// ApproximateReceiveCount is SQS's 1-based delivery count (first
+	// delivery is "1"). Queue.Claim reports 0-based Attempt, matching the
+	// redisstream adapter's first-claim convention (jobs.attempt in
+	// internal/coachapi/migrations/0001_init.sql), so callers see
+	// consistent semantics across both TaskQueue backends.
+	attempt := 0
 	if raw, ok := msg.Attributes[string(types.MessageSystemAttributeNameApproximateReceiveCount)]; ok {
-		if n, err := strconv.Atoi(raw); err == nil {
-			attempt = n
+		if n, err := strconv.Atoi(raw); err == nil && n > 1 {
+			attempt = n - 1
 		}
 	}
 
 	token := aws.ToString(msg.ReceiptHandle)
-	q.inflight[wt.ID] = &inflightClaim{
+	q.inflight[token] = &inflightClaim{
+		taskID:        wt.ID,
 		receiptHandle: token,
 		payload:       wt.Payload,
 		attempt:       attempt,
@@ -202,7 +214,7 @@ func (q *Queue) Claim(ctx context.Context) (queue.Claim, bool, error) {
 // rejected.
 func (q *Queue) reapExpiredLocked(ctx context.Context) error {
 	now := q.clock.Now()
-	for taskID, claim := range q.inflight {
+	for token, claim := range q.inflight {
 		if now.Before(claim.deadline) {
 			continue
 		}
@@ -212,9 +224,9 @@ func (q *Queue) reapExpiredLocked(ctx context.Context) error {
 			VisibilityTimeout: 0,
 		})
 		if err != nil && !isReceiptHandleInvalid(err) {
-			return fmt.Errorf("sqs: reclaiming task %q: %w", taskID, err)
+			return fmt.Errorf("sqs: reclaiming task %q: %w", claim.taskID, err)
 		}
-		delete(q.inflight, taskID)
+		delete(q.inflight, token)
 	}
 	return nil
 }
@@ -224,8 +236,8 @@ func (q *Queue) Complete(ctx context.Context, claim queue.Claim) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	entry, ok := q.inflight[claim.TaskID]
-	if !ok || entry.receiptHandle != claim.Token {
+	entry, ok := q.inflight[claim.Token]
+	if !ok || entry.taskID != claim.TaskID {
 		return fmt.Errorf("%w: task %q", errStaleClaim, claim.TaskID)
 	}
 
@@ -237,7 +249,7 @@ func (q *Queue) Complete(ctx context.Context, claim queue.Claim) error {
 		return fmt.Errorf("sqs: DeleteMessage for task %q: %w", claim.TaskID, err)
 	}
 
-	delete(q.inflight, claim.TaskID)
+	delete(q.inflight, claim.Token)
 	return nil
 }
 
@@ -250,8 +262,8 @@ func (q *Queue) Nack(ctx context.Context, claim queue.Claim, permanent bool) err
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	entry, ok := q.inflight[claim.TaskID]
-	if !ok || entry.receiptHandle != claim.Token {
+	entry, ok := q.inflight[claim.Token]
+	if !ok || entry.taskID != claim.TaskID {
 		return fmt.Errorf("%w: task %q", errStaleClaim, claim.TaskID)
 	}
 
@@ -272,7 +284,7 @@ func (q *Queue) Nack(ctx context.Context, claim queue.Claim, permanent bool) err
 		}); err != nil {
 			return fmt.Errorf("sqs: deleting poisoned task %q from main queue: %w", claim.TaskID, err)
 		}
-		delete(q.inflight, claim.TaskID)
+		delete(q.inflight, claim.Token)
 		return nil
 	}
 
@@ -283,15 +295,17 @@ func (q *Queue) Nack(ctx context.Context, claim queue.Claim, permanent bool) err
 	}); err != nil {
 		return fmt.Errorf("sqs: retryable Nack for task %q: %w", claim.TaskID, err)
 	}
-	delete(q.inflight, claim.TaskID)
+	delete(q.inflight, claim.Token)
 	return nil
 }
 
-// PoisonTasks returns every task currently on the poison-task destination
-// queue. It receives with VisibilityTimeout: 0 rather than deleting, so
-// repeated calls keep observing the same poisoned tasks instead of draining
-// the queue (see the package doc comment's "Poison-task destination"
-// section).
+// PoisonTasks returns the tasks currently observable on the poison-task
+// destination queue, up to maxPoisonDrainRounds drain rounds; it is a
+// bounded, best-effort enumeration, not guaranteed to be exhaustive under
+// pathological redelivery timing. It receives with VisibilityTimeout: 0
+// rather than deleting, so repeated calls keep observing the same poisoned
+// tasks instead of draining the queue (see the package doc comment's
+// "Poison-task destination" section).
 func (q *Queue) PoisonTasks(ctx context.Context) ([]queue.Task, error) {
 	var tasks []queue.Task
 	seen := make(map[string]bool)
