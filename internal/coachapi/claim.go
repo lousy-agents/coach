@@ -44,12 +44,15 @@ type WorkerJobStore interface {
 	Heartbeat(ctx context.Context, jobID, workerID string, attempt int, now time.Time) error
 
 	// InsertFindings appends findings when (claimed_by, attempt) match.
-	// Each finding's Attempt must equal attempt. Returns ErrClaimLost on
+	// Implementations stamp each finding's JobID and Attempt from the lease
+	// args (caller-supplied values are ignored). Returns ErrClaimLost on
 	// fence mismatch.
 	InsertFindings(ctx context.Context, jobID, workerID string, attempt int, findings []JobFinding) error
 
 	// InsertDiagnostics appends diagnostics when (claimed_by, attempt) match.
-	// Returns ErrClaimLost on fence mismatch.
+	// Implementations stamp each diagnostic's JobID and Attempt from the
+	// lease args (caller-supplied values are ignored). Returns ErrClaimLost
+	// on fence mismatch.
 	InsertDiagnostics(ctx context.Context, jobID, workerID string, attempt int, diagnostics []JobDiagnostic) error
 
 	// CompleteJob fenced-terminal-transitions the job to completed and
