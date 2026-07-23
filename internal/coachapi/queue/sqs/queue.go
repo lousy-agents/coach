@@ -151,12 +151,15 @@ func (q *Queue) Enqueue(ctx context.Context, task queue.Task) error {
 // Claim implements internal/coachapi/queue.TaskQueue. It first reaps any
 // locally-tracked claim whose deadline (per the injected Clock) has passed
 // -- see the package doc comment's "Reclaim mechanism" section -- then
-// attempts to receive one message from the main queue.
+// attempts to receive one message from the main queue. The mutex is held
+// only around the two steps that touch q.inflight, not around the
+// ReceiveMessage network call or JSON decode in between, so a slow or
+// blocked SQS request cannot stall concurrent Complete/Nack/Claim calls.
 func (q *Queue) Claim(ctx context.Context) (queue.Claim, bool, error) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	if err := q.reapExpiredLocked(ctx); err != nil {
+	err := q.reapExpiredLocked(ctx)
+	q.mu.Unlock()
+	if err != nil {
 		return queue.Claim{}, false, err
 	}
 
@@ -195,6 +198,7 @@ func (q *Queue) Claim(ctx context.Context) (queue.Claim, bool, error) {
 	}
 
 	token := aws.ToString(msg.ReceiptHandle)
+	q.mu.Lock()
 	q.inflight[token] = &inflightClaim{
 		taskID:        wt.ID,
 		receiptHandle: token,
@@ -202,6 +206,7 @@ func (q *Queue) Claim(ctx context.Context) (queue.Claim, bool, error) {
 		attempt:       attempt,
 		deadline:      q.clock.Now().Add(q.visibilityTimeout),
 	}
+	q.mu.Unlock()
 
 	return queue.Claim{TaskID: wt.ID, Attempt: attempt, Token: token}, true, nil
 }

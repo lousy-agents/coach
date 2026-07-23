@@ -3,6 +3,7 @@ package queue_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -48,7 +49,8 @@ func (q *fakeTaskQueue) Claim(_ context.Context) (queue.Claim, bool, error) {
 	task := q.pending[0]
 	q.pending = q.pending[1:]
 	q.attempts[task.ID]++
-	claim := queue.Claim{TaskID: task.ID, Attempt: q.attempts[task.ID], Token: "token"}
+	token := fmt.Sprintf("%s-attempt-%d", task.ID, q.attempts[task.ID])
+	claim := queue.Claim{TaskID: task.ID, Attempt: q.attempts[task.ID], Token: token}
 	q.inFlight[task.ID] = claim
 	return claim, true, nil
 }
@@ -112,6 +114,10 @@ var _ = Describe("TaskQueue port", func() {
 			Expect(ok).To(BeTrue(), "a retryable Nack must leave the task claimable")
 			Expect(second.TaskID).To(Equal("task-1"))
 			Expect(second.Attempt).To(Equal(first.Attempt + 1))
+
+			// The pre-reclaim claim's token must be invalidated by the
+			// reclaim, not merely coincide with the fresh claim's token.
+			Expect(q.Complete(ctx, first)).To(HaveOccurred(), "a stale (pre-reclaim) claim must not be completable")
 		})
 	})
 

@@ -22,8 +22,10 @@
 // testable under acceptanceharness.FakeClock (required by
 // internal/acceptanceharness/queueconformance) and to behave uniformly in
 // production, Queue tracks its own claimed-but-not-yet-acknowledged
-// messages (keyed by task ID) with a deadline computed from the injected
-// Clock. Every Claim call first reaps any tracked claim whose deadline has
+// messages (keyed by receipt handle, the port's Claim.Token -- SQS can
+// deliver multiple messages sharing one task id, so the receipt handle is
+// the only value unique per in-flight claim) with a deadline computed from
+// the injected Clock. Every Claim call first reaps any tracked claim whose deadline has
 // passed: it calls ChangeMessageVisibility(0) on that message (best-effort;
 // SQS returning ReceiptHandleIsInvalid means another path already reclaimed
 // it) so the next ReceiveMessage can redeliver it with a fresh receipt

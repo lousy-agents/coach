@@ -271,6 +271,14 @@ func Run(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Cloc
 			t.Fatalf("Nack(permanent=false): %v", err)
 		}
 
+		// A retryable Nack must invalidate the pre-Nack claim's token
+		// immediately -- not lazily on the next Claim -- so a worker that
+		// gets Nack'd and then races a Complete call must fail here, before
+		// any other worker has reclaimed the task.
+		if err := q.Complete(ctx, first); err == nil {
+			t.Fatalf("Complete with stale (pre-Nack) claim immediately after Nack: want error, got nil")
+		}
+
 		second, ok, err := q.Claim(ctx)
 		if err != nil {
 			t.Fatalf("Claim after retryable Nack: %v", err)
