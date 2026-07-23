@@ -699,6 +699,58 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 		})
 	})
 
+	// Issue #104 / epic submit durability: the same reconciler recovers a job
+	// stuck running after its queue message was already acked (e.g. duplicate
+	// live-running delivery acked the broker while the owner later died).
+	// ReleaseStaleRunning → queued + Enqueue → ProcessNext completes.
+	When("a running job is stale and the queue message was already acked", func() {
+		It("ReconcileOnce releases it to queued, re-enqueues via TaskQueue, and ProcessNext completes the job", func() {
+			job := newQueuedJob("deadbeef-0000-0000-0000-000000000001")
+			// Old enough that after release, ListQueuedOlderThan still selects it.
+			job.CreatedAt = start.Add(-2 * time.Minute)
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+
+			// Owner claimed; queue is empty (message already acked / never pending).
+			_, err := store.ClaimJob(ctx, job.ID, "worker-dead", start, 60*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(tq.pendingCount()).To(Equal(0))
+			Expect(tq.inFlightCount()).To(Equal(0))
+
+			mid, err := store.GetJob(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(mid.Status).To(Equal(coachapi.JobStatusRunning))
+
+			wkr, err := worker.New(store, tq, clock, successHandler, worker.Config{
+				WorkerID:           "w-stale-rec",
+				StaleAfter:         60 * time.Second,
+				QueuedAgeThreshold: 30 * time.Second,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Heartbeat age == staleAfter must release (same boundary as store ATs).
+			clock.Advance(60 * time.Second)
+			Expect(wkr.ReconcileOnce(ctx)).To(Succeed())
+
+			released, err := store.GetJob(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(released.Status).To(Equal(coachapi.JobStatusQueued), "ReconcileOnce must ReleaseStaleRunning before re-enqueue")
+			Expect(released.ClaimedBy).To(BeNil())
+			Expect(tq.enqueueCount()).To(BeNumerically(">=", 1))
+			Expect(tq.pendingCount()).To(Equal(1), "reconciler must re-enqueue after releasing stale running")
+
+			ok, err := wkr.ProcessNext(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+
+			got, err := store.GetJob(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Status).To(Equal(coachapi.JobStatusCompleted))
+			Expect(got.Attempt).To(Equal(2), "next ClaimJob after release must increment attempt")
+			Expect(got.ClaimedBy).NotTo(BeNil())
+			Expect(*got.ClaimedBy).To(Equal("w-stale-rec"))
+		})
+	})
+
 	When("two workers race to claim the same queued job", func() {
 		It("never double-claims", func() {
 			job := newQueuedJob("11111111-2222-3333-4444-555555555555")

@@ -562,4 +562,46 @@ var _ = Describe("coachapi.PostgresStore", func() {
 			Expect(got.Status).To(Equal(coachapi.JobStatusQueued), "ReleaseStaleRunning at age==staleAfter must release")
 		})
 	})
+
+	// Issue #104: two concurrent workers never double-claim (Postgres exclusivity).
+	// MemoryStore already race-tests this; production safety is the SQL claim predicate.
+	When("many goroutines race ClaimJob on the same queued job against Postgres", func() {
+		It("exactly one worker wins and the rest observe ErrNotClaimable", func() {
+			job := pgQueuedJob("dddddddd-dddd-dddd-dddd-dddddddddddd")
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+
+			const n = 20
+			start := time.Date(2026, 7, 23, 15, 0, 0, 0, time.UTC)
+			results := make(chan error, n)
+			var wg sync.WaitGroup
+			for i := 0; i < n; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					_, err := store.ClaimJob(ctx, job.ID, fmt.Sprintf("pg-w-%d", i), start, 60*time.Second)
+					results <- err
+				}(i)
+			}
+			wg.Wait()
+			close(results)
+
+			var wins, losses int
+			for err := range results {
+				if err == nil {
+					wins++
+					continue
+				}
+				Expect(errors.Is(err, coachapi.ErrNotClaimable)).To(BeTrue(), "unexpected claim err: %v", err)
+				losses++
+			}
+			Expect(wins).To(Equal(1), "exactly one Postgres claim must succeed")
+			Expect(losses).To(Equal(n - 1))
+
+			got, err := store.GetJob(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Status).To(Equal(coachapi.JobStatusRunning))
+			Expect(got.Attempt).To(Equal(1))
+			Expect(got.ClaimedBy).NotTo(BeNil())
+		})
+	})
 })
