@@ -167,8 +167,12 @@ func (w *Worker) processQueueClaim(ctx context.Context, qclaim queue.Claim) erro
 
 	now := w.clock.Now()
 	switch job.Status {
-	case coachapi.JobStatusCompleted, coachapi.JobStatusFailed:
+	case coachapi.JobStatusCompleted:
 		return w.queue.Complete(ctx, qclaim)
+	case coachapi.JobStatusFailed:
+		// Terminal failed may still need poison dispatch if a prior
+		// Nack(true) failed after FailJob (ADR-006 permanent-failure).
+		return w.queue.Nack(ctx, qclaim, true)
 	case coachapi.JobStatusRunning:
 		if hasLiveHeartbeat(job, now, w.cfg.StaleAfter) {
 			return w.queue.Complete(ctx, qclaim)
@@ -207,8 +211,10 @@ func (w *Worker) ackIfDuplicateOrTerminal(ctx context.Context, qclaim queue.Clai
 	}
 	now := w.clock.Now()
 	switch job.Status {
-	case coachapi.JobStatusCompleted, coachapi.JobStatusFailed:
+	case coachapi.JobStatusCompleted:
 		return w.queue.Complete(ctx, qclaim)
+	case coachapi.JobStatusFailed:
+		return w.queue.Nack(ctx, qclaim, true)
 	case coachapi.JobStatusRunning:
 		if hasLiveHeartbeat(job, now, w.cfg.StaleAfter) {
 			return w.queue.Complete(ctx, qclaim)

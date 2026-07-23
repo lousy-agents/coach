@@ -40,6 +40,11 @@ type fakeTaskQueue struct {
 	complete   []queue.Claim
 	enqueueN   int
 	enqueueErr error
+	// permanentNackFailLeft makes the next N permanent Nack calls fail after
+	// releasing the claim back to pending (simulating poison publish failure
+	// while leaving the source message redeliverable).
+	permanentNackFailLeft int
+	permanentNackCalls    int
 }
 
 func newFakeTaskQueue() *fakeTaskQueue {
@@ -98,6 +103,13 @@ func (q *fakeTaskQueue) Nack(_ context.Context, claim queue.Claim, permanent boo
 	}
 	delete(q.inFlight, claim.Token)
 	if permanent {
+		q.permanentNackCalls++
+		if q.permanentNackFailLeft > 0 {
+			q.permanentNackFailLeft--
+			// Source message stays redeliverable; poison was not published.
+			q.pending = append(q.pending, entry.task)
+			return errors.New("fakeTaskQueue: poison destination unavailable")
+		}
 		q.poison[claim.TaskID] = true
 		return nil
 	}
@@ -133,6 +145,12 @@ func (q *fakeTaskQueue) isPoisoned(taskID string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.poison[taskID]
+}
+
+func (q *fakeTaskQueue) permanentNackCallCount() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.permanentNackCalls
 }
 
 var _ queue.TaskQueue = (*fakeTaskQueue)(nil)
@@ -415,10 +433,11 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 	})
 
 	// Issue #104 duplicate-delivery disposition:
-	// completed/failed → ack; running with live heartbeat → ack; queued → claim.
+	// completed → Complete; failed → Nack(true) so poison is not skipped;
+	// running with live heartbeat → Complete; queued → claim.
 	When("the queue delivers a job id that is already terminal or live-running", func() {
-		It("acks completed/failed and live-running duplicates, and claims queued jobs", func() {
-			// completed → ack
+		It("acks completed and live-running duplicates, poisons failed duplicates, and claims queued jobs", func() {
+			// completed → Complete
 			doneJob := newQueuedJob("dddddddd-dddd-dddd-dddd-dddddddddddd")
 			doneJob.CreatedAt = start
 			Expect(store.CreateJob(ctx, doneJob)).To(Succeed())
@@ -430,7 +449,7 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 			})).To(Succeed())
 			Expect(tq.Enqueue(ctx, queue.Task{ID: doneJob.ID})).To(Succeed())
 
-			// failed → ack
+			// failed → Nack(true) (ADR-006 poison contract on redelivery)
 			failJob := newQueuedJob("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
 			failJob.CreatedAt = start
 			Expect(store.CreateJob(ctx, failJob)).To(Succeed())
@@ -439,7 +458,7 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 			Expect(store.FailJob(ctx, failJob.ID, "w", leaseF.Attempt, "boom", start)).To(Succeed())
 			Expect(tq.Enqueue(ctx, queue.Task{ID: failJob.ID})).To(Succeed())
 
-			// live running → ack
+			// live running → Complete
 			liveJob := newQueuedJob("ffffffff-ffff-ffff-ffff-ffffffffffff")
 			liveJob.CreatedAt = start
 			Expect(store.CreateJob(ctx, liveJob)).To(Succeed())
@@ -467,12 +486,52 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 				Expect(ok).To(BeTrue())
 			}
 			Expect(handlerCalls.Load()).To(Equal(int32(1)), "only the queued job should run the handler")
-			Expect(tq.completedCount()).To(Equal(4))
+			Expect(tq.completedCount()).To(Equal(3), "completed + live-running + successful queued job")
+			Expect(tq.isPoisoned(failJob.ID)).To(BeTrue(), "failed duplicate must Nack(true) so poison is not skipped")
 			Expect(tq.inFlightCount()).To(Equal(0))
 
 			got, err := store.GetJob(ctx, queuedJob.ID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(got.Status).To(Equal(coachapi.JobStatusCompleted))
+		})
+	})
+
+	// ADR-006 permanent-failure contract: FailJob before poison must not
+	// permanently skip poison if Nack(true) fails and the message redelivers.
+	When("permanent Nack fails after the job is already recorded failed", func() {
+		It("redelivery retries poison dispatch exactly once rather than Completing the source message", func() {
+			job := newQueuedJob("poison01-fail-once-0000-000000000001")
+			job.CreatedAt = start
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+			Expect(tq.Enqueue(ctx, queue.Task{ID: job.ID})).To(Succeed())
+
+			tq.permanentNackFailLeft = 1
+
+			h := func(context.Context, coachapi.Job, worker.JobWriter) (*coachapi.Completion, error) {
+				return nil, errors.New("clone failed: permanent")
+			}
+			wkr, err := worker.New(store, tq, clock, h, worker.Config{WorkerID: "w-poison-retry"})
+			Expect(err).NotTo(HaveOccurred())
+
+			ok, err := wkr.ProcessNext(ctx)
+			Expect(ok).To(BeTrue())
+			Expect(err).To(HaveOccurred(), "first permanent Nack failure must surface")
+			Expect(tq.isPoisoned(job.ID)).To(BeFalse(), "poison must not be recorded when Nack(true) fails")
+			Expect(tq.pendingCount()).To(Equal(1), "failed poison publish must leave the source message redeliverable")
+			Expect(tq.completedCount()).To(Equal(0))
+
+			got, err := store.GetJob(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Status).To(Equal(coachapi.JobStatusFailed), "job stays failed after FailJob; redelivery must not re-run the handler")
+
+			ok, err = wkr.ProcessNext(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(tq.isPoisoned(job.ID)).To(BeTrue(), "redelivery of a failed job must complete poison dispatch")
+			Expect(tq.permanentNackCallCount()).To(Equal(2), "first fail + one successful poison retry")
+			Expect(tq.completedCount()).To(Equal(0), "failed jobs must not Complete past poison")
+			Expect(tq.pendingCount()).To(Equal(0))
+			Expect(tq.inFlightCount()).To(Equal(0))
 		})
 	})
 
