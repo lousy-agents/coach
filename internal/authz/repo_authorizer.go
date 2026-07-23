@@ -80,10 +80,31 @@ func (a *GitHubRepoAuthorizer) Authorize(ctx context.Context, login, owner, repo
 		return fmt.Errorf("authz: checking permission for %s on %s/%s: %w", login, owner, repo, err)
 	}
 
-	if level.GetPermission() == "none" {
-		return fmt.Errorf("authz: %s has no role in %s/%s: %w", login, owner, repo, ErrNotAuthorized)
+	// Fail closed: only GitHub's documented effective permission levels
+	// prove a repository role. Empty, "none", and any unrecognized value
+	// (including future or malformed API responses) are denied so
+	// authorization never fails open (ADR-003).
+	if !isRecognizedRepoPermission(level.GetPermission()) {
+		return fmt.Errorf("authz: %s has no recognized role in %s/%s (permission %q): %w",
+			login, owner, repo, level.GetPermission(), ErrNotAuthorized)
 	}
 	return nil
+}
+
+// recognizedRepoPermissions are GitHub's documented effective permission
+// levels from GET /repos/{owner}/{repo}/collaborators/{username}/permission
+// that indicate the principal has a repository role.
+var recognizedRepoPermissions = map[string]struct{}{
+	"admin":    {},
+	"maintain": {},
+	"write":    {},
+	"triage":   {},
+	"read":     {},
+}
+
+func isRecognizedRepoPermission(permission string) bool {
+	_, ok := recognizedRepoPermissions[permission]
+	return ok
 }
 
 // permissionClient builds a go-github client authenticated with the freshly

@@ -3,7 +3,11 @@ package coachapi_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +24,8 @@ import (
 	"github.com/lousy-agents/coach/internal/authz"
 	"github.com/lousy-agents/coach/internal/coachapi"
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
+	"github.com/lousy-agents/coach/internal/fakegithub"
+	"github.com/lousy-agents/coach/pkg/githubingest"
 )
 
 const (
@@ -220,7 +226,7 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 	})
 
 	When("an authenticated principal submits a valid repo_baseline_scan job and a nil-erroring authorizer allows it", func() {
-		It("returns 202 with an id, GET status shows queued, and the queue records the job id", func() {
+		It("returns 202 with an id, GET status shows queued, and the queue records a versioned payload with the job id", func() {
 			store := newSpyJobStore()
 			az := &stubRepoAuthorizer{}
 			q := &stubTaskQueue{}
@@ -244,9 +250,49 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 
 			tasks := q.enqueuedTasks()
 			Expect(tasks).To(HaveLen(1))
-			Expect(tasks[0].ID).To(Equal(created.ID))
+			Expect(tasks[0].ID).To(Equal(created.ID), "task ID is the job idempotency key")
+			var payload map[string]any
+			Expect(json.Unmarshal(tasks[0].Payload, &payload)).To(Succeed(), "payload=%s", tasks[0].Payload)
+			Expect(payload).To(Equal(map[string]any{
+				"schema_version": float64(1),
+				"job_id":         created.ID,
+			}), "ADR-006 requires versioned queue payloads; exact enqueued JSON shape")
 
 			Expect(az.callCount()).To(Equal(1))
+		})
+	})
+
+	When("an authenticated principal submits repo_owner/repo_name with surrounding whitespace", func() {
+		It("returns 202 and persists params whose owner/repo exactly match the canonical identifiers used for authorization", func() {
+			store := newSpyJobStore()
+			az := &stubRepoAuthorizer{}
+			q := &stubTaskQueue{}
+			srv := newTestServer(store, az, q, serverFixedNow(time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)), sequentialJobIDs("pad"))
+			h := authnSvc.Middleware(srv.Handler())
+
+			tok := mustIssueToken(authnSvc, principalAlice())
+			// Padded identifiers authorize as acme/widgets; the worker must
+			// receive the same canonical pair, not the raw padded JSON.
+			paddedBody := []byte(`{"kind":"repo_baseline_scan","params":{"repo_owner":" acme ","repo_name":" widgets ","ref":"main"}}`)
+			code, body := doServerReq(h, http.MethodPost, "/v1/jobs", tok, paddedBody)
+			Expect(code).To(Equal(http.StatusAccepted), "body=%s", body)
+			var created coachapi.CreateJobResponse
+			Expect(json.Unmarshal(body, &created)).To(Succeed())
+
+			Expect(az.callCount()).To(Equal(1))
+			Expect(az.calls[0].owner).To(Equal("acme"))
+			Expect(az.calls[0].repo).To(Equal("widgets"))
+
+			job, err := store.GetJob(context.Background(), created.ID)
+			Expect(err).NotTo(HaveOccurred())
+			var stored coachapi.RepoBaselineScanParams
+			Expect(json.Unmarshal(job.Params, &stored)).To(Succeed(), "params=%s", job.Params)
+			Expect(stored.RepoOwner).To(Equal("acme"), "persisted owner must match the authorized canonical owner")
+			Expect(stored.RepoName).To(Equal("widgets"), "persisted name must match the authorized canonical name")
+			Expect(stored.Ref).To(Equal("main"), "intended ref semantics must be preserved")
+			// Reject any residual padding in the raw stored JSON.
+			Expect(string(job.Params)).NotTo(ContainSubstring(`" acme "`))
+			Expect(string(job.Params)).NotTo(ContainSubstring(`" widgets "`))
 		})
 	})
 
@@ -348,6 +394,40 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 			Expect(env.Error.Message).To(Or(ContainSubstring("no role"), ContainSubstring("not authorized"), ContainSubstring("denied")),
 				"message must be actionable, not a bare 'forbidden'")
 			Expect(store.createJobCalls()).To(Equal(0))
+		})
+	})
+
+	When("the live GitHubRepoAuthorizer sees an unrecognized effective permission for the principal", func() {
+		It("returns 403 repo_not_authorized and persists nothing (fail closed on unknown permission)", func() {
+			fx := fakegithub.NewFixture("server-unknown-perm")
+			fx.Installation.Installations[1] = fakegithub.InstallationEntry{Token: "server-install-token", Scenario: fakegithub.ScenarioOK}
+			fx.Installation.RepoMappings["acme/widgets"] = fakegithub.RepoInstallationEntry{InstallationID: 1, Scenario: fakegithub.ScenarioOK}
+			fx.Installation.Permissions["acme/widgets/alice"] = fakegithub.PermissionEntry{Level: "superadmin", Scenario: fakegithub.ScenarioOK}
+			ghServer := fakegithub.NewServer(&fx)
+			DeferCleanup(ghServer.Close)
+
+			key, err := rsa.GenerateKey(rand.Reader, 2048)
+			Expect(err).NotTo(HaveOccurred())
+			privateKey := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+			credentials, err := githubingest.NewCredentialResolver(githubingest.CredentialResolverConfig{
+				AppID: 12345, PrivateKey: privateKey, BaseURL: ghServer.URL(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			az, err := authz.NewGitHubRepoAuthorizer(authz.GitHubRepoAuthorizerConfig{
+				Credentials: credentials, BaseURL: ghServer.URL(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			store := newSpyJobStore()
+			q := &stubTaskQueue{}
+			srv := newTestServer(store, az, q, serverFixedNow(time.Now()), sequentialJobIDs("unkperm"))
+			h := authnSvc.Middleware(srv.Handler())
+			tok := mustIssueToken(authnSvc, principalAlice())
+
+			code, body := doServerReq(h, http.MethodPost, "/v1/jobs", tok, validRepoBaselineScanBody())
+			expectEnvelope(code, body, http.StatusForbidden, coachapi.ErrorCodeRepoNotAuthorized)
+			Expect(store.createJobCalls()).To(Equal(0))
+			Expect(q.enqueuedTasks()).To(BeEmpty())
 		})
 	})
 

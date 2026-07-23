@@ -85,12 +85,18 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
+// TaskPayloadSchemaVersion1 is the supported queue.Task.Payload schema
+// version for this package. ADR-006 requires versioned queue payloads; the
+// worker decodes this wire shape independently of the job row.
+const TaskPayloadSchemaVersion1 = 1
+
 // taskPayload is the opaque queue.Task.Payload wire shape this package
-// enqueues: just the job id, versioned via the job row itself (the worker
-// re-reads the job from the store, so no other job data needs to travel
-// through the queue).
+// enqueues. The worker re-reads the job from the store, so only the
+// schema version and job id travel through the queue. Task.ID remains the
+// idempotency key; the queue adapter must not interpret these fields.
 type taskPayload struct {
-	JobID string `json:"job_id"`
+	SchemaVersion int    `json:"schema_version"`
+	JobID         string `json:"job_id"`
 }
 
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
@@ -138,10 +144,19 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Persist the validated/canonical params (trimmed owner/repo), not the
+	// original raw JSON, so the worker fetches the same repository that was
+	// authorized.
+	canonicalParams, err := json.Marshal(params)
+	if err != nil {
+		writeAPIError(w, http.StatusServiceUnavailable, ErrorCodeInternalError, "failed to encode job params")
+		return
+	}
+
 	job := Job{
 		ID:                s.newJobID(),
 		Kind:              req.Kind,
-		Params:            req.Params,
+		Params:            canonicalParams,
 		Status:            JobStatusQueued,
 		CreatedAt:         s.now(),
 		Attempt:           0,
@@ -155,7 +170,7 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, err := json.Marshal(taskPayload{JobID: job.ID})
+	payload, err := json.Marshal(taskPayload{SchemaVersion: TaskPayloadSchemaVersion1, JobID: job.ID})
 	if err != nil {
 		writeAPIError(w, http.StatusServiceUnavailable, ErrorCodeInternalError, "failed to build task payload")
 		return

@@ -46,6 +46,8 @@ func newAuthzFixture() *fakegithub.Fixture {
 	fx.Installation.Permissions["acme/widgets/collab-user"] = fakegithub.PermissionEntry{Level: "write", Scenario: fakegithub.ScenarioOK}
 	fx.Installation.Permissions["acme/widgets/team-user"] = fakegithub.PermissionEntry{Level: "read", Scenario: fakegithub.ScenarioOK}
 	fx.Installation.Permissions["acme/widgets/outsider"] = fakegithub.PermissionEntry{Level: "none", Scenario: fakegithub.ScenarioOK}
+	fx.Installation.Permissions["acme/widgets/empty-perm-user"] = fakegithub.PermissionEntry{Level: "", Scenario: fakegithub.ScenarioOK}
+	fx.Installation.Permissions["acme/widgets/unknown-perm-user"] = fakegithub.PermissionEntry{Level: "superadmin", Scenario: fakegithub.ScenarioOK}
 	fx.Installation.Permissions["acme/widgets/transient-user"] = fakegithub.PermissionEntry{Scenario: fakegithub.ScenarioTransient}
 
 	return &fx
@@ -111,6 +113,20 @@ var _ = Describe("GitHubRepoAuthorizer (ADR-003 submit-time repository authoriza
 	When("the principal has no role in the repository", func() {
 		It("denies with an error matching ErrNotAuthorized", func() {
 			err := authorizer.Authorize(ctx, "outsider", "acme", "widgets")
+			Expect(errors.Is(err, authz.ErrNotAuthorized)).To(BeTrue(), "got err %v, want errors.Is(err, ErrNotAuthorized)", err)
+		})
+	})
+
+	When("GitHub returns an empty effective permission level", func() {
+		It("denies with an error matching ErrNotAuthorized (fail closed; empty is not a recognized role)", func() {
+			err := authorizer.Authorize(ctx, "empty-perm-user", "acme", "widgets")
+			Expect(errors.Is(err, authz.ErrNotAuthorized)).To(BeTrue(), "got err %v, want errors.Is(err, ErrNotAuthorized)", err)
+		})
+	})
+
+	When("GitHub returns an unrecognized effective permission level", func() {
+		It("denies with an error matching ErrNotAuthorized (fail closed; only known GitHub roles authorize)", func() {
+			err := authorizer.Authorize(ctx, "unknown-perm-user", "acme", "widgets")
 			Expect(errors.Is(err, authz.ErrNotAuthorized)).To(BeTrue(), "got err %v, want errors.Is(err, ErrNotAuthorized)", err)
 		})
 	})
