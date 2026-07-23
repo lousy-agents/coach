@@ -330,6 +330,48 @@ func TestIssueValidate_ClaimsAndPrincipal(t *testing.T) {
 	}
 }
 
+// Expiry is exclusive at exp: Validate must fail when Now equals ExpiresAt
+// (not only when Now is strictly after exp).
+func TestValidate_RejectsTokenAtExactExpiryBoundary(t *testing.T) {
+	base := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	now := base
+	const ttl = time.Hour
+	svc := newTestService(t, authn.Options{
+		TokenTTL: ttl,
+		Now:      func() time.Time { return now },
+	})
+	tok, err := svc.Issue(context.Background(), coachapi.Principal{
+		Provider: "github", Subject: "9", Login: "boundary",
+	})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	// Still valid just before exp.
+	now = base.Add(ttl - time.Nanosecond)
+	if _, err := svc.Validate(context.Background(), tok); err != nil {
+		t.Fatalf("Validate at exp-1ns: %v", err)
+	}
+	code, body := doReq(t, svc.Handler(), http.MethodGet, "/v1/me", tok, nil)
+	if code != http.StatusOK {
+		t.Fatalf("/v1/me at exp-1ns: got %d want 200 body=%s", code, body)
+	}
+
+	// At the exact expiry instant the token must be rejected.
+	now = base.Add(ttl)
+	if _, err := svc.Validate(context.Background(), tok); err == nil {
+		t.Fatal("Validate at exp==now must fail")
+	}
+	code, body = doReq(t, svc.Handler(), http.MethodGet, "/v1/me", tok, nil)
+	if code != http.StatusUnauthorized {
+		t.Fatalf("/v1/me at exp==now: got %d want 401 body=%s", code, body)
+	}
+	env := decodeEnvelope(t, body)
+	if env.Error.Code != coachapi.ErrorCodeUnauthenticated {
+		t.Errorf("error.code: got %q want %q", env.Error.Code, coachapi.ErrorCodeUnauthenticated)
+	}
+}
+
 // Task 2a / Task A: Revoke denylists jti so subsequent Validate and /v1/me fail.
 func TestRevoke_DenylistsJTI(t *testing.T) {
 	svc := newTestService(t, authn.Options{})

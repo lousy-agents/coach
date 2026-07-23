@@ -491,6 +491,143 @@ func TestGitHubOAuth_UserFetch_UsesAPIBaseURL(t *testing.T) {
 	}
 }
 
+// Incomplete GitHub /user payloads (zero id or empty login alone) must 400 and
+// not mint a Coach token — both sides of the incomplete check are required.
+func TestGitHubOAuth_Callback_RejectsIncompleteUser(t *testing.T) {
+	cases := []struct {
+		name string
+		user map[string]any
+	}{
+		{name: "zero_id_with_login", user: map[string]any{"id": 0, "login": "ghost"}},
+		{name: "empty_login_with_id", user: map[string]any{"id": int64(7), "login": ""}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			const ghAccessToken = "gho_incomplete_user"
+			gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/login/oauth/access_token":
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]string{
+						"access_token": ghAccessToken,
+						"token_type":   "bearer",
+						"scope":        "",
+					})
+				case r.Method == http.MethodGet && r.URL.Path == "/user":
+					if r.Header.Get("Authorization") != "Bearer "+ghAccessToken {
+						http.Error(w, "unauthorized", http.StatusUnauthorized)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(tc.user)
+				default:
+					http.Error(w, "not found: "+r.URL.Path, http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(gh.Close)
+
+			svc := newOAuthService(t, gh.URL, nil, 0)
+			client := noRedirectClient()
+			coach := httptest.NewServer(svc.Handler())
+			t.Cleanup(coach.Close)
+
+			startResp, err := client.Get(coach.URL + "/oauth/github/start")
+			if err != nil {
+				t.Fatalf("start: %v", err)
+			}
+			startResp.Body.Close()
+			if startResp.StatusCode != http.StatusFound {
+				t.Fatalf("start status: got %d want 302", startResp.StatusCode)
+			}
+			authURL, err := url.Parse(startResp.Header.Get("Location"))
+			if err != nil {
+				t.Fatalf("parse Location: %v", err)
+			}
+			state := authURL.Query().Get("state")
+			if state == "" {
+				t.Fatal("empty state")
+			}
+
+			status, body := doReq(t, svc.Handler(), http.MethodGet, "/oauth/github/callback?"+url.Values{
+				"code":  {"incomplete-user-code"},
+				"state": {state},
+			}.Encode(), "", nil)
+			if status != http.StatusBadRequest {
+				t.Fatalf("status: got %d want 400; body=%s", status, body)
+			}
+			env := decodeEnvelope(t, body)
+			if env.Error.Code != coachapi.ErrorCodeInvalidRequest {
+				t.Errorf("error.code: got %q want %q", env.Error.Code, coachapi.ErrorCodeInvalidRequest)
+			}
+			if strings.Contains(string(body), "access_token") {
+				t.Errorf("incomplete user must not issue a token; body=%s", body)
+			}
+		})
+	}
+}
+
+// OAuth CSRF state is single-use: a second callback with the same state must fail
+// even when a fresh authorization code is presented.
+func TestGitHubOAuth_Callback_RejectsReusedState(t *testing.T) {
+	fx, gh := newOAuthFake(t)
+	fx.OAuth.Codes["code-second"] = fakegithub.OAuthCodeEntry{
+		IdentityLogin: "octocat",
+		Scenario:      fakegithub.ScenarioOK,
+	}
+	svc := newOAuthService(t, gh.URL(), nil, 0)
+	client := noRedirectClient()
+	coach := httptest.NewServer(svc.Handler())
+	t.Cleanup(coach.Close)
+
+	startResp, err := client.Get(coach.URL + "/oauth/github/start")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	startResp.Body.Close()
+	if startResp.StatusCode != http.StatusFound {
+		t.Fatalf("start status: got %d want 302", startResp.StatusCode)
+	}
+	authURL, err := url.Parse(startResp.Header.Get("Location"))
+	if err != nil {
+		t.Fatalf("parse Location: %v", err)
+	}
+	state := authURL.Query().Get("state")
+	if state == "" {
+		t.Fatal("empty state")
+	}
+
+	// First callback succeeds and consumes state.
+	status, body := doReq(t, svc.Handler(), http.MethodGet, "/oauth/github/callback?"+url.Values{
+		"code":  {oauthScenarioCode},
+		"state": {state},
+	}.Encode(), "", nil)
+	if status != http.StatusOK {
+		t.Fatalf("first callback: got %d want 200; body=%s", status, body)
+	}
+	var first struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(body, &first); err != nil || first.AccessToken == "" {
+		t.Fatalf("first callback token: err=%v body=%s", err, body)
+	}
+
+	// Same state + unused code must not mint another token.
+	status, body = doReq(t, svc.Handler(), http.MethodGet, "/oauth/github/callback?"+url.Values{
+		"code":  {"code-second"},
+		"state": {state},
+	}.Encode(), "", nil)
+	if status != http.StatusBadRequest {
+		t.Fatalf("reused state: got %d want 400; body=%s", status, body)
+	}
+	env := decodeEnvelope(t, body)
+	if env.Error.Code != coachapi.ErrorCodeInvalidRequest {
+		t.Errorf("error.code: got %q want %q", env.Error.Code, coachapi.ErrorCodeInvalidRequest)
+	}
+	if strings.Contains(string(body), "access_token") {
+		t.Errorf("reused state must not issue a token; body=%s", body)
+	}
+}
+
 // Task 2a / Task B: GitHub error=access_denied on callback → 400, no Coach token.
 func TestGitHubOAuth_Callback_AccessDenied_NoToken(t *testing.T) {
 	_, gh := newOAuthFake(t)
