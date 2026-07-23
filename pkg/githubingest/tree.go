@@ -97,7 +97,7 @@ func (r *GitHubFileReader) walkTree(ctx context.Context, ref GitHubTreeRef, dir 
 
 func dirLabel(ref GitHubTreeRef, dir string) string {
 	if dir == "" {
-		return fmt.Sprintf("%s/%s's root", ref.Owner, ref.Repo)
+		return fmt.Sprintf("%s/%s root", ref.Owner, ref.Repo)
 	}
 	return dir
 }
