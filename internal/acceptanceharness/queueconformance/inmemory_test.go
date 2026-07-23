@@ -31,6 +31,7 @@ type inMemoryTaskState struct {
 	token         string
 	claimDeadline time.Time
 	completed     bool
+	poisoned      bool
 }
 
 var (
@@ -60,7 +61,7 @@ func (q *inMemoryQueue) Claim(ctx context.Context) (Claim, bool, error) {
 
 	now := q.clock.Now()
 	for _, state := range q.tasks {
-		if state.completed {
+		if state.completed || state.poisoned {
 			continue
 		}
 		if state.claimed && now.Before(state.claimDeadline) {
@@ -92,4 +93,44 @@ func (q *inMemoryQueue) Complete(ctx context.Context, claim Claim) error {
 
 	state.completed = true
 	return nil
+}
+
+func (q *inMemoryQueue) Nack(ctx context.Context, claim Claim, permanent bool) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	state, found := q.tasks[claim.TaskID]
+	if !found {
+		return errUnknownTask
+	}
+	if state.token != claim.Token {
+		return errStaleClaim
+	}
+
+	if permanent {
+		state.poisoned = true
+		state.claimed = false
+		return nil
+	}
+
+	// A retryable Nack makes the task claimable again immediately,
+	// exactly like a reclaim, rather than waiting for claimDeadline to
+	// elapse -- so the token is invalidated (via the next Claim's
+	// attempt/token bump) by clearing claimed and letting Claim's normal
+	// path pick it up.
+	state.claimed = false
+	return nil
+}
+
+func (q *inMemoryQueue) PoisonTasks(ctx context.Context) ([]Task, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	var poisoned []Task
+	for _, state := range q.tasks {
+		if state.poisoned {
+			poisoned = append(poisoned, state.task)
+		}
+	}
+	return poisoned, nil
 }
