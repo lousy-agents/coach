@@ -63,8 +63,9 @@ func pgMigrationFiles() []string {
 // repo's real-backend integration test convention (see
 // internal/coachapi/queue/redisstream/redisstream_conformance_test.go):
 // skip cleanly rather than fail or hang when the real backend isn't
-// available.
-func setupPostgresStore(ctx context.Context, dsn string) *coachapi.PostgresStore {
+// available. The returned pool is for direct SQL assertions (e.g. row
+// counts after reclaim) that GetReport cannot exercise without false-green.
+func setupPostgresStore(ctx context.Context, dsn string) (*coachapi.PostgresStore, *pgxpool.Pool) {
 	pool, err := pgxpool.New(ctx, dsn)
 	Expect(err).NotTo(HaveOccurred(), "pgxpool.New")
 	DeferCleanup(pool.Close)
@@ -83,7 +84,7 @@ func setupPostgresStore(ctx context.Context, dsn string) *coachapi.PostgresStore
 		Expect(err).NotTo(HaveOccurred(), "applying migration %s", path)
 	}
 
-	return coachapi.NewPostgresStore(pool)
+	return coachapi.NewPostgresStore(pool), pool
 }
 
 // coachapi.PostgresStore (Task 2, GitHub issue #103) is exercised against a
@@ -96,6 +97,7 @@ var _ = Describe("coachapi.PostgresStore", func() {
 	var (
 		ctx   context.Context
 		store *coachapi.PostgresStore
+		pool  *pgxpool.Pool
 	)
 
 	BeforeEach(func() {
@@ -104,7 +106,7 @@ var _ = Describe("coachapi.PostgresStore", func() {
 			Skip("COACH_PG_DSN not set; skipping Postgres integration test")
 		}
 		ctx = context.Background()
-		store = setupPostgresStore(ctx, dsn)
+		store, pool = setupPostgresStore(ctx, dsn)
 	})
 
 	When("a job is created", func() {
@@ -358,8 +360,11 @@ var _ = Describe("coachapi.PostgresStore", func() {
 	})
 
 	// Task 3 / #104: claim, fence, and reclaim against real Postgres.
+	// Issue #104: reclaim increments attempt and deletes prior findings and
+	// diagnostics. Row counts are asserted via SQL so GetReport's final-attempt
+	// filter cannot false-green a missing DELETE.
 	When("ClaimJob reclaims a stale running job", func() {
-		It("increments attempt, deletes prior findings, and fences the previous worker out", func() {
+		It("increments attempt, deletes prior findings and diagnostics, and fences the previous worker out", func() {
 			job := pgQueuedJob("88888888-8888-8888-8888-888888888888")
 			Expect(store.CreateJob(ctx, job)).To(Succeed())
 
@@ -377,11 +382,25 @@ var _ = Describe("coachapi.PostgresStore", func() {
 				PayloadHash: "hash-old",
 				CreatedAt:   start,
 			}})).To(Succeed())
+			Expect(store.InsertDiagnostics(ctx, job.ID, "worker-a", 1, []coachapi.JobDiagnostic{{
+				ID:        "88888888-0000-0000-0000-0000000000d1",
+				JobID:     job.ID,
+				Attempt:   1,
+				Scope:     "file:a.go",
+				Message:   "partial crash",
+				CreatedAt: start,
+			}})).To(Succeed())
 
 			reclaimAt := start.Add(61 * time.Second)
 			lease2, err := store.ClaimJob(ctx, job.ID, "worker-b", reclaimAt, 60*time.Second)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(lease2.Attempt).To(Equal(2))
+
+			var findingCount, diagCount int
+			Expect(pool.QueryRow(ctx, `SELECT COUNT(*) FROM job_findings WHERE job_id = $1`, job.ID).Scan(&findingCount)).To(Succeed())
+			Expect(pool.QueryRow(ctx, `SELECT COUNT(*) FROM job_diagnostics WHERE job_id = $1`, job.ID).Scan(&diagCount)).To(Succeed())
+			Expect(findingCount).To(Equal(0), "ClaimJob must DELETE prior findings rows")
+			Expect(diagCount).To(Equal(0), "ClaimJob must DELETE prior diagnostics rows")
 
 			err = store.Heartbeat(ctx, job.ID, "worker-a", 1, reclaimAt)
 			Expect(errors.Is(err, coachapi.ErrClaimLost)).To(BeTrue())
@@ -407,6 +426,7 @@ var _ = Describe("coachapi.PostgresStore", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.Findings).To(HaveLen(1))
 			Expect(report.Findings[0].Payload).To(MatchJSON(`{"rule_id":"new"}`))
+			Expect(report.Diagnostics).To(BeEmpty())
 		})
 	})
 

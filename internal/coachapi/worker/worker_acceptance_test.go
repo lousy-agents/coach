@@ -332,8 +332,11 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 		})
 	})
 
+	// Issue #104 fenced writes: every heartbeat, findings/diagnostics insert,
+	// and terminal transition is conditional on (claimed_by, attempt); fence
+	// failure abandons without queue ack.
 	When("a worker's fenced write no longer matches (claimed_by, attempt)", func() {
-		It("returns ErrClaimLost and the worker abandons without acking the queue message", func() {
+		It("returns ErrClaimLost for heartbeat, findings, diagnostics, and terminal writes, and abandons without acking", func() {
 			job := newQueuedJob("cccccccc-cccc-cccc-cccc-cccccccccccc")
 			job.CreatedAt = start
 			Expect(store.CreateJob(ctx, job)).To(Succeed())
@@ -376,7 +379,7 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(leaseB.Attempt).To(Equal(2))
 
-			// A's late heartbeat / findings / terminal must fail the fence.
+			// A's late heartbeat / findings / diagnostics / terminal must fail the fence.
 			err = store.Heartbeat(ctx, job.ID, "worker-a", 1, clock.Now())
 			Expect(errors.Is(err, coachapi.ErrClaimLost)).To(BeTrue())
 
@@ -384,6 +387,12 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 				ID: "late", JobID: job.ID, Attempt: 1,
 				Source:  coachapi.FindingSourceDeterministic,
 				Payload: json.RawMessage(`{}`), PayloadHash: "x",
+			}})
+			Expect(errors.Is(err, coachapi.ErrClaimLost)).To(BeTrue())
+
+			err = store.InsertDiagnostics(ctx, job.ID, "worker-a", 1, []coachapi.JobDiagnostic{{
+				ID: "late-diag", JobID: job.ID, Attempt: 1,
+				Scope: "file:a.go", Message: "zombie",
 			}})
 			Expect(errors.Is(err, coachapi.ErrClaimLost)).To(BeTrue())
 
@@ -405,6 +414,8 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 		})
 	})
 
+	// Issue #104 duplicate-delivery disposition:
+	// completed/failed → ack; running with live heartbeat → ack; queued → claim.
 	When("the queue delivers a job id that is already terminal or live-running", func() {
 		It("acks completed/failed and live-running duplicates, and claims queued jobs", func() {
 			// completed → ack
@@ -462,6 +473,78 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 			got, err := store.GetJob(ctx, queuedJob.ID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(got.Status).To(Equal(coachapi.JobStatusCompleted))
+		})
+	})
+
+	// Issue #104: stale running is eligible for queue redelivery / re-dispatch;
+	// ProcessNext must reclaim (not ack as live-running).
+	When("the queue redelivers a job whose running heartbeat is stale", func() {
+		It("reclaims via ClaimJob (attempt+1), runs the handler, and completes", func() {
+			job := newQueuedJob("stale000-2345-6789-abcd-ef0123456789")
+			job.CreatedAt = start
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+
+			// Prior owner claimed then went silent (no heartbeats).
+			_, err := store.ClaimJob(ctx, job.ID, "worker-dead", start, 60*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.InsertFindings(ctx, job.ID, "worker-dead", 1, []coachapi.JobFinding{{
+				ID: "stale-partial", JobID: job.ID, Attempt: 1,
+				Source:  coachapi.FindingSourceDeterministic,
+				Payload: json.RawMessage(`{"rule_id":"old"}`), PayloadHash: "old",
+			}})).To(Succeed())
+
+			// Queue redelivery after visibility/pending reclaim.
+			Expect(tq.Enqueue(ctx, queue.Task{ID: job.ID})).To(Succeed())
+
+			// Advance clock past stale threshold before ProcessNext observes the job.
+			clock.Advance(61 * time.Second)
+
+			wkr, err := worker.New(store, tq, clock, successHandler, worker.Config{
+				WorkerID:   "worker-alive",
+				StaleAfter: 60 * time.Second,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			ok, err := wkr.ProcessNext(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(tq.completedCount()).To(Equal(1))
+
+			got, err := store.GetJob(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Status).To(Equal(coachapi.JobStatusCompleted))
+			Expect(got.Attempt).To(Equal(2))
+			Expect(got.ClaimedBy).NotTo(BeNil())
+			Expect(*got.ClaimedBy).To(Equal("worker-alive"))
+
+			report, err := store.GetReport(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Findings).To(HaveLen(1))
+			Expect(string(report.Findings[0].Payload)).To(ContainSubstring(`"rule_id":"state.hidden_input_mutation"`))
+		})
+	})
+
+	// Orphan/poison hygiene: unknown job ids must not loop forever on the queue.
+	When("the queue delivers a job id that does not exist in the store", func() {
+		It("acks the message so an orphan does not redeliver forever", func() {
+			orphanID := "00000000-0000-0000-0000-000000000001"
+			Expect(tq.Enqueue(ctx, queue.Task{ID: orphanID})).To(Succeed())
+
+			var handlerCalls atomic.Int32
+			h := func(context.Context, coachapi.Job, worker.JobWriter) (*coachapi.Completion, error) {
+				handlerCalls.Add(1)
+				return nil, errors.New("must not run")
+			}
+			wkr, err := worker.New(store, tq, clock, h, worker.Config{WorkerID: "orphan-w"})
+			Expect(err).NotTo(HaveOccurred())
+
+			ok, err := wkr.ProcessNext(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(handlerCalls.Load()).To(Equal(int32(0)))
+			Expect(tq.completedCount()).To(Equal(1))
+			Expect(tq.inFlightCount()).To(Equal(0))
+			Expect(tq.pendingCount()).To(Equal(0))
 		})
 	})
 
@@ -655,13 +738,16 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 		})
 	})
 
-	When("a handler crashes after partial findings persist and the job is reclaimed", func() {
-		It("the completed report has no duplicate findings from the failed attempt", func() {
+	// Issue #104: crash-after-partial-findings-persist then reclaim yields a
+	// completed report with no duplicate findings (single final attempt only).
+	// Also covers diagnostics cleanup on reclaim.
+	When("a handler crashes after partial findings and diagnostics persist and the job is reclaimed", func() {
+		It("the completed report has no duplicate findings or diagnostics from the failed attempt", func() {
 			job := newQueuedJob("abcdef01-2345-6789-abcd-ef0123456789")
 			job.CreatedAt = start
 			Expect(store.CreateJob(ctx, job)).To(Succeed())
 
-			// Attempt 1: partial findings, then "crash" (no CompleteJob).
+			// Attempt 1: partial findings + diagnostics, then "crash" (no CompleteJob).
 			lease1, err := store.ClaimJob(ctx, job.ID, "worker-a", start, 60*time.Second)
 			Expect(err).NotTo(HaveOccurred())
 			partial := []coachapi.JobFinding{
@@ -677,8 +763,15 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 				},
 			}
 			Expect(store.InsertFindings(ctx, job.ID, "worker-a", lease1.Attempt, partial)).To(Succeed())
+			Expect(store.InsertDiagnostics(ctx, job.ID, "worker-a", lease1.Attempt, []coachapi.JobDiagnostic{{
+				ID: "pd1", JobID: job.ID, Attempt: lease1.Attempt,
+				Scope: "file:a.go", Message: "partial attempt diagnostic",
+			}})).To(Succeed())
 
-			// Reclaim after stale.
+			// Reclaim after stale. Direct row-delete is asserted in
+			// coachapi MemoryStore/PostgresStore acceptance (export_test /
+			// SQL counts); this worker-boundary spec locks the customer-
+			// visible report contract.
 			reclaimAt := start.Add(90 * time.Second)
 			lease2, err := store.ClaimJob(ctx, job.ID, "worker-b", reclaimAt, 60*time.Second)
 			Expect(err).NotTo(HaveOccurred())
@@ -700,6 +793,7 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(report.Findings).To(HaveLen(1), "only the final attempt's findings must appear")
 			Expect(string(report.Findings[0].Payload)).To(ContainSubstring(`"path":"a.go"`))
+			Expect(report.Diagnostics).To(BeEmpty(), "failed-attempt diagnostics must not appear in the completed report")
 		})
 	})
 

@@ -269,6 +269,51 @@ var _ = Describe("coachapi.MemoryStore", func() {
 		})
 	})
 
+	// Issue #104: on reclaim after stale heartbeat the claim transaction shall
+	// increment attempt and delete prior job_findings/job_diagnostics.
+	When("ClaimJob reclaims a stale running job that had partial findings and diagnostics", func() {
+		It("increments attempt and deletes prior findings and diagnostics (not merely filter them from GetReport)", func() {
+			job := newQueuedJob("dddddddd-dddd-dddd-dddd-dddddddddddd")
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+
+			start := time.Date(2026, 7, 23, 12, 30, 0, 0, time.UTC)
+			lease1, err := store.ClaimJob(ctx, job.ID, "worker-a", start, 60*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lease1.Attempt).To(Equal(1))
+
+			Expect(store.InsertFindings(ctx, job.ID, "worker-a", 1, []coachapi.JobFinding{{
+				ID:          "finding-partial",
+				JobID:       job.ID,
+				Attempt:     1,
+				Source:      coachapi.FindingSourceDeterministic,
+				Payload:     json.RawMessage(`{"rule_id":"old"}`),
+				PayloadHash: "hash-old",
+				CreatedAt:   start,
+			}})).To(Succeed())
+			Expect(store.InsertDiagnostics(ctx, job.ID, "worker-a", 1, []coachapi.JobDiagnostic{{
+				ID:        "diag-partial",
+				JobID:     job.ID,
+				Attempt:   1,
+				Scope:     "file:a.go",
+				Message:   "partial crash",
+				CreatedAt: start,
+			}})).To(Succeed())
+
+			findingsBefore, diagsBefore := store.StoredAttemptRowCountsForTest(job.ID)
+			Expect(findingsBefore).To(Equal(1))
+			Expect(diagsBefore).To(Equal(1))
+
+			reclaimAt := start.Add(61 * time.Second)
+			lease2, err := store.ClaimJob(ctx, job.ID, "worker-b", reclaimAt, 60*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lease2.Attempt).To(Equal(2))
+
+			findingsAfter, diagsAfter := store.StoredAttemptRowCountsForTest(job.ID)
+			Expect(findingsAfter).To(Equal(0), "ClaimJob must delete prior findings, not leave them for GetReport to filter")
+			Expect(diagsAfter).To(Equal(0), "ClaimJob must delete prior diagnostics, not leave them for GetReport to filter")
+		})
+	})
+
 	// Reviewer finding #2: MemoryStore must stamp lease jobID/attempt.
 	When("InsertFindings is given findings stamped with a wrong Attempt", func() {
 		It("persists the fenced lease attempt so GetReport includes them", func() {
