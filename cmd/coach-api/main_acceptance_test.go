@@ -149,6 +149,14 @@ var _ = Describe("cmd/coach-api composed handler", func() {
 			code, _ := doRequest(handler, http.MethodGet, "/oauth/github/start", "", nil)
 			Expect(code).To(Equal(http.StatusNotFound))
 		})
+
+		It("returns the stable not_found envelope for a path matching no registered route", func() {
+			code, body := doRequest(handler, http.MethodGet, "/totally/unknown/path", "", nil)
+			Expect(code).To(Equal(http.StatusNotFound))
+			var env coachapi.ErrorEnvelope
+			Expect(json.Unmarshal(body, &env)).To(Succeed(), "body=%s", body)
+			Expect(env.Error.Code).To(Equal(coachapi.ErrorCodeNotFound))
+		})
 	})
 
 	When("the handler is composed with GitHub OAuth configured", func() {

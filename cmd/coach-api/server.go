@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -67,6 +68,7 @@ func buildDependencies(ctx context.Context, cfg InfraConfig) (Dependencies, erro
 	if cfg.PostgresDSN != "" {
 		pool, err := pgxpool.New(ctx, cfg.PostgresDSN)
 		if err != nil {
+			_ = taskQueue.Close() //nolint:errcheck // best-effort cleanup; we already have the error to report
 			return Dependencies{}, fmt.Errorf("coach-api: constructing Postgres pool: %w", err)
 		}
 		store = coachapi.NewPostgresStore(pool)
@@ -94,8 +96,10 @@ func wrapAuthorizerForBypass(authorizer authz.RepoAuthorizer, cfg InfraConfig) a
 // /v1/auth/test-mint; authnSvc.Middleware wraps coachapi.Server.Handler()
 // for /v1/jobs and its subpaths, since coachapi.Server does not self-guard
 // (see internal/coachapi/server.go's Handler doc comment). A request whose
-// path matches neither prefix falls through to http.ServeMux's own default
-// 404 -- acceptable here since no sub-handler claims responsibility for it.
+// path matches none of those registers on the "/" catch-all below, which
+// returns the same stable not_found envelope every other unmatched route in
+// this API returns (epic #97 Story 1: "All unmatched routes ... return the
+// envelope with code not_found").
 func buildHandler(cfg Config, deps Dependencies) (http.Handler, error) {
 	if deps.Store == nil {
 		return nil, errors.New("coach-api: Dependencies.Store is required")
@@ -136,5 +140,18 @@ func buildHandler(cfg Config, deps Dependencies) (http.Handler, error) {
 	mux.Handle("/v1/jobs", jobsHandler)
 	mux.Handle("/v1/jobs/", jobsHandler)
 
+	mux.HandleFunc("/", writeNotFoundEnvelope)
+
 	return mux, nil
+}
+
+// writeNotFoundEnvelope answers any path not claimed by a more specific
+// pattern on the composed mux with the same stable not_found envelope every
+// other unmatched route in this API returns.
+func writeNotFoundEnvelope(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	_ = json.NewEncoder(w).Encode(coachapi.ErrorEnvelope{
+		Error: coachapi.APIError{Code: coachapi.ErrorCodeNotFound, Message: "not found"},
+	})
 }
