@@ -36,6 +36,12 @@ to subagents.
      task's acceptance criteria, the in-scope file paths, and the conventions +
      lint/test commands from CLAUDE.md and package.json. If a `task-implementer-quick`
      variant exists, prefer it for mechanical, single-file edits.
+
+     **Do not weaken AGENTS.md in implementer prompts.** Pass conventions from
+     AGENTS.md as written. Never offer "stdlib table tests are fine" (or similar)
+     as an alternative to Ginkgo acceptance tests for features/bug fixes. Do not
+     invent weaker acceptance-test, HTTP-timeout, fail-closed, or comment rules
+     than AGENTS.md states.
    - When it returns, delegate the task's diff to the `task-reviewer` subagent. Pass
      it the same acceptance criteria, scope, and conventions, plus any recurring bug
      patterns to watch for, plus the implementer's `## Implementer Report` block

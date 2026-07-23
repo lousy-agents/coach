@@ -23,10 +23,15 @@ run = "go test -race ./..."
 description = "Run Go example tests"
 run = "go test -run Example ./..."
 
+[tasks.acceptance-style-check]
+description = "Fail if any *_acceptance_test.go lacks a ginkgo/v2 import (except the explicit allowlist)"
+run = "go run ./cmd/acceptance-style-guard"
+
 [tasks.test-acceptance-fast]
 description = "Run the fast, in-process Ginkgo/Gomega acceptance suites (public Go/CLI-boundary tests, offline, no real credentials) -- Feature Zero's runnable acceptance layer (see docs/architecture/acceptance-harness.md)"
 run = [
   "go run ./cmd/acceptance-guard-preflight",
+  { task = "acceptance-style-check" },
   "go test -race ./... -run Acceptance",
 ]
 
@@ -91,6 +96,7 @@ run = [
   { task = "gofmt" },
   { task = "go-vet" },
   { task = "tidy-check" },
+  { task = "acceptance-style-check" },
   { task = "test" },
   { task = "test-examples" },
   { task = "js-ci" },

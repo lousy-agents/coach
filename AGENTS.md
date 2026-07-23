@@ -47,6 +47,7 @@ mise run tidy-check        # go mod tidy && diff go.mod/go.sum
 mise run test              # go test -race ./...
 mise run test-examples     # go test -run Example ./...
 mise run test-acceptance-fast # runs the fast, in-process Ginkgo/Gomega acceptance suites (offline, no real credentials)
+mise run acceptance-style-check # fails if any *_acceptance_test.go lacks ginkgo/v2 (except allowlist)
 mise run test-queue-conformance # runs the queue conformance harness self-test; real Redis Streams/LocalStack SQS legs land with Baseline Task 3a
 mise run thinproof-build    # vendors deps + builds the thin offline Compose proof's Docker images (run once, online)
 mise run test-acceptance-thin-proof # runs the offline thin Compose proof: fake GitHub -> pkg/githubingest -> CodeSignal, no image pull, no egress
@@ -100,6 +101,7 @@ These are the exact checks CI runs in `.github/workflows/ci.yml`, so a clean loc
 gofmt -l .                      # must print nothing
 go vet ./...
 go mod tidy && git diff --exit-code go.mod go.sum
+go run ./cmd/acceptance-style-guard   # or: mise run acceptance-style-check
 go test -race ./...
 go test -run Example ./...
 mise run js-ci
@@ -117,7 +119,27 @@ Every new feature and every bug fix **must begin with a failing acceptance test*
 - The test must exercise the relevant public behavior at the most meaningful available boundary; a unit test alone is not an acceptance test unless that unit is itself the public contract.
 - Do not treat an unrun test, a test written after implementation, or a test that already passes as satisfying this policy. If the required test cannot be made to fail before implementation, stop and resolve the discrepancy with the requester rather than proceeding.
 
-For delegated work, the `task-implementer`/`task-reviewer` subagent pair (`.claude/agents/`) operationalizes this policy step-by-step: the implementer must write and fail the test before implementing, and the reviewer gates on seeing that red-then-green evidence.
+**Go acceptance form (mandatory):**
+
+- Use Ginkgo v2 + Gomega (`github.com/onsi/ginkgo/v2`, `github.com/onsi/gomega`).
+- Spec style: `Describe` / `When` / `It` (and `DescribeTable` when useful) that read as EARS/acceptance-criteria statements.
+- Layout: `*_acceptance_test.go` plus `acceptance_suite_test.go` with a `TestXxxAcceptance` entrypoint so `mise run test-acceptance-fast` (`go test … -run Acceptance`) picks them up.
+- Reference examples: `cmd/coach/baseline_acceptance_test.go`, `pkg/githubingest/acceptance_test.go`.
+- Plain unit tests (`*_test.go` without the acceptance suite role) may use stdlib `testing` + table tests; that is **not** a substitute for acceptance coverage of new features/bug fixes.
+- Exception: thin stdlib `Test*Acceptance` **wrappers** that only call a shared harness (e.g. `internal/acceptanceharness/queueconformance/acceptance_test.go`) are allowed when they are not the behavioral specs themselves.
+- Mechanical guard (when present): `mise run acceptance-style-check`.
+
+**False-green rule:** a test only counts if it exercises the intended branch/failure mode. Shared clocks/fakes that make a different path produce the same status/outcome are invalid (e.g. advancing time so a "denylisted" case actually fails on expiry).
+
+For delegated work, the `task-implementer`/`task-reviewer` subagent pair (`.claude/agents/`) operationalizes this policy step-by-step: the implementer must write and fail a Ginkgo acceptance test before implementing, and the reviewer gates on red-then-green evidence plus the form/false-green rules above. Subagent prompts must not relax AGENTS.md — do not tell implementers that stdlib table tests substitute for Ginkgo acceptance tests; copy conventions from here, don't invent weaker ones.
+
+### Outbound HTTP (required policy)
+
+Production defaults for upstream HTTP clients must use a finite `Timeout`. Do not use bare `http.DefaultClient` for request paths that can hang.
+
+### Store/dependency fail-closed (required policy)
+
+When a required store/dependency errors (not a clean miss/not-found), protected/auth paths return **503** with the stable JSON error envelope — fail closed. Do not skip the check or treat store errors as soft 500 inconsistently across analogous paths.
 
 ### Go comments (required policy)
 
