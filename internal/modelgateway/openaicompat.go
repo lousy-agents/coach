@@ -50,7 +50,6 @@ type OpenAICompatClient struct {
 
 var _ Gateway = (*OpenAICompatClient)(nil)
 
-// NewOpenAICompatClient constructs an OpenAI-compatible Gateway client.
 func NewOpenAICompatClient(cfg OpenAICompatConfig) (*OpenAICompatClient, error) {
 	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	if base == "" {
@@ -94,7 +93,6 @@ func NewOpenAICompatClient(cfg OpenAICompatConfig) (*OpenAICompatClient, error) 
 	}, nil
 }
 
-// HTTPClient returns the HTTP client used for upstream calls.
 func (c *OpenAICompatClient) HTTPClient() *http.Client {
 	if c == nil {
 		return nil
@@ -124,7 +122,6 @@ type chatCompletionResponse struct {
 	} `json:"choices"`
 }
 
-// Judge implements Gateway.
 func (c *OpenAICompatClient) Judge(ctx context.Context, req JudgmentRequest) (JudgmentResponse, error) {
 	if c == nil {
 		return JudgmentResponse{}, NewUnavailableError("nil client", nil)
@@ -176,12 +173,11 @@ func extractAndValidateJudgment(content string, schema json.RawMessage) (json.Ra
 	if content == "" {
 		return nil, NewValidationError("assistant content is empty")
 	}
-	// Content is expected to be a JSON object string (or stringify of one).
 	var raw json.RawMessage
 	if err := json.Unmarshal([]byte(content), &raw); err != nil {
 		return nil, NewValidationError("assistant content is not valid JSON")
 	}
-	// If the model returned a JSON string containing JSON, unwrap once.
+	// Models sometimes return a JSON string whose contents are the object; unwrap once.
 	var asString string
 	if err := json.Unmarshal(raw, &asString); err == nil {
 		asString = strings.TrimSpace(asString)

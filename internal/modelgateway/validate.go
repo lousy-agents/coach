@@ -9,6 +9,8 @@ import (
 // validateJudgmentJSON ensures judgment is a JSON object. When schema is
 // non-empty, it enforces a minimal JSON Schema subset used by seed rubrics:
 // object type, required properties, string enums, and string|null types.
+// Other JSON Schema types (integer, number, boolean, object, array) are
+// rejected so incomplete checks cannot silently accept invalid values.
 func validateJudgmentJSON(judgment, schema json.RawMessage) error {
 	var value any
 	if err := json.Unmarshal(judgment, &value); err != nil {
@@ -35,6 +37,9 @@ func validateJudgmentJSON(judgment, schema json.RawMessage) error {
 		}
 	}
 	for name, prop := range sch.Properties {
+		if err := ensureSupportedPropSchema(name, prop); err != nil {
+			return err
+		}
 		raw, present := obj[name]
 		if !present {
 			continue
@@ -81,6 +86,24 @@ func (p *propSchema) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func ensureSupportedPropSchema(name string, prop propSchema) error {
+	for _, t := range prop.types {
+		if !supportedPropType(t) {
+			return NewValidationError(name + " has unsupported schema type: " + t)
+		}
+	}
+	return nil
+}
+
+func supportedPropType(t string) bool {
+	switch strings.ToLower(t) {
+	case "string", "null":
+		return true
+	default:
+		return false
+	}
+}
+
 func checkProperty(name string, raw any, prop propSchema) error {
 	if len(prop.Enum) > 0 {
 		s, ok := raw.(string)
@@ -109,21 +132,13 @@ func checkProperty(name string, raw any, prop propSchema) error {
 			return NewValidationError(name + " must not be a string")
 		}
 	case float64:
-		if !hasType(prop.types, "number") && !hasType(prop.types, "integer") {
-			return NewValidationError(name + " must not be a number")
-		}
+		return NewValidationError(name + " must not be a number")
 	case bool:
-		if !hasType(prop.types, "boolean") {
-			return NewValidationError(name + " must not be a boolean")
-		}
+		return NewValidationError(name + " must not be a boolean")
 	case map[string]any:
-		if !hasType(prop.types, "object") {
-			return NewValidationError(name + " must not be an object")
-		}
+		return NewValidationError(name + " must not be an object")
 	case []any:
-		if !hasType(prop.types, "array") {
-			return NewValidationError(name + " must not be an array")
-		}
+		return NewValidationError(name + " must not be an array")
 	default:
 		return NewValidationError(name + " has unsupported JSON type")
 	}

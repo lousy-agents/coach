@@ -29,7 +29,6 @@ func NewStubGateway(opts ...StubOptions) *StubGateway {
 	return g
 }
 
-// Judge implements Gateway with fixed fixtures for seed rubrics.
 func (g *StubGateway) Judge(ctx context.Context, req JudgmentRequest) (JudgmentResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return JudgmentResponse{}, NewUnavailableError("context done", err)

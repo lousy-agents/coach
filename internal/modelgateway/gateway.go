@@ -15,15 +15,11 @@ const DefaultLogicalModel = "coach-default"
 // LogicalModelStub is the logical model id reported by StubGateway.
 const LogicalModelStub = "stub"
 
-// Message is one chat turn in a judgment request.
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-// JudgmentRequest is a structured rubric-judgment request. It is intentionally
-// minimal but forward-compatible for later rubrics (id/version, messages,
-// JSON schema for expected output).
 type JudgmentRequest struct {
 	RubricID      string          `json:"rubric_id"`
 	RubricVersion string          `json:"rubric_version"`
@@ -33,16 +29,15 @@ type JudgmentRequest struct {
 	LogicalModel string `json:"logical_model,omitempty"`
 }
 
-// JudgmentResponse is a schema-validated judgment with model identity suitable
-// for Story 5 provenance. LogicalModelID is always set; ServedModelID is set
-// when the upstream reports an authoritative served model id.
+// JudgmentResponse is a schema-validated judgment with model identity for
+// provenance. LogicalModelID is always set; ServedModelID is set when the
+// upstream reports an authoritative served model id.
 type JudgmentResponse struct {
 	JudgmentJSON   json.RawMessage `json:"judgment_json"`
 	LogicalModelID string          `json:"logical_model_id"`
 	ServedModelID  string          `json:"served_model_id,omitempty"`
 }
 
-// Gateway is the sole inference seam for structured judgment.
 type Gateway interface {
 	// Judge runs a structured rubric judgment and returns a schema-validated
 	// response. On failure, the error satisfies errors.Is(..., ErrSchemaValidation)

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -54,7 +53,7 @@ func chatCompletionBody(servedModel, content string) []byte {
 
 func defaultJudgeRequest() modelgateway.JudgmentRequest {
 	return modelgateway.JudgmentRequest{
-		RubricID:      "hidden_mutation",
+		RubricID:      "hidden_mutation_contextualization",
 		RubricVersion: "1",
 		Messages: []modelgateway.Message{
 			{Role: "system", Content: "You are a rubric judge."},
@@ -62,6 +61,21 @@ func defaultJudgeRequest() modelgateway.JudgmentRequest {
 		},
 		OutputSchema: hiddenMutationSchema(),
 	}
+}
+
+func newCompatClient(srv *httptest.Server, cfg modelgateway.OpenAICompatConfig) *modelgateway.OpenAICompatClient {
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = srv.URL
+	}
+	if cfg.LogicalModel == "" {
+		cfg.LogicalModel = modelgateway.DefaultLogicalModel
+	}
+	if cfg.HTTPClient == nil {
+		cfg.HTTPClient = srv.Client()
+	}
+	client, err := modelgateway.NewOpenAICompatClient(cfg)
+	Expect(err).NotTo(HaveOccurred())
+	return client
 }
 
 var _ = Describe("modelgateway.OpenAICompatClient", func() {
@@ -81,28 +95,27 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				}))
 				DeferCleanup(srv.Close)
 
-				client, err := modelgateway.NewOpenAICompatClient(modelgateway.OpenAICompatConfig{
-					BaseURL:      srv.URL,
-					LogicalModel: modelgateway.DefaultLogicalModel,
-					HTTPClient:   srv.Client(),
-				})
-				Expect(err).NotTo(HaveOccurred())
-
-				var gw modelgateway.Gateway = client
+				var gw modelgateway.Gateway = newCompatClient(srv, modelgateway.OpenAICompatConfig{})
 				resp, err := gw.Judge(context.Background(), defaultJudgeRequest())
 				Expect(err).NotTo(HaveOccurred())
 
 				Expect(gotPath).To(Equal("/v1/chat/completions"))
 				Expect(gotBody["model"]).To(Equal(modelgateway.DefaultLogicalModel))
+				Expect(gotBody["stream"]).To(Equal(false))
 				msgs, ok := gotBody["messages"].([]any)
 				Expect(ok).To(BeTrue())
-				Expect(msgs).NotTo(BeEmpty())
-				// Portable OpenAI chat-completions shape only — no vendor-specific request fields.
+				Expect(msgs).To(HaveLen(2))
+				msg0, ok := msgs[0].(map[string]any)
+				Expect(ok).To(BeTrue())
+				Expect(msg0["role"]).To(Equal("system"))
+				Expect(msg0["content"]).To(Equal("You are a rubric judge."))
+				msg1, ok := msgs[1].(map[string]any)
+				Expect(ok).To(BeTrue())
+				Expect(msg1["role"]).To(Equal("user"))
+				Expect(msg1["content"]).To(Equal("Judge this change for hidden mutation."))
+				// Portable OpenAI shape only — keys the client may emit.
 				for key := range gotBody {
-					Expect(key).To(BeElementOf(
-						"model", "messages", "stream", "response_format",
-						"temperature", "max_tokens", "n",
-					))
+					Expect(key).To(BeElementOf("model", "messages", "stream"))
 				}
 
 				Expect(resp.LogicalModelID).To(Equal(modelgateway.DefaultLogicalModel))
@@ -114,6 +127,7 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				Expect(got.Judgment).To(Equal("acceptable"))
 				Expect(got.Rationale).NotTo(BeEmpty())
 				Expect(got.Confidence).To(Equal("high"))
+				Expect(got.SuggestedFocus).To(BeNil())
 			})
 		})
 
@@ -130,13 +144,7 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				}))
 				DeferCleanup(srv.Close)
 
-				client, err := modelgateway.NewOpenAICompatClient(modelgateway.OpenAICompatConfig{
-					BaseURL:      srv.URL,
-					LogicalModel: modelgateway.DefaultLogicalModel,
-					HTTPClient:   srv.Client(),
-				})
-				Expect(err).NotTo(HaveOccurred())
-
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{})
 				resp, err := client.Judge(context.Background(), defaultJudgeRequest())
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.LogicalModelID).To(Equal(modelgateway.DefaultLogicalModel))
@@ -145,36 +153,50 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 			})
 		})
 
+		When("OutputSchema uses types outside the seed-rubric subset", func() {
+			It("returns typed ErrSchemaValidation for integer property schemas instead of accepting JSON numbers", func() {
+				integerSchema := json.RawMessage(`{
+					"type": "object",
+					"required": ["score"],
+					"properties": {
+						"score": {"type": "integer"}
+					}
+				}`)
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(chatCompletionBody("served-x", `{"score": 1}`))
+				}))
+				DeferCleanup(srv.Close)
+
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{})
+				req := defaultJudgeRequest()
+				req.OutputSchema = integerSchema
+				_, err := client.Judge(context.Background(), req)
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, modelgateway.ErrSchemaValidation)).To(BeTrue())
+				Expect(errors.Is(err, modelgateway.ErrUnavailable)).To(BeFalse())
+			})
+		})
+
 		When("the assistant content is malformed or fails OutputSchema", func() {
-			It("returns typed ErrSchemaValidation after bounded retries on validation/parse only", func() {
+			It("returns typed ErrSchemaValidation after exactly DefaultSchemaValidationAttempts on invalid enum", func() {
 				var attempts atomic.Int32
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					attempts.Add(1)
 					w.Header().Set("Content-Type", "application/json")
-					// Valid envelope, invalid judgment JSON relative to OutputSchema.
 					_, _ = w.Write(chatCompletionBody("served-x", `{"judgment":"not-an-enum","rationale":"x","confidence":"high","suggested_focus":null}`))
 				}))
 				DeferCleanup(srv.Close)
 
-				client, err := modelgateway.NewOpenAICompatClient(modelgateway.OpenAICompatConfig{
-					BaseURL:      srv.URL,
-					LogicalModel: modelgateway.DefaultLogicalModel,
-					HTTPClient:   srv.Client(),
-				})
-				Expect(err).NotTo(HaveOccurred())
-
-				_, err = client.Judge(context.Background(), defaultJudgeRequest())
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{})
+				_, err := client.Judge(context.Background(), defaultJudgeRequest())
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, modelgateway.ErrSchemaValidation)).To(BeTrue())
 				Expect(errors.Is(err, modelgateway.ErrUnavailable)).To(BeFalse())
-
-				// Bounded retries: more than one attempt, but not unbounded.
-				n := attempts.Load()
-				Expect(n).To(BeNumerically(">=", 2))
-				Expect(n).To(BeNumerically("<=", 4))
+				Expect(attempts.Load()).To(Equal(int32(modelgateway.DefaultSchemaValidationAttempts)))
 			})
 
-			It("retries on non-JSON assistant content then fails with ErrSchemaValidation", func() {
+			It("returns typed ErrSchemaValidation after exactly DefaultSchemaValidationAttempts on non-JSON content", func() {
 				var attempts atomic.Int32
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					attempts.Add(1)
@@ -183,23 +205,48 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				}))
 				DeferCleanup(srv.Close)
 
-				client, err := modelgateway.NewOpenAICompatClient(modelgateway.OpenAICompatConfig{
-					BaseURL:      srv.URL,
-					LogicalModel: modelgateway.DefaultLogicalModel,
-					HTTPClient:   srv.Client(),
-				})
-				Expect(err).NotTo(HaveOccurred())
-
-				_, err = client.Judge(context.Background(), defaultJudgeRequest())
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{})
+				_, err := client.Judge(context.Background(), defaultJudgeRequest())
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, modelgateway.ErrSchemaValidation)).To(BeTrue())
-				Expect(attempts.Load()).To(BeNumerically(">=", 2))
-				Expect(attempts.Load()).To(BeNumerically("<=", 4))
+				Expect(attempts.Load()).To(Equal(int32(modelgateway.DefaultSchemaValidationAttempts)))
+			})
+
+			It("returns typed ErrSchemaValidation when a required OutputSchema property is missing", func() {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(chatCompletionBody("served-x", `{"judgment":"acceptable","rationale":"x","confidence":"high"}`))
+				}))
+				DeferCleanup(srv.Close)
+
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{})
+				_, err := client.Judge(context.Background(), defaultJudgeRequest())
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, modelgateway.ErrSchemaValidation)).To(BeTrue())
+				Expect(errors.Is(err, modelgateway.ErrUnavailable)).To(BeFalse())
+			})
+
+			It("accepts assistant content that is a JSON string wrapping the judgment object", func() {
+				wrapped, err := json.Marshal(validHiddenMutationContent())
+				Expect(err).NotTo(HaveOccurred())
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(chatCompletionBody("served-wrap", string(wrapped)))
+				}))
+				DeferCleanup(srv.Close)
+
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{})
+				resp, err := client.Judge(context.Background(), defaultJudgeRequest())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.ServedModelID).To(Equal("served-wrap"))
+				var got hiddenMutationJudgment
+				Expect(json.Unmarshal(resp.JudgmentJSON, &got)).To(Succeed())
+				Expect(got.Judgment).To(Equal("acceptable"))
 			})
 		})
 
 		When("the upstream is unavailable", func() {
-			It("returns typed ErrUnavailable on HTTP 5xx without schema-validation retries", func() {
+			It("returns typed ErrUnavailable on HTTP 5xx with a single attempt", func() {
 				var attempts atomic.Int32
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					attempts.Add(1)
@@ -208,19 +255,12 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				}))
 				DeferCleanup(srv.Close)
 
-				client, err := modelgateway.NewOpenAICompatClient(modelgateway.OpenAICompatConfig{
-					BaseURL:      srv.URL,
-					LogicalModel: modelgateway.DefaultLogicalModel,
-					HTTPClient:   srv.Client(),
-				})
-				Expect(err).NotTo(HaveOccurred())
-
-				_, err = client.Judge(context.Background(), defaultJudgeRequest())
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{})
+				_, err := client.Judge(context.Background(), defaultJudgeRequest())
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, modelgateway.ErrUnavailable)).To(BeTrue())
 				Expect(errors.Is(err, modelgateway.ErrSchemaValidation)).To(BeFalse())
-				// Prefer prompt typed unavailable — do not busy-retry 5xx like validation failures.
-				Expect(attempts.Load()).To(BeNumerically("<=", 2))
+				Expect(attempts.Load()).To(Equal(int32(1)))
 			})
 
 			It("returns typed ErrUnavailable on connection refused", func() {
@@ -266,10 +306,24 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				Expect(errors.Is(err, modelgateway.ErrUnavailable)).To(BeTrue())
 				Expect(errors.Is(err, modelgateway.ErrSchemaValidation)).To(BeFalse())
 			})
+
+			It("returns typed ErrUnavailable when the upstream envelope has no choices", func() {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"id":"chatcmpl-x","object":"chat.completion","model":"m","choices":[]}`))
+				}))
+				DeferCleanup(srv.Close)
+
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{})
+				_, err := client.Judge(context.Background(), defaultJudgeRequest())
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, modelgateway.ErrUnavailable)).To(BeTrue())
+				Expect(errors.Is(err, modelgateway.ErrSchemaValidation)).To(BeFalse())
+			})
 		})
 
-		When("optional API key and extra headers are configured", func() {
-			It("sends Authorization and extra headers on the chat-completions request", func() {
+		When("optional credentials are configured", func() {
+			It("sends Bearer Authorization from APIKey and extra headers", func() {
 				var gotAuth, gotExtra string
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					gotAuth = r.Header.Get("Authorization")
@@ -279,19 +333,32 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				}))
 				DeferCleanup(srv.Close)
 
-				client, err := modelgateway.NewOpenAICompatClient(modelgateway.OpenAICompatConfig{
-					BaseURL:      srv.URL,
-					LogicalModel: modelgateway.DefaultLogicalModel,
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{
 					APIKey:       "test-key",
 					ExtraHeaders: map[string]string{"X-Request-Source": "coach-acceptance"},
-					HTTPClient:   srv.Client(),
 				})
-				Expect(err).NotTo(HaveOccurred())
-
-				_, err = client.Judge(context.Background(), defaultJudgeRequest())
+				_, err := client.Judge(context.Background(), defaultJudgeRequest())
 				Expect(err).NotTo(HaveOccurred())
 				Expect(gotAuth).To(Equal("Bearer test-key"))
 				Expect(gotExtra).To(Equal("coach-acceptance"))
+			})
+
+			It("sends AuthHeader as Authorization as-is when set", func() {
+				var gotAuth string
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gotAuth = r.Header.Get("Authorization")
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(chatCompletionBody("served-y", validHiddenMutationContent()))
+				}))
+				DeferCleanup(srv.Close)
+
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{
+					APIKey:     "ignored-when-auth-header-set",
+					AuthHeader: "Bearer edge-injected-token",
+				})
+				_, err := client.Judge(context.Background(), defaultJudgeRequest())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(gotAuth).To(Equal("Bearer edge-injected-token"))
 			})
 		})
 
@@ -303,7 +370,7 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				})
 				Expect(err).NotTo(HaveOccurred())
 				Expect(client.HTTPClient()).NotTo(BeNil())
-				Expect(client.HTTPClient().Timeout).To(BeNumerically(">", 0))
+				Expect(client.HTTPClient().Timeout).To(Equal(modelgateway.DefaultHTTPClientTimeout))
 				// Must not be the shared DefaultClient (Timeout is 0 and is process-global).
 				Expect(client.HTTPClient()).NotTo(BeIdenticalTo(http.DefaultClient))
 			})
@@ -312,7 +379,7 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 
 	Describe("thin env config", func() {
 		When("MODEL_GATEWAY_BASE_URL and MODEL_GATEWAY_MODEL are set", func() {
-			It("constructs an OpenAICompatClient from environment without provider-specific types", func() {
+			It("constructs an OpenAICompatClient from environment and completes a judgment", func() {
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					_, _ = w.Write(chatCompletionBody("env-served", validHiddenMutationContent()))
@@ -322,22 +389,24 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				origBase := os.Getenv("MODEL_GATEWAY_BASE_URL")
 				origModel := os.Getenv("MODEL_GATEWAY_MODEL")
 				origKey := os.Getenv("MODEL_GATEWAY_API_KEY")
+				origTimeout := os.Getenv("MODEL_GATEWAY_TIMEOUT")
 				DeferCleanup(func() {
 					_ = os.Setenv("MODEL_GATEWAY_BASE_URL", origBase)
 					_ = os.Setenv("MODEL_GATEWAY_MODEL", origModel)
 					_ = os.Setenv("MODEL_GATEWAY_API_KEY", origKey)
+					_ = os.Setenv("MODEL_GATEWAY_TIMEOUT", origTimeout)
 				})
 				Expect(os.Setenv("MODEL_GATEWAY_BASE_URL", srv.URL)).To(Succeed())
 				Expect(os.Setenv("MODEL_GATEWAY_MODEL", modelgateway.DefaultLogicalModel)).To(Succeed())
 				Expect(os.Setenv("MODEL_GATEWAY_API_KEY", "")).To(Succeed())
+				Expect(os.Unsetenv("MODEL_GATEWAY_TIMEOUT")).To(Succeed())
 
 				cfg, err := modelgateway.ConfigFromEnv()
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cfg.BaseURL).To(Equal(srv.URL))
 				Expect(cfg.LogicalModel).To(Equal(modelgateway.DefaultLogicalModel))
-				// Config surface is URL/model/api-key/timeout only.
-				Expect(strings.ToLower(cfg.BaseURL + cfg.LogicalModel)).NotTo(ContainSubstring("llamacpp"))
-				Expect(strings.ToLower(cfg.BaseURL + cfg.LogicalModel)).NotTo(ContainSubstring("sglang"))
+				Expect(cfg.HTTPClient).NotTo(BeNil())
+				Expect(cfg.HTTPClient.Timeout).To(Equal(modelgateway.DefaultHTTPClientTimeout))
 
 				cfg.HTTPClient = srv.Client()
 				client, err := modelgateway.NewOpenAICompatClient(cfg)
@@ -347,6 +416,38 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.LogicalModelID).To(Equal(modelgateway.DefaultLogicalModel))
 				Expect(resp.ServedModelID).To(Equal("env-served"))
+			})
+		})
+
+		When("MODEL_GATEWAY_TIMEOUT is set", func() {
+			It("applies the configured timeout to the HTTP client", func() {
+				origBase := os.Getenv("MODEL_GATEWAY_BASE_URL")
+				origTimeout := os.Getenv("MODEL_GATEWAY_TIMEOUT")
+				DeferCleanup(func() {
+					_ = os.Setenv("MODEL_GATEWAY_BASE_URL", origBase)
+					_ = os.Setenv("MODEL_GATEWAY_TIMEOUT", origTimeout)
+				})
+				Expect(os.Setenv("MODEL_GATEWAY_BASE_URL", "http://127.0.0.1:1")).To(Succeed())
+				Expect(os.Setenv("MODEL_GATEWAY_TIMEOUT", "250ms")).To(Succeed())
+
+				cfg, err := modelgateway.ConfigFromEnv()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cfg.HTTPClient).NotTo(BeNil())
+				Expect(cfg.HTTPClient.Timeout).To(Equal(250 * time.Millisecond))
+			})
+		})
+
+		When("MODEL_GATEWAY_BASE_URL is unset", func() {
+			It("returns an error and does not invent a base URL", func() {
+				origBase := os.Getenv("MODEL_GATEWAY_BASE_URL")
+				DeferCleanup(func() {
+					_ = os.Setenv("MODEL_GATEWAY_BASE_URL", origBase)
+				})
+				Expect(os.Unsetenv("MODEL_GATEWAY_BASE_URL")).To(Succeed())
+
+				_, err := modelgateway.ConfigFromEnv()
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("MODEL_GATEWAY_BASE_URL"))
 			})
 		})
 	})

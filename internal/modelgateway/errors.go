@@ -2,7 +2,6 @@ package modelgateway
 
 import "errors"
 
-// Sentinel errors for gateway failures. Callers use errors.Is / errors.As.
 var (
 	// ErrSchemaValidation indicates the model output failed schema validation
 	// after any bounded retries the gateway applies.
@@ -28,7 +27,6 @@ func (e *ValidationError) Error() string {
 
 func (e *ValidationError) Unwrap() error { return ErrSchemaValidation }
 
-// NewValidationError returns a typed schema/validation failure.
 func NewValidationError(detail string) error {
 	return &ValidationError{Detail: detail}
 }
@@ -66,7 +64,6 @@ func (e *UnavailableError) Unwrap() error {
 	return errors.Join(ErrUnavailable, e.Err)
 }
 
-// NewUnavailableError returns a typed unavailable/transient failure.
 func NewUnavailableError(detail string, cause error) error {
 	return &UnavailableError{Detail: detail, Err: cause}
 }

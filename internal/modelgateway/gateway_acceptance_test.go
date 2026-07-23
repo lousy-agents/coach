@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -11,7 +14,6 @@ import (
 	"github.com/lousy-agents/coach/internal/modelgateway"
 )
 
-// Seed rubric output shapes (Task 4 / epic #97) used to assert stub fixture validity.
 type hiddenMutationJudgment struct {
 	Judgment       string  `json:"judgment"`
 	Rationale      string  `json:"rationale"`
@@ -55,11 +57,11 @@ func changeCohesionSchema() json.RawMessage {
 var _ = Describe("modelgateway.Gateway", func() {
 	Describe("StubGateway", func() {
 		When("a rubric-judgment request is made for a seed rubric", func() {
-			It("returns a canned schema-valid judgment with model identity for provenance", func() {
+			It("returns a canned schema-valid judgment with stub model identity for provenance", func() {
 				var gw modelgateway.Gateway = modelgateway.NewStubGateway()
 
 				resp, err := gw.Judge(context.Background(), modelgateway.JudgmentRequest{
-					RubricID:      "hidden_mutation",
+					RubricID:      "hidden_mutation_contextualization",
 					RubricVersion: "1",
 					Messages: []modelgateway.Message{
 						{Role: "user", Content: "Judge this change for hidden mutation."},
@@ -68,7 +70,7 @@ var _ = Describe("modelgateway.Gateway", func() {
 				})
 				Expect(err).NotTo(HaveOccurred())
 
-				Expect(resp.LogicalModelID).NotTo(BeEmpty(), "Story 5 provenance requires logical model id")
+				Expect(resp.LogicalModelID).To(Equal(modelgateway.LogicalModelStub))
 				Expect(resp.JudgmentJSON).NotTo(BeEmpty())
 
 				var got hiddenMutationJudgment
@@ -76,6 +78,7 @@ var _ = Describe("modelgateway.Gateway", func() {
 				Expect(got.Judgment).To(BeElementOf("concern", "acceptable", "unclear"))
 				Expect(got.Rationale).NotTo(BeEmpty())
 				Expect(got.Confidence).To(BeElementOf("high", "medium", "low"))
+				Expect(got.SuggestedFocus).To(BeNil())
 
 				resp2, err := gw.Judge(context.Background(), modelgateway.JudgmentRequest{
 					RubricID:      "change_cohesion",
@@ -86,13 +89,14 @@ var _ = Describe("modelgateway.Gateway", func() {
 					OutputSchema: changeCohesionSchema(),
 				})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(resp2.LogicalModelID).NotTo(BeEmpty())
+				Expect(resp2.LogicalModelID).To(Equal(modelgateway.LogicalModelStub))
 
 				var got2 changeCohesionJudgment
 				Expect(json.Unmarshal(resp2.JudgmentJSON, &got2)).To(Succeed())
 				Expect(got2.Judgment).To(BeElementOf("focused", "diffuse", "unclear"))
 				Expect(got2.Rationale).NotTo(BeEmpty())
 				Expect(got2.Confidence).To(BeElementOf("high", "medium", "low"))
+				Expect(got2.SuggestedFocus).To(BeNil())
 			})
 		})
 	})
@@ -118,13 +122,12 @@ var _ = Describe("modelgateway.Gateway", func() {
 				Expect(asUnavail.Detail).NotTo(BeEmpty())
 				Expect(errors.As(valErr, &asUnavail)).To(BeFalse())
 
-				// Public Gateway surface: a Judge failure must be classifiable the same way.
-				// Force the stub into each failure mode so the seam itself is covered, not only constructors.
+				// Cover Judge classification, not only error constructors.
 				schemaFail := modelgateway.NewStubGateway(modelgateway.StubOptions{
 					JudgeErr: modelgateway.NewValidationError("fixture schema mismatch"),
 				})
 				_, err := schemaFail.Judge(context.Background(), modelgateway.JudgmentRequest{
-					RubricID:      "hidden_mutation",
+					RubricID:      "hidden_mutation_contextualization",
 					RubricVersion: "1",
 					Messages:      []modelgateway.Message{{Role: "user", Content: "x"}},
 					OutputSchema:  hiddenMutationSchema(),
@@ -137,7 +140,7 @@ var _ = Describe("modelgateway.Gateway", func() {
 					JudgeErr: modelgateway.NewUnavailableError("connection refused", errors.New("dial tcp")),
 				})
 				_, err = down.Judge(context.Background(), modelgateway.JudgmentRequest{
-					RubricID:      "hidden_mutation",
+					RubricID:      "hidden_mutation_contextualization",
 					RubricVersion: "1",
 					Messages:      []modelgateway.Message{{Role: "user", Content: "x"}},
 					OutputSchema:  hiddenMutationSchema(),
@@ -148,4 +151,86 @@ var _ = Describe("modelgateway.Gateway", func() {
 			})
 		})
 	})
+
+	Describe("package surface", func() {
+		It("keeps production identifiers free of provider-specific names", func() {
+			dir, err := os.Getwd()
+			Expect(err).NotTo(HaveOccurred())
+
+			entries, err := os.ReadDir(dir)
+			Expect(err).NotTo(HaveOccurred())
+
+			forbidden := []string{"llamacpp", "llama.cpp", "sglang"}
+			for _, e := range entries {
+				name := e.Name()
+				if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+					continue
+				}
+				lowerName := strings.ToLower(name)
+				for _, f := range forbidden {
+					Expect(lowerName).NotTo(ContainSubstring(f), "production filename %s", name)
+				}
+				raw, readErr := os.ReadFile(filepath.Join(dir, name))
+				Expect(readErr).NotTo(HaveOccurred())
+				lower := strings.ToLower(string(raw))
+				for _, f := range forbidden {
+					Expect(lower).NotTo(ContainSubstring(f), "production file %s", name)
+				}
+			}
+		})
+
+		It("is the only non-test package that owns the chat-completions wire path", func() {
+			root := findModuleRoot()
+			Expect(root).NotTo(BeEmpty())
+
+			var offenders []string
+			err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+				if walkErr != nil {
+					return walkErr
+				}
+				if d.IsDir() {
+					base := d.Name()
+					if base == ".git" || base == "node_modules" || base == "vendor" || base == "dist" || base == "dist-test" {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+					return nil
+				}
+				rel, relErr := filepath.Rel(root, path)
+				Expect(relErr).NotTo(HaveOccurred())
+				if strings.HasPrefix(rel, "internal"+string(filepath.Separator)+"modelgateway"+string(filepath.Separator)) {
+					return nil
+				}
+				raw, readErr := os.ReadFile(path)
+				if readErr != nil {
+					return readErr
+				}
+				if strings.Contains(string(raw), "/v1/chat/completions") {
+					offenders = append(offenders, rel)
+				}
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(offenders).To(BeEmpty(), "chat-completions path must stay inside internal/modelgateway: %v", offenders)
+		})
+	})
 })
+
+func findModuleRoot() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
