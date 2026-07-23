@@ -32,10 +32,30 @@ Steps:
    by AGENTS.md's acceptance-test-first policy and applies even to small
    tasks. If a covering acceptance test already exists and already passes,
    stop and tell the orchestrator instead of proceeding.
+
+   **Go acceptance form (mandatory):** use Ginkgo v2 + Gomega
+   (`Describe` / `When` / `It`, EARS/AC-readable), in `*_acceptance_test.go`
+   plus `acceptance_suite_test.go` with a `TestXxxAcceptance` entrypoint so
+   `mise run test-acceptance-fast` picks it up. Match
+   `cmd/coach/baseline_acceptance_test.go` / `pkg/githubingest/acceptance_test.go`.
+   Stdlib `testing` table tests are fine for unit tests only — they are **not**
+   a substitute for the acceptance suite of a feature or bug fix.
+
+   **False-green ban:** the failing (and later passing) case must hit the
+   intended branch/failure mode. Shared clocks/fakes that make a different path
+   produce the same status/outcome do not count (e.g. advancing time so a
+   "denylisted" case actually fails on expiry).
 3. Make the smallest change that turns that test green and otherwise satisfies
    the task's acceptance criteria. Follow the repo's existing conventions and
    patterns — match what is already there. For Go, comments only per AGENTS.md's
    Go comments policy (useful godoc/contracts; no bloat or narration).
+
+   When the task involves outbound HTTP or dependency stores, also satisfy
+   AGENTS.md's policies: production default HTTP clients must use a finite
+   `Timeout` (no bare `http.DefaultClient` on hangable paths); store/dependency
+   errors on protected/auth paths fail closed with **503** and the stable JSON
+   error envelope where that is the package contract — do not skip the check or
+   soften to 500 inconsistently with analogous paths.
 4. Run the repo's lint and test commands. Fix anything you broke.
 5. Report back under a `## Implementer Report` heading: the files you changed,
    a one-line rationale per change, the failing-test output from step 2, and

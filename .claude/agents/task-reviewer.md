@@ -25,12 +25,28 @@ Steps:
    evidence, or a test that only exercises an internal helper rather than the
    public contract, is a FINDINGS item; do not pass on "the code looks correct"
    alone.
+
+   **Acceptance form gate:** FINDINGS if new/changed acceptance coverage uses
+   plain `testing` without Ginkgo v2 + Gomega (`Describe`/`When`/`It`), except
+   thin allowlisted harness wrappers (e.g. queueconformance's `Test*Acceptance`
+   entry that only delegates to a shared harness and is not the behavioral
+   spec itself).
+
+   **Red evidence / false-green gate:** FINDINGS if red evidence is compile-only
+   or missing-package only, or if a case is false-green (clocks/fakes/other setup
+   make a different branch produce the asserted status/outcome).
 4. Run the repo's lint and test commands yourself. Do not trust a claim that they
    pass.
 5. Look for: silent scope creep, over-broad error handling, sequencing bugs (e.g.
    transform-before-filter), missing edge-case coverage, Go comment bloat or
    missing godoc on non-obvious exported contracts (AGENTS.md Go comments
    policy), and any recurring patterns named in your prompt.
+
+   **Watch patterns (AGENTS.md):** missing finite `Timeout` on production-default
+   upstream HTTP clients (no bare `http.DefaultClient` on hangable paths);
+   store/dependency errors on protected/auth paths that are not fail-closed
+   **503** when analogous paths in the same package already use 503 + the stable
+   JSON error envelope.
 
 Return EXACTLY one of:
 - `PASS` — with a one-line note on what you verified.

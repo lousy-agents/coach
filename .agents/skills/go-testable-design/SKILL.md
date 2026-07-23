@@ -40,6 +40,14 @@ Do not use this skill for non-Go projects, generic CI setup, or broad architectu
 - Do not hide meaningful errors from tests; assert them.
 - Avoid sleeps in tests unless the behavior is explicitly timing-based. Prefer fake clocks, channels, contexts, or retry helpers.
 
+### Acceptance vs unit tests (this repo)
+
+When this skill is used inside **this** repository, do not fight `AGENTS.md`:
+
+- **Acceptance** tests (`*_acceptance_test.go` / package acceptance suites): use **Ginkgo v2 + Gomega** (`Describe` / `When` / `It`), suite entrypoint `TestXxxAcceptance`, layout matching nearby suites (e.g. `pkg/githubingest/acceptance_suite_test.go`, `cmd/coach/baseline_acceptance_test.go`). Stdlib table tests are **not** a substitute for acceptance coverage of new features/bug fixes.
+- **Unit** and other non-acceptance tests: this skill's stdlib `testing`, table-test, subtest, and given/when/then-helper guidance applies as written below.
+- Thin stdlib `Test*Acceptance` wrappers that only call a shared harness are an allowed exception when they are not the behavioral specs themselves (see `AGENTS.md`).
+
 ### Acceptance-Criteria-First Helpers (Given/When/Then)
 
 - Prefer capturing acceptance criteria in the test's structure — named `given`/`when`/`then` helpers or descriptive `t.Run` subtests — instead of explaining them only in a comment (e.g. an `// AC-1.8: ...` annotation). The test should demonstrate the criterion; the comment should not be the only place it is recorded.
@@ -73,6 +81,7 @@ Before finalizing any Go test, check it against these requirements:
      ```
 
 2. **Choose the Test Shape**
+   - **Acceptance vs unit (this repo):** if the work is a new feature or bug fix requiring acceptance coverage per `AGENTS.md`, write a Ginkgo/Gomega acceptance suite first (see Core Rules above). The shapes below are for unit and other non-acceptance tests.
    - Pure functions: use direct assertions, then table tests once cases multiply.
    - Methods with mutation: assert state before and after, and cover error paths.
    - Business logic with collaborators: inject dependencies through constructors and test with small local fakes.

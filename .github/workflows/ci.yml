@@ -26,6 +26,9 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum
 
+      - name: acceptance-style-check
+        run: go run ./cmd/acceptance-style-guard
+
       - name: go test -race
         run: go test -race ./...
 
