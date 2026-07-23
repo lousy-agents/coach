@@ -10,8 +10,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
-	"testing"
 	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/authn"
 	"github.com/lousy-agents/coach/internal/coachapi"
@@ -26,8 +28,7 @@ func fixedNow(t time.Time) func() time.Time {
 	return func() time.Time { return t }
 }
 
-func newTestService(t *testing.T, opts authn.Options) *authn.Service {
-	t.Helper()
+func newTestService(opts authn.Options) *authn.Service {
 	if opts.SigningKey == nil {
 		opts.SigningKey = []byte(testSecret)
 	}
@@ -44,23 +45,17 @@ func newTestService(t *testing.T, opts authn.Options) *authn.Service {
 		opts.Denylist = authn.NewMemoryDenylist()
 	}
 	svc, err := authn.New(opts)
-	if err != nil {
-		t.Fatalf("authn.New: %v", err)
-	}
+	Expect(err).NotTo(HaveOccurred())
 	return svc
 }
 
-func decodeEnvelope(t *testing.T, body []byte) coachapi.ErrorEnvelope {
-	t.Helper()
+func decodeEnvelope(body []byte) coachapi.ErrorEnvelope {
 	var env coachapi.ErrorEnvelope
-	if err := json.Unmarshal(body, &env); err != nil {
-		t.Fatalf("decode error envelope: %v\nbody=%s", err, body)
-	}
+	Expect(json.Unmarshal(body, &env)).To(Succeed(), "body=%s", body)
 	return env
 }
 
-func doReq(t *testing.T, h http.Handler, method, path, bearer string, body []byte) (int, []byte) {
-	t.Helper()
+func doReq(h http.Handler, method, path, bearer string, body []byte) (int, []byte) {
 	var rdr io.Reader
 	if body != nil {
 		rdr = bytes.NewReader(body)
@@ -77,317 +72,236 @@ func doReq(t *testing.T, h http.Handler, method, path, bearer string, body []byt
 	return rec.Code, rec.Body.Bytes()
 }
 
-// Task 2a / Task A: missing, invalid, wrong-issuer, expired, and denylisted
-// tokens are rejected on protected /v1 routes with 401 unauthenticated.
-func TestProtectedRoute_RejectsBadTokensWith401(t *testing.T) {
-	base := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
-	now := base
-	// trackingDenylist records IsRevoked hits so the jti-denylisted case cannot
-	// false-green on expiry alone (Validate checks exp before the denylist).
-	mem := authn.NewMemoryDenylist()
-	dl := &trackingDenylist{inner: mem}
-	svc := newTestService(t, authn.Options{
-		Now:      func() time.Time { return now },
-		Denylist: dl,
-	})
-	h := svc.Handler()
+func expectUnauthenticated(code int, body []byte) {
+	Expect(code).To(Equal(http.StatusUnauthorized), "body=%s", body)
+	env := decodeEnvelope(body)
+	Expect(env.Error.Code).To(Equal(coachapi.ErrorCodeUnauthenticated))
+	Expect(strings.TrimSpace(env.Error.Message)).NotTo(BeEmpty())
+}
 
-	good, err := svc.Issue(context.Background(), coachapi.Principal{
-		Provider: "github",
-		Subject:  "12345",
-		Login:    "octocat",
-	})
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+var _ = Describe("Coach JWT auth on protected /v1 routes", func() {
+	When("the bearer is missing, invalid, wrong-issuer, expired, denylisted, or a GitHub OAuth stand-in", func() {
+		It("rejects each case with 401 unauthenticated, while a valid Coach JWT authorizes /v1/me", func() {
+			base := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+			now := base
+			// trackingDenylist records IsRevoked hits so the jti-denylisted case cannot
+			// false-green on expiry alone (Validate checks exp before the denylist).
+			mem := authn.NewMemoryDenylist()
+			dl := &trackingDenylist{inner: mem}
+			svc := newTestService(authn.Options{
+				Now:      func() time.Time { return now },
+				Denylist: dl,
+			})
+			h := svc.Handler()
 
-	// Denylist a second token after issue (clock stays at base so the token is
-	// still unexpired when Validate runs IsRevoked).
-	toRevoke, err := svc.Issue(context.Background(), coachapi.Principal{
-		Provider: "github",
-		Subject:  "99999",
-		Login:    "revoked-user",
-	})
-	if err != nil {
-		t.Fatalf("Issue revoke candidate: %v", err)
-	}
-	if err := svc.Revoke(context.Background(), toRevoke); err != nil {
-		t.Fatalf("Revoke: %v", err)
-	}
+			good, err := svc.Issue(context.Background(), coachapi.Principal{
+				Provider: "github",
+				Subject:  "12345",
+				Login:    "octocat",
+			})
+			Expect(err).NotTo(HaveOccurred())
 
-	// Wrong issuer token: mint with a different service issuer.
-	other, err := authn.New(authn.Options{
-		SigningKey: []byte(testSecret),
-		Issuer:     "https://evil.example",
-		TokenTTL:   time.Hour,
-		Now:        func() time.Time { return base },
-		Denylist:   authn.NewMemoryDenylist(),
-	})
-	if err != nil {
-		t.Fatalf("other issuer New: %v", err)
-	}
-	wrongIss, err := other.Issue(context.Background(), coachapi.Principal{
-		Provider: "github", Subject: "1", Login: "x",
-	})
-	if err != nil {
-		t.Fatalf("wrong issuer Issue: %v", err)
-	}
+			// Denylist a second token after issue (clock stays at base so the token is
+			// still unexpired when Validate runs IsRevoked).
+			toRevoke, err := svc.Issue(context.Background(), coachapi.Principal{
+				Provider: "github",
+				Subject:  "99999",
+				Login:    "revoked-user",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(svc.Revoke(context.Background(), toRevoke)).To(Succeed())
 
-	// Expired: issue with short TTL; only that subtest advances the clock.
-	short, err := authn.New(authn.Options{
-		SigningKey: []byte(testSecret),
-		Issuer:     testIssuer,
-		TokenTTL:   time.Minute,
-		Now:        func() time.Time { return base },
-		Denylist:   authn.NewMemoryDenylist(),
-	})
-	if err != nil {
-		t.Fatalf("short TTL New: %v", err)
-	}
-	expiredTok, err := short.Issue(context.Background(), coachapi.Principal{
-		Provider: "github", Subject: "2", Login: "y",
-	})
-	if err != nil {
-		t.Fatalf("expired Issue: %v", err)
-	}
+			other, err := authn.New(authn.Options{
+				SigningKey: []byte(testSecret),
+				Issuer:     "https://evil.example",
+				TokenTTL:   time.Hour,
+				Now:        func() time.Time { return base },
+				Denylist:   authn.NewMemoryDenylist(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			wrongIss, err := other.Issue(context.Background(), coachapi.Principal{
+				Provider: "github", Subject: "1", Login: "x",
+			})
+			Expect(err).NotTo(HaveOccurred())
 
-	cases := []struct {
-		name        string
-		bearer      string
-		advance     time.Duration // per-case clock; zero keeps now at base
-		wantRevoked bool          // true => must hit denylist IsRevoked and get revoked
-	}{
-		{name: "missing Authorization", bearer: ""},
-		{name: "invalid signature / garbage", bearer: "not-a-jwt"},
-		{name: "wrong issuer", bearer: wrongIss},
-		{name: "expired", bearer: expiredTok, advance: 2 * time.Hour},
-		{name: "jti denylisted", bearer: toRevoke, wantRevoked: true},
-		{name: "github oauth access token stand-in", bearer: "gho_not_a_coach_jwt_at_all"},
-	}
+			short, err := authn.New(authn.Options{
+				SigningKey: []byte(testSecret),
+				Issuer:     testIssuer,
+				TokenTTL:   time.Minute,
+				Now:        func() time.Time { return base },
+				Denylist:   authn.NewMemoryDenylist(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			expiredTok, err := short.Issue(context.Background(), coachapi.Principal{
+				Provider: "github", Subject: "2", Login: "y",
+			})
+			Expect(err).NotTo(HaveOccurred())
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			now = base.Add(tc.advance)
-			t.Cleanup(func() { now = base })
-
-			before := dl.isRevokedCalls()
-			code, body := doReq(t, h, http.MethodGet, "/v1/me", tc.bearer, nil)
-			if code != http.StatusUnauthorized {
-				t.Fatalf("status: got %d want 401; body=%s", code, body)
+			type badCase struct {
+				name        string
+				bearer      string
+				advance     time.Duration
+				wantRevoked bool
 			}
-			env := decodeEnvelope(t, body)
-			if env.Error.Code != coachapi.ErrorCodeUnauthenticated {
-				t.Errorf("error.code: got %q want %q", env.Error.Code, coachapi.ErrorCodeUnauthenticated)
+			cases := []badCase{
+				{name: "missing Authorization", bearer: ""},
+				{name: "invalid signature / garbage", bearer: "not-a-jwt"},
+				{name: "wrong issuer", bearer: wrongIss},
+				{name: "expired", bearer: expiredTok, advance: 2 * time.Hour},
+				{name: "jti denylisted", bearer: toRevoke, wantRevoked: true},
+				{name: "github oauth access token stand-in", bearer: "gho_not_a_coach_jwt_at_all"},
 			}
-			if strings.TrimSpace(env.Error.Message) == "" {
-				t.Error("error.message must be non-empty")
-			}
-			if tc.wantRevoked {
-				if dl.isRevokedCalls() <= before {
-					t.Fatal("jti denylisted case must call IsRevoked (token still unexpired)")
+
+			for _, tc := range cases {
+				now = base.Add(tc.advance)
+				before := dl.isRevokedCalls()
+				code, body := doReq(h, http.MethodGet, "/v1/me", tc.bearer, nil)
+				expectUnauthenticated(code, body)
+				if tc.wantRevoked {
+					Expect(dl.isRevokedCalls()).To(BeNumerically(">", before),
+						"%s must call IsRevoked (token still unexpired)", tc.name)
+					last, ok := dl.lastRevokedResult()
+					Expect(ok).To(BeTrue(), "%s: IsRevoked must have recorded a result", tc.name)
+					Expect(last).To(BeTrue(), "%s: IsRevoked must report revoked=true", tc.name)
 				}
-				if last, ok := dl.lastRevokedResult(); !ok || !last {
-					t.Fatalf("IsRevoked must report revoked=true for denylisted jti; got ok=%v revoked=%v", ok, last)
-				}
+				now = base
 			}
+
+			now = base
+			code, body := doReq(h, http.MethodGet, "/v1/me", good, nil)
+			Expect(code).To(Equal(http.StatusOK), "valid token must authorize /v1/me; body=%s", body)
 		})
-	}
-
-	// Sanity: valid unexpired token authorizes /v1/me.
-	now = base
-	code, body := doReq(t, h, http.MethodGet, "/v1/me", good, nil)
-	if code != http.StatusOK {
-		t.Fatalf("valid token must authorize /v1/me: status=%d body=%s", code, body)
-	}
-}
-
-// Task 2a / Task A: denylist store errors fail closed with 503 internal_error,
-// distinct from denylisted-jti → 401.
-func TestProtectedRoute_DenylistStoreError_503FailClosed(t *testing.T) {
-	dl := &errDenylist{err: errors.New("denylist unavailable")}
-	svc := newTestService(t, authn.Options{Denylist: dl})
-	// Issue does not consult the denylist; only Validate/Revoke do.
-	tok, err := svc.Issue(context.Background(), coachapi.Principal{
-		Provider: "github", Subject: "1", Login: "octocat",
 	})
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
 
-	code, body := doReq(t, svc.Handler(), http.MethodGet, "/v1/me", tok, nil)
-	if code != http.StatusServiceUnavailable {
-		t.Fatalf("status: got %d want 503; body=%s", code, body)
-	}
-	env := decodeEnvelope(t, body)
-	if env.Error.Code != coachapi.ErrorCodeInternalError {
-		t.Errorf("error.code: got %q want %q", env.Error.Code, coachapi.ErrorCodeInternalError)
-	}
-}
+	When("the denylist store errors during Validate", func() {
+		It("fails closed with 503 internal_error, distinct from denylisted-jti → 401", func() {
+			dl := &errDenylist{err: errors.New("denylist unavailable")}
+			svc := newTestService(authn.Options{Denylist: dl})
+			tok, err := svc.Issue(context.Background(), coachapi.Principal{
+				Provider: "github", Subject: "1", Login: "octocat",
+			})
+			Expect(err).NotTo(HaveOccurred())
 
-// Task 2a / Task A: test-mint is disabled by default (not registered → 404 not_found).
-func TestTestMint_DisabledByDefault_Returns404(t *testing.T) {
-	svc := newTestService(t, authn.Options{TestMintEnabled: false})
-	body := []byte(`{"subject":"12345","login":"octocat"}`)
-	code, resp := doReq(t, svc.Handler(), http.MethodPost, "/v1/auth/test-mint", "", body)
-	if code != http.StatusNotFound {
-		t.Fatalf("status: got %d want 404; body=%s", code, resp)
-	}
-	env := decodeEnvelope(t, resp)
-	if env.Error.Code != coachapi.ErrorCodeNotFound {
-		t.Errorf("error.code: got %q want %q", env.Error.Code, coachapi.ErrorCodeNotFound)
-	}
-}
-
-// Task 2a / Task A: when mint is enabled, mint succeeds and JWT authorizes /v1/me
-// with Principal matching the mint request (provider=github).
-func TestTestMint_Enabled_IssuesTokenThatAuthorizesMe(t *testing.T) {
-	svc := newTestService(t, authn.Options{TestMintEnabled: true})
-	h := svc.Handler()
-
-	mintBody := []byte(`{"subject":"424242","login":"hubot"}`)
-	code, resp := doReq(t, h, http.MethodPost, "/v1/auth/test-mint", "", mintBody)
-	if code != http.StatusOK {
-		t.Fatalf("mint status: got %d want 200; body=%s", code, resp)
-	}
-	var mintResp struct {
-		Token string `json:"token"`
-	}
-	if err := json.Unmarshal(resp, &mintResp); err != nil {
-		t.Fatalf("mint response JSON: %v body=%s", err, resp)
-	}
-	if mintResp.Token == "" {
-		t.Fatal("mint response token must be non-empty")
-	}
-
-	code, meBody := doReq(t, h, http.MethodGet, "/v1/me", mintResp.Token, nil)
-	if code != http.StatusOK {
-		t.Fatalf("/v1/me status: got %d want 200; body=%s", code, meBody)
-	}
-	var p coachapi.Principal
-	if err := json.Unmarshal(meBody, &p); err != nil {
-		t.Fatalf("/v1/me JSON: %v body=%s", err, meBody)
-	}
-	want := coachapi.Principal{Provider: "github", Subject: "424242", Login: "hubot"}
-	if p != want {
-		t.Errorf("principal: got %+v want %+v", p, want)
-	}
-}
-
-// Task 2a / Task A: issued Coach JWT carries provider, sub, login, iss, exp, jti
-// and validates to the same Principal.
-func TestIssueValidate_ClaimsAndPrincipal(t *testing.T) {
-	svc := newTestService(t, authn.Options{})
-	in := coachapi.Principal{Provider: "github", Subject: "12345", Login: "octocat"}
-	tok, err := svc.Issue(context.Background(), in)
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
-	if tok == "" {
-		t.Fatal("token must be non-empty")
-	}
-	// Three JWT segments.
-	if parts := strings.Split(tok, "."); len(parts) != 3 {
-		t.Fatalf("token must be compact JWT with 3 segments; got %d", len(parts))
-	}
-
-	got, err := svc.Validate(context.Background(), tok)
-	if err != nil {
-		t.Fatalf("Validate: %v", err)
-	}
-	if got != in {
-		t.Errorf("Validate principal: got %+v want %+v", got, in)
-	}
-
-	claims, err := svc.InspectClaims(tok)
-	if err != nil {
-		t.Fatalf("InspectClaims: %v", err)
-	}
-	if claims.Provider != "github" {
-		t.Errorf("provider: got %q", claims.Provider)
-	}
-	if claims.Subject != "12345" {
-		t.Errorf("sub: got %q", claims.Subject)
-	}
-	if claims.Login != "octocat" {
-		t.Errorf("login: got %q", claims.Login)
-	}
-	if claims.Issuer != testIssuer {
-		t.Errorf("iss: got %q want %q", claims.Issuer, testIssuer)
-	}
-	if claims.ExpiresAt.IsZero() {
-		t.Error("exp must be set")
-	}
-	if claims.ID == "" {
-		t.Error("jti must be set")
-	}
-}
-
-// Expiry is exclusive at exp: Validate must fail when Now equals ExpiresAt
-// (not only when Now is strictly after exp).
-func TestValidate_RejectsTokenAtExactExpiryBoundary(t *testing.T) {
-	base := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
-	now := base
-	const ttl = time.Hour
-	svc := newTestService(t, authn.Options{
-		TokenTTL: ttl,
-		Now:      func() time.Time { return now },
+			code, body := doReq(svc.Handler(), http.MethodGet, "/v1/me", tok, nil)
+			Expect(code).To(Equal(http.StatusServiceUnavailable), "body=%s", body)
+			env := decodeEnvelope(body)
+			Expect(env.Error.Code).To(Equal(coachapi.ErrorCodeInternalError))
+		})
 	})
-	tok, err := svc.Issue(context.Background(), coachapi.Principal{
-		Provider: "github", Subject: "9", Login: "boundary",
+
+	When("test-mint is disabled (the default)", func() {
+		It("leaves the path unregistered and returns 404 not_found", func() {
+			svc := newTestService(authn.Options{TestMintEnabled: false})
+			body := []byte(`{"subject":"12345","login":"octocat"}`)
+			code, resp := doReq(svc.Handler(), http.MethodPost, "/v1/auth/test-mint", "", body)
+			Expect(code).To(Equal(http.StatusNotFound), "body=%s", resp)
+			env := decodeEnvelope(resp)
+			Expect(env.Error.Code).To(Equal(coachapi.ErrorCodeNotFound))
+		})
 	})
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
 
-	// Still valid just before exp.
-	now = base.Add(ttl - time.Nanosecond)
-	if _, err := svc.Validate(context.Background(), tok); err != nil {
-		t.Fatalf("Validate at exp-1ns: %v", err)
-	}
-	code, body := doReq(t, svc.Handler(), http.MethodGet, "/v1/me", tok, nil)
-	if code != http.StatusOK {
-		t.Fatalf("/v1/me at exp-1ns: got %d want 200 body=%s", code, body)
-	}
+	When("test-mint is enabled", func() {
+		It("issues a JWT that authorizes /v1/me with Principal matching the mint request", func() {
+			svc := newTestService(authn.Options{TestMintEnabled: true})
+			h := svc.Handler()
 
-	// At the exact expiry instant the token must be rejected.
-	now = base.Add(ttl)
-	if _, err := svc.Validate(context.Background(), tok); err == nil {
-		t.Fatal("Validate at exp==now must fail")
-	}
-	code, body = doReq(t, svc.Handler(), http.MethodGet, "/v1/me", tok, nil)
-	if code != http.StatusUnauthorized {
-		t.Fatalf("/v1/me at exp==now: got %d want 401 body=%s", code, body)
-	}
-	env := decodeEnvelope(t, body)
-	if env.Error.Code != coachapi.ErrorCodeUnauthenticated {
-		t.Errorf("error.code: got %q want %q", env.Error.Code, coachapi.ErrorCodeUnauthenticated)
-	}
-}
+			mintBody := []byte(`{"subject":"424242","login":"hubot"}`)
+			code, resp := doReq(h, http.MethodPost, "/v1/auth/test-mint", "", mintBody)
+			Expect(code).To(Equal(http.StatusOK), "body=%s", resp)
+			var mintResp struct {
+				Token string `json:"token"`
+			}
+			Expect(json.Unmarshal(resp, &mintResp)).To(Succeed(), "body=%s", resp)
+			Expect(mintResp.Token).NotTo(BeEmpty())
 
-// Task 2a / Task A: Revoke denylists jti so subsequent Validate and /v1/me fail.
-func TestRevoke_DenylistsJTI(t *testing.T) {
-	svc := newTestService(t, authn.Options{})
-	tok, err := svc.Issue(context.Background(), coachapi.Principal{
-		Provider: "github", Subject: "7", Login: "revokee",
+			code, meBody := doReq(h, http.MethodGet, "/v1/me", mintResp.Token, nil)
+			Expect(code).To(Equal(http.StatusOK), "body=%s", meBody)
+			var p coachapi.Principal
+			Expect(json.Unmarshal(meBody, &p)).To(Succeed(), "body=%s", meBody)
+			Expect(p).To(Equal(coachapi.Principal{Provider: "github", Subject: "424242", Login: "hubot"}))
+		})
 	})
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
-	if err := svc.Revoke(context.Background(), tok); err != nil {
-		t.Fatalf("Revoke: %v", err)
-	}
-	if _, err := svc.Validate(context.Background(), tok); err == nil {
-		t.Fatal("Validate after Revoke must fail")
-	}
-	code, body := doReq(t, svc.Handler(), http.MethodGet, "/v1/me", tok, nil)
-	if code != http.StatusUnauthorized {
-		t.Fatalf("status after revoke: got %d want 401 body=%s", code, body)
-	}
-	env := decodeEnvelope(t, body)
-	if env.Error.Code != coachapi.ErrorCodeUnauthenticated {
-		t.Errorf("error.code: got %q want %q", env.Error.Code, coachapi.ErrorCodeUnauthenticated)
-	}
-}
+
+	When("a Coach JWT is issued", func() {
+		It("carries provider, sub, login, iss, exp, and jti, and validates to the same Principal", func() {
+			svc := newTestService(authn.Options{})
+			in := coachapi.Principal{Provider: "github", Subject: "12345", Login: "octocat"}
+			tok, err := svc.Issue(context.Background(), in)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(tok).NotTo(BeEmpty())
+			Expect(strings.Split(tok, ".")).To(HaveLen(3), "token must be compact JWT with 3 segments")
+
+			got, err := svc.Validate(context.Background(), tok)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(Equal(in))
+
+			claims, err := svc.InspectClaims(tok)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(claims.Provider).To(Equal("github"))
+			Expect(claims.Subject).To(Equal("12345"))
+			Expect(claims.Login).To(Equal("octocat"))
+			Expect(claims.Issuer).To(Equal(testIssuer))
+			Expect(claims.ExpiresAt.IsZero()).To(BeFalse(), "exp must be set")
+			Expect(claims.ID).NotTo(BeEmpty(), "jti must be set")
+		})
+	})
+
+	When("Now equals the token's exp instant", func() {
+		It("rejects the token (expiry is exclusive at exp), while exp-1ns still authorizes", func() {
+			base := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+			now := base
+			const ttl = time.Hour
+			svc := newTestService(authn.Options{
+				TokenTTL: ttl,
+				Now:      func() time.Time { return now },
+			})
+			tok, err := svc.Issue(context.Background(), coachapi.Principal{
+				Provider: "github", Subject: "9", Login: "boundary",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			now = base.Add(ttl - time.Nanosecond)
+			_, err = svc.Validate(context.Background(), tok)
+			Expect(err).NotTo(HaveOccurred())
+			code, body := doReq(svc.Handler(), http.MethodGet, "/v1/me", tok, nil)
+			Expect(code).To(Equal(http.StatusOK), "body=%s", body)
+
+			now = base.Add(ttl)
+			_, err = svc.Validate(context.Background(), tok)
+			Expect(err).To(HaveOccurred(), "Validate at exp==now must fail")
+			code, body = doReq(svc.Handler(), http.MethodGet, "/v1/me", tok, nil)
+			expectUnauthenticated(code, body)
+		})
+	})
+
+	When("a token is revoked", func() {
+		It("denylists jti so subsequent Validate and /v1/me fail with 401 unauthenticated", func() {
+			svc := newTestService(authn.Options{})
+			tok, err := svc.Issue(context.Background(), coachapi.Principal{
+				Provider: "github", Subject: "7", Login: "revokee",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(svc.Revoke(context.Background(), tok)).To(Succeed())
+			_, err = svc.Validate(context.Background(), tok)
+			Expect(err).To(HaveOccurred(), "Validate after Revoke must fail")
+			code, body := doReq(svc.Handler(), http.MethodGet, "/v1/me", tok, nil)
+			expectUnauthenticated(code, body)
+		})
+	})
+
+	When("the request method does not match a registered /v1 route", func() {
+		It("returns an enveloped 404 not_found with application/json", func() {
+			svc := newTestService(authn.Options{})
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/v1/me", nil)
+			svc.Handler().ServeHTTP(rec, req)
+			Expect(rec.Code).To(Equal(http.StatusNotFound), "body=%s", rec.Body.String())
+			Expect(rec.Header().Get("Content-Type")).To(ContainSubstring("application/json"))
+			env := decodeEnvelope(rec.Body.Bytes())
+			Expect(env.Error.Code).To(Equal(coachapi.ErrorCodeNotFound))
+		})
+	})
+})
 
 // errDenylist always returns a store error from IsRevoked (fail-closed path).
 type errDenylist struct {
