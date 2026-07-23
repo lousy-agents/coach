@@ -33,7 +33,7 @@ func (s *Service) Handler() http.Handler {
 }
 
 func (s *Service) handleMe(w http.ResponseWriter, r *http.Request) {
-	p, ok := PrincipalFromContext(r.Context())
+	p, ok := coachapi.PrincipalFromContext(r.Context())
 	if !ok {
 		writeAPIError(w, http.StatusUnauthorized, coachapi.ErrorCodeUnauthenticated, "unauthenticated")
 		return

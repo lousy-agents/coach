@@ -1,23 +1,12 @@
 package authn
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/coachapi"
 )
-
-type ctxKey int
-
-const principalKey ctxKey = 1
-
-// PrincipalFromContext returns the Principal attached by Middleware, if any.
-func PrincipalFromContext(ctx context.Context) (coachapi.Principal, bool) {
-	p, ok := ctx.Value(principalKey).(coachapi.Principal)
-	return p, ok
-}
 
 // Middleware validates the Authorization Bearer Coach JWT and attaches the
 // Principal to the request context. Missing/invalid/expired/denylisted tokens
@@ -38,7 +27,7 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 			writeAPIError(w, http.StatusUnauthorized, coachapi.ErrorCodeUnauthenticated, "unauthenticated")
 			return
 		}
-		ctx := context.WithValue(r.Context(), principalKey, p)
+		ctx := coachapi.WithPrincipal(r.Context(), p)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
