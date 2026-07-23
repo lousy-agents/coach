@@ -274,3 +274,328 @@ func (s *PostgresStore) RecordFailure(ctx context.Context, jobID string, errMsg 
 	}
 	return nil
 }
+
+// ClaimJob implements WorkerJobStore: claims queued rows or reclaims running
+// rows whose heartbeat is older than staleAfter, incrementing attempt and
+// deleting prior findings/diagnostics in one transaction.
+func (s *PostgresStore) ClaimJob(ctx context.Context, jobID, workerID string, now time.Time, staleAfter time.Duration) (ClaimLease, error) {
+	staleBefore := now.Add(-staleAfter)
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return ClaimLease{}, fmt.Errorf("coachapi: claim job: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once committed
+
+	var attempt int
+	err = tx.QueryRow(ctx, `
+		UPDATE jobs
+		SET status = $1,
+			claimed_by = $2,
+			heartbeat_at = $3,
+			started_at = $3,
+			finished_at = NULL,
+			error = NULL,
+			attempt = attempt + 1,
+			commit_sha = NULL,
+			report_versions = NULL,
+			generated_at = NULL
+		WHERE id = $4
+		  AND (
+			status = $5
+			OR (
+				status = $6
+				AND (heartbeat_at IS NULL OR heartbeat_at <= $7)
+			)
+		  )
+		RETURNING attempt`,
+		string(JobStatusRunning), workerID, now, jobID,
+		string(JobStatusQueued), string(JobStatusRunning), staleBefore,
+	).Scan(&attempt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Distinguish not-found from not-claimable.
+			var exists bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM jobs WHERE id = $1)`, jobID).Scan(&exists); err != nil {
+				return ClaimLease{}, fmt.Errorf("coachapi: claim job %q: %w", jobID, err)
+			}
+			if !exists {
+				return ClaimLease{}, fmt.Errorf("coachapi: job %q: %w", jobID, ErrJobNotFound)
+			}
+			return ClaimLease{}, fmt.Errorf("coachapi: job %q: %w", jobID, ErrNotClaimable)
+		}
+		return ClaimLease{}, fmt.Errorf("coachapi: claim job %q: %w", jobID, err)
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM job_findings WHERE job_id = $1`, jobID); err != nil {
+		return ClaimLease{}, fmt.Errorf("coachapi: claim job %q: delete findings: %w", jobID, err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM job_diagnostics WHERE job_id = $1`, jobID); err != nil {
+		return ClaimLease{}, fmt.Errorf("coachapi: claim job %q: delete diagnostics: %w", jobID, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return ClaimLease{}, fmt.Errorf("coachapi: claim job %q: commit: %w", jobID, err)
+	}
+	return ClaimLease{JobID: jobID, WorkerID: workerID, Attempt: attempt, StartedAt: now}, nil
+}
+
+// Heartbeat implements WorkerJobStore.
+func (s *PostgresStore) Heartbeat(ctx context.Context, jobID, workerID string, attempt int, now time.Time) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE jobs SET heartbeat_at = $1
+		WHERE id = $2 AND status = $3 AND claimed_by = $4 AND attempt = $5`,
+		now, jobID, string(JobStatusRunning), workerID, attempt,
+	)
+	if err != nil {
+		return fmt.Errorf("coachapi: heartbeat job %q: %w", jobID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return s.fenceFailure(ctx, jobID)
+	}
+	return nil
+}
+
+// InsertFindings implements WorkerJobStore. Each row uses INSERT…SELECT gated
+// on the lease fence (atomic; no check-then-act), and job_id/attempt are taken
+// from the lease args rather than client-supplied finding fields.
+func (s *PostgresStore) InsertFindings(ctx context.Context, jobID, workerID string, attempt int, findings []JobFinding) error {
+	if len(findings) == 0 {
+		return nil
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("coachapi: insert findings: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once committed
+
+	if fenceHoldForTest != nil {
+		fenceHoldForTest()
+	}
+	for _, f := range findings {
+		createdAt := f.CreatedAt
+		if createdAt.IsZero() {
+			createdAt = time.Now().UTC()
+		}
+		tag, err := tx.Exec(ctx, `
+			INSERT INTO job_findings (
+				id, job_id, attempt, source, rubric_id, rubric_version,
+				model_identity, payload, payload_hash, created_at
+			)
+			SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
+			WHERE EXISTS (
+				SELECT 1 FROM jobs
+				WHERE id = $2 AND status = $11 AND claimed_by = $12 AND attempt = $3
+			)`,
+			f.ID, jobID, attempt, string(f.Source), f.RubricID,
+			f.RubricVersion, f.ModelIdentity, f.Payload, f.PayloadHash, createdAt,
+			string(JobStatusRunning), workerID,
+		)
+		if err != nil {
+			return fmt.Errorf("coachapi: insert findings: inserting %q: %w", f.ID, err)
+		}
+		if tag.RowsAffected() == 0 {
+			return s.fenceFailureTx(ctx, tx, jobID)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("coachapi: insert findings: commit: %w", err)
+	}
+	return nil
+}
+
+// InsertDiagnostics implements WorkerJobStore (same atomic fence/stamping as InsertFindings).
+func (s *PostgresStore) InsertDiagnostics(ctx context.Context, jobID, workerID string, attempt int, diagnostics []JobDiagnostic) error {
+	if len(diagnostics) == 0 {
+		return nil
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("coachapi: insert diagnostics: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once committed
+
+	if fenceHoldForTest != nil {
+		fenceHoldForTest()
+	}
+	for _, d := range diagnostics {
+		createdAt := d.CreatedAt
+		if createdAt.IsZero() {
+			createdAt = time.Now().UTC()
+		}
+		tag, err := tx.Exec(ctx, `
+			INSERT INTO job_diagnostics (id, job_id, attempt, scope, message, created_at)
+			SELECT $1,$2,$3,$4,$5,$6
+			WHERE EXISTS (
+				SELECT 1 FROM jobs
+				WHERE id = $2 AND status = $7 AND claimed_by = $8 AND attempt = $3
+			)`,
+			d.ID, jobID, attempt, d.Scope, d.Message, createdAt,
+			string(JobStatusRunning), workerID,
+		)
+		if err != nil {
+			return fmt.Errorf("coachapi: insert diagnostics: inserting %q: %w", d.ID, err)
+		}
+		if tag.RowsAffected() == 0 {
+			return s.fenceFailureTx(ctx, tx, jobID)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("coachapi: insert diagnostics: commit: %w", err)
+	}
+	return nil
+}
+
+// CompleteJob implements WorkerJobStore.
+func (s *PostgresStore) CompleteJob(ctx context.Context, jobID, workerID string, attempt int, completion Completion) error {
+	versionsRaw, err := json.Marshal(completion.Versions)
+	if err != nil {
+		return fmt.Errorf("coachapi: complete job: encoding versions: %w", err)
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("coachapi: complete job: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once committed
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE jobs
+		SET status = $1, attempt = $2, finished_at = $3, error = NULL,
+			commit_sha = $4, report_versions = $5, generated_at = $6
+		WHERE id = $7 AND status = $8 AND claimed_by = $9 AND attempt = $10`,
+		string(JobStatusCompleted), attempt, completion.FinishedAt,
+		completion.CommitSHA, versionsRaw, completion.GeneratedAt, jobID,
+		string(JobStatusRunning), workerID, attempt,
+	)
+	if err != nil {
+		return fmt.Errorf("coachapi: complete job %q: %w", jobID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return s.fenceFailureTx(ctx, tx, jobID)
+	}
+
+	seq := 0
+	nextCreatedAt := func() time.Time {
+		t := completion.GeneratedAt.Add(time.Duration(seq) * time.Nanosecond)
+		seq++
+		return t
+	}
+	for _, f := range completion.Findings {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO job_findings (
+				id, job_id, attempt, source, rubric_id, rubric_version,
+				model_identity, payload, payload_hash, created_at
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+			f.ID, jobID, attempt, string(f.Source), f.RubricID,
+			f.RubricVersion, f.ModelIdentity, f.Payload, f.PayloadHash,
+			nextCreatedAt(),
+		); err != nil {
+			return fmt.Errorf("coachapi: complete job: inserting finding %q: %w", f.ID, err)
+		}
+	}
+	for _, d := range completion.Diagnostics {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO job_diagnostics (id, job_id, attempt, scope, message, created_at)
+			VALUES ($1,$2,$3,$4,$5,$6)`,
+			d.ID, jobID, attempt, d.Scope, d.Message, nextCreatedAt(),
+		); err != nil {
+			return fmt.Errorf("coachapi: complete job: inserting diagnostic %q: %w", d.ID, err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("coachapi: complete job: commit: %w", err)
+	}
+	return nil
+}
+
+// FailJob implements WorkerJobStore.
+func (s *PostgresStore) FailJob(ctx context.Context, jobID, workerID string, attempt int, errMsg string, finishedAt time.Time) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE jobs SET status = $1, error = $2, finished_at = $3
+		WHERE id = $4 AND status = $5 AND claimed_by = $6 AND attempt = $7`,
+		string(JobStatusFailed), errMsg, finishedAt, jobID,
+		string(JobStatusRunning), workerID, attempt,
+	)
+	if err != nil {
+		return fmt.Errorf("coachapi: fail job %q: %w", jobID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return s.fenceFailure(ctx, jobID)
+	}
+	return nil
+}
+
+// ListQueuedOlderThan implements WorkerJobStore.
+func (s *PostgresStore) ListQueuedOlderThan(ctx context.Context, olderThan time.Time) ([]Job, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, kind, params, status, error, created_at, started_at,
+			finished_at, claimed_by, heartbeat_at, attempt,
+			created_by_provider, created_by_subject, created_by_login
+		FROM jobs
+		WHERE status = $1 AND created_at < $2
+		ORDER BY created_at ASC`,
+		string(JobStatusQueued), olderThan,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("coachapi: list queued older than: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Job
+	for rows.Next() {
+		job, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("coachapi: list queued older than: %w", err)
+	}
+	return out, nil
+}
+
+// ReleaseStaleRunning implements WorkerJobStore.
+func (s *PostgresStore) ReleaseStaleRunning(ctx context.Context, now time.Time, staleAfter time.Duration) (int, error) {
+	staleBefore := now.Add(-staleAfter)
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE jobs
+		SET status = $1, claimed_by = NULL, heartbeat_at = NULL
+		WHERE status = $2 AND (heartbeat_at IS NULL OR heartbeat_at <= $3)`,
+		string(JobStatusQueued), string(JobStatusRunning), staleBefore,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("coachapi: release stale running: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+// fenceHoldForTest, when non-nil, runs before atomic fenced inserts so
+// acceptance tests can interleave ClaimJob reclaim. nil outside tests.
+var fenceHoldForTest func()
+
+func (s *PostgresStore) fenceFailure(ctx context.Context, jobID string) error {
+	var exists bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM jobs WHERE id = $1)`, jobID).Scan(&exists); err != nil {
+		return fmt.Errorf("coachapi: fence check job %q: %w", jobID, err)
+	}
+	if !exists {
+		return fmt.Errorf("coachapi: job %q: %w", jobID, ErrJobNotFound)
+	}
+	return fmt.Errorf("coachapi: job %q: %w", jobID, ErrClaimLost)
+}
+
+func (s *PostgresStore) fenceFailureTx(ctx context.Context, tx pgx.Tx, jobID string) error {
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM jobs WHERE id = $1)`, jobID).Scan(&exists); err != nil {
+		return fmt.Errorf("coachapi: fence check job %q: %w", jobID, err)
+	}
+	if !exists {
+		return fmt.Errorf("coachapi: job %q: %w", jobID, ErrJobNotFound)
+	}
+	return fmt.Errorf("coachapi: job %q: %w", jobID, ErrClaimLost)
+}
+
+var _ WorkerJobStore = (*PostgresStore)(nil)

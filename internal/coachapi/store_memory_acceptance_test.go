@@ -268,4 +268,71 @@ var _ = Describe("coachapi.MemoryStore", func() {
 			}
 		})
 	})
+
+	// Reviewer finding #2: MemoryStore must stamp lease jobID/attempt.
+	When("InsertFindings is given findings stamped with a wrong Attempt", func() {
+		It("persists the fenced lease attempt so GetReport includes them", func() {
+			job := newQueuedJob("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+
+			start := time.Date(2026, 7, 23, 13, 0, 0, 0, time.UTC)
+			lease, err := store.ClaimJob(ctx, job.ID, "worker-a", start, 60*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lease.Attempt).To(Equal(1))
+
+			Expect(store.InsertFindings(ctx, job.ID, "worker-a", lease.Attempt, []coachapi.JobFinding{{
+				ID:          "finding-wrong-attempt",
+				JobID:       "other-job",
+				Attempt:     0,
+				Source:      coachapi.FindingSourceDeterministic,
+				Payload:     json.RawMessage(`{"rule_id":"stamped"}`),
+				PayloadHash: "hash-stamped",
+				CreatedAt:   start,
+			}})).To(Succeed())
+
+			Expect(store.CompleteJob(ctx, job.ID, "worker-a", lease.Attempt, coachapi.Completion{
+				Attempt:     lease.Attempt,
+				CommitSHA:   "abc123def4567890abc123def4567890abc123de",
+				Versions:    coachapi.ReportVersions{Analyzer: "codesignal@1"},
+				FinishedAt:  start,
+				GeneratedAt: start,
+			})).To(Succeed())
+
+			report, err := store.GetReport(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Findings).To(HaveLen(1), "findings must be stored under the lease attempt, not client Attempt")
+			Expect(string(report.Findings[0].Payload)).To(ContainSubstring(`"rule_id":"stamped"`))
+		})
+	})
+
+	// Reviewer finding #3 contract: age == staleAfter is reclaimable.
+	When("a running job's heartbeat age equals staleAfter exactly", func() {
+		It("allows ClaimJob to reclaim and ReleaseStaleRunning to release", func() {
+			job := newQueuedJob("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+
+			const staleAfter = 60 * time.Second
+			start := time.Date(2026, 7, 23, 14, 0, 0, 0, time.UTC)
+			_, err := store.ClaimJob(ctx, job.ID, "worker-a", start, staleAfter)
+			Expect(err).NotTo(HaveOccurred())
+
+			boundary := start.Add(staleAfter)
+			lease2, err := store.ClaimJob(ctx, job.ID, "worker-b", boundary, staleAfter)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lease2.Attempt).To(Equal(2))
+
+			job2 := newQueuedJob("cccccccc-cccc-cccc-cccc-cccccccccccc")
+			Expect(store.CreateJob(ctx, job2)).To(Succeed())
+			_, err = store.ClaimJob(ctx, job2.ID, "worker-a", start, staleAfter)
+			Expect(err).NotTo(HaveOccurred())
+
+			released, err := store.ReleaseStaleRunning(ctx, boundary, staleAfter)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(released).To(BeNumerically(">=", 1))
+
+			got, err := store.GetJob(ctx, job2.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Status).To(Equal(coachapi.JobStatusQueued))
+		})
+	})
 })
