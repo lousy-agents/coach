@@ -10,8 +10,9 @@ import (
 )
 
 // RegisterTools registers the seed rubric judgment tools on loop as job-specific
-// tools (ADR-005). Tools call modelgateway.Gateway.Judge; judgment failures
-// degrade to a diagnostic envelope instead of failing the tool call hard.
+// tools (ADR-005). Tools call modelgateway.Gateway.Judge; schema/unavailable
+// judgment failures degrade to a diagnostic envelope instead of failing the
+// tool call hard. context.Canceled is returned as a hard tool error.
 func RegisterTools(loop *agentloop.Loop, gw modelgateway.Gateway) error {
 	if loop == nil {
 		return fmt.Errorf("rubrics: loop is required")
@@ -19,7 +20,11 @@ func RegisterTools(loop *agentloop.Loop, gw modelgateway.Gateway) error {
 	if gw == nil {
 		return fmt.Errorf("rubrics: gateway is required")
 	}
-	for _, spec := range ToolSpecs(gw) {
+	specs, err := ToolSpecs(gw)
+	if err != nil {
+		return err
+	}
+	for _, spec := range specs {
 		if err := loop.Register(spec); err != nil {
 			return err
 		}
@@ -28,15 +33,31 @@ func RegisterTools(loop *agentloop.Loop, gw modelgateway.Gateway) error {
 }
 
 // ToolSpecs returns agentloop.ToolSpec values for the two seed rubrics.
-func ToolSpecs(gw modelgateway.Gateway) []agentloop.ToolSpec {
-	return []agentloop.ToolSpec{
-		hiddenMutationToolSpec(gw),
-		changeCohesionToolSpec(gw),
+func ToolSpecs(gw modelgateway.Gateway) ([]agentloop.ToolSpec, error) {
+	hidden, err := hiddenMutationToolSpec(gw)
+	if err != nil {
+		return nil, err
 	}
+	cohesion, err := changeCohesionToolSpec(gw)
+	if err != nil {
+		return nil, err
+	}
+	return []agentloop.ToolSpec{hidden, cohesion}, nil
 }
 
-func hiddenMutationToolSpec(gw modelgateway.Gateway) agentloop.ToolSpec {
-	def, _ := DefinitionByID(IDHiddenMutationContextualization)
+func mustSeedDefinition(id string) (Definition, error) {
+	def, ok := DefinitionByID(id)
+	if !ok {
+		return Definition{}, fmt.Errorf("rubrics: missing seed definition %q", id)
+	}
+	return def, nil
+}
+
+func hiddenMutationToolSpec(gw modelgateway.Gateway) (agentloop.ToolSpec, error) {
+	def, err := mustSeedDefinition(IDHiddenMutationContextualization)
+	if err != nil {
+		return agentloop.ToolSpec{}, err
+	}
 	return agentloop.ToolSpec{
 		Name:       IDHiddenMutationContextualization,
 		ArgsSchema: hiddenMutationArgsSchema(),
@@ -54,14 +75,20 @@ func hiddenMutationToolSpec(gw modelgateway.Gateway) agentloop.ToolSpec {
 				Finding: finding,
 				File:    in.File,
 			})
-			result := Run(ctx, gw, def, msgs)
+			result, err := Run(ctx, gw, def, msgs)
+			if err != nil {
+				return nil, err
+			}
 			return marshalToolResult(toolResultFromRun(def, result))
 		},
-	}
+	}, nil
 }
 
-func changeCohesionToolSpec(gw modelgateway.Gateway) agentloop.ToolSpec {
-	def, _ := DefinitionByID(IDChangeCohesion)
+func changeCohesionToolSpec(gw modelgateway.Gateway) (agentloop.ToolSpec, error) {
+	def, err := mustSeedDefinition(IDChangeCohesion)
+	if err != nil {
+		return agentloop.ToolSpec{}, err
+	}
 	return agentloop.ToolSpec{
 		Name:       IDChangeCohesion,
 		ArgsSchema: changeCohesionArgsSchema(),
@@ -78,10 +105,13 @@ func changeCohesionToolSpec(gw modelgateway.Gateway) agentloop.ToolSpec {
 				Findings: findings,
 				Files:    in.Files,
 			})
-			result := Run(ctx, gw, def, msgs)
+			result, err := Run(ctx, gw, def, msgs)
+			if err != nil {
+				return nil, err
+			}
 			return marshalToolResult(toolResultFromRun(def, result))
 		},
-	}
+	}, nil
 }
 
 func marshalToolResult(r ToolResult) (json.RawMessage, error) {

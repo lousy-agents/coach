@@ -72,7 +72,9 @@ func (l *Loop) wallBudgetContext(ctx context.Context) (context.Context, context.
 }
 
 // mapWallErr rewrites deadline/cancel from a wall-budget child context into
-// ErrBudgetExceeded when the parent context is still live.
+// ErrBudgetExceeded when the parent context is still live. Handler errors that
+// are context.Canceled/DeadlineExceeded while opCtx is still live are left
+// alone (e.g. rubric tools surfacing lifecycle abort from Gateway.Judge).
 func (l *Loop) mapWallErr(parent, opCtx context.Context, err error) error {
 	if err == nil {
 		return nil
@@ -80,9 +82,13 @@ func (l *Loop) mapWallErr(parent, opCtx context.Context, err error) error {
 	if parent.Err() != nil {
 		return err
 	}
+	if opCtx.Err() == nil {
+		return err
+	}
 	if errors.Is(err, context.DeadlineExceeded) ||
 		errors.Is(err, context.Canceled) ||
-		errors.Is(opCtx.Err(), context.DeadlineExceeded) {
+		errors.Is(opCtx.Err(), context.DeadlineExceeded) ||
+		errors.Is(opCtx.Err(), context.Canceled) {
 		return fmt.Errorf("%w: max_wall_time %s", ErrBudgetExceeded, l.budget.MaxWallTime)
 	}
 	return err

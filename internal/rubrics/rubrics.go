@@ -71,9 +71,11 @@ type Result struct {
 }
 
 // ToolResult is the JSON envelope returned by rubric agent-loop tools.
-// On success Judgment is set and Diagnostic is null; on degrade Judgment is
-// null and Diagnostic is set. Tools never return a hard error for judgment
-// failure so handlers can finish the job with deterministic evidence.
+// On success Judgment is set and Diagnostic is null; on Story 5 degrade
+// Judgment is null and Diagnostic is set. Schema/unavailable judgment
+// failures do not hard-error the tool call so handlers can finish with
+// deterministic evidence. context.Canceled is returned as a hard tool error
+// (not a ToolResult diagnostic).
 type ToolResult struct {
 	RubricID       string          `json:"rubric_id"`
 	RubricVersion  string          `json:"rubric_version"`

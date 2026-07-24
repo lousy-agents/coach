@@ -490,12 +490,13 @@ var _ = Describe("internal/rubrics seed LLM-as-judge definitions", func() {
 				// Deterministic evidence still intact for the job handler.
 				Expect(deterministic).To(ContainSubstring("state.hidden_input_mutation"))
 
-				// Same contract via Run API used by handlers that skip the loop for a single judgment.
-				run := rubrics.Run(context.Background(), gw, seedByID(rubrics.IDHiddenMutationContextualization),
+				// Same contract via Run (gateway primitive used by registered tools).
+				run, runErr := rubrics.Run(context.Background(), gw, seedByID(rubrics.IDHiddenMutationContextualization),
 					rubrics.AssembleHiddenMutationMessages(rubrics.HiddenMutationEvidence{
 						Finding: sampleHiddenMutationFinding(),
 						File:    rubrics.FileContext{Path: "pkg/example/service.go", Language: "go"},
 					}))
+				Expect(runErr).NotTo(HaveOccurred())
 				Expect(run.Judgment).To(BeNil())
 				Expect(run.Diagnostic).NotTo(BeNil())
 				Expect(run.Diagnostic.Message).NotTo(BeEmpty())
@@ -539,6 +540,51 @@ var _ = Describe("internal/rubrics seed LLM-as-judge definitions", func() {
 				Expect(errors.Is(judgeErr, modelgateway.ErrUnavailable)).To(BeFalse())
 			})
 		})
+
+		When("judgment fails because the owning context was canceled", func() {
+			It("hard-fails the tool call and Run instead of soft-degrading to a diagnostic success", func() {
+				// Lifecycle abort is not Story 5 degrade: Task 8 must not CompleteJob.
+				loop := newLoop()
+				gw := modelgateway.NewStubGateway(modelgateway.StubOptions{
+					JudgeErr: modelgateway.NewUnavailableError("context done", context.Canceled),
+				})
+				Expect(rubrics.RegisterTools(loop, gw)).To(Succeed())
+
+				args := json.RawMessage(`{
+					"findings": [{"rule_id":"state.hidden_input_mutation","path":"a.go"}],
+					"files": [{"path":"a.go","language":"go"}]
+				}`)
+				raw, err := loop.Call(context.Background(), agentloop.CallSourceHandler,
+					rubrics.IDChangeCohesion, args)
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, context.Canceled)).To(BeTrue())
+				Expect(raw).To(BeNil())
+
+				// DeadlineExceeded remains judgment-phase timeout → soft degrade.
+				timeoutGW := modelgateway.NewStubGateway(modelgateway.StubOptions{
+					JudgeErr: modelgateway.NewUnavailableError("upstream timeout", context.DeadlineExceeded),
+				})
+				timeoutLoop := newLoop()
+				Expect(rubrics.RegisterTools(timeoutLoop, timeoutGW)).To(Succeed())
+				timeoutRaw, timeoutErr := timeoutLoop.Call(context.Background(), agentloop.CallSourceHandler,
+					rubrics.IDChangeCohesion, args)
+				Expect(timeoutErr).NotTo(HaveOccurred())
+				var timeoutOut rubrics.ToolResult
+				Expect(json.Unmarshal(timeoutRaw, &timeoutOut)).To(Succeed())
+				Expect(timeoutOut.HasJudgment()).To(BeFalse())
+				Expect(timeoutOut.Diagnostic).NotTo(BeNil())
+
+				// Direct Run with canceled parent context hard-fails.
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				run, runErr := rubrics.Run(ctx, modelgateway.NewStubGateway(),
+					seedByID(rubrics.IDChangeCohesion), nil)
+				Expect(runErr).To(HaveOccurred())
+				Expect(errors.Is(runErr, context.Canceled)).To(BeTrue())
+				Expect(run.Judgment).To(BeNil())
+				Expect(run.Diagnostic).To(BeNil())
+			})
+		})
 	})
 
 	Describe("Run judgment API for job handlers", func() {
@@ -554,7 +600,10 @@ var _ = Describe("internal/rubrics seed LLM-as-judge definitions", func() {
 						Content:  "package example\nfunc NewService(cfg *Config) *Service { cfg.timeout = 1; return &Service{} }\n",
 					},
 				})
-				result := rubrics.Run(context.Background(), rec, def, msgs)
+				// Run is the Gateway.Judge primitive used by registered tools;
+				// job handlers must drive judgments via RegisterTools + Call (ADR-005).
+				result, err := rubrics.Run(context.Background(), rec, def, msgs)
+				Expect(err).NotTo(HaveOccurred())
 
 				Expect(result.Diagnostic).To(BeNil())
 				Expect(result.Judgment).NotTo(BeNil())
@@ -630,7 +679,8 @@ var _ = Describe("internal/rubrics seed LLM-as-judge definitions", func() {
 				for _, tc := range cases {
 					def := seedByID(tc.id)
 					rec := newRecordingGateway(modelgateway.NewStubGateway())
-					result := rubrics.Run(context.Background(), rec, def, tc.msgs)
+					result, err := rubrics.Run(context.Background(), rec, def, tc.msgs)
+					Expect(err).NotTo(HaveOccurred(), "rubric %s", tc.id)
 					Expect(result.Diagnostic).To(BeNil(), "rubric %s", tc.id)
 					Expect(result.Judgment).NotTo(BeNil(), "rubric %s", tc.id)
 					Expect(canonicalJSON(result.Judgment.JudgmentJSON)).To(Equal(

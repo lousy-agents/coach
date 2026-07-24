@@ -50,7 +50,7 @@ func goldenReport() Report {
 				RubricVersion: &agentRubricVersion,
 				ModelIdentity: &agentModelIdentity,
 				Payload: json.RawMessage(
-					`{"judgment":"actionable","rule_id":"state.hidden_input_mutation"}`,
+					`{"judgment":"concern","rationale":"mutation hides input state that will surprise reviewers","confidence":"high","suggested_focus":"constructor parameter assignment"}`,
 				),
 			},
 		},
