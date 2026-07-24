@@ -71,7 +71,10 @@ func newCompatClient(srv *httptest.Server, cfg modelgateway.OpenAICompatConfig) 
 		cfg.LogicalModel = modelgateway.DefaultLogicalModel
 	}
 	if cfg.HTTPClient == nil {
-		cfg.HTTPClient = srv.Client()
+		// httptest.Server.Client has Timeout 0; production requires a finite timeout.
+		c := srv.Client()
+		c.Timeout = modelgateway.DefaultHTTPClientTimeout
+		cfg.HTTPClient = c
 	}
 	client, err := modelgateway.NewOpenAICompatClient(cfg)
 	Expect(err).NotTo(HaveOccurred())
@@ -154,7 +157,7 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 		})
 
 		When("OutputSchema uses types outside the seed-rubric subset", func() {
-			It("returns typed ErrSchemaValidation for integer property schemas instead of accepting JSON numbers", func() {
+			It("returns typed ErrSchemaValidation for integer property schemas with zero upstream calls", func() {
 				integerSchema := json.RawMessage(`{
 					"type": "object",
 					"required": ["score"],
@@ -162,7 +165,9 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 						"score": {"type": "integer"}
 					}
 				}`)
+				var attempts atomic.Int32
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					attempts.Add(1)
 					w.Header().Set("Content-Type", "application/json")
 					_, _ = w.Write(chatCompletionBody("served-x", `{"score": 1}`))
 				}))
@@ -175,6 +180,9 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, modelgateway.ErrSchemaValidation)).To(BeTrue())
 				Expect(errors.Is(err, modelgateway.ErrUnavailable)).To(BeFalse())
+				// Static schema problems are caller/config errors — do not burn the
+				// model-output retry budget against the upstream.
+				Expect(attempts.Load()).To(Equal(int32(0)))
 			})
 		})
 
@@ -375,6 +383,47 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				Expect(client.HTTPClient()).NotTo(BeIdenticalTo(http.DefaultClient))
 			})
 		})
+
+		When("HTTPClient is injected without a finite timeout", func() {
+			It("rejects a client with Timeout <= 0", func() {
+				_, err := modelgateway.NewOpenAICompatClient(modelgateway.OpenAICompatConfig{
+					BaseURL:      "http://127.0.0.1:1",
+					LogicalModel: modelgateway.DefaultLogicalModel,
+					HTTPClient:   &http.Client{Timeout: 0},
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Timeout"))
+			})
+
+			It("rejects bare http.DefaultClient", func() {
+				_, err := modelgateway.NewOpenAICompatClient(modelgateway.OpenAICompatConfig{
+					BaseURL:      "http://127.0.0.1:1",
+					LogicalModel: modelgateway.DefaultLogicalModel,
+					HTTPClient:   http.DefaultClient,
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("DefaultClient"))
+			})
+		})
+
+		When("BaseURL already ends with the OpenAI root path segment", func() {
+			It("POSTs a single /v1/chat/completions path (no /v1/v1 double prefix)", func() {
+				var gotPath string
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gotPath = r.URL.Path
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(chatCompletionBody("served-norm", validHiddenMutationContent()))
+				}))
+				DeferCleanup(srv.Close)
+
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{
+					BaseURL: srv.URL + "/v1",
+				})
+				_, err := client.Judge(context.Background(), defaultJudgeRequest())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(gotPath).To(Equal("/v1/chat/completions"))
+			})
+		})
 	})
 
 	Describe("thin env config", func() {
@@ -408,7 +457,9 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				Expect(cfg.HTTPClient).NotTo(BeNil())
 				Expect(cfg.HTTPClient.Timeout).To(Equal(modelgateway.DefaultHTTPClientTimeout))
 
-				cfg.HTTPClient = srv.Client()
+				c := srv.Client()
+				c.Timeout = modelgateway.DefaultHTTPClientTimeout
+				cfg.HTTPClient = c
 				client, err := modelgateway.NewOpenAICompatClient(cfg)
 				Expect(err).NotTo(HaveOccurred())
 

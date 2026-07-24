@@ -32,6 +32,7 @@ type OpenAICompatConfig struct {
 	AuthHeader   string
 	ExtraHeaders map[string]string
 	// HTTPClient is optional; when nil a client with DefaultHTTPClientTimeout is used.
+	// When non-nil it must not be http.DefaultClient and must have Timeout > 0.
 	HTTPClient *http.Client
 	// SchemaValidationAttempts overrides DefaultSchemaValidationAttempts when > 0.
 	SchemaValidationAttempts int
@@ -51,12 +52,9 @@ type OpenAICompatClient struct {
 var _ Gateway = (*OpenAICompatClient)(nil)
 
 func NewOpenAICompatClient(cfg OpenAICompatConfig) (*OpenAICompatClient, error) {
-	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
-	if base == "" {
-		return nil, fmt.Errorf("modelgateway: BaseURL is required")
-	}
-	if _, err := url.ParseRequestURI(base); err != nil {
-		return nil, fmt.Errorf("modelgateway: BaseURL is invalid: %w", err)
+	base, err := normalizeBaseURL(cfg.BaseURL)
+	if err != nil {
+		return nil, err
 	}
 
 	logical := strings.TrimSpace(cfg.LogicalModel)
@@ -64,9 +62,9 @@ func NewOpenAICompatClient(cfg OpenAICompatConfig) (*OpenAICompatClient, error) 
 		logical = DefaultLogicalModel
 	}
 
-	httpClient := cfg.HTTPClient
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: DefaultHTTPClientTimeout}
+	httpClient, err := resolveHTTPClient(cfg.HTTPClient)
+	if err != nil {
+		return nil, err
 	}
 
 	attempts := cfg.SchemaValidationAttempts
@@ -91,6 +89,41 @@ func NewOpenAICompatClient(cfg OpenAICompatConfig) (*OpenAICompatClient, error) 
 		httpClient:               httpClient,
 		schemaValidationAttempts: attempts,
 	}, nil
+}
+
+// normalizeBaseURL trims whitespace and trailing slashes, and strips a single
+// trailing "/v1" so operators may pass either the origin or the OpenAI API root
+// without producing /v1/v1/chat/completions.
+func normalizeBaseURL(raw string) (string, error) {
+	base := strings.TrimSpace(raw)
+	base = strings.TrimRight(base, "/")
+	if base == "" {
+		return "", fmt.Errorf("modelgateway: BaseURL is required")
+	}
+	if strings.HasSuffix(base, "/v1") {
+		base = strings.TrimSuffix(base, "/v1")
+		base = strings.TrimRight(base, "/")
+	}
+	if base == "" {
+		return "", fmt.Errorf("modelgateway: BaseURL is required")
+	}
+	if _, err := url.ParseRequestURI(base); err != nil {
+		return "", fmt.Errorf("modelgateway: BaseURL is invalid: %w", err)
+	}
+	return base, nil
+}
+
+func resolveHTTPClient(c *http.Client) (*http.Client, error) {
+	if c == nil {
+		return &http.Client{Timeout: DefaultHTTPClientTimeout}, nil
+	}
+	if c == http.DefaultClient {
+		return nil, fmt.Errorf("modelgateway: HTTPClient must not be http.DefaultClient")
+	}
+	if c.Timeout <= 0 {
+		return nil, fmt.Errorf("modelgateway: HTTPClient.Timeout must be > 0")
+	}
+	return c, nil
 }
 
 func (c *OpenAICompatClient) HTTPClient() *http.Client {
@@ -136,6 +169,12 @@ func (c *OpenAICompatClient) Judge(ctx context.Context, req JudgmentRequest) (Ju
 	}
 	if logical == "" {
 		logical = DefaultLogicalModel
+	}
+
+	// Fail closed on static schema problems before any upstream call so the
+	// bounded retry budget is reserved for malformed model output only.
+	if err := validateOutputSchema(req.OutputSchema); err != nil {
+		return JudgmentResponse{}, err
 	}
 
 	var lastValErr error

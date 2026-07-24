@@ -6,6 +6,28 @@ import (
 	"strings"
 )
 
+// validateOutputSchema checks OutputSchema shape and supported property types
+// without a judgment value. Callers use this to fail closed on static schema
+// problems before any upstream inference call.
+func validateOutputSchema(schema json.RawMessage) error {
+	if len(schema) == 0 {
+		return nil
+	}
+	var sch schemaDoc
+	if err := json.Unmarshal(schema, &sch); err != nil {
+		return NewValidationError("output schema is not valid JSON")
+	}
+	if sch.Type != "" && sch.Type != "object" {
+		return NewValidationError("output schema type must be object")
+	}
+	for name, prop := range sch.Properties {
+		if err := ensureSupportedPropSchema(name, prop); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // validateJudgmentJSON ensures judgment is a JSON object. When schema is
 // non-empty, it enforces a minimal JSON Schema subset used by seed rubrics:
 // object type, required properties, string enums, and string|null types.
@@ -24,12 +46,13 @@ func validateJudgmentJSON(judgment, schema json.RawMessage) error {
 		return nil
 	}
 
+	if err := validateOutputSchema(schema); err != nil {
+		return err
+	}
+
 	var sch schemaDoc
 	if err := json.Unmarshal(schema, &sch); err != nil {
 		return NewValidationError("output schema is not valid JSON")
-	}
-	if sch.Type != "" && sch.Type != "object" {
-		return NewValidationError("output schema type must be object")
 	}
 	for _, key := range sch.Required {
 		if _, present := obj[key]; !present {
@@ -37,9 +60,6 @@ func validateJudgmentJSON(judgment, schema json.RawMessage) error {
 		}
 	}
 	for name, prop := range sch.Properties {
-		if err := ensureSupportedPropSchema(name, prop); err != nil {
-			return err
-		}
 		raw, present := obj[name]
 		if !present {
 			continue
