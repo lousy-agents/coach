@@ -127,6 +127,10 @@ func isTransientFetchCause(err error) bool {
 
 // buildModelGateway prefers OpenAI-compat when MODEL_GATEWAY_BASE_URL is set;
 // otherwise the deterministic stub (core/smoke profile).
+//
+// When the operator set a base URL but the client cannot be constructed,
+// return a gateway that always yields ErrUnavailable so rubrics degrade to
+// diagnostics instead of the success stub's canned source=agent judgments.
 func buildModelGateway() modelgateway.Gateway {
 	ocfg, err := modelgateway.ConfigFromEnv()
 	if err != nil {
@@ -134,8 +138,10 @@ func buildModelGateway() modelgateway.Gateway {
 	}
 	client, err := modelgateway.NewOpenAICompatClient(ocfg)
 	if err != nil {
-		log.Printf("coach-worker: OpenAI-compat gateway unavailable (%v); using stub", err)
-		return modelgateway.NewStubGateway()
+		log.Printf("coach-worker: OpenAI-compat gateway unavailable (%v); degrading judgments", err)
+		return modelgateway.NewStubGateway(modelgateway.StubOptions{
+			JudgeErr: modelgateway.NewUnavailableError("openai-compat client construction failed", err),
+		})
 	}
 	return client
 }

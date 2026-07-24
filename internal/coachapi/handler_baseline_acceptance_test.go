@@ -820,4 +820,31 @@ func Mut(c *C, n string) { c.N = n }
 			Expect(report.ReportVersion).To(Equal(coachapi.ReportVersion1))
 		})
 	})
+
+	When("the local smoke fixture contains a symlink that points outside the root", func() {
+		It("skips the symlink in ListFiles and rejects it on ReadFile", func() {
+			root := GinkgoT().TempDir()
+			outside := GinkgoT().TempDir()
+			secret := filepath.Join(outside, "secret.go")
+			Expect(os.WriteFile(secret, []byte("package secret\n\nfunc Leak() {}\n"), 0o644)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(root, "safe.go"), []byte("package safe\n"), 0o644)).To(Succeed())
+			Expect(os.Symlink(secret, filepath.Join(root, "leak.go"))).To(Succeed())
+
+			src := &coachapi.LocalFixtureTreeSource{Root: root}
+			entries, err := src.ListFiles(context.Background(), "o", "r", "", coachapi.BaselineListOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			paths := make([]string, 0, len(entries))
+			for _, e := range entries {
+				paths = append(paths, e.Path)
+			}
+			Expect(paths).To(ContainElement("safe.go"))
+			Expect(paths).NotTo(ContainElement("leak.go"),
+				"ListFiles must not surface fixture symlinks (GitHub Contents skips them)")
+
+			_, _, err = src.ReadFile(context.Background(), "o", "r", "", "leak.go")
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, githubingest.ErrUnsupportedContent)).To(BeTrue(),
+				"ReadFile must reject symlinks without following them; got %v", err)
+		})
+	})
 })

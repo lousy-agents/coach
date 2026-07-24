@@ -18,6 +18,7 @@ import (
 	"github.com/lousy-agents/coach/internal/coachapi"
 	"github.com/lousy-agents/coach/internal/coachapi/worker"
 	"github.com/lousy-agents/coach/internal/fakegithub"
+	"github.com/lousy-agents/coach/internal/modelgateway"
 	"github.com/lousy-agents/coach/pkg/githubingest"
 )
 
@@ -147,6 +148,25 @@ var _ = Describe("coach-worker baseline handler wiring", func() {
 			completion, err := h(context.Background(), job, &storeJobWriter{store: store, lease: lease})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(completion.CommitSHA).To(Equal("local-fixture"))
+		})
+	})
+
+	When("MODEL_GATEWAY_BASE_URL is set but the OpenAI-compat client cannot be constructed", func() {
+		It("degrades to ErrUnavailable rather than the success stub's canned judgments", func() {
+			// ConfigFromEnv accepts any non-empty URL; NewOpenAICompatClient rejects this.
+			Expect(os.Setenv("MODEL_GATEWAY_BASE_URL", "://not-a-valid-url")).To(Succeed())
+			DeferCleanup(func() { _ = os.Unsetenv("MODEL_GATEWAY_BASE_URL") })
+
+			gw := buildModelGateway()
+			_, err := gw.Judge(context.Background(), modelgateway.JudgmentRequest{
+				RubricID:      "change_cohesion",
+				RubricVersion: "1",
+				OutputSchema:  []byte(`{"type":"object"}`),
+				Messages:      []modelgateway.Message{{Role: "user", Content: "x"}},
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, modelgateway.ErrUnavailable)).To(BeTrue(),
+				"misconfigured gateway must degrade as unavailable, not emit canned agent judgments; got %v", err)
 		})
 	})
 })

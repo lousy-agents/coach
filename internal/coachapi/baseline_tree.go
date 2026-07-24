@@ -167,6 +167,11 @@ func (s *LocalFixtureTreeSource) ListFiles(_ context.Context, _, _, _ string, op
 		if walkErr != nil {
 			return walkErr
 		}
+		// Skip symlinks entirely (do not follow). Matches githubingest Contents
+		// behavior and prevents List→Read escaping the fixture root via a link.
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
 		if d.IsDir() {
 			return nil
 		}
@@ -185,6 +190,9 @@ func (s *LocalFixtureTreeSource) ListFiles(_ context.Context, _, _, _ string, op
 		fi, err := d.Info()
 		if err != nil {
 			return err
+		}
+		if !fi.Mode().IsRegular() {
+			return nil
 		}
 		size := int(fi.Size())
 		if opts.MaxFiles > 0 && len(out)+1 > opts.MaxFiles {
@@ -222,6 +230,20 @@ func (s *LocalFixtureTreeSource) ReadFile(_ context.Context, _, _, _, path strin
 	rel, err := filepath.Rel(root, full)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return nil, "", fmt.Errorf("coachapi: path %q escapes smoke fixture root: %w", path, githubingest.ErrNotFound)
+	}
+	// Lstat so we never follow a symlink that sits under root but points out.
+	fi, err := os.Lstat(full)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, "", fmt.Errorf("coachapi: fixture file %q: %w", path, githubingest.ErrNotFound)
+		}
+		return nil, "", err
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return nil, "", fmt.Errorf("coachapi: fixture path %q is a symlink: %w", path, githubingest.ErrUnsupportedContent)
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, "", fmt.Errorf("coachapi: fixture path %q is not a regular file: %w", path, githubingest.ErrUnsupportedContent)
 	}
 	content, err := os.ReadFile(full)
 	if err != nil {
