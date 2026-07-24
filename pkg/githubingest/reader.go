@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"path"
+	"strings"
+	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v89/github"
@@ -15,6 +17,12 @@ import (
 // maxContentSize is the GitHub Contents API's file size limit: files larger
 // than this are served with encoding "none" and no usable inline content.
 const maxContentSize = 1 << 20 // 1 MiB
+
+// DefaultGitHubFileReaderHTTPTimeout bounds outbound Contents API HTTP calls
+// issued by GitHubFileReader (ReadFile and parent-directory listings). Matches
+// DefaultCredentialResolverHTTPTimeout so App-authenticated paths share one
+// production hang bound.
+const DefaultGitHubFileReaderHTTPTimeout = 10 * time.Second
 
 // GitHubAppConfig configures a GitHubFileReader's GitHub App authentication.
 type GitHubAppConfig struct {
@@ -65,7 +73,10 @@ func NewGitHubFileReader(cfg GitHubAppConfig) (*GitHubFileReader, error) {
 		return nil, fmt.Errorf("githubingest: building installation transport: %w", err)
 	}
 
-	opts := []github.ClientOptionsFunc{github.WithTransport(itr)}
+	opts := []github.ClientOptionsFunc{
+		github.WithTransport(itr),
+		github.WithTimeout(DefaultGitHubFileReaderHTTPTimeout),
+	}
 	if cfg.BaseURL != "" {
 		opts = append(opts, github.WithEnterpriseURLs(cfg.BaseURL, cfg.BaseURL))
 	}
@@ -86,6 +97,54 @@ func NewGitHubFileReader(cfg GitHubAppConfig) (*GitHubFileReader, error) {
 	}
 
 	return &GitHubFileReader{client: client}, nil
+}
+
+// NewGitHubFileReaderFromToken builds a GitHubFileReader authenticated with a
+// pre-minted installation access token (from CredentialResolver.InstallationToken).
+// baseURL is optional (GitHub Enterprise). Prefer this over NewGitHubFileReader
+// when the caller already holds a token via the ADR-002 CredentialResolver seam.
+func NewGitHubFileReaderFromToken(token, baseURL string) (*GitHubFileReader, error) {
+	if token == "" {
+		return nil, fmt.Errorf("githubingest: installation access token must be set")
+	}
+	opts := []github.ClientOptionsFunc{
+		github.WithTimeout(DefaultGitHubFileReaderHTTPTimeout),
+		github.WithAuthToken(token),
+	}
+	if baseURL != "" {
+		opts = append(opts, github.WithEnterpriseURLs(baseURL, baseURL))
+	}
+	client, err := github.NewClient(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("githubingest: building GitHub client from token: %w", err)
+	}
+	return &GitHubFileReader{client: client}, nil
+}
+
+// ResolveCommitSHA resolves ref to a commit object SHA for owner/repo.
+// Empty ref resolves the repository default branch tip (not the literal "HEAD").
+// Branch names, tags, and already-resolved SHAs are accepted via the Commits API.
+func (r *GitHubFileReader) ResolveCommitSHA(ctx context.Context, owner, repo, ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		repository, resp, err := r.client.Repositories.Get(ctx, owner, repo)
+		if err != nil {
+			return "", mapContentsAPIError(err, resp, fmt.Sprintf("resolving default branch for %s/%s", owner, repo))
+		}
+		ref = strings.TrimSpace(repository.GetDefaultBranch())
+		if ref == "" {
+			return "", fmt.Errorf("githubingest: %s/%s has an empty default branch", owner, repo)
+		}
+	}
+	commit, resp, err := r.client.Repositories.GetCommit(ctx, owner, repo, ref, nil)
+	if err != nil {
+		return "", mapContentsAPIError(err, resp, fmt.Sprintf("resolving commit SHA for %s/%s at ref %s", owner, repo, ref))
+	}
+	sha := commit.GetSHA()
+	if sha == "" {
+		return "", fmt.Errorf("githubingest: resolved empty commit SHA for %s/%s at ref %s", owner, repo, ref)
+	}
+	return sha, nil
 }
 
 // ReadFile fetches the raw bytes and metadata of a single file at ref.

@@ -1,8 +1,7 @@
 // Command coach-worker is the composition-root job consumer for the coach
-// platform (Task 3 / GitHub issue #104, epic #97): it claims work only through
-// queue.TaskQueue, persists claim/heartbeat/fenced writes via
-// coachapi.WorkerJobStore, and runs an injectable job handler (stub until
-// Task 8 baseline scan lands).
+// platform (Task 3 / GitHub issue #104, epic #97; Task 8 baseline handler):
+// it claims work only through queue.TaskQueue, persists claim/heartbeat/fenced
+// writes via coachapi.WorkerJobStore, and runs the repo_baseline_scan handler.
 package main
 
 import (
@@ -38,7 +37,12 @@ func run(ctx context.Context, cfg Config) error {
 	}
 	defer deps.Close()
 
-	w, err := worker.New(deps.Store, deps.Queue, acceptanceharness.RealClock{}, stubJobHandler, worker.Config{
+	handler, err := buildJobHandler(cfg)
+	if err != nil {
+		return err
+	}
+
+	w, err := worker.New(deps.Store, deps.Queue, acceptanceharness.RealClock{}, handler, worker.Config{
 		WorkerID:           cfg.WorkerID,
 		HeartbeatInterval:  cfg.HeartbeatInterval,
 		StaleAfter:         cfg.StaleAfter,
@@ -54,9 +58,9 @@ func run(ctx context.Context, cfg Config) error {
 	defer w.StopReconciler()
 
 	log.Printf(
-		"coach-worker: running (worker_id=%s heartbeat=%s stale=%s reconcile=%s queued_age=%s postgres=%t)",
+		"coach-worker: running (worker_id=%s heartbeat=%s stale=%s reconcile=%s queued_age=%s postgres=%t smoke=%t)",
 		cfg.WorkerID, cfg.HeartbeatInterval, cfg.StaleAfter, cfg.ReconcileInterval, cfg.QueuedAgeThreshold,
-		cfg.PostgresDSN != "",
+		cfg.PostgresDSN != "", cfg.SmokeFixturePath != "",
 	)
 
 	return runLoop(ctx, w, cfg.IdlePollInterval)

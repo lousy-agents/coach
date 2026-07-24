@@ -76,4 +76,30 @@ var _ = Describe("cmd/coach-worker config", func() {
 			Expect(err.Error()).To(ContainSubstring("COACH_REDIS_ADDR"))
 		})
 	})
+
+	When("baseline budget env vars are set to 0", func() {
+		It("accepts 0 as unlimited for MaxFiles and MaxTotalBytes", func() {
+			setenv("COACH_WORKER_ID", "w1")
+			setenv("COACH_REDIS_ADDR", "127.0.0.1:6379")
+			setenv("COACH_BASELINE_MAX_FILES", "0")
+			setenv("COACH_BASELINE_MAX_TOTAL_BYTES", "0")
+
+			cfg, err := loadConfigFromEnv()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.BaselineMaxFiles).To(Equal(0))
+			Expect(cfg.BaselineMaxTotalBytes).To(Equal(int64(0)))
+		})
+	})
+
+	When("baseline budget env vars are negative", func() {
+		It("rejects negative MaxFiles", func() {
+			setenv("COACH_WORKER_ID", "w1")
+			setenv("COACH_REDIS_ADDR", "127.0.0.1:6379")
+			setenv("COACH_BASELINE_MAX_FILES", "-1")
+
+			_, err := loadConfigFromEnv()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("COACH_BASELINE_MAX_FILES"))
+		})
+	})
 })

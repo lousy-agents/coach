@@ -106,6 +106,26 @@ type ContentsFixture struct {
 	Dirs  map[string][]DirEntry // "owner/repo/ref/dirpath" (root path segment omitted) -> listing
 }
 
+// RepoMetaEntry is repository metadata for GET /repos/{owner}/{repo}
+// (default-branch resolution for empty refs).
+type RepoMetaEntry struct {
+	DefaultBranch string
+	Scenario      Scenario
+}
+
+// CommitEntry is a resolved commit object for GET /repos/{owner}/{repo}/commits/{ref}.
+type CommitEntry struct {
+	SHA      string
+	Scenario Scenario
+}
+
+// RepoMetaFixture holds repository metadata and commit resolutions used by
+// githubingest.ResolveCommitSHA.
+type RepoMetaFixture struct {
+	Repos   map[string]RepoMetaEntry // "owner/repo" -> meta
+	Commits map[string]CommitEntry   // "owner/repo/ref" -> commit
+}
+
 // Fixture is the versioned dataset a [Server] answers from, stamped with the
 // shared acceptanceharness fixture envelope.
 type Fixture struct {
@@ -113,6 +133,7 @@ type Fixture struct {
 	OAuth        OAuthFixture
 	Installation InstallationFixture
 	Contents     ContentsFixture
+	Repos        RepoMetaFixture
 
 	// RejectedTokens are bearer credentials that must never be accepted on
 	// any route (AuthModeRejected). Use for non-GitHub credentials (notably a
@@ -145,6 +166,10 @@ func NewFixture(fixtureID string) Fixture {
 		Contents: ContentsFixture{
 			Files: make(map[string]FileEntry),
 			Dirs:  make(map[string][]DirEntry),
+		},
+		Repos: RepoMetaFixture{
+			Repos:   make(map[string]RepoMetaEntry),
+			Commits: make(map[string]CommitEntry),
 		},
 		RejectedTokens: make(map[string]struct{}),
 	}
