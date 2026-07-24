@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
 	"github.com/lousy-agents/coach/internal/acceptanceharness/agentloopharness"
 	"github.com/lousy-agents/coach/internal/agentloop"
+	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 // harnessGateway adapts agentloopharness.ScriptedGateway to agentloop.TurnGateway
@@ -205,6 +207,140 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 			})
 		})
 
+		When("a single model turn requests multiple registered tools", func() {
+			It("executes every tool call in order before the next model turn", func() {
+				var order []string
+				loop, err := agentloop.New(agentloop.Options{
+					SemanticsAnalyze: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						order = append(order, agentloop.ToolSemanticsAnalyze)
+						return json.RawMessage(`{"tool":"semantics_analyze"}`), nil
+					},
+					CodeSignalReport: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						order = append(order, agentloop.ToolCodeSignalReport)
+						return json.RawMessage(`{"tool":"codesignal_report"}`), nil
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				scripted := agentloopharness.NewScriptedGateway(
+					agentloopharness.Response{
+						ToolCalls: []agentloopharness.ToolCall{
+							{Name: agentloop.ToolSemanticsAnalyze, Args: validSemanticsArgs("a.go")},
+							{Name: agentloop.ToolCodeSignalReport, Args: json.RawMessage(`{"files":[{"path":"a.go"}]}`)},
+						},
+					},
+					agentloopharness.Response{Text: "both tools done"},
+				)
+
+				result, err := loop.Run(context.Background(), harnessGateway{inner: scripted}, "prompt")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.FinalText).To(Equal("both tools done"))
+				Expect(order).To(Equal([]string{
+					agentloop.ToolSemanticsAnalyze,
+					agentloop.ToolCodeSignalReport,
+				}))
+
+				recorded := loop.Calls()
+				Expect(recorded).To(HaveLen(2))
+				Expect(recorded[0].Name).To(Equal(agentloop.ToolSemanticsAnalyze))
+				Expect(recorded[0].Source).To(Equal(agentloop.CallSourceModel))
+				Expect(recorded[1].Name).To(Equal(agentloop.ToolCodeSignalReport))
+				Expect(recorded[1].Source).To(Equal(agentloop.CallSourceModel))
+			})
+
+			It("stops the run on the first tool error and does not invoke later tools in the same turn", func() {
+				toolErr := errors.New("codesignal boom")
+				var order []string
+				loop, err := agentloop.New(agentloop.Options{
+					SemanticsAnalyze: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						order = append(order, agentloop.ToolSemanticsAnalyze)
+						return json.RawMessage(`{"ok":true}`), nil
+					},
+					CodeSignalReport: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						order = append(order, agentloop.ToolCodeSignalReport)
+						return nil, toolErr
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				// Register a third tool that must never run after the failure.
+				var thirdInvoked atomic.Bool
+				Expect(loop.Register(agentloop.ToolSpec{
+					Name: "third_tool",
+					Handler: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						thirdInvoked.Store(true)
+						return json.RawMessage(`{}`), nil
+					},
+				})).To(Succeed())
+
+				scripted := agentloopharness.NewScriptedGateway(
+					agentloopharness.Response{
+						ToolCalls: []agentloopharness.ToolCall{
+							{Name: agentloop.ToolSemanticsAnalyze, Args: validSemanticsArgs("a.go")},
+							{Name: agentloop.ToolCodeSignalReport, Args: json.RawMessage(`{"files":[{"path":"a.go"}]}`)},
+							{Name: "third_tool", Args: json.RawMessage(`{}`)},
+						},
+					},
+					agentloopharness.Response{Text: "should not reach"},
+				)
+
+				result, err := loop.Run(context.Background(), harnessGateway{inner: scripted}, "prompt")
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, toolErr)).To(BeTrue())
+				Expect(result.FinalText).NotTo(Equal("should not reach"))
+				Expect(order).To(Equal([]string{
+					agentloop.ToolSemanticsAnalyze,
+					agentloop.ToolCodeSignalReport,
+				}))
+				Expect(thirdInvoked.Load()).To(BeFalse())
+			})
+		})
+
+		When("a registered tool handler returns a non-budget error", func() {
+			It("surfaces that error from Call and from Run without rewriting it as a budget or unknown-tool failure", func() {
+				toolErr := fmt.Errorf("deterministic analyze failed: %w", errors.New("disk full"))
+				loop, err := agentloop.New(agentloop.Options{
+					SemanticsAnalyze: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						return nil, toolErr
+					},
+					CodeSignalReport: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				_, callErr := loop.Call(context.Background(), agentloop.CallSourceHandler, agentloop.ToolSemanticsAnalyze, validSemanticsArgs("a.go"))
+				Expect(callErr).To(HaveOccurred())
+				Expect(errors.Is(callErr, toolErr)).To(BeTrue())
+				Expect(errors.Is(callErr, agentloop.ErrBudgetExceeded)).To(BeFalse())
+				Expect(errors.Is(callErr, agentloop.ErrUnknownTool)).To(BeFalse())
+				Expect(errors.Is(callErr, agentloop.ErrInvalidArgs)).To(BeFalse())
+
+				// Fresh loop so Call budget state does not interfere with Run.
+				loop2, err := agentloop.New(agentloop.Options{
+					SemanticsAnalyze: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						return nil, toolErr
+					},
+					CodeSignalReport: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				scripted := agentloopharness.NewScriptedGateway(
+					agentloopharness.Response{
+						ToolCalls: []agentloopharness.ToolCall{
+							{Name: agentloop.ToolSemanticsAnalyze, Args: validSemanticsArgs("b.go")},
+						},
+					},
+				)
+				_, runErr := loop2.Run(context.Background(), harnessGateway{inner: scripted}, "prompt")
+				Expect(runErr).To(HaveOccurred())
+				Expect(errors.Is(runErr, toolErr)).To(BeTrue())
+				Expect(errors.Is(runErr, agentloop.ErrBudgetExceeded)).To(BeFalse())
+			})
+		})
+
 		When("the model requests an unregistered tool name", func() {
 			It("ends the run with ErrUnknownTool and does not execute any freeform action", func() {
 				var coreCalls []agentloopharness.RecordedCall
@@ -329,6 +465,30 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(json.Valid(csOut)).To(BeTrue())
 			})
+
+			It("surfaces a partial semantics Result together with ErrSyntax for broken source", func() {
+				// Task 8 must keep the partial JSON when AnalyzeBytes returns
+				// (result, ErrSyntax); the loop must not drop the payload.
+				loop, err := agentloop.New(agentloop.Options{})
+				Expect(err).NotTo(HaveOccurred())
+
+				out, callErr := loop.Call(context.Background(), agentloop.CallSourceHandler, agentloop.ToolSemanticsAnalyze,
+					json.RawMessage(`{"path":"broken.go","language":"go","content":"package p\nfunc ("}`))
+				Expect(callErr).To(HaveOccurred())
+				Expect(errors.Is(callErr, semantics.ErrSyntax)).To(BeTrue())
+				Expect(out).NotTo(BeEmpty())
+				Expect(json.Valid(out)).To(BeTrue())
+
+				var partial map[string]any
+				Expect(json.Unmarshal(out, &partial)).To(Succeed())
+				Expect(partial["parse_status"]).To(Equal("syntax_errors"))
+				Expect(partial["path"]).To(Equal("broken.go"))
+
+				recorded := loop.Calls()
+				Expect(recorded).To(HaveLen(1))
+				Expect(recorded[0].Result).NotTo(BeEmpty())
+				Expect(errors.Is(recorded[0].Err, semantics.ErrSyntax)).To(BeTrue())
+			})
 		})
 	})
 
@@ -360,6 +520,59 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, agentloop.ErrBudgetExceeded)).To(BeTrue())
 				Expect(invokeCount.Load()).To(Equal(int32(1)))
+			})
+
+			It("shares one max_tool_calls pool across handler-driven Call and model-selected Run on the same Loop", func() {
+				// Task 8 drives the deterministic pass via Call then may Run
+				// for model-selected evidence; both must debit the same budget.
+				var invokeCount atomic.Int32
+				loop, err := agentloop.New(agentloop.Options{
+					Budget: agentloop.Budget{
+						MaxToolCalls:  2,
+						MaxModelCalls: 20,
+						MaxWallTime:   5 * time.Minute,
+					},
+					SemanticsAnalyze: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						invokeCount.Add(1)
+						return json.RawMessage(`{"ok":true}`), nil
+					},
+					CodeSignalReport: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						invokeCount.Add(1)
+						return json.RawMessage(`{"ok":true}`), nil
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				_, err = loop.Call(context.Background(), agentloop.CallSourceHandler, agentloop.ToolSemanticsAnalyze, validSemanticsArgs("handler.go"))
+				Expect(err).NotTo(HaveOccurred())
+
+				scripted := agentloopharness.NewScriptedGateway(
+					agentloopharness.Response{
+						ToolCalls: []agentloopharness.ToolCall{
+							{Name: agentloop.ToolCodeSignalReport, Args: json.RawMessage(`{"files":[{"path":"a.go"}]}`)},
+						},
+					},
+					agentloopharness.Response{
+						ToolCalls: []agentloopharness.ToolCall{
+							// Third tool call overall must hit the shared budget.
+							{Name: agentloop.ToolSemanticsAnalyze, Args: validSemanticsArgs("too-many.go")},
+						},
+					},
+					agentloopharness.Response{Text: "should not reach"},
+				)
+
+				result, err := loop.Run(context.Background(), harnessGateway{inner: scripted}, "prompt")
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, agentloop.ErrBudgetExceeded)).To(BeTrue())
+				Expect(err.Error()).To(ContainSubstring("max_tool_calls"))
+				Expect(result.FinalText).NotTo(Equal("should not reach"))
+				// Handler Call + first model tool succeeded; third attempt blocked.
+				Expect(invokeCount.Load()).To(Equal(int32(2)))
+
+				recorded := loop.Calls()
+				Expect(recorded).To(HaveLen(2))
+				Expect(recorded[0].Source).To(Equal(agentloop.CallSourceHandler))
+				Expect(recorded[1].Source).To(Equal(agentloop.CallSourceModel))
 			})
 		})
 
@@ -412,7 +625,7 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 			})
 		})
 
-		When("max_wall_time is exhausted under an injected clock", func() {
+		When("max_wall_time is exhausted between calls under an injected clock", func() {
 			It("ends the run with ErrBudgetExceeded without treating wall-time failure as a different path", func() {
 				start := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
 				clock := acceptanceharness.NewFakeClock(start)
@@ -477,8 +690,10 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 				Expect(err.Error()).To(ContainSubstring("max_wall_time"))
 				Expect(result.FinalText).NotTo(Equal("late success"))
 			})
+		})
 
-			It("cancels an in-flight Generate when max_wall_time elapses and returns ErrBudgetExceeded", func() {
+		When("max_wall_time elapses during in-flight work", func() {
+			It("cancels an in-flight Generate and returns ErrBudgetExceeded", func() {
 				loop, err := agentloop.New(agentloop.Options{
 					Budget: agentloop.Budget{
 						MaxToolCalls:  50,
@@ -506,7 +721,7 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 				Expect(elapsed).To(BeNumerically("<", time.Second))
 			})
 
-			It("cancels an in-flight tool handler when max_wall_time elapses and returns ErrBudgetExceeded", func() {
+			It("cancels an in-flight tool handler and returns ErrBudgetExceeded", func() {
 				loop, err := agentloop.New(agentloop.Options{
 					Budget: agentloop.Budget{
 						MaxToolCalls:  50,
