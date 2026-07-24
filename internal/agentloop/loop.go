@@ -2,12 +2,20 @@
 // (ADR-005). Handlers drive guaranteed tools; models may only select from
 // registered, schema-validated tools. Model text never becomes an arbitrary
 // action.
+//
+// Layout for extension:
+//   - loop.go — Call/Run orchestration and recording
+//   - budget.go — tool/model/wall budgets
+//   - tools.go — registry types + core-tool table (add always-on tools there)
+//   - core_tools.go — default handlers/schemas for core tools
+//   - schema.go — args-schema validation
+//
+// Job-specific tools (rubrics, PR-history GitHub tools) use Register at loop start.
 package agentloop
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -22,31 +30,6 @@ const (
 	// CallSourceModel marks a model-selected call from the fixed allowlist.
 	CallSourceModel CallSource = "model"
 )
-
-// Budget limits one Loop run. Zero fields are filled with v1 defaults in New.
-type Budget struct {
-	MaxToolCalls  int
-	MaxModelCalls int
-	MaxWallTime   time.Duration
-}
-
-const (
-	// DefaultMaxToolCalls is the v1 default tool-call budget.
-	DefaultMaxToolCalls = 50
-	// DefaultMaxModelCalls is the v1 default model-turn budget.
-	DefaultMaxModelCalls = 20
-	// DefaultMaxWallTime is the v1 default wall-clock budget.
-	DefaultMaxWallTime = 5 * time.Minute
-)
-
-// Clock supplies Now for wall-time budget checks. Tests inject a fake clock.
-type Clock interface {
-	Now() time.Time
-}
-
-type realClock struct{}
-
-func (realClock) Now() time.Time { return time.Now() }
 
 // ToolCall is one model- or handler-requested invocation.
 type ToolCall struct {
@@ -82,6 +65,7 @@ type RecordedCall struct {
 }
 
 // Options configures New. Core tool handlers may be injected; nil uses package defaults.
+// When adding a new always-on core tool, extend Options (if injectable) and coreToolDefs.
 type Options struct {
 	Budget           Budget
 	Clock            Clock
@@ -105,40 +89,20 @@ type Loop struct {
 
 // New constructs a Loop with core tools always registered and the given budget defaults applied.
 func New(opts Options) (*Loop, error) {
-	budget := opts.Budget
-	if budget.MaxToolCalls <= 0 {
-		budget.MaxToolCalls = DefaultMaxToolCalls
-	}
-	if budget.MaxModelCalls <= 0 {
-		budget.MaxModelCalls = DefaultMaxModelCalls
-	}
-	if budget.MaxWallTime <= 0 {
-		budget.MaxWallTime = DefaultMaxWallTime
-	}
-
 	clock := opts.Clock
 	if clock == nil {
 		clock = realClock{}
 	}
 
-	sem := opts.SemanticsAnalyze
-	if sem == nil {
-		sem = DefaultSemanticsAnalyze()
-	}
-	cs := opts.CodeSignalReport
-	if cs == nil {
-		cs = DefaultCodeSignalReport()
-	}
+	tools := make(map[string]registeredTool)
+	registerCoreTools(tools, opts)
 
-	l := &Loop{
-		tools:  make(map[string]registeredTool),
-		budget: budget,
+	return &Loop{
+		tools:  tools,
+		budget: applyBudgetDefaults(opts.Budget),
 		clock:  clock,
 		start:  clock.Now(),
-	}
-	l.tools[ToolSemanticsAnalyze] = registeredTool{schema: coreSemanticsSchema(), handler: sem}
-	l.tools[ToolCodeSignalReport] = registeredTool{schema: coreCodeSignalSchema(), handler: cs}
-	return l, nil
+	}, nil
 }
 
 // Budget returns the effective budget for this loop (including defaults).
@@ -157,8 +121,8 @@ func (l *Loop) Register(spec ToolSpec) error {
 	if spec.Handler == nil {
 		return fmt.Errorf("agentloop: tool handler is required")
 	}
-	if spec.Name == ToolSemanticsAnalyze || spec.Name == ToolCodeSignalReport {
-		return fmt.Errorf("agentloop: cannot replace core tool %q via Register; inject via Options", spec.Name)
+	if err := rejectCoreToolRegister(spec.Name); err != nil {
+		return err
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -182,8 +146,9 @@ func (l *Loop) Call(ctx context.Context, source CallSource, name string, args js
 		return nil, err
 	}
 	if l.toolCalls >= l.budget.MaxToolCalls {
+		max := l.budget.MaxToolCalls
 		l.mu.Unlock()
-		return nil, fmt.Errorf("%w: max_tool_calls %d", ErrBudgetExceeded, l.budget.MaxToolCalls)
+		return nil, fmt.Errorf("%w: max_tool_calls %d", ErrBudgetExceeded, max)
 	}
 	tool, ok := l.tools[name]
 	if !ok {
@@ -200,33 +165,20 @@ func (l *Loop) Call(ctx context.Context, source CallSource, name string, args js
 	l.mu.Unlock()
 
 	if err := validateToolArgs(schema, args); err != nil {
-		l.mu.Lock()
-		l.calls = append(l.calls, RecordedCall{Name: name, Source: source, Args: cloneRawMessage(args), Err: err})
-		l.mu.Unlock()
+		l.record(name, source, args, nil, err)
 		return nil, err
 	}
 
 	opCtx, cancel, err := l.wallBudgetContext(ctx)
 	if err != nil {
-		l.mu.Lock()
-		l.calls = append(l.calls, RecordedCall{Name: name, Source: source, Args: cloneRawMessage(args), Err: err})
-		l.mu.Unlock()
+		l.record(name, source, args, nil, err)
 		return nil, err
 	}
 	defer cancel()
 
 	result, err := handler(opCtx, args)
 	err = l.mapWallErr(ctx, opCtx, err)
-
-	l.mu.Lock()
-	l.calls = append(l.calls, RecordedCall{
-		Name:   name,
-		Source: source,
-		Args:   cloneRawMessage(args),
-		Result: cloneRawMessage(result),
-		Err:    err,
-	})
-	l.mu.Unlock()
+	l.record(name, source, args, result, err)
 	return result, err
 }
 
@@ -283,7 +235,7 @@ func (l *Loop) Run(ctx context.Context, gw TurnGateway, prompt string) (RunResul
 		}
 
 		// Model text never becomes an action; only registered tool calls execute.
-		var toolResults []json.RawMessage
+		toolResults := make([]json.RawMessage, 0, len(resp.ToolCalls))
 		for _, tc := range resp.ToolCalls {
 			out, callErr := l.Call(ctx, CallSourceModel, tc.Name, tc.Args)
 			if callErr != nil {
@@ -292,7 +244,6 @@ func (l *Loop) Run(ctx context.Context, gw TurnGateway, prompt string) (RunResul
 			toolResults = append(toolResults, out)
 		}
 
-		// Feed tool results into the next model turn as opaque JSON.
 		payload, err := json.Marshal(toolResults)
 		if err != nil {
 			return RunResult{}, err
@@ -314,45 +265,14 @@ func (l *Loop) Calls() []RecordedCall {
 	return out
 }
 
-func (l *Loop) checkWallLocked() error {
-	if l.clock.Now().Sub(l.start) >= l.budget.MaxWallTime {
-		return fmt.Errorf("%w: max_wall_time %s", ErrBudgetExceeded, l.budget.MaxWallTime)
-	}
-	return nil
-}
-
-// wallBudgetContext returns a child context cancelled when the remaining wall
-// budget elapses (real-time timeout derived from clock-measured remaining).
-func (l *Loop) wallBudgetContext(ctx context.Context) (context.Context, context.CancelFunc, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, func() {}, err
-	}
+func (l *Loop) record(name string, source CallSource, args, result json.RawMessage, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if err := l.checkWallLocked(); err != nil {
-		return nil, func() {}, err
-	}
-	remaining := l.budget.MaxWallTime - l.clock.Now().Sub(l.start)
-	if remaining <= 0 {
-		return nil, func() {}, fmt.Errorf("%w: max_wall_time %s", ErrBudgetExceeded, l.budget.MaxWallTime)
-	}
-	opCtx, cancel := context.WithTimeout(ctx, remaining)
-	return opCtx, cancel, nil
-}
-
-// mapWallErr rewrites deadline/cancel from a wall-budget child context into
-// ErrBudgetExceeded when the parent context is still live.
-func (l *Loop) mapWallErr(parent, opCtx context.Context, err error) error {
-	if err == nil {
-		return nil
-	}
-	if parent.Err() != nil {
-		return err
-	}
-	if errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, context.Canceled) ||
-		errors.Is(opCtx.Err(), context.DeadlineExceeded) {
-		return fmt.Errorf("%w: max_wall_time %s", ErrBudgetExceeded, l.budget.MaxWallTime)
-	}
-	return err
+	l.calls = append(l.calls, RecordedCall{
+		Name:   name,
+		Source: source,
+		Args:   cloneRawMessage(args),
+		Result: cloneRawMessage(result),
+		Err:    err,
+	})
 }
