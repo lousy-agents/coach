@@ -36,17 +36,11 @@ func Run(ctx context.Context, gw modelgateway.Gateway, def Definition, messages 
 		Messages:      messages,
 		OutputSchema:  def.OutputSchema,
 	})
-	if err != nil {
-		if abort := lifecycleAbortErr(err); abort != nil {
-			return Result{}, abort
-		}
-		if abort := lifecycleAbortErr(ctx.Err()); abort != nil {
-			return Result{}, abort
-		}
-		return degradeFromErr(def.ID, err), nil
-	}
-	if abort := lifecycleAbortErr(ctx.Err()); abort != nil {
+	if abort := firstLifecycleAbort(err, ctx.Err()); abort != nil {
 		return Result{}, abort
+	}
+	if err != nil {
+		return degradeFromErr(def.ID, err), nil
 	}
 
 	identity := FormatModelIdentity(resp.LogicalModelID, resp.ServedModelID)
@@ -75,6 +69,15 @@ func lifecycleAbortErr(err error) error {
 	return nil
 }
 
+func firstLifecycleAbort(errs ...error) error {
+	for _, err := range errs {
+		if abort := lifecycleAbortErr(err); abort != nil {
+			return abort
+		}
+	}
+	return nil
+}
+
 func degradeFromErr(rubricID string, err error) Result {
 	switch {
 	case errors.Is(err, modelgateway.ErrSchemaValidation):
@@ -93,32 +96,4 @@ func degrade(rubricID, message string) Result {
 			Message: message,
 		},
 	}
-}
-
-func toolResultFromRun(def Definition, r Result) ToolResult {
-	out := ToolResult{
-		RubricID:      def.ID,
-		RubricVersion: def.Version,
-	}
-	if r.Diagnostic != nil {
-		out.Diagnostic = r.Diagnostic
-		return out
-	}
-	if r.Judgment == nil {
-		out.Diagnostic = &Diagnostic{
-			Scope:   diagnosticScope(def.ID),
-			Message: "judgment failed: empty result",
-		}
-		return out
-	}
-	identity := r.Judgment.ModelIdentity
-	logical := r.Judgment.LogicalModelID
-	out.ModelIdentity = &identity
-	out.LogicalModelID = &logical
-	if r.Judgment.ServedModelID != "" {
-		served := r.Judgment.ServedModelID
-		out.ServedModelID = &served
-	}
-	out.Judgment = append(json.RawMessage(nil), r.Judgment.JudgmentJSON...)
-	return out
 }
