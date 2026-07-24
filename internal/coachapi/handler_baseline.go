@@ -186,49 +186,54 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 	// Persist deterministic findings before judgment so a hard judgment error
 	// cannot drop Story 5 deterministic evidence (F4).
 	detFindings := findingsFromCodeSignalReport(report)
-	if len(detFindings) > 0 {
-		if err := w.InsertFindings(ctx, detFindings); err != nil {
-			return nil, err
-		}
+	if err := insertBaselineFindings(ctx, w, detFindings); err != nil {
+		return nil, err
 	}
 
-	var diagnostics []JobDiagnostic
 	agentFindings, agentDiags, err := judgeBaselineViaLoop(ctx, loop, loaded, detFindings)
 	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil, err
-		}
-		// Hard non-cancel judgment failure: record diagnostic, still complete
-		// with deterministic findings already written.
-		diagnostics = append(diagnostics, JobDiagnostic{
-			ID:      watermill.NewUUID(),
-			Scope:   "judgment",
-			Message: fmt.Sprintf("judgment phase failed: %v", err),
-		})
-		diagnostics = append(diagnostics, diagnosticsFromCodeSignal(report)...)
-		if len(diagnostics) > 0 {
-			if err := w.InsertDiagnostics(ctx, diagnostics); err != nil {
-				return nil, err
-			}
-		}
-		return baselineCompletion(cfg, w, commitSHA), nil
+		return completeAfterJudgmentError(ctx, cfg, w, commitSHA, report, err)
 	}
 
-	findings := agentFindings
-	diagnostics = append(diagnostics, agentDiags...)
+	diagnostics := append(agentDiags, diagnosticsFromCodeSignal(report)...)
+	if err := insertBaselineFindings(ctx, w, agentFindings); err != nil {
+		return nil, err
+	}
+	if err := insertBaselineDiagnostics(ctx, w, diagnostics); err != nil {
+		return nil, err
+	}
+	return baselineCompletion(cfg, w, commitSHA), nil
+}
+
+func insertBaselineFindings(ctx context.Context, w BaselineJobWriter, findings []JobFinding) error {
+	if len(findings) == 0 {
+		return nil
+	}
+	return w.InsertFindings(ctx, findings)
+}
+
+func insertBaselineDiagnostics(ctx context.Context, w BaselineJobWriter, diagnostics []JobDiagnostic) error {
+	if len(diagnostics) == 0 {
+		return nil
+	}
+	return w.InsertDiagnostics(ctx, diagnostics)
+}
+
+// completeAfterJudgmentError keeps deterministic findings already written and
+// still completes the job unless the parent context was canceled.
+func completeAfterJudgmentError(ctx context.Context, cfg RepoBaselineScanConfig, w BaselineJobWriter, commitSHA string, report *codesignal.Report, err error) (*Completion, error) {
+	if errors.Is(err, context.Canceled) {
+		return nil, err
+	}
+	diagnostics := []JobDiagnostic{{
+		ID:      watermill.NewUUID(),
+		Scope:   "judgment",
+		Message: fmt.Sprintf("judgment phase failed: %v", err),
+	}}
 	diagnostics = append(diagnostics, diagnosticsFromCodeSignal(report)...)
-
-	if len(findings) > 0 {
-		if err := w.InsertFindings(ctx, findings); err != nil {
-			return nil, err
-		}
+	if err := insertBaselineDiagnostics(ctx, w, diagnostics); err != nil {
+		return nil, err
 	}
-	if len(diagnostics) > 0 {
-		if err := w.InsertDiagnostics(ctx, diagnostics); err != nil {
-			return nil, err
-		}
-	}
-
 	return baselineCompletion(cfg, w, commitSHA), nil
 }
 
@@ -311,34 +316,54 @@ func loadBaselineFiles(ctx context.Context, source BaselineTreeSource, params Re
 }
 
 func analyzeBaselineViaLoop(ctx context.Context, loop *agentloop.Loop, files []loadedBaselineFile, repo, revision string) ([]loadedBaselineFile, *codesignal.Report, error) {
+	// Build a new slice rather than mutating the caller's files (hidden_input_mutation).
+	loaded := make([]loadedBaselineFile, 0, len(files))
 	fileChanges := make([]codesignal.FileChange, 0, len(files))
-	for i := range files {
-		args, err := json.Marshal(map[string]string{
-			"path":     files[i].Path,
-			"language": string(files[i].Language),
-			"content":  files[i].Content,
-		})
+	for _, f := range files {
+		entry, fc, err := analyzeOneBaselineFile(ctx, loop, f)
 		if err != nil {
 			return nil, nil, err
 		}
-		raw, err := loop.Call(ctx, agentloop.CallSourceHandler, agentloop.ToolSemanticsAnalyze, args)
-		if err != nil && raw == nil {
-			// Hard tool failure (not syntax-partial): permanent for this job.
-			return nil, nil, fmt.Errorf("coachapi: semantics_analyze %s: %w", files[i].Path, err)
-		}
-		var result semantics.Result
-		if len(raw) > 0 {
-			if uerr := json.Unmarshal(raw, &result); uerr != nil {
-				return nil, nil, fmt.Errorf("coachapi: decoding semantics_analyze result for %s: %w", files[i].Path, uerr)
-			}
-			files[i].Result = &result
-			fileChanges = append(fileChanges, codesignal.FileChange{
-				Path: files[i].Path,
-				Head: &result,
-			})
+		loaded = append(loaded, entry)
+		if fc != nil {
+			fileChanges = append(fileChanges, *fc)
 		}
 	}
 
+	report, err := codesignalReportViaLoop(ctx, loop, fileChanges, repo, revision)
+	if err != nil {
+		return nil, nil, err
+	}
+	return loaded, report, nil
+}
+
+func analyzeOneBaselineFile(ctx context.Context, loop *agentloop.Loop, f loadedBaselineFile) (loadedBaselineFile, *codesignal.FileChange, error) {
+	args, err := json.Marshal(map[string]string{
+		"path":     f.Path,
+		"language": string(f.Language),
+		"content":  f.Content,
+	})
+	if err != nil {
+		return loadedBaselineFile{}, nil, err
+	}
+	raw, err := loop.Call(ctx, agentloop.CallSourceHandler, agentloop.ToolSemanticsAnalyze, args)
+	if err != nil && raw == nil {
+		return loadedBaselineFile{}, nil, fmt.Errorf("coachapi: semantics_analyze %s: %w", f.Path, err)
+	}
+	out := loadedBaselineFile{Path: f.Path, Language: f.Language, Content: f.Content}
+	if len(raw) == 0 {
+		return out, nil, nil
+	}
+	var result semantics.Result
+	if uerr := json.Unmarshal(raw, &result); uerr != nil {
+		return loadedBaselineFile{}, nil, fmt.Errorf("coachapi: decoding semantics_analyze result for %s: %w", f.Path, uerr)
+	}
+	res := result
+	out.Result = &res
+	return out, &codesignal.FileChange{Path: out.Path, Head: &res}, nil
+}
+
+func codesignalReportViaLoop(ctx context.Context, loop *agentloop.Loop, fileChanges []codesignal.FileChange, repo, revision string) (*codesignal.Report, error) {
 	csArgs, err := json.Marshal(struct {
 		Files      []codesignal.FileChange `json:"files"`
 		Baseline   bool                    `json:"baseline"`
@@ -351,17 +376,17 @@ func analyzeBaselineViaLoop(ctx context.Context, loop *agentloop.Loop, files []l
 		Revision:   revision,
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	rawReport, err := loop.Call(ctx, agentloop.CallSourceHandler, agentloop.ToolCodeSignalReport, csArgs)
 	if err != nil {
-		return nil, nil, fmt.Errorf("coachapi: codesignal_report: %w", err)
+		return nil, fmt.Errorf("coachapi: codesignal_report: %w", err)
 	}
 	var report codesignal.Report
 	if err := json.Unmarshal(rawReport, &report); err != nil {
-		return nil, nil, fmt.Errorf("coachapi: decoding codesignal_report: %w", err)
+		return nil, fmt.Errorf("coachapi: decoding codesignal_report: %w", err)
 	}
-	return files, &report, nil
+	return &report, nil
 }
 
 func judgeBaselineViaLoop(ctx context.Context, loop *agentloop.Loop, files []loadedBaselineFile, detFindings []JobFinding) ([]JobFinding, []JobDiagnostic, error) {
