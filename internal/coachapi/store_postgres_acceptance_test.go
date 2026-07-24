@@ -215,7 +215,7 @@ var _ = Describe("coachapi.PostgresStore", func() {
 						RubricID:      &agentRubricID,
 						RubricVersion: &agentRubricVersion,
 						ModelIdentity: &agentModelIdentity,
-						Payload:       json.RawMessage(`{"judgment":"actionable","rule_id":"state.hidden_input_mutation"}`),
+						Payload:       json.RawMessage(`{"judgment":"concern","rationale":"mutation hides input state that will surprise reviewers","confidence":"high","suggested_focus":"constructor parameter assignment"}`),
 						PayloadHash:   "hash-agent-1",
 					},
 				},
@@ -274,7 +274,7 @@ var _ = Describe("coachapi.PostgresStore", func() {
 						RubricID:      &agentRubricID,
 						RubricVersion: &agentRubricVersion,
 						ModelIdentity: &agentModelIdentity,
-						Payload:       json.RawMessage(`{"judgment":"actionable","rule_id":"state.hidden_input_mutation"}`),
+						Payload:       json.RawMessage(`{"judgment":"concern","rationale":"mutation hides input state that will surprise reviewers","confidence":"high","suggested_focus":"constructor parameter assignment"}`),
 					},
 				},
 				Diagnostics: []coachapi.Diagnostic{

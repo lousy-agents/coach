@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "required": ["judgment", "rationale", "confidence", "suggested_focus"],
+  "properties": {
+    "judgment": {
+      "type": "string",
+      "enum": ["focused", "diffuse", "unclear"]
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "suggested_focus": {
+      "type": ["string", "null"]
+    }
+  }
+}
