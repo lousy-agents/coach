@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"strings"
 	"testing"
+	"time"
 )
 
 // internalTestRSAPrivateKeyPEM mirrors the external test helper but lives in
@@ -27,6 +28,33 @@ func internalTestRSAPrivateKeyPEM(t *testing.T) []byte {
 	}
 
 	return pem.EncodeToMemory(block)
+}
+
+// NewGitHubFileReader must attach a finite HTTP timeout so production
+// ListFiles/ReadFile cannot hang indefinitely on a stalled upstream.
+func TestNewGitHubFileReader_DefaultHTTPClientHasFiniteTimeout(t *testing.T) {
+	reader, err := NewGitHubFileReader(GitHubAppConfig{
+		AppID:          1,
+		InstallationID: 2,
+		PrivateKey:     internalTestRSAPrivateKeyPEM(t),
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubFileReader: unexpected error: %v", err)
+	}
+	hc := reader.client.Client()
+	if hc == nil {
+		t.Fatal("reader HTTP client is nil")
+	}
+	if hc.Timeout <= 0 {
+		t.Fatalf("reader HTTP client Timeout = %v, want finite default > 0", hc.Timeout)
+	}
+	if hc.Timeout != DefaultGitHubFileReaderHTTPTimeout {
+		t.Fatalf("reader HTTP client Timeout = %v, want DefaultGitHubFileReaderHTTPTimeout (%v)", hc.Timeout, DefaultGitHubFileReaderHTTPTimeout)
+	}
+	// Same order of magnitude as DefaultCredentialResolverHTTPTimeout / peer clients.
+	if hc.Timeout > time.Minute {
+		t.Fatalf("reader HTTP client Timeout = %v, want a modest production bound (≤1m)", hc.Timeout)
+	}
 }
 
 // AC-5.3: where GitHubAppConfig.BaseURL is set, the reader shall target that

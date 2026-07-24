@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"path"
+	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v89/github"
@@ -15,6 +16,12 @@ import (
 // maxContentSize is the GitHub Contents API's file size limit: files larger
 // than this are served with encoding "none" and no usable inline content.
 const maxContentSize = 1 << 20 // 1 MiB
+
+// DefaultGitHubFileReaderHTTPTimeout bounds outbound Contents API HTTP calls
+// issued by GitHubFileReader (ReadFile and parent-directory listings). Matches
+// DefaultCredentialResolverHTTPTimeout so App-authenticated paths share one
+// production hang bound.
+const DefaultGitHubFileReaderHTTPTimeout = 10 * time.Second
 
 // GitHubAppConfig configures a GitHubFileReader's GitHub App authentication.
 type GitHubAppConfig struct {
@@ -65,7 +72,10 @@ func NewGitHubFileReader(cfg GitHubAppConfig) (*GitHubFileReader, error) {
 		return nil, fmt.Errorf("githubingest: building installation transport: %w", err)
 	}
 
-	opts := []github.ClientOptionsFunc{github.WithTransport(itr)}
+	opts := []github.ClientOptionsFunc{
+		github.WithTransport(itr),
+		github.WithTimeout(DefaultGitHubFileReaderHTTPTimeout),
+	}
 	if cfg.BaseURL != "" {
 		opts = append(opts, github.WithEnterpriseURLs(cfg.BaseURL, cfg.BaseURL))
 	}
