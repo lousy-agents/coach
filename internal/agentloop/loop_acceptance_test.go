@@ -51,6 +51,28 @@ func (g countingGateway) Generate(ctx context.Context, prompt string) (agentloop
 	return resp, nil
 }
 
+// advanceClockGateway advances an injected FakeClock during Generate so wall
+// budget can be proven without sleeping, then returns a text-only turn.
+type advanceClockGateway struct {
+	clock *acceptanceharness.FakeClock
+	by    time.Duration
+	text  string
+}
+
+func (g advanceClockGateway) Generate(ctx context.Context, prompt string) (agentloop.TurnResponse, error) {
+	g.clock.Advance(g.by)
+	return agentloop.TurnResponse{Text: g.text}, nil
+}
+
+// blockUntilCancelGateway blocks until ctx is cancelled — used to prove the
+// loop derives a wall-budget deadline on Generate.
+type blockUntilCancelGateway struct{}
+
+func (blockUntilCancelGateway) Generate(ctx context.Context, prompt string) (agentloop.TurnResponse, error) {
+	<-ctx.Done()
+	return agentloop.TurnResponse{}, ctx.Err()
+}
+
 func validSemanticsArgs(path string) json.RawMessage {
 	return json.RawMessage(`{"path":` + mustJSON(path) + `,"language":"go","content":"package p\n"}`)
 }
@@ -237,6 +259,76 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 				Expect(errors.Is(err, agentloop.ErrInvalidArgs)).To(BeTrue())
 				Expect(invoked.Load()).To(BeFalse())
 			})
+
+			It("rejects codesignal_report files items missing path without invoking the handler", func() {
+				var invoked atomic.Bool
+				loop, err := agentloop.New(agentloop.Options{
+					SemanticsAnalyze: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					},
+					CodeSignalReport: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						invoked.Store(true)
+						return json.RawMessage(`{}`), nil
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				_, err = loop.Call(context.Background(), agentloop.CallSourceHandler, agentloop.ToolCodeSignalReport,
+					json.RawMessage(`{"files":[{"status":"added"}],"diagnostics":[]}`))
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, agentloop.ErrInvalidArgs)).To(BeTrue())
+				Expect(invoked.Load()).To(BeFalse())
+			})
+		})
+	})
+
+	Describe("core tool registration boundary", func() {
+		When("a handler tries to Register over a core tool name", func() {
+			It("rejects the registration so core tools stay on Options injection only", func() {
+				loop, err := agentloop.New(agentloop.Options{
+					SemanticsAnalyze: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					},
+					CodeSignalReport: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				err = loop.Register(agentloop.ToolSpec{
+					Name:    agentloop.ToolSemanticsAnalyze,
+					Handler: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) { return nil, nil },
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(agentloop.ToolSemanticsAnalyze))
+
+				// Core handler still the one from Options, not replaced.
+				var coreCalls []agentloopharness.RecordedCall
+				loop2 := newLoopWithRecordingCore(agentloop.Options{}, &coreCalls)
+				_, err = loop2.Call(context.Background(), agentloop.CallSourceHandler, agentloop.ToolSemanticsAnalyze, validSemanticsArgs("a.go"))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(coreCalls).To(HaveLen(1))
+			})
+		})
+	})
+
+	Describe("default core tool wrappers", func() {
+		When("Options leave SemanticsAnalyze and CodeSignalReport nil", func() {
+			It("runs the real pkg/semantics and pkg/codesignal wrappers through the registry", func() {
+				loop, err := agentloop.New(agentloop.Options{})
+				Expect(err).NotTo(HaveOccurred())
+
+				semOut, err := loop.Call(context.Background(), agentloop.CallSourceHandler, agentloop.ToolSemanticsAnalyze,
+					json.RawMessage(`{"path":"hello.go","language":"go","content":"package hello\n"}`))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(json.Valid(semOut)).To(BeTrue())
+				Expect(semOut).To(ContainSubstring(`"path"`))
+
+				csOut, err := loop.Call(context.Background(), agentloop.CallSourceHandler, agentloop.ToolCodeSignalReport,
+					json.RawMessage(`{"files":[{"path":"hello.go"}],"baseline":true,"diagnostics":[]}`))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(json.Valid(csOut)).To(BeTrue())
+			})
 		})
 	})
 
@@ -352,7 +444,94 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 				_, err = loop.Call(context.Background(), agentloop.CallSourceHandler, agentloop.ToolSemanticsAnalyze, validSemanticsArgs("b.go"))
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, agentloop.ErrBudgetExceeded)).To(BeTrue())
+				Expect(err.Error()).To(ContainSubstring("max_wall_time"))
 				Expect(invokeCount.Load()).To(Equal(int32(1)))
+			})
+
+			It("rejects a text-only Generate that overran max_wall_time rather than returning success", func() {
+				start := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+				clock := acceptanceharness.NewFakeClock(start)
+				loop, err := agentloop.New(agentloop.Options{
+					Clock: clock,
+					Budget: agentloop.Budget{
+						MaxToolCalls:  50,
+						MaxModelCalls: 20,
+						MaxWallTime:   5 * time.Minute,
+					},
+					SemanticsAnalyze: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					},
+					CodeSignalReport: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				result, err := loop.Run(context.Background(), advanceClockGateway{
+					clock: clock,
+					by:    5*time.Minute + time.Second,
+					text:  "late success",
+				}, "prompt")
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, agentloop.ErrBudgetExceeded)).To(BeTrue())
+				Expect(err.Error()).To(ContainSubstring("max_wall_time"))
+				Expect(result.FinalText).NotTo(Equal("late success"))
+			})
+
+			It("cancels an in-flight Generate when max_wall_time elapses and returns ErrBudgetExceeded", func() {
+				loop, err := agentloop.New(agentloop.Options{
+					Budget: agentloop.Budget{
+						MaxToolCalls:  50,
+						MaxModelCalls: 20,
+						MaxWallTime:   40 * time.Millisecond,
+					},
+					SemanticsAnalyze: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					},
+					CodeSignalReport: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				// Parent timeout is a safety net only; green path must hit loop wall budget first.
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				started := time.Now()
+				_, err = loop.Run(ctx, blockUntilCancelGateway{}, "prompt")
+				elapsed := time.Since(started)
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, agentloop.ErrBudgetExceeded)).To(BeTrue())
+				Expect(err.Error()).To(ContainSubstring("max_wall_time"))
+				Expect(elapsed).To(BeNumerically("<", time.Second))
+			})
+
+			It("cancels an in-flight tool handler when max_wall_time elapses and returns ErrBudgetExceeded", func() {
+				loop, err := agentloop.New(agentloop.Options{
+					Budget: agentloop.Budget{
+						MaxToolCalls:  50,
+						MaxModelCalls: 20,
+						MaxWallTime:   40 * time.Millisecond,
+					},
+					SemanticsAnalyze: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						<-ctx.Done()
+						return nil, ctx.Err()
+					},
+					CodeSignalReport: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				started := time.Now()
+				_, err = loop.Call(ctx, agentloop.CallSourceHandler, agentloop.ToolSemanticsAnalyze, validSemanticsArgs("a.go"))
+				elapsed := time.Since(started)
+				Expect(err).To(HaveOccurred())
+				Expect(errors.Is(err, agentloop.ErrBudgetExceeded)).To(BeTrue())
+				Expect(err.Error()).To(ContainSubstring("max_wall_time"))
+				Expect(elapsed).To(BeNumerically("<", time.Second))
 			})
 		})
 

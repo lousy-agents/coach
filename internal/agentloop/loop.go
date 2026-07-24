@@ -7,6 +7,7 @@ package agentloop
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -147,13 +148,17 @@ func (l *Loop) Budget() Budget {
 	return l.budget
 }
 
-// Register adds a job-specific tool for this run. Replaces an existing registration of the same name.
+// Register adds a job-specific tool for this run. Core tool names cannot be
+// replaced here — inject handlers via Options instead.
 func (l *Loop) Register(spec ToolSpec) error {
 	if spec.Name == "" {
 		return fmt.Errorf("agentloop: tool name is required")
 	}
 	if spec.Handler == nil {
 		return fmt.Errorf("agentloop: tool handler is required")
+	}
+	if spec.Name == ToolSemanticsAnalyze || spec.Name == ToolCodeSignalReport {
+		return fmt.Errorf("agentloop: cannot replace core tool %q via Register; inject via Options", spec.Name)
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -201,7 +206,17 @@ func (l *Loop) Call(ctx context.Context, source CallSource, name string, args js
 		return nil, err
 	}
 
-	result, err := handler(ctx, args)
+	opCtx, cancel, err := l.wallBudgetContext(ctx)
+	if err != nil {
+		l.mu.Lock()
+		l.calls = append(l.calls, RecordedCall{Name: name, Source: source, Args: cloneRawMessage(args), Err: err})
+		l.mu.Unlock()
+		return nil, err
+	}
+	defer cancel()
+
+	result, err := handler(opCtx, args)
+	err = l.mapWallErr(ctx, opCtx, err)
 
 	l.mu.Lock()
 	l.calls = append(l.calls, RecordedCall{
@@ -242,9 +257,25 @@ func (l *Loop) Run(ctx context.Context, gw TurnGateway, prompt string) (RunResul
 		l.modelCalls++
 		l.mu.Unlock()
 
-		resp, err := gw.Generate(ctx, nextPrompt)
+		opCtx, cancel, err := l.wallBudgetContext(ctx)
 		if err != nil {
 			return RunResult{}, err
+		}
+
+		resp, err := gw.Generate(opCtx, nextPrompt)
+		err = l.mapWallErr(ctx, opCtx, err)
+		cancel()
+		if err != nil {
+			return RunResult{}, err
+		}
+
+		// Re-check after Generate so a turn that overran wall time (e.g. via
+		// injected clock) cannot succeed as text-only or start tools.
+		l.mu.Lock()
+		wallErr := l.checkWallLocked()
+		l.mu.Unlock()
+		if wallErr != nil {
+			return RunResult{}, wallErr
 		}
 
 		if len(resp.ToolCalls) == 0 {
@@ -284,8 +315,44 @@ func (l *Loop) Calls() []RecordedCall {
 }
 
 func (l *Loop) checkWallLocked() error {
-	if l.clock.Now().Sub(l.start) > l.budget.MaxWallTime {
+	if l.clock.Now().Sub(l.start) >= l.budget.MaxWallTime {
 		return fmt.Errorf("%w: max_wall_time %s", ErrBudgetExceeded, l.budget.MaxWallTime)
 	}
 	return nil
+}
+
+// wallBudgetContext returns a child context cancelled when the remaining wall
+// budget elapses (real-time timeout derived from clock-measured remaining).
+func (l *Loop) wallBudgetContext(ctx context.Context) (context.Context, context.CancelFunc, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, func() {}, err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.checkWallLocked(); err != nil {
+		return nil, func() {}, err
+	}
+	remaining := l.budget.MaxWallTime - l.clock.Now().Sub(l.start)
+	if remaining <= 0 {
+		return nil, func() {}, fmt.Errorf("%w: max_wall_time %s", ErrBudgetExceeded, l.budget.MaxWallTime)
+	}
+	opCtx, cancel := context.WithTimeout(ctx, remaining)
+	return opCtx, cancel, nil
+}
+
+// mapWallErr rewrites deadline/cancel from a wall-budget child context into
+// ErrBudgetExceeded when the parent context is still live.
+func (l *Loop) mapWallErr(parent, opCtx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	if parent.Err() != nil {
+		return err
+	}
+	if errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(opCtx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("%w: max_wall_time %s", ErrBudgetExceeded, l.budget.MaxWallTime)
+	}
+	return err
 }
