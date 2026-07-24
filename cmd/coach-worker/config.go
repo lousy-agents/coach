@@ -49,7 +49,8 @@ func loadConfigFromEnv() (Config, error) {
 		return Config{}, err
 	}
 	cfg := defaultConfig(workerID, redisAddr)
-	if err := applyOptionalEnv(&cfg); err != nil {
+	cfg, err = applyOptionalEnv(cfg)
+	if err != nil {
 		return Config{}, err
 	}
 	return validateConfig(cfg)
