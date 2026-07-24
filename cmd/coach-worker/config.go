@@ -44,21 +44,19 @@ type Config struct {
 }
 
 func loadConfigFromEnv() (Config, error) {
-	var missing []string
+	workerID, redisAddr, err := requiredEnv()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg := defaultConfig(workerID, redisAddr)
+	if err := applyOptionalEnv(&cfg); err != nil {
+		return Config{}, err
+	}
+	return validateConfig(cfg)
+}
 
-	workerID := os.Getenv("COACH_WORKER_ID")
-	if workerID == "" {
-		missing = append(missing, "COACH_WORKER_ID")
-	}
-	redisAddr := os.Getenv("COACH_REDIS_ADDR")
-	if redisAddr == "" {
-		missing = append(missing, "COACH_REDIS_ADDR")
-	}
-	if len(missing) > 0 {
-		return Config{}, fmt.Errorf("coach-worker: missing required env var(s): %s", strings.Join(missing, ", "))
-	}
-
-	cfg := Config{
+func defaultConfig(workerID, redisAddr string) Config {
+	return Config{
 		WorkerID:           workerID,
 		HeartbeatInterval:  defaultHeartbeatInterval,
 		StaleAfter:         defaultStaleAfter,
@@ -74,50 +72,32 @@ func loadConfigFromEnv() (Config, error) {
 		RedisClaimAfter:    defaultRedisClaimAfter,
 		PostgresDSN:        os.Getenv("COACH_PG_DSN"),
 	}
+}
 
-	if raw := os.Getenv("COACH_REDIS_DB"); raw != "" {
-		var db int
-		if _, err := fmt.Sscanf(raw, "%d", &db); err != nil {
-			return Config{}, fmt.Errorf("coach-worker: invalid COACH_REDIS_DB %q: %w", raw, err)
-		}
-		cfg.RedisDB = db
-	}
-	for _, pair := range []struct {
-		env string
-		dst *time.Duration
-	}{
-		{"COACH_WORKER_HEARTBEAT_INTERVAL", &cfg.HeartbeatInterval},
-		{"COACH_WORKER_STALE_AFTER", &cfg.StaleAfter},
-		{"COACH_WORKER_RECONCILE_INTERVAL", &cfg.ReconcileInterval},
-		{"COACH_WORKER_QUEUED_AGE_THRESHOLD", &cfg.QueuedAgeThreshold},
-		{"COACH_WORKER_IDLE_POLL_INTERVAL", &cfg.IdlePollInterval},
-		{"COACH_REDIS_CLAIM_AFTER", &cfg.RedisClaimAfter},
-	} {
-		if raw := os.Getenv(pair.env); raw != "" {
-			d, err := time.ParseDuration(raw)
-			if err != nil {
-				return Config{}, fmt.Errorf("coach-worker: invalid %s %q: %w", pair.env, raw, err)
-			}
-			*pair.dst = d
-		}
-	}
-
-	if raw := os.Getenv("COACH_WORKER_MAX_ATTEMPTS"); raw != "" {
-		var n int
-		if _, err := fmt.Sscanf(raw, "%d", &n); err != nil || n < 1 {
-			return Config{}, fmt.Errorf("coach-worker: invalid COACH_WORKER_MAX_ATTEMPTS %q (must be integer >= 1)", raw)
-		}
-		cfg.MaxAttempts = n
-	}
-
+func validateConfig(cfg Config) (Config, error) {
 	if cfg.StaleAfter < 3*cfg.HeartbeatInterval {
 		return Config{}, fmt.Errorf(
 			"coach-worker: COACH_WORKER_STALE_AFTER (%s) must be >= 3× COACH_WORKER_HEARTBEAT_INTERVAL (%s)",
 			cfg.StaleAfter, cfg.HeartbeatInterval,
 		)
 	}
-
 	return cfg, nil
+}
+
+func requiredEnv() (workerID, redisAddr string, err error) {
+	var missing []string
+	workerID = os.Getenv("COACH_WORKER_ID")
+	if workerID == "" {
+		missing = append(missing, "COACH_WORKER_ID")
+	}
+	redisAddr = os.Getenv("COACH_REDIS_ADDR")
+	if redisAddr == "" {
+		missing = append(missing, "COACH_REDIS_ADDR")
+	}
+	if len(missing) > 0 {
+		return "", "", fmt.Errorf("coach-worker: missing required env var(s): %s", strings.Join(missing, ", "))
+	}
+	return workerID, redisAddr, nil
 }
 
 func valueOrDefault(v, def string) string {

@@ -135,6 +135,14 @@ func (q *fakeTaskQueue) pendingCount() int {
 	return len(q.pending)
 }
 
+func (q *fakeTaskQueue) pendingTasks() []queue.Task {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	out := make([]queue.Task, len(q.pending))
+	copy(out, q.pending)
+	return out
+}
+
 func (q *fakeTaskQueue) enqueueCount() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -728,13 +736,16 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 	})
 
 	When("enqueue failed at submit and left a queued row with no in-flight claim", func() {
-		It("the requeue reconciler re-enqueues so the job can complete", func() {
+		It("the requeue reconciler re-enqueues the API versioned task payload so the job can complete", func() {
 			job := newQueuedJob("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 			// Created in the past relative to clock so it exceeds QueuedAgeThreshold.
 			job.CreatedAt = start.Add(-2 * time.Minute)
 			Expect(store.CreateJob(ctx, job)).To(Succeed())
 			// Simulate submit-time enqueue failure: row is queued, queue is empty.
 			Expect(tq.pendingCount()).To(Equal(0))
+
+			wantPayload, err := coachapi.MarshalTaskPayload(job.ID)
+			Expect(err).NotTo(HaveOccurred())
 
 			h := successHandler
 			wkr, err := worker.New(store, tq, clock, h, worker.Config{
@@ -747,6 +758,20 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 			Expect(wkr.ReconcileOnce(ctx)).To(Succeed())
 			Expect(tq.enqueueCount()).To(BeNumerically(">=", 1))
 			Expect(tq.pendingCount()).To(Equal(1))
+
+			// ADR-006 versioned payloads: reconciler must emit the same wire
+			// shape as POST /v1/jobs (schema_version + job_id), not raw job id bytes.
+			pending := tq.pendingTasks()
+			Expect(pending).To(HaveLen(1))
+			Expect(pending[0].ID).To(Equal(job.ID))
+			Expect(pending[0].Payload).To(Equal(wantPayload),
+				"reconciler payload must match API MarshalTaskPayload; got %s", pending[0].Payload)
+			var decoded map[string]any
+			Expect(json.Unmarshal(pending[0].Payload, &decoded)).To(Succeed())
+			Expect(decoded).To(Equal(map[string]any{
+				"schema_version": float64(coachapi.TaskPayloadSchemaVersion1),
+				"job_id":         job.ID,
+			}))
 
 			ok, err := wkr.ProcessNext(ctx)
 			Expect(err).NotTo(HaveOccurred())
