@@ -94,11 +94,8 @@ func New(opts Options) (*Loop, error) {
 		clock = realClock{}
 	}
 
-	tools := make(map[string]registeredTool)
-	registerCoreTools(tools, opts)
-
 	return &Loop{
-		tools:  tools,
+		tools:  newCoreToolRegistry(opts),
 		budget: applyBudgetDefaults(opts.Budget),
 		clock:  clock,
 		start:  clock.Now(),

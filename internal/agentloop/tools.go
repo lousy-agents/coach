@@ -70,13 +70,16 @@ func isCoreToolName(name string) bool {
 	return false
 }
 
-func registerCoreTools(tools map[string]registeredTool, opts Options) {
+// newCoreToolRegistry builds the always-registered tool map for a new Loop.
+func newCoreToolRegistry(opts Options) map[string]registeredTool {
+	tools := make(map[string]registeredTool, len(coreToolDefs()))
 	for _, def := range coreToolDefs() {
 		tools[def.name] = registeredTool{
 			schema:  def.schema(),
 			handler: def.pick(opts),
 		}
 	}
+	return tools
 }
 
 func rejectCoreToolRegister(name string) error {
