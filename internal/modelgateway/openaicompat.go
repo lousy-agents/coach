@@ -1,11 +1,8 @@
 package modelgateway
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -56,74 +53,19 @@ func NewOpenAICompatClient(cfg OpenAICompatConfig) (*OpenAICompatClient, error) 
 	if err != nil {
 		return nil, err
 	}
-
-	logical := strings.TrimSpace(cfg.LogicalModel)
-	if logical == "" {
-		logical = DefaultLogicalModel
-	}
-
 	httpClient, err := resolveHTTPClient(cfg.HTTPClient)
 	if err != nil {
 		return nil, err
 	}
-
-	attempts := cfg.SchemaValidationAttempts
-	if attempts <= 0 {
-		attempts = DefaultSchemaValidationAttempts
-	}
-
-	var extra map[string]string
-	if len(cfg.ExtraHeaders) > 0 {
-		extra = make(map[string]string, len(cfg.ExtraHeaders))
-		for k, v := range cfg.ExtraHeaders {
-			extra[k] = v
-		}
-	}
-
 	return &OpenAICompatClient{
 		baseURL:                  base,
-		logicalModel:             logical,
+		logicalModel:             resolveLogicalModel(cfg.LogicalModel, ""),
 		apiKey:                   cfg.APIKey,
 		authHeader:               cfg.AuthHeader,
-		extraHeaders:             extra,
+		extraHeaders:             cloneStringMap(cfg.ExtraHeaders),
 		httpClient:               httpClient,
-		schemaValidationAttempts: attempts,
+		schemaValidationAttempts: resolveSchemaAttempts(cfg.SchemaValidationAttempts),
 	}, nil
-}
-
-// normalizeBaseURL trims whitespace and trailing slashes, and strips a single
-// trailing "/v1" so operators may pass either the origin or the OpenAI API root
-// without producing /v1/v1/chat/completions.
-func normalizeBaseURL(raw string) (string, error) {
-	base := strings.TrimSpace(raw)
-	base = strings.TrimRight(base, "/")
-	if base == "" {
-		return "", fmt.Errorf("modelgateway: BaseURL is required")
-	}
-	if strings.HasSuffix(base, "/v1") {
-		base = strings.TrimSuffix(base, "/v1")
-		base = strings.TrimRight(base, "/")
-	}
-	if base == "" {
-		return "", fmt.Errorf("modelgateway: BaseURL is required")
-	}
-	if _, err := url.ParseRequestURI(base); err != nil {
-		return "", fmt.Errorf("modelgateway: BaseURL is invalid: %w", err)
-	}
-	return base, nil
-}
-
-func resolveHTTPClient(c *http.Client) (*http.Client, error) {
-	if c == nil {
-		return &http.Client{Timeout: DefaultHTTPClientTimeout}, nil
-	}
-	if c == http.DefaultClient {
-		return nil, fmt.Errorf("modelgateway: HTTPClient must not be http.DefaultClient")
-	}
-	if c.Timeout <= 0 {
-		return nil, fmt.Errorf("modelgateway: HTTPClient.Timeout must be > 0")
-	}
-	return c, nil
 }
 
 func (c *OpenAICompatClient) HTTPClient() *http.Client {
@@ -131,28 +73,6 @@ func (c *OpenAICompatClient) HTTPClient() *http.Client {
 		return nil
 	}
 	return c.httpClient
-}
-
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type chatCompletionRequest struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
-	Stream   bool          `json:"stream"`
-}
-
-type chatCompletionResponse struct {
-	Model   string `json:"model"`
-	Choices []struct {
-		Message struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
 }
 
 func (c *OpenAICompatClient) Judge(ctx context.Context, req JudgmentRequest) (JudgmentResponse, error) {
@@ -163,13 +83,7 @@ func (c *OpenAICompatClient) Judge(ctx context.Context, req JudgmentRequest) (Ju
 		return JudgmentResponse{}, NewUnavailableError("context done", err)
 	}
 
-	logical := strings.TrimSpace(req.LogicalModel)
-	if logical == "" {
-		logical = c.logicalModel
-	}
-	if logical == "" {
-		logical = DefaultLogicalModel
-	}
+	logical := resolveLogicalModel(req.LogicalModel, c.logicalModel)
 
 	// Fail closed on static schema problems before any upstream call so the
 	// bounded retry budget is reserved for malformed model output only.
@@ -177,6 +91,10 @@ func (c *OpenAICompatClient) Judge(ctx context.Context, req JudgmentRequest) (Ju
 		return JudgmentResponse{}, err
 	}
 
+	return c.judgeWithRetries(ctx, logical, req)
+}
+
+func (c *OpenAICompatClient) judgeWithRetries(ctx context.Context, logical string, req JudgmentRequest) (JudgmentResponse, error) {
 	var lastValErr error
 	for attempt := 1; attempt <= c.schemaValidationAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
@@ -200,94 +118,66 @@ func (c *OpenAICompatClient) Judge(ctx context.Context, req JudgmentRequest) (Ju
 			ServedModelID:  servedModel,
 		}, nil
 	}
-
 	if lastValErr == nil {
 		lastValErr = NewValidationError("schema validation failed after retries")
 	}
 	return JudgmentResponse{}, lastValErr
 }
 
-func extractAndValidateJudgment(content string, schema json.RawMessage) (json.RawMessage, error) {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return nil, NewValidationError("assistant content is empty")
+// normalizeBaseURL trims whitespace and trailing slashes, and strips a single
+// trailing "/v1" so operators may pass either the origin or the OpenAI API root
+// without producing /v1/v1/chat/completions.
+func normalizeBaseURL(raw string) (string, error) {
+	base := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if strings.HasSuffix(base, "/v1") {
+		base = strings.TrimRight(strings.TrimSuffix(base, "/v1"), "/")
 	}
-	var raw json.RawMessage
-	if err := json.Unmarshal([]byte(content), &raw); err != nil {
-		return nil, NewValidationError("assistant content is not valid JSON")
+	if base == "" {
+		return "", fmt.Errorf("modelgateway: BaseURL is required")
 	}
-	// Models sometimes return a JSON string whose contents are the object; unwrap once.
-	var asString string
-	if err := json.Unmarshal(raw, &asString); err == nil {
-		asString = strings.TrimSpace(asString)
-		if asString == "" {
-			return nil, NewValidationError("assistant content is empty")
-		}
-		if err := json.Unmarshal([]byte(asString), &raw); err != nil {
-			return nil, NewValidationError("assistant content is not valid JSON")
-		}
+	if _, err := url.ParseRequestURI(base); err != nil {
+		return "", fmt.Errorf("modelgateway: BaseURL is invalid: %w", err)
 	}
-	if err := validateJudgmentJSON(raw, schema); err != nil {
-		return nil, err
-	}
-	return raw, nil
+	return base, nil
 }
 
-func (c *OpenAICompatClient) callChatCompletions(ctx context.Context, logicalModel string, messages []Message) (servedModel, content string, err error) {
-	wireMsgs := make([]chatMessage, 0, len(messages))
-	for _, m := range messages {
-		wireMsgs = append(wireMsgs, chatMessage{Role: m.Role, Content: m.Content})
+func resolveHTTPClient(c *http.Client) (*http.Client, error) {
+	if c == nil {
+		return &http.Client{Timeout: DefaultHTTPClientTimeout}, nil
 	}
-	body, err := json.Marshal(chatCompletionRequest{
-		Model:    logicalModel,
-		Messages: wireMsgs,
-		Stream:   false,
-	})
-	if err != nil {
-		return "", "", NewUnavailableError("encode request", err)
+	if c == http.DefaultClient {
+		return nil, fmt.Errorf("modelgateway: HTTPClient must not be http.DefaultClient")
 	}
+	if c.Timeout <= 0 {
+		return nil, fmt.Errorf("modelgateway: HTTPClient.Timeout must be > 0")
+	}
+	return c, nil
+}
 
-	endpoint := c.baseURL + "/v1/chat/completions"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return "", "", NewUnavailableError("build request", err)
+func resolveLogicalModel(requestModel, clientDefault string) string {
+	if m := strings.TrimSpace(requestModel); m != "" {
+		return m
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
-	if c.authHeader != "" {
-		httpReq.Header.Set("Authorization", c.authHeader)
-	} else if c.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	if m := strings.TrimSpace(clientDefault); m != "" {
+		return m
 	}
-	for k, v := range c.extraHeaders {
-		httpReq.Header.Set(k, v)
-	}
+	return DefaultLogicalModel
+}
 
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return "", "", NewUnavailableError("upstream request failed", err)
+func resolveSchemaAttempts(n int) int {
+	if n <= 0 {
+		return DefaultSchemaValidationAttempts
 	}
-	defer resp.Body.Close()
+	return n
+}
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	if err != nil {
-		return "", "", NewUnavailableError("read upstream response", err)
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
 	}
-
-	if resp.StatusCode >= 500 || resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode == http.StatusTooManyRequests {
-		return "", "", NewUnavailableError(fmt.Sprintf("upstream HTTP %d", resp.StatusCode), nil)
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// Non-retryable client/auth errors are still unavailability of inference for callers.
-		return "", "", NewUnavailableError(fmt.Sprintf("upstream HTTP %d", resp.StatusCode), nil)
-	}
-
-	var parsed chatCompletionResponse
-	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return "", "", NewUnavailableError("decode upstream response", err)
-	}
-	if len(parsed.Choices) == 0 {
-		return "", "", NewUnavailableError("upstream response missing choices", nil)
-	}
-	return parsed.Model, parsed.Choices[0].Message.Content, nil
+	return out
 }

@@ -19,10 +19,14 @@ type ValidationError struct {
 }
 
 func (e *ValidationError) Error() string {
-	if e == nil || e.Detail == "" {
-		return ErrSchemaValidation.Error()
+	return formatPrefixedError(ErrSchemaValidation, e.detail())
+}
+
+func (e *ValidationError) detail() string {
+	if e == nil {
+		return ""
 	}
-	return ErrSchemaValidation.Error() + ": " + e.Detail
+	return e.Detail
 }
 
 func (e *ValidationError) Unwrap() error { return ErrSchemaValidation }
@@ -42,23 +46,11 @@ func (e *UnavailableError) Error() string {
 	if e == nil {
 		return ErrUnavailable.Error()
 	}
-	if e.Detail == "" && e.Err == nil {
-		return ErrUnavailable.Error()
-	}
-	if e.Err == nil {
-		return ErrUnavailable.Error() + ": " + e.Detail
-	}
-	if e.Detail == "" {
-		return ErrUnavailable.Error() + ": " + e.Err.Error()
-	}
-	return ErrUnavailable.Error() + ": " + e.Detail + ": " + e.Err.Error()
+	return formatPrefixedError(ErrUnavailable, joinDetailCause(e.Detail, e.Err))
 }
 
 func (e *UnavailableError) Unwrap() error {
-	if e == nil {
-		return ErrUnavailable
-	}
-	if e.Err == nil {
+	if e == nil || e.Err == nil {
 		return ErrUnavailable
 	}
 	return errors.Join(ErrUnavailable, e.Err)
@@ -66,4 +58,24 @@ func (e *UnavailableError) Unwrap() error {
 
 func NewUnavailableError(detail string, cause error) error {
 	return &UnavailableError{Detail: detail, Err: cause}
+}
+
+func formatPrefixedError(sentinel error, detail string) string {
+	if detail == "" {
+		return sentinel.Error()
+	}
+	return sentinel.Error() + ": " + detail
+}
+
+func joinDetailCause(detail string, cause error) string {
+	switch {
+	case detail == "" && cause == nil:
+		return ""
+	case cause == nil:
+		return detail
+	case detail == "":
+		return cause.Error()
+	default:
+		return detail + ": " + cause.Error()
+	}
 }
