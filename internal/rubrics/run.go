@@ -22,11 +22,12 @@ func Run(ctx context.Context, gw modelgateway.Gateway, def Definition, messages 
 	if err := lifecycleAbortErr(ctx.Err()); err != nil {
 		return Result{}, err
 	}
-	if gw == nil {
-		return degrade(def.ID, "model gateway is nil"), nil
-	}
+	// Validate definition before gw so a missing id never yields scope "rubric:".
 	if def.ID == "" {
 		return degrade("unknown", "rubric definition id is required"), nil
+	}
+	if gw == nil {
+		return degrade(def.ID, "model gateway is nil"), nil
 	}
 
 	resp, err := gw.Judge(ctx, modelgateway.JudgmentRequest{
