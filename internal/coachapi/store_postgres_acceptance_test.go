@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -62,8 +63,9 @@ func pgMigrationFiles() []string {
 // repo's real-backend integration test convention (see
 // internal/coachapi/queue/redisstream/redisstream_conformance_test.go):
 // skip cleanly rather than fail or hang when the real backend isn't
-// available.
-func setupPostgresStore(ctx context.Context, dsn string) *coachapi.PostgresStore {
+// available. The returned pool is for direct SQL assertions (e.g. row
+// counts after reclaim) that GetReport cannot exercise without false-green.
+func setupPostgresStore(ctx context.Context, dsn string) (*coachapi.PostgresStore, *pgxpool.Pool) {
 	pool, err := pgxpool.New(ctx, dsn)
 	Expect(err).NotTo(HaveOccurred(), "pgxpool.New")
 	DeferCleanup(pool.Close)
@@ -82,7 +84,7 @@ func setupPostgresStore(ctx context.Context, dsn string) *coachapi.PostgresStore
 		Expect(err).NotTo(HaveOccurred(), "applying migration %s", path)
 	}
 
-	return coachapi.NewPostgresStore(pool)
+	return coachapi.NewPostgresStore(pool), pool
 }
 
 // coachapi.PostgresStore (Task 2, GitHub issue #103) is exercised against a
@@ -95,6 +97,7 @@ var _ = Describe("coachapi.PostgresStore", func() {
 	var (
 		ctx   context.Context
 		store *coachapi.PostgresStore
+		pool  *pgxpool.Pool
 	)
 
 	BeforeEach(func() {
@@ -103,7 +106,7 @@ var _ = Describe("coachapi.PostgresStore", func() {
 			Skip("COACH_PG_DSN not set; skipping Postgres integration test")
 		}
 		ctx = context.Background()
-		store = setupPostgresStore(ctx, dsn)
+		store, pool = setupPostgresStore(ctx, dsn)
 	})
 
 	When("a job is created", func() {
@@ -398,6 +401,252 @@ var _ = Describe("coachapi.PostgresStore", func() {
 			Expect(getErr).NotTo(HaveOccurred())
 			Expect(gotJob.Status).To(Equal(coachapi.JobStatusQueued), "status after rolled-back RecordCompletion should be unchanged")
 			Expect(gotJob.Attempt).To(Equal(0), "attempt after rolled-back RecordCompletion should be unchanged")
+		})
+	})
+
+	// Task 3 / #104: claim, fence, and reclaim against real Postgres.
+	// Issue #104: reclaim increments attempt and deletes prior findings and
+	// diagnostics. Row counts are asserted via SQL so GetReport's final-attempt
+	// filter cannot false-green a missing DELETE.
+	When("ClaimJob reclaims a stale running job", func() {
+		It("increments attempt, deletes prior findings and diagnostics, and fences the previous worker out", func() {
+			job := pgQueuedJob("88888888-8888-8888-8888-888888888888")
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+
+			start := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+			lease1, err := store.ClaimJob(ctx, job.ID, "worker-a", start, 60*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lease1.Attempt).To(Equal(1))
+
+			Expect(store.InsertFindings(ctx, job.ID, "worker-a", 1, []coachapi.JobFinding{{
+				ID:          "88888888-0000-0000-0000-000000000001",
+				JobID:       job.ID,
+				Attempt:     1,
+				Source:      coachapi.FindingSourceDeterministic,
+				Payload:     json.RawMessage(`{"rule_id":"old"}`),
+				PayloadHash: "hash-old",
+				CreatedAt:   start,
+			}})).To(Succeed())
+			Expect(store.InsertDiagnostics(ctx, job.ID, "worker-a", 1, []coachapi.JobDiagnostic{{
+				ID:        "88888888-0000-0000-0000-0000000000d1",
+				JobID:     job.ID,
+				Attempt:   1,
+				Scope:     "file:a.go",
+				Message:   "partial crash",
+				CreatedAt: start,
+			}})).To(Succeed())
+
+			reclaimAt := start.Add(61 * time.Second)
+			lease2, err := store.ClaimJob(ctx, job.ID, "worker-b", reclaimAt, 60*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lease2.Attempt).To(Equal(2))
+
+			var findingCount, diagCount int
+			Expect(pool.QueryRow(ctx, `SELECT COUNT(*) FROM job_findings WHERE job_id = $1`, job.ID).Scan(&findingCount)).To(Succeed())
+			Expect(pool.QueryRow(ctx, `SELECT COUNT(*) FROM job_diagnostics WHERE job_id = $1`, job.ID).Scan(&diagCount)).To(Succeed())
+			Expect(findingCount).To(Equal(0), "ClaimJob must DELETE prior findings rows")
+			Expect(diagCount).To(Equal(0), "ClaimJob must DELETE prior diagnostics rows")
+
+			err = store.Heartbeat(ctx, job.ID, "worker-a", 1, reclaimAt)
+			Expect(errors.Is(err, coachapi.ErrClaimLost)).To(BeTrue())
+
+			Expect(store.InsertFindings(ctx, job.ID, "worker-b", 2, []coachapi.JobFinding{{
+				ID:          "88888888-0000-0000-0000-000000000002",
+				JobID:       job.ID,
+				Attempt:     2,
+				Source:      coachapi.FindingSourceDeterministic,
+				Payload:     json.RawMessage(`{"rule_id":"new"}`),
+				PayloadHash: "hash-new",
+				CreatedAt:   reclaimAt,
+			}})).To(Succeed())
+			Expect(store.CompleteJob(ctx, job.ID, "worker-b", 2, coachapi.Completion{
+				Attempt:     2,
+				CommitSHA:   "abc123def4567890abc123def4567890abc123de",
+				Versions:    coachapi.ReportVersions{Analyzer: "codesignal@1"},
+				FinishedAt:  reclaimAt,
+				GeneratedAt: reclaimAt,
+			})).To(Succeed())
+
+			report, err := store.GetReport(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Findings).To(HaveLen(1))
+			Expect(report.Findings[0].Payload).To(MatchJSON(`{"rule_id":"new"}`))
+			Expect(report.Diagnostics).To(BeEmpty())
+		})
+	})
+
+	// Reviewer finding #1: fenced inserts must not succeed if ClaimJob reclaim
+	// commits between the fence check and the INSERT (TOCTOU).
+	When("InsertFindings holds an open fenced insert transaction and another connection reclaims the job", func() {
+		It("returns ErrClaimLost and does not persist the zombie worker's findings", func() {
+			job := pgQueuedJob("99999999-9999-9999-9999-999999999999")
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+
+			start := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+			lease1, err := store.ClaimJob(ctx, job.ID, "worker-a", start, 60*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lease1.Attempt).To(Equal(1))
+
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			coachapi.SetFenceHoldForTest(func() {
+				close(entered)
+				<-release
+			})
+			DeferCleanup(func() { coachapi.SetFenceHoldForTest(nil) })
+
+			var insertErr error
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				insertErr = store.InsertFindings(ctx, job.ID, "worker-a", 1, []coachapi.JobFinding{{
+					ID:          "99999999-0000-0000-0000-000000000001",
+					JobID:       job.ID,
+					Attempt:     1,
+					Source:      coachapi.FindingSourceDeterministic,
+					Payload:     json.RawMessage(`{"rule_id":"zombie"}`),
+					PayloadHash: "hash-zombie",
+					CreatedAt:   start,
+				}})
+			}()
+
+			Eventually(entered).Should(BeClosed())
+
+			reclaimAt := start.Add(61 * time.Second)
+			lease2, err := store.ClaimJob(ctx, job.ID, "worker-b", reclaimAt, 60*time.Second)
+			Expect(err).NotTo(HaveOccurred(), "reclaim must commit while the zombie insert tx is open past its fence check")
+			Expect(lease2.Attempt).To(Equal(2))
+
+			close(release)
+			wg.Wait()
+
+			Expect(errors.Is(insertErr, coachapi.ErrClaimLost)).To(BeTrue(), "zombie InsertFindings err = %v", insertErr)
+
+			// Completing as B with no findings must yield an empty report —
+			// the zombie row must not have been committed.
+			Expect(store.CompleteJob(ctx, job.ID, "worker-b", 2, coachapi.Completion{
+				Attempt:     2,
+				CommitSHA:   "abc123def4567890abc123def4567890abc123de",
+				Versions:    coachapi.ReportVersions{Analyzer: "codesignal@1"},
+				FinishedAt:  reclaimAt,
+				GeneratedAt: reclaimAt,
+			})).To(Succeed())
+			report, err := store.GetReport(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Findings).To(BeEmpty(), "zombie findings must not pollute the reclaimed attempt's report")
+		})
+	})
+
+	// Reviewer finding #2: inserts must stamp lease jobID/attempt, not client fields.
+	When("InsertFindings is given findings stamped with a wrong Attempt", func() {
+		It("persists the fenced lease attempt so GetReport includes them", func() {
+			job := pgQueuedJob("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+
+			start := time.Date(2026, 7, 23, 13, 0, 0, 0, time.UTC)
+			lease, err := store.ClaimJob(ctx, job.ID, "worker-a", start, 60*time.Second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lease.Attempt).To(Equal(1))
+
+			Expect(store.InsertFindings(ctx, job.ID, "worker-a", lease.Attempt, []coachapi.JobFinding{{
+				ID:          "aaaaaaaa-0000-0000-0000-000000000001",
+				JobID:       job.ID,
+				Attempt:     0, // client-supplied wrong attempt must not win
+				Source:      coachapi.FindingSourceDeterministic,
+				Payload:     json.RawMessage(`{"rule_id":"stamped"}`),
+				PayloadHash: "hash-stamped",
+				CreatedAt:   start,
+			}})).To(Succeed())
+
+			Expect(store.CompleteJob(ctx, job.ID, "worker-a", lease.Attempt, coachapi.Completion{
+				Attempt:     lease.Attempt,
+				CommitSHA:   "abc123def4567890abc123def4567890abc123de",
+				Versions:    coachapi.ReportVersions{Analyzer: "codesignal@1"},
+				FinishedAt:  start,
+				GeneratedAt: start,
+			})).To(Succeed())
+
+			report, err := store.GetReport(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.Findings).To(HaveLen(1), "findings must be stored under the lease attempt, not client Attempt")
+			Expect(report.Findings[0].Payload).To(MatchJSON(`{"rule_id":"stamped"}`))
+		})
+	})
+
+	// Reviewer finding #3: age == staleAfter must be reclaimable (match MemoryStore).
+	When("a running job's heartbeat age equals staleAfter exactly", func() {
+		It("allows ClaimJob to reclaim and ReleaseStaleRunning to release", func() {
+			job := pgQueuedJob("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+
+			const staleAfter = 60 * time.Second
+			start := time.Date(2026, 7, 23, 14, 0, 0, 0, time.UTC)
+			_, err := store.ClaimJob(ctx, job.ID, "worker-a", start, staleAfter)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Boundary: now.Sub(heartbeat) == staleAfter must be stale.
+			boundary := start.Add(staleAfter)
+			lease2, err := store.ClaimJob(ctx, job.ID, "worker-b", boundary, staleAfter)
+			Expect(err).NotTo(HaveOccurred(), "ClaimJob at age==staleAfter must reclaim (got %v)", err)
+			Expect(lease2.Attempt).To(Equal(2))
+			Expect(lease2.WorkerID).To(Equal("worker-b"))
+
+			// Re-claim as C then test ReleaseStaleRunning at the same boundary.
+			job2 := pgQueuedJob("cccccccc-cccc-cccc-cccc-cccccccccccc")
+			Expect(store.CreateJob(ctx, job2)).To(Succeed())
+			_, err = store.ClaimJob(ctx, job2.ID, "worker-a", start, staleAfter)
+			Expect(err).NotTo(HaveOccurred())
+
+			released, err := store.ReleaseStaleRunning(ctx, boundary, staleAfter)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(released).To(BeNumerically(">=", 1))
+
+			got, err := store.GetJob(ctx, job2.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Status).To(Equal(coachapi.JobStatusQueued), "ReleaseStaleRunning at age==staleAfter must release")
+		})
+	})
+
+	// Issue #104: two concurrent workers never double-claim (Postgres exclusivity).
+	// MemoryStore already race-tests this; production safety is the SQL claim predicate.
+	When("many goroutines race ClaimJob on the same queued job against Postgres", func() {
+		It("exactly one worker wins and the rest observe ErrNotClaimable", func() {
+			job := pgQueuedJob("dddddddd-dddd-dddd-dddd-dddddddddddd")
+			Expect(store.CreateJob(ctx, job)).To(Succeed())
+
+			const n = 20
+			start := time.Date(2026, 7, 23, 15, 0, 0, 0, time.UTC)
+			results := make(chan error, n)
+			var wg sync.WaitGroup
+			for i := 0; i < n; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					_, err := store.ClaimJob(ctx, job.ID, fmt.Sprintf("pg-w-%d", i), start, 60*time.Second)
+					results <- err
+				}(i)
+			}
+			wg.Wait()
+			close(results)
+
+			var wins, losses int
+			for err := range results {
+				if err == nil {
+					wins++
+					continue
+				}
+				Expect(errors.Is(err, coachapi.ErrNotClaimable)).To(BeTrue(), "unexpected claim err: %v", err)
+				losses++
+			}
+			Expect(wins).To(Equal(1), "exactly one Postgres claim must succeed")
+			Expect(losses).To(Equal(n - 1))
+
+			got, err := store.GetJob(ctx, job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Status).To(Equal(coachapi.JobStatusRunning))
+			Expect(got.Attempt).To(Equal(1))
+			Expect(got.ClaimedBy).NotTo(BeNil())
 		})
 	})
 })

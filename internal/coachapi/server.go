@@ -99,6 +99,16 @@ type taskPayload struct {
 	JobID         string `json:"job_id"`
 }
 
+// MarshalTaskPayload returns the ADR-006 versioned queue.Task.Payload body for
+// jobID. POST /v1/jobs and the worker requeue reconciler must use this helper
+// so submit and recovery publish the same wire shape.
+func MarshalTaskPayload(jobID string) ([]byte, error) {
+	return json.Marshal(taskPayload{
+		SchemaVersion: TaskPayloadSchemaVersion1,
+		JobID:         jobID,
+	})
+}
+
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	principal, ok := PrincipalFromContext(r.Context())
 	if !ok {
@@ -170,7 +180,7 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, err := json.Marshal(taskPayload{SchemaVersion: TaskPayloadSchemaVersion1, JobID: job.ID})
+	payload, err := MarshalTaskPayload(job.ID)
 	if err != nil {
 		writeAPIError(w, http.StatusServiceUnavailable, ErrorCodeInternalError, "failed to build task payload")
 		return
