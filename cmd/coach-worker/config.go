@@ -56,7 +56,10 @@ type Config struct {
 	BaselineMaxFiles      int
 	BaselineMaxTotalBytes int64
 
-	// Optional GitHub App installation for non-smoke baseline tree fetch.
+	// Optional GitHub App credentials for non-smoke baseline tree fetch.
+	// Production path uses AppID + PrivateKey via CredentialResolver and
+	// resolves installation per repo (ADR-002/003). InstallationID is an
+	// optional thinproof/backward-compat override only — not required.
 	GitHubAppID          int64
 	GitHubInstallationID int64
 	GitHubPrivateKey     []byte

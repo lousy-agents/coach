@@ -44,6 +44,10 @@ type BaselineListOptions struct {
 // BaselineTreeSource enumerates and reads repository files at a ref without git clone.
 // Implementations: GitHub Contents API (pkg/githubingest) and local smoke fixtures.
 type BaselineTreeSource interface {
+	// ResolveCommitSHA resolves ref to the commit object SHA that will be analyzed.
+	// Empty ref means the repository default branch tip (not the literal string "HEAD").
+	// Smoke fixtures return a stable placeholder (local-fixture).
+	ResolveCommitSHA(ctx context.Context, owner, repo, ref string) (string, error)
 	ListFiles(ctx context.Context, owner, repo, ref string, opts BaselineListOptions) ([]BaselineFileEntry, error)
 	ReadFile(ctx context.Context, owner, repo, ref, path string) (content []byte, blobSHA string, err error)
 }
@@ -85,6 +89,11 @@ type RepoBaselineScanConfig struct {
 	// tools have been driven (so Calls() is populated on success paths).
 	ObserveLoop func(*agentloop.Loop)
 
+	// ConfigureLoop, if set, runs after core + rubric tools are registered and
+	// before analysis. Tests may replace rubric handlers to inject hard
+	// judgment failures; production leaves it nil.
+	ConfigureLoop func(*agentloop.Loop)
+
 	// Now, if set, stamps Completion.FinishedAt/GeneratedAt; otherwise time.Now UTC.
 	Now func() time.Time
 }
@@ -112,15 +121,17 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 		return nil, err
 	}
 
-	source, commitSHA, err := resolveBaselineTreeSource(cfg, params)
+	source, err := resolveBaselineTreeSource(cfg, params)
 	if err != nil {
 		return nil, err
 	}
 
-	ref := strings.TrimSpace(params.Ref)
-	if ref == "" {
-		ref = "HEAD"
+	commitSHA, err := source.ResolveCommitSHA(ctx, params.RepoOwner, params.RepoName, params.Ref)
+	if err != nil {
+		return nil, mapBaselineFetchError(err)
 	}
+	// List/Read at the resolved commit object so analysis and report identity match.
+	ref := commitSHA
 
 	listOpts := BaselineListOptions{
 		MaxFiles:      cfg.MaxFiles,
@@ -139,7 +150,16 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 		return nil, err
 	}
 
-	loop, err := agentloop.New(agentloop.Options{})
+	// Per-file semantics_analyze + codesignal + worst-case per-file hidden_mutation
+	// + cohesion and slack. Floor at DefaultMaxToolCalls so small trees keep the
+	// global default; do not lower agentloop.DefaultMaxToolCalls for other loops.
+	maxToolCalls := len(entries) + 1 /*codesignal*/ + len(entries) /*worst hidden_mutation*/ + 10 /*cohesion+slack*/
+	if maxToolCalls < agentloop.DefaultMaxToolCalls {
+		maxToolCalls = agentloop.DefaultMaxToolCalls
+	}
+	loop, err := agentloop.New(agentloop.Options{
+		Budget: agentloop.Budget{MaxToolCalls: maxToolCalls},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("coachapi: constructing agent loop: %w", err)
 	}
@@ -149,6 +169,9 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 	}
 	if err := rubrics.RegisterTools(loop, gw); err != nil {
 		return nil, fmt.Errorf("coachapi: registering rubric tools: %w", err)
+	}
+	if cfg.ConfigureLoop != nil {
+		cfg.ConfigureLoop(loop)
 	}
 	if cfg.ObserveLoop != nil {
 		defer cfg.ObserveLoop(loop)
@@ -160,13 +183,38 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 		return nil, err
 	}
 
-	findings := findingsFromCodeSignalReport(report)
-	var diagnostics []JobDiagnostic
-	agentFindings, agentDiags, err := judgeBaselineViaLoop(ctx, loop, loaded, findings)
-	if err != nil {
-		return nil, err
+	// Persist deterministic findings before judgment so a hard judgment error
+	// cannot drop Story 5 deterministic evidence (F4).
+	detFindings := findingsFromCodeSignalReport(report)
+	if len(detFindings) > 0 {
+		if err := w.InsertFindings(ctx, detFindings); err != nil {
+			return nil, err
+		}
 	}
-	findings = append(findings, agentFindings...)
+
+	var diagnostics []JobDiagnostic
+	agentFindings, agentDiags, err := judgeBaselineViaLoop(ctx, loop, loaded, detFindings)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, err
+		}
+		// Hard non-cancel judgment failure: record diagnostic, still complete
+		// with deterministic findings already written.
+		diagnostics = append(diagnostics, JobDiagnostic{
+			ID:      watermill.NewUUID(),
+			Scope:   "judgment",
+			Message: fmt.Sprintf("judgment phase failed: %v", err),
+		})
+		diagnostics = append(diagnostics, diagnosticsFromCodeSignal(report)...)
+		if len(diagnostics) > 0 {
+			if err := w.InsertDiagnostics(ctx, diagnostics); err != nil {
+				return nil, err
+			}
+		}
+		return baselineCompletion(cfg, w, commitSHA), nil
+	}
+
+	findings := agentFindings
 	diagnostics = append(diagnostics, agentDiags...)
 	diagnostics = append(diagnostics, diagnosticsFromCodeSignal(report)...)
 
@@ -181,6 +229,10 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 		}
 	}
 
+	return baselineCompletion(cfg, w, commitSHA), nil
+}
+
+func baselineCompletion(cfg RepoBaselineScanConfig, w BaselineJobWriter, commitSHA string) *Completion {
 	now := time.Now().UTC()
 	if cfg.Now != nil {
 		now = cfg.Now().UTC()
@@ -195,7 +247,7 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 		},
 		FinishedAt:  now,
 		GeneratedAt: now,
-	}, nil
+	}
 }
 
 func parseBaselineParams(raw json.RawMessage) (RepoBaselineScanParams, error) {
@@ -224,22 +276,18 @@ func parseBaselineParams(raw json.RawMessage) (RepoBaselineScanParams, error) {
 	return params, nil
 }
 
-func resolveBaselineTreeSource(cfg RepoBaselineScanConfig, params RepoBaselineScanParams) (BaselineTreeSource, string, error) {
+func resolveBaselineTreeSource(cfg RepoBaselineScanConfig, params RepoBaselineScanParams) (BaselineTreeSource, error) {
 	if cfg.SmokeFixturePath != "" &&
 		cfg.SmokeRepoOwner != "" &&
 		cfg.SmokeRepoName != "" &&
 		params.RepoOwner == cfg.SmokeRepoOwner &&
 		params.RepoName == cfg.SmokeRepoName {
-		return &LocalFixtureTreeSource{Root: cfg.SmokeFixturePath}, localFixtureCommitSHA, nil
+		return &LocalFixtureTreeSource{Root: cfg.SmokeFixturePath}, nil
 	}
 	if cfg.TreeSource == nil {
-		return nil, "", fmt.Errorf("coachapi: no tree source configured for %s/%s (not the smoke fixture pair)", params.RepoOwner, params.RepoName)
+		return nil, fmt.Errorf("coachapi: no tree source configured for %s/%s (not the smoke fixture pair)", params.RepoOwner, params.RepoName)
 	}
-	commitSHA := params.Ref
-	if commitSHA == "" {
-		commitSHA = "HEAD"
-	}
-	return cfg.TreeSource, commitSHA, nil
+	return cfg.TreeSource, nil
 }
 
 func loadBaselineFiles(ctx context.Context, source BaselineTreeSource, params RepoBaselineScanParams, ref string, entries []BaselineFileEntry) ([]loadedBaselineFile, error) {

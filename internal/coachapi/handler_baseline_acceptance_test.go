@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -156,16 +157,38 @@ func newMemoryFencedWriter(job coachapi.Job) (*coachapi.MemoryStore, *memoryFenc
 
 // fakeTreeSource is a test double for GitHub-backed tree fetch failures and budgets.
 type fakeTreeSource struct {
-	listErr   error
-	readErr   error
-	entries   []coachapi.BaselineFileEntry
-	contents  map[string][]byte
-	listCalls int
-	readCalls int
+	listErr        error
+	readErr        error
+	resolveErr     error
+	resolvedSHA    string
+	entries        []coachapi.BaselineFileEntry
+	contents       map[string][]byte
+	listCalls      int
+	readCalls      int
+	resolveCalls   int
+	lastListRef    string
+	lastReadRef    string
+	lastResolveRef string
 }
 
-func (f *fakeTreeSource) ListFiles(_ context.Context, _, _, _ string, _ coachapi.BaselineListOptions) ([]coachapi.BaselineFileEntry, error) {
+func (f *fakeTreeSource) ResolveCommitSHA(_ context.Context, _, _, ref string) (string, error) {
+	f.resolveCalls++
+	f.lastResolveRef = ref
+	if f.resolveErr != nil {
+		return "", f.resolveErr
+	}
+	if f.resolvedSHA != "" {
+		return f.resolvedSHA, nil
+	}
+	if ref == "" {
+		return "HEAD", nil
+	}
+	return ref, nil
+}
+
+func (f *fakeTreeSource) ListFiles(_ context.Context, _, _, ref string, _ coachapi.BaselineListOptions) ([]coachapi.BaselineFileEntry, error) {
 	f.listCalls++
+	f.lastListRef = ref
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -174,8 +197,9 @@ func (f *fakeTreeSource) ListFiles(_ context.Context, _, _, _ string, _ coachapi
 	return out, nil
 }
 
-func (f *fakeTreeSource) ReadFile(_ context.Context, _, _, _, path string) ([]byte, string, error) {
+func (f *fakeTreeSource) ReadFile(_ context.Context, _, _, ref, path string) ([]byte, string, error) {
 	f.readCalls++
+	f.lastReadRef = ref
 	if f.readErr != nil {
 		return nil, "", f.readErr
 	}
@@ -536,6 +560,264 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 				ContainSubstring("not allowed"),
 				ContainSubstring("invalid"),
 			))
+		})
+	})
+
+	When("the supported-language tree has more than 50 files", func() {
+		It("completes deterministic findings without agentloop max_tool_calls budget exhaustion", func() {
+			// DefaultMaxToolCalls is 50; one semantics_analyze per file + codesignal +
+			// rubrics exceeds that for any real repo. Fixture must be >50 files.
+			root := GinkgoT().TempDir()
+			const n = 55
+			for i := 0; i < n; i++ {
+				// Tiny non-empty Go files (local fixture rejects empty content).
+				name := filepath.Join(root, fmt.Sprintf("f%02d.go", i))
+				content := fmt.Sprintf("package p%d\n\nfunc F%d() {}\n", i, i)
+				Expect(os.WriteFile(name, []byte(content), 0o644)).To(Succeed())
+			}
+			// One file that yields a deterministic signal so we can assert findings,
+			// not merely "handler returned nil error".
+			signalFile := filepath.Join(root, "mutate.go")
+			Expect(os.WriteFile(signalFile, []byte(`package p
+
+type C struct{ N string }
+
+func Mut(c *C, n string) { c.N = n }
+`), 0o644)).To(Succeed())
+
+			var observed *agentloop.Loop
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath: root,
+				SmokeRepoOwner:   "big-owner",
+				SmokeRepoName:    "big-repo",
+				Gateway:          modelgateway.NewStubGateway(),
+				ObserveLoop:      func(loop *agentloop.Loop) { observed = loop },
+			})
+
+			w := newCaptureWriter()
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "big-owner",
+				RepoName:  "big-repo",
+			}), w)
+			Expect(err).NotTo(HaveOccurred(),
+				"repos with >50 supported files must not fail with ErrBudgetExceeded/max_tool_calls")
+			Expect(completion).NotTo(BeNil())
+			Expect(errors.Is(err, agentloop.ErrBudgetExceeded)).To(BeFalse())
+
+			var det int
+			for _, f := range w.findings {
+				if f.Source == coachapi.FindingSourceDeterministic {
+					det++
+				}
+			}
+			Expect(det).To(BeNumerically(">=", 1),
+				"deterministic codesignal findings must be produced for the large tree")
+
+			Expect(observed).NotTo(BeNil())
+			Expect(observed.Budget().MaxToolCalls).To(BeNumerically(">", agentloop.DefaultMaxToolCalls),
+				"baseline loop budget must scale above DefaultMaxToolCalls for large trees")
+			analyzeCalls := 0
+			for _, c := range observed.Calls() {
+				if c.Source == agentloop.CallSourceHandler && c.Name == agentloop.ToolSemanticsAnalyze {
+					analyzeCalls++
+				}
+			}
+			Expect(analyzeCalls).To(BeNumerically(">=", n),
+				"handler must drive semantics_analyze for each supported file")
+		})
+	})
+
+	When("a GitHub-backed tree source resolves the analyzed commit", func() {
+		It("records Completion.CommitSHA as the resolved object SHA, not the branch name or HEAD", func() {
+			const resolved = "0123456789abcdef0123456789abcdef01234567"
+			src := &fakeTreeSource{
+				resolvedSHA: resolved,
+				entries: []coachapi.BaselineFileEntry{
+					{Path: "main.go", Size: 20},
+				},
+				contents: map[string][]byte{
+					"main.go": []byte("package main\n\nfunc main() {}\n"),
+				},
+			}
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				TreeSource: src,
+				Gateway:    modelgateway.NewStubGateway(),
+			})
+
+			w := newCaptureWriter()
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "acme",
+				RepoName:  "widgets",
+				Ref:       "main",
+			}), w)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(completion).NotTo(BeNil())
+			Expect(completion.CommitSHA).To(Equal(resolved),
+				"commit_sha must be the resolved commit object SHA, not the branch ref")
+			Expect(completion.CommitSHA).NotTo(Equal("main"))
+			Expect(completion.CommitSHA).NotTo(Equal("HEAD"))
+			Expect(src.resolveCalls).To(BeNumerically(">=", 1))
+			// List/Read must use the resolved SHA as the ref once resolved.
+			Expect(src.lastListRef).To(Equal(resolved))
+			Expect(src.lastReadRef).To(Equal(resolved))
+		})
+
+		It("resolves an empty ref to a commit object SHA rather than inventing HEAD", func() {
+			const resolved = "fedcba9876543210fedcba9876543210fedcba98"
+			src := &fakeTreeSource{
+				resolvedSHA: resolved,
+				entries:     []coachapi.BaselineFileEntry{{Path: "a.go", Size: 10}},
+				contents:    map[string][]byte{"a.go": []byte("package a\n")},
+			}
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				TreeSource: src,
+				Gateway:    modelgateway.NewStubGateway(),
+			})
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "acme",
+				RepoName:  "widgets",
+				// Ref intentionally empty → default branch tip, not literal "HEAD".
+			}), newCaptureWriter())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(completion.CommitSHA).To(Equal(resolved))
+			Expect(completion.CommitSHA).NotTo(Equal("HEAD"))
+			Expect(src.lastResolveRef).To(Equal(""), "handler must pass empty ref through to ResolveCommitSHA")
+		})
+	})
+
+	When("judgment fails hard after deterministic analysis (not a gateway-unavailable envelope)", func() {
+		It("still completes with deterministic findings already written and a judgment diagnostic", func() {
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath: baselineFixtureRoot(),
+				SmokeRepoOwner:   "smoke-owner",
+				SmokeRepoName:    "smoke-repo",
+				Gateway:          modelgateway.NewStubGateway(),
+				ConfigureLoop: func(loop *agentloop.Loop) {
+					// Replace seed rubric tools with hard failures (plain error,
+					// not Story 5 gateway-unavailable diagnostic envelope).
+					hard := func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+						return nil, errors.New("injected hard judgment failure")
+					}
+					Expect(loop.Register(agentloop.ToolSpec{
+						Name:    rubrics.IDHiddenMutationContextualization,
+						Handler: hard,
+					})).To(Succeed())
+					Expect(loop.Register(agentloop.ToolSpec{
+						Name:    rubrics.IDChangeCohesion,
+						Handler: hard,
+					})).To(Succeed())
+				},
+			})
+
+			w := newCaptureWriter()
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "smoke-owner",
+				RepoName:  "smoke-repo",
+			}), w)
+			Expect(err).NotTo(HaveOccurred(),
+				"hard non-cancel judgment error must not FailJob after deterministic analysis (Story 5)")
+			Expect(completion).NotTo(BeNil())
+
+			var det int
+			for _, f := range w.findings {
+				if f.Source == coachapi.FindingSourceDeterministic {
+					det++
+				}
+				Expect(f.Source).NotTo(Equal(coachapi.FindingSourceAgent),
+					"hard judgment failure must not leave partial source=agent findings")
+			}
+			Expect(det).To(BeNumerically(">=", 1),
+				"deterministic findings must already be InsertFindings'd before judgment hard-fails")
+			Expect(w.diagnostics).NotTo(BeEmpty(), "hard judgment failure must record a JobDiagnostic")
+			var sawJudgmentDiag bool
+			for _, d := range w.diagnostics {
+				if strings.Contains(d.Message, "judgment") || strings.Contains(d.Scope, "judgment") ||
+					strings.Contains(d.Message, "injected hard") || strings.Contains(d.Scope, "rubric") {
+					sawJudgmentDiag = true
+				}
+			}
+			Expect(sawJudgmentDiag).To(BeTrue(), "diagnostic should describe the judgment-phase failure")
+		})
+
+		It("still aborts when the owning context is canceled during judgment", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath: baselineFixtureRoot(),
+				SmokeRepoOwner:   "smoke-owner",
+				SmokeRepoName:    "smoke-repo",
+				Gateway:          modelgateway.NewStubGateway(),
+				ConfigureLoop: func(loop *agentloop.Loop) {
+					Expect(loop.Register(agentloop.ToolSpec{
+						Name: rubrics.IDHiddenMutationContextualization,
+						Handler: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+							cancel()
+							return nil, context.Canceled
+						},
+					})).To(Succeed())
+					Expect(loop.Register(agentloop.ToolSpec{
+						Name: rubrics.IDChangeCohesion,
+						Handler: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+							return nil, context.Canceled
+						},
+					})).To(Succeed())
+				},
+			})
+
+			completion, err := h(ctx, baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "smoke-owner",
+				RepoName:  "smoke-repo",
+			}), newCaptureWriter())
+			Expect(completion).To(BeNil())
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, context.Canceled)).To(BeTrue(),
+				"context.Canceled during judgment must still abort the job; got %v", err)
+		})
+	})
+
+	When("a successful smoke baseline is completed through MemoryStore", func() {
+		It("assembles a GetReport with commit_sha, source-tagged findings, versions.rubrics, and analyzer", func() {
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath: baselineFixtureRoot(),
+				SmokeRepoOwner:   "smoke-owner",
+				SmokeRepoName:    "smoke-repo",
+				Gateway:          modelgateway.NewStubGateway(),
+			})
+			job := baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "smoke-owner",
+				RepoName:  "smoke-repo",
+				Ref:       "main",
+			})
+			store, w := newMemoryFencedWriter(job)
+			completion, err := h(context.Background(), job, w)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(completion).NotTo(BeNil())
+
+			lease := w.Lease()
+			Expect(store.CompleteJob(context.Background(), lease.JobID, lease.WorkerID, lease.Attempt, *completion)).To(Succeed())
+
+			report, err := store.GetReport(context.Background(), job.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(report.CommitSHA).To(Equal("local-fixture"))
+			Expect(report.Versions.Analyzer).NotTo(BeEmpty())
+			Expect(report.Versions.Rubrics).NotTo(BeEmpty())
+			Expect(report.Versions.Rubrics).To(HaveKey(rubrics.IDHiddenMutationContextualization))
+			Expect(report.Versions.Rubrics).To(HaveKey(rubrics.IDChangeCohesion))
+			Expect(report.Findings).NotTo(BeEmpty())
+			var sawDet, sawAgent bool
+			for _, f := range report.Findings {
+				switch f.Source {
+				case coachapi.FindingSourceDeterministic:
+					sawDet = true
+					Expect(f.RubricID).To(BeNil())
+				case coachapi.FindingSourceAgent:
+					sawAgent = true
+					Expect(f.RubricID).NotTo(BeNil())
+				}
+			}
+			Expect(sawDet).To(BeTrue(), "report must include source=deterministic findings")
+			Expect(sawAgent).To(BeTrue(), "report must include source=agent findings from stub judgments")
+			Expect(report.Error).To(BeNil())
+			Expect(report.ReportVersion).To(Equal(coachapi.ReportVersion1))
 		})
 	})
 })
