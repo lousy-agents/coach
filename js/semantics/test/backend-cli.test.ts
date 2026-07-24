@@ -4,10 +4,26 @@
  */
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 
 import { CliBackend } from "../dist/backend-cli.js";
 import { createAnalyzerWithBackend, SemanticsError } from "../dist/index.js";
+
+/** A child that accepts stdin forever and never writes a response line. */
+function hangForeverBinaryUrl(): { url: URL; cleanup: () => void } {
+  const dir = mkdtempSync(join(tmpdir(), "coach-semantics-hang-"));
+  const path = join(dir, "hang-forever");
+  writeFileSync(path, "#!/bin/sh\nexec cat >/dev/null\n");
+  chmodSync(path, 0o755);
+  return {
+    url: pathToFileURL(path),
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+  };
+}
 
 test("missing binary rejects with backend_unavailable naming the build command", async () => {
   const backend = new CliBackend(new URL("file:///nonexistent/coach-semantics-json"));
@@ -107,4 +123,38 @@ test("dispose ends the child and blocks further calls", async () => {
     .then(() => assert.fail("expected rejection"), (e: unknown) => e);
   assert.ok(err instanceof SemanticsError);
   assert.equal(err.kind, "internal");
+});
+
+// timeout_ms: 0 means "no deadline" — the JS backstop must not arm.
+// Assert on the pending call's timer directly (deterministic; no real-time sleep).
+test("timeout_ms of zero does not arm the backstop timer", async () => {
+  const hang = hangForeverBinaryUrl();
+  const backend = new CliBackend(hang.url);
+  try {
+    const inFlight = backend.analyze(
+      JSON.stringify({
+        id: 1,
+        op: "analyze",
+        language: "go",
+        content_b64: "",
+        options: {},
+        timeout_ms: 0,
+      }),
+    );
+    // analyze() registers the pending call synchronously before returning.
+    const internals = backend as unknown as {
+      pending: Map<number, { timer?: NodeJS.Timeout }>;
+      child?: NodeJS.EventEmitter;
+    };
+    const call = internals.pending.get(1);
+    assert.ok(call, "expected pending call id 1");
+    assert.equal(call.timer, undefined, "backstop timer must not be armed for timeout_ms: 0");
+    const child = internals.child;
+    const gone = child ? once(child, "exit") : Promise.resolve();
+    backend.dispose();
+    await assert.rejects(inFlight, SemanticsError);
+    await gone;
+  } finally {
+    hang.cleanup();
+  }
 });

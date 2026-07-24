@@ -184,6 +184,17 @@ test("createAnalyzerWithBackend validates options eagerly", () => {
     () => createAnalyzerWithBackend(backend, { languages: ["python" as never] }),
     (err: unknown) => err instanceof SemanticsError && err.kind === "unsupported_language",
   );
+  // maxFileBytes: 0 means "use Go default" — only negatives are invalid.
+  assert.doesNotThrow(() => createAnalyzerWithBackend(backend, { maxFileBytes: 0 }));
+});
+
+test("zero and empty option values are omitted from the wire request", async () => {
+  const backend = fakeBackend(() => ({ result: okResult }));
+  const analyzer = createAnalyzerWithBackend(backend, { languages: [], maxFileBytes: 0 });
+  await analyzer.analyzeBytes({ language: "go", content: "package main\n", timeoutMs: 0 });
+  const request = backend.requests[0]!;
+  assert.deepEqual(request.options, {});
+  assert.equal(Object.hasOwn(request, "timeout_ms"), false);
 });
 
 test("dispose runs onDispose once and blocks further calls", async () => {
