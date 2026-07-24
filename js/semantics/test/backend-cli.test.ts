@@ -4,10 +4,23 @@
  */
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 
 import { CliBackend } from "../dist/backend-cli.js";
 import { createAnalyzerWithBackend, SemanticsError } from "../dist/index.js";
+
+/** A child that accepts stdin forever and never writes a response line. */
+function hangForeverBinaryUrl(): URL {
+  const dir = mkdtempSync(join(tmpdir(), "coach-semantics-hang-"));
+  const path = join(dir, "hang-forever");
+  writeFileSync(path, "#!/bin/sh\nexec cat >/dev/null\n");
+  chmodSync(path, 0o755);
+  return pathToFileURL(path);
+}
 
 test("missing binary rejects with backend_unavailable naming the build command", async () => {
   const backend = new CliBackend(new URL("file:///nonexistent/coach-semantics-json"));
@@ -107,4 +120,35 @@ test("dispose ends the child and blocks further calls", async () => {
     .then(() => assert.fail("expected rejection"), (e: unknown) => e);
   assert.ok(err instanceof SemanticsError);
   assert.equal(err.kind, "internal");
+});
+
+// timeout_ms: 0 means "no deadline" — the JS backstop must not arm (BACKSTOP_SLACK_MS
+// is 500ms; a mutant that treats 0 as a positive budget would kill the child by then).
+test("timeout_ms of zero does not arm the backstop timer", async () => {
+  const backend = new CliBackend(hangForeverBinaryUrl());
+  try {
+    const pending = backend.analyze(
+      JSON.stringify({
+        id: 1,
+        op: "analyze",
+        language: "go",
+        content_b64: "",
+        options: {},
+        timeout_ms: 0,
+      }),
+    );
+    let settled: unknown;
+    void pending.then(
+      (v) => {
+        settled = { ok: v };
+      },
+      (e: unknown) => {
+        settled = { err: e };
+      },
+    );
+    await new Promise((r) => setTimeout(r, 700));
+    assert.equal(settled, undefined, `call settled early: ${String((settled as { err?: unknown })?.err ?? settled)}`);
+  } finally {
+    backend.dispose();
+  }
 });
