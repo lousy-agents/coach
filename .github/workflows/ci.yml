@@ -62,3 +62,22 @@ jobs:
 
       - name: GOOS=js GOARCH=wasm build (pure-Go engine)
         run: mise run wasm-build
+
+  # Baseline Scan Story 4 / Task 10: credential-free core-profile E2E smoke
+  # (api + worker + postgres + redis + model stub). Distinct from thinproof.
+  platform-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+
+      - name: platform-up (core)
+        run: mise run platform-up
+
+      - name: platform-smoke
+        run: mise run platform-smoke
+
+      - name: platform-down
+        if: always()
+        run: mise run platform-down

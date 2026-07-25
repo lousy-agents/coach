@@ -1,0 +1,187 @@
+# Local coach platform stack (Baseline Scan Story 4 / Task 10 / issue #108).
+#
+# Profiles:
+#   core (default for CI/smoke) — coach-api + coach-worker + postgres + redis
+#     + model-stub + Envoy AI Gateway (aigw). Worker reaches models only through
+#     aigw → model-stub (OpenAI-compatible). Zero GitHub credentials.
+#     Distinct from deploy/compose/thinproof (Feature Zero).
+#   llm — same services as core; point aigw's OPENAI_BASE_URL at host-native
+#     llama.cpp via host.docker.internal (operator-only; not required in CI).
+#     See docs/development/local-platform.md.
+#
+# Inference path (production-shaped local data plane):
+#   coach-worker (internal/modelgateway OpenAI client)
+#     → ai-gateway (Envoy AI Gateway CLI / aigw on :1975)
+#     → model-stub (core) or llama.cpp (llm)
+#
+# Product policy, schema validation, and typed unavailable/WARMING semantics
+# stay in Go (internal/modelgateway). aigw is a transparent data-plane proxy —
+# do not translate upstream 5xx into 202 (system-overview pilot wake path).
+#
+# Lifecycle: mise run platform-up | platform-down | platform-smoke
+
+name: coach-platform
+
+x-pg-dsn: &pg-dsn "postgres://coach:coach@postgres:5432/coach?sslmode=disable"
+
+services:
+  postgres:
+    profiles: ["core", "llm"]
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    environment:
+      POSTGRES_USER: coach
+      POSTGRES_PASSWORD: coach
+      POSTGRES_DB: coach
+    volumes:
+      - ./internal/coachapi/migrations:/docker-entrypoint-initdb.d:ro
+      - coach-platform-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coach -d coach"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    ports:
+      - "5432:5432"
+
+  redis:
+    profiles: ["core", "llm"]
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 2s
+    ports:
+      - "6379:6379"
+
+  # Deterministic OpenAI-compatible backend for core (no weights).
+  model-stub:
+    profiles: ["core", "llm"]
+    build:
+      context: .
+      dockerfile: deploy/compose/platform/Dockerfile.model-stub
+    image: coach/platform-model-stub:local
+    environment:
+      COACH_MODEL_STUB_ADDR: ":8090"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:8090/healthz || exit 1",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+
+  # Envoy AI Gateway CLI (standalone). Worker talks only to this service for
+  # inference; upstream is OPENAI_BASE_URL (model-stub by default).
+  ai-gateway:
+    profiles: ["core", "llm"]
+    image: envoyproxy/ai-gateway-cli:v1.0.0@sha256:c4e56717f70c93e0c14119e660511ebb4f8389364a1f8842522a5d3cbc1c5bb0
+    depends_on:
+      model-stub:
+        condition: service_healthy
+    environment:
+      # core default: in-compose model-stub. llm: override to host llama.cpp, e.g.
+      # AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1
+      OPENAI_BASE_URL: ${AIGW_OPENAI_BASE_URL:-http://model-stub:8090/v1}
+      OPENAI_API_KEY: ${AIGW_OPENAI_API_KEY:-unused}
+      AIGW_RUN_ID: "0"
+      # Do not set AIGW_DEBUG to empty — aigw rejects "". Use true/false only.
+      AIGW_DEBUG: ${AIGW_DEBUG:-false}
+    volumes:
+      # Reference Gateway API / AIGatewayRoute config (documented shape).
+      # aigw synthesizes the live route from OPENAI_* when started with `run`
+      # and no path; mount is available for `aigw run /config/config.yaml`.
+      - ./deploy/compose/platform/aigw:/config:ro
+    command: ["run", "--run-id", "0", "--admin-port", "1064"]
+    ports:
+      - "1975:1975"
+      - "1064:1064"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
+
+  coach-api:
+    profiles: ["core", "llm"]
+    build:
+      context: .
+      dockerfile: deploy/compose/platform/Dockerfile.api
+    image: coach/platform-api:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      COACH_HTTP_ADDR: ":8080"
+      COACH_JWT_SIGNING_KEY: "platform-smoke-signing-key-at-least-32b!"
+      COACH_JWT_ISSUER: "http://coach-api:8080"
+      COACH_AUTH_TEST_MINT: "1"
+      COACH_REDIS_ADDR: "redis:6379"
+      COACH_REDIS_STREAM: "coach-jobs"
+      COACH_REDIS_CONSUMER_GROUP: "coach-api"
+      COACH_PG_DSN: *pg-dsn
+      COACH_AUTHZ_BYPASS_OWNER: "coach-smoke"
+      COACH_AUTHZ_BYPASS_REPO: "fixture-repo"
+      # Intentionally omit: COACH_GITHUB_APP_*, COACH_GITHUB_OAUTH_*
+    ports:
+      - "8080:8080"
+    healthcheck:
+      # /v1/me without a token returns 401 once the process is listening.
+      # BusyBox wget exits non-zero on 4xx; treat any HTTP response as healthy.
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -S -O /dev/null http://127.0.0.1:8080/v1/me 2>&1 | grep -q 'HTTP/'",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  coach-worker:
+    profiles: ["core", "llm"]
+    build:
+      context: .
+      dockerfile: deploy/compose/platform/Dockerfile.worker
+    image: coach/platform-worker:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      coach-api:
+        condition: service_healthy
+      ai-gateway:
+        condition: service_healthy
+    environment:
+      COACH_WORKER_ID: "platform-worker-1"
+      COACH_REDIS_ADDR: "redis:6379"
+      COACH_REDIS_STREAM: "coach-jobs"
+      COACH_REDIS_CONSUMER_GROUP: "coach-workers"
+      COACH_PG_DSN: *pg-dsn
+      COACH_SMOKE_FIXTURE_PATH: "/fixtures/smoke-repo"
+      COACH_SMOKE_REPO_OWNER: "coach-smoke"
+      COACH_SMOKE_REPO_NAME: "fixture-repo"
+      # Always via Envoy AI Gateway (production-shaped). Override only for
+      # deliberate direct-backend experiments.
+      MODEL_GATEWAY_BASE_URL: ${MODEL_GATEWAY_BASE_URL:-http://ai-gateway:1975/v1}
+      MODEL_GATEWAY_MODEL: ${MODEL_GATEWAY_MODEL:-local}
+      MODEL_GATEWAY_TIMEOUT: ${MODEL_GATEWAY_TIMEOUT:-120s}
+      MODEL_GATEWAY_API_KEY: ${MODEL_GATEWAY_API_KEY:-unused}
+    volumes:
+      - ./deploy/compose/platform/fixtures/smoke-repo:/fixtures/smoke-repo:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  coach-platform-pg:

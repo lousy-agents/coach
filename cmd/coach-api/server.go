@@ -34,22 +34,14 @@ type Dependencies struct {
 // GitHub-App-authenticated authz.RepoAuthorizer (optionally wrapped in the
 // Story 3 credential-free-smoke BypassAuthorizer), a Redis Streams
 // queue.TaskQueue, and either a PostgresStore (cfg.PostgresDSN set) or a
-// MemoryStore.
+// MemoryStore. When App credentials are absent and the full authz bypass
+// pair is set, buildAuthorizer uses a fail-closed deny-all inner instead of
+// a live GitHub CredentialResolver (credential-free compose smoke).
 func buildDependencies(ctx context.Context, cfg InfraConfig) (Dependencies, error) {
-	credentials, err := githubingest.NewCredentialResolver(githubingest.CredentialResolverConfig{
-		AppID:      cfg.GitHubAppID,
-		PrivateKey: cfg.GitHubAppPrivateKey,
-	})
+	authorizer, err := buildAuthorizer(cfg)
 	if err != nil {
-		return Dependencies{}, fmt.Errorf("coach-api: constructing GitHub credential resolver: %w", err)
+		return Dependencies{}, err
 	}
-
-	var authorizer authz.RepoAuthorizer
-	authorizer, err = authz.NewGitHubRepoAuthorizer(authz.GitHubRepoAuthorizerConfig{Credentials: credentials})
-	if err != nil {
-		return Dependencies{}, fmt.Errorf("coach-api: constructing repo authorizer: %w", err)
-	}
-	authorizer = wrapAuthorizerForBypass(authorizer, cfg)
 
 	taskQueue, err := redisstream.NewQueue(redisstream.Config{
 		Address:       cfg.RedisAddr,
@@ -77,6 +69,44 @@ func buildDependencies(ctx context.Context, cfg InfraConfig) (Dependencies, erro
 	}
 
 	return Dependencies{Store: store, Authorizer: authorizer, Queue: taskQueue}, nil
+}
+
+// denyAllRepoAuthorizer is the fail-closed inner used when coach-api runs
+// without GitHub App credentials (credential-free smoke). Only a surrounding
+// BypassAuthorizer can authorize, and only for its exact configured pair.
+type denyAllRepoAuthorizer struct{}
+
+func (denyAllRepoAuthorizer) Authorize(context.Context, string, string, string) error {
+	return authz.ErrNotAuthorized
+}
+
+// buildAuthorizer constructs the submit-time authz.RepoAuthorizer for cfg.
+// With GitHub App credentials it builds the live GitHub authorizer (optionally
+// bypass-wrapped). With no App credentials it requires the full bypass pair
+// and wraps a fail-closed deny-all inner — never a live CredentialResolver.
+func buildAuthorizer(cfg InfraConfig) (authz.RepoAuthorizer, error) {
+	hasApp := cfg.GitHubAppID > 0 && len(cfg.GitHubAppPrivateKey) > 0
+	hasBypass := cfg.AuthzBypassOwner != "" && cfg.AuthzBypassRepo != ""
+
+	if !hasApp {
+		if !hasBypass {
+			return nil, errors.New("coach-api: GitHub App credentials required unless both COACH_AUTHZ_BYPASS_OWNER and COACH_AUTHZ_BYPASS_REPO are set")
+		}
+		return wrapAuthorizerForBypass(denyAllRepoAuthorizer{}, cfg), nil
+	}
+
+	credentials, err := githubingest.NewCredentialResolver(githubingest.CredentialResolverConfig{
+		AppID:      cfg.GitHubAppID,
+		PrivateKey: cfg.GitHubAppPrivateKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("coach-api: constructing GitHub credential resolver: %w", err)
+	}
+	authorizer, err := authz.NewGitHubRepoAuthorizer(authz.GitHubRepoAuthorizerConfig{Credentials: credentials})
+	if err != nil {
+		return nil, fmt.Errorf("coach-api: constructing repo authorizer: %w", err)
+	}
+	return wrapAuthorizerForBypass(authorizer, cfg), nil
 }
 
 // wrapAuthorizerForBypass wraps authorizer in authz.NewBypassAuthorizer only

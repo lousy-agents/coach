@@ -94,6 +94,62 @@ depends = ["js-test"]
 description = "Prove pkg/semantics compiles for GOOS=js GOARCH=wasm via the pure-Go gotreesitter engine (no TinyGo)"
 run = "GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -tags 'grammar_subset grammar_subset_go grammar_subset_typescript grammar_subset_tsx' ./pkg/semantics/..."
 
+[tasks.platform-up]
+description = "Build and start the local platform compose stack (core profile: api + worker + postgres + redis + model stub); wait until coach-api is healthy"
+run = [
+  "docker compose --profile core up -d --build",
+  # Wait for API: unauthenticated /v1/me returns 401 once the process is up.
+  """
+  set -e
+  echo "platform-up: waiting for coach-api on :8080..."
+  for i in $(seq 1 90); do
+    code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/v1/me || true)
+    if [ "$code" = "401" ] || [ "$code" = "200" ]; then
+      echo "platform-up: coach-api ready (HTTP $code)"
+      exit 0
+    fi
+    sleep 2
+  done
+  echo "platform-up: timed out waiting for coach-api" >&2
+  docker compose --profile core ps >&2 || true
+  docker compose --profile core logs --tail=80 >&2 || true
+  exit 1
+  """,
+]
+
+[tasks.platform-down]
+description = "Stop the local platform compose stack (core + llm profiles)"
+run = "docker compose --profile core --profile llm down --remove-orphans"
+
+[tasks.platform-stop]
+description = "Alias for platform-down"
+run = [{ task = "platform-down" }]
+
+[tasks.platform-smoke]
+description = "Ambient-credential guard + end-to-end platform smoke (mint → repo_baseline_scan → provenance report) against a running core stack"
+run = [
+  "go run ./cmd/acceptance-guard-preflight",
+  "go run ./cmd/platform-smoke",
+]
+
+[tasks.platform-llm-validate]
+description = "Operator-only reminder for llm-profile validation against host llama.cpp via Envoy AI Gateway (does not download weights; not a CI gate)"
+run = """
+set -e
+echo "platform-llm-validate (operator-only, not CI)"
+echo ""
+echo "1. Start host-native llama.cpp with OpenAI-compat /v1/chat/completions"
+echo "   (prefer Metal on macOS), e.g. listening on 127.0.0.1:8081"
+echo "2. export AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1"
+echo "   (worker still calls ai-gateway:1975; aigw proxies to llama.cpp)"
+echo "3. docker compose --profile llm up -d --build"
+echo "4. mise run platform-smoke"
+echo "5. Confirm report has ≥1 source=agent judgment from llama.cpp"
+echo ""
+echo "Full detail: docs/development/local-platform.md"
+echo "Linux fallback: containerized llama.cpp on the compose network; set AIGW_OPENAI_BASE_URL to that service."
+"""
+
 [tasks.ci]
 description = "Run all CI verifications"
 run = [
