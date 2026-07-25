@@ -3,7 +3,11 @@ package coachapi_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -18,6 +22,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/agentloop"
 	"github.com/lousy-agents/coach/internal/coachapi"
+	"github.com/lousy-agents/coach/internal/fakegithub"
 	"github.com/lousy-agents/coach/internal/modelgateway"
 	"github.com/lousy-agents/coach/internal/rubrics"
 	"github.com/lousy-agents/coach/pkg/githubingest"
@@ -260,6 +265,55 @@ func handlerSourcedNames(calls []agentloop.RecordedCall) []string {
 	return names
 }
 
+func baselineRSAKey() []byte {
+	GinkgoHelper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	Expect(err).NotTo(HaveOccurred())
+	block := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
+	return pem.EncodeToMemory(block)
+}
+
+// newGitHubBaselineTreeFixture builds a fakegithub Contents + commit graph that
+// GitHubBaselineTreeSource can walk end-to-end (resolve → list → read).
+// files keys must be top-level basenames (no nested paths).
+func newGitHubBaselineTreeFixture(objectSHA string, files map[string][]byte) *fakegithub.Fixture {
+	GinkgoHelper()
+	fx := fakegithub.NewFixture("handler-github-tree-fixture")
+	fx.Installation.Installations[42] = fakegithub.InstallationEntry{
+		Token: "handler-install-token", Scenario: fakegithub.ScenarioOK,
+	}
+	fx.Installation.RepoMappings["acme/widgets"] = fakegithub.RepoInstallationEntry{
+		InstallationID: 42, Scenario: fakegithub.ScenarioOK,
+	}
+	fx.Repos.Repos["acme/widgets"] = fakegithub.RepoMetaEntry{
+		DefaultBranch: "main", Scenario: fakegithub.ScenarioOK,
+	}
+	fx.Repos.Commits["acme/widgets/main"] = fakegithub.CommitEntry{
+		SHA: objectSHA, Scenario: fakegithub.ScenarioOK,
+	}
+	fx.Repos.Commits["acme/widgets/"+objectSHA] = fakegithub.CommitEntry{
+		SHA: objectSHA, Scenario: fakegithub.ScenarioOK,
+	}
+
+	rootKey := "acme/widgets/" + objectSHA
+	rootEntries := make([]fakegithub.DirEntry, 0, len(files))
+	i := 0
+	for path, body := range files {
+		Expect(path).NotTo(ContainSubstring("/"), "fixture helper supports top-level paths only")
+		i++
+		blob := fmt.Sprintf("blob%d", i)
+		fx.Contents.Files[rootKey+"/"+path] = fakegithub.FileEntry{
+			Content: body, SHA: blob, Scenario: fakegithub.ScenarioOK,
+		}
+		rootEntries = append(rootEntries, fakegithub.DirEntry{
+			Name: path, Type: "file", SHA: blob, Size: len(body),
+		})
+	}
+	// Root dir listing doubles as the parent listing for top-level ReadFile symlink checks.
+	fx.Contents.Dirs[rootKey] = rootEntries
+	return &fx
+}
+
 var _ = Describe("repo_baseline_scan job handler", func() {
 	When("worker is configured with a local smoke fixture path", func() {
 		It("completes a baseline via agentloop against the fixture and records deterministic findings", func() {
@@ -416,8 +470,12 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 				"analysis must go through agentloop.Call(handler, semantics_analyze); no direct pkg/semantics bypass")
 			Expect(names).To(ContainElement(agentloop.ToolCodeSignalReport),
 				"analysis must go through agentloop.Call(handler, codesignal_report); no direct pkg/codesignal bypass")
-			// Seed rubrics also handler-driven.
-			Expect(names).To(ContainElement(rubrics.IDChangeCohesion))
+			// Seed rubrics also handler-driven. Fixture yields hidden_input_mutation
+			// signals, so both rubrics must appear as handler-sourced calls.
+			Expect(names).To(ContainElement(rubrics.IDChangeCohesion),
+				"change_cohesion must run via agentloop.Call(handler, …)")
+			Expect(names).To(ContainElement(rubrics.IDHiddenMutationContextualization),
+				"hidden_mutation_contextualization must run via agentloop when deterministic signals exist")
 		})
 	})
 
@@ -448,6 +506,145 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 				ContainSubstring("MaxFiles"),
 				ContainSubstring("max files"),
 			))
+		})
+
+		It("fails the job when MaxTotalBytes is exceeded with an actionable too-large error", func() {
+			// Fixture supported files total more than a few bytes; a 1-byte budget
+			// must fail at list time before any analysis.
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath: baselineFixtureRoot(),
+				SmokeRepoOwner:   "smoke-owner",
+				SmokeRepoName:    "smoke-repo",
+				MaxTotalBytes:    1,
+				Gateway:          modelgateway.NewStubGateway(),
+			})
+
+			w := newCaptureWriter()
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "smoke-owner",
+				RepoName:  "smoke-repo",
+			}), w)
+			Expect(completion).To(BeNil())
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, githubingest.ErrTooLarge)).To(BeTrue(),
+				"byte-budget path must wrap githubingest.ErrTooLarge; got %v", err)
+			Expect(err.Error()).To(Or(
+				ContainSubstring("budget"),
+				ContainSubstring("too large"),
+				ContainSubstring("exceeds"),
+				ContainSubstring("byte"),
+				ContainSubstring("MaxTotalBytes"),
+			))
+			Expect(w.findings).To(BeEmpty(), "byte-budget failure must not persist findings")
+		})
+	})
+
+	When("the fixture tree mixes supported and unsupported extensions", func() {
+		It("analyzes only semantics-supported paths (.go, .ts, .tsx) and skips the rest", func() {
+			root := GinkgoT().TempDir()
+			// Supported languages currently in the pkg/semantics registry.
+			Expect(os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(root, "util.ts"), []byte("export const n = 1;\n"), 0o644)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(root, "Widget.tsx"), []byte("export const W = () => null;\n"), 0o644)).To(Succeed())
+			// Unsupported: must not appear as semantics_analyze targets.
+			Expect(os.WriteFile(filepath.Join(root, "notes.md"), []byte("# docs\n"), 0o644)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(root, "script.py"), []byte("print('no')\n"), 0o644)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(root, "data.json"), []byte(`{"a":1}`+"\n"), 0o644)).To(Succeed())
+
+			var observed *agentloop.Loop
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath: root,
+				SmokeRepoOwner:   "lang-owner",
+				SmokeRepoName:    "lang-repo",
+				Gateway:          modelgateway.NewStubGateway(),
+				ObserveLoop:      func(loop *agentloop.Loop) { observed = loop },
+			})
+
+			w := newCaptureWriter()
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "lang-owner",
+				RepoName:  "lang-repo",
+			}), w)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(completion).NotTo(BeNil())
+			Expect(observed).NotTo(BeNil())
+
+			analyzed := map[string]struct{}{}
+			for _, c := range observed.Calls() {
+				if c.Source != agentloop.CallSourceHandler || c.Name != agentloop.ToolSemanticsAnalyze {
+					continue
+				}
+				var args struct {
+					Path string `json:"path"`
+				}
+				Expect(json.Unmarshal(c.Args, &args)).To(Succeed(), "semantics_analyze args must be JSON with path")
+				analyzed[args.Path] = struct{}{}
+			}
+			Expect(analyzed).To(HaveKey("main.go"))
+			Expect(analyzed).To(HaveKey("util.ts"))
+			Expect(analyzed).To(HaveKey("Widget.tsx"))
+			Expect(analyzed).NotTo(HaveKey("notes.md"), "markdown is outside the semantics language registry")
+			Expect(analyzed).NotTo(HaveKey("script.py"), "python is outside the semantics language registry")
+			Expect(analyzed).NotTo(HaveKey("data.json"), "json is outside the semantics language registry")
+			Expect(analyzed).To(HaveLen(3), "exactly the three supported-language files must be analyzed")
+		})
+	})
+
+	When("job params do not match the configured smoke fixture owner/name pair", func() {
+		It("does not walk the smoke fixture and fails closed without a TreeSource", func() {
+			// Fixture is configured, but params name a different repo — Story 3
+			// smoke path is operator-paired only; mismatch must not silently use it.
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath: baselineFixtureRoot(),
+				SmokeRepoOwner:   "smoke-owner",
+				SmokeRepoName:    "smoke-repo",
+				// TreeSource intentionally nil: production would use GitHub here.
+				Gateway: modelgateway.NewStubGateway(),
+			})
+
+			w := newCaptureWriter()
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "other-owner",
+				RepoName:  "other-repo",
+			}), w)
+			Expect(completion).To(BeNil())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Or(
+				ContainSubstring("no tree source"),
+				ContainSubstring("not the smoke fixture"),
+				ContainSubstring("TreeSource"),
+			), "mismatch must fail closed rather than using the fixture; got %v", err)
+			Expect(w.findings).To(BeEmpty())
+		})
+
+		It("routes a non-smoke pair through TreeSource instead of the local fixture", func() {
+			const resolved = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			src := &fakeTreeSource{
+				resolvedSHA: resolved,
+				entries:     []coachapi.BaselineFileEntry{{Path: "only.go", Size: 20}},
+				contents: map[string][]byte{
+					"only.go": []byte("package only\n\nfunc F() {}\n"),
+				},
+			}
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath: baselineFixtureRoot(),
+				SmokeRepoOwner:   "smoke-owner",
+				SmokeRepoName:    "smoke-repo",
+				TreeSource:       src,
+				Gateway:          modelgateway.NewStubGateway(),
+			})
+
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "acme",
+				RepoName:  "widgets",
+			}), newCaptureWriter())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(completion).NotTo(BeNil())
+			Expect(completion.CommitSHA).To(Equal(resolved),
+				"non-smoke pair must use TreeSource (resolved SHA), not local-fixture")
+			Expect(completion.CommitSHA).NotTo(Equal("local-fixture"))
+			Expect(src.resolveCalls).To(BeNumerically(">=", 1))
+			Expect(src.listCalls).To(BeNumerically(">=", 1))
 		})
 	})
 
@@ -484,6 +681,141 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, githubingest.ErrAuth)).To(BeTrue(),
 				"auth fetch must remain errors.Is-compatible with githubingest.ErrAuth; got %v", err)
+		})
+	})
+
+	When("ListFiles succeeds but ReadFile fails mid-fetch", func() {
+		It("fails with ErrNotFound and persists no findings", func() {
+			src := &fakeTreeSource{
+				resolvedSHA: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				entries:     []coachapi.BaselineFileEntry{{Path: "main.go", Size: 20}},
+				readErr:     githubingest.ErrNotFound,
+			}
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				TreeSource: src,
+				Gateway:    modelgateway.NewStubGateway(),
+			})
+
+			w := newCaptureWriter()
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "acme",
+				RepoName:  "widgets",
+				Ref:       "main",
+			}), w)
+			Expect(completion).To(BeNil())
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, githubingest.ErrNotFound)).To(BeTrue(),
+				"mid-fetch ReadFile not-found must remain errors.Is-compatible; got %v", err)
+			Expect(src.listCalls).To(BeNumerically(">=", 1))
+			Expect(src.readCalls).To(BeNumerically(">=", 1),
+				"handler must attempt ReadFile after a successful ListFiles")
+			Expect(w.findings).To(BeEmpty(), "mid-fetch failure must not persist findings")
+		})
+
+		It("fails with ErrAuth and persists no findings", func() {
+			src := &fakeTreeSource{
+				resolvedSHA: "cccccccccccccccccccccccccccccccccccccccc",
+				entries:     []coachapi.BaselineFileEntry{{Path: "main.go", Size: 20}},
+				readErr:     githubingest.ErrAuth,
+			}
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				TreeSource: src,
+				Gateway:    modelgateway.NewStubGateway(),
+			})
+
+			w := newCaptureWriter()
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "acme",
+				RepoName:  "private",
+			}), w)
+			Expect(completion).To(BeNil())
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, githubingest.ErrAuth)).To(BeTrue(),
+				"mid-fetch ReadFile auth failure must remain errors.Is-compatible; got %v", err)
+			Expect(src.readCalls).To(BeNumerically(">=", 1))
+			Expect(w.findings).To(BeEmpty())
+		})
+	})
+
+	When("the handler uses GitHubBaselineTreeSource against fake GitHub Contents", func() {
+		It("completes a baseline via real ListFiles/ReadFile/ResolveCommitSHA, not a tree double", func() {
+			const objectSHA = "0123456789abcdef0123456789abcdef01234567"
+			// Include a hidden_input_mutation signal so agentloop drives both seed rubrics.
+			mutate := []byte(`package main
+
+type C struct{ N string }
+
+func Mut(c *C, n string) { c.N = n }
+`)
+			plain := []byte("package main\n\nfunc main() {}\n")
+			fx := newGitHubBaselineTreeFixture(objectSHA, map[string][]byte{
+				"main.go":   plain,
+				"mutate.go": mutate,
+				"notes.md":  []byte("# ignored\n"),
+			})
+			server := fakegithub.NewServer(fx)
+			DeferCleanup(server.Close)
+
+			reader, err := githubingest.NewGitHubFileReader(githubingest.GitHubAppConfig{
+				AppID:          12345,
+				InstallationID: 42,
+				PrivateKey:     baselineRSAKey(),
+				BaseURL:        server.URL(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			var observed *agentloop.Loop
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				TreeSource: &coachapi.GitHubBaselineTreeSource{Reader: reader},
+				Gateway:    modelgateway.NewStubGateway(),
+				ObserveLoop: func(loop *agentloop.Loop) {
+					observed = loop
+				},
+			})
+
+			w := newCaptureWriter()
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "acme",
+				RepoName:  "widgets",
+				Ref:       "main",
+			}), w)
+			Expect(err).NotTo(HaveOccurred(),
+				"GitHubBaselineTreeSource must drive handler end-to-end against fakegithub Contents")
+			Expect(completion).NotTo(BeNil())
+			Expect(completion.CommitSHA).To(Equal(objectSHA),
+				"commit_sha must come from ResolveCommitSHA on the real GitHub adapter")
+			Expect(completion.CommitSHA).NotTo(Equal("main"))
+			Expect(completion.CommitSHA).NotTo(Equal("local-fixture"))
+
+			Expect(observed).NotTo(BeNil())
+			names := handlerSourcedNames(observed.Calls())
+			Expect(names).To(ContainElement(agentloop.ToolSemanticsAnalyze))
+			Expect(names).To(ContainElement(agentloop.ToolCodeSignalReport))
+
+			analyzed := map[string]struct{}{}
+			for _, c := range observed.Calls() {
+				if c.Source != agentloop.CallSourceHandler || c.Name != agentloop.ToolSemanticsAnalyze {
+					continue
+				}
+				var args struct {
+					Path string `json:"path"`
+				}
+				Expect(json.Unmarshal(c.Args, &args)).To(Succeed())
+				analyzed[args.Path] = struct{}{}
+			}
+			Expect(analyzed).To(HaveKey("main.go"))
+			Expect(analyzed).To(HaveKey("mutate.go"))
+			Expect(analyzed).NotTo(HaveKey("notes.md"),
+				"GitHubBaselineTreeSource must filter to semantics-supported extensions")
+
+			var det int
+			for _, f := range w.findings {
+				if f.Source == coachapi.FindingSourceDeterministic {
+					det++
+				}
+			}
+			Expect(det).To(BeNumerically(">=", 1),
+				"Contents-backed tree must produce deterministic findings from mutate.go")
 		})
 	})
 
@@ -533,17 +865,61 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 		})
 	})
 
-	When("client-supplied clone URLs appear in job params", func() {
-		It("rejects git_url at the public params decode boundary (API contract; submit matrix is Task 2)", func() {
-			// Cross-check of server DisallowUnknownFields contract without re-testing RepoAuthorizer.
-			raw := []byte(`{"repo_owner":"acme","repo_name":"widgets","git_url":"https://evil.example/x.git"}`)
-			dec := json.NewDecoder(bytes.NewReader(raw))
-			dec.DisallowUnknownFields()
-			var params coachapi.RepoBaselineScanParams
-			err := dec.Decode(&params)
-			Expect(err).To(HaveOccurred(), "git_url must be rejected at the params schema boundary")
+	When("rubric judgment fails schema validation after bounded retries", func() {
+		It("still completes with deterministic findings and schema diagnostics, without source=agent findings", func() {
+			// Story 5 at the handler boundary: schema-invalid model output is a
+			// diagnostic, not a failed job, and must not suppress deterministic rows.
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath: baselineFixtureRoot(),
+				SmokeRepoOwner:   "smoke-owner",
+				SmokeRepoName:    "smoke-repo",
+				Gateway: modelgateway.NewStubGateway(modelgateway.StubOptions{
+					JudgeErr: modelgateway.NewValidationError("judgment missing required field: confidence"),
+				}),
+			})
 
-			// Belt-and-suspenders: handler must also fail permanently if forbidden keys sneak into stored params.
+			w := newCaptureWriter()
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "smoke-owner",
+				RepoName:  "smoke-repo",
+			}), w)
+			Expect(err).NotTo(HaveOccurred(),
+				"schema-validation degrade must not fail the job (Story 5); got %v", err)
+			Expect(completion).NotTo(BeNil())
+
+			var det int
+			for _, f := range w.findings {
+				if f.Source == coachapi.FindingSourceDeterministic {
+					det++
+				}
+				Expect(f.Source).NotTo(Equal(coachapi.FindingSourceAgent),
+					"schema-invalid judgments must not become source=agent findings")
+			}
+			Expect(det).To(BeNumerically(">=", 1),
+				"deterministic findings must survive schema-validation degrade")
+			Expect(w.diagnostics).NotTo(BeEmpty(),
+				"schema-validation degrade must record JobDiagnostic entries")
+
+			var sawSchemaDiag bool
+			for _, d := range w.diagnostics {
+				if strings.Contains(strings.ToLower(d.Message), "schema") ||
+					strings.Contains(d.Message, "confidence") ||
+					strings.Contains(d.Message, "validation") ||
+					strings.HasPrefix(d.Scope, "rubric:") {
+					sawSchemaDiag = true
+				}
+			}
+			Expect(sawSchemaDiag).To(BeTrue(),
+				"diagnostics should describe schema/validation failure from rubric degrade envelopes; got %#v", w.diagnostics)
+		})
+	})
+
+	When("client-supplied clone URLs appear in stored job params", func() {
+		// HTTP DisallowUnknownFields rejection of git_url/clone_url is owned by
+		// server_acceptance_test (Task 2). This slice owns the worker-side permanent
+		// reject through the handler's production params parser (parseBaselineParams).
+		It("rejects git_url via the handler production params parser", func() {
+			raw := []byte(`{"repo_owner":"acme","repo_name":"widgets","git_url":"https://evil.example/x.git"}`)
 			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
 				SmokeFixturePath: baselineFixtureRoot(),
 				SmokeRepoOwner:   "acme",
@@ -552,14 +928,32 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 			})
 			job := baselineJob(coachapi.RepoBaselineScanParams{RepoOwner: "acme", RepoName: "widgets"})
 			job.Params = raw
-			_, err = h(context.Background(), job, newCaptureWriter())
+			completion, err := h(context.Background(), job, newCaptureWriter())
+			Expect(completion).To(BeNil())
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(Or(
+			Expect(err.Error()).To(And(
 				ContainSubstring("git_url"),
+				ContainSubstring("not allowed"),
+			), "handler must reject sneaked git_url via production parser; got %v", err)
+		})
+
+		It("rejects clone_url via the handler production params parser", func() {
+			raw := []byte(`{"repo_owner":"acme","repo_name":"widgets","clone_url":"https://evil.example/x.git"}`)
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath: baselineFixtureRoot(),
+				SmokeRepoOwner:   "acme",
+				SmokeRepoName:    "widgets",
+				Gateway:          modelgateway.NewStubGateway(),
+			})
+			job := baselineJob(coachapi.RepoBaselineScanParams{RepoOwner: "acme", RepoName: "widgets"})
+			job.Params = raw
+			completion, err := h(context.Background(), job, newCaptureWriter())
+			Expect(completion).To(BeNil())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(And(
 				ContainSubstring("clone_url"),
 				ContainSubstring("not allowed"),
-				ContainSubstring("invalid"),
-			))
+			), "handler must reject sneaked clone_url via production parser; got %v", err)
 		})
 	})
 
