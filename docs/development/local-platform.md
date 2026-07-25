@@ -73,7 +73,7 @@ fixture owner/repo pair can be submitted.
 | `COACH_WORKER_ID` | `platform-worker-1` | Lease / consumer identity |
 | `COACH_REDIS_ADDR` | `redis:6379` | Redis Streams |
 | `COACH_REDIS_STREAM` | `coach-jobs` | **Same stream as API** |
-| `COACH_REDIS_CONSUMER_GROUP` | `coach-workers` | Consume-side group (may differ from API) |
+| `COACH_REDIS_CONSUMER_GROUP` | `coach-workers` | Consume-side group — **must differ** from API (`coach-api`); both open a Redis Streams subscriber today, so a shared group lets the API drain work before the worker |
 | `COACH_PG_DSN` | same as API | Shared job store |
 | `COACH_SMOKE_FIXTURE_PATH` | `/fixtures/smoke-repo` | Mounted fixture tree |
 | `COACH_SMOKE_REPO_OWNER` | `coach-smoke` | Owner pair → fixture path |
@@ -93,8 +93,9 @@ GitHub App vars on the worker are optional and **unset** in core/smoke.
 
 Flow: mint token → `POST /v1/jobs` `repo_baseline_scan` for the fixture
 owner/name (**no client-supplied clone URL**) → poll → `GET …/report` → require
-provenance-tagged findings (`source=deterministic` required; `source=agent`
-present when the stub/rubrics produce judgments).
+provenance-tagged findings with **both** `source=deterministic` (fixture
+signals) and `source=agent` (stub/gateway judgment path). Core smoke fails if
+either is missing.
 
 Fixture tree: `deploy/compose/platform/fixtures/smoke-repo/` (tiny Go sources that
 trigger deterministic analysis).

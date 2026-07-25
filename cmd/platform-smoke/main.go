@@ -228,13 +228,16 @@ func assertReport(ctx context.Context, client *http.Client, baseURL, token, jobI
 			return fmt.Errorf("finding with unexpected source=%q", f.Source)
 		}
 	}
-	if !hasDeterministic && !hasAgent {
-		return fmt.Errorf("report has no provenance-tagged findings (need source=deterministic and/or source=agent); body=%s", truncate(raw))
-	}
 	if !hasDeterministic {
 		// Fixture is chosen to produce deterministic mutates_input signals;
 		// require at least one deterministic finding so smoke is not a no-op.
 		return fmt.Errorf("report missing source=deterministic findings; body=%s", truncate(raw))
+	}
+	// Core/stub smoke must prove agent tool loop + model gateway plumbing
+	// (Story 4 full path). The success stub always returns schema-valid
+	// judgments; missing source=agent means the judgment path never ran.
+	if !hasAgent {
+		return fmt.Errorf("report missing source=agent findings (stub/gateway path not proven); body=%s", truncate(raw))
 	}
 	fmt.Printf("platform-smoke: report ok findings=%d deterministic=%t agent=%t\n",
 		len(report.Findings), hasDeterministic, hasAgent)
