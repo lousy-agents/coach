@@ -7,6 +7,12 @@
 - [`pkg/semantics`](./pkg/semantics) — Deterministic structural analysis of Go, TypeScript, and TSX source bytes (validates syntax, extracts imports, computes branching metrics, and detects constructor-like patterns).
 - [`pkg/githubingest`](./pkg/githubingest) — Optional GitHub App-authenticated single-file reader via the GitHub Contents API.
 
+## Run locally (Docker)
+
+[Local Coach quickstart](./docs/pilot-local-quickstart.md): Docker Compose API + worker, smoke test without GitHub, optional local Qwen (`qwen3.5:4b` / `qwen3.5:4b-mlx`), optional scan of a GitHub.com repo without cloning it.
+
+For deterministic signals on a local checkout with no Docker, see [`coach codesignal`](#coach-codesignal-cli-preview).
+
 ---
 
 ## Installation

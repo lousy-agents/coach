@@ -1,0 +1,18 @@
+{
+  "name": "Coach Local Pilot",
+  "description": "Local Coach GitHub App for baseline scans. Read-only Contents, Metadata, and Administration. Webhooks off. For local use only.",
+  "url": "http://127.0.0.1:8080",
+  "hook_attributes": {
+    "url": "http://127.0.0.1:8080/github/webhook-unused",
+    "active": false
+  },
+  "redirect_url": "http://127.0.0.1:8765/create-github-app.html",
+  "public": false,
+  "default_permissions": {
+    "contents": "read",
+    "metadata": "read",
+    "administration": "read"
+  },
+  "default_events": [],
+  "request_oauth_on_install": false
+}

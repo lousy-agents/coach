@@ -133,21 +133,25 @@ run = [
 ]
 
 [tasks.platform-llm-validate]
-description = "Operator-only reminder for llm-profile validation against host llama.cpp via Envoy AI Gateway (does not download weights; not a CI gate)"
+description = "Operator-only reminder for llm-profile validation against a host OpenAI-compat model (Ollama/llama.cpp) via Envoy AI Gateway (does not download weights; not a CI gate)"
 run = """
 set -e
 echo "platform-llm-validate (operator-only, not CI)"
 echo ""
-echo "1. Start host-native llama.cpp with OpenAI-compat /v1/chat/completions"
-echo "   (prefer Metal on macOS), e.g. listening on 127.0.0.1:8081"
-echo "2. export AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1"
-echo "   (worker still calls ai-gateway:1975; aigw proxies to llama.cpp)"
+echo "Pilot path: docs/pilot-local-quickstart.md (Path B)"
+echo "Operator env detail: docs/development/local-platform.md"
+echo ""
+echo "1. Start a host OpenAI-compat /v1/chat/completions server, e.g.:"
+echo "   - Ollama: ollama pull qwen3.5:4b  (or qwen3.5:4b-mlx) on :11434"
+echo "   - llama.cpp Metal: listen on 127.0.0.1:8081"
+echo "2. export AIGW_OPENAI_BASE_URL=http://host.docker.internal:<port>/v1"
+echo "   export MODEL_GATEWAY_MODEL=<served id>   # e.g. qwen3.5:4b"
+echo "   (worker still calls ai-gateway:1975; aigw proxies upstream)"
 echo "3. docker compose --profile llm up -d --build"
 echo "4. mise run platform-smoke"
-echo "5. Confirm report has ≥1 source=agent judgment from llama.cpp"
+echo "5. Confirm report has ≥1 source=agent judgment from the host model"
 echo ""
-echo "Full detail: docs/development/local-platform.md"
-echo "Linux fallback: containerized llama.cpp on the compose network; set AIGW_OPENAI_BASE_URL to that service."
+echo "Linux fallback: model container on the compose network; set AIGW_OPENAI_BASE_URL to that service."
 """
 
 [tasks.ci]
