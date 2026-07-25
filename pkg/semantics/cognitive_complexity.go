@@ -13,8 +13,7 @@ func computeGoCognitiveComplexity(root engine.Node, source []byte) []FunctionCog
 	if root == nil {
 		return nil
 	}
-	var targets []goCCTarget
-	collectGoCCTargets(root, source, &targets)
+	targets := collectGoCCTargets(root, source)
 	if len(targets) == 0 {
 		return nil
 	}
@@ -43,14 +42,12 @@ func computeGoCognitiveComplexity(root engine.Node, source []byte) []FunctionCog
 	return records
 }
 
-// applyCognitiveComplexityAggregates sets max (all records) and sum on metrics.
-// When topLevel is nil, sum uses the Go convention (kind function|method only).
-// When topLevel is non-nil, it must match records length; sum includes only
-// indices where topLevel[i] is true (TS/TSX lexical top-level rule).
-func applyCognitiveComplexityAggregates(metrics *StructuralMetrics, records []FunctionCognitiveComplexity, topLevel []bool) {
-	if metrics == nil {
-		return
-	}
+// applyCognitiveComplexityAggregates returns metrics with max (all records)
+// and sum set. When topLevel is nil, sum uses the Go convention (kind
+// function|method only). When topLevel is non-nil, it must match records
+// length; sum includes only indices where topLevel[i] is true (TS/TSX
+// lexical top-level rule).
+func applyCognitiveComplexityAggregates(metrics StructuralMetrics, records []FunctionCognitiveComplexity, topLevel []bool) StructuralMetrics {
 	max, sum := 0, 0
 	for i, r := range records {
 		if r.Score > max {
@@ -66,6 +63,7 @@ func applyCognitiveComplexityAggregates(metrics *StructuralMetrics, records []Fu
 	}
 	metrics.MaxCognitiveComplexity = max
 	metrics.SumCognitiveComplexity = sum
+	return metrics
 }
 
 type goCCTarget struct {
@@ -74,22 +72,24 @@ type goCCTarget struct {
 	kind string
 }
 
-func collectGoCCTargets(n engine.Node, source []byte, out *[]goCCTarget) {
+func collectGoCCTargets(n engine.Node, source []byte) []goCCTarget {
 	if n == nil {
-		return
+		return nil
 	}
+	var out []goCCTarget
 	switch n.Kind() {
 	case "function_declaration":
-		*out = append(*out, goCCTarget{node: n, name: goDeclName(n, source), kind: "function"})
+		out = append(out, goCCTarget{node: n, name: goDeclName(n, source), kind: "function"})
 	case "method_declaration":
-		*out = append(*out, goCCTarget{node: n, name: goDeclName(n, source), kind: "method"})
+		out = append(out, goCCTarget{node: n, name: goDeclName(n, source), kind: "method"})
 	case "func_literal":
-		*out = append(*out, goCCTarget{node: n, name: goFuncLitName(n, source), kind: "func_lit"})
+		out = append(out, goCCTarget{node: n, name: goFuncLitName(n, source), kind: "func_lit"})
 	}
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
-		collectGoCCTargets(n.Child(i), source, out)
+		out = append(out, collectGoCCTargets(n.Child(i), source)...)
 	}
+	return out
 }
 
 func goDeclName(decl engine.Node, source []byte) string {
@@ -349,8 +349,7 @@ func computeTSCognitiveComplexity(root engine.Node, source []byte) ([]FunctionCo
 	if root == nil {
 		return nil, nil
 	}
-	var targets []tsCCTarget
-	collectTSCCTargets(root, source, &targets)
+	targets := collectTSCCTargets(root, source)
 	if len(targets) == 0 {
 		return nil, nil
 	}
@@ -445,15 +444,16 @@ func tsIsNestedInScoredBody(n engine.Node) bool {
 	return false
 }
 
-func collectTSCCTargets(n engine.Node, source []byte, out *[]tsCCTarget) {
+func collectTSCCTargets(n engine.Node, source []byte) []tsCCTarget {
 	if n == nil {
-		return
+		return nil
 	}
+	var out []tsCCTarget
 	if isTSCCScoredKind(n.Kind()) {
 		// Overload signatures and abstract methods have no body — skip.
 		if body := tsCCBody(n); body != nil {
 			kind := tsCCKind(n.Kind())
-			*out = append(*out, tsCCTarget{
+			out = append(out, tsCCTarget{
 				node:     n,
 				name:     tsCCName(n, source),
 				kind:     kind,
@@ -463,8 +463,9 @@ func collectTSCCTargets(n engine.Node, source []byte, out *[]tsCCTarget) {
 	}
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
-		collectTSCCTargets(n.Child(i), source, out)
+		out = append(out, collectTSCCTargets(n.Child(i), source)...)
 	}
+	return out
 }
 
 func tsCCName(n engine.Node, source []byte) string {

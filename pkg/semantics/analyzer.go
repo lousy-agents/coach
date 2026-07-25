@@ -128,11 +128,11 @@ func (a *Analyzer) AnalyzeBytes(ctx context.Context, in FileInput) (*Result, err
 	switch in.Language {
 	case LanguageGo:
 		cognitive = computeGoCognitiveComplexity(root, in.Content)
-		applyCognitiveComplexityAggregates(&metrics, cognitive, nil)
+		metrics = applyCognitiveComplexityAggregates(metrics, cognitive, nil)
 	case LanguageTypeScript, LanguageTSX:
 		var topLevel []bool
 		cognitive, topLevel = computeTSCognitiveComplexity(root, in.Content)
-		applyCognitiveComplexityAggregates(&metrics, cognitive, topLevel)
+		metrics = applyCognitiveComplexityAggregates(metrics, cognitive, topLevel)
 	}
 
 	result := &Result{
