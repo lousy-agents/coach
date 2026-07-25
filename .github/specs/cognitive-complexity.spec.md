@@ -575,6 +575,8 @@ sequenceDiagram
 - [ ] Whether file-level `branch_density` / `max_nesting_depth` rules should later be demoted or retuned once Cognitive Complexity ships (not blocking; leave both active in v1).
 - [ ] Whether method `name` should later include Go receiver type text for disambiguation (v1 uses bare method name + location ordinals).
 - [ ] Whether v2 should count direct method recursion via selector/call expressions (`t.Foo()`, `this.foo()`) — v1 only matches simple-identifier callees.
+- [x] **Parameter-list / default-value complexity?** — **Decided (v1)**: score only the function **body** walk (see Nested-function score attribution / Walk order). Complexity in parameter default expressions, Go parameters, or other signature-only subtrees is **out of scope** for v1 (not a Sonar whole-method parity goal this slice). Revisit if pilot noise shows defaults hiding real control flow.
+- [ ] Whether TS/TSX class field initializers that bind an arrow/func lit (`class C { handler = () => { … } }`) should take `name` from the field property identifier — v1 Naming rule 5 yields `"<func lit>"` for property assignment without a simple variable/assignment binding.
 
 ---
 
@@ -756,14 +758,14 @@ sequenceDiagram
 - Rubric(s) that cite `complexity.cognitive_complexity` evidence explicitly
 - Optional contribution breakdown always-on in CLI text mode for coaching
 - Align threshold with pilot feedback (keep rule_version bump if threshold changes)
-- Richer method naming (e.g. include Go receiver type) if pilot feedback shows subject collisions
+- Richer method naming (e.g. include Go receiver type, TS class-field property bindings) if pilot feedback shows subject collisions
+- Score parameter default expressions / signature subtrees if pilot shows body-only walks miss real complexity
 - Lifecycle keying that ignores numeric score churn while still over threshold (would need a deliberate fingerprint contract change)
 
 ---
 
 ## Cross-Reference
 
-- Calculation draft (non-normative): `cognative-complexity-draft.md`
 - PRD planned item: more deterministic complexity rules (`docs/product/prd.md` §8)
 - Architecture: deterministic `pkg/semantics` → `pkg/codesignal` before inference (`docs/architecture/system-overview.md`)
 - Related existing rules: `complexity.max_nesting_depth`, `complexity.branch_density`
