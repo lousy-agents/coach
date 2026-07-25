@@ -501,5 +501,111 @@ var _ = Describe("modelgateway.OpenAICompatClient", func() {
 				Expect(err.Error()).To(ContainSubstring("MODEL_GATEWAY_BASE_URL"))
 			})
 		})
+
+		When("MODEL_GATEWAY_DISABLE_THINKING is unset", func() {
+			It("does not enable think-disable (portable body omits think)", func() {
+				origBase := os.Getenv("MODEL_GATEWAY_BASE_URL")
+				origThink := os.Getenv("MODEL_GATEWAY_DISABLE_THINKING")
+				DeferCleanup(func() {
+					_ = os.Setenv("MODEL_GATEWAY_BASE_URL", origBase)
+					_ = os.Setenv("MODEL_GATEWAY_DISABLE_THINKING", origThink)
+				})
+				Expect(os.Setenv("MODEL_GATEWAY_BASE_URL", "http://127.0.0.1:1")).To(Succeed())
+				Expect(os.Unsetenv("MODEL_GATEWAY_DISABLE_THINKING")).To(Succeed())
+
+				cfg, err := modelgateway.ConfigFromEnv()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cfg.DisableThinking).To(BeFalse())
+			})
+		})
+
+		When("MODEL_GATEWAY_DISABLE_THINKING is 1 or true", func() {
+			It("sets DisableThinking so the chat-completions body includes think:false", func() {
+				origBase := os.Getenv("MODEL_GATEWAY_BASE_URL")
+				origThink := os.Getenv("MODEL_GATEWAY_DISABLE_THINKING")
+				DeferCleanup(func() {
+					_ = os.Setenv("MODEL_GATEWAY_BASE_URL", origBase)
+					_ = os.Setenv("MODEL_GATEWAY_DISABLE_THINKING", origThink)
+				})
+				Expect(os.Setenv("MODEL_GATEWAY_BASE_URL", "http://127.0.0.1:1")).To(Succeed())
+				Expect(os.Setenv("MODEL_GATEWAY_DISABLE_THINKING", "1")).To(Succeed())
+
+				cfg, err := modelgateway.ConfigFromEnv()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cfg.DisableThinking).To(BeTrue())
+
+				Expect(os.Setenv("MODEL_GATEWAY_DISABLE_THINKING", "true")).To(Succeed())
+				cfg, err = modelgateway.ConfigFromEnv()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cfg.DisableThinking).To(BeTrue())
+			})
+		})
+
+		When("MODEL_GATEWAY_DISABLE_THINKING is 0 or false", func() {
+			It("leaves DisableThinking false so think is omitted from the body", func() {
+				origBase := os.Getenv("MODEL_GATEWAY_BASE_URL")
+				origThink := os.Getenv("MODEL_GATEWAY_DISABLE_THINKING")
+				DeferCleanup(func() {
+					_ = os.Setenv("MODEL_GATEWAY_BASE_URL", origBase)
+					_ = os.Setenv("MODEL_GATEWAY_DISABLE_THINKING", origThink)
+				})
+				Expect(os.Setenv("MODEL_GATEWAY_BASE_URL", "http://127.0.0.1:1")).To(Succeed())
+				Expect(os.Setenv("MODEL_GATEWAY_DISABLE_THINKING", "0")).To(Succeed())
+
+				cfg, err := modelgateway.ConfigFromEnv()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cfg.DisableThinking).To(BeFalse())
+			})
+		})
+	})
+
+	Describe("think-disable request field", func() {
+		When("DisableThinking is true", func() {
+			It("includes think:false on the chat-completions request body (Ollama-style)", func() {
+				var gotBody map[string]any
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					raw, err := io.ReadAll(r.Body)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(json.Unmarshal(raw, &gotBody)).To(Succeed())
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(chatCompletionBody("served-think", validHiddenMutationContent()))
+				}))
+				DeferCleanup(srv.Close)
+
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{
+					DisableThinking: true,
+				})
+				_, err := client.Judge(context.Background(), defaultJudgeRequest())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(gotBody).To(HaveKeyWithValue("think", false))
+				for key := range gotBody {
+					Expect(key).To(BeElementOf("model", "messages", "stream", "think"))
+				}
+			})
+		})
+
+		When("DisableThinking is false", func() {
+			It("omits the think field (portable OpenAI shape)", func() {
+				var gotBody map[string]any
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					raw, err := io.ReadAll(r.Body)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(json.Unmarshal(raw, &gotBody)).To(Succeed())
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(chatCompletionBody("served-no-think", validHiddenMutationContent()))
+				}))
+				DeferCleanup(srv.Close)
+
+				client := newCompatClient(srv, modelgateway.OpenAICompatConfig{
+					DisableThinking: false,
+				})
+				_, err := client.Judge(context.Background(), defaultJudgeRequest())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(gotBody).NotTo(HaveKey("think"))
+				for key := range gotBody {
+					Expect(key).To(BeElementOf("model", "messages", "stream"))
+				}
+			})
+		})
 	})
 })

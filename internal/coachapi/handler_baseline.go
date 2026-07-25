@@ -77,15 +77,37 @@ type RepoBaselineScanConfig struct {
 
 	Gateway modelgateway.Gateway
 
-	// ObserveLoop, if set, receives the job's agentloop after tools have run.
+	// ObserveLoop, if set, receives each job agentloop after tools have run
+	// (analyze loop, then judgment loop when judgment runs).
 	ObserveLoop func(*agentloop.Loop)
 
-	// ConfigureLoop, if set, runs after tool registration (tests inject failures).
+	// ConfigureLoop, if set, runs after tool registration on each loop
+	// (tests inject failures).
 	ConfigureLoop func(*agentloop.Loop)
+
+	// PackConfig controls hidden-mutation judgment packing. Zero fields use
+	// rubrics.ApplyPackConfigDefaults.
+	PackConfig rubrics.PackConfig
+
+	// JudgmentMaxWallTime is the judgment-phase agentloop wall budget.
+	// Zero means DefaultJudgmentMaxWallTime (10m). Analyze time does not
+	// consume this budget (judgment uses a fresh loop).
+	JudgmentMaxWallTime time.Duration
+
+	// MaxHiddenMutationJudgments caps how many hidden_input_mutation signals
+	// receive model judgment per baseline job (Story 3 priority cap).
+	// Zero means DefaultMaxHiddenMutationJudgments (16). Negative means unlimited.
+	MaxHiddenMutationJudgments int
 
 	// Now, if set, stamps Completion timestamps; otherwise time.Now UTC.
 	Now func() time.Time
 }
+
+// DefaultJudgmentMaxWallTime is the local-LLM-oriented default judgment wall.
+const DefaultJudgmentMaxWallTime = 10 * time.Minute
+
+// DefaultMaxHiddenMutationJudgments is the local-LLM-oriented default judgment cap.
+const DefaultMaxHiddenMutationJudgments = 16
 
 type loadedBaselineFile struct {
 	Path     string
@@ -139,35 +161,29 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 		return nil, err
 	}
 
-	// Scale MaxToolCalls with tree size; never below DefaultMaxToolCalls (other loops).
-	maxToolCalls := len(entries) + 1 /*codesignal*/ + len(entries) /*worst hidden_mutation*/ + 10 /*cohesion+slack*/
-	if maxToolCalls < agentloop.DefaultMaxToolCalls {
-		maxToolCalls = agentloop.DefaultMaxToolCalls
+	// Analyze loop: semantics + codesignal only. Judgment uses a fresh loop so
+	// analyze wall time does not consume the judgment budget (Story 2).
+	analyzeMaxTools := len(entries) + 1 /*codesignal*/ + 10 /*slack*/
+	if analyzeMaxTools < agentloop.DefaultMaxToolCalls {
+		analyzeMaxTools = agentloop.DefaultMaxToolCalls
 	}
-	loop, err := agentloop.New(agentloop.Options{
-		Budget: agentloop.Budget{MaxToolCalls: maxToolCalls},
+	analyzeLoop, err := agentloop.New(agentloop.Options{
+		Budget: agentloop.Budget{MaxToolCalls: analyzeMaxTools},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("coachapi: constructing agent loop: %w", err)
-	}
-	gw := cfg.Gateway
-	if gw == nil {
-		gw = modelgateway.NewStubGateway()
-	}
-	if err := rubrics.RegisterTools(loop, gw); err != nil {
-		return nil, fmt.Errorf("coachapi: registering rubric tools: %w", err)
+		return nil, fmt.Errorf("coachapi: constructing analyze agent loop: %w", err)
 	}
 	if cfg.ConfigureLoop != nil {
-		cfg.ConfigureLoop(loop)
-	}
-	if cfg.ObserveLoop != nil {
-		defer cfg.ObserveLoop(loop)
+		cfg.ConfigureLoop(analyzeLoop)
 	}
 
 	repoLabel := params.RepoOwner + "/" + params.RepoName
-	loaded, report, err := analyzeBaselineViaLoop(ctx, loop, files, repoLabel, commitSHA)
+	loaded, report, err := analyzeBaselineViaLoop(ctx, analyzeLoop, files, repoLabel, commitSHA)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.ObserveLoop != nil {
+		cfg.ObserveLoop(analyzeLoop)
 	}
 
 	// Write deterministic findings before judgment so hard judgment errors keep them.
@@ -176,19 +192,67 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 		return nil, err
 	}
 
-	agentFindings, agentDiags, err := judgeBaselineViaLoop(ctx, loop, loaded, detFindings)
+	gw := cfg.Gateway
+	if gw == nil {
+		gw = modelgateway.NewStubGateway()
+	}
+
+	judgmentWall := cfg.JudgmentMaxWallTime
+	if judgmentWall <= 0 {
+		judgmentWall = DefaultJudgmentMaxWallTime
+	}
+	// Scale judgment MaxToolCalls for packs + cohesion + slack (not 1:1 findings).
+	// Ceiling is one Call per finding (worst pack size 1) + cohesion + slack.
+	hiddenCount := countHiddenMutationFindings(detFindings)
+	judgmentMaxTools := hiddenCount + 1 /*cohesion*/ + 10 /*slack*/
+	if judgmentMaxTools < agentloop.DefaultMaxToolCalls {
+		judgmentMaxTools = agentloop.DefaultMaxToolCalls
+	}
+	judgmentLoop, err := agentloop.New(agentloop.Options{
+		Budget: agentloop.Budget{
+			MaxToolCalls: judgmentMaxTools,
+			MaxWallTime:  judgmentWall,
+		},
+	})
 	if err != nil {
-		return completeAfterJudgmentError(ctx, cfg, w, commitSHA, report, err)
+		return nil, fmt.Errorf("coachapi: constructing judgment agent loop: %w", err)
+	}
+	if err := rubrics.RegisterTools(judgmentLoop, gw); err != nil {
+		return nil, fmt.Errorf("coachapi: registering rubric tools: %w", err)
+	}
+	if cfg.ConfigureLoop != nil {
+		cfg.ConfigureLoop(judgmentLoop)
+	}
+
+	// Agent findings from hidden-mutation packs are inserted incrementally
+	// inside judgeBaselineViaLoop; cohesion findings are inserted there too.
+	// Do not re-insert agent findings here.
+	_, agentDiags, err := judgeBaselineViaLoop(ctx, judgmentLoop, loaded, detFindings, w, cfg.PackConfig, cfg.MaxHiddenMutationJudgments)
+	if cfg.ObserveLoop != nil {
+		cfg.ObserveLoop(judgmentLoop)
+	}
+	if err != nil {
+		return completeAfterJudgmentError(ctx, cfg, w, commitSHA, report, err, agentDiags)
 	}
 
 	diagnostics := append(agentDiags, diagnosticsFromCodeSignal(report)...)
-	if err := insertBaselineFindings(ctx, w, agentFindings); err != nil {
-		return nil, err
-	}
 	if err := insertBaselineDiagnostics(ctx, w, diagnostics); err != nil {
 		return nil, err
 	}
 	return baselineCompletion(cfg, w, commitSHA), nil
+}
+
+func countHiddenMutationFindings(detFindings []JobFinding) int {
+	n := 0
+	for _, f := range detFindings {
+		if f.Source != FindingSourceDeterministic {
+			continue
+		}
+		if _, ok := hiddenMutationSignal(f.Payload); ok {
+			n++
+		}
+	}
+	return n
 }
 
 func insertBaselineFindings(ctx context.Context, w BaselineJobWriter, findings []JobFinding) error {
@@ -205,17 +269,26 @@ func insertBaselineDiagnostics(ctx context.Context, w BaselineJobWriter, diagnos
 	return w.InsertDiagnostics(ctx, diagnostics)
 }
 
-// completeAfterJudgmentError keeps deterministic findings already written and
-// completes the job unless the parent context was canceled.
-func completeAfterJudgmentError(ctx context.Context, cfg RepoBaselineScanConfig, w BaselineJobWriter, commitSHA string, report *codesignal.Report, err error) (*Completion, error) {
+// completeAfterJudgmentError keeps deterministic findings and any agent findings
+// already InsertFindings'd during judgment, then completes the job unless the
+// parent context was canceled.
+func completeAfterJudgmentError(ctx context.Context, cfg RepoBaselineScanConfig, w BaselineJobWriter, commitSHA string, report *codesignal.Report, err error, priorDiags []JobDiagnostic) (*Completion, error) {
 	if errors.Is(err, context.Canceled) {
 		return nil, err
 	}
-	diagnostics := []JobDiagnostic{{
-		ID:      watermill.NewUUID(),
-		Scope:   "judgment",
-		Message: fmt.Sprintf("judgment phase failed: %v", err),
-	}}
+	var diagnostics []JobDiagnostic
+	diagnostics = append(diagnostics, priorDiags...)
+
+	var budgetErr *judgmentBudgetExceededError
+	if errors.As(err, &budgetErr) {
+		diagnostics = append(diagnostics, judgmentBudgetDiagnostic(budgetErr.Judged, budgetErr.Remaining, budgetErr.Err))
+	} else {
+		diagnostics = append(diagnostics, JobDiagnostic{
+			ID:      watermill.NewUUID(),
+			Scope:   "judgment",
+			Message: fmt.Sprintf("judgment phase failed: %v", err),
+		})
+	}
 	diagnostics = append(diagnostics, diagnosticsFromCodeSignal(report)...)
 	if err := insertBaselineDiagnostics(ctx, w, diagnostics); err != nil {
 		return nil, err

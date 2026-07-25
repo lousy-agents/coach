@@ -7,7 +7,7 @@ This guide covers three paths:
 | Path | What you do | What you need |
 | --- | --- | --- |
 | **A** | Smoke test with a built-in sample repo and a fake model | Docker, mise |
-| **B** | Same smoke test with a real local model (Qwen) | Path A plus Ollama or similar |
+| **B** | Same smoke test with a real local model (Qwen 3.5 or Gemma 4) | Path A plus Ollama or similar |
 | **C** | Scan a real GitHub.com repo without cloning it | Path A plus GitHub OAuth App and GitHub App |
 
 Path A takes about 10–15 minutes the first time (image builds dominate). Paths B and C add setup on top.
@@ -48,11 +48,12 @@ Before Path A or B smoke tests, unset GitHub and cloud tokens in that shell (`GI
 
 ### Path B only
 
-- Enough RAM for a ~4B chat model (Apple Silicon works well)
+- Enough RAM for a ~4B–12B chat model (Apple Silicon works well)
 - One OpenAI-compatible server on the host:
-  - [Ollama](https://ollama.com/) with `qwen3.5:4b` (usual choice)
+  - [Ollama](https://ollama.com/) with `qwen3.5:4b` (usual Qwen 3.5 choice)
   - Ollama or another server with `qwen3.5:4b-mlx` on Apple Silicon
-  - llama.cpp with a Qwen-family GGUF, if you already run that
+  - Ollama (or similar) with a **Gemma 4** id your server exposes (example tag below)
+  - llama.cpp with a Qwen- or Gemma-family GGUF, if you already run that
 
 Coach talks to the model only through the compose gateway (`POST /v1/chat/completions`). You do not configure the worker to call Ollama directly.
 
@@ -140,9 +141,11 @@ Agent findings never remove or change deterministic ones. If the model is down o
 
 Same stack and smoke as Path A. Point the gateway at a model on your machine.
 
+**Recreate containers after changing model/gateway/judgment env.** Compose does not hot-reload `AIGW_OPENAI_BASE_URL`, `MODEL_GATEWAY_*`, or worker judgment knobs into already-running containers. After exports change, run `docker compose --profile llm up -d --build` again (or `down` then `up`) so worker and ai-gateway pick up the new values.
+
 ### 1. Start a model server
 
-**Ollama (`qwen3.5:4b`):**
+**Qwen 3.5 via Ollama (`qwen3.5:4b`):**
 
 ```sh
 ollama pull qwen3.5:4b
@@ -150,16 +153,29 @@ ollama serve   # default http://127.0.0.1:11434
 curl -s http://127.0.0.1:11434/v1/models | jq .
 ```
 
-**MLX (`qwen3.5:4b-mlx`):** run any OpenAI-compatible server that serves that id (often still port 11434 with Ollama). Note the exact `model` string the server expects.
+**Qwen 3.5 MLX (`qwen3.5:4b-mlx`):** run any OpenAI-compatible server that serves that id (often still port 11434 with Ollama). Note the exact `model` string the server expects.
+
+**Gemma 4 via Ollama (example id — use the tag your server lists):**
+
+```sh
+# Example; confirm the id with: curl -s http://127.0.0.1:11434/v1/models | jq .
+ollama pull gemma4:12b
+ollama serve
+curl -s http://127.0.0.1:11434/v1/models | jq .
+```
 
 **llama.cpp:** serve OpenAI-compatible chat on a port you choose (example: 8081).
 
 ### 2. Start compose with that upstream
 
 ```sh
-# Ollama
+# --- Qwen 3.5 (Ollama) ---
 export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
 export MODEL_GATEWAY_MODEL=qwen3.5:4b
+
+# --- Gemma 4 (Ollama; id must match /v1/models) ---
+# export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
+# export MODEL_GATEWAY_MODEL=gemma4:12b
 
 # MLX example (only if your server uses this id):
 # export MODEL_GATEWAY_MODEL=qwen3.5:4b-mlx
@@ -168,8 +184,17 @@ export MODEL_GATEWAY_MODEL=qwen3.5:4b
 # export AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1
 # export MODEL_GATEWAY_MODEL=local
 
-# Optional if the model is slow:
-# export MODEL_GATEWAY_TIMEOUT=300s
+# Local-LLM recommendations (Path B):
+export MODEL_GATEWAY_TIMEOUT=120s          # raise to 300s if judgments time out
+export MODEL_GATEWAY_DISABLE_THINKING=1    # Ollama-style think:false when supported
+
+# Optional judgment packing / budget knobs (worker; defaults shown):
+# export COACH_JUDGMENT_MAX_WALL_TIME=10m                 # min 5m
+# export COACH_MAX_HIDDEN_MUTATION_JUDGMENTS=16           # 0=default 16; negative=unlimited
+# export COACH_MAX_FINDINGS_PER_JUDGMENT_PACK=4
+# export COACH_MAX_JUDGMENT_PROMPT_TOKENS=3500
+# export COACH_JUDGMENT_FILE_AFFINITY_MIN_FINDINGS=5
+# export COACH_JUDGMENT_EVIDENCE_WINDOW_LINES=15
 
 docker compose --profile llm up -d --build
 ```
@@ -185,6 +210,23 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/v1/me
 
 On Linux, if the gateway cannot reach the host, run the model in a container on the same compose network and set `AIGW_OPENAI_BASE_URL=http://<service>:<port>/v1`.
 
+### Path B env reference
+
+| Variable | Typical Path B | Purpose |
+| --- | --- | --- |
+| `AIGW_OPENAI_BASE_URL` | `http://host.docker.internal:11434/v1` | aigw upstream (Ollama/llama.cpp) |
+| `MODEL_GATEWAY_MODEL` | `qwen3.5:4b` or `gemma4:12b` | Must match the server’s model id |
+| `MODEL_GATEWAY_TIMEOUT` | `120s` (try `300s` if slow) | Outbound judgment HTTP timeout |
+| `MODEL_GATEWAY_DISABLE_THINKING` | `1` | Adds `think: false` on chat completions (best-effort; ignored if unsupported) |
+| `COACH_JUDGMENT_MAX_WALL_TIME` | `10m` (min `5m`) | Judgment-phase wall budget (separate from analyze) |
+| `COACH_MAX_HIDDEN_MUTATION_JUDGMENTS` | `16` (`0`→16; negative→unlimited) | Cap on judged hidden-mutation signals |
+| `COACH_MAX_FINDINGS_PER_JUDGMENT_PACK` | `4` | Max findings per model call |
+| `COACH_MAX_JUDGMENT_PROMPT_TOKENS` | `3500` | Soft pack split (chars/4 estimator) |
+| `COACH_JUDGMENT_FILE_AFFINITY_MIN_FINDINGS` | `5` | Dense paths get dedicated packs |
+| `COACH_JUDGMENT_EVIDENCE_WINDOW_LINES` | `15` | ±N lines of evidence around the signal |
+
+If jobs hit the judgment wall with few agent rows, lower `COACH_MAX_HIDDEN_MUTATION_JUDGMENTS` or raise `COACH_JUDGMENT_MAX_WALL_TIME` / `MODEL_GATEWAY_TIMEOUT`—do not only shrink pack size.
+
 ### 3. Smoke again
 
 ```sh
@@ -195,7 +237,7 @@ mise run platform-smoke
 | --- | --- | --- |
 | Agent text | Fixed sample JSON | From your local model |
 | `source` labels | `deterministic` / `agent` | Same |
-| `MODEL_GATEWAY_MODEL` | `local` (default) | Must match the server’s model id |
+| `MODEL_GATEWAY_MODEL` | `local` (default) | Must match the server’s model id (Qwen 3.5 or Gemma 4 example above) |
 
 Wrong model id, unreachable URL, or invalid model JSON → missing `source=agent` → smoke fails.
 
@@ -450,8 +492,8 @@ No. You pull the report from the local API.
 **Can I scan github.com/lousy-agents/coach without cloning?**  
 Yes (Path C). You need a role on that repo and an installed App that can read it.
 
-**Fake model vs Qwen?**  
-Fake model proves the pipeline. Qwen produces real agent text. Both stay labeled `source=agent`.
+**Fake model vs Qwen / Gemma?**  
+Fake model proves the pipeline. Qwen 3.5 or Gemma 4 produces real agent text. Both stay labeled `source=agent`.
 
 **What languages?**  
 Go, TypeScript, TSX. Baseline scan only in this guide.
@@ -469,11 +511,13 @@ mise run platform-up
 mise run platform-smoke
 mise run platform-down
 
-# Path B
+# Path B (Qwen 3.5; for Gemma 4 use MODEL_GATEWAY_MODEL=gemma4:12b or your server id)
 ollama pull qwen3.5:4b
 export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
 export MODEL_GATEWAY_MODEL=qwen3.5:4b
-docker compose --profile llm up -d --build
+export MODEL_GATEWAY_TIMEOUT=120s
+export MODEL_GATEWAY_DISABLE_THINKING=1
+docker compose --profile llm up -d --build   # recreate after env changes
 mise run platform-smoke
 
 # Path C (after App registration + compose.override.yaml)

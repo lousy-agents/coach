@@ -97,8 +97,17 @@ fixture owner/repo pair can be submitted.
 | `MODEL_GATEWAY_MODEL` | `local` | Logical model id |
 | `MODEL_GATEWAY_TIMEOUT` | `120s` | Outbound judgment timeout |
 | `MODEL_GATEWAY_API_KEY` | `unused` | Bearer passed through aigw (stub ignores) |
+| `MODEL_GATEWAY_DISABLE_THINKING` | unset (core) | When `1`/`true`, request body includes `think: false` (local llm Path B) |
+| `COACH_JUDGMENT_MAX_WALL_TIME` | `10m` default | Judgment-phase wall (min `5m` if set) |
+| `COACH_MAX_HIDDEN_MUTATION_JUDGMENTS` | `0`→16 | Cap judged hidden-mutation signals; negative = unlimited |
+| `COACH_MAX_FINDINGS_PER_JUDGMENT_PACK` | `4` | Max findings per Judge call |
+| `COACH_MAX_JUDGMENT_PROMPT_TOKENS` | `3500` | Pack split estimator |
+| `COACH_JUDGMENT_FILE_AFFINITY_MIN_FINDINGS` | `5` | Dense-path dedicated packs |
+| `COACH_JUDGMENT_EVIDENCE_WINDOW_LINES` | `15` | ±N evidence lines |
 
-GitHub App vars on the worker are optional and **unset** in core/smoke.
+Core/smoke needs **none** of the judgment knobs or `MODEL_GATEWAY_DISABLE_THINKING` (defaults + stub gateway). GitHub App vars on the worker are optional and **unset** in core/smoke.
+
+**Recreate containers** after changing `MODEL_GATEWAY_*`, `AIGW_OPENAI_BASE_URL`, or judgment env — compose does not hot-reload them.
 
 ### Envoy AI Gateway (`ai-gateway`)
 
@@ -154,24 +163,36 @@ is operator-run. The worker always calls **aigw**; aigw's upstream is any
 OpenAI-compatible `POST /v1/chat/completions` server on the host or compose
 network.
 
-**Pilot-oriented steps** (Ollama `qwen3.5:4b` / `qwen3.5:4b-mlx`, plus
-llama.cpp) live in [`docs/pilot-local-quickstart.md`](../pilot-local-quickstart.md)
-Path B. Condensed operator form:
+**Pilot-oriented steps** (Ollama **Qwen 3.5** `qwen3.5:4b` / `qwen3.5:4b-mlx`,
+**Gemma 4** e.g. `gemma4:12b`, plus llama.cpp) live in
+[`docs/pilot-local-quickstart.md`](../pilot-local-quickstart.md) Path B.
+Condensed operator form:
 
 1. Start a host OpenAI-compatible server (architecture reference: native
    llama.cpp with Metal on macOS; pilots often use Ollama). Example listen
    addresses: Ollama `127.0.0.1:11434`, llama.cpp `127.0.0.1:8081`.
 2. Point **aigw's upstream** at that server and bring up the `llm` profile
-   (worker still calls aigw, not the host directly):
+   (worker still calls aigw, not the host directly). **Recreate** worker/aigw
+   after changing these env vars:
 
    ```sh
    # llama.cpp example
    export AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1
    export MODEL_GATEWAY_MODEL=local   # or your served model id
 
-   # Ollama example (must match the pulled tag)
+   # Qwen 3.5 via Ollama (must match the pulled tag)
    # export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
    # export MODEL_GATEWAY_MODEL=qwen3.5:4b
+
+   # Gemma 4 via Ollama (example id — confirm with /v1/models)
+   # export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
+   # export MODEL_GATEWAY_MODEL=gemma4:12b
+
+   export MODEL_GATEWAY_TIMEOUT=120s          # raise if judgments time out
+   export MODEL_GATEWAY_DISABLE_THINKING=1    # local path: think:false when supported
+   # Optional: COACH_JUDGMENT_MAX_WALL_TIME, COACH_MAX_HIDDEN_MUTATION_JUDGMENTS,
+   # COACH_MAX_FINDINGS_PER_JUDGMENT_PACK, COACH_MAX_JUDGMENT_PROMPT_TOKENS,
+   # COACH_JUDGMENT_FILE_AFFINITY_MIN_FINDINGS, COACH_JUDGMENT_EVIDENCE_WINDOW_LINES
 
    docker compose --profile llm up -d --build
    # wait healthy, then:

@@ -20,7 +20,7 @@ Feature Zero defines the **full eventual taxonomy** so later epics (Baseline Sca
 | Platform workflow acceptance | Compose API + worker + Postgres + Redis Streams + model stub + fake GitHub + fixture repo + external runner | `test-acceptance` (full workflow leg) | Reserved name; lands once API + worker exist (Baseline) |
 | Queue-provider conformance | Black-box contract against real Redis Streams + LocalStack SQS | `test-queue-conformance` | **Runnable now**: harness self-test against the in-memory reference adapter (Task 0.4), plus the `redisstream` and `sqs` adapters' own conformance tests against real Docker-spun-up Redis Streams / LocalStack SQS wherever Docker is available, skipping gracefully otherwise (Baseline Task 3a) |
 | Operator smoke | Narrow credential-free Compose submission/poll path | a `platform-smoke`-style task | Reserved name; lands once smoke path exists (Baseline) |
-| Native model validation | Operator-run Compose/native llama.cpp validation, schema-focused | a `platform-llm-validate`-style task | Reserved name; lands once Baseline's model path exists |
+| Native model validation | Operator-run Compose/native OpenAI-compatible server validation (llama.cpp, Ollama; Qwen/Gemma-class), schema-focused; judgment packing/caps per local-LLM judgment spec | a `platform-llm-validate`-style task | Reserved name; lands once Baseline's model path exists; must not assume 1:1 judgment-per-finding |
 
 A lower layer passing is never evidence that a higher layer has run — each layer proves a different boundary, and `test-acceptance` (once it exists) must not silently omit a leg whose consumer (API, worker, queue adapter) is actually present.
 

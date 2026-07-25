@@ -20,6 +20,8 @@ type chatCompletionRequest struct {
 	Model    string        `json:"model"`
 	Messages []chatMessage `json:"messages"`
 	Stream   bool          `json:"stream"`
+	// Think is Ollama-style; omitempty keeps portable OpenAI bodies clean.
+	Think *bool `json:"think,omitempty"`
 }
 
 type chatCompletionResponse struct {
@@ -34,7 +36,7 @@ type chatCompletionResponse struct {
 }
 
 func (c *OpenAICompatClient) callChatCompletions(ctx context.Context, logicalModel string, messages []Message) (servedModel, content string, err error) {
-	body, err := marshalChatCompletionRequest(logicalModel, messages)
+	body, err := marshalChatCompletionRequest(logicalModel, messages, c.disableThinking)
 	if err != nil {
 		return "", "", err
 	}
@@ -60,16 +62,22 @@ func (c *OpenAICompatClient) callChatCompletions(ctx context.Context, logicalMod
 	return parseChatCompletionBody(respBody)
 }
 
-func marshalChatCompletionRequest(logicalModel string, messages []Message) ([]byte, error) {
+func marshalChatCompletionRequest(logicalModel string, messages []Message, disableThinking bool) ([]byte, error) {
 	wireMsgs := make([]chatMessage, 0, len(messages))
 	for _, m := range messages {
 		wireMsgs = append(wireMsgs, chatMessage{Role: m.Role, Content: m.Content})
 	}
-	body, err := json.Marshal(chatCompletionRequest{
+	req := chatCompletionRequest{
 		Model:    logicalModel,
 		Messages: wireMsgs,
 		Stream:   false,
-	})
+	}
+	if disableThinking {
+		// Ollama-style: think:false disables reasoning-only channels.
+		f := false
+		req.Think = &f
+	}
+	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, NewUnavailableError("encode request", err)
 	}

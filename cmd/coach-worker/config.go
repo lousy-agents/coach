@@ -19,6 +19,14 @@ const (
 	defaultMaxAttempts                 = 5
 	defaultBaselineMaxFiles            = 5000
 	defaultBaselineMaxTotalBytes int64 = 50 << 20 // 50 MiB supported-language source
+
+	// Local-LLM judgment defaults (match coachapi/rubrics binding defaults).
+	defaultJudgmentMaxWallTime             = 10 * time.Minute
+	minJudgmentMaxWallTime                 = 5 * time.Minute
+	defaultMaxFindingsPerJudgmentPack      = 4
+	defaultMaxJudgmentPromptTokens         = 3500
+	defaultJudgmentFileAffinityMinFindings = 5
+	defaultJudgmentEvidenceWindowLines     = 15
 )
 
 // Config holds cmd/coach-worker environment-driven settings.
@@ -53,6 +61,15 @@ type Config struct {
 	BaselineMaxFiles      int
 	BaselineMaxTotalBytes int64
 
+	// Judgment / packing knobs for RepoBaselineScanConfig (local-LLM oriented).
+	// MaxHiddenMutationJudgments: 0 = handler default 16; negative = unlimited.
+	JudgmentMaxWallTime             time.Duration
+	MaxHiddenMutationJudgments      int
+	MaxFindingsPerJudgmentPack      int
+	MaxJudgmentPromptTokens         int
+	JudgmentFileAffinityMinFindings int
+	JudgmentEvidenceWindowLines     int
+
 	// GitHub App credentials for non-smoke tree fetch via CredentialResolver.
 	// InstallationID is optional thinproof override; zero resolves per repo.
 	GitHubAppID          int64
@@ -76,26 +93,32 @@ func loadConfigFromEnv() (Config, error) {
 
 func defaultConfig(workerID, redisAddr string) Config {
 	return Config{
-		WorkerID:              workerID,
-		HeartbeatInterval:     defaultHeartbeatInterval,
-		StaleAfter:            defaultStaleAfter,
-		ReconcileInterval:     defaultReconcileInterval,
-		QueuedAgeThreshold:    defaultQueuedAgeThreshold,
-		IdlePollInterval:      defaultIdlePollInterval,
-		MaxAttempts:           defaultMaxAttempts,
-		RedisAddr:             redisAddr,
-		RedisPassword:         os.Getenv("COACH_REDIS_PASSWORD"),
-		RedisStream:           valueOrDefault(os.Getenv("COACH_REDIS_STREAM"), defaultRedisStream),
-		RedisConsumerGroup:    valueOrDefault(os.Getenv("COACH_REDIS_CONSUMER_GROUP"), defaultRedisConsumerGroup),
-		RedisConsumer:         valueOrDefault(os.Getenv("COACH_REDIS_CONSUMER"), workerID),
-		RedisClaimAfter:       defaultRedisClaimAfter,
-		PostgresDSN:           os.Getenv("COACH_PG_DSN"),
-		SmokeFixturePath:      os.Getenv("COACH_SMOKE_FIXTURE_PATH"),
-		SmokeRepoOwner:        os.Getenv("COACH_SMOKE_REPO_OWNER"),
-		SmokeRepoName:         os.Getenv("COACH_SMOKE_REPO_NAME"),
-		BaselineMaxFiles:      defaultBaselineMaxFiles,
-		BaselineMaxTotalBytes: defaultBaselineMaxTotalBytes,
-		GitHubBaseURL:         os.Getenv("COACH_GITHUB_BASE_URL"),
+		WorkerID:                        workerID,
+		HeartbeatInterval:               defaultHeartbeatInterval,
+		StaleAfter:                      defaultStaleAfter,
+		ReconcileInterval:               defaultReconcileInterval,
+		QueuedAgeThreshold:              defaultQueuedAgeThreshold,
+		IdlePollInterval:                defaultIdlePollInterval,
+		MaxAttempts:                     defaultMaxAttempts,
+		RedisAddr:                       redisAddr,
+		RedisPassword:                   os.Getenv("COACH_REDIS_PASSWORD"),
+		RedisStream:                     valueOrDefault(os.Getenv("COACH_REDIS_STREAM"), defaultRedisStream),
+		RedisConsumerGroup:              valueOrDefault(os.Getenv("COACH_REDIS_CONSUMER_GROUP"), defaultRedisConsumerGroup),
+		RedisConsumer:                   valueOrDefault(os.Getenv("COACH_REDIS_CONSUMER"), workerID),
+		RedisClaimAfter:                 defaultRedisClaimAfter,
+		PostgresDSN:                     os.Getenv("COACH_PG_DSN"),
+		SmokeFixturePath:                os.Getenv("COACH_SMOKE_FIXTURE_PATH"),
+		SmokeRepoOwner:                  os.Getenv("COACH_SMOKE_REPO_OWNER"),
+		SmokeRepoName:                   os.Getenv("COACH_SMOKE_REPO_NAME"),
+		BaselineMaxFiles:                defaultBaselineMaxFiles,
+		BaselineMaxTotalBytes:           defaultBaselineMaxTotalBytes,
+		JudgmentMaxWallTime:             defaultJudgmentMaxWallTime,
+		MaxHiddenMutationJudgments:      0, // handler default 16
+		MaxFindingsPerJudgmentPack:      defaultMaxFindingsPerJudgmentPack,
+		MaxJudgmentPromptTokens:         defaultMaxJudgmentPromptTokens,
+		JudgmentFileAffinityMinFindings: defaultJudgmentFileAffinityMinFindings,
+		JudgmentEvidenceWindowLines:     defaultJudgmentEvidenceWindowLines,
+		GitHubBaseURL:                   os.Getenv("COACH_GITHUB_BASE_URL"),
 	}
 }
 

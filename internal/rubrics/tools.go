@@ -13,6 +13,10 @@ import (
 // tools (ADR-005). Tools call modelgateway.Gateway.Judge; schema/unavailable
 // judgment failures degrade to a diagnostic envelope instead of failing the
 // tool call hard. context.Canceled is returned as a hard tool error.
+//
+// hidden_mutation_contextualization accepts legacy singular {finding,file} or
+// pack {items:[{finding_ref,finding,file},...]} args. Multi-item packs return
+// a ToolPackResult envelope ({"results":[ToolResult...]}) for Task 3 handlers.
 func RegisterTools(loop *agentloop.Loop, gw modelgateway.Gateway) error {
 	if loop == nil {
 		return fmt.Errorf("rubrics: loop is required")
@@ -48,7 +52,9 @@ func ToolSpecs(gw modelgateway.Gateway) ([]agentloop.ToolSpec, error) {
 type seedToolConfig struct {
 	id         string
 	argsSchema json.RawMessage
-	assemble   func(json.RawMessage) ([]modelgateway.Message, error)
+	// packAware: when true, the tool parses dual-shape args and may return a pack envelope.
+	packAware bool
+	assemble  func(json.RawMessage) ([]modelgateway.Message, error)
 }
 
 func seedToolConfigs() []seedToolConfig {
@@ -56,6 +62,7 @@ func seedToolConfigs() []seedToolConfig {
 		{
 			id:         IDHiddenMutationContextualization,
 			argsSchema: hiddenMutationArgsSchema(),
+			packAware:  true,
 			assemble:   assembleHiddenMutationArgs,
 		},
 		{
@@ -70,6 +77,13 @@ func seedJudgmentTool(gw modelgateway.Gateway, cfg seedToolConfig) (agentloop.To
 	def, ok := DefinitionByID(cfg.id)
 	if !ok {
 		return agentloop.ToolSpec{}, fmt.Errorf("rubrics: missing seed definition %q", cfg.id)
+	}
+	if cfg.packAware {
+		return agentloop.ToolSpec{
+			Name:       cfg.id,
+			ArgsSchema: cfg.argsSchema,
+			Handler:    hiddenMutationToolHandler(gw, def),
+		}, nil
 	}
 	assemble := cfg.assemble
 	return agentloop.ToolSpec{
@@ -87,4 +101,75 @@ func seedJudgmentTool(gw modelgateway.Gateway, cfg seedToolConfig) (agentloop.To
 			return marshalToolResult(toolResultFromRun(def, result))
 		},
 	}, nil
+}
+
+func hiddenMutationToolHandler(gw modelgateway.Gateway, def Definition) agentloop.ToolHandler {
+	return func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+		in, err := parseHiddenMutationArgs(args)
+		if err != nil {
+			return nil, err
+		}
+		if len(in.Items) >= 2 {
+			return runHiddenMutationPack(ctx, gw, def, in.Items)
+		}
+		// Singular path: legacy args, or a one-item pack (may use singular schema).
+		var msgs []modelgateway.Message
+		if len(in.Items) == 1 {
+			msgs = AssembleHiddenMutationMessages(HiddenMutationEvidence{
+				Finding: in.Items[0].Finding,
+				File:    in.Items[0].File,
+			})
+		} else {
+			msgs = AssembleHiddenMutationMessages(HiddenMutationEvidence{
+				Finding: in.Finding,
+				File:    in.File,
+			})
+		}
+		result, err := Run(ctx, gw, def, msgs)
+		if err != nil {
+			return nil, err
+		}
+		tr := toolResultFromRun(def, result)
+		if len(in.Items) == 1 {
+			tr.FindingRef = in.Items[0].FindingRef
+		}
+		return marshalToolResult(tr)
+	}
+}
+
+func runHiddenMutationPack(ctx context.Context, gw modelgateway.Gateway, def Definition, items []HiddenMutationPackItem) (json.RawMessage, error) {
+	if err := lifecycleAbortErr(ctx.Err()); err != nil {
+		return nil, err
+	}
+	if gw == nil {
+		refs := packRefs(items)
+		return marshalToolPackResult(packResultsForGatewayDegrade(def, refs, degrade(def.ID, "model gateway is nil")))
+	}
+
+	msgs := AssembleHiddenMutationPackMessages(HiddenMutationPackEvidence{Items: items})
+	refs := packRefs(items)
+
+	resp, err := gw.Judge(ctx, modelgateway.JudgmentRequest{
+		RubricID:      def.ID,
+		RubricVersion: def.Version,
+		Messages:      msgs,
+		OutputSchema:  HiddenMutationBatchOutputSchema(),
+	})
+	if abort := firstLifecycleAbort(err, ctx.Err()); abort != nil {
+		return nil, abort
+	}
+	if err != nil {
+		return marshalToolPackResult(packResultsForGatewayDegrade(def, refs, degradeFromErr(def.ID, err)))
+	}
+
+	pack := mapBatchJudgmentToPackResult(def, refs, resp)
+	return marshalToolPackResult(pack)
+}
+
+func packRefs(items []HiddenMutationPackItem) []string {
+	refs := make([]string, len(items))
+	for i, it := range items {
+		refs[i] = it.FindingRef
+	}
+	return refs
 }

@@ -16,6 +16,16 @@ Distinguish benign constructor wiring from hidden state mutation.
 Respond only with JSON matching the provided output schema.
 Do not modify, suppress, or restate deterministic findings as if they were yours to alter.`
 
+const shortRationaleGuidance = `Keep each rationale short: at most 2 sentences and at most 400 characters.`
+
+const hiddenMutationPackSystemPrompt = `You are a code-quality judge for the Coach platform.
+Evaluate multiple deterministic hidden_input_mutation findings in one batch.
+Question per item: Does the mutation hide input state in a way that will surprise a reviewer or complicate future changes?
+Distinguish benign constructor wiring from hidden state mutation.
+` + shortRationaleGuidance + `
+Respond only with JSON matching the provided batch output schema (items array keyed by finding_ref).
+Do not modify, suppress, or restate deterministic findings as if they were yours to alter.`
+
 const changeCohesionSystemPrompt = `You are a code-quality judge for the Coach platform.
 Evaluate whether deterministic findings and analyzed files form a cohesive unit of concern.
 Question (baseline): Do the analyzed files and findings cluster into coherent areas of concern, or is structural risk scattered across unrelated packages/modules?

@@ -11,6 +11,7 @@ import (
 	"github.com/lousy-agents/coach/internal/coachapi"
 	"github.com/lousy-agents/coach/internal/coachapi/worker"
 	"github.com/lousy-agents/coach/internal/modelgateway"
+	"github.com/lousy-agents/coach/internal/rubrics"
 	"github.com/lousy-agents/coach/pkg/githubingest"
 )
 
@@ -30,12 +31,20 @@ func stubJobHandler(_ context.Context, _ coachapi.Job, w worker.JobWriter) (*coa
 
 func buildJobHandler(cfg Config) (worker.JobHandler, error) {
 	baselineCfg := coachapi.RepoBaselineScanConfig{
-		SmokeFixturePath: cfg.SmokeFixturePath,
-		SmokeRepoOwner:   cfg.SmokeRepoOwner,
-		SmokeRepoName:    cfg.SmokeRepoName,
-		MaxFiles:         cfg.BaselineMaxFiles,
-		MaxTotalBytes:    cfg.BaselineMaxTotalBytes,
-		Gateway:          buildModelGateway(),
+		SmokeFixturePath:           cfg.SmokeFixturePath,
+		SmokeRepoOwner:             cfg.SmokeRepoOwner,
+		SmokeRepoName:              cfg.SmokeRepoName,
+		MaxFiles:                   cfg.BaselineMaxFiles,
+		MaxTotalBytes:              cfg.BaselineMaxTotalBytes,
+		Gateway:                    buildModelGateway(),
+		JudgmentMaxWallTime:        cfg.JudgmentMaxWallTime,
+		MaxHiddenMutationJudgments: cfg.MaxHiddenMutationJudgments,
+		PackConfig: rubrics.PackConfig{
+			MaxFindingsPerJudgmentPack:      cfg.MaxFindingsPerJudgmentPack,
+			MaxJudgmentPromptTokens:         cfg.MaxJudgmentPromptTokens,
+			JudgmentFileAffinityMinFindings: cfg.JudgmentFileAffinityMinFindings,
+			EvidenceWindowLines:             cfg.JudgmentEvidenceWindowLines,
+		},
 	}
 
 	if cfg.GitHubAppID > 0 && len(cfg.GitHubPrivateKey) > 0 {
