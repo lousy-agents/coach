@@ -57,6 +57,14 @@ func judgeBaselineViaLoop(
 
 	cohesionFindings, cohesionDiags, err := judgeChangeCohesion(ctx, loop, fileMetas, detFindings)
 	if err != nil {
+		if errors.Is(err, agentloop.ErrBudgetExceeded) {
+			// HM packs finished; wall died on cohesion. Report HM agent rows as judged.
+			return agentFindings, diagnostics, &judgmentBudgetExceededError{
+				Judged:    len(agentFindings),
+				Remaining: 0,
+				Err:       err,
+			}
+		}
 		return agentFindings, diagnostics, err
 	}
 	if err := insertBaselineFindings(ctx, w, cohesionFindings); err != nil {
@@ -190,7 +198,9 @@ func judgeHiddenMutationFindings(
 		}
 		agentFindings = append(agentFindings, packFindings...)
 		diagnostics = append(diagnostics, packDiags...)
-		judged += len(items)
+		// Count successful agent rows only — diagnostics-only packs must not
+		// inflate judged= in the Story 2 budget diagnostic.
+		judged += len(packFindings)
 	}
 	return agentFindings, diagnostics, nil
 }

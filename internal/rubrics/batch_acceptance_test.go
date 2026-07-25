@@ -3,6 +3,7 @@ package rubrics_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -18,6 +20,14 @@ import (
 	"github.com/lousy-agents/coach/internal/modelgateway"
 	"github.com/lousy-agents/coach/internal/rubrics"
 )
+
+// blockUntilCancelGateway blocks Judge until ctx is done (wall-budget tests).
+type blockUntilCancelGateway struct{}
+
+func (blockUntilCancelGateway) Judge(ctx context.Context, _ modelgateway.JudgmentRequest) (modelgateway.JudgmentResponse, error) {
+	<-ctx.Done()
+	return modelgateway.JudgmentResponse{}, modelgateway.NewUnavailableError("context done", ctx.Err())
+}
 
 // fixedBatchGateway returns a canned JudgmentJSON (used for partial-pack cases).
 type fixedBatchGateway struct {
@@ -310,6 +320,81 @@ var _ = Describe("batch hidden_mutation rubric (local-LLM pack path)", func() {
 				Expect(canonicalJSON(out.Judgment)).To(Equal(
 					canonicalJSON(readGolden("hidden_mutation_contextualization_v1.json")),
 				))
+			})
+
+			It("includes short-rationale guidance (≤2 sentences / ≤400 chars) on the singular judgment prompt", func() {
+				loop := newLoop()
+				rec := newRecordingGateway(modelgateway.NewStubGateway())
+				Expect(rubrics.RegisterTools(loop, rec)).To(Succeed())
+
+				args := json.RawMessage(`{
+					"finding": {
+						"rule_id": "state.hidden_input_mutation",
+						"kind": "hidden_input_mutation",
+						"path": "pkg/example/service.go",
+						"subject": "NewService"
+					},
+					"file": {
+						"path": "pkg/example/service.go",
+						"language": "go",
+						"content": "package example\n"
+					}
+				}`)
+				_, err := loop.Call(context.Background(), agentloop.CallSourceHandler,
+					rubrics.IDHiddenMutationContextualization, args)
+				Expect(err).NotTo(HaveOccurred())
+
+				judgeReqs := rec.requests()
+				Expect(judgeReqs).To(HaveLen(1))
+				joined := joinedMessageContent(judgeReqs[0].Messages)
+				Expect(joined).To(Or(
+					ContainSubstring("2 sentences"),
+					ContainSubstring("two sentences"),
+				))
+				Expect(joined).To(ContainSubstring("400"))
+			})
+		})
+	})
+
+	Describe("wall budget during in-flight pack Judge", func() {
+		When("the agentloop wall expires while a multi-item pack Judge is in flight", func() {
+			It("returns ErrBudgetExceeded from Call instead of soft-degrading to pack diagnostics", func() {
+				// False-green guard: gateway must block on ctx (wall child), not return
+				// a pre-baked Unavailable while opCtx is still live (that path stays Story 5).
+				blockGW := &blockUntilCancelGateway{}
+				loop, err := agentloop.New(agentloop.Options{
+					Budget: agentloop.Budget{
+						MaxToolCalls:  50,
+						MaxModelCalls: 20,
+						MaxWallTime:   40 * time.Millisecond,
+					},
+					SemanticsAnalyze: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+						return json.RawMessage(`{"ok":true}`), nil
+					},
+					CodeSignalReport: func(context.Context, json.RawMessage) (json.RawMessage, error) {
+						return json.RawMessage(`{"ok":true}`), nil
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rubrics.RegisterTools(loop, blockGW)).To(Succeed())
+
+				content := sampleFileContent(10)
+				args, err := json.Marshal(map[string]any{
+					"items": []any{
+						packItemArgs("ref-a", "a.go", 1, content),
+						packItemArgs("ref-b", "b.go", 2, content),
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				raw, callErr := loop.Call(ctx, agentloop.CallSourceHandler,
+					rubrics.IDHiddenMutationContextualization, args)
+				Expect(callErr).To(HaveOccurred())
+				Expect(errors.Is(callErr, agentloop.ErrBudgetExceeded)).To(BeTrue(),
+					"wall expiry mid-pack Judge must surface ErrBudgetExceeded, got %v (raw=%s)", callErr, string(raw))
+				Expect(callErr.Error()).To(ContainSubstring("max_wall_time"))
 			})
 		})
 	})

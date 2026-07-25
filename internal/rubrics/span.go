@@ -14,7 +14,6 @@ func FormatSpanWindow(content string, startRow, radius int) string {
 	if radius <= 0 {
 		radius = DefaultEvidenceWindowLines
 	}
-	// Split preserving trailing empty only when content ends with newline-less last line.
 	lines := splitContentLines(content)
 	if len(lines) == 0 {
 		return ""

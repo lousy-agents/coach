@@ -89,6 +89,13 @@ type recordingJudgeGateway struct {
 	// agentloop surfaces agentloop.ErrBudgetExceeded mid-phase.
 	failAfterN int
 	failErr    error
+
+	// blockAfterN, when > 0, blocks on ctx.Done() for call number > N (1-based)
+	// after recording the request. Used to force wall expiry on a specific pack.
+	blockAfterN int
+
+	// fixedJudgment, when non-nil, is returned instead of inner for non-blocking calls.
+	fixedJudgment json.RawMessage
 }
 
 func newRecordingJudgeGateway(inner modelgateway.Gateway) *recordingJudgeGateway {
@@ -119,12 +126,22 @@ func (g *recordingJudgeGateway) Judge(ctx context.Context, req modelgateway.Judg
 		}
 		return modelgateway.JudgmentResponse{}, err
 	}
+	if g.blockAfterN > 0 && n > g.blockAfterN {
+		<-ctx.Done()
+		return modelgateway.JudgmentResponse{}, modelgateway.NewUnavailableError("context done", ctx.Err())
+	}
 	if g.delay > 0 {
 		select {
 		case <-ctx.Done():
 			return modelgateway.JudgmentResponse{}, modelgateway.NewUnavailableError("context done", ctx.Err())
 		case <-time.After(g.delay):
 		}
+	}
+	if len(g.fixedJudgment) > 0 {
+		return modelgateway.JudgmentResponse{
+			JudgmentJSON:   append(json.RawMessage(nil), g.fixedJudgment...),
+			LogicalModelID: modelgateway.LogicalModelStub,
+		}, nil
 	}
 	return g.inner.Judge(ctx, req)
 }
@@ -394,6 +411,97 @@ var _ = Describe("repo_baseline_scan packed judgment (local-LLM)", func() {
 			}
 			Expect(sawBudgetDiag).To(BeTrue(),
 				"must record judgment budget diagnostic with judged/remaining; got %#v", w.diagnostics)
+		})
+
+		It("records judgment_budget_exceeded when the wall expires during the sole pack's in-flight Judge", func() {
+			// Story 2 gap: wall death mid-Judge on the last/only pack must not
+			// soft-degrade to gateway-unavailable diagnostics without a budget diagnostic.
+			root := multiHiddenMutationFixtureRoot()
+			recGW := newRecordingJudgeGateway(modelgateway.NewStubGateway())
+			recGW.delay = 200 * time.Millisecond
+
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath:           root,
+				SmokeRepoOwner:             "pack-owner",
+				SmokeRepoName:              "pack-repo",
+				Gateway:                    recGW,
+				JudgmentMaxWallTime:        50 * time.Millisecond,
+				MaxHiddenMutationJudgments: -1,
+				// One multi-item pack: high affinity threshold avoids path-dedicated splits
+				// so wall can only die mid-Judge (no pack N+1 checkWall).
+				PackConfig: rubrics.PackConfig{
+					MaxFindingsPerJudgmentPack:      50,
+					JudgmentFileAffinityMinFindings: 100,
+				},
+			})
+
+			w := newCaptureWriter()
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "pack-owner",
+				RepoName:  "pack-repo",
+			}), w)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(completion).NotTo(BeNil())
+
+			_, _, detHidden, agentHidden := countFindingsBySource(w.findings)
+			Expect(detHidden).To(BeNumerically(">=", 12))
+			Expect(agentHidden).To(Equal(0),
+				"sole pack wall death mid-Judge must not invent agent rows")
+
+			var budgetMsg string
+			for _, d := range w.diagnostics {
+				if strings.Contains(d.Message, "judgment_budget_exceeded") ||
+					d.Scope == "judgment_budget" {
+					budgetMsg = d.Message
+					break
+				}
+			}
+			Expect(budgetMsg).NotTo(BeEmpty(),
+				"sole-pack wall expiry must emit judgment_budget_exceeded; got %#v", w.diagnostics)
+			Expect(budgetMsg).To(ContainSubstring("judged=0"))
+			Expect(budgetMsg).To(ContainSubstring("remaining="))
+		})
+
+		It("counts judged= as source=agent findings, not diagnostics-only pack items", func() {
+			// Pack 1 returns an empty batch (all items → diagnostics, 0 agent rows).
+			// Pack 2 blocks until wall cancels. judged must be 0, not pack-1 item count.
+			root := multiHiddenMutationFixtureRoot()
+			recGW := newRecordingJudgeGateway(modelgateway.NewStubGateway())
+			recGW.fixedJudgment = json.RawMessage(`{"items":[]}`)
+			recGW.blockAfterN = 1
+
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath:    root,
+				SmokeRepoOwner:      "pack-owner",
+				SmokeRepoName:       "pack-repo",
+				Gateway:             recGW,
+				JudgmentMaxWallTime: 80 * time.Millisecond,
+				PackConfig:          rubrics.PackConfig{MaxFindingsPerJudgmentPack: 4},
+			})
+
+			w := newCaptureWriter()
+			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "pack-owner",
+				RepoName:  "pack-repo",
+			}), w)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(completion).NotTo(BeNil())
+
+			_, _, _, agentHidden := countFindingsBySource(w.findings)
+			Expect(agentHidden).To(Equal(0))
+
+			var budgetMsg string
+			for _, d := range w.diagnostics {
+				if strings.Contains(d.Message, "judgment_budget_exceeded") ||
+					d.Scope == "judgment_budget" {
+					budgetMsg = d.Message
+					break
+				}
+			}
+			Expect(budgetMsg).NotTo(BeEmpty(),
+				"expected judgment_budget_exceeded; got %#v", w.diagnostics)
+			Expect(budgetMsg).To(ContainSubstring("judged=0"),
+				"diagnostics-only pack must not inflate judged=; got %q", budgetMsg)
 		})
 	})
 

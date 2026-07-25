@@ -158,6 +158,11 @@ func runHiddenMutationPack(ctx context.Context, gw modelgateway.Gateway, def Def
 	if abort := firstLifecycleAbort(err, ctx.Err()); abort != nil {
 		return nil, abort
 	}
+	// Wall-budget deadline: surface to agentloop.mapWallErr (Story 2). Do not
+	// soft-degrade wall expiry as pack-level gateway-unavailable diagnostics.
+	if err != nil && isOpDeadlineExceeded(ctx) {
+		return nil, err
+	}
 	if err != nil {
 		return marshalToolPackResult(packResultsForGatewayDegrade(def, refs, degradeFromErr(def.ID, err)))
 	}
