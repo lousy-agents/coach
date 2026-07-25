@@ -66,11 +66,21 @@ func handleHTTPStubChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 func httpStubJudgmentForMessages(msgs []chatMessage) string {
 	var b strings.Builder
+	gwMsgs := make([]Message, 0, len(msgs))
 	for _, m := range msgs {
 		b.WriteString(m.Content)
 		b.WriteByte('\n')
+		gwMsgs = append(gwMsgs, Message{Role: m.Role, Content: m.Content})
 	}
 	text := strings.ToLower(b.String())
+
+	// Multi-finding pack prompts (local-LLM judgment packing) require a batch
+	// envelope with finding_ref items. Returning singular JSON fails OpenAI-compat
+	// schema validation and zeros source=agent rows in compose platform-smoke.
+	if isHTTPStubPackPrompt(text, gwMsgs) {
+		return string(stubBatchJudgment(JudgmentRequest{Messages: gwMsgs}))
+	}
+
 	switch {
 	case strings.Contains(text, "hidden_input_mutation") ||
 		strings.Contains(text, "hidden mutation") ||
@@ -88,4 +98,13 @@ func httpStubJudgmentForMessages(msgs []chatMessage) string {
 		return string(raw)
 	}
 	return `{"judgment":"unclear","rationale":"model-stub: no canned judgment","confidence":"low","suggested_focus":null}`
+}
+
+func isHTTPStubPackPrompt(lowerText string, msgs []Message) bool {
+	if strings.Contains(lowerText, "judgment pack") ||
+		strings.Contains(lowerText, "hidden-mutation judgment pack") {
+		return true
+	}
+	// Two or more finding_ref lines ⇒ pack prompt from AssembleHiddenMutationPackMessages.
+	return len(extractFindingRefsFromMessages(msgs)) >= 2
 }

@@ -89,6 +89,61 @@ var _ = Describe("modelgateway HTTP stub (compose model-stub backend)", func() {
 		})
 	})
 
+	When("POST /v1/chat/completions carries a multi-finding hidden-mutation pack prompt", func() {
+		It("returns a batch envelope that validates against the batch OutputSchema (compose platform-smoke path)", func() {
+			// Mirrors worker → aigw → model-stub when smoke packs 2 fixture signals.
+			batchSchema := json.RawMessage(`{
+				"type":"object",
+				"required":["items"],
+				"additionalProperties":false,
+				"properties":{
+					"items":{
+						"type":"array",
+						"items":{
+							"type":"object",
+							"required":["finding_ref","judgment","rationale","confidence","suggested_focus"],
+							"additionalProperties":false,
+							"properties":{
+								"finding_ref":{"type":"string"},
+								"judgment":{"type":"string","enum":["concern","acceptable","unclear"]},
+								"rationale":{"type":"string"},
+								"confidence":{"type":"string","enum":["high","medium","low"]},
+								"suggested_focus":{"type":["string","null"]}
+							}
+						}
+					}
+				}
+			}`)
+			client, err := modelgateway.NewOpenAICompatClient(modelgateway.OpenAICompatConfig{
+				BaseURL:      srv.URL,
+				LogicalModel: "local",
+				HTTPClient:   &http.Client{Timeout: 5 * time.Second},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := client.Judge(context.Background(), modelgateway.JudgmentRequest{
+				RubricID: "hidden_mutation_contextualization",
+				Messages: []modelgateway.Message{
+					{Role: "system", Content: "You are a code-quality judge for a hidden-mutation judgment pack."},
+					{Role: "user", Content: "## Hidden-mutation judgment pack\nfinding_ref: hash-a\nhidden_input_mutation\nfinding_ref: hash-b\nhidden_input_mutation\n"},
+				},
+				OutputSchema: batchSchema,
+			})
+			Expect(err).NotTo(HaveOccurred(),
+				"HTTP model-stub must return batch items JSON for pack prompts; singular JSON fails schema validation and platform-smoke loses source=agent")
+			var env struct {
+				Items []struct {
+					FindingRef string `json:"finding_ref"`
+					Judgment   string `json:"judgment"`
+				} `json:"items"`
+			}
+			Expect(json.Unmarshal(resp.JudgmentJSON, &env)).To(Succeed())
+			Expect(env.Items).To(HaveLen(2))
+			refs := []string{env.Items[0].FindingRef, env.Items[1].FindingRef}
+			Expect(refs).To(ConsistOf("hash-a", "hash-b"))
+		})
+	})
+
 	When("POST /v1/chat/completions receives invalid JSON", func() {
 		It("returns 400 rather than a fake completion", func() {
 			req, err := http.NewRequest(http.MethodPost, srv.URL+"/v1/chat/completions", bytes.NewReader([]byte(`{not-json`)))
