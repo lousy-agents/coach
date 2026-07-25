@@ -8,15 +8,17 @@ import (
 )
 
 const (
-	defaultRedisStream        = "coach-jobs"
-	defaultRedisConsumerGroup = "coach-workers"
-	defaultRedisClaimAfter    = 5 * time.Minute
-	defaultHeartbeatInterval  = 15 * time.Second
-	defaultStaleAfter         = 60 * time.Second
-	defaultReconcileInterval  = 30 * time.Second
-	defaultQueuedAgeThreshold = 30 * time.Second
-	defaultIdlePollInterval   = time.Second
-	defaultMaxAttempts        = 5
+	defaultRedisStream                 = "coach-jobs"
+	defaultRedisConsumerGroup          = "coach-workers"
+	defaultRedisClaimAfter             = 5 * time.Minute
+	defaultHeartbeatInterval           = 15 * time.Second
+	defaultStaleAfter                  = 60 * time.Second
+	defaultReconcileInterval           = 30 * time.Second
+	defaultQueuedAgeThreshold          = 30 * time.Second
+	defaultIdlePollInterval            = time.Second
+	defaultMaxAttempts                 = 5
+	defaultBaselineMaxFiles            = 5000
+	defaultBaselineMaxTotalBytes int64 = 50 << 20 // 50 MiB supported-language source
 )
 
 // Config holds cmd/coach-worker environment-driven settings.
@@ -41,6 +43,22 @@ type Config struct {
 	// PostgresDSN selects PostgresStore when set; MemoryStore when empty
 	// (local/dev only — production must set COACH_PG_DSN).
 	PostgresDSN string
+
+	// Smoke fixture pair: when path is set and job owner/name match, walk the
+	// local tree instead of GitHub (credential-free baseline).
+	SmokeFixturePath string
+	SmokeRepoOwner   string
+	SmokeRepoName    string
+
+	BaselineMaxFiles      int
+	BaselineMaxTotalBytes int64
+
+	// GitHub App credentials for non-smoke tree fetch via CredentialResolver.
+	// InstallationID is optional thinproof override; zero resolves per repo.
+	GitHubAppID          int64
+	GitHubInstallationID int64
+	GitHubPrivateKey     []byte
+	GitHubBaseURL        string
 }
 
 func loadConfigFromEnv() (Config, error) {
@@ -58,20 +76,26 @@ func loadConfigFromEnv() (Config, error) {
 
 func defaultConfig(workerID, redisAddr string) Config {
 	return Config{
-		WorkerID:           workerID,
-		HeartbeatInterval:  defaultHeartbeatInterval,
-		StaleAfter:         defaultStaleAfter,
-		ReconcileInterval:  defaultReconcileInterval,
-		QueuedAgeThreshold: defaultQueuedAgeThreshold,
-		IdlePollInterval:   defaultIdlePollInterval,
-		MaxAttempts:        defaultMaxAttempts,
-		RedisAddr:          redisAddr,
-		RedisPassword:      os.Getenv("COACH_REDIS_PASSWORD"),
-		RedisStream:        valueOrDefault(os.Getenv("COACH_REDIS_STREAM"), defaultRedisStream),
-		RedisConsumerGroup: valueOrDefault(os.Getenv("COACH_REDIS_CONSUMER_GROUP"), defaultRedisConsumerGroup),
-		RedisConsumer:      valueOrDefault(os.Getenv("COACH_REDIS_CONSUMER"), workerID),
-		RedisClaimAfter:    defaultRedisClaimAfter,
-		PostgresDSN:        os.Getenv("COACH_PG_DSN"),
+		WorkerID:              workerID,
+		HeartbeatInterval:     defaultHeartbeatInterval,
+		StaleAfter:            defaultStaleAfter,
+		ReconcileInterval:     defaultReconcileInterval,
+		QueuedAgeThreshold:    defaultQueuedAgeThreshold,
+		IdlePollInterval:      defaultIdlePollInterval,
+		MaxAttempts:           defaultMaxAttempts,
+		RedisAddr:             redisAddr,
+		RedisPassword:         os.Getenv("COACH_REDIS_PASSWORD"),
+		RedisStream:           valueOrDefault(os.Getenv("COACH_REDIS_STREAM"), defaultRedisStream),
+		RedisConsumerGroup:    valueOrDefault(os.Getenv("COACH_REDIS_CONSUMER_GROUP"), defaultRedisConsumerGroup),
+		RedisConsumer:         valueOrDefault(os.Getenv("COACH_REDIS_CONSUMER"), workerID),
+		RedisClaimAfter:       defaultRedisClaimAfter,
+		PostgresDSN:           os.Getenv("COACH_PG_DSN"),
+		SmokeFixturePath:      os.Getenv("COACH_SMOKE_FIXTURE_PATH"),
+		SmokeRepoOwner:        os.Getenv("COACH_SMOKE_REPO_OWNER"),
+		SmokeRepoName:         os.Getenv("COACH_SMOKE_REPO_NAME"),
+		BaselineMaxFiles:      defaultBaselineMaxFiles,
+		BaselineMaxTotalBytes: defaultBaselineMaxTotalBytes,
+		GitHubBaseURL:         os.Getenv("COACH_GITHUB_BASE_URL"),
 	}
 }
 

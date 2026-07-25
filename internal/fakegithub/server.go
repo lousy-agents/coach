@@ -53,6 +53,9 @@ func Handler(fixture *Fixture) (http.Handler, *acceptanceharness.Recorder) {
 	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/installation", installationResolutionHandler(fixture, rec))
 	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission", permissionHandler(fixture, rec))
 	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/contents/{path...}", contentsHandler(fixture, rec))
+	// Register commits before bare repo so the more-specific path wins.
+	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/commits/{ref}", commitHandler(fixture, rec))
+	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}", repoMetaHandler(fixture, rec))
 
 	return mux, rec
 }
