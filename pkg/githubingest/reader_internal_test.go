@@ -51,7 +51,6 @@ func TestNewGitHubFileReader_DefaultHTTPClientHasFiniteTimeout(t *testing.T) {
 	if hc.Timeout != DefaultGitHubFileReaderHTTPTimeout {
 		t.Fatalf("reader HTTP client Timeout = %v, want DefaultGitHubFileReaderHTTPTimeout (%v)", hc.Timeout, DefaultGitHubFileReaderHTTPTimeout)
 	}
-	// Same order of magnitude as DefaultCredentialResolverHTTPTimeout / peer clients.
 	if hc.Timeout > time.Minute {
 		t.Fatalf("reader HTTP client Timeout = %v, want a modest production bound (≤1m)", hc.Timeout)
 	}

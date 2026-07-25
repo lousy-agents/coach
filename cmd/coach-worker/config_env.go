@@ -28,8 +28,7 @@ func applyOptionalEnv(cfg Config) (Config, error) {
 }
 
 func parseBaselineBudgets(cfg Config) (Config, error) {
-	// 0 means unlimited (matches RepoBaselineScanConfig / BaselineListOptions).
-	// Negative values are rejected. Unset env keeps worker defaults.
+	// 0 = unlimited (handler contract); negative rejected; unset keeps defaults.
 	if raw := os.Getenv("COACH_BASELINE_MAX_FILES"); raw != "" {
 		var n int
 		if _, err := fmt.Sscanf(raw, "%d", &n); err != nil || n < 0 {

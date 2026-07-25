@@ -1,7 +1,6 @@
-// Command coach-worker is the composition-root job consumer for the coach
-// platform (Task 3 / GitHub issue #104, epic #97; Task 8 baseline handler):
-// it claims work only through queue.TaskQueue, persists claim/heartbeat/fenced
-// writes via coachapi.WorkerJobStore, and runs the repo_baseline_scan handler.
+// Command coach-worker claims work through queue.TaskQueue, persists
+// claim/heartbeat/fenced writes via coachapi.WorkerJobStore, and runs the
+// repo_baseline_scan handler.
 package main
 
 import (

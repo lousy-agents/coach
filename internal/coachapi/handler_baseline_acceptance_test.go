@@ -103,8 +103,7 @@ func findingUniqKey(f coachapi.JobFinding) string {
 	if f.RubricID != nil {
 		rubric = *f.RubricID
 	}
-	// Mirrors UNIQUE NULLS NOT DISTINCT (job_id, attempt, source, rubric_id, payload_hash).
-	// JobID/Attempt are stamped by leaseWriter in production; captureWriter keys on source+rubric+hash.
+	// JobID/Attempt stamped by leaseWriter in production; capture keys source+rubric+hash.
 	return string(f.Source) + "\x00" + rubric + "\x00" + f.PayloadHash
 }
 
@@ -120,8 +119,7 @@ type memoryFencedWriter struct {
 func (w *memoryFencedWriter) Lease() coachapi.ClaimLease { return w.lease }
 
 func (w *memoryFencedWriter) InsertFindings(ctx context.Context, findings []coachapi.JobFinding) error {
-	// Reuse captureWriter validation so empty IDs / hash collisions fail closed
-	// the way Postgres would (MemoryStore itself does not enforce those).
+	// MemoryStore does not enforce UUID PK / UNIQUE hash; captureWriter does.
 	cap := &captureWriter{lease: w.lease}
 	if err := cap.InsertFindings(ctx, findings); err != nil {
 		return err
@@ -309,7 +307,7 @@ func newGitHubBaselineTreeFixture(objectSHA string, files map[string][]byte) *fa
 			Name: path, Type: "file", SHA: blob, Size: len(body),
 		})
 	}
-	// Root dir listing doubles as the parent listing for top-level ReadFile symlink checks.
+	// Parent listing for top-level ReadFile symlink checks.
 	fx.Contents.Dirs[rootKey] = rootEntries
 	return &fx
 }
@@ -333,7 +331,6 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 				RepoName:  "smoke-repo",
 				Ref:       "main",
 			})
-			// MemoryStore + lease fencing + Postgres-shaped ID/unique-hash checks.
 			_, w := newMemoryFencedWriter(job)
 			completion, err := h(context.Background(), job, w)
 			Expect(err).NotTo(HaveOccurred(),
@@ -344,7 +341,6 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 			Expect(completion.Versions.Rubrics).To(HaveKey(rubrics.IDHiddenMutationContextualization))
 			Expect(completion.Versions.Rubrics).To(HaveKey(rubrics.IDChangeCohesion))
 
-			// Second pass through captureWriter to inspect minted IDs/hashes directly.
 			cap := newCaptureWriter()
 			_, err = h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
 				RepoOwner: "smoke-owner",
@@ -387,9 +383,8 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 		})
 
 		It("persists distinct agent payload_hash values for multiple hidden_mutation signals", func() {
-			// Fixture has ≥2 hidden_input_mutation signals (widget/update.go + widget/reset.go).
-			// Stub judgments are identical across signals, so agent payload_hash must include a
-			// per-signal discriminator or UNIQUE (job_id, attempt, source, rubric_id, payload_hash) fails.
+			// Fixture has ≥2 hidden_input_mutation signals; stub judgments are identical,
+			// so payload_hash needs a per-signal discriminator for store UNIQUE.
 			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
 				SmokeFixturePath: baselineFixtureRoot(),
 				SmokeRepoOwner:   "smoke-owner",
@@ -407,7 +402,6 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 				"multi hidden-mutation agent findings must not collide on payload_hash")
 			Expect(completion).NotTo(BeNil())
 
-			// Capture a clean write for hash inspection (same handler path).
 			cap := newCaptureWriter()
 			_, err = h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
 				RepoOwner: "smoke-owner",
@@ -470,8 +464,6 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 				"analysis must go through agentloop.Call(handler, semantics_analyze); no direct pkg/semantics bypass")
 			Expect(names).To(ContainElement(agentloop.ToolCodeSignalReport),
 				"analysis must go through agentloop.Call(handler, codesignal_report); no direct pkg/codesignal bypass")
-			// Seed rubrics also handler-driven. Fixture yields hidden_input_mutation
-			// signals, so both rubrics must appear as handler-sourced calls.
 			Expect(names).To(ContainElement(rubrics.IDChangeCohesion),
 				"change_cohesion must run via agentloop.Call(handler, …)")
 			Expect(names).To(ContainElement(rubrics.IDHiddenMutationContextualization),
@@ -481,7 +473,6 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 
 	When("the repository exceeds the configured size budget", func() {
 		It("fails the job with an actionable too-large error", func() {
-			// Two fixture .go files; budget of 1 file must fail before analysis.
 			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
 				SmokeFixturePath: baselineFixtureRoot(),
 				SmokeRepoOwner:   "smoke-owner",
@@ -509,8 +500,6 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 		})
 
 		It("fails the job when MaxTotalBytes is exceeded with an actionable too-large error", func() {
-			// Fixture supported files total more than a few bytes; a 1-byte budget
-			// must fail at list time before any analysis.
 			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
 				SmokeFixturePath: baselineFixtureRoot(),
 				SmokeRepoOwner:   "smoke-owner",
@@ -542,11 +531,9 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 	When("the fixture tree mixes supported and unsupported extensions", func() {
 		It("analyzes only semantics-supported paths (.go, .ts, .tsx) and skips the rest", func() {
 			root := GinkgoT().TempDir()
-			// Supported languages currently in the pkg/semantics registry.
 			Expect(os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(root, "util.ts"), []byte("export const n = 1;\n"), 0o644)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(root, "Widget.tsx"), []byte("export const W = () => null;\n"), 0o644)).To(Succeed())
-			// Unsupported: must not appear as semantics_analyze targets.
 			Expect(os.WriteFile(filepath.Join(root, "notes.md"), []byte("# docs\n"), 0o644)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(root, "script.py"), []byte("print('no')\n"), 0o644)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(root, "data.json"), []byte(`{"a":1}`+"\n"), 0o644)).To(Succeed())
@@ -592,14 +579,12 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 
 	When("job params do not match the configured smoke fixture owner/name pair", func() {
 		It("does not walk the smoke fixture and fails closed without a TreeSource", func() {
-			// Fixture is configured, but params name a different repo — Story 3
-			// smoke path is operator-paired only; mismatch must not silently use it.
+			// TreeSource nil: mismatch must not silently walk the configured fixture.
 			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
 				SmokeFixturePath: baselineFixtureRoot(),
 				SmokeRepoOwner:   "smoke-owner",
 				SmokeRepoName:    "smoke-repo",
-				// TreeSource intentionally nil: production would use GitHub here.
-				Gateway: modelgateway.NewStubGateway(),
+				Gateway:          modelgateway.NewStubGateway(),
 			})
 
 			w := newCaptureWriter()
@@ -740,7 +725,6 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 	When("the handler uses GitHubBaselineTreeSource against fake GitHub Contents", func() {
 		It("completes a baseline via real ListFiles/ReadFile/ResolveCommitSHA, not a tree double", func() {
 			const objectSHA = "0123456789abcdef0123456789abcdef01234567"
-			// Include a hidden_input_mutation signal so agentloop drives both seed rubrics.
 			mutate := []byte(`package main
 
 type C struct{ N string }
@@ -867,8 +851,6 @@ func Mut(c *C, n string) { c.N = n }
 
 	When("rubric judgment fails schema validation after bounded retries", func() {
 		It("still completes with deterministic findings and schema diagnostics, without source=agent findings", func() {
-			// Story 5 at the handler boundary: schema-invalid model output is a
-			// diagnostic, not a failed job, and must not suppress deterministic rows.
 			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
 				SmokeFixturePath: baselineFixtureRoot(),
 				SmokeRepoOwner:   "smoke-owner",
@@ -915,9 +897,8 @@ func Mut(c *C, n string) { c.N = n }
 	})
 
 	When("client-supplied clone URLs appear in stored job params", func() {
-		// HTTP DisallowUnknownFields rejection of git_url/clone_url is owned by
-		// server_acceptance_test (Task 2). This slice owns the worker-side permanent
-		// reject through the handler's production params parser (parseBaselineParams).
+		// API DisallowUnknownFields is covered in server_acceptance_test; this
+		// owns the handler params parser permanent reject.
 		It("rejects git_url via the handler production params parser", func() {
 			raw := []byte(`{"repo_owner":"acme","repo_name":"widgets","git_url":"https://evil.example/x.git"}`)
 			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
@@ -959,18 +940,15 @@ func Mut(c *C, n string) { c.N = n }
 
 	When("the supported-language tree has more than 50 files", func() {
 		It("completes deterministic findings without agentloop max_tool_calls budget exhaustion", func() {
-			// DefaultMaxToolCalls is 50; one semantics_analyze per file + codesignal +
-			// rubrics exceeds that for any real repo. Fixture must be >50 files.
+			// DefaultMaxToolCalls is 50; fixture must exceed that with supported files.
 			root := GinkgoT().TempDir()
 			const n = 55
 			for i := 0; i < n; i++ {
-				// Tiny non-empty Go files (local fixture rejects empty content).
 				name := filepath.Join(root, fmt.Sprintf("f%02d.go", i))
 				content := fmt.Sprintf("package p%d\n\nfunc F%d() {}\n", i, i)
 				Expect(os.WriteFile(name, []byte(content), 0o644)).To(Succeed())
 			}
-			// One file that yields a deterministic signal so we can assert findings,
-			// not merely "handler returned nil error".
+			// Signal-bearing file so we assert findings, not only nil error.
 			signalFile := filepath.Join(root, "mutate.go")
 			Expect(os.WriteFile(signalFile, []byte(`package p
 
@@ -1051,7 +1029,6 @@ func Mut(c *C, n string) { c.N = n }
 			Expect(completion.CommitSHA).NotTo(Equal("main"))
 			Expect(completion.CommitSHA).NotTo(Equal("HEAD"))
 			Expect(src.resolveCalls).To(BeNumerically(">=", 1))
-			// List/Read must use the resolved SHA as the ref once resolved.
 			Expect(src.lastListRef).To(Equal(resolved))
 			Expect(src.lastReadRef).To(Equal(resolved))
 		})
@@ -1070,7 +1047,6 @@ func Mut(c *C, n string) { c.N = n }
 			completion, err := h(context.Background(), baselineJob(coachapi.RepoBaselineScanParams{
 				RepoOwner: "acme",
 				RepoName:  "widgets",
-				// Ref intentionally empty → default branch tip, not literal "HEAD".
 			}), newCaptureWriter())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(completion.CommitSHA).To(Equal(resolved))
@@ -1087,8 +1063,7 @@ func Mut(c *C, n string) { c.N = n }
 				SmokeRepoName:    "smoke-repo",
 				Gateway:          modelgateway.NewStubGateway(),
 				ConfigureLoop: func(loop *agentloop.Loop) {
-					// Replace seed rubric tools with hard failures (plain error,
-					// not Story 5 gateway-unavailable diagnostic envelope).
+					// Plain hard failure (not gateway-unavailable degrade envelope).
 					hard := func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 						return nil, errors.New("injected hard judgment failure")
 					}
@@ -1239,6 +1214,27 @@ func Mut(c *C, n string) { c.N = n }
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, githubingest.ErrUnsupportedContent)).To(BeTrue(),
 				"ReadFile must reject symlinks without following them; got %v", err)
+		})
+	})
+
+	When("the local smoke fixture has supported sources under a top-level dot directory", func() {
+		It("lists them like GitHub Contents (does not drop paths starting with '.')", func() {
+			root := GinkgoT().TempDir()
+			dotDir := filepath.Join(root, ".github", "workflows")
+			Expect(os.MkdirAll(dotDir, 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(dotDir, "ci.ts"), []byte("export const x = 1\n"), 0o644)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(root, ".hidden.go"), []byte("package hidden\n"), 0o644)).To(Succeed())
+
+			src := &coachapi.LocalFixtureTreeSource{Root: root}
+			entries, err := src.ListFiles(context.Background(), "o", "r", "", coachapi.BaselineListOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			paths := make([]string, 0, len(entries))
+			for _, e := range entries {
+				paths = append(paths, e.Path)
+			}
+			Expect(paths).To(ContainElements("main.go", ".github/workflows/ci.ts", ".hidden.go"),
+				"ListFiles must include supported sources under top-level dot paths for GitHub parity; got %v", paths)
 		})
 	})
 })

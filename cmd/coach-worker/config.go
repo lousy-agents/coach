@@ -8,19 +8,17 @@ import (
 )
 
 const (
-	defaultRedisStream        = "coach-jobs"
-	defaultRedisConsumerGroup = "coach-workers"
-	defaultRedisClaimAfter    = 5 * time.Minute
-	defaultHeartbeatInterval  = 15 * time.Second
-	defaultStaleAfter         = 60 * time.Second
-	defaultReconcileInterval  = 30 * time.Second
-	defaultQueuedAgeThreshold = 30 * time.Second
-	defaultIdlePollInterval   = time.Second
-	defaultMaxAttempts        = 5
-	// defaultBaselineMaxFiles is a conservative whole-repo file-count budget.
-	defaultBaselineMaxFiles = 5000
-	// defaultBaselineMaxTotalBytes is 50 MiB of supported-language source.
-	defaultBaselineMaxTotalBytes int64 = 50 << 20
+	defaultRedisStream                 = "coach-jobs"
+	defaultRedisConsumerGroup          = "coach-workers"
+	defaultRedisClaimAfter             = 5 * time.Minute
+	defaultHeartbeatInterval           = 15 * time.Second
+	defaultStaleAfter                  = 60 * time.Second
+	defaultReconcileInterval           = 30 * time.Second
+	defaultQueuedAgeThreshold          = 30 * time.Second
+	defaultIdlePollInterval            = time.Second
+	defaultMaxAttempts                 = 5
+	defaultBaselineMaxFiles            = 5000
+	defaultBaselineMaxTotalBytes int64 = 50 << 20 // 50 MiB supported-language source
 )
 
 // Config holds cmd/coach-worker environment-driven settings.
@@ -46,9 +44,8 @@ type Config struct {
 	// (local/dev only — production must set COACH_PG_DSN).
 	PostgresDSN string
 
-	// Smoke fixture: operator-configured local tree for credential-free baseline.
-	// When SmokeFixturePath is set and a job's repo_owner/repo_name match
-	// SmokeRepoOwner/SmokeRepoName, the worker walks the fixture instead of GitHub.
+	// Smoke fixture pair: when path is set and job owner/name match, walk the
+	// local tree instead of GitHub (credential-free baseline).
 	SmokeFixturePath string
 	SmokeRepoOwner   string
 	SmokeRepoName    string
@@ -56,10 +53,8 @@ type Config struct {
 	BaselineMaxFiles      int
 	BaselineMaxTotalBytes int64
 
-	// Optional GitHub App credentials for non-smoke baseline tree fetch.
-	// Production path uses AppID + PrivateKey via CredentialResolver and
-	// resolves installation per repo (ADR-002/003). InstallationID is an
-	// optional thinproof/backward-compat override only — not required.
+	// GitHub App credentials for non-smoke tree fetch via CredentialResolver.
+	// InstallationID is optional thinproof override; zero resolves per repo.
 	GitHubAppID          int64
 	GitHubInstallationID int64
 	GitHubPrivateKey     []byte

@@ -12,7 +12,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// supportedBaselinePath reports whether path has a semantics-supported extension.
 func supportedBaselinePath(path string) bool {
 	_, ok := semantics.LanguageForExtension(filepath.Ext(path))
 	return ok
@@ -23,7 +22,6 @@ type GitHubBaselineTreeSource struct {
 	Reader *githubingest.GitHubFileReader
 }
 
-// ResolveCommitSHA implements BaselineTreeSource.
 func (s *GitHubBaselineTreeSource) ResolveCommitSHA(ctx context.Context, owner, repo, ref string) (string, error) {
 	if s == nil || s.Reader == nil {
 		return "", fmt.Errorf("coachapi: GitHub tree source is not configured")
@@ -31,7 +29,6 @@ func (s *GitHubBaselineTreeSource) ResolveCommitSHA(ctx context.Context, owner, 
 	return s.Reader.ResolveCommitSHA(ctx, owner, repo, ref)
 }
 
-// ListFiles implements BaselineTreeSource.
 func (s *GitHubBaselineTreeSource) ListFiles(ctx context.Context, owner, repo, ref string, opts BaselineListOptions) ([]BaselineFileEntry, error) {
 	if s == nil || s.Reader == nil {
 		return nil, fmt.Errorf("coachapi: GitHub tree source is not configured")
@@ -55,7 +52,6 @@ func (s *GitHubBaselineTreeSource) ListFiles(ctx context.Context, owner, repo, r
 	return out, nil
 }
 
-// ReadFile implements BaselineTreeSource.
 func (s *GitHubBaselineTreeSource) ReadFile(ctx context.Context, owner, repo, ref, path string) ([]byte, string, error) {
 	if s == nil || s.Reader == nil {
 		return nil, "", fmt.Errorf("coachapi: GitHub tree source is not configured")
@@ -73,13 +69,13 @@ func (s *GitHubBaselineTreeSource) ReadFile(ctx context.Context, owner, repo, re
 }
 
 // ResolvingGitHubBaselineTreeSource builds a Contents-API reader per owner/repo
-// via CredentialResolver (ADR-002): ResolveInstallationID → InstallationToken →
-// NewGitHubFileReaderFromToken. Optional InstallationID skips resolution
+// via CredentialResolver (ResolveInstallationID → InstallationToken →
+// NewGitHubFileReaderFromToken). InstallationID, when non-zero, skips resolution
 // (thinproof/backward-compat override only).
 type ResolvingGitHubBaselineTreeSource struct {
 	Credentials    *githubingest.CredentialResolver
 	BaseURL        string
-	InstallationID int64 // optional override; zero means resolve per repo
+	InstallationID int64 // optional; zero means resolve per repo
 }
 
 func (s *ResolvingGitHubBaselineTreeSource) readerFor(ctx context.Context, owner, repo string) (*githubingest.GitHubFileReader, error) {
@@ -101,7 +97,6 @@ func (s *ResolvingGitHubBaselineTreeSource) readerFor(ctx context.Context, owner
 	return githubingest.NewGitHubFileReaderFromToken(token, s.BaseURL)
 }
 
-// ResolveCommitSHA implements BaselineTreeSource.
 func (s *ResolvingGitHubBaselineTreeSource) ResolveCommitSHA(ctx context.Context, owner, repo, ref string) (string, error) {
 	reader, err := s.readerFor(ctx, owner, repo)
 	if err != nil {
@@ -110,7 +105,6 @@ func (s *ResolvingGitHubBaselineTreeSource) ResolveCommitSHA(ctx context.Context
 	return (&GitHubBaselineTreeSource{Reader: reader}).ResolveCommitSHA(ctx, owner, repo, ref)
 }
 
-// ListFiles implements BaselineTreeSource.
 func (s *ResolvingGitHubBaselineTreeSource) ListFiles(ctx context.Context, owner, repo, ref string, opts BaselineListOptions) ([]BaselineFileEntry, error) {
 	reader, err := s.readerFor(ctx, owner, repo)
 	if err != nil {
@@ -119,7 +113,6 @@ func (s *ResolvingGitHubBaselineTreeSource) ListFiles(ctx context.Context, owner
 	return (&GitHubBaselineTreeSource{Reader: reader}).ListFiles(ctx, owner, repo, ref, opts)
 }
 
-// ReadFile implements BaselineTreeSource.
 func (s *ResolvingGitHubBaselineTreeSource) ReadFile(ctx context.Context, owner, repo, ref, path string) ([]byte, string, error) {
 	reader, err := s.readerFor(ctx, owner, repo)
 	if err != nil {
@@ -130,11 +123,12 @@ func (s *ResolvingGitHubBaselineTreeSource) ReadFile(ctx context.Context, owner,
 
 // LocalFixtureTreeSource walks an operator-configured directory tree.
 // owner/repo/ref are ignored; the fixture root is the sole content source.
+// Supported-language files under top-level dot paths (e.g. .github/) are kept
+// for parity with GitHub Contents.
 type LocalFixtureTreeSource struct {
 	Root string
 }
 
-// ResolveCommitSHA implements BaselineTreeSource.
 func (s *LocalFixtureTreeSource) ResolveCommitSHA(_ context.Context, _, _, _ string) (string, error) {
 	if s == nil || s.Root == "" {
 		return "", fmt.Errorf("coachapi: local fixture path is not configured")
@@ -142,7 +136,6 @@ func (s *LocalFixtureTreeSource) ResolveCommitSHA(_ context.Context, _, _, _ str
 	return localFixtureCommitSHA, nil
 }
 
-// ListFiles implements BaselineTreeSource.
 func (s *LocalFixtureTreeSource) ListFiles(_ context.Context, _, _, _ string, opts BaselineListOptions) ([]BaselineFileEntry, error) {
 	if s == nil || s.Root == "" {
 		return nil, fmt.Errorf("coachapi: local fixture path is not configured")
@@ -167,8 +160,7 @@ func (s *LocalFixtureTreeSource) ListFiles(_ context.Context, _, _, _ string, op
 		if walkErr != nil {
 			return walkErr
 		}
-		// Skip symlinks entirely (do not follow). Matches githubingest Contents
-		// behavior and prevents List→Read escaping the fixture root via a link.
+		// Do not follow symlinks (githubingest Contents parity; blocks root escape).
 		if d.Type()&fs.ModeSymlink != 0 {
 			return nil
 		}
@@ -179,11 +171,7 @@ func (s *LocalFixtureTreeSource) ListFiles(_ context.Context, _, _, _ string, op
 		if err != nil {
 			return err
 		}
-		// Normalize to slash paths like GitHub Contents API.
 		rel = filepath.ToSlash(rel)
-		if strings.HasPrefix(rel, ".") {
-			return nil
-		}
 		if !supportedBaselinePath(rel) {
 			return nil
 		}
@@ -215,7 +203,6 @@ func (s *LocalFixtureTreeSource) ListFiles(_ context.Context, _, _, _ string, op
 	return out, nil
 }
 
-// ReadFile implements BaselineTreeSource.
 func (s *LocalFixtureTreeSource) ReadFile(_ context.Context, _, _, _, path string) ([]byte, string, error) {
 	if s == nil || s.Root == "" {
 		return nil, "", fmt.Errorf("coachapi: local fixture path is not configured")
@@ -224,14 +211,13 @@ func (s *LocalFixtureTreeSource) ReadFile(_ context.Context, _, _, _, path strin
 	if err != nil {
 		return nil, "", fmt.Errorf("coachapi: resolving smoke fixture path: %w", err)
 	}
-	// Reject path traversal: join then ensure result stays under root.
-	// Do not filepath.Join an absolute second element — on Unix that discards root.
+	// filepath.Join drops root if path is absolute; Clean+Rel enforce containment.
 	full := filepath.Clean(filepath.Join(root, filepath.FromSlash(path)))
 	rel, err := filepath.Rel(root, full)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return nil, "", fmt.Errorf("coachapi: path %q escapes smoke fixture root: %w", path, githubingest.ErrNotFound)
 	}
-	// Lstat so we never follow a symlink that sits under root but points out.
+	// Lstat: never follow a symlink under root that points outside.
 	fi, err := os.Lstat(full)
 	if err != nil {
 		if os.IsNotExist(err) {

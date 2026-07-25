@@ -67,9 +67,7 @@ func judgeHiddenMutationFindings(ctx context.Context, loop *agentloop.Loop, byPa
 		if err != nil {
 			return nil, nil, fmt.Errorf("coachapi: rubric %s: %w", rubrics.IDHiddenMutationContextualization, err)
 		}
-		// Discriminate agent payload_hash by the deterministic signal's hash so
-		// identical stub/live judgments across N hidden-mutation signals do not
-		// collide on UNIQUE (job_id, attempt, source, rubric_id, payload_hash).
+		// Mix deterministic PayloadHash so identical judgments stay UNIQUE.
 		af, d, err := jobOutcomeFromRubricTool(raw, f.PayloadHash)
 		if err != nil {
 			return nil, nil, err

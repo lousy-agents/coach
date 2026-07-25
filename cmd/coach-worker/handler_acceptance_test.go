@@ -46,8 +46,6 @@ var _ = Describe("coach-worker baseline handler wiring", func() {
 			fx.Repos.Commits["acme/widgets/main"] = fakegithub.CommitEntry{
 				SHA: objectSHA, Scenario: fakegithub.ScenarioOK,
 			}
-			// Minimal tree for a successful baseline (one tiny go file).
-			// Root dir listing + file content + parent dir for symlink check (root itself).
 			body := []byte("package main\n\nfunc main() {}\n")
 			fx.Contents.Dirs["acme/widgets/"+objectSHA] = []fakegithub.DirEntry{
 				{Name: "main.go", Type: "file", SHA: "blob1", Size: len(body)},
@@ -58,11 +56,11 @@ var _ = Describe("coach-worker baseline handler wiring", func() {
 			server := fakegithub.NewServer(&fx)
 			DeferCleanup(server.Close)
 
+			// InstallationID zero: must resolve per repo via CredentialResolver.
 			cfg := Config{
 				GitHubAppID:      12345,
 				GitHubPrivateKey: workerRSAKey(),
 				GitHubBaseURL:    server.URL(),
-				// InstallationID intentionally zero — must resolve per repo.
 			}
 			h, err := buildJobHandler(cfg)
 			Expect(err).NotTo(HaveOccurred())
@@ -82,7 +80,6 @@ var _ = Describe("coach-worker baseline handler wiring", func() {
 			lease, err := store.ClaimJob(context.Background(), job.ID, "w1", storeNow(), storeStale())
 			Expect(err).NotTo(HaveOccurred())
 
-			// Minimal JobWriter adapter over MemoryStore fencing.
 			w := &storeJobWriter{store: store, lease: lease}
 			completion, err := h(context.Background(), job, w)
 			Expect(err).NotTo(HaveOccurred())
@@ -153,7 +150,7 @@ var _ = Describe("coach-worker baseline handler wiring", func() {
 
 	When("MODEL_GATEWAY_BASE_URL is set but the OpenAI-compat client cannot be constructed", func() {
 		It("degrades to ErrUnavailable rather than the success stub's canned judgments", func() {
-			// ConfigFromEnv accepts any non-empty URL; NewOpenAICompatClient rejects this.
+			// Non-empty URL passes ConfigFromEnv; NewOpenAICompatClient rejects it.
 			Expect(os.Setenv("MODEL_GATEWAY_BASE_URL", "://not-a-valid-url")).To(Succeed())
 			DeferCleanup(func() { _ = os.Unsetenv("MODEL_GATEWAY_BASE_URL") })
 

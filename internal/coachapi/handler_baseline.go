@@ -20,10 +20,9 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// Baseline analyzer version string recorded on Report.Versions.
 const baselineAnalyzerVersion = "codesignal@1"
 
-// Local fixture commit_sha placeholder (no git object for smoke trees).
+// localFixtureCommitSHA is the stable Completion.CommitSHA for smoke trees (no git object).
 const localFixtureCommitSHA = "local-fixture"
 
 // BaselineFileEntry is one supported-language file discovered for a baseline scan.
@@ -40,19 +39,17 @@ type BaselineListOptions struct {
 }
 
 // BaselineTreeSource enumerates and reads repository files at a ref without git clone.
-// Implementations: GitHub Contents API (pkg/githubingest) and local smoke fixtures.
 type BaselineTreeSource interface {
-	// ResolveCommitSHA resolves ref to the commit object SHA that will be analyzed.
-	// Empty ref means the repository default branch tip (not the literal string "HEAD").
-	// Smoke fixtures return a stable placeholder (local-fixture).
+	// ResolveCommitSHA returns the commit object SHA that will be analyzed.
+	// Empty ref means the repository default branch tip (not the literal "HEAD").
+	// Smoke fixtures return localFixtureCommitSHA.
 	ResolveCommitSHA(ctx context.Context, owner, repo, ref string) (string, error)
 	ListFiles(ctx context.Context, owner, repo, ref string, opts BaselineListOptions) ([]BaselineFileEntry, error)
 	ReadFile(ctx context.Context, owner, repo, ref, path string) (content []byte, blobSHA string, err error)
 }
 
 // BaselineJobWriter is the fenced persistence surface the baseline handler needs.
-// worker.JobWriter satisfies this interface; defined here to avoid an import cycle
-// (coachapi → worker → coachapi).
+// Defined here so coachapi does not import worker (import cycle).
 type BaselineJobWriter interface {
 	Lease() ClaimLease
 	InsertFindings(ctx context.Context, findings []JobFinding) error
@@ -64,35 +61,29 @@ type BaselineJobHandler func(ctx context.Context, job Job, w BaselineJobWriter) 
 
 // RepoBaselineScanConfig configures NewRepoBaselineScanHandler.
 type RepoBaselineScanConfig struct {
-	// TreeSource is used when the job is not resolved to the smoke fixture pair.
+	// TreeSource is used when the job is not the operator smoke fixture pair.
 	TreeSource BaselineTreeSource
 
-	// SmokeFixturePath is an operator-configured local tree root. When set and
-	// job params match SmokeRepoOwner/SmokeRepoName, the handler walks this path
-	// instead of calling TreeSource (never from client-supplied clone URLs).
+	// SmokeFixturePath is an operator-configured local tree. Used only when job
+	// params match SmokeRepoOwner/SmokeRepoName (never from client clone URLs).
 	SmokeFixturePath string
 	SmokeRepoOwner   string
 	SmokeRepoName    string
 
 	// MaxFiles / MaxTotalBytes cap the supported-language tree. Zero means
-	// unlimited for that dimension. Oversized trees fail with an error wrapping
-	// githubingest.ErrTooLarge.
+	// unlimited. Oversized trees fail wrapping githubingest.ErrTooLarge.
 	MaxFiles      int
 	MaxTotalBytes int64
 
-	// Gateway is required for seed rubric tools (stub is fine for core profile).
 	Gateway modelgateway.Gateway
 
-	// ObserveLoop, if set, is invoked with the agentloop used for the job after
-	// tools have been driven (so Calls() is populated on success paths).
+	// ObserveLoop, if set, receives the job's agentloop after tools have run.
 	ObserveLoop func(*agentloop.Loop)
 
-	// ConfigureLoop, if set, runs after core + rubric tools are registered and
-	// before analysis. Tests may replace rubric handlers to inject hard
-	// judgment failures; production leaves it nil.
+	// ConfigureLoop, if set, runs after tool registration (tests inject failures).
 	ConfigureLoop func(*agentloop.Loop)
 
-	// Now, if set, stamps Completion.FinishedAt/GeneratedAt; otherwise time.Now UTC.
+	// Now, if set, stamps Completion timestamps; otherwise time.Now UTC.
 	Now func() time.Time
 }
 
@@ -128,7 +119,7 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 	if err != nil {
 		return nil, mapBaselineFetchError(err)
 	}
-	// List/Read at the resolved commit object so analysis and report identity match.
+	// List/Read at the resolved object SHA so analysis and report identity match.
 	ref := commitSHA
 
 	listOpts := BaselineListOptions{
@@ -148,9 +139,7 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 		return nil, err
 	}
 
-	// Per-file semantics_analyze + codesignal + worst-case per-file hidden_mutation
-	// + cohesion and slack. Floor at DefaultMaxToolCalls so small trees keep the
-	// global default; do not lower agentloop.DefaultMaxToolCalls for other loops.
+	// Scale MaxToolCalls with tree size; never below DefaultMaxToolCalls (other loops).
 	maxToolCalls := len(entries) + 1 /*codesignal*/ + len(entries) /*worst hidden_mutation*/ + 10 /*cohesion+slack*/
 	if maxToolCalls < agentloop.DefaultMaxToolCalls {
 		maxToolCalls = agentloop.DefaultMaxToolCalls
@@ -181,8 +170,7 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 		return nil, err
 	}
 
-	// Persist deterministic findings before judgment so a hard judgment error
-	// cannot drop Story 5 deterministic evidence (F4).
+	// Write deterministic findings before judgment so hard judgment errors keep them.
 	detFindings := findingsFromCodeSignalReport(report)
 	if err := insertBaselineFindings(ctx, w, detFindings); err != nil {
 		return nil, err
@@ -218,7 +206,7 @@ func insertBaselineDiagnostics(ctx context.Context, w BaselineJobWriter, diagnos
 }
 
 // completeAfterJudgmentError keeps deterministic findings already written and
-// still completes the job unless the parent context was canceled.
+// completes the job unless the parent context was canceled.
 func completeAfterJudgmentError(ctx context.Context, cfg RepoBaselineScanConfig, w BaselineJobWriter, commitSHA string, report *codesignal.Report, err error) (*Completion, error) {
 	if errors.Is(err, context.Canceled) {
 		return nil, err
@@ -314,7 +302,7 @@ func loadBaselineFiles(ctx context.Context, source BaselineTreeSource, params Re
 }
 
 func analyzeBaselineViaLoop(ctx context.Context, loop *agentloop.Loop, files []loadedBaselineFile, repo, revision string) ([]loadedBaselineFile, *codesignal.Report, error) {
-	// Build a new slice rather than mutating the caller's files (hidden_input_mutation).
+	// Copy: do not mutate the caller's slice elements in place.
 	loaded := make([]loadedBaselineFile, 0, len(files))
 	fileChanges := make([]codesignal.FileChange, 0, len(files))
 	for _, f := range files {
@@ -387,14 +375,12 @@ func codesignalReportViaLoop(ctx context.Context, loop *agentloop.Loop, fileChan
 	return &report, nil
 }
 
-// mapBaselineFetchError wraps fetch failures so callers keep errors.Is on
-// githubingest sentinels (not found, auth, too large, …) while adding a
-// stable coachapi prefix for FailJob messages.
+// mapBaselineFetchError keeps errors.Is on githubingest sentinels and adds a
+// stable coachapi: prefix for FailJob messages when missing.
 func mapBaselineFetchError(err error) error {
 	if err == nil {
 		return nil
 	}
-	// Already wrapped by local fixture / GitHub adapter with a sentinel.
 	if errors.Is(err, githubingest.ErrNotFound) ||
 		errors.Is(err, githubingest.ErrAuth) ||
 		errors.Is(err, githubingest.ErrTooLarge) ||
