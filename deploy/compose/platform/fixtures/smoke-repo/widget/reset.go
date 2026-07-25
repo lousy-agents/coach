@@ -1,6 +1,6 @@
 package widget
 
-// ResetName clears cfg.Name through the pointer parameter.
+// Pointer receiver mutation — fixture input for deterministic mutates_input.
 func ResetName(cfg *Config) {
 	cfg.Name = ""
 }

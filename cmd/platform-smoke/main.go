@@ -111,11 +111,8 @@ func submitBaseline(ctx context.Context, client *http.Client, baseURL, token, ow
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
-	// POST /v1/jobs is contractually 202 Accepted after durable persist+enqueue
-	// (internal/coachapi.Server.handleCreateJob). Do not accept 200 — that would
-	// let a submit-status regression pass platform-smoke.
-	if resp.StatusCode != http.StatusAccepted {
-		return "", fmt.Errorf("submit job status %d (want 202): %s", resp.StatusCode, truncate(raw))
+	if err := checkSubmitStatus(resp.StatusCode, raw); err != nil {
+		return "", err
 	}
 	var out struct {
 		ID string `json:"id"`
@@ -194,56 +191,10 @@ func assertReport(ctx context.Context, client *http.Client, baseURL, token, jobI
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("get report status %d: %s", resp.StatusCode, truncate(raw))
 	}
-
-	var report struct {
-		ReportVersion string `json:"report_version"`
-		JobID         string `json:"job_id"`
-		Kind          string `json:"kind"`
-		Findings      []struct {
-			Source string `json:"source"`
-		} `json:"findings"`
-		Error *string `json:"error"`
+	if err := validateReportBody(raw, jobID); err != nil {
+		return err
 	}
-	if err := json.Unmarshal(raw, &report); err != nil {
-		return fmt.Errorf("report decode: %w body=%s", err, truncate(raw))
-	}
-	if report.ReportVersion != "1" {
-		return fmt.Errorf("report_version=%q want %q", report.ReportVersion, "1")
-	}
-	if report.JobID != jobID {
-		return fmt.Errorf("report job_id=%q want %q", report.JobID, jobID)
-	}
-	if report.Kind != "repo_baseline_scan" {
-		return fmt.Errorf("report kind=%q want repo_baseline_scan", report.Kind)
-	}
-	if report.Error != nil {
-		return fmt.Errorf("report error set: %s", *report.Error)
-	}
-
-	var hasDeterministic, hasAgent bool
-	for _, f := range report.Findings {
-		switch f.Source {
-		case "deterministic":
-			hasDeterministic = true
-		case "agent":
-			hasAgent = true
-		default:
-			return fmt.Errorf("finding with unexpected source=%q", f.Source)
-		}
-	}
-	if !hasDeterministic {
-		// Fixture is chosen to produce deterministic mutates_input signals;
-		// require at least one deterministic finding so smoke is not a no-op.
-		return fmt.Errorf("report missing source=deterministic findings; body=%s", truncate(raw))
-	}
-	// Core/stub smoke must prove agent tool loop + model gateway plumbing
-	// (Story 4 full path). The success stub always returns schema-valid
-	// judgments; missing source=agent means the judgment path never ran.
-	if !hasAgent {
-		return fmt.Errorf("report missing source=agent findings (stub/gateway path not proven); body=%s", truncate(raw))
-	}
-	fmt.Printf("platform-smoke: report ok findings=%d deterministic=%t agent=%t\n",
-		len(report.Findings), hasDeterministic, hasAgent)
+	fmt.Printf("platform-smoke: report ok job_id=%s\n", jobID)
 	return nil
 }
 
