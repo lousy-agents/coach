@@ -8,10 +8,22 @@ This is **not** Feature Zero's offline thinproof suite (`deploy/compose/thinproo
 
 | Profile | Services | Model path | GitHub credentials |
 | --- | --- | --- | --- |
-| **`core`** | `coach-api`, `coach-worker`, `postgres`, `redis` | In-process deterministic **stub** (`MODEL_GATEWAY_BASE_URL` unset) | **None** (credential-free) |
-| **`llm`** | Same as `core` | OpenAI-compat gateway → host-native **llama.cpp** via `host.docker.internal` | Still none for smoke; live App/OAuth only if you add them |
+| **`core`** | `coach-api`, `coach-worker`, `postgres`, `redis`, `model-stub`, `ai-gateway` | Worker → **Envoy AI Gateway** (`ai-gateway:1975`) → **model-stub** (canned OpenAI chat completions, no weights) | **None** (credential-free) |
+| **`llm`** | Same as `core` | Worker → **ai-gateway** → host-native **llama.cpp** (`AIGW_OPENAI_BASE_URL=http://host.docker.internal:…`) | Still none for smoke; live App/OAuth only if you add them |
 
 Compose file: repo-root [`compose.yaml`](../../compose.yaml).
+
+### Inference data plane
+
+```text
+coach-worker (internal/modelgateway OpenAI client)
+  → ai-gateway  (Envoy AI Gateway CLI / aigw, :1975)
+  → model-stub  (core)  or  llama.cpp (llm)
+```
+
+- **Product policy** (schema validation, typed unavailable errors, degrade-to-deterministic) stays in Go `internal/modelgateway`.
+- **ai-gateway** is a transparent OpenAI-compatible data-plane proxy (token/access-log shape for production parity). It must **not** rewrite upstream 5xx into 202 (see `docs/architecture/system-overview.md` pilot wake path).
+- Reference Gateway API config: [`deploy/compose/platform/aigw/config.yaml`](../../deploy/compose/platform/aigw/config.yaml). Compose starts aigw with `OPENAI_BASE_URL` / `OPENAI_API_KEY` (env-synthesized route, same as upstream aigw examples).
 
 ## mise tasks
 
@@ -78,9 +90,30 @@ fixture owner/repo pair can be submitted.
 | `COACH_SMOKE_FIXTURE_PATH` | `/fixtures/smoke-repo` | Mounted fixture tree |
 | `COACH_SMOKE_REPO_OWNER` | `coach-smoke` | Owner pair → fixture path |
 | `COACH_SMOKE_REPO_NAME` | `fixture-repo` | Repo pair → fixture path |
-| `MODEL_GATEWAY_BASE_URL` | **unset** (core) | Unset → stub; set → OpenAI-compat |
+| `MODEL_GATEWAY_BASE_URL` | `http://ai-gateway:1975/v1` | OpenAI-compat client → Envoy AI Gateway |
+| `MODEL_GATEWAY_MODEL` | `local` | Logical model id |
+| `MODEL_GATEWAY_TIMEOUT` | `120s` | Outbound judgment timeout |
+| `MODEL_GATEWAY_API_KEY` | `unused` | Bearer passed through aigw (stub ignores) |
 
 GitHub App vars on the worker are optional and **unset** in core/smoke.
+
+### Envoy AI Gateway (`ai-gateway`)
+
+| Variable | Value in core | Purpose |
+| --- | --- | --- |
+| `OPENAI_BASE_URL` | `http://model-stub:8090/v1` (via `AIGW_OPENAI_BASE_URL`) | Upstream OpenAI-compatible backend |
+| `OPENAI_API_KEY` | `unused` | Required by aigw env-synthesized config |
+| `AIGW_RUN_ID` | `0` | Stable run id for containers |
+| Admin | `:1064` (`/health`, `/metrics`) | Healthcheck target |
+
+Host ports: `1975` (proxy), `1064` (admin).
+
+### Model stub (`model-stub`)
+
+| Variable | Value in core | Purpose |
+| --- | --- | --- |
+| `COACH_MODEL_STUB_ADDR` | `:8090` | Listen address |
+| Endpoints | `GET /healthz`, `POST /v1/chat/completions` | Canned schema-valid rubric JSON in assistant content |
 
 ### Smoke client (`cmd/platform-smoke`)
 
@@ -94,8 +127,8 @@ GitHub App vars on the worker are optional and **unset** in core/smoke.
 Flow: mint token → `POST /v1/jobs` `repo_baseline_scan` for the fixture
 owner/name (**no client-supplied clone URL**) → poll → `GET …/report` → require
 provenance-tagged findings with **both** `source=deterministic` (fixture
-signals) and `source=agent` (stub/gateway judgment path). Core smoke fails if
-either is missing.
+signals) and `source=agent` (worker → aigw → model-stub judgment path). Core
+smoke fails if either is missing.
 
 Fixture tree: `deploy/compose/platform/fixtures/smoke-repo/` (tiny Go sources that
 trigger deterministic analysis).
@@ -113,15 +146,17 @@ mise run platform-up
 
 ## `llm` profile (operator-only, not CI)
 
-CI runs **only** the `core` profile (stub). Real-model validation is operator-run:
+CI runs **only** the `core` profile (aigw → model-stub). Real-model validation
+is operator-run:
 
 1. Start a host-native llama.cpp server with an OpenAI-compatible
    `/v1/chat/completions` endpoint (prefer Metal on macOS), e.g. listening on
    `127.0.0.1:8081`.
-2. Export gateway env and bring up the `llm` profile:
+2. Point **aigw's upstream** at the host server and bring up the `llm` profile
+   (worker still calls aigw, not the host directly):
 
    ```sh
-   export MODEL_GATEWAY_BASE_URL=http://host.docker.internal:8081/v1
+   export AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1
    export MODEL_GATEWAY_MODEL=local   # or your served model id
    docker compose --profile llm up -d --build
    # wait healthy, then:
@@ -129,13 +164,12 @@ CI runs **only** the `core` profile (stub). Real-model validation is operator-ru
    ```
 
 3. Expect the report to include ≥1 schema-valid `source=agent` judgment produced
-   by llama.cpp (not only the stub).
+   by llama.cpp (not only model-stub).
 
 **Linux fallback:** if host networking to llama.cpp is awkward, run a
-containerized llama.cpp on the compose network and point
-`MODEL_GATEWAY_BASE_URL` at that service instead of `host.docker.internal`.
-GPU/weights are **not** required in CI and are not pulled by this repo's
-compose file.
+containerized llama.cpp on the compose network and set
+`AIGW_OPENAI_BASE_URL=http://<llama-service>:8080/v1`. GPU/weights are **not**
+required in CI and are not pulled by this repo's compose file.
 
 `mise run platform-llm-validate` prints these steps and exits 0 when used as a
 docs/reminder task (it does not download weights).
@@ -146,7 +180,7 @@ docs/reminder task (it does not download weights).
 | --- | --- | --- |
 | Path | `compose.yaml` | `deploy/compose/thinproof/` |
 | mise | `platform-up` / `platform-smoke` | `thinproof-build` / `test-acceptance-thin-proof` |
-| Network | Normal (pull postgres/redis) | Internal no-egress, `pull_policy: never` |
-| Surface | Full `coach-api` + `coach-worker` HTTP/job path | `pkg/githubingest` → CodeSignal runner |
+| Network | Normal (pull postgres/redis/aigw) | Internal no-egress, `pull_policy: never` |
+| Surface | Full `coach-api` + `coach-worker` + aigw data plane | `pkg/githubingest` → CodeSignal runner |
 | Auth | Test mint + authz bypass | N/A (no coach-api) |
 | CI job | `platform-smoke` | (via thinproof acceptance when run) |

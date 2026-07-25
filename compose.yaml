@@ -2,11 +2,21 @@
 #
 # Profiles:
 #   core (default for CI/smoke) — coach-api + coach-worker + postgres + redis
-#     with the in-process model stub (MODEL_GATEWAY_BASE_URL unset). Zero GitHub
-#     credentials. Distinct from deploy/compose/thinproof (Feature Zero).
-#   llm — same services as core; set MODEL_GATEWAY_BASE_URL to a host-native
-#     llama.cpp OpenAI-compatible server via host.docker.internal (operator-only;
-#     not required in CI). See docs/development/local-platform.md.
+#     + model-stub + Envoy AI Gateway (aigw). Worker reaches models only through
+#     aigw → model-stub (OpenAI-compatible). Zero GitHub credentials.
+#     Distinct from deploy/compose/thinproof (Feature Zero).
+#   llm — same services as core; point aigw's OPENAI_BASE_URL at host-native
+#     llama.cpp via host.docker.internal (operator-only; not required in CI).
+#     See docs/development/local-platform.md.
+#
+# Inference path (production-shaped local data plane):
+#   coach-worker (internal/modelgateway OpenAI client)
+#     → ai-gateway (Envoy AI Gateway CLI / aigw on :1975)
+#     → model-stub (core) or llama.cpp (llm)
+#
+# Product policy, schema validation, and typed unavailable/WARMING semantics
+# stay in Go (internal/modelgateway). aigw is a transparent data-plane proxy —
+# do not translate upstream 5xx into 202 (system-overview pilot wake path).
 #
 # Lifecycle: mise run platform-up | platform-down | platform-smoke
 
@@ -45,6 +55,60 @@ services:
       start_period: 2s
     ports:
       - "6379:6379"
+
+  # Deterministic OpenAI-compatible backend for core (no weights).
+  model-stub:
+    profiles: ["core", "llm"]
+    build:
+      context: .
+      dockerfile: deploy/compose/platform/Dockerfile.model-stub
+    image: coach/platform-model-stub:local
+    environment:
+      COACH_MODEL_STUB_ADDR: ":8090"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:8090/healthz || exit 1",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+
+  # Envoy AI Gateway CLI (standalone). Worker talks only to this service for
+  # inference; upstream is OPENAI_BASE_URL (model-stub by default).
+  ai-gateway:
+    profiles: ["core", "llm"]
+    image: envoyproxy/ai-gateway-cli:v1.0.0@sha256:c4e56717f70c93e0c14119e660511ebb4f8389364a1f8842522a5d3cbc1c5bb0
+    depends_on:
+      model-stub:
+        condition: service_healthy
+    environment:
+      # core default: in-compose model-stub. llm: override to host llama.cpp, e.g.
+      # AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1
+      OPENAI_BASE_URL: ${AIGW_OPENAI_BASE_URL:-http://model-stub:8090/v1}
+      OPENAI_API_KEY: ${AIGW_OPENAI_API_KEY:-unused}
+      AIGW_RUN_ID: "0"
+      # Do not set AIGW_DEBUG to empty — aigw rejects "". Use true/false only.
+      AIGW_DEBUG: ${AIGW_DEBUG:-false}
+    volumes:
+      # Reference Gateway API / AIGatewayRoute config (documented shape).
+      # aigw synthesizes the live route from OPENAI_* when started with `run`
+      # and no path; mount is available for `aigw run /config/config.yaml`.
+      - ./deploy/compose/platform/aigw:/config:ro
+    command: ["run", "--run-id", "0", "--admin-port", "1064"]
+    ports:
+      - "1975:1975"
+      - "1064:1064"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "/app", "healthcheck"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
 
   coach-api:
     profiles: ["core", "llm"]
@@ -97,6 +161,8 @@ services:
         condition: service_healthy
       coach-api:
         condition: service_healthy
+      ai-gateway:
+        condition: service_healthy
     environment:
       COACH_WORKER_ID: "platform-worker-1"
       COACH_REDIS_ADDR: "redis:6379"
@@ -106,12 +172,12 @@ services:
       COACH_SMOKE_FIXTURE_PATH: "/fixtures/smoke-repo"
       COACH_SMOKE_REPO_OWNER: "coach-smoke"
       COACH_SMOKE_REPO_NAME: "fixture-repo"
-      # core: leave MODEL_GATEWAY_BASE_URL unset → in-process deterministic stub.
-      # llm: export MODEL_GATEWAY_BASE_URL=http://host.docker.internal:8081/v1
-      # before platform-up --profile llm (see docs/development/local-platform.md).
-      MODEL_GATEWAY_BASE_URL: ${MODEL_GATEWAY_BASE_URL:-}
+      # Always via Envoy AI Gateway (production-shaped). Override only for
+      # deliberate direct-backend experiments.
+      MODEL_GATEWAY_BASE_URL: ${MODEL_GATEWAY_BASE_URL:-http://ai-gateway:1975/v1}
       MODEL_GATEWAY_MODEL: ${MODEL_GATEWAY_MODEL:-local}
       MODEL_GATEWAY_TIMEOUT: ${MODEL_GATEWAY_TIMEOUT:-120s}
+      MODEL_GATEWAY_API_KEY: ${MODEL_GATEWAY_API_KEY:-unused}
     volumes:
       - ./deploy/compose/platform/fixtures/smoke-repo:/fixtures/smoke-repo:ro
     extra_hosts:
