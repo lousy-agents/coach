@@ -34,6 +34,8 @@
     "selects": 0,
     "functions": 0,
     "methods": 0,
-    "max_nesting_depth": 0
+    "max_nesting_depth": 0,
+    "max_cognitive_complexity": 0,
+    "sum_cognitive_complexity": 0
   }
 }

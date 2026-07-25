@@ -36,7 +36,9 @@
       "selects": 0,
       "functions": 0,
       "methods": 2,
-      "max_nesting_depth": 2
+      "max_nesting_depth": 2,
+      "max_cognitive_complexity": 1,
+      "sum_cognitive_complexity": 1
     },
     "findings": [
       {
@@ -50,6 +52,34 @@
           "end_row": 8,
           "end_col": 32
         }
+      }
+    ],
+    "cognitive_complexity": [
+      {
+        "name": "constructor",
+        "kind": "method",
+        "location": {
+          "start_byte": 142,
+          "end_byte": 222,
+          "start_row": 6,
+          "start_col": 2,
+          "end_row": 9,
+          "end_col": 3
+        },
+        "score": 0
+      },
+      {
+        "name": "render",
+        "kind": "method",
+        "location": {
+          "start_byte": 226,
+          "end_byte": 356,
+          "start_row": 11,
+          "start_col": 2,
+          "end_row": 16,
+          "end_col": 3
+        },
+        "score": 1
       }
     ]
   }

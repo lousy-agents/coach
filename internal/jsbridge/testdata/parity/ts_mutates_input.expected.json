@@ -12,7 +12,9 @@
       "selects": 0,
       "functions": 5,
       "methods": 0,
-      "max_nesting_depth": 2
+      "max_nesting_depth": 2,
+      "max_cognitive_complexity": 1,
+      "sum_cognitive_complexity": 1
     },
     "findings": [
       {
@@ -126,6 +128,73 @@
         "evidence": "cfg.name",
         "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
         "suggested_skill": "refactor-hidden-mutation"
+      }
+    ],
+    "cognitive_complexity": [
+      {
+        "name": "updateName",
+        "kind": "function",
+        "location": {
+          "start_byte": 45,
+          "end_byte": 161,
+          "start_row": 4,
+          "start_col": 7,
+          "end_row": 9,
+          "end_col": 1
+        },
+        "score": 1
+      },
+      {
+        "name": "updateWrapped",
+        "kind": "function",
+        "location": {
+          "start_byte": 170,
+          "end_byte": 268,
+          "start_row": 11,
+          "start_col": 7,
+          "end_row": 14,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "updateCollection",
+        "kind": "function",
+        "location": {
+          "start_byte": 277,
+          "end_byte": 398,
+          "start_row": 16,
+          "start_col": 7,
+          "end_row": 20,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "ignoreShadowed",
+        "kind": "function",
+        "location": {
+          "start_byte": 407,
+          "end_byte": 527,
+          "start_row": 22,
+          "start_col": 7,
+          "end_row": 27,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "detectVarRebind",
+        "kind": "function",
+        "location": {
+          "start_byte": 536,
+          "end_byte": 648,
+          "start_row": 29,
+          "start_col": 7,
+          "end_row": 32,
+          "end_col": 1
+        },
+        "score": 0
       }
     ]
   }
