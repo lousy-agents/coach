@@ -1,0 +1,12 @@
+# coach-worker image for the local platform compose stack (issue #108 / Task 10).
+FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /out/coach-worker ./cmd/coach-worker
+
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+RUN apk add --no-cache ca-certificates
+COPY --from=build /out/coach-worker /usr/local/bin/coach-worker
+ENTRYPOINT ["/usr/local/bin/coach-worker"]

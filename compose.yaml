@@ -1,0 +1,121 @@
+# Local coach platform stack (Baseline Scan Story 4 / Task 10 / issue #108).
+#
+# Profiles:
+#   core (default for CI/smoke) — coach-api + coach-worker + postgres + redis
+#     with the in-process model stub (MODEL_GATEWAY_BASE_URL unset). Zero GitHub
+#     credentials. Distinct from deploy/compose/thinproof (Feature Zero).
+#   llm — same services as core; set MODEL_GATEWAY_BASE_URL to a host-native
+#     llama.cpp OpenAI-compatible server via host.docker.internal (operator-only;
+#     not required in CI). See docs/development/local-platform.md.
+#
+# Lifecycle: mise run platform-up | platform-down | platform-smoke
+
+name: coach-platform
+
+x-pg-dsn: &pg-dsn "postgres://coach:coach@postgres:5432/coach?sslmode=disable"
+
+services:
+  postgres:
+    profiles: ["core", "llm"]
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    environment:
+      POSTGRES_USER: coach
+      POSTGRES_PASSWORD: coach
+      POSTGRES_DB: coach
+    volumes:
+      - ./internal/coachapi/migrations:/docker-entrypoint-initdb.d:ro
+      - coach-platform-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coach -d coach"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    ports:
+      - "5432:5432"
+
+  redis:
+    profiles: ["core", "llm"]
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 2s
+    ports:
+      - "6379:6379"
+
+  coach-api:
+    profiles: ["core", "llm"]
+    build:
+      context: .
+      dockerfile: deploy/compose/platform/Dockerfile.api
+    image: coach/platform-api:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      COACH_HTTP_ADDR: ":8080"
+      COACH_JWT_SIGNING_KEY: "platform-smoke-signing-key-at-least-32b!"
+      COACH_JWT_ISSUER: "http://coach-api:8080"
+      COACH_AUTH_TEST_MINT: "1"
+      COACH_REDIS_ADDR: "redis:6379"
+      COACH_REDIS_STREAM: "coach-jobs"
+      COACH_REDIS_CONSUMER_GROUP: "coach-api"
+      COACH_PG_DSN: *pg-dsn
+      COACH_AUTHZ_BYPASS_OWNER: "coach-smoke"
+      COACH_AUTHZ_BYPASS_REPO: "fixture-repo"
+      # Intentionally omit: COACH_GITHUB_APP_*, COACH_GITHUB_OAUTH_*
+    ports:
+      - "8080:8080"
+    healthcheck:
+      # /v1/me without a token returns 401 once the process is listening.
+      # BusyBox wget exits non-zero on 4xx; treat any HTTP response as healthy.
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -S -O /dev/null http://127.0.0.1:8080/v1/me 2>&1 | grep -q 'HTTP/'",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  coach-worker:
+    profiles: ["core", "llm"]
+    build:
+      context: .
+      dockerfile: deploy/compose/platform/Dockerfile.worker
+    image: coach/platform-worker:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      coach-api:
+        condition: service_healthy
+    environment:
+      COACH_WORKER_ID: "platform-worker-1"
+      COACH_REDIS_ADDR: "redis:6379"
+      COACH_REDIS_STREAM: "coach-jobs"
+      COACH_REDIS_CONSUMER_GROUP: "coach-workers"
+      COACH_PG_DSN: *pg-dsn
+      COACH_SMOKE_FIXTURE_PATH: "/fixtures/smoke-repo"
+      COACH_SMOKE_REPO_OWNER: "coach-smoke"
+      COACH_SMOKE_REPO_NAME: "fixture-repo"
+      # core: leave MODEL_GATEWAY_BASE_URL unset → in-process deterministic stub.
+      # llm: export MODEL_GATEWAY_BASE_URL=http://host.docker.internal:8081/v1
+      # before platform-up --profile llm (see docs/development/local-platform.md).
+      MODEL_GATEWAY_BASE_URL: ${MODEL_GATEWAY_BASE_URL:-}
+      MODEL_GATEWAY_MODEL: ${MODEL_GATEWAY_MODEL:-local}
+      MODEL_GATEWAY_TIMEOUT: ${MODEL_GATEWAY_TIMEOUT:-120s}
+    volumes:
+      - ./deploy/compose/platform/fixtures/smoke-repo:/fixtures/smoke-repo:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  coach-platform-pg:

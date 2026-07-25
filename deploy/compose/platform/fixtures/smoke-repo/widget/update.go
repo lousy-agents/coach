@@ -1,0 +1,12 @@
+package widget
+
+// Config holds a name.
+type Config struct {
+	Name string
+}
+
+// UpdateName mutates cfg through its pointer parameter instead of
+// returning a new value.
+func UpdateName(cfg *Config, name string) {
+	cfg.Name = name
+}

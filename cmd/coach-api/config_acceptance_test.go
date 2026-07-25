@@ -170,6 +170,94 @@ var _ = Describe("loadInfraConfigFromEnv", func() {
 			[]string{"COACH_GITHUB_APP_PRIVATE_KEY", "COACH_GITHUB_APP_PRIVATE_KEY_PATH"},
 			"COACH_GITHUB_APP_PRIVATE_KEY"),
 	)
+
+	// Story 4 / Task 10 credential-free smoke: when the full authz bypass pair
+	// is configured, GitHub App credentials must be optional so compose core
+	// can start with zero GitHub secrets.
+	When("both COACH_AUTHZ_BYPASS_OWNER and COACH_AUTHZ_BYPASS_REPO are set", func() {
+		BeforeEach(func() {
+			setValidInfraConfigEnv()
+			setEnv("COACH_AUTHZ_BYPASS_OWNER", "coach-smoke")
+			setEnv("COACH_AUTHZ_BYPASS_REPO", "fixture-repo")
+			clearEnv("COACH_GITHUB_APP_ID", "COACH_GITHUB_APP_PRIVATE_KEY", "COACH_GITHUB_APP_PRIVATE_KEY_PATH")
+		})
+
+		It("loads InfraConfig with zero GitHub App credentials", func() {
+			cfg, err := loadInfraConfigFromEnv()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.GitHubAppID).To(BeZero())
+			Expect(cfg.GitHubAppPrivateKey).To(BeEmpty())
+			Expect(cfg.AuthzBypassOwner).To(Equal("coach-smoke"))
+			Expect(cfg.AuthzBypassRepo).To(Equal("fixture-repo"))
+			Expect(cfg.RedisAddr).To(Equal(configTestRedisAddr))
+		})
+	})
+
+	When("only COACH_AUTHZ_BYPASS_OWNER is set and App credentials are absent", func() {
+		BeforeEach(func() {
+			setValidInfraConfigEnv()
+			setEnv("COACH_AUTHZ_BYPASS_OWNER", "coach-smoke")
+			clearEnv("COACH_AUTHZ_BYPASS_REPO", "COACH_GITHUB_APP_ID",
+				"COACH_GITHUB_APP_PRIVATE_KEY", "COACH_GITHUB_APP_PRIVATE_KEY_PATH")
+		})
+
+		It("fails fast rather than starting half-configured without App credentials", func() {
+			_, err := loadInfraConfigFromEnv()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Or(
+				ContainSubstring("COACH_GITHUB_APP_ID"),
+				ContainSubstring("COACH_AUTHZ_BYPASS"),
+			))
+		})
+	})
+
+	When("neither App credentials nor the full bypass pair are set", func() {
+		BeforeEach(func() {
+			setValidInfraConfigEnv()
+			clearEnv("COACH_GITHUB_APP_ID", "COACH_GITHUB_APP_PRIVATE_KEY",
+				"COACH_GITHUB_APP_PRIVATE_KEY_PATH", "COACH_AUTHZ_BYPASS_OWNER", "COACH_AUTHZ_BYPASS_REPO")
+		})
+
+		It("fails fast with a clear error naming App credentials or the bypass pair", func() {
+			_, err := loadInfraConfigFromEnv()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Or(
+				ContainSubstring("COACH_GITHUB_APP_ID"),
+				ContainSubstring("COACH_AUTHZ_BYPASS"),
+			))
+		})
+	})
+})
+
+var _ = Describe("buildAuthorizer", func() {
+	// Credential-free smoke wiring must never construct a live GitHub
+	// CredentialResolver: only the configured bypass pair is authorized, and
+	// every other owner/repo fails closed.
+	When("InfraConfig has the full bypass pair and no GitHub App credentials", func() {
+		It("authorizes only the bypass pair and denies every other owner/repo", func() {
+			cfg := InfraConfig{
+				AuthzBypassOwner: "coach-smoke",
+				AuthzBypassRepo:  "fixture-repo",
+			}
+			authorizer, err := buildAuthorizer(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(authorizer).NotTo(BeNil())
+
+			Expect(authorizer.Authorize(context.Background(), "smoke-user", "coach-smoke", "fixture-repo")).
+				To(Succeed())
+			Expect(authorizer.Authorize(context.Background(), "smoke-user", "acme", "widgets")).
+				To(HaveOccurred())
+			Expect(authorizer.Authorize(context.Background(), "smoke-user", "coach-smoke", "other-repo")).
+				To(HaveOccurred())
+		})
+	})
+
+	When("InfraConfig has neither App credentials nor a full bypass pair", func() {
+		It("fails closed instead of constructing an open authorizer", func() {
+			_, err := buildAuthorizer(InfraConfig{})
+			Expect(err).To(HaveOccurred())
+		})
+	})
 })
 
 // recordingAuthorizer denies exactly one (owner, repo) pair, so a test can
