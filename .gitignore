@@ -32,6 +32,11 @@ go.work.sum
 # env file
 .env
 
+# Local pilot secrets and Compose overrides (Path C GitHub credentials)
+secrets/
+compose.override.yaml
+compose.override.yml
+
 # Editor/IDE
 # .idea/
 # .vscode/

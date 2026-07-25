@@ -6,7 +6,8 @@ This is **not** Feature Zero's offline thinproof suite (`deploy/compose/thinproo
 
 **Pilot-facing first run:** see [`docs/pilot-local-quickstart.md`](../pilot-local-quickstart.md)
 (credential-free smoke, optional host `qwen3.5:4b` / `qwen3.5:4b-mlx` via OpenAI-compatible
-upstream). This page is the env-var and operator reference.
+upstream, and Path C remote GitHub.com baseline scans). This page is the env-var and
+operator reference.
 
 ## Profiles
 
