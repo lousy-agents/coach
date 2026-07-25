@@ -4,10 +4,8 @@ Operator guide for the **Baseline Scan Story 4 / Task 10** Docker Compose stack.
 This is **not** Feature Zero's offline thinproof suite (`deploy/compose/thinproof`,
 `mise run test-acceptance-thin-proof`).
 
-**Pilot-facing first run:** see [`docs/pilot-local-quickstart.md`](../pilot-local-quickstart.md)
-(credential-free smoke, optional host `qwen3.5:4b` / `qwen3.5:4b-mlx` via OpenAI-compatible
-upstream, and Path C remote GitHub.com baseline scans). This page is the env-var and
-operator reference.
+**End-user quickstart:** [`docs/pilot-local-quickstart.md`](../pilot-local-quickstart.md).
+This page is the operator env-var reference.
 
 ## Profiles
 

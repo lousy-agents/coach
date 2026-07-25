@@ -1,351 +1,295 @@
-# Pilot Local Quickstart
+# Local Coach quickstart
 
-A local Compose stack is how we prove the Coach platform before we pay for cloud inference. Async `repo_baseline_scan` in; a report that keeps deterministic findings separate from agent judgments out. This guide is for pilot engineers who want that loop on a laptop.
+Run Coach on your laptop with Docker Compose. You submit a baseline scan, wait for the job to finish, and download a report. The report labels each finding as either **deterministic** (rule-based, same inputs → same result) or **agent** (model judgment).
 
-In about 15 minutes you can bring up API, worker, queue, and local inference, submit a scan, and pull a report. No GitHub App, OAuth, or cloud account is required for the first run. This is a self-serve lab for folks validating whether Coach feedback is worth repeating. It is not a hosted product, a team rollout, or a production security boundary.
+This guide covers three paths:
 
-Want deterministic signals only, with zero Docker? Use the [`coach codesignal` CLI](../README.md#coach-codesignal-cli-preview) instead. Operator and env-var detail lives in [`docs/development/local-platform.md`](./development/local-platform.md).
+| Path | What you do | What you need |
+| --- | --- | --- |
+| **A** | Smoke test with a built-in sample repo and a fake model | Docker, mise |
+| **B** | Same smoke test with a real local model (Qwen) | Path A plus Ollama or similar |
+| **C** | Scan a real GitHub.com repo without cloning it | Path A plus GitHub OAuth App and GitHub App |
+
+Path A takes about 10–15 minutes the first time (image builds dominate). Paths B and C add setup on top.
+
+For deterministic analysis of a local git checkout with no Docker, use the [`coach codesignal` CLI](../README.md#coach-codesignal-cli-preview) instead.
 
 ---
 
-## What this path covers
+## What you get
 
-Here is the surface area of this guide:
+- API on `http://127.0.0.1:8080`
+- Background worker, Postgres, Redis, and a model gateway
+- Job type: `repo_baseline_scan` (Go, TypeScript, and TSX files only)
+- No writes to GitHub (no PR comments, checks, or status updates)
+- Paths A and B analyze a small fixture repo (`coach-smoke` / `fixture-repo`), not your code
+- Path C reads a remote repo over the GitHub API into the worker on your machine
 
-| You run | You get |
-| --- | --- |
-| Docker Compose and a few `mise` tasks | `coach-api`, `coach-worker`, Postgres, Redis, Envoy AI Gateway, and a model backend |
-| Path A (default) | Full pipeline with a canned model stub (proves plumbing and provenance shape) |
-| Path B (optional) | Same pipeline with a host-local Qwen 3.5 4B model for real rubric text |
-| Path C (optional) | Same pipeline scanning a **remote** GitHub.com repository (no local clone of the target) |
-| Success (A/B) | `platform-smoke: ok` and a report with both `source=deterministic` and `source=agent` findings |
-| Success (C) | Job `completed` for `owner/repo` on GitHub, report pulled over localhost |
-
-Languages analyzed today: Go, TypeScript, TSX. Paths A and B use an in-compose fixture (`coach-smoke/fixture-repo`). Path C uses GitHub's APIs for a repo you name (for example `lousy-agents/coach`). Coach still performs no GitHub writes. The API and worker run on your machine; only GitHub API traffic leaves the laptop.
+This stack is for local experiments. It uses fixed lab credentials and test login shortcuts. Do not expose port 8080 on a public network.
 
 ---
 
 ## Prerequisites
 
-### Required
+### All paths
 
-- Docker with Compose.
-- [mise](https://mise.jdx.dev/) (pins Go; the smoke client is `go run ./cmd/platform-smoke`).
-- Free host ports: 8080 (API), 1975 and 1064 (AI gateway), 5432 (Postgres), 6379 (Redis).
-- A clone of this repository.
+- Docker with Compose
+- [mise](https://mise.jdx.dev/)
+- Free ports: **8080**, **1975**, **1064**, **5432**, **6379**
+- A clone of this repository
 
 ```sh
 git clone https://github.com/lousy-agents/coach.git
 cd coach
-mise install   # installs the Go version pinned by the repo
+mise install
 ```
 
-Do not export GitHub App, GitHub OAuth, or other ambient cloud credentials while running the smoke. The smoke preflight fails closed if they are present, so a green run cannot be caused by tokens already on your laptop.
+Before Path A or B smoke tests, unset GitHub and cloud tokens in that shell (`GITHUB_TOKEN`, `GH_TOKEN`, and similar). The smoke check fails if those are set, so a pass cannot depend on credentials already on your machine.
 
-### Optional (Path B: real local model)
+### Path B only
 
-- Host RAM enough for a 4B-class chat model (Apple Silicon with unified memory is a good fit).
-- One of the following OpenAI-compatible servers:
-  - [Ollama](https://ollama.com/) serving `qwen3.5:4b` (what most pilots use).
-  - Ollama MLX (or another OpenAI-compatible server) serving `qwen3.5:4b-mlx` on Apple Silicon.
-  - llama.cpp with a quantized Qwen-family GGUF (our architecture reference path).
+- Enough RAM for a ~4B chat model (Apple Silicon works well)
+- One OpenAI-compatible server on the host:
+  - [Ollama](https://ollama.com/) with `qwen3.5:4b` (usual choice)
+  - Ollama or another server with `qwen3.5:4b-mlx` on Apple Silicon
+  - llama.cpp with a Qwen-family GGUF, if you already run that
 
-The worker never talks to the model process directly. It always calls the in-compose AI gateway, which proxies OpenAI-compatible `POST /v1/chat/completions` to your host server.
+Coach talks to the model only through the compose gateway (`POST /v1/chat/completions`). You do not configure the worker to call Ollama directly.
 
-### Optional (Path C: remote GitHub.com repository)
+### Path C only
 
-You need two separate GitHub integrations. Do not conflate them (ADR-002):
+Two different GitHub apps (both required):
 
-| Integration | Role | Used for |
-| --- | --- | --- |
-| **GitHub OAuth App** | Who you are | Browser login → Coach JWT on `/v1` |
-| **GitHub App** (installation) | What Coach can read | Submit-time authz + worker Contents/tree fetch |
+| App | Purpose |
+| --- | --- |
+| **OAuth App** | Sign you in; Coach issues its own API token |
+| **GitHub App** | Lets Coach read repository files and check that you have access |
 
-You also need:
+Also required:
 
-- A GitHub user that has a **role** in the target repository (owner, collaborator, or org/team-derived access). Public readability alone is not enough. We deny `403` `repo_not_authorized` for public repos where you have no role on purpose (no-surveillance).
-- The Coach GitHub App **installed** on the account or org that owns the target repo, with access to that repo.
-- The target does **not** need to be cloned locally. Path C is remote-only: `repo_owner` + `repo_name` (+ optional `ref`). Client-supplied clone URLs are rejected.
+- You have a **role** on the target repo (owner, collaborator, or org/team access). Being able to view a public repo is not enough; you will get `403` `repo_not_authorized`.
+- The GitHub App is **installed** on the account or org that owns the repo, with access to that repo.
+- You do **not** clone the target repo. You only pass `repo_owner`, `repo_name`, and optional `ref`.
 
 ---
 
-## Path A: First taste (credential-free, about 10 minutes)
+## Path A: Smoke test (no GitHub, fake model)
 
-Path A proves the full loop: mint, submit, queue, worker, agent tools, gateway, model, report. It uses the model stub (no weights). Stub agent judgments are schema-valid and canned. That is useful for pipeline confidence, not for reading as insight.
+Starts the stack, runs one scan against the fixture repo, and checks that the report has both kinds of findings.
 
-### Start the stack
+### Start
 
 ```sh
 mise run platform-up
 ```
 
-This builds images, starts the `core` profile, and waits until `http://127.0.0.1:8080` answers.
+Builds images if needed, starts the default profile, and waits until the API responds.
 
-### Run the smoke scan
+### Smoke
 
 ```sh
 mise run platform-smoke
 ```
 
-Expected ending line:
+You want:
 
 ```text
 platform-smoke: ok
 ```
 
-If the stack is down, smoke exits non-zero (connection refused or timeout). That is intentional. We want a tight feedback loop, not a false green.
+If nothing is listening, the command exits non-zero (connection refused or timeout). That is expected.
 
 ### What "ok" means
 
-Smoke already fetched and checked the report. You should see logs that include a submitted `job_id`, then `platform-smoke: ok`.
-
-"ok" means all of the following:
-
-1. A Coach JWT was minted via the test-only `POST /v1/auth/test-mint` path (lab only, not production auth).
-2. A `repo_baseline_scan` was accepted for the fixture pair `coach-smoke` / `fixture-repo`.
+1. A short-lived lab token was created (`POST /v1/auth/test-mint`; local testing only).
+2. A `repo_baseline_scan` for `coach-smoke` / `fixture-repo` was accepted.
 3. The job reached `completed`.
-4. The report contains at least one finding with `source=deterministic` and at least one with `source=agent`.
+4. The report has at least one `source=deterministic` finding and at least one `source=agent` finding.
 
-Containers healthy without that dual-provenance report is not success.
+Containers running without that report is not a pass. The fake model returns fixed, valid agent JSON so you can verify the pipeline without downloading weights. Those agent texts are not real analysis.
 
-To inspect a report yourself after a successful smoke (optional):
+### Optional: inspect a report yourself
 
 ```sh
-# Mint a short-lived lab token
 TOKEN=$(curl -s -X POST http://127.0.0.1:8080/v1/auth/test-mint \
   -H 'Content-Type: application/json' \
   -d '{"subject":"1","login":"platform-smoke"}' | jq -r .token)
 
-# Use the job_id printed by platform-smoke, or submit again:
 JOB=$(curl -s -X POST http://127.0.0.1:8080/v1/jobs \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"kind":"repo_baseline_scan","params":{"repo_owner":"coach-smoke","repo_name":"fixture-repo"}}' \
   | jq -r .id)
 
-# Poll until completed, then:
 curl -s -H "Authorization: Bearer $TOKEN" \
   "http://127.0.0.1:8080/v1/jobs/$JOB/report" | jq .
 ```
 
-Look for findings like:
+Findings look like:
 
 ```json
 { "source": "deterministic", "…": "…" }
 { "source": "agent", "rubric_id": "…", "model_identity": "…", "…": "…" }
 ```
 
-Agent rows never overwrite or suppress deterministic ones. If the model is down or returns invalid JSON for a rubric, we still deliver the deterministic portion and record a diagnostic. The smoke client requires `source=agent` rows, so a broken model path fails the smoke. That is how we keep the proof honest.
+Agent findings never remove or change deterministic ones. If the model is down or returns invalid JSON, deterministic findings can still appear and the problem is recorded as a diagnostic. The smoke command still requires agent findings, so a broken model path fails smoke.
 
 ---
 
-## Path B: Same stack, your local Qwen
+## Path B: Real local model
 
-Path B upgrades from canned stub judgments to a host-local Qwen 3.5 4B (or MLX variant). The Compose services stay the same. Only the AI gateway's upstream changes.
+Same stack and smoke as Path A. Point the gateway at a model on your machine.
 
-### 1. Start an OpenAI-compatible server on the host
+### 1. Start a model server
 
-Pick one option. The server must expose `POST /v1/chat/completions` and accept the `model` id you will set below.
-
-#### Option 1: Ollama and `qwen3.5:4b` (recommended for most pilots)
+**Ollama (`qwen3.5:4b`):**
 
 ```sh
 ollama pull qwen3.5:4b
-ollama serve   # if not already running; default http://127.0.0.1:11434
-```
-
-Quick check from the host:
-
-```sh
+ollama serve   # default http://127.0.0.1:11434
 curl -s http://127.0.0.1:11434/v1/models | jq .
 ```
 
-#### Option 2: `qwen3.5:4b-mlx` on Apple Silicon
+**MLX (`qwen3.5:4b-mlx`):** run any OpenAI-compatible server that serves that id (often still port 11434 with Ollama). Note the exact `model` string the server expects.
 
-Use whatever OpenAI-compatible front-end you already run for MLX (for example Ollama's MLX backend, or another local server that speaks `/v1/chat/completions`). Pull or load `qwen3.5:4b-mlx`, then note:
+**llama.cpp:** serve OpenAI-compatible chat on a port you choose (example: 8081).
 
-- Host base URL (often still `http://127.0.0.1:11434/v1` for Ollama).
-- Exact model id string the server expects in the chat-completions `model` field.
-
-We do not ship an MLX runtime. We only need that HTTP contract.
-
-#### Option 3: llama.cpp (architecture reference)
+### 2. Start compose with that upstream
 
 ```sh
-# Example shape only. Flags and GGUF path are yours to choose and record.
-llama-server --port 8081   # must serve OpenAI-compat /v1/chat/completions
-```
-
-Use a quantized 4B-class Qwen-family GGUF. Record source, license, and digest for anything you evaluate seriously. Our production cloud target remains SGLang and Qwen3.5-4B after this local gate. Local serving is a stand-in.
-
-### 2. Point the gateway and bring up the `llm` profile
-
-The supported path is worker → ai-gateway (`:1975`) → your host model. Do not point the worker straight at Ollama or llama.cpp.
-
-```sh
-# Ollama defaults (adjust port/model id if yours differ)
+# Ollama
 export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
 export MODEL_GATEWAY_MODEL=qwen3.5:4b
 
-# MLX tag example (only if that is the id your server advertises):
+# MLX example (only if your server uses this id):
 # export MODEL_GATEWAY_MODEL=qwen3.5:4b-mlx
 
 # llama.cpp example:
 # export AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1
-# export MODEL_GATEWAY_MODEL=local   # or whatever id your server accepts
+# export MODEL_GATEWAY_MODEL=local
 
-# Optional if judgments are slow on CPU:
+# Optional if the model is slow:
 # export MODEL_GATEWAY_TIMEOUT=300s
 
 docker compose --profile llm up -d --build
 ```
 
-Wait until the API is healthy (same signal `platform-up` uses):
+Wait for the API:
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/v1/me
-# expect 401 (listening, unauthenticated) or 200
+# 401 or 200 means it is listening
 ```
 
-`mise run platform-up` always starts the `core` profile (stub upstream). For a real model you must export the env vars and use `--profile llm` as above. `mise run platform-llm-validate` only prints operator reminders. It does not download weights or run inference.
+`mise run platform-up` always uses the fake model. For a real model, set the env vars and use `--profile llm` as above.
 
-On Linux, Compose already maps `host.docker.internal` via `host-gateway` on `ai-gateway` and `coach-worker`. If the gateway still cannot reach the host, run the model in a container on the Compose network and set `AIGW_OPENAI_BASE_URL=http://<service>:<port>/v1` instead.
+On Linux, if the gateway cannot reach the host, run the model in a container on the same compose network and set `AIGW_OPENAI_BASE_URL=http://<service>:<port>/v1`.
 
-### 3. Re-run smoke
+### 3. Smoke again
 
 ```sh
 mise run platform-smoke
 ```
 
-### What changes vs the stub
-
-| | Path A (`core` + stub) | Path B (host Qwen) |
+| | Path A | Path B |
 | --- | --- | --- |
-| Agent judgment text | Canned, schema-valid | Model-generated rubric output |
-| `source` tags | Still `deterministic` / `agent` | Same separation |
-| `MODEL_GATEWAY_MODEL` | `local` (compose default) | Must match the server's model id (`qwen3.5:4b` or `qwen3.5:4b-mlx`) |
-| Success bar | Both sources present | Same, plus you can read agent rationales as real model output |
+| Agent text | Fixed sample JSON | From your local model |
+| `source` labels | `deterministic` / `agent` | Same |
+| `MODEL_GATEWAY_MODEL` | `local` (default) | Must match the server’s model id |
 
-Wrong model id, unreachable host URL, or schema-invalid JSON means missing `source=agent`, which means smoke fails.
+Wrong model id, unreachable URL, or invalid model JSON → missing `source=agent` → smoke fails.
 
 ---
 
-## Path C: Scan a remote GitHub.com repository
+## Path C: Scan a GitHub.com repository
 
-Path C is how you baseline a repo that lives on GitHub without cloning it into the worker. Example target: `https://github.com/lousy-agents/coach` → params `repo_owner=lousy-agents`, `repo_name=coach`.
+Scan a remote repo (for example `https://github.com/lousy-agents/coach`) without cloning it. Finish Path A first.
 
-Do Path A first so you know the stack works. Path C adds real GitHub credentials to the same Compose services. It is slower, more setup, and still lab-only.
+Coach accepts the job only if:
 
-### What we require (and why)
+1. Your GitHub App installation can read the repository.
+2. The signed-in user has a role on that repository (`admin`, `maintain`, `write`, `triage`, or `read`).
 
-Submit is allowed only when **both** are true (ADR-003):
+Missing repo and unauthorized repo both return `403` `repo_not_authorized`. Coach reads files with the App installation, not with your OAuth login token.
 
-1. The Coach GitHub App installation can read the repository.
-2. The authenticated principal has a GitHub role in that repository (`admin`, `maintain`, `write`, `triage`, or `read`).
+### 1. GitHub OAuth App (sign-in)
 
-A nonexistent repo and an unauthorized one both return `403` with code `repo_not_authorized`. That is deliberate.
+GitHub → Settings → Developer settings → **OAuth Apps** → New OAuth App:
 
-The worker never uses your OAuth token to fetch files. It mints short-lived **installation** tokens from the App private key and walks the tree via the Contents API. No `git clone` of the target.
-
-### 1. Create a GitHub OAuth App (identity)
-
-In GitHub → Settings → Developer settings → **OAuth Apps** → New OAuth App:
-
-| Field | Local pilot value |
+| Field | Value |
 | --- | --- |
-| Application name | e.g. `coach-local-pilot` |
+| Application name | e.g. `coach-local` |
 | Homepage URL | `http://127.0.0.1:8080` |
 | Authorization callback URL | `http://127.0.0.1:8080/oauth/github/callback` |
 
-Register **no scopes**. Coach only needs public `id` and `login` from `GET /user` during login.
+Leave scopes empty. Save the **Client ID** and create a **Client secret**.
 
-Save the **Client ID** and generate a **Client secret**.
+### 2. GitHub App (repo read)
 
-### 2. Create and install a GitHub App (repository read)
-
-We ship a **GitHub App manifest** so you do not have to hand-pick permissions. It requests read-only:
+Use the manifest in this repo so permissions match what Coach needs:
 
 | Permission | Why |
 | --- | --- |
-| **Contents** | Tree walk and file reads (`pkg/githubingest`) |
-| **Metadata** | Repository metadata (always required with Contents) |
-| **Administration** | `GET …/collaborators/{user}/permission` for submit-time authz (ADR-003) |
+| Contents (read) | List and read source files |
+| Metadata (read) | Basic repo metadata |
+| Administration (read) | Check your access level on the repo |
 
-Webhooks are present in the manifest only because GitHub requires a hook URL on App create; they are **inactive**. Groundwork does not ingest webhooks. The App is **not** public (`public: false`): only you (the owner) install it for lab use.
+Webhooks are inactive. The App is private to you.
 
-Manifest and helpers:
-
-| File | Role |
+| File | Use |
 | --- | --- |
-| [`deploy/compose/platform/github-app.manifest.json`](../deploy/compose/platform/github-app.manifest.json) | Canonical manifest JSON |
-| [`deploy/compose/platform/create-github-app.html`](../deploy/compose/platform/create-github-app.html) | Browser form that POSTs the manifest to GitHub |
-| [`deploy/compose/platform/complete-github-app-manifest.sh`](../deploy/compose/platform/complete-github-app-manifest.sh) | Exchanges GitHub’s one-hour conversion `code` for App ID + PEM |
-
-#### Register from the manifest (recommended)
-
-From the repo root:
+| [`deploy/compose/platform/github-app.manifest.json`](../deploy/compose/platform/github-app.manifest.json) | Permission definition |
+| [`deploy/compose/platform/create-github-app.html`](../deploy/compose/platform/create-github-app.html) | Browser button to register the App |
+| [`deploy/compose/platform/complete-github-app-manifest.sh`](../deploy/compose/platform/complete-github-app-manifest.sh) | Saves App ID and private key after GitHub redirects |
 
 ```sh
 cd deploy/compose/platform
 python3 -m http.server 8765
 ```
 
-Open [http://127.0.0.1:8765/create-github-app.html](http://127.0.0.1:8765/create-github-app.html).
+Open http://127.0.0.1:8765/create-github-app.html
 
-1. Click **Register GitHub App (user account)**, or enter an org login and register under that org.
-2. On GitHub, confirm the name (change it if `Coach Local Pilot` is taken) and create the App.
-3. GitHub redirects back to the local page with `?code=…`. From the **repo root**, run the printed command (within one hour):
+1. Register on your user account, or under an org you admin.
+2. Confirm the name on GitHub (change it if taken) and create the App.
+3. You return to the local page with `?code=…`. Within one hour, from the **repo root**:
 
    ```sh
    ./deploy/compose/platform/complete-github-app-manifest.sh <code>
    ```
 
-4. The script writes gitignored files:
+4. That creates (gitignored):
 
-   - `secrets/github-app.pem` (private key)
-   - `secrets/github-app.json` (App id, slug, urls; no PEM)
+   - `secrets/github-app.pem`
+   - `secrets/github-app.json` (includes App ID)
 
-5. **Install** the App on the account or org that owns the target repo (the script prints an installations URL). For `lousy-agents/coach`, install on the `lousy-agents` org (you need org permission to install), or scan a personal fork where you can install on your user. Grant access to the specific repository (or all repos, if you accept that blast radius for a lab install).
+5. **Install** the App on the owner of the target repo (link is printed by the script). Grant that repo (or all repos, if you accept the wider access).
 
-#### Manual create (fallback)
-
-If you prefer the GitHub UI: Developer settings → GitHub Apps → New GitHub App. Match [`github-app.manifest.json`](../deploy/compose/platform/github-app.manifest.json): homepage `http://127.0.0.1:8080`, webhook **inactive**, permissions Contents / Metadata / Administration **read**, not public. Generate a private key and move it to `secrets/github-app.pem`.
-
-If submit later fails with `repo_not_authorized` while you are sure you are a collaborator, re-check installation target and that Administration + Contents read are granted. Org-level permission quirks for the collaborators API are still a known edge (ADR-003).
-
-### 3. Keep secrets off git
+**Manual fallback:** create a GitHub App in the UI with the same homepage, inactive webhook, Contents / Metadata / Administration read, not public. Download a private key to `secrets/github-app.pem`.
 
 ```sh
-# After the manifest script (preferred), secrets/ already holds the PEM.
-# Manual fallback only:
-# mkdir -p secrets
-# mv ~/Downloads/*private-key.pem secrets/github-app.pem
-chmod 600 secrets/github-app.pem 2>/dev/null || true
+chmod 600 secrets/github-app.pem
 ```
 
-`secrets/` and `compose.override.yaml` are gitignored. Do not commit PEMs, client secrets, or override files with real values.
+Do not commit `secrets/` or `compose.override.yaml`.
 
-### 4. Compose override (wire credentials into api + worker)
+### 3. Compose override
 
-Repo-root `compose.yaml` is credential-free by default. Add a **gitignored** `compose.override.yaml` next to it. Docker Compose merges that file automatically.
+Default compose has no GitHub credentials. Add a gitignored `compose.override.yaml` at the repo root (Compose loads it automatically):
 
 ```yaml
 # compose.override.yaml  (local only; do not commit)
 services:
   coach-api:
     environment:
-      # Identity (OAuth)
       COACH_GITHUB_OAUTH_CLIENT_ID: "Iv1.xxxxxxxx"
       COACH_GITHUB_OAUTH_CLIENT_SECRET: "xxxxxxxx"
       COACH_GITHUB_OAUTH_REDIRECT_URI: "http://127.0.0.1:8080/oauth/github/callback"
-      # Repo authz (same App as the worker). App ID is printed by
-      # complete-github-app-manifest.sh and stored in secrets/github-app.json
+      # App ID from complete-github-app-manifest.sh / secrets/github-app.json
       COACH_GITHUB_APP_ID: "123456"
       COACH_GITHUB_APP_PRIVATE_KEY_PATH: "/secrets/github-app.pem"
-      # Keep fixture bypass so Path A smoke still works alongside live GitHub
+      # Keep fixture access so Path A still works
       COACH_AUTHZ_BYPASS_OWNER: "coach-smoke"
       COACH_AUTHZ_BYPASS_REPO: "fixture-repo"
-      # Lab convenience: leave test-mint on. Prefer OAuth for real-repo scans.
       COACH_AUTH_TEST_MINT: "1"
     volumes:
       - ./secrets/github-app.pem:/secrets/github-app.pem:ro
@@ -354,60 +298,43 @@ services:
     environment:
       COACH_GITHUB_APP_ID: "123456"
       COACH_GITHUB_APP_PRIVATE_KEY_PATH: "/secrets/github-app.pem"
-      # Optional: pin one installation. Prefer unset so the worker resolves
-      # installation per owner/repo (needed if you scan across accounts).
-      # COACH_GITHUB_INSTALLATION_ID: "987654321"
-      #
-      # Optional: raise budgets for large trees (defaults: 5000 files / 50 MiB
-      # of supported-language source). coach itself can need headroom.
+      # Optional: larger repos (defaults 5000 files / 50 MiB of Go/TS/TSX source)
       # COACH_BASELINE_MAX_FILES: "20000"
       # COACH_BASELINE_MAX_TOTAL_BYTES: "104857600"
     volumes:
       - ./secrets/github-app.pem:/secrets/github-app.pem:ro
 ```
 
-Bring the stack up (or recreate api/worker after editing the override):
-
 ```sh
 docker compose --profile core up -d --build
-# wait until API answers, same as Path A:
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/v1/me
 ```
 
-You can combine this with Path B by also exporting `AIGW_OPENAI_BASE_URL` / `MODEL_GATEWAY_MODEL` and using `--profile llm`.
+Combine with Path B by exporting `AIGW_OPENAI_BASE_URL` / `MODEL_GATEWAY_MODEL` and using `--profile llm`.
 
-### 5. Sign in (Coach JWT)
+### 4. Sign in
 
-Open in a browser:
+Open http://127.0.0.1:8080/oauth/github/start
 
-```text
-http://127.0.0.1:8080/oauth/github/start
-```
-
-Complete GitHub consent. The callback responds with JSON (not a polished UI):
+After GitHub consent you get JSON (no fancy UI):
 
 ```json
 {
-  "access_token": "<coach-jwt>",
+  "access_token": "<coach-token>",
   "token_type": "bearer"
 }
 ```
 
-Copy `access_token`. That value is the **Coach** JWT for `Authorization: Bearer …` on `/v1`. Your GitHub OAuth access token is not accepted on `/v1` and is never used for repo reads.
-
-Confirm identity:
+Use that `access_token` as `Authorization: Bearer …` on `/v1`. A raw GitHub token will not work.
 
 ```sh
-export TOKEN='paste-coach-jwt-here'
+export TOKEN='paste-coach-token-here'
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/v1/me | jq .
-# expect provider=github, your numeric subject, your login
 ```
 
-Lab shortcut (not production identity): with test-mint still enabled you can mint a JWT whose `login` is your real GitHub login. Submit-time authz still calls GitHub as the App for that login. Prefer the OAuth path above so the subject is verified.
+You should see your GitHub login. Prefer this OAuth flow for real repos. Lab-only alternative: test-mint with your real GitHub `login` string still checks access via the App, but identity is not verified by GitHub login.
 
-### 6. Submit a remote baseline scan
-
-No local clone of the target. Name the GitHub owner and repo only:
+### 5. Submit, poll, fetch report
 
 ```sh
 # Example: https://github.com/lousy-agents/coach
@@ -424,14 +351,7 @@ JOB=$(curl -s -X POST http://127.0.0.1:8080/v1/jobs \
   }' | jq -r .id)
 
 echo "job_id=$JOB"
-```
 
-`ref` is optional. When omitted, the worker uses the repository default branch tip. Do not send `git_url`, `clone_url`, or any clone-style field; those return `400`.
-
-Poll and fetch the report:
-
-```sh
-# Poll status until completed or failed
 while true; do
   STATUS=$(curl -s -H "Authorization: Bearer $TOKEN" \
     "http://127.0.0.1:8080/v1/jobs/$JOB" | jq -r .status)
@@ -451,78 +371,57 @@ curl -s -H "Authorization: Bearer $TOKEN" \
   }'
 ```
 
-Success means status `completed`, a pinned `commit_sha`, and findings you can inspect. Large repositories take longer: the worker walks the tree over the Contents API and analyzes every supported-language file within budget. If the job fails with a budget or size message, raise `COACH_BASELINE_MAX_FILES` / `COACH_BASELINE_MAX_TOTAL_BYTES` on the worker and recreate it, or scan a smaller repo first.
+`ref` is optional (default branch if omitted). Do not send `git_url` or `clone_url` (rejected with `400`).
 
-### Path C failure modes
+Success: status `completed`, a `commit_sha`, and findings you can read. Large repos are slow and may hit size limits; raise `COACH_BASELINE_MAX_*` on the worker or pick a smaller repo.
+
+### Path C problems
 
 | Symptom | Likely cause |
 | --- | --- |
-| `403` `repo_not_authorized` | You have no GitHub role in the repo; App not installed on that owner; App cannot see the repo; or the repo does not exist (same code on purpose) |
-| `401` on `/v1/jobs` | Missing/expired Coach JWT; used a GitHub token instead of the Coach JWT from OAuth callback |
-| OAuth callback `400` | Wrong callback URL on the OAuth App; stale `state`; user denied consent |
-| Job `failed` / "no tree source configured" | Worker missing App id + private key |
-| Job `failed` auth/not found during fetch | App installed but Contents permission missing, or installation cannot read that repo |
-| Job `failed` budget / too large | Tree exceeds default 5000 files or 50 MiB supported source; raise worker budgets or pick a smaller target |
-| Slow job on a monorepo | Expected: remote Contents walk is chatty. Prefer a focused repo for first Path C runs |
-| `platform-smoke` fails ambient-credential guard | Host shell has `GITHUB_TOKEN` / `GH_TOKEN` / similar set. Path C credentials belong in Compose containers via override, not necessarily in your interactive shell. Unset ambient tokens before smoke, or skip smoke while debugging live GitHub |
-
-### Path C honesty bounds
-
-- Still lab Compose: fixed JWT signing key, optional test-mint, fixture bypass remain. Do not expose `:8080` beyond localhost.
-- No GitHub writes (no PR comments, checks, or status).
-- Scanning `lousy-agents/coach` only works if **you** have a role there **and** your pilot App is installed on that org with repo access. Being able to `git clone` a public URL is not enough.
-- Cloud SGLang/AWS and `pr_history_scan` are still out of scope here.
+| `403` `repo_not_authorized` | No role on the repo; App not installed; App cannot see the repo; or repo does not exist |
+| `401` on `/v1/jobs` | Missing/expired Coach token, or you used a GitHub token |
+| OAuth callback `400` | Wrong callback URL; expired login attempt; you denied access |
+| Job failed / no tree source | Worker missing App ID or private key |
+| Job failed auth during fetch | App lacks Contents access or is not installed on that repo |
+| Job failed budget / too large | Over 5000 files or 50 MiB of supported source; raise limits or use a smaller repo |
+| Slow monorepo job | Normal for remote file-by-file fetch; try a smaller repo first |
+| Smoke fails credential check | `GITHUB_TOKEN` / `GH_TOKEN` set in your shell; unset them, or skip smoke while using Path C |
 
 ---
 
-## What the report means
+## Reading the report
 
-### Deterministic vs agent
+- **`source=deterministic`**: rule-based finding. Same commit and same Coach version should reproduce it.
+- **`source=agent`**: model judgment for a named rubric. Extra context, not a replacement for deterministic rows.
 
-- `source=deterministic` means reproducible structural signals from `pkg/semantics` / `pkg/codesignal` (rule id and version). Same commit and same analyzer versions yield the same findings.
-- `source=agent` means LLM-as-judge output for a versioned rubric (`rubric_id`, `rubric_version`, model identity). Opinion and context, never a replacement for deterministic evidence.
-
-Our trust posture for this era is provenance over polish. Fewer, clearer findings beat exhaustive noise.
-
-### Privacy on the smoke path
-
-- The analysis target is a mounted fixture, not your working tree or private repos.
-- There is no GitHub OAuth token and no GitHub App private key.
-- Coach performs no GitHub writes (no PR comments, no checks).
-- You pull results over HTTP on localhost.
-
-Live "scan a real GitHub repo" is **Path C** above. Deeper env matrices live in [local-platform.md](./development/local-platform.md); contracts live under `.github/specs/` and ADR-001 through ADR-003.
+Paths A and B only touch the fixture repo. Path C fetches the remote tree over GitHub’s API; Coach still does not write to GitHub.
 
 ---
 
-## Limits (honest)
+## Limits
 
-- Pilot and lab only. Compose enables test mint, a fixed local JWT signing key, and an authz bypass for the fixture pair. Path C adds real GitHub secrets to the same lab boundary. Do not expose this stack on a network or treat it as multi-tenant production.
-- Not a linter, CI gate, or merge blocker. Advisory reports only.
-- Not a public PR review bot. No GitHub writes in this era.
-- Go, TypeScript, and TSX only. Other languages are skipped.
-- `pr_history_scan`, web UI, harness hooks, SGLang, and AWS are out of scope here. Local Compose validation is the investment gate for cloud serving.
-- Ollama and MLX are supported only as OpenAI-compatible upstreams behind the AI gateway, the same wire contract as llama.cpp. We do not vendor those runtimes.
-- Compose is not a hostile-code sandbox. Do not point this stack at untrusted repositories expecting isolation.
-- Path C is not anonymous OSS scanning. Relationship-gated authz is load-bearing.
-
-We are still sharpening this path. Polished hosted login UX and cloud serving remain work in progress.
+- Local lab only (test login, fixed signing key, fixture bypass). Keep it on localhost.
+- Advisory reports only; not a CI gate or merge blocker.
+- No GitHub writes.
+- Go, TypeScript, TSX only.
+- No PR-history scan or web UI in this guide.
+- You cannot scan arbitrary public OSS without a role on the repo and an App install.
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Likely fix |
+| Symptom | Fix |
 | --- | --- |
-| `platform-smoke` connection refused | Run `mise run platform-up` (or wait for health) first |
-| Smoke fails ambient-credential guard | Unset GitHub App, OAuth, `GITHUB_*`, and similar env vars in that shell |
-| Report missing `source=agent` | Gateway cannot reach the model; wrong `AIGW_OPENAI_BASE_URL`; wrong `MODEL_GATEWAY_MODEL`; model returned non-schema JSON; timeout too low |
-| Report missing `source=deterministic` | Worker fixture mount or owner-repo pair mismatch (defaults: `coach-smoke` / `fixture-repo`) |
-| Host model unreachable from Docker | Use `host.docker.internal` (not `localhost` inside the container); on Linux prefer a compose-network model service if host-gateway fails |
-| Stale Postgres schema after pulling main | `docker compose --profile core --profile llm down -v`, then bring the stack up again |
-| Expecting your real GitHub repo in smoke | Smoke always scans the fixture; use Path C for remote GitHub.com repos |
-| Believing stub text is "the model" | Path A always hits `model-stub` unless you switched aigw upstream (Path B) |
-| Path C `403` on a public repo you only read | You need a GitHub **role** in that repo plus App install; see Path C failure modes |
+| Smoke: connection refused | `mise run platform-up` first |
+| Smoke: credential check failed | Unset `GITHUB_*` / `GH_TOKEN` in that shell |
+| No `source=agent` | Model URL/id wrong, gateway cannot reach host, bad JSON, or timeout |
+| No `source=deterministic` | Fixture pair mismatch (`coach-smoke` / `fixture-repo`) |
+| Host model unreachable | Use `host.docker.internal`, not `localhost`, from inside Docker |
+| Postgres errors after git pull | `docker compose --profile core --profile llm down -v` then start again |
+| Smoke never sees your GitHub repo | Expected; use Path C |
+| Path C `403` on a public repo | Need a role + App install, not just public read |
 
 ---
 
@@ -532,7 +431,7 @@ We are still sharpening this path. Polished hosted login UX and cloud serving re
 mise run platform-down
 ```
 
-Named Postgres volume is kept by default. Wipe data:
+Drop database volume too:
 
 ```sh
 docker compose --profile core --profile llm down -v --remove-orphans
@@ -542,64 +441,48 @@ docker compose --profile core --profile llm down -v --remove-orphans
 
 ## FAQ
 
-**Do I need a GitHub App or OAuth to try this?**  
-No for Paths A and B. Test mint and the `coach-smoke/fixture-repo` fixture only. Path C (remote GitHub.com repos) needs both a GitHub OAuth App (identity) and a GitHub App installation (repo read). Use [`deploy/compose/platform/github-app.manifest.json`](../deploy/compose/platform/github-app.manifest.json) plus `create-github-app.html` for the App.
+**Do I need GitHub apps for the first try?**  
+No. Paths A and B use the fixture only. Path C needs OAuth App + GitHub App.
 
-**Does Coach post comments, checks, or write anything to GitHub?**  
-No. Submit, poll, and fetch the report. Nothing is written back to GitHub in this era. Path C only **reads** via the App installation.
+**Does Coach comment on PRs?**  
+No. You pull the report from the local API.
 
-**Can I scan `https://github.com/lousy-agents/coach` without cloning it?**  
-Yes, that is Path C. Submit `repo_owner=lousy-agents` and `repo_name=coach`. You still need a GitHub role in that repo and an App install that can read it. Public clone access alone is not enough.
+**Can I scan github.com/lousy-agents/coach without cloning?**  
+Yes (Path C). You need a role on that repo and an installed App that can read it.
 
-**Stub vs `qwen3.5:4b` / `qwen3.5:4b-mlx`: what is the difference?**  
-Stub returns canned, schema-valid agent judgments so the pipeline is testable without weights. Your local Qwen produces real rubric text. Both are still labeled `source=agent` and never mixed into deterministic evidence.
+**Fake model vs Qwen?**  
+Fake model proves the pipeline. Qwen produces real agent text. Both stay labeled `source=agent`.
 
-**Where does my code go on the smoke path?**  
-It does not. Analysis runs against a small in-compose fixture. Traffic stays on your machine. Path C reads the remote tree over GitHub's API into the worker process; still no GitHub writes.
+**What languages?**  
+Go, TypeScript, TSX. Baseline scan only in this guide.
 
-**What languages and job types work today?**  
-Baseline scan over Go, TypeScript, and TSX. PR-history scan and other languages are not part of this quickstart.
-
-**How do I know it actually worked?**  
-Paths A/B: `platform-smoke: ok` and a completed report with both `source=deterministic` and `source=agent` findings. Path C: job status `completed`, a pinned `commit_sha` for the remote ref, and a report you pull from `/v1/jobs/{id}/report`. Containers up without that report is not success.
+**How do I know it worked?**  
+A/B: `platform-smoke: ok` and both finding sources. C: job `completed`, `commit_sha` set, report from `/v1/jobs/{id}/report`.
 
 ---
 
-## Command cheat-sheet
+## Commands
 
 ```sh
-# Path A: plumbing and stub judgments
+# Path A
 mise run platform-up
 mise run platform-smoke
 mise run platform-down
 
-# Path B: host Qwen via Ollama (example)
+# Path B
 ollama pull qwen3.5:4b
 export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
 export MODEL_GATEWAY_MODEL=qwen3.5:4b
 docker compose --profile llm up -d --build
 mise run platform-smoke
 
-# Path C: GitHub App from manifest, then remote scan
+# Path C (after App registration + compose.override.yaml)
 cd deploy/compose/platform && python3 -m http.server 8765
-# browser: http://127.0.0.1:8765/create-github-app.html → register → then:
-# ./deploy/compose/platform/complete-github-app-manifest.sh <code>
-# install App on target owner; add OAuth App + compose.override.yaml; then:
-open http://127.0.0.1:8080/oauth/github/start   # copy access_token from JSON
+# browser → register App → ./deploy/compose/platform/complete-github-app-manifest.sh <code>
+open http://127.0.0.1:8080/oauth/github/start
 export TOKEN='…'
 curl -s -X POST http://127.0.0.1:8080/v1/jobs \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"kind":"repo_baseline_scan","params":{"repo_owner":"lousy-agents","repo_name":"coach","ref":"main"}}'
 ```
-
----
-
-## Related docs
-
-| Doc | Audience |
-| --- | --- |
-| [local-platform.md](./development/local-platform.md) | Operators: full env matrix, aigw notes, CI smoke |
-| [prd.md](./product/prd.md) | Product direction for the groundwork era |
-| [system-overview.md](./architecture/system-overview.md) | Long-term architecture (webhook platform, SGLang/AWS) |
-| Epic [#97](https://github.com/lousy-agents/coach/issues/97) | Baseline Scan platform epic |

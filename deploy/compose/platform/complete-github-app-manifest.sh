@@ -75,22 +75,20 @@ printf '%s\n' "${pem}" > "${pem_path}"
 chmod 600 "${pem_path}"
 
 cat <<EOF
-GitHub App registered from manifest.
+GitHub App ready.
 
-  App ID:     ${app_id}
-  Slug:       ${slug}
-  Settings:   ${html_url}
+  App ID:      ${app_id}
+  Slug:        ${slug}
+  Settings:    ${html_url}
   Private key: ${pem_path}
   Metadata:    ${meta_path}
 
 Next:
-  1. Install the App on the user/org that owns the repos you will scan
-     (${html_url}/installations/new).
-  2. Put COACH_GITHUB_APP_ID=${app_id} and
-     COACH_GITHUB_APP_PRIVATE_KEY_PATH=/secrets/github-app.pem
-     in compose.override.yaml (see docs/pilot-local-quickstart.md Path C).
-  3. Mount ./secrets/github-app.pem into coach-api and coach-worker.
-  4. Create the separate GitHub OAuth App for browser identity (Path C).
+  1. Install the App on the account/org that owns the repos you will scan:
+     ${html_url}/installations/new
+  2. Set COACH_GITHUB_APP_ID=${app_id} and mount the PEM in compose.override.yaml
+     (see docs/pilot-local-quickstart.md, Path C).
+  3. Create a separate GitHub OAuth App for browser sign-in (same guide).
 
-secrets/ is gitignored. Do not commit the PEM or github-app.json.
+Do not commit secrets/ (gitignored).
 EOF
