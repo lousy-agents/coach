@@ -41,9 +41,9 @@ func signalsByRule(report *codesignal.Report, ruleID string) []codesignal.Signal
 	return out
 }
 
-var _ = Describe("complexity.cognitive_complexity", func() {
+var _ = Describe("Story 2: complexity.cognitive_complexity codesignal rule", func() {
 	When("a head result has one or more cognitive_complexity records with score >= 15", func() {
-		It("emits exactly one signal per such record with the locked field shape", func() {
+		It("shall emit exactly one signal per such record with the locked field shape", func() {
 			locA := semantics.Location{StartByte: 10, EndByte: 200, StartRow: 1, EndRow: 40}
 			locB := semantics.Location{StartByte: 300, EndByte: 500, StartRow: 50, EndRow: 90}
 			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
@@ -87,7 +87,7 @@ var _ = Describe("complexity.cognitive_complexity", func() {
 	})
 
 	When("no record meets the threshold", func() {
-		It("emits no complexity.cognitive_complexity signal", func() {
+		It("shall emit no complexity.cognitive_complexity signal", func() {
 			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
 				Path:   "simple.go",
 				Status: "modified",
@@ -101,7 +101,7 @@ var _ = Describe("complexity.cognitive_complexity", func() {
 	})
 
 	When("cognitive_complexity is absent or empty on a Result", func() {
-		It("emits no cognitive-complexity signals and does not fail the build", func() {
+		It("shall emit no cognitive-complexity signals and shall not fail the build", func() {
 			absent := &semantics.Result{
 				Path:        "legacy.go",
 				Language:    semantics.LanguageGo,
@@ -124,7 +124,7 @@ var _ = Describe("complexity.cognitive_complexity", func() {
 	})
 
 	Describe("lifecycle classification", func() {
-		It("marks a function introduced when head crosses the threshold and base did not", func() {
+		It("shall mark a function introduced when head crosses the threshold and base did not", func() {
 			base := resultWithCognitiveComplexity("complex.go",
 				ccRecord("tangled", 14, semantics.Location{StartRow: 1, EndRow: 20}),
 			)
@@ -141,7 +141,7 @@ var _ = Describe("complexity.cognitive_complexity", func() {
 			Expect(signals[0].Evidence).To(Equal("cognitive_complexity=15"))
 		})
 
-		It("marks matching over-threshold records on both sides existing", func() {
+		It("shall mark matching over-threshold records on both sides existing", func() {
 			rec := ccRecord("tangled", 18, semantics.Location{StartRow: 1, EndRow: 30})
 			base := resultWithCognitiveComplexity("complex.go", rec)
 			head := resultWithCognitiveComplexity("complex.go", rec)
@@ -153,7 +153,7 @@ var _ = Describe("complexity.cognitive_complexity", func() {
 			Expect(signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("existing")))
 		})
 
-		It("marks a function resolved (with IncludeResolved) when head drops below threshold", func() {
+		It("shall mark a function resolved (with IncludeResolved) when head drops below threshold", func() {
 			base := resultWithCognitiveComplexity("complex.go",
 				ccRecord("tangled", 20, semantics.Location{StartRow: 1, EndRow: 30}),
 			)
@@ -173,6 +173,37 @@ var _ = Describe("complexity.cognitive_complexity", func() {
 			Expect(signals).To(HaveLen(1))
 			Expect(signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("resolved")))
 			Expect(signals[0].Evidence).To(Equal("cognitive_complexity=20"))
+		})
+
+		// Spec Story 2: evidence includes the numeric score, so score churn
+		// while still over threshold yields distinct lifecycle keys.
+		It("shall treat score churn while still >= 15 as resolved prior score plus introduced new score", func() {
+			base := resultWithCognitiveComplexity("complex.go",
+				ccRecord("tangled", 16, semantics.Location{StartRow: 1, EndRow: 30}),
+			)
+			head := resultWithCognitiveComplexity("complex.go",
+				ccRecord("tangled", 20, semantics.Location{StartRow: 1, EndRow: 35}),
+			)
+
+			defaultReport := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "complex.go", Status: "modified", Base: base, Head: head,
+			}}})
+			active := signalsByRule(defaultReport, "complexity.cognitive_complexity")
+			Expect(active).To(HaveLen(1))
+			Expect(active[0].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
+			Expect(active[0].Evidence).To(Equal("cognitive_complexity=20"))
+
+			full := build(codesignal.Options{IncludeResolved: true}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "complex.go", Status: "modified", Base: base, Head: head,
+			}}})
+			all := signalsByRule(full, "complexity.cognitive_complexity")
+			Expect(all).To(HaveLen(2))
+			byLife := map[codesignal.Lifecycle]codesignal.Signal{}
+			for _, s := range all {
+				byLife[s.Lifecycle] = s
+			}
+			Expect(byLife[codesignal.Lifecycle("resolved")].Evidence).To(Equal("cognitive_complexity=16"))
+			Expect(byLife[codesignal.Lifecycle("introduced")].Evidence).To(Equal("cognitive_complexity=20"))
 		})
 	})
 })

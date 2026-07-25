@@ -227,6 +227,7 @@ var _ = Describe("syntax error reporting", func() {
 			Expect(result.SyntaxErrors).NotTo(BeEmpty())
 			Expect(result.Imports).To(BeEmpty())
 			Expect(result.Findings).To(BeEmpty())
+			Expect(result.CognitiveComplexity).To(BeEmpty())
 			Expect(result.Metrics).To(Equal(semantics.StructuralMetrics{}))
 			Expect(err).To(HaveOccurred())
 		})

@@ -2,6 +2,8 @@ package semantics_test
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -317,6 +319,140 @@ OUTER:
 				Expect(rec.Kind).To(Equal("function"))
 				Expect(result.Metrics.MaxCognitiveComplexity).To(Equal(4))
 				Expect(result.Metrics.SumCognitiveComplexity).To(Equal(4))
+			})
+		})
+	})
+
+	// Story 1 contract edges beyond the worked-example arithmetic locks.
+	Describe("Story 1 Result contract", func() {
+		When("a function body has no flow-breaking structures", func() {
+			It("shall still attach a cognitive_complexity record with score 0", func() {
+				result := analyzeGoCC(analyzer, `func plain() {
+	x := 1
+	_ = x
+}
+`)
+				rec, ok := ccByName(result.CognitiveComplexity, "plain")
+				Expect(ok).To(BeTrue(), "zero-score functions must still yield a record")
+				Expect(rec.Score).To(Equal(0))
+				Expect(rec.Kind).To(Equal("function"))
+				Expect(result.Metrics.MaxCognitiveComplexity).To(Equal(0))
+				Expect(result.Metrics.SumCognitiveComplexity).To(Equal(0))
+			})
+		})
+
+		When("AnalyzeBytes is invoked twice on identical Go bytes", func() {
+			It("shall produce byte-identical cognitive_complexity JSON", func() {
+				const body = `func processNumbers(numbers []int) {
+	for _, num := range numbers {
+		if num > 1 {
+			if isOdd(num) && isValid(num) {
+				fmt.Println(num)
+			}
+		}
+	}
+}
+`
+				content := goPackagePrefix(body)
+				in := semantics.FileInput{Path: "example.go", Language: semantics.LanguageGo, Content: content}
+				first, err := analyzer.AnalyzeBytes(context.Background(), in)
+				Expect(err).NotTo(HaveOccurred())
+				second, err := analyzer.AnalyzeBytes(context.Background(), in)
+				Expect(err).NotTo(HaveOccurred())
+
+				firstJSON, err := json.Marshal(struct {
+					CC  []semantics.FunctionCognitiveComplexity `json:"cognitive_complexity"`
+					Max int                                     `json:"max_cognitive_complexity"`
+					Sum int                                     `json:"sum_cognitive_complexity"`
+				}{first.CognitiveComplexity, first.Metrics.MaxCognitiveComplexity, first.Metrics.SumCognitiveComplexity})
+				Expect(err).NotTo(HaveOccurred())
+				secondJSON, err := json.Marshal(struct {
+					CC  []semantics.FunctionCognitiveComplexity `json:"cognitive_complexity"`
+					Max int                                     `json:"max_cognitive_complexity"`
+					Sum int                                     `json:"sum_cognitive_complexity"`
+				}{second.CognitiveComplexity, second.Metrics.MaxCognitiveComplexity, second.Metrics.SumCognitiveComplexity})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(secondJSON).To(Equal(firstJSON))
+			})
+		})
+
+		When("Go source has syntax errors", func() {
+			It("shall leave cognitive_complexity empty and max/sum aggregates at 0", func() {
+				result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+					Path:     "broken.go",
+					Language: semantics.LanguageGo,
+					Content:  []byte("package main\nfunc {"),
+				})
+				Expect(result).NotTo(BeNil())
+				Expect(result.ParseStatus).To(Equal(semantics.ParseStatus("syntax_errors")))
+				Expect(errors.Is(err, semantics.ErrSyntax)).To(BeTrue())
+				Expect(result.CognitiveComplexity).To(BeEmpty())
+				Expect(result.Metrics.MaxCognitiveComplexity).To(Equal(0))
+				Expect(result.Metrics.SumCognitiveComplexity).To(Equal(0))
+			})
+		})
+
+		When("a Go method declaration is scored", func() {
+			It("shall attach kind method with a full declaration location span", func() {
+				result := analyzeGoCC(analyzer, `type T struct{}
+
+func (t *T) Method(n int) {
+	if n > 0 {
+		return
+	}
+}
+`)
+				rec, ok := ccByName(result.CognitiveComplexity, "Method")
+				Expect(ok).To(BeTrue())
+				Expect(rec.Kind).To(Equal("method"))
+				Expect(rec.Score).To(Equal(1))
+				Expect(rec.Location.EndByte).To(BeNumerically(">", rec.Location.StartByte),
+					"location must span the full method declaration, not an empty range")
+			})
+		})
+
+		When("a worked-example function is scored", func() {
+			It("shall set location to a non-empty span covering the declaration", func() {
+				result := analyzeGoCC(analyzer, `func classify(n int) string {
+	if n < 0 {
+		return "negative"
+	}
+	return "non-neg"
+}
+`)
+				rec, ok := ccByName(result.CognitiveComplexity, "classify")
+				Expect(ok).To(BeTrue())
+				Expect(rec.Location.EndByte).To(BeNumerically(">", rec.Location.StartByte))
+				Expect(rec.Location.EndRow).To(BeNumerically(">=", rec.Location.StartRow))
+			})
+		})
+
+		When("AnalyzeBytes scores a TSX file with the same control flow as TS-1", func() {
+			It("shall attach processNumbers with score 7 under LanguageTSX", func() {
+				const source = `export function processNumbers(numbers: number[]) {
+  for (const num of numbers) {
+    if (num > 1) {
+      if (isOdd(num) && isValid(num)) {
+        console.log(num);
+      }
+    }
+  }
+}
+`
+				result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+					Path:     "example.tsx",
+					Language: semantics.LanguageTSX,
+					Content:  []byte(source),
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.ParseStatus).To(Equal(semantics.ParseStatus("ok")))
+
+				rec, ok := ccByName(result.CognitiveComplexity, "processNumbers")
+				Expect(ok).To(BeTrue())
+				Expect(rec.Score).To(Equal(7))
+				Expect(rec.Kind).To(Equal("function"))
+				Expect(result.Metrics.MaxCognitiveComplexity).To(Equal(7))
+				Expect(result.Metrics.SumCognitiveComplexity).To(Equal(7))
 			})
 		})
 	})

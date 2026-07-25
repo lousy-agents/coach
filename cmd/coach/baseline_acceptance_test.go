@@ -168,6 +168,52 @@ var _ = Describe("coach codesignal --baseline", func() {
 		})
 	})
 
+	// Story 3 (cognitive-complexity.spec.md): coach codesignal surfaces
+	// complexity.cognitive_complexity without new flags when a function
+	// scores at or above the codesignal threshold (15).
+	When("a tracked Go file contains a function with Cognitive Complexity >= 15", func() {
+		It("shall include complexity.cognitive_complexity in baseline JSON with locked evidence shape", func() {
+			// Six nested ifs: structural costs 1+2+3+4+5+6 = 21 (>= 15).
+			const tangled = `package a
+
+func tangle(n int) {
+	if n > 0 {
+		if n > 1 {
+			if n > 2 {
+				if n > 3 {
+					if n > 4 {
+						if n > 5 {
+							return
+						}
+					}
+				}
+			}
+		}
+	}
+}
+`
+			repo := newTempGitRepo()
+			commitFile(repo, "tangle.go", tangled)
+
+			report, stderr := runCoachCodesignalBaseline(repo)
+			Expect(stderr).To(BeEmpty())
+
+			var cc []codesignal.Signal
+			for _, s := range report.Signals {
+				if s.RuleID == "complexity.cognitive_complexity" && s.Path == "tangle.go" {
+					cc = append(cc, s)
+				}
+			}
+			Expect(cc).To(HaveLen(1), "baseline must surface the over-threshold function via the existing report path")
+			Expect(cc[0].Kind).To(Equal("cognitive_complexity"))
+			Expect(cc[0].Subject).To(Equal("tangle"))
+			Expect(cc[0].Evidence).To(Equal("cognitive_complexity=21"))
+			Expect(cc[0].Lifecycle).To(Equal(codesignal.Lifecycle("baseline")))
+			Expect(cc[0].Confidence).To(Equal(codesignal.Confidence("high")))
+			Expect(cc[0].Provenance.Producer).To(Equal("codesignal"))
+		})
+	})
+
 	When("--format is omitted (text) for a Repository Baseline scan", func() {
 		It("identifies the report as a repository baseline and never implies a comparison lifecycle", func() {
 			repo := newTempGitRepo()
