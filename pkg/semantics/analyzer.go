@@ -124,13 +124,25 @@ func (a *Analyzer) AnalyzeBytes(ctx context.Context, in FileInput) (*Result, err
 	}
 	metrics, findings := spec.computeFeatures(root, in.Content)
 
+	var cognitive []FunctionCognitiveComplexity
+	switch in.Language {
+	case LanguageGo:
+		cognitive = computeGoCognitiveComplexity(root, in.Content)
+		metrics = applyCognitiveComplexityAggregates(metrics, cognitive, nil)
+	case LanguageTypeScript, LanguageTSX:
+		var topLevel []bool
+		cognitive, topLevel = computeTSCognitiveComplexity(root, in.Content)
+		metrics = applyCognitiveComplexityAggregates(metrics, cognitive, topLevel)
+	}
+
 	result := &Result{
-		Path:        in.Path,
-		Language:    in.Language,
-		ParseStatus: ParseStatus("ok"),
-		Imports:     imports,
-		Metrics:     metrics,
-		Findings:    findings,
+		Path:                in.Path,
+		Language:            in.Language,
+		ParseStatus:         ParseStatus("ok"),
+		Imports:             imports,
+		Metrics:             metrics,
+		Findings:            findings,
+		CognitiveComplexity: cognitive,
 	}
 	return result, nil
 }

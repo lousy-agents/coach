@@ -48,6 +48,22 @@ export interface StructuralMetrics {
   functions: number;
   methods: number;
   max_nesting_depth: number;
+  /** Max Cognitive Complexity score over all per-function records; 0 if none. */
+  max_cognitive_complexity: number;
+  /** Sum of Cognitive Complexity scores over top-level records only; 0 if none. */
+  sum_cognitive_complexity: number;
+}
+
+/**
+ * Cognitive Complexity score for one scored function body (declaration,
+ * method, func lit, or arrow). kind is a closed set: Go uses function |
+ * method | func_lit; TypeScript/TSX also allow arrow.
+ */
+export interface FunctionCognitiveComplexity {
+  name: string;
+  kind: string;
+  location: Location;
+  score: number;
 }
 
 /** One detected pattern of interest, such as a constructor-like function. */
@@ -72,4 +88,6 @@ export interface Result {
   imports?: ImportFeature[];
   metrics: StructuralMetrics;
   findings?: Finding[];
+  /** Per-function Cognitive Complexity records; omitted when empty. */
+  cognitive_complexity?: FunctionCognitiveComplexity[];
 }

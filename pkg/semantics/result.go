@@ -2,13 +2,14 @@ package semantics
 
 // Result is the top-level output of analyzing one source file.
 type Result struct {
-	Path         string            `json:"path"`
-	Language     Language          `json:"language"`
-	ParseStatus  ParseStatus       `json:"parse_status"`
-	SyntaxErrors []SyntaxIssue     `json:"syntax_errors,omitempty"`
-	Imports      []ImportFeature   `json:"imports,omitempty"`
-	Metrics      StructuralMetrics `json:"metrics"`
-	Findings     []Finding         `json:"findings,omitempty"`
+	Path                string                        `json:"path"`
+	Language            Language                      `json:"language"`
+	ParseStatus         ParseStatus                   `json:"parse_status"`
+	SyntaxErrors        []SyntaxIssue                 `json:"syntax_errors,omitempty"`
+	Imports             []ImportFeature               `json:"imports,omitempty"`
+	Metrics             StructuralMetrics             `json:"metrics"`
+	Findings            []Finding                     `json:"findings,omitempty"`
+	CognitiveComplexity []FunctionCognitiveComplexity `json:"cognitive_complexity,omitempty"`
 }
 
 // Location is a 0-based byte/row/col span as Tree-sitter reports it.
@@ -39,14 +40,25 @@ type ImportFeature struct {
 // TypeSwitches and Selects have no TypeScript/TSX analog and are always 0
 // for those languages (Go-only fields).
 type StructuralMetrics struct {
-	Ifs             int `json:"ifs"`
-	Fors            int `json:"fors"`
-	ExprSwitches    int `json:"expr_switches"`
-	TypeSwitches    int `json:"type_switches"`
-	Selects         int `json:"selects"`
-	Functions       int `json:"functions"`
-	Methods         int `json:"methods"`
-	MaxNestingDepth int `json:"max_nesting_depth"`
+	Ifs                    int `json:"ifs"`
+	Fors                   int `json:"fors"`
+	ExprSwitches           int `json:"expr_switches"`
+	TypeSwitches           int `json:"type_switches"`
+	Selects                int `json:"selects"`
+	Functions              int `json:"functions"`
+	Methods                int `json:"methods"`
+	MaxNestingDepth        int `json:"max_nesting_depth"`
+	MaxCognitiveComplexity int `json:"max_cognitive_complexity"`
+	SumCognitiveComplexity int `json:"sum_cognitive_complexity"`
+}
+
+// FunctionCognitiveComplexity is the Cognitive Complexity score for one
+// scored function body (declaration, method, func lit, or arrow).
+type FunctionCognitiveComplexity struct {
+	Name     string   `json:"name"`
+	Kind     string   `json:"kind"`
+	Location Location `json:"location"`
+	Score    int      `json:"score"`
 }
 
 // Finding describes one detected pattern of interest, such as a

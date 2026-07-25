@@ -42,6 +42,7 @@ export {
 export { SemanticsError, SemanticsSyntaxError, type SemanticsErrorKind } from "./errors.js";
 export type {
   Finding,
+  FunctionCognitiveComplexity,
   ImportFeature,
   Language,
   Location,

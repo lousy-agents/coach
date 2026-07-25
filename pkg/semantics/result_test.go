@@ -9,11 +9,16 @@ import (
 )
 
 // goldenOkResult builds the small, hand-legible fixture used by the AC-4.4
-// golden test for a clean parse: one import, one finding, non-zero metrics,
-// no syntax errors. This is a state AnalyzeBytes can actually return
-// (ParseStatus "ok" always carries Imports/Metrics/Findings, never
-// SyntaxErrors).
+// golden test for a clean parse: one import, one finding, one zero-score
+// Cognitive Complexity record, no syntax errors. Shape matches a reachable
+// AnalyzeBytes "ok" result (ParseStatus "ok" carries Imports/Metrics/Findings
+// and per-function cognitive_complexity, never SyntaxErrors).
 func goldenOkResult() Result {
+	loc := Location{
+		StartByte: 30, EndByte: 45,
+		StartRow: 3, StartCol: 0,
+		EndRow: 3, EndCol: 15,
+	}
 	return Result{
 		Path:        "example.go",
 		Language:    LanguageGo,
@@ -29,18 +34,22 @@ func goldenOkResult() Result {
 			},
 		},
 		Metrics: StructuralMetrics{
-			Ifs: 1, Fors: 2, ExprSwitches: 0, TypeSwitches: 0,
-			Selects: 0, Functions: 1, Methods: 0, MaxNestingDepth: 2,
+			Ifs: 0, Fors: 0, ExprSwitches: 0, TypeSwitches: 0,
+			Selects: 0, Functions: 1, Methods: 0, MaxNestingDepth: 0,
 		},
 		Findings: []Finding{
 			{
-				Kind: "constructor_func",
-				Name: "NewThing",
-				Location: Location{
-					StartByte: 30, EndByte: 45,
-					StartRow: 3, StartCol: 0,
-					EndRow: 3, EndCol: 15,
-				},
+				Kind:     "constructor_func",
+				Name:     "NewThing",
+				Location: loc,
+			},
+		},
+		CognitiveComplexity: []FunctionCognitiveComplexity{
+			{
+				Name:     "NewThing",
+				Kind:     "function",
+				Location: loc,
+				Score:    0,
 			},
 		},
 	}

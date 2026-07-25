@@ -227,6 +227,7 @@ var _ = Describe("syntax error reporting", func() {
 			Expect(result.SyntaxErrors).NotTo(BeEmpty())
 			Expect(result.Imports).To(BeEmpty())
 			Expect(result.Findings).To(BeEmpty())
+			Expect(result.CognitiveComplexity).To(BeEmpty())
 			Expect(result.Metrics).To(Equal(semantics.StructuralMetrics{}))
 			Expect(err).To(HaveOccurred())
 		})
@@ -363,6 +364,9 @@ func (t T) M() {
 		Expect(result.Metrics).To(Equal(semantics.StructuralMetrics{
 			Ifs: 2, Fors: 1, ExprSwitches: 1, TypeSwitches: 1, Selects: 1,
 			Functions: 1, Methods: 1, MaxNestingDepth: result.Metrics.MaxNestingDepth,
+			// F: two ifs + for + switch + type-switch + select = 6; M: 0
+			MaxCognitiveComplexity: 6,
+			SumCognitiveComplexity: 6,
 		}))
 	})
 

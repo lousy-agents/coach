@@ -223,6 +223,24 @@ func advanceUntil(clock *acceptanceharness.FakeClock, step time.Duration, max ti
 	}
 }
 
+// heartbeatMuteStore wraps MemoryStore so tests can stop refreshing
+// heartbeat_at while a handler is paused. FakeClock.Advance fires pending
+// After waiters; the heartbeat goroutine would otherwise beat at the advanced
+// Now() and un-stale the lease before ClaimJob reclaim (CI flake).
+type heartbeatMuteStore struct {
+	*coachapi.MemoryStore
+	mute atomic.Bool
+}
+
+func (s *heartbeatMuteStore) Heartbeat(ctx context.Context, jobID, workerID string, attempt int, now time.Time) error {
+	if s.mute.Load() {
+		return nil
+	}
+	return s.MemoryStore.Heartbeat(ctx, jobID, workerID, attempt, now)
+}
+
+var _ coachapi.WorkerJobStore = (*heartbeatMuteStore)(nil)
+
 var _ = Describe("worker job claiming and lifecycle", func() {
 	var (
 		ctx   context.Context
@@ -363,9 +381,10 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 	// failure abandons without queue ack.
 	When("a worker's fenced write no longer matches (claimed_by, attempt)", func() {
 		It("returns ErrClaimLost for heartbeat, findings, diagnostics, and terminal writes, and abandons without acking", func() {
+			muted := &heartbeatMuteStore{MemoryStore: store}
 			job := newQueuedJob("cccccccc-cccc-cccc-cccc-cccccccccccc")
 			job.CreatedAt = start
-			Expect(store.CreateJob(ctx, job)).To(Succeed())
+			Expect(muted.CreateJob(ctx, job)).To(Succeed())
 			Expect(tq.Enqueue(ctx, queue.Task{ID: job.ID, Payload: []byte(job.ID)})).To(Succeed())
 
 			// Worker A will pause mid-handler; B reclaims after stale; A's
@@ -382,7 +401,7 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 				return successHandler(ctx, job, w)
 			}
 
-			wA, err := worker.New(store, tq, clock, handlerA, worker.Config{
+			wA, err := worker.New(muted, tq, clock, handlerA, worker.Config{
 				WorkerID:          "worker-a",
 				HeartbeatInterval: 15 * time.Second,
 				StaleAfter:        45 * time.Second, // 3×15
@@ -398,37 +417,40 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 			Expect(tq.inFlightCount()).To(Equal(1))
 			Expect(tq.completedCount()).To(Equal(0))
 
-			// Advance past stale; B claims via store (simulating queue redelivery).
+			// Handler is paused: mute heartbeats so Advance cannot refresh
+			// heartbeat_at via the still-running beat loop (would un-stale the lease).
+			muted.mute.Store(true)
 			clock.Advance(46 * time.Second)
 			nowB := clock.Now()
-			leaseB, err := store.ClaimJob(ctx, job.ID, "worker-b", nowB, 45*time.Second)
+			leaseB, err := muted.ClaimJob(ctx, job.ID, "worker-b", nowB, 45*time.Second)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(leaseB.Attempt).To(Equal(2))
+			muted.mute.Store(false)
 
 			// A's late heartbeat / findings / diagnostics / terminal must fail the fence.
-			err = store.Heartbeat(ctx, job.ID, "worker-a", 1, clock.Now())
+			err = muted.Heartbeat(ctx, job.ID, "worker-a", 1, clock.Now())
 			Expect(errors.Is(err, coachapi.ErrClaimLost)).To(BeTrue())
 
-			err = store.InsertFindings(ctx, job.ID, "worker-a", 1, []coachapi.JobFinding{{
+			err = muted.InsertFindings(ctx, job.ID, "worker-a", 1, []coachapi.JobFinding{{
 				ID: "late", JobID: job.ID, Attempt: 1,
 				Source:  coachapi.FindingSourceDeterministic,
 				Payload: json.RawMessage(`{}`), PayloadHash: "x",
 			}})
 			Expect(errors.Is(err, coachapi.ErrClaimLost)).To(BeTrue())
 
-			err = store.InsertDiagnostics(ctx, job.ID, "worker-a", 1, []coachapi.JobDiagnostic{{
+			err = muted.InsertDiagnostics(ctx, job.ID, "worker-a", 1, []coachapi.JobDiagnostic{{
 				ID: "late-diag", JobID: job.ID, Attempt: 1,
 				Scope: "file:a.go", Message: "zombie",
 			}})
 			Expect(errors.Is(err, coachapi.ErrClaimLost)).To(BeTrue())
 
-			err = store.CompleteJob(ctx, job.ID, "worker-a", 1, coachapi.Completion{
+			err = muted.CompleteJob(ctx, job.ID, "worker-a", 1, coachapi.Completion{
 				Attempt: 1, CommitSHA: "x", FinishedAt: nowB, GeneratedAt: nowB,
 				Versions: coachapi.ReportVersions{Analyzer: "a"},
 			})
 			Expect(errors.Is(err, coachapi.ErrClaimLost)).To(BeTrue())
 
-			err = store.FailJob(ctx, job.ID, "worker-a", 1, "late", nowB)
+			err = muted.FailJob(ctx, job.ID, "worker-a", 1, "late", nowB)
 			Expect(errors.Is(err, coachapi.ErrClaimLost)).To(BeTrue())
 
 			// Resume A: handler's InsertFindings/CompleteJob path also fences out.
@@ -937,9 +959,10 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 		It("rejects A's late heartbeat, findings, and terminal writes; A does not ack", func() {
 			// Covered in detail by the fenced-write scenario above; this
 			// variant drives the full worker A ProcessNext path with clock.
+			muted := &heartbeatMuteStore{MemoryStore: store}
 			job := newQueuedJob("feedface-feed-face-feed-facefeedface")
 			job.CreatedAt = start
-			Expect(store.CreateJob(ctx, job)).To(Succeed())
+			Expect(muted.CreateJob(ctx, job)).To(Succeed())
 			Expect(tq.Enqueue(ctx, queue.Task{ID: job.ID})).To(Succeed())
 
 			entered := make(chan struct{})
@@ -955,7 +978,7 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 				}})
 				return nil, err
 			}
-			wA, err := worker.New(store, tq, clock, handlerA, worker.Config{
+			wA, err := worker.New(muted, tq, clock, handlerA, worker.Config{
 				WorkerID: "zombie-a", HeartbeatInterval: 15 * time.Second, StaleAfter: 45 * time.Second,
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -967,16 +990,21 @@ var _ = Describe("worker job claiming and lifecycle", func() {
 			}()
 			Eventually(entered).Should(BeClosed())
 
+			// Mute beats before Advance: otherwise the heartbeat goroutine can
+			// refresh heartbeat_at to clock.Now() after the jump and ClaimJob
+			// returns ErrNotClaimable (observed flake on CI).
+			muted.mute.Store(true)
 			clock.Advance(46 * time.Second)
-			_, err = store.ClaimJob(ctx, job.ID, "zombie-b", clock.Now(), 45*time.Second)
+			_, err = muted.ClaimJob(ctx, job.ID, "zombie-b", clock.Now(), 45*time.Second)
 			Expect(err).NotTo(HaveOccurred())
+			muted.mute.Store(false)
 
 			close(release)
 			Eventually(aDone).Should(Receive(MatchError(coachapi.ErrClaimLost)))
 			Expect(tq.completedCount()).To(Equal(0))
 			Expect(tq.inFlightCount()).To(Equal(1))
 
-			got, err := store.GetJob(ctx, job.ID)
+			got, err := muted.GetJob(ctx, job.ID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(got.Attempt).To(Equal(2))
 			Expect(*got.ClaimedBy).To(Equal("zombie-b"))

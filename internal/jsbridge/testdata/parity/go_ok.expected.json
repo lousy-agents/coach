@@ -37,7 +37,9 @@
       "selects": 0,
       "functions": 1,
       "methods": 1,
-      "max_nesting_depth": 2
+      "max_nesting_depth": 2,
+      "max_cognitive_complexity": 2,
+      "sum_cognitive_complexity": 3
     },
     "findings": [
       {
@@ -63,6 +65,34 @@
           "end_row": 18,
           "end_col": 1
         }
+      }
+    ],
+    "cognitive_complexity": [
+      {
+        "name": "NewWidget",
+        "kind": "function",
+        "location": {
+          "start_byte": 176,
+          "end_byte": 282,
+          "start_row": 13,
+          "start_col": 0,
+          "end_row": 18,
+          "end_col": 1
+        },
+        "score": 1
+      },
+      {
+        "name": "Describe",
+        "kind": "method",
+        "location": {
+          "start_byte": 316,
+          "end_byte": 506,
+          "start_row": 21,
+          "start_col": 0,
+          "end_row": 31,
+          "end_col": 1
+        },
+        "score": 2
       }
     ]
   }
