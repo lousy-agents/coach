@@ -46,7 +46,7 @@ services:
 
   redis:
     profiles: ["core", "llm"]
-    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    image: redis:8-alpine@sha256:8096655e437712b07503796fb64d81359256cfcff0ab29d95a7da72863786efb
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
