@@ -111,8 +111,11 @@ func submitBaseline(ctx context.Context, client *http.Client, baseURL, token, ow
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("submit job status %d: %s", resp.StatusCode, truncate(raw))
+	// POST /v1/jobs is contractually 202 Accepted after durable persist+enqueue
+	// (internal/coachapi.Server.handleCreateJob). Do not accept 200 — that would
+	// let a submit-status regression pass platform-smoke.
+	if resp.StatusCode != http.StatusAccepted {
+		return "", fmt.Errorf("submit job status %d (want 202): %s", resp.StatusCode, truncate(raw))
 	}
 	var out struct {
 		ID string `json:"id"`
