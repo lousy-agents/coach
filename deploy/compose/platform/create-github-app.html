@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Coach Local Pilot: register GitHub App</title>
+  <style>
+    :root { font-family: ui-sans-serif, system-ui, sans-serif; line-height: 1.45; color: #1a1a1a; }
+    body { max-width: 44rem; margin: 2rem auto; padding: 0 1rem; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+    pre { background: #f4f4f5; padding: 0.75rem 1rem; overflow-x: auto; border-radius: 6px; }
+    .box { border: 1px solid #d4d4d8; border-radius: 8px; padding: 1rem 1.25rem; margin: 1.25rem 0; }
+    .ok { border-color: #86efac; background: #f0fdf4; }
+    .warn { border-color: #fcd34d; background: #fffbeb; }
+    button, .btn {
+      display: inline-block; background: #18181b; color: #fafafa; border: 0;
+      padding: 0.55rem 1rem; border-radius: 6px; cursor: pointer; font-size: 1rem;
+      text-decoration: none;
+    }
+    button.secondary { background: #52525b; }
+    label { display: block; margin: 0.5rem 0 0.25rem; font-weight: 600; }
+    input[type=text] { width: 100%; max-width: 24rem; padding: 0.4rem 0.5rem; }
+    h1 { font-size: 1.35rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.75rem; }
+    p.muted { color: #52525b; }
+  </style>
+</head>
+<body>
+  <h1>Register the Coach Local Pilot GitHub App</h1>
+  <p>
+    This page posts the repo’s
+    <code>github-app.manifest.json</code>
+    to GitHub so you get the right read-only permissions without hand-clicking the App form.
+    Serve it from this directory on port <strong>8765</strong> so the manifest
+    <code>redirect_url</code> matches.
+  </p>
+  <pre>cd deploy/compose/platform
+python3 -m http.server 8765
+# then open http://127.0.0.1:8765/create-github-app.html</pre>
+
+  <div id="post-create" class="box ok" hidden>
+    <h2>Manifest handshake code received</h2>
+    <p>
+      GitHub created the App registration and sent a temporary <code>code</code>.
+      Exchange it within one hour (from the <strong>repo root</strong>):
+    </p>
+    <pre id="convert-cmd"></pre>
+    <p>
+      That writes <code>secrets/github-app.pem</code> and prints the App ID for
+      <code>compose.override.yaml</code>. Then install the App on the account/org
+      that owns the repos you will scan.
+    </p>
+    <p class="muted">
+      Full Path C steps:
+      <code>docs/pilot-local-quickstart.md</code>
+    </p>
+  </div>
+
+  <div id="register" class="box">
+    <h2>1. Register on your user account</h2>
+    <p class="muted">
+      GitHub will let you edit the App name if <code>Coach Local Pilot</code> is taken.
+      Webhooks stay inactive. Permissions: Contents, Metadata, and Administration (read)
+      for Contents walks and collaborator permission checks.
+    </p>
+    <form id="form-user" action="https://github.com/settings/apps/new" method="post">
+      <input type="hidden" name="manifest" id="manifest-user" />
+      <button type="submit">Register GitHub App (user account)</button>
+    </form>
+
+    <h2>2. Or register under an organization</h2>
+    <p class="muted">
+      Use this when the App should be owned by an org (for example the org that owns
+      the repos you will scan). You need permission to manage GitHub Apps in that org.
+    </p>
+    <label for="org">Organization login</label>
+    <input type="text" id="org" placeholder="lousy-agents" autocomplete="off" />
+    <p style="margin-top: 0.75rem;">
+      <button type="button" class="secondary" id="btn-org">Register GitHub App (organization)</button>
+    </p>
+    <form id="form-org" method="post" hidden>
+      <input type="hidden" name="manifest" id="manifest-org" />
+    </form>
+  </div>
+
+  <div class="box warn">
+    <strong>Still needed separately:</strong> a GitHub <em>OAuth</em> App for browser login
+    (identity). The GitHub App is only for server-side repository read and authz.
+    See Path C in the pilot quickstart.
+  </div>
+
+  <script>
+    async function loadManifest() {
+      const res = await fetch("github-app.manifest.json", { cache: "no-store" });
+      if (!res.ok) throw new Error("failed to load github-app.manifest.json (" + res.status + ")");
+      return res.json();
+    }
+
+    function setManifestFields(manifest) {
+      const raw = JSON.stringify(manifest);
+      document.getElementById("manifest-user").value = raw;
+      document.getElementById("manifest-org").value = raw;
+    }
+
+    function showCodeStep(code) {
+      document.getElementById("register").hidden = true;
+      document.getElementById("post-create").hidden = false;
+      document.getElementById("convert-cmd").textContent =
+        "./deploy/compose/platform/complete-github-app-manifest.sh " + code;
+    }
+
+    document.getElementById("btn-org").addEventListener("click", () => {
+      const org = document.getElementById("org").value.trim();
+      if (!org) {
+        alert("Enter the organization login (e.g. lousy-agents).");
+        return;
+      }
+      const form = document.getElementById("form-org");
+      form.action = "https://github.com/organizations/" + encodeURIComponent(org) + "/settings/apps/new";
+      form.submit();
+    });
+
+    (async () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      if (code) {
+        showCodeStep(code);
+        return;
+      }
+      try {
+        const manifest = await loadManifest();
+        setManifestFields(manifest);
+      } catch (err) {
+        document.getElementById("register").innerHTML =
+          "<p><strong>Could not load github-app.manifest.json.</strong> " +
+          "Serve this directory over HTTP (see instructions above). " +
+          String(err) + "</p>";
+      }
+    })();
+  </script>
+</body>
+</html>

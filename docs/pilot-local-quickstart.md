@@ -263,28 +263,64 @@ Save the **Client ID** and generate a **Client secret**.
 
 ### 2. Create and install a GitHub App (repository read)
 
-In GitHub → Settings → Developer settings → **GitHub Apps** → New GitHub App:
+We ship a **GitHub App manifest** so you do not have to hand-pick permissions. It requests read-only:
 
-| Field | Local pilot value |
+| Permission | Why |
 | --- | --- |
-| GitHub App name | e.g. `coach-local-pilot-app` (must be globally unique) |
-| Homepage URL | `http://127.0.0.1:8080` |
-| Webhook | Uncheck **Active** (groundwork does not ingest webhooks) |
-| Repository permissions | **Contents**: Read-only; **Metadata**: Read-only (automatic) |
-| Where can this GitHub App be installed? | Only on this account, or any account if you will install on an org |
+| **Contents** | Tree walk and file reads (`pkg/githubingest`) |
+| **Metadata** | Repository metadata (always required with Contents) |
+| **Administration** | `GET …/collaborators/{user}/permission` for submit-time authz (ADR-003) |
 
-Create the app, note the **App ID**, and generate a **private key** (`.pem` download).
+Webhooks are present in the manifest only because GitHub requires a hook URL on App create; they are **inactive**. Groundwork does not ingest webhooks. The App is **not** public (`public: false`): only you (the owner) install it for lab use.
 
-Install the app on the account or org that owns the target repo (for `lousy-agents/coach`, install on the `lousy-agents` org, or on your user if you are scanning a personal fork). Grant access to the specific repository (or all repos, if you accept that blast radius for a lab install).
+Manifest and helpers:
 
-If submit later fails with `repo_not_authorized` while you are sure you are a collaborator, re-check installation target and Contents read permission first. Org-level permission quirks for the collaborators API are still a known edge (ADR-003).
+| File | Role |
+| --- | --- |
+| [`deploy/compose/platform/github-app.manifest.json`](../deploy/compose/platform/github-app.manifest.json) | Canonical manifest JSON |
+| [`deploy/compose/platform/create-github-app.html`](../deploy/compose/platform/create-github-app.html) | Browser form that POSTs the manifest to GitHub |
+| [`deploy/compose/platform/complete-github-app-manifest.sh`](../deploy/compose/platform/complete-github-app-manifest.sh) | Exchanges GitHub’s one-hour conversion `code` for App ID + PEM |
+
+#### Register from the manifest (recommended)
+
+From the repo root:
+
+```sh
+cd deploy/compose/platform
+python3 -m http.server 8765
+```
+
+Open [http://127.0.0.1:8765/create-github-app.html](http://127.0.0.1:8765/create-github-app.html).
+
+1. Click **Register GitHub App (user account)**, or enter an org login and register under that org.
+2. On GitHub, confirm the name (change it if `Coach Local Pilot` is taken) and create the App.
+3. GitHub redirects back to the local page with `?code=…`. From the **repo root**, run the printed command (within one hour):
+
+   ```sh
+   ./deploy/compose/platform/complete-github-app-manifest.sh <code>
+   ```
+
+4. The script writes gitignored files:
+
+   - `secrets/github-app.pem` (private key)
+   - `secrets/github-app.json` (App id, slug, urls; no PEM)
+
+5. **Install** the App on the account or org that owns the target repo (the script prints an installations URL). For `lousy-agents/coach`, install on the `lousy-agents` org (you need org permission to install), or scan a personal fork where you can install on your user. Grant access to the specific repository (or all repos, if you accept that blast radius for a lab install).
+
+#### Manual create (fallback)
+
+If you prefer the GitHub UI: Developer settings → GitHub Apps → New GitHub App. Match [`github-app.manifest.json`](../deploy/compose/platform/github-app.manifest.json): homepage `http://127.0.0.1:8080`, webhook **inactive**, permissions Contents / Metadata / Administration **read**, not public. Generate a private key and move it to `secrets/github-app.pem`.
+
+If submit later fails with `repo_not_authorized` while you are sure you are a collaborator, re-check installation target and that Administration + Contents read are granted. Org-level permission quirks for the collaborators API are still a known edge (ADR-003).
 
 ### 3. Keep secrets off git
 
 ```sh
-mkdir -p secrets
-mv ~/Downloads/coach-local-pilot-app.*.private-key.pem secrets/github-app.pem
-chmod 600 secrets/github-app.pem
+# After the manifest script (preferred), secrets/ already holds the PEM.
+# Manual fallback only:
+# mkdir -p secrets
+# mv ~/Downloads/*private-key.pem secrets/github-app.pem
+chmod 600 secrets/github-app.pem 2>/dev/null || true
 ```
 
 `secrets/` and `compose.override.yaml` are gitignored. Do not commit PEMs, client secrets, or override files with real values.
@@ -302,7 +338,8 @@ services:
       COACH_GITHUB_OAUTH_CLIENT_ID: "Iv1.xxxxxxxx"
       COACH_GITHUB_OAUTH_CLIENT_SECRET: "xxxxxxxx"
       COACH_GITHUB_OAUTH_REDIRECT_URI: "http://127.0.0.1:8080/oauth/github/callback"
-      # Repo authz (same App as the worker)
+      # Repo authz (same App as the worker). App ID is printed by
+      # complete-github-app-manifest.sh and stored in secrets/github-app.json
       COACH_GITHUB_APP_ID: "123456"
       COACH_GITHUB_APP_PRIVATE_KEY_PATH: "/secrets/github-app.pem"
       # Keep fixture bypass so Path A smoke still works alongside live GitHub
@@ -506,7 +543,7 @@ docker compose --profile core --profile llm down -v --remove-orphans
 ## FAQ
 
 **Do I need a GitHub App or OAuth to try this?**  
-No for Paths A and B. Test mint and the `coach-smoke/fixture-repo` fixture only. Path C (remote GitHub.com repos) needs both a GitHub OAuth App and a GitHub App installation.
+No for Paths A and B. Test mint and the `coach-smoke/fixture-repo` fixture only. Path C (remote GitHub.com repos) needs both a GitHub OAuth App (identity) and a GitHub App installation (repo read). Use [`deploy/compose/platform/github-app.manifest.json`](../deploy/compose/platform/github-app.manifest.json) plus `create-github-app.html` for the App.
 
 **Does Coach post comments, checks, or write anything to GitHub?**  
 No. Submit, poll, and fetch the report. Nothing is written back to GitHub in this era. Path C only **reads** via the App installation.
@@ -543,7 +580,11 @@ export MODEL_GATEWAY_MODEL=qwen3.5:4b
 docker compose --profile llm up -d --build
 mise run platform-smoke
 
-# Path C: remote GitHub.com repo (after compose.override.yaml + App install)
+# Path C: GitHub App from manifest, then remote scan
+cd deploy/compose/platform && python3 -m http.server 8765
+# browser: http://127.0.0.1:8765/create-github-app.html → register → then:
+# ./deploy/compose/platform/complete-github-app-manifest.sh <code>
+# install App on target owner; add OAuth App + compose.override.yaml; then:
 open http://127.0.0.1:8080/oauth/github/start   # copy access_token from JSON
 export TOKEN='…'
 curl -s -X POST http://127.0.0.1:8080/v1/jobs \
