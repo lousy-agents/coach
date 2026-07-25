@@ -23,7 +23,9 @@
     "selects": 0,
     "functions": 0,
     "methods": 1,
-    "max_nesting_depth": 1
+    "max_nesting_depth": 1,
+    "max_cognitive_complexity": 0,
+    "sum_cognitive_complexity": 0
   },
   "findings": [
     {
@@ -37,6 +39,21 @@
         "end_row": 4,
         "end_col": 32
       }
+    }
+  ],
+  "cognitive_complexity": [
+    {
+      "name": "constructor",
+      "kind": "method",
+      "location": {
+        "start_byte": 55,
+        "end_byte": 107,
+        "start_row": 3,
+        "start_col": 1,
+        "end_row": 5,
+        "end_col": 2
+      },
+      "score": 0
     }
   ]
 }

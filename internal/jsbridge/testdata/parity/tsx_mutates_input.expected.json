@@ -25,7 +25,9 @@
       "selects": 0,
       "functions": 7,
       "methods": 0,
-      "max_nesting_depth": 2
+      "max_nesting_depth": 2,
+      "max_cognitive_complexity": 0,
+      "sum_cognitive_complexity": 0
     },
     "findings": [
       {
@@ -107,6 +109,99 @@
         "evidence": "arr[\"push\"]",
         "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
         "suggested_skill": "refactor-hidden-mutation"
+      }
+    ],
+    "cognitive_complexity": [
+      {
+        "name": "updateName",
+        "kind": "function",
+        "location": {
+          "start_byte": 66,
+          "end_byte": 141,
+          "start_row": 6,
+          "start_col": 0,
+          "end_row": 8,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "updateWrapped",
+        "kind": "function",
+        "location": {
+          "start_byte": 143,
+          "end_byte": 241,
+          "start_row": 10,
+          "start_col": 0,
+          "end_row": 13,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "updateCollection",
+        "kind": "function",
+        "location": {
+          "start_byte": 243,
+          "end_byte": 323,
+          "start_row": 15,
+          "start_col": 0,
+          "end_row": 18,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "ignoreShadowed",
+        "kind": "function",
+        "location": {
+          "start_byte": 325,
+          "end_byte": 443,
+          "start_row": 20,
+          "start_col": 0,
+          "end_row": 25,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "ignorePredeclaredShadow",
+        "kind": "function",
+        "location": {
+          "start_byte": 445,
+          "end_byte": 554,
+          "start_row": 27,
+          "start_col": 0,
+          "end_row": 30,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "cfg",
+        "kind": "function",
+        "location": {
+          "start_byte": 535,
+          "end_byte": 552,
+          "start_row": 29,
+          "start_col": 2,
+          "end_row": 29,
+          "end_col": 19
+        },
+        "score": 0
+      },
+      {
+        "name": "Panel",
+        "kind": "function",
+        "location": {
+          "start_byte": 556,
+          "end_byte": 662,
+          "start_row": 32,
+          "start_col": 0,
+          "end_row": 35,
+          "end_col": 1
+        },
+        "score": 0
       }
     ]
   }

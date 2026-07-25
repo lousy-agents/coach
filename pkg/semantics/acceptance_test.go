@@ -363,6 +363,9 @@ func (t T) M() {
 		Expect(result.Metrics).To(Equal(semantics.StructuralMetrics{
 			Ifs: 2, Fors: 1, ExprSwitches: 1, TypeSwitches: 1, Selects: 1,
 			Functions: 1, Methods: 1, MaxNestingDepth: result.Metrics.MaxNestingDepth,
+			// F: two ifs + for + switch + type-switch + select = 6; M: 0
+			MaxCognitiveComplexity: 6,
+			SumCognitiveComplexity: 6,
 		}))
 	})
 

@@ -36,7 +36,37 @@
       "selects": 0,
       "functions": 2,
       "methods": 0,
-      "max_nesting_depth": 3
-    }
+      "max_nesting_depth": 3,
+      "max_cognitive_complexity": 5,
+      "sum_cognitive_complexity": 5
+    },
+    "cognitive_complexity": [
+      {
+        "name": "greet",
+        "kind": "function",
+        "location": {
+          "start_byte": 83,
+          "end_byte": 384,
+          "start_row": 3,
+          "start_col": 7,
+          "end_row": 18,
+          "end_col": 1
+        },
+        "score": 5
+      },
+      {
+        "name": "load",
+        "kind": "function",
+        "location": {
+          "start_byte": 393,
+          "end_byte": 485,
+          "start_row": 20,
+          "start_col": 7,
+          "end_row": 22,
+          "end_col": 1
+        },
+        "score": 0
+      }
+    ]
   }
 }

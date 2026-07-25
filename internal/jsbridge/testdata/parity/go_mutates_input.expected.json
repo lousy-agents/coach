@@ -12,7 +12,9 @@
       "selects": 0,
       "functions": 5,
       "methods": 0,
-      "max_nesting_depth": 2
+      "max_nesting_depth": 2,
+      "max_cognitive_complexity": 1,
+      "sum_cognitive_complexity": 1
     },
     "findings": [
       {
@@ -110,6 +112,73 @@
         "evidence": "items[0]",
         "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
         "suggested_skill": "refactor-hidden-mutation"
+      }
+    ],
+    "cognitive_complexity": [
+      {
+        "name": "UpdateName",
+        "kind": "function",
+        "location": {
+          "start_byte": 170,
+          "end_byte": 271,
+          "start_row": 9,
+          "start_col": 0,
+          "end_row": 14,
+          "end_col": 1
+        },
+        "score": 1
+      },
+      {
+        "name": "ReplaceConfig",
+        "kind": "function",
+        "location": {
+          "start_byte": 273,
+          "end_byte": 344,
+          "start_row": 16,
+          "start_col": 0,
+          "end_row": 18,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "UpdateParenthesized",
+        "kind": "function",
+        "location": {
+          "start_byte": 346,
+          "end_byte": 440,
+          "start_row": 20,
+          "start_col": 0,
+          "end_row": 23,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "UpdateCounters",
+        "kind": "function",
+        "location": {
+          "start_byte": 442,
+          "end_byte": 516,
+          "start_row": 25,
+          "start_col": 0,
+          "end_row": 28,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "IgnoreShadowed",
+        "kind": "function",
+        "location": {
+          "start_byte": 518,
+          "end_byte": 600,
+          "start_row": 30,
+          "start_col": 0,
+          "end_row": 35,
+          "end_col": 1
+        },
+        "score": 0
       }
     ]
   }

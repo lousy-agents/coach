@@ -24,6 +24,8 @@ const okResult: Result = {
     functions: 1,
     methods: 0,
     max_nesting_depth: 1,
+    max_cognitive_complexity: 0,
+    sum_cognitive_complexity: 0,
   },
 };
 
@@ -46,6 +48,8 @@ const syntaxResult: Result = {
     functions: 0,
     methods: 0,
     max_nesting_depth: 0,
+    max_cognitive_complexity: 0,
+    sum_cognitive_complexity: 0,
   },
 };
 

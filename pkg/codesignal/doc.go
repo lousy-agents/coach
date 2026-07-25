@@ -12,6 +12,10 @@
 // finding kinds are ignored. A third dispatch path, signalsFromImports,
 // derives "coupling.deep_relative_import" directly from a TypeScript/TSX
 // file's semantics.ImportFeature list rather than from Findings or Metrics.
+// A fourth path, signalsFromCognitiveComplexity, derives
+// "complexity.cognitive_complexity" from per-function
+// semantics.FunctionCognitiveComplexity records (threshold-gated in
+// codesignal, not in semantics).
 //
 // A Signal's Lifecycle classifies it relative to an optional Base result.
 // Signal.Changed is independent of Lifecycle: a pre-existing signal may sit
