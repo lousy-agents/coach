@@ -4,6 +4,10 @@ Operator guide for the **Baseline Scan Story 4 / Task 10** Docker Compose stack.
 This is **not** Feature Zero's offline thinproof suite (`deploy/compose/thinproof`,
 `mise run test-acceptance-thin-proof`).
 
+**Pilot-facing first run:** see [`docs/pilot-local-quickstart.md`](../pilot-local-quickstart.md)
+(credential-free smoke, optional host `qwen3.5:4b` / `qwen3.5:4b-mlx` via OpenAI-compatible
+upstream). This page is the env-var and operator reference.
+
 ## Profiles
 
 | Profile | Services | Model path | GitHub credentials |
@@ -147,32 +151,44 @@ mise run platform-up
 ## `llm` profile (operator-only, not CI)
 
 CI runs **only** the `core` profile (aigw → model-stub). Real-model validation
-is operator-run:
+is operator-run. The worker always calls **aigw**; aigw's upstream is any
+OpenAI-compatible `POST /v1/chat/completions` server on the host or compose
+network.
 
-1. Start a host-native llama.cpp server with an OpenAI-compatible
-   `/v1/chat/completions` endpoint (prefer Metal on macOS), e.g. listening on
-   `127.0.0.1:8081`.
-2. Point **aigw's upstream** at the host server and bring up the `llm` profile
+**Pilot-oriented steps** (Ollama `qwen3.5:4b` / `qwen3.5:4b-mlx`, plus
+llama.cpp) live in [`docs/pilot-local-quickstart.md`](../pilot-local-quickstart.md)
+Path B. Condensed operator form:
+
+1. Start a host OpenAI-compatible server (architecture reference: native
+   llama.cpp with Metal on macOS; pilots often use Ollama). Example listen
+   addresses: Ollama `127.0.0.1:11434`, llama.cpp `127.0.0.1:8081`.
+2. Point **aigw's upstream** at that server and bring up the `llm` profile
    (worker still calls aigw, not the host directly):
 
    ```sh
+   # llama.cpp example
    export AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1
    export MODEL_GATEWAY_MODEL=local   # or your served model id
+
+   # Ollama example (must match the pulled tag)
+   # export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
+   # export MODEL_GATEWAY_MODEL=qwen3.5:4b
+
    docker compose --profile llm up -d --build
    # wait healthy, then:
    mise run platform-smoke
    ```
 
 3. Expect the report to include ≥1 schema-valid `source=agent` judgment produced
-   by llama.cpp (not only model-stub).
+   by the host model (not only model-stub).
 
-**Linux fallback:** if host networking to llama.cpp is awkward, run a
-containerized llama.cpp on the compose network and set
-`AIGW_OPENAI_BASE_URL=http://<llama-service>:8080/v1`. GPU/weights are **not**
-required in CI and are not pulled by this repo's compose file.
+**Linux fallback:** if host networking is awkward, run the model server on the
+compose network and set `AIGW_OPENAI_BASE_URL=http://<service>:<port>/v1`.
+GPU/weights are **not** required in CI and are not pulled by this repo's
+compose file.
 
-`mise run platform-llm-validate` prints these steps and exits 0 when used as a
-docs/reminder task (it does not download weights).
+`mise run platform-llm-validate` prints a short reminder and exits 0 (it does
+not download weights).
 
 ## Distinction from thinproof (Feature Zero)
 
