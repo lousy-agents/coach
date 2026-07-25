@@ -48,22 +48,30 @@ type goCCTarget struct {
 	kind string
 }
 
-func collectGoCCTargets(n engine.Node, source []byte) []goCCTarget {
-	if n == nil {
+func collectGoCCTargets(root engine.Node, source []byte) []goCCTarget {
+	if root == nil {
 		return nil
 	}
+	// Iterative DFS into one result slice: avoids recursive slice-concat
+	// copies on large ASTs. Discovery order is irrelevant — callers sort by
+	// location.start_byte then name.
 	var out []goCCTarget
-	switch n.Kind() {
-	case "function_declaration":
-		out = append(out, goCCTarget{node: n, name: goDeclName(n, source), kind: "function"})
-	case "method_declaration":
-		out = append(out, goCCTarget{node: n, name: goDeclName(n, source), kind: "method"})
-	case "func_literal":
-		out = append(out, goCCTarget{node: n, name: goFuncLitName(n, source), kind: "func_lit"})
-	}
-	count := n.ChildCount()
-	for i := 0; i < count; i++ {
-		out = append(out, collectGoCCTargets(n.Child(i), source)...)
+	stack := []engine.Node{root}
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		switch n.Kind() {
+		case "function_declaration":
+			out = append(out, goCCTarget{node: n, name: goDeclName(n, source), kind: "function"})
+		case "method_declaration":
+			out = append(out, goCCTarget{node: n, name: goDeclName(n, source), kind: "method"})
+		case "func_literal":
+			out = append(out, goCCTarget{node: n, name: goFuncLitName(n, source), kind: "func_lit"})
+		}
+		count := n.ChildCount()
+		for i := count - 1; i >= 0; i-- {
+			stack = append(stack, n.Child(i))
+		}
 	}
 	return out
 }

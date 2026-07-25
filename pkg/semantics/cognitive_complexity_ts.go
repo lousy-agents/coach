@@ -108,25 +108,33 @@ func tsIsNestedInScoredBody(n engine.Node) bool {
 	return false
 }
 
-func collectTSCCTargets(n engine.Node, source []byte) []tsCCTarget {
-	if n == nil {
+func collectTSCCTargets(root engine.Node, source []byte) []tsCCTarget {
+	if root == nil {
 		return nil
 	}
+	// Iterative DFS into one result slice: avoids recursive slice-concat
+	// copies on large ASTs. Discovery order is irrelevant — callers sort by
+	// location.start_byte then name.
 	var out []tsCCTarget
-	if isTSCCScoredKind(n.Kind()) {
-		// Overload signatures and abstract methods have no body — skip.
-		if body := tsCCBody(n); body != nil {
-			out = append(out, tsCCTarget{
-				node:     n,
-				name:     tsCCName(n, source),
-				kind:     tsCCKind(n.Kind()),
-				topLevel: !tsIsNestedInScoredBody(n),
-			})
+	stack := []engine.Node{root}
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if isTSCCScoredKind(n.Kind()) {
+			// Overload signatures and abstract methods have no body — skip.
+			if body := tsCCBody(n); body != nil {
+				out = append(out, tsCCTarget{
+					node:     n,
+					name:     tsCCName(n, source),
+					kind:     tsCCKind(n.Kind()),
+					topLevel: !tsIsNestedInScoredBody(n),
+				})
+			}
 		}
-	}
-	count := n.ChildCount()
-	for i := 0; i < count; i++ {
-		out = append(out, collectTSCCTargets(n.Child(i), source)...)
+		count := n.ChildCount()
+		for i := count - 1; i >= 0; i-- {
+			stack = append(stack, n.Child(i))
+		}
 	}
 	return out
 }
