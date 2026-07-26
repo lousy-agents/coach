@@ -16,6 +16,8 @@ This page is the operator env-var reference.
 
 Compose file: repo-root [`compose.yaml`](../../compose.yaml).
 
+**Local config:** copy [`.env.example`](../../.env.example) → `.env` (gitignored). Compose loads `.env` for `${VAR}` interpolation into service `environment`. Path C PEM convention: host `secrets/github-app.pem` → container `/secrets/github-app.pem` (`secrets/` is always bind-mounted). Recreate containers after `.env` edits.
+
 ### Inference data plane
 
 ```text
@@ -69,17 +71,19 @@ falsely.
 | `COACH_PG_DSN` | `postgres://coach:coach@postgres:5432/coach?sslmode=disable` | Job store |
 | `COACH_AUTHZ_BYPASS_OWNER` | `coach-smoke` | Submit-time authz bypass owner |
 | `COACH_AUTHZ_BYPASS_REPO` | `fixture-repo` | Submit-time authz bypass repo |
+| `COACH_GITHUB_*` | empty via `${…:-}` | Path C from `.env`; leave unset/empty for credential-free smoke |
 
-**Omitted on purpose (must stay unset for credential-free smoke):**
+**Must stay empty for credential-free smoke** (no Path C keys in `.env`):
 
 - `COACH_GITHUB_APP_ID`
 - `COACH_GITHUB_APP_PRIVATE_KEY` / `COACH_GITHUB_APP_PRIVATE_KEY_PATH`
 - `COACH_GITHUB_OAUTH_CLIENT_ID` / `COACH_GITHUB_OAUTH_CLIENT_SECRET`
 - any other GitHub credential
 
-When both bypass vars are set, coach-api starts without App credentials and
-wraps a fail-closed deny-all authorizer in `BypassAuthorizer` so **only** the
-fixture owner/repo pair can be submitted.
+When both bypass vars are set and App credentials are empty, coach-api starts
+without App credentials and wraps a fail-closed deny-all authorizer in
+`BypassAuthorizer` so **only** the fixture owner/repo pair can be submitted.
+Path C sets App + OAuth in `.env` while bypass remains for fixture smoke.
 
 ### Worker (`coach-worker`)
 
@@ -104,10 +108,12 @@ fixture owner/repo pair can be submitted.
 | `COACH_MAX_JUDGMENT_PROMPT_TOKENS` | `3500` | Pack split estimator |
 | `COACH_JUDGMENT_FILE_AFFINITY_MIN_FINDINGS` | `5` | Dense-path dedicated packs |
 | `COACH_JUDGMENT_EVIDENCE_WINDOW_LINES` | `15` | ±N evidence lines |
+| `COACH_GITHUB_APP_ID` / `_PRIVATE_KEY_PATH` | empty | Path C from `.env` |
+| volumes | `secrets/` → `/secrets` | PEM convention; directory always mounted |
 
-Core/smoke needs **none** of the judgment knobs or `MODEL_GATEWAY_DISABLE_THINKING` (defaults + stub gateway). GitHub App vars on the worker are optional and **unset** in core/smoke.
+Core/smoke needs **none** of the judgment knobs or `MODEL_GATEWAY_DISABLE_THINKING` (defaults + stub gateway). GitHub App vars on the worker are optional and **empty** in core/smoke.
 
-**Recreate containers** after changing `MODEL_GATEWAY_*`, `AIGW_OPENAI_BASE_URL`, or judgment env — compose does not hot-reload them.
+**Recreate containers** after changing `.env` (`MODEL_GATEWAY_*`, `AIGW_OPENAI_BASE_URL`, judgment, or GitHub keys) — compose does not hot-reload them.
 
 ### Envoy AI Gateway (`ai-gateway`)
 
@@ -171,29 +177,19 @@ Condensed operator form:
 1. Start a host OpenAI-compatible server (architecture reference: native
    llama.cpp with Metal on macOS; pilots often use Ollama). Example listen
    addresses: Ollama `127.0.0.1:11434`, llama.cpp `127.0.0.1:8081`.
-2. Point **aigw's upstream** at that server and bring up the `llm` profile
+2. Copy [`.env.example`](../../.env.example) → `.env` and set Path B keys
    (worker still calls aigw, not the host directly). **Recreate** worker/aigw
-   after changing these env vars:
+   after changing `.env`:
 
    ```sh
-   # llama.cpp example
-   export AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1
-   export MODEL_GATEWAY_MODEL=local   # or your served model id
+   cp .env.example .env
+   # Edit .env — examples:
+   #   AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
+   #   MODEL_GATEWAY_MODEL=qwen3.5:4b          # or gemma4:12b / local
+   #   MODEL_GATEWAY_TIMEOUT=120s
+   #   MODEL_GATEWAY_DISABLE_THINKING=1        # Ollama-style; leave empty for llama.cpp
 
-   # Qwen 3.5 via Ollama (must match the pulled tag)
-   # export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
-   # export MODEL_GATEWAY_MODEL=qwen3.5:4b
-
-   # Gemma 4 via Ollama (example id — confirm with /v1/models)
-   # export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
-   # export MODEL_GATEWAY_MODEL=gemma4:12b
-
-   export MODEL_GATEWAY_TIMEOUT=120s          # raise if judgments time out
-   export MODEL_GATEWAY_DISABLE_THINKING=1    # local path: think:false when supported
-   # Optional: COACH_JUDGMENT_MAX_WALL_TIME, COACH_MAX_HIDDEN_MUTATION_JUDGMENTS,
-   # COACH_MAX_FINDINGS_PER_JUDGMENT_PACK, COACH_MAX_JUDGMENT_PROMPT_TOKENS,
-   # COACH_JUDGMENT_FILE_AFFINITY_MIN_FINDINGS, COACH_JUDGMENT_EVIDENCE_WINDOW_LINES
-
+   mkdir -p secrets
    docker compose --profile llm up -d --build
    # wait healthy, then:
    mise run platform-smoke
@@ -203,9 +199,9 @@ Condensed operator form:
    by the host model (not only model-stub).
 
 **Linux fallback:** if host networking is awkward, run the model server on the
-compose network and set `AIGW_OPENAI_BASE_URL=http://<service>:<port>/v1`.
-GPU/weights are **not** required in CI and are not pulled by this repo's
-compose file.
+compose network and set `AIGW_OPENAI_BASE_URL=http://<service>:<port>/v1` in
+`.env`. GPU/weights are **not** required in CI and are not pulled by this
+repo's compose file.
 
 `mise run platform-llm-validate` prints a short reminder and exits 0 (it does
 not download weights).

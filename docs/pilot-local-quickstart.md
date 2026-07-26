@@ -42,7 +42,10 @@ This stack is for local experiments. It uses fixed lab credentials and test logi
 git clone https://github.com/lousy-agents/coach.git
 cd coach
 mise install
+cp .env.example .env   # optional for Path A; required knobs for Path B/C
 ```
+
+Local config lives in a gitignored **`.env`** (Compose loads it automatically for variable interpolation). See [`.env.example`](../.env.example). After editing `.env`, recreate containers (`docker compose … up -d --build`).
 
 Before Path A or B smoke tests, unset GitHub and cloud tokens in that shell (`GITHUB_TOKEN`, `GH_TOKEN`, and similar). The smoke check fails if those are set, so a pass cannot depend on credentials already on your machine.
 
@@ -139,9 +142,9 @@ Agent findings never remove or change deterministic ones. If the model is down o
 
 ## Path B: Real local model
 
-Same stack and smoke as Path A. Point the gateway at a model on your machine.
+Same stack and smoke as Path A. Point the gateway at a model on your machine via **`.env`** (not shell `export`s).
 
-**Recreate containers after changing model/gateway/judgment env.** Compose does not hot-reload `AIGW_OPENAI_BASE_URL`, `MODEL_GATEWAY_*`, or worker judgment knobs into already-running containers. After exports change, run `docker compose --profile llm up -d --build` again (or `down` then `up`) so worker and ai-gateway pick up the new values.
+**Recreate containers after changing `.env`.** Compose does not hot-reload `AIGW_OPENAI_BASE_URL`, `MODEL_GATEWAY_*`, or worker judgment knobs. After edits: `docker compose --profile llm up -d --build` (or `down` then `up`).
 
 ### 1. Start a model server
 
@@ -166,36 +169,38 @@ curl -s http://127.0.0.1:11434/v1/models | jq .
 
 **llama.cpp:** serve OpenAI-compatible chat on a port you choose (example: 8081).
 
-### 2. Start compose with that upstream
+### 2. Configure `.env` and start compose
 
 ```sh
-# --- Qwen 3.5 (Ollama) ---
-export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
-export MODEL_GATEWAY_MODEL=qwen3.5:4b
+cp .env.example .env   # if you have not already
+```
 
-# --- Gemma 4 (Ollama; id must match /v1/models) ---
-# export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
-# export MODEL_GATEWAY_MODEL=gemma4:12b
+Edit `.env` (uncomment Path B). **Qwen 3.5 via Ollama:**
 
-# MLX example (only if your server uses this id):
-# export MODEL_GATEWAY_MODEL=qwen3.5:4b-mlx
+```dotenv
+AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
+MODEL_GATEWAY_MODEL=qwen3.5:4b
+MODEL_GATEWAY_TIMEOUT=120s
+MODEL_GATEWAY_DISABLE_THINKING=1
+```
 
-# llama.cpp example:
-# export AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1
-# export MODEL_GATEWAY_MODEL=local
+Other examples (same file):
 
-# Local-LLM recommendations (Path B):
-export MODEL_GATEWAY_TIMEOUT=120s          # raise to 300s if judgments time out
-export MODEL_GATEWAY_DISABLE_THINKING=1    # Ollama-style think:false when supported
+```dotenv
+# Gemma 4 — MODEL_GATEWAY_MODEL must match /v1/models
+# MODEL_GATEWAY_MODEL=gemma4:12b
 
-# Optional judgment packing / budget knobs (worker; defaults shown):
-# export COACH_JUDGMENT_MAX_WALL_TIME=10m                 # min 5m
-# export COACH_MAX_HIDDEN_MUTATION_JUDGMENTS=16           # 0=default 16; negative=unlimited
-# export COACH_MAX_FINDINGS_PER_JUDGMENT_PACK=4
-# export COACH_MAX_JUDGMENT_PROMPT_TOKENS=3500
-# export COACH_JUDGMENT_FILE_AFFINITY_MIN_FINDINGS=5
-# export COACH_JUDGMENT_EVIDENCE_WINDOW_LINES=15
+# MLX
+# MODEL_GATEWAY_MODEL=qwen3.5:4b-mlx
 
+# llama.cpp
+# AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1
+# MODEL_GATEWAY_MODEL=local
+# MODEL_GATEWAY_DISABLE_THINKING=
+```
+
+```sh
+mkdir -p secrets
 docker compose --profile llm up -d --build
 ```
 
@@ -206,9 +211,9 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/v1/me
 # 401 or 200 means it is listening
 ```
 
-`mise run platform-up` always uses the fake model. For a real model, set the env vars and use `--profile llm` as above.
+`mise run platform-up` uses the **core** profile. With no Path B keys in `.env`, aigw still targets model-stub. For a real model, put Path B keys in `.env` and use `--profile llm` as above.
 
-On Linux, if the gateway cannot reach the host, run the model in a container on the same compose network and set `AIGW_OPENAI_BASE_URL=http://<service>:<port>/v1`.
+On Linux, if the gateway cannot reach the host, run the model in a container on the same compose network and set `AIGW_OPENAI_BASE_URL=http://<service>:<port>/v1` in `.env`.
 
 ### Path B env reference
 
@@ -225,7 +230,7 @@ On Linux, if the gateway cannot reach the host, run the model in a container on 
 | `COACH_JUDGMENT_FILE_AFFINITY_MIN_FINDINGS` | `5` | Dense paths get dedicated packs |
 | `COACH_JUDGMENT_EVIDENCE_WINDOW_LINES` | `15` | ±N lines of evidence around the signal |
 
-If jobs hit the judgment wall with few agent rows, lower `COACH_MAX_HIDDEN_MUTATION_JUDGMENTS` or raise `COACH_JUDGMENT_MAX_WALL_TIME` / `MODEL_GATEWAY_TIMEOUT`—do not only shrink pack size.
+Full commented list: [`.env.example`](../.env.example). If jobs hit the judgment wall with few agent rows, lower `COACH_MAX_HIDDEN_MUTATION_JUDGMENTS` or raise `COACH_JUDGMENT_MAX_WALL_TIME` / `MODEL_GATEWAY_TIMEOUT`—do not only shrink pack size.
 
 ### 3. Smoke again
 
@@ -299,7 +304,7 @@ Open http://127.0.0.1:8765/create-github-app.html
    ./deploy/compose/platform/complete-github-app-manifest.sh <code>
    ```
 
-4. That creates (gitignored):
+4. That creates (gitignored contents under `secrets/`):
 
    - `secrets/github-app.pem`
    - `secrets/github-app.json` (includes App ID)
@@ -312,47 +317,41 @@ Open http://127.0.0.1:8765/create-github-app.html
 chmod 600 secrets/github-app.pem
 ```
 
-Do not commit `secrets/` or `compose.override.yaml`.
+**PEM convention:** Compose always bind-mounts host `secrets/` → `/secrets` in `coach-api` and `coach-worker`. Put the private key at `secrets/github-app.pem` and set `COACH_GITHUB_APP_PRIVATE_KEY_PATH=/secrets/github-app.pem` in `.env`.
 
-### 3. Compose override
+Do not commit `.env` or `secrets/*.pem`.
 
-Default compose has no GitHub credentials. Add a gitignored `compose.override.yaml` at the repo root (Compose loads it automatically):
+### 3. Configure `.env` and start compose
 
-```yaml
-# compose.override.yaml  (local only; do not commit)
-services:
-  coach-api:
-    environment:
-      COACH_GITHUB_OAUTH_CLIENT_ID: "Iv1.xxxxxxxx"
-      COACH_GITHUB_OAUTH_CLIENT_SECRET: "xxxxxxxx"
-      COACH_GITHUB_OAUTH_REDIRECT_URI: "http://127.0.0.1:8080/oauth/github/callback"
-      # App ID from complete-github-app-manifest.sh / secrets/github-app.json
-      COACH_GITHUB_APP_ID: "123456"
-      COACH_GITHUB_APP_PRIVATE_KEY_PATH: "/secrets/github-app.pem"
-      # Keep fixture access so Path A still works
-      COACH_AUTHZ_BYPASS_OWNER: "coach-smoke"
-      COACH_AUTHZ_BYPASS_REPO: "fixture-repo"
-      COACH_AUTH_TEST_MINT: "1"
-    volumes:
-      - ./secrets/github-app.pem:/secrets/github-app.pem:ro
-
-  coach-worker:
-    environment:
-      COACH_GITHUB_APP_ID: "123456"
-      COACH_GITHUB_APP_PRIVATE_KEY_PATH: "/secrets/github-app.pem"
-      # Optional: larger repos (defaults 5000 files / 50 MiB of Go/TS/TSX source)
-      # COACH_BASELINE_MAX_FILES: "20000"
-      # COACH_BASELINE_MAX_TOTAL_BYTES: "104857600"
-    volumes:
-      - ./secrets/github-app.pem:/secrets/github-app.pem:ro
-```
+Default compose has no GitHub credentials until you set them in `.env`:
 
 ```sh
+cp .env.example .env   # if you have not already
+```
+
+Uncomment/set Path C keys (values from the OAuth App and `secrets/github-app.json`):
+
+```dotenv
+COACH_GITHUB_OAUTH_CLIENT_ID=Iv1.xxxxxxxx
+COACH_GITHUB_OAUTH_CLIENT_SECRET=xxxxxxxx
+COACH_GITHUB_OAUTH_REDIRECT_URI=http://127.0.0.1:8080/oauth/github/callback
+COACH_GITHUB_APP_ID=123456
+COACH_GITHUB_APP_PRIVATE_KEY_PATH=/secrets/github-app.pem
+
+# Optional: larger repos (defaults 5000 files / 50 MiB of Go/TS/TSX source)
+# COACH_BASELINE_MAX_FILES=20000
+# COACH_BASELINE_MAX_TOTAL_BYTES=104857600
+```
+
+Fixture authz bypass and test-mint stay enabled in `compose.yaml` so Path A smoke still works alongside Path C.
+
+```sh
+mkdir -p secrets
 docker compose --profile core up -d --build
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/v1/me
 ```
 
-Combine with Path B by exporting `AIGW_OPENAI_BASE_URL` / `MODEL_GATEWAY_MODEL` and using `--profile llm`.
+Combine with Path B by keeping Path B keys in the same `.env` and using `--profile llm`.
 
 ### 4. Sign in
 
@@ -511,18 +510,20 @@ mise run platform-up
 mise run platform-smoke
 mise run platform-down
 
-# Path B (Qwen 3.5; for Gemma 4 use MODEL_GATEWAY_MODEL=gemma4:12b or your server id)
+# Path B (Qwen 3.5; edit .env — Gemma 4: MODEL_GATEWAY_MODEL=gemma4:12b)
+cp .env.example .env
+# set AIGW_OPENAI_BASE_URL, MODEL_GATEWAY_MODEL, MODEL_GATEWAY_TIMEOUT,
+# MODEL_GATEWAY_DISABLE_THINKING in .env
 ollama pull qwen3.5:4b
-export AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
-export MODEL_GATEWAY_MODEL=qwen3.5:4b
-export MODEL_GATEWAY_TIMEOUT=120s
-export MODEL_GATEWAY_DISABLE_THINKING=1
-docker compose --profile llm up -d --build   # recreate after env changes
+mkdir -p secrets
+docker compose --profile llm up -d --build   # recreate after .env changes
 mise run platform-smoke
 
-# Path C (after App registration + compose.override.yaml)
+# Path C (after App registration + Path C keys in .env)
 cd deploy/compose/platform && python3 -m http.server 8765
 # browser → register App → ./deploy/compose/platform/complete-github-app-manifest.sh <code>
+# set COACH_GITHUB_* in .env; PEM at secrets/github-app.pem
+docker compose --profile core up -d --build
 open http://127.0.0.1:8080/oauth/github/start
 export TOKEN='…'
 curl -s -X POST http://127.0.0.1:8080/v1/jobs \

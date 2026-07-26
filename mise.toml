@@ -97,6 +97,8 @@ run = "GOOS=js GOARCH=wasm CGO_ENABLED=0 go build -tags 'grammar_subset grammar_
 [tasks.platform-up]
 description = "Build and start the local platform compose stack (core profile: api + worker + postgres + redis + model stub); wait until coach-api is healthy"
 run = [
+  # secrets/ is bind-mounted at /secrets; ensure the host dir exists (PEM optional until Path C).
+  "mkdir -p secrets",
   "docker compose --profile core up -d --build",
   # Wait for API: unauthenticated /v1/me returns 401 once the process is up.
   """
@@ -140,18 +142,20 @@ echo "platform-llm-validate (operator-only, not CI)"
 echo ""
 echo "Pilot path: docs/pilot-local-quickstart.md (Path B)"
 echo "Operator env detail: docs/development/local-platform.md"
+echo "Config: copy .env.example → .env (Compose loads .env automatically)"
 echo ""
 echo "1. Start a host OpenAI-compat /v1/chat/completions server, e.g.:"
 echo "   - Ollama: ollama pull qwen3.5:4b  (or qwen3.5:4b-mlx) on :11434"
 echo "   - llama.cpp Metal: listen on 127.0.0.1:8081"
-echo "2. export AIGW_OPENAI_BASE_URL=http://host.docker.internal:<port>/v1"
-echo "   export MODEL_GATEWAY_MODEL=<served id>   # e.g. qwen3.5:4b"
+echo "2. cp .env.example .env  # if needed"
+echo "   Set in .env: AIGW_OPENAI_BASE_URL=http://host.docker.internal:<port>/v1"
+echo "               MODEL_GATEWAY_MODEL=<served id>   # e.g. qwen3.5:4b"
 echo "   (worker still calls ai-gateway:1975; aigw proxies upstream)"
-echo "3. docker compose --profile llm up -d --build"
+echo "3. mkdir -p secrets && docker compose --profile llm up -d --build"
 echo "4. mise run platform-smoke"
 echo "5. Confirm report has ≥1 source=agent judgment from the host model"
 echo ""
-echo "Linux fallback: model container on the compose network; set AIGW_OPENAI_BASE_URL to that service."
+echo "Linux fallback: model container on the compose network; set AIGW_OPENAI_BASE_URL in .env to that service."
 """
 
 [tasks.ci]
