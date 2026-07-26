@@ -29,11 +29,16 @@ vendor/
 go.work
 go.work.sum
 
-# env file
+# env file (operator copy of .env.example)
 .env
+.env.local
 
-# Local pilot secrets and Compose overrides (Path C GitHub credentials)
-secrets/
+# Local pilot secrets (PEM/metadata); keep scaffold tracked
+secrets/*
+!secrets/.gitkeep
+!secrets/README.md
+
+# Optional advanced Compose merges (not required; prefer .env)
 compose.override.yaml
 compose.override.yml
 

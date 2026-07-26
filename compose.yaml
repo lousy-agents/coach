@@ -9,6 +9,10 @@
 #     llama.cpp via host.docker.internal (operator-only; not required in CI).
 #     See docs/development/local-platform.md.
 #
+# Local config: copy .env.example → .env (gitignored). Compose loads .env for
+# ${VAR} interpolation. Path C PEM convention: secrets/github-app.pem on the
+# host → /secrets/github-app.pem in api/worker (directory always mounted).
+#
 # Inference path (production-shaped local data plane):
 #   coach-worker (internal/modelgateway OpenAI client)
 #     → ai-gateway (Envoy AI Gateway CLI / aigw on :1975)
@@ -87,8 +91,8 @@ services:
       model-stub:
         condition: service_healthy
     environment:
-      # core default: in-compose model-stub. llm: override to host llama.cpp, e.g.
-      # AIGW_OPENAI_BASE_URL=http://host.docker.internal:8081/v1
+      # core default: in-compose model-stub. llm / .env: override, e.g.
+      # AIGW_OPENAI_BASE_URL=http://host.docker.internal:11434/v1
       OPENAI_BASE_URL: ${AIGW_OPENAI_BASE_URL:-http://model-stub:8090/v1}
       OPENAI_API_KEY: ${AIGW_OPENAI_API_KEY:-unused}
       AIGW_RUN_ID: "0"
@@ -132,9 +136,18 @@ services:
       COACH_REDIS_STREAM: "coach-jobs"
       COACH_REDIS_CONSUMER_GROUP: "coach-api"
       COACH_PG_DSN: *pg-dsn
+      # Fixture bypass always on for local smoke; Path C still needs App + OAuth.
       COACH_AUTHZ_BYPASS_OWNER: "coach-smoke"
       COACH_AUTHZ_BYPASS_REPO: "fixture-repo"
-      # Intentionally omit: COACH_GITHUB_APP_*, COACH_GITHUB_OAUTH_*
+      # Path C via .env (empty = credential-free core/smoke).
+      COACH_GITHUB_OAUTH_CLIENT_ID: ${COACH_GITHUB_OAUTH_CLIENT_ID:-}
+      COACH_GITHUB_OAUTH_CLIENT_SECRET: ${COACH_GITHUB_OAUTH_CLIENT_SECRET:-}
+      COACH_GITHUB_OAUTH_REDIRECT_URI: ${COACH_GITHUB_OAUTH_REDIRECT_URI:-http://127.0.0.1:8080/oauth/github/callback}
+      COACH_GITHUB_APP_ID: ${COACH_GITHUB_APP_ID:-}
+      COACH_GITHUB_APP_PRIVATE_KEY_PATH: ${COACH_GITHUB_APP_PRIVATE_KEY_PATH:-}
+    volumes:
+      # Convention: host secrets/ → /secrets (PEM at secrets/github-app.pem).
+      - ./secrets:/secrets:ro
     ports:
       - "8080:8080"
     healthcheck:
@@ -190,8 +203,14 @@ services:
       COACH_MAX_JUDGMENT_PROMPT_TOKENS: ${COACH_MAX_JUDGMENT_PROMPT_TOKENS:-3500}
       COACH_JUDGMENT_FILE_AFFINITY_MIN_FINDINGS: ${COACH_JUDGMENT_FILE_AFFINITY_MIN_FINDINGS:-5}
       COACH_JUDGMENT_EVIDENCE_WINDOW_LINES: ${COACH_JUDGMENT_EVIDENCE_WINDOW_LINES:-15}
+      COACH_BASELINE_MAX_FILES: ${COACH_BASELINE_MAX_FILES:-}
+      COACH_BASELINE_MAX_TOTAL_BYTES: ${COACH_BASELINE_MAX_TOTAL_BYTES:-}
+      # Path C via .env (empty = fixture-only worker).
+      COACH_GITHUB_APP_ID: ${COACH_GITHUB_APP_ID:-}
+      COACH_GITHUB_APP_PRIVATE_KEY_PATH: ${COACH_GITHUB_APP_PRIVATE_KEY_PATH:-}
     volumes:
       - ./deploy/compose/platform/fixtures/smoke-repo:/fixtures/smoke-repo:ro
+      - ./secrets:/secrets:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

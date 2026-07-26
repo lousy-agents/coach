@@ -86,9 +86,12 @@ GitHub App ready.
 Next:
   1. Install the App on the account/org that owns the repos you will scan:
      ${html_url}/installations/new
-  2. Set COACH_GITHUB_APP_ID=${app_id} and mount the PEM in compose.override.yaml
-     (see docs/pilot-local-quickstart.md, Path C).
-  3. Create a separate GitHub OAuth App for browser sign-in (same guide).
+  2. Copy .env.example → .env (if needed) and set:
+       COACH_GITHUB_APP_ID=${app_id}
+       COACH_GITHUB_APP_PRIVATE_KEY_PATH=/secrets/github-app.pem
+     Compose mounts host secrets/ at /secrets (see docs/pilot-local-quickstart.md Path C).
+  3. Create a separate GitHub OAuth App for browser sign-in (same guide) and put
+     client id/secret in .env.
 
-Do not commit secrets/ (gitignored).
+Do not commit secrets/*.pem or .env (gitignored).
 EOF

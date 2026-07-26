@@ -9,7 +9,7 @@
 
 ## Run locally (Docker)
 
-[Local Coach quickstart](./docs/pilot-local-quickstart.md): Docker Compose API + worker, smoke test without GitHub, optional local Qwen (`qwen3.5:4b` / `qwen3.5:4b-mlx`), optional scan of a GitHub.com repo without cloning it.
+[Local Coach quickstart](./docs/pilot-local-quickstart.md): Docker Compose API + worker, smoke test without GitHub, optional local Qwen (`qwen3.5:4b` / `qwen3.5:4b-mlx`), optional scan of a GitHub.com repo without cloning it. Local knobs: [`.env.example`](./.env.example) → `.env`.
 
 For deterministic signals on a local checkout with no Docker, see [`coach codesignal`](#coach-codesignal-cli-preview).
 
