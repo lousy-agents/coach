@@ -35,6 +35,7 @@ func toolResultFromRun(def Definition, r Result) ToolResult {
 func marshalToolResult(r ToolResult) (json.RawMessage, error) {
 	// Ensure judgment serializes as JSON null (not omitted) when absent.
 	type wire struct {
+		FindingRef     string          `json:"finding_ref,omitempty"`
 		RubricID       string          `json:"rubric_id"`
 		RubricVersion  string          `json:"rubric_version"`
 		ModelIdentity  *string         `json:"model_identity"`
@@ -44,6 +45,7 @@ func marshalToolResult(r ToolResult) (json.RawMessage, error) {
 		Diagnostic     *Diagnostic     `json:"diagnostic"`
 	}
 	w := wire{
+		FindingRef:     r.FindingRef,
 		RubricID:       r.RubricID,
 		RubricVersion:  r.RubricVersion,
 		ModelIdentity:  r.ModelIdentity,

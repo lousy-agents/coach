@@ -440,14 +440,15 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 		})
 
 		It("records handler-sourced semantics_analyze and codesignal_report calls on the loop", func() {
-			var observed *agentloop.Loop
+			// Analyze and judgment use separate loops (judgment wall isolation).
+			var observed []*agentloop.Loop
 			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
 				SmokeFixturePath: baselineFixtureRoot(),
 				SmokeRepoOwner:   "smoke-owner",
 				SmokeRepoName:    "smoke-repo",
 				Gateway:          modelgateway.NewStubGateway(),
 				ObserveLoop: func(loop *agentloop.Loop) {
-					observed = loop
+					observed = append(observed, loop)
 				},
 			})
 
@@ -457,9 +458,12 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 				RepoName:  "smoke-repo",
 			}), w)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(observed).NotTo(BeNil())
+			Expect(observed).NotTo(BeEmpty())
 
-			names := handlerSourcedNames(observed.Calls())
+			var names []string
+			for _, loop := range observed {
+				names = append(names, handlerSourcedNames(loop.Calls())...)
+			}
 			Expect(names).To(ContainElement(agentloop.ToolSemanticsAnalyze),
 				"analysis must go through agentloop.Call(handler, semantics_analyze); no direct pkg/semantics bypass")
 			Expect(names).To(ContainElement(agentloop.ToolCodeSignalReport),
@@ -538,13 +542,13 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 			Expect(os.WriteFile(filepath.Join(root, "script.py"), []byte("print('no')\n"), 0o644)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(root, "data.json"), []byte(`{"a":1}`+"\n"), 0o644)).To(Succeed())
 
-			var observed *agentloop.Loop
+			var observed []*agentloop.Loop
 			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
 				SmokeFixturePath: root,
 				SmokeRepoOwner:   "lang-owner",
 				SmokeRepoName:    "lang-repo",
 				Gateway:          modelgateway.NewStubGateway(),
-				ObserveLoop:      func(loop *agentloop.Loop) { observed = loop },
+				ObserveLoop:      func(loop *agentloop.Loop) { observed = append(observed, loop) },
 			})
 
 			w := newCaptureWriter()
@@ -554,18 +558,20 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 			}), w)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(completion).NotTo(BeNil())
-			Expect(observed).NotTo(BeNil())
+			Expect(observed).NotTo(BeEmpty())
 
 			analyzed := map[string]struct{}{}
-			for _, c := range observed.Calls() {
-				if c.Source != agentloop.CallSourceHandler || c.Name != agentloop.ToolSemanticsAnalyze {
-					continue
+			for _, loop := range observed {
+				for _, c := range loop.Calls() {
+					if c.Source != agentloop.CallSourceHandler || c.Name != agentloop.ToolSemanticsAnalyze {
+						continue
+					}
+					var args struct {
+						Path string `json:"path"`
+					}
+					Expect(json.Unmarshal(c.Args, &args)).To(Succeed(), "semantics_analyze args must be JSON with path")
+					analyzed[args.Path] = struct{}{}
 				}
-				var args struct {
-					Path string `json:"path"`
-				}
-				Expect(json.Unmarshal(c.Args, &args)).To(Succeed(), "semantics_analyze args must be JSON with path")
-				analyzed[args.Path] = struct{}{}
 			}
 			Expect(analyzed).To(HaveKey("main.go"))
 			Expect(analyzed).To(HaveKey("util.ts"))
@@ -748,12 +754,12 @@ func Mut(c *C, n string) { c.N = n }
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			var observed *agentloop.Loop
+			var observed []*agentloop.Loop
 			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
 				TreeSource: &coachapi.GitHubBaselineTreeSource{Reader: reader},
 				Gateway:    modelgateway.NewStubGateway(),
 				ObserveLoop: func(loop *agentloop.Loop) {
-					observed = loop
+					observed = append(observed, loop)
 				},
 			})
 
@@ -771,21 +777,26 @@ func Mut(c *C, n string) { c.N = n }
 			Expect(completion.CommitSHA).NotTo(Equal("main"))
 			Expect(completion.CommitSHA).NotTo(Equal("local-fixture"))
 
-			Expect(observed).NotTo(BeNil())
-			names := handlerSourcedNames(observed.Calls())
+			Expect(observed).NotTo(BeEmpty())
+			var names []string
+			for _, loop := range observed {
+				names = append(names, handlerSourcedNames(loop.Calls())...)
+			}
 			Expect(names).To(ContainElement(agentloop.ToolSemanticsAnalyze))
 			Expect(names).To(ContainElement(agentloop.ToolCodeSignalReport))
 
 			analyzed := map[string]struct{}{}
-			for _, c := range observed.Calls() {
-				if c.Source != agentloop.CallSourceHandler || c.Name != agentloop.ToolSemanticsAnalyze {
-					continue
+			for _, loop := range observed {
+				for _, c := range loop.Calls() {
+					if c.Source != agentloop.CallSourceHandler || c.Name != agentloop.ToolSemanticsAnalyze {
+						continue
+					}
+					var args struct {
+						Path string `json:"path"`
+					}
+					Expect(json.Unmarshal(c.Args, &args)).To(Succeed())
+					analyzed[args.Path] = struct{}{}
 				}
-				var args struct {
-					Path string `json:"path"`
-				}
-				Expect(json.Unmarshal(c.Args, &args)).To(Succeed())
-				analyzed[args.Path] = struct{}{}
 			}
 			Expect(analyzed).To(HaveKey("main.go"))
 			Expect(analyzed).To(HaveKey("mutate.go"))
@@ -957,13 +968,13 @@ type C struct{ N string }
 func Mut(c *C, n string) { c.N = n }
 `), 0o644)).To(Succeed())
 
-			var observed *agentloop.Loop
+			var observed []*agentloop.Loop
 			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
 				SmokeFixturePath: root,
 				SmokeRepoOwner:   "big-owner",
 				SmokeRepoName:    "big-repo",
 				Gateway:          modelgateway.NewStubGateway(),
-				ObserveLoop:      func(loop *agentloop.Loop) { observed = loop },
+				ObserveLoop:      func(loop *agentloop.Loop) { observed = append(observed, loop) },
 			})
 
 			w := newCaptureWriter()
@@ -985,15 +996,20 @@ func Mut(c *C, n string) { c.N = n }
 			Expect(det).To(BeNumerically(">=", 1),
 				"deterministic codesignal findings must be produced for the large tree")
 
-			Expect(observed).NotTo(BeNil())
-			Expect(observed.Budget().MaxToolCalls).To(BeNumerically(">", agentloop.DefaultMaxToolCalls),
-				"baseline loop budget must scale above DefaultMaxToolCalls for large trees")
+			Expect(observed).NotTo(BeEmpty())
+			var analyzeLoop *agentloop.Loop
 			analyzeCalls := 0
-			for _, c := range observed.Calls() {
-				if c.Source == agentloop.CallSourceHandler && c.Name == agentloop.ToolSemanticsAnalyze {
-					analyzeCalls++
+			for _, loop := range observed {
+				for _, c := range loop.Calls() {
+					if c.Source == agentloop.CallSourceHandler && c.Name == agentloop.ToolSemanticsAnalyze {
+						analyzeCalls++
+						analyzeLoop = loop
+					}
 				}
 			}
+			Expect(analyzeLoop).NotTo(BeNil())
+			Expect(analyzeLoop.Budget().MaxToolCalls).To(BeNumerically(">", agentloop.DefaultMaxToolCalls),
+				"baseline analyze loop budget must scale above DefaultMaxToolCalls for large trees")
 			Expect(analyzeCalls).To(BeNumerically(">=", n),
 				"handler must drive semantics_analyze for each supported file")
 		})

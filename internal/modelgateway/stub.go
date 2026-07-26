@@ -3,6 +3,8 @@ package modelgateway
 import (
 	"context"
 	"encoding/json"
+	"regexp"
+	"strings"
 )
 
 // StubOptions configures optional StubGateway behavior (tests may inject typed errors).
@@ -35,6 +37,14 @@ func (g *StubGateway) Judge(ctx context.Context, req JudgmentRequest) (JudgmentR
 	}
 	if g != nil && g.judgeErr != nil {
 		return JudgmentResponse{}, g.judgeErr
+	}
+
+	if isBatchItemsOutputSchema(req.OutputSchema) {
+		judgment := stubBatchJudgment(req)
+		return JudgmentResponse{
+			JudgmentJSON:   judgment,
+			LogicalModelID: LogicalModelStub,
+		}, nil
 	}
 
 	judgment, ok := stubJudgmentForRubric(req.RubricID)
@@ -70,4 +80,85 @@ func stubJudgmentForRubric(rubricID string) (json.RawMessage, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// isBatchItemsOutputSchema reports whether schema is a multi-finding batch
+// envelope (object with an items array property). Used so the stub can return
+// canned batch JSON without routing through the singular string|null validator.
+func isBatchItemsOutputSchema(schema json.RawMessage) bool {
+	if len(schema) == 0 {
+		return false
+	}
+	var sch struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(schema, &sch); err != nil {
+		return false
+	}
+	raw, ok := sch.Properties["items"]
+	if !ok || len(raw) == 0 {
+		return false
+	}
+	var itemsProp struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &itemsProp); err != nil {
+		return false
+	}
+	return strings.EqualFold(itemsProp.Type, "array")
+}
+
+var findingRefLine = regexp.MustCompile(`(?m)(?:^|\s)finding_ref:\s*(\S+)`)
+
+func stubBatchJudgment(req JudgmentRequest) json.RawMessage {
+	refs := extractFindingRefsFromMessages(req.Messages)
+	if len(refs) == 0 {
+		// No refs in messages: emit a single stub item so schema shape is valid.
+		refs = []string{"stub-item-1"}
+	}
+	type item struct {
+		FindingRef     string  `json:"finding_ref"`
+		Judgment       string  `json:"judgment"`
+		Rationale      string  `json:"rationale"`
+		Confidence     string  `json:"confidence"`
+		SuggestedFocus *string `json:"suggested_focus"`
+	}
+	items := make([]item, 0, len(refs))
+	for _, ref := range refs {
+		items = append(items, item{
+			FindingRef:     ref,
+			Judgment:       "acceptable",
+			Rationale:      "stub: batch item for " + ref,
+			Confidence:     "high",
+			SuggestedFocus: nil,
+		})
+	}
+	raw, err := json.Marshal(map[string]any{"items": items})
+	if err != nil {
+		// Unreachable with fixed structs; keep Judge from panicking.
+		return json.RawMessage(`{"items":[]}`)
+	}
+	return raw
+}
+
+func extractFindingRefsFromMessages(msgs []Message) []string {
+	var refs []string
+	seen := make(map[string]struct{})
+	for _, m := range msgs {
+		for _, match := range findingRefLine.FindAllStringSubmatch(m.Content, -1) {
+			if len(match) < 2 {
+				continue
+			}
+			ref := strings.TrimSpace(match[1])
+			if ref == "" {
+				continue
+			}
+			if _, ok := seen[ref]; ok {
+				continue
+			}
+			seen[ref] = struct{}{}
+			refs = append(refs, ref)
+		}
+	}
+	return refs
 }

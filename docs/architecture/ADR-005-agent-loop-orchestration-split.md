@@ -46,12 +46,13 @@ The following are never delegated to the model:
 - Self-serve author check at submit.
 - Smoke fixture path resolution.
 - Size budgets and max-iteration budgets.
+- **Judgment packing and prioritization** (how many rubric model calls, which findings, pack boundaries)—never model-selected. See amendment below and [local-LLM judgment spec](../../.github/specs/coach-api-platform-local-llm-judgment.spec.md).
 
-Budgets for v1:
+Budgets for v1 (loop defaults; judgment phase may apply a separate wall—see amendment):
 
 - `max_tool_calls`: 50
 - `max_model_calls`: 20
-- `max_wall_time`: 5 minutes
+- `max_wall_time`: 5 minutes (loop default; **insufficient as a single shared wall** for analyze+uncapped local-LLM judgment—amendment)
 
 ## Consequences
 
@@ -76,3 +77,32 @@ Budgets for v1:
 - Acceptance tests prove unknown tools and over-budget loops end with typed errors.
 - Task 7 and Task 8 acceptance tests assert the analysis path executes via `internal/agentloop`, not via direct package calls.
 - Acceptance tests prove a job completes with a deterministic-only report when the gateway is unavailable for the entire judgment phase.
+
+## Amendment: Local-LLM judgment packing and budgets (2026-07-25)
+
+| Field | Value |
+| --- | --- |
+| Status | Accepted (amends this ADR; does not replace the three-layer split) |
+| Date | 2026-07-25 |
+| Spec | [coach-api-platform-local-llm-judgment.spec.md](../../.github/specs/coach-api-platform-local-llm-judgment.spec.md) |
+
+### Context
+
+Pilot measurement on a small TypeScript repo (~42 `hidden_input_mutation` signals) with local `qwen3.5:4b-class` OpenAI-compatible inference showed that **handler-driven one-gateway-call-per-finding** exhausts a 5-minute shared loop wall before producing `source=agent` rows. The failure mode is call amplification and generation latency on small models—not monorepo size. Uncapped packing (max 4 or max 2 findings per pack) reduces call count and can improve JSON validity but still exceeds five minutes when judging all signals; **priority caps** are required for laptop viability.
+
+### Decision (additive)
+
+1. **Handler-owned packing**: `hidden_mutation_contextualization` may be invoked on **packs** of findings (token-aware packing with file-affinity preference). Pack formation, caps, and ordering are deterministic handler policy—not model-selected tools.
+2. **Span-local evidence** by default (line windows), not full-file bodies on every call.
+3. **Judgment-phase wall budget** is separated from deterministic analyze time (reset or distinct budget). Operator-configurable; local profile default **≥10 minutes** for the judgment phase unless a lower explicit config is set.
+4. **Partial agent persistence**: if judgment budget/caps exhaust mid-phase, **keep** already-produced `source=agent` findings and record diagnostics; do not discard them on `ErrBudgetExceeded`.
+5. **Quality cap**: `max_hidden_mutation_judgments` (local default **16**) with cross-file round-robin prioritization so small models spend budget on spread insight, not only the hottest file.
+6. **Pack size default 4** (not 2): empirical full-set runs were slower at max 2 due to round-trips; operators may lower pack size if batch validity suffers.
+7. Loop `max_wall_time` 5 minutes remains a safety default for the broker but must not be the sole control that zeros agent output after a successful deterministic pass.
+
+### Consequences (additive)
+
+- **Positive**: Local Qwen/Gemma-class Path B can complete with meaningful agent rows under explicit caps.
+- **Positive**: Cloud/SGLang can raise caps without changing the orchestration split.
+- **Negative**: Reports may include a judged subset of deterministic hidden-mutation signals; diagnostics must state selected vs omitted counts so pilots do not assume exhaustive agent coverage.
+- **Negative**: Batch output schema and pack planner add surface area beyond singular rubric JSON.

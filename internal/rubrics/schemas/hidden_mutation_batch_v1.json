@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["finding_ref", "judgment", "rationale", "confidence", "suggested_focus"],
+        "properties": {
+          "finding_ref": {
+            "type": "string"
+          },
+          "judgment": {
+            "type": "string",
+            "enum": ["concern", "acceptable", "unclear"]
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "suggested_focus": {
+            "type": ["string", "null"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -75,8 +75,10 @@ type Result struct {
 // Judgment is null and Diagnostic is set. Schema/unavailable judgment
 // failures do not hard-error the tool call so handlers can finish with
 // deterministic evidence. context.Canceled is returned as a hard tool error
-// (not a ToolResult diagnostic).
+// (not a ToolResult diagnostic). FindingRef is set for multi-finding pack
+// items (deterministic finding id / payload_hash); empty on singular calls.
 type ToolResult struct {
+	FindingRef     string          `json:"finding_ref,omitempty"`
 	RubricID       string          `json:"rubric_id"`
 	RubricVersion  string          `json:"rubric_version"`
 	ModelIdentity  *string         `json:"model_identity"`

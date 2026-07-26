@@ -39,6 +39,12 @@ func Run(ctx context.Context, gw modelgateway.Gateway, def Definition, messages 
 	if abort := firstLifecycleAbort(err, ctx.Err()); abort != nil {
 		return Result{}, abort
 	}
+	// Wall-budget deadline on the tool op context: propagate so agentloop.mapWallErr
+	// rewrites to ErrBudgetExceeded (Story 2). Gateway timeouts while ctx is still
+	// live remain Story 5 soft-degrade via degradeFromErr below.
+	if err != nil && isOpDeadlineExceeded(ctx) {
+		return Result{}, err
+	}
 	if err != nil {
 		return degradeFromErr(def.ID, err), nil
 	}
@@ -57,8 +63,9 @@ func Run(ctx context.Context, gw modelgateway.Gateway, def Definition, messages 
 }
 
 // lifecycleAbortErr returns a non-nil error when err represents owning-context
-// cancellation. DeadlineExceeded is not an abort — it is judgment-phase timeout
-// and remains eligible for Story 5 soft degrade.
+// cancellation. DeadlineExceeded is not a cancel abort: when the op context is
+// still live it soft-degrades (Story 5); when the op context itself timed out
+// (judgment wall), callers propagate via isOpDeadlineExceeded for mapWallErr.
 func lifecycleAbortErr(err error) error {
 	if err == nil {
 		return nil
@@ -76,6 +83,12 @@ func firstLifecycleAbort(errs ...error) error {
 		}
 	}
 	return nil
+}
+
+// isOpDeadlineExceeded reports whether ctx was canceled by deadline (wall budget
+// child). Distinct from a gateway-injected DeadlineExceeded cause while ctx lives.
+func isOpDeadlineExceeded(ctx context.Context) bool {
+	return ctx != nil && ctx.Err() != nil && errors.Is(ctx.Err(), context.DeadlineExceeded)
 }
 
 func degradeFromErr(rubricID string, err error) Result {

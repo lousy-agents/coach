@@ -33,6 +33,9 @@ type OpenAICompatConfig struct {
 	HTTPClient *http.Client
 	// SchemaValidationAttempts overrides DefaultSchemaValidationAttempts when > 0.
 	SchemaValidationAttempts int
+	// DisableThinking, when true, adds "think": false to chat-completions bodies
+	// (Ollama-style). When false, the field is omitted for portable OpenAI shape.
+	DisableThinking bool
 }
 
 // OpenAICompatClient implements Gateway via POST {baseURL}/v1/chat/completions.
@@ -44,6 +47,7 @@ type OpenAICompatClient struct {
 	extraHeaders             map[string]string
 	httpClient               *http.Client
 	schemaValidationAttempts int
+	disableThinking          bool
 }
 
 var _ Gateway = (*OpenAICompatClient)(nil)
@@ -65,6 +69,7 @@ func NewOpenAICompatClient(cfg OpenAICompatConfig) (*OpenAICompatClient, error) 
 		extraHeaders:             cloneStringMap(cfg.ExtraHeaders),
 		httpClient:               httpClient,
 		schemaValidationAttempts: resolveSchemaAttempts(cfg.SchemaValidationAttempts),
+		disableThinking:          cfg.DisableThinking,
 	}, nil
 }
 

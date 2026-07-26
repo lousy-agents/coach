@@ -7,3 +7,6 @@ var schemaHiddenMutationV1 []byte
 
 //go:embed schemas/change_cohesion_v1.json
 var schemaChangeCohesionV1 []byte
+
+//go:embed schemas/hidden_mutation_batch_v1.json
+var schemaHiddenMutationBatchV1 []byte

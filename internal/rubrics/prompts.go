@@ -9,11 +9,22 @@ import (
 	"github.com/lousy-agents/coach/internal/modelgateway"
 )
 
+const shortRationaleGuidance = `Keep each rationale short: at most 2 sentences and at most 400 characters.`
+
 const hiddenMutationSystemPrompt = `You are a code-quality judge for the Coach platform.
 Evaluate one deterministic hidden_input_mutation finding in baseline file context.
 Question: Does the mutation hide input state in a way that will surprise a reviewer or complicate future changes?
 Distinguish benign constructor wiring from hidden state mutation.
+` + shortRationaleGuidance + `
 Respond only with JSON matching the provided output schema.
+Do not modify, suppress, or restate deterministic findings as if they were yours to alter.`
+
+const hiddenMutationPackSystemPrompt = `You are a code-quality judge for the Coach platform.
+Evaluate multiple deterministic hidden_input_mutation findings in one batch.
+Question per item: Does the mutation hide input state in a way that will surprise a reviewer or complicate future changes?
+Distinguish benign constructor wiring from hidden state mutation.
+` + shortRationaleGuidance + `
+Respond only with JSON matching the provided batch output schema (items array keyed by finding_ref).
 Do not modify, suppress, or restate deterministic findings as if they were yours to alter.`
 
 const changeCohesionSystemPrompt = `You are a code-quality judge for the Coach platform.

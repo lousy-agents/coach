@@ -8,7 +8,9 @@ The architecture separates reliable GitHub event handling, a Go state machine th
 
 The recommended AWS v1 uses ECS/Fargate for the Go control plane and task-per-job isolated execution, ECS on EC2 GPU capacity for SGLang, SQS for work notification, DynamoDB plus transactional outboxes for idempotency/dispatch intent, Aurora PostgreSQL for workflow state, and S3 for immutable payloads/evidence. EKS is a later inference-plane option, not a co-equal v1 target. For proof of value, the self-hosted inference cell may scale to zero between scheduled pilot windows; the webhook/control plane never does. Docker Compose is the daily local default; the default core profile needs no model weights, while optional llama.cpp runs natively on macOS to use Metal/unified memory.
 
-An intermediate **platform groundwork phase** (see `.github/specs/coach-api-platform-groundwork.spec.md` and `docs/product/prd.md`) precedes the webhook-driven platform above. It decouples end-user consumption from the feedback platform: an authenticated, versioned Coach HTTP API triggers asynchronous analysis jobs (self-serve PR-history scans, repository baseline scans) executed by a worker through an application-owned `TaskQueue` port over Watermill, with adapters for Redis Streams (local Docker Compose and Redis-first customer deployments) and SQS (AWS-leaning customer deployments). Agent judgment sits behind the same model-gateway contract served locally by llama.cpp. Job state, findings, diagnostics, and the JWT `jti` denylist remain in Postgres. This phase validates the deterministic-plus-rubric flow end to end in Docker Compose before any SGLang or AWS investment; the webhook ingestion plane, DynamoDB/outbox machinery, and GitHub feedback writes remain deferred until it succeeds. Groundwork-phase reports are retrieved only by the requesting user through the API — there are no GitHub writes at all in that phase.
+An intermediate **platform groundwork phase** (see `.github/specs/coach-api-platform-groundwork.spec.md` and `docs/product/prd.md`) precedes the webhook-driven platform above. It decouples end-user consumption from the feedback platform: an authenticated, versioned Coach HTTP API triggers asynchronous analysis jobs (self-serve PR-history scans, repository baseline scans) executed by a worker through an application-owned `TaskQueue` port over Watermill, with adapters for Redis Streams (local Docker Compose and Redis-first customer deployments) and SQS (AWS-leaning customer deployments). Agent judgment sits behind the same model-gateway contract served locally by an OpenAI-compatible server (llama.cpp, Ollama, or equivalent—Qwen 3.5 / Gemma 4 class models on the pilot path). Job state, findings, diagnostics, and the JWT `jti` denylist remain in Postgres. This phase validates the deterministic-plus-rubric flow end to end in Docker Compose before any SGLang or AWS investment; the webhook ingestion plane, DynamoDB/outbox machinery, and GitHub feedback writes remain deferred until it succeeds. Groundwork-phase reports are retrieved only by the requesting user through the API — there are no GitHub writes at all in that phase.
+
+**Local-LLM judgment (groundwork delta):** handler-driven rubric calls must not assume one model generation per deterministic finding. Small local models need **token-aware judgment packing**, **span-local evidence**, a **judgment-scoped wall budget** separate from analyze time, **partial `source=agent` persistence** when budget exhausts, and an optional **priority cap** so pilots get fewer high-value rationales instead of a timed-out empty agent section. Details: [local-LLM judgment spec](../../.github/specs/coach-api-platform-local-llm-judgment.spec.md) and [ADR-005 amendment](ADR-005-agent-loop-orchestration-split.md#amendment-local-llm-judgment-packing-and-budgets-2026-07-25).
 
 ## 2. Goals, non-goals, constraints, and principles
 
@@ -455,7 +457,7 @@ Compose has lower memory/operational overhead, faster rebuild/debug loops, and p
 
 | Phase | Compose contents | Queue | Auth | When |
 |---|---|---|---|---|
-| **Groundwork (current)** | `coach-api`, `coach-worker`, Postgres, Redis, model stub; optional llama.cpp | Watermill → Redis Streams (SQS adapter via conformance suite, not required in daily compose) | GitHub OAuth App + Coach-JWT; config-gated test mint for smoke | Daily pilot path; see Baseline Scan spec Story 4 |
+| **Groundwork (current)** | `coach-api`, `coach-worker`, Postgres, Redis, model stub; optional host OpenAI-compatible LLM (llama.cpp / Ollama; Qwen 3.5, Gemma 4, …) via `host.docker.internal` | Watermill → Redis Streams (SQS adapter via conformance suite, not required in daily compose) | GitHub OAuth App + Coach-JWT; config-gated test mint for smoke | Daily pilot path; see Baseline Scan spec Story 4 and local-LLM judgment spec |
 | **Webhook platform (v1+)** | Webhook ingestor, control-plane workers, Postgres, LocalStack (SQS/DynamoDB/S3), model stub; optional llama.cpp | SQS (+ DynamoDB delivery/outbox) | GitHub App webhooks + installation broker | After groundwork E2E validation |
 
 The groundwork stack does **not** require LocalStack, DynamoDB, S3 quarantine, or webhook replay. The diagram below is the **v1+ webhook-platform** local topology.
@@ -650,7 +652,7 @@ Parent index: `.github/specs/coach-api-platform-groundwork.spec.md`. Vertical sl
 | vLLM | Not default | Smaller supply-chain surface | Add only for measured capability gap |
 | Local topology | Compose daily; ECS/IaC and AWS-account integration | Matches ECS control plane within a 5–6 GB VM cap | kind/native default |
 | kind | Use only for an adopted EKS path | It is not ECS parity | Always-on kind |
-| Local inference | Deterministic stub default; optional native Metal llama.cpp behind gateway | Core works offline; avoids Docker model overhead | Remote/SGLang CPU; benchmark |
+| Local inference | Deterministic stub default; optional native Metal/host OpenAI-compatible server (llama.cpp, Ollama) behind gateway; judgment packing + caps for small models | Core works offline; laptop Path B yields partial high-value agent rows without monorepo-scale hardware | Uncapped 1:1 judgment per finding; Dockerized GPU for daily pilot |
 | Feedback | Advisory/non-blocking v1 | Earn trust and contain false positives | Blocking/auto-approval |
 | Feedback writes | System-owned advisory check/comment updates in v1 | Required delivery path; Go policy owns publication | Agent-initiated or blocking feedback |
 | Repository-content mutations | Prohibited in v1; explicit developer activation in Next | Avoid surprise branch/commit/PR changes | Autonomous mutation/read-only forever |
@@ -672,8 +674,9 @@ The platform groundwork phase produced additional load-bearing decisions that ar
 | [ADR-002](ADR-002-identity-separate-from-repo-reads.md) | Separate user identity from repository-read credentials | Accepted |
 | [ADR-003](ADR-003-repository-authorization-policy.md) | Repository authorization policy for self-serve scans | Accepted |
 | [ADR-004](ADR-004-job-ownership-isolation.md) | Job ownership and cross-principal read isolation | Accepted |
-| [ADR-005](ADR-005-agent-loop-orchestration-split.md) | Agent loop orchestration split | Accepted |
+| [ADR-005](ADR-005-agent-loop-orchestration-split.md) | Agent loop orchestration split (+ 2026-07-25 amendment: local-LLM judgment packing, judgment wall, partial agent persist, priority cap) | Accepted |
 | [ADR-006](ADR-006-watermill-queue-abstraction.md) | Watermill TaskQueue/EventBus ports with Redis Streams and SQS adapters | Accepted for groundwork phase |
+| Spec delta | [Local-LLM judgment effectiveness](../../.github/specs/coach-api-platform-local-llm-judgment.spec.md) | Draft / implement next |
 
 ## 16. Final adversarial-review summary
 

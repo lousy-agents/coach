@@ -18,9 +18,11 @@ func validateOutputSchema(schema json.RawMessage) error {
 
 // validateJudgmentJSON ensures judgment is a JSON object. When schema is
 // non-empty, it enforces a minimal JSON Schema subset used by seed rubrics:
-// object type, required properties, string enums, and string|null types.
-// Other JSON Schema types (integer, number, boolean, object, array) are
-// rejected so incomplete checks cannot silently accept invalid values.
+// object type, required properties, string enums, string|null types, and
+// top-level array-of-object properties (batch envelope) whose element leaves
+// use the same string|null/enum subset. Other JSON Schema types (integer,
+// number, boolean, nested object, array-of-non-object) are rejected so
+// incomplete checks cannot silently accept invalid values.
 func validateJudgmentJSON(judgment, schema json.RawMessage) error {
 	obj, err := parseJudgmentObject(judgment)
 	if err != nil {
