@@ -10,6 +10,62 @@ type Result struct {
 	Metrics             StructuralMetrics             `json:"metrics"`
 	Findings            []Finding                     `json:"findings,omitempty"`
 	CognitiveComplexity []FunctionCognitiveComplexity `json:"cognitive_complexity,omitempty"`
+	// ReactComponents holds per-component React orchestration facts (TSX
+	// only). AnalyzeBytes never populates this field; it always stays nil
+	// until the extraction pass lands.
+	ReactComponents []ReactComponentFacts `json:"react_components,omitempty"`
+}
+
+// ReactComponentFacts describes one detected React component's state and
+// coordination shape, used by the react_component_orchestration_density
+// codesignal rule. AnalyzeBytes never populates this field; it always stays
+// nil until the extraction pass lands.
+type ReactComponentFacts struct {
+	Name                   string                       `json:"name"`
+	Location               Location                     `json:"location"`
+	ClientKind             string                       `json:"client_kind"`
+	UseState               []ReactUseStateBinding       `json:"use_state,omitempty"`
+	CoordinatedTransitions []ReactCoordinatedTransition `json:"coordinated_transitions,omitempty"`
+	WorkspaceBranches      []ReactWorkspaceBranch       `json:"workspace_branches,omitempty"`
+	ImperativeUI           []ReactImperativeUICall      `json:"imperative_ui,omitempty"`
+	SharedPanelDeps        []ReactSharedPanelDep        `json:"shared_panel_deps,omitempty"`
+}
+
+// ReactUseStateBinding is one useState() call's binding/setter pair.
+type ReactUseStateBinding struct {
+	Binding  string   `json:"binding"`
+	Setter   string   `json:"setter"`
+	Location Location `json:"location"`
+}
+
+// ReactCoordinatedTransition is a callback (e.g. a useEffect body or event
+// handler) that updates more than one state binding together.
+type ReactCoordinatedTransition struct {
+	Name            string   `json:"name"`
+	Kind            string   `json:"kind"`
+	Location        Location `json:"location"`
+	UpdatedBindings []string `json:"updated_bindings"`
+}
+
+// ReactWorkspaceBranch is one branch of a multi-way conditional that renders
+// a distinct panel/view.
+type ReactWorkspaceBranch struct {
+	Label    string   `json:"label"`
+	Location Location `json:"location"`
+}
+
+// ReactImperativeUICall is a call to an imperative DOM/UI API (e.g.
+// document.getElementById, .focus()) inside a component body.
+type ReactImperativeUICall struct {
+	API      string   `json:"api"`
+	Location Location `json:"location"`
+}
+
+// ReactSharedPanelDep is a state binding passed as a prop to more than one
+// distinct child panel component.
+type ReactSharedPanelDep struct {
+	Name   string   `json:"name"`
+	Panels []string `json:"panels"`
 }
 
 // Location is a 0-based byte/row/col span as Tree-sitter reports it.
