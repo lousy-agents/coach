@@ -10,15 +10,15 @@ type Result struct {
 	Metrics             StructuralMetrics             `json:"metrics"`
 	Findings            []Finding                     `json:"findings,omitempty"`
 	CognitiveComplexity []FunctionCognitiveComplexity `json:"cognitive_complexity,omitempty"`
-	// ReactComponents holds per-component React orchestration facts (TSX
-	// only). AnalyzeBytes never populates this field; it always stays nil
-	// until the extraction pass lands.
+	// ReactComponents holds per-component React orchestration facts for
+	// TypeScript and TSX. AnalyzeBytes does not yet populate this field for
+	// any language; it stays nil until the extraction pass lands.
 	ReactComponents []ReactComponentFacts `json:"react_components,omitempty"`
 }
 
 // ReactComponentFacts describes one detected React component's state and
 // coordination shape, used by the react_component_orchestration_density
-// codesignal rule. AnalyzeBytes never populates this field; it always stays
+// codesignal rule. AnalyzeBytes does not yet populate this field; it stays
 // nil until the extraction pass lands.
 type ReactComponentFacts struct {
 	Name                   string                       `json:"name"`
