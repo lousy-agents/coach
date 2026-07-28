@@ -82,32 +82,23 @@ func signalsFromReactOrchestration(path string, records []semantics.ReactCompone
 }
 
 func reactOrchestrationRequiredMet(rec semantics.ReactComponentFacts) bool {
-	if len(uniqueStateDomains(rec)) < reactStateDomainMinUnique {
-		return false
-	}
-	if len(rec.CoordinatedTransitions) < reactStateDomainMinTransitions {
-		return false
-	}
-	if len(rec.WorkspaceBranches) < reactStateDomainMinBranches {
-		return false
-	}
-	return true
+	return len(uniqueStateDomains(rec)) >= reactStateDomainMinUnique &&
+		len(rec.CoordinatedTransitions) >= reactStateDomainMinTransitions &&
+		len(rec.WorkspaceBranches) >= reactStateDomainMinBranches
 }
 
 func reactOrchestrationSupportingMet(rec semantics.ReactComponentFacts) bool {
-	for _, transition := range rec.CoordinatedTransitions {
-		if transition.Kind == "effect" && len(transition.UpdatedBindings) >= 2 {
+	return reactHasSupportingTransition(rec.CoordinatedTransitions) ||
+		len(rec.ImperativeUI) >= 1 ||
+		len(rec.SharedPanelDeps) >= 1
+}
+
+func reactHasSupportingTransition(transitions []semantics.ReactCoordinatedTransition) bool {
+	for _, transition := range transitions {
+		effectPair := transition.Kind == "effect" && len(transition.UpdatedBindings) >= 2
+		if effectPair || len(transition.UpdatedBindings) >= 3 {
 			return true
 		}
-		if len(transition.UpdatedBindings) >= 3 {
-			return true
-		}
-	}
-	if len(rec.ImperativeUI) >= 1 {
-		return true
-	}
-	if len(rec.SharedPanelDeps) >= 1 {
-		return true
 	}
 	return false
 }
