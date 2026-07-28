@@ -422,6 +422,90 @@ export function Counter() {
 		})
 	})
 
+	When("a nested PascalCase inner component calls two useState setters from the outer scope", func() {
+		It("shall attribute no coordinated transition to the outer component", func() {
+			const src = `"use client";
+
+import { useState } from "react";
+
+export function Outer() {
+  const [a, setA] = useState(1);
+  const [b, setB] = useState(2);
+  function InnerPanel() {
+    setA(1);
+    setB(2);
+    return <section />;
+  }
+  return (
+    <div>
+      <InnerPanel />
+    </div>
+  );
+}
+`
+			result := analyzeTSX(analyzer, "Outer.tsx", src)
+
+			rec, ok := reactComponentByName(result.ReactComponents, "Outer")
+			Expect(ok).To(BeTrue(), "expected a react_components record named Outer, got %+v", result.ReactComponents)
+			Expect(rec.CoordinatedTransitions).To(BeEmpty(), "InnerPanel's setter calls must not attribute a coordinated transition to Outer, got %+v", rec.CoordinatedTransitions)
+		})
+	})
+
+	When("a ternary chain's branches test three structurally distinct discriminant bases (v, props.v, other.v)", func() {
+		It("shall not treat the mixed-base chain as a single >=3 branch workspace-branch chain", func() {
+			const src = `"use client";
+
+export function Mixed(props: { v: string }) {
+  const v = "x";
+  const other = { v: "z" };
+  return (
+    <div>
+      {v === "a" ? (
+        <Aa />
+      ) : props.v === "b" ? (
+        <Bb />
+      ) : other.v === "c" ? (
+        <Cc />
+      ) : null}
+    </div>
+  );
+}
+`
+			result := analyzeTSX(analyzer, "Mixed.tsx", src)
+
+			rec, ok := reactComponentByName(result.ReactComponents, "Mixed")
+			Expect(ok).To(BeTrue(), "expected a react_components record named Mixed, got %+v", result.ReactComponents)
+			Expect(rec.WorkspaceBranches).To(BeEmpty(), "mixed-base discriminant chain (v vs props.v vs other.v) must contribute zero branches, got %+v", rec.WorkspaceBranches)
+		})
+	})
+
+	When("a two-setter-calling arrow function is the second (not first) argument of a useEffect call", func() {
+		It("shall classify the transition as callback, not effect", func() {
+			const src = `"use client";
+
+import { useState } from "react";
+
+export function Counter() {
+  const [a, setA] = useState(1);
+  const [b, setB] = useState(2);
+  useEffect(null, () => {
+    setA(1);
+    setB(2);
+  });
+  return <div>{a}</div>;
+}
+`
+			result := analyzeTSX(analyzer, "Counter.tsx", src)
+
+			rec, ok := reactComponentByName(result.ReactComponents, "Counter")
+			Expect(ok).To(BeTrue(), "expected a react_components record named Counter, got %+v", result.ReactComponents)
+			Expect(rec.CoordinatedTransitions).To(HaveLen(1), "expected exactly one coordinated transition")
+			if len(rec.CoordinatedTransitions) == 1 {
+				Expect(rec.CoordinatedTransitions[0].Kind).To(Equal("callback"), "an arrow function in the second argument position of useEffect must not be classified as an effect")
+			}
+		})
+	})
+
 	When("AnalyzeBytes is invoked twice on identical P1 bytes", func() {
 		It("shall produce byte-identical react_components JSON", func() {
 			in := semantics.FileInput{
