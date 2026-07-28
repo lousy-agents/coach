@@ -17,9 +17,8 @@ var reactHookNamePattern = regexp.MustCompile(`^use[A-Z]`)
 
 // computeReactComponents discovers every candidate React component among
 // root's top-level exports (TS/TSX only) and extracts its useState
-// bindings. CoordinatedTransitions, WorkspaceBranches, ImperativeUI, and
-// SharedPanelDeps are intentionally left nil/empty on every returned
-// record; this function does not populate coordination facts.
+// bindings plus its coordination facts (CoordinatedTransitions,
+// WorkspaceBranches, ImperativeUI, SharedPanelDeps).
 func computeReactComponents(root engine.Node, source []byte) []ReactComponentFacts {
 	if root == nil {
 		return nil

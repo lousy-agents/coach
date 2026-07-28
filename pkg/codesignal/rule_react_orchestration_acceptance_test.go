@@ -416,6 +416,67 @@ function SettingsPanel(_props: { filterText: string; onFilter: (v: string) => vo
 }
 `
 
+const reactOrchestrationRuleDomainOrder = `"use client";
+
+import { useEffect, useState } from "react";
+
+export function DomainOrderPage() {
+  const [activeView, setActiveView] = useState("list");
+  const [selectedView, setSelectedView] = useState("list");
+  const [filterText, setFilterText] = useState("");
+  const [hoverRow, setHoverRow] = useState<string | null>(null);
+  const header = document.getElementById("workspace-header");
+
+  useEffect(() => {
+    setFilterText("");
+    setActiveView("list");
+  }, [selectedView]);
+
+  return (
+    <div>
+      {activeView === "list" ? (
+        <ListPanel
+          selectedView={selectedView}
+          filterText={filterText}
+          hoverRow={hoverRow}
+          onSelect={setSelectedView}
+          onHover={setHoverRow}
+        />
+      ) : activeView === "detail" ? (
+        <DetailPanel selectedView={selectedView} onBack={() => setActiveView("list")} />
+      ) : activeView === "settings" ? (
+        <SettingsPanel filterText={filterText} onFilter={setFilterText} />
+      ) : null}
+      <button
+        type="button"
+        onClick={() => {
+          header?.focus();
+          setActiveView("settings");
+        }}
+      >
+        Settings
+      </button>
+    </div>
+  );
+}
+
+function ListPanel(_props: {
+  selectedView: string;
+  filterText: string;
+  hoverRow: string | null;
+  onSelect: (id: string) => void;
+  onHover: (id: string | null) => void;
+}) {
+  return <section />;
+}
+function DetailPanel(_props: { selectedView: string; onBack: () => void }) {
+  return <section />;
+}
+function SettingsPanel(_props: { filterText: string; onFilter: (v: string) => void }) {
+  return <section />;
+}
+`
+
 var _ = Describe("Story 5: structure.react_component_orchestration_density codesignal rule", func() {
 	When("P1: WorkspacePage.tsx is analyzed end to end through semantics then codesignal", func() {
 		It("shall emit exactly one signal with the locked field shape", func() {
@@ -453,6 +514,25 @@ var _ = Describe("Story 5: structure.react_component_orchestration_density codes
 			Expect(signals).To(HaveLen(1))
 			Expect(signals[0].Subject).To(Equal("WorkspacePage"))
 			Expect(signals[0].Evidence).To(Equal(reactOrchestrationEvidenceP1))
+		})
+	})
+
+	When("Domain order: activeView/selectedView/filterText/hoverRow bindings are analyzed", func() {
+		It("shall collapse selectedView into the navigation domain (not a distinct selection domain), yielding 3 unique domains", func() {
+			head := analyzeTSXForCodesignal("DomainOrderPage.tsx", reactOrchestrationRuleDomainOrder)
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "DomainOrderPage.tsx", Status: "modified", Head: head,
+			}}})
+
+			signals := signalsByRule(report, reactOrchestrationRuleID)
+			Expect(signals).To(HaveLen(1))
+			// Under correct domain-table ordering, "navigation" is matched
+			// before "selection", so selectedView collapses into the same
+			// domain as activeView: {navigation, filtering, hover_focus} = 3
+			// unique domains. A swapped table would classify selectedView as
+			// "selection" instead, producing 4 unique domains and failing
+			// this assertion.
+			Expect(signals[0].Evidence).To(ContainSubstring("domains=3"))
 		})
 	})
 

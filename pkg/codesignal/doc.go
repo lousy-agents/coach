@@ -15,7 +15,10 @@
 // A fourth path, signalsFromCognitiveComplexity, derives
 // "complexity.cognitive_complexity" from per-function
 // semantics.FunctionCognitiveComplexity records (threshold-gated in
-// codesignal, not in semantics).
+// codesignal, not in semantics). A fifth path, signalsFromReactOrchestration,
+// derives "structure.react_component_orchestration_density" from per-component
+// semantics.ReactComponentFacts records via a state-domain classification and
+// Emission Rule that live entirely in this package.
 //
 // A Signal's Lifecycle classifies it relative to an optional Base result.
 // Signal.Changed is independent of Lifecycle: a pre-existing signal may sit

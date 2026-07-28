@@ -19,9 +19,9 @@ type Result struct {
 
 // ReactComponentFacts describes one detected React component's state and
 // coordination shape, used by the react_component_orchestration_density
-// codesignal rule. AnalyzeBytes populates Name, Location, ClientKind, and
-// UseState; CoordinatedTransitions, WorkspaceBranches, ImperativeUI, and
-// SharedPanelDeps are not yet populated and stay nil/empty.
+// codesignal rule. AnalyzeBytes populates Name, Location, ClientKind,
+// UseState, CoordinatedTransitions, WorkspaceBranches, ImperativeUI, and
+// SharedPanelDeps for TypeScript/TSX.
 type ReactComponentFacts struct {
 	Name                   string                       `json:"name"`
 	Location               Location                     `json:"location"`
