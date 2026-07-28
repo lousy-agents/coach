@@ -35,6 +35,13 @@
     "expected": "tsx_ok.expected.json"
   },
   {
+    "name": "tsx_react_orchestration",
+    "src": "tsx_react_orchestration.src",
+    "path": "example/workspace_page.tsx",
+    "language": "tsx",
+    "expected": "tsx_react_orchestration.expected.json"
+  },
+  {
     "name": "go_mutates_input",
     "src": "go_mutates_input.src",
     "path": "example/mutate.go",

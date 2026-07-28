@@ -79,6 +79,55 @@ export interface Finding {
   suggested_skill?: string;
 }
 
+/** One useState() call's binding/setter pair. */
+export interface ReactUseStateBinding {
+  binding: string;
+  setter: string;
+  location: Location;
+}
+
+/** A callback (e.g. a useEffect body or event handler) that updates more than one state binding together. */
+export interface ReactCoordinatedTransition {
+  name: string;
+  kind: string;
+  location: Location;
+  updated_bindings: string[];
+}
+
+/** One branch of a multi-way conditional that renders a distinct panel/view. */
+export interface ReactWorkspaceBranch {
+  label: string;
+  location: Location;
+}
+
+/** A call to an imperative DOM/UI API (e.g. document.getElementById, .focus()) inside a component body. */
+export interface ReactImperativeUICall {
+  api: string;
+  location: Location;
+}
+
+/** A state binding passed as a prop to more than one distinct child panel component. */
+export interface ReactSharedPanelDep {
+  name: string;
+  panels: string[];
+}
+
+/**
+ * One detected React component's state and coordination shape, used by the
+ * react_component_orchestration_density codesignal rule. Populated for
+ * TypeScript/TSX only.
+ */
+export interface ReactComponentFacts {
+  name: string;
+  location: Location;
+  client_kind: string;
+  use_state?: ReactUseStateBinding[];
+  coordinated_transitions?: ReactCoordinatedTransition[];
+  workspace_branches?: ReactWorkspaceBranch[];
+  imperative_ui?: ReactImperativeUICall[];
+  shared_panel_deps?: ReactSharedPanelDep[];
+}
+
 /** Top-level output of analyzing one source file. */
 export interface Result {
   path: string;
@@ -90,4 +139,6 @@ export interface Result {
   findings?: Finding[];
   /** Per-function Cognitive Complexity records; omitted when empty. */
   cognitive_complexity?: FunctionCognitiveComplexity[];
+  /** Per-component React orchestration facts; omitted when empty or non-TS/TSX. */
+  react_components?: ReactComponentFacts[];
 }
