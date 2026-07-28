@@ -477,6 +477,38 @@ function SettingsPanel(_props: { filterText: string; onFilter: (v: string) => vo
 }
 `
 
+const reactOrchestrationRuleElidedHole = `"use client";
+
+import { useEffect, useState } from "react";
+
+export function TwoDomainWithHolePage() {
+  const [activeView, setActiveView] = useState("a");
+  const [selectedId, setSelectedId] = useState("x");
+  const [, setSomething] = useState(0);
+  useEffect(() => {
+    setActiveView("a");
+    setSelectedId("x");
+  }, []);
+  return activeView === "a" ? (
+    <A />
+  ) : activeView === "b" ? (
+    <B />
+  ) : activeView === "c" ? (
+    <C />
+  ) : null;
+}
+
+function A() {
+  return <section />;
+}
+function B() {
+  return <section />;
+}
+function C() {
+  return <section />;
+}
+`
+
 var _ = Describe("Story 5: structure.react_component_orchestration_density codesignal rule", func() {
 	When("P1: WorkspacePage.tsx is analyzed end to end through semantics then codesignal", func() {
 		It("shall emit exactly one signal with the locked field shape", func() {
@@ -616,6 +648,21 @@ function C() {
 			Expect(signalsByRule(report, reactOrchestrationRuleID)).To(BeEmpty(),
 				"shared module-level theme must not satisfy Supporting C; got signals %+v",
 				signalsByRule(report, reactOrchestrationRuleID))
+		})
+	})
+
+	When("an elided-hole useState binding (const [, setSomething] = useState(...)) is present alongside exactly two real, distinct state domains", func() {
+		It("shall emit no signal (the empty binding name must not be classified into a phantom 'other' domain)", func() {
+			head := analyzeTSXForCodesignal("TwoDomainWithHolePage.tsx", reactOrchestrationRuleElidedHole)
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "TwoDomainWithHolePage.tsx", Status: "modified", Head: head,
+			}}})
+			signals := signalsByRule(report, reactOrchestrationRuleID)
+			Expect(signals).To(BeEmpty(),
+				"activeView/selectedId classify into only 2 real domains (navigation, selection); "+
+					"the elided-hole useState binding must not contribute a phantom 'other' domain that "+
+					"would push uniqueDomains to 3 and satisfy the required domain-count criterion; got signals %+v",
+				signals)
 		})
 	})
 

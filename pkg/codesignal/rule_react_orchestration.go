@@ -53,6 +53,9 @@ func classifyStateDomain(binding string) string {
 func uniqueStateDomains(record semantics.ReactComponentFacts) []string {
 	seen := make(map[string]bool, len(record.UseState))
 	for _, binding := range record.UseState {
+		if binding.Binding == "" {
+			continue
+		}
 		seen[classifyStateDomain(binding.Binding)] = true
 	}
 	domains := make([]string, 0, len(seen))
