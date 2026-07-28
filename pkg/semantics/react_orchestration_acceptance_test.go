@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -208,6 +209,13 @@ function SettingsPanel(_props: { filterText: string; onFilter: (v: string) => vo
 }
 `
 
+// assertNonEmptyLocation locks Story 1's requirement that every recorded
+// fact carry a real Tree-sitter span (start_byte < end_byte).
+func assertNonEmptyLocation(loc semantics.Location, label string) {
+	GinkgoHelper()
+	Expect(loc.EndByte).To(BeNumerically(">", loc.StartByte), "%s location must be a non-empty span, got %+v", label, loc)
+}
+
 // assertWorkspacePageShape locks the P1/P-memo expected fact shape: use_state
 // order, one coordinated effect transition, three ordered workspace
 // branches, two imperative UI calls, and two shared panel deps ordered by
@@ -215,15 +223,19 @@ function SettingsPanel(_props: { filterText: string; onFilter: (v: string) => vo
 func assertWorkspacePageShape(rec semantics.ReactComponentFacts) {
 	GinkgoHelper()
 	Expect(rec.ClientKind).To(Equal("use_client_directive"))
+	assertNonEmptyLocation(rec.Location, "component")
 
 	Expect(rec.UseState).To(HaveLen(3), "expected activeView, selectedId, filterText useState bindings")
 	if len(rec.UseState) == 3 {
 		Expect(rec.UseState[0].Binding).To(Equal("activeView"))
 		Expect(rec.UseState[0].Setter).To(Equal("setActiveView"))
+		assertNonEmptyLocation(rec.UseState[0].Location, "use_state[0]")
 		Expect(rec.UseState[1].Binding).To(Equal("selectedId"))
 		Expect(rec.UseState[1].Setter).To(Equal("setSelectedId"))
+		assertNonEmptyLocation(rec.UseState[1].Location, "use_state[1]")
 		Expect(rec.UseState[2].Binding).To(Equal("filterText"))
 		Expect(rec.UseState[2].Setter).To(Equal("setFilterText"))
+		assertNonEmptyLocation(rec.UseState[2].Location, "use_state[2]")
 	}
 
 	Expect(rec.CoordinatedTransitions).To(HaveLen(1), "expected exactly one coordinated effect transition")
@@ -231,6 +243,7 @@ func assertWorkspacePageShape(rec semantics.ReactComponentFacts) {
 		Expect(rec.CoordinatedTransitions[0].Kind).To(Equal("effect"))
 		Expect(rec.CoordinatedTransitions[0].Name).To(Equal("<anonymous>"), "anonymous effect callbacks must use the <anonymous> name sentinel, not empty string")
 		Expect(rec.CoordinatedTransitions[0].UpdatedBindings).To(Equal([]string{"activeView", "filterText"}))
+		assertNonEmptyLocation(rec.CoordinatedTransitions[0].Location, "coordinated_transitions[0]")
 	}
 
 	Expect(rec.WorkspaceBranches).To(HaveLen(3), "expected list/detail/settings workspace branches")
@@ -238,12 +251,16 @@ func assertWorkspacePageShape(rec semantics.ReactComponentFacts) {
 		Expect(rec.WorkspaceBranches[0].Label).To(Equal("list"))
 		Expect(rec.WorkspaceBranches[1].Label).To(Equal("detail"))
 		Expect(rec.WorkspaceBranches[2].Label).To(Equal("settings"))
+		assertNonEmptyLocation(rec.WorkspaceBranches[0].Location, "workspace_branches[0]")
+		assertNonEmptyLocation(rec.WorkspaceBranches[1].Location, "workspace_branches[1]")
+		assertNonEmptyLocation(rec.WorkspaceBranches[2].Location, "workspace_branches[2]")
 	}
 
 	Expect(rec.ImperativeUI).To(HaveLen(2), "expected getElementById + focus imperative UI calls")
 	apis := map[string]bool{}
-	for _, c := range rec.ImperativeUI {
+	for i, c := range rec.ImperativeUI {
 		apis[c.API] = true
+		assertNonEmptyLocation(c.Location, fmt.Sprintf("imperative_ui[%d]", i))
 	}
 	Expect(apis).To(HaveKey("getElementById"))
 	Expect(apis).To(HaveKey("focus"))
@@ -795,6 +812,214 @@ function B() {
 				Expect(rec.WorkspaceBranches[1].Label).To(Equal("detail"))
 				Expect(rec.WorkspaceBranches[2].Label).To(Equal("settings"))
 			}
+		})
+	})
+
+	When("a TSX component has hooks and JSX but no \"use client\" directive", func() {
+		It("shall attach a record with client_kind hooks_and_jsx", func() {
+			const src = `import { useState } from "react";
+
+export function ClientWidget() {
+  const [n, setN] = useState(0);
+  return <div>{n}</div>;
+}
+`
+			result := analyzeTSX(analyzer, "ClientWidget.tsx", src)
+
+			rec, ok := reactComponentByName(result.ReactComponents, "ClientWidget")
+			Expect(ok).To(BeTrue(), "expected a react_components record named ClientWidget, got %+v", result.ReactComponents)
+			Expect(rec.ClientKind).To(Equal("hooks_and_jsx"))
+			Expect(rec.UseState).To(HaveLen(1))
+			if len(rec.UseState) == 1 {
+				Expect(rec.UseState[0].Binding).To(Equal("n"))
+				Expect(rec.UseState[0].Setter).To(Equal("setN"))
+			}
+			assertNonEmptyLocation(rec.Location, "ClientWidget")
+		})
+	})
+
+	When("P-forwardRef: WorkspacePage is wrapped in forwardRef(...)", func() {
+		It("shall attach one WorkspacePage record with the same fact shape as P1", func() {
+			const src = `"use client";
+
+import { forwardRef, useEffect, useState } from "react";
+
+export default forwardRef(function WorkspacePage(_props, _ref) {
+  const [activeView, setActiveView] = useState("list");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filterText, setFilterText] = useState("");
+  const header = document.getElementById("workspace-header");
+
+  useEffect(() => {
+    setFilterText("");
+    setActiveView("list");
+  }, [selectedId]);
+
+  return (
+    <div>
+      {activeView === "list" ? (
+        <ListPanel
+          selectedId={selectedId}
+          filterText={filterText}
+          onSelect={setSelectedId}
+        />
+      ) : activeView === "detail" ? (
+        <DetailPanel selectedId={selectedId} onBack={() => setActiveView("list")} />
+      ) : activeView === "settings" ? (
+        <SettingsPanel filterText={filterText} onFilter={setFilterText} />
+      ) : null}
+      <button
+        type="button"
+        onClick={() => {
+          header?.focus();
+          setActiveView("settings");
+        }}
+      >
+        Settings
+      </button>
+    </div>
+  );
+});
+
+function ListPanel(_props: {
+  selectedId: string | null;
+  filterText: string;
+  onSelect: (id: string) => void;
+}) {
+  return <section />;
+}
+function DetailPanel(_props: { selectedId: string | null; onBack: () => void }) {
+  return <section />;
+}
+function SettingsPanel(_props: { filterText: string; onFilter: (v: string) => void }) {
+  return <section />;
+}
+`
+			result := analyzeTSX(analyzer, "WorkspacePageForwardRef.tsx", src)
+
+			rec, ok := reactComponentByName(result.ReactComponents, "WorkspacePage")
+			Expect(ok).To(BeTrue(), "expected a react_components record named WorkspacePage under forwardRef(), got %+v", result.ReactComponents)
+			Expect(countReactComponentsNamed(result.ReactComponents, "WorkspacePage")).To(Equal(1))
+			assertWorkspacePageShape(rec)
+		})
+	})
+
+	When("a component body contains role=\"tabpanel\" elements", func() {
+		It("shall emit one workspace branch per tabpanel with aria-label/id/tabpanel label precedence", func() {
+			const src = `"use client";
+
+export function TabHost() {
+  return (
+    <div>
+      <div role="tabpanel" aria-label="one">
+        a
+      </div>
+      <div role="tabpanel" id="two">
+        b
+      </div>
+      <div role="tabpanel">c</div>
+    </div>
+  );
+}
+`
+			result := analyzeTSX(analyzer, "TabHost.tsx", src)
+
+			rec, ok := reactComponentByName(result.ReactComponents, "TabHost")
+			Expect(ok).To(BeTrue(), "expected a react_components record named TabHost, got %+v", result.ReactComponents)
+			Expect(rec.WorkspaceBranches).To(HaveLen(3), "each role=tabpanel must yield one branch, got %+v", rec.WorkspaceBranches)
+			if len(rec.WorkspaceBranches) == 3 {
+				Expect(rec.WorkspaceBranches[0].Label).To(Equal("one"))
+				Expect(rec.WorkspaceBranches[1].Label).To(Equal("two"))
+				Expect(rec.WorkspaceBranches[2].Label).To(Equal("tabpanel"))
+				assertNonEmptyLocation(rec.WorkspaceBranches[0].Location, "tabpanel[0]")
+				assertNonEmptyLocation(rec.WorkspaceBranches[1].Location, "tabpanel[1]")
+				assertNonEmptyLocation(rec.WorkspaceBranches[2].Location, "tabpanel[2]")
+			}
+		})
+	})
+
+	When("an inline JSX onClick arrow updates two state bindings", func() {
+		It("shall record a coordinated transition with kind handler and name onClick", func() {
+			const src = `"use client";
+
+import { useState } from "react";
+
+export function Counter() {
+  const [a, setA] = useState(1);
+  const [b, setB] = useState(2);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setA(1);
+        setB(2);
+      }}
+    />
+  );
+}
+`
+			result := analyzeTSX(analyzer, "Counter.tsx", src)
+
+			rec, ok := reactComponentByName(result.ReactComponents, "Counter")
+			Expect(ok).To(BeTrue(), "expected a react_components record named Counter, got %+v", result.ReactComponents)
+			Expect(rec.CoordinatedTransitions).To(HaveLen(1))
+			if len(rec.CoordinatedTransitions) == 1 {
+				Expect(rec.CoordinatedTransitions[0].Kind).To(Equal("handler"))
+				Expect(rec.CoordinatedTransitions[0].Name).To(Equal("onClick"))
+				Expect(rec.CoordinatedTransitions[0].UpdatedBindings).To(Equal([]string{"a", "b"}))
+				assertNonEmptyLocation(rec.CoordinatedTransitions[0].Location, "onClick handler")
+			}
+		})
+	})
+
+	When("a local handle* binding updates two state bindings", func() {
+		It("shall record a coordinated transition with kind handler and the binding name", func() {
+			const src = `"use client";
+
+import { useState } from "react";
+
+export function Counter() {
+  const [a, setA] = useState(1);
+  const [b, setB] = useState(2);
+  const handleReset = () => {
+    setA(1);
+    setB(2);
+  };
+  return <button type="button" onClick={handleReset} />;
+}
+`
+			result := analyzeTSX(analyzer, "Counter.tsx", src)
+
+			rec, ok := reactComponentByName(result.ReactComponents, "Counter")
+			Expect(ok).To(BeTrue(), "expected a react_components record named Counter, got %+v", result.ReactComponents)
+			Expect(rec.CoordinatedTransitions).To(HaveLen(1))
+			if len(rec.CoordinatedTransitions) == 1 {
+				Expect(rec.CoordinatedTransitions[0].Kind).To(Equal("handler"))
+				Expect(rec.CoordinatedTransitions[0].Name).To(Equal("handleReset"))
+				Expect(rec.CoordinatedTransitions[0].UpdatedBindings).To(Equal([]string{"a", "b"}))
+			}
+		})
+	})
+
+	When("LanguageTypeScript analyzes a module with \"use client\" but no JSX", func() {
+		It("shall leave react_components empty (JSX body is required for candidacy)", func() {
+			const src = `"use client";
+
+import { useState } from "react";
+
+export function formatCount(n: number): number {
+  const [x, setX] = useState(n);
+  return x;
+}
+`
+			result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+				Path:     "formatCount.ts",
+				Language: semantics.LanguageTypeScript,
+				Content:  []byte(src),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.ParseStatus).To(Equal(semantics.ParseStatus("ok")))
+			Expect(result.ReactComponents).To(BeEmpty())
 		})
 	})
 })

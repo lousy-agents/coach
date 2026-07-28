@@ -670,7 +670,7 @@ function C(_props: { filterText: string }) {
 }
 `
 
-var _ = Describe("Story 5: structure.react_component_orchestration_density codesignal rule", func() {
+var _ = Describe("Stories 2/3/5: structure.react_component_orchestration_density codesignal rule", func() {
 	When("P1: WorkspacePage.tsx is analyzed end to end through semantics then codesignal", func() {
 		It("shall emit exactly one signal with the locked field shape", func() {
 			head := analyzeTSXForCodesignal("WorkspacePage.tsx", reactOrchestrationRuleP1)
@@ -688,11 +688,17 @@ var _ = Describe("Story 5: structure.react_component_orchestration_density codes
 			Expect(sig.Category).To(Equal(codesignal.Category("structure")))
 			Expect(sig.Severity).To(Equal(codesignal.Severity("medium")))
 			Expect(sig.Confidence).To(Equal(codesignal.Confidence("high")))
+			Expect(sig.Path).To(Equal("WorkspacePage.tsx"))
 			Expect(sig.Subject).To(Equal("WorkspacePage"))
 			Expect(sig.Evidence).To(Equal(reactOrchestrationEvidenceP1))
 			Expect(sig.WhyItMatters).To(Equal(reactOrchestrationWhyItMatters))
 			Expect(sig.Recommendation).To(Equal(reactOrchestrationRecommendation))
 			Expect(sig.Provenance).To(Equal(codesignal.Provenance{Producer: "codesignal"}))
+			Expect(sig.SuggestedSkill).To(BeEmpty(), "v1 orchestration signals must omit suggested_skill")
+			Expect(head.ReactComponents).NotTo(BeEmpty())
+			Expect(sig.Location).To(Equal(head.ReactComponents[0].Location),
+				"signal location must equal the component record location")
+			Expect(sig.Location.EndByte).To(BeNumerically(">", sig.Location.StartByte))
 		})
 	})
 
@@ -707,6 +713,76 @@ var _ = Describe("Story 5: structure.react_component_orchestration_density codes
 			Expect(signals).To(HaveLen(1))
 			Expect(signals[0].Subject).To(Equal("WorkspacePage"))
 			Expect(signals[0].Evidence).To(Equal(reactOrchestrationEvidenceP1))
+		})
+	})
+
+	When("P-forwardRef: the same component is wrapped in forwardRef(...)", func() {
+		It("shall emit one signal with the same subject and evidence as P1", func() {
+			const src = `"use client";
+
+import { forwardRef, useEffect, useState } from "react";
+
+export default forwardRef(function WorkspacePage(_props, _ref) {
+  const [activeView, setActiveView] = useState("list");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filterText, setFilterText] = useState("");
+  const header = document.getElementById("workspace-header");
+
+  useEffect(() => {
+    setFilterText("");
+    setActiveView("list");
+  }, [selectedId]);
+
+  return (
+    <div>
+      {activeView === "list" ? (
+        <ListPanel
+          selectedId={selectedId}
+          filterText={filterText}
+          onSelect={setSelectedId}
+        />
+      ) : activeView === "detail" ? (
+        <DetailPanel selectedId={selectedId} onBack={() => setActiveView("list")} />
+      ) : activeView === "settings" ? (
+        <SettingsPanel filterText={filterText} onFilter={setFilterText} />
+      ) : null}
+      <button
+        type="button"
+        onClick={() => {
+          header?.focus();
+          setActiveView("settings");
+        }}
+      >
+        Settings
+      </button>
+    </div>
+  );
+});
+
+function ListPanel(_props: {
+  selectedId: string | null;
+  filterText: string;
+  onSelect: (id: string) => void;
+}) {
+  return <section />;
+}
+function DetailPanel(_props: { selectedId: string | null; onBack: () => void }) {
+  return <section />;
+}
+function SettingsPanel(_props: { filterText: string; onFilter: (v: string) => void }) {
+  return <section />;
+}
+`
+			head := analyzeTSXForCodesignal("WorkspacePageForwardRef.tsx", src)
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "WorkspacePageForwardRef.tsx", Status: "modified", Head: head,
+			}}})
+
+			signals := signalsByRule(report, reactOrchestrationRuleID)
+			Expect(signals).To(HaveLen(1))
+			Expect(signals[0].Subject).To(Equal("WorkspacePage"))
+			Expect(signals[0].Evidence).To(Equal(reactOrchestrationEvidenceP1))
+			Expect(signals[0].Path).To(Equal("WorkspacePageForwardRef.tsx"))
 		})
 	})
 
