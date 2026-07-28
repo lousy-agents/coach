@@ -1,0 +1,271 @@
+{
+  "id": 0,
+  "result": {
+    "path": "example/workspace_page.tsx",
+    "language": "tsx",
+    "parse_status": "ok",
+    "imports": [
+      {
+        "path": "react",
+        "location": {
+          "start_byte": 51,
+          "end_byte": 58,
+          "start_row": 2,
+          "start_col": 36,
+          "end_row": 2,
+          "end_col": 43
+        }
+      }
+    ],
+    "metrics": {
+      "ifs": 0,
+      "fors": 0,
+      "expr_switches": 0,
+      "type_switches": 0,
+      "selects": 0,
+      "functions": 7,
+      "methods": 0,
+      "max_nesting_depth": 1,
+      "max_cognitive_complexity": 6,
+      "sum_cognitive_complexity": 6
+    },
+    "cognitive_complexity": [
+      {
+        "name": "WorkspacePage",
+        "kind": "function",
+        "location": {
+          "start_byte": 68,
+          "end_byte": 1061,
+          "start_row": 4,
+          "start_col": 7,
+          "end_row": 39,
+          "end_col": 1
+        },
+        "score": 6
+      },
+      {
+        "name": "\u003cfunc lit\u003e",
+        "kind": "arrow",
+        "location": {
+          "start_byte": 347,
+          "end_byte": 408,
+          "start_row": 10,
+          "start_col": 12,
+          "end_row": 13,
+          "end_col": 3
+        },
+        "score": 0
+      },
+      {
+        "name": "\u003cfunc lit\u003e",
+        "kind": "arrow",
+        "location": {
+          "start_byte": 704,
+          "end_byte": 731,
+          "start_row": 24,
+          "start_col": 53,
+          "end_row": 24,
+          "end_col": 80
+        },
+        "score": 0
+      },
+      {
+        "name": "\u003cfunc lit\u003e",
+        "kind": "arrow",
+        "location": {
+          "start_byte": 920,
+          "end_byte": 1001,
+          "start_row": 30,
+          "start_col": 17,
+          "end_row": 33,
+          "end_col": 9
+        },
+        "score": 0
+      },
+      {
+        "name": "ListPanel",
+        "kind": "function",
+        "location": {
+          "start_byte": 1063,
+          "end_byte": 1205,
+          "start_row": 41,
+          "start_col": 0,
+          "end_row": 47,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "DetailPanel",
+        "kind": "function",
+        "location": {
+          "start_byte": 1206,
+          "end_byte": 1311,
+          "start_row": 48,
+          "start_col": 0,
+          "end_row": 50,
+          "end_col": 1
+        },
+        "score": 0
+      },
+      {
+        "name": "SettingsPanel",
+        "kind": "function",
+        "location": {
+          "start_byte": 1312,
+          "end_byte": 1423,
+          "start_row": 51,
+          "start_col": 0,
+          "end_row": 53,
+          "end_col": 1
+        },
+        "score": 0
+      }
+    ],
+    "react_components": [
+      {
+        "name": "WorkspacePage",
+        "location": {
+          "start_byte": 68,
+          "end_byte": 1061,
+          "start_row": 4,
+          "start_col": 7,
+          "end_row": 39,
+          "end_col": 1
+        },
+        "client_kind": "use_client_directive",
+        "use_state": [
+          {
+            "binding": "activeView",
+            "setter": "setActiveView",
+            "location": {
+              "start_byte": 133,
+              "end_byte": 149,
+              "start_row": 5,
+              "start_col": 38,
+              "end_row": 5,
+              "end_col": 54
+            }
+          },
+          {
+            "binding": "selectedId",
+            "setter": "setSelectedId",
+            "location": {
+              "start_byte": 189,
+              "end_byte": 218,
+              "start_row": 6,
+              "start_col": 38,
+              "end_row": 6,
+              "end_col": 67
+            }
+          },
+          {
+            "binding": "filterText",
+            "setter": "setFilterText",
+            "location": {
+              "start_byte": 258,
+              "end_byte": 270,
+              "start_row": 7,
+              "start_col": 38,
+              "end_row": 7,
+              "end_col": 50
+            }
+          }
+        ],
+        "coordinated_transitions": [
+          {
+            "name": "\u003canonymous\u003e",
+            "kind": "effect",
+            "location": {
+              "start_byte": 347,
+              "end_byte": 408,
+              "start_row": 10,
+              "start_col": 12,
+              "end_row": 13,
+              "end_col": 3
+            },
+            "updated_bindings": [
+              "activeView",
+              "filterText"
+            ]
+          }
+        ],
+        "workspace_branches": [
+          {
+            "label": "list",
+            "location": {
+              "start_byte": 488,
+              "end_byte": 612,
+              "start_row": 18,
+              "start_col": 8,
+              "end_row": 22,
+              "end_col": 10
+            }
+          },
+          {
+            "label": "detail",
+            "location": {
+              "start_byte": 659,
+              "end_byte": 735,
+              "start_row": 24,
+              "start_col": 8,
+              "end_row": 24,
+              "end_col": 84
+            }
+          },
+          {
+            "label": "settings",
+            "location": {
+              "start_byte": 784,
+              "end_byte": 850,
+              "start_row": 26,
+              "start_col": 8,
+              "end_row": 26,
+              "end_col": 74
+            }
+          }
+        ],
+        "imperative_ui": [
+          {
+            "api": "getElementById",
+            "location": {
+              "start_byte": 289,
+              "end_byte": 332,
+              "start_row": 8,
+              "start_col": 17,
+              "end_row": 8,
+              "end_col": 60
+            }
+          },
+          {
+            "api": "focus",
+            "location": {
+              "start_byte": 938,
+              "end_byte": 953,
+              "start_row": 31,
+              "start_col": 10,
+              "end_row": 31,
+              "end_col": 25
+            }
+          }
+        ],
+        "shared_panel_deps": [
+          {
+            "name": "filterText",
+            "panels": [
+              "ListPanel",
+              "SettingsPanel"
+            ]
+          },
+          {
+            "name": "selectedId",
+            "panels": [
+              "DetailPanel",
+              "ListPanel"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,6 +1,7 @@
 package semantics
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -75,6 +76,58 @@ func goldenSyntaxErrorResult() Result {
 					StartByte: 10, EndByte: 11,
 					StartRow: 1, StartCol: 0,
 					EndRow: 1, EndCol: 1,
+				},
+			},
+		},
+	}
+}
+
+// goldenReactComponentsResult locks the additive react_components JSON
+// field family (Story 4 / epic #139) under the same golden discipline as
+// cognitive_complexity: one minimal, hand-legible record with every nested
+// fact slice present so snake_case tags and omitempty presence stay frozen.
+func goldenReactComponentsResult() Result {
+	compLoc := Location{
+		StartByte: 40, EndByte: 200,
+		StartRow: 2, StartCol: 0,
+		EndRow: 12, EndCol: 1,
+	}
+	bindLoc := Location{
+		StartByte: 60, EndByte: 90,
+		StartRow: 3, StartCol: 2,
+		EndRow: 3, EndCol: 32,
+	}
+	return Result{
+		Path:        "WorkspacePage.tsx",
+		Language:    LanguageTSX,
+		ParseStatus: ParseStatus("ok"),
+		Metrics: StructuralMetrics{
+			Functions: 1,
+		},
+		ReactComponents: []ReactComponentFacts{
+			{
+				Name:       "WorkspacePage",
+				Location:   compLoc,
+				ClientKind: "use_client_directive",
+				UseState: []ReactUseStateBinding{
+					{Binding: "activeView", Setter: "setActiveView", Location: bindLoc},
+				},
+				CoordinatedTransitions: []ReactCoordinatedTransition{
+					{
+						Name:            "<anonymous>",
+						Kind:            "effect",
+						Location:        Location{StartByte: 100, EndByte: 140, StartRow: 5, StartCol: 2, EndRow: 7, EndCol: 4},
+						UpdatedBindings: []string{"activeView", "filterText"},
+					},
+				},
+				WorkspaceBranches: []ReactWorkspaceBranch{
+					{Label: "list", Location: Location{StartByte: 150, EndByte: 160, StartRow: 8, StartCol: 8, EndRow: 8, EndCol: 18}},
+				},
+				ImperativeUI: []ReactImperativeUICall{
+					{API: "getElementById", Location: Location{StartByte: 70, EndByte: 99, StartRow: 4, StartCol: 2, EndRow: 4, EndCol: 31}},
+				},
+				SharedPanelDeps: []ReactSharedPanelDep{
+					{Name: "selectedId", Panels: []string{"DetailPanel", "ListPanel"}},
 				},
 			},
 		},
@@ -216,6 +269,42 @@ func TestResult_MarshalMatchesGoldenFile(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:       "react_components",
+			result:     goldenReactComponentsResult(),
+			goldenFile: "testdata/result_golden_react_components.json",
+			checkRoundTripped: func(t *testing.T, r Result) {
+				t.Helper()
+				if r.ParseStatus != ParseStatus("ok") {
+					t.Errorf("AC-4.4: golden react_components Result.ParseStatus: got %q, want %q", r.ParseStatus, "ok")
+				}
+				if r.Language != LanguageTSX {
+					t.Errorf("AC-4.4: golden react_components Result.Language: got %q, want %q", r.Language, LanguageTSX)
+				}
+				if len(r.ReactComponents) != 1 {
+					t.Fatalf("AC-4.4: golden react_components length: got %d, want 1", len(r.ReactComponents))
+				}
+				rec := r.ReactComponents[0]
+				if rec.Name != "WorkspacePage" || rec.ClientKind != "use_client_directive" {
+					t.Errorf("AC-4.4: golden react_components[0] name/client_kind: got %q/%q", rec.Name, rec.ClientKind)
+				}
+				if len(rec.UseState) != 1 || rec.UseState[0].Binding != "activeView" || rec.UseState[0].Setter != "setActiveView" {
+					t.Errorf("AC-4.4: golden react_components[0].use_state: got %+v", rec.UseState)
+				}
+				if len(rec.CoordinatedTransitions) != 1 || rec.CoordinatedTransitions[0].Kind != "effect" {
+					t.Errorf("AC-4.4: golden react_components[0].coordinated_transitions: got %+v", rec.CoordinatedTransitions)
+				}
+				if len(rec.WorkspaceBranches) != 1 || rec.WorkspaceBranches[0].Label != "list" {
+					t.Errorf("AC-4.4: golden react_components[0].workspace_branches: got %+v", rec.WorkspaceBranches)
+				}
+				if len(rec.ImperativeUI) != 1 || rec.ImperativeUI[0].API != "getElementById" {
+					t.Errorf("AC-4.4: golden react_components[0].imperative_ui: got %+v", rec.ImperativeUI)
+				}
+				if len(rec.SharedPanelDeps) != 1 || rec.SharedPanelDeps[0].Name != "selectedId" {
+					t.Errorf("AC-4.4: golden react_components[0].shared_panel_deps: got %+v", rec.SharedPanelDeps)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -338,6 +427,84 @@ func TestSentinelErrors_AreNonNilAndPairwiseDistinct(t *testing.T) {
 			t.Errorf("sentinels %s and %s must have distinct messages, both are %q", name, other, msg)
 		}
 		seen[msg] = name
+	}
+}
+
+// Result.ReactComponents must stay nil (and thus be omitted from JSON via
+// omitempty) when AnalyzeBytes finds no React client component candidates:
+// Go sources, plain TS/TSX without candidacy, and syntax-error partial
+// results.
+func TestResult_ReactComponentsEmpty(t *testing.T) {
+	a := mustNewAnalyzer(t)
+
+	tests := []struct {
+		name       string
+		input      FileInput
+		wantStatus ParseStatus
+	}{
+		{
+			name: "go ok",
+			input: FileInput{
+				Path:     "main.go",
+				Language: LanguageGo,
+				Content:  []byte("package main\n\nfunc main() {}\n"),
+			},
+			wantStatus: ParseStatus("ok"),
+		},
+		{
+			name: "typescript ok",
+			input: FileInput{
+				Path:     "main.ts",
+				Language: LanguageTypeScript,
+				Content:  []byte("const x: number = 1;\n"),
+			},
+			wantStatus: ParseStatus("ok"),
+		},
+		{
+			name: "tsx ok",
+			input: FileInput{
+				Path:     "App.tsx",
+				Language: LanguageTSX,
+				Content:  []byte("const App = () => <div>hi</div>;\n"),
+			},
+			wantStatus: ParseStatus("ok"),
+		},
+		{
+			name: "tsx syntax error",
+			input: FileInput{
+				Path:     "broken.tsx",
+				Language: LanguageTSX,
+				Content:  []byte("const x = ;"),
+			},
+			wantStatus: ParseStatus("syntax_errors"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, _ := a.AnalyzeBytes(context.Background(), tt.input)
+			if result == nil {
+				t.Fatalf("AnalyzeBytes(%s): got nil result, want non-nil", tt.name)
+			}
+			if result.ParseStatus != tt.wantStatus {
+				t.Fatalf("AnalyzeBytes(%s): ParseStatus = %q, want %q", tt.name, result.ParseStatus, tt.wantStatus)
+			}
+			if result.ReactComponents != nil {
+				t.Errorf("AnalyzeBytes(%s): ReactComponents = %+v, want nil", tt.name, result.ReactComponents)
+			}
+
+			raw, err := json.Marshal(result)
+			if err != nil {
+				t.Fatalf("AnalyzeBytes(%s): marshaling Result must not fail: %v", tt.name, err)
+			}
+			var asMap map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &asMap); err != nil {
+				t.Fatalf("AnalyzeBytes(%s): Result JSON must unmarshal into a generic map: %v", tt.name, err)
+			}
+			if _, present := asMap["react_components"]; present {
+				t.Errorf("AnalyzeBytes(%s): Result JSON must omit key %q (omitempty), got present with value %s", tt.name, "react_components", asMap["react_components"])
+			}
+		})
 	}
 }
 

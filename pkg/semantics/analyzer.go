@@ -135,6 +135,12 @@ func (a *Analyzer) AnalyzeBytes(ctx context.Context, in FileInput) (*Result, err
 		metrics = applyCognitiveComplexityAggregates(metrics, cognitive, topLevel)
 	}
 
+	var reactComponents []ReactComponentFacts
+	switch in.Language {
+	case LanguageTypeScript, LanguageTSX:
+		reactComponents = computeReactComponents(root, in.Content)
+	}
+
 	result := &Result{
 		Path:                in.Path,
 		Language:            in.Language,
@@ -143,6 +149,7 @@ func (a *Analyzer) AnalyzeBytes(ctx context.Context, in FileInput) (*Result, err
 		Metrics:             metrics,
 		Findings:            findings,
 		CognitiveComplexity: cognitive,
+		ReactComponents:     reactComponents,
 	}
 	return result, nil
 }

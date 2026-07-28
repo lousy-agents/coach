@@ -1,0 +1,54 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+export function WorkspacePage() {
+  const [activeView, setActiveView] = useState("list");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filterText, setFilterText] = useState("");
+  const header = document.getElementById("workspace-header");
+
+  useEffect(() => {
+    setFilterText("");
+    setActiveView("list");
+  }, [selectedId]);
+
+  return (
+    <div>
+      {activeView === "list" ? (
+        <ListPanel
+          selectedId={selectedId}
+          filterText={filterText}
+          onSelect={setSelectedId}
+        />
+      ) : activeView === "detail" ? (
+        <DetailPanel selectedId={selectedId} onBack={() => setActiveView("list")} />
+      ) : activeView === "settings" ? (
+        <SettingsPanel filterText={filterText} onFilter={setFilterText} />
+      ) : null}
+      <button
+        type="button"
+        onClick={() => {
+          header?.focus();
+          setActiveView("settings");
+        }}
+      >
+        Settings
+      </button>
+    </div>
+  );
+}
+
+function ListPanel(_props: {
+  selectedId: string | null;
+  filterText: string;
+  onSelect: (id: string) => void;
+}) {
+  return <section />;
+}
+function DetailPanel(_props: { selectedId: string | null; onBack: () => void }) {
+  return <section />;
+}
+function SettingsPanel(_props: { filterText: string; onFilter: (v: string) => void }) {
+  return <section />;
+}

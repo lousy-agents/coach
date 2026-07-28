@@ -129,6 +129,7 @@ func processHeadResult(fc FileChange) ([]Diagnostic, []Signal) {
 		signals = append(signals, signalsFromMetrics(fc.Path, fc.Head.Metrics)...)
 		signals = append(signals, signalsFromImports(fc.Path, fc.Head.Language, fc.Head.Imports)...)
 		signals = append(signals, signalsFromCognitiveComplexity(fc.Path, fc.Head.CognitiveComplexity)...)
+		signals = append(signals, signalsFromReactOrchestration(fc.Path, fc.Head.ReactComponents)...)
 		return nil, signals
 	case "syntax_errors":
 		diagnostics := make([]Diagnostic, 0, len(fc.Head.SyntaxErrors))
@@ -162,6 +163,7 @@ func extractBaseSignals(fc FileChange) []Signal {
 	signals = append(signals, signalsFromMetrics(fc.Path, fc.Base.Metrics)...)
 	signals = append(signals, signalsFromImports(fc.Path, fc.Base.Language, fc.Base.Imports)...)
 	signals = append(signals, signalsFromCognitiveComplexity(fc.Path, fc.Base.CognitiveComplexity)...)
+	signals = append(signals, signalsFromReactOrchestration(fc.Path, fc.Base.ReactComponents)...)
 	return signals
 }
 
