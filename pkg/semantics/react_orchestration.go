@@ -99,7 +99,7 @@ func reactBuildComponentFacts(cand reactCandidate, hasDirective bool, source []b
 		CoordinatedTransitions: reactExtractCoordinatedTransitions(body, source, useState),
 		WorkspaceBranches:      reactExtractWorkspaceBranches(body, source),
 		ImperativeUI:           reactExtractImperativeUI(body, source),
-		SharedPanelDeps:        reactExtractSharedPanelDeps(body, source),
+		SharedPanelDeps:        reactExtractSharedPanelDeps(body, source, useState),
 	}, true
 }
 
@@ -773,36 +773,43 @@ func reactIsEffectHookCallee(call engine.Node, source []byte) bool {
 // reactTransitionKindAndName classifies fn as "effect" (first argument of
 // useEffect/useLayoutEffect), "handler" (bound to an on*/handle* name via a
 // declarator, assignment, object property, or JSX on* attribute), or
-// "callback" (none of the above), and returns the matched name alongside
-// ("" for effect and callback).
+// "callback" (none of the above). Name is the assigned identifier, JSX
+// attribute name, function's own name field, or the "<anonymous>" sentinel
+// when none of those exist — never the empty string.
 func reactTransitionKindAndName(fn engine.Node, source []byte) (kind, name string) {
 	parent := fn.Parent()
 	if parent != nil && parent.Kind() == "arguments" && sameNodeSpan(reactFirstArgumentNode(parent), fn) {
 		if call := parent.Parent(); call != nil && call.Kind() == "call_expression" && reactIsEffectHookCallee(call, source) {
-			return "effect", ""
+			return "effect", reactTransitionNameOrAnonymous(fn, source)
 		}
 	}
 	if parent == nil {
-		return "callback", ""
+		return "callback", reactTransitionNameOrAnonymous(fn, source)
 	}
 	switch parent.Kind() {
 	case "variable_declarator":
 		if nameNode := parent.ChildByFieldName("name"); nameNode != nil && nameNode.Kind() == "identifier" {
-			if n := nameNode.Utf8Text(source); reactHandlerNamePattern.MatchString(n) {
+			n := nameNode.Utf8Text(source)
+			if reactHandlerNamePattern.MatchString(n) {
 				return "handler", n
 			}
+			return "callback", n
 		}
 	case "assignment_expression":
 		if left := parent.ChildByFieldName("left"); left != nil && left.Kind() == "identifier" {
-			if n := left.Utf8Text(source); reactHandlerNamePattern.MatchString(n) {
+			n := left.Utf8Text(source)
+			if reactHandlerNamePattern.MatchString(n) {
 				return "handler", n
 			}
+			return "callback", n
 		}
 	case "pair":
 		if key := parent.ChildByFieldName("key"); key != nil && key.Kind() == "property_identifier" {
-			if n := key.Utf8Text(source); reactHandlerNamePattern.MatchString(n) {
+			n := key.Utf8Text(source)
+			if reactHandlerNamePattern.MatchString(n) {
 				return "handler", n
 			}
+			return "callback", n
 		}
 	case "jsx_expression":
 		if attr := parent.Parent(); attr != nil && attr.Kind() == "jsx_attribute" {
@@ -811,7 +818,16 @@ func reactTransitionKindAndName(fn engine.Node, source []byte) (kind, name strin
 			}
 		}
 	}
-	return "callback", ""
+	return "callback", reactTransitionNameOrAnonymous(fn, source)
+}
+
+// reactTransitionNameOrAnonymous returns fn's own syntactic name field when
+// present, otherwise the epic's "<anonymous>" sentinel.
+func reactTransitionNameOrAnonymous(fn engine.Node, source []byte) string {
+	if own := reactFuncOwnName(fn, source); own != "" {
+		return own
+	}
+	return "<anonymous>"
 }
 
 // reactJSXAttributeNameText returns attr's name text -- attr's child 0, a
@@ -1275,9 +1291,16 @@ func reactImperativeAPI(call engine.Node, source []byte) string {
 // reactExtractSharedPanelDeps groups every `attr={identifier}` JSX
 // attribute (identifier value, not a member expression/spread/literal)
 // found on an uppercase-tag JSX element in body's scan set by identifier
-// name, and returns one ReactSharedPanelDep per identifier referenced this
-// way by >=2 distinct tag names, ordered by Name.
-func reactExtractSharedPanelDeps(body engine.Node, source []byte) []ReactSharedPanelDep {
+// name, and returns one ReactSharedPanelDep per identifier that is a known
+// state binding or in-component callback/handler name and is referenced this
+// way by >=2 distinct tag names, ordered by Name. Module-level constants and
+// other non-allowlisted identifiers never qualify (Supporting C isolation).
+func reactExtractSharedPanelDeps(body engine.Node, source []byte, useState []ReactUseStateBinding) []ReactSharedPanelDep {
+	allow := reactKnownSharedDepNames(body, source, useState)
+	if len(allow) == 0 {
+		return nil
+	}
+
 	depTags := map[string]map[string]struct{}{}
 
 	reactWalkScope(body, source, func(n engine.Node) {
@@ -1304,6 +1327,9 @@ func reactExtractSharedPanelDeps(body engine.Node, source []byte) []ReactSharedP
 				continue
 			}
 			idName := inner.Utf8Text(source)
+			if _, ok := allow[idName]; !ok {
+				continue
+			}
 			if depTags[idName] == nil {
 				depTags[idName] = map[string]struct{}{}
 			}
@@ -1330,6 +1356,56 @@ func reactExtractSharedPanelDeps(body engine.Node, source []byte) []ReactSharedP
 		out = append(out, ReactSharedPanelDep{Name: name, Panels: panels})
 	}
 	return out
+}
+
+// reactKnownSharedDepNames builds the allowlist for shared panel deps: every
+// non-empty useState binding name, plus every local function/arrow binding
+// name in body's scan set (known callbacks/handlers). Nested PascalCase
+// component names are excluded. Setters and non-function module values are
+// not included.
+func reactKnownSharedDepNames(body engine.Node, source []byte, useState []ReactUseStateBinding) map[string]struct{} {
+	known := make(map[string]struct{}, len(useState))
+	for _, u := range useState {
+		if u.Binding != "" {
+			known[u.Binding] = struct{}{}
+		}
+	}
+	reactWalkScope(body, source, func(n engine.Node) {
+		switch n.Kind() {
+		case "function_declaration":
+			if reactIsNestedComponent(n, source) {
+				return
+			}
+			if name := n.ChildByFieldName("name"); name != nil {
+				if nme := name.Utf8Text(source); nme != "" {
+					known[nme] = struct{}{}
+				}
+			}
+		case "function_expression", "arrow_function":
+			if reactIsNestedComponent(n, source) {
+				return
+			}
+			parent := n.Parent()
+			if parent == nil {
+				return
+			}
+			switch parent.Kind() {
+			case "variable_declarator":
+				if nameNode := parent.ChildByFieldName("name"); nameNode != nil && nameNode.Kind() == "identifier" {
+					if nme := nameNode.Utf8Text(source); nme != "" {
+						known[nme] = struct{}{}
+					}
+				}
+			case "assignment_expression":
+				if left := parent.ChildByFieldName("left"); left != nil && left.Kind() == "identifier" {
+					if nme := left.Utf8Text(source); nme != "" {
+						known[nme] = struct{}{}
+					}
+				}
+			}
+		}
+	})
+	return known
 }
 
 func isPascalCaseName(name string) bool {

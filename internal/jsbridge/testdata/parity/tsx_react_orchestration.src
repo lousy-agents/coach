@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 export function WorkspacePage() {
   const [activeView, setActiveView] = useState("list");
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
   const header = document.getElementById("workspace-header");
 

@@ -50,11 +50,11 @@ export function HugeForm() {
   const [notes, setNotes] = useState("");
   return (
     <form>
-      <input onChange={(e) => setFirstName(e.target.value)} />
-      <input onChange={(e) => setLastName(e.target.value)} />
-      <input onChange={(e) => setEmail(e.target.value)} />
-      <input onChange={(e) => setPhone(e.target.value)} />
-      <input onChange={(e) => setNotes(e.target.value)} />
+      <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+      <input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+      <input value={email} onChange={(e) => setEmail(e.target.value)} />
+      <input value={phone} onChange={(e) => setPhone(e.target.value)} />
+      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
     </form>
   );
 }
@@ -253,7 +253,7 @@ import { useEffect, useState } from "react";
 
 export function WorkspacePage() {
   const [activeView, setActiveView] = useState("list");
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
   const header = document.getElementById("workspace-header");
 
@@ -309,7 +309,7 @@ import { useEffect, useState } from "react";
 
 export function WorkspacePage() {
   const [activeView, setActiveView] = useState("list");
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
   const [workspaceDraft, setWorkspaceDraft] = useState("");
   const header = document.getElementById("workspace-header");
@@ -566,6 +566,58 @@ var _ = Describe("Story 5: structure.react_component_orchestration_density codes
 		Entry("N8: supporting predicates A/B/C all fail", "HandlerOnlyPage.tsx", reactOrchestrationRuleN8, semantics.LanguageTSX),
 		Entry("N9: use client directive but no JSX", "formatDate.tsx", reactOrchestrationRuleN9, semantics.LanguageTSX),
 	)
+
+	When("N8-class required predicates pass but only a module-level non-state identifier is shared across panels", func() {
+		It("shall emit no signal (Supporting C must not fire on non-state shared identifiers)", func() {
+			const src = `"use client";
+
+import { useState } from "react";
+
+const theme = "dark";
+
+export function HandlerOnlyPage() {
+  const [activeView, setActiveView] = useState("a");
+  const [selectedId, setSelectedId] = useState("x");
+  const [filterText, setFilterText] = useState("");
+  const onReset = () => {
+    setActiveView("a");
+    setSelectedId("x");
+  };
+  return (
+    <div>
+      {activeView === "a" ? (
+        <A selectedId={selectedId} theme={theme} />
+      ) : activeView === "b" ? (
+        <B filterText={filterText} theme={theme} />
+      ) : activeView === "c" ? (
+        <C />
+      ) : null}
+      <button type="button" onClick={onReset}>
+        Reset
+      </button>
+    </div>
+  );
+}
+
+function A(_props: { selectedId: string; theme: string }) {
+  return <section />;
+}
+function B(_props: { filterText: string; theme: string }) {
+  return <section />;
+}
+function C() {
+  return <section />;
+}
+`
+			head := analyzeTSXForCodesignal("HandlerOnlyPage.tsx", src)
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "HandlerOnlyPage.tsx", Status: "modified", Head: head,
+			}}})
+			Expect(signalsByRule(report, reactOrchestrationRuleID)).To(BeEmpty(),
+				"shared module-level theme must not satisfy Supporting C; got signals %+v",
+				signalsByRule(report, reactOrchestrationRuleID))
+		})
+	})
 
 	When("L1: WorkspacePage.tsx gains a fourth useState binding between base and head", func() {
 		It("shall mark the base evidence resolved and the head evidence introduced", func() {

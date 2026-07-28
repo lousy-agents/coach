@@ -49,7 +49,7 @@ import { useEffect, useState } from "react";
 
 export function WorkspacePage() {
   const [activeView, setActiveView] = useState("list");
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
   const header = document.getElementById("workspace-header");
 
@@ -229,6 +229,7 @@ func assertWorkspacePageShape(rec semantics.ReactComponentFacts) {
 	Expect(rec.CoordinatedTransitions).To(HaveLen(1), "expected exactly one coordinated effect transition")
 	if len(rec.CoordinatedTransitions) == 1 {
 		Expect(rec.CoordinatedTransitions[0].Kind).To(Equal("effect"))
+		Expect(rec.CoordinatedTransitions[0].Name).To(Equal("<anonymous>"), "anonymous effect callbacks must use the <anonymous> name sentinel, not empty string")
 		Expect(rec.CoordinatedTransitions[0].UpdatedBindings).To(Equal([]string{"activeView", "filterText"}))
 	}
 
@@ -502,7 +503,83 @@ export function Counter() {
 			Expect(rec.CoordinatedTransitions).To(HaveLen(1), "expected exactly one coordinated transition")
 			if len(rec.CoordinatedTransitions) == 1 {
 				Expect(rec.CoordinatedTransitions[0].Kind).To(Equal("callback"), "an arrow function in the second argument position of useEffect must not be classified as an effect")
+				Expect(rec.CoordinatedTransitions[0].Name).To(Equal("<anonymous>"), "anonymous callbacks must use the <anonymous> name sentinel, not empty string")
 			}
+		})
+	})
+
+	When("a non-handler-named local callback updates two state bindings", func() {
+		It("shall record the assigned binding as the transition name with kind callback", func() {
+			const src = `"use client";
+
+import { useState } from "react";
+
+export function Counter() {
+  const [a, setA] = useState(1);
+  const [b, setB] = useState(2);
+  const run = () => {
+    setA(1);
+    setB(2);
+  };
+  return <button type="button" onClick={run} />;
+}
+`
+			result := analyzeTSX(analyzer, "Counter.tsx", src)
+
+			rec, ok := reactComponentByName(result.ReactComponents, "Counter")
+			Expect(ok).To(BeTrue(), "expected a react_components record named Counter, got %+v", result.ReactComponents)
+			Expect(rec.CoordinatedTransitions).To(HaveLen(1))
+			if len(rec.CoordinatedTransitions) == 1 {
+				Expect(rec.CoordinatedTransitions[0].Kind).To(Equal("callback"))
+				Expect(rec.CoordinatedTransitions[0].Name).To(Equal("run"), "assigned non-on*/handle* callbacks must keep their binding name")
+				Expect(rec.CoordinatedTransitions[0].UpdatedBindings).To(Equal([]string{"a", "b"}))
+			}
+		})
+	})
+
+	When("a module-level non-state identifier is passed to two panels but no state binding is shared", func() {
+		It("shall not record that identifier as a shared_panel_dep", func() {
+			const src = `"use client";
+
+import { useState } from "react";
+
+const theme = "dark";
+
+export function Page() {
+  const [activeView, setActiveView] = useState("a");
+  const [selectedId, setSelectedId] = useState("x");
+  const [filterText, setFilterText] = useState("");
+  return (
+    <div>
+      {activeView === "a" ? (
+        <A selectedId={selectedId} theme={theme} />
+      ) : activeView === "b" ? (
+        <B filterText={filterText} theme={theme} />
+      ) : activeView === "c" ? (
+        <C />
+      ) : null}
+    </div>
+  );
+}
+
+function A(_props: { selectedId: string; theme: string }) {
+  return <section />;
+}
+function B(_props: { filterText: string; theme: string }) {
+  return <section />;
+}
+function C() {
+  return <section />;
+}
+`
+			result := analyzeTSX(analyzer, "Page.tsx", src)
+
+			rec, ok := reactComponentByName(result.ReactComponents, "Page")
+			Expect(ok).To(BeTrue(), "expected a react_components record named Page, got %+v", result.ReactComponents)
+			for _, dep := range rec.SharedPanelDeps {
+				Expect(dep.Name).NotTo(Equal("theme"), "module-level non-state identifiers must not become shared_panel_deps, got %+v", rec.SharedPanelDeps)
+			}
+			Expect(rec.SharedPanelDeps).To(BeEmpty(), "no state binding or known callback is shared across >=2 panels, got %+v", rec.SharedPanelDeps)
 		})
 	})
 
