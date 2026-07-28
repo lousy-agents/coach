@@ -136,6 +136,10 @@ func (a *Analyzer) AnalyzeBytes(ctx context.Context, in FileInput) (*Result, err
 	}
 
 	var reactComponents []ReactComponentFacts
+	switch in.Language {
+	case LanguageTypeScript, LanguageTSX:
+		reactComponents = computeReactComponents(root, in.Content)
+	}
 
 	result := &Result{
 		Path:                in.Path,

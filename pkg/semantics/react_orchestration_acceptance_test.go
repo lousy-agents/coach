@@ -343,6 +343,85 @@ var _ = Describe("React component orchestration density facts (epic #139 Story 1
 		})
 	})
 
+	When("a TSX module opens with a single-quoted 'use client' directive", func() {
+		It("shall report ClientKind use_client_directive on the exported component", func() {
+			const src = `'use client';
+
+export function ClientPage() {
+  return <div>Hello</div>;
+}
+`
+			result := analyzeTSX(analyzer, "ClientPage.tsx", src)
+
+			rec, ok := reactComponentByName(result.ReactComponents, "ClientPage")
+			Expect(ok).To(BeTrue(), "expected a react_components record named ClientPage, got %+v", result.ReactComponents)
+			Expect(rec.ClientKind).To(Equal("use_client_directive"))
+		})
+	})
+
+	When("a component is exported once via a const declaration and again via a separate export default statement", func() {
+		It("shall attach exactly one Page record, not two", func() {
+			const src = `"use client";
+
+import { useState } from "react";
+
+export const Page = () => {
+  const [x] = useState(1);
+  return <div>{x}</div>;
+};
+export default Page;
+`
+			result := analyzeTSX(analyzer, "Page.tsx", src)
+
+			Expect(countReactComponentsNamed(result.ReactComponents, "Page")).To(Equal(1), "expected exactly one Page record, got %+v", result.ReactComponents)
+		})
+	})
+
+	When("a component is exported once via export { Name } and again via export { Name as default }", func() {
+		It("shall attach exactly one Page record, not two", func() {
+			const src = `"use client";
+
+import { useState } from "react";
+
+function Page() {
+  const [x] = useState(1);
+  return <div>{x}</div>;
+}
+export { Page };
+export { Page as default };
+`
+			result := analyzeTSX(analyzer, "Page.tsx", src)
+
+			Expect(countReactComponentsNamed(result.ReactComponents, "Page")).To(Equal(1), "expected exactly one Page record, got %+v", result.ReactComponents)
+		})
+	})
+
+	When("a destructuring useState binding has an elided (hole) first element, as in const [, setC] = useState(2)", func() {
+		It("shall keep the setter in the setter slot rather than shifting it into the binding slot", func() {
+			const src = `"use client";
+
+import { useState } from "react";
+
+export function Counter() {
+  const [, setC] = useState(2);
+  const [x, setX] = useState(1);
+  return <div>{x}</div>;
+}
+`
+			result := analyzeTSX(analyzer, "Counter.tsx", src)
+
+			rec, ok := reactComponentByName(result.ReactComponents, "Counter")
+			Expect(ok).To(BeTrue(), "expected a react_components record named Counter, got %+v", result.ReactComponents)
+			Expect(rec.UseState).To(HaveLen(2))
+			if len(rec.UseState) == 2 {
+				Expect(rec.UseState[0].Binding).To(Equal(""))
+				Expect(rec.UseState[0].Setter).To(Equal("setC"))
+				Expect(rec.UseState[1].Binding).To(Equal("x"))
+				Expect(rec.UseState[1].Setter).To(Equal("setX"))
+			}
+		})
+	})
+
 	When("AnalyzeBytes is invoked twice on identical P1 bytes", func() {
 		It("shall produce byte-identical react_components JSON", func() {
 			in := semantics.FileInput{
