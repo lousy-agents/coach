@@ -1031,6 +1031,11 @@ func reactCollectTernaryChain(n engine.Node, base string, source []byte) ([]Reac
 			cur = alt
 			continue
 		}
+		// Terminal residual alternative of the same-base chain (e.g. the
+		// final `: <DefaultPanel />` arm). null/undefined/non-JSX yield no branch.
+		if b, ok := reactResidualBranch(alt, source); ok {
+			branches = append(branches, b)
+		}
 		break
 	}
 	return branches, nodes
@@ -1057,6 +1062,10 @@ func reactCollectIfChain(n engine.Node, base string, source []byte) ([]ReactWork
 		if alt != nil && alt.Kind() == "if_statement" {
 			cur = alt
 			continue
+		}
+		// Terminal final-else body of the same-base chain.
+		if b, ok := reactResidualBranch(alt, source); ok {
+			branches = append(branches, b)
 		}
 		break
 	}
@@ -1085,14 +1094,32 @@ func reactIfBranch(n engine.Node, source []byte) (ReactWorkspaceBranch, bool) {
 	}, true
 }
 
+// reactResidualBranch emits a workspace branch for a chain's terminal
+// residual alternative / final else body when it contains JSX. Label uses
+// Design precedence steps 2–3 only (no equality literal on residual arms).
+func reactResidualBranch(cons engine.Node, source []byte) (ReactWorkspaceBranch, bool) {
+	if cons == nil || !reactContainsJSX(cons) {
+		return ReactWorkspaceBranch{}, false
+	}
+	return ReactWorkspaceBranch{
+		Label:    reactWorkspaceBranchLabel(nil, cons, source),
+		Location: locationFromNode(cons),
+	}, true
+}
+
 // reactWorkspaceBranchLabel applies the label precedence rule: the
 // discriminant condition's literal text first, else a capitalized primary
-// JSX child's tag name, else "".
+// JSX child's tag name, else the "<branch>" sentinel.
 func reactWorkspaceBranchLabel(condHolder, cons engine.Node, source []byte) string {
-	if lbl := reactDiscriminantLiteralLabel(condHolder, source); lbl != "" {
+	if condHolder != nil {
+		if lbl := reactDiscriminantLiteralLabel(condHolder, source); lbl != "" {
+			return lbl
+		}
+	}
+	if lbl := reactCapitalizedJSXChildLabel(cons, source); lbl != "" {
 		return lbl
 	}
-	return reactCapitalizedJSXChildLabel(cons, source)
+	return "<branch>"
 }
 
 func reactDiscriminantLiteralLabel(n engine.Node, source []byte) string {
