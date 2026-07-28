@@ -509,6 +509,167 @@ function C() {
 }
 `
 
+// Supporting-predicate isolation fixtures: required criteria always hold
+// (3 domains, >=1 coordinated transition, 3 discriminant branches). Exactly
+// one supporting path holds so OR semantics and binding-count thresholds are
+// pinned independently of the all-true P1 happy path.
+
+const reactOrchestrationSupportEffectPair = `"use client";
+
+import { useEffect, useState } from "react";
+
+export function EffectPairOnlyPage() {
+  const [activeView, setActiveView] = useState("a");
+  const [selectedId, setSelectedId] = useState("x");
+  const [filterText, setFilterText] = useState("");
+  useEffect(() => {
+    setFilterText("");
+    setActiveView("a");
+  }, [selectedId]);
+  return activeView === "a" ? (
+    <A />
+  ) : activeView === "b" ? (
+    <B />
+  ) : activeView === "c" ? (
+    <C />
+  ) : null;
+}
+
+function A() {
+  return <section />;
+}
+function B() {
+  return <section />;
+}
+function C() {
+  return <section />;
+}
+`
+
+const reactOrchestrationSupportHandlerTriple = `"use client";
+
+import { useState } from "react";
+
+export function HandlerTripleOnlyPage() {
+  const [activeView, setActiveView] = useState("a");
+  const [selectedId, setSelectedId] = useState("x");
+  const [filterText, setFilterText] = useState("");
+  const onReset = () => {
+    setActiveView("a");
+    setSelectedId("x");
+    setFilterText("");
+  };
+  return (
+    <div>
+      {activeView === "a" ? (
+        <A />
+      ) : activeView === "b" ? (
+        <B />
+      ) : activeView === "c" ? (
+        <C />
+      ) : null}
+      <button type="button" onClick={onReset}>
+        Reset
+      </button>
+    </div>
+  );
+}
+
+function A() {
+  return <section />;
+}
+function B() {
+  return <section />;
+}
+function C() {
+  return <section />;
+}
+`
+
+const reactOrchestrationSupportImperativeOnly = `"use client";
+
+import { useState } from "react";
+
+export function ImperativeOnlyPage() {
+  const [activeView, setActiveView] = useState("a");
+  const [selectedId, setSelectedId] = useState("x");
+  const [filterText, setFilterText] = useState("");
+  const onReset = () => {
+    setActiveView("a");
+    setSelectedId("x");
+  };
+  return (
+    <div>
+      {activeView === "a" ? (
+        <A />
+      ) : activeView === "b" ? (
+        <B />
+      ) : activeView === "c" ? (
+        <C />
+      ) : null}
+      <button
+        type="button"
+        onClick={() => {
+          document.getElementById("workspace-header")?.focus();
+          onReset();
+        }}
+      >
+        Reset
+      </button>
+    </div>
+  );
+}
+
+function A() {
+  return <section />;
+}
+function B() {
+  return <section />;
+}
+function C() {
+  return <section />;
+}
+`
+
+const reactOrchestrationSupportSharedOnly = `"use client";
+
+import { useState } from "react";
+
+export function SharedOnlyPage() {
+  const [activeView, setActiveView] = useState("a");
+  const [selectedId, setSelectedId] = useState("x");
+  const [filterText, setFilterText] = useState("");
+  const onReset = () => {
+    setActiveView("a");
+    setSelectedId("x");
+  };
+  return (
+    <div>
+      {activeView === "a" ? (
+        <A selectedId={selectedId} />
+      ) : activeView === "b" ? (
+        <B selectedId={selectedId} />
+      ) : activeView === "c" ? (
+        <C filterText={filterText} />
+      ) : null}
+      <button type="button" onClick={onReset}>
+        Reset
+      </button>
+    </div>
+  );
+}
+
+function A(_props: { selectedId: string }) {
+  return <section />;
+}
+function B(_props: { selectedId: string }) {
+  return <section />;
+}
+function C(_props: { filterText: string }) {
+  return <section />;
+}
+`
+
 var _ = Describe("Story 5: structure.react_component_orchestration_density codesignal rule", func() {
 	When("P1: WorkspacePage.tsx is analyzed end to end through semantics then codesignal", func() {
 		It("shall emit exactly one signal with the locked field shape", func() {
@@ -665,6 +826,27 @@ function C() {
 				signals)
 		})
 	})
+
+	DescribeTable("supporting predicates are OR'd: required criteria plus exactly one supporting path shall emit",
+		func(path, source, subject string) {
+			head := analyzeTSXForCodesignal(path, source)
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: path, Status: "modified", Head: head,
+			}}})
+			signals := signalsByRule(report, reactOrchestrationRuleID)
+			Expect(signals).To(HaveLen(1),
+				"expected emission when required criteria hold and only this supporting path is true; got %+v", signals)
+			Expect(signals[0].Subject).To(Equal(subject))
+		},
+		Entry("Supporting A via effect pair (exactly 2 updated bindings, no imperative/shared)",
+			"EffectPairOnlyPage.tsx", reactOrchestrationSupportEffectPair, "EffectPairOnlyPage"),
+		Entry("Supporting A via non-effect transition with exactly 3 updated bindings",
+			"HandlerTripleOnlyPage.tsx", reactOrchestrationSupportHandlerTriple, "HandlerTripleOnlyPage"),
+		Entry("Supporting B via imperative UI only (handler has only 2 setters)",
+			"ImperativeOnlyPage.tsx", reactOrchestrationSupportImperativeOnly, "ImperativeOnlyPage"),
+		Entry("Supporting C via shared panel dep only (handler has only 2 setters)",
+			"SharedOnlyPage.tsx", reactOrchestrationSupportSharedOnly, "SharedOnlyPage"),
+	)
 
 	When("L1: WorkspacePage.tsx gains a fourth useState binding between base and head", func() {
 		It("shall mark the base evidence resolved and the head evidence introduced", func() {
