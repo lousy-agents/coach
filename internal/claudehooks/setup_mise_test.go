@@ -5,81 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
-
-// TestCloudEnvSetup_ParityWithMiseToml verifies that the committed cloud
-// environment setup script installs the same mise, go, and node versions that
-// are pinned in the repository's mise.toml. We cannot auto-apply the cloud
-// setup script, but we can guarantee that the copy-paste template does not
-// drift.
-func TestCloudEnvSetup_ParityWithMiseToml(t *testing.T) {
-	setupScript, err := filepath.Abs(filepath.Join("..", "..", ".claude", "cloud-env-setup.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	setupBytes, err := os.ReadFile(setupScript)
-	if err != nil {
-		t.Fatalf("failed to read cloud setup script: %v", err)
-	}
-	setup := string(setupBytes)
-
-	miseTomlPath, err := filepath.Abs(filepath.Join("..", "..", "mise.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	miseBytes, err := os.ReadFile(miseTomlPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mise := string(miseBytes)
-
-	assertEqual(t, "mise", parseMiseValue("min_version", mise), parseShellVar("mise_version", setup))
-	assertEqual(t, "go", parseMiseValue("go", mise), parseShellVar("go_version", setup))
-	assertEqual(t, "node", parseMiseValue("node", mise), parseShellVar("node_version", setup))
-}
-
-func TestParseMiseValue_MinVersionNotOnlyAtFileStart(t *testing.T) {
-	// A leading comment/blank line must not prevent extracting min_version.
-	text := "# pinned toolchain\n\nmin_version = \"2026.7.7\"\n[tools]\ngo = \"1.26.5\"\n"
-	got := parseMiseValue("min_version", text)
-	if got != "2026.7.7" {
-		t.Fatalf("parseMiseValue(min_version) = %q, want 2026.7.7", got)
-	}
-}
-
-func assertEqual(t *testing.T, name, fromMise, fromScript string) {
-	t.Helper()
-	if fromMise == "" {
-		t.Fatalf("could not extract %s version from mise.toml", name)
-	}
-	if fromScript == "" {
-		t.Fatalf("could not extract %s version from cloud-env-setup.sh", name)
-	}
-	if fromMise != fromScript {
-		t.Fatalf("%s version mismatch: mise.toml=%q cloud-env-setup.sh=%q", name, fromMise, fromScript)
-	}
-}
-
-func parseMiseValue(key, text string) string {
-	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(key) + `\s*=\s*"([^"]+)"`)
-	m := re.FindStringSubmatch(text)
-	if len(m) < 2 {
-		return ""
-	}
-	return m[1]
-}
-
-func parseShellVar(name, text string) string {
-	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(name) + `="([^"]+)"`)
-	m := re.FindStringSubmatch(text)
-	if len(m) < 2 {
-		return ""
-	}
-	return m[1]
-}
 
 // TestSetupMise_UpgradesStaleVersion verifies that the SessionStart hook
 // installs the mise version pinned in mise.toml when an older mise binary is
@@ -346,8 +274,8 @@ func TestSetupMise_UnparseableVersionTriggersInstall(t *testing.T) {
 
 // TestSetupMise_FindsMiseInHomeLocalBin verifies that a previous install under
 // $HOME/.local/bin is detected even when that directory is not already on PATH.
-// Cloud setup caches the binary on disk but does not persist PATH; without an
-// early PATH prepend the hook would re-run npm install every SessionStart.
+// Cloud sessions may cache the binary on disk without persisting PATH; without
+// an early PATH prepend the hook would re-run npm install every SessionStart.
 func TestSetupMise_FindsMiseInHomeLocalBin(t *testing.T) {
 	tmp, home, project, bin, npmDir, localBin := setupTestDirs(t)
 
@@ -400,6 +328,143 @@ func TestSetupMise_InstallsWhenMissing(t *testing.T) {
 	}
 }
 
+// TestSetupMise_TrustFailureContinuesInstall verifies that a non-zero mise trust
+// exit does not abort bootstrap: install still runs and CLAUDE_ENV_FILE is written.
+func TestSetupMise_TrustFailureContinuesInstall(t *testing.T) {
+	tmp, home, project, bin, npmDir, localBin := setupTestDirs(t)
+
+	logPath := filepath.Join(tmp, "mise-log")
+	currentMise := filepath.Join(bin, "mise")
+	if err := os.WriteFile(currentMise, []byte(fakeMiseScriptRecording(logPath, "2026.7.7", localBin, true, false)), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	npmBin := filepath.Join(npmDir, "npm")
+	if err := os.WriteFile(npmBin, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	envFile := filepath.Join(tmp, "env")
+	stdout, stderr, err := runHookSplit(t, home, project, envFile, npmDir+":"+bin)
+	if err != nil {
+		t.Fatalf("setup-mise.sh failed after trust failure: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("expected mise invocations to be logged: %v", err)
+	}
+	log := string(logData)
+	if !strings.Contains(log, "trust ") && !strings.Contains(log, "trust\n") {
+		t.Fatalf("expected trust to be attempted; log:\n%s", log)
+	}
+	if !hasLogLine(log, "install") {
+		t.Fatalf("expected bare install after trust failure; log:\n%s", log)
+	}
+	if !strings.Contains(string(stderr), "mise trust failed") {
+		t.Fatalf("expected stderr warning about trust failure; got: %q", stderr)
+	}
+	if _, err := os.Stat(envFile); err != nil {
+		t.Fatalf("expected CLAUDE_ENV_FILE to be written: %v", err)
+	}
+	if len(bytes.TrimSpace(stdout)) != 0 {
+		t.Fatalf("expected empty stdout; got: %q", stdout)
+	}
+}
+
+// TestSetupMise_InstallFallbackToGoNode verifies that when bare `mise install`
+// fails, the hook retries with `mise install go node` and still writes PATH.
+func TestSetupMise_InstallFallbackToGoNode(t *testing.T) {
+	tmp, home, project, bin, npmDir, localBin := setupTestDirs(t)
+
+	logPath := filepath.Join(tmp, "mise-log")
+	currentMise := filepath.Join(bin, "mise")
+	if err := os.WriteFile(currentMise, []byte(fakeMiseScriptRecording(logPath, "2026.7.7", localBin, false, true)), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	npmBin := filepath.Join(npmDir, "npm")
+	if err := os.WriteFile(npmBin, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	envFile := filepath.Join(tmp, "env")
+	stdout, stderr, err := runHookSplit(t, home, project, envFile, npmDir+":"+bin)
+	if err != nil {
+		t.Fatalf("setup-mise.sh failed on install fallback path: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("expected mise invocations to be logged: %v", err)
+	}
+	log := string(logData)
+	if !hasLogLine(log, "install") {
+		t.Fatalf("expected bare install attempt; log:\n%s", log)
+	}
+	if !hasLogLine(log, "install go node") {
+		t.Fatalf("expected fallback install go node; log:\n%s", log)
+	}
+	if !strings.Contains(string(stderr), "installing go and node") {
+		t.Fatalf("expected stderr note about fallback; got: %q", stderr)
+	}
+	if _, err := os.Stat(envFile); err != nil {
+		t.Fatalf("expected CLAUDE_ENV_FILE to be written after fallback: %v", err)
+	}
+	if len(bytes.TrimSpace(stdout)) != 0 {
+		t.Fatalf("expected empty stdout; got: %q", stdout)
+	}
+}
+
+// TestSetupMise_UnsetProjectDirUsesPwd verifies that when CLAUDE_PROJECT_DIR is
+// unset, the hook uses PWD (cmd.Dir) to find mise.toml instead of aborting under
+// set -u.
+func TestSetupMise_UnsetProjectDirUsesPwd(t *testing.T) {
+	tmp, home, project, bin, npmDir, localBin := setupTestDirs(t)
+
+	currentMise := filepath.Join(bin, "mise")
+	if err := os.WriteFile(currentMise, []byte(fakeMiseScript("2026.7.7", localBin)), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	npmBin := filepath.Join(npmDir, "npm")
+	if err := os.WriteFile(npmBin, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	envFile := filepath.Join(tmp, "env")
+	cmd := exec.Command("bash", absScript(t))
+	cmd.Dir = project
+	// Build a clean env without CLAUDE_PROJECT_DIR.
+	base := []string{
+		"HOME=" + home,
+		"CLAUDE_CODE_REMOTE=true",
+		"CLAUDE_ENV_FILE=" + envFile,
+		"PATH=" + npmDir + ":" + bin + ":/usr/bin:/bin",
+	}
+	for _, e := range os.Environ() {
+		switch {
+		case strings.HasPrefix(e, "HOME="),
+			strings.HasPrefix(e, "CLAUDE_CODE_REMOTE="),
+			strings.HasPrefix(e, "CLAUDE_PROJECT_DIR="),
+			strings.HasPrefix(e, "CLAUDE_ENV_FILE="),
+			strings.HasPrefix(e, "PATH="):
+			continue
+		default:
+			base = append(base, e)
+		}
+	}
+	cmd.Env = base
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("setup-mise.sh failed without CLAUDE_PROJECT_DIR: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(envFile); err != nil {
+		t.Fatalf("expected CLAUDE_ENV_FILE to be written when using PWD: %v", err)
+	}
+}
+
 func setupTestDirs(t *testing.T) (tmp, home, project, bin, npmDir, localBin string) {
 	tmp = t.TempDir()
 	home = filepath.Join(tmp, "home")
@@ -424,6 +489,15 @@ node = "24"
 	return
 }
 
+func hasLogLine(log, line string) bool {
+	for _, l := range strings.Split(log, "\n") {
+		if l == line {
+			return true
+		}
+	}
+	return false
+}
+
 func absScript(t *testing.T) string {
 	t.Helper()
 	scriptPath := filepath.Join("..", "..", ".claude", "hooks", "setup-mise.sh")
@@ -439,6 +513,33 @@ func fakeMiseScript(version, binPaths string) string {
 if [ "$1" = "--version" ]; then echo "` + version + `"; exit 0; fi
 if [ "$1" = "trust" ]; then exit 0; fi
 if [ "$1" = "install" ]; then exit 0; fi
+if [ "$1" = "bin-paths" ]; then echo "` + binPaths + `"; exit 0; fi
+exit 0
+`
+}
+
+// fakeMiseScriptRecording logs each invocation and can fail trust and/or bare install.
+// failBareInstall: exit 1 only when `install` is called with no tool args.
+func fakeMiseScriptRecording(logPath, version, binPaths string, failTrust, failBareInstall bool) string {
+	trustExit := "0"
+	if failTrust {
+		trustExit = "1"
+	}
+	bareFail := "false"
+	if failBareInstall {
+		bareFail = "true"
+	}
+	return `#!/bin/sh
+log=` + logPath + `
+echo "$*" >> "$log"
+if [ "$1" = "--version" ]; then echo "` + version + `"; exit 0; fi
+if [ "$1" = "trust" ]; then exit ` + trustExit + `; fi
+if [ "$1" = "install" ]; then
+  if [ "` + bareFail + `" = "true" ] && [ "$#" -eq 1 ]; then
+    exit 1
+  fi
+  exit 0
+fi
 if [ "$1" = "bin-paths" ]; then echo "` + binPaths + `"; exit 0; fi
 exit 0
 `

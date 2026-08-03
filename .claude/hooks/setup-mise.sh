@@ -1,14 +1,33 @@
 #!/usr/bin/env bash
+# SessionStart hook: make the repository's pinned toolchain available in a
+# Claude Code cloud session.
+#
+# A cloud container starts without this repository's mise-pinned Go and Node.
+# Without this hook, Bash tools either fail or silently use the wrong toolchain.
+#
+# Local sessions are left alone: developers manage their own mise install, and
+# rewriting their PATH from a session hook would be an unpleasant surprise.
+#
+# This deliberately does NOT run project dependency installs or build steps.
+# Its job is the toolchain only; pulling module/npm deps into every session
+# start would slow sessions that only read code.
+#
+# mise itself is installed with npm (global prefix ~/.local) when missing or
+# older than min_version in mise.toml — not via curl, cargo, or apt.
 set -euo pipefail
 
 if [[ "${CLAUDE_CODE_REMOTE:-}" != "true" ]]; then
   exit 0
 fi
 
-cd "$CLAUDE_PROJECT_DIR"
+# Default rather than expand bare: under `set -u` an unset CLAUDE_PROJECT_DIR
+# aborts the hook before it can report anything useful, and the whole toolchain
+# bootstrap silently does not happen. The harness does set it, but a hook that
+# hard-fails on a missing environment variable is a hook that fails invisibly.
+cd "${CLAUDE_PROJECT_DIR:-$PWD}"
 
-# Cloud env setup installs mise under ~/.local/bin and caches the binary on
-# disk, but does not persist PATH. Prefer that location before probing.
+# The cloud environment may cache ~/.local on disk but does not persist PATH, so
+# a mise installed by an earlier session is present but not yet reachable.
 export PATH="$HOME/.local/bin:$PATH"
 
 mise_version="$(sed -n 's/^min_version = "\([^"]*\)".*/\1/p' mise.toml)"
@@ -58,8 +77,19 @@ if [[ "$needs_install" == true ]]; then
     "mise@$mise_version" >&2
 fi
 
-mise trust mise.toml >/dev/null
-mise install >/dev/null
+# Best-effort: confirmed `mise trust` can exit non-zero (e.g. an unreadable or
+# missing config), and under this script's `set -e`, an unguarded failure here
+# would abort the toolchain bootstrap entirely before `mise install` ever runs
+# — the one step this whole hook exists to perform.
+mise trust mise.toml >/dev/null 2>&1 || echo "mise trust failed; continuing without it" >&2
+
+# Install every tool in [tools]. If the full install fails (e.g. a future
+# optional tool), fall back to the tools every coach session needs so one bad
+# pin cannot leave the session with no Go or Node at all.
+if ! mise install >/dev/null 2>&1; then
+  echo "mise install did not complete for every tool; installing go and node." >&2
+  mise install go node >/dev/null
+fi
 
 if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
   # An empty PATH element resolves to the current working directory, so only
