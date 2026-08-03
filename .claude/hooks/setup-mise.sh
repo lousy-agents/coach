@@ -42,7 +42,7 @@ fi
 # a mise installed by an earlier session is present but not yet reachable.
 export PATH="$HOME/.local/bin:$PATH"
 
-mise_version="$(sed -n 's/^min_version = "\([^"]*\)".*/\1/p' mise.toml)"
+mise_version="$(sed -n 's/^min_version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' mise.toml)"
 
 if [[ ! "$mise_version" =~ ^[0-9]{4}\.[0-9]+\.[0-9]+$ ]]; then
   echo "mise.toml must define min_version as YYYY.M.PATCH" >&2
@@ -88,12 +88,22 @@ fi
 if [[ "$needs_install" == true ]]; then
   # SessionStart stdout is injected into the conversation context, so npm's
   # progress output goes to stderr.
+  #
+  # Best-effort for the same reason as `mise trust` below: when a stale but
+  # working mise is already on PATH, a transient npm failure (registry blip,
+  # network policy) must not cost the session its PATH export entirely.
   npm install \
     --global \
     --prefix "$HOME/.local" \
     --no-audit \
     --no-fund \
-    "mise@$mise_version" >&2
+    "mise@$mise_version" >&2 ||
+    echo "npm install of mise@$mise_version failed; continuing with the mise already on PATH." >&2
+fi
+
+if ! command -v mise >/dev/null 2>&1; then
+  echo "no mise on PATH after install attempt; skipping toolchain bootstrap." >&2
+  exit 1
 fi
 
 # Best-effort: confirmed `mise trust` can exit non-zero (e.g. an unreadable or
@@ -130,9 +140,9 @@ if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
     path_line="$(printf 'export PATH=%q:$PATH' "$HOME/.local/bin")"
   fi
 
-  # SessionStart fires on start and on every resume. When the harness keeps one
-  # env file across those, a blind append re-prepends the same entries on each
-  # resume and PATH grows without bound.
+  # SessionStart fires on start and on every resume. This guard is exact-line,
+  # so it only suppresses an identical re-append on resume; a toolchain bump
+  # that changes bin_paths intentionally appends a new (shadowing) line.
   if ! grep -qxF "$path_line" "$CLAUDE_ENV_FILE" 2>/dev/null; then
     printf '%s\n' "$path_line" >> "$CLAUDE_ENV_FILE"
   fi

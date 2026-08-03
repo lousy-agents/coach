@@ -131,6 +131,20 @@ var _ = Describe("setup-mise.sh SessionStart hook", func() {
 			})
 		})
 
+		When("npm fails while a stale but usable mise is already on PATH", func() {
+			It("still writes CLAUDE_ENV_FILE from the mise that is present", func() {
+				e := newHookEnv(pinnedMiseToml)
+				e.writeBin("npm", "#!/bin/sh\necho 'network unreachable' >&2\nexit 1\n")
+				log := filepath.Join(e.tmp, "mise-log")
+				e.writeBin("mise", recordingMise(log, "2020.1.1", e.localBin, nil))
+
+				_, stderr, err := e.run(e.project)
+
+				Expect(err).NotTo(HaveOccurred(), "a transient npm failure must not cost the session its PATH; stderr: %s", stderr)
+				Expect(e.envFileContents()).To(ContainSubstring(filepath.Join(e.home, ".local", "bin")))
+			})
+		})
+
 		When("the hook runs repeatedly against a CLAUDE_ENV_FILE that persists", func() {
 			It("appends the PATH export only once", func() {
 				e := newHookEnv(pinnedMiseToml)
@@ -188,6 +202,19 @@ node = "24"
 				Expect(err).To(HaveOccurred(), "a missing mise.toml must not be silently ignored")
 				Expect(stderr).To(ContainSubstring("mise.toml not found"))
 				Expect(stderr).To(ContainSubstring(e.project))
+			})
+		})
+
+		When("min_version is written without spaces around the equals sign", func() {
+			It("still parses the pin instead of failing the format check", func() {
+				e := newHookEnv("min_version=\"2026.7.7\"\n[tools]\ngo = \"1.26.5\"\nnode = \"24\"\n")
+				log := filepath.Join(e.tmp, "mise-log")
+				e.writeBin("mise", recordingMise(log, "2026.7.7", e.localBin, nil))
+
+				_, stderr, err := e.run(e.project)
+
+				Expect(err).NotTo(HaveOccurred(), "stderr: %s", stderr)
+				Expect(stderr).NotTo(ContainSubstring("min_version"))
 			})
 		})
 
