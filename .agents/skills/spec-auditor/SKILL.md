@@ -32,7 +32,7 @@ Do NOT use when:
 
 1. Locate the spec or planning artifact to audit. Accept markdown specs, PRDs, GitHub issues, task plans, or pasted text.
 2. If repository access is available, read nearby context: `AGENTS.md`, `README.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.github/instructions/`, `CONTRIBUTING.md`, and relevant files referenced by the spec.
-3. If shell access and Python are available, optionally run `python3 .github/skills/spec-auditor/scripts/spec_audit_lint.py <spec-file> --format markdown` for structural findings. Exit code 1 means High findings were found (not a script error); exit code 0 means none. Treat script output as a supplement, not the complete audit.
+3. If shell access and Python are available, optionally run `python3 ./scripts/spec_audit_lint.py <spec-file> --format markdown` from this skill's directory for structural findings. Exit code 1 means High findings were found (not a script error); exit code 0 means none. Treat script output as a supplement, not the complete audit.
 4. Load `./references/audit-rubric.md` for the adversarial review passes.
 5. Load `./references/output-contract.md` before writing the final report.
 6. Load `./references/platform-guidance.md` when the user wants the report to feed Codex, GitHub Copilot, Claude, or another coding agent.
@@ -111,8 +111,8 @@ Use `./scripts/spec_audit_lint.py` only when the runtime can read local files an
 Examples:
 
 ```bash
-python3 .github/skills/spec-auditor/scripts/spec_audit_lint.py .github/specs/my-feature.spec.md --format markdown
-python3 .github/skills/spec-auditor/scripts/spec_audit_lint.py .github/specs/my-feature.spec.md --format json
+python3 ./scripts/spec_audit_lint.py .github/specs/my-feature.spec.md --format markdown
+python3 ./scripts/spec_audit_lint.py .github/specs/my-feature.spec.md --format json
 ```
 
 The script cannot understand product intent or architectural fit. Always combine it with the adversarial review passes.
