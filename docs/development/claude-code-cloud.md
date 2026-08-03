@@ -1,43 +1,54 @@
 # Claude Code cloud development
 
-Claude Code cloud sessions use a repository `SessionStart` hook and a cloud
-environment setup script to prepare the toolchain declared in `mise.toml`.
+Claude Code cloud sessions use a repository `SessionStart` hook to prepare the
+toolchain declared in `mise.toml`.
 
-There are two layers by design:
+There is a single bootstrap layer by design:
 
-1. **Cloud environment setup script** — runs once while the environment cache
-   builds. It installs `mise` and the pinned toolchains into the cached
-   filesystem, so fresh sessions start with Go and Node already on disk.
-2. **Repository `SessionStart` hook** — runs on every session start and resume
-   after Claude Code launches. It verifies the `mise` version, trusts the
-   checked-out project configuration, installs any missing tools, and persists
-   the active tool paths through `CLAUDE_ENV_FILE` so `go`, `node`, and
-   `mise run` later work through the Bash tool.
+1. **Repository `SessionStart` hook** — runs on every session start and resume
+   after Claude Code launches. When `CLAUDE_CODE_REMOTE=true`, it ensures `mise`
+   is installed at the `min_version` pinned in `mise.toml` (via npm into
+   `~/.local`), best-effort trusts the project config, installs the pinned tools
+   (`go`, `node`), and persists active tool paths through `CLAUDE_ENV_FILE` so
+   later Bash calls can run `go`, `node`, and `mise run`.
 
 The hook only runs when `CLAUDE_CODE_REMOTE=true`, leaving local sessions
-unchanged.
+unchanged. Local developers manage their own mise install; the hook does not
+rewrite PATH on a laptop.
 
-## Recommended cloud environment setup
+### What this trades away
 
-Installing `mise` and its pinned tools in the cloud environment setup script
-makes every subsequent session start fast. Claude caches the setup script's
-filesystem output, while the repository hook remains a fallback and handles
-project-specific reconciliation.
+A previous design also pasted a setup script into the cloud environment
+settings, so `mise`, Go, and Node landed in the environment's **cached**
+filesystem before Claude Code launched. Collapsing to one layer removed a second
+place for version pins to drift, at a real cost: the first session in a fresh
+environment now downloads the whole toolchain inside the hook, against the
+`timeout` in `.claude/settings.json` (currently 300s). Later sessions in the
+same environment are fast, because `~/.local` and the mise tool cache survive.
 
-The setup script is committed at `.claude/cloud-env-setup.sh`. Paste that
-file's contents into the Claude Code cloud environment settings — do not
-re-copy version pins from this page. The script is the paste source of truth;
-`mise.toml` is the pin source of truth. A CI parity test rejects PRs that
-update one without the other.
+This also makes `npm` (and therefore Node) a **runtime prerequisite of the base
+image** — the hook installs `mise` with `npm install --global`, and cannot
+bootstrap at all without it. That used to be satisfied at cache-build time.
 
-After Renovate (or a human) bumps versions in those two files, rebuild the
-cloud environment cache by re-pasting the updated script in the cloud UI (for
-example, changing the `mise_version` line triggers a cache rebuild on the next
-session).
+## No cloud environment paste script
 
-The default Trusted network policy permits npm registry access and the hosts
-mise uses for Go and Node downloads, so this does not require unrestricted
-network access.
+Do **not** paste a custom environment setup script that installs mise, Go, or
+Node pins. Version pins live only in `mise.toml`. If an older coach cloud
+environment still has a pasted setup script (for example a former
+`cloud-env-setup.sh`), clear it in the Claude Code cloud environment settings
+so it does not keep installing stale or duplicate pins beside the SessionStart
+hook. Clearing it rebuilds the environment cache.
+
+Until it is cleared, sessions still work but drift silently: the stale paste
+installs its own hardcoded pins, then the hook installs the current ones on top,
+so the environment carries an unused toolchain and `mise --version` may report a
+version `mise.toml` no longer pins. Nothing detects this — the parity test that
+used to catch it was deleted along with the script.
+
+The default Trusted network policy is expected to permit npm registry access and
+the hosts mise uses for Go and Node downloads. Unlike the old design, where that
+mattered once during cache build, **every** fresh environment now depends on it.
+If that policy is tightened, the hook fails as described below.
 
 ## Repository `SessionStart` hook
 
@@ -46,14 +57,46 @@ It handles:
 
 - walking away cleanly when `CLAUDE_CODE_REMOTE` is not `true`;
 - parsing `min_version` from `mise.toml` and installing or upgrading `mise`
-  through npm when the version on `PATH` is missing or too old;
-- running `mise trust` and `mise install`;
-- appending `export PATH=...` into `CLAUDE_ENV_FILE` so later Bash calls use the
-  pinned tools by default.
+  through npm (`npm install --global --prefix ~/.local mise@…`) when the
+  version on PATH is missing or too old;
+- best-effort `mise trust` (a trust failure does not abort bootstrap);
+- `mise install`, with a fallback to `mise install go node` if the full
+  install does not complete;
+- appending `export PATH=...` into `CLAUDE_ENV_FILE`, when that variable is set,
+  so later Bash calls use the pinned tools by default. The append is idempotent,
+  because the hook also runs on resume.
 
-Install noise from `mise` is redirected so that the hook produces empty stdout
-on success. SessionStart stdout is otherwise injected into the conversation
-context.
+Everything after the `mise.toml` lookup is best-effort by design: a failing
+trust, install, fallback install, or `mise bin-paths` warns on stderr and
+continues, so the hook still persists a PATH the session can work from. The one
+hard failure is a missing or malformed `mise.toml` — the hook exits 1 with a
+message naming the directory it searched, because there is nothing to reconcile
+against.
+
+Install noise is redirected so that the hook produces empty stdout on success.
+SessionStart stdout is otherwise injected into the conversation context.
+
+## When the hook fails
+
+A failed hook does not block the session — it degrades it. Because stdout is
+kept empty by design, the symptom is usually a later `go: command not found`
+rather than a visible error, so check here first.
+
+Re-run it by hand in the session to see the real output:
+
+```bash
+CLAUDE_CODE_REMOTE=true bash .claude/hooks/setup-mise.sh
+```
+
+- **Hook timed out** (fresh environment, cold toolchain download): re-run the
+  command above. `~/.local` and the mise cache persist, so a second attempt
+  resumes rather than restarting.
+- **`npm: command not found`**: the base image has no Node. The hook cannot
+  bootstrap; the environment image needs fixing.
+- **Network errors**: check the environment's network policy against the note
+  above.
+- **`mise.toml not found in <dir>`**: the hook resolved the wrong project
+  directory — check `CLAUDE_PROJECT_DIR`.
 
 ## Verification
 
@@ -66,7 +109,12 @@ node --version
 mise run ci
 ```
 
-The expected `mise`, Go, and Node versions are defined only in `mise.toml` and
-reflected in `.claude/cloud-env-setup.sh`; do not duplicate them in Claude
-configuration. If any verification shows a different version, update the
-environment setup script and rebuild the cache.
+The expected `mise`, Go, and Node versions are defined only in `mise.toml`. If
+any verification shows a different version, update `mise.toml` and start or
+resume a session so the hook reconciles. Two limits on that reconciliation:
+
+- It only runs on the `startup` and `resume` SessionStart events, so `/clear`
+  and auto-compact do not re-trigger it.
+- `mise` itself is only reinstalled when the version on PATH is **older** than
+  `min_version`. Pinning `min_version` back down leaves a newer cached `mise` in
+  place; remove `~/.local/bin/mise` if you need that rollback to take effect.

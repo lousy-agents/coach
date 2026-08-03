@@ -50,45 +50,39 @@
     ],
     "customManagers": [
         {
-            "description": "Track Go version in mise.toml and the Claude cloud setup script (parity-tested together)",
+            "description": "Track Go version in mise.toml (custom manager because the native mise manager is disabled above)",
             "customType": "regex",
             "managerFilePatterns": [
-                "/(^|/)mise\\.toml$/",
-                "/(^|/)\\.claude/cloud-env-setup\\.sh$/"
+                "/(^|/)mise\\.toml$/"
             ],
             "matchStrings": [
-                "(?:^|\\n)go\\s*=\\s*\"(?<currentValue>[^\"]+)\"",
-                "go_version=\"(?<currentValue>[^\"]+)\""
+                "(?:^|\\n)go\\s*=\\s*\"(?<currentValue>[^\"]+)\""
             ],
             "depNameTemplate": "golang/go",
             "datasourceTemplate": "github-tags",
             "extractVersionTemplate": "^go(?<version>.*)$"
         },
         {
-            "description": "Track Node.js version in mise.toml and the Claude cloud setup script (parity-tested together)",
+            "description": "Track Node.js version in mise.toml (custom manager because the native mise manager is disabled above)",
             "customType": "regex",
             "managerFilePatterns": [
-                "/(^|/)mise\\.toml$/",
-                "/(^|/)\\.claude/cloud-env-setup\\.sh$/"
+                "/(^|/)mise\\.toml$/"
             ],
             "matchStrings": [
-                "(?:^|\\n)node\\s*=\\s*\"(?<currentValue>[^\"]+)\"",
-                "node_version=\"(?<currentValue>[^\"]+)\""
+                "(?:^|\\n)node\\s*=\\s*\"(?<currentValue>[^\"]+)\""
             ],
             "depNameTemplate": "nodejs/node",
             "datasourceTemplate": "github-tags",
             "versioningTemplate": "node"
         },
         {
-            "description": "Track mise minimum version in mise.toml and the Claude cloud setup script (parity-tested together)",
+            "description": "Track mise minimum version in mise.toml (custom manager because the native mise manager is disabled above)",
             "customType": "regex",
             "managerFilePatterns": [
-                "/(^|/)mise\\.toml$/",
-                "/(^|/)\\.claude/cloud-env-setup\\.sh$/"
+                "/(^|/)mise\\.toml$/"
             ],
             "matchStrings": [
-                "min_version\\s*=\\s*\"(?<currentValue>[^\"]+)\"",
-                "mise_version=\"(?<currentValue>[^\"]+)\""
+                "min_version\\s*=\\s*\"(?<currentValue>[^\"]+)\""
             ],
             "depNameTemplate": "jdx/mise",
             "datasourceTemplate": "github-releases"
