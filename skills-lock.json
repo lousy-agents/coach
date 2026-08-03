@@ -47,7 +47,7 @@
       "source": "lousy-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/spec-auditor/SKILL.md",
-      "computedHash": "9ce75f527bc3977fa2b2951ee5f1fecde6442f0096a79d1d538d3cafdf62e864"
+      "computedHash": "fcb342c750eb3b5c9e93ba773bdcf5eae7edd13c4e3bb6167667bda521303efc"
     },
     "triaging-pr-reviews": {
       "source": "lousy-agents/skills",
