@@ -13,6 +13,12 @@
       "skillPath": "skills/go-testable-design/SKILL.md",
       "computedHash": "4285b6f229578ee58aa63026e27d7dbf8a2b515eb2ddba1f90e4eb174bbe7958"
     },
+    "issue-refine-loop": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/issue-refine-loop/SKILL.md",
+      "computedHash": "dde1febae225bde54cfd186d9e1bb3a93f140b784642703d5237461fb4460e6d"
+    },
     "mutation-hunter": {
       "source": "lousy-agents/skills",
       "sourceType": "github",

@@ -25,6 +25,7 @@ The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) currently ex
 - `spec-auditor` — adversarially review specs/PRDs/plans before coding.
 - `triaging-pr-reviews` — classify and triage PR review comments, including automated reviewer (e.g. Copilot) suggestions.
 - `correctness-review` — perform an evidence-backed GitHub pull-request correctness review against its linked issue's acceptance criteria, repository architecture, and downstream specs.
+- `issue-refine-loop` — refine an unrefined GitHub issue in place into an implementation-ready epic (problem statement, personas, EARS acceptance criteria, design, tasks, scope boundaries), then decompose it into child issues.
 
 ## Custom subagents
 
