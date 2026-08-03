@@ -416,10 +416,15 @@ func TestSetupMise_InstallFallbackToGoNode(t *testing.T) {
 	}
 }
 
-// TestSetupMise_UnsetProjectDirUsesPwd verifies that when CLAUDE_PROJECT_DIR is
-// unset, the hook uses PWD (cmd.Dir) to find mise.toml instead of aborting under
-// set -u.
-func TestSetupMise_UnsetProjectDirUsesPwd(t *testing.T) {
+// TestSetupMise_UnsetProjectDirDoesNotAbort verifies that an unset
+// CLAUDE_PROJECT_DIR does not abort the hook under `set -u`.
+//
+// It deliberately does not claim to prove "PWD is used to find mise.toml":
+// cmd.Dir already starts the shell in the project directory, so `cd "$PWD"` is a
+// no-op and deleting the cd entirely would still pass. The load-bearing
+// assertion is that the hook completes and writes CLAUDE_ENV_FILE rather than
+// dying on an unbound variable.
+func TestSetupMise_UnsetProjectDirDoesNotAbort(t *testing.T) {
 	tmp, home, project, bin, npmDir, localBin := setupTestDirs(t)
 
 	currentMise := filepath.Join(bin, "mise")

@@ -24,7 +24,19 @@ fi
 # aborts the hook before it can report anything useful, and the whole toolchain
 # bootstrap silently does not happen. The harness does set it, but a hook that
 # hard-fails on a missing environment variable is a hook that fails invisibly.
-cd "${CLAUDE_PROJECT_DIR:-$PWD}"
+project_dir="${CLAUDE_PROJECT_DIR:-$PWD}"
+# Redirect: `cd` writes the resolved directory to stdout when CDPATH is set, and
+# SessionStart stdout is injected into the conversation context.
+cd "$project_dir" >/dev/null
+
+# Name the directory that was actually searched. Without this the next command
+# fails as `sed: mise.toml: No such file or directory`, which does not say which
+# directory the hook resolved — the one fact needed to tell a missing
+# CLAUDE_PROJECT_DIR apart from a wrong one.
+if [[ ! -f mise.toml ]]; then
+  echo "mise.toml not found in $project_dir; skipping toolchain bootstrap." >&2
+  exit 1
+fi
 
 # The cloud environment may cache ~/.local on disk but does not persist PATH, so
 # a mise installed by an earlier session is present but not yet reachable.
@@ -38,20 +50,27 @@ if [[ ! "$mise_version" =~ ^[0-9]{4}\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 # Returns 0 when $1 >= $2 for YYYY.M.PATCH versions.
+#
+# Every field is compared with an explicit 10# radix. Bash arithmetic reads a
+# leading zero as octal, so a zero-padded month like 2026.08.0 would otherwise
+# raise "value too great for base", and `[[ ]]` returns 2 — which `if` treats as
+# false, silently skipping the month comparison and deciding a stale mise is
+# current. Both callers' inputs are digit-only by the time they reach here, so
+# 10# cannot fail.
 mise_version_ge() {
   local installed="$1" required="$2"
   local i1 i2 i3 r1 r2 r3
   IFS=. read -r i1 i2 i3 <<< "$installed"
   IFS=. read -r r1 r2 r3 <<< "$required"
-  if [[ "$i1" -ne "$r1" ]]; then
-    [[ "$i1" -gt "$r1" ]]
+  if [[ "10#$i1" -ne "10#$r1" ]]; then
+    [[ "10#$i1" -gt "10#$r1" ]]
     return
   fi
-  if [[ "$i2" -ne "$r2" ]]; then
-    [[ "$i2" -gt "$r2" ]]
+  if [[ "10#$i2" -ne "10#$r2" ]]; then
+    [[ "10#$i2" -gt "10#$r2" ]]
     return
   fi
-  [[ "$i3" -ge "$r3" ]]
+  [[ "10#$i3" -ge "10#$r3" ]]
 }
 
 needs_install=false
@@ -88,16 +107,33 @@ mise trust mise.toml >/dev/null 2>&1 || echo "mise trust failed; continuing with
 # pin cannot leave the session with no Go or Node at all.
 if ! mise install >/dev/null 2>&1; then
   echo "mise install did not complete for every tool; installing go and node." >&2
-  mise install go node >/dev/null
+  # Best-effort for the same reason as `mise trust` above: an unguarded failure
+  # here aborts before the PATH export below, which would leave the session with
+  # no PATH entry at all — strictly worse than the partial toolchain this
+  # fallback exists to salvage.
+  mise install go node >/dev/null 2>&1 ||
+    echo "mise install go node failed; the session toolchain may be incomplete." >&2
 fi
 
 if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
+  # `mise bin-paths` exits non-zero when a tool in [tools] is not installed —
+  # exactly the state the fallback above leaves behind. Persisting ~/.local/bin
+  # alone still beats writing nothing, because it keeps mise itself reachable so
+  # the session can retry the install by hand.
+  bin_paths="$(mise bin-paths 2>/dev/null | paste -sd: - || true)"
+
   # An empty PATH element resolves to the current working directory, so only
   # emit tool bin paths when mise actually reports some.
-  bin_paths="$(mise bin-paths | paste -sd: -)"
   if [[ -n "$bin_paths" ]]; then
-    printf 'export PATH=%q:%q:$PATH\n' "$HOME/.local/bin" "$bin_paths" >> "$CLAUDE_ENV_FILE"
+    path_line="$(printf 'export PATH=%q:%q:$PATH' "$HOME/.local/bin" "$bin_paths")"
   else
-    printf 'export PATH=%q:$PATH\n' "$HOME/.local/bin" >> "$CLAUDE_ENV_FILE"
+    path_line="$(printf 'export PATH=%q:$PATH' "$HOME/.local/bin")"
+  fi
+
+  # SessionStart fires on start and on every resume. When the harness keeps one
+  # env file across those, a blind append re-prepends the same entries on each
+  # resume and PATH grows without bound.
+  if ! grep -qxF "$path_line" "$CLAUDE_ENV_FILE" 2>/dev/null; then
+    printf '%s\n' "$path_line" >> "$CLAUDE_ENV_FILE"
   fi
 fi

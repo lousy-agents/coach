@@ -50,7 +50,7 @@
     ],
     "customManagers": [
         {
-            "description": "Track Go version in mise.toml",
+            "description": "Track Go version in mise.toml (custom manager because the native mise manager is disabled above)",
             "customType": "regex",
             "managerFilePatterns": [
                 "/(^|/)mise\\.toml$/"
@@ -63,7 +63,7 @@
             "extractVersionTemplate": "^go(?<version>.*)$"
         },
         {
-            "description": "Track Node.js version in mise.toml",
+            "description": "Track Node.js version in mise.toml (custom manager because the native mise manager is disabled above)",
             "customType": "regex",
             "managerFilePatterns": [
                 "/(^|/)mise\\.toml$/"
@@ -76,7 +76,7 @@
             "versioningTemplate": "node"
         },
         {
-            "description": "Track mise minimum version in mise.toml",
+            "description": "Track mise minimum version in mise.toml (custom manager because the native mise manager is disabled above)",
             "customType": "regex",
             "managerFilePatterns": [
                 "/(^|/)mise\\.toml$/"

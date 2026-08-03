@@ -13,6 +13,10 @@
 
 For deterministic signals on a local checkout with no Docker, see [`coach codesignal`](#coach-codesignal-cli-preview).
 
+Working in a Claude Code cloud session? See
+[Claude Code cloud development](./docs/development/claude-code-cloud.md) for how
+the toolchain is bootstrapped and what to do when it fails.
+
 ---
 
 ## Installation
