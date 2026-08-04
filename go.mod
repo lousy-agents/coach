@@ -10,7 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.46.3
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/google/go-github/v89 v89.0.0
+	github.com/google/go-github/v90 v90.0.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/odvcencio/gotreesitter v0.48.0
 	github.com/onsi/ginkgo/v2 v2.32.0
