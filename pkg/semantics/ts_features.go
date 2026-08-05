@@ -280,12 +280,9 @@ func tsFunctionOwnerName(decl engine.Node, source []byte) string {
 // a bare single identifier (`p => ...`, field "parameter") or a
 // parenthesized formal_parameters list (field "parameters"); every other
 // function-like kind and method_definition only ever have "parameters".
-// Each formal_parameters child is a required_parameter or
-// optional_parameter wrapping a "pattern" field, which is a plain
-// identifier only for a non-destructured, non-rest binding; a "value"
-// field present alongside it means the parameter has a default
-// (`q = 1`), which -- per D5 -- is excluded just like the destructured and
-// rest forms, not treated as identifier-bound.
+// Each formal_parameters child is filtered per-parameter by
+// tsFormalParameterIdentifierName, whose doc comment is the source of
+// truth for what counts as identifier-bound.
 func tsIdentifierParams(decl engine.Node, source []byte) map[string]bool {
 	params := map[string]bool{}
 
@@ -369,7 +366,7 @@ func collectTSFunctionScopedBindingNames(root, node engine.Node, source []byte, 
 func tsCollectFunctionScopedNodeNames(root, node engine.Node, source []byte, params, names map[string]bool) bool {
 	switch node.Kind() {
 	case "function_declaration", "generator_function_declaration":
-		collectTSNestedFunctionDeclarationNames(root, node, source, params, names)
+		collectTSFunctionDeclarationNames(root, node, source, params, names)
 		return true
 	case "variable_declaration":
 		collectTSFunctionScopedVarDeclarationNames(node, source, params, names)
@@ -381,12 +378,15 @@ func tsCollectFunctionScopedNodeNames(root, node engine.Node, source []byte, par
 	}
 }
 
-// collectTSNestedFunctionDeclarationNames handles the
+// collectTSFunctionDeclarationNames handles the
 // function_declaration/generator_function_declaration case of
-// tsCollectFunctionScopedNodeNames: node's own name (unless node is root,
-// which tsFunctionScopedBindingNames' caller already accounts for
-// separately), then recursion into node's own children.
-func collectTSNestedFunctionDeclarationNames(root, node engine.Node, source []byte, params, names map[string]bool) {
+// tsCollectFunctionScopedNodeNames: node is always root here --
+// collectTSFunctionScopedBindingNames' function-like boundary check already
+// stops at any nested function_declaration, so the node != root
+// name-collection guard below is defensive and never fires (behavior
+// preserved verbatim from the pre-refactor collect closure) -- then
+// recursion into node's own children.
+func collectTSFunctionDeclarationNames(root, node engine.Node, source []byte, params, names map[string]bool) {
 	if node != root {
 		if name := node.ChildByFieldName("name"); name != nil {
 			names[name.Utf8Text(source)] = true
