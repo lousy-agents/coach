@@ -176,6 +176,10 @@ Passing checks proves nothing broke; it doesn't prove new behavior is correct. F
 
 After a failing check, fix and rerun that specific command rather than the whole suite — `go test -race ./... -run TestName` narrows to one test. Don't move on to the next validation step until the current one is clean.
 
+## Pull requests
+
+Before `gh pr create` / `create_pull_request`, read and fill every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). That file is the PR contract for coding agents: linked issue, single concern, acceptance-criteria → evidence table, red-then-green acceptance proof, and the validation commands you actually ran. Do not open a PR with blank sections or placeholder text.
+
 ## CI shape (`.github/workflows/ci.yml`)
 
 Three independent jobs: `verify` (gofmt/vet/tidy/test/examples), `js-verify` (`mise run js-ci`), `wasm-build` (proves the `GOOS=js GOARCH=wasm` grammar-subset build compiles under the sole pure-Go engine).

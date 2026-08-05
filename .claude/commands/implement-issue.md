@@ -54,8 +54,11 @@ to subagents.
      re-review. Repeat until PASS.
 
 5. When every task's reviewer has returned PASS and the full lint/test suite is
-   green, open the PR with `gh pr create`. In the description, map each acceptance
-   criterion to where it is satisfied, and note which tasks ran in parallel.
+   green, open the PR with `gh pr create`. Fill every section of
+   `.github/PULL_REQUEST_TEMPLATE.md` (do not leave placeholders). Map each
+   acceptance criterion to where it is satisfied in the AC → evidence table,
+   paste red-then-green acceptance proof and the validation commands you ran,
+   and note implementer/reviewer cycle count (and which tasks ran in parallel).
 
 If issue #$1 is trivial enough that decomposition adds no value, say so and
 implement it directly through a single implementer→reviewer cycle rather than
