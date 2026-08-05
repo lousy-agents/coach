@@ -1490,43 +1490,53 @@ func TestTSXMutatesInput_CompoundAssignment(t *testing.T) {
 // existsSync(p) guard whose consequence block calls a matching fs act
 // call on identical path text must yield exactly one
 // toctou_check_then_act Finding, located at the act call (not the check
-// call), with the documented Confidence/SuggestedSkill fields.
+// call), with the documented Confidence/SuggestedSkill fields. Table
+// covers every name in tsToctouActCallNames so deleting any one of them
+// from that set fails a case here.
 func TestComputeTSFeatures_TOCTOUCheckThenAct_PositiveFinding(t *testing.T) {
-	source := `function readIfPresent(p: string): string | undefined {
-	if (existsSync(p)) {
-		return readFileSync(p, "utf8");
+	tests := []struct {
+		name        string
+		actCallText string
+	}{
+		{name: "readFileSync", actCallText: `readFileSync(p, "utf8")`},
+		{name: "writeFileSync", actCallText: `writeFileSync(p, "seed")`},
+		{name: "appendFileSync", actCallText: `appendFileSync(p, "more")`},
+		{name: "unlinkSync", actCallText: `unlinkSync(p)`},
+		{name: "rmSync", actCallText: `rmSync(p)`},
 	}
-	return undefined;
-}
-`
-	root, closeTree := mustParseTS(t, []byte(source))
-	defer closeTree()
 
-	_, findings := computeTSFeatures(root, []byte(source))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := "function f(p: string) {\n\tif (existsSync(p)) {\n\t\t" + tt.actCallText + ";\n\t}\n}\n"
+			root, closeTree := mustParseTS(t, []byte(source))
+			defer closeTree()
 
-	var got []Finding
-	for _, f := range findings {
-		if f.Kind == "toctou_check_then_act" {
-			got = append(got, f)
-		}
-	}
-	if len(got) != 1 {
-		t.Fatalf("computeTSFeatures for %q: got %d toctou_check_then_act findings (%+v), want exactly 1", source, len(got), findings)
-	}
-	f := got[0]
-	if f.Kind != "toctou_check_then_act" {
-		t.Errorf("Finding.Kind = %q, want %q", f.Kind, "toctou_check_then_act")
-	}
-	if f.Confidence != "medium" {
-		t.Errorf("Finding.Confidence = %q, want %q", f.Confidence, "medium")
-	}
-	if f.SuggestedSkill != "find-bugs" {
-		t.Errorf("Finding.SuggestedSkill = %q, want %q", f.SuggestedSkill, "find-bugs")
-	}
-	wantActText := `readFileSync(p, "utf8")`
-	gotText := source[f.Location.StartByte:f.Location.EndByte]
-	if gotText != wantActText {
-		t.Errorf("Finding.Location text = %q, want %q (Location must point at the act call, not the check call)", gotText, wantActText)
+			_, findings := computeTSFeatures(root, []byte(source))
+
+			var got []Finding
+			for _, f := range findings {
+				if f.Kind == "toctou_check_then_act" {
+					got = append(got, f)
+				}
+			}
+			if len(got) != 1 {
+				t.Fatalf("computeTSFeatures for %q: got %d toctou_check_then_act findings (%+v), want exactly 1", source, len(got), findings)
+			}
+			f := got[0]
+			if f.Kind != "toctou_check_then_act" {
+				t.Errorf("Finding.Kind = %q, want %q", f.Kind, "toctou_check_then_act")
+			}
+			if f.Confidence != "medium" {
+				t.Errorf("Finding.Confidence = %q, want %q", f.Confidence, "medium")
+			}
+			if f.SuggestedSkill != "find-bugs" {
+				t.Errorf("Finding.SuggestedSkill = %q, want %q", f.SuggestedSkill, "find-bugs")
+			}
+			gotText := source[f.Location.StartByte:f.Location.EndByte]
+			if gotText != tt.actCallText {
+				t.Errorf("Finding.Location text = %q, want %q (Location must point at the act call, not the check call)", gotText, tt.actCallText)
+			}
+		})
 	}
 }
 
@@ -1588,6 +1598,17 @@ func TestComputeTSFeatures_TOCTOUCheckThenAct_ExcludedCases(t *testing.T) {
 			source: `function f(p: string) {
 	if (!existsSync(p)) {
 		readFileSync(p);
+	}
+}
+`,
+		},
+		{
+			name: "act call sits in the else branch, which is not gated by the check",
+			source: `function f(p: string) {
+	if (existsSync(p)) {
+		log(p);
+	} else {
+		writeFileSync(p, "seed");
 	}
 }
 `,
