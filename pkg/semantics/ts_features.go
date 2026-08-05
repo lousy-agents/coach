@@ -141,6 +141,34 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 		scopes = appendTSLocalBindings(scopes, names)
 	}
 
+	blockDepth, inFunc, inCtorBody, scopes = c.walkEnterNode(n, source, blockDepth, inFunc, inCtorBody, scopes)
+	c.checkMutatesInputForNode(n, source, scopes)
+
+	switch n.Kind() {
+	case "statement_block":
+		c.walkScopedChildBlock(n, source, blockDepth, inFunc, inCtorBody, scopes, tsBlockScopedBindingNames)
+		return
+	case "switch_body":
+		c.walkScopedChildBlock(n, source, blockDepth, inFunc, inCtorBody, scopes, tsSwitchBodyBindingNames)
+		return
+	case "switch_case", "switch_default":
+		c.walkScopedChildBlock(n, source, blockDepth, inFunc, inCtorBody, scopes, tsBlockScopedBindingNames)
+		return
+	}
+
+	count := n.ChildCount()
+	for i := 0; i < count; i++ {
+		c.walk(n.Child(i), source, blockDepth, inFunc, inCtorBody, scopes)
+	}
+}
+
+// walkEnterNode applies walk's per-node-kind metrics increments, the
+// TOCTOU/tight-coupling finding checks that fire on entering (not
+// descending into) n, and the resulting updates to the per-descent state
+// (blockDepth, inFunc, inCtorBody, scopes) that walk threads through the
+// rest of n's subtree. See walk's own doc comment for the exact
+// reset/nesting contract each state field encodes.
+func (c *tsFeatureCollector) walkEnterNode(n engine.Node, source []byte, blockDepth int, inFunc bool, inCtorBody bool, scopes []tsParamScope) (int, bool, bool, []tsParamScope) {
 	switch {
 	case n.Kind() == "if_statement":
 		c.metrics.Ifs++
@@ -179,65 +207,45 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 	case inCtorBody && n.Kind() == "assignment_expression":
 		c.checkTightCouplingAssignment(n, source)
 	}
+	return blockDepth, inFunc, inCtorBody, scopes
+}
 
-	if len(scopes) > 0 {
-		switch n.Kind() {
-		case "assignment_expression", "augmented_assignment_expression":
-			c.checkMutatesInputAssignment(n, source, scopes)
-		case "unary_expression":
-			c.checkMutatesInputDelete(n, source, scopes)
-		case "call_expression":
-			c.checkMutatesInputCall(n, source, scopes)
-		case "update_expression":
-			c.checkMutatesInputUpdate(n, source, scopes)
-		}
-	}
-
-	if n.Kind() == "statement_block" {
-		scopes = appendTSLocalBindings(scopes, tsBlockScopedBindingNames(n, source))
-		currentParams := tsCurrentFunctionParamNames(scopes)
-		count := n.ChildCount()
-		for i := 0; i < count; i++ {
-			child := n.Child(i)
-			c.walk(child, source, blockDepth, inFunc, inCtorBody, scopes)
-			scopes = appendTSLocalBindings(scopes, tsLocalBindingNames(child, source, currentParams))
-			scopes = appendTSLocalBindings(scopes, tsReboundParameterNames(child, source))
-			scopes = appendTSLocalBindings(scopes, tsVarBindingNames(child, source, currentParams))
-		}
+// checkMutatesInputForNode runs the mutates_input detector (Story 2)
+// matching n's own kind, when scopes has at least one enclosing
+// function-like/method scope to attribute a mutation to.
+func (c *tsFeatureCollector) checkMutatesInputForNode(n engine.Node, source []byte, scopes []tsParamScope) {
+	if len(scopes) == 0 {
 		return
 	}
-
-	if n.Kind() == "switch_body" {
-		scopes = appendTSLocalBindings(scopes, tsSwitchBodyBindingNames(n, source))
-		currentParams := tsCurrentFunctionParamNames(scopes)
-		count := n.ChildCount()
-		for i := 0; i < count; i++ {
-			child := n.Child(i)
-			c.walk(child, source, blockDepth, inFunc, inCtorBody, scopes)
-			scopes = appendTSLocalBindings(scopes, tsLocalBindingNames(child, source, currentParams))
-			scopes = appendTSLocalBindings(scopes, tsReboundParameterNames(child, source))
-			scopes = appendTSLocalBindings(scopes, tsVarBindingNames(child, source, currentParams))
-		}
-		return
+	switch n.Kind() {
+	case "assignment_expression", "augmented_assignment_expression":
+		c.checkMutatesInputAssignment(n, source, scopes)
+	case "unary_expression":
+		c.checkMutatesInputDelete(n, source, scopes)
+	case "call_expression":
+		c.checkMutatesInputCall(n, source, scopes)
+	case "update_expression":
+		c.checkMutatesInputUpdate(n, source, scopes)
 	}
+}
 
-	if n.Kind() == "switch_case" || n.Kind() == "switch_default" {
-		scopes = appendTSLocalBindings(scopes, tsBlockScopedBindingNames(n, source))
-		currentParams := tsCurrentFunctionParamNames(scopes)
-		count := n.ChildCount()
-		for i := 0; i < count; i++ {
-			child := n.Child(i)
-			c.walk(child, source, blockDepth, inFunc, inCtorBody, scopes)
-			scopes = appendTSLocalBindings(scopes, tsLocalBindingNames(child, source, currentParams))
-			scopes = appendTSLocalBindings(scopes, tsReboundParameterNames(child, source))
-			scopes = appendTSLocalBindings(scopes, tsVarBindingNames(child, source, currentParams))
-		}
-		return
-	}
-
+// walkScopedChildBlock walks n's children in declaration order, threading a
+// scopes stack extended first by n's own hoisted binding names (scopeNames
+// -- tsBlockScopedBindingNames for statement_block/switch_case/
+// switch_default, tsSwitchBodyBindingNames for switch_body, the only way
+// those three node kinds differ here) and then, after each child, that
+// child's own local/rebound/var binding after-effects -- so a later sibling
+// sees bindings a plain pre-order walk would not have introduced yet.
+func (c *tsFeatureCollector) walkScopedChildBlock(n engine.Node, source []byte, blockDepth int, inFunc bool, inCtorBody bool, scopes []tsParamScope, scopeNames func(engine.Node, []byte) map[string]bool) {
+	scopes = appendTSLocalBindings(scopes, scopeNames(n, source))
+	currentParams := tsCurrentFunctionParamNames(scopes)
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
-		c.walk(n.Child(i), source, blockDepth, inFunc, inCtorBody, scopes)
+		child := n.Child(i)
+		c.walk(child, source, blockDepth, inFunc, inCtorBody, scopes)
+		scopes = appendTSLocalBindings(scopes, tsLocalBindingNames(child, source, currentParams))
+		scopes = appendTSLocalBindings(scopes, tsReboundParameterNames(child, source))
+		scopes = appendTSLocalBindings(scopes, tsVarBindingNames(child, source, currentParams))
 	}
 }
 
@@ -272,12 +280,9 @@ func tsFunctionOwnerName(decl engine.Node, source []byte) string {
 // a bare single identifier (`p => ...`, field "parameter") or a
 // parenthesized formal_parameters list (field "parameters"); every other
 // function-like kind and method_definition only ever have "parameters".
-// Each formal_parameters child is a required_parameter or
-// optional_parameter wrapping a "pattern" field, which is a plain
-// identifier only for a non-destructured, non-rest binding; a "value"
-// field present alongside it means the parameter has a default
-// (`q = 1`), which -- per D5 -- is excluded just like the destructured and
-// rest forms, not treated as identifier-bound.
+// Each formal_parameters child is filtered per-parameter by
+// tsFormalParameterIdentifierName, whose doc comment is the source of
+// truth for what counts as identifier-bound.
 func tsIdentifierParams(decl engine.Node, source []byte) map[string]bool {
 	params := map[string]bool{}
 
@@ -296,66 +301,117 @@ func tsIdentifierParams(decl engine.Node, source []byte) map[string]bool {
 	}
 	count := formal.ChildCount()
 	for i := 0; i < count; i++ {
-		p := formal.Child(i)
-		if p.Kind() != "required_parameter" && p.Kind() != "optional_parameter" {
-			continue
+		if name, ok := tsFormalParameterIdentifierName(formal.Child(i), source); ok {
+			params[name] = true
 		}
-		if p.ChildByFieldName("value") != nil {
-			continue
-		}
-		pattern := p.ChildByFieldName("pattern")
-		if pattern == nil || pattern.Kind() != "identifier" {
-			continue
-		}
-		params[pattern.Utf8Text(source)] = true
 	}
 	return params
 }
 
+// tsFormalParameterIdentifierName reports p's bound identifier name with ok
+// == true only when p is a required_parameter or optional_parameter with no
+// default "value" field (a default like `q = 1` is excluded, per D5, same
+// as a destructured or rest parameter) whose "pattern" field is itself a
+// plain, non-destructured identifier.
+func tsFormalParameterIdentifierName(p engine.Node, source []byte) (string, bool) {
+	if p.Kind() != "required_parameter" && p.Kind() != "optional_parameter" {
+		return "", false
+	}
+	if p.ChildByFieldName("value") != nil {
+		return "", false
+	}
+	pattern := p.ChildByFieldName("pattern")
+	if pattern == nil || pattern.Kind() != "identifier" {
+		return "", false
+	}
+	return pattern.Utf8Text(source), true
+}
+
 func tsFunctionScopedBindingNames(n engine.Node, source []byte, params map[string]bool) map[string]bool {
 	names := map[string]bool{}
-	var collect func(engine.Node)
-	collect = func(node engine.Node) {
-		if node == nil {
-			return
-		}
-		if node != n && (tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition") {
-			return
-		}
-		switch node.Kind() {
-		case "function_declaration", "generator_function_declaration":
-			if node != n {
-				if name := node.ChildByFieldName("name"); name != nil {
-					names[name.Utf8Text(source)] = true
-				}
-			}
-			count := node.ChildCount()
-			for i := 0; i < count; i++ {
-				collect(node.Child(i))
-			}
-			return
-		case "variable_declaration":
-			varNames := map[string]bool{}
-			count := node.ChildCount()
-			for i := 0; i < count; i++ {
-				collectTSVariableDeclaratorNames(node.Child(i), source, varNames)
-			}
-			for name := range varNames {
-				if !params[name] {
-					names[name] = true
-				}
-			}
-			return
-		case "lexical_declaration":
-			return
-		}
-		count := node.ChildCount()
-		for i := 0; i < count; i++ {
-			collect(node.Child(i))
+	collectTSFunctionScopedBindingNames(n, n, source, params, names)
+	return names
+}
+
+// collectTSFunctionScopedBindingNames recurses node's subtree relative to
+// root (the enclosing function-like/method_definition n started from in
+// tsFunctionScopedBindingNames), stopping without descending at any nested
+// function-like or method_definition boundary other than root itself, and
+// otherwise delegating node's own contribution to
+// tsCollectFunctionScopedNodeNames.
+func collectTSFunctionScopedBindingNames(root, node engine.Node, source []byte, params, names map[string]bool) {
+	if node == nil {
+		return
+	}
+	if node != root && (tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition") {
+		return
+	}
+	if tsCollectFunctionScopedNodeNames(root, node, source, params, names) {
+		return
+	}
+	count := node.ChildCount()
+	for i := 0; i < count; i++ {
+		collectTSFunctionScopedBindingNames(root, node.Child(i), source, params, names)
+	}
+}
+
+// tsCollectFunctionScopedNodeNames handles node's own hoisted-binding
+// contribution when node is a function_declaration/
+// generator_function_declaration, variable_declaration, or
+// lexical_declaration, reporting handled == true so
+// collectTSFunctionScopedBindingNames does not also apply its own generic
+// child recursion for these three kinds (each either recurses itself, or --
+// lexical_declaration, since let/const are block-scoped, not hoisted --
+// must not recurse into its subtree at all).
+func tsCollectFunctionScopedNodeNames(root, node engine.Node, source []byte, params, names map[string]bool) bool {
+	switch node.Kind() {
+	case "function_declaration", "generator_function_declaration":
+		collectTSFunctionDeclarationNames(root, node, source, params, names)
+		return true
+	case "variable_declaration":
+		collectTSFunctionScopedVarDeclarationNames(node, source, params, names)
+		return true
+	case "lexical_declaration":
+		return true
+	default:
+		return false
+	}
+}
+
+// collectTSFunctionDeclarationNames handles the
+// function_declaration/generator_function_declaration case of
+// tsCollectFunctionScopedNodeNames: node is always root here --
+// collectTSFunctionScopedBindingNames' function-like boundary check already
+// stops at any nested function_declaration, so the node != root
+// name-collection guard below is defensive and never fires (behavior
+// preserved verbatim from the pre-refactor collect closure) -- then
+// recursion into node's own children.
+func collectTSFunctionDeclarationNames(root, node engine.Node, source []byte, params, names map[string]bool) {
+	if node != root {
+		if name := node.ChildByFieldName("name"); name != nil {
+			names[name.Utf8Text(source)] = true
 		}
 	}
-	collect(n)
-	return names
+	count := node.ChildCount()
+	for i := 0; i < count; i++ {
+		collectTSFunctionScopedBindingNames(root, node.Child(i), source, params, names)
+	}
+}
+
+// collectTSFunctionScopedVarDeclarationNames handles the
+// variable_declaration case of tsCollectFunctionScopedNodeNames: node's own
+// `var`-bound declarator names, excluding any already in params.
+func collectTSFunctionScopedVarDeclarationNames(node engine.Node, source []byte, params, names map[string]bool) {
+	varNames := map[string]bool{}
+	count := node.ChildCount()
+	for i := 0; i < count; i++ {
+		collectTSVariableDeclaratorNames(node.Child(i), source, varNames)
+	}
+	for name := range varNames {
+		if !params[name] {
+			names[name] = true
+		}
+	}
 }
 
 func tsBlockScopedBindingNames(n engine.Node, source []byte) map[string]bool {
