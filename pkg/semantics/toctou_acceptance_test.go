@@ -25,6 +25,22 @@ func analyzeTSToctou(analyzer *semantics.Analyzer, source string) *semantics.Res
 	return result
 }
 
+// analyzeTSXToctou mirrors analyzeTSToctou but drives the TSX path through
+// AnalyzeBytes, so JSX-bearing sources exercise LanguageTSX's registry
+// wiring rather than TypeScript's.
+func analyzeTSXToctou(analyzer *semantics.Analyzer, source string) *semantics.Result {
+	GinkgoHelper()
+	result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+		Path:     "example.tsx",
+		Language: semantics.LanguageTSX,
+		Content:  []byte(source),
+	})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(result).NotTo(BeNil())
+	Expect(result.ParseStatus).To(Equal(semantics.ParseStatus("ok")))
+	return result
+}
+
 func toctouFindings(findings []semantics.Finding) []semantics.Finding {
 	var out []semantics.Finding
 	for _, f := range findings {
@@ -118,6 +134,41 @@ function readOrDefault(p: string): string {
 `
 			result := analyzeTSToctou(analyzer, source)
 			Expect(toctouFindings(result.Findings)).To(BeEmpty(), "EAFP-style code with no existsSync gate must not be flagged")
+		})
+	})
+
+	When("nested existsSync guards on the same path gate a single act call", func() {
+		It("emits exactly one toctou_check_then_act Finding", func() {
+			const source = `import { existsSync, readFileSync } from "fs";
+
+function readIfPresent(p: string): string | undefined {
+  if (existsSync(p)) {
+    if (existsSync(p)) {
+      return readFileSync(p, "utf8");
+    }
+  }
+  return undefined;
+}
+`
+			result := analyzeTSToctou(analyzer, source)
+			Expect(toctouFindings(result.Findings)).To(HaveLen(1), "nested existsSync guards on the same path must dedupe to a single Finding on the act call")
+		})
+	})
+
+	When("a TSX component gates a matching fs act call behind a bare existsSync(path) check", func() {
+		It("emits exactly one toctou_check_then_act Finding", func() {
+			const source = `import { existsSync, readFileSync } from "fs";
+
+const Loader = (p: string) => {
+  if (existsSync(p)) {
+    const data = readFileSync(p, "utf8");
+    return <div>{data}</div>;
+  }
+  return null;
+};
+`
+			result := analyzeTSXToctou(analyzer, source)
+			Expect(toctouFindings(result.Findings)).To(HaveLen(1), "expected exactly one toctou_check_then_act Finding for the TSX form")
 		})
 	})
 })

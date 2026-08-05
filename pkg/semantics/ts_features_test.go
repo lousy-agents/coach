@@ -1663,12 +1663,8 @@ func TestComputeTSFeatures_TOCTOUCheckThenAct_DedupesNestedGuardsOnSamePath(t *t
 	}
 }
 
-// TSX variant of the positive TOCTOU case, proving toctou_check_then_act
-// detection works against a TSX-parsed tree the same way it does for TS
-// (same pattern as TestComputeTSFeatures_WorksOnTSXParsedTree and
-// TestTSXMutatesInput_PropertyAssignment): computeTSFeatures is the same
-// function registered for both LanguageTypeScript and LanguageTSX, but
-// this file previously had no TSX-specific TOCTOU regression coverage.
+// TSX variant of the positive TOCTOU case: computeTSFeatures must detect
+// the same pattern in a TSX-parsed tree.
 func TestComputeTSFeatures_TOCTOUCheckThenAct_WorksOnTSXParsedTree(t *testing.T) {
 	source := []byte(`const Loader = (p: string) => {
 	if (existsSync(p)) {
