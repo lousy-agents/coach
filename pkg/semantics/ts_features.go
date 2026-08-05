@@ -26,6 +26,7 @@ type tsFeatureCollector struct {
 	metrics          StructuralMetrics
 	findings         []Finding
 	mutatesInputSeen map[tsMutatesInputKey]bool
+	toctouActSeen    map[tsLocationKey]bool
 }
 
 // mutatingTSMethodNames is the exact set of built-in Array/Map/Set method
@@ -66,6 +67,16 @@ type tsParamScope struct {
 type tsMutatesInputKey struct {
 	ownerName string
 	paramName string
+	startByte uint
+	endByte   uint
+}
+
+// tsLocationKey dedupes findings by source span alone (StartByte/EndByte),
+// for detectors like toctou_check_then_act where a given resolved node
+// (e.g. the "act" call) can only ever belong to one canonical Finding, so
+// there is no separate "owning construct" half to key on the way
+// tsMutatesInputKey has for mutates_input.
+type tsLocationKey struct {
 	startByte uint
 	endByte   uint
 }
@@ -932,6 +943,15 @@ var tsToctouActCallNames = map[string]bool{
 // call_expression once unwrapTSParen has stripped the grammar's mandatory
 // parenthesization of an if/while condition, so those out-of-scope forms
 // are excluded without any special-casing.
+//
+// A nested existsSync guard on the same path (`if (existsSync(p)) { if
+// (existsSync(p)) { readFileSync(p); } }`) makes both the outer and inner
+// if's own call to this method resolve to the identical act call node
+// independently, since findTSToctouActCall searches the whole guarded
+// body's subtree, including any nested if. Deduping by the act call's
+// Location (toctouActSeen) -- mirroring mutatesInputSeen's dedup rule for
+// mutates_input -- ensures that resolves to exactly one Finding, not one
+// per enclosing guard.
 func (c *tsFeatureCollector) checkTOCTOUCheckThenAct(n engine.Node, source []byte) {
 	cond := unwrapTSParen(n.ChildByFieldName("condition"))
 	checkArg := tsToctouCallArg(cond, source, "existsSync")
@@ -953,6 +973,16 @@ func (c *tsFeatureCollector) checkTOCTOUCheckThenAct(n engine.Node, source []byt
 	if act == nil {
 		return
 	}
+
+	loc := locationFromNode(act)
+	key := tsLocationKey{startByte: loc.StartByte, endByte: loc.EndByte}
+	if c.toctouActSeen == nil {
+		c.toctouActSeen = map[tsLocationKey]bool{}
+	}
+	if c.toctouActSeen[key] {
+		return
+	}
+	c.toctouActSeen[key] = true
 
 	c.findings = append(c.findings, newTOCTOUCheckThenActFinding(cond, act, checkArg.Utf8Text(source), source))
 }
