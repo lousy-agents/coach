@@ -17,7 +17,7 @@
       "source": "lousy-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/go-testable-design/SKILL.md",
-      "computedHash": "4285b6f229578ee58aa63026e27d7dbf8a2b515eb2ddba1f90e4eb174bbe7958"
+      "computedHash": "79103a23e4f4ff661cbd4ecbc5aa2c81464b05098ad050c74c07a636410576af"
     },
     "issue-refine-loop": {
       "source": "lousy-agents/skills",
