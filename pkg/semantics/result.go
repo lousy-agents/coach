@@ -125,7 +125,7 @@ type FunctionCognitiveComplexity struct {
 // "mutates_input"; they're omitted (via omitempty) for findings that don't
 // set them (e.g. "constructor_func", "pointer_return", "tight_coupling").
 type Finding struct {
-	Kind           string   `json:"kind"` // "constructor_func" | "pointer_return" | "mutates_input" (Go); "tight_coupling" | "mutates_input" (TS/TSX)
+	Kind           string   `json:"kind"` // "constructor_func" | "pointer_return" | "mutates_input" (Go); "tight_coupling" | "mutates_input" | "toctou_check_then_act" (TS/TSX)
 	Name           string   `json:"name"`
 	Location       Location `json:"location"`
 	Confidence     string   `json:"confidence,omitempty"`
