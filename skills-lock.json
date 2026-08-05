@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "curate-release": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/curate-release/SKILL.md",
+      "computedHash": "a223fade925197b236cc432b564ced726ce75b82d832502d8cd75f8d987c79d0"
+    },
     "feature-to-plan": {
       "source": "lousy-agents/skills",
       "sourceType": "github",
