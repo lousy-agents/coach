@@ -30,6 +30,12 @@ func computeGoFeatures(root engine.Node, source []byte) (StructuralMetrics, []Fi
 type featureCollector struct {
 	metrics  StructuralMetrics
 	findings []Finding
+
+	// goToctouActSeen dedupes toctou_check_then_act Findings by the act
+	// call's own source span (see checkGoTOCTOUCheckThenAct), since a
+	// nested Stat-gated if on the same path resolves the same act call
+	// once per enclosing guard.
+	goToctouActSeen map[goToctouLocationKey]bool
 }
 
 // walk visits n and its descendants in pre-order, incrementing metrics
@@ -46,6 +52,7 @@ func (c *featureCollector) walk(n engine.Node, source []byte, blockDepth int, in
 	switch n.Kind() {
 	case "if_statement":
 		c.metrics.Ifs++
+		c.checkGoTOCTOUCheckThenAct(n, source)
 	case "for_statement":
 		c.metrics.Fors++
 	case "expression_switch_statement":
