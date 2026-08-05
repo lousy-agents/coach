@@ -17,7 +17,7 @@
       "source": "lousy-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/issue-refine-loop/SKILL.md",
-      "computedHash": "dde1febae225bde54cfd186d9e1bb3a93f140b784642703d5237461fb4460e6d"
+      "computedHash": "80a13ce6d3bf62dc7bc1bdc67c3a809829cd2e0b3c8aa2f3bba2d2610ba5dec4"
     },
     "mutation-hunter": {
       "source": "lousy-agents/skills",
