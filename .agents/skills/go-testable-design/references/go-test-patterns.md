@@ -30,6 +30,188 @@ tutorial structure.
 - Avoid adding assertion libraries or mocking frameworks unless the repo
   already uses them.
 
+## Detecting the Repository's Acceptance-Test Convention
+
+Unit tests and acceptance tests are different products with different
+defaults. Unit tests default to the standard library. An acceptance suite —
+the coverage that proves a feature or bug fix works at the public boundary —
+takes whatever form the repository already mandates. Detect that form before
+writing the test; do not infer it from this document.
+
+Run these checks and combine the results. Check 1 alone is enough to stop when
+it finds an existing acceptance suite. Check 2 is never enough on its own:
+many modules pull in assertion helpers (especially `testify/assert` or
+`testify/require`) for unit tests without adopting that library as an
+acceptance harness.
+
+```bash
+# 1. Existing acceptance suites, by filename or directory
+find . -name '*_test.go' | grep -Ei '(_acceptance_test\.go|/(acceptance|e2e|features|specs?)/)'
+
+# 2. Suite-harness or spec-runner modules already in the dependency graph.
+#    Match suite/spec packages, not bare assertion helpers: `testify` alone is
+#    not a signal — only `testify/suite` (or another runner below) counts.
+find . -name go.mod -exec grep -Ein \
+  '(ginkgo|gomega|testify/suite|godog|goconvey|check\.v1)' {} +
+
+# 3. A suite entrypoint — the bootstrap that hands control to a runner.
+#    `func TestMain` on its own does NOT count: it is routine stdlib plumbing
+#    for flag parsing, fixture setup, or container teardown. Treat it as an
+#    entrypoint signal only when check 1 or check 2 also matched.
+find . -name '*_test.go' -exec grep -En '(RunSpecs|suite\.Run|godog\.TestSuite|func TestMain)' {} +
+
+# 4. Declared acceptance targets
+find . \( -name Makefile -o -name '*.toml' -o -name 'Taskfile.y*ml' \
+  -o -path '*/.github/workflows/*' \) -exec grep -Ein 'acceptance|e2e' {} +
+
+# 5. Stated project policy
+find . \( -name AGENTS.md -o -name CLAUDE.md -o -name CONTRIBUTING.md \) \
+  -exec grep -Ein 'acceptance|e2e|spec runner|test (harness|framework|suite)' {} +
+```
+
+Every check searches the tree instead of naming files that may not exist, so a
+repository without a `go.mod` at the root, a task runner, or agent docs simply
+returns nothing. Empty output is a clean "no signal", not a tooling failure.
+
+Reading the result:
+
+- **A convention exists** (an acceptance suite file; a runner module from
+  check 2 *plus* a matching entrypoint from check 1 or 3; or a written
+  policy): write the acceptance test in that form, matching the existing
+  suite's file layout, naming, and bootstrap. Do not introduce a second
+  acceptance style alongside it.
+- **No convention exists**: the acceptance form is standard-library `testing`,
+  written the way the rest of the repository writes tests. Do NOT add a spec
+  runner, BDD framework, or assertion library to a repository that does not
+  already depend on one — that is a dependency decision owned by the module's
+  maintainers, not something to settle inside a test. A `go.mod` that only
+  lists unit-test assertion helpers is still "no convention".
+- **Signals conflict** (e.g. a runner sits in `go.mod` but the package under
+  test uses stdlib tables): follow the nearest existing acceptance suite, and
+  state in your report which signal you followed and which you set aside.
+
+### The Same Criterion in Two Acceptance Forms
+
+The criterion does not change; only the vehicle does. Both versions below make
+the rule legible from structure alone.
+
+Standard library `testing` — the form to use when the repository has no
+runner:
+
+```go
+func TestWithdrawAcceptance(t *testing.T) {
+    t.Run("an account with insufficient funds", func(t *testing.T) {
+        t.Run("rejects the withdrawal and leaves the balance unchanged", func(t *testing.T) {
+            account := givenAccountWith(Money(20))
+
+            err := whenWithdrawing(account, Money(25))
+
+            thenErrorIs(t, err, ErrInsufficientFunds, "overdrafts must be rejected")
+            thenBalanceIs(t, account, Money(20), "a rejected withdrawal must not move money")
+        })
+    })
+}
+```
+
+A nested-block spec runner — use this form *only* when the repository already
+runs one. The example below is written in Ginkgo/Gomega syntax; a testify
+`suite`, a `godog` feature file, or an in-tree harness expresses the same
+structure with its own vocabulary:
+
+```go
+var _ = Describe("Withdraw", func() {
+    var account *Account
+
+    When("the account has insufficient funds", func() {
+        BeforeEach(func() { account = NewAccount(Money(20)) })
+
+        It("rejects the withdrawal and leaves the balance unchanged", func() {
+            err := account.Withdraw(Money(25))
+
+            Expect(err).To(MatchError(ErrInsufficientFunds))
+            Expect(account.Balance()).To(Equal(Money(20)))
+        })
+    })
+})
+```
+
+The mapping is mechanical: the runner's outer blocks carry what `given...`
+helpers and outer subtest names carry, and its innermost block carries what
+the innermost subtest name and `then...` assertions carry. Whichever vehicle
+the repository uses, the bar is identical — the structure names the criterion,
+and the failure output names the behavior that broke.
+
+## Starting Outside-In
+
+For a new feature or a bug fix, the first failing test belongs at the public
+boundary — the CLI invocation, the HTTP request, or the exported call a user
+actually makes. Write it in whichever acceptance form the detection above
+identified; the walkthrough uses standard-library `testing` because that is
+the form for a repository with no runner.
+
+1. **Write the boundary test first, calling the API you wish existed.** The
+   test is that API's first consumer, so let it invent the seam instead of
+   designing the seam up front. This one needs a rate source that production
+   does not have yet — and nothing else, so invent nothing else:
+
+   ```go
+   func TestQuoteAcceptance(t *testing.T) {
+       t.Run("prices an order in the customer's currency", func(t *testing.T) {
+           quoter := NewQuoter(stubRates{"EUR": 0.9})
+
+           got, err := quoter.Quote(Order{Subtotal: Money(100), Currency: "EUR"})
+
+           if err != nil {
+               t.Fatalf("quoting a EUR order should succeed: got err %v", err)
+           }
+           if want := Money(90); got != want {
+               t.Fatalf("EUR order priced at the source's rate: got %v, want %v", got, want)
+           }
+       })
+   }
+   ```
+
+2. **Let the test define the ports.** `stubRates` does not exist yet either;
+   write it in the test file, and the interface it satisfies becomes the port
+   production accepts through its constructor:
+
+   ```go
+   // In the test file — the fake the test just invented.
+   type stubRates map[string]float64
+
+   func (r stubRates) Rate(currency string) (float64, error) {
+       rate, ok := r[currency]
+       if !ok {
+           return 0, fmt.Errorf("no rate for %s", currency)
+       }
+       return rate, nil
+   }
+
+   // In production — the port that fake forced, and the constructor that takes it.
+   type RateSource interface {
+       Rate(currency string) (float64, error)
+   }
+
+   func NewQuoter(rates RateSource) *Quoter // body comes in step 3
+   ```
+
+   If the arrangement is awkward to write — too many parameters, a hidden
+   global, an unclear return — that is the API being awkward, not the test.
+   Change the signature before writing production code.
+
+3. **Make it pass with the smallest honest change.** A hard-coded conversion
+   or a single-branch `Quote` is enough; the boundary test only has to go
+   green.
+
+4. **Drill inward.** Add unit tests for the pieces that carry real logic —
+   rounding rules, unsupported-currency errors, missing-rate handling — and let
+   those tests own the edge cases. The boundary test keeps proving the feature
+   works end to end; it should not grow a case per rounding rule.
+
+Inside-out remains the right start for a pure internal helper, an algorithmic
+core, or a well-understood domain whose public API is already settled: write
+the unit test directly and skip the boundary step.
+
 ## Executable Documentation and Diagnostic Assertions
 
 Tests should document the behavior a caller relies on, not the mechanism the
@@ -293,6 +475,106 @@ dependencies.
   dependency wiring for code that touches external state.
 - Avoid service locators, mutable package-level state, and hidden singleton
   clients.
+
+## Package Fitness and the Dependency Rule
+
+A package's imports decide how testable it is before a test is written: a
+package that imports no IO needs no fakes, no `httptest` server, and no temp
+directory. Keep calculation and decision packages pure, keep the adapters —
+HTTP clients, database access, parsers, filesystem readers — in packages at
+the edge, and let the composition root wire the two together.
+
+Declare interfaces at the use site. The package that *consumes* a dependency
+declares the small interface it needs next to the code that calls it (e.g.
+`type RateSource interface { Rate(string) (float64, error) }`); the package
+that *provides* it returns concrete types. The dependency then points from
+the adapter toward the pure package, and each test's fake stays local to the
+test that needs it.
+
+Check this rather than trusting it, with two commands. The first walks the
+module's own packages the target reaches and prints the packages *they*
+import directly, then greps for IO. The second drops the module's own packages
+and reports the third-party ones that remain. Each is a single `go list` — no
+`xargs` second hop.
+
+```bash
+# stdlib IO reached through your own packages
+go list -deps -f '{{if and .Module .Module.Main}}{{range .Imports}}{{.}}{{"\n"}}{{end}}{{end}}' ./pricing |
+  sort -u | grep -E '^(os|net|log|database/sql)(/|$)'
+# third-party dependencies
+go list -deps -f '{{if and .Module (not .Module.Main)}}{{.ImportPath}}{{end}}' ./pricing
+```
+
+Keep the two separate. A single `go list -deps` piped into one IO grep also
+matches the stdlib's own internals: `fmt` and `encoding/json` both depend on
+`os`, so that shorter form reports `os` for any package whose only sin is
+calling `fmt.Errorf` — a false positive on exactly the pure domain packages
+this section tells you to build.
+
+Two details in that form are load-bearing. The `-f` template asks `go list`
+which module each dependency belongs to instead of string-matching the module
+path, so a multi-module `go.work` (where `go list -m` prints several lines and
+silently corrupts the pattern) still classifies correctly. And the IO check
+prints each main-module package's *direct* `.Imports` inside that same
+invocation — it never shells out to a second `go list` via `xargs`. A two-step
+`go list | xargs go list` form is how a typo'd path or undownloaded dependency
+used to print a confident, entirely fabricated impurity report (bare `xargs`
+falls back to the package in the current directory).
+
+A package that is still pure prints nothing from either command (grep exits 1
+on no match):
+
+```
+$ <io-check>
+$ echo $?
+1
+$ <third-party-check>
+$ echo $?
+1
+```
+
+The same package after someone reaches for `os` and `net/http` inside it:
+
+```
+$ <io-check>
+net/http
+os
+```
+
+A package that has picked up a third-party dependency:
+
+```
+$ <third-party-check>
+github.com/acme/rates/rates
+```
+
+That second list is a review list, not a verdict. It is transitive like the
+IO check, so a package whose own imports are entirely stdlib can still list a
+third-party path it reaches through an internal sub-package that exists to own
+exactly that dependency — a parser package wrapping a grammar library, say.
+That is the shape this section is asking for: the dependency is quarantined
+behind a seam instead of spread through the domain. Read the list and ask
+whether each entry is quarantined or has leaked into the code that holds
+decisions; only the second is a finding.
+
+Notes on running them:
+
+- The IO check is transitive across your own packages, which is the point: a
+  pure package that depends on a helper package that opens files is not pure
+  either. To find which import caused a hit, list a package's direct imports:
+  `go list -f '{{join .Imports "\n"}}' ./pricing`.
+- A third-party dependency shows up as its full import path
+  (`github.com/acme/rates/rates`). Stdlib packages belong to no module, so
+  `go list`'s module metadata excludes them from both checks automatically.
+- Extend the IO alternation with whatever else must stay out of the
+  package (`os/exec`, `database/sql`, a config or logging package of your
+  own).
+- `go list` needs the module graph to resolve. If dependencies are not
+  downloaded it errors instead of printing packages — that is a check that
+  did not run, not a package that passed.
+- The symptom that precedes a failing check: a unit test that needs three
+  fakes to reach one calculation. Moving that calculation into a package
+  with no IO imports usually deletes the fakes outright.
 
 ## Testing Goroutines and Concurrency
 
