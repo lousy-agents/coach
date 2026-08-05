@@ -75,6 +75,8 @@ allowed only when the target repository has an established convention; never dro
 
 ## Tasks
 
+## Issue Graph Manifest                              <- added by Phase 5 once child issues exist
+
 ## Out of Scope
 
 ## Future Considerations
@@ -92,6 +94,12 @@ Notes drawn from the reference epic:
   settled a trade-off; omit it when nothing was decided.
 - The epic closes with a provenance footer stating where the body came from and what review it
   passed.
+- `## Issue Graph Manifest` is a v1 addition to this skill, not a structural element re-derived from
+  any repository's gold-standard epic. An older reference epic — including the one used to derive
+  the section list above — predates this section and won't contain it; treat that absence as
+  expected, not as evidence the section should be dropped. See "Issue Graph Manifest Anatomy" below
+  for its content, and the Closing Comment Contract in
+  [`github-surface.md`](./github-surface.md) for the machine-parseable form the manifest summarizes.
 
 ## The Completeness Rubric in Full
 
@@ -135,6 +143,13 @@ the loop's exit condition and the `needs-human-input` terminal state both key of
 
 Report the result as eight verdicts plus the counts named in the `SKILL.md` table. That tuple is
 what the loop converges on and what the closing comment records before and after.
+
+`## Issue Graph Manifest` is deliberately not a ninth scored row. The Phase 2/Phase 4 loop converges
+*before* Phase 5 creates any child, so a rubric row that required the manifest to exist would never
+be satisfiable at the point the loop checks it. Phase 5 writes the manifest unconditionally once
+children exist; Phase 6 verifies it lists every current child as a one-time gate on the `refined`
+terminal state instead (see `SKILL.md` Phase 6), which avoids the circularity while still keeping the
+check mandatory.
 
 ## EARS Acceptance Criteria
 
@@ -226,6 +241,46 @@ Sizing: one task should be completable in a single coding-agent session — roug
 files. State dependencies explicitly as `Depends on: <task title>`. Write every checkbox unchecked;
 only the implementer marks them. Use the repository's own test and lint commands in Verification —
 never a command the repository does not define.
+
+## Issue Graph Manifest Anatomy
+
+Written by Phase 5 in the same `update_issue_body` as the Tasks collapse, once at least one child
+exists. Its purpose is narrow: let an agent that opens only the epic body — no issue-hierarchy read,
+no `gh` CLI, no dependency-graph API access — see the full child set and its dependency edges
+without a follow-up call.
+
+```markdown
+## Issue Graph Manifest
+
+Parent epic: `owner/repo#N` (this issue). Dependency edges below are native GitHub blocking
+relationships where the bound write path supports them, otherwise recorded as issue references
+only — see this issue's most recent `issue-refine-loop closing comment` for the authoritative,
+machine-parseable snapshot and which kind applies.
+
+| Child issue | Status | Depends on |
+| --- | --- | --- |
+| owner/repo#M — <title> | open | owner/repo#K, owner/repo#J |
+| owner/repo#M2 — <title> | open | — |
+```
+
+Rules:
+
+- One row per child that currently exists for this epic — every child created this run, plus every
+  child recorded by a prior run that a `read_issue` on this epic still confirms as a live child. A
+  re-run appends or updates rows; it never drops a row for a child that still exists. Build or
+  refresh the section whenever any child exists, including when this run created none.
+- **Status** is `open` or `closed`, read at write time. This field goes stale the moment GitHub state
+  changes after the write — it is a snapshot, not a live value — so do not treat it as authoritative
+  for dispatch decisions; that is exactly what the closing comment's precedence note exists to say.
+- **Depends on** lists blocker issues resolved to `owner/repo#N` (never a bare title) once the
+  blocker's own issue exists. Prefer Phase 5's dependency wiring for children created this run; for
+  children not created this run, take blockers from that child's body (`Depends on:` line) or from
+  native blocking edges when the bound read path exposes them. A blocker capped or not yet created
+  keeps its title-text form until it exists in a later run. Use `—` for no blockers.
+- A child dropped by the 12-issue cap, or declined at the collision gate, gets no row and stays named
+  only in the collapsed Tasks link list — the manifest describes issues that exist, not the full task
+  list.
+- Omit the whole section only when the epic still has no children at all.
 
 ## Diagram Requirements
 
