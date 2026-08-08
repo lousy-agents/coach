@@ -21,10 +21,11 @@ var gatedFindingKinds = map[string]bool{
 // single dispatch point processHeadResult and extractBaseSignals use, so
 // adding a rule means adding an entry here rather than a new conditional.
 var ruleRegistry = map[string]func(path string, finding semantics.Finding) Signal{
-	"mutates_input":    newHiddenInputMutationSignal,
-	"tight_coupling":   newTightCouplingSignal,
-	"constructor_func": newConstructorDensitySignal,
-	"pointer_return":   newPointerReturnDensitySignal,
+	"mutates_input":         newHiddenInputMutationSignal,
+	"tight_coupling":        newTightCouplingSignal,
+	"constructor_func":      newConstructorDensitySignal,
+	"pointer_return":        newPointerReturnDensitySignal,
+	"toctou_check_then_act": newTOCTOUCheckThenActSignal,
 }
 
 // findingCountsByKind counts findings in one side's Findings slice by Kind,

@@ -5,9 +5,10 @@
 // (registry.go) dispatches each semantics.Finding.Kind to its rule
 // constructor: "state.hidden_input_mutation" ("mutates_input"),
 // "coupling.tight_constructor_init" ("tight_coupling"),
-// "structure.constructor_density" ("constructor_func"), and
-// "structure.pointer_return_density" ("pointer_return"). The two structure
-// rules are density-gated: a file only surfaces them once its own
+// "structure.constructor_density" ("constructor_func"),
+// "structure.pointer_return_density" ("pointer_return"), and
+// "security.toctou_check_then_act" ("toctou_check_then_act"). The two
+// structure rules are density-gated: a file only surfaces them once its own
 // per-side count of that finding kind reaches a threshold. Unrecognized
 // finding kinds are ignored. A third dispatch path, signalsFromImports,
 // derives "coupling.deep_relative_import" directly from a TypeScript/TSX
