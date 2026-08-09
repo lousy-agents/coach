@@ -1,0 +1,10 @@
+package widget
+
+import "os"
+
+func readIfPresent(path string) ([]byte, error) {
+	if _, err := os.Stat(path); err == nil {
+		return os.ReadFile(path)
+	}
+	return nil, nil
+}

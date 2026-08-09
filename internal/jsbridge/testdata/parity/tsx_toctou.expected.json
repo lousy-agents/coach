@@ -1,0 +1,66 @@
+{
+  "id": 0,
+  "result": {
+    "path": "example/toctou.tsx",
+    "language": "tsx",
+    "parse_status": "ok",
+    "imports": [
+      {
+        "path": "fs",
+        "location": {
+          "start_byte": 41,
+          "end_byte": 45,
+          "start_row": 0,
+          "start_col": 41,
+          "end_row": 0,
+          "end_col": 45
+        }
+      }
+    ],
+    "metrics": {
+      "ifs": 1,
+      "fors": 0,
+      "expr_switches": 0,
+      "type_switches": 0,
+      "selects": 0,
+      "functions": 1,
+      "methods": 0,
+      "max_nesting_depth": 2,
+      "max_cognitive_complexity": 1,
+      "sum_cognitive_complexity": 1
+    },
+    "findings": [
+      {
+        "kind": "toctou_check_then_act",
+        "name": "path",
+        "location": {
+          "start_byte": 133,
+          "end_byte": 159,
+          "start_row": 4,
+          "start_col": 17,
+          "end_row": 4,
+          "end_col": 43
+        },
+        "confidence": "medium",
+        "evidence": "existsSync(path) ... readFileSync(path, \"utf8\")",
+        "recommendation": "Don't gate a filesystem operation behind an existsSync check on the same path -- the file can be created, removed, or replaced between the check and the act (CWE-367/TOCTOU). Call the operation directly and handle its ENOENT (or equivalent) error instead (EAFP-style); fs.promises.access does not close this race either, since it is still a separate check before the act.",
+        "suggested_skill": "find-bugs"
+      }
+    ],
+    "cognitive_complexity": [
+      {
+        "name": "Loader",
+        "kind": "arrow",
+        "location": {
+          "start_byte": 70,
+          "end_byte": 211,
+          "start_row": 2,
+          "start_col": 22,
+          "end_row": 8,
+          "end_col": 1
+        },
+        "score": 1
+      }
+    ]
+  }
+}

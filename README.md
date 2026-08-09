@@ -310,6 +310,7 @@ func WithDefaults(cfg Config) Config {
 - `constructor_func` (Go) — Flags factory or constructor functions.
 - `pointer_return` (Go) — Flags functions returning a pointer to a struct.
 - `tight_coupling` (TS/TSX) — Flags class/object patterns with high coupling.
+- `toctou_check_then_act` (Go, TS/TSX) — Flags a filesystem existence/state check whose success path later acts on the identical path (CWE-367).
 
 ---
 
