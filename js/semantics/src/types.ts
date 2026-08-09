@@ -68,7 +68,7 @@ export interface FunctionCognitiveComplexity {
 
 /** One detected pattern of interest, such as a constructor-like function. */
 export interface Finding {
-  /** "constructor_func" | "pointer_return" | "mutates_input" (Go); "tight_coupling" | "mutates_input" (TS/TSX). */
+  /** "constructor_func" | "pointer_return" | "mutates_input" | "toctou_check_then_act" (Go); "tight_coupling" | "mutates_input" | "toctou_check_then_act" (TS/TSX). */
   kind: string;
   name: string;
   location: Location;

@@ -1,0 +1,66 @@
+{
+  "id": 0,
+  "result": {
+    "path": "example/toctou.go",
+    "language": "go",
+    "parse_status": "ok",
+    "imports": [
+      {
+        "path": "os",
+        "location": {
+          "start_byte": 23,
+          "end_byte": 27,
+          "start_row": 2,
+          "start_col": 7,
+          "end_row": 2,
+          "end_col": 11
+        }
+      }
+    ],
+    "metrics": {
+      "ifs": 1,
+      "fors": 0,
+      "expr_switches": 0,
+      "type_switches": 0,
+      "selects": 0,
+      "functions": 1,
+      "methods": 0,
+      "max_nesting_depth": 2,
+      "max_cognitive_complexity": 1,
+      "sum_cognitive_complexity": 1
+    },
+    "findings": [
+      {
+        "kind": "toctou_check_then_act",
+        "name": "path",
+        "location": {
+          "start_byte": 130,
+          "end_byte": 147,
+          "start_row": 6,
+          "start_col": 9,
+          "end_row": 6,
+          "end_col": 26
+        },
+        "confidence": "medium",
+        "evidence": "os.Stat(path) ... os.ReadFile(path)",
+        "recommendation": "Don't gate a filesystem operation behind an os.Stat/os.Lstat check on the same path -- the file can be created, removed, or replaced between the check and the act (CWE-367/TOCTOU). Call the operation directly and handle its fs.ErrNotExist (or equivalent) error instead (EAFP-style); for stronger hardening, prefer errors.Is(err, fs.ErrNotExist) over string/type sniffing, and consider os.Root to scope filesystem access and further shrink this race.",
+        "suggested_skill": "find-bugs"
+      }
+    ],
+    "cognitive_complexity": [
+      {
+        "name": "readIfPresent",
+        "kind": "function",
+        "location": {
+          "start_byte": 29,
+          "end_byte": 169,
+          "start_row": 4,
+          "start_col": 0,
+          "end_row": 9,
+          "end_col": 1
+        },
+        "score": 1
+      }
+    ]
+  }
+}

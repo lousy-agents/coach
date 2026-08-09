@@ -1,0 +1,8 @@
+import { existsSync, readFileSync } from "fs";
+
+export function readIfPresent(path: string): string | undefined {
+  if (existsSync(path)) {
+    return readFileSync(path, "utf8");
+  }
+  return undefined;
+}

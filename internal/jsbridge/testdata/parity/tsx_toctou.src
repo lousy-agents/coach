@@ -1,0 +1,9 @@
+import { existsSync, readFileSync } from "fs";
+
+export const Loader = (path: string) => {
+  if (existsSync(path)) {
+    const data = readFileSync(path, "utf8");
+    return <div>{data}</div>;
+  }
+  return null;
+};
