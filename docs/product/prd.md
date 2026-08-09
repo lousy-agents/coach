@@ -13,9 +13,18 @@ Coach is built as two separable things:
 
 This separation is deliberate: the platform earns trust through the quality of its analysis, while consumption surfaces can multiply without changing it.
 
+For the current release posture, the local `coach codesignal` CLI is the verified
+consumer for deterministic signals. The API and worker surfaces are specified
+future consumers; implementing a rule in the shared analyzer/report packages is
+not, by itself, evidence that a hosted or API job path delivers that rule.
+
 ## 2. One-Sentence Positioning
 
 An async code-quality coach that combines deterministic structural analysis with LLM-as-judge rubric evaluation over your recent pull requests and repositories — private to you, and honest about what is evidence versus opinion.
+
+For deterministic analysis, “evidence” means reproducible output for pinned
+source, analyzer, and rule versions. It does not mean semantic completeness,
+runtime proof, or the absence of false positives and false negatives.
 
 ## 3. Target User (this era)
 
@@ -26,6 +35,10 @@ This constraint is a feature: it keeps the trust posture simple (you see your ow
 ## 4. Core Problem
 
 AI-generated changes often carry structural quality problems that are invisible until review: hidden input mutation, tangled coupling, unclear change scope, tests that mirror implementation instead of behavior. Engineers lack a fast, private way to get evidence-grounded quality feedback across their recent work — not one PR at a time in public review comments, but asynchronously, across the last N changes, with a clear line between reproducible findings and model judgment.
+
+Filesystem check-then-act races are one concrete security and correctness pattern
+in this problem space: a path is checked and then used later under the assumption
+that the checked state still holds.
 
 ## 5. Product Hypothesis
 
@@ -42,21 +55,39 @@ Most AI review tools comment publicly on open PRs. Linters enforce rules. CI gat
 
 ## 7. Product Surface (this era)
 
-The Coach API (`/v1`), fronting an async job platform:
+The intended Coach API (`/v1`), fronting an async job platform, is the next
+consumption surface after the local CLI preview:
 
-- `repo_baseline_scan` — analyze a whole repository at a ref. **Ships first**: it validates every load-bearing platform seam (auth, queue, worker, agent loop, gateway, rubrics, compose smoke) against the smallest GitHub-ingestion surface.
-- `pr_history_scan` — analyze the last 10 open-or-merged PRs authored by the requester in a repository they have a role in. **Ships second**, on the validated platform.
+- `repo_baseline_scan` — analyze a whole repository at a ref. **Roadmap order: first API slice**: it validates every load-bearing platform seam (auth, queue, worker, agent loop, gateway, rubrics, compose smoke) against the smallest GitHub-ingestion surface.
+- `pr_history_scan` — analyze the last 10 open-or-merged PRs authored by the requester in a repository they have a role in. **Roadmap order: second API slice**, on the validated platform.
 
 Reports combine deterministic codesignal findings with LLM-as-judge rubric judgments. Full contracts: `.github/specs/coach-api-platform-baseline.spec.md` and `.github/specs/coach-api-platform-pr-history.spec.md` (index: `.github/specs/coach-api-platform-groundwork.spec.md`).
+
+The local CLI is the current verified deterministic consumption surface. The
+specified API/worker report path is intended to reuse the same signal contract,
+but TOCTOU-specific API/worker delivery is not independently verified yet. The
+TOCTOU rule adds no endpoint, job kind, queue message, model-gateway call,
+schema migration, or GitHub write.
+
+Across consumption surfaces, an empty deterministic signal set means that no
+matched signal was produced for the inputs that were analyzed. Unsupported,
+skipped, or unanalyzable inputs remain distinct diagnostics; an empty set is not
+a safety verdict.
 
 Consumption is pull-only (submit, poll, fetch report). Harness hooks and a web UI are future consumers of this same API, not part of this era.
 
 ## 8. Core Capabilities
 
+Status in this table describes evidence at each layer: **Implemented** means
+package or CLI behavior is locked by passing acceptance tests; **pilot/preview**
+qualifies the current release posture; **Specified** means intended platform
+behavior without feature-specific acceptance evidence.
+
 | Capability | Status (evidence standard: passing acceptance tests) |
 | --- | --- |
 | Deterministic structural analysis, Go/TS/TSX (`pkg/semantics`) | **Implemented** — metrics, imports, findings; frozen JSON contract |
-| Diff-aware signal reports with lifecycle (`pkg/codesignal` + `coach codesignal` CLI) | **Implemented** — four rules surfaced (`hidden_input_mutation`, `tight_constructor_init`, `constructor_density`, `pointer_return_density`); merge-base diffing, scope filtering, baseline mode |
+| Diff-aware deterministic signal reports with lifecycle (`pkg/codesignal` + `coach codesignal` CLI) | **Implemented — pilot/preview** — merge-base diffing, scope filtering, baseline mode, and versioned signals across state, coupling, structure, complexity, and security categories |
+| TOCTOU check-then-act security signal (Go/TS/TSX) | **Implemented — pilot/preview advisory** — `security.toctou_check_then_act` emits a medium-severity, provenance-tagged signal with evidence, remediation guidance, and existing diff/baseline lifecycle handling for selected syntactic filesystem patterns |
 | Single-file GitHub App ingestion (`pkg/githubingest`) | **Implemented** |
 | Coach API, worker, job model | **Specified** — see baseline spec |
 | GitHub OAuth identity → Coach-signed JWT (`Principal`, `jti` revocation, job ownership) | **Specified** — ADR-001/002/004 |
@@ -65,9 +96,19 @@ Consumption is pull-only (submit, poll, fetch report). Harness hooks and a web U
 | Minimal agent tool loop + model gateway (stub, llama.cpp) | **Specified** |
 | LLM-as-judge rubrics (versioned, schema-validated) | **Specified** — two seed rubrics |
 | Docker Compose stack + E2E smoke | **Specified** |
-| Surfacing remaining deterministic findings (`tight_coupling`, complexity/nesting, constructor patterns) as rules | **Planned** — cheap follow-on; rubric evidence |
+| Deterministic rule coverage and precision follow-up | **Planned/ongoing** — prioritize additional supported patterns and false-positive/false-negative work from pilot-corpus evidence; TOCTOU coverage and TypeScript binding precision remain follow-up work in [#205](https://github.com/lousy-agents/coach/issues/205) |
 | SGLang/Qwen serving, AWS deployment | **Planned** — gated on compose-stack validation |
 | Harness hooks, web UI | **Planned** — future API consumers |
+
+The current deterministic CodeSignal report path can emit these versioned rule
+IDs: `state.hidden_input_mutation`, `coupling.tight_constructor_init`,
+`structure.constructor_density`, `structure.pointer_return_density`,
+`security.toctou_check_then_act`, `complexity.max_nesting_depth`,
+`complexity.branch_density`, `coupling.deep_relative_import`,
+`complexity.cognitive_complexity`, and
+`structure.react_component_orchestration_density`. This inventory is not a
+claim that every rule matches every file; individual rules remain language-,
+threshold-, and pattern-specific.
 
 ## 9. Explicitly Parked: Review-Readiness Digest
 
@@ -83,6 +124,7 @@ Behavioral evidence remains the long-term differentiator. This era builds the pl
 
 - No management dashboard; no developer scoring; no per-person productivity metrics — ever. The API shape enforces self-serve scans (OAuth-verified author identity: scans are bound to the GitHub login Coach verified at sign-in, plus a GitHub-role check on the target repository) precisely so the platform cannot quietly become surveillance.
 - No auto-approval, no merge blocking, no CI replacement.
+- No comprehensive security scanner or TOCTOU completeness guarantee; absence of a deterministic signal is not a safety verdict.
 - No GitHub writes of any kind in this era.
 - No style policing; no universal architecture enforcement.
 - No new analysis languages this era (Go/TS/TSX only, per the `pkg/semantics` registry).
@@ -90,22 +132,25 @@ Behavioral evidence remains the long-term differentiator. This era builds the pl
 ## 11. Trust Principles
 
 - **Self-serve by construction** — you scan yourself or a repo you have a role in (per GitHub); the API refuses cross-author scans and unauthorized repositories.
-- **Provenance over polish** — deterministic evidence and model opinion are never blended.
+- **Provenance over polish** — deterministic output is reproducible and rule-versioned; it is not semantic proof or a completeness claim, and model opinion is never blended into it.
 - **Behavior over style** — rubrics judge structural and behavioral quality, not formatting.
-- **Fewer, better findings** — a short, high-confidence report beats an exhaustive one.
+- **Coverage honesty** — an absent signal may mean an unsupported pattern, skipped or unanalyzable input, or no match; it is never a safety verdict.
+- **Fewer, better findings** — a short, actionable report is a pilot hypothesis to measure, not proof that the analysis is better.
+- **Advisory security signals** — security-category rules explain narrow, reproducible patterns; they do not provide runtime proof, block CI or merges, or trigger GitHub writes.
 - **Degrade honestly** — if the model fails rubric schema validation, the deterministic report still ships, with the failure recorded as a diagnostic.
 
 ## 12. Success Signals (this era)
 
 - The compose stack's E2E smoke passes in CI against the core (stub) profile **and** on the operator's machine against the `llm` (llama.cpp) profile with at least one schema-valid agent judgment — together, the gate for SGLang/AWS investment. A stub-only smoke proves plumbing, not real-model rubric behavior.
 - Pilot engineers run scans voluntarily more than once, and at least one rubric judgment per scan is rated useful by its requester (collected out-of-band during pilot check-ins; no in-product feedback mechanism this era).
+- Pilot-corpus review records confirmed true positives, false positives, known misses, and user action for new deterministic rules—especially security-category rules—before broader coverage or security claims are made.
 - Zero findings presented as deterministic that are not reproducible from the recorded analyzer/rule versions and the report's pinned commit SHA (per-PR scans pin base/head SHAs).
 - The operator can add a new rubric or tool to the platform without touching the API contract or worker lifecycle (the groundwork seams hold).
 
 ## 13. Roadmap
 
 1. **Now — platform groundwork**: the Baseline Scan slice first (shared platform + `repo_baseline_scan` + compose smoke), then the PR History slice (`pr_history_scan`) — see the spec index at `.github/specs/coach-api-platform-groundwork.spec.md`.
-2. **Next**: more deterministic rules from existing semantics findings; more rubrics; SGLang/Qwen behind the same gateway; AWS deployment per the architecture doc; additional platform tools/skills.
+2. **Next**: deterministic-rule coverage and precision follow-up based on pilot evidence (including [TOCTOU follow-up #205](https://github.com/lousy-agents/coach/issues/205)); more rubrics; SGLang/Qwen behind the same gateway; AWS deployment per the architecture doc; additional platform tools/skills.
 3. **Later**: harness hooks (e.g., an MCP surface over the API), web UI for viewing feedback, revisiting the review-readiness digest — including behavioral test-gap detection — on top of proven rubric infrastructure, and the GitHub-event-driven ingestion plane.
 
 ## 14. Relationship to the System Design
