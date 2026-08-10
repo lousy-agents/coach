@@ -827,6 +827,8 @@ var _ = Describe("coach top-level discoverability", func() {
 			Expect(text).To(ContainSubstring("--format"))
 			Expect(text).To(ContainSubstring("--scope"))
 			Expect(text).To(ContainSubstring("--build-target"))
+			Expect(text).To(ContainSubstring("--project-config"))
+			Expect(text).To(ContainSubstring("--project-language"))
 		})
 	})
 
@@ -841,6 +843,8 @@ var _ = Describe("coach top-level discoverability", func() {
 			Expect(text).To(ContainSubstring("--format"))
 			Expect(text).To(ContainSubstring("--scope"))
 			Expect(text).To(ContainSubstring("--build-target"))
+			Expect(text).To(ContainSubstring("--project-config"))
+			Expect(text).To(ContainSubstring("--project-language"))
 		})
 	})
 
