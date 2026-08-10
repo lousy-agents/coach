@@ -28,20 +28,29 @@ func RenderText(report *codesignal.Report) string {
 		renderDiffSummary(&b, report)
 	}
 
+	// Build projects anchored ProjectChanges onto Signals for JSON consumers
+	// while retaining project_changes for structured fields. Text must present
+	// each logical observation once: file-local signals via the signal block,
+	// project-origin findings only under Project findings (matched by Signal.ID).
+	projectSignalIDs := projectChangeSignalIDs(report.ProjectChanges)
+
 	if len(report.Signals) == 0 && len(report.ProjectChanges) == 0 {
 		b.WriteString("No active CodeSignal findings.\n")
 		renderProjectSummary(&b, report.ProjectSummary)
 	} else {
-		if len(report.Signals) > 0 {
-			for i, signal := range report.Signals {
-				renderSignal(&b, signal)
-				if i != len(report.Signals)-1 {
-					b.WriteString("\n")
-				}
+		renderedSignal := false
+		for _, signal := range report.Signals {
+			if _, isProject := projectSignalIDs[signal.ID]; isProject {
+				continue
 			}
+			if renderedSignal {
+				b.WriteString("\n")
+			}
+			renderSignal(&b, signal)
+			renderedSignal = true
 		}
 		if len(report.ProjectChanges) > 0 {
-			if len(report.Signals) > 0 {
+			if renderedSignal {
 				b.WriteString("\n")
 			}
 			renderProjectChanges(&b, report)
@@ -151,6 +160,19 @@ func renderSignal(b *strings.Builder, signal codesignal.Signal) {
 	fmt.Fprintf(b, "evidence: %s\n", signal.Evidence)
 	fmt.Fprintf(b, "why it matters: %s\n", signal.WhyItMatters)
 	fmt.Fprintf(b, "recommendation: %s\n", signal.Recommendation)
+}
+
+// projectChangeSignalIDs returns the set of Signal IDs Build assigns to
+// project observations so text rendering can skip the plain signal body for
+// those entries and emit the structured Project findings block once.
+func projectChangeSignalIDs(changes []codesignal.ProjectChange) map[string]struct{} {
+	ids := make(map[string]struct{}, len(changes))
+	for _, change := range changes {
+		if change.ID != "" {
+			ids[change.ID] = struct{}{}
+		}
+	}
+	return ids
 }
 
 func renderProjectChanges(b *strings.Builder, report *codesignal.Report) {

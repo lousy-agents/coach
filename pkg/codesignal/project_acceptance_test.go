@@ -299,6 +299,35 @@ var _ = Describe("Project-analysis report generation", func() {
 			Expect(factsOnly.Summary.ActiveSignals).To(Equal(0))
 			Expect(factsOnly.ProjectFacts).To(HaveLen(1))
 		})
+
+		// F-2: every active project Signal requires a repository-relative primary
+		// path; anchorless observations stay out of the shared signals surface.
+		It("does not promote a ProjectChange with an empty primary anchor path to a Signal", func() {
+			anchorless := projectChange("cycle:pkg/a<->pkg/b", "architecture.layer_violation")
+			anchorless.PrimaryAnchor = codesignal.ProjectLocation{}
+
+			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
+				ProjectChanges:  []codesignal.ProjectChange{anchorless},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+			})
+
+			Expect(report.Signals).To(BeEmpty())
+			Expect(report.Summary.ActiveSignals).To(Equal(0))
+			Expect(report.Summary.BaselineSignals).To(Equal(0))
+			for _, sig := range report.Signals {
+				Expect(sig.Path).NotTo(BeEmpty())
+			}
+
+			// Control: the same observation with a real anchor still maps once.
+			anchored := projectChange("cycle:pkg/a<->pkg/b", "architecture.layer_violation")
+			control := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
+				ProjectChanges:  []codesignal.ProjectChange{anchored},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+			})
+			Expect(control.Signals).To(HaveLen(1))
+			Expect(control.Signals[0].Path).To(Equal("pkg/a/a.go"))
+			Expect(control.Summary.ActiveSignals).To(Equal(1))
+		})
 	})
 
 	// F-004: same-kind facts with missing/duplicate keys and reversed coverage

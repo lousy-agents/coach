@@ -102,6 +102,70 @@ var _ = Describe("project-analysis text rendering", func() {
 		Expect(text).To(ContainSubstring("path step: func:Handler (Handler), resolution: static, confidence: medium"))
 		Expect(text).NotTo(ContainSubstring("Project findings:"))
 	})
+
+	// F-1: Build projects ProjectChange onto signals for JSON consumers while
+	// keeping project_changes for structured fields. Text must present each
+	// logical observation once (structured project block), not a plain signal
+	// body plus a Project findings body.
+	It("presents a Build-projected project observation once in text with structured fields", func() {
+		builder, err := codesignal.New(codesignal.Options{ProjectEnabled: true, Baseline: true})
+		Expect(err).NotTo(HaveOccurred())
+		report, err := builder.Build(context.Background(), codesignal.Input{
+			Files: []codesignal.FileChange{{
+				Path:   "file_local.go",
+				Status: "modified",
+				Head: &semantics.Result{
+					Path:        "file_local.go",
+					Language:    semantics.LanguageGo,
+					ParseStatus: "ok",
+					Findings: []semantics.Finding{{
+						Kind:     "mutates_input",
+						Name:     "Update",
+						Location: semantics.Location{StartRow: 0, EndRow: 0},
+						Evidence: "input.value = 1",
+					}},
+				},
+			}},
+			ProjectChanges: []codesignal.ProjectChange{{
+				SemanticKey: "cycle:pkg/a<->pkg/b",
+				RuleID:      "architecture.layer_violation",
+				RuleVersion: "1",
+				Kind:        "project_layer_violation",
+				Category:    "structure",
+				Severity:    "medium",
+				Confidence:  "high",
+				Evidence:    "domain imports infrastructure",
+				PrimaryAnchor: codesignal.ProjectLocation{
+					Path:     "pkg/a/a.go",
+					Location: semantics.Location{StartRow: 2},
+				},
+				RelatedLocations: []codesignal.ProjectLocation{{
+					Path: "pkg/b/b.go", Location: semantics.Location{StartRow: 4},
+				}},
+				PathSteps: []codesignal.ProjectPathStep{{
+					NodeID:      "package:pkg/a",
+					DisplayName: "pkg/a",
+					Resolution:  "resolved",
+					Confidence:  codesignal.Confidence("high"),
+				}},
+				Provenance: codesignal.Provenance{Producer: "projectmodel"},
+			}},
+			ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(report.Signals).NotTo(BeEmpty(), "Build must still project anchored project observations onto signals for JSON")
+		Expect(report.ProjectChanges).To(HaveLen(1))
+
+		text := RenderText(report)
+		Expect(text).To(ContainSubstring("path: file_local.go"), "file-local signals must still render")
+		Expect(strings.Count(text, "path: pkg/a/a.go")).To(Equal(1), "project primary path must appear once; text=\n%s", text)
+		Expect(strings.Count(text, "evidence: domain imports infrastructure")).To(Equal(1), "project evidence must appear once; text=\n%s", text)
+		Expect(strings.Count(text, "lifecycle:")).To(Equal(2), "one file-local + one project lifecycle line; text=\n%s", text)
+		Expect(text).To(ContainSubstring("Project findings:"))
+		Expect(text).To(ContainSubstring("semantic_key: cycle:pkg/a<->pkg/b"))
+		Expect(text).To(ContainSubstring("related: pkg/b/b.go:5"))
+		Expect(text).To(ContainSubstring("path step: package:pkg/a (pkg/a), resolution: resolved, confidence: high"))
+	})
 })
 
 // F-002: typed project handoff must reach the builder for baseline and diff
