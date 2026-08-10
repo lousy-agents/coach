@@ -35,10 +35,16 @@ type ProjectChange struct {
 	PathSteps            []ProjectPathStep `json:"path_steps,omitempty"`
 	CoverageRefs         []string          `json:"coverage_refs,omitempty"`
 	Evidence             string            `json:"evidence,omitempty"`
-	WhyItMatters         string            `json:"why_it_matters,omitempty"`
-	Recommendation       string            `json:"recommendation,omitempty"`
-	SuggestedSkill       string            `json:"suggested_skill,omitempty"`
-	Provenance           Provenance        `json:"provenance"`
+	// MachineEvidence holds structured rule evidence (e.g. importer/importee
+	// for architecture.layer_violation). Keys are frozen per rule; encoding/json
+	// sorts map keys so equivalent maps marshal byte-identically. Not part of
+	// lifecycle identity — producers fold causal machine fields into
+	// CausalEvidenceDigest when Changed must track them.
+	MachineEvidence map[string]string `json:"machine_evidence,omitempty"`
+	WhyItMatters    string            `json:"why_it_matters,omitempty"`
+	Recommendation  string            `json:"recommendation,omitempty"`
+	SuggestedSkill  string            `json:"suggested_skill,omitempty"`
+	Provenance      Provenance        `json:"provenance"`
 }
 
 // ProjectLocation anchors a ProjectChange (or one step/related point) to a

@@ -75,6 +75,36 @@ var _ = Describe("project-analysis text rendering", func() {
 		Expect(text).To(ContainSubstring("Project coverage: phase=full, complete=true"))
 	})
 
+	It("renders machine_evidence keys in sorted order under Project findings", func() {
+		report := &codesignal.Report{
+			SchemaVersion: "2",
+			Scope:         codesignal.Scope{AppliedScope: "all"},
+			ProjectChanges: []codesignal.ProjectChange{{
+				SemanticKey: "layer:domain->infra",
+				RuleID:      "architecture.layer_violation",
+				Lifecycle:   codesignal.Lifecycle("baseline"),
+				PrimaryAnchor: codesignal.ProjectLocation{
+					Path:     "pkg/domain/d.go",
+					Location: semantics.Location{StartRow: 0},
+				},
+				MachineEvidence: map[string]string{
+					"importer":  "pkg/domain",
+					"edge_kind": "internal",
+					"importee":  "pkg/infra",
+				},
+			}},
+			ProjectSummary: &codesignal.ProjectSummary{ActiveChanges: 1, BaselineChanges: 1},
+		}
+
+		text := RenderText(report)
+		edge := strings.Index(text, "machine_evidence.edge_kind: internal")
+		importee := strings.Index(text, "machine_evidence.importee: pkg/infra")
+		importer := strings.Index(text, "machine_evidence.importer: pkg/domain")
+		Expect(edge).To(BeNumerically(">=", 0))
+		Expect(importee).To(BeNumerically(">", edge))
+		Expect(importer).To(BeNumerically(">", importee))
+	})
+
 	It("renders facts-only observations under Facts without counting them as project findings", func() {
 		report := &codesignal.Report{
 			SchemaVersion: "2",

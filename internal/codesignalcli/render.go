@@ -187,6 +187,16 @@ func renderProjectChanges(b *strings.Builder, report *codesignal.Report) {
 		if change.Evidence != "" {
 			fmt.Fprintf(b, "evidence: %s\n", change.Evidence)
 		}
+		if len(change.MachineEvidence) > 0 {
+			keys := make([]string, 0, len(change.MachineEvidence))
+			for key := range change.MachineEvidence {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				fmt.Fprintf(b, "machine_evidence.%s: %s\n", key, change.MachineEvidence[key])
+			}
+		}
 		if change.WhyItMatters != "" {
 			fmt.Fprintf(b, "why it matters: %s\n", change.WhyItMatters)
 		}

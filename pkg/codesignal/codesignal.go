@@ -113,7 +113,26 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 
 	if b.options.ProjectEnabled {
 		hasBase := input.ProjectBaseAnalyzed
-		projectChanges = classifyProjectChanges(hasBase, projectLifecycleIndeterminate, input.ProjectChanges, input.BaseProjectChanges, noBaseLifecycle)
+		var projectDiags []Diagnostic
+		projectChanges, projectDiags = classifyProjectChanges(hasBase, projectLifecycleIndeterminate, input.ProjectChanges, input.BaseProjectChanges, noBaseLifecycle)
+		diagnostics = append(diagnostics, projectDiags...)
+
+		// Anchorless observations are not active findings: drop them from
+		// project_changes and counters, keep a diagnostic so producers use
+		// ProjectFact / coverage instead of inventing empty anchors.
+		anchored := projectChanges[:0]
+		for _, change := range projectChanges {
+			if change.PrimaryAnchor.Path == "" {
+				diagnostics = append(diagnostics, Diagnostic{
+					Kind: "project_observation_missing_primary_path",
+					Message: "project observation semantic_key \"" + change.SemanticKey +
+						"\" omitted from active project findings: primary_anchor.path is empty",
+				})
+				continue
+			}
+			anchored = append(anchored, change)
+		}
+		projectChanges = anchored
 
 		summaryCounts := ProjectSummary{}
 		for _, change := range projectChanges {
@@ -129,11 +148,8 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 			}
 			// Active project observations also appear on the shared signals
 			// surface and normal summary counters (#208 Story 5 / F-003).
-			// Every active project Signal requires a repository-relative
-			// primary path; anchorless observations stay facts/coverage only.
-			if change.PrimaryAnchor.Path != "" {
-				signals = append(signals, signalFromProjectChange(change))
-			}
+			// Paths are non-empty after the anchorless filter above.
+			signals = append(signals, signalFromProjectChange(change))
 		}
 
 		if !b.options.IncludeResolved {
@@ -155,6 +171,10 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 		sortProjectFacts(projectFacts)
 		projectCoverage = cloneProjectCoverage(input.ProjectCoverage)
 	}
+
+	// Project hardening diagnostics are appended after the earlier sort; re-sort
+	// so report diagnostics stay totally ordered.
+	sortDiagnostics(diagnostics)
 
 	summary := Summary{
 		FilesAnalyzed:        len(input.Files),
