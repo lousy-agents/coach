@@ -7,27 +7,40 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// indexProjectChangesByKey maps changes by SemanticKey. Unlike Signal's
-// groupAndOrder (which must tolerate several signals sharing one composite
-// key and assign occurrence ordinals), ProjectChange's SemanticKey is
-// itself the lifecycle identity, so a plain map lookup with no ordinal
-// machinery is sufficient -- see ProjectChange's doc comment.
-func indexProjectChangesByKey(changes []ProjectChange) map[string]ProjectChange {
+// indexProjectChangesByKey maps changes by SemanticKey, keeping the first
+// occurrence. Duplicates violate the one-observation-per-key producer
+// invariant and yield project_duplicate_semantic_key diagnostics rather than
+// silent last-write-wins. Unlike Signal's groupAndOrder (which tolerates
+// several signals sharing one composite key and assigns occurrence ordinals),
+// ProjectChange's SemanticKey is itself the lifecycle identity.
+func indexProjectChangesByKey(changes []ProjectChange) (map[string]ProjectChange, []Diagnostic) {
 	byKey := make(map[string]ProjectChange, len(changes))
+	var diagnostics []Diagnostic
 	for _, change := range changes {
+		if _, exists := byKey[change.SemanticKey]; exists {
+			diagnostics = append(diagnostics, Diagnostic{
+				Path: change.PrimaryAnchor.Path,
+				Kind: "project_duplicate_semantic_key",
+				Message: "duplicate project observation semantic_key \"" + change.SemanticKey +
+					"\"; keeping the first occurrence",
+			})
+			continue
+		}
 		byKey[change.SemanticKey] = change
 	}
-	return byKey
+	return byKey, diagnostics
 }
 
 // classifyProjectChanges computes identity, lifecycle, and causal Changed
 // state for every project change on either side of a comparison. When
 // lifecycleIndeterminate is true, no observation is promoted to introduced,
 // existing, or resolved because one of the compared project models is not
-// complete.
-func classifyProjectChanges(hasBase, lifecycleIndeterminate bool, headChanges, baseChanges []ProjectChange, noBaseLifecycle Lifecycle) []ProjectChange {
-	headByKey := indexProjectChangesByKey(headChanges)
-	baseByKey := indexProjectChangesByKey(baseChanges)
+// complete. Duplicate SemanticKeys on either side produce diagnostics and
+// keep the first occurrence only.
+func classifyProjectChanges(hasBase, lifecycleIndeterminate bool, headChanges, baseChanges []ProjectChange, noBaseLifecycle Lifecycle) ([]ProjectChange, []Diagnostic) {
+	headByKey, headDiags := indexProjectChangesByKey(headChanges)
+	baseByKey, baseDiags := indexProjectChangesByKey(baseChanges)
+	diagnostics := append(headDiags, baseDiags...)
 
 	result := make([]ProjectChange, 0, len(headByKey)+len(baseByKey))
 
@@ -69,7 +82,7 @@ func classifyProjectChanges(hasBase, lifecycleIndeterminate bool, headChanges, b
 		result = append(result, change)
 	}
 
-	return result
+	return result, diagnostics
 }
 
 func projectChangeChanged(head, base ProjectChange) bool {

@@ -301,7 +301,8 @@ var _ = Describe("Project-analysis report generation", func() {
 		})
 
 		// F-2: every active project Signal requires a repository-relative primary
-		// path; anchorless observations stay out of the shared signals surface.
+		// path; anchorless observations stay facts/coverage only — not Signals,
+		// not project_changes, and not ProjectSummary active counters.
 		It("does not promote a ProjectChange with an empty primary anchor path to a Signal", func() {
 			anchorless := projectChange("cycle:pkg/a<->pkg/b", "architecture.layer_violation")
 			anchorless.PrimaryAnchor = codesignal.ProjectLocation{}
@@ -314,6 +315,10 @@ var _ = Describe("Project-analysis report generation", func() {
 			Expect(report.Signals).To(BeEmpty())
 			Expect(report.Summary.ActiveSignals).To(Equal(0))
 			Expect(report.Summary.BaselineSignals).To(Equal(0))
+			Expect(report.ProjectChanges).To(BeEmpty(), "anchorless observations must not appear as project findings")
+			Expect(report.ProjectSummary.ActiveChanges).To(Equal(0))
+			Expect(report.ProjectSummary.BaselineChanges).To(Equal(0))
+			Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_observation_missing_primary_path")))
 			for _, sig := range report.Signals {
 				Expect(sig.Path).NotTo(BeEmpty())
 			}
@@ -327,6 +332,55 @@ var _ = Describe("Project-analysis report generation", func() {
 			Expect(control.Signals).To(HaveLen(1))
 			Expect(control.Signals[0].Path).To(Equal("pkg/a/a.go"))
 			Expect(control.Summary.ActiveSignals).To(Equal(1))
+		})
+	})
+
+	Describe("project observation input hardening", func() {
+		It("keeps the first ProjectChange per SemanticKey and emits project_duplicate_semantic_key", func() {
+			first := projectChange("cycle:pkg/a<->pkg/b", "architecture.layer_violation")
+			first.Evidence = "first"
+			second := projectChange("cycle:pkg/a<->pkg/b", "architecture.layer_violation")
+			second.Evidence = "second"
+			second.PrimaryAnchor.Path = "pkg/other/o.go"
+
+			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
+				ProjectChanges:  []codesignal.ProjectChange{first, second},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+			})
+
+			Expect(report.ProjectChanges).To(HaveLen(1))
+			Expect(report.ProjectChanges[0].Evidence).To(Equal("first"))
+			Expect(report.ProjectChanges[0].PrimaryAnchor.Path).To(Equal("pkg/a/a.go"))
+			Expect(report.ProjectSummary.ActiveChanges).To(Equal(1))
+			Expect(report.Signals).To(HaveLen(1))
+			Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_duplicate_semantic_key")))
+		})
+
+		It("serializes structured machine_evidence with stable key order for layer-violation consumers", func() {
+			change := projectChange("layer:domain->infra", "architecture.layer_violation")
+			change.Kind = "project_layer_violation"
+			change.MachineEvidence = map[string]string{
+				"policy_rule":    "domain_must_not_import_infrastructure",
+				"importer":       "pkg/domain",
+				"importee":       "pkg/infra",
+				"importer_layer": "domain",
+				"importee_layer": "infrastructure",
+				"edge_kind":      "internal",
+			}
+
+			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
+				ProjectChanges:  []codesignal.ProjectChange{change},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+			})
+
+			Expect(report.ProjectChanges).To(HaveLen(1))
+			Expect(report.ProjectChanges[0].MachineEvidence).To(HaveKeyWithValue("importer", "pkg/domain"))
+			Expect(report.ProjectChanges[0].MachineEvidence).To(HaveKeyWithValue("policy_rule", "domain_must_not_import_infrastructure"))
+
+			raw, err := json.Marshal(report.ProjectChanges[0])
+			Expect(err).NotTo(HaveOccurred())
+			// encoding/json sorts map keys; freeze the epic #208 field set order in the wire bytes.
+			Expect(string(raw)).To(ContainSubstring(`"machine_evidence":{"edge_kind":"internal","importee":"pkg/infra","importee_layer":"infrastructure","importer":"pkg/domain","importer_layer":"domain","policy_rule":"domain_must_not_import_infrastructure"}`))
 		})
 	})
 
