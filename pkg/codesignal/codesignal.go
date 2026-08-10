@@ -195,12 +195,11 @@ func buildProjectReportSurface(input Input, noBaseLifecycle Lifecycle, includeRe
 		projectChanges = filtered
 	}
 
-	sortProjectChanges(projectChanges)
+	projectChanges = sortProjectChanges(projectChanges)
 	summaryCounts.ActiveChanges = len(projectChanges)
 	projectSummary = &summaryCounts
 
-	projectFacts = append([]ProjectFact(nil), input.ProjectFacts...)
-	sortProjectFacts(projectFacts)
+	projectFacts = sortProjectFacts(append([]ProjectFact(nil), input.ProjectFacts...))
 	projectCoverage = cloneProjectCoverage(input.ProjectCoverage)
 	return projectChanges, projectFacts, projectSummary, projectCoverage, projectSignals, diagnostics
 }

@@ -101,33 +101,37 @@ func sortedProjectKeys(byKey map[string]ProjectChange) []string {
 	return keys
 }
 
-// sortProjectChanges sorts classified changes by SemanticKey, ties broken
-// by RuleID, mirroring sortSignals's deterministic-output guarantee. Nested
-// related_locations, coverage_refs, and path-step source_locations are also
-// canonicalized; path_steps themselves keep producer order (witness path).
-func sortProjectChanges(changes []ProjectChange) {
+// sortProjectChanges returns classified changes ordered by SemanticKey, ties
+// broken by RuleID, mirroring sortSignals's deterministic-output guarantee.
+// Nested related_locations, coverage_refs, and path-step source_locations are
+// canonicalized into a fresh slice; path_steps themselves keep producer order.
+func sortProjectChanges(changes []ProjectChange) []ProjectChange {
+	out := make([]ProjectChange, len(changes))
 	for i := range changes {
-		changes[i] = withCanonicalProjectChangeArrays(changes[i])
+		out[i] = withCanonicalProjectChangeArrays(changes[i])
 	}
-	sort.SliceStable(changes, func(i, j int) bool {
-		a, b := changes[i], changes[j]
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
 		if a.SemanticKey != b.SemanticKey {
 			return a.SemanticKey < b.SemanticKey
 		}
 		return a.RuleID < b.RuleID
 	})
+	return out
 }
 
-// sortProjectFacts sorts facts-only observations with a total order over every
-// serialized field so equivalent analyses remain byte-identical even when
-// producers omit or duplicate semantic keys (F-004).
-func sortProjectFacts(facts []ProjectFact) {
+// sortProjectFacts returns facts-only observations with a total order over
+// every serialized field so equivalent analyses remain byte-identical even
+// when producers omit or duplicate semantic keys (F-004).
+func sortProjectFacts(facts []ProjectFact) []ProjectFact {
+	out := make([]ProjectFact, len(facts))
 	for i := range facts {
-		facts[i] = withCanonicalProjectFactArrays(facts[i])
+		out[i] = withCanonicalProjectFactArrays(facts[i])
 	}
-	sort.SliceStable(facts, func(i, j int) bool {
-		return compareProjectFacts(facts[i], facts[j]) < 0
+	sort.SliceStable(out, func(i, j int) bool {
+		return compareProjectFacts(out[i], out[j]) < 0
 	})
+	return out
 }
 
 func compareProjectFacts(a, b ProjectFact) int {
