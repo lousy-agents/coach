@@ -200,8 +200,7 @@ func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codes
 		fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
 		return nil, 0, nil
 	}
-	attachProjectDiagnostic(report, diag)
-	return report, projectExitCode, nil
+	return withProjectDiagnostic(report, diag), projectExitCode, nil
 }
 
 func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, int, error) {
@@ -228,16 +227,17 @@ func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesigna
 		fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
 		return nil, 0, nil
 	}
-	attachProjectDiagnostic(report, diag)
-	return report, projectExitCode, nil
+	return withProjectDiagnostic(report, diag), projectExitCode, nil
 }
 
-func attachProjectDiagnostic(report *codesignal.Report, diag *codesignal.Diagnostic) {
+func withProjectDiagnostic(report *codesignal.Report, diag *codesignal.Diagnostic) *codesignal.Report {
 	if report == nil || diag == nil {
-		return
+		return report
 	}
-	report.Diagnostics = append(report.Diagnostics, *diag)
-	sortReportDiagnostics(report)
+	out := *report
+	out.Diagnostics = append(append([]codesignal.Diagnostic(nil), report.Diagnostics...), *diag)
+	codesignal.SortDiagnostics(out.Diagnostics)
+	return &out
 }
 
 // prepareProjectAnalysis resolves the typed project handoff. When the flag is
@@ -286,10 +286,6 @@ func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configP
 		ConfigDigest: codesignalcli.ConfigDigest(config),
 		Backend:      backend,
 	}, nil, 0, nil
-}
-
-func sortReportDiagnostics(report *codesignal.Report) {
-	codesignal.SortDiagnostics(report.Diagnostics)
 }
 
 func renderReport(report *codesignal.Report, format string, stdout, stderr *os.File) int {

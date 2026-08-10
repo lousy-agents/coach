@@ -94,12 +94,11 @@ var _ = Describe("coach project-analysis failure reports", func() {
 				{Path: "a.go", Kind: "syntax_errors", Message: "aaa", Location: loc(2)},
 			},
 		}
-		report.Diagnostics = append(report.Diagnostics, codesignal.Diagnostic{
+		report = withProjectDiagnostic(report, &codesignal.Diagnostic{
 			Kind:    "project_config_invalid",
 			Path:    "project.json",
 			Message: "bad config",
 		})
-		sortReportDiagnostics(report)
 
 		Expect(report.Diagnostics).To(HaveLen(3))
 		Expect(report.Diagnostics[0].Message).To(Equal("zzz"), "location row 1 must sort before row 2 even when its message is lexicographically later")
