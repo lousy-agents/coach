@@ -58,12 +58,11 @@ func ConfigDigest(config json.RawMessage) string {
 	return "pcfg_" + hex.EncodeToString(sum[:])
 }
 
-func applyProjectBackend(ctx context.Context, input *codesignal.Input, opts *codesignal.Options, project *ProjectAnalysis, dir, headRevision, baseRevision string, baseline bool) error {
-	if project == nil {
-		return nil
-	}
-	if project.Backend == nil {
-		return nil
+// applyProjectBackend returns input/options with project observations applied.
+// Callers pass values; results are new values (no in-place mutation).
+func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codesignal.Options, project *ProjectAnalysis, dir, headRevision, baseRevision string, baseline bool) (codesignal.Input, codesignal.Options, error) {
+	if project == nil || project.Backend == nil {
+		return input, opts, nil
 	}
 	result, err := project.Backend.Analyze(ctx, ProjectBackendRequest{
 		Dir:          dir,
@@ -76,17 +75,27 @@ func applyProjectBackend(ctx context.Context, input *codesignal.Input, opts *cod
 		Language:     project.Language,
 	})
 	if err != nil {
-		return err
+		return input, opts, err
 	}
-	opts.ProjectEnabled = true
+	enabled := codesignal.Options{
+		IncludeResolved: opts.IncludeResolved,
+		Baseline:        opts.Baseline,
+		ProjectEnabled:  true,
+	}
 	if result == nil {
-		return nil
+		return input, enabled, nil
 	}
-	input.ProjectChanges = result.HeadChanges
-	input.BaseProjectChanges = result.BaseChanges
-	input.ProjectFacts = result.Facts
-	input.ProjectCoverage = result.HeadCoverage
-	input.BaseProjectCoverage = result.BaseCoverage
-	input.ProjectBaseAnalyzed = result.BaseAnalyzed
-	return nil
+	merged := codesignal.Input{
+		Scope:               input.Scope,
+		Files:               input.Files,
+		Diagnostics:         input.Diagnostics,
+		Coverage:            input.Coverage,
+		ProjectChanges:      result.HeadChanges,
+		BaseProjectChanges:  result.BaseChanges,
+		ProjectFacts:        result.Facts,
+		ProjectCoverage:     result.HeadCoverage,
+		BaseProjectCoverage: result.BaseCoverage,
+		ProjectBaseAnalyzed: result.BaseAnalyzed,
+	}
+	return merged, enabled, nil
 }

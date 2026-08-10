@@ -107,7 +107,7 @@ func sortedProjectKeys(byKey map[string]ProjectChange) []string {
 // canonicalized; path_steps themselves keep producer order (witness path).
 func sortProjectChanges(changes []ProjectChange) {
 	for i := range changes {
-		canonicalizeProjectChangeArrays(&changes[i])
+		changes[i] = withCanonicalProjectChangeArrays(changes[i])
 	}
 	sort.SliceStable(changes, func(i, j int) bool {
 		a, b := changes[i], changes[j]
@@ -123,7 +123,7 @@ func sortProjectChanges(changes []ProjectChange) {
 // producers omit or duplicate semantic keys (F-004).
 func sortProjectFacts(facts []ProjectFact) {
 	for i := range facts {
-		canonicalizeProjectFactArrays(&facts[i])
+		facts[i] = withCanonicalProjectFactArrays(facts[i])
 	}
 	sort.SliceStable(facts, func(i, j int) bool {
 		return compareProjectFacts(facts[i], facts[j]) < 0
@@ -228,18 +228,47 @@ func comparePathSteps(a, b ProjectPathStep) int {
 	}
 }
 
-func canonicalizeProjectChangeArrays(change *ProjectChange) {
-	change.RelatedLocations = canonicalProjectLocations(change.RelatedLocations)
-	change.CoverageRefs = canonicalStringSlice(change.CoverageRefs)
-	// PathSteps is a shared slice header after a shallow ProjectChange copy
-	// (classify copies structs, not nested slices). Copy before rewriting
-	// SourceLocations so Build never mutates the caller's Input.
-	change.PathSteps = canonicalPathSteps(change.PathSteps)
+func withCanonicalProjectChangeArrays(in ProjectChange) ProjectChange {
+	// Copy nested slices before rewriting so Build never mutates caller Input
+	// headers shared after shallow ProjectChange copies from classify.
+	return ProjectChange{
+		SemanticKey:          in.SemanticKey,
+		ID:                   in.ID,
+		Fingerprint:          in.Fingerprint,
+		RuleID:               in.RuleID,
+		RuleVersion:          in.RuleVersion,
+		BackendVersion:       in.BackendVersion,
+		AlgorithmVersion:     in.AlgorithmVersion,
+		ConfigDigest:         in.ConfigDigest,
+		Kind:                 in.Kind,
+		Category:             in.Category,
+		Severity:             in.Severity,
+		Confidence:           in.Confidence,
+		Lifecycle:            in.Lifecycle,
+		Changed:              in.Changed,
+		CausalEvidenceDigest: in.CausalEvidenceDigest,
+		PrimaryAnchor:        in.PrimaryAnchor,
+		RelatedLocations:     canonicalProjectLocations(in.RelatedLocations),
+		PathSteps:            canonicalPathSteps(in.PathSteps),
+		CoverageRefs:         canonicalStringSlice(in.CoverageRefs),
+		Evidence:             in.Evidence,
+		MachineEvidence:      in.MachineEvidence,
+		WhyItMatters:         in.WhyItMatters,
+		Recommendation:       in.Recommendation,
+		SuggestedSkill:       in.SuggestedSkill,
+		Provenance:           in.Provenance,
+	}
 }
 
-func canonicalizeProjectFactArrays(fact *ProjectFact) {
-	fact.CoverageRefs = canonicalStringSlice(fact.CoverageRefs)
-	fact.PathSteps = canonicalPathSteps(fact.PathSteps)
+func withCanonicalProjectFactArrays(in ProjectFact) ProjectFact {
+	return ProjectFact{
+		Kind:         in.Kind,
+		SemanticKey:  in.SemanticKey,
+		PathSteps:    canonicalPathSteps(in.PathSteps),
+		CoverageRefs: canonicalStringSlice(in.CoverageRefs),
+		Evidence:     in.Evidence,
+		Provenance:   in.Provenance,
+	}
 }
 
 func canonicalPathSteps(in []ProjectPathStep) []ProjectPathStep {

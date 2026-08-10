@@ -58,7 +58,8 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 		Diagnostics: diagnostics,
 		Coverage:    coverage,
 	}
-	if err := applyProjectBackend(ctx, &input, &opts, project, dir, headSHA, mergeBaseSHA, false); err != nil {
+	input, opts, err = applyProjectBackend(ctx, input, opts, project, dir, headSHA, mergeBaseSHA, false)
+	if err != nil {
 		return nil, err
 	}
 	builder, err := codesignal.New(opts)
@@ -129,7 +130,8 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []Selec
 		Diagnostics: diagnostics,
 		Coverage:    &coverage,
 	}
-	if err := applyProjectBackend(ctx, &input, &opts, project, dir, revisionSHA, "", true); err != nil {
+	input, opts, err = applyProjectBackend(ctx, input, opts, project, dir, revisionSHA, "", true)
+	if err != nil {
 		return nil, err
 	}
 	builder, err := codesignal.New(opts)
