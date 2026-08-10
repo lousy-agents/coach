@@ -129,7 +129,11 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 			}
 			// Active project observations also appear on the shared signals
 			// surface and normal summary counters (#208 Story 5 / F-003).
-			signals = append(signals, signalFromProjectChange(change))
+			// Every active project Signal requires a repository-relative
+			// primary path; anchorless observations stay facts/coverage only.
+			if change.PrimaryAnchor.Path != "" {
+				signals = append(signals, signalFromProjectChange(change))
+			}
 		}
 
 		if !b.options.IncludeResolved {
