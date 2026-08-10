@@ -21,57 +21,71 @@ import (
 // unchanged.
 func RenderText(report *codesignal.Report) string {
 	var b strings.Builder
-
-	if report.Scope.Baseline {
-		renderBaselineSummary(&b, report)
-	} else {
-		renderDiffSummary(&b, report)
-	}
-
-	// Build projects anchored ProjectChanges onto Signals for JSON consumers
-	// while retaining project_changes for structured fields. Text must present
-	// each logical observation once: file-local signals via the signal block,
-	// project-origin findings only under Project findings (matched by Signal.ID).
-	projectSignalIDs := projectChangeSignalIDs(report.ProjectChanges)
-
-	if len(report.Signals) == 0 && len(report.ProjectChanges) == 0 {
-		b.WriteString("No active CodeSignal findings.\n")
-		renderProjectSummary(&b, report.ProjectSummary)
-	} else {
-		renderedSignal := false
-		for _, signal := range report.Signals {
-			if _, isProject := projectSignalIDs[signal.ID]; isProject {
-				continue
-			}
-			if renderedSignal {
-				b.WriteString("\n")
-			}
-			renderSignal(&b, signal)
-			renderedSignal = true
-		}
-		if len(report.ProjectChanges) > 0 {
-			if renderedSignal {
-				b.WriteString("\n")
-			}
-			renderProjectChanges(&b, report)
-		} else if report.ProjectSummary != nil {
-			renderProjectSummary(&b, report.ProjectSummary)
-		}
-	}
-
+	renderReportSummary(&b, report)
+	renderActiveFindings(&b, report)
 	renderProjectFacts(&b, report.ProjectFacts)
-
-	if len(report.Diagnostics) > 0 {
-		b.WriteString("\nDiagnostics:\n")
-		for _, diagnostic := range report.Diagnostics {
-			renderDiagnostic(&b, diagnostic)
-		}
-	}
-
+	renderDiagnosticsSection(&b, report.Diagnostics)
 	renderCoverageSection(&b, report.Coverage)
 	renderProjectCoverageSection(&b, report.ProjectCoverage)
-
 	return b.String()
+}
+
+func renderReportSummary(b *strings.Builder, report *codesignal.Report) {
+	if report.Scope.Baseline {
+		renderBaselineSummary(b, report)
+		return
+	}
+	renderDiffSummary(b, report)
+}
+
+// renderActiveFindings writes file-local signal blocks and structured project
+// findings. Build projects anchored ProjectChanges onto Signals for JSON
+// consumers while retaining project_changes for structured fields; text must
+// present each logical observation once (project-origin IDs skipped in the
+// plain signal loop).
+func renderActiveFindings(b *strings.Builder, report *codesignal.Report) {
+	if len(report.Signals) == 0 && len(report.ProjectChanges) == 0 {
+		b.WriteString("No active CodeSignal findings.\n")
+		renderProjectSummary(b, report.ProjectSummary)
+		return
+	}
+
+	renderedSignal := renderFileLocalSignals(b, report.Signals, projectChangeSignalIDs(report.ProjectChanges))
+	if len(report.ProjectChanges) > 0 {
+		if renderedSignal {
+			b.WriteString("\n")
+		}
+		renderProjectChanges(b, report)
+		return
+	}
+	if report.ProjectSummary != nil {
+		renderProjectSummary(b, report.ProjectSummary)
+	}
+}
+
+func renderFileLocalSignals(b *strings.Builder, signals []codesignal.Signal, projectSignalIDs map[string]struct{}) bool {
+	rendered := false
+	for _, signal := range signals {
+		if _, isProject := projectSignalIDs[signal.ID]; isProject {
+			continue
+		}
+		if rendered {
+			b.WriteString("\n")
+		}
+		renderSignal(b, signal)
+		rendered = true
+	}
+	return rendered
+}
+
+func renderDiagnosticsSection(b *strings.Builder, diagnostics []codesignal.Diagnostic) {
+	if len(diagnostics) == 0 {
+		return
+	}
+	b.WriteString("\nDiagnostics:\n")
+	for _, diagnostic := range diagnostics {
+		renderDiagnostic(b, diagnostic)
+	}
 }
 
 // renderBaselineSummary writes the Repository Baseline summary line: the
@@ -178,58 +192,32 @@ func projectChangeSignalIDs(changes []codesignal.ProjectChange) map[string]struc
 func renderProjectChanges(b *strings.Builder, report *codesignal.Report) {
 	b.WriteString("Project findings:\n")
 	for i, change := range report.ProjectChanges {
-		fmt.Fprintf(b, "semantic_key: %s\n", change.SemanticKey)
-		fmt.Fprintf(b, "rule_id: %s\n", change.RuleID)
-		fmt.Fprintf(b, "path: %s\n", change.PrimaryAnchor.Path)
-		fmt.Fprintf(b, "line: %d\n", change.PrimaryAnchor.Location.StartRow+1)
-		fmt.Fprintf(b, "lifecycle: %s\n", change.Lifecycle)
-		fmt.Fprintf(b, "changed: %t\n", change.Changed)
-		if change.Evidence != "" {
-			fmt.Fprintf(b, "evidence: %s\n", change.Evidence)
-		}
-		if len(change.MachineEvidence) > 0 {
-			keys := make([]string, 0, len(change.MachineEvidence))
-			for key := range change.MachineEvidence {
-				keys = append(keys, key)
-			}
-			sort.Strings(keys)
-			for _, key := range keys {
-				fmt.Fprintf(b, "machine_evidence.%s: %s\n", key, change.MachineEvidence[key])
-			}
-		}
-		if change.WhyItMatters != "" {
-			fmt.Fprintf(b, "why it matters: %s\n", change.WhyItMatters)
-		}
-		if change.Recommendation != "" {
-			fmt.Fprintf(b, "recommendation: %s\n", change.Recommendation)
-		}
-		for _, location := range change.RelatedLocations {
-			fmt.Fprintf(b, "related: %s:%d\n", location.Path, location.Location.StartRow+1)
-		}
-		for _, ref := range change.CoverageRefs {
-			fmt.Fprintf(b, "coverage_ref: %s\n", ref)
-		}
-		for _, step := range change.PathSteps {
-			fmt.Fprintf(b, "path step: %s", step.NodeID)
-			if step.DisplayName != "" {
-				fmt.Fprintf(b, " (%s)", step.DisplayName)
-			}
-			if step.Resolution != "" {
-				fmt.Fprintf(b, ", resolution: %s", step.Resolution)
-			}
-			if step.Confidence != "" {
-				fmt.Fprintf(b, ", confidence: %s", step.Confidence)
-			}
-			b.WriteByte('\n')
-			for _, location := range step.SourceLocations {
-				fmt.Fprintf(b, "  source: %s:%d\n", location.Path, location.Location.StartRow+1)
-			}
-		}
+		renderOneProjectChange(b, change)
 		if i != len(report.ProjectChanges)-1 {
 			b.WriteString("\n")
 		}
 	}
 	renderProjectSummary(b, report.ProjectSummary)
+}
+
+func renderOneProjectChange(b *strings.Builder, change codesignal.ProjectChange) {
+	fmt.Fprintf(b, "semantic_key: %s\n", change.SemanticKey)
+	fmt.Fprintf(b, "rule_id: %s\n", change.RuleID)
+	fmt.Fprintf(b, "path: %s\n", change.PrimaryAnchor.Path)
+	fmt.Fprintf(b, "line: %d\n", change.PrimaryAnchor.Location.StartRow+1)
+	fmt.Fprintf(b, "lifecycle: %s\n", change.Lifecycle)
+	fmt.Fprintf(b, "changed: %t\n", change.Changed)
+	writeOptionalLine(b, "evidence", change.Evidence)
+	renderMachineEvidence(b, change.MachineEvidence)
+	writeOptionalLine(b, "why it matters", change.WhyItMatters)
+	writeOptionalLine(b, "recommendation", change.Recommendation)
+	for _, location := range change.RelatedLocations {
+		fmt.Fprintf(b, "related: %s:%d\n", location.Path, location.Location.StartRow+1)
+	}
+	for _, ref := range change.CoverageRefs {
+		fmt.Fprintf(b, "coverage_ref: %s\n", ref)
+	}
+	renderPathSteps(b, change.PathSteps)
 }
 
 func renderProjectSummary(b *strings.Builder, summary *codesignal.ProjectSummary) {
@@ -252,34 +240,59 @@ func renderProjectFacts(b *strings.Builder, facts []codesignal.ProjectFact) {
 	}
 	b.WriteString("\nFacts:\n")
 	for i, fact := range facts {
-		fmt.Fprintf(b, "kind: %s\n", fact.Kind)
-		if fact.SemanticKey != "" {
-			fmt.Fprintf(b, "semantic_key: %s\n", fact.SemanticKey)
-		}
-		if fact.Evidence != "" {
-			fmt.Fprintf(b, "evidence: %s\n", fact.Evidence)
-		}
-		for _, ref := range fact.CoverageRefs {
-			fmt.Fprintf(b, "coverage_ref: %s\n", ref)
-		}
-		for _, step := range fact.PathSteps {
-			fmt.Fprintf(b, "path step: %s", step.NodeID)
-			if step.DisplayName != "" {
-				fmt.Fprintf(b, " (%s)", step.DisplayName)
-			}
-			if step.Resolution != "" {
-				fmt.Fprintf(b, ", resolution: %s", step.Resolution)
-			}
-			if step.Confidence != "" {
-				fmt.Fprintf(b, ", confidence: %s", step.Confidence)
-			}
-			b.WriteByte('\n')
-			for _, location := range step.SourceLocations {
-				fmt.Fprintf(b, "  source: %s:%d\n", location.Path, location.Location.StartRow+1)
-			}
-		}
+		renderOneProjectFact(b, fact)
 		if i != len(facts)-1 {
 			b.WriteString("\n")
+		}
+	}
+}
+
+func renderOneProjectFact(b *strings.Builder, fact codesignal.ProjectFact) {
+	fmt.Fprintf(b, "kind: %s\n", fact.Kind)
+	writeOptionalLine(b, "semantic_key", fact.SemanticKey)
+	writeOptionalLine(b, "evidence", fact.Evidence)
+	for _, ref := range fact.CoverageRefs {
+		fmt.Fprintf(b, "coverage_ref: %s\n", ref)
+	}
+	renderPathSteps(b, fact.PathSteps)
+}
+
+func writeOptionalLine(b *strings.Builder, label, value string) {
+	if value == "" {
+		return
+	}
+	fmt.Fprintf(b, "%s: %s\n", label, value)
+}
+
+func renderMachineEvidence(b *strings.Builder, evidence map[string]string) {
+	if len(evidence) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(evidence))
+	for key := range evidence {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		fmt.Fprintf(b, "machine_evidence.%s: %s\n", key, evidence[key])
+	}
+}
+
+func renderPathSteps(b *strings.Builder, steps []codesignal.ProjectPathStep) {
+	for _, step := range steps {
+		fmt.Fprintf(b, "path step: %s", step.NodeID)
+		if step.DisplayName != "" {
+			fmt.Fprintf(b, " (%s)", step.DisplayName)
+		}
+		if step.Resolution != "" {
+			fmt.Fprintf(b, ", resolution: %s", step.Resolution)
+		}
+		if step.Confidence != "" {
+			fmt.Fprintf(b, ", confidence: %s", step.Confidence)
+		}
+		b.WriteByte('\n')
+		for _, location := range step.SourceLocations {
+			fmt.Fprintf(b, "  source: %s:%d\n", location.Path, location.Location.StartRow+1)
 		}
 	}
 }
@@ -290,24 +303,24 @@ func renderProjectCoverageSection(b *strings.Builder, coverage *projectmodel.Cov
 	}
 
 	fmt.Fprintf(b, "\nProject coverage: phase=%s, complete=%t\n", coverage.Phase, coverage.Complete)
-	keys := make([]string, 0, len(coverage.Counts))
-	for key := range coverage.Counts {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		fmt.Fprintf(b, "  count: %s=%d\n", key, coverage.Counts[key])
-	}
-	keys = keys[:0]
-	for key := range coverage.Budgets {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		fmt.Fprintf(b, "  budget: %s=%d\n", key, coverage.Budgets[key])
-	}
+	writeSortedIntMap(b, "count", coverage.Counts)
+	writeSortedIntMap(b, "budget", coverage.Budgets)
 	for _, diagnostic := range coverage.Diagnostics {
 		fmt.Fprintf(b, "  project diagnostic: %s: %s\n", diagnostic.Code, diagnostic.Message)
+	}
+}
+
+func writeSortedIntMap(b *strings.Builder, label string, values map[string]int) {
+	if len(values) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		fmt.Fprintf(b, "  %s: %s=%d\n", label, key, values[key])
 	}
 }
 

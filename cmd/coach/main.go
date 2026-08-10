@@ -62,7 +62,50 @@ run "coach codesignal --help" for command-specific help.`
 
 const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript]"
 
+type codesignalFlags struct {
+	base             string
+	baseline         bool
+	format           string
+	scope            string
+	buildTarget      string
+	projectConfig    string
+	projectLanguage  string
+	projectConfigSet bool
+}
+
 func runCodesignal(args []string, stdout, stderr *os.File) int {
+	parsed, exitCode, ok := parseCodesignalFlags(args, stdout, stderr)
+	if !ok {
+		return exitCode
+	}
+
+	dir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(stderr, "coach codesignal: cannot determine working directory: %s\n", err)
+		return 1
+	}
+
+	var report *codesignal.Report
+	var projectExitCode int
+	if parsed.baseline {
+		report, projectExitCode, err = runBaselineAnalysis(dir, parsed, stderr)
+	} else {
+		report, projectExitCode, err = runDiffAnalysis(dir, parsed, stderr)
+	}
+	if err != nil {
+		return reportOperationalError(err, stderr)
+	}
+	if report == nil {
+		return 1
+	}
+
+	if exitCode := renderReport(report, parsed.format, stdout, stderr); exitCode != 0 {
+		return exitCode
+	}
+	return projectExitCode
+}
+
+func parseCodesignalFlags(args []string, stdout, stderr *os.File) (codesignalFlags, int, bool) {
 	flags := flag.NewFlagSet("codesignal", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	base := flags.String("base", "", "git ref to diff against (mutually exclusive with --baseline)")
@@ -81,12 +124,12 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 			flags.SetOutput(stderr)
 			fmt.Fprintln(stdout, codesignalUsage)
 			fmt.Fprint(stdout, buffer.String())
-			return 0
+			return codesignalFlags{}, 0, false
 		}
 	}
 
 	if err := flags.Parse(args); err != nil {
-		return 2
+		return codesignalFlags{}, 2, false
 	}
 
 	projectConfigSet := false
@@ -96,107 +139,105 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		}
 	})
 
-	if *baseline && *base != "" {
-		fmt.Fprintln(stderr, codesignalUsage)
-		fmt.Fprintln(stderr, "coach: --baseline and --base are mutually exclusive: choose a Repository Baseline scan (--baseline) or a diff comparison (--base), not both")
-		return 2
+	parsed := codesignalFlags{
+		base:             *base,
+		baseline:         *baseline,
+		format:           *format,
+		scope:            *scope,
+		buildTarget:      *buildTarget,
+		projectConfig:    *projectConfig,
+		projectLanguage:  *projectLanguage,
+		projectConfigSet: projectConfigSet,
 	}
+	if errMsg := validateCodesignalFlags(parsed); errMsg != "" {
+		fmt.Fprintln(stderr, codesignalUsage)
+		fmt.Fprintln(stderr, errMsg)
+		return codesignalFlags{}, 2, false
+	}
+	return parsed, 0, true
+}
 
-	if !*baseline && *base == "" {
-		fmt.Fprintln(stderr, codesignalUsage)
-		fmt.Fprintln(stderr, "coach: missing required --base flag")
-		return 2
+func validateCodesignalFlags(f codesignalFlags) string {
+	if f.baseline && f.base != "" {
+		return "coach: --baseline and --base are mutually exclusive: choose a Repository Baseline scan (--baseline) or a diff comparison (--base), not both"
 	}
+	if !f.baseline && f.base == "" {
+		return "coach: missing required --base flag"
+	}
+	if f.format != "text" && f.format != "json" {
+		return fmt.Sprintf("coach: invalid --format value %q: must be \"text\" or \"json\"", f.format)
+	}
+	if f.scope != "production" && f.scope != "all" {
+		return fmt.Sprintf("coach: invalid --scope value %q: must be \"production\" or \"all\"", f.scope)
+	}
+	if f.projectLanguage != "go" && f.projectLanguage != "typescript" {
+		return fmt.Sprintf("coach: invalid --project-language value %q: must be \"go\" or \"typescript\"", f.projectLanguage)
+	}
+	return ""
+}
 
-	if *format != "text" && *format != "json" {
-		fmt.Fprintln(stderr, codesignalUsage)
-		fmt.Fprintf(stderr, "coach: invalid --format value %q: must be \"text\" or \"json\"\n", *format)
-		return 2
-	}
-	if *scope != "production" && *scope != "all" {
-		fmt.Fprintln(stderr, codesignalUsage)
-		fmt.Fprintf(stderr, "coach: invalid --scope value %q: must be \"production\" or \"all\"\n", *scope)
-		return 2
-	}
-	if *projectLanguage != "go" && *projectLanguage != "typescript" {
-		fmt.Fprintln(stderr, codesignalUsage)
-		fmt.Fprintf(stderr, "coach: invalid --project-language value %q: must be \"go\" or \"typescript\"\n", *projectLanguage)
-		return 2
-	}
-
-	dir, err := os.Getwd()
+func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, int, error) {
+	revisionSHA, err := codesignalcli.ResolveBaselineRevision(dir)
 	if err != nil {
-		fmt.Fprintf(stderr, "coach codesignal: cannot determine working directory: %s\n", err)
-		return 1
+		return nil, 0, err
+	}
+	discovered, coverage, err := codesignalcli.DiscoverTrackedFiles(dir, revisionSHA)
+	if err != nil {
+		return nil, 0, err
+	}
+	kept, excluded, err := codesignalcli.ApplyBaselineSourceScope(dir, revisionSHA, f.buildTarget, f.scope, discovered)
+	if err != nil {
+		return nil, 0, err
+	}
+	coverage.Excluded = excluded
+
+	project, diag, projectExitCode, opErr := prepareProjectAnalysis(dir, revisionSHA, f.projectConfigSet, f.projectConfig, f.projectLanguage)
+	if opErr != nil {
+		return nil, 0, opErr
+	}
+	report, err := codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, nil, coverage, project)
+	if err != nil {
+		fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
+		return nil, 0, nil
+	}
+	attachProjectDiagnostic(report, diag)
+	return report, projectExitCode, nil
+}
+
+func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, int, error) {
+	headSHA, mergeBaseSHA, err := codesignalcli.ResolveRevisions(dir, f.base)
+	if err != nil {
+		return nil, 0, err
 	}
 
-	var report *codesignal.Report
-	var projectExitCode int
-	if *baseline {
-		revisionSHA, err := codesignalcli.ResolveBaselineRevision(dir)
-		if err != nil {
-			return reportOperationalError(err, stderr)
-		}
-		discovered, coverage, err := codesignalcli.DiscoverTrackedFiles(dir, revisionSHA)
-		if err != nil {
-			return reportOperationalError(err, stderr)
-		}
-		kept, excluded, err := codesignalcli.ApplyBaselineSourceScope(dir, revisionSHA, *buildTarget, *scope, discovered)
-		if err != nil {
-			return reportOperationalError(err, stderr)
-		}
-		coverage.Excluded = excluded
-
-		project, diag, exitCode, opErr := prepareProjectAnalysis(dir, revisionSHA, projectConfigSet, *projectConfig, *projectLanguage)
-		if opErr != nil {
-			return reportOperationalError(opErr, stderr)
-		}
-		report, err = codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, nil, coverage, project)
-		if err != nil {
-			fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
-			return 1
-		}
-		if diag != nil {
-			report.Diagnostics = append(report.Diagnostics, *diag)
-			sortReportDiagnostics(report)
-		}
-		projectExitCode = exitCode
-	} else {
-		headSHA, mergeBaseSHA, err := codesignalcli.ResolveRevisions(dir, *base)
-		if err != nil {
-			return reportOperationalError(err, stderr)
-		}
-
-		selected, diagnostics, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA)
-		if err != nil {
-			return reportOperationalError(err, stderr)
-		}
-		var excluded []codesignal.CoverageGroup
-		selected, excluded, err = codesignalcli.ApplySourceScope(dir, headSHA, *buildTarget, *scope, selected)
-		if err != nil {
-			return reportOperationalError(err, stderr)
-		}
-
-		project, diag, exitCode, opErr := prepareProjectAnalysis(dir, headSHA, projectConfigSet, *projectConfig, *projectLanguage)
-		if opErr != nil {
-			return reportOperationalError(opErr, stderr)
-		}
-		report, err = codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, *scope, excluded, project)
-		if err != nil {
-			fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
-			return 1
-		}
-		if diag != nil {
-			report.Diagnostics = append(report.Diagnostics, *diag)
-			sortReportDiagnostics(report)
-		}
-		projectExitCode = exitCode
+	selected, diagnostics, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA)
+	if err != nil {
+		return nil, 0, err
+	}
+	selected, excluded, err := codesignalcli.ApplySourceScope(dir, headSHA, f.buildTarget, f.scope, selected)
+	if err != nil {
+		return nil, 0, err
 	}
 
-	if exitCode := renderReport(report, *format, stdout, stderr); exitCode != 0 {
-		return exitCode
+	project, diag, projectExitCode, opErr := prepareProjectAnalysis(dir, headSHA, f.projectConfigSet, f.projectConfig, f.projectLanguage)
+	if opErr != nil {
+		return nil, 0, opErr
 	}
-	return projectExitCode
+	report, err := codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, f.scope, excluded, project)
+	if err != nil {
+		fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
+		return nil, 0, nil
+	}
+	attachProjectDiagnostic(report, diag)
+	return report, projectExitCode, nil
+}
+
+func attachProjectDiagnostic(report *codesignal.Report, diag *codesignal.Diagnostic) {
+	if report == nil || diag == nil {
+		return
+	}
+	report.Diagnostics = append(report.Diagnostics, *diag)
+	sortReportDiagnostics(report)
 }
 
 // prepareProjectAnalysis resolves the typed project handoff. When the flag is
