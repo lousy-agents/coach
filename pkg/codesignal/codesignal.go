@@ -71,109 +71,19 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 		}
 	}
 
-	projectLifecycleIndeterminate := false
-	if b.options.ProjectEnabled {
-		// Complete coverage is required before any normal lifecycle claim
-		// (introduced/existing/resolved/baseline). Missing or incomplete
-		// head coverage always makes lifecycle indeterminate; when a base
-		// model was analyzed, incomplete base coverage does too.
-		headCoverageComplete := completeProjectCoverage(input.ProjectCoverage)
-		if !headCoverageComplete {
-			projectLifecycleIndeterminate = true
-		}
-		if input.ProjectBaseAnalyzed && !completeProjectCoverage(input.BaseProjectCoverage) {
-			projectLifecycleIndeterminate = true
-		}
-		// Non-empty base observations without ProjectBaseAnalyzed are
-		// inconsistent input. A non-nil empty slice is not: callers commonly
-		// initialize with make/append and still run baseline (no base side).
-		if !input.ProjectBaseAnalyzed && len(input.BaseProjectChanges) > 0 {
-			projectLifecycleIndeterminate = true
-		}
-		if input.ProjectCoverage != nil && !input.ProjectCoverage.Complete {
-			diagnostics = append(diagnostics, Diagnostic{
-				Kind:    "project_coverage_incomplete",
-				Message: "project analysis coverage is incomplete; project observations may be partial",
-			})
-		}
-		if projectLifecycleIndeterminate {
-			diagnostics = append(diagnostics, Diagnostic{
-				Kind:    "project_lifecycle_indeterminate",
-				Message: projectLifecycleDiagnosticMessage(input),
-			})
-		}
-	}
-
-	sortDiagnostics(diagnostics)
-
 	var projectChanges []ProjectChange
 	var projectFacts []ProjectFact
 	var projectSummary *ProjectSummary
 	var projectCoverage *projectmodel.Coverage
-
 	if b.options.ProjectEnabled {
-		hasBase := input.ProjectBaseAnalyzed
+		var projectSignals []Signal
 		var projectDiags []Diagnostic
-		projectChanges, projectDiags = classifyProjectChanges(hasBase, projectLifecycleIndeterminate, input.ProjectChanges, input.BaseProjectChanges, noBaseLifecycle)
+		projectChanges, projectFacts, projectSummary, projectCoverage, projectSignals, projectDiags =
+			buildProjectReportSurface(input, noBaseLifecycle, b.options.IncludeResolved)
+		signals = append(signals, projectSignals...)
 		diagnostics = append(diagnostics, projectDiags...)
-
-		// Anchorless observations are not active findings: drop them from
-		// project_changes and counters, keep a diagnostic so producers use
-		// ProjectFact / coverage instead of inventing empty anchors.
-		anchored := projectChanges[:0]
-		for _, change := range projectChanges {
-			if change.PrimaryAnchor.Path == "" {
-				diagnostics = append(diagnostics, Diagnostic{
-					Kind: "project_observation_missing_primary_path",
-					Message: "project observation semantic_key \"" + change.SemanticKey +
-						"\" omitted from active project findings: primary_anchor.path is empty",
-				})
-				continue
-			}
-			anchored = append(anchored, change)
-		}
-		projectChanges = anchored
-
-		summaryCounts := ProjectSummary{}
-		for _, change := range projectChanges {
-			switch change.Lifecycle {
-			case "introduced":
-				summaryCounts.IntroducedChanges++
-			case "existing":
-				summaryCounts.ExistingChanges++
-			case "resolved":
-				summaryCounts.ResolvedChanges++
-			case "baseline":
-				summaryCounts.BaselineChanges++
-			}
-			// Active project observations also appear on the shared signals
-			// surface and normal summary counters (#208 Story 5 / F-003).
-			// Paths are non-empty after the anchorless filter above.
-			signals = append(signals, signalFromProjectChange(change))
-		}
-
-		if !b.options.IncludeResolved {
-			filtered := projectChanges[:0]
-			for _, change := range projectChanges {
-				if change.Lifecycle == "resolved" {
-					continue
-				}
-				filtered = append(filtered, change)
-			}
-			projectChanges = filtered
-		}
-
-		sortProjectChanges(projectChanges)
-		summaryCounts.ActiveChanges = len(projectChanges)
-		projectSummary = &summaryCounts
-
-		projectFacts = append([]ProjectFact(nil), input.ProjectFacts...)
-		sortProjectFacts(projectFacts)
-		projectCoverage = cloneProjectCoverage(input.ProjectCoverage)
 	}
 
-	// Project hardening diagnostics are appended after the earlier sort; re-sort
-	// so report diagnostics stay totally ordered.
 	sortDiagnostics(diagnostics)
 
 	summary := Summary{
@@ -232,6 +142,112 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 	}
 
 	return report, nil
+}
+
+// buildProjectReportSurface classifies project observations, drops anchorless
+// and (optionally) resolved entries, projects anchored findings onto the shared
+// signals surface, and returns schema-2 project report fields plus diagnostics.
+func buildProjectReportSurface(input Input, noBaseLifecycle Lifecycle, includeResolved bool) (
+	projectChanges []ProjectChange,
+	projectFacts []ProjectFact,
+	projectSummary *ProjectSummary,
+	projectCoverage *projectmodel.Coverage,
+	projectSignals []Signal,
+	diagnostics []Diagnostic,
+) {
+	lifecycleIndeterminate, diagnostics := projectLifecycleState(input)
+
+	projectChanges, classifyDiags := classifyProjectChanges(
+		input.ProjectBaseAnalyzed,
+		lifecycleIndeterminate,
+		input.ProjectChanges,
+		input.BaseProjectChanges,
+		noBaseLifecycle,
+	)
+	diagnostics = append(diagnostics, classifyDiags...)
+
+	projectChanges, missingPathDiags := filterAnchorlessProjectChanges(projectChanges)
+	diagnostics = append(diagnostics, missingPathDiags...)
+
+	summaryCounts := ProjectSummary{}
+	for _, change := range projectChanges {
+		switch change.Lifecycle {
+		case "introduced":
+			summaryCounts.IntroducedChanges++
+		case "existing":
+			summaryCounts.ExistingChanges++
+		case "resolved":
+			summaryCounts.ResolvedChanges++
+		case "baseline":
+			summaryCounts.BaselineChanges++
+		}
+		projectSignals = append(projectSignals, signalFromProjectChange(change))
+	}
+
+	if !includeResolved {
+		filtered := projectChanges[:0]
+		for _, change := range projectChanges {
+			if change.Lifecycle == "resolved" {
+				continue
+			}
+			filtered = append(filtered, change)
+		}
+		projectChanges = filtered
+	}
+
+	sortProjectChanges(projectChanges)
+	summaryCounts.ActiveChanges = len(projectChanges)
+	projectSummary = &summaryCounts
+
+	projectFacts = append([]ProjectFact(nil), input.ProjectFacts...)
+	sortProjectFacts(projectFacts)
+	projectCoverage = cloneProjectCoverage(input.ProjectCoverage)
+	return projectChanges, projectFacts, projectSummary, projectCoverage, projectSignals, diagnostics
+}
+
+func projectLifecycleState(input Input) (indeterminate bool, diagnostics []Diagnostic) {
+	// Complete coverage is required before any normal lifecycle claim.
+	if !completeProjectCoverage(input.ProjectCoverage) {
+		indeterminate = true
+	}
+	if input.ProjectBaseAnalyzed && !completeProjectCoverage(input.BaseProjectCoverage) {
+		indeterminate = true
+	}
+	// Non-empty base observations without ProjectBaseAnalyzed are inconsistent.
+	// A non-nil empty slice is not: callers commonly initialize with make/append.
+	if !input.ProjectBaseAnalyzed && len(input.BaseProjectChanges) > 0 {
+		indeterminate = true
+	}
+	if input.ProjectCoverage != nil && !input.ProjectCoverage.Complete {
+		diagnostics = append(diagnostics, Diagnostic{
+			Kind:    "project_coverage_incomplete",
+			Message: "project analysis coverage is incomplete; project observations may be partial",
+		})
+	}
+	if indeterminate {
+		diagnostics = append(diagnostics, Diagnostic{
+			Kind:    "project_lifecycle_indeterminate",
+			Message: projectLifecycleDiagnosticMessage(input),
+		})
+	}
+	return indeterminate, diagnostics
+}
+
+func filterAnchorlessProjectChanges(changes []ProjectChange) ([]ProjectChange, []Diagnostic) {
+	anchored := changes[:0]
+	var diagnostics []Diagnostic
+	for _, change := range changes {
+		if change.PrimaryAnchor.Path == "" {
+			diagnostics = append(diagnostics, Diagnostic{
+				Kind: "project_observation_missing_primary_path",
+				Message: "project observation semantic_key \"" + change.SemanticKey +
+					"\" omitted from active project findings: primary_anchor.path is empty",
+			})
+			continue
+		}
+		anchored = append(anchored, change)
+	}
+	return anchored, diagnostics
 }
 
 // signalFromProjectChange projects a classified project observation onto the
