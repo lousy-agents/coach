@@ -20,7 +20,7 @@ import (
 // builds one codesignal.Report. A per-file failure (an unreadable path, a
 // semantics error, an unparsable diff) is reported as a diagnostic; it never
 // stops analysis of the remaining files.
-func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, appliedScope string, excluded []codesignal.CoverageGroup) (*codesignal.Report, error) {
+func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, appliedScope string, excluded []codesignal.CoverageGroup, project *ProjectAnalysis) (*codesignal.Report, error) {
 	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
 	if err != nil {
 		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
@@ -43,11 +43,6 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 		}
 	}
 
-	builder, err := codesignal.New(codesignal.Options{IncludeResolved: true})
-	if err != nil {
-		return nil, err
-	}
-
 	// Only Excluded is meaningful on a diff-flow report; TrackedFilesDiscovered/
 	// FilesAnalyzed/FilesUnanalyzable are baseline-only accounting fields and
 	// are deliberately left zero here (see codesignal.Coverage's doc comment).
@@ -56,12 +51,21 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 		coverage = &codesignal.Coverage{Excluded: excluded}
 	}
 
-	return builder.Build(ctx, codesignal.Input{
+	opts := codesignal.Options{IncludeResolved: true}
+	input := codesignal.Input{
 		Scope:       codesignal.Scope{Repository: "", Revision: headSHA, Base: mergeBaseSHA, AppliedScope: appliedScope},
 		Files:       fileChanges,
 		Diagnostics: diagnostics,
 		Coverage:    coverage,
-	})
+	}
+	if err := applyProjectBackend(ctx, &input, &opts, project, dir, headSHA, mergeBaseSHA, false); err != nil {
+		return nil, err
+	}
+	builder, err := codesignal.New(opts)
+	if err != nil {
+		return nil, err
+	}
+	return builder.Build(ctx, input)
 }
 
 // AnalyzeBaseline reads revisionSHA content for each selected file via a
@@ -76,7 +80,7 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 // including one whose ParseStatus is "syntax_errors", still gets a
 // codesignal.FileChange so Build's existing processHeadResult emits its own
 // syntax_errors diagnostic -- callers must not duplicate that here.
-func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, coverage codesignal.Coverage) (*codesignal.Report, error) {
+func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, coverage codesignal.Coverage, project *ProjectAnalysis) (*codesignal.Report, error) {
 	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
 	if err != nil {
 		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
@@ -118,17 +122,21 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []Selec
 		}
 	}
 
-	builder, err := codesignal.New(codesignal.Options{Baseline: true})
-	if err != nil {
-		return nil, err
-	}
-
-	return builder.Build(ctx, codesignal.Input{
+	opts := codesignal.Options{Baseline: true}
+	input := codesignal.Input{
 		Scope:       codesignal.Scope{Revision: revisionSHA},
 		Files:       fileChanges,
 		Diagnostics: diagnostics,
 		Coverage:    &coverage,
-	})
+	}
+	if err := applyProjectBackend(ctx, &input, &opts, project, dir, revisionSHA, "", true); err != nil {
+		return nil, err
+	}
+	builder, err := codesignal.New(opts)
+	if err != nil {
+		return nil, err
+	}
+	return builder.Build(ctx, input)
 }
 
 // analyzeAddedOrModifiedFile handles "added" and "modified" SelectedFiles:

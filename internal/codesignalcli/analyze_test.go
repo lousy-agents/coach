@@ -147,7 +147,7 @@ func TestAnalyzeChangesSurvivesUnreadableFile(t *testing.T) {
 		{Path: "does-not-exist.go", Status: "modified", Language: semantics.LanguageGo},
 	}
 
-	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "", nil)
+	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "", nil, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestAnalyzeChangesThreadsScopeAndCoverage(t *testing.T) {
 	t.Run("non-empty scope and excluded", func(t *testing.T) {
 		excluded := []codesignal.CoverageGroup{{Reason: "test_only", Language: "go", Count: 1}}
 
-		report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "production", excluded)
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "production", excluded, nil)
 		if err != nil {
 			t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
 		}
@@ -208,7 +208,7 @@ func TestAnalyzeChangesThreadsScopeAndCoverage(t *testing.T) {
 	})
 
 	t.Run("nil excluded leaves Coverage nil", func(t *testing.T) {
-		report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "", nil)
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "", nil, nil)
 		if err != nil {
 			t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
 		}
@@ -237,7 +237,7 @@ func TestAnalyzeBaseline(t *testing.T) {
 		{Path: "missing.go", Language: semantics.LanguageGo},
 	}
 
-	report, err := AnalyzeBaseline(context.Background(), dir, headSHA, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 3})
+	report, err := AnalyzeBaseline(context.Background(), dir, headSHA, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 3}, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeBaseline: unexpected error: %v", err)
 	}
@@ -316,7 +316,7 @@ func TestAnalyzeBaselineInterleavedReadFailures(t *testing.T) {
 		{Path: "c.go", Language: semantics.LanguageGo},
 	}
 
-	report, err := AnalyzeBaseline(context.Background(), dir, headSHA, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 5})
+	report, err := AnalyzeBaseline(context.Background(), dir, headSHA, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 5}, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeBaseline: unexpected error: %v", err)
 	}
@@ -375,7 +375,7 @@ func TestAnalyzeChangesBaseReadFailureForModifiedFile(t *testing.T) {
 	// emptySHA predates a.go's existence, so `git show emptySHA:a.go` fails
 	// even though Status claims "modified" -- simulating a base-read failure
 	// for a path Git already told us existed at base.
-	report, err := AnalyzeChanges(context.Background(), dir, headSHA, emptySHA, files, nil, "", nil)
+	report, err := AnalyzeChanges(context.Background(), dir, headSHA, emptySHA, files, nil, "", nil, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
 	}

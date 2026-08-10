@@ -4,6 +4,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -16,6 +17,16 @@ import (
 // version identifies the coach binary. There is no build-time ldflags wiring
 // yet; that is intentionally out of scope for this issue.
 var version = "dev"
+
+// loadProjectConfig and resolveProjectBackend are indirections over
+// codesignalcli's project-analysis entry points. Tests override them to
+// prove that runCodesignal's exit-code classification is driven by the
+// concrete error type (errors.As), not by which call site produced the error.
+var (
+	loadProjectConfig     = codesignalcli.LoadProjectConfig
+	resolveProjectBackend = codesignalcli.ResolveProjectBackend
+	lookupProjectBackend  = func(string) codesignalcli.ProjectBackend { return nil }
+)
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -49,7 +60,7 @@ commands:
 
 run "coach codesignal --help" for command-specific help.`
 
-const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>]"
+const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript]"
 
 func runCodesignal(args []string, stdout, stderr *os.File) int {
 	flags := flag.NewFlagSet("codesignal", flag.ContinueOnError)
@@ -59,6 +70,8 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 	format := flags.String("format", "text", "output format: text or json")
 	scope := flags.String("scope", "production", "source scope: production or all")
 	buildTarget := flags.String("build-target", "", "Go package pattern used to determine production reachability")
+	projectConfig := flags.String("project-config", "", "repository-relative path to a project-analysis config at the selected revision; enables opt-in cross-module project facts")
+	projectLanguage := flags.String("project-language", "go", "project-analysis language: go or typescript")
 
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
@@ -75,6 +88,13 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
+
+	projectConfigSet := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "project-config" {
+			projectConfigSet = true
+		}
+	})
 
 	if *baseline && *base != "" {
 		fmt.Fprintln(stderr, codesignalUsage)
@@ -98,6 +118,11 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintf(stderr, "coach: invalid --scope value %q: must be \"production\" or \"all\"\n", *scope)
 		return 2
 	}
+	if *projectLanguage != "go" && *projectLanguage != "typescript" {
+		fmt.Fprintln(stderr, codesignalUsage)
+		fmt.Fprintf(stderr, "coach: invalid --project-language value %q: must be \"go\" or \"typescript\"\n", *projectLanguage)
+		return 2
+	}
 
 	dir, err := os.Getwd()
 	if err != nil {
@@ -106,6 +131,7 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 	}
 
 	var report *codesignal.Report
+	var projectExitCode int
 	if *baseline {
 		revisionSHA, err := codesignalcli.ResolveBaselineRevision(dir)
 		if err != nil {
@@ -120,11 +146,21 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 			return reportOperationalError(err, stderr)
 		}
 		coverage.Excluded = excluded
-		report, err = codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, nil, coverage)
+
+		project, diag, exitCode, opErr := prepareProjectAnalysis(dir, revisionSHA, projectConfigSet, *projectConfig, *projectLanguage)
+		if opErr != nil {
+			return reportOperationalError(opErr, stderr)
+		}
+		report, err = codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, nil, coverage, project)
 		if err != nil {
 			fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
 			return 1
 		}
+		if diag != nil {
+			report.Diagnostics = append(report.Diagnostics, *diag)
+			sortReportDiagnostics(report)
+		}
+		projectExitCode = exitCode
 	} else {
 		headSHA, mergeBaseSHA, err := codesignalcli.ResolveRevisions(dir, *base)
 		if err != nil {
@@ -141,14 +177,82 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 			return reportOperationalError(err, stderr)
 		}
 
-		report, err = codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, *scope, excluded)
+		project, diag, exitCode, opErr := prepareProjectAnalysis(dir, headSHA, projectConfigSet, *projectConfig, *projectLanguage)
+		if opErr != nil {
+			return reportOperationalError(opErr, stderr)
+		}
+		report, err = codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, *scope, excluded, project)
 		if err != nil {
 			fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
 			return 1
 		}
+		if diag != nil {
+			report.Diagnostics = append(report.Diagnostics, *diag)
+			sortReportDiagnostics(report)
+		}
+		projectExitCode = exitCode
 	}
 
-	if *format == "json" {
+	if exitCode := renderReport(report, *format, stdout, stderr); exitCode != 0 {
+		return exitCode
+	}
+	return projectExitCode
+}
+
+// prepareProjectAnalysis resolves the typed project handoff. When the flag is
+// omitted, all results are zero. Config/backend failures return a diagnostic
+// and exit code while keeping project nil so file-local analysis stays schema-1.
+// Unexpected error types return opErr for the operational path (no report).
+func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configPath, language string) (*codesignalcli.ProjectAnalysis, *codesignal.Diagnostic, int, error) {
+	if !projectConfigSet {
+		return nil, nil, 0, nil
+	}
+	config, err := loadProjectConfig(dir, revision, configPath)
+	if err != nil {
+		var configErr *codesignalcli.ProjectConfigError
+		if !errors.As(err, &configErr) {
+			return nil, nil, 0, err
+		}
+		return nil, &codesignal.Diagnostic{
+			Kind:    "project_config_invalid",
+			Path:    configPath,
+			Message: configErr.Message,
+		}, 2, nil
+	}
+	if err := resolveProjectBackend(language); err != nil {
+		var backendErr *codesignalcli.ProjectBackendUnavailableError
+		if !errors.As(err, &backendErr) {
+			return nil, nil, 0, err
+		}
+		return nil, &codesignal.Diagnostic{
+			Kind:    "project_backend_unavailable",
+			Path:    configPath,
+			Message: backendErr.Message,
+		}, 3, nil
+	}
+	backend := lookupProjectBackend(language)
+	if backend == nil {
+		return nil, &codesignal.Diagnostic{
+			Kind:    "project_backend_unavailable",
+			Path:    configPath,
+			Message: fmt.Sprintf("coach codesignal: no project-analysis backend is available for language %q yet (project_backend_unavailable)", language),
+		}, 3, nil
+	}
+	return &codesignalcli.ProjectAnalysis{
+		ConfigPath:   configPath,
+		Language:     language,
+		Config:       append(json.RawMessage(nil), config...),
+		ConfigDigest: codesignalcli.ConfigDigest(config),
+		Backend:      backend,
+	}, nil, 0, nil
+}
+
+func sortReportDiagnostics(report *codesignal.Report) {
+	codesignal.SortDiagnostics(report.Diagnostics)
+}
+
+func renderReport(report *codesignal.Report, format string, stdout, stderr *os.File) int {
+	if format == "json" {
 		encoded, err := codesignalcli.RenderJSON(report)
 		if err != nil {
 			fmt.Fprintf(stderr, "coach codesignal: encoding report: %s\n", err)

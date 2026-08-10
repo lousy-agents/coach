@@ -3,18 +3,18 @@ package codesignalcli
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
+	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
 // RenderText renders report as deterministic, ANSI-free plain text: a
-// one-line summary, then either "No active CodeSignal findings." or one
-// block per signal (in report.Signals order), then a diagnostics section
-// when report.Diagnostics is non-empty, then a Coverage section summarizing
-// unsupported/excluded files by reason and language rather than one line per
-// file (written only when report.Coverage has groups to show, for both
-// baseline and non-baseline reports). A Repository Baseline report
+// one-line summary, then either "No active CodeSignal findings." or blocks
+// per file-local signal and project observation (in report order), then a
+// diagnostics section when report.Diagnostics is non-empty, then file and
+// project coverage sections. A Repository Baseline report
 // (report.Scope.Baseline) renders a distinct summary line that identifies
 // the analyzed revision and states plainly that the result is not a diff
 // comparison; everything else (signal blocks, diagnostics section) is
@@ -28,16 +28,29 @@ func RenderText(report *codesignal.Report) string {
 		renderDiffSummary(&b, report)
 	}
 
-	if len(report.Signals) == 0 {
+	if len(report.Signals) == 0 && len(report.ProjectChanges) == 0 {
 		b.WriteString("No active CodeSignal findings.\n")
+		renderProjectSummary(&b, report.ProjectSummary)
 	} else {
-		for i, signal := range report.Signals {
-			renderSignal(&b, signal)
-			if i != len(report.Signals)-1 {
-				b.WriteString("\n")
+		if len(report.Signals) > 0 {
+			for i, signal := range report.Signals {
+				renderSignal(&b, signal)
+				if i != len(report.Signals)-1 {
+					b.WriteString("\n")
+				}
 			}
 		}
+		if len(report.ProjectChanges) > 0 {
+			if len(report.Signals) > 0 {
+				b.WriteString("\n")
+			}
+			renderProjectChanges(&b, report)
+		} else if report.ProjectSummary != nil {
+			renderProjectSummary(&b, report.ProjectSummary)
+		}
 	}
+
+	renderProjectFacts(&b, report.ProjectFacts)
 
 	if len(report.Diagnostics) > 0 {
 		b.WriteString("\nDiagnostics:\n")
@@ -47,6 +60,7 @@ func RenderText(report *codesignal.Report) string {
 	}
 
 	renderCoverageSection(&b, report.Coverage)
+	renderProjectCoverageSection(&b, report.ProjectCoverage)
 
 	return b.String()
 }
@@ -137,6 +151,132 @@ func renderSignal(b *strings.Builder, signal codesignal.Signal) {
 	fmt.Fprintf(b, "evidence: %s\n", signal.Evidence)
 	fmt.Fprintf(b, "why it matters: %s\n", signal.WhyItMatters)
 	fmt.Fprintf(b, "recommendation: %s\n", signal.Recommendation)
+}
+
+func renderProjectChanges(b *strings.Builder, report *codesignal.Report) {
+	b.WriteString("Project findings:\n")
+	for i, change := range report.ProjectChanges {
+		fmt.Fprintf(b, "semantic_key: %s\n", change.SemanticKey)
+		fmt.Fprintf(b, "rule_id: %s\n", change.RuleID)
+		fmt.Fprintf(b, "path: %s\n", change.PrimaryAnchor.Path)
+		fmt.Fprintf(b, "line: %d\n", change.PrimaryAnchor.Location.StartRow+1)
+		fmt.Fprintf(b, "lifecycle: %s\n", change.Lifecycle)
+		fmt.Fprintf(b, "changed: %t\n", change.Changed)
+		if change.Evidence != "" {
+			fmt.Fprintf(b, "evidence: %s\n", change.Evidence)
+		}
+		if change.WhyItMatters != "" {
+			fmt.Fprintf(b, "why it matters: %s\n", change.WhyItMatters)
+		}
+		if change.Recommendation != "" {
+			fmt.Fprintf(b, "recommendation: %s\n", change.Recommendation)
+		}
+		for _, location := range change.RelatedLocations {
+			fmt.Fprintf(b, "related: %s:%d\n", location.Path, location.Location.StartRow+1)
+		}
+		for _, ref := range change.CoverageRefs {
+			fmt.Fprintf(b, "coverage_ref: %s\n", ref)
+		}
+		for _, step := range change.PathSteps {
+			fmt.Fprintf(b, "path step: %s", step.NodeID)
+			if step.DisplayName != "" {
+				fmt.Fprintf(b, " (%s)", step.DisplayName)
+			}
+			if step.Resolution != "" {
+				fmt.Fprintf(b, ", resolution: %s", step.Resolution)
+			}
+			if step.Confidence != "" {
+				fmt.Fprintf(b, ", confidence: %s", step.Confidence)
+			}
+			b.WriteByte('\n')
+			for _, location := range step.SourceLocations {
+				fmt.Fprintf(b, "  source: %s:%d\n", location.Path, location.Location.StartRow+1)
+			}
+		}
+		if i != len(report.ProjectChanges)-1 {
+			b.WriteString("\n")
+		}
+	}
+	renderProjectSummary(b, report.ProjectSummary)
+}
+
+func renderProjectSummary(b *strings.Builder, summary *codesignal.ProjectSummary) {
+	if summary == nil {
+		return
+	}
+	fmt.Fprintf(b, "Project summary: active=%d, introduced=%d, existing=%d, resolved=%d, baseline=%d\n",
+		summary.ActiveChanges,
+		summary.IntroducedChanges,
+		summary.ExistingChanges,
+		summary.ResolvedChanges,
+		summary.BaselineChanges)
+}
+
+// renderProjectFacts writes the deterministic Facts section for facts-only
+// observations. Facts never appear under Project findings or active counters.
+func renderProjectFacts(b *strings.Builder, facts []codesignal.ProjectFact) {
+	if len(facts) == 0 {
+		return
+	}
+	b.WriteString("\nFacts:\n")
+	for i, fact := range facts {
+		fmt.Fprintf(b, "kind: %s\n", fact.Kind)
+		if fact.SemanticKey != "" {
+			fmt.Fprintf(b, "semantic_key: %s\n", fact.SemanticKey)
+		}
+		if fact.Evidence != "" {
+			fmt.Fprintf(b, "evidence: %s\n", fact.Evidence)
+		}
+		for _, ref := range fact.CoverageRefs {
+			fmt.Fprintf(b, "coverage_ref: %s\n", ref)
+		}
+		for _, step := range fact.PathSteps {
+			fmt.Fprintf(b, "path step: %s", step.NodeID)
+			if step.DisplayName != "" {
+				fmt.Fprintf(b, " (%s)", step.DisplayName)
+			}
+			if step.Resolution != "" {
+				fmt.Fprintf(b, ", resolution: %s", step.Resolution)
+			}
+			if step.Confidence != "" {
+				fmt.Fprintf(b, ", confidence: %s", step.Confidence)
+			}
+			b.WriteByte('\n')
+			for _, location := range step.SourceLocations {
+				fmt.Fprintf(b, "  source: %s:%d\n", location.Path, location.Location.StartRow+1)
+			}
+		}
+		if i != len(facts)-1 {
+			b.WriteString("\n")
+		}
+	}
+}
+
+func renderProjectCoverageSection(b *strings.Builder, coverage *projectmodel.Coverage) {
+	if coverage == nil {
+		return
+	}
+
+	fmt.Fprintf(b, "\nProject coverage: phase=%s, complete=%t\n", coverage.Phase, coverage.Complete)
+	keys := make([]string, 0, len(coverage.Counts))
+	for key := range coverage.Counts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		fmt.Fprintf(b, "  count: %s=%d\n", key, coverage.Counts[key])
+	}
+	keys = keys[:0]
+	for key := range coverage.Budgets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		fmt.Fprintf(b, "  budget: %s=%d\n", key, coverage.Budgets[key])
+	}
+	for _, diagnostic := range coverage.Diagnostics {
+		fmt.Fprintf(b, "  project diagnostic: %s: %s\n", diagnostic.Code, diagnostic.Message)
+	}
 }
 
 func renderDiagnostic(b *strings.Builder, diagnostic codesignal.Diagnostic) {
