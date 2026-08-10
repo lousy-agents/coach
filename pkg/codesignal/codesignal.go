@@ -42,34 +42,8 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 		return nil, err
 	}
 
-	diagnostics := make([]Diagnostic, 0, len(input.Diagnostics))
-	diagnostics = append(diagnostics, input.Diagnostics...)
-
-	var signals []Signal
-
-	noBaseLifecycle := Lifecycle("unknown")
-	if b.options.Baseline {
-		noBaseLifecycle = Lifecycle("baseline")
-	}
-
-	for _, fc := range input.Files {
-		diagnostics = append(diagnostics, validateFileChange(fc)...)
-
-		fileDiagnostics, fileSignals := processHeadResult(fc)
-		diagnostics = append(diagnostics, fileDiagnostics...)
-
-		rangeDiagnostics, validRanges := validateChangedRanges(fc)
-		diagnostics = append(diagnostics, rangeDiagnostics...)
-
-		if eligibleForLifecycleClassification(fc) {
-			fileClassifiedSignals := classifyFileSignals(baseUsableForLifecycle(fc), fileSignals, extractBaseSignals(fc), noBaseLifecycle)
-			for i := range fileClassifiedSignals {
-				fileClassifiedSignals[i].SourceScope = fc.SourceScope
-			}
-			markChanged(fileClassifiedSignals, validRanges)
-			signals = append(signals, fileClassifiedSignals...)
-		}
-	}
+	noBaseLifecycle := lifecycleWithoutBase(b.options.Baseline)
+	diagnostics, signals := processFileChanges(input.Files, input.Diagnostics, noBaseLifecycle)
 
 	var projectChanges []ProjectChange
 	var projectFacts []ProjectFact
@@ -85,10 +59,47 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 	}
 
 	sortDiagnostics(diagnostics)
+	signals, summary := finalizeSignals(signals, len(input.Files), input.Files, diagnostics, b.options.IncludeResolved)
+	return assembleReport(b.options, input, signals, diagnostics, summary, projectChanges, projectFacts, projectSummary, projectCoverage), nil
+}
 
+func lifecycleWithoutBase(baseline bool) Lifecycle {
+	if baseline {
+		return Lifecycle("baseline")
+	}
+	return Lifecycle("unknown")
+}
+
+func processFileChanges(files []FileChange, seed []Diagnostic, noBaseLifecycle Lifecycle) ([]Diagnostic, []Signal) {
+	diagnostics := make([]Diagnostic, 0, len(seed))
+	diagnostics = append(diagnostics, seed...)
+	var signals []Signal
+	for _, fc := range files {
+		diagnostics = append(diagnostics, validateFileChange(fc)...)
+
+		fileDiagnostics, fileSignals := processHeadResult(fc)
+		diagnostics = append(diagnostics, fileDiagnostics...)
+
+		rangeDiagnostics, validRanges := validateChangedRanges(fc)
+		diagnostics = append(diagnostics, rangeDiagnostics...)
+
+		if !eligibleForLifecycleClassification(fc) {
+			continue
+		}
+		fileClassifiedSignals := classifyFileSignals(baseUsableForLifecycle(fc), fileSignals, extractBaseSignals(fc), noBaseLifecycle)
+		for i := range fileClassifiedSignals {
+			fileClassifiedSignals[i].SourceScope = fc.SourceScope
+		}
+		markChanged(fileClassifiedSignals, validRanges)
+		signals = append(signals, fileClassifiedSignals...)
+	}
+	return diagnostics, signals
+}
+
+func finalizeSignals(signals []Signal, filesAnalyzed int, files []FileChange, diagnostics []Diagnostic, includeResolved bool) ([]Signal, Summary) {
 	summary := Summary{
-		FilesAnalyzed:        len(input.Files),
-		FilesWithDiagnostics: countFilesWithDiagnostics(input.Files, diagnostics),
+		FilesAnalyzed:        filesAnalyzed,
+		FilesWithDiagnostics: countFilesWithDiagnostics(files, diagnostics),
 	}
 	for _, sig := range signals {
 		switch sig.Lifecycle {
@@ -102,9 +113,8 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 			summary.BaselineSignals++
 		}
 	}
-
-	if !b.options.IncludeResolved {
-		filtered := signals[:0]
+	if !includeResolved {
+		filtered := make([]Signal, 0, len(signals))
 		for _, sig := range signals {
 			if sig.Lifecycle == "resolved" {
 				continue
@@ -113,18 +123,28 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 		}
 		signals = filtered
 	}
-
 	sortSignals(signals)
 	summary.ActiveSignals = len(signals)
+	return signals, summary
+}
 
+func assembleReport(
+	options Options,
+	input Input,
+	signals []Signal,
+	diagnostics []Diagnostic,
+	summary Summary,
+	projectChanges []ProjectChange,
+	projectFacts []ProjectFact,
+	projectSummary *ProjectSummary,
+	projectCoverage *projectmodel.Coverage,
+) *Report {
 	scope := input.Scope
-	scope.Baseline = b.options.Baseline
-
+	scope.Baseline = options.Baseline
 	schemaVersion := "1"
-	if b.options.ProjectEnabled {
+	if options.ProjectEnabled {
 		schemaVersion = "2"
 	}
-
 	report := &Report{
 		SchemaVersion: schemaVersion,
 		Scope:         scope,
@@ -133,15 +153,13 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 		Diagnostics:   diagnostics,
 		Coverage:      input.Coverage,
 	}
-
-	if b.options.ProjectEnabled {
+	if options.ProjectEnabled {
 		report.ProjectChanges = projectChanges
 		report.ProjectFacts = projectFacts
 		report.ProjectSummary = projectSummary
 		report.ProjectCoverage = projectCoverage
 	}
-
-	return report, nil
+	return report
 }
 
 // buildProjectReportSurface classifies project observations, drops anchorless
