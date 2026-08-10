@@ -14,6 +14,13 @@ type Diagnostic struct {
 	Location *semantics.Location `json:"location,omitempty"`
 }
 
+// SortDiagnostics orders diagnostics by path, kind, location, then message.
+// Callers that append diagnostics after Build must use this so report order
+// stays identical to Build's own sortDiagnostics pass.
+func SortDiagnostics(diagnostics []Diagnostic) {
+	sortDiagnostics(diagnostics)
+}
+
 func sortDiagnostics(diagnostics []Diagnostic) {
 	sort.SliceStable(diagnostics, func(i, j int) bool {
 		a, b := diagnostics[i], diagnostics[j]

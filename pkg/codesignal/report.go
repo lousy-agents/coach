@@ -1,6 +1,9 @@
 package codesignal
 
-import "github.com/lousy-agents/coach/pkg/semantics"
+import (
+	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/semantics"
+)
 
 // Report is the top-level output of a Builder.Build call.
 type Report struct {
@@ -10,6 +13,18 @@ type Report struct {
 	Signals       []Signal     `json:"signals,omitempty"`
 	Diagnostics   []Diagnostic `json:"diagnostics,omitempty"`
 	Coverage      *Coverage    `json:"coverage,omitempty"`
+
+	// ProjectChanges, ProjectFacts, ProjectSummary, and ProjectCoverage are
+	// only populated when Options.ProjectEnabled is true (schema_version "2");
+	// otherwise they stay at Go zero value (nil) and, combined with their
+	// omitempty tags, never appear in JSON -- this is what keeps a
+	// disabled Builder's output byte-identical to a Builder built without
+	// these fields existing at all. ProjectFacts holds facts-only
+	// observations (never active signals or summary counters).
+	ProjectChanges  []ProjectChange        `json:"project_changes,omitempty"`
+	ProjectFacts    []ProjectFact          `json:"project_facts,omitempty"`
+	ProjectSummary  *ProjectSummary        `json:"project_summary,omitempty"`
+	ProjectCoverage *projectmodel.Coverage `json:"project_coverage,omitempty"`
 }
 
 // Summary counts files and signals across a Report.

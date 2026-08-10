@@ -1,13 +1,23 @@
 package codesignal
 
-import "context"
+import (
+	"context"
+	"sort"
+	"strings"
 
-// Options configures a Builder. It has no fields in v0.1; kept as a struct
-// (rather than removed) so New's signature doesn't need to change once
-// options exist.
+	"github.com/lousy-agents/coach/pkg/projectmodel"
+)
+
+// Options configures a Builder.
 type Options struct {
 	IncludeResolved bool `json:"include_resolved"`
 	Baseline        bool `json:"baseline"`
+
+	// ProjectEnabled switches Build onto the schema-2 project-analysis
+	// report path: SchemaVersion becomes "2" and the Report's project_*
+	// fields become eligible to serialize. See Report's field block for
+	// the byte-identity guarantee this default-false zero value preserves.
+	ProjectEnabled bool `json:"project_enabled"`
 }
 
 // Builder produces Reports from Input. It holds no mutable state after
@@ -61,7 +71,86 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 		}
 	}
 
+	projectLifecycleIndeterminate := false
+	if b.options.ProjectEnabled {
+		// Complete coverage is required before any normal lifecycle claim
+		// (introduced/existing/resolved/baseline). Missing or incomplete
+		// head coverage always makes lifecycle indeterminate; when a base
+		// model was analyzed, incomplete base coverage does too.
+		headCoverageComplete := completeProjectCoverage(input.ProjectCoverage)
+		if !headCoverageComplete {
+			projectLifecycleIndeterminate = true
+		}
+		if input.ProjectBaseAnalyzed && !completeProjectCoverage(input.BaseProjectCoverage) {
+			projectLifecycleIndeterminate = true
+		}
+		// Non-empty base observations without ProjectBaseAnalyzed are
+		// inconsistent input. A non-nil empty slice is not: callers commonly
+		// initialize with make/append and still run baseline (no base side).
+		if !input.ProjectBaseAnalyzed && len(input.BaseProjectChanges) > 0 {
+			projectLifecycleIndeterminate = true
+		}
+		if input.ProjectCoverage != nil && !input.ProjectCoverage.Complete {
+			diagnostics = append(diagnostics, Diagnostic{
+				Kind:    "project_coverage_incomplete",
+				Message: "project analysis coverage is incomplete; project observations may be partial",
+			})
+		}
+		if projectLifecycleIndeterminate {
+			diagnostics = append(diagnostics, Diagnostic{
+				Kind:    "project_lifecycle_indeterminate",
+				Message: projectLifecycleDiagnosticMessage(input),
+			})
+		}
+	}
+
 	sortDiagnostics(diagnostics)
+
+	var projectChanges []ProjectChange
+	var projectFacts []ProjectFact
+	var projectSummary *ProjectSummary
+	var projectCoverage *projectmodel.Coverage
+
+	if b.options.ProjectEnabled {
+		hasBase := input.ProjectBaseAnalyzed
+		projectChanges = classifyProjectChanges(hasBase, projectLifecycleIndeterminate, input.ProjectChanges, input.BaseProjectChanges, noBaseLifecycle)
+
+		summaryCounts := ProjectSummary{}
+		for _, change := range projectChanges {
+			switch change.Lifecycle {
+			case "introduced":
+				summaryCounts.IntroducedChanges++
+			case "existing":
+				summaryCounts.ExistingChanges++
+			case "resolved":
+				summaryCounts.ResolvedChanges++
+			case "baseline":
+				summaryCounts.BaselineChanges++
+			}
+			// Active project observations also appear on the shared signals
+			// surface and normal summary counters (#208 Story 5 / F-003).
+			signals = append(signals, signalFromProjectChange(change))
+		}
+
+		if !b.options.IncludeResolved {
+			filtered := projectChanges[:0]
+			for _, change := range projectChanges {
+				if change.Lifecycle == "resolved" {
+					continue
+				}
+				filtered = append(filtered, change)
+			}
+			projectChanges = filtered
+		}
+
+		sortProjectChanges(projectChanges)
+		summaryCounts.ActiveChanges = len(projectChanges)
+		projectSummary = &summaryCounts
+
+		projectFacts = append([]ProjectFact(nil), input.ProjectFacts...)
+		sortProjectFacts(projectFacts)
+		projectCoverage = cloneProjectCoverage(input.ProjectCoverage)
+	}
 
 	summary := Summary{
 		FilesAnalyzed:        len(input.Files),
@@ -97,8 +186,13 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 	scope := input.Scope
 	scope.Baseline = b.options.Baseline
 
+	schemaVersion := "1"
+	if b.options.ProjectEnabled {
+		schemaVersion = "2"
+	}
+
 	report := &Report{
-		SchemaVersion: "1",
+		SchemaVersion: schemaVersion,
 		Scope:         scope,
 		Summary:       summary,
 		Signals:       signals,
@@ -106,7 +200,102 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 		Coverage:      input.Coverage,
 	}
 
+	if b.options.ProjectEnabled {
+		report.ProjectChanges = projectChanges
+		report.ProjectFacts = projectFacts
+		report.ProjectSummary = projectSummary
+		report.ProjectCoverage = projectCoverage
+	}
+
 	return report, nil
+}
+
+// signalFromProjectChange projects a classified project observation onto the
+// shared Signal surface so consumers that only read signals/summary still see
+// active cross-module findings. Structured project fields remain on
+// ProjectChange / project_changes.
+func signalFromProjectChange(change ProjectChange) Signal {
+	return Signal{
+		ID:             change.ID,
+		Fingerprint:    change.Fingerprint,
+		RuleID:         change.RuleID,
+		RuleVersion:    change.RuleVersion,
+		Kind:           change.Kind,
+		Category:       change.Category,
+		Severity:       change.Severity,
+		Confidence:     change.Confidence,
+		Lifecycle:      change.Lifecycle,
+		Changed:        change.Changed,
+		Path:           change.PrimaryAnchor.Path,
+		Subject:        change.SemanticKey,
+		Location:       change.PrimaryAnchor.Location,
+		Evidence:       change.Evidence,
+		WhyItMatters:   change.WhyItMatters,
+		Recommendation: change.Recommendation,
+		SuggestedSkill: change.SuggestedSkill,
+		Provenance:     change.Provenance,
+	}
+}
+
+func cloneProjectCoverage(in *projectmodel.Coverage) *projectmodel.Coverage {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if len(in.Counts) > 0 {
+		out.Counts = make(map[string]int, len(in.Counts))
+		for k, v := range in.Counts {
+			out.Counts[k] = v
+		}
+	}
+	if len(in.Budgets) > 0 {
+		out.Budgets = make(map[string]int, len(in.Budgets))
+		for k, v := range in.Budgets {
+			out.Budgets[k] = v
+		}
+	}
+	if len(in.Diagnostics) > 0 {
+		out.Diagnostics = append([]projectmodel.Diagnostic(nil), in.Diagnostics...)
+		sort.SliceStable(out.Diagnostics, func(i, j int) bool {
+			a, b := out.Diagnostics[i], out.Diagnostics[j]
+			if a.Code != b.Code {
+				return a.Code < b.Code
+			}
+			if a.Path != b.Path {
+				return a.Path < b.Path
+			}
+			return a.Message < b.Message
+		})
+	}
+	return &out
+}
+
+func completeProjectCoverage(coverage *projectmodel.Coverage) bool {
+	return coverage != nil && coverage.Complete
+}
+
+func projectLifecycleDiagnosticMessage(input Input) string {
+	reasons := make([]string, 0, 2)
+	if input.ProjectCoverage == nil {
+		reasons = append(reasons, "head coverage unavailable")
+	} else if !input.ProjectCoverage.Complete {
+		reasons = append(reasons, "head coverage incomplete")
+	}
+	// Only blame the base side when a base model was analyzed or base
+	// observations were actually supplied. Baseline runs and head-only
+	// diffs never expect base coverage.
+	baseSideExpected := input.ProjectBaseAnalyzed || len(input.BaseProjectChanges) > 0
+	if baseSideExpected {
+		if !input.ProjectBaseAnalyzed || input.BaseProjectCoverage == nil {
+			reasons = append(reasons, "base coverage unavailable")
+		} else if !input.BaseProjectCoverage.Complete {
+			reasons = append(reasons, "base coverage incomplete")
+		}
+	}
+	if len(reasons) == 0 {
+		return "project lifecycle is indeterminate"
+	}
+	return "project lifecycle is indeterminate: " + strings.Join(reasons, "; ")
 }
 
 // processHeadResult derives diagnostics and signals from fc.Head.

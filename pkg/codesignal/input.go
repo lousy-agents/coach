@@ -1,6 +1,9 @@
 package codesignal
 
-import "github.com/lousy-agents/coach/pkg/semantics"
+import (
+	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/semantics"
+)
 
 // Input is the unit of work for a Builder.
 type Input struct {
@@ -8,6 +11,30 @@ type Input struct {
 	Files       []FileChange `json:"files,omitempty"`
 	Diagnostics []Diagnostic `json:"diagnostics,omitempty"`
 	Coverage    *Coverage    `json:"coverage,omitempty"`
+
+	// ProjectChanges are head-side raw project observations, not yet
+	// lifecycle-classified. BaseProjectChanges is the base-side equivalent
+	// for a diff-flow comparison (empty/nil for a Repository Baseline
+	// run). SemanticKey must be set by the caller on every entry -- it is
+	// ProjectChange's lifecycle identity, unlike Signal which derives its
+	// key from rule/path/subject/evidence.
+	ProjectChanges      []ProjectChange        `json:"project_changes,omitempty"`
+	BaseProjectChanges  []ProjectChange        `json:"base_project_changes,omitempty"`
+	ProjectFacts        []ProjectFact          `json:"project_facts,omitempty"`
+	ProjectCoverage     *projectmodel.Coverage `json:"project_coverage,omitempty"`
+	BaseProjectCoverage *projectmodel.Coverage `json:"base_project_coverage,omitempty"`
+
+	// ProjectBaseAnalyzed reports whether a base-side project model was
+	// built at all; distinct from len(BaseProjectChanges) > 0, which cannot
+	// distinguish a clean base (analyzed, zero changes) from no base having
+	// been analyzed. Build uses this flag (not slice length) to decide
+	// whether head-only project changes are "introduced" or "unknown" --
+	// mirroring how Signal lifecycle classification keys off FileChange.Base's
+	// presence rather than whether it produced findings. A non-nil empty
+	// BaseProjectChanges with ProjectBaseAnalyzed false is treated as "no
+	// base side" (valid for baseline); non-empty changes without the flag
+	// are inconsistent and force lifecycle-indeterminate.
+	ProjectBaseAnalyzed bool `json:"project_base_analyzed,omitempty"`
 }
 
 // Scope identifies the repository and revision range an Input covers.
