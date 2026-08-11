@@ -29,6 +29,7 @@ vendor/
 # Go workspace file
 go.work
 go.work.sum
+!pkg/projectmodel/testdata/**/go.work
 
 # env file (operator copy of .env.example)
 .env
