@@ -1,9 +1,10 @@
 // Package projectmodel defines deterministic, offline, whole-repository
 // structural facts about a codebase: workspace/module/package/file
 // inventory and import edges. It holds no policy and no derived signals --
-// it never imports pkg/codesignal, pkg/semantics, or any GitHub-related
-// package, so a consumer that only needs raw project facts never pulls in
-// analysis policy or a GitHub client.
+// it may depend on pkg/semantics for source parsing, but it never imports
+// pkg/codesignal or any GitHub-related package, so a consumer that only
+// needs raw project facts never pulls in analysis policy or a GitHub
+// client.
 package projectmodel
 
 // SchemaVersion is the frozen schema version for Model's JSON encoding.
