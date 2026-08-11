@@ -96,9 +96,19 @@ var gitCommandContext = func(ctx context.Context, dir string, args ...string) *e
 }
 
 // runGitBytesBounded runs git with a wall-time limit and hard caps on
-// collected stdout and stderr. The LimitReader stops after maxStdout+1 bytes
-// so an oversized blob is detected without buffering the entire child output.
+// collected stdout and stderr, building the child via the package's default
+// gitCommandContext seam. The LimitReader stops after maxStdout+1 bytes so
+// an oversized blob is detected without buffering the entire child output.
 func runGitBytesBounded(dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
+	return runGitBytesBoundedWith(gitCommandContext, dir, maxStdout, maxStderr, timeout, args...)
+}
+
+// runGitBytesBoundedWith is the shared bounded-git-read implementation
+// behind runGitBytesBounded: a wall-time limit, hard stdout/stderr caps, and
+// concurrent pipe draining. buildCmd is the child-construction seam, letting
+// callers vary command/environment construction (e.g. project_snapshot.go's
+// sanitized-environment snapshot reads) without duplicating this I/O logic.
+func runGitBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args ...string) *exec.Cmd, dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
 	if timeout <= 0 {
 		return nil, fmt.Errorf("git execution timeout must be positive")
 	}
@@ -109,7 +119,7 @@ func runGitBytesBounded(dir string, maxStdout, maxStderr int64, timeout time.Dur
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := gitCommandContext(ctx, dir, args...)
+	cmd := buildCmd(ctx, dir, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
