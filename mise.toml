@@ -66,6 +66,12 @@ run = "go mod tidy && git diff --exit-code go.mod go.sum"
 description = "Build the Go stdio backend binary consumed by js/semantics"
 run = "go build -o js/semantics/bin/coach-semantics-json ./cmd/semantics-json"
 
+[tasks.project-sidecar-build]
+description = "Build the pinned Node/TypeScript project sidecar binary consumed by pkg/projectmodel (issue #214 Task 3)"
+run = "npm run build:project-sidecar"
+dir = "js/semantics"
+depends = ["js-install"]
+
 [tasks.js-install]
 description = "Install js/semantics dev dependencies (scripts skipped; js-build compiles explicitly)"
 run = "npm ci --ignore-scripts"

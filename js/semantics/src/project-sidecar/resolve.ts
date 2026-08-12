@@ -1,0 +1,154 @@
+import { isRecord, VIRTUAL_ROOT, type ProjectSnapshot } from "./vfs.js";
+
+export type ResolvedKind = "snapshot" | "external" | "unresolved";
+
+export interface ResolvedSpecifier {
+  kind: ResolvedKind;
+  /** Set only when kind === "snapshot". */
+  virtualPath?: string;
+}
+
+/**
+ * Manual, hand-rolled specifier resolver used only where the real TS
+ * checker cannot help: require() calls (TS never tracks these without an
+ * ambient `require` typing from @types/node, which snapshots do not ship)
+ * and as a fallback when the checker's own resolution comes back empty
+ * (e.g. an extensionless relative specifier under NodeNext-style
+ * resolution, which TS itself would reject with a diagnostic but which
+ * this sidecar still resolves for edge-reporting purposes). Static
+ * import/export declarations are resolved primarily through the real TS
+ * checker (see edges.ts), which correctly and more completely honors
+ * tsconfig paths/baseUrl and (via vfs.ts's node_modules mirror)
+ * package.json exports; this resolver's package-exports support below is
+ * intentionally a narrower subset, sufficient only as that fallback.
+ */
+export function resolveSpecifier(fromVirtualPath: string, specifier: string, snapshot: ProjectSnapshot): ResolvedSpecifier {
+  if (isRelativeSpecifier(specifier)) {
+    const resolved = resolveRelative(fromVirtualPath, specifier, snapshot.originalVirtualPaths);
+    return resolved ? { kind: "snapshot", virtualPath: resolved } : { kind: "unresolved" };
+  }
+  const resolved = resolvePackageSpecifier(specifier, snapshot);
+  return resolved ? { kind: "snapshot", virtualPath: resolved } : { kind: "external" };
+}
+
+function isRelativeSpecifier(spec: string): boolean {
+  return spec === "." || spec === ".." || spec.startsWith("./") || spec.startsWith("../");
+}
+
+function resolveRelative(fromVirtualPath: string, specifier: string, paths: ReadonlySet<string>): string | undefined {
+  const dir = fromVirtualPath.slice(0, fromVirtualPath.lastIndexOf("/"));
+  const joined = normalizeVirtualPath(`${dir}/${specifier}`);
+  return probeCandidates(joined, paths);
+}
+
+/**
+ * Tries, in order: the exact path; a `.js`/`.jsx` specifier rewritten to
+ * `.ts`/`.tsx` (the standard NodeNext/Node16 "import the emitted name,
+ * resolve the source" convention); `.ts`/`.tsx`/`.d.ts` appended; and
+ * `/index.ts`/`/index.tsx`.
+ */
+function probeCandidates(base: string, paths: ReadonlySet<string>): string | undefined {
+  const rewritten = base.replace(/\.jsx$/, ".tsx").replace(/\.js$/, ".ts");
+  const candidates = [
+    rewritten,
+    base,
+    `${rewritten}.ts`,
+    `${rewritten}.tsx`,
+    `${rewritten}.d.ts`,
+    `${rewritten}/index.ts`,
+    `${rewritten}/index.tsx`,
+  ];
+  for (const candidate of candidates) {
+    if (paths.has(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+function resolvePackageSpecifier(specifier: string, snapshot: ProjectSnapshot): string | undefined {
+  for (const info of snapshot.packagesByName.values()) {
+    if (specifier !== info.name && !specifier.startsWith(`${info.name}/`)) continue;
+    const subpath = specifier === info.name ? "." : `.${specifier.slice(info.name.length)}`;
+    const target = resolvePackageExports(info.exports, info.main, subpath);
+    if (target === undefined) continue;
+    const full = normalizeVirtualPath(`${info.dirVirtual}/${target}`);
+    if (snapshot.originalVirtualPaths.has(full)) return full;
+    const probed = probeCandidates(full, snapshot.originalVirtualPaths);
+    if (probed) return probed;
+  }
+  return undefined;
+}
+
+const CONDITION_PRIORITY = ["import", "require", "node", "default"];
+
+/**
+ * Minimal package.json "exports" resolution: a plain string (only for
+ * subpath "."), a subpath-keyed object (with one-level condition objects
+ * and a single "*" wildcard per pattern), or -- absent "exports" -- the
+ * "main" field for subpath ".". This intentionally does not implement the
+ * full exports spec (multi-star patterns, exports arrays, nested
+ * subpath-and-condition combinations beyond one level); see resolve.ts's
+ * module comment for why the primary path does not need it to.
+ */
+function resolvePackageExports(exp: unknown, main: string | undefined, subpath: string): string | undefined {
+  if (typeof exp === "string") {
+    return subpath === "." ? stripLeadingDot(exp) : undefined;
+  }
+  if (isRecord(exp)) {
+    if (exp[subpath] !== undefined) {
+      return resolveConditions(exp[subpath]);
+    }
+    for (const [pattern, value] of Object.entries(exp)) {
+      if (!pattern.includes("*")) continue;
+      const match = matchWildcard(pattern, subpath);
+      if (match === undefined) continue;
+      const resolved = resolveConditions(value);
+      if (resolved !== undefined) return resolved.replace("*", match);
+    }
+    return undefined;
+  }
+  if (exp === undefined && main !== undefined && subpath === ".") {
+    return stripLeadingDot(main);
+  }
+  return undefined;
+}
+
+function resolveConditions(value: unknown): string | undefined {
+  if (typeof value === "string") return stripLeadingDot(value);
+  if (isRecord(value)) {
+    for (const condition of CONDITION_PRIORITY) {
+      const nested = value[condition];
+      if (typeof nested === "string") return stripLeadingDot(nested);
+      if (isRecord(nested)) {
+        const resolved = resolveConditions(nested);
+        if (resolved !== undefined) return resolved;
+      }
+    }
+  }
+  return undefined;
+}
+
+function matchWildcard(pattern: string, subpath: string): string | undefined {
+  const starIdx = pattern.indexOf("*");
+  const prefix = pattern.slice(0, starIdx);
+  const suffix = pattern.slice(starIdx + 1);
+  if (!subpath.startsWith(prefix) || !subpath.endsWith(suffix)) return undefined;
+  return subpath.slice(prefix.length, subpath.length - suffix.length);
+}
+
+function stripLeadingDot(p: string): string {
+  return p.replace(/^\.\//, "");
+}
+
+function normalizeVirtualPath(p: string): string {
+  const parts = p.split("/");
+  const out: string[] = [];
+  for (const part of parts) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      out.pop();
+      continue;
+    }
+    out.push(part);
+  }
+  return out.length === 0 ? VIRTUAL_ROOT : `/${out.join("/")}`;
+}
