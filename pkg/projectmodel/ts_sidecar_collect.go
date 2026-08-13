@@ -17,40 +17,62 @@ import (
 // request's Files array, with no other channel -- omitting them silently
 // starves the sidecar of every project it would otherwise open (zero
 // tsconfig.json forwarded => zero projects opened => zero import edges,
-// yet Coverage.Complete still reports true, since analyze.ts treats "no
-// tsconfig discovered" as a vacuously complete analysis rather than a
-// failure). tsconfig*.json (not just the exact "tsconfig.json" name) is
+// reported as Complete=false with a ts_no_project_config diagnostic).
+// tsconfig*.json (not just the exact "tsconfig.json" name) is
 // matched, not merely suffix-matched, so a `"my-tsconfig.json"` is not
 // swept in while an `"extends": "./tsconfig.base.json"` target is still
 // forwarded for the sidecar to read. Anything under a node_modules/
 // directory is excluded from both source and config matching, since
 // sweeping in every vendored package.json would explode the request size
-// with no corresponding benefit. Unlike BuildGoModel's GoBudgets
-// (MaxInputFiles/MaxInputBytes), this walk has no file-count or byte cap
-// of its own yet -- a caller-supplied budget analogous to GoBudgets is a
-// natural follow-up once a CLI path actually wires this backend up for
-// real repositories. It returns the files collected plus a
-// separate seen count so a read failure still contributes to
-// Coverage.Counts["files_seen"].
-func collectTSSidecarFiles(snapshot fs.FS, roots []string) ([]projectbridge.ProjectFile, int) {
+// with no corresponding benefit.
+//
+// budgets.MaxInputFiles/MaxInputBytes bound this walk the same way
+// GoBudgets bounds BuildGoModel's source-file read phase: paths are
+// already collected in deterministic sorted order (listTSSidecarPaths),
+// so truncating at either budget always drops the same trailing paths
+// across repeated calls with the same snapshot and budget. It returns the
+// files collected, a separate seen count (the full candidate count before
+// any truncation, so a read failure or budget truncation still contributes
+// to Coverage.Counts["files_seen"] on the failure paths that use this
+// count; on a successful response the sidecar's own post-truncation
+// files_seen is reported instead), and whether either budget truncated
+// the walk; the caller is responsible for turning a true
+// truncated into Coverage.Complete=false plus a DiagFileBudgetExceeded
+// diagnostic (BuildTypeScriptModelViaSidecar does this uniformly across
+// every response outcome, mirroring BuildGoModel's own truncation
+// handling).
+func collectTSSidecarFiles(snapshot fs.FS, roots []string, budgets GoBudgets) ([]projectbridge.ProjectFile, int, bool) {
 	paths := listTSSidecarPaths(snapshot, roots)
-	files := readTSSidecarFiles(snapshot, paths)
-	return files, len(paths)
+	files, truncated := readTSSidecarFilesBudgeted(snapshot, paths, budgets)
+	return files, len(paths), truncated
 }
 
-func readTSSidecarFiles(snapshot fs.FS, paths []string) []projectbridge.ProjectFile {
+func readTSSidecarFilesBudgeted(snapshot fs.FS, paths []string, budgets GoBudgets) ([]projectbridge.ProjectFile, bool) {
 	files := make([]projectbridge.ProjectFile, 0, len(paths))
+	filesAdmitted := 0
+	bytesAdmitted := int64(0)
 	for _, p := range paths {
+		if budgets.MaxInputFiles > 0 && filesAdmitted >= budgets.MaxInputFiles {
+			return files, true
+		}
+
 		content, err := fs.ReadFile(snapshot, p)
 		if err != nil {
 			continue
 		}
+
+		if budgets.MaxInputBytes > 0 && bytesAdmitted+int64(len(content)) > budgets.MaxInputBytes {
+			return files, true
+		}
+		bytesAdmitted += int64(len(content))
+
 		files = append(files, projectbridge.ProjectFile{
 			Path:       p,
 			ContentB64: base64.StdEncoding.EncodeToString(content),
 		})
+		filesAdmitted++
 	}
-	return files
+	return files, false
 }
 
 func listTSSidecarPaths(snapshot fs.FS, roots []string) []string {

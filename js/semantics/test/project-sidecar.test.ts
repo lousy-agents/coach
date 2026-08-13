@@ -201,6 +201,75 @@ test("commonjs/dynamic/type-only imports each produce an edge with a distinct Ki
   assert.equal(kinds.size, 3, `expected 3 distinct kinds, got ${JSON.stringify([...kinds])}`);
 });
 
+test("inline type-only named imports: `import { type T }` classifies as type_only, not a value import", async () => {
+  const { response, exitCode } = await runSidecar({
+    files: [
+      file("tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } })),
+      file("src/a.ts", `import { type T } from "./b";\nexport type UsesT = T;\n`),
+      file("src/b.ts", `export type T = number;\nexport const v = 1;\n`),
+    ],
+  });
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.equal(response.error, undefined);
+  const edges = edgesTo(response, "file:src/b.ts");
+  assert.equal(edges.length, 1, JSON.stringify(response));
+  assert.equal(edges[0]?.kind, "type_only", JSON.stringify(response));
+  assert.equal(edges[0]?.resolution, "snapshot");
+});
+
+test("mixed inline type-only and value named imports: `import { type T, v }` classifies as a value import", async () => {
+  const { response, exitCode } = await runSidecar({
+    files: [
+      file("tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } })),
+      file("src/a.ts", `import { type T, v } from "./b";\nexport type UsesT = T;\nconsole.log(v);\n`),
+      file("src/b.ts", `export type T = number;\nexport const v = 1;\n`),
+    ],
+  });
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.equal(response.error, undefined);
+  const edges = edgesTo(response, "file:src/b.ts");
+  assert.equal(edges.length, 1, JSON.stringify(response));
+  assert.equal(edges[0]?.kind, "import", JSON.stringify(response));
+});
+
+test("inline type-only named re-exports: `export { type T } from` classifies as type_only, not a value reexport", async () => {
+  const { response, exitCode } = await runSidecar({
+    files: [
+      file("tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } })),
+      file("src/a.ts", `export { type T } from "./b";\n`),
+      file("src/b.ts", `export type T = number;\nexport const v = 1;\n`),
+    ],
+  });
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.equal(response.error, undefined);
+  const edges = edgesTo(response, "file:src/b.ts");
+  assert.equal(edges.length, 1, JSON.stringify(response));
+  assert.equal(edges[0]?.kind, "type_only", JSON.stringify(response));
+});
+
+test("false-complete guard: .ts sources with no discovered tsconfig.json report Complete=false with a diagnostic", async () => {
+  const { response, exitCode } = await runSidecar({
+    files: [file("src/a.ts", `export const a = 1;\n`), file("src/b.ts", `export const b = 1;\n`)],
+  });
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.equal(response.error, undefined);
+  assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
+  assert.ok(
+    response.coverage.diagnostics?.some((d) => d.code === "ts_no_project_config"),
+    JSON.stringify(response.coverage),
+  );
+});
+
+test("vacuous snapshot: no .ts/.tsx sources and no tsconfig.json stays Complete=true with empty edges", async () => {
+  const { response, exitCode } = await runSidecar({
+    files: [file("README.md", "not typescript\n")],
+  });
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.equal(response.error, undefined);
+  assert.equal(response.coverage.complete, true, JSON.stringify(response.coverage));
+  assert.equal(response.import_edges, undefined, JSON.stringify(response));
+});
+
 test("snapshot confinement: an import resolving only via real disk is reported unresolved, never read", async () => {
   const realDir = mkdtempSync(join(tmpdir(), "coach-ts-sidecar-leak-"));
   const realFile = join(realDir, "leak-marker.ts");

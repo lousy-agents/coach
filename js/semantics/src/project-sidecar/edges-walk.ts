@@ -10,6 +10,7 @@ import {
   type ImportEdgeFact,
 } from "./protocol.js";
 import { resolveTarget } from "./edges-resolve.js";
+import { isTypeOnlyExportDeclaration, isTypeOnlyImportClause } from "./type-only.js";
 import type { ProjectSnapshot } from "./vfs.js";
 
 export function collectEdgesFromSourceFile(
@@ -38,11 +39,11 @@ function edgeFromNode(
   snapshot: ProjectSnapshot,
 ): ImportEdgeFact | undefined {
   if (astns.isImportDeclaration(node) && astns.isStringLiteral(node.moduleSpecifier)) {
-    const kind = node.importClause?.phaseModifier === astns.SyntaxKind.TypeKeyword ? KIND_TYPE_ONLY : KIND_IMPORT;
+    const kind = isTypeOnlyImportClause(node.importClause) ? KIND_TYPE_ONLY : KIND_IMPORT;
     return buildEdge(fromId, node.moduleSpecifier, sf, fromRepoPath, kind, project, snapshot, true);
   }
   if (astns.isExportDeclaration(node) && node.moduleSpecifier && astns.isStringLiteral(node.moduleSpecifier)) {
-    const kind = node.isTypeOnly ? KIND_TYPE_ONLY : KIND_REEXPORT;
+    const kind = isTypeOnlyExportDeclaration(node) ? KIND_TYPE_ONLY : KIND_REEXPORT;
     return buildEdge(fromId, node.moduleSpecifier, sf, fromRepoPath, kind, project, snapshot, true);
   }
   return edgeFromCall(node, fromId, sf, fromRepoPath, project, snapshot);

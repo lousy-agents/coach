@@ -223,6 +223,35 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 		})
 	})
 
+	When("a snapshot contains a root tsconfig.json and a nested workspace tsconfig.json, alongside decoy config files", func() {
+		It("populates Model.Workspaces with one sorted, deduped entry per discovered tsconfig.json, excluding tsconfig.base.json/package.json", func() {
+			snapshot := fstest.MapFS{
+				"tsconfig.json": tsconfigJSON(map[string]any{
+					"compilerOptions": map[string]any{"module": "commonjs", "moduleResolution": "node10"},
+				}),
+				"tsconfig.base.json": tsconfigJSON(map[string]any{
+					"compilerOptions": map[string]any{"module": "commonjs", "moduleResolution": "node10"},
+				}),
+				"package.json": tsconfigJSON(map[string]any{"name": "root-fixture"}),
+				"src/a.ts":     file("export const a = 1;\n"),
+				"packages/x/tsconfig.json": tsconfigJSON(map[string]any{
+					"compilerOptions": map[string]any{"module": "commonjs", "moduleResolution": "node10"},
+				}),
+				"packages/x/src/b.ts": file("export const b = 1;\n"),
+			}
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), realOpts())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeTrue(), "%+v", model.Coverage)
+			Expect(model.Coverage.Counts).To(HaveKeyWithValue("projects_analyzed", 2), "expected both discovered tsconfig.json roots to be opened and walked")
+
+			Expect(model.Workspaces).To(Equal([]projectmodel.Workspace{
+				{ID: "workspace:.", Language: "typescript", Root: "."},
+				{ID: "workspace:packages/x", Language: "typescript", Root: "packages/x"},
+			}), "expected one Workspace per forwarded tsconfig.json, sorted and deduped, excluding the tsconfig.base.json/package.json decoys, got %+v", model.Workspaces)
+		})
+	})
+
 	When("compilerOptions.paths/baseUrl alias an import", func() {
 		It("produces an ImportEdge resolving the aliased import to its target file", func() {
 			snapshot := fstest.MapFS{
@@ -451,6 +480,162 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 				kinds[e.Kind] = struct{}{}
 			}
 			Expect(kinds).To(HaveLen(3), "expected 3 distinct kinds, got %+v", kinds)
+		})
+	})
+
+	When("a source file imports a pure inline type-only named binding", func() {
+		It("classifies the edge type_only, not a value import, and a mixed named import still classifies as a value import", func() {
+			snapshot := fstest.MapFS{
+				"tsconfig.json": tsconfigJSON(map[string]any{
+					"compilerOptions": map[string]any{"module": "commonjs", "moduleResolution": "node10"},
+				}),
+				"src/a.ts": file("import { type T } from \"./b\";\nexport type UsesT = T;\n"),
+				"src/b.ts": file("export type T = number;\nexport const v = 1;\n"),
+				"src/c.ts": file("import { type T, v } from \"./b\";\nexport type UsesT = T;\nconsole.log(v);\n"),
+			}
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), realOpts())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeTrue(), "%+v", model.Coverage)
+
+			var pureTypeOnly, mixed []projectmodel.ImportEdge
+			for _, e := range model.ImportEdges {
+				if e.To != "file:src/b.ts" {
+					continue
+				}
+				switch e.From {
+				case "file:src/a.ts":
+					pureTypeOnly = append(pureTypeOnly, e)
+				case "file:src/c.ts":
+					mixed = append(mixed, e)
+				}
+			}
+			Expect(pureTypeOnly).To(HaveLen(1), "%+v", model.ImportEdges)
+			Expect(pureTypeOnly[0].Kind).To(Equal("type_only"), "expected `import { type T } from \"./b\"` to classify as type_only, got %+v", pureTypeOnly[0])
+
+			Expect(mixed).To(HaveLen(1), "%+v", model.ImportEdges)
+			Expect(mixed[0].Kind).To(Equal("import"), "expected `import { type T, v } from \"./b\"` to classify as a value import, got %+v", mixed[0])
+		})
+	})
+
+	When("a snapshot contains .ts sources but no tsconfig.json anywhere", func() {
+		It("reports Complete=false with a stable diagnostic instead of a vacuous complete empty graph", func() {
+			snapshot := fstest.MapFS{
+				"src/a.ts": file("export const a = 1;\n"),
+				"src/b.ts": file("export const b = 1;\n"),
+			}
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), realOpts())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeFalse(), "%+v", model.Coverage)
+			Expect(model.ImportEdges).To(BeEmpty())
+
+			_, hasDiag := diagnosticWithCode(model.Coverage.Diagnostics, "ts_no_project_config")
+			Expect(hasDiag).To(BeTrue(), "expected a ts_no_project_config diagnostic, got %+v", model.Coverage.Diagnostics)
+
+			_, hasBackendUnavailable := diagnosticWithCode(model.Coverage.Diagnostics, projectmodel.DiagBackendUnavailable)
+			Expect(hasBackendUnavailable).To(BeFalse(), "missing project config is a degraded-but-successful analysis, not a transport/backend failure")
+		})
+	})
+
+	When("the snapshot has no TypeScript/TSX sources and no tsconfig.json", func() {
+		It("stays Complete=true with an empty, vacuous model", func() {
+			snapshot := fstest.MapFS{
+				"README.md": file("not typescript\n"),
+			}
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), realOpts())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeTrue(), "%+v", model.Coverage)
+			Expect(model.ImportEdges).To(BeEmpty())
+		})
+	})
+
+	When("a successful analysis inventories the snapshot's TS/TSX sources", func() {
+		It("populates Model.Files for every analyzed path, with every file: edge endpoint present in Model.Files", func() {
+			snapshot := fstest.MapFS{
+				"tsconfig.json": tsconfigJSON(map[string]any{
+					"compilerOptions": map[string]any{
+						"module": "commonjs", "moduleResolution": "node10",
+						"baseUrl": ".", "paths": map[string]any{"@lib/*": []string{"src/lib/*"}},
+					},
+				}),
+				"src/a.ts":        file("import { helper } from \"@lib/util\";\nconsole.log(helper);\n"),
+				"src/lib/util.ts": file("export const helper = 1;\n"),
+			}
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), realOpts())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeTrue(), "%+v", model.Coverage)
+
+			Expect(model.Files).NotTo(BeEmpty())
+			paths := map[string]string{}
+			for _, f := range model.Files {
+				paths[f.Path] = f.Language
+			}
+			Expect(paths).To(HaveKeyWithValue("src/a.ts", "typescript"))
+			Expect(paths).To(HaveKeyWithValue("src/lib/util.ts", "typescript"))
+
+			fileIDs := map[string]bool{}
+			for _, f := range model.Files {
+				fileIDs[f.ID] = true
+			}
+			for _, e := range model.ImportEdges {
+				for _, endpoint := range []string{e.From, e.To} {
+					if strings.HasPrefix(endpoint, "file:") {
+						Expect(fileIDs).To(HaveKey(endpoint), "edge endpoint %q has no corresponding Model.Files entry, got %+v", endpoint, model.Files)
+					}
+				}
+			}
+
+			first, err := json.Marshal(model)
+			Expect(err).NotTo(HaveOccurred())
+			second, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), realOpts())
+			Expect(err).NotTo(HaveOccurred())
+			secondJSON, err := json.Marshal(second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(first).To(Equal(secondJSON), "expected canonical Model.Files JSON to be byte-identical across two runs")
+		})
+	})
+
+	When("a source file directly requires/imports a forwarded config file (package.json, tsconfig.json)", func() {
+		It("includes those config-file edge endpoints in Model.Files too, not just .ts/.tsx sources", func() {
+			snapshot := fstest.MapFS{
+				"tsconfig.json": tsconfigJSON(map[string]any{
+					"compilerOptions": map[string]any{"module": "commonjs", "moduleResolution": "node10"},
+				}),
+				"package.json": tsconfigJSON(map[string]any{"name": "fixture"}),
+				"src/a.ts": file(strings.Join([]string{
+					`const pkg = require("../package.json");`,
+					`import cfg from "../tsconfig.json";`,
+					`console.log(pkg, cfg);`,
+					``,
+				}, "\n")),
+			}
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), realOpts())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeTrue(), "%+v", model.Coverage)
+
+			pkgEdge, ok := edgeByTo(model.ImportEdges, "file:package.json")
+			Expect(ok).To(BeTrue(), "expected an edge to file:package.json, got %+v", model.ImportEdges)
+			Expect(pkgEdge.Kind).To(Equal("commonjs_require"))
+
+			tsconfigEdge, ok := edgeByTo(model.ImportEdges, "file:tsconfig.json")
+			Expect(ok).To(BeTrue(), "expected an edge to file:tsconfig.json, got %+v", model.ImportEdges)
+			Expect(tsconfigEdge).NotTo(BeZero())
+
+			fileIDs := map[string]bool{}
+			for _, f := range model.Files {
+				fileIDs[f.ID] = true
+			}
+			for _, e := range model.ImportEdges {
+				for _, endpoint := range []string{e.From, e.To} {
+					if strings.HasPrefix(endpoint, "file:") {
+						Expect(fileIDs).To(HaveKey(endpoint), "edge endpoint %q has no corresponding Model.Files entry, got %+v", endpoint, model.Files)
+					}
+				}
+			}
 		})
 	})
 

@@ -59,6 +59,14 @@ type TSSidecarOptions struct {
 	// indefinitely on a stalled child, callers should always set a
 	// positive Timeout in production.
 	Timeout time.Duration
+	// Budgets bounds collectTSSidecarFiles's input walk before any file is
+	// sent to the sidecar, mirroring GoBuildOptions.Budgets -- only
+	// MaxInputFiles and MaxInputBytes are enforced here (the same two
+	// dimensions BuildGoModel enforces); the rest of GoBudgets' fields are
+	// reserved for this backend the same way they are for Go's. A zero
+	// value is unbounded, matching GoBudgets' own no-implicit-default
+	// convention.
+	Budgets GoBudgets
 }
 
 // BuildTypeScriptModelViaSidecar builds a Model's raw TypeScript/TSX
@@ -84,7 +92,7 @@ func BuildTypeScriptModelViaSidecar(ctx context.Context, snapshot fs.FS, meta Sn
 		ctx = context.Background()
 	}
 
-	files, filesSeen := collectTSSidecarFiles(snapshot, opts.Roots)
+	files, filesSeen, truncated := collectTSSidecarFiles(snapshot, opts.Roots, opts.Budgets)
 	req := projectbridge.Request{
 		Version:   projectbridge.ProtocolVersion,
 		Op:        projectbridge.OpAnalyzeProject,
@@ -95,20 +103,49 @@ func BuildTypeScriptModelViaSidecar(ctx context.Context, snapshot fs.FS, meta Sn
 	}
 
 	resp, diagMessage := callTSSidecar(ctx, opts, req)
-	if diagMessage != "" {
-		return tsSidecarModel(meta, opts, filesSeen, Diagnostic{Code: DiagBackendUnavailable, Message: diagMessage}), nil
+	var model Model
+	switch {
+	case diagMessage != "":
+		model = tsSidecarModel(meta, opts, filesSeen, Diagnostic{Code: DiagBackendUnavailable, Message: diagMessage})
+	case resp.Error != nil:
+		model = tsSidecarModel(meta, opts, filesSeen, tsSidecarErrorDiagnostics(resp)...)
+	default:
+		model = modelFromTSSidecarResponse(meta, opts, resp, files)
 	}
-	if resp.Error != nil {
-		return tsSidecarModel(meta, opts, filesSeen, tsSidecarErrorDiagnostics(resp)...), nil
+	if truncated {
+		model = applyTSSidecarInputBudgetTruncation(model)
 	}
-	return modelFromTSSidecarResponse(meta, opts, resp), nil
+	return model, nil
 }
 
-func modelFromTSSidecarResponse(meta SnapshotMeta, opts TSSidecarOptions, resp projectbridge.Response) Model {
+// applyTSSidecarInputBudgetTruncation marks model incomplete and appends a
+// DiagFileBudgetExceeded diagnostic when opts.Budgets truncated
+// collectTSSidecarFiles's input walk, regardless of which outcome branch
+// (successful response, resp.Error, or transport failure) produced model --
+// a truncated input snapshot never represents complete facts, even if the
+// sidecar itself reported success over the smaller set it was actually
+// given.
+func applyTSSidecarInputBudgetTruncation(model Model) Model {
+	model.Coverage = canonicalCoverage(Coverage{
+		Phase:    model.Coverage.Phase,
+		Complete: false,
+		Counts:   model.Coverage.Counts,
+		Budgets:  model.Coverage.Budgets,
+		Diagnostics: append(append([]Diagnostic{}, model.Coverage.Diagnostics...), Diagnostic{
+			Code:    DiagFileBudgetExceeded,
+			Message: "ts sidecar input collection truncated by Budgets.MaxInputFiles/MaxInputBytes",
+		}),
+	})
+	return model
+}
+
+func modelFromTSSidecarResponse(meta SnapshotMeta, opts TSSidecarOptions, resp projectbridge.Response, files []projectbridge.ProjectFile) Model {
 	return Model{
 		SchemaVersion: SchemaVersion,
 		Repository:    meta.Repository,
 		Snapshot:      tsSidecarSnapshot(meta, opts),
+		Workspaces:    tsWorkspaceFactsFromCollected(files),
+		Files:         tsFileFactsFromCollected(files),
 		ImportEdges:   importEdgesFromWire(resp.ImportEdges),
 		Coverage: canonicalCoverage(Coverage{
 			Phase:       tsSidecarPhase,

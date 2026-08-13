@@ -2,6 +2,7 @@ package projectmodel_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -113,6 +114,77 @@ var _ = Describe("BuildTypeScriptModelViaSidecar", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(model.Coverage.Complete).To(BeTrue())
 			Expect(model.Coverage.Counts).To(HaveKeyWithValue("files_seen", 2), "expected src/nested/b.ts, reachable from both the src and src/nested roots, to be counted once, not twice")
+		})
+	})
+
+	When("Budgets bounds file collection", func() {
+		ts3Snapshot := func() fstest.MapFS {
+			return fstest.MapFS{
+				"src/a.ts": &fstest.MapFile{Data: []byte("export const a = 'A';\n")},
+				"src/b.ts": &fstest.MapFile{Data: []byte("export const b = 'B';\n")},
+				"src/c.ts": &fstest.MapFile{Data: []byte("export const c = 'C';\n")},
+			}
+		}
+
+		It("admits every candidate file when no budget is set", func() {
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), ts3Snapshot(), testMeta(), sidecarOptsWithMode("happy"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeTrue())
+			Expect(model.Coverage.Counts).To(HaveKeyWithValue("files_seen", 3))
+		})
+
+		It("truncates deterministically to the sorted-first path, marks Complete false, and records a budget diagnostic", func() {
+			opts := sidecarOptsWithMode("happy")
+			opts.Budgets = projectmodel.GoBudgets{MaxInputFiles: 1}
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), ts3Snapshot(), testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeFalse(), "expected the client-imposed input budget to mark the model incomplete even though the fake sidecar itself reports success")
+			Expect(model.Coverage.Counts).To(HaveKeyWithValue("files_seen", 1), "expected only the single admitted file to be forwarded to the sidecar")
+			Expect(model.ImportEdges).To(ContainElement(projectmodel.ImportEdge{
+				From: "file:src/a.ts", To: "export const a = 'A';\n", Kind: "internal", Site: "src/a.ts:1",
+			}), "expected the deterministic sorted-first path src/a.ts to be the sole admitted file, got %+v", model.ImportEdges)
+
+			diag, ok := diagnosticWithCode(model.Coverage.Diagnostics, projectmodel.DiagFileBudgetExceeded)
+			Expect(ok).To(BeTrue(), "expected a project_file_budget_exceeded diagnostic, got %+v", model.Coverage.Diagnostics)
+			Expect(diag.Message).NotTo(BeEmpty())
+		})
+
+		It("truncates deterministically by MaxInputBytes, marks Complete false, and records a budget diagnostic", func() {
+			opts := sidecarOptsWithMode("happy")
+			opts.Budgets = projectmodel.GoBudgets{MaxInputBytes: 30}
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), ts3Snapshot(), testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeFalse(), "expected the client-imposed byte budget to mark the model incomplete even though the fake sidecar itself reports success")
+			Expect(model.Coverage.Counts).To(HaveKeyWithValue("files_seen", 1), "expected only the single admitted file (22 bytes, under the 30-byte budget) to be forwarded to the sidecar; a second 22-byte file would exceed it")
+			Expect(model.ImportEdges).To(ContainElement(projectmodel.ImportEdge{
+				From: "file:src/a.ts", To: "export const a = 'A';\n", Kind: "internal", Site: "src/a.ts:1",
+			}), "expected the deterministic sorted-first path src/a.ts to be the sole admitted file, got %+v", model.ImportEdges)
+
+			diag, ok := diagnosticWithCode(model.Coverage.Diagnostics, projectmodel.DiagFileBudgetExceeded)
+			Expect(ok).To(BeTrue(), "expected a project_file_budget_exceeded diagnostic, got %+v", model.Coverage.Diagnostics)
+			Expect(diag.Message).NotTo(BeEmpty())
+		})
+
+		It("produces a byte-identical truncation set across repeated calls with the same budget", func() {
+			opts := sidecarOptsWithMode("happy")
+			opts.Budgets = projectmodel.GoBudgets{MaxInputFiles: 1}
+
+			first, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), ts3Snapshot(), testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(first.Coverage.Complete).To(BeFalse(), "expected truncation to actually occur so this spec cannot trivially pass on two vacuously-equal untruncated runs")
+			_, ok := diagnosticWithCode(first.Coverage.Diagnostics, projectmodel.DiagFileBudgetExceeded)
+			Expect(ok).To(BeTrue(), "expected a project_file_budget_exceeded diagnostic confirming truncation happened, got %+v", first.Coverage.Diagnostics)
+
+			second, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), ts3Snapshot(), testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+
+			firstJSON, err := json.Marshal(first)
+			Expect(err).NotTo(HaveOccurred())
+			secondJSON, err := json.Marshal(second)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(firstJSON).To(Equal(secondJSON), "expected truncation to be deterministic across repeated calls with the same budget")
 		})
 	})
 

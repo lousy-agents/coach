@@ -37,7 +37,7 @@ export function analyzeProject(opts: AnalyzeOptions): AnalyzeResult {
   const counts: Record<string, number> = { files_seen: opts.files.length, tsconfig_count: tsconfigPaths.length };
 
   if (tsconfigPaths.length === 0) {
-    return emptyComplete(counts);
+    return emptyComplete(counts, opts.files);
   }
   if (deadline !== undefined && Date.now() >= deadline) {
     return timeoutBeforeStart(counts, opts.timeoutMs ?? 0);
@@ -51,8 +51,32 @@ export function analyzeProject(opts: AnalyzeOptions): AnalyzeResult {
   }
 }
 
-function emptyComplete(counts: Record<string, number>): AnalyzeResult {
-  return { edges: [], coverage: { phase: SIDECAR_PHASE, complete: true, counts } };
+/**
+ * Reports the vacuous-project result when no tsconfig.json was discovered.
+ * A snapshot that genuinely contains no TypeScript/TSX sources has nothing
+ * to analyze, so it stays Complete=true with empty edges. A snapshot that
+ * does contain .ts/.tsx sources but no project config would otherwise
+ * silently invent a "complete" empty graph over unanalyzed sources -- the
+ * same false-complete failure mode this sidecar already guards against for
+ * missing config forwarding -- so that case reports Complete=false with a
+ * stable ts_no_project_config diagnostic instead.
+ */
+function emptyComplete(counts: Record<string, number>, files: readonly ProjectFile[]): AnalyzeResult {
+  const hasTsSources = files.some((f) => f.path.endsWith(".ts") || f.path.endsWith(".tsx"));
+  if (!hasTsSources) {
+    return { edges: [], coverage: { phase: SIDECAR_PHASE, complete: true, counts } };
+  }
+  return {
+    edges: [],
+    coverage: {
+      phase: SIDECAR_PHASE,
+      complete: false,
+      counts,
+      diagnostics: [
+        { code: "ts_no_project_config", message: "no tsconfig.json was discovered while .ts/.tsx sources were provided" },
+      ],
+    },
+  };
 }
 
 function timeoutBeforeStart(counts: Record<string, number>, timeoutMs: number): AnalyzeResult {
