@@ -162,6 +162,37 @@ test("aliases: compilerOptions.paths/baseUrl resolve an aliased import to its ta
   assert.equal(edges[0]?.resolution, "snapshot");
 });
 
+test("stable IDs: mixed-case snapshot paths are preserved byte-for-byte in from/to/site", async () => {
+  // On case-insensitive hosts, TS's checker lowercases declaration paths.
+  // Stable file: IDs must still match the request inventory exactly so
+  // Mac and Linux emit byte-identical facts for the same snapshot.
+  const { response, exitCode } = await runSidecar({
+    files: [
+      file(
+        "tsconfig.json",
+        JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } }),
+      ),
+      file("Src/App.ts", `import { helper } from "./Lib/Util";\nexport { onlyY } from "./onlyY";\nconsole.log(helper);\n`),
+      file("Src/Lib/Util.ts", `export const helper = 1;\n`),
+      file("Src/onlyY.ts", `export const onlyY = 1;\n`),
+    ],
+  });
+  assert.equal(exitCode, 0);
+  assert.equal(response.error, undefined, JSON.stringify(response));
+
+  const utilEdge = edgesTo(response, "file:Src/Lib/Util.ts");
+  assert.equal(utilEdge.length, 1, JSON.stringify(response));
+  assert.equal(utilEdge[0]?.from, "file:Src/App.ts");
+  assert.equal(utilEdge[0]?.site, "Src/App.ts:1");
+  assert.equal(utilEdge[0]?.resolution, "snapshot");
+
+  const onlyYEdge = edgesTo(response, "file:Src/onlyY.ts");
+  assert.equal(onlyYEdge.length, 1, JSON.stringify(response));
+  assert.equal(onlyYEdge[0]?.from, "file:Src/App.ts");
+  assert.equal(onlyYEdge[0]?.kind, "reexport");
+  assert.equal(onlyYEdge[0]?.resolution, "snapshot");
+});
+
 test("references: an import crossing a tsconfig project-reference boundary resolves to the referenced project's file", async () => {
   // The alias target ("../libpkg/dist/*") only exists via reference-driven
   // redirection: libpkg's tsconfig declares rootDir "src"/outDir "dist" but

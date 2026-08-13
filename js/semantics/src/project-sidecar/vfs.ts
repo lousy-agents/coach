@@ -42,6 +42,19 @@ export interface ProjectSnapshot {
    * snapshot virtual path it shadows, so an edge resolved through the
    * mirror is reported against the real repository path. */
   unmirror(virtualPath: string): string;
+  /**
+   * Rewrites a virtual path (mirror or original, any casing) to the
+   * exact-cased original snapshot virtual path when one exists. On
+   * case-insensitive hosts, TS's checker lowercases declaration paths;
+   * stable `file:` IDs must still match the request inventory byte-for-byte.
+   */
+  canonicalizeVirtualPath(virtualPath: string): string;
+  /**
+   * Like fromVirtualPath, but after unmirror + case canonicalization so
+   * the returned repo-relative path matches a request inventory entry
+   * exactly when the virtual path names a snapshot file.
+   */
+  toRepoPath(virtualPath: string): string | undefined;
 }
 
 /**
@@ -72,6 +85,14 @@ export function buildProjectSnapshot(files: readonly ProjectFile[]): ProjectSnap
 
   const packagesByName = new Map<string, PackageJsonInfo>();
   const mirrorToOriginal = new Map<string, string>();
+  // Lowercased virtual path -> exact-cased original snapshot virtual path.
+  // Mirrors are resolved to their original first, then this map restores
+  // inventory casing after TS lowercases paths on case-insensitive hosts.
+  const originalByLower = new Map<string, string>();
+  for (const vpath of originalVirtualPaths) {
+    originalByLower.set(vpath.toLowerCase(), vpath);
+  }
+  const mirrorByLower = new Map<string, string>();
 
   for (const f of files) {
     if (basename(f.path) !== "package.json") continue;
@@ -94,8 +115,10 @@ export function buildProjectSnapshot(files: readonly ProjectFile[]): ProjectSnap
       if (dirRepo === "" && other.path.startsWith("node_modules/")) continue;
       const suffix = other.path.slice(prefix.length);
       const mirrorPath = suffix === "" ? mirrorDir : `${mirrorDir}/${suffix}`;
+      const originalVirtual = toVirtualPath(other.path);
       record[mirrorPath] = contentByPath.get(other.path) ?? "";
-      mirrorToOriginal.set(mirrorPath, toVirtualPath(other.path));
+      mirrorToOriginal.set(mirrorPath, originalVirtual);
+      mirrorByLower.set(mirrorPath.toLowerCase(), originalVirtual);
     }
   }
 
@@ -112,11 +135,30 @@ export function buildProjectSnapshot(files: readonly ProjectFile[]): ProjectSnap
     },
   };
 
+  const unmirror = (virtualPath: string): string => {
+    const exact = mirrorToOriginal.get(virtualPath);
+    if (exact !== undefined) return exact;
+    const folded = mirrorByLower.get(virtualPath.toLowerCase());
+    if (folded !== undefined) return folded;
+    return virtualPath;
+  };
+
+  const canonicalizeVirtualPath = (virtualPath: string): string => {
+    const unmirrored = unmirror(virtualPath);
+    return originalByLower.get(unmirrored.toLowerCase()) ?? unmirrored;
+  };
+
+  const toRepoPath = (virtualPath: string): string | undefined => {
+    return fromVirtualPath(canonicalizeVirtualPath(virtualPath));
+  };
+
   return {
     fs,
     originalVirtualPaths,
     packagesByName,
-    unmirror: (virtualPath) => mirrorToOriginal.get(virtualPath) ?? virtualPath,
+    unmirror,
+    canonicalizeVirtualPath,
+    toRepoPath,
   };
 }
 

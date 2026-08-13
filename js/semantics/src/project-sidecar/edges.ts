@@ -14,7 +14,7 @@ import {
   type ImportEdgeFact,
 } from "./protocol.js";
 import { resolveSpecifier } from "./resolve.js";
-import { fromVirtualPath, type ProjectSnapshot } from "./vfs.js";
+import type { ProjectSnapshot } from "./vfs.js";
 
 export interface EdgeExtractionResult {
   edges: ImportEdgeFact[];
@@ -35,13 +35,16 @@ export function extractEdgesForProject(project: Project, snapshot: ProjectSnapsh
   const diagnostics: Diagnostic[] = [];
 
   for (const virtualPath of project.rootFiles) {
-    const repoPath = fromVirtualPath(virtualPath);
+    const canonicalVirtual = snapshot.canonicalizeVirtualPath(virtualPath);
+    const repoPath = snapshot.toRepoPath(virtualPath);
     if (repoPath === undefined) continue;
     if (!(repoPath.endsWith(".ts") || repoPath.endsWith(".tsx"))) continue;
-    if (visited.has(virtualPath)) continue;
-    visited.add(virtualPath);
+    // Visit-key on the canonical path so case-folded duplicates from TS do
+    // not re-walk the same inventory file.
+    if (visited.has(canonicalVirtual)) continue;
+    visited.add(canonicalVirtual);
 
-    const sf = project.program.getSourceFile(virtualPath);
+    const sf = project.program.getSourceFile(virtualPath) ?? project.program.getSourceFile(canonicalVirtual);
     if (!sf) {
       diagnostics.push({
         code: "ts_source_file_missing",
@@ -130,17 +133,17 @@ function resolveTarget(
     const symbol = project.checker.getSymbolAtLocation(specifierNode);
     const declPath = symbol?.declarations?.[0]?.path;
     if (declPath) {
-      const originalVirtualPath = snapshot.unmirror(declPath);
-      const repoPath = fromVirtualPath(originalVirtualPath);
+      const repoPath = snapshot.toRepoPath(declPath);
       if (repoPath !== undefined) {
         return { to: `file:${repoPath}`, resolution: RESOLUTION_SNAPSHOT };
       }
     }
   }
 
-  const manual = resolveSpecifier(fromVirtualFsPath, specifierText, snapshot);
+  const manualFrom = snapshot.canonicalizeVirtualPath(fromVirtualFsPath);
+  const manual = resolveSpecifier(manualFrom, specifierText, snapshot);
   if (manual.kind === "snapshot" && manual.virtualPath) {
-    const repoPath = fromVirtualPath(manual.virtualPath);
+    const repoPath = snapshot.toRepoPath(manual.virtualPath);
     if (repoPath !== undefined) {
       return { to: `file:${repoPath}`, resolution: RESOLUTION_SNAPSHOT };
     }

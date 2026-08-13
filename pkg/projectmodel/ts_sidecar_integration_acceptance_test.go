@@ -372,6 +372,43 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 		})
 	})
 
+	When("snapshot paths use mixed case", func() {
+		It("preserves inventory path casing byte-for-byte in ImportEdge from/to/site", func() {
+			// On case-insensitive hosts, TS's checker lowercases declaration
+			// paths. Stable file: IDs must still match the request inventory
+			// exactly so Mac and Linux emit byte-identical facts.
+			snapshot := fstest.MapFS{
+				"tsconfig.json": tsconfigJSON(map[string]any{
+					"compilerOptions": map[string]any{"module": "commonjs", "moduleResolution": "node10"},
+				}),
+				"Src/App.ts": file(strings.Join([]string{
+					`import { helper } from "./Lib/Util";`,
+					`export { onlyY } from "./onlyY";`,
+					`console.log(helper);`,
+					``,
+				}, "\n")),
+				"Src/Lib/Util.ts": file("export const helper = 1;\n"),
+				"Src/onlyY.ts":    file("export const onlyY = 1;\n"),
+			}
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), realOpts())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeTrue(), "%+v", model.Coverage)
+
+			utilEdge, ok := edgeByTo(model.ImportEdges, "file:Src/Lib/Util.ts")
+			Expect(ok).To(BeTrue(), "expected exact-case to file:Src/Lib/Util.ts, got %+v", model.ImportEdges)
+			Expect(utilEdge.From).To(Equal("file:Src/App.ts"))
+			Expect(utilEdge.Site).To(Equal("Src/App.ts:1"))
+			Expect(utilEdge.Resolution).To(Equal("snapshot"))
+
+			onlyYEdge, ok := edgeByTo(model.ImportEdges, "file:Src/onlyY.ts")
+			Expect(ok).To(BeTrue(), "expected exact-case to file:Src/onlyY.ts, got %+v", model.ImportEdges)
+			Expect(onlyYEdge.From).To(Equal("file:Src/App.ts"))
+			Expect(onlyYEdge.Kind).To(Equal("reexport"))
+			Expect(onlyYEdge.Resolution).To(Equal("snapshot"))
+		})
+	})
+
 	When("a file mixes a CommonJS require, a dynamic import, and a type-only import", func() {
 		It("produces three edges with three distinct Kind values", func() {
 			snapshot := fstest.MapFS{
