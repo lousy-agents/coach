@@ -3,9 +3,7 @@ package projectmodel
 import (
 	"encoding/base64"
 	"io/fs"
-	"path"
 	"sort"
-	"strings"
 
 	"github.com/lousy-agents/coach/internal/projectbridge"
 )
@@ -36,6 +34,11 @@ import (
 // Coverage.Counts["files_seen"].
 func collectTSSidecarFiles(snapshot fs.FS, roots []string) ([]projectbridge.ProjectFile, int) {
 	paths := listTSSidecarPaths(snapshot, roots)
+	files := readTSSidecarFiles(snapshot, paths)
+	return files, len(paths)
+}
+
+func readTSSidecarFiles(snapshot fs.FS, paths []string) []projectbridge.ProjectFile {
 	files := make([]projectbridge.ProjectFile, 0, len(paths))
 	for _, p := range paths {
 		content, err := fs.ReadFile(snapshot, p)
@@ -47,89 +50,38 @@ func collectTSSidecarFiles(snapshot fs.FS, roots []string) ([]projectbridge.Proj
 			ContentB64: base64.StdEncoding.EncodeToString(content),
 		})
 	}
-	return files, len(paths)
+	return files
 }
 
 func listTSSidecarPaths(snapshot fs.FS, roots []string) []string {
-	var paths []string
+	collector := &tsSidecarPathCollector{}
 	for _, root := range tsSidecarWalkRoots(roots) {
-		_ = fs.WalkDir(snapshot, root, func(p string, entry fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if entry.IsDir() {
-				if entry.Name() == "node_modules" {
-					return fs.SkipDir
-				}
-				return nil
-			}
-			if shouldCollectTSSidecarPath(p) {
-				paths = append(paths, p)
-			}
-			return nil
-		})
+		_ = fs.WalkDir(snapshot, root, collector.visit)
 	}
-	sort.Strings(paths)
-	return dedupeSorted(paths)
+	sort.Strings(collector.paths)
+	return dedupeSorted(collector.paths)
 }
 
-func shouldCollectTSSidecarPath(p string) bool {
-	if isWithinNodeModules(p) {
-		return false
-	}
-	return isTSSidecarSourceFile(p) || isTSSidecarConfigFile(path.Base(p))
+type tsSidecarPathCollector struct {
+	paths []string
 }
 
-// isTSSidecarSourceFile reports whether p is a TypeScript/TSX source file
-// by extension, independent of node_modules/ exclusion (handled by the
-// caller).
-func isTSSidecarSourceFile(p string) bool {
-	return strings.HasSuffix(p, ".ts") || strings.HasSuffix(p, ".tsx")
+func (c *tsSidecarPathCollector) visit(p string, entry fs.DirEntry, err error) error {
+	if err != nil {
+		return nil
+	}
+	if entry.IsDir() {
+		return c.visitDir(entry)
+	}
+	if shouldCollectTSSidecarPath(p) {
+		c.paths = append(c.paths, p)
+	}
+	return nil
 }
 
-// isTSSidecarConfigFile reports whether base (a bare filename, not a
-// path) is a config file the sidecar needs forwarded: "package.json"
-// exactly, or any "tsconfig*.json" basename (e.g. "tsconfig.json",
-// "tsconfig.base.json") so extends-chain targets are included without
-// also sweeping in unrelated *-tsconfig.json/*-package.json files.
-func isTSSidecarConfigFile(base string) bool {
-	if base == "package.json" {
-		return true
+func (c *tsSidecarPathCollector) visitDir(entry fs.DirEntry) error {
+	if entry.Name() == "node_modules" {
+		return fs.SkipDir
 	}
-	return strings.HasPrefix(base, "tsconfig") && strings.HasSuffix(base, ".json")
-}
-
-// isWithinNodeModules reports whether any path segment of p (a
-// slash-separated fs.FS path) is literally "node_modules".
-func isWithinNodeModules(p string) bool {
-	for _, segment := range strings.Split(p, "/") {
-		if segment == "node_modules" {
-			return true
-		}
-	}
-	return false
-}
-
-func tsSidecarWalkRoots(roots []string) []string {
-	if len(roots) == 0 {
-		return []string{"."}
-	}
-	out := make([]string, len(roots))
-	for i, r := range roots {
-		out[i] = path.Clean(r)
-	}
-	return out
-}
-
-func dedupeSorted(sortedPaths []string) []string {
-	if len(sortedPaths) < 2 {
-		return sortedPaths
-	}
-	out := sortedPaths[:1]
-	for _, p := range sortedPaths[1:] {
-		if p != out[len(out)-1] {
-			out = append(out, p)
-		}
-	}
-	return out
+	return nil
 }

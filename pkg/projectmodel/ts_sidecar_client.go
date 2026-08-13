@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/lousy-agents/coach/internal/projectbridge"
@@ -90,87 +88,4 @@ func startTSSidecarCmd(runCtx context.Context, opts TSSidecarOptions, reqLine []
 		return nil, nil, fmt.Sprintf("starting ts sidecar: %s", err)
 	}
 	return &tsSidecarProc{wait: cmd.Wait, stdout: stdout}, stderr, ""
-}
-
-func tsSidecarTransportFailure(
-	ctx, runCtx context.Context,
-	timeout time.Duration,
-	oversized bool,
-	readErr, waitErr error,
-	stderr *boundedWriter,
-) string {
-	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-		if timeout > 0 {
-			return fmt.Sprintf("ts sidecar timed out after %s", timeout)
-		}
-		return "ts sidecar timed out (caller deadline exceeded)"
-	}
-	if errors.Is(ctx.Err(), context.Canceled) {
-		return "ts sidecar canceled"
-	}
-	if oversized {
-		return fmt.Sprintf("ts sidecar response exceeded %d-byte budget", maxTSSidecarResponseBytes)
-	}
-	if readErr != nil {
-		return fmt.Sprintf("reading ts sidecar output: %s", readErr)
-	}
-	if waitErr != nil {
-		if tail := strings.TrimSpace(stderr.buf.String()); tail != "" {
-			return fmt.Sprintf("ts sidecar exited: %s: %s", waitErr, tail)
-		}
-		return fmt.Sprintf("ts sidecar exited: %s", waitErr)
-	}
-	return ""
-}
-
-func decodeTSSidecarResponse(data []byte, reqID int64) (projectbridge.Response, string) {
-	var resp projectbridge.Response
-	if err := json.Unmarshal(bytes.TrimRight(firstLine(data), "\n"), &resp); err != nil {
-		return projectbridge.Response{}, fmt.Sprintf("ts sidecar produced malformed response: %s", err)
-	}
-	if resp.Version != projectbridge.ProtocolVersion || resp.ID != reqID {
-		return projectbridge.Response{}, fmt.Sprintf("ts sidecar response protocol mismatch: version %d id %d", resp.Version, resp.ID)
-	}
-	return resp, ""
-}
-
-// sanitizedTSSidecarEnv is the minimal environment for the sidecar child,
-// mirroring internal/codesignalcli/project_snapshot.go's
-// sanitizedSnapshotGitEnv: only PATH and HOME are forwarded so the
-// sidecar can locate itself and any runtime it wraps (e.g. a Node
-// installation), never the parent process's full ambient environment.
-func sanitizedTSSidecarEnv() []string {
-	var env []string
-	if value, ok := os.LookupEnv("PATH"); ok {
-		env = append(env, "PATH="+value)
-	}
-	if value, ok := os.LookupEnv("HOME"); ok {
-		env = append(env, "HOME="+value)
-	}
-	return env
-}
-
-// boundedWriter retains only the first limit bytes written to it, silently
-// discarding the rest, so an untrusted child's stderr cannot grow the
-// diagnostic message without bound.
-type boundedWriter struct {
-	buf   bytes.Buffer
-	limit int
-}
-
-func (w *boundedWriter) Write(p []byte) (int, error) {
-	if room := w.limit - w.buf.Len(); room > 0 {
-		if room > len(p) {
-			room = len(p)
-		}
-		w.buf.Write(p[:room])
-	}
-	return len(p), nil
-}
-
-func firstLine(data []byte) []byte {
-	if idx := bytes.IndexByte(data, '\n'); idx >= 0 {
-		return data[:idx]
-	}
-	return data
 }

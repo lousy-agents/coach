@@ -1,6 +1,6 @@
 import { isRecord } from "./vfs.js";
 
-const CONDITION_PRIORITY = ["import", "require", "node", "default"];
+const CONDITION_PRIORITY = ["import", "require", "node", "default"] as const;
 
 /**
  * Minimal package.json "exports" resolution: a plain string (only for
@@ -15,24 +15,37 @@ export function resolvePackageExports(exp: unknown, main: string | undefined, su
   if (isRecord(exp)) {
     return resolveExportsObject(exp, subpath);
   }
-  if (exp === undefined && main !== undefined && subpath === ".") {
-    return stripLeadingDot(main);
-  }
-  return undefined;
+  return mainFallback(exp, main, subpath);
+}
+
+function mainFallback(exp: unknown, main: string | undefined, subpath: string): string | undefined {
+  if (exp !== undefined || main === undefined || subpath !== ".") return undefined;
+  return stripLeadingDot(main);
 }
 
 function resolveExportsObject(exp: Record<string, unknown>, subpath: string): string | undefined {
-  if (exp[subpath] !== undefined) {
-    return resolveConditions(exp[subpath]);
-  }
+  const direct = exp[subpath];
+  if (direct !== undefined) return resolveConditions(direct);
+  return resolveWildcardExport(exp, subpath);
+}
+
+function resolveWildcardExport(exp: Record<string, unknown>, subpath: string): string | undefined {
   for (const [pattern, value] of Object.entries(exp)) {
-    if (!pattern.includes("*")) continue;
-    const match = matchWildcard(pattern, subpath);
+    const match = tryWildcard(pattern, subpath);
     if (match === undefined) continue;
     const resolved = resolveConditions(value);
     if (resolved !== undefined) return resolved.replace("*", match);
   }
   return undefined;
+}
+
+function tryWildcard(pattern: string, subpath: string): string | undefined {
+  if (!pattern.includes("*")) return undefined;
+  const starIdx = pattern.indexOf("*");
+  const prefix = pattern.slice(0, starIdx);
+  const suffix = pattern.slice(starIdx + 1);
+  if (!subpath.startsWith(prefix) || !subpath.endsWith(suffix)) return undefined;
+  return subpath.slice(prefix.length, subpath.length - suffix.length);
 }
 
 function resolveConditions(value: unknown): string | undefined {
@@ -41,20 +54,15 @@ function resolveConditions(value: unknown): string | undefined {
   for (const condition of CONDITION_PRIORITY) {
     const nested = value[condition];
     if (typeof nested === "string") return stripLeadingDot(nested);
-    if (isRecord(nested)) {
-      const resolved = resolveConditions(nested);
-      if (resolved !== undefined) return resolved;
-    }
+    const deeper = nestedRecord(nested);
+    if (deeper !== undefined) return deeper;
   }
   return undefined;
 }
 
-function matchWildcard(pattern: string, subpath: string): string | undefined {
-  const starIdx = pattern.indexOf("*");
-  const prefix = pattern.slice(0, starIdx);
-  const suffix = pattern.slice(starIdx + 1);
-  if (!subpath.startsWith(prefix) || !subpath.endsWith(suffix)) return undefined;
-  return subpath.slice(prefix.length, subpath.length - suffix.length);
+function nestedRecord(nested: unknown): string | undefined {
+  if (!isRecord(nested)) return undefined;
+  return resolveConditions(nested);
 }
 
 function stripLeadingDot(p: string): string {

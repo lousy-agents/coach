@@ -114,14 +114,16 @@ function runProjects(
     projectsProcessed += 1;
   }
 
-  counts.files_analyzed = visited.size;
-  counts.projects_analyzed = projectsProcessed;
   return {
     edges: canonicalizeEdges(edges),
     coverage: {
       phase: SIDECAR_PHASE,
       complete,
-      counts,
+      counts: {
+        ...counts,
+        files_analyzed: visited.size,
+        projects_analyzed: projectsProcessed,
+      },
       budgets: deadline !== undefined ? { timeout_ms: opts.timeoutMs ?? 0 } : undefined,
       diagnostics: diagnostics.length > 0 ? canonicalizeDiagnostics(diagnostics) : undefined,
     },
