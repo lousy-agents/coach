@@ -71,32 +71,57 @@ export interface ProjectSnapshot {
  * require()/dynamic-import cases the checker does not resolve; see there.)
  */
 export function buildProjectSnapshot(files: readonly ProjectFile[]): ProjectSnapshot {
+  const inventory = indexSnapshotFiles(files);
+  const packages = mirrorInSnapshotPackages(files, inventory);
+
+  return {
+    fs: confinedFileSystem(inventory.record),
+    originalVirtualPaths: inventory.originalVirtualPaths,
+    packagesByName: packages.packagesByName,
+    ...pathCanonicalizers(inventory.originalByLower, packages.mirrorToOriginal, packages.mirrorByLower),
+  };
+}
+
+interface SnapshotInventory {
+  record: Record<string, string>;
+  originalVirtualPaths: Set<string>;
+  contentByPath: Map<string, string>;
+  /** Lowercased virtual path -> exact-cased original snapshot virtual path. */
+  originalByLower: Map<string, string>;
+}
+
+function indexSnapshotFiles(files: readonly ProjectFile[]): SnapshotInventory {
   const record: Record<string, string> = {};
   const originalVirtualPaths = new Set<string>();
   const contentByPath = new Map<string, string>();
+  const originalByLower = new Map<string, string>();
 
   for (const f of files) {
     const content = Buffer.from(f.content_b64, "base64").toString("utf8");
     const vpath = toVirtualPath(f.path);
     record[vpath] = content;
     originalVirtualPaths.add(vpath);
+    originalByLower.set(vpath.toLowerCase(), vpath);
     contentByPath.set(f.path, content);
   }
 
+  return { record, originalVirtualPaths, contentByPath, originalByLower };
+}
+
+interface PackageMirrorTables {
+  packagesByName: Map<string, PackageJsonInfo>;
+  mirrorToOriginal: Map<string, string>;
+  mirrorByLower: Map<string, string>;
+}
+
+function mirrorInSnapshotPackages(files: readonly ProjectFile[], inventory: SnapshotInventory): PackageMirrorTables {
   const packagesByName = new Map<string, PackageJsonInfo>();
   const mirrorToOriginal = new Map<string, string>();
-  // Lowercased virtual path -> exact-cased original snapshot virtual path.
-  // Mirrors are resolved to their original first, then this map restores
-  // inventory casing after TS lowercases paths on case-insensitive hosts.
-  const originalByLower = new Map<string, string>();
-  for (const vpath of originalVirtualPaths) {
-    originalByLower.set(vpath.toLowerCase(), vpath);
-  }
   const mirrorByLower = new Map<string, string>();
 
   for (const f of files) {
     if (basename(f.path) !== "package.json") continue;
-    const parsed = tryParseJson(contentByPath.get(f.path) ?? "");
+    const parsed = tryParseJson(inventory.contentByPath.get(f.path) ?? "");
     if (!isRecord(parsed) || typeof parsed.name !== "string" || parsed.name === "") continue;
 
     const name = parsed.name;
@@ -108,22 +133,42 @@ export function buildProjectSnapshot(files: readonly ProjectFile[]): ProjectSnap
       main: typeof parsed.main === "string" ? parsed.main : undefined,
     });
 
-    const mirrorDir = `${VIRTUAL_ROOT}/node_modules/${name}`;
-    const prefix = dirRepo === "" ? "" : `${dirRepo}/`;
-    for (const other of files) {
-      if (dirRepo !== "" && !other.path.startsWith(prefix)) continue;
-      if (dirRepo === "" && other.path.startsWith("node_modules/")) continue;
-      const suffix = other.path.slice(prefix.length);
-      const mirrorPath = suffix === "" ? mirrorDir : `${mirrorDir}/${suffix}`;
-      const originalVirtual = toVirtualPath(other.path);
-      record[mirrorPath] = contentByPath.get(other.path) ?? "";
-      mirrorToOriginal.set(mirrorPath, originalVirtual);
-      mirrorByLower.set(mirrorPath.toLowerCase(), originalVirtual);
-    }
+    mirrorPackageTree(name, dirRepo, files, inventory, mirrorToOriginal, mirrorByLower);
   }
 
+  return { packagesByName, mirrorToOriginal, mirrorByLower };
+}
+
+function mirrorPackageTree(
+  name: string,
+  dirRepo: string,
+  files: readonly ProjectFile[],
+  inventory: SnapshotInventory,
+  mirrorToOriginal: Map<string, string>,
+  mirrorByLower: Map<string, string>,
+): void {
+  const mirrorDir = `${VIRTUAL_ROOT}/node_modules/${name}`;
+  const prefix = dirRepo === "" ? "" : `${dirRepo}/`;
+  for (const other of files) {
+    if (!fileBelongsToPackage(other.path, dirRepo, prefix)) continue;
+    const suffix = other.path.slice(prefix.length);
+    const mirrorPath = suffix === "" ? mirrorDir : `${mirrorDir}/${suffix}`;
+    const originalVirtual = toVirtualPath(other.path);
+    inventory.record[mirrorPath] = inventory.contentByPath.get(other.path) ?? "";
+    mirrorToOriginal.set(mirrorPath, originalVirtual);
+    mirrorByLower.set(mirrorPath.toLowerCase(), originalVirtual);
+  }
+}
+
+function fileBelongsToPackage(path: string, dirRepo: string, prefix: string): boolean {
+  if (dirRepo !== "" && !path.startsWith(prefix)) return false;
+  if (dirRepo === "" && path.startsWith("node_modules/")) return false;
+  return true;
+}
+
+function confinedFileSystem(record: Record<string, string>): FileSystem {
   const base = createVirtualFileSystem(record);
-  const fs: FileSystem = {
+  return {
     ...base,
     readFile: (fileName) => {
       const result = base.readFile ? base.readFile(fileName) : undefined;
@@ -134,13 +179,15 @@ export function buildProjectSnapshot(files: readonly ProjectFile[]): ProjectSnap
       return result === undefined ? null : result;
     },
   };
+}
 
+function pathCanonicalizers(
+  originalByLower: ReadonlyMap<string, string>,
+  mirrorToOriginal: ReadonlyMap<string, string>,
+  mirrorByLower: ReadonlyMap<string, string>,
+): Pick<ProjectSnapshot, "unmirror" | "canonicalizeVirtualPath" | "toRepoPath"> {
   const unmirror = (virtualPath: string): string => {
-    const exact = mirrorToOriginal.get(virtualPath);
-    if (exact !== undefined) return exact;
-    const folded = mirrorByLower.get(virtualPath.toLowerCase());
-    if (folded !== undefined) return folded;
-    return virtualPath;
+    return mirrorToOriginal.get(virtualPath) ?? mirrorByLower.get(virtualPath.toLowerCase()) ?? virtualPath;
   };
 
   const canonicalizeVirtualPath = (virtualPath: string): string => {
@@ -152,14 +199,7 @@ export function buildProjectSnapshot(files: readonly ProjectFile[]): ProjectSnap
     return fromVirtualPath(canonicalizeVirtualPath(virtualPath));
   };
 
-  return {
-    fs,
-    originalVirtualPaths,
-    packagesByName,
-    unmirror,
-    canonicalizeVirtualPath,
-    toRepoPath,
-  };
+  return { unmirror, canonicalizeVirtualPath, toRepoPath };
 }
 
 function basename(p: string): string {
