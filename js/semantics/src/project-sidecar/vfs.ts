@@ -60,22 +60,15 @@ export interface ProjectSnapshot {
 /**
  * Builds the snapshot-confined virtual filesystem the sidecar hands to
  * `typescript/unstable/sync`'s API, plus a synthetic node_modules mirror
- * of every in-snapshot package.json'd directory. TS's own module
- * resolution only discovers package.json "exports"/"main" fields for
- * packages it finds by walking up node_modules directories from the
- * importing file -- mirroring each snapshot package under
- * `node_modules/<name>` lets the real (already-correct) TS resolver
- * satisfy issue #214's requirement 4 natively, instead of this sidecar
- * hand-rolling Node's exports algorithm for the primary import/export
- * case. (A narrower hand-rolled fallback still exists in resolve.ts, for
- * require()/dynamic-import cases the checker does not resolve; see there.)
+ * of every in-snapshot package.json'd directory.
  */
 export function buildProjectSnapshot(files: readonly ProjectFile[]): ProjectSnapshot {
   const inventory = indexSnapshotFiles(files);
-  const packages = mirrorInSnapshotPackages(files, inventory);
+  const packages = mirrorInSnapshotPackages(files, inventory.contentByPath);
+  const record = { ...inventory.record, ...packages.mirrorRecord };
 
   return {
-    fs: confinedFileSystem(inventory.record),
+    fs: confinedFileSystem(record),
     originalVirtualPaths: inventory.originalVirtualPaths,
     packagesByName: packages.packagesByName,
     ...pathCanonicalizers(inventory.originalByLower, packages.mirrorToOriginal, packages.mirrorByLower),
@@ -86,7 +79,6 @@ interface SnapshotInventory {
   record: Record<string, string>;
   originalVirtualPaths: Set<string>;
   contentByPath: Map<string, string>;
-  /** Lowercased virtual path -> exact-cased original snapshot virtual path. */
   originalByLower: Map<string, string>;
 }
 
@@ -110,18 +102,23 @@ function indexSnapshotFiles(files: readonly ProjectFile[]): SnapshotInventory {
 
 interface PackageMirrorTables {
   packagesByName: Map<string, PackageJsonInfo>;
+  mirrorRecord: Record<string, string>;
   mirrorToOriginal: Map<string, string>;
   mirrorByLower: Map<string, string>;
 }
 
-function mirrorInSnapshotPackages(files: readonly ProjectFile[], inventory: SnapshotInventory): PackageMirrorTables {
+function mirrorInSnapshotPackages(
+  files: readonly ProjectFile[],
+  contentByPath: ReadonlyMap<string, string>,
+): PackageMirrorTables {
   const packagesByName = new Map<string, PackageJsonInfo>();
+  const mirrorRecord: Record<string, string> = {};
   const mirrorToOriginal = new Map<string, string>();
   const mirrorByLower = new Map<string, string>();
 
   for (const f of files) {
     if (basename(f.path) !== "package.json") continue;
-    const parsed = tryParseJson(inventory.contentByPath.get(f.path) ?? "");
+    const parsed = tryParseJson(contentByPath.get(f.path) ?? "");
     if (!isRecord(parsed) || typeof parsed.name !== "string" || parsed.name === "") continue;
 
     const name = parsed.name;
@@ -133,31 +130,42 @@ function mirrorInSnapshotPackages(files: readonly ProjectFile[], inventory: Snap
       main: typeof parsed.main === "string" ? parsed.main : undefined,
     });
 
-    mirrorPackageTree(name, dirRepo, files, inventory, mirrorToOriginal, mirrorByLower);
+    const tree = packageMirrorEntries(name, dirRepo, files, contentByPath);
+    Object.assign(mirrorRecord, tree.record);
+    for (const [k, v] of tree.mirrorToOriginal) mirrorToOriginal.set(k, v);
+    for (const [k, v] of tree.mirrorByLower) mirrorByLower.set(k, v);
   }
 
-  return { packagesByName, mirrorToOriginal, mirrorByLower };
+  return { packagesByName, mirrorRecord, mirrorToOriginal, mirrorByLower };
 }
 
-function mirrorPackageTree(
+function packageMirrorEntries(
   name: string,
   dirRepo: string,
   files: readonly ProjectFile[],
-  inventory: SnapshotInventory,
-  mirrorToOriginal: Map<string, string>,
-  mirrorByLower: Map<string, string>,
-): void {
+  contentByPath: ReadonlyMap<string, string>,
+): {
+  record: Record<string, string>;
+  mirrorToOriginal: Map<string, string>;
+  mirrorByLower: Map<string, string>;
+} {
+  const record: Record<string, string> = {};
+  const mirrorToOriginal = new Map<string, string>();
+  const mirrorByLower = new Map<string, string>();
   const mirrorDir = `${VIRTUAL_ROOT}/node_modules/${name}`;
   const prefix = dirRepo === "" ? "" : `${dirRepo}/`;
+
   for (const other of files) {
     if (!fileBelongsToPackage(other.path, dirRepo, prefix)) continue;
     const suffix = other.path.slice(prefix.length);
     const mirrorPath = suffix === "" ? mirrorDir : `${mirrorDir}/${suffix}`;
     const originalVirtual = toVirtualPath(other.path);
-    inventory.record[mirrorPath] = inventory.contentByPath.get(other.path) ?? "";
+    record[mirrorPath] = contentByPath.get(other.path) ?? "";
     mirrorToOriginal.set(mirrorPath, originalVirtual);
     mirrorByLower.set(mirrorPath.toLowerCase(), originalVirtual);
   }
+
+  return { record, mirrorToOriginal, mirrorByLower };
 }
 
 function fileBelongsToPackage(path: string, dirRepo: string, prefix: string): boolean {
@@ -172,10 +180,8 @@ function confinedFileSystem(record: Record<string, string>): FileSystem {
     ...base,
     readFile: (fileName) => {
       const result = base.readFile ? base.readFile(fileName) : undefined;
-      // Explicit null (not undefined) on a miss. The FileSystem contract
-      // documented on typescript/unstable/fs treats `undefined` as "fall
-      // back to the real filesystem" -- returning it here would silently
-      // break snapshot confinement, issue #214's core requirement.
+      // Explicit null (not undefined) on a miss — undefined falls through
+      // to the real filesystem and breaks snapshot confinement.
       return result === undefined ? null : result;
     },
   };

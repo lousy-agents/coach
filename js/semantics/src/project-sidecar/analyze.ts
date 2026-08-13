@@ -4,7 +4,7 @@ import { canonicalizeDiagnostics, canonicalizeEdges } from "./canonical.js";
 import { discoverTsconfigPaths } from "./discover.js";
 import { extractEdgesForProject } from "./edges.js";
 import { SIDECAR_PHASE, type Coverage, type Diagnostic, type ImportEdgeFact, type ProjectFile } from "./protocol.js";
-import { buildProjectSnapshot, fromVirtualPath, toVirtualPath, VIRTUAL_ROOT } from "./vfs.js";
+import { buildProjectSnapshot, fromVirtualPath, toVirtualPath, VIRTUAL_ROOT, type ProjectSnapshot } from "./vfs.js";
 
 /** Thrown only for genuine backend-startup failures (e.g. the bundled
  * native tsgo binary failing to spawn); main.ts turns this into a
@@ -37,101 +37,115 @@ export function analyzeProject(opts: AnalyzeOptions): AnalyzeResult {
   const counts: Record<string, number> = { files_seen: opts.files.length, tsconfig_count: tsconfigPaths.length };
 
   if (tsconfigPaths.length === 0) {
-    return { edges: [], coverage: { phase: SIDECAR_PHASE, complete: true, counts } };
+    return emptyComplete(counts);
   }
   if (deadline !== undefined && Date.now() >= deadline) {
-    return {
-      edges: [],
-      coverage: {
-        phase: SIDECAR_PHASE,
-        complete: false,
-        counts,
-        budgets: { timeout_ms: opts.timeoutMs ?? 0 },
-        diagnostics: [{ code: "ts_sidecar_timeout", message: "timeout_ms exceeded before analysis started" }],
-      },
-    };
+    return timeoutBeforeStart(counts, opts.timeoutMs ?? 0);
   }
 
-  let api: API;
+  const api = startAnalysisAPI(snapshot);
   try {
-    api = new API({ fs: snapshot.fs });
-  } catch (err) {
-    throw new SidecarBackendError(`failed to start ts sidecar analysis backend: ${String(err)}`);
-  }
-
-  const edges: ImportEdgeFact[] = [];
-  const diagnostics: Diagnostic[] = [];
-  // Dedupes identical (numeric TS code, path, message) config-parsing
-  // diagnostics: a single malformed tsconfig can otherwise repeat the same
-  // parser message many times, and the wire Diagnostic carries no position
-  // to distinguish them for a consumer anyway.
-  const seenConfigDiagnostics = new Set<string>();
-  let complete = true;
-
-  try {
-    const snap = api.updateSnapshot({ openProjects: tsconfigPaths.map(toVirtualPath) });
-    const projects = snap.getProjects();
-    const visited = new Set<string>();
-    let projectsProcessed = 0;
-
-    for (const project of projects) {
-      if (opts.testDelayMsPerProject) {
-        busyWaitMs(opts.testDelayMsPerProject);
-      }
-      if (deadline !== undefined && Date.now() >= deadline) {
-        complete = false;
-        diagnostics.push({
-          code: "ts_sidecar_timeout",
-          message: `timeout_ms (${opts.timeoutMs}) exceeded after processing ${projectsProcessed} of ${projects.length} project(s)`,
-        });
-        break;
-      }
-      const configPath = fromVirtualPath(project.configFileName);
-      for (const d of project.program.getConfigFileParsingDiagnostics()) {
-        // A config that failed to parse cleanly was never fully honored
-        // (aliases/references it declared may have been silently lost), so
-        // this response cannot claim `complete: true` even though analysis
-        // otherwise ran to completion.
-        complete = false;
-        const key = `${d.code}|${configPath ?? ""}|${d.text}`;
-        if (seenConfigDiagnostics.has(key)) continue;
-        seenConfigDiagnostics.add(key);
-        // TS's own config-parsing diagnostics embed the config file's
-        // *absolute* path in the message text (e.g. "No inputs were found
-        // in config file '<path>'"), which -- unlike the diagnostic's own
-        // `path` field -- is the synthetic VIRTUAL_ROOT, not a
-        // repo-relative one. Strip it so the wire message never leaks this
-        // internal implementation detail; genuinely-external paths (e.g. a
-        // real-disk "extends" target) are untouched.
-        const message = d.text.split(`${VIRTUAL_ROOT}/`).join("");
-        diagnostics.push({ code: "ts_config_diagnostic", message, path: configPath });
-      }
-      const result = extractEdgesForProject(project, snapshot, visited);
-      edges.push(...result.edges);
-      diagnostics.push(...result.diagnostics);
-      projectsProcessed += 1;
-    }
-    counts.files_analyzed = visited.size;
-    counts.projects_analyzed = projectsProcessed;
+    return runProjects(api, snapshot, tsconfigPaths, opts, deadline, counts);
   } finally {
     api.close();
   }
-
-  const coverage: Coverage = {
-    phase: SIDECAR_PHASE,
-    complete,
-    counts,
-    // Reported consistently for both timeout paths (the pre-analysis check
-    // above, and the mid-loop check in this function): present whenever a
-    // deadline was in effect, regardless of which path enforced it.
-    budgets: deadline !== undefined ? { timeout_ms: opts.timeoutMs ?? 0 } : undefined,
-    diagnostics: diagnostics.length > 0 ? canonicalizeDiagnostics(diagnostics) : undefined,
-  };
-  return { edges: canonicalizeEdges(edges), coverage };
 }
 
-/** Test-only: deliberately blocks the event loop for `ms` milliseconds to
- * simulate a slow analysis phase (see AnalyzeOptions.testDelayMsPerProject). */
+function emptyComplete(counts: Record<string, number>): AnalyzeResult {
+  return { edges: [], coverage: { phase: SIDECAR_PHASE, complete: true, counts } };
+}
+
+function timeoutBeforeStart(counts: Record<string, number>, timeoutMs: number): AnalyzeResult {
+  return {
+    edges: [],
+    coverage: {
+      phase: SIDECAR_PHASE,
+      complete: false,
+      counts,
+      budgets: { timeout_ms: timeoutMs },
+      diagnostics: [{ code: "ts_sidecar_timeout", message: "timeout_ms exceeded before analysis started" }],
+    },
+  };
+}
+
+function startAnalysisAPI(snapshot: ProjectSnapshot): API {
+  try {
+    return new API({ fs: snapshot.fs });
+  } catch (err) {
+    throw new SidecarBackendError(`failed to start ts sidecar analysis backend: ${String(err)}`);
+  }
+}
+
+function runProjects(
+  api: API,
+  snapshot: ProjectSnapshot,
+  tsconfigPaths: readonly string[],
+  opts: AnalyzeOptions,
+  deadline: number | undefined,
+  counts: Record<string, number>,
+): AnalyzeResult {
+  const snap = api.updateSnapshot({ openProjects: tsconfigPaths.map(toVirtualPath) });
+  const projects = snap.getProjects();
+  const visited = new Set<string>();
+  const edges: ImportEdgeFact[] = [];
+  const diagnostics: Diagnostic[] = [];
+  const seenConfigDiagnostics = new Set<string>();
+  let complete = true;
+  let projectsProcessed = 0;
+
+  for (const project of projects) {
+    if (opts.testDelayMsPerProject) busyWaitMs(opts.testDelayMsPerProject);
+    if (deadline !== undefined && Date.now() >= deadline) {
+      complete = false;
+      diagnostics.push({
+        code: "ts_sidecar_timeout",
+        message: `timeout_ms (${opts.timeoutMs}) exceeded after processing ${projectsProcessed} of ${projects.length} project(s)`,
+      });
+      break;
+    }
+    const configResult = collectConfigDiagnostics(project, seenConfigDiagnostics);
+    for (const key of configResult.newKeys) seenConfigDiagnostics.add(key);
+    if (configResult.diagnostics.length > 0) complete = false;
+    diagnostics.push(...configResult.diagnostics);
+    const result = extractEdgesForProject(project, snapshot, visited);
+    for (const path of result.visitedPaths) visited.add(path);
+    edges.push(...result.edges);
+    diagnostics.push(...result.diagnostics);
+    projectsProcessed += 1;
+  }
+
+  counts.files_analyzed = visited.size;
+  counts.projects_analyzed = projectsProcessed;
+  return {
+    edges: canonicalizeEdges(edges),
+    coverage: {
+      phase: SIDECAR_PHASE,
+      complete,
+      counts,
+      budgets: deadline !== undefined ? { timeout_ms: opts.timeoutMs ?? 0 } : undefined,
+      diagnostics: diagnostics.length > 0 ? canonicalizeDiagnostics(diagnostics) : undefined,
+    },
+  };
+}
+
+function collectConfigDiagnostics(
+  project: { configFileName: string; program: { getConfigFileParsingDiagnostics(): ReadonlyArray<{ code: number; text: string }> } },
+  seen: ReadonlySet<string>,
+): { diagnostics: Diagnostic[]; newKeys: string[] } {
+  const configPath = fromVirtualPath(project.configFileName);
+  const diagnostics: Diagnostic[] = [];
+  const newKeys: string[] = [];
+  for (const d of project.program.getConfigFileParsingDiagnostics()) {
+    const key = `${d.code}|${configPath ?? ""}|${d.text}`;
+    if (seen.has(key) || newKeys.includes(key)) continue;
+    newKeys.push(key);
+    // TS embeds the synthetic VIRTUAL_ROOT absolute path in some messages.
+    const message = d.text.split(`${VIRTUAL_ROOT}/`).join("");
+    diagnostics.push({ code: "ts_config_diagnostic", message, path: configPath });
+  }
+  return { diagnostics, newKeys };
+}
+
 function busyWaitMs(ms: number): void {
   const end = Date.now() + ms;
   while (Date.now() < end) {

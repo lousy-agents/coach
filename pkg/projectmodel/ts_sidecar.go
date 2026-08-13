@@ -1,19 +1,9 @@
 package projectmodel
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"os"
-	"os/exec"
-	"path"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/lousy-agents/coach/internal/projectbridge"
@@ -95,7 +85,6 @@ func BuildTypeScriptModelViaSidecar(ctx context.Context, snapshot fs.FS, meta Sn
 	}
 
 	files, filesSeen := collectTSSidecarFiles(snapshot, opts.Roots)
-
 	req := projectbridge.Request{
 		Version:   projectbridge.ProtocolVersion,
 		Op:        projectbridge.OpAnalyzeProject,
@@ -112,167 +101,39 @@ func BuildTypeScriptModelViaSidecar(ctx context.Context, snapshot fs.FS, meta Sn
 	if resp.Error != nil {
 		return tsSidecarModel(meta, opts, filesSeen, tsSidecarErrorDiagnostics(resp)...), nil
 	}
+	return modelFromTSSidecarResponse(meta, opts, resp), nil
+}
 
-	edges := make([]ImportEdge, 0, len(resp.ImportEdges))
-	for _, e := range resp.ImportEdges {
-		edges = append(edges, ImportEdge{From: e.From, To: e.To, Kind: e.Kind, Site: e.Site, Resolution: e.Resolution})
-	}
-	diagnostics := make([]Diagnostic, 0, len(resp.Coverage.Diagnostics))
-	for _, d := range resp.Coverage.Diagnostics {
-		diagnostics = append(diagnostics, Diagnostic{Code: d.Code, Message: d.Message, Path: d.Path})
-	}
-
+func modelFromTSSidecarResponse(meta SnapshotMeta, opts TSSidecarOptions, resp projectbridge.Response) Model {
 	return Model{
 		SchemaVersion: SchemaVersion,
 		Repository:    meta.Repository,
 		Snapshot:      tsSidecarSnapshot(meta, opts),
-		ImportEdges:   edges,
+		ImportEdges:   importEdgesFromWire(resp.ImportEdges),
 		Coverage: canonicalCoverage(Coverage{
 			Phase:       tsSidecarPhase,
 			Complete:    resp.Coverage.Complete,
 			Counts:      resp.Coverage.Counts,
 			Budgets:     resp.Coverage.Budgets,
-			Diagnostics: diagnostics,
+			Diagnostics: diagnosticsFromWire(resp.Coverage.Diagnostics),
 		}),
-	}, nil
+	}
 }
 
-// callTSSidecar runs the sidecar transport for one request: it stats the
-// binary, spawns it with a minimal explicit environment and opts.Args,
-// writes req to its stdin, and reads one bounded response line from its
-// stdout. On any transport failure it returns a non-empty human-readable
-// message describing which failure mode occurred (missing binary, failed
-// start, non-zero exit, oversized output, or timeout); the caller turns
-// that into a DiagBackendUnavailable diagnostic rather than a Go error.
-func callTSSidecar(ctx context.Context, opts TSSidecarOptions, req projectbridge.Request) (projectbridge.Response, string) {
-	if _, err := os.Stat(opts.BinaryPath); err != nil {
-		return projectbridge.Response{}, fmt.Sprintf("ts sidecar binary unavailable at %q: %s", opts.BinaryPath, err)
+func importEdgesFromWire(in []projectbridge.ImportEdgeFact) []ImportEdge {
+	edges := make([]ImportEdge, 0, len(in))
+	for _, e := range in {
+		edges = append(edges, ImportEdge{From: e.From, To: e.To, Kind: e.Kind, Site: e.Site, Resolution: e.Resolution})
 	}
-
-	runCtx := ctx
-	if opts.Timeout > 0 {
-		var cancelTimeout context.CancelFunc
-		runCtx, cancelTimeout = context.WithTimeout(runCtx, opts.Timeout)
-		defer cancelTimeout()
-	}
-	runCtx, cancelRun := context.WithCancel(runCtx)
-	defer cancelRun()
-
-	reqLine, err := json.Marshal(req)
-	if err != nil {
-		return projectbridge.Response{}, fmt.Sprintf("encoding ts sidecar request: %s", err)
-	}
-
-	cmd := exec.CommandContext(runCtx, opts.BinaryPath, opts.Args...)
-	cmd.Env = sanitizedTSSidecarEnv()
-	cmd.Stdin = bytes.NewReader(append(reqLine, '\n'))
-	stderr := &boundedWriter{limit: maxTSSidecarStderrBytes}
-	cmd.Stderr = stderr
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return projectbridge.Response{}, fmt.Sprintf("starting ts sidecar: %s", err)
-	}
-	if err := cmd.Start(); err != nil {
-		return projectbridge.Response{}, fmt.Sprintf("starting ts sidecar: %s", err)
-	}
-
-	data, readErr := io.ReadAll(io.LimitReader(stdout, maxTSSidecarResponseBytes+1))
-	oversized := int64(len(data)) > maxTSSidecarResponseBytes
-	// Only cancel before Wait when the child may still be writing past the
-	// budget (oversized) or the read itself failed; canceling
-	// unconditionally races exec.CommandContext's own ctx-watchdog against
-	// a child that has already exited normally, and if the watchdog wins
-	// it kills the (already-dead) process group and Wait returns
-	// ctx.Err() instead of nil -- turning a perfectly good response into a
-	// spurious "context canceled" failure. On the normal path stdout has
-	// already hit EOF, so Wait returns on its own and the deferred
-	// cancelRun still runs afterward.
-	if oversized || readErr != nil {
-		cancelRun()
-	}
-	waitErr := cmd.Wait()
-
-	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-		if opts.Timeout > 0 {
-			return projectbridge.Response{}, fmt.Sprintf("ts sidecar timed out after %s", opts.Timeout)
-		}
-		// opts.Timeout is documented as "no deadline" when zero, so the
-		// DeadlineExceeded here came from a deadline the caller set on ctx
-		// (e.g. context.WithDeadline/WithTimeout), not opts.Timeout --
-		// printing opts.Timeout in that case would misreport it as 0s.
-		return projectbridge.Response{}, "ts sidecar timed out (caller deadline exceeded)"
-	}
-	// ctx (the caller's original context, distinct from runCtx which this
-	// function always cancels itself once the response is read) is only
-	// Canceled here if the caller canceled it; that must be reported
-	// distinctly from a crash, since cmd.Wait() otherwise reports the same
-	// "exited" shape (e.g. "signal: killed") for both.
-	if errors.Is(ctx.Err(), context.Canceled) {
-		return projectbridge.Response{}, "ts sidecar canceled"
-	}
-	if oversized {
-		return projectbridge.Response{}, fmt.Sprintf("ts sidecar response exceeded %d-byte budget", maxTSSidecarResponseBytes)
-	}
-	if readErr != nil {
-		return projectbridge.Response{}, fmt.Sprintf("reading ts sidecar output: %s", readErr)
-	}
-	if waitErr != nil {
-		if tail := strings.TrimSpace(stderr.buf.String()); tail != "" {
-			return projectbridge.Response{}, fmt.Sprintf("ts sidecar exited: %s: %s", waitErr, tail)
-		}
-		return projectbridge.Response{}, fmt.Sprintf("ts sidecar exited: %s", waitErr)
-	}
-
-	var resp projectbridge.Response
-	if err := json.Unmarshal(bytes.TrimRight(firstLine(data), "\n"), &resp); err != nil {
-		return projectbridge.Response{}, fmt.Sprintf("ts sidecar produced malformed response: %s", err)
-	}
-	if resp.Version != projectbridge.ProtocolVersion || resp.ID != req.ID {
-		return projectbridge.Response{}, fmt.Sprintf("ts sidecar response protocol mismatch: version %d id %d", resp.Version, resp.ID)
-	}
-	return resp, ""
+	return edges
 }
 
-// sanitizedTSSidecarEnv is the minimal environment for the sidecar child,
-// mirroring internal/codesignalcli/project_snapshot.go's
-// sanitizedSnapshotGitEnv: only PATH and HOME are forwarded so the
-// sidecar can locate itself and any runtime it wraps (e.g. a Node
-// installation), never the parent process's full ambient environment.
-func sanitizedTSSidecarEnv() []string {
-	var env []string
-	if value, ok := os.LookupEnv("PATH"); ok {
-		env = append(env, "PATH="+value)
+func diagnosticsFromWire(in []projectbridge.Diagnostic) []Diagnostic {
+	out := make([]Diagnostic, 0, len(in))
+	for _, d := range in {
+		out = append(out, Diagnostic{Code: d.Code, Message: d.Message, Path: d.Path})
 	}
-	if value, ok := os.LookupEnv("HOME"); ok {
-		env = append(env, "HOME="+value)
-	}
-	return env
-}
-
-// boundedWriter retains only the first limit bytes written to it, silently
-// discarding the rest, so an untrusted child's stderr cannot grow the
-// diagnostic message without bound.
-type boundedWriter struct {
-	buf   bytes.Buffer
-	limit int
-}
-
-func (w *boundedWriter) Write(p []byte) (int, error) {
-	if room := w.limit - w.buf.Len(); room > 0 {
-		if room > len(p) {
-			room = len(p)
-		}
-		w.buf.Write(p[:room])
-	}
-	return len(p), nil
-}
-
-func firstLine(data []byte) []byte {
-	if idx := bytes.IndexByte(data, '\n'); idx >= 0 {
-		return data[:idx]
-	}
-	return data
+	return out
 }
 
 // tsSidecarModel returns the mostly-empty Model produced for a transport
@@ -306,12 +167,8 @@ func tsSidecarErrorDiagnostics(resp projectbridge.Response) []Diagnostic {
 	if resp.Error.Kind != "" {
 		message = fmt.Sprintf("%s (kind: %s)", message, resp.Error.Kind)
 	}
-	diags := make([]Diagnostic, 0, len(resp.Coverage.Diagnostics)+1)
-	diags = append(diags, Diagnostic{Code: DiagBackendUnavailable, Message: message})
-	for _, d := range resp.Coverage.Diagnostics {
-		diags = append(diags, Diagnostic{Code: d.Code, Message: d.Message, Path: d.Path})
-	}
-	return diags
+	diags := []Diagnostic{{Code: DiagBackendUnavailable, Message: message}}
+	return append(diags, diagnosticsFromWire(resp.Coverage.Diagnostics)...)
 }
 
 func tsSidecarSnapshot(meta SnapshotMeta, opts TSSidecarOptions) Snapshot {
@@ -323,121 +180,4 @@ func tsSidecarSnapshot(meta SnapshotMeta, opts TSSidecarOptions) Snapshot {
 		BuildContextDigest: meta.BuildContextDigest,
 		SelectedRoots:      selectedRootsFrom(opts.Roots),
 	}
-}
-
-// collectTSSidecarFiles walks snapshot for .ts/.tsx source files plus
-// tsconfig*.json and package.json config files (scoped to roots when
-// non-empty, else the whole snapshot), base64-encoding each one's content
-// for internal/projectbridge.Request.Files. Config files must be
-// forwarded too: js/semantics/src/project-sidecar/discover.ts and
-// vfs.ts source tsconfig.json/package.json exclusively from this
-// request's Files array, with no other channel -- omitting them silently
-// starves the sidecar of every project it would otherwise open (zero
-// tsconfig.json forwarded => zero projects opened => zero import edges,
-// yet Coverage.Complete still reports true, since analyze.ts treats "no
-// tsconfig discovered" as a vacuously complete analysis rather than a
-// failure). tsconfig*.json (not just the exact "tsconfig.json" name) is
-// matched, not merely suffix-matched, so a `"my-tsconfig.json"` is not
-// swept in while an `"extends": "./tsconfig.base.json"` target is still
-// forwarded for the sidecar to read. Anything under a node_modules/
-// directory is excluded from both source and config matching, since
-// sweeping in every vendored package.json would explode the request size
-// with no corresponding benefit. Unlike BuildGoModel's GoBudgets
-// (MaxInputFiles/MaxInputBytes), this walk has no file-count or byte cap
-// of its own yet -- a caller-supplied budget analogous to GoBudgets is a
-// natural follow-up once a CLI path actually wires this backend up for
-// real repositories. It returns the files collected plus a
-// separate seen count so a read failure still contributes to
-// Coverage.Counts["files_seen"].
-func collectTSSidecarFiles(snapshot fs.FS, roots []string) ([]projectbridge.ProjectFile, int) {
-	var paths []string
-	for _, root := range tsSidecarWalkRoots(roots) {
-		_ = fs.WalkDir(snapshot, root, func(p string, entry fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if entry.IsDir() {
-				if entry.Name() == "node_modules" {
-					return fs.SkipDir
-				}
-				return nil
-			}
-			if isWithinNodeModules(p) {
-				return nil
-			}
-			if isTSSidecarSourceFile(p) || isTSSidecarConfigFile(path.Base(p)) {
-				paths = append(paths, p)
-			}
-			return nil
-		})
-	}
-	sort.Strings(paths)
-	paths = dedupeSorted(paths)
-
-	files := make([]projectbridge.ProjectFile, 0, len(paths))
-	for _, p := range paths {
-		content, err := fs.ReadFile(snapshot, p)
-		if err != nil {
-			continue
-		}
-		files = append(files, projectbridge.ProjectFile{
-			Path:       p,
-			ContentB64: base64.StdEncoding.EncodeToString(content),
-		})
-	}
-	return files, len(paths)
-}
-
-// isTSSidecarSourceFile reports whether p is a TypeScript/TSX source file
-// by extension, independent of node_modules/ exclusion (handled by the
-// caller).
-func isTSSidecarSourceFile(p string) bool {
-	return strings.HasSuffix(p, ".ts") || strings.HasSuffix(p, ".tsx")
-}
-
-// isTSSidecarConfigFile reports whether base (a bare filename, not a
-// path) is a config file the sidecar needs forwarded: "package.json"
-// exactly, or any "tsconfig*.json" basename (e.g. "tsconfig.json",
-// "tsconfig.base.json") so extends-chain targets are included without
-// also sweeping in unrelated *-tsconfig.json/*-package.json files.
-func isTSSidecarConfigFile(base string) bool {
-	if base == "package.json" {
-		return true
-	}
-	return strings.HasPrefix(base, "tsconfig") && strings.HasSuffix(base, ".json")
-}
-
-// isWithinNodeModules reports whether any path segment of p (a
-// slash-separated fs.FS path) is literally "node_modules".
-func isWithinNodeModules(p string) bool {
-	for _, segment := range strings.Split(p, "/") {
-		if segment == "node_modules" {
-			return true
-		}
-	}
-	return false
-}
-
-func tsSidecarWalkRoots(roots []string) []string {
-	if len(roots) == 0 {
-		return []string{"."}
-	}
-	out := make([]string, len(roots))
-	for i, r := range roots {
-		out[i] = path.Clean(r)
-	}
-	return out
-}
-
-func dedupeSorted(sortedPaths []string) []string {
-	if len(sortedPaths) < 2 {
-		return sortedPaths
-	}
-	out := sortedPaths[:1]
-	for _, p := range sortedPaths[1:] {
-		if p != out[len(out)-1] {
-			out = append(out, p)
-		}
-	}
-	return out
 }

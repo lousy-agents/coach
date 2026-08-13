@@ -2,143 +2,25 @@
  * Acceptance coverage for the pinned Node/TypeScript project sidecar
  * (issue #214 Task 2): spawns the compiled bin/coach-ts-project-sidecar
  * binary as a real child process -- the same way Task 1's Go client
- * (pkg/projectmodel/ts_sidecar.go, already merged) invokes it -- writes
- * one internal/projectbridge.Request NDJSON line to its stdin, and reads
- * one Response line back from stdout. This is the sidecar's public
- * boundary; it deliberately does not import the TypeScript source modules
- * directly.
+ * (pkg/projectmodel/ts_sidecar.go) invokes it -- writes one
+ * internal/projectbridge.Request NDJSON line to its stdin, and reads one
+ * Response line back from stdout.
  */
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { before, test } from "node:test";
 
+import { edgesTo, file, runSidecar, type WireFile } from "./project-sidecar-harness.js";
+
 const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BIN_PATH = join(PACKAGE_ROOT, "bin", "coach-ts-project-sidecar");
 
 before(() => {
   execFileSync("npm", ["run", "build:project-sidecar"], { cwd: PACKAGE_ROOT, stdio: "pipe" });
 });
-
-interface WireFile {
-  path: string;
-  content_b64: string;
-}
-
-interface WireRequest {
-  version: number;
-  op: string;
-  id: number;
-  files: WireFile[];
-  roots?: string[];
-  timeout_ms?: number;
-}
-
-interface WireEdge {
-  from: string;
-  to: string;
-  kind: string;
-  site?: string;
-  resolution?: string;
-}
-
-interface WireDiagnostic {
-  code: string;
-  message: string;
-  path?: string;
-}
-
-interface WireResponse {
-  version: number;
-  id: number;
-  import_edges?: WireEdge[];
-  coverage: {
-    phase: string;
-    complete: boolean;
-    counts?: Record<string, number>;
-    budgets?: Record<string, number>;
-    diagnostics?: WireDiagnostic[];
-  };
-  error?: { kind: string; message: string };
-}
-
-function file(path: string, content: string): WireFile {
-  return { path, content_b64: Buffer.from(content, "utf8").toString("base64") };
-}
-
-let nextId = 1;
-
-function runSidecar(
-  request: Omit<WireRequest, "version" | "op" | "id"> & Partial<Pick<WireRequest, "version" | "op" | "id">>,
-  env?: Record<string, string>,
-): Promise<{ response: WireResponse; rawLine: string; exitCode: number | null }> {
-  const fullRequest: WireRequest = {
-    version: 1,
-    op: "analyze_project",
-    id: nextId++,
-    ...request,
-  };
-  return new Promise((resolve, reject) => {
-    const child = spawn(BIN_PATH, [], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...env },
-    });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    let exitCode: number | null = null;
-
-    const budget = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      child.kill("SIGKILL");
-      reject(new Error(`sidecar did not respond within the test budget; stderr so far: ${stderr}`));
-    }, 30000);
-    budget.unref();
-
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-    });
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-    });
-    child.on("error", (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(budget);
-      reject(err);
-    });
-    child.on("exit", (code) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(budget);
-      exitCode = code;
-      const newline = stdout.indexOf("\n");
-      const rawLine = newline === -1 ? stdout : stdout.slice(0, newline);
-      if (rawLine.trim() === "") {
-        reject(new Error(`sidecar exited (code ${code}) without a response line; stderr: ${stderr}`));
-        return;
-      }
-      try {
-        resolve({ response: JSON.parse(rawLine) as WireResponse, rawLine, exitCode });
-      } catch (err) {
-        reject(new Error(`malformed response JSON: ${String(err)}; line=${rawLine}`));
-      }
-    });
-
-    child.stdin.write(`${JSON.stringify(fullRequest)}\n`);
-    child.stdin.end();
-  });
-}
-
-function edgesTo(response: WireResponse, to: string): WireEdge[] {
-  return (response.import_edges ?? []).filter((e) => e.to === to);
-}
 
 test("aliases: compilerOptions.paths/baseUrl resolve an aliased import to its target file", async () => {
   const { response, exitCode } = await runSidecar({
