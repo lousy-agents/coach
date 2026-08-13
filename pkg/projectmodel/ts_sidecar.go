@@ -342,7 +342,11 @@ func tsSidecarSnapshot(meta SnapshotMeta, opts TSSidecarOptions) Snapshot {
 // forwarded for the sidecar to read. Anything under a node_modules/
 // directory is excluded from both source and config matching, since
 // sweeping in every vendored package.json would explode the request size
-// with no corresponding benefit. It returns the files collected plus a
+// with no corresponding benefit. Unlike BuildGoModel's GoBudgets
+// (MaxInputFiles/MaxInputBytes), this walk has no file-count or byte cap
+// of its own yet -- a caller-supplied budget analogous to GoBudgets is a
+// natural follow-up once a CLI path actually wires this backend up for
+// real repositories. It returns the files collected plus a
 // separate seen count so a read failure still contributes to
 // Coverage.Counts["files_seen"].
 func collectTSSidecarFiles(snapshot fs.FS, roots []string) ([]projectbridge.ProjectFile, int) {
