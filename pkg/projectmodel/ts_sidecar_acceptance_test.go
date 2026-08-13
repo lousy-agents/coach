@@ -63,7 +63,7 @@ var _ = Describe("BuildTypeScriptModelViaSidecar", func() {
 			Expect(model.Coverage.Complete).To(BeTrue())
 			Expect(model.Coverage.Diagnostics).To(BeEmpty())
 			Expect(model.Coverage.Phase).To(Equal("ts_sidecar_build"), "expected the client's own phase, not the fake sidecar's reported Coverage.Phase, which must be ignored")
-			Expect(model.Coverage.Counts).To(HaveKeyWithValue("files_seen", 3), "expected src/a.ts, src/b.ts, and src/c.tsx to be collected and sent to the sidecar, but src/notes.md excluded as a non-TS file")
+			Expect(model.Coverage.Counts).To(HaveKeyWithValue("files_seen", 3), "expected src/a.ts, src/b.ts, and src/c.tsx to be collected and sent to the sidecar, but src/notes.md excluded as neither a TypeScript source file nor a tsconfig*.json/package.json config file")
 			Expect(model.ImportEdges).To(ContainElement(projectmodel.ImportEdge{
 				From: "file:src/a.ts", To: "import { b } from './b';\nexport const a = b;\n", Kind: "internal", Site: "src/a.ts:1",
 			}), "expected the sidecar's echo of the decoded first file's content to survive the base64 round-trip unchanged")

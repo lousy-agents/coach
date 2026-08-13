@@ -325,19 +325,43 @@ func tsSidecarSnapshot(meta SnapshotMeta, opts TSSidecarOptions) Snapshot {
 	}
 }
 
-// collectTSSidecarFiles walks snapshot for .ts/.tsx source files (scoped
-// to roots when non-empty, else the whole snapshot), base64-encoding each
-// one's content for internal/projectbridge.Request.Files. It returns the
-// files collected plus a separate seen count so a read failure still
-// contributes to Coverage.Counts["files_seen"].
+// collectTSSidecarFiles walks snapshot for .ts/.tsx source files plus
+// tsconfig*.json and package.json config files (scoped to roots when
+// non-empty, else the whole snapshot), base64-encoding each one's content
+// for internal/projectbridge.Request.Files. Config files must be
+// forwarded too: js/semantics/src/project-sidecar/discover.ts and
+// vfs.ts source tsconfig.json/package.json exclusively from this
+// request's Files array, with no other channel -- omitting them silently
+// starves the sidecar of every project it would otherwise open (zero
+// tsconfig.json forwarded => zero projects opened => zero import edges,
+// yet Coverage.Complete still reports true, since analyze.ts treats "no
+// tsconfig discovered" as a vacuously complete analysis rather than a
+// failure). tsconfig*.json (not just the exact "tsconfig.json" name) is
+// matched, not merely suffix-matched, so a `"my-tsconfig.json"` is not
+// swept in while an `"extends": "./tsconfig.base.json"` target is still
+// forwarded for the sidecar to read. Anything under a node_modules/
+// directory is excluded from both source and config matching, since
+// sweeping in every vendored package.json would explode the request size
+// with no corresponding benefit. It returns the files collected plus a
+// separate seen count so a read failure still contributes to
+// Coverage.Counts["files_seen"].
 func collectTSSidecarFiles(snapshot fs.FS, roots []string) ([]projectbridge.ProjectFile, int) {
 	var paths []string
 	for _, root := range tsSidecarWalkRoots(roots) {
 		_ = fs.WalkDir(snapshot, root, func(p string, entry fs.DirEntry, err error) error {
-			if err != nil || entry.IsDir() {
+			if err != nil {
 				return nil
 			}
-			if strings.HasSuffix(p, ".ts") || strings.HasSuffix(p, ".tsx") {
+			if entry.IsDir() {
+				if entry.Name() == "node_modules" {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if isWithinNodeModules(p) {
+				return nil
+			}
+			if isTSSidecarSourceFile(p) || isTSSidecarConfigFile(path.Base(p)) {
 				paths = append(paths, p)
 			}
 			return nil
@@ -358,6 +382,36 @@ func collectTSSidecarFiles(snapshot fs.FS, roots []string) ([]projectbridge.Proj
 		})
 	}
 	return files, len(paths)
+}
+
+// isTSSidecarSourceFile reports whether p is a TypeScript/TSX source file
+// by extension, independent of node_modules/ exclusion (handled by the
+// caller).
+func isTSSidecarSourceFile(p string) bool {
+	return strings.HasSuffix(p, ".ts") || strings.HasSuffix(p, ".tsx")
+}
+
+// isTSSidecarConfigFile reports whether base (a bare filename, not a
+// path) is a config file the sidecar needs forwarded: "package.json"
+// exactly, or any "tsconfig*.json" basename (e.g. "tsconfig.json",
+// "tsconfig.base.json") so extends-chain targets are included without
+// also sweeping in unrelated *-tsconfig.json/*-package.json files.
+func isTSSidecarConfigFile(base string) bool {
+	if base == "package.json" {
+		return true
+	}
+	return strings.HasPrefix(base, "tsconfig") && strings.HasSuffix(base, ".json")
+}
+
+// isWithinNodeModules reports whether any path segment of p (a
+// slash-separated fs.FS path) is literally "node_modules".
+func isWithinNodeModules(p string) bool {
+	for _, segment := range strings.Split(p, "/") {
+		if segment == "node_modules" {
+			return true
+		}
+	}
+	return false
 }
 
 func tsSidecarWalkRoots(roots []string) []string {
