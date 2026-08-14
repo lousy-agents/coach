@@ -47,6 +47,20 @@ jobs:
       - name: js/semantics build + tests
         run: mise run js-ci
 
+      # pkg/projectmodel/ts_sidecar_integration_acceptance_test.go drives
+      # Task 1's Go client against Task 2's real compiled Node/TypeScript
+      # sidecar; it needs Node/npm on PATH (this job has them via mise, the
+      # `verify` job deliberately does not) and gracefully skips otherwise,
+      # so without this step it silently contributes zero regression signal.
+      - name: js/semantics install (for pkg/projectmodel's real ts sidecar integration suite)
+        run: mise run js-install
+
+      - name: build the pinned ts project sidecar
+        run: mise run project-sidecar-build
+
+      - name: go test -race ./pkg/projectmodel/... (real ts sidecar integration suite)
+        run: go test -race ./pkg/projectmodel/... -run Acceptance
+
   # Proves pkg/semantics compiles for GOOS=js GOARCH=wasm via the pure-Go
   # gotreesitter engine, with no TinyGo.
   wasm-build:
