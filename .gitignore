@@ -63,4 +63,14 @@ js/semantics/vendor/wasm_exec.js
 deploy/compose/thinproof/output/*
 !deploy/compose/thinproof/output/.gitkeep
 
+# Per-machine Claude Code overrides. Claude Code loads this file and it can
+# override .claude/settings.json, so committing one developer's copy would
+# silently change every teammate's hook and permission behavior.
+.claude/settings.local.json
+
+# /implement-issue run artifacts: planner output and validation evidence.
+# Build-time state, never committed -- and they must stay ignored so they
+# cannot perturb the candidate tree digest (`git add -A && git write-tree`).
+.claude/.implement-issue/
+
 tmp

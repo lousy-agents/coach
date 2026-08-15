@@ -175,3 +175,34 @@ run = [
   { task = "test-examples" },
   { task = "js-ci" },
 ]
+
+# `ci` runs `test` before `js-ci`, so pkg/projectmodel's TypeScript sidecar
+# acceptance suite has no sidecar binary when it executes and skips silently --
+# see .github/workflows/ci.yml:52-56, which is why the js-verify job rebuilds
+# and re-runs that package. `ci-fast` puts the sidecar first, so a per-cycle
+# run cannot mistake a skip for a pass; without it an implementer's "red" and
+# "green" for a test in that suite are the same skip.
+[tasks.ci-fast]
+description = "Per-cycle validation for the implement/review loop: Go slice with the TS sidecar built first (no silent skips)"
+run = [
+  { task = "gofmt" },
+  { task = "go-vet" },
+  { task = "acceptance-style-check" },
+  { task = "project-sidecar-build" },
+  { task = "test" },
+]
+
+# The single authoritative "everything CI proves" task, used by the ship gate.
+# Excludes test-acceptance-fast: its ambient-credential preflight refuses to
+# run whenever GITHUB_TOKEN/GH_TOKEN or ~/.aws/config are present -- always
+# true in Claude Code remote environments -- and it adds no coverage, since
+# `test` is `go test -race ./...` unfiltered, a superset of -run Acceptance.
+# Excludes platform-smoke: needs Docker and live services.
+[tasks.ci-all]
+description = "Everything CI proves: ci + wasm-build + the real TS sidecar integration suite"
+run = [
+  { task = "ci" },
+  { task = "wasm-build" },
+  { task = "project-sidecar-build" },
+  "go test -race ./pkg/projectmodel/... -run Acceptance",
+]
