@@ -28,7 +28,7 @@ func TestGatePrCreation_EmptyCommandNoOp(t *testing.T) {
 }
 
 // TestGatePrCreation_BashCreateAllowsWhenCiPasses verifies that `gh pr create`
-// is allowed through (no deny JSON) when `mise run ci` succeeds.
+// is allowed through (no deny JSON) when the validation suite succeeds.
 func TestGatePrCreation_BashCreateAllowsWhenCiPasses(t *testing.T) {
 	stdout := runGatePrCreation(t, "Bash", "gh pr create --title x --body y", true)
 	if strings.TrimSpace(stdout) != "" {
@@ -37,7 +37,7 @@ func TestGatePrCreation_BashCreateAllowsWhenCiPasses(t *testing.T) {
 }
 
 // TestGatePrCreation_BashCreateDeniesWhenCiFails verifies that `gh pr create`
-// is denied with a hookSpecificOutput payload when `mise run ci` fails.
+// is denied with a hookSpecificOutput payload when the validation suite fails.
 func TestGatePrCreation_BashCreateDeniesWhenCiFails(t *testing.T) {
 	stdout := runGatePrCreation(t, "Bash", "gh pr create --title x --body y", false)
 	assertDenyDecision(t, stdout)
@@ -106,6 +106,16 @@ func runGatePrCreation(t *testing.T, toolName, command string, ciPasses bool) st
 		exitCode = "1"
 	}
 	if err := os.WriteFile(fakeMise, []byte("#!/bin/sh\nexit "+exitCode+"\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stub git as a clean worktree. Without this the hook reads the real
+	// repository, so these tests would pass or fail depending on whether the
+	// checkout happens to be dirty — they are about the hook's reaction to
+	// mise's exit code, not about ambient state. Dirty-tree behavior has its
+	// own specs in gate_pr_creation_acceptance_test.go.
+	fakeGit := filepath.Join(fakeBin, "git")
+	if err := os.WriteFile(fakeGit, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
 
