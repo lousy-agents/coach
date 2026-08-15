@@ -28,6 +28,18 @@
             ]
           }
         ]
+      },
+      {
+        "matcher": "workflow-integration-reviewer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/verify-review-verdict.sh"
+            ]
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -38,6 +50,7 @@
             "type": "command",
             "if": "Bash(gh pr create*)",
             "command": "bash",
+            "timeout": 900,
             "args": [
               "${CLAUDE_PROJECT_DIR}/.claude/hooks/gate-pr-creation.sh"
             ]
@@ -50,6 +63,7 @@
           {
             "type": "command",
             "command": "bash",
+            "timeout": 900,
             "args": [
               "${CLAUDE_PROJECT_DIR}/.claude/hooks/gate-pr-creation.sh"
             ]
