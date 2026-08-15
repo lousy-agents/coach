@@ -199,7 +199,10 @@ func buildProjectReportSurface(input Input, noBaseLifecycle Lifecycle, includeRe
 		case "baseline":
 			summaryCounts.BaselineChanges++
 		}
-		projectSignals = append(projectSignals, signalFromProjectChange(change))
+		// Canonicalize nested arrays before mirroring onto Signal so the
+		// signals[] surface is producer-order independent, matching the
+		// project_changes[] canonicalization sortProjectChanges applies below.
+		projectSignals = append(projectSignals, signalFromProjectChange(withCanonicalProjectChangeArrays(change)))
 	}
 
 	if !includeResolved {
@@ -269,8 +272,11 @@ func filterAnchorlessProjectChanges(changes []ProjectChange) ([]ProjectChange, [
 
 // signalFromProjectChange projects a classified project observation onto the
 // shared Signal surface so consumers that only read signals/summary still see
-// active cross-module findings. Structured project fields remain on
-// ProjectChange / project_changes.
+// active cross-module findings. machine_evidence, related_locations,
+// path_steps, and coverage_refs are mirrored onto the Signal so signals-only
+// consumers get text-parity evidence; project-only identity fields
+// (backend_version, algorithm_version, config_digest,
+// causal_evidence_digest) stay on ProjectChange.
 func signalFromProjectChange(change ProjectChange) Signal {
 	return Signal{
 		ID:             change.ID,
@@ -291,6 +297,11 @@ func signalFromProjectChange(change ProjectChange) Signal {
 		Recommendation: change.Recommendation,
 		SuggestedSkill: change.SuggestedSkill,
 		Provenance:     change.Provenance,
+
+		MachineEvidence:  change.MachineEvidence,
+		RelatedLocations: change.RelatedLocations,
+		PathSteps:        change.PathSteps,
+		CoverageRefs:     change.CoverageRefs,
 	}
 }
 
