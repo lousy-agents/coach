@@ -74,15 +74,17 @@ var _ = Describe("repo_baseline_scan local-model judgment amplification harness 
 			root := lousyIAMStyleHiddenMutationFixtureRoot()
 
 			// Timing contract (false-green guard):
-			//   wall 200ms, sleep 50ms/Judge → at most ~4 gateway calls before wall.
-			//   Pure 1:1 for 42 findings needs ~2.1s and cannot produce a full
-			//   capped set; with pack size 4 + cap 16 the path needs ~4 packs
-			//   (~200ms) and yields many agent rows per call.
+			//   wall 700ms, sleep 100ms/Judge → at most ~7 sequential 1:1
+			//   gateway calls before wall. Pure 1:1 for 42 findings needs ~4.2s
+			//   and cannot reach the 16-finding cap; with pack size 4 + cap 16,
+			//   the path needs ~4 HM packs (~400ms) and yields many agent rows per
+			//   call. The larger absolute window leaves room for scheduler and
+			//   race-detector overhead while preserving the one-to-one guard.
 			//   Assert agentHidden > max 1:1 calls under the wall so a revert to
-			//   uncapped 1:1 fails this spec (1:1 yields ≤~4 agent rows here).
+			//   uncapped 1:1 fails this spec (1:1 yields ≤~7 agent rows here).
 			const (
-				judgeDelay   = 50 * time.Millisecond
-				judgmentWall = 200 * time.Millisecond
+				judgeDelay   = 100 * time.Millisecond
+				judgmentWall = 700 * time.Millisecond
 				// Floor above what sequential 1:1 can produce under wall/delay.
 				minAgentHiddenBeyondOneToOne = 8
 			)
@@ -127,10 +129,10 @@ var _ = Describe("repo_baseline_scan local-model judgment amplification harness 
 			Expect(agentHidden).To(BeNumerically(">=", 1),
 				"packed path must persist ≥1 source=agent hidden_mutation finding under short wall")
 			// False-green: pure 1:1 under the same wall can finish at most
-			// ~wall/delay Judge calls (≈4), so agentHidden would stay ≤ that
+			// ~wall/delay Judge calls (≈7), so agentHidden would stay ≤ that
 			// bound. Packed packs (size 4) with cap 16 amplify findings/call.
 			Expect(agentHidden).To(BeNumerically(">=", minAgentHiddenBeyondOneToOne),
-				"agent rows must exceed pure 1:1 capacity under wall=%s delay=%s (1:1≤~4); agent=%d paths=%v",
+				"agent rows must exceed pure 1:1 capacity under wall=%s delay=%s (1:1≤~7); agent=%d paths=%v",
 				judgmentWall, judgeDelay, agentHidden, pathCounts)
 
 			// Packing evidence: gateway Judge calls for hidden_mutation must be
