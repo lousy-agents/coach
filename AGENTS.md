@@ -191,6 +191,15 @@ After a failing check, fix and rerun that specific command rather than the whole
 
 Before `gh pr create` / `create_pull_request`, read and fill every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). That file is the PR contract for coding agents: linked issue, single concern, acceptance-criteria → evidence table, red-then-green acceptance proof, and the validation commands you actually ran. Do not open a PR with blank sections or placeholder text.
 
+### Commit types (required policy)
+
+Conventional Commits, chosen by **who the change is for** — GoReleaser builds release notes from commit subjects, so the type decides whether a change is described to `coach` users as part of the CLI.
+
+- `feat` / `fix` — behavior a `coach` user can invoke: the CLI, `pkg/semantics`, `pkg/githubingest`, `js/semantics`. These reach the release notes.
+- `chore` / `ci` / `build` / `refactor` / `style` / `test` / `docs` — everything else, including **agent tooling**: `.claude/` and `.agents/` definitions, hooks, subagent and workflow files, `mise.toml` tasks, and CI workflows. These are filtered out of the release notes by `.goreleaser.yaml`.
+
+A PR title follows the same rule as its commits. Agent tooling changes the way this repository is *built*, not what it *does*, so labelling it `feat` publishes a feature that does not exist.
+
 ## CI shape (`.github/workflows/ci.yml`)
 
 Four independent jobs:

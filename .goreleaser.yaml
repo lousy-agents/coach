@@ -67,5 +67,13 @@ changelog:
   sort: asc
   filters:
     exclude:
+      # Internal-only work: agent tooling, CI, and refactors ship no
+      # behavior a coach user can invoke, so they stay out of notes
+      # describing the CLI.
       - '^docs:'
       - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - '^build:'
+      - '^refactor:'
+      - '^style:'
