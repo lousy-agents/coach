@@ -7,20 +7,19 @@ import (
 
 // GoBudgets bounds one Go discovery/build call. A zero field means
 // unbounded for that dimension -- there is no implicit default ceiling;
-// callers that want a safe limit must set it explicitly. Only
-// MaxInputFiles and MaxInputBytes are enforced today, by discoverGoProject
-// (the go.work/go.mod walk) and BuildGoModel's source-file read/analyze
-// phase. WallTime, MaxGraphNodes, MaxGraphEdges, and MaxWorkingSetBytes are
-// reserved for future enforcement: they are echoed back in
-// Coverage.Budgets but have no truncating effect yet.
+// callers that want a safe limit must set it explicitly. MaxInputFiles and
+// MaxInputBytes are enforced by discoverGoProject (the go.work/go.mod walk)
+// and BuildGoModel's source-file read/analyze phase. WallTime,
+// MaxGraphNodes, and MaxGraphEdges are enforced by BuildGoCallGraph (wall
+// clock via context deadline; nodes/edges by bounding its local-function
+// call-site walk). MaxWorkingSetBytes remains reserved for future
+// enforcement: it is echoed back in Coverage.Budgets but has no truncating
+// effect anywhere yet.
 type GoBudgets struct {
-	// WallTime is reserved; not enforced yet.
 	WallTime      time.Duration
 	MaxInputFiles int
 	MaxInputBytes int64
-	// MaxGraphNodes is reserved; not enforced yet.
 	MaxGraphNodes int
-	// MaxGraphEdges is reserved; not enforced yet.
 	MaxGraphEdges int
 	// MaxWorkingSetBytes is reserved; not enforced yet.
 	MaxWorkingSetBytes int64
