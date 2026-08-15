@@ -190,6 +190,24 @@ var _ = Describe("BuildGoModel", func() {
 		})
 	})
 
+	When("a module has .go files under testdata/, vendor/, and a dot-prefixed subdirectory", func() {
+		It("excludes those files from Model.Files and Model.Packages, matching the go tool's own convention", func() {
+			snapshot := os.DirFS("testdata/go_module_excluded_dirs")
+			model, err := projectmodel.BuildGoModel(snapshot, testMeta(), projectmodel.GoBuildOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(model.Files).To(ConsistOf(
+				projectmodel.File{ID: "file:main.go", Path: "main.go", Language: "go"},
+			))
+			Expect(model.Modules).To(ConsistOf(
+				projectmodel.Module{ID: "module:.", Path: ".", Language: "go", Files: []string{"main.go"}},
+			))
+			Expect(model.Packages).To(ConsistOf(
+				projectmodel.Package{ID: "package:.", Path: ".", Language: "go", Files: []string{"main.go"}},
+			))
+		})
+	})
+
 	When("GoBuildOptions.Roots is the repository-root path \".\" on a multi-module workspace", func() {
 		It("includes every module under the snapshot, not an empty hollow workspace", func() {
 			snapshot := os.DirFS("testdata/go_multiworkspace")

@@ -119,7 +119,7 @@ func BuildGoModel(snapshot fs.FS, meta SnapshotMeta, opts GoBuildOptions) (Model
 				"unresolved_edges": unresolvedEdges,
 				"excluded_edges":   excludedEdges,
 			},
-			Budgets:     effectiveGoBudgets(opts.Budgets),
+			Budgets:     EffectiveGoBudgets(opts.Budgets),
 			Diagnostics: diagnostics,
 		}),
 	}, nil
@@ -317,7 +317,8 @@ func selectedRootsFrom(roots []string) []string {
 
 // moduleGoFiles returns every .go file under moduleDir, repository-relative
 // and sorted, excluding any subtree that is itself a different module's
-// root (moduleDirs) so files are never attributed to more than one module.
+// root (moduleDirs), plus any testdata/, vendor/, or dot-prefixed
+// subdirectory -- the same directories the go tool itself never walks into.
 func moduleGoFiles(snapshot fs.FS, moduleDir string, moduleDirs map[string]bool) []string {
 	var files []string
 	_ = fs.WalkDir(snapshot, moduleDir, func(p string, entry fs.DirEntry, err error) error {
@@ -325,7 +326,7 @@ func moduleGoFiles(snapshot fs.FS, moduleDir string, moduleDirs map[string]bool)
 			return nil
 		}
 		if entry.IsDir() {
-			if p != moduleDir && moduleDirs[p] {
+			if shouldSkipModuleWalkDir(p, moduleDir, moduleDirs) {
 				return fs.SkipDir
 			}
 			return nil
@@ -337,6 +338,16 @@ func moduleGoFiles(snapshot fs.FS, moduleDir string, moduleDirs map[string]bool)
 	})
 	sort.Strings(files)
 	return files
+}
+
+// shouldSkipModuleWalkDir reports whether the moduleGoFiles walk should
+// prune p: nested module roots plus the same testdata/vendor/dot dirs
+// discovery skips. The module root itself is never pruned.
+func shouldSkipModuleWalkDir(p, moduleDir string, moduleDirs map[string]bool) bool {
+	if p == moduleDir {
+		return false
+	}
+	return moduleDirs[p] || shouldSkipDiscoveryDir(p)
 }
 
 // classifyGoImport assigns importPath one of the six frozen ImportEdge.Kind

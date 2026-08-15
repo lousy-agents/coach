@@ -46,7 +46,9 @@ var runSnapshotGit = func(dir string, maxStdout, maxStderr int64, timeout time.D
 // ambient environment wholesale: only PATH (so the git executable can be
 // found) and HOME are carried through, plus GIT_TERMINAL_PROMPT/
 // GIT_CONFIG_NOSYSTEM to force non-interactive, system-config-free
-// behavior. Go-tooling and proxy/credential variables (GOPROXY, GOFLAGS,
+// behavior, and GIT_NO_LAZY_FETCH to disable partial-clone promisor fetches
+// so a blobless snapshot can never reach the network. Go-tooling and
+// proxy/credential variables (GOPROXY, GOFLAGS,
 // GOPATH, GO111MODULE, GONOSUMCHECK, GOSUMDB, HTTP(S)_PROXY, NO_PROXY, ...)
 // are deliberately never forwarded, even when set in the parent process:
 // this package only runs `git ls-tree`/`git show` against a local
@@ -57,6 +59,7 @@ func sanitizedSnapshotGitEnv() []string {
 	env := []string{
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_NO_LAZY_FETCH=1",
 	}
 	if value, ok := os.LookupEnv("PATH"); ok {
 		env = append(env, "PATH="+value)
@@ -81,13 +84,31 @@ type goSnapshotFS struct {
 	children map[string][]fs.DirEntry
 }
 
+// snapshotListError wraps a failed `git ls-tree` listing (NewGoSnapshotFS's
+// construction step). Error() renders the same human-readable text the
+// previous fmt.Errorf-based message did, dir included, for any consumer
+// that just wants a message to display; Unwrap exposes the underlying git
+// failure alone, with no path interpolated, for a consumer that must not
+// leak dir into a diagnostic (see NewGoSnapshotFS's doc comment).
+type snapshotListError struct {
+	revision string
+	dir      string
+	err      error
+}
+
+func (e *snapshotListError) Error() string {
+	return fmt.Sprintf("coach: git ls-tree failed for revision %q in %q: %s", e.revision, e.dir, e.err)
+}
+
+func (e *snapshotListError) Unwrap() error { return e.err }
+
 // NewGoSnapshotFS returns an fs.FS that reads every file tracked at
 // revision in the Git repository at dir, using only git plumbing
 // (ls-tree/show) -- never the worktree, never `go` or another toolchain,
 // never network. It is intended as the read boundary
 // pkg/projectmodel.BuildGoModel/DiscoverGoRoots (issue #210) consume; this
-// function does not itself call into pkg/projectmodel (that wiring belongs
-// to a later issue, #211).
+// function does not itself call into pkg/projectmodel -- that wiring is
+// issue #220's SuggestProjectConfig, its first consumer.
 //
 // The returned fs.FS enumerates the full file list once via one bounded
 // `git ls-tree -r -z --name-only <revision>` call at construction time
@@ -100,6 +121,11 @@ type goSnapshotFS struct {
 //
 // If revision is unresolvable or dir is not a Git repository, NewGoSnapshotFS
 // returns an error; it never returns a silently empty FS for such a failure.
+// A failed listing is returned as *snapshotListError, not a bare
+// fmt.Errorf, so a caller that must not leak dir into a diagnostic message
+// (SuggestProjectConfig's snapshotUnavailableMessage) can render its own
+// message from Unwrap() alone instead of scrubbing dir out of formatted
+// text via substring match.
 func NewGoSnapshotFS(dir, revision string) (fs.FS, error) {
 	if revision == "" {
 		return nil, fmt.Errorf("coach: revision must be a non-empty Git revision")
@@ -107,7 +133,7 @@ func NewGoSnapshotFS(dir, revision string) (fs.FS, error) {
 
 	output, err := runSnapshotGit(dir, maxSnapshotListBytes, maxSnapshotGitStderr, snapshotGitTimeout, "ls-tree", "-r", "-z", "--name-only", revision)
 	if err != nil {
-		return nil, fmt.Errorf("coach: git ls-tree failed for revision %q in %q: %w", revision, dir, err)
+		return nil, &snapshotListError{revision: revision, dir: dir, err: err}
 	}
 
 	fsys := &goSnapshotFS{

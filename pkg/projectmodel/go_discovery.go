@@ -49,60 +49,12 @@ func discoverGoProject(snapshot fs.FS, budgets GoBudgets) *goProjectDiscovery {
 	truncated := false
 	walkErr := fs.WalkDir(snapshot, ".", func(p string, entry fs.DirEntry, err error) error {
 		if err != nil {
-			if p == "." {
-				d.Complete = false
-				d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagRootUnavailable, Path: "."})
-				return fs.SkipAll
-			}
-			// Best-effort: an unreadable subtree doesn't abort the whole walk.
-			return nil
+			return d.handleWalkError(p)
 		}
 		if entry.IsDir() {
-			return nil
+			return d.visitDiscoveryDir(p)
 		}
-
-		d.FilesSeen++
-		if budgets.MaxInputFiles > 0 && d.FilesSeen > budgets.MaxInputFiles {
-			truncated = true
-			d.FilesSkipped++
-			return fs.SkipAll
-		}
-
-		base := path.Base(p)
-		if base != "go.mod" && base != "go.work" {
-			return nil
-		}
-
-		data, readErr := fs.ReadFile(snapshot, p)
-		if readErr != nil {
-			return nil
-		}
-		d.BytesSeen += int64(len(data))
-		if budgets.MaxInputBytes > 0 && d.BytesSeen > budgets.MaxInputBytes {
-			truncated = true
-			d.FilesSkipped++
-			return fs.SkipAll
-		}
-
-		dir := path.Dir(p)
-		switch base {
-		case "go.mod":
-			mf, parseErr := modfile.Parse(p, data, nil)
-			if parseErr != nil {
-				d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagRootInvalid, Path: p, Message: parseErr.Error()})
-				d.ModulesSkipped++
-				return nil
-			}
-			d.Modules[dir] = mf
-		case "go.work":
-			wf, parseErr := modfile.ParseWork(p, data, nil)
-			if parseErr != nil {
-				d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagRootInvalid, Path: p, Message: parseErr.Error()})
-				return nil
-			}
-			d.Workspaces[dir] = wf
-		}
-		return nil
+		return d.visitDiscoveryFile(snapshot, p, budgets, &truncated)
 	})
 	_ = walkErr // walkFn only ever returns nil or fs.SkipAll, so WalkDir never propagates an error here.
 
@@ -112,6 +64,98 @@ func discoverGoProject(snapshot fs.FS, budgets GoBudgets) *goProjectDiscovery {
 	}
 
 	return d
+}
+
+// handleWalkError applies DiscoverGoRoots' fail-open walk-error policy:
+// a failure at the snapshot root is DiagRootUnavailable + SkipAll; any
+// other unreadable subtree is skipped so the rest of the walk continues.
+func (d *goProjectDiscovery) handleWalkError(p string) error {
+	if p == "." {
+		d.Complete = false
+		d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagRootUnavailable, Path: "."})
+		return fs.SkipAll
+	}
+	return nil
+}
+
+func (d *goProjectDiscovery) visitDiscoveryDir(p string) error {
+	if shouldSkipDiscoveryDir(p) {
+		return fs.SkipDir
+	}
+	return nil
+}
+
+// visitDiscoveryFile counts p against MaxInputFiles/MaxInputBytes and, for
+// go.mod/go.work paths, reads and records them. A go.mod/go.work path that
+// WalkDir enumerated but whose content can't be read (e.g. a missing Git
+// blob object) is the same "snapshot cannot be read" case DiagRootUnavailable
+// already covers for the top-level walk failure -- do not silently drop it,
+// or a multi-root discovery can go Complete with a wrong, truncated root set
+// instead of failing closed.
+func (d *goProjectDiscovery) visitDiscoveryFile(snapshot fs.FS, p string, budgets GoBudgets, truncated *bool) error {
+	d.FilesSeen++
+	if budgets.MaxInputFiles > 0 && d.FilesSeen > budgets.MaxInputFiles {
+		*truncated = true
+		d.FilesSkipped++
+		return fs.SkipAll
+	}
+
+	base := path.Base(p)
+	if base != "go.mod" && base != "go.work" {
+		return nil
+	}
+
+	data, readErr := fs.ReadFile(snapshot, p)
+	if readErr != nil {
+		d.Complete = false
+		d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagRootUnavailable, Path: p})
+		return nil
+	}
+	d.BytesSeen += int64(len(data))
+	if budgets.MaxInputBytes > 0 && d.BytesSeen > budgets.MaxInputBytes {
+		*truncated = true
+		d.FilesSkipped++
+		return fs.SkipAll
+	}
+
+	d.recordGoFile(p, base, data)
+	return nil
+}
+
+// shouldSkipDiscoveryDir reports whether the walk should prune the directory
+// at p: testdata/vendor fixtures and dot-prefixed directories (e.g. .git)
+// never contain go.mod/go.work files relevant to root discovery.
+func shouldSkipDiscoveryDir(p string) bool {
+	if p == "." {
+		return false
+	}
+	base := path.Base(p)
+	return base == "testdata" || base == "vendor" || strings.HasPrefix(base, ".")
+}
+
+// recordGoFile parses the go.mod/go.work file already read at p (data) and
+// records the successful module/workspace, or a DiagRootInvalid diagnostic
+// on parse failure. base must be "go.mod" or "go.work"; any other value is a
+// no-op, since the caller only invokes this after that check.
+func (d *goProjectDiscovery) recordGoFile(p, base string, data []byte) {
+	dir := path.Dir(p)
+	switch base {
+	case "go.mod":
+		mf, parseErr := modfile.Parse(p, data, nil)
+		if parseErr != nil {
+			d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagRootInvalid, Path: p, Message: parseErr.Error()})
+			d.ModulesSkipped++
+			return
+		}
+		d.Modules[dir] = mf
+	case "go.work":
+		wf, parseErr := modfile.ParseWork(p, data, nil)
+		if parseErr != nil {
+			d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagRootInvalid, Path: p, Message: parseErr.Error()})
+			return
+		}
+		d.Workspaces[dir] = wf
+	}
 }
 
 // resolveUseDirectives walks every discovered go.work's use directives in
@@ -175,12 +219,18 @@ func (d *goProjectDiscovery) roots(validWorkspaces map[string]bool) []string {
 	return out
 }
 
-// effectiveGoBudgets renders b as the frozen budgets map vocabulary shared
-// by RootDiscoveryResult.Coverage.Budgets and Model.Coverage.Budgets.
+// EffectiveGoBudgets renders b as the frozen budgets map vocabulary shared
+// by RootDiscoveryResult.Coverage.Budgets and Model.Coverage.Budgets
+// (wall_time_ms, input_files, input_bytes, graph_nodes, graph_edges,
+// working_set_bytes, stderr_bytes). It is exported so a caller that needs
+// to report this vocabulary before calling DiscoverGoRoots/BuildGoModel
+// (e.g. a zero-value coverage for a pre-discovery failure) can reuse it
+// instead of duplicating the key set.
+//
 // stderr_bytes always reports 0: neither entry point shells out to a
 // subprocess today, but the key is reserved so a future backend that does
 // can report it without changing the vocabulary.
-func effectiveGoBudgets(b GoBudgets) map[string]int {
+func EffectiveGoBudgets(b GoBudgets) map[string]int {
 	return map[string]int{
 		"wall_time_ms":      int(b.WallTime / time.Millisecond),
 		"input_files":       b.MaxInputFiles,

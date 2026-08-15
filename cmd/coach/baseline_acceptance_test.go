@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -72,6 +73,22 @@ var _ = Describe("coach codesignal --baseline", func() {
 			Expect(exitErr.ExitCode()).To(Equal(2))
 			Expect(stdout.Bytes()).To(BeEmpty())
 			Expect(stderr.String()).To(ContainSubstring("mutually exclusive"))
+		})
+	})
+
+	When("--output is given without --suggest-project-config", func() {
+		It("exits 2, writes nothing to stdout, writes no file, and rejects --output instead of silently ignoring it", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "a.go", "package a\n")
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--output", "whatever.json")
+
+			Expect(exitCode).To(Equal(2))
+			Expect(stdout).To(BeEmpty())
+			Expect(string(stderr)).To(ContainSubstring("--output"))
+
+			_, statErr := os.Stat(filepath.Join(repo, "whatever.json"))
+			Expect(os.IsNotExist(statErr)).To(BeTrue(), "--output must not write a file when --suggest-project-config was not requested")
 		})
 	})
 
