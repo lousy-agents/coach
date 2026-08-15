@@ -155,6 +155,17 @@ var _ = Describe("DiscoverGoRoots", func() {
 		})
 	})
 
+	When("a go.mod sits under a testdata/, vendor/, or dot-prefixed subdirectory of a larger tree", func() {
+		It("never treats those nested go.mod files as roots, matching the go tool's own convention", func() {
+			snapshot := os.DirFS("testdata/go_roots_excluded_dirs")
+			result, err := projectmodel.DiscoverGoRoots(snapshot, projectmodel.GoBudgets{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Complete).To(BeTrue())
+			Expect(result.Roots).To(Equal([]string{"."}),
+				"testdata/, vendor/, and .hidden/ go.mod fixtures must be pruned, not reported as roots")
+		})
+	})
+
 	When("a build produces diagnostics with two different codes", func() {
 		It("returns Coverage.Diagnostics sorted by code then path, not walk/resolution order", func() {
 			snapshot := fstest.MapFS{

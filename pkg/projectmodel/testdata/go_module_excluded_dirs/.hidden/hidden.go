@@ -1,0 +1,3 @@
+package hidden
+
+func Hidden() {}
