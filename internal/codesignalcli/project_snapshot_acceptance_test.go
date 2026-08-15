@@ -134,6 +134,7 @@ var _ = Describe("NewGoSnapshotFS", func() {
 		Expect(hasEnvPrefix(cmd.Env, "PATH=")).To(BeTrue(), "PATH must still be forwarded so the git executable can be found")
 		Expect(cmd.Env).To(ContainElement("GIT_TERMINAL_PROMPT=0"))
 		Expect(cmd.Env).To(ContainElement("GIT_CONFIG_NOSYSTEM=1"))
+		Expect(cmd.Env).To(ContainElement("GIT_NO_LAZY_FETCH=1"), "a blobless partial-clone promisor fetch must never be allowed to reach the network")
 	})
 
 	It("returns an error rather than an empty FS for an unresolvable revision", func() {

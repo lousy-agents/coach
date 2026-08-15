@@ -193,6 +193,38 @@ Every signal carries a `lifecycle`, computed by comparing HEAD against the resol
 
 JSON output reports `Location` fields (`start_row`, `start_col`, etc., see `pkg/semantics/result.go`) as 0-based, matching Tree-sitter's own convention. Text-mode output's `line:` field adds 1 to `start_row` for a human-friendly 1-based display line.
 
+### `--suggest-project-config`: opt-in project-config candidate
+
+`coach codesignal --baseline --suggest-project-config` is a separate, opt-in mode that discovers Go module/workspace roots at HEAD and prints a minimal `--project-config` **candidate** for you to review and commit yourself — it never reads or writes an actual `--project-config` file, and it never runs any project-analysis backend. It resolves HEAD once, walks an immutable Git snapshot for `go.mod`/`go.work` files (never the worktree, so uncommitted or ignored files never affect the result), and emits strict schema-1 JSON containing only `roots` (never `layers`, `forbidden_imports`, or `source_sink_pack` — those require a human decision this mode does not make).
+
+```sh
+coach codesignal --baseline --suggest-project-config
+```
+
+- Requires `--baseline`; it cannot be combined with `--base`, `--project-config`, `--project-language`, `--format`, `--scope`, `--build-target`, or a positional argument — any of those combinations is rejected outright rather than given a precedence.
+- The candidate JSON is written to stdout (2-space indent, one trailing newline); pass `--output <path>` to write it to a repository-relative file instead (create-only — it fails if the target already exists in any form). Either way, exactly one UTF-8 newline-delimited JSON (NDJSON) diagnostic/provenance object — compact, single-line, one trailing newline — is written to stderr describing the resolved revision, the roots considered, and root-discovery coverage.
+- **This is a candidate only.** Nothing consumes it automatically: review it, add any `layers`/`forbidden_imports`/`source_sink_pack` policy you want, and pass the result to `--project-config` yourself.
+
+**Candidate example** (stdout, for a repository with a root module and one nested module):
+
+```json
+{
+  "schema_version": "1",
+  "roots": [
+    ".",
+    "services/payments"
+  ]
+}
+```
+
+**Diagnostic/provenance example** (stderr, one NDJSON line — shown compact, exactly as emitted):
+
+```json
+{"diagnostic_version":"1","kind":"project_config_suggestion","revision":"3474e2c...","heuristic_version":"go-project-config-roots@1","roots_considered":[".","services/payments"],"coverage":{"phase":"project_config_suggestion","complete":true,"counts":{"files_seen":2,"files_skipped":0,"modules_seen":2,"modules_skipped":0,"roots_emitted":2},"budgets":{"graph_edges":0,"graph_nodes":0,"input_bytes":67108864,"input_files":500000,"stderr_bytes":0,"wall_time_ms":0,"working_set_bytes":0},"diagnostics":[]},"diagnostics":[{"code":"project_config_suggestion_ready","message":"coach codesignal --suggest-project-config: candidate generated successfully"}]}
+```
+
+Exit codes are distinct from the standard `codesignal` modes above: `0` on a successfully generated candidate, `2` for a usage error or a discovery problem (no Go modules found, ambiguous/duplicate roots, an invalid or already-existing `--output` path), and `3` if the immutable snapshot can't be read or candidate serialization unexpectedly fails.
+
 ---
 
 ## `pkg/semantics` Quickstart

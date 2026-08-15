@@ -8,7 +8,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -60,17 +64,20 @@ commands:
 
 run "coach codesignal --help" for command-specific help.`
 
-const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript]"
+const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]"
 
 type codesignalFlags struct {
-	base             string
-	baseline         bool
-	format           string
-	scope            string
-	buildTarget      string
-	projectConfig    string
-	projectLanguage  string
-	projectConfigSet bool
+	base                 string
+	baseline             bool
+	format               string
+	scope                string
+	buildTarget          string
+	projectConfig        string
+	projectLanguage      string
+	projectConfigSet     bool
+	suggestProjectConfig bool
+	output               string
+	outputSet            bool
 }
 
 func runCodesignal(args []string, stdout, stderr *os.File) int {
@@ -83,6 +90,10 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "coach codesignal: cannot determine working directory: %s\n", err)
 		return 1
+	}
+
+	if parsed.suggestProjectConfig {
+		return runSuggestProjectConfig(dir, parsed, stdout, stderr)
 	}
 
 	var report *codesignal.Report
@@ -105,50 +116,184 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 	return projectExitCode
 }
 
-func parseCodesignalFlags(args []string, stdout, stderr *os.File) (codesignalFlags, int, bool) {
-	flags := flag.NewFlagSet("codesignal", flag.ContinueOnError)
-	flags.SetOutput(stderr)
-	base := flags.String("base", "", "git ref to diff against (mutually exclusive with --baseline)")
-	baseline := flags.Bool("baseline", false, "scan every tracked file at HEAD instead of diffing against --base")
-	format := flags.String("format", "text", "output format: text or json")
-	scope := flags.String("scope", "production", "source scope: production or all")
-	buildTarget := flags.String("build-target", "", "Go package pattern used to determine production reachability")
-	projectConfig := flags.String("project-config", "", "repository-relative path to a project-analysis config at the selected revision; enables opt-in cross-module project facts")
-	projectLanguage := flags.String("project-language", "go", "project-analysis language: go or typescript")
+// countingBoolFlag is a flag.Value wrapper that counts how many times Set
+// was called, so parseCodesignalFlags can detect a flag supplied more than
+// once (flag.FlagSet's normal Bool/String accessors silently keep only the
+// last value).
+type countingBoolFlag struct {
+	value bool
+	count int
+}
 
+func (c *countingBoolFlag) String() string {
+	if c == nil {
+		return "false"
+	}
+	return strconv.FormatBool(c.value)
+}
+func (c *countingBoolFlag) Set(s string) error {
+	v, err := strconv.ParseBool(s)
+	if err != nil {
+		return err
+	}
+	c.value = v
+	c.count++
+	return nil
+}
+func (c *countingBoolFlag) IsBoolFlag() bool { return true }
+
+// countingStringFlag mirrors countingBoolFlag for a string-valued flag.
+type countingStringFlag struct {
+	value string
+	count int
+}
+
+func (c *countingStringFlag) String() string {
+	if c == nil {
+		return ""
+	}
+	return c.value
+}
+func (c *countingStringFlag) Set(s string) error {
+	c.value = s
+	c.count++
+	return nil
+}
+
+// suggestProjectConfigRequested reports whether --suggest-project-config
+// appears anywhere in args as a bare flag or an explicit true-ish value,
+// independent of whether the rest of args parses successfully. It backs
+// the invalid-arguments envelope path: an unknown flag or malformed
+// argument list combined with a requested --suggest-project-config must
+// still surface the project_config_suggestion_invalid_arguments envelope
+// (not the standard flag-package usage text), regardless of where in args
+// the bad token appears relative to --suggest-project-config.
+//
+// An explicit --suggest-project-config=false does not count as requested:
+// this pre-scan runs before flags.Parse, so it must honor the flag's own
+// boolean value rather than reacting to its mere presence, or an unrelated
+// malformed flag combined with a deliberately disabled
+// --suggest-project-config would wrongly surface the suggestion envelope
+// instead of the plain usage-text error every other codesignal flag error
+// produces. A value that fails strconv.ParseBool is treated as requested,
+// same as before this distinction existed: flags.Parse will itself reject
+// it as a malformed --suggest-project-config value, which is exactly the
+// case this envelope exists to report.
+func suggestProjectConfigRequested(args []string) bool {
 	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			var buffer bytes.Buffer
-			flags.SetOutput(&buffer)
-			flags.PrintDefaults()
+		if arg == "--suggest-project-config" || arg == "-suggest-project-config" {
+			return true
+		}
+		if value, ok := suggestProjectConfigFlagValue(arg); ok {
+			if requested, err := strconv.ParseBool(value); err == nil && !requested {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// suggestProjectConfigFlagValue extracts <value> from a
+// --suggest-project-config=<value>/-suggest-project-config=<value> token.
+func suggestProjectConfigFlagValue(arg string) (string, bool) {
+	for _, prefix := range []string{"--suggest-project-config=", "-suggest-project-config="} {
+		if strings.HasPrefix(arg, prefix) {
+			return arg[len(prefix):], true
+		}
+	}
+	return "", false
+}
+
+func writeSuggestInvalidArguments(stderr *os.File, message string) {
+	stderr.Write(codesignalcli.InvalidArgumentsSuggestionEnvelope(message))
+}
+
+type codesignalFlagHolders struct {
+	base                 *string
+	baseline             *bool
+	format               *string
+	scope                *string
+	buildTarget          *string
+	projectConfig        *string
+	projectLanguage      *string
+	suggestProjectConfig *countingBoolFlag
+	output               *countingStringFlag
+}
+
+func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
+	h := codesignalFlagHolders{
+		base:                 flags.String("base", "", "git ref to diff against (mutually exclusive with --baseline)"),
+		baseline:             flags.Bool("baseline", false, "scan every tracked file at HEAD instead of diffing against --base"),
+		format:               flags.String("format", "text", "output format: text or json"),
+		scope:                flags.String("scope", "production", "source scope: production or all"),
+		buildTarget:          flags.String("build-target", "", "Go package pattern used to determine production reachability"),
+		projectConfig:        flags.String("project-config", "", "repository-relative path to a project-analysis config at the selected revision; enables opt-in cross-module project facts"),
+		projectLanguage:      flags.String("project-language", "go", "project-analysis language: go or typescript"),
+		suggestProjectConfig: &countingBoolFlag{},
+		output:               &countingStringFlag{},
+	}
+	flags.Var(h.suggestProjectConfig, "suggest-project-config", "generate a project-config candidate JSON from Go module/workspace discovery at HEAD (requires --baseline; human-reviewed candidate only, never auto-applied)")
+	flags.Var(h.output, "output", "write the --suggest-project-config candidate to this repository-relative path instead of stdout (create-only)")
+	return h
+}
+
+// handleCodesignalHelp prints codesignal usage + defaults when --help/-h is
+// present and restores the FlagSet output sink used for subsequent Parse.
+func handleCodesignalHelp(args []string, flags *flag.FlagSet, suggestRequested bool, stdout, stderr *os.File) (handled bool, exitCode int) {
+	for _, arg := range args {
+		if arg != "--help" && arg != "-h" {
+			continue
+		}
+		var buffer bytes.Buffer
+		flags.SetOutput(&buffer)
+		flags.PrintDefaults()
+		if suggestRequested {
+			flags.SetOutput(io.Discard)
+		} else {
 			flags.SetOutput(stderr)
-			fmt.Fprintln(stdout, codesignalUsage)
-			fmt.Fprint(stdout, buffer.String())
-			return codesignalFlags{}, 0, false
 		}
+		fmt.Fprintln(stdout, codesignalUsage)
+		fmt.Fprint(stdout, buffer.String())
+		return true, 0
 	}
+	return false, 0
+}
 
-	if err := flags.Parse(args); err != nil {
-		return codesignalFlags{}, 2, false
+func codesignalFlagsFromHolders(h codesignalFlagHolders, setFlags map[string]bool) codesignalFlags {
+	return codesignalFlags{
+		base:                 *h.base,
+		baseline:             *h.baseline,
+		format:               *h.format,
+		scope:                *h.scope,
+		buildTarget:          *h.buildTarget,
+		projectConfig:        *h.projectConfig,
+		projectLanguage:      *h.projectLanguage,
+		projectConfigSet:     setFlags["project-config"],
+		suggestProjectConfig: h.suggestProjectConfig.value,
+		output:               h.output.value,
+		outputSet:            setFlags["output"],
 	}
+}
 
-	projectConfigSet := false
+// finishCodesignalFlagParse validates the post-Parse flag combination for
+// either the suggest-project-config path or the normal codesignal path.
+func finishCodesignalFlagParse(flags *flag.FlagSet, h codesignalFlagHolders, stderr *os.File) (codesignalFlags, int, bool) {
+	setFlags := map[string]bool{}
 	flags.Visit(func(f *flag.Flag) {
-		if f.Name == "project-config" {
-			projectConfigSet = true
-		}
+		setFlags[f.Name] = true
 	})
 
-	parsed := codesignalFlags{
-		base:             *base,
-		baseline:         *baseline,
-		format:           *format,
-		scope:            *scope,
-		buildTarget:      *buildTarget,
-		projectConfig:    *projectConfig,
-		projectLanguage:  *projectLanguage,
-		projectConfigSet: projectConfigSet,
+	parsed := codesignalFlagsFromHolders(h, setFlags)
+
+	if parsed.suggestProjectConfig {
+		if errMsg := validateSuggestProjectConfigFlags(parsed, setFlags, flags.Args(), h.suggestProjectConfig.count, h.output.count); errMsg != "" {
+			writeSuggestInvalidArguments(stderr, errMsg)
+			return codesignalFlags{}, 2, false
+		}
+		return parsed, 0, true
 	}
+
 	if errMsg := validateCodesignalFlags(parsed); errMsg != "" {
 		fmt.Fprintln(stderr, codesignalUsage)
 		fmt.Fprintln(stderr, errMsg)
@@ -157,7 +302,99 @@ func parseCodesignalFlags(args []string, stdout, stderr *os.File) (codesignalFla
 	return parsed, 0, true
 }
 
+func parseCodesignalFlags(args []string, stdout, stderr *os.File) (codesignalFlags, int, bool) {
+	suggestRequested := suggestProjectConfigRequested(args)
+
+	flags := flag.NewFlagSet("codesignal", flag.ContinueOnError)
+	if suggestRequested {
+		flags.SetOutput(io.Discard)
+	} else {
+		flags.SetOutput(stderr)
+	}
+	holders := registerCodesignalFlags(flags)
+
+	if handled, code := handleCodesignalHelp(args, flags, suggestRequested, stdout, stderr); handled {
+		return codesignalFlags{}, code, false
+	}
+
+	if err := flags.Parse(args); err != nil {
+		if suggestRequested {
+			writeSuggestInvalidArguments(stderr, fmt.Sprintf("coach codesignal --suggest-project-config: invalid flags (project_config_suggestion_invalid_arguments): %s", err))
+			return codesignalFlags{}, 2, false
+		}
+		return codesignalFlags{}, 2, false
+	}
+
+	return finishCodesignalFlagParse(flags, holders, stderr)
+}
+
+// sortedFlagNames returns setFlags' keys in sorted order, so a caller that
+// reports the first disallowed flag gets a deterministic result regardless
+// of Go's randomized map iteration order.
+func sortedFlagNames(setFlags map[string]bool) []string {
+	names := make([]string, 0, len(setFlags))
+	for name := range setFlags {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// validateSuggestProjectConfigFlags rejects any flag combination the
+// --suggest-project-config contract (issue #220) forbids outright: it
+// never picks a precedence between --suggest-project-config and a
+// conflicting flag, it rejects the combination. Rather than enumerating
+// every flag known to conflict (which silently stops protecting a newly
+// added codesignal flag), it walks setFlags -- the flags actually supplied
+// -- against the fixed allowlist the contract describes ({baseline,
+// output, suggest-project-config}), so any other flag is rejected by
+// construction.
+func validateSuggestProjectConfigFlags(f codesignalFlags, setFlags map[string]bool, positional []string, suggestCount, outputCount int) string {
+	if suggestCount > 1 {
+		return "coach: --suggest-project-config may only be provided once (project_config_suggestion_invalid_arguments)"
+	}
+	if outputCount > 1 {
+		return "coach: --output may only be provided once (project_config_suggestion_invalid_arguments)"
+	}
+	if !f.baseline {
+		return "coach: --suggest-project-config requires --baseline (project_config_suggestion_invalid_arguments)"
+	}
+	allowedWithSuggest := map[string]bool{"suggest-project-config": true, "output": true, "baseline": true}
+	for _, name := range sortedFlagNames(setFlags) {
+		if !allowedWithSuggest[name] {
+			return fmt.Sprintf("coach: --suggest-project-config cannot be combined with --%s (project_config_suggestion_invalid_arguments)", name)
+		}
+	}
+	if len(positional) > 0 {
+		return "coach: --suggest-project-config does not accept positional arguments (project_config_suggestion_invalid_arguments)"
+	}
+	return ""
+}
+
+// runSuggestProjectConfig dispatches `coach codesignal --baseline
+// --suggest-project-config`: it never builds a codesignal.Report, unlike
+// the diff/baseline analysis paths above.
+func runSuggestProjectConfig(dir string, f codesignalFlags, stdout, stderr *os.File) int {
+	result := codesignalcli.SuggestProjectConfig(dir, f.output, f.outputSet)
+	if len(result.Envelope) > 0 {
+		if _, writeErr := stderr.Write(result.Envelope); writeErr != nil {
+			fmt.Fprintf(stderr, "coach codesignal: writing diagnostic: %s\n", writeErr)
+			return 1
+		}
+	}
+	if result.ExitCode == 0 && len(result.Candidate) > 0 {
+		if _, writeErr := stdout.Write(result.Candidate); writeErr != nil {
+			fmt.Fprintf(stderr, "coach codesignal: writing candidate: %s\n", writeErr)
+			return 1
+		}
+	}
+	return result.ExitCode
+}
+
 func validateCodesignalFlags(f codesignalFlags) string {
+	if f.outputSet {
+		return "coach: --output requires --suggest-project-config"
+	}
 	if f.baseline && f.base != "" {
 		return "coach: --baseline and --base are mutually exclusive: choose a Repository Baseline scan (--baseline) or a diff comparison (--base), not both"
 	}
