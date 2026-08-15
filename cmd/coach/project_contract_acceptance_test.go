@@ -35,11 +35,13 @@ var _ = Describe("coach project-analysis failure reports", func() {
 	})
 
 	It("writes a local report and structured diagnostic when the selected backend is unavailable", func() {
+		// "go" has a registered backend (#211); "typescript" (#214) does not
+		// yet, so it remains the language that exercises this diagnostic.
 		repo := newTempGitRepo()
 		initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
 		commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`)
 
-		stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--project-config", "project.json", "--format=json")
+		stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 
 		Expect(exitCode).To(Equal(3))
 		Expect(stderr).To(BeEmpty())

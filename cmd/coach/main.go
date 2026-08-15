@@ -29,7 +29,12 @@ var version = "dev"
 var (
 	loadProjectConfig     = codesignalcli.LoadProjectConfig
 	resolveProjectBackend = codesignalcli.ResolveProjectBackend
-	lookupProjectBackend  = func(string) codesignalcli.ProjectBackend { return nil }
+	lookupProjectBackend  = func(language string) codesignalcli.ProjectBackend {
+		if language == "go" {
+			return codesignalcli.NewGoProjectBackend()
+		}
+		return nil
+	}
 )
 
 func main() {
