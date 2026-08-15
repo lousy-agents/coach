@@ -220,16 +220,18 @@ func (d *goProjectDiscovery) roots(validWorkspaces map[string]bool) []string {
 }
 
 // EffectiveGoBudgets renders b as the frozen budgets map vocabulary shared
-// by RootDiscoveryResult.Coverage.Budgets and Model.Coverage.Budgets
-// (wall_time_ms, input_files, input_bytes, graph_nodes, graph_edges,
-// working_set_bytes, stderr_bytes). It is exported so a caller that needs
-// to report this vocabulary before calling DiscoverGoRoots/BuildGoModel
-// (e.g. a zero-value coverage for a pre-discovery failure) can reuse it
-// instead of duplicating the key set.
+// by RootDiscoveryResult.Coverage.Budgets, Model.Coverage.Budgets,
+// CallGraphResult.Coverage.Budgets, and (with an added search_nodes key)
+// ReachabilityResult.Coverage.Budgets. It is exported so a caller that
+// needs to report this vocabulary before calling
+// DiscoverGoRoots/BuildGoModel (e.g. a zero-value coverage for a
+// pre-discovery failure) can reuse it instead of duplicating the key set.
 //
-// stderr_bytes always reports 0: neither entry point shells out to a
-// subprocess today, but the key is reserved so a future backend that does
-// can report it without changing the vocabulary.
+// stderr_bytes always reports 0: the call-graph/reachability path
+// (BuildGoCallGraph, and BuildGoReachability through it) does shell out
+// via go/packages (which invokes the Go toolchain) but does not capture
+// stderr, so the key stays 0; it is reserved so a future backend that does
+// capture stderr can report it without changing the vocabulary.
 func EffectiveGoBudgets(b GoBudgets) map[string]int {
 	return map[string]int{
 		"wall_time_ms":      int(b.WallTime / time.Millisecond),
