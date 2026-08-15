@@ -341,6 +341,61 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(backend.requests[0].ConfigDigest).To(Equal("pcfg_test"))
 		Expect(backend.requests[0].Baseline).To(BeFalse())
 	})
+
+	// Proves the CLI-facing AnalyzeBaseline wiring genuinely surfaces a
+	// backend's incomplete HeadCoverage rather than silently claiming
+	// completeness: codesignal.Build already contracts that incomplete head
+	// coverage forces Lifecycle "unknown" plus a project_lifecycle_indeterminate
+	// diagnostic (see pkg/codesignal/project_contract_acceptance_test.go); this
+	// asserts AnalyzeBaseline threads ProjectBackendResult.HeadCoverage into
+	// that same contract instead of re-deriving or dropping it.
+	It("threads an incomplete HeadCoverage into a lifecycle-indeterminate report rather than claiming baseline", func() {
+		dir := acceptanceTempGitRepo()
+		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
+		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
+
+		backend := &recordingProjectBackend{result: &ProjectBackendResult{
+			HeadChanges: []codesignal.ProjectChange{{
+				SemanticKey: "cycle:pkg/a<->pkg/b",
+				RuleID:      "architecture.layer_violation",
+				RuleVersion: "1",
+				Kind:        "project_layer_violation",
+				Category:    "structure",
+				Severity:    "medium",
+				Confidence:  "high",
+				PrimaryAnchor: codesignal.ProjectLocation{
+					Path:     "a.go",
+					Location: semantics.Location{StartRow: 1},
+				},
+				Provenance: codesignal.Provenance{Producer: "fake-backend"},
+			}},
+			HeadCoverage: &projectmodel.Coverage{Phase: "go_model_build", Complete: false},
+		}}
+		cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
+		project := &ProjectAnalysis{
+			ConfigPath:   "project.json",
+			Language:     "go",
+			Config:       cfg,
+			ConfigDigest: ConfigDigest(cfg),
+			Backend:      backend,
+		}
+
+		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(report.ProjectChanges).To(HaveLen(1))
+		Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")), "an incomplete HeadCoverage must never be reported as lifecycle baseline")
+		Expect(report.ProjectSummary.BaselineChanges).To(Equal(0))
+		// ProjectCoverage itself (not just the lifecycle outcome) must reach
+		// the report and stay Complete:false: Lifecycle "unknown" plus
+		// project_lifecycle_indeterminate alone would also fire for a
+		// completely dropped (nil) HeadCoverage, so asserting those two
+		// facts alone would not prove HeadCoverage was genuinely threaded
+		// through rather than silently discarded.
+		Expect(report.ProjectCoverage).NotTo(BeNil(), "HeadCoverage must reach the report, not be dropped as nil")
+		Expect(report.ProjectCoverage.Complete).To(BeFalse())
+		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_coverage_incomplete")))
+		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_lifecycle_indeterminate")), "the CLI-facing report must surface the same indeterminate diagnostic codesignal.Build contracts for partial coverage")
+	})
 })
 
 var _ = Describe("project-config boundary budgets", func() {

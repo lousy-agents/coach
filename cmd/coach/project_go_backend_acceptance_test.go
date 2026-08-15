@@ -42,6 +42,16 @@ const handlersWithoutImport = "package handlers\n\nfunc Use() string {\n\treturn
 // layer-unmapped negative control above.
 const handlersImportingUnresolved = "package handlers\n\nimport \"example.com/app/pkg/db/missing\"\n\nfunc Use() string {\n\treturn missing.Name\n}\n"
 
+// handlersOtherImportingDB is a second file under pkg/handlers importing
+// pkg/db, used to prove that two import sites within the same importer
+// package collapse into a single ProjectChange with a non-empty
+// RelatedLocations (see EvaluateGoLayerViolations's doc comment). The import
+// sits on line 5 (0-based row 4), after handlersImportingDB's line 3, so
+// sites sort "pkg/handlers/handlers.go:3" before "pkg/handlers/other.go:5"
+// (layerViolationChange sorts sites lexicographically) and this file's
+// location lands in RelatedLocations rather than PrimaryAnchor.
+const handlersOtherImportingDB = "package handlers\n\n// second site\n// note\nimport \"example.com/app/pkg/db\"\n\nfunc UseOther() string {\n\treturn db.Name\n}\n"
+
 func decodeCoachReport(stdout []byte) *codesignal.Report {
 	var report codesignal.Report
 	ExpectWithOffset(1, json.Unmarshal(stdout, &report)).To(Succeed(), "stdout should be one JSON report: %s", stdout)
@@ -141,6 +151,38 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			Expect(report.ProjectSummary).NotTo(BeNil())
 			Expect(report.ProjectSummary.BaselineChanges).To(Equal(1))
 			Expect(report.ProjectSummary.ActiveChanges).To(Equal(1))
+		})
+	})
+
+	When("two files under the same importer package each import the same forbidden importee package", func() {
+		It("collapses both sites into one ProjectChange with a sorted primary anchor and non-empty RelatedLocations", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "go.mod", goModuleFile)
+			commitFile(repo, "pkg/db/db.go", dbPackageFile)
+			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
+			commitFile(repo, "pkg/handlers/other.go", handlersOtherImportingDB)
+			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			Expect(stderr).To(BeEmpty())
+
+			report := decodeCoachReport(stdout)
+			Expect(report.ProjectChanges).To(HaveLen(1), "two sites between the same importer/importee package pair must collapse into one ProjectChange")
+
+			change := report.ProjectChanges[0]
+			Expect(change.RuleID).To(Equal("architecture.layer_violation"))
+			Expect(change.PrimaryAnchor.Path).To(Equal("pkg/handlers/handlers.go"), `sites sort lexicographically by "<path>:<line>"; handlers.go sorts before other.go`)
+			Expect(change.PrimaryAnchor.Location.StartRow).To(Equal(uint(2)))
+			Expect(change.RelatedLocations).To(HaveLen(1))
+			Expect(change.RelatedLocations[0].Path).To(Equal("pkg/handlers/other.go"))
+			Expect(change.RelatedLocations[0].Location.StartRow).To(Equal(uint(4)))
+
+			textStdout, textStderr, textExit := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json")
+			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
+			text := string(textStdout)
+			Expect(text).To(ContainSubstring("path: pkg/handlers/handlers.go"), "text must present the primary anchor as the change's path")
+			Expect(text).To(ContainSubstring("related: pkg/handlers/other.go:5"), "text must present the second site's 1-based line via a related: line")
 		})
 	})
 
