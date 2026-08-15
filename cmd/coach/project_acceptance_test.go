@@ -115,21 +115,10 @@ var _ = Describe("coach codesignal --project-config", func() {
 		})
 	})
 
-	When("--project-config is syntactically valid JSON but no backend is registered", func() {
-		It("exits 3 and writes a local JSON report with a project_backend_unavailable diagnostic for the default language", func() {
-			repo := newTempGitRepo()
-			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
-
-			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`)
-
-			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--project-config", "project.json", "--format=json")
-
-			Expect(exitCode).To(Equal(3))
-			Expect(stderr).To(BeEmpty())
-			Expect(string(stdout)).To(ContainSubstring(`"kind":"project_backend_unavailable"`))
-		})
-
-		It("exits 3 and writes a local report for --project-language typescript too", func() {
+	When("--project-config is syntactically valid JSON but the requested language has no backend", func() {
+		// "go" has a registered backend (#211); "typescript" (#214) does not
+		// yet, so it is what exercises project_backend_unavailable here.
+		It("exits 3 and writes a local report for --project-language typescript", func() {
 			repo := newTempGitRepo()
 			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
 
@@ -144,7 +133,7 @@ var _ = Describe("coach codesignal --project-config", func() {
 
 		// Nested roots are required by the multi-module candidate contract (#220):
 		// a workspace root may contain a more specific module root. Validation
-		// must accept that shape and reach backend dispatch (exit 3 here).
+		// must accept that shape and reach backend dispatch.
 		It("accepts nested roots such as . plus a descendant module path", func() {
 			repo := newTempGitRepo()
 			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
@@ -152,9 +141,9 @@ var _ = Describe("coach codesignal --project-config", func() {
 
 			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--project-config", "project.json", "--format=json")
 
-			Expect(exitCode).To(Equal(3), "nested roots must not be rejected as project_config_invalid; got stdout=%s stderr=%s", stdout, stderr)
+			Expect(exitCode).To(Equal(0), "nested roots must not be rejected as project_config_invalid; got stdout=%s stderr=%s", stdout, stderr)
 			Expect(stderr).To(BeEmpty())
-			Expect(string(stdout)).To(ContainSubstring(`"kind":"project_backend_unavailable"`))
+			Expect(string(stdout)).NotTo(ContainSubstring(`"kind":"project_backend_unavailable"`))
 			Expect(string(stdout)).NotTo(ContainSubstring(`"kind":"project_config_invalid"`))
 		})
 
@@ -165,8 +154,8 @@ var _ = Describe("coach codesignal --project-config", func() {
 
 			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--project-config", "project.json", "--format=json")
 
-			Expect(exitCode).To(Equal(3), "ancestor/descendant roots must not be rejected; got stdout=%s stderr=%s", stdout, stderr)
-			Expect(string(stdout)).To(ContainSubstring(`"kind":"project_backend_unavailable"`))
+			Expect(exitCode).To(Equal(0), "ancestor/descendant roots must not be rejected; got stdout=%s stderr=%s", stdout, stderr)
+			Expect(string(stdout)).NotTo(ContainSubstring(`"kind":"project_backend_unavailable"`))
 			Expect(string(stdout)).NotTo(ContainSubstring(`"kind":"project_config_invalid"`))
 		})
 

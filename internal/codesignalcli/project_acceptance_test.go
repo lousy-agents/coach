@@ -362,6 +362,17 @@ var _ = Describe("project-config boundary budgets", func() {
 		Expect(elapsed).To(BeNumerically("<", 2*time.Second), "prefix validation must stay sub-quadratic; elapsed=%s", elapsed)
 	})
 
+	// forbidden_imports entries are an explicit user claim that a layer pair
+	// exists; a typo'd from/to that names no declared layer must never
+	// silently validate and reach the evaluator as a permanent no-op edge.
+	It("rejects forbidden_imports entries that reference an undeclared layer name", func() {
+		doc := []byte(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handler","to":"db"}]}`)
+		err := validateProjectConfigJSON(doc)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("undefined layer"))
+		Expect(err.Error()).To(ContainSubstring("handler"))
+	})
+
 	It("rejects overlapping layer prefixes with the stable diagnostic", func() {
 		doc := []byte(`{"schema_version":"1","roots":["."],"layers":[{"name":"L","prefixes":["services","services/payments"]}]}`)
 		err := validateProjectConfigJSON(doc)

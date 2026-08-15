@@ -264,6 +264,17 @@ func validateProjectConfigJSON(data []byte) error {
 		if forbidden.From == "" || forbidden.To == "" {
 			return fmt.Errorf("forbidden_imports entries require non-empty from and to")
 		}
+		// A forbidden_imports entry is an explicit user claim that a layer
+		// pair exists. Left unchecked, a typo'd from/to that names no
+		// declared layer would validate cleanly but can never match any
+		// evaluated (layerFrom, layerTo) pair, silently making that policy
+		// line a permanent no-op (#211).
+		if _, ok := seenLayerNames[forbidden.From]; !ok {
+			return fmt.Errorf("forbidden_imports entry references undefined layer %q", forbidden.From)
+		}
+		if _, ok := seenLayerNames[forbidden.To]; !ok {
+			return fmt.Errorf("forbidden_imports entry references undefined layer %q", forbidden.To)
+		}
 		key := forbidden.From + "\x00" + forbidden.To
 		if _, exists := seenForbidden[key]; exists {
 			return fmt.Errorf("forbidden_imports entries must be unique")
@@ -384,8 +395,12 @@ func rejectDuplicateJSONKeys(data []byte) error {
 }
 
 // ResolveProjectBackend reports whether a project-analysis backend is
-// registered for language. No backend is registered for any language yet;
-// this is the seam a later backend registers into.
+// registered for language. Only "go" (#211) has a registered backend today;
+// every other language, including "typescript" (#214) and the empty string,
+// remains unavailable until its own backend lands.
 func ResolveProjectBackend(language string) error {
+	if language == "go" {
+		return nil
+	}
 	return &ProjectBackendUnavailableError{Message: fmt.Sprintf("coach codesignal: no project-analysis backend is available for language %q yet (project_backend_unavailable)", language)}
 }
