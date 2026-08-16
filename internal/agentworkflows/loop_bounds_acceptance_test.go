@@ -97,12 +97,13 @@ var _ = Describe("implement/review loop bounds", func() {
 
 	// Two prose copies of one number drift silently; the orchestrator then has
 	// two contradictory caps and no way to tell which governs.
-	When("the cap is stated in more than one step", func() {
-		It("states the same number everywhere", func() {
-			caps := []int{capIn(step("2")), capIn(step("3")), capIn(step("4"))}
-			for _, c := range caps {
-				Expect(c).To(Equal(caps[0]), "steps disagree on the cycle cap: %v", caps)
-			}
+	// Steps 2 and 3 state one rule twice, so they must agree. Step 4 is
+	// deliberately excluded: its budget is independent, and requiring equality
+	// there would forbid tuning repair separately from per-task rework.
+	When("one rule is stated in more than one step", func() {
+		It("states the same number in both places", func() {
+			Expect(capIn(step("3"))).To(Equal(capIn(step("2"))),
+				"steps 2 and 3 claim the same rule; a drifting number gives the orchestrator two answers")
 		})
 	})
 
@@ -117,9 +118,22 @@ var _ = Describe("implement/review loop bounds", func() {
 				"the implementer needs the actual failure, not a summary of it")
 		})
 
-		It("shares the same cycle bound rather than looping freely", func() {
-			Expect(step("4")).To(MatchRegexp(`(?si)(same|shares?).{0,40}(cap|bound|limit)`),
+		// Sharing the per-task counter would make a task already at its cap
+		// unrepairable, so a late validation failure would be terminal after all
+		// -- the outcome this path exists to remove. It needs its own budget.
+		It("carries its own bound rather than the per-task one", func() {
+			Expect(capIn(step("4"))).To(BeNumerically(">", 0),
 				"an unbounded repair loop just moves the runaway to a later phase")
+			Expect(step("4")).To(MatchRegexp(`(?si)own.{0,30}(cap|bound|budget)|separate from`),
+				"sharing the per-task counter makes a capped task unrepairable")
+		})
+
+		// ci-all's distinctive failures -- wasm-build, cross-file gofmt, an
+		// untidy go.mod -- frequently belong to no single task. Guessing an owner
+		// sends a fresh implementer to work outside the scope it was given.
+		It("says who receives a failure no single task caused", func() {
+			Expect(step("4")).To(MatchRegexp(`(?si)(attribut|scope).{0,400}(several|none|no single)`),
+				"an unattributable failure needs a named owner, not a guess")
 		})
 	})
 })

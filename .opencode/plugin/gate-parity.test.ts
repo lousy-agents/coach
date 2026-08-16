@@ -28,3 +28,28 @@ test("the OpenCode PR gate runs the same task the Claude gate runs", async () =>
     "the deny reason must name the task actually run, or it misdirects the fix")
   assert.ok(typeof runMiseCiAll === "function")
 })
+
+// The Claude gate refuses a dirty tree before it refuses a red suite. Without
+// the same check here, the two harnesses enforce materially different contracts
+// while the command file mirrored into both promises one.
+test("the OpenCode PR gate also refuses a tree that does not match what ships", async () => {
+  const { worktreeIsClean } = await import("./implement-issue-gates.ts")
+  const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
+
+  const clean = worktreeIsClean(repoRoot)
+  assert.strictEqual(typeof clean.ok, "boolean")
+
+  // A path that is not a repository must deny, not pass: "git failed" and "the
+  // tree is clean" must not be the same observation.
+  const outside = worktreeIsClean("/")
+  assert.strictEqual(outside.ok, false,
+    "a git failure must deny rather than read as a clean tree")
+
+  const claudeGate = await fs.readFile(
+    path.join(repoRoot, ".claude", "hooks", "gate-pr-creation.sh"), "utf8")
+  assert.match(claudeGate, /status --porcelain/)
+  const source = await fs.readFile(
+    path.join(import.meta.dirname, "implement-issue-gates.ts"), "utf8")
+  assert.match(source, /status", "--porcelain/,
+    "both gates must make the same cleanliness check")
+})

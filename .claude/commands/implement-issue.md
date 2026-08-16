@@ -140,8 +140,20 @@ that delegates those into a workflow looks identical and enforces nothing.
    this is where a break is most likely — and it arrives after every task has
    PASSed and the whole budget is spent. Aborting there throws all of it away.
 
-   Repair **shares the same cycle cap** as step 2: at most 3 attempts, and the
-   same no-progress rule. Exhausting it stops the run with `repeated-finding`.
+   **Attribute the failure before delegating.** Map the failing command's paths
+   to the tasks' declared `files` scopes. If it lands in exactly one task's
+   scope, that task owns it. If it lands in several or none — a `wasm-build`
+   break from two tasks interacting, a cross-file `gofmt`, an untidy `go.mod` —
+   it belongs to no single implementer: open an **integration-repair task**
+   scoped to the offending files, with the integration reviewer as its gate.
+   Guessing an owner sends a fresh implementer to work outside the scope it was
+   given.
+
+   Repair carries **its own cap of at most 3 attempts**, separate from the
+   per-task counter. Sharing that counter would make a task already at its cap
+   unrepairable, so a late validation failure would be terminal after all —
+   which is the outcome this path exists to remove. Exhausting the repair cap
+   stops the run with `repeated-finding`.
 
 5. **Open the PR yourself**, with your own tool call, from this session. Commit
    and push first: the gate denies a dirty working tree, because the suite

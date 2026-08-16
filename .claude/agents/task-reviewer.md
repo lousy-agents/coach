@@ -35,12 +35,19 @@ Steps:
    **Red evidence / false-green gate:** FINDINGS if red evidence is compile-only
    or missing-package only, or if a case is false-green (clocks/fakes/other setup
    make a different branch produce the asserted status/outcome).
-4. Run `mise run ci-fast` yourself. Do not trust a claim that it passes, and do
+4. **A test that asserts a file contains a string is not evidence the behavior
+   works.** Config, prompt, and script changes are the usual offenders: a spec
+   that greps for a pattern passes whether or not the pattern does anything. Ask
+   what the test would catch, and reject red-then-green evidence where the red
+   step could not have failed for the intended reason. If the change is a
+   config, the evidence should exercise the thing the config drives.
+
+5. Run `mise run ci-fast` yourself. Do not trust a claim that it passes, and do
    not substitute `mise run ci`: it runs the Go suite before the TypeScript
    sidecar is built, so `pkg/projectmodel`'s acceptance suite skips silently
    there. An implementer's red evidence from that suite under `ci` is a skip,
    not a failure -- treat it as missing red evidence.
-5. Look for: silent scope creep, over-broad error handling, sequencing bugs (e.g.
+6. Look for: silent scope creep, over-broad error handling, sequencing bugs (e.g.
    transform-before-filter), missing edge-case coverage, Go comment bloat or
    missing godoc on non-obvious exported contracts (AGENTS.md Go comments
    policy), and any recurring patterns named in your prompt.
