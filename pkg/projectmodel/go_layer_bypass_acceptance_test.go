@@ -107,6 +107,53 @@ var _ = Describe("BuildGoLayerBypass", func() {
 		})
 	})
 
+	When("a handler has two distinct, equal-length bypass routes to the sink", func() {
+		It("produces exactly one witness, following the lexicographically-first next hop", func() {
+			snapshot := os.DirFS("testdata/go_layer_bypass_dual_bypass")
+			result, err := projectmodel.BuildGoLayerBypass(context.Background(), snapshot, projectmodel.LayerBypassOptions{
+				RequiredLayer: requiredServiceLayer,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Witnesses).To(HaveLen(1), "BuildGoLayerBypass returns the single shortest witness per source/sink pair, not every bypass route, got %+v", result.Witnesses)
+			witness := result.Witnesses[0]
+
+			Expect(witness.Source).To(Equal("example.com/layerbypassdual.Handler"))
+			Expect(witness.Sink).To(Equal("(*database/sql.DB).Query"))
+			Expect(witness.RequiredLayer).To(Equal("service"))
+
+			// The fixture's two routes -- Handler -> AlphaQuery -> sink and
+			// Handler -> BetaQuery -> sink -- are the same length, so
+			// bfsShortestPaths' tie-break decides the winner: adjacency lists
+			// are sorted by each node's full ssa.Function.RelString(nil)
+			// identity (buildCallGraphAdjacency), and bfsShortestPaths
+			// enqueues each node at most once, on first discovery. Handler's
+			// sorted neighbors are AlphaQuery, BetaQuery, then
+			// service.Unused ("example.com/layerbypassdual.AlphaQuery" <
+			// "example.com/layerbypassdual.BetaQuery" <
+			// "example.com/layerbypassdual/service.Unused", since '.'
+			// (0x2E) sorts before '/' (0x2F) at the position right after
+			// "layerbypassdual", and 'A' < 'B' between the first two). So
+			// AlphaQuery is enqueued and reaches the sink first; BetaQuery's
+			// route to the already-visited sink is discovered second and
+			// discarded, and service.Unused's edges are removed from
+			// adjacency entirely as a required-layer node. A wrong or
+			// unstable tie-break (e.g. Go map iteration order, or picking
+			// BetaQuery) would fail this exact-path assertion.
+			Expect(witness.Path).To(HaveLen(3), "expected Handler, AlphaQuery, and the sink, got %+v", witness.Path)
+			Expect(witness.Path[0].NodeID).To(Equal("example.com/layerbypassdual.Handler"))
+			Expect(witness.Path[1].NodeID).To(Equal("example.com/layerbypassdual.AlphaQuery"))
+			Expect(witness.Path[2].NodeID).To(Equal("(*database/sql.DB).Query"))
+
+			Expect(witness.Path[0].Path).To(Equal("main.go"))
+			Expect(witness.Path[0].Line).To(Equal(26), "expected Handler's func declaration line")
+			Expect(witness.Path[1].Path).To(Equal("main.go"))
+			Expect(witness.Path[1].Line).To(Equal(32), "expected AlphaQuery's func declaration line")
+
+			Expect(result.Coverage.Complete).To(BeTrue())
+		})
+	})
+
 	When("the call graph contains a cycle unrelated to the shortest bypass path", func() {
 		It("still finds the correct witness deterministically without hanging", func(ctx SpecContext) {
 			snapshot := os.DirFS("testdata/go_layer_bypass_cycle")
