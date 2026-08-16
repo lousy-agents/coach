@@ -67,6 +67,15 @@ type Signal struct {
 	Recommendation string             `json:"recommendation,omitempty"`
 	SuggestedSkill string             `json:"suggested_skill,omitempty"`
 	Provenance     Provenance         `json:"provenance"`
+
+	// MachineEvidence, RelatedLocations, PathSteps, and CoverageRefs mirror
+	// the same-named ProjectChange fields for project-origin signals only
+	// (see signalFromProjectChange); file-local signals never set them, so
+	// omitempty keeps schema-1 output byte-identical.
+	MachineEvidence  map[string]string `json:"machine_evidence,omitempty"`
+	RelatedLocations []ProjectLocation `json:"related_locations,omitempty"`
+	PathSteps        []ProjectPathStep `json:"path_steps,omitempty"`
+	CoverageRefs     []string          `json:"coverage_refs,omitempty"`
 }
 
 // Provenance records what produced a Signal.

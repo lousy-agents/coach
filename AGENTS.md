@@ -41,7 +41,9 @@ Some skills delegate to a named subagent rather than doing the work inline. Each
 All tasks are defined in `mise.toml`; use `mise run <task>` (mise also pins `go` and `node` versions — CI installs mise so both share one tool-version source of truth).
 
 ```sh
-mise run ci               # everything CI runs, in order
+mise run ci-all           # authoritative pre-PR check: ci + wasm-build + sidecar-built projectmodel suite
+mise run ci-fast          # per-cycle loop check: Go slice, sidecar built first (no silent skips)
+mise run ci               # gofmt/vet/tidy/style/test/examples/js-ci -- NOT wasm-build, and see ci-fast on skips
 mise run gofmt             # gofmt -l . (must be empty)
 mise run go-vet
 mise run tidy-check        # go mod tidy && diff go.mod/go.sum
@@ -109,7 +111,16 @@ mise run js-ci
 mise run wasm-build
 ```
 
-`mise run ci` runs all of the Go-side checks (not `js-ci`/`wasm-build`, which are separate CI jobs — run those explicitly when touching `js/semantics` or WASM build tags).
+`mise run ci` runs the Go-side checks **and `js-ci`** (`mise.toml` lists `{ task = "js-ci" }` in the `ci` task). It does **not** run `wasm-build`.
+
+Two gaps `mise run ci` alone does not close:
+
+- `wasm-build` is in no task's closure, so a `GOOS=js GOARCH=wasm` break can pass `ci`.
+- `ci` runs `test` **before** `js-ci`, so `pkg/projectmodel`'s TypeScript sidecar acceptance suite has no built sidecar when it executes and **skips silently** — see the comment at `.github/workflows/ci.yml:52-56`. A green `ci` does not mean that suite ran.
+
+Use **`mise run ci-all`** as the authoritative pre-PR check: it chains `ci`, `wasm-build`, and a sidecar-built re-run of the `pkg/projectmodel` acceptance suite. Use **`mise run ci-fast`** inside an implement/review loop — same sidecar-first ordering, without the wasm and full-CI legs.
+
+`ci-all` deliberately excludes `test-acceptance-fast` (its ambient-credential preflight cannot pass where `GITHUB_TOKEN`/`GH_TOKEN` or `~/.aws/config` are present, and `test` already runs every acceptance suite unfiltered) and `platform-smoke` (Docker + live services).
 
 ### Acceptance-test-first (required policy)
 
@@ -182,4 +193,11 @@ Before `gh pr create` / `create_pull_request`, read and fill every section of [`
 
 ## CI shape (`.github/workflows/ci.yml`)
 
-Three independent jobs: `verify` (gofmt/vet/tidy/test/examples), `js-verify` (`mise run js-ci`), `wasm-build` (proves the `GOOS=js GOARCH=wasm` grammar-subset build compiles under the sole pure-Go engine).
+Four independent jobs:
+
+- `verify` — gofmt/vet/tidy/acceptance-style-check/test/examples. Deliberately has **no** Node on PATH, so `pkg/projectmodel`'s TS sidecar suite skips here and contributes no signal.
+- `js-verify` — `mise run js-ci`, **plus** `js-install`, `project-sidecar-build`, and `go test -race ./pkg/projectmodel/... -run Acceptance`. Those extra steps are what actually exercise the sidecar suite; `js-ci` alone does not.
+- `wasm-build` — proves the `GOOS=js GOARCH=wasm` grammar-subset build compiles under the sole pure-Go engine.
+- `platform-smoke` — Docker-based `platform-up` / `platform-smoke` / `platform-down`.
+
+`mise run ci-all` mirrors the first three locally. `platform-smoke` has no local mirror.
