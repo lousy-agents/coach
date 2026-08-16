@@ -51,7 +51,7 @@ All tasks are defined in `mise.toml`; use `mise run <task>` (mise also pins `go`
 
 ```sh
 mise run ci-all           # authoritative pre-PR check: ci + wasm-build + sidecar-built projectmodel suite
-mise run ci-fast          # per-cycle loop check: Go slice, sidecar built first (no silent skips)
+mise run ci-fast          # per-cycle loop check: Go slice + agent-tooling suites, sidecar built first
 mise run ci               # gofmt/vet/tidy/style/test/examples/js-ci -- NOT wasm-build, and see ci-fast on skips
 mise run gofmt             # gofmt -l . (must be empty)
 mise run go-vet
@@ -65,12 +65,20 @@ mise run thinproof-build    # vendors deps + builds the thin offline Compose pro
 mise run test-acceptance-thin-proof # runs the offline thin Compose proof: fake GitHub -> pkg/githubingest -> CodeSignal, no image pull, no egress
 mise run js-ci              # -> js-test -> js-build -> backend-build/js-install
 mise run wasm-build         # proves GOOS=js GOARCH=wasm compiles (pure-Go engine, grammar-subset tags)
+mise run workflow-test      # .claude/workflows scripts under a fake harness (also their only parse check)
+mise run opencode-plugin-test # the loader that mirrors .claude/agents + .claude/commands into OpenCode
 ```
 
 Single test, Go side:
 
 ```sh
 go test ./pkg/semantics/... -run TestName -v
+```
+
+Single test, agent tooling (Node, from the repo root):
+
+```sh
+node --test ".claude/workflows/**/*.test.mjs" --test-name-pattern "cycle"
 ```
 
 Single test, JS side (from `js/semantics/`):

@@ -32,5 +32,15 @@ var _ = Describe("workflow script validation", func() {
 			Expect(taskBody(toml, "js-ci")).To(ContainSubstring("workflow-test"),
 				"a task no job depends on is a task that never runs")
 		})
+
+		// ci-fast is the loop an implementer actually runs between edits. These
+		// suites cover the agent-tooling files most likely to be edited in that
+		// loop and finish in well under a second, so leaving them out means the
+		// fastest feedback available is the ~400s gate.
+		It("runs in the per-cycle loop, not only in the full gate", func() {
+			body := taskBody(toml, "ci-fast")
+			Expect(body).To(ContainSubstring("workflow-test"))
+			Expect(body).To(ContainSubstring("opencode-plugin-test"))
+		})
 	})
 })

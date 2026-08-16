@@ -191,13 +191,18 @@ run = [
 # run cannot mistake a skip for a pass; without it an implementer's "red" and
 # "green" for a test in that suite are the same skip.
 [tasks.ci-fast]
-description = "Per-cycle validation for the implement/review loop: Go slice with the TS sidecar built first (no silent skips)"
+description = "Per-cycle validation for the implement/review loop: Go slice with the TS sidecar built first, plus the agent-tooling suites (no silent skips)"
 run = [
   { task = "gofmt" },
   { task = "go-vet" },
   { task = "acceptance-style-check" },
   { task = "project-sidecar-build" },
   { task = "test" },
+  # Pure-Node and sub-second, covering the agent-tooling files most likely to
+  # be edited inside this loop -- without them the fastest feedback on a broken
+  # workflow script or a non-portable command is the full gate.
+  { task = "workflow-test" },
+  { task = "opencode-plugin-test" },
 ]
 
 # The single authoritative "everything CI proves" task, used by the ship gate.
