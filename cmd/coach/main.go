@@ -30,10 +30,14 @@ var (
 	loadProjectConfig     = codesignalcli.LoadProjectConfig
 	resolveProjectBackend = codesignalcli.ResolveProjectBackend
 	lookupProjectBackend  = func(language string) codesignalcli.ProjectBackend {
-		if language == "go" {
+		switch language {
+		case "go":
 			return codesignalcli.NewGoProjectBackend()
+		case "typescript":
+			return codesignalcli.NewTSProjectBackend()
+		default:
+			return nil
 		}
-		return nil
 	}
 )
 

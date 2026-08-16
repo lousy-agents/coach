@@ -81,7 +81,7 @@ func (b *goProjectBackend) Analyze(_ context.Context, req ProjectBackendRequest)
 	if err := json.Unmarshal(req.Config, &config); err != nil {
 		return nil, fmt.Errorf("coach: decoding validated project config: %w", err)
 	}
-	policy := goLayerPolicyFromConfig(config)
+	policy := layerPolicyFromConfig(config)
 
 	headChanges, headCoverage, err := b.evaluateRevision(req.Dir, req.HeadRevision, config.Roots, policy, req.ConfigDigest)
 	if err != nil {
@@ -130,9 +130,11 @@ func (b *goProjectBackend) evaluateRevision(dir, revision string, roots []string
 	return changes, model.Coverage, nil
 }
 
-// goLayerPolicyFromConfig translates the already-schema-validated
-// projectConfig layers/forbidden_imports into codesignal.LayerPolicy.
-func goLayerPolicyFromConfig(config projectConfig) codesignal.LayerPolicy {
+// layerPolicyFromConfig translates the already-schema-validated
+// projectConfig layers/forbidden_imports into codesignal.LayerPolicy. It is
+// language-agnostic (projectConfig/LayerPolicy have no Go- or TS-specific
+// fields), so both goProjectBackend and tsProjectBackend share it.
+func layerPolicyFromConfig(config projectConfig) codesignal.LayerPolicy {
 	layers := make([]codesignal.ArchitectureLayer, len(config.Layers))
 	for i, layer := range config.Layers {
 		layers[i] = codesignal.ArchitectureLayer{

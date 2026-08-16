@@ -168,14 +168,14 @@ recommendation: Return a copy instead of mutating the caller's value, or documen
 - `0` — the CLI completed its analysis, regardless of whether any signals or diagnostics were reported. A quiet report with only diagnostics and zero signals is still a normal, exit-0 outcome.
 - `1` — an operational failure: the working directory is not a Git worktree, `--base` cannot be resolved, `git` is not found in `PATH`, or an internal analysis step fails. One actionable message goes to stderr; nothing is written to stdout.
 - `2` — a usage error: `--base` is missing, `--format` is not `text` or `json`, or (with `--project-config`) the config document is missing, unreadable, or fails schema validation (`project_config_invalid`). Usage guidance goes to stderr; nothing is written to stdout.
-- `3` — a valid `--project-config` names a `--project-language` with no registered project-analysis backend (`project_backend_unavailable`; see [Configured Go layer violations](#configured-go-layer-violations---project-config) below).
+- `3` — reserved for a valid `--project-config` naming a `--project-language` with no registered project-analysis backend at all (`project_backend_unavailable`; see [Configured layer violations](#configured-layer-violations---project-config) below). It's currently unreachable through the real CLI: `--project-language` accepts only `go` and `typescript`, both of which have registered backends, and any other value is rejected as a usage error (exit `2`) before backend dispatch ever happens. This exit code stays defined for a future language whose backend is registered but unavailable. A missing or failed TypeScript sidecar is a distinct, exit-`0` condition; see below.
 
 ### Scope and limitations
 
 - **Advisory only.** It surfaces deterministic structural signals; it does not judge correctness or block anything on its own.
 - **Go, TypeScript, and TSX only.** Changed files in other languages are skipped (with an `unsupported_language` diagnostic).
 - **Does not execute code.** All analysis is static, over source bytes read via `git show`.
-- **No runtime proof, cross-file analysis only by explicit opt-in.** By default it cannot prove a defect exists or trace causality across files; each file is analyzed independently. An explicit `--project-config` (see [Configured Go layer violations](#configured-go-layer-violations---project-config) below) opts into one narrow, advisory exception: checking configured Go import edges against configured architectural layers.
+- **No runtime proof, cross-file analysis only by explicit opt-in.** By default it cannot prove a defect exists or trace causality across files; each file is analyzed independently. An explicit `--project-config` (see [Configured layer violations](#configured-layer-violations---project-config) below) opts into one narrow, advisory exception: checking configured Go or TypeScript import edges against configured architectural layers.
 - **Local-only, zero external configuration.** It never contacts GitHub, a model/LLM API, or any other network service — see `internal/codesignalcli/dependencies_test.go`'s `TestNoExternalDependencies` for the enforced boundary (no `net/http`, no GitHub client, anywhere in its dependency graph).
 - **Renames and copies are not analyzed for lifecycle continuity.** A renamed or copied file produces an `unsupported_change_type` diagnostic instead of being diffed against its old path.
 
@@ -226,9 +226,9 @@ coach codesignal --baseline --suggest-project-config
 
 Exit codes are distinct from the standard `codesignal` modes above: `0` on a successfully generated candidate, `2` for a usage error or a discovery problem (no Go modules found, ambiguous/duplicate roots, an invalid or already-existing `--output` path), and `3` if the immutable snapshot can't be read or candidate serialization unexpectedly fails.
 
-### Configured Go layer violations (`--project-config`)
+### Configured layer violations (`--project-config`)
 
-Pass `--project-config <path>` (a repository-relative path to a JSON document, read at the analyzed revision — not your worktree) to opt into one narrow exception to the file-local default: a Go import-layer check. It never guesses your architecture — you declare which directories belong to which layer and which layer-to-layer imports are forbidden, and the CLI reports only edges that violate that explicit policy.
+Pass `--project-config <path>` (a repository-relative path to a JSON document, read at the analyzed revision — not your worktree) to opt into one narrow exception to the file-local default: an import-layer check. It never guesses your architecture — you declare which directories belong to which layer and which layer-to-layer imports are forbidden, and the CLI reports only edges that violate that explicit policy.
 
 ```json
 {
@@ -244,7 +244,7 @@ Pass `--project-config <path>` (a repository-relative path to a JSON document, r
 }
 ```
 
-- `roots` — repository-relative directories to analyze (Go module/workspace roots); required, at least one. Use `--suggest-project-config` above to generate a starting candidate.
+- `roots` — repository-relative directories to analyze (for `--project-language go`, your Go module/workspace roots; for `typescript`, the directories the sidecar should collect); required, at least one. `--suggest-project-config` above generates a starting candidate for Go projects.
 - `layers` — named layers, each with one or more non-overlapping repository-relative directory prefixes; optional.
 - `forbidden_imports` — directed `{"from": "<layer>", "to": "<layer>"}` pairs naming layers declared above; optional. A `from`/`to` that doesn't match a declared layer name is a config error (exit `2`), not a silently-ignored rule.
 
@@ -282,7 +282,7 @@ Project coverage: phase=go_model_build, complete=true
 
 `--format=json` adds `project_changes` (each with a `machine_evidence` map, `primary_anchor`, and — when the same violating layer pair has more than one import site — `related_locations`), `project_summary`, and `project_coverage` alongside the existing `signals` array; `--base <ref>` classifies each finding's `lifecycle` as `introduced`, `existing`, or `resolved` instead of `baseline`, following the same semantics as file-local signals. Omitting `--project-config` leaves every existing example above completely unchanged (byte-identical `schema_version: "1"` output, no `project_*` fields).
 
-This check is **advisory, coverage-honest, and approximate**: it reports zero findings (never a guess) for any import edge it cannot resolve or that doesn't map to a configured layer, retains findings at `lifecycle: unknown` rather than a false `introduced`/`existing`/`resolved` claim when project coverage is incomplete, and matches layers by repository-relative directory prefix over Go import facts — not a full type or build-graph analysis. `--project-language typescript` is accepted by the flag parser but has no backend yet (exit `3`, `project_backend_unavailable`); Go is the only implemented language today.
+This check is **advisory, coverage-honest, and approximate**: it reports zero findings (never a guess) for any import edge it cannot resolve or that doesn't map to a configured layer, retains findings at `lifecycle: unknown` rather than a false `introduced`/`existing`/`resolved` claim when project coverage is incomplete, and matches layers by repository-relative directory prefix over Go import facts (the `go` backend) or TypeScript import facts (the `typescript` backend) — not a full type or build-graph analysis. `--project-language typescript` is a real, registered backend: layer violations are evaluated from file-addressed import edges produced by a pinned sidecar binary at `js/semantics/bin/coach-ts-project-sidecar`, resolved relative to the analyzed repository's own root (not this `coach` binary's install location — the analyzed repository must vendor the sidecar at that exact path). If the sidecar is missing, crashes, or times out, that is reported as a `project_backend_unavailable` entry in `project_coverage.diagnostics` with `complete: false` and exit `0` — never exit `3`. Exit `3` is reserved: currently unreachable, because `--project-language` accepts only `go` and `typescript` (both registered) and any other value is a usage error (exit `2`); it remains defined for a future language whose backend is registered but unavailable.
 
 ---
 
