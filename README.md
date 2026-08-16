@@ -280,6 +280,59 @@ Project coverage: phase=go_model_build, complete=true
   ...
 ```
 
+**TypeScript example.** The same `project.json` schema shown above works unmodified with `--project-language typescript` — only the CLI flag changes. A TypeScript project additionally needs a discoverable `tsconfig.json` (the sidecar uses it to resolve relative import specifiers into file-addressed edges) and the vendored sidecar binary described below.
+
+```json
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "es2022"
+  },
+  "include": ["pkg/**/*.ts"]
+}
+```
+
+```sh
+coach codesignal --baseline --project-config project.json --project-language typescript
+```
+
+```text
+Repository Baseline for revision c67e28c... (not a diff comparison)
+tracked files discovered: 4, analyzed: 2, unsupported: 2, excluded: 0, unanalyzable: 0, active signals: 1, diagnostics: 0
+Project findings:
+semantic_key: architecture.layer_violation:pkg/handlers/handlers.ts->pkg/db/db.ts
+rule_id: architecture.layer_violation
+path: pkg/handlers/handlers.ts
+line: 1
+lifecycle: baseline
+changed: false
+evidence: pkg/handlers/handlers.ts imports pkg/db/db.ts (layer handlers -> db is forbidden)
+machine_evidence.importee: pkg/db/db.ts
+machine_evidence.importer: pkg/handlers/handlers.ts
+machine_evidence.language: typescript
+machine_evidence.layer_from: handlers
+machine_evidence.layer_to: db
+machine_evidence.rule: handlers->db
+why it matters: Import edges that cross a configured layer boundary erode the architecture the team claims to follow, so drift compounds across packages that look fine in isolation.
+recommendation: Move the dependency behind an allowed boundary (interface in the lower layer, invert the import, or relocate the shared type), or update the explicit layer policy if the edge is intentional.
+Project summary: active=1, introduced=0, existing=0, resolved=0, baseline=1
+
+Coverage:
+  unsupported: 2 .json files
+
+Project coverage: phase=ts_sidecar_build, complete=true
+  count: files_analyzed=2
+  count: files_seen=3
+  count: projects_analyzed=1
+  count: tsconfig_count=1
+  budget: timeout_ms=60000
+```
+
+Three differences from the Go example above are structural, not incidental. `machine_evidence` carries an extra `language: typescript` entry (Go's output has no such key). The project coverage phase is `ts_sidecar_build` rather than `go_model_build`, and each backend emits its own disjoint set of `count:`/`budget:` keys under that phase (only `count: files_seen` is shared) — the Go example's `...` above stands in for Go's own set, not TypeScript's. And addressing granularity differs: Go's evaluator groups findings per (importer package directory, importee package directory) pair, so `semantic_key`, `evidence`, and `machine_evidence.importer`/`machine_evidence.importee` use package-directory addressing (`pkg/handlers`, `pkg/db`), while the TypeScript evaluator is file-addressed instead, so those same fields carry full file paths (`pkg/handlers/handlers.ts`, `pkg/db/db.ts`) and findings group per violating file pair rather than per package pair — forced by file-level vs. package-level import-edge identity in each backend, not an artifact of the filenames chosen for this example.
+
+The `why it matters:`/`recommendation:` lines are true abridgement, not a fourth structural difference: both evaluators reuse the same underlying constants, and the Go example above simply leaves those two lines out rather than marking them with `...` (its one `...` is under `Project coverage:`, standing in for Go's coverage keys, not for these lines).
+
 `--format=json` adds `project_changes` (each with a `machine_evidence` map, `primary_anchor`, and — when the same violating layer pair has more than one import site — `related_locations`), `project_summary`, and `project_coverage` alongside the existing `signals` array; `--base <ref>` classifies each finding's `lifecycle` as `introduced`, `existing`, or `resolved` instead of `baseline`, following the same semantics as file-local signals. Omitting `--project-config` leaves every existing example above completely unchanged (byte-identical `schema_version: "1"` output, no `project_*` fields).
 
 This check is **advisory, coverage-honest, and approximate**: it reports zero findings (never a guess) for any import edge it cannot resolve or that doesn't map to a configured layer, retains findings at `lifecycle: unknown` rather than a false `introduced`/`existing`/`resolved` claim when project coverage is incomplete, and matches layers by repository-relative directory prefix over Go import facts (the `go` backend) or TypeScript import facts (the `typescript` backend) — not a full type or build-graph analysis. `--project-language typescript` is a real, registered backend: layer violations are evaluated from file-addressed import edges produced by a pinned sidecar binary at `js/semantics/bin/coach-ts-project-sidecar`, resolved relative to the analyzed repository's own root (not this `coach` binary's install location — the analyzed repository must vendor the sidecar at that exact path). If the sidecar is missing, crashes, or times out, that is reported as a `project_backend_unavailable` entry in `project_coverage.diagnostics` with `complete: false` and exit `0` — never exit `3`. Exit `3` is reserved: currently unreachable, because `--project-language` accepts only `go` and `typescript` (both registered) and any other value is a usage error (exit `2`); it remains defined for a future language whose backend is registered but unavailable.
