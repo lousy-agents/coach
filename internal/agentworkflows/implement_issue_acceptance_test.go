@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -36,8 +35,13 @@ var _ = Describe("implement-issue planner workflow", func() {
 		})
 
 		It("constrains its planning output to a schema", func() {
-			Expect(readRepoFile(plannerPath)).To(ContainSubstring("schema:"),
+			planner := readRepoFile(plannerPath)
+			// Anchored to the agent options, not the bare word: `schema:` also
+			// appears inside the schema literals themselves, so a substring
+			// check stays green after the binding is removed.
+			Expect(planner).To(MatchRegexp(`schema:\s*PLAN_SCHEMA`),
 				"an unvalidated plan would reach the executor as free text it cannot reliably act on")
+			Expect(planner).To(MatchRegexp(`schema:\s*AUDIT_SCHEMA`))
 		})
 	})
 
@@ -87,16 +91,20 @@ var _ = Describe("implement-issue command", func() {
 
 		It("opens the pull request from the main session", func() {
 			command := readRepoFile(commandPath)
-			Expect(strings.ToLower(command)).To(ContainSubstring("pull request"))
+			// "pull request" alone appears in the frontmatter and in prose, so
+			// it stays green even if step 5 were rewritten to delegate PR
+			// creation into a workflow -- which is what would disarm
+			// gate-pr-creation.sh. Anchor on the ownership language instead.
+			Expect(command).To(MatchRegexp(`(?i)with your own tool call, from this session`),
+				"the PR call must originate in the main session or the PR gate never runs")
 			Expect(command).To(ContainSubstring("PULL_REQUEST_TEMPLATE.md"),
 				"the template is the PR contract for coding agents")
 		})
 	})
 
-	// The gate runs ci-all itself at PR time. A command that tells the
-	// orchestrator to skip its own validation would leave the gate's run cold,
-	// which measured 391s against ~40s warm -- close enough to the hook
-	// timeout to turn a legitimate PR into a deny.
+	// The gate runs ci-all itself at PR time, so this is not about the gate
+	// catching a red suite -- it will. It is about not spending an entire run
+	// before finding out.
 	When("the run reaches validation", func() {
 		It("validates with the authoritative task before opening the PR", func() {
 			Expect(readRepoFile(commandPath)).To(ContainSubstring("ci-all"))

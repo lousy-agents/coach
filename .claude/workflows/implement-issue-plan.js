@@ -9,11 +9,20 @@ export const meta = {
   ],
 }
 
-// Every agent below is read-only by construction: `Explore` carries no Edit or
-// Write tool. That is a property this workflow depends on, not a convenience --
-// a planner that edits would produce changes no reviewer ever sees, because the
-// review gate runs in the main session against tasks it hands back.
+// `Explore` carries no Edit, Write, or NotebookEdit tool. It does carry Bash,
+// so "cannot mutate" is not something the agent type guarantees on its own --
+// every prompt below therefore states the prohibition explicitly.
+//
+// This matters more than ordinary tidiness: the review gate runs in the main
+// session against the tasks this workflow hands back, so anything the planner
+// changed itself would reach the branch without any reviewer ever seeing it.
 const READ_ONLY = 'Explore'
+
+// Appended to every planner prompt. Bash is in reach; this says not to use it
+// for anything that writes.
+const NO_MUTATION = '\n\nYou are planning, not implementing. Do not modify, create, or delete any file, ' +
+  'and do not run any command that writes to the repository, the index, or the working tree. ' +
+  'Read and report only.'
 
 const CRITERION = {
   type: 'object',
@@ -89,18 +98,21 @@ const [spec, code, conventions] = await parallel([
   () => agent(
     `Read GitHub issue #${issue} and every spec or issue it links. Return its explicit acceptance criteria verbatim, each with a stable ID (AC-1, AC-2, ...). ` +
     `Where a criterion is ambiguous, record the ambiguity and the most defensible reading rather than resolving it silently. ` +
-    `Do not design an implementation.`,
+    `Do not design an implementation.`
+    + NO_MUTATION,
     { label: `issue #${issue}`, phase: 'Ingest', agentType: READ_ONLY },
   ),
   () => agent(
     `For GitHub issue #${issue}, map the code that a fix must touch: the packages, files, and existing tests. ` +
-    `Report what exists, not what should be built. Note any file that several plausible tasks would all need to edit -- that is what makes tasks non-parallelizable.`,
+    `Report what exists, not what should be built. Note any file that several plausible tasks would all need to edit -- that is what makes tasks non-parallelizable.`
+    + NO_MUTATION,
     { label: 'affected code', phase: 'Ingest', agentType: READ_ONLY },
   ),
   () => agent(
     `Read AGENTS.md and any nested AGENTS.md or package-level convention docs. Return, verbatim, the conventions and validation commands an implementer must follow: ` +
     `the acceptance-test-first policy and its required Ginkgo form, the architecture dependency rules, the outbound-HTTP and fail-closed policies, the Go comment policy, and the exact validation commands. ` +
-    `Quote them; do not paraphrase or soften them.`,
+    `Quote them; do not paraphrase or soften them.`
+    + NO_MUTATION,
     { label: 'conventions', phase: 'Ingest', agentType: READ_ONLY },
   ),
 ])
@@ -115,7 +127,8 @@ const plan = await agent(
   `- Two tasks may only be independent (neither in the other's dependsOn) if they share no file and neither consumes the other's output.\n` +
   `- Each task states the externally observable behavior an implementer must first demonstrate as a FAILING test, per the acceptance-test-first policy.\n` +
   `- Scope each task to what the issue asks for. Do not add adjacent improvements.\n` +
-  `- The 'conventions' field is copied verbatim into implementer prompts, which share no context with anyone. Omitting something makes it unavailable.`,
+  `- The 'conventions' field is copied verbatim into implementer prompts, which share no context with anyone. Omitting something makes it unavailable.`
+  + NO_MUTATION,
   { label: 'task DAG', phase: 'Plan', agentType: READ_ONLY, schema: PLAN_SCHEMA },
 )
 
@@ -125,11 +138,13 @@ phase('Self-check')
 // anyway, so planning past the point of obvious defects buys nothing.
 const audits = await parallel([
   () => agent(
-    `Find tasks marked independent that are not. Two tasks conflict if they share a file, or if one consumes what the other produces.\n\nPLAN:\n${JSON.stringify(plan)}`,
+    `Find tasks marked independent that are not. Two tasks conflict if they share a file, or if one consumes what the other produces.\n\nPLAN:\n${JSON.stringify(plan)}`
+    + NO_MUTATION,
     { label: 'false parallelism', phase: 'Self-check', agentType: READ_ONLY, schema: AUDIT_SCHEMA },
   ),
   () => agent(
-    `Find acceptance criteria no task covers, and tasks whose work no criterion justifies. Check by ID against the plan's own criteria list.\n\nPLAN:\n${JSON.stringify(plan)}`,
+    `Find acceptance criteria no task covers, and tasks whose work no criterion justifies. Check by ID against the plan's own criteria list.\n\nPLAN:\n${JSON.stringify(plan)}`
+    + NO_MUTATION,
     { label: 'coverage', phase: 'Self-check', agentType: READ_ONLY, schema: AUDIT_SCHEMA },
   ),
 ])
@@ -144,7 +159,8 @@ log(`self-check found ${defects.length} defect(s); repairing`)
 
 const repaired = await agent(
   `Repair this task DAG. Return the corrected DAG in full -- same schema, every field.\n\nPLAN:\n${JSON.stringify(plan)}\n\nDEFECTS:\n${JSON.stringify(defects)}\n\n` +
-  `Fix only what the defects name. Preserve the conventions text verbatim.`,
+  `Fix only what the defects name. Preserve the conventions text verbatim.`
+  + NO_MUTATION,
   { label: 'repair', phase: 'Self-check', agentType: READ_ONLY, schema: PLAN_SCHEMA },
 )
 

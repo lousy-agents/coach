@@ -69,9 +69,11 @@ that delegates those into a workflow looks identical and enforces nothing.
    `task-implementer` → `task-reviewer` cycle, then re-run the integration
    review. Repeat until PASS.
 
-4. **Validate.** Run `mise run ci-all` yourself and confirm it passes. This is
-   also what makes the PR gate's own run warm — a cold `ci-all` has measured
-   ~390s against ~40s warm, close enough to the hook timeout to matter.
+4. **Validate.** Run `mise run ci-all` yourself and confirm it passes. Do not
+   leave this to the gate: the gate's job is to refuse a red PR, not to be how
+   you find out the suite is red. Discovering it there means the whole run has
+   already been spent. It also warms the gate's own run — ~40s against ~390s
+   cold, well inside its 900s timeout either way.
 
 5. **Open the PR yourself**, with your own tool call, from this session. Commit
    and push first: the gate denies a dirty working tree, because the suite
