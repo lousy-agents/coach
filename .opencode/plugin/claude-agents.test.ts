@@ -99,6 +99,7 @@ test("loads real .claude/agents/*.md with expected structure", async () => {
     "system-design-expert",
     "task-implementer",
     "task-reviewer",
+    "workflow-integration-reviewer",
   ])
 
   for (const [name, agent] of Object.entries(cfg.agent ?? {})) {
@@ -215,4 +216,41 @@ test("command body preserves leading and trailing blank lines", async () => {
   await rm(base, { recursive: true, force: true })
 
   assert.strictEqual(cfg.command?.["spaces-cmd"]?.template, body)
+})
+
+// Commands are mirrored into OpenCode verbatim as templates, and OpenCode has
+// no Workflow tool -- the loader above maps agents and commands only. A command
+// that delegates work to a workflow without stating what that work is leaves
+// this harness with an instruction it cannot follow and no way to recover.
+test("a command that delegates to a workflow still carries the work inline", async () => {
+  const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
+  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
+  const plugin = await pluginModule.default({ directory: repoRoot, worktree: repoRoot })
+
+  const cfg: { command?: Record<string, { template?: string }> } = {}
+  await plugin.config(cfg)
+
+  const commands = Object.entries(cfg.command ?? {})
+  assert.ok(commands.length > 0, "no commands loaded -- the assertions below would be vacuous")
+
+  for (const [name, command] of commands) {
+    const template = command.template ?? ""
+    if (!/\bWorkflow\b|implement-issue-plan/.test(template)) continue
+
+    // The contract the workflow produces has to be recoverable from the command
+    // itself, or a harness without workflows cannot produce an equivalent plan.
+    for (const field of ["dependsOn", "criteriaIds", "acceptanceTest"]) {
+      assert.ok(
+        template.includes(field),
+        `${name}: delegates planning to a workflow but never states the plan's ${field} field, ` +
+          `so a harness without a Workflow tool has no contract to work from`,
+      )
+    }
+
+    assert.match(
+      template,
+      /without a Workflow tool/i,
+      `${name}: must say what to do in a harness that has no Workflow tool`,
+    )
+  }
 })

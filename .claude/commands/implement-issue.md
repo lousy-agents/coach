@@ -14,16 +14,38 @@ inside a workflow do not reach them. So planning runs as a workflow, but every
 implement/review cycle and the PR creation itself must be your own calls — a run
 that delegates those into a workflow looks identical and enforces nothing.
 
-1. **Plan.** Call the `implement-issue-plan` workflow with `args: {issue: "$1"}`.
-   It returns `{issue, plan, defects}`, where `plan` holds the acceptance
-   criteria (stable IDs), the task DAG, and a verbatim `conventions` string.
+1. **Plan.** Planning produces one artifact: the issue's acceptance criteria with
+   stable IDs (AC-1, AC-2, …), a `conventions` string quoted verbatim from
+   AGENTS.md, and a task DAG in which each task records
 
-   Read the returned `defects` before proceeding. They are the self-check's
-   findings on its own plan — already repaired, but they tell you where the
-   decomposition was fragile, which is where to be skeptical of a PASS.
+   - `files` — every file the task may touch
+   - `criteriaIds` — the acceptance criteria it satisfies, by ID
+   - `dependsOn` — the task IDs that must be COMPLETE before it may start
+   - `acceptanceTest` — the observable behavior whose absence the implementer
+     must demonstrate as a failing test first
 
-   If the plan has one task and the issue is genuinely trivial, say so and run a
-   single implement→review cycle rather than performing a task graph.
+   In Claude Code, delegate this: call the `implement-issue-plan` workflow with
+   `args: {issue: "$1"}`. It fans the research out in parallel, self-checks the
+   result, and returns `{issue, plan, defects, repairApplied}`.
+
+   **Without a Workflow tool** — OpenCode, or any other harness this file is
+   mirrored into — do the same work inline instead: read the issue with
+   `gh issue view $1` and any spec it links, explore the affected code, quote the
+   conventions from AGENTS.md, and build the DAG above yourself. Nothing below
+   depends on *how* the plan was produced, only on its shape.
+
+   Self-check the plan once, however it was produced, for three failure modes:
+   (a) false parallelism — tasks marked independent that share a file or consume
+   each other's output; (b) an acceptance criterion no task covers; (c) a
+   dependency cycle, or a `dependsOn` naming a task that does not exist — both
+   deadlock step 2 rather than failing it. Fix what you find, then start.
+
+   The workflow reports its own findings as `defects` and repairs them; read
+   them before proceeding. They mark where the decomposition was fragile, which
+   is where to be skeptical of a PASS later.
+
+   If the issue is genuinely trivial, say so and run a single implement→review
+   cycle rather than performing a task graph.
 
 2. **Execute the DAG.** Track it with TodoWrite. A task is COMPLETE only when its
    reviewer returns PASS; a task may not START until every task in its `dependsOn`

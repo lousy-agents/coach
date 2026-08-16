@@ -96,9 +96,13 @@ depends = ["js-build"]
 description = "Functional tests for .claude/workflows scripts (also the only check that they parse)"
 run = "node --test \".claude/workflows/**/*.test.mjs\""
 
+[tasks.opencode-plugin-test]
+description = "Tests for the OpenCode plugin that mirrors .claude/agents and .claude/commands"
+run = "node --test \".opencode/plugin/*.test.ts\""
+
 [tasks.js-ci]
 description = "All JS-side verifications"
-depends = ["js-test", "workflow-test"]
+depends = ["js-test", "workflow-test", "opencode-plugin-test"]
 
 [tasks.wasm-build]
 description = "Prove pkg/semantics compiles for GOOS=js GOARCH=wasm via the pure-Go gotreesitter engine (no TinyGo)"
