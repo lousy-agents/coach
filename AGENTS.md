@@ -36,13 +36,22 @@ Some skills delegate to a named subagent rather than doing the work inline. Each
 - `.codex/agents/*.toml` — Codex custom subagents (`name`, `description`, `sandbox_mode`, `developer_instructions`). Codex cannot import Claude markdown, so instruction text is mirrored from `.claude/agents/` and marked with a one-line sync comment — don't build codegen for a two-file mirror.
 - `.agents/skills/*/agents/<harness>.yaml` — optional, separate from subagent definitions: a per-harness "interface" declaration (e.g. `display_name`/`default_prompt`) for how a skill surfaces in that harness's UI. Only add one if the harness actually reads it — Claude Code has no such mechanism today.
 
+### Workflows (`.claude/workflows/`) — Claude Code only
+
+Scripts the Claude Code Workflow tool executes to orchestrate subagents deterministically (`.claude/workflows/implement-issue-plan.js` plans an issue). **No other harness has an equivalent**, and the OpenCode loader above mirrors agents and commands only — so a command that delegates work to a workflow must also state that work inline, or it is broken the moment OpenCode loads it. `.opencode/plugin/claude-agents.test.ts` enforces this.
+
+Two invariants apply to anything a workflow does:
+
+- **Hooks do not reach inside.** `SubagentStop` and `PreToolUse` fire on agents the main session spawns and on its own tool calls. An agent spawned inside a workflow reaches neither, so `verify-review-verdict.sh` and `gate-pr-creation.sh` do not run for it — a workflow that took over the implement/review loop or PR creation would look identical and enforce nothing.
+- **Nothing else executes these scripts**, so a syntax error or renamed binding surfaces only when a human runs the command. `mise run workflow-test` imports each one under a fake harness; it is wired into `js-ci` rather than `verify` because the `verify` job has no Node and the check would skip silently there.
+
 ## Commands
 
 All tasks are defined in `mise.toml`; use `mise run <task>` (mise also pins `go` and `node` versions — CI installs mise so both share one tool-version source of truth).
 
 ```sh
 mise run ci-all           # authoritative pre-PR check: ci + wasm-build + sidecar-built projectmodel suite
-mise run ci-fast          # per-cycle loop check: Go slice, sidecar built first (no silent skips)
+mise run ci-fast          # per-cycle loop check: Go slice + agent-tooling suites, sidecar built first
 mise run ci               # gofmt/vet/tidy/style/test/examples/js-ci -- NOT wasm-build, and see ci-fast on skips
 mise run gofmt             # gofmt -l . (must be empty)
 mise run go-vet
@@ -56,12 +65,20 @@ mise run thinproof-build    # vendors deps + builds the thin offline Compose pro
 mise run test-acceptance-thin-proof # runs the offline thin Compose proof: fake GitHub -> pkg/githubingest -> CodeSignal, no image pull, no egress
 mise run js-ci              # -> js-test -> js-build -> backend-build/js-install
 mise run wasm-build         # proves GOOS=js GOARCH=wasm compiles (pure-Go engine, grammar-subset tags)
+mise run workflow-test      # .claude/workflows scripts under a fake harness (also their only parse check)
+mise run opencode-plugin-test # the loader that mirrors .claude/agents + .claude/commands into OpenCode
 ```
 
 Single test, Go side:
 
 ```sh
 go test ./pkg/semantics/... -run TestName -v
+```
+
+Single test, agent tooling (Node, from the repo root):
+
+```sh
+node --test ".claude/workflows/**/*.test.mjs" --test-name-pattern "cycle"
 ```
 
 Single test, JS side (from `js/semantics/`):
@@ -190,6 +207,15 @@ After a failing check, fix and rerun that specific command rather than the whole
 ## Pull requests
 
 Before `gh pr create` / `create_pull_request`, read and fill every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). That file is the PR contract for coding agents: linked issue, single concern, acceptance-criteria → evidence table, red-then-green acceptance proof, and the validation commands you actually ran. Do not open a PR with blank sections or placeholder text.
+
+### Commit types (required policy)
+
+Conventional Commits, chosen by **who the change is for** — GoReleaser builds release notes from commit subjects, so the type decides whether a change is described to `coach` users as part of the CLI.
+
+- `feat` / `fix` — behavior a `coach` user can invoke: the CLI, `pkg/semantics`, `pkg/githubingest`, `js/semantics`. These reach the release notes.
+- `chore` / `ci` / `build` / `refactor` / `style` / `test` / `docs` — everything else, including **agent tooling**: `.claude/` and `.agents/` definitions, hooks, subagent and workflow files, `mise.toml` tasks, and CI workflows. These are filtered out of the release notes by `.goreleaser.yaml`.
+
+A PR title follows the same rule as its commits. Agent tooling changes the way this repository is *built*, not what it *does*, so labelling it `feat` publishes a feature that does not exist.
 
 ## CI shape (`.github/workflows/ci.yml`)
 

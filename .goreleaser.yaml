@@ -67,5 +67,15 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
+      # Internal-only work: agent tooling, CI, and refactors ship no
+      # behavior a coach user can invoke, so they stay out of notes
+      # describing the CLI. The scope group is required, not decorative --
+      # this repository writes `chore(agents):`, and `^chore:` matches none
+      # of it.
+      - '^docs(\([^)]*\))?!?:'
+      - '^test(\([^)]*\))?!?:'
+      - '^chore(\([^)]*\))?!?:'
+      - '^ci(\([^)]*\))?!?:'
+      - '^build(\([^)]*\))?!?:'
+      - '^refactor(\([^)]*\))?!?:'
+      - '^style(\([^)]*\))?!?:'

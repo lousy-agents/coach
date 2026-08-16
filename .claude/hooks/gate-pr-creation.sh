@@ -45,7 +45,14 @@ deny() {
   exit 0
 }
 
-if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+# Fail closed when git itself fails. Swallowing the error would make "git is
+# missing" and "the tree is clean" the same observation, and the gate would
+# allow a PR having verified nothing.
+if ! worktree_status=$(git status --porcelain 2>&1); then
+  deny "Could not determine whether the working tree is clean (git status failed: ${worktree_status}). Refusing rather than publishing an unverified tree."
+fi
+
+if [ -n "$worktree_status" ]; then
   deny "The working tree is dirty, so validation would not describe the commit this PR publishes. Commit or stash the changes, then retry."
 fi
 
