@@ -87,7 +87,68 @@ const AUDIT_SCHEMA = {
   },
 }
 
-const issue = args && args.issue ? String(args.issue) : String(args || '')
+// Resolve the issue reference before spending a single agent turn. Without
+// this, `{}` interpolates as "#[object Object]" and a missing args as "#",
+// and the ingest agents research a nonexistent issue rather than failing.
+const issue = String((args && args.issue) || args || '').trim()
+if (!/^\d+$/.test(issue)) {
+  throw new Error(
+    `implement-issue-plan needs a numeric issue reference; got ${JSON.stringify(args)}. ` +
+    'Call it as: Workflow({name: "implement-issue-plan", args: {issue: "248"}}).')
+}
+
+// mustHave turns a failed agent() -- null on a terminal error or a schema the
+// model could not satisfy -- into a stop. Every downstream consumer here reads
+// its input as if planning succeeded, so a silent null becomes a confident
+// report about nothing.
+function mustHave(value, what) {
+  if (value === null || value === undefined) {
+    throw new Error(`implement-issue-plan: the ${what} agent returned no usable result; aborting rather than planning from nothing.`)
+  }
+  return value
+}
+
+// checkGraph reports structural defects the plan schema cannot express and no
+// auditor looks for. Both deadlock the executor, whose rule is that a task may
+// not start until everything in its dependsOn is COMPLETE: a cycle leaves no
+// task eligible, and a dangling reference never completes.
+function checkGraph(candidate) {
+  const tasks = (candidate && candidate.tasks) || []
+  const ids = new Set(tasks.map((t) => t.id))
+  const criteria = new Set(((candidate && candidate.acceptanceCriteria) || []).map((c) => c.id))
+  const found = []
+
+  for (const task of tasks) {
+    for (const dep of task.dependsOn || []) {
+      if (!ids.has(dep)) {
+        found.push({ kind: 'unbuildable-order', detail: `task ${task.id} depends on ${dep}, which no task defines` })
+      }
+    }
+    for (const cid of task.criteriaIds || []) {
+      if (!criteria.has(cid)) {
+        found.push({ kind: 'uncovered-criterion', detail: `task ${task.id} cites ${cid}, which no acceptance criterion defines` })
+      }
+    }
+  }
+
+  // Iteratively strip tasks whose dependencies are all satisfied; whatever
+  // cannot be stripped is in, or behind, a cycle.
+  const pending = new Map(tasks.map((t) => [t.id, (t.dependsOn || []).filter((d) => ids.has(d))]))
+  let progressed = true
+  while (progressed) {
+    progressed = false
+    for (const [id, deps] of pending) {
+      if (deps.every((d) => !pending.has(d))) {
+        pending.delete(id)
+        progressed = true
+      }
+    }
+  }
+  if (pending.size) {
+    found.push({ kind: 'unbuildable-order', detail: `dependency cycle among tasks: ${[...pending.keys()].join(', ')}` })
+  }
+  return found
+}
 
 phase('Ingest')
 
@@ -119,7 +180,7 @@ const [spec, code, conventions] = await parallel([
 
 phase('Plan')
 
-const plan = await agent(
+const plan = mustHave(await agent(
   `Decompose GitHub issue #${issue} into a task DAG.\n\n` +
   `ACCEPTANCE CRITERIA:\n${spec}\n\nAFFECTED CODE:\n${code}\n\nCONVENTIONS (pass through verbatim):\n${conventions}\n\n` +
   `Rules:\n` +
@@ -130,7 +191,7 @@ const plan = await agent(
   `- The 'conventions' field is copied verbatim into implementer prompts, which share no context with anyone. Omitting something makes it unavailable.`
   + NO_MUTATION,
   { label: 'task DAG', phase: 'Plan', agentType: READ_ONLY, schema: PLAN_SCHEMA },
-)
+), 'planning')
 
 phase('Self-check')
 
@@ -149,19 +210,33 @@ const audits = await parallel([
   ),
 ])
 
-const defects = audits.filter(Boolean).flatMap((a) => a.defects || [])
+// An auditor that failed found nothing because it never ran. Reporting that
+// as a clean bill of health is the same error as reporting a null plan as a
+// good one, so refuse instead.
+if (audits.some((a) => a === null || a === undefined)) {
+  throw new Error('implement-issue-plan: a self-check auditor returned no result, so the plan is unaudited. Aborting rather than reporting it clean.')
+}
+
+const defects = [...checkGraph(plan), ...audits.flatMap((a) => a.defects || [])]
 if (!defects.length) {
   log('self-check found no defects in the task DAG')
-  return { issue, plan, defects: [] }
+  return { issue, plan, defects: [], repairApplied: false }
 }
 
 log(`self-check found ${defects.length} defect(s); repairing`)
 
-const repaired = await agent(
+const repaired = mustHave(await agent(
   `Repair this task DAG. Return the corrected DAG in full -- same schema, every field.\n\nPLAN:\n${JSON.stringify(plan)}\n\nDEFECTS:\n${JSON.stringify(defects)}\n\n` +
   `Fix only what the defects name. Preserve the conventions text verbatim.`
   + NO_MUTATION,
   { label: 'repair', phase: 'Self-check', agentType: READ_ONLY, schema: PLAN_SCHEMA },
-)
+), 'repair')
 
-return { issue, plan: repaired || plan, defects }
+// The repair is re-checked, not trusted: it is the same kind of agent that
+// produced the defects, and the executor deadlocks on a bad graph.
+const remaining = checkGraph(repaired)
+if (remaining.length) {
+  throw new Error(`implement-issue-plan: the repaired DAG is still structurally invalid: ${JSON.stringify(remaining)}`)
+}
+
+return { issue, plan: repaired, defects, repairApplied: true }

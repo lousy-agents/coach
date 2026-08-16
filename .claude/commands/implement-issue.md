@@ -65,9 +65,12 @@ that delegates those into a workflow looks identical and enforces nothing.
    one's evidence.
 
    Give it the full acceptance criteria with IDs, the per-task scopes, and each
-   task's verdict. On FINDINGS, route each one back through a
-   `task-implementer` → `task-reviewer` cycle, then re-run the integration
-   review. Repeat until PASS.
+   task's verdict. On FINDINGS, hand its **entire `## Reviewer Findings` block
+   verbatim** to a fresh `task-implementer`, exactly as in step 2 — do not split
+   it into one delegation per finding. `verify-context-relay.sh` denies any
+   rework delegation that lacks that literal heading, so a per-finding split is
+   refused at the Agent tool. Then re-review, and re-run the integration review.
+   Repeat until PASS.
 
 4. **Validate.** Run `mise run ci-all` yourself and confirm it passes. Do not
    leave this to the gate: the gate's job is to refuse a red PR, not to be how

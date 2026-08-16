@@ -65,6 +65,38 @@ func runGate(toolName string, worktreeDirty, ciPasses bool) gateRun {
 	return gateRun{stdout: stdout.String(), miseArgs: string(recorded)}
 }
 
+// runGateWithBrokenGit stubs git as failing outright, standing in for a
+// corrupt repository, a missing binary, or a permissions failure.
+func runGateWithBrokenGit() gateRun {
+	GinkgoHelper()
+
+	scriptPath, err := filepath.Abs(filepath.Join("..", "..", ".claude", "hooks", "gate-pr-creation.sh"))
+	Expect(err).NotTo(HaveOccurred())
+
+	fakeBin := GinkgoT().TempDir()
+	argsLog := filepath.Join(fakeBin, "mise-args.txt")
+	Expect(os.WriteFile(filepath.Join(fakeBin, "mise"),
+		[]byte("#!/bin/sh\necho \"$@\" >> "+argsLog+"\nexit 0\n"), 0o755)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(fakeBin, "git"),
+		[]byte("#!/bin/sh\necho 'fatal: not a git repository' >&2\nexit 128\n"), 0o755)).To(Succeed())
+
+	payload, err := json.Marshal(map[string]any{
+		"tool_name":  "mcp__github__create_pull_request",
+		"tool_input": map[string]string{"command": ""},
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("bash", scriptPath)
+	cmd.Stdin = bytes.NewReader(payload)
+	cmd.Env = append(os.Environ(), "PATH="+fakeBin+":"+os.Getenv("PATH"))
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	Expect(cmd.Run()).To(Succeed(), "hook exited non-zero; stderr: %s", stderr.String())
+
+	recorded, _ := os.ReadFile(argsLog)
+	return gateRun{stdout: stdout.String(), miseArgs: string(recorded)}
+}
+
 func expectDeny(run gateRun, reasonSubstring string) {
 	GinkgoHelper()
 	var payload struct {
@@ -107,6 +139,20 @@ var _ = Describe("gate-pr-creation", func() {
 		It("does so without paying for the full suite first", func() {
 			Expect(runGate("mcp__github__create_pull_request", true, true).miseArgs).To(BeEmpty(),
 				"the cheap check must short-circuit before the expensive one")
+		})
+	})
+
+	// Swallowing a git failure would make "git is broken or missing" and "the
+	// tree is clean" the same observation, and the gate would allow a PR having
+	// verified nothing -- the fail-open shape AGENTS.md's store/dependency
+	// policy exists to prevent.
+	When("the working tree's state cannot be determined at all", func() {
+		It("refuses rather than assuming the tree is clean", func() {
+			expectDeny(runGateWithBrokenGit(), "Could not determine")
+		})
+
+		It("does not fall through to the suite", func() {
+			Expect(runGateWithBrokenGit().miseArgs).To(BeEmpty())
 		})
 	})
 
