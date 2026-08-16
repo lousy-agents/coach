@@ -261,8 +261,22 @@ var _ = Describe("Project-analysis report generation", func() {
 	Describe("project observations on the shared signals surface", func() {
 		It("maps an active project observation into signals and summary counters while facts stay facts-only", func() {
 			active := projectChange("cycle:pkg/a<->pkg/b", "architecture.layer_violation")
+			// Deliberately unsorted producer order so the assertions below can
+			// distinguish "mirrored verbatim" from "mirrored canonicalized"
+			// (RelatedLocations sorts by path, so "pkg/z/z.go" before
+			// "pkg/b/b.go" would pass a same-order-as-input assertion but fail
+			// a same-order-as-canonicalized one).
 			active.RelatedLocations = []codesignal.ProjectLocation{
+				{Path: "pkg/z/z.go", Location: semantics.Location{StartRow: 9}},
 				{Path: "pkg/b/b.go", Location: semantics.Location{StartRow: 4}},
+			}
+			active.PathSteps = []codesignal.ProjectPathStep{
+				{NodeID: "func:Z", DisplayName: "Z", Resolution: "static", Confidence: codesignal.Confidence("medium")},
+			}
+			active.CoverageRefs = []string{"z_ref", "a_ref"}
+			active.MachineEvidence = map[string]string{
+				"importer": "pkg/a",
+				"importee": "pkg/b",
 			}
 			fact := codesignal.ProjectFact{
 				Kind:        "possible_call_reachability",
@@ -285,7 +299,28 @@ var _ = Describe("Project-analysis report generation", func() {
 			Expect(report.Summary.ActiveSignals).To(Equal(1))
 			Expect(report.Summary.BaselineSignals).To(Equal(1))
 
+			// signals[] must carry the same structured evidence as
+			// project_changes[] -- consumers reading only signals get full parity.
+			// The mirrored arrays are asserted against the canonicalized
+			// project_changes[0] values (not the raw producer-order active.*
+			// fixture) so this also locks that signalFromProjectChange mirrors
+			// post-canonicalization output, not pre-canonicalization input.
 			Expect(report.ProjectChanges).To(HaveLen(1))
+			Expect(sig.MachineEvidence).To(Equal(active.MachineEvidence))
+			Expect(sig.RelatedLocations).To(Equal(report.ProjectChanges[0].RelatedLocations))
+			Expect(sig.PathSteps).To(Equal(report.ProjectChanges[0].PathSteps))
+			Expect(sig.CoverageRefs).To(Equal(report.ProjectChanges[0].CoverageRefs))
+			Expect(sig.RelatedLocations).NotTo(Equal(active.RelatedLocations), "canonicalization must sort RelatedLocations by path, not preserve producer order")
+			Expect(sig.CoverageRefs).To(Equal([]string{"a_ref", "z_ref"}), "canonicalization must sort CoverageRefs")
+
+			// Struct-field equality above can't catch a JSON tag rename; lock the
+			// wire keys and canonicalized (sorted) values at the raw-bytes level.
+			sigRaw, err := json.Marshal(sig)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(sigRaw)).To(ContainSubstring(`"related_locations":[{"path":"pkg/b/b.go","location":{"start_byte":0,"end_byte":0,"start_row":4,"start_col":0,"end_row":0,"end_col":0}},{"path":"pkg/z/z.go","location":{"start_byte":0,"end_byte":0,"start_row":9,"start_col":0,"end_row":0,"end_col":0}}]`))
+			Expect(string(sigRaw)).To(ContainSubstring(`"path_steps":[{"node_id":"func:Z","display_name":"Z","resolution":"static","confidence":"medium"}]`))
+			Expect(string(sigRaw)).To(ContainSubstring(`"coverage_refs":["a_ref","z_ref"]`))
+
 			Expect(report.ProjectFacts).To(HaveLen(1))
 			Expect(report.ProjectSummary.ActiveChanges).To(Equal(1))
 			Expect(report.ProjectSummary.BaselineChanges).To(Equal(1))
@@ -381,6 +416,12 @@ var _ = Describe("Project-analysis report generation", func() {
 			Expect(err).NotTo(HaveOccurred())
 			// encoding/json sorts map keys; freeze the epic #208 field set order in the wire bytes.
 			Expect(string(raw)).To(ContainSubstring(`"machine_evidence":{"edge_kind":"internal","importee":"pkg/infra","importee_layer":"infrastructure","importer":"pkg/domain","importer_layer":"domain","policy_rule":"domain_must_not_import_infrastructure"}`))
+
+			Expect(report.Signals).To(HaveLen(1))
+			sigRaw, err := json.Marshal(report.Signals[0])
+			Expect(err).NotTo(HaveOccurred())
+			// signals[] must carry the same stable-ordered machine_evidence bytes.
+			Expect(string(sigRaw)).To(ContainSubstring(`"machine_evidence":{"edge_kind":"internal","importee":"pkg/infra","importee_layer":"infrastructure","importer":"pkg/domain","importer_layer":"domain","policy_rule":"domain_must_not_import_infrastructure"}`))
 		})
 	})
 

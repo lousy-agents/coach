@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -366,6 +367,12 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			commitFile(repo, "go.mod", goModuleFile)
 			commitFile(repo, "pkg/db/db.go", dbPackageFile)
 			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
+			// A second file in the same importer package directory that also
+			// imports pkg/db gives the (pkg/handlers, pkg/db) violation group
+			// two sites, so RelatedLocations is non-empty and the sig/text
+			// parity assertions below actually exercise it rather than
+			// comparing nil to nil.
+			commitFile(repo, "pkg/handlers/other.go", "package handlers\n\nimport \"example.com/app/pkg/db\"\n\nfunc Other() string {\n\treturn db.Name\n}\n")
 			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
 
 			jsonStdout, jsonStderr, jsonExit := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
@@ -386,6 +393,30 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			Expect(text).To(ContainSubstring("machine_evidence.importee: pkg/db"))
 			Expect(text).To(ContainSubstring("Project summary: active=1"))
 			Expect(text).To(ContainSubstring("Project coverage: phase=go_model_build, complete=true"))
+
+			// signals[] must carry the same structured machine_evidence the
+			// text Project findings section shows for this violation -- a
+			// consumer reading only signals gets full parity with text.
+			Expect(report.Signals).To(HaveLen(1))
+			sig := report.Signals[0]
+			Expect(sig.MachineEvidence).To(Equal(map[string]string{
+				"importer":   "pkg/handlers",
+				"importee":   "pkg/db",
+				"layer_from": "handlers",
+				"layer_to":   "db",
+				"rule":       "handlers->db",
+			}))
+			for key, value := range sig.MachineEvidence {
+				Expect(text).To(ContainSubstring("machine_evidence." + key + ": " + value))
+			}
+			Expect(sig.RelatedLocations).NotTo(BeEmpty())
+			Expect(sig.RelatedLocations).To(Equal(report.ProjectChanges[0].RelatedLocations))
+
+			// text must show the same related location the JSON RelatedLocations
+			// carries -- parity for the second site, not just the primary anchor.
+			for _, location := range sig.RelatedLocations {
+				Expect(text).To(ContainSubstring(fmt.Sprintf("related: %s:%d", location.Path, location.Location.StartRow+1)))
+			}
 
 			legacyStdout, legacyStderr, legacyExit := runCoachCodesignalBaselineRaw(repo)
 			Expect(legacyExit).To(Equal(0), "stderr: %s", legacyStderr)
