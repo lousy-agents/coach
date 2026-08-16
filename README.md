@@ -284,6 +284,10 @@ Project coverage: phase=go_model_build, complete=true
 
 This check is **advisory, coverage-honest, and approximate**: it reports zero findings (never a guess) for any import edge it cannot resolve or that doesn't map to a configured layer, retains findings at `lifecycle: unknown` rather than a false `introduced`/`existing`/`resolved` claim when project coverage is incomplete, and matches layers by repository-relative directory prefix over Go import facts — not a full type or build-graph analysis. `--project-language typescript` is accepted by the flag parser but has no backend yet (exit `3`, `project_backend_unavailable`); Go is the only implemented language today.
 
+**Absence is not a compliance verdict.** A report with no `architecture.layer_violation` finding is never proof the codebase follows any particular architecture: it can mean the edge doesn't violate your configured policy, the edge isn't covered by any layer you declared, or project coverage was incomplete for that revision — check `project_coverage`/`Project coverage:` before treating a clean report as an architectural guarantee.
+
+`pkg/projectmodel` also has library-only support for bounded Go possible-call-reachability facts (a pinned static call graph plus deterministic source-to-sink path search, both bounded by budgets and approximate — direct, statically resolved calls only, not full points-to). It is not wired into `coach codesignal` today: no flag builds it, and no report field surfaces call-graph or reachability facts yet.
+
 ---
 
 ## `pkg/semantics` Quickstart
