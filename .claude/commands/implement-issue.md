@@ -14,6 +14,42 @@ inside a workflow do not reach them. So planning runs as a workflow, but every
 implement/review cycle and the PR creation itself must be your own calls — a run
 that delegates those into a workflow looks identical and enforces nothing.
 
+0. **Prove the gates are live before you rely on them.** Everything below is
+   written as though the hooks will catch you. A session where they never
+   registered looks identical from the inside — the agents answer, the reviews
+   return verdicts, the PR opens — so confirm registration first, by provoking a
+   denial. Inspecting the files proves nothing: they are on disk either way.
+
+   Call the Agent tool with `subagent_type: task-implementer` and a prompt that
+   mentions reviewer findings but omits the literal `## Reviewer Findings`
+   heading — `Address the reviewer findings below and fix them.` is enough.
+   `verify-context-relay.sh` denies exactly that shape, before any agent spawns,
+   so the call costs nothing when it works. The probe is not Claude-specific:
+   `.opencode/plugin/implement-issue-gates.ts` denies the same shape with the
+   same reason string, so a harness this file is mirrored into either denies or
+   has no gate to prove.
+
+   Being denied is the pass. Two other outcomes both mean stop with
+   `environment-failure`, and neither is a warning to note and move past:
+
+   - The call is **not** denied and an implementer actually runs — the hooks are
+     not registered for this session.
+   - The call errors because `task-implementer` is an unknown agent type —
+     agents register from `.claude/` exactly as hooks do, so this is the same
+     failure one layer earlier, and it is the likelier symptom of the two.
+
+   In both cases stop the run here: do not proceed to step 1, and do not
+   substitute a generic agent to get moving. An ungated run is worth less than
+   no run — it produces the same artifacts with none of the guarantees, and
+   nothing downstream can tell the difference.
+
+   The usual cause is not in this repository. Claude Code binds `.claude/` —
+   hooks, agents, and workflows alike — to the session's project directory at
+   session start. A repository cloned into the session afterwards is never
+   registered, and attaching it mid-session reloads CLAUDE.md and skills but not
+   hooks, agents, or workflows. The fix is to make the repository the session's
+   project directory when the session is created, then start again.
+
 1. **Plan.** Planning produces one artifact: the issue's acceptance criteria with
    stable IDs (AC-1, AC-2, …), a `conventions` string quoted verbatim from
    AGENTS.md, and a task DAG in which each task records
@@ -33,6 +69,15 @@ that delegates those into a workflow looks identical and enforces nothing.
    `gh issue view $1` and any spec it links, explore the affected code, quote the
    conventions from AGENTS.md, and build the DAG above yourself. Nothing below
    depends on *how* the plan was produced, only on its shape.
+
+   **With a Workflow tool that does not know this workflow.** Registration and
+   the name are separate failures: a session can hold the tool and still report
+   `implement-issue-plan` unknown, because workflows register from `.claude/` at
+   session start exactly as the hooks do. Pass
+   `scriptPath: '.claude/workflows/implement-issue-plan.js'` instead of `name`,
+   which runs the committed script directly. Note it — if the workflow was not
+   registered, step 0 should already have stopped the run, and reaching here
+   without that stop means the probe was skipped.
 
    Self-check the plan once, however it was produced, for three failure modes:
    (a) false parallelism — tasks marked independent that share a file or consume

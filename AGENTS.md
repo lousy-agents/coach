@@ -225,6 +225,10 @@ Those are instructions in `.claude/commands/implement-issue.md`. The specs in `i
 
 Treat a clean run as evidence the gates held, not as evidence the loop was bounded. When a run's behavior matters, read the hook trace (see `.claude/hooks/lib/trace.sh`) rather than inferring from the absence of a complaint.
 
+**And a clean run is only evidence the gates held if they were registered at all.** Claude Code binds `.claude/` — hooks, agents, and workflows alike — to the session's project directory at session start. A repository cloned into a session whose project directory is elsewhere never registers any of them, and attaching it mid-session reloads CLAUDE.md and skills but not hooks, agents, or workflows. A run in that state is indistinguishable from a gated one from the inside: the agents answer, the reviews return verdicts, the PR opens. This is not hypothetical — a proving run reached exactly that state, and caught it by reasoning about the environment rather than by any mechanism.
+
+Step 0 of the command is the mechanism: it provokes a denial from `verify-context-relay.sh` and stops with `environment-failure` if the call is allowed, or if `task-implementer` does not resolve. Being denied is the pass. Inspecting the hook files proves nothing, because they are on disk either way — which is why the check is a probe and not a file existence test. It is prose like the rules above, so it constrains an orchestrator that follows it and nothing else; what it removes is the *ambiguity*, not the possibility of skipping the step.
+
 ## Pull requests
 
 Before `gh pr create` / `create_pull_request`, read and fill every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). That file is the PR contract for coding agents: linked issue, single concern, acceptance-criteria → evidence table, red-then-green acceptance proof, and the validation commands you actually ran. Do not open a PR with blank sections or placeholder text.
