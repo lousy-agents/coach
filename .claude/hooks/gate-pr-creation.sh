@@ -24,12 +24,8 @@ set -euo pipefail
 input=$(cat)
 tool_name=$(jq -r '.tool_name // empty' <<<"$input")
 
-# Optional trace -- see verify-review-verdict.sh for why. A hook that never
-# fires looks exactly like one that passed; this makes the difference visible.
-trace() {
-  [ -n "${COACH_HOOK_TRACE:-}" ] || return 0
-  printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$COACH_HOOK_TRACE" 2>/dev/null || true
-}
+. "$(dirname "${BASH_SOURCE[0]}")/lib/trace.sh"
+trace gate "${tool_name:-<unset>}" fired
 
 if [ "$tool_name" = "Bash" ]; then
   command=$(jq -r '.tool_input.command // empty' <<<"$input")
@@ -56,7 +52,6 @@ deny() {
 # Fail closed when git itself fails. Swallowing the error would make "git is
 # missing" and "the tree is clean" the same observation, and the gate would
 # allow a PR having verified nothing.
-trace gate "$tool_name" checking
 if ! worktree_status=$(git status --porcelain 2>&1); then
   deny "Could not determine whether the working tree is clean (git status failed: ${worktree_status}). Refusing rather than publishing an unverified tree."
 fi

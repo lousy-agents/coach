@@ -6,14 +6,18 @@
 # something it can't parse.
 set -euo pipefail
 input=$(cat)
-# Optional trace. When COACH_HOOK_TRACE names a file, every invocation appends
-# one line: which hook ran, what it matched, and what it decided. A hook that
-# never fires is otherwise indistinguishable from one that passed -- silence
-# looks identical either way -- so a run that needs evidence sets this.
-trace() {
-  [ -n "${COACH_HOOK_TRACE:-}" ] || return 0
-  printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$COACH_HOOK_TRACE" 2>/dev/null || true
-}
+. "$(dirname "${BASH_SOURCE[0]}")/lib/trace.sh"
+trace verdict "${agent_type:-<unset>}" fired
+
+# Claude Code sets stop_hook_active when it is re-running an agent because a
+# stop hook already blocked it. Blocking again from here is an unbounded
+# machine-driven retry inside a single orchestrator cycle -- invisible to the
+# cycle cap, because no cycle ever completes. Defer instead: the orchestrator
+# then sees the malformed verdict and counts it toward agent-failure.
+if [ "$(jq -r '.stop_hook_active // false' <<<"$input")" = "true" ]; then
+  trace verdict "${agent_type:-<unset>}" defer-already-blocked
+  exit 0
+fi
 agent_type=$(jq -r '.agent_type // empty' <<<"$input")
 verdict=$(jq -r '.last_assistant_message // empty' <<<"$input")
 
@@ -21,19 +25,19 @@ verdict=$(jq -r '.last_assistant_message // empty' <<<"$input")
 # checking the whole (possibly multi-line) message would let PASS/FINDINGS
 # appearing after leading prose slip through. Anchor to the first non-empty
 # line instead.
-trace verdict "${agent_type:-<unknown>}" "checking"
+trace verdict "${agent_type:-<unset>}" "checking"
 first_line=$(printf '%s\n' "$verdict" | sed -n '/[^[:space:]]/{p;q;}')
 
 if echo "$first_line" | grep -qE '^PASS\b'; then
-  trace verdict "${agent_type:-<unknown>}" allow
+  trace verdict "${agent_type:-<unset>}" allow
   exit 0
 fi
 if echo "$first_line" | grep -qE '^FINDINGS\b'; then
-  trace verdict "${agent_type:-<unknown>}" allow
+  trace verdict "${agent_type:-<unset>}" allow
   exit 0
 fi
 
-trace verdict "${agent_type:-<unknown>}" block
+trace verdict "${agent_type:-<unset>}" block
 jq -n '{
   decision: "block",
   reason: "task-reviewer must begin its reply with PASS or FINDINGS, verbatim, per its system prompt. Re-emit a valid verdict in that exact shape."

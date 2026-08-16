@@ -72,7 +72,7 @@ export function needsReviewerFindingsRelay(
 export const RELAY_DENY_REASON =
   'Re-delegation after FINDINGS must include the reviewer\'s "## Reviewer Findings" block verbatim, not a paraphrase.'
 
-export const PR_CI_DENY_REASON = "mise run ci failed; fix before opening the PR."
+export const PR_CI_DENY_REASON = "mise run ci-all failed; fix before opening the PR."
 
 export const VERDICT_SOFT_FAIL_MESSAGE = [
   "ERROR: task-reviewer reply shape invalid.",
@@ -82,8 +82,8 @@ export const VERDICT_SOFT_FAIL_MESSAGE = [
 
 export type RunCi = (cwd: string) => { ok: boolean; detail?: string }
 
-export function runMiseCi(cwd: string): { ok: boolean; detail?: string } {
-  const result = spawnSync("mise", ["run", "ci"], {
+export function runMiseCiAll(cwd: string): { ok: boolean; detail?: string } {
+  const result = spawnSync("mise", ["run", "ci-all"], {
     cwd,
     encoding: "utf8",
     env: process.env,
@@ -116,7 +116,7 @@ export type GatesOptions = {
 }
 
 export default async (input: PluginInput, options: GatesOptions = {}) => {
-  const runCi = options.runCi ?? runMiseCi
+  const runCi = options.runCi ?? runMiseCiAll
   const cwd = input.worktree || input.directory
 
   return {

@@ -114,7 +114,12 @@ that delegates those into a workflow looks identical and enforces nothing.
    it into one delegation per finding. `verify-context-relay.sh` denies any
    rework delegation that lacks that literal heading, so a per-finding split is
    refused at the Agent tool. Then re-review, and re-run the integration review.
-   Repeat until PASS.
+
+   **This loop is bounded exactly as step 2 is:** at most **3** integration
+   rounds, the same no-progress rule, and the same named stop reasons. It needs
+   its own bound because step 4 routes a red suite back through here — an
+   unbounded loop at this point would swallow every repair attempt without the
+   per-task cap ever applying.
 
 4. **Validate.** Run `mise run ci-all` yourself and confirm it passes. Do not
    leave this to the gate: the gate's job is to refuse a red PR, not to be how
@@ -126,7 +131,7 @@ that delegates those into a workflow looks identical and enforces nothing.
    step-2 loop rather than aborting: paste the failing **command output** under
    a literal `## Reviewer Findings` heading, hand that to a fresh
    `task-implementer` scoped to the offending files, re-review, then re-run
-   `ci-all`. Treat it as a Phase-5 finding for invalidation purposes — the
+   `ci-all`. Treat it as a step-3 finding for invalidation purposes — the
    integration review must run again afterwards.
 
    This path exists because `ci-all` is the *first* place `wasm-build`, the
