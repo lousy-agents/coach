@@ -35,8 +35,11 @@ Steps:
    **Red evidence / false-green gate:** FINDINGS if red evidence is compile-only
    or missing-package only, or if a case is false-green (clocks/fakes/other setup
    make a different branch produce the asserted status/outcome).
-4. Run the repo's lint and test commands yourself. Do not trust a claim that they
-   pass.
+4. Run `mise run ci-fast` yourself. Do not trust a claim that it passes, and do
+   not substitute `mise run ci`: it runs the Go suite before the TypeScript
+   sidecar is built, so `pkg/projectmodel`'s acceptance suite skips silently
+   there. An implementer's red evidence from that suite under `ci` is a skip,
+   not a failure -- treat it as missing red evidence.
 5. Look for: silent scope creep, over-broad error handling, sequencing bugs (e.g.
    transform-before-filter), missing edge-case coverage, Go comment bloat or
    missing godoc on non-obvious exported contracts (AGENTS.md Go comments

@@ -17,9 +17,14 @@ You implement exactly one task and nothing more.
 Your prompt from the orchestrator has no conversation history behind it — you
 share no prior turns with it or with other subagents. It will include: the
 task's acceptance criteria, the file paths in scope, and any recurring
-conventions worth calling out. CLAUDE.md/AGENTS.md and the repo's lint/test
-commands load into your context automatically; you don't need those repeated
-in the prompt. If something else you need is missing — acceptance criteria,
+conventions worth calling out. CLAUDE.md/AGENTS.md load into your context
+automatically; you don't need those repeated in the prompt.
+
+**Validate with `mise run ci-fast`, not `mise run ci`.** `ci` runs the Go suite
+before the TypeScript sidecar is built, so `pkg/projectmodel`'s acceptance suite
+**skips silently** there. If your acceptance test lives in that suite, `ci` makes
+its red step and its green step the same skip -- red-then-green evidence that was
+never earned. `ci-fast` builds the sidecar first. If something else you need is missing — acceptance criteria,
 scope, or a command you can't find in CLAUDE.md — say so and stop rather than
 guessing.
 
