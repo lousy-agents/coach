@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
@@ -34,14 +35,31 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		})))
 	})
 
+	// "go" (#211) and "typescript" (#215) both have registered backends now,
+	// so no real --project-language flag value can reach
+	// project_backend_unavailable through the CLI any more. This test
+	// instead overrides the loadProjectConfig/resolveProjectBackend seams
+	// in-process (see "coach codesignal project-mode exit-code
+	// classification" in project_acceptance_test.go for the same pattern)
+	// to keep exercising the full report shape a genuinely unavailable
+	// backend still produces.
 	It("writes a local report and structured diagnostic when the selected backend is unavailable", func() {
-		// "go" has a registered backend (#211); "typescript" (#214) does not
-		// yet, so it remains the language that exercises this diagnostic.
-		repo := newTempGitRepo()
-		initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
-		commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`)
+		originalLoadProjectConfig := loadProjectConfig
+		originalResolveProjectBackend := resolveProjectBackend
+		DeferCleanup(func() {
+			loadProjectConfig = originalLoadProjectConfig
+			resolveProjectBackend = originalResolveProjectBackend
+		})
+		loadProjectConfig = func(string, string, string) (json.RawMessage, error) {
+			return json.RawMessage(`{"schema_version":"1","roots":["."]}`), nil
+		}
+		resolveProjectBackend = func(string) error {
+			return &codesignalcli.ProjectBackendUnavailableError{
+				Message: `coach codesignal: no project-analysis backend is available for language "rust" yet (project_backend_unavailable)`,
+			}
+		}
 
-		stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+		stdout, stderr, exitCode := runInProcess("codesignal", "--baseline", "--project-config", "project.json", "--format=json")
 
 		Expect(exitCode).To(Equal(3))
 		Expect(stderr).To(BeEmpty())

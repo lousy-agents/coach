@@ -395,11 +395,11 @@ func rejectDuplicateJSONKeys(data []byte) error {
 }
 
 // ResolveProjectBackend reports whether a project-analysis backend is
-// registered for language. Only "go" (#211) has a registered backend today;
-// every other language, including "typescript" (#214) and the empty string,
-// remains unavailable until its own backend lands.
+// registered for language. "go" (#211) and "typescript" (#214/#215) both
+// have registered backends today; every other language, including the empty
+// string, remains unavailable until its own backend lands.
 func ResolveProjectBackend(language string) error {
-	if language == "go" {
+	if language == "go" || language == "typescript" {
 		return nil
 	}
 	return &ProjectBackendUnavailableError{Message: fmt.Sprintf("coach codesignal: no project-analysis backend is available for language %q yet (project_backend_unavailable)", language)}

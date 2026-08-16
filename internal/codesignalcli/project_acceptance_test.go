@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -395,6 +396,125 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(report.ProjectCoverage.Complete).To(BeFalse())
 		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_coverage_incomplete")))
 		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_lifecycle_indeterminate")), "the CLI-facing report must surface the same indeterminate diagnostic codesignal.Build contracts for partial coverage")
+	})
+})
+
+// fakeTSSidecarBinary holds the compiled
+// cmd/coach/testdata/fake_ts_sidecar bytes, built lazily on first use via
+// buildFakeTSSidecarBinaryOnce. It is built by full module import path
+// rather than a relative "./testdata/..." path so the build works
+// regardless of the test binary's own working directory. The build-scratch
+// dir is removed via DeferCleanup when the first spec that builds it ends,
+// not at suite teardown; later specs write the cached bytes, not that path.
+var (
+	fakeTSSidecarBinary      []byte
+	buildFakeTSSidecarBinary sync.Once
+)
+
+func ensureFakeTSSidecarBinaryBuilt() {
+	buildFakeTSSidecarBinary.Do(func() {
+		dir, err := os.MkdirTemp("", "fake-ts-project-sidecar-*")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(os.RemoveAll, dir)
+
+		binPath := filepath.Join(dir, "fake-ts-project-sidecar")
+		build := exec.Command("go", "build", "-o", binPath, "github.com/lousy-agents/coach/cmd/coach/testdata/fake_ts_sidecar")
+		output, err := build.CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), "building fake ts project sidecar: %s", output)
+
+		data, err := os.ReadFile(binPath)
+		Expect(err).NotTo(HaveOccurred())
+		fakeTSSidecarBinary = data
+	})
+}
+
+// installFakeTSSidecarAt writes the compiled fake sidecar binary to
+// repoDir/js/semantics/bin/coach-ts-project-sidecar -- the fixed
+// tsSidecarRelativePath tsProjectBackend resolves against the repository
+// root (via repositoryRoot(req.Dir)), so repoDir must be the repository
+// root here.
+func installFakeTSSidecarAt(repoDir string) {
+	ensureFakeTSSidecarBinaryBuilt()
+	binDir := filepath.Join(repoDir, "js", "semantics", "bin")
+	Expect(os.MkdirAll(binDir, 0o755)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(binDir, "coach-ts-project-sidecar"), fakeTSSidecarBinary, 0o755)).To(Succeed())
+}
+
+// F-003 (issue #215 rework): mutation testing showed that swapping
+// filepath.Join(req.Dir, tsSidecarRelativePath) for the bare
+// tsSidecarRelativePath left the whole cmd/coach acceptance suite green,
+// because every existing test happens to run with the process's cwd equal
+// to req.Dir. This spec calls tsProjectBackend.Analyze directly (bypassing
+// the CLI's run() entrypoint) so the test process's own cwd -- this
+// package's source directory -- differs from req.Dir, the temporary repo
+// below (which is also that repo's own root, so repository-root-relative
+// resolution still finds the sidecar here). See the "from a subdirectory
+// invocation" spec below for the case where req.Dir is not the repository
+// root.
+var _ = Describe("tsProjectBackend sidecar binary resolution", func() {
+	When("ProjectBackendRequest.Dir differs from the test process's own working directory", func() {
+		It("resolves the sidecar binary relative to req.Dir, not the process cwd", func() {
+			cwd, err := os.Getwd()
+			Expect(err).NotTo(HaveOccurred())
+
+			repo := acceptanceTempGitRepo()
+			Expect(repo).NotTo(Equal(cwd), "the temp repo must differ from the test process's cwd for this assertion to be meaningful")
+
+			sha := acceptanceCommitFile(repo, "a.ts", "export const a = 1;\n")
+			installFakeTSSidecarAt(repo)
+
+			cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
+			backend := NewTSProjectBackend()
+
+			result, err := backend.Analyze(context.Background(), ProjectBackendRequest{
+				Dir:          repo,
+				HeadRevision: sha,
+				Baseline:     true,
+				Config:       cfg,
+				ConfigDigest: ConfigDigest(cfg),
+				Language:     "typescript",
+			})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.HeadCoverage).NotTo(BeNil())
+			Expect(result.HeadCoverage.Complete).To(BeTrue(), "the sidecar must have been found and invoked via req.Dir-relative resolution")
+		})
+	})
+})
+
+// F-004 (issue #215 rework, round 5): ProjectBackendRequest.Dir is
+// os.Getwd() at CLI invocation time, not necessarily the repository
+// checkout root -- coach codesignal run from a subdirectory of a repo must
+// still find a sidecar vendored at the repository root's
+// js/semantics/bin/coach-ts-project-sidecar. This spec sets req.Dir to a
+// subdirectory of the temp repo (not the repo root itself), so only
+// repository-root-anchored (not req.Dir-anchored) resolution can find it.
+var _ = Describe("tsProjectBackend sidecar binary resolution from a subdirectory invocation", func() {
+	When("ProjectBackendRequest.Dir is a subdirectory of the repository, not its root", func() {
+		It("still finds the sidecar vendored at the repository root", func() {
+			repo := acceptanceTempGitRepo()
+			sha := acceptanceCommitFile(repo, "a.ts", "export const a = 1;\n")
+			installFakeTSSidecarAt(repo)
+
+			subDir := filepath.Join(repo, "sub")
+			Expect(os.MkdirAll(subDir, 0o755)).To(Succeed())
+
+			cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
+			backend := NewTSProjectBackend()
+
+			result, err := backend.Analyze(context.Background(), ProjectBackendRequest{
+				Dir:          subDir,
+				HeadRevision: sha,
+				Baseline:     true,
+				Config:       cfg,
+				ConfigDigest: ConfigDigest(cfg),
+				Language:     "typescript",
+			})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.HeadCoverage).NotTo(BeNil())
+			Expect(result.HeadCoverage.Complete).To(BeTrue(), "the sidecar must be found via repository-root-relative resolution regardless of invocation subdirectory")
+		})
 	})
 })
 

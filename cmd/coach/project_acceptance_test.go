@@ -115,22 +115,7 @@ var _ = Describe("coach codesignal --project-config", func() {
 		})
 	})
 
-	When("--project-config is syntactically valid JSON but the requested language has no backend", func() {
-		// "go" has a registered backend (#211); "typescript" (#214) does not
-		// yet, so it is what exercises project_backend_unavailable here.
-		It("exits 3 and writes a local report for --project-language typescript", func() {
-			repo := newTempGitRepo()
-			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
-
-			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`)
-
-			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-
-			Expect(exitCode).To(Equal(3))
-			Expect(stderr).To(BeEmpty())
-			Expect(string(stdout)).To(ContainSubstring(`"kind":"project_backend_unavailable"`))
-		})
-
+	When("--project-config is syntactically valid JSON", func() {
 		// Nested roots are required by the multi-module candidate contract (#220):
 		// a workspace root may contain a more specific module root. Validation
 		// must accept that shape and reach backend dispatch.
@@ -244,6 +229,11 @@ var _ = Describe("coach codesignal project-mode exit-code classification", func(
 	})
 
 	When("resolveProjectBackend fails with an error that is not a *codesignalcli.ProjectBackendUnavailableError", func() {
+		// This asserts only the negative classification (exit code must not
+		// be 3). The positive project_backend_unavailable/exit-3 case is
+		// covered by "writes a local report and structured diagnostic when
+		// the selected backend is unavailable" in
+		// project_contract_acceptance_test.go.
 		It("does not classify it as project-backend-unavailable (exit 3); it falls back to the operational-error path", func() {
 			loadProjectConfig = func(string, string, string) (json.RawMessage, error) {
 				return json.RawMessage(`{"schema_version":"1","roots":["."]}`), nil
