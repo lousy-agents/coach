@@ -75,9 +75,31 @@ that delegates those into a workflow looks identical and enforces nothing.
    - On FINDINGS, hand the reviewer's `## Reviewer Findings` block to a *fresh*
      `task-implementer` verbatim. That implementer shares no history with the one
      before it, so anything you paraphrase while relaying is gone for good. Then
-     re-review. Repeat until PASS.
+     re-review.
 
    Do not start a dependent task until its dependencies' reviewers return PASS.
+
+   **The loop is bounded.** Run at most **3** implement→review cycles per task.
+   Stop earlier when a cycle made no progress: the reviewer returned
+   substantially the *same findings* as the previous cycle **and** the task's
+   diff is unchanged since then. Both conditions matter — repeated findings
+   against a moved diff means the implementer is chipping away at a real
+   problem, and an unchanged diff with new findings means the reviewer is still
+   discovering things. Only together do they mean the cycle is spinning.
+
+   When you stop, name the reason from this set and **stop the run — do not
+   open a PR**:
+
+   - `repeated-finding` — the bound or the no-progress rule fired
+   - `agent-failure` — an implementer or reviewer returned nothing usable twice
+   - `ambiguous-product-decision` — the task needs a call the issue does not
+     make and you are not authorized to invent
+   - `scope-change` — the work required is materially outside the plan
+   - `environment-failure` — the toolchain or a required command is unusable
+   - `merge-conflict` — the branch cannot be reconciled with its base
+
+   Report the reason, the task it stopped on, and what was completed. A stop is
+   a legitimate outcome; a silent loop is not.
 
 3. **Review the integrated diff.** Once every task has PASSed, delegate to the
    `workflow-integration-reviewer` subagent — again via the Agent tool. Per-task
@@ -92,13 +114,46 @@ that delegates those into a workflow looks identical and enforces nothing.
    it into one delegation per finding. `verify-context-relay.sh` denies any
    rework delegation that lacks that literal heading, so a per-finding split is
    refused at the Agent tool. Then re-review, and re-run the integration review.
-   Repeat until PASS.
+
+   **This loop is bounded exactly as step 2 is:** at most **3** integration
+   rounds, the same no-progress rule, and the same named stop reasons. It needs
+   its own bound because step 4 routes a red suite back through here — an
+   unbounded loop at this point would swallow every repair attempt without the
+   per-task cap ever applying.
 
 4. **Validate.** Run `mise run ci-all` yourself and confirm it passes. Do not
    leave this to the gate: the gate's job is to refuse a red PR, not to be how
    you find out the suite is red. Discovering it there means the whole run has
    already been spent. It also warms the gate's own run — ~40s against ~390s
    cold, well inside its 900s timeout either way.
+
+   **A red `ci-all` is repairable, not terminal.** Route it back through the
+   step-2 loop rather than aborting: paste the failing **command output** under
+   a literal `## Reviewer Findings` heading, hand that to a fresh
+   `task-implementer` scoped to the offending files, re-review, then re-run
+   `ci-all`. Treat it as a step-3 finding for invalidation purposes — the
+   integration review must run again afterwards.
+
+   This path exists because `ci-all` is the *first* place `wasm-build`, the
+   sidecar-built `pkg/projectmodel` suite, and cross-file `gofmt`/`tidy-check`
+   ever run against the integrated tree. No per-task cycle exercises them, so
+   this is where a break is most likely — and it arrives after every task has
+   PASSed and the whole budget is spent. Aborting there throws all of it away.
+
+   **Attribute the failure before delegating.** Map the failing command's paths
+   to the tasks' declared `files` scopes. If it lands in exactly one task's
+   scope, that task owns it. If it lands in several or none — a `wasm-build`
+   break from two tasks interacting, a cross-file `gofmt`, an untidy `go.mod` —
+   it belongs to no single implementer: open an **integration-repair task**
+   scoped to the offending files, with the integration reviewer as its gate.
+   Guessing an owner sends a fresh implementer to work outside the scope it was
+   given.
+
+   Repair carries **its own cap of at most 3 attempts**, separate from the
+   per-task counter. Sharing that counter would make a task already at its cap
+   unrepairable, so a late validation failure would be terminal after all —
+   which is the outcome this path exists to remove. Exhausting the repair cap
+   stops the run with `repeated-finding`.
 
 5. **Open the PR yourself**, with your own tool call, from this session. Commit
    and push first: the gate denies a dirty working tree, because the suite

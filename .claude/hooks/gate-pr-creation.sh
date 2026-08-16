@@ -24,6 +24,9 @@ set -euo pipefail
 input=$(cat)
 tool_name=$(jq -r '.tool_name // empty' <<<"$input")
 
+. "$(dirname "${BASH_SOURCE[0]}")/lib/trace.sh"
+trace gate "${tool_name:-<unset>}" fired
+
 if [ "$tool_name" = "Bash" ]; then
   command=$(jq -r '.tool_input.command // empty' <<<"$input")
   if [ -z "$command" ]; then
@@ -35,6 +38,7 @@ elif [ "$tool_name" != "mcp__github__create_pull_request" ]; then
 fi
 
 deny() {
+  trace gate "$tool_name" deny
   jq -n --arg reason "$1" '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
@@ -60,4 +64,5 @@ if ! mise run ci-all; then
   deny "mise run ci-all failed; fix before opening the PR."
 fi
 
+trace gate "$tool_name" allow
 exit 0

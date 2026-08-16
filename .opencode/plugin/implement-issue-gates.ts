@@ -72,7 +72,9 @@ export function needsReviewerFindingsRelay(
 export const RELAY_DENY_REASON =
   'Re-delegation after FINDINGS must include the reviewer\'s "## Reviewer Findings" block verbatim, not a paraphrase.'
 
-export const PR_CI_DENY_REASON = "mise run ci failed; fix before opening the PR."
+export const PR_DIRTY_TREE_DENY_REASON =
+  "The working tree is dirty, so validation would not describe the commit this PR publishes. Commit or stash the changes, then retry."
+export const PR_CI_DENY_REASON = "mise run ci-all failed; fix before opening the PR."
 
 export const VERDICT_SOFT_FAIL_MESSAGE = [
   "ERROR: task-reviewer reply shape invalid.",
@@ -82,8 +84,20 @@ export const VERDICT_SOFT_FAIL_MESSAGE = [
 
 export type RunCi = (cwd: string) => { ok: boolean; detail?: string }
 
-export function runMiseCi(cwd: string): { ok: boolean; detail?: string } {
-  const result = spawnSync("mise", ["run", "ci"], {
+// Mirrors gate-pr-creation.sh's first check. The suite validates the working
+// tree while a pull request publishes committed history; if they differ, the PR
+// ships a tree nothing validated. A git failure denies rather than passing --
+// "git is broken" and "the tree is clean" must not be the same observation.
+export function worktreeIsClean(cwd: string): { ok: boolean; detail?: string } {
+  const result = spawnSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8", env: process.env })
+  if (result.error) return { ok: false, detail: result.error.message }
+  if (result.status !== 0) return { ok: false, detail: (result.stderr || "").trim() || `exit ${result.status}` }
+  const dirty = (result.stdout || "").trim()
+  return dirty ? { ok: false, detail: dirty.split("\n").slice(0, 10).join("\n") } : { ok: true }
+}
+
+export function runMiseCiAll(cwd: string): { ok: boolean; detail?: string } {
+  const result = spawnSync("mise", ["run", "ci-all"], {
     cwd,
     encoding: "utf8",
     env: process.env,
@@ -116,7 +130,7 @@ export type GatesOptions = {
 }
 
 export default async (input: PluginInput, options: GatesOptions = {}) => {
-  const runCi = options.runCi ?? runMiseCi
+  const runCi = options.runCi ?? runMiseCiAll
   const cwd = input.worktree || input.directory
 
   return {
