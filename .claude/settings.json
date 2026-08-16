@@ -26,6 +26,13 @@
             "args": [
               "${CLAUDE_PROJECT_DIR}/.claude/hooks/verify-review-verdict.sh"
             ]
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/enforce-cycle-ceiling.sh"
+            ]
           }
         ]
       },
@@ -37,6 +44,13 @@
             "command": "bash",
             "args": [
               "${CLAUDE_PROJECT_DIR}/.claude/hooks/verify-review-verdict.sh"
+            ]
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/enforce-cycle-ceiling.sh"
             ]
           }
         ]

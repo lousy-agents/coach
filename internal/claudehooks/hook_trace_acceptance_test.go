@@ -94,11 +94,19 @@ var _ = Describe("hook trace", func() {
 	// bash reports a failed `>>` on the shell's own stderr before a trailing
 	// 2>/dev/null applies, so an unwritable path used to make every invocation
 	// spray diagnostics into the hook's output channel.
+	// The unwritable path is a file used as a directory, not a merely absent
+	// one: an absent path is creatable, and a hardcoded absolute path is shared
+	// state between tests -- the cycle-ceiling hook's mkdir once created
+	// /nonexistent-dir and silently made this assertion pass for the wrong
+	// reason.
 	When("the trace path cannot be written", func() {
 		It("stays silent and still decides", func() {
+			blocked := filepath.Join(GinkgoT().TempDir(), "not-a-dir")
+			Expect(os.WriteFile(blocked, []byte("x"), 0o600)).To(Succeed())
+
 			rows, stderr := traceRows("verify-review-verdict.sh",
 				map[string]any{"last_assistant_message": "PASS"},
-				filepath.Join("/nonexistent-dir", "trace.tsv"))
+				filepath.Join(blocked, "trace.tsv"))
 			Expect(rows).To(BeEmpty())
 			Expect(stderr).To(BeEmpty(), "a broken trace path must not pollute hook stderr")
 		})

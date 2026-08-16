@@ -204,6 +204,27 @@ Passing checks proves nothing broke; it doesn't prove new behavior is correct. F
 
 After a failing check, fix and rerun that specific command rather than the whole suite — `go test -race ./... -run TestName` narrows to one test. Don't move on to the next validation step until the current one is clean.
 
+### What `/implement-issue` guarantees, and what it does not
+
+The command was designed to move orchestration out of the model's conversational memory and into a committed script, on the reasoning that memory is the fragile part. **That is only partly what shipped**, and the difference matters when reading a run's output.
+
+**Deterministic, held by code or hooks:**
+
+- **Planning.** `.claude/workflows/implement-issue-plan.js` produces the task DAG. Its arg validation, null guards, cycle and dangling-reference checks are JS, covered by `mise run workflow-test`, and mutation-tested.
+- **The gates.** A reviewer's verdict shape, verbatim findings relay, a clean worktree, and `ci-all` green are enforced by hooks that run outside the model's control — and are stronger than the originals: `ci-all` rather than `ci`, fail-closed on a git error, a second registration so a new reviewer cannot escape, and a re-entry guard so a blocked reviewer is not retried forever.
+- **A ceiling on reviewer cycles** (`enforce-cycle-ceiling.sh`), which is a blunt total-invocation backstop, not the per-task rule.
+
+**Prose, held by the orchestrator following instructions:**
+
+- The per-task cycle cap and the no-progress rule
+- Dependency ordering — that a task waits for its `dependsOn`
+- Which task receives a validation failure, and the invalidation rule after rework
+- That the `conventions` string reaches implementers unweakened
+
+Those are instructions in `.claude/commands/implement-issue.md`. The specs in `internal/agentworkflows/` assert that **the instruction is present and says the right thing** — they cannot assert that a run obeyed it. A paragraph cannot be fault-injected or mutation-tested, which are the two methods that have actually found defects in this repository.
+
+Treat a clean run as evidence the gates held, not as evidence the loop was bounded. When a run's behavior matters, read the hook trace (see `.claude/hooks/lib/trace.sh`) rather than inferring from the absence of a complaint.
+
 ## Pull requests
 
 Before `gh pr create` / `create_pull_request`, read and fill every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). That file is the PR contract for coding agents: linked issue, single concern, acceptance-criteria → evidence table, red-then-green acceptance proof, and the validation commands you actually ran. Do not open a PR with blank sections or placeholder text.
