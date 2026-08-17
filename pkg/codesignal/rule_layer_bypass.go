@@ -93,12 +93,63 @@ func EvaluateGoLayerBypass(result projectmodel.LayerBypassResult, ruleVersion, b
 
 	changes := make([]ProjectChange, 0, len(witnesses))
 	for _, witness := range witnesses {
-		changes = append(changes, layerBypassChange(witness, ruleVersion, backendVersion, configDigest))
+		changes = append(changes, layerBypassChange(witness, ruleVersion, backendVersion, configDigest, ""))
 	}
 	return changes, diagnostics
 }
 
-func layerBypassChange(witness projectmodel.LayerBypassWitness, ruleVersion, backendVersion, configDigest string) ProjectChange {
+// EvaluateTypeScriptLayerBypass is the TypeScript analog of
+// EvaluateGoLayerBypass: it maps result's high-confidence LayerBypassWitnesses
+// (see pkg/projectmodel.BuildTypeScriptLayerBypass) onto one
+// architecture.layer_bypass ProjectChange per witness, under the same
+// ruleLayerBypassID vocabulary, plus a MachineEvidence["language"] =
+// "typescript" entry -- mirroring EvaluateTypeScriptLayerViolations'
+// relationship to EvaluateGoLayerViolations (rule_layer_violation.go). See
+// EvaluateGoLayerBypass's doc comment for the shared confidence-filtering,
+// anchoring, and coverage-incompleteness contract this function reuses
+// unchanged via layerBypassChange.
+func EvaluateTypeScriptLayerBypass(result projectmodel.LayerBypassResult, ruleVersion, backendVersion, configDigest string) ([]ProjectChange, []Diagnostic) {
+	var diagnostics []Diagnostic
+	if !result.Coverage.Complete {
+		diagnostics = append(diagnostics, Diagnostic{
+			Kind:    diagLayerBypassCoverageIncomplete,
+			Message: "typescript layer-bypass search coverage is incomplete; absence of a witness for a source/sink pair in this run does not mean no bypass exists",
+		})
+	}
+
+	witnesses := make([]projectmodel.LayerBypassWitness, 0, len(result.Witnesses))
+	for _, witness := range result.Witnesses {
+		if witness.Confidence != projectmodel.LayerBypassConfidenceHigh {
+			continue
+		}
+		witnesses = append(witnesses, witness)
+	}
+	if len(witnesses) == 0 {
+		return nil, diagnostics
+	}
+
+	sort.SliceStable(witnesses, func(i, j int) bool {
+		if witnesses[i].Source != witnesses[j].Source {
+			return witnesses[i].Source < witnesses[j].Source
+		}
+		return witnesses[i].Sink < witnesses[j].Sink
+	})
+
+	changes := make([]ProjectChange, 0, len(witnesses))
+	for _, witness := range witnesses {
+		changes = append(changes, layerBypassChange(witness, ruleVersion, backendVersion, configDigest, "typescript"))
+	}
+	return changes, diagnostics
+}
+
+// layerBypassChange builds the shared architecture.layer_bypass ProjectChange
+// shape for both language evaluators. language is added to
+// MachineEvidence["language"] only when non-empty, so Go's evaluator (which
+// passes "") keeps its already-frozen MachineEvidence keys while
+// EvaluateTypeScriptLayerBypass gains a "language": "typescript" entry --
+// mirroring rule_layer_violation.go's layerViolationChange split (issue
+// #215).
+func layerBypassChange(witness projectmodel.LayerBypassWitness, ruleVersion, backendVersion, configDigest, language string) ProjectChange {
 	nodeIDs := make([]string, len(witness.Path))
 	pathSteps := make([]ProjectPathStep, len(witness.Path))
 	for i, step := range witness.Path {
@@ -108,6 +159,16 @@ func layerBypassChange(witness projectmodel.LayerBypassWitness, ruleVersion, bac
 			Confidence:      Confidence("high"),
 			SourceLocations: layerBypassStepSourceLocations(step),
 		}
+	}
+
+	machineEvidence := map[string]string{
+		"source":         witness.Source,
+		"sink":           witness.Sink,
+		"required_layer": witness.RequiredLayer,
+		"path":           strings.Join(nodeIDs, "->"),
+	}
+	if language != "" {
+		machineEvidence["language"] = language
 	}
 
 	return ProjectChange{
@@ -124,16 +185,11 @@ func layerBypassChange(witness projectmodel.LayerBypassWitness, ruleVersion, bac
 		CausalEvidenceDigest: layerBypassCausalDigest(nodeIDs),
 		PrimaryAnchor:        layerBypassPrimaryAnchor(witness.Path),
 		PathSteps:            pathSteps,
-		MachineEvidence: map[string]string{
-			"source":         witness.Source,
-			"sink":           witness.Sink,
-			"required_layer": witness.RequiredLayer,
-			"path":           strings.Join(nodeIDs, "->"),
-		},
-		Evidence:       witness.Source + " reaches " + witness.Sink + " via a statically resolved path that never passes through required layer \"" + witness.RequiredLayer + "\"",
-		WhyItMatters:   layerBypassWhyItMatters,
-		Recommendation: layerBypassRecommendation,
-		Provenance:     Provenance{Producer: "projectmodel", FindingKind: ruleLayerBypassID},
+		MachineEvidence:      machineEvidence,
+		Evidence:             witness.Source + " reaches " + witness.Sink + " via a statically resolved path that never passes through required layer \"" + witness.RequiredLayer + "\"",
+		WhyItMatters:         layerBypassWhyItMatters,
+		Recommendation:       layerBypassRecommendation,
+		Provenance:           Provenance{Producer: "projectmodel", FindingKind: ruleLayerBypassID},
 	}
 }
 
