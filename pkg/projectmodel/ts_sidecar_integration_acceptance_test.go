@@ -749,6 +749,109 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 		})
 	})
 
+	When("BuildTypeScriptLayerBypass runs against a snapshot with one compliant handler (whose depth-1 walk hits a routine local-call-not-followed gap) and one unrelated, fully-resolved, genuinely direct bypass handler", func() {
+		// Reproduces issue #216's layer-bypass review finding: a project-wide
+		// Coverage.Complete gate must not suppress a different, unrelated
+		// pair's already-found witness. getUsersCompliant delegates into the
+		// required "service" layer via a local call this depth-1 walk does
+		// not itself follow (a real ts_reachability_local_call_not_followed_gap,
+		// the ordinary shape of layered code, not a rare failure), while
+		// getUsersBypass calls the pinned ORM sink directly and never touches
+		// "service" at all. Only getUsersBypass's pair should ever be
+		// evaluated -- it has one resolved CallFact edge -- and it must still
+		// produce a witness despite the compliant handler's unrelated gap.
+		It("still produces the unrelated bypass witness instead of suppressing it project-wide", func() {
+			snapshot := fstest.MapFS{
+				"tsconfig.json": tsconfigJSON(map[string]any{
+					"compilerOptions": map[string]any{"module": "commonjs", "moduleResolution": "node10"},
+				}),
+				"vendor/prisma-client/package.json": tsconfigJSON(map[string]any{"name": "@prisma/client", "main": "index"}),
+				"vendor/prisma-client/index.ts": file(strings.Join([]string{
+					`export class PrismaClient {`,
+					`  user = {`,
+					`    findMany(): Promise<unknown[]> {`,
+					`      return Promise.resolve([]);`,
+					`    },`,
+					`  };`,
+					`}`,
+					``,
+				}, "\n")),
+				"src/db.ts": file(strings.Join([]string{
+					`import { PrismaClient } from "@prisma/client";`,
+					`export const prisma = new PrismaClient();`,
+					``,
+				}, "\n")),
+				"service/userService.ts": file(strings.Join([]string{
+					`export function loadUsers(): unknown[] {`,
+					`  return [];`,
+					`}`,
+					``,
+				}, "\n")),
+				"handlers/compliant.ts": file(strings.Join([]string{
+					`import { loadUsers } from "../service/userService";`,
+					``,
+					`interface App {`,
+					`  get(path: string, handler: (req: unknown, res: unknown) => void): void;`,
+					`}`,
+					`declare const app: App;`,
+					``,
+					`export function getUsersCompliant(req: unknown, res: unknown): void {`,
+					`  const users = loadUsers();`,
+					`  console.log(users, req, res);`,
+					`}`,
+					`app.get("/users-compliant", getUsersCompliant);`,
+					``,
+				}, "\n")),
+				"handlers/bypass.ts": file(strings.Join([]string{
+					`import { prisma } from "../src/db";`,
+					``,
+					`interface App {`,
+					`  get(path: string, handler: (req: unknown, res: unknown) => void): void;`,
+					`}`,
+					`declare const app: App;`,
+					``,
+					`export async function getUsersBypass(req: unknown, res: unknown): Promise<void> {`,
+					`  const users = await prisma.user.findMany();`,
+					`  console.log(users, req, res);`,
+					`}`,
+					`app.get("/users-bypass", getUsersBypass);`,
+					``,
+				}, "\n")),
+			}
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), realOpts())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeFalse(), "expected the compliant handler's routine depth-1 gap to mark the model incomplete, got %+v", model.Coverage)
+			_, hasGapDiag := diagnosticWithCode(model.Coverage.Diagnostics, "ts_reachability_local_call_not_followed_gap")
+			Expect(hasGapDiag).To(BeTrue(), "expected this fixture to genuinely reproduce the routine local-call-not-followed gap, got %+v", model.Coverage.Diagnostics)
+
+			const bypassSource = "file:handlers/bypass.ts#getUsersBypass"
+			const sink = "(PrismaClient).findMany"
+			foundBypassEdge := false
+			for _, f := range model.CallFacts {
+				if f.From == bypassSource && f.To == sink {
+					foundBypassEdge = true
+				}
+			}
+			Expect(foundBypassEdge).To(BeTrue(), "expected the real sidecar to resolve the direct bypass edge despite the unrelated gap elsewhere, got %+v", model.CallFacts)
+
+			result, err := projectmodel.BuildTypeScriptLayerBypass(ctx, snapshot, testMeta(), realOpts(), projectmodel.BypassLayer{Name: "service", Prefixes: []string{"service"}})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Witnesses).To(HaveLen(1), "expected the unrelated, fully-resolved bypass witness to survive an unrelated compliant handler's routine gap, got %+v (Coverage: %+v)", result.Witnesses, result.Coverage)
+			witness := result.Witnesses[0]
+			Expect(witness.Source).To(Equal(bypassSource))
+			Expect(witness.Sink).To(Equal(sink))
+			Expect(witness.RequiredLayer).To(Equal("service"))
+			Expect(witness.Confidence).To(Equal(projectmodel.LayerBypassConfidenceHigh))
+
+			// The aggregate result must still honestly report incompleteness
+			// -- the fix must scope the gate per-pair, not erase the signal
+			// that some other part of this same run was truncated.
+			Expect(result.Coverage.Complete).To(BeFalse(), "expected the unrelated gap to still surface as aggregate incompleteness, got %+v", result.Coverage)
+		})
+	})
+
 	When("an import resolves only via the real filesystem, outside the snapshot", func() {
 		It("never reads real-disk content and never reports it as a snapshot-resolved edge", func() {
 			realDir, err := os.MkdirTemp("", "coach-ts-sidecar-integration-leak-*")

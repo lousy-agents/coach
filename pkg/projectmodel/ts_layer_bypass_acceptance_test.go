@@ -166,13 +166,13 @@ var _ = Describe("BuildTypeScriptLayerBypass", func() {
 		})
 	})
 
-	When("the sidecar reports incomplete coverage alongside a resolvable bypass edge", func() {
-		It("suppresses the witness rather than reporting a genuinely searched result", func() {
+	When("the sidecar reports incomplete coverage (an unrelated diagnostic elsewhere) alongside a resolvable bypass edge", func() {
+		It("still emits the resolved witness, but reports the aggregate coverage as incomplete", func() {
 			result, err := projectmodel.BuildTypeScriptLayerBypass(context.Background(), tsLayerBypassSnapshot(), testMeta(), sidecarOptsWithMode("layer_bypass_gap"), requiredServiceLayer)
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(result.Witnesses).To(BeEmpty(), "an incomplete sidecar round trip must suppress every witness, even one that would otherwise resolve, got %+v", result.Witnesses)
-			Expect(result.Coverage.Complete).To(BeFalse())
+			Expect(result.Witnesses).To(HaveLen(1), "an unrelated project-wide coverage gap must not suppress this pair's own already-resolved witness, got %+v", result.Witnesses)
+			Expect(result.Coverage.Complete).To(BeFalse(), "the unrelated gap must still surface honestly at the aggregate level")
 		})
 	})
 })
