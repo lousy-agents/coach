@@ -222,6 +222,10 @@ The command was designed to move orchestration out of the model's conversational
 - **The gates.** A reviewer's verdict shape, verbatim findings relay, a clean worktree, and a green `ci-gate` are enforced by hooks that run outside the model's control — fail-closed on a git error, a second registration so a new reviewer cannot escape, and a re-entry guard so a blocked reviewer is not retried forever. The exhaustive suite moved to required CI checks, which is a *stronger* placement: a hook runs inside the environment being gated, and a session where it never registered is indistinguishable from one where it did (hence step 0). A required check runs where no agent can reach it.
 - **A ceiling on reviewer cycles** (`enforce-cycle-ceiling.sh`), which is a blunt total-invocation backstop, not the per-task rule.
 
+**Registered but never observed firing — treat as prose until step 0 says otherwise.** "Registered" and "fires" are different claims, and this repository has shipped a registration that matched nothing more than once. Only two gates have been watched denying something: `verify-context-relay.sh`, and `gate-pr-creation.sh` on each of its matchers. `verify-review-verdict.sh` has **never** been observed firing — it is inherited from PR #90's manual testing and nothing since has re-measured it. Nor has `validate-no-git-writes.sh`, nor `enforce-cycle-ceiling.sh`. Step 0 of `/implement-issue` provokes all five for exactly this reason.
+
+Note also what the ceiling is *not*: its counter is a file any agent holding Bash can rewrite. It is a runaway-cost backstop, not an adversarial control — the same observation that withdrew the validation manifest as gate authority.
+
 **Prose, held by the orchestrator following instructions:**
 
 - The per-task cycle cap and the no-progress rule
@@ -230,6 +234,10 @@ The command was designed to move orchestration out of the model's conversational
 - That the `conventions` string reaches implementers unweakened
 
 Those are instructions in `.claude/commands/implement-issue.md`. The specs in `internal/agentworkflows/` assert that **the instruction is present and says the right thing** — they cannot assert that a run obeyed it. A paragraph cannot be fault-injected or mutation-tested, which are the two methods that have actually found defects in this repository.
+
+**What a PR opened by this flow asserts.** That the worktree was clean at push and at PR creation; that the pushed tree is the tree the gate inspected; that `ci-gate` was green on it; that every task reached reviewer `PASS` and the integration reviewer passed the whole diff; and that the body records the per-task `ci-fast` output as its test evidence.
+
+**What it does not assert.** That the exhaustive suite passed locally — it no longer runs locally. `ci-all` is ~910s against a 900s hook ceiling, so exhaustive verification lives in GitHub Actions and gates **merge**, not PR creation. Nor `platform-smoke` or `test-acceptance-fast` results, nor that any prose-held rule below was obeyed. The practical reading: **a PR from this flow is a well-evidenced proposal, not a verified one.** Branch protection is what makes it safe to open one unattended.
 
 Treat a clean run as evidence the gates held, not as evidence the loop was bounded. When a run's behavior matters, read the hook trace (see `.claude/hooks/lib/trace.sh`) rather than inferring from the absence of a complaint.
 

@@ -226,6 +226,21 @@ that delegates those into a workflow looks identical and enforces nothing.
    Guessing an owner sends a fresh implementer to work outside the scope it was
    given.
 
+   **`platform-smoke` is always unattributable.** It runs Docker and live
+   services against the whole stack, so its failures are essentially never
+   traceable to one task's declared files. Route it straight to an
+   integration-repair task without attempting attribution.
+
+   **Every repair push goes through the publish gate**, exactly as the first one
+   did: commit, let the gate check the tree and `ci-gate`, then push. A repair
+   fix is the most hurried commit in the run and it lands on a branch a pull
+   request already describes, so it is the last place to skip the check.
+
+   **If the session dies mid-repair, that is `environment-failure`** — a typed
+   stop, not a completed run. CCR containers are reclaimed on inactivity and
+   repair is the longest-lived phase, so this will happen. An interrupted repair
+   must never be reported as a finished one.
+
    Repair carries **its own cap of at most 3 attempts**, separate from the
    per-task counter. Sharing that counter would make a task already at its cap
    unrepairable, so a late validation failure would be terminal after all —
@@ -238,6 +253,13 @@ that delegates those into a workflow looks identical and enforces nothing.
 
    Opening the PR is not the end of the run — step 4's repair loop continues
    against its required checks until they are green.
+
+   **If you stop after the PR is open, leave it open and red.** Post the typed
+   stop reason as a comment on the PR itself, where the next reader will look,
+   and say what was completed and what was not. Never close it to tidy up, and
+   **never merge it** to make the run look finished — branch protection should
+   refuse that anyway, and a run that needs the protection to save it has
+   already gone wrong.
 
    Fill every section of `.github/PULL_REQUEST_TEMPLATE.md` — no placeholders.
    Map each acceptance criterion to where it is satisfied, paste the

@@ -31,7 +31,10 @@ var _ = Describe("the step 0 liveness probe", func() {
 		GinkgoHelper()
 		body, err := os.ReadFile(filepath.Join("..", "..", ".claude", "commands", "implement-issue.md"))
 		Expect(err).NotTo(HaveOccurred())
-		m := regexp.MustCompile("heading — `([^`]+)`").FindStringSubmatch(string(body))
+		// Tolerates the line break the five-probe rewrite introduced between the
+		// heading and the example. The contract is that an example exists and
+		// trips the hook, not how the markdown wraps.
+		m := regexp.MustCompile("(?s)heading —\\s*`([^`]+)`").FindStringSubmatch(string(body))
 		Expect(m).NotTo(BeNil(),
 			"step 0 no longer offers a concrete example prompt; an orchestrator improvising one may not trip the hook at all")
 		return m[1]
