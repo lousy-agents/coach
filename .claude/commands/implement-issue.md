@@ -166,26 +166,35 @@ that delegates those into a workflow looks identical and enforces nothing.
    unbounded loop at this point would swallow every repair attempt without the
    per-task cap ever applying.
 
-4. **Validate.** Run `mise run ci-all` yourself and confirm it passes. Do not
-   leave this to the gate: the gate's job is to refuse a red PR, not to be how
-   you find out the suite is red. Discovering it there means the whole run has
-   already been spent. It also warms the gate's own run — ~40s against ~390s
-   cold, well inside its 900s timeout either way.
+4. **Validate — cheaply here, exhaustively in CI.** Run `mise run ci-fast`,
+   the same command the per-task cycles use. Do **not** run the full suite
+   yourself. GitHub Actions runs those checks as required parallel jobs — a
+   strict superset, including `platform-smoke`, which no local task covers — in
+   less wall clock than a serial local run and on compute that is not this
+   session's. Re-running it here would spend ~910s of the scarcer budget to
+   prove less than CI proves minutes later.
 
-   **A red `ci-all` is repairable, not terminal.** Route it back through the
-   step-2 loop rather than aborting: paste the failing **command output** under
-   a literal `## Reviewer Findings` heading, hand that to a fresh
-   `task-implementer` scoped to the offending files, re-review, then re-run
-   `ci-all`. Treat it as a step-3 finding for invalidation purposes — the
+   The PR-creation gate runs only `mise run ci-gate` (about a second) plus a
+   clean-worktree check, which is the one thing CI structurally cannot do: CI
+   validates the *pushed commit* and cannot see that your working tree differs
+   from it.
+
+   **A red required check is repairable, not terminal.** After the PR is open,
+   watch its checks. Route a failure back through the step-2 loop rather than
+   abandoning it: paste the failing **job output** under a literal
+   `## Reviewer Findings` heading, hand that to a fresh `task-implementer`
+   scoped to the offending files, re-review, then push and let the checks
+   re-run. Treat it as a step-3 finding for invalidation purposes — the
    integration review must run again afterwards.
 
-   This path exists because `ci-all` is the *first* place `wasm-build`, the
-   sidecar-built `pkg/projectmodel` suite, and cross-file `gofmt`/`tidy-check`
-   ever run against the integrated tree. No per-task cycle exercises them, so
-   this is where a break is most likely — and it arrives after every task has
-   PASSed and the whole budget is spent. Aborting there throws all of it away.
+   This path exists because CI is the *first* place `wasm-build`, the
+   sidecar-built `pkg/projectmodel` suite, cross-file `gofmt`/`tidy-check`, and
+   `platform-smoke` ever meet the integrated tree. No per-task cycle exercises
+   them, so this is where a break is most likely — and it now arrives *after*
+   the PR exists rather than before. That is the trade: a red PR is a normal
+   working state you drive to green, not a failed run.
 
-   **Attribute the failure before delegating.** Map the failing command's paths
+   **Attribute the failure before delegating.** Map the failing job's paths
    to the tasks' declared `files` scopes. If it lands in exactly one task's
    scope, that task owns it. If it lands in several or none — a `wasm-build`
    break from two tasks interacting, a cross-file `gofmt`, an untidy `go.mod` —
@@ -201,8 +210,11 @@ that delegates those into a workflow looks identical and enforces nothing.
    stops the run with `repeated-finding`.
 
 5. **Open the PR yourself**, with your own tool call, from this session. Commit
-   and push first: the gate denies a dirty working tree, because the suite
-   validates the working tree while a pull request publishes committed history.
+   and push first: the gate denies a dirty working tree, because it validates
+   the working tree while a pull request publishes committed history.
+
+   Opening the PR is not the end of the run — step 4's repair loop continues
+   against its required checks until they are green.
 
    Fill every section of `.github/PULL_REQUEST_TEMPLATE.md` — no placeholders.
    Map each acceptance criterion to where it is satisfied, paste the

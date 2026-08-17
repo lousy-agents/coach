@@ -74,7 +74,8 @@ export const RELAY_DENY_REASON =
 
 export const PR_DIRTY_TREE_DENY_REASON =
   "The working tree is dirty, so validation would not describe the commit this PR publishes. Commit or stash the changes, then retry."
-export const PR_CI_DENY_REASON = "mise run ci-all failed; fix before opening the PR."
+export const PR_CI_DENY_REASON =
+  "mise run ci-gate failed; fix before opening the PR. (This is the cheap smoke check -- the full suite runs in GitHub Actions.)"
 
 export const VERDICT_SOFT_FAIL_MESSAGE = [
   "ERROR: task-reviewer reply shape invalid.",
@@ -96,8 +97,13 @@ export function worktreeIsClean(cwd: string): { ok: boolean; detail?: string } {
   return dirty ? { ok: false, detail: dirty.split("\n").slice(0, 10).join("\n") } : { ok: true }
 }
 
-export function runMiseCiAll(cwd: string): { ok: boolean; detail?: string } {
-  const result = spawnSync("mise", ["run", "ci-all"], {
+// Mirrors gate-pr-creation.sh's second check. ci-gate, not ci-all: GitHub
+// Actions runs the exhaustive suite as parallel required jobs, so re-running it
+// here cost twice the wall clock on scarcer compute to prove a subset. Both
+// harnesses must run the same task or the gate means different things depending
+// on which one opened the PR.
+export function runMiseCiGate(cwd: string): { ok: boolean; detail?: string } {
+  const result = spawnSync("mise", ["run", "ci-gate"], {
     cwd,
     encoding: "utf8",
     env: process.env,
@@ -130,7 +136,7 @@ export type GatesOptions = {
 }
 
 export default async (input: PluginInput, options: GatesOptions = {}) => {
-  const runCi = options.runCi ?? runMiseCiAll
+  const runCi = options.runCi ?? runMiseCiGate
   const cwd = input.worktree || input.directory
 
   return {

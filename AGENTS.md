@@ -50,7 +50,8 @@ Two invariants apply to anything a workflow does:
 All tasks are defined in `mise.toml`; use `mise run <task>` (mise also pins `go` and `node` versions — CI installs mise so both share one tool-version source of truth).
 
 ```sh
-mise run ci-all           # authoritative pre-PR check: ci + wasm-build + sidecar-built projectmodel suite
+mise run ci-gate          # what the PR hook runs: gofmt/vet/style only, no tests (~1s warm)
+mise run ci-all           # everything CI proves locally: ci + wasm-build + sidecar-built projectmodel suite
 mise run ci-fast          # per-cycle loop check: Go slice + agent-tooling suites, sidecar built first
 mise run ci               # gofmt/vet/tidy/style/test/examples/js-ci -- NOT wasm-build, and see ci-fast on skips
 mise run gofmt             # gofmt -l . (must be empty)
@@ -135,7 +136,11 @@ Two gaps `mise run ci` alone does not close:
 - `wasm-build` is in no task's closure, so a `GOOS=js GOARCH=wasm` break can pass `ci`.
 - `ci` runs `test` **before** `js-ci`, so `pkg/projectmodel`'s TypeScript sidecar acceptance suite has no built sidecar when it executes and **skips silently** — see the comment at `.github/workflows/ci.yml:52-56`. A green `ci` does not mean that suite ran.
 
-Use **`mise run ci-all`** as the authoritative pre-PR check: it chains `ci`, `wasm-build`, and a sidecar-built re-run of the `pkg/projectmodel` acceptance suite. Use **`mise run ci-fast`** inside an implement/review loop — same sidecar-first ordering, without the wasm and full-CI legs.
+Use **`mise run ci-fast`** inside an implement/review loop — sidecar-first ordering, without the wasm and full-CI legs. **`mise run ci-all`** chains `ci`, `wasm-build`, and the sidecar-built `pkg/projectmodel` suite; run it when you want the whole thing locally, but it is no longer the pre-PR gate.
+
+**The exhaustive gate is GitHub Actions plus branch protection, not a local run.** `gate-pr-creation.sh` used to run `ci-all` — chosen when a warm `ci-all` was projected at ~41s. Measured on a CCR container it is ~910s, against that hook's own 900s timeout, while CI proves a strict superset (the same atomic tasks as parallel required jobs, **plus `platform-smoke`**) in ~426s wall clock on compute that is not the session's. The hook now runs `ci-gate` (~1s warm) and the clean-worktree check, which is the one thing CI structurally cannot do: CI validates the *pushed commit* and cannot see a working tree that differs from it.
+
+`ci-gate` deliberately runs no tests and **no `tidy-check`** — the latter rewrites `go.mod`/`go.sum` in place, which would dirty the very tree the hook just certified clean. CI runs both. This split is only safe while those jobs are **required checks** on the base branch; if branch protection is removed, nothing gates a red merge.
 
 `ci-all` deliberately excludes `test-acceptance-fast` (its ambient-credential preflight cannot pass where `GITHUB_TOKEN`/`GH_TOKEN` or `~/.aws/config` are present, and `test` already runs every acceptance suite unfiltered) and `platform-smoke` (Docker + live services).
 
@@ -211,7 +216,7 @@ The command was designed to move orchestration out of the model's conversational
 **Deterministic, held by code or hooks:**
 
 - **Planning.** `.claude/workflows/implement-issue-plan.js` produces the task DAG. Its arg validation, null guards, cycle and dangling-reference checks are JS, covered by `mise run workflow-test`, and mutation-tested.
-- **The gates.** A reviewer's verdict shape, verbatim findings relay, a clean worktree, and `ci-all` green are enforced by hooks that run outside the model's control — and are stronger than the originals: `ci-all` rather than `ci`, fail-closed on a git error, a second registration so a new reviewer cannot escape, and a re-entry guard so a blocked reviewer is not retried forever.
+- **The gates.** A reviewer's verdict shape, verbatim findings relay, a clean worktree, and a green `ci-gate` are enforced by hooks that run outside the model's control — fail-closed on a git error, a second registration so a new reviewer cannot escape, and a re-entry guard so a blocked reviewer is not retried forever. The exhaustive suite moved to required CI checks, which is a *stronger* placement: a hook runs inside the environment being gated, and a session where it never registered is indistinguishable from one where it did (hence step 0). A required check runs where no agent can reach it.
 - **A ceiling on reviewer cycles** (`enforce-cycle-ceiling.sh`), which is a blunt total-invocation backstop, not the per-task rule.
 
 **Prose, held by the orchestrator following instructions:**
@@ -251,4 +256,4 @@ Four independent jobs:
 - `wasm-build` — proves the `GOOS=js GOARCH=wasm` grammar-subset build compiles under the sole pure-Go engine.
 - `platform-smoke` — Docker-based `platform-up` / `platform-smoke` / `platform-down`.
 
-`mise run ci-all` mirrors the first three locally. `platform-smoke` has no local mirror.
+`mise run ci-all` mirrors the first three locally. `platform-smoke` has no local mirror — it is one reason CI is a strict superset of any local run.

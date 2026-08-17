@@ -211,6 +211,30 @@ run = [
 # true in Claude Code remote environments -- and it adds no coverage, since
 # `test` is `go test -race ./...` unfiltered, a superset of -run Acceptance.
 # Excludes platform-smoke: needs Docker and live services.
+# What the PR-creation hook runs. Deliberately cheap: no test execution at all.
+#
+# The hook used to run ci-all, chosen when a warm ci-all was projected at ~41s.
+# Measured on a CCR container it is ~910s against the hook's own 900s timeout,
+# while GitHub Actions proves a strict superset -- the same atomic tasks as
+# parallel required jobs, plus platform-smoke -- in ~426s wall clock on compute
+# that is not the session's. Re-running the suite locally cost twice the wall
+# clock to prove less.
+#
+# So the exhaustive gate is GHA + branch protection, and this is the smoke
+# signal in front of it: the checks that cost seconds and account for most red
+# PRs. Do not add `test`, `ci-go`, `ci-fast` or `ci-all` here -- `test` is
+# `go test -race ./...`, which with the sidecar built includes pkg/projectmodel
+# at ~451s, the exact cost this split removes. Do not add `tidy-check` either:
+# it rewrites go.mod/go.sum in place, which would dirty the tree the hook has
+# just certified clean. GHA runs both.
+[tasks.ci-gate]
+description = "Pre-PR smoke for the creation hook: cheap static checks only; GHA + branch protection are the exhaustive gate"
+run = [
+  { task = "gofmt" },
+  { task = "go-vet" },
+  { task = "acceptance-style-check" },
+]
+
 [tasks.ci-all]
 description = "Everything CI proves: ci + wasm-build + the real TS sidecar integration suite"
 run = [
