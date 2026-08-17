@@ -26,6 +26,40 @@ func jobBody(yml, name string) string {
 	return rest
 }
 
+// leafJobs returns every top-level job under `jobs:` except `status`.
+// Scanning only after `jobs:` avoids treating `on.push` / `on.pull_request`
+// as jobs. A hardcoded leaf list cannot catch a new job that was never
+// added to status.needs — the failure mode the aggregator exists to close.
+func leafJobs(yml string) []string {
+	loc := regexp.MustCompile(`(?m)^jobs:\s*$`).FindStringIndex(yml)
+	if loc == nil {
+		return nil
+	}
+	matches := regexp.MustCompile(`(?m)^  ([A-Za-z0-9_-]+):`).FindAllStringSubmatch(yml[loc[1]:], -1)
+	var jobs []string
+	for _, m := range matches {
+		if m[1] == "status" {
+			continue
+		}
+		jobs = append(jobs, m[1])
+	}
+	return jobs
+}
+
+func needsList(body string) []string {
+	m := regexp.MustCompile(`needs:\s*\[([^\]]+)\]`).FindStringSubmatch(body)
+	if m == nil {
+		return nil
+	}
+	var listed []string
+	for _, part := range strings.Split(m[1], ",") {
+		if name := strings.TrimSpace(part); name != "" {
+			listed = append(listed, name)
+		}
+	}
+	return listed
+}
+
 var _ = Describe("CI status aggregator", func() {
 	var yml string
 
@@ -46,28 +80,28 @@ var _ = Describe("CI status aggregator", func() {
 			body := jobBody(yml, "status")
 			Expect(body).NotTo(BeEmpty(),
 				"status is the single required check; without it every leaf name must be listed in branch protection")
-			Expect(body).To(ContainSubstring("if: always()"),
+			Expect(body).To(MatchRegexp(`(?m)^    if: always\(\)\s*$`),
 				"a failed leaf must still produce a failed status, not a missing check")
 		})
 
 		It("fails unless every leaf job succeeded", func() {
+			leaves := leafJobs(yml)
+			Expect(leaves).NotTo(BeEmpty(),
+				"the workflow must declare leaf jobs or this spec cannot catch a missing needs entry")
+			Expect(leaves).NotTo(ContainElement("status"),
+				"status must not need itself")
+
 			body := jobBody(yml, "status")
 			Expect(body).NotTo(BeEmpty())
-			Expect(body).To(MatchRegexp(`needs:\s*\[verify,\s*js-verify,\s*projectmodel-sidecar,\s*wasm-build,\s*platform-smoke\]`),
-				"status must wait on every leaf; a missing name can fail while the required check is green")
+			Expect(needsList(body)).To(ConsistOf(leaves),
+				"status.needs must be exactly the leaf jobs; a missing name can fail while the required check is green")
 
-			for _, leaf := range []string{
-				"verify",
-				"js-verify",
-				"projectmodel-sidecar",
-				"wasm-build",
-				"platform-smoke",
-			} {
-				Expect(body).To(ContainSubstring("needs."+leaf+".result"),
-					"status must inspect %s's result, not only list it under needs", leaf)
-			}
-			Expect(strings.Count(body, `!= "success"`)).To(BeNumerically(">=", 5),
-				"each leaf result must be required to be success")
+			Expect(body).To(ContainSubstring("toJSON(needs)"),
+				"checking a hand-copied result list lets a job in needs fail while status stays green")
+			Expect(body).To(ContainSubstring(`!= "success"`),
+				"every needs result must be required to be success")
+			Expect(body).To(Or(ContainSubstring("sys.exit(1)"), ContainSubstring("exit 1")),
+				"a non-success leaf must fail the status job")
 		})
 	})
 })

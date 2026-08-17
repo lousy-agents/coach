@@ -247,11 +247,11 @@ GHA is a parallel scheduler of atomic `mise run <task>` steps. Local `ci` / `ci-
 
 Five independent leaf jobs plus a `status` aggregator (the single required check):
 
-- `verify` — `gofmt` / `go-vet` / `tidy-check` / `acceptance-style-check` / `test` / `test-examples` (`ci-go`). Installs only Go, so `pkg/projectmodel`'s TS sidecar suite skips here and contributes no signal. Toolchain is `mise.toml` (`go = "1.26.6"`), not `go.mod`'s language version.
+- `verify` — `gofmt` / `go-vet` / `tidy-check` / `acceptance-style-check` / `test` / `test-examples` (`ci-go`). mise installs only Go; the runner image may still have Node, so the sidecar suite usually skips because the sidecar is not built, not because `node` is missing. Toolchain is `mise.toml` (`go = "1.26.6"`), not `go.mod`'s language version.
 - `js-verify` — `mise run js-ci` only.
 - `projectmodel-sidecar` — `mise run projectmodel-sidecar-acceptance` (builds the sidecar, then the real suite). Parallel with `js-verify`.
 - `wasm-build` — `mise run wasm-build`.
 - `platform-smoke` — `platform-up` / `platform-smoke` / `platform-down` as three steps so teardown still runs on failure.
-- `status` — `if: always()` + `needs` every leaf; fails unless each result is `success`. Branch protection should require this job only. Adding a leaf means adding it to `status.needs` and the result checks, or it can fail while the required check is green.
+- `status` — `if: always()` + `needs` every leaf; inspects `toJSON(needs)` and fails unless each result is `success`. Branch protection should require this job only. Adding a leaf means adding it to `status.needs`, or it can fail while the required check is green.
 
 `mise run ci-all` mirrors the first four locally (sidecar-first, so the suite runs inside `test` rather than as a second invocation). `platform-smoke` has no local composite; run the three platform tasks directly. The GHA `status` check is stricter than `ci-all` because it includes `platform-smoke`.

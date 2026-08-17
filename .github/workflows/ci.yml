@@ -14,8 +14,10 @@ permissions:
   contents: read
 
 jobs:
-  # Atomic mise tasks matching `ci-go`. Node is not installed, so
-  # pkg/projectmodel's real TS sidecar suite skips here on purpose.
+  # Atomic mise tasks matching `ci-go`. This job does not install Node via
+  # mise; ubuntu-latest still has a runner Node, so the sidecar suite typically
+  # skips because the sidecar build fails (no npm ci), not because node is
+  # absent. The real suite lives in projectmodel-sidecar.
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -140,31 +142,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check required jobs passed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          verify="${{ needs.verify.result }}"
-          js="${{ needs.js-verify.result }}"
-          sidecar="${{ needs.projectmodel-sidecar.result }}"
-          wasm="${{ needs.wasm-build.result }}"
-          smoke="${{ needs.platform-smoke.result }}"
-
-          if [[ "$verify" != "success" ]]; then
-            echo "verify failed: $verify"
-            exit 1
-          fi
-          if [[ "$js" != "success" ]]; then
-            echo "js-verify failed: $js"
-            exit 1
-          fi
-          if [[ "$sidecar" != "success" ]]; then
-            echo "projectmodel-sidecar failed: $sidecar"
-            exit 1
-          fi
-          if [[ "$wasm" != "success" ]]; then
-            echo "wasm-build failed: $wasm"
-            exit 1
-          fi
-          if [[ "$smoke" != "success" ]]; then
-            echo "platform-smoke failed: $smoke"
-            exit 1
-          fi
-          echo "All required jobs passed"
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["RESULTS"])
+          failed = sorted(
+              name for name, job in needs.items() if job.get("result") != "success"
+          )
+          if failed:
+              for name in failed:
+                  print(f"{name} failed: {needs[name].get('result')}")
+              sys.exit(1)
+          print("All required jobs passed")
+          PY
