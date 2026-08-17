@@ -49,6 +49,30 @@ var _ = Describe("gate liveness", func() {
 				"the probe has to name the hook it expects to fire, or a reader cannot check it")
 			Expect(section).To(ContainSubstring("## Reviewer Findings"),
 				"that hook denies on the absence of this literal heading; the probe is built from it")
+
+			// Mutation testing killed the earlier version of this spec: a step 0
+			// that replaced the probe with "confirm .claude/settings.json and the
+			// hook scripts exist on disk" passed every assertion above, because
+			// it still mentioned denial, the hook, and the heading. Vocabulary is
+			// not structure. The probe has to be an action the gate can
+			// intercept, and only a tool call is that.
+			Expect(section).To(MatchRegexp(`(?si)call the Agent tool with.{0,60}subagent_type`),
+				"a check that reads the filesystem cannot distinguish registered from merely present -- that is the whole finding")
+			Expect(section).To(ContainSubstring("task-implementer"),
+				"the hook only denies for this subagent type; a probe naming another one is never evaluated")
+		})
+
+		// The same mutation sweep found that inverting the pass condition --
+		// "Being allowed is the pass" -- survived every assertion, because they
+		// all tested for the presence of words rather than which outcome each
+		// word was bound to. An inverted step 0 is worse than none: it reads a
+		// live gate as broken and a dead gate as healthy.
+		It("binds the pass to the denial and not to its opposite", func() {
+			section := commandSection(command, "0")
+			Expect(section).To(MatchRegexp(`(?si)being\s+\*{0,2}denied\*{0,2}\s+is the pass`),
+				"the direction has to be stated outright; an orchestrator cannot infer which outcome is good")
+			Expect(section).NotTo(MatchRegexp(`(?si)being\s+\*{0,2}(allowed|permitted|accepted)\*{0,2}\s+is the pass`),
+				"this is the inversion the sweep produced, and it passed the original specs unchanged")
 		})
 
 		It("treats an un-denied probe as a stop, not a warning", func() {
