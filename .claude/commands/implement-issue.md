@@ -18,30 +18,54 @@ that delegates those into a workflow looks identical and enforces nothing.
    written as though the hooks will catch you. A session where they never
    registered looks identical from the inside — the agents answer, the reviews
    return verdicts, the PR opens — so confirm registration first, by provoking a
-   denial. Inspecting the files proves nothing: they are on disk either way.
+   denial from each gate in turn. Inspecting the files proves nothing: they are
+   on disk either way.
 
-   Call the Agent tool with `subagent_type: task-implementer` and a prompt that
-   mentions reviewer findings but omits the literal `## Reviewer Findings`
-   heading — `Address the reviewer findings below and fix them.` is enough.
-   `verify-context-relay.sh` denies exactly that shape, before any agent spawns,
-   so the call costs nothing when it works. The probe is not Claude-specific:
-   `.opencode/plugin/implement-issue-gates.ts` denies the same shape with the
-   same reason string, so a harness this file is mirrored into either denies or
-   has no gate to prove.
+   **Being denied is the pass.** Run all five; each names the hook it expects.
 
-   Being denied is the pass. Two other outcomes both mean stop with
-   `environment-failure`, and neither is a warning to note and move past:
+   1. **Relay** — `verify-context-relay.sh`. Call the Agent tool with
+      `subagent_type: task-implementer` and a prompt that mentions reviewer
+      findings but omits the literal `## Reviewer Findings` heading —
+      `Address the reviewer findings below and fix them.` is enough. Denied
+      before any agent spawns, so it costs nothing.
+   2. **Git jail** — `validate-no-git-writes.sh`. Ask a `task-implementer` to run
+      `git push coach-gate-probe-remote HEAD`. The remote is **bogus on purpose**:
+      if the hook is dead the push executes and fails harmlessly with "does not
+      appear to be a git repository", instead of publishing anything.
+   3. **Verdict shape** — `verify-review-verdict.sh`. Delegate to `task-reviewer`
+      with a stub prompt instructing it to reply with exactly `garbage`. A live
+      hook blocks the malformed verdict. This is the only gate in the system that
+      has never been observed firing, so do not skip it.
+   4. **Cycle ceiling** — `enforce-cycle-ceiling.sh`. The reviewer call above also
+      passes through the ceiling, which records it. Confirm the counter advanced
+      (`.coach-cycle-state/`), and treat a counter that never appears as the same
+      failure as an un-denied probe.
+   5. **Publish** — `gate-pr-creation.sh`. Create a stray file so the tree is
+      **deliberately dirty**, then attempt
+      `gh pr create --repo coach-gate-probe/nonexistent --fill`. Denied on the
+      worktree check. Remove the stray file afterwards. Both halves matter: on a
+      clean tree a dead gate would proceed, and the repo is **bogus on purpose**
+      so that even then it fails without opening anything.
 
-   - The call is **not** denied and an implementer actually runs — the hooks are
-     not registered for this session.
-   - The call errors because `task-implementer` is an unknown agent type —
-     agents register from `.claude/` exactly as hooks do, so this is the same
-     failure one layer earlier, and it is the likelier symptom of the two.
+   Three outcomes mean stop with `environment-failure`, and none is a warning to
+   note and move past:
 
-   In both cases stop the run here: do not proceed to step 1, and do not
+   - A probe is **not** denied and the action runs — that hook is not registered.
+   - A probe errors because `task-implementer` or `task-reviewer` is an unknown
+     agent type — agents register from `.claude/` exactly as hooks do, so this is
+     the same failure one layer earlier, and it is the likelier symptom.
+   - Any probe cannot be run at all.
+
+   In every case stop the run here: do not proceed to step 1, and do not
    substitute a generic agent to get moving. An ungated run is worth less than
    no run — it produces the same artifacts with none of the guarantees, and
    nothing downstream can tell the difference.
+
+   **Provoke each one separately, and do not infer the rest from one pass.** A
+   whole `.claude/` that never registered takes every gate down together, and one
+   probe would find that. But a registration whose matcher names an agent that no
+   longer exists leaves exactly one gate inert while every other one answers
+   normally — a failure this repository has shipped twice.
 
    The usual cause is not in this repository. Claude Code binds `.claude/` —
    hooks, agents, and workflows alike — to the session's project directory at
@@ -174,10 +198,10 @@ that delegates those into a workflow looks identical and enforces nothing.
    session's. Re-running it here would spend ~910s of the scarcer budget to
    prove less than CI proves minutes later.
 
-   The PR-creation gate runs only `mise run ci-gate` (about a second) plus a
-   clean-worktree check, which is the one thing CI structurally cannot do: CI
-   validates the *pushed commit* and cannot see that your working tree differs
-   from it.
+   The PR-creation gate validates nothing — it only refuses a dirty working
+   tree, which is the one thing CI structurally cannot check: CI validates the
+   *pushed commit*, so only something local can notice that your tree differs
+   from what you pushed and that the PR's evidence describes neither.
 
    **A red required check is repairable, not terminal.** After the PR is open,
    watch its checks. Route a failure back through the step-2 loop rather than
@@ -203,6 +227,23 @@ that delegates those into a workflow looks identical and enforces nothing.
    Guessing an owner sends a fresh implementer to work outside the scope it was
    given.
 
+   **`platform-smoke` is always unattributable.** It runs Docker and live
+   services against the whole stack, so its failures are essentially never
+   traceable to one task's declared files. Route it straight to an
+   integration-repair task without attempting attribution.
+
+   **Repair pushes are checked by CI, not locally.** Nothing gates them — the
+   publish gate fires on pull-request creation, which has already happened by
+   this point. The required checks re-run on every push, so a bad repair shows
+   up there rather than being refused up front. Commit everything before pushing
+   anyway: the pull request body's evidence describes the tree you pushed, and
+   a partial commit quietly makes that description false.
+
+   **If the session dies mid-repair, that is `environment-failure`** — a typed
+   stop, not a completed run. CCR containers are reclaimed on inactivity and
+   repair is the longest-lived phase, so this will happen. An interrupted repair
+   must never be reported as a finished one.
+
    Repair carries **its own cap of at most 3 attempts**, separate from the
    per-task counter. Sharing that counter would make a task already at its cap
    unrepairable, so a late validation failure would be terminal after all —
@@ -215,6 +256,13 @@ that delegates those into a workflow looks identical and enforces nothing.
 
    Opening the PR is not the end of the run — step 4's repair loop continues
    against its required checks until they are green.
+
+   **If you stop after the PR is open, leave it open and red.** Post the typed
+   stop reason as a comment on the PR itself, where the next reader will look,
+   and say what was completed and what was not. Never close it to tidy up, and
+   **never merge it** to make the run look finished — branch protection should
+   refuse that anyway, and a run that needs the protection to save it has
+   already gone wrong.
 
    Fill every section of `.github/PULL_REQUEST_TEMPLATE.md` — no placeholders.
    Map each acceptance criterion to where it is satisfied, paste the

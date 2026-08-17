@@ -113,27 +113,24 @@ func expectDeny(run gateRun, reasonSubstring string) {
 
 var _ = Describe("gate-pr-creation", func() {
 	When("a pull request is being opened and the working tree is clean", func() {
-		// Was ci-all. GitHub Actions now runs the same checks as parallel
-		// required jobs -- a strict superset, including platform-smoke -- in
-		// less wall clock than the serial local run, and on compute that is not
-		// the session's. Re-running it here proved less, cost more, and pushed
-		// against the hook's own 900s timeout. What is left is the part GHA
-		// structurally cannot do (the clean-tree check above) plus a seconds-
-		// scale smoke signal.
-		It("validates with the cheap ci-gate task, leaving the suite to GHA", func() {
+		// This gate runs no validation of its own any more, and that is the
+		// point rather than an omission. It ran ci-all, then ci-gate; both were
+		// re-proving what GitHub Actions proves as required jobs, on compute
+		// that is not the session's. Since branch protection makes the `status`
+		// check required, a red tree cannot merge no matter what this hook does.
+		//
+		// So the hook keeps exactly the job CI structurally cannot do. CI
+		// validates the *pushed commit*; only something local can notice that
+		// the working tree differs from it -- which would leave the PR body's
+		// acceptance evidence describing a tree nobody pushed.
+		It("runs no validation itself, leaving that to CI", func() {
 			run := runGate("mcp__github__create_pull_request", false, true)
-			Expect(run.miseArgs).To(ContainSubstring("run ci-gate"),
-				"a gate that re-runs the full suite duplicates GHA at twice the wall clock on scarcer compute")
-			Expect(run.miseArgs).NotTo(ContainSubstring("run ci-all"),
-				"ci-all here is the design this replaced; it is only safe to drop because GHA requires those jobs")
+			Expect(run.miseArgs).To(BeEmpty(),
+				"re-running checks here duplicates required CI jobs on the scarcer budget and proves a subset")
 		})
 
-		It("allows the pull request when that task passes", func() {
+		It("allows the pull request when the tree is clean", func() {
 			Expect(strings.TrimSpace(runGate("mcp__github__create_pull_request", false, true).stdout)).To(BeEmpty())
-		})
-
-		It("denies the pull request when that task fails", func() {
-			expectDeny(runGate("mcp__github__create_pull_request", false, false), "ci-gate")
 		})
 	})
 
@@ -145,9 +142,9 @@ var _ = Describe("gate-pr-creation", func() {
 			expectDeny(runGate("mcp__github__create_pull_request", true, true), "working tree")
 		})
 
-		It("does so without paying for the full suite first", func() {
+		It("does so without invoking any task runner", func() {
 			Expect(runGate("mcp__github__create_pull_request", true, true).miseArgs).To(BeEmpty(),
-				"the cheap check must short-circuit before the expensive one")
+				"the whole hook is now one git call; anything else has crept back in")
 		})
 	})
 
@@ -160,7 +157,7 @@ var _ = Describe("gate-pr-creation", func() {
 			expectDeny(runGateWithBrokenGit(), "Could not determine")
 		})
 
-		It("does not fall through to the suite", func() {
+		It("does not fall through to anything else", func() {
 			Expect(runGateWithBrokenGit().miseArgs).To(BeEmpty())
 		})
 	})

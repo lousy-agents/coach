@@ -62,12 +62,12 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(gh pr create*)",
             "command": "bash",
-            "timeout": 300,
+            "timeout": 60,
             "args": [
               "${CLAUDE_PROJECT_DIR}/.claude/hooks/gate-pr-creation.sh"
-            ]
+            ],
+            "if": "Bash(gh pr create*)"
           }
         ]
       },
@@ -77,7 +77,7 @@
           {
             "type": "command",
             "command": "bash",
-            "timeout": 300,
+            "timeout": 60,
             "args": [
               "${CLAUDE_PROJECT_DIR}/.claude/hooks/gate-pr-creation.sh"
             ]

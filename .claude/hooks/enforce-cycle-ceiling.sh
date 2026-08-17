@@ -14,12 +14,27 @@
 #
 # The ceiling is generous on purpose. A four-task issue with a rework each is
 # well inside it; only a loop that is not converging reaches it.
+#
+# THREAT MODEL. The counter is a file, and any agent holding Bash can write it.
+# That is the same observation that withdrew the validation manifest as gate
+# authority, and it applies here: this is a runaway-cost backstop, *not an
+# adversarial control*. It stops an orchestrator that has lost count. It cannot
+# stop a determined one, and nothing downstream should be built as though it
+# could.
+#
+# A hard block also lands wherever the run happens to be -- most often on
+# uncommitted work, in a container that will be reclaimed. So there is a warning
+# before the wall: past the soft budget the hook writes to stderr and allows,
+# giving the orchestrator room to stop cleanly and commit. The arithmetic makes
+# that worth having: six tasks at three cycles each is eighteen reviews before a
+# single integration round or repair attempt.
 set -euo pipefail
 input=$(cat)
 
 . "$(dirname "${BASH_SOURCE[0]}")/lib/trace.sh"
 
 CEILING="${COACH_CYCLE_CEILING:-24}"
+SOFT_BUDGET="${COACH_CYCLE_SOFT_BUDGET:-$((CEILING - 4))}"
 state_dir="${COACH_CYCLE_STATE_DIR:-${COACH_REPO_ROOT}/.coach-cycle-state}"
 
 # Per session: two runs sharing a checkout must not inherit each other's count,
@@ -51,6 +66,14 @@ trace ceiling "$session" "$count"
 
 if [ "$count" -gt "$CEILING" ]; then
   block "This run has spent ${count} reviews, past the ceiling of ${CEILING}. A loop this long is not converging: stop, report the task it stalled on with reason repeated-finding, and do not open a PR."
+fi
+
+# Warn, do not block. Blocking here would just move the ceiling earlier; the
+# point is to be told while there is still budget to stop cleanly with.
+if [ "$count" -gt "$SOFT_BUDGET" ]; then
+  trace ceiling "$session" soft
+  printf 'coach: %s reviews spent, %s remaining before the ceiling of %s. Wrap up: finish the task in flight, commit what is done, and stop with a typed reason rather than being cut off mid-edit.\n' \
+    "$count" "$((CEILING - count))" "$CEILING" >&2
 fi
 
 exit 0
