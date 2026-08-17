@@ -32,7 +32,7 @@ The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) currently ex
 Some skills delegate to a named subagent rather than doing the work inline. Each harness defines subagents in its own format:
 
 - `.claude/agents/*.md` — **canonical** Claude Code subagents (YAML frontmatter + markdown body as the system prompt). `task-implementer`/`task-reviewer` back the `implement-issue` command; `product-sme` backs `product-quality-evaluation`. Edit these files when changing agent instructions.
-- OpenCode — no separate agent/command body mirrors. `.opencode/plugin/claude-agents.ts` loads `.claude/agents/*.md` and `.claude/commands/*.md` at config time (agents: Claude `tools` → OpenCode `permission`, `maxTurns` → `steps`, `mode: subagent`; commands: frontmatter `description` + body as `template`). Explicit entries in `opencode.json` / `.opencode/agents/` / `.opencode/command(s)/` win over the loader. `.opencode/plugin/implement-issue-gates.ts` enforces implement-issue checkpoints: PR create gated on `mise run ci`; `task` → `task-implementer` rework requires literal `## Reviewer Findings`; `task` → `task-reviewer` results are soft-gated so the first non-empty line is `PASS` or `FINDINGS`. Restart OpenCode after agent, command, or plugin changes.
+- OpenCode — no separate agent/command body mirrors. `.opencode/plugin/claude-agents.ts` loads `.claude/agents/*.md` and `.claude/commands/*.md` at config time (agents: Claude `tools` → OpenCode `permission`, `maxTurns` → `steps`, `mode: subagent`; commands: frontmatter `description` + body as `template`). Explicit entries in `opencode.json` / `.opencode/agents/` / `.opencode/command(s)/` win over the loader. `.opencode/plugin/implement-issue-gates.ts` enforces implement-issue checkpoints: PR create gated on a clean worktree plus `mise run ci-gate`, mirroring the Claude hook; `task` → `task-implementer` rework requires literal `## Reviewer Findings`; `task` → `task-reviewer` results are soft-gated so the first non-empty line is `PASS` or `FINDINGS`. Restart OpenCode after agent, command, or plugin changes.
 - `.codex/agents/*.toml` — Codex custom subagents (`name`, `description`, `sandbox_mode`, `developer_instructions`). Codex cannot import Claude markdown, so instruction text is mirrored from `.claude/agents/` and marked with a one-line sync comment — don't build codegen for a two-file mirror.
 - `.agents/skills/*/agents/<harness>.yaml` — optional, separate from subagent definitions: a per-harness "interface" declaration (e.g. `display_name`/`default_prompt`) for how a skill surfaces in that harness's UI. Only add one if the harness actually reads it — Claude Code has no such mechanism today.
 
@@ -50,7 +50,8 @@ Two invariants apply to anything a workflow does:
 All tasks are defined in `mise.toml`; use `mise run <task>` (mise also pins `go` and `node` versions — CI installs mise so both share one tool-version source of truth).
 
 ```sh
-mise run ci-all           # authoritative pre-PR check: sidecar-first ci-go + js-ci + wasm-build
+mise run ci-gate          # what the PR hook runs: gofmt/vet/style only, no tests (~1s warm)
+mise run ci-all           # everything CI proves locally: sidecar-first ci-go + js-ci + wasm-build
 mise run ci-fast          # per-cycle loop check: Go slice + agent-tooling suites, sidecar built first
 mise run ci               # ci-go + js-ci -- NOT wasm-build, and see ci-fast on skips
 mise run ci-go             # verify job atoms: gofmt/vet/tidy/style/test/examples
@@ -138,7 +139,11 @@ Two gaps `mise run ci` alone does not close:
 - `wasm-build` is in no task's closure, so a `GOOS=js GOARCH=wasm` break can pass `ci`.
 - `ci` runs `test` before anything builds the sidecar, so `pkg/projectmodel`'s TypeScript sidecar acceptance suite **skips silently** unless Node and the binary are already present. A green `ci` does not mean that suite ran.
 
-Use **`mise run ci-all`** as the authoritative pre-PR check: it builds the sidecar first, then `ci-go` (so `test` actually runs the projectmodel suite), `js-ci`, and `wasm-build`. Use **`mise run ci-fast`** inside an implement/review loop — same sidecar-first ordering, without the wasm and full-CI legs.
+Use **`mise run ci-fast`** inside an implement/review loop — sidecar-first ordering, without the wasm and full-CI legs. **`mise run ci-all`** builds the sidecar first, then `ci-go` (so `test` actually runs the projectmodel suite), `js-ci`, and `wasm-build`; run it when you want the whole thing locally, but it is **no longer the pre-PR gate**.
+
+**The exhaustive gate is GitHub Actions plus branch protection, not a local run.** `gate-pr-creation.sh` used to run `ci-all` — chosen when a warm `ci-all` was projected at ~41s. Measured on a CCR container it is ~910s, against that hook's own 900s timeout, while CI proves a strict superset (the same atomic tasks as parallel leaf jobs, **plus `platform-smoke`**) in ~426s wall clock on compute that is not the session's. The hook now runs `ci-gate` (~1s warm) plus the clean-worktree check, which is the one thing CI structurally cannot do: CI validates the *pushed commit* and cannot see a working tree that differs from it.
+
+`ci-gate` deliberately runs no tests and **no `tidy-check`** — the latter rewrites `go.mod`/`go.sum` in place, which would dirty the very tree the hook just certified clean. CI runs both. This split is only safe while the `status` aggregator is a **required check** on the base branch; if branch protection is removed, nothing gates a red merge.
 
 `ci-all` deliberately excludes `test-acceptance-fast` (its ambient-credential preflight cannot pass where `GITHUB_TOKEN`/`GH_TOKEN` or `~/.aws/config` are present, and `test` already runs every acceptance suite unfiltered) and `platform-smoke` (Docker + live services).
 
@@ -214,7 +219,7 @@ The command was designed to move orchestration out of the model's conversational
 **Deterministic, held by code or hooks:**
 
 - **Planning.** `.claude/workflows/implement-issue-plan.js` produces the task DAG. Its arg validation, null guards, cycle and dangling-reference checks are JS, covered by `mise run workflow-test`, and mutation-tested.
-- **The gates.** A reviewer's verdict shape, verbatim findings relay, a clean worktree, and `ci-all` green are enforced by hooks that run outside the model's control — and are stronger than the originals: `ci-all` rather than `ci`, fail-closed on a git error, a second registration so a new reviewer cannot escape, and a re-entry guard so a blocked reviewer is not retried forever.
+- **The gates.** A reviewer's verdict shape, verbatim findings relay, a clean worktree, and a green `ci-gate` are enforced by hooks that run outside the model's control — fail-closed on a git error, a second registration so a new reviewer cannot escape, and a re-entry guard so a blocked reviewer is not retried forever. The exhaustive suite moved to required CI checks, which is a *stronger* placement: a hook runs inside the environment being gated, and a session where it never registered is indistinguishable from one where it did (hence step 0). A required check runs where no agent can reach it.
 - **A ceiling on reviewer cycles** (`enforce-cycle-ceiling.sh`), which is a blunt total-invocation backstop, not the per-task rule.
 
 **Prose, held by the orchestrator following instructions:**
@@ -227,6 +232,10 @@ The command was designed to move orchestration out of the model's conversational
 Those are instructions in `.claude/commands/implement-issue.md`. The specs in `internal/agentworkflows/` assert that **the instruction is present and says the right thing** — they cannot assert that a run obeyed it. A paragraph cannot be fault-injected or mutation-tested, which are the two methods that have actually found defects in this repository.
 
 Treat a clean run as evidence the gates held, not as evidence the loop was bounded. When a run's behavior matters, read the hook trace (see `.claude/hooks/lib/trace.sh`) rather than inferring from the absence of a complaint.
+
+**And a clean run is only evidence the gates held if they were registered at all.** Claude Code binds `.claude/` — hooks, agents, and workflows alike — to the session's project directory at session start. A repository cloned into a session whose project directory is elsewhere never registers any of them, and attaching it mid-session reloads CLAUDE.md and skills but not hooks, agents, or workflows. A run in that state is indistinguishable from a gated one from the inside: the agents answer, the reviews return verdicts, the PR opens. This is not hypothetical — a proving run reached exactly that state, and caught it by reasoning about the environment rather than by any mechanism.
+
+Step 0 of the command is the mechanism: it provokes a denial from `verify-context-relay.sh` and stops with `environment-failure` if the call is allowed, or if `task-implementer` does not resolve. Being denied is the pass. Inspecting the hook files proves nothing, because they are on disk either way — which is why the check is a probe and not a file existence test. It is prose like the rules above, so it constrains an orchestrator that follows it and nothing else; what it removes is the *ambiguity*, not the possibility of skipping the step.
 
 ## Pull requests
 

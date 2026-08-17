@@ -102,12 +102,19 @@ var _ = Describe("implement-issue command", func() {
 		})
 	})
 
-	// The gate runs ci-all itself at PR time, so this is not about the gate
-	// catching a red suite -- it will. It is about not spending an entire run
-	// before finding out.
+	// The gate no longer runs the exhaustive suite -- GitHub Actions does, as
+	// required parallel jobs on compute that is not the session's. What has to
+	// survive is that *something* cheap runs before the PR: an orchestrator that
+	// validates nothing locally turns every typo into a full CI round trip.
 	When("the run reaches validation", func() {
-		It("validates with the authoritative task before opening the PR", func() {
-			Expect(readRepoFile(commandPath)).To(ContainSubstring("ci-all"))
+		It("runs a cheap local check before opening the PR", func() {
+			Expect(readRepoFile(commandPath)).To(ContainSubstring("mise run ci-fast"),
+				"the per-cycle command is the right cost here; the exhaustive proof is CI's job")
+		})
+
+		It("does not tell the orchestrator to re-run the exhaustive suite", func() {
+			Expect(readRepoFile(commandPath)).NotTo(ContainSubstring("mise run ci-all"),
+				"that is the ~910s duplicate of CI this split removed")
 		})
 	})
 })

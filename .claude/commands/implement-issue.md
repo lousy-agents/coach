@@ -14,6 +14,42 @@ inside a workflow do not reach them. So planning runs as a workflow, but every
 implement/review cycle and the PR creation itself must be your own calls — a run
 that delegates those into a workflow looks identical and enforces nothing.
 
+0. **Prove the gates are live before you rely on them.** Everything below is
+   written as though the hooks will catch you. A session where they never
+   registered looks identical from the inside — the agents answer, the reviews
+   return verdicts, the PR opens — so confirm registration first, by provoking a
+   denial. Inspecting the files proves nothing: they are on disk either way.
+
+   Call the Agent tool with `subagent_type: task-implementer` and a prompt that
+   mentions reviewer findings but omits the literal `## Reviewer Findings`
+   heading — `Address the reviewer findings below and fix them.` is enough.
+   `verify-context-relay.sh` denies exactly that shape, before any agent spawns,
+   so the call costs nothing when it works. The probe is not Claude-specific:
+   `.opencode/plugin/implement-issue-gates.ts` denies the same shape with the
+   same reason string, so a harness this file is mirrored into either denies or
+   has no gate to prove.
+
+   Being denied is the pass. Two other outcomes both mean stop with
+   `environment-failure`, and neither is a warning to note and move past:
+
+   - The call is **not** denied and an implementer actually runs — the hooks are
+     not registered for this session.
+   - The call errors because `task-implementer` is an unknown agent type —
+     agents register from `.claude/` exactly as hooks do, so this is the same
+     failure one layer earlier, and it is the likelier symptom of the two.
+
+   In both cases stop the run here: do not proceed to step 1, and do not
+   substitute a generic agent to get moving. An ungated run is worth less than
+   no run — it produces the same artifacts with none of the guarantees, and
+   nothing downstream can tell the difference.
+
+   The usual cause is not in this repository. Claude Code binds `.claude/` —
+   hooks, agents, and workflows alike — to the session's project directory at
+   session start. A repository cloned into the session afterwards is never
+   registered, and attaching it mid-session reloads CLAUDE.md and skills but not
+   hooks, agents, or workflows. The fix is to make the repository the session's
+   project directory when the session is created, then start again.
+
 1. **Plan.** Planning produces one artifact: the issue's acceptance criteria with
    stable IDs (AC-1, AC-2, …), a `conventions` string quoted verbatim from
    AGENTS.md, and a task DAG in which each task records
@@ -33,6 +69,15 @@ that delegates those into a workflow looks identical and enforces nothing.
    `gh issue view $1` and any spec it links, explore the affected code, quote the
    conventions from AGENTS.md, and build the DAG above yourself. Nothing below
    depends on *how* the plan was produced, only on its shape.
+
+   **With a Workflow tool that does not know this workflow.** Registration and
+   the name are separate failures: a session can hold the tool and still report
+   `implement-issue-plan` unknown, because workflows register from `.claude/` at
+   session start exactly as the hooks do. Pass
+   `scriptPath: '.claude/workflows/implement-issue-plan.js'` instead of `name`,
+   which runs the committed script directly. Note it — if the workflow was not
+   registered, step 0 should already have stopped the run, and reaching here
+   without that stop means the probe was skipped.
 
    Self-check the plan once, however it was produced, for three failure modes:
    (a) false parallelism — tasks marked independent that share a file or consume
@@ -121,26 +166,35 @@ that delegates those into a workflow looks identical and enforces nothing.
    unbounded loop at this point would swallow every repair attempt without the
    per-task cap ever applying.
 
-4. **Validate.** Run `mise run ci-all` yourself and confirm it passes. Do not
-   leave this to the gate: the gate's job is to refuse a red PR, not to be how
-   you find out the suite is red. Discovering it there means the whole run has
-   already been spent. It also warms the gate's own run — ~40s against ~390s
-   cold, well inside its 900s timeout either way.
+4. **Validate — cheaply here, exhaustively in CI.** Run `mise run ci-fast`,
+   the same command the per-task cycles use. Do **not** run the full suite
+   yourself. GitHub Actions runs those checks as required parallel jobs — a
+   strict superset, including `platform-smoke`, which no local task covers — in
+   less wall clock than a serial local run and on compute that is not this
+   session's. Re-running it here would spend ~910s of the scarcer budget to
+   prove less than CI proves minutes later.
 
-   **A red `ci-all` is repairable, not terminal.** Route it back through the
-   step-2 loop rather than aborting: paste the failing **command output** under
-   a literal `## Reviewer Findings` heading, hand that to a fresh
-   `task-implementer` scoped to the offending files, re-review, then re-run
-   `ci-all`. Treat it as a step-3 finding for invalidation purposes — the
+   The PR-creation gate runs only `mise run ci-gate` (about a second) plus a
+   clean-worktree check, which is the one thing CI structurally cannot do: CI
+   validates the *pushed commit* and cannot see that your working tree differs
+   from it.
+
+   **A red required check is repairable, not terminal.** After the PR is open,
+   watch its checks. Route a failure back through the step-2 loop rather than
+   abandoning it: paste the failing **job output** under a literal
+   `## Reviewer Findings` heading, hand that to a fresh `task-implementer`
+   scoped to the offending files, re-review, then push and let the checks
+   re-run. Treat it as a step-3 finding for invalidation purposes — the
    integration review must run again afterwards.
 
-   This path exists because `ci-all` is the *first* place `wasm-build`, the
-   sidecar-built `pkg/projectmodel` suite, and cross-file `gofmt`/`tidy-check`
-   ever run against the integrated tree. No per-task cycle exercises them, so
-   this is where a break is most likely — and it arrives after every task has
-   PASSed and the whole budget is spent. Aborting there throws all of it away.
+   This path exists because CI is the *first* place `wasm-build`, the
+   sidecar-built `pkg/projectmodel` suite, cross-file `gofmt`/`tidy-check`, and
+   `platform-smoke` ever meet the integrated tree. No per-task cycle exercises
+   them, so this is where a break is most likely — and it now arrives *after*
+   the PR exists rather than before. That is the trade: a red PR is a normal
+   working state you drive to green, not a failed run.
 
-   **Attribute the failure before delegating.** Map the failing command's paths
+   **Attribute the failure before delegating.** Map the failing job's paths
    to the tasks' declared `files` scopes. If it lands in exactly one task's
    scope, that task owns it. If it lands in several or none — a `wasm-build`
    break from two tasks interacting, a cross-file `gofmt`, an untidy `go.mod` —
@@ -156,8 +210,11 @@ that delegates those into a workflow looks identical and enforces nothing.
    stops the run with `repeated-finding`.
 
 5. **Open the PR yourself**, with your own tool call, from this session. Commit
-   and push first: the gate denies a dirty working tree, because the suite
-   validates the working tree while a pull request publishes committed history.
+   and push first: the gate denies a dirty working tree, because it validates
+   the working tree while a pull request publishes committed history.
+
+   Opening the PR is not the end of the run — step 4's repair loop continues
+   against its required checks until they are green.
 
    Fill every section of `.github/PULL_REQUEST_TEMPLATE.md` — no placeholders.
    Map each acceptance criterion to where it is satisfied, paste the

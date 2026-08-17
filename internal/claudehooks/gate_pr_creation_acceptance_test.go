@@ -113,10 +113,19 @@ func expectDeny(run gateRun, reasonSubstring string) {
 
 var _ = Describe("gate-pr-creation", func() {
 	When("a pull request is being opened and the working tree is clean", func() {
-		It("validates with the authoritative ci-all task, not the narrower ci", func() {
+		// Was ci-all. GitHub Actions now runs the same checks as parallel
+		// required jobs -- a strict superset, including platform-smoke -- in
+		// less wall clock than the serial local run, and on compute that is not
+		// the session's. Re-running it here proved less, cost more, and pushed
+		// against the hook's own 900s timeout. What is left is the part GHA
+		// structurally cannot do (the clean-tree check above) plus a seconds-
+		// scale smoke signal.
+		It("validates with the cheap ci-gate task, leaving the suite to GHA", func() {
 			run := runGate("mcp__github__create_pull_request", false, true)
-			Expect(run.miseArgs).To(ContainSubstring("run ci-all"),
-				"ci alone leaves wasm-build uncovered and lets pkg/projectmodel's sidecar suite skip silently")
+			Expect(run.miseArgs).To(ContainSubstring("run ci-gate"),
+				"a gate that re-runs the full suite duplicates GHA at twice the wall clock on scarcer compute")
+			Expect(run.miseArgs).NotTo(ContainSubstring("run ci-all"),
+				"ci-all here is the design this replaced; it is only safe to drop because GHA requires those jobs")
 		})
 
 		It("allows the pull request when that task passes", func() {
@@ -124,7 +133,7 @@ var _ = Describe("gate-pr-creation", func() {
 		})
 
 		It("denies the pull request when that task fails", func() {
-			expectDeny(runGate("mcp__github__create_pull_request", false, false), "ci-all")
+			expectDeny(runGate("mcp__github__create_pull_request", false, false), "ci-gate")
 		})
 	})
 

@@ -76,8 +76,8 @@ var _ = Describe("implement/review loop bounds", func() {
 		})
 	})
 
-	// ci-all is where wasm-build, the sidecar-built projectmodel suite, and
-	// cross-file gofmt/tidy first run against the integrated tree -- none of
+	// The exhaustive suite is where wasm-build, the sidecar-built projectmodel
+	// suite, and cross-file gofmt/tidy first run against the integrated tree -- none of
 	// them exercised by any per-task cycle. Making that the one unrecoverable
 	// point puts the most likely failure after the entire token spend.
 	// Step 3 is where step 4's repair path lands, so leaving it unbounded moves
@@ -107,10 +107,26 @@ var _ = Describe("implement/review loop bounds", func() {
 		})
 	})
 
+	// The gate stopped running ci-all because GHA proves a strict superset in
+	// less wall clock, on compute that is not the session's. If step 4 still
+	// told the orchestrator to run it, the ~910s would have moved rather than
+	// gone -- the same duplicated work, one caller later.
+	When("the exhaustive suite runs as required CI checks", func() {
+		It("does not also spend the session's compute re-running it", func() {
+			// Case-sensitive: an earlier draft matched /CI/i, which "ci-all"
+			// satisfies, so the assertion passed against the very text it was
+			// written to reject.
+			Expect(step("4")).NotTo(ContainSubstring("mise run ci-all"),
+				"re-running the full suite locally duplicates GHA at twice the wall clock on the scarcer budget")
+			Expect(step("4")).To(MatchRegexp(`GitHub Actions|required check`),
+				"the orchestrator has to know where the exhaustive proof comes from, or it will re-add a local run")
+		})
+	})
+
 	When("the full validation suite comes back red", func() {
 		It("routes the failure back through implement and review", func() {
-			Expect(step("4")).To(MatchRegexp(`(?si)ci-all.{0,400}(back through|re-enter|route.{0,20}back|same.{0,20}loop)`),
-				"a red suite must be repairable, not terminal")
+			Expect(step("4")).To(MatchRegexp(`(?si)(ci-all|required check|workflow run|GitHub Actions).{0,400}(back through|re-enter|route.{0,20}back|same.{0,20}loop)`),
+				"a red suite must be repairable, not terminal, wherever it is run")
 		})
 
 		It("carries the failing output as the findings block", func() {

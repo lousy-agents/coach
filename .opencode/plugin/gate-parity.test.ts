@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import test from "node:test"
 
-import { PR_CI_DENY_REASON, runMiseCiAll } from "./implement-issue-gates.ts"
+import { PR_CI_DENY_REASON, runMiseCiGate } from "./implement-issue-gates.ts"
 
 // The OpenCode gate and the Claude gate protect the same command file, which
 // .opencode/plugin/claude-agents.ts mirrors verbatim. Its step 4 states that
@@ -26,7 +26,7 @@ test("the OpenCode PR gate runs the same task the Claude gate runs", async () =>
 
   assert.match(PR_CI_DENY_REASON, new RegExp(claudeTask),
     "the deny reason must name the task actually run, or it misdirects the fix")
-  assert.ok(typeof runMiseCiAll === "function")
+  assert.ok(typeof runMiseCiGate === "function")
 })
 
 // The Claude gate refuses a dirty tree before it refuses a red suite. Without

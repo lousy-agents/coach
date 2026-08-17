@@ -224,7 +224,33 @@ run = [
   { task = "opencode-plugin-test" },
 ]
 
-# The single authoritative "everything CI proves" task, used by the ship gate.
+# What the PR-creation hook runs. Deliberately cheap: no test execution at all.
+#
+# The hook used to run ci-all, chosen when a warm ci-all was projected at ~41s.
+# Measured on a CCR container it is ~910s against the hook's own 900s timeout,
+# while GitHub Actions proves a strict superset -- the same atomic tasks as
+# parallel required jobs, plus platform-smoke -- in ~426s wall clock on compute
+# that is not the session's. Re-running the suite locally cost twice the wall
+# clock to prove less.
+#
+# So the exhaustive gate is GHA + branch protection, and this is the smoke
+# signal in front of it: the checks that cost seconds and account for most red
+# PRs. Do not add `test`, `ci-go`, `ci-fast` or `ci-all` here -- `test` is
+# `go test -race ./...`, which with the sidecar built includes pkg/projectmodel,
+# the exact cost this split removes. Do not add `tidy-check` either: it rewrites
+# go.mod/go.sum in place, which would dirty the tree the hook has just certified
+# clean. GHA runs both, as required checks.
+[tasks.ci-gate]
+description = "Pre-PR smoke for the creation hook: cheap static checks only; GHA + branch protection are the exhaustive gate"
+run = [
+  { task = "gofmt" },
+  { task = "go-vet" },
+  { task = "acceptance-style-check" },
+]
+
+# The single authoritative "everything CI proves" task. No longer the ship gate
+# -- GHA runs these as parallel required jobs -- but still the way to prove the
+# whole thing locally when you want to.
 # Sidecar-first so `test` inside `ci-go` actually runs the projectmodel suite
 # (no second invocation). Excludes test-acceptance-fast: its ambient-credential
 # preflight refuses to run whenever GITHUB_TOKEN/GH_TOKEN or ~/.aws/config are
