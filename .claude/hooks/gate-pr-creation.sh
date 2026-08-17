@@ -39,7 +39,19 @@ input=$(cat)
 tool_name=$(jq -r '.tool_name // empty' <<<"$input")
 
 . "$(dirname "${BASH_SOURCE[0]}")/lib/trace.sh"
-trace gate "${tool_name:-<unset>}" fired
+
+# The other hooks trace `fired` before their filter, so that "ran and did not
+# match" stays distinguishable from "never registered". This one cannot: its
+# Bash matcher is unguarded, so a pre-filter trace appends a row for every shell
+# command in the session and empties the trace of meaning -- the same file
+# AGENTS.md sends a human to, and the same pollution fixed from another
+# direction one change ago.
+#
+# The liveness signal survives the move, because step 0 probes this gate with an
+# actual publish command, which traces below.
+if [ "$tool_name" != "Bash" ]; then
+  trace gate "${tool_name:-<unset>}" fired
+fi
 
 if [ "$tool_name" = "Bash" ]; then
   command=$(jq -r '.tool_input.command // empty' <<<"$input")
@@ -63,6 +75,7 @@ if [ "$tool_name" = "Bash" ]; then
   # misfires constantly. A false deny is safe but infuriating, and nothing about
   # the safe direction depends on matching mentions.
   echo "$command" | grep -qE '(^|[;&|]|&&|\|\|)[[:space:]]*(gh[[:space:]]+pr[[:space:]]+create|git[[:space:]]+push)\b' || exit 0
+  trace gate "$tool_name" fired
 else
   # git is not the only way to reach the remote. The GitHub MCP server writes
   # commits over the API with no shell involved, so a Bash-only gate watches one

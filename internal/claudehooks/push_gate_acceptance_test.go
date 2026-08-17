@@ -145,3 +145,54 @@ var _ = Describe("the push gate", func() {
 		})
 	})
 })
+
+// The gate is registered on an unguarded Bash matcher, so it now runs on every
+// shell command in the session. Its liveness trace was written before the
+// publish filter -- deliberately, so that "ran and did not match" stays
+// distinguishable from "never registered" -- which under an unguarded matcher
+// means every `ls` appends a row.
+//
+// That empties the trace of meaning, and the trace is what AGENTS.md tells a
+// human to read to find out what a run actually did. The previous change to
+// this repository was fixing pollution of that same file from a different
+// direction, so restoring it from this one is not optional.
+//
+// The liveness signal survives: step 0's publish probe is itself a publish
+// command, so it still traces.
+var _ = Describe("the publish gate's trace", func() {
+	tracePathFor := func() string {
+		GinkgoHelper()
+		return filepath.Join(GinkgoT().TempDir(), "trace.tsv")
+	}
+
+	When("an ordinary shell command runs", func() {
+		It("writes nothing", func() {
+			for _, command := range []string{"ls -la", "go test ./...", "git status"} {
+				rows, _ := traceRows("gate-pr-creation.sh",
+					map[string]any{"tool_name": "Bash", "tool_input": map[string]string{"command": command}},
+					tracePathFor())
+				Expect(rows).To(BeEmpty(),
+					"%q traced a row; every command in the session would, and the trace stops being readable", command)
+			}
+		})
+	})
+
+	When("a command that publishes runs", func() {
+		It("still traces, so the gate's liveness stays observable", func() {
+			rows, _ := traceRows("gate-pr-creation.sh",
+				map[string]any{"tool_name": "Bash", "tool_input": map[string]string{"command": "git push origin main"}},
+				tracePathFor())
+			Expect(rows).NotTo(BeEmpty(),
+				"step 0 probes this path; with no row a dead gate and a quiet one look identical")
+		})
+	})
+
+	When("the remote is written through the API", func() {
+		It("traces, since those matchers are narrow enough not to flood", func() {
+			rows, _ := traceRows("gate-pr-creation.sh",
+				map[string]any{"tool_name": "mcp__github__push_files"},
+				tracePathFor())
+			Expect(rows).NotTo(BeEmpty())
+		})
+	})
+})
