@@ -8,8 +8,14 @@ go = "1.26.6"
 node = "24"
 
 [tasks.gofmt]
-description = "Check Go formatting"
-run = "gofmt -l ."
+description = "Fail if any Go file needs formatting"
+run = """
+files=$(gofmt -l .)
+if [ -n "$files" ]; then
+  printf '%s\\n' "$files"
+  exit 1
+fi
+"""
 
 [tasks.go-vet]
 description = "Run go vet on all packages"
@@ -71,6 +77,11 @@ description = "Build the pinned Node/TypeScript project sidecar binary consumed 
 run = "npm run build:project-sidecar"
 dir = "js/semantics"
 depends = ["js-install"]
+
+[tasks.projectmodel-sidecar-acceptance]
+description = "Run the real TS sidecar integration specs (verify already ran the rest of the package)"
+depends = ["project-sidecar-build"]
+run = "go test -race ./pkg/projectmodel/... -run Acceptance -ginkgo.label-filter=ts-sidecar-integration -ginkgo.fail-on-empty"
 
 [tasks.js-install]
 description = "Install js/semantics dev dependencies (scripts skipped; js-build compiles explicitly)"
@@ -172,8 +183,11 @@ echo ""
 echo "Linux fallback: model container on the compose network; set AIGW_OPENAI_BASE_URL in .env to that service."
 """
 
-[tasks.ci]
-description = "Run all CI verifications"
+# Atomic Go slice matching the verify job's steps. The sidecar suite still
+# skips inside `test` unless Node and the sidecar binary are already present
+# (verify installs only Go; local `ci-all` / `ci-fast` build the sidecar first).
+[tasks.ci-go]
+description = "Go slice matching the verify job: gofmt/vet/tidy/style/test/examples"
 run = [
   { task = "gofmt" },
   { task = "go-vet" },
@@ -181,15 +195,20 @@ run = [
   { task = "acceptance-style-check" },
   { task = "test" },
   { task = "test-examples" },
+]
+
+[tasks.ci]
+description = "Run all CI verifications"
+run = [
+  { task = "ci-go" },
   { task = "js-ci" },
 ]
 
-# `ci` runs `test` before `js-ci`, so pkg/projectmodel's TypeScript sidecar
-# acceptance suite has no sidecar binary when it executes and skips silently --
-# see .github/workflows/ci.yml:52-56, which is why the js-verify job rebuilds
-# and re-runs that package. `ci-fast` puts the sidecar first, so a per-cycle
-# run cannot mistake a skip for a pass; without it an implementer's "red" and
-# "green" for a test in that suite are the same skip.
+# `ci` runs `test` before anything builds the sidecar, so pkg/projectmodel's
+# TypeScript sidecar acceptance suite skips unless Node and the binary are
+# already present. `ci-fast` and `ci-all` put the sidecar first; the GHA
+# `projectmodel-sidecar` job runs `projectmodel-sidecar-acceptance` in
+# parallel with `js-verify` so that suite is never a silent skip in CI.
 [tasks.ci-fast]
 description = "Per-cycle validation for the implement/review loop: Go slice with the TS sidecar built first, plus the agent-tooling suites (no silent skips)"
 run = [
@@ -206,16 +225,17 @@ run = [
 ]
 
 # The single authoritative "everything CI proves" task, used by the ship gate.
-# Excludes test-acceptance-fast: its ambient-credential preflight refuses to
-# run whenever GITHUB_TOKEN/GH_TOKEN or ~/.aws/config are present -- always
-# true in Claude Code remote environments -- and it adds no coverage, since
-# `test` is `go test -race ./...` unfiltered, a superset of -run Acceptance.
-# Excludes platform-smoke: needs Docker and live services.
+# Sidecar-first so `test` inside `ci-go` actually runs the projectmodel suite
+# (no second invocation). Excludes test-acceptance-fast: its ambient-credential
+# preflight refuses to run whenever GITHUB_TOKEN/GH_TOKEN or ~/.aws/config are
+# present -- always true in Claude Code remote environments -- and it adds no
+# coverage, since `test` is `go test -race ./...` unfiltered, a superset of
+# -run Acceptance. Excludes platform-smoke: needs Docker and live services.
 [tasks.ci-all]
-description = "Everything CI proves: ci + wasm-build + the real TS sidecar integration suite"
+description = "Everything CI proves except platform-smoke: sidecar-first Go slice + js-ci + wasm-build"
 run = [
-  { task = "ci" },
-  { task = "wasm-build" },
   { task = "project-sidecar-build" },
-  "go test -race ./pkg/projectmodel/... -run Acceptance",
+  { task = "ci-go" },
+  { task = "js-ci" },
+  { task = "wasm-build" },
 ]

@@ -182,7 +182,7 @@ func pathExcludingExecutables(names ...string) string {
 	return strings.Join(kept, string(os.PathListSeparator))
 }
 
-var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/TypeScript sidecar", func() {
+var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/TypeScript sidecar", Label("ts-sidecar-integration"), func() {
 	var (
 		sidecarPath string
 		ctx         context.Context
