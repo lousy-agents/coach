@@ -530,6 +530,59 @@ var _ = Describe("Project-analysis report generation", func() {
 		})
 	})
 
+	Describe("TypeScript reachability facts mapped into ProjectFact", func() {
+		It("maps a resolved TS possible-call-reachability fact with projectmodel/kind provenance and produces no active Signal/Change through the shared pipeline", func() {
+			result := projectmodel.ReachabilityResult{
+				Facts: []projectmodel.ReachabilityFact{{
+					ID:         "reach:file:src/app.ts#getUsers->(PrismaClient).findMany@ts-source-sink-registry@1",
+					Kind:       projectmodel.KindPossibleCallReachability,
+					Confidence: projectmodel.ReachabilityConfidenceResolvedDirect,
+					Source:     "file:src/app.ts#getUsers",
+					Sink:       "(PrismaClient).findMany",
+					Path: []projectmodel.ReachabilityStep{
+						{NodeID: "file:src/app.ts#getUsers"},
+						{NodeID: "(PrismaClient).findMany"},
+					},
+					AlgorithmVersion: "ts-source-sink-registry@1",
+				}},
+				Sources:   []string{"file:src/app.ts#getUsers"},
+				Algorithm: "ts-source-sink-registry@1",
+				Coverage:  projectmodel.Coverage{Phase: "ts_sidecar_build", Complete: true},
+			}
+
+			facts := codesignal.ReachabilityProjectFacts(result, "typescript")
+			Expect(facts).To(HaveLen(1))
+			fact := facts[0]
+			Expect(fact.Kind).To(Equal(projectmodel.KindPossibleCallReachability))
+			Expect(fact.Provenance.Producer).To(Equal("projectmodel"))
+			Expect(fact.Provenance.FindingKind).To(Equal(projectmodel.KindPossibleCallReachability))
+			Expect(fact.Provenance.Language).To(Equal("typescript"))
+			Expect(fact.SemanticKey).To(Equal("possible_call_reachability:file:src/app.ts#getUsers->(PrismaClient).findMany"))
+			Expect(fact.PathSteps).To(HaveLen(2))
+			Expect(fact.PathSteps[0].NodeID).To(Equal("file:src/app.ts#getUsers"))
+			Expect(fact.PathSteps[0].Confidence).To(Equal(codesignal.Confidence("high")))
+			Expect(fact.PathSteps[1].NodeID).To(Equal("(PrismaClient).findMany"))
+			Expect(fact.PathSteps[1].Confidence).To(Equal(codesignal.Confidence("high")))
+			Expect(fact.Evidence).To(ContainSubstring("possible"), "expected shared possible-call wording per AC-1")
+
+			// AC-4/AC-11 regression guard: routing this ProjectFact through the
+			// existing generic Input.ProjectFacts -> Report.ProjectFacts pipeline
+			// must never promote it to a ProjectChange, a Signal, or an active
+			// ProjectSummary counter.
+			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
+				ProjectFacts:    facts,
+				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+			})
+			Expect(report.ProjectFacts).To(HaveLen(1))
+			Expect(report.ProjectFacts[0].Provenance.Producer).To(Equal("projectmodel"))
+			Expect(report.ProjectChanges).To(BeEmpty())
+			Expect(report.ProjectSummary).NotTo(BeNil())
+			Expect(*report.ProjectSummary).To(Equal(codesignal.ProjectSummary{}), "expected an all-zero ProjectSummary: a fact must never inflate active/introduced/existing/resolved/baseline counters")
+			Expect(report.Signals).To(BeEmpty())
+			Expect(report.Summary.ActiveSignals).To(Equal(0))
+		})
+	})
+
 	Describe("Project-analysis JSON round-trip", func() {
 		It("preserves project fields across marshal/unmarshal", func() {
 			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{

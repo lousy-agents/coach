@@ -82,4 +82,11 @@ type Signal struct {
 type Provenance struct {
 	Producer    string `json:"producer"`
 	FindingKind string `json:"finding_kind,omitempty"`
+
+	// Language is the source language a project-origin fact was derived
+	// from ("go" or "typescript"), when the producer records one. It is
+	// the only queryable cross-language provenance signal on ProjectFact,
+	// which unlike ProjectChange has no MachineEvidence map to carry an
+	// equivalent key (see ReachabilityProjectFacts).
+	Language string `json:"language,omitempty"`
 }
