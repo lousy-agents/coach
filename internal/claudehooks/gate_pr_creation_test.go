@@ -51,7 +51,10 @@ func TestGatePrCreation_McpCreatePullRequestAllowsOnCleanTree(t *testing.T) {
 // unanchored search cannot tell `gh pr create` being run from a commit message
 // that merely discusses it.
 func TestGatePrCreation_MentionIsNotAnInvocation(t *testing.T) {
-	stdout := runGatePrCreation(t, "Bash", `git commit -m "document the gh pr create gate"`, true)
+	// Deliberately a dirty tree. With a clean one the gate allows whether or not
+	// the filter matched, so the assertion could not tell an anchored filter from
+	// an unanchored one -- and a mutation removing the anchor survived it.
+	stdout := runGatePrCreation(t, "Bash", `git commit -m "document the gh pr create gate"`, false)
 	if strings.TrimSpace(stdout) != "" {
 		t.Fatalf("a mention must not be gated; got: %q", stdout)
 	}
