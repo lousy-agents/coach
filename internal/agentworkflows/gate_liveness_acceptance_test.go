@@ -41,6 +41,46 @@ var _ = Describe("gate liveness", func() {
 		// proves only that the repository is checked out -- which was true in
 		// the failing run. Registration is the thing in question, and the only
 		// evidence of it is a hook actually firing.
+		// Rev-8's step 0 provoked one hook and inferred the rest. That inference
+		// holds only for the all-or-nothing binding failure in §8 -- a whole
+		// .claude/ that never registered. It does not hold for the failure this
+		// repository has actually shipped twice: a registration whose matcher
+		// names an agent that no longer exists, which leaves exactly one gate
+		// inert while every other one answers normally. D-16 exists because of
+		// it. So each gate has to be provoked on its own.
+		It("provokes every gate, not one of them", func() {
+			section := commandSection(command, "0")
+			for _, gate := range []string{
+				"verify-review-verdict.sh",
+				"validate-no-git-writes.sh",
+				"verify-context-relay.sh",
+				"enforce-cycle-ceiling.sh",
+				"gate-pr-creation.sh",
+			} {
+				Expect(section).To(ContainSubstring(gate),
+					"%s is never provoked, so a run cannot tell it apart from an absent one", gate)
+			}
+		})
+
+		// A probe's failure mode is that the action actually happens. Spike C
+		// learned this the hard way and scoped its commit probe to a scratch
+		// clone with no remote; the constraint has to survive into step 0, where
+		// there is no scratch clone. Probing a publish gate on a *clean* tree
+		// means a dead gate performs a real push or opens a real pull request.
+		It("constructs each probe so a dead gate does something harmless", func() {
+			section := commandSection(command, "0")
+			Expect(section).To(MatchRegexp(`(?si)dirty|uncommitted|stray file`),
+				"the publish probes must run against a deliberately dirty tree, so the denial lands on the worktree check before anything is published")
+			// Assert the artifact, not a word order: the probe must name a remote
+			// that does not exist, so a dead gate's push has nowhere to go.
+			Expect(section).To(ContainSubstring("coach-gate-probe-remote"),
+				"if the push gate is dead the push executes; it has to be aimed at a remote that does not exist")
+			Expect(section).To(MatchRegexp(`(?si)bogus|nonexistent|does not exist`),
+				"and the reason has to be stated, or someone will 'fix' it to a real remote")
+			Expect(section).NotTo(MatchRegexp(`(?si)git commit --allow-empty`),
+				"a probe that lands a junk commit on a live branch when the gate is dead is the wrong shape")
+		})
+
 		It("proves registration by provoking a denial rather than by inspection", func() {
 			section := commandSection(command, "0")
 			Expect(section).To(MatchRegexp(`(?si)deni(ed|al)|denies`),

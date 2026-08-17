@@ -18,30 +18,53 @@ that delegates those into a workflow looks identical and enforces nothing.
    written as though the hooks will catch you. A session where they never
    registered looks identical from the inside — the agents answer, the reviews
    return verdicts, the PR opens — so confirm registration first, by provoking a
-   denial. Inspecting the files proves nothing: they are on disk either way.
+   denial from each gate in turn. Inspecting the files proves nothing: they are
+   on disk either way.
 
-   Call the Agent tool with `subagent_type: task-implementer` and a prompt that
-   mentions reviewer findings but omits the literal `## Reviewer Findings`
-   heading — `Address the reviewer findings below and fix them.` is enough.
-   `verify-context-relay.sh` denies exactly that shape, before any agent spawns,
-   so the call costs nothing when it works. The probe is not Claude-specific:
-   `.opencode/plugin/implement-issue-gates.ts` denies the same shape with the
-   same reason string, so a harness this file is mirrored into either denies or
-   has no gate to prove.
+   **Being denied is the pass.** Run all five; each names the hook it expects.
 
-   Being denied is the pass. Two other outcomes both mean stop with
-   `environment-failure`, and neither is a warning to note and move past:
+   1. **Relay** — `verify-context-relay.sh`. Call the Agent tool with
+      `subagent_type: task-implementer` and a prompt that mentions reviewer
+      findings but omits the literal `## Reviewer Findings` heading —
+      `Address the reviewer findings below and fix them.` is enough. Denied
+      before any agent spawns, so it costs nothing.
+   2. **Git jail** — `validate-no-git-writes.sh`. Ask a `task-implementer` to run
+      `git push coach-gate-probe-remote HEAD`. The remote is **bogus on purpose**:
+      if the hook is dead the push executes and fails harmlessly with "does not
+      appear to be a git repository", instead of publishing anything.
+   3. **Verdict shape** — `verify-review-verdict.sh`. Delegate to `task-reviewer`
+      with a stub prompt instructing it to reply with exactly `garbage`. A live
+      hook blocks the malformed verdict. This is the only gate in the system that
+      has never been observed firing, so do not skip it.
+   4. **Cycle ceiling** — `enforce-cycle-ceiling.sh`. The reviewer call above also
+      passes through the ceiling, which records it. Confirm the counter advanced
+      (`.coach-cycle-state/`), and treat a counter that never appears as the same
+      failure as an un-denied probe.
+   5. **Publish** — `gate-pr-creation.sh`. Create a stray file so the tree is
+      **deliberately dirty**, then attempt `git push coach-gate-probe-remote HEAD`.
+      Denied on the worktree check before anything is published. Remove the stray
+      file afterwards. Probe this on a dirty tree, never a clean one: on a clean
+      tree a dead gate performs the push for real.
 
-   - The call is **not** denied and an implementer actually runs — the hooks are
-     not registered for this session.
-   - The call errors because `task-implementer` is an unknown agent type —
-     agents register from `.claude/` exactly as hooks do, so this is the same
-     failure one layer earlier, and it is the likelier symptom of the two.
+   Three outcomes mean stop with `environment-failure`, and none is a warning to
+   note and move past:
 
-   In both cases stop the run here: do not proceed to step 1, and do not
+   - A probe is **not** denied and the action runs — that hook is not registered.
+   - A probe errors because `task-implementer` or `task-reviewer` is an unknown
+     agent type — agents register from `.claude/` exactly as hooks do, so this is
+     the same failure one layer earlier, and it is the likelier symptom.
+   - Any probe cannot be run at all.
+
+   In every case stop the run here: do not proceed to step 1, and do not
    substitute a generic agent to get moving. An ungated run is worth less than
    no run — it produces the same artifacts with none of the guarantees, and
    nothing downstream can tell the difference.
+
+   **Provoke each one separately, and do not infer the rest from one pass.** A
+   whole `.claude/` that never registered takes every gate down together, and one
+   probe would find that. But a registration whose matcher names an agent that no
+   longer exists leaves exactly one gate inert while every other one answers
+   normally — a failure this repository has shipped twice.
 
    The usual cause is not in this repository. Claude Code binds `.claude/` —
    hooks, agents, and workflows alike — to the session's project directory at
