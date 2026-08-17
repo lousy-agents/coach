@@ -3,53 +3,72 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import test from "node:test"
 
-import { PR_CI_DENY_REASON, runMiseCiGate } from "./implement-issue-gates.ts"
+import { PR_DIRTY_TREE_DENY_REASON } from "./implement-issue-gates.ts"
 
 // The OpenCode gate and the Claude gate protect the same command file, which
-// .opencode/plugin/claude-agents.ts mirrors verbatim. Its step 4 states that
-// ci-all is the first place wasm-build, the sidecar-built projectmodel suite,
-// and cross-file gofmt/tidy-check touch the integrated tree -- so a gate here
-// running plain `ci` lets an OpenCode run open a PR on a broken wasm build or
-// an unrun sidecar suite, while the prose promises otherwise.
-test("the OpenCode PR gate runs the same task the Claude gate runs", async () => {
+// .opencode/plugin/claude-agents.ts mirrors verbatim. If they enforce different
+// contracts, the prose promises something only one harness delivers.
+//
+// Both are now clean-worktree checks and nothing else. Since the `status`
+// aggregator became a required check, a red tree cannot merge whatever either
+// hook decides, so validating locally bought latency rather than safety. What
+// survives is the one thing CI cannot do: CI validates the pushed commit, so
+// only something local notices that the working tree differs from it and that
+// the PR's evidence therefore describes neither.
+test("neither gate runs a task runner any more", async () => {
   const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
   const claudeGate = await fs.readFile(
     path.join(repoRoot, ".claude", "hooks", "gate-pr-creation.sh"), "utf8")
-  const claudeTask = claudeGate.match(/^if ! mise run (ci[a-z-]*);/m)?.[1]
-  assert.ok(claudeTask, "could not read the task the Claude gate runs")
+  assert.strictEqual(
+    /^\s*if ! mise run /m.test(claudeGate), false,
+    "the Claude gate invokes mise again; the OpenCode mirror would silently diverge")
 
   const source = await fs.readFile(
     path.join(import.meta.dirname, "implement-issue-gates.ts"), "utf8")
-  const openCodeTask = source.match(/spawnSync\("mise", \["run", "([^"]+)"\]/)?.[1]
-  assert.strictEqual(openCodeTask, claudeTask,
-    `OpenCode gate runs "${openCodeTask}" but the Claude gate runs "${claudeTask}"`)
-
-  assert.match(PR_CI_DENY_REASON, new RegExp(claudeTask),
-    "the deny reason must name the task actually run, or it misdirects the fix")
-  assert.ok(typeof runMiseCiGate === "function")
+  assert.strictEqual(
+    /spawnSync\("mise"/.test(source), false,
+    "the OpenCode gate invokes mise again")
 })
 
-// The Claude gate refuses a dirty tree before it refuses a red suite. Without
-// the same check here, the two harnesses enforce materially different contracts
-// while the command file mirrored into both promises one.
-test("the OpenCode PR gate also refuses a tree that does not match what ships", async () => {
-  const { worktreeIsClean } = await import("./implement-issue-gates.ts")
+// The previous version of this test called worktreeIsClean directly and asserted
+// it behaved. It does -- but the plugin never called it, so the OpenCode gate
+// refused nothing at all while a test named for that refusal stayed green. A
+// helper that works is not a gate that runs; drive the entry point.
+test("the OpenCode PR gate refuses a tree that does not match what ships", async () => {
+  const pluginModule = await import(new URL("./implement-issue-gates.ts", import.meta.url).href)
+  const plugin = await pluginModule.default(
+    { directory: "/tmp", worktree: "/tmp" },
+    { checkWorktree: () => ({ ok: false, detail: " M some/file.go" }) },
+  )
+
+  await assert.rejects(
+    () => plugin["tool.execute.before"](
+      { tool: "bash", sessionID: "s", callID: "c" },
+      { args: { command: "gh pr create --fill" } },
+    ),
+    (err: Error) => {
+      assert.match(err.message, /working tree/i)
+      return true
+    },
+    "a dirty tree must block PR creation through the plugin, not merely through a helper")
+})
+
+test("the OpenCode PR gate allows a clean tree", async () => {
+  const pluginModule = await import(new URL("./implement-issue-gates.ts", import.meta.url).href)
+  const plugin = await pluginModule.default(
+    { directory: "/tmp", worktree: "/tmp" },
+    { checkWorktree: () => ({ ok: true }) },
+  )
+  await plugin["tool.execute.before"](
+    { tool: "bash", sessionID: "s", callID: "c" },
+    { args: { command: "gh pr create --fill" } },
+  )
+})
+
+test("both gates deny with the same reason", async () => {
   const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
-
-  const clean = worktreeIsClean(repoRoot)
-  assert.strictEqual(typeof clean.ok, "boolean")
-
-  // A path that is not a repository must deny, not pass: "git failed" and "the
-  // tree is clean" must not be the same observation.
-  const outside = worktreeIsClean("/")
-  assert.strictEqual(outside.ok, false,
-    "a git failure must deny rather than read as a clean tree")
-
   const claudeGate = await fs.readFile(
     path.join(repoRoot, ".claude", "hooks", "gate-pr-creation.sh"), "utf8")
-  assert.match(claudeGate, /status --porcelain/)
-  const source = await fs.readFile(
-    path.join(import.meta.dirname, "implement-issue-gates.ts"), "utf8")
-  assert.match(source, /status", "--porcelain/,
-    "both gates must make the same cleanliness check")
+  assert.match(claudeGate, /working tree is dirty/i)
+  assert.match(PR_DIRTY_TREE_DENY_REASON, /working tree is dirty/i)
 })

@@ -74,8 +74,9 @@ export const RELAY_DENY_REASON =
 
 export const PR_DIRTY_TREE_DENY_REASON =
   "The working tree is dirty, so validation would not describe the commit this PR publishes. Commit or stash the changes, then retry."
-export const PR_CI_DENY_REASON =
-  "mise run ci-gate failed; fix before opening the PR. (This is the cheap smoke check -- the full suite runs in GitHub Actions.)"
+// Kept as an alias so a mirrored prompt referring to it still resolves; the
+// gate has only one denial now.
+export const PR_CI_DENY_REASON = PR_DIRTY_TREE_DENY_REASON
 
 export const VERDICT_SOFT_FAIL_MESSAGE = [
   "ERROR: task-reviewer reply shape invalid.",
@@ -83,7 +84,7 @@ export const VERDICT_SOFT_FAIL_MESSAGE = [
   "Do not invent a PASS. Re-delegate task-reviewer (fresh or continued) until the reply begins with PASS or FINDINGS verbatim.",
 ].join(" ")
 
-export type RunCi = (cwd: string) => { ok: boolean; detail?: string }
+export type WorktreeCheck = (cwd: string) => { ok: boolean; detail?: string }
 
 // Mirrors gate-pr-creation.sh's first check. The suite validates the working
 // tree while a pull request publishes committed history; if they differ, the PR
@@ -95,25 +96,6 @@ export function worktreeIsClean(cwd: string): { ok: boolean; detail?: string } {
   if (result.status !== 0) return { ok: false, detail: (result.stderr || "").trim() || `exit ${result.status}` }
   const dirty = (result.stdout || "").trim()
   return dirty ? { ok: false, detail: dirty.split("\n").slice(0, 10).join("\n") } : { ok: true }
-}
-
-// Mirrors gate-pr-creation.sh's second check. ci-gate, not ci-all: GitHub
-// Actions runs the exhaustive suite as parallel required jobs, so re-running it
-// here cost twice the wall clock on scarcer compute to prove a subset. Both
-// harnesses must run the same task or the gate means different things depending
-// on which one opened the PR.
-export function runMiseCiGate(cwd: string): { ok: boolean; detail?: string } {
-  const result = spawnSync("mise", ["run", "ci-gate"], {
-    cwd,
-    encoding: "utf8",
-    env: process.env,
-  })
-  if (result.error) {
-    return { ok: false, detail: result.error.message }
-  }
-  if (result.status === 0) return { ok: true }
-  const tail = [result.stderr, result.stdout].filter(Boolean).join("\n").trim()
-  return { ok: false, detail: tail.slice(-2000) || `exit ${result.status}` }
 }
 
 async function log(
@@ -132,11 +114,11 @@ async function log(
 }
 
 export type GatesOptions = {
-  runCi?: RunCi
+  checkWorktree?: WorktreeCheck
 }
 
 export default async (input: PluginInput, options: GatesOptions = {}) => {
-  const runCi = options.runCi ?? runMiseCiGate
+  const checkWorktree = options.checkWorktree ?? worktreeIsClean
   const cwd = input.worktree || input.directory
 
   return {
@@ -159,14 +141,18 @@ export default async (input: PluginInput, options: GatesOptions = {}) => {
         }
       }
 
+      // The Claude hook's only remaining check, mirrored: a pull request
+      // publishes committed history, so a dirty tree means its evidence
+      // describes something that was never pushed. Everything else is a
+      // required CI check now.
       if (isPrCreateAttempt(tool, args as { command?: unknown })) {
-        const result = runCi(cwd)
+        const result = checkWorktree(cwd)
         if (!result.ok) {
-          await log(input.client, "warn", "blocked PR create; ci failed", {
+          await log(input.client, "warn", "blocked PR create; dirty worktree", {
             sessionID: hookInput.sessionID,
             detail: result.detail,
           })
-          throw new Error(PR_CI_DENY_REASON)
+          throw new Error(PR_DIRTY_TREE_DENY_REASON)
         }
       }
     },

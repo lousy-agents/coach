@@ -27,36 +27,33 @@ func TestGatePrCreation_EmptyCommandNoOp(t *testing.T) {
 	}
 }
 
-// TestGatePrCreation_BashCreateAllowsWhenCiPasses verifies that `gh pr create`
-// is allowed through (no deny JSON) when the validation suite succeeds.
-func TestGatePrCreation_BashCreateAllowsWhenCiPasses(t *testing.T) {
+// TestGatePrCreation_BashCreateAllowsOnCleanTree verifies `gh pr create` passes
+// on a clean tree. The gate no longer runs any validation of its own -- the
+// required CI checks do that -- so a clean tree is the whole condition.
+func TestGatePrCreation_BashCreateAllowsOnCleanTree(t *testing.T) {
 	stdout := runGatePrCreation(t, "Bash", "gh pr create --title x --body y", true)
 	if strings.TrimSpace(stdout) != "" {
-		t.Fatalf("expected no stdout (allow) when ci passes; got: %q", stdout)
+		t.Fatalf("expected no stdout (allow) on a clean tree; got: %q", stdout)
 	}
 }
 
-// TestGatePrCreation_BashCreateDeniesWhenCiFails verifies that `gh pr create`
-// is denied with a hookSpecificOutput payload when the validation suite fails.
-func TestGatePrCreation_BashCreateDeniesWhenCiFails(t *testing.T) {
-	stdout := runGatePrCreation(t, "Bash", "gh pr create --title x --body y", false)
-	assertDenyDecision(t, stdout)
-}
-
-// TestGatePrCreation_McpCreatePullRequestDeniesWhenCiFails verifies the gate
-// also covers the GitHub MCP create_pull_request tool path, used in
-// environments where PR creation doesn't go through a Bash `gh` invocation.
-func TestGatePrCreation_McpCreatePullRequestDeniesWhenCiFails(t *testing.T) {
-	stdout := runGatePrCreation(t, "mcp__github__create_pull_request", "", false)
-	assertDenyDecision(t, stdout)
-}
-
-// TestGatePrCreation_McpCreatePullRequestAllowsWhenCiPasses mirrors the above
-// for the passing-ci case.
-func TestGatePrCreation_McpCreatePullRequestAllowsWhenCiPasses(t *testing.T) {
+// TestGatePrCreation_McpCreatePullRequestAllowsOnCleanTree mirrors the above for
+// the MCP path, which is the only one available in environments without gh.
+func TestGatePrCreation_McpCreatePullRequestAllowsOnCleanTree(t *testing.T) {
 	stdout := runGatePrCreation(t, "mcp__github__create_pull_request", "", true)
 	if strings.TrimSpace(stdout) != "" {
-		t.Fatalf("expected no stdout (allow) when ci passes; got: %q", stdout)
+		t.Fatalf("expected no stdout (allow) on a clean tree; got: %q", stdout)
+	}
+}
+
+// TestGatePrCreation_MentionIsNotAnInvocation guards a false positive that was
+// observed in practice: the hook receives one flat command string, so an
+// unanchored search cannot tell `gh pr create` being run from a commit message
+// that merely discusses it.
+func TestGatePrCreation_MentionIsNotAnInvocation(t *testing.T) {
+	stdout := runGatePrCreation(t, "Bash", `git commit -m "document the gh pr create gate"`, true)
+	if strings.TrimSpace(stdout) != "" {
+		t.Fatalf("a mention must not be gated; got: %q", stdout)
 	}
 }
 
@@ -89,10 +86,9 @@ func assertDenyDecision(t *testing.T, stdout string) {
 }
 
 // runGatePrCreation execs gate-pr-creation.sh with a synthetic PreToolUse
-// payload, stubbing `mise` on PATH so the test never runs the real (slow)
-// CI suite — it only needs to prove the hook reacts correctly to mise's exit
-// code.
-func runGatePrCreation(t *testing.T, toolName, command string, ciPasses bool) string {
+// payload. cleanTree stubs `git status --porcelain` as empty or dirty; the hook
+// runs no task runner at all any more, so there is nothing else to stub.
+func runGatePrCreation(t *testing.T, toolName, command string, cleanTree bool) string {
 	t.Helper()
 	scriptPath, err := filepath.Abs(filepath.Join("..", "..", ".claude", "hooks", "gate-pr-creation.sh"))
 	if err != nil {
@@ -100,22 +96,16 @@ func runGatePrCreation(t *testing.T, toolName, command string, ciPasses bool) st
 	}
 
 	fakeBin := t.TempDir()
-	fakeMise := filepath.Join(fakeBin, "mise")
-	exitCode := "0"
-	if !ciPasses {
-		exitCode = "1"
-	}
-	if err := os.WriteFile(fakeMise, []byte("#!/bin/sh\nexit "+exitCode+"\n"), 0755); err != nil {
-		t.Fatal(err)
-	}
 
-	// Stub git as a clean worktree. Without this the hook reads the real
-	// repository, so these tests would pass or fail depending on whether the
-	// checkout happens to be dirty — they are about the hook's reaction to
-	// mise's exit code, not about ambient state. Dirty-tree behavior has its
-	// own specs in gate_pr_creation_acceptance_test.go.
+	// Stub git. Without this the hook reads the real repository, so these tests
+	// would pass or fail depending on whether the checkout happens to be dirty.
+	porcelain := ""
+	if !cleanTree {
+		porcelain = "echo ' M pkg/semantics/analyzer.go'\n"
+	}
 	fakeGit := filepath.Join(fakeBin, "git")
-	if err := os.WriteFile(fakeGit, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+	if err := os.WriteFile(fakeGit,
+		[]byte("#!/bin/sh\ncase \"$*\" in\n  'status --porcelain') "+porcelain+";;\nesac\nexit 0\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
 

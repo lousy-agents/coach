@@ -15,16 +15,18 @@ var _ = Describe("the repair loop after the PR is open", func() {
 
 	BeforeEach(func() { command = readRepoFile(commandPath) })
 
-	// Every other push in the run goes through the publish gate. Repair pushes
-	// are the ones most likely to carry a hurried fix, and they land on a branch
-	// that already has a pull request describing it.
+	// The publish gate fires on pull-request creation, which has already
+	// happened by the time repair starts -- so nothing gates these pushes, and
+	// the command has to say so rather than implying a check that is not there.
+	// The required CI checks re-run on every push, which is where a bad repair
+	// surfaces.
 	When("a repair pushes a fix", func() {
-		It("goes through the same publish gate as any other push", func() {
-			// Anchored on "repair": step 4 already discusses the gate and pushing
-			// in other contexts, so a loose proximity match here passed against
-			// prose that says nothing about repair pushes at all.
-			Expect(commandSection(command, "4")).To(MatchRegexp(`(?si)repair push.{0,200}(gate|clean|ci-gate)`),
-				"a repair push that skips the gate publishes a tree nothing checked, onto a branch a PR already describes")
+		It("says plainly that CI, not a local gate, is what checks it", func() {
+			section := commandSection(command, "4")
+			Expect(section).To(MatchRegexp(`(?si)repair push.{0,200}(CI|checks)`),
+				"an orchestrator that assumes a local gate will catch a bad repair push will not look at CI")
+			Expect(section).To(MatchRegexp(`(?si)commit everything|partial commit`),
+				"the PR body's evidence describes the pushed tree; a partial commit makes it false")
 		})
 	})
 

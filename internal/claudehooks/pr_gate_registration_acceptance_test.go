@@ -75,37 +75,41 @@ var _ = Describe("publish gate registration", func() {
 		return false
 	}
 
-	// Deliberately one unguarded Bash registration rather than one `if` clause
-	// per verb. A `Bash(git push*)` guard was observed matching a `git commit`
-	// whose *message* discussed pushing, so the harness glob was deciding more
-	// loosely than its spelling suggests -- and its real semantics are not
-	// something this repository can pin with a test. The script's anchored
-	// filter decides instead, and that filter has specs.
-	When("publishing happens through a shell", func() {
-		It("routes every Bash command to the gate, which filters them itself", func() {
-			var bash []gateRegistration
+	// The gate fires on pull-request creation only, and neither registration is
+	// redundant: local sessions supply no GitHub MCP server at all (.mcp.json
+	// declares context7, lousy-agents and sequential-thinking), while CCR has no
+	// gh -- exit 127. Each is the sole live gate on one surface, so deleting
+	// either fails open there while every other check stays green.
+	//
+	// An earlier revision widened this to `git push` and the MCP write tools on
+	// an unguarded matcher. It ran on every shell command, refused a commit whose
+	// message merely mentioned pushing, and flooded the hook trace -- all to
+	// defend a property the required `status` check already provides.
+	When("a pull request is opened", func() {
+		It("is gated on whichever path the surface actually has", func() {
+			var bashIf string
+			var bashCount int
 			for _, r := range regs {
 				if r.Matcher == "Bash" {
-					bash = append(bash, r)
+					bashCount++
+					bashIf = r.If
 				}
 			}
-			Expect(bash).To(HaveLen(1),
-				"one unguarded registration; per-verb `if` clauses put the matching rule somewhere untestable")
-			Expect(bash[0].If).To(BeEmpty(),
-				"an `if` guard here would silently re-narrow what the gate sees, and it cannot be asserted on")
+			Expect(bashCount).To(Equal(1), "one Bash registration, scoped to PR creation")
+			Expect(bashIf).To(ContainSubstring("gh pr create"),
+				"an unscoped Bash matcher puts this hook on the hot path of every command in the session")
+			Expect(hasMatcher("mcp__github__create_pull_request")).To(BeTrue(),
+				"CCR has no gh; losing this leaves the primary surface ungated")
 		})
-	})
 
-	When("the remote is reached through the GitHub API instead of a shell", func() {
-		It("gates every tool that can write to it", func() {
+		It("does not gate the publishing paths branch protection already covers", func() {
 			for _, tool := range []string{
-				"mcp__github__create_pull_request",
 				"mcp__github__push_files",
 				"mcp__github__create_or_update_file",
 				"mcp__github__delete_file",
 			} {
-				Expect(hasMatcher(tool)).To(BeTrue(),
-					"%s writes to the remote with no shell involved, so the Bash registrations never see it", tool)
+				Expect(hasMatcher(tool)).To(BeFalse(),
+					"%s writes reach the remote, but the required status check is what stops them merging; gating here re-buys the cost this narrowing removed", tool)
 			}
 		})
 	})

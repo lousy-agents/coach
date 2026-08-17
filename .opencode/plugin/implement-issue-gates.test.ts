@@ -130,7 +130,7 @@ test("hooks: implementer rework without findings throws", async () => {
   const pluginModule = await import(new URL("./implement-issue-gates.ts", import.meta.url).href)
   const plugin = await pluginModule.default(
     { directory: "/tmp", worktree: "/tmp" },
-    { runCi: () => ({ ok: true }) },
+    { checkWorktree: () => ({ ok: true }) },
   )
 
   await assert.rejects(
@@ -179,7 +179,7 @@ test("hooks: non-PR bash does not run ci", async () => {
   const plugin = await pluginModule.default(
     { directory: "/tmp", worktree: "/tmp" },
     {
-      runCi: () => {
+      checkWorktree: () => {
         ran = true
         return { ok: false }
       },
@@ -197,7 +197,7 @@ test("hooks: malformed reviewer verdict is soft-rewritten", async () => {
   const pluginModule = await import(new URL("./implement-issue-gates.ts", import.meta.url).href)
   const plugin = await pluginModule.default(
     { directory: "/tmp", worktree: "/tmp" },
-    { runCi: () => ({ ok: true }) },
+    { checkWorktree: () => ({ ok: true }) },
   )
 
   const output = {
@@ -224,7 +224,7 @@ test("hooks: valid reviewer PASS is left alone", async () => {
   const pluginModule = await import(new URL("./implement-issue-gates.ts", import.meta.url).href)
   const plugin = await pluginModule.default(
     { directory: "/tmp", worktree: "/tmp" },
-    { runCi: () => ({ ok: true }) },
+    { checkWorktree: () => ({ ok: true }) },
   )
 
   const original = "PASS — verified the diff and tests."

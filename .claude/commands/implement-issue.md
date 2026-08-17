@@ -41,10 +41,11 @@ that delegates those into a workflow looks identical and enforces nothing.
       (`.coach-cycle-state/`), and treat a counter that never appears as the same
       failure as an un-denied probe.
    5. **Publish** — `gate-pr-creation.sh`. Create a stray file so the tree is
-      **deliberately dirty**, then attempt `git push coach-gate-probe-remote HEAD`.
-      Denied on the worktree check before anything is published. Remove the stray
-      file afterwards. Probe this on a dirty tree, never a clean one: on a clean
-      tree a dead gate performs the push for real.
+      **deliberately dirty**, then attempt
+      `gh pr create --repo coach-gate-probe/nonexistent --fill`. Denied on the
+      worktree check. Remove the stray file afterwards. Both halves matter: on a
+      clean tree a dead gate would proceed, and the repo is **bogus on purpose**
+      so that even then it fails without opening anything.
 
    Three outcomes mean stop with `environment-failure`, and none is a warning to
    note and move past:
@@ -197,10 +198,10 @@ that delegates those into a workflow looks identical and enforces nothing.
    session's. Re-running it here would spend ~910s of the scarcer budget to
    prove less than CI proves minutes later.
 
-   The PR-creation gate runs only `mise run ci-gate` (about a second) plus a
-   clean-worktree check, which is the one thing CI structurally cannot do: CI
-   validates the *pushed commit* and cannot see that your working tree differs
-   from it.
+   The PR-creation gate validates nothing — it only refuses a dirty working
+   tree, which is the one thing CI structurally cannot check: CI validates the
+   *pushed commit*, so only something local can notice that your tree differs
+   from what you pushed and that the PR's evidence describes neither.
 
    **A red required check is repairable, not terminal.** After the PR is open,
    watch its checks. Route a failure back through the step-2 loop rather than
@@ -231,10 +232,12 @@ that delegates those into a workflow looks identical and enforces nothing.
    traceable to one task's declared files. Route it straight to an
    integration-repair task without attempting attribution.
 
-   **Every repair push goes through the publish gate**, exactly as the first one
-   did: commit, let the gate check the tree and `ci-gate`, then push. A repair
-   fix is the most hurried commit in the run and it lands on a branch a pull
-   request already describes, so it is the last place to skip the check.
+   **Repair pushes are checked by CI, not locally.** Nothing gates them — the
+   publish gate fires on pull-request creation, which has already happened by
+   this point. The required checks re-run on every push, so a bad repair shows
+   up there rather than being refused up front. Commit everything before pushing
+   anyway: the pull request body's evidence describes the tree you pushed, and
+   a partial commit quietly makes that description false.
 
    **If the session dies mid-repair, that is `environment-failure`** — a typed
    stop, not a completed run. CCR containers are reclaimed on inactivity and
