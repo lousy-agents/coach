@@ -309,13 +309,13 @@ func modeLayerBypassCycle(req projectbridge.Request) {
 	})
 }
 
-// modeLayerBypassGap emits a resolvable bypass edge but reports
-// Coverage.Complete false -- BuildTypeScriptLayerBypass must suppress every
-// witness rather than treat a truncated sidecar round trip as a genuinely
-// searched "bypass found" result. The "service" required layer resolves
-// from the acceptance suite's own snapshot file inventory
-// (tsLayerBypassSnapshot's "service/inventory.ts"), independent of this
-// CallGraph.
+// modeLayerBypassGap emits a resolvable bypass edge alongside
+// Coverage.Complete false and an unrelated gap diagnostic --
+// BuildTypeScriptLayerBypass must still emit this pair's own resolved
+// witness while reporting the aggregate LayerBypassResult.Coverage.Complete
+// as false. The "service" required layer resolves from the acceptance
+// suite's own snapshot file inventory (tsLayerBypassSnapshot's
+// "service/inventory.ts"), independent of this CallGraph.
 func modeLayerBypassGap(req projectbridge.Request) {
 	const source = "file:src/handlers/app.ts#getUsers"
 	const sink = "(PrismaClient).findMany"

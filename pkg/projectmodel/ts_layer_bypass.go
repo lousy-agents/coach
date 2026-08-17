@@ -35,15 +35,27 @@ const TSLayerBypassAlgorithm = "ts-layer-bypass-registry@1"
 // identification walk the way Go's findGoReachabilitySourcesFromLoaded and
 // pinned ReachabilitySinkPatterns do.
 //
-// A witness is only ever emitted at LayerBypassConfidenceHigh, and only
-// when requiredLayer is unambiguous (non-empty Prefixes matching at least
-// one file in the snapshot's own file inventory) and Model.Coverage.Complete
-// is true --
-// mirroring BuildGoLayerBypass's ambiguous-layer guard and its
-// callGraphIncomplete/dirsComplete suppression, folded here into the TS
-// sidecar's single combined Coverage rather than Go's several separate
-// walks. BuildTypeScriptLayerBypass never returns a non-nil error for a
-// sidecar transport/analysis failure; that is reported through
+// A witness is only ever emitted at LayerBypassConfidenceHigh, and only when
+// requiredLayer is unambiguous (non-empty Prefixes matching at least one
+// file in the snapshot's own file inventory) and that specific source's BFS
+// completed within budget (see the per-source hitBudget/ctx.Err() check
+// below) and every node on the witness's own path resolved a classifiable
+// position (stepPathFullyClassified). Unlike BuildGoLayerBypass,
+// Model.Coverage.Complete being false does NOT by itself suppress a pair:
+// the TS sidecar's single combined Coverage folds in
+// ts_reachability_local_call_not_followed_gap, which fires for the routine
+// case of a handler delegating one hop into a helper/service function this
+// depth-1 walk does not itself follow -- the ordinary shape of layered code,
+// not a rare failure. That diagnostic reflects incompleteness in a
+// *different* source's own reachability picture (fewer edges recorded from
+// it, never a fabricated one), so it must not suppress an unrelated,
+// already fully-resolved witness. model.Coverage.Complete still gates the
+// aggregate LayerBypassResult.Coverage.Complete, so the incompleteness is
+// reported honestly rather than erased -- see EvaluateGoLayerBypass's doc
+// comment (rule_layer_bypass.go) for how a caller must fold that into a
+// witness's Lifecycle rather than treat the witness's presence as suspect.
+// BuildTypeScriptLayerBypass never returns a non-nil error for a sidecar
+// transport/analysis failure; that is reported through
 // Coverage.Diagnostics/Coverage.Complete instead, matching
 // BuildTypeScriptModelViaSidecar's fail-open-with-diagnostics contract.
 func BuildTypeScriptLayerBypass(ctx context.Context, snapshot fs.FS, meta SnapshotMeta, opts TSSidecarOptions, requiredLayer BypassLayer) (LayerBypassResult, error) {
@@ -90,17 +102,9 @@ func BuildTypeScriptLayerBypass(ctx context.Context, snapshot fs.FS, meta Snapsh
 		bypassAdjacency = removeLayerNodesFromAdjacency(adjacency, requiredLayerNodes)
 	}
 
-	// modelIncomplete is the TS analog of BuildGoLayerBypass's
-	// callGraphIncomplete/dirsComplete checks folded into one: the TS
-	// sidecar produces CallFacts, source/sink identification, and node
-	// classification in a single round trip with a single Coverage, so
-	// there is no separate "call graph complete but sources incomplete"
-	// state to distinguish.
-	modelIncomplete := !model.Coverage.Complete
-
 	var witnesses []LayerBypassWitness
 	evaluated, truncatedPairs, nodesVisited := 0, 0, 0
-	truncatedSearch := modelIncomplete
+	truncatedSearch := false
 	unclassifiedNodeSeen := false
 
 	if ambiguousLayer {
@@ -116,7 +120,7 @@ func BuildTypeScriptLayerBypass(ctx context.Context, snapshot fs.FS, meta Snapsh
 			if hitBudget {
 				truncatedSearch = true
 			}
-			skip := hitBudget || ctx.Err() != nil || modelIncomplete
+			skip := hitBudget || ctx.Err() != nil
 			for _, sink := range sinks {
 				if skip {
 					truncatedPairs++
