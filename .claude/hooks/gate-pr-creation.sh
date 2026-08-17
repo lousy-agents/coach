@@ -54,7 +54,15 @@ if [ "$tool_name" = "Bash" ]; then
   # This filter is why adding a Bash registration is not enough on its own: an
   # unmatched command exits 0, so a `git push` registration pointing at this
   # script would have allowed silently until this line learned the verb.
-  echo "$command" | grep -qE '\b(gh[[:space:]]+pr[[:space:]]+create|git[[:space:]]+push)\b' || exit 0
+  #
+  # Anchored to a command position -- start of a line, or after a separator --
+  # rather than searched anywhere in the string. Observed: a commit whose
+  # message discussed this gate was refused by it, because the hook receives one
+  # flat command string in which an invocation and a mention look identical. In
+  # a repository whose commit messages are mostly about its own tooling that
+  # misfires constantly. A false deny is safe but infuriating, and nothing about
+  # the safe direction depends on matching mentions.
+  echo "$command" | grep -qE '(^|[;&|]|&&|\|\|)[[:space:]]*(gh[[:space:]]+pr[[:space:]]+create|git[[:space:]]+push)\b' || exit 0
 else
   # git is not the only way to reach the remote. The GitHub MCP server writes
   # commits over the API with no shell involved, so a Bash-only gate watches one

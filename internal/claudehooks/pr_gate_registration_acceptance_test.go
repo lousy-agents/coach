@@ -66,15 +66,6 @@ var _ = Describe("publish gate registration", func() {
 		Expect(regs).NotTo(BeEmpty(), "nothing routes to the gate; every assertion below would be vacuous")
 	})
 
-	hasBashIf := func(fragment string) bool {
-		for _, r := range regs {
-			if r.Matcher == "Bash" && strings.Contains(r.If, fragment) {
-				return true
-			}
-		}
-		return false
-	}
-
 	hasMatcher := func(name string) bool {
 		for _, r := range regs {
 			if r.Matcher == name {
@@ -84,20 +75,24 @@ var _ = Describe("publish gate registration", func() {
 		return false
 	}
 
-	When("a pull request is opened from a shell", func() {
-		It("is gated", func() {
-			Expect(hasBashIf("gh pr create")).To(BeTrue(),
-				"local sessions have no GitHub MCP server; losing this leaves `gh pr create` ungated there")
-		})
-	})
-
-	// The push is where tree identity is actually decided. The PR body describes
-	// a tree the gate inspected; without this the branch can carry another one,
-	// and every repair push made while driving a red PR to green is unchecked.
-	When("commits are pushed to the remote", func() {
-		It("is gated on both surfaces", func() {
-			Expect(hasBashIf("git push")).To(BeTrue(),
-				"pushes are Bash on every surface; this is the only registration covering the repair path")
+	// Deliberately one unguarded Bash registration rather than one `if` clause
+	// per verb. A `Bash(git push*)` guard was observed matching a `git commit`
+	// whose *message* discussed pushing, so the harness glob was deciding more
+	// loosely than its spelling suggests -- and its real semantics are not
+	// something this repository can pin with a test. The script's anchored
+	// filter decides instead, and that filter has specs.
+	When("publishing happens through a shell", func() {
+		It("routes every Bash command to the gate, which filters them itself", func() {
+			var bash []gateRegistration
+			for _, r := range regs {
+				if r.Matcher == "Bash" {
+					bash = append(bash, r)
+				}
+			}
+			Expect(bash).To(HaveLen(1),
+				"one unguarded registration; per-verb `if` clauses put the matching rule somewhere untestable")
+			Expect(bash[0].If).To(BeEmpty(),
+				"an `if` guard here would silently re-narrow what the gate sees, and it cannot be asserted on")
 		})
 	})
 

@@ -99,6 +99,37 @@ var _ = Describe("the push gate", func() {
 		})
 	})
 
+	// Observed, not hypothesised: a commit whose message discussed the push gate
+	// was refused by the push gate. The hook sees one flat command string, so an
+	// unanchored search cannot tell an invocation from a mention -- and in a
+	// repository whose commit messages are largely about its own tooling, that
+	// misfires constantly. Anchoring costs nothing: a false deny is safe but
+	// infuriating, and the safe direction is already covered above.
+	When("a command merely mentions a publish verb", func() {
+		It("is not gated", func() {
+			for _, command := range []string{
+				`git commit -m "explain the git push gate"`,
+				"echo 'run git push later' > notes.txt",
+				`git commit -m "this also mentions gh pr create"`,
+			} {
+				run := runGateCommand("Bash", command, true, true)
+				Expect(run.stdout).To(BeEmpty(), "%q is a mention, not an invocation", command)
+			}
+		})
+	})
+
+	When("a publish verb appears after a shell separator", func() {
+		It("is still gated", func() {
+			for _, command := range []string{
+				"git add -A && git push",
+				"make build; git push origin main",
+				"git commit -m x && gh pr create --fill",
+			} {
+				expectDeny(runGateCommand("Bash", command, true, true), "working tree")
+			}
+		})
+	})
+
 	// git push is not the only way to write to the remote. On CCR the harness
 	// supplies MCP tools that commit over the API with no shell involved, so a
 	// Bash-only gate watches a door that is not the only door.

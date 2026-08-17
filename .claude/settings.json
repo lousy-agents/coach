@@ -62,21 +62,6 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(gh pr create*)",
-            "command": "bash",
-            "timeout": 300,
-            "args": [
-              "${CLAUDE_PROJECT_DIR}/.claude/hooks/gate-pr-creation.sh"
-            ]
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "if": "Bash(git push*)",
             "command": "bash",
             "timeout": 300,
             "args": [
