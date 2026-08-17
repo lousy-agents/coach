@@ -42,7 +42,7 @@ func BuildTypeScriptReachability(ctx context.Context, snapshot fs.FS, meta Snaps
 		Facts:     model.ReachabilityFacts,
 		Sources:   tsReachabilitySources(model.ReachabilityFacts),
 		Algorithm: TSReachabilityAlgorithm,
-		Coverage:  model.Coverage,
+		Coverage:  tsReachabilityCoverage(model.Coverage),
 	}, nil
 }
 
@@ -52,4 +52,45 @@ func tsReachabilitySources(facts []ReachabilityFact) []string {
 		seen[f.Source] = true
 	}
 	return mapKeysSorted(seen)
+}
+
+// tsReachabilityGapDiagnosticCodes lists every diagnostic code
+// js/semantics/src/project-sidecar/reachability.ts's recordGapDiagnostic
+// call sites can emit (see that file's gapDiagnosticInfo and
+// handleCallInSource) -- kept in lockstep with those literal strings, the
+// same way TSReachabilityAlgorithm mirrors REACHABILITY_ALGORITHM. Each one
+// means "this hop was deliberately left unverified by the depth-1 walk,"
+// never an import/config/budget failure, so Model.Coverage.Complete (what
+// internal/codesignalcli/project_ts_backend.go publishes as CLI
+// ProjectCoverage) does not flip on their presence -- see analyze.ts's
+// runProjects. Reachability's own completeness is derived from them here
+// instead.
+var tsReachabilityGapDiagnosticCodes = map[string]bool{
+	"ts_reachability_dynamic_import_gap":          true,
+	"ts_reachability_unresolved_handler_gap":      true,
+	"ts_reachability_local_call_not_followed_gap": true,
+	"ts_reachability_type_only_gap":               true,
+	"ts_reachability_unresolved_type_gap":         true,
+}
+
+// tsReachabilityHasGap reports whether diagnostics contains any reachability
+// coverage-gap diagnostic (see tsReachabilityGapDiagnosticCodes).
+func tsReachabilityHasGap(diagnostics []Diagnostic) bool {
+	for _, d := range diagnostics {
+		if tsReachabilityGapDiagnosticCodes[d.Code] {
+			return true
+		}
+	}
+	return false
+}
+
+// tsReachabilityCoverage derives a reachability-specific Coverage from
+// modelCoverage: Complete is additionally false whenever a reachability
+// coverage-gap diagnostic is present, even though that diagnostic no longer
+// flips modelCoverage.Complete itself (see tsReachabilityGapDiagnosticCodes).
+// Diagnostics/Counts/Budgets/Phase are passed through unchanged.
+func tsReachabilityCoverage(modelCoverage Coverage) Coverage {
+	coverage := modelCoverage
+	coverage.Complete = coverage.Complete && !tsReachabilityHasGap(coverage.Diagnostics)
+	return coverage
 }

@@ -114,6 +114,12 @@ func modeReachability(req projectbridge.Request) {
 	})
 }
 
+// modeReachabilityGap mirrors the real sidecar's own contract: a routine
+// reachability coverage gap surfaces as a diagnostic but leaves the
+// project-wide Complete bit true (see analyze.ts's runProjects and
+// pkg/projectmodel/ts_reachability.go's tsReachabilityGapDiagnosticCodes) --
+// only ReachabilityResult.Coverage/LayerBypassResult.Coverage report the gap
+// as incompleteness.
 func modeReachabilityGap(req projectbridge.Request) {
 	fact := reachabilityFixtureFact()
 	writeResponse(projectbridge.Response{
@@ -123,7 +129,7 @@ func modeReachabilityGap(req projectbridge.Request) {
 		ReachabilityFacts: []projectbridge.ReachabilityFactWire{fact},
 		Coverage: projectbridge.Coverage{
 			Phase:    "ts_sidecar_fake",
-			Complete: false,
+			Complete: true,
 			Counts:   map[string]int{"files_seen": len(req.Files)},
 			Diagnostics: []projectbridge.Diagnostic{
 				{
@@ -309,13 +315,15 @@ func modeLayerBypassCycle(req projectbridge.Request) {
 	})
 }
 
-// modeLayerBypassGap emits a resolvable bypass edge alongside
-// Coverage.Complete false and an unrelated gap diagnostic --
+// modeLayerBypassGap emits a resolvable bypass edge alongside Coverage
+// mirroring the real sidecar's own contract for a routine gap (Complete
+// true, an unrelated gap diagnostic present -- see modeReachabilityGap) --
 // BuildTypeScriptLayerBypass must still emit this pair's own resolved
 // witness while reporting the aggregate LayerBypassResult.Coverage.Complete
-// as false. The "service" required layer resolves from the acceptance
-// suite's own snapshot file inventory (tsLayerBypassSnapshot's
-// "service/inventory.ts"), independent of this CallGraph.
+// as false via its own gap-diagnostic derivation. The "service" required
+// layer resolves from the acceptance suite's own snapshot file inventory
+// (tsLayerBypassSnapshot's "service/inventory.ts"), independent of this
+// CallGraph.
 func modeLayerBypassGap(req projectbridge.Request) {
 	const source = "file:src/handlers/app.ts#getUsers"
 	const sink = "(PrismaClient).findMany"
@@ -328,7 +336,7 @@ func modeLayerBypassGap(req projectbridge.Request) {
 		ReachabilityFacts: []projectbridge.ReachabilityFactWire{layerBypassFact(source, sink)},
 		Coverage: projectbridge.Coverage{
 			Phase:    "ts_sidecar_fake",
-			Complete: false,
+			Complete: true,
 			Counts:   map[string]int{"files_seen": len(req.Files)},
 			Diagnostics: []projectbridge.Diagnostic{
 				{

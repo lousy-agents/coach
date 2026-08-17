@@ -821,7 +821,7 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 
 			model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), realOpts())
 			Expect(err).NotTo(HaveOccurred())
-			Expect(model.Coverage.Complete).To(BeFalse(), "expected the compliant handler's routine depth-1 gap to mark the model incomplete, got %+v", model.Coverage)
+			Expect(model.Coverage.Complete).To(BeTrue(), "a routine depth-1 reachability gap must not mark the whole model incomplete -- that bit is what coach codesignal --project-language typescript publishes as project_coverage, and it must not degrade an unrelated architecture.layer_violation to lifecycle unknown for the ordinary shape of layered code; got %+v", model.Coverage)
 			_, hasGapDiag := diagnosticWithCode(model.Coverage.Diagnostics, "ts_reachability_local_call_not_followed_gap")
 			Expect(hasGapDiag).To(BeTrue(), "expected this fixture to genuinely reproduce the routine local-call-not-followed gap, got %+v", model.Coverage.Diagnostics)
 

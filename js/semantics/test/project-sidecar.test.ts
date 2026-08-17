@@ -535,10 +535,14 @@ test("TS reachability: resolved route-to-query facts, explicit coverage gaps, an
   assert.ok(diagCodes.has("ts_reachability_unresolved_type_gap"), JSON.stringify(response.coverage));
   assert.ok(diagCodes.has("ts_reachability_dynamic_import_gap"), JSON.stringify(response.coverage));
 
-  // A response carrying acknowledged ts_reachability_*_gap diagnostics must
-  // not also claim Complete=true -- a consumer reading only Coverage.Complete
-  // would otherwise see a fully-covered model despite the gaps above.
-  assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
+  // A ts_reachability_*_gap diagnostic means one hop was deliberately left
+  // unverified, not that import/config analysis for this project failed, so
+  // it must not flip this project-wide Complete bit -- that would mark most
+  // real layered TS trees incomplete for the ordinary shape of their code
+  // (see analyze.ts's runProjects). The diagnostics above still surface;
+  // reachability's own incompleteness is a Go-side concern (see
+  // pkg/projectmodel/ts_reachability.go's tsReachabilityGapDiagnosticCodes).
+  assert.equal(response.coverage.complete, true, JSON.stringify(response.coverage));
 
   // The raw call graph carries the same resolved edge the fact's path used.
   const callGraph = response.call_graph ?? [];
@@ -636,7 +640,9 @@ test("TS reachability: a non-identifier handler (inline arrow) is an explicit ga
     response.coverage.diagnostics?.some((d) => d.code === "ts_reachability_unresolved_handler_gap"),
     JSON.stringify(response.coverage),
   );
-  assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
+  // A routine reachability gap does not flip the project-wide Complete bit
+  // -- see the "resolved route-to-query facts" test above for why.
+  assert.equal(response.coverage.complete, true, JSON.stringify(response.coverage));
 });
 
 test("TS reachability: a dynamic import() inside a handler body is a gap, not silence", async () => {
@@ -683,7 +689,9 @@ test("TS reachability: a dynamic import() inside a handler body is a gap, not si
     response.coverage.diagnostics?.some((d) => d.code === "ts_reachability_dynamic_import_gap"),
     JSON.stringify(response.coverage),
   );
-  assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
+  // A routine reachability gap does not flip the project-wide Complete bit
+  // -- see the "resolved route-to-query facts" test above for why.
+  assert.equal(response.coverage.complete, true, JSON.stringify(response.coverage));
 });
 
 test("TS reachability: calling the same sink twice from one source yields exactly one fact", async () => {

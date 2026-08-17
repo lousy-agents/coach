@@ -73,69 +73,132 @@ func BuildTypeScriptLayerBypass(ctx context.Context, snapshot fs.FS, meta Snapsh
 	adjacency := buildCallGraphAdjacency(model.CallFacts)
 	nodePositions := tsLayerBypassNodePositions(model.CallFacts)
 
-	requiredLayerNodes := map[string]bool{}
-	for node, pos := range nodePositions {
-		if layerBypassContainsDir(requiredLayer, pos.Dir) {
-			requiredLayerNodes[node] = true
-		}
-	}
-	// ambiguousLayer mirrors BuildGoLayerBypass's own guard: an
-	// unconfigured/unmatched requiredLayer would remove nothing from
-	// adjacency, silently turning this into an ordinary reachability search
-	// that could misreport a genuinely compliant path as a bypass witness.
-	//
-	// The match itself is decided from model.Files, not from
-	// requiredLayerNodes/CallFacts: the real sidecar's call graph only ever
-	// contains route-handler-to-sink edges (see
-	// js/semantics/src/project-sidecar/reachability.ts's depth-1 walk), so a
-	// required layer with no route handler of its own -- the exact shape a
-	// genuine layer bypass produces -- would never appear as a CallFact
-	// endpoint even though real files live there. model.Files is populated
-	// from the snapshot's own collected file list independent of the
-	// sidecar's response (see tsFileFactsFromCollected), so it reflects what
-	// is actually on disk regardless of what the call graph happened to
-	// touch.
-	ambiguousLayer := len(requiredLayer.Prefixes) == 0 || !tsLayerBypassLayerMatchesFiles(model.Files, requiredLayer)
+	requiredLayerNodes, ambiguousLayer := tsLayerBypassRequiredLayerNodes(model.Files, nodePositions, requiredLayer)
 
 	bypassAdjacency := adjacency
 	if !ambiguousLayer {
 		bypassAdjacency = removeLayerNodesFromAdjacency(adjacency, requiredLayerNodes)
 	}
 
-	var witnesses []LayerBypassWitness
-	evaluated, truncatedPairs, nodesVisited := 0, 0, 0
-	truncatedSearch := false
-	unclassifiedNodeSeen := false
+	search := tsLayerBypassRunSearch(ctx, sources, sinks, bypassAdjacency, nodePositions, requiredLayer, ambiguousLayer)
+
+	diagnostics := tsLayerBypassDiagnostics(model.Coverage.Diagnostics, ambiguousLayer, search.unclassifiedNodeSeen, search.truncatedSearch)
+
+	// model.Coverage.Complete alone no longer reflects reachability gaps
+	// (see tsReachabilityGapDiagnosticCodes's doc comment), so the aggregate
+	// LayerBypassResult.Coverage.Complete this function's own doc comment
+	// promises -- honest incompleteness reporting without suppressing an
+	// unrelated, already-resolved witness -- is derived from gap presence
+	// here instead.
+	complete := model.Coverage.Complete && !tsReachabilityHasGap(model.Coverage.Diagnostics) && !search.truncatedSearch
+
+	sort.Slice(search.witnesses, func(i, j int) bool {
+		if search.witnesses[i].Source != search.witnesses[j].Source {
+			return search.witnesses[i].Source < search.witnesses[j].Source
+		}
+		return search.witnesses[i].Sink < search.witnesses[j].Sink
+	})
+
+	return LayerBypassResult{
+		Witnesses: search.witnesses,
+		Sources:   sources,
+		Algorithm: TSLayerBypassAlgorithm,
+		Coverage: canonicalCoverage(Coverage{
+			Phase:    "ts_layer_bypass",
+			Complete: complete,
+			Counts: map[string]int{
+				"sources_identified":           len(sources),
+				"sinks_identified":             len(sinks),
+				"source_sink_pairs_total":      len(sources) * len(sinks),
+				"source_sink_pairs_evaluated":  search.evaluated,
+				"source_sink_pairs_truncated":  search.truncatedPairs,
+				"witnesses_found":              len(search.witnesses),
+				"required_layer_nodes_matched": len(requiredLayerNodes),
+				"search_nodes_visited":         search.nodesVisited,
+			},
+			Diagnostics: diagnostics,
+		}),
+	}, nil
+}
+
+// tsLayerBypassRequiredLayerNodes computes which call-graph node IDs fall
+// under requiredLayer's Prefixes and whether requiredLayer is ambiguous.
+// ambiguousLayer mirrors BuildGoLayerBypass's own guard: an
+// unconfigured/unmatched requiredLayer would remove nothing from adjacency,
+// silently turning the search into an ordinary reachability search that
+// could misreport a genuinely compliant path as a bypass witness.
+//
+// The match itself is decided from files, not from the returned node map:
+// the real sidecar's call graph only ever contains route-handler-to-sink
+// edges (see js/semantics/src/project-sidecar/reachability.ts's depth-1
+// walk), so a required layer with no route handler of its own -- the exact
+// shape a genuine layer bypass produces -- would never appear as a CallFact
+// endpoint even though real files live there. files is populated from the
+// snapshot's own collected file list independent of the sidecar's response
+// (see tsFileFactsFromCollected), so it reflects what is actually on disk
+// regardless of what the call graph happened to touch.
+func tsLayerBypassRequiredLayerNodes(files []File, nodePositions map[string]layerBypassNodePosition, requiredLayer BypassLayer) (map[string]bool, bool) {
+	requiredLayerNodes := map[string]bool{}
+	for node, pos := range nodePositions {
+		if layerBypassContainsDir(requiredLayer, pos.Dir) {
+			requiredLayerNodes[node] = true
+		}
+	}
+	ambiguousLayer := len(requiredLayer.Prefixes) == 0 || !tsLayerBypassLayerMatchesFiles(files, requiredLayer)
+	return requiredLayerNodes, ambiguousLayer
+}
+
+// tsLayerBypassSearchResult accumulates one BuildTypeScriptLayerBypass run's
+// BFS-and-witness-collection outcome across every source x sink pair.
+type tsLayerBypassSearchResult struct {
+	witnesses            []LayerBypassWitness
+	evaluated            int
+	truncatedPairs       int
+	nodesVisited         int
+	truncatedSearch      bool
+	unclassifiedNodeSeen bool
+}
+
+// tsLayerBypassRunSearch runs BuildGoLayerBypass's shared deterministic BFS
+// (bfsShortestPaths/reconstructReachabilityPath) over adjacency for every
+// source x sink pair, skipping the search entirely when ambiguousLayer is
+// true (see tsLayerBypassRequiredLayerNodes). A witness is only collected
+// when its reconstructed path is fully classified
+// (stepPathFullyClassified); an unclassified path is recorded via
+// unclassifiedNodeSeen instead, mirroring
+// BuildTypeScriptLayerBypass's own high-confidence-only contract.
+func tsLayerBypassRunSearch(ctx context.Context, sources, sinks []string, adjacency map[string][]string, nodePositions map[string]layerBypassNodePosition, requiredLayer BypassLayer, ambiguousLayer bool) tsLayerBypassSearchResult {
+	var result tsLayerBypassSearchResult
 
 	if ambiguousLayer {
-		truncatedPairs = len(sources) * len(sinks)
-		truncatedSearch = true
+		result.truncatedPairs = len(sources) * len(sinks)
+		result.truncatedSearch = true
 	} else {
 		for _, source := range sources {
 			if ctx.Err() != nil {
-				truncatedSearch = true
+				result.truncatedSearch = true
 				break
 			}
-			parents, hitBudget := bfsShortestPaths(ctx, source, bypassAdjacency, 0, &nodesVisited)
+			parents, hitBudget := bfsShortestPaths(ctx, source, adjacency, 0, &result.nodesVisited)
 			if hitBudget {
-				truncatedSearch = true
+				result.truncatedSearch = true
 			}
 			skip := hitBudget || ctx.Err() != nil
 			for _, sink := range sinks {
 				if skip {
-					truncatedPairs++
+					result.truncatedPairs++
 					continue
 				}
-				evaluated++
+				result.evaluated++
 				stepPath, ok := reconstructReachabilityPath(parents, source, sink)
 				if !ok {
 					continue
 				}
 				if !stepPathFullyClassified(stepPath, nodePositions) {
-					unclassifiedNodeSeen = true
+					result.unclassifiedNodeSeen = true
 					continue
 				}
-				witnesses = append(witnesses, LayerBypassWitness{
+				result.witnesses = append(result.witnesses, LayerBypassWitness{
 					ID:               fmt.Sprintf("bypass:%s:%s->%s@%s", requiredLayer.Name, source, sink, TSLayerBypassAlgorithm),
 					Source:           source,
 					Sink:             sink,
@@ -147,11 +210,18 @@ func BuildTypeScriptLayerBypass(ctx context.Context, snapshot fs.FS, meta Snapsh
 			}
 		}
 	}
-	if !truncatedSearch && ctx.Err() != nil {
-		truncatedSearch = true
+	if !result.truncatedSearch && ctx.Err() != nil {
+		result.truncatedSearch = true
 	}
+	return result
+}
 
-	diagnostics := append([]Diagnostic{}, model.Coverage.Diagnostics...)
+// tsLayerBypassDiagnostics appends the ambiguous-layer and budget-exceeded
+// diagnostics (each deduplicated via containsDiagnosticCode) to base's
+// coverage diagnostics, matching BuildTypeScriptLayerBypass's documented
+// diagnostic contract.
+func tsLayerBypassDiagnostics(base []Diagnostic, ambiguousLayer, unclassifiedNodeSeen, truncatedSearch bool) []Diagnostic {
+	diagnostics := append([]Diagnostic{}, base...)
 	if ambiguousLayer {
 		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassAmbiguousLayer})
 	} else if unclassifiedNodeSeen && !containsDiagnosticCode(diagnostics, DiagLayerBypassAmbiguousLayer) {
@@ -160,36 +230,7 @@ func BuildTypeScriptLayerBypass(ctx context.Context, snapshot fs.FS, meta Snapsh
 	if truncatedSearch && !containsDiagnosticCode(diagnostics, DiagLayerBypassBudgetExceeded) {
 		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded})
 	}
-
-	complete := model.Coverage.Complete && !truncatedSearch
-
-	sort.Slice(witnesses, func(i, j int) bool {
-		if witnesses[i].Source != witnesses[j].Source {
-			return witnesses[i].Source < witnesses[j].Source
-		}
-		return witnesses[i].Sink < witnesses[j].Sink
-	})
-
-	return LayerBypassResult{
-		Witnesses: witnesses,
-		Sources:   sources,
-		Algorithm: TSLayerBypassAlgorithm,
-		Coverage: canonicalCoverage(Coverage{
-			Phase:    "ts_layer_bypass",
-			Complete: complete,
-			Counts: map[string]int{
-				"sources_identified":           len(sources),
-				"sinks_identified":             len(sinks),
-				"source_sink_pairs_total":      len(sources) * len(sinks),
-				"source_sink_pairs_evaluated":  evaluated,
-				"source_sink_pairs_truncated":  truncatedPairs,
-				"witnesses_found":              len(witnesses),
-				"required_layer_nodes_matched": len(requiredLayerNodes),
-				"search_nodes_visited":         nodesVisited,
-			},
-			Diagnostics: diagnostics,
-		}),
-	}, nil
+	return diagnostics
 }
 
 // tsLayerBypassLayerMatchesFiles reports whether any file in files falls
