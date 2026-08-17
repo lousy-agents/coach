@@ -1,7 +1,7 @@
 {
   "name": "mutation-hunter",
   "displayName": "Mutation Hunter",
-  "description": "Uncover test coverage gaps by applying semantic mutations to production TypeScript, Go, or Python code"
+  "description": "Uncover test coverage gaps by applying semantic mutations to production TypeScript, Go, or Python code",
   "license": "BSD-2-Clause",
   "repository": "https://github.com/lousy-agents/skills",
   "homepage": "https://github.com/lousy-agents/skills#readme",

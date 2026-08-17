@@ -1,6 +1,6 @@
 ---
 name: issue-refine-loop
-description: "Refine an unrefined GitHub issue in place into an implementation-ready epic — problem statement, personas, value assessment, EARS acceptance criteria, design with Mermaid diagrams, tasks, and scope boundaries — then decompose it into child issues. Use when asked to 'refine this issue', 'refine issue #N', 'harden a GitHub issue', 'turn this issue into an epic', 'make this issue implementable', 'flesh out this issue', 'add acceptance criteria to this issue', 'groom the backlog', 'issue refine loop', or when a needs-refine / unrefined label triggers automation. Do NOT use to draft a local spec file (use feature-to-plan), to convert an already-approved epic into a sub-issue graph (use plan-to-graph), or to produce findings without applying them (use spec-auditor)."
+description: "Refine an unrefined GitHub issue in place into an implementation-ready epic — problem statement, personas, value assessment, EARS acceptance criteria, design with Mermaid diagrams, tasks, and scope boundaries — then decompose it into child issues. Use when asked to 'refine this issue', 'refine issue #N', 'harden a GitHub issue', 'turn this issue into an epic', 'make this issue implementable', 'flesh out this issue', 'add acceptance criteria to this issue', 'groom the backlog', 'issue refine loop', or when a needs-refine / unrefined label triggers automation. An issue feature-to-plan just created is a valid input here. Do NOT use to author a new plan from an idea or seed (use feature-to-plan — spec file or one new GitHub issue), to convert an already-approved epic into a sub-issue graph (use plan-to-graph), or to produce findings without applying them (use spec-auditor)."
 argument-hint: "GitHub issue number, #N, or full issue URL (e.g. #162 or https://github.com/owner/repo/issues/162)"
 effort: high
 allowed-tools: Read, Grep, Glob, Bash
@@ -36,8 +36,9 @@ Three on-demand references back this skill:
 
 **Do NOT use when:**
 
-- The user wants a spec **file** drafted under the repo's specs directory — use `feature-to-plan`.
-  That skill writes a local file; this one writes only to GitHub.
+- The user wants a **new** plan authored from an idea or seed — use `feature-to-plan`. That skill
+  creates a spec file or one new GitHub issue; this skill rewrites an existing issue in place.
+  An issue `feature-to-plan` just created is a valid input here.
 - The epic body is already approved and the user only wants tasks turned into a native sub-issue
   graph with blocking edges — use `plan-to-graph`. This skill refines the body first, then
   delegates child creation to `plan-to-graph` when it is available.
