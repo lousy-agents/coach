@@ -1,7 +1,7 @@
 {
   "name": "go-testable-design",
   "displayName": "Go Testable Design",
-  "description": "Guide Go development with tests: small behavior first, dual-track unit vs acceptance form, outside-in starts, package purity, and incremental refactoring",
+  "description": "Guide Go development with tests: smallest test first, start from public behavior, keep IO out of decision packages",
   "license": "BSD-2-Clause",
   "repository": "https://github.com/lousy-agents/skills",
   "homepage": "https://github.com/lousy-agents/skills#readme",

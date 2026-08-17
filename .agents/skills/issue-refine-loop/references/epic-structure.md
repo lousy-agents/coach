@@ -30,7 +30,8 @@ default, not a repo-invariant law:
    strongest signal, since a prior run of this skill already produced it.
 2. Failing that, an issue titled with an `epic:` prefix (or whatever prefix convention the
    repository's other issues establish) whose body contains at least six of the eight canonical
-   section headings below.
+   section headings below. A `feature-to-plan`-authored issue matches this tier by structure
+   only — it is a drafted plan, not a refined epic; copy its heading set, not a `refined` verdict.
 3. Neither found — use the section set below unchanged, and record in the closing comment that the
    tiebreaker was unavailable.
 

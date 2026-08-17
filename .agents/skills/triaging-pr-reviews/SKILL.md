@@ -2,7 +2,7 @@
 name: triaging-pr-reviews
 description: Use when triaging or analyzing PR review comments — especially from automated reviewers like GitHub Copilot — to classify root concerns, verify claims against actual code, evaluate trade-offs, and decide what to implement, reject, or implement differently. Also use to process or respond to review feedback, handle Copilot suggestions, or sort through code review comments
 argument-hint: "PR number to analyze (e.g., #317). Optionally specify a source filter: 'copilot', 'human', or 'all' (default: all)"
-allowed-tools: Bash, Read, Grep, Edit
+allowed-tools: Bash, Read, Grep, Edit, Write, mcp__github
 ---
 
 # Triaging PR Reviews
@@ -26,37 +26,43 @@ PR review comments — especially from automated reviewers — are hypotheses, n
 
 ## Prerequisites
 
-- **`gh` CLI** — must be installed and authenticated (`gh auth status` to verify)
-- **`jq`** — required for JSON filtering of API responses
+One GitHub read surface, bound once before Phase 1. Load [`references/github-surface.md`](./references/github-surface.md) and run its probe. Local sessions with authenticated `gh` and `jq` use `gh`. Claude Code cloud sessions, and any session without `gh`, use the harness's GitHub MCP or built-in GitHub tools.
+
+If the probe finds no read surface, abort and name every probe that failed. Do not install `gh` to recover.
+
+## GitHub surface
+
+Later phases name only these operations. The reference binds each one to the surface chosen in the probe.
+
+| Operation | Meaning |
+| --- | --- |
+| `read_pr` | PR title, body, branches, state, url |
+| `list_review_comments` | Inline review comments (id, user, path, line, body, created_at, in_reply_to_id) |
+| `list_reviews` | Review summaries (id, user, state, body, submitted_at) |
+| `reply_in_thread` | Reply in a review thread, never as a top-level PR comment |
+| `resolve_thread` | Mark an addressed review thread resolved |
+
+Bind exactly one read path and one write path. Do not mix surfaces mid-run. Phase 7 covers what to do when a write op can't be bound.
 
 ## Procedure
 
 ```
-DISCOVER → TRIAGE → VERIFY → CLASSIFY → EVALUATE → IMPLEMENT → RESOLVE
+PROBE → DISCOVER → TRIAGE → VERIFY → CLASSIFY → EVALUATE → IMPLEMENT → RESOLVE
 ```
 
-Each phase builds on the previous. Do not skip phases — automated reviewers frequently make claims that don't hold up under verification.
+Probe first (see Prerequisites). Each later phase builds on the previous. Do not skip phases — automated reviewers frequently make claims that don't hold up under verification.
 
 ---
 
 ### Phase 1: Discovery
 
-Fetch all PR context. Run these commands to gather metadata, inline comments, and review summaries:
+Fetch all PR context through the bound surface (see [`references/github-surface.md`](./references/github-surface.md)):
 
-```bash
-# PR metadata (title, branch, state)
-gh pr view {number} --json title,body,headRefName,baseRefName,state,url
+1. `read_pr` — title, body, branches, state, url
+2. `list_review_comments` — the actual inline feedback; exhaust every page
+3. `list_reviews` — approval state per reviewer; exhaust every page
 
-# Inline review comments — the actual feedback
-gh api repos/{owner}/{repo}/pulls/{number}/comments --paginate \
-  | jq '[.[] | {id, user: .user.login, path, line, body, created_at, in_reply_to_id}]
-        | sort_by(.created_at) | reverse'
-
-# Review summaries (approval state per reviewer)
-gh api repos/{owner}/{repo}/pulls/{number}/reviews --paginate \
-  | jq '[.[] | {id, user: .user.login, state, body, submitted_at}]
-        | sort_by(.submitted_at) | reverse'
-```
+Sort comments and reviews by timestamp, newest first. If any of these three ops fails, abort. Do not implement or resolve anything.
 
 ---
 
@@ -161,40 +167,17 @@ Determine the project's development workflow before implementing. Search for TDD
 
 ### Phase 7: Resolution
 
-**Reply in the review thread** (not as a top-level PR comment):
+Use the write bindings recorded during the probe. Reload [`references/github-surface.md`](./references/github-surface.md) only if that binding is no longer in context.
 
-```bash
-gh api repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies \
-  -f body="Fixed in {sha}. {Brief description of what changed and why.}"
-```
+**Reply in the review thread** (not as a top-level PR comment) with `reply_in_thread`:
 
-**Resolve the thread via GraphQL:**
+`Fixed in {sha}. {Brief description of what changed and why.}`
 
-```bash
-# Get unresolved thread node IDs
-gh api graphql -f query='{
-  repository(owner: "{owner}", name: "{repo}") {
-    pullRequest(number: {number}) {
-      reviewThreads(last: 50) {
-        nodes {
-          id
-          isResolved
-          comments(first: 1) { nodes { databaseId path } }
-        }
-      }
-    }
-  }
-}'
-
-# Resolve each addressed thread
-gh api graphql -f query='mutation {
-  resolveReviewThread(input: {threadId: "{thread_node_id}"}) {
-    thread { isResolved }
-  }
-}'
-```
+**Resolve each addressed thread** with `resolve_thread`.
 
 **Leave unresolved:** process-only comments, items deferred to user, rejected items awaiting discussion.
+
+If `reply_in_thread` or `resolve_thread` is unbound or returns a 403 / GraphQL pin error, skip that write, leave the thread open, and disclose the degradation. Do not post a top-level PR comment as a substitute.
 
 ---
 
@@ -243,3 +226,5 @@ Automated reviewers frequently flag Windows/POSIX compatibility. Before implemen
 | Replying as top-level PR comment | Always reply in the review thread |
 | Resolving threads you rejected | Leave unresolved for user to close |
 | Batch-implementing without testing each | Test each fix individually, then full validation |
+| Running `gh` before the probe, or on a CCR-proxy session | Bind once from [`references/github-surface.md`](./references/github-surface.md); run the CCR check first and skip `gh` if it prints anything |
+| Treating `proxy-injected` as a token | It is a placeholder. Never curl with it. Degrade writes you cannot bind |
