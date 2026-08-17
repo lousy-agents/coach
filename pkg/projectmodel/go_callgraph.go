@@ -126,18 +126,20 @@ func BuildGoCallGraph(ctx context.Context, snapshot fs.FS, opts CallGraphOptions
 		defer cancel()
 	}
 
-	discovery := discoverGoProject(snapshot, opts.Budgets)
-	modules := discovery.Modules
-	if len(opts.Roots) > 0 {
-		modules, _ = filterToRoots(modules, discovery.Workspaces, opts.Roots)
+	loaded, err := loadGoSnapshot(ctx, snapshot, opts.Roots, opts.Budgets)
+	if err != nil {
+		return CallGraphResult{}, err
 	}
-	moduleDirs := mapKeysSorted(modules)
+	defer loaded.cleanup()
+	return buildGoCallGraphFromLoaded(ctx, loaded, opts), nil
+}
 
-	diagnostics := append([]Diagnostic{}, discovery.Diagnostics...)
-	complete := discovery.Complete
+func buildGoCallGraphFromLoaded(ctx context.Context, loaded *loadedGoSnapshot, opts CallGraphOptions) CallGraphResult {
+	diagnostics := append([]Diagnostic{}, loaded.discovery.Diagnostics...)
+	complete := loaded.discovery.Complete
 
 	counts := map[string]int{
-		"roots_seen":                        len(moduleDirs),
+		"roots_seen":                        len(loaded.moduleDirs),
 		"roots_built":                       0,
 		"functions_seen":                    0,
 		"call_sites_seen":                   0,
@@ -146,6 +148,7 @@ func BuildGoCallGraph(ctx context.Context, snapshot fs.FS, opts CallGraphOptions
 		"unresolved_reflection":             0,
 		"unresolved_framework_registration": 0,
 		"callgraph_static_nodes":            0,
+		"ssa_programs_built":                loaded.programsBuilt(),
 	}
 
 	buildResult := func(facts []CallFact, complete bool) CallGraphResult {
@@ -162,39 +165,32 @@ func BuildGoCallGraph(ctx context.Context, snapshot fs.FS, opts CallGraphOptions
 		}
 	}
 
-	if err := ctx.Err(); err != nil {
-		diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Message: err.Error()})
-		return buildResult(nil, false), nil
+	if ctx.Err() != nil && len(loaded.roots) == 0 {
+		diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Message: ctx.Err().Error()})
+		return buildResult(nil, false)
 	}
-
-	tempDir, cleanup, err := materializeSnapshot(snapshot)
-	if err != nil {
-		return CallGraphResult{}, fmt.Errorf("projectmodel: materializing snapshot for call-graph build: %w", err)
-	}
-	defer cleanup()
 
 	var callFacts []CallFact
 	nodesProcessed, edgesProcessed := 0, 0
-	truncated := false
+	truncated := loaded.loadStopped
 
 rootLoop:
-	for _, mdir := range moduleDirs {
+	for _, root := range loaded.roots {
 		if ctx.Err() != nil {
 			truncated = true
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: mdir})
+			diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: root.dir})
 			break
 		}
 
-		pkgs, prog, localPkgPaths, loadErr := loadGoSSAProgram(ctx, tempDir, mdir)
-		if loadErr != nil {
+		if root.loadErr != nil {
 			complete = false
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBuildFailed, Path: mdir, Message: stripTempDir(loadErr.Error(), tempDir)})
+			diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBuildFailed, Path: root.dir, Message: stripTempDir(root.loadErr.Error(), loaded.tempDir)})
 			continue
 		}
-		for _, p := range pkgs {
+		for _, p := range root.pkgs {
 			for _, e := range p.Errors {
 				complete = false
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBuildFailed, Path: mdir, Message: stripTempDir(e.Error(), tempDir)})
+				diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBuildFailed, Path: root.dir, Message: stripTempDir(e.Error(), loaded.tempDir)})
 			}
 		}
 		counts["roots_built"]++
@@ -207,19 +203,19 @@ rootLoop:
 		// cg's own maps would reintroduce Go map iteration order and drop
 		// the unresolved-site diagnostics; cg is kept only for the pinned
 		// static-analysis-backend cross-check below.
-		cg := static.CallGraph(prog)
+		cg := static.CallGraph(root.prog)
 		counts["callgraph_static_nodes"] += len(cg.Nodes)
-		httpHandlerIface := httpHandlerInterface(prog)
+		httpHandlerIface := httpHandlerInterface(root.prog, root.pkgs)
 
-		for _, fn := range sortedLocalFunctions(prog, localPkgPaths) {
+		for _, fn := range sortedLocalFunctions(root.prog, root.localPkgPaths) {
 			if ctx.Err() != nil {
 				truncated = true
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: mdir})
+				diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: root.dir})
 				break rootLoop
 			}
 			if opts.Budgets.MaxGraphNodes > 0 && nodesProcessed >= opts.Budgets.MaxGraphNodes {
 				truncated = true
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: mdir})
+				diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: root.dir})
 				break rootLoop
 			}
 			nodesProcessed++
@@ -233,13 +229,13 @@ rootLoop:
 					}
 					if opts.Budgets.MaxGraphEdges > 0 && edgesProcessed >= opts.Budgets.MaxGraphEdges {
 						truncated = true
-						diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: mdir})
+						diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: root.dir})
 						break rootLoop
 					}
 					edgesProcessed++
 					counts["call_sites_seen"]++
 
-					result := classifyCallSite(fn, site, tempDir, httpHandlerIface)
+					result := classifyCallSite(fn, site, loaded.tempDir, httpHandlerIface)
 					if result.Fact != nil {
 						callFacts = append(callFacts, *result.Fact)
 					}
@@ -252,10 +248,18 @@ rootLoop:
 		}
 	}
 
+	if loaded.loadStopped && !containsDiagnosticCode(diagnostics, DiagCallGraphBudgetExceeded) {
+		path := ""
+		if len(loaded.roots) < len(loaded.moduleDirs) {
+			path = loaded.moduleDirs[len(loaded.roots)]
+		}
+		diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: path})
+	}
+
 	if truncated {
 		complete = false
 	}
-	return buildResult(callFacts, complete), nil
+	return buildResult(callFacts, complete)
 }
 
 // callSiteDiagnosticCounts maps each call-site diagnostic code classifyCallSite
@@ -325,42 +329,6 @@ func classifyCallSite(fn *ssa.Function, site ssa.CallInstruction, tempDir string
 	return result
 }
 
-// loadGoSSAProgram loads moduleDir's own packages (and, transitively, their
-// dependencies) from tempDir/moduleDir and builds an SSA program for them.
-// NeedDeps is required alongside NeedSyntax so dependency packages (e.g.
-// reflect, net/http) get real *types.Package objects instead of ID-only
-// placeholders -- without it, StaticCallee() could never resolve a call
-// into a dependency at all, which would misclassify genuinely resolvable
-// calls (like reflect.Value.Call or net/http.HandleFunc) as unresolved
-// function-value calls. golang.org/x/tools/go/packages' LoadMode semantics
-// make that combination load full transitive syntax (LoadAllSyntax-
-// equivalent), not just the initial packages.
-func loadGoSSAProgram(ctx context.Context, tempDir, moduleDir string) ([]*packages.Package, *ssa.Program, map[string]bool, error) {
-	cfg := &packages.Config{
-		Context: ctx,
-		Dir:     filepath.Join(tempDir, filepath.FromSlash(moduleDir)),
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-			packages.NeedImports | packages.NeedDeps | packages.NeedTypes |
-			packages.NeedSyntax | packages.NeedTypesInfo,
-	}
-	pkgs, err := packages.Load(cfg, "./...")
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if len(pkgs) == 0 {
-		return nil, nil, nil, fmt.Errorf("no Go packages found under %q", moduleDir)
-	}
-
-	localPkgPaths := make(map[string]bool, len(pkgs))
-	for _, p := range pkgs {
-		localPkgPaths[p.PkgPath] = true
-	}
-
-	prog, _ := ssautil.AllPackages(pkgs, 0)
-	prog.Build()
-	return pkgs, prog, localPkgPaths, nil
-}
-
 // sortedLocalFunctions returns every function with a body (fn.Blocks != nil)
 // belonging to a package in localPkgPaths, sorted by RelString(nil) so
 // budget truncation cuts the same trailing set on every call regardless of
@@ -413,15 +381,15 @@ func isFunctionValueArg(v ssa.Value, handlerIface *types.Interface) bool {
 }
 
 // httpHandlerInterface looks up net/http.Handler's interface type from
-// prog's already-loaded packages, returning nil if net/http was not part
-// of this root's build (so isFunctionValueArg falls back to its func-typed
-// check only).
-func httpHandlerInterface(prog *ssa.Program) *types.Interface {
-	pkg := prog.ImportedPackage("net/http")
-	if pkg == nil {
+// prog or the initial packages' type-checker import graph, returning nil
+// if net/http was not part of this root's build (so isFunctionValueArg
+// falls back to its func-typed check only).
+func httpHandlerInterface(prog *ssa.Program, pkgs []*packages.Package) *types.Interface {
+	tp := typesPackageByPath(prog, pkgs, "net/http")
+	if tp == nil {
 		return nil
 	}
-	obj := pkg.Pkg.Scope().Lookup("Handler")
+	obj := tp.Scope().Lookup("Handler")
 	if obj == nil {
 		return nil
 	}

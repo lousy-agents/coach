@@ -34,6 +34,18 @@ var _ = Describe("BuildGoLayerBypass", func() {
 			Expect(result.Witnesses).To(BeEmpty(), "a compliant-only path must never produce a bypass witness, got %+v", result.Witnesses)
 			Expect(result.Coverage.Complete).To(BeTrue())
 		})
+
+		It("builds one SSA program for the module root rather than one per internal walk", func() {
+			snapshot := os.DirFS("testdata/go_layer_bypass_compliant_only")
+			result, err := projectmodel.BuildGoLayerBypass(context.Background(), snapshot, projectmodel.LayerBypassOptions{
+				RequiredLayer: requiredServiceLayer,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Coverage.Complete).To(BeTrue())
+			Expect(result.Coverage.Counts).To(HaveKeyWithValue("ssa_programs_built", 1),
+				"call-graph, source identification, and node-directory walks must share one SSA program per root, got counts=%v", result.Coverage.Counts)
+		})
 	})
 
 	When("a handler reaches the sink both through the required layer and directly", func() {
@@ -171,7 +183,7 @@ var _ = Describe("BuildGoLayerBypass", func() {
 			// this fixture actually has (Handler, cycleA, cycleB, queryDB,
 			// service.Unused).
 			Expect(result.Coverage.Counts["search_nodes_visited"]).To(BeNumerically("<", 20))
-		}, SpecTimeout(120*time.Second))
+		}, SpecTimeout(20*time.Second))
 	})
 
 	When("the only surviving route to the sink is through an unresolved interface dispatch", func() {
@@ -245,15 +257,7 @@ var _ = Describe("BuildGoLayerBypass", func() {
 			// (skip) would still find and emit a witness here, while a
 			// smaller budget wouldn't discriminate between the two (the sink
 			// wouldn't be discovered at all either way).
-			//
-			// This spec's node budget only bounds the BFS itself: the
-			// SpecTimeout instead bounds the three full SSA loads a single
-			// BuildGoLayerBypass call performs (call graph, source
-			// identification, node-directory classification), which
-			// `go test -race` makes noticeably slower -- mirroring
-			// go_reachability_acceptance_test.go's own generous SpecTimeout
-			// comment for its multi-load specs.
-		}, SpecTimeout(120*time.Second))
+		}, SpecTimeout(20*time.Second))
 	})
 
 	When("a wall-time budget expires before the search can run", func() {

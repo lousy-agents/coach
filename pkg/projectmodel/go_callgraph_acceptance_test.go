@@ -100,6 +100,19 @@ var _ = Describe("BuildGoCallGraph", func() {
 				"expected a project_call_unresolved_framework_registration diagnostic, got %+v", result.Coverage.Diagnostics)
 			Expect(result.Coverage.Counts).To(HaveKeyWithValue("unresolved_framework_registration", 1))
 		})
+
+		It("keeps callgraph_static_nodes on the snapshot's own functions instead of SSA-building the standard library", func() {
+			snapshot := os.DirFS("testdata/go_callgraph_framework_registration")
+			result, err := projectmodel.BuildGoCallGraph(context.Background(), snapshot, projectmodel.CallGraphOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(hasCallGraphDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagCallUnresolvedFrameworkRegistration)).To(BeTrue(),
+				"stdlib types must still be available so http.HandleFunc is classified, got %+v", result.Coverage.Diagnostics)
+			Expect(result.Coverage.Counts["functions_seen"]).To(BeNumerically("<=", 10),
+				"fixture only has a handful of local functions, got functions_seen=%d", result.Coverage.Counts["functions_seen"])
+			Expect(result.Coverage.Counts["callgraph_static_nodes"]).To(BeNumerically("<", 5000),
+				"LoadAllSyntax of net/http produces ~15k static-graph nodes from stdlib function bodies; LoadSyntax should stay on the fixture plus export-data stubs, got %d", result.Coverage.Counts["callgraph_static_nodes"])
+		})
 	})
 
 	When("a handler value is registered via http.Handle", func() {

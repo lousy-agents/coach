@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 )
 
@@ -146,12 +147,14 @@ func BuildGoReachability(ctx context.Context, snapshot fs.FS, opts ReachabilityO
 	var memBefore, memAfter runtime.MemStats
 	runtime.ReadMemStats(&memBefore)
 
-	callGraph, err := BuildGoCallGraph(ctx, snapshot, CallGraphOptions{Roots: opts.Roots, Budgets: opts.Budgets})
+	loaded, err := loadGoSnapshot(ctx, snapshot, opts.Roots, opts.Budgets)
 	if err != nil {
 		return ReachabilityResult{}, fmt.Errorf("projectmodel: building call graph for reachability: %w", err)
 	}
+	defer loaded.cleanup()
 
-	sources, sourcesComplete, sourceDiagnostics := findGoReachabilitySources(ctx, snapshot, opts)
+	callGraph := buildGoCallGraphFromLoaded(ctx, loaded, CallGraphOptions{Roots: opts.Roots, Budgets: opts.Budgets})
+	sources, sourcesComplete, sourceDiagnostics := findGoReachabilitySourcesFromLoaded(ctx, loaded)
 	adjacency := buildCallGraphAdjacency(callGraph.CallFacts)
 
 	sinks := append([]string(nil), ReachabilitySinkPatterns...)
@@ -236,6 +239,7 @@ func BuildGoReachability(ctx context.Context, snapshot fs.FS, opts ReachabilityO
 				"reachable_pairs":                  len(facts),
 				"underlying_call_sites_seen":       callGraph.Coverage.Counts["call_sites_seen"],
 				"underlying_unresolved_call_sites": unresolvedCallSites,
+				"ssa_programs_built":               loaded.programsBuilt(),
 				"runtime_ms":                       int(time.Since(start) / time.Millisecond),
 				"memory_bytes":                     int(memDelta), // coarse process-wide TotalAlloc delta; see BuildGoReachability's doc comment.
 			},
@@ -275,61 +279,46 @@ func reachabilityFactsForSource(source string, sinks []string, parents map[strin
 	return facts, evaluated, truncated
 }
 
-// findGoReachabilitySources performs its own lightweight SSA walk over
-// snapshot's local functions, returning the sorted set of every function
-// whose signature is identical to net/http.HandlerFunc's underlying
-// func(http.ResponseWriter, *http.Request). Source identification needs
-// each function's own signature, which CallGraphResult's From/To strings
-// do not carry, so this walk stays separate from BuildGoCallGraph rather
-// than growing CallFact with metadata no other caller needs.
-func findGoReachabilitySources(ctx context.Context, snapshot fs.FS, opts ReachabilityOptions) ([]string, bool, []Diagnostic) {
+// findGoReachabilitySourcesFromLoaded walks loaded's local functions and
+// returns every function whose signature is identical to
+// net/http.HandlerFunc's underlying func(http.ResponseWriter, *http.Request).
+// Source identification needs each function's own signature, which
+// CallGraphResult's From/To strings do not carry, so this walk stays
+// separate from the call-graph walk rather than growing CallFact.
+func findGoReachabilitySourcesFromLoaded(ctx context.Context, loaded *loadedGoSnapshot) ([]string, bool, []Diagnostic) {
 	if ctx.Err() != nil {
 		return nil, false, []Diagnostic{{Code: DiagReachabilityBudgetExceeded}}
 	}
 
-	discovery := discoverGoProject(snapshot, opts.Budgets)
-	modules := discovery.Modules
-	if len(opts.Roots) > 0 {
-		modules, _ = filterToRoots(modules, discovery.Workspaces, opts.Roots)
-	}
-	moduleDirs := mapKeysSorted(modules)
-	complete := discovery.Complete
-
-	tempDir, cleanup, err := materializeSnapshot(snapshot)
-	if err != nil {
-		return nil, false, []Diagnostic{{Code: DiagReachabilitySourceLoadFailed, Message: stripTempDir(err.Error(), tempDir)}}
-	}
-	defer cleanup()
-
+	complete := loaded.discovery.Complete
 	var diagnostics []Diagnostic
 	seen := map[string]bool{}
 
-	for _, mdir := range moduleDirs {
+	for _, root := range loaded.roots {
 		if ctx.Err() != nil {
 			complete = false
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagReachabilityBudgetExceeded, Path: mdir})
+			diagnostics = append(diagnostics, Diagnostic{Code: DiagReachabilityBudgetExceeded, Path: root.dir})
 			break
 		}
-		pkgs, prog, localPkgPaths, loadErr := loadGoSSAProgram(ctx, tempDir, mdir)
-		if loadErr != nil {
+		if root.loadErr != nil {
 			complete = false
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagReachabilitySourceLoadFailed, Path: mdir, Message: stripTempDir(loadErr.Error(), tempDir)})
+			diagnostics = append(diagnostics, Diagnostic{Code: DiagReachabilitySourceLoadFailed, Path: root.dir, Message: stripTempDir(root.loadErr.Error(), loaded.tempDir)})
 			continue
 		}
-		for _, p := range pkgs {
+		for _, p := range root.pkgs {
 			if len(p.Errors) > 0 {
 				complete = false
 			}
 		}
 
-		handlerSig := httpHandlerFuncSignature(prog)
+		handlerSig := httpHandlerFuncSignature(root.prog, root.pkgs)
 		if handlerSig == nil {
 			continue
 		}
-		for _, fn := range sortedLocalFunctions(prog, localPkgPaths) {
+		for _, fn := range sortedLocalFunctions(root.prog, root.localPkgPaths) {
 			if ctx.Err() != nil {
 				complete = false
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagReachabilityBudgetExceeded, Path: mdir})
+				diagnostics = append(diagnostics, Diagnostic{Code: DiagReachabilityBudgetExceeded, Path: root.dir})
 				break
 			}
 			if types.Identical(fn.Signature, handlerSig) {
@@ -342,14 +331,14 @@ func findGoReachabilitySources(ctx context.Context, snapshot fs.FS, opts Reachab
 }
 
 // httpHandlerFuncSignature looks up net/http.HandlerFunc's underlying
-// *types.Signature from prog's already-loaded packages, returning nil if
-// net/http was not part of this root's build.
-func httpHandlerFuncSignature(prog *ssa.Program) *types.Signature {
-	pkg := prog.ImportedPackage("net/http")
-	if pkg == nil {
+// *types.Signature from prog or the initial packages' type-checker import
+// graph, returning nil if net/http was not part of this root's build.
+func httpHandlerFuncSignature(prog *ssa.Program, pkgs []*packages.Package) *types.Signature {
+	tp := typesPackageByPath(prog, pkgs, "net/http")
+	if tp == nil {
 		return nil
 	}
-	obj := pkg.Pkg.Scope().Lookup("HandlerFunc")
+	obj := tp.Scope().Lookup("HandlerFunc")
 	if obj == nil {
 		return nil
 	}
