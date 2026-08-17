@@ -733,6 +733,69 @@ test("TS reachability: calling the same sink twice from one source yields exactl
   assert.equal(callGraph.length, 1, JSON.stringify(callGraph));
 });
 
+test("TS reachability: a handler registered from two tsconfig projects yields exactly one fact and one edge", async () => {
+  const { response, exitCode } = await runSidecar({
+    files: [
+      ...prismaPackageFiles(),
+      file(
+        "shared/db.ts",
+        [`import { PrismaClient } from "@prisma/client";`, `export const prisma = new PrismaClient();`, ``].join("\n"),
+      ),
+      file(
+        "shared/handler.ts",
+        [
+          `import { prisma } from "./db";`,
+          `export async function getUsers(req: unknown, res: unknown): Promise<void> {`,
+          `  await prisma.user.findMany();`,
+          `  console.log(req, res);`,
+          `}`,
+        ].join("\n"),
+      ),
+      file("proj1/tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } })),
+      file(
+        "proj1/reg.ts",
+        [
+          `import { getUsers } from "../shared/handler";`,
+          `interface App {`,
+          `  get(path: string, handler: (req: unknown, res: unknown) => void): void;`,
+          `}`,
+          `declare const app: App;`,
+          `app.get("/users", getUsers);`,
+          ``,
+        ].join("\n"),
+      ),
+      file("proj2/tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } })),
+      file(
+        "proj2/reg.ts",
+        [
+          `import { getUsers } from "../shared/handler";`,
+          `interface App {`,
+          `  get(path: string, handler: (req: unknown, res: unknown) => void): void;`,
+          `}`,
+          `declare const app: App;`,
+          `app.get("/users", getUsers);`,
+          ``,
+        ].join("\n"),
+      ),
+    ],
+  });
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.equal(response.error, undefined, JSON.stringify(response));
+
+  // shared/handler.ts#getUsers is reachable via a route registration in
+  // BOTH proj1/reg.ts and proj2/reg.ts -- each project's own tsconfig
+  // pulls it into a separate Program, but it is one function at one repo
+  // path, so it must be walked, and its fact/edge emitted, exactly once
+  // across the whole request, not once per project.
+  const facts = response.reachability_facts ?? [];
+  assert.equal(facts.length, 1, JSON.stringify(facts));
+  assert.equal(facts[0]?.source, "file:shared/handler.ts#getUsers", JSON.stringify(facts));
+  assert.equal(facts[0]?.sink, "(PrismaClient).findMany", JSON.stringify(facts));
+
+  const callGraph = response.call_graph ?? [];
+  assert.equal(callGraph.length, 1, JSON.stringify(callGraph));
+});
+
 test("TS reachability: sink matching requires module provenance, not just a matching class name", async () => {
   const { response, exitCode } = await runSidecar({
     files: [
