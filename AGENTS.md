@@ -245,12 +245,13 @@ A PR title follows the same rule as its commits. Agent tooling changes the way t
 
 GHA is a parallel scheduler of atomic `mise run <task>` steps. Local `ci` / `ci-fast` / `ci-all` are serial bundles of the same tasks. The workflow does not invoke those composites.
 
-Five independent jobs:
+Five independent leaf jobs plus a `status` aggregator (the single required check):
 
 - `verify` — `gofmt` / `go-vet` / `tidy-check` / `acceptance-style-check` / `test` / `test-examples` (`ci-go`). Installs only Go, so `pkg/projectmodel`'s TS sidecar suite skips here and contributes no signal. Toolchain is `mise.toml` (`go = "1.26.6"`), not `go.mod`'s language version.
 - `js-verify` — `mise run js-ci` only.
-- `projectmodel-sidecar` — `mise run projectmodel-sidecar-acceptance` (builds the sidecar, then the real suite). Parallel with `js-verify`. If branch protection lists jobs by name, this check must be required or the split drops a gate.
+- `projectmodel-sidecar` — `mise run projectmodel-sidecar-acceptance` (builds the sidecar, then the real suite). Parallel with `js-verify`.
 - `wasm-build` — `mise run wasm-build`.
 - `platform-smoke` — `platform-up` / `platform-smoke` / `platform-down` as three steps so teardown still runs on failure.
+- `status` — `if: always()` + `needs` every leaf; fails unless each result is `success`. Branch protection should require this job only. Adding a leaf means adding it to `status.needs` and the result checks, or it can fail while the required check is green.
 
-`mise run ci-all` mirrors the first four locally (sidecar-first, so the suite runs inside `test` rather than as a second invocation). `platform-smoke` has no local composite; run the three platform tasks directly.
+`mise run ci-all` mirrors the first four locally (sidecar-first, so the suite runs inside `test` rather than as a second invocation). `platform-smoke` has no local composite; run the three platform tasks directly. The GHA `status` check is stricter than `ci-all` because it includes `platform-smoke`.

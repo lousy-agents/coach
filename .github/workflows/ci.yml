@@ -68,7 +68,6 @@ jobs:
         run: mise run js-ci
 
   # Parallel with js-verify: both need Node, neither waits on the other.
-  # Required-check follow-up: add this job name if branch protection lists jobs.
   projectmodel-sidecar:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -130,3 +129,42 @@ jobs:
       - name: platform-down
         if: always()
         run: mise run platform-down
+
+  # Single required check for branch protection. Leaf jobs stay parallel;
+  # this job fails if any required leaf is not success. if: always() so a
+  # failed leaf still produces a failed status rather than a missing check.
+  status:
+    if: always()
+    needs: [verify, js-verify, projectmodel-sidecar, wasm-build, platform-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check required jobs passed
+        run: |
+          verify="${{ needs.verify.result }}"
+          js="${{ needs.js-verify.result }}"
+          sidecar="${{ needs.projectmodel-sidecar.result }}"
+          wasm="${{ needs.wasm-build.result }}"
+          smoke="${{ needs.platform-smoke.result }}"
+
+          if [[ "$verify" != "success" ]]; then
+            echo "verify failed: $verify"
+            exit 1
+          fi
+          if [[ "$js" != "success" ]]; then
+            echo "js-verify failed: $js"
+            exit 1
+          fi
+          if [[ "$sidecar" != "success" ]]; then
+            echo "projectmodel-sidecar failed: $sidecar"
+            exit 1
+          fi
+          if [[ "$wasm" != "success" ]]; then
+            echo "wasm-build failed: $wasm"
+            exit 1
+          fi
+          if [[ "$smoke" != "success" ]]; then
+            echo "platform-smoke failed: $smoke"
+            exit 1
+          fi
+          echo "All required jobs passed"
