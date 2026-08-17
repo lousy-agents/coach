@@ -55,6 +55,8 @@ var _ = Describe("BuildGoReachability", func() {
 			Expect(fact.Path[3].NodeID).To(Equal("(*database/sql.DB).Query"))
 
 			Expect(result.Coverage.Complete).To(BeTrue())
+			Expect(result.Coverage.Counts).To(HaveKeyWithValue("ssa_programs_built", 1),
+				"call-graph and source identification must share one SSA program per root, got counts=%v", result.Coverage.Counts)
 
 			// Running twice, from a fresh call, must reproduce the same ID.
 			second, err := projectmodel.BuildGoReachability(context.Background(), snapshot, projectmodel.ReachabilityOptions{})
@@ -311,13 +313,7 @@ var _ = Describe("BuildGoReachability", func() {
 			Expect(leftCoverageJSON).To(Equal(rightCoverageJSON))
 			Expect(string(leftCoverageJSON)).NotTo(ContainSubstring(left))
 			Expect(string(leftCoverageJSON)).NotTo(ContainSubstring(right))
-			// This spec issues four BuildGoReachability calls, each of which
-			// loads/type-checks the fixture's SSA program twice (once inside
-			// BuildGoCallGraph, once for source identification): under
-			// `go test -race`, go/packages' underlying toolchain shell-outs
-			// are noticeably slower than the other single/double-call specs
-			// in this suite, so this spec gets a longer budget.
-		}, SpecTimeout(90*time.Second))
+		}, SpecTimeout(20*time.Second))
 	})
 })
 

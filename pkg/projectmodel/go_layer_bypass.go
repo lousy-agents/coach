@@ -154,18 +154,20 @@ func BuildGoLayerBypass(ctx context.Context, snapshot fs.FS, opts LayerBypassOpt
 	var memBefore, memAfter runtime.MemStats
 	runtime.ReadMemStats(&memBefore)
 
-	callGraph, err := BuildGoCallGraph(ctx, snapshot, CallGraphOptions{Roots: opts.Roots, Budgets: opts.Budgets})
+	loaded, err := loadGoSnapshot(ctx, snapshot, opts.Roots, opts.Budgets)
 	if err != nil {
 		return LayerBypassResult{}, fmt.Errorf("projectmodel: building call graph for layer bypass: %w", err)
 	}
+	defer loaded.cleanup()
 
-	sources, sourcesComplete, rawSourceDiagnostics := findGoReachabilitySources(ctx, snapshot, ReachabilityOptions{Roots: opts.Roots, Budgets: opts.Budgets})
+	callGraph := buildGoCallGraphFromLoaded(ctx, loaded, CallGraphOptions{Roots: opts.Roots, Budgets: opts.Budgets})
+	sources, sourcesComplete, rawSourceDiagnostics := findGoReachabilitySourcesFromLoaded(ctx, loaded)
 	sourceDiagnostics := remapDiagnosticCodes(rawSourceDiagnostics, map[string]string{
 		DiagReachabilityBudgetExceeded:   DiagLayerBypassBudgetExceeded,
 		DiagReachabilitySourceLoadFailed: DiagLayerBypassSourceLoadFailed,
 	})
 
-	nodePositions, dirsComplete, dirDiagnostics := layerBypassNodePackageDirs(ctx, snapshot, opts)
+	nodePositions, dirsComplete, dirDiagnostics := layerBypassNodePackageDirsFromLoaded(ctx, loaded)
 
 	adjacency := buildCallGraphAdjacency(callGraph.CallFacts)
 	sinks := append([]string(nil), ReachabilitySinkPatterns...)
@@ -297,6 +299,7 @@ func BuildGoLayerBypass(ctx context.Context, snapshot fs.FS, opts LayerBypassOpt
 				"required_layer_nodes_matched":     len(requiredLayerNodes),
 				"underlying_call_sites_seen":       callGraph.Coverage.Counts["call_sites_seen"],
 				"underlying_unresolved_call_sites": unresolvedCallSites,
+				"ssa_programs_built":               loaded.programsBuilt(),
 				"search_nodes_visited":             nodesVisited,
 				"runtime_ms":                       int(time.Since(start) / time.Millisecond),
 				"memory_bytes":                     int(memDelta), // coarse process-wide TotalAlloc delta; see BuildGoReachability's doc comment.
@@ -388,55 +391,40 @@ type layerBypassNodePosition struct {
 	Line int
 }
 
-// layerBypassNodePackageDirs performs its own SSA walk over snapshot's local
-// functions (mirroring findGoReachabilitySources' loop shape), returning
-// every local function's RelString(nil) identity mapped to its resolved
-// declaration position. This walk stays separate from BuildGoCallGraph's own
-// walk because CallFact's From/To strings carry no directory or position
-// information, and separate from findGoReachabilitySources because it needs
-// every local function, not just handler-shaped ones.
-func layerBypassNodePackageDirs(ctx context.Context, snapshot fs.FS, opts LayerBypassOptions) (map[string]layerBypassNodePosition, bool, []Diagnostic) {
+// layerBypassNodePackageDirsFromLoaded walks loaded's local functions,
+// returning every local function's RelString(nil) identity mapped to its
+// resolved declaration position. This walk stays separate from the
+// call-graph walk because CallFact's From/To strings carry no directory or
+// position information, and separate from source identification because it
+// needs every local function, not just handler-shaped ones.
+func layerBypassNodePackageDirsFromLoaded(ctx context.Context, loaded *loadedGoSnapshot) (map[string]layerBypassNodePosition, bool, []Diagnostic) {
 	if ctx.Err() != nil {
 		return nil, false, []Diagnostic{{Code: DiagLayerBypassBudgetExceeded}}
 	}
 
-	discovery := discoverGoProject(snapshot, opts.Budgets)
-	modules := discovery.Modules
-	if len(opts.Roots) > 0 {
-		modules, _ = filterToRoots(modules, discovery.Workspaces, opts.Roots)
-	}
-	moduleDirs := mapKeysSorted(modules)
-	complete := discovery.Complete
-
-	tempDir, cleanup, err := materializeSnapshot(snapshot)
-	if err != nil {
-		return nil, false, []Diagnostic{{Code: DiagLayerBypassSourceLoadFailed, Message: stripTempDir(err.Error(), tempDir)}}
-	}
-	defer cleanup()
-
+	complete := loaded.discovery.Complete
 	var diagnostics []Diagnostic
 	positions := map[string]layerBypassNodePosition{}
 
-	for _, mdir := range moduleDirs {
+	for _, root := range loaded.roots {
 		if ctx.Err() != nil {
 			complete = false
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded, Path: mdir})
+			diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded, Path: root.dir})
 			break
 		}
-		_, prog, localPkgPaths, loadErr := loadGoSSAProgram(ctx, tempDir, mdir)
-		if loadErr != nil {
+		if root.loadErr != nil {
 			complete = false
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassSourceLoadFailed, Path: mdir, Message: stripTempDir(loadErr.Error(), tempDir)})
+			diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassSourceLoadFailed, Path: root.dir, Message: stripTempDir(root.loadErr.Error(), loaded.tempDir)})
 			continue
 		}
 
-		for _, fn := range sortedLocalFunctions(prog, localPkgPaths) {
+		for _, fn := range sortedLocalFunctions(root.prog, root.localPkgPaths) {
 			if ctx.Err() != nil {
 				complete = false
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded, Path: mdir})
+				diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded, Path: root.dir})
 				break
 			}
-			pos, ok := fnPosition(tempDir, fn)
+			pos, ok := fnPosition(loaded.tempDir, fn)
 			if !ok {
 				continue
 			}
