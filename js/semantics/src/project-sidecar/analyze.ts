@@ -1,4 +1,4 @@
-import { API } from "typescript/unstable/sync";
+import { API, type Project } from "typescript/unstable/sync";
 
 import { canonicalizeDiagnostics, canonicalizeEdges } from "./canonical.js";
 import { discoverTsconfigPaths } from "./discover.js";
@@ -145,32 +145,26 @@ function runProjects(
     for (const path of result.visitedPaths) visited.add(path);
     edges.push(...result.edges);
     diagnostics.push(...result.diagnostics);
-    // A project whose own config failed to parse never got a real Program
-    // built from the sender's intent, so no call-graph/reachability
-    // extraction is attempted for it either -- mirrors this loop's own
-    // complete=false gate above, just applied to a second output.
-    if (configResult.diagnostics.length === 0) {
-      const reachResult = extractReachabilityForProject(project, snapshot, reachVisited);
-      for (const path of reachResult.visitedPaths) reachVisited.add(path);
-      callGraph.push(...reachResult.callGraph);
-      reachabilityFacts.push(...reachResult.facts);
-      diagnostics.push(...reachResult.diagnostics);
-      // A ts_reachability_*_gap diagnostic means one hop's reachability was
-      // deliberately left unverified, not that import/config analysis for
-      // this project failed -- unlike Go's Complete gate (unresolved
-      // interface/function-value/framework-registration sites there are
-      // also counts+diagnostics, never a Complete flip; see
-      // pkg/projectmodel/go_callgraph.go), a routine one-hop delegation
-      // into a helper/service function is the ordinary shape of layered
-      // code, not a rare failure. Folding it into this project-wide
-      // Complete bit would mark most real TS trees incomplete and, via
-      // internal/codesignalcli/project_ts_backend.go's passthrough, degrade
-      // an unrelated already-shipped architecture.layer_violation to
-      // lifecycle unknown. Reachability's own incompleteness is reported
-      // independently on ReachabilityResult.Coverage/LayerBypassResult.Coverage
-      // instead (see pkg/projectmodel/ts_reachability.go,
-      // ts_layer_bypass.go).
-    }
+    const reachResult = processProjectReachability(project, snapshot, reachVisited, configResult.diagnostics.length > 0);
+    callGraph.push(...reachResult.callGraph);
+    reachabilityFacts.push(...reachResult.facts);
+    // A ts_reachability_*_gap diagnostic (see processProjectReachability)
+    // means one hop's reachability was deliberately left unverified, not
+    // that import/config analysis for this project failed -- unlike Go's
+    // Complete gate (unresolved interface/function-value/framework-
+    // registration sites there are also counts+diagnostics, never a
+    // Complete flip; see pkg/projectmodel/go_callgraph.go), a routine
+    // one-hop delegation into a helper/service function is the ordinary
+    // shape of layered code, not a rare failure. Folding it into this
+    // project-wide Complete bit would mark most real TS trees incomplete
+    // and, via internal/codesignalcli/project_ts_backend.go's passthrough,
+    // degrade an unrelated already-shipped architecture.layer_violation to
+    // lifecycle unknown. Reachability's own incompleteness is reported
+    // independently on ReachabilityResult.Coverage/LayerBypassResult.Coverage
+    // instead (see pkg/projectmodel/ts_reachability.go, ts_layer_bypass.go)
+    // -- so, unlike configResult's diagnostics above, these never set
+    // complete = false here.
+    diagnostics.push(...reachResult.diagnostics);
     projectsProcessed += 1;
   }
 
@@ -190,6 +184,25 @@ function runProjects(
       diagnostics: diagnostics.length > 0 ? canonicalizeDiagnostics(diagnostics) : undefined,
     },
   };
+}
+
+/**
+ * Runs call-graph/reachability extraction for one project, unless
+ * configDiagnosticsPresent -- a project whose own config failed to parse
+ * never got a real Program built from the sender's intent, so no
+ * call-graph/reachability extraction is attempted for it either, mirroring
+ * runProjects's own complete=false gate on config diagnostics.
+ */
+function processProjectReachability(
+  project: Project,
+  snapshot: ProjectSnapshot,
+  reachVisited: Set<string>,
+  configDiagnosticsPresent: boolean,
+): { callGraph: CallGraphEdgeFact[]; facts: ReachabilityFactWire[]; diagnostics: Diagnostic[] } {
+  if (configDiagnosticsPresent) return { callGraph: [], facts: [], diagnostics: [] };
+  const reachResult = extractReachabilityForProject(project, snapshot, reachVisited);
+  for (const path of reachResult.visitedPaths) reachVisited.add(path);
+  return { callGraph: reachResult.callGraph, facts: reachResult.facts, diagnostics: reachResult.diagnostics };
 }
 
 function collectConfigDiagnostics(
