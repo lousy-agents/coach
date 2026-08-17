@@ -160,7 +160,7 @@ var _ = Describe("Model JSON encoding contract", func() {
 
 			for _, key := range []string{
 				`"repository"`, `"workspaces"`, `"modules"`, `"packages"`,
-				`"files"`, `"import_edges"`, `"call_facts"`,
+				`"files"`, `"import_edges"`, `"call_facts"`, `"reachability_facts"`,
 			} {
 				Expect(text).NotTo(ContainSubstring(key), "expected %s to be omitted from %s", key, text)
 			}
@@ -295,6 +295,108 @@ var _ = Describe("Model JSON encoding contract", func() {
 		})
 	})
 
+	When("ReachabilityFacts collection was not selected", func() {
+		It("omits reachability_facts entirely (nil slice)", func() {
+			model := baseModel()
+			model.ReachabilityFacts = nil
+
+			out, err := json.Marshal(model)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(out)).NotTo(ContainSubstring(`"reachability_facts"`))
+		})
+	})
+
+	When("ReachabilityFacts collection was selected but found no facts", func() {
+		It("serializes reachability_facts as an explicit empty array", func() {
+			model := baseModel()
+			model.ReachabilityFacts = []projectmodel.ReachabilityFact{}
+
+			out, err := json.Marshal(model)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(out)).To(ContainSubstring(`"reachability_facts":[]`))
+		})
+	})
+
+	When("reachability_facts is explicitly present as JSON null", func() {
+		It("decodes to a nil ReachabilityFacts slice, matching an absent key", func() {
+			model := baseModel()
+			model.ReachabilityFacts = nil
+			absent, err := json.Marshal(model)
+			Expect(err).NotTo(HaveOccurred())
+
+			var withNull map[string]any
+			Expect(json.Unmarshal(absent, &withNull)).To(Succeed())
+			withNull["reachability_facts"] = nil
+			raw, err := json.Marshal(withNull)
+			Expect(err).NotTo(HaveOccurred())
+
+			var decoded projectmodel.Model
+			Expect(json.Unmarshal(raw, &decoded)).To(Succeed())
+			Expect(decoded.ReachabilityFacts).To(BeNil())
+
+			roundTrip, err := json.Marshal(decoded)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(roundTrip).To(Equal(absent))
+		})
+	})
+
+	When("reachability_facts is decoded in both directions", func() {
+		It("decodes a present empty array to a non-nil, zero-length slice", func() {
+			model := baseModel()
+			model.ReachabilityFacts = []projectmodel.ReachabilityFact{}
+			out, err := json.Marshal(model)
+			Expect(err).NotTo(HaveOccurred())
+
+			var decoded projectmodel.Model
+			Expect(json.Unmarshal(out, &decoded)).To(Succeed())
+			Expect(decoded.ReachabilityFacts).NotTo(BeNil())
+			Expect(decoded.ReachabilityFacts).To(HaveLen(0))
+
+			roundTrip, err := json.Marshal(decoded)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(roundTrip).To(Equal(out))
+		})
+
+		It("decodes an absent key to a nil slice", func() {
+			model := baseModel()
+			model.ReachabilityFacts = nil
+			out, err := json.Marshal(model)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(out)).NotTo(ContainSubstring(`"reachability_facts"`))
+
+			var decoded projectmodel.Model
+			Expect(json.Unmarshal(out, &decoded)).To(Succeed())
+			Expect(decoded.ReachabilityFacts).To(BeNil())
+
+			roundTrip, err := json.Marshal(decoded)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(roundTrip).To(Equal(out))
+		})
+
+		It("round-trips a populated fact unchanged", func() {
+			model := baseModel()
+			model.ReachabilityFacts = []projectmodel.ReachabilityFact{{
+				ID:         "reach:A->B@algo@1",
+				Kind:       projectmodel.KindPossibleCallReachability,
+				Confidence: projectmodel.ReachabilityConfidenceResolvedDirect,
+				Source:     "A",
+				Sink:       "B",
+				Path: []projectmodel.ReachabilityStep{
+					{NodeID: "A"},
+					{NodeID: "B"},
+				},
+				AlgorithmVersion: "algo@1",
+			}}
+
+			out, err := json.Marshal(model)
+			Expect(err).NotTo(HaveOccurred())
+
+			var decoded projectmodel.Model
+			Expect(json.Unmarshal(out, &decoded)).To(Succeed())
+			Expect(decoded.ReachabilityFacts).To(Equal(model.ReachabilityFacts))
+		})
+	})
+
 	When("Coverage and Diagnostic are marshaled on their own", func() {
 		It("round-trips a fact-only, codesignal-free diagnostics contract", func() {
 			coverage := projectmodel.Coverage{
@@ -361,6 +463,10 @@ var _ = Describe("Model JSON encoding contract", func() {
 				{From: "B", To: "A"},
 				{From: "A", To: "B"},
 			}
+			left.ReachabilityFacts = []projectmodel.ReachabilityFact{
+				{ID: "reach:B->A@algo@1", Kind: projectmodel.KindPossibleCallReachability, Confidence: projectmodel.ReachabilityConfidenceResolvedDirect, Source: "B", Sink: "A", Path: []projectmodel.ReachabilityStep{{NodeID: "B"}, {NodeID: "A"}}, AlgorithmVersion: "algo@1"},
+				{ID: "reach:A->B@algo@1", Kind: projectmodel.KindPossibleCallReachability, Confidence: projectmodel.ReachabilityConfidenceResolvedDirect, Source: "A", Sink: "B", Path: []projectmodel.ReachabilityStep{{NodeID: "A"}, {NodeID: "B"}}, AlgorithmVersion: "algo@1"},
+			}
 			left.Coverage.Diagnostics = []projectmodel.Diagnostic{
 				{Code: "unresolved_import", Message: "b", Path: "b/z.go"},
 				{Code: "unresolved_import", Message: "a", Path: "a/a.go"},
@@ -390,6 +496,10 @@ var _ = Describe("Model JSON encoding contract", func() {
 			right.CallFacts = []projectmodel.CallFact{
 				{From: "A", To: "B"},
 				{From: "B", To: "A"},
+			}
+			right.ReachabilityFacts = []projectmodel.ReachabilityFact{
+				{ID: "reach:A->B@algo@1", Kind: projectmodel.KindPossibleCallReachability, Confidence: projectmodel.ReachabilityConfidenceResolvedDirect, Source: "A", Sink: "B", Path: []projectmodel.ReachabilityStep{{NodeID: "A"}, {NodeID: "B"}}, AlgorithmVersion: "algo@1"},
+				{ID: "reach:B->A@algo@1", Kind: projectmodel.KindPossibleCallReachability, Confidence: projectmodel.ReachabilityConfidenceResolvedDirect, Source: "B", Sink: "A", Path: []projectmodel.ReachabilityStep{{NodeID: "B"}, {NodeID: "A"}}, AlgorithmVersion: "algo@1"},
 			}
 			right.Coverage.Diagnostics = []projectmodel.Diagnostic{
 				{Code: "unresolved_import", Message: "a", Path: "a/a.go"},
