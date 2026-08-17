@@ -3,7 +3,8 @@ import { API } from "typescript/unstable/sync";
 import { canonicalizeDiagnostics, canonicalizeEdges } from "./canonical.js";
 import { discoverTsconfigPaths } from "./discover.js";
 import { extractEdgesForProject } from "./edges.js";
-import { SIDECAR_PHASE, type Coverage, type Diagnostic, type ImportEdgeFact, type ProjectFile } from "./protocol.js";
+import { SIDECAR_PHASE, type CallGraphEdgeFact, type Coverage, type Diagnostic, type ImportEdgeFact, type ProjectFile, type ReachabilityFactWire } from "./protocol.js";
+import { canonicalizeCallGraph, canonicalizeReachabilityFacts, extractReachabilityForProject } from "./reachability.js";
 import { buildProjectSnapshot, fromVirtualPath, toVirtualPath, VIRTUAL_ROOT, type ProjectSnapshot } from "./vfs.js";
 
 /** Thrown only for genuine backend-startup failures (e.g. the bundled
@@ -27,6 +28,8 @@ export interface AnalyzeOptions {
 
 export interface AnalyzeResult {
   edges: ImportEdgeFact[];
+  callGraph: CallGraphEdgeFact[];
+  reachabilityFacts: ReachabilityFactWire[];
   coverage: Coverage;
 }
 
@@ -64,10 +67,12 @@ export function analyzeProject(opts: AnalyzeOptions): AnalyzeResult {
 function emptyComplete(counts: Record<string, number>, files: readonly ProjectFile[]): AnalyzeResult {
   const hasTsSources = files.some((f) => f.path.endsWith(".ts") || f.path.endsWith(".tsx"));
   if (!hasTsSources) {
-    return { edges: [], coverage: { phase: SIDECAR_PHASE, complete: true, counts } };
+    return { edges: [], callGraph: [], reachabilityFacts: [], coverage: { phase: SIDECAR_PHASE, complete: true, counts } };
   }
   return {
     edges: [],
+    callGraph: [],
+    reachabilityFacts: [],
     coverage: {
       phase: SIDECAR_PHASE,
       complete: false,
@@ -82,6 +87,8 @@ function emptyComplete(counts: Record<string, number>, files: readonly ProjectFi
 function timeoutBeforeStart(counts: Record<string, number>, timeoutMs: number): AnalyzeResult {
   return {
     edges: [],
+    callGraph: [],
+    reachabilityFacts: [],
     coverage: {
       phase: SIDECAR_PHASE,
       complete: false,
@@ -111,7 +118,10 @@ function runProjects(
   const snap = api.updateSnapshot({ openProjects: tsconfigPaths.map(toVirtualPath) });
   const projects = snap.getProjects();
   const visited = new Set<string>();
+  const reachVisited = new Set<string>();
   const edges: ImportEdgeFact[] = [];
+  const callGraph: CallGraphEdgeFact[] = [];
+  const reachabilityFacts: ReachabilityFactWire[] = [];
   const diagnostics: Diagnostic[] = [];
   const seenConfigDiagnostics = new Set<string>();
   let complete = true;
@@ -135,11 +145,28 @@ function runProjects(
     for (const path of result.visitedPaths) visited.add(path);
     edges.push(...result.edges);
     diagnostics.push(...result.diagnostics);
+    // A project whose own config failed to parse never got a real Program
+    // built from the sender's intent, so no call-graph/reachability
+    // extraction is attempted for it either -- mirrors this loop's own
+    // complete=false gate above, just applied to a second output.
+    if (configResult.diagnostics.length === 0) {
+      const reachResult = extractReachabilityForProject(project, snapshot, reachVisited);
+      for (const path of reachResult.visitedPaths) reachVisited.add(path);
+      callGraph.push(...reachResult.callGraph);
+      reachabilityFacts.push(...reachResult.facts);
+      diagnostics.push(...reachResult.diagnostics);
+      // A ts_reachability_*_gap diagnostic means some hop's reachability was
+      // deliberately left unverified; Complete must not claim otherwise,
+      // mirroring Go's own Complete gate on its call-graph coverage.
+      if (reachResult.diagnostics.length > 0) complete = false;
+    }
     projectsProcessed += 1;
   }
 
   return {
     edges: canonicalizeEdges(edges),
+    callGraph: canonicalizeCallGraph(callGraph),
+    reachabilityFacts: canonicalizeReachabilityFacts(reachabilityFacts),
     coverage: {
       phase: SIDECAR_PHASE,
       complete,
