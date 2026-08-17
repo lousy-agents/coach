@@ -141,12 +141,14 @@ func applyTSSidecarInputBudgetTruncation(model Model) Model {
 
 func modelFromTSSidecarResponse(meta SnapshotMeta, opts TSSidecarOptions, resp projectbridge.Response, files []projectbridge.ProjectFile) Model {
 	return Model{
-		SchemaVersion: SchemaVersion,
-		Repository:    meta.Repository,
-		Snapshot:      tsSidecarSnapshot(meta, opts),
-		Workspaces:    tsWorkspaceFactsFromCollected(files),
-		Files:         tsFileFactsFromCollected(files),
-		ImportEdges:   importEdgesFromWire(resp.ImportEdges),
+		SchemaVersion:     SchemaVersion,
+		Repository:        meta.Repository,
+		Snapshot:          tsSidecarSnapshot(meta, opts),
+		Workspaces:        tsWorkspaceFactsFromCollected(files),
+		Files:             tsFileFactsFromCollected(files),
+		ImportEdges:       importEdgesFromWire(resp.ImportEdges),
+		CallFacts:         callFactsFromWire(resp.CallGraph),
+		ReachabilityFacts: reachabilityFactsFromWire(resp.ReachabilityFacts),
 		Coverage: canonicalCoverage(Coverage{
 			Phase:       tsSidecarPhase,
 			Complete:    resp.Coverage.Complete,
@@ -163,6 +165,56 @@ func importEdgesFromWire(in []projectbridge.ImportEdgeFact) []ImportEdge {
 		edges = append(edges, ImportEdge{From: e.From, To: e.To, Kind: e.Kind, Site: e.Site, Resolution: e.Resolution})
 	}
 	return edges
+}
+
+// callFactsFromWire translates the sidecar's raw call-graph edges into
+// Model.CallFacts. Every non-error Response has attempted call-graph
+// collection (analyze_project always tries it alongside import-edge
+// extraction), so this always returns a non-nil slice -- an empty result set
+// is "selected but found nothing", matching CallFacts' documented
+// nil-vs-empty-slice contract, never "not selected".
+func callFactsFromWire(in []projectbridge.CallGraphEdgeFact) []CallFact {
+	facts := make([]CallFact, 0, len(in))
+	for _, f := range in {
+		facts = append(facts, CallFact{From: f.From, To: f.To})
+	}
+	return facts
+}
+
+// reachabilityFactsFromWire translates the sidecar's raw
+// possible-call-reachability facts into Model.ReachabilityFacts, mirroring
+// callFactsFromWire's always-non-nil contract. It deliberately drops the
+// wire's Backend field: every Model BuildTypeScriptModelViaSidecar returns
+// is TS-sourced by construction, so that provenance is already visible at
+// the Model level (Coverage.Phase, Workspace/File.Language) without needing
+// a per-fact field on projectmodel.ReachabilityFact, which has no Backend
+// field today (see go_reachability.go). This mirrors the established
+// wire-vs-model asymmetry documented on
+// wire_bridge_parity_test.go's TestReachabilityBypassWireFieldParity: every
+// projectbridge wire type in this family adds a trailing Backend provenance
+// field with no projectmodel counterpart.
+func reachabilityFactsFromWire(in []projectbridge.ReachabilityFactWire) []ReachabilityFact {
+	facts := make([]ReachabilityFact, 0, len(in))
+	for _, f := range in {
+		facts = append(facts, ReachabilityFact{
+			ID:               f.ID,
+			Kind:             f.Kind,
+			Confidence:       ReachabilityConfidence(f.Confidence),
+			Source:           f.Source,
+			Sink:             f.Sink,
+			Path:             reachabilityStepsFromWire(f.Path),
+			AlgorithmVersion: f.AlgorithmVersion,
+		})
+	}
+	return facts
+}
+
+func reachabilityStepsFromWire(in []projectbridge.ReachabilityStepFact) []ReachabilityStep {
+	steps := make([]ReachabilityStep, 0, len(in))
+	for _, s := range in {
+		steps = append(steps, ReachabilityStep{NodeID: s.NodeID})
+	}
+	return steps
 }
 
 func diagnosticsFromWire(in []projectbridge.Diagnostic) []Diagnostic {

@@ -13,8 +13,9 @@ const SchemaVersion = "1"
 // Model is the top-level, JSON-serializable set of facts collected for a
 // single Snapshot. json.Marshal on a Model is its canonical encoding: see
 // serialization.go, which sorts workspaces, modules, packages, files,
-// import edges, call facts, and coverage diagnostics so semantically
-// identical models marshal byte-identically regardless of producer order.
+// import edges, call facts, reachability facts, and coverage diagnostics so
+// semantically identical models marshal byte-identically regardless of
+// producer order.
 type Model struct {
 	SchemaVersion string       `json:"schema_version"`
 	Repository    string       `json:"repository,omitempty"`
@@ -31,6 +32,16 @@ type Model struct {
 	// cannot express this -- see Model's MarshalJSON/UnmarshalJSON in
 	// serialization.go, which encode/decode this field explicitly.
 	CallFacts []CallFact `json:"call_facts,omitempty"`
+
+	// ReachabilityFacts mirrors CallFacts' exact nil-vs-empty-slice JSON
+	// contract: nil/omitted means reachability collection was not
+	// selected, a non-nil (possibly empty) slice means it was selected.
+	// BuildTypeScriptModelViaSidecar is currently the only producer, since
+	// the TS sidecar computes call-graph and reachability facts in the
+	// same round trip as its import facts; a Go-side equivalent may
+	// populate this field the same way in the future without changing its
+	// contract.
+	ReachabilityFacts []ReachabilityFact `json:"reachability_facts,omitempty"`
 
 	Coverage Coverage `json:"coverage"`
 }

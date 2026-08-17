@@ -13,16 +13,17 @@ import (
 // slice identically. Every field of Model must be mirrored here; a field
 // added to Model but not to modelWire is silently dropped from JSON output.
 type modelWire struct {
-	SchemaVersion string          `json:"schema_version"`
-	Repository    string          `json:"repository,omitempty"`
-	Snapshot      Snapshot        `json:"snapshot"`
-	Workspaces    []Workspace     `json:"workspaces,omitempty"`
-	Modules       []Module        `json:"modules,omitempty"`
-	Packages      []Package       `json:"packages,omitempty"`
-	Files         []File          `json:"files,omitempty"`
-	ImportEdges   []ImportEdge    `json:"import_edges,omitempty"`
-	CallFacts     json.RawMessage `json:"call_facts,omitempty"`
-	Coverage      Coverage        `json:"coverage"`
+	SchemaVersion     string          `json:"schema_version"`
+	Repository        string          `json:"repository,omitempty"`
+	Snapshot          Snapshot        `json:"snapshot"`
+	Workspaces        []Workspace     `json:"workspaces,omitempty"`
+	Modules           []Module        `json:"modules,omitempty"`
+	Packages          []Package       `json:"packages,omitempty"`
+	Files             []File          `json:"files,omitempty"`
+	ImportEdges       []ImportEdge    `json:"import_edges,omitempty"`
+	CallFacts         json.RawMessage `json:"call_facts,omitempty"`
+	ReachabilityFacts json.RawMessage `json:"reachability_facts,omitempty"`
+	Coverage          Coverage        `json:"coverage"`
 }
 
 // MarshalJSON implements the nil-vs-empty-slice CallFacts contract
@@ -54,6 +55,13 @@ func (m Model) MarshalJSON() ([]byte, error) {
 		}
 		wire.CallFacts = raw
 	}
+	if m.ReachabilityFacts != nil {
+		raw, err := json.Marshal(canonicalReachabilityFacts(m.ReachabilityFacts))
+		if err != nil {
+			return nil, err
+		}
+		wire.ReachabilityFacts = raw
+	}
 	return json.Marshal(wire)
 }
 
@@ -82,6 +90,13 @@ func (m *Model) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		m.CallFacts = facts
+	}
+	if len(wire.ReachabilityFacts) > 0 {
+		var facts []ReachabilityFact
+		if err := json.Unmarshal(wire.ReachabilityFacts, &facts); err != nil {
+			return err
+		}
+		m.ReachabilityFacts = facts
 	}
 	return nil
 }
@@ -210,6 +225,29 @@ func canonicalCallFacts(in []CallFact) []CallFact {
 			return out[i].From < out[j].From
 		}
 		return out[i].To < out[j].To
+	})
+	return out
+}
+
+// canonicalReachabilityFacts sorts by Source then Sink then ID, mirroring
+// BuildGoReachability's own Source/Sink ordering (go_reachability.go) with ID
+// as a final tie-breaker for the rare case of multiple facts sharing a
+// source/sink pair with differing AlgorithmVersion (both producers derive ID
+// as "reach:<source>-><sink>@<algorithm>", so a shared Source/Sink pair only
+// diverges in ID when AlgorithmVersion does).
+func canonicalReachabilityFacts(in []ReachabilityFact) []ReachabilityFact {
+	if len(in) == 0 {
+		return in
+	}
+	out := append([]ReachabilityFact(nil), in...)
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Source != out[j].Source {
+			return out[i].Source < out[j].Source
+		}
+		if out[i].Sink != out[j].Sink {
+			return out[i].Sink < out[j].Sink
+		}
+		return out[i].ID < out[j].ID
 	})
 	return out
 }

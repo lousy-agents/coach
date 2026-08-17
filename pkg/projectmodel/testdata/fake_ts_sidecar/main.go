@@ -52,19 +52,308 @@ func readRequest() projectbridge.Request {
 }
 
 var modeHandlers = map[string]modeHandler{
-	"crash":            modeCrash,
-	"crash_noisy":      modeCrashNoisy,
-	"malformed":        modeMalformed,
-	"oversized":        modeOversized,
-	"hang":             modeHang,
-	"version_mismatch": modeVersionMismatch,
-	"id_mismatch":      modeIDMismatch,
-	"request_error":    modeRequestError,
-	"request_probe":    modeRequestProbe,
-	"partial":          modePartial,
-	"trailing_output":  modeTrailingOutput,
-	"env":              modeEnv,
-	"happy":            modeHappy,
+	"crash":                  modeCrash,
+	"crash_noisy":            modeCrashNoisy,
+	"malformed":              modeMalformed,
+	"oversized":              modeOversized,
+	"hang":                   modeHang,
+	"version_mismatch":       modeVersionMismatch,
+	"id_mismatch":            modeIDMismatch,
+	"request_error":          modeRequestError,
+	"request_probe":          modeRequestProbe,
+	"partial":                modePartial,
+	"trailing_output":        modeTrailingOutput,
+	"env":                    modeEnv,
+	"happy":                  modeHappy,
+	"reachability":           modeReachability,
+	"reachability_gap":       modeReachabilityGap,
+	"reachability_multi":     modeReachabilityMulti,
+	"bad_tsconfig":           modeBadTsconfig,
+	"layer_bypass_direct":    modeLayerBypassDirect,
+	"layer_bypass_compliant": modeLayerBypassCompliant,
+	"layer_bypass_dual":      modeLayerBypassDual,
+	"layer_bypass_cycle":     modeLayerBypassCycle,
+	"layer_bypass_gap":       modeLayerBypassGap,
+}
+
+// reachabilityFixtureFact is the one resolved call-graph edge/reachability
+// fact modeReachability and modeReachabilityGap both emit, mirroring the
+// real sidecar's own reachability-registry vocabulary (js/semantics/src/
+// project-sidecar/reachability-registry.ts's REACHABILITY_ALGORITHM/
+// REACHABILITY_BACKEND) so the fake stand-in exercises the same wire shape.
+func reachabilityFixtureFact() projectbridge.ReachabilityFactWire {
+	const source = "file:src/app.ts#getUsers"
+	const sink = "(PrismaClient).findMany"
+	return projectbridge.ReachabilityFactWire{
+		ID:         fmt.Sprintf("reach:%s->%s@ts-source-sink-registry@1", source, sink),
+		Kind:       projectbridge.KindPossibleCallReachability,
+		Confidence: "resolved_direct",
+		Source:     source,
+		Sink:       sink,
+		Path: []projectbridge.ReachabilityStepFact{
+			{NodeID: source},
+			{NodeID: sink},
+		},
+		AlgorithmVersion: "ts-source-sink-registry@1",
+		Backend:          "ts_project_sidecar",
+	}
+}
+
+func modeReachability(req projectbridge.Request) {
+	fact := reachabilityFixtureFact()
+	writeResponse(projectbridge.Response{
+		Version:           req.Version,
+		ID:                req.ID,
+		CallGraph:         []projectbridge.CallGraphEdgeFact{{From: fact.Source, To: fact.Sink}},
+		ReachabilityFacts: []projectbridge.ReachabilityFactWire{fact},
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: true,
+			Counts:   map[string]int{"files_seen": len(req.Files)},
+		},
+	})
+}
+
+func modeReachabilityGap(req projectbridge.Request) {
+	fact := reachabilityFixtureFact()
+	writeResponse(projectbridge.Response{
+		Version:           req.Version,
+		ID:                req.ID,
+		CallGraph:         []projectbridge.CallGraphEdgeFact{{From: fact.Source, To: fact.Sink}},
+		ReachabilityFacts: []projectbridge.ReachabilityFactWire{fact},
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: false,
+			Counts:   map[string]int{"files_seen": len(req.Files)},
+			Diagnostics: []projectbridge.Diagnostic{
+				{
+					Code:    "ts_reachability_type_only_gap",
+					Message: "call target resolves through a type-only import binding, so further reachability from here is unverified",
+					Path:    "src/app.ts",
+				},
+			},
+		},
+	})
+}
+
+// modeReachabilityMulti emits three facts: two sharing
+// "file:src/app.ts#getUsers" as Source (so a caller must dedup), plus a
+// third fact from "file:src/app.ts#createUser" -- which sorts before
+// "getUsers" -- emitted last (so a caller must sort rather than preserve
+// wire order).
+func modeReachabilityMulti(req projectbridge.Request) {
+	fact1 := reachabilityFixtureFact()
+	fact2 := projectbridge.ReachabilityFactWire{
+		ID:         fmt.Sprintf("reach:%s->%s@ts-source-sink-registry@1", fact1.Source, "(PrismaClient).update"),
+		Kind:       projectbridge.KindPossibleCallReachability,
+		Confidence: "resolved_direct",
+		Source:     fact1.Source,
+		Sink:       "(PrismaClient).update",
+		Path: []projectbridge.ReachabilityStepFact{
+			{NodeID: fact1.Source},
+			{NodeID: "(PrismaClient).update"},
+		},
+		AlgorithmVersion: "ts-source-sink-registry@1",
+		Backend:          "ts_project_sidecar",
+	}
+	const source3 = "file:src/app.ts#createUser"
+	const sink3 = "(PrismaClient).create"
+	fact3 := projectbridge.ReachabilityFactWire{
+		ID:         fmt.Sprintf("reach:%s->%s@ts-source-sink-registry@1", source3, sink3),
+		Kind:       projectbridge.KindPossibleCallReachability,
+		Confidence: "resolved_direct",
+		Source:     source3,
+		Sink:       sink3,
+		Path: []projectbridge.ReachabilityStepFact{
+			{NodeID: source3},
+			{NodeID: sink3},
+		},
+		AlgorithmVersion: "ts-source-sink-registry@1",
+		Backend:          "ts_project_sidecar",
+	}
+	writeResponse(projectbridge.Response{
+		Version: req.Version,
+		ID:      req.ID,
+		CallGraph: []projectbridge.CallGraphEdgeFact{
+			{From: fact1.Source, To: fact1.Sink},
+			{From: fact2.Source, To: fact2.Sink},
+			{From: fact3.Source, To: fact3.Sink},
+		},
+		ReachabilityFacts: []projectbridge.ReachabilityFactWire{fact1, fact2, fact3},
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: true,
+			Counts:   map[string]int{"files_seen": len(req.Files)},
+		},
+	})
+}
+
+// layerBypassFact returns a resolved reachability fact for (source, sink),
+// mirroring reachabilityFixtureFact's shape but parameterized so the
+// layer-bypass modes below can register whichever Source/Sink pair their
+// CallGraph fixture actually resolves to.
+func layerBypassFact(source, sink string) projectbridge.ReachabilityFactWire {
+	return projectbridge.ReachabilityFactWire{
+		ID:               fmt.Sprintf("reach:%s->%s@ts-source-sink-registry@1", source, sink),
+		Kind:             projectbridge.KindPossibleCallReachability,
+		Confidence:       "resolved_direct",
+		Source:           source,
+		Sink:             sink,
+		Path:             []projectbridge.ReachabilityStepFact{{NodeID: source}, {NodeID: sink}},
+		AlgorithmVersion: "ts-source-sink-registry@1",
+		Backend:          "ts_project_sidecar",
+	}
+}
+
+// modeLayerBypassDirect emits exactly the real sidecar's own depth-1 call-
+// graph edge shape (js/semantics/src/project-sidecar/reachability.ts): a
+// single route-handler-to-sink edge, with no same-layer call-graph node.
+// The required-layer match comes from the acceptance suite's own snapshot
+// containing a real file under "service/", not from this CallGraph.
+func modeLayerBypassDirect(req projectbridge.Request) {
+	const source = "file:src/handlers/app.ts#getUsers"
+	const sink = "(PrismaClient).findMany"
+	writeResponse(projectbridge.Response{
+		Version:           req.Version,
+		ID:                req.ID,
+		CallGraph:         []projectbridge.CallGraphEdgeFact{{From: source, To: sink}},
+		ReachabilityFacts: []projectbridge.ReachabilityFactWire{layerBypassFact(source, sink)},
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: true,
+			Counts:   map[string]int{"files_seen": len(req.Files)},
+		},
+	})
+}
+
+// modeLayerBypassCompliant emits a source node whose own declaration
+// directory ("service") falls under the "service" required-layer prefix the
+// acceptance test configures -- BuildTypeScriptLayerBypass must remove this
+// node from adjacency entirely rather than emit a witness for it.
+func modeLayerBypassCompliant(req projectbridge.Request) {
+	const source = "file:service/handler.ts#getUsers"
+	const sink = "(PrismaClient).findMany"
+	writeResponse(projectbridge.Response{
+		Version:           req.Version,
+		ID:                req.ID,
+		CallGraph:         []projectbridge.CallGraphEdgeFact{{From: source, To: sink}},
+		ReachabilityFacts: []projectbridge.ReachabilityFactWire{layerBypassFact(source, sink)},
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: true,
+			Counts:   map[string]int{"files_seen": len(req.Files)},
+		},
+	})
+}
+
+// modeLayerBypassDual emits a synthetic multi-hop call graph -- a shape the
+// TS sidecar's real depth-1 walk does not itself produce today -- so the
+// acceptance suite can exercise BuildTypeScriptLayerBypass's general
+// BFS/shortest-witness tie-break over more than one hop: two equal-length
+// routes from Handler to the sink (via AlphaQuery and BetaQuery), plus an
+// unrelated required-layer edge that must be removed from adjacency before
+// the search runs.
+func modeLayerBypassDual(req projectbridge.Request) {
+	const handler = "file:src/app.ts#Handler"
+	const alpha = "file:src/app.ts#AlphaQuery"
+	const beta = "file:src/app.ts#BetaQuery"
+	const unused = "file:service/unused.ts#Unused"
+	const sink = "(PrismaClient).findMany"
+	writeResponse(projectbridge.Response{
+		Version: req.Version,
+		ID:      req.ID,
+		CallGraph: []projectbridge.CallGraphEdgeFact{
+			{From: handler, To: alpha},
+			{From: handler, To: beta},
+			{From: handler, To: unused},
+			{From: alpha, To: sink},
+			{From: beta, To: sink},
+		},
+		ReachabilityFacts: []projectbridge.ReachabilityFactWire{layerBypassFact(handler, sink)},
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: true,
+			Counts:   map[string]int{"files_seen": len(req.Files)},
+		},
+	})
+}
+
+// modeLayerBypassCycle emits a synthetic call graph containing a cycle
+// (CycleA <-> CycleB) unrelated to the shortest path to the sink, proving
+// BuildTypeScriptLayerBypass's BFS terminates and finds the correct witness
+// deterministically rather than hanging or double-visiting nodes. The
+// "service" required layer resolves from the acceptance suite's own
+// snapshot file inventory, not from any node in this CallGraph.
+func modeLayerBypassCycle(req projectbridge.Request) {
+	const handler = "file:src/app.ts#Handler"
+	const cycleA = "file:src/app.ts#CycleA"
+	const cycleB = "file:src/app.ts#CycleB"
+	const queryDB = "file:src/app.ts#QueryDB"
+	const sink = "(PrismaClient).findMany"
+	writeResponse(projectbridge.Response{
+		Version: req.Version,
+		ID:      req.ID,
+		CallGraph: []projectbridge.CallGraphEdgeFact{
+			{From: handler, To: cycleA},
+			{From: cycleA, To: cycleB},
+			{From: cycleB, To: cycleA},
+			{From: handler, To: queryDB},
+			{From: queryDB, To: sink},
+		},
+		ReachabilityFacts: []projectbridge.ReachabilityFactWire{layerBypassFact(handler, sink)},
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: true,
+			Counts:   map[string]int{"files_seen": len(req.Files)},
+		},
+	})
+}
+
+// modeLayerBypassGap emits a resolvable bypass edge but reports
+// Coverage.Complete false -- BuildTypeScriptLayerBypass must suppress every
+// witness rather than treat a truncated sidecar round trip as a genuinely
+// searched "bypass found" result. The "service" required layer resolves
+// from the acceptance suite's own snapshot file inventory
+// (tsLayerBypassSnapshot's "service/inventory.ts"), independent of this
+// CallGraph.
+func modeLayerBypassGap(req projectbridge.Request) {
+	const source = "file:src/handlers/app.ts#getUsers"
+	const sink = "(PrismaClient).findMany"
+	writeResponse(projectbridge.Response{
+		Version: req.Version,
+		ID:      req.ID,
+		CallGraph: []projectbridge.CallGraphEdgeFact{
+			{From: source, To: sink},
+		},
+		ReachabilityFacts: []projectbridge.ReachabilityFactWire{layerBypassFact(source, sink)},
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: false,
+			Counts:   map[string]int{"files_seen": len(req.Files)},
+			Diagnostics: []projectbridge.Diagnostic{
+				{
+					Code:    "ts_reachability_type_only_gap",
+					Message: "call target resolves through a type-only import binding, so further reachability from here is unverified",
+					Path:    "src/app.ts",
+				},
+			},
+		},
+	})
+}
+
+func modeBadTsconfig(req projectbridge.Request) {
+	writeResponse(projectbridge.Response{
+		Version: req.Version,
+		ID:      req.ID,
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: false,
+			Counts:   map[string]int{"files_seen": len(req.Files)},
+			Diagnostics: []projectbridge.Diagnostic{
+				{Code: "ts_config_diagnostic", Message: "simulated unparseable tsconfig.json", Path: "tsconfig.json"},
+			},
+		},
+	})
 }
 
 func modeCrash(_ projectbridge.Request) {

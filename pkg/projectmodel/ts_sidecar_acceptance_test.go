@@ -188,6 +188,65 @@ var _ = Describe("BuildTypeScriptModelViaSidecar", func() {
 		})
 	})
 
+	When("the sidecar reports call-graph edges and reachability facts", func() {
+		It("translates them into Model.CallFacts and Model.ReachabilityFacts with structured paths, confidence, and algorithm version", func() {
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsSidecarSnapshot(), testMeta(), sidecarOptsWithMode("reachability"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeTrue())
+			Expect(model.Coverage.Phase).To(Equal("ts_sidecar_build"))
+
+			Expect(model.CallFacts).To(ContainElement(projectmodel.CallFact{
+				From: "file:src/app.ts#getUsers", To: "(PrismaClient).findMany",
+			}))
+
+			Expect(model.ReachabilityFacts).To(ContainElement(projectmodel.ReachabilityFact{
+				ID:         "reach:file:src/app.ts#getUsers->(PrismaClient).findMany@ts-source-sink-registry@1",
+				Kind:       projectmodel.KindPossibleCallReachability,
+				Confidence: projectmodel.ReachabilityConfidenceResolvedDirect,
+				Source:     "file:src/app.ts#getUsers",
+				Sink:       "(PrismaClient).findMany",
+				Path: []projectmodel.ReachabilityStep{
+					{NodeID: "file:src/app.ts#getUsers"},
+					{NodeID: "(PrismaClient).findMany"},
+				},
+				AlgorithmVersion: "ts-source-sink-registry@1",
+			}), "expected the wire fact's ID/Kind/Confidence/Source/Sink/Path/AlgorithmVersion to translate unchanged, got %+v", model.ReachabilityFacts)
+		})
+	})
+
+	When("the sidecar reports reachability coverage gaps alongside a resolved fact", func() {
+		It("passes the gap diagnostic through unchanged while still translating the fact that was resolved", func() {
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsSidecarSnapshot(), testMeta(), sidecarOptsWithMode("reachability_gap"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeFalse(), "expected an unacknowledged reachability gap to mark the model incomplete")
+
+			diag, ok := diagnosticWithCode(model.Coverage.Diagnostics, "ts_reachability_type_only_gap")
+			Expect(ok).To(BeTrue(), "expected the sidecar's reachability coverage-gap diagnostic to survive translation, got %+v", model.Coverage.Diagnostics)
+			Expect(diag.Path).To(Equal("src/app.ts"))
+
+			Expect(model.ReachabilityFacts).To(HaveLen(1), "expected the one resolved fact to still translate despite the coexisting gap")
+			Expect(model.CallFacts).To(HaveLen(1))
+		})
+	})
+
+	When("the sidecar's project analysis fails to load its tsconfig", func() {
+		It("reports diagnostics and skips TS project signals instead of inventing a partial call/reachability graph", func() {
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsSidecarSnapshot(), testMeta(), sidecarOptsWithMode("bad_tsconfig"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeFalse())
+
+			diag, ok := diagnosticWithCode(model.Coverage.Diagnostics, "ts_config_diagnostic")
+			Expect(ok).To(BeTrue(), "expected a ts_config_diagnostic, got %+v", model.Coverage.Diagnostics)
+			Expect(diag.Path).To(Equal("tsconfig.json"))
+
+			Expect(model.CallFacts).To(BeEmpty(), "expected no fabricated call facts when tsconfig failed to load")
+			Expect(model.ReachabilityFacts).To(BeEmpty(), "expected no fabricated reachability facts when tsconfig failed to load")
+
+			_, hasBackendUnavailable := diagnosticWithCode(model.Coverage.Diagnostics, projectmodel.DiagBackendUnavailable)
+			Expect(hasBackendUnavailable).To(BeFalse(), "a bad tsconfig is a degraded-but-successful analysis, not a transport/backend failure")
+		})
+	})
+
 	When("the sidecar reports a whole-request error", func() {
 		It("reports a project_backend_unavailable diagnostic carrying the error's message and kind, merged with any partial diagnostics the sidecar collected", func() {
 			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsSidecarSnapshot(), testMeta(), sidecarOptsWithMode("request_error"))

@@ -655,6 +655,97 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 
 			_, hasBackendUnavailable := diagnosticWithCode(model.Coverage.Diagnostics, projectmodel.DiagBackendUnavailable)
 			Expect(hasBackendUnavailable).To(BeFalse(), "an invalid config is a degraded-but-successful analysis, not a transport/backend failure")
+
+			// AC-13: a tsconfig load failure must never invent a partial
+			// call/reachability graph over a project the sidecar never actually
+			// built (see analyze.ts's own config-diagnostic gate on reachability
+			// extraction).
+			Expect(model.CallFacts).To(BeEmpty(), "expected no fabricated call facts when tsconfig failed to load")
+			Expect(model.ReachabilityFacts).To(BeEmpty(), "expected no fabricated reachability facts when tsconfig failed to load")
+		})
+	})
+
+	When("a route registration's handler calls a resolved ORM sink method", func() {
+		// Mirrors js/semantics/test/project-sidecar.test.ts's own
+		// "TS reachability: resolved route-to-query facts" fixture (prisma
+		// package mirrored into node_modules via package.json's "name" field;
+		// see vfs.ts's package-mirroring) so this proves the same wire facts
+		// survive translation through BuildTypeScriptModelViaSidecar into
+		// Model.CallFacts/Model.ReachabilityFacts, not just that the sidecar
+		// itself produces them.
+		It("populates Model.CallFacts and Model.ReachabilityFacts with structured paths and resolved-direct confidence", func() {
+			snapshot := fstest.MapFS{
+				"tsconfig.json": tsconfigJSON(map[string]any{
+					"compilerOptions": map[string]any{"module": "commonjs", "moduleResolution": "node10"},
+				}),
+				"vendor/prisma-client/package.json": tsconfigJSON(map[string]any{"name": "@prisma/client", "main": "index"}),
+				"vendor/prisma-client/index.ts": file(strings.Join([]string{
+					`export class PrismaClient {`,
+					`  user = {`,
+					`    findMany(): Promise<unknown[]> {`,
+					`      return Promise.resolve([]);`,
+					`    },`,
+					`  };`,
+					`}`,
+					``,
+				}, "\n")),
+				"src/db.ts": file(strings.Join([]string{
+					`import { PrismaClient } from "@prisma/client";`,
+					`export const prisma = new PrismaClient();`,
+					``,
+				}, "\n")),
+				"src/app.ts": file(strings.Join([]string{
+					`import { prisma } from "./db";`,
+					``,
+					`interface App {`,
+					`  get(path: string, handler: (req: unknown, res: unknown) => void): void;`,
+					`}`,
+					`declare const app: App;`,
+					``,
+					`export async function getUsers(req: unknown, res: unknown): Promise<void> {`,
+					`  const users = await prisma.user.findMany();`,
+					`  console.log(users, req, res);`,
+					`}`,
+					`app.get("/users", getUsers);`,
+					``,
+				}, "\n")),
+			}
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), realOpts())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(model.Coverage.Complete).To(BeTrue(), "%+v", model.Coverage)
+
+			const source = "file:src/app.ts#getUsers"
+			const sink = "(PrismaClient).findMany"
+
+			var callFact projectmodel.CallFact
+			foundCallFact := false
+			for _, f := range model.CallFacts {
+				if f.From == source && f.To == sink {
+					callFact = f
+					foundCallFact = true
+					break
+				}
+			}
+			Expect(foundCallFact).To(BeTrue(), "expected a CallFact from %q to %q, got %+v", source, sink, model.CallFacts)
+			Expect(callFact).To(Equal(projectmodel.CallFact{From: source, To: sink}))
+
+			var reachFact projectmodel.ReachabilityFact
+			foundReachFact := false
+			for _, f := range model.ReachabilityFacts {
+				if f.Source == source && f.Sink == sink {
+					reachFact = f
+					foundReachFact = true
+					break
+				}
+			}
+			Expect(foundReachFact).To(BeTrue(), "expected a ReachabilityFact from %q to %q, got %+v", source, sink, model.ReachabilityFacts)
+			Expect(reachFact.Kind).To(Equal(projectmodel.KindPossibleCallReachability))
+			Expect(reachFact.Confidence).To(Equal(projectmodel.ReachabilityConfidenceResolvedDirect))
+			Expect(reachFact.AlgorithmVersion).To(Equal(projectmodel.TSReachabilityAlgorithm))
+			Expect(reachFact.Path).To(HaveLen(2), "expected a structured source-to-sink path, got %+v", reachFact.Path)
+			Expect(reachFact.Path[0].NodeID).To(Equal(source))
+			Expect(reachFact.Path[len(reachFact.Path)-1].NodeID).To(Equal(sink))
 		})
 	})
 
