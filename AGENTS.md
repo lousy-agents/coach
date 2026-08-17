@@ -32,7 +32,7 @@ The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) currently ex
 Some skills delegate to a named subagent rather than doing the work inline. Each harness defines subagents in its own format:
 
 - `.claude/agents/*.md` — **canonical** Claude Code subagents (YAML frontmatter + markdown body as the system prompt). `task-implementer`/`task-reviewer` back the `implement-issue` command; `product-sme` backs `product-quality-evaluation`. Edit these files when changing agent instructions.
-- OpenCode — no separate agent/command body mirrors. `.opencode/plugin/claude-agents.ts` loads `.claude/agents/*.md` and `.claude/commands/*.md` at config time (agents: Claude `tools` → OpenCode `permission`, `maxTurns` → `steps`, `mode: subagent`; commands: frontmatter `description` + body as `template`). Explicit entries in `opencode.json` / `.opencode/agents/` / `.opencode/command(s)/` win over the loader. `.opencode/plugin/implement-issue-gates.ts` enforces implement-issue checkpoints: PR create gated on `mise run ci`; `task` → `task-implementer` rework requires literal `## Reviewer Findings`; `task` → `task-reviewer` results are soft-gated so the first non-empty line is `PASS` or `FINDINGS`. Restart OpenCode after agent, command, or plugin changes.
+- OpenCode — no separate agent/command body mirrors. `.opencode/plugin/claude-agents.ts` loads `.claude/agents/*.md` and `.claude/commands/*.md` at config time (agents: Claude `tools` → OpenCode `permission`, `maxTurns` → `steps`, `mode: subagent`; commands: frontmatter `description` + body as `template`). Explicit entries in `opencode.json` / `.opencode/agents/` / `.opencode/command(s)/` win over the loader. `.opencode/plugin/implement-issue-gates.ts` enforces implement-issue checkpoints: PR create gated on a clean worktree plus `mise run ci-gate`, mirroring the Claude hook; `task` → `task-implementer` rework requires literal `## Reviewer Findings`; `task` → `task-reviewer` results are soft-gated so the first non-empty line is `PASS` or `FINDINGS`. Restart OpenCode after agent, command, or plugin changes.
 - `.codex/agents/*.toml` — Codex custom subagents (`name`, `description`, `sandbox_mode`, `developer_instructions`). Codex cannot import Claude markdown, so instruction text is mirrored from `.claude/agents/` and marked with a one-line sync comment — don't build codegen for a two-file mirror.
 - `.agents/skills/*/agents/<harness>.yaml` — optional, separate from subagent definitions: a per-harness "interface" declaration (e.g. `display_name`/`default_prompt`) for how a skill surfaces in that harness's UI. Only add one if the harness actually reads it — Claude Code has no such mechanism today.
 
@@ -51,10 +51,12 @@ All tasks are defined in `mise.toml`; use `mise run <task>` (mise also pins `go`
 
 ```sh
 mise run ci-gate          # what the PR hook runs: gofmt/vet/style only, no tests (~1s warm)
-mise run ci-all           # everything CI proves locally: ci + wasm-build + sidecar-built projectmodel suite
+mise run ci-all           # everything CI proves locally: sidecar-first ci-go + js-ci + wasm-build
 mise run ci-fast          # per-cycle loop check: Go slice + agent-tooling suites, sidecar built first
-mise run ci               # gofmt/vet/tidy/style/test/examples/js-ci -- NOT wasm-build, and see ci-fast on skips
-mise run gofmt             # gofmt -l . (must be empty)
+mise run ci               # ci-go + js-ci -- NOT wasm-build, and see ci-fast on skips
+mise run ci-go             # verify job atoms: gofmt/vet/tidy/style/test/examples
+mise run gofmt             # fail if gofmt -l . prints any file
+mise run projectmodel-sidecar-acceptance  # real TS sidecar specs only (GHA job of the same role)
 mise run go-vet
 mise run tidy-check        # go mod tidy && diff go.mod/go.sum
 mise run test              # go test -race ./...
@@ -116,31 +118,32 @@ Single entry point `ReadFile`, authenticated via a GitHub App installation (`ghi
 
 ### Validation Suite (mandatory before commit)
 
-These are the exact checks CI runs in `.github/workflows/ci.yml`, so a clean local run here means CI passes:
+These are the exact checks CI runs in `.github/workflows/ci.yml` (atomic `mise run <task>` steps). A clean local `mise run ci-all` covers every job except `platform-smoke`:
 
 ```sh
-gofmt -l .                      # must print nothing
-go vet ./...
-go mod tidy && git diff --exit-code go.mod go.sum
-go run ./cmd/acceptance-style-guard   # or: mise run acceptance-style-check
-go test -race ./...
-go test -run Example ./...
+mise run gofmt
+mise run go-vet
+mise run tidy-check
+mise run acceptance-style-check
+mise run test
+mise run test-examples
 mise run js-ci
+mise run projectmodel-sidecar-acceptance
 mise run wasm-build
 ```
 
-`mise run ci` runs the Go-side checks **and `js-ci`** (`mise.toml` lists `{ task = "js-ci" }` in the `ci` task). It does **not** run `wasm-build`.
+`mise run ci` runs `ci-go` **and `js-ci`**. It does **not** run `wasm-build`.
 
 Two gaps `mise run ci` alone does not close:
 
 - `wasm-build` is in no task's closure, so a `GOOS=js GOARCH=wasm` break can pass `ci`.
-- `ci` runs `test` **before** `js-ci`, so `pkg/projectmodel`'s TypeScript sidecar acceptance suite has no built sidecar when it executes and **skips silently** — see the comment at `.github/workflows/ci.yml:52-56`. A green `ci` does not mean that suite ran.
+- `ci` runs `test` before anything builds the sidecar, so `pkg/projectmodel`'s TypeScript sidecar acceptance suite **skips silently** unless Node and the binary are already present. A green `ci` does not mean that suite ran.
 
-Use **`mise run ci-fast`** inside an implement/review loop — sidecar-first ordering, without the wasm and full-CI legs. **`mise run ci-all`** chains `ci`, `wasm-build`, and the sidecar-built `pkg/projectmodel` suite; run it when you want the whole thing locally, but it is no longer the pre-PR gate.
+Use **`mise run ci-fast`** inside an implement/review loop — sidecar-first ordering, without the wasm and full-CI legs. **`mise run ci-all`** builds the sidecar first, then `ci-go` (so `test` actually runs the projectmodel suite), `js-ci`, and `wasm-build`; run it when you want the whole thing locally, but it is **no longer the pre-PR gate**.
 
-**The exhaustive gate is GitHub Actions plus branch protection, not a local run.** `gate-pr-creation.sh` used to run `ci-all` — chosen when a warm `ci-all` was projected at ~41s. Measured on a CCR container it is ~910s, against that hook's own 900s timeout, while CI proves a strict superset (the same atomic tasks as parallel required jobs, **plus `platform-smoke`**) in ~426s wall clock on compute that is not the session's. The hook now runs `ci-gate` (~1s warm) and the clean-worktree check, which is the one thing CI structurally cannot do: CI validates the *pushed commit* and cannot see a working tree that differs from it.
+**The exhaustive gate is GitHub Actions plus branch protection, not a local run.** `gate-pr-creation.sh` used to run `ci-all` — chosen when a warm `ci-all` was projected at ~41s. Measured on a CCR container it is ~910s, against that hook's own 900s timeout, while CI proves a strict superset (the same atomic tasks as parallel leaf jobs, **plus `platform-smoke`**) in ~426s wall clock on compute that is not the session's. The hook now runs `ci-gate` (~1s warm) plus the clean-worktree check, which is the one thing CI structurally cannot do: CI validates the *pushed commit* and cannot see a working tree that differs from it.
 
-`ci-gate` deliberately runs no tests and **no `tidy-check`** — the latter rewrites `go.mod`/`go.sum` in place, which would dirty the very tree the hook just certified clean. CI runs both. This split is only safe while those jobs are **required checks** on the base branch; if branch protection is removed, nothing gates a red merge.
+`ci-gate` deliberately runs no tests and **no `tidy-check`** — the latter rewrites `go.mod`/`go.sum` in place, which would dirty the very tree the hook just certified clean. CI runs both. This split is only safe while the `status` aggregator is a **required check** on the base branch; if branch protection is removed, nothing gates a red merge.
 
 `ci-all` deliberately excludes `test-acceptance-fast` (its ambient-credential preflight cannot pass where `GITHUB_TOKEN`/`GH_TOKEN` or `~/.aws/config` are present, and `test` already runs every acceptance suite unfiltered) and `platform-smoke` (Docker + live services).
 
@@ -249,11 +252,15 @@ A PR title follows the same rule as its commits. Agent tooling changes the way t
 
 ## CI shape (`.github/workflows/ci.yml`)
 
-Four independent jobs:
+GHA is a parallel scheduler of atomic `mise run <task>` steps. Local `ci` / `ci-fast` / `ci-all` are serial bundles of the same tasks. The workflow does not invoke those composites.
 
-- `verify` — gofmt/vet/tidy/acceptance-style-check/test/examples. Deliberately has **no** Node on PATH, so `pkg/projectmodel`'s TS sidecar suite skips here and contributes no signal.
-- `js-verify` — `mise run js-ci`, **plus** `js-install`, `project-sidecar-build`, and `go test -race ./pkg/projectmodel/... -run Acceptance`. Those extra steps are what actually exercise the sidecar suite; `js-ci` alone does not.
-- `wasm-build` — proves the `GOOS=js GOARCH=wasm` grammar-subset build compiles under the sole pure-Go engine.
-- `platform-smoke` — Docker-based `platform-up` / `platform-smoke` / `platform-down`.
+Five independent leaf jobs plus a `status` aggregator (the single required check):
 
-`mise run ci-all` mirrors the first three locally. `platform-smoke` has no local mirror — it is one reason CI is a strict superset of any local run.
+- `verify` — `gofmt` / `go-vet` / `tidy-check` / `acceptance-style-check` / `test` / `test-examples` (`ci-go`). mise installs only Go; the runner image may still have Node, so the sidecar suite usually skips because the sidecar is not built, not because `node` is missing. Toolchain is `mise.toml` (`go = "1.26.6"`), not `go.mod`'s language version.
+- `js-verify` — `mise run js-ci` only.
+- `projectmodel-sidecar` — `mise run projectmodel-sidecar-acceptance` (builds the sidecar, then the real suite). Parallel with `js-verify`.
+- `wasm-build` — `mise run wasm-build`.
+- `platform-smoke` — `platform-up` / `platform-smoke` / `platform-down` as three steps so teardown still runs on failure.
+- `status` — `if: always()` + `needs` every leaf; inspects `toJSON(needs)` and fails unless each result is `success`. Branch protection should require this job only. Adding a leaf means adding it to `status.needs`, or it can fail while the required check is green.
+
+`mise run ci-all` mirrors the first four locally (sidecar-first, so the suite runs inside `test` rather than as a second invocation). `platform-smoke` has no local composite; run the three platform tasks directly. The GHA `status` check is stricter than `ci-all` because it includes `platform-smoke`.

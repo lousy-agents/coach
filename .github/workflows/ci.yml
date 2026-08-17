@@ -2,91 +2,127 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
+  # Atomic mise tasks matching `ci-go`. This job does not install Node via
+  # mise; ubuntu-latest still has a runner Node, so the sidecar suite typically
+  # skips because the sidecar build fails (no npm ci), not because node is
+  # absent. The real suite lives in projectmodel-sidecar.
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
-          go-version-file: go.mod
+          install_args: go
+          experimental: true
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
       - name: gofmt
-        run: |
-          diff <(gofmt -l .) <(printf '')
+        run: mise run gofmt
 
-      - name: go vet
-        run: go vet ./...
+      - name: go-vet
+        run: mise run go-vet
 
-      - name: go mod tidy (no diff)
-        run: |
-          go mod tidy
-          git diff --exit-code go.mod go.sum
+      - name: tidy-check
+        run: mise run tidy-check
 
       - name: acceptance-style-check
-        run: go run ./cmd/acceptance-style-guard
+        run: mise run acceptance-style-check
 
-      - name: go test -race
-        run: go test -race ./...
+      - name: test
+        run: mise run test
 
-      - name: go test examples
-        run: go test -run Example ./...
+      - name: test-examples
+        run: mise run test-examples
 
   js-verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Installs go and node from mise.toml [tools], so CI and local builds
-      # share one tool-version source of truth.
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
 
-      - name: js/semantics build + tests
+      - name: js-ci
         run: mise run js-ci
 
-      # pkg/projectmodel/ts_sidecar_integration_acceptance_test.go drives
-      # Task 1's Go client against Task 2's real compiled Node/TypeScript
-      # sidecar; it needs Node/npm on PATH (this job has them via mise, the
-      # `verify` job deliberately does not) and gracefully skips otherwise,
-      # so without this step it silently contributes zero regression signal.
-      - name: js/semantics install (for pkg/projectmodel's real ts sidecar integration suite)
-        run: mise run js-install
+  # Parallel with js-verify: both need Node, neither waits on the other.
+  projectmodel-sidecar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: build the pinned ts project sidecar
-        run: mise run project-sidecar-build
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
 
-      - name: go test -race ./pkg/projectmodel/... (real ts sidecar integration suite)
-        run: go test -race ./pkg/projectmodel/... -run Acceptance
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: projectmodel-sidecar-acceptance
+        run: mise run projectmodel-sidecar-acceptance
 
   # Proves pkg/semantics compiles for GOOS=js GOARCH=wasm via the pure-Go
   # gotreesitter engine, with no TinyGo.
   wasm-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # jdx/mise-action (not actions/setup-go) so `mise run wasm-build`
-      # resolves, keeping the exact build flags (grammar-subset tags,
-      # GOOS/GOARCH/CGO_ENABLED) defined once in mise.toml rather than
-      # duplicated here.
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          install_args: go
+          experimental: true
 
-      - name: GOOS=js GOARCH=wasm build (pure-Go engine)
+      - name: wasm-build
         run: mise run wasm-build
 
   # Baseline Scan Story 4 / Task 10: credential-free core-profile E2E smoke
   # (api + worker + postgres + redis + model stub). Distinct from thinproof.
+  # Three steps so platform-down still runs when up or smoke fails.
   platform-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          install_args: go
+          experimental: true
 
-      - name: platform-up (core)
+      - name: platform-up
         run: mise run platform-up
 
       - name: platform-smoke
@@ -95,3 +131,29 @@ jobs:
       - name: platform-down
         if: always()
         run: mise run platform-down
+
+  # Single required check for branch protection. Leaf jobs stay parallel;
+  # this job fails if any required leaf is not success. if: always() so a
+  # failed leaf still produces a failed status rather than a missing check.
+  status:
+    if: always()
+    needs: [verify, js-verify, projectmodel-sidecar, wasm-build, platform-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check required jobs passed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["RESULTS"])
+          failed = sorted(
+              name for name, job in needs.items() if job.get("result") != "success"
+          )
+          if failed:
+              for name in failed:
+                  print(f"{name} failed: {needs[name].get('result')}")
+              sys.exit(1)
+          print("All required jobs passed")
+          PY
