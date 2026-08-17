@@ -218,7 +218,7 @@ var _ = Describe("BuildTypeScriptModelViaSidecar", func() {
 		It("passes the gap diagnostic through unchanged while still translating the fact that was resolved", func() {
 			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsSidecarSnapshot(), testMeta(), sidecarOptsWithMode("reachability_gap"))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(model.Coverage.Complete).To(BeFalse(), "expected an unacknowledged reachability gap to mark the model incomplete")
+			Expect(model.Coverage.Complete).To(BeTrue(), "a routine reachability gap must not mark the whole model incomplete -- only reachability's own Coverage.Complete (BuildTypeScriptReachability/BuildTypeScriptLayerBypass) reflects it")
 
 			diag, ok := diagnosticWithCode(model.Coverage.Diagnostics, "ts_reachability_type_only_gap")
 			Expect(ok).To(BeTrue(), "expected the sidecar's reachability coverage-gap diagnostic to survive translation, got %+v", model.Coverage.Diagnostics)

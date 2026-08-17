@@ -155,10 +155,21 @@ function runProjects(
       callGraph.push(...reachResult.callGraph);
       reachabilityFacts.push(...reachResult.facts);
       diagnostics.push(...reachResult.diagnostics);
-      // A ts_reachability_*_gap diagnostic means some hop's reachability was
-      // deliberately left unverified; Complete must not claim otherwise,
-      // mirroring Go's own Complete gate on its call-graph coverage.
-      if (reachResult.diagnostics.length > 0) complete = false;
+      // A ts_reachability_*_gap diagnostic means one hop's reachability was
+      // deliberately left unverified, not that import/config analysis for
+      // this project failed -- unlike Go's Complete gate (unresolved
+      // interface/function-value/framework-registration sites there are
+      // also counts+diagnostics, never a Complete flip; see
+      // pkg/projectmodel/go_callgraph.go), a routine one-hop delegation
+      // into a helper/service function is the ordinary shape of layered
+      // code, not a rare failure. Folding it into this project-wide
+      // Complete bit would mark most real TS trees incomplete and, via
+      // internal/codesignalcli/project_ts_backend.go's passthrough, degrade
+      // an unrelated already-shipped architecture.layer_violation to
+      // lifecycle unknown. Reachability's own incompleteness is reported
+      // independently on ReachabilityResult.Coverage/LayerBypassResult.Coverage
+      // instead (see pkg/projectmodel/ts_reachability.go,
+      // ts_layer_bypass.go).
     }
     projectsProcessed += 1;
   }
