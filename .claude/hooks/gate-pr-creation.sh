@@ -1,6 +1,7 @@
 #!/bin/bash
-# PreToolUse hook: blocks PR creation on a dirty working tree, or when the
-# cheap `mise run ci-gate` smoke check fails.
+# PreToolUse hook: blocks anything that publishes -- `git push`, `gh pr create`,
+# and the GitHub MCP write tools -- on a dirty working tree, or when the cheap
+# `mise run ci-gate` smoke check fails.
 #
 # This is no longer the exhaustive gate, and that is deliberate. It ran
 # `mise run ci-all` when a warm ci-all was projected at ~41s. Measured on a CCR
@@ -25,14 +26,14 @@
 # `git add`, a stray untracked file -- which would publish a tree nothing
 # validated. That check is cheap git plumbing and runs first.
 #
-# Covers both PR-creation paths,
-# since which one is available depends on the Claude Code environment: a
-# Bash `gh pr create` invocation (matcher: Bash, filtered via the settings.json
-# "if" clause to just that command) and the GitHub MCP create_pull_request
-# tool call (matcher: mcp__github__create_pull_request) used in environments
-# where the gh CLI isn't available and PR creation goes through the MCP
-# server instead. Denies via a JSON hookSpecificOutput permissionDecision,
-# not the stderr+exit-2 convention validate-no-git-writes.sh uses.
+# Covers every publishing path, because which ones exist depends on the
+# environment and none of them is redundant: `gh pr create` and `git push` via
+# Bash (matcher: Bash, narrowed by the settings.json "if" clauses), and the
+# GitHub MCP write tools -- create_pull_request, push_files,
+# create_or_update_file, delete_file -- used where the gh CLI is absent. Local
+# sessions have no GitHub MCP server at all; CCR has no gh. Denies via a JSON
+# hookSpecificOutput permissionDecision, not the stderr+exit-2 convention
+# validate-no-git-writes.sh uses.
 set -euo pipefail
 input=$(cat)
 tool_name=$(jq -r '.tool_name // empty' <<<"$input")
@@ -45,9 +46,26 @@ if [ "$tool_name" = "Bash" ]; then
   if [ -z "$command" ]; then
     exit 0
   fi
-  echo "$command" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+create\b' || exit 0
-elif [ "$tool_name" != "mcp__github__create_pull_request" ]; then
-  exit 0
+  # Both publish. `gh pr create` opens the pull request; `git push` puts the
+  # commits that pull request describes onto the remote. Gating only the first
+  # left every push unchecked -- the initial one and, once the exhaustive suite
+  # moved to CI, every repair push made while driving a red PR to green.
+  #
+  # This filter is why adding a Bash registration is not enough on its own: an
+  # unmatched command exits 0, so a `git push` registration pointing at this
+  # script would have allowed silently until this line learned the verb.
+  echo "$command" | grep -qE '\b(gh[[:space:]]+pr[[:space:]]+create|git[[:space:]]+push)\b' || exit 0
+else
+  # git is not the only way to reach the remote. The GitHub MCP server writes
+  # commits over the API with no shell involved, so a Bash-only gate watches one
+  # of two doors.
+  case "$tool_name" in
+    mcp__github__create_pull_request | \
+    mcp__github__push_files | \
+    mcp__github__create_or_update_file | \
+    mcp__github__delete_file) ;;
+    *) exit 0 ;;
+  esac
 fi
 
 deny() {
@@ -70,11 +88,11 @@ if ! worktree_status=$(git status --porcelain 2>&1); then
 fi
 
 if [ -n "$worktree_status" ]; then
-  deny "The working tree is dirty, so validation would not describe the commit this PR publishes. Commit or stash the changes, then retry."
+  deny "The working tree is dirty, so validation would not describe what this publishes. Commit or stash the changes, then retry."
 fi
 
 if ! mise run ci-gate; then
-  deny "mise run ci-gate failed; fix before opening the PR. (This is the cheap smoke check -- the full suite runs in GitHub Actions.)"
+  deny "mise run ci-gate failed; fix before publishing. (This is the cheap smoke check -- the full suite runs in GitHub Actions.)"
 fi
 
 trace gate "$tool_name" allow
