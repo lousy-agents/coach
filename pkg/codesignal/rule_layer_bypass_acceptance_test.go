@@ -446,3 +446,209 @@ var _ = Describe("EvaluateGoLayerBypass", func() {
 		})
 	})
 })
+
+var _ = Describe("EvaluateTypeScriptLayerBypass", func() {
+	When("a single high-confidence TS witness is supplied", func() {
+		It("emits exactly one architecture.layer_bypass ProjectChange tagged with language typescript", func() {
+			witness := projectmodel.LayerBypassWitness{
+				ID:            "bypass:service:file:src/handlers/app.ts#getUsers->(PrismaClient).findMany@" + projectmodel.TSLayerBypassAlgorithm,
+				Source:        "file:src/handlers/app.ts#getUsers",
+				Sink:          "(PrismaClient).findMany",
+				RequiredLayer: "service",
+				Path: []projectmodel.LayerBypassStep{
+					{NodeID: "file:src/handlers/app.ts#getUsers", Path: "src/handlers/app.ts"},
+					{NodeID: "(PrismaClient).findMany"},
+				},
+				Confidence:       projectmodel.LayerBypassConfidenceHigh,
+				AlgorithmVersion: projectmodel.TSLayerBypassAlgorithm,
+			}
+			result := projectmodel.LayerBypassResult{
+				Witnesses: []projectmodel.LayerBypassWitness{witness},
+				Algorithm: projectmodel.TSLayerBypassAlgorithm,
+				Coverage:  projectmodel.Coverage{Phase: "ts_layer_bypass", Complete: true},
+			}
+
+			changes, diagnostics := codesignal.EvaluateTypeScriptLayerBypass(result, "1", "backend-1", "digest-1")
+
+			Expect(diagnostics).To(BeEmpty())
+			Expect(changes).To(HaveLen(1))
+			change := changes[0]
+
+			Expect(change.RuleID).To(Equal("architecture.layer_bypass"))
+			Expect(change.Kind).To(Equal("architecture.layer_bypass"))
+			Expect(change.Category).To(Equal(codesignal.Category("architecture")))
+			Expect(change.Severity).To(Equal(codesignal.Severity("advisory")))
+			Expect(change.Confidence).To(Equal(codesignal.Confidence("high")))
+			Expect(change.AlgorithmVersion).To(Equal(projectmodel.TSLayerBypassAlgorithm))
+			Expect(change.SemanticKey).To(Equal(
+				"architecture.layer_bypass:service:file:src/handlers/app.ts#getUsers->(PrismaClient).findMany",
+			))
+
+			// False-green control: MachineEvidence["language"] is TS-only --
+			// EvaluateGoLayerBypass's own spec above asserts an exact
+			// MachineEvidence map with no "language" key at all, so a shared
+			// builder that always added the key (rather than only when
+			// non-empty) would fail that Go spec, not this one.
+			Expect(change.MachineEvidence).To(Equal(map[string]string{
+				"source":         "file:src/handlers/app.ts#getUsers",
+				"sink":           "(PrismaClient).findMany",
+				"required_layer": "service",
+				"path":           "file:src/handlers/app.ts#getUsers->(PrismaClient).findMany",
+				"language":       "typescript",
+			}))
+
+			Expect(change.PrimaryAnchor).To(Equal(codesignal.ProjectLocation{Path: "src/handlers/app.ts"}))
+			Expect(change.Provenance).To(Equal(codesignal.Provenance{Producer: "projectmodel", FindingKind: "architecture.layer_bypass"}))
+		})
+	})
+
+	When("a TS witness's Confidence is not LayerBypassConfidenceHigh", func() {
+		It("emits zero ProjectChanges (defensive re-check, not decoration)", func() {
+			witness := projectmodel.LayerBypassWitness{
+				ID:               "bypass:service:file:src/handlers/app.ts#getUsers->(PrismaClient).findMany@" + projectmodel.TSLayerBypassAlgorithm,
+				Source:           "file:src/handlers/app.ts#getUsers",
+				Sink:             "(PrismaClient).findMany",
+				RequiredLayer:    "service",
+				Path:             []projectmodel.LayerBypassStep{{NodeID: "file:src/handlers/app.ts#getUsers"}, {NodeID: "(PrismaClient).findMany"}},
+				Confidence:       "medium", // BuildTypeScriptLayerBypass never produces this; constructed directly to exercise the guard.
+				AlgorithmVersion: projectmodel.TSLayerBypassAlgorithm,
+			}
+			result := projectmodel.LayerBypassResult{
+				Witnesses: []projectmodel.LayerBypassWitness{witness},
+				Algorithm: projectmodel.TSLayerBypassAlgorithm,
+				Coverage:  projectmodel.Coverage{Phase: "ts_layer_bypass", Complete: true},
+			}
+
+			changes, _ := codesignal.EvaluateTypeScriptLayerBypass(result, "1", "backend-1", "digest-1")
+
+			Expect(changes).To(BeEmpty())
+		})
+	})
+
+	When("BuildTypeScriptLayerBypass's search coverage was incomplete", func() {
+		It("still emits the witness's ProjectChange but also a coverage-incomplete diagnostic", func() {
+			witness := projectmodel.LayerBypassWitness{
+				ID:               "bypass:service:file:src/handlers/app.ts#getUsers->(PrismaClient).findMany@" + projectmodel.TSLayerBypassAlgorithm,
+				Source:           "file:src/handlers/app.ts#getUsers",
+				Sink:             "(PrismaClient).findMany",
+				RequiredLayer:    "service",
+				Path:             []projectmodel.LayerBypassStep{{NodeID: "file:src/handlers/app.ts#getUsers"}, {NodeID: "(PrismaClient).findMany"}},
+				Confidence:       projectmodel.LayerBypassConfidenceHigh,
+				AlgorithmVersion: projectmodel.TSLayerBypassAlgorithm,
+			}
+			result := projectmodel.LayerBypassResult{
+				Witnesses: []projectmodel.LayerBypassWitness{witness},
+				Algorithm: projectmodel.TSLayerBypassAlgorithm,
+				Coverage:  projectmodel.Coverage{Phase: "ts_layer_bypass", Complete: false},
+			}
+
+			changes, diagnostics := codesignal.EvaluateTypeScriptLayerBypass(result, "1", "backend-1", "digest-1")
+
+			Expect(changes).To(HaveLen(1))
+			Expect(diagnostics).To(HaveLen(1))
+			Expect(diagnostics[0].Kind).To(Equal("project_layer_bypass_coverage_incomplete"))
+		})
+	})
+
+	When("the required layer was ambiguous, so BuildTypeScriptLayerBypass found zero witnesses", func() {
+		It("emits zero ProjectChanges and a coverage-incomplete diagnostic, matching an ambiguous-layer run's Coverage.Complete false", func() {
+			result := projectmodel.LayerBypassResult{
+				Algorithm: projectmodel.TSLayerBypassAlgorithm,
+				Coverage:  projectmodel.Coverage{Phase: "ts_layer_bypass", Complete: false},
+			}
+
+			changes, diagnostics := codesignal.EvaluateTypeScriptLayerBypass(result, "1", "backend-1", "digest-1")
+
+			Expect(changes).To(BeEmpty())
+			Expect(diagnostics).To(HaveLen(1))
+			Expect(diagnostics[0].Kind).To(Equal("project_layer_bypass_coverage_incomplete"))
+		})
+	})
+
+	When("no witnesses are supplied", func() {
+		It("emits zero ProjectChanges (negative control)", func() {
+			result := projectmodel.LayerBypassResult{
+				Algorithm: projectmodel.TSLayerBypassAlgorithm,
+				Coverage:  projectmodel.Coverage{Phase: "ts_layer_bypass", Complete: true},
+			}
+
+			changes, diagnostics := codesignal.EvaluateTypeScriptLayerBypass(result, "1", "backend-1", "digest-1")
+
+			Expect(diagnostics).To(BeEmpty())
+			Expect(changes).To(BeEmpty())
+		})
+	})
+
+	Describe("lifecycle classification via the shared Build entrypoint", func() {
+		coverage := func() *projectmodel.Coverage {
+			return &projectmodel.Coverage{Phase: "full", Complete: true}
+		}
+
+		tsWitness := func(source, sink, requiredLayer string, path []string) projectmodel.LayerBypassWitness {
+			steps := make([]projectmodel.LayerBypassStep, len(path))
+			for i, nodeID := range path {
+				steps[i] = projectmodel.LayerBypassStep{NodeID: nodeID}
+			}
+			if len(steps) > 0 {
+				steps[0].Path = layerBypassSourcePath
+			}
+			return projectmodel.LayerBypassWitness{
+				ID:               "bypass:" + requiredLayer + ":" + source + "->" + sink + "@" + projectmodel.TSLayerBypassAlgorithm,
+				Source:           source,
+				Sink:             sink,
+				RequiredLayer:    requiredLayer,
+				Path:             steps,
+				Confidence:       projectmodel.LayerBypassConfidenceHigh,
+				AlgorithmVersion: projectmodel.TSLayerBypassAlgorithm,
+			}
+		}
+		tsResult := func(witnesses ...projectmodel.LayerBypassWitness) projectmodel.LayerBypassResult {
+			return projectmodel.LayerBypassResult{
+				Witnesses: witnesses,
+				Algorithm: projectmodel.TSLayerBypassAlgorithm,
+				Coverage:  projectmodel.Coverage{Phase: "ts_layer_bypass", Complete: true},
+			}
+		}
+
+		When("a TS witness is present only on head", func() {
+			It("classifies introduced, sharing the ruleLayerBypassID vocabulary with the Go evaluator", func() {
+				witness := tsWitness("file:src/handlers/app.ts#getUsers", "(PrismaClient).findMany", "service",
+					[]string{"file:src/handlers/app.ts#getUsers", "(PrismaClient).findMany"})
+				headChanges, _ := codesignal.EvaluateTypeScriptLayerBypass(tsResult(witness), "1", "backend-1", "digest-1")
+
+				report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
+					ProjectChanges:      headChanges,
+					BaseProjectChanges:  nil,
+					ProjectBaseAnalyzed: true,
+					ProjectCoverage:     coverage(),
+					BaseProjectCoverage: coverage(),
+				})
+
+				Expect(report.ProjectChanges).To(HaveLen(1))
+				Expect(report.ProjectChanges[0].RuleID).To(Equal("architecture.layer_bypass"))
+				Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
+			})
+		})
+
+		When("the identical TS witness is present on both head and base", func() {
+			It("classifies existing with Changed false", func() {
+				witness := tsWitness("file:src/handlers/app.ts#getUsers", "(PrismaClient).findMany", "service",
+					[]string{"file:src/handlers/app.ts#getUsers", "(PrismaClient).findMany"})
+				result := tsResult(witness)
+				changes, _ := codesignal.EvaluateTypeScriptLayerBypass(result, "1", "backend-1", "digest-1")
+
+				report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
+					ProjectChanges:      changes,
+					BaseProjectChanges:  changes,
+					ProjectBaseAnalyzed: true,
+					ProjectCoverage:     coverage(),
+					BaseProjectCoverage: coverage(),
+				})
+
+				Expect(report.ProjectChanges).To(HaveLen(1))
+				Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("existing")))
+				Expect(report.ProjectChanges[0].Changed).To(BeFalse())
+			})
+		})
+	})
+})
