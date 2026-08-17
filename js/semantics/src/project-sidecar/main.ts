@@ -31,7 +31,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    const { edges, coverage } = analyzeProject({
+    const { edges, callGraph, reachabilityFacts, coverage } = analyzeProject({
       files: req.files ?? [],
       roots: req.roots,
       timeoutMs: req.timeout_ms,
@@ -41,6 +41,8 @@ async function main(): Promise<void> {
       version: PROTOCOL_VERSION,
       id: req.id,
       import_edges: edges.length > 0 ? edges : undefined,
+      call_graph: callGraph.length > 0 ? callGraph : undefined,
+      reachability_facts: reachabilityFacts.length > 0 ? reachabilityFacts : undefined,
       coverage,
     };
     writeResponseLine(process.stdout, response);

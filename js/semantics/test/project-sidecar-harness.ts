@@ -38,10 +38,32 @@ export interface WireDiagnostic {
   path?: string;
 }
 
+export interface WireCallGraphEdge {
+  from: string;
+  to: string;
+}
+
+export interface WireReachabilityStep {
+  node_id: string;
+}
+
+export interface WireReachabilityFact {
+  id: string;
+  kind: string;
+  confidence: string;
+  source: string;
+  sink: string;
+  path: WireReachabilityStep[];
+  algorithm_version: string;
+  backend?: string;
+}
+
 export interface WireResponse {
   version: number;
   id: number;
   import_edges?: WireEdge[];
+  call_graph?: WireCallGraphEdge[];
+  reachability_facts?: WireReachabilityFact[];
   coverage: {
     phase: string;
     complete: boolean;

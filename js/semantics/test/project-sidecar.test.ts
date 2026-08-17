@@ -419,6 +419,362 @@ test("invalid config: an unparseable tsconfig.json degrades to a diagnostic, not
   assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
 });
 
+/**
+ * A `@prisma/client` package mirrored into the snapshot's node_modules
+ * (see vfs.ts's package-mirroring), so PrismaClient has real module
+ * provenance -- REACHABILITY_SINK_CLASSES only matches a class declared
+ * under this module specifier, not any in-snapshot class sharing the name
+ * (see the "sink matching requires module provenance" spec below).
+ */
+function prismaPackageFiles(): WireFile[] {
+  return [
+    file("vendor/prisma-client/package.json", JSON.stringify({ name: "@prisma/client", main: "index" })),
+    file(
+      "vendor/prisma-client/index.ts",
+      [
+        `export class PrismaClient {`,
+        `  user = {`,
+        `    findMany(): Promise<unknown[]> {`,
+        `      return Promise.resolve([]);`,
+        `    },`,
+        `    delete(): void {},`,
+        `  };`,
+        `}`,
+        ``,
+      ].join("\n"),
+    ),
+  ];
+}
+
+function reachabilityTsconfig(): WireFile {
+  return file("tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } }));
+}
+
+test("TS reachability: resolved route-to-query facts, explicit coverage gaps, and a bad-tsconfig skip", async () => {
+  const { response, exitCode } = await runSidecar({
+    files: [
+      reachabilityTsconfig(),
+      ...prismaPackageFiles(),
+      file(
+        "src/db.ts",
+        [`import { PrismaClient } from "@prisma/client";`, `export const prisma = new PrismaClient();`, ``].join("\n"),
+      ),
+      file("src/helpers.ts", `export function helperFn(): void {}\n`),
+      file(
+        "src/dynamic-handler.ts",
+        `export function handler(req: unknown, res: unknown): void {\n  console.log(req, res);\n}\n`,
+      ),
+      file(
+        "src/app.ts",
+        [
+          `import { prisma } from "./db";`,
+          `import { type helperFn } from "./helpers";`,
+          `import unknownThing from "unresolved-external-package";`,
+          ``,
+          `interface App {`,
+          `  get(path: string, handler: (req: unknown, res: unknown) => void): void;`,
+          `}`,
+          `declare const app: App;`,
+          ``,
+          `export async function getUsers(req: unknown, res: unknown): Promise<void> {`,
+          `  const users = await prisma.user.findMany();`,
+          `  console.log(users, req, res);`,
+          `}`,
+          `app.get("/users", getUsers);`,
+          ``,
+          `export function callsTypeOnly(req: unknown, res: unknown): void {`,
+          `  helperFn();`,
+          `  console.log(req, res);`,
+          `}`,
+          `app.get("/type-only", callsTypeOnly);`,
+          ``,
+          `export function callsUnresolvedExternal(req: unknown, res: unknown): void {`,
+          `  unknownThing.doSomething();`,
+          `  console.log(req, res);`,
+          `}`,
+          `app.get("/external", callsUnresolvedExternal);`,
+          ``,
+          `async function registerDynamicRoute(): Promise<void> {`,
+          `  app.get("/dynamic", (await import("./dynamic-handler")).handler);`,
+          `}`,
+          `void registerDynamicRoute();`,
+          ``,
+        ].join("\n"),
+      ),
+    ],
+  });
+
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.equal(response.error, undefined, JSON.stringify(response));
+
+  // Resolved case: getUsers -> prisma.user.findMany() is a fully resolved
+  // possible-call-reachability fact, using the same vocabulary as Go's
+  // ReachabilityFact (Kind/Confidence/AlgorithmVersion), not an active Signal.
+  const facts = response.reachability_facts ?? [];
+  const resolved = facts.filter((f) => f.source.endsWith("#getUsers"));
+  assert.equal(resolved.length, 1, JSON.stringify(response.reachability_facts));
+  assert.equal(resolved[0]?.sink, "(PrismaClient).findMany", JSON.stringify(resolved[0]));
+  assert.equal(resolved[0]?.confidence, "resolved_direct", JSON.stringify(resolved[0]));
+  assert.equal(resolved[0]?.kind, "possible_call_reachability", JSON.stringify(resolved[0]));
+  assert.ok(resolved[0]?.algorithm_version, JSON.stringify(resolved[0]));
+  assert.ok((resolved[0]?.path.length ?? 0) >= 2, JSON.stringify(resolved[0]));
+  // backend carries this sidecar's own language/backend provenance, the
+  // same way Coverage.phase does, so a fact can be attributed to "this TS
+  // sidecar" rather than looking indistinguishable from a Go-side fact.
+  assert.equal(resolved[0]?.backend, "ts_project_sidecar", JSON.stringify(resolved[0]));
+
+  // No fabricated facts for the dynamic-import, unresolved-external-type, or
+  // type-only handlers -- their absence must come with an explicit coverage
+  // gap below, not silence.
+  assert.equal(facts.some((f) => f.source.endsWith("#callsTypeOnly")), false, JSON.stringify(facts));
+  assert.equal(facts.some((f) => f.source.endsWith("#callsUnresolvedExternal")), false, JSON.stringify(facts));
+  assert.equal(facts.some((f) => f.source.includes("dynamic")), false, JSON.stringify(facts));
+
+  const diagCodes = new Set((response.coverage.diagnostics ?? []).map((d) => d.code));
+  assert.ok(diagCodes.has("ts_reachability_type_only_gap"), JSON.stringify(response.coverage));
+  assert.ok(diagCodes.has("ts_reachability_unresolved_type_gap"), JSON.stringify(response.coverage));
+  assert.ok(diagCodes.has("ts_reachability_dynamic_import_gap"), JSON.stringify(response.coverage));
+
+  // A response carrying acknowledged ts_reachability_*_gap diagnostics must
+  // not also claim Complete=true -- a consumer reading only Coverage.Complete
+  // would otherwise see a fully-covered model despite the gaps above.
+  assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
+
+  // The raw call graph carries the same resolved edge the fact's path used.
+  const callGraph = response.call_graph ?? [];
+  assert.ok(
+    callGraph.some((e) => e.from.endsWith("#getUsers") && e.to === "(PrismaClient).findMany"),
+    JSON.stringify(callGraph),
+  );
+
+  const badConfig = await runSidecar({
+    files: [file("tsconfig.json", "{ this is not valid json !!! "), file("src/a.ts", `export const a = 1;\n`)],
+  });
+  assert.equal(badConfig.exitCode, 0);
+  assert.equal(badConfig.response.coverage.complete, false, JSON.stringify(badConfig.response.coverage));
+  assert.ok(
+    badConfig.response.coverage.diagnostics?.some((d) => d.code === "ts_config_diagnostic"),
+    JSON.stringify(badConfig.response.coverage),
+  );
+  assert.equal(badConfig.response.call_graph, undefined, JSON.stringify(badConfig.response));
+  assert.equal(badConfig.response.reachability_facts, undefined, JSON.stringify(badConfig.response));
+});
+
+test("TS reachability: a handler imported from another file still resolves as a source", async () => {
+  const { response, exitCode } = await runSidecar({
+    files: [
+      reachabilityTsconfig(),
+      ...prismaPackageFiles(),
+      file(
+        "src/db.ts",
+        [`import { PrismaClient } from "@prisma/client";`, `export const prisma = new PrismaClient();`, ``].join("\n"),
+      ),
+      file(
+        "src/handlers.ts",
+        [
+          `import { prisma } from "./db";`,
+          `export async function h(req: unknown, res: unknown): Promise<void> {`,
+          `  await prisma.user.findMany();`,
+          `  console.log(req, res);`,
+          `}`,
+        ].join("\n"),
+      ),
+      file(
+        "src/app.ts",
+        [
+          `import { h } from "./handlers";`,
+          `interface App {`,
+          `  get(path: string, handler: (req: unknown, res: unknown) => void): void;`,
+          `}`,
+          `declare const app: App;`,
+          `app.get("/a", h);`,
+          ``,
+        ].join("\n"),
+      ),
+    ],
+  });
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.equal(response.error, undefined, JSON.stringify(response));
+
+  const facts = response.reachability_facts ?? [];
+  assert.equal(facts.length, 1, JSON.stringify(response));
+  assert.equal(facts[0]?.source, "file:src/handlers.ts#h", JSON.stringify(facts));
+  assert.equal(facts[0]?.sink, "(PrismaClient).findMany", JSON.stringify(facts));
+});
+
+test("TS reachability: a non-identifier handler (inline arrow) is an explicit gap, not silence", async () => {
+  const { response, exitCode } = await runSidecar({
+    files: [
+      reachabilityTsconfig(),
+      ...prismaPackageFiles(),
+      file(
+        "src/db.ts",
+        [`import { PrismaClient } from "@prisma/client";`, `export const prisma = new PrismaClient();`, ``].join("\n"),
+      ),
+      file(
+        "src/app.ts",
+        [
+          `import { prisma } from "./db";`,
+          `interface App {`,
+          `  get(path: string, handler: (req: unknown, res: unknown) => void): void;`,
+          `}`,
+          `declare const app: App;`,
+          `app.get("/a", async (req, res) => {`,
+          `  await prisma.user.findMany();`,
+          `  console.log(req, res);`,
+          `});`,
+          ``,
+        ].join("\n"),
+      ),
+    ],
+  });
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.equal(response.error, undefined, JSON.stringify(response));
+
+  assert.equal(response.reachability_facts, undefined, JSON.stringify(response.reachability_facts));
+  assert.ok(
+    response.coverage.diagnostics?.some((d) => d.code === "ts_reachability_unresolved_handler_gap"),
+    JSON.stringify(response.coverage),
+  );
+  assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
+});
+
+test("TS reachability: a dynamic import() inside a handler body is a gap, not silence", async () => {
+  const { response, exitCode } = await runSidecar({
+    files: [
+      reachabilityTsconfig(),
+      ...prismaPackageFiles(),
+      file(
+        "src/db.ts",
+        [`import { PrismaClient } from "@prisma/client";`, `export const prisma = new PrismaClient();`, ``].join("\n"),
+      ),
+      file(
+        "src/mod.ts",
+        [
+          `import { prisma } from "./db";`,
+          `export async function doThing(): Promise<void> {`,
+          `  await prisma.user.findMany();`,
+          `}`,
+        ].join("\n"),
+      ),
+      file(
+        "src/app.ts",
+        [
+          `interface App {`,
+          `  get(path: string, handler: (req: unknown, res: unknown) => void): void;`,
+          `}`,
+          `declare const app: App;`,
+          `export async function h(req: unknown, res: unknown): Promise<void> {`,
+          `  const m = await import("./mod");`,
+          `  m.doThing();`,
+          `  console.log(req, res);`,
+          `}`,
+          `app.get("/a", h);`,
+          ``,
+        ].join("\n"),
+      ),
+    ],
+  });
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.equal(response.error, undefined, JSON.stringify(response));
+
+  assert.equal(response.reachability_facts, undefined, JSON.stringify(response.reachability_facts));
+  assert.ok(
+    response.coverage.diagnostics?.some((d) => d.code === "ts_reachability_dynamic_import_gap"),
+    JSON.stringify(response.coverage),
+  );
+  assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
+});
+
+test("TS reachability: calling the same sink twice from one source yields exactly one fact", async () => {
+  const { response, exitCode } = await runSidecar({
+    files: [
+      reachabilityTsconfig(),
+      ...prismaPackageFiles(),
+      file(
+        "src/db.ts",
+        [`import { PrismaClient } from "@prisma/client";`, `export const prisma = new PrismaClient();`, ``].join("\n"),
+      ),
+      file(
+        "src/app.ts",
+        [
+          `import { prisma } from "./db";`,
+          `interface App {`,
+          `  get(path: string, handler: (req: unknown, res: unknown) => void): void;`,
+          `}`,
+          `declare const app: App;`,
+          `export async function h(req: unknown, res: unknown): Promise<void> {`,
+          `  await prisma.user.findMany();`,
+          `  await prisma.user.findMany();`,
+          `  console.log(req, res);`,
+          `}`,
+          `app.get("/a", h);`,
+          ``,
+        ].join("\n"),
+      ),
+    ],
+  });
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.equal(response.error, undefined, JSON.stringify(response));
+
+  const facts = response.reachability_facts ?? [];
+  assert.equal(facts.length, 1, JSON.stringify(facts));
+  assert.equal(new Set(facts.map((f) => f.id)).size, facts.length, JSON.stringify(facts));
+
+  const callGraph = response.call_graph ?? [];
+  assert.equal(callGraph.length, 1, JSON.stringify(callGraph));
+});
+
+test("TS reachability: sink matching requires module provenance, not just a matching class name", async () => {
+  const { response, exitCode } = await runSidecar({
+    files: [
+      reachabilityTsconfig(),
+      file(
+        "src/domain.ts",
+        [
+          `export class PrismaClient {`,
+          `  user = { delete(): void {} };`,
+          `}`,
+        ].join("\n"),
+      ),
+      file(
+        "src/app.ts",
+        [
+          `import { PrismaClient } from "./domain";`,
+          `const prisma = new PrismaClient();`,
+          `interface App {`,
+          `  get(path: string, handler: (req: unknown, res: unknown) => void): void;`,
+          `}`,
+          `declare const app: App;`,
+          `export function h(req: unknown, res: unknown): void {`,
+          `  prisma.user.delete();`,
+          `  console.log(req, res);`,
+          `}`,
+          `app.get("/a", h);`,
+          ``,
+        ].join("\n"),
+      ),
+    ],
+  });
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.equal(response.error, undefined, JSON.stringify(response));
+
+  // A class named PrismaClient that isn't imported from the pinned
+  // @prisma/client module specifier must never be treated as a resolved
+  // sink -- only its module provenance (not its name) makes it a sink.
+  const facts = response.reachability_facts ?? [];
+  assert.equal(facts.some((f) => f.sink === "(PrismaClient).delete"), false, JSON.stringify(facts));
+  const callGraph = response.call_graph ?? [];
+  assert.equal(callGraph.some((e) => e.to === "(PrismaClient).delete"), false, JSON.stringify(callGraph));
+  // The call is not silently dropped either: since it resolves to an
+  // in-snapshot method this depth-1 walk does not follow, it surfaces as
+  // an explicit truncation gap instead of a false "nothing reachable" claim.
+  assert.ok(
+    response.coverage.diagnostics?.some((d) => d.code === "ts_reachability_local_call_not_followed_gap"),
+    JSON.stringify(response.coverage),
+  );
+});
+
 test("diagnostic messages never leak the synthetic virtual-root path", async () => {
   // A root-scoped monorepo tsconfig whose "include" matches nothing in the
   // snapshot drives TS's own "No inputs were found" config diagnostic,
