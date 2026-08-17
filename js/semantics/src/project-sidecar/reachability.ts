@@ -11,6 +11,11 @@ import {
 import { resolveTarget } from "./edges-resolve.js";
 import {
   CONFIDENCE_RESOLVED_DIRECT,
+  GAP_DYNAMIC_IMPORT,
+  GAP_LOCAL_CALL_NOT_FOLLOWED,
+  GAP_TYPE_ONLY,
+  GAP_UNRESOLVED_HANDLER,
+  GAP_UNRESOLVED_TYPE,
   REACHABILITY_ALGORITHM,
   REACHABILITY_BACKEND,
   ROUTE_REGISTRATION_METHODS,
@@ -24,6 +29,15 @@ export interface ReachabilityExtractionResult {
   diagnostics: Diagnostic[];
   /** Canonical virtual paths newly walked by this call (caller merges into its visit set), mirroring EdgeExtractionResult.visitedPaths. */
   visitedPaths: string[];
+  /**
+   * functionSourceId values walked by this call, including ones seeded via
+   * alreadyVisitedSources -- the caller merges this into a request-wide
+   * set (mirroring visitedPaths) so a handler function registered as a
+   * route from more than one tsconfig project (e.g. a monorepo service
+   * sharing one handler file) is walked, and its facts/diagnostics
+   * emitted, exactly once across the whole request, not once per project.
+   */
+  visitedSources: string[];
 }
 
 interface MutableAccumulator {
@@ -41,9 +55,18 @@ interface MutableAccumulator {
  * been visited by another project's reachability extraction in this
  * request, finding `<receiver>.<verb>(path, handler)`-shaped route
  * registrations (see ROUTE_REGISTRATION_METHODS) and, for every handler
- * that resolves to a locally declared or re-exported function, walking
- * that function's body (one level deep) for calls into the pinned sink
- * registry (REACHABILITY_SINK_CLASSES). A call this walk cannot classify
+ * that resolves to a locally declared or re-exported function and whose
+ * functionSourceId is not in alreadyVisitedSources, walking that
+ * function's body (one level deep) for calls into the pinned sink
+ * registry (REACHABILITY_SINK_CLASSES). alreadyVisitedSources is seeded
+ * from every prior project's own walk in this request, so a handler
+ * registered as a route from more than one tsconfig project is walked
+ * exactly once -- without this, MutableAccumulator's factKeys/seenGapSites
+ * dedup only within a single project's own walk, so the same handler
+ * walked again from a second project would emit a second, duplicate
+ * ReachabilityFact/CallGraphEdgeFact sharing the first one's ID, which
+ * canonicalizeCallGraph/canonicalizeReachabilityFacts only sort, never
+ * dedup. A call this walk cannot classify
  * as a resolved sink, a recognized coverage gap, or an unfollowed local
  * callee is left unreported only when it resolves to nothing this
  * snapshot owns at all (e.g. `console.log`) -- absence of a fact is never
@@ -53,11 +76,12 @@ export function extractReachabilityForProject(
   project: Project,
   snapshot: ProjectSnapshot,
   alreadyVisited: ReadonlySet<string>,
+  alreadyVisitedSources: ReadonlySet<string>,
 ): ReachabilityExtractionResult {
   const out: MutableAccumulator = { callGraph: [], facts: [], diagnostics: [], factKeys: new Set() };
   const visitedPaths: string[] = [];
   const seen = new Set(alreadyVisited);
-  const seenSources = new Set<string>();
+  const seenSources = new Set(alreadyVisitedSources);
   const seenGapSites = new Set<string>();
 
   for (const virtualPath of project.rootFiles) {
@@ -74,7 +98,7 @@ export function extractReachabilityForProject(
     collectRouteRegistrations(sf, project, snapshot, out, seenSources, seenGapSites);
   }
 
-  return { ...out, visitedPaths };
+  return { ...out, visitedPaths, visitedSources: [...seenSources] };
 }
 
 function collectRouteRegistrations(
@@ -132,7 +156,7 @@ function processRouteRegistration(
   }
   if (containsDynamicImport(handlerArg)) {
     recordGapDiagnostic(
-      "ts_reachability_dynamic_import_gap",
+      GAP_DYNAMIC_IMPORT,
       "route handler is resolved through a dynamic import, so it cannot be statically added as a reachability source",
       handlerArg,
       sf,
@@ -143,7 +167,7 @@ function processRouteRegistration(
     return;
   }
   recordGapDiagnostic(
-    "ts_reachability_unresolved_handler_gap",
+    GAP_UNRESOLVED_HANDLER,
     "route handler did not resolve to a locally declared named function (e.g. an inline arrow/function expression, or a handler bound through something other than a direct or re-exported function declaration), so it cannot be statically added as a reachability source",
     handlerArg,
     sf,
@@ -240,7 +264,7 @@ function handleCallInSource(
   }
   if (declNode && isUnfollowedLocalCallee(declNode, snapshot)) {
     recordGapDiagnostic(
-      "ts_reachability_local_call_not_followed_gap",
+      GAP_LOCAL_CALL_NOT_FOLLOWED,
       "call target resolves to a function declared within this snapshot that this depth-1 walk does not follow further, so multi-hop reachability from here is unverified",
       call,
       sf,
@@ -322,17 +346,17 @@ function gapDiagnosticInfo(gap: GapKind): { code: string; message: string } {
   switch (gap) {
     case "type_only":
       return {
-        code: "ts_reachability_type_only_gap",
+        code: GAP_TYPE_ONLY,
         message: "call target resolves through a type-only import binding, so further reachability from here is unverified",
       };
     case "dynamic_import":
       return {
-        code: "ts_reachability_dynamic_import_gap",
+        code: GAP_DYNAMIC_IMPORT,
         message: "call target is bound through a dynamic import, so it cannot be statically added as a reachability sink",
       };
     case "unresolved_external":
       return {
-        code: "ts_reachability_unresolved_type_gap",
+        code: GAP_UNRESOLVED_TYPE,
         message:
           "call target resolves through an import that did not resolve within the snapshot, so further reachability from here is unverified",
       };

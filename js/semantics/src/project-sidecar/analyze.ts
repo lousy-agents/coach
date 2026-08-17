@@ -119,6 +119,7 @@ function runProjects(
   const projects = snap.getProjects();
   const visited = new Set<string>();
   const reachVisited = new Set<string>();
+  const reachSourcesVisited = new Set<string>();
   const edges: ImportEdgeFact[] = [];
   const callGraph: CallGraphEdgeFact[] = [];
   const reachabilityFacts: ReachabilityFactWire[] = [];
@@ -145,7 +146,13 @@ function runProjects(
     for (const path of result.visitedPaths) visited.add(path);
     edges.push(...result.edges);
     diagnostics.push(...result.diagnostics);
-    const reachResult = processProjectReachability(project, snapshot, reachVisited, configResult.diagnostics.length > 0);
+    const reachResult = processProjectReachability(
+      project,
+      snapshot,
+      reachVisited,
+      reachSourcesVisited,
+      configResult.diagnostics.length > 0,
+    );
     callGraph.push(...reachResult.callGraph);
     reachabilityFacts.push(...reachResult.facts);
     // A ts_reachability_*_gap diagnostic (see processProjectReachability)
@@ -197,11 +204,13 @@ function processProjectReachability(
   project: Project,
   snapshot: ProjectSnapshot,
   reachVisited: Set<string>,
+  reachSourcesVisited: Set<string>,
   configDiagnosticsPresent: boolean,
 ): { callGraph: CallGraphEdgeFact[]; facts: ReachabilityFactWire[]; diagnostics: Diagnostic[] } {
   if (configDiagnosticsPresent) return { callGraph: [], facts: [], diagnostics: [] };
-  const reachResult = extractReachabilityForProject(project, snapshot, reachVisited);
+  const reachResult = extractReachabilityForProject(project, snapshot, reachVisited, reachSourcesVisited);
   for (const path of reachResult.visitedPaths) reachVisited.add(path);
+  for (const sourceId of reachResult.visitedSources) reachSourcesVisited.add(sourceId);
   return { callGraph: reachResult.callGraph, facts: reachResult.facts, diagnostics: reachResult.diagnostics };
 }
 
