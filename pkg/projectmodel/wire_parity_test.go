@@ -171,3 +171,56 @@ func tsInterfaceFields(t *testing.T, source []byte, interfaceName string) []wire
 	}
 	return fields
 }
+
+// TestReachabilityGapDiagnosticCodeParity guards issue #216's coverage-honesty
+// invariant: tsReachabilityGapDiagnosticCodes (ts_reachability.go) must list
+// exactly the same diagnostic codes as js/semantics/src/project-sidecar/
+// reachability-registry.ts's GAP_* constants. Go cannot import that
+// TypeScript file, so it is read as source text (mirroring
+// TestProtocolGoTSFieldParity's approach for protocol.ts) -- a code present
+// on only one side means BuildTypeScriptReachability/BuildTypeScriptLayerBypass
+// either silently report Coverage.Complete: true for a genuinely unverified
+// hop (a code missing from the Go side) or over-report incompleteness for a
+// hop that was actually fully resolved (a code missing from the TS side).
+func TestReachabilityGapDiagnosticCodeParity(t *testing.T) {
+	tsSource := readReachabilityRegistryTSSource(t)
+	tsCodes := gapCodeConstPattern.FindAllSubmatch(tsSource, -1)
+	if len(tsCodes) == 0 {
+		t.Fatal("reachability-registry.ts: no GAP_* constants found; gapCodeConstPattern likely no longer matches the source")
+	}
+
+	tsSet := make(map[string]bool, len(tsCodes))
+	for _, m := range tsCodes {
+		tsSet[string(m[1])] = true
+	}
+
+	for code := range tsReachabilityGapDiagnosticCodes {
+		if !tsSet[code] {
+			t.Errorf("tsReachabilityGapDiagnosticCodes (ts_reachability.go) has %q, but reachability-registry.ts has no matching GAP_* constant", code)
+		}
+	}
+	for code := range tsSet {
+		if !tsReachabilityGapDiagnosticCodes[code] {
+			t.Errorf("reachability-registry.ts declares GAP_* constant %q, but tsReachabilityGapDiagnosticCodes (ts_reachability.go) does not include it", code)
+		}
+	}
+}
+
+// gapCodeConstPattern matches one `export const GAP_<NAME> = "<code>";` line
+// in reachability-registry.ts.
+var gapCodeConstPattern = regexp.MustCompile(`(?m)^export const GAP_[A-Z_]+ = "([a-z0-9_]+)";$`)
+
+func readReachabilityRegistryTSSource(t *testing.T) []byte {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller(0) failed")
+	}
+	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..")
+	path := filepath.Join(repoRoot, "js", "semantics", "src", "project-sidecar", "reachability-registry.ts")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %s", path, err)
+	}
+	return data
+}

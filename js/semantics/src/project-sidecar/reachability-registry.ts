@@ -107,3 +107,29 @@ export function sinkNodeId(className: string, methodName: string, declaringVirtu
   if (!declaringVirtualPath.startsWith(`${VIRTUAL_ROOT}/node_modules/${pattern.moduleSpecifier}/`)) return undefined;
   return `(${className}).${methodName}`;
 }
+
+// Every diagnostic code reachability.ts's recordGapDiagnostic call sites
+// can emit, each meaning "one hop's reachability was deliberately left
+// unverified by this depth-1 walk," never an import/config/budget
+// failure. pkg/projectmodel/ts_reachability.go's
+// tsReachabilityGapDiagnosticCodes must mirror REACHABILITY_GAP_DIAGNOSTIC_CODES
+// below exactly -- guarded by TestReachabilityGapDiagnosticCodeParity in
+// pkg/projectmodel/wire_parity_test.go, since Go cannot import this file
+// and a code missing from that Go-side set makes BuildTypeScriptReachability/
+// BuildTypeScriptLayerBypass silently report Coverage.Complete: true for a
+// genuinely unverified hop.
+export const GAP_DYNAMIC_IMPORT = "ts_reachability_dynamic_import_gap";
+export const GAP_UNRESOLVED_HANDLER = "ts_reachability_unresolved_handler_gap";
+export const GAP_LOCAL_CALL_NOT_FOLLOWED = "ts_reachability_local_call_not_followed_gap";
+export const GAP_TYPE_ONLY = "ts_reachability_type_only_gap";
+export const GAP_UNRESOLVED_TYPE = "ts_reachability_unresolved_type_gap";
+
+/** Every REACHABILITY_GAP_DIAGNOSTIC_CODES member above, for the Go-side
+ * parity test to enumerate (see the doc comment above). */
+export const REACHABILITY_GAP_DIAGNOSTIC_CODES = [
+  GAP_DYNAMIC_IMPORT,
+  GAP_UNRESOLVED_HANDLER,
+  GAP_LOCAL_CALL_NOT_FOLLOWED,
+  GAP_TYPE_ONLY,
+  GAP_UNRESOLVED_TYPE,
+] as const;
