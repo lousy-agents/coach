@@ -55,7 +55,7 @@ mise run ci-fast          # per-cycle loop check: Go slice + agent-tooling suite
 mise run ci               # ci-go + js-ci -- NOT wasm-build, and see ci-fast on skips
 mise run ci-go             # verify job atoms: gofmt/vet/tidy/style/test/examples
 mise run gofmt             # fail if gofmt -l . prints any file
-mise run projectmodel-sidecar-acceptance  # real TS sidecar suite (GHA job of the same role)
+mise run projectmodel-sidecar-acceptance  # real TS sidecar specs only (GHA job of the same role)
 mise run go-vet
 mise run tidy-check        # go mod tidy && diff go.mod/go.sum
 mise run test              # go test -race ./...

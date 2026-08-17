@@ -97,6 +97,21 @@ var _ = Describe("mise validation tasks", func() {
 		// true in Claude Code remote environments. Including it would make the
 		// ship gate unconditionally red there, and it adds no coverage: `test`
 		// is `go test -race ./...` unfiltered, a superset of -run Acceptance.
+		It("scopes the sidecar job to the real-sidecar specs, not the whole projectmodel suite", func() {
+			body := taskBody(toml, "projectmodel-sidecar-acceptance")
+			Expect(body).NotTo(BeEmpty(),
+				"projectmodel-sidecar-acceptance is the unique GHA job; without it verify's skip is silent")
+			Expect(body).To(ContainSubstring("ginkgo.label-filter=ts-sidecar-integration"),
+				"-run Acceptance matches TestProjectmodelAcceptance and then runs every spec; the job exists only for the real sidecar")
+			Expect(body).To(ContainSubstring("ginkgo.fail-on-empty"),
+				"a missing Label would run zero specs and pass")
+
+			src, err := os.ReadFile(filepath.Join("..", "..", "pkg", "projectmodel", "ts_sidecar_integration_acceptance_test.go"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(src)).To(ContainSubstring(`Label("ts-sidecar-integration")`),
+				"the filter is useless unless the real-sidecar Describe carries this label")
+		})
+
 		It("excludes test-acceptance-fast, whose credential guard cannot pass in remote environments", func() {
 			body := taskBody(toml, "ci-all")
 			// Assert presence first: NotTo(ContainSubstring) is vacuously true

@@ -79,9 +79,9 @@ dir = "js/semantics"
 depends = ["js-install"]
 
 [tasks.projectmodel-sidecar-acceptance]
-description = "Run pkg/projectmodel Acceptance against the real compiled TS sidecar (the verify job cannot; it has no Node)"
+description = "Run the real TS sidecar integration specs (verify already ran the rest of the package)"
 depends = ["project-sidecar-build"]
-run = "go test -race ./pkg/projectmodel/... -run Acceptance"
+run = "go test -race ./pkg/projectmodel/... -run Acceptance -ginkgo.label-filter=ts-sidecar-integration -ginkgo.fail-on-empty"
 
 [tasks.js-install]
 description = "Install js/semantics dev dependencies (scripts skipped; js-build compiles explicitly)"
