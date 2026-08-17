@@ -46,10 +46,11 @@ var _ = Describe("mise validation tasks", func() {
 	})
 
 	// pkg/projectmodel's TS sidecar acceptance suite skips silently when the
-	// sidecar binary is absent (see .github/workflows/ci.yml:52-56). `ci` runs
-	// `test` before `js-ci`, so under `ci` that suite contributes no signal --
-	// and an implementer whose acceptance test lives there would record a
-	// "red" and a "green" that are the same skip.
+	// sidecar binary is absent. `ci` runs `test` before anything builds the
+	// sidecar, so under `ci` that suite contributes no signal -- and an
+	// implementer whose acceptance test lives there would record a "red" and
+	// a "green" that are the same skip. GHA runs the suite in the parallel
+	// `projectmodel-sidecar` job via `projectmodel-sidecar-acceptance`.
 	When("an implement/review cycle validates a change", func() {
 		It("has a ci-fast task", func() {
 			Expect(taskBody(toml, "ci-fast")).NotTo(BeEmpty(),
@@ -79,12 +80,16 @@ var _ = Describe("mise validation tasks", func() {
 			Expect(taskBody(toml, "ci-all")).To(ContainSubstring(`task = "wasm-build"`))
 		})
 
-		It("re-runs the projectmodel acceptance suite with the sidecar present", func() {
+		It("builds the sidecar before ci-go so the projectmodel suite runs inside test", func() {
 			body := taskBody(toml, "ci-all")
-			Expect(body).To(ContainSubstring("./pkg/projectmodel/... -run Acceptance"))
-			Expect(indexOfStep(body, "project-sidecar-build")).To(
-				BeNumerically("<", strings.Index(body, "./pkg/projectmodel/... -run Acceptance")),
-				"the sidecar must exist before the suite that needs it runs")
+			Expect(body).NotTo(BeEmpty())
+
+			sidecar := indexOfStep(body, "project-sidecar-build")
+			cigo := indexOfStep(body, "ci-go")
+			Expect(sidecar).To(BeNumerically(">=", 0), "ci-all must build the sidecar")
+			Expect(cigo).To(BeNumerically(">=", 0), "ci-all must run ci-go")
+			Expect(sidecar).To(BeNumerically("<", cigo),
+				"sidecar build must precede ci-go, or the projectmodel acceptance suite skips silently")
 		})
 
 		// The guard at cmd/acceptance-guard-preflight refuses to run whenever
