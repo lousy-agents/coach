@@ -70,6 +70,41 @@ type ImportEdgeFact struct {
 	Resolution string `json:"resolution,omitempty"`
 }
 
+// CallGraphEdgeFact is one raw call-graph edge reported by the sidecar,
+// mirroring projectmodel.CallFact's From/To fields exactly.
+type CallGraphEdgeFact struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// KindPossibleCallReachability is ReachabilityFactWire.Kind's fixed value,
+// mirroring projectmodel.KindPossibleCallReachability. Defined separately
+// here (not imported) for the same import-cycle reason documented on
+// Diagnostic.
+const KindPossibleCallReachability = "possible_call_reachability"
+
+// ReachabilityStepFact is one node in a ReachabilityFactWire's Path,
+// mirroring projectmodel.ReachabilityStep's NodeID field exactly.
+type ReachabilityStepFact struct {
+	NodeID string `json:"node_id"`
+}
+
+// ReachabilityFactWire is one possible-call-reachability observation
+// reported by the sidecar, mirroring projectmodel.ReachabilityFact's field
+// shape (ID/Kind/Confidence/Source/Sink/Path/AlgorithmVersion) with an added
+// Backend field recording which analysis backend/language produced the
+// fact.
+type ReachabilityFactWire struct {
+	ID               string                 `json:"id"`
+	Kind             string                 `json:"kind"`
+	Confidence       string                 `json:"confidence"`
+	Source           string                 `json:"source"`
+	Sink             string                 `json:"sink"`
+	Path             []ReachabilityStepFact `json:"path"`
+	AlgorithmVersion string                 `json:"algorithm_version"`
+	Backend          string                 `json:"backend,omitempty"`
+}
+
 // Diagnostic mirrors projectmodel.Diagnostic's exact field names and JSON
 // shape. It is a separate Go type, not a re-export, because
 // pkg/projectmodel imports this package (the client imports its own wire
@@ -108,7 +143,12 @@ type Response struct {
 	// ID echoes the Request's ID.
 	ID          int64            `json:"id"`
 	ImportEdges []ImportEdgeFact `json:"import_edges,omitempty"`
-	Coverage    Coverage         `json:"coverage"`
+	// CallGraph and ReachabilityFacts are empty when the sidecar reports no
+	// such facts; absence is never a "none exist" claim (see
+	// projectmodel.ReachabilityFact).
+	CallGraph         []CallGraphEdgeFact    `json:"call_graph,omitempty"`
+	ReachabilityFacts []ReachabilityFactWire `json:"reachability_facts,omitempty"`
+	Coverage          Coverage               `json:"coverage"`
 	// Error is set for a whole-request failure (e.g. an unreadable
 	// tsconfig); Coverage is still meaningful in that case -- the Go
 	// client merges Coverage.Diagnostics into the diagnostics it returns,

@@ -70,6 +70,36 @@ export interface ImportEdgeFact {
   resolution?: string;
 }
 
+/** One raw call-graph edge, mirroring internal/projectbridge.CallGraphEdgeFact. */
+export interface CallGraphEdgeFact {
+  from: string;
+  to: string;
+}
+
+export const KIND_POSSIBLE_CALL_REACHABILITY = "possible_call_reachability";
+
+/** One node in a ReachabilityFactWire.path, mirroring internal/projectbridge.ReachabilityStepFact. */
+export interface ReachabilityStepFact {
+  node_id: string;
+}
+
+/**
+ * One possible-call-reachability observation, mirroring
+ * internal/projectbridge.ReachabilityFactWire exactly, including the
+ * `backend` field carrying AC-1's backend provenance / AC-6's language
+ * provenance.
+ */
+export interface ReachabilityFactWire {
+  id: string;
+  kind: string;
+  confidence: string;
+  source: string;
+  sink: string;
+  path: ReachabilityStepFact[];
+  algorithm_version: string;
+  backend?: string;
+}
+
 export interface Diagnostic {
   code: string;
   message: string;
@@ -93,6 +123,12 @@ export interface Response {
   version: number;
   id: number;
   import_edges?: ImportEdgeFact[];
+  /**
+   * call_graph and reachability_facts are populated from this sidecar's
+   * route-to-sink possible-call-reachability walk (reachability.ts).
+   */
+  call_graph?: CallGraphEdgeFact[];
+  reachability_facts?: ReachabilityFactWire[];
   coverage: Coverage;
   error?: ErrorPayload;
 }
