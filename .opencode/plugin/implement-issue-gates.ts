@@ -9,7 +9,6 @@
 type PluginInput = {
   directory: string
   worktree: string
-  $?: (...args: unknown[]) => { cwd: (dir: string) => Promise<unknown> }
   client?: {
     app?: {
       log?: (input: {
@@ -61,10 +60,14 @@ export function needsReviewerFindingsRelay(
 export const RELAY_DENY_REASON =
   'Re-delegation after FINDINGS must include the reviewer\'s "## Reviewer Findings" block verbatim, not a paraphrase.'
 
+// The Claude hook registers for both reviewer agent types; this set mirrors
+// that pairing exactly.
+export const VERDICT_GATED_AGENTS = new Set(["task-reviewer", "workflow-integration-reviewer"])
+
 export const VERDICT_SOFT_FAIL_MESSAGE = [
-  "ERROR: task-reviewer reply shape invalid.",
+  "ERROR: reviewer reply shape invalid.",
   "The first non-empty line of the reviewer result must be PASS or FINDINGS (word boundary).",
-  "Do not invent a PASS. Re-delegate task-reviewer (fresh or continued) until the reply begins with PASS or FINDINGS verbatim.",
+  "Do not invent a PASS. Re-delegate the reviewer (fresh or continued) until the reply begins with PASS or FINDINGS verbatim.",
 ].join(" ")
 
 async function log(
@@ -107,7 +110,7 @@ export default async (input: PluginInput) => {
     ) => {
       if (hookInput.tool !== "task") return
       const args = hookInput.args ?? {}
-      if (args.subagent_type !== "task-reviewer") return
+      if (!VERDICT_GATED_AGENTS.has(String(args.subagent_type))) return
 
       const raw = typeof output.output === "string" ? output.output : ""
       const text = extractTaskResultText(raw)

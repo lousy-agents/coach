@@ -74,3 +74,10 @@ deploy/compose/thinproof/output/*
 .claude/.implement-issue/
 
 tmp
+
+# Runtime state of the removed hook apparatus. Kept ignored so checkouts that
+# ran the old machinery don't surface stale artifacts as untracked files;
+# delete these lines once no such checkout remains.
+.coach-hook-trace.tsv
+.claude/hooks/.trace-enabled
+.coach-cycle-state/

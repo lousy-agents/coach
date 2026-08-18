@@ -164,6 +164,26 @@ PASS — done
   assert.strictEqual(output.output, VERDICT_SOFT_FAIL_MESSAGE)
 })
 
+// The Claude hook registers for both reviewer agent types; the mirror must
+// gate the integration reviewer too, or step 3's verdict goes unguarded in
+// OpenCode while the header claims parity.
+test("hooks: malformed integration-reviewer verdict is also soft-rewritten", async () => {
+  const pluginModule = await import(new URL("./implement-issue-gates.ts", import.meta.url).href)
+  const plugin = await pluginModule.default({ directory: "/tmp", worktree: "/tmp" })
+
+  const output = { title: "task", output: "Looks good across the diff.", metadata: {} }
+  await plugin["tool.execute.after"](
+    {
+      tool: "task",
+      sessionID: "s",
+      callID: "c",
+      args: { subagent_type: "workflow-integration-reviewer" },
+    },
+    output,
+  )
+  assert.strictEqual(output.output, VERDICT_SOFT_FAIL_MESSAGE)
+})
+
 test("hooks: valid reviewer PASS is left alone", async () => {
   const pluginModule = await import(new URL("./implement-issue-gates.ts", import.meta.url).href)
   const plugin = await pluginModule.default({ directory: "/tmp", worktree: "/tmp" })

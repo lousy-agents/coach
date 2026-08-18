@@ -1,7 +1,7 @@
 export const meta = {
   name: 'implement-issue-plan',
   description: 'Read-only planner: turns a GitHub issue into a task DAG for the main session to execute',
-  whenToUse: 'Invoked by the /implement-issue command. Plans only -- it never edits code, and never runs the implement/review loop, which must stay in the main session so the review and PR hooks fire.',
+  whenToUse: 'Invoked by the /implement-issue command. Plans only -- it never edits code, and never runs the implement/review loop, which must stay in the main session so the review-fidelity hooks fire.',
   phases: [
     { title: 'Ingest', detail: 'read the issue, its linked specs, and the code it touches' },
     { title: 'Plan', detail: 'decompose into a task DAG with per-task acceptance criteria' },

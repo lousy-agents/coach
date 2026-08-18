@@ -62,4 +62,4 @@ Steps:
    explicitly rather than expanding scope to force it.
 
 Do not touch files outside your scope. Do not refactor adjacent code. Do not
-create commits or open PRs — the orchestrator owns git.
+commit, push, or open PRs — the orchestrator owns git.
