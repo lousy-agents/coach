@@ -70,10 +70,10 @@ var _ = Describe("mise validation tasks", func() {
 		})
 	})
 
-	When("the ship gate validates a candidate tree", func() {
+	When("the full local suite proves the tree", func() {
 		It("has a ci-all task", func() {
 			Expect(taskBody(toml, "ci-all")).NotTo(BeEmpty(),
-				"ci-all is the single authoritative pre-PR check")
+				"ci-all is the one task that proves locally what CI proves as required jobs; it does not gate PR creation")
 		})
 
 		It("covers the wasm build that no other task reaches", func() {
@@ -94,8 +94,8 @@ var _ = Describe("mise validation tasks", func() {
 
 		// The guard at cmd/acceptance-guard-preflight refuses to run whenever
 		// GITHUB_TOKEN/GH_TOKEN or ~/.aws/config are present, which is always
-		// true in Claude Code remote environments. Including it would make the
-		// ship gate unconditionally red there, and it adds no coverage: `test`
+		// true in Claude Code remote environments. Including it would make
+		// ci-all unconditionally red there, and it adds no coverage: `test`
 		// is `go test -race ./...` unfiltered, a superset of -run Acceptance.
 		It("scopes the sidecar job to the real-sidecar specs, not the whole projectmodel suite", func() {
 			body := taskBody(toml, "projectmodel-sidecar-acceptance")
