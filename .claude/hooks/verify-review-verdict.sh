@@ -6,8 +6,6 @@
 # something it can't parse.
 set -euo pipefail
 input=$(cat)
-. "$(dirname "${BASH_SOURCE[0]}")/lib/trace.sh"
-trace verdict "${agent_type:-<unset>}" fired
 
 # Claude Code sets stop_hook_active when it is re-running an agent because a
 # stop hook already blocked it. Blocking again from here is an unbounded
@@ -15,29 +13,23 @@ trace verdict "${agent_type:-<unset>}" fired
 # cycle cap, because no cycle ever completes. Defer instead: the orchestrator
 # then sees the malformed verdict and counts it toward agent-failure.
 if [ "$(jq -r '.stop_hook_active // false' <<<"$input")" = "true" ]; then
-  trace verdict "${agent_type:-<unset>}" defer-already-blocked
   exit 0
 fi
-agent_type=$(jq -r '.agent_type // empty' <<<"$input")
 verdict=$(jq -r '.last_assistant_message // empty' <<<"$input")
 
 # grep's ^ anchors to the start of every line, not the start of the string, so
 # checking the whole (possibly multi-line) message would let PASS/FINDINGS
 # appearing after leading prose slip through. Anchor to the first non-empty
 # line instead.
-trace verdict "${agent_type:-<unset>}" "checking"
 first_line=$(printf '%s\n' "$verdict" | sed -n '/[^[:space:]]/{p;q;}')
 
 if echo "$first_line" | grep -qE '^PASS\b'; then
-  trace verdict "${agent_type:-<unset>}" allow
   exit 0
 fi
 if echo "$first_line" | grep -qE '^FINDINGS\b'; then
-  trace verdict "${agent_type:-<unset>}" allow
   exit 0
 fi
 
-trace verdict "${agent_type:-<unset>}" block
 jq -n '{
   decision: "block",
   reason: "task-reviewer must begin its reply with PASS or FINDINGS, verbatim, per its system prompt. Re-emit a valid verdict in that exact shape."

@@ -62,42 +62,6 @@ func reviewerAgents() []string {
 	return names
 }
 
-// The ceiling is the only mechanical bound on the loop; the per-task cap is
-// prose. A reviewer agent registered without it is one the orchestrator can
-// spin on indefinitely with nothing outside the model noticing.
-var _ = Describe("cycle ceiling enforcement", func() {
-	It("covers every reviewer-shaped agent", func() {
-		raw, err := os.ReadFile(filepath.Join("..", "..", ".claude", "settings.json"))
-		Expect(err).NotTo(HaveOccurred())
-		var settings struct {
-			Hooks struct {
-				SubagentStop []struct {
-					Matcher string `json:"matcher"`
-					Hooks   []struct {
-						Args []string `json:"args"`
-					} `json:"hooks"`
-				} `json:"SubagentStop"`
-			} `json:"hooks"`
-		}
-		Expect(json.Unmarshal(raw, &settings)).To(Succeed())
-
-		covered := map[string]bool{}
-		for _, reg := range settings.Hooks.SubagentStop {
-			for _, h := range reg.Hooks {
-				if strings.Contains(strings.Join(h.Args, " "), "enforce-cycle-ceiling.sh") {
-					covered[reg.Matcher] = true
-				}
-			}
-		}
-		agents := reviewerAgents()
-		Expect(agents).NotTo(BeEmpty())
-		for _, a := range agents {
-			Expect(covered).To(HaveKey(a),
-				"reviewer %q has no cycle ceiling; its loop is bounded only by prose", a)
-		}
-	})
-})
-
 var _ = Describe("reviewer verdict enforcement", func() {
 	// verify-review-verdict.sh is wired by a literal agent-type matcher, so a
 	// new reviewer agent is not covered by the existing task-reviewer

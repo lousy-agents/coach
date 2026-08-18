@@ -1,8 +1,10 @@
 /**
- * Mechanical gates for the implement-issue orchestrator flow in OpenCode.
- * Mirrors Claude hooks under .claude/hooks/ (shape only; no semantic re-judgment).
+ * Review-loop fidelity checks for the implement-issue orchestrator flow in
+ * OpenCode. Mirrors the two Claude hooks under .claude/hooks/ (shape only; no
+ * semantic re-judgment): verify-context-relay.sh and verify-review-verdict.sh.
+ * Publish safety is branch protection plus the required `status` check — this
+ * plugin deliberately gates nothing about git or pull requests.
  */
-import { spawnSync } from "node:child_process"
 
 type PluginInput = {
   directory: string
@@ -42,19 +44,6 @@ export function extractTaskResultText(output: string): string {
   return output
 }
 
-/** True when the tool call is a PR-create attempt (bash gh or clear MCP create_pull_request). */
-export function isPrCreateAttempt(tool: string, args: { command?: unknown } | null | undefined): boolean {
-  const name = tool ?? ""
-  if (name === "bash" || name === "Bash") {
-    const command = typeof args?.command === "string" ? args.command : ""
-    if (!command) return false
-    return /\bgh\s+pr\s+create\b/.test(command)
-  }
-  if (name === "mcp__github__create_pull_request") return true
-  if (/(^|__)create_pull_request$/.test(name)) return true
-  return false
-}
-
 /**
  * True when a task-implementer rework prompt must include "## Reviewer Findings".
  * Presence-only; does not validate findings content.
@@ -72,31 +61,11 @@ export function needsReviewerFindingsRelay(
 export const RELAY_DENY_REASON =
   'Re-delegation after FINDINGS must include the reviewer\'s "## Reviewer Findings" block verbatim, not a paraphrase.'
 
-export const PR_DIRTY_TREE_DENY_REASON =
-  "The working tree is dirty, so validation would not describe the commit this PR publishes. Commit or stash the changes, then retry."
-// Kept as an alias so a mirrored prompt referring to it still resolves; the
-// gate has only one denial now.
-export const PR_CI_DENY_REASON = PR_DIRTY_TREE_DENY_REASON
-
 export const VERDICT_SOFT_FAIL_MESSAGE = [
   "ERROR: task-reviewer reply shape invalid.",
   "The first non-empty line of the reviewer result must be PASS or FINDINGS (word boundary).",
   "Do not invent a PASS. Re-delegate task-reviewer (fresh or continued) until the reply begins with PASS or FINDINGS verbatim.",
 ].join(" ")
-
-export type WorktreeCheck = (cwd: string) => { ok: boolean; detail?: string }
-
-// Mirrors gate-pr-creation.sh's first check. The suite validates the working
-// tree while a pull request publishes committed history; if they differ, the PR
-// ships a tree nothing validated. A git failure denies rather than passing --
-// "git is broken" and "the tree is clean" must not be the same observation.
-export function worktreeIsClean(cwd: string): { ok: boolean; detail?: string } {
-  const result = spawnSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8", env: process.env })
-  if (result.error) return { ok: false, detail: result.error.message }
-  if (result.status !== 0) return { ok: false, detail: (result.stderr || "").trim() || `exit ${result.status}` }
-  const dirty = (result.stdout || "").trim()
-  return dirty ? { ok: false, detail: dirty.split("\n").slice(0, 10).join("\n") } : { ok: true }
-}
 
 async function log(
   client: PluginInput["client"],
@@ -113,47 +82,22 @@ async function log(
   }
 }
 
-export type GatesOptions = {
-  checkWorktree?: WorktreeCheck
-}
-
-export default async (input: PluginInput, options: GatesOptions = {}) => {
-  const checkWorktree = options.checkWorktree ?? worktreeIsClean
-  const cwd = input.worktree || input.directory
-
+export default async (input: PluginInput) => {
   return {
     "tool.execute.before": async (
       hookInput: { tool: string; sessionID: string; callID: string },
       output: { args: Record<string, unknown> },
     ) => {
-      const tool = hookInput.tool
+      if (hookInput.tool !== "task") return
       const args = output.args ?? {}
-
-      if (tool === "task") {
-        const subagentType =
-          typeof args.subagent_type === "string" ? args.subagent_type : undefined
-        const prompt = typeof args.prompt === "string" ? args.prompt : undefined
-        if (needsReviewerFindingsRelay(subagentType, prompt)) {
-          await log(input.client, "warn", "blocked implementer rework without findings relay", {
-            sessionID: hookInput.sessionID,
-          })
-          throw new Error(RELAY_DENY_REASON)
-        }
-      }
-
-      // The Claude hook's only remaining check, mirrored: a pull request
-      // publishes committed history, so a dirty tree means its evidence
-      // describes something that was never pushed. Everything else is a
-      // required CI check now.
-      if (isPrCreateAttempt(tool, args as { command?: unknown })) {
-        const result = checkWorktree(cwd)
-        if (!result.ok) {
-          await log(input.client, "warn", "blocked PR create; dirty worktree", {
-            sessionID: hookInput.sessionID,
-            detail: result.detail,
-          })
-          throw new Error(PR_DIRTY_TREE_DENY_REASON)
-        }
+      const subagentType =
+        typeof args.subagent_type === "string" ? args.subagent_type : undefined
+      const prompt = typeof args.prompt === "string" ? args.prompt : undefined
+      if (needsReviewerFindingsRelay(subagentType, prompt)) {
+        await log(input.client, "warn", "blocked implementer rework without findings relay", {
+          sessionID: hookInput.sessionID,
+        })
+        throw new Error(RELAY_DENY_REASON)
       }
     },
 

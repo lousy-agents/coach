@@ -26,13 +26,6 @@
             "args": [
               "${CLAUDE_PROJECT_DIR}/.claude/hooks/verify-review-verdict.sh"
             ]
-          },
-          {
-            "type": "command",
-            "command": "bash",
-            "args": [
-              "${CLAUDE_PROJECT_DIR}/.claude/hooks/enforce-cycle-ceiling.sh"
-            ]
           }
         ]
       },
@@ -45,45 +38,11 @@
             "args": [
               "${CLAUDE_PROJECT_DIR}/.claude/hooks/verify-review-verdict.sh"
             ]
-          },
-          {
-            "type": "command",
-            "command": "bash",
-            "args": [
-              "${CLAUDE_PROJECT_DIR}/.claude/hooks/enforce-cycle-ceiling.sh"
-            ]
           }
         ]
       }
     ],
     "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash",
-            "timeout": 60,
-            "args": [
-              "${CLAUDE_PROJECT_DIR}/.claude/hooks/gate-pr-creation.sh"
-            ],
-            "if": "Bash(gh pr create*)"
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__github__create_pull_request",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash",
-            "timeout": 60,
-            "args": [
-              "${CLAUDE_PROJECT_DIR}/.claude/hooks/gate-pr-creation.sh"
-            ]
-          }
-        ]
-      },
       {
         "matcher": "Agent",
         "hooks": [

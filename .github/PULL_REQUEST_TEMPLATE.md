@@ -72,7 +72,7 @@ Closes <!-- #N -->
 
 ## Validation run
 <!-- Paste real output summaries. Agents: run these before gh pr create.
-     gate-pr-creation / implement-issue-gates expect mise run ci green. -->
+     The exhaustive gate is CI: the required status check must pass to merge. -->
 
 | Check | Command | Result |
 | --- | --- | --- |

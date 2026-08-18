@@ -48,8 +48,9 @@ var _ = Describe("implement-issue planner workflow", func() {
 	// Spike C established that the SubagentStop and PreToolUse hooks match on
 	// agents spawned by the main session. Agents spawned inside a workflow do
 	// not reach them, so moving the implement/review loop into the workflow
-	// would silently disable verify-review-verdict.sh and gate-pr-creation.sh
-	// -- the run would look identical while enforcing nothing.
+	// would silently disable verify-review-verdict.sh and
+	// verify-context-relay.sh -- the run would look identical while the review
+	// loop lost its fidelity checks.
 	When("the planner is asked to do more than plan", func() {
 		It("never spawns the implementer or reviewer agents itself", func() {
 			planner := readRepoFile(plannerPath)
@@ -93,10 +94,10 @@ var _ = Describe("implement-issue command", func() {
 			command := readRepoFile(commandPath)
 			// "pull request" alone appears in the frontmatter and in prose, so
 			// it stays green even if step 5 were rewritten to delegate PR
-			// creation into a workflow -- which is what would disarm
-			// gate-pr-creation.sh. Anchor on the ownership language instead.
+			// creation into a subagent. Anchor on the ownership language
+			// instead: the orchestrator owns git and publishing.
 			Expect(command).To(MatchRegexp(`(?i)with your own tool call, from this session`),
-				"the PR call must originate in the main session or the PR gate never runs")
+				"the PR must be opened by the orchestrator, which owns git and the PR evidence")
 			Expect(command).To(ContainSubstring("PULL_REQUEST_TEMPLATE.md"),
 				"the template is the PR contract for coding agents")
 		})

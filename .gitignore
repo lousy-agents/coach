@@ -74,8 +74,3 @@ deploy/compose/thinproof/output/*
 .claude/.implement-issue/
 
 tmp
-
-# Hook trace output and its opt-in marker (see .claude/hooks/lib/trace.sh)
-.coach-hook-trace.tsv
-.claude/hooks/.trace-enabled
-.coach-cycle-state/

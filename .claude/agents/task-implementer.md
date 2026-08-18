@@ -4,12 +4,6 @@ description: Implements one scoped task from the plan and self-verifies with the
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 maxTurns: 30
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "./.claude/scripts/validate-no-git-writes.sh"
 ---
 
 You implement exactly one task and nothing more.

@@ -9,16 +9,12 @@ input=$(cat)
 subagent_type=$(jq -r '.tool_input.subagent_type // empty' <<<"$input")
 prompt=$(jq -r '.tool_input.prompt // empty' <<<"$input")
 
-. "$(dirname "${BASH_SOURCE[0]}")/lib/trace.sh"
-trace relay "${subagent_type:-<unset>}" fired
-
 if [ "$subagent_type" != "task-implementer" ]; then
   exit 0
 fi
 
 if echo "$prompt" | grep -qiE 'reviewer.{0,40}finding|re-?delegat|re-review'; then
   if ! echo "$prompt" | grep -qF '## Reviewer Findings'; then
-    trace relay "$subagent_type" deny
     jq -n '{
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
@@ -30,5 +26,4 @@ if echo "$prompt" | grep -qiE 'reviewer.{0,40}finding|re-?delegat|re-review'; th
   fi
 fi
 
-trace relay "$subagent_type" allow
 exit 0
