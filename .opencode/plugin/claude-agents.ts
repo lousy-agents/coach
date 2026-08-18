@@ -58,25 +58,6 @@ const CLAUDE_TOOL_TO_PERM: Record<string, string> = {
 
 const PERM_KEYS = ["read", "edit", "glob", "grep", "list", "bash"] as const
 
-/** Matches .claude/scripts/validate-no-git-writes.sh intent via OpenCode bash permissions. */
-const GIT_WRITE_DENY: Record<string, PermissionAction> = {
-  "*": "allow",
-  "git commit*": "deny",
-  "git push*": "deny",
-  "git merge*": "deny",
-  "git rebase*": "deny",
-  "git reset*": "deny",
-  "git cherry-pick*": "deny",
-  "git tag*": "deny",
-  "gh pr create*": "deny",
-  "gh pr merge*": "deny",
-  "gh pr edit*": "deny",
-  "gh pr close*": "deny",
-  "gh release create*": "deny",
-  "gh release edit*": "deny",
-  "gh release delete*": "deny",
-}
-
 function parseFrontmatter(text: string): { data: Record<string, string>; body: string } | null {
   const normalized = text.replace(/^\uFEFF/, "")
   if (!normalized.startsWith("---\n") && !normalized.startsWith("---\r\n")) return null
@@ -130,7 +111,6 @@ function parseTools(raw: string | undefined): string[] {
 
 function permissionsFromTools(
   tools: string[],
-  blockGitWrites: boolean,
 ): Record<string, PermissionAction | Record<string, PermissionAction>> {
   const allowed = new Set<string>()
   for (const tool of tools) {
@@ -143,22 +123,10 @@ function permissionsFromTools(
 
   const permission: Record<string, PermissionAction | Record<string, PermissionAction>> = {}
   for (const key of PERM_KEYS) {
-    if (key === "bash" && blockGitWrites && allowed.has("bash")) {
-      permission.bash = { ...GIT_WRITE_DENY }
-      continue
-    }
     permission[key] = allowed.has(key) ? "allow" : "deny"
   }
   permission.todowrite = "deny"
   return permission
-}
-
-function hasGitWriteHook(data: Record<string, string>): boolean {
-  const hooks = data.hooks ?? ""
-  return (
-    hooks.includes("validate-no-git-writes") ||
-    /PreToolUse/i.test(hooks) && /matcher:.*Bash/i.test(hooks)
-  )
 }
 
 function agentName(data: Record<string, string>, filePath: string): string {
@@ -191,7 +159,6 @@ async function loadClaudeAgents(agentsDir: string): Promise<Record<string, Agent
 
     const name = agentName(parsed.data, filePath)
     const tools = parseTools(parsed.data.tools)
-    const blockGitWrites = hasGitWriteHook(parsed.data)
     const maxTurnsRaw =
       parsed.data.maxTurns ?? parsed.data.max_turns ?? parsed.data["max-turns"]
     const maxTurns = maxTurnsRaw ? Number.parseInt(maxTurnsRaw, 10) : undefined
@@ -200,7 +167,7 @@ async function loadClaudeAgents(agentsDir: string): Promise<Record<string, Agent
       description: parsed.data.description?.trim() || `Claude agent ${name}`,
       mode: "subagent",
       prompt: parsed.body,
-      permission: permissionsFromTools(tools, blockGitWrites),
+      permission: permissionsFromTools(tools),
     }
     if (Number.isFinite(maxTurns) && maxTurns! > 0) {
       agent.steps = maxTurns

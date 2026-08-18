@@ -3,10 +3,8 @@ import test from "node:test"
 
 import {
   extractTaskResultText,
-  isPrCreateAttempt,
   isValidReviewVerdict,
   needsReviewerFindingsRelay,
-  PR_CI_DENY_REASON,
   RELAY_DENY_REASON,
   VERDICT_SOFT_FAIL_MESSAGE,
 } from "./implement-issue-gates.ts"
@@ -59,26 +57,6 @@ test("extractTaskResultText: plain text passthrough", () => {
   assert.strictEqual(extractTaskResultText("FINDINGS\n\nx"), "FINDINGS\n\nx")
 })
 
-test("isPrCreateAttempt: bash gh pr create", () => {
-  assert.strictEqual(isPrCreateAttempt("bash", { command: "gh pr create --title x" }), true)
-})
-
-test("isPrCreateAttempt: bash git status is not", () => {
-  assert.strictEqual(isPrCreateAttempt("bash", { command: "git status" }), false)
-})
-
-test("isPrCreateAttempt: empty bash command is not", () => {
-  assert.strictEqual(isPrCreateAttempt("bash", { command: "" }), false)
-})
-
-test("isPrCreateAttempt: MCP create_pull_request", () => {
-  assert.strictEqual(isPrCreateAttempt("mcp__github__create_pull_request", {}), true)
-})
-
-test("isPrCreateAttempt: other tools are not", () => {
-  assert.strictEqual(isPrCreateAttempt("read", {}), false)
-})
-
 test("needsReviewerFindingsRelay: rework without heading", () => {
   assert.strictEqual(
     needsReviewerFindingsRelay(
@@ -128,10 +106,7 @@ test("needsReviewerFindingsRelay: re-delegate wording without heading", () => {
 
 test("hooks: implementer rework without findings throws", async () => {
   const pluginModule = await import(new URL("./implement-issue-gates.ts", import.meta.url).href)
-  const plugin = await pluginModule.default(
-    { directory: "/tmp", worktree: "/tmp" },
-    { checkWorktree: () => ({ ok: true }) },
-  )
+  const plugin = await pluginModule.default({ directory: "/tmp", worktree: "/tmp" })
 
   await assert.rejects(
     () =>
@@ -152,53 +127,22 @@ test("hooks: implementer rework without findings throws", async () => {
   )
 })
 
-test("hooks: PR create blocked when ci fails", async () => {
+// The plugin used to gate PR creation on a clean worktree. That gate is gone
+// on purpose — publish safety is branch protection plus the required `status`
+// check — so a bash tool call must pass through untouched.
+test("hooks: bash tool calls are not gated", async () => {
   const pluginModule = await import(new URL("./implement-issue-gates.ts", import.meta.url).href)
-  const plugin = await pluginModule.default(
-    { directory: "/tmp", worktree: "/tmp" },
-    { runCi: () => ({ ok: false, detail: "fail" }) },
-  )
-
-  await assert.rejects(
-    () =>
-      plugin["tool.execute.before"](
-        { tool: "bash", sessionID: "s", callID: "c" },
-        { args: { command: "gh pr create --title x --body y" } },
-      ),
-    (err: Error) => {
-      assert.ok(err instanceof Error)
-      assert.strictEqual(err.message, PR_CI_DENY_REASON)
-      return true
-    },
-  )
-})
-
-test("hooks: non-PR bash does not run ci", async () => {
-  let ran = false
-  const pluginModule = await import(new URL("./implement-issue-gates.ts", import.meta.url).href)
-  const plugin = await pluginModule.default(
-    { directory: "/tmp", worktree: "/tmp" },
-    {
-      checkWorktree: () => {
-        ran = true
-        return { ok: false }
-      },
-    },
-  )
+  const plugin = await pluginModule.default({ directory: "/tmp", worktree: "/tmp" })
 
   await plugin["tool.execute.before"](
     { tool: "bash", sessionID: "s", callID: "c" },
-    { args: { command: "git status" } },
+    { args: { command: "gh pr create --title x --body y" } },
   )
-  assert.strictEqual(ran, false)
 })
 
 test("hooks: malformed reviewer verdict is soft-rewritten", async () => {
   const pluginModule = await import(new URL("./implement-issue-gates.ts", import.meta.url).href)
-  const plugin = await pluginModule.default(
-    { directory: "/tmp", worktree: "/tmp" },
-    { checkWorktree: () => ({ ok: true }) },
-  )
+  const plugin = await pluginModule.default({ directory: "/tmp", worktree: "/tmp" })
 
   const output = {
     title: "task",
@@ -222,10 +166,7 @@ PASS — done
 
 test("hooks: valid reviewer PASS is left alone", async () => {
   const pluginModule = await import(new URL("./implement-issue-gates.ts", import.meta.url).href)
-  const plugin = await pluginModule.default(
-    { directory: "/tmp", worktree: "/tmp" },
-    { checkWorktree: () => ({ ok: true }) },
-  )
+  const plugin = await pluginModule.default({ directory: "/tmp", worktree: "/tmp" })
 
   const original = "PASS — verified the diff and tests."
   const output = { title: "task", output: original, metadata: {} }

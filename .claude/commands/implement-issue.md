@@ -7,72 +7,17 @@ model: inherit
 Implement GitHub issue #$1. You are the orchestrator: you delegate planning,
 implementation, and review, and you do not write feature code yourself.
 
-**Why the split matters.** The review and PR gates
-(`.claude/hooks/verify-review-verdict.sh`, `.claude/hooks/gate-pr-creation.sh`)
-fire on agents spawned by *this* session and on *your* tool calls. Agents spawned
-inside a workflow do not reach them. So planning runs as a workflow, but every
-implement/review cycle and the PR creation itself must be your own calls — a run
-that delegates those into a workflow looks identical and enforces nothing.
+The point of this command is **continuous review**: every change is written by
+one agent and adversarially reviewed by another before it counts, and the
+integrated result is reviewed again before it ships. Merge safety is not your
+job — branch protection and the required `status` check on the base branch are
+what make an unattended run safe. Your job is the quality of the loop.
 
-0. **Prove the gates are live before you rely on them.** Everything below is
-   written as though the hooks will catch you. A session where they never
-   registered looks identical from the inside — the agents answer, the reviews
-   return verdicts, the PR opens — so confirm registration first, by provoking a
-   denial from each gate in turn. Inspecting the files proves nothing: they are
-   on disk either way.
-
-   **Being denied is the pass.** Run all five; each names the hook it expects.
-
-   1. **Relay** — `verify-context-relay.sh`. Call the Agent tool with
-      `subagent_type: task-implementer` and a prompt that mentions reviewer
-      findings but omits the literal `## Reviewer Findings` heading —
-      `Address the reviewer findings below and fix them.` is enough. Denied
-      before any agent spawns, so it costs nothing.
-   2. **Git jail** — `validate-no-git-writes.sh`. Ask a `task-implementer` to run
-      `git push coach-gate-probe-remote HEAD`. The remote is **bogus on purpose**:
-      if the hook is dead the push executes and fails harmlessly with "does not
-      appear to be a git repository", instead of publishing anything.
-   3. **Verdict shape** — `verify-review-verdict.sh`. Delegate to `task-reviewer`
-      with a stub prompt instructing it to reply with exactly `garbage`. A live
-      hook blocks the malformed verdict. This is the only gate in the system that
-      has never been observed firing, so do not skip it.
-   4. **Cycle ceiling** — `enforce-cycle-ceiling.sh`. The reviewer call above also
-      passes through the ceiling, which records it. Confirm the counter advanced
-      (`.coach-cycle-state/`), and treat a counter that never appears as the same
-      failure as an un-denied probe.
-   5. **Publish** — `gate-pr-creation.sh`. Create a stray file so the tree is
-      **deliberately dirty**, then attempt
-      `gh pr create --repo coach-gate-probe/nonexistent --fill`. Denied on the
-      worktree check. Remove the stray file afterwards. Both halves matter: on a
-      clean tree a dead gate would proceed, and the repo is **bogus on purpose**
-      so that even then it fails without opening anything.
-
-   Three outcomes mean stop with `environment-failure`, and none is a warning to
-   note and move past:
-
-   - A probe is **not** denied and the action runs — that hook is not registered.
-   - A probe errors because `task-implementer` or `task-reviewer` is an unknown
-     agent type — agents register from `.claude/` exactly as hooks do, so this is
-     the same failure one layer earlier, and it is the likelier symptom.
-   - Any probe cannot be run at all.
-
-   In every case stop the run here: do not proceed to step 1, and do not
-   substitute a generic agent to get moving. An ungated run is worth less than
-   no run — it produces the same artifacts with none of the guarantees, and
-   nothing downstream can tell the difference.
-
-   **Provoke each one separately, and do not infer the rest from one pass.** A
-   whole `.claude/` that never registered takes every gate down together, and one
-   probe would find that. But a registration whose matcher names an agent that no
-   longer exists leaves exactly one gate inert while every other one answers
-   normally — a failure this repository has shipped twice.
-
-   The usual cause is not in this repository. Claude Code binds `.claude/` —
-   hooks, agents, and workflows alike — to the session's project directory at
-   session start. A repository cloned into the session afterwards is never
-   registered, and attaching it mid-session reloads CLAUDE.md and skills but not
-   hooks, agents, or workflows. The fix is to make the repository the session's
-   project directory when the session is created, then start again.
+**Why the split matters.** Planning runs as a workflow because it is read-only,
+parallelizable research. The implement/review loop stays in this session
+because the two review-fidelity hooks (`verify-review-verdict.sh`,
+`verify-context-relay.sh`) fire on agents spawned by *this* session and on
+*your* tool calls — agents spawned inside a workflow never reach them.
 
 1. **Plan.** Planning produces one artifact: the issue's acceptance criteria with
    stable IDs (AC-1, AC-2, …), a `conventions` string quoted verbatim from
@@ -94,14 +39,9 @@ that delegates those into a workflow looks identical and enforces nothing.
    conventions from AGENTS.md, and build the DAG above yourself. Nothing below
    depends on *how* the plan was produced, only on its shape.
 
-   **With a Workflow tool that does not know this workflow.** Registration and
-   the name are separate failures: a session can hold the tool and still report
-   `implement-issue-plan` unknown, because workflows register from `.claude/` at
-   session start exactly as the hooks do. Pass
+   **With a Workflow tool that does not know this workflow**, pass
    `scriptPath: '.claude/workflows/implement-issue-plan.js'` instead of `name`,
-   which runs the committed script directly. Note it — if the workflow was not
-   registered, step 0 should already have stopped the run, and reaching here
-   without that stop means the probe was skipped.
+   which runs the committed script directly.
 
    Self-check the plan once, however it was produced, for three failure modes:
    (a) false parallelism — tasks marked independent that share a file or consume
@@ -133,7 +73,10 @@ that delegates those into a workflow looks identical and enforces nothing.
      for features and bug fixes. Do not invent weaker acceptance-test,
      HTTP-timeout, fail-closed, or comment rules than AGENTS.md states. Pass the
      `conventions` string through as given — softening it is the failure mode
-     these gates exist to catch.
+     the review loop exists to catch.
+
+     The implementer does not commit, push, or open PRs — you own git. That is
+     a rule its prompt states, not a mechanism; repeat it in your delegation.
 
    - When it returns, delegate the task's diff to the `task-reviewer` subagent
      with the same criteria, scope, and conventions, plus the implementer's
@@ -143,8 +86,9 @@ that delegates those into a workflow looks identical and enforces nothing.
 
    - On FINDINGS, hand the reviewer's `## Reviewer Findings` block to a *fresh*
      `task-implementer` verbatim. That implementer shares no history with the one
-     before it, so anything you paraphrase while relaying is gone for good. Then
-     re-review.
+     before it, so anything you paraphrase while relaying is gone for good.
+     (`verify-context-relay.sh` denies a rework delegation that lacks the
+     literal `## Reviewer Findings` heading.) Then re-review.
 
    Do not start a dependent task until its dependencies' reviewers return PASS.
 
@@ -180,9 +124,8 @@ that delegates those into a workflow looks identical and enforces nothing.
    Give it the full acceptance criteria with IDs, the per-task scopes, and each
    task's verdict. On FINDINGS, hand its **entire `## Reviewer Findings` block
    verbatim** to a fresh `task-implementer`, exactly as in step 2 — do not split
-   it into one delegation per finding. `verify-context-relay.sh` denies any
-   rework delegation that lacks that literal heading, so a per-finding split is
-   refused at the Agent tool. Then re-review, and re-run the integration review.
+   it into one delegation per finding. Then re-review, and re-run the
+   integration review.
 
    **This loop is bounded exactly as step 2 is:** at most **3** integration
    rounds, the same no-progress rule, and the same named stop reasons. It needs
@@ -198,11 +141,6 @@ that delegates those into a workflow looks identical and enforces nothing.
    session's. Re-running it here would spend ~910s of the scarcer budget to
    prove less than CI proves minutes later.
 
-   The PR-creation gate validates nothing — it only refuses a dirty working
-   tree, which is the one thing CI structurally cannot check: CI validates the
-   *pushed commit*, so only something local can notice that your tree differs
-   from what you pushed and that the PR's evidence describes neither.
-
    **A red required check is repairable, not terminal.** After the PR is open,
    watch its checks. Route a failure back through the step-2 loop rather than
    abandoning it: paste the failing **job output** under a literal
@@ -214,8 +152,8 @@ that delegates those into a workflow looks identical and enforces nothing.
    This path exists because CI is the *first* place `wasm-build`, the
    sidecar-built `pkg/projectmodel` suite, cross-file `gofmt`/`tidy-check`, and
    `platform-smoke` ever meet the integrated tree. No per-task cycle exercises
-   them, so this is where a break is most likely — and it now arrives *after*
-   the PR exists rather than before. That is the trade: a red PR is a normal
+   them, so this is where a break is most likely — and it arrives *after* the
+   PR exists rather than before. That is the trade: a red PR is a normal
    working state you drive to green, not a failed run.
 
    **Attribute the failure before delegating.** Map the failing job's paths
@@ -232,12 +170,11 @@ that delegates those into a workflow looks identical and enforces nothing.
    traceable to one task's declared files. Route it straight to an
    integration-repair task without attempting attribution.
 
-   **Repair pushes are checked by CI, not locally.** Nothing gates them — the
-   publish gate fires on pull-request creation, which has already happened by
-   this point. The required checks re-run on every push, so a bad repair shows
-   up there rather than being refused up front. Commit everything before pushing
-   anyway: the pull request body's evidence describes the tree you pushed, and
-   a partial commit quietly makes that description false.
+   **Repair pushes are checked by CI, not locally.** The required checks re-run
+   on every push, so a bad repair shows up there rather than being refused up
+   front. Commit everything before pushing: the pull request body's evidence
+   describes the tree you pushed, and a partial commit quietly makes that
+   description false.
 
    **If the session dies mid-repair, that is `environment-failure`** — a typed
    stop, not a completed run. CCR containers are reclaimed on inactivity and
@@ -251,8 +188,9 @@ that delegates those into a workflow looks identical and enforces nothing.
    stops the run with `repeated-finding`.
 
 5. **Open the PR yourself**, with your own tool call, from this session. Commit
-   and push first: the gate denies a dirty working tree, because it validates
-   the working tree while a pull request publishes committed history.
+   and push first, and open the PR from a clean working tree: the PR body's
+   evidence describes the tree you pushed, and uncommitted changes make that
+   description false.
 
    Opening the PR is not the end of the run — step 4's repair loop continues
    against its required checks until they are green.

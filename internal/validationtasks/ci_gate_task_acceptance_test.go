@@ -9,22 +9,14 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// ci-gate is what the PR hook runs. It exists because the hook used to run
-// ci-all, and ci-all is the wrong shape for that job once GitHub Actions runs
-// the same checks as parallel required jobs.
-//
-// The measurement that chose the old design no longer holds. Spike K projected
-// a warm ci-all at ~41s, which made "the gate re-runs everything itself" both
-// the strongest and the cheapest option. Measured on a CCR container it is
-// ~910s, against the hook's own 900s timeout -- and GitHub Actions proves a
+// ci-gate is the fast local smoke check. It exists because a serial local
+// ci-all measured ~910s on a CCR container, while GitHub Actions proves a
 // strict superset of it in ~426s wall clock, in parallel, on compute that is
-// not the session's. A local gate that costs twice the wall clock to prove
-// less is not rigour, it is duplicated work charged to the scarcer budget.
-//
-// What stays local is what only a local check can do: the clean-worktree
-// comparison, because GHA validates the pushed commit and cannot see that the
-// working tree differs from it. What ci-gate adds is a cheap smoke signal so
-// an obvious break costs seconds rather than a PR round trip.
+// not the session's. A local run that costs twice the wall clock to prove
+// less is not rigour, it is duplicated work charged to the scarcer budget --
+// so the exhaustive gate is GHA plus branch protection, and ci-gate is the
+// cheap smoke signal in front of it: an obvious break costs seconds rather
+// than a PR round trip.
 
 // taskBody spans from a table header to the next one, so it swallows the
 // comment block documenting the *following* table. Reading a task's steps out
@@ -60,7 +52,7 @@ func leadingComment(toml, name string) string {
 	return strings.Join(out, "\n")
 }
 
-var _ = Describe("the pre-PR gate task", func() {
+var _ = Describe("the ci-gate smoke task", func() {
 	var toml string
 
 	BeforeEach(func() {
@@ -71,7 +63,7 @@ var _ = Describe("the pre-PR gate task", func() {
 
 	It("exists", func() {
 		Expect(taskBody(toml, "ci-gate")).NotTo(BeEmpty(),
-			"the PR hook needs a task scoped to it; pointing the hook at ci-all or ci-fast re-buys the cost this split exists to remove")
+			"the fast smoke check needs its own task; reaching for ci-all or ci-fast instead re-buys the cost this split exists to remove")
 	})
 
 	// The whole point is that no test executes here. ci-fast is not a
@@ -90,16 +82,13 @@ var _ = Describe("the pre-PR gate task", func() {
 	})
 
 	// tidy-check is `go mod tidy && git diff --exit-code`, so it rewrites
-	// go.mod and go.sum in place. Running it after the hook has verified a
-	// clean tree would dirty the very tree the hook just certified, and the PR
-	// would publish something the check never saw. GHA runs it inside ci-go,
-	// where nothing has certified a tree.
+	// go.mod and go.sum in place -- a smoke check that dirties the working
+	// tree mid-run. GHA runs it inside ci-go, where that does not matter.
 	It("does not run the one check that mutates the tree it is guarding", func() {
 		body := taskSteps(toml, "ci-gate")
 		// taskSteps returns "" for a missing task, and "" contains nothing --
 		// so a bare NotTo(ContainSubstring) here passes most confidently when
-		// ci-gate does not exist at all. Same shape as the strings.Index(-1)
-		// trap in the step 0 specs.
+		// ci-gate does not exist at all.
 		Expect(body).NotTo(BeEmpty(), "ci-gate must exist for this exclusion to mean anything")
 		Expect(body).NotTo(ContainSubstring(`task = "tidy-check"`),
 			"tidy-check mutates go.mod/go.sum, which would invalidate the gate's own clean-worktree finding")

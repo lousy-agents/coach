@@ -6,6 +6,8 @@
 package agentworkflows
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -15,4 +17,17 @@ import (
 func TestAgentWorkflowsAcceptance(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Agent Workflows Acceptance Suite")
+}
+
+// commandSection slices one numbered step out of the command, so a rule
+// asserted for one step cannot be satisfied by prose belonging to another.
+func commandSection(command, n string) string {
+	GinkgoHelper()
+	start := strings.Index(command, "\n"+n+". **")
+	Expect(start).To(BeNumerically(">", -1), "step %s not found", n)
+	rest := command[start+1:]
+	if end := regexp.MustCompile(`\n\d+\. \*\*`).FindStringIndex(rest); end != nil {
+		return rest[:end[0]]
+	}
+	return rest
 }

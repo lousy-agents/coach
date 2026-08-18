@@ -114,10 +114,10 @@ test("loads real .claude/agents/*.md with expected structure", async () => {
     assert.strictEqual(agent.permission!.write, undefined, `${name}: write should not be a separate permission key`)
   }
 
-  const implementerBash = cfg.agent!["task-implementer"]?.permission?.bash
-  assert.ok(typeof implementerBash === "object" && implementerBash !== null, "task-implementer: bash permission should be scoped object")
-  assert.strictEqual(implementerBash!["*"], "allow")
-  assert.strictEqual(implementerBash!["git commit*"], "deny")
+  // The git-write jail was removed with the rest of the control apparatus:
+  // "the orchestrator owns git" is prose in the agent prompt, and publish
+  // safety is branch protection plus the required status check.
+  assert.strictEqual(cfg.agent!["task-implementer"]?.permission?.bash, "allow")
   assert.strictEqual(cfg.agent!["task-implementer"]?.steps, 30)
   // task-reviewer has no Edit tool, so edit is denied; write is not modeled separately.
   assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.edit, "deny")
