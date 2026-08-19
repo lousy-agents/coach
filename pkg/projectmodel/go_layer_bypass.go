@@ -175,12 +175,7 @@ func BuildGoLayerBypass(ctx context.Context, snapshot fs.FS, opts LayerBypassOpt
 
 	callGraphIncomplete := !callGraph.Coverage.Complete
 
-	requiredLayerNodes := map[string]bool{}
-	for node, pos := range nodePositions {
-		if layerBypassContainsDir(opts.RequiredLayer, pos.Dir) {
-			requiredLayerNodes[node] = true
-		}
-	}
+	requiredLayerNodes := requiredLayerNodeSet(opts.RequiredLayer, nodePositions)
 	// ambiguousLayer guards against the false-positive case where an
 	// unconfigured/unmatched RequiredLayer would remove nothing from
 	// adjacency, silently turning this into an ordinary reachability search
@@ -192,63 +187,7 @@ func BuildGoLayerBypass(ctx context.Context, snapshot fs.FS, opts LayerBypassOpt
 		bypassAdjacency = removeLayerNodesFromAdjacency(adjacency, requiredLayerNodes)
 	}
 
-	var witnesses []LayerBypassWitness
-	evaluated, truncatedPairs, nodesVisited := 0, 0, 0
-	truncatedSearch := callGraphIncomplete || !dirsComplete
-	unclassifiedNodeSeen := false
-
-	if ambiguousLayer {
-		// An ambiguous RequiredLayer means the search below never runs for
-		// any pair, so every pair is truncated (not evaluated) and the run
-		// as a whole is incomplete -- this must not look like a genuinely
-		// searched, fully-covered "no bypass found" result.
-		truncatedPairs = len(sources) * len(sinks)
-		truncatedSearch = true
-	} else {
-		for _, source := range sources {
-			if ctx.Err() != nil {
-				truncatedSearch = true
-				break
-			}
-			parents, hitBudget := bfsShortestPaths(ctx, source, bypassAdjacency, opts.MaxSearchNodes, &nodesVisited)
-			if hitBudget {
-				truncatedSearch = true
-			}
-			skip := hitBudget || ctx.Err() != nil || callGraphIncomplete || !dirsComplete
-			for _, sink := range sinks {
-				if skip {
-					truncatedPairs++
-					continue
-				}
-				evaluated++
-				stepPath, ok := reconstructReachabilityPath(parents, source, sink)
-				if !ok {
-					continue
-				}
-				if !stepPathFullyClassified(stepPath, nodePositions) {
-					// A node on the path has no resolvable package
-					// directory (e.g. a synthetic wrapper), so its
-					// required-layer membership is unknown -- suppress
-					// rather than risk reporting a path that could have
-					// been removed as an in-layer route.
-					unclassifiedNodeSeen = true
-					continue
-				}
-				witnesses = append(witnesses, LayerBypassWitness{
-					ID:               fmt.Sprintf("bypass:%s:%s->%s@%s", opts.RequiredLayer.Name, source, sink, LayerBypassAlgorithm),
-					Source:           source,
-					Sink:             sink,
-					RequiredLayer:    opts.RequiredLayer.Name,
-					Path:             layerBypassSteps(stepPath, nodePositions),
-					Confidence:       LayerBypassConfidenceHigh,
-					AlgorithmVersion: LayerBypassAlgorithm,
-				})
-			}
-		}
-	}
-	if !truncatedSearch && ctx.Err() != nil {
-		truncatedSearch = true
-	}
+	search := searchLayerBypassWitnesses(ctx, sources, sinks, bypassAdjacency, nodePositions, opts, callGraphIncomplete, dirsComplete, ambiguousLayer)
 
 	runtime.ReadMemStats(&memAfter)
 	memDelta := int64(memAfter.TotalAlloc) - int64(memBefore.TotalAlloc)
@@ -256,58 +195,135 @@ func BuildGoLayerBypass(ctx context.Context, snapshot fs.FS, opts LayerBypassOpt
 		memDelta = 0
 	}
 
-	unresolvedCallSites := callGraph.Coverage.Counts["unresolved_interface"] +
-		callGraph.Coverage.Counts["unresolved_function_value"] +
-		callGraph.Coverage.Counts["unresolved_reflection"] +
-		callGraph.Coverage.Counts["unresolved_framework_registration"]
+	return assembleLayerBypassResult(loaded, callGraph, sources, sinks, requiredLayerNodes, search, sourceDiagnostics, dirDiagnostics, sourcesComplete, dirsComplete, ambiguousLayer, opts, start, memDelta), nil
+}
 
+func requiredLayerNodeSet(layer BypassLayer, nodePositions map[string]layerBypassNodePosition) map[string]bool {
+	nodes := map[string]bool{}
+	for node, pos := range nodePositions {
+		if layerBypassContainsDir(layer, pos.Dir) {
+			nodes[node] = true
+		}
+	}
+	return nodes
+}
+
+func assembleLayerBypassResult(loaded *loadedGoSnapshot, callGraph CallGraphResult, sources, sinks []string, requiredLayerNodes map[string]bool, search layerBypassSearch, sourceDiagnostics, dirDiagnostics []Diagnostic, sourcesComplete, dirsComplete, ambiguousLayer bool, opts LayerBypassOptions, start time.Time, memDelta int64) LayerBypassResult {
 	diagnostics := append([]Diagnostic{}, callGraph.Coverage.Diagnostics...)
 	diagnostics = append(diagnostics, sourceDiagnostics...)
 	diagnostics = append(diagnostics, dirDiagnostics...)
 	if ambiguousLayer {
 		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassAmbiguousLayer})
-	} else if unclassifiedNodeSeen && !containsDiagnosticCode(diagnostics, DiagLayerBypassAmbiguousLayer) {
+	} else if search.unclassifiedNodeSeen && !containsDiagnosticCode(diagnostics, DiagLayerBypassAmbiguousLayer) {
 		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassAmbiguousLayer})
 	}
-	if truncatedSearch && !containsDiagnosticCode(diagnostics, DiagLayerBypassBudgetExceeded) {
+	if search.truncatedSearch && !containsDiagnosticCode(diagnostics, DiagLayerBypassBudgetExceeded) {
 		diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded})
 	}
 
-	complete := callGraph.Coverage.Complete && sourcesComplete && dirsComplete && !truncatedSearch
-
-	sort.Slice(witnesses, func(i, j int) bool {
-		if witnesses[i].Source != witnesses[j].Source {
-			return witnesses[i].Source < witnesses[j].Source
+	sort.Slice(search.witnesses, func(i, j int) bool {
+		if search.witnesses[i].Source != search.witnesses[j].Source {
+			return search.witnesses[i].Source < search.witnesses[j].Source
 		}
-		return witnesses[i].Sink < witnesses[j].Sink
+		return search.witnesses[i].Sink < search.witnesses[j].Sink
 	})
 
 	return LayerBypassResult{
-		Witnesses: witnesses,
+		Witnesses: search.witnesses,
 		Sources:   sources,
 		Algorithm: LayerBypassAlgorithm,
 		Coverage: canonicalCoverage(Coverage{
 			Phase:    "go_layer_bypass",
-			Complete: complete,
+			Complete: callGraph.Coverage.Complete && sourcesComplete && dirsComplete && !search.truncatedSearch,
 			Counts: map[string]int{
 				"sources_identified":               len(sources),
 				"sinks_pinned":                     len(sinks),
 				"source_sink_pairs_total":          len(sources) * len(sinks),
-				"source_sink_pairs_evaluated":      evaluated,
-				"source_sink_pairs_truncated":      truncatedPairs,
-				"witnesses_found":                  len(witnesses),
+				"source_sink_pairs_evaluated":      search.evaluated,
+				"source_sink_pairs_truncated":      search.truncatedPairs,
+				"witnesses_found":                  len(search.witnesses),
 				"required_layer_nodes_matched":     len(requiredLayerNodes),
 				"underlying_call_sites_seen":       callGraph.Coverage.Counts["call_sites_seen"],
-				"underlying_unresolved_call_sites": unresolvedCallSites,
+				"underlying_unresolved_call_sites": unresolvedCallSiteCount(callGraph.Coverage.Counts),
 				"ssa_programs_built":               loaded.programsBuilt(),
-				"search_nodes_visited":             nodesVisited,
+				"search_nodes_visited":             search.nodesVisited,
 				"runtime_ms":                       int(time.Since(start) / time.Millisecond),
-				"memory_bytes":                     int(memDelta), // coarse process-wide TotalAlloc delta; see BuildGoReachability's doc comment.
+				"memory_bytes":                     int(memDelta),
 			},
 			Budgets:     effectiveLayerBypassBudgets(opts),
 			Diagnostics: diagnostics,
 		}),
-	}, nil
+	}
+}
+
+// layerBypassSearch is the result of one source/sink witness search.
+// truncatedSearch reflects this search's own budget (MaxSearchNodes, ctx
+// wall-time/cancellation) plus the one non-budget case, ambiguousLayer,
+// where the search never runs at all. It does not reflect
+// callGraphIncomplete or !dirsComplete: both already carry their own
+// diagnostic and already force complete to false, and both already force
+// every pair to skip as truncated. Folding either into truncatedSearch
+// would additionally claim a project_layer_bypass_budget_exceeded that
+// never happened -- e.g. a call-graph dead end at a local-targeted
+// synthetic wrapper, or a root load failure.
+type layerBypassSearch struct {
+	witnesses            []LayerBypassWitness
+	evaluated            int
+	truncatedPairs       int
+	nodesVisited         int
+	truncatedSearch      bool
+	unclassifiedNodeSeen bool
+}
+
+func searchLayerBypassWitnesses(ctx context.Context, sources, sinks []string, bypassAdjacency map[string][]string, nodePositions map[string]layerBypassNodePosition, opts LayerBypassOptions, callGraphIncomplete, dirsComplete, ambiguousLayer bool) layerBypassSearch {
+	var search layerBypassSearch
+	if ambiguousLayer {
+		search.truncatedPairs = len(sources) * len(sinks)
+		search.truncatedSearch = true
+		return search
+	}
+	for _, source := range sources {
+		if ctx.Err() != nil {
+			search.truncatedSearch = true
+			break
+		}
+		parents, hitBudget := bfsShortestPaths(ctx, source, bypassAdjacency, opts.MaxSearchNodes, &search.nodesVisited)
+		if hitBudget {
+			search.truncatedSearch = true
+		}
+		search.collectWitnesses(source, sinks, parents, nodePositions, opts.RequiredLayer.Name, hitBudget || ctx.Err() != nil || callGraphIncomplete || !dirsComplete)
+	}
+	if !search.truncatedSearch && ctx.Err() != nil {
+		search.truncatedSearch = true
+	}
+	return search
+}
+
+func (s *layerBypassSearch) collectWitnesses(source string, sinks []string, parents map[string]string, nodePositions map[string]layerBypassNodePosition, requiredLayer string, skip bool) {
+	for _, sink := range sinks {
+		if skip {
+			s.truncatedPairs++
+			continue
+		}
+		s.evaluated++
+		stepPath, ok := reconstructReachabilityPath(parents, source, sink)
+		if !ok {
+			continue
+		}
+		if !stepPathFullyClassified(stepPath, nodePositions) {
+			s.unclassifiedNodeSeen = true
+			continue
+		}
+		s.witnesses = append(s.witnesses, LayerBypassWitness{
+			ID:               fmt.Sprintf("bypass:%s:%s->%s@%s", requiredLayer, source, sink, LayerBypassAlgorithm),
+			Source:           source,
+			Sink:             sink,
+			RequiredLayer:    requiredLayer,
+			Path:             layerBypassSteps(stepPath, nodePositions),
+			Confidence:       LayerBypassConfidenceHigh,
+			AlgorithmVersion: LayerBypassAlgorithm,
+		})
+	}
 }
 
 // layerBypassContainsDir mirrors codesignal's layerContainsDir: "." matches
