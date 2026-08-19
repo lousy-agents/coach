@@ -201,6 +201,30 @@ var _ = Describe("BuildGoLayerBypass", func() {
 		})
 	})
 
+	When("a handler's only route to the pinned database sink passes through a synthetic bound-method-value wrapper whose real target is local to the snapshot", func() {
+		It("produces no witness for the pair and marks Coverage.Complete false with the call graph's synthetic-wrapper diagnostic, instead of silently dead-ending", func() {
+			snapshot := os.DirFS("testdata/go_layer_bypass_bound_method")
+			result, err := projectmodel.BuildGoLayerBypass(context.Background(), snapshot, projectmodel.LayerBypassOptions{
+				RequiredLayer: requiredServiceLayer,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Witnesses).To(BeEmpty(),
+				"a call route that dead-ends at a local-targeted synthetic wrapper must not silently synthesize a bypass witness through it, got %+v", result.Witnesses)
+			Expect(result.Coverage.Complete).To(BeFalse(),
+				"the underlying call graph's synthetic-wrapper dead end must propagate as layer-bypass incompleteness, not report a silently 'complete' no-witness result")
+			Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagCallUnresolvedSyntheticWrapper)).To(BeTrue(),
+				"expected the call graph's project_call_unresolved_synthetic_wrapper diagnostic to surface on LayerBypassResult.Coverage, got %+v", result.Coverage.Diagnostics)
+			Expect(result.Coverage.Counts["source_sink_pairs_evaluated"]).To(Equal(0),
+				"a pair searched against an incompletely built call graph must not count as conclusively evaluated")
+			Expect(result.Coverage.Counts["source_sink_pairs_truncated"]).To(BeNumerically(">", 0))
+			Expect(result.Coverage.Counts["underlying_unresolved_call_sites"]).To(Equal(1),
+				"the call graph's unresolved_synthetic_wrapper count must propagate into LayerBypassResult's unresolved-ratio input, not be dropped to zero")
+			Expect(hasLayerBypassDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagLayerBypassBudgetExceeded)).To(BeFalse(),
+				"no budget was ever exceeded in this run; a call-graph dead end must not also report a false budget-exceeded diagnostic")
+		})
+	})
+
 	When("the required layer's prefixes match no package anywhere in the snapshot", func() {
 		It("produces zero witnesses and records an ambiguous-layer diagnostic, even though a structural path exists", func() {
 			snapshot := os.DirFS("testdata/go_layer_bypass_ambiguous")

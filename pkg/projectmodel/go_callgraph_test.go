@@ -51,6 +51,7 @@ func TestCallSiteDiagnosticCountsMatchesClassification(t *testing.T) {
 		DiagCallUnresolvedFunctionValue:         true,
 		DiagCallUnresolvedReflection:            true,
 		DiagCallUnresolvedFrameworkRegistration: true,
+		DiagCallUnresolvedSyntheticWrapper:      true,
 	}
 	if len(callSiteDiagnosticCounts) != len(wantCodes) {
 		t.Fatalf("callSiteDiagnosticCounts has %d entries, want %d matching the classifyCallSite diagnostic codes", len(callSiteDiagnosticCounts), len(wantCodes))
@@ -61,6 +62,7 @@ func TestCallSiteDiagnosticCountsMatchesClassification(t *testing.T) {
 		"unresolved_function_value":         true,
 		"unresolved_reflection":             true,
 		"unresolved_framework_registration": true,
+		"unresolved_synthetic_wrapper":      true,
 	}
 	for code, countKey := range callSiteDiagnosticCounts {
 		if !wantCodes[code] {

@@ -4,15 +4,12 @@ import (
 	"context"
 	"fmt"
 	"go/token"
-	"go/types"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"golang.org/x/tools/go/callgraph/static"
-	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 )
@@ -49,6 +46,21 @@ const (
 	// invoked directly: the framework invokes it later, at a call site
 	// static analysis cannot see.
 	DiagCallUnresolvedFrameworkRegistration = "project_call_unresolved_framework_registration"
+	// DiagCallUnresolvedSyntheticWrapper marks a call site whose resolved
+	// callee is itself a synthetic wrapper function (fn.Pkg == nil: a
+	// bound-method value or a promoted/embedded-method thunk) whose real
+	// target is itself local to the snapshot. sortedLocalFunctions excludes
+	// the wrapper from the walk, so its own outgoing call is never
+	// processed; returning a CallFact into it would dead-end the graph
+	// silently, so this diagnostic makes that dead end visible instead. A
+	// wrapper whose real target lies outside the snapshot was never going
+	// to be walked either way and is not classified here -- it still
+	// contributes an ordinary CallFact. A generic instantiation (fn.Pkg ==
+	// nil, fn.Origin() != nil) is not classified here either, even when its
+	// target is local: sortedLocalFunctions walks fn.Origin() directly (it
+	// has its own Pkg and Blocks), so classifyCallSite routes the CallFact
+	// to fn.Origin() instead of losing the edge.
+	DiagCallUnresolvedSyntheticWrapper = "project_call_unresolved_synthetic_wrapper"
 	// DiagCallGraphBudgetExceeded marks a call-graph build that stopped
 	// before completion because a budget or context deadline was reached.
 	DiagCallGraphBudgetExceeded = "project_callgraph_budget_exceeded"
@@ -106,10 +118,14 @@ var frameworkRegistrationCallees = map[string]bool{
 // Every ssa.CallInstruction reachable from the snapshot's own packages is
 // classified: a direct, statically resolved call contributes a CallFact;
 // interface dispatch, an unresolved function-value call, a
-// reflect.Value.Call/CallSlice dispatch, and a function/handler value
-// passed to a recognized HTTP registration call each contribute no
-// CallFact but do contribute an explicit coverage diagnostic/count, so
-// unresolved call sites stay visible rather than silently dropped.
+// reflect.Value.Call/CallSlice dispatch, a function/handler value passed to
+// a recognized HTTP registration call, and a call into a synthetic
+// bound-method-value or promoted-method thunk whose real target is itself
+// local to the snapshot each contribute no CallFact but do contribute an
+// explicit coverage diagnostic/count, so unresolved call sites stay visible
+// rather than silently dropped; the synthetic-wrapper case is also the only
+// one of these that marks Coverage.Complete false, since it means a real
+// local-to-local call edge was structurally present but never walked.
 //
 // BuildGoCallGraph never returns a non-nil error for a per-root load
 // failure or for budget/context exhaustion -- those are reported through
@@ -135,21 +151,7 @@ func BuildGoCallGraph(ctx context.Context, snapshot fs.FS, opts CallGraphOptions
 }
 
 func buildGoCallGraphFromLoaded(ctx context.Context, loaded *loadedGoSnapshot, opts CallGraphOptions) CallGraphResult {
-	diagnostics := append([]Diagnostic{}, loaded.discovery.Diagnostics...)
-	complete := loaded.discovery.Complete
-
-	counts := map[string]int{
-		"roots_seen":                        len(loaded.moduleDirs),
-		"roots_built":                       0,
-		"functions_seen":                    0,
-		"call_sites_seen":                   0,
-		"unresolved_interface":              0,
-		"unresolved_function_value":         0,
-		"unresolved_reflection":             0,
-		"unresolved_framework_registration": 0,
-		"callgraph_static_nodes":            0,
-		"ssa_programs_built":                loaded.programsBuilt(),
-	}
+	walk := newCallGraphWalk(loaded)
 
 	buildResult := func(facts []CallFact, complete bool) CallGraphResult {
 		return CallGraphResult{
@@ -158,175 +160,32 @@ func buildGoCallGraphFromLoaded(ctx context.Context, loaded *loadedGoSnapshot, o
 			Coverage: canonicalCoverage(Coverage{
 				Phase:       "go_call_graph",
 				Complete:    complete,
-				Counts:      counts,
+				Counts:      walk.counts,
 				Budgets:     EffectiveGoBudgets(opts.Budgets),
-				Diagnostics: diagnostics,
+				Diagnostics: walk.diagnostics,
 			}),
 		}
 	}
 
 	if ctx.Err() != nil && len(loaded.roots) == 0 {
-		diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Message: ctx.Err().Error()})
+		walk.diagnostics = append(walk.diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Message: ctx.Err().Error()})
 		return buildResult(nil, false)
 	}
 
-	var callFacts []CallFact
-	nodesProcessed, edgesProcessed := 0, 0
-	truncated := loaded.loadStopped
+	walk.walkRoots(ctx, loaded, opts)
 
-rootLoop:
-	for _, root := range loaded.roots {
-		if ctx.Err() != nil {
-			truncated = true
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: root.dir})
-			break
-		}
-
-		if root.loadErr != nil {
-			complete = false
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBuildFailed, Path: root.dir, Message: stripTempDir(root.loadErr.Error(), loaded.tempDir)})
-			continue
-		}
-		for _, p := range root.pkgs {
-			for _, e := range p.Errors {
-				complete = false
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBuildFailed, Path: root.dir, Message: stripTempDir(e.Error(), loaded.tempDir)})
-			}
-		}
-		counts["roots_built"]++
-
-		// CallFacts deliberately come from the sortedLocalFunctions walk
-		// below, not from cg.Nodes/cg.Edges: that walk gives a single,
-		// deterministically ordered pass that both resolves direct callees
-		// and classifies every unresolved call site (interface, function
-		// value, reflection, framework registration) in one place. Walking
-		// cg's own maps would reintroduce Go map iteration order and drop
-		// the unresolved-site diagnostics; cg is kept only for the pinned
-		// static-analysis-backend cross-check below.
-		cg := static.CallGraph(root.prog)
-		counts["callgraph_static_nodes"] += len(cg.Nodes)
-		httpHandlerIface := httpHandlerInterface(root.prog, root.pkgs)
-
-		for _, fn := range sortedLocalFunctions(root.prog, root.localPkgPaths) {
-			if ctx.Err() != nil {
-				truncated = true
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: root.dir})
-				break rootLoop
-			}
-			if opts.Budgets.MaxGraphNodes > 0 && nodesProcessed >= opts.Budgets.MaxGraphNodes {
-				truncated = true
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: root.dir})
-				break rootLoop
-			}
-			nodesProcessed++
-			counts["functions_seen"]++
-
-			for _, blk := range fn.Blocks {
-				for _, instr := range blk.Instrs {
-					site, ok := instr.(ssa.CallInstruction)
-					if !ok {
-						continue
-					}
-					if opts.Budgets.MaxGraphEdges > 0 && edgesProcessed >= opts.Budgets.MaxGraphEdges {
-						truncated = true
-						diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: root.dir})
-						break rootLoop
-					}
-					edgesProcessed++
-					counts["call_sites_seen"]++
-
-					result := classifyCallSite(fn, site, loaded.tempDir, httpHandlerIface)
-					if result.Fact != nil {
-						callFacts = append(callFacts, *result.Fact)
-					}
-					for _, d := range result.Diagnostics {
-						diagnostics = append(diagnostics, d)
-						counts[callSiteDiagnosticCounts[d.Code]]++
-					}
-				}
-			}
-		}
-	}
-
-	if loaded.loadStopped && !containsDiagnosticCode(diagnostics, DiagCallGraphBudgetExceeded) {
+	if loaded.loadStopped && !containsDiagnosticCode(walk.diagnostics, DiagCallGraphBudgetExceeded) {
 		path := ""
 		if len(loaded.roots) < len(loaded.moduleDirs) {
 			path = loaded.moduleDirs[len(loaded.roots)]
 		}
-		diagnostics = append(diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: path})
+		walk.diagnostics = append(walk.diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: path})
 	}
 
-	if truncated {
-		complete = false
+	if walk.truncated {
+		walk.complete = false
 	}
-	return buildResult(callFacts, complete)
-}
-
-// callSiteDiagnosticCounts maps each call-site diagnostic code classifyCallSite
-// can emit to the Coverage.Counts key BuildGoCallGraph increments for it.
-var callSiteDiagnosticCounts = map[string]string{
-	DiagCallUnresolvedInterface:             "unresolved_interface",
-	DiagCallUnresolvedFunctionValue:         "unresolved_function_value",
-	DiagCallUnresolvedReflection:            "unresolved_reflection",
-	DiagCallUnresolvedFrameworkRegistration: "unresolved_framework_registration",
-}
-
-// callSiteClassification is the result of classifying one ssa.CallInstruction:
-// an optional resolved CallFact plus zero or more coverage diagnostics.
-// Interface dispatch, an unresolved function value, and a reflection
-// dispatch each contribute exactly one diagnostic and no CallFact; a
-// resolved direct call to a frameworkRegistrationCallees entry contributes
-// its CallFact plus zero or more diagnostics, one per handler-typed
-// argument.
-type callSiteClassification struct {
-	Fact        *CallFact
-	Diagnostics []Diagnostic
-}
-
-// classifyCallSite resolves site's callee within fn and reports the
-// resulting CallFact and/or diagnostics. It touches no shared call-graph
-// state -- BuildGoCallGraph merges the result into its own
-// callFacts/counts/diagnostics.
-func classifyCallSite(fn *ssa.Function, site ssa.CallInstruction, tempDir string, httpHandlerIface *types.Interface) callSiteClassification {
-	sitePath := relCallSitePath(tempDir, fn.Prog.Fset.Position(site.Pos()))
-	common := site.Common()
-
-	if common.IsInvoke() {
-		return callSiteClassification{Diagnostics: []Diagnostic{{Code: DiagCallUnresolvedInterface, Path: sitePath}}}
-	}
-
-	callee := common.StaticCallee()
-	if callee == nil {
-		return callSiteClassification{Diagnostics: []Diagnostic{{Code: DiagCallUnresolvedFunctionValue, Path: sitePath}}}
-	}
-
-	if isReflectDynamicCall(callee) {
-		return callSiteClassification{Diagnostics: []Diagnostic{{Code: DiagCallUnresolvedReflection, Path: sitePath}}}
-	}
-
-	calleeID := callee.RelString(nil)
-	result := callSiteClassification{Fact: &CallFact{From: fn.RelString(nil), To: calleeID}}
-
-	if frameworkRegistrationCallees[calleeID] {
-		args := common.Args
-		if callee.Signature.Recv() != nil && len(args) > 0 {
-			// Method-form registration ((*http.ServeMux).Handle/
-			// HandleFunc): Args[0] is the receiver, not a handler
-			// argument -- see ssa.CallCommon.Args's doc ("If Value
-			// is a method, Args[0] contains the receiver
-			// parameter"). *http.ServeMux itself implements
-			// http.Handler, so skipping it here avoids
-			// double-counting the registration site.
-			args = args[1:]
-		}
-		for _, arg := range args {
-			if isFunctionValueArg(arg, httpHandlerIface) {
-				result.Diagnostics = append(result.Diagnostics, Diagnostic{Code: DiagCallUnresolvedFrameworkRegistration, Path: sitePath})
-			}
-		}
-	}
-
-	return result
+	return buildResult(walk.facts, walk.complete)
 }
 
 // sortedLocalFunctions returns every function with a body (fn.Blocks != nil)
@@ -347,57 +206,6 @@ func sortedLocalFunctions(prog *ssa.Program, localPkgPaths map[string]bool) []*s
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].RelString(nil) < out[j].RelString(nil) })
 	return out
-}
-
-// isReflectDynamicCall reports whether fn is reflect.Value.Call or
-// reflect.Value.CallSlice: SSA resolves both as ordinary static method
-// calls (reflect.Value is a concrete type), but the function they actually
-// invoke is chosen at runtime and is invisible to static analysis.
-func isReflectDynamicCall(fn *ssa.Function) bool {
-	if fn.Pkg == nil || fn.Pkg.Pkg.Path() != "reflect" {
-		return false
-	}
-	switch fn.Name() {
-	case "Call", "CallSlice":
-		return true
-	default:
-		return false
-	}
-}
-
-// isFunctionValueArg reports whether v is a handler value passed to a
-// frameworkRegistrationCallees entry: either a func-typed value (the
-// net/http.HandleFunc/(*http.ServeMux).HandleFunc case) or a value whose
-// type implements net/http.Handler (the net/http.Handle/
-// (*http.ServeMux).Handle case, where the parameter type is the interface,
-// not a func signature). handlerIface is nil when net/http was not loaded
-// for this root, in which case only the func-typed check applies.
-func isFunctionValueArg(v ssa.Value, handlerIface *types.Interface) bool {
-	t := v.Type()
-	if _, ok := t.Underlying().(*types.Signature); ok {
-		return true
-	}
-	return handlerIface != nil && types.Implements(t, handlerIface)
-}
-
-// httpHandlerInterface looks up net/http.Handler's interface type from
-// prog or the initial packages' type-checker import graph, returning nil
-// if net/http was not part of this root's build (so isFunctionValueArg
-// falls back to its func-typed check only).
-func httpHandlerInterface(prog *ssa.Program, pkgs []*packages.Package) *types.Interface {
-	tp := typesPackageByPath(prog, pkgs, "net/http")
-	if tp == nil {
-		return nil
-	}
-	obj := tp.Scope().Lookup("Handler")
-	if obj == nil {
-		return nil
-	}
-	iface, ok := obj.Type().Underlying().(*types.Interface)
-	if !ok {
-		return nil
-	}
-	return iface
 }
 
 // stripTempDir removes materializeSnapshot's absolute temp-dir prefix from
