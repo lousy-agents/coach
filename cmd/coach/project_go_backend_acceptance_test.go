@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -16,6 +17,17 @@ import (
 const goLayerPolicyConfigJSON = `{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}]}`
 
 const goModuleFile = "module example.com/app\n\ngo 1.25\n"
+
+// goModuleFileDotless is goModuleFile's dotless-module-path counterpart
+// (issue #284): a module declared via `go mod init app` rather than a
+// domain-style path.
+const goModuleFileDotless = "module app\n\ngo 1.25\n"
+
+// handlersImportingDBDotlessModule is handlersImportingDB re-pointed at the
+// goModuleFileDotless module path ("app" instead of "example.com/app") --
+// byte-identical otherwise, so a diff between the two fixtures is exactly
+// the module path literal.
+const handlersImportingDBDotlessModule = "package handlers\n\nimport \"app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n"
 
 const dbPackageFile = "package db\n\n// Name is a placeholder export used by the layer-violation fixtures.\nvar Name = \"db\"\n"
 
@@ -57,6 +69,21 @@ func decodeCoachReport(stdout []byte) *codesignal.Report {
 	var report codesignal.Report
 	ExpectWithOffset(1, json.Unmarshal(stdout, &report)).To(Succeed(), "stdout should be one JSON report: %s", stdout)
 	return &report
+}
+
+// normalizeProjectChangesModulePath JSON-encodes each ProjectChange in
+// changes and replaces every occurrence of modulePath with a fixed
+// placeholder. Two reports built from repositories differing only in their
+// go.mod module path can then be compared for exact (ordered, field-by-field)
+// equality once that one permitted difference is stripped out.
+func normalizeProjectChangesModulePath(changes []codesignal.ProjectChange, modulePath string) []string {
+	normalized := make([]string, len(changes))
+	for i, change := range changes {
+		raw, err := json.Marshal(change)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		normalized[i] = strings.ReplaceAll(string(raw), modulePath, "<MODULE_PATH>")
+	}
+	return normalized
 }
 
 var _ = Describe("coach codesignal --project-config with the real Go project-language backend", func() {
@@ -423,6 +450,61 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			legacyText := string(legacyStdout)
 			Expect(legacyText).NotTo(ContainSubstring("Project findings:"))
 			Expect(legacyText).NotTo(ContainSubstring("Project coverage:"))
+		})
+	})
+
+	When("a dotless-module repository and an otherwise-identical dotted-module repository each trigger the same forbidden_imports layer violation", func() {
+		It("reports the same layer_violation finding in both, modulo the module path literal (issue #284)", func() {
+			dottedRepo := newTempGitRepo()
+			commitFile(dottedRepo, "go.mod", goModuleFile)
+			commitFile(dottedRepo, "pkg/db/db.go", dbPackageFile)
+			commitFile(dottedRepo, "pkg/handlers/handlers.go", handlersImportingDB)
+			commitFile(dottedRepo, "project.json", goLayerPolicyConfigJSON)
+
+			dotlessRepo := newTempGitRepo()
+			commitFile(dotlessRepo, "go.mod", goModuleFileDotless)
+			commitFile(dotlessRepo, "pkg/db/db.go", dbPackageFile)
+			commitFile(dotlessRepo, "pkg/handlers/handlers.go", handlersImportingDBDotlessModule)
+			commitFile(dotlessRepo, "project.json", goLayerPolicyConfigJSON)
+
+			dottedStdout, dottedStderr, dottedExit := runCoachCodesignalBaselineRaw(dottedRepo, "--project-config", "project.json", "--format=json")
+			Expect(dottedExit).To(Equal(0), "stderr: %s stdout: %s", dottedStderr, dottedStdout)
+			Expect(dottedStderr).To(BeEmpty())
+			dottedReport := decodeCoachReport(dottedStdout)
+
+			dotlessStdout, dotlessStderr, dotlessExit := runCoachCodesignalBaselineRaw(dotlessRepo, "--project-config", "project.json", "--format=json")
+			Expect(dotlessExit).To(Equal(0), "stderr: %s stdout: %s", dotlessStderr, dotlessStdout)
+			Expect(dotlessStderr).To(BeEmpty())
+			dotlessReport := decodeCoachReport(dotlessStdout)
+
+			// AC-2: the dotless module must still resolve its own import as
+			// internal and trigger the rule, with the same rule id, path, and
+			// line as the dotted module -- before T1's classifyGoImport fix
+			// this was silently zero findings with coverage.complete: true.
+			Expect(dottedReport.ProjectChanges).To(HaveLen(1), "sanity: the dotted-module fixture must itself trigger exactly one violation")
+			dottedChange := dottedReport.ProjectChanges[0]
+
+			Expect(dotlessReport.ProjectChanges).To(HaveLen(1), "a dotless workspace module must classify its own import as internal and report the forbidden_imports violation, not silently zero findings")
+			dotlessChange := dotlessReport.ProjectChanges[0]
+
+			Expect(dotlessChange.RuleID).NotTo(BeEmpty())
+			Expect(dotlessChange.PrimaryAnchor.Path).NotTo(BeEmpty())
+			Expect(dotlessChange.Evidence).NotTo(BeEmpty())
+			Expect(dotlessChange.RuleID).To(Equal(dottedChange.RuleID))
+			Expect(dotlessChange.PrimaryAnchor.Path).To(Equal(dottedChange.PrimaryAnchor.Path))
+			Expect(dotlessChange.PrimaryAnchor.Location.StartRow).To(Equal(dottedChange.PrimaryAnchor.Location.StartRow))
+			Expect(dotlessChange.Evidence).To(Equal(dottedChange.Evidence))
+
+			Expect(dotlessReport.ProjectCoverage).NotTo(BeNil())
+			Expect(dotlessReport.ProjectCoverage.Complete).To(BeTrue(), "the fix must not trade a false stdlib classification for a false coverage gap")
+
+			// AC-3: normalize each side's ProjectChanges against its own
+			// module path literal, then require exact, ordered equality of
+			// everything else -- rule id, kind, severity, count, and ordering
+			// included, not merely "a finding exists on both sides".
+			dottedNormalized := normalizeProjectChangesModulePath(dottedReport.ProjectChanges, "example.com/app")
+			dotlessNormalized := normalizeProjectChangesModulePath(dotlessReport.ProjectChanges, "app")
+			Expect(dotlessNormalized).To(Equal(dottedNormalized), "dotless and dotted module project findings must be identical apart from the module path literal")
 		})
 	})
 })
