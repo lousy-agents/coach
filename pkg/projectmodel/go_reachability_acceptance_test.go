@@ -168,6 +168,43 @@ var _ = Describe("BuildGoReachability", func() {
 		}, SpecTimeout(20*time.Second))
 	})
 
+	When("a source's only call route to a pinned sink passes through a synthetic bound-method-value wrapper whose real target is local to the snapshot", func() {
+		It("reports no ReachabilityFact for the pair and marks Coverage.Complete false with the call graph's synthetic-wrapper diagnostic, instead of silently dead-ending", func() {
+			snapshot := os.DirFS("testdata/go_reachability_bound_method")
+			result, err := projectmodel.BuildGoReachability(context.Background(), snapshot, projectmodel.ReachabilityOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Facts).To(BeEmpty(),
+				"a call route that dead-ends at a local-targeted synthetic wrapper must not silently synthesize a path through it")
+			Expect(result.Coverage.Complete).To(BeFalse(),
+				"the underlying call graph's synthetic-wrapper dead end must propagate as reachability incompleteness, not report a silently 'complete' no-path result")
+			Expect(hasReachabilityDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagCallUnresolvedSyntheticWrapper)).To(BeTrue(),
+				"expected the call graph's project_call_unresolved_synthetic_wrapper diagnostic to surface on ReachabilityResult.Coverage, got %+v", result.Coverage.Diagnostics)
+			Expect(result.Coverage.Counts["source_sink_pairs_evaluated"]).To(Equal(0),
+				"a pair searched against an incompletely built call graph must not count as conclusively evaluated")
+			Expect(result.Coverage.Counts["source_sink_pairs_truncated"]).To(BeNumerically(">", 0))
+			Expect(result.Coverage.Counts["underlying_unresolved_call_sites"]).To(Equal(1),
+				"the call graph's unresolved_synthetic_wrapper count must propagate into ReachabilityResult's unresolved-ratio input, not be dropped to zero")
+			Expect(hasReachabilityDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagReachabilityBudgetExceeded)).To(BeFalse(),
+				"no budget was ever exceeded in this run (search_nodes and wall_time_ms are both unbounded); a call-graph dead end must not also report a false budget-exceeded diagnostic")
+		})
+	})
+
+	When("a snapshot contains a resolvable source-to-sink route alongside an unrelated local generic function call", func() {
+		It("still produces the resolvable ReachabilityFact instead of losing all facts under a false Coverage.Complete=false", func() {
+			snapshot := os.DirFS("testdata/go_reachability_generic_call")
+			result, err := projectmodel.BuildGoReachability(context.Background(), snapshot, projectmodel.ReachabilityOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Facts).To(HaveLen(1),
+				"expected the resolvable source-to-sink route to survive an unrelated local generic call, got %+v", result.Facts)
+			Expect(result.Coverage.Complete).To(BeTrue(),
+				"an unrelated local generic function call must not flip reachability Coverage.Complete false for the whole snapshot")
+			Expect(result.Coverage.Counts["source_sink_pairs_evaluated"]).To(BeNumerically(">", 0),
+				"a false call-graph incompleteness must not zero out source_sink_pairs_evaluated")
+		})
+	})
+
 	When("the underlying call-graph build itself is truncated by a graph-node budget", func() {
 		It("treats every pair as unevaluated rather than reporting a truncated call graph as a fully searched one", func() {
 			snapshot := os.DirFS("testdata/go_reachability_path")

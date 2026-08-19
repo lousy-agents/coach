@@ -53,7 +53,8 @@ type ReachabilityConfidence string
 // BuildGoReachability produces: every hop in Path is a direct, statically
 // resolved CallFact edge (BuildGoCallGraph never emits a CallFact for an
 // unresolved call site), so the whole path is provable, not a guess through
-// an interface/function-value/reflection/framework-registration boundary.
+// an interface, function-value, reflection, framework-registration, or
+// local-targeted synthetic-wrapper boundary.
 const ReachabilityConfidenceResolvedDirect ReachabilityConfidence = "resolved_direct"
 
 // ReachabilityStep is one node in a ReachabilityFact's Path, ordered from
@@ -170,38 +171,13 @@ func BuildGoReachability(ctx context.Context, snapshot fs.FS, opts ReachabilityO
 	// it reports a genuinely complete one.
 	callGraphIncomplete := !callGraph.Coverage.Complete
 
-	var facts []ReachabilityFact
-	evaluated, truncatedPairs, nodesVisited := 0, 0, 0
-	truncatedSearch := callGraphIncomplete
-
-	for _, source := range sources {
-		if ctx.Err() != nil {
-			truncatedSearch = true
-			break
-		}
-		parents, hitBudget := bfsShortestPaths(ctx, source, adjacency, opts.MaxSearchNodes, &nodesVisited)
-		if hitBudget {
-			truncatedSearch = true
-		}
-		sourceFacts, sourceEvaluated, sourceTruncated := reachabilityFactsForSource(source, sinks, parents, hitBudget || ctx.Err() != nil || callGraphIncomplete)
-		facts = append(facts, sourceFacts...)
-		evaluated += sourceEvaluated
-		truncatedPairs += sourceTruncated
-	}
-	if !truncatedSearch && ctx.Err() != nil {
-		truncatedSearch = true
-	}
+	search := searchReachabilityFacts(ctx, sources, sinks, adjacency, opts.MaxSearchNodes, callGraphIncomplete)
 
 	runtime.ReadMemStats(&memAfter)
 	memDelta := int64(memAfter.TotalAlloc) - int64(memBefore.TotalAlloc)
 	if memDelta < 0 {
 		memDelta = 0
 	}
-
-	unresolvedCallSites := callGraph.Coverage.Counts["unresolved_interface"] +
-		callGraph.Coverage.Counts["unresolved_function_value"] +
-		callGraph.Coverage.Counts["unresolved_reflection"] +
-		callGraph.Coverage.Counts["unresolved_framework_registration"]
 
 	diagnostics := append([]Diagnostic{}, callGraph.Coverage.Diagnostics...)
 	diagnostics = append(diagnostics, sourceDiagnostics...)
@@ -210,21 +186,21 @@ func BuildGoReachability(ctx context.Context, snapshot fs.FS, opts ReachabilityO
 	// DiagReachabilityBudgetExceeded for this same ctx/budget exhaustion
 	// (e.g. an already-cancelled ctx is observed at both call sites);
 	// otherwise the same event would be reported twice.
-	if truncatedSearch && !containsDiagnosticCode(diagnostics, DiagReachabilityBudgetExceeded) {
+	if search.truncatedSearch && !containsDiagnosticCode(diagnostics, DiagReachabilityBudgetExceeded) {
 		diagnostics = append(diagnostics, Diagnostic{Code: DiagReachabilityBudgetExceeded})
 	}
 
-	complete := callGraph.Coverage.Complete && sourcesComplete && !truncatedSearch
+	complete := callGraph.Coverage.Complete && sourcesComplete && !search.truncatedSearch
 
-	sort.Slice(facts, func(i, j int) bool {
-		if facts[i].Source != facts[j].Source {
-			return facts[i].Source < facts[j].Source
+	sort.Slice(search.facts, func(i, j int) bool {
+		if search.facts[i].Source != search.facts[j].Source {
+			return search.facts[i].Source < search.facts[j].Source
 		}
-		return facts[i].Sink < facts[j].Sink
+		return search.facts[i].Sink < search.facts[j].Sink
 	})
 
 	return ReachabilityResult{
-		Facts:     facts,
+		Facts:     search.facts,
 		Sources:   sources,
 		Algorithm: ReachabilityAlgorithm,
 		Coverage: canonicalCoverage(Coverage{
@@ -234,19 +210,58 @@ func BuildGoReachability(ctx context.Context, snapshot fs.FS, opts ReachabilityO
 				"sources_identified":               len(sources),
 				"sinks_pinned":                     len(sinks),
 				"source_sink_pairs_total":          len(sources) * len(sinks),
-				"source_sink_pairs_evaluated":      evaluated,
-				"source_sink_pairs_truncated":      truncatedPairs,
-				"reachable_pairs":                  len(facts),
+				"source_sink_pairs_evaluated":      search.evaluated,
+				"source_sink_pairs_truncated":      search.truncatedPairs,
+				"reachable_pairs":                  len(search.facts),
 				"underlying_call_sites_seen":       callGraph.Coverage.Counts["call_sites_seen"],
-				"underlying_unresolved_call_sites": unresolvedCallSites,
+				"underlying_unresolved_call_sites": unresolvedCallSiteCount(callGraph.Coverage.Counts),
 				"ssa_programs_built":               loaded.programsBuilt(),
 				"runtime_ms":                       int(time.Since(start) / time.Millisecond),
-				"memory_bytes":                     int(memDelta), // coarse process-wide TotalAlloc delta; see BuildGoReachability's doc comment.
+				"memory_bytes":                     int(memDelta),
 			},
 			Budgets:     effectiveReachabilityBudgets(opts),
 			Diagnostics: diagnostics,
 		}),
 	}, nil
+}
+
+// reachabilitySearch is the result of one source/sink path search.
+// truncatedSearch only reflects this search's own budget (MaxSearchNodes,
+// ctx wall-time/cancellation), not callGraphIncomplete: the underlying
+// call graph's own incompleteness diagnostic (e.g.
+// DiagCallUnresolvedSyntheticWrapper) already surfaces via
+// callGraph.Coverage.Diagnostics, and callGraphIncomplete already forces
+// every pair to skip as truncated at reachabilityFactsForSource's call
+// site. Folding it into truncatedSearch too would additionally claim a
+// project_reachability_budget_exceeded that never happened.
+type reachabilitySearch struct {
+	facts           []ReachabilityFact
+	evaluated       int
+	truncatedPairs  int
+	nodesVisited    int
+	truncatedSearch bool
+}
+
+func searchReachabilityFacts(ctx context.Context, sources, sinks []string, adjacency map[string][]string, maxSearchNodes int, callGraphIncomplete bool) reachabilitySearch {
+	var search reachabilitySearch
+	for _, source := range sources {
+		if ctx.Err() != nil {
+			search.truncatedSearch = true
+			break
+		}
+		parents, hitBudget := bfsShortestPaths(ctx, source, adjacency, maxSearchNodes, &search.nodesVisited)
+		if hitBudget {
+			search.truncatedSearch = true
+		}
+		sourceFacts, sourceEvaluated, sourceTruncated := reachabilityFactsForSource(source, sinks, parents, hitBudget || ctx.Err() != nil || callGraphIncomplete)
+		search.facts = append(search.facts, sourceFacts...)
+		search.evaluated += sourceEvaluated
+		search.truncatedPairs += sourceTruncated
+	}
+	if !search.truncatedSearch && ctx.Err() != nil {
+		search.truncatedSearch = true
+	}
+	return search
 }
 
 // reachabilityFactsForSource evaluates source against every sink using
