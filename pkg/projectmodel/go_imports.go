@@ -357,17 +357,13 @@ func shouldSkipModuleWalkDir(p, moduleDir string, moduleDirs map[string]bool) bo
 // "internal" edges, the raw import path for every other kind.
 //
 // Classification order is deliberate: internal (workspace-local) module-path
-// matching is checked before the stdlib heuristic, since a genuine stdlib
-// package name can never collide with a module path actually declared in
-// the workspace -- that module wouldn't build otherwise. Checking stdlib
-// first would misclassify every import from a module whose path has no dot
-// (e.g. "module myapp" from a bare `go mod init myapp`) as stdlib, because
-// isStdlibImport's heuristic can't distinguish "no dot because it's stdlib"
-// from "no dot because the workspace's own module path has none". For
-// anything that resolves to neither, replace takes priority over exclude,
-// which takes priority over require, since a module path can legally appear
-// in more than one of those lists at once (e.g. required and then
-// excluded).
+// matching is checked before the stdlib heuristic, because isStdlibImport is
+// a dot-only heuristic that can't distinguish a stdlib name from a dotless
+// workspace module path (e.g. "module myapp" from `go mod init myapp`). A
+// module path that shadows a stdlib name (e.g. `go mod init fmt`) is an
+// accepted, vanishingly rare trade-off. Beyond that, replace outranks
+// exclude, which outranks require, since a module path can legally appear in
+// more than one of those lists (e.g. required and then excluded).
 func classifyGoImport(importPath string, owner *modfile.File, allModules map[string]*modfile.File, packageDirs map[string][]string) (kind, to string) {
 	// Iterate module directories in sorted order (never Go's randomized map
 	// order) and keep the longest matching module path so results are

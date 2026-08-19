@@ -234,10 +234,10 @@ var _ = Describe("BuildGoModel", func() {
 			model, err := projectmodel.BuildGoModel(snapshot, testMeta(), projectmodel.GoBuildOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			internal, ok := edgeByTo(model.ImportEdges, "package:moduleb/greet")
-			Expect(ok).To(BeTrue(), "expected an edge resolving to package:moduleb/greet, got %+v", model.ImportEdges)
+			internal, ok := edgeByTo(model.ImportEdges, "package:moduleb/sub")
+			Expect(ok).To(BeTrue(), "expected an edge resolving to package:moduleb/sub, got %+v", model.ImportEdges)
 			Expect(internal.Kind).To(Equal("internal"),
-				"a dotless module path (\"moduleab\") must not be misclassified as stdlib merely because its first path segment has no dot")
+				"a dotless module path (\"moduleab/greet\") must not be misclassified as stdlib merely because its first path segment has no dot")
 
 			stdlib, ok := edgeByTo(model.ImportEdges, "fmt")
 			Expect(ok).To(BeTrue())
@@ -261,22 +261,43 @@ var _ = Describe("BuildGoModel", func() {
 			Expect(unresolved.Kind).To(Equal("unresolved"))
 		})
 
-		It("resolves an import to the longest matching dotless module path even when a shorter module path is a string prefix of it", func() {
+		It("matches a dotless module path only at a slash boundary, not merely as a literal string prefix", func() {
 			snapshot := os.DirFS("testdata/go_dotless_module")
 			model, err := projectmodel.BuildGoModel(snapshot, testMeta(), projectmodel.GoBuildOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
 			// "modulea" (7 chars) is a literal string prefix of "moduleab" (8
 			// chars), both dotless and both declared in this workspace. The
-			// import path "moduleab/greet" must resolve only against the
-			// longer, actually-matching module path "moduleab" -- the same
-			// sorted-iteration/longest-match mechanism classifyGoImport
-			// already uses for dotted module paths, not a dotless special
-			// case.
-			edge, ok := edgeByTo(model.ImportEdges, "package:moduleb/greet")
+			// import path "moduleab/greet" must never resolve against
+			// "modulea" -- matchesModulePrefix requires a slash boundary
+			// ("modulea/"), which "moduleab/greet" does not have.
+			edge, ok := edgeByTo(model.ImportEdges, "package:moduleb/sub")
 			Expect(ok).To(BeTrue())
 			Expect(edge.Kind).To(Equal("internal"))
 			Expect(edge.From).To(Equal("package:modulea/pkg"))
+		})
+
+		It("resolves an import to the longest matching module path when more than one declared module genuinely matches", func() {
+			snapshot := os.DirFS("testdata/go_dotless_module")
+			model, err := projectmodel.BuildGoModel(snapshot, testMeta(), projectmodel.GoBuildOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Both "moduleab" (8 chars, package dir moduleb/greet) and
+			// "moduleab/greet" (14 chars, package dir moduleb/sub) are
+			// declared module paths that genuinely match the import path
+			// "moduleab/greet" -- the first by exact equality, the second by
+			// a slash-bounded prefix. Both candidate package directories
+			// exist, so only the len(modPath) tiebreak in classifyGoImport
+			// decides between them; the slash-boundary test above alone
+			// would still pass with a broken (e.g. inverted) tiebreak, since
+			// it only rules out "modulea".
+			edge, ok := edgeByTo(model.ImportEdges, "package:moduleb/sub")
+			Expect(ok).To(BeTrue(), "expected the import to resolve against the longer module path \"moduleab/greet\", got %+v", model.ImportEdges)
+			Expect(edge.Kind).To(Equal("internal"))
+
+			_, shorterMatched := edgeByTo(model.ImportEdges, "package:moduleb/greet")
+			Expect(shorterMatched).To(BeFalse(),
+				"the shorter module path \"moduleab\" must lose the longest-match tiebreak to \"moduleab/greet\", not also resolve the import")
 		})
 	})
 
