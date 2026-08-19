@@ -269,8 +269,8 @@ var _ = Describe("BuildGoModel", func() {
 			// Both "moduleab" (8 chars, package dir moduleb/greet) and
 			// "moduleab/greet" (14 chars, package dir moduleb/sub) are
 			// declared module paths that genuinely match the import path
-			// "moduleab/greet" -- the first by exact equality, the second by
-			// a slash-bounded prefix. Both candidate package directories
+			// "moduleab/greet" -- the first by a slash-bounded prefix, the
+			// second by exact equality. Both candidate package directories
 			// exist, so only the len(modPath) tiebreak in classifyGoImport
 			// decides between them.
 			edge, ok := edgeByTo(model.ImportEdges, "package:moduleb/sub")
