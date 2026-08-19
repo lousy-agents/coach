@@ -228,6 +228,58 @@ var _ = Describe("BuildGoModel", func() {
 		})
 	})
 
+	When("a workspace's modules declare dotless module paths (e.g. from `go mod init myapp`)", func() {
+		It("classifies a same-module import as internal, not stdlib, alongside every other import kind", func() {
+			snapshot := os.DirFS("testdata/go_dotless_module")
+			model, err := projectmodel.BuildGoModel(snapshot, testMeta(), projectmodel.GoBuildOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			internal, ok := edgeByTo(model.ImportEdges, "package:moduleb/greet")
+			Expect(ok).To(BeTrue(), "expected an edge resolving to package:moduleb/greet, got %+v", model.ImportEdges)
+			Expect(internal.Kind).To(Equal("internal"),
+				"a dotless module path (\"moduleab\") must not be misclassified as stdlib merely because its first path segment has no dot")
+
+			stdlib, ok := edgeByTo(model.ImportEdges, "fmt")
+			Expect(ok).To(BeTrue())
+			Expect(stdlib.Kind).To(Equal("stdlib"),
+				"a genuine stdlib import matching no declared module path must still classify as stdlib")
+
+			excluded, ok := edgeByTo(model.ImportEdges, "github.com/excluded/pkg")
+			Expect(ok).To(BeTrue())
+			Expect(excluded.Kind).To(Equal("excluded"))
+
+			external, ok := edgeByTo(model.ImportEdges, "github.com/external/pkg")
+			Expect(ok).To(BeTrue())
+			Expect(external.Kind).To(Equal("external"))
+
+			replaced, ok := edgeByTo(model.ImportEdges, "github.com/replaced/pkg")
+			Expect(ok).To(BeTrue())
+			Expect(replaced.Kind).To(Equal("replaced"))
+
+			unresolved, ok := edgeByTo(model.ImportEdges, "github.com/unresolved/pkg")
+			Expect(ok).To(BeTrue())
+			Expect(unresolved.Kind).To(Equal("unresolved"))
+		})
+
+		It("resolves an import to the longest matching dotless module path even when a shorter module path is a string prefix of it", func() {
+			snapshot := os.DirFS("testdata/go_dotless_module")
+			model, err := projectmodel.BuildGoModel(snapshot, testMeta(), projectmodel.GoBuildOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			// "modulea" (7 chars) is a literal string prefix of "moduleab" (8
+			// chars), both dotless and both declared in this workspace. The
+			// import path "moduleab/greet" must resolve only against the
+			// longer, actually-matching module path "moduleab" -- the same
+			// sorted-iteration/longest-match mechanism classifyGoImport
+			// already uses for dotted module paths, not a dotless special
+			// case.
+			edge, ok := edgeByTo(model.ImportEdges, "package:moduleb/greet")
+			Expect(ok).To(BeTrue())
+			Expect(edge.Kind).To(Equal("internal"))
+			Expect(edge.From).To(Equal("package:modulea/pkg"))
+		})
+	})
+
 	When("two modules declare the same module path and an import could resolve to either", func() {
 		It("always resolves the import to the same, sorted-first module across repeated builds", func() {
 			snapshot := os.DirFS("testdata/go_duplicate_module_path")
