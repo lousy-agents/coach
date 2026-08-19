@@ -1,7 +1,8 @@
 package greet
 
-// Hello is a workspace-internal export imported by modulea/pkg, used to
-// exercise the "internal" ImportEdge.Kind classification for a module whose
-// declared path ("moduleab") is dotless and is a longer string that starts
-// with another dotless module's full path ("modulea").
+// Hello only exists so this directory has a Go file and therefore appears in
+// packageDirs: it is the package directory moduleb's declared path
+// ("moduleab") maps an import of "moduleab/greet" to, making "moduleab" a
+// genuine candidate that the longest-match tiebreak in classifyGoImport must
+// reject in favor of moduleb/sub's declared path ("moduleab/greet").
 var Hello = "hello"

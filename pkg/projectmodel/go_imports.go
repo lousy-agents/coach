@@ -431,8 +431,9 @@ func matchesModulePrefix(importPath, modPath string) bool {
 // isStdlibImport reports whether importPath looks like a standard-library
 // import: its first path segment has no dot. This is the same heuristic
 // goimports and similar tools use to separate stdlib from third-party
-// imports, and holds for every module path convention in use (domains
-// always contain a dot).
+// imports. It cannot distinguish a stdlib name from a dotless module path
+// (`go mod init myapp`), so callers must match workspace module paths first
+// — see classifyGoImport.
 func isStdlibImport(importPath string) bool {
 	first := importPath
 	if idx := strings.Index(importPath, "/"); idx >= 0 {
