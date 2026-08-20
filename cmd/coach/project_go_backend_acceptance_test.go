@@ -65,6 +65,14 @@ const handlersImportingUnresolved = "package handlers\n\nimport \"example.com/ap
 // location lands in RelatedLocations rather than PrimaryAnchor.
 const handlersOtherImportingDB = "package handlers\n\n// second site\n// note\nimport \"example.com/app/pkg/db\"\n\nfunc UseOther() string {\n\treturn db.Name\n}\n"
 
+// modelFileWithTwoConstructors mirrors issue #259's own repro: two
+// constructor-like functions in one file reach structure.constructor_density's
+// per-file density gate (densityGateThreshold == 2 in registry.go), which
+// emits a "low" severity structure.constructor_density Signal. Combined with
+// handlersImportingDB (an "advisory" severity architecture.layer_violation)
+// in the same lifecycle group, this reproduces issue #259's sort-order bug.
+const modelFileWithTwoConstructors = "package model\n\ntype A struct{}\n\ntype B struct{}\n\nfunc NewA() *A {\n\treturn &A{}\n}\n\nfunc NewB() *B {\n\treturn &B{}\n}\n"
+
 func decodeCoachReport(stdout []byte) *codesignal.Report {
 	var report codesignal.Report
 	ExpectWithOffset(1, json.Unmarshal(stdout, &report)).To(Succeed(), "stdout should be one JSON report: %s", stdout)
@@ -450,6 +458,126 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			legacyText := string(legacyStdout)
 			Expect(legacyText).NotTo(ContainSubstring("Project findings:"))
 			Expect(legacyText).NotTo(ContainSubstring("Project coverage:"))
+		})
+	})
+
+	// A user-declared, confidence:high architecture.layer_violation/layer_bypass
+	// finding must outrank a heuristic low-severity structural finding in
+	// signals[] order (issue #259).
+	When("a baseline scan produces both an architecture layer-violation finding and a low-severity structural finding in the same lifecycle group", func() {
+		It("orders the architecture finding ahead of the low-severity structural finding in signals[]", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "go.mod", goModuleFile)
+			commitFile(repo, "pkg/db/db.go", dbPackageFile)
+			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
+			// Build appends file-local structural signals before project
+			// signals (see codesignal.go's Build: processFileChanges runs
+			// before buildProjectReportSurface's projectSignals are appended),
+			// so the structural finding naturally lands first in the
+			// pre-sort signals slice. sortSignals uses sort.SliceStable, so if
+			// the comparator (not incidental input order) were not what
+			// distinguished the two, this test would pass for the wrong
+			// reason; the two rules' distinct severities are what must decide
+			// the order here.
+			commitFile(repo, "pkg/model/model.go", modelFileWithTwoConstructors)
+			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			Expect(stderr).To(BeEmpty())
+
+			report := decodeCoachReport(stdout)
+
+			architectureIndex := -1
+			structuralIndex := -1
+			for i, sig := range report.Signals {
+				switch sig.RuleID {
+				case "architecture.layer_violation", "architecture.layer_bypass":
+					if architectureIndex == -1 {
+						architectureIndex = i
+					}
+				case "structure.constructor_density":
+					if structuralIndex == -1 {
+						structuralIndex = i
+					}
+				}
+			}
+
+			Expect(architectureIndex).To(BeNumerically(">=", 0), "expected an architecture.layer_violation or architecture.layer_bypass signal in signals[]: %s", stdout)
+			Expect(structuralIndex).To(BeNumerically(">=", 0), "expected a structure.constructor_density signal in signals[]: %s", stdout)
+
+			Expect(report.Signals[architectureIndex].Severity).To(Equal(codesignal.Severity("advisory")))
+			Expect(report.Signals[architectureIndex].Confidence).To(Equal(codesignal.Confidence("high")))
+			Expect(report.Signals[structuralIndex].Severity).To(Equal(codesignal.Severity("low")))
+			Expect(report.Signals[architectureIndex].Lifecycle).To(Equal(report.Signals[structuralIndex].Lifecycle), "both findings must belong to the same lifecycle group for this to test the severity comparator rather than group ordering")
+
+			Expect(architectureIndex).To(BeNumerically("<", structuralIndex), "an advisory-severity, high-confidence architecture finding must outrank a low-severity structural finding in signals[] order (issue #259)")
+		})
+	})
+
+	When("--baseline is run without --project-config against a revision that also carries an unreferenced project.json, a layer-violation import, and a low-severity structural finding", func() {
+		It("produces a report identical to an equivalent revision with no project.json at all, since no advisory signal can ever be produced without --project-config", func() {
+			repoWithConfigFile := newTempGitRepo()
+			commitFile(repoWithConfigFile, "go.mod", goModuleFile)
+			commitFile(repoWithConfigFile, "pkg/db/db.go", dbPackageFile)
+			commitFile(repoWithConfigFile, "pkg/handlers/handlers.go", handlersImportingDB)
+			commitFile(repoWithConfigFile, "pkg/model/model.go", modelFileWithTwoConstructors)
+			commitFile(repoWithConfigFile, "project.json", goLayerPolicyConfigJSON)
+
+			stdoutWithConfigFile, stderrWithConfigFile, exitWithConfigFile := runCoachCodesignalBaselineRaw(repoWithConfigFile, "--format=json")
+			Expect(exitWithConfigFile).To(Equal(0), "stderr: %s", stderrWithConfigFile)
+			Expect(stderrWithConfigFile).To(BeEmpty())
+			reportWithConfigFile := decodeCoachReport(stdoutWithConfigFile)
+
+			repoWithoutConfigFile := newTempGitRepo()
+			commitFile(repoWithoutConfigFile, "go.mod", goModuleFile)
+			commitFile(repoWithoutConfigFile, "pkg/db/db.go", dbPackageFile)
+			commitFile(repoWithoutConfigFile, "pkg/handlers/handlers.go", handlersImportingDB)
+			commitFile(repoWithoutConfigFile, "pkg/model/model.go", modelFileWithTwoConstructors)
+
+			stdoutWithoutConfigFile, stderrWithoutConfigFile, exitWithoutConfigFile := runCoachCodesignalBaselineRaw(repoWithoutConfigFile, "--format=json")
+			Expect(exitWithoutConfigFile).To(Equal(0), "stderr: %s", stderrWithoutConfigFile)
+			Expect(stderrWithoutConfigFile).To(BeEmpty())
+			reportWithoutConfigFile := decodeCoachReport(stdoutWithoutConfigFile)
+
+			// Revision is the tree's own commit SHA, and TrackedFilesDiscovered/
+			// Unsupported legitimately differ by exactly the one extra tracked
+			// (but never referenced) project.json file -- neither is what AC-4
+			// guards. Normalizing them isolates the property under test: with
+			// --project-config never supplied, project.json's mere presence in
+			// the tree must have zero effect on schema_version, signals[], or
+			// any project_* field.
+			reportWithConfigFile.Scope.Revision = reportWithoutConfigFile.Scope.Revision
+			reportWithConfigFile.Coverage.TrackedFilesDiscovered = reportWithoutConfigFile.Coverage.TrackedFilesDiscovered
+			reportWithConfigFile.Coverage.Unsupported = reportWithoutConfigFile.Coverage.Unsupported
+
+			Expect(reportWithConfigFile).To(Equal(reportWithoutConfigFile), "an unreferenced project.json in the tree must not change the report when --project-config is not supplied")
+
+			// Frozen expectation on the no-config-file report itself: pins the
+			// property this It exists to guard (no advisory signal without
+			// --project-config) and today's exact signals[] sequence, so a
+			// future severityRank/comparator change that perturbs
+			// non-advisory ordering fails here
+			// even though it would perturb both reports above identically.
+			for _, sig := range reportWithoutConfigFile.Signals {
+				Expect(sig.Severity).NotTo(Equal(codesignal.Severity("advisory")), "no advisory signal can ever be produced without --project-config: %+v", sig)
+			}
+
+			type ruleIDPathSeverity struct {
+				RuleID   string
+				Path     string
+				Severity codesignal.Severity
+			}
+			gotSequence := make([]ruleIDPathSeverity, 0, len(reportWithoutConfigFile.Signals))
+			for _, sig := range reportWithoutConfigFile.Signals {
+				gotSequence = append(gotSequence, ruleIDPathSeverity{RuleID: sig.RuleID, Path: sig.Path, Severity: sig.Severity})
+			}
+			Expect(gotSequence).To(Equal([]ruleIDPathSeverity{
+				{RuleID: "structure.constructor_density", Path: "pkg/model/model.go", Severity: codesignal.Severity("low")},
+				{RuleID: "structure.pointer_return_density", Path: "pkg/model/model.go", Severity: codesignal.Severity("low")},
+				{RuleID: "structure.constructor_density", Path: "pkg/model/model.go", Severity: codesignal.Severity("low")},
+				{RuleID: "structure.pointer_return_density", Path: "pkg/model/model.go", Severity: codesignal.Severity("low")},
+			}), "the no-config-file signals[] sequence must stay this literal shape: one constructor_density/pointer_return_density pair per constructor (NewA, NewB) in modelFileWithTwoConstructors")
 		})
 	})
 
