@@ -356,17 +356,15 @@ func shouldSkipModuleWalkDir(p, moduleDir string, moduleDirs map[string]bool) bo
 // ImportEdge.To value that goes with that kind: a "package:" fact ID for
 // "internal" edges, the raw import path for every other kind.
 //
-// Classification order is deliberate: stdlib and internal (workspace-local)
-// imports are recognized first since they never appear in a go.mod's
-// require/replace/exclude lists; then, for anything else, replace takes
-// priority over exclude, which takes priority over require, since a module
-// path can legally appear in more than one of those lists at once (e.g.
-// required and then excluded).
+// Classification order is deliberate: internal (workspace-local) module-path
+// matching is checked before the stdlib heuristic, because isStdlibImport is
+// a dot-only heuristic that can't distinguish a stdlib name from a dotless
+// workspace module path (e.g. "module myapp" from `go mod init myapp`). A
+// module path that shadows a stdlib name (e.g. `go mod init fmt`) is an
+// accepted, vanishingly rare trade-off. Beyond that, replace outranks
+// exclude, which outranks require, since a module path can legally appear in
+// more than one of those lists (e.g. required and then excluded).
 func classifyGoImport(importPath string, owner *modfile.File, allModules map[string]*modfile.File, packageDirs map[string][]string) (kind, to string) {
-	if isStdlibImport(importPath) {
-		return "stdlib", importPath
-	}
-
 	// Iterate module directories in sorted order (never Go's randomized map
 	// order) and keep the longest matching module path so results are
 	// deterministic and reproducible across processes: two modules can
@@ -401,6 +399,10 @@ func classifyGoImport(importPath string, owner *modfile.File, allModules map[str
 		return "internal", "package:" + bestPkgDir
 	}
 
+	if isStdlibImport(importPath) {
+		return "stdlib", importPath
+	}
+
 	if owner != nil {
 		for _, r := range owner.Replace {
 			if matchesModulePrefix(importPath, r.Old.Path) {
@@ -429,8 +431,9 @@ func matchesModulePrefix(importPath, modPath string) bool {
 // isStdlibImport reports whether importPath looks like a standard-library
 // import: its first path segment has no dot. This is the same heuristic
 // goimports and similar tools use to separate stdlib from third-party
-// imports, and holds for every module path convention in use (domains
-// always contain a dot).
+// imports. It cannot distinguish a stdlib name from a dotless module path
+// (`go mod init myapp`), so callers must match workspace module paths first
+// — see classifyGoImport.
 func isStdlibImport(importPath string) bool {
 	first := importPath
 	if idx := strings.Index(importPath, "/"); idx >= 0 {
