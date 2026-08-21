@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -221,7 +222,9 @@ func acceptanceTempGitRepo() string {
 }
 
 func acceptanceCommitFile(dir, name, contents string) string {
-	Expect(os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o644)).To(Succeed())
+	target := filepath.Join(dir, name)
+	Expect(os.MkdirAll(filepath.Dir(target), 0o755)).To(Succeed())
+	Expect(os.WriteFile(target, []byte(contents), 0o644)).To(Succeed())
 	addCmd := exec.Command("git", "add", name)
 	addCmd.Dir = dir
 	output, err := addCmd.CombinedOutput()
@@ -598,6 +601,30 @@ var _ = Describe("project-config boundary budgets", func() {
 		Expect(err.Error()).To(ContainSubstring("timed out"))
 	})
 
+	It("accepts a required_layer that names a declared layer", func() {
+		doc := []byte(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"required_layer":"db"}`)
+		Expect(validateProjectConfigJSON(doc)).To(Succeed(), "a required_layer naming a declared layer must be a valid config")
+	})
+
+	It("treats an empty required_layer the same as omitting the field entirely", func() {
+		withEmpty := []byte(`{"schema_version":"1","roots":["."],"required_layer":""}`)
+		withoutField := []byte(`{"schema_version":"1","roots":["."]}`)
+		Expect(validateProjectConfigJSON(withEmpty)).To(Succeed(), "an empty required_layer must not be treated as naming a (nonexistent) layer")
+		Expect(validateProjectConfigJSON(withoutField)).To(Succeed())
+	})
+
+	// A required_layer is an explicit user claim that a declared layer exists,
+	// mirroring the forbidden_imports precedent above (#211): a typo'd name
+	// that matches no declared layer must never validate cleanly and become a
+	// permanent no-op for the downstream backend wiring.
+	It("rejects a required_layer that references an undeclared layer name", func() {
+		doc := []byte(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]}],"required_layer":"database"}`)
+		err := validateProjectConfigJSON(doc)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("undefined layer"))
+		Expect(err.Error()).To(ContainSubstring("database"))
+	})
+
 	It("rejects oversized git stdout without buffering unbounded output", func() {
 		originalGit := gitCommandContext
 		DeferCleanup(func() {
@@ -641,5 +668,263 @@ sys.stdout.flush()
 		Expect(err).NotTo(HaveOccurred(), "concurrent pipe drain must succeed without waiting for the wall-time budget; elapsed=%s", elapsed)
 		Expect(elapsed).To(BeNumerically("<", 1500*time.Millisecond), "sequential pipe reads hang until timeout; elapsed=%s", elapsed)
 		Expect(string(data)).To(Equal("ok"))
+	})
+})
+
+var _ = Describe("source_sink_pack config field disposition", func() {
+	It("never changes which findings the real Go backend produces or their content, but does change config_digest/id/fingerprint, and README documents both halves", func() {
+		dir := acceptanceTempGitRepo()
+		acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
+		acceptanceCommitFile(dir, "pkg/db/db.go", "package db\n\nvar Name = \"db\"\n")
+		sha := acceptanceCommitFile(dir, "pkg/handlers/handlers.go", "package handlers\n\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n")
+		files := []SelectedFile{
+			{Path: "pkg/db/db.go", Language: "go", Status: "added"},
+			{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"},
+		}
+
+		// handlers -> db is a real forbidden_imports violation (mirrors
+		// cmd/coach's goLayerPolicyConfigJSON fixture), so this run produces
+		// at least one ProjectChange -- unlike an empty-result fixture, that
+		// makes the comparison below capable of catching source_sink_pack
+		// actually being wired to select a different sink pack.
+		withoutField := json.RawMessage(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}]}`)
+		withPack := json.RawMessage(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}],"source_sink_pack":"builtin-v1"}`)
+		Expect(validateProjectConfigJSON(withoutField)).To(Succeed())
+		Expect(validateProjectConfigJSON(withPack)).To(Succeed())
+
+		buildReport := func(cfg json.RawMessage) *codesignal.Report {
+			project := &ProjectAnalysis{
+				ConfigPath:   "project.json",
+				Language:     "go",
+				Config:       cfg,
+				ConfigDigest: ConfigDigest(cfg),
+				Backend:      NewGoProjectBackend(),
+			}
+			report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 2}, project)
+			Expect(err).NotTo(HaveOccurred())
+			return report
+		}
+
+		withoutReport := buildReport(withoutField)
+		withReport := buildReport(withPack)
+
+		Expect(withoutReport.ProjectChanges).NotTo(BeEmpty(), "fixture must produce at least one real project finding, or this comparison cannot catch source_sink_pack being wired to change evaluation")
+		Expect(withReport.ProjectChanges).To(HaveLen(len(withoutReport.ProjectChanges)))
+
+		for i := range withoutReport.ProjectChanges {
+			without := withoutReport.ProjectChanges[i]
+			with := withReport.ProjectChanges[i]
+
+			Expect(with.SemanticKey).To(Equal(without.SemanticKey))
+			Expect(with.RuleID).To(Equal(without.RuleID))
+			Expect(with.Kind).To(Equal(without.Kind))
+			Expect(with.Severity).To(Equal(without.Severity))
+			Expect(with.Confidence).To(Equal(without.Confidence))
+			Expect(with.Lifecycle).To(Equal(without.Lifecycle))
+			Expect(with.Evidence).To(Equal(without.Evidence))
+			Expect(with.PrimaryAnchor).To(Equal(without.PrimaryAnchor))
+			Expect(with.RelatedLocations).To(Equal(without.RelatedLocations))
+			Expect(with.PathSteps).To(Equal(without.PathSteps))
+			Expect(with.MachineEvidence).To(Equal(without.MachineEvidence))
+
+			// source_sink_pack is still part of the raw config bytes
+			// ConfigDigest hashes, and ConfigDigest feeds both
+			// ProjectChange.ID and ProjectChange.Fingerprint (see
+			// pkg/codesignal/project_fingerprint.go), so identity fields
+			// must genuinely differ even though evaluation content above
+			// does not.
+			Expect(with.ConfigDigest).NotTo(Equal(without.ConfigDigest))
+			Expect(with.ID).NotTo(Equal(without.ID))
+			Expect(with.Fingerprint).NotTo(Equal(without.Fingerprint))
+		}
+
+		Expect(withReport.ProjectSummary).To(Equal(withoutReport.ProjectSummary))
+		Expect(withReport.ProjectCoverage).To(Equal(withoutReport.ProjectCoverage))
+
+		withoutJSON, err := RenderJSON(withoutReport)
+		Expect(err).NotTo(HaveOccurred())
+		withJSON, err := RenderJSON(withReport)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(withJSON).NotTo(Equal(withoutJSON), "config_digest/id/fingerprint differ, so the full rendered JSON documents must differ too")
+
+		readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(readme)).To(ContainSubstring("`source_sink_pack`"), "README must document source_sink_pack")
+		Expect(string(readme)).To(ContainSubstring("reserved field"), "README must document source_sink_pack as reserved, not a live policy knob")
+		Expect(string(readme)).To(ContainSubstring("config_digest"), "README must disclose that source_sink_pack still affects config_digest/id/fingerprint")
+		Expect(string(readme)).NotTo(ContainSubstring("byte-identical `coach codesignal` output"), "README must not claim source_sink_pack produces byte-identical output -- config_digest/id/fingerprint genuinely differ")
+	})
+})
+
+// goLayerBypassSearchConfigJSON declares a handlers/service layer pair with
+// service as required_layer, matching goLayerBypassFakeWitness's
+// RequiredLayer/Source/Sink below.
+var goLayerBypassSearchConfigJSON = json.RawMessage(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"service","prefixes":["pkg/service"]}],"required_layer":"service"}`)
+
+// goLayerBypassFakeWitness is a minimal, validly anchored high-confidence
+// LayerBypassWitness: its Path has a step with a non-empty Path field, which
+// EvaluateGoLayerBypass requires to compute a PrimaryAnchor (see
+// pkg/codesignal/rule_layer_bypass.go) rather than dropping the witness as
+// anchorless.
+var goLayerBypassFakeWitness = projectmodel.LayerBypassWitness{
+	ID:            "witness-1",
+	Source:        "example.com/app/pkg/handlers.Handler",
+	Sink:          "(*database/sql.DB).Query",
+	RequiredLayer: "service",
+	Path: []projectmodel.LayerBypassStep{
+		{NodeID: "example.com/app/pkg/handlers.Handler", Path: "pkg/handlers/handlers.go", Line: 1},
+		{NodeID: "(*database/sql.DB).Query"},
+	},
+	Confidence:       projectmodel.LayerBypassConfidenceHigh,
+	AlgorithmVersion: "go-layer-bypass-registry@1",
+}
+
+func countDiagnosticsOfKind(diagnostics []codesignal.Diagnostic, kind string) int {
+	count := 0
+	for _, d := range diagnostics {
+		if d.Kind == kind {
+			count++
+		}
+	}
+	return count
+}
+
+var _ = Describe("Go layer-bypass search coverage folding into project lifecycle", func() {
+	var originalBuildGoLayerBypass func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error)
+
+	BeforeEach(func() {
+		originalBuildGoLayerBypass = buildGoLayerBypass
+		DeferCleanup(func() {
+			buildGoLayerBypass = originalBuildGoLayerBypass
+		})
+	})
+
+	It("degrades a found witness to lifecycle unknown and surfaces project_layer_bypass_coverage_incomplete when the search itself did not complete", func() {
+		buildGoLayerBypass = func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error) {
+			return projectmodel.LayerBypassResult{
+				Witnesses: []projectmodel.LayerBypassWitness{goLayerBypassFakeWitness},
+				Coverage:  projectmodel.Coverage{Phase: "layer_bypass_search", Complete: false},
+			}, nil
+		}
+
+		dir := acceptanceTempGitRepo()
+		acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
+		sha := acceptanceCommitFile(dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
+		files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
+
+		project := &ProjectAnalysis{
+			ConfigPath:   "project.json",
+			Language:     "go",
+			Config:       goLayerBypassSearchConfigJSON,
+			ConfigDigest: ConfigDigest(goLayerBypassSearchConfigJSON),
+			Backend:      NewGoProjectBackend(),
+		}
+		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(report.ProjectChanges).To(HaveLen(1), "the high-confidence witness must still surface as a ProjectChange even though the search was incomplete")
+		change := report.ProjectChanges[0]
+		Expect(change.RuleID).To(Equal("architecture.layer_bypass"))
+		Expect(string(change.Lifecycle)).To(Equal("unknown"), "an incomplete layer-bypass search must never let a witness claim a determinate lifecycle")
+		Expect(report.ProjectCoverage).NotTo(BeNil())
+		Expect(report.ProjectCoverage.Complete).To(BeFalse(), "combineProjectCoverage must fold the bypass search's own incomplete Coverage into the reported project coverage")
+
+		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_layer_bypass_coverage_incomplete")).To(Equal(1))
+		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_lifecycle_indeterminate")).To(Equal(1))
+	})
+
+	It("passes MaxSearchNodes as 0 (unbounded) deliberately, not goProjectBudgets.MaxGraphNodes", func() {
+		calls := 0
+		var capturedMaxSearchNodes int
+		buildGoLayerBypass = func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error) {
+			calls++
+			capturedMaxSearchNodes = opts.MaxSearchNodes
+			return projectmodel.LayerBypassResult{Coverage: projectmodel.Coverage{Phase: "layer_bypass_search", Complete: true}}, nil
+		}
+
+		dir := acceptanceTempGitRepo()
+		acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
+		sha := acceptanceCommitFile(dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
+		files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
+
+		project := &ProjectAnalysis{
+			ConfigPath:   "project.json",
+			Language:     "go",
+			Config:       goLayerBypassSearchConfigJSON,
+			ConfigDigest: ConfigDigest(goLayerBypassSearchConfigJSON),
+			Backend:      NewGoProjectBackend(),
+		}
+		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(calls).To(Equal(1), "the bypass seam must actually have been invoked, or the MaxSearchNodes assertion below is vacuous")
+		// Pinned at 0; see goLayerBypassMaxSearchNodes's doc comment in
+		// project_go_backend.go before making this finite.
+		Expect(capturedMaxSearchNodes).To(Equal(0))
+		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_layer_bypass_coverage_incomplete")).To(Equal(0))
+	})
+
+	It("degrades only the base-side coverage-incomplete diagnostic to base_-prefixed and still marks the report indeterminate when only the base revision's search is incomplete", func() {
+		callCount := 0
+		buildGoLayerBypass = func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error) {
+			callCount++
+			if callCount == 1 {
+				// First call is always the head revision (goProjectBackend.Analyze
+				// evaluates HeadRevision before BaseRevision).
+				return projectmodel.LayerBypassResult{
+					Witnesses: []projectmodel.LayerBypassWitness{goLayerBypassFakeWitness},
+					Coverage:  projectmodel.Coverage{Phase: "layer_bypass_search", Complete: true},
+				}, nil
+			}
+			return projectmodel.LayerBypassResult{Coverage: projectmodel.Coverage{Phase: "layer_bypass_search", Complete: false}}, nil
+		}
+
+		dir := acceptanceTempGitRepo()
+		baseSHA := acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
+		headSHA := acceptanceCommitFile(dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
+		files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
+
+		project := &ProjectAnalysis{
+			ConfigPath:   "project.json",
+			Language:     "go",
+			Config:       goLayerBypassSearchConfigJSON,
+			ConfigDigest: ConfigDigest(goLayerBypassSearchConfigJSON),
+			Backend:      NewGoProjectBackend(),
+		}
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(report.ProjectChanges).To(HaveLen(1))
+		Expect(string(report.ProjectChanges[0].Lifecycle)).To(Equal("unknown"), "the base revision's own incomplete search must degrade the whole report's lifecycle claims, including the head-side witness")
+
+		Expect(report.ProjectCoverage).NotTo(BeNil())
+		Expect(report.ProjectCoverage.Complete).To(BeTrue(), "sanity: the head-side search alone must have completed cleanly, or this spec would not be isolating the base-side failure it claims to")
+		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_layer_bypass_coverage_incomplete")).To(Equal(0), "the head-side search completed, so it must not also report incomplete coverage")
+		Expect(countDiagnosticsOfKind(report.Diagnostics, "base_project_layer_bypass_coverage_incomplete")).To(Equal(1))
+		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_lifecycle_indeterminate")).To(Equal(1))
+	})
+
+	It("keeps head- and base-side coverage-incomplete diagnostics distinct when both revisions' searches are incomplete", func() {
+		buildGoLayerBypass = func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error) {
+			return projectmodel.LayerBypassResult{Coverage: projectmodel.Coverage{Phase: "layer_bypass_search", Complete: false}}, nil
+		}
+
+		dir := acceptanceTempGitRepo()
+		baseSHA := acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
+		headSHA := acceptanceCommitFile(dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
+		files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
+
+		project := &ProjectAnalysis{
+			ConfigPath:   "project.json",
+			Language:     "go",
+			Config:       goLayerBypassSearchConfigJSON,
+			ConfigDigest: ConfigDigest(goLayerBypassSearchConfigJSON),
+			Backend:      NewGoProjectBackend(),
+		}
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_layer_bypass_coverage_incomplete")).To(Equal(1), "the head-side incompleteness must not be collapsed into or duplicated by the base-side one")
+		Expect(countDiagnosticsOfKind(report.Diagnostics, "base_project_layer_bypass_coverage_incomplete")).To(Equal(1))
 	})
 })
