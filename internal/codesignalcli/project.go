@@ -50,7 +50,27 @@ type projectConfig struct {
 	Roots            []string                 `json:"roots"`
 	Layers           []projectConfigLayer     `json:"layers,omitempty"`
 	ForbiddenImports []projectForbiddenImport `json:"forbidden_imports,omitempty"`
-	SourceSinkPack   string                   `json:"source_sink_pack,omitempty"`
+	// SourceSinkPack is accepted and schema-validated (must be "" or
+	// "builtin-v1"; see validateProjectConfigJSON) but is currently reserved:
+	// no ProjectBackend reads it, so setting it never changes which findings
+	// are produced or their content (severity, confidence, lifecycle,
+	// evidence, anchors, etc.). It is not fully inert, though: it is still
+	// part of the raw config bytes
+	// ConfigDigest hashes, so setting or clearing it changes a project
+	// analysis's config_digest and therefore every ProjectChange's
+	// ID/Fingerprint (see pkg/codesignal/project_fingerprint.go) --
+	// downstream consumers keyed on those IDs will see churn. The Go
+	// backend's source/sink set is pinned in code
+	// (pkg/projectmodel/go_reachability.go's ReachabilitySinkPatterns), not
+	// selected via this field.
+	SourceSinkPack string `json:"source_sink_pack,omitempty"`
+	// RequiredLayer names a declared layer (by projectConfigLayer.Name) that a
+	// downstream ProjectBackend must treat as a required intermediate layer
+	// for source-to-sink reachability policy. Empty means "not configured",
+	// equivalent to omitting the field; a non-empty value naming no declared
+	// layer is invalid (see validateProjectConfigJSON), matching the
+	// forbidden_imports undefined-layer precedent below.
+	RequiredLayer string `json:"required_layer,omitempty"`
 }
 
 type projectConfigLayer struct {
@@ -283,6 +303,11 @@ func validateProjectConfigJSON(data []byte) error {
 	}
 	if config.SourceSinkPack != "" && config.SourceSinkPack != "builtin-v1" {
 		return fmt.Errorf("source_sink_pack must be \"builtin-v1\" when supplied")
+	}
+	if config.RequiredLayer != "" {
+		if _, ok := seenLayerNames[config.RequiredLayer]; !ok {
+			return fmt.Errorf("required_layer references undefined layer %q", config.RequiredLayer)
+		}
 	}
 	return nil
 }

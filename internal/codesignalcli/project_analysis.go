@@ -44,12 +44,20 @@ type ProjectBackendRequest struct {
 
 // ProjectBackendResult is the builder-facing project observation bundle.
 type ProjectBackendResult struct {
-	HeadChanges  []codesignal.ProjectChange
-	BaseChanges  []codesignal.ProjectChange
-	Facts        []codesignal.ProjectFact
-	HeadCoverage *projectmodel.Coverage
-	BaseCoverage *projectmodel.Coverage
-	BaseAnalyzed bool
+	HeadChanges []codesignal.ProjectChange
+	BaseChanges []codesignal.ProjectChange
+	Facts       []codesignal.ProjectFact
+	// HeadDiagnostics/BaseDiagnostics carry backend-produced diagnostics that
+	// are not themselves ProjectChanges (e.g. a coverage-incomplete
+	// diagnostic), reaching report.Diagnostics[] via applyProjectBackend
+	// instead of being silently dropped alongside the ProjectChanges/Coverage
+	// they describe. See baseProjectDiagnostics for how a base-side entry
+	// stays distinguishable from a head-side one in diff mode.
+	HeadDiagnostics []codesignal.Diagnostic
+	BaseDiagnostics []codesignal.Diagnostic
+	HeadCoverage    *projectmodel.Coverage
+	BaseCoverage    *projectmodel.Coverage
+	BaseAnalyzed    bool
 }
 
 // ConfigDigest returns a stable hex digest of validated project-config bytes.
@@ -85,10 +93,15 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 	if result == nil {
 		return input, enabled, nil
 	}
+	diagnostics := input.Diagnostics
+	if len(result.HeadDiagnostics) > 0 || len(result.BaseDiagnostics) > 0 {
+		diagnostics = append(append([]codesignal.Diagnostic(nil), input.Diagnostics...), result.HeadDiagnostics...)
+		diagnostics = append(diagnostics, baseProjectDiagnostics(result.BaseDiagnostics)...)
+	}
 	merged := codesignal.Input{
 		Scope:               input.Scope,
 		Files:               input.Files,
-		Diagnostics:         input.Diagnostics,
+		Diagnostics:         diagnostics,
 		Coverage:            input.Coverage,
 		ProjectChanges:      result.HeadChanges,
 		BaseProjectChanges:  result.BaseChanges,
@@ -98,4 +111,23 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		ProjectBaseAnalyzed: result.BaseAnalyzed,
 	}
 	return merged, enabled, nil
+}
+
+// baseProjectDiagnostics prefixes each diagnostic's Kind with "base_",
+// mirroring analyze.go's baseSyntaxDiagnostics ("syntax_errors" ->
+// "base_syntax_errors"). Without this, a diff-mode run whose backend finds
+// the same incompleteness on both revisions (e.g. two
+// project_layer_bypass_coverage_incomplete diagnostics) would emit two
+// byte-identical Diagnostic entries with no way to tell which revision each
+// one describes.
+func baseProjectDiagnostics(diagnostics []codesignal.Diagnostic) []codesignal.Diagnostic {
+	if len(diagnostics) == 0 {
+		return nil
+	}
+	prefixed := make([]codesignal.Diagnostic, len(diagnostics))
+	for i, d := range diagnostics {
+		d.Kind = "base_" + d.Kind
+		prefixed[i] = d
+	}
+	return prefixed
 }

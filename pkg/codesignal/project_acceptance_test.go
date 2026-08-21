@@ -154,6 +154,7 @@ var _ = Describe("Project-analysis report generation", func() {
 			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("resolved")))
 			Expect(report.ProjectSummary.ResolvedChanges).To(Equal(1))
 			Expect(report.ProjectSummary.ActiveChanges).To(Equal(1))
+			Expect(report.ProjectChanges[0].Evidence).To(Equal("pkg/a -> pkg/b -> pkg/a"), "a determinate resolved finding must not carry the indeterminate-lifecycle note")
 		})
 
 		It("marks a head-only change introduced when the base was analyzed and legitimately produced zero changes", func() {
@@ -253,6 +254,50 @@ var _ = Describe("Project-analysis report generation", func() {
 			Expect(report.ProjectSummary.ExistingChanges).To(Equal(0))
 			Expect(report.ProjectSummary.IntroducedChanges).To(Equal(0))
 			Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_lifecycle_indeterminate")))
+		})
+
+		// A finding's own Evidence is the only place a reader looks while
+		// scanning findings one at a time; the indeterminate diagnostic
+		// explaining why lives in a separate top-level list. Without a
+		// pointer on the finding itself, "lifecycle: unknown" reads as
+		// unexplained noise.
+		It("points from a degraded finding's own Evidence to the project_lifecycle_indeterminate diagnostic that explains why", func() {
+			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
+				ProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: false},
+			})
+			Expect(report.ProjectChanges).To(HaveLen(1))
+			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
+			Expect(report.ProjectChanges[0].Evidence).To(ContainSubstring("pkg/a -> pkg/b -> pkg/a"), "the producer's own evidence must survive, not be replaced")
+			Expect(report.ProjectChanges[0].Evidence).To(ContainSubstring("project_lifecycle_indeterminate"), "a reader must be able to find why lifecycle degraded without separately cross-referencing the diagnostics list")
+		})
+
+		It("leaves Evidence exactly as the producer supplied it when lifecycle is a normal, determinate claim", func() {
+			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
+				ProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+			})
+			Expect(report.ProjectChanges).To(HaveLen(1))
+			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("baseline")))
+			Expect(report.ProjectChanges[0].Evidence).To(Equal("pkg/a -> pkg/b -> pkg/a"))
+		})
+
+		// The base-only branch (a semantic key present only in
+		// BaseProjectChanges, a resolved-claim candidate) applies the same
+		// Evidence pointer as the head-side branch above -- it must not be
+		// left silently unexplained just because it's on the other side of
+		// the comparison.
+		It("points from a base-only finding's Evidence to the project_lifecycle_indeterminate diagnostic when base coverage is incomplete", func() {
+			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
+				BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+				ProjectBaseAnalyzed: true,
+				ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: false},
+			})
+			Expect(report.ProjectChanges).To(HaveLen(1))
+			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
+			Expect(report.ProjectChanges[0].Evidence).To(ContainSubstring("pkg/a -> pkg/b -> pkg/a"), "the producer's own evidence must survive, not be replaced")
+			Expect(report.ProjectChanges[0].Evidence).To(ContainSubstring("project_lifecycle_indeterminate"), "a base-only finding needs the same pointer as a head-side one")
 		})
 	})
 

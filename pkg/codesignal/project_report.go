@@ -34,7 +34,12 @@ type ProjectChange struct {
 	RelatedLocations     []ProjectLocation `json:"related_locations,omitempty"`
 	PathSteps            []ProjectPathStep `json:"path_steps,omitempty"`
 	CoverageRefs         []string          `json:"coverage_refs,omitempty"`
-	Evidence             string            `json:"evidence,omitempty"`
+	// Evidence is producer-supplied prose. Build appends a fixed note when it
+	// degrades Lifecycle to "unknown" for incomplete coverage, so a reader
+	// scanning one finding at a time can see why without separately
+	// cross-referencing the report's project_lifecycle_indeterminate
+	// diagnostic. Excluded from Fingerprint/ID (see appendProjectIdentity).
+	Evidence string `json:"evidence,omitempty"`
 	// MachineEvidence holds structured rule evidence (e.g. importer/importee
 	// for architecture.layer_violation). Keys are frozen per rule; encoding/json
 	// sorts map keys so equivalent maps marshal byte-identically. Not part of

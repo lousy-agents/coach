@@ -249,14 +249,14 @@ var _ = Describe("project observation identity and lifecycle", func() {
 // guardedUnwiredProjectSymbols lists every Go and TypeScript
 // reachability/layer-bypass entry point that is deliberately library-only:
 // none of these are wired into `coach codesignal` today (see README.md's
-// "library-only" paragraph). BuildGoReachability/BuildGoLayerBypass were
-// already unwired precedent (issue #253); BuildTypeScriptReachability/
-// BuildTypeScriptLayerBypass/EvaluateTypeScriptLayerBypass/
-// ReachabilityProjectFacts (issue #216) follow the same rule.
+// "library-only" paragraph). BuildGoLayerBypass/EvaluateGoLayerBypass were
+// wired into the real Go backend (issue #253) and are no longer guarded
+// here; BuildGoReachability stays unwired precedent.
+// BuildTypeScriptReachability/BuildTypeScriptLayerBypass/
+// EvaluateTypeScriptLayerBypass/ReachabilityProjectFacts (issue #216) follow
+// the same still-unwired rule -- #253 scopes wiring to the Go backend only.
 var guardedUnwiredProjectSymbols = []string{
 	"BuildGoReachability",
-	"BuildGoLayerBypass",
-	"EvaluateGoLayerBypass",
 	"BuildTypeScriptReachability",
 	"BuildTypeScriptLayerBypass",
 	"EvaluateTypeScriptLayerBypass",
