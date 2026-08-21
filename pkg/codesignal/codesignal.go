@@ -36,7 +36,6 @@ func New(options Options) (*Builder, error) {
 	return &Builder{options: options}, nil
 }
 
-// Build analyzes input and produces a Report.
 func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -366,7 +365,6 @@ func projectLifecycleDiagnosticMessage(input Input) string {
 	return "project lifecycle is indeterminate: " + strings.Join(reasons, "; ")
 }
 
-// processHeadResult derives diagnostics and signals from fc.Head.
 func processHeadResult(fc FileChange) ([]Diagnostic, []Signal) {
 	if fc.Head == nil {
 		if fc.Status == "modified" || fc.Status == "added" {
@@ -409,8 +407,6 @@ func processHeadResult(fc FileChange) ([]Diagnostic, []Signal) {
 	}
 }
 
-// extractBaseSignals maps fc.Base.Findings to signals for lifecycle
-// comparison without emitting diagnostics.
 func extractBaseSignals(fc FileChange) []Signal {
 	if !baseUsableForLifecycle(fc) || fc.Base.ParseStatus != "ok" {
 		return nil
@@ -424,8 +420,6 @@ func extractBaseSignals(fc FileChange) []Signal {
 	return signals
 }
 
-// baseUsableForLifecycle reports whether fc.Base can be trusted as a
-// lifecycle baseline.
 func baseUsableForLifecycle(fc FileChange) bool {
 	if fc.Base == nil {
 		return false
@@ -433,8 +427,6 @@ func baseUsableForLifecycle(fc FileChange) bool {
 	return fc.Base.Path == "" || fc.Base.Path == fc.Path
 }
 
-// eligibleForLifecycleClassification reports whether fc's Head state is
-// clean enough to run lifecycle classification.
 func eligibleForLifecycleClassification(fc FileChange) bool {
 	if fc.Head != nil {
 		return fc.Head.ParseStatus == "ok"
@@ -442,8 +434,6 @@ func eligibleForLifecycleClassification(fc FileChange) bool {
 	return fc.Status == "removed"
 }
 
-// validateFileChange checks that fc.Base/fc.Head, when present, agree
-// with fc.Path.
 func validateFileChange(fc FileChange) []Diagnostic {
 	var diagnostics []Diagnostic
 
@@ -465,8 +455,6 @@ func validateFileChange(fc FileChange) []Diagnostic {
 	return diagnostics
 }
 
-// countFilesWithDiagnostics counts the distinct FileChange.Path values in
-// files that have at least one diagnostic attributed to them.
 func countFilesWithDiagnostics(files []FileChange, diagnostics []Diagnostic) int {
 	withDiagnostics := make(map[string]bool, len(diagnostics))
 	for _, d := range diagnostics {

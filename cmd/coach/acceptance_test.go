@@ -36,8 +36,6 @@ func runCoachCodesignalRaw(repo, base string, extraArgs ...string) (stdout, stde
 	return outBuf.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
 }
 
-// removeFile deletes name from repo and commits the removal, returning the
-// resulting commit's full SHA.
 func removeFile(repo, name string) string {
 	rmCmd := exec.Command("git", "rm", name)
 	rmCmd.Dir = repo

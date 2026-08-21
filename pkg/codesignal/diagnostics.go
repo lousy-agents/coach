@@ -14,12 +14,8 @@ type Diagnostic struct {
 	Location *semantics.Location `json:"location,omitempty"`
 }
 
-// Diagnostic.Kind values projectLifecycleState (codesignal.go) emits to
-// report that project analysis -- on either the head or the base side of a
-// diff -- did not complete. Exported so consumers that need to recognize
-// project-incompleteness from a Report's Diagnostics (e.g. the CLI's text
-// renderer) depend on these constants rather than duplicating the literal
-// strings.
+// Diagnostic.Kind values projectLifecycleState (codesignal.go) emits when
+// project analysis did not complete, on either side of a diff.
 const (
 	DiagKindProjectCoverageIncomplete     = "project_coverage_incomplete"
 	DiagKindProjectLifecycleIndeterminate = "project_lifecycle_indeterminate"

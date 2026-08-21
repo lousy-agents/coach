@@ -135,10 +135,6 @@ var _ = Describe("project-analysis text rendering", func() {
 		Expect(text).NotTo(ContainSubstring("Project findings:"))
 	})
 
-	// F-1: Build projects ProjectChange onto signals for JSON consumers while
-	// keeping project_changes for structured fields. Text must present each
-	// logical observation once (structured project block), not a plain signal
-	// body plus a Project findings body.
 	It("presents a Build-projected project observation once in text with structured fields", func() {
 		builder, err := codesignal.New(codesignal.Options{ProjectEnabled: true, Baseline: true})
 		Expect(err).NotTo(HaveOccurred())
@@ -200,8 +196,6 @@ var _ = Describe("project-analysis text rendering", func() {
 	})
 })
 
-// F-002: typed project handoff must reach the builder for baseline and diff
-// when a backend is selected, and must not run when project mode is omitted.
 type recordingProjectBackend struct {
 	requests []ProjectBackendRequest
 	result   *ProjectBackendResult
@@ -401,7 +395,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_lifecycle_indeterminate")), "the CLI-facing report must surface the same indeterminate diagnostic codesignal.Build contracts for partial coverage")
 	})
 
-	// AC-3 through the real Build pipeline: incomplete project coverage with
+	// Through the real Build pipeline: incomplete project coverage with
 	// no project changes and no file-local signals must reach the
 	// zero-active-finding verdict, stating project analysis did not complete,
 	// without claiming any path was skipped -- project_coverage_incomplete and
@@ -561,7 +555,7 @@ func installFakeTSSidecarAt(repoDir string) {
 	Expect(os.WriteFile(filepath.Join(binDir, "coach-ts-project-sidecar"), fakeTSSidecarBinary, 0o755)).To(Succeed())
 }
 
-// F-003 (issue #215 rework): mutation testing showed that swapping
+// Mutation testing showed that swapping
 // filepath.Join(req.Dir, tsSidecarRelativePath) for the bare
 // tsSidecarRelativePath left the whole cmd/coach acceptance suite green,
 // because every existing test happens to run with the process's cwd equal
@@ -603,7 +597,7 @@ var _ = Describe("tsProjectBackend sidecar binary resolution", func() {
 	})
 })
 
-// F-004 (issue #215 rework, round 5): ProjectBackendRequest.Dir is
+// ProjectBackendRequest.Dir is
 // os.Getwd() at CLI invocation time, not necessarily the repository
 // checkout root -- coach codesignal run from a subdirectory of a repo must
 // still find a sidecar vendored at the repository root's
@@ -647,8 +641,6 @@ var _ = Describe("project-config boundary budgets", func() {
 		Expect(err.Error()).To(ContainSubstring("size budget"))
 	})
 
-	// F-006: many non-overlapping prefixes must validate without a long CPU stall
-	// and exact overlap diagnostics must remain deterministic.
 	It("validates a near-budget set of non-overlapping layer prefixes without stalling", func() {
 		doc := layerPrefixConfigJSON(512)
 		started := time.Now()
@@ -732,7 +724,7 @@ var _ = Describe("project-config boundary budgets", func() {
 	})
 
 	// A required_layer is an explicit user claim that a declared layer exists,
-	// mirroring the forbidden_imports precedent above (#211): a typo'd name
+	// mirroring the forbidden_imports precedent above: a typo'd name
 	// that matches no declared layer must never validate cleanly and become a
 	// permanent no-op for the downstream backend wiring.
 	It("rejects a required_layer that references an undeclared layer name", func() {
