@@ -196,7 +196,7 @@ JSON output reports `Location` fields (`start_row`, `start_col`, etc., see `pkg/
 
 ### `--suggest-project-config`: opt-in project-config candidate
 
-`coach codesignal --baseline --suggest-project-config` is a separate, opt-in mode that discovers Go module/workspace roots at HEAD and prints a minimal `--project-config` **candidate** for you to review and commit yourself — it never reads or writes an actual `--project-config` file, and it never runs any project-analysis backend. It resolves HEAD once, walks an immutable Git snapshot for `go.mod`/`go.work` files (never the worktree, so uncommitted or ignored files never affect the result), and emits strict schema-1 JSON containing only `roots` (never `layers`, `forbidden_imports`, or `source_sink_pack` — those require a human decision this mode does not make).
+`coach codesignal --baseline --suggest-project-config` is a separate, opt-in mode that discovers Go module/workspace roots at HEAD and prints a minimal `--project-config` **candidate** for you to review and commit yourself — it never reads or writes an actual `--project-config` file, and it never runs any project-analysis backend. It resolves HEAD once, walks an immutable Git snapshot for `go.mod`/`go.work` files (never the worktree, so uncommitted or ignored files never affect the result), and emits strict schema-1 JSON containing only `roots` (never `layers`, `forbidden_imports`, or `required_layer` — those require a human decision this mode does not make; nor `source_sink_pack`, which is a reserved field with no effect on evaluation today, so there is nothing for this mode to suggest for it).
 
 ```sh
 coach codesignal --baseline --suggest-project-config
@@ -204,7 +204,7 @@ coach codesignal --baseline --suggest-project-config
 
 - Requires `--baseline`; it cannot be combined with `--base`, `--project-config`, `--project-language`, `--format`, `--scope`, `--build-target`, or a positional argument — any of those combinations is rejected outright rather than given a precedence.
 - The candidate JSON is written to stdout (2-space indent, one trailing newline); pass `--output <path>` to write it to a repository-relative file instead (create-only — it fails if the target already exists in any form). Either way, exactly one UTF-8 newline-delimited JSON (NDJSON) diagnostic/provenance object — compact, single-line, one trailing newline — is written to stderr describing the resolved revision, the roots considered, and root-discovery coverage.
-- **This is a candidate only.** Nothing consumes it automatically: review it, add any `layers`/`forbidden_imports`/`source_sink_pack` policy you want, and pass the result to `--project-config` yourself.
+- **This is a candidate only.** Nothing consumes it automatically: review it, add any `layers`/`forbidden_imports`/`required_layer` policy you want (`source_sink_pack` is accepted but currently reserved and has no effect — see [Configured layer violations](#configured-layer-violations---project-config) below), and pass the result to `--project-config` yourself.
 
 **Candidate example** (stdout, for a repository with a root module and one nested module):
 
@@ -247,6 +247,8 @@ Pass `--project-config <path>` (a repository-relative path to a JSON document, r
 - `roots` — repository-relative directories to analyze (for `--project-language go`, your Go module/workspace roots; for `typescript`, the directories the sidecar should collect); required, at least one. `--suggest-project-config` above generates a starting candidate for Go projects.
 - `layers` — named layers, each with one or more non-overlapping repository-relative directory prefixes; optional.
 - `forbidden_imports` — directed `{"from": "<layer>", "to": "<layer>"}` pairs naming layers declared above; optional. A `from`/`to` that doesn't match a declared layer name is a config error (exit `2`), not a silently-ignored rule.
+- `required_layer` — the name of one layer declared above that a statically resolved call path from a handler-shaped source to a pinned database-access sink must pass through; optional, and only wired for `--project-language go` today (see `architecture.layer_bypass` below). A name that doesn't match a declared layer is a config error (exit `2`), matching `forbidden_imports`' undefined-layer rule.
+- `source_sink_pack` — accepted and schema-validated (must be `""` or `"builtin-v1"` if set; any other value is a config error, exit `2`). It is currently a reserved field: no backend reads it, so setting it never changes which findings are produced or their content (kind, severity, confidence, lifecycle, evidence, anchors, etc.). It is still part of the raw config bytes hashed into `config_digest`, though, so setting or clearing it changes a project analysis's `config_digest` and therefore every `ProjectChange`'s `id`/`fingerprint` — downstream consumers keyed on those IDs will see churn even though the findings themselves are unchanged. `architecture.layer_bypass`'s source/sink set is pinned in code (`pkg/projectmodel/go_reachability.go`'s `ReachabilitySinkPatterns`), not selected via this field.
 
 Works with both `--baseline` and `--base <ref>`:
 
@@ -280,7 +282,52 @@ Project coverage: phase=go_model_build, complete=true
   ...
 ```
 
-**TypeScript example.** The same `project.json` schema shown above works unmodified with `--project-language typescript` — only the CLI flag changes. A TypeScript project additionally needs a discoverable `tsconfig.json` (the sidecar uses it to resolve relative import specifiers into file-addressed edges) and the vendored sidecar binary described below.
+**Required intermediate layer (`architecture.layer_bypass`, `--project-language go` only).** Add `required_layer` naming one of the declared layers to additionally check that every statically resolved call path from a `net/http.HandlerFunc`-shaped source to a pinned database-access sink (`*database/sql.DB`'s `Exec`/`ExecContext`/`Query`/`QueryContext`) passes through that layer:
+
+```json
+{
+  "schema_version": "1",
+  "roots": ["."],
+  "layers": [
+    { "name": "handlers", "prefixes": ["pkg/handlers"] },
+    { "name": "service", "prefixes": ["pkg/service"] }
+  ],
+  "required_layer": "service"
+}
+```
+
+```text
+Project findings:
+semantic_key: architecture.layer_bypass:service:example.com/app/pkg/handlers.Handler->(*database/sql.DB).Query
+rule_id: architecture.layer_bypass
+path: pkg/handlers/handlers.go
+line: 10
+lifecycle: baseline
+changed: false
+evidence: example.com/app/pkg/handlers.Handler reaches (*database/sql.DB).Query via a statically resolved path that never passes through required layer "service"
+machine_evidence.path: example.com/app/pkg/handlers.Handler->example.com/app/pkg/handlers.directQuery->example.com/app/pkg/handlers.rawQuery->(*database/sql.DB).Query
+machine_evidence.required_layer: service
+machine_evidence.sink: (*database/sql.DB).Query
+machine_evidence.source: example.com/app/pkg/handlers.Handler
+why it matters: A statically resolved call path from a handler-shaped source to a pinned sink that structurally never passes through a required intermediate layer means that layer's invariants (validation, authorization, caching, ...) can be silently skipped by this route, even if a separate compliant path also exists.
+recommendation: Route the call through the required layer, or add an explicit exception/allowlist entry if the bypass is intentional so it stops surfacing as drift.
+path step: example.com/app/pkg/handlers.Handler, confidence: high
+  source: pkg/handlers/handlers.go:10
+path step: example.com/app/pkg/handlers.directQuery, confidence: high
+  source: pkg/handlers/handlers.go:15
+path step: example.com/app/pkg/handlers.rawQuery, confidence: high
+  source: pkg/handlers/handlers.go:19
+path step: (*database/sql.DB).Query, confidence: high
+Project summary: active=1, introduced=0, existing=0, resolved=0, baseline=1
+```
+
+This `Handler` also calls `service.LoadUser` — a compliant route that does pass through the required `service` layer — but `architecture.layer_bypass` still reports the direct `directQuery`/`rawQuery` route: a coexisting compliant route never suppresses a real bypass witness (see `pkg/projectmodel.LayerBypassWitness`'s doc comment). Only exact, statically resolved, `confidence: high` witnesses are ever reported — an unresolved, dynamic, ambiguous-layer, or budget-truncated path is silently dropped rather than guessed. `--format=json` carries the same shape as `architecture.layer_violation`'s `project_changes[]`/`signals[]` entries, with `path_steps[]` giving each hop's `node_id`, source location, and `confidence`, and `machine_evidence` carrying `source`/`sink`/`required_layer`/`path` instead of `importer`/`importee`/`layer_from`/`layer_to`/`rule`.
+
+**A clean `architecture.layer_bypass` report is not a compliance verdict.** The source and sink registries are narrow and pinned in code, not configurable: a source must match `net/http.HandlerFunc`'s exact signature (a custom router, a gRPC handler, or a framework that wraps the request differently is invisible to this check), and a sink must be a direct call to one of `*database/sql.DB`'s four methods — `Exec`/`ExecContext`/`Query`/`QueryContext` — not a call through `*sql.Tx`, `*sql.Stmt`, `*sql.Conn`, an ORM like `gorm`/`sqlx`, or a repository interface the driver call sits behind, none of which are in the registry. If your codebase's handlers or data access don't match those exact shapes, zero findings means "nothing matched the registry," not "no bypass exists" — the same caveat `architecture.layer_violation` states for its own coverage below applies here with an even narrower net.
+
+When the underlying search's own coverage is incomplete, a `project_layer_bypass_coverage_incomplete` diagnostic appears in the report, a witness the search already found is still reported rather than hard-suppressed, and every project finding's lifecycle in that report degrades to `unknown` instead of a definitive `resolved`/`introduced`/`existing`/`baseline` claim. Each degraded finding's own `evidence` says "see the project_lifecycle_indeterminate diagnostic for why" — so you don't have to separately cross-reference the report's `Diagnostics:` section to find out.
+
+**TypeScript example.** The same `layers`/`forbidden_imports` schema shown above works unmodified with `--project-language typescript` (`required_layer` is Go-only — see above) — only the CLI flag changes. A TypeScript project additionally needs a discoverable `tsconfig.json` (the sidecar uses it to resolve relative import specifiers into file-addressed edges) and the vendored sidecar binary described below.
 
 ```json
 {
@@ -341,11 +388,11 @@ This check is **advisory, coverage-honest, and approximate**: it reports zero fi
 
 **Absence is not a compliance verdict.** A report with no `architecture.layer_violation` finding is never proof the codebase follows any particular architecture: it can mean the edge doesn't violate your configured policy, the edge isn't covered by any layer you declared, or project coverage was incomplete for that revision — check `project_coverage`/`Project coverage:` before treating a clean report as an architectural guarantee.
 
-`pkg/projectmodel` also has library-only support for bounded Go possible-call-reachability facts (a pinned static call graph plus deterministic source-to-sink path search, both bounded by budgets and approximate — direct, statically resolved calls only, not full points-to), and `pkg/codesignal.EvaluateGoLayerBypass` maps a `pkg/projectmodel.BuildGoLayerBypass` run's high-confidence witnesses — a statically resolved call path from a source to a sink that structurally never passes through a required layer — onto `architecture.layer_bypass` findings, following the same suppression rules as `architecture.layer_violation`: only exact high-confidence witnesses are emitted, path search is shortest-first, and an incomplete search still emits any witnesses it did find alongside a coverage-incomplete diagnostic rather than a silent "no bypass" claim. `BuildTypeScriptLayerBypass`/`EvaluateTypeScriptLayerBypass` are the TypeScript analogs, built from the same sidecar round trip as `--project-language typescript`'s import-edge analysis and sharing the `architecture.layer_bypass` rule ID and every suppression rule above; the only externally visible differences are a `machine_evidence.language: typescript` entry and a distinct `algorithm_version` (`ts-layer-bypass-registry@1` vs. `go-layer-bypass-registry@1`), matching `architecture.layer_violation`'s existing Go/TypeScript split.
+`pkg/codesignal.EvaluateGoLayerBypass` maps a `pkg/projectmodel.BuildGoLayerBypass` run's high-confidence witnesses — a statically resolved call path from a source to a sink that structurally never passes through a required layer — onto `architecture.layer_bypass` findings, following the same suppression rules as `architecture.layer_violation`: only exact high-confidence witnesses are emitted, path search is shortest-first, and an incomplete search still emits any witnesses it did find alongside a coverage-incomplete diagnostic rather than a silent "no bypass" claim. Both are wired into `coach codesignal --project-config` via the `required_layer` field documented above — but for `--project-language go` only; see the worked example above. `pkg/projectmodel` separately has library-only support for bounded Go possible-call-reachability facts (a pinned static call graph plus deterministic source-to-sink path search, both bounded by budgets and approximate — direct, statically resolved calls only, not full points-to) via `BuildGoReachability`, which stays unwired. `BuildTypeScriptLayerBypass`/`EvaluateTypeScriptLayerBypass` are the TypeScript analogs of the now-wired Go pair — built from the same sidecar round trip as `--project-language typescript`'s import-edge analysis and sharing the `architecture.layer_bypass` rule ID and every suppression rule above, with a `machine_evidence.language: typescript` entry and a distinct `algorithm_version` (`ts-layer-bypass-registry@1` vs. `go-layer-bypass-registry@1`) as the only externally visible differences, matching `architecture.layer_violation`'s existing Go/TypeScript split — but they remain library-only: CLI wiring is scoped to the Go backend, so `required_layer` has no effect under `--project-language typescript` today.
 
 `BuildTypeScriptReachability` is the TypeScript analog of `BuildGoReachability`, producing `possible_call_reachability` facts over the same sidecar round trip — but not the same facts: the TS walk follows a route handler's body only one level deep, so a handler → service → sink chain that isn't a direct call yields no fact, only a `ts_reachability_local_call_not_followed_gap` coverage diagnostic, where Go's BFS is unbounded. `Sources` is correspondingly narrower too, listing only the sources that actually produced a resolved fact rather than every registry source function identified in the snapshot. Unlike `architecture.layer_bypass`, these facts carry no `ProjectChange`/`machine_evidence` shape at all — they map onto `ProjectFact` (facts-only: a reachability fact never becomes a `Signal` or `ProjectChange`) via `pkg/codesignal.ReachabilityProjectFacts`, which the caller invokes once per backend with a `language` argument ("go" or "typescript") that lands in the resulting facts' `provenance.language` field. That field is `ProjectFact`'s only cross-language provenance signal, since `ProjectFact` has neither a `rule_id` nor a `machine_evidence` map to carry an equivalent key.
 
-None of `BuildGoReachability`, `EvaluateGoLayerBypass`, `BuildTypeScriptReachability`, `BuildTypeScriptLayerBypass`, `EvaluateTypeScriptLayerBypass`, or `ReachabilityProjectFacts` are wired into `coach codesignal` today: no flag builds them, and no report field surfaces call-graph, reachability, or layer-bypass facts through the CLI yet.
+None of `BuildGoReachability`, `BuildTypeScriptReachability`, `BuildTypeScriptLayerBypass`, `EvaluateTypeScriptLayerBypass`, or `ReachabilityProjectFacts` are wired into `coach codesignal` today: no flag builds them, and no report field surfaces call-graph, reachability, or TypeScript layer-bypass facts through the CLI yet. `BuildGoLayerBypass`/`EvaluateGoLayerBypass` are the one exception, wired as described above.
 
 ---
 
