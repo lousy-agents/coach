@@ -11,10 +11,11 @@ import (
 )
 
 // RenderText renders report as deterministic, ANSI-free plain text: a
-// one-line summary, then either "No active CodeSignal findings." or blocks
-// per file-local signal and project observation (in report order), then a
-// diagnostics section when report.Diagnostics is non-empty, then file and
-// project coverage sections. A Repository Baseline report
+// one-line summary, then either a zero-active-finding verdict (see
+// renderNoActiveFindingsVerdict) or blocks per file-local signal and project
+// observation (in report order), then a diagnostics section when
+// report.Diagnostics is non-empty, then file and project coverage sections.
+// A Repository Baseline report
 // (report.Scope.Baseline) renders a distinct summary line that identifies
 // the analyzed revision and states plainly that the result is not a diff
 // comparison; everything else (signal blocks, diagnostics section) is
@@ -45,7 +46,7 @@ func renderReportSummary(b *strings.Builder, report *codesignal.Report) {
 // plain signal loop).
 func renderActiveFindings(b *strings.Builder, report *codesignal.Report) {
 	if len(report.Signals) == 0 && len(report.ProjectChanges) == 0 {
-		b.WriteString("No active CodeSignal findings.\n")
+		renderNoActiveFindingsVerdict(b, report)
 		renderProjectSummary(b, report.ProjectSummary)
 		return
 	}
@@ -61,6 +62,81 @@ func renderActiveFindings(b *strings.Builder, report *codesignal.Report) {
 	if report.ProjectSummary != nil {
 		renderProjectSummary(b, report.ProjectSummary)
 	}
+}
+
+// renderNoActiveFindingsVerdict writes the zero-active-finding verdict. A
+// bare "no active findings" would misleadingly read as a clean pass when the
+// analysis actually skipped work, so this qualifies the verdict whenever
+// report.Diagnostics is non-empty or report.ProjectCoverage reports
+// incomplete coverage (a nil ProjectCoverage means no project analysis was
+// requested at all, not that it failed, and stays unqualified). Project
+// incompleteness is read from the project_coverage_incomplete/
+// project_lifecycle_indeterminate diagnostic kinds themselves, not only from
+// report.ProjectCoverage.Complete: Report exposes only head-side coverage,
+// and pkg/codesignal's projectLifecycleState marks the diagnostic
+// indeterminate (with no Path) when the BASE side was incomplete even while
+// head coverage is complete -- consulting the diagnostic catches that case
+// the Complete field alone cannot see. The "N path(s) were not analyzed"
+// clause (correctly pluralized) counts distinct non-empty Diagnostic.Path
+// values, not len(report.Diagnostics): a single path can carry several
+// diagnostics (e.g. one base_syntax_errors diagnostic per syntax issue), and
+// project-coverage diagnostics carry no Path at all. That clause is omitted
+// when no diagnostic names a path.
+func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report) {
+	incompleteProject := (report.ProjectCoverage != nil && !report.ProjectCoverage.Complete) ||
+		hasProjectLifecycleDiagnostic(report.Diagnostics)
+	hasDiagnostics := len(report.Diagnostics) > 0
+	if !hasDiagnostics && !incompleteProject {
+		b.WriteString("No active CodeSignal findings.\n")
+		return
+	}
+
+	skippedPaths := distinctDiagnosticPaths(report.Diagnostics)
+	var causes []string
+	if n := len(skippedPaths); n > 0 {
+		if n == 1 {
+			causes = append(causes, "1 path was not analyzed")
+		} else {
+			causes = append(causes, fmt.Sprintf("%d paths were not analyzed", n))
+		}
+	}
+	if incompleteProject {
+		causes = append(causes, "project analysis did not complete")
+	}
+	if len(causes) == 0 {
+		// hasDiagnostics is true here (the branch above ruled out the
+		// all-clear case), but every diagnostic is pathless and
+		// ProjectCoverage is complete or absent -- neither specific cause
+		// applies, so still name that diagnostics exist rather than silently
+		// dropping the qualifier.
+		causes = append(causes, "additional diagnostics were recorded")
+	}
+	fmt.Fprintf(b, "No active CodeSignal findings, but the analysis is incomplete: %s.\n", strings.Join(causes, "; "))
+}
+
+// distinctDiagnosticPaths returns the set of distinct non-empty
+// Diagnostic.Path values across diagnostics.
+func distinctDiagnosticPaths(diagnostics []codesignal.Diagnostic) map[string]struct{} {
+	paths := make(map[string]struct{})
+	for _, d := range diagnostics {
+		if d.Path != "" {
+			paths[d.Path] = struct{}{}
+		}
+	}
+	return paths
+}
+
+// hasProjectLifecycleDiagnostic reports whether diagnostics contains a
+// project_coverage_incomplete or project_lifecycle_indeterminate kind --
+// pkg/codesignal's only signal that project analysis (on either the head or
+// the base side) did not complete.
+func hasProjectLifecycleDiagnostic(diagnostics []codesignal.Diagnostic) bool {
+	for _, d := range diagnostics {
+		if d.Kind == "project_coverage_incomplete" || d.Kind == "project_lifecycle_indeterminate" {
+			return true
+		}
+	}
+	return false
 }
 
 func renderFileLocalSignals(b *strings.Builder, signals []codesignal.Signal, projectSignalIDs map[string]struct{}) bool {
