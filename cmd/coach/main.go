@@ -18,14 +18,9 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-// version identifies the coach binary. There is no build-time ldflags wiring
-// yet; that is intentionally out of scope for this issue.
+// version is overridden via -ldflags at release; a local build reports "dev".
 var version = "dev"
 
-// loadProjectConfig and resolveProjectBackend are indirections over
-// codesignalcli's project-analysis entry points. Tests override them to
-// prove that runCodesignal's exit-code classification is driven by the
-// concrete error type (errors.As), not by which call site produced the error.
 var (
 	loadProjectConfig     = codesignalcli.LoadProjectConfig
 	resolveProjectBackend = codesignalcli.ResolveProjectBackend
@@ -113,7 +108,7 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		report, projectExitCode, err = runDiffAnalysis(dir, parsed, stderr)
 	}
 	if err != nil {
-		return reportOperationalError(err, stderr)
+		return classifyAnalysisError(err, stderr)
 	}
 	if report == nil {
 		return 1
@@ -151,7 +146,6 @@ func (c *countingBoolFlag) Set(s string) error {
 }
 func (c *countingBoolFlag) IsBoolFlag() bool { return true }
 
-// countingStringFlag mirrors countingBoolFlag for a string-valued flag.
 type countingStringFlag struct {
 	value string
 	count int
@@ -169,25 +163,6 @@ func (c *countingStringFlag) Set(s string) error {
 	return nil
 }
 
-// suggestProjectConfigRequested reports whether --suggest-project-config
-// appears anywhere in args as a bare flag or an explicit true-ish value,
-// independent of whether the rest of args parses successfully. It backs
-// the invalid-arguments envelope path: an unknown flag or malformed
-// argument list combined with a requested --suggest-project-config must
-// still surface the project_config_suggestion_invalid_arguments envelope
-// (not the standard flag-package usage text), regardless of where in args
-// the bad token appears relative to --suggest-project-config.
-//
-// An explicit --suggest-project-config=false does not count as requested:
-// this pre-scan runs before flags.Parse, so it must honor the flag's own
-// boolean value rather than reacting to its mere presence, or an unrelated
-// malformed flag combined with a deliberately disabled
-// --suggest-project-config would wrongly surface the suggestion envelope
-// instead of the plain usage-text error every other codesignal flag error
-// produces. A value that fails strconv.ParseBool is treated as requested,
-// same as before this distinction existed: flags.Parse will itself reject
-// it as a malformed --suggest-project-config value, which is exactly the
-// case this envelope exists to report.
 func suggestProjectConfigRequested(args []string) bool {
 	for _, arg := range args {
 		if arg == "--suggest-project-config" || arg == "-suggest-project-config" {
@@ -203,8 +178,6 @@ func suggestProjectConfigRequested(args []string) bool {
 	return false
 }
 
-// suggestProjectConfigFlagValue extracts <value> from a
-// --suggest-project-config=<value>/-suggest-project-config=<value> token.
 func suggestProjectConfigFlagValue(arg string) (string, bool) {
 	for _, prefix := range []string{"--suggest-project-config=", "-suggest-project-config="} {
 		if strings.HasPrefix(arg, prefix) {
@@ -247,8 +220,8 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 	return h
 }
 
-// handleCodesignalHelp prints codesignal usage + defaults when --help/-h is
-// present and restores the FlagSet output sink used for subsequent Parse.
+// handleCodesignalHelp prints usage and defaults for --help/-h, then sets
+// the FlagSet's output sink for the Parse call that follows.
 func handleCodesignalHelp(args []string, flags *flag.FlagSet, suggestRequested bool, stdout, stderr *os.File) (handled bool, exitCode int) {
 	for _, arg := range args {
 		if arg != "--help" && arg != "-h" {
@@ -285,8 +258,6 @@ func codesignalFlagsFromHolders(h codesignalFlagHolders, setFlags map[string]boo
 	}
 }
 
-// finishCodesignalFlagParse validates the post-Parse flag combination for
-// either the suggest-project-config path or the normal codesignal path.
 func finishCodesignalFlagParse(flags *flag.FlagSet, h codesignalFlagHolders, stderr *os.File) (codesignalFlags, int, bool) {
 	setFlags := map[string]bool{}
 	flags.Visit(func(f *flag.Flag) {
@@ -337,9 +308,9 @@ func parseCodesignalFlags(args []string, stdout, stderr *os.File) (codesignalFla
 	return finishCodesignalFlagParse(flags, holders, stderr)
 }
 
-// sortedFlagNames returns setFlags' keys in sorted order, so a caller that
-// reports the first disallowed flag gets a deterministic result regardless
-// of Go's randomized map iteration order.
+// sortedFlagNames orders setFlags' keys deterministically, so a caller that
+// reports the first disallowed flag doesn't depend on Go's randomized map
+// iteration order.
 func sortedFlagNames(setFlags map[string]bool) []string {
 	names := make([]string, 0, len(setFlags))
 	for name := range setFlags {
@@ -349,15 +320,13 @@ func sortedFlagNames(setFlags map[string]bool) []string {
 	return names
 }
 
-// validateSuggestProjectConfigFlags rejects any flag combination the
-// --suggest-project-config contract (issue #220) forbids outright: it
-// never picks a precedence between --suggest-project-config and a
-// conflicting flag, it rejects the combination. Rather than enumerating
-// every flag known to conflict (which silently stops protecting a newly
-// added codesignal flag), it walks setFlags -- the flags actually supplied
-// -- against the fixed allowlist the contract describes ({baseline,
-// output, suggest-project-config}), so any other flag is rejected by
-// construction.
+// validateSuggestProjectConfigFlags never picks a precedence between
+// --suggest-project-config and a conflicting flag; it rejects the
+// combination outright. Rather than enumerating every flag known to
+// conflict (which silently stops protecting a newly added codesignal
+// flag), it walks setFlags -- the flags actually supplied -- against the
+// fixed allowlist {baseline, output, suggest-project-config}, so any other
+// flag is rejected by construction.
 func validateSuggestProjectConfigFlags(f codesignalFlags, setFlags map[string]bool, positional []string, suggestCount, outputCount int) string {
 	if suggestCount > 1 {
 		return "coach: --suggest-project-config may only be provided once (project_config_suggestion_invalid_arguments)"
@@ -380,9 +349,6 @@ func validateSuggestProjectConfigFlags(f codesignalFlags, setFlags map[string]bo
 	return ""
 }
 
-// runSuggestProjectConfig dispatches `coach codesignal --baseline
-// --suggest-project-config`: it never builds a codesignal.Report, unlike
-// the diff/baseline analysis paths above.
 func runSuggestProjectConfig(dir string, f codesignalFlags, stdout, stderr *os.File) int {
 	result := codesignalcli.SuggestProjectConfig(dir, f.output, f.outputSet)
 	if len(result.Envelope) > 0 {
@@ -487,24 +453,18 @@ func withProjectDiagnostic(report *codesignal.Report, diag *codesignal.Diagnosti
 }
 
 // prepareProjectAnalysis resolves the typed project handoff. When the flag is
-// omitted, all results are zero. Config/backend failures return a diagnostic
-// and exit code while keeping project nil so file-local analysis stays schema-1.
-// Unexpected error types return opErr for the operational path (no report).
+// omitted, all results are zero. A --project-config load/validation failure
+// propagates as the returned error (opErr) so classifyAnalysisError classifies
+// it as a configuration error (exit 2, nothing on stdout); a valid config
+// naming an unavailable backend still returns a diagnostic and exit code
+// while keeping project nil so file-local analysis stays schema-1.
 func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configPath, language string) (*codesignalcli.ProjectAnalysis, *codesignal.Diagnostic, int, error) {
 	if !projectConfigSet {
 		return nil, nil, 0, nil
 	}
 	config, err := loadProjectConfig(dir, revision, configPath)
 	if err != nil {
-		var configErr *codesignalcli.ProjectConfigError
-		if !errors.As(err, &configErr) {
-			return nil, nil, 0, err
-		}
-		return nil, &codesignal.Diagnostic{
-			Kind:    "project_config_invalid",
-			Path:    configPath,
-			Message: configErr.Message,
-		}, 2, nil
+		return nil, nil, 0, err
 	}
 	if err := resolveProjectBackend(language); err != nil {
 		var backendErr *codesignalcli.ProjectBackendUnavailableError
@@ -555,7 +515,15 @@ func renderReport(report *codesignal.Report, format string, stdout, stderr *os.F
 	return 0
 }
 
-func reportOperationalError(err error, stderr *os.File) int {
+// classifyAnalysisError never sees a project_backend_unavailable (exit 3)
+// error -- prepareProjectAnalysis handles that case separately by returning
+// a diagnostic instead of an error.
+func classifyAnalysisError(err error, stderr *os.File) int {
+	var configErr *codesignalcli.ProjectConfigError
+	if errors.As(err, &configErr) {
+		fmt.Fprintln(stderr, configErr.Message)
+		return 2
+	}
 	var opErr *codesignalcli.OperationalError
 	if errors.As(err, &opErr) {
 		fmt.Fprintln(stderr, opErr.Message)

@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -15,7 +18,7 @@ import (
 
 // Project-config boundary budgets. Config is repository-controlled input and
 // must fail closed before unbounded memory/CPU or a hung git child can stall
-// the CLI (issue #208 finite project-phase resource behavior).
+// the CLI.
 const (
 	maxProjectConfigBytes     = 1 << 20 // 1 MiB
 	maxProjectConfigJSONDepth = 32
@@ -28,8 +31,8 @@ const (
 
 // ProjectConfigError signals a --project-config value that is missing,
 // unreadable, or does not satisfy the frozen v1 schema. It maps to exit code
-// 2 and is reported in the local CodeSignal document when analysis has
-// already completed.
+// 2 and is reported as a single stderr message; no report is written to
+// stdout.
 type ProjectConfigError struct {
 	Message string
 }
@@ -45,32 +48,24 @@ type ProjectBackendUnavailableError struct {
 
 func (e *ProjectBackendUnavailableError) Error() string { return e.Message }
 
+// gitOperationalBoundError marks a runGitBytesBoundedWith failure that comes
+// from our own timeout/output-budget enforcement rather than from git's
+// stderr. Its message is already complete and safe to surface verbatim to a
+// --project-config user: unlike a git failure, it never embeds raw git
+// stderr.
+type gitOperationalBoundError struct {
+	message string
+}
+
+func (e *gitOperationalBoundError) Error() string { return e.message }
+
 type projectConfig struct {
 	SchemaVersion    string                   `json:"schema_version"`
 	Roots            []string                 `json:"roots"`
 	Layers           []projectConfigLayer     `json:"layers,omitempty"`
 	ForbiddenImports []projectForbiddenImport `json:"forbidden_imports,omitempty"`
-	// SourceSinkPack is accepted and schema-validated (must be "" or
-	// "builtin-v1"; see validateProjectConfigJSON) but is currently reserved:
-	// no ProjectBackend reads it, so setting it never changes which findings
-	// are produced or their content (severity, confidence, lifecycle,
-	// evidence, anchors, etc.). It is not fully inert, though: it is still
-	// part of the raw config bytes
-	// ConfigDigest hashes, so setting or clearing it changes a project
-	// analysis's config_digest and therefore every ProjectChange's
-	// ID/Fingerprint (see pkg/codesignal/project_fingerprint.go) --
-	// downstream consumers keyed on those IDs will see churn. The Go
-	// backend's source/sink set is pinned in code
-	// (pkg/projectmodel/go_reachability.go's ReachabilitySinkPatterns), not
-	// selected via this field.
-	SourceSinkPack string `json:"source_sink_pack,omitempty"`
-	// RequiredLayer names a declared layer (by projectConfigLayer.Name) that a
-	// downstream ProjectBackend must treat as a required intermediate layer
-	// for source-to-sink reachability policy. Empty means "not configured",
-	// equivalent to omitting the field; a non-empty value naming no declared
-	// layer is invalid (see validateProjectConfigJSON), matching the
-	// forbidden_imports undefined-layer precedent below.
-	RequiredLayer string `json:"required_layer,omitempty"`
+	SourceSinkPack   string                   `json:"source_sink_pack,omitempty"`
+	RequiredLayer    string                   `json:"required_layer,omitempty"`
 }
 
 type projectConfigLayer struct {
@@ -90,17 +85,45 @@ type projectForbiddenImport struct {
 // nesting are bounded at this boundary.
 func LoadProjectConfig(dir, revision, repoPath string) (json.RawMessage, error) {
 	if err := validateProjectConfigPath(repoPath); err != nil {
-		return nil, projectConfigError(repoPath, err.Error())
+		return nil, projectConfigError(repoPath, revision, err.Error())
 	}
 
 	data, err := runProjectConfigGit(dir, "show", revision+":"+repoPath)
 	if err != nil {
-		return nil, &ProjectConfigError{Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, err)}
+		return nil, projectConfigGitError(dir, revision, repoPath, err)
 	}
 	if err := validateProjectConfigJSON(data); err != nil {
-		return nil, projectConfigError(repoPath, err.Error())
+		return nil, projectConfigError(repoPath, revision, err.Error())
 	}
 	return json.RawMessage(data), nil
+}
+
+// projectConfigGitError classifies a runProjectConfigGit failure into a
+// user-facing message that never surfaces raw git stderr. A
+// *gitOperationalBoundError is our own timeout/output-budget text and is
+// safe to include verbatim. Any other failure means git itself reported the
+// read as failed; that case is further split by whether repoPath exists in
+// the worktree, so a user who forgot to commit a generated config is told to
+// commit it rather than shown a generic not-found message.
+func projectConfigGitError(dir, revision, repoPath string, gitErr error) error {
+	var boundErr *gitOperationalBoundError
+	if errors.As(gitErr, &boundErr) {
+		return &ProjectConfigError{Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
+	}
+	if configExistsInWorktree(dir, repoPath) {
+		return &ProjectConfigError{Message: fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision)}
+	}
+	return &ProjectConfigError{Message: fmt.Sprintf("coach codesignal: --project-config %q was not found at revision %q (project_config_invalid)", repoPath, revision)}
+}
+
+// configExistsInWorktree reports whether repoPath is readable in the
+// worktree at dir. Any stat failure (not just "does not exist") is treated
+// as absent: this function's only caller already falls back to a generic
+// not-found-at-revision message in that case, so distinguishing
+// permission-denied or other I/O errors from a missing file has no observer.
+func configExistsInWorktree(dir, repoPath string) bool {
+	_, statErr := os.Stat(filepath.Join(dir, repoPath))
+	return statErr == nil
 }
 
 // runProjectConfigGit is the Git seam used by LoadProjectConfig. Tests may
@@ -180,13 +203,13 @@ func runGitBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args 
 		return nil, stderrRes.err
 	}
 	if int64(len(stdoutRes.data)) > maxStdout {
-		return nil, fmt.Errorf("git stdout exceeded %d-byte budget", maxStdout)
+		return nil, &gitOperationalBoundError{message: fmt.Sprintf("git stdout exceeded %d-byte budget", maxStdout)}
 	}
 	if int64(len(stderrRes.data)) > maxStderr {
-		return nil, fmt.Errorf("git stderr exceeded %d-byte budget", maxStderr)
+		return nil, &gitOperationalBoundError{message: fmt.Sprintf("git stderr exceeded %d-byte budget", maxStderr)}
 	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return nil, fmt.Errorf("git execution timed out after %s", timeout)
+		return nil, &gitOperationalBoundError{message: fmt.Sprintf("git execution timed out after %s", timeout)}
 	}
 	if waitErr != nil {
 		if len(stderrRes.data) > 0 {
@@ -197,8 +220,8 @@ func runGitBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args 
 	return stdoutRes.data, nil
 }
 
-func projectConfigError(repoPath, reason string) error {
-	return &ProjectConfigError{Message: fmt.Sprintf("coach codesignal: --project-config %q is invalid (project_config_invalid): %s", repoPath, reason)}
+func projectConfigError(repoPath, revision, reason string) error {
+	return &ProjectConfigError{Message: fmt.Sprintf("coach codesignal: --project-config %q is invalid at revision %q (project_config_invalid): %s", repoPath, revision, reason)}
 }
 
 func validateProjectConfigPath(repoPath string) error {
@@ -243,9 +266,9 @@ func validateProjectConfigJSON(data []byte) error {
 			return fmt.Errorf("root %q: %s", root, err)
 		}
 	}
-	// Roots may nest (e.g. "." plus "services/payments"): multi-module Go
-	// workspaces and the #220 candidate contract treat a workspace root and a
-	// more specific module root as distinct configured roots. Exact duplicate
+	// Roots may nest (e.g. "." plus "services/payments"): a multi-module Go
+	// workspace treats a workspace root and a more specific module root as
+	// distinct configured roots. Exact duplicate
 	// identities remain invalid. Layer prefixes below stay non-overlapping
 	// because they partition policy membership, not discovery roots.
 	if hasDuplicatePaths(config.Roots) {
@@ -288,7 +311,7 @@ func validateProjectConfigJSON(data []byte) error {
 		// pair exists. Left unchecked, a typo'd from/to that names no
 		// declared layer would validate cleanly but can never match any
 		// evaluated (layerFrom, layerTo) pair, silently making that policy
-		// line a permanent no-op (#211).
+		// line a permanent no-op.
 		if _, ok := seenLayerNames[forbidden.From]; !ok {
 			return fmt.Errorf("forbidden_imports entry references undefined layer %q", forbidden.From)
 		}
@@ -337,7 +360,7 @@ func hasDuplicatePaths(paths []string) bool {
 // hasDuplicateOrOverlappingPaths reports exact duplicates or ancestor/descendant
 // path pairs. Used for layer prefixes, which must partition policy membership.
 // Complexity is O(n log n) via sort + adjacent/ancestor checks rather than a
-// nested all-pairs scan (F-006).
+// nested all-pairs scan.
 func hasDuplicateOrOverlappingPaths(paths []string) bool {
 	if len(paths) < 2 {
 		return false
@@ -420,9 +443,9 @@ func rejectDuplicateJSONKeys(data []byte) error {
 }
 
 // ResolveProjectBackend reports whether a project-analysis backend is
-// registered for language. "go" (#211) and "typescript" (#214/#215) both
-// have registered backends today; every other language, including the empty
-// string, remains unavailable until its own backend lands.
+// registered for language. "go" and "typescript" both have registered
+// backends today; every other language, including the empty string, remains
+// unavailable until its own backend lands.
 func ResolveProjectBackend(language string) error {
 	if language == "go" || language == "typescript" {
 		return nil

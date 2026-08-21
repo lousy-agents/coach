@@ -165,8 +165,9 @@ var _ = Describe("coach codesignal --project-config with the real TypeScript pro
 
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(stderr).To(BeEmpty())
-			Expect(string(stdout)).To(ContainSubstring(`"kind":"project_config_invalid"`))
+			Expect(stdout).To(BeEmpty(), "never reaching backend dispatch means nothing is written to stdout")
+			Expect(string(stderr)).NotTo(BeEmpty())
+			Expect(string(stderr)).To(ContainSubstring("project.json"))
 		})
 	})
 })
