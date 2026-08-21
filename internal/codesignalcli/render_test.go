@@ -51,8 +51,8 @@ func TestRenderTextLineIsOneBasedFromStartRow(t *testing.T) {
 		startRow uint
 		wantLine string
 	}{
-		{name: "zero start row", startRow: 0, wantLine: "line: 1"},
-		{name: "start row ten", startRow: 10, wantLine: "line: 11"},
+		{name: "reports line 1 for a zero start row", startRow: 0, wantLine: "line: 1"},
+		{name: "reports line 11 for a start row of ten", startRow: 10, wantLine: "line: 11"},
 	}
 
 	for _, tt := range tests {
@@ -95,7 +95,7 @@ func TestRenderTextSummaryLine(t *testing.T) {
 }
 
 func TestRenderTextSummaryLineScopeDisclosure(t *testing.T) {
-	t.Run("production scope with filtered files", func(t *testing.T) {
+	t.Run("discloses the filtered count under production scope", func(t *testing.T) {
 		report := &codesignal.Report{
 			Scope:   codesignal.Scope{AppliedScope: "production"},
 			Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
@@ -114,7 +114,7 @@ func TestRenderTextSummaryLineScopeDisclosure(t *testing.T) {
 		}
 	})
 
-	t.Run("production scope with nothing filtered", func(t *testing.T) {
+	t.Run("discloses zero filtered without claiming no scope was applied", func(t *testing.T) {
 		report := &codesignal.Report{
 			Scope:   codesignal.Scope{AppliedScope: "production"},
 			Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
@@ -223,16 +223,6 @@ func TestRenderTextCoverageSection(t *testing.T) {
 	})
 }
 
-func TestRenderTextNoActiveSignals(t *testing.T) {
-	report := &codesignal.Report{Summary: codesignal.Summary{FilesAnalyzed: 1}}
-
-	got := RenderText(report)
-
-	if !strings.Contains(got, "No active CodeSignal findings.") {
-		t.Errorf("expected exact sentence \"No active CodeSignal findings.\"; got:\n%s", got)
-	}
-}
-
 func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -241,9 +231,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 		wantAbsent   []string
 	}{
 		{
-			// AC-1: zero signals, zero project changes, zero diagnostics, no
-			// project coverage -> unqualified verdict, unchanged from today.
-			name:   "zero everything and no project coverage",
+			name:   "prints the unqualified verdict when nothing is missing",
 			report: &codesignal.Report{Summary: codesignal.Summary{FilesAnalyzed: 1}},
 			wantContains: []string{
 				"No active CodeSignal findings.\n",
@@ -251,9 +239,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 			wantAbsent: []string{"incomplete"},
 		},
 		{
-			// AC-1: report.ProjectCoverage.Complete == true must not qualify
-			// the verdict, even though ProjectCoverage is non-nil.
-			name: "zero everything with complete project coverage",
+			name: "prints the unqualified verdict when project coverage is non-nil but complete",
 			report: &codesignal.Report{
 				Summary:         codesignal.Summary{FilesAnalyzed: 1},
 				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
@@ -262,10 +248,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 			wantAbsent:   []string{"incomplete"},
 		},
 		{
-			// AC-2: diagnostics present must qualify the verdict and name
-			// the number of distinct affected paths (not the diagnostic
-			// count -- see "multiple diagnostics share one path" below).
-			name: "diagnostics only",
+			name: "names the distinct affected-path count when diagnostics are present",
 			report: &codesignal.Report{
 				Diagnostics: []codesignal.Diagnostic{
 					{Path: "a.go", Kind: "unsupported_change_type", Message: "m"},
@@ -277,16 +260,12 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 			},
 		},
 		{
-			// AC-3: incomplete project coverage alone must qualify the
-			// verdict and state that project analysis did not complete.
-			// The real Build pipeline never leaves Diagnostics nil when
-			// ProjectCoverage.Complete is false: it always appends a
-			// pathless project_coverage_incomplete diagnostic alongside
-			// it (pkg/codesignal/codesignal.go's projectLifecycleState),
-			// so this fixture includes that diagnostic to match what
-			// Build actually emits, and the verdict must still not claim
-			// any path was skipped (that diagnostic carries no Path).
-			name: "incomplete project coverage only",
+			// The fixture includes project_coverage_incomplete alongside
+			// ProjectCoverage.Complete: false because the real Build pipeline
+			// never leaves Diagnostics empty in that state (see
+			// pkg/codesignal/codesignal.go's projectLifecycleState); a
+			// fixture missing it would not match what Build actually emits.
+			name: "states project analysis did not complete when project coverage alone is incomplete",
 			report: &codesignal.Report{
 				Diagnostics: []codesignal.Diagnostic{
 					{Kind: "project_coverage_incomplete", Message: "project analysis coverage is incomplete; project observations may be partial"},
@@ -300,11 +279,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 			wantAbsent: []string{"not analyzed"},
 		},
 		{
-			// Regression (finding: len(Diagnostics) != distinct affected
-			// paths): four diagnostics sharing one path (e.g. one
-			// base_syntax_errors diagnostic per syntax issue on the same
-			// file) must be reported as one affected path, not four.
-			name: "multiple diagnostics share one path",
+			name: "counts one affected path when four diagnostics share it",
 			report: &codesignal.Report{
 				Diagnostics: []codesignal.Diagnostic{
 					{Path: "a.go", Kind: "base_syntax_errors", Message: "m1"},
@@ -320,15 +295,10 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 			wantAbsent: []string{"4 paths were not analyzed"},
 		},
 		{
-			// Regression: a pathless diagnostic unrelated to project-coverage
-			// incompleteness (project_observation_missing_primary_path fires
-			// when a project observation lacks an anchor path -- a distinct
-			// anomaly from project_coverage_incomplete/
-			// project_lifecycle_indeterminate, and reachable even when
-			// ProjectCoverage.Complete is true) exercises the fallback
-			// "additional diagnostics were recorded" cause -- neither the
-			// path-count clause nor the project-incomplete clause applies here.
-			name: "pathless diagnostic unrelated to project coverage, with complete project coverage",
+			// project_observation_missing_primary_path is reachable even when
+			// ProjectCoverage.Complete is true -- a distinct anomaly from the
+			// two project-lifecycle diagnostic kinds above.
+			name: "falls back to a generic incomplete-analysis clause for a pathless diagnostic unrelated to project coverage",
 			report: &codesignal.Report{
 				Diagnostics: []codesignal.Diagnostic{
 					{Kind: "project_observation_missing_primary_path", Message: "m"},
@@ -342,8 +312,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 			wantAbsent: []string{"not analyzed", "project analysis did not complete"},
 		},
 		{
-			// AC-2 + AC-3 combined: both facts must appear, neither dropped.
-			name: "diagnostics and incomplete project coverage together",
+			name: "states both causes when diagnostics and incomplete project coverage co-occur",
 			report: &codesignal.Report{
 				Diagnostics: []codesignal.Diagnostic{
 					{Path: "a.go", Kind: "unsupported_change_type", Message: "m"},
@@ -376,8 +345,6 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 	}
 }
 
-// AC-4: a qualified verdict must render before the Diagnostics block, so a
-// reader encounters the qualification before scrolling past diagnostics.
 func TestRenderTextQualifiedVerdictPrecedesDiagnostics(t *testing.T) {
 	report := &codesignal.Report{
 		Diagnostics: []codesignal.Diagnostic{{Path: "a.go", Kind: "unsupported_change_type", Message: "m"}},
@@ -395,9 +362,7 @@ func TestRenderTextQualifiedVerdictPrecedesDiagnostics(t *testing.T) {
 	}
 }
 
-// AC-5: the non-empty findings path is untouched by this change -- pinned by
-// an exact string match rather than substring checks.
-func TestRenderTextSignalsPresentPathUnchanged(t *testing.T) {
+func TestRenderTextSignalsPresentRenderingIsPinnedExactly(t *testing.T) {
 	report := &codesignal.Report{
 		Summary: codesignal.Summary{FilesAnalyzed: 1, ActiveSignals: 1},
 		Signals: []codesignal.Signal{
@@ -497,7 +462,7 @@ func TestRenderTextPreservesSignalOrder(t *testing.T) {
 	}
 }
 
-func TestRenderJSONDoesNotAddFields(t *testing.T) {
+func TestRenderJSONHasExactlyOneTrailingNewline(t *testing.T) {
 	report := &codesignal.Report{
 		SchemaVersion: "1",
 		Summary:       codesignal.Summary{FilesAnalyzed: 1},
@@ -510,6 +475,18 @@ func TestRenderJSONDoesNotAddFields(t *testing.T) {
 
 	if strings.Count(string(encoded), "\n") != 1 {
 		t.Fatalf("expected exactly one trailing newline; got %q", encoded)
+	}
+}
+
+func TestRenderJSONDoesNotAddFields(t *testing.T) {
+	report := &codesignal.Report{
+		SchemaVersion: "1",
+		Summary:       codesignal.Summary{FilesAnalyzed: 1},
+	}
+
+	encoded, err := RenderJSON(report)
+	if err != nil {
+		t.Fatalf("RenderJSON: %s", err)
 	}
 
 	var directMarshal map[string]any

@@ -29,12 +29,11 @@ var _ = Describe("the zero-active-signal text verdict", func() {
 		BeforeEach(func() {
 			repo := newTempGitRepo()
 
-			// The file being renamed already contains finding-triggering
-			// content, unchanged, so a rename-only diff (unsupported_change_type)
-			// is what discards it -- see the sibling It below for the control
-			// proving this content is a real finding trigger.
+			By("committing content that would trigger a real finding if analyzed unchanged")
 			oldContent := "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n"
 			initialSHA := commitFile(repo, "old.go", oldContent)
+
+			By("renaming the file instead of editing it, so the diff reports unsupported_change_type and discards that finding")
 			renameFile(repo, "old.go", "new.go")
 
 			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--format=text")
@@ -43,9 +42,7 @@ var _ = Describe("the zero-active-signal text verdict", func() {
 		})
 
 		It("prints a verdict distinct from a genuinely clean run, naming that the analysis did not complete", func() {
-			// Control: proves this exact hidden-input-mutation content, when
-			// actually analyzed (no rename), produces a signal -- so the
-			// rename fixture above is skipping a real finding, not a no-op.
+			By("confirming the hidden-input-mutation content is a real finding trigger when actually analyzed, so the rename fixture is skipping a real finding rather than a no-op")
 			controlRepo := newTempGitRepo()
 			controlBase := "package a\n\nfunc Get(input *int) int {\n\treturn *input\n}\n"
 			controlHead := controlBase + "\nfunc Update(input *int) {\n\t*input = 1\n}\n"
