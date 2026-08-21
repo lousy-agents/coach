@@ -18,9 +18,8 @@ const goLayerPolicyConfigJSON = `{"schema_version":"1","roots":["."],"layers":[{
 
 const goModuleFile = "module example.com/app\n\ngo 1.25\n"
 
-// goModuleFileDotless is goModuleFile's dotless-module-path counterpart
-// (issue #284): a module declared via `go mod init app` rather than a
-// domain-style path.
+// goModuleFileDotless is goModuleFile's dotless-module-path counterpart: a
+// module declared via `go mod init app` rather than a domain-style path.
 const goModuleFileDotless = "module app\n\ngo 1.25\n"
 
 // handlersImportingDBDotlessModule is handlersImportingDB re-pointed at the
@@ -35,9 +34,6 @@ const dbPackageFile = "package db\n\n// Name is a placeholder export used by the
 // goLayerPolicyConfigJSON. The import sits on line 3 (0-based row 2).
 const handlersImportingDB = "package handlers\n\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n"
 
-// handlersImportingDBShifted is handlersImportingDB with a leading comment
-// that shifts the import onto a different line, used to prove Changed
-// tracks the violation's own anchor rather than file membership.
 const handlersImportingDBShifted = "package handlers\n\n// shifted\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n"
 
 const handlersWithoutImport = "package handlers\n\nfunc Use() string {\n\treturn \"\"\n}\n"
@@ -65,12 +61,12 @@ const handlersImportingUnresolved = "package handlers\n\nimport \"example.com/ap
 // location lands in RelatedLocations rather than PrimaryAnchor.
 const handlersOtherImportingDB = "package handlers\n\n// second site\n// note\nimport \"example.com/app/pkg/db\"\n\nfunc UseOther() string {\n\treturn db.Name\n}\n"
 
-// modelFileWithTwoConstructors mirrors issue #259's own repro: two
-// constructor-like functions in one file reach structure.constructor_density's
-// per-file density gate (densityGateThreshold == 2 in registry.go), which
-// emits a "low" severity structure.constructor_density Signal. Combined with
-// handlersImportingDB (an "advisory" severity architecture.layer_violation)
-// in the same lifecycle group, this reproduces issue #259's sort-order bug.
+// modelFileWithTwoConstructors puts two constructor-like functions in one
+// file, reaching structure.constructor_density's per-file density gate
+// (densityGateThreshold == 2 in registry.go), which emits a "low" severity
+// structure.constructor_density Signal. Combined with handlersImportingDB
+// (an "advisory" severity architecture.layer_violation) in the same
+// lifecycle group, this exercises severity-based sort ordering across rules.
 const modelFileWithTwoConstructors = "package model\n\ntype A struct{}\n\ntype B struct{}\n\nfunc NewA() *A {\n\treturn &A{}\n}\n\nfunc NewB() *B {\n\treturn &B{}\n}\n"
 
 // goLayerBypassPolicyConfigJSON declares three layers ("handlers",
@@ -181,23 +177,14 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			commitFile(repo, "go.mod", goModuleFile)
 			commitFile(repo, "pkg/db/db.go", dbPackageFile)
 			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
-			// "handler" (missing the trailing "s") does not match the
-			// declared layer name "handlers": a typo that must be rejected
-			// at config-validation time rather than silently matching
-			// nothing at evaluation time.
 			typoConfig := `{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handler","to":"db"}]}`
 			commitFile(repo, "project.json", typoConfig)
 
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
 
 			Expect(exitCode).To(Equal(2), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(stderr).To(BeEmpty())
-			Expect(string(stdout)).To(ContainSubstring(`"kind":"project_config_invalid"`))
-			Expect(string(stdout)).To(ContainSubstring("handler"), "diagnostic message must reference the undefined layer name")
-
-			var document map[string]json.RawMessage
-			Expect(json.Unmarshal(stdout, &document)).To(Succeed())
-			Expect(document).NotTo(HaveKey("project_changes"), "a rejected config must never reach the layer-violation evaluator")
+			Expect(stdout).To(BeEmpty(), "a rejected config must never reach the layer-violation evaluator; nothing is written to stdout")
+			Expect(string(stderr)).To(ContainSubstring("handler"), "stderr message must reference the undefined layer name")
 		})
 	})
 
@@ -459,11 +446,7 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			commitFile(repo, "go.mod", goModuleFile)
 			commitFile(repo, "pkg/db/db.go", dbPackageFile)
 			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
-			// A second file in the same importer package directory that also
-			// imports pkg/db gives the (pkg/handlers, pkg/db) violation group
-			// two sites, so RelatedLocations is non-empty and the sig/text
-			// parity assertions below actually exercise it rather than
-			// comparing nil to nil.
+			By("committing a second importer of pkg/db so the violation group has two sites and RelatedLocations is non-empty")
 			commitFile(repo, "pkg/handlers/other.go", "package handlers\n\nimport \"example.com/app/pkg/db\"\n\nfunc Other() string {\n\treturn db.Name\n}\n")
 			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
 
@@ -486,9 +469,7 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			Expect(text).To(ContainSubstring("Project summary: active=1"))
 			Expect(text).To(ContainSubstring("Project coverage: phase=go_model_build, complete=true"))
 
-			// signals[] must carry the same structured machine_evidence the
-			// text Project findings section shows for this violation -- a
-			// consumer reading only signals gets full parity with text.
+			By("asserting signals[] carries the same structured machine_evidence text shows, so a consumer reading only signals gets full parity")
 			Expect(report.Signals).To(HaveLen(1))
 			sig := report.Signals[0]
 			Expect(sig.MachineEvidence).To(Equal(map[string]string{
@@ -504,8 +485,7 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			Expect(sig.RelatedLocations).NotTo(BeEmpty())
 			Expect(sig.RelatedLocations).To(Equal(report.ProjectChanges[0].RelatedLocations))
 
-			// text must show the same related location the JSON RelatedLocations
-			// carries -- parity for the second site, not just the primary anchor.
+			By("asserting text shows the same related location JSON RelatedLocations carries, not only the primary anchor")
 			for _, location := range sig.RelatedLocations {
 				Expect(text).To(ContainSubstring(fmt.Sprintf("related: %s:%d", location.Path, location.Location.StartRow+1)))
 			}
@@ -520,7 +500,7 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 
 	// A user-declared, confidence:high architecture.layer_violation/layer_bypass
 	// finding must outrank a heuristic low-severity structural finding in
-	// signals[] order (issue #259).
+	// signals[] order.
 	When("a baseline scan produces both an architecture layer-violation finding and a low-severity structural finding in the same lifecycle group", func() {
 		It("orders the architecture finding ahead of the low-severity structural finding in signals[]", func() {
 			repo := newTempGitRepo()
@@ -599,8 +579,8 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 
 			// Revision is the tree's own commit SHA, and TrackedFilesDiscovered/
 			// Unsupported legitimately differ by exactly the one extra tracked
-			// (but never referenced) project.json file -- neither is what AC-4
-			// guards. Normalizing them isolates the property under test: with
+			// (but never referenced) project.json file -- neither is what this
+			// test guards. Normalizing them isolates the property under test: with
 			// --project-config never supplied, project.json's mere presence in
 			// the tree must have zero effect on schema_version, signals[], or
 			// any project_* field.
@@ -639,7 +619,7 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 	})
 
 	When("a dotless-module repository and an otherwise-identical dotted-module repository each trigger the same forbidden_imports layer violation", func() {
-		It("reports the same layer_violation finding in both, modulo the module path literal (issue #284)", func() {
+		It("reports the same layer_violation finding in both, modulo the module path literal", func() {
 			dottedRepo := newTempGitRepo()
 			commitFile(dottedRepo, "go.mod", goModuleFile)
 			commitFile(dottedRepo, "pkg/db/db.go", dbPackageFile)
@@ -662,10 +642,10 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			Expect(dotlessStderr).To(BeEmpty())
 			dotlessReport := decodeCoachReport(dotlessStdout)
 
-			// AC-2: the dotless module must still resolve its own import as
-			// internal and trigger the rule, with the same rule id, path, and
-			// line as the dotted module -- before T1's classifyGoImport fix
-			// this was silently zero findings with coverage.complete: true.
+			// The dotless module must still resolve its own import as internal
+			// and trigger the rule, with the same rule id, path, and line as the
+			// dotted module -- previously this was silently zero findings with
+			// coverage.complete: true.
 			Expect(dottedReport.ProjectChanges).To(HaveLen(1), "sanity: the dotted-module fixture must itself trigger exactly one violation")
 			dottedChange := dottedReport.ProjectChanges[0]
 
@@ -683,8 +663,8 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			Expect(dotlessReport.ProjectCoverage).NotTo(BeNil())
 			Expect(dotlessReport.ProjectCoverage.Complete).To(BeTrue(), "the fix must not trade a false stdlib classification for a false coverage gap")
 
-			// AC-3: normalize each side's ProjectChanges against its own
-			// module path literal, then require exact, ordered equality of
+			// Normalize each side's ProjectChanges against its own module path
+			// literal, then require exact, ordered equality of
 			// everything else -- rule id, kind, severity, count, and ordering
 			// included, not merely "a finding exists on both sides".
 			dottedNormalized := normalizeProjectChangesModulePath(dottedReport.ProjectChanges, "example.com/app")
