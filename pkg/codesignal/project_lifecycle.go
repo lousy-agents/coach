@@ -31,6 +31,15 @@ func indexProjectChangesByKey(changes []ProjectChange) (map[string]ProjectChange
 	return byKey, diagnostics
 }
 
+// indeterminateLifecycleEvidenceNote is appended to a ProjectChange's own
+// Evidence whenever classifyProjectChanges degrades it to lifecycle
+// "unknown", so a reader scanning findings one at a time can see why without
+// separately cross-referencing the project_lifecycle_indeterminate
+// diagnostic in the report's top-level Diagnostics[]. Evidence is excluded
+// from fingerprint/ID computation (see appendProjectIdentity), so this never
+// affects lifecycle identity or Changed.
+const indeterminateLifecycleEvidenceNote = ` (lifecycle is "unknown": see the project_lifecycle_indeterminate diagnostic for why)`
+
 // classifyProjectChanges computes identity, lifecycle, and causal Changed
 // state for every project change on either side of a comparison. When
 // lifecycleIndeterminate is true, no observation is promoted to introduced,
@@ -51,6 +60,7 @@ func classifyProjectChanges(hasBase, lifecycleIndeterminate bool, headChanges, b
 		case lifecycleIndeterminate:
 			change.Lifecycle = "unknown"
 			change.Changed = false
+			change.Evidence += indeterminateLifecycleEvidenceNote
 		case !hasBase:
 			change.Lifecycle = noBaseLifecycle
 			change.Changed = false
@@ -72,7 +82,13 @@ func classifyProjectChanges(hasBase, lifecycleIndeterminate bool, headChanges, b
 		}
 		change := baseByKey[key]
 		if lifecycleIndeterminate || !hasBase {
+			// !hasBase only reaches here when baseByKey is non-empty, which
+			// projectLifecycleState (codesignal.go) already treats as
+			// lifecycleIndeterminate on its own -- so this branch always
+			// runs with lifecycleIndeterminate true, and the note is never
+			// misattributed to a determinate change.
 			change.Lifecycle = "unknown"
+			change.Evidence += indeterminateLifecycleEvidenceNote
 		} else {
 			change.Lifecycle = "resolved"
 		}
