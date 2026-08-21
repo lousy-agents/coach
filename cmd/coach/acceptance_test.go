@@ -36,8 +36,6 @@ func runCoachCodesignalRaw(repo, base string, extraArgs ...string) (stdout, stde
 	return outBuf.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
 }
 
-// removeFile deletes name from repo and commits the removal, returning the
-// resulting commit's full SHA.
 func removeFile(repo, name string) string {
 	rmCmd := exec.Command("git", "rm", name)
 	rmCmd.Dir = repo
@@ -221,7 +219,7 @@ var _ = Describe("coach codesignal", func() {
 	})
 
 	When("the comparison contains no supported changed files", func() {
-		It("prints a completed no-findings summary and exits 0", func() {
+		It("exits 0 and qualifies the no-findings verdict as incomplete because of the unsupported_language diagnostic", func() {
 			repo := newTempGitRepo()
 			initialSHA := commitFile(repo, "notes.txt", "before\n")
 			commitFile(repo, "notes.txt", "after\n")
@@ -229,7 +227,7 @@ var _ = Describe("coach codesignal", func() {
 			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA)
 
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-			Expect(string(stdout)).To(ContainSubstring("No active CodeSignal findings."))
+			Expect(string(stdout)).To(ContainSubstring("No active CodeSignal findings, but the analysis is incomplete"))
 			Expect(string(stdout)).To(ContainSubstring("unsupported_language"))
 		})
 	})
@@ -574,7 +572,7 @@ var _ = Describe("coach codesignal", func() {
 	})
 
 	When("--format=text and there are no active signals but there is a diagnostic", func() {
-		It("renders the diagnostics section and the exact no-findings sentence", func() {
+		It("renders the diagnostics section and a verdict qualified as incomplete", func() {
 			repo := newTempGitRepo()
 			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
 			commitFile(repo, "a.go", "package a\n\n// updated\nfunc A() {}\n")
@@ -584,7 +582,7 @@ var _ = Describe("coach codesignal", func() {
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 
 			text := string(stdout)
-			Expect(text).To(ContainSubstring("No active CodeSignal findings."))
+			Expect(text).To(ContainSubstring("No active CodeSignal findings, but the analysis is incomplete"))
 			Expect(text).To(ContainSubstring("empty.go"))
 			Expect(text).To(ContainSubstring("empty_content"))
 		})

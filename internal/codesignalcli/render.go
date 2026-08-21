@@ -10,15 +10,7 @@ import (
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-// RenderText renders report as deterministic, ANSI-free plain text: a
-// one-line summary, then either "No active CodeSignal findings." or blocks
-// per file-local signal and project observation (in report order), then a
-// diagnostics section when report.Diagnostics is non-empty, then file and
-// project coverage sections. A Repository Baseline report
-// (report.Scope.Baseline) renders a distinct summary line that identifies
-// the analyzed revision and states plainly that the result is not a diff
-// comparison; everything else (signal blocks, diagnostics section) is
-// unchanged.
+// RenderText renders report as deterministic, ANSI-free plain text.
 func RenderText(report *codesignal.Report) string {
 	var b strings.Builder
 	renderReportSummary(&b, report)
@@ -38,14 +30,9 @@ func renderReportSummary(b *strings.Builder, report *codesignal.Report) {
 	renderDiffSummary(b, report)
 }
 
-// renderActiveFindings writes file-local signal blocks and structured project
-// findings. Build projects anchored ProjectChanges onto Signals for JSON
-// consumers while retaining project_changes for structured fields; text must
-// present each logical observation once (project-origin IDs skipped in the
-// plain signal loop).
 func renderActiveFindings(b *strings.Builder, report *codesignal.Report) {
 	if len(report.Signals) == 0 && len(report.ProjectChanges) == 0 {
-		b.WriteString("No active CodeSignal findings.\n")
+		renderNoActiveFindingsVerdict(b, report)
 		renderProjectSummary(b, report.ProjectSummary)
 		return
 	}
@@ -61,6 +48,59 @@ func renderActiveFindings(b *strings.Builder, report *codesignal.Report) {
 	if report.ProjectSummary != nil {
 		renderProjectSummary(b, report.ProjectSummary)
 	}
+}
+
+// renderNoActiveFindingsVerdict qualifies the verdict from a diagnostic Kind,
+// not only report.ProjectCoverage.Complete: Report exposes only head-side
+// coverage, and a diff's base side can be incomplete while the head side is
+// complete, which the Complete field alone cannot see.
+func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report) {
+	incompleteProject := (report.ProjectCoverage != nil && !report.ProjectCoverage.Complete) ||
+		hasProjectLifecycleDiagnostic(report.Diagnostics)
+	hasDiagnostics := len(report.Diagnostics) > 0
+	if !hasDiagnostics && !incompleteProject {
+		b.WriteString("No active CodeSignal findings.\n")
+		return
+	}
+
+	skippedPaths := distinctDiagnosticPaths(report.Diagnostics)
+	var causes []string
+	if n := len(skippedPaths); n > 0 {
+		causes = append(causes, pathCountClause(n))
+	}
+	if incompleteProject {
+		causes = append(causes, "project analysis did not complete")
+	}
+	if len(causes) == 0 {
+		causes = append(causes, "additional diagnostics were recorded")
+	}
+	fmt.Fprintf(b, "No active CodeSignal findings, but the analysis is incomplete: %s.\n", strings.Join(causes, "; "))
+}
+
+func pathCountClause(n int) string {
+	if n == 1 {
+		return "1 path was not analyzed"
+	}
+	return fmt.Sprintf("%d paths were not analyzed", n)
+}
+
+func distinctDiagnosticPaths(diagnostics []codesignal.Diagnostic) map[string]struct{} {
+	paths := make(map[string]struct{})
+	for _, d := range diagnostics {
+		if d.Path != "" {
+			paths[d.Path] = struct{}{}
+		}
+	}
+	return paths
+}
+
+func hasProjectLifecycleDiagnostic(diagnostics []codesignal.Diagnostic) bool {
+	for _, d := range diagnostics {
+		if d.Kind == codesignal.DiagKindProjectCoverageIncomplete || d.Kind == codesignal.DiagKindProjectLifecycleIndeterminate {
+			return true
+		}
+	}
+	return false
 }
 
 func renderFileLocalSignals(b *strings.Builder, signals []codesignal.Signal, projectSignalIDs map[string]struct{}) bool {
@@ -88,11 +128,6 @@ func renderDiagnosticsSection(b *strings.Builder, diagnostics []codesignal.Diagn
 	}
 }
 
-// renderBaselineSummary writes the Repository Baseline summary line: the
-// analyzed revision, an explicit statement that this is not a diff
-// comparison, and file-discovery/coverage counts. report.Coverage is
-// nil-checked defensively -- a nil Coverage falls back to treating every
-// count as 0 rather than panicking.
 func renderBaselineSummary(b *strings.Builder, report *codesignal.Report) {
 	fmt.Fprintf(b, "Repository Baseline for revision %s (not a diff comparison)\n", report.Scope.Revision)
 
@@ -109,21 +144,11 @@ func renderBaselineSummary(b *strings.Builder, report *codesignal.Report) {
 		tracked, analyzed, unsupported, excluded, unanalyzable, report.Summary.ActiveSignals, len(report.Diagnostics))
 }
 
-// renderDiffSummary writes the non-baseline (base-diff) summary line. When
-// report.Scope.AppliedScope was actually populated by the diff flow ("all" or
-// "production"), it prepends a scope clause disclosing the applied scope and,
-// for "production", the number of files filtered out by that scope
-// (report.Coverage.Excluded, nil-safe) -- distinguishing "scope: production,
-// filtered: 0" (scoped, nothing happened to match) from "all" (no scope
-// filtering applied at all). When AppliedScope is empty (not populated by the
-// diff flow, e.g. an older/unrelated caller), the line is left in its
-// original format with no scope clause.
 func renderDiffSummary(b *strings.Builder, report *codesignal.Report) {
 	switch report.Scope.AppliedScope {
 	case "all":
 		fmt.Fprintf(b, "scope: all (no scope filtering applied), ")
 	case "":
-		// No scope clause: AppliedScope was never populated.
 	default:
 		var filtered int
 		if report.Coverage != nil {
@@ -136,9 +161,6 @@ func renderDiffSummary(b *strings.Builder, report *codesignal.Report) {
 		report.Summary.FilesAnalyzed, report.Summary.ActiveSignals, len(report.Diagnostics))
 }
 
-// sumCoverageGroups totals CoverageGroup.Count across groups so the
-// top-line summary can report a single count per bucket without printing
-// one line per group there.
 func sumCoverageGroups(groups []codesignal.CoverageGroup) int {
 	total := 0
 	for _, g := range groups {
@@ -147,10 +169,6 @@ func sumCoverageGroups(groups []codesignal.CoverageGroup) int {
 	return total
 }
 
-// renderCoverageSection writes one line per CoverageGroup in
-// coverage.Unsupported and coverage.Excluded, staying proportional to the
-// number of distinct reason/language combinations rather than the number of
-// files. Writes nothing when coverage is nil or has no groups.
 func renderCoverageSection(b *strings.Builder, coverage *codesignal.Coverage) {
 	if coverage == nil || (len(coverage.Unsupported) == 0 && len(coverage.Excluded) == 0) {
 		return
@@ -176,9 +194,6 @@ func renderSignal(b *strings.Builder, signal codesignal.Signal) {
 	fmt.Fprintf(b, "recommendation: %s\n", signal.Recommendation)
 }
 
-// projectChangeSignalIDs returns the set of Signal IDs Build assigns to
-// project observations so text rendering can skip the plain signal body for
-// those entries and emit the structured Project findings block once.
 func projectChangeSignalIDs(changes []codesignal.ProjectChange) map[string]struct{} {
 	ids := make(map[string]struct{}, len(changes))
 	for _, change := range changes {
@@ -232,8 +247,6 @@ func renderProjectSummary(b *strings.Builder, summary *codesignal.ProjectSummary
 		summary.BaselineChanges)
 }
 
-// renderProjectFacts writes the deterministic Facts section for facts-only
-// observations. Facts never appear under Project findings or active counters.
 func renderProjectFacts(b *strings.Builder, facts []codesignal.ProjectFact) {
 	if len(facts) == 0 {
 		return

@@ -135,10 +135,6 @@ var _ = Describe("project-analysis text rendering", func() {
 		Expect(text).NotTo(ContainSubstring("Project findings:"))
 	})
 
-	// F-1: Build projects ProjectChange onto signals for JSON consumers while
-	// keeping project_changes for structured fields. Text must present each
-	// logical observation once (structured project block), not a plain signal
-	// body plus a Project findings body.
 	It("presents a Build-projected project observation once in text with structured fields", func() {
 		builder, err := codesignal.New(codesignal.Options{ProjectEnabled: true, Baseline: true})
 		Expect(err).NotTo(HaveOccurred())
@@ -200,8 +196,6 @@ var _ = Describe("project-analysis text rendering", func() {
 	})
 })
 
-// F-002: typed project handoff must reach the builder for baseline and diff
-// when a backend is selected, and must not run when project mode is omitted.
 type recordingProjectBackend struct {
 	requests []ProjectBackendRequest
 	result   *ProjectBackendResult
@@ -400,6 +394,124 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_coverage_incomplete")))
 		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_lifecycle_indeterminate")), "the CLI-facing report must surface the same indeterminate diagnostic codesignal.Build contracts for partial coverage")
 	})
+
+	// Through the real Build pipeline: incomplete project coverage with
+	// no project changes and no file-local signals must reach the
+	// zero-active-finding verdict, stating project analysis did not complete,
+	// without claiming any path was skipped -- project_coverage_incomplete and
+	// project_lifecycle_indeterminate diagnostics carry no Path.
+	It("renders the no-active-findings verdict as project-incomplete, not path-skipped, for a real incomplete-coverage report", func() {
+		dir := acceptanceTempGitRepo()
+		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
+		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
+
+		backend := &recordingProjectBackend{result: &ProjectBackendResult{
+			HeadCoverage: &projectmodel.Coverage{Phase: "go_model_build", Complete: false},
+		}}
+		cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
+		project := &ProjectAnalysis{
+			ConfigPath:   "project.json",
+			Language:     "go",
+			Config:       cfg,
+			ConfigDigest: ConfigDigest(cfg),
+			Backend:      backend,
+		}
+
+		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(report.ProjectChanges).To(BeEmpty(), "no project changes were returned by the backend")
+		Expect(report.Signals).To(BeEmpty(), "the fixture file triggers no file-local finding")
+		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_coverage_incomplete")))
+
+		text := RenderText(report)
+		Expect(text).To(ContainSubstring("No active CodeSignal findings, but the analysis is incomplete"))
+		Expect(text).To(ContainSubstring("project analysis did not complete"))
+		Expect(text).NotTo(ContainSubstring("not analyzed"), "project_coverage_incomplete/project_lifecycle_indeterminate diagnostics carry no Path, so no path count must be claimed")
+	})
+
+	// Regression: Report only exposes head-side ProjectCoverage, so a report
+	// whose HEAD coverage is complete but whose BASE coverage was incomplete
+	// (a real, reachable diff-mode state -- see pkg/codesignal/codesignal.go's
+	// projectLifecycleState, which marks lifecycle indeterminate and appends a
+	// project_lifecycle_indeterminate diagnostic when the base side is
+	// expected but incomplete) must still render "project analysis did not
+	// complete", not the generic "additional diagnostics were recorded"
+	// fallback -- the render layer must consult the diagnostic itself, not
+	// only report.ProjectCoverage.Complete.
+	It("renders project-incomplete for a real report whose base-side coverage was incomplete even though head coverage is complete", func() {
+		dir := acceptanceTempGitRepo()
+		baseSHA := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
+		headSHA := acceptanceCommitFile(dir, "a.go", "package a\n\n// note\nfunc A() {}\n")
+		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "modified"}}
+
+		backend := &recordingProjectBackend{result: &ProjectBackendResult{
+			HeadCoverage: &projectmodel.Coverage{Phase: "go_model_build", Complete: true},
+			BaseCoverage: &projectmodel.Coverage{Phase: "go_model_build", Complete: false},
+			BaseAnalyzed: true,
+		}}
+		cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
+		project := &ProjectAnalysis{
+			ConfigPath:   "project.json",
+			Language:     "go",
+			Config:       cfg,
+			ConfigDigest: ConfigDigest(cfg),
+			Backend:      backend,
+		}
+
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(report.ProjectChanges).To(BeEmpty(), "the backend returned no observations on either side")
+		Expect(report.Signals).To(BeEmpty(), "a comment-only change triggers no file-local finding")
+		Expect(report.ProjectCoverage.Complete).To(BeTrue(), "head coverage alone is complete")
+		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_lifecycle_indeterminate")), "base-side incompleteness must still surface as a diagnostic")
+
+		text := RenderText(report)
+		Expect(text).To(ContainSubstring("No active CodeSignal findings, but the analysis is incomplete"))
+		Expect(text).To(ContainSubstring("project analysis did not complete"), "the verdict must not fall back to the generic 'additional diagnostics were recorded' clause when the diagnostic itself names project-analysis incompleteness")
+	})
+
+	// Regression: a real backend can return a ProjectChange with no
+	// PrimaryAnchor.Path (filterAnchorlessProjectChanges in
+	// pkg/codesignal/codesignal.go drops it and appends a pathless
+	// project_observation_missing_primary_path diagnostic), while
+	// ProjectCoverage is otherwise complete. That diagnostic is neither a
+	// path-count cause nor a project-incompleteness cause, so it must reach
+	// the render layer's generic "additional diagnostics were recorded"
+	// fallback through the real Build pipeline, not only a hand-built Report.
+	It("renders the generic incomplete-analysis fallback for a real report whose only diagnostic is an anchorless project observation", func() {
+		dir := acceptanceTempGitRepo()
+		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
+		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
+
+		backend := &recordingProjectBackend{result: &ProjectBackendResult{
+			HeadChanges: []codesignal.ProjectChange{{
+				SemanticKey: "cycle:pkg/a<->pkg/b",
+				RuleID:      "architecture.layer_violation",
+				Kind:        "project_layer_violation",
+				Provenance:  codesignal.Provenance{Producer: "fake-backend"},
+				// PrimaryAnchor deliberately left zero-value: Path == "".
+			}},
+			HeadCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+		}}
+		cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
+		project := &ProjectAnalysis{
+			ConfigPath:   "project.json",
+			Language:     "go",
+			Config:       cfg,
+			ConfigDigest: ConfigDigest(cfg),
+			Backend:      backend,
+		}
+
+		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(report.ProjectChanges).To(BeEmpty(), "the anchorless observation must be dropped, not rendered as an active finding")
+		Expect(report.Signals).To(BeEmpty(), "the fixture file triggers no file-local finding")
+		Expect(report.ProjectCoverage.Complete).To(BeTrue())
+		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_observation_missing_primary_path")))
+
+		text := RenderText(report)
+		Expect(text).To(ContainSubstring("No active CodeSignal findings, but the analysis is incomplete: additional diagnostics were recorded."))
+	})
 })
 
 // fakeTSSidecarBinary holds the compiled
@@ -443,7 +555,7 @@ func installFakeTSSidecarAt(repoDir string) {
 	Expect(os.WriteFile(filepath.Join(binDir, "coach-ts-project-sidecar"), fakeTSSidecarBinary, 0o755)).To(Succeed())
 }
 
-// F-003 (issue #215 rework): mutation testing showed that swapping
+// Mutation testing showed that swapping
 // filepath.Join(req.Dir, tsSidecarRelativePath) for the bare
 // tsSidecarRelativePath left the whole cmd/coach acceptance suite green,
 // because every existing test happens to run with the process's cwd equal
@@ -485,7 +597,7 @@ var _ = Describe("tsProjectBackend sidecar binary resolution", func() {
 	})
 })
 
-// F-004 (issue #215 rework, round 5): ProjectBackendRequest.Dir is
+// ProjectBackendRequest.Dir is
 // os.Getwd() at CLI invocation time, not necessarily the repository
 // checkout root -- coach codesignal run from a subdirectory of a repo must
 // still find a sidecar vendored at the repository root's
@@ -529,8 +641,6 @@ var _ = Describe("project-config boundary budgets", func() {
 		Expect(err.Error()).To(ContainSubstring("size budget"))
 	})
 
-	// F-006: many non-overlapping prefixes must validate without a long CPU stall
-	// and exact overlap diagnostics must remain deterministic.
 	It("validates a near-budget set of non-overlapping layer prefixes without stalling", func() {
 		doc := layerPrefixConfigJSON(512)
 		started := time.Now()
@@ -614,7 +724,7 @@ var _ = Describe("project-config boundary budgets", func() {
 	})
 
 	// A required_layer is an explicit user claim that a declared layer exists,
-	// mirroring the forbidden_imports precedent above (#211): a typo'd name
+	// mirroring the forbidden_imports precedent above: a typo'd name
 	// that matches no declared layer must never validate cleanly and become a
 	// permanent no-op for the downstream backend wiring.
 	It("rejects a required_layer that references an undeclared layer name", func() {
