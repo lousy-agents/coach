@@ -240,13 +240,13 @@ func projectLifecycleState(input Input) (indeterminate bool, diagnostics []Diagn
 	}
 	if input.ProjectCoverage != nil && !input.ProjectCoverage.Complete {
 		diagnostics = append(diagnostics, Diagnostic{
-			Kind:    "project_coverage_incomplete",
+			Kind:    DiagKindProjectCoverageIncomplete,
 			Message: "project analysis coverage is incomplete; project observations may be partial",
 		})
 	}
 	if indeterminate {
 		diagnostics = append(diagnostics, Diagnostic{
-			Kind:    "project_lifecycle_indeterminate",
+			Kind:    DiagKindProjectLifecycleIndeterminate,
 			Message: projectLifecycleDiagnosticMessage(input),
 		})
 	}

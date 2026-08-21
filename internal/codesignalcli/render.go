@@ -94,11 +94,7 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 	skippedPaths := distinctDiagnosticPaths(report.Diagnostics)
 	var causes []string
 	if n := len(skippedPaths); n > 0 {
-		if n == 1 {
-			causes = append(causes, "1 path was not analyzed")
-		} else {
-			causes = append(causes, fmt.Sprintf("%d paths were not analyzed", n))
-		}
+		causes = append(causes, pathCountClause(n))
 	}
 	if incompleteProject {
 		causes = append(causes, "project analysis did not complete")
@@ -114,6 +110,15 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 	fmt.Fprintf(b, "No active CodeSignal findings, but the analysis is incomplete: %s.\n", strings.Join(causes, "; "))
 }
 
+// pathCountClause renders the correctly pluralized "N path(s) were not
+// analyzed" clause for n distinct skipped paths (n must be > 0).
+func pathCountClause(n int) string {
+	if n == 1 {
+		return "1 path was not analyzed"
+	}
+	return fmt.Sprintf("%d paths were not analyzed", n)
+}
+
 // distinctDiagnosticPaths returns the set of distinct non-empty
 // Diagnostic.Path values across diagnostics.
 func distinctDiagnosticPaths(diagnostics []codesignal.Diagnostic) map[string]struct{} {
@@ -126,13 +131,12 @@ func distinctDiagnosticPaths(diagnostics []codesignal.Diagnostic) map[string]str
 	return paths
 }
 
-// hasProjectLifecycleDiagnostic reports whether diagnostics contains a
-// project_coverage_incomplete or project_lifecycle_indeterminate kind --
+// hasProjectLifecycleDiagnostic reports whether diagnostics contains
 // pkg/codesignal's only signal that project analysis (on either the head or
 // the base side) did not complete.
 func hasProjectLifecycleDiagnostic(diagnostics []codesignal.Diagnostic) bool {
 	for _, d := range diagnostics {
-		if d.Kind == "project_coverage_incomplete" || d.Kind == "project_lifecycle_indeterminate" {
+		if d.Kind == codesignal.DiagKindProjectCoverageIncomplete || d.Kind == codesignal.DiagKindProjectLifecycleIndeterminate {
 			return true
 		}
 	}

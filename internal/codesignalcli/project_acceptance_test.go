@@ -475,6 +475,49 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(text).To(ContainSubstring("No active CodeSignal findings, but the analysis is incomplete"))
 		Expect(text).To(ContainSubstring("project analysis did not complete"), "the verdict must not fall back to the generic 'additional diagnostics were recorded' clause when the diagnostic itself names project-analysis incompleteness")
 	})
+
+	// Regression: a real backend can return a ProjectChange with no
+	// PrimaryAnchor.Path (filterAnchorlessProjectChanges in
+	// pkg/codesignal/codesignal.go drops it and appends a pathless
+	// project_observation_missing_primary_path diagnostic), while
+	// ProjectCoverage is otherwise complete. That diagnostic is neither a
+	// path-count cause nor a project-incompleteness cause, so it must reach
+	// the render layer's generic "additional diagnostics were recorded"
+	// fallback through the real Build pipeline, not only a hand-built Report.
+	It("renders the generic incomplete-analysis fallback for a real report whose only diagnostic is an anchorless project observation", func() {
+		dir := acceptanceTempGitRepo()
+		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
+		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
+
+		backend := &recordingProjectBackend{result: &ProjectBackendResult{
+			HeadChanges: []codesignal.ProjectChange{{
+				SemanticKey: "cycle:pkg/a<->pkg/b",
+				RuleID:      "architecture.layer_violation",
+				Kind:        "project_layer_violation",
+				Provenance:  codesignal.Provenance{Producer: "fake-backend"},
+				// PrimaryAnchor deliberately left zero-value: Path == "".
+			}},
+			HeadCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+		}}
+		cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
+		project := &ProjectAnalysis{
+			ConfigPath:   "project.json",
+			Language:     "go",
+			Config:       cfg,
+			ConfigDigest: ConfigDigest(cfg),
+			Backend:      backend,
+		}
+
+		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(report.ProjectChanges).To(BeEmpty(), "the anchorless observation must be dropped, not rendered as an active finding")
+		Expect(report.Signals).To(BeEmpty(), "the fixture file triggers no file-local finding")
+		Expect(report.ProjectCoverage.Complete).To(BeTrue())
+		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_observation_missing_primary_path")))
+
+		text := RenderText(report)
+		Expect(text).To(ContainSubstring("No active CodeSignal findings, but the analysis is incomplete: additional diagnostics were recorded."))
+	})
 })
 
 // fakeTSSidecarBinary holds the compiled

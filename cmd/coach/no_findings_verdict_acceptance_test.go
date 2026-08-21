@@ -24,12 +24,28 @@ var _ = Describe("the zero-active-signal text verdict", func() {
 	})
 
 	When("a file is renamed with no content change, discarding a diagnosable finding", func() {
-		It("prints a verdict distinct from a genuinely clean run, naming that the analysis did not complete", func() {
+		var incompleteText string
+
+		BeforeEach(func() {
 			repo := newTempGitRepo()
 
+			// The file being renamed already contains finding-triggering
+			// content, unchanged, so a rename-only diff (unsupported_change_type)
+			// is what discards it -- see the sibling It below for the control
+			// proving this content is a real finding trigger.
+			oldContent := "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n"
+			initialSHA := commitFile(repo, "old.go", oldContent)
+			renameFile(repo, "old.go", "new.go")
+
+			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--format=text")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			incompleteText = string(stdout)
+		})
+
+		It("prints a verdict distinct from a genuinely clean run, naming that the analysis did not complete", func() {
 			// Control: proves this exact hidden-input-mutation content, when
 			// actually analyzed (no rename), produces a signal -- so the
-			// rename fixture below is skipping a real finding, not a no-op.
+			// rename fixture above is skipping a real finding, not a no-op.
 			controlRepo := newTempGitRepo()
 			controlBase := "package a\n\nfunc Get(input *int) int {\n\treturn *input\n}\n"
 			controlHead := controlBase + "\nfunc Update(input *int) {\n\t*input = 1\n}\n"
@@ -38,17 +54,6 @@ var _ = Describe("the zero-active-signal text verdict", func() {
 			controlReport, controlStderr := runCoachCodesignal(controlRepo, controlInitialSHA)
 			Expect(controlStderr).To(BeEmpty())
 			Expect(signalsForPath(controlReport, "old.go")).NotTo(BeEmpty(), "the fixture content must be a real finding trigger, or this test proves nothing")
-
-			// The file being renamed already contains that same
-			// finding-triggering content, unchanged, so a rename-only diff
-			// (unsupported_change_type) is what discards it.
-			oldContent := "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n"
-			initialSHA := commitFile(repo, "old.go", oldContent)
-			renameFile(repo, "old.go", "new.go")
-
-			incompleteStdout, incompleteStderr, incompleteExitCode := runCoachCodesignalRaw(repo, initialSHA, "--format=text")
-			Expect(incompleteExitCode).To(Equal(0), "stderr: %s", incompleteStderr)
-			incompleteText := string(incompleteStdout)
 
 			cleanRepo := newTempGitRepo()
 			cleanInitialSHA := commitFile(cleanRepo, "a.go", "package a\n\nfunc A() {}\n")
@@ -64,7 +69,9 @@ var _ = Describe("the zero-active-signal text verdict", func() {
 			Expect(incompleteText).To(ContainSubstring("No active CodeSignal findings"), "verdict must still state that no findings were produced")
 			Expect(incompleteText).To(ContainSubstring("incomplete"), "verdict must state the analysis did not complete")
 			Expect(incompleteVerdict).To(ContainSubstring("1 path"), "the verdict sentence itself (not just the summary line's diagnostics count) must name the number of affected paths")
+		})
 
+		It("renders the qualified verdict before the Diagnostics block", func() {
 			diagnosticsIdx := strings.Index(incompleteText, "Diagnostics:")
 			Expect(diagnosticsIdx).To(BeNumerically(">", 0), "expected a Diagnostics section")
 			verdictIdx := strings.Index(incompleteText, "incomplete")

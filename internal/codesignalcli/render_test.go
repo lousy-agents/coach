@@ -263,7 +263,8 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 		},
 		{
 			// AC-2: diagnostics present must qualify the verdict and name
-			// the diagnostic count.
+			// the number of distinct affected paths (not the diagnostic
+			// count -- see "multiple diagnostics share one path" below).
 			name: "diagnostics only",
 			report: &codesignal.Report{
 				Diagnostics: []codesignal.Diagnostic{
