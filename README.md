@@ -170,6 +170,17 @@ recommendation: Return a copy instead of mutating the caller's value, or documen
 - `2` — a usage error: `--base` is missing, `--format` is not `text` or `json`, or (with `--project-config`) the config document is missing, unreadable, or fails schema validation (`project_config_invalid`). Usage guidance goes to stderr; nothing is written to stdout.
 - `3` — reserved for a valid `--project-config` naming a `--project-language` with no registered project-analysis backend at all (`project_backend_unavailable`; see [Configured layer violations](#configured-layer-violations---project-config) below). It's currently unreachable through the real CLI: `--project-language` accepts only `go` and `typescript`, both of which have registered backends, and any other value is rejected as a usage error (exit `2`) before backend dispatch ever happens. This exit code stays defined for a future language whose backend is registered but unavailable. A missing or failed TypeScript sidecar is a distinct, exit-`0` condition; see below.
 
+A `--project-config` load/validation failure (exit `2`, `project_config_invalid`) is treated exactly like any other usage error: it never writes a report to stdout, even in `--format json`. The stderr message identifies the `--project-config` path, the analyzed revision, and a specific reason — not found at that revision, not valid JSON, or a schema validation failure. If the path exists in your worktree but not at the analyzed revision (e.g. a `--suggest-project-config --output` candidate that hasn't been committed yet, see below), the message says so explicitly and names committing the file as the fix. This is distinct from `project_backend_unavailable` (exit `3`), which keeps its own report-on-stdout behavior unchanged.
+
+### `schema_version`: "1" vs "2"
+
+`schema_version` is chosen per invocation by whether `--project-config` is supplied, not by the `coach` binary's release version:
+
+- **No `--project-config`** → `schema_version: "1"`. A consumer may rely on `scope`, `summary`, and `signals`; the `project_*` fields are never present.
+- **A valid `--project-config` that reaches a registered backend** → `schema_version: "2"`. In addition to `scope`, `summary`, and `signals`, a consumer may rely on `project_changes`, `project_summary`, and `project_coverage` being present.
+
+Because a `--project-config` failure now writes nothing to stdout, there is no schema-1 or schema-2 document to distinguish on that path — the failure is detectable from the exit status (`2`) alone.
+
 ### Scope and limitations
 
 - **Advisory only.** It surfaces deterministic structural signals; it does not judge correctness or block anything on its own.
@@ -205,6 +216,8 @@ coach codesignal --baseline --suggest-project-config
 - Requires `--baseline`; it cannot be combined with `--base`, `--project-config`, `--project-language`, `--format`, `--scope`, `--build-target`, or a positional argument — any of those combinations is rejected outright rather than given a precedence.
 - The candidate JSON is written to stdout (2-space indent, one trailing newline); pass `--output <path>` to write it to a repository-relative file instead (create-only — it fails if the target already exists in any form). Either way, exactly one UTF-8 newline-delimited JSON (NDJSON) diagnostic/provenance object — compact, single-line, one trailing newline — is written to stderr describing the resolved revision, the roots considered, and root-discovery coverage.
 - **This is a candidate only.** Nothing consumes it automatically: review it, add any `layers`/`forbidden_imports`/`required_layer` policy you want (`source_sink_pack` is accepted but currently reserved and has no effect — see [Configured layer violations](#configured-layer-violations---project-config) below), and pass the result to `--project-config` yourself.
+- **Commit before use.** `--project-config` reads at the analyzed revision, not your worktree (see [Configured layer violations](#configured-layer-violations---project-config) below), so a candidate written with `--output <path>` must be committed before a subsequent `--project-config <path>` run can read it — an uncommitted candidate fails with exit `2` and a stderr message naming commit as the remedy.
+- **`roots` alone yields facts only.** A candidate straight from this mode has `roots` but no `layers`/`forbidden_imports`: fed into `--project-config` as-is, it produces a real schema-2 report with `project_coverage`, but zero layer findings, because there is no layer policy yet to violate. Add `layers`/`forbidden_imports` yourself (see below) once you're ready to enforce one.
 
 **Candidate example** (stdout, for a repository with a root module and one nested module):
 
