@@ -15,19 +15,58 @@ import (
 )
 
 var _ = Describe("coach project-analysis failure reports", func() {
-	It("writes nothing to stdout and an actionable message to stderr for an invalid revision config", func() {
+	It("writes nothing to stdout and an actionable message to stderr for an invalid --project-config", func() {
 		repo := newTempGitRepo()
-		initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
-		configSHA := commitFile(repo, "project.json", "not valid json")
+		baseSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
+		headSHA := commitFile(repo, "project.json", "not valid json")
 
-		stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--project-config", "project.json", "--format=json")
+		stdout, stderr, exitCode := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json", "--format=json")
 
 		Expect(exitCode).To(Equal(2))
 		Expect(stdout).To(BeEmpty(), "a --project-config load/validation failure must write NOTHING to stdout")
 		Expect(string(stderr)).To(ContainSubstring("project.json"), "stderr must identify the --project-config path")
-		// The analyzed revision is HEAD (configSHA, the project.json commit),
-		// not --base (initialSHA), which only bounds the diff.
-		Expect(string(stderr)).To(ContainSubstring(configSHA), "stderr must identify the analyzed revision")
+		Expect(string(stderr)).To(ContainSubstring(headSHA), "stderr must identify the analyzed revision")
+	})
+
+	It("writes nothing to stdout and an actionable message to stderr for an invalid --project-config when --project-language is typescript", func() {
+		repo := newTempGitRepo()
+		baseSHA := commitFile(repo, "a.ts", "export const A = 1;\n")
+		headSHA := commitFile(repo, "project.json", "not valid json")
+
+		stdout, stderr, exitCode := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+
+		Expect(exitCode).To(Equal(2))
+		Expect(stdout).To(BeEmpty(), "a --project-config load/validation failure must write NOTHING to stdout")
+		Expect(string(stderr)).To(ContainSubstring("project.json"), "stderr must identify the --project-config path")
+		Expect(string(stderr)).To(ContainSubstring(headSHA), "stderr must identify the analyzed revision")
+	})
+
+	// loadProjectConfig runs before resolveProjectBackend and never receives
+	// --project-language (main.go:465-469), so class-2 config failures are
+	// language-independent by construction. This spec guards against a
+	// reordering that would break that invariant.
+	It("produces the same class-2 shape for --project-language go and --project-language typescript given the same invalid config", func() {
+		repo := newTempGitRepo()
+		commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
+		configSHA := commitFile(repo, "project.json", "not valid json")
+
+		goStdout, goStderr, goExitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "go", "--format=json")
+		tsStdout, tsStderr, tsExitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+
+		Expect(goExitCode).To(Equal(2))
+		Expect(tsExitCode).To(Equal(2))
+		Expect(tsExitCode).To(Equal(goExitCode), "class-2 config failures must exit the same code regardless of --project-language")
+
+		Expect(goStdout).To(BeEmpty(), "go: a --project-config load/validation failure must write NOTHING to stdout")
+		Expect(tsStdout).To(BeEmpty(), "typescript: a --project-config load/validation failure must write NOTHING to stdout")
+
+		Expect(string(goStderr)).NotTo(BeEmpty())
+		Expect(string(tsStderr)).NotTo(BeEmpty())
+		Expect(string(goStderr)).To(ContainSubstring("project.json"), "go: stderr must identify the --project-config path")
+		Expect(string(tsStderr)).To(ContainSubstring("project.json"), "typescript: stderr must identify the --project-config path")
+		Expect(string(goStderr)).To(ContainSubstring(configSHA), "go: stderr must identify the analyzed revision")
+		Expect(string(tsStderr)).To(ContainSubstring(configSHA), "typescript: stderr must identify the analyzed revision")
+		Expect(string(tsStderr)).To(Equal(string(goStderr)), "class-2 config failures must produce the same message regardless of --project-language")
 	})
 
 	// "go" and "typescript" both have registered backends now, so no real
@@ -113,10 +152,9 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		Expect(string(stderr)).To(ContainSubstring("commit"), "an uncommitted --suggest-project-config --output candidate must name commit as the remedy (AC-6)")
 	})
 
-	// When project-mode appends a diagnostic after Build, re-sorting must keep
-	// the same path/kind/location/message key order as pkg/codesignal. A
-	// path/kind/message-only sort reorders equal path+kind diagnostics whose
-	// messages disagree with location order and breaks deterministic reports.
+	// Re-sorting after Build must match pkg/codesignal's path/kind/location/message
+	// key order; a message-only tiebreaker would reorder rows whose messages
+	// disagree with their location order, breaking determinism.
 	It("keeps location-aware diagnostic order when appending a project diagnostic", func() {
 		loc := func(row uint) *semantics.Location {
 			return &semantics.Location{StartRow: row}
