@@ -114,22 +114,25 @@ coach codesignal --base <ref>
 **Text example** (`coach codesignal --base <ref>`), after a commit adds a function that mutates a caller-owned pointer:
 
 ```
-files analyzed: 1, active signals: 1, diagnostics: 0
+scope: production, filtered: 0, files analyzed: 1, active signals: 1, diagnostics: 0
 path: config.go
-line: 12
+line: 10
 lifecycle: introduced
+source_scope: unknown
 changed: true
 evidence: cfg.Timeout
 why it matters: Mutating a caller-owned input can create behavior that is not visible from the function signature, make outcomes dependent on call ordering, introduce temporal coupling, make tests and local reasoning more difficult, and surprise callers that expect an input to remain unchanged.
 recommendation: Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.
 ```
 
-**JSON example** (`coach codesignal --base <ref> --format=json`), for the same change:
+The leading `scope: production, filtered: 0, ` clause reflects `--scope`'s default (`production`); pass `--scope all` to drop it. `source_scope: unknown` is expected here because no `--build-target` was given, so this run cannot tell whether `config.go` actually ships in a build — it is retained (not filtered), just labeled `unknown`.
+
+**JSON example** (`coach codesignal --base <ref> --format=json`), for the same change — real output, captured from an actual `coach` binary built from this repository and run against a throwaway Git repository:
 
 ```json
 {
   "schema_version": "1",
-  "scope": { "revision": "3474e2c...", "base": "ece3690..." },
+  "scope": { "revision": "592147e385d...", "base": "ba6b55ffa1e...", "applied_scope": "production" },
   "summary": {
     "files_analyzed": 1,
     "files_with_diagnostics": 0,
@@ -141,8 +144,8 @@ recommendation: Return a copy instead of mutating the caller's value, or documen
   },
   "signals": [
     {
-      "id": "sig_88ec28c6...",
-      "fingerprint": "fp_dcf2afc2...",
+      "id": "sig_8b52faea049d0bdc6eb96c8c2838803e05279ef40a0b94c797eb46f29f51f1d4",
+      "fingerprint": "fp_dcf2afc2dfc5317dda2084b2de8eec306381b436ce887f8c5285904b0a9fdf50",
       "rule_id": "state.hidden_input_mutation",
       "rule_version": "1",
       "kind": "hidden_input_mutation",
@@ -152,19 +155,32 @@ recommendation: Return a copy instead of mutating the caller's value, or documen
       "lifecycle": "introduced",
       "changed": true,
       "path": "config.go",
+      "source_scope": "unknown",
       "subject": "ApplyDefaults:cfg",
-      "location": { "start_byte": 137, "end_byte": 148, "start_row": 11, "start_col": 1, "end_row": 11, "end_col": 12 },
+      "location": { "start_byte": 113, "end_byte": 124, "start_row": 9, "start_col": 1, "end_row": 9, "end_col": 12 },
       "evidence": "cfg.Timeout",
       "why_it_matters": "Mutating a caller-owned input can create behavior that is not visible from the function signature, make outcomes dependent on call ordering, introduce temporal coupling, make tests and local reasoning more difficult, and surprise callers that expect an input to remain unchanged.",
       "recommendation": "Return a copy instead of mutating the caller's value, or document/rename this function to make the in-place mutation explicit.",
       "suggested_skill": "refactor-hidden-mutation",
-      "provenance": { "producer": "semantics", "finding_kind": "mutates_input" }
+      "provenance": { "producer": "semantics", "finding_kind": "mutates_input" },
+      "machine_evidence": {},
+      "related_locations": [],
+      "path_steps": [],
+      "coverage_refs": []
     }
-  ]
+  ],
+  "diagnostics": [],
+  "coverage": {
+    "tracked_files_discovered": 0,
+    "files_analyzed": 0,
+    "files_unanalyzable": 0,
+    "unsupported": [],
+    "excluded": []
+  }
 }
 ```
 
-This example's `scope` and top-level object omit `repository`, `applied_scope`, `baseline`, `diagnostics`, `coverage`, and the `project_*` fields because they're empty for this run: those specific fields carry `omitempty` (they are not the only `omitempty` fields — `signals`, `revision`, and `base` do too, and are simply non-empty here; see `pkg/codesignal/report.go` and `input.go`), so an empty collection or unset value disappears from JSON output rather than appearing as `[]`/`{}`/`""`. [Issue #269](https://github.com/lousy-agents/coach/issues/269) tracks changing that so empty collections are always present; until it lands, don't read this example's key set as the complete set of keys `Report` can ever emit. `summary`'s fields (including `baseline_signals`) carry no `omitempty` tag and are always present, even at `0` — a zero count there is presence, not omission, and should not be read as evidence for the same `omitempty` behavior described above.
+Every one of `schema_version`, `scope`, `summary`, `signals`, `diagnostics`, and `coverage` is a guaranteed top-level key — see [`schema_version`: "1" vs "2"](#schema_version-1-vs-2) below for the full present/optional key contract, including every `signals[]` entry's guaranteed key set (`machine_evidence`/`related_locations`/`path_steps`/`coverage_refs` above are empty-typed, not project-origin, but still always present). `coverage`'s `tracked_files_discovered`/`files_analyzed`/`files_unanalyzable` are baseline-only accounting fields and are always `0` on a diff-flow (`--base`) report; only `coverage.excluded` is meaningful there.
 
 ### Exit status
 
@@ -179,10 +195,67 @@ A `--project-config` load/validation failure (exit `2`, `project_config_invalid`
 
 `schema_version` is chosen per invocation by whether `--project-config` is supplied, not by the `coach` binary's release version:
 
-- **No `--project-config`** → `schema_version: "1"`. A consumer may rely on `scope`, `summary`, and `signals`; the `project_*` fields are never present.
-- **A valid `--project-config` that reaches a registered backend** → `schema_version: "2"`. In addition to `scope`, `summary`, and `signals`, a consumer may rely on `project_changes`, `project_summary`, and `project_coverage` being present.
+- **No `--project-config`** → `schema_version: "1"`.
+- **A valid `--project-config` that reaches a registered backend** → `schema_version: "2"`.
 
 Because a `--project-config` failure now writes nothing to stdout, there is no schema-1 or schema-2 document to distinguish on that path — the failure is detectable from the exit status (`2`) alone.
+
+#### Top-level keys
+
+At `schema_version: "1"`, the following six top-level keys are **guaranteed present in every report, never absent, never null** — empty-typed (`[]`/`{}`/zero) rather than omitted when there is nothing to report:
+
+| Key | Type | Guarantee |
+| --- | --- | --- |
+| `schema_version` | string | always `"1"` or `"2"` |
+| `scope` | object | always present; individual fields (`repository`, `revision`, `base`, `applied_scope`, `baseline`) are each optional/omitted when not applicable (e.g. `base` is absent on a `--baseline` run, `applied_scope` is absent only if scope resolution itself never ran) |
+| `summary` | object | always present, all-zero when there is nothing to summarize |
+| `signals` | array | always present; `[]` when there are no signals |
+| `diagnostics` | array | always present; `[]` when there are no diagnostics |
+| `coverage` | object | always present; its `unsupported`/`excluded` arrays are always `[]` rather than omitted, even though the object as a whole is empty on a fresh diff-flow report |
+
+At `schema_version: "2"`, all six keys above are still guaranteed, **plus** these four additional top-level keys, likewise guaranteed present and empty-typed (never absent, never null) rather than omitted when the project phase produced nothing:
+
+| Key | Type | Guarantee |
+| --- | --- | --- |
+| `project_changes` | array | `[]` when the configured layer policy produced no findings |
+| `project_facts` | array | `[]` when no facts-only backend (e.g. reachability) is wired for the run |
+| `project_summary` | object | all-zero when there are no project changes |
+| `project_coverage` | object | present even if the backend never ran a real analysis (e.g. `project_backend_unavailable`) |
+
+At `schema_version: "1"`, none of these four keys are present at all — not `null`, entirely absent from the JSON document.
+
+`scope.applied_scope` records the resolved `--scope` value (`"production"` by default, or `"all"`) on **both** `--base <ref>` and `--baseline` runs. For example, `coach codesignal --baseline --scope all --format=json` against a repository with one Go file:
+
+```json
+{
+  "schema_version": "1",
+  "scope": { "revision": "3ff11bbc945...", "applied_scope": "all", "baseline": true },
+  "summary": { "files_analyzed": 1, "files_with_diagnostics": 0, "active_signals": 0, "introduced_signals": 0, "existing_signals": 0, "resolved_signals": 0, "baseline_signals": 0 },
+  "signals": [],
+  "diagnostics": [],
+  "coverage": {
+    "tracked_files_discovered": 2,
+    "files_analyzed": 1,
+    "files_unanalyzable": 0,
+    "unsupported": [{ "reason": "unsupported_language", "language": ".mod", "count": 1 }],
+    "excluded": []
+  }
+}
+```
+
+#### `signals[]` entry keys
+
+Every entry in `signals[]` — at schema_version "1" or "2" alike, and regardless of whether the signal originated from file-local analysis or a `--project-config` backend — carries the same key set below, with one exception: `source_scope`/`subject`/`evidence` are omitted entirely (not emitted as `""`) when empty, because those three fields alone are tagged `omitempty` in `pkg/codesignal/report.go`. Every other key listed is present on every signal, never omitted, with its JSON empty value used rather than leaving the key out:
+
+| Key | Guarantee when not applicable |
+| --- | --- |
+| `id`, `fingerprint`, `rule_id`, `rule_version`, `kind`, `category`, `severity`, `confidence`, `lifecycle`, `changed`, `path`, `location`, `why_it_matters`, `recommendation`, `provenance` | always populated |
+| `suggested_skill` | always present; `""` when the rule suggests no skill |
+| `source_scope`, `subject`, `evidence` | **omitted entirely** when empty (`omitempty`) — a consumer must treat them as absent-or-present, not assume the key exists |
+| `machine_evidence` | always present; `{}` for a file-local signal (only project-origin signals populate it) |
+| `related_locations`, `path_steps`, `coverage_refs` | always present; `[]` for a file-local signal, or when the project-origin finding has none |
+
+`machine_evidence`/`related_locations`/`path_steps`/`coverage_refs` mirror the same-named `project_changes[]` fields for project-origin signals; see [Configured layer violations](#configured-layer-violations---project-config) below.
 
 ### Scope and limitations
 
@@ -396,9 +469,9 @@ Three differences from the Go example above are structural, not incidental. `mac
 
 The `why it matters:`/`recommendation:` lines are true abridgement, not a fourth structural difference: both evaluators reuse the same underlying constants, and the Go example above simply leaves those two lines out rather than marking them with `...` (its one `...` is under `Project coverage:`, standing in for Go's coverage keys, not for these lines).
 
-`--format=json` adds `project_changes` (each with a `machine_evidence` map, `primary_anchor`, and — when the same violating layer pair has more than one import site — `related_locations`), `project_summary`, and `project_coverage` alongside the existing `signals` array; `--base <ref>` classifies each finding's `lifecycle` as `introduced`, `existing`, or `resolved` instead of `baseline`, following the same semantics as file-local signals. Omitting `--project-config` leaves every existing example above completely unchanged (byte-identical `schema_version: "1"` output, no `project_*` fields).
+`--format=json` adds `project_changes` (each with a `machine_evidence` map, `primary_anchor`, and — when the same violating layer pair has more than one import site — `related_locations`), `project_facts`, `project_summary`, and `project_coverage` alongside the existing `signals` array; `--base <ref>` classifies each finding's `lifecycle` as `introduced`, `existing`, or `resolved` instead of `baseline`, following the same semantics as file-local signals. Omitting `--project-config` leaves every existing example above completely unchanged: byte-identical `schema_version: "1"` output, with the `project_changes`/`project_facts`/`project_summary`/`project_coverage` keys entirely absent (not merely empty) from the document — confirmed above, where the diff-mode JSON example run with no `--project-config` carries no `project_*` key at all.
 
-Each `signals[]` entry for a project-origin finding also carries the same optional `machine_evidence`, `related_locations`, `path_steps`, and `coverage_refs` fields as its `project_changes[]` counterpart; these fields are omitted for file-local findings. This lets automation that reads only `signals[]` get the same structured evidence as the text report, without also reading `project_changes[]`. `project_changes[]` still exposes the same fields for consumers that want the project-specific raw view.
+Each `signals[]` entry carries the same `machine_evidence`, `related_locations`, `path_steps`, and `coverage_refs` fields as its `project_changes[]` counterpart, for a project-origin finding *and* a file-local one alike — see [`schema_version`: "1" vs "2"](#schema_version-1-vs-2) above. A file-local finding's copies are simply empty (`{}`/`[]`/`[]`/`[]`) rather than omitted. This lets automation that reads only `signals[]` get the same structured evidence as the text report, without also reading `project_changes[]`. `project_changes[]` still exposes the same fields for consumers that want the project-specific raw view.
 
 This check is **advisory, coverage-honest, and approximate**: it reports zero findings (never a guess) for any import edge it cannot resolve or that doesn't map to a configured layer, retains findings at `lifecycle: unknown` rather than a false `introduced`/`existing`/`resolved` claim when project coverage is incomplete, and matches layers by repository-relative directory prefix over Go import facts (the `go` backend) or TypeScript import facts (the `typescript` backend) — not a full type or build-graph analysis. `--project-language typescript` is a real, registered backend: layer violations are evaluated from file-addressed import edges produced by a pinned sidecar binary at `js/semantics/bin/coach-ts-project-sidecar`, resolved relative to the analyzed repository's own root (not this `coach` binary's install location — the analyzed repository must vendor the sidecar at that exact path). If the sidecar is missing, crashes, or times out, that is reported as a `project_backend_unavailable` entry in `project_coverage.diagnostics` with `complete: false` and exit `0` — never exit `3`. Exit `3` is reserved: currently unreachable, because `--project-language` accepts only `go` and `typescript` (both registered) and any other value is a usage error (exit `2`); it remains defined for a future language whose backend is registered but unavailable.
 

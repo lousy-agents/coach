@@ -270,4 +270,31 @@ func tangle(n int) {
 			Expect(foundExcluded).To(BeTrue(), "the excluded test-only Go file must be accounted for in Coverage.Excluded")
 		})
 	})
+
+	When("--scope all is given for a Repository Baseline scan", func() {
+		It("records the resolved --scope value in scope.applied_scope", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--scope", "all", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var report codesignal.Report
+			Expect(json.Unmarshal(stdout, &report)).To(Succeed(), "stdout should be one JSON report: %s", stdout)
+
+			Expect(report.Scope.AppliedScope).To(Equal("all"))
+		})
+	})
+
+	When("--scope is omitted for a Repository Baseline scan", func() {
+		It("records the CLI's default applied scope value in scope.applied_scope", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
+
+			report, stderr := runCoachCodesignalBaseline(repo)
+			Expect(stderr).To(BeEmpty())
+
+			Expect(report.Scope.AppliedScope).To(Equal("production"), "the default --scope value used by diff mode must also be recorded for baseline mode")
+		})
+	})
 })

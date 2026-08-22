@@ -237,7 +237,7 @@ func TestAnalyzeBaseline(t *testing.T) {
 		{Path: "missing.go", Language: semantics.LanguageGo},
 	}
 
-	report, err := AnalyzeBaseline(context.Background(), dir, headSHA, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 3}, nil)
+	report, err := AnalyzeBaseline(context.Background(), dir, headSHA, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 3}, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeBaseline: unexpected error: %v", err)
 	}
@@ -316,7 +316,7 @@ func TestAnalyzeBaselineInterleavedReadFailures(t *testing.T) {
 		{Path: "c.go", Language: semantics.LanguageGo},
 	}
 
-	report, err := AnalyzeBaseline(context.Background(), dir, headSHA, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 5}, nil)
+	report, err := AnalyzeBaseline(context.Background(), dir, headSHA, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 5}, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeBaseline: unexpected error: %v", err)
 	}

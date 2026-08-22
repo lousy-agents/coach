@@ -3,6 +3,7 @@ package codesignal
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"os"
 	"reflect"
 	"strings"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
+
+var update = flag.Bool("update", false, "regenerate testdata/golden files")
 
 func buildAndMarshal(t *testing.T, input Input, options Options) []byte {
 	t.Helper()
@@ -41,9 +44,16 @@ func buildAndMarshal(t *testing.T, input Input, options Options) []byte {
 func assertMatchesGolden(t *testing.T, goldenPath string, got []byte) {
 	t.Helper()
 
+	if *update {
+		if err := os.WriteFile(goldenPath, got, 0o644); err != nil {
+			t.Fatalf("write golden file %s: %v", goldenPath, err)
+		}
+		return
+	}
+
 	want, err := os.ReadFile(goldenPath)
 	if err != nil {
-		t.Fatalf("reading golden file %s: %v\n\nactual output (save this as the golden file if correct):\n%s", goldenPath, err, got)
+		t.Fatalf("reading golden file %s: %v\n\nactual output (save this as the golden file if correct, or rerun with -update):\n%s", goldenPath, err, got)
 	}
 
 	if string(got) != string(want) {
@@ -428,16 +438,12 @@ var frozenReportJSONFieldNames = map[string]struct{}{
 // TestFrozenSchema_FieldNames locks Report's JSON field names (across every
 // nested type it can reach) against accidental rename, independent of which
 // fields any golden fixture above happens to populate. It walks Go struct
-// tags via reflection rather than any single marshaled Report, so it does
-// not marshal a Report at all and therefore takes no position on whether an
-// empty collection field is present (`[]`/`{}`) or omitted in JSON output --
-// today Report's slice/map/pointer fields carry `omitempty`, so this test
-// tolerates that omission by construction. Issue #269 proposes making empty
-// collections always-present; when it lands, the field *names* enumerated in
-// frozenReportJSONFieldNames do not change (a presence/absence change is not
-// a rename) and this test should not need edits -- only the golden fixtures
-// in testdata/golden/ regenerate. Do not read this test's silence on
-// presence/absence as a decision that omission is the frozen contract.
+// tags via reflection rather than any single marshaled Report, so the same
+// assertion holds regardless of whether a field is present-but-empty or
+// omitted in a given fixture. Issue #269 (#308) made Report's own
+// slice/map/pointer fields always-present rather than `omitempty`; this
+// test needed no changes when that landed, exactly as designed -- a
+// presence/absence change is not a rename.
 //
 // This test freezes JSON field names only, for Report's JSON rendering path.
 // It says nothing about text-format output: internal/codesignalcli/render.go's

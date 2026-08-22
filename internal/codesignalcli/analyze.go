@@ -14,12 +14,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// AnalyzeChanges reads HEAD and merge-base content for each selected file via
-// `git show`, analyzes both sides with semantics.Analyzer, computes changed
-// line ranges from the unified diff between mergeBaseSHA and HEAD, and
-// builds one codesignal.Report. A per-file failure (an unreadable path, a
-// semantics error, an unparsable diff) is reported as a diagnostic; it never
-// stops analysis of the remaining files.
 func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, appliedScope string, excluded []codesignal.CoverageGroup, project *ProjectAnalysis) (*codesignal.Report, error) {
 	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
 	if err != nil {
@@ -43,9 +37,6 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 		}
 	}
 
-	// Only Excluded is meaningful on a diff-flow report; TrackedFilesDiscovered/
-	// FilesAnalyzed/FilesUnanalyzable are baseline-only accounting fields and
-	// are deliberately left zero here (see codesignal.Coverage's doc comment).
 	var coverage *codesignal.Coverage
 	if len(excluded) > 0 {
 		coverage = &codesignal.Coverage{Excluded: excluded}
@@ -69,19 +60,9 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 	return builder.Build(ctx, input)
 }
 
-// AnalyzeBaseline reads revisionSHA content for each selected file via a
-// single long-lived `git cat-file --batch` process (see
-// revisionFileReader) rather than one `git show` subprocess per file, and
-// analyzes each file's content with semantics.Analyzer. Unlike AnalyzeChanges,
-// there is no base content and no changed-ranges computation: a Repository
-// Baseline is not a comparison against anything, just every tracked file at
-// one revision. A per-file failure (an unreadable path, a semantics error)
-// is reported as a diagnostic and tallied into coverage.FilesUnanalyzable;
-// it never stops analysis of the remaining files. A file that parses,
-// including one whose ParseStatus is "syntax_errors", still gets a
-// codesignal.FileChange so Build's existing processHeadResult emits its own
-// syntax_errors diagnostic -- callers must not duplicate that here.
-func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, coverage codesignal.Coverage, project *ProjectAnalysis) (*codesignal.Report, error) {
+// AnalyzeBaseline uses a single long-lived `git cat-file --batch` process
+// (revisionFileReader) instead of one `git show` subprocess per file.
+func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, appliedScope string, coverage codesignal.Coverage, project *ProjectAnalysis) (*codesignal.Report, error) {
 	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
 	if err != nil {
 		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
@@ -125,7 +106,7 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []Selec
 
 	opts := codesignal.Options{Baseline: true}
 	input := codesignal.Input{
-		Scope:       codesignal.Scope{Revision: revisionSHA},
+		Scope:       codesignal.Scope{Revision: revisionSHA, AppliedScope: appliedScope},
 		Files:       fileChanges,
 		Diagnostics: diagnostics,
 		Coverage:    &coverage,
@@ -141,9 +122,6 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []Selec
 	return builder.Build(ctx, input)
 }
 
-// analyzeAddedOrModifiedFile handles "added" and "modified" SelectedFiles:
-// HEAD content is mandatory, base content is read (and analyzed) only when
-// the file already existed at mergeBaseSHA.
 func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, headSHA, mergeBaseSHA string, sf SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic) {
 	headBytes, err := runGitBytes(dir, "show", headSHA+":"+sf.Path)
 	if err != nil {
@@ -165,10 +143,6 @@ func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyze
 	if sf.Status == "modified" {
 		baseBytes, err := runGitBytes(dir, "show", mergeBaseSHA+":"+sf.Path)
 		if err != nil {
-			// A "modified" status means Git already knows this path existed at
-			// mergeBaseSHA, so a failed read here is a real problem (e.g. a
-			// corrupted object), not an added-file's expected absence -- it
-			// must be surfaced, not silently treated as "no base".
 			diagnostics = append(diagnostics, codesignal.Diagnostic{
 				Path:    sf.Path,
 				Kind:    "base_read_failed",
@@ -201,9 +175,6 @@ func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyze
 	return &fc, diagnostics
 }
 
-// analyzeRemovedFile handles "removed" SelectedFiles: only base content
-// exists, and there is no changed-range computation (no HEAD content to
-// place ranges against).
 func analyzeRemovedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, mergeBaseSHA string, sf SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic) {
 	baseBytes, err := runGitBytes(dir, "show", mergeBaseSHA+":"+sf.Path)
 	if err != nil {
@@ -225,9 +196,6 @@ func analyzeRemovedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, 
 	}
 }
 
-// baseSyntaxDiagnostics emits one "base_syntax_errors" diagnostic per syntax
-// issue found in a base analysis, using errors.As to recover the specific
-// issues from baseErr.
 func baseSyntaxDiagnostics(path string, baseErr error) []codesignal.Diagnostic {
 	var syntaxErr *semantics.SyntaxError
 	if !errors.As(baseErr, &syntaxErr) {
@@ -266,10 +234,6 @@ func mapSemanticsError(path string, err error) codesignal.Diagnostic {
 	return codesignal.Diagnostic{Path: path, Kind: kind, Message: err.Error()}
 }
 
-// computeChangedRanges runs `git diff --unified=0` for path between
-// mergeBaseSHA and HEAD and parses the resulting hunk headers into
-// changed-line ranges. Any failure (to run git, or to parse its output) is
-// reported as a single "diff_analysis_failed" diagnostic with no ranges.
 func computeChangedRanges(dir, mergeBaseSHA, path string) ([]codesignal.LineRange, *codesignal.Diagnostic) {
 	output, err := runGitBytes(dir, "diff", "--unified=0", "--no-ext-diff", mergeBaseSHA, "HEAD", "--", path)
 	if err != nil {
@@ -292,15 +256,12 @@ func computeChangedRanges(dir, mergeBaseSHA, path string) ([]codesignal.LineRang
 }
 
 // hunkHeaderPattern matches a unified diff hunk header:
-// "@@ -oldStart[,oldCount] +newStart[,newCount] @@" (with an optional
-// trailing section heading, which is ignored). Omitted counts mean 1.
+// "@@ -oldStart[,oldCount] +newStart[,newCount] @@" (trailing section
+// heading ignored).
 var hunkHeaderPattern = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)
 
-// parseChangedRanges parses ONLY unified diff hunk headers out of diff,
-// ignoring every other line (file headers, context, +/- lines). Each hunk
-// with a non-zero new-side line count becomes one 0-based inclusive
-// codesignal.LineRange; pure-deletion hunks (new count 0) contribute no
-// range.
+// parseChangedRanges returns 0-based, inclusive codesignal.LineRange values
+// derived from each hunk's new-side start/count.
 func parseChangedRanges(diff []byte) ([]codesignal.LineRange, error) {
 	var ranges []codesignal.LineRange
 

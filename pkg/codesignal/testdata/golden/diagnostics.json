@@ -14,6 +14,7 @@
     "resolved_signals": 0,
     "baseline_signals": 0
   },
+  "signals": [],
   "diagnostics": [
     {
       "path": "adapter.go",
@@ -66,5 +67,12 @@
       "kind": "unsupported_parse_status",
       "message": "head analysis result has unsupported parse status \"weird\""
     }
-  ]
+  ],
+  "coverage": {
+    "tracked_files_discovered": 0,
+    "files_analyzed": 0,
+    "files_unanalyzable": 0,
+    "unsupported": [],
+    "excluded": []
+  }
 }

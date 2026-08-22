@@ -220,8 +220,6 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 	return h
 }
 
-// handleCodesignalHelp prints usage and defaults for --help/-h, then sets
-// the FlagSet's output sink for the Parse call that follows.
 func handleCodesignalHelp(args []string, flags *flag.FlagSet, suggestRequested bool, stdout, stderr *os.File) (handled bool, exitCode int) {
 	for _, arg := range args {
 		if arg != "--help" && arg != "-h" {
@@ -407,7 +405,7 @@ func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codes
 	if opErr != nil {
 		return nil, 0, opErr
 	}
-	report, err := codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, nil, coverage, project)
+	report, err := codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, nil, f.scope, coverage, project)
 	if err != nil {
 		fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
 		return nil, 0, nil
