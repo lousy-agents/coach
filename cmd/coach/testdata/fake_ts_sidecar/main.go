@@ -1,12 +1,3 @@
-// Command fake_ts_sidecar is a test-only stand-in for the real TypeScript
-// project sidecar (js/semantics/scripts/build-project-sidecar.mjs), used
-// only by cmd/coach's project_ts_backend_acceptance_test.go. It speaks the
-// internal/projectbridge NDJSON protocol over stdin/stdout: it reads one
-// Request and always replies with one successful Response, emitting a
-// single fixed import edge (pkg/handlers/h.ts -> pkg/db/d.ts) whenever any
-// received snapshot file's decoded content contains the literal marker
-// string layerViolationMarker, and zero edges otherwise. It is compiled on
-// demand by the acceptance suite and is not part of any production build.
 package main
 
 import (
@@ -16,18 +7,41 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/lousy-agents/coach/internal/projectbridge"
 )
 
-// layerViolationMarker lets a test control, via committed file content
-// alone, whether this fake sidecar reports the fixed forbidden-layer edge --
-// mirroring how the real sidecar's output depends on actual import
-// statements, without this fixture needing to parse TypeScript.
+// layerViolationMarker stands in for a real TypeScript import statement, so
+// this fixture can drive the sidecar's output without parsing TypeScript.
 const layerViolationMarker = "LAYER_VIOLATION_MARKER"
+
+// layerViolationCrashMarker is checked first, ahead of
+// layerViolationHangMarker and layerViolationMarker, so a fixture can safely
+// carry more than one marker.
+const layerViolationCrashMarker = "LAYER_VIOLATION_CRASH_MARKER"
+
+// layerViolationHangMarker relies on the real caller's context deadline
+// (internal/codesignalcli's tsSidecarWallTime) to kill the subprocess.
+// Checked ahead of layerViolationMarker for the same reason as
+// layerViolationCrashMarker.
+const layerViolationHangMarker = "LAYER_VIOLATION_HANG_MARKER"
 
 func main() {
 	req := readRequest()
+
+	if hasMarkerString(req.Files, layerViolationCrashMarker) {
+		fmt.Fprintln(os.Stderr, "fake_ts_sidecar: simulated crash")
+		os.Exit(1)
+	}
+
+	if hasMarkerString(req.Files, layerViolationHangMarker) {
+		// A bare select{} is flagged by the Go runtime as a deadlock and
+		// exits immediately, exercising the crash path instead of this one.
+		// The sleep keeps a runnable timer alive so the process blocks until
+		// the caller's context deadline kills it.
+		time.Sleep(time.Hour)
+	}
 
 	resp := projectbridge.Response{
 		Version: req.Version,
@@ -62,12 +76,16 @@ func readRequest() projectbridge.Request {
 }
 
 func hasMarker(files []projectbridge.ProjectFile) bool {
+	return hasMarkerString(files, layerViolationMarker)
+}
+
+func hasMarkerString(files []projectbridge.ProjectFile, marker string) bool {
 	for _, f := range files {
 		decoded, err := base64.StdEncoding.DecodeString(f.ContentB64)
 		if err != nil {
 			continue
 		}
-		if strings.Contains(string(decoded), layerViolationMarker) {
+		if strings.Contains(string(decoded), marker) {
 			return true
 		}
 	}

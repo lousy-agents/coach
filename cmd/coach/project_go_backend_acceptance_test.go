@@ -11,83 +11,52 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-// goLayerPolicyConfigJSON is the shared --project-config fixture for the
-// real Go backend acceptance scenarios below: two layers ("handlers",
-// "db") with handlers -> db forbidden.
 const goLayerPolicyConfigJSON = `{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}]}`
 
 const goModuleFile = "module example.com/app\n\ngo 1.25\n"
 
-// goModuleFileDotless is goModuleFile's dotless-module-path counterpart: a
-// module declared via `go mod init app` rather than a domain-style path.
 const goModuleFileDotless = "module app\n\ngo 1.25\n"
 
-// handlersImportingDBDotlessModule is handlersImportingDB re-pointed at the
-// goModuleFileDotless module path ("app" instead of "example.com/app") --
-// byte-identical otherwise, so a diff between the two fixtures is exactly
-// the module path literal.
 const handlersImportingDBDotlessModule = "package handlers\n\nimport \"app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n"
 
 const dbPackageFile = "package db\n\n// Name is a placeholder export used by the layer-violation fixtures.\nvar Name = \"db\"\n"
 
-// handlersImportingDB imports pkg/db, a forbidden edge under
-// goLayerPolicyConfigJSON. The import sits on line 3 (0-based row 2).
+// The import sits on line 3 (0-based row 2).
 const handlersImportingDB = "package handlers\n\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n"
 
 const handlersImportingDBShifted = "package handlers\n\n// shifted\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n"
 
 const handlersWithoutImport = "package handlers\n\nfunc Use() string {\n\treturn \"\"\n}\n"
 
-// handlersImportingUnresolved imports a same-module path under the
-// layer-mapped pkg/db prefix with no corresponding package directory in the
-// fixture, which classifyGoImport resolves as Kind "unresolved" rather than
-// "internal" -- an internal-looking import that must never reach the
-// layer-violation evaluator end to end. The importee directory
-// (pkg/db/missing) is deliberately layer-mapped (unlike a made-up
-// pkg/missing) so that if the unresolved classification were ever broken and
-// the edge wrongly resolved as internal, EvaluateGoLayerViolations would
-// still see two layer-mapped packages and emit a real violation -- keeping
-// this test discriminating rather than degenerating into the
-// layer-unmapped negative control above.
+// classifyGoImport resolves this as Kind "unresolved", not "internal" --
+// pkg/db/missing is deliberately layer-mapped (unlike a made-up
+// pkg/missing) so a regression that wrongly resolved it as internal would
+// still emit a real violation, keeping this a discriminating negative
+// control rather than a vacuous one.
 const handlersImportingUnresolved = "package handlers\n\nimport \"example.com/app/pkg/db/missing\"\n\nfunc Use() string {\n\treturn missing.Name\n}\n"
 
-// handlersOtherImportingDB is a second file under pkg/handlers importing
-// pkg/db, used to prove that two import sites within the same importer
-// package collapse into a single ProjectChange with a non-empty
-// RelatedLocations (see EvaluateGoLayerViolations's doc comment). The import
-// sits on line 5 (0-based row 4), after handlersImportingDB's line 3, so
-// sites sort "pkg/handlers/handlers.go:3" before "pkg/handlers/other.go:5"
-// (layerViolationChange sorts sites lexicographically) and this file's
-// location lands in RelatedLocations rather than PrimaryAnchor.
+// The import sits on line 5 (0-based row 4); sites sort lexicographically
+// ("handlers.go:3" before "other.go:5"), landing this one in
+// RelatedLocations rather than PrimaryAnchor.
 const handlersOtherImportingDB = "package handlers\n\n// second site\n// note\nimport \"example.com/app/pkg/db\"\n\nfunc UseOther() string {\n\treturn db.Name\n}\n"
 
-// modelFileWithTwoConstructors puts two constructor-like functions in one
-// file, reaching structure.constructor_density's per-file density gate
-// (densityGateThreshold == 2 in registry.go), which emits a "low" severity
-// structure.constructor_density Signal. Combined with handlersImportingDB
-// (an "advisory" severity architecture.layer_violation) in the same
-// lifecycle group, this exercises severity-based sort ordering across rules.
+// Reaches structure.constructor_density's per-file density gate
+// (densityGateThreshold == 2 in registry.go); paired with
+// handlersImportingDB, exercises severity-based signal sort ordering.
 const modelFileWithTwoConstructors = "package model\n\ntype A struct{}\n\ntype B struct{}\n\nfunc NewA() *A {\n\treturn &A{}\n}\n\nfunc NewB() *B {\n\treturn &B{}\n}\n"
 
-// goLayerBypassPolicyConfigJSON declares three layers ("handlers",
-// "service", "db") and a required intermediate layer "service", with no
-// forbidden_imports so a layer_bypass finding is never accompanied by an
-// unrelated layer_violation finding.
+// No forbidden_imports, so a layer_bypass finding is never accompanied by
+// an unrelated layer_violation finding.
 const goLayerBypassPolicyConfigJSON = `{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"service","prefixes":["pkg/service"]},{"name":"db","prefixes":["pkg/db"]}],"required_layer":"service"}`
 
-// servicePackageFile mirrors pkg/projectmodel's own
-// go_layer_bypass_compliant_and_bypass/service/service.go fixture: a
-// required-layer function that calls the pinned database sink directly.
+// Mirrors pkg/projectmodel's own
+// go_layer_bypass_compliant_and_bypass/service/service.go fixture.
 const servicePackageFile = "package service\n\nimport \"database/sql\"\n\n// LoadUser calls the pinned database-access sink through *sql.DB.\nfunc LoadUser() {\n\tvar db *sql.DB\n\tdb.Query(\"SELECT 1\")\n}\n"
 
-// handlersCompliantOnly is a net/http.HandlerFunc-shaped source that reaches
-// the pinned database sink only through the required "service" layer.
 const handlersCompliantOnly = "package handlers\n\nimport (\n\t\"net/http\"\n\n\t\"example.com/app/pkg/service\"\n)\n\nfunc Handler(w http.ResponseWriter, r *http.Request) {\n\tservice.LoadUser()\n}\n"
 
-// handlersCompliantAndBypass extends handlersCompliantOnly with a second,
-// direct route to the same sink (directQuery -> rawQuery) that never passes
-// through pkg/service -- mirroring pkg/projectmodel's own
-// go_layer_bypass_compliant_and_bypass fixture.
+// Mirrors pkg/projectmodel's own go_layer_bypass_compliant_and_bypass
+// fixture.
 const handlersCompliantAndBypass = "package handlers\n\nimport (\n\t\"database/sql\"\n\t\"net/http\"\n\n\t\"example.com/app/pkg/service\"\n)\n\nfunc Handler(w http.ResponseWriter, r *http.Request) {\n\tservice.LoadUser()\n\tdirectQuery()\n}\n\nfunc directQuery() {\n\trawQuery()\n}\n\nfunc rawQuery() {\n\tvar db *sql.DB\n\tdb.Query(\"SELECT 1\")\n}\n"
 
 // expectLayerBypassChange asserts the shared architecture.layer_bypass
@@ -132,11 +101,6 @@ func decodeCoachReport(stdout []byte) *codesignal.Report {
 	return &report
 }
 
-// normalizeProjectChangesModulePath JSON-encodes each ProjectChange in
-// changes and replaces every occurrence of modulePath with a fixed
-// placeholder. Two reports built from repositories differing only in their
-// go.mod module path can then be compared for exact (ordered, field-by-field)
-// equality once that one permitted difference is stripped out.
 func normalizeProjectChangesModulePath(changes []codesignal.ProjectChange, modulePath string) []string {
 	normalized := make([]string, len(changes))
 	for i, change := range changes {
@@ -145,6 +109,60 @@ func normalizeProjectChangesModulePath(changes []codesignal.ProjectChange, modul
 		normalized[i] = strings.ReplaceAll(string(raw), modulePath, "<MODULE_PATH>")
 	}
 	return normalized
+}
+
+type disabledProjectAnalysisReportPair struct {
+	repoWithConfigFile      string
+	stdoutWithConfigFile    []byte
+	reportWithConfigFile    *codesignal.Report
+	reportWithoutConfigFile *codesignal.Report
+}
+
+func buildDisabledProjectAnalysisReportPair() disabledProjectAnalysisReportPair {
+	repoWithConfigFile := newTempGitRepo()
+	commitFile(repoWithConfigFile, "go.mod", goModuleFile)
+	commitFile(repoWithConfigFile, "pkg/db/db.go", dbPackageFile)
+	commitFile(repoWithConfigFile, "pkg/handlers/handlers.go", handlersImportingDB)
+	commitFile(repoWithConfigFile, "pkg/model/model.go", modelFileWithTwoConstructors)
+	commitFile(repoWithConfigFile, "project.json", goLayerPolicyConfigJSON)
+
+	repoWithoutConfigFile := newTempGitRepo()
+	commitFile(repoWithoutConfigFile, "go.mod", goModuleFile)
+	commitFile(repoWithoutConfigFile, "pkg/db/db.go", dbPackageFile)
+	commitFile(repoWithoutConfigFile, "pkg/handlers/handlers.go", handlersImportingDB)
+	commitFile(repoWithoutConfigFile, "pkg/model/model.go", modelFileWithTwoConstructors)
+
+	stdoutWithConfigFile, stderrWithConfigFile, exitWithConfigFile := runCoachCodesignalBaselineRaw(repoWithConfigFile, "--format=json")
+	ExpectWithOffset(1, exitWithConfigFile).To(Equal(0), "stderr: %s", stderrWithConfigFile)
+	ExpectWithOffset(1, stderrWithConfigFile).To(BeEmpty())
+	reportWithConfigFile := decodeCoachReport(stdoutWithConfigFile)
+
+	stdoutWithoutConfigFile, stderrWithoutConfigFile, exitWithoutConfigFile := runCoachCodesignalBaselineRaw(repoWithoutConfigFile, "--format=json")
+	ExpectWithOffset(1, exitWithoutConfigFile).To(Equal(0), "stderr: %s", stderrWithoutConfigFile)
+	ExpectWithOffset(1, stderrWithoutConfigFile).To(BeEmpty())
+	reportWithoutConfigFile := decodeCoachReport(stdoutWithoutConfigFile)
+
+	ExpectWithOffset(1, reportWithConfigFile.Coverage.TrackedFilesDiscovered).To(
+		Equal(reportWithoutConfigFile.Coverage.TrackedFilesDiscovered+1),
+		"an unreferenced project.json must add exactly one to TrackedFilesDiscovered")
+	expectedUnsupported := append(append([]codesignal.CoverageGroup{}, reportWithoutConfigFile.Coverage.Unsupported...),
+		codesignal.CoverageGroup{Reason: "unsupported_language", Language: ".json", Count: 1})
+	ExpectWithOffset(1, reportWithConfigFile.Coverage.Unsupported).To(ConsistOf(expectedUnsupported),
+		"an unreferenced project.json must add exactly one unsupported_language(.json) group and change nothing else in Unsupported")
+
+	reportWithConfigFile.Scope.Revision = reportWithoutConfigFile.Scope.Revision
+	reportWithConfigFile.Coverage.TrackedFilesDiscovered = reportWithoutConfigFile.Coverage.TrackedFilesDiscovered
+	reportWithConfigFile.Coverage.Unsupported = reportWithoutConfigFile.Coverage.Unsupported
+
+	ExpectWithOffset(1, reportWithConfigFile).To(Equal(reportWithoutConfigFile),
+		"an unreferenced project.json in the tree must not change the report when --project-config is not supplied")
+
+	return disabledProjectAnalysisReportPair{
+		repoWithConfigFile:      repoWithConfigFile,
+		stdoutWithConfigFile:    stdoutWithConfigFile,
+		reportWithConfigFile:    reportWithConfigFile,
+		reportWithoutConfigFile: reportWithoutConfigFile,
+	}
 }
 
 var _ = Describe("coach codesignal --project-config with the real Go project-language backend", func() {
@@ -168,6 +186,34 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			Expect(document).NotTo(HaveKey("project_changes"))
 			Expect(document).NotTo(HaveKey("project_summary"))
 			Expect(document).NotTo(HaveKey("project_coverage"))
+		})
+	})
+
+	When("the CLI is invoked without --project-config against a repository that could otherwise report an architecture.layer_violation and a structural finding", func() {
+		It("stays on the schema-1 path, matches a repository that never had a project-analysis config at all, and leaks no project_* keys, schema_version 2, or project-analysis-only text", func() {
+			pair := buildDisabledProjectAnalysisReportPair()
+
+			By("(a) staying on the schema-1 path and (c) leaking no project_* key in JSON")
+			var document map[string]json.RawMessage
+			Expect(json.Unmarshal(pair.stdoutWithConfigFile, &document)).To(Succeed())
+			var schemaVersion string
+			Expect(json.Unmarshal(document["schema_version"], &schemaVersion)).To(Succeed())
+			Expect(schemaVersion).To(Equal("1"), "disabled project analysis must stay on the schema-1 path")
+			for _, key := range []string{"project_changes", "project_facts", "project_summary", "project_coverage"} {
+				Expect(document).NotTo(HaveKey(key), "disabled project analysis must never leak %q", key)
+			}
+			Expect(string(pair.stdoutWithConfigFile)).NotTo(ContainSubstring(`"schema_version":"2"`))
+
+			By("(b) matching a repository that never had a project-analysis config present at all")
+			// Asserted inside buildDisabledProjectAnalysisReportPair, not here.
+
+			By("(c) leaking no project-analysis-only marker in text output")
+			textStdout, textStderr, textExit := runCoachCodesignalBaselineRaw(pair.repoWithConfigFile)
+			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
+			text := string(textStdout)
+			for _, marker := range []string{"Project findings:", "Project summary:", "Project coverage:", "Facts:", "coverage_ref:"} {
+				Expect(text).NotTo(ContainSubstring(marker), "disabled project analysis text output must never show %q", marker)
+			}
 		})
 	})
 
@@ -266,12 +312,12 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 		})
 	})
 
-	When("--baseline is run with an internal-looking but layer-unmapped import", func() {
-		It("emits zero ProjectChanges: the real end-to-end pipeline stays silent (negative control)", func() {
+	DescribeTable("negative control: an internal-looking Go import that must not reach the layer-violation evaluator as an internal edge",
+		func(importerPath, importerContent, wantMessage string) {
 			repo := newTempGitRepo()
 			commitFile(repo, "go.mod", goModuleFile)
 			commitFile(repo, "pkg/db/db.go", dbPackageFile)
-			commitFile(repo, "pkg/other/other.go", "package other\n\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n")
+			commitFile(repo, importerPath, importerContent)
 			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
 
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
@@ -280,27 +326,15 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 
 			report := decodeCoachReport(stdout)
 			Expect(report.SchemaVersion).To(Equal("2"))
-			Expect(report.ProjectChanges).To(BeEmpty(), "pkg/other is not covered by any configured layer and must not trigger a violation")
-		})
-	})
-
-	When("--baseline is run with an internal-looking but actually unresolved import", func() {
-		It("emits zero ProjectChanges: an unresolved edge never reaches the evaluator as internal (negative control)", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", goModuleFile)
-			commitFile(repo, "pkg/db/db.go", dbPackageFile)
-			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingUnresolved)
-			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
-
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(stderr).To(BeEmpty())
-
-			report := decodeCoachReport(stdout)
-			Expect(report.SchemaVersion).To(Equal("2"))
-			Expect(report.ProjectChanges).To(BeEmpty(), "an unresolved same-module import must not be treated as an internal layer edge")
-		})
-	})
+			Expect(report.ProjectChanges).To(BeEmpty(), wantMessage)
+		},
+		Entry("layer-unmapped: the real end-to-end pipeline stays silent",
+			"pkg/other/other.go", "package other\n\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n",
+			"pkg/other is not covered by any configured layer and must not trigger a violation"),
+		Entry("unresolved: an unresolved edge never reaches the evaluator as internal",
+			"pkg/handlers/handlers.go", handlersImportingUnresolved,
+			"an unresolved same-module import must not be treated as an internal layer edge"),
+	)
 
 	When("diff mode introduces a forbidden layer edge that did not exist at base", func() {
 		It("classifies the ProjectChange as lifecycle introduced", func() {
@@ -403,11 +437,9 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 		})
 	})
 
-	// A valid config may use prefixes:["."] as the sole layer prefix (overlap
-	// validation treats "." as ancestor of every other prefix, so it cannot
-	// coexist with concrete prefixes). matchLayer must treat "." the same way
-	// or the pipeline reports complete:true with zero findings — a silent
-	// policy no-op for every nested package edge.
+	// Overlap validation treats "." as ancestor of every other prefix, so a
+	// config may use it only as the sole layer prefix; matchLayer must honor
+	// that same ancestry.
 	When(`--baseline is run with a catch-all layer prefix of "."`, func() {
 		It("matches nested packages and emits architecture.layer_violation rather than a silent complete:true no-op", func() {
 			const catchAllRootConfigJSON = `{"schema_version":"1","roots":["."],"layers":[{"name":"app","prefixes":["."]}],"forbidden_imports":[{"from":"app","to":"app"}]}`
@@ -498,24 +530,13 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 		})
 	})
 
-	// A user-declared, confidence:high architecture.layer_violation/layer_bypass
-	// finding must outrank a heuristic low-severity structural finding in
-	// signals[] order.
 	When("a baseline scan produces both an architecture layer-violation finding and a low-severity structural finding in the same lifecycle group", func() {
 		It("orders the architecture finding ahead of the low-severity structural finding in signals[]", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "go.mod", goModuleFile)
 			commitFile(repo, "pkg/db/db.go", dbPackageFile)
 			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
-			// Build appends file-local structural signals before project
-			// signals (see codesignal.go's Build: processFileChanges runs
-			// before buildProjectReportSurface's projectSignals are appended),
-			// so the structural finding naturally lands first in the
-			// pre-sort signals slice. sortSignals uses sort.SliceStable, so if
-			// the comparator (not incidental input order) were not what
-			// distinguished the two, this test would pass for the wrong
-			// reason; the two rules' distinct severities are what must decide
-			// the order here.
+			By("committing the structural finding so it naturally lands first in the pre-sort signals slice (Build appends file-local signals before project signals) -- sortSignals's sort.SliceStable would let that incidental order pass this test for the wrong reason unless the comparator itself is what decides the final order")
 			commitFile(repo, "pkg/model/model.go", modelFileWithTwoConstructors)
 			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
 
@@ -554,48 +575,10 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 
 	When("--baseline is run without --project-config against a revision that also carries an unreferenced project.json, a layer-violation import, and a low-severity structural finding", func() {
 		It("produces a report identical to an equivalent revision with no project.json at all, since no advisory signal can ever be produced without --project-config", func() {
-			repoWithConfigFile := newTempGitRepo()
-			commitFile(repoWithConfigFile, "go.mod", goModuleFile)
-			commitFile(repoWithConfigFile, "pkg/db/db.go", dbPackageFile)
-			commitFile(repoWithConfigFile, "pkg/handlers/handlers.go", handlersImportingDB)
-			commitFile(repoWithConfigFile, "pkg/model/model.go", modelFileWithTwoConstructors)
-			commitFile(repoWithConfigFile, "project.json", goLayerPolicyConfigJSON)
+			pair := buildDisabledProjectAnalysisReportPair()
+			reportWithoutConfigFile := pair.reportWithoutConfigFile
 
-			stdoutWithConfigFile, stderrWithConfigFile, exitWithConfigFile := runCoachCodesignalBaselineRaw(repoWithConfigFile, "--format=json")
-			Expect(exitWithConfigFile).To(Equal(0), "stderr: %s", stderrWithConfigFile)
-			Expect(stderrWithConfigFile).To(BeEmpty())
-			reportWithConfigFile := decodeCoachReport(stdoutWithConfigFile)
-
-			repoWithoutConfigFile := newTempGitRepo()
-			commitFile(repoWithoutConfigFile, "go.mod", goModuleFile)
-			commitFile(repoWithoutConfigFile, "pkg/db/db.go", dbPackageFile)
-			commitFile(repoWithoutConfigFile, "pkg/handlers/handlers.go", handlersImportingDB)
-			commitFile(repoWithoutConfigFile, "pkg/model/model.go", modelFileWithTwoConstructors)
-
-			stdoutWithoutConfigFile, stderrWithoutConfigFile, exitWithoutConfigFile := runCoachCodesignalBaselineRaw(repoWithoutConfigFile, "--format=json")
-			Expect(exitWithoutConfigFile).To(Equal(0), "stderr: %s", stderrWithoutConfigFile)
-			Expect(stderrWithoutConfigFile).To(BeEmpty())
-			reportWithoutConfigFile := decodeCoachReport(stdoutWithoutConfigFile)
-
-			// Revision is the tree's own commit SHA, and TrackedFilesDiscovered/
-			// Unsupported legitimately differ by exactly the one extra tracked
-			// (but never referenced) project.json file -- neither is what this
-			// test guards. Normalizing them isolates the property under test: with
-			// --project-config never supplied, project.json's mere presence in
-			// the tree must have zero effect on schema_version, signals[], or
-			// any project_* field.
-			reportWithConfigFile.Scope.Revision = reportWithoutConfigFile.Scope.Revision
-			reportWithConfigFile.Coverage.TrackedFilesDiscovered = reportWithoutConfigFile.Coverage.TrackedFilesDiscovered
-			reportWithConfigFile.Coverage.Unsupported = reportWithoutConfigFile.Coverage.Unsupported
-
-			Expect(reportWithConfigFile).To(Equal(reportWithoutConfigFile), "an unreferenced project.json in the tree must not change the report when --project-config is not supplied")
-
-			// Frozen expectation on the no-config-file report itself: pins the
-			// property this It exists to guard (no advisory signal without
-			// --project-config) and today's exact signals[] sequence, so a
-			// future severityRank/comparator change that perturbs
-			// non-advisory ordering fails here
-			// even though it would perturb both reports above identically.
+			By("also pinning today's exact signals[] sequence, so a future severityRank/comparator change that perturbs non-advisory ordering fails here even though it would perturb both reports above identically")
 			for _, sig := range reportWithoutConfigFile.Signals {
 				Expect(sig.Severity).NotTo(Equal(codesignal.Severity("advisory")), "no advisory signal can ever be produced without --project-config: %+v", sig)
 			}
@@ -642,10 +625,6 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			Expect(dotlessStderr).To(BeEmpty())
 			dotlessReport := decodeCoachReport(dotlessStdout)
 
-			// The dotless module must still resolve its own import as internal
-			// and trigger the rule, with the same rule id, path, and line as the
-			// dotted module -- previously this was silently zero findings with
-			// coverage.complete: true.
 			Expect(dottedReport.ProjectChanges).To(HaveLen(1), "sanity: the dotted-module fixture must itself trigger exactly one violation")
 			dottedChange := dottedReport.ProjectChanges[0]
 
@@ -663,10 +642,6 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			Expect(dotlessReport.ProjectCoverage).NotTo(BeNil())
 			Expect(dotlessReport.ProjectCoverage.Complete).To(BeTrue(), "the fix must not trade a false stdlib classification for a false coverage gap")
 
-			// Normalize each side's ProjectChanges against its own module path
-			// literal, then require exact, ordered equality of
-			// everything else -- rule id, kind, severity, count, and ordering
-			// included, not merely "a finding exists on both sides".
 			dottedNormalized := normalizeProjectChangesModulePath(dottedReport.ProjectChanges, "example.com/app")
 			dotlessNormalized := normalizeProjectChangesModulePath(dotlessReport.ProjectChanges, "app")
 			Expect(dotlessNormalized).To(Equal(dottedNormalized), "dotless and dotted module project findings must be identical apart from the module path literal")
