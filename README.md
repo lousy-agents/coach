@@ -136,7 +136,8 @@ recommendation: Return a copy instead of mutating the caller's value, or documen
     "active_signals": 1,
     "introduced_signals": 1,
     "existing_signals": 0,
-    "resolved_signals": 0
+    "resolved_signals": 0,
+    "baseline_signals": 0
   },
   "signals": [
     {
@@ -162,6 +163,8 @@ recommendation: Return a copy instead of mutating the caller's value, or documen
   ]
 }
 ```
+
+This example's `scope` and top-level object omit `repository`, `applied_scope`, `baseline`, `diagnostics`, `coverage`, and the `project_*` fields because they're empty for this run: those specific fields carry `omitempty` (they are not the only `omitempty` fields — `signals`, `revision`, and `base` do too, and are simply non-empty here; see `pkg/codesignal/report.go` and `input.go`), so an empty collection or unset value disappears from JSON output rather than appearing as `[]`/`{}`/`""`. [Issue #269](https://github.com/lousy-agents/coach/issues/269) tracks changing that so empty collections are always present; until it lands, don't read this example's key set as the complete set of keys `Report` can ever emit. `summary`'s fields (including `baseline_signals`) carry no `omitempty` tag and are always present, even at `0` — a zero count there is presence, not omission, and should not be read as evidence for the same `omitempty` behavior described above.
 
 ### Exit status
 
