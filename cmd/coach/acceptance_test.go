@@ -589,15 +589,25 @@ var _ = Describe("coach codesignal", func() {
 	})
 
 	When("--format=json", func() {
-		It("writes exactly one unwrapped report document followed by exactly one newline", func() {
+		var (
+			stdout     []byte
+			headSHA    string
+			initialSHA string
+		)
+
+		BeforeEach(func() {
 			repo := newTempGitRepo()
-			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
+			initialSHA = commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
 			commitFile(repo, "b.go", "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n")
-			headSHA := commitFile(repo, "binary.go", "package binary\x00")
+			headSHA = commitFile(repo, "binary.go", "package binary\x00")
 
-			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--format=json")
+			var stderr []byte
+			var exitCode int
+			stdout, stderr, exitCode = runCoachCodesignalRaw(repo, initialSHA, "--format=json")
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+		})
 
+		It("writes exactly one unwrapped report document followed by exactly one newline", func() {
 			Expect(bytes.Count(stdout, []byte("\n"))).To(Equal(1))
 
 			var report codesignal.Report
@@ -616,7 +626,20 @@ var _ = Describe("coach codesignal", func() {
 			Expect(document).To(HaveKey("summary"))
 			Expect(document).To(HaveKey("signals"))
 			Expect(document).To(HaveKey("diagnostics"))
-			Expect(document).To(HaveLen(5), "JSON mode must not add CLI-only fields around codesignal.Report")
+			Expect(document).To(HaveKey("coverage"))
+			Expect(document).To(HaveLen(6), "JSON mode must not add CLI-only fields around codesignal.Report")
+		})
+
+		It("emits empty coverage.excluded and coverage.unsupported arrays when scope excludes nothing", func() {
+			var document map[string]json.RawMessage
+			Expect(json.Unmarshal(stdout, &document)).To(Succeed())
+
+			var coverage map[string]json.RawMessage
+			Expect(json.Unmarshal(document["coverage"], &coverage)).To(Succeed())
+			Expect(coverage).To(HaveKey("excluded"))
+			Expect(coverage).To(HaveKey("unsupported"))
+			Expect(string(coverage["excluded"])).To(Equal("[]"), "coverage.excluded must be present and empty when scope excludes nothing")
+			Expect(string(coverage["unsupported"])).To(Equal("[]"), "coverage.unsupported must be present and empty when scope excludes nothing")
 		})
 	})
 
