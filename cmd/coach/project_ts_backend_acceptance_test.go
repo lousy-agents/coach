@@ -13,12 +13,9 @@ import (
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-// fakeTSSidecarBinary holds the compiled testdata/fake_ts_sidecar bytes,
-// built lazily on first use via buildFakeTSSidecarOnce -- cmd/coach's suite
+// Built lazily on first use rather than in a BeforeSuite: cmd/coach's suite
 // already defines its one allowed BeforeSuite node in
-// acceptance_suite_test.go (Ginkgo permits only one), so this cannot add a
-// second BeforeSuite the way pkg/projectmodel/ts_sidecar_acceptance_test.go
-// does.
+// acceptance_suite_test.go (Ginkgo permits only one).
 var (
 	fakeTSSidecarBinary    []byte
 	buildFakeTSSidecarOnce sync.Once
@@ -41,11 +38,9 @@ func ensureFakeTSSidecarBuilt() {
 	})
 }
 
-// installFakeTSSidecar writes the compiled fake sidecar binary at the fixed
-// repository-relative path (js/semantics/bin/coach-ts-project-sidecar) the
-// real tsProjectBackend resolves against --project-config's checkout dir, so
-// the CLI's real filesystem-path resolution is exercised end to end rather
-// than through a test-only injection seam.
+// Writes to the same repository-relative path the real tsProjectBackend
+// resolves, so the CLI's own filesystem-path resolution is exercised end to
+// end rather than through a test-only injection seam.
 func installFakeTSSidecar(repo string) {
 	ensureFakeTSSidecarBuilt()
 	binDir := filepath.Join(repo, "js", "semantics", "bin")
@@ -53,12 +48,20 @@ func installFakeTSSidecar(repo string) {
 	Expect(os.WriteFile(filepath.Join(binDir, "coach-ts-project-sidecar"), fakeTSSidecarBinary, 0o755)).To(Succeed())
 }
 
-// tsHandlersWithoutMarker and tsHandlersWithMarker let a test control,
-// purely via committed file content, whether testdata/fake_ts_sidecar
-// reports its one fixed forbidden-layer edge.
 const tsHandlersWithoutMarker = "export function use(): string {\n  return 'no import here';\n}\n"
 const tsHandlersWithMarker = "// LAYER_VIOLATION_MARKER\nexport function use(): string {\n  return 'no import here';\n}\n"
 const tsDbFile = "export const Name = 'db';\n"
+
+// Carries both LAYER_VIOLATION_MARKER and LAYER_VIOLATION_CRASH_MARKER, so
+// a test using this fixture proves a real violation went unreported because
+// the sidecar crashed, not merely that nothing was configured to find.
+const tsHandlersWithMarkerAndCrash = "// LAYER_VIOLATION_MARKER\n// LAYER_VIOLATION_CRASH_MARKER\nexport function use(): string {\n  return 'no import here';\n}\n"
+
+// Carries both LAYER_VIOLATION_MARKER and LAYER_VIOLATION_HANG_MARKER, so a
+// test using this fixture proves a real violation went unreported because
+// the sidecar exhausted the wall-time budget, not because it crashed or was
+// absent.
+const tsHandlersWithMarkerAndHang = "// LAYER_VIOLATION_MARKER\n// LAYER_VIOLATION_HANG_MARKER\nexport function use(): string {\n  return 'no import here';\n}\n"
 
 var _ = Describe("coach codesignal --project-config with the real TypeScript project-language backend", func() {
 	When("--project-language typescript is selected but no sidecar binary is installed", func() {
@@ -84,6 +87,118 @@ var _ = Describe("coach codesignal --project-config with the real TypeScript pro
 				}
 			}
 			Expect(found).To(BeTrue(), "expected a %s diagnostic in ProjectCoverage.Diagnostics, got %+v", projectmodel.DiagBackendUnavailable, report.ProjectCoverage.Diagnostics)
+		})
+
+		It("renders a qualified verdict, not the unqualified clean-run sentence, when the sidecar is absent", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "pkg/db/d.ts", tsDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsHandlersWithMarker)
+			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			Expect(stderr).To(BeEmpty())
+
+			text := string(stdout)
+			Expect(text).NotTo(ContainSubstring("No active CodeSignal findings.\n"), "a missing sidecar must not render the exact unqualified clean-run verdict")
+			Expect(text).To(ContainSubstring("No active CodeSignal findings, but the analysis is incomplete"))
+			Expect(text).To(ContainSubstring("project analysis did not complete"))
+		})
+	})
+
+	When("--project-language typescript is selected and the installed sidecar crashes partway through instead of being absent", func() {
+		It("stays exit 0, reports project_backend_unavailable via ProjectCoverage.Diagnostics, and never fabricates the layer violation the crashed sidecar would have found", func() {
+			repo := newTempGitRepo()
+			installFakeTSSidecar(repo)
+			commitFile(repo, "pkg/db/d.ts", tsDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsHandlersWithMarkerAndCrash)
+			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			Expect(stderr).To(BeEmpty())
+
+			report := decodeCoachReport(stdout)
+			Expect(report.ProjectChanges).To(BeEmpty(), "a crashed sidecar must never fabricate the layer violation it never actually reported")
+			Expect(report.ProjectCoverage).NotTo(BeNil())
+			Expect(report.ProjectCoverage.Complete).To(BeFalse())
+
+			var found bool
+			for _, diag := range report.ProjectCoverage.Diagnostics {
+				if diag.Code == projectmodel.DiagBackendUnavailable {
+					found = true
+					Expect(diag.Message).To(ContainSubstring("ts sidecar exited"), "the crash scenario must fail through the crashed-process path, not silently degrade into the missing-binary path")
+				}
+			}
+			Expect(found).To(BeTrue(), "expected a %s diagnostic in ProjectCoverage.Diagnostics, got %+v", projectmodel.DiagBackendUnavailable, report.ProjectCoverage.Diagnostics)
+		})
+
+		It("renders a qualified verdict, not the unqualified clean-run sentence, when the sidecar crashes", func() {
+			repo := newTempGitRepo()
+			installFakeTSSidecar(repo)
+			commitFile(repo, "pkg/db/d.ts", tsDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsHandlersWithMarkerAndCrash)
+			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			Expect(stderr).To(BeEmpty())
+
+			text := string(stdout)
+			Expect(text).NotTo(ContainSubstring("No active CodeSignal findings.\n"), "a crashed sidecar must not render the exact unqualified clean-run verdict")
+			Expect(text).To(ContainSubstring("No active CodeSignal findings, but the analysis is incomplete"))
+			Expect(text).To(ContainSubstring("project analysis did not complete"))
+		})
+	})
+
+	// Covers only the deadline/timeout half of "budgets/cancellation": cancellation
+	// is unreachable from cmd/coach today, since main.go passes
+	// context.Background() with no signal handling. Both specs below wait out
+	// the full 60s tsSidecarWallTime -- do not shorten the fake sidecar's hang
+	// sleep to speed this up, or it answers before the deadline and stops
+	// exercising the timeout path entirely.
+	When("--project-language typescript is selected and the installed sidecar hangs past the real backend's wall-time budget instead of crashing or exiting", func() {
+		It("stays exit 0, reports project_backend_unavailable via ProjectCoverage.Diagnostics with a timeout message, and never fabricates the layer violation the hung sidecar would have found", func() {
+			repo := newTempGitRepo()
+			installFakeTSSidecar(repo)
+			commitFile(repo, "pkg/db/d.ts", tsDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsHandlersWithMarkerAndHang)
+			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			Expect(stderr).To(BeEmpty())
+
+			report := decodeCoachReport(stdout)
+			Expect(report.ProjectChanges).To(BeEmpty(), "a hung sidecar must never fabricate the layer violation it never actually reported")
+			Expect(report.ProjectCoverage).NotTo(BeNil())
+			Expect(report.ProjectCoverage.Complete).To(BeFalse())
+
+			var found bool
+			for _, diag := range report.ProjectCoverage.Diagnostics {
+				if diag.Code == projectmodel.DiagBackendUnavailable {
+					found = true
+					Expect(diag.Message).To(ContainSubstring("ts sidecar timed out after"), "the hang scenario must fail through the wall-time-budget path, not silently degrade into the crashed-process or missing-binary path")
+				}
+			}
+			Expect(found).To(BeTrue(), "expected a %s diagnostic in ProjectCoverage.Diagnostics, got %+v", projectmodel.DiagBackendUnavailable, report.ProjectCoverage.Diagnostics)
+		})
+
+		It("renders a qualified verdict, not the unqualified clean-run sentence, when the sidecar hangs past budget", func() {
+			repo := newTempGitRepo()
+			installFakeTSSidecar(repo)
+			commitFile(repo, "pkg/db/d.ts", tsDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsHandlersWithMarkerAndHang)
+			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			Expect(stderr).To(BeEmpty())
+
+			text := string(stdout)
+			Expect(text).NotTo(ContainSubstring("No active CodeSignal findings.\n"), "a hung sidecar must not render the exact unqualified clean-run verdict")
+			Expect(text).To(ContainSubstring("No active CodeSignal findings, but the analysis is incomplete"))
+			Expect(text).To(ContainSubstring("project analysis did not complete"))
 		})
 	})
 
