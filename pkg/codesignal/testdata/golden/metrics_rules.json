@@ -38,9 +38,14 @@
       "evidence": "branch_sum=12",
       "why_it_matters": "A large number of branching constructs concentrated in one file increases the number of paths a reader has to hold in mind at once and the number of cases tests need to cover.",
       "recommendation": "Split this file's branching logic across smaller, single-purpose functions or files so each piece has fewer paths to reason about.",
+      "suggested_skill": "",
       "provenance": {
         "producer": "codesignal"
-      }
+      },
+      "machine_evidence": {},
+      "related_locations": [],
+      "path_steps": [],
+      "coverage_refs": []
     },
     {
       "id": "sig_108d19bddb7d5c907c28b3d6aba415ecf6edb999452651dd42560c9183334f53",
@@ -65,9 +70,22 @@
       "evidence": "max_nesting_depth=5",
       "why_it_matters": "Deeply nested control flow is harder to read, harder to test exhaustively, and hides the function's actual branching structure behind indentation, making it easy to miss an edge case.",
       "recommendation": "Extract deeply nested blocks into named helper functions or invert conditionals with early returns to flatten the control flow.",
+      "suggested_skill": "",
       "provenance": {
         "producer": "codesignal"
-      }
+      },
+      "machine_evidence": {},
+      "related_locations": [],
+      "path_steps": [],
+      "coverage_refs": []
     }
-  ]
+  ],
+  "diagnostics": [],
+  "coverage": {
+    "tracked_files_discovered": 0,
+    "files_analyzed": 0,
+    "files_unanalyzable": 0,
+    "unsupported": [],
+    "excluded": []
+  }
 }

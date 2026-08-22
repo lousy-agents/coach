@@ -43,7 +43,19 @@
       "provenance": {
         "producer": "semantics",
         "finding_kind": "mutates_input"
-      }
+      },
+      "machine_evidence": {},
+      "related_locations": [],
+      "path_steps": [],
+      "coverage_refs": []
     }
-  ]
+  ],
+  "diagnostics": [],
+  "coverage": {
+    "tracked_files_discovered": 0,
+    "files_analyzed": 0,
+    "files_unanalyzable": 0,
+    "unsupported": [],
+    "excluded": []
+  }
 }

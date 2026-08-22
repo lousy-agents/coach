@@ -13,8 +13,8 @@ type Coverage struct {
 	TrackedFilesDiscovered int             `json:"tracked_files_discovered"`
 	FilesAnalyzed          int             `json:"files_analyzed"`
 	FilesUnanalyzable      int             `json:"files_unanalyzable"`
-	Unsupported            []CoverageGroup `json:"unsupported,omitempty"`
-	Excluded               []CoverageGroup `json:"excluded,omitempty"`
+	Unsupported            []CoverageGroup `json:"unsupported"`
+	Excluded               []CoverageGroup `json:"excluded"`
 }
 
 // CoverageGroup summarizes a set of files sharing an exclusion/unsupported

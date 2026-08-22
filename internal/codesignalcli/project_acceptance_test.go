@@ -267,7 +267,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 			Backend:      backend,
 		}
 
-		withProject, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
+		withProject, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(withProject.SchemaVersion).To(Equal("2"))
 		Expect(withProject.ProjectChanges).To(HaveLen(1))
@@ -280,7 +280,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(backend.requests[0].ConfigDigest).To(Equal(project.ConfigDigest))
 
 		backend.requests = nil
-		withoutProject, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, nil)
+		withoutProject, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 1}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(withoutProject.SchemaVersion).To(Equal("1"))
 		Expect(withoutProject.ProjectChanges).To(BeEmpty())
@@ -378,7 +378,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 			Backend:      backend,
 		}
 
-		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
+		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(report.ProjectChanges).To(HaveLen(1))
 		Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")), "an incomplete HeadCoverage must never be reported as lifecycle baseline")
@@ -417,7 +417,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 			Backend:      backend,
 		}
 
-		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
+		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(report.ProjectChanges).To(BeEmpty(), "no project changes were returned by the backend")
 		Expect(report.Signals).To(BeEmpty(), "the fixture file triggers no file-local finding")
@@ -502,7 +502,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 			Backend:      backend,
 		}
 
-		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
+		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(report.ProjectChanges).To(BeEmpty(), "the anchorless observation must be dropped, not rendered as an active finding")
 		Expect(report.Signals).To(BeEmpty(), "the fixture file triggers no file-local finding")
@@ -810,7 +810,7 @@ var _ = Describe("source_sink_pack config field disposition", func() {
 				ConfigDigest: ConfigDigest(cfg),
 				Backend:      NewGoProjectBackend(),
 			}
-			report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 2}, project)
+			report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 2}, project)
 			Expect(err).NotTo(HaveOccurred())
 			return report
 		}
@@ -929,7 +929,7 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 			ConfigDigest: ConfigDigest(goLayerBypassSearchConfigJSON),
 			Backend:      NewGoProjectBackend(),
 		}
-		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
+		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(report.ProjectChanges).To(HaveLen(1), "the high-confidence witness must still surface as a ProjectChange even though the search was incomplete")
@@ -964,7 +964,7 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 			ConfigDigest: ConfigDigest(goLayerBypassSearchConfigJSON),
 			Backend:      NewGoProjectBackend(),
 		}
-		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
+		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(calls).To(Equal(1), "the bypass seam must actually have been invoked, or the MaxSearchNodes assertion below is vacuous")
