@@ -3,11 +3,14 @@ package codesignal
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"os"
 	"testing"
 
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
+
+var update = flag.Bool("update", false, "regenerate testdata/golden files")
 
 func buildAndMarshal(t *testing.T, input Input, options Options) []byte {
 	t.Helper()
@@ -32,9 +35,16 @@ func buildAndMarshal(t *testing.T, input Input, options Options) []byte {
 func assertMatchesGolden(t *testing.T, goldenPath string, got []byte) {
 	t.Helper()
 
+	if *update {
+		if err := os.WriteFile(goldenPath, got, 0o644); err != nil {
+			t.Fatalf("write golden file %s: %v", goldenPath, err)
+		}
+		return
+	}
+
 	want, err := os.ReadFile(goldenPath)
 	if err != nil {
-		t.Fatalf("reading golden file %s: %v\n\nactual output (save this as the golden file if correct):\n%s", goldenPath, err, got)
+		t.Fatalf("reading golden file %s: %v\n\nactual output (save this as the golden file if correct, or rerun with -update):\n%s", goldenPath, err, got)
 	}
 
 	if string(got) != string(want) {
