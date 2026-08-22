@@ -83,7 +83,7 @@ var _ = Describe("Project-analysis report generation", func() {
 	})
 
 	When("ProjectEnabled is true and enabled with no project data at all", func() {
-		It("still reports schema 2 with an all-zero ProjectSummary and no project_changes/project_coverage keys", func() {
+		It("still reports schema 2 with an all-zero ProjectSummary and present-but-empty project_changes/project_coverage keys", func() {
 			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{})
 
 			Expect(report.SchemaVersion).To(Equal("2"))
@@ -96,8 +96,10 @@ var _ = Describe("Project-analysis report generation", func() {
 			Expect(err).NotTo(HaveOccurred())
 			var fields map[string]json.RawMessage
 			Expect(json.Unmarshal(raw, &fields)).To(Succeed())
-			Expect(fields).NotTo(HaveKey("project_changes"))
-			Expect(fields).NotTo(HaveKey("project_coverage"))
+			Expect(fields).To(HaveKey("project_changes"))
+			Expect(string(fields["project_changes"])).To(Equal("[]"))
+			Expect(fields).To(HaveKey("project_coverage"))
+			Expect(string(fields["project_coverage"])).NotTo(Equal("null"))
 			Expect(fields).To(HaveKey("project_summary"))
 		})
 	})
@@ -550,7 +552,8 @@ var _ = Describe("Project-analysis report generation", func() {
 			var fields map[string]json.RawMessage
 			Expect(json.Unmarshal(raw, &fields)).To(Succeed())
 			Expect(fields).To(HaveKey("project_facts"))
-			Expect(fields).NotTo(HaveKey("project_changes"))
+			Expect(fields).To(HaveKey("project_changes"))
+			Expect(string(fields["project_changes"])).To(Equal("[]"))
 
 			first, err := json.Marshal(report)
 			Expect(err).NotTo(HaveOccurred())
