@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coach — TypeScript project analysis customer journey</title>
+  <style>
+    :root {
+      --paper: #f1f4f0;
+      --card: #fff;
+      --ink: #132a3a;
+      --muted: #4c6274;
+      --faint: #6e7f8a;
+      --rule: #d2dad1;
+      --rule-strong: #a9b8ac;
+      --current: #286747;
+      --current-bg: #e7f1ea;
+      --documented: #4c6274;
+      --documented-bg: #edf1f3;
+      --hypothesis: #805116;
+      --hypothesis-bg: #fbf0dc;
+      --planned: #33528f;
+      --planned-bg: #e7ecf6;
+      --boundary: #873b36;
+      --boundary-bg: #f6e7e5;
+      --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+      --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      * { animation: none !important; transition: none !important; }
+    }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(var(--paper), var(--paper)),
+        repeating-linear-gradient(0deg, rgb(19 42 58 / 3.5%) 0 1px, transparent 1px 28px),
+        repeating-linear-gradient(90deg, rgb(19 42 58 / 3.5%) 0 1px, transparent 1px 28px);
+      font: 1rem/1.55 var(--serif);
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--planned); }
+    a:focus-visible, button:focus-visible, summary:focus-visible {
+      outline: 2px solid var(--planned);
+      outline-offset: 3px;
+    }
+    h1, h2, h3, h4 {
+      margin: 0;
+      color: var(--ink);
+      font-family: var(--sans);
+      letter-spacing: -0.015em;
+      line-height: 1.2;
+    }
+    p { margin: 0 0 1rem; }
+    code { font: .85em var(--mono); background: rgb(19 42 58 / 6%); border-radius: 3px; padding: .1em .35em; }
+    .shell { display: flex; align-items: flex-start; max-width: 1180px; margin: 0 auto; }
+    .rail {
+      position: sticky;
+      top: 0;
+      flex: 0 0 238px;
+      height: 100vh;
+      padding: 2rem 1rem 2rem 1.5rem;
+      overflow-y: auto;
+    }
+    .rail-inner { min-height: 100%; padding-right: 1.25rem; border-right: 1px solid var(--rule); }
+    .brand { margin: 0 0 1.5rem; color: var(--muted); font: .72rem/1.6 var(--mono); }
+    .brand strong { display: block; color: var(--ink); font-size: .8rem; }
+    .toc ul, .legend, .measure-list, .gap-list, .artifact-flow { margin: 0; padding: 0; list-style: none; }
+    .toc li { margin-bottom: .15rem; }
+    .toc a {
+      display: block;
+      border-left: 2px solid transparent;
+      border-radius: 5px;
+      color: var(--muted);
+      font: .76rem/1.25 var(--mono);
+      letter-spacing: .02em;
+      padding: .4rem .55rem;
+      text-decoration: none;
+    }
+    .toc a:hover, .toc a[aria-current="location"] { color: var(--ink); background: rgb(19 42 58 / 6%); }
+    .toc a[aria-current="location"] { border-left-color: var(--ink); font-weight: 700; }
+    .legend { margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--rule); }
+    .legend h2 { margin-bottom: .65rem; color: var(--faint); font: .68rem var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    .legend li { display: flex; align-items: flex-start; gap: .5rem; margin-bottom: .55rem; color: var(--muted); font: .72rem/1.4 var(--sans); }
+    .lanes { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--rule); }
+    .lanes p { margin: 0 0 .75rem; color: var(--muted); font: .72rem/1.45 var(--sans); }
+    .lanes p:last-child { margin-bottom: 0; }
+    .lanes strong { display: block; color: var(--ink); font: .66rem var(--mono); letter-spacing: .07em; text-transform: uppercase; }
+    main { flex: 1; min-width: 0; padding: 2.5rem 3rem 6rem; }
+    section { max-width: 42rem; margin: 0 auto 4.5rem; scroll-margin-top: 1.5rem; }
+    section.wide, .masthead { max-width: 920px; }
+    .eyebrow { display: block; margin-bottom: .5rem; color: var(--muted); font: .7rem var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+    section > h2 { margin-bottom: .35rem; font-size: 1.55rem; }
+    .section-sub { max-width: 40rem; margin-bottom: 1.75rem; color: var(--muted); font-size: .95rem; }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      border: 1.5px solid currentColor;
+      border-radius: 3px;
+      font: 700 .66rem var(--mono);
+      letter-spacing: .07em;
+      padding: .28em .6em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .tag--current { color: var(--current); background: var(--current-bg); }
+    .tag--documented { color: var(--documented); background: var(--documented-bg); }
+    .tag--hypothesis { color: var(--hypothesis); background: var(--hypothesis-bg); }
+    .tag--planned { color: var(--planned); background: var(--planned-bg); }
+    .tag--boundary { color: var(--boundary); background: var(--boundary-bg); }
+    .masthead {
+      position: relative;
+      margin: 2.5rem auto 4rem;
+      border: 1.5px solid var(--ink);
+      background: var(--card);
+      padding: 2.1rem 2.3rem 0;
+    }
+    .masthead::before, .masthead::after {
+      position: absolute;
+      top: -1px;
+      width: 13px;
+      height: 13px;
+      border: 2px solid var(--ink);
+      content: "";
+    }
+    .masthead::before { left: -1px; border-right: 0; border-bottom: 0; }
+    .masthead::after { right: -1px; border-left: 0; border-bottom: 0; }
+    .masthead h1 { margin: .5rem 0 .9rem; font-size: clamp(2rem, 5vw, 2.3rem); }
+    .lede { max-width: 42rem; margin-bottom: 1.6rem; color: var(--muted); font-size: 1.05rem; font-style: italic; }
+    .meta { display: grid; grid-template-columns: repeat(2, 1fr); border-top: 1px solid var(--rule); }
+    .meta div { min-height: 4.6rem; padding: .9rem 1.5rem .9rem 0; border-bottom: 1px solid var(--rule); }
+    .meta div:nth-child(odd) { border-right: 1px solid var(--rule); }
+    .meta div:nth-child(even) { padding-left: 1.5rem; }
+    .meta dt { margin-bottom: .3rem; color: var(--faint); font: .65rem var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    .meta dd { margin: 0; font: .88rem var(--sans); }
+    .meta a { color: inherit; }
+    .masthead-note { margin: 0; padding: .85rem 0 1rem; color: var(--muted); font: .8rem var(--sans); }
+    .callout { border: 1px dashed var(--rule-strong); border-radius: 9px; background: rgb(255 255 255 / 55%); color: var(--muted); font: .92rem/1.5 var(--sans); padding: 1.1rem 1.3rem; }
+    .callout strong { color: var(--ink); }
+    .arc { display: flex; align-items: stretch; gap: .6rem; flex-wrap: wrap; margin: 1.75rem 0; }
+    .arc-step { flex: 1 1 180px; border: 1px solid var(--rule); border-radius: 9px; background: var(--card); font: 600 .86rem/1.45 var(--sans); padding: 1rem 1.1rem; text-align: center; }
+    .arc-arrow { display: grid; place-content: center; color: var(--faint); font: 1.1rem var(--sans); }
+    .gap-list { display: grid; gap: .5rem; margin-top: .75rem; }
+    .gap-list li, .measure-list li { display: flex; gap: .65rem; align-items: flex-start; font-size: .92rem; }
+    .gap-list li::before { flex: 0 0 auto; color: var(--faint); content: "—"; }
+    .grid { display: grid; gap: 1.1rem; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--rule); border-radius: 9px; background: var(--card); padding: 1.3rem 1.4rem; }
+    .promise-num { color: var(--faint); font: .72rem var(--mono); }
+    .card h3 { margin: .4rem 0 .5rem; font-size: 1rem; }
+    .card p { margin: 0; color: var(--muted); font: .88rem/1.5 var(--sans); }
+    .journey { margin: 0; padding: 0; list-style: none; }
+    .journey > li { display: grid; grid-template-columns: 2.55rem minmax(0, 1fr); gap: 1.1rem; }
+    .marker { display: flex; flex-direction: column; align-items: center; }
+    .marker span { display: grid; place-content: center; width: 2.55rem; height: 2.55rem; flex: 0 0 auto; border: 2px solid var(--ink); border-radius: 50%; background: var(--card); font: 700 .95rem var(--mono); }
+    .marker::after { width: 2px; min-height: 1.25rem; flex: 1; margin: .3rem 0; background: var(--rule-strong); content: ""; }
+    .journey > li:last-child .marker::after { display: none; }
+    .moment { margin-bottom: 1.6rem; }
+    .moment .question { margin: .15rem 0 1rem; color: var(--ink); font-size: 1.08rem; font-style: italic; }
+    .moment-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .moment-fields h4, .actor-field h4 { margin-bottom: .3rem; color: var(--faint); font: .64rem var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .moment-fields p { margin: 0; color: var(--ink); font: .87rem/1.5 var(--sans); }
+    .xref { display: inline-block; margin-top: 1rem; border: 1px dashed var(--planned); border-radius: 999px; font: .68rem var(--mono); padding: .35em .7em; text-decoration: none; }
+    .xref:hover { background: var(--planned-bg); }
+    details { border-top: 1px solid var(--rule); margin-top: 1rem; padding-top: .85rem; }
+    summary { cursor: pointer; color: var(--muted); font: 700 .74rem var(--mono); letter-spacing: .04em; }
+    details > div, details > p, details > ol, details > ul { margin: .8rem 0 0; color: var(--muted); font: .86rem/1.5 var(--sans); }
+    details li { margin-bottom: .4rem; }
+    .artifact-flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; margin-bottom: 1.1rem; }
+    .artifact-flow li { position: relative; border: 1px dashed var(--rule-strong); border-radius: 8px; background: rgb(255 255 255 / 55%); padding: .75rem .85rem; color: var(--muted); font: .78rem/1.4 var(--sans); }
+    .artifact-flow strong { display: block; margin-bottom: .2rem; color: var(--ink); font: .68rem var(--mono); text-transform: uppercase; }
+    .actor-card h3 { padding-bottom: .7rem; border-bottom: 1px solid var(--rule); font: .85rem var(--mono); letter-spacing: .03em; text-transform: uppercase; }
+    .actor-field { margin-top: .9rem; }
+    .actor-field p { color: var(--ink); font-size: .85rem; }
+    .scenario { display: flex; flex-direction: column; gap: .8rem; }
+    .scenario-head { display: flex; justify-content: space-between; gap: .7rem; align-items: flex-start; }
+    .scenario-head h3 { margin: 0; font-size: 1rem; }
+    .scenario-type { color: var(--faint); font: .66rem var(--mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+    .scenario .quote { margin: 0; border-left: 2px solid var(--rule-strong); color: var(--ink); font-size: .9rem; font-style: italic; padding-left: .8rem; }
+    .next { margin: 0; color: var(--faint); font: .8rem/1.45 var(--sans); }
+    .next strong { color: var(--muted); font: .68rem var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+    .question-card { border: 1px solid var(--rule); border-radius: 9px; background: var(--card); margin-bottom: .9rem; padding: 1.1rem 1.35rem; }
+    .question-card summary { color: var(--ink); font: 700 1rem/1.4 var(--sans); }
+    .question-card p { border-top: 1px solid var(--rule); margin: .9rem 0 0; padding-top: .9rem; color: var(--muted); font-size: .9rem; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 9px; background: var(--card); }
+    table { width: 100%; min-width: 740px; border-collapse: collapse; }
+    th { background: rgb(19 42 58 / 3%); color: var(--faint); font: .65rem var(--mono); letter-spacing: .07em; padding: .85rem 1rem; text-align: left; text-transform: uppercase; }
+    td { border-top: 1px solid var(--rule); color: var(--ink); font: .85rem/1.5 var(--sans); padding: 1rem; vertical-align: top; }
+    td p { margin: .45rem 0 0; color: var(--muted); font-size: .82rem; }
+    .measure-list { display: grid; gap: .55rem; }
+    .measure-list li::before { width: .55rem; height: .55rem; flex: 0 0 auto; border: 1.5px solid var(--muted); border-radius: 2px; content: ""; margin-top: .35rem; }
+    .measure-list.qual li::before { border-radius: 50%; }
+    .boundary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.1rem; }
+    .boundary-card { border-radius: 9px; padding: 1.3rem 1.4rem; }
+    .boundary-card h3 { margin-bottom: .85rem; font: .85rem var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+    .boundary-card ul, .guardrail ul { margin: 0; padding-left: 1.1rem; font: .86rem/1.5 var(--sans); }
+    .boundary-card li, .guardrail li { margin-bottom: .65rem; }
+    .boundary-card--current { border: 1px solid var(--current); background: var(--current-bg); }
+    .boundary-card--current h3 { color: var(--current); }
+    .boundary-card--planned { border: 1px solid var(--planned); background: var(--planned-bg); }
+    .boundary-card--planned h3 { color: var(--planned); }
+    .guardrail { margin-bottom: 1.1rem; border-radius: 9px; padding: 1.3rem 1.4rem; }
+    .guardrail h3 { display: flex; align-items: center; gap: .55rem; margin-bottom: .85rem; font-size: .95rem; }
+    .guardrail p { margin: .85rem 0 0; color: var(--muted); font: italic .82rem/1.45 var(--sans); }
+    .guardrail--hypothesis { border: 1px solid var(--hypothesis); background: var(--hypothesis-bg); }
+    .guardrail--boundary { border: 1px solid var(--boundary); background: var(--boundary-bg); }
+    footer { max-width: 920px; margin: 0 auto 4rem; border-top: 1px solid var(--rule); color: var(--faint); font: .78rem/1.5 var(--mono); padding-top: 2rem; }
+    @media (max-width: 960px) {
+      .shell { display: block; }
+      .rail { position: sticky; z-index: 2; width: 100%; height: auto; padding: 0; background: var(--paper); border-bottom: 1px solid var(--rule); }
+      .rail-inner { min-height: 0; padding: .75rem 1rem; border: 0; }
+      .brand, .legend, .lanes { display: none; }
+      .toc ul { display: flex; gap: .35rem; overflow-x: auto; }
+      .toc li { flex: 0 0 auto; }
+      .toc a { border-bottom: 2px solid transparent; border-left: 0; white-space: nowrap; }
+      .toc a[aria-current="location"] { border-bottom-color: var(--ink); }
+      main { padding: 2rem 1.25rem 4rem; }
+    }
+    @media (max-width: 780px) {
+      .grid-2, .grid-4, .boundary-grid, .artifact-flow { grid-template-columns: 1fr; }
+      .meta, .moment-fields { grid-template-columns: 1fr; }
+      .meta div:nth-child(odd) { border-right: 0; }
+      .meta div:nth-child(even) { padding-left: 0; }
+    }
+    @media (max-width: 620px) {
+      .arc { flex-direction: column; }
+      .arc-arrow { transform: rotate(90deg); }
+      .masthead { padding: 1.5rem 1.35rem 0; }
+      .journey > li { grid-template-columns: 2.1rem minmax(0, 1fr); gap: .8rem; }
+      .marker span { width: 2.1rem; height: 2.1rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail">
+      <div class="rail-inner">
+        <p class="brand"><strong>lousy-agents / coach</strong>customer journey — strategy artifact</p>
+        <nav class="toc" aria-label="Document sections">
+          <ul>
+            <li><a href="#overview">Overview</a></li>
+            <li><a href="#promises">Promises</a></li>
+            <li><a href="#journey">Journey map</a></li>
+            <li><a href="#actors">Actor handoffs</a></li>
+            <li><a href="#scenarios">Scenarios</a></li>
+            <li><a href="#questions">Open questions</a></li>
+            <li><a href="#hypotheses">Hypotheses</a></li>
+            <li><a href="#measures">Pilot measures</a></li>
+            <li><a href="#boundary">Evidence boundary</a></li>
+            <li><a href="#guardrails">Guardrails</a></li>
+          </ul>
+        </nav>
+        <div class="legend" aria-label="Status key">
+          <h2>Status key</h2>
+          <ul>
+            <li><span class="tag tag--current">Acceptance-backed</span> implementation proven by current acceptance evidence</li>
+            <li><span class="tag tag--documented">Documented record</span> a repository document or dated evaluation; not blanket proof</li>
+            <li><span class="tag tag--hypothesis">Hypothesis</span> unvalidated assumption</li>
+            <li><span class="tag tag--planned">Planned</span> designed, not yet built</li>
+            <li><span class="tag tag--boundary">Boundary</span> explicit non-goal</li>
+          </ul>
+        </div>
+        <div class="lanes" aria-label="How to read the document">
+          <p><strong>Current lane</strong>Supportable observations and their sources are in the evidence boundary.</p>
+          <p><strong>Target lane</strong>Moments 0–10 describe the intended customer experience, not a released funnel.</p>
+        </div>
+      </div>
+    </aside>
+
+    <main>
+      <header class="masthead" id="top">
+        <span class="eyebrow">lousy-agents / coach — canonical strategy document</span>
+        <h1>Customer Journey: TypeScript Project Analysis</h1>
+        <p class="lede">This document starts with the customer outcome and judges solution choices by whether they make that outcome easier to reach. It guides discovery, product copy, and the eventual epic's acceptance criteria.</p>
+        <dl class="meta">
+          <div><dt>Claim state</dt><dd><span class="tag tag--hypothesis">Hypothesis</span> target customer journey</dd></div>
+          <div><dt>Authority</dt><dd>Canonical for this journey; not overall product direction</dd></div>
+          <div><dt>Product direction</dt><dd><a href="prd.md">PRD</a> is authoritative</dd></div>
+          <div><dt>Implementation truth</dt><dd>Acceptance evidence and release validation decide what ships</dd></div>
+          <div><dt>Documented assessment</dt><dd><a href="evaluations/codesignal-pilot-readiness.html">Pilot evaluation</a>, updated 2026-08-16; a dated record, not blanket proof</dd></div>
+          <div><dt>Repository review</dt><dd>Current strategy boundary reviewed 2026-08-23</dd></div>
+          <div><dt>Governs</dt><dd>Discovery · product copy · epic acceptance criteria</dd></div>
+          <div><dt>Does not govern</dt><dd>Implementation spec · adoption evidence · release claim</dd></div>
+        </dl>
+        <p class="masthead-note">Status tags name claim state; linked sources name provenance. Read this as a bet to argue with before building—not as proof that the journey ships today.</p>
+      </header>
+
+      <section id="overview">
+        <span class="eyebrow">01 · Why this journey exists</span>
+        <h2>The job the customer hires Coach to do</h2>
+        <p class="section-sub">An agentic software engineer has a working TypeScript application. They want their coding agent to help improve its architecture, not merely produce more code.</p>
+        <p>They need to know whether Coach can usefully analyze this repository; what it found in their actual code and why it matters; what a focused refactor would look like, including residual uncertainty; and whether that refactor improved the architectural evidence.</p>
+        <div class="arc" aria-label="Desired emotional arc">
+          <div class="arc-step">“Can Coach help here?”</div><div class="arc-arrow">→</div>
+          <div class="arc-step">“It understands enough of my project to be credible.”</div><div class="arc-arrow">→</div>
+          <div class="arc-step">“My agent and I know exactly what to change.”</div><div class="arc-arrow">→</div>
+          <div class="arc-step">“The change made the evidence better.”</div>
+        </div>
+        <div class="callout"><strong>Coach succeeds when that loop is useful and repeatable.</strong> It is not enough for a command to start, for a dependency to install, or for a fixture to produce a prearranged finding.</div>
+        <div style="margin-top: 2.5rem">
+          <span class="eyebrow">Target customer and honest starting point <span class="tag tag--hypothesis">Hypothesis</span></span>
+          <p>The candidate first persona is <strong>a project owner using a coding agent in their own TypeScript repository.</strong> This is a founder hypothesis, not a validated market segment. Interviews and pilot use must establish whether the person has this job, prefers this workflow, and will return after the first loop. It can inform this journey, its research prompts, and a narrow implementation epic; it cannot choose a durable persona, pricing, distribution model, or broader roadmap.</p>
+          <p>This candidate is comfortable using a terminal and a coding agent, but should not need to understand Coach’s JavaScript packaging, compiler APIs, process boundaries, or internal rule registries.</p>
+          <p style="margin-top: 1.5rem; font-size: .9rem"><strong>The journey starts with a working project, not a prepared Coach project.</strong> At that point, any of these may be missing:</p>
+          <ul class="gap-list">
+            <li>Coach itself on <code>PATH</code></li>
+            <li>a compatible Node and TypeScript environment</li>
+            <li>a committed Coach architecture policy</li>
+            <li>a supported <code>tsconfig</code> or framework pattern</li>
+            <li>a clear way to compare an agent’s uncommitted refactor with the prior scan</li>
+          </ul>
+          <div class="callout" style="margin-top: 1.1rem">The journey must expose those gaps early and plainly. Hiding one behind an empty report, a mysterious dependency failure, or an analysis of different source than the agent just edited <strong>destroys trust.</strong></div>
+        </div>
+      </section>
+
+      <section id="promises" class="wide">
+        <span class="eyebrow">02 · Commitments that outlive any implementation</span>
+        <h2>Customer promises</h2>
+        <p class="section-sub">These should hold regardless of how the implementation achieves them.</p>
+        <div class="grid grid-2">
+          <article class="card"><span class="promise-num">01</span><h3>One understandable entry point</h3><p>The customer starts from one obvious Coach entry point and understands the setup it needs without learning about internal analyzer components. Delivery packaging remains a solution hypothesis, not this invariant.</p></article>
+          <article class="card"><span class="promise-num">02</span><h3>A fast, legible fit check</h3><p>Before asking for setup or policy investment, Coach tells the customer whether it can analyze this project meaningfully: repository, code state, coverage, and gaps in language a human and agent can act on.</p></article>
+          <article class="card"><span class="promise-num">03</span><h3>No surprise changes or invented success</h3><p>Coach explains every project-changing action before it happens. It never silently installs a dependency, edits a manifest, uses the network during a scan, or presents a setup failure as a clean result.</p></article>
+          <article class="card"><span class="promise-num">04</span><h3>Architectural intent belongs to the customer</h3><p>Coach does not infer the architecture a team wants. A missing policy is a visible onboarding step, not a condition silently assumed by the first command.</p></article>
+          <article class="card"><span class="promise-num">05</span><h3>The first result is useful, even without a defect</h3><p>A coverage/fit summary or reachability fact can be a first win when it accurately explains what Coach saw. The product must not manufacture a finding to create a dopamine hit.</p></article>
+          <article class="card"><span class="promise-num">06</span><h3>The agent can explain, change, and verify</h3><p>Coach returns source-anchored, recommendation-grade evidence. The agent can propose a narrow change, assess behavioral protection, and explain what a rescan did and did not establish.</p></article>
+          <article class="card"><span class="promise-num">07</span><h3>Limits are visible at the decision point</h3><p>If a framework, import, source-to-sink path, or code state is outside covered analysis, Coach says so where the customer would otherwise act. “No matched finding” is not “the architecture is clean.”</p></article>
+        </div>
+      </section>
+
+      <section id="journey">
+        <span class="eyebrow">03 · The ideal journey, moment by moment</span>
+        <h2>Journey map</h2>
+        <p class="section-sub">The journey begins when something outside Coach creates urgency. Coach belongs in the workflow only if it gives a clearer decision than inspecting a diff, running tests, tracing dependencies, or asking a reviewer to reconstruct intent.</p>
+        <div class="callout"><strong><span class="tag tag--planned">Target journey</span> Moments 0–10 define the intended experience.</strong> They do not describe a currently released TypeScript-project funnel. The current supportable path and its limits remain visible in the <a href="#boundary">evidence boundary</a>.</div>
+        <ol class="journey" aria-label="Target journey moments">
+          <li><div class="marker"><span>0</span></div><article class="card moment"><span class="eyebrow">Trigger</span><p class="question">“Why is the current review or refactor loop not enough?”</p><div class="moment-fields"><div><h4>Coach and agent experience</h4><p>The human and agent name the architectural or review uncertainty they are trying to reduce, and the current workaround that is falling short.</p></div><div><h4>Evidence of success</h4><p>The customer can say what a useful Coach result would let them decide.</p></div></div></article></li>
+          <li><div class="marker"><span>1</span></div><article class="card moment"><span class="eyebrow">Discover</span><p class="question">“Can I use Coach on this TypeScript app?”</p><div class="moment-fields"><div><h4>Coach and agent experience</h4><p>The customer finds the Coach entry point without reading about internal analyzer components.</p></div><div><h4>Evidence of success</h4><p><code>coach</code> is available; the documentation makes the next command obvious.</p></div></div></article></li>
+          <li><div class="marker"><span>2</span></div><article class="card moment"><span class="eyebrow">Fit check</span><p class="question">“Will Coach understand enough of this repository to be useful?”</p><div class="moment-fields"><div><h4>Coach and agent experience</h4><p>Coach identifies the selected project and code state, then reports readiness: usable now, needs an explicit prerequisite, needs policy configuration, or outside current support.</p></div><div><h4>Evidence of success</h4><p>The customer knows the shortest honest next step before an analysis failure occurs.</p></div></div></article></li>
+          <li><div class="marker"><span>3</span></div><article class="card moment"><span class="eyebrow">Establish architectural intent</span><p class="question">“What behavior do I want Coach to check?”</p><div class="moment-fields"><div><h4>Coach and agent experience</h4><p>The customer and agent draft or review a small policy describing project roots, layers, forbidden boundaries, and any required intermediary layer. Coach explains coverage and asks for review rather than guessing.</p></div><div><h4>Evidence of success</h4><p>The customer can point to the boundary Coach will evaluate and understands how to change it intentionally.</p></div></div><a class="xref" href="#q-policy">Open question: how does a TypeScript customer create the first policy?</a></article></li>
+          <li><div class="marker"><span>4</span></div><article class="card moment"><span class="eyebrow">Prepare with consent</span><p class="question">“What must change before the scan can run?”</p><div class="moment-fields"><div><h4>Coach and agent experience</h4><p>If a prerequisite is missing, Coach names it, explains why, and offers only actions it can actually perform. A human or interactive agent explicitly approves any project or environment change.</p></div><div><h4>Evidence of success</h4><p>Setup either succeeds and returns to the scan, or stops clearly with no misleading report.</p></div></div><a class="xref" href="#q-friction">Open question: is compatibility friction acceptable to this audience?</a></article></li>
+          <li><div class="marker"><span>5</span></div><article class="card moment"><span class="eyebrow">See the project</span><p class="question">“What did Coach actually analyze?”</p><div class="moment-fields"><div><h4>Coach and agent experience</h4><p>Coach reports the requested revision/code state, relevant project roots, coverage, and recognized patterns before or alongside findings.</p></div><div><h4>Evidence of success</h4><p>The customer can tell whether the report applies to the app and change they care about.</p></div></div><a class="xref" href="#q-coverage">Open question: what does useful coverage look like?</a></article></li>
+          <li><div class="marker"><span>6</span></div><article class="card moment"><span class="eyebrow">Meaningful insight</span><p class="question">“What should we improve?”</p><div class="moment-fields"><div><h4>Coach and agent experience</h4><p>Coach presents a concrete layer violation, a high-confidence bypass, or an informative reachability fact—with locations, explanation, and coverage context. If none exists, it says what was checked and offers the next useful action.</p></div><div><h4>Evidence of success</h4><p>The customer or agent can restate the evidence without inventing semantics.</p></div></div></article></li>
+          <li><div class="marker"><span>7</span></div><article class="card moment"><span class="eyebrow">Refactor together</span><p class="question">“What is the smallest architecture-preserving change?”</p><div class="moment-fields"><div><h4>Coach and agent experience</h4><p>The agent inspects the evidence, local conventions, and relevant behavioral tests; it proposes a focused change and identifies when behavioral coverage should be added or remains uncertain.</p></div><div><h4>Evidence of success</h4><p>The human remains in control and understands the intended architectural effect, behavior evidence, and residual risk.</p></div></div><details><summary>Full agent-assisted refactor loop</summary><ol><li>Ask Coach to assess fit or run the configured scan.</li><li>Summarize the strongest applicable evidence in plain language, including coverage limits.</li><li>Inspect the referenced code, the customer’s policy, and the tests or other evidence representing affected behavior.</li><li>Propose the smallest change that addresses the evidence without weakening the intended architecture. When behavior is not credibly protected, add or recommend a behavioral test before treating a passing run as preservation evidence.</li><li>Obtain human approval where the agent’s operating policy requires it.</li><li>Apply the change and run the repository’s normal tests.</li><li>Ask Coach to evaluate the same scope against the changed source.</li><li>Explain separately what improved in architecture evidence, what supports behavioral preservation, and remaining uncertainty.</li></ol></details></article></li>
+          <li><div class="marker"><span>8</span></div><article class="card moment"><span class="eyebrow">Verify improvement</span><p class="question">“Did the change improve the intended evidence?”</p><div class="moment-fields"><div><h4>Coach and agent experience</h4><p>Coach analyzes the same requested scope against the changed code state and makes before/after evidence legible: resolved, remaining, newly introduced, or indeterminate.</p></div><div><h4>Evidence of success</h4><p>The customer sees a credible architecture improvement or an honest limitation—never an incomplete comparison treated as verified.</p></div></div><a class="xref" href="#q-code-state">Open questions: which code state, and can the comparison be trusted?</a></article></li>
+          <li><div class="marker"><span>9</span></div><article class="card moment"><span class="eyebrow">Hand off</span><p class="question">“What can a reviewer trust about this change?”</p><div class="moment-fields"><div><h4>Coach and agent experience</h4><p>The human and agent carry architectural intent, code-state provenance, behavior evidence, Coach evidence, coverage limits, and residual uncertainty into the change’s review context.</p></div><div><h4>Evidence of success</h4><p>A reviewer can evaluate the change without reconstructing the agent’s reasoning from scratch.</p></div></div><details><summary>What travels into the review</summary><ul><li>The intent and approved architecture policy that motivated the change</li><li>The selected source state and comparison scope</li><li>The relevant behavior tests, or the stated absence of behavioral evidence</li><li>Coach’s source-anchored finding or fact and its before/after state</li><li>Coverage limits and residual uncertainty</li></ul><p>This is a desired experience boundary, not a promise that the current CLI publishes a review artifact or that a reviewer receives an automated Coach verdict.</p></details></article></li>
+          <li><div class="marker"><span>10</span></div><article class="card moment"><span class="eyebrow">Repeat</span><p class="question">“Can we use this on the next agent change?”</p><div class="moment-fields"><div><h4>Coach and agent experience</h4><p>The team repeats the same small loop without re-learning setup or internal terminology.</p></div><div><h4>Evidence of success</h4><p>Coach becomes a voluntary part of the agent-assisted engineering workflow.</p></div></div></article></li>
+        </ol>
+      </section>
+
+      <section id="actors" class="wide">
+        <span class="eyebrow">04 · Service blueprint, not a single funnel</span>
+        <h2>Actor ownership and durable handoffs</h2>
+        <p class="section-sub">These handoffs must be explicit in the product and in research sessions.</p>
+        <ol class="artifact-flow" aria-label="Artifacts carried through the service">
+          <li><strong>Human owner</strong>approved goal, scope, policy, and consent</li>
+          <li><strong>Coach</strong>reproducible report with provenance and limits</li>
+          <li><strong>Coding agent</strong>proposed change and behavior evidence</li>
+          <li><strong>Review system</strong>review context naming evidence and uncertainty</li>
+        </ol>
+        <div class="grid grid-4">
+          <article class="card actor-card"><h3>Human project owner</h3><div class="actor-field"><h4>Owns</h4><p>The goal, selected code state, policy approval, setup consent, and refactor approval.</p></div><div class="actor-field"><h4>Needs to understand</h4><p>What Coach can and cannot establish; what the agent proposes to change.</p></div><div class="actor-field"><h4>Durable handoff</h4><p>Reviewed policy, explicit approvals, and the final review context.</p></div></article>
+          <article class="card actor-card"><h3>Coding agent</h3><div class="actor-field"><h4>Owns</h4><p>Exploring code, drafting a policy or refactor, identifying relevant behavior tests, and explaining limits.</p></div><div class="actor-field"><h4>Needs to understand</h4><p>The chosen scope, approved policy, source state, and Coach evidence.</p></div><div class="actor-field"><h4>Durable handoff</h4><p>Proposed change, test/behavior evidence, and a before/after explanation.</p></div></article>
+          <article class="card actor-card"><h3>Coach</h3><div class="actor-field"><h4>Owns</h4><p>Declaring fit, analyzed scope, findings/facts, diagnostics, and coverage limits—without mutating the project.</p></div><div class="actor-field"><h4>Needs to understand</h4><p>Nothing implicit: the configured policy and requested source state.</p></div><div class="actor-field"><h4>Durable handoff</h4><p>Reproducible report with provenance, evidence, and diagnostics.</p></div></article>
+          <article class="card actor-card"><h3>Repository and review system</h3><div class="actor-field"><h4>Owns</h4><p>Persisting source, policy, commits, tests, and the reviewable change.</p></div><div class="actor-field"><h4>Needs to understand</h4><p>Which report and test evidence correspond to the reviewed revision.</p></div><div class="actor-field"><h4>Durable handoff</h4><p>Committed source/policy and a review artifact that names evidence and uncertainty.</p></div></article>
+        </div>
+      </section>
+
+      <section id="scenarios" class="wide">
+        <span class="eyebrow">05 · How this plays out</span>
+        <h2>High-value scenarios</h2>
+        <p class="section-sub">All four are legitimate first interactions. Only one involves a defect.</p>
+        <div class="grid grid-2">
+          <article class="card scenario"><div class="scenario-head"><h3>A supported project, a meaningful finding</h3><span class="scenario-type">Finding path</span></div><p>The customer finds Coach, asks for a fit check, confirms a small architecture policy, and runs a scan. Coach recognizes the relevant configuration and reports an import that crosses a forbidden boundary. The agent explains the dependency, proposes a policy-preserving change, checks relevant behavior is protected or recommends a missing behavioral test, and asks Coach to compare changed code with the earlier scan.</p><p class="quote">The first win is not “TypeScript was installed.” It is “Coach gave my agent a specific, credible reason to change this dependency, and we could verify the result.”</p></article>
+          <article class="card scenario"><div class="scenario-head"><h3>A project that is not ready yet</h3><span class="scenario-type">Recovery path</span></div><p>The customer asks for a fit check but lacks a compatible environment, policy, or supported project shape. Coach says which one, what it checked, and what the customer can do next. It never emits a report that could be mistaken for a clean result.</p><p class="quote">This is a successful first interaction when it saves the customer from debugging hidden setup or trusting a report that did not apply.</p></article>
+          <article class="card scenario"><div class="scenario-head"><h3>A supported, complete scan with no finding</h3><span class="scenario-type">No-finding path</span></div><p>Coach fully analyzes the selected source and policy, but no configured boundary or supported source-to-sink pattern produces a finding.</p><p class="quote">The safe decision is only that no configured, covered rule matched this revision—not that the architecture is compliant or behavior is safe.</p><p class="next"><strong>Next action</strong> Record the baseline, review whether the policy covers the boundary the customer cares about, or inspect a higher-risk flow with the stated coverage in mind.</p></article>
+          <article class="card scenario"><div class="scenario-head"><h3>A supported scan with incomplete or uncertain coverage</h3><span class="scenario-type">Coverage-limit path</span></div><p>Coach recognizes the project but cannot fully resolve a configured import, route, source-to-sink path, or source scope.</p><p class="quote">The safe decision is that Coach cannot establish a complete architecture result for this revision.</p><p class="next"><strong>Next action</strong> Inspect the diagnostic with the agent, correct configuration or project shape where possible, and carry the limitation into review rather than treating an absent finding as a pass.</p></article>
+        </div>
+      </section>
+
+      <section id="questions" class="wide">
+        <span class="eyebrow">06 · Left intentionally visible</span>
+        <h2>Product questions the journey exposes</h2>
+        <p class="section-sub">A technical design may answer these, but it must not make them disappear from the customer experience.</p>
+        <details class="question-card" id="q-code-state"><summary>Which code state is Coach verifying?</summary><p>Today <code>coach codesignal</code> analyzes immutable Git revisions. That protects reproducibility, but an agent’s uncommitted change is not part of a baseline rescan. The current product therefore requires a commit before Coach can verify a refactor, and must say so explicitly. The ideal journey may support an explicitly selected worktree snapshot or another clear comparison mode. Until then, documentation and output must show the analyzed revision and warn when uncommitted changes would make the result surprising.</p></details>
+        <details class="question-card"><summary>Can Coach make a trustworthy change-comparison claim?</summary><p>The agent needs more than a baseline report to claim that a refactor improved a change. When an added, renamed, copied, or otherwise unanalyzable path prevents a complete comparison, human-readable and structured output must identify the affected path and make lifecycle/counter conclusions indeterminate. A summary that says no change was introduced while relevant source was skipped is not an honest verification result.</p></details>
+        <details class="question-card" id="q-policy"><summary>How does a TypeScript customer create the first policy?</summary><p>Layer violations and bypasses require a customer-owned policy. The existing project-config suggestion path is Go-only, so a TypeScript customer cannot yet experience “Coach helped me create a starting policy” as a first-run flow. The eventual epic must either begin after a reviewed, committed policy exists or provide a supported way to create one. The latter is not automatically in scope; the former is a real onboarding cost that must be documented.</p></details>
+        <details class="question-card" id="q-friction"><summary>Is compatibility friction acceptable to the first audience?</summary><p>The proposed exact TypeScript pin and interactive-only install path may be a sound narrow-pilot choice. They are not universal customer requirements. The pilot should measure whether customers can complete setup in their actual agent environment, including after dependency updates and without a TTY.</p></details>
+        <details class="question-card" id="q-coverage"><summary>What does useful coverage look like before a defect appears?</summary><p>The customer needs a legible answer about framework, routing pattern, data-access pattern, aliases, source scope, and unsupported boundaries. A report must distinguish code included by project configuration from code that meaningfully represents the customer’s production concern, especially when a test file can be included in the same scan. A no-violation report should still say whether Coach saw the relevant parts of the application and what the next useful check is.</p></details>
+      </section>
+
+      <section id="hypotheses" class="wide">
+        <span class="eyebrow">07 · What we believe versus what we know</span>
+        <h2>Experience hypotheses and evidence</h2>
+        <p class="section-sub">Do not optimize for a finding on every first run. That would encourage noisy analysis and undermine the trust the product needs.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Hypothesis</th><th>Research status / current evidence</th><th>Evidence we would seek</th><th>Evidence that would disprove or narrow it</th></tr></thead>
+            <tbody>
+              <tr><td><strong>One obvious Coach entry point reduces adoption friction.</strong></td><td><span class="tag tag--hypothesis">Unvalidated</span><p>The foreign-repository TypeScript project path is planned rather than shipped; the <a href="evaluations/codesignal-pilot-readiness.html">current product evidence</a> separates it from file-local TypeScript analysis.</p></td><td>Customers can reach a fit check without component-specific setup archaeology.</td><td>Customers still need to locate or debug a Coach-specific runtime component.</td></tr>
+              <tr><td><strong>Explicit consent earns trust without killing momentum.</strong></td><td><span class="tag tag--hypothesis">Unvalidated</span><p>Interactive setup is a proposed delivery path, not observed customer preference.</p></td><td>Interactive users understand the proposed change, complete it, and reach a scan in one focused session.</td><td>Users abandon at the setup choice, or agents cannot act because their environment has no TTY.</td></tr>
+              <tr><td><strong>A small explicit policy is an acceptable route to architectural value.</strong></td><td><span class="tag tag--documented">Documented design</span><p>Backed by the <a href="../../README.md#configured-layer-violations---project-config">configured-layer design</a>, but unvalidated with TypeScript customers.</p></td><td>Customers and agents can author/review a policy, understand its coverage, and get meaningful evidence.</td><td>Customers cannot create a policy without expert help or receive no value after doing so.</td></tr>
+              <tr><td><strong>Coach creates a useful agent loop.</strong></td><td><span class="tag tag--hypothesis">Unvalidated</span><p>The <a href="prd.md#12-success-signals">PRD success signals</a> treat voluntary repeat use and useful customer judgment as pilot evidence, not established behavior.</p></td><td>A customer can trace a finding to code, approve a change, and understand a complete before/after rescan.</td><td>The agent needs to guess at missing semantics, the comparison is incomplete, or the rescan evaluates a different source state than the edited code.</td></tr>
+              <tr><td><strong>Coverage honesty increases trust and repeat use.</strong></td><td><span class="tag tag--documented">Documented design</span><p>The <a href="../../README.md#configured-layer-violations---project-config">CLI contract</a> has coverage/diagnostic rules, but there is no customer evidence yet that people understand or value them.</p></td><td>Customers can explain what Coach checked, name the limit, and return after partial or no-finding reports.</td><td>Customers treat an empty report as a clean bill of health or abandon because fit is opaque.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="measures" class="wide">
+        <span class="eyebrow">08 · How we would know</span>
+        <h2>Pilot measures</h2>
+        <div class="grid grid-2">
+          <article class="card"><h3>Funnel measures</h3><ul class="measure-list"><li>Time from first invocation to a legible fit result</li><li>Time from fit result to first meaningful evidence</li><li>Abandonment by missing Coach, environment, policy, unsupported project shape, or non-interactive setup</li><li>Percentage of customers who can identify the analyzed code state correctly</li><li>Percentage of findings that lead to an agent proposal and a reviewed change</li><li>Percentage of those changes with a credible rescan result</li><li>Voluntary repeat scans</li></ul></article>
+          <article class="card"><h3>Qualitative signals</h3><p style="margin-bottom: .85rem">Think-aloud sessions, agent transcripts, and post-task interviews should establish:</p><ul class="measure-list qual"><li>Can the customer explain selected source state, what Coach checked, and the most important coverage limit?</li><li>Do they feel in control of policy, installation, and refactor approval rather than delegated around by the agent?</li><li>Can they explain to a reviewer why the change was made, what behavior was checked, and what remains uncertain?</li><li>After credible verification, do they report relief, increased confidence, or another concrete moment of value—and name the evidence that produced it?</li></ul></article>
+        </div>
+      </section>
+
+      <section id="boundary" class="wide">
+        <span class="eyebrow">09 · Reality check</span>
+        <h2>Current evidence boundary</h2>
+        <p class="section-sub">This is a desired journey, not a statement that the whole path ships today. Release language must retain these distinctions.</p>
+        <div class="boundary-grid">
+          <article class="boundary-card boundary-card--current"><h3>Current, supportable observations</h3><ul><li><span class="tag tag--documented">Documented product path</span> A local Go baseline with configured layer policy is narrow and is not this complete TypeScript customer journey.</li><li><span class="tag tag--documented">Documented constraint</span> The CLI analyzes immutable Git revisions; a TypeScript project config must be committed at the analyzed revision.</li><li><span class="tag tag--documented">Pilot evaluation</span> The <a href="evaluations/codesignal-pilot-readiness.html">evaluation updated 2026-08-16</a> records re-verified foreign-repository TypeScript deployment and diff-mode blockers. It is a dated observation, not acceptance-backed proof of current behavior.</li></ul></article>
+          <article class="boundary-card boundary-card--planned"><h3>Target journey, not shipped</h3><ul><li>Raw TypeScript structural analysis is not a deployable foreign-repository TypeScript project experience. The target fit check, policy onboarding, safe setup, and agent loop remain planned.</li><li>TypeScript CLI layer-bypass and reachability facts are planned wiring, not current CLI capability.</li><li>Analysis of a dirty worktree is not supported; only committed revisions are analyzed.</li><li>Full source/rule/coverage/comparison/version provenance across text and structured reports, sufficient for a human and agent to make the same claim, holds unevenly today.</li></ul></article>
+        </div>
+      </section>
+
+      <section id="guardrails" class="wide">
+        <span class="eyebrow">10 · Where the line is drawn</span>
+        <h2>Delivery assumptions and guardrails</h2>
+        <article class="guardrail guardrail--hypothesis"><h3><span class="tag tag--hypothesis">Hypothesis</span> Delivery assumptions</h3><ul><li>Coach may ship its small analyzer as part of Coach itself, rather than asking customers to vendor a <code>js/semantics/</code> tree or download another component.</li><li>Node and the exact supported TypeScript compiler are resolved from the customer’s project or a supported environment manager; preflight verifies compatibility before scanning.</li><li>Any installation or manifest change requires an explicit interactive choice; non-interactive runs fail clearly rather than installing silently.</li><li>The scan is offline and keeps requested project source separate from host-provided compiler code, so a dirty worktree cannot silently alter a report for a committed revision.</li><li>The first CLI outcomes under consideration are layer violations, TypeScript layer-bypass findings, and facts about possible route-to-sink reachability.</li></ul><p>Record these implementation hypotheses in a versioned epic only when they create the customer outcomes above; change them if they fail those promises.</p></article>
+        <article class="guardrail guardrail--boundary"><h3><span class="tag tag--boundary">Boundary</span> Scope</h3><ul><li>This document does not authorize implementation changes, issue creation, or a broader TypeScript roadmap.</li><li>It does not promise automatic code edits, a clean architecture verdict, universal framework support, or a new active defect signal for reachability.</li></ul><p>Its purpose is to make customer friction visible before a solution becomes too locked in to question.</p></article>
+      </section>
+
+      <footer>
+        Canonical HTML strategy document for this TypeScript customer-journey hypothesis, reviewed against the repository on 2026-08-23. It is intentionally self-contained, linkable, and readable without JavaScript; the small navigation enhancement only marks the section currently in view. The PRD remains authoritative for product direction, and acceptance evidence determines implementation status.
+      </footer>
+    </main>
+  </div>
+  <script>
+    (() => {
+      const links = [...document.querySelectorAll(".toc a")];
+      const byId = new Map(links.map((link) => [link.getAttribute("href").slice(1), link]));
+      const sections = [...byId.keys()].map((id) => document.getElementById(id)).filter(Boolean);
+      const setCurrent = (link) => links.forEach((item) => {
+        if (item === link) item.setAttribute("aria-current", "location");
+        else item.removeAttribute("aria-current");
+      });
+      const observer = new IntersectionObserver((entries) => {
+        const visible = entries.find((entry) => entry.isIntersecting);
+        if (visible) setCurrent(byId.get(visible.target.id));
+      }, { rootMargin: "-15% 0px -70% 0px", threshold: 0 });
+      sections.forEach((section) => observer.observe(section));
+      document.querySelectorAll(".xref").forEach((link) => link.addEventListener("click", () => {
+        const target = document.getElementById(link.getAttribute("href").slice(1));
+        if (target?.tagName === "DETAILS") target.open = true;
+      }));
+    })();
+  </script>
+</body>
+</html>
