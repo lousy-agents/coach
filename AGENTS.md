@@ -14,6 +14,8 @@ Experimental AI coach for humans making software with agents. Currently two inde
 
 The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) currently exposes one subcommand, `codesignal`, which produces deterministic signal reports for a git diff (`--base`) or a repository baseline (`--baseline`) via the `pkg/semantics` → `pkg/codesignal` pipeline. Product direction lives in `docs/product/prd.md`; system design in `docs/architecture/system-overview.md`.
 
+**Living product evaluation:** `docs/product/evaluations/codesignal-pilot-readiness.html` is the current leave-pilot evidence, not a historical snapshot. Closing a #282 child or merging user-facing `coach codesignal` behavior means updating it: re-run the affected claim against HEAD, move closed gaps to the archive (do not delete them), restamp date / HEAD / `#282 · N / 24`, and re-rank only after a run. GitHub `CLOSED` is not sufficient evidence.
+
 ## Agent Skills (`.agents/skills/`)
 
 - `feature-to-plan` — turn a feature request, PRD, or backlog issue into a structured EARS-format spec.
