@@ -33,7 +33,7 @@ Do NOT use when:
 
 1. Locate the spec or planning artifact to audit. Accept markdown specs, PRDs, GitHub issues, task plans, or pasted text.
 2. If repository access is available, read nearby context: `AGENTS.md`, `README.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.github/instructions/`, `CONTRIBUTING.md`, and relevant files referenced by the spec.
-3. If shell access and Python are available, optionally run `python3 ./scripts/spec_audit_lint.py <spec-file> --format markdown` from this skill's directory for structural findings. Exit code 1 means High findings were found (not a script error); exit code 0 means none. Treat script output as a supplement, not the complete audit.
+3. If shell access and Python are available, optionally run `python3 ./scripts/spec_audit_lint.py <spec-file> --format markdown` from this skill's directory for structural findings. Exit code 0 means no High findings — Medium and Low findings may still be present, so read the output rather than trusting the exit code alone. Exit code 1 means at least one High finding. Exit code 2 means the spec could not be read (missing, a directory, or denied) and nothing was audited. Treat script output as a supplement, not the complete audit.
 4. Load `./references/audit-rubric.md` for the adversarial review passes.
 5. Load `./references/output-contract.md` before writing the final report.
 6. Load `./references/platform-guidance.md` when the user wants the report to feed Codex, GitHub Copilot, Claude, or another coding agent.
@@ -107,7 +107,16 @@ When the user asks for machine-readable output, use the JSON schema in `./refere
 
 ## Optional Static Lint Script
 
-Use `./scripts/spec_audit_lint.py` only when the runtime can read local files and run Python. It performs deterministic checks for required sections, EARS-like acceptance criteria, prematurely completed checkboxes (drafts should use unchecked `[ ]`), TODO markers, weak language, Mermaid diagrams, and task structure.
+Use `./scripts/spec_audit_lint.py` only when the runtime can read local files and run Python. It performs deterministic checks for required sections, per-story acceptance criteria, EARS-like phrasing, prematurely completed checkboxes (drafts should use unchecked `[ ]`), placeholder markers, weak language, Mermaid diagram types, and task structure.
+
+What it does and does not treat as spec content:
+
+- Fenced code blocks are examples, not spec content. A heading, bullet, task, checkbox, or `TODO` inside a fence is ignored, so a section shown as an illustration never satisfies a required-section check. Mermaid diagrams are the exception: they are only recognized *because* they are fenced.
+- Heading levels matter, and a wrong level is reported rather than ignored: required document sections are level 2 (`## Tasks`), user stories and tasks level 3 (`### Story 1: <Title>`, `### Task N: <Title>`). A section, story, or task found at another level is named with the level it actually has.
+- `feature-to-plan` sanctions two title variations and both are accepted: `## Stakeholders` for `## Personas`, and `Acceptance` for `Acceptance Criteria` at whatever level the criteria sit. No other alternates are accepted.
+- Acceptance criteria are checked **per story**, so one well-covered story no longer hides a story that has none. Criteria are expected to nest one level under their story; criteria written at or above the story's own level are reported as a structure problem, because nothing distinguishes them from a separate section that merely follows the story.
+
+Finding ids (`SL-001`, ...) are run-local ordinals for referencing findings inside one lint report — unlike the `SA-NNN` ids your own audit emits, they are not stable across runs. The module docstring lists the script's known limitations.
 
 Examples:
 
