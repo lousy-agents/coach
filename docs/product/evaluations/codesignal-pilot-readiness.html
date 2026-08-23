@@ -83,7 +83,6 @@
 
   .prose { max-width: 40rem; }
 
-  /* ---- type roles ---- */
   h1, h2, h3 { font-family: var(--serif); font-weight: 600; text-wrap: balance; letter-spacing: -0.01em; }
   h1 { font-size: 2.6rem; line-height: 1.08; margin: 0; }
   h2 { font-size: 1.7rem; line-height: 1.2; margin: 0; }
@@ -101,7 +100,6 @@
 
   .lede { font-size: 1.12rem; color: var(--muted); }
 
-  /* ---- masthead ---- */
   .masthead { display: flex; flex-direction: column; gap: 0.9rem; }
   .meta {
     font-family: var(--mono);
@@ -114,7 +112,6 @@
     padding-top: 0.85rem;
   }
 
-  /* ---- verdict ---- */
   .verdict {
     border: 1px solid var(--rule-sq);
     border-left: 5px solid var(--rust);
@@ -133,11 +130,9 @@
   }
   .verdict p { max-width: 44rem; }
 
-  /* ---- section scaffolding ---- */
   section { display: flex; flex-direction: column; gap: 1.4rem; }
   .sec-head { display: flex; flex-direction: column; gap: 0.35rem; border-bottom: 1px solid var(--rule); padding-bottom: 0.7rem; }
 
-  /* ---- verification chips ---- */
   .chip {
     display: inline-flex;
     align-items: center;
@@ -153,6 +148,7 @@
   .chip.verified { color: var(--teal); background: var(--teal-bg); }
   .chip.reported { color: var(--muted); background: transparent; }
   .chip.refuted  { color: var(--ochre); background: var(--ochre-bg); }
+  .chip.closed   { color: var(--teal); background: var(--teal-bg); }
 
   a.chip.issue {
     color: var(--teal);
@@ -194,7 +190,6 @@
   }
   .correction .eyebrow { color: var(--ochre); }
 
-  /* ---- gap entries ---- */
   .gaps { display: flex; flex-direction: column; gap: 1.6rem; }
   .gap {
     display: grid;
@@ -225,6 +220,16 @@
   .gap-cost b { color: var(--ink); font-weight: 600; }
   .sev-block { --sev: var(--rust); }
   .sev-warn  { --sev: var(--ochre); }
+  .sev-closed { --sev: var(--teal); }
+
+  .maintain {
+    border: 1px dashed var(--rule-sq);
+    padding: 1rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    background: var(--card);
+  }
 
   @media (max-width: 34rem) {
     .gap { grid-template-columns: minmax(0, 1fr); gap: 0.6rem; }
@@ -232,7 +237,6 @@
     .verdict-word { font-size: 1.7rem; }
   }
 
-  /* ---- code ---- */
   .code {
     background: var(--code-bg);
     color: var(--code-fg);
@@ -248,7 +252,6 @@
   .code .hi { color: #E8A33D; }
   .code .ok { color: #6FBFA6; }
 
-  /* ---- table ---- */
   .tbl-wrap { overflow-x: auto; border: 1px solid var(--rule); background: var(--card); }
   table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
   th, td { text-align: left; padding: 0.7rem 1rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
@@ -266,7 +269,6 @@
   .bad { color: var(--rust); font-weight: 600; }
   .good { color: var(--teal); font-weight: 600; }
 
-  /* ---- lists ---- */
   ul.plain { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.9rem; }
   ul.plain > li { display: grid; grid-template-columns: 1.1rem minmax(0,1fr); gap: 0.75rem; }
   ul.plain > li::before {
@@ -312,111 +314,180 @@
 <div class="wrap">
 
   <header class="masthead">
-    <p class="eyebrow">Functional evaluation · coach codesignal</p>
+    <p class="eyebrow">Living evaluation · coach codesignal</p>
     <h1>Can CodeSignal leave pilot?</h1>
-    <p class="lede prose">A hands-on product assessment of the shipped CLI — run against this repository, five other local repos, and a set of purpose-built repros — answering one question for the product owner. Every gap is now linked to the issue that tracks it.</p>
+    <p class="lede prose">A hands-on product assessment of the shipped CLI. First published 16 Aug 2026; this page is the current leave-pilot evidence, not a historical snapshot. Gap ids stay stable — closed items move to the archive below, they are not deleted.</p>
     <div class="meta">
-      <span>16 Aug 2026</span>
-      <span>HEAD 19b6628</span>
-      <span>~50 CLI runs</span>
+      <span>Last reviewed 23 Aug 2026</span>
+      <span>HEAD 62480d2</span>
+      <span>~55 CLI runs</span>
       <span>6 repositories</span>
-      <span>2 verification passes</span>
-      <span>25 tracked issues</span>
+      <span>3rd verification pass</span>
+      <span>#282 · 5 / 24 closed</span>
     </div>
   </header>
 
   <div class="verdict">
     <p class="eyebrow">Verdict</p>
     <p class="verdict-word">Stay in pilot.</p>
-    <p>Not because the analysis is bad. The parser is fast, deterministic, and safe on foreign code, and several rules are genuinely good. The blocker is narrower and worse: <strong>diff mode — the capability that makes this a PR check — returns a confident all-clear on the two most common shapes of AI-assisted change.</strong> A brand-new file's findings are counted as zero introduced. A renamed-and-rewritten file is not analyzed at all. Everything downstream of diff mode — CI gating, a PR bot, a team rollout — inherits that false green.</p>
-    <p>The engine is further along than the product wrapper around it. Closing the two lifecycle gaps, the exit-code contract, and report ergonomics is weeks of work, not quarters — and it moves this to <em>“expand to Go teams as an advisory PR check.”</em></p>
+    <p>Not because the analysis is bad. The engine is faster and more honest than it was on 16 August. The blocker is narrower and sharper: <strong>a new file’s findings are still counted as zero introduced, with no diagnostic.</strong> A rename is still not analyzed — the headline now admits the skip, but the machine summary still says the change introduced nothing. Diff mode is the capability that would make this a PR check. It still cannot tell a customer what a typical AI-assisted change introduced.</p>
+    <p>The honesty fix changed the <em>presentation</em> of visible skips. It did not change the <em>job</em>. Do not expand to a named advisory PR-check audience. The current self-serve Go pilot can keep using baseline and configured layer policy.</p>
     <div class="tracks">
       <span class="tracks-label">Tracked in</span>
-      <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/282">epic #282 — close the pilot-exit gaps</a>
+      <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/282">epic #282 — 5 of 24 closed</a>
     </div>
   </div>
+
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">How this stays current</p>
+      <h2>Refresh contract</h2>
+    </div>
+    <div class="maintain prose">
+      <p>Refresh when a <a href="https://github.com/lousy-agents/coach/issues/282">#282</a> child closes, or before any leave-pilot decision. GitHub <code>CLOSED</code> is not enough — re-run the affected claim against HEAD.</p>
+      <p>Do not delete closed gaps; move them to the archive and keep the original id. Re-rank only after a run, not after a merge commit. Restamp date, HEAD, run count, and <code>#282 · N / 24</code>.</p>
+      <p>This page answers one question for the product owner. A generated issue table is not a substitute.</p>
+    </div>
+  </section>
 
   <section>
     <div class="sec-head">
       <p class="eyebrow">Method</p>
       <h2>What was verified, and how</h2>
     </div>
-    <p class="prose">This report has been through two passes. The first was a functional evaluation against a locally built binary. The second put a six-specialist team on the findings with one instruction: <strong>re-verify every single-observation claim before anyone writes it into an issue.</strong> Each gap below carries the result — <span class="chip verified">re-verified</span> means independently reproduced on a fresh repro, <span class="chip reported">agent-run</span> means observed but not re-run, and <span class="chip refuted">corrected</span> marks a first-pass claim that did not survive.</p>
-    <p class="prose">That second pass earned its keep twice over: it killed four claims, deepened two others into sharper defects than first reported, and surfaced a silent failure worse than anything in the original evaluation. Every gap is now tracked as a GitHub issue, linked inline.</p>
+    <p class="prose">Pass 1 (16 Aug, <code>19b6628</code>) was a functional evaluation against a locally built binary. Pass 2 re-verified every single-observation claim before filing issues. <strong>Pass 3 (23 Aug, <code>62480d2</code>) replayed the protocol against current <code>main</code></strong> — this repository, five foreign repos, and purpose-built repros — then handed the run log to an independent product evaluator. <span class="chip verified">re-verified</span> means reproduced on this binary, <span class="chip closed">closed</span> means the claim no longer holds, <span class="chip reported">agent-run</span> means observed but not the focus of this pass, and <span class="chip refuted">corrected</span> marks a prior claim that did not survive.</p>
+    <p class="prose">Corpus: this repo; <code>learn-go-with-tests</code> (the original 304-file repo); <code>lousy-iam</code>; <code>lousy-api-eval</code>; <code>lousy-agents</code>; <code>lousy-docs</code>. Local binary prints <code>dev</code>, as expected.</p>
+  </section>
 
-    <div class="correction prose">
-      <p class="eyebrow">Corrected since first publication</p>
-      <p><strong>The released binary does not report <code>dev</code>.</strong> v0.3.0 prints <code>0.3.0</code>; GoReleaser's default ldflags apply and only local builds say <code>dev</code>. The real defect is that the <em>report</em> carries no tool version — narrower than first stated.</p>
-      <p><strong><code>architecture.layer_bypass</code> was never firing.</strong> It has no CLI wiring at all, so the stale-inventory delta is one rule, not two.</p>
-      <p><strong>Write-side TOCTOU races are not missed in both languages.</strong> TypeScript covers them; the gap is Go-specific — and sharper than reported, since Go's act-call set contains no write, create, rename, or metadata call whatsoever.</p>
-      <p><strong>Report ordering is not rule-then-path.</strong> It is lifecycle → severity → confidence → path. The real defect is that magnitude never participates in the sort at all.</p>
-      <p>Two evidence gaps were also largely refuted rather than confirmed — TypeScript path aliases, project references, and <code>.tsx</code> all work once the sidecar is vendored, and multi-root config suggestion works for Go. What remains is that none of it is regression-locked outside this repository.</p>
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Closed this cycle</p>
+      <h2>What 16–22 Aug actually unlocked</h2>
+    </div>
+    <p class="prose">Five of twenty-four #282 children, plus Go layer-bypass as a real CLI feature. A customer can now trust these outcomes. They do not unlock a PR check.</p>
+
+    <div class="gaps">
+
+      <article class="gap sev-closed">
+        <div class="gap-id">G0</div>
+        <div class="gap-body">
+          <div class="gap-title">
+            <h3>Dotless modules no longer silence project analysis</h3>
+            <span class="chip closed">closed</span>
+            <span class="chip verified">re-verified</span>
+          </div>
+          <p>Two repos, byte-identical apart from the <code>go.mod</code> path. Both emit one <code>architecture.layer_violation</code>, coverage complete, zero diagnostics. <code>go mod init myapp</code> is no longer a silent empty report.</p>
+          <div class="tracks">
+            <span class="tracks-label">Closed by</span>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/284">#284</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/pull/296">PR #296</a>
+          </div>
+        </div>
+      </article>
+
+      <article class="gap sev-closed">
+        <div class="gap-id">—</div>
+        <div class="gap-body">
+          <div class="gap-title">
+            <h3>Incomplete analysis no longer prints a clean all-clear</h3>
+            <span class="chip closed">closed</span>
+            <span class="chip verified">re-verified</span>
+          </div>
+          <p>A true rename now reads <em>“No active CodeSignal findings, but the analysis is incomplete: 1 path was not analyzed.”</em> A foreign TypeScript repo with no sidecar reads <em>“…project analysis did not complete.”</em> The skip is still a skip. The headline is no longer a lie.</p>
+          <div class="tracks">
+            <span class="tracks-label">Closed by</span>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/267">#267</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/pull/305">PR #305</a>
+          </div>
+        </div>
+      </article>
+
+      <article class="gap sev-closed">
+        <div class="gap-id">G3</div>
+        <div class="gap-body">
+          <div class="gap-title">
+            <h3>Invalid <code>--project-config</code> fails closed</h3>
+            <span class="chip closed">closed</span>
+            <span class="chip verified">re-verified</span>
+          </div>
+          <p>Missing file, absolute path, and non-JSON document: exit 2, zero stdout bytes, stderr names the path and <code>project_config_invalid</code>. The 240 KB silent-omit report is gone. Suggest-then-use and the Go-only suggest heuristic are still open (#278).</p>
+          <div class="tracks">
+            <span class="tracks-label">Closed by</span>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/275">#275</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/pull/306">PR #306</a>
+          </div>
+        </div>
+      </article>
+
+      <article class="gap sev-closed">
+        <div class="gap-id">—</div>
+        <div class="gap-body">
+          <div class="gap-title">
+            <h3>JSON keeps its collections; advisory ranks above low</h3>
+            <span class="chip closed">closed</span>
+            <span class="chip verified">re-verified</span>
+          </div>
+          <p>An empty report still has <code>signals: []</code>, <code>diagnostics: []</code>, and <code>coverage</code>. Combined fixture: <code>architecture.layer_bypass</code> (advisory) sorts before constructor density (low).</p>
+          <div class="tracks">
+            <span class="tracks-label">Closed by</span>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/269">#269</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/pull/308">PR #308</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/259">#259</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/pull/299">PR #299</a>
+          </div>
+        </div>
+      </article>
+
+      <article class="gap sev-closed">
+        <div class="gap-id">—</div>
+        <div class="gap-body">
+          <div class="gap-title">
+            <h3>Go <code>architecture.layer_bypass</code> is a real CLI feature</h3>
+            <span class="chip closed">closed</span>
+            <span class="chip verified">re-verified</span>
+          </div>
+          <p>The 16 Aug correction said this rule never fired. It does now. <code>required_layer: service</code> emits an exact handler→sink path, machine evidence, high confidence, advisory severity. TypeScript <code>required_layer</code> remains library-only.</p>
+          <div class="tracks">
+            <span class="tracks-label">Closed by</span>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/253">#253</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/pull/303">PR #303</a>
+          </div>
+        </div>
+      </article>
+
     </div>
   </section>
 
   <section>
     <div class="sec-head">
       <p class="eyebrow">Blockers · ranked</p>
-      <h2>Gaps that keep this in pilot</h2>
+      <h2>Gaps that still keep this in pilot</h2>
     </div>
 
     <div class="gaps">
 
       <article class="gap sev-block">
-        <div class="gap-id">G0</div>
-        <div class="gap-body">
-          <div class="gap-title">
-            <h3>A dotless module path silences all project analysis</h3>
-            <span class="chip verified">re-verified</span>
-          </div>
-          <p>Found during the second pass, after this report was first published — and it outranks everything below it. Two repositories, byte-identical apart from the <code>go.mod</code> module path, each declaring two layers and containing a real forbidden import:</p>
-          <div class="code"><span class="c">$ coach codesignal --baseline --project-config coach-project.json --format json</span>
-
-module layersrepro       <span class="c">(dotless)</span>
-  layer findings:     <span class="hi">0</span>
-  coverage complete:  <span class="hi">True</span>
-  diagnostics:        <span class="hi">0</span>
-  exit:               0
-
-module example.com/app   <span class="c">(dotted)</span>
-  layer findings:     <span class="ok">1</span>
-  coverage complete:  True
-  diagnostics:        0</div>
-          <p>The forbidden edge is not merely unreported — searching the entire JSON report from the dotless run for the string <code>transport</code> returns nothing. The edge never entered the model.</p>
-          <p><code>pkg/projectmodel/go_imports.go:366</code> applies <code>isStdlibImport</code> <em>before</em> matching the import against any known module path, and that heuristic is “the first path segment has no dot.” So in a dotless-module repository every internal import classifies as stdlib. The code comment states the assumption that fails: <em>“holds for every module path convention in use (domains always contain a dot).”</em></p>
-          <p>Three things make this the most severe silent failure found. It <strong>defeats every disclosure mechanism</strong>, including the qualified-verdict fix — coverage reports complete and no diagnostic is emitted, so nothing downstream has anything to report. It <strong>silences the product's best output</strong>, since configured layer violations are the highest-precision finding CodeSignal produces. And <strong><code>go mod init myapp</code> produces exactly this</strong> — a dotless path is the default for any non-domain name.</p>
-          <div class="tracks">
-            <span class="tracks-label">Tracked in</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/284">#284 — dotless-module stdlib misclassification</a>
-          </div>
-        </div>
-      </article>
-
-      <article class="gap sev-block">
         <div class="gap-id">G1</div>
         <div class="gap-body">
           <div class="gap-title">
-            <h3>A new file's findings are counted as zero introduced</h3>
+            <h3>A new file’s findings are counted as zero introduced</h3>
             <span class="chip verified">re-verified</span>
           </div>
-          <p>One commit adds one valid Go file carrying cognitive complexity 28, nesting depth 8, and a map mutation. The tool finds all three — then classifies them <code>unknown</code> and reports <code>introduced_signals: 0</code>.</p>
-          <div class="code"><span class="c">$ git diff --name-status HEAD~1 HEAD</span>
-A	brandnew.go
-
-<span class="c">$ coach codesignal --base HEAD~1 --format json</span>
+          <p>This is now the sharper blocker: the remaining <em>silent</em> path, and the dominant agent-authored shape. One commit adds one valid Go file. The tool finds four signals — then classifies them <code>unknown</code> and reports <code>introduced_signals: 0</code>. No diagnostic. Coverage looks complete.</p>
+          <div class="code"><span class="c">$ coach codesignal --base HEAD~1 --format json</span>
 "summary": {
   "files_analyzed":     1,
-  "active_signals":     3,
+  "active_signals":     4,
   <span class="hi">"introduced_signals": 0,</span>
   "existing_signals":   0,
   "resolved_signals":   0
 }
-  unknown  complexity.cognitive_complexity  brandnew.go  cognitive_complexity=28
-  unknown  complexity.max_nesting_depth     brandnew.go  max_nesting_depth=8
+  unknown  complexity.cognitive_complexity  brandnew.go  =56
+  unknown  complexity.max_nesting_depth     brandnew.go  =9
   unknown  state.hidden_input_mutation      brandnew.go  m["x"]</div>
-          <p>The README defines <code>introduced</code> as “present at HEAD, not present at the merge-base” and <code>unknown</code> as “the merge-base side could not be analyzed (e.g. it had a syntax error).” An added file is definitionally introduced. The shipped behavior contradicts the shipped contract. Note also that the counters do not sum: three active signals, and all four lifecycle buckets read zero.</p>
-          <p>The agent's composite case is worse. A commit that <em>adds</em> a risky new file and <em>deletes</em> a risky old one reports <code>introduced: 0, resolved: 3</code> — a strictly worse change reading as a pure win. Any CI gate written the obvious way, <code>fail if introduced_signals &gt; 0</code>, passes it.</p>
-          <p class="gap-cost"><b>Who it hurts:</b> every consumer of diff mode — the entire PR-check story — and worst for the customer the PRD names, someone reviewing agent-generated code where new files dominate. <b>Cost to close:</b> small. The classifier cannot currently distinguish “no base version because the file is new” from “no base version because the base was unanalyzable”; they collapse to one value. The second pass confirmed the counters are broken twice, not once: <code>unknown</code> falls out of all four buckets <em>and</em> <code>resolved</code> is double-counted into <code>active_signals</code>.</p>
+          <p>The README defines <code>introduced</code> as “present at HEAD, not present at the merge-base” and <code>unknown</code> as “the merge-base side could not be analyzed.” An added file is definitionally introduced. The shipped behavior contradicts both sentences. Counters still do not sum: four active, every bucket zero.</p>
+          <p>The composite is worse. Add a risky file and delete another: <code>introduced: 0, resolved: 1</code> — a strictly worse change reading as a pure win. Any CI gate written <code>fail if introduced_signals &gt; 0</code> passes it.</p>
+          <p class="gap-cost"><b>Who it hurts:</b> every consumer of diff mode — and worst for the customer the PRD names, someone reviewing agent-generated code where new files dominate. <b>Why it outranks the rename skip:</b> a careful human now sees a qualified headline on a rename; they see nothing wrong here.</p>
           <div class="tracks">
             <span class="tracks-label">Tracked in</span>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/262">#262 — added-file lifecycle &amp; summary counters</a>
@@ -428,58 +499,28 @@ A	brandnew.go
         <div class="gap-id">G2</div>
         <div class="gap-body">
           <div class="gap-title">
-            <h3>Renamed files are skipped, and the headline says “no findings”</h3>
+            <h3>Renamed files are still skipped</h3>
             <span class="chip verified">re-verified</span>
           </div>
-          <p>A commit that renames a file and appends a 6-deep nested function with a map mutation. Git reports it as a 91%-similar rename; the tool analyzes nothing and exits 0.</p>
+          <p>Git reports <code>R087</code>. The tool analyzes nothing. The headline is now honest — that is #267, closed — but the file is still not examined, and the machine summary still says the change introduced nothing.</p>
           <div class="code"><span class="c">$ git diff --name-status -M HEAD~1 HEAD</span>
-R091	renamed.go	moved.go
+R087	renamed.go	moved.go
 
 <span class="c">$ coach codesignal --base HEAD~1</span>
 scope: production, filtered: 0, <span class="hi">files analyzed: 0, active signals: 0</span>, diagnostics: 1
-<span class="hi">No active CodeSignal findings.</span>
+<span class="ok">No active CodeSignal findings, but the analysis is incomplete: 1 path was not analyzed.</span>
 
 Diagnostics:
 path: moved.go, kind: unsupported_change_type,
-message: change status "R091" (rename/copy) is not supported
-<span class="c">exit=0</span></div>
-          <p>The limitation is documented — but the <em>headline</em> is a false all-clear, not “1 file could not be analyzed.” Agents rename and relocate constantly; a “reorganize the package” PR reports nothing at all. The behavior is also invisible from the outside: whether a change is analyzed depends on git's similarity heuristic, so the same logical edit is caught below the threshold and silently dropped above it.</p>
-          <p>The second pass found this is <strong>self-inflicted, and not really about renames at all</strong>. <code>internal/codesignalcli/git.go:120</code> passes <code>--find-copies-harder</code>, which lets git treat an <em>unmodified</em> file as a copy source. Measured over this repository's last 200 non-merge commits:</p>
-          <div class="code">coach's flags : A=520  M=588  <span class="hi">C=8</span>   D=6
-git's default : A=528  M=588  <span class="ok">C=0</span>   D=6</div>
-          <p>All eight copy records are files git would plainly call <code>A</code>. The tool manufactures copy records out of ordinary new files and then drops them. The clearest example is a commit in this repository: <code>fbfa1a0</code> dropped a 98-line new production <code>.ts</code> file as <code>C058</code>, reporting <code>introduced: 0, resolved: 2</code>, exit 0.</p>
-          <p class="gap-cost"><b>Cost to close:</b> analyzing the head side of an <code>R</code>/<code>C</code> change as new content — even leaving lifecycle as <code>unknown</code> — is far cheaper than real rename tracking and removes the false all-clear. Reconsidering <code>--find-copies-harder</code> is cheaper still. <b>Sequencing:</b> #262 must merge first, or the natural fix here routes renamed files straight into that bug.</p>
+message: change status "R087" (rename/copy) is not supported</div>
+          <p>Still self-inflicted. Last 200 non-merge commits on this repo:</p>
+          <div class="code">coach's flags : A=412  M=633  <span class="hi">C=8</span>   D=16
+git's default : A=420  M=633  <span class="ok">C=0</span>   D=16</div>
+          <p><code>fbfa1a0</code> still drops a new production <code>.ts</code> file as <code>C058</code> and reports <code>introduced: 0, resolved: 2</code>.</p>
+          <p class="gap-cost"><b>Sequencing:</b> #262 must merge first, or the natural fix here routes renamed files straight into that bug.</p>
           <div class="tracks">
             <span class="tracks-label">Tracked in</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/264">#264 — renamed/copied files dropped silently</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/267">#267 — the false all-clear verdict</a>
-          </div>
-        </div>
-      </article>
-
-      <article class="gap sev-block">
-        <div class="gap-id">G3</div>
-        <div class="gap-body">
-          <div class="gap-title">
-            <h3><code>--project-config</code> failures invert the documented exit contract</h3>
-            <span class="chip verified">re-verified</span>
-          </div>
-          <p>The README states: <em>“2 — a usage error… Usage guidance goes to stderr; nothing is written to stdout.”</em> The observed behavior is exactly backwards.</p>
-          <div class="code"><span class="c">$ coach codesignal --baseline --format json --project-config missing.json</span>
-exit=2  <span class="hi">stdout_bytes=243039  stderr_bytes=0</span>
-
-<span class="c">$ coach codesignal --baseline --format json --project-config /etc/passwd</span>
-exit=2  <span class="hi">stdout_bytes=242920  stderr_bytes=0</span></div>
-          <p>Under <code>set -e</code> the job dies with no message at all. Without it, a consumer happily ingests a 240 KB report that silently omitted the analysis it asked for. In text mode the only warning sits on line 2137 of a 2148-line report — and leaks a raw <code>git</code> error and exit code.</p>
-          <p>Compounding it, the documented suggest-then-use flow cannot work as written. <code>--output</code> writes to the worktree; <code>--project-config</code> reads at the git revision. The generated file is unusable until committed, and nothing says so — so the first thing a new user does fails, quietly. When it does work, the suggested candidate is 54 bytes with no <code>layers</code> or <code>forbidden_imports</code>, which is where all the value lives.</p>
-          <p>The second pass established this is <strong>not an oversight but a contradiction between two deliberate decisions</strong>. <code>README.md:170</code> says exit 2 writes nothing to stdout; <code>cmd/coach/project_contract_acceptance_test.go:25-26</code> locks in exit 2 <em>with</em> a full report on stdout and an empty stderr, and #208's failure-taxonomy table specifies that as intended. Meanwhile #48 Story 2 sets the opposite precedent for the analogous <code>.coach.yaml</code> case — two conventions for one situation.</p>
-          <p><strong>Now ruled.</strong> CLI failures sort into three classes: usage errors, configuration errors, and partial-analysis conditions. Configuration errors are usage errors — exit 2, stderr, no stdout. A report that silently omits the analysis the user asked for is the same false green as G0 and G2, one layer up, and the degradation is undetectable because a failed schema-2 run emits a report byte-shape-indistinguishable from a legitimate schema-1 one.</p>
-          <p class="gap-cost"><b>Cost to close:</b> small for the exit contract, now that the ruling exists. The round-trip separately needs the suggestion to emit something worth committing, or the step does not earn itself.</p>
-          <div class="tracks">
-            <span class="tracks-label">Tracked in</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/275">#275 — config-failure exit contract</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/278">#278 — suggest-project-config boundary</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/208">#208 — taxonomy amendment</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/264">#264 — renamed/copied files dropped</a>
           </div>
         </div>
       </article>
@@ -488,20 +529,17 @@ exit=2  <span class="hi">stdout_bytes=242920  stderr_bytes=0</span></div>
         <div class="gap-id">G4</div>
         <div class="gap-body">
           <div class="gap-title">
-            <h3>TypeScript is second-class in two ways a TS team hits immediately</h3>
-            <span class="chip reported">agent-run</span>
+            <h3>TypeScript project analysis is honest, and still undeployable</h3>
+            <span class="chip verified">re-verified</span>
           </div>
-          <p><strong><code>--scope production</code> does not exclude TypeScript tests.</strong> On a clean TS repo with <code>src/app.ts</code> and an identical <code>src/app.test.ts</code>, both scopes return byte-identical results. The exclusion is Go-only — coverage reports <code>excluded: [{reason: test_only, language: go}]</code> and nothing else. On a TS-only repo the flag is a no-op; on <code>lousy-api-eval</code> the <em>only</em> production-scope finding is an e2e test file.</p>
-          <p><strong>TS project analysis cannot be deployed outside this repo.</strong> Following the README's own TypeScript example in a fresh repo produces a missing-sidecar diagnostic; hand-vendoring the sidecar yields a raw Node <code>ERR_MODULE_NOT_FOUND</code> stack trace inside the report; vendoring <code>typescript</code> too reaches an unresolvable platform package. To use the feature, a customer must reproduce this project's own <code>js/semantics</code> npm layout inside their repository.</p>
-          <p>Every one of those failures exits 0 with <code>No active CodeSignal findings.</code> For an architecture check, “the backend didn't run” and “your architecture is clean” must not be the same output.</p>
-          <p>The second pass quantified the customer payload: <strong>586 files / 30 MB</strong> vendored at <code>&lt;repo&gt;/js/semantics/</code>, plus <code>node</code> on PATH — and it is platform-locked, since TypeScript 7 ships 20 mutually-exclusive platform packages. A working laptop run does not predict a working Linux CI run. It also <strong>refuted the tempting fix</strong>: a WASM backend would not dissolve this, because <code>pkg/semantics</code>' WASM build runs Go analysis inside JS — the opposite direction — while the sidecar depends on <code>typescript/unstable/sync</code> for module resolution.</p>
-          <p class="gap-cost"><b>Cost to close:</b> the exit-0 false all-clear is small. Making the sidecar resolvable from the coach install — shipping it in the release archive, publishing to npm, or a <code>--ts-sidecar-path</code> flag — is real but bounded.</p>
+          <p>A foreign TypeScript repo with no <code>js/semantics/</code> no longer prints a clean bill of health. It also does not produce a layer report. Exit 0, schema 2, <code>project_backend_unavailable</code>. File-local TypeScript still works from the Go binary alone. Do not conflate the two.</p>
+          <p><code>--scope production</code> has no dedicated <code>.test.ts</code> classifier. It piggybacks on tsconfig include/exclude: <code>lousy-iam</code> excludes 39 test files that way; a clean <code>src/app.ts</code> + <code>src/app.test.ts</code> fixture with no exclude analyzes both; on <code>lousy-api-eval</code> the only production-scope finding is still an e2e test file marked <code>source_scope: production</code>.</p>
+          <p class="gap-cost"><b>Cost to close:</b> obtain/preflight so a foreign repo can run project analysis without vendoring this tree. Packaging options in #280 are stale relative to the locked TypeScript obtain strategy; retarget #282 at that epic when it exists. Filename-based TS test scope is #281, separate.</p>
           <div class="tracks">
             <span class="tracks-label">Tracked in</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/280">#280 — sidecar deployability</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/280">#280 — TS project analysis on a foreign repo</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/281">#281 — TypeScript source-scope classifier</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/267">#267 — verdict on incomplete analysis</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/218">#218 — parity gate, rewritten</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/218">#218 — parity gate (closed, in-repo)</a>
           </div>
         </div>
       </article>
@@ -510,24 +548,19 @@ exit=2  <span class="hi">stdout_bytes=242920  stderr_bytes=0</span></div>
         <div class="gap-id">G5</div>
         <div class="gap-body">
           <div class="gap-title">
-            <h3>The report can't be ranked, capped, or suppressed — so nobody will own it</h3>
-            <span class="chip reported">agent-run</span>
+            <h3>The report still can’t be ranked, capped, or suppressed</h3>
+            <span class="chip verified">re-verified</span>
           </div>
-          <p>Baseline on this repo: <strong>237 findings across 264 files, 2160 lines of text.</strong> 178 <code>medium</code> and 59 <code>low</code>; nothing <code>high</code> or <code>critical</code>. There is no “read this first,” no ignore or allowlist mechanism anywhere, and no published threshold rationale — a skeptical staff engineer asking “why is 25 a problem and 24 not?” has nowhere to look.</p>
-          <p><span class="chip refuted">corrected</span> The first pass said ordering is by rule then path. It is not — <code>pkg/codesignal/sort.go:96-124</code> sorts by lifecycle group → severity → confidence → path, with rule id only sixth. The symptom was real, the diagnosis wrong, and <strong>the true defect is sharper: magnitude never participates in the sort at all.</strong> The first nine findings read 18, 15, 28, 19, 25, 17, 15, <strong>116</strong>, 33. The second pass also found a fourth severity value, <code>advisory</code>, carried by <code>architecture.layer_violation</code> — which sorts <em>below</em> every <code>low</code>, so the one opt-in high-precision rule in the product lands last.</p>
-          <p>The noise is measurable on real code:</p>
+          <p>This-repo production baseline: <strong>250 findings across 281 files, 1.02s.</strong> 191 <code>medium</code>, 59 <code>low</code>; nothing <code>high</code> or <code>critical</code>. Magnitude still never participates in the sort. The first nine cognitive values read 18, 15, 28, 19, 16, 17, 15, <strong>116</strong>, 33. Advisory ranking is fixed; the rest of the noise is not.</p>
           <ul class="plain">
-            <li class="neg"><span><code>learn-go-with-tests</code> — <strong>60 of 79 findings (75%) are inside <code>vendor/</code></strong>. Production scope does not exclude vendored code.</span></li>
-            <li class="neg"><span><code>lousy-iam</code> — <strong>42 of 50 findings (84%) are one rule</strong>, <code>state.hidden_input_mutation</code>, 22 of them in a single file. Every one is <code>violations.push</code> into an explicitly named out-parameter on a <code>void</code> function. Technically true; the attached advice — “return a copy instead” — would be wrong here.</span></li>
-            <li class="neg"><span>One 5-constructor file produced <strong>10 findings: five identical density signals, twice</strong>, each with an <em>empty evidence field</em>. Two facts about one file, printed ten times, with no number attached. <span class="chip refuted">corrected</span> — they are only identical <em>in text</em>; the JSON carries distinct <code>subject</code>, <code>location</code>, and <code>fingerprint</code> per signal, and the text renderer never prints <code>subject</code>. The underlying reading held: a file-level metric is emitted once per matching site.</span></li>
-            <li class="neg"><span><strong>59 of 237 findings (25%) carry an empty <code>evidence</code> field</strong> — every <code>pointer_return_density</code> and <code>constructor_density</code> hit. Those findings are not adjudicable by a human, which also blocks the precision census below.</span></li>
+            <li class="neg"><span><code>learn-go-with-tests</code> — <strong>60 of 79 findings (76%) are inside <code>vendor/</code></strong>. Production scope still does not exclude vendored code. 304 files analyzed in 0.56s.</span></li>
+            <li class="neg"><span><code>lousy-iam</code> — <strong>42 of 50 findings (84%) are one rule</strong>, <code>state.hidden_input_mutation</code>, 22 of them in a single file, 29 evidence strings <code>violations.push</code>. Same precision problem as 16 Aug.</span></li>
+            <li class="neg"><span><strong>59 of 250 findings (24%) carry empty <code>evidence</code></strong> — every density hit. Still not adjudicable.</span></li>
           </ul>
-          <p>The PRD's own trust principle is “fewer, better findings,” and its success signal is voluntary repeat use. This report is neither, and no team runs it twice in this form.</p>
-          <p>Suppression — the one part of this already covered, by the <code>.coach.yaml</code> work under #48 — closes <strong>one of five</strong> sub-problems. The <code>lousy-iam</code> case is the sharpest reason why: <code>push</code> genuinely mutates, so the match is correct and the <em>judgment</em> is wrong. Suppression can only silence the whole file. That is a rule-precision problem, and the author had already written the discriminator into the types — <code>readonly</code> used 16 times in that file, the <code>violations</code> out-parameter deliberately not.</p>
+          <p>Suppression under #48 still closes one of five sub-problems. The <code>lousy-iam</code> case is still why: the match is correct and the judgment is wrong.</p>
           <div class="tracks">
             <span class="tracks-label">Tracked in</span>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/272">#272 — severity spread &amp; ranking</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/259">#259 — advisory sorts below low</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/277">#277 — vendored dependencies</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/261">#261 — density rules, one per site</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/268">#268 — out-parameter precision</a>
@@ -541,12 +574,10 @@ exit=2  <span class="hi">stdout_bytes=242920  stderr_bytes=0</span></div>
         <div class="gap-id">G6</div>
         <div class="gap-body">
           <div class="gap-title">
-            <h3>Text output drops the two fields a human needs; diff mode has no provenance</h3>
-            <span class="chip reported">agent-run</span>
+            <h3>Text still drops the fields a human needs; diff mode has no text provenance</h3>
+            <span class="chip verified">re-verified</span>
           </div>
-          <p>Text mode never prints <code>rule_id</code> or <code>severity</code> for file-local signals — you get an evidence string and infer the rule. The JSON for the same signal carries rule id, version, category, severity, confidence, fingerprint, and byte location; all of it is dropped on the way to the terminal. Layer-violation findings <em>do</em> print <code>rule_id</code>, so the formatter is inconsistent with itself. Meanwhile <code>source_scope: unknown</code> prints on 100% of findings in every default run — a dead field on every line of a user's first report.</p>
-          <p>Diff mode prints no provenance at all — no HEAD sha, no resolved merge-base — while baseline mode does. Since <code>--base</code> resolves through merge-base, pointing at a docs-only commit's parent silently pulled in 20 unrelated files and 17 signals with nothing in the output explaining what was compared. The merge-base surprise reproduced exactly on re-verification: <code>--base 21efd94^</code> reported <code>filtered: 20, files analyzed: 20, active signals: 17</code> against a merge-base of <code>6b7936b</code>, with 73 files actually compared and none of that visible.</p>
-          <p><span class="chip refuted">corrected</span> The first pass reported that <code>coach --version</code> returns <code>dev</code>. That is true only of local builds — the published v0.3.0 binary prints <code>0.3.0</code>, because GoReleaser's default ldflags apply. There is no release-identity defect, and adding ldflags would be a no-op. The real, unaffected defect is narrower: <strong>the report carries no tool version</strong>, so the PRD's stated goal of findings reproducible from recorded analyzer and rule versions is still not achievable.</p>
+          <p>Text mode still never prints <code>rule_id</code> or <code>severity</code> for file-local signals. Layer findings still do. <code>source_scope: unknown</code> still prints on 250 of 250 default-run findings. JSON now carries <code>revision</code> and <code>base</code> on a <code>--base</code> run; the text header still names neither. The report still carries no tool version.</p>
           <div class="tracks">
             <span class="tracks-label">Tracked in</span>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/279">#279 — text omits rule_id, severity, subject</a>
@@ -563,9 +594,9 @@ exit=2  <span class="hi">stdout_bytes=242920  stderr_bytes=0</span></div>
   <section>
     <div class="sec-head">
       <p class="eyebrow">Root cause</p>
-      <h2>One table explains the blocker</h2>
+      <h2>One table still explains the blocker</h2>
     </div>
-    <p class="prose">Diff mode's correctness is entirely a function of how git labels the change. Two of the four labels are mishandled, and both mishandle toward silence. (G0 is a separate mechanism — it removes the import edge before any of this runs, and it affects baseline mode too.)</p>
+    <p class="prose">Diff mode’s correctness is still a function of how git labels the change. Two of the four labels mishandle toward silence. G0 used to be a third mechanism; it is closed.</p>
     <div class="tbl-wrap">
       <table>
         <thead>
@@ -579,7 +610,7 @@ exit=2  <span class="hi">stdout_bytes=242920  stderr_bytes=0</span></div>
         </tbody>
       </table>
     </div>
-    <p class="prose">The two rows that fail are the two that dominate agent-authored diffs. And the <code>R</code>/<code>C</code> row is largely self-inflicted: <code>--find-copies-harder</code> converts ordinary additions into copy records that are then discarded.</p>
+    <p class="prose">The two rows that fail are the two that dominate agent-authored diffs. The R/C <em>headline</em> is now qualified. The A row still has no diagnostic. Machine consumers still see <code>introduced: 0</code> on both.</p>
   </section>
 
   <section>
@@ -588,12 +619,12 @@ exit=2  <span class="hi">stdout_bytes=242920  stderr_bytes=0</span></div>
       <h2>What the pilot has already earned</h2>
     </div>
     <ul class="plain prose">
-      <li class="pos"><span><strong>Determinism and speed.</strong> Three identical runs hash identically. Baseline over 685 tracked files in 0.97s production / 1.43s all-scope. Clean exit-0 runs on five foreign repos including a 304-file one in 0.54s. No crashes, no hangs.</span></li>
-      <li class="pos"><span><strong>Fingerprint stability is the hard part, and it's right.</strong> Inserting a comment above flagged code kept every fingerprint stable and produced 6 findings, all correctly <code>existing</code>, zero false <code>introduced</code>. That is a real foundation for “new since last run.”</span></li>
-      <li class="pos"><span><strong><code>--build-target</code> is the best idea in the product.</strong> It cut 264 files / 237 signals down to 111 / 128, correctly excluding code unreachable from that binary. “This code actually ships in the artifact” is defensible in a way “this file has branch_sum=68” is not.</span></li>
-      <li class="pos"><span><strong>Configured layer violations are the highest-quality output.</strong> Exact edge, exact line, machine-readable evidence, and a policy the user declared themselves — no threshold argument to have.</span></li>
-      <li class="pos"><span><strong>The TOCTOU recommendation is what actionable looks like</strong> — CWE-367, concrete Go API names, <code>errors.Is(err, fs.ErrNotExist)</code>, a pointer to <code>os.Root</code>.</span></li>
-      <li class="pos"><span><strong>Usage errors are clean and leak nothing.</strong> Bad ref, non-git directory, bad format/scope/language, conflicting flags, empty diff, oversized file — all correct exit codes, stderr-only, no internals. Installation is credible: signed releases with checksums and a cosign bundle.</span></li>
+      <li class="pos"><span><strong>Determinism and speed.</strong> Three identical production runs hash identically. Baseline over 720 tracked files in 1.02s production / 1.57s all-scope. <code>learn-go-with-tests</code> (304 files) in 0.56s. No crashes, no hangs on six repos.</span></li>
+      <li class="pos"><span><strong>Fingerprint stability is the hard part, and it’s right.</strong> Inserting a comment above flagged code produced 3 findings, all <code>existing</code>, zero false <code>introduced</code>.</span></li>
+      <li class="pos"><span><strong><code>--build-target</code> is still the best idea in the product.</strong> It cut 281 files / 250 signals down to 118 / 141. “This code actually ships in the artifact” is defensible in a way “this file has branch_sum=68” is not. It is still a silent no-op under <code>--scope all</code>.</span></li>
+      <li class="pos"><span><strong>Configured layer policy is the highest-quality output</strong> — and now there are two of them. <code>architecture.layer_violation</code> and Go <code>architecture.layer_bypass</code>: exact edge or path, exact line, machine-readable evidence, a policy the user declared.</span></li>
+      <li class="pos"><span><strong>Incomplete analysis is disclosed</strong> when the skip is visible as a diagnostic. Config failures fail closed. Usage errors stay off stdout. Empty JSON collections stay present.</span></li>
+      <li class="pos"><span><strong>The TOCTOU recommendation is still what actionable looks like</strong> — CWE-367, concrete Go API names, <code>errors.Is(err, fs.ErrNotExist)</code>, a pointer to <code>os.Root</code>.</span></li>
     </ul>
   </section>
 
@@ -603,12 +634,12 @@ exit=2  <span class="hi">stdout_bytes=242920  stderr_bytes=0</span></div>
       <h2>Ship with a caveat rather than fix first</h2>
     </div>
     <ul class="plain prose">
-      <li class="neg"><span><strong>Security-rule recall is ~33%, and that's fine as long as you never market it.</strong> Six semantically identical TOCTOU patterns; two matched. Missed: the idiomatic Go guard-clause form, the <code>os.IsNotExist</code> form, and the TypeScript negated-guard form. <span class="chip refuted">corrected</span> — the first pass said <em>both</em> write-side races are missed in both languages; TypeScript in fact covers them. The gap is Go-specific and sharper than reported: <strong>Go's act-call name set contains no write, create, rename, or metadata-mutation call at all</strong>, so the higher-severity write-side race is missed even in the fully supported gate shape. That is an act-name omission, far cheaper to fix than a dataflow limitation. The PRD is explicit this isn't a completeness guarantee, so no promise is broken — but it is the concrete reason the word “security” shouldn't leave the pilot yet. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/205">#205</a></span></li>
-      <li class="neg"><span><strong>JSON key presence is unstable.</strong> <code>signals</code>, <code>diagnostics</code>, <code>coverage</code>, <code>subject</code>, and <code>evidence</code> are omitted rather than emitted empty — five <code>KeyError</code>s while writing throwaway consumers. Friction on the “consumable by CI” claim. Re-verification found five distinct top-level key sets and four per-signal sets from one binary, with 46% of signals lacking <code>subject</code>. Related: <code>schema_version</code> is 1 or 2 depending on a <em>flag</em>, not the tool version — and a <em>failed</em> schema-2 run degrades silently back to 1. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/269">#269</a></span></li>
-      <li class="neg"><span><strong>A dirty working tree is silently ignored.</strong> Staged and untracked files are invisible with no warning. Correct by design — analysis reads committed bytes — but it forecloses the pre-commit use case and will confuse people. A one-line “analyzing revision &lt;sha&gt;; N uncommitted changes” notice closes the confusion; the capability itself is a separate ask. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/265">#265</a> <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/168">#168</a></span></li>
-      <li class="neg"><span><strong><code>--build-target</code> needs a Go toolchain on PATH</strong> in the analyzed environment, which quietly undoes the self-contained-binary story. Good error message; document the constraint next to the flag. It also fires in repositories containing <em>zero</em> Go files, and is a silent no-op under <code>--scope all</code> — which turned out to be a design question in its own right, resolved below. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/63">#63</a> <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/283">#283</a></span></li>
-      <li class="neg"><span><strong>Positional args are worse than swallowed.</strong> Go's <code>flag</code> stops at the first non-flag token, so <em>every flag after one is silently discarded</em>: <code>--baseline foo bar --format json</code> returns text, exit 0, empty stderr. You ask for JSON and get text. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/273">#273</a></span></li>
-      <li class="neg"><span><strong>The PRD's rule inventory is stale</strong> — it omits <code>architecture.layer_violation</code>, which the CLI emits today. <span class="chip refuted">corrected</span> — the first pass also named <code>architecture.layer_bypass</code>, but that rule has no CLI wiring and was never firing. The delta is one rule, not two. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/274">#274</a></span></li>
+      <li class="neg"><span><strong>Security-rule recall is still not a completeness claim.</strong> Supported if-init <code>Stat</code>/<code>Lstat</code>+<code>Open</code> fire; TypeScript <code>existsSync</code>+read and write-side fire. Missed: the idiomatic Go guard-clause, <code>os.IsNotExist</code>, Go write-side <code>Create</code>/<code>Rename</code>, TypeScript negated guard. Do not put the word “security” in front of a customer. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/205">#205</a></span></li>
+      <li class="neg"><span><strong>A dirty working tree is silently ignored.</strong> Staged and untracked mutations are invisible and can print a clean all-clear. Correct by design — analysis reads committed bytes — and still confusing. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/265">#265</a> <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/168">#168</a></span></li>
+      <li class="neg"><span><strong><code>--scope all --build-target</code> is byte-identical to <code>--scope all</code>.</strong> Filter policy and classifier evidence are still conflated. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/283">#283</a></span></li>
+      <li class="neg"><span><strong>Positional args still swallow every flag after them.</strong> <code>--baseline foo bar --format json</code> returns text, exit 0, empty stderr. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/273">#273</a></span></li>
+      <li class="neg"><span><strong>The PRD rule inventory is more stale, not less</strong> — it still omits <code>architecture.layer_violation</code>, and now also omits the shipped Go <code>architecture.layer_bypass</code>. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/274">#274</a></span></li>
+      <li class="neg"><span><strong><code>source_sink_pack</code> is still a reserved no-op</strong> that changes project fingerprints without changing findings. Documented; still a footgun.</span></li>
     </ul>
   </section>
 
@@ -619,12 +650,10 @@ exit=2  <span class="hi">stdout_bytes=242920  stderr_bytes=0</span></div>
     </div>
     <p class="prose">These bound the verdict and should be read as unresolved, not as absent problems.</p>
     <ul class="plain prose">
-      <li class="unk"><span><strong>TypeScript project analysis on any repo but this one.</strong> It was proved to <em>fail</em> elsewhere; it was proved to <em>work</em> only inside a clone of this repo with its own <code>node_modules</code>. <span class="chip refuted">largely refuted</span> — the second pass vendored the sidecar and exercised all three named scenarios successfully: tsconfig <code>paths</code> aliases, solution-style project references (3 projects analyzed), and <code>.tsx</code>. Workspace package-name imports resolve even without a <code>paths</code> entry. What remains is that none of it is regression-locked, and no test runs the real sidecar from any repository but this one. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/218">#218</a></span></li>
-      <li class="unk"><span><strong>Multi-module / monorepo config suggestion.</strong> <span class="chip refuted">refuted</span> — multi-root output works. Three <code>go.mod</code> files produced three roots; a <code>go.work</code> workspace produced three more. The single-root observation was an artifact of only testing single-module repos. The real gap is different and was missed the first time: <strong>the heuristic is Go-only</strong>, so a TypeScript monorepo gets exit 2 and <code>--suggest-project-config</code> refuses <code>--project-language</code> entirely. That reframes it from an evidence gap to a legibility gap. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/278">#278</a></span></li>
-      <li class="unk"><span><strong>The released binary in a real CI runner.</strong> Testing used a locally built macOS/arm64 binary. Linux/Windows, container startup cost, and the signed-release path are unverified. The second pass added three concrete findings: there is <strong>no <code>linux/arm64</code> build</strong> in <code>.goreleaser.yaml</code>, <strong>no Dockerfile</strong> for the CLI, and <code>git cat-file --batch -Z</code> requires <strong>Git ≥ 2.42</strong> with no minimum declared anywhere. Also note that #55, whose title reads like it covers this, verifies the source tree on one platform and never touches a produced artifact. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/276">#276</a></span></li>
-      <li class="unk"><span><strong>Two rules never fired in ~50 runs</strong> — <code>structure.react_component_orchestration_density</code> and <code>coupling.tight_constructor_init</code> — because no TSX/React repo was available — and a third, <code>coupling.deep_relative_import</code>, that the first pass did not name. All four were individually confirmed to fire end-to-end when given a matching fixture, so this is a corpus gap, not broken rules. Separately, <code>source_sink_pack</code> turned out to be <strong>validated and then discarded</strong>: the README tells users to set it and it changes nothing. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/260">#260</a> <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/253">#253</a></span></li>
-      <li class="unk"><span><strong>No systematic precision census.</strong> Misses were found trivially; a true-positive / false-positive count across real repos was not attempted. That census is the actual gate the PRD names, and as far as the evidence shows it has not been done by anyone. It now has an issue that defines it concretely — repositories, sample size, adjudicator, and the precision threshold that would unblock the security claim — because an open-ended research ticket is how this gets deferred again. One prerequisite: 25% of findings currently carry empty evidence and are not adjudicable. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/260">#260</a></span></li>
-      <li class="unk"><span><strong>The noise judgment is inferred, not observed.</strong> The 84%-single-pattern and 75%-vendor numbers are hard measurements; “nobody will own this report” is an inference from them, not a watched user abandoning one. Folded into the census rather than asserted as a separate finding. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/260">#260</a></span></li>
+      <li class="unk"><span><strong>TypeScript project analysis on any repo but this one.</strong> Proved to fail honestly elsewhere; proved to work only inside this clone. In-repo parity is now locked (#218). Obtain on a foreign repo is not. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/280">#280</a></span></li>
+      <li class="unk"><span><strong>The released binary in a real CI runner.</strong> This pass used a locally built macOS/arm64 binary. Linux/Windows, container startup, and the signed-release path are unverified. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/276">#276</a></span></li>
+      <li class="unk"><span><strong>No systematic precision census.</strong> Still the gate the PRD names. 24% of findings still carry empty evidence and are not adjudicable. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/260">#260</a></span></li>
+      <li class="unk"><span><strong>The noise judgment is inferred, not observed.</strong> The 84% and 76% numbers are measurements; “a named team will not run this twice” is an inference from them.</span></li>
     </ul>
   </section>
 
@@ -633,80 +662,43 @@ exit=2  <span class="hi">stdout_bytes=242920  stderr_bytes=0</span></div>
       <p class="eyebrow">Path to yes · in order</p>
       <h2>The shortest credible route out of pilot</h2>
     </div>
-    <p class="prose">None of these is large. The ordering is a real dependency sequence — each step unlocks the claim beside it.</p>
+    <p class="prose">Do not wait on every remaining #282 child. Re-open the leave-pilot decision when these three customer outcomes are true on a fresh CLI corpus.</p>
     <ol class="path prose">
       <li>
         <div>
-          <p><strong>Make the tool report what is actually there.</strong> Classify signals in added files as <code>introduced</code> and fix the summary counters; analyze the head side of renames; stop misclassifying dotless-module imports as stdlib; and stop printing a clean verdict over input that was never examined. Removes every false all-clear.</p>
+          <p><strong>A new file’s findings count as introduced.</strong> Counters add up. Adding risk cannot look like <code>introduced: 0</code> with no diagnostic.</p>
           <p class="step-gate">Unlocks → any run can be trusted at all</p>
           <div class="tracks">
             <span class="tracks-label">Issues</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/284">#284 — dotless module</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/262">#262 — added-file lifecycle</a>
+          </div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <p><strong>The head side of a rename or copy is examined as content</strong>, and ordinary adds are not recategorized into skipped copies. If a path is still unanalyzable, the headline <em>and</em> the machine summary both say so.</p>
+          <p class="step-gate">Unlocks → agent-authored diffs stop being a special silence</p>
+          <div class="tracks">
+            <span class="tracks-label">Issues</span>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/264">#264 — renames dropped</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/267">#267 — false all-clear verdict</a>
           </div>
         </div>
       </li>
       <li>
         <div>
-          <p><strong>Make failures fail.</strong> Configuration errors follow the ruled contract — exit 2, stderr, no stdout report. Positional arguments stop swallowing the flags after them. JSON stops omitting empty collections. The TypeScript sidecar becomes deployable outside this repository.</p>
-          <p class="step-gate">Unlocks → safe to put in a CI pipeline</p>
+          <p><strong>A named audience can be told an honest job.</strong> Until the two rows above hold, that job is not “advisory PR check.” A later pass then judges whether vendor/test noise, dirty-tree silence, TypeScript obtain, and report ergonomics still keep it in pilot.</p>
+          <p class="step-gate">Unlocks → the leave-pilot question is worth asking again</p>
           <div class="tracks">
-            <span class="tracks-label">Issues</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/275">#275 — config-failure exit contract</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/269">#269 — JSON key stability</a>
+            <span class="tracks-label">Then</span>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/280">#280 — TS obtain</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/273">#273 — positional args</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/280">#280 — TS sidecar</a>
-          </div>
-        </div>
-      </li>
-      <li>
-        <div>
-          <p><strong>Fix report ergonomics.</strong> <code>rule_id</code> and <code>severity</code> in text output; revision and resolved base in the diff-mode header; drop <code>source_scope</code> when unknown; stamp a tool version into the report; document the terms a reader meets first.</p>
-          <p class="step-gate">Unlocks → “expand to Go teams as an advisory PR check”</p>
-          <div class="tracks">
-            <span class="tracks-label">Issues</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/279">#279 — text output fields</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/263">#263 — diff provenance</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/270">#270 — tool version</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/63">#63 — README terms</a>
-          </div>
-        </div>
-      </li>
-      <li>
-        <div>
-          <p><strong>Cut the noise.</strong> Exclude <code>vendor/</code> and TypeScript tests from production scope, and let <code>--scope</code> and <code>--build-target</code> compose instead of one silently voiding the other. Roll density rules up per file. Rank by magnitude. Stop firing on declared out-parameters. Ship the suppression mechanism.</p>
-          <p class="step-gate">Unlocks → someone runs it a second time</p>
-          <div class="tracks">
-            <span class="tracks-label">Issues</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/277">#277 — vendored code</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/281">#281 — TS source scope</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/283">#283 — scope/build-target composition</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/261">#261 — density rollup</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/272">#272 — ranking</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/259">#259 — advisory severity</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/268">#268 — out-parameter precision</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/48">#48 — suppression</a>
-          </div>
-        </div>
-      </li>
-      <li>
-        <div>
-          <p><strong>Publish the thresholds, then run the precision census</strong> the PRD already names as the gate — true positives, false positives, and known misses across 5–10 real repos. Close the Go write-side TOCTOU blind spot, and actually execute the released archives on the platforms they ship to.</p>
-          <p class="step-gate">Unlocks → the word “security” in front of a customer</p>
-          <div class="tracks">
-            <span class="tracks-label">Issues</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/266">#266 — publish thresholds</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/260">#260 — precision census</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/205">#205 — TOCTOU act set</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/276">#276 — release verification</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/277">#277 — vendor</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/260">#260 — census</a>
           </div>
         </div>
       </li>
     </ol>
-    <p class="prose">Steps 1–3 alone are enough to expand to a named segment with stated caveats. Step 4 is what makes the tool sticky. Step 5 is what makes the security claim honest.</p>
-    <p class="prose">Two decisions blocked planning and have both been ruled. <strong>Configuration errors are usage errors</strong> — exit 2, stderr, no stdout — which gives every future config knob one rule to inherit instead of negotiating its own. And <strong><code>--scope</code> and <code>--build-target</code> are not mutually exclusive</strong>: one is a filter policy, the other is classifier evidence, and the fix is to make them compose rather than to add a validation error. Folding <code>--build-target</code> into <code>--scope</code> as an enum value was considered and rejected, because TypeScript's evidence is a root <code>tsconfig.json</code> and a polyglot repository would then be able to declare evidence for only one language at a time.</p>
+    <p class="prose">“Expand to Go teams as an advisory PR check” is not unlocked. Advisory-versus-blocking does not save it: the failure is a successful-looking report that the change introduced nothing. You cannot caveat “ignore the change counters on new files and renames” and still offer a PR check.</p>
   </section>
 
 </div>
