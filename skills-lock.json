@@ -53,13 +53,13 @@
       "source": "lousy-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/spec-auditor/SKILL.md",
-      "computedHash": "9722a5385dcf8bcd903ff469d250de8c597b8cd1b2c52bb2fc7d876c9ec46968"
+      "computedHash": "52b300f69d00357eb7fb7a9b14396bac5fb92e3735d4d51a8dca644b10cf5a34"
     },
     "triaging-pr-reviews": {
       "source": "lousy-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/triaging-pr-reviews/SKILL.md",
-      "computedHash": "805d27c9e70049ed4239b70b9572e6a7435f2c70fff804fa772e83cb234fda68"
+      "computedHash": "3c93bf5e7b07a3f448e5d46f76d559c858feabfd5fab28f35ee2108745ab12bc"
     }
   }
 }
