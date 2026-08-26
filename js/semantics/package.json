@@ -6,7 +6,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": "26.7.0"
+    "node": "26.8.1"
   },
   "exports": {
     ".": {
