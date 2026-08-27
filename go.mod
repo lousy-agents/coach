@@ -5,9 +5,9 @@ go 1.25.0
 require (
 	github.com/ThreeDotsLabs/watermill v1.5.3
 	github.com/ThreeDotsLabs/watermill-redisstream v1.4.5
-	github.com/aws/aws-sdk-go-v2 v1.44.0
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.39
-	github.com/aws/aws-sdk-go-v2/service/sqs v1.47.0
+	github.com/aws/aws-sdk-go-v2 v1.45.0
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.0
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.48.0
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-github/v90 v90.0.0
@@ -23,8 +23,8 @@ require (
 require (
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/Rican7/retry v0.3.1 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.40 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.40 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.0 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.0 // indirect
 	github.com/aws/smithy-go v1.28.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
