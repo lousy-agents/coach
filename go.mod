@@ -14,7 +14,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/odvcencio/gotreesitter v0.51.0
 	github.com/onsi/ginkgo/v2 v2.32.1
-	github.com/onsi/gomega v1.42.1
+	github.com/onsi/gomega v1.43.0
 	github.com/redis/go-redis/v9 v9.22.0
 	golang.org/x/mod v0.40.0
 	golang.org/x/tools v0.49.0
