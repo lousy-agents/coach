@@ -82,7 +82,7 @@ test("maxTurns supports camelCase, snake_case, and kebab-case", async () => {
   assert.strictEqual(cfg.agent?.kebab?.steps, 30)
 })
 
-test("loads real .claude/agents/*.md with expected structure", async () => {
+test("loads real .claude/agents/*.md with expected structure", async (t) => {
   const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
   const pluginFactory = await loadPluginFactory()
   const plugin = await pluginFactory({ directory: repoRoot, worktree: repoRoot })
@@ -116,18 +116,27 @@ test("loads real .claude/agents/*.md with expected structure", async () => {
       assert.ok(Object.prototype.hasOwnProperty.call(agent.permission!, permKey), `${name}: missing ${permKey} permission`)
     }
     // 'write' is not modeled separately; Write tool is covered by the 'edit' permission.
-    assert.strictEqual(agent.permission!.write, undefined, `${name}: write should not be a separate permission key`)
+    assert.strictEqual(
+      agent.permission!.write,
+      undefined,
+      `${name}: write should not be a separate permission key -- the Write tool is covered by 'edit'`,
+    )
   }
 
   // The git-write jail was removed with the rest of the control apparatus:
   // "the orchestrator owns git" is prose in the agent prompt, and publish
   // safety is branch protection plus the required status check.
-  assert.strictEqual(cfg.agent!["task-implementer"]?.permission?.bash, "allow")
-  assert.strictEqual(cfg.agent!["task-implementer"]?.steps, 30)
+  await t.test("task-implementer keeps bash allowed -- git ownership is enforced by prose and branch protection, not tool gating", () => {
+    assert.strictEqual(cfg.agent!["task-implementer"]?.permission?.bash, "allow")
+    assert.strictEqual(cfg.agent!["task-implementer"]?.steps, 30)
+  })
+
   // task-reviewer has no Edit tool, so edit is denied; write is not modeled separately.
-  assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.edit, "deny")
-  assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.write, undefined)
-  assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.bash, "allow")
+  await t.test("task-reviewer denies edit but keeps bash allowed for its read-only checks", () => {
+    assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.edit, "deny")
+    assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.write, undefined)
+    assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.bash, "allow")
+  })
 })
 
 test("prompt body preserves leading and trailing blank lines", async () => {
@@ -223,11 +232,7 @@ test("command body preserves leading and trailing blank lines", async () => {
   assert.strictEqual(cfg.command?.["spaces-cmd"]?.template, body)
 })
 
-// Commands are mirrored into OpenCode verbatim as templates, and OpenCode has
-// no Workflow tool -- the loader above maps agents and commands only. A command
-// that delegates work to a workflow without stating what that work is leaves
-// this harness with an instruction it cannot follow and no way to recover.
-test("a command that delegates to a workflow still carries the work inline", async () => {
+test("a command delegating to a Workflow still carries its plan inline, since OpenCode has no Workflow tool to run it", async () => {
   const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
   const pluginFactory = await loadPluginFactory()
   const plugin = await pluginFactory({ directory: repoRoot, worktree: repoRoot })
