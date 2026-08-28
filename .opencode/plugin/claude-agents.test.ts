@@ -16,6 +16,11 @@ function agentFile(name: string, body: string): string {
   return `---\nname: ${name}\ndescription: test agent\n---\n${body}`
 }
 
+async function loadPluginFactory() {
+  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
+  return pluginModule.default
+}
+
 test("agent key order is deterministic regardless of fs.readdir order", async () => {
   const { base, agentsDir } = await makeAgentsDir()
   await fs.writeFile(path.join(agentsDir, "b-agent.md"), agentFile("b-agent", "B"))
@@ -34,13 +39,12 @@ test("agent key order is deterministic regardless of fs.readdir order", async ()
     return entries
   }
 
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-    const pluginFactory = pluginModule.default
-    const plugin = await pluginFactory({ directory: base, worktree: "" })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: base, worktree: "" })
 
-    try {
-      const cfg: { agent?: Record<string, { prompt?: string }> } = {}
-      await plugin.config(cfg)
+  try {
+    const cfg: { agent?: Record<string, { prompt?: string }> } = {}
+    await plugin.config(cfg)
 
     const names = Object.keys(cfg.agent ?? {})
     assert.deepStrictEqual(names, ["a-agent", "b-agent", "c-agent"])
@@ -65,8 +69,8 @@ test("maxTurns supports camelCase, snake_case, and kebab-case", async () => {
     "---\nname: kebab\ndescription: d\nmax-turns: 30\n---\nBody",
   )
 
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: base, worktree: "" })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: base, worktree: "" })
 
   const cfg: { agent?: Record<string, { steps?: number }> } = {}
   await plugin.config(cfg)
@@ -80,8 +84,8 @@ test("maxTurns supports camelCase, snake_case, and kebab-case", async () => {
 
 test("loads real .claude/agents/*.md with expected structure", async () => {
   const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: repoRoot, worktree: repoRoot })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: repoRoot, worktree: repoRoot })
 
   const cfg: {
     agent?: Record<
@@ -131,8 +135,8 @@ test("prompt body preserves leading and trailing blank lines", async () => {
   const body = "\n\nFirst line.\n\n"
   await fs.writeFile(path.join(agentsDir, "spaces.md"), agentFile("spaces", body))
 
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: base, worktree: "" })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: base, worktree: "" })
 
   const cfg: { agent?: Record<string, { prompt?: string }> } = {}
   await plugin.config(cfg)
@@ -155,8 +159,8 @@ function commandFile(name: string, description: string, body: string): string {
 
 test("loads real .claude/commands/implement-issue.md", async () => {
   const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: repoRoot, worktree: repoRoot })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: repoRoot, worktree: repoRoot })
 
   const cfg: {
     command?: Record<string, { description?: string; template?: string; subtask?: boolean }>
@@ -180,8 +184,8 @@ test("explicit pre-existing command is not overwritten", async () => {
     commandFile("implement-issue", "from claude", "Claude body with task-implementer"),
   )
 
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: base, worktree: "" })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: base, worktree: "" })
 
   const explicit = {
     description: "explicit opencode",
@@ -208,8 +212,8 @@ test("command body preserves leading and trailing blank lines", async () => {
     commandFile("spaces-cmd", "d", body),
   )
 
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: base, worktree: "" })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: base, worktree: "" })
 
   const cfg: { command?: Record<string, { template?: string }> } = {}
   await plugin.config(cfg)
@@ -225,8 +229,8 @@ test("command body preserves leading and trailing blank lines", async () => {
 // this harness with an instruction it cannot follow and no way to recover.
 test("a command that delegates to a workflow still carries the work inline", async () => {
   const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: repoRoot, worktree: repoRoot })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: repoRoot, worktree: repoRoot })
 
   const cfg: { command?: Record<string, { template?: string }> } = {}
   await plugin.config(cfg)
