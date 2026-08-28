@@ -115,7 +115,6 @@ test("loads real .claude/agents/*.md with expected structure", async (t) => {
     for (const permKey of ["read", "edit", "glob", "grep", "list", "bash", "todowrite"]) {
       assert.ok(Object.prototype.hasOwnProperty.call(agent.permission!, permKey), `${name}: missing ${permKey} permission`)
     }
-    // 'write' is not modeled separately; Write tool is covered by the 'edit' permission.
     assert.strictEqual(
       agent.permission!.write,
       undefined,
@@ -123,15 +122,11 @@ test("loads real .claude/agents/*.md with expected structure", async (t) => {
     )
   }
 
-  // The git-write jail was removed with the rest of the control apparatus:
-  // "the orchestrator owns git" is prose in the agent prompt, and publish
-  // safety is branch protection plus the required status check.
   await t.test("task-implementer keeps bash allowed -- git ownership is enforced by prose and branch protection, not tool gating", () => {
     assert.strictEqual(cfg.agent!["task-implementer"]?.permission?.bash, "allow")
     assert.strictEqual(cfg.agent!["task-implementer"]?.steps, 30)
   })
 
-  // task-reviewer has no Edit tool, so edit is denied; write is not modeled separately.
   await t.test("task-reviewer denies edit but keeps bash allowed for its read-only checks", () => {
     assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.edit, "deny")
     assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.write, undefined)
@@ -247,8 +242,6 @@ test("a command delegating to a Workflow still carries its plan inline, since Op
     const template = command.template ?? ""
     if (!/\bWorkflow\b|implement-issue-plan/.test(template)) continue
 
-    // The contract the workflow produces has to be recoverable from the command
-    // itself, or a harness without workflows cannot produce an equivalent plan.
     for (const field of ["dependsOn", "criteriaIds", "acceptanceTest"]) {
       assert.ok(
         template.includes(field),
