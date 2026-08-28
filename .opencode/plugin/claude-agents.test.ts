@@ -99,6 +99,7 @@ test("loads real .claude/agents/*.md with expected structure", async () => {
     "system-design-expert",
     "task-implementer",
     "task-reviewer",
+    "ux-advocate",
     "workflow-integration-reviewer",
   ])
 
