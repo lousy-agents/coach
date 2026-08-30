@@ -84,14 +84,21 @@ This skill never writes code and never proposes metrics. Hand off instead:
 
 ## Procedure
 
+Use only `Read`, `Grep`, `Glob`, and `Agent`. Do not write or edit files.
+`Agent` is only for delegating to `ux-advocate` when that subagent is
+registered (see "Using the agent, and working without it"); otherwise run
+every step inline.
+
 ### 1. Ground in evidence
 
-Read the actual artifact: the screen, the flow, the PRD excerpt, the CLI
-report, the journey map, the onboarding copy. Do not invent a flow from a
-one-line description if the real artifact is available — read it first. If no
-artifact exists yet and the request is genuinely about a not-yet-built idea,
-say so explicitly and treat every downstream claim as inferred rather than
-observed.
+Load the actual artifact before analyzing it. If the user gave a path, use
+`Read`. If they named a screen, flow, PRD excerpt, CLI report, journey map,
+or onboarding copy without a path, use `Glob`/`Grep` to locate it, then
+`Read`. If they pasted the artifact in the conversation, use that text. Do
+not invent a flow from a one-line description when the real artifact is
+available. If no artifact exists yet and the request is genuinely about a
+not-yet-built idea, say so explicitly and treat every downstream claim as
+inferred rather than observed.
 
 ### 2. Extract the intents
 
@@ -135,12 +142,14 @@ someone else without their say.
 
 ### 4. Set the confidence-to-response policy
 
-State what happens at low, medium, and high inference confidence. This is not
-a free design choice at the high end — see the trust-posture fence in the
-Pattern library: **high confidence still only proposes, never silently
-acts.** Confidence changes how strongly something is suggested and how much
-friction gates it, never whether the human is asked at all before an
-irreversible or externally visible action happens.
+`Read` [`./references/pattern-library.md`](./references/pattern-library.md)
+before choosing a response. State what happens at low, medium, and high
+inference confidence. This is not a free design choice at the high end —
+the trust-posture fence in that file is non-negotiable: **high confidence
+still only proposes, never silently acts.** Confidence changes how strongly
+something is suggested and how much friction gates it, never whether the
+human is asked at all before an irreversible or externally visible action
+happens.
 
 ### 5. Design the orchestration surface
 
@@ -187,40 +196,11 @@ skip straight there.
 
 ### Illustration: the GitHub App install consent moment
 
-A small worked example, grounded in Coach's actual onboarding flow (see
-`docs/product/prd.md` and `docs/architecture/system-overview.md`): before a
-repository can be scanned, "the Coach GitHub App must also be installed for
-that repository — part of pilot onboarding."
-
-- **Outcome**: the engineer wants a trustworthy signal report on their own
-  work, fast, without granting more access than that requires.
-- **Constraints**: temporal — they are usually doing this right before or
-  right after opening a PR, not as a separate errand; capacity — they will
-  not read a permissions essay, they will skim it in seconds.
-- **Delegation boundary**: they are willing to hand off "read this
-  repository's contents for analysis"; they are not implicitly agreeing to
-  "write to this repository" or "scan every repository I can see." The
-  architecture's own posture agrees: repository-content mutation is
-  "prohibited in v1; explicit developer activation in Next"
-  (`docs/architecture/system-overview.md`).
-- **Implicit signal / privacy cost**: installing the App on one repository
-  could be read as "trust Coach with all my repositories." That inference is
-  wrong and costly if surfaced (it would make an engineer distrust the tool
-  for over-reaching); the install screen should scope its language to the
-  single repository being onboarded, not to the person's account-wide trust.
-- **Confidence-to-response policy**: even at high confidence that the
-  engineer wants read access to more of their repositories (e.g. because
-  their `coach codesignal` runs keep hitting a second repo they don't have
-  installed), the correct response is to propose "install Coach on this
-  repository too," never to broaden scope silently.
-- **Agency risks found**: A1 (Major) coherence break — the architecture's
-  "system-owned, non-blocking advisory feedback" posture
-  (`docs/architecture/system-overview.md`) is stated in docs but never
-  restated at the point where the first report appears, so a first-time user
-  could predictably misread an advisory finding as a hard gate; A2 (Minor)
-  hidden reasoning — the install screen does not say why Contents-API read
-  access is needed rather than a broader scope, though the granted scope
-  itself is still stated correctly.
+A Coach-shaped worked example of this procedure is in
+[`./references/github-app-install.md`](./references/github-app-install.md).
+`Read` it only when a concrete example would help, or when the artifact under
+review is that install/consent flow. Do not treat it as the artifact unless
+the user asked to review it.
 
 ## Output contract
 
@@ -228,12 +208,10 @@ Respond with a two-to-three sentence verdict naming the sharpest finding —
 the single agency risk or intent gap most worth the reader's attention — then
 these sections, in this order:
 
-1. **Intent map** — outcome, constraints (temporal and capacity called out
-   explicitly), and delegation boundary, using the schema in "Editable Intent
-   + Constraint Object" below.
-2. **Interaction model** — the explicit and implicit signals identified, each
-   implicit signal paired with its privacy cost, and the confidence-to-response
-   policy at low/medium/high confidence.
+1. **Intent map** — the filled `intent:` block from the schema below
+   (outcome, constraints, delegation boundary).
+2. **Interaction model** — the filled `interaction:` block from the schema
+   below (signals with privacy costs, confidence-to-response policy).
 3. **Orchestration surface** — what the human can see, steer, pause, or
    cancel while the system or an agent acts on their behalf.
 4. **Agency risks** — every failure mode from the adversarial pass with a
@@ -252,59 +230,17 @@ these sections, in this order:
 
 ## Pattern library
 
-Reusable interaction patterns for carrying intent across a handoff without
-losing it:
-
-- **Progressive disclosure of reasoning** — show the one-line "why" for a
-  suggestion up front, with the full inference chain available on demand,
-  rather than either hiding it entirely or forcing the user through it
-  unasked.
-- **Propose-and-confirm** — the system states what it is about to do and
-  waits for an explicit go-ahead before doing it, especially for anything
-  hard to reverse.
-- **Confidence-tiered friction** — the amount of confirmation required scales
-  with how consequential and how reversible the action is, not with how
-  confident the system is that it guessed right.
-- **Visible delegation boundary** — the UI states, in the user's language,
-  what has been handed off and what has not (e.g. "Coach reads this
-  repository's diffs; it does not open PRs or push commits").
-- **Scoped consent** — a permission or install grant is described and scoped
-  to the specific artifact it applies to (one repository, one job), not
-  phrased so broadly that it reads as blanket trust.
-
-### Trust-posture fence (this repo's override — non-negotiable)
-
-Where a pattern above, or any pattern brought in from elsewhere, conflicts
-with this product's stated trust posture, **the trust posture wins.** This
-skill does not infer architecture policy from a screen; it reads the posture
-that has already been decided and designs within it. Concretely, for this
-repository (`docs/architecture/system-overview.md`,
-`docs/product/prd.md`):
-
-- **High confidence still only proposes.** Never let a design "just do it"
-  once confidence crosses some threshold. The source method this skill is
-  built from allowed a generic "at high confidence, just do it" default; this
-  skill deliberately replaces that default with propose-and-confirm at every
-  confidence level, because this product's posture is "fail open for
-  advisory developer flow but fail closed for credentials and mutation" —
-  and an unreviewed high-confidence auto-action on someone else's repository
-  is exactly a mutation-shaped risk. Treat that replacement as a hard
-  override of the source pattern, not a case-by-case judgment call.
-- **No silent mutation.** Repository-content mutation is out of scope for
-  designs reviewed under this skill unless the artifact under review already
-  documents "explicit developer activation" for it; do not design a flow
-  that mutates without a human-visible, human-triggered step.
-- **Coverage honesty over anticipatory automation.** An absent signal, an
-  unanalyzed case, or a low-confidence guess must be represented as absence
-  or uncertainty, never smoothed over by inventing a plausible-looking
-  automated action to fill the gap.
+`Read` [`./references/pattern-library.md`](./references/pattern-library.md)
+before Procedure step 4 and when recommending a handoff pattern. That file
+holds the reusable patterns and this repo's trust-posture fence.
 
 ## Editable Intent + Constraint Object
 
-Use this as the literal schema for the "Intent map" output section. It is
-meant to be copied, filled in, and kept as a living artifact the human can
-edit as their understanding of their own intent evolves — it is not a
-one-time inference to be thrown away after this report.
+Copy, fill, and keep this YAML as a living artifact the human can edit as
+their understanding of their own intent evolves — it is not a one-time
+inference to throw away after this report. Emit the `intent:` key as
+**Intent map** and the `interaction:` key as **Interaction model**. Do not
+merge or duplicate the two keys.
 
 ```yaml
 intent:
@@ -316,6 +252,7 @@ intent:
   delegation_boundary:
     keeps_deciding: []
     willing_to_hand_off: []
+interaction:
   confidence_policy:
     low: "<response at low confidence>"
     medium: "<response at medium confidence>"
@@ -336,12 +273,11 @@ got:
   pairing: the human can push back on a finding, ask a follow-up, redirect
   the analysis toward a different screen mid-review, or ask "what about
   this constraint" and get an updated intent map in the same conversation.
-- **As the `ux-advocate` agent** (a separate, single-shot subagent — see the
-  epic's other task, not part of this skill's own definition), when it is
-  registered in the current environment, the analysis is spawned once,
-  returns one report, and cannot be paired with turn-by-turn. It does not
-  have the multi-turn capability the main-thread path has, and this document
-  never claims otherwise.
+- **As the `ux-advocate` agent** (a separate, single-shot subagent, not
+  defined by this skill), when it is registered in the current environment,
+  the analysis is spawned once, returns one report, and cannot be paired
+  with turn-by-turn. It does not have the multi-turn capability the
+  main-thread path has, and this document never claims otherwise.
 
 If `ux-advocate` is available as a registered subagent in this environment
 (for example, a `.claude/agents/ux-advocate.md` or equivalent definition
