@@ -16,6 +16,11 @@ function agentFile(name: string, body: string): string {
   return `---\nname: ${name}\ndescription: test agent\n---\n${body}`
 }
 
+async function loadPluginFactory() {
+  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
+  return pluginModule.default
+}
+
 test("agent key order is deterministic regardless of fs.readdir order", async () => {
   const { base, agentsDir } = await makeAgentsDir()
   await fs.writeFile(path.join(agentsDir, "b-agent.md"), agentFile("b-agent", "B"))
@@ -34,13 +39,12 @@ test("agent key order is deterministic regardless of fs.readdir order", async ()
     return entries
   }
 
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-    const pluginFactory = pluginModule.default
-    const plugin = await pluginFactory({ directory: base, worktree: "" })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: base, worktree: "" })
 
-    try {
-      const cfg: { agent?: Record<string, { prompt?: string }> } = {}
-      await plugin.config(cfg)
+  try {
+    const cfg: { agent?: Record<string, { prompt?: string }> } = {}
+    await plugin.config(cfg)
 
     const names = Object.keys(cfg.agent ?? {})
     assert.deepStrictEqual(names, ["a-agent", "b-agent", "c-agent"])
@@ -65,8 +69,8 @@ test("maxTurns supports camelCase, snake_case, and kebab-case", async () => {
     "---\nname: kebab\ndescription: d\nmax-turns: 30\n---\nBody",
   )
 
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: base, worktree: "" })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: base, worktree: "" })
 
   const cfg: { agent?: Record<string, { steps?: number }> } = {}
   await plugin.config(cfg)
@@ -78,10 +82,10 @@ test("maxTurns supports camelCase, snake_case, and kebab-case", async () => {
   assert.strictEqual(cfg.agent?.kebab?.steps, 30)
 })
 
-test("loads real .claude/agents/*.md with expected structure", async () => {
+test("loads real .claude/agents/*.md with expected structure", async (t) => {
   const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: repoRoot, worktree: repoRoot })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: repoRoot, worktree: repoRoot })
 
   const cfg: {
     agent?: Record<
@@ -99,6 +103,7 @@ test("loads real .claude/agents/*.md with expected structure", async () => {
     "system-design-expert",
     "task-implementer",
     "task-reviewer",
+    "ux-advocate",
     "workflow-integration-reviewer",
   ])
 
@@ -110,19 +115,23 @@ test("loads real .claude/agents/*.md with expected structure", async () => {
     for (const permKey of ["read", "edit", "glob", "grep", "list", "bash", "todowrite"]) {
       assert.ok(Object.prototype.hasOwnProperty.call(agent.permission!, permKey), `${name}: missing ${permKey} permission`)
     }
-    // 'write' is not modeled separately; Write tool is covered by the 'edit' permission.
-    assert.strictEqual(agent.permission!.write, undefined, `${name}: write should not be a separate permission key`)
+    assert.strictEqual(
+      agent.permission!.write,
+      undefined,
+      `${name}: write should not be a separate permission key -- the Write tool is covered by 'edit'`,
+    )
   }
 
-  // The git-write jail was removed with the rest of the control apparatus:
-  // "the orchestrator owns git" is prose in the agent prompt, and publish
-  // safety is branch protection plus the required status check.
-  assert.strictEqual(cfg.agent!["task-implementer"]?.permission?.bash, "allow")
-  assert.strictEqual(cfg.agent!["task-implementer"]?.steps, 30)
-  // task-reviewer has no Edit tool, so edit is denied; write is not modeled separately.
-  assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.edit, "deny")
-  assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.write, undefined)
-  assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.bash, "allow")
+  await t.test("task-implementer keeps bash allowed -- git ownership is enforced by prose and branch protection, not tool gating", () => {
+    assert.strictEqual(cfg.agent!["task-implementer"]?.permission?.bash, "allow")
+    assert.strictEqual(cfg.agent!["task-implementer"]?.steps, 30)
+  })
+
+  await t.test("task-reviewer denies edit but keeps bash allowed for its read-only checks", () => {
+    assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.edit, "deny")
+    assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.write, undefined)
+    assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.bash, "allow")
+  })
 })
 
 test("prompt body preserves leading and trailing blank lines", async () => {
@@ -130,8 +139,8 @@ test("prompt body preserves leading and trailing blank lines", async () => {
   const body = "\n\nFirst line.\n\n"
   await fs.writeFile(path.join(agentsDir, "spaces.md"), agentFile("spaces", body))
 
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: base, worktree: "" })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: base, worktree: "" })
 
   const cfg: { agent?: Record<string, { prompt?: string }> } = {}
   await plugin.config(cfg)
@@ -154,8 +163,8 @@ function commandFile(name: string, description: string, body: string): string {
 
 test("loads real .claude/commands/implement-issue.md", async () => {
   const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: repoRoot, worktree: repoRoot })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: repoRoot, worktree: repoRoot })
 
   const cfg: {
     command?: Record<string, { description?: string; template?: string; subtask?: boolean }>
@@ -179,8 +188,8 @@ test("explicit pre-existing command is not overwritten", async () => {
     commandFile("implement-issue", "from claude", "Claude body with task-implementer"),
   )
 
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: base, worktree: "" })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: base, worktree: "" })
 
   const explicit = {
     description: "explicit opencode",
@@ -207,8 +216,8 @@ test("command body preserves leading and trailing blank lines", async () => {
     commandFile("spaces-cmd", "d", body),
   )
 
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: base, worktree: "" })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: base, worktree: "" })
 
   const cfg: { command?: Record<string, { template?: string }> } = {}
   await plugin.config(cfg)
@@ -218,14 +227,10 @@ test("command body preserves leading and trailing blank lines", async () => {
   assert.strictEqual(cfg.command?.["spaces-cmd"]?.template, body)
 })
 
-// Commands are mirrored into OpenCode verbatim as templates, and OpenCode has
-// no Workflow tool -- the loader above maps agents and commands only. A command
-// that delegates work to a workflow without stating what that work is leaves
-// this harness with an instruction it cannot follow and no way to recover.
-test("a command that delegates to a workflow still carries the work inline", async () => {
+test("a command delegating to a Workflow still carries its plan inline, since OpenCode has no Workflow tool to run it", async () => {
   const repoRoot = path.resolve(path.join(import.meta.dirname, "..", ".."))
-  const pluginModule = await import(new URL("./claude-agents.ts", import.meta.url).href)
-  const plugin = await pluginModule.default({ directory: repoRoot, worktree: repoRoot })
+  const pluginFactory = await loadPluginFactory()
+  const plugin = await pluginFactory({ directory: repoRoot, worktree: repoRoot })
 
   const cfg: { command?: Record<string, { template?: string }> } = {}
   await plugin.config(cfg)
@@ -237,8 +242,6 @@ test("a command that delegates to a workflow still carries the work inline", asy
     const template = command.template ?? ""
     if (!/\bWorkflow\b|implement-issue-plan/.test(template)) continue
 
-    // The contract the workflow produces has to be recoverable from the command
-    // itself, or a harness without workflows cannot produce an equivalent plan.
     for (const field of ["dependsOn", "criteriaIds", "acceptanceTest"]) {
       assert.ok(
         template.includes(field),
