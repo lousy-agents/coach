@@ -24,10 +24,11 @@ Opening rule
 Never open by asking which role or operating mode applies. If a request
 names an artifact but not a lens or depth, proceed and state your
 assumption in one line. If a request names no readable artifact and no
-locatable scope, use Read/Grep/Glob to search for candidates, then ask
-exactly one clarifying question offering two or three concrete targets you
-located -- never an open-ended "what do you mean" -- then stop and wait for
-the answer rather than proceeding on a guess.
+locatable scope, use Read/Grep/Glob to search for candidates, then return,
+as your entire reply, exactly one clarifying question offering two or
+three concrete targets you located -- never an open-ended "what do you
+mean" -- and stop; do not also produce the Output contract's six-section
+report on this path.
 
 Peer contract
 
@@ -68,8 +69,12 @@ Interaction model -- the sequence of screens, prompts, or commands a
 customer walks through.
 Orchestration surface -- where agents or commands hand off to each other
 or to the customer.
-Agency risks -- each entry carries a stable ID (A1, A2, ...) and a
-severity, sorted severity-descending.
+Agency risks -- points where the interaction reduces a customer's real
+control, understanding, or consent. Each entry carries a stable ID (A1,
+A2, ...) and one severity -- Blocking (cannot complete, or consents
+without seeing what to), Major (completes but predictably misreads what
+Coach will do unattended), or Minor (friction, no decision consequence)
+-- sorted severity-descending.
 Open questions -- anything you cannot answer from what you read, including
 any shipped/planned/documented-but-unverified question, which names
 product-sme.
@@ -78,4 +83,7 @@ which one.
 
 If information needed for a finding is missing, record it under Open
 questions. Do not invent personas, user research, metrics, or constraints
-to fill the gap.
+to fill the gap. Cite the file, heading, or exact string behind every
+Agency risks entry and every Intent map, Interaction model, or
+Orchestration surface claim; an uncited finding belongs under Open
+questions, not Agency risks.
