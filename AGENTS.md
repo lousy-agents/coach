@@ -23,6 +23,7 @@ The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) currently ex
 - `mutation-hunter` — find TypeScript test-coverage gaps via semantic mutation testing.
 - `rugged-evil-tester` — generate adversarial/negative/chaos tests for TypeScript code.
 - `product-quality-evaluation` — get a candid, evidence-grounded product/release-readiness assessment via the `product-sme` subagent.
+- `designing-for-intent` — review a UX/onboarding/consent artifact for intent map, delegation boundary, and agency risks before implementation. Complementary to the `ux-advocate` roster seat (customer-reading of copy/sequencing), not a wrapper around it.
 - `skill-reviewer` — lint and review Agent Skills `SKILL.md` files across harnesses.
 - `spec-auditor` — adversarially review specs/PRDs/plans before coding.
 - `triaging-pr-reviews` — classify and triage PR review comments, including automated reviewer (e.g. Copilot) suggestions.
@@ -33,7 +34,7 @@ The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) currently ex
 
 Some skills delegate to a named subagent rather than doing the work inline. Each harness defines subagents in its own format:
 
-- `.claude/agents/*.md` — **canonical** Claude Code subagents (YAML frontmatter + markdown body as the system prompt). `task-implementer`/`task-reviewer` back the `implement-issue` command; `product-sme` backs `product-quality-evaluation`. Edit these files when changing agent instructions.
+- `.claude/agents/*.md` — **canonical** Claude Code subagents (YAML frontmatter + markdown body as the system prompt). `task-implementer`/`task-reviewer` back the `implement-issue` command; `product-sme` backs `product-quality-evaluation`; `ux-advocate` is a roster peer for customer-facing journey reading and does not back `designing-for-intent`. Edit these files when changing agent instructions.
 - OpenCode — no separate agent/command body mirrors. `.opencode/plugin/claude-agents.ts` loads `.claude/agents/*.md` and `.claude/commands/*.md` at config time (agents: Claude `tools` → OpenCode `permission`, `maxTurns` → `steps`, `mode: subagent`; commands: frontmatter `description` + body as `template`). Explicit entries in `opencode.json` / `.opencode/agents/` / `.opencode/command(s)/` win over the loader. `.opencode/plugin/implement-issue-gates.ts` mirrors the two review-loop hooks: `task` → `task-implementer` rework requires the literal `## Reviewer Findings` heading, and `task` → `task-reviewer` results are soft-gated so the first non-empty line is `PASS` or `FINDINGS`. Restart OpenCode after agent, command, or plugin changes.
 - `.codex/agents/*.toml` — Codex custom subagents (`name`, `description`, `sandbox_mode`, `developer_instructions`). Codex cannot import Claude markdown, so instruction text is mirrored from `.claude/agents/` and marked with a one-line sync comment — don't build codegen for a two-file mirror.
 - `.agents/skills/*/agents/<harness>.yaml` — optional, separate from subagent definitions: a per-harness "interface" declaration (e.g. `display_name`/`default_prompt`) for how a skill surfaces in that harness's UI. Only add one if the harness actually reads it — Claude Code has no such mechanism today.

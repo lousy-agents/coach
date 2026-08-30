@@ -2,7 +2,7 @@
 name: designing-for-intent
 description: Advocate for the user's intent map — desired outcome, constraints, and delegation boundary — across a journey, especially onboarding and consent moments, rather than for the screen or user experience sitting in front of you. Use to review a UX flow, agentic handoff point, or delegation-boundary decision for agency risks and articulation barriers before implementation begins. Not for product-quality verdicts or system design.
 argument-hint: "Artifact to analyze (screen, flow, PRD excerpt, onboarding/consent step, CLI report); optional depth mode (strategic/tactical) — inferred if omitted"
-allowed-tools: Read, Grep, Glob, Agent
+allowed-tools: Read, Grep, Glob
 ---
 
 # Designing for Intent
@@ -81,13 +81,17 @@ This skill never writes code and never proposes metrics. Hand off instead:
   platform-foundation questions raised by a design (e.g. "should this
   delegation boundary be enforced server-side or client-side"). This skill
   names the question; `system-design-expert` answers the architecture.
+- **`ux-advocate`** — roster peer for how a journey, CLI copy, or consent
+  moment *reads* from outside the repo (sequencing, messaging, encounter).
+  Complementary, not a substitute: this skill does not spawn that seat, and
+  that seat does not run this method. Hand copy/sequencing/legibility
+  questions to it; keep the intent-map audit here.
 
 ## Procedure
 
-Use only `Read`, `Grep`, `Glob`, and `Agent`. Do not write or edit files.
-`Agent` is only for delegating to `ux-advocate` when that subagent is
-registered (see "Using the agent, and working without it"); otherwise run
-every step inline.
+Use only `Read`, `Grep`, and `Glob`. Do not write or edit files. Run every
+step inline in this conversation. Do not delegate this analysis to
+`ux-advocate` or any other subagent.
 
 ### 1. Ground in evidence
 
@@ -266,30 +270,22 @@ interaction:
 
 ## Using the agent, and working without it
 
-This skill can be run two ways, and the reader must be told which one they
-got:
+This skill is the method. Always run the procedure inline in the current
+conversation and still produce the complete output contract: the
+two-to-three sentence verdict followed by Intent map, Interaction model,
+Orchestration surface, Agency risks, Open questions, and Out of scope.
 
-- **In the main conversation thread**, this skill supports multi-turn
-  pairing: the human can push back on a finding, ask a follow-up, redirect
-  the analysis toward a different screen mid-review, or ask "what about
-  this constraint" and get an updated intent map in the same conversation.
-- **As the `ux-advocate` agent** (a separate, single-shot subagent, not
-  defined by this skill), when it is registered in the current environment,
-  the analysis is spawned once, returns one report, and cannot be paired
-  with turn-by-turn. It does not have the multi-turn capability the
-  main-thread path has, and this document never claims otherwise.
+`ux-advocate` is a complementary roster seat, not a single-shot of this
+analysis. Do not spawn it as a substitute.
 
-If `ux-advocate` is available as a registered subagent in this environment
-(for example, a `.claude/agents/ux-advocate.md` or equivalent definition
-exists), it is reasonable to delegate to it via the Agent tool for a
-single-shot version of this analysis, and to say so plainly when doing so.
+- **This skill** fills the living intent/constraint YAML, runs the nine-mode
+  adversarial pass, and sets the confidence-to-response policy. It supports
+  multi-turn pairing in the main thread.
+- **`ux-advocate`** reads how a customer encounters Coach (copy, sequencing,
+  consent language, multi-actor journeys) as a peer to `product-sme`. It
+  does not run this method and does not fill this schema.
 
-If `ux-advocate` is **not** registered in this environment — for example, in
-a different project, or a harness where the agent mirror was never
-installed — do not tell the reader to invoke it. Instead, run the full
-procedure above yourself, inline, in the current conversation, and still
-produce the complete output contract:
-the two-to-three sentence verdict followed by Intent map, Interaction model,
-Orchestration surface, Agency risks, Open questions, and Out of scope. The
-absence of the agent changes who runs the procedure; it never changes what
-the reader receives.
+If part of the request is copy, sequencing, or how an encounter *reads*,
+name `ux-advocate` under Out of scope and still complete this method for
+the intent/agency half. If `ux-advocate` is not registered, do not tell
+the reader to invoke it.
