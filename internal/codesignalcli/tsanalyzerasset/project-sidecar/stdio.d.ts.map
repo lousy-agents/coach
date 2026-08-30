@@ -1,0 +1,1 @@
+{"version":3,"file":"stdio.d.ts","sourceRoot":"","sources":["../../src/project-sidecar/stdio.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,QAAQ,EAAE,QAAQ,EAAE,MAAM,aAAa,CAAC;AAEtD;;;;;;;GAOG;AACH,wBAAgB,eAAe,CAAC,KAAK,EAAE,QAAQ,GAAG,OAAO,CAAC,MAAM,CAAC,CAoChE;AAED,oEAAoE;AACpE,wBAAgB,iBAAiB,CAAC,MAAM,EAAE,QAAQ,EAAE,QAAQ,EAAE,OAAO,GAAG,IAAI,CAE3E"}

@@ -76,7 +76,18 @@ run = "go build -o js/semantics/bin/coach-semantics-json ./cmd/semantics-json"
 description = "Build the pinned Node/TypeScript project sidecar binary consumed by pkg/projectmodel (issue #214 Task 3)"
 run = "npm run build:project-sidecar"
 dir = "js/semantics"
-depends = ["js-install"]
+# build:project-sidecar runs `tsc -p tsconfig.json` into the same dist/ that
+# js-build's `npm run build` (also `tsc -p tsconfig.json`) writes to, then
+# rmSync/cpSync's dist/project-sidecar. js-build is an independent sibling in
+# js-ci's DAG with no edge to this task, so without this dependency mise runs
+# them concurrently and the two tsc invocations can interleave writes into
+# the shared dist/ tree -- this task's cpSync can then read a
+# partially-rewritten file, corrupting bin/project-sidecar (and, via
+# ts-analyzer-embed-sync, the checked-in embed). Depending on js-build
+# (which already depends on js-install/backend-build) serializes the two
+# tsc runs. Tradeoff: this also pulls js-install/backend-build/js-build into
+# the projectmodel-sidecar GHA job, which previously only ran js-install.
+depends = ["js-build"]
 
 [tasks.projectmodel-sidecar-acceptance]
 description = "Run the real TS sidecar integration specs (verify already ran the rest of the package)"
@@ -101,7 +112,14 @@ run = [
   "node --test \"dist-test/**/*.test.js\"",
 ]
 dir = "js/semantics"
-depends = ["js-build"]
+# project-sidecar-build is also ts-analyzer-embed-sync's dependency (via
+# ts-analyzer-embed-stale-check, in js-ci's depends alongside this task).
+# mise runs a shared dependency once per invocation and every dependent
+# waits for it, so listing it here forces that rebuild to finish before
+# js-test spawns the sidecar it's currently vendoring into --
+# build-project-sidecar.mjs's --clean/rmSync steps would otherwise race
+# js-test's own sidecar process and delete modules out from under it.
+depends = ["js-build", "project-sidecar-build"]
 
 [tasks.workflow-test]
 description = "Functional tests for .claude/workflows scripts (also the only check that they parse)"
@@ -111,9 +129,29 @@ run = "node --test \".claude/workflows/**/*.test.mjs\""
 description = "Tests for the OpenCode plugin that mirrors .claude/agents and .claude/commands"
 run = "node --test \".opencode/plugin/*.test.ts\""
 
+[tasks.ts-analyzer-embed-sync]
+description = "Regenerate the checked-in TypeScript analyzer embed (internal/codesignalcli/tsanalyzerasset/) from a fresh js/semantics project-sidecar build (coach#325)"
+depends = ["project-sidecar-build"]
+run = "node js/semantics/scripts/sync-ts-analyzer-embed.mjs"
+
+[tasks.ts-analyzer-embed-stale-check]
+description = "Fail if the checked-in TypeScript analyzer embed drifts from a fresh js/semantics build -- the tidy-check pattern applied to internal/codesignalcli/tsanalyzerasset/ instead of go.mod/go.sum"
+depends = ["ts-analyzer-embed-sync"]
+# sync-ts-analyzer-embed.mjs deletes and recreates the whole destination, so
+# a module added to the js/semantics build output lands as an untracked
+# file, not a tracked diff -- `git diff --exit-code` alone (the naive
+# go.mod/go.sum-style check) would miss it silently. `--intent-to-add`
+# stages new paths (without their content) so `git diff` reports them too;
+# it deliberately does not `git add` (which would stage content and could
+# mask this task with a dirty index on a later run).
+run = """
+git add --intent-to-add -- internal/codesignalcli/tsanalyzerasset
+git diff --exit-code -- internal/codesignalcli/tsanalyzerasset
+"""
+
 [tasks.js-ci]
 description = "All JS-side verifications"
-depends = ["js-test", "workflow-test", "opencode-plugin-test"]
+depends = ["js-test", "workflow-test", "opencode-plugin-test", "ts-analyzer-embed-stale-check"]
 
 [tasks.wasm-build]
 description = "Prove pkg/semantics compiles for GOOS=js GOARCH=wasm via the pure-Go gotreesitter engine (no TinyGo)"

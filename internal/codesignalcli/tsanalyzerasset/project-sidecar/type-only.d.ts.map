@@ -1,0 +1,1 @@
+{"version":3,"file":"type-only.d.ts","sourceRoot":"","sources":["../../src/project-sidecar/type-only.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,KAAK,MAAM,yBAAyB,CAAC;AAEjD;;;;;;;;GAQG;AACH,wBAAgB,sBAAsB,CAAC,MAAM,EAAE,KAAK,CAAC,YAAY,GAAG,SAAS,GAAG,OAAO,CAStF;AAED;;;;;GAKG;AACH,wBAAgB,2BAA2B,CAAC,IAAI,EAAE,KAAK,CAAC,iBAAiB,GAAG,OAAO,CAOlF"}
