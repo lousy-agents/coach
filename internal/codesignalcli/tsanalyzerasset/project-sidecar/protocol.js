@@ -1,0 +1,49 @@
+/**
+ * Wire types mirroring internal/projectbridge/protocol.go exactly (field
+ * names, JSON shape, constant values). This is the frozen spec for the
+ * stdin/stdout NDJSON boundary between pkg/projectmodel's Go client
+ * (Task 1, already merged) and this sidecar (Task 2) -- do not rename a
+ * field here without updating the Go side, since the two are not generated
+ * from a shared schema.
+ */
+export const PROTOCOL_VERSION = 1;
+export const OP_ANALYZE_PROJECT = "analyze_project";
+export const KIND_BACKEND_UNAVAILABLE = "backend_unavailable";
+export const KIND_CRASHED = "crashed";
+export const KIND_INTERNAL = "internal";
+export const KIND_CANCELED = "canceled";
+/**
+ * Kind vocabulary for ImportEdgeFact.kind, stable wire values other code
+ * matches on (issue #214):
+ *  - "import": a value-level `import ... from "spec"` declaration.
+ *  - "reexport": a value-level `export ... from "spec"` declaration
+ *    (`export * from`, `export { x } from`).
+ *  - "type_only": an `import type ...` declaration, or an
+ *    `export type ... from`/`export ... from` with isTypeOnly set.
+ *  - "commonjs_require": a `require("spec")` call.
+ *  - "dynamic_import": an `import("spec")` call expression.
+ */
+export const KIND_IMPORT = "import";
+export const KIND_REEXPORT = "reexport";
+export const KIND_TYPE_ONLY = "type_only";
+export const KIND_COMMONJS_REQUIRE = "commonjs_require";
+export const KIND_DYNAMIC_IMPORT = "dynamic_import";
+/**
+ * Resolution vocabulary for ImportEdgeFact.resolution, paired with the `to`
+ * field's stable-ID convention:
+ *  - "snapshot": resolved to a file present in the request's snapshot;
+ *    `to` is `file:<repository-relative path>`.
+ *  - "external": a non-relative specifier that did not resolve to any
+ *    snapshot file (a real external package); `to` is `external:<specifier>`.
+ *  - "unresolved": a relative or aliased specifier that should have
+ *    resolved within the snapshot but did not (e.g. a broken import, or a
+ *    file genuinely missing from the request); `to` is
+ *    `unresolved:<specifier>`.
+ */
+export const RESOLUTION_SNAPSHOT = "snapshot";
+export const RESOLUTION_EXTERNAL = "external";
+export const RESOLUTION_UNRESOLVED = "unresolved";
+export const KIND_POSSIBLE_CALL_REACHABILITY = "possible_call_reachability";
+/** Coverage.phase for every analyze_project response this sidecar produces. */
+export const SIDECAR_PHASE = "ts_project_sidecar";
+//# sourceMappingURL=protocol.js.map

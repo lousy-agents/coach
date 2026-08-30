@@ -1,0 +1,1 @@
+{"version":3,"file":"canonical.d.ts","sourceRoot":"","sources":["../../src/project-sidecar/canonical.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,UAAU,EAAE,cAAc,EAAE,MAAM,eAAe,CAAC;AAEhE;;;;;GAKG;AACH,wBAAgB,iBAAiB,CAAC,KAAK,EAAE,SAAS,cAAc,EAAE,GAAG,cAAc,EAAE,CASpF;AAED,wBAAgB,uBAAuB,CAAC,WAAW,EAAE,SAAS,UAAU,EAAE,GAAG,UAAU,EAAE,CAIxF"}
