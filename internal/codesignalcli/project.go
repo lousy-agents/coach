@@ -27,6 +27,16 @@ const (
 	// maxProjectConfigLayerPrefixes bounds the sorted prefix-overlap scan so a
 	// hostile but still ≤1 MiB config cannot force quadratic validation CPU.
 	maxProjectConfigLayerPrefixes = 4096
+	// maxProjectConfigRoots bounds the declared roots list. Unlike layer
+	// prefixes (a pure in-process string-comparison budget), each declared
+	// root can drive up to three git child-process spawns in
+	// checkProjectShape's non-root package.json probe
+	// (project_readiness.go), so this budget must stay small enough that
+	// even the worst case (no package.json under any root) completes in a
+	// few seconds rather than fanning out into tens of thousands of git
+	// invocations from a config that is still well under
+	// maxProjectConfigBytes.
+	maxProjectConfigRoots = 256
 )
 
 // ProjectConfigError signals a --project-config value that is missing,
@@ -48,6 +58,19 @@ type ProjectBackendUnavailableError struct {
 
 func (e *ProjectBackendUnavailableError) Error() string { return e.Message }
 
+// gitOperationalBoundErrorKind distinguishes which of runGitBytesBoundedWith's
+// own bounds tripped, so a caller can classify a size-budget failure
+// (customer-controlled content) differently from a timeout or stderr-budget
+// failure (a resource/environment condition, not content the config author
+// can shrink by hand).
+type gitOperationalBoundErrorKind int
+
+const (
+	gitOperationalBoundTimeout gitOperationalBoundErrorKind = iota
+	gitOperationalBoundStdout
+	gitOperationalBoundStderr
+)
+
 // gitOperationalBoundError marks a runGitBytesBoundedWith failure that comes
 // from our own timeout/output-budget enforcement rather than from git's
 // stderr. Its message is already complete and safe to surface verbatim to a
@@ -55,6 +78,7 @@ func (e *ProjectBackendUnavailableError) Error() string { return e.Message }
 // stderr.
 type gitOperationalBoundError struct {
 	message string
+	kind    gitOperationalBoundErrorKind
 }
 
 func (e *gitOperationalBoundError) Error() string { return e.message }
@@ -203,13 +227,13 @@ func runGitBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args 
 		return nil, stderrRes.err
 	}
 	if int64(len(stdoutRes.data)) > maxStdout {
-		return nil, &gitOperationalBoundError{message: fmt.Sprintf("git stdout exceeded %d-byte budget", maxStdout)}
+		return nil, &gitOperationalBoundError{kind: gitOperationalBoundStdout, message: fmt.Sprintf("git stdout exceeded %d-byte budget", maxStdout)}
 	}
 	if int64(len(stderrRes.data)) > maxStderr {
-		return nil, &gitOperationalBoundError{message: fmt.Sprintf("git stderr exceeded %d-byte budget", maxStderr)}
+		return nil, &gitOperationalBoundError{kind: gitOperationalBoundStderr, message: fmt.Sprintf("git stderr exceeded %d-byte budget", maxStderr)}
 	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return nil, &gitOperationalBoundError{message: fmt.Sprintf("git execution timed out after %s", timeout)}
+		return nil, &gitOperationalBoundError{kind: gitOperationalBoundTimeout, message: fmt.Sprintf("git execution timed out after %s", timeout)}
 	}
 	if waitErr != nil {
 		if len(stderrRes.data) > 0 {
@@ -239,29 +263,67 @@ func validateProjectConfigPath(repoPath string) error {
 }
 
 func validateProjectConfigJSON(data []byte) error {
+	_, err := parseProjectConfig(data)
+	return err
+}
+
+// parseProjectConfig performs validateProjectConfigJSON's full decode and
+// schema validation, additionally returning the decoded projectConfig. It
+// exists so a caller that needs the decoded value (checkPolicy, via
+// loadProjectConfigForReadiness) never has to run a second, redundant decode
+// of bytes validateProjectConfigJSON already accepted.
+func parseProjectConfig(data []byte) (projectConfig, error) {
+	config, err := decodeProjectConfig(data)
+	if err != nil {
+		return projectConfig{}, err
+	}
+	if err := validateProjectConfigRoots(config.Roots); err != nil {
+		return projectConfig{}, err
+	}
+	seenLayerNames, err := validateProjectConfigLayers(config.Layers)
+	if err != nil {
+		return projectConfig{}, err
+	}
+	if err := validateProjectConfigForbiddenImports(config.ForbiddenImports, seenLayerNames); err != nil {
+		return projectConfig{}, err
+	}
+	if err := validateProjectConfigCrossFields(config, seenLayerNames); err != nil {
+		return projectConfig{}, err
+	}
+	return config, nil
+}
+
+func decodeProjectConfig(data []byte) (projectConfig, error) {
 	if int64(len(data)) > maxProjectConfigBytes {
-		return fmt.Errorf("document exceeds %d-byte size budget", maxProjectConfigBytes)
+		return projectConfig{}, fmt.Errorf("document exceeds %d-byte size budget", maxProjectConfigBytes)
 	}
 	if !json.Valid(data) {
-		return fmt.Errorf("document is not valid JSON")
+		return projectConfig{}, fmt.Errorf("document is not valid JSON")
 	}
 	if err := rejectDuplicateJSONKeys(data); err != nil {
-		return err
+		return projectConfig{}, err
 	}
 
 	var config projectConfig
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&config); err != nil {
-		return fmt.Errorf("schema decode failed: %s", err)
+		return projectConfig{}, fmt.Errorf("schema decode failed: %s", err)
 	}
 	if config.SchemaVersion != "1" {
-		return fmt.Errorf("schema_version must be \"1\"")
+		return projectConfig{}, fmt.Errorf("schema_version must be \"1\"")
 	}
-	if len(config.Roots) == 0 {
+	return config, nil
+}
+
+func validateProjectConfigRoots(roots []string) error {
+	if len(roots) == 0 {
 		return fmt.Errorf("roots must contain at least one repository-relative directory")
 	}
-	for _, root := range config.Roots {
+	if len(roots) > maxProjectConfigRoots {
+		return fmt.Errorf("roots exceed budget of %d entries", maxProjectConfigRoots)
+	}
+	for _, root := range roots {
 		if err := validateProjectConfigDirectory(root); err != nil {
 			return fmt.Errorf("root %q: %s", root, err)
 		}
@@ -271,39 +333,48 @@ func validateProjectConfigJSON(data []byte) error {
 	// distinct configured roots. Exact duplicate
 	// identities remain invalid. Layer prefixes below stay non-overlapping
 	// because they partition policy membership, not discovery roots.
-	if hasDuplicatePaths(config.Roots) {
+	if hasDuplicatePaths(roots) {
 		return fmt.Errorf("roots must be unique")
 	}
+	return nil
+}
 
-	seenLayerNames := make(map[string]struct{}, len(config.Layers))
+// validateProjectConfigLayers returns the declared layer names so
+// validateProjectConfigForbiddenImports and validateProjectConfigCrossFields
+// can check their own layer references against it.
+func validateProjectConfigLayers(layers []projectConfigLayer) (map[string]struct{}, error) {
+	seenLayerNames := make(map[string]struct{}, len(layers))
 	var allPrefixes []string
-	for _, layer := range config.Layers {
+	for _, layer := range layers {
 		if layer.Name == "" {
-			return fmt.Errorf("layer name must be non-empty")
+			return nil, fmt.Errorf("layer name must be non-empty")
 		}
 		if _, exists := seenLayerNames[layer.Name]; exists {
-			return fmt.Errorf("layer names must be unique")
+			return nil, fmt.Errorf("layer names must be unique")
 		}
 		seenLayerNames[layer.Name] = struct{}{}
 		if len(layer.Prefixes) == 0 {
-			return fmt.Errorf("layer %q must contain at least one prefix", layer.Name)
+			return nil, fmt.Errorf("layer %q must contain at least one prefix", layer.Name)
 		}
 		for _, prefix := range layer.Prefixes {
 			if err := validateProjectConfigDirectory(prefix); err != nil {
-				return fmt.Errorf("layer %q prefix %q: %s", layer.Name, prefix, err)
+				return nil, fmt.Errorf("layer %q prefix %q: %s", layer.Name, prefix, err)
 			}
 			allPrefixes = append(allPrefixes, prefix)
 		}
 	}
 	if len(allPrefixes) > maxProjectConfigLayerPrefixes {
-		return fmt.Errorf("layer prefixes exceed budget of %d entries", maxProjectConfigLayerPrefixes)
+		return nil, fmt.Errorf("layer prefixes exceed budget of %d entries", maxProjectConfigLayerPrefixes)
 	}
 	if hasDuplicateOrOverlappingPaths(allPrefixes) {
-		return fmt.Errorf("layer prefixes must be unique and non-overlapping")
+		return nil, fmt.Errorf("layer prefixes must be unique and non-overlapping")
 	}
+	return seenLayerNames, nil
+}
 
-	seenForbidden := make(map[string]struct{}, len(config.ForbiddenImports))
-	for _, forbidden := range config.ForbiddenImports {
+func validateProjectConfigForbiddenImports(forbiddenImports []projectForbiddenImport, seenLayerNames map[string]struct{}) error {
+	seenForbidden := make(map[string]struct{}, len(forbiddenImports))
+	for _, forbidden := range forbiddenImports {
 		if forbidden.From == "" || forbidden.To == "" {
 			return fmt.Errorf("forbidden_imports entries require non-empty from and to")
 		}
@@ -324,6 +395,10 @@ func validateProjectConfigJSON(data []byte) error {
 		}
 		seenForbidden[key] = struct{}{}
 	}
+	return nil
+}
+
+func validateProjectConfigCrossFields(config projectConfig, seenLayerNames map[string]struct{}) error {
 	if config.SourceSinkPack != "" && config.SourceSinkPack != "builtin-v1" {
 		return fmt.Errorf("source_sink_pack must be \"builtin-v1\" when supplied")
 	}
@@ -333,6 +408,45 @@ func validateProjectConfigJSON(data []byte) error {
 		}
 	}
 	return nil
+}
+
+// loadProjectConfigForReadiness reads and validates repoPath at revision
+// like LoadProjectConfig, but keeps a git-read failure distinct from a
+// content/schema rejection instead of collapsing both into
+// *ProjectConfigError: checkPolicy must report the former as an
+// *OperationalError (exit 1, fail closed) and only the latter as the
+// policy_invalid gap. It returns the decoded projectConfig directly so
+// checkPolicy needs no second decode of the same bytes.
+//
+// A stdout-size-budget failure is deliberately classified as content
+// rejection (policy_invalid, exit 0) rather than operational (exit 1),
+// diverging from LoadProjectConfig's projectConfigGitError, which reports
+// every *gitOperationalBoundError -- including this same size-budget case --
+// as project_config_invalid at exit 2. The committed policy file's size is
+// something its author controls and can fix, unlike a corrupt object store
+// or a timed-out git process, so --check-project's read-only, actionable-gap
+// contract treats it as a gap rather than an environment failure. A timeout
+// or stderr-budget failure still reports *OperationalError: those indicate a
+// resource/environment condition, not a defect in the file's content.
+func loadProjectConfigForReadiness(dir, revision, repoPath string) (projectConfig, error) {
+	if err := validateProjectConfigPath(repoPath); err != nil {
+		return projectConfig{}, projectConfigError(repoPath, revision, err.Error())
+	}
+
+	data, err := runProjectConfigGit(dir, "show", revision+":"+repoPath)
+	if err != nil {
+		var boundErr *gitOperationalBoundError
+		if errors.As(err, &boundErr) && boundErr.kind == gitOperationalBoundStdout {
+			return projectConfig{}, projectConfigError(repoPath, revision, fmt.Sprintf("committed content exceeds the %d-byte size budget: %s", maxProjectConfigBytes, err))
+		}
+		return projectConfig{}, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: --project-config %q could not be read at revision %q: %s", repoPath, revision, err)}
+	}
+
+	config, err := parseProjectConfig(data)
+	if err != nil {
+		return projectConfig{}, projectConfigError(repoPath, revision, err.Error())
+	}
+	return config, nil
 }
 
 func validateProjectConfigDirectory(value string) error {
