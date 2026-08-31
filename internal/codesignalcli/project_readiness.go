@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-const ReadinessSchemaVersion = "1"
+const (
+	ReadinessSchemaVersion   = "1"
+	defaultProjectConfigPath = "project.json"
+)
 
 // MinimumSupportedNodeMajor is the floor this build of coach requires for
 // TypeScript readiness checks, mirroring js/semantics/package.json's
@@ -155,7 +158,7 @@ type ReadinessResult struct {
 func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, error) {
 	policyPath := configPath
 	if policyPath == "" {
-		policyPath = "project.json"
+		policyPath = defaultProjectConfigPath
 	}
 
 	// checkPolicy must run before checkProjectShape: the latter needs to know
@@ -317,20 +320,23 @@ func checkPackageManager() ReadinessCheck {
 //     revision, unreadable repository, corrupt commit/tree objects) is
 //     unambiguously operational.
 //  2. Resolve repoPath within revision's tree via `git ls-tree --full-tree
-//     --object-only <revision> -- <repoPath>`, which walks tree objects but
-//     never opens blob content. `--full-tree` is required: without it,
-//     ls-tree's pathspec is interpreted relative to dir (the process's cwd),
-//     not the repository root, so a caller running from any subdirectory
-//     would get a false "absent" result for a path that exists at revision
-//     -- the same root-relative semantics loadProjectConfigForReadiness's
+//     <revision> -- <repoPath>`, which walks tree objects but never opens
+//     blob content. `--full-tree` is required: without it, ls-tree's
+//     pathspec is interpreted relative to dir (the process's cwd), not the
+//     repository root, so a caller running from any subdirectory would get
+//     a false "absent" result for a path that exists at revision -- the
+//     same root-relative semantics loadProjectConfigForReadiness's
 //     `git show <rev>:<path>` already has. Dropping `--full-tree` in a
 //     future edit would silently reintroduce that false-negative readiness
-//     verdict. This call distinguishes the two remaining states by its own
-//     exit code, not just its output: it exits 0 with empty stdout when
-//     repoPath is genuinely absent from the tree, but exits non-zero when a
-//     tree object along the path cannot be read (e.g. a corrupt or missing
-//     subtree) -- a case `git rev-parse --verify <rev>:<path>` cannot
-//     distinguish from "absent", and which must fail closed as an
+//     verdict. The entry type must be blob: a tree (or gitlink) at the
+//     same path is not the file the snapshot checks look for, and treating
+//     it as present would let a directory named package.json pass
+//     project_shape. This call distinguishes the remaining states by its
+//     own exit code, not just its output: it exits 0 with empty stdout
+//     when repoPath is genuinely absent from the tree, but exits non-zero
+//     when a tree object along the path cannot be read (e.g. a corrupt or
+//     missing subtree) -- a case `git rev-parse --verify <rev>:<path>`
+//     cannot distinguish from "absent", and which must fail closed as an
 //     operational error rather than silently report the path missing.
 //  3. Confirm the resolved blob object is actually present and readable via
 //     `git cat-file -e <sha>` on the concrete blob SHA. Step 2's `ls-tree`
@@ -343,12 +349,12 @@ func fileExistsAtRevision(dir, revision, repoPath string) (bool, error) {
 		return false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: revision %q could not be verified: %s", revision, err)}
 	}
 
-	output, err := runProjectConfigGit(dir, "ls-tree", "--full-tree", "--object-only", revision, "--", repoPath)
+	output, err := runProjectConfigGit(dir, "ls-tree", "--full-tree", revision, "--", repoPath)
 	if err != nil {
 		return false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be resolved at revision %q: %s", repoPath, revision, err)}
 	}
-	blobSHA := strings.TrimSpace(string(output))
-	if blobSHA == "" {
+	blobSHA, ok := lsTreeBlobSHA(output)
+	if !ok {
 		return false, nil
 	}
 
@@ -356,6 +362,22 @@ func fileExistsAtRevision(dir, revision, repoPath string) (bool, error) {
 		return false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be read at revision %q: %s", repoPath, revision, err)}
 	}
 	return true, nil
+}
+
+func lsTreeBlobSHA(output []byte) (string, bool) {
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" || strings.Contains(trimmed, "\n") {
+		return "", false
+	}
+	meta, _, found := strings.Cut(trimmed, "\t")
+	if !found {
+		return "", false
+	}
+	fields := strings.Fields(meta)
+	if len(fields) != 3 || fields[1] != "blob" {
+		return "", false
+	}
+	return fields[2], true
 }
 
 // ValidateProjectConfigPath validates a --project-config value's shape using

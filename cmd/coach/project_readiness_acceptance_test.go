@@ -278,6 +278,27 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(gapCodes(doc)).To(BeEmpty())
 			Expect(doc.Status).To(Equal("ready"))
 		})
+
+		It("reports the same policy pass when --project-config is omitted, reading the default project.json at HEAD", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+			commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
+			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			explicitStdout, explicitStderr, explicitExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
+			Expect(explicitExit).To(Equal(0), "stderr: %s", explicitStderr)
+			omittedStdout, omittedStderr, omittedExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(omittedExit).To(Equal(0), "stderr: %s", omittedStderr)
+
+			var explicitDoc, omittedDoc readinessResultDoc
+			Expect(json.Unmarshal(explicitStdout, &explicitDoc)).To(Succeed(), "stdout: %s", explicitStdout)
+			Expect(json.Unmarshal(omittedStdout, &omittedDoc)).To(Succeed(), "stdout: %s", omittedStdout)
+			Expect(omittedDoc).To(Equal(explicitDoc))
+			Expect(omittedDoc.Checks.Policy.State).To(Equal("pass"))
+			Expect(omittedDoc.Status).To(Equal("ready"))
+		})
 	})
 
 	When("coach is invoked from a committed subdirectory of the repository rather than the repository root", func() {
@@ -384,6 +405,46 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(text).To(ContainSubstring("Warning: uncommitted or untracked changes exist under paths relevant to this result. "))
 			Expect(text).To(ContainSubstring("These paths are not part of the analyzed revision and had no effect on the checks above:"))
 			Expect(text).To(ContainSubstring("tsconfig.json"))
+		})
+	})
+
+	When("node_modules is gitignored and present only as untracked worktree files", func() {
+		It("does not list those paths as relevant dirty worktree changes", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, ".gitignore", "node_modules\n")
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+			commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
+			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
+			Expect(os.MkdirAll(filepath.Join(repo, "node_modules", "pkg"), 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(repo, "node_modules", "pkg", "index.js"), []byte("module.exports = {}\n"), 0o644)).To(Succeed())
+
+			path := pathWithStubNode("v24.9.9")
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Status).To(Equal("ready"))
+			Expect(doc.DirtyWorktree.RelevantChanges).To(BeFalse())
+			Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(HavePrefix("node_modules")))
+		})
+	})
+
+	When("HEAD has a committed directory named package.json and no package.json blob", func() {
+		It("reports project_shape fail/unsupported_repository_shape rather than treating the tree as a project manifest", func() {
+			repo := newTempGitRepo()
+			Expect(os.Mkdir(filepath.Join(repo, "package.json"), 0o755)).To(Succeed())
+			commitFile(repo, "package.json/inner.txt", "not a manifest\n")
+
+			path := pathWithStubNode("v24.9.9")
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.ProjectShape.State).To(Equal("fail"))
+			Expect(doc.Checks.ProjectShape.Code).To(Equal("unsupported_repository_shape"))
+			Expect(doc.Status).To(Equal("outside_support"))
 		})
 	})
 
@@ -581,6 +642,13 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(doc.Warnings[0].FoundMajor).To(Equal(26))
 			Expect(doc.Warnings[0].TestedMajor).To(Equal(24))
 			Expect(doc.Warnings[0].FloorMajor).To(Equal(24))
+
+			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
+			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
+			text := string(textStdout)
+			Expect(text).To(ContainSubstring("status: ready_with_limits"))
+			Expect(text).To(ContainSubstring("node: pass (node_untested) version=v26.0.0"))
+			Expect(text).To(ContainSubstring("node_untested (found_major=26 tested_major=24 floor_major=24)"))
 		})
 	})
 

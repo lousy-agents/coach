@@ -1,8 +1,12 @@
 package codesignalcli
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -27,6 +31,171 @@ func TestCheckProjectShapeIgnoresRootsWhenPolicyNotPassed(t *testing.T) {
 	if got.Code != GapUnsupportedRepositoryShape {
 		t.Fatalf("Code = %q, want %q", got.Code, GapUnsupportedRepositoryShape)
 	}
+}
+
+func TestFileExistsAtRevisionIgnoresTreeEntries(t *testing.T) {
+	repo := newTempGitRepoT(t)
+	if err := os.Mkdir(filepath.Join(repo, "package.json"), 0o755); err != nil {
+		t.Fatalf("mkdir package.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "package.json", "inner"), []byte("not a blob\n"), 0o644); err != nil {
+		t.Fatalf("write inner: %v", err)
+	}
+
+	addCmd := exec.Command("git", "add", "package.json")
+	addCmd.Dir = repo
+	if output, err := addCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	commitCmd := exec.Command("git", "commit", "-m", "tree named package.json")
+	commitCmd.Dir = repo
+	commitCmd.Env = commitTestEnv
+	if output, err := commitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	revCmd := exec.Command("git", "rev-parse", "HEAD")
+	revCmd.Dir = repo
+	revOut, err := revCmd.Output()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD: %v", err)
+	}
+	revision := strings.TrimSpace(string(revOut))
+
+	exists, err := fileExistsAtRevision(repo, revision, "package.json")
+	if err != nil {
+		t.Fatalf("fileExistsAtRevision returned error: %v", err)
+	}
+	if exists {
+		t.Fatal("a tree named package.json must not count as the package.json blob")
+	}
+}
+
+func TestNodeVersionConstantsMatchDeclaredPins(t *testing.T) {
+	root := coachRepoRoot(t)
+
+	engines := packageJSONEnginesNode(t, filepath.Join(root, "js", "semantics", "package.json"))
+	lockEngines := packageLockRootEnginesNode(t, filepath.Join(root, "js", "semantics", "package-lock.json"))
+	if engines != lockEngines {
+		t.Fatalf("js/semantics package.json engines.node = %q, package-lock.json root engines.node = %q", engines, lockEngines)
+	}
+	floor, err := majorFromEnginesMinimum(engines)
+	if err != nil {
+		t.Fatalf("parse engines %q: %v", engines, err)
+	}
+	if floor != MinimumSupportedNodeMajor {
+		t.Fatalf("MinimumSupportedNodeMajor = %d, js/semantics engines.node %q parses as %d", MinimumSupportedNodeMajor, engines, floor)
+	}
+
+	tested, err := testedNodeMajorFromMise(readFileT(t, filepath.Join(root, "mise.toml")))
+	if err != nil {
+		t.Fatalf("parse mise.toml node pin: %v", err)
+	}
+	if tested != TestedNodeMajor {
+		t.Fatalf("TestedNodeMajor = %d, mise.toml [tools].node parses as %d", TestedNodeMajor, tested)
+	}
+	if MinimumSupportedNodeMajor > TestedNodeMajor {
+		t.Fatalf("MinimumSupportedNodeMajor (%d) must be <= TestedNodeMajor (%d)", MinimumSupportedNodeMajor, TestedNodeMajor)
+	}
+}
+
+func coachRepoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("go.mod not found from test working directory")
+		}
+		dir = parent
+	}
+}
+
+func readFileT(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
+}
+
+func packageJSONEnginesNode(t *testing.T, path string) string {
+	t.Helper()
+	var doc struct {
+		Engines struct {
+			Node string `json:"node"`
+		} `json:"engines"`
+	}
+	if err := json.Unmarshal([]byte(readFileT(t, path)), &doc); err != nil {
+		t.Fatalf("decode %s: %v", path, err)
+	}
+	if doc.Engines.Node == "" {
+		t.Fatalf("%s engines.node is empty", path)
+	}
+	return doc.Engines.Node
+}
+
+func packageLockRootEnginesNode(t *testing.T, path string) string {
+	t.Helper()
+	var doc struct {
+		Packages map[string]struct {
+			Engines struct {
+				Node string `json:"node"`
+			} `json:"engines"`
+		} `json:"packages"`
+	}
+	if err := json.Unmarshal([]byte(readFileT(t, path)), &doc); err != nil {
+		t.Fatalf("decode %s: %v", path, err)
+	}
+	root, ok := doc.Packages[""]
+	if !ok {
+		t.Fatalf("%s missing packages[\"\"]", path)
+	}
+	if root.Engines.Node == "" {
+		t.Fatalf("%s packages[\"\"].engines.node is empty", path)
+	}
+	return root.Engines.Node
+}
+
+func majorFromEnginesMinimum(engines string) (int, error) {
+	trimmed := strings.TrimSpace(engines)
+	if !strings.HasPrefix(trimmed, ">=") {
+		return 0, strconv.ErrSyntax
+	}
+	majorPart, _, _ := strings.Cut(strings.TrimPrefix(trimmed, ">="), ".")
+	return strconv.Atoi(majorPart)
+}
+
+func testedNodeMajorFromMise(contents string) (int, error) {
+	inTools := false
+	for _, line := range strings.Split(contents, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "[tools]" {
+			inTools = true
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") {
+			inTools = false
+			continue
+		}
+		if !inTools {
+			continue
+		}
+		key, value, ok := strings.Cut(trimmed, "=")
+		if !ok || strings.TrimSpace(key) != "node" {
+			continue
+		}
+		raw := strings.Trim(strings.TrimSpace(value), `"`)
+		majorPart, _, _ := strings.Cut(raw, ".")
+		return strconv.Atoi(majorPart)
+	}
+	return 0, strconv.ErrSyntax
 }
 
 // TestAggregateReadinessPrecedence proves the frozen primary-status
