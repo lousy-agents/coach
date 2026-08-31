@@ -58,7 +58,7 @@ const (
 // Gap codes map 1:1 to a ReadinessStatus via statusForGapCode. The
 // package-manager and compiler-version codes are declared here as vocabulary
 // that later work will plug real detection into; this package never
-// produces them itself -- see checkCompiler's doc comment.
+// produces them itself -- see checkCompiler and checkPackageManager.
 const (
 	GapUnsupportedRepositoryShape       = "unsupported_repository_shape"
 	GapNodeMissing                      = "node_missing"
@@ -95,10 +95,11 @@ type ReadinessCheck struct {
 // every field always runs and reports pass/fail/not_checked, regardless of
 // any other field's outcome.
 type ReadinessChecks struct {
-	ProjectShape ReadinessCheck `json:"project_shape"`
-	Policy       ReadinessCheck `json:"policy"`
-	Node         ReadinessCheck `json:"node"`
-	Compiler     ReadinessCheck `json:"compiler"`
+	ProjectShape   ReadinessCheck `json:"project_shape"`
+	Policy         ReadinessCheck `json:"policy"`
+	Node           ReadinessCheck `json:"node"`
+	Compiler       ReadinessCheck `json:"compiler"`
+	PackageManager ReadinessCheck `json:"package_manager"`
 }
 
 type ReadinessGap struct {
@@ -173,12 +174,14 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 	}
 	node := checkNodeReadiness()
 	compiler := checkCompiler()
+	packageManager := checkPackageManager()
 
 	checks := ReadinessChecks{
-		ProjectShape: projectShape,
-		Policy:       policy,
-		Node:         node,
-		Compiler:     compiler,
+		ProjectShape:   projectShape,
+		Policy:         policy,
+		Node:           node,
+		Compiler:       compiler,
+		PackageManager: packageManager,
 	}
 
 	dirty, err := detectRelevantDirtyWorktree(dir, roots, policyPath)
@@ -290,6 +293,15 @@ func checkPolicy(dir, revision, policyPath string) (ReadinessCheck, []string, er
 // seam for a later task to plug in; fabricating a pass or fail here would
 // misreport a check that does not exist yet.
 func checkCompiler() ReadinessCheck {
+	return ReadinessCheck{State: ReadinessNotChecked}
+}
+
+// checkPackageManager always reports not_checked. Real package-manager
+// discovery (the package_manager_ambiguous /
+// package_manager_config_unverifiable gap codes) is a seam for a later
+// task to plug in; fabricating a pass or fail here would misreport a
+// check that does not exist yet.
+func checkPackageManager() ReadinessCheck {
 	return ReadinessCheck{State: ReadinessNotChecked}
 }
 
@@ -511,7 +523,7 @@ func nextActionForGapCode(code string) (string, bool) {
 
 func aggregateReadiness(checks ReadinessChecks, dirtyRelevant bool) (ReadinessStatus, []ReadinessGap, []ReadinessNextAction, []ReadinessWarning) {
 	var codes []string
-	for _, check := range []ReadinessCheck{checks.ProjectShape, checks.Policy, checks.Node, checks.Compiler} {
+	for _, check := range []ReadinessCheck{checks.ProjectShape, checks.Policy, checks.Node, checks.Compiler, checks.PackageManager} {
 		if check.State == ReadinessFail {
 			codes = append(codes, check.Code)
 		}

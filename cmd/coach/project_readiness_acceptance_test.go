@@ -33,10 +33,11 @@ type readinessResultDoc struct {
 		Paths           []string `json:"paths"`
 	} `json:"dirty_worktree"`
 	Checks struct {
-		ProjectShape readinessCheckDoc `json:"project_shape"`
-		Policy       readinessCheckDoc `json:"policy"`
-		Node         readinessCheckDoc `json:"node"`
-		Compiler     readinessCheckDoc `json:"compiler"`
+		ProjectShape   readinessCheckDoc `json:"project_shape"`
+		Policy         readinessCheckDoc `json:"policy"`
+		Node           readinessCheckDoc `json:"node"`
+		Compiler       readinessCheckDoc `json:"compiler"`
+		PackageManager readinessCheckDoc `json:"package_manager"`
 	} `json:"checks"`
 	Gaps []struct {
 		Code string `json:"code"`
@@ -227,6 +228,10 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(doc.Checks.Policy.State).To(Equal("fail"))
 			Expect(doc.Checks.Policy.Code).To(Equal("policy_missing"))
 			Expect(doc.Checks.Compiler.State).To(Equal("not_checked"))
+			Expect(doc.Checks.PackageManager.State).To(Equal("not_checked"))
+			Expect(doc.Checks.PackageManager.Code).To(BeEmpty())
+			Expect(gapCodes(doc)).NotTo(ContainElement("package_manager_ambiguous"))
+			Expect(gapCodes(doc)).NotTo(ContainElement("package_manager_config_unverifiable"))
 			Expect(doc.Checks.Node.State).To(Equal("pass"), "the stubbed, supported Node major must report pass deterministically")
 			Expect(gapCodes(doc)).To(ContainElement("policy_missing"))
 			Expect(nextActionKinds(doc)).To(ContainElement("author_policy"))
@@ -246,6 +251,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(text).To(ContainSubstring("status: needs_policy"))
 			Expect(text).To(ContainSubstring("policy: fail (policy_missing)"))
 			Expect(text).To(ContainSubstring("compiler: not_checked"))
+			Expect(text).To(ContainSubstring("package_manager: not_checked"))
 			Expect(text).To(ContainSubstring("author_policy"))
 		})
 	})
@@ -266,6 +272,9 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
 			Expect(doc.Checks.Policy.State).To(Equal("pass"))
 			Expect(doc.Checks.Policy.Code).To(BeEmpty())
+			Expect(doc.Checks.Compiler.State).To(Equal("not_checked"))
+			Expect(doc.Checks.PackageManager.State).To(Equal("not_checked"))
+			Expect(doc.Checks.PackageManager.Code).To(BeEmpty())
 			Expect(gapCodes(doc)).To(BeEmpty())
 			Expect(doc.Status).To(Equal("ready"))
 		})

@@ -30,6 +30,7 @@ func RenderReadinessText(result *ReadinessResult) string {
 	renderReadinessCheckLine(&b, "policy", result.Checks.Policy)
 	renderReadinessCheckLine(&b, "node", result.Checks.Node)
 	renderReadinessCheckLine(&b, "compiler", result.Checks.Compiler)
+	renderReadinessCheckLine(&b, "package_manager", result.Checks.PackageManager)
 
 	if len(result.Gaps) > 0 {
 		b.WriteString("\nGaps:\n")
