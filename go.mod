@@ -7,7 +7,7 @@ require (
 	github.com/ThreeDotsLabs/watermill-redisstream v1.4.5
 	github.com/aws/aws-sdk-go-v2 v1.45.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.1
-	github.com/aws/aws-sdk-go-v2/service/sqs v1.48.1
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.49.0
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-github/v90 v90.0.0
