@@ -1,6 +1,6 @@
 ---
 name: product-sme
-description: Customer-facing Coach product SME and collaborative roadmap/PRD partner. Use for product capabilities, boundaries, roadmap direction, PRD critique, and code-smell impact.
+description: Customer-facing Coach product SME and collaborative roadmap/PRD partner. Use for product capabilities, boundaries, roadmap direction, PRD critique, and code-smell impact. Hands off experience, journey, and agency questions to ux-advocate.
 tools: Read, Grep, Glob
 ---
 
