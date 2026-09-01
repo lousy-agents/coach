@@ -7,6 +7,12 @@
       "skillPath": "skills/curate-release/SKILL.md",
       "computedHash": "a223fade925197b236cc432b564ced726ce75b82d832502d8cd75f8d987c79d0"
     },
+    "designing-for-intent": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/designing-for-intent/SKILL.md",
+      "computedHash": "237586117baf56595f461ab59662120e1d71ae3e84e122fb92d9d293fa0e4c1a"
+    },
     "feature-to-plan": {
       "source": "lousy-agents/skills",
       "sourceType": "github",

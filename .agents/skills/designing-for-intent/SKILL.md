@@ -67,25 +67,27 @@ withheld pending clarification.
 This skill never writes code and never proposes metrics. Hand off instead:
 
 - **Implementation work** (turning an approved design into code, wiring an
-  API, editing `pkg/`, `cmd/`, `internal/`, or `js/`) — that is not this
+  API, editing application or library source) — that is not this
   skill's job at any point in the procedure. Hand it to the implementing
-  agent (e.g. the `/implement-issue` flow) once a design decision has
-  actually been made — see Procedure step 8.
-- **`product-sme`** — for release-readiness, adoption risk, or "is this
-  useful/lovable/ready" verdicts. This skill only feeds `product-sme` the
+  agent (e.g. whatever implementation workflow your project uses) once a
+  design decision has actually been made — see Procedure step 8.
+- **The product-strategy peer** — for release-readiness, adoption risk, or
+  "is this useful/lovable/ready" verdicts, including any dedicated go/no-go
+  evaluation flow the host project runs. This skill only feeds that peer the
   evidence question (see Procedure, step 7); it never answers it.
-- **`product-quality-evaluation`** — the skill that delegates to `product-sme`
-  for a customer-centered go/no-go assessment. If the request is "should we
-  ship this," that is `product-quality-evaluation`, not this skill.
-- **`system-design-expert`** — for infrastructure, security model, or
+- **The system-design peer** — for infrastructure, security model, or
   platform-foundation questions raised by a design (e.g. "should this
   delegation boundary be enforced server-side or client-side"). This skill
-  names the question; `system-design-expert` answers the architecture.
-- **`ux-advocate`** — roster peer for how a journey, CLI copy, or consent
-  moment *reads* from outside the repo (sequencing, messaging, encounter).
-  Complementary, not a substitute: this skill does not spawn that seat, and
-  that seat does not run this method. Hand copy/sequencing/legibility
-  questions to it; keep the intent-map audit here.
+  names the question; the system-design peer answers the architecture.
+- **`ux-advocate`** — roster peer for how a journey, screen, CLI, copy, or
+  consent moment *reads* from outside the repo (sequencing, messaging,
+  encounter). Complementary, not a substitute: this skill does not spawn
+  that seat, and that seat does not run this method. Hand
+  copy/sequencing/legibility questions to it; keep the intent-map audit here.
+- **Visual design, layout, affordance, or classic usability-heuristic
+  review** — this skill reads a screen as an encounter (intent, consent,
+  agency). It does not judge whether the screen is pretty or follows a
+  heuristic checklist.
 
 ## Procedure
 
@@ -109,11 +111,13 @@ inferred rather than observed.
 For the artifact under review, name:
 
 - **Outcome** — the verb and the result: what is the person trying to
-  accomplish, stated as an action, not a feature name ("get a trustworthy
-  signal report before I merge," not "use the codesignal command"). If the
-  artifact is too sparse or ambiguous to support this, record it as "not
-  resolvable from the available evidence" rather than guessing a plausible
-  one — the same discipline applied to constraints below.
+  accomplish, stated as an action, not a feature name. Developer-tool
+  shape: "get a trustworthy signal report before I merge," not "use the
+  scan command." Screen/consent shape: "grant this app access to one
+  project," not "click Continue." If the artifact is too sparse or
+  ambiguous to support this, record it as "not resolvable from the
+  available evidence" rather than guessing a plausible one — the same
+  discipline applied to constraints below.
 - **Constraints** — everything that bounds how the outcome can be reached.
   Always check explicitly for:
   - *temporal constraints* — deadlines, "before my meeting," "before CI
@@ -121,10 +125,12 @@ For the artifact under review, name:
   - *capacity constraints* — how much attention, effort, or working memory
     the person actually has right now, not how much the flow assumes they
     have.
-- **Delegation boundary** — what the person keeps deciding themselves (which
-  findings matter, whether to merge) versus what they are willing to hand to
-  the system (running the scan, drafting the report, ranking findings by
-  severity). State the boundary as a line, not a feeling: name the specific
+- **Delegation boundary** — what the person keeps deciding themselves
+  versus what they are willing to hand to the system. Developer-tool
+  shape: keeps deciding which findings matter and whether to merge; hands
+  off running the scan and drafting the report. Screen/consent shape:
+  keeps deciding the scope of access; hands off reading the selected
+  project. State the boundary as a line, not a feeling: name the specific
   decision on each side of it.
 
 ### 3. Find the articulation barrier
@@ -185,26 +191,26 @@ Ask, explicitly: **"What would tell us this worked?"**
 
 Do not answer it. Do not propose metrics, KPIs, or success criteria anywhere
 in this analysis — that is a different seat. Hand the resulting measurement
-question to `product-sme` as-is. Product measurement belongs to
-`product-sme`; if this skill also drafts measures, the pilot ends up with two
-measure sets for one journey, and a journey with two measure sets is a
-journey that gets measured by neither.
+question to the product-strategy peer as-is. Product measurement belongs to
+the product-strategy peer; if this skill also drafts measures, the project
+ends up with two measure sets for one journey, and a journey with two
+measure sets is a journey that gets measured by neither.
 
 ### 8. Hand off
 
-Close by naming the next owner per the map in "Do NOT Use": `product-sme` for
-the evidence question and any release-readiness judgment, `system-design-expert`
-for any architecture or enforcement question the delegation boundary raises,
-and implementation only once a design decision has actually been made — never
-skip straight there.
+Close by naming the next owner per the map in "Do NOT Use": the
+product-strategy peer for the evidence question and any release-readiness
+judgment, the system-design peer for any architecture or enforcement
+question the delegation boundary raises, and implementation only once a
+design decision has actually been made — never skip straight there.
 
-### Illustration: the GitHub App install consent moment
+## Pilot illustration
 
-A Coach-shaped worked example of this procedure is in
+A **pilot** worked example (Coach) of this procedure is in
 [`./references/github-app-install.md`](./references/github-app-install.md).
-`Read` it only when a concrete example would help, or when the artifact under
-review is that install/consent flow. Do not treat it as the artifact unless
-the user asked to review it.
+`Read` it only when a concrete example would help. It is not a procedure
+step, not a runtime dependency of the host project, and not the artifact
+under review unless the user asked to review that install/consent flow.
 
 ## Output contract
 
@@ -226,17 +232,17 @@ these sections, in this order:
    listed in severity-descending order. Omit failure modes with no finding
    rather than padding the list.
 5. **Open questions** — anything that could not be resolved from the
-   available evidence, including the evidence question from Procedure step 7
-   handed to `product-sme` verbatim.
+    available evidence, including the evidence question from Procedure step 7
+    handed to the product-strategy peer verbatim.
 6. **Out of scope** — anything explicitly deferred per the Do NOT Use map
-   (implementation, product-quality verdict, architecture decision), named
-   with its intended owner.
+   (implementation, product-quality verdict, architecture decision, visual
+   design / usability-heuristic review), named with its intended owner.
 
 ## Pattern library
 
 `Read` [`./references/pattern-library.md`](./references/pattern-library.md)
 before Procedure step 4 and when recommending a handoff pattern. That file
-holds the reusable patterns and this repo's trust-posture fence.
+holds the reusable patterns and the trust-posture fence.
 
 ## Editable Intent + Constraint Object
 
@@ -281,9 +287,10 @@ analysis. Do not spawn it as a substitute.
 - **This skill** fills the living intent/constraint YAML, runs the nine-mode
   adversarial pass, and sets the confidence-to-response policy. It supports
   multi-turn pairing in the main thread.
-- **`ux-advocate`** reads how a customer encounters Coach (copy, sequencing,
-  consent language, multi-actor journeys) as a peer to `product-sme`. It
-  does not run this method and does not fill this schema.
+- **`ux-advocate`** reads how a customer encounters the product (copy,
+  sequencing, consent language, screens or CLI, multi-actor journeys) as a
+  peer to the product-strategy peer. It does not run this method and does
+  not fill this schema.
 
 If part of the request is copy, sequencing, or how an encounter *reads*,
 name `ux-advocate` under Out of scope and still complete this method for

@@ -1,0 +1,10 @@
+{
+  "name": "designing-for-intent",
+  "displayName": "Designing for Intent",
+  "description": "Review a UX flow, agentic handoff point, or delegation-boundary decision for agency risks and articulation barriers before implementation — advocating for the user's intent map, not the screen in front of you",
+  "license": "BSD-2-Clause",
+  "repository": "https://github.com/lousy-agents/skills",
+  "homepage": "https://github.com/lousy-agents/skills#readme",
+  "skills": "./",
+  "keywords": ["ux", "intent", "agency", "onboarding", "consent", "delegation", "design-review"]
+}

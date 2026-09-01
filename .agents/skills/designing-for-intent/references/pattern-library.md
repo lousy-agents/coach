@@ -14,36 +14,38 @@ and when recommending a handoff pattern in the report.
 - **Confidence-tiered friction** — the amount of confirmation required scales
   with how consequential and how reversible the action is, not with how
   confident the system is that it guessed right.
-- **Visible delegation boundary** — the UI states, in the user's language,
-  what has been handed off and what has not (e.g. "Coach reads this
-  repository's diffs; it does not open PRs or push commits").
+- **Visible delegation boundary** — the surface states, in the user's
+  language, what has been handed off and what has not (e.g. "this reads the
+  file you selected; it does not send it anywhere else").
 - **Scoped consent** — a permission or install grant is described and scoped
-  to the specific artifact it applies to (one repository, one job), not
-  phrased so broadly that it reads as blanket trust.
+  to the specific artifact it applies to (one repository, one job, one
+  account), not phrased so broadly that it reads as blanket trust.
 
-## Trust-posture fence (this repo's override — non-negotiable)
+## Trust-posture fence (non-negotiable)
 
 Where a pattern above, or any pattern brought in from elsewhere, conflicts
-with this product's stated trust posture, **the trust posture wins.** This
-skill does not infer architecture policy from a screen; it reads the posture
-that has already been decided and designs within it. Concretely, for this
-repository (`docs/architecture/system-overview.md`,
-`docs/product/prd.md`):
+with the host product's stated trust posture, **the trust posture wins.**
+This skill does not infer architecture policy from a screen; it reads the
+posture that has already been decided and designs within it.
+
+Apply these defaults unless the host artifact states a stricter posture:
 
 - **High confidence still only proposes.** Never let a design "just do it"
-  once confidence crosses some threshold. The source method this skill is
-  built from allowed a generic "at high confidence, just do it" default; this
-  skill deliberately replaces that default with propose-and-confirm at every
-  confidence level, because this product's posture is "fail open for
-  advisory developer flow but fail closed for credentials and mutation" —
-  and an unreviewed high-confidence auto-action on someone else's repository
-  is exactly a mutation-shaped risk. Treat that replacement as a hard
-  override of the source pattern, not a case-by-case judgment call.
-- **No silent mutation.** Repository-content mutation is out of scope for
-  designs reviewed under this skill unless the artifact under review already
-  documents "explicit developer activation" for it; do not design a flow
-  that mutates without a human-visible, human-triggered step.
+  once confidence crosses some threshold. Confidence changes how strongly
+  something is suggested and how much friction gates it, never whether the
+  human is asked at all before an irreversible or externally visible action
+  happens.
+- **No silent irreversible action.** Do not design a flow that mutates,
+  grants, sends, or otherwise commits without a human-visible, human-triggered
+  step, unless the artifact under review already documents explicit activation
+  for that step.
 - **Coverage honesty over anticipatory automation.** An absent signal, an
   unanalyzed case, or a low-confidence guess must be represented as absence
   or uncertainty, never smoothed over by inventing a plausible-looking
   automated action to fill the gap.
+
+**When a host project states no trust posture at all**, default to
+propose-and-confirm, no silent irreversible action, and coverage honesty over
+anticipatory automation, and record "no stated trust posture found; defaulting
+to propose-and-confirm" as an Open Question in the report, so a human sees
+the substitution rather than assuming a posture was found and read.
