@@ -49,7 +49,7 @@ var tsAuthoringRootBudgets = projectmodel.GoBudgets{
 // path is acceptable in that text where it would not be in the envelope.
 func runAuthorProjectConfigTypeScript(dir string, f codesignalFlags, stdout, stderr *os.File) int {
 	if !codesignalcli.HasControllingTerminal(os.Stdin) {
-		fmt.Fprintf(stderr, "%s: no controlling terminal is available; refusing to enter guided policy authoring or write a policy config\n", authorTSUsagePrefix)
+		fmt.Fprintf(stderr, "%s: no controlling terminal is available; refusing to enter guided policy authoring or write a policy config. Draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>.\n", authorTSUsagePrefix)
 		return 2
 	}
 	return authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr)
@@ -122,7 +122,16 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 		return 3
 	}
 	if !discovered.Complete {
-		fmt.Fprintf(stderr, "%s: TypeScript root discovery did not complete within its budget; the list below may be partial\n", authorTSUsagePrefix)
+		// A budget-truncated walk must never be presented to the customer
+		// as an authoritative root list: unlike an unavailable snapshot
+		// (exit 3, hard failure), the partial data collected so far is
+		// real, but incomplete input is still not something an approval
+		// gate can safely be built on top of. This mirrors the batch
+		// --suggest-project-config path, which maps the equivalent
+		// DiscoverGoRoots truncation to SuggestDiagIncomplete (exit 2) and
+		// refuses to write, rather than warning and proceeding.
+		fmt.Fprintf(stderr, "%s: TypeScript root discovery did not complete within its budget; refusing to enter guided authoring against a partial root list\n", authorTSUsagePrefix)
+		return 2
 	}
 
 	result := codesignalcli.AuthorProjectConfig(root, stdin, stderr, stdout, discovered, f.output, f.outputSet)
