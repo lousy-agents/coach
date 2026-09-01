@@ -227,6 +227,16 @@ func repositoryRoot(dir string) (string, error) {
 	return resolved, nil
 }
 
+// AuthoringRepositoryRoot is a thin exported wrapper around repositoryRoot,
+// the same pattern ValidateAuthoringOutputPath (project_config_suggestion.go)
+// already uses for validateOutputPath: it lets cmd/coach's guided TypeScript
+// authoring dispatch resolve the repository root that both its --output
+// write confinement and its DiscoverTSRoots snapshot are rooted at, without
+// duplicating repositoryRoot's git-rev-parse-plus-EvalSymlinks logic.
+func AuthoringRepositoryRoot(dir string) (string, error) {
+	return repositoryRoot(dir)
+}
+
 // snapshotBuildTarget preserves the meaning of relative package patterns
 // supplied from a subdirectory while making them point at the HEAD snapshot.
 func snapshotBuildTarget(target, repositoryRoot, invocationDir, snapshotDir string) (string, error) {
