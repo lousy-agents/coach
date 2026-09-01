@@ -368,9 +368,6 @@ type suggestCoverageWire struct {
 	Diagnostics []projectmodel.Diagnostic `json:"diagnostics"`
 }
 
-// suggestCoverageWireFrom renders in as the envelope's stderr wire shape:
-// see suggestCoverageWire's doc comment for the two fields it normalizes.
-// It never mutates in, including a caller-owned DiscoverGoRoots result.
 func suggestCoverageWireFrom(in projectmodel.Coverage) suggestCoverageWire {
 	diagnostics := in.Diagnostics
 	if diagnostics == nil {
@@ -506,13 +503,6 @@ func validateOutputPath(repositoryRootDir, outputPath string) (clean string, err
 	return clean, nil
 }
 
-// ValidateAuthoringOutputPath is a thin exported wrapper around
-// validateOutputPath, letting cmd/coach's guided TypeScript authoring
-// dispatch validate --output's shape and parent confinement before starting
-// the interactive session -- the same "validate output before discovery/
-// interaction" failure precedence issue #220 already applies to the batch
-// --suggest-project-config path -- without duplicating validateOutputPath's
-// logic.
 func ValidateAuthoringOutputPath(repositoryRootDir, outputPath string) (clean string, err error) {
 	return validateOutputPath(repositoryRootDir, outputPath)
 }
@@ -537,13 +527,7 @@ func unwrapPathError(cleanOutput string, err error) error {
 // both because issue #220 puts "target already exists" last in the failure
 // precedence (after root discovery) and because O_EXCL leaves no TOCTOU
 // window: a concurrently created target is never clobbered, and a symlink at
-// the target position is never followed. The guided TypeScript authoring
-// dispatch (cmd/coach's runAuthorProjectConfigTypeScript) layers an
-// os.Lstat preflight check ahead of this call, purely as a fail-fast UX
-// improvement so an --output rejection is reported before an interactive
-// session runs; that preflight is in addition to, not instead of, this
-// O_EXCL open, which remains the sole authority on existence and the sole
-// defense against a target created concurrently between the two checks.
+// the target position is never followed.
 //
 // A failed Write or Close (ENOSPC, EIO, ...) leaves target removed: the
 // O_EXCL create already succeeded, so without this cleanup a truncated file

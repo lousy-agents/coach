@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -79,6 +78,12 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			Expect(exitErr.ExitCode()).To(Equal(2))
 			Expect(stdout.String()).To(BeEmpty(), "no candidate/prompt output must reach stdout when there is no controlling terminal")
 			Expect(stderr.String()).To(ContainSubstring("controlling terminal"), "stderr: %s", stderr.String())
+			// A coding agent without a terminal must be steered toward
+			// drafting the documented schema-1 policy itself and handing it
+			// to a human to review, commit, and rerun -- not toward faking a
+			// PTY and inventing architecture on the human's behalf (AC-POL-3).
+			Expect(stderr.String()).To(ContainSubstring("--project-config"), "stderr must name the non-interactive alternative: %s", stderr.String())
+			Expect(stderr.String()).To(ContainSubstring("review"), "stderr must instruct a human to review the drafted policy: %s", stderr.String())
 
 			// --output is supplied above specifically so this assertion can fail
 			// for the intended reason: without --output, AuthorProjectConfig never
@@ -143,31 +148,32 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 	})
 
 	When("TypeScript root discovery is truncated by its budget before it finishes walking", func() {
-		When("stdin is immediately exhausted so the session cannot block", func() {
-			It("writes the budget-truncation warning to stderr before the root-selection prompt", func() {
-				original := tsAuthoringRootBudgets
-				tsAuthoringRootBudgets = projectmodel.GoBudgets{MaxInputFiles: 1}
-				DeferCleanup(func() { tsAuthoringRootBudgets = original })
+		It("exits 2 with a refusal message before any prompt, never entering the session against a partial root list", func() {
+			original := tsAuthoringRootBudgets
+			tsAuthoringRootBudgets = projectmodel.GoBudgets{MaxInputFiles: 1}
+			DeferCleanup(func() { tsAuthoringRootBudgets = original })
 
-				repo := newTempGitRepo()
-				commitFile(repo, "package.json", "{}\n")
-				commitFile(repo, "tsconfig.json", "{}\n")
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", "{}\n")
+			commitFile(repo, "tsconfig.json", "{}\n")
 
-				stdin, err := os.Open(os.DevNull)
-				Expect(err).NotTo(HaveOccurred())
-				defer stdin.Close()
-				stdout, stderr, _, readStderr := authoringOutputFiles()
-				defer stdout.Close()
-				defer stderr.Close()
+			// stdin is never read: this spec's whole point is that the
+			// session must refuse before it ever tries.
+			stdin, err := os.Open(os.DevNull)
+			Expect(err).NotTo(HaveOccurred())
+			defer stdin.Close()
+			stdout, stderr, readStdout, readStderr := authoringOutputFiles()
+			defer stdout.Close()
+			defer stderr.Close()
 
-				flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
-				authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
 
-				stderrText := readStderr()
-				Expect(stderrText).To(ContainSubstring("TypeScript root discovery did not complete within its budget; the list below may be partial"))
-				Expect(stderrText).To(ContainSubstring("Select the roots to include"))
-				Expect(strings.Index(stderrText, "did not complete within its budget")).To(BeNumerically("<", strings.Index(stderrText, "Select the roots to include")))
-			})
+			Expect(exitCode).To(Equal(2))
+			Expect(readStdout()).To(BeEmpty(), "no prompt output must reach stdout when discovery is refused for being budget-truncated")
+			stderrText := readStderr()
+			Expect(stderrText).To(ContainSubstring("TypeScript root discovery did not complete within its budget"))
+			Expect(stderrText).NotTo(ContainSubstring("Select the roots to include"), "a budget-truncated discovery must never enter the guided-authoring prompt sequence")
 		})
 	})
 
@@ -336,6 +342,47 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 
 			_, statErr := os.Stat(filepath.Join(repo, "project.json"))
 			Expect(os.IsNotExist(statErr)).To(BeTrue(), "no file is written when --output is omitted; the candidate is emitted, not saved")
+		})
+	})
+
+	When("the worktree has modified tracked, untracked, and ignored TypeScript files", func() {
+		It("still discovers only the committed HEAD snapshot, matching a clean-worktree run", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", "{}\n")
+			commitFile(repo, "tsconfig.json", "{}\n")
+
+			runAuthoring := func() (stdout, stderr string, exitCode int) {
+				stdin := authoringStdin("1\n\n\n\napprove\n")
+				defer stdin.Close()
+				stdoutFile, stderrFile, readStdout, readStderr := authoringOutputFiles()
+				defer stdoutFile.Close()
+				defer stderrFile.Close()
+
+				flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
+				exitCode = authorProjectConfigTypeScript(repo, flags, stdin, stdoutFile, stderrFile)
+				return readStdout(), readStderr(), exitCode
+			}
+
+			cleanStdout, cleanStderr, cleanExit := runAuthoring()
+			Expect(cleanExit).To(Equal(0), "stderr: %s", cleanStderr)
+
+			// Modify the tracked tsconfig.json's content (discovery only cares
+			// about a manifest's existence, never its content), add an
+			// untracked tsconfig.json in a new directory (a second root that
+			// must never appear), and add a gitignored directory with its own
+			// tsconfig.json (equally uncommitted, equally invisible).
+			Expect(os.WriteFile(filepath.Join(repo, "tsconfig.json"), []byte(`{"compilerOptions":{}}`), 0o644)).To(Succeed())
+			Expect(os.MkdirAll(filepath.Join(repo, "untracked-app"), 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(repo, "untracked-app", "tsconfig.json"), []byte("{}\n"), 0o644)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("ignored/\n"), 0o644)).To(Succeed())
+			Expect(os.MkdirAll(filepath.Join(repo, "ignored"), 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(repo, "ignored", "tsconfig.json"), []byte("{}\n"), 0o644)).To(Succeed())
+
+			noisyStdout, noisyStderr, noisyExit := runAuthoring()
+			Expect(noisyExit).To(Equal(0), "stderr: %s", noisyStderr)
+
+			Expect(noisyStdout).To(Equal(cleanStdout), "worktree noise must not affect the emitted candidate document")
+			Expect(noisyStderr).To(Equal(cleanStderr), "worktree noise must not affect the discovered-roots transcript")
 		})
 	})
 })

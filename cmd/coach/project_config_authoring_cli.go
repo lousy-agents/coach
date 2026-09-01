@@ -55,6 +55,9 @@ func runAuthorProjectConfigTypeScript(dir string, f codesignalFlags, stdout, std
 	return authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr)
 }
 
+// rejectUnusableAuthoringOutput fails fast on --output shape or an existing
+// target before the session. writeSuggestOutput's O_EXCL remains the sole
+// existence authority against a concurrently created target.
 func rejectUnusableAuthoringOutput(root string, f codesignalFlags) error {
 	if !f.outputSet {
 		return nil
@@ -93,20 +96,6 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 		return 3
 	}
 
-	// --output's shape/parent-confinement, and whether the target already
-	// exists, are both checked here, before any discovery or interactive
-	// prompting begins: a guided-authoring session can take real,
-	// uninterruptible user time (roots, layers, forbidden pairs, required
-	// layer, coverage preview, approval), and only reporting an --output
-	// rejection at the very end would throw all of that away for a typo or
-	// a target that was already there before the session started. This
-	// mirrors issue #220's "validate output before discovery" failure
-	// precedence for the batch --suggest-project-config path. The later
-	// create-only write inside AuthorProjectConfig is still the sole
-	// authority on existence -- its O_EXCL open is what actually prevents a
-	// clobber if the target is created concurrently between this check and
-	// that write -- so this is a fail-fast UX improvement layered on top of,
-	// not a replacement for, that guarantee.
 	if err := rejectUnusableAuthoringOutput(root, f); err != nil {
 		fmt.Fprintf(stderr, "%s: %s\n", authorTSUsagePrefix, err)
 		return 2
@@ -129,27 +118,13 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 		return 3
 	}
 	if diag, unavailable := tsRootDiscoverySnapshotUnavailable(discovered); unavailable {
-		// See tsRootDiscoverySnapshotUnavailable's doc comment for what this
-		// diagnostic can mean. This check runs strictly ahead of the
-		// budget-truncation warning below and, like the Go family's
-		// SuggestDiagSnapshotUnavailable, exits 3 without entering the
-		// session at all.
 		fmt.Fprintf(stderr, "%s: could not read the TypeScript root-discovery snapshot (%s); refusing to enter guided authoring against a partial or empty root list\n", authorTSUsagePrefix, diag.Path)
 		return 3
 	}
 	if !discovered.Complete {
-		// A budget-truncated walk must never be presented to the user as an
-		// authoritative root list -- AuthorProjectConfig has no way to tell
-		// the user's approval was given against a partial picture, so this
-		// warns explicitly rather than silently proceeding.
 		fmt.Fprintf(stderr, "%s: TypeScript root discovery did not complete within its budget; the list below may be partial\n", authorTSUsagePrefix)
 	}
 
-	// The interactive transcript goes to stderr and the approved candidate
-	// (when --output is omitted) goes to stdout: a customer piping stdout to
-	// a file to capture the candidate must still see every prompt on their
-	// terminal, and that captured file must never contain anything but the
-	// candidate document itself.
 	result := codesignalcli.AuthorProjectConfig(root, stdin, stderr, stdout, discovered, f.output, f.outputSet)
 	return reportAuthoringResult(result, stderr)
 }

@@ -363,9 +363,6 @@ func equalForbiddenImports(a, b []projectForbiddenImport) bool {
 	return true
 }
 
-// runAuthoring drives AuthorProjectConfig with a scripted, newline-joined
-// answer sequence and returns both the result and everything written to out,
-// so a test can assert on prompt text as well as the accumulated fields.
 func runAuthoring(discovered projectmodel.TSRootDiscoveryResult, lines ...string) (AuthoringResult, string) {
 	out := &bytes.Buffer{}
 	in := strings.NewReader(strings.Join(lines, "\n") + "\n")

@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-// tsProjectDiscovery is the shared result of walking a TS snapshot for
-// tsconfig.json/package.json files, mirroring goProjectDiscovery's role for
-// DiscoverGoRoots: DiscoverTSRoots builds on it so root/candidate discovery
-// semantics live in one place.
 type tsProjectDiscovery struct {
 	TSConfigDirs map[string]bool
 	PackageDirs  map[string]bool
@@ -136,10 +132,6 @@ func shouldSkipTSDiscoveryDir(p string) bool {
 	return base == "node_modules" || strings.HasPrefix(base, ".")
 }
 
-// rootsAndCandidates returns Roots (every tsconfig.json directory) and
-// Candidates (every package.json directory that does not also hold a
-// tsconfig.json), both deduplicated and sorted with no grouping or
-// architectural labeling -- see TSRootDiscoveryResult.
 func (d *tsProjectDiscovery) rootsAndCandidates() (roots, candidates []string) {
 	roots = mapKeysSorted(d.TSConfigDirs)
 	for dir := range d.PackageDirs {

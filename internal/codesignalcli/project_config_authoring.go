@@ -11,28 +11,15 @@ import (
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-// AuthoringResult accumulates one guided policy-authoring session's answers,
-// in the order they are collected: roots, then layers, then forbidden layer
-// pairs, then the optional required intermediary layer.
 type AuthoringResult struct {
-	// Roots holds the directories the user explicitly selected or typed,
-	// in the order they named them. It is nil, not a copy of a discovered
-	// suggestion, when the user gave no answer -- selection always requires
-	// the user's own input.
+	// Roots is nil, not a copy of a discovered suggestion, when the user
+	// gave no answer -- selection always requires the user's own input.
 	Roots []string
 
-	// Layers holds the named layers the user defined, each with the
-	// prefixes they typed for it, in the order they were entered. It is
-	// nil if the user finished the layer stage without defining any.
 	Layers []projectConfigLayer
 
-	// ForbiddenImports holds the forbidden layer-import pairs the user
-	// defined, in the order they were entered. It is nil if the user
-	// finished that stage without defining any.
 	ForbiddenImports []projectForbiddenImport
 
-	// RequiredLayer names the required intermediary layer the user chose,
-	// or is empty if they left it unset.
 	RequiredLayer string
 
 	// Approved reports whether the user gave the exact approval token at
@@ -104,28 +91,11 @@ type AuthoringResult struct {
 	WriteError error
 }
 
-// AuthorProjectConfig runs the guided project-config authoring prompt
-// sequence over in/out rather than a real terminal, so it is testable
-// without a pty. discovered is supplied by the caller; this function never
-// runs discovery itself. out carries every prompt, explanation, and the
-// coverage preview -- the whole human-facing transcript -- and is kept
-// strictly separate from candidateOut, which receives only the approved
-// candidate document itself when outputSet is false. Callers must bind out
-// to a stream the human can see even when they redirect whatever stream
-// candidateOut is bound to (e.g. out to stderr, candidateOut to stdout):
-// mixing the two into one writer would make a captured candidate document
-// unparseable, and would leave the transcript invisible if that same
-// stream were redirected. dir, outputPath, and outputSet are used only once
-// the user approves the candidate: dir is the repository root the write is
-// confined to, and outputPath/outputSet select between a create-only write
-// (outputSet true) and emitting the candidate document to candidateOut
-// (outputSet false). None of the three plays any part in field collection,
-// the coverage preview, or the approval gate itself.
-//
-// This function only ever suggests roots DiscoverTSRoots already found; it
-// never preselects or infers one on the user's behalf, and it never groups,
-// names, or otherwise proposes an architectural layer boundary -- that
-// collection step belongs to a later stage, not this one.
+// AuthorProjectConfig runs the guided authoring prompts over in/out rather
+// than a real terminal. out is the human-facing transcript; candidateOut
+// receives only the approved document when outputSet is false -- mixing
+// those streams makes a captured candidate unparseable. Collection never
+// preselects roots or infers layers.
 func AuthorProjectConfig(dir string, in io.Reader, out io.Writer, candidateOut io.Writer, discovered projectmodel.TSRootDiscoveryResult, outputPath string, outputSet bool) AuthoringResult {
 	result := collectAuthoringAnswers(in, out, discovered)
 	if !result.Approved {
@@ -242,8 +212,6 @@ func promptForApproval(out io.Writer, reader *bufio.Reader, discovered projectmo
 	return strings.EqualFold(strings.TrimSpace(answer), "approve")
 }
 
-// printCandidateSummary prints every field collected so far, legibly, so the
-// user reviews the complete candidate before being asked to approve it.
 func printCandidateSummary(out io.Writer, roots []string, layers []projectConfigLayer, forbidden []projectForbiddenImport, requiredLayer string) {
 	fmt.Fprintln(out, "Candidate project config:")
 	fmt.Fprintf(out, "  roots: %s\n", formatStringList(roots))
@@ -270,12 +238,6 @@ func printCandidateSummary(out io.Writer, roots []string, layers []projectConfig
 	}
 }
 
-// printCoveragePreview prints, for each declared layer, which of the
-// discovered directories (both DiscoverTSRoots' Roots and Candidates) its
-// prefixes match, and then a final line naming every discovered directory
-// that no declared layer matches. This is the preview the approval gate is
-// there to protect: it shows what an eventual real analysis run would and
-// would not classify under the candidate policy.
 func printCoveragePreview(out io.Writer, discovered projectmodel.TSRootDiscoveryResult, layers []projectConfigLayer) {
 	dirs := discoveredDirectories(discovered)
 
@@ -352,9 +314,6 @@ func uncoveredDiscoveredDirectories(dirs []string, layers []projectConfigLayer) 
 	return uncovered
 }
 
-// formatStringList renders items as a comma-separated list, or "(none)" when
-// there are none, so an empty match/uncovered set never prints as a blank
-// line the user might mistake for missing output.
 func formatStringList(items []string) string {
 	if len(items) == 0 {
 		return "(none)"
@@ -412,11 +371,6 @@ func printRootSuggestions(out io.Writer, discovered projectmodel.TSRootDiscovery
 	}
 }
 
-// validateRootSelection applies validateProjectConfigRoots' own per-entry
-// rule (validateProjectConfigDirectory) plus its non-empty requirement to one
-// candidate root selection, so an author sees the same rejection at
-// collection time that the final schema validation would otherwise only
-// apply once every remaining stage had already been answered.
 func validateRootSelection(selected []string) error {
 	if len(selected) == 0 {
 		return fmt.Errorf("at least one repository-relative root must be selected")
@@ -432,16 +386,9 @@ func validateRootSelection(selected []string) error {
 	return nil
 }
 
-// readLine reads and returns one line from reader, including its trailing
-// newline if present, and whether the read ended because input is
-// exhausted. A missing trailing newline before EOF is still returned as the
-// line's content, matching bufio.Reader.ReadString's own contract. exhausted
-// is set on ANY read error, not only io.EOF: a real reader can fail with
-// something other than a clean end-of-input (a closed stdin file
-// descriptor, a detached tty, a reset network stream), and like io.EOF it
-// will never produce a different answer on a later read. Recognizing only
-// io.EOF here would let promptRetryOrCancel keep retrying forever against a
-// reader that can only ever error again.
+// readLine sets unreadable on any read error, not only io.EOF: a closed
+// stdin or detached tty will never produce a different answer later, and
+// treating only io.EOF as exhausted would spin promptRetryOrCancel forever.
 func readLine(reader *bufio.Reader) (line string, unreadable bool) {
 	line, err := reader.ReadString('\n')
 	return line, err != nil
@@ -466,9 +413,6 @@ func promptRetryOrCancel(out io.Writer, reader *bufio.Reader, explanation string
 	return strings.EqualFold(strings.TrimSpace(reply), "cancel")
 }
 
-// layerNameDeclared reports whether name matches an already-collected
-// layer, used both to reject a duplicate layer name and to check that a
-// forbidden-pair endpoint or required-layer answer names a real layer.
 func layerNameDeclared(name string, layers []projectConfigLayer) bool {
 	for _, layer := range layers {
 		if layer.Name == name {
@@ -539,11 +483,6 @@ func promptLayerPrefixes(out io.Writer, reader *bufio.Reader, name string, exist
 	}
 }
 
-// validateLayerPrefixCandidate applies validateProjectConfigLayers' own
-// per-prefix rules -- non-empty, valid repository-relative directory syntax,
-// unique and non-overlapping with every prefix already accepted -- to one
-// new layer's candidate prefixes, so an author sees the same rejection here
-// that the final schema validation would apply.
 func validateLayerPrefixCandidate(name string, prefixes []string, existing []projectConfigLayer) error {
 	if len(prefixes) == 0 {
 		return fmt.Errorf("layer %q must contain at least one prefix", name)
@@ -567,11 +506,6 @@ func validateLayerPrefixCandidate(name string, prefixes []string, existing []pro
 	return nil
 }
 
-// promptForForbiddenImports collects forbidden (from, to) layer-import
-// pairs, one at a time, until the user leaves the source layer name blank.
-// It applies validateProjectConfigForbiddenImports' own rules: both
-// endpoints must name an already-declared layer, and each pair must be
-// unique.
 func promptForForbiddenImports(out io.Writer, reader *bufio.Reader, layers []projectConfigLayer) (forbidden []projectForbiddenImport, cancelled bool) {
 	fmt.Fprintln(out, "Define forbidden layer-import pairs (a source layer that may not import a destination layer). Leave the source blank to finish.")
 	for {
@@ -629,10 +563,6 @@ func validateForbiddenPairCandidate(from, to string, layers []projectConfigLayer
 	return nil
 }
 
-// promptForRequiredLayer collects the optional required intermediary layer.
-// A blank answer leaves it unset; a non-blank answer must name an
-// already-declared layer, matching validateProjectConfigCrossFields' rule
-// for required_layer.
 func promptForRequiredLayer(out io.Writer, reader *bufio.Reader, layers []projectConfigLayer) (requiredLayer string, cancelled bool) {
 	for {
 		fmt.Fprintln(out, "Enter the name of a required intermediary layer, or leave blank for none:")
@@ -652,9 +582,6 @@ func promptForRequiredLayer(out io.Writer, reader *bufio.Reader, layers []projec
 	}
 }
 
-// splitTrimmedNonEmpty splits s on sep, trims surrounding whitespace from
-// each piece, and drops empty pieces -- e.g. a trailing comma or repeated
-// separators produce no spurious empty prefix.
 func splitTrimmedNonEmpty(s, sep string) []string {
 	var result []string
 	for _, piece := range strings.Split(s, sep) {
