@@ -77,10 +77,11 @@ func (d *tsProjectDiscovery) visitDiscoveryDir(p string) error {
 }
 
 // visitDiscoveryFile counts p against MaxInputFiles/MaxInputBytes and, for
-// tsconfig.json/package.json basenames, reads them to confirm they are
+// tsconfig.json/package.json basenames, stats them to confirm they are
 // readable and records their containing directory. Neither file's contents
-// are parsed or interpreted -- discovery only needs to know a directory
-// holds one, and requires no TypeScript compiler to determine that.
+// are read, parsed, or interpreted -- discovery only needs to know a
+// directory holds one, and requires no TypeScript compiler to determine
+// that.
 func (d *tsProjectDiscovery) visitDiscoveryFile(snapshot fs.FS, p string, budgets GoBudgets, truncated *bool) error {
 	d.FilesSeen++
 	if budgets.MaxInputFiles > 0 && d.FilesSeen > budgets.MaxInputFiles {
@@ -94,13 +95,19 @@ func (d *tsProjectDiscovery) visitDiscoveryFile(snapshot fs.FS, p string, budget
 		return nil
 	}
 
-	data, readErr := fs.ReadFile(snapshot, p)
-	if readErr != nil {
+	// fs.Stat, not fs.ReadFile: this walk only needs a file's existence and
+	// size to confirm it is readable and count it against MaxInputBytes.
+	// Reading its content first (and discarding it) would buffer an
+	// arbitrarily large manifest into memory before the budget check below
+	// ever runs, defeating the budget's purpose of bounding memory/time on
+	// an untrusted repository.
+	info, statErr := fs.Stat(snapshot, p)
+	if statErr != nil {
 		d.Complete = false
 		d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagTSRootUnavailable, Path: p})
 		return nil
 	}
-	d.BytesSeen += int64(len(data))
+	d.BytesSeen += info.Size()
 	if budgets.MaxInputBytes > 0 && d.BytesSeen > budgets.MaxInputBytes {
 		*truncated = true
 		d.FilesSkipped++
