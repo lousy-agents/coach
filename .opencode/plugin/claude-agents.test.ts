@@ -132,6 +132,13 @@ test("loads real .claude/agents/*.md with expected structure", async (t) => {
     assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.write, undefined)
     assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.bash, "allow")
   })
+
+  await t.test("ux-advocate host peer map names Coach roster seats", () => {
+    const prompt = cfg.agent!["ux-advocate"]?.prompt ?? ""
+    for (const name of ["product-sme", "system-design-expert", "spec-review-agent"]) {
+      assert.ok(prompt.includes(name), `ux-advocate prompt missing ${name}`)
+    }
+  })
 })
 
 test("prompt body preserves leading and trailing blank lines", async () => {
