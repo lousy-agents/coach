@@ -132,6 +132,36 @@ test("loads real .claude/agents/*.md with expected structure", async (t) => {
     assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.write, undefined)
     assert.strictEqual(cfg.agent!["task-reviewer"]?.permission?.bash, "allow")
   })
+
+  await t.test("ux-advocate host peer map names Coach roster seats", () => {
+    const prompt = cfg.agent!["ux-advocate"]?.prompt ?? ""
+    for (const name of ["product-sme", "system-design-expert", "spec-review-agent"]) {
+      assert.ok(prompt.includes(name), `ux-advocate prompt missing ${name}`)
+    }
+  })
+
+  await t.test("ux-advocate prompt inlines the published charter", async () => {
+    const prompt = cfg.agent!["ux-advocate"]?.prompt ?? ""
+    const charter = await fs.readFile(
+      path.join(repoRoot, ".agents/skills/designing-for-intent/agents/ux-advocate.md"),
+      "utf8",
+    )
+    const marker = "You are this product's UX and product-design advocate"
+    const start = charter.indexOf(marker)
+    assert.ok(start >= 0, "published charter missing expected body")
+    const body = charter.slice(start).trim()
+    assert.ok(prompt.includes(body), "ux-advocate prompt missing published charter body")
+    for (const heading of [
+      "Intent map --",
+      "Interaction model --",
+      "Orchestration surface --",
+      "Agency risks --",
+      "Open questions --",
+      "Out of scope --",
+    ]) {
+      assert.ok(prompt.includes(heading), `ux-advocate prompt missing output-contract heading ${heading}`)
+    }
+  })
 })
 
 test("prompt body preserves leading and trailing blank lines", async () => {
