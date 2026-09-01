@@ -30,10 +30,6 @@ var _ = Describe("DiscoverTSRoots", func() {
 
 	When("snapshot has multiple nested tsconfig.json roots", func() {
 		It("discovers every distinct root purely from the fs.FS snapshot, with no compiler or subprocess involved", func() {
-			// This snapshot is a pure in-memory fstest.MapFS: there is no
-			// real directory a subprocess could exec against, no node_modules,
-			// and no tsc binary anywhere in reach. If discovery required a
-			// compiler or subprocess it could not succeed here at all.
 			snapshot := fstest.MapFS{
 				"apps/api/tsconfig.json": &fstest.MapFile{Data: []byte(`{"compilerOptions":{}}`)},
 				"apps/web/tsconfig.json": &fstest.MapFile{Data: []byte(`{"compilerOptions":{}}`)},
@@ -56,10 +52,7 @@ var _ = Describe("DiscoverTSRoots", func() {
 			}
 			result, err := projectmodel.DiscoverTSRoots(snapshot, projectmodel.GoBudgets{})
 			Expect(err).NotTo(HaveOccurred())
-			// apps/backend has both files: it is a confirmed root, not a candidate.
 			Expect(result.Roots).To(Equal([]string{"apps/backend"}))
-			// apps/frontend has only a package.json: a bare candidate path,
-			// never renamed, grouped, or labeled "frontend"/"ui"/any layer.
 			Expect(result.Candidates).To(Equal([]string{"apps/frontend"}))
 		})
 	})
@@ -124,8 +117,8 @@ var _ = Describe("DiscoverTSRoots", func() {
 		})
 	})
 
-	When("discovery never groups, orders, or labels its output by architectural role", func() {
-		It("returns only bare, sorted directory paths for both Roots and Candidates", func() {
+	When("several roots and one candidate are present", func() {
+		It("returns only sorted bare directory paths", func() {
 			snapshot := fstest.MapFS{
 				"services/checkout/tsconfig.json": &fstest.MapFile{Data: []byte(`{}`)},
 				"services/billing/tsconfig.json":  &fstest.MapFile{Data: []byte(`{}`)},
@@ -133,11 +126,28 @@ var _ = Describe("DiscoverTSRoots", func() {
 			}
 			result, err := projectmodel.DiscoverTSRoots(snapshot, projectmodel.GoBudgets{})
 			Expect(err).NotTo(HaveOccurred())
-			// Alphabetical path order only -- never reordered or clustered by
-			// any inferred "service"/"lib" role, and TSRootDiscoveryResult has
-			// no field capable of carrying such a label in the first place.
 			Expect(result.Roots).To(Equal([]string{"services/billing", "services/checkout"}))
 			Expect(result.Candidates).To(Equal([]string{"libs/shared"}))
+		})
+	})
+
+	When("a single manifest exceeds MaxInputBytes", func() {
+		It("truncates, marks Complete false, and emits ts_project_root_incomplete", func() {
+			snapshot := fstest.MapFS{
+				"apps/api/tsconfig.json": &fstest.MapFile{Data: make([]byte, 64)},
+				"apps/web/tsconfig.json": &fstest.MapFile{Data: []byte(`{}`)},
+			}
+			result, err := projectmodel.DiscoverTSRoots(snapshot, projectmodel.GoBudgets{MaxInputBytes: 32})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Complete).To(BeFalse())
+			found := false
+			for _, diag := range result.Coverage.Diagnostics {
+				if diag.Code == projectmodel.DiagTSRootIncomplete {
+					found = true
+				}
+			}
+			Expect(found).To(BeTrue(), "expected a ts_project_root_incomplete diagnostic, got %+v", result.Coverage.Diagnostics)
+			Expect(len(result.Roots) + len(result.Candidates)).To(BeNumerically("<", 2))
 		})
 	})
 })

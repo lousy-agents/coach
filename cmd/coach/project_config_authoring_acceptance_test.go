@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -31,9 +32,6 @@ func authoringStdin(content string) *os.File {
 	return f
 }
 
-// authoringOutputFiles returns fresh, empty stdout/stderr *os.File values for
-// a direct authorProjectConfigTypeScript call, along with a reader for each
-// that seeks back to the start before reading everything written so far.
 func authoringOutputFiles() (stdout, stderr *os.File, readStdout, readStderr func() string) {
 	var err error
 	stdout, err = os.CreateTemp(GinkgoT().TempDir(), "authoring-stdout")
@@ -145,30 +143,31 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 	})
 
 	When("TypeScript root discovery is truncated by its budget before it finishes walking", func() {
-		It("warns on stderr before the guided-authoring prompt ever runs, but still enters the session", func() {
-			original := tsAuthoringRootBudgets
-			tsAuthoringRootBudgets = projectmodel.GoBudgets{MaxInputFiles: 1}
-			DeferCleanup(func() { tsAuthoringRootBudgets = original })
+		When("stdin is immediately exhausted so the session cannot block", func() {
+			It("writes the budget-truncation warning to stderr before the root-selection prompt", func() {
+				original := tsAuthoringRootBudgets
+				tsAuthoringRootBudgets = projectmodel.GoBudgets{MaxInputFiles: 1}
+				DeferCleanup(func() { tsAuthoringRootBudgets = original })
 
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", "{}\n")
-			commitFile(repo, "tsconfig.json", "{}\n")
+				repo := newTempGitRepo()
+				commitFile(repo, "package.json", "{}\n")
+				commitFile(repo, "tsconfig.json", "{}\n")
 
-			// /dev/null as stdin makes AuthorProjectConfig's prompts hit EOF
-			// immediately, so the session declines without blocking; this
-			// test only cares about the warning written before that session
-			// ever starts.
-			stdin, err := os.Open(os.DevNull)
-			Expect(err).NotTo(HaveOccurred())
-			defer stdin.Close()
-			stdout, stderr, _, readStderr := authoringOutputFiles()
-			defer stdout.Close()
-			defer stderr.Close()
+				stdin, err := os.Open(os.DevNull)
+				Expect(err).NotTo(HaveOccurred())
+				defer stdin.Close()
+				stdout, stderr, _, readStderr := authoringOutputFiles()
+				defer stdout.Close()
+				defer stderr.Close()
 
-			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
-			authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+				flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
+				authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
 
-			Expect(readStderr()).To(ContainSubstring("TypeScript root discovery did not complete within its budget; the list below may be partial"))
+				stderrText := readStderr()
+				Expect(stderrText).To(ContainSubstring("TypeScript root discovery did not complete within its budget; the list below may be partial"))
+				Expect(stderrText).To(ContainSubstring("Select the roots to include"))
+				Expect(strings.Index(stderrText, "did not complete within its budget")).To(BeNumerically("<", strings.Index(stderrText, "Select the roots to include")))
+			})
 		})
 	})
 
@@ -178,13 +177,6 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			commitFile(repo, "package.json", "{}\n")
 			commitFile(repo, "tsconfig.json", "{}\n")
 
-			// A full answer sequence that would walk all the way through
-			// roots -> layers -> forbidden pairs -> required layer ->
-			// approval if the session ever started: blank, blank, blank,
-			// blank, then the literal approval token. Under the bug this
-			// fixes, --output was validated only after this whole sequence
-			// ran, so stdout would already contain every prompt by the time
-			// the rejection was reported.
 			stdin := authoringStdin("\n\n\n\napprove\n")
 			defer stdin.Close()
 			stdout, stderr, readStdout, readStderr := authoringOutputFiles()
@@ -212,12 +204,6 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			preexisting := "this is not a project config and must not be overwritten"
 			Expect(os.WriteFile(filepath.Join(repo, "project.json"), []byte(preexisting), 0o644)).To(Succeed())
 
-			// The same full answer sequence used by the invalid-path spec
-			// above: under the bug this fixes, the existing-target check ran
-			// only inside AuthorProjectConfig's own write step, after the
-			// entire interactive session (roots -> layers -> forbidden pairs
-			// -> required layer -> coverage preview -> approve) had already
-			// completed and printed its output.
 			stdin := authoringStdin("\n\n\n\napprove\n")
 			defer stdin.Close()
 			stdout, stderr, readStdout, readStderr := authoringOutputFiles()
@@ -277,12 +263,6 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			commitFile(repo, "package.json", "{}\n")
 			commitFile(repo, "tsconfig.json", "{}\n")
 
-			// A full answer sequence -- select the discovered root, leave
-			// layers/forbidden pairs/required layer blank, reach the coverage
-			// preview -- ending in a non-approval answer ("no") rather than the
-			// approval token. A declined-but-completed session
-			// (Approved == false, Cancelled == false) must still be treated as
-			// a failure to write, not a silent success.
 			stdin := authoringStdin("1\n\n\n\nno\n")
 			defer stdin.Close()
 			stdout, stderr, readStdout, readStderr := authoringOutputFiles()
@@ -307,8 +287,6 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			commitFile(repo, "package.json", "{}\n")
 			commitFile(repo, "tsconfig.json", "{}\n")
 
-			// Roots: select the single discovered root by number. Layers,
-			// forbidden pairs, required layer: all left blank. Approve.
 			stdin := authoringStdin("1\n\n\n\napprove\n")
 			defer stdin.Close()
 			stdout, stderr, readStdout, readStderr := authoringOutputFiles()
@@ -319,10 +297,6 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
 
 			Expect(exitCode).To(Equal(0))
-			// The interactive transcript -- every prompt, the coverage
-			// preview, the approval question -- goes to stderr so a customer
-			// can see and answer it even if stdout is redirected; none of it
-			// is an error, but stderr is where the whole session lives.
 			Expect(readStderr()).To(ContainSubstring("Select the roots to include"), "stderr: %s", readStderr())
 
 			data, err := os.ReadFile(filepath.Join(repo, "project.json"))
@@ -331,10 +305,6 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			Expect(json.Unmarshal(data, &candidate)).To(Succeed(), "written file: %s", data)
 			Expect(candidate.SchemaVersion).To(Equal("1"))
 			Expect(candidate.Roots).To(Equal([]string{"."}))
-
-			// Nothing reaches stdout when --output is set: the written file
-			// is the only place the candidate document appears, and every
-			// prompt went to stderr instead.
 			Expect(readStdout()).To(BeEmpty())
 		})
 	})
@@ -356,19 +326,11 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 
 			Expect(exitCode).To(Equal(0))
 
-			// stdout must be exactly the candidate document -- parseable on
-			// its own, with no interactive prompt text mixed in, so a
-			// customer capturing it (e.g. `> project.json`) gets a usable
-			// file even though they never saw the redirected stream.
 			var candidate suggestionCandidateDoc
 			stdoutBytes := []byte(readStdout())
 			Expect(json.Unmarshal(stdoutBytes, &candidate)).To(Succeed(), "stdout: %s", readStdout())
 			Expect(candidate.SchemaVersion).To(Equal("1"))
 			Expect(candidate.Roots).To(Equal([]string{"."}))
-
-			// The full interactive transcript must still be visible on
-			// stderr -- the customer answered these prompts on their
-			// terminal even though stdout was redirected to a file.
 			Expect(readStderr()).To(ContainSubstring("Select the roots to include"))
 			Expect(readStderr()).NotTo(ContainSubstring(`"schema_version"`), "the candidate document must never leak into the transcript stream")
 

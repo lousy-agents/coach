@@ -117,11 +117,6 @@ func TestAuthorProjectConfig_SuggestsDiscoveredRootsWithoutPreselecting(t *testi
 	})
 
 	t.Run("cancels when the user never answers the prompt", func(t *testing.T) {
-		// An empty root selection is rejected at collection time (see
-		// TestAuthorProjectConfig_RootSelectionRejectsInvalidOrEmptyAndOffersRetryOrCancel),
-		// and exhausted input at the resulting retry-or-cancel prompt is
-		// itself treated as cancellation, so a reader that never answers at
-		// all now ends the session rather than silently selecting no roots.
 		out := &bytes.Buffer{}
 		in := strings.NewReader("")
 
@@ -155,7 +150,7 @@ func TestAuthorProjectConfig_RootSelectionNeverProposesLayerBoundaries(t *testin
 		answer     string
 	}{
 		{
-			name: "roots only",
+			name: "with only roots listed, prompt text never contains layer or boundary",
 			discovered: projectmodel.TSRootDiscoveryResult{
 				Roots:      []string{"services/checkout", "services/billing", "libs/shared"},
 				Candidates: nil,
@@ -164,7 +159,7 @@ func TestAuthorProjectConfig_RootSelectionNeverProposesLayerBoundaries(t *testin
 			answer: "1,2,3\n",
 		},
 		{
-			name: "roots and candidates",
+			name: "with roots and candidates listed, prompt text never contains layer or boundary",
 			discovered: projectmodel.TSRootDiscoveryResult{
 				Roots:      []string{"services/checkout", "services/billing"},
 				Candidates: []string{"libs/shared"},
@@ -173,7 +168,7 @@ func TestAuthorProjectConfig_RootSelectionNeverProposesLayerBoundaries(t *testin
 			answer: "1,2\n",
 		},
 		{
-			name: "no roots discovered",
+			name: "with nothing discovered, prompt text never contains layer or boundary",
 			discovered: projectmodel.TSRootDiscoveryResult{
 				Roots:      nil,
 				Candidates: nil,
@@ -209,16 +204,6 @@ func TestAuthorProjectConfig_RootSelectionNeverProposesLayerBoundaries(t *testin
 	}
 }
 
-// TestAuthorProjectConfig_RootSelectionRejectsInvalidOrEmptyAndOffersRetryOrCancel
-// reproduces the dead end an interactive user reaches by taking
-// promptForRoots' own former "Leave blank and press Enter to select no
-// roots." copy at its word, or by typing an absolute/non-normalized/
-// repository-escaping path: previously none of that was checked until the
-// very end of the session, when validateProjectConfigRoots (run only once
-// the user had already answered every remaining stage and approved the
-// candidate) rejected it with no retry or cancel offered. Root selection
-// must now get the same explain-and-retry-or-cancel treatment every other
-// field (layers, forbidden pairs, required layer) already has.
 func TestAuthorProjectConfig_RootSelectionRejectsInvalidOrEmptyAndOffersRetryOrCancel(t *testing.T) {
 	discovered := projectmodel.TSRootDiscoveryResult{Roots: []string{"apps/api"}, Complete: true}
 
@@ -626,6 +611,13 @@ func TestAuthorProjectConfig_CollectsLayersForbiddenPairsAndRequiredLayerInOrder
 			"",
 		)
 
+		wantLayers := []projectConfigLayer{
+			{Name: "domain", Prefixes: []string{"internal/domain"}},
+			{Name: "app", Prefixes: []string{"internal/app"}},
+		}
+		if !equalLayers(result.Layers, wantLayers) {
+			t.Fatalf("Layers = %+v, want %+v", result.Layers, wantLayers)
+		}
 		wantForbidden := []projectForbiddenImport{{From: "domain", To: "app"}}
 		if !equalForbiddenImports(result.ForbiddenImports, wantForbidden) {
 			t.Fatalf("ForbiddenImports = %+v, want %+v", result.ForbiddenImports, wantForbidden)
@@ -649,6 +641,17 @@ func TestAuthorProjectConfig_CollectsLayersForbiddenPairsAndRequiredLayerInOrder
 			"domain", // required layer
 		)
 
+		wantLayers := []projectConfigLayer{
+			{Name: "domain", Prefixes: []string{"internal/domain"}},
+			{Name: "app", Prefixes: []string{"internal/app"}},
+		}
+		if !equalLayers(result.Layers, wantLayers) {
+			t.Fatalf("Layers = %+v, want %+v", result.Layers, wantLayers)
+		}
+		wantForbidden := []projectForbiddenImport{{From: "domain", To: "app"}}
+		if !equalForbiddenImports(result.ForbiddenImports, wantForbidden) {
+			t.Fatalf("ForbiddenImports = %+v, want %+v", result.ForbiddenImports, wantForbidden)
+		}
 		if result.RequiredLayer != "domain" {
 			t.Fatalf("RequiredLayer = %q, want %q", result.RequiredLayer, "domain")
 		}
@@ -657,7 +660,7 @@ func TestAuthorProjectConfig_CollectsLayersForbiddenPairsAndRequiredLayerInOrder
 		}
 	})
 
-	t.Run("fields accumulate without re-asking earlier stages", func(t *testing.T) {
+	t.Run("keeps the accepted root and layer after later stages are left blank", func(t *testing.T) {
 		result, _ := runAuthoring(discovered,
 			"1", // select the discovered root
 			"domain", "internal/domain",
@@ -676,7 +679,7 @@ func TestAuthorProjectConfig_CollectsLayersForbiddenPairsAndRequiredLayerInOrder
 	})
 }
 
-func TestAuthorProjectConfig_InvalidLayerFieldsExplainAndAllowRetryOrCancel(t *testing.T) {
+func TestAuthorProjectConfig_InvalidAnswersExplainAndAllowRetryOrCancel(t *testing.T) {
 	discovered := projectmodel.TSRootDiscoveryResult{Complete: true}
 
 	t.Run("duplicate layer name explains the error and cancel stops the session there", func(t *testing.T) {
@@ -778,15 +781,15 @@ func TestAuthorProjectConfig_LayerStageNeverInfersPreselectsOrRecommends(t *test
 		discovered projectmodel.TSRootDiscoveryResult
 	}{
 		{
-			name:       "discovered roots present",
+			name:       "blank answers preselect nothing when discovered roots are present",
 			discovered: projectmodel.TSRootDiscoveryResult{Roots: []string{"apps/api", "apps/web"}, Complete: true},
 		},
 		{
-			name:       "discovered roots and candidates present",
+			name:       "blank answers preselect nothing when roots and candidates are present",
 			discovered: projectmodel.TSRootDiscoveryResult{Roots: []string{"apps/api"}, Candidates: []string{"libs/shared"}, Complete: true},
 		},
 		{
-			name:       "nothing discovered",
+			name:       "blank answers preselect nothing when nothing is discovered",
 			discovered: projectmodel.TSRootDiscoveryResult{Complete: true},
 		},
 	}
@@ -913,10 +916,6 @@ func TestAuthorProjectConfig_LayerPrefixesRejectOversizedBudget(t *testing.T) {
 	}
 }
 
-// lineContaining returns the first line of out containing substr, or "" if
-// none does, letting a test assert on one coverage-preview line (a layer's
-// matches, or the uncovered-directories line) without depending on the exact
-// surrounding formatting.
 func lineContaining(out, substr string) string {
 	for _, line := range strings.Split(out, "\n") {
 		if strings.Contains(line, substr) {
@@ -927,27 +926,21 @@ func lineContaining(out, substr string) string {
 }
 
 func TestAuthorProjectConfig_CoveragePreviewShowsCandidateAndDirectoryCoverage(t *testing.T) {
-	// libsx/legacy is a deliberate string-prefix sibling of prefix "libs": it
-	// shares "libs" as a leading substring but is not nested under a "libs"
-	// path segment. A naive strings.HasPrefix(dir, prefix) match (dropping
-	// the "/" segment-boundary check) would wrongly count it as matched by
-	// libsLayer and wrongly omit it from the uncovered line -- exactly the
-	// mutant this fixture exists to catch.
 	discovered := projectmodel.TSRootDiscoveryResult{
 		Roots:      []string{"apps/api", "apps/web"},
 		Candidates: []string{"libs/shared", "libsx/legacy"},
 		Complete:   true,
 	}
 
-	t.Run("multi-match layer, no-match layer, and an uncovered directory are all shown before approval", func(t *testing.T) {
+	t.Run("mixed layer matches", func(t *testing.T) {
 		result, out := runAuthoring(discovered,
-			"1,2",               // roots: apps/api, apps/web
-			"libsLayer", "libs", // matches libs/shared only, NOT the libsx/legacy string-prefix sibling
-			"apiLayer", "apps/api", // matches only apps/api
-			"unusedLayer", "services/other", // matches no discovered directory
-			"", // finish layers
-			"", // finish forbidden pairs
-			"", // no required layer
+			"1,2",
+			"libsLayer", "libs",
+			"apiLayer", "apps/api",
+			"unusedLayer", "services/other",
+			"",
+			"",
+			"",
 			"approve",
 		)
 
@@ -958,49 +951,57 @@ func TestAuthorProjectConfig_CoveragePreviewShowsCandidateAndDirectoryCoverage(t
 			t.Fatalf("expected the printed candidate to include the selected roots, got:\n%s", out)
 		}
 
-		libsLine := lineContaining(out, `layer "libsLayer" (prefixes:`)
-		if libsLine == "" {
-			t.Fatalf("expected a coverage line for layer libsLayer, got:\n%s", out)
-		}
-		if !strings.Contains(libsLine, "libs/shared") {
-			t.Fatalf("expected layer libsLayer's coverage line to list its matching discovered directory, got:\n%s", libsLine)
-		}
-		if strings.Contains(libsLine, "libsx/legacy") {
-			t.Fatalf("expected layer libsLayer's coverage line NOT to list libsx/legacy (a string-prefix sibling of prefix %q, not a path-segment match), got:\n%s", "libs", libsLine)
-		}
+		t.Run("layer libs matches libs/shared and not string-prefix sibling libsx/legacy", func(t *testing.T) {
+			libsLine := lineContaining(out, `layer "libsLayer" (prefixes:`)
+			if libsLine == "" {
+				t.Fatalf("expected a coverage line for layer libsLayer, got:\n%s", out)
+			}
+			if !strings.Contains(libsLine, "libs/shared") {
+				t.Fatalf("expected layer libsLayer's coverage line to list its matching discovered directory, got:\n%s", libsLine)
+			}
+			if strings.Contains(libsLine, "libsx/legacy") {
+				t.Fatalf("expected layer libsLayer's coverage line NOT to list libsx/legacy (a string-prefix sibling of prefix %q, not a path-segment match), got:\n%s", "libs", libsLine)
+			}
+		})
 
-		apiLine := lineContaining(out, `layer "apiLayer" (prefixes:`)
-		if apiLine == "" {
-			t.Fatalf("expected a coverage line for layer apiLayer, got:\n%s", out)
-		}
-		if !strings.Contains(apiLine, "apps/api") {
-			t.Fatalf("expected layer apiLayer's coverage line to list its matching discovered directory, got:\n%s", apiLine)
-		}
-		if strings.Contains(apiLine, "apps/web") || strings.Contains(apiLine, "libs") {
-			t.Fatalf("expected layer apiLayer's coverage line to list only apps/api, got:\n%s", apiLine)
-		}
+		t.Run("layer apiLayer lists only apps/api", func(t *testing.T) {
+			apiLine := lineContaining(out, `layer "apiLayer" (prefixes:`)
+			if apiLine == "" {
+				t.Fatalf("expected a coverage line for layer apiLayer, got:\n%s", out)
+			}
+			if !strings.Contains(apiLine, "apps/api") {
+				t.Fatalf("expected layer apiLayer's coverage line to list its matching discovered directory, got:\n%s", apiLine)
+			}
+			if strings.Contains(apiLine, "apps/web") || strings.Contains(apiLine, "libs") {
+				t.Fatalf("expected layer apiLayer's coverage line to list only apps/api, got:\n%s", apiLine)
+			}
+		})
 
-		unusedLine := lineContaining(out, `layer "unusedLayer" (prefixes:`)
-		if unusedLine == "" {
-			t.Fatalf("expected a coverage line for layer unusedLayer, got:\n%s", out)
-		}
-		if strings.Contains(unusedLine, "apps/") || strings.Contains(unusedLine, "libs") {
-			t.Fatalf("expected layer unusedLayer's coverage line to match no discovered directory, got:\n%s", unusedLine)
-		}
+		t.Run("layer unusedLayer matches no discovered directory", func(t *testing.T) {
+			unusedLine := lineContaining(out, `layer "unusedLayer" (prefixes:`)
+			if unusedLine == "" {
+				t.Fatalf("expected a coverage line for layer unusedLayer, got:\n%s", out)
+			}
+			if strings.Contains(unusedLine, "apps/") || strings.Contains(unusedLine, "libs") {
+				t.Fatalf("expected layer unusedLayer's coverage line to match no discovered directory, got:\n%s", unusedLine)
+			}
+		})
 
-		uncoveredLine := lineContaining(out, "no declared layer matches")
-		if uncoveredLine == "" {
-			t.Fatalf("expected an uncovered-directories line, got:\n%s", out)
-		}
-		if !strings.Contains(uncoveredLine, "apps/web") {
-			t.Fatalf("expected apps/web (matched by no layer) to be listed as uncovered, got:\n%s", uncoveredLine)
-		}
-		if !strings.Contains(uncoveredLine, "libsx/legacy") {
-			t.Fatalf("expected libsx/legacy (a string-prefix sibling of libsLayer's prefix %q, not a real path-segment match) to be listed as uncovered, got:\n%s", "libs", uncoveredLine)
-		}
-		if strings.Contains(uncoveredLine, "apps/api") || strings.Contains(uncoveredLine, "libs/shared") {
-			t.Fatalf("expected only apps/web and libsx/legacy to be listed as uncovered, got:\n%s", uncoveredLine)
-		}
+		t.Run("uncovered line lists apps/web and libsx/legacy only", func(t *testing.T) {
+			uncoveredLine := lineContaining(out, "no declared layer matches")
+			if uncoveredLine == "" {
+				t.Fatalf("expected an uncovered-directories line, got:\n%s", out)
+			}
+			if !strings.Contains(uncoveredLine, "apps/web") {
+				t.Fatalf("expected apps/web (matched by no layer) to be listed as uncovered, got:\n%s", uncoveredLine)
+			}
+			if !strings.Contains(uncoveredLine, "libsx/legacy") {
+				t.Fatalf("expected libsx/legacy (a string-prefix sibling of libsLayer's prefix %q, not a real path-segment match) to be listed as uncovered, got:\n%s", "libs", uncoveredLine)
+			}
+			if strings.Contains(uncoveredLine, "apps/api") || strings.Contains(uncoveredLine, "libs/shared") {
+				t.Fatalf("expected only apps/web and libsx/legacy to be listed as uncovered, got:\n%s", uncoveredLine)
+			}
+		})
 	})
 
 	t.Run("no layers declared at all: every discovered directory is shown as uncovered", func(t *testing.T) {
@@ -1030,16 +1031,16 @@ func TestAuthorProjectConfig_CoveragePreviewShowsCandidateAndDirectoryCoverage(t
 		}
 	})
 
-	t.Run("prints the complete candidate (including forbidden_imports and required_layer) before the coverage preview and the approval prompt, in that order", func(t *testing.T) {
+	t.Run("complete candidate and gate order", func(t *testing.T) {
 		result, out := runAuthoring(discovered,
-			"1,2",                  // roots: apps/api, apps/web
-			"apiLayer", "apps/api", // layer 1
-			"libsLayer", "libs", // layer 2
-			"",                      // finish layers
-			"apiLayer", "libsLayer", // forbidden pair: apiLayer -> libsLayer
-			"libsLayer", "apiLayer", // forbidden pair: libsLayer -> apiLayer
-			"",         // finish forbidden pairs
-			"apiLayer", // required layer
+			"1,2",
+			"apiLayer", "apps/api",
+			"libsLayer", "libs",
+			"",
+			"apiLayer", "libsLayer",
+			"libsLayer", "apiLayer",
+			"",
+			"apiLayer",
 			"approve",
 		)
 
@@ -1047,74 +1048,51 @@ func TestAuthorProjectConfig_CoveragePreviewShowsCandidateAndDirectoryCoverage(t
 			t.Fatalf("expected Approved = true, got false; output:\n%s", out)
 		}
 
-		// The approval gate must show the complete candidate: every
-		// collected field must actually appear in the printed summary, not
-		// merely be inferable from output printed elsewhere (the discovery
-		// listing and coverage lines already print root/layer names, so a
-		// bare strings.Contains on those would pass even if the candidate
-		// summary itself were deleted). forbidden_imports and required_layer
-		// in particular are never printed anywhere except the summary, so
-		// they are the sharpest markers that the summary ran at all.
-		rootsLine := lineContaining(out, "roots:")
-		if rootsLine == "" {
-			t.Fatalf("expected the candidate summary's roots line, got:\n%s", out)
-		}
-		if !strings.Contains(rootsLine, "apps/api") || !strings.Contains(rootsLine, "apps/web") {
-			t.Fatalf("expected the candidate summary's roots line to list the selected roots, got:\n%s", rootsLine)
-		}
+		t.Run("prints every collected field in the candidate summary", func(t *testing.T) {
+			rootsLine := lineContaining(out, "roots:")
+			if rootsLine == "" {
+				t.Fatalf("expected the candidate summary's roots line, got:\n%s", out)
+			}
+			if !strings.Contains(rootsLine, "apps/api") || !strings.Contains(rootsLine, "apps/web") {
+				t.Fatalf("expected the candidate summary's roots line to list the selected roots, got:\n%s", rootsLine)
+			}
 
-		forbiddenHeaderLine := lineContaining(out, "forbidden_imports:")
-		if forbiddenHeaderLine == "" {
-			t.Fatalf("expected the candidate summary's forbidden_imports header line, got:\n%s", out)
-		}
-		// Two distinct pairs are declared so a summary that only prints the
-		// first one (e.g. by indexing forbidden[0] instead of ranging over
-		// the slice) still fails.
-		if lineContaining(out, "apiLayer -> libsLayer") == "" {
-			t.Fatalf("expected the candidate summary to print the declared forbidden pair apiLayer -> libsLayer, got:\n%s", out)
-		}
-		if lineContaining(out, "libsLayer -> apiLayer") == "" {
-			t.Fatalf("expected the candidate summary to print the declared forbidden pair libsLayer -> apiLayer, got:\n%s", out)
-		}
+			if lineContaining(out, "forbidden_imports:") == "" {
+				t.Fatalf("expected the candidate summary's forbidden_imports header line, got:\n%s", out)
+			}
+			if lineContaining(out, "apiLayer -> libsLayer") == "" {
+				t.Fatalf("expected the candidate summary to print the declared forbidden pair apiLayer -> libsLayer, got:\n%s", out)
+			}
+			if lineContaining(out, "libsLayer -> apiLayer") == "" {
+				t.Fatalf("expected the candidate summary to print the declared forbidden pair libsLayer -> apiLayer, got:\n%s", out)
+			}
+			if lineContaining(out, "- apiLayer: apps/api") == "" {
+				t.Fatalf("expected the candidate summary's layers block to list apiLayer with its prefix, got:\n%s", out)
+			}
+			if lineContaining(out, "- libsLayer: libs") == "" {
+				t.Fatalf("expected the candidate summary's layers block to list libsLayer with its prefix, got:\n%s", out)
+			}
 
-		// The summary's layers block (name plus prefixes) is asserted here
-		// in its own "- <name>: <prefixes>" form, distinct from the coverage
-		// preview's "layer <name> (prefixes: ...) matches: ..." form, so a
-		// summary that omits or mis-renders the layers block fails even
-		// though the preview's own layer lines are still present later in
-		// the same output.
-		if lineContaining(out, "- apiLayer: apps/api") == "" {
-			t.Fatalf("expected the candidate summary's layers block to list apiLayer with its prefix, got:\n%s", out)
-		}
-		if lineContaining(out, "- libsLayer: libs") == "" {
-			t.Fatalf("expected the candidate summary's layers block to list libsLayer with its prefix, got:\n%s", out)
-		}
+			requiredLayerLine := lineContaining(out, "required_layer:")
+			if requiredLayerLine == "" {
+				t.Fatalf("expected the candidate summary's required_layer line, got:\n%s", out)
+			}
+			if !strings.Contains(requiredLayerLine, "apiLayer") {
+				t.Fatalf("expected the candidate summary's required_layer line to name apiLayer, got:\n%s", requiredLayerLine)
+			}
+		})
 
-		requiredLayerLine := lineContaining(out, "required_layer:")
-		if requiredLayerLine == "" {
-			t.Fatalf("expected the candidate summary's required_layer line, got:\n%s", out)
-		}
-		if !strings.Contains(requiredLayerLine, "apiLayer") {
-			t.Fatalf("expected the candidate summary's required_layer line to name apiLayer, got:\n%s", requiredLayerLine)
-		}
-
-		// The approval gate must also get its ordering right: the
-		// candidate summary, then the coverage preview, then the approval
-		// prompt, all in that relative position -- so the user always sees
-		// the whole candidate before being asked to approve it. A mutant
-		// that moves both print calls to run after the approval read would
-		// still make this same test's Approved/line assertions above pass
-		// (the lines still get printed eventually), so ordering must be
-		// checked on index, not mere presence.
-		candidateIdx := strings.Index(out, "Candidate project config:")
-		coverageIdx := strings.Index(out, "Coverage preview:")
-		approvalIdx := strings.Index(out, "Type 'approve'")
-		if candidateIdx == -1 || coverageIdx == -1 || approvalIdx == -1 {
-			t.Fatalf("expected all three markers (candidate summary, coverage preview, approval prompt) to appear, got indices %d/%d/%d, output:\n%s", candidateIdx, coverageIdx, approvalIdx, out)
-		}
-		if !(candidateIdx < coverageIdx && coverageIdx < approvalIdx) {
-			t.Fatalf("expected candidate summary, then coverage preview, then approval prompt in that order (got indices %d, %d, %d), output:\n%s", candidateIdx, coverageIdx, approvalIdx, out)
-		}
+		t.Run("prints candidate summary, then coverage preview, then approval prompt", func(t *testing.T) {
+			candidateIdx := strings.Index(out, "Candidate project config:")
+			coverageIdx := strings.Index(out, "Coverage preview:")
+			approvalIdx := strings.Index(out, "Type 'approve'")
+			if candidateIdx == -1 || coverageIdx == -1 || approvalIdx == -1 {
+				t.Fatalf("expected all three markers (candidate summary, coverage preview, approval prompt) to appear, got indices %d/%d/%d, output:\n%s", candidateIdx, coverageIdx, approvalIdx, out)
+			}
+			if !(candidateIdx < coverageIdx && coverageIdx < approvalIdx) {
+				t.Fatalf("expected candidate summary, then coverage preview, then approval prompt in that order (got indices %d, %d, %d), output:\n%s", candidateIdx, coverageIdx, approvalIdx, out)
+			}
+		})
 	})
 
 	t.Run("a layer whose prefix is the universal root \".\" matches every discovered directory and leaves nothing uncovered", func(t *testing.T) {
@@ -1176,14 +1154,11 @@ func TestAuthorProjectConfig_ApprovalGateRequiresExactApprovalToken(t *testing.T
 			if result.Approved {
 				t.Fatalf("expected Approved = false for answer %q, got true", tc.answer)
 			}
-			// Declining approval is a distinct outcome from cancellation
-			// (AuthoringResult.Cancelled's documented contract): a caller
-			// that gates a config write on !Cancelled alone, instead of on
-			// Approved, would write a config the user just declined. This
-			// was previously asserted nowhere in the decline cases.
-			if result.Cancelled {
-				t.Fatalf("expected Cancelled = false for declined answer %q (declining approval is not a cancellation; a later write stage must gate on Approved, not !Cancelled), got true", tc.answer)
-			}
+			t.Run("declining is not a cancellation", func(t *testing.T) {
+				if result.Cancelled {
+					t.Fatalf("expected Cancelled = false for declined answer %q (a later write stage must gate on Approved, not !Cancelled), got true", tc.answer)
+				}
+			})
 		})
 	}
 
@@ -1216,35 +1191,39 @@ func TestAuthorProjectConfig_ApprovalGateRequiresExactApprovalToken(t *testing.T
 	})
 }
 
-// TestAuthorProjectConfig_ApprovalGateTerminatesPromptlyOnExhaustedOrErroringInput
-// reproduces the approval gate's own version of the retry-loop hang risk: a
-// reader that fails with a persistent non-io.EOF error right when the
-// approval prompt tries to read its answer. The gate must treat this as "not
-// approved" on the very first read, not retry -- so it must return promptly
-// either way.
 func TestAuthorProjectConfig_ApprovalGateTerminatesPromptlyOnExhaustedOrErroringInput(t *testing.T) {
 	discovered := projectmodel.TSRootDiscoveryResult{Complete: true}
 	const watchdog = 3 * time.Second
-	persistentErr := errors.New("simulated non-EOF read error (e.g. EBADF/EIO)")
 
-	in := &persistentErrorReader{data: []byte("root\napiLayer\napps/api\n\n\n\n"), err: persistentErr}
-
-	type outcome struct {
-		result AuthoringResult
-	}
-	done := make(chan outcome, 1)
-	go func() {
-		done <- outcome{AuthorProjectConfig("", in, io.Discard, io.Discard, discovered, "", false)}
-	}()
-
-	select {
-	case o := <-done:
-		if o.result.Approved {
-			t.Fatalf("expected an exhausted/erroring read at the approval gate to not approve, got Approved = true")
+	assertNotApprovedBeforeWatchdog := func(t *testing.T, in io.Reader) {
+		t.Helper()
+		type outcome struct {
+			result AuthoringResult
 		}
-	case <-time.After(watchdog):
-		t.Fatalf("AuthorProjectConfig did not return within %s: the approval gate is hanging on exhausted/erroring input", watchdog)
+		done := make(chan outcome, 1)
+		go func() {
+			done <- outcome{AuthorProjectConfig("", in, io.Discard, io.Discard, discovered, "", false)}
+		}()
+
+		select {
+		case o := <-done:
+			if o.result.Approved {
+				t.Fatalf("expected an exhausted/erroring read at the approval gate to not approve, got Approved = true")
+			}
+		case <-time.After(watchdog):
+			t.Fatalf("AuthorProjectConfig did not return within %s: the approval gate is hanging on exhausted/erroring input", watchdog)
+		}
 	}
+
+	t.Run("persistent non-EOF read error does not approve and returns before watchdog", func(t *testing.T) {
+		in := &persistentErrorReader{data: []byte("root\napiLayer\napps/api\n\n\n\n"), err: errors.New("simulated non-EOF read error (e.g. EBADF/EIO)")}
+		assertNotApprovedBeforeWatchdog(t, in)
+	})
+
+	t.Run("clean EOF at the approval prompt does not approve and returns before watchdog", func(t *testing.T) {
+		in := strings.NewReader("root\napiLayer\napps/api\n\n\n\n")
+		assertNotApprovedBeforeWatchdog(t, in)
+	})
 }
 
 // approvedCandidateBytes builds the expected schema-1 project-config
@@ -1276,32 +1255,14 @@ func tailAfterLastPrompt(out string) string {
 	return out[idx+len(marker):]
 }
 
-// TestAuthorProjectConfig_ApprovedCandidateFailingSchemaValidationIsNeverWritten
-// exercises the write-time schema validator directly against an empty root
-// selection, the same way
-// TestBuildApprovedCandidate_RejectsAScenarioTheInteractiveFlowCannotProduce
-// does for a forbidden-import pair naming an undeclared layer. promptForRoots
-// now rejects an empty selection at collection time (see
-// TestAuthorProjectConfig_RootSelectionRejectsInvalidOrEmptyAndOffersRetryOrCancel),
-// so AuthorProjectConfig itself can no longer reach the approval gate having
-// selected zero roots; this is checked here as defense in depth against a
-// genuinely unreachable-via-the-UI scenario, not something a real
-// guided-authoring session can trigger.
-func TestAuthorProjectConfig_ApprovedCandidateFailingSchemaValidationIsNeverWritten(t *testing.T) {
+func TestBuildApprovedCandidate_RejectsEmptyRoots(t *testing.T) {
 	_, err := buildApprovedCandidate(nil, nil, nil, "")
 	if err == nil || !strings.Contains(err.Error(), "roots must contain at least one") {
 		t.Fatalf("expected buildApprovedCandidate to reject an empty roots slice (\"roots must contain at least one\"), got %v", err)
 	}
 }
 
-// TestBuildApprovedCandidate_RejectsAScenarioTheInteractiveFlowCannotProduce
-// exercises the write-time schema validator directly against a forbidden
-// import pair naming an undeclared layer -- a shape
-// validateForbiddenPairCandidate already rejects during interactive
-// collection, so AuthorProjectConfig itself can never reach the approval
-// gate with it. Checking it here proves the write stage runs the general
-// schema validator, not merely one it happens to reject roots on.
-func TestBuildApprovedCandidate_RejectsAScenarioTheInteractiveFlowCannotProduce(t *testing.T) {
+func TestBuildApprovedCandidate_RejectsForbiddenPairNamingUndeclaredLayer(t *testing.T) {
 	forbidden := []projectForbiddenImport{{From: "domain", To: "unknown-layer"}}
 
 	_, err := buildApprovedCandidate([]string{"apps/api"}, nil, forbidden, "")
@@ -1593,20 +1554,21 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToCandidateOu
 		t.Fatalf("Document = %s, want %s", result.Document, want)
 	}
 
-	// candidateOut must contain the candidate document and nothing else --
-	// not the interactive transcript that reached the separate transcript
-	// writer -- so a caller capturing candidateOut (e.g. redirected stdout)
-	// gets a parseable document, and transcript must be visible even if
-	// candidateOut is redirected somewhere the customer cannot see.
-	if !bytes.Equal(candidateOut.Bytes(), want) {
-		t.Fatalf("candidateOut = %q, want exactly the candidate document %q", candidateOut.String(), want)
-	}
-	if transcript.Len() == 0 {
-		t.Fatalf("expected the interactive transcript to be written to the transcript writer, got none")
-	}
-	if strings.Contains(transcript.String(), `"schema_version"`) {
-		t.Fatalf("expected the candidate document to never appear in the transcript writer, got:\n%s", transcript.String())
-	}
+	t.Run("candidateOut is exactly the schema-1 document", func(t *testing.T) {
+		if !bytes.Equal(candidateOut.Bytes(), want) {
+			t.Fatalf("candidateOut = %q, want exactly the candidate document %q", candidateOut.String(), want)
+		}
+	})
+	t.Run("transcript writer is non-empty", func(t *testing.T) {
+		if transcript.Len() == 0 {
+			t.Fatalf("expected the interactive transcript to be written to the transcript writer, got none")
+		}
+	})
+	t.Run("transcript writer does not contain schema_version", func(t *testing.T) {
+		if strings.Contains(transcript.String(), `"schema_version"`) {
+			t.Fatalf("expected the candidate document to never appear in the transcript writer, got:\n%s", transcript.String())
+		}
+	})
 
 	var decoded projectConfig
 	if err := json.Unmarshal(candidateOut.Bytes(), &decoded); err != nil {
@@ -1623,8 +1585,6 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToCandidateOu
 	}
 }
 
-// alwaysErrorWriter fails every Write with a fixed error, standing in for a
-// broken pipe or a full disk on the far end of the caller-supplied out.
 type alwaysErrorWriter struct {
 	err error
 }
