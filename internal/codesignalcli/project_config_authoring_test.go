@@ -300,6 +300,30 @@ func TestAuthorProjectConfig_RootSelectionRejectsInvalidOrEmptyAndOffersRetryOrC
 			t.Fatalf("expected the error explanation to reference the offending path, got:\n%s", out)
 		}
 	})
+
+	t.Run("a root selection over the budget is rejected and cancel stops the session before any later stage runs", func(t *testing.T) {
+		roots := make([]string, maxProjectConfigRoots+1)
+		for i := range roots {
+			roots[i] = fmt.Sprintf("dir%d", i)
+		}
+
+		result, out := runAuthoringWithTimeout(t, 3*time.Second, discovered,
+			strings.Join(roots, ","),
+			"cancel",
+		)
+		if !result.Cancelled {
+			t.Fatalf("expected an over-budget root selection to be rejected and cancelled, got Cancelled = false, result = %+v", result)
+		}
+		if len(result.Roots) != 0 {
+			t.Fatalf("expected no roots to be recorded for a cancelled over-budget selection, got %v", result.Roots)
+		}
+		if !strings.Contains(out, fmt.Sprintf("%d", maxProjectConfigRoots)) {
+			t.Fatalf("expected the rejection explanation to reference the %d-entry budget, got:\n%s", maxProjectConfigRoots, out)
+		}
+		if strings.Contains(strings.ToLower(out), "layer") {
+			t.Fatalf("expected authoring to stop at cancellation, not continue to the layer stage, got:\n%s", out)
+		}
+	})
 }
 
 func equalStringSlices(a, b []string) bool {
@@ -1569,6 +1593,45 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToOut(t *test
 	}
 	if !equalLayers(decoded.Layers, []projectConfigLayer{{Name: "domain", Prefixes: []string{"internal/domain"}}}) {
 		t.Fatalf("decoded layers = %+v, want the declared domain layer", decoded.Layers)
+	}
+}
+
+// alwaysErrorWriter fails every Write with a fixed error, standing in for a
+// broken pipe or a full disk on the far end of the caller-supplied out.
+type alwaysErrorWriter struct {
+	err error
+}
+
+func (w *alwaysErrorWriter) Write(p []byte) (int, error) {
+	return 0, w.err
+}
+
+func TestAuthorProjectConfig_ApprovedAndOutputUnset_WriteFailureIsReportedNotSilentlySuccessful(t *testing.T) {
+	discovered := projectmodel.TSRootDiscoveryResult{Roots: []string{"apps/api"}, Complete: true}
+	writeErr := errors.New("write: broken pipe")
+	out := &alwaysErrorWriter{err: writeErr}
+	in := strings.NewReader(strings.Join([]string{
+		"1",
+		"domain", "internal/domain",
+		"",
+		"",
+		"",
+		"approve",
+	}, "\n") + "\n")
+
+	result := AuthorProjectConfig(t.TempDir(), in, out, discovered, "", false)
+
+	if !result.Approved {
+		t.Fatalf("expected Approved = true (the candidate itself is valid), got false")
+	}
+	if result.ValidationError != nil {
+		t.Fatalf("expected ValidationError = nil, got %v", result.ValidationError)
+	}
+	if result.WriteError == nil {
+		t.Fatalf("expected WriteError to report the failed write to out, got nil")
+	}
+	if !errors.Is(result.WriteError, writeErr) {
+		t.Fatalf("WriteError = %v, want it to wrap %v", result.WriteError, writeErr)
 	}
 }
 

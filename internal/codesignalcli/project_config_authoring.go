@@ -94,10 +94,13 @@ type AuthoringResult struct {
 	// true, and ValidationError is nil.
 	OutputExists bool
 
-	// WriteError holds a create-only write failure other than the target
+	// WriteError holds a failure writing the approved candidate: when
+	// outputSet was true, a create-only write failure other than the target
 	// already existing (an invalid or unconfined output path, or an
-	// unexpected filesystem error). Only meaningful when Approved is true,
-	// outputSet was true, and ValidationError is nil.
+	// unexpected filesystem error); when outputSet was false, a failure
+	// writing the candidate to the caller-supplied out (e.g. a broken pipe
+	// or full disk on the other end). Only meaningful when Approved is true
+	// and ValidationError is nil.
 	WriteError error
 }
 
@@ -184,7 +187,9 @@ func finalizeApprovedCandidate(result AuthoringResult, dir string, out io.Writer
 	result.Document = candidate
 
 	if !outputSet {
-		out.Write(candidate)
+		if _, err := out.Write(candidate); err != nil {
+			result.WriteError = err
+		}
 		return result
 	}
 
@@ -401,6 +406,9 @@ func printDiscoveredRoots(out io.Writer, discovered projectmodel.TSRootDiscovery
 func validateRootSelection(selected []string) error {
 	if len(selected) == 0 {
 		return fmt.Errorf("at least one repository-relative root must be selected")
+	}
+	if len(selected) > maxProjectConfigRoots {
+		return fmt.Errorf("roots exceed budget of %d entries", maxProjectConfigRoots)
 	}
 	for _, root := range selected {
 		if err := validateProjectConfigDirectory(root); err != nil {
