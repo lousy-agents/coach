@@ -127,33 +127,37 @@ type AuthoringResult struct {
 // names, or otherwise proposes an architectural layer boundary -- that
 // collection step belongs to a later stage, not this one.
 func AuthorProjectConfig(dir string, in io.Reader, out io.Writer, candidateOut io.Writer, discovered projectmodel.TSRootDiscoveryResult, outputPath string, outputSet bool) AuthoringResult {
+	result := collectAuthoringAnswers(in, out, discovered)
+	if !result.Approved {
+		return result
+	}
+	return finalizeApprovedCandidate(result, dir, candidateOut, outputPath, outputSet)
+}
+
+func collectAuthoringAnswers(in io.Reader, transcript io.Writer, discovered projectmodel.TSRootDiscoveryResult) AuthoringResult {
 	reader := bufio.NewReader(in)
-	roots, cancelled := promptForRoots(out, reader, discovered)
+	roots, cancelled := promptForRoots(transcript, reader, discovered)
 	if cancelled {
 		return AuthoringResult{Cancelled: true}
 	}
 
-	layers, cancelled := promptForLayers(out, reader)
+	layers, cancelled := promptForLayers(transcript, reader)
 	if cancelled {
 		return AuthoringResult{Roots: roots, Layers: layers, Cancelled: true}
 	}
 
-	forbidden, cancelled := promptForForbiddenImports(out, reader, layers)
+	forbidden, cancelled := promptForForbiddenImports(transcript, reader, layers)
 	if cancelled {
 		return AuthoringResult{Roots: roots, Layers: layers, ForbiddenImports: forbidden, Cancelled: true}
 	}
 
-	requiredLayer, cancelled := promptForRequiredLayer(out, reader, layers)
+	requiredLayer, cancelled := promptForRequiredLayer(transcript, reader, layers)
 	if cancelled {
 		return AuthoringResult{Roots: roots, Layers: layers, ForbiddenImports: forbidden, Cancelled: true}
 	}
 
-	approved := promptForApproval(out, reader, discovered, roots, layers, forbidden, requiredLayer)
-	result := AuthoringResult{Roots: roots, Layers: layers, ForbiddenImports: forbidden, RequiredLayer: requiredLayer, Approved: approved}
-	if !approved {
-		return result
-	}
-	return finalizeApprovedCandidate(result, dir, candidateOut, outputPath, outputSet)
+	approved := promptForApproval(transcript, reader, discovered, roots, layers, forbidden, requiredLayer)
+	return AuthoringResult{Roots: roots, Layers: layers, ForbiddenImports: forbidden, RequiredLayer: requiredLayer, Approved: approved}
 }
 
 // buildApprovedCandidate renders the collected fields as the schema-1
@@ -370,7 +374,7 @@ func formatStringList(items []string) string {
 // never returns discovered.Roots itself when the user selects nothing: an
 // accepted selection is always something the user typed or picked.
 func promptForRoots(out io.Writer, reader *bufio.Reader, discovered projectmodel.TSRootDiscoveryResult) (roots []string, cancelled bool) {
-	printDiscoveredRoots(out, discovered)
+	printRootSuggestions(out, discovered)
 
 	for {
 		fmt.Fprintln(out, "Select the roots to include: enter comma-separated numbers from the list above and/or directory paths, then press Enter. At least one repository-relative root is required.")
@@ -391,10 +395,7 @@ func promptForRoots(out io.Writer, reader *bufio.Reader, discovered projectmodel
 	}
 }
 
-// printDiscoveredRoots prints DiscoverTSRoots' own findings as a suggestion,
-// never as a preselection: promptForRoots always reads the user's own answer
-// afterward regardless of what is printed here.
-func printDiscoveredRoots(out io.Writer, discovered projectmodel.TSRootDiscoveryResult) {
+func printRootSuggestions(out io.Writer, discovered projectmodel.TSRootDiscoveryResult) {
 	if len(discovered.Roots) > 0 {
 		fmt.Fprintln(out, "Discovered TypeScript roots (directories with a tsconfig.json):")
 		for i, root := range discovered.Roots {
@@ -441,7 +442,7 @@ func validateRootSelection(selected []string) error {
 // will never produce a different answer on a later read. Recognizing only
 // io.EOF here would let promptRetryOrCancel keep retrying forever against a
 // reader that can only ever error again.
-func readLine(reader *bufio.Reader) (line string, exhausted bool) {
+func readLine(reader *bufio.Reader) (line string, unreadable bool) {
 	line, err := reader.ReadString('\n')
 	return line, err != nil
 }
@@ -458,8 +459,8 @@ func promptRetryOrCancel(out io.Writer, reader *bufio.Reader, explanation string
 	fmt.Fprintf(out, "That answer is invalid: %s\n", explanation)
 	fmt.Fprintln(out, "Type 'retry' to try again, or 'cancel' to cancel authoring:")
 	fmt.Fprint(out, "> ")
-	reply, eof := readLine(reader)
-	if eof {
+	reply, unreadable := readLine(reader)
+	if unreadable {
 		return true
 	}
 	return strings.EqualFold(strings.TrimSpace(reply), "cancel")
@@ -682,11 +683,7 @@ func parseRootSelection(answer string, discoveredRoots []string) ([]string, erro
 
 	var selected []string
 	seen := map[string]bool{}
-	for _, token := range strings.Split(answer, ",") {
-		token = strings.TrimSpace(token)
-		if token == "" {
-			continue
-		}
+	for _, token := range splitTrimmedNonEmpty(answer, ",") {
 		root := token
 		if idx, err := strconv.Atoi(token); err == nil {
 			if idx < 1 || idx > len(discoveredRoots) {

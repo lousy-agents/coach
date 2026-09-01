@@ -55,6 +55,20 @@ func runAuthorProjectConfigTypeScript(dir string, f codesignalFlags, stdout, std
 	return authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr)
 }
 
+func rejectUnusableAuthoringOutput(root string, f codesignalFlags) error {
+	if !f.outputSet {
+		return nil
+	}
+	clean, err := codesignalcli.ValidateAuthoringOutputPath(root, f.output)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(filepath.Join(root, clean)); err == nil {
+		return fmt.Errorf("--output target already exists")
+	}
+	return nil
+}
+
 // authorProjectConfigTypeScript performs runAuthorProjectConfigTypeScript's
 // work after the controlling-terminal gate: resolving the baseline
 // revision/repository root/snapshot, discovering TypeScript roots, and
@@ -93,16 +107,9 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 	// clobber if the target is created concurrently between this check and
 	// that write -- so this is a fail-fast UX improvement layered on top of,
 	// not a replacement for, that guarantee.
-	if f.outputSet {
-		clean, err := codesignalcli.ValidateAuthoringOutputPath(root, f.output)
-		if err != nil {
-			fmt.Fprintf(stderr, "%s: %s\n", authorTSUsagePrefix, err)
-			return 2
-		}
-		if _, err := os.Lstat(filepath.Join(root, clean)); err == nil {
-			fmt.Fprintf(stderr, "%s: --output target already exists\n", authorTSUsagePrefix)
-			return 2
-		}
+	if err := rejectUnusableAuthoringOutput(root, f); err != nil {
+		fmt.Fprintf(stderr, "%s: %s\n", authorTSUsagePrefix, err)
+		return 2
 	}
 
 	snapshot, err := codesignalcli.NewGoSnapshotFS(root, revision)
