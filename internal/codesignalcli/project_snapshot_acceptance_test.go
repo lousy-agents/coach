@@ -137,6 +137,29 @@ var _ = Describe("NewGoSnapshotFS", func() {
 		Expect(cmd.Env).To(ContainElement("GIT_NO_LAZY_FETCH=1"), "a blobless partial-clone promisor fetch must never be allowed to reach the network")
 	})
 
+	It("stats a file's size without ever running `git show` (must not buffer blob content just to size it)", func() {
+		var invokedArgs [][]string
+		originalRunner := runSnapshotGit
+		DeferCleanup(func() { runSnapshotGit = originalRunner })
+		runSnapshotGit = func(d string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
+			invokedArgs = append(invokedArgs, append([]string(nil), args...))
+			return originalRunner(d, maxStdout, maxStderr, timeout, args...)
+		}
+
+		fsys, err := NewGoSnapshotFS(dir, sha)
+		Expect(err).NotTo(HaveOccurred())
+		invokedArgs = nil // discard construction's own ls-tree call; this spec only cares about Stat
+
+		info, err := fs.Stat(fsys, "pkg/lib.go")
+		Expect(err).NotTo(HaveOccurred())
+		want := snapshotGroundTruthShow(dir, sha, "pkg/lib.go")
+		Expect(info.Size()).To(Equal(int64(len(want))), "Stat's reported size must match the blob's real content length")
+
+		for _, args := range invokedArgs {
+			Expect(args).NotTo(ContainElement("show"), "fs.Stat must never invoke git show (it would buffer the whole blob just to size it); invoked git args: %v", invokedArgs)
+		}
+	})
+
 	It("returns an error rather than an empty FS for an unresolvable revision", func() {
 		_, err := NewGoSnapshotFS(dir, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 		Expect(err).To(HaveOccurred())

@@ -8,6 +8,10 @@
 *.so
 *.dylib
 
+# `go build ./cmd/coach` (or a bare `go build ./...`) from the repo root
+# writes the coach CLI binary here; never a source artifact.
+/coach
+
 # Test binary, built with `go test -c`
 *.test
 

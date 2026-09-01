@@ -227,6 +227,10 @@ func repositoryRoot(dir string) (string, error) {
 	return resolved, nil
 }
 
+func AuthoringRepositoryRoot(dir string) (string, error) {
+	return repositoryRoot(dir)
+}
+
 // snapshotBuildTarget preserves the meaning of relative package patterns
 // supplied from a subdirectory while making them point at the HEAD snapshot.
 func snapshotBuildTarget(target, repositoryRoot, invocationDir, snapshotDir string) (string, error) {

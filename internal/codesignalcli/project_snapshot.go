@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -81,6 +82,7 @@ type goSnapshotFS struct {
 	revision string
 	isDir    map[string]bool
 	isFile   map[string]bool
+	sizes    map[string]int64
 	children map[string][]fs.DirEntry
 }
 
@@ -110,14 +112,17 @@ func (e *snapshotListError) Unwrap() error { return e.err }
 // function does not itself call into pkg/projectmodel -- that wiring is
 // issue #220's SuggestProjectConfig, its first consumer.
 //
-// The returned fs.FS enumerates the full file list once via one bounded
-// `git ls-tree -r -z --name-only <revision>` call at construction time
-// (reusing the same git invocation shape as DiscoverTrackedFiles in
-// git.go), then serves individual file reads lazily via bounded
-// `git show <revision>:<path>` calls (reusing runGitBytesBounded's shared
-// implementation from project.go). It implements fs.FS, fs.ReadDirFS, and
-// fs.ReadFileFS so that fs.WalkDir and fs.ReadFile work efficiently without
-// a slow per-directory Open/ReadDir dance.
+// The returned fs.FS enumerates the full file list, and every file's blob
+// size, once via one bounded `git ls-tree -r -z -l <revision>` call at
+// construction time (the `-l` long-format flag reuses the same listing call
+// to carry sizes too, rather than a second git invocation), then serves
+// individual file reads lazily via bounded `git show <revision>:<path>`
+// calls (reusing runGitBytesBounded's shared implementation from
+// project.go). It implements fs.FS, fs.ReadDirFS, fs.ReadFileFS, and
+// fs.StatFS so that fs.WalkDir, fs.ReadFile, and fs.Stat all work
+// efficiently: fs.Stat in particular must resolve from the cached listing
+// alone, never by falling back to Open (which would run `git show` and
+// buffer an entire blob's content just to report its length).
 //
 // If revision is unresolvable or dir is not a Git repository, NewGoSnapshotFS
 // returns an error; it never returns a silently empty FS for such a failure.
@@ -131,7 +136,7 @@ func NewGoSnapshotFS(dir, revision string) (fs.FS, error) {
 		return nil, fmt.Errorf("coach: revision must be a non-empty Git revision")
 	}
 
-	output, err := runSnapshotGit(dir, maxSnapshotListBytes, maxSnapshotGitStderr, snapshotGitTimeout, "ls-tree", "-r", "-z", "--name-only", revision)
+	output, err := runSnapshotGit(dir, maxSnapshotListBytes, maxSnapshotGitStderr, snapshotGitTimeout, "ls-tree", "-r", "-z", "-l", revision)
 	if err != nil {
 		return nil, &snapshotListError{revision: revision, dir: dir, err: err}
 	}
@@ -141,19 +146,55 @@ func NewGoSnapshotFS(dir, revision string) (fs.FS, error) {
 		revision: revision,
 		isDir:    map[string]bool{".": true},
 		isFile:   map[string]bool{},
+		sizes:    map[string]int64{},
 	}
 	childSets := map[string]map[string]bool{}
 
-	for _, p := range splitNULPaths(output) {
+	for _, entry := range splitNULPaths(output) {
+		p, size, err := parseSnapshotLsTreeEntry(entry)
+		if err != nil {
+			return nil, fmt.Errorf("coach: git ls-tree reported an unparseable entry %q: %w", entry, err)
+		}
 		if err := validateSnapshotPath(p); err != nil {
 			return nil, fmt.Errorf("coach: git ls-tree reported an unsafe path %q: %w", p, err)
 		}
 		fsys.isFile[p] = true
+		fsys.sizes[p] = size
 		addSnapshotPath(childSets, fsys.isDir, p)
 	}
 
 	fsys.children = finalizeSnapshotChildren(childSets)
 	return fsys, nil
+}
+
+// parseSnapshotLsTreeEntry parses one `git ls-tree -l` entry (already split
+// on the `-z` NUL terminator) into its path and blob size. The long format
+// is "<mode> SP <type> SP <object> SP <size> TAB <path>"; size is
+// whitespace-padded, not tab-separated from the preceding fields, so the
+// metadata is split by field first and the path is taken verbatim after the
+// first tab (a path may itself contain spaces). git reports a size it could
+// not determine as a non-numeric sentinel: "-" for a non-blob entry (e.g. a
+// submodule gitlink), and the literal "BAD" for a blob whose object is
+// missing or corrupt from the local object store. Both are parsed here as
+// size 0 rather than rejected: this construction step must not be the place
+// a missing blob surfaces as a failure, since erroring the whole listing
+// here would discard the specific path the caller needs to report -- the
+// existing per-path failure instead surfaces naturally, with that path
+// intact, the moment something actually tries to read the blob's content.
+func parseSnapshotLsTreeEntry(entry string) (path string, size int64, err error) {
+	meta, p, found := strings.Cut(entry, "\t")
+	if !found {
+		return "", 0, fmt.Errorf("missing tab-separated path")
+	}
+	fields := strings.Fields(meta)
+	if len(fields) < 4 {
+		return "", 0, fmt.Errorf("expected mode/type/object/size, got %q", meta)
+	}
+	parsedSize, err := strconv.ParseInt(fields[3], 10, 64)
+	if err != nil {
+		return p, 0, nil
+	}
+	return p, parsedSize, nil
 }
 
 // validateSnapshotPath defensively rejects any git-reported path that would
@@ -238,6 +279,25 @@ func (f *goSnapshotFS) Open(name string) (fs.File, error) {
 		return &snapshotFile{name: clean, data: data}, nil
 	}
 	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+}
+
+// Stat implements fs.StatFS entirely from the listing cached at
+// construction, with no git child process of its own -- in particular, it
+// never falls back to Open+git-show the way the io/fs package's own
+// fs.Stat helper would if this method were absent, which would buffer an
+// entire blob's content just to report its length.
+func (f *goSnapshotFS) Stat(name string) (fs.FileInfo, error) {
+	clean, err := normalizeSnapshotName(name)
+	if err != nil {
+		return nil, &fs.PathError{Op: "stat", Path: name, Err: fs.ErrInvalid}
+	}
+	if f.isDir[clean] {
+		return snapshotDirInfo{name: path.Base(clean)}, nil
+	}
+	if f.isFile[clean] {
+		return snapshotFileInfo{name: path.Base(clean), size: f.sizes[clean]}, nil
+	}
+	return nil, &fs.PathError{Op: "stat", Path: name, Err: fs.ErrNotExist}
 }
 
 func (f *goSnapshotFS) ReadDir(name string) ([]fs.DirEntry, error) {

@@ -68,7 +68,7 @@ commands:
 
 run "coach codesignal --help" for command-specific help.`
 
-const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]"
+const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]"
 
 type codesignalFlags struct {
 	base                 string
@@ -98,6 +98,9 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 	}
 
 	if parsed.suggestProjectConfig {
+		if parsed.projectLanguage == "typescript" {
+			return runAuthorProjectConfigTypeScript(dir, parsed, stdout, stderr)
+		}
 		return runSuggestProjectConfig(dir, parsed, stdout, stderr)
 	}
 
@@ -222,7 +225,7 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		output:               &countingStringFlag{},
 		checkProject:         &countingBoolFlag{},
 	}
-	flags.Var(h.suggestProjectConfig, "suggest-project-config", "generate a project-config candidate JSON from Go module/workspace discovery at HEAD (requires --baseline; human-reviewed candidate only, never auto-applied)")
+	flags.Var(h.suggestProjectConfig, "suggest-project-config", "generate a project-config candidate JSON from Go module/workspace discovery at HEAD (requires --baseline; human-reviewed candidate only, never auto-applied); combined with --project-language typescript, runs an interactive guided-authoring session over discovered TypeScript roots instead of emitting a Go candidate directly")
 	flags.Var(h.output, "output", "write the --suggest-project-config candidate to this repository-relative path instead of stdout (create-only)")
 	flags.Var(h.checkProject, "check-project", "report a read-only TypeScript project-readiness result for the selected revision (requires --baseline and --project-language typescript)")
 	return h
@@ -342,7 +345,10 @@ func sortedFlagNames(setFlags map[string]bool) []string {
 // conflict (which silently stops protecting a newly added codesignal
 // flag), it walks setFlags -- the flags actually supplied -- against the
 // fixed allowlist {baseline, output, suggest-project-config}, so any other
-// flag is rejected by construction.
+// flag is rejected by construction. --project-language is allowed only
+// when its value is "typescript" (the guided TypeScript authoring
+// dispatch); an explicit --project-language go, or any other value, is
+// rejected exactly as before this flag existed at all.
 func validateSuggestProjectConfigFlags(f codesignalFlags, setFlags map[string]bool, positional []string, suggestCount, outputCount int) string {
 	if suggestCount > 1 {
 		return "coach: --suggest-project-config may only be provided once (project_config_suggestion_invalid_arguments)"
@@ -354,6 +360,9 @@ func validateSuggestProjectConfigFlags(f codesignalFlags, setFlags map[string]bo
 		return "coach: --suggest-project-config requires --baseline (project_config_suggestion_invalid_arguments)"
 	}
 	allowedWithSuggest := map[string]bool{"suggest-project-config": true, "output": true, "baseline": true}
+	if f.projectLanguage == "typescript" {
+		allowedWithSuggest["project-language"] = true
+	}
 	for _, name := range sortedFlagNames(setFlags) {
 		if !allowedWithSuggest[name] {
 			return fmt.Sprintf("coach: --suggest-project-config cannot be combined with --%s (project_config_suggestion_invalid_arguments)", name)

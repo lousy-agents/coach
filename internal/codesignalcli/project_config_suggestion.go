@@ -368,9 +368,6 @@ type suggestCoverageWire struct {
 	Diagnostics []projectmodel.Diagnostic `json:"diagnostics"`
 }
 
-// suggestCoverageWireFrom renders in as the envelope's stderr wire shape:
-// see suggestCoverageWire's doc comment for the two fields it normalizes.
-// It never mutates in, including a caller-owned DiscoverGoRoots result.
 func suggestCoverageWireFrom(in projectmodel.Coverage) suggestCoverageWire {
 	diagnostics := in.Diagnostics
 	if diagnostics == nil {
@@ -506,6 +503,10 @@ func validateOutputPath(repositoryRootDir, outputPath string) (clean string, err
 	return clean, nil
 }
 
+func ValidateAuthoringOutputPath(repositoryRootDir, outputPath string) (clean string, err error) {
+	return validateOutputPath(repositoryRootDir, outputPath)
+}
+
 // unwrapPathError rebuilds err as "<cleanOutput>: <errno>" when it is a
 // *fs.PathError, dropping the absolute host filesystem path the error
 // otherwise carries; every other diagnostic message in this feature is
@@ -521,11 +522,12 @@ func unwrapPathError(cleanOutput string, err error) error {
 
 // writeSuggestOutput performs the authoritative create-only write: an
 // O_EXCL open that fails with fs.ErrExist when the target already exists.
-// This is the only existence check for --output -- there is deliberately no
-// preflight stat, both because issue #220 puts "target already exists" last
-// in the failure precedence (after root discovery) and because O_EXCL leaves
-// no TOCTOU window: a concurrently created target is never clobbered, and a
-// symlink at the target position is never followed.
+// For the batch --suggest-project-config path specifically, this is the only
+// existence check for --output -- there is deliberately no preflight stat,
+// both because issue #220 puts "target already exists" last in the failure
+// precedence (after root discovery) and because O_EXCL leaves no TOCTOU
+// window: a concurrently created target is never clobbered, and a symlink at
+// the target position is never followed.
 //
 // A failed Write or Close (ENOSPC, EIO, ...) leaves target removed: the
 // O_EXCL create already succeeded, so without this cleanup a truncated file
