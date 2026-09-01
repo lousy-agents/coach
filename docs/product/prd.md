@@ -2,7 +2,7 @@
 
 > Supersedes the v1 "Private Review-Readiness Coach" draft PRD. This revision reflects the product direction set in July 2026: decouple end-user consumption from the feedback platform, validate the full agentic flow locally before cloud investment, and park review-readiness verdicts in favor of async code-quality analysis. Implementation status claims follow the evidence hierarchy: only behavior locked by passing acceptance tests counts as implemented.
 
-> **Shipped-behavior evidence:** [`evaluations/codesignal-pilot-readiness.html`](evaluations/codesignal-pilot-readiness.html) is the living leave-pilot evaluation of the shipped `coach codesignal` CLI — last reviewed 2026-08-23 at `main` = `62480d2`. Gaps are tracked in epic [#282](https://github.com/lousy-agents/coach/issues/282); the standing decision is that all of them close before CodeSignal leaves pilot.
+> **Shipped-behavior evidence:** [`evaluations/codesignal-pilot-readiness.html`](evaluations/codesignal-pilot-readiness.html) is the living leave-pilot evaluation of the shipped `coach codesignal` CLI — last reviewed 2026-08-31 at `main` = `e5bfa4a`. Gaps are tracked in epic [#282](https://github.com/lousy-agents/coach/issues/282); the standing decision is that all of them close before CodeSignal leaves pilot.
 
 ## 1. Product Purpose
 

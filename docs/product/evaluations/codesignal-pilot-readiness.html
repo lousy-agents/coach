@@ -318,11 +318,11 @@
     <h1>Can CodeSignal leave pilot?</h1>
     <p class="lede prose">A hands-on product assessment of the shipped CLI. First published 16 Aug 2026; this page is the current leave-pilot evidence, not a historical snapshot. Gap ids stay stable — closed items move to the archive below, they are not deleted.</p>
     <div class="meta">
-      <span>Last reviewed 23 Aug 2026</span>
-      <span>HEAD 62480d2</span>
+      <span>Last reviewed 31 Aug 2026</span>
+      <span>HEAD e5bfa4a</span>
       <span>~55 CLI runs</span>
       <span>6 repositories</span>
-      <span>3rd verification pass</span>
+      <span>4th verification pass</span>
       <span>#282 · 5 / 24 closed</span>
     </div>
   </header>
@@ -344,7 +344,7 @@
       <h2>Refresh contract</h2>
     </div>
     <div class="maintain prose">
-      <p>Refresh when a <a href="https://github.com/lousy-agents/coach/issues/282">#282</a> child closes, or before any leave-pilot decision. GitHub <code>CLOSED</code> is not enough — re-run the affected claim against HEAD.</p>
+      <p>Refresh when a <a href="https://github.com/lousy-agents/coach/issues/282">#282</a> child closes, when user-facing <code>coach codesignal</code> behavior merges, or before any leave-pilot decision. GitHub <code>CLOSED</code> is not enough — re-run the affected claim against HEAD.</p>
       <p>Do not delete closed gaps; move them to the archive and keep the original id. Re-rank only after a run, not after a merge commit. Restamp date, HEAD, run count, and <code>#282 · N / 24</code>.</p>
       <p>This page answers one question for the product owner. A generated issue table is not a substitute.</p>
     </div>
@@ -355,13 +355,13 @@
       <p class="eyebrow">Method</p>
       <h2>What was verified, and how</h2>
     </div>
-    <p class="prose">Pass 1 (16 Aug, <code>19b6628</code>) was a functional evaluation against a locally built binary. Pass 2 re-verified every single-observation claim before filing issues. <strong>Pass 3 (23 Aug, <code>62480d2</code>) replayed the protocol against current <code>main</code></strong> — this repository, five foreign repos, and purpose-built repros — then handed the run log to an independent product evaluator. <span class="chip verified">re-verified</span> means reproduced on this binary, <span class="chip closed">closed</span> means the claim no longer holds, <span class="chip reported">agent-run</span> means observed but not the focus of this pass, and <span class="chip refuted">corrected</span> marks a prior claim that did not survive.</p>
+    <p class="prose">Pass 1 (16 Aug, <code>19b6628</code>) was a functional evaluation against a locally built binary. Pass 2 re-verified every single-observation claim before filing issues. <strong>Pass 3 (23 Aug, <code>62480d2</code>) replayed the protocol against current <code>main</code></strong> — this repository, five foreign repos, and purpose-built repros — then handed the run log to an independent product evaluator. <strong>Pass 4 (31 Aug, <code>e5bfa4a</code>) is a focused G4 restamp after v0.4.0, not a full corpus replay.</strong> <span class="chip verified">re-verified</span> means reproduced on this binary, <span class="chip closed">closed</span> means the claim no longer holds, <span class="chip reported">agent-run</span> means observed but not the focus of this pass, and <span class="chip refuted">corrected</span> marks a prior claim that did not survive.</p>
     <p class="prose">Corpus: this repo; <code>learn-go-with-tests</code> (the original 304-file repo); <code>lousy-iam</code>; <code>lousy-api-eval</code>; <code>lousy-agents</code>; <code>lousy-docs</code>. Local binary prints <code>dev</code>, as expected.</p>
   </section>
 
   <section>
     <div class="sec-head">
-      <p class="eyebrow">Closed this cycle</p>
+      <p class="eyebrow">Already closed</p>
       <h2>What 16–22 Aug actually unlocked</h2>
     </div>
     <p class="prose">Five of twenty-four #282 children, plus Go layer-bypass as a real CLI feature. A customer can now trust these outcomes. They do not unlock a PR check.</p>
@@ -532,9 +532,10 @@ git's default : A=420  M=633  <span class="ok">C=0</span>   D=16</div>
             <h3>TypeScript project analysis is honest, and still undeployable</h3>
             <span class="chip verified">re-verified</span>
           </div>
-          <p>A foreign TypeScript repo with no <code>js/semantics/</code> no longer prints a clean bill of health. It also does not produce a layer report. Exit 0, schema 2, <code>project_backend_unavailable</code>. File-local TypeScript still works from the Go binary alone. Do not conflate the two.</p>
+          <p><code>--check-project</code> and a TypeScript project scan are not the same job. This repository, no root <code>package.json</code>: exit 0, status <code>outside_support</code>, <code>unsupported_repository_shape</code>, <code>policy_missing</code>, Node pass <code>v24.19.0</code>, compiler and package_manager <code>not_checked</code>. A fresh foreign TypeScript git repo with <code>package.json</code>, tsconfig, <code>src/app.ts</code>, a valid committed <code>project.json</code>, and no <code>js/semantics/</code> tree: exit 0, status <code>ready</code>, <code>project_shape</code> / <code>policy</code> / <code>node</code> all pass, empty gaps, compiler and package_manager still <code>not_checked</code>. <code>ready</code> plus <code>not_checked</code> is not “a TypeScript project scan will work.”</p>
+          <p>The scan on that same foreign repo still does not print a clean bill of health. It also does not produce a layer report. Exit 0, schema 2, headline <em>“No active CodeSignal findings, but the analysis is incomplete: project analysis did not complete.”</em> Project coverage phase <code>ts_sidecar_build</code>, <code>complete: false</code>, diagnostic <code>project_backend_unavailable</code> looking up <code>js/semantics/bin/coach-ts-project-sidecar</code> inside the foreign checkout (missing). File-local TypeScript still ran — 1 file analyzed — from the Go binary alone. Do not conflate the two.</p>
           <p><code>--scope production</code> has no dedicated <code>.test.ts</code> classifier. It piggybacks on tsconfig include/exclude: <code>lousy-iam</code> excludes 39 test files that way; a clean <code>src/app.ts</code> + <code>src/app.test.ts</code> fixture with no exclude analyzes both; on <code>lousy-api-eval</code> the only production-scope finding is still an e2e test file marked <code>source_scope: production</code>.</p>
-          <p class="gap-cost"><b>Cost to close:</b> obtain/preflight so a foreign repo can run project analysis without vendoring this tree. Packaging options in #280 are stale relative to the locked TypeScript obtain strategy; retarget #282 at that epic when it exists. Filename-based TS test scope is #281, separate.</p>
+          <p class="gap-cost"><b>Cost to close:</b> obtain/preflight so a foreign repo can run project analysis without vendoring this tree. <code>--check-project</code> is not that obtain. Filename-based TS test scope is #281, separate.</p>
           <div class="tracks">
             <span class="tracks-label">Tracked in</span>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/280">#280 — TS project analysis on a foreign repo</a>
@@ -650,7 +651,7 @@ git's default : A=420  M=633  <span class="ok">C=0</span>   D=16</div>
     </div>
     <p class="prose">These bound the verdict and should be read as unresolved, not as absent problems.</p>
     <ul class="plain prose">
-      <li class="unk"><span><strong>TypeScript project analysis on any repo but this one.</strong> Proved to fail honestly elsewhere; proved to work only inside this clone. In-repo parity is now locked (#218). Obtain on a foreign repo is not. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/280">#280</a></span></li>
+      <li class="unk"><span><strong>TypeScript project analysis on any repo but this one.</strong> <code>--check-project</code> now runs on a foreign TypeScript repo and can report <code>ready</code> with empty gaps. The following scan still fails honestly (<code>project_backend_unavailable</code>); file-local TypeScript still works. A layer report is still proved only inside this clone. In-repo parity is locked (#218). Obtain on a foreign repo is not. Do not read <code>ready</code> as obtain. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/280">#280</a></span></li>
       <li class="unk"><span><strong>The released binary in a real CI runner.</strong> This pass used a locally built macOS/arm64 binary. Linux/Windows, container startup, and the signed-release path are unverified. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/276">#276</a></span></li>
       <li class="unk"><span><strong>No systematic precision census.</strong> Still the gate the PRD names. 24% of findings still carry empty evidence and are not adjudicable. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/260">#260</a></span></li>
       <li class="unk"><span><strong>The noise judgment is inferred, not observed.</strong> The 84% and 76% numbers are measurements; “a named team will not run this twice” is an inference from them.</span></li>
