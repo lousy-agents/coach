@@ -138,7 +138,12 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 		fmt.Fprintf(stderr, "%s: TypeScript root discovery did not complete within its budget; the list below may be partial\n", authorTSUsagePrefix)
 	}
 
-	result := codesignalcli.AuthorProjectConfig(root, stdin, stdout, discovered, f.output, f.outputSet)
+	// The interactive transcript goes to stderr and the approved candidate
+	// (when --output is omitted) goes to stdout: a customer piping stdout to
+	// a file to capture the candidate must still see every prompt on their
+	// terminal, and that captured file must never contain anything but the
+	// candidate document itself.
+	result := codesignalcli.AuthorProjectConfig(root, stdin, stderr, stdout, discovered, f.output, f.outputSet)
 	return reportAuthoringResult(result, stderr)
 }
 

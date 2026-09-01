@@ -294,7 +294,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 
 			Expect(exitCode).To(Equal(2))
 			Expect(readStderr()).To(ContainSubstring("cancelled or not approved"), "stderr: %s", readStderr())
-			Expect(readStdout()).NotTo(ContainSubstring(`"schema_version"`), "no candidate document must reach stdout for a declined session")
+			Expect(readStdout()).To(BeEmpty(), "the interactive transcript goes to stderr, so nothing -- prompts or a candidate document -- must ever reach stdout for a declined session")
 
 			_, statErr := os.Stat(filepath.Join(repo, "project.json"))
 			Expect(os.IsNotExist(statErr)).To(BeTrue(), "no policy config file must be written when the session completes without approval")
@@ -319,7 +319,11 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
 
 			Expect(exitCode).To(Equal(0))
-			Expect(readStderr()).To(BeEmpty(), "no error output on a successful, approved write")
+			// The interactive transcript -- every prompt, the coverage
+			// preview, the approval question -- goes to stderr so a customer
+			// can see and answer it even if stdout is redirected; none of it
+			// is an error, but stderr is where the whole session lives.
+			Expect(readStderr()).To(ContainSubstring("Select the roots to include"), "stderr: %s", readStderr())
 
 			data, err := os.ReadFile(filepath.Join(repo, "project.json"))
 			Expect(err).NotTo(HaveOccurred())
@@ -328,10 +332,48 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			Expect(candidate.SchemaVersion).To(Equal("1"))
 			Expect(candidate.Roots).To(Equal([]string{"."}))
 
-			// Nothing beyond the interactive prompt text reaches stdout when
-			// --output is set: the written file is the only place the
-			// candidate document appears.
-			Expect(readStdout()).NotTo(ContainSubstring(`"schema_version"`))
+			// Nothing reaches stdout when --output is set: the written file
+			// is the only place the candidate document appears, and every
+			// prompt went to stderr instead.
+			Expect(readStdout()).To(BeEmpty())
+		})
+	})
+
+	When("guided authoring is approved with --output omitted", func() {
+		It("exits 0, emits only the validated candidate on stdout, and writes the full transcript to stderr", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", "{}\n")
+			commitFile(repo, "tsconfig.json", "{}\n")
+
+			stdin := authoringStdin("1\n\n\n\napprove\n")
+			defer stdin.Close()
+			stdout, stderr, readStdout, readStderr := authoringOutputFiles()
+			defer stdout.Close()
+			defer stderr.Close()
+
+			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+
+			Expect(exitCode).To(Equal(0))
+
+			// stdout must be exactly the candidate document -- parseable on
+			// its own, with no interactive prompt text mixed in, so a
+			// customer capturing it (e.g. `> project.json`) gets a usable
+			// file even though they never saw the redirected stream.
+			var candidate suggestionCandidateDoc
+			stdoutBytes := []byte(readStdout())
+			Expect(json.Unmarshal(stdoutBytes, &candidate)).To(Succeed(), "stdout: %s", readStdout())
+			Expect(candidate.SchemaVersion).To(Equal("1"))
+			Expect(candidate.Roots).To(Equal([]string{"."}))
+
+			// The full interactive transcript must still be visible on
+			// stderr -- the customer answered these prompts on their
+			// terminal even though stdout was redirected to a file.
+			Expect(readStderr()).To(ContainSubstring("Select the roots to include"))
+			Expect(readStderr()).NotTo(ContainSubstring(`"schema_version"`), "the candidate document must never leak into the transcript stream")
+
+			_, statErr := os.Stat(filepath.Join(repo, "project.json"))
+			Expect(os.IsNotExist(statErr)).To(BeTrue(), "no file is written when --output is omitted; the candidate is emitted, not saved")
 		})
 	})
 })

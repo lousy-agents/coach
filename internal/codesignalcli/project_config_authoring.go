@@ -98,27 +98,35 @@ type AuthoringResult struct {
 	// outputSet was true, a create-only write failure other than the target
 	// already existing (an invalid or unconfined output path, or an
 	// unexpected filesystem error); when outputSet was false, a failure
-	// writing the candidate to the caller-supplied out (e.g. a broken pipe
-	// or full disk on the other end). Only meaningful when Approved is true
-	// and ValidationError is nil.
+	// writing the candidate to the caller-supplied candidateOut (e.g. a
+	// broken pipe or full disk on the other end). Only meaningful when
+	// Approved is true and ValidationError is nil.
 	WriteError error
 }
 
 // AuthorProjectConfig runs the guided project-config authoring prompt
 // sequence over in/out rather than a real terminal, so it is testable
 // without a pty. discovered is supplied by the caller; this function never
-// runs discovery itself. dir, outputPath, and outputSet are used only once
+// runs discovery itself. out carries every prompt, explanation, and the
+// coverage preview -- the whole human-facing transcript -- and is kept
+// strictly separate from candidateOut, which receives only the approved
+// candidate document itself when outputSet is false. Callers must bind out
+// to a stream the human can see even when they redirect whatever stream
+// candidateOut is bound to (e.g. out to stderr, candidateOut to stdout):
+// mixing the two into one writer would make a captured candidate document
+// unparseable, and would leave the transcript invisible if that same
+// stream were redirected. dir, outputPath, and outputSet are used only once
 // the user approves the candidate: dir is the repository root the write is
 // confined to, and outputPath/outputSet select between a create-only write
-// (outputSet true) and emitting the candidate document to out (outputSet
-// false). None of the three plays any part in field collection, the
-// coverage preview, or the approval gate itself.
+// (outputSet true) and emitting the candidate document to candidateOut
+// (outputSet false). None of the three plays any part in field collection,
+// the coverage preview, or the approval gate itself.
 //
 // This function only ever suggests roots DiscoverTSRoots already found; it
 // never preselects or infers one on the user's behalf, and it never groups,
 // names, or otherwise proposes an architectural layer boundary -- that
 // collection step belongs to a later stage, not this one.
-func AuthorProjectConfig(dir string, in io.Reader, out io.Writer, discovered projectmodel.TSRootDiscoveryResult, outputPath string, outputSet bool) AuthoringResult {
+func AuthorProjectConfig(dir string, in io.Reader, out io.Writer, candidateOut io.Writer, discovered projectmodel.TSRootDiscoveryResult, outputPath string, outputSet bool) AuthoringResult {
 	reader := bufio.NewReader(in)
 	roots, cancelled := promptForRoots(out, reader, discovered)
 	if cancelled {
@@ -145,7 +153,7 @@ func AuthorProjectConfig(dir string, in io.Reader, out io.Writer, discovered pro
 	if !approved {
 		return result
 	}
-	return finalizeApprovedCandidate(result, dir, out, outputPath, outputSet)
+	return finalizeApprovedCandidate(result, dir, candidateOut, outputPath, outputSet)
 }
 
 // buildApprovedCandidate renders the collected fields as the schema-1
@@ -174,11 +182,13 @@ func buildApprovedCandidate(roots []string, layers []projectConfigLayer, forbidd
 
 // finalizeApprovedCandidate validates result's collected fields and either
 // create-only writes them to outputPath (outputSet true) or emits them to
-// out (outputSet false). Nothing is written when validation fails; a
-// create-only write that finds outputPath already occupied leaves the
-// existing content untouched and is reported via OutputExists, never as
-// WriteError.
-func finalizeApprovedCandidate(result AuthoringResult, dir string, out io.Writer, outputPath string, outputSet bool) AuthoringResult {
+// candidateOut (outputSet false). candidateOut must never be the same
+// stream as the interactive transcript (see AuthorProjectConfig's doc
+// comment): it carries only the document itself, byte for byte. Nothing is
+// written when validation fails; a create-only write that finds outputPath
+// already occupied leaves the existing content untouched and is reported
+// via OutputExists, never as WriteError.
+func finalizeApprovedCandidate(result AuthoringResult, dir string, candidateOut io.Writer, outputPath string, outputSet bool) AuthoringResult {
 	candidate, err := buildApprovedCandidate(result.Roots, result.Layers, result.ForbiddenImports, result.RequiredLayer)
 	if err != nil {
 		result.ValidationError = err
@@ -187,7 +197,7 @@ func finalizeApprovedCandidate(result AuthoringResult, dir string, out io.Writer
 	result.Document = candidate
 
 	if !outputSet {
-		if _, err := out.Write(candidate); err != nil {
+		if _, err := candidateOut.Write(candidate); err != nil {
 			result.WriteError = err
 		}
 		return result
@@ -367,9 +377,12 @@ func promptForRoots(out io.Writer, reader *bufio.Reader, discovered projectmodel
 		fmt.Fprint(out, "> ")
 
 		answer, _ := readLine(reader)
-		selected := parseRootSelection(answer, discovered.Roots)
-		if err := validateRootSelection(selected); err != nil {
-			if promptRetryOrCancel(out, reader, err.Error()) {
+		selected, parseErr := parseRootSelection(answer, discovered.Roots)
+		if parseErr == nil {
+			parseErr = validateRootSelection(selected)
+		}
+		if parseErr != nil {
+			if promptRetryOrCancel(out, reader, parseErr.Error()) {
 				return nil, true
 			}
 			continue
@@ -656,19 +669,15 @@ func splitTrimmedNonEmpty(s, sep string) []string {
 // deduplicated root list. A token that parses as a 1-based index into
 // discoveredRoots resolves to that root; any other non-empty token is taken
 // as a literal path exactly as typed. An out-of-range numeric token is
-// silently dropped from the resolved set, with no rejection of its own: this
-// function only parses, it does not validate. promptForRoots' own
-// validateRootSelection + promptRetryOrCancel already retry-or-cancel on the
-// resulting selection (an empty selection, or one containing an invalid
-// literal path), so a selection that silently drops one bad index while
-// keeping the rest of a valid answer is, as-is, at worst under-selective --
-// never silently accepted as invalid or left unreported to the user, since
-// every accepted selection still passes validateRootSelection before this
-// stage returns.
-func parseRootSelection(answer string, discoveredRoots []string) []string {
+// rejected with an explanatory error rather than silently dropped: dropping
+// it while keeping the rest of a valid answer would leave the resolved
+// selection non-empty and so pass validateRootSelection unnoticed, meaning
+// the customer's typo (or a stale suggestion list) silently selects fewer
+// roots than they asked for with no indication anything was wrong.
+func parseRootSelection(answer string, discoveredRoots []string) ([]string, error) {
 	answer = strings.TrimSpace(answer)
 	if answer == "" {
-		return nil
+		return nil, nil
 	}
 
 	var selected []string
@@ -681,7 +690,7 @@ func parseRootSelection(answer string, discoveredRoots []string) []string {
 		root := token
 		if idx, err := strconv.Atoi(token); err == nil {
 			if idx < 1 || idx > len(discoveredRoots) {
-				continue
+				return nil, fmt.Errorf("%q is not a valid root number: only 1-%d are listed above", token, len(discoveredRoots))
 			}
 			root = discoveredRoots[idx-1]
 		}
@@ -691,5 +700,5 @@ func parseRootSelection(answer string, discoveredRoots []string) []string {
 		seen[root] = true
 		selected = append(selected, root)
 	}
-	return selected
+	return selected, nil
 }

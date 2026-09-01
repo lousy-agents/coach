@@ -52,7 +52,7 @@ func TestAuthorProjectConfig_SuggestsDiscoveredRootsWithoutPreselecting(t *testi
 		out := &recordingWriter{w: &bytes.Buffer{}, events: &events}
 		in := &recordingReader{r: strings.NewReader("1\n"), events: &events}
 
-		AuthorProjectConfig(t.TempDir(), in, out, discovered, "", false)
+		AuthorProjectConfig(t.TempDir(), in, out, out, discovered, "", false)
 
 		if len(events) == 0 {
 			t.Fatalf("expected at least one write/read event, got none")
@@ -84,7 +84,7 @@ func TestAuthorProjectConfig_SuggestsDiscoveredRootsWithoutPreselecting(t *testi
 		out := &bytes.Buffer{}
 		in := strings.NewReader("1,2\n")
 
-		result := AuthorProjectConfig(t.TempDir(), in, out, discovered, "", false)
+		result := AuthorProjectConfig(t.TempDir(), in, out, out, discovered, "", false)
 
 		want := []string{"apps/api", "apps/web"}
 		if !equalStringSlices(result.Roots, want) {
@@ -96,7 +96,7 @@ func TestAuthorProjectConfig_SuggestsDiscoveredRootsWithoutPreselecting(t *testi
 		out := &bytes.Buffer{}
 		in := strings.NewReader("2\n")
 
-		result := AuthorProjectConfig(t.TempDir(), in, out, discovered, "", false)
+		result := AuthorProjectConfig(t.TempDir(), in, out, out, discovered, "", false)
 
 		want := []string{"apps/web"}
 		if !equalStringSlices(result.Roots, want) {
@@ -108,7 +108,7 @@ func TestAuthorProjectConfig_SuggestsDiscoveredRootsWithoutPreselecting(t *testi
 		out := &bytes.Buffer{}
 		in := strings.NewReader("2,services/checkout\n")
 
-		result := AuthorProjectConfig(t.TempDir(), in, out, discovered, "", false)
+		result := AuthorProjectConfig(t.TempDir(), in, out, out, discovered, "", false)
 
 		want := []string{"apps/web", "services/checkout"}
 		if !equalStringSlices(result.Roots, want) {
@@ -125,7 +125,7 @@ func TestAuthorProjectConfig_SuggestsDiscoveredRootsWithoutPreselecting(t *testi
 		out := &bytes.Buffer{}
 		in := strings.NewReader("")
 
-		result := AuthorProjectConfig(t.TempDir(), in, out, discovered, "", false)
+		result := AuthorProjectConfig(t.TempDir(), in, out, out, discovered, "", false)
 
 		if !result.Cancelled {
 			t.Fatalf("expected the session to cancel when the user never answers the root-selection prompt, got Cancelled = false, result = %+v", result)
@@ -139,7 +139,7 @@ func TestAuthorProjectConfig_SuggestsDiscoveredRootsWithoutPreselecting(t *testi
 		out := &bytes.Buffer{}
 		in := strings.NewReader("services/checkout\n")
 
-		result := AuthorProjectConfig(t.TempDir(), in, out, discovered, "", false)
+		result := AuthorProjectConfig(t.TempDir(), in, out, out, discovered, "", false)
 
 		want := []string{"services/checkout"}
 		if !equalStringSlices(result.Roots, want) {
@@ -301,6 +301,22 @@ func TestAuthorProjectConfig_RootSelectionRejectsInvalidOrEmptyAndOffersRetryOrC
 		}
 	})
 
+	t.Run("an out-of-range root number mixed with a valid one is rejected, not silently dropped, and cancel stops the session", func(t *testing.T) {
+		result, out := runAuthoring(discovered,
+			"1,3",
+			"cancel",
+		)
+		if !result.Cancelled {
+			t.Fatalf("expected a selection containing an out-of-range root number to be rejected and cancelled, got Cancelled = false, result = %+v", result)
+		}
+		if len(result.Roots) != 0 {
+			t.Fatalf("expected no roots to be recorded for a cancelled selection, got %v -- an out-of-range index must never be silently dropped while keeping the rest of the answer", result.Roots)
+		}
+		if !strings.Contains(out, `"3"`) {
+			t.Fatalf("expected the rejection explanation to reference the offending token %q, got:\n%s", "3", out)
+		}
+	})
+
 	t.Run("a root selection over the budget is rejected and cancel stops the session before any later stage runs", func(t *testing.T) {
 		roots := make([]string, maxProjectConfigRoots+1)
 		for i := range roots {
@@ -368,7 +384,7 @@ func equalForbiddenImports(a, b []projectForbiddenImport) bool {
 func runAuthoring(discovered projectmodel.TSRootDiscoveryResult, lines ...string) (AuthoringResult, string) {
 	out := &bytes.Buffer{}
 	in := strings.NewReader(strings.Join(lines, "\n") + "\n")
-	result := AuthorProjectConfig("", in, out, discovered, "", false)
+	result := AuthorProjectConfig("", in, out, out, discovered, "", false)
 	return result, out.String()
 }
 
@@ -386,7 +402,7 @@ func runAuthoringWithTimeout(t *testing.T, timeout time.Duration, discovered pro
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		done <- outcome{AuthorProjectConfig("", in, out, discovered, "", false)}
+		done <- outcome{AuthorProjectConfig("", in, out, out, discovered, "", false)}
 	}()
 
 	select {
@@ -549,7 +565,7 @@ func TestAuthorProjectConfig_NonEOFReadErrorCancelsInsteadOfSpinning(t *testing.
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		done <- outcome{AuthorProjectConfig("", in, out, discovered, "", false)}
+		done <- outcome{AuthorProjectConfig("", in, out, out, discovered, "", false)}
 	}()
 
 	select {
@@ -1218,7 +1234,7 @@ func TestAuthorProjectConfig_ApprovalGateTerminatesPromptlyOnExhaustedOrErroring
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		done <- outcome{AuthorProjectConfig("", in, io.Discard, discovered, "", false)}
+		done <- outcome{AuthorProjectConfig("", in, io.Discard, io.Discard, discovered, "", false)}
 	}()
 
 	select {
@@ -1314,7 +1330,7 @@ func TestAuthorProjectConfig_ApprovedAndOutputSet_WritesCreateOnly(t *testing.T)
 			"approve",
 		}, "\n") + "\n")
 
-		result := AuthorProjectConfig(dir, in, out, discovered, outputPath, true)
+		result := AuthorProjectConfig(dir, in, out, out, discovered, outputPath, true)
 
 		if !result.Approved {
 			t.Fatalf("expected Approved = true, got false; output:\n%s", out.String())
@@ -1364,7 +1380,7 @@ func TestAuthorProjectConfig_ApprovedAndOutputSet_WritesCreateOnly(t *testing.T)
 			"approve",
 		}, "\n") + "\n")
 
-		result := AuthorProjectConfig(dir, in, out, discovered, outputPath, true)
+		result := AuthorProjectConfig(dir, in, out, out, discovered, outputPath, true)
 
 		if !result.Approved {
 			t.Fatalf("expected Approved = true, got false; output:\n%s", out.String())
@@ -1410,7 +1426,7 @@ func TestAuthorProjectConfig_ApprovedAndOutputSet_WritesCreateOnly(t *testing.T)
 			"approve",
 		}, "\n") + "\n")
 
-		result := AuthorProjectConfig(dir, in, out, discovered, outputPath, true)
+		result := AuthorProjectConfig(dir, in, out, out, discovered, outputPath, true)
 
 		if !result.Approved {
 			t.Fatalf("expected Approved = true, got false; output:\n%s", out.String())
@@ -1452,7 +1468,7 @@ func TestAuthorProjectConfig_ApprovedAndOutputSet_WritesCreateOnly(t *testing.T)
 			"approve",
 		}, "\n") + "\n")
 
-		result := AuthorProjectConfig(dir, in, out, discovered, outputPath, true)
+		result := AuthorProjectConfig(dir, in, out, out, discovered, outputPath, true)
 
 		if !result.Approved {
 			t.Fatalf("expected Approved = true, got false; output:\n%s", out.String())
@@ -1482,7 +1498,7 @@ func TestAuthorProjectConfig_ApprovedAndOutputSet_WritesCreateOnly(t *testing.T)
 			"approve",
 		}, "\n") + "\n")
 
-		result := AuthorProjectConfig(dir, in, out, discovered, outputPath, true)
+		result := AuthorProjectConfig(dir, in, out, out, discovered, outputPath, true)
 
 		if !result.Approved {
 			t.Fatalf("expected Approved = true, got false; output:\n%s", out.String())
@@ -1523,7 +1539,7 @@ func TestAuthorProjectConfig_ApprovedAndOutputSet_WritesCreateOnly(t *testing.T)
 			"approve",
 		}, "\n") + "\n")
 
-		result := AuthorProjectConfig(dir, in, out, discovered, outputPath, true)
+		result := AuthorProjectConfig(dir, in, out, out, discovered, outputPath, true)
 
 		if !result.Approved {
 			t.Fatalf("expected Approved = true, got false; output:\n%s", out.String())
@@ -1547,9 +1563,10 @@ func TestAuthorProjectConfig_ApprovedAndOutputSet_WritesCreateOnly(t *testing.T)
 	})
 }
 
-func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToOut(t *testing.T) {
+func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToCandidateOutOnly(t *testing.T) {
 	discovered := projectmodel.TSRootDiscoveryResult{Roots: []string{"apps/api"}, Complete: true}
-	out := &bytes.Buffer{}
+	transcript := &bytes.Buffer{}
+	candidateOut := &bytes.Buffer{}
 	in := strings.NewReader(strings.Join([]string{
 		"1",
 		"domain", "internal/domain",
@@ -1559,10 +1576,10 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToOut(t *test
 		"approve",
 	}, "\n") + "\n")
 
-	result := AuthorProjectConfig(t.TempDir(), in, out, discovered, "", false)
+	result := AuthorProjectConfig(t.TempDir(), in, transcript, candidateOut, discovered, "", false)
 
 	if !result.Approved {
-		t.Fatalf("expected Approved = true, got false; output:\n%s", out.String())
+		t.Fatalf("expected Approved = true, got false; transcript:\n%s", transcript.String())
 	}
 	if result.ValidationError != nil {
 		t.Fatalf("expected ValidationError = nil, got %v", result.ValidationError)
@@ -1576,14 +1593,24 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToOut(t *test
 		t.Fatalf("Document = %s, want %s", result.Document, want)
 	}
 
-	tail := tailAfterLastPrompt(out.String())
-	if tail != string(want) {
-		t.Fatalf("expected the approved candidate document to be written to out after the interactive prompt text, got tail = %q, want %q", tail, want)
+	// candidateOut must contain the candidate document and nothing else --
+	// not the interactive transcript that reached the separate transcript
+	// writer -- so a caller capturing candidateOut (e.g. redirected stdout)
+	// gets a parseable document, and transcript must be visible even if
+	// candidateOut is redirected somewhere the customer cannot see.
+	if !bytes.Equal(candidateOut.Bytes(), want) {
+		t.Fatalf("candidateOut = %q, want exactly the candidate document %q", candidateOut.String(), want)
+	}
+	if transcript.Len() == 0 {
+		t.Fatalf("expected the interactive transcript to be written to the transcript writer, got none")
+	}
+	if strings.Contains(transcript.String(), `"schema_version"`) {
+		t.Fatalf("expected the candidate document to never appear in the transcript writer, got:\n%s", transcript.String())
 	}
 
 	var decoded projectConfig
-	if err := json.Unmarshal([]byte(tail), &decoded); err != nil {
-		t.Fatalf("expected the emitted document to be valid JSON, got error %v decoding %q", err, tail)
+	if err := json.Unmarshal(candidateOut.Bytes(), &decoded); err != nil {
+		t.Fatalf("expected the emitted document to be valid JSON, got error %v decoding %q", err, candidateOut.String())
 	}
 	if decoded.SchemaVersion != "1" {
 		t.Fatalf("schema_version = %q, want %q", decoded.SchemaVersion, "1")
@@ -1609,7 +1636,8 @@ func (w *alwaysErrorWriter) Write(p []byte) (int, error) {
 func TestAuthorProjectConfig_ApprovedAndOutputUnset_WriteFailureIsReportedNotSilentlySuccessful(t *testing.T) {
 	discovered := projectmodel.TSRootDiscoveryResult{Roots: []string{"apps/api"}, Complete: true}
 	writeErr := errors.New("write: broken pipe")
-	out := &alwaysErrorWriter{err: writeErr}
+	transcript := &bytes.Buffer{}
+	candidateOut := &alwaysErrorWriter{err: writeErr}
 	in := strings.NewReader(strings.Join([]string{
 		"1",
 		"domain", "internal/domain",
@@ -1619,16 +1647,16 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WriteFailureIsReportedNotSil
 		"approve",
 	}, "\n") + "\n")
 
-	result := AuthorProjectConfig(t.TempDir(), in, out, discovered, "", false)
+	result := AuthorProjectConfig(t.TempDir(), in, transcript, candidateOut, discovered, "", false)
 
 	if !result.Approved {
-		t.Fatalf("expected Approved = true (the candidate itself is valid), got false")
+		t.Fatalf("expected Approved = true (the candidate itself is valid), got false; transcript:\n%s", transcript.String())
 	}
 	if result.ValidationError != nil {
 		t.Fatalf("expected ValidationError = nil, got %v", result.ValidationError)
 	}
 	if result.WriteError == nil {
-		t.Fatalf("expected WriteError to report the failed write to out, got nil")
+		t.Fatalf("expected WriteError to report the failed write to candidateOut, got nil")
 	}
 	if !errors.Is(result.WriteError, writeErr) {
 		t.Fatalf("WriteError = %v, want it to wrap %v", result.WriteError, writeErr)
@@ -1651,7 +1679,7 @@ func TestAuthorProjectConfig_DeclinedApprovalNeverReachesTheWritePath(t *testing
 			"nope", // declines approval
 		}, "\n") + "\n")
 
-		result := AuthorProjectConfig(dir, in, out, discovered, outputPath, true)
+		result := AuthorProjectConfig(dir, in, out, out, discovered, outputPath, true)
 
 		if result.Approved {
 			t.Fatalf("expected Approved = false, got true")
@@ -1681,7 +1709,7 @@ func TestAuthorProjectConfig_DeclinedApprovalNeverReachesTheWritePath(t *testing
 			"nope",
 		}, "\n") + "\n")
 
-		result := AuthorProjectConfig(t.TempDir(), in, out, discovered, "", false)
+		result := AuthorProjectConfig(t.TempDir(), in, out, out, discovered, "", false)
 
 		if result.Approved {
 			t.Fatalf("expected Approved = false, got true")
