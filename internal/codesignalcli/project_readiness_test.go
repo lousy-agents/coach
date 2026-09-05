@@ -33,6 +33,25 @@ func TestCheckProjectShapeIgnoresRootsWhenPolicyNotPassed(t *testing.T) {
 	}
 }
 
+func TestCheckProjectShapeWalksUpToParentPackageJSONWhenPolicyPassed(t *testing.T) {
+	repo := newTempGitRepoT(t)
+	if err := os.MkdirAll(filepath.Join(repo, "js", "semantics", "src"), 0o755); err != nil {
+		t.Fatalf("mkdir nested src: %v", err)
+	}
+	revision := commitFileT(t, repo, "js/semantics/package.json", `{"name":"semantics","version":"1.0.0"}`+"\n")
+	if err := os.WriteFile(filepath.Join(repo, "js", "semantics", "src", "index.ts"), []byte("export const x = 1;\n"), 0o644); err != nil {
+		t.Fatalf("write index.ts: %v", err)
+	}
+
+	got, err := checkProjectShape(repo, revision, []string{"js/semantics/src"}, true)
+	if err != nil {
+		t.Fatalf("checkProjectShape returned error: %v", err)
+	}
+	if got.State != ReadinessPass {
+		t.Fatalf("State = %q code=%q, want pass (parent package.json via walk-up)", got.State, got.Code)
+	}
+}
+
 func TestFileExistsAtRevisionIgnoresTreeEntries(t *testing.T) {
 	repo := newTempGitRepoT(t)
 	if err := os.Mkdir(filepath.Join(repo, "package.json"), 0o755); err != nil {
@@ -295,12 +314,10 @@ func TestAggregateReadinessPrecedence(t *testing.T) {
 
 // TestAggregateReadinessOrdersNextActionsPolicyBeforeCompiler proves AC-SET-13
 // directly: when a policy gap and a compiler gap exist simultaneously,
-// author_policy precedes prepare_compiler in next_actions. checkCompiler
-// never actually fails today (it always reports not_checked, per its own
-// doc comment) so this scenario is unreachable via the CLI until a later
-// task wires real compiler resolution -- exercised directly against
-// aggregateReadiness, the same way TestGapCodeMappings pins the other
-// currently-unreachable gap codes.
+// author_policy precedes prepare_compiler in next_actions. Exercised
+// directly against aggregateReadiness, rather than through resolveCompiler,
+// so the ordering assertion does not depend on constructing a real
+// typescript_compiler_missing fixture.
 func TestAggregateReadinessOrdersNextActionsPolicyBeforeCompiler(t *testing.T) {
 	checks := ReadinessChecks{
 		Policy:   ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
@@ -337,16 +354,22 @@ func TestAggregateReadinessEmitsNodeUntestedWarningShape(t *testing.T) {
 	}
 }
 
-// TestAggregateReadinessOmitsWarningsWhenNodeNotUntested proves a passing,
-// tested-major node check (or any non-node_untested code) never emits a
-// warnings entry.
 func TestAggregateReadinessOmitsWarningsWhenNodeNotUntested(t *testing.T) {
-	checks := ReadinessChecks{
-		Node: ReadinessCheck{State: ReadinessPass, Version: "v24.9.9"},
+	cases := []struct {
+		name string
+		node ReadinessCheck
+	}{
+		{"passing, tested-major node check", ReadinessCheck{State: ReadinessPass, Version: "v24.9.9"}},
+		{"failing node check with a non-node_untested code", ReadinessCheck{State: ReadinessFail, Code: GapNodeBelowMinimum}},
 	}
-	_, _, _, warnings := aggregateReadiness(checks, false)
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %#v, want none", warnings)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			checks := ReadinessChecks{Node: tc.node}
+			_, _, _, warnings := aggregateReadiness(checks, false)
+			if len(warnings) != 0 {
+				t.Fatalf("warnings = %#v, want none", warnings)
+			}
+		})
 	}
 }
 

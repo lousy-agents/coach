@@ -25,21 +25,13 @@ const (
 // compiled-in constants, not read from either file at runtime: an analyzed
 // repository has neither this repo's package.json nor its mise.toml, and a
 // runtime read would conflate "the host running coach" with "the host being
-// checked." The invariant MinimumSupportedNodeMajor <= TestedNodeMajor must
-// hold: a host Node at or above the floor whose major differs from the
-// tested major is the node_untested warning, never a gap, so the
-// repository's own tested Node always reports ready with neither a gap nor
-// a warning. Update both
-// constants by hand (and the package.json engines value) if either pin
-// moves.
+// checked." See TestNodeVersionConstantsMatchDeclaredPins for the pinned
+// invariant these must satisfy.
 const (
 	MinimumSupportedNodeMajor = 24
 	TestedNodeMajor           = 24
 )
 
-// ReadinessState distinguishes a check that could not be verified
-// (not_checked) from one that failed outright, so a caller never confuses a
-// missing prerequisite with an unsupported project.
 type ReadinessState string
 
 const (
@@ -59,9 +51,10 @@ const (
 )
 
 // Gap codes map 1:1 to a ReadinessStatus via statusForGapCode. The
-// package-manager and compiler-version codes are declared here as vocabulary
-// that later work will plug real detection into; this package never
-// produces them itself -- see checkCompiler and checkPackageManager.
+// package-manager codes are declared here as vocabulary that later work will
+// plug real detection into; checkPackageManager never produces them itself
+// yet. The compiler codes are produced by resolveCompiler
+// (project_ts_compiler_resolve.go).
 const (
 	GapUnsupportedRepositoryShape       = "unsupported_repository_shape"
 	GapNodeMissing                      = "node_missing"
@@ -82,16 +75,43 @@ const (
 // ready_with_limits, alongside a relevant dirty worktree.
 const WarnNodeUntested = "node_untested"
 
+// WarnCompilerDeclarationMismatch is the limit-class warning when a
+// selected manifest declares a non-exact range or an out-of-set version
+// and another origin still supplies a supported compiler. It never appears
+// in gaps[] and carries no next action: Coach never edits manifests.
+const WarnCompilerDeclarationMismatch = "compiler_declaration_mismatch"
+
+// ReadinessRootFinding names one selected policy root's compiler-origin
+// result on a typescript_version_conflict. Version is empty when that root
+// has no nearest package.json (or an empty project origin). Paths are
+// repository-relative policy roots, never absolute host paths.
+type ReadinessRootFinding struct {
+	Root    string `json:"root"`
+	Version string `json:"version,omitempty"`
+}
+
 // ReadinessCheck is one entry in ReadinessChecks. Version/ExpectedVersion/
-// FoundVersion are populated only by the checks that have a version concept
-// today (Node); they are reserved, always-empty fields for Compiler until a
-// later task implements real version comparison.
+// FoundVersion are populated by the checks that have a version concept:
+// Node populates Version (and the node_untested code) on a pass; Compiler
+// populates Version on a pass, ExpectedVersion/FoundVersion together with
+// SupportedVersions on a typescript_version_mismatch, ExpectedVersion (and
+// FoundVersion when a rejected candidate was probed) on
+// typescript_compiler_missing, and RootFindings only on
+// typescript_version_conflict — expected_version and found_version are
+// omitted for a conflict. SupportedVersions is additive and omitempty:
+// only typescript_version_mismatch lists the compiled-in supported set.
+// RootFindings is additive and omitempty: only typescript_version_conflict
+// lists every selected root's finding so remediation can name each one.
 type ReadinessCheck struct {
-	State           ReadinessState `json:"state"`
-	Code            string         `json:"code,omitempty"`
-	Version         string         `json:"version,omitempty"`
-	ExpectedVersion string         `json:"expected_version,omitempty"`
-	FoundVersion    string         `json:"found_version,omitempty"`
+	State             ReadinessState         `json:"state"`
+	Code              string                 `json:"code,omitempty"`
+	Version           string                 `json:"version,omitempty"`
+	ExpectedVersion   string                 `json:"expected_version,omitempty"`
+	FoundVersion      string                 `json:"found_version,omitempty"`
+	SupportedVersions []string               `json:"supported_versions,omitempty"`
+	RootFindings      []ReadinessRootFinding `json:"root_findings,omitempty"`
+	DeclaredVersion   string                 `json:"-"`
+	DeclarationOrigin string                 `json:"-"`
 }
 
 // ReadinessChecks is the fixed set of independently discoverable checks:
@@ -111,14 +131,17 @@ type ReadinessGap struct {
 
 // ReadinessWarning is a warning-class condition: unlike a ReadinessGap it
 // never blocks readiness on its own, elevating status only as far as
-// ready_with_limits. WarnNodeUntested is the only warning kind today; its
-// entry shape (code, found_major, tested_major, floor_major) is frozen even
-// though the vocabulary currently has one member.
+// ready_with_limits. Entries are discriminated by Code: node_untested uses
+// found_major/tested_major/floor_major; compiler_declaration_mismatch uses
+// declared_version/found_version/declaration_origin.
 type ReadinessWarning struct {
-	Code        string `json:"code"`
-	FoundMajor  int    `json:"found_major"`
-	TestedMajor int    `json:"tested_major"`
-	FloorMajor  int    `json:"floor_major"`
+	Code              string `json:"code"`
+	FoundMajor        int    `json:"found_major,omitempty"`
+	TestedMajor       int    `json:"tested_major,omitempty"`
+	FloorMajor        int    `json:"floor_major,omitempty"`
+	DeclaredVersion   string `json:"declared_version,omitempty"`
+	FoundVersion      string `json:"found_version,omitempty"`
+	DeclarationOrigin string `json:"declaration_origin,omitempty"`
 }
 
 type ReadinessNextAction struct {
@@ -152,9 +175,13 @@ type ReadinessResult struct {
 // CheckProjectReadiness produces a read-only TypeScript project-readiness
 // result at revision. Snapshot checks (project_shape, policy) read only
 // committed content at revision via Git plumbing; the Node host check reads
-// only host state; worktree paths are inspected only to report their
-// existence, never their content. configPath is the --project-config value;
-// an empty string resolves to the default "project.json" at revision.
+// only host state; the Compiler check reads worktree content (package.json,
+// mise.toml, node_modules/typescript) directly rather than the Git
+// snapshot -- these are host-readiness reads of worktree state that setup
+// would mutate; they never become analysis input. Other worktree paths are
+// inspected only to report their existence, never their content. configPath
+// is the --project-config value; an empty string resolves to the default
+// "project.json" at revision.
 func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, error) {
 	policyPath := configPath
 	if policyPath == "" {
@@ -176,7 +203,7 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 		return nil, err
 	}
 	node := checkNodeReadiness()
-	compiler := checkCompiler()
+	compiler := resolveCompiler(dir, roots)
 	packageManager := checkPackageManager()
 
 	checks := ReadinessChecks{
@@ -209,15 +236,14 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 
 // checkProjectShape reports whether revision looks like a Node/TypeScript
 // project at all: a committed package.json at the repository root, or, once
-// policyPassed is true, under at least one of the policy's declared roots.
-// Without a validated policy, a non-root package.json is not a reliable
-// signal -- roots is untrusted input until a policy has passed
-// schema/content validation -- so the root-only heuristic is the correct,
-// conservative default when there is no other signal available. This is
-// still a coarse, deliberately shallow signal: layer discovery beyond "does
-// package.json exist here" is the policy check's job. A repository-
-// inspection failure (fileExistsAtRevision's error return) is propagated,
-// never collapsed into a fabricated pass/fail.
+// policyPassed is true, at or above at least one of the policy's declared
+// roots (nearest package.json walking toward the repository root, matching
+// compiler resolution). Without a validated policy, a non-root package.json
+// is not a reliable signal -- roots is untrusted input until a policy has
+// passed schema/content validation -- so the root-only heuristic is the
+// correct, conservative default when there is no other signal available.
+// This is still a coarse, deliberately shallow signal: layer discovery
+// beyond "does package.json exist here" is the policy check's job.
 func checkProjectShape(dir, revision string, roots []string, policyPassed bool) (ReadinessCheck, error) {
 	exists, err := fileExistsAtRevision(dir, revision, "package.json")
 	if err != nil {
@@ -240,22 +266,31 @@ func checkProjectShape(dir, revision string, roots []string, policyPassed bool) 
 	return ReadinessCheck{State: ReadinessFail, Code: GapUnsupportedRepositoryShape}, nil
 }
 
-// packageJSONExistsUnderAnyRoot reports whether package.json exists under
-// any of roots at revision. roots is already bounded by
-// parseProjectConfig's maxProjectConfigRoots (project.go): a validated
-// policy cannot fan this loop out into an unbounded number of git
-// child-process spawns.
+// packageJSONExistsUnderAnyRoot reports whether a package.json blob exists
+// at or above any of roots at revision. The walk uses fileExistsAtRevision
+// (Git snapshot), never worktree os.Stat, so it matches compiler
+// nearest-manifest resolution without mixing host state into a snapshot
+// check. roots: ["."] is skipped here because the caller already probed
+// the repository-root package.json and must not walk down.
 func packageJSONExistsUnderAnyRoot(dir, revision string, roots []string) (bool, error) {
 	for _, root := range roots {
-		if root == "." || root == "" {
+		current := path.Clean(strings.TrimSpace(root))
+		if current == "" || current == "." {
 			continue
 		}
-		exists, err := fileExistsAtRevision(dir, revision, path.Join(root, "package.json"))
-		if err != nil {
-			return false, err
-		}
-		if exists {
-			return true, nil
+		for {
+			exists, err := fileExistsAtRevision(dir, revision, path.Join(current, "package.json"))
+			if err != nil {
+				return false, err
+			}
+			if exists {
+				return true, nil
+			}
+			parent := path.Dir(current)
+			if parent == "." || parent == current {
+				break
+			}
+			current = parent
 		}
 	}
 	return false, nil
@@ -288,15 +323,6 @@ func checkPolicy(dir, revision, policyPath string) (ReadinessCheck, []string, er
 		return ReadinessCheck{}, nil, err
 	}
 	return ReadinessCheck{State: ReadinessPass}, config.Roots, nil
-}
-
-// checkCompiler always reports not_checked. Real TypeScript compiler
-// discovery/version comparison (the typescript_compiler_missing/
-// typescript_version_mismatch/typescript_version_conflict gap codes) is a
-// seam for a later task to plug in; fabricating a pass or fail here would
-// misreport a check that does not exist yet.
-func checkCompiler() ReadinessCheck {
-	return ReadinessCheck{State: ReadinessNotChecked}
 }
 
 // checkPackageManager always reports not_checked. Real package-manager
@@ -392,21 +418,73 @@ func ValidateProjectConfigPath(repoPath string) error {
 
 var errNodeNotFound = errors.New("node executable not found on PATH")
 
-// errNodeVersionProbeTimedOut signals that `node --version` was started but
-// did not complete within nodeVersionProbeTimeout. Distinguished from
-// errNodeNotFound so checkNodeReadiness can report node_below_minimum (Node
-// is present, just unresponsive) rather than the misleading node_missing.
+// errNodeVersionProbeTimedOut signals that `node --version` did not
+// complete within nodeVersionProbeTimeout; see checkNodeReadiness's doc for
+// why this is classified separately from errNodeNotFound.
 var errNodeVersionProbeTimedOut = errors.New("node --version timed out")
 
-// nodeVersionProbeTimeout and maxNodeVersionProbeOutput bound the `node
-// --version` host probe, mirroring runGitBytesBoundedWith's shape: a host
-// Node that hangs or streams unbounded output on `--version` must fail
-// closed within a finite wall clock and memory budget rather than wedging
-// the CLI, the same as every other subprocess this package spawns.
 const (
 	nodeVersionProbeTimeout   = 10 * time.Second
-	maxNodeVersionProbeOutput = 4 << 10 // 4 KiB is ample for a version string
+	maxNodeVersionProbeOutput = 4 << 10
 )
+
+// errBoundedProbeTimedOut is runBoundedSubprocessProbe's shared timeout
+// signal; every host subprocess probe in this package (Node/mise version
+// and install-location detection) maps it onto its own domain error rather
+// than leaking a generic message to a readiness/runtime consumer.
+var errBoundedProbeTimedOut = errors.New("bounded subprocess probe timed out")
+
+// runBoundedSubprocessProbe runs name with args, capped at timeout wall
+// clock and maxOutput bytes of stdout, so a hung or unbounded-output host
+// tool fails closed rather than wedging the CLI. exitErr carries the
+// process's own non-zero-exit error uninterpreted -- callers assign their
+// own meaning (a non-zero mise exit means "no candidate"; a non-zero node
+// exit means a real error) -- while err covers every other spawn/read
+// failure, with errBoundedProbeTimedOut identifying a deadline specifically.
+func runBoundedSubprocessProbe(ctx context.Context, timeout time.Duration, maxOutput int64, name string, args ...string) (data []byte, exitErr, err error) {
+	return runBoundedSubprocessProbeAt(ctx, timeout, maxOutput, "", nil, name, args...)
+}
+
+func runBoundedSubprocessProbeAt(ctx context.Context, timeout time.Duration, maxOutput int64, dir string, env []string, name string, args ...string) (data []byte, exitErr, err error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	if env != nil {
+		cmd.Env = env
+	}
+	stdout, pipeErr := cmd.StdoutPipe()
+	if pipeErr != nil {
+		return nil, nil, fmt.Errorf("starting %s: %w", name, pipeErr)
+	}
+	if startErr := cmd.Start(); startErr != nil {
+		return nil, nil, fmt.Errorf("starting %s: %w", name, startErr)
+	}
+
+	data, readErr := io.ReadAll(io.LimitReader(stdout, maxOutput+1))
+	waitErr := cmd.Wait()
+
+	// Checked ahead of readErr/waitErr: killing the child on deadline makes
+	// both of those non-nil too, but the deadline is the true, deterministic
+	// cause and must classify as a timeout rather than a generic run/read
+	// failure.
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, nil, errBoundedProbeTimedOut
+	}
+	if readErr != nil {
+		return nil, nil, fmt.Errorf("reading %s output: %w", name, readErr)
+	}
+	if int64(len(data)) > maxOutput {
+		return nil, nil, fmt.Errorf("%s output exceeded %d-byte budget", name, maxOutput)
+	}
+	if waitErr != nil {
+		return nil, waitErr, nil
+	}
+	return data, nil, nil
+}
 
 // detectHostNodeMajor is the Node-detection seam: it looks up `node` on
 // PATH and parses `node --version`'s major component. Tests may replace it
@@ -417,36 +495,14 @@ var detectHostNodeMajor = func() (rawVersion string, major int, err error) {
 		return "", 0, errNodeNotFound
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nodeVersionProbeTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "node", "--version")
-	stdout, pipeErr := cmd.StdoutPipe()
-	if pipeErr != nil {
-		return "", 0, fmt.Errorf("starting node --version: %w", pipeErr)
-	}
-	if startErr := cmd.Start(); startErr != nil {
-		return "", 0, fmt.Errorf("starting node --version: %w", startErr)
-	}
-
-	data, readErr := io.ReadAll(io.LimitReader(stdout, maxNodeVersionProbeOutput+1))
-	waitErr := cmd.Wait()
-
-	// Checked ahead of readErr/waitErr: killing the child on deadline makes
-	// both of those non-nil too, but the deadline is the true, deterministic
-	// cause and must classify as a timeout rather than a generic run/read
-	// failure.
-	if ctx.Err() == context.DeadlineExceeded {
+	data, exitErr, probeErr := runBoundedSubprocessProbe(context.Background(), nodeVersionProbeTimeout, maxNodeVersionProbeOutput, "node", "--version")
+	switch {
+	case errors.Is(probeErr, errBoundedProbeTimedOut):
 		return "", 0, errNodeVersionProbeTimedOut
-	}
-	if readErr != nil {
-		return "", 0, fmt.Errorf("reading node --version output: %w", readErr)
-	}
-	if waitErr != nil {
-		return "", 0, fmt.Errorf("running node --version: %w", waitErr)
-	}
-	if int64(len(data)) > maxNodeVersionProbeOutput {
-		return "", 0, fmt.Errorf("node --version output exceeded %d-byte budget", maxNodeVersionProbeOutput)
+	case probeErr != nil:
+		return "", 0, probeErr
+	case exitErr != nil:
+		return "", 0, fmt.Errorf("running node --version: %w", exitErr)
 	}
 
 	rawVersion = strings.TrimSpace(string(data))
@@ -567,12 +623,20 @@ func aggregateReadiness(checks ReadinessChecks, dirtyRelevant bool) (ReadinessSt
 		}
 	}
 
-	limitWarning := dirtyRelevant || checks.Node.Code == WarnNodeUntested
+	limitWarning := dirtyRelevant || checks.Node.Code == WarnNodeUntested || checks.Compiler.Code == WarnCompilerDeclarationMismatch
 	if len(gaps) == 0 && limitWarning {
 		status = StatusReadyWithLimits
 	}
 
 	warnings := make([]ReadinessWarning, 0, 1)
+	if checks.Compiler.Code == WarnCompilerDeclarationMismatch {
+		warnings = append(warnings, ReadinessWarning{
+			Code:              WarnCompilerDeclarationMismatch,
+			DeclaredVersion:   checks.Compiler.DeclaredVersion,
+			FoundVersion:      checks.Compiler.Version,
+			DeclarationOrigin: checks.Compiler.DeclarationOrigin,
+		})
+	}
 	if checks.Node.Code == WarnNodeUntested {
 		// checkNodeReadiness only ever sets WarnNodeUntested after successfully
 		// parsing checks.Node.Version to compare its major against
@@ -593,9 +657,7 @@ func aggregateReadiness(checks ReadinessChecks, dirtyRelevant bool) (ReadinessSt
 	return status, gaps, nextActions, warnings
 }
 
-// packageManagerMetadataBasenames are always treated as relevant dirty-
-// worktree paths, regardless of configured roots.
-var packageManagerMetadataBasenames = map[string]bool{
+var alwaysRelevantMetadataBasenames = map[string]bool{
 	"package.json":        true,
 	"package-lock.json":   true,
 	"yarn.lock":           true,
@@ -632,7 +694,7 @@ func isRelevantDirtyPath(candidate string, roots []string, policyPath string) bo
 	if strings.HasPrefix(base, "tsconfig") {
 		return true
 	}
-	if packageManagerMetadataBasenames[base] {
+	if alwaysRelevantMetadataBasenames[base] {
 		return true
 	}
 	for _, root := range roots {
@@ -661,15 +723,15 @@ type worktreeStatusEntry struct {
 // CLI or exhausting memory, the same as every other git read this package
 // performs.
 const (
-	maxDirtyWorktreeStatusBytes = 16 << 20 // 16 MiB path listing
-	maxDirtyWorktreeGitStderr   = 64 << 10
-	dirtyWorktreeGitTimeout     = 30 * time.Second
+	maxDirtyWorktreeStatusListingBytes = 16 << 20
+	maxDirtyWorktreeGitStderr          = 64 << 10
+	dirtyWorktreeGitTimeout            = 30 * time.Second
 )
 
 // runDirtyWorktreeGit is the git seam used by gitWorktreeStatus. Tests may
 // replace it to exercise timeout and bound failures without hanging.
 var runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
-	return runGitBytesBounded(dir, maxDirtyWorktreeStatusBytes, maxDirtyWorktreeGitStderr, dirtyWorktreeGitTimeout, args...)
+	return runGitBytesBounded(dir, maxDirtyWorktreeStatusListingBytes, maxDirtyWorktreeGitStderr, dirtyWorktreeGitTimeout, args...)
 }
 
 // gitWorktreeStatus parses `git status --porcelain=v1 --untracked-files=all
@@ -693,7 +755,7 @@ func gitWorktreeStatus(dir string) ([]worktreeStatusEntry, error) {
 		code := raw[:2]
 		entries = append(entries, worktreeStatusEntry{code: code, path: raw[3:]})
 		if strings.ContainsAny(code, "RC") && i < len(fields) {
-			i++ // skip the paired original path for a rename/copy record
+			i++
 		}
 	}
 	return entries, nil

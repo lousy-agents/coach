@@ -119,6 +119,9 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return classifyAnalysisError(err, stderr)
 	}
 	if report == nil {
+		if projectExitCode != 0 {
+			return projectExitCode
+		}
 		return 1
 	}
 
@@ -505,6 +508,10 @@ func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codes
 	}
 	report, err := codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, nil, f.scope, coverage, project)
 	if err != nil {
+		var unresolved *codesignalcli.CompilerUnresolvedError
+		if errors.As(err, &unresolved) {
+			return nil, 0, unresolved
+		}
 		fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
 		return nil, 0, nil
 	}
@@ -532,6 +539,10 @@ func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesigna
 	}
 	report, err := codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, f.scope, excluded, project)
 	if err != nil {
+		var unresolved *codesignalcli.CompilerUnresolvedError
+		if errors.As(err, &unresolved) {
+			return nil, 0, unresolved
+		}
 		fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
 		return nil, 0, nil
 	}
@@ -615,6 +626,11 @@ func renderReport(report *codesignal.Report, format string, stdout, stderr *os.F
 // error -- prepareProjectAnalysis handles that case separately by returning
 // a diagnostic instead of an error.
 func classifyAnalysisError(err error, stderr *os.File) int {
+	var unresolved *codesignalcli.CompilerUnresolvedError
+	if errors.As(err, &unresolved) {
+		fmt.Fprintln(stderr, unresolved.RemediationLine())
+		return 2
+	}
 	var configErr *codesignalcli.ProjectConfigError
 	if errors.As(err, &configErr) {
 		fmt.Fprintln(stderr, configErr.Message)

@@ -64,6 +64,7 @@ var modeHandlers = map[string]modeHandler{
 	"partial":                modePartial,
 	"trailing_output":        modeTrailingOutput,
 	"env":                    modeEnv,
+	"cwd":                    modeCwd,
 	"happy":                  modeHappy,
 	"reachability":           modeReachability,
 	"reachability_gap":       modeReachabilityGap,
@@ -465,6 +466,24 @@ func modeTrailingOutput(req projectbridge.Request) {
 	fmt.Println(`{"not": "part of the response"}`)
 }
 
+func modeCwd(req projectbridge.Request) {
+	wd, err := os.Getwd()
+	if err != nil {
+		wd = err.Error()
+	}
+	writeResponse(projectbridge.Response{
+		Version: req.Version,
+		ID:      req.ID,
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: true,
+			Diagnostics: []projectbridge.Diagnostic{
+				{Code: "cwd_probe", Message: wd},
+			},
+		},
+	})
+}
+
 func modeEnv(req projectbridge.Request) {
 	probe := os.Getenv("COACH_TS_SIDECAR_ENV_PROBE")
 	writeResponse(projectbridge.Response{
@@ -474,7 +493,18 @@ func modeEnv(req projectbridge.Request) {
 			Phase:    "ts_sidecar_fake",
 			Complete: true,
 			Diagnostics: []projectbridge.Diagnostic{
-				{Code: "env_probe", Message: fmt.Sprintf("probe=%q path=%s home=%s", probe, envState("PATH"), envState("HOME"))},
+				{
+					Code: "env_probe",
+					Message: fmt.Sprintf(
+						"probe=%q path=%s home=%s node_options=%s http_proxy=%s npm_config_registry=%s",
+						probe,
+						envState("PATH"),
+						envState("HOME"),
+						envState("NODE_OPTIONS"),
+						envState("HTTP_PROXY"),
+						envState("npm_config_registry"),
+					),
+				},
 			},
 		},
 	})

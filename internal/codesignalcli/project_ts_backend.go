@@ -3,25 +3,18 @@ package codesignalcli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"path/filepath"
-	"time"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-// tsSidecarWallTime bounds one BuildTypeScriptModelViaSidecar call's
-// TSSidecarOptions.Timeout, matching goProjectBuildWallTime's 60s value from
-// epic #208's frozen "Snapshot/import facts" phase row -- the TS sidecar
-// call is a peer of the Go in-process build for budget purposes even though
-// it crosses a subprocess boundary.
-const tsSidecarWallTime = 60 * time.Second
-
-// tsProjectMaxInputBytes mirrors goProjectMaxInputBytes for the TS sidecar's
-// input-collection budget (TSSidecarOptions.Budgets), per epic #208's same
-// frozen resource-default table.
-const tsProjectMaxInputBytes = 50 << 20
+// tsSidecarWallTime is the TS sidecar call's TSSidecarOptions.Timeout: the
+// same budget as goProjectBuildWallTime, since the TS sidecar call is a peer
+// of the Go in-process build for budget purposes even though it crosses a
+// subprocess boundary.
+const tsSidecarWallTime = goProjectBuildWallTime
 
 // Identity constants for architecture.layer_violation ProjectChanges emitted
 // by tsProjectBackend, kept distinct from goLayerRuleVersion/
@@ -33,53 +26,34 @@ const (
 	tsLayerBackendVersion = "ts-layer-policy@1"
 )
 
-// tsProjectBudgets mirrors goProjectBudgets for the TS sidecar backend; see
-// that value's doc comment for the shared epic #208 resource-default table
-// this must track.
-var tsProjectBudgets = projectmodel.GoBudgets{
-	WallTime:           tsSidecarWallTime,
-	MaxInputFiles:      5000,
-	MaxInputBytes:      tsProjectMaxInputBytes,
-	MaxGraphNodes:      100000,
-	MaxGraphEdges:      500000,
-	MaxWorkingSetBytes: 512 << 20,
-}
-
-// tsSidecarRelativePath is the fixed, repository-pinned path (relative to
-// the repository root, resolved via repositoryRoot -- see scope.go) that
-// js/semantics/scripts/build-project-sidecar.mjs writes the compiled
-// sidecar binary to. It is resolved per-request rather than once at
-// construction, since the repository root varies per invocation while
-// NewTSProjectBackend takes no arguments.
-//
-// req.Dir is os.Getwd() at CLI invocation time, which need not be the
-// repository's checkout root (e.g. coach codesignal run from a
-// subdirectory) -- so the base directory is resolved via repositoryRoot,
-// not req.Dir itself. --project-language typescript only finds a sidecar
-// when the analyzed repository itself vendors
-// js/semantics/bin/coach-ts-project-sidecar at this exact
-// repository-root-relative path. Every other repository silently degrades
-// to DiagBackendUnavailable with Coverage.Complete false (exit 0, not an
-// error): this is a deliberate, narrow v1 scope boundary, not a bug -- do
-// not "fix" it into a $PATH or install-relative lookup.
-const tsSidecarRelativePath = "js/semantics/bin/coach-ts-project-sidecar"
+// tsProjectBudgets is goProjectBudgets, reused as-is: the TS sidecar backend
+// tracks the same resource-default table as the Go in-process build.
+var tsProjectBudgets = goProjectBudgets
 
 // tsProjectBackend is the ProjectBackend for --project-language typescript:
-// it builds a projectmodel.Model per revision via a pinned local sidecar
-// subprocess (BuildTypeScriptModelViaSidecar) and evaluates it against the
-// config's layer policy via codesignal.EvaluateTypeScriptLayerViolations.
+// it builds a projectmodel.Model per revision via a private, host-approved
+// runtime (PrepareTSRuntime -- resolved Node, resolved compiler, and a
+// materialized private analyzer directory, never anything resolved from the
+// analyzed repository itself) and evaluates it against the config's layer
+// policy via codesignal.EvaluateTypeScriptLayerViolations.
 type tsProjectBackend struct{}
 
 // NewTSProjectBackend returns the ProjectBackend registered for
 // --project-language typescript. Analyze always builds the head-side model;
 // when req.Baseline is false (diff mode) it additionally builds the
-// base-side model and sets ProjectBackendResult.BaseAnalyzed.
+// base-side model and sets ProjectBackendResult.BaseAnalyzed. Head and base
+// evaluations share one PrepareTSRuntime call -- one resolved Node/compiler
+// and one materialized analyzer directory serve both revisions.
 //
-// Unlike goProjectBackend, a missing, crashed, or timed-out sidecar is never
-// surfaced as a Go error here: BuildTypeScriptModelViaSidecar's own contract
-// reports that condition as a DiagBackendUnavailable diagnostic inside the
-// returned Model's Coverage (Coverage.Complete false), which flows through
-// unchanged into ProjectBackendResult.HeadCoverage/BaseCoverage.
+// A crashed or timed-out analyzer subprocess is never surfaced as a Go
+// error here: BuildTypeScriptModelViaSidecar's own contract reports that
+// condition as a DiagBackendUnavailable diagnostic inside the returned
+// Model's Coverage (Coverage.Complete false), which flows through unchanged
+// into ProjectBackendResult.HeadCoverage/BaseCoverage. A PrepareTSRuntime
+// failure (no usable Node, no locatable compiler, or a materialization
+// failure) is different: it surfaces as a real Go error, since it is an
+// unexpected condition --check-project is expected to have already gated
+// (see PrepareTSRuntime's doc comment).
 func NewTSProjectBackend() ProjectBackend {
 	return &tsProjectBackend{}
 }
@@ -91,32 +65,50 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	}
 	policy := layerPolicyFromConfig(config)
 
-	// req.Dir need not be the repository root (see tsSidecarRelativePath);
-	// repositoryRoot failing here means req.Dir is not inside a Git work
-	// tree at all, which is the same fatal condition evaluateRevision's own
-	// NewGoSnapshotFS call already surfaces as a hard error below -- so this
-	// follows that same established convention rather than degrading to a
-	// DiagBackendUnavailable diagnostic.
+	// req.Dir need not be the repository root; repositoryRoot failing here
+	// means req.Dir is not inside a Git work tree at all, which is the same
+	// fatal condition evaluateRevision's own NewGoSnapshotFS call already
+	// surfaces as a hard error below -- so this follows that same
+	// established convention rather than degrading to a
+	// DiagBackendUnavailable diagnostic. The resolved root is the walk
+	// ceiling for PrepareTSRuntime's compiler resolution (see
+	// resolveCompilerForRuntime), never the project-manifest origin and
+	// never analysis input. Selected policy roots come from config.Roots.
 	root, err := repositoryRoot(req.Dir)
 	if err != nil {
-		return nil, fmt.Errorf("coach: resolving repository root for TypeScript sidecar binary: %w", err)
+		return nil, fmt.Errorf("coach: resolving repository root for TypeScript analysis: %w", err)
 	}
-	binaryPath := filepath.Join(root, tsSidecarRelativePath)
 
-	headChanges, headCoverage, err := b.evaluateRevision(ctx, req.Dir, req.HeadRevision, binaryPath, config.Roots, policy, req.ConfigDigest)
+	runtime, cleanup, err := PrepareTSRuntime(ctx, root, config.Roots)
+	if err != nil {
+		var unresolved *CompilerUnresolvedError
+		if errors.As(err, &unresolved) {
+			unresolved.ConfigPath = req.ConfigPath
+			return nil, unresolved
+		}
+		return nil, err
+	}
+	defer cleanup()
+
+	headChanges, headCoverage, err := b.evaluateRevision(ctx, req.Dir, req.HeadRevision, runtime, config.Roots, policy, req.ConfigDigest)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &ProjectBackendResult{
-		HeadChanges:  headChanges,
-		HeadCoverage: &headCoverage,
+		HeadChanges:     headChanges,
+		HeadCoverage:    &headCoverage,
+		RuntimeKind:     runtime.Kind,
+		RuntimeVersion:  runtime.NodeVersion,
+		RuntimeOrigin:   runtime.Origin,
+		CompilerVersion: runtime.CompilerVersion,
+		CompilerOrigin:  runtime.CompilerOrigin,
 	}
 	if req.Baseline {
 		return result, nil
 	}
 
-	baseChanges, baseCoverage, err := b.evaluateRevision(ctx, req.Dir, req.BaseRevision, binaryPath, config.Roots, policy, req.ConfigDigest)
+	baseChanges, baseCoverage, err := b.evaluateRevision(ctx, req.Dir, req.BaseRevision, runtime, config.Roots, policy, req.ConfigDigest)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +124,10 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 // model's own Coverage. NewGoSnapshotFS is reused as-is despite its Go-
 // specific name: it is a plain immutable Git-revision fs.FS with no
 // Go-specific behavior, the same snapshot mechanism goProjectBackend uses.
-func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision, binaryPath string, roots []string, policy codesignal.LayerPolicy, configDigest string) ([]codesignal.ProjectChange, projectmodel.Coverage, error) {
+// The analyzer is spawned as runtime.NodeExecPath directly (see tsRuntime's
+// NodeExecPath field doc for why), with runtime.AnalyzerShimPath as its
+// first argument.
+func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, runtime *tsRuntime, roots []string, policy codesignal.LayerPolicy, configDigest string) ([]codesignal.ProjectChange, projectmodel.Coverage, error) {
 	snapshot, err := NewGoSnapshotFS(dir, revision)
 	if err != nil {
 		return nil, projectmodel.Coverage{}, fmt.Errorf("coach: building TypeScript snapshot at revision %q: %w", revision, err)
@@ -142,7 +137,9 @@ func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision, 
 		Revision:     revision,
 		ConfigDigest: configDigest,
 	}, projectmodel.TSSidecarOptions{
-		BinaryPath: binaryPath,
+		BinaryPath: runtime.NodeExecPath,
+		Args:       []string{runtime.AnalyzerShimPath, "--compiler-module=" + runtime.CompilerModulePath},
+		Dir:        runtime.AnalyzerDir,
 		Roots:      roots,
 		Timeout:    tsSidecarWallTime,
 		Budgets:    tsProjectBudgets,
