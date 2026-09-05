@@ -94,6 +94,11 @@ description = "Run the real TS sidecar integration specs (verify already ran the
 depends = ["project-sidecar-build"]
 run = "go test -race ./pkg/projectmodel/... -run Acceptance -ginkgo.label-filter=ts-sidecar-integration -ginkgo.fail-on-empty"
 
+[tasks.ts-project-backend-acceptance]
+description = "Run cmd/coach and internal/codesignalcli's TS-dependent acceptance specs (coach#326 Task 3's remaining CI gap) against this repo's own installed js/semantics TypeScript compiler"
+depends = ["js-install"]
+run = "go test -race ./cmd/coach/... ./internal/codesignalcli/... -run Acceptance -ginkgo.label-filter=ts-project-backend -ginkgo.fail-on-empty"
+
 [tasks.js-install]
 description = "Install js/semantics dev dependencies (scripts skipped; js-build compiles explicitly)"
 run = "npm ci --ignore-scripts"
