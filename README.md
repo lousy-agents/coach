@@ -78,7 +78,7 @@ mise exec -- go install ./cmd/coach
 Download the archive for your platform from
 [Releases](https://github.com/lousy-agents/coach/releases), verify
 `checksums.txt` with cosign, then put `coach` on your `PATH`. The exact
-commands live under [`coach codesignal` CLI Preview](#coach-codesignal-cli-preview).
+commands live in the [CLI contract](./docs/cli-codesignal.md).
 
 </details>
 
@@ -97,7 +97,7 @@ files produced no active signals. `lifecycle` is `introduced` / `existing` /
 - **Absence is not a clean bill of health.** An empty signal set means no
   matched rule for the inputs that were analyzed.
 
-Full flag, schema, and exit-status contract: [`coach codesignal` CLI Preview](#coach-codesignal-cli-preview).
+Full flag, schema, and exit-status contract: [CLI contract](./docs/cli-codesignal.md).
 
 ## Preview — experimental, try it now
 
@@ -175,12 +175,11 @@ Working in a Claude Code cloud session? See
 If you want the analyzer as a library rather than the CLI:
 
 - [`pkg/semantics`](./pkg/semantics) — deterministic structural analysis of Go,
-  TypeScript, and TSX source bytes. [`pkg/semantics` Quickstart](#pkgsemantics-quickstart).
+  TypeScript, and TSX source bytes. [Quickstart](./docs/cli-codesignal.md#pkgsemantics-quickstart).
 - [`pkg/githubingest`](./pkg/githubingest) — optional GitHub App-authenticated
   single-file reader.
-- [`@lousy-agents/coach-semantics`](#javascript--typescript-bindings-lousy-agentscoach-semantics)
-  — Node ESM bindings. Not published to npm yet; clone and build locally.
-  [JS/TS Quickstart](#javascript--typescript-quickstart).
+- `@lousy-agents/coach-semantics` — Node ESM bindings. Not published to npm yet;
+  clone and build locally. [JS/TS Quickstart](./docs/cli-codesignal.md#javascript--typescript-quickstart).
 
 ```sh
 go get github.com/lousy-agents/coach/pkg/semantics
@@ -188,3 +187,8 @@ go get github.com/lousy-agents/coach/pkg/githubingest
 ```
 
 ---
+
+## `coach codesignal` CLI Preview
+
+The full flag, schema, exit-status, and `--project-config` contract now lives in
+[`docs/cli-codesignal.md`](./docs/cli-codesignal.md).
