@@ -1,11 +1,29 @@
-import { API, type Project } from "typescript/unstable/sync";
+import type { Project } from "typescript/unstable/sync";
 
 import { canonicalizeDiagnostics, canonicalizeEdges } from "./canonical.js";
+import { describeErrorWithoutPaths } from "./describe-error.js";
 import { discoverTsconfigPaths } from "./discover.js";
 import { extractEdgesForProject } from "./edges.js";
 import { SIDECAR_PHASE, type CallGraphEdgeFact, type Coverage, type Diagnostic, type ImportEdgeFact, type ProjectFile, type ReachabilityFactWire } from "./protocol.js";
 import { canonicalizeCallGraph, canonicalizeReachabilityFacts, extractReachabilityForProject } from "./reachability.js";
 import { buildProjectSnapshot, fromVirtualPath, toVirtualPath, VIRTUAL_ROOT, type ProjectSnapshot } from "./vfs.js";
+
+/**
+ * The exact resolved TypeScript compiler this request must run against
+ * (coach#326 Task 2), assembled once by main.ts's dynamic-import bootstrap
+ * from an explicit, host-provided compiler module location instead of this
+ * package's own `typescript` devDependency. Every module below receives
+ * the pieces it needs from this bundle as parameters rather than statically
+ * importing "typescript/unstable/*" itself.
+ */
+export interface CompilerBundle {
+  api: typeof import("typescript/unstable/sync").API;
+  symbolFlags: typeof import("typescript/unstable/sync").SymbolFlags;
+  ast: typeof import("typescript/unstable/ast");
+  createVirtualFileSystem: typeof import("typescript/unstable/fs").createVirtualFileSystem;
+}
+
+type ApiInstance = InstanceType<CompilerBundle["api"]>;
 
 /** Thrown only for genuine backend-startup failures (e.g. the bundled
  * native tsgo binary failing to spawn); main.ts turns this into a
@@ -24,6 +42,7 @@ export interface AnalyzeOptions {
    * TypeScript analysis. Must never be set outside tests (see main.ts's
    * COACH_TS_SIDECAR_TEST_DELAY_MS gate). */
   testDelayMsPerProject?: number;
+  compiler: CompilerBundle;
 }
 
 export interface AnalyzeResult {
@@ -35,7 +54,7 @@ export interface AnalyzeResult {
 
 export function analyzeProject(opts: AnalyzeOptions): AnalyzeResult {
   const deadline = opts.timeoutMs && opts.timeoutMs > 0 ? Date.now() + opts.timeoutMs : undefined;
-  const snapshot = buildProjectSnapshot(opts.files);
+  const snapshot = buildProjectSnapshot(opts.files, opts.compiler.createVirtualFileSystem);
   const tsconfigPaths = discoverTsconfigPaths(opts.files, opts.roots);
   const counts: Record<string, number> = { files_seen: opts.files.length, tsconfig_count: tsconfigPaths.length };
 
@@ -46,7 +65,7 @@ export function analyzeProject(opts: AnalyzeOptions): AnalyzeResult {
     return timeoutBeforeStart(counts, opts.timeoutMs ?? 0);
   }
 
-  const api = startAnalysisAPI(snapshot);
+  const api = startAnalysisAPI(snapshot, opts.compiler.api);
   try {
     return runProjects(api, snapshot, tsconfigPaths, opts, deadline, counts);
   } finally {
@@ -54,21 +73,16 @@ export function analyzeProject(opts: AnalyzeOptions): AnalyzeResult {
   }
 }
 
-/**
- * Reports the vacuous-project result when no tsconfig.json was discovered.
- * A snapshot that genuinely contains no TypeScript/TSX sources has nothing
- * to analyze, so it stays Complete=true with empty edges. A snapshot that
- * does contain .ts/.tsx sources but no project config would otherwise
- * silently invent a "complete" empty graph over unanalyzed sources -- the
- * same false-complete failure mode this sidecar already guards against for
- * missing config forwarding -- so that case reports Complete=false with a
- * stable ts_no_project_config diagnostic instead.
- */
 function emptyComplete(counts: Record<string, number>, files: readonly ProjectFile[]): AnalyzeResult {
   const hasTsSources = files.some((f) => f.path.endsWith(".ts") || f.path.endsWith(".tsx"));
-  if (!hasTsSources) {
-    return { edges: [], callGraph: [], reachabilityFacts: [], coverage: { phase: SIDECAR_PHASE, complete: true, counts } };
-  }
+  return hasTsSources ? sourcesWithNoProjectConfigResult(counts) : vacuousProjectResult(counts);
+}
+
+function vacuousProjectResult(counts: Record<string, number>): AnalyzeResult {
+  return { edges: [], callGraph: [], reachabilityFacts: [], coverage: { phase: SIDECAR_PHASE, complete: true, counts } };
+}
+
+function sourcesWithNoProjectConfigResult(counts: Record<string, number>): AnalyzeResult {
   return {
     edges: [],
     callGraph: [],
@@ -99,16 +113,16 @@ function timeoutBeforeStart(counts: Record<string, number>, timeoutMs: number): 
   };
 }
 
-function startAnalysisAPI(snapshot: ProjectSnapshot): API {
+function startAnalysisAPI(snapshot: ProjectSnapshot, ApiCtor: CompilerBundle["api"]): ApiInstance {
   try {
-    return new API({ fs: snapshot.fs });
+    return new ApiCtor({ fs: snapshot.fs });
   } catch (err) {
-    throw new SidecarBackendError(`failed to start ts sidecar analysis backend: ${String(err)}`);
+    throw new SidecarBackendError(`failed to start ts sidecar analysis backend: ${describeErrorWithoutPaths(err)}`);
   }
 }
 
 function runProjects(
-  api: API,
+  api: ApiInstance,
   snapshot: ProjectSnapshot,
   tsconfigPaths: readonly string[],
   opts: AnalyzeOptions,
@@ -142,8 +156,8 @@ function runProjects(
     for (const key of configResult.newKeys) seenConfigDiagnostics.add(key);
     if (configResult.diagnostics.length > 0) complete = false;
     diagnostics.push(...configResult.diagnostics);
-    const result = extractEdgesForProject(project, snapshot, visited);
-    for (const path of result.visitedPaths) visited.add(path);
+    const result = extractEdgesForProject(project, snapshot, visited, opts.compiler.ast);
+    for (const path of result.newlyVisitedPaths) visited.add(path);
     edges.push(...result.edges);
     diagnostics.push(...result.diagnostics);
     const reachResult = processProjectReachability(
@@ -152,6 +166,7 @@ function runProjects(
       reachVisited,
       reachSourcesVisited,
       configResult.diagnostics.length > 0,
+      opts.compiler,
     );
     callGraph.push(...reachResult.callGraph);
     reachabilityFacts.push(...reachResult.facts);
@@ -193,23 +208,22 @@ function runProjects(
   };
 }
 
-/**
- * Runs call-graph/reachability extraction for one project, unless
- * configDiagnosticsPresent -- a project whose own config failed to parse
- * never got a real Program built from the sender's intent, so no
- * call-graph/reachability extraction is attempted for it either, mirroring
- * runProjects's own complete=false gate on config diagnostics.
- */
+// A project whose own config failed to parse never got a real Program
+// built, so no call-graph/reachability extraction is attempted for it.
 function processProjectReachability(
   project: Project,
   snapshot: ProjectSnapshot,
   reachVisited: Set<string>,
   reachSourcesVisited: Set<string>,
   configDiagnosticsPresent: boolean,
+  compiler: CompilerBundle,
 ): { callGraph: CallGraphEdgeFact[]; facts: ReachabilityFactWire[]; diagnostics: Diagnostic[] } {
   if (configDiagnosticsPresent) return { callGraph: [], facts: [], diagnostics: [] };
-  const reachResult = extractReachabilityForProject(project, snapshot, reachVisited, reachSourcesVisited);
-  for (const path of reachResult.visitedPaths) reachVisited.add(path);
+  const reachResult = extractReachabilityForProject(project, snapshot, reachVisited, reachSourcesVisited, {
+    ast: compiler.ast,
+    symbolFlags: compiler.symbolFlags,
+  });
+  for (const path of reachResult.newlyVisitedPaths) reachVisited.add(path);
   for (const sourceId of reachResult.visitedSources) reachSourcesVisited.add(sourceId);
   return { callGraph: reachResult.callGraph, facts: reachResult.facts, diagnostics: reachResult.diagnostics };
 }
@@ -234,7 +248,5 @@ function collectConfigDiagnostics(
 
 function busyWaitMs(ms: number): void {
   const end = Date.now() + ms;
-  while (Date.now() < end) {
-    // Deliberate synchronous busy-wait; test-only.
-  }
+  while (Date.now() < end) {}
 }

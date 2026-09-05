@@ -1,5 +1,5 @@
-import * as astns from "typescript/unstable/ast";
-import { SymbolFlags, type Project } from "typescript/unstable/sync";
+import type * as astns from "typescript/unstable/ast";
+import type { Project, SymbolFlags } from "typescript/unstable/sync";
 
 import {
   KIND_POSSIBLE_CALL_REACHABILITY,
@@ -23,20 +23,16 @@ import {
 } from "./reachability-registry.js";
 import type { ProjectSnapshot } from "./vfs.js";
 
+export interface AstCompiler {
+  ast: typeof astns;
+  symbolFlags: typeof SymbolFlags;
+}
+
 export interface ReachabilityExtractionResult {
   callGraph: CallGraphEdgeFact[];
   facts: ReachabilityFactWire[];
   diagnostics: Diagnostic[];
-  /** Canonical virtual paths newly walked by this call (caller merges into its visit set), mirroring EdgeExtractionResult.visitedPaths. */
-  visitedPaths: string[];
-  /**
-   * functionSourceId values walked by this call, including ones seeded via
-   * alreadyVisitedSources -- the caller merges this into a request-wide
-   * set (mirroring visitedPaths) so a handler function registered as a
-   * route from more than one tsconfig project (e.g. a monorepo service
-   * sharing one handler file) is walked, and its facts/diagnostics
-   * emitted, exactly once across the whole request, not once per project.
-   */
+  newlyVisitedPaths: string[];
   visitedSources: string[];
 }
 
@@ -51,35 +47,26 @@ interface MutableAccumulator {
 }
 
 /**
- * Walks every .ts/.tsx root file owned by `project` that has not already
- * been visited by another project's reachability extraction in this
- * request, finding `<receiver>.<verb>(path, handler)`-shaped route
- * registrations (see ROUTE_REGISTRATION_METHODS) and, for every handler
- * that resolves to a locally declared or re-exported function and whose
- * functionSourceId is not in alreadyVisitedSources, walking that
- * function's body (one level deep) for calls into the pinned sink
- * registry (REACHABILITY_SINK_CLASSES). alreadyVisitedSources is seeded
- * from every prior project's own walk in this request, so a handler
- * registered as a route from more than one tsconfig project is walked
- * exactly once -- without this, MutableAccumulator's factKeys/seenGapSites
- * dedup only within a single project's own walk, so the same handler
- * walked again from a second project would emit a second, duplicate
- * ReachabilityFact/CallGraphEdgeFact sharing the first one's ID, which
+ * alreadyVisitedSources is seeded from every prior project's own walk in
+ * this request, so a handler registered as a route from more than one
+ * tsconfig project is walked exactly once -- without this,
+ * MutableAccumulator's factKeys/seenGapSites dedup only within a single
+ * project's own walk, so the same handler walked again from a second
+ * project would emit a second, duplicate ReachabilityFact/CallGraphEdgeFact
+ * sharing the first one's ID, which
  * canonicalizeCallGraph/canonicalizeReachabilityFacts only sort, never
- * dedup. A call this walk cannot classify
- * as a resolved sink, a recognized coverage gap, or an unfollowed local
- * callee is left unreported only when it resolves to nothing this
- * snapshot owns at all (e.g. `console.log`) -- absence of a fact is never
- * a "verified safe" claim, only "not found within this walk".
+ * dedup. Absence of a fact is never a "verified safe" claim, only "not
+ * found within this walk".
  */
 export function extractReachabilityForProject(
   project: Project,
   snapshot: ProjectSnapshot,
   alreadyVisited: ReadonlySet<string>,
   alreadyVisitedSources: ReadonlySet<string>,
+  compiler: AstCompiler,
 ): ReachabilityExtractionResult {
   const out: MutableAccumulator = { callGraph: [], facts: [], diagnostics: [], factKeys: new Set() };
-  const visitedPaths: string[] = [];
+  const newlyVisitedPaths: string[] = [];
   const seen = new Set(alreadyVisited);
   const seenSources = new Set(alreadyVisitedSources);
   const seenGapSites = new Set<string>();
@@ -91,14 +78,14 @@ export function extractReachabilityForProject(
     if (!(repoPath.endsWith(".ts") || repoPath.endsWith(".tsx"))) continue;
     if (seen.has(canonicalVirtual)) continue;
     seen.add(canonicalVirtual);
-    visitedPaths.push(canonicalVirtual);
+    newlyVisitedPaths.push(canonicalVirtual);
 
     const sf = project.program.getSourceFile(virtualPath) ?? project.program.getSourceFile(canonicalVirtual);
     if (!sf) continue;
-    collectRouteRegistrations(sf, project, snapshot, out, seenSources, seenGapSites);
+    collectRouteRegistrations(sf, project, snapshot, out, seenSources, seenGapSites, compiler);
   }
 
-  return { ...out, visitedPaths, visitedSources: [...seenSources] };
+  return { ...out, newlyVisitedPaths, visitedSources: [...seenSources] };
 }
 
 function collectRouteRegistrations(
@@ -108,28 +95,24 @@ function collectRouteRegistrations(
   out: MutableAccumulator,
   seenSources: Set<string>,
   seenGapSites: Set<string>,
+  compiler: AstCompiler,
 ): void {
+  const { ast } = compiler;
   const visit = (node: astns.Node): void => {
-    if (astns.isCallExpression(node) && isRouteRegistrationCall(node, project)) {
-      processRouteRegistration(node, sf, project, snapshot, out, seenSources, seenGapSites);
+    if (ast.isCallExpression(node) && isRouteRegistrationCall(node, project, compiler)) {
+      processRouteRegistration(node, sf, project, snapshot, out, seenSources, seenGapSites, compiler);
     }
     node.forEachChild(visit);
   };
   visit(sf);
 }
 
-/**
- * Reports whether call is shaped `<receiver>.<verb>(pathLiteral, handler, ...)`
- * where verb is in ROUTE_REGISTRATION_METHODS and receiver's
- * checker-resolved type actually has a property of that name -- a
- * structural check, not a literal Express/Koa/Fastify import, matching any
- * locally declared router-shaped interface.
- */
-function isRouteRegistrationCall(call: astns.CallExpression, project: Project): boolean {
-  if (!astns.isPropertyAccessExpression(call.expression)) return false;
+function isRouteRegistrationCall(call: astns.CallExpression, project: Project, compiler: AstCompiler): boolean {
+  const { ast } = compiler;
+  if (!ast.isPropertyAccessExpression(call.expression)) return false;
   const callee = call.expression;
-  if (!astns.isIdentifier(callee.name) || !ROUTE_REGISTRATION_METHODS.has(callee.name.text)) return false;
-  if (call.arguments.length < 2 || !astns.isStringLiteral(call.arguments[0])) return false;
+  if (!ast.isIdentifier(callee.name) || !ROUTE_REGISTRATION_METHODS.has(callee.name.text)) return false;
+  if (call.arguments.length < 2 || !ast.isStringLiteral(call.arguments[0])) return false;
   const receiverType = project.checker.getTypeAtLocation(callee.expression);
   if (!receiverType) return false;
   return project.checker.getPropertyOfType(receiverType, callee.name.text) !== undefined;
@@ -143,18 +126,19 @@ function processRouteRegistration(
   out: MutableAccumulator,
   seenSources: Set<string>,
   seenGapSites: Set<string>,
+  compiler: AstCompiler,
 ): void {
   const handlerArg = call.arguments[1];
-  const fn = resolveHandlerFunction(handlerArg, project);
+  const fn = resolveHandlerFunction(handlerArg, project, compiler);
   if (fn) {
     const sourceId = functionSourceId(fn, snapshot);
     if (sourceId && !seenSources.has(sourceId)) {
       seenSources.add(sourceId);
-      walkSourceForReachability(fn, sourceId, out, snapshot, project, seenGapSites);
+      walkSourceForReachability(fn, sourceId, out, snapshot, project, seenGapSites, compiler);
     }
     return;
   }
-  if (containsDynamicImport(handlerArg)) {
+  if (containsDynamicImport(handlerArg, compiler.ast)) {
     recordGapDiagnostic(
       GAP_DYNAMIC_IMPORT,
       "route handler is resolved through a dynamic import, so it cannot be statically added as a reachability source",
@@ -182,24 +166,22 @@ function processRouteRegistration(
  * alias hop via Checker.getAliasedSymbol when the identifier's symbol
  * itself is an alias (e.g. `import { h } from "./handlers"` -- the
  * identifier's own declaration is the ImportSpecifier, not the function).
- * Anything else (an inline arrow/function expression, a `const` bound to
- * one, a `.bind()` wrapper, a class method) is not resolved here; the
- * caller reports an explicit gap instead of silently dropping the route.
  */
-function resolveHandlerFunction(handlerArg: astns.Expression, project: Project): astns.FunctionDeclaration | undefined {
-  if (!astns.isIdentifier(handlerArg)) return undefined;
+function resolveHandlerFunction(handlerArg: astns.Expression, project: Project, compiler: AstCompiler): astns.FunctionDeclaration | undefined {
+  const { ast, symbolFlags } = compiler;
+  if (!ast.isIdentifier(handlerArg)) return undefined;
   const symbol = project.checker.getSymbolAtLocation(handlerArg);
   if (!symbol) return undefined;
-  const resolvedSymbol = (symbol.flags & SymbolFlags.Alias) !== 0 ? project.checker.getAliasedSymbol(symbol) : symbol;
+  const resolvedSymbol = (symbol.flags & symbolFlags.Alias) !== 0 ? project.checker.getAliasedSymbol(symbol) : symbol;
   const declNode = resolvedSymbol.declarations?.[0]?.resolve(project);
-  return declNode && astns.isFunctionDeclaration(declNode) && declNode.name ? declNode : undefined;
+  return declNode && ast.isFunctionDeclaration(declNode) && declNode.name ? declNode : undefined;
 }
 
-function containsDynamicImport(node: astns.Node): boolean {
-  if (astns.isCallExpression(node) && node.expression.kind === astns.SyntaxKind.ImportKeyword) return true;
+function containsDynamicImport(node: astns.Node, ast: typeof astns): boolean {
+  if (ast.isCallExpression(node) && node.expression.kind === ast.SyntaxKind.ImportKeyword) return true;
   let found = false;
   node.forEachChild((child) => {
-    if (!found) found = containsDynamicImport(child);
+    if (!found) found = containsDynamicImport(child, ast);
   });
   return found;
 }
@@ -218,29 +200,20 @@ function walkSourceForReachability(
   snapshot: ProjectSnapshot,
   project: Project,
   seenGapSites: Set<string>,
+  compiler: AstCompiler,
 ): void {
   if (!fn.body) return;
+  const { ast } = compiler;
   const sf = fn.getSourceFile();
   const visit = (node: astns.Node): void => {
-    if (astns.isCallExpression(node)) {
-      handleCallInSource(node, sourceId, sf, project, snapshot, out, seenGapSites);
+    if (ast.isCallExpression(node)) {
+      handleCallInSource(node, sourceId, sf, project, snapshot, out, seenGapSites, compiler);
     }
     node.forEachChild(visit);
   };
   visit(fn.body);
 }
 
-/**
- * Handles one call expression found while walking a source function's
- * body, in priority order: a resolved registry sink wins outright; a call
- * classified as passing through a type-only/dynamic-import/unresolved-
- * external binding records that gap; otherwise, if the callee resolves to
- * a function-like declaration inside this snapshot that this depth-1 walk
- * does not itself follow, that hop is recorded as an explicit truncation
- * gap rather than silently reporting no reachability. Only a call this
- * walk cannot resolve to any in-snapshot declaration at all (e.g.
- * `console.log`, an ambient global) is left unreported.
- */
 function handleCallInSource(
   call: astns.CallExpression,
   sourceId: string,
@@ -249,20 +222,21 @@ function handleCallInSource(
   snapshot: ProjectSnapshot,
   out: MutableAccumulator,
   seenGapSites: Set<string>,
+  compiler: AstCompiler,
 ): void {
   const declNode = resolvedCallDeclaration(call, project);
-  const sinkId = declNode ? sinkIdForDeclaration(declNode) : undefined;
+  const sinkId = declNode ? sinkIdForDeclaration(declNode, compiler.ast) : undefined;
   if (sinkId) {
     recordReachabilityFact(sourceId, sinkId, out);
     return;
   }
-  const gap = classifyCalleeGap(call, project, snapshot);
+  const gap = classifyCalleeGap(call, project, snapshot, compiler);
   if (gap) {
     const { code, message } = gapDiagnosticInfo(gap);
     recordGapDiagnostic(code, message, call, sf, snapshot, out, seenGapSites);
     return;
   }
-  if (declNode && isUnfollowedLocalCallee(declNode, snapshot)) {
+  if (declNode && isUnfollowedLocalCallee(declNode, snapshot, compiler.ast)) {
     recordGapDiagnostic(
       GAP_LOCAL_CALL_NOT_FOLLOWED,
       "call target resolves to a function declared within this snapshot that this depth-1 walk does not follow further, so multi-hop reachability from here is unverified",
@@ -292,8 +266,6 @@ function recordReachabilityFact(sourceId: string, sinkId: string, out: MutableAc
   });
 }
 
-/** Resolves call's callee to a concrete declaration via
- * Checker.getResolvedSignature (not manual symbol-chasing). */
 function resolvedCallDeclaration(call: astns.CallExpression, project: Project): astns.Node | undefined {
   const signature = project.checker.getResolvedSignature(call);
   return signature?.declaration?.resolve(project);
@@ -307,35 +279,28 @@ function resolvedCallDeclaration(call: astns.CallExpression, project: Project): 
  * immediate object-literal type) names the sink -- then defers to
  * sinkNodeId for both the name and module-provenance match.
  */
-function sinkIdForDeclaration(declNode: astns.Node): string | undefined {
-  if (!astns.isMethodDeclaration(declNode) || !astns.isIdentifier(declNode.name)) return undefined;
-  const className = enclosingClassName(declNode);
+function sinkIdForDeclaration(declNode: astns.Node, ast: typeof astns): string | undefined {
+  if (!ast.isMethodDeclaration(declNode) || !ast.isIdentifier(declNode.name)) return undefined;
+  const className = enclosingClassName(declNode, ast);
   if (!className) return undefined;
   return sinkNodeId(className, declNode.name.text, declNode.getSourceFile().path);
 }
 
-function enclosingClassName(node: astns.Node): string | undefined {
+function enclosingClassName(node: astns.Node, ast: typeof astns): string | undefined {
   let cur: astns.Node | undefined = node.parent;
-  while (cur && !astns.isSourceFile(cur)) {
-    if ((astns.isClassDeclaration(cur) || astns.isClassExpression(cur)) && cur.name) return cur.name.text;
+  while (cur && !ast.isSourceFile(cur)) {
+    if ((ast.isClassDeclaration(cur) || ast.isClassExpression(cur)) && cur.name) return cur.name.text;
     cur = cur.parent;
   }
   return undefined;
 }
 
-/**
- * Reports whether declNode is a function-like declaration (the shape this
- * walk could in principle step into) whose own source file is part of
- * this request's snapshot -- used to distinguish "a local callee we chose
- * not to follow" (a truncation gap) from an ambient/lib declaration with
- * no body to follow at all (not a gap; nothing was truncated).
- */
-function isUnfollowedLocalCallee(declNode: astns.Node, snapshot: ProjectSnapshot): boolean {
+function isUnfollowedLocalCallee(declNode: astns.Node, snapshot: ProjectSnapshot, ast: typeof astns): boolean {
   const isFunctionLike =
-    astns.isFunctionDeclaration(declNode) ||
-    astns.isFunctionExpression(declNode) ||
-    astns.isArrowFunction(declNode) ||
-    astns.isMethodDeclaration(declNode);
+    ast.isFunctionDeclaration(declNode) ||
+    ast.isFunctionExpression(declNode) ||
+    ast.isArrowFunction(declNode) ||
+    ast.isMethodDeclaration(declNode);
   if (!isFunctionLike) return false;
   return snapshot.toRepoPath(declNode.getSourceFile().path) !== undefined;
 }
@@ -363,52 +328,41 @@ function gapDiagnosticInfo(gap: GapKind): { code: string; message: string } {
   }
 }
 
-/**
- * Classifies why call's callee cannot be trusted to extend the call graph
- * further, tracing its base identifier back to the declaration that
- * brought it into scope:
- *  - an ImportSpecifier/ImportClause carrying its own type-only marker
- *    ("type_only")
- *  - a local variable whose initializer contains a dynamic `import(...)`
- *    call (e.g. `const m = await import("./mod")`) ("dynamic_import")
- *  - a value import whose module specifier resolved to anything other
- *    than RESOLUTION_SNAPSHOT via the same resolveTarget edges.ts uses
- *    ("unresolved_external")
- * A symbol with no local import (e.g. an ambient global like `console`
- * that resolves to no declaration at all under this snapshot's lib set)
- * is not a gap -- there is nothing to extend from, so it is silently
- * ignored rather than misreported as an unresolved import.
- */
-function classifyCalleeGap(call: astns.CallExpression, project: Project, snapshot: ProjectSnapshot): GapKind | undefined {
-  const baseIdent = leftmostIdentifier(call.expression);
+// A symbol with no local import (e.g. an ambient global like `console`
+// that resolves to no declaration at all under this snapshot's lib set)
+// is not a gap -- there is nothing to extend from, so it is silently
+// ignored rather than misreported as an unresolved import.
+function classifyCalleeGap(call: astns.CallExpression, project: Project, snapshot: ProjectSnapshot, compiler: AstCompiler): GapKind | undefined {
+  const { ast } = compiler;
+  const baseIdent = leftmostIdentifier(call.expression, ast);
   if (!baseIdent) return undefined;
   const symbol = project.checker.getSymbolAtLocation(baseIdent);
   const declNode = symbol?.declarations?.[0]?.resolve(project);
   if (!declNode) return undefined;
 
-  if (astns.isImportSpecifier(declNode) && declNode.isTypeOnly) return "type_only";
-  if (astns.isImportClause(declNode) && declNode.phaseModifier === astns.SyntaxKind.TypeKeyword) return "type_only";
-  if (astns.isVariableDeclaration(declNode) && declNode.initializer && containsDynamicImport(declNode.initializer)) {
+  if (ast.isImportSpecifier(declNode) && declNode.isTypeOnly) return "type_only";
+  if (ast.isImportClause(declNode) && declNode.phaseModifier === ast.SyntaxKind.TypeKeyword) return "type_only";
+  if (ast.isVariableDeclaration(declNode) && declNode.initializer && containsDynamicImport(declNode.initializer, ast)) {
     return "dynamic_import";
   }
 
-  const importDecl = enclosingImportDeclaration(declNode);
-  if (!importDecl || !astns.isStringLiteral(importDecl.moduleSpecifier)) return undefined;
+  const importDecl = enclosingImportDeclaration(declNode, ast);
+  if (!importDecl || !ast.isStringLiteral(importDecl.moduleSpecifier)) return undefined;
   const fromVirtualPath = importDecl.getSourceFile().path;
   const target = resolveTarget(project, importDecl.moduleSpecifier, importDecl.moduleSpecifier.text, snapshot, fromVirtualPath, true);
   return target.resolution === RESOLUTION_SNAPSHOT ? undefined : "unresolved_external";
 }
 
-function leftmostIdentifier(expr: astns.Expression): astns.Identifier | undefined {
+function leftmostIdentifier(expr: astns.Expression, ast: typeof astns): astns.Identifier | undefined {
   let cur: astns.Expression = expr;
-  while (astns.isPropertyAccessExpression(cur)) cur = cur.expression;
-  return astns.isIdentifier(cur) ? cur : undefined;
+  while (ast.isPropertyAccessExpression(cur)) cur = cur.expression;
+  return ast.isIdentifier(cur) ? cur : undefined;
 }
 
-function enclosingImportDeclaration(node: astns.Node): astns.ImportDeclaration | undefined {
+function enclosingImportDeclaration(node: astns.Node, ast: typeof astns): astns.ImportDeclaration | undefined {
   let cur: astns.Node | undefined = node;
-  while (cur && !astns.isSourceFile(cur)) {
-    if (astns.isImportDeclaration(cur)) return cur;
+  while (cur && !ast.isSourceFile(cur)) {
+    if (ast.isImportDeclaration(cur)) return cur;
     cur = cur.parent;
   }
   return undefined;

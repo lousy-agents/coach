@@ -1,5 +1,5 @@
-import { API } from "typescript/unstable/sync";
 import { canonicalizeDiagnostics, canonicalizeEdges } from "./canonical.js";
+import { describeErrorWithoutPaths } from "./describe-error.js";
 import { discoverTsconfigPaths } from "./discover.js";
 import { extractEdgesForProject } from "./edges.js";
 import { SIDECAR_PHASE } from "./protocol.js";
@@ -14,7 +14,7 @@ export class SidecarBackendError extends Error {
 }
 export function analyzeProject(opts) {
     const deadline = opts.timeoutMs && opts.timeoutMs > 0 ? Date.now() + opts.timeoutMs : undefined;
-    const snapshot = buildProjectSnapshot(opts.files);
+    const snapshot = buildProjectSnapshot(opts.files, opts.compiler.createVirtualFileSystem);
     const tsconfigPaths = discoverTsconfigPaths(opts.files, opts.roots);
     const counts = { files_seen: opts.files.length, tsconfig_count: tsconfigPaths.length };
     if (tsconfigPaths.length === 0) {
@@ -23,7 +23,7 @@ export function analyzeProject(opts) {
     if (deadline !== undefined && Date.now() >= deadline) {
         return timeoutBeforeStart(counts, opts.timeoutMs ?? 0);
     }
-    const api = startAnalysisAPI(snapshot);
+    const api = startAnalysisAPI(snapshot, opts.compiler.api);
     try {
         return runProjects(api, snapshot, tsconfigPaths, opts, deadline, counts);
     }
@@ -31,21 +31,14 @@ export function analyzeProject(opts) {
         api.close();
     }
 }
-/**
- * Reports the vacuous-project result when no tsconfig.json was discovered.
- * A snapshot that genuinely contains no TypeScript/TSX sources has nothing
- * to analyze, so it stays Complete=true with empty edges. A snapshot that
- * does contain .ts/.tsx sources but no project config would otherwise
- * silently invent a "complete" empty graph over unanalyzed sources -- the
- * same false-complete failure mode this sidecar already guards against for
- * missing config forwarding -- so that case reports Complete=false with a
- * stable ts_no_project_config diagnostic instead.
- */
 function emptyComplete(counts, files) {
     const hasTsSources = files.some((f) => f.path.endsWith(".ts") || f.path.endsWith(".tsx"));
-    if (!hasTsSources) {
-        return { edges: [], callGraph: [], reachabilityFacts: [], coverage: { phase: SIDECAR_PHASE, complete: true, counts } };
-    }
+    return hasTsSources ? sourcesWithNoProjectConfigResult(counts) : vacuousProjectResult(counts);
+}
+function vacuousProjectResult(counts) {
+    return { edges: [], callGraph: [], reachabilityFacts: [], coverage: { phase: SIDECAR_PHASE, complete: true, counts } };
+}
+function sourcesWithNoProjectConfigResult(counts) {
     return {
         edges: [],
         callGraph: [],
@@ -74,12 +67,12 @@ function timeoutBeforeStart(counts, timeoutMs) {
         },
     };
 }
-function startAnalysisAPI(snapshot) {
+function startAnalysisAPI(snapshot, ApiCtor) {
     try {
-        return new API({ fs: snapshot.fs });
+        return new ApiCtor({ fs: snapshot.fs });
     }
     catch (err) {
-        throw new SidecarBackendError(`failed to start ts sidecar analysis backend: ${String(err)}`);
+        throw new SidecarBackendError(`failed to start ts sidecar analysis backend: ${describeErrorWithoutPaths(err)}`);
     }
 }
 function runProjects(api, snapshot, tsconfigPaths, opts, deadline, counts) {
@@ -112,12 +105,12 @@ function runProjects(api, snapshot, tsconfigPaths, opts, deadline, counts) {
         if (configResult.diagnostics.length > 0)
             complete = false;
         diagnostics.push(...configResult.diagnostics);
-        const result = extractEdgesForProject(project, snapshot, visited);
-        for (const path of result.visitedPaths)
+        const result = extractEdgesForProject(project, snapshot, visited, opts.compiler.ast);
+        for (const path of result.newlyVisitedPaths)
             visited.add(path);
         edges.push(...result.edges);
         diagnostics.push(...result.diagnostics);
-        const reachResult = processProjectReachability(project, snapshot, reachVisited, reachSourcesVisited, configResult.diagnostics.length > 0);
+        const reachResult = processProjectReachability(project, snapshot, reachVisited, reachSourcesVisited, configResult.diagnostics.length > 0, opts.compiler);
         callGraph.push(...reachResult.callGraph);
         reachabilityFacts.push(...reachResult.facts);
         // A ts_reachability_*_gap diagnostic (see processProjectReachability)
@@ -156,18 +149,16 @@ function runProjects(api, snapshot, tsconfigPaths, opts, deadline, counts) {
         },
     };
 }
-/**
- * Runs call-graph/reachability extraction for one project, unless
- * configDiagnosticsPresent -- a project whose own config failed to parse
- * never got a real Program built from the sender's intent, so no
- * call-graph/reachability extraction is attempted for it either, mirroring
- * runProjects's own complete=false gate on config diagnostics.
- */
-function processProjectReachability(project, snapshot, reachVisited, reachSourcesVisited, configDiagnosticsPresent) {
+// A project whose own config failed to parse never got a real Program
+// built, so no call-graph/reachability extraction is attempted for it.
+function processProjectReachability(project, snapshot, reachVisited, reachSourcesVisited, configDiagnosticsPresent, compiler) {
     if (configDiagnosticsPresent)
         return { callGraph: [], facts: [], diagnostics: [] };
-    const reachResult = extractReachabilityForProject(project, snapshot, reachVisited, reachSourcesVisited);
-    for (const path of reachResult.visitedPaths)
+    const reachResult = extractReachabilityForProject(project, snapshot, reachVisited, reachSourcesVisited, {
+        ast: compiler.ast,
+        symbolFlags: compiler.symbolFlags,
+    });
+    for (const path of reachResult.newlyVisitedPaths)
         reachVisited.add(path);
     for (const sourceId of reachResult.visitedSources)
         reachSourcesVisited.add(sourceId);
@@ -190,8 +181,6 @@ function collectConfigDiagnostics(project, seen) {
 }
 function busyWaitMs(ms) {
     const end = Date.now() + ms;
-    while (Date.now() < end) {
-        // Deliberate synchronous busy-wait; test-only.
-    }
+    while (Date.now() < end) { }
 }
 //# sourceMappingURL=analyze.js.map

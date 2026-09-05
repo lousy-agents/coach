@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 )
 
 // tsAnalyzerAssetFiles embeds internal/codesignalcli/tsanalyzerasset/, a
@@ -67,7 +66,6 @@ func digestFS(src fs.FS) (string, error) {
 	}); err != nil {
 		return "", err
 	}
-	sort.Strings(paths)
 
 	h := sha256.New()
 	for _, p := range paths {
@@ -96,11 +94,6 @@ var materializeMkdirTemp = os.MkdirTemp
 // usefully) call it. On success the caller owns dir and must call cleanup,
 // which is safe to call more than once, once it is done with the
 // directory.
-//
-// This is a standalone materialization primitive: it does not change how
-// tsProjectBackend.Analyze locates a sidecar today (see
-// project_ts_backend.go's tsSidecarRelativePath doc comment) -- wiring this
-// asset into that lookup is out of scope here.
 func MaterializeTSAnalyzer(ctx context.Context) (dir string, cleanup func(), err error) {
 	return materializeFS(ctx, tsAnalyzerAssetFS)
 }
