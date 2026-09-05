@@ -276,9 +276,32 @@ var _ = Describe("BuildTypeScriptModelViaSidecar", func() {
 		})
 	})
 
+	When("TSSidecarOptions.Dir is set", func() {
+		It("spawns the child with that directory as its working directory", func() {
+			dir, err := os.MkdirTemp("", "coach-ts-sidecar-cwd-*")
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(os.RemoveAll, dir)
+
+			opts := sidecarOptsWithMode("cwd")
+			opts.Dir = dir
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsSidecarSnapshot(), testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+
+			diag, ok := diagnosticWithCode(model.Coverage.Diagnostics, "cwd_probe")
+			Expect(ok).To(BeTrue(), "expected a cwd_probe diagnostic, got %+v", model.Coverage.Diagnostics)
+			resolved, err := filepath.EvalSymlinks(dir)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(diag.Message).To(Equal(resolved))
+		})
+	})
+
 	When("the sidecar child process is spawned", func() {
-		It("does not inherit the parent's full environment but does receive PATH", func() {
+		It("does not inherit ambient Node loader, proxy, package-manager, or HOME configuration", func() {
 			GinkgoT().Setenv("COACH_TS_SIDECAR_ENV_PROBE", "leaked")
+			GinkgoT().Setenv("NODE_OPTIONS", "--require /tmp/coach-confinement-spy.js")
+			GinkgoT().Setenv("HTTP_PROXY", "http://127.0.0.1:9")
+			GinkgoT().Setenv("npm_config_registry", "http://127.0.0.1:9/registry/")
+			GinkgoT().Setenv("HOME", "/tmp/coach-confinement-home")
 
 			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsSidecarSnapshot(), testMeta(), sidecarOptsWithMode("env"))
 			Expect(err).NotTo(HaveOccurred())
@@ -287,8 +310,11 @@ var _ = Describe("BuildTypeScriptModelViaSidecar", func() {
 			diag, ok := diagnosticWithCode(model.Coverage.Diagnostics, "env_probe")
 			Expect(ok).To(BeTrue(), "expected an env_probe diagnostic, got %+v", model.Coverage.Diagnostics)
 			Expect(diag.Message).To(ContainSubstring(`probe=""`), "expected the child not to see the parent's COACH_TS_SIDECAR_ENV_PROBE value")
-			Expect(diag.Message).To(ContainSubstring("path=set"), "expected PATH to still be forwarded to the child")
-			Expect(diag.Message).To(ContainSubstring("home=set"), "expected HOME to still be forwarded to the child")
+			Expect(diag.Message).To(ContainSubstring("path=set"), "expected PATH to still be forwarded so the resolved runtime can load dynamic linker search paths")
+			Expect(diag.Message).To(ContainSubstring("home=unset"), "HOME must not be forwarded; it carries npmrc and other project-runtime config")
+			Expect(diag.Message).To(ContainSubstring("node_options=unset"), "NODE_OPTIONS must not be forwarded; a leaked --require would run in the analyzer")
+			Expect(diag.Message).To(ContainSubstring("http_proxy=unset"), "HTTP_PROXY must not be forwarded; a leaked proxy would be a network path")
+			Expect(diag.Message).To(ContainSubstring("npm_config_registry=unset"), "npm_config_registry must not be forwarded; it is package-manager configuration")
 		})
 	})
 

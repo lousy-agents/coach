@@ -75,6 +75,7 @@ type tsSidecarProc struct {
 
 func startTSSidecarCmd(runCtx context.Context, opts TSSidecarOptions, reqLine []byte) (*tsSidecarProc, *boundedWriter, string) {
 	cmd := exec.CommandContext(runCtx, opts.BinaryPath, opts.Args...)
+	cmd.Dir = opts.Dir
 	cmd.Env = sanitizedTSSidecarEnv()
 	cmd.Stdin = bytes.NewReader(append(reqLine, '\n'))
 	stderr := &boundedWriter{limit: maxTSSidecarStderrBytes}

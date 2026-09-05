@@ -1,4 +1,3 @@
-import { createVirtualFileSystem } from "typescript/unstable/fs";
 /**
  * All virtual paths live under this synthetic absolute root, disjoint from
  * any real filesystem path, so tsgo's absolute-path-based module
@@ -9,41 +8,35 @@ export function toVirtualPath(repoRelativePath) {
     const normalized = repoRelativePath.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/^\/+/, "");
     return `${VIRTUAL_ROOT}/${normalized}`;
 }
-/** Inverse of toVirtualPath; undefined for any path outside VIRTUAL_ROOT (e.g. tsgo's bundled lib.*.d.ts). */
 export function fromVirtualPath(virtualPath) {
     const prefix = `${VIRTUAL_ROOT}/`;
     return virtualPath.startsWith(prefix) ? virtualPath.slice(prefix.length) : undefined;
 }
-/**
- * Builds the snapshot-confined virtual filesystem the sidecar hands to
- * `typescript/unstable/sync`'s API, plus a synthetic node_modules mirror
- * of every in-snapshot package.json'd directory.
- */
-export function buildProjectSnapshot(files) {
+export function buildProjectSnapshot(files, createVirtualFileSystem) {
     const inventory = indexSnapshotFiles(files);
     const packages = mirrorInSnapshotPackages(files, inventory.contentByPath);
     const record = { ...inventory.record, ...packages.mirrorRecord };
     return {
-        fs: confinedFileSystem(record),
-        originalVirtualPaths: inventory.originalVirtualPaths,
+        fs: confinedFileSystem(record, createVirtualFileSystem),
+        nonMirrorVirtualPaths: inventory.nonMirrorVirtualPaths,
         packagesByName: packages.packagesByName,
         ...pathCanonicalizers(inventory.originalByLower, packages.mirrorToOriginal, packages.mirrorByLower),
     };
 }
 function indexSnapshotFiles(files) {
     const record = {};
-    const originalVirtualPaths = new Set();
+    const nonMirrorVirtualPaths = new Set();
     const contentByPath = new Map();
     const originalByLower = new Map();
     for (const f of files) {
         const content = Buffer.from(f.content_b64, "base64").toString("utf8");
         const vpath = toVirtualPath(f.path);
         record[vpath] = content;
-        originalVirtualPaths.add(vpath);
+        nonMirrorVirtualPaths.add(vpath);
         originalByLower.set(vpath.toLowerCase(), vpath);
         contentByPath.set(f.path, content);
     }
-    return { record, originalVirtualPaths, contentByPath, originalByLower };
+    return { record, nonMirrorVirtualPaths, contentByPath, originalByLower };
 }
 function mirrorInSnapshotPackages(files, contentByPath) {
     const packagesByName = new Map();
@@ -98,7 +91,11 @@ function fileBelongsToPackage(path, dirRepo, prefix) {
         return false;
     return true;
 }
-function confinedFileSystem(record) {
+// Confines snapshot content reads. fileExists is not overridden:
+// createVirtualFileSystem already returns boolean false for paths outside
+// the snapshot, and tsgo's native server still host-stats for compiler-
+// package lookups. Wrapping fileExists does not demonstrate AC-RUN-3.
+function confinedFileSystem(record, createVirtualFileSystem) {
     const base = createVirtualFileSystem(record);
     return {
         ...base,

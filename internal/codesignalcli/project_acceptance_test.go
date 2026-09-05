@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -340,13 +341,8 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(backend.requests[0].Baseline).To(BeFalse())
 	})
 
-	// Proves the CLI-facing AnalyzeBaseline wiring genuinely surfaces a
-	// backend's incomplete HeadCoverage rather than silently claiming
-	// completeness: codesignal.Build already contracts that incomplete head
-	// coverage forces Lifecycle "unknown" plus a project_lifecycle_indeterminate
-	// diagnostic (see pkg/codesignal/project_contract_acceptance_test.go); this
-	// asserts AnalyzeBaseline threads ProjectBackendResult.HeadCoverage into
-	// that same contract instead of re-deriving or dropping it.
+	// See pkg/codesignal/project_contract_acceptance_test.go for
+	// codesignal.Build's own contract on incomplete head coverage.
 	It("threads an incomplete HeadCoverage into a lifecycle-indeterminate report rather than claiming baseline", func() {
 		dir := acceptanceTempGitRepo()
 		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
@@ -383,23 +379,12 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(report.ProjectChanges).To(HaveLen(1))
 		Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")), "an incomplete HeadCoverage must never be reported as lifecycle baseline")
 		Expect(report.ProjectSummary.BaselineChanges).To(Equal(0))
-		// ProjectCoverage itself (not just the lifecycle outcome) must reach
-		// the report and stay Complete:false: Lifecycle "unknown" plus
-		// project_lifecycle_indeterminate alone would also fire for a
-		// completely dropped (nil) HeadCoverage, so asserting those two
-		// facts alone would not prove HeadCoverage was genuinely threaded
-		// through rather than silently discarded.
 		Expect(report.ProjectCoverage).NotTo(BeNil(), "HeadCoverage must reach the report, not be dropped as nil")
 		Expect(report.ProjectCoverage.Complete).To(BeFalse())
 		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_coverage_incomplete")))
 		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_lifecycle_indeterminate")), "the CLI-facing report must surface the same indeterminate diagnostic codesignal.Build contracts for partial coverage")
 	})
 
-	// Through the real Build pipeline: incomplete project coverage with
-	// no project changes and no file-local signals must reach the
-	// zero-active-finding verdict, stating project analysis did not complete,
-	// without claiming any path was skipped -- project_coverage_incomplete and
-	// project_lifecycle_indeterminate diagnostics carry no Path.
 	It("renders the no-active-findings verdict as project-incomplete, not path-skipped, for a real incomplete-coverage report", func() {
 		dir := acceptanceTempGitRepo()
 		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
@@ -429,15 +414,8 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(text).NotTo(ContainSubstring("not analyzed"), "project_coverage_incomplete/project_lifecycle_indeterminate diagnostics carry no Path, so no path count must be claimed")
 	})
 
-	// Regression: Report only exposes head-side ProjectCoverage, so a report
-	// whose HEAD coverage is complete but whose BASE coverage was incomplete
-	// (a real, reachable diff-mode state -- see pkg/codesignal/codesignal.go's
-	// projectLifecycleState, which marks lifecycle indeterminate and appends a
-	// project_lifecycle_indeterminate diagnostic when the base side is
-	// expected but incomplete) must still render "project analysis did not
-	// complete", not the generic "additional diagnostics were recorded"
-	// fallback -- the render layer must consult the diagnostic itself, not
-	// only report.ProjectCoverage.Complete.
+	// See pkg/codesignal/codesignal.go's projectLifecycleState for when
+	// base-side incompleteness marks lifecycle indeterminate.
 	It("renders project-incomplete for a real report whose base-side coverage was incomplete even though head coverage is complete", func() {
 		dir := acceptanceTempGitRepo()
 		baseSHA := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
@@ -470,14 +448,8 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(text).To(ContainSubstring("project analysis did not complete"), "the verdict must not fall back to the generic 'additional diagnostics were recorded' clause when the diagnostic itself names project-analysis incompleteness")
 	})
 
-	// Regression: a real backend can return a ProjectChange with no
-	// PrimaryAnchor.Path (filterAnchorlessProjectChanges in
-	// pkg/codesignal/codesignal.go drops it and appends a pathless
-	// project_observation_missing_primary_path diagnostic), while
-	// ProjectCoverage is otherwise complete. That diagnostic is neither a
-	// path-count cause nor a project-incompleteness cause, so it must reach
-	// the render layer's generic "additional diagnostics were recorded"
-	// fallback through the real Build pipeline, not only a hand-built Report.
+	// See pkg/codesignal/codesignal.go's filterAnchorlessProjectChanges for
+	// the project_observation_missing_primary_path diagnostic this pins.
 	It("renders the generic incomplete-analysis fallback for a real report whose only diagnostic is an anchorless project observation", func() {
 		dir := acceptanceTempGitRepo()
 		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
@@ -514,69 +486,154 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	})
 })
 
-// fakeTSSidecarBinary holds the compiled
-// cmd/coach/testdata/fake_ts_sidecar bytes, built lazily on first use via
-// buildFakeTSSidecarBinaryOnce. It is built by full module import path
-// rather than a relative "./testdata/..." path so the build works
-// regardless of the test binary's own working directory. The build-scratch
-// dir is removed via DeferCleanup when the first spec that builds it ends,
-// not at suite teardown; later specs write the cached bytes, not that path.
+// tsAcceptanceRepoRootFromThisFile locates the repository root relative to
+// this test file's own path (internal/codesignalcli is two directories
+// below the repository root), so the specs below can find this
+// repository's own installed js/semantics/node_modules/typescript
+// devDependency regardless of the test binary's own working directory,
+// mirroring pkg/projectmodel's ts_sidecar_integration_acceptance_test.go
+// convention.
+func tsAcceptanceRepoRootFromThisFile() string {
+	_, thisFile, _, ok := runtime.Caller(0)
+	Expect(ok).To(BeTrue(), "runtime.Caller(0) failed")
+	return filepath.Join(filepath.Dir(thisFile), "..", "..")
+}
+
+// tsAcceptanceNPMArchName maps Go's runtime.GOARCH to the npm/Node
+// process.arch naming convention typescript's native platform package
+// directories use (e.g. "amd64" -> "x64").
+func tsAcceptanceNPMArchName() string {
+	switch runtime.GOARCH {
+	case "amd64":
+		return "x64"
+	case "386":
+		return "ia32"
+	default:
+		return runtime.GOARCH
+	}
+}
+
+func tsAcceptanceRealTypescriptDir() string {
+	return filepath.Join(tsAcceptanceRepoRootFromThisFile(), "js", "semantics", "node_modules", "typescript")
+}
+
+func tsAcceptanceRealNativeTypescriptDir() string {
+	name := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, tsAcceptanceNPMArchName())
+	return filepath.Join(tsAcceptanceRepoRootFromThisFile(), "js", "semantics", "node_modules", "@typescript", name)
+}
+
+// tsAcceptanceRealTypescriptVersion reads js/semantics' own installed
+// typescript devDependency version directly from disk, so fixtures
+// declaring an exact matching version in package.json cannot drift from the
+// actual installed copy these specs copy.
+func tsAcceptanceRealTypescriptVersion() string {
+	data, err := os.ReadFile(filepath.Join(tsAcceptanceRealTypescriptDir(), "package.json"))
+	Expect(err).NotTo(HaveOccurred())
+	var manifest struct {
+		Version string `json:"version"`
+	}
+	Expect(json.Unmarshal(data, &manifest)).To(Succeed())
+	Expect(manifest.Version).NotTo(BeEmpty())
+	return manifest.Version
+}
+
+func tsAcceptanceCopyFileTree(src, dst string) {
+	Expect(filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, relErr := filepath.Rel(src, p)
+		if relErr != nil {
+			return relErr
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		content, readErr := os.ReadFile(p)
+		if readErr != nil {
+			return readErr
+		}
+		mode := os.FileMode(0o644)
+		if info, infoErr := d.Info(); infoErr == nil && info.Mode()&0o111 != 0 {
+			mode = 0o755
+		}
+		return os.WriteFile(target, content, mode)
+	})).To(Succeed())
+}
+
 var (
-	fakeTSSidecarBinary      []byte
-	buildFakeTSSidecarBinary sync.Once
+	tsAcceptanceRealCompilerOnce sync.Once
+	tsAcceptanceRealCompilerSkip string
 )
 
-func ensureFakeTSSidecarBinaryBuilt() {
-	buildFakeTSSidecarBinary.Do(func() {
-		dir, err := os.MkdirTemp("", "fake-ts-project-sidecar-*")
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(os.RemoveAll, dir)
-
-		binPath := filepath.Join(dir, "fake-ts-project-sidecar")
-		build := exec.Command("go", "build", "-o", binPath, "github.com/lousy-agents/coach/cmd/coach/testdata/fake_ts_sidecar")
-		output, err := build.CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), "building fake ts project sidecar: %s", output)
-
-		data, err := os.ReadFile(binPath)
-		Expect(err).NotTo(HaveOccurred())
-		fakeTSSidecarBinary = data
+// ensureRealTypeScriptCompilerAvailable memoizes whether this repository's
+// own js/semantics/node_modules/typescript devDependency (plus its matching
+// native platform package) is installed, so the specs below -- which copy
+// that installed compiler into a fixture repository -- can skip gracefully
+// in a Go-only CI leg (verify installs only Go, no `npm ci`) instead of
+// failing hard. Mirrors
+// pkg/projectmodel/ts_sidecar_integration_acceptance_test.go's
+// ensureRealTSSidecarBinary contract.
+func ensureRealTypeScriptCompilerAvailable() (skipReason string) {
+	tsAcceptanceRealCompilerOnce.Do(func() {
+		if _, err := exec.LookPath("node"); err != nil {
+			tsAcceptanceRealCompilerSkip = fmt.Sprintf("node not found on PATH; skipping specs requiring the real installed TypeScript compiler (%s)", err)
+			return
+		}
+		tsPkgJSON := filepath.Join(tsAcceptanceRealTypescriptDir(), "package.json")
+		if _, err := os.Stat(tsPkgJSON); err != nil {
+			tsAcceptanceRealCompilerSkip = fmt.Sprintf("%s not found (run `npm ci` in js/semantics); skipping specs requiring the real installed TypeScript compiler (%s)", tsPkgJSON, err)
+			return
+		}
+		nativePkgJSON := filepath.Join(tsAcceptanceRealNativeTypescriptDir(), "package.json")
+		if _, err := os.Stat(nativePkgJSON); err != nil {
+			tsAcceptanceRealCompilerSkip = fmt.Sprintf("%s not found (run `npm ci` in js/semantics); skipping specs requiring the real installed TypeScript compiler (%s)", nativePkgJSON, err)
+			return
+		}
 	})
+	return tsAcceptanceRealCompilerSkip
 }
 
-// installFakeTSSidecarAt writes the compiled fake sidecar binary to
-// repoDir/js/semantics/bin/coach-ts-project-sidecar -- the fixed
-// tsSidecarRelativePath tsProjectBackend resolves against the repository
-// root (via repositoryRoot(req.Dir)), so repoDir must be the repository
-// root here.
-func installFakeTSSidecarAt(repoDir string) {
-	ensureFakeTSSidecarBinaryBuilt()
-	binDir := filepath.Join(repoDir, "js", "semantics", "bin")
-	Expect(os.MkdirAll(binDir, 0o755)).To(Succeed())
-	Expect(os.WriteFile(filepath.Join(binDir, "coach-ts-project-sidecar"), fakeTSSidecarBinary, 0o755)).To(Succeed())
+// installRealTypescriptCompilerAt copies this repository's own installed
+// js/semantics node_modules/typescript devDependency, plus its native
+// platform package, into repoDir's own node_modules/typescript, uncommitted
+// -- PrepareTSRuntime's compiler resolution reads worktree filesystem state
+// directly, never a Git snapshot (see
+// project_ts_compiler_resolve.go's resolveCompilerForRuntime doc comment),
+// so this need not be tracked by Git.
+func installRealTypescriptCompilerAt(repoDir string) {
+	tsAcceptanceCopyFileTree(tsAcceptanceRealTypescriptDir(), filepath.Join(repoDir, "node_modules", "typescript"))
+	nativeName := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, tsAcceptanceNPMArchName())
+	tsAcceptanceCopyFileTree(tsAcceptanceRealNativeTypescriptDir(), filepath.Join(repoDir, "node_modules", "@typescript", nativeName))
 }
 
-// Mutation testing showed that swapping
-// filepath.Join(req.Dir, tsSidecarRelativePath) for the bare
-// tsSidecarRelativePath left the whole cmd/coach acceptance suite green,
-// because every existing test happens to run with the process's cwd equal
-// to req.Dir. This spec calls tsProjectBackend.Analyze directly (bypassing
-// the CLI's run() entrypoint) so the test process's own cwd -- this
-// package's source directory -- differs from req.Dir, the temporary repo
-// below (which is also that repo's own root, so repository-root-relative
-// resolution still finds the sidecar here). See the "from a subdirectory
-// invocation" spec below for the case where req.Dir is not the repository
-// root.
-var _ = Describe("tsProjectBackend sidecar binary resolution", func() {
+// Mutation testing showed that swapping filepath.Join(req.Dir, ...) for a
+// bare repository-root-relative lookup left the whole cmd/coach acceptance
+// suite green, because every existing test happens to run with the
+// process's cwd equal to req.Dir. This spec calls tsProjectBackend.Analyze
+// directly (bypassing the CLI's run() entrypoint) so the test process's own
+// cwd differs from req.Dir.
+var _ = Describe("tsProjectBackend compiler resolution", Label("ts-project-backend"), func() {
+	BeforeEach(func() {
+		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+			Skip(reason)
+		}
+	})
+
 	When("ProjectBackendRequest.Dir differs from the test process's own working directory", func() {
-		It("resolves the sidecar binary relative to req.Dir, not the process cwd", func() {
+		It("resolves the TypeScript compiler relative to req.Dir's repository root, not the process cwd", func() {
 			cwd, err := os.Getwd()
 			Expect(err).NotTo(HaveOccurred())
 
 			repo := acceptanceTempGitRepo()
 			Expect(repo).NotTo(Equal(cwd), "the temp repo must differ from the test process's cwd for this assertion to be meaningful")
 
+			version := tsAcceptanceRealTypescriptVersion()
+			acceptanceCommitFile(repo, "package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
+			acceptanceCommitFile(repo, "tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
 			sha := acceptanceCommitFile(repo, "a.ts", "export const a = 1;\n")
-			installFakeTSSidecarAt(repo)
+			installRealTypescriptCompilerAt(repo)
 
 			cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
 			backend := NewTSProjectBackend()
@@ -592,24 +649,31 @@ var _ = Describe("tsProjectBackend sidecar binary resolution", func() {
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.HeadCoverage).NotTo(BeNil())
-			Expect(result.HeadCoverage.Complete).To(BeTrue(), "the sidecar must have been found and invoked via req.Dir-relative resolution")
+			Expect(result.HeadCoverage.Complete).To(BeTrue(), "the compiler must have been resolved and the analyzer invoked via req.Dir's repository-root-relative resolution")
+			Expect(result.RuntimeKind).To(Equal(runtimeKindNode))
+			Expect(result.RuntimeVersion).To(MatchRegexp(`^v?\d+\.\d+\.\d+`))
+			Expect(result.RuntimeOrigin).To(Equal(runtimeOriginPath))
+			Expect(result.CompilerVersion).To(Equal(version))
+			Expect(result.CompilerOrigin).To(Equal(compilerOriginProject))
 		})
 	})
 })
 
-// ProjectBackendRequest.Dir is
-// os.Getwd() at CLI invocation time, not necessarily the repository
-// checkout root -- coach codesignal run from a subdirectory of a repo must
-// still find a sidecar vendored at the repository root's
-// js/semantics/bin/coach-ts-project-sidecar. This spec sets req.Dir to a
-// subdirectory of the temp repo (not the repo root itself), so only
-// repository-root-anchored (not req.Dir-anchored) resolution can find it.
-var _ = Describe("tsProjectBackend sidecar binary resolution from a subdirectory invocation", func() {
+var _ = Describe("tsProjectBackend compiler resolution from a subdirectory invocation", Label("ts-project-backend"), func() {
+	BeforeEach(func() {
+		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+			Skip(reason)
+		}
+	})
+
 	When("ProjectBackendRequest.Dir is a subdirectory of the repository, not its root", func() {
-		It("still finds the sidecar vendored at the repository root", func() {
+		It("still resolves the compiler declared and installed at the repository root", func() {
 			repo := acceptanceTempGitRepo()
+			version := tsAcceptanceRealTypescriptVersion()
+			acceptanceCommitFile(repo, "package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
+			acceptanceCommitFile(repo, "tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
 			sha := acceptanceCommitFile(repo, "a.ts", "export const a = 1;\n")
-			installFakeTSSidecarAt(repo)
+			installRealTypescriptCompilerAt(repo)
 
 			subDir := filepath.Join(repo, "sub")
 			Expect(os.MkdirAll(subDir, 0o755)).To(Succeed())
@@ -628,8 +692,113 @@ var _ = Describe("tsProjectBackend sidecar binary resolution from a subdirectory
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.HeadCoverage).NotTo(BeNil())
-			Expect(result.HeadCoverage.Complete).To(BeTrue(), "the sidecar must be found via repository-root-relative resolution regardless of invocation subdirectory")
+			Expect(result.HeadCoverage.Complete).To(BeTrue(), "the compiler must be resolved via repository-root-relative resolution regardless of invocation subdirectory")
 		})
+	})
+})
+
+var _ = Describe("tsProjectBackend compiler resolution from a nested TypeScript project", Label("ts-project-backend"), func() {
+	BeforeEach(func() {
+		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+			Skip(reason)
+		}
+	})
+
+	When("the repository has no top-level package.json and the policy names a nested js/semantics-shaped root that pins an exact installed compiler", func() {
+		It("resolves that nested manifest's compiler and produces a complete analysis rather than failing with no locatable compiler", func() {
+			repo := acceptanceTempGitRepo()
+			version := tsAcceptanceRealTypescriptVersion()
+			acceptanceCommitFile(repo, "js/semantics/package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
+			acceptanceCommitFile(repo, "js/semantics/tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
+			sha := acceptanceCommitFile(repo, "js/semantics/a.ts", "export const a = 1;\n")
+			installRealTypescriptCompilerAt(filepath.Join(repo, "js", "semantics"))
+
+			_, statErr := os.Stat(filepath.Join(repo, "package.json"))
+			Expect(os.IsNotExist(statErr)).To(BeTrue(), "nested-only fixture must not have a top-level package.json; that would exercise the already-green worktree-top origin")
+
+			cfg := json.RawMessage(`{"schema_version":"1","roots":["js/semantics"]}`)
+			backend := NewTSProjectBackend()
+
+			result, err := backend.Analyze(context.Background(), ProjectBackendRequest{
+				Dir:          repo,
+				HeadRevision: sha,
+				Baseline:     true,
+				Config:       cfg,
+				ConfigDigest: ConfigDigest(cfg),
+				Language:     "typescript",
+			})
+
+			Expect(err).NotTo(HaveOccurred(), "nested js/semantics-shaped analysis must locate the compiler from the selected root's manifest, not fail with no locatable compiler")
+			Expect(result.HeadCoverage).NotTo(BeNil())
+			Expect(result.HeadCoverage.Complete).To(BeTrue(), "the compiler must be resolved from the nested project's package.json")
+			Expect(result.CompilerVersion).To(Equal(version))
+			Expect(result.CompilerOrigin).To(Equal(compilerOriginProject))
+		})
+	})
+})
+
+var _ = Describe("PrepareTSRuntime resolved-runtime provenance", Label("ts-project-backend"), func() {
+	BeforeEach(func() {
+		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+			Skip(reason)
+		}
+	})
+
+	It("records node version, compiler version, compiler origin, and the materialized analyzer directory on the prepared runtime", func() {
+		repo := acceptanceTempGitRepo()
+		version := tsAcceptanceRealTypescriptVersion()
+		acceptanceCommitFile(repo, "package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
+		acceptanceCommitFile(repo, "tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
+		acceptanceCommitFile(repo, "a.ts", "export const a = 1;\n")
+		installRealTypescriptCompilerAt(repo)
+
+		rt, cleanup, err := PrepareTSRuntime(context.Background(), repo, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer cleanup()
+
+		Expect(rt.NodeExecPath).NotTo(BeEmpty())
+		Expect(rt.NodeVersion).NotTo(BeEmpty())
+		Expect(rt.NodeVersion).To(MatchRegexp(`^v?\d+\.\d+\.\d+`), "expected a real `node --version` output, got %q", rt.NodeVersion)
+		Expect(rt.Kind).To(Equal(runtimeKindNode))
+		Expect(rt.Origin).To(Equal(runtimeOriginPath))
+		Expect(rt.CompilerVersion).To(Equal(version), "CompilerVersion must match the installed compiler's own package.json version")
+		Expect(rt.CompilerOrigin).To(Equal(compilerOriginProject), "the manifest/installed-version match must resolve via the project origin")
+		wantCompiler, err := filepath.EvalSymlinks(filepath.Join(repo, "node_modules", "typescript"))
+		Expect(err).NotTo(HaveOccurred())
+		gotCompiler, err := filepath.EvalSymlinks(rt.CompilerModulePath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(gotCompiler).To(Equal(wantCompiler))
+		Expect(rt.AnalyzerDir).NotTo(BeEmpty())
+		Expect(rt.AnalyzerShimPath).To(HavePrefix(rt.AnalyzerDir))
+	})
+})
+
+type identityHandoffBackend struct {
+	result *ProjectBackendResult
+}
+
+func (b identityHandoffBackend) Analyze(context.Context, ProjectBackendRequest) (*ProjectBackendResult, error) {
+	return b.result, nil
+}
+
+var _ = Describe("applyProjectBackend runtime identity handoff", func() {
+	It("copies runtime kind, version, origin, compiler version, and compiler origin onto codesignal.Input", func() {
+		backend := identityHandoffBackend{result: &ProjectBackendResult{
+			RuntimeKind:     runtimeKindNode,
+			RuntimeVersion:  "v24.9.9",
+			RuntimeOrigin:   runtimeOriginPath,
+			CompilerVersion: "7.0.2",
+			CompilerOrigin:  compilerOriginProject,
+		}}
+		input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, &ProjectAnalysis{
+			Backend: backend,
+		}, ".", "HEAD", "", true)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(input.RuntimeKind).To(Equal(runtimeKindNode), "runtime identity must reach codesignal.Input, not stop on ProjectBackendResult")
+		Expect(input.RuntimeVersion).To(Equal("v24.9.9"))
+		Expect(input.RuntimeOrigin).To(Equal(runtimeOriginPath))
+		Expect(input.CompilerVersion).To(Equal("7.0.2"))
+		Expect(input.CompilerOrigin).To(Equal(compilerOriginProject))
 	})
 })
 
@@ -650,10 +819,7 @@ var _ = Describe("project-config boundary budgets", func() {
 		Expect(elapsed).To(BeNumerically("<", 2*time.Second), "prefix validation must stay sub-quadratic; elapsed=%s", elapsed)
 	})
 
-	// forbidden_imports entries are an explicit user claim that a layer pair
-	// exists; a typo'd from/to that names no declared layer must never
-	// silently validate and reach the evaluator as a permanent no-op edge.
-	It("rejects forbidden_imports entries that reference an undeclared layer name", func() {
+	It("rejects a forbidden_imports entry naming an undeclared layer, rather than silently becoming a permanent no-op edge", func() {
 		doc := []byte(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handler","to":"db"}]}`)
 		err := validateProjectConfigJSON(doc)
 		Expect(err).To(HaveOccurred())
@@ -723,11 +889,7 @@ var _ = Describe("project-config boundary budgets", func() {
 		Expect(validateProjectConfigJSON(withoutField)).To(Succeed())
 	})
 
-	// A required_layer is an explicit user claim that a declared layer exists,
-	// mirroring the forbidden_imports precedent above: a typo'd name
-	// that matches no declared layer must never validate cleanly and become a
-	// permanent no-op for the downstream backend wiring.
-	It("rejects a required_layer that references an undeclared layer name", func() {
+	It("rejects a required_layer naming an undeclared layer, mirroring forbidden_imports, rather than silently becoming a permanent no-op", func() {
 		doc := []byte(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]}],"required_layer":"database"}`)
 		err := validateProjectConfigJSON(doc)
 		Expect(err).To(HaveOccurred())
@@ -742,7 +904,6 @@ var _ = Describe("project-config boundary budgets", func() {
 		})
 
 		gitCommandContext = func(ctx context.Context, dir string, args ...string) *exec.Cmd {
-			// Emit more than the tiny budget without relying on a real repo.
 			return exec.CommandContext(ctx, "python3", "-c", "print('x'*100)")
 		}
 
@@ -792,11 +953,6 @@ var _ = Describe("source_sink_pack config field disposition", func() {
 			{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"},
 		}
 
-		// handlers -> db is a real forbidden_imports violation (mirrors
-		// cmd/coach's goLayerPolicyConfigJSON fixture), so this run produces
-		// at least one ProjectChange -- unlike an empty-result fixture, that
-		// makes the comparison below capable of catching source_sink_pack
-		// actually being wired to select a different sink pack.
 		withoutField := json.RawMessage(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}]}`)
 		withPack := json.RawMessage(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}],"source_sink_pack":"builtin-v1"}`)
 		Expect(validateProjectConfigJSON(withoutField)).To(Succeed())

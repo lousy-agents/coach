@@ -42,7 +42,12 @@ func RenderReadinessText(result *ReadinessResult) string {
 	if len(result.Warnings) > 0 {
 		b.WriteString("\nWarnings:\n")
 		for _, warning := range result.Warnings {
-			fmt.Fprintf(&b, "  %s (found_major=%d tested_major=%d floor_major=%d)\n", warning.Code, warning.FoundMajor, warning.TestedMajor, warning.FloorMajor)
+			switch warning.Code {
+			case WarnCompilerDeclarationMismatch:
+				fmt.Fprintf(&b, "  %s (declared_version=%s found_version=%s declaration_origin=%s)\n", warning.Code, warning.DeclaredVersion, warning.FoundVersion, warning.DeclarationOrigin)
+			default:
+				fmt.Fprintf(&b, "  %s (found_major=%d tested_major=%d floor_major=%d)\n", warning.Code, warning.FoundMajor, warning.TestedMajor, warning.FloorMajor)
+			}
 		}
 	}
 
@@ -77,6 +82,20 @@ func renderReadinessCheckLine(b *strings.Builder, name string, check ReadinessCh
 	}
 	if check.FoundVersion != "" {
 		fmt.Fprintf(b, " found_version=%s", check.FoundVersion)
+	}
+	if len(check.SupportedVersions) > 0 {
+		fmt.Fprintf(b, " supported_versions=%s", strings.Join(check.SupportedVersions, ","))
+	}
+	if len(check.RootFindings) > 0 {
+		parts := make([]string, 0, len(check.RootFindings))
+		for _, finding := range check.RootFindings {
+			if finding.Version == "" {
+				parts = append(parts, finding.Root)
+			} else {
+				parts = append(parts, finding.Root+"@"+finding.Version)
+			}
+		}
+		fmt.Fprintf(b, " root_findings=%s", strings.Join(parts, ","))
 	}
 	b.WriteString("\n")
 }

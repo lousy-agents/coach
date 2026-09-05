@@ -20,18 +20,16 @@ func decodeTSSidecarResponse(data []byte, reqID int64) (projectbridge.Response, 
 	return resp, ""
 }
 
-// sanitizedTSSidecarEnv is the minimal environment for the sidecar child,
-// mirroring internal/codesignalcli/project_snapshot.go's
-// sanitizedSnapshotGitEnv: only PATH and HOME are forwarded so the
-// sidecar can locate itself and any runtime it wraps (e.g. a Node
-// installation), never the parent process's full ambient environment.
+// sanitizedTSSidecarEnv is the analyzer child's environment. Only PATH is
+// forwarded: Node is spawned by absolute path, but some native compiler
+// packages still consult PATH for the dynamic linker. HOME, NODE_OPTIONS,
+// HTTP(S)_PROXY, npm_config_*, and every other ambient variable are
+// omitted so a leaked loader, proxy, or package-manager config cannot
+// influence analysis (AC-RUN-2/AC-RUN-4).
 func sanitizedTSSidecarEnv() []string {
 	var env []string
 	if value, ok := os.LookupEnv("PATH"); ok {
 		env = append(env, "PATH="+value)
-	}
-	if value, ok := os.LookupEnv("HOME"); ok {
-		env = append(env, "HOME="+value)
 	}
 	return env
 }

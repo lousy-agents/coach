@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const BIN_PATH = join(PACKAGE_ROOT, "bin", "coach-ts-project-sidecar");
+export const DEFAULT_COMPILER_MODULE = join(PACKAGE_ROOT, "node_modules", "typescript");
 
 export interface WireFile {
   path: string;
@@ -83,6 +84,7 @@ let nextId = 1;
 export function runSidecar(
   request: Omit<WireRequest, "version" | "op" | "id"> & Partial<Pick<WireRequest, "version" | "op" | "id">>,
   env?: Record<string, string>,
+  args?: readonly string[],
 ): Promise<{ response: WireResponse; rawLine: string; exitCode: number | null }> {
   const fullRequest: WireRequest = {
     version: 1,
@@ -90,15 +92,17 @@ export function runSidecar(
     id: nextId++,
     ...request,
   };
-  return spawnAndRead(fullRequest, env);
+  const argv = args === undefined ? [`--compiler-module=${DEFAULT_COMPILER_MODULE}`] : [...args];
+  return spawnAndRead(fullRequest, env, argv);
 }
 
 function spawnAndRead(
   fullRequest: WireRequest,
   env?: Record<string, string>,
+  args?: readonly string[],
 ): Promise<{ response: WireResponse; rawLine: string; exitCode: number | null }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(BIN_PATH, [], {
+    const child = spawn(BIN_PATH, args ? [...args] : [], {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, ...env },
     });
