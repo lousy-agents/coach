@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
@@ -99,7 +100,7 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 		HeadChanges:     headChanges,
 		HeadCoverage:    &headCoverage,
 		RuntimeKind:     runtime.Kind,
-		RuntimeVersion:  runtime.NodeVersion,
+		RuntimeVersion:  runtime.Version,
 		RuntimeOrigin:   runtime.Origin,
 		CompilerVersion: runtime.CompilerVersion,
 		CompilerOrigin:  runtime.CompilerOrigin,
@@ -124,9 +125,7 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 // model's own Coverage. NewGoSnapshotFS is reused as-is despite its Go-
 // specific name: it is a plain immutable Git-revision fs.FS with no
 // Go-specific behavior, the same snapshot mechanism goProjectBackend uses.
-// The analyzer is spawned as runtime.NodeExecPath directly (see tsRuntime's
-// NodeExecPath field doc for why), with runtime.AnalyzerShimPath as its
-// first argument.
+// The analyzer is spawned as runtime.ExecPath with runtime.ExecArgs.
 func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, runtime *tsRuntime, roots []string, policy codesignal.LayerPolicy, configDigest string) ([]codesignal.ProjectChange, projectmodel.Coverage, error) {
 	snapshot, err := NewGoSnapshotFS(dir, revision)
 	if err != nil {
@@ -137,9 +136,10 @@ func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 		Revision:     revision,
 		ConfigDigest: configDigest,
 	}, projectmodel.TSSidecarOptions{
-		BinaryPath: runtime.NodeExecPath,
-		Args:       []string{runtime.AnalyzerShimPath, "--compiler-module=" + runtime.CompilerModulePath},
+		BinaryPath: runtime.ExecPath,
+		Args:       runtime.ExecArgs,
 		Dir:        runtime.AnalyzerDir,
+		Path:       filepath.Dir(runtime.ExecPath),
 		Roots:      roots,
 		Timeout:    tsSidecarWallTime,
 		Budgets:    tsProjectBudgets,

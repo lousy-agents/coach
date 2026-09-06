@@ -295,6 +295,19 @@ var _ = Describe("BuildTypeScriptModelViaSidecar", func() {
 		})
 	})
 
+	When("TSSidecarOptions.Path is set", func() {
+		It("sets the child's PATH to that value exactly with no extra components", func() {
+			opts := sidecarOptsWithMode("env")
+			opts.Path = "/only/runtime/dir"
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsSidecarSnapshot(), testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+			diag, ok := diagnosticWithCode(model.Coverage.Diagnostics, "env_probe")
+			Expect(ok).To(BeTrue(), "expected an env_probe diagnostic, got %+v", model.Coverage.Diagnostics)
+			Expect(diag.Message).To(ContainSubstring("path_value=/only/runtime/dir"), "child PATH must equal TSSidecarOptions.Path exactly, got %s", diag.Message)
+			Expect(diag.Message).NotTo(ContainSubstring("path_value=/only/runtime/dir:"), "child PATH must have no extra components")
+		})
+	})
+
 	When("the sidecar child process is spawned", func() {
 		It("does not inherit ambient Node loader, proxy, package-manager, or HOME configuration", func() {
 			GinkgoT().Setenv("COACH_TS_SIDECAR_ENV_PROBE", "leaked")

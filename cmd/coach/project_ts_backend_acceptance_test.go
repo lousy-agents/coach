@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -20,133 +19,26 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/tstestutil"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-// repoRootFromThisFile locates the repository root relative to this test
-// file's own path, mirroring pkg/projectmodel's own
-// ts_sidecar_integration_acceptance_test.go convention.
-func repoRootFromThisFile() string {
-	_, thisFile, _, ok := runtime.Caller(0)
-	Expect(ok).To(BeTrue(), "runtime.Caller(0) failed")
-	return filepath.Join(filepath.Dir(thisFile), "..", "..")
-}
-
-// npmArchName maps Go's runtime.GOARCH to the npm/Node process.arch naming
-// convention typescript's native platform package directories use (e.g.
-// "amd64" -> "x64"), which differs from Go's own arch names.
 func npmArchName() string {
-	switch runtime.GOARCH {
-	case "amd64":
-		return "x64"
-	case "386":
-		return "ia32"
-	default:
-		return runtime.GOARCH
-	}
+	return tstestutil.NPMArch()
 }
 
-func jsSemanticsRealTypescriptDir() string {
-	return filepath.Join(repoRootFromThisFile(), "js", "semantics", "node_modules", "typescript")
+func ensureRealTypeScriptCompilerAvailable() string {
+	return tstestutil.EnsureTypeScriptCompilerAvailable()
 }
 
-func jsSemanticsRealNativeTypescriptDir() string {
-	name := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
-	return filepath.Join(repoRootFromThisFile(), "js", "semantics", "node_modules", "@typescript", name)
-}
-
-var (
-	realTSCompilerOnce sync.Once
-	realTSCompilerSkip string
-)
-
-// ensureRealTypeScriptCompilerAvailable memoizes whether this repository's
-// own js/semantics/node_modules/typescript devDependency (plus its matching
-// native platform package) is installed, so the specs below -- which copy
-// that installed compiler into a fixture repository -- can skip gracefully
-// in a Go-only CI leg (verify installs only Go, no `npm ci`) instead of
-// failing hard. Mirrors
-// pkg/projectmodel/ts_sidecar_integration_acceptance_test.go's
-// ensureRealTSSidecarBinary contract.
-func ensureRealTypeScriptCompilerAvailable() (skipReason string) {
-	realTSCompilerOnce.Do(func() {
-		if _, err := exec.LookPath("node"); err != nil {
-			realTSCompilerSkip = fmt.Sprintf("node not found on PATH; skipping specs requiring the real installed TypeScript compiler (%s)", err)
-			return
-		}
-		tsPkgJSON := filepath.Join(jsSemanticsRealTypescriptDir(), "package.json")
-		if _, err := os.Stat(tsPkgJSON); err != nil {
-			realTSCompilerSkip = fmt.Sprintf("%s not found (run `npm ci` in js/semantics); skipping specs requiring the real installed TypeScript compiler (%s)", tsPkgJSON, err)
-			return
-		}
-		nativePkgJSON := filepath.Join(jsSemanticsRealNativeTypescriptDir(), "package.json")
-		if _, err := os.Stat(nativePkgJSON); err != nil {
-			realTSCompilerSkip = fmt.Sprintf("%s not found (run `npm ci` in js/semantics); skipping specs requiring the real installed TypeScript compiler (%s)", nativePkgJSON, err)
-			return
-		}
-	})
-	return realTSCompilerSkip
-}
-
-// realTypescriptVersion reads js/semantics' own installed typescript
-// devDependency version directly from disk, so fixtures declaring an exact
-// matching version in package.json cannot drift from the actual installed
-// copy this suite copies.
 func realTypescriptVersion() string {
-	data, err := os.ReadFile(filepath.Join(jsSemanticsRealTypescriptDir(), "package.json"))
-	Expect(err).NotTo(HaveOccurred())
-	var manifest struct {
-		Version string `json:"version"`
-	}
-	Expect(json.Unmarshal(data, &manifest)).To(Succeed())
-	Expect(manifest.Version).NotTo(BeEmpty())
-	return manifest.Version
+	return tstestutil.TypeScriptVersion()
 }
 
-func copyFileTree(src, dst string) {
-	Expect(filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, relErr := filepath.Rel(src, p)
-		if relErr != nil {
-			return relErr
-		}
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		content, readErr := os.ReadFile(p)
-		if readErr != nil {
-			return readErr
-		}
-		mode := os.FileMode(0o644)
-		if info, infoErr := d.Info(); infoErr == nil && info.Mode()&0o111 != 0 {
-			mode = 0o755
-		}
-		return os.WriteFile(target, content, mode)
-	})).To(Succeed())
-}
-
-// installRealTypescriptCompiler copies this repository's own installed
-// js/semantics node_modules/typescript devDependency into repo's own
-// node_modules/typescript, uncommitted. PrepareTSRuntime's compiler
-// resolution reads worktree filesystem state directly, never a Git
-// snapshot (see project_ts_compiler_resolve.go's resolveCompilerForRuntime
-// doc comment), so this need not be tracked by Git -- mirroring
-// js/semantics's own setupAlternateCompiler test helper
-// (js/semantics/test/project-sidecar.test.ts) one layer up, at the CLI
-// boundary.
-func installRealTypescriptCompiler(repo string, includeNativePackage bool) (packageDir string) {
-	packageDir = filepath.Join(repo, "node_modules", "typescript")
-	copyFileTree(jsSemanticsRealTypescriptDir(), packageDir)
-	if includeNativePackage {
-		nativeName := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
-		nativeDest := filepath.Join(repo, "node_modules", "@typescript", nativeName)
-		copyFileTree(jsSemanticsRealNativeTypescriptDir(), nativeDest)
-	}
-	return packageDir
+func installRealTypescriptCompiler(repo string, includeNativePackage bool) string {
+	return tstestutil.InstallTypeScriptCompiler(repo, includeNativePackage)
 }
 
 // breakCompilerExportSubpath removes subpath from packageDir/package.json's
@@ -194,12 +86,6 @@ func repointCompilerExportSubpath(packageDir, subpath, target string) {
 	Expect(os.WriteFile(pkgPath, out, 0o644)).To(Succeed())
 }
 
-// runCoachCodesignalBaselineEnv runs `coach codesignal --baseline` with a
-// caller-controlled PATH (and no other inherited environment beyond HOME),
-// mirroring project_readiness_acceptance_test.go's runCoachCheckProjectEnv
-// one layer up at the full analysis boundary rather than --check-project
-// alone: it lets a spec deterministically hide (or fake) node/mise on PATH
-// regardless of what the host running this suite happens to have installed.
 func runCoachCodesignalBaselineEnv(repo, path string, extraArgs ...string) (stdout, stderr []byte, exitCode int) {
 	args := append([]string{"codesignal", "--baseline"}, extraArgs...)
 	command := exec.Command(commandPath, args...)
@@ -228,6 +114,67 @@ func codesignalArgsFromRemediationLine(stderr []byte) []string {
 	Expect(fields[0]).To(Equal("coach"), "printed invocation must start with coach so a customer can run it unchanged, got %q", invocation)
 	Expect(fields[1]).To(Equal("codesignal"), "printed invocation must invoke codesignal, got %q", invocation)
 	return fields[2:]
+}
+
+func nativeTypescriptPackageLookupName() string {
+	return fmt.Sprintf("@typescript/typescript-%s-%s", runtime.GOOS, npmArchName())
+}
+
+func writeInstalledNativeTypescript(repo, version string) {
+	writeInstalledNativeTypescriptUnder(repo, ".", version)
+}
+
+func commitNativePackageGapFixture(repo string) {
+	commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+	commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersWithoutImport)
+	commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+	commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
+	writeInstalledTypescriptCompilerOnly(repo, "7.0.2")
+}
+
+func pathValueFromEnviron(env string) string {
+	for _, part := range strings.FieldsFunc(env, func(r rune) bool { return r == '\n' || r == '\x00' }) {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "PATH=") {
+			return strings.TrimSpace(strings.TrimPrefix(part, "PATH="))
+		}
+		if i := strings.Index(part, "PATH="); i >= 0 {
+			rest := part[i+5:]
+			if j := strings.IndexAny(rest, " \t"); j >= 0 {
+				return rest[:j]
+			}
+			return rest
+		}
+	}
+	if i := strings.Index(env, "PATH="); i >= 0 {
+		rest := env[i+5:]
+		if j := strings.IndexAny(rest, " \n\t"); j >= 0 {
+			return rest[:j]
+		}
+		return rest
+	}
+	return ""
+}
+
+func wrapExecutableWithMarker(exe, marker string) {
+	real := exe + ".real"
+	Expect(os.Rename(exe, real)).To(Succeed())
+	script := fmt.Sprintf("#!/bin/sh\nprintf planted > %q\nexec %q \"$@\"\n", marker, real)
+	Expect(os.WriteFile(exe, []byte(script), 0o755)).To(Succeed())
+}
+
+func plantCanaryExecutable(exe, marker string) {
+	Expect(os.MkdirAll(filepath.Dir(exe), 0o755)).To(Succeed())
+	script := fmt.Sprintf("#!/bin/sh\nprintf canary > %q\nexit 1\n", marker)
+	Expect(os.WriteFile(exe, []byte(script), 0o755)).To(Succeed())
+}
+
+func expectTypescriptCompilerMissingScan(stdout, stderr []byte, exitCode int) {
+	Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
+	Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
+	Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_compiler_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+	Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
+	Expect(string(stderr)).NotTo(ContainSubstring("@typescript/"))
 }
 
 func tsRealCompilerPackageJSON(version string) string {
@@ -430,7 +377,7 @@ func readProcessEnviron(pid int) (string, bool) {
 	if data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/environ"); err == nil {
 		return strings.ReplaceAll(string(data), "\x00", "\n"), true
 	}
-	out, err := exec.Command("ps", "-wwE", "-p", strconv.Itoa(pid)).Output()
+	out, err := exec.Command("ps", "-wwwE", "-p", strconv.Itoa(pid), "-o", "command=").Output()
 	if err != nil {
 		return "", false
 	}
@@ -738,18 +685,94 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 		})
 	})
 
-	When("the resolved compiler is missing its required native platform package", Label("ts-project-backend"), func() {
+	When("the approved compiler's native platform package is missing", func() {
+		It("exits 2 with empty stdout and the D3 typescript_compiler_missing stderr line that does not name the native package", func() {
+			repo := newTempGitRepo()
+			commitNativePackageGapFixture(repo)
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			expectTypescriptCompilerMissingScan(stdout, stderr, exitCode)
+			Expect(codesignalcli.NativeTypescriptPackageName()).To(Equal(nativeTypescriptPackageLookupName()))
+		})
+
+		It("executes the printed fit-check invocation and reports typescript_compiler_missing naming the native package with the compiler found_version", func() {
+			repo := newTempGitRepo()
+			commitNativePackageGapFixture(repo)
+			packageName := nativeTypescriptPackageLookupName()
+
+			path := pathWithStubNode("v24.9.9")
+
+			_, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
+
+			args := codesignalArgsFromRemediationLine(stderr)
+			stdout, runStderr, runExit := runCoachCheckProjectEnv(repo, path, args...)
+			Expect(runExit).To(Equal(0), "printed invocation must pass the flag validator unchanged; stderr: %s stdout: %s", runStderr, stdout)
+			Expect(string(stdout)).To(ContainSubstring("compiler: fail (typescript_compiler_missing)"), "readiness document must name the same gap the scan printed, got %q", stdout)
+			Expect(string(stdout)).To(ContainSubstring(packageName), "readiness text must name the native package %s, got %q", packageName, stdout)
+			Expect(string(stdout)).NotTo(ContainSubstring(repo+string(os.PathSeparator)), "readiness remediation must not print a filesystem path, got %q", stdout)
+
+			jsonStdout, jsonStderr, jsonExit := runCoachCheckProjectEnv(repo, path, append(args, "--format", "json")...)
+			Expect(jsonExit).To(Equal(0), "stderr: %s stdout: %s", jsonStderr, jsonStdout)
+			Expect(string(jsonStdout)).To(ContainSubstring(packageName), "JSON remediation must name the native package %s, got %q", packageName, jsonStdout)
+			Expect(string(jsonStdout)).NotTo(ContainSubstring(repo+string(os.PathSeparator)), "JSON remediation must not print a filesystem path, got %q", jsonStdout)
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(jsonStdout, &doc)).To(Succeed(), "stdout: %s", jsonStdout)
+			Expect(doc.Checks.Compiler.Code).To(Equal("typescript_compiler_missing"))
+			Expect(doc.Checks.Compiler.FoundVersion).To(Equal("7.0.2"), "found_version must be the compiler's probed version, not the native package, got %q stdout=%s", doc.Checks.Compiler.FoundVersion, jsonStdout)
+		})
+	})
+
+	When("the approved compiler's native platform package is version-divergent", func() {
+		It("exits 2 with empty stdout and typescript_compiler_missing, not typescript_version_mismatch, naming the native package with the compiler found_version", func() {
+			repo := newTempGitRepo()
+			commitNativePackageGapFixture(repo)
+			writeInstalledNativeTypescript(repo, "5.0.0")
+			packageName := nativeTypescriptPackageLookupName()
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			expectTypescriptCompilerMissingScan(stdout, stderr, exitCode)
+			Expect(string(stderr)).NotTo(ContainSubstring("typescript_version_mismatch"))
+			Expect(codesignalcli.NativeTypescriptPackageName()).To(Equal(packageName))
+
+			args := codesignalArgsFromRemediationLine(stderr)
+			checkStdout, checkStderr, checkExit := runCoachCheckProjectEnv(repo, path, args...)
+			Expect(checkExit).To(Equal(0), "stderr: %s stdout: %s", checkStderr, checkStdout)
+			Expect(string(checkStdout)).To(ContainSubstring("compiler: fail (typescript_compiler_missing)"))
+			Expect(string(checkStdout)).NotTo(ContainSubstring("typescript_version_mismatch"))
+			Expect(string(checkStdout)).To(ContainSubstring(packageName), "readiness text must name the native package %s, got %q", packageName, checkStdout)
+			Expect(string(checkStdout)).NotTo(ContainSubstring(repo+string(os.PathSeparator)), "readiness remediation must not print a filesystem path, got %q", checkStdout)
+
+			jsonStdout, jsonStderr, jsonExit := runCoachCheckProjectEnv(repo, path, append(args, "--format", "json")...)
+			Expect(jsonExit).To(Equal(0), "stderr: %s stdout: %s", jsonStderr, jsonStdout)
+			Expect(string(jsonStdout)).To(ContainSubstring(packageName), "JSON remediation must name the native package %s, got %q", packageName, jsonStdout)
+			Expect(string(jsonStdout)).NotTo(ContainSubstring(repo+string(os.PathSeparator)), "JSON remediation must not print a filesystem path, got %q", jsonStdout)
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(jsonStdout, &doc)).To(Succeed(), "stdout: %s", jsonStdout)
+			Expect(doc.Checks.Compiler.Code).To(Equal("typescript_compiler_missing"), "version-divergent native package is not typescript_version_mismatch, got code=%s", doc.Checks.Compiler.Code)
+			Expect(doc.Checks.Compiler.FoundVersion).To(Equal("7.0.2"), "found_version must be the compiler's probed version, not the native package, got %q stdout=%s", doc.Checks.Compiler.FoundVersion, jsonStdout)
+		})
+	})
+
+	When("the resolved native platform package is present and version-equal but unloadable", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
 			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
 				Skip(reason)
 			}
 		})
 
-		It("reports the native-backend startup failure specifically, distinguishing it from the pre-#326 generic sidecar-unavailable degrade, without leaking the compiler's absolute path", func() {
+		It("reports a qualified incomplete report at exit 0, not exit 2, without leaking the compiler's absolute path", func() {
 			repo := newTempGitRepo()
 			version := realTypescriptVersion()
 			commitRealTSLayerFixture(repo, version)
-			compilerDir := installRealTypescriptCompiler(repo, false)
+			compilerDir := installRealTypescriptCompiler(repo, true)
+			nativeName := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
+			nativeDest := filepath.Join(repo, "node_modules", "@typescript", nativeName)
+			Expect(os.Remove(filepath.Join(nativeDest, "lib", "tsc"))).To(Succeed())
 
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
@@ -769,36 +792,28 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 				}
 			}
 			Expect(found).To(BeTrue(), "expected a %s diagnostic in ProjectCoverage.Diagnostics, got %+v", projectmodel.DiagBackendUnavailable, report.ProjectCoverage.Diagnostics)
-			Expect(message).To(ContainSubstring("failed to start ts sidecar analysis backend"), "expected the native-platform-package startup failure to surface, got: %s", message)
+			Expect(message).To(Or(
+				ContainSubstring("failed to load resolved TypeScript compiler module"),
+				ContainSubstring("native TypeScript executable is missing"),
+				ContainSubstring("failed to start ts sidecar analysis backend"),
+			), "expected the missing-native-executable failure to surface, got: %s", message)
 
 			Expect(string(stdout)).NotTo(ContainSubstring(compilerDir), "the resolved compiler's absolute filesystem path must never appear in the serialized report")
+			Expect(string(stdout)).NotTo(ContainSubstring(nativeDest), "the native compiler executable path must never appear in the serialized report")
 			Expect(message).NotTo(ContainSubstring(repo), "diagnostic must not contain the repository path")
 			Expect(message).NotTo(ContainSubstring("coach-ts-analyzer-"), "diagnostic must not contain the analyzer temp-directory prefix")
 			Expect(message).NotTo(ContainSubstring("file://"))
 			Expect(message).NotTo(ContainSubstring("node:internal"))
 		})
 
-		It("does not embed the native compiler executable path when that executable is missing from an otherwise resolved compiler", func() {
-			repo := newTempGitRepo()
-			version := realTypescriptVersion()
-			commitRealTSLayerFixture(repo, version)
-			compilerDir := installRealTypescriptCompiler(repo, true)
-			nativeName := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
-			nativeDest := filepath.Join(repo, "node_modules", "@typescript", nativeName)
-			Expect(os.Remove(filepath.Join(nativeDest, "lib", "tsc"))).To(Succeed())
-
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-
-			Expect(string(stdout)).NotTo(ContainSubstring(compilerDir), "the resolved compiler's absolute filesystem path must never appear in the serialized report")
-			Expect(string(stdout)).NotTo(ContainSubstring(nativeDest), "the native compiler executable path must never appear in the serialized report")
-		})
-
 		It("renders a qualified verdict, not the unqualified clean-run sentence", func() {
 			repo := newTempGitRepo()
 			version := realTypescriptVersion()
 			commitRealTSLayerFixture(repo, version)
-			installRealTypescriptCompiler(repo, false)
+			installRealTypescriptCompiler(repo, true)
+			nativeName := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
+			nativeDest := filepath.Join(repo, "node_modules", "@typescript", nativeName)
+			Expect(os.Remove(filepath.Join(nativeDest, "lib", "tsc"))).To(Succeed())
 
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
 			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
@@ -906,6 +921,215 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			Expect(stdout).To(BeEmpty(), "never reaching backend dispatch means nothing is written to stdout")
 			Expect(string(stderr)).NotTo(BeEmpty())
 			Expect(string(stderr)).To(ContainSubstring("project.json"))
+		})
+	})
+
+	When("a recording node shim is first on PATH", Label("ts-project-backend"), func() {
+		BeforeEach(func() {
+			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+				Skip(reason)
+			}
+		})
+
+		It("probes process.execPath and spawns that path so the shim log does not contain --compiler-module", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitRealTSLayerFixture(repo, version)
+			installRealTypescriptCompiler(repo, true)
+
+			realNode, err := exec.LookPath("node")
+			Expect(err).NotTo(HaveOccurred())
+			probe := exec.Command(realNode, "-p", "process.execPath")
+			probed, err := probe.Output()
+			Expect(err).NotTo(HaveOccurred())
+			execPath := strings.TrimSpace(string(probed))
+
+			shimDir, err := os.MkdirTemp("", "coach-recording-node-*")
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(os.RemoveAll, shimDir)
+			logPath := filepath.Join(shimDir, "shim.log")
+			script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\nexec %q \"$@\"\n", logPath, realNode)
+			Expect(os.WriteFile(filepath.Join(shimDir, "node"), []byte(script), 0o755)).To(Succeed())
+
+			path := shimDir + string(os.PathListSeparator) + pathExcludingExecutables("node")
+			sampler := startAnalyzerEnvironSampler()
+			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			environs := sampler.halt()
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+
+			logBytes, readErr := os.ReadFile(logPath)
+			Expect(readErr).NotTo(HaveOccurred())
+			Expect(string(logBytes)).NotTo(ContainSubstring("--compiler-module"), "analyzer child must be the probed execPath, not the PATH shim; log=%s", logBytes)
+
+			Expect(environs).NotTo(BeEmpty(), "must observe the analyzer child")
+			for _, env := range environs {
+				childPath := pathValueFromEnviron(env)
+				Expect(childPath).To(Equal(filepath.Dir(execPath)), "child PATH must equal the runtime directory exactly, got %q env=%q", childPath, env)
+				Expect(childPath).NotTo(ContainSubstring(shimDir), "recording shim directory must be absent from child PATH")
+			}
+		})
+	})
+
+	When("ambient PATH includes a sibling directory containing a shim", Label("ts-project-backend"), func() {
+		BeforeEach(func() {
+			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+				Skip(reason)
+			}
+		})
+
+		It("sets the analyzer child PATH to the runtime directory with no extra components", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitRealTSLayerFixture(repo, version)
+			installRealTypescriptCompiler(repo, true)
+
+			realNode, err := exec.LookPath("node")
+			Expect(err).NotTo(HaveOccurred())
+			probe := exec.Command(realNode, "-p", "process.execPath")
+			probed, err := probe.Output()
+			Expect(err).NotTo(HaveOccurred())
+			runtimeDir := filepath.Dir(strings.TrimSpace(string(probed)))
+
+			sibling, err := os.MkdirTemp("", "coach-path-sibling-*")
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(os.RemoveAll, sibling)
+			Expect(os.WriteFile(filepath.Join(sibling, "node"), []byte("#!/bin/sh\necho sibling-shim\n"), 0o755)).To(Succeed())
+
+			path := os.Getenv("PATH")
+			GinkgoT().Setenv("PATH", path+string(os.PathListSeparator)+sibling)
+
+			sampler := startAnalyzerEnvironSampler()
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			environs := sampler.halt()
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			Expect(environs).NotTo(BeEmpty(), "must observe the analyzer child")
+			for _, env := range environs {
+				childPath := pathValueFromEnviron(env)
+				Expect(childPath).To(Equal(runtimeDir), "child PATH must equal the runtime directory exactly, got %q env=%q", childPath, env)
+				Expect(strings.Split(childPath, string(os.PathListSeparator))).To(Equal([]string{runtimeDir}))
+				Expect(childPath).NotTo(ContainSubstring(sibling), "planted sibling must be absent from child PATH")
+			}
+		})
+	})
+
+	When("host Node major is 25 at runtime preparation", func() {
+		It("exits 2 with empty stdout and node_missing, not node_unsupported or node_below_minimum", func() {
+			repo := newTempGitRepo()
+			commitNativePackageGapFixture(repo)
+			writeInstalledNativeTypescript(repo, "7.0.2")
+
+			path := pathWithStubNode("v25.0.0")
+			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
+			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+			Expect(string(stderr)).NotTo(ContainSubstring("node_unsupported"))
+			Expect(string(stderr)).NotTo(ContainSubstring("node_below_minimum"))
+			Expect(string(stderr)).NotTo(ContainSubstring("25"))
+			Expect(string(stderr)).NotTo(ContainSubstring("{24, 26}"))
+		})
+
+		It("still accepts the same stub under --check-project as node_untested and does not emit node_unsupported", func() {
+			repo := newTempGitRepo()
+			commitNativePackageGapFixture(repo)
+			writeInstalledNativeTypescript(repo, "7.0.2")
+
+			path := pathWithStubNode("v25.0.0")
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			Expect(string(stdout)).To(ContainSubstring("node_untested"))
+			Expect(string(stdout)).NotTo(ContainSubstring("node_unsupported"))
+			Expect(string(stdout)).NotTo(ContainSubstring("node_missing"))
+		})
+	})
+
+	When("a wrong-version native package canary sits on the omit-tsserverPath walk", Label("ts-project-backend"), func() {
+		BeforeEach(func() {
+			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+				Skip(reason)
+			}
+		})
+
+		It("completes a real scan using the approved native path and never runs the canary", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitRealTSLayerFixture(repo, version)
+			installRealTypescriptCompiler(repo, true)
+
+			markerDir, err := os.MkdirTemp("", "coach-native-canary-*")
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(os.RemoveAll, markerDir)
+			approvedMarker := filepath.Join(markerDir, "approved")
+			canaryMarker := filepath.Join(markerDir, "canary")
+
+			nativeName := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
+			approvedExe := filepath.Join(repo, "node_modules", "@typescript", nativeName, "lib", "tsc")
+			wrapExecutableWithMarker(approvedExe, approvedMarker)
+
+			canaryExe := filepath.Join(repo, "node_modules", "typescript", "node_modules", "@typescript", nativeName, "lib", "tsc")
+			plantCanaryExecutable(canaryExe, canaryMarker)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			report := decodeCoachReport(stdout)
+			Expect(report.ProjectCoverage).NotTo(BeNil())
+			Expect(report.ProjectCoverage.Complete).To(BeTrue(), "%+v", report.ProjectCoverage)
+			Expect(report.ProjectChanges).To(HaveLen(1))
+
+			_, approvedErr := os.Stat(approvedMarker)
+			Expect(approvedErr).NotTo(HaveOccurred(), "approved native path wrapper must run")
+			_, canaryErr := os.Stat(canaryMarker)
+			Expect(os.IsNotExist(canaryErr)).To(BeTrue(), "canary on the omit-tsserverPath walk must not run")
+		})
+	})
+
+	When("TMPDIR contains typescript or package.json decoys", Label("ts-project-backend"), func() {
+		BeforeEach(func() {
+			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+				Skip(reason)
+			}
+		})
+
+		It("does not change the scan result when $TMPDIR/node_modules/typescript is a decoy", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitRealTSLayerFixture(repo, version)
+			installRealTypescriptCompiler(repo, true)
+
+			decoy := filepath.Join(os.TempDir(), "node_modules", "typescript")
+			Expect(os.MkdirAll(decoy, 0o755)).To(Succeed())
+			DeferCleanup(os.RemoveAll, filepath.Join(os.TempDir(), "node_modules"))
+			Expect(os.WriteFile(filepath.Join(decoy, "package.json"), []byte(`{"name":"typescript","version":"0.0.0"}`+"\n"), 0o644)).To(Succeed())
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			report := decodeCoachReport(stdout)
+			Expect(report.ProjectCoverage.Complete).To(BeTrue(), "%+v", report.ProjectCoverage)
+			Expect(report.ProjectChanges).To(HaveLen(1))
+		})
+
+		It("does not change the scan result when $TMPDIR/package.json declares type commonjs", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitRealTSLayerFixture(repo, version)
+			installRealTypescriptCompiler(repo, true)
+
+			pkg := filepath.Join(os.TempDir(), "package.json")
+			_, existed := os.Stat(pkg)
+			if existed == nil {
+				prev, err := os.ReadFile(pkg)
+				Expect(err).NotTo(HaveOccurred())
+				DeferCleanup(func() { _ = os.WriteFile(pkg, prev, 0o644) })
+			} else {
+				DeferCleanup(os.Remove, pkg)
+			}
+			Expect(os.WriteFile(pkg, []byte(`{"type":"commonjs"}`+"\n"), 0o644)).To(Succeed())
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			report := decodeCoachReport(stdout)
+			Expect(report.ProjectCoverage.Complete).To(BeTrue(), "%+v", report.ProjectCoverage)
+			Expect(report.ProjectChanges).To(HaveLen(1))
 		})
 	})
 })

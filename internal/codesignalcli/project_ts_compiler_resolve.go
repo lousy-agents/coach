@@ -179,9 +179,10 @@ func compilerWorktreeRoot(dir string) string {
 // path, ready for PrepareTSRuntime to spawn the analyzer against via
 // --compiler-module.
 type compilerRuntimeResolution struct {
-	Origin  string
-	Version string
-	Path    string
+	Origin            string
+	Version           string
+	Path              string
+	NativePackagePath string
 }
 
 // CompilerUnresolvedError is the typed scan-time failure when analysis

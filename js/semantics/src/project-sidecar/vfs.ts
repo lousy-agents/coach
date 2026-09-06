@@ -158,10 +158,11 @@ function fileBelongsToPackage(path: string, dirRepo: string, prefix: string): bo
   return true;
 }
 
-// Confines snapshot content reads. fileExists is not overridden:
-// createVirtualFileSystem already returns boolean false for paths outside
-// the snapshot, and tsgo's native server still host-stats for compiler-
-// package lookups. Wrapping fileExists does not demonstrate AC-RUN-3.
+// Confines snapshot content reads and directory listings. fileExists is
+// not overridden: createVirtualFileSystem already returns boolean false
+// for paths outside the snapshot, and tsgo's native server still host-
+// stats for compiler-package lookups. Wrapping fileExists does not
+// demonstrate AC-RUN-3.
 function confinedFileSystem(record: Record<string, string>, createVirtualFileSystem: CreateVirtualFileSystem): FileSystem {
   const base = createVirtualFileSystem(record);
   return {
@@ -171,6 +172,10 @@ function confinedFileSystem(record: Record<string, string>, createVirtualFileSys
       // Explicit null (not undefined) on a miss — undefined falls through
       // to the real filesystem and breaks snapshot confinement.
       return result === undefined ? null : result;
+    },
+    getAccessibleEntries: (directoryName) => {
+      const result = base.getAccessibleEntries ? base.getAccessibleEntries(directoryName) : undefined;
+      return result === undefined ? { files: [], directories: [] } : result;
     },
   };
 }

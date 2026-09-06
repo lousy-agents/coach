@@ -199,9 +199,17 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 
 	realOpts := func() projectmodel.TSSidecarOptions {
 		compilerModule := filepath.Join(jsSemanticsRoot(), "node_modules", "typescript")
+		arch := runtime.GOARCH
+		switch arch {
+		case "amd64":
+			arch = "x64"
+		case "386":
+			arch = "ia32"
+		}
+		nativePackage := filepath.Join(jsSemanticsRoot(), "node_modules", "@typescript", fmt.Sprintf("typescript-%s-%s", runtime.GOOS, arch))
 		return projectmodel.TSSidecarOptions{
 			BinaryPath: sidecarPath,
-			Args:       []string{"--compiler-module=" + compilerModule},
+			Args:       []string{"--compiler-module=" + compilerModule, "--native-package=" + nativePackage},
 			Timeout:    20 * time.Second,
 		}
 	}

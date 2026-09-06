@@ -102,6 +102,9 @@ type ReadinessRootFinding struct {
 // only typescript_version_mismatch lists the compiled-in supported set.
 // RootFindings is additive and omitempty: only typescript_version_conflict
 // lists every selected root's finding so remediation can name each one.
+// Detail is additive and omitempty: typescript_compiler_missing names the
+// native package (@typescript/typescript-<os>-<arch>) when the compiler
+// was present and that package was missing or version-divergent.
 type ReadinessCheck struct {
 	State             ReadinessState         `json:"state"`
 	Code              string                 `json:"code,omitempty"`
@@ -110,6 +113,7 @@ type ReadinessCheck struct {
 	FoundVersion      string                 `json:"found_version,omitempty"`
 	SupportedVersions []string               `json:"supported_versions,omitempty"`
 	RootFindings      []ReadinessRootFinding `json:"root_findings,omitempty"`
+	Detail            string                 `json:"detail,omitempty"`
 	DeclaredVersion   string                 `json:"-"`
 	DeclarationOrigin string                 `json:"-"`
 }
