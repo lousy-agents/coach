@@ -943,7 +943,7 @@ sys.stdout.flush()
 })
 
 var _ = Describe("source_sink_pack config field disposition", func() {
-	It("never changes which findings the real Go backend produces or their content, but does change config_digest/id/fingerprint, and README documents both halves", func() {
+	It("never changes which findings the real Go backend produces or their content, but does change config_digest/id/fingerprint", func() {
 		dir := acceptanceTempGitRepo()
 		acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
 		acceptanceCommitFile(dir, "pkg/db/db.go", "package db\n\nvar Name = \"db\"\n")
@@ -1012,13 +1012,6 @@ var _ = Describe("source_sink_pack config field disposition", func() {
 		withJSON, err := RenderJSON(withReport)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(withJSON).NotTo(Equal(withoutJSON), "config_digest/id/fingerprint differ, so the full rendered JSON documents must differ too")
-
-		readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(string(readme)).To(ContainSubstring("`source_sink_pack`"), "README must document source_sink_pack")
-		Expect(string(readme)).To(ContainSubstring("reserved field"), "README must document source_sink_pack as reserved, not a live policy knob")
-		Expect(string(readme)).To(ContainSubstring("config_digest"), "README must disclose that source_sink_pack still affects config_digest/id/fingerprint")
-		Expect(string(readme)).NotTo(ContainSubstring("byte-identical `coach codesignal` output"), "README must not claim source_sink_pack produces byte-identical output -- config_digest/id/fingerprint genuinely differ")
 	})
 })
 

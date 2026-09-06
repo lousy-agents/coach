@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/google/go-github/v90/github"
+	"github.com/google/go-github/v91/github"
 )
 
 // DefaultCredentialResolverHTTPTimeout bounds outbound App-JWT-authenticated
