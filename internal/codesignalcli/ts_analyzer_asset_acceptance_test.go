@@ -89,6 +89,10 @@ var _ = Describe("TypeScript analyzer asset", func() {
 			shimInfo, err := os.Stat(filepath.Join(dir, "coach-ts-project-sidecar"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(shimInfo.Mode()&0o111).NotTo(BeZero(), "materialized sidecar shim must be executable (embed.FS itself never reports the source's executable bit)")
+
+			pkg, err := os.ReadFile(filepath.Join(dir, "package.json"))
+			Expect(err).NotTo(HaveOccurred(), "materialized analyzer root must carry package.json so Node does not walk above it for a package scope")
+			Expect(string(pkg)).To(Equal("{\"type\":\"module\"}\n"))
 		})
 
 		It("removes the materialized directory once the caller invokes cleanup after success", func() {

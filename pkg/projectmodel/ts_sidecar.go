@@ -38,10 +38,14 @@ const tsSidecarPhase = "ts_sidecar_build"
 
 // TSSidecarOptions bounds one BuildTypeScriptModelViaSidecar call.
 type TSSidecarOptions struct {
-	// BinaryPath is a repository-pinned path to the sidecar executable,
-	// not a $PATH lookup -- mirroring js/semantics/src/backend-cli.ts's
-	// fixed BINARY_URL built-artifact path rather than searching PATH.
+	// BinaryPath is the executable spawned for the sidecar, not a $PATH
+	// lookup. Production TypeScript analysis passes the resolved Node
+	// binary; tests pass a fake sidecar binary.
 	BinaryPath string
+	// Dir is the child's working directory. Empty inherits the parent
+	// process cwd. Production TypeScript analysis sets this to the
+	// materialized private analyzer directory.
+	Dir string
 	// Roots optionally scopes file collection and sidecar analysis to
 	// specific repository-relative project roots; empty scans the whole
 	// snapshot.

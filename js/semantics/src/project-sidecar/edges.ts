@@ -4,38 +4,35 @@ import type { Diagnostic, ImportEdgeFact } from "./protocol.js";
 import { collectEdgesFromSourceFile } from "./edges-walk.js";
 import type { ProjectSnapshot } from "./vfs.js";
 
+type AstModule = typeof import("typescript/unstable/ast");
+
 export interface EdgeExtractionResult {
   edges: ImportEdgeFact[];
   diagnostics: Diagnostic[];
-  /** Canonical virtual paths newly walked by this call (caller merges into its visit set). */
-  visitedPaths: string[];
+  newlyVisitedPaths: string[];
 }
 
-/**
- * Walks every .ts/.tsx file owned by `project` that has not already been
- * visited by another project in this request, extracting one ImportEdgeFact
- * per import/re-export/require/dynamic-import site.
- */
 export function extractEdgesForProject(
   project: Project,
   snapshot: ProjectSnapshot,
   alreadyVisited: ReadonlySet<string>,
+  ast: AstModule,
 ): EdgeExtractionResult {
   const edges: ImportEdgeFact[] = [];
   const diagnostics: Diagnostic[] = [];
-  const visitedPaths: string[] = [];
+  const newlyVisitedPaths: string[] = [];
   const seen = new Set(alreadyVisited);
 
   for (const virtualPath of project.rootFiles) {
-    const fileResult = extractEdgesFromRootFile(project, snapshot, virtualPath, seen);
+    const fileResult = extractEdgesFromRootFile(project, snapshot, virtualPath, seen, ast);
     if (!fileResult) continue;
     seen.add(fileResult.visitedPath);
-    visitedPaths.push(fileResult.visitedPath);
+    newlyVisitedPaths.push(fileResult.visitedPath);
     edges.push(...fileResult.edges);
     diagnostics.push(...fileResult.diagnostics);
   }
 
-  return { edges, diagnostics, visitedPaths };
+  return { edges, diagnostics, newlyVisitedPaths };
 }
 
 function extractEdgesFromRootFile(
@@ -43,7 +40,8 @@ function extractEdgesFromRootFile(
   snapshot: ProjectSnapshot,
   virtualPath: string,
   seen: ReadonlySet<string>,
-): (Omit<EdgeExtractionResult, "visitedPaths"> & { visitedPath: string }) | undefined {
+  ast: AstModule,
+): (Omit<EdgeExtractionResult, "newlyVisitedPaths"> & { visitedPath: string }) | undefined {
   const canonicalVirtual = snapshot.canonicalizeVirtualPath(virtualPath);
   const repoPath = snapshot.toRepoPath(virtualPath);
   if (repoPath === undefined) return undefined;
@@ -56,12 +54,12 @@ function extractEdgesFromRootFile(
   }
   return {
     visitedPath: canonicalVirtual,
-    edges: collectEdgesFromSourceFile(sf, repoPath, project, snapshot),
+    edges: collectEdgesFromSourceFile(sf, repoPath, project, snapshot, ast),
     diagnostics: [],
   };
 }
 
-function missingSourceFile(visitedPath: string, repoPath: string): Omit<EdgeExtractionResult, "visitedPaths"> & { visitedPath: string } {
+function missingSourceFile(visitedPath: string, repoPath: string): Omit<EdgeExtractionResult, "newlyVisitedPaths"> & { visitedPath: string } {
   return {
     visitedPath,
     edges: [],

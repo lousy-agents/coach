@@ -19,7 +19,7 @@ export interface ResolvedSpecifier {
  */
 export function resolveSpecifier(fromVirtualPath: string, specifier: string, snapshot: ProjectSnapshot): ResolvedSpecifier {
   if (isRelativeSpecifier(specifier)) {
-    const resolved = resolveRelative(fromVirtualPath, specifier, snapshot.originalVirtualPaths);
+    const resolved = resolveRelative(fromVirtualPath, specifier, snapshot.nonMirrorVirtualPaths);
     return resolved ? { kind: "snapshot", virtualPath: resolved } : { kind: "unresolved" };
   }
   const resolved = resolvePackageSpecifier(specifier, snapshot);
@@ -64,8 +64,8 @@ function resolvePackageSpecifier(specifier: string, snapshot: ProjectSnapshot): 
     const target = resolvePackageExports(info.exports, info.main, subpath);
     if (target === undefined) continue;
     const full = normalizeVirtualPath(`${info.dirVirtual}/${target}`);
-    if (snapshot.originalVirtualPaths.has(full)) return full;
-    const probed = probeCandidates(full, snapshot.originalVirtualPaths);
+    if (snapshot.nonMirrorVirtualPaths.has(full)) return full;
+    const probed = probeCandidates(full, snapshot.nonMirrorVirtualPaths);
     if (probed) return probed;
   }
   return undefined;

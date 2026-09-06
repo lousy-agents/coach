@@ -44,8 +44,19 @@ func tsSidecarWaitFailure(waitErr error, stderr *boundedWriter) string {
 	if waitErr == nil {
 		return ""
 	}
-	if tail := strings.TrimSpace(stderr.buf.String()); tail != "" {
+	if tail := scrubTSSidecarStderr(stderr.buf.String()); tail != "" {
 		return fmt.Sprintf("ts sidecar exited: %s: %s", waitErr, tail)
 	}
 	return fmt.Sprintf("ts sidecar exited: %s", waitErr)
+}
+
+func scrubTSSidecarStderr(raw string) string {
+	var kept []string
+	for _, line := range strings.Split(raw, "\n") {
+		if strings.Contains(line, "file://") || strings.Contains(line, "node:internal") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }

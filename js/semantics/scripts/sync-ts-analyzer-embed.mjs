@@ -14,7 +14,7 @@
  * `go mod tidy && git diff --exit-code go.mod go.sum` pattern for this
  * embedded asset instead of go.mod/go.sum.
  */
-import { chmodSync, cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,5 +39,6 @@ mkdirSync(destDir, { recursive: true });
 cpSync(shimSrc, shimDest);
 chmodSync(shimDest, 0o755);
 cpSync(treeSrc, treeDest, { recursive: true });
+writeFileSync(join(destDir, "package.json"), `${JSON.stringify({ type: "module" })}\n`);
 
 console.log(`synced ${destDir}`);
