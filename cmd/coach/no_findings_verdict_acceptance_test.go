@@ -1,6 +1,10 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -86,7 +90,7 @@ func expectIncompleteVerdictDiscrimination(cleanRepo, incompleteRepo, exitCodeRe
 }
 
 var _ = Describe("coach codesignal rendered verdict, negative control: incomplete analysis versus a genuinely clean run", func() {
-	When("one run's TypeScript analysis resolves a fully working compiler over a fixture with no forbidden edge, and a second run's resolved compiler is missing its required native platform package over a fixture carrying a real forbidden-layer edge", Label("ts-project-backend"), func() {
+	When("one run's TypeScript analysis resolves a fully working compiler over a fixture with no forbidden edge, and a second run's resolved native package is present and version-equal but unloadable over a fixture carrying a real forbidden-layer edge", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
 			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
 				Skip(reason)
@@ -103,15 +107,17 @@ var _ = Describe("coach codesignal rendered verdict, negative control: incomplet
 			commitFile(cleanRepo, "project.json", goLayerPolicyConfigJSON)
 			installRealTypescriptCompiler(cleanRepo, true)
 
-			By("using tsRealHandlersImportingDB: project_ts_backend_acceptance_test.go's positive spec already proves this exact fixture reports a real edge against a fully working compiler, so the missing native package below suppresses a real finding, not an absent one")
+			By("using tsRealHandlersImportingDB: project_ts_backend_acceptance_test.go's positive spec already proves this exact fixture reports a real edge against a fully working compiler, so the unloadable native executable below suppresses a real finding, not an absent one")
 			incompleteRepo := newTempGitRepo()
 			incompleteVersion := realTypescriptVersion()
 			commitRealTSLayerFixture(incompleteRepo, incompleteVersion)
-			installRealTypescriptCompiler(incompleteRepo, false)
+			installRealTypescriptCompiler(incompleteRepo, true)
+			nativeName := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
+			Expect(os.Remove(filepath.Join(incompleteRepo, "node_modules", "@typescript", nativeName, "lib", "tsc"))).To(Succeed())
 
 			expectIncompleteVerdictDiscrimination(cleanRepo, incompleteRepo,
 				"this backend intentionally keeps exit 0 for a degraded-but-nonfatal compiler startup failure; exit status alone cannot discriminate these two runs",
-				"the compiler missing its native platform package",
+				"the native package present and version-equal but unloadable",
 				"--project-language", "typescript")
 		})
 	})

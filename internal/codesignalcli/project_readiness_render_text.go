@@ -83,6 +83,9 @@ func renderReadinessCheckLine(b *strings.Builder, name string, check ReadinessCh
 	if formatted := formatRootFindings(check.RootFindings); formatted != "" {
 		fmt.Fprintf(b, " root_findings=%s", formatted)
 	}
+	if check.Detail != "" {
+		fmt.Fprintf(b, " detail=%s", check.Detail)
+	}
 	b.WriteString("\n")
 }
 

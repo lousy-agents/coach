@@ -10,6 +10,12 @@ import { fileURLToPath } from "node:url";
 const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const BIN_PATH = join(PACKAGE_ROOT, "bin", "coach-ts-project-sidecar");
 export const DEFAULT_COMPILER_MODULE = join(PACKAGE_ROOT, "node_modules", "typescript");
+export const DEFAULT_NATIVE_PACKAGE = join(
+  PACKAGE_ROOT,
+  "node_modules",
+  "@typescript",
+  `typescript-${process.platform}-${process.arch}`,
+);
 
 export interface WireFile {
   path: string;
@@ -92,7 +98,10 @@ export function runSidecar(
     id: nextId++,
     ...request,
   };
-  const argv = args === undefined ? [`--compiler-module=${DEFAULT_COMPILER_MODULE}`] : [...args];
+  const argv =
+    args === undefined
+      ? [`--compiler-module=${DEFAULT_COMPILER_MODULE}`, `--native-package=${DEFAULT_NATIVE_PACKAGE}`]
+      : [...args];
   return spawnAndRead(fullRequest, env, argv);
 }
 

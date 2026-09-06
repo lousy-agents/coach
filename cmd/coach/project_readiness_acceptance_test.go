@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -90,7 +91,7 @@ func writeStubNodeScript(version string) string {
 	Expect(err).NotTo(HaveOccurred())
 	DeferCleanup(os.RemoveAll, dir)
 
-	script := fmt.Sprintf("#!/bin/sh\necho %s\n", version)
+	script := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo %s; exit 0; fi\nif [ \"$1\" = \"-p\" ]; then echo \"$0\"; exit 0; fi\necho %s\n", version, version)
 	Expect(os.WriteFile(filepath.Join(dir, "node"), []byte(script), 0o755)).To(Succeed())
 	return dir
 }
@@ -242,6 +243,10 @@ func writeStubMiseScript(version string) string {
 	installDir := filepath.Join(dir, "install")
 	Expect(os.MkdirAll(filepath.Join(installDir, "node_modules", "typescript"), 0o755)).To(Succeed())
 	Expect(os.WriteFile(filepath.Join(installDir, "node_modules", "typescript", "package.json"), []byte(fmt.Sprintf(`{"name":"typescript","version":%q}`+"\n", version)), 0o644)).To(Succeed())
+	nativeUnscoped := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
+	nativeDir := filepath.Join(installDir, "node_modules", "@typescript", nativeUnscoped)
+	Expect(os.MkdirAll(nativeDir, 0o755)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(nativeDir, "package.json"), []byte(fmt.Sprintf(`{"name":%q,"version":%q}`+"\n", "@typescript/"+nativeUnscoped, version)), 0o644)).To(Succeed())
 
 	script := fmt.Sprintf("#!/bin/sh\necho \"$PWD\" >> %q\necho \"$@\" >> %q\nif [ \"$1\" = \"where\" ]; then echo %q; exit 0; fi\necho %s\n", filepath.Join(dir, stubMiseCwdLog), filepath.Join(dir, stubMiseInvocationLog), installDir, version)
 	Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755)).To(Succeed())
@@ -918,7 +923,16 @@ func writeInstalledTypescript(repo, version string) {
 	writeInstalledTypescriptUnder(repo, ".", version)
 }
 
+func writeInstalledTypescriptCompilerOnly(repo, version string) {
+	writeInstalledTypescriptCompilerUnder(repo, ".", version)
+}
+
 func writeInstalledTypescriptUnder(repo, relDir, version string) {
+	writeInstalledTypescriptCompilerUnder(repo, relDir, version)
+	writeInstalledNativeTypescriptUnder(repo, relDir, version)
+}
+
+func writeInstalledTypescriptCompilerUnder(repo, relDir, version string) {
 	if _, err := os.Stat(filepath.Join(repo, ".gitignore")); err != nil {
 		commitFile(repo, ".gitignore", "node_modules\n")
 	}
@@ -927,6 +941,15 @@ func writeInstalledTypescriptUnder(repo, relDir, version string) {
 		manifest = relDir + "/" + manifest
 	}
 	writeWorktreeFile(repo, manifest, fmt.Sprintf(`{"name":"typescript","version":%q}`+"\n", version))
+}
+
+func writeInstalledNativeTypescriptUnder(repo, relDir, version string) {
+	unscoped := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
+	manifest := filepath.Join("node_modules", "@typescript", unscoped, "package.json")
+	if relDir != "." && relDir != "" {
+		manifest = relDir + "/" + manifest
+	}
+	writeWorktreeFile(repo, manifest, fmt.Sprintf(`{"name":%q,"version":%q}`+"\n", "@typescript/"+unscoped, version))
 }
 
 var _ = Describe("coach codesignal --baseline --check-project --project-language typescript: compiler resolution", func() {

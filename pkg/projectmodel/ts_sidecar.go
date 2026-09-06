@@ -42,6 +42,7 @@ type TSSidecarOptions struct {
 	// lookup. Production TypeScript analysis passes the resolved Node
 	// binary; tests pass a fake sidecar binary.
 	BinaryPath string
+	Path       string
 	// Dir is the child's working directory. Empty inherits the parent
 	// process cwd. Production TypeScript analysis sets this to the
 	// materialized private analyzer directory.

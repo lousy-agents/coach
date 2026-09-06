@@ -43,6 +43,7 @@ export interface AnalyzeOptions {
    * COACH_TS_SIDECAR_TEST_DELAY_MS gate). */
   testDelayMsPerProject?: number;
   compiler: CompilerBundle;
+  tsserverPath: string;
 }
 
 export interface AnalyzeResult {
@@ -65,7 +66,7 @@ export function analyzeProject(opts: AnalyzeOptions): AnalyzeResult {
     return timeoutBeforeStart(counts, opts.timeoutMs ?? 0);
   }
 
-  const api = startAnalysisAPI(snapshot, opts.compiler.api);
+  const api = startAnalysisAPI(snapshot, opts.compiler.api, opts.tsserverPath);
   try {
     return runProjects(api, snapshot, tsconfigPaths, opts, deadline, counts);
   } finally {
@@ -113,9 +114,9 @@ function timeoutBeforeStart(counts: Record<string, number>, timeoutMs: number): 
   };
 }
 
-function startAnalysisAPI(snapshot: ProjectSnapshot, ApiCtor: CompilerBundle["api"]): ApiInstance {
+function startAnalysisAPI(snapshot: ProjectSnapshot, ApiCtor: CompilerBundle["api"], tsserverPath: string): ApiInstance {
   try {
-    return new ApiCtor({ fs: snapshot.fs });
+    return new ApiCtor({ fs: snapshot.fs, tsserverPath });
   } catch (err) {
     throw new SidecarBackendError(`failed to start ts sidecar analysis backend: ${describeErrorWithoutPaths(err)}`);
   }

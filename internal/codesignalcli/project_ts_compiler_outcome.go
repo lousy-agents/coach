@@ -55,11 +55,15 @@ func compilerCheckFromNonEmptyOrigin(outcome compilerOriginOutcome, pendingDecl,
 }
 
 func passOrMissingCompilerCheck(outcome compilerOriginOutcome, pendingDecl, pendingFound string) ReadinessCheck {
-	_, installed, gap := resolvedInstalledCompiler(outcome)
+	location, installed, gap := resolvedInstalledCompiler(outcome)
 	switch gap {
 	case GapTypescriptCompilerMissing:
 		declared := firstNonEmpty(pendingDecl, outcome.version)
-		return missingCompilerCheck(pendingFound, declared)
+		check := missingCompilerCheck(firstNonEmpty(installed, pendingFound), declared)
+		if location != "" {
+			check.Detail = NativeTypescriptPackageName()
+		}
+		return check
 	case GapTypescriptVersionMismatch:
 		return mismatchCompilerCheck(installed)
 	default:
@@ -103,7 +107,12 @@ func locatableRuntimeResolution(outcome compilerOriginOutcome) (compilerRuntimeR
 	if gap != "" {
 		return compilerRuntimeResolution{}, compilerUnresolved(gap)
 	}
-	return compilerRuntimeResolution{Origin: outcome.origin, Version: installed, Path: location}, nil
+	return compilerRuntimeResolution{
+		Origin:            outcome.origin,
+		Version:           installed,
+		Path:              location,
+		NativePackagePath: nativePackageDirNextTo(location),
+	}, nil
 }
 
 // resolvedInstalledCompiler locates the origin's on-disk compiler and
@@ -119,6 +128,10 @@ func resolvedInstalledCompiler(outcome compilerOriginOutcome) (location, version
 	installed := installedCompilerVersion(location, outcome.version)
 	if !isSupportedTypescriptVersion(installed) {
 		return location, installed, GapTypescriptVersionMismatch
+	}
+	_, _, nativeOK := resolveNativePackage(location, installed)
+	if !nativeOK {
+		return location, installed, GapTypescriptCompilerMissing
 	}
 	return location, installed, ""
 }

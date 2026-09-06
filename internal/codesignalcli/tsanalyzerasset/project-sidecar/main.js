@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
-import { resolve as resolvePath } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { isAbsolute, join, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { analyzeProject, SidecarBackendError } from "./analyze.js";
 import { describeErrorWithoutPaths } from "./describe-error.js";
 import { KIND_INTERNAL, OP_ANALYZE_PROJECT, PROTOCOL_VERSION, SIDECAR_PHASE } from "./protocol.js";
 import { readRequestLine, writeResponseLine } from "./stdio.js";
 const COMPILER_MODULE_FLAG_PREFIX = "--compiler-module=";
+const NATIVE_PACKAGE_FLAG_PREFIX = "--native-package=";
 /**
  * Every named export from `typescript/unstable/ast` this sidecar calls at
  * runtime (coach#326 Task 2 review round 3): the full set of `ast.<name>`
@@ -62,8 +63,11 @@ async function main() {
         return;
     }
     let compiler;
+    let tsserverPath;
     try {
-        compiler = await loadCompiler(await resolveCompilerRootURL(process.argv.slice(2)));
+        const argv = process.argv.slice(2);
+        compiler = await loadCompiler(await resolveCompilerRootURL(argv));
+        tsserverPath = await resolveNativeTsserverPath(argv);
     }
     catch (err) {
         // A CompilerLoadError's own .message is already constructed to be
@@ -82,6 +86,7 @@ async function main() {
             timeoutMs: req.timeout_ms,
             testDelayMsPerProject: readTestDelayHook(),
             compiler,
+            tsserverPath,
         });
         const response = {
             version: PROTOCOL_VERSION,
@@ -136,15 +141,40 @@ async function resolveCompilerRootURL(argv) {
     }
     return normalizePackageRootURL(flag.slice(COMPILER_MODULE_FLAG_PREFIX.length));
 }
+async function resolveNativeTsserverPath(argv) {
+    const flag = argv.find((a) => a.startsWith(NATIVE_PACKAGE_FLAG_PREFIX));
+    const raw = flag?.slice(NATIVE_PACKAGE_FLAG_PREFIX.length) ?? "";
+    if (!raw || !isAbsolute(raw)) {
+        throw new CompilerLoadError("missing required --native-package argument");
+    }
+    try {
+        const info = await stat(raw);
+        if (!info.isDirectory()) {
+            throw new CompilerLoadError("missing required --native-package argument");
+        }
+    }
+    catch (err) {
+        if (err instanceof CompilerLoadError)
+            throw err;
+        throw new CompilerLoadError("missing required --native-package argument");
+    }
+    const tsserverPath = join(raw, "lib", "tsc");
+    try {
+        await stat(tsserverPath);
+    }
+    catch {
+        throw new CompilerLoadError("native TypeScript executable is missing");
+    }
+    return tsserverPath;
+}
 function normalizePackageRootURL(raw) {
     const url = raw.startsWith("file:") ? new URL(raw) : pathToFileURL(resolvePath(raw));
     return url.href.endsWith("/") ? url : new URL(`${url.href}/`);
 }
-/** Thrown only for a compiler module that failed to resolve/load/declare
- * the required unstable API surface -- distinct from SidecarBackendError,
- * which covers a resolved-and-loaded compiler whose native platform
- * package is missing (that failure only surfaces once the compiler
- * actually tries to spawn its backend; see analyze.ts's startAnalysisAPI). */
+/** Thrown for a compiler module that failed to resolve/load/declare the
+ * required unstable API surface, or for a missing/invalid --native-package
+ * argument. Distinct from SidecarBackendError, which covers a loaded
+ * compiler whose native backend then fails to spawn. */
 class CompilerLoadError extends Error {
 }
 /**

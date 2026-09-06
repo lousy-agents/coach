@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -15,16 +16,11 @@ import (
 // compiler and its own materialized directory, without resolving an
 // analyzer, a compiler, or a runtime from the analyzed repository itself.
 type tsRuntime struct {
-	// NodeExecPath is the absolute, host-resolved path to the exact `node`
-	// binary the analyzer is spawned with. It is passed to
-	// projectmodel.TSSidecarOptions.BinaryPath directly -- never a bare
-	// "node" left for the child's own #!/usr/bin/env node shebang plus a
-	// PATH lookup to re-resolve, which cannot guarantee this specific
-	// resolved runtime is the one that actually runs.
-	NodeExecPath string
-	NodeVersion  string
-	Kind         string
-	Origin       string
+	ExecPath string
+	ExecArgs []string
+	Version  string
+	Kind     string
+	Origin   string
 
 	// AnalyzerDir is the materialized private analyzer directory
 	// (see MaterializeTSAnalyzer). The analyzer process's working directory
@@ -40,6 +36,7 @@ type tsRuntime struct {
 	// approved TypeScript compiler package root, passed to the analyzer as
 	// --compiler-module.
 	CompilerModulePath string
+	NativePackagePath  string
 	CompilerVersion    string
 	CompilerOrigin     string
 }
@@ -49,44 +46,84 @@ const (
 	runtimeOriginPath = "path"
 )
 
-var errHostNodeNotFound = errors.New("node executable not found on PATH")
+var (
+	errHostNodeNotFound        = errors.New("node executable not found on PATH")
+	errHostNodeMajorDisallowed = errors.New("host node major is outside the analysis runtime set")
+)
 
 const (
 	hostNodeVersionProbeTimeout   = 10 * time.Second
 	maxHostNodeVersionProbeOutput = 4 << 10
 )
 
+func analysisNodeMajorAllowed(major int) bool {
+	return major == 24 || major == 26
+}
+
+func hostNodeProbeEnv() []string {
+	return []string{
+		"PATH=" + os.Getenv("PATH"),
+		"HOME=" + os.Getenv("HOME"),
+	}
+}
+
+func mapHostNodeProbeError(path, probe string, exitErr, probeErr error) error {
+	switch {
+	case errors.Is(probeErr, errBoundedProbeTimedOut):
+		return fmt.Errorf("%s %s timed out", path, probe)
+	case probeErr != nil:
+		return probeErr
+	case exitErr != nil:
+		return fmt.Errorf("running %s %s: %w", path, probe, exitErr)
+	default:
+		return nil
+	}
+}
+
 // resolveHostNode resolves the exact host `node` executable PrepareTSRuntime
-// spawns the analyzer with: its absolute path (exec.LookPath, not a bare
-// command name a child's own shebang would independently re-resolve) and
-// its raw `node --version` output. This is a separate probe from
-// checkNodeReadiness/detectHostNodeMajor (project_readiness.go): readiness
-// only needs a major version for --check-project, while runtime preparation
-// needs the resolved absolute path itself to spawn against, and the two are
-// independent probes by design -- see resolveCompilerForRuntime's doc
-// comment for the analogous compiler-side distinction between "readiness
-// pass" and "runtime resolvable."
+// spawns the analyzer with: process.execPath from a probe of the LookPath
+// result (never a version-manager shim) and its raw `node --version` output.
+// This is a separate probe from checkNodeReadiness/detectHostNodeMajor
+// (project_readiness.go): readiness only needs a major version for
+// --check-project, while runtime preparation needs the resolved absolute
+// path itself to spawn against, and the two are independent probes by
+// design -- see resolveCompilerForRuntime's doc comment for the analogous
+// compiler-side distinction between "readiness pass" and "runtime
+// resolvable."
 var resolveHostNode = func(ctx context.Context) (execPath, rawVersion string, err error) {
 	path, lookErr := exec.LookPath("node")
 	if lookErr != nil {
 		return "", "", errHostNodeNotFound
 	}
 
-	data, exitErr, probeErr := runBoundedSubprocessProbe(ctx, hostNodeVersionProbeTimeout, maxHostNodeVersionProbeOutput, path, "--version")
-	switch {
-	case errors.Is(probeErr, errBoundedProbeTimedOut):
-		return "", "", fmt.Errorf("%s --version timed out", path)
-	case probeErr != nil:
-		return "", "", probeErr
-	case exitErr != nil:
-		return "", "", fmt.Errorf("running %s --version: %w", path, exitErr)
+	data, exitErr, probeErr := runBoundedSubprocessProbeAt(ctx, hostNodeVersionProbeTimeout, maxHostNodeVersionProbeOutput, "", hostNodeProbeEnv(), path, "--version")
+	if err := mapHostNodeProbeError(path, "--version", exitErr, probeErr); err != nil {
+		return "", "", err
 	}
 
-	return path, strings.TrimSpace(string(data)), nil
+	rawVersion = strings.TrimSpace(string(data))
+	major, parseErr := parseNodeMajor(rawVersion)
+	if parseErr != nil {
+		return "", "", parseErr
+	}
+	if !analysisNodeMajorAllowed(major) {
+		return "", "", errHostNodeMajorDisallowed
+	}
+
+	execData, execExitErr, execProbeErr := runBoundedSubprocessProbeAt(ctx, hostNodeVersionProbeTimeout, maxHostNodeVersionProbeOutput, "", hostNodeProbeEnv(), path, "-p", "process.execPath")
+	if err := mapHostNodeProbeError(path, "process.execPath probe", execExitErr, execProbeErr); err != nil {
+		return "", "", err
+	}
+
+	execPath = strings.TrimSpace(string(execData))
+	if !filepath.IsAbs(execPath) {
+		return "", "", fmt.Errorf("host node process.execPath is not absolute: %q", execPath)
+	}
+	return execPath, rawVersion, nil
 }
 
 func mapHostNodeResolveError(err error) error {
-	if errors.Is(err, errHostNodeNotFound) {
+	if errors.Is(err, errHostNodeNotFound) || errors.Is(err, errHostNodeMajorDisallowed) {
 		return compilerUnresolved(GapNodeMissing)
 	}
 	return fmt.Errorf("coach: resolving host Node runtime for TypeScript analysis: %w", err)
@@ -139,14 +176,22 @@ func PrepareTSRuntime(ctx context.Context, dir string, roots []string) (*tsRunti
 		return nil, func() {}, fmt.Errorf("coach: materializing private TypeScript analyzer: %w", err)
 	}
 
+	shim := filepath.Join(analyzerDir, tsAnalyzerShimAssetPath)
+	execArgs := []string{
+		shim,
+		"--compiler-module=" + compiler.Path,
+		"--native-package=" + compiler.NativePackagePath,
+	}
 	return &tsRuntime{
-		NodeExecPath:       nodePath,
-		NodeVersion:        nodeVersion,
+		ExecPath:           nodePath,
+		ExecArgs:           execArgs,
+		Version:            nodeVersion,
 		Kind:               runtimeKindNode,
 		Origin:             runtimeOriginPath,
 		AnalyzerDir:        analyzerDir,
-		AnalyzerShimPath:   filepath.Join(analyzerDir, tsAnalyzerShimAssetPath),
+		AnalyzerShimPath:   shim,
 		CompilerModulePath: compiler.Path,
+		NativePackagePath:  compiler.NativePackagePath,
 		CompilerVersion:    compiler.Version,
 		CompilerOrigin:     compiler.Origin,
 	}, cleanup, nil

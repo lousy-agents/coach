@@ -8,15 +8,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/tstestutil"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 	"github.com/lousy-agents/coach/pkg/semantics"
@@ -486,126 +485,16 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	})
 })
 
-// tsAcceptanceRepoRootFromThisFile locates the repository root relative to
-// this test file's own path (internal/codesignalcli is two directories
-// below the repository root), so the specs below can find this
-// repository's own installed js/semantics/node_modules/typescript
-// devDependency regardless of the test binary's own working directory,
-// mirroring pkg/projectmodel's ts_sidecar_integration_acceptance_test.go
-// convention.
-func tsAcceptanceRepoRootFromThisFile() string {
-	_, thisFile, _, ok := runtime.Caller(0)
-	Expect(ok).To(BeTrue(), "runtime.Caller(0) failed")
-	return filepath.Join(filepath.Dir(thisFile), "..", "..")
-}
-
-// tsAcceptanceNPMArchName maps Go's runtime.GOARCH to the npm/Node
-// process.arch naming convention typescript's native platform package
-// directories use (e.g. "amd64" -> "x64").
-func tsAcceptanceNPMArchName() string {
-	switch runtime.GOARCH {
-	case "amd64":
-		return "x64"
-	case "386":
-		return "ia32"
-	default:
-		return runtime.GOARCH
-	}
-}
-
-func tsAcceptanceRealTypescriptDir() string {
-	return filepath.Join(tsAcceptanceRepoRootFromThisFile(), "js", "semantics", "node_modules", "typescript")
-}
-
-func tsAcceptanceRealNativeTypescriptDir() string {
-	name := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, tsAcceptanceNPMArchName())
-	return filepath.Join(tsAcceptanceRepoRootFromThisFile(), "js", "semantics", "node_modules", "@typescript", name)
-}
-
-// tsAcceptanceRealTypescriptVersion reads js/semantics' own installed
-// typescript devDependency version directly from disk, so fixtures
-// declaring an exact matching version in package.json cannot drift from the
-// actual installed copy these specs copy.
 func tsAcceptanceRealTypescriptVersion() string {
-	data, err := os.ReadFile(filepath.Join(tsAcceptanceRealTypescriptDir(), "package.json"))
-	Expect(err).NotTo(HaveOccurred())
-	var manifest struct {
-		Version string `json:"version"`
-	}
-	Expect(json.Unmarshal(data, &manifest)).To(Succeed())
-	Expect(manifest.Version).NotTo(BeEmpty())
-	return manifest.Version
+	return tstestutil.TypeScriptVersion()
 }
 
-func tsAcceptanceCopyFileTree(src, dst string) {
-	Expect(filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, relErr := filepath.Rel(src, p)
-		if relErr != nil {
-			return relErr
-		}
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		content, readErr := os.ReadFile(p)
-		if readErr != nil {
-			return readErr
-		}
-		mode := os.FileMode(0o644)
-		if info, infoErr := d.Info(); infoErr == nil && info.Mode()&0o111 != 0 {
-			mode = 0o755
-		}
-		return os.WriteFile(target, content, mode)
-	})).To(Succeed())
+func ensureRealTypeScriptCompilerAvailable() string {
+	return tstestutil.EnsureTypeScriptCompilerAvailable()
 }
 
-var (
-	tsAcceptanceRealCompilerOnce sync.Once
-	tsAcceptanceRealCompilerSkip string
-)
-
-// ensureRealTypeScriptCompilerAvailable memoizes whether this repository's
-// own js/semantics/node_modules/typescript devDependency (plus its matching
-// native platform package) is installed, so the specs below -- which copy
-// that installed compiler into a fixture repository -- can skip gracefully
-// in a Go-only CI leg (verify installs only Go, no `npm ci`) instead of
-// failing hard. Mirrors
-// pkg/projectmodel/ts_sidecar_integration_acceptance_test.go's
-// ensureRealTSSidecarBinary contract.
-func ensureRealTypeScriptCompilerAvailable() (skipReason string) {
-	tsAcceptanceRealCompilerOnce.Do(func() {
-		if _, err := exec.LookPath("node"); err != nil {
-			tsAcceptanceRealCompilerSkip = fmt.Sprintf("node not found on PATH; skipping specs requiring the real installed TypeScript compiler (%s)", err)
-			return
-		}
-		tsPkgJSON := filepath.Join(tsAcceptanceRealTypescriptDir(), "package.json")
-		if _, err := os.Stat(tsPkgJSON); err != nil {
-			tsAcceptanceRealCompilerSkip = fmt.Sprintf("%s not found (run `npm ci` in js/semantics); skipping specs requiring the real installed TypeScript compiler (%s)", tsPkgJSON, err)
-			return
-		}
-		nativePkgJSON := filepath.Join(tsAcceptanceRealNativeTypescriptDir(), "package.json")
-		if _, err := os.Stat(nativePkgJSON); err != nil {
-			tsAcceptanceRealCompilerSkip = fmt.Sprintf("%s not found (run `npm ci` in js/semantics); skipping specs requiring the real installed TypeScript compiler (%s)", nativePkgJSON, err)
-			return
-		}
-	})
-	return tsAcceptanceRealCompilerSkip
-}
-
-// installRealTypescriptCompilerAt copies this repository's own installed
-// js/semantics node_modules/typescript devDependency, plus its native
-// platform package, into repoDir's own node_modules/typescript, uncommitted
-// -- PrepareTSRuntime's compiler resolution reads worktree filesystem state
-// directly, never a Git snapshot (see
-// project_ts_compiler_resolve.go's resolveCompilerForRuntime doc comment),
-// so this need not be tracked by Git.
 func installRealTypescriptCompilerAt(repoDir string) {
-	tsAcceptanceCopyFileTree(tsAcceptanceRealTypescriptDir(), filepath.Join(repoDir, "node_modules", "typescript"))
-	nativeName := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, tsAcceptanceNPMArchName())
-	tsAcceptanceCopyFileTree(tsAcceptanceRealNativeTypescriptDir(), filepath.Join(repoDir, "node_modules", "@typescript", nativeName))
+	tstestutil.InstallTypeScriptCompiler(repoDir, true)
 }
 
 // Mutation testing showed that swapping filepath.Join(req.Dir, ...) for a
@@ -756,9 +645,15 @@ var _ = Describe("PrepareTSRuntime resolved-runtime provenance", Label("ts-proje
 		Expect(err).NotTo(HaveOccurred())
 		defer cleanup()
 
-		Expect(rt.NodeExecPath).NotTo(BeEmpty())
-		Expect(rt.NodeVersion).NotTo(BeEmpty())
-		Expect(rt.NodeVersion).To(MatchRegexp(`^v?\d+\.\d+\.\d+`), "expected a real `node --version` output, got %q", rt.NodeVersion)
+		Expect(rt.ExecPath).NotTo(BeEmpty())
+		Expect(filepath.IsAbs(rt.ExecPath)).To(BeTrue())
+		Expect(rt.ExecArgs).To(Equal([]string{
+			rt.AnalyzerShimPath,
+			"--compiler-module=" + rt.CompilerModulePath,
+			"--native-package=" + rt.NativePackagePath,
+		}))
+		Expect(rt.Version).NotTo(BeEmpty())
+		Expect(rt.Version).To(MatchRegexp(`^v?\d+\.\d+\.\d+`), "expected a real `node --version` output, got %q", rt.Version)
 		Expect(rt.Kind).To(Equal(runtimeKindNode))
 		Expect(rt.Origin).To(Equal(runtimeOriginPath))
 		Expect(rt.CompilerVersion).To(Equal(version), "CompilerVersion must match the installed compiler's own package.json version")
@@ -770,6 +665,12 @@ var _ = Describe("PrepareTSRuntime resolved-runtime provenance", Label("ts-proje
 		Expect(gotCompiler).To(Equal(wantCompiler))
 		Expect(rt.AnalyzerDir).NotTo(BeEmpty())
 		Expect(rt.AnalyzerShimPath).To(HavePrefix(rt.AnalyzerDir))
+		wantNative, err := filepath.EvalSymlinks(filepath.Join(repo, "node_modules", "@typescript", nativeTypescriptUnscopedName()))
+		Expect(err).NotTo(HaveOccurred())
+		gotNative, err := filepath.EvalSymlinks(rt.NativePackagePath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(gotNative).To(Equal(wantNative))
+		Expect(NativeTypescriptPackageName()).To(Equal("@typescript/" + nativeTypescriptUnscopedName()))
 	})
 })
 

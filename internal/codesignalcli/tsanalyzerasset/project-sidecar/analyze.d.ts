@@ -31,6 +31,7 @@ export interface AnalyzeOptions {
      * COACH_TS_SIDECAR_TEST_DELAY_MS gate). */
     testDelayMsPerProject?: number;
     compiler: CompilerBundle;
+    tsserverPath: string;
 }
 export interface AnalyzeResult {
     edges: ImportEdgeFact[];

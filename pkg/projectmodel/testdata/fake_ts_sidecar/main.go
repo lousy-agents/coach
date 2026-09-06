@@ -496,9 +496,10 @@ func modeEnv(req projectbridge.Request) {
 				{
 					Code: "env_probe",
 					Message: fmt.Sprintf(
-						"probe=%q path=%s home=%s node_options=%s http_proxy=%s npm_config_registry=%s",
+						"probe=%q path=%s path_value=%s home=%s node_options=%s http_proxy=%s npm_config_registry=%s",
 						probe,
 						envState("PATH"),
+						os.Getenv("PATH"),
 						envState("HOME"),
 						envState("NODE_OPTIONS"),
 						envState("HTTP_PROXY"),
