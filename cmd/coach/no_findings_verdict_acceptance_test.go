@@ -86,24 +86,32 @@ func expectIncompleteVerdictDiscrimination(cleanRepo, incompleteRepo, exitCodeRe
 }
 
 var _ = Describe("coach codesignal rendered verdict, negative control: incomplete analysis versus a genuinely clean run", func() {
-	When("one run's TS sidecar crashes over a fixture carrying a real forbidden-layer edge, and a second run's TS sidecar succeeds over a fixture with no edge at all", func() {
+	When("one run's TypeScript analysis resolves a fully working compiler over a fixture with no forbidden edge, and a second run's resolved compiler is missing its required native platform package over a fixture carrying a real forbidden-layer edge", Label("ts-project-backend"), func() {
+		BeforeEach(func() {
+			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+				Skip(reason)
+			}
+		})
+
 		It("renders different verdict text for the two runs, not merely different coverage fields", func() {
 			cleanRepo := newTempGitRepo()
-			installFakeTSSidecar(cleanRepo)
-			commitFile(cleanRepo, "pkg/db/d.ts", tsDbFile)
-			commitFile(cleanRepo, "pkg/handlers/h.ts", tsHandlersWithoutMarker)
+			cleanVersion := realTypescriptVersion()
+			commitFile(cleanRepo, "package.json", tsRealCompilerPackageJSON(cleanVersion))
+			commitFile(cleanRepo, "tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(cleanRepo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(cleanRepo, "pkg/handlers/h.ts", tsRealHandlersWithoutImport)
 			commitFile(cleanRepo, "project.json", goLayerPolicyConfigJSON)
+			installRealTypescriptCompiler(cleanRepo, true)
 
-			By("using tsHandlersWithMarkerAndCrash: project_ts_backend_acceptance_test.go's working-sidecar spec already proves the marker alone reports a real edge, so the crash trigger here suppresses a real finding, not an absent one")
+			By("using tsRealHandlersImportingDB: project_ts_backend_acceptance_test.go's positive spec already proves this exact fixture reports a real edge against a fully working compiler, so the missing native package below suppresses a real finding, not an absent one")
 			incompleteRepo := newTempGitRepo()
-			installFakeTSSidecar(incompleteRepo)
-			commitFile(incompleteRepo, "pkg/db/d.ts", tsDbFile)
-			commitFile(incompleteRepo, "pkg/handlers/h.ts", tsHandlersWithMarkerAndCrash)
-			commitFile(incompleteRepo, "project.json", goLayerPolicyConfigJSON)
+			incompleteVersion := realTypescriptVersion()
+			commitRealTSLayerFixture(incompleteRepo, incompleteVersion)
+			installRealTypescriptCompiler(incompleteRepo, false)
 
 			expectIncompleteVerdictDiscrimination(cleanRepo, incompleteRepo,
-				"this backend intentionally keeps exit 0 for a degraded-but-nonfatal sidecar crash; exit status alone cannot discriminate these two runs",
-				"the crashed sidecar",
+				"this backend intentionally keeps exit 0 for a degraded-but-nonfatal compiler startup failure; exit status alone cannot discriminate these two runs",
+				"the compiler missing its native platform package",
 				"--project-language", "typescript")
 		})
 	})

@@ -92,6 +92,36 @@ jobs:
       - name: projectmodel-sidecar-acceptance
         run: mise run projectmodel-sidecar-acceptance
 
+  # coach#326 Task 3's CI gap: cmd/coach's and internal/codesignalcli's
+  # TS-dependent acceptance specs read this repo's own installed
+  # js/semantics/node_modules/typescript (plus its native platform package)
+  # directly, so they need both Go and Node+npm present -- neither verify
+  # (Go only) nor js-verify/projectmodel-sidecar (which never run
+  # cmd/coach/internal/codesignalcli) exercises them. Parallel with
+  # js-verify/projectmodel-sidecar: all three need Node, none waits on
+  # another.
+  ts-project-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          experimental: true
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: ts-project-backend-acceptance
+        run: mise run ts-project-backend-acceptance
+
   # Proves pkg/semantics compiles for GOOS=js GOARCH=wasm via the pure-Go
   # gotreesitter engine, with no TinyGo.
   wasm-build:
@@ -137,7 +167,7 @@ jobs:
   # failed leaf still produces a failed status rather than a missing check.
   status:
     if: always()
-    needs: [verify, js-verify, projectmodel-sidecar, wasm-build, platform-smoke]
+    needs: [verify, js-verify, projectmodel-sidecar, ts-project-backend, wasm-build, platform-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -8,7 +8,7 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,9 +17,202 @@ import { before, test } from "node:test";
 import { edgesTo, file, runSidecar, type WireFile } from "./project-sidecar-harness.js";
 
 const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const REAL_TS_PACKAGE_DIR = join(PACKAGE_ROOT, "node_modules", "typescript");
+const NATIVE_PACKAGE_NAME = `@typescript/typescript-${process.platform}-${process.arch}`;
+const REAL_NATIVE_PACKAGE_DIR = join(PACKAGE_ROOT, "node_modules", ...NATIVE_PACKAGE_NAME.split("/"));
 
 before(() => {
   execFileSync("npm", ["run", "build:project-sidecar"], { cwd: PACKAGE_ROOT, stdio: "pipe" });
+});
+
+/**
+ * Copies the real, installed `typescript` devDependency into a fresh
+ * scratch directory so `--compiler-module` acceptance specs can point the
+ * sidecar at a compiler that is distinguishable from (or missing pieces
+ * relative to) the bundled copy every static
+ * `import ... from "typescript/unstable/*"` used to always resolve to.
+ */
+function setupAlternateCompiler(opts: {
+  includeNativePackage: boolean;
+  patchIsImportDeclarationMarker?: boolean;
+  removeExportSubpath?: string;
+  removeAstExportName?: string;
+}): { root: string; packageDir: string } {
+  const root = mkdtempSync(join(tmpdir(), "coach-ts-sidecar-compiler-"));
+  const modulesDir = join(root, "node_modules");
+  const packageDir = join(modulesDir, "typescript");
+  cpSync(REAL_TS_PACKAGE_DIR, packageDir, { recursive: true });
+
+  if (opts.includeNativePackage) {
+    const nativeDest = join(modulesDir, ...NATIVE_PACKAGE_NAME.split("/"));
+    cpSync(REAL_NATIVE_PACKAGE_DIR, nativeDest, { recursive: true });
+  }
+
+  if (opts.patchIsImportDeclarationMarker) {
+    const isGeneratedPath = join(packageDir, "dist", "ast", "is.generated.js");
+    const original = readFileSync(isGeneratedPath, "utf8");
+    const needle = "export function isImportDeclaration(node) {";
+    if (!original.includes(needle)) {
+      throw new Error(`marker patch target not found in ${isGeneratedPath}; typescript package layout changed`);
+    }
+    const patched = original.replace(needle, `${needle}\n    return false;`);
+    writeFileSync(isGeneratedPath, patched);
+  }
+
+  if (opts.removeExportSubpath) {
+    const pkgJsonPath = join(packageDir, "package.json");
+    const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as { exports?: Record<string, unknown> };
+    if (!pkg.exports || !(opts.removeExportSubpath in pkg.exports)) {
+      throw new Error(`expected exports["${opts.removeExportSubpath}"] in ${pkgJsonPath}`);
+    }
+    delete pkg.exports[opts.removeExportSubpath];
+    writeFileSync(pkgJsonPath, JSON.stringify(pkg, null, 2));
+  }
+
+  if (opts.removeAstExportName) {
+    // Drops the `export ` keyword from one guard function's declaration in
+    // the ast module's generated source, so the function itself still runs
+    // (any internal caller within the package keeps working) but the module
+    // namespace this sidecar imports (`typescript/unstable/ast`) no longer
+    // has that name at all -- reproducing version skew that drops a single
+    // unstable API export without deleting the whole subpath (that case is
+    // `removeExportSubpath` above).
+    const isGeneratedPath = join(packageDir, "dist", "ast", "is.generated.js");
+    const original = readFileSync(isGeneratedPath, "utf8");
+    const needle = `export function ${opts.removeAstExportName}(`;
+    if (!original.includes(needle)) {
+      throw new Error(`ast export target "${opts.removeAstExportName}" not found in ${isGeneratedPath}; typescript package layout changed`);
+    }
+    writeFileSync(isGeneratedPath, original.replace(needle, `function ${opts.removeAstExportName}(`));
+  }
+
+  return { root, packageDir };
+}
+
+function aliasImportSnapshot(): WireFile[] {
+  return [
+    file("tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } })),
+    file("src/a.ts", `import { helper } from "./b";\nconsole.log(helper);\n`),
+    file("src/b.ts", `export const helper = 1;\n`),
+  ];
+}
+
+test("--compiler-module: absent argument exits with a structured error rather than loading a default compiler", async () => {
+  const { response, exitCode } = await runSidecar({ files: aliasImportSnapshot() }, undefined, []);
+  assert.equal(exitCode, 0, JSON.stringify(response));
+  assert.ok(response.error, JSON.stringify(response));
+  assert.match(
+    response.error?.message ?? "",
+    /missing required --compiler-module argument/,
+    JSON.stringify(response),
+  );
+  assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
+});
+
+test("--compiler-module: an alternate, distinguishable compiler is actually loaded and used, not the bundled devDependency", async () => {
+  const baseline = await runSidecar({ files: aliasImportSnapshot() });
+  assert.equal(baseline.exitCode, 0, JSON.stringify(baseline.response));
+  assert.equal(baseline.response.error, undefined);
+  assert.equal(edgesTo(baseline.response, "file:src/b.ts").length, 1, JSON.stringify(baseline.response));
+
+  const { root, packageDir } = setupAlternateCompiler({ includeNativePackage: true, patchIsImportDeclarationMarker: true });
+  try {
+    const { response, exitCode } = await runSidecar({ files: aliasImportSnapshot() }, undefined, [
+      `--compiler-module=${packageDir}`,
+    ]);
+    assert.equal(exitCode, 0, JSON.stringify(response));
+    assert.equal(response.error, undefined, JSON.stringify(response));
+    // The alternate copy's isImportDeclaration always reports false, so the
+    // ordinary `import { helper } from "./b"` is no longer recognized as an
+    // import declaration at all -- proving the sidecar actually executed
+    // code from this alternate compiler, not the bundled devDependency
+    // (which would still report the edge, as the baseline run above shows).
+    assert.equal(edgesTo(response, "file:src/b.ts").length, 0, JSON.stringify(response));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("--compiler-module: a resolved compiler missing its required native platform package degrades to a structured error, not a crash", async () => {
+  const { root, packageDir } = setupAlternateCompiler({ includeNativePackage: false });
+  try {
+    const { response, exitCode } = await runSidecar({ files: aliasImportSnapshot() }, undefined, [
+      `--compiler-module=${packageDir}`,
+    ]);
+    assert.equal(exitCode, 0, JSON.stringify(response));
+    assert.ok(response.error, JSON.stringify(response));
+    assert.match(
+      response.error?.message ?? "",
+      /failed to start ts sidecar analysis backend/,
+      JSON.stringify(response),
+    );
+    assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("--compiler-module: a resolved compiler whose native executable is missing does not embed the executable path in the serialized error", async () => {
+  const { root, packageDir } = setupAlternateCompiler({ includeNativePackage: true });
+  const nativeDest = join(root, "node_modules", ...NATIVE_PACKAGE_NAME.split("/"));
+  unlinkSync(join(nativeDest, "lib", "tsc"));
+  try {
+    const { response, rawLine, exitCode } = await runSidecar({ files: aliasImportSnapshot() }, undefined, [
+      `--compiler-module=${packageDir}`,
+    ]);
+    assert.equal(exitCode, 0, JSON.stringify(response));
+    assert.ok(response.error, JSON.stringify(response));
+    assert.match(
+      response.error?.message ?? "",
+      /failed to start ts sidecar analysis backend/,
+      JSON.stringify(response),
+    );
+    assert.ok(
+      !(response.error?.message ?? "").includes(nativeDest),
+      `native-startup error must not embed the executable path: ${response.error?.message}`,
+    );
+    assert.ok(!rawLine.includes(nativeDest), `serialized sidecar line must not embed the executable path: ${rawLine}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("--compiler-module: a resolved compiler missing a required unstable API degrades to a structured error, not a crash", async () => {
+  const { root, packageDir } = setupAlternateCompiler({ includeNativePackage: true, removeExportSubpath: "./unstable/fs" });
+  try {
+    const { response, exitCode } = await runSidecar({ files: aliasImportSnapshot() }, undefined, [
+      `--compiler-module=${packageDir}`,
+    ]);
+    assert.equal(exitCode, 0, JSON.stringify(response));
+    assert.ok(response.error, JSON.stringify(response));
+    assert.match(
+      response.error?.message ?? "",
+      /does not declare a "\.\/unstable\/fs" export/,
+      JSON.stringify(response),
+    );
+    assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("--compiler-module: a resolved compiler whose ast module is missing a required guard export degrades to a structured error, not a crash", async () => {
+  const { root, packageDir } = setupAlternateCompiler({ includeNativePackage: true, removeAstExportName: "isImportDeclaration" });
+  try {
+    const { response, exitCode } = await runSidecar({ files: aliasImportSnapshot() }, undefined, [
+      `--compiler-module=${packageDir}`,
+    ]);
+    assert.equal(exitCode, 0, JSON.stringify(response));
+    assert.ok(response.error, JSON.stringify(response));
+    assert.match(
+      response.error?.message ?? "",
+      /does not export required API "isImportDeclaration"/,
+      JSON.stringify(response),
+    );
+    assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("aliases: compilerOptions.paths/baseUrl resolve an aliased import to its target file", async () => {
@@ -133,7 +326,6 @@ test("exports/re-exports: a package.json exports map and barrel re-exports both 
         "packages/lib/package.json",
         JSON.stringify({ name: "@acme/lib", exports: { ".": "./src/index.ts", "./sub": "./src/sub.ts" } }),
       ),
-      // Barrel: index.ts re-exports through both `export * from` and `export { x } from`.
       file("packages/lib/src/index.ts", `export * from "./inner";\nexport { onlyY } from "./onlyY";\n`),
       file("packages/lib/src/inner.ts", `export const z = 42;\n`),
       file("packages/lib/src/onlyY.ts", `export const onlyY = 1;\n`),
@@ -325,9 +517,7 @@ test("snapshot confinement: tsconfig 'extends' targeting a real, existing disk p
     assert.equal(exitCode, 0);
     // If vfs.ts's readFile fell through to the real filesystem instead of
     // confining reads to the snapshot, "extends" would resolve cleanly and
-    // no diagnostic would be produced at all -- see the Implementer Report
-    // for the reproduced before/after with vfs.ts's fall-through guard
-    // deliberately removed.
+    // no diagnostic would be produced at all.
     assert.ok(
       response.coverage.diagnostics?.some((d) => d.code === "ts_config_diagnostic" && d.message.includes("Cannot read file")),
       JSON.stringify(response.coverage),
@@ -358,8 +548,8 @@ test("bounded output: a large synthetic snapshot still produces a single valid r
   assert.equal(response.coverage.complete, true, JSON.stringify(response.coverage));
   assert.equal(response.import_edges?.length, fileCount - 1, `expected ${fileCount - 1} re-export edges`);
   // Not a hard product guarantee -- just proves this snapshot size does not
-  // pathologically blow up; see the Implementer Report for what "bounded"
-  // means for this design (timeout_ms self-enforcement, not a hardcoded cap).
+  // pathologically blow up. "Bounded" for this design means timeout_ms
+  // self-enforcement, not a hardcoded file-count cap.
   assert.ok(elapsedMs < 20000, `analysis took ${elapsedMs}ms, expected well under 20s for ${fileCount} trivial files`);
 });
 
@@ -414,8 +604,6 @@ test("invalid config: an unparseable tsconfig.json degrades to a diagnostic, not
     response.coverage.diagnostics?.some((d) => d.code === "ts_config_diagnostic"),
     JSON.stringify(response.coverage),
   );
-  // A tsconfig that failed to parse was never honored, so this response
-  // must not claim a complete model even though the sidecar didn't crash.
   assert.equal(response.coverage.complete, false, JSON.stringify(response.coverage));
 });
 
@@ -544,7 +732,6 @@ test("TS reachability: resolved route-to-query facts, explicit coverage gaps, an
   // pkg/projectmodel/ts_reachability.go's tsReachabilityGapDiagnosticCodes).
   assert.equal(response.coverage.complete, true, JSON.stringify(response.coverage));
 
-  // The raw call graph carries the same resolved edge the fact's path used.
   const callGraph = response.call_graph ?? [];
   assert.ok(
     callGraph.some((e) => e.from.endsWith("#getUsers") && e.to === "(PrismaClient).findMany"),
@@ -830,9 +1017,6 @@ test("TS reachability: sink matching requires module provenance, not just a matc
   assert.equal(exitCode, 0, JSON.stringify(response));
   assert.equal(response.error, undefined, JSON.stringify(response));
 
-  // A class named PrismaClient that isn't imported from the pinned
-  // @prisma/client module specifier must never be treated as a resolved
-  // sink -- only its module provenance (not its name) makes it a sink.
   const facts = response.reachability_facts ?? [];
   assert.equal(facts.some((f) => f.sink === "(PrismaClient).delete"), false, JSON.stringify(facts));
   const callGraph = response.call_graph ?? [];

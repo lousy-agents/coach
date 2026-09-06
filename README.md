@@ -125,9 +125,11 @@ switches the report to `schema_version: "2"` and can emit
 `architecture.layer_violation`. For Go only, `required_layer` can also emit
 `architecture.layer_bypass` on a narrow handler→SQL registry.
 
-TypeScript `--project-config` still expects this repository's analyzer sidecar
-layout. It is a preview, not a packaged foreign-repository TypeScript product
-yet. `--suggest-project-config` never invents `layers` or `forbidden_imports`,
+TypeScript `--project-config` uses Coach's embedded analyzer and a host-resolved
+compiler whose own `package.json` version is in the supported set (`7.0.2`
+today). Version ranges (`^`, `~`, `latest`) never count. If you previously
+vendored Coach's analyzer under the analyzed repository, you can delete that
+copy. `--suggest-project-config` never invents `layers` or `forbidden_imports`,
 and it never auto-applies a config.
 
 ### 2. TypeScript project readiness
@@ -140,9 +142,12 @@ coach codesignal --baseline --check-project --project-language typescript
 coach codesignal --baseline --suggest-project-config --project-language typescript
 ```
 
-`--check-project` is read-only: it reports readiness gaps and exits `0` so you
-inspect the result instead of treating the process status as a gate. The
-interactive authoring session writes nothing until you say so.
+Run `--check-project` first. It is the diagnostic for compiler, Node, and
+policy fit, and it is read-only: it reports readiness gaps and exits `0` so you
+inspect the result instead of treating the process status as a gate. A scan
+that cannot resolve a supported compiler or host Node exits `2` with empty
+stdout and one stderr line naming that same invocation. The interactive
+authoring session writes nothing until you say so.
 
 Still being built — do not expect these to work yet: consented package-manager
 / mise compiler setup for the scanned project, Bun as a project runtime, and a

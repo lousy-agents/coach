@@ -198,7 +198,12 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 	})
 
 	realOpts := func() projectmodel.TSSidecarOptions {
-		return projectmodel.TSSidecarOptions{BinaryPath: sidecarPath, Timeout: 20 * time.Second}
+		compilerModule := filepath.Join(jsSemanticsRoot(), "node_modules", "typescript")
+		return projectmodel.TSSidecarOptions{
+			BinaryPath: sidecarPath,
+			Args:       []string{"--compiler-module=" + compilerModule},
+			Timeout:    20 * time.Second,
+		}
 	}
 
 	When("a snapshot contains a tsconfig.json alongside .ts files", func() {

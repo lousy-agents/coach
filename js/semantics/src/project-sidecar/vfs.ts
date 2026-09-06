@@ -1,6 +1,8 @@
-import { createVirtualFileSystem, type FileSystem } from "typescript/unstable/fs";
+import type { FileSystem } from "typescript/unstable/fs";
 
 import type { ProjectFile } from "./protocol.js";
+
+type CreateVirtualFileSystem = typeof import("typescript/unstable/fs").createVirtualFileSystem;
 
 /**
  * All virtual paths live under this synthetic absolute root, disjoint from
@@ -14,16 +16,13 @@ export function toVirtualPath(repoRelativePath: string): string {
   return `${VIRTUAL_ROOT}/${normalized}`;
 }
 
-/** Inverse of toVirtualPath; undefined for any path outside VIRTUAL_ROOT (e.g. tsgo's bundled lib.*.d.ts). */
 export function fromVirtualPath(virtualPath: string): string | undefined {
   const prefix = `${VIRTUAL_ROOT}/`;
   return virtualPath.startsWith(prefix) ? virtualPath.slice(prefix.length) : undefined;
 }
 
-/** Parsed subset of a snapshot package.json used for bare-specifier resolution. */
 export interface PackageJsonInfo {
   name: string;
-  /** Virtual directory containing this package.json. */
   dirVirtual: string;
   exports?: unknown;
   main?: string;
@@ -31,16 +30,8 @@ export interface PackageJsonInfo {
 
 export interface ProjectSnapshot {
   fs: FileSystem;
-  /** Every virtual path present in the ORIGINAL snapshot (excludes the
-   * synthetic node_modules mirror below), used by the manual fallback
-   * resolver in resolve.ts. */
-  originalVirtualPaths: ReadonlySet<string>;
-  /** Snapshot package.json files keyed by their declared "name", used to
-   * resolve bare specifiers that reference an in-snapshot package. */
+  nonMirrorVirtualPaths: ReadonlySet<string>;
   packagesByName: ReadonlyMap<string, PackageJsonInfo>;
-  /** Maps a synthetic node_modules mirror path back to the original
-   * snapshot virtual path it shadows, so an edge resolved through the
-   * mirror is reported against the real repository path. */
   unmirror(virtualPath: string): string;
   /**
    * Rewrites a virtual path (mirror or original, any casing) to the
@@ -49,27 +40,20 @@ export interface ProjectSnapshot {
    * stable `file:` IDs must still match the request inventory byte-for-byte.
    */
   canonicalizeVirtualPath(virtualPath: string): string;
-  /**
-   * Like fromVirtualPath, but after unmirror + case canonicalization so
-   * the returned repo-relative path matches a request inventory entry
-   * exactly when the virtual path names a snapshot file.
-   */
   toRepoPath(virtualPath: string): string | undefined;
 }
 
-/**
- * Builds the snapshot-confined virtual filesystem the sidecar hands to
- * `typescript/unstable/sync`'s API, plus a synthetic node_modules mirror
- * of every in-snapshot package.json'd directory.
- */
-export function buildProjectSnapshot(files: readonly ProjectFile[]): ProjectSnapshot {
+export function buildProjectSnapshot(
+  files: readonly ProjectFile[],
+  createVirtualFileSystem: CreateVirtualFileSystem,
+): ProjectSnapshot {
   const inventory = indexSnapshotFiles(files);
   const packages = mirrorInSnapshotPackages(files, inventory.contentByPath);
   const record = { ...inventory.record, ...packages.mirrorRecord };
 
   return {
-    fs: confinedFileSystem(record),
-    originalVirtualPaths: inventory.originalVirtualPaths,
+    fs: confinedFileSystem(record, createVirtualFileSystem),
+    nonMirrorVirtualPaths: inventory.nonMirrorVirtualPaths,
     packagesByName: packages.packagesByName,
     ...pathCanonicalizers(inventory.originalByLower, packages.mirrorToOriginal, packages.mirrorByLower),
   };
@@ -77,14 +61,14 @@ export function buildProjectSnapshot(files: readonly ProjectFile[]): ProjectSnap
 
 interface SnapshotInventory {
   record: Record<string, string>;
-  originalVirtualPaths: Set<string>;
+  nonMirrorVirtualPaths: Set<string>;
   contentByPath: Map<string, string>;
   originalByLower: Map<string, string>;
 }
 
 function indexSnapshotFiles(files: readonly ProjectFile[]): SnapshotInventory {
   const record: Record<string, string> = {};
-  const originalVirtualPaths = new Set<string>();
+  const nonMirrorVirtualPaths = new Set<string>();
   const contentByPath = new Map<string, string>();
   const originalByLower = new Map<string, string>();
 
@@ -92,12 +76,12 @@ function indexSnapshotFiles(files: readonly ProjectFile[]): SnapshotInventory {
     const content = Buffer.from(f.content_b64, "base64").toString("utf8");
     const vpath = toVirtualPath(f.path);
     record[vpath] = content;
-    originalVirtualPaths.add(vpath);
+    nonMirrorVirtualPaths.add(vpath);
     originalByLower.set(vpath.toLowerCase(), vpath);
     contentByPath.set(f.path, content);
   }
 
-  return { record, originalVirtualPaths, contentByPath, originalByLower };
+  return { record, nonMirrorVirtualPaths, contentByPath, originalByLower };
 }
 
 interface PackageMirrorTables {
@@ -174,7 +158,11 @@ function fileBelongsToPackage(path: string, dirRepo: string, prefix: string): bo
   return true;
 }
 
-function confinedFileSystem(record: Record<string, string>): FileSystem {
+// Confines snapshot content reads. fileExists is not overridden:
+// createVirtualFileSystem already returns boolean false for paths outside
+// the snapshot, and tsgo's native server still host-stats for compiler-
+// package lookups. Wrapping fileExists does not demonstrate AC-RUN-3.
+function confinedFileSystem(record: Record<string, string>, createVirtualFileSystem: CreateVirtualFileSystem): FileSystem {
   const base = createVirtualFileSystem(record);
   return {
     ...base,

@@ -1,26 +1,21 @@
 import { collectEdgesFromSourceFile } from "./edges-walk.js";
-/**
- * Walks every .ts/.tsx file owned by `project` that has not already been
- * visited by another project in this request, extracting one ImportEdgeFact
- * per import/re-export/require/dynamic-import site.
- */
-export function extractEdgesForProject(project, snapshot, alreadyVisited) {
+export function extractEdgesForProject(project, snapshot, alreadyVisited, ast) {
     const edges = [];
     const diagnostics = [];
-    const visitedPaths = [];
+    const newlyVisitedPaths = [];
     const seen = new Set(alreadyVisited);
     for (const virtualPath of project.rootFiles) {
-        const fileResult = extractEdgesFromRootFile(project, snapshot, virtualPath, seen);
+        const fileResult = extractEdgesFromRootFile(project, snapshot, virtualPath, seen, ast);
         if (!fileResult)
             continue;
         seen.add(fileResult.visitedPath);
-        visitedPaths.push(fileResult.visitedPath);
+        newlyVisitedPaths.push(fileResult.visitedPath);
         edges.push(...fileResult.edges);
         diagnostics.push(...fileResult.diagnostics);
     }
-    return { edges, diagnostics, visitedPaths };
+    return { edges, diagnostics, newlyVisitedPaths };
 }
-function extractEdgesFromRootFile(project, snapshot, virtualPath, seen) {
+function extractEdgesFromRootFile(project, snapshot, virtualPath, seen, ast) {
     const canonicalVirtual = snapshot.canonicalizeVirtualPath(virtualPath);
     const repoPath = snapshot.toRepoPath(virtualPath);
     if (repoPath === undefined)
@@ -35,7 +30,7 @@ function extractEdgesFromRootFile(project, snapshot, virtualPath, seen) {
     }
     return {
         visitedPath: canonicalVirtual,
-        edges: collectEdgesFromSourceFile(sf, repoPath, project, snapshot),
+        edges: collectEdgesFromSourceFile(sf, repoPath, project, snapshot, ast),
         diagnostics: [],
     };
 }

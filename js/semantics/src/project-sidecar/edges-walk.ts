@@ -1,4 +1,4 @@
-import * as astns from "typescript/unstable/ast";
+import type * as astns from "typescript/unstable/ast";
 import type { Project } from "typescript/unstable/sync";
 
 import {
@@ -18,11 +18,12 @@ export function collectEdgesFromSourceFile(
   repoPath: string,
   project: Project,
   snapshot: ProjectSnapshot,
+  ast: typeof astns,
 ): ImportEdgeFact[] {
   const fromId = `file:${repoPath}`;
   const edges: ImportEdgeFact[] = [];
   const visit = (node: astns.Node): void => {
-    const edge = edgeFromNode(node, fromId, sf, repoPath, project, snapshot);
+    const edge = edgeFromNode(node, fromId, sf, repoPath, project, snapshot, ast);
     if (edge) edges.push(edge);
     node.forEachChild(visit);
   };
@@ -37,16 +38,17 @@ function edgeFromNode(
   fromRepoPath: string,
   project: Project,
   snapshot: ProjectSnapshot,
+  ast: typeof astns,
 ): ImportEdgeFact | undefined {
-  if (astns.isImportDeclaration(node) && astns.isStringLiteral(node.moduleSpecifier)) {
-    const kind = isTypeOnlyImportClause(node.importClause) ? KIND_TYPE_ONLY : KIND_IMPORT;
+  if (ast.isImportDeclaration(node) && ast.isStringLiteral(node.moduleSpecifier)) {
+    const kind = isTypeOnlyImportClause(node.importClause, ast) ? KIND_TYPE_ONLY : KIND_IMPORT;
     return buildEdge(fromId, node.moduleSpecifier, sf, fromRepoPath, kind, project, snapshot, true);
   }
-  if (astns.isExportDeclaration(node) && node.moduleSpecifier && astns.isStringLiteral(node.moduleSpecifier)) {
-    const kind = isTypeOnlyExportDeclaration(node) ? KIND_TYPE_ONLY : KIND_REEXPORT;
+  if (ast.isExportDeclaration(node) && node.moduleSpecifier && ast.isStringLiteral(node.moduleSpecifier)) {
+    const kind = isTypeOnlyExportDeclaration(node, ast) ? KIND_TYPE_ONLY : KIND_REEXPORT;
     return buildEdge(fromId, node.moduleSpecifier, sf, fromRepoPath, kind, project, snapshot, true);
   }
-  return edgeFromCall(node, fromId, sf, fromRepoPath, project, snapshot);
+  return edgeFromCall(node, fromId, sf, fromRepoPath, project, snapshot, ast);
 }
 
 function edgeFromCall(
@@ -56,9 +58,10 @@ function edgeFromCall(
   fromRepoPath: string,
   project: Project,
   snapshot: ProjectSnapshot,
+  ast: typeof astns,
 ): ImportEdgeFact | undefined {
-  if (!astns.isCallExpression(node)) return undefined;
-  const call = classifyCallExpression(node);
+  if (!ast.isCallExpression(node)) return undefined;
+  const call = classifyCallExpression(node, ast);
   if (!call) return undefined;
   return buildEdge(fromId, call.specifier, sf, fromRepoPath, call.kind, project, snapshot, call.useChecker);
 }
@@ -69,13 +72,13 @@ interface ClassifiedCall {
   useChecker: boolean;
 }
 
-function classifyCallExpression(node: astns.CallExpression): ClassifiedCall | undefined {
-  if (node.arguments.length === 0 || !astns.isStringLiteral(node.arguments[0])) return undefined;
+function classifyCallExpression(node: astns.CallExpression, ast: typeof astns): ClassifiedCall | undefined {
+  if (node.arguments.length === 0 || !ast.isStringLiteral(node.arguments[0])) return undefined;
   const specifier = node.arguments[0];
-  if (astns.isIdentifier(node.expression) && node.expression.text === "require") {
+  if (ast.isIdentifier(node.expression) && node.expression.text === "require") {
     return { specifier, kind: KIND_COMMONJS_REQUIRE, useChecker: false };
   }
-  if (node.expression.kind === astns.SyntaxKind.ImportKeyword) {
+  if (node.expression.kind === ast.SyntaxKind.ImportKeyword) {
     return { specifier, kind: KIND_DYNAMIC_IMPORT, useChecker: true };
   }
   return undefined;
