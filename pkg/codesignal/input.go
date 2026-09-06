@@ -35,6 +35,12 @@ type Input struct {
 	// base side" (valid for baseline); non-empty changes without the flag
 	// are inconsistent and force lifecycle-indeterminate.
 	ProjectBaseAnalyzed bool `json:"project_base_analyzed,omitempty"`
+
+	RuntimeKind     string `json:"runtime_kind,omitempty"`
+	RuntimeVersion  string `json:"runtime_version,omitempty"`
+	RuntimeOrigin   string `json:"runtime_origin,omitempty"`
+	CompilerVersion string `json:"compiler_version,omitempty"`
+	CompilerOrigin  string `json:"compiler_origin,omitempty"`
 }
 
 // Scope identifies the repository and revision range an Input covers.

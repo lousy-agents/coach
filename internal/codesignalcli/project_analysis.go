@@ -58,6 +58,11 @@ type ProjectBackendResult struct {
 	HeadCoverage    *projectmodel.Coverage
 	BaseCoverage    *projectmodel.Coverage
 	BaseAnalyzed    bool
+	RuntimeKind     string
+	RuntimeVersion  string
+	RuntimeOrigin   string
+	CompilerVersion string
+	CompilerOrigin  string
 }
 
 // ConfigDigest returns a stable hex digest of validated project-config bytes.
@@ -109,6 +114,11 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		ProjectCoverage:     result.HeadCoverage,
 		BaseProjectCoverage: result.BaseCoverage,
 		ProjectBaseAnalyzed: result.BaseAnalyzed,
+		RuntimeKind:         result.RuntimeKind,
+		RuntimeVersion:      result.RuntimeVersion,
+		RuntimeOrigin:       result.RuntimeOrigin,
+		CompilerVersion:     result.CompilerVersion,
+		CompilerOrigin:      result.CompilerOrigin,
 	}
 	return merged, enabled, nil
 }
