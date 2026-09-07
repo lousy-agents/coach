@@ -102,7 +102,7 @@ jobs:
   # another.
   ts-project-backend:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -118,6 +118,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+
+      - name: install file-syscall tracer
+        run: sudo apt-get update && sudo apt-get install -y strace
 
       - name: ts-project-backend-acceptance
         run: mise run ts-project-backend-acceptance
