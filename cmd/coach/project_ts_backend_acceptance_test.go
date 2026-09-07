@@ -207,10 +207,6 @@ func commitRealTSLayerFixture(repo, version string) {
 	commitFile(repo, "project.json", goLayerPolicyConfigJSON)
 }
 
-// analyzerChildArgMarker uniquely identifies the TypeScript analyzer child
-// argv (see tsProjectBackend.evaluateRevision). Host probes such as
-// `node --version` inherit the parent environ and must not be sampled:
-// treating them as the analyzer is an AC-RUN-2 false-red.
 const analyzerChildArgMarker = "--compiler-module="
 
 type recordingProxyListener struct {
@@ -422,7 +418,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 		})
 	})
 
-	When("the parent process has NODE_OPTIONS=--require pointing at a spy and HTTP(S)_PROXY pointing at a recording listener", Label("ts-project-backend"), func() {
+	When("the parent process spies via NODE_OPTIONS=--require and HTTP(S)_PROXY points at a recording listener", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
 			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
 				Skip(reason)

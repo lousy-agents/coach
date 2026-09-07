@@ -73,4 +73,29 @@ var _ = Describe("ts-project-backend-acceptance wiring", func() {
 				"the mise task's label filter is useless unless at least one Describe here carries this label")
 		})
 	})
+
+	When("checking the Linux file-syscall control the ts-project-backend job must run", func() {
+		var body string
+
+		BeforeEach(func() {
+			src, err := os.ReadFile(filepath.Join("..", "..", "cmd", "coach", "project_ts_linux_confinement_acceptance_test.go"))
+			Expect(err).NotTo(HaveOccurred(),
+				"Linux file-syscall controls must live in cmd/coach/project_ts_linux_confinement_acceptance_test.go")
+			body = string(src)
+		})
+
+		It("keeps confined and unconfined Its labeled ts-project-backend", func() {
+			Expect(body).To(ContainSubstring(`Label("ts-project-backend")`))
+			Expect(body).To(ContainSubstring(`It("completes a confined --baseline scan whose analyzer-subtree file syscalls stay inside the frozen allowlist and never observe the typeRoots decoy"`))
+			Expect(body).To(ContainSubstring(`It("records the typeRoots decoy in the analyzer-subtree trace when the harness-built unconfined analyzer omits tsserverPath and restores listing fall-through"`))
+		})
+
+		It("keeps asserting that the decoy must appear", func() {
+			Expect(body).To(ContainSubstring("decoy must appear"))
+		})
+
+		It("installs strace in the ts-project-backend job", func() {
+			Expect(jobBody(yml, "ts-project-backend")).To(ContainSubstring("strace"))
+		})
+	})
 })
