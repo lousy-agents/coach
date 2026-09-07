@@ -99,6 +99,11 @@ description = "Run cmd/coach and internal/codesignalcli's TS-dependent acceptanc
 depends = ["js-install"]
 run = "go test -race ./cmd/coach/... ./internal/codesignalcli/... -run Acceptance -ginkgo.label-filter=ts-project-backend -ginkgo.fail-on-empty"
 
+[tasks.foreign-clone-snapshot-acceptance]
+description = "Run the GoReleaser snapshot foreign-repository TypeScript scan (AC-REL-1); not part of ts-project-backend"
+depends = ["js-install"]
+run = "go test -race -tags foreignclone ./cmd/coach/... -run Acceptance -ginkgo.focus='GoReleaser snapshot foreign-repository' -ginkgo.fail-on-empty"
+
 [tasks.js-install]
 description = "Install js/semantics dev dependencies (scripts skipped; js-build compiles explicitly)"
 run = "npm ci --ignore-scripts"
