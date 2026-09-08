@@ -353,12 +353,20 @@ func analyzerChildPIDsFromPS() []int {
 	return pids
 }
 
+// readProcessEnviron reports a process's environment, or false when none
+// could be observed. A successful read of zero bytes is not an observation:
+// the kernel returns an empty environ for a task that has already torn down
+// its address space, so a child that exits between being listed and being
+// read would otherwise be recorded as having no PATH at all.
 func readProcessEnviron(pid int) (string, bool) {
 	if data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/environ"); err == nil {
+		if len(data) == 0 {
+			return "", false
+		}
 		return strings.ReplaceAll(string(data), "\x00", "\n"), true
 	}
 	out, err := exec.Command("ps", "-wwwE", "-p", strconv.Itoa(pid), "-o", "command=").Output()
-	if err != nil {
+	if err != nil || strings.TrimSpace(string(out)) == "" {
 		return "", false
 	}
 	return string(out), true
