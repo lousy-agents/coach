@@ -4,20 +4,21 @@ argument-hint: [issue-number]
 model: inherit
 ---
 
-Implement GitHub issue #$1. You are the orchestrator: you delegate planning,
-implementation, and review, and you do not write feature code yourself.
+Implement GitHub issue #$1. You are the orchestrator.
+The orchestrator shall delegate planning, implementation, and review.
+The orchestrator shall not write feature code.
 
-The point of this command is **continuous review**: every change is written by
-one agent and adversarially reviewed by another before it counts, and the
-integrated result is reviewed again before it ships. Merge safety is not your
-job — branch protection and the required `status` check on the base branch are
-what make an unattended run safe. Your job is the quality of the loop.
+The point of this command is **continuous review**.
+One agent writes each change. Another agent reviews that change before it counts.
+The integrated result is reviewed again before it ships.
+Merge safety is not the orchestrator's job.
+Branch protection and the required `status` check on the base branch make an unattended run safe.
+The orchestrator's job is the quality of the loop.
 
-**Why the split matters.** Planning runs as a workflow because it is read-only,
-parallelizable research. The implement/review loop stays in this session
-because the two review-fidelity hooks (`verify-review-verdict.sh`,
-`verify-context-relay.sh`) fire on agents spawned by *this* session and on
-*your* tool calls — agents spawned inside a workflow never reach them.
+**Why the split matters.** Planning runs as a workflow because it is read-only, parallelizable research.
+The implement/review loop stays in this session.
+The two review-fidelity hooks (`verify-review-verdict.sh`, `verify-context-relay.sh`) fire on agents spawned by *this* session and on *your* tool calls.
+Agents spawned inside a workflow never reach them.
 
 1. **Plan.** Planning produces one artifact: the issue's acceptance criteria with
    stable IDs (AC-1, AC-2, …), a `conventions` string quoted verbatim from
@@ -25,46 +26,49 @@ because the two review-fidelity hooks (`verify-review-verdict.sh`,
 
    - `files` — every file the task may touch
    - `criteriaIds` — the acceptance criteria it satisfies, by ID
-   - `dependsOn` — the task IDs that must be COMPLETE before it may start
+   - `dependsOn` — the task IDs that shall be COMPLETE before it may start
    - `acceptanceTest` — the observable behavior whose absence the implementer
-     must demonstrate as a failing test first
+     shall demonstrate as a failing test first
 
-   In Claude Code, delegate this: call the `implement-issue-plan` workflow with
-   `args: {issue: "$1"}`. It fans the research out in parallel, self-checks the
-   result, and returns `{issue, plan, defects, repairApplied}`.
+   In Claude Code, the orchestrator shall delegate this work.
+   Call the `implement-issue-plan` workflow with `args: {issue: "$1"}`.
+   It fans the research out in parallel, self-checks the result, and returns `{issue, plan, defects, repairApplied}`.
 
    **Without a Workflow tool** — OpenCode, or any other harness this file is
-   mirrored into — do the same work inline instead: read the issue with
-   `gh issue view $1` and any spec it links, explore the affected code, quote the
-   conventions from AGENTS.md, and build the DAG above yourself. Nothing below
-   depends on *how* the plan was produced, only on its shape.
+   mirrored into — the orchestrator shall do the same work inline.
+   Read the issue with `gh issue view $1` and any spec it links.
+   Explore the affected code. Quote the conventions from AGENTS.md.
+   Build the DAG above yourself.
+   Nothing below depends on *how* the plan was produced, only on its shape.
 
    **With a Workflow tool that does not know this workflow**, pass
-   `scriptPath: '.claude/workflows/implement-issue-plan.js'` instead of `name`,
-   which runs the committed script directly.
+   `scriptPath: '.claude/workflows/implement-issue-plan.js'` instead of `name`.
+   That runs the committed script directly.
 
-   Self-check the plan once, however it was produced, for three failure modes:
+   The orchestrator shall self-check the plan once, however it was produced, for three failure modes:
    (a) false parallelism — tasks marked independent that share a file or consume
    each other's output; (b) an acceptance criterion no task covers; (c) a
    dependency cycle, or a `dependsOn` naming a task that does not exist — both
    deadlock step 2 rather than failing it. Fix what you find, then start.
 
-   The workflow reports its own findings as `defects` and repairs them; read
-   them before proceeding. They mark where the decomposition was fragile, which
-   is where to be skeptical of a PASS later.
+   The workflow reports its own findings as `defects` and repairs them.
+   The orchestrator shall read them before proceeding.
+   They mark where the decomposition was fragile, which is where to be skeptical of a PASS later.
 
    If the issue is genuinely trivial, say so and run a single implement→review
    cycle rather than performing a task graph.
 
-2. **Execute the DAG.** Track it with TodoWrite. A task is COMPLETE only when its
-   reviewer returns PASS; a task may not START until every task in its `dependsOn`
-   is COMPLETE. Independent tasks run their full implement→review cycles
-   concurrently — only the critical path is serialized.
+2. **Execute the DAG.** Track it with TodoWrite.
+   A task is COMPLETE only when its reviewer returns PASS.
+   When a task lists `dependsOn` tasks, the orchestrator shall not START it until each listed task is COMPLETE.
+   Independent tasks will run their full implement→review cycles concurrently.
+   The orchestrator shall serialize only the critical path.
 
-   For each task, use the **Agent tool** from this session (never a workflow):
+   For each task, the orchestrator shall use the **Agent tool** from this session.
+   The orchestrator shall not use a workflow for this loop.
 
-   - Delegate to the `task-implementer` subagent, scoped to that one task. It
-     shares no context with you, so its prompt must carry everything: the task's
+   - Delegate to the `task-implementer` subagent, scoped to that one task.
+     It shares no context with you, so its prompt shall carry everything: the task's
      acceptance criteria, its `files` scope, its `acceptanceTest`, and the
      `conventions` string **verbatim**.
 
@@ -147,7 +151,7 @@ because the two review-fidelity hooks (`verify-review-verdict.sh`,
    `## Reviewer Findings` heading, hand that to a fresh `task-implementer`
    scoped to the offending files, re-review, then push and let the checks
    re-run. Treat it as a step-3 finding for invalidation purposes — the
-   integration review must run again afterwards.
+   integration review shall run again afterwards.
 
    This path exists because CI is the *first* place `wasm-build`, the
    sidecar-built `pkg/projectmodel` suite, cross-file `gofmt`/`tidy-check`, and
@@ -179,7 +183,7 @@ because the two review-fidelity hooks (`verify-review-verdict.sh`,
    **If the session dies mid-repair, that is `environment-failure`** — a typed
    stop, not a completed run. CCR containers are reclaimed on inactivity and
    repair is the longest-lived phase, so this will happen. An interrupted repair
-   must never be reported as a finished one.
+   shall never be reported as a finished one.
 
    Repair carries **its own cap of at most 3 attempts**, separate from the
    per-task counter. Sharing that counter would make a task already at its cap

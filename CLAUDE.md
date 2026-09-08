@@ -1,5 +1,8 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. Project guidance lives in `AGENTS.md` (the canonical, harness-agnostic instructions also read by Codex and other Agent Skills-compatible tools) and is inlined below.
+Claude Code shall load project guidance from `AGENTS.md`.
+`AGENTS.md` is the canonical, harness-agnostic instruction file.
+Codex and other Agent Skills-compatible tools will also read `AGENTS.md`.
+This file inlines that guidance below.
 
 @./AGENTS.md

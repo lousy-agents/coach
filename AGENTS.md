@@ -1,60 +1,131 @@
 # AGENTS.md
 
-Canonical project instructions for coding agents working in this repository (Codex, and any other Agent Skills-compatible harness). Claude Code loads this file via the `@./AGENTS.md` import at the top of `CLAUDE.md` — edit guidance here, not there, so the two never drift apart.
+This file is the canonical instruction set for coding agents in this repository.
+Claude Code shall load this file through the `@./AGENTS.md` import in `CLAUDE.md`.
+The agent shall edit guidance here. The agent shall not edit `CLAUDE.md` for project guidance.
 
 ## What this is
 
-Experimental AI coach for humans making software with agents. Currently two independent Go packages, plus a TypeScript wrapper for one of them:
+Coach is an experimental AI coach for humans who make software with agents.
+This repository contains two independent Go packages and one TypeScript wrapper.
 
-- `pkg/semantics` — deterministic structural analysis of raw Go/TypeScript/TSX source bytes (syntax validity, imports, branching metrics, constructor-like patterns) via Tree-sitter. No GitHub dependency.
-- `pkg/githubingest` — optional GitHub App-authenticated single-file reader via the GitHub Contents API.
-- `js/semantics` — Node/TS bindings for `pkg/semantics` (`@lousy-agents/coach-semantics`, not published to npm), talking newline-delimited JSON to a Go binary over stdin/stdout.
+- `pkg/semantics` analyses Go, TypeScript, and TSX source bytes with Tree-sitter.
+- `pkg/semantics` reports syntax validity, imports, branching metrics, and constructor-like patterns.
+- `pkg/semantics` has no GitHub dependency.
+- `pkg/githubingest` reads one file through the GitHub Contents API with GitHub App auth.
+- `js/semantics` is the Node/TS binding for `pkg/semantics` (`@lousy-agents/coach-semantics`).
+- `js/semantics` is not published to npm.
+- `js/semantics` sends newline-delimited JSON to a Go binary on stdin and stdout.
 
-**Dependency rule**: `pkg/semantics` never imports `pkg/githubingest` (or `go-github`/`ghinstallation`), and `pkg/githubingest` never imports `pkg/semantics` back. Keep it that way — this is what lets a consumer that only needs source analysis avoid pulling in a GitHub client.
+**Dependency rule**
 
-The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) currently exposes one subcommand, `codesignal`, which produces deterministic signal reports for a git diff (`--base`) or a repository baseline (`--baseline`) via the `pkg/semantics` → `pkg/codesignal` pipeline. Product direction lives in `docs/product/prd.md`; system design in `docs/architecture/system-overview.md`.
+The `pkg/semantics` package shall not import `pkg/githubingest`, `go-github`, or `ghinstallation`.
+The `pkg/githubingest` package shall not import `pkg/semantics`.
+This rule lets a consumer that needs only source analysis omit a GitHub client.
 
-**Living product evaluation:** `docs/product/evaluations/codesignal-pilot-readiness.html` is the current leave-pilot evidence, not a historical snapshot. Closing a #282 child or merging user-facing `coach codesignal` behavior means updating it: re-run the affected claim against HEAD, move closed gaps to the archive (do not delete them), restamp date / HEAD / `#282 · N / 24`, and re-rank only after a run. GitHub `CLOSED` is not sufficient evidence.
+The `coach` CLI lives in `cmd/coach`. Plumbing lives in `internal/codesignalcli`.
+The CLI exposes one subcommand: `codesignal`.
+The `codesignal` command produces signal reports for a git diff (`--base`) or a repository baseline (`--baseline`).
+The pipeline is `pkg/semantics` then `pkg/codesignal`.
+Product direction lives in `docs/product/prd.md`.
+System design lives in `docs/architecture/system-overview.md`.
+
+**Living product evaluation**
+
+`docs/product/evaluations/codesignal-pilot-readiness.html` is the current leave-pilot evidence.
+That file is not a historical snapshot.
+When the agent closes a #282 child, the agent shall update that file.
+When the agent merges user-facing `coach codesignal` behavior, the agent shall update that file.
+The agent shall re-run the affected claim against HEAD.
+The agent shall move closed gaps to the archive. The agent shall not delete them.
+The agent shall restamp date, HEAD, and `#282 · N / 24`.
+The agent shall re-rank only after a run.
+GitHub `CLOSED` is not sufficient evidence.
 
 ## Agent Skills (`.agents/skills/`)
 
 - `feature-to-plan` — turn a feature request, PRD, or backlog issue into a structured EARS-format spec.
-- `go-testable-design` — guidance for writing/refactoring testable Go (table tests, constructor injection, boundaries, concurrency tests).
+- `go-testable-design` — guidance for writing or refactoring testable Go.
 - `mutation-hunter` — find TypeScript test-coverage gaps via semantic mutation testing.
-- `rugged-evil-tester` — generate adversarial/negative/chaos tests for TypeScript code.
-- `product-quality-evaluation` — get a candid, evidence-grounded product/release-readiness assessment via the `product-sme` subagent.
-- `designing-for-intent` — review a UX/onboarding/consent artifact for intent map, delegation boundary, and agency risks before implementation. Complementary to the `ux-advocate` roster seat (customer-reading of copy/sequencing), not a wrapper around it.
+- `rugged-evil-tester` — generate adversarial, negative, and chaos tests for TypeScript code.
+- `product-quality-evaluation` — get an evidence-grounded product assessment via the `product-sme` subagent.
+- `designing-for-intent` — review a UX, onboarding, or consent artifact for intent map, delegation boundary, and agency risks.
+- `designing-for-intent` is complementary to the `ux-advocate` roster seat. It is not a wrapper around that seat.
 - `skill-reviewer` — lint and review Agent Skills `SKILL.md` files across harnesses.
-- `spec-auditor` — adversarially review specs/PRDs/plans before coding.
-- `triaging-pr-reviews` — classify and triage PR review comments, including automated reviewer (e.g. Copilot) suggestions.
-- `correctness-review` — perform an evidence-backed GitHub pull-request correctness review against its linked issue's acceptance criteria, repository architecture, and downstream specs.
-- `issue-refine-loop` — refine an unrefined GitHub issue in place into an implementation-ready epic (problem statement, personas, EARS acceptance criteria, design, tasks, scope boundaries), then decompose it into child issues.
+- `spec-auditor` — review specs, PRDs, and plans before coding.
+- `triaging-pr-reviews` — classify and triage PR review comments, including automated reviewer suggestions.
+- `correctness-review` — review a GitHub pull request against linked acceptance criteria, architecture, and specs.
+- `issue-refine-loop` — refine a GitHub issue in place into an implementation-ready epic, then decompose it.
 
 ## Custom subagents
 
-Some skills delegate to a named subagent rather than doing the work inline. Each harness defines subagents in its own format:
+Some skills delegate to a named subagent. Each harness defines subagents in its own format.
 
-- `.claude/agents/*.md` — **canonical** Claude Code subagents (YAML frontmatter + markdown body as the system prompt). `task-implementer`/`task-reviewer` back the `implement-issue` command; `product-sme` backs `product-quality-evaluation`; `ux-advocate` is a roster peer for customer-facing journey reading and does not back `designing-for-intent`. Route product/roadmap questions to `product-sme`, experience/journey/agency questions to `ux-advocate`, architecture/design questions to `system-design-expert`, and — only once a spec has actually been drafted — spec-audit questions to `spec-review-agent`; the orchestrator delegates to these seats rather than impersonating them. Edit these files when changing agent instructions. **Exception:** `ux-advocate` is a Coach host-binding wrapper over the lockfile-sourced `designing-for-intent` agent (host peer map, then the published charter inlined). Do not fork the charter here — change `lousy-agents/skills`, re-run `npx skills add`, and refresh the inlined body from `.agents/skills/designing-for-intent/agents/ux-advocate.md`. Edit only the host peer map in this wrapper.
-- OpenCode — no separate agent/command body mirrors. `.opencode/plugin/claude-agents.ts` loads `.claude/agents/*.md` and `.claude/commands/*.md` at config time (agents: Claude `tools` → OpenCode `permission`, `maxTurns` → `steps`, `mode: subagent`; commands: frontmatter `description` + body as `template`). Explicit entries in `opencode.json` / `.opencode/agents/` / `.opencode/command(s)/` win over the loader. `.opencode/plugin/implement-issue-gates.ts` mirrors the two review-loop hooks: `task` → `task-implementer` rework requires the literal `## Reviewer Findings` heading, and `task` → `task-reviewer` results are soft-gated so the first non-empty line is `PASS` or `FINDINGS`. Restart OpenCode after agent, command, or plugin changes.
-- `.codex/agents/*.toml` — Codex custom subagents (`name`, `description`, `sandbox_mode`, `developer_instructions`). Codex cannot import Claude markdown, so instruction text is mirrored from `.claude/agents/` and marked with a one-line sync comment — don't build codegen for a two-file mirror. `ux-advocate.toml` mirrors the Coach host-binding wrapper (refresh the inlined charter after a skills-lock update).
-- `.agents/skills/*/agents/<harness>.yaml` — optional, separate from subagent definitions: a per-harness "interface" declaration (e.g. `display_name`/`default_prompt`) for how a skill surfaces in that harness's UI. Only add one if the harness actually reads it — Claude Code has no such mechanism today.
+- `.claude/agents/*.md` — canonical Claude Code subagents (YAML frontmatter plus markdown body as the system prompt).
+- `task-implementer` and `task-reviewer` back the `implement-issue` command.
+- `product-sme` backs `product-quality-evaluation`.
+- `ux-advocate` is a roster peer for customer-facing journey reading. It does not back `designing-for-intent`.
+- The orchestrator shall route product and roadmap questions to `product-sme`.
+- The orchestrator shall route experience, journey, and agency questions to `ux-advocate`.
+- The orchestrator shall route architecture and design questions to `system-design-expert`.
+- When a spec exists, the orchestrator shall route spec-audit questions to `spec-review-agent`.
+- The orchestrator shall delegate to these seats. The orchestrator shall not impersonate them.
+- The agent shall edit these files when it changes agent instructions.
+- **Exception:** `ux-advocate` is a Coach host-binding wrapper over the lockfile-sourced `designing-for-intent` agent.
+- The wrapper holds a host peer map, then the published charter inlined.
+- The agent shall not fork the charter in this wrapper.
+- The agent shall change `lousy-agents/skills`, then re-run `npx skills add`.
+- The agent shall refresh the inlined body from `.agents/skills/designing-for-intent/agents/ux-advocate.md`.
+- The agent shall edit only the host peer map in this wrapper.
+- OpenCode has no separate agent or command body mirrors.
+- `.opencode/plugin/claude-agents.ts` loads `.claude/agents/*.md` and `.claude/commands/*.md` at config time.
+- Agents map Claude `tools` to OpenCode `permission`, `maxTurns` to `steps`, and `mode: subagent`.
+- Commands use frontmatter `description` plus body as `template`.
+- Explicit entries in `opencode.json`, `.opencode/agents/`, or `.opencode/command(s)/` win over the loader.
+- `.opencode/plugin/implement-issue-gates.ts` mirrors the two review-loop hooks.
+- When `task` targets `task-implementer` for rework, the prompt shall include the literal `## Reviewer Findings` heading.
+- When `task` targets `task-reviewer`, the first non-empty line shall be `PASS` or `FINDINGS`.
+- After agent, command, or plugin changes, the operator shall restart OpenCode.
+- `.codex/agents/*.toml` — Codex custom subagents (`name`, `description`, `sandbox_mode`, `developer_instructions`).
+- Codex cannot import Claude markdown, so instruction text is mirrored from `.claude/agents/`.
+- Each Codex file shall carry a one-line sync comment.
+- The agent shall not build codegen for a two-file mirror.
+- `ux-advocate.toml` mirrors the Coach host-binding wrapper.
+- After a skills-lock update, the agent shall refresh the inlined charter.
+- `.agents/skills/*/agents/<harness>.yaml` is an optional per-harness interface declaration.
+- Add one only if the harness reads it. Claude Code has no such mechanism today.
 
 ### Workflows (`.claude/workflows/`) — Claude Code only
 
-Scripts the Claude Code Workflow tool executes to orchestrate subagents deterministically (`.claude/workflows/implement-issue-plan.js` plans an issue). **No other harness has an equivalent**, and the OpenCode loader above mirrors agents and commands only — so a command that delegates work to a workflow must also state that work inline, or it is broken the moment OpenCode loads it. `.opencode/plugin/claude-agents.test.ts` enforces this.
+The Claude Code Workflow tool executes these scripts to orchestrate subagents.
+`.claude/workflows/implement-issue-plan.js` plans an issue.
+No other harness has an equivalent.
+The OpenCode loader mirrors agents and commands only.
+If a command delegates work to a workflow, then the command shall also state that work inline.
+If it does not, then the command fails the moment OpenCode loads it.
+`.opencode/plugin/claude-agents.test.ts` enforces this.
 
 Two invariants apply to anything a workflow does:
 
-- **Hooks do not reach inside.** `SubagentStop` and `PreToolUse` fire on agents the main session spawns and on its own tool calls. An agent spawned inside a workflow reaches neither, so `verify-review-verdict.sh` and `verify-context-relay.sh` do not run for it — a workflow that took over the implement/review loop would look identical while the review loop silently lost its fidelity checks.
-- **Nothing else executes these scripts**, so a syntax error or renamed binding surfaces only when a human runs the command. `mise run workflow-test` imports each one under a fake harness; it is wired into `js-ci` rather than `verify` because the `verify` job has no Node and the check would skip silently there.
+- **Hooks do not reach inside.** `SubagentStop` and `PreToolUse` fire on agents the main session spawns and on its own tool calls.
+- An agent spawned inside a workflow reaches neither hook.
+- `verify-review-verdict.sh` and `verify-context-relay.sh` do not run for that agent.
+- If a workflow took over the implement/review loop, then the review loop would lose its fidelity checks.
+- **Nothing else executes these scripts.** A syntax error or renamed binding surfaces only when a human runs the command.
+- `mise run workflow-test` imports each script under a fake harness.
+- That check is wired into `js-ci` rather than `verify`.
+- The `verify` job has no Node. If the check lived there, then it would skip silently.
 
 ## Commands
 
-All tasks are defined in `mise.toml`; use `mise run <task>` (mise also pins `go` and `node` versions — CI installs mise so both share one tool-version source of truth).
+All tasks are defined in `mise.toml`.
+The agent shall use `mise run <task>`.
+mise pins `go` and `node` versions.
+CI installs mise so both share one tool-version source of truth.
 
 ```sh
-mise run ci-gate          # fast local smoke: gofmt/vet/style only, no tests (~1s warm)
-mise run ci-all           # everything CI proves locally: sidecar-first ci-go + js-ci + wasm-build
+mise run ci-gate          # local smoke: gofmt/vet/style only, no tests (~1s warm)
+mise run ci-all           # sidecar-first ci-go + js-ci + wasm-build
 mise run ci-fast          # per-cycle loop check: Go slice + agent-tooling suites, sidecar built first
 mise run ci               # ci-go + js-ci -- NOT wasm-build, and see ci-fast on skips
 mise run ci-go             # verify job atoms: gofmt/vet/tidy/style/test/examples
@@ -64,11 +135,11 @@ mise run go-vet
 mise run tidy-check        # go mod tidy && diff go.mod/go.sum
 mise run test              # go test -race ./...
 mise run test-examples     # go test -run Example ./...
-mise run test-acceptance-fast # runs the fast, in-process Ginkgo/Gomega acceptance suites (offline, no real credentials)
+mise run test-acceptance-fast # in-process Ginkgo/Gomega acceptance suites (offline, no real credentials)
 mise run acceptance-style-check # fails if any *_acceptance_test.go lacks ginkgo/v2 (except allowlist)
-mise run test-queue-conformance # runs the queue conformance harness self-test; real Redis Streams/LocalStack SQS legs land with Baseline Task 3a
+mise run test-queue-conformance # queue conformance harness self-test; Redis Streams/LocalStack SQS legs land with Baseline Task 3a
 mise run thinproof-build    # vendors deps + builds the thin offline Compose proof's Docker images (run once, online)
-mise run test-acceptance-thin-proof # runs the offline thin Compose proof: fake GitHub -> pkg/githubingest -> CodeSignal, no image pull, no egress
+mise run test-acceptance-thin-proof # offline thin Compose proof: fake GitHub -> pkg/githubingest -> CodeSignal, no image pull, no egress
 mise run js-ci              # -> js-test -> js-build -> backend-build/js-install
 mise run wasm-build         # proves GOOS=js GOARCH=wasm compiles (pure-Go engine, grammar-subset tags)
 mise run workflow-test      # .claude/workflows scripts under a fake harness (also their only parse check)
@@ -96,32 +167,69 @@ node --test "dist-test/**/*.test.js"
 
 ### Parsing engine
 
-`pkg/semantics` parses purely in Go via `github.com/odvcencio/gotreesitter` — no CGO, no C toolchain, and no dual-backend selection required.
+`pkg/semantics` will parse in Go through `github.com/odvcencio/gotreesitter`.
+The package will not use CGO. The package will not require a C toolchain.
+The package will not select a dual backend.
 
 ## Architecture: `pkg/semantics`
 
 Pipeline (`analyzer.go`): `AnalyzeBytes` = validate -> parse -> syntax-check -> extract imports -> compute metrics/findings -> `Result`.
 
-- **Backend seam** (`internal/engine/engine.go`): a deliberately narrow interface (`Node`, `Tree`, `Parser`, `Query`, `QueryCursor`, `Language`) exposing only the Tree-sitter operations the package actually uses (no `NamedChild`, no `TreeCursor`, no query predicates, no incremental parsing). This package is `internal`, so it's only importable from within `pkg/semantics`. There is exactly one implementation: `internal/engine/gotreesitter.go` (pure-Go, always compiled, no build tag).
-- **Registry selection** (`language.go`): `languageSpec` bundles a backend-bound `engine.Language` handle with language-specific `extractImports`/`computeFeatures` functions. `languageRegistry` (`map[Language]languageSpec`) is defined unconditionally in `language.go` — no build tags, no per-backend variants. Adding a language means extending the registry plus its own `extract*Imports`/`compute*Features` pair (mirroring the Go or TS implementations), not touching `parser.go`/`analyzer.go`.
-- **Concurrency**: `*Analyzer` holds no backend resources between calls — every `AnalyzeBytes` call creates and closes its own `Parser`/`Tree`/`Query`/`QueryCursor` — so a single `*Analyzer` is safe for concurrent use regardless of engine backend.
-- **Error contract**: syntax errors return a partial `*Result` (`ParseStatus == "syntax_errors"`) *and* a non-nil error satisfying `errors.Is(err, ErrSyntax)` (use `errors.As` for `*SyntaxError.Issues`). Other sentinels: `ErrEmptyContent`, `ErrUnsupportedLanguage`, `ErrFileTooLarge`, `ErrBinaryContent`, `ErrParseFailure`.
-- **JSON stability**: `Result` and nested types use frozen `snake_case` JSON field names, locked by a golden-file test (`result_test.go`). Field names and error identities (`Err*` sentinels, `*SyntaxError`) are treated as stable pre-1.0 API surface; other surface may still change.
-- `internal/jsbridge` (repo-root `internal/`, not under `pkg/semantics`) implements the newline-delimited JSON protocol consumed by `cmd/semantics-json` (the stdio backend binary `js/semantics` shells out to) and mirrored by `js/semantics/src/protocol.ts`. A parity test suite (`js/semantics/test/parity.test.ts`) replays shared fixtures through both the Go API and the JS package to keep them byte-identical.
+- **Backend seam** (`internal/engine/engine.go`): a narrow interface (`Node`, `Tree`, `Parser`, `Query`, `QueryCursor`, `Language`).
+- The interface exposes only the Tree-sitter operations the package uses.
+- The interface has no `NamedChild`, `TreeCursor`, query predicates, or incremental parsing.
+- This package is `internal`. Only `pkg/semantics` may import it.
+- There is exactly one implementation: `internal/engine/gotreesitter.go` (pure-Go, always compiled, no build tag).
+- **Registry selection** (`language.go`): `languageSpec` bundles a backend-bound `engine.Language` handle with `extractImports` and `computeFeatures`.
+- `languageRegistry` (`map[Language]languageSpec`) is defined unconditionally in `language.go`.
+- The registry has no build tags and no per-backend variants.
+- When the agent adds a language, the agent shall extend the registry plus its `extract*Imports`/`compute*Features` pair.
+- The agent shall not touch `parser.go` or `analyzer.go` for that change.
+- **Concurrency**: `*Analyzer` holds no backend resources between calls.
+- When the caller invokes `AnalyzeBytes`, the Analyzer shall create and close its own `Parser`, `Tree`, `Query`, and `QueryCursor`.
+- A single `*Analyzer` is safe for concurrent use.
+- **Error contract**: If the parser finds syntax errors, then `AnalyzeBytes` shall return a partial `*Result` with `ParseStatus == "syntax_errors"`.
+- If the parser finds syntax errors, then `AnalyzeBytes` shall also return a non-nil error that satisfies `errors.Is(err, ErrSyntax)`.
+- Use `errors.As` for `*SyntaxError.Issues`.
+- Other sentinels: `ErrEmptyContent`, `ErrUnsupportedLanguage`, `ErrFileTooLarge`, `ErrBinaryContent`, `ErrParseFailure`.
+- **JSON stability**: `Result` and nested types use frozen `snake_case` JSON field names, locked by `result_test.go`.
+- Field names and error identities (`Err*` sentinels, `*SyntaxError`) are a stable pre-1.0 API surface.
+- Other surface may still change.
+- `internal/jsbridge` (repo-root `internal/`, not under `pkg/semantics`) implements the newline-delimited JSON protocol.
+- `cmd/semantics-json` consumes that protocol. `js/semantics` shells out to that binary.
+- `js/semantics/src/protocol.ts` mirrors the protocol.
+- `js/semantics/test/parity.test.ts` replays shared fixtures through the Go API and the JS package.
+- The two outputs shall stay byte-identical.
 
 ## Architecture: `js/semantics`
 
-TypeScript package with a `Backend` seam (`src/backend.ts`) abstracting the transport; `src/backend-cli.ts`/`backend-default.ts` spawn the compiled `coach-semantics-json` Go binary and speak the jsbridge protocol over stdio. A WASM backend (`backend-wasm.ts`) is not yet wired up even though `pkg/semantics` now builds for `GOOS=js GOARCH=wasm` (see `wasm-build`/`cmd/semantics-wasm-smoke`) — swapping transports is meant to stay behind the `Backend` seam without changing the public API. `npm install`/`prepare` builds the Go backend binary and the TS package, so Go is required even for JS-only work.
+This TypeScript package has a `Backend` seam (`src/backend.ts`) that abstracts transport.
+`src/backend-cli.ts` and `backend-default.ts` spawn the compiled `coach-semantics-json` Go binary.
+They speak the jsbridge protocol over stdio.
+A WASM backend (`backend-wasm.ts`) is not yet wired up.
+`pkg/semantics` now builds for `GOOS=js GOARCH=wasm` (see `wasm-build` and `cmd/semantics-wasm-smoke`).
+When the agent swaps transports, the agent shall keep the change behind the `Backend` seam.
+The public API shall not change for a transport swap.
+`npm install` and `prepare` build the Go backend binary and the TS package.
+Go is required even for JS-only work.
 
 ## Architecture: `pkg/githubingest`
 
-Single entry point `ReadFile`, authenticated via a GitHub App installation (`ghinstallation` + `go-github`). Each call issues two Contents API requests: the file fetch, plus a listing of the parent directory to detect in-repo symlinks GitHub's Contents API would otherwise silently resolve as a plain file (`reader.go`'s `rejectIfPathIsSymlink`). That listing is capped at GitHub's 1,000-entries-per-directory limit with no truncation signal, so a symlink in a very large directory can go undetected — an accepted, documented limitation for v1. Error sentinels: `ErrNotFound`, `ErrAuth`, `ErrUnsupportedContent`, `ErrTooLarge` (>1 MiB), `ErrEmptyContent`.
+The single entry point is `ReadFile`.
+Auth uses a GitHub App installation (`ghinstallation` plus `go-github`).
+Each call issues two Contents API requests: the file fetch, plus a listing of the parent directory.
+The listing detects in-repo symlinks that GitHub's Contents API would resolve as a plain file (`reader.go`'s `rejectIfPathIsSymlink`).
+That listing is capped at GitHub's 1,000-entries-per-directory limit with no truncation signal.
+If a directory has more than 1,000 entries, then a symlink in that directory can go undetected.
+That limit is an accepted, documented limitation for v1.
+Error sentinels: `ErrNotFound`, `ErrAuth`, `ErrUnsupportedContent`, `ErrTooLarge` (>1 MiB), `ErrEmptyContent`.
 
 ## Validation
 
 ### Validation Suite (mandatory before commit)
 
-These are the exact checks CI runs in `.github/workflows/ci.yml` (atomic `mise run <task>` steps). A clean local `mise run ci-all` covers every job except `platform-smoke`:
+These are the exact checks CI runs in `.github/workflows/ci.yml` (atomic `mise run <task>` steps).
+A clean local `mise run ci-all` covers every job except `platform-smoke`:
 
 ```sh
 mise run gofmt
@@ -140,92 +248,175 @@ mise run wasm-build
 Two gaps `mise run ci` alone does not close:
 
 - `wasm-build` is in no task's closure, so a `GOOS=js GOARCH=wasm` break can pass `ci`.
-- `ci` runs `test` before anything builds the sidecar, so `pkg/projectmodel`'s TypeScript sidecar acceptance suite **skips silently** unless Node and the binary are already present. A green `ci` does not mean that suite ran.
+- `ci` runs `test` before anything builds the sidecar.
+- If Node and the sidecar binary are absent, then `pkg/projectmodel`'s TypeScript sidecar suite **skips silently**.
+- A green `ci` does not mean that suite ran.
 
-Use **`mise run ci-fast`** inside an implement/review loop — sidecar-first ordering, without the wasm and full-CI legs. **`mise run ci-all`** builds the sidecar first, then `ci-go` (so `test` actually runs the projectmodel suite), `js-ci`, and `wasm-build`; run it when you want the whole thing locally, but it is **no longer the pre-PR gate**.
+The agent shall use **`mise run ci-fast`** inside an implement/review loop.
+`ci-fast` uses sidecar-first ordering. It omits the wasm and full-CI legs.
+**`mise run ci-all`** builds the sidecar first, then `ci-go`, `js-ci`, and `wasm-build`.
+Because the sidecar is built first, `test` actually runs the projectmodel suite.
+The agent should run `ci-all` when it wants the whole local set.
+`ci-all` is **no longer the pre-PR gate**.
 
-**The exhaustive gate is GitHub Actions plus branch protection, not a local run.** A serial local `ci-all` measured ~910s on a CCR container, while CI proves a strict superset (the same atomic tasks as parallel leaf jobs, **plus `platform-smoke`**) in ~426s wall clock on compute that is not the session's. Since the `status` aggregator became a required check, a red tree cannot merge no matter what any local check decides — so nothing gates PR creation locally. Commit and push everything before opening a PR so its evidence describes the tree you pushed; that is a discipline, not a mechanism.
+**The exhaustive gate is GitHub Actions plus branch protection, not a local run.**
+A serial local `ci-all` measured ~910s on a CCR container.
+CI proves a strict superset in ~426s wall clock on compute that is not the session's.
+CI runs the same atomic tasks as parallel leaf jobs, **plus `platform-smoke`**.
+The `status` aggregator is a required check.
+If the tree is red, then merge shall fail no matter what any local check decides.
+Nothing gates PR creation locally.
+The agent shall commit and push everything before it opens a PR.
+The PR evidence shall describe the tree that was pushed.
+That rule is a discipline, not a mechanism.
 
-`ci-gate` is a fast local smoke check you can run yourself. It deliberately runs no tests and **no `tidy-check`** — the latter rewrites `go.mod`/`go.sum` in place. This whole arrangement is only safe while `status` is a **required check** on the base branch; if branch protection is removed, nothing gates a red merge.
+`ci-gate` is a local smoke check. It completes in about 1s when warm.
+It runs no tests and **no `tidy-check`**.
+`tidy-check` rewrites `go.mod`/`go.sum` in place.
+This arrangement is only safe while `status` is a **required check** on the base branch.
+If branch protection is removed, then nothing gates a red merge.
 
-`ci-all` deliberately excludes `test-acceptance-fast` (its ambient-credential preflight cannot pass where `GITHUB_TOKEN`/`GH_TOKEN` or `~/.aws/config` are present, and `test` already runs every acceptance suite unfiltered) and `platform-smoke` (Docker + live services).
+`ci-all` excludes `test-acceptance-fast`.
+That task's ambient-credential preflight cannot pass where `GITHUB_TOKEN`, `GH_TOKEN`, or `~/.aws/config` are present.
+`test` already runs every acceptance suite unfiltered.
+`ci-all` also excludes `platform-smoke` (Docker plus live services).
 
-A cross-language parity or coverage/failure acceptance gate — one whose acceptance criteria assert on the rendered CLI report across both the Go and TypeScript project backends — exercises this same mandatory Validation Suite, plus `mise run test-acceptance-fast` run directly rather than only through `mise run test`: it names and scopes the acceptance-suite layer explicitly (`docs/architecture/acceptance-harness.md`) and carries its own preflight guard (`go run ./cmd/acceptance-guard-preflight`), independent of the wider `test` superset. In a credentialed environment, `test-acceptance-fast`'s ambient-credential preflight refusal is the documented, expected result, not a gate failure — `mise run test` already ran the same `*Acceptance` suites unfiltered. This gate also puts a ~4-minute floor under `cmd/coach`'s suite (`go test -race ./cmd/coach/...` measured ~239s): roughly 180s of that is deliberate blocking on `tsSidecarWallTime` (60s, `internal/codesignalcli/project_ts_backend.go`) and `snapshotGitTimeout` (30s, `internal/codesignalcli/project_snapshot.go`), each paid twice across the project-backend and no-findings-verdict acceptance specs, so `cmd/coach` now dominates `mise run test`'s wall time and the `ci-fast` "per-cycle loop check" description above should not be read as implying this suite is quick.
+A cross-language parity or coverage/failure acceptance gate shall exercise this Validation Suite.
+That gate shall also run `mise run test-acceptance-fast` directly, not only through `mise run test`.
+It names and scopes the acceptance-suite layer (`docs/architecture/acceptance-harness.md`).
+It carries its own preflight guard (`go run ./cmd/acceptance-guard-preflight`).
+In a credentialed environment, `test-acceptance-fast`'s ambient-credential preflight refusal is the expected result.
+That refusal is not a gate failure. `mise run test` already ran the same `*Acceptance` suites unfiltered.
+This gate also puts a ~4-minute floor under `cmd/coach`'s suite.
+`go test -race ./cmd/coach/...` measured ~239s.
+About 180s of that is blocking on `tsSidecarWallTime` (60s, `internal/codesignalcli/project_ts_backend.go`) and `snapshotGitTimeout` (30s, `internal/codesignalcli/project_snapshot.go`).
+Each timeout is paid twice across the project-backend and no-findings-verdict acceptance specs.
+`cmd/coach` now dominates `mise run test`'s wall time.
+The agent shall not read the `ci-fast` "per-cycle loop check" label as a claim that this suite is quick.
 
 ### Acceptance-test-first (required policy)
 
-Every new feature and every bug fix **must begin with a failing acceptance test** before production implementation changes are made.
+When the agent adds a feature or fixes a bug, the agent shall begin with a failing acceptance test.
+The agent shall not make production implementation changes before that test fails.
 
-- For a feature, write an acceptance test that demonstrates the requested externally observable behavior is absent, run it, and confirm that it fails. Only then implement the feature until that same test passes.
-- For a bug fix, write an acceptance test that reproduces the reported incorrect behavior, run it, and confirm that it fails for the bug. Only then implement the fix until that same test passes.
-- The test must exercise the relevant public behavior at the most meaningful available boundary; a unit test alone is not an acceptance test unless that unit is itself the public contract.
-- Do not treat an unrun test, a test written after implementation, or a test that already passes as satisfying this policy. If the required test cannot be made to fail before implementation, stop and resolve the discrepancy with the requester rather than proceeding.
+- When the agent adds a feature, the agent shall write an acceptance test that shows the requested public behavior is absent.
+- The agent shall run that test and confirm that it fails.
+- Then the agent shall implement the feature until that same test passes.
+- When the agent fixes a bug, the agent shall write an acceptance test that reproduces the incorrect behavior.
+- The agent shall run that test and confirm that it fails for the bug.
+- Then the agent shall implement the fix until that same test passes.
+- The test shall exercise the relevant public behavior at the most meaningful available boundary.
+- A unit test alone is not an acceptance test unless that unit is itself the public contract.
+- An unrun test, a test written after implementation, or a test that already passes shall not satisfy this policy.
+- If the required test cannot be made to fail before implementation, then the agent shall stop.
+- The agent shall resolve the discrepancy with the requester rather than proceed.
 
 **Go acceptance form (mandatory):**
 
-- Use Ginkgo v2 + Gomega (`github.com/onsi/ginkgo/v2`, `github.com/onsi/gomega`).
-- Spec style: `Describe` / `When` / `It` (and `DescribeTable` when useful) that read as EARS/acceptance-criteria statements.
-- Layout: `*_acceptance_test.go` plus `acceptance_suite_test.go` with a `TestXxxAcceptance` entrypoint so `mise run test-acceptance-fast` (`go test … -run Acceptance`) picks them up.
+- The agent shall use Ginkgo v2 + Gomega (`github.com/onsi/ginkgo/v2`, `github.com/onsi/gomega`).
+- Spec style: `Describe` / `When` / `It` (and `DescribeTable` when useful) that read as EARS statements.
+- Layout: `*_acceptance_test.go` plus `acceptance_suite_test.go` with a `TestXxxAcceptance` entrypoint.
+- `mise run test-acceptance-fast` (`go test … -run Acceptance`) shall pick them up.
 - Reference examples: `cmd/coach/baseline_acceptance_test.go`, `pkg/githubingest/acceptance_test.go`.
-- Plain unit tests (`*_test.go` without the acceptance suite role) may use stdlib `testing` + table tests; that is **not** a substitute for acceptance coverage of new features/bug fixes.
-- Exception: thin stdlib `Test*Acceptance` **wrappers** that only call a shared harness (e.g. `internal/acceptanceharness/queueconformance/acceptance_test.go`) are allowed when they are not the behavioral specs themselves.
+- Plain unit tests (`*_test.go` without the acceptance suite role) may use stdlib `testing` plus table tests.
+- Those unit tests shall not substitute for acceptance coverage of new features or bug fixes.
+- Exception: thin stdlib `Test*Acceptance` **wrappers** that only call a shared harness are allowed.
+- Example: `internal/acceptanceharness/queueconformance/acceptance_test.go`.
+- Those wrappers are allowed only when they are not the behavioral specs themselves.
 - Mechanical guard (when present): `mise run acceptance-style-check`.
 
-**False-green rule:** a test only counts if it exercises the intended branch/failure mode. Shared clocks/fakes that make a different path produce the same status/outcome are invalid (e.g. advancing time so a "denylisted" case actually fails on expiry).
+**False-green rule:** a test counts only if it exercises the intended branch or failure mode.
+If shared clocks or fakes make a different path produce the same status, then that test is invalid.
+Example: advancing time so a "denylisted" case actually fails on expiry.
 
-For delegated work, the `task-implementer`/`task-reviewer` subagent pair (`.claude/agents/`) operationalizes this policy step-by-step: the implementer must write and fail a Ginkgo acceptance test before implementing, and the reviewer gates on red-then-green evidence plus the form/false-green rules above. Subagent prompts must not relax AGENTS.md — do not tell implementers that stdlib table tests substitute for Ginkgo acceptance tests; copy conventions from here, don't invent weaker ones.
+For delegated work, the `task-implementer`/`task-reviewer` pair (`.claude/agents/`) operationalizes this policy.
+The implementer shall write and fail a Ginkgo acceptance test before implementing.
+The reviewer shall gate on red-then-green evidence plus the form and false-green rules above.
+Subagent prompts shall not relax AGENTS.md.
+The orchestrator shall not tell implementers that stdlib table tests substitute for Ginkgo acceptance tests.
+The orchestrator shall copy conventions from here. The orchestrator shall not invent weaker ones.
 
 ### Outbound HTTP (required policy)
 
-Production defaults for upstream HTTP clients must use a finite `Timeout`. Do not use bare `http.DefaultClient` for request paths that can hang.
+Production defaults for upstream HTTP clients shall use a finite `Timeout`.
+The agent shall not use bare `http.DefaultClient` for request paths that can hang.
 
 ### Store/dependency fail-closed (required policy)
 
-When a required store/dependency errors (not a clean miss/not-found), protected/auth paths return **503** with the stable JSON error envelope — fail closed. Do not skip the check or treat store errors as soft 500 inconsistently across analogous paths.
+If a required store or dependency errors (not a clean miss), then protected auth paths shall return **503**.
+The response shall use the stable JSON error envelope. The path shall fail closed.
+The agent shall not skip the check.
+The agent shall not treat store errors as soft 500 inconsistently across analogous paths.
 
 ### Go comments (required policy)
 
-Default is **no comment** unless it helps a human or coding agent use or change the code correctly. This policy applies to Go only.
+Default is **no comment** unless it helps a human or coding agent use or change the code correctly.
+This policy applies to Go only.
 
 **Keep / write** when the comment encodes a non-local contract:
 
 - Exported API behavior callers cannot infer from the name (errors, auth, zero value, concurrency, special cases)
-- Intentional simplifications and external wire quirks (e.g. go-github response shapes, GitHub API limits)
+- Intentional simplifications and external wire quirks (for example, go-github response shapes, GitHub API limits)
 - Invariants that tests or agents will otherwise “fix” wrongly (race guards, auth-mode recording, false-green traps)
 
 **Form (godoc):**
 
-- Doc comments sit immediately above the declaration; complete sentences; start with the symbol name (`Package foo…`, `ClassifyToken reports…`)
-- Prefer short paragraphs; use end-of-line comments for map keys / enum values when enough
-- Attach notes to a declaration (no orphan `// NOTE` blocks)
-- Follow [Go doc comments](https://go.dev/doc/comment); do not put epic/issue narrative in code — that belongs in `docs/`, the PR, or the commit message
+- Doc comments sit immediately above the declaration.
+- They are complete sentences. They start with the symbol name (`Package foo…`, `ClassifyToken reports…`).
+- Prefer short paragraphs. Use end-of-line comments for map keys or enum values when enough.
+- Attach notes to a declaration. Do not write orphan `// NOTE` blocks.
+- Follow [Go doc comments](https://go.dev/doc/comment).
+- Do not put epic or issue narrative in code. That belongs in `docs/`, the PR, or the commit message.
 
 **Delete / never add:**
 
 - Restating the identifier or the next line of code
 - Step-by-step narration of obvious control flow
-- Long essays duplicated across handlers (factor one shared helper/doc or package comment)
-- Test comments that only paraphrase `It("…")` / subtest names — prefer structure and names (see `go-testable-design`); keep only subtle assertion traps
+- Long essays duplicated across handlers (factor one shared helper, doc, or package comment)
+- Test comments that only paraphrase `It("…")` or subtest names
+- Prefer structure and names (see `go-testable-design`). Keep only subtle assertion traps.
 
-**Unexported** symbols: comment only for the contracts/traps above, not routine helpers.
+**Unexported** symbols: comment only for the contracts and traps above, not routine helpers.
 
 ### Verification
 
-Passing checks proves nothing broke; it doesn't prove new behavior is correct. For a `pkg/semantics` extraction/metric change, add or extend a case in the relevant `*_test.go` (`features_test.go`, `ts_features_test.go`, `query_test.go`, …) with a concrete before/after `Result`, not just a "does it run" assertion. For `js/semantics` changes, extend `parity.test.ts` so the Go and JS outputs are checked byte-identical, not just independently plausible.
+Passing checks prove nothing broke. They do not prove new behavior is correct.
+When the agent changes a `pkg/semantics` extraction or metric, the agent shall add or extend a case in the relevant `*_test.go`.
+Examples: `features_test.go`, `ts_features_test.go`, `query_test.go`.
+The case shall include a concrete before/after `Result`, not only a "does it run" assertion.
+When the agent changes `js/semantics`, the agent shall extend `parity.test.ts`.
+The Go and JS outputs shall be byte-identical.
 
 ### Feedback Loop
 
-After a failing check, fix and rerun that specific command rather than the whole suite — `go test -race ./... -run TestName` narrows to one test. Don't move on to the next validation step until the current one is clean.
+After a failing check, the agent shall fix and rerun that specific command.
+The agent shall not rerun the whole suite first.
+`go test -race ./... -run TestName` narrows to one test.
+The agent shall not move to the next validation step until the current one is clean.
 
 ### What `/implement-issue` guarantees, and what it does not
 
-The command's job is **continuous review**: every change is written by one agent and adversarially reviewed by another before it counts, and the integrated diff is reviewed again before a PR opens. It deliberately does *not* try to box agents in with control mechanisms — an earlier revision carried a git-write jail, a cycle-ceiling counter, a PR-creation gate, a hook trace, and a five-probe liveness ritual to prove them all live, and that apparatus spent more effort watching itself than reviewing code. It was removed. Merge safety belongs to **branch protection plus the required `status` check**, which run where no agent can reach them.
+The command's job is **continuous review**.
+One agent writes each change. Another agent reviews that change before it counts.
+The integrated diff is reviewed again before a PR opens.
+The command shall not box agents with control mechanisms.
+An earlier revision carried a git-write jail, a cycle-ceiling counter, a PR-creation gate, a hook trace, and a five-probe liveness ritual.
+That apparatus spent more effort watching itself than reviewing code. It was removed.
+Merge safety belongs to **branch protection plus the required `status` check**.
+Those checks run where no agent can reach them.
 
 **Deterministic, held by code:**
 
-- **Planning.** `.claude/workflows/implement-issue-plan.js` produces the task DAG. Its arg validation, null guards, cycle and dangling-reference checks are JS, covered by `mise run workflow-test`, and mutation-tested.
-- **Review-loop fidelity.** Two small hooks, both scoped to the loop's conversation rather than to what agents may do: `verify-review-verdict.sh` (a reviewer's reply must begin `PASS` or `FINDINGS`, so the orchestrator always receives a parseable verdict) and `verify-context-relay.sh` (a rework delegation must carry the literal `## Reviewer Findings` block, so findings cannot be paraphrased away). They fire on agents this session spawns — agents inside a workflow never reach them, which is why the implement/review loop stays in the main session.
-- **Merge safety.** Branch protection and the required `status` aggregator on the base branch. This is the only gate that matters for an unattended run, and it runs on GitHub's side.
+- **Planning.** `.claude/workflows/implement-issue-plan.js` produces the task DAG.
+- Its arg validation, null guards, cycle checks, and dangling-reference checks are JS.
+- `mise run workflow-test` covers them. They are mutation-tested.
+- **Review-loop fidelity.** Two small hooks, both scoped to the loop's conversation.
+- `verify-review-verdict.sh`: a reviewer's reply shall begin `PASS` or `FINDINGS`.
+- `verify-context-relay.sh`: a rework delegation shall carry the literal `## Reviewer Findings` block.
+- They fire on agents this session spawns. Agents inside a workflow never reach them.
+- That is why the implement/review loop stays in the main session.
+- **Merge safety.** Branch protection and the required `status` aggregator on the base branch.
+- This is the only gate that matters for an unattended run. It runs on GitHub's side.
 
 **Prose, held by the orchestrator following instructions:**
 
@@ -235,38 +426,77 @@ The command's job is **continuous review**: every change is written by one agent
 - That the `conventions` string reaches implementers unweakened
 - That implementers do not commit, push, or open PRs — the orchestrator owns git
 
-Those are instructions in `.claude/commands/implement-issue.md`. The specs in `internal/agentworkflows/` assert that **the instruction is present and says the right thing** — they cannot assert that a run obeyed it. A run that ignores them produces a worse PR, not an unsafe merge: the required checks still gate the merge.
+Those are instructions in `.claude/commands/implement-issue.md`.
+The specs in `internal/agentworkflows/` assert that **the instruction is present and says the right thing**.
+They cannot assert that a run obeyed it.
+A run that ignores them produces a worse PR, not an unsafe merge.
+The required checks still gate the merge.
 
-**What a PR opened by this flow asserts.** That every task reached reviewer `PASS` and the integration reviewer passed the whole diff, and that the body records the per-task `ci-fast` output as its test evidence.
+**What a PR opened by this flow asserts.** Every task reached reviewer `PASS`.
+The integration reviewer passed the whole diff.
+The body records the per-task `ci-fast` output as its test evidence.
 
-**What it does not assert.** That the exhaustive suite passed locally — it no longer runs locally. Exhaustive verification lives in GitHub Actions and gates **merge**, not PR creation. Nor `platform-smoke` or `test-acceptance-fast` results, nor that any prose-held rule above was obeyed. The practical reading: **a PR from this flow is a well-evidenced proposal, not a verified one.** Branch protection is what makes it safe to open one unattended.
+**What it does not assert.** That the exhaustive suite passed locally — it no longer runs locally.
+Exhaustive verification lives in GitHub Actions and gates **merge**, not PR creation.
+It does not assert `platform-smoke` or `test-acceptance-fast` results.
+It does not assert that any prose-held rule above was obeyed.
+The practical reading: **a PR from this flow is a well-evidenced proposal, not a verified one.**
+Branch protection is what makes it safe to open one unattended.
 
-One environment caveat worth knowing: Claude Code binds `.claude/` — hooks, agents, and workflows alike — to the session's project directory at session start. A repository cloned into a session whose project directory is elsewhere never registers any of them, and attaching it mid-session reloads CLAUDE.md and skills but not hooks, agents, or workflows. In that state the two review-fidelity hooks are silently absent and the run degrades to prose-only review discipline — still merge-safe, because branch protection does not care, but weaker. Sessions for this repo should be created with the repo as the project directory.
+Claude Code binds `.claude/` — hooks, agents, and workflows — to the session's project directory at session start.
+If a repository is cloned into a session whose project directory is elsewhere, then none of them register.
+Attaching it mid-session reloads CLAUDE.md and skills but not hooks, agents, or workflows.
+In that state the two review-fidelity hooks are silently absent.
+The run degrades to prose-only review discipline.
+It is still merge-safe, because branch protection does not care, but weaker.
+Sessions for this repo should be created with the repo as the project directory.
 
 ## Pull requests
 
-Before `gh pr create` / `create_pull_request`, read and fill every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). That file is the PR contract for coding agents: linked issue, single concern, acceptance-criteria → evidence table, red-then-green acceptance proof, and the validation commands you actually ran. Do not open a PR with blank sections or placeholder text.
+Before `gh pr create` / `create_pull_request`, the agent shall read and fill every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md).
+That file is the PR contract for coding agents.
+It requires a linked issue, a single concern, an acceptance-criteria → evidence table, red-then-green proof, and the validation commands that actually ran.
+The agent shall not open a PR with blank sections or placeholder text.
 
 ### Commit types (required policy)
 
-Conventional Commits, chosen by **who the change is for** — GoReleaser builds release notes from commit subjects, so the type decides whether a change is described to `coach` users as part of the CLI.
+Conventional Commits, chosen by **who the change is for**.
+GoReleaser builds release notes from commit subjects.
+The type decides whether a change is described to `coach` users as part of the CLI.
 
-- `feat` / `fix` — behavior a `coach` user can invoke: the CLI, `pkg/semantics`, `pkg/githubingest`, `js/semantics`. These reach the release notes.
-- `chore` / `ci` / `build` / `refactor` / `style` / `test` / `docs` — everything else, including **agent tooling**: `.claude/` and `.agents/` definitions, hooks, subagent and workflow files, `mise.toml` tasks, and CI workflows. These are filtered out of the release notes by `.goreleaser.yaml`.
+- `feat` / `fix` — behavior a `coach` user can invoke: the CLI, `pkg/semantics`, `pkg/githubingest`, `js/semantics`.
+- These reach the release notes.
+- `chore` / `ci` / `build` / `refactor` / `style` / `test` / `docs` — everything else, including **agent tooling**.
+- Agent tooling includes `.claude/` and `.agents/` definitions, hooks, subagent and workflow files, `mise.toml` tasks, and CI workflows.
+- `.goreleaser.yaml` filters these out of the release notes.
 
-A PR title follows the same rule as its commits. Agent tooling changes the way this repository is *built*, not what it *does*, so labelling it `feat` publishes a feature that does not exist.
+A PR title follows the same rule as its commits.
+Agent tooling changes the way this repository is *built*, not what it *does*.
+If the agent labels it `feat`, then release notes publish a feature that does not exist.
 
 ## CI shape (`.github/workflows/ci.yml`)
 
-GHA is a parallel scheduler of atomic `mise run <task>` steps. Local `ci` / `ci-fast` / `ci-all` are serial bundles of the same tasks. The workflow does not invoke those composites.
+GHA is a parallel scheduler of atomic `mise run <task>` steps.
+Local `ci` / `ci-fast` / `ci-all` are serial bundles of the same tasks.
+The workflow does not invoke those composites.
 
 Five independent leaf jobs plus a `status` aggregator (the single required check):
 
-- `verify` — `gofmt` / `go-vet` / `tidy-check` / `acceptance-style-check` / `test` / `test-examples` (`ci-go`). mise installs only Go; the runner image may still have Node, so the sidecar suite usually skips because the sidecar is not built, not because `node` is missing. Toolchain is `mise.toml` (`go = "1.26.6"`), not `go.mod`'s language version.
+- `verify` — `gofmt` / `go-vet` / `tidy-check` / `acceptance-style-check` / `test` / `test-examples` (`ci-go`).
+- mise installs only Go. The runner image may still have Node.
+- The sidecar suite usually skips because the sidecar is not built, not because `node` is missing.
+- Toolchain is `mise.toml` (`go = "1.26.6"`), not `go.mod`'s language version.
 - `js-verify` — `mise run js-ci` only.
 - `projectmodel-sidecar` — `mise run projectmodel-sidecar-acceptance` (builds the sidecar, then the real suite). Parallel with `js-verify`.
 - `wasm-build` — `mise run wasm-build`.
 - `platform-smoke` — `platform-up` / `platform-smoke` / `platform-down` as three steps so teardown still runs on failure.
-- `status` — `if: always()` + `needs` every leaf; inspects `toJSON(needs)` and fails unless each result is `success`. Branch protection should require this job only. Adding a leaf means adding it to `status.needs`, or it can fail while the required check is green.
+- `status` — `if: always()` plus `needs` every leaf.
+- It inspects `toJSON(needs)` and fails unless each result is `success`.
+- Branch protection should require this job only.
+- When the agent adds a leaf, the agent shall add it to `status.needs`.
+- If it does not, then the leaf can fail while the required check is green.
 
-`mise run ci-all` mirrors the first four locally (sidecar-first, so the suite runs inside `test` rather than as a second invocation). `platform-smoke` has no local composite; run the three platform tasks directly. The GHA `status` check is stricter than `ci-all` because it includes `platform-smoke`.
+`mise run ci-all` mirrors the first four locally (sidecar-first).
+The suite runs inside `test` rather than as a second invocation.
+`platform-smoke` has no local composite. Run the three platform tasks directly.
+The GHA `status` check is stricter than `ci-all` because it includes `platform-smoke`.
