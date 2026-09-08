@@ -1,16 +1,7 @@
 package codesignalcli
 
 import (
-	"context"
 	"errors"
-	"fmt"
-	"io"
-	"os/exec"
-	"path"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
 )
 
 const (
@@ -76,46 +67,54 @@ const (
 const WarnNodeUntested = "node_untested"
 
 // WarnCompilerDeclarationMismatch is the limit-class warning when a
-// selected manifest declares a non-exact range or an out-of-set version
-// and another origin still supplies a supported compiler. It never appears
-// in gaps[] and carries no next action: Coach never edits manifests.
+// selected root's manifest declares a typescript version other than the
+// compiler the scan will use. A winning non-project origin warns for any
+// differing declaration (range or exact); a winning project origin warns
+// only for a stale exact pin -- a range is never warned about, and range
+// satisfaction is never evaluated. It never appears in gaps[] and carries
+// no next action: Coach never edits manifests.
 const WarnCompilerDeclarationMismatch = "compiler_declaration_mismatch"
 
 // ReadinessRootFinding names one selected policy root's compiler-origin
-// result on a typescript_version_conflict. Version is empty when that root
-// has no nearest package.json (or an empty project origin). Paths are
-// repository-relative policy roots, never absolute host paths.
+// result. Roots are repository-relative, never absolute host paths.
 type ReadinessRootFinding struct {
 	Root    string `json:"root"`
 	Version string `json:"version,omitempty"`
 }
 
-// ReadinessCheck is one entry in ReadinessChecks. Version/ExpectedVersion/
-// FoundVersion are populated by the checks that have a version concept:
-// Node populates Version (and the node_untested code) on a pass; Compiler
-// populates Version on a pass, ExpectedVersion/FoundVersion together with
-// SupportedVersions on a typescript_version_mismatch, ExpectedVersion (and
-// FoundVersion when a rejected candidate was probed) on
-// typescript_compiler_missing, and RootFindings only on
-// typescript_version_conflict — expected_version and found_version are
-// omitted for a conflict. SupportedVersions is additive and omitempty:
-// only typescript_version_mismatch lists the compiled-in supported set.
-// RootFindings is additive and omitempty: only typescript_version_conflict
-// lists every selected root's finding so remediation can name each one.
-// Detail is additive and omitempty: typescript_compiler_missing names the
-// native package (@typescript/typescript-<os>-<arch>) when the compiler
-// was present and that package was missing or version-divergent.
+// ReadinessOriginFinding names one compiler-resolution origin and the
+// candidate class it yielded. It reaches the customer as remediation text
+// only, never as part of the frozen checks.compiler JSON surface.
+type ReadinessOriginFinding struct {
+	Origin string
+	Class  string
+}
+
+// ReadinessDeclarationMismatch names one selected root whose manifest
+// declares a typescript version other than the compiler the scan will use.
+type ReadinessDeclarationMismatch struct {
+	Root     string
+	Declared string
+}
+
+// ReadinessCheck is one entry in ReadinessChecks. Which optional fields
+// accompany which code is the frozen compiler-check contract, pinned by
+// cmd/coach's aggregation acceptance table; the json:"-" fields never
+// serialize and reach the customer as rendered text only.
 type ReadinessCheck struct {
-	State             ReadinessState         `json:"state"`
-	Code              string                 `json:"code,omitempty"`
-	Version           string                 `json:"version,omitempty"`
-	ExpectedVersion   string                 `json:"expected_version,omitempty"`
-	FoundVersion      string                 `json:"found_version,omitempty"`
-	SupportedVersions []string               `json:"supported_versions,omitempty"`
-	RootFindings      []ReadinessRootFinding `json:"root_findings,omitempty"`
-	Detail            string                 `json:"detail,omitempty"`
-	DeclaredVersion   string                 `json:"-"`
-	DeclarationOrigin string                 `json:"-"`
+	State             ReadinessState           `json:"state"`
+	Code              string                   `json:"code,omitempty"`
+	Version           string                   `json:"version,omitempty"`
+	ExpectedVersion   string                   `json:"expected_version,omitempty"`
+	FoundVersion      string                   `json:"found_version,omitempty"`
+	SupportedVersions []string                 `json:"supported_versions,omitempty"`
+	RootFindings      []ReadinessRootFinding   `json:"root_findings,omitempty"`
+	Detail            string                   `json:"detail,omitempty"`
+	DeclaredVersion   string                   `json:"-"`
+	DeclarationOrigin string                   `json:"-"`
+	OriginFindings    []ReadinessOriginFinding `json:"-"`
+
+	DeclarationMismatches []ReadinessDeclarationMismatch `json:"-"`
 }
 
 // ReadinessChecks is the fixed set of independently discoverable checks:
@@ -133,11 +132,9 @@ type ReadinessGap struct {
 	Code string `json:"code"`
 }
 
-// ReadinessWarning is a warning-class condition: unlike a ReadinessGap it
-// never blocks readiness on its own, elevating status only as far as
-// ready_with_limits. Entries are discriminated by Code: node_untested uses
-// found_major/tested_major/floor_major; compiler_declaration_mismatch uses
-// declared_version/found_version/declaration_origin.
+// ReadinessWarning never blocks readiness on its own, elevating status only
+// as far as ready_with_limits. Entries are discriminated by Code, and each
+// code populates its own subset of the fields below.
 type ReadinessWarning struct {
 	Code              string `json:"code"`
 	FoundMajor        int    `json:"found_major,omitempty"`
@@ -146,6 +143,7 @@ type ReadinessWarning struct {
 	DeclaredVersion   string `json:"declared_version,omitempty"`
 	FoundVersion      string `json:"found_version,omitempty"`
 	DeclarationOrigin string `json:"declaration_origin,omitempty"`
+	Root              string `json:"root,omitempty"`
 }
 
 type ReadinessNextAction struct {
@@ -238,72 +236,6 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 	}, nil
 }
 
-// checkProjectShape reports whether revision looks like a Node/TypeScript
-// project at all: a committed package.json at the repository root, or, once
-// policyPassed is true, at or above at least one of the policy's declared
-// roots (nearest package.json walking toward the repository root, matching
-// compiler resolution). Without a validated policy, a non-root package.json
-// is not a reliable signal -- roots is untrusted input until a policy has
-// passed schema/content validation -- so the root-only heuristic is the
-// correct, conservative default when there is no other signal available.
-// This is still a coarse, deliberately shallow signal: layer discovery
-// beyond "does package.json exist here" is the policy check's job.
-func checkProjectShape(dir, revision string, roots []string, policyPassed bool) (ReadinessCheck, error) {
-	exists, err := fileExistsAtRevision(dir, revision, "package.json")
-	if err != nil {
-		return ReadinessCheck{}, err
-	}
-	if exists {
-		return ReadinessCheck{State: ReadinessPass}, nil
-	}
-
-	if policyPassed {
-		found, err := packageJSONExistsUnderAnyRoot(dir, revision, roots)
-		if err != nil {
-			return ReadinessCheck{}, err
-		}
-		if found {
-			return ReadinessCheck{State: ReadinessPass}, nil
-		}
-	}
-
-	return ReadinessCheck{State: ReadinessFail, Code: GapUnsupportedRepositoryShape}, nil
-}
-
-// packageJSONExistsUnderAnyRoot reports whether a package.json blob exists
-// at or above any of roots at revision. The walk uses fileExistsAtRevision
-// (Git snapshot), never worktree os.Stat, so it matches compiler
-// nearest-manifest resolution without mixing host state into a snapshot
-// check. roots: ["."] is skipped here because the caller already probed
-// the repository-root package.json and must not walk down.
-func packageJSONExistsUnderAnyRoot(dir, revision string, roots []string) (bool, error) {
-	for _, root := range roots {
-		found, err := packageJSONExistsWalkingUp(dir, revision, root)
-		if err != nil || found {
-			return found, err
-		}
-	}
-	return false, nil
-}
-
-func packageJSONExistsWalkingUp(dir, revision, root string) (bool, error) {
-	current := path.Clean(strings.TrimSpace(root))
-	if current == "" || current == "." {
-		return false, nil
-	}
-	for {
-		exists, err := fileExistsAtRevision(dir, revision, path.Join(current, "package.json"))
-		if err != nil || exists {
-			return exists, err
-		}
-		parent := path.Dir(current)
-		if parent == "." || parent == current {
-			return false, nil
-		}
-		current = parent
-	}
-}
-
 // checkPolicy loads and validates the project-config policy file at
 // revision, reusing loadProjectConfigForReadiness (project.go) -- the same
 // Git-snapshot read/validate path LoadProjectConfig uses, but with a git-
@@ -342,78 +274,6 @@ func checkPackageManager() ReadinessCheck {
 	return ReadinessCheck{State: ReadinessNotChecked}
 }
 
-// fileExistsAtRevision reports whether repoPath exists as a blob at
-// revision, without reading its content. It reuses runProjectConfigGit's
-// bounded git invocation rather than a bespoke exec call.
-//
-// The check runs in three steps because no single git-plumbing call
-// unambiguously reports "this path is absent" separately from "this
-// repository/revision/object could not be read":
-//
-//  1. Confirm revision itself resolves to a commit. Any failure here (bad
-//     revision, unreadable repository, corrupt commit/tree objects) is
-//     unambiguously operational.
-//  2. Resolve repoPath within revision's tree via `git ls-tree --full-tree
-//     <revision> -- <repoPath>`, which walks tree objects but never opens
-//     blob content. `--full-tree` is required: without it, ls-tree's
-//     pathspec is interpreted relative to dir (the process's cwd), not the
-//     repository root, so a caller running from any subdirectory would get
-//     a false "absent" result for a path that exists at revision -- the
-//     same root-relative semantics loadProjectConfigForReadiness's
-//     `git show <rev>:<path>` already has. Dropping `--full-tree` in a
-//     future edit would silently reintroduce that false-negative readiness
-//     verdict. The entry type must be blob: a tree (or gitlink) at the
-//     same path is not the file the snapshot checks look for, and treating
-//     it as present would let a directory named package.json pass
-//     project_shape. This call distinguishes the remaining states by its
-//     own exit code, not just its output: it exits 0 with empty stdout
-//     when repoPath is genuinely absent from the tree, but exits non-zero
-//     when a tree object along the path cannot be read (e.g. a corrupt or
-//     missing subtree) -- a case `git rev-parse --verify <rev>:<path>`
-//     cannot distinguish from "absent", and which must fail closed as an
-//     operational error rather than silently report the path missing.
-//  3. Confirm the resolved blob object is actually present and readable via
-//     `git cat-file -e <sha>` on the concrete blob SHA. Step 2's `ls-tree`
-//     only reads the tree entry recording the blob's SHA, not the blob
-//     itself, so a corrupt/missing blob object still resolves a SHA there;
-//     any failure here means the object store itself is unreadable, which
-//     must also fail closed rather than report the path absent.
-func fileExistsAtRevision(dir, revision, repoPath string) (bool, error) {
-	if _, err := runProjectConfigGit(dir, "cat-file", "-e", revision+"^{commit}"); err != nil {
-		return false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: revision %q could not be verified: %s", revision, err)}
-	}
-
-	output, err := runProjectConfigGit(dir, "ls-tree", "--full-tree", revision, "--", repoPath)
-	if err != nil {
-		return false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be resolved at revision %q: %s", repoPath, revision, err)}
-	}
-	blobSHA, ok := lsTreeBlobSHA(output)
-	if !ok {
-		return false, nil
-	}
-
-	if _, err := runProjectConfigGit(dir, "cat-file", "-e", blobSHA); err != nil {
-		return false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be read at revision %q: %s", repoPath, revision, err)}
-	}
-	return true, nil
-}
-
-func lsTreeBlobSHA(output []byte) (string, bool) {
-	trimmed := strings.TrimSpace(string(output))
-	if trimmed == "" || strings.Contains(trimmed, "\n") {
-		return "", false
-	}
-	meta, _, found := strings.Cut(trimmed, "\t")
-	if !found {
-		return "", false
-	}
-	fields := strings.Fields(meta)
-	if len(fields) != 3 || fields[1] != "blob" {
-		return "", false
-	}
-	return fields[2], true
-}
-
 // ValidateProjectConfigPath validates a --project-config value's shape using
 // the same rules LoadProjectConfig enforces, without touching Git or the
 // filesystem. --check-project's argument validation calls this before any
@@ -422,246 +282,4 @@ func lsTreeBlobSHA(output []byte) (string, bool) {
 // surfacing as a false policy_missing/policy_invalid readiness gap.
 func ValidateProjectConfigPath(repoPath string) error {
 	return validateProjectConfigPath(repoPath)
-}
-
-var errNodeNotFound = errors.New("node executable not found on PATH")
-
-// errNodeVersionProbeTimedOut signals that `node --version` did not
-// complete within nodeVersionProbeTimeout; see checkNodeReadiness's doc for
-// why this is classified separately from errNodeNotFound.
-var errNodeVersionProbeTimedOut = errors.New("node --version timed out")
-
-const (
-	nodeVersionProbeTimeout   = 10 * time.Second
-	maxNodeVersionProbeOutput = 4 << 10
-)
-
-// errBoundedProbeTimedOut is runBoundedSubprocessProbe's shared timeout
-// signal; every host subprocess probe in this package (Node/mise version
-// and install-location detection) maps it onto its own domain error rather
-// than leaking a generic message to a readiness/runtime consumer.
-var errBoundedProbeTimedOut = errors.New("bounded subprocess probe timed out")
-
-// runBoundedSubprocessProbe runs name with args, capped at timeout wall
-// clock and maxOutput bytes of stdout, so a hung or unbounded-output host
-// tool fails closed rather than wedging the CLI. exitErr carries the
-// process's own non-zero-exit error uninterpreted -- callers assign their
-// own meaning (a non-zero mise exit means "no candidate"; a non-zero node
-// exit means a real error) -- while err covers every other spawn/read
-// failure, with errBoundedProbeTimedOut identifying a deadline specifically.
-func runBoundedSubprocessProbe(ctx context.Context, timeout time.Duration, maxOutput int64, name string, args ...string) (data []byte, exitErr, err error) {
-	return runBoundedSubprocessProbeAt(ctx, timeout, maxOutput, "", nil, name, args...)
-}
-
-func runBoundedSubprocessProbeAt(ctx context.Context, timeout time.Duration, maxOutput int64, dir string, env []string, name string, args ...string) (data []byte, exitErr, err error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, name, args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	if env != nil {
-		cmd.Env = env
-	}
-	stdout, pipeErr := cmd.StdoutPipe()
-	if pipeErr != nil {
-		return nil, nil, fmt.Errorf("starting %s: %w", name, pipeErr)
-	}
-	if startErr := cmd.Start(); startErr != nil {
-		return nil, nil, fmt.Errorf("starting %s: %w", name, startErr)
-	}
-
-	data, readErr := io.ReadAll(io.LimitReader(stdout, maxOutput+1))
-	waitErr := cmd.Wait()
-
-	// Checked ahead of readErr/waitErr: killing the child on deadline makes
-	// both of those non-nil too, but the deadline is the true, deterministic
-	// cause and must classify as a timeout rather than a generic run/read
-	// failure.
-	if ctx.Err() == context.DeadlineExceeded {
-		return nil, nil, errBoundedProbeTimedOut
-	}
-	if readErr != nil {
-		return nil, nil, fmt.Errorf("reading %s output: %w", name, readErr)
-	}
-	if int64(len(data)) > maxOutput {
-		return nil, nil, fmt.Errorf("%s output exceeded %d-byte budget", name, maxOutput)
-	}
-	if waitErr != nil {
-		return nil, waitErr, nil
-	}
-	return data, nil, nil
-}
-
-// detectHostNodeMajor is the Node-detection seam: it looks up `node` on
-// PATH and parses `node --version`'s major component. Tests may replace it
-// to exercise node_missing/node_below_minimum without depending on the host
-// environment's actual Node installation.
-var detectHostNodeMajor = func() (rawVersion string, major int, err error) {
-	if _, lookErr := exec.LookPath("node"); lookErr != nil {
-		return "", 0, errNodeNotFound
-	}
-
-	data, exitErr, probeErr := runBoundedSubprocessProbe(context.Background(), nodeVersionProbeTimeout, maxNodeVersionProbeOutput, "node", "--version")
-	switch {
-	case errors.Is(probeErr, errBoundedProbeTimedOut):
-		return "", 0, errNodeVersionProbeTimedOut
-	case probeErr != nil:
-		return "", 0, probeErr
-	case exitErr != nil:
-		return "", 0, fmt.Errorf("running node --version: %w", exitErr)
-	}
-
-	rawVersion = strings.TrimSpace(string(data))
-	major, err = parseNodeMajor(rawVersion)
-	return rawVersion, major, err
-}
-
-func parseNodeMajor(rawVersion string) (int, error) {
-	trimmed := strings.TrimPrefix(rawVersion, "v")
-	majorPart, _, _ := strings.Cut(trimmed, ".")
-	major, err := strconv.Atoi(majorPart)
-	if err != nil {
-		return 0, fmt.Errorf("unparsable node version %q", rawVersion)
-	}
-	return major, nil
-}
-
-// checkNodeReadiness compares the discovered host Node major against
-// MinimumSupportedNodeMajor and TestedNodeMajor: node_missing only when Node
-// cannot be found on PATH at all (errNodeNotFound). Every other
-// detectHostNodeMajor failure -- unparsable version output, a probe
-// timeout, or a run failure -- means Node is actually present and was
-// invoked but could not be confirmed to meet the floor, so it is reported
-// as node_below_minimum with whatever diagnostic was observed rather than
-// the misleading node_missing. A major below the floor is the same gap; a
-// major at or above the floor but different from TestedNodeMajor is the
-// node_untested warning, not a gap.
-func checkNodeReadiness() ReadinessCheck {
-	rawVersion, major, err := detectHostNodeMajor()
-	if err != nil {
-		if errors.Is(err, errNodeNotFound) {
-			return ReadinessCheck{State: ReadinessFail, Code: GapNodeMissing}
-		}
-		foundVersion := rawVersion
-		switch {
-		case errors.Is(err, errNodeVersionProbeTimedOut):
-			foundVersion = "timed out"
-		case foundVersion == "":
-			foundVersion = fmt.Sprintf("unparsable: %s", err)
-		}
-		return ReadinessCheck{State: ReadinessFail, Code: GapNodeBelowMinimum, FoundVersion: foundVersion}
-	}
-	if major < MinimumSupportedNodeMajor {
-		return ReadinessCheck{State: ReadinessFail, Code: GapNodeBelowMinimum, FoundVersion: rawVersion}
-	}
-	if major != TestedNodeMajor {
-		return ReadinessCheck{State: ReadinessPass, Code: WarnNodeUntested, Version: rawVersion}
-	}
-	return ReadinessCheck{State: ReadinessPass, Version: rawVersion}
-}
-
-var alwaysRelevantMetadataBasenames = map[string]bool{
-	"package.json":        true,
-	"package-lock.json":   true,
-	"yarn.lock":           true,
-	"pnpm-lock.yaml":      true,
-	"npm-shrinkwrap.json": true,
-	"bun.lockb":           true,
-}
-
-// detectRelevantDirtyWorktree lists uncommitted/untracked paths -- via `git
-// status`, path names only, never their content -- relevant to the
-// readiness result: see isRelevantDirtyPath for what counts as relevant.
-func detectRelevantDirtyWorktree(dir string, roots []string, policyPath string) (ReadinessDirtyWorktree, error) {
-	entries, err := gitWorktreeStatus(dir)
-	if err != nil {
-		return ReadinessDirtyWorktree{}, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: git status failed: %s", err)}
-	}
-
-	relevant := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if isRelevantDirtyPath(entry.path, roots, policyPath) {
-			relevant = append(relevant, entry.path)
-		}
-	}
-	sort.Strings(relevant)
-
-	return ReadinessDirtyWorktree{RelevantChanges: len(relevant) > 0, Paths: relevant}, nil
-}
-
-func isRelevantDirtyPath(candidate string, roots []string, policyPath string) bool {
-	if candidate == policyPath {
-		return true
-	}
-	base := path.Base(candidate)
-	if strings.HasPrefix(base, "tsconfig") {
-		return true
-	}
-	if alwaysRelevantMetadataBasenames[base] {
-		return true
-	}
-	for _, root := range roots {
-		if pathUnderRoot(candidate, root) {
-			return true
-		}
-	}
-	return false
-}
-
-func pathUnderRoot(candidate, root string) bool {
-	if root == "." || root == "" {
-		return true
-	}
-	return candidate == root || strings.HasPrefix(candidate, root+"/")
-}
-
-type worktreeStatusEntry struct {
-	code string
-	path string
-}
-
-// Dirty-worktree status boundary budgets, mirroring project.go's
-// maxProjectConfig* and project_snapshot.go's maxSnapshot*: `git status` on
-// a large or pathological worktree must fail closed instead of hanging the
-// CLI or exhausting memory, the same as every other git read this package
-// performs.
-const (
-	maxDirtyWorktreeStatusListingBytes = 16 << 20
-	maxDirtyWorktreeGitStderr          = 64 << 10
-	dirtyWorktreeGitTimeout            = 30 * time.Second
-)
-
-// runDirtyWorktreeGit is the git seam used by gitWorktreeStatus. Tests may
-// replace it to exercise timeout and bound failures without hanging.
-var runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
-	return runGitBytesBounded(dir, maxDirtyWorktreeStatusListingBytes, maxDirtyWorktreeGitStderr, dirtyWorktreeGitTimeout, args...)
-}
-
-// gitWorktreeStatus parses `git status --porcelain=v1 --untracked-files=all
-// -z`. Rename/copy records emit two NUL-delimited fields (new path, then
-// old path); the old path is consumed and discarded since only path
-// identity, never diff content, is used by any caller.
-func gitWorktreeStatus(dir string) ([]worktreeStatusEntry, error) {
-	output, err := runDirtyWorktreeGit(dir, "status", "--porcelain=v1", "--untracked-files=all", "-z")
-	if err != nil {
-		return nil, err
-	}
-
-	fields := splitNULPaths(output)
-	entries := make([]worktreeStatusEntry, 0, len(fields))
-	for i := 0; i < len(fields); {
-		raw := fields[i]
-		i++
-		if len(raw) < 3 {
-			continue
-		}
-		code := raw[:2]
-		entries = append(entries, worktreeStatusEntry{code: code, path: raw[3:]})
-		if strings.ContainsAny(code, "RC") && i < len(fields) {
-			i++
-		}
-	}
-	return entries, nil
 }

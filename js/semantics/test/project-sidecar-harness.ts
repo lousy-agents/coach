@@ -87,29 +87,35 @@ export function file(path: string, content: string): WireFile {
 
 let nextId = 1;
 
+type PartialRequest = Omit<WireRequest, "version" | "op" | "id"> & Partial<Pick<WireRequest, "version" | "op" | "id">>;
+
+interface SidecarRun {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+}
+
 export function runSidecar(
-  request: Omit<WireRequest, "version" | "op" | "id"> & Partial<Pick<WireRequest, "version" | "op" | "id">>,
+  request: PartialRequest,
   env?: Record<string, string>,
   args?: readonly string[],
 ): Promise<{ response: WireResponse; rawLine: string; exitCode: number | null }> {
-  const fullRequest: WireRequest = {
-    version: 1,
-    op: "analyze_project",
-    id: nextId++,
-    ...request,
-  };
   const argv =
     args === undefined
       ? [`--compiler-module=${DEFAULT_COMPILER_MODULE}`, `--native-package=${DEFAULT_NATIVE_PACKAGE}`]
       : [...args];
-  return spawnAndRead(fullRequest, env, argv);
+  return spawnAndCollect(fullRequest(request), env, argv).then(readResponse);
 }
 
-function spawnAndRead(
-  fullRequest: WireRequest,
-  env?: Record<string, string>,
-  args?: readonly string[],
-): Promise<{ response: WireResponse; rawLine: string; exitCode: number | null }> {
+export function spawnSidecarWithoutResponse(request: PartialRequest, args: readonly string[]): Promise<SidecarRun> {
+  return spawnAndCollect(fullRequest(request), undefined, args);
+}
+
+function fullRequest(request: PartialRequest): WireRequest {
+  return { version: 1, op: "analyze_project", id: nextId++, ...request };
+}
+
+function spawnAndCollect(request: WireRequest, env?: Record<string, string>, args?: readonly string[]): Promise<SidecarRun> {
   return new Promise((resolve, reject) => {
     const child = spawn(BIN_PATH, args ? [...args] : [], {
       stdio: ["pipe", "pipe", "pipe"],
@@ -128,7 +134,7 @@ function spawnAndRead(
     const budget = setTimeout(() => {
       finish(() => {
         child.kill("SIGKILL");
-        reject(new Error(`sidecar did not respond within the test budget; stderr so far: ${buckets.stderr}`));
+        reject(new Error(`sidecar did not exit within the test budget; stderr so far: ${buckets.stderr}`));
       });
     }, 30000);
     budget.unref();
@@ -142,29 +148,23 @@ function spawnAndRead(
       buckets.stderr += chunk;
     });
     child.on("error", (err) => finish(() => reject(err)));
-    child.on("exit", (code) => finish(() => settleExit(code, buckets, resolve, reject)));
+    child.on("exit", (code) => finish(() => resolve({ exitCode: code, stdout: buckets.stdout, stderr: buckets.stderr })));
 
-    child.stdin.write(`${JSON.stringify(fullRequest)}\n`);
+    child.stdin.write(`${JSON.stringify(request)}\n`);
     child.stdin.end();
   });
 }
 
-function settleExit(
-  code: number | null,
-  buckets: { stdout: string; stderr: string },
-  resolve: (v: { response: WireResponse; rawLine: string; exitCode: number | null }) => void,
-  reject: (e: Error) => void,
-): void {
-  const newline = buckets.stdout.indexOf("\n");
-  const rawLine = newline === -1 ? buckets.stdout : buckets.stdout.slice(0, newline);
+function readResponse(run: SidecarRun): { response: WireResponse; rawLine: string; exitCode: number | null } {
+  const newline = run.stdout.indexOf("\n");
+  const rawLine = newline === -1 ? run.stdout : run.stdout.slice(0, newline);
   if (rawLine.trim() === "") {
-    reject(new Error(`sidecar exited (code ${code}) without a response line; stderr: ${buckets.stderr}`));
-    return;
+    throw new Error(`sidecar exited (code ${run.exitCode}) without a response line; stderr: ${run.stderr}`);
   }
   try {
-    resolve({ response: JSON.parse(rawLine) as WireResponse, rawLine, exitCode: code });
+    return { response: JSON.parse(rawLine) as WireResponse, rawLine, exitCode: run.exitCode };
   } catch (err) {
-    reject(new Error(`malformed response JSON: ${String(err)}; line=${rawLine}`));
+    throw new Error(`malformed response JSON: ${String(err)}; line=${rawLine}`);
   }
 }
 

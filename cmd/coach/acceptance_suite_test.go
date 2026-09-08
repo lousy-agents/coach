@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,6 +36,33 @@ var _ = BeforeSuite(func() {
 	output, err := build.CombinedOutput()
 	Expect(err).NotTo(HaveOccurred(), "building the command: %s", output)
 })
+
+// runCoachBinary runs one coach invocation and reports its streams and exit
+// code. A failure that is not an *exec.ExitError fails the spec rather than
+// being reported as an exit code the command never produced. A nil env
+// inherits this process's environment.
+func runCoachBinary(binary, workingDir string, env []string, args ...string) (stdout, stderr []byte, exitCode int) {
+	command := exec.Command(binary, args...)
+	command.Dir = workingDir
+	command.Env = env
+	var outBuf, errBuf bytes.Buffer
+	command.Stdout = &outBuf
+	command.Stderr = &errBuf
+
+	err := command.Run()
+	if err == nil {
+		return outBuf.Bytes(), errBuf.Bytes(), 0
+	}
+	var exitErr *exec.ExitError
+	Expect(errors.As(err, &exitErr)).To(BeTrue(), "expected an ExitError, got: %s (stderr: %s)", err, errBuf.String())
+	return outBuf.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
+}
+
+// stubToolchainEnv is the scrubbed environment a spec gives coach so it
+// resolves node and mise from its own stub directory rather than the host.
+func stubToolchainEnv(path string) []string {
+	return []string{"PATH=" + path, "HOME=" + os.Getenv("HOME")}
+}
 
 func newTempGitRepo() string {
 	directory, err := os.MkdirTemp("", "coach-acceptance-repo-*")
