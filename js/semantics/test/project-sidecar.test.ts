@@ -23,6 +23,7 @@ import {
   edgesTo,
   file,
   runSidecar,
+  spawnSidecarWithoutResponse,
   type WireFile,
 } from "./project-sidecar-harness.js";
 
@@ -153,6 +154,32 @@ describe("--native-package", () => {
     assert.equal(response.error, undefined, JSON.stringify(response));
     assert.equal(isAbsolute(DEFAULT_NATIVE_PACKAGE), true);
     assert.notEqual(DEFAULT_NATIVE_PACKAGE, join(DEFAULT_NATIVE_PACKAGE, "lib", "tsc"));
+  });
+});
+
+describe("--coach-test-hook", () => {
+  test("crash-partway dies before any response, printing the file URL and node:internal frames the caller must scrub", async () => {
+    const { exitCode, stdout, stderr } = await spawnSidecarWithoutResponse({ files: aliasImportSnapshot() }, [
+      `--compiler-module=${REAL_TS_PACKAGE_DIR}`,
+      `--native-package=${REAL_NATIVE_PACKAGE_DIR}`,
+      "--coach-test-hook=crash-partway",
+    ]);
+    assert.notEqual(exitCode, 0, stderr);
+    assert.equal(stdout.trim(), "", "a crash partway through analysis writes no response line");
+    assert.match(stderr, /crashing partway through analysis/);
+    assert.match(stderr, /node:internal/, "the raw stderr carries a runtime stack frame Coach must not relay");
+    assert.match(stderr, /file:\/\//, "the raw stderr carries a file URL under the analyzer directory Coach must not relay");
+  });
+
+  test("an unrecognized hook value changes nothing: the analysis completes normally", async () => {
+    const { response, exitCode } = await runSidecar({ files: aliasImportSnapshot() }, undefined, [
+      `--compiler-module=${REAL_TS_PACKAGE_DIR}`,
+      `--native-package=${REAL_NATIVE_PACKAGE_DIR}`,
+      "--coach-test-hook=not-a-hook",
+    ]);
+    assert.equal(exitCode, 0, JSON.stringify(response));
+    assert.equal(response.error, undefined, JSON.stringify(response));
+    assert.equal(response.coverage.complete, true, JSON.stringify(response.coverage));
   });
 });
 

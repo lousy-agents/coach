@@ -1,0 +1,1 @@
+{"version":3,"file":"compiler-argv.d.ts","sourceRoot":"","sources":["../../src/project-sidecar/compiler-argv.ts"],"names":[],"mappings":"AAMA,eAAO,MAAM,2BAA2B,uBAAuB,CAAC;AAChE,eAAO,MAAM,0BAA0B,sBAAsB,CAAC;AAE9D;;;;GAIG;AACH,wBAAsB,sBAAsB,CAAC,IAAI,EAAE,SAAS,MAAM,EAAE,GAAG,OAAO,CAAC,GAAG,CAAC,CAMlF;AAED,wBAAsB,yBAAyB,CAAC,IAAI,EAAE,SAAS,MAAM,EAAE,GAAG,OAAO,CAAC,MAAM,CAAC,CAsBxF"}

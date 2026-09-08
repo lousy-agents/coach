@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -87,22 +86,7 @@ func repointCompilerExportSubpath(packageDir, subpath, target string) {
 }
 
 func runCoachCodesignalBaselineEnv(repo, path string, extraArgs ...string) (stdout, stderr []byte, exitCode int) {
-	args := append([]string{"codesignal", "--baseline"}, extraArgs...)
-	command := exec.Command(commandPath, args...)
-	command.Dir = repo
-	command.Env = []string{"PATH=" + path, "HOME=" + os.Getenv("HOME")}
-	var outBuf, errBuf bytes.Buffer
-	command.Stdout = &outBuf
-	command.Stderr = &errBuf
-
-	err := command.Run()
-	if err == nil {
-		return outBuf.Bytes(), errBuf.Bytes(), 0
-	}
-
-	var exitErr *exec.ExitError
-	Expect(errors.As(err, &exitErr)).To(BeTrue(), "expected an ExitError, got: %s (stderr: %s)", err, errBuf.String())
-	return outBuf.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
+	return runCoachBinary(commandPath, repo, stubToolchainEnv(path), append([]string{"codesignal", "--baseline"}, extraArgs...)...)
 }
 
 func codesignalArgsFromRemediationLine(stderr []byte) []string {
@@ -621,7 +605,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 	})
 
 	When("the installed compiler is an exact 5.x version", func() {
-		It("exits 2 with empty stdout and one stderr line naming typescript_version_mismatch and the --check-project invocation", func() {
+		It("exits 2 with empty stdout and one stderr line naming typescript_version_mismatch, each root's finding, and the --check-project invocation", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
 			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersWithoutImport)
@@ -634,13 +618,15 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_version_mismatch: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_version_mismatch (.@5.4.0): run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
 			Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
+			Expect(strings.Count(strings.TrimSpace(string(stderr)), "\n")).To(Equal(0), "the refusal stays one line, got %q", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring(repo), "the refusal must never print a filesystem path, got %q", stderr)
 		})
 	})
 
 	When("two selected roots pin disagreeing exact typescript versions", func() {
-		It("exits 2 with empty stdout and one stderr line naming typescript_version_conflict and the --check-project invocation", func() {
+		It("exits 2 with empty stdout and one stderr line naming typescript_version_conflict, each root's finding, and the --check-project invocation", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
 			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersWithoutImport)
@@ -655,8 +641,10 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_version_conflict: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_version_conflict (apps/web@7.0.2,apps/api@5.4.0): run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
 			Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
+			Expect(strings.Count(strings.TrimSpace(string(stderr)), "\n")).To(Equal(0), "the refusal stays one line, got %q", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring(repo), "the refusal must never print a filesystem path, got %q", stderr)
 		})
 	})
 

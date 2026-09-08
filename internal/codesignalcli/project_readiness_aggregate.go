@@ -1,50 +1,5 @@
 package codesignalcli
 
-func statusForGapCode(code string) ReadinessStatus {
-	switch code {
-	case GapUnsupportedRepositoryShape:
-		return StatusOutsideSupport
-	case GapNodeMissing, GapNodeBelowMinimum, GapTypescriptCompilerMissing, GapTypescriptVersionMismatch, GapTypescriptVersionConflict, GapPackageManagerAmbiguous, GapPackageManagerConfigUnverifiable:
-		return StatusNeedsPrerequisite
-	case GapPolicyMissing, GapPolicyInvalid:
-		return StatusNeedsPolicy
-	default:
-		return StatusReady
-	}
-}
-
-func statusRank(status ReadinessStatus) int {
-	switch status {
-	case StatusOutsideSupport:
-		return 4
-	case StatusNeedsPrerequisite:
-		return 3
-	case StatusNeedsPolicy:
-		return 2
-	case StatusReadyWithLimits:
-		return 1
-	default:
-		return 0
-	}
-}
-
-func nextActionForGapCode(code string) (string, bool) {
-	switch code {
-	case GapUnsupportedRepositoryShape:
-		return "confirm_repository_shape", true
-	case GapNodeMissing, GapNodeBelowMinimum:
-		return "install_node", true
-	case GapTypescriptCompilerMissing, GapTypescriptVersionMismatch, GapTypescriptVersionConflict:
-		return "prepare_compiler", true
-	case GapPackageManagerAmbiguous, GapPackageManagerConfigUnverifiable:
-		return "resolve_package_manager", true
-	case GapPolicyMissing, GapPolicyInvalid:
-		return "author_policy", true
-	default:
-		return "", false
-	}
-}
-
 func aggregateReadiness(checks ReadinessChecks, dirtyRelevant bool) (ReadinessStatus, []ReadinessGap, []ReadinessNextAction, []ReadinessWarning) {
 	codes := failingReadinessCodes(checks)
 	gaps, nextActions, status := readinessFromGapCodes(codes)
@@ -88,25 +43,28 @@ func hasReadinessLimitWarning(checks ReadinessChecks, dirtyRelevant bool) bool {
 
 func readinessWarnings(checks ReadinessChecks) []ReadinessWarning {
 	warnings := make([]ReadinessWarning, 0, 1)
-	if warning, ok := compilerDeclarationWarning(checks.Compiler); ok {
-		warnings = append(warnings, warning)
-	}
+	warnings = append(warnings, compilerDeclarationWarnings(checks.Compiler)...)
 	if warning, ok := nodeUntestedWarning(checks.Node); ok {
 		warnings = append(warnings, warning)
 	}
 	return warnings
 }
 
-func compilerDeclarationWarning(check ReadinessCheck) (ReadinessWarning, bool) {
+func compilerDeclarationWarnings(check ReadinessCheck) []ReadinessWarning {
 	if check.Code != WarnCompilerDeclarationMismatch {
-		return ReadinessWarning{}, false
+		return nil
 	}
-	return ReadinessWarning{
-		Code:              WarnCompilerDeclarationMismatch,
-		DeclaredVersion:   check.DeclaredVersion,
-		FoundVersion:      check.Version,
-		DeclarationOrigin: check.DeclarationOrigin,
-	}, true
+	warnings := make([]ReadinessWarning, 0, len(check.DeclarationMismatches))
+	for _, mismatch := range check.DeclarationMismatches {
+		warnings = append(warnings, ReadinessWarning{
+			Code:              WarnCompilerDeclarationMismatch,
+			DeclaredVersion:   mismatch.Declared,
+			FoundVersion:      check.Version,
+			DeclarationOrigin: check.DeclarationOrigin,
+			Root:              mismatch.Root,
+		})
+	}
+	return warnings
 }
 
 func nodeUntestedWarning(check ReadinessCheck) (ReadinessWarning, bool) {

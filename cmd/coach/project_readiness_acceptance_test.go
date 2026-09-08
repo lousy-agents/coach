@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -58,6 +56,7 @@ type readinessResultDoc struct {
 		DeclaredVersion   string `json:"declared_version"`
 		FoundVersion      string `json:"found_version"`
 		DeclarationOrigin string `json:"declaration_origin"`
+		Root              string `json:"root"`
 	} `json:"warnings"`
 	NextActions []struct {
 		Kind string `json:"kind"`
@@ -96,12 +95,8 @@ func writeStubNodeScript(version string) string {
 	return dir
 }
 
-// pathWithStubNode returns a PATH whose first entry is a stub `node`
-// reporting version, with every directory containing a real node/npm/mise
-// executable removed so the stub is the only "node" the child process can
-// resolve. mise is stripped too so resolveMiseGlobalCompiler deterministically
-// finds no global-mise candidate, regardless of whether the host running the
-// suite happens to have a real `mise` on PATH.
+// pathWithStubNode strips every real node/npm/mise directory, so a spec on
+// this PATH has no global-mise candidate however the host is configured.
 func pathWithStubNode(version string) string {
 	return writeStubNodeScript(version) + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
 }
@@ -143,21 +138,7 @@ func requireNodeUnreachable(path string) {
 // the child's PATH, so a deterministic node-dependent spec must control that
 // PATH.
 func runCoachCheckProjectEnv(workingDir, path string, args ...string) (stdout, stderr []byte, exitCode int) {
-	command := exec.Command(commandPath, append([]string{"codesignal"}, args...)...)
-	command.Dir = workingDir
-	command.Env = []string{"PATH=" + path, "HOME=" + os.Getenv("HOME")}
-	var outBuf, errBuf bytes.Buffer
-	command.Stdout = &outBuf
-	command.Stderr = &errBuf
-
-	err := command.Run()
-	if err == nil {
-		return outBuf.Bytes(), errBuf.Bytes(), 0
-	}
-
-	var exitErr *exec.ExitError
-	Expect(errors.As(err, &exitErr)).To(BeTrue(), "expected an ExitError, got: %s (stderr: %s)", err, errBuf.String())
-	return outBuf.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
+	return runCoachBinary(commandPath, workingDir, stubToolchainEnv(path), append([]string{"codesignal"}, args...)...)
 }
 
 // corruptCommittedBlob deletes path's loose object file after it has been
@@ -220,21 +201,12 @@ func pathWithHangingNode() string {
 	return writeHangingNodeScript() + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
 }
 
-// stubMiseInvocationLog is the filename writeStubMiseScript's stub appends
-// each invocation's argv to, one line per call.
 const stubMiseInvocationLog = "mise-invocations.log"
 const stubMiseCwdLog = "mise-probe-cwd.log"
 
-// writeStubMiseScript writes an executable `mise` script into a fresh temp
-// directory that always prints version regardless of its arguments,
-// mirroring writeStubNodeScript, and separately records each invocation's
-// argv into stubMiseInvocationLog in that same directory. resolveMiseGlobalCompiler
-// shells out to whatever `mise` is first on the child process's PATH, so a
-// spec that wants a specific, host-independent global-mise result must
-// control PATH with a stub rather than depend on whether the host actually
-// has mise installed; recording argv additionally lets a spec assert the
-// frozen mise mechanic invoked only a read-only detection command, never a
-// mutating one such as `mise install` or `mise use`.
+// writeStubMiseScript answers every mise invocation with version and
+// records each invocation's argv and working directory, so a spec can pin
+// both the outcome and the read-only command that produced it.
 func writeStubMiseScript(version string) string {
 	dir, err := os.MkdirTemp("", "coach-acceptance-stubmise-*")
 	Expect(err).NotTo(HaveOccurred())
@@ -1013,27 +985,6 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 		})
 	})
 
-	When("package.json declares a unique exact typescript version that is not installed, even though project mise pins a different exact version", func() {
-		It("reports fail/typescript_compiler_missing rather than passing the undeployed pin or silently selecting the mise pin", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
-			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"9.9.9\"\n")
-
-			path, _ := pathWithStubNodeAndMise("v24.9.9", "9.9.9")
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Compiler.State).To(Equal("fail"))
-			Expect(doc.Checks.Compiler.Code).To(Equal("typescript_compiler_missing"))
-			Expect(doc.Checks.Compiler.Version).NotTo(Equal("7.0.2"), "a declared-but-not-installed pin is not a selected compiler")
-			Expect(doc.Checks.Compiler.Version).NotTo(Equal("9.9.9"), "a lower-precedence origin must not be selected after a higher origin produced a candidate")
-			Expect(gapCodes(doc)).To(ContainElement("typescript_compiler_missing"))
-		})
-	})
-
 	When("package.json declares a unique exact typescript version and the worktree's project mise.toml also pins a different exact version", func() {
 		It("resolves from the project manifest origin, pinning that project outranks project mise rather than merely being the only candidate present", func() {
 			repo := newTempGitRepo()
@@ -1319,52 +1270,6 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 		})
 	})
 
-	When("package.json is not valid JSON, even though the worktree's project mise.toml would otherwise resolve a compiler cleanly", func() {
-		It("rejects the unreadable manifest as fail/typescript_compiler_missing rather than silently falling through to mise or crashing", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name": "example", "devDependencies": {`+"\n")
-			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"9.9.9\"\n")
-
-			path := pathWithStubNode("v24.9.9")
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Compiler.State).To(Equal("fail"))
-			Expect(doc.Checks.Compiler.Code).To(Equal("typescript_compiler_missing"))
-			Expect(doc.Checks.Compiler.Version).NotTo(Equal("9.9.9"), "an unreadable project manifest must never silently fall through to a lower-precedence origin")
-		})
-	})
-
-	When("package.json exists but is unreadable (permission-denied), even though the worktree's project mise.toml would otherwise resolve a compiler cleanly", func() {
-		It("rejects the unreadable manifest as fail/typescript_compiler_missing rather than silently falling through to mise", func() {
-			if os.Geteuid() == 0 {
-				Skip("cannot exercise a permission-denied read while running as root")
-			}
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
-			writeInstalledTypescript(repo, "7.0.2")
-			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"9.9.9\"\n")
-
-			packageJSONPath := filepath.Join(repo, "package.json")
-			Expect(os.Chmod(packageJSONPath, 0o000)).To(Succeed())
-			DeferCleanup(func() { os.Chmod(packageJSONPath, 0o644) })
-
-			path := pathWithStubNode("v24.9.9")
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Compiler.State).To(Equal("fail"))
-			Expect(doc.Checks.Compiler.Code).To(Equal("typescript_compiler_missing"))
-			Expect(doc.Checks.Compiler.Version).NotTo(Equal("9.9.9"), "an unreadable project manifest must never silently fall through to a lower-precedence origin")
-		})
-	})
-
 	When("the installed compiler is an exact 5.x version from its own package.json", func() {
 		It("reports fail/typescript_version_mismatch with supported_versions [7.0.2] rather than pass", func() {
 			repo := newTempGitRepo()
@@ -1391,49 +1296,8 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 		})
 	})
 
-	When("package.json declares a ^7 range, 7.0.2 is installed at the project origin, and project mise supplies 7.0.2", func() {
-		It("disqualifies the project origin and reports pass from mise with a compiler_declaration_mismatch warning", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"^7.0.2"}}`+"\n")
-			writeInstalledTypescript(repo, "7.0.2")
-			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"7.0.2\"\n")
-
-			path, _ := pathWithStubNodeAndMise("v24.9.9", "7.0.2")
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Compiler.State).To(Equal("pass"), "mise origin must supply the supported compiler after the range declaration is disqualified, got state=%s code=%s stdout=%s", doc.Checks.Compiler.State, doc.Checks.Compiler.Code, stdout)
-			Expect(doc.Checks.Compiler.Version).To(Equal("7.0.2"))
-			Expect(doc.Status).To(Equal("ready_with_limits"))
-			Expect(gapCodes(doc)).NotTo(ContainElement("compiler_declaration_mismatch"))
-			Expect(nextActionKinds(doc)).NotTo(ContainElement("prepare_compiler"))
-			Expect(doc.Warnings).To(ContainElement(HaveField("Code", "compiler_declaration_mismatch")))
-			var warning struct {
-				Code              string
-				DeclaredVersion   string
-				FoundVersion      string
-				DeclarationOrigin string
-			}
-			for _, w := range doc.Warnings {
-				if w.Code == "compiler_declaration_mismatch" {
-					warning.Code = w.Code
-					warning.DeclaredVersion = w.DeclaredVersion
-					warning.FoundVersion = w.FoundVersion
-					warning.DeclarationOrigin = w.DeclarationOrigin
-				}
-			}
-			Expect(warning.DeclaredVersion).To(Equal("^7.0.2"))
-			Expect(warning.FoundVersion).To(Equal("7.0.2"))
-			Expect(warning.DeclarationOrigin).To(Equal("manifest"))
-		})
-	})
-
 	When("package.json declares an exact out-of-set typescript version, 7.0.2 is installed at the project origin, and project mise supplies 7.0.2", func() {
-		It("disqualifies the project origin and reports pass from mise with a compiler_declaration_mismatch warning", func() {
+		It("passes from the project origin, which outranks the mise pin, and warns that the manifest declares a stale exact version", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"5.4.0"}}`+"\n")
@@ -1447,7 +1311,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 			var doc readinessResultDoc
 			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Compiler.State).To(Equal("pass"), "an out-of-set exact declaration must not certify the project origin even when 7.0.2 is installed there, got state=%s code=%s stdout=%s", doc.Checks.Compiler.State, doc.Checks.Compiler.Code, stdout)
+			Expect(doc.Checks.Compiler.State).To(Equal("pass"), "the compiler installed at the project origin is its candidate whatever the manifest declares, got state=%s code=%s stdout=%s", doc.Checks.Compiler.State, doc.Checks.Compiler.Code, stdout)
 			Expect(doc.Checks.Compiler.Version).To(Equal("7.0.2"))
 			Expect(doc.Status).To(Equal("ready_with_limits"))
 			Expect(gapCodes(doc)).NotTo(ContainElement("compiler_declaration_mismatch"))
@@ -1464,58 +1328,9 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 					warning.DeclarationOrigin = w.DeclarationOrigin
 				}
 			}
-			Expect(warning.DeclaredVersion).To(Equal("5.4.0"), "warning must name the out-of-set exact pin, got %+v stdout=%s", warning, stdout)
+			Expect(warning.DeclaredVersion).To(Equal("5.4.0"), "warning must name the stale exact pin, got %+v stdout=%s", warning, stdout)
 			Expect(warning.FoundVersion).To(Equal("7.0.2"))
 			Expect(warning.DeclarationOrigin).To(Equal("manifest"))
-		})
-	})
-
-	When("package.json declares an exact out-of-set typescript version, 7.0.2 is installed at the project origin, and no mise origin is available", func() {
-		It("reports fail/typescript_compiler_missing with found_version 7.0.2 rather than passing the project origin", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"5.4.0"}}`+"\n")
-			writeInstalledTypescript(repo, "7.0.2")
-
-			path := pathWithStubNode("v24.9.9")
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Compiler.State).To(Equal("fail"), "an out-of-set exact declaration must disqualify the project origin, got state=%s code=%s version=%s stdout=%s", doc.Checks.Compiler.State, doc.Checks.Compiler.Code, doc.Checks.Compiler.Version, stdout)
-			Expect(doc.Checks.Compiler.Code).To(Equal("typescript_compiler_missing"))
-			Expect(doc.Checks.Compiler.ExpectedVersion).To(Equal("7.0.2"))
-			Expect(doc.Checks.Compiler.FoundVersion).To(Equal("7.0.2"), "the probed in-set install at the disqualified origin must be found_version, got %q stdout=%s", doc.Checks.Compiler.FoundVersion, stdout)
-			Expect(doc.Checks.Compiler.Version).NotTo(Equal("7.0.2"), "the project origin must not be selected as a passing compiler")
-
-			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript")
-			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
-			Expect(string(textStdout)).To(ContainSubstring("5.4.0"), "gap text must name the out-of-set declaration, got %s", textStdout)
-		})
-	})
-
-	When("package.json declares a ^5 range, 5.4.0 is installed at the project origin, and no mise origin is available", func() {
-		It("reports fail/typescript_compiler_missing with found_version 5.4.0 rather than mismatch or a bare missing gap", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"^5.4.0"}}`+"\n")
-			writeInstalledTypescript(repo, "5.4.0")
-
-			path := pathWithStubNode("v24.9.9")
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Compiler.State).To(Equal("fail"))
-			Expect(doc.Checks.Compiler.Code).To(Equal("typescript_compiler_missing"), "a range never selects the project origin, so an out-of-set install is a probed rejected candidate on missing, not mismatch, got code=%s stdout=%s", doc.Checks.Compiler.Code, stdout)
-			Expect(doc.Checks.Compiler.ExpectedVersion).To(Equal("7.0.2"))
-			Expect(doc.Checks.Compiler.FoundVersion).To(Equal("5.4.0"), "the probed installed candidate must be found_version, got %q stdout=%s", doc.Checks.Compiler.FoundVersion, stdout)
-
-			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript")
-			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
-			Expect(string(textStdout)).To(ContainSubstring("^5.4.0"), "gap text must name the range declaration, got %s", textStdout)
 		})
 	})
 

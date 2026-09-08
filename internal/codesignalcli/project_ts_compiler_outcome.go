@@ -1,5 +1,32 @@
 package codesignalcli
 
+func compilerCheckFromAggregate(aggregate compilerAggregate) ReadinessCheck {
+	code, findings := compilerOutcomeFromAggregate(aggregate)
+	switch code {
+	case "":
+		return passingCompilerCheck(aggregate)
+	case GapTypescriptVersionConflict:
+		return ReadinessCheck{State: ReadinessFail, Code: code, RootFindings: findings}
+	case GapTypescriptVersionMismatch:
+		unsupported, _ := aggregate.firstOfClass(compilerClassUnsupported)
+		check := mismatchCompilerCheck(unsupported.version)
+		check.DeclaredVersion = aggregate.namedDeclaration()
+		return check
+	default:
+		return missingCompilerCheckFromAggregate(aggregate)
+	}
+}
+
+func passingCompilerCheck(aggregate compilerAggregate) ReadinessCheck {
+	check := ReadinessCheck{State: ReadinessPass, Version: aggregate.winner.version}
+	if mismatches := aggregate.declarationMismatches(); len(mismatches) > 0 {
+		check.Code = WarnCompilerDeclarationMismatch
+		check.DeclarationOrigin = compilerDeclarationOriginManifest
+		check.DeclarationMismatches = mismatches
+	}
+	return check
+}
+
 func mismatchCompilerCheck(found string) ReadinessCheck {
 	return ReadinessCheck{
 		State:             ReadinessFail,
@@ -8,6 +35,20 @@ func mismatchCompilerCheck(found string) ReadinessCheck {
 		FoundVersion:      found,
 		SupportedVersions: supportedTypescriptVersionsCopy(),
 	}
+}
+
+func missingCompilerCheckFromAggregate(aggregate compilerAggregate) ReadinessCheck {
+	found := ""
+	detail := ""
+	if nativeInvalid, ok := aggregate.firstOfClass(compilerClassNativeInvalid); ok {
+		found = nativeInvalid.version
+		detail = NativeTypescriptPackageName()
+	}
+
+	check := missingCompilerCheck(found, aggregate.project.rejectedDeclaration)
+	check.Detail = detail
+	check.OriginFindings = aggregate.originFindings()
+	return check
 }
 
 func missingCompilerCheck(found, declared string) ReadinessCheck {
@@ -21,117 +62,4 @@ func missingCompilerCheck(found, declared string) ReadinessCheck {
 		check.FoundVersion = found
 	}
 	return check
-}
-
-func firstPendingDecl(pending string, outcome compilerOriginOutcome) string {
-	if pending == "" && outcome.warnDecl {
-		return outcome.declared
-	}
-	return pending
-}
-
-func firstNonEmpty(current, next string) string {
-	if current != "" {
-		return current
-	}
-	return next
-}
-
-func compilerCheckFromNonEmptyOrigin(outcome compilerOriginOutcome, pendingDecl, pendingFound string) ReadinessCheck {
-	switch outcome.state {
-	case compilerOutcomePass:
-		return passOrMissingCompilerCheck(outcome, pendingDecl, pendingFound)
-	case compilerOutcomeMismatch:
-		found := outcome.found
-		if found == "" {
-			found = outcome.version
-		}
-		return mismatchCompilerCheck(found)
-	case compilerOutcomeConflict:
-		return ReadinessCheck{State: ReadinessFail, Code: GapTypescriptVersionConflict, RootFindings: outcome.rootFindings}
-	default:
-		return missingCompilerCheck(pendingFound, pendingDecl)
-	}
-}
-
-func passOrMissingCompilerCheck(outcome compilerOriginOutcome, pendingDecl, pendingFound string) ReadinessCheck {
-	location, installed, gap := resolvedInstalledCompiler(outcome)
-	switch gap {
-	case GapTypescriptCompilerMissing:
-		declared := firstNonEmpty(pendingDecl, outcome.version)
-		check := missingCompilerCheck(firstNonEmpty(installed, pendingFound), declared)
-		if location != "" {
-			check.Detail = NativeTypescriptPackageName()
-		}
-		return check
-	case GapTypescriptVersionMismatch:
-		return mismatchCompilerCheck(installed)
-	default:
-		return passingCompilerCheck(installed, pendingDecl)
-	}
-}
-
-func installedCompilerVersion(location, declared string) string {
-	version, exists, unreadable := readTypescriptVersionAt(location)
-	if !unreadable && exists {
-		return version
-	}
-	return declared
-}
-
-func passingCompilerCheck(installed, pendingDecl string) ReadinessCheck {
-	check := ReadinessCheck{State: ReadinessPass, Version: installed}
-	if pendingDecl != "" {
-		check.Code = WarnCompilerDeclarationMismatch
-		check.DeclaredVersion = pendingDecl
-		check.DeclarationOrigin = compilerDeclarationOriginManifest
-	}
-	return check
-}
-
-func runtimeResolutionFromOrigin(outcome compilerOriginOutcome) (compilerRuntimeResolution, error) {
-	switch outcome.state {
-	case compilerOutcomePass:
-		return locatableRuntimeResolution(outcome)
-	case compilerOutcomeMismatch:
-		return compilerRuntimeResolution{}, compilerUnresolved(GapTypescriptVersionMismatch)
-	case compilerOutcomeConflict:
-		return compilerRuntimeResolution{}, compilerUnresolved(GapTypescriptVersionConflict)
-	default:
-		return compilerRuntimeResolution{}, compilerUnresolved(GapTypescriptCompilerMissing)
-	}
-}
-
-func locatableRuntimeResolution(outcome compilerOriginOutcome) (compilerRuntimeResolution, error) {
-	location, installed, gap := resolvedInstalledCompiler(outcome)
-	if gap != "" {
-		return compilerRuntimeResolution{}, compilerUnresolved(gap)
-	}
-	return compilerRuntimeResolution{
-		Origin:            outcome.origin,
-		Version:           installed,
-		Path:              location,
-		NativePackagePath: nativePackageDirNextTo(location),
-	}, nil
-}
-
-// resolvedInstalledCompiler locates the origin's on-disk compiler and
-// returns its installed version. A non-empty gap is
-// GapTypescriptCompilerMissing or GapTypescriptVersionMismatch and is the
-// same code readiness and runtime resolution must report for that origin,
-// so the two projections cannot drift.
-func resolvedInstalledCompiler(outcome compilerOriginOutcome) (location, version, gap string) {
-	location, ok := locateCompilerForOrigin(outcome)
-	if !ok {
-		return "", "", GapTypescriptCompilerMissing
-	}
-	installed := installedCompilerVersion(location, outcome.version)
-	if !isSupportedTypescriptVersion(installed) {
-		return location, installed, GapTypescriptVersionMismatch
-	}
-	_, _, nativeOK := resolveNativePackage(location, installed)
-	if !nativeOK {
-		return location, installed, GapTypescriptCompilerMissing
-	}
-	return location, installed, ""
 }
