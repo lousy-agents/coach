@@ -34,7 +34,33 @@ func renderReadinessWarningLine(b *strings.Builder, warning ReadinessWarning) {
 		b.WriteString(")\n")
 		return
 	}
-	fmt.Fprintf(b, "  %s (found_major=%d tested_major=%d floor_major=%d)\n", warning.Code, warning.FoundMajor, warning.TestedMajor, warning.FloorMajor)
+}
+
+func renderReadinessNextActions(b *strings.Builder, actions []ReadinessNextAction) {
+	if len(actions) == 0 {
+		return
+	}
+	b.WriteString("\nNext actions:\n")
+	for _, action := range actions {
+		renderReadinessNextActionLine(b, action)
+	}
+}
+
+func renderReadinessNextActionLine(b *strings.Builder, action ReadinessNextAction) {
+	fmt.Fprintf(b, "  %s (executable=%t)", action.Kind, action.Executable)
+	if action.RuntimeKind != "" {
+		fmt.Fprintf(b, " runtime_kind=%s", action.RuntimeKind)
+	}
+	if len(action.Supported) > 0 {
+		fmt.Fprintf(b, " supported=%s", strings.Join(action.Supported, ","))
+	}
+	if action.FoundVersion != "" {
+		fmt.Fprintf(b, " found_version=%s", action.FoundVersion)
+	}
+	if action.Detail != "" {
+		fmt.Fprintf(b, " detail=%s", action.Detail)
+	}
+	b.WriteString("\n")
 }
 
 func renderReadinessDirtyWorktree(b *strings.Builder, dirty ReadinessDirtyWorktree) {

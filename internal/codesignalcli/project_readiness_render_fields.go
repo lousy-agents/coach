@@ -29,7 +29,9 @@ func readinessCheckFields(check ReadinessCheck) []readinessCheckField {
 		declaredVersion = ""
 	}
 	return []readinessCheckField{
+		{label: "kind", value: check.Kind},
 		{label: "version", value: check.Version},
+		{label: "origin", value: check.Origin},
 		{label: "expected_version", value: check.ExpectedVersion},
 		{label: "found_version", value: check.FoundVersion},
 		{label: "declared_version", value: declaredVersion},

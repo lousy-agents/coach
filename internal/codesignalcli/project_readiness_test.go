@@ -2,9 +2,12 @@ package codesignalcli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -89,6 +92,22 @@ func TestFileExistsAtRevisionIgnoresTreeEntries(t *testing.T) {
 	}
 }
 
+// wantEnginesNodeString derives js/semantics' expected engines.node
+// declaration directly from the compiled-in SupportedNodeMajors, so a
+// legitimate future change to that constant does not require a second,
+// hand-maintained restatement here to be updated in lockstep -- the
+// byte-consistency check below always compares against the single source of
+// truth.
+func wantEnginesNodeString(majors []int) string {
+	sorted := append([]int(nil), majors...)
+	sort.Ints(sorted)
+	terms := make([]string, len(sorted))
+	for i, major := range sorted {
+		terms[i] = "^" + strconv.Itoa(major)
+	}
+	return strings.Join(terms, " || ")
+}
+
 func TestNodeVersionConstantsMatchDeclaredPins(t *testing.T) {
 	root := coachRepoRoot(t)
 
@@ -97,23 +116,23 @@ func TestNodeVersionConstantsMatchDeclaredPins(t *testing.T) {
 	if engines != lockEngines {
 		t.Fatalf("js/semantics package.json engines.node = %q, package-lock.json root engines.node = %q", engines, lockEngines)
 	}
-	floor, err := majorFromEnginesMinimum(engines)
+	wantEnginesNode := wantEnginesNodeString(SupportedNodeMajors)
+	if engines != wantEnginesNode {
+		t.Fatalf("js/semantics engines.node = %q, want %q (must restate SupportedNodeMajors %v)", engines, wantEnginesNode, SupportedNodeMajors)
+	}
+
+	majors, err := nodeMajorsFromEnginesRangeUnion(engines)
 	if err != nil {
 		t.Fatalf("parse engines %q: %v", engines, err)
 	}
-	if floor != MinimumSupportedNodeMajor {
-		t.Fatalf("MinimumSupportedNodeMajor = %d, js/semantics engines.node %q parses as %d", MinimumSupportedNodeMajor, engines, floor)
-	}
+	assertSameNodeMajorSet(t, "js/semantics engines.node", majors, SupportedNodeMajors)
 
 	tested, err := testedNodeMajorFromMise(readFileT(t, filepath.Join(root, "mise.toml")))
 	if err != nil {
 		t.Fatalf("parse mise.toml node pin: %v", err)
 	}
-	if tested != TestedNodeMajor {
-		t.Fatalf("TestedNodeMajor = %d, mise.toml [tools].node parses as %d", TestedNodeMajor, tested)
-	}
-	if MinimumSupportedNodeMajor > TestedNodeMajor {
-		t.Fatalf("MinimumSupportedNodeMajor (%d) must be <= TestedNodeMajor (%d)", MinimumSupportedNodeMajor, TestedNodeMajor)
+	if !nodeMajorSupported(tested) {
+		t.Fatalf("mise.toml [tools].node pin %d is not in SupportedNodeMajors %v", tested, SupportedNodeMajors)
 	}
 }
 
@@ -182,13 +201,46 @@ func packageLockRootEnginesNode(t *testing.T, path string) string {
 	return root.Engines.Node
 }
 
-func majorFromEnginesMinimum(engines string) (int, error) {
-	trimmed := strings.TrimSpace(engines)
-	if !strings.HasPrefix(trimmed, ">=") {
-		return 0, strconv.ErrSyntax
+// nodeMajorsFromEnginesRangeUnion parses a "^N || ^M ..." engines.node
+// declaration into the set of Node majors it names. It understands only the
+// caret-range-union syntax this repository's own manifests use (a discrete
+// certified set, not a semver floor) -- not the full semver range grammar.
+func nodeMajorsFromEnginesRangeUnion(engines string) ([]int, error) {
+	terms := strings.Split(engines, "||")
+	majors := make([]int, 0, len(terms))
+	for _, term := range terms {
+		trimmed := strings.TrimSpace(term)
+		if !strings.HasPrefix(trimmed, "^") {
+			return nil, fmt.Errorf("engines range %q: term %q is not %q-prefixed", engines, trimmed, "^")
+		}
+		majorPart, _, _ := strings.Cut(strings.TrimPrefix(trimmed, "^"), ".")
+		major, err := strconv.Atoi(majorPart)
+		if err != nil {
+			return nil, fmt.Errorf("engines range %q: %w", engines, err)
+		}
+		majors = append(majors, major)
 	}
-	majorPart, _, _ := strings.Cut(strings.TrimPrefix(trimmed, ">="), ".")
-	return strconv.Atoi(majorPart)
+	return majors, nil
+}
+
+// assertSameNodeMajorSet fails t unless got and want contain the same Node
+// majors, ignoring order -- used to bind a manifest-parsed set to the
+// compiled-in SupportedNodeMajors rather than merely asserting they're
+// coincidentally equal-looking.
+func assertSameNodeMajorSet(t *testing.T, label string, got, want []int) {
+	t.Helper()
+	gotSorted := append([]int(nil), got...)
+	wantSorted := append([]int(nil), want...)
+	sort.Ints(gotSorted)
+	sort.Ints(wantSorted)
+	if len(gotSorted) != len(wantSorted) {
+		t.Fatalf("%s parses as %v, want %v", label, got, want)
+	}
+	for i := range gotSorted {
+		if gotSorted[i] != wantSorted[i] {
+			t.Fatalf("%s parses as %v, want %v", label, got, want)
+		}
+	}
 }
 
 func testedNodeMajorFromMise(contents string) (int, error) {
@@ -241,20 +293,22 @@ func TestAggregateReadinessPrecedence(t *testing.T) {
 			wantStatus:    StatusReadyWithLimits,
 		},
 		{
-			name: "no gaps, node_untested warning -> ready_with_limits, not a gap",
+			name: "no gaps, relevant dirty worktree with a supported Node major -> ready_with_limits, not a gap",
 			checks: ReadinessChecks{
-				Node: ReadinessCheck{State: ReadinessPass, Code: WarnNodeUntested, Version: "v26.0.0"},
+				Runtime: ReadinessCheck{State: ReadinessPass, Version: "v26.0.0"},
 			},
-			wantStatus: StatusReadyWithLimits,
+			dirtyRelevant: true,
+			wantStatus:    StatusReadyWithLimits,
 		},
 		{
-			name: "policy gap outranks a simultaneous node_untested warning",
+			name: "policy gap outranks a simultaneous dirty-worktree limit condition",
 			checks: ReadinessChecks{
-				Policy: ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
-				Node:   ReadinessCheck{State: ReadinessPass, Code: WarnNodeUntested, Version: "v26.0.0"},
+				Policy:  ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
+				Runtime: ReadinessCheck{State: ReadinessPass, Version: "v26.0.0"},
 			},
-			wantStatus:   StatusNeedsPolicy,
-			wantGapCodes: []string{GapPolicyMissing},
+			dirtyRelevant: true,
+			wantStatus:    StatusNeedsPolicy,
+			wantGapCodes:  []string{GapPolicyMissing},
 		},
 		{
 			name: "policy gap alone -> needs_policy",
@@ -276,21 +330,21 @@ func TestAggregateReadinessPrecedence(t *testing.T) {
 		{
 			name: "node prerequisite gap outranks a simultaneous policy gap",
 			checks: ReadinessChecks{
-				Policy: ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
-				Node:   ReadinessCheck{State: ReadinessFail, Code: GapNodeBelowMinimum},
+				Policy:  ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
+				Runtime: ReadinessCheck{State: ReadinessFail, Code: GapNodeUnsupported},
 			},
 			wantStatus:   StatusNeedsPrerequisite,
-			wantGapCodes: []string{GapPolicyMissing, GapNodeBelowMinimum},
+			wantGapCodes: []string{GapPolicyMissing, GapNodeUnsupported},
 		},
 		{
 			name: "unsupported repository shape outranks every other simultaneous gap",
 			checks: ReadinessChecks{
 				ProjectShape: ReadinessCheck{State: ReadinessFail, Code: GapUnsupportedRepositoryShape},
 				Policy:       ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
-				Node:         ReadinessCheck{State: ReadinessFail, Code: GapNodeBelowMinimum},
+				Runtime:      ReadinessCheck{State: ReadinessFail, Code: GapNodeUnsupported},
 			},
 			wantStatus:   StatusOutsideSupport,
-			wantGapCodes: []string{GapUnsupportedRepositoryShape, GapPolicyMissing, GapNodeBelowMinimum},
+			wantGapCodes: []string{GapUnsupportedRepositoryShape, GapPolicyMissing, GapNodeUnsupported},
 		},
 	}
 
@@ -324,47 +378,65 @@ func TestAggregateReadinessOrdersNextActionsPolicyBeforeCompiler(t *testing.T) {
 		Compiler: ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
 	}
 	_, _, nextActions, _ := aggregateReadiness(checks, false)
-	want := []ReadinessNextAction{{Kind: "author_policy"}, {Kind: "prepare_compiler"}}
+	want := []ReadinessNextAction{
+		{Kind: "author_policy", Executable: false},
+		{Kind: "prepare_compiler", Executable: true, Supported: []string{"7.0.2"}},
+	}
 	if len(nextActions) != len(want) {
 		t.Fatalf("nextActions = %#v, want %#v", nextActions, want)
 	}
 	for i, action := range want {
-		if nextActions[i] != action {
+		if !reflect.DeepEqual(nextActions[i], action) {
 			t.Fatalf("nextActions[%d] = %#v, want %#v (full: %#v)", i, nextActions[i], action, nextActions)
 		}
 	}
 }
 
-// TestAggregateReadinessEmitsNodeUntestedWarningShape proves SA-280-006's
-// frozen warnings entry shape directly: found_major is parsed from the
-// node check's discovered version, tested_major/floor_major always echo the
-// compiled-in constants, and the warning is present even though this
-// checks fixture has no gaps.
-func TestAggregateReadinessEmitsNodeUntestedWarningShape(t *testing.T) {
+// TestAggregateReadinessEmitsCompilerDeclarationMismatchWarningShape proves
+// the frozen warnings entry shape for compiler_declaration_mismatch, the
+// only remaining warning code now that node_untested is retired: every
+// supported Node major (24 and 26 both) passes with zero warnings, so
+// compiler_declaration_mismatch alone can populate warnings[].
+func TestAggregateReadinessEmitsCompilerDeclarationMismatchWarningShape(t *testing.T) {
 	checks := ReadinessChecks{
-		Node: ReadinessCheck{State: ReadinessPass, Code: WarnNodeUntested, Version: "v26.0.0"},
+		Compiler: ReadinessCheck{
+			State:             ReadinessPass,
+			Code:              WarnCompilerDeclarationMismatch,
+			Version:           "7.0.2",
+			DeclarationOrigin: compilerDeclarationOriginManifest,
+			DeclarationMismatches: []ReadinessDeclarationMismatch{
+				{Root: ".", Declared: "5.4.0"},
+			},
+		},
 	}
 	_, _, _, warnings := aggregateReadiness(checks, false)
 	if len(warnings) != 1 {
 		t.Fatalf("warnings = %#v, want exactly one entry", warnings)
 	}
-	want := ReadinessWarning{Code: WarnNodeUntested, FoundMajor: 26, TestedMajor: TestedNodeMajor, FloorMajor: MinimumSupportedNodeMajor}
+	want := ReadinessWarning{Code: WarnCompilerDeclarationMismatch, DeclaredVersion: "5.4.0", FoundVersion: "7.0.2", DeclarationOrigin: compilerDeclarationOriginManifest, Root: "."}
 	if warnings[0] != want {
 		t.Fatalf("warnings[0] = %#v, want %#v", warnings[0], want)
 	}
 }
 
-func TestAggregateReadinessOmitsWarningsWhenNodeNotUntested(t *testing.T) {
+// TestAggregateReadinessOmitsWarningsForNodeChecks proves the retired
+// node_untested vocabulary has no successor: no Runtime check outcome --
+// passing at either supported major, or any failing gap code -- ever
+// populates warnings[].
+func TestAggregateReadinessOmitsWarningsForNodeChecks(t *testing.T) {
 	cases := []struct {
-		name string
-		node ReadinessCheck
+		name    string
+		runtime ReadinessCheck
 	}{
-		{"passing, tested-major node check", ReadinessCheck{State: ReadinessPass, Version: "v24.9.9"}},
-		{"failing node check with a non-node_untested code", ReadinessCheck{State: ReadinessFail, Code: GapNodeBelowMinimum}},
+		{"passing at supported major 24", ReadinessCheck{State: ReadinessPass, Version: "v24.9.9"}},
+		{"passing at supported major 26", ReadinessCheck{State: ReadinessPass, Version: "v26.0.0"}},
+		{"failing node_missing", ReadinessCheck{State: ReadinessFail, Code: GapNodeMissing}},
+		{"failing node_unsupported", ReadinessCheck{State: ReadinessFail, Code: GapNodeUnsupported}},
+		{"failing node_unverifiable", ReadinessCheck{State: ReadinessFail, Code: GapNodeUnverifiable}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			checks := ReadinessChecks{Node: tc.node}
+			checks := ReadinessChecks{Runtime: tc.runtime, Node: nodeCompatibilityMirror(tc.runtime)}
 			_, _, _, warnings := aggregateReadiness(checks, false)
 			if len(warnings) != 0 {
 				t.Fatalf("warnings = %#v, want none", warnings)
@@ -374,7 +446,7 @@ func TestAggregateReadinessOmitsWarningsWhenNodeNotUntested(t *testing.T) {
 }
 
 // TestGapCodeMappings proves statusForGapCode and nextActionForGapCode agree
-// with the frozen gap-code table for all 10 gap codes, not just the 3
+// with the frozen gap-code table for all 11 gap codes, not just the ones
 // reachable through today's checks. GapTypescriptCompilerMissing,
 // GapTypescriptVersionMismatch, GapTypescriptVersionConflict,
 // GapPackageManagerAmbiguous, and GapPackageManagerConfigUnverifiable are
@@ -388,8 +460,9 @@ func TestGapCodeMappings(t *testing.T) {
 		wantNextAction string
 	}{
 		{GapUnsupportedRepositoryShape, StatusOutsideSupport, "confirm_repository_shape"},
-		{GapNodeMissing, StatusNeedsPrerequisite, "install_node"},
-		{GapNodeBelowMinimum, StatusNeedsPrerequisite, "install_node"},
+		{GapNodeMissing, StatusNeedsPrerequisite, "install_supported_runtime"},
+		{GapNodeUnsupported, StatusNeedsPrerequisite, "install_supported_runtime"},
+		{GapNodeUnverifiable, StatusNeedsPrerequisite, "repair_runtime_probe"},
 		{GapTypescriptCompilerMissing, StatusNeedsPrerequisite, "prepare_compiler"},
 		{GapTypescriptVersionMismatch, StatusNeedsPrerequisite, "prepare_compiler"},
 		{GapTypescriptVersionConflict, StatusNeedsPrerequisite, "prepare_compiler"},
@@ -410,6 +483,24 @@ func TestGapCodeMappings(t *testing.T) {
 			}
 			if kind != tc.wantNextAction {
 				t.Fatalf("nextActionForGapCode(%q) = %q, want %q", tc.code, kind, tc.wantNextAction)
+			}
+		})
+	}
+}
+
+// TestNodeMajorSupportedMatchesAnalysisGate binds checkNodeReadiness's
+// set-membership predicate (nodeMajorSupported, backed by
+// SupportedNodeMajors) to tsRuntime's independent analysisNodeMajorAllowed
+// (project_ts_runtime.go): the two are frozen to agree on {24, 26} today,
+// but nothing else ties them together, so a change to one that silently
+// diverges from the other would make the readiness verdict and the
+// analysis gate disagree on the same host Node major. This test must turn
+// red the moment either one changes without the other.
+func TestNodeMajorSupportedMatchesAnalysisGate(t *testing.T) {
+	for major := 20; major <= 30; major++ {
+		t.Run(strconv.Itoa(major), func(t *testing.T) {
+			if got, want := nodeMajorSupported(major), analysisNodeMajorAllowed(major); got != want {
+				t.Fatalf("nodeMajorSupported(%d) = %t, analysisNodeMajorAllowed(%d) = %t: readiness and analysis gates disagree", major, got, major, want)
 			}
 		})
 	}
