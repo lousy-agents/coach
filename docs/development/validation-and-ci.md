@@ -15,6 +15,8 @@ agent can otherwise derive from `mise.toml` and `.github/workflows/ci.yml`.
 | `ci` | `ci-go` + `js-ci` | no — sidecar is not built first | no |
 | `ci-all` | sidecar, then `ci-go` + `js-ci` + `wasm-build` | yes | yes |
 
+No local composite runs `ts-project-backend-acceptance` or the platform tasks, so `ci-all` covers four of the six CI leaves. Run `mise run ts-project-backend-acceptance` directly when you touch `cmd/coach` or `internal/codesignalcli`; it needs `strace` on PATH, because the specs assert on the analyzer subtree's file syscalls.
+
 Two gaps `mise run ci` alone does not close, which is why `ci-all` exists:
 
 - `wasm-build` is in no task's closure, so a `GOOS=js GOARCH=wasm` break passes `ci`.
@@ -28,7 +30,9 @@ rewrites `go.mod`/`go.sum` in place and a smoke check should not mutate the tree
 `ci-all` deliberately excludes `test-acceptance-fast` (its ambient-credential
 preflight cannot pass where `GITHUB_TOKEN`/`GH_TOKEN` or `~/.aws/config` are
 present, and `test` already runs every acceptance suite unfiltered) and
-`platform-smoke` (Docker plus live services).
+`platform-smoke` (Docker plus live services). It also omits
+`ts-project-backend`, which is a gap rather than a decision: that leaf needs
+`strace`, so it was never given a local composite.
 
 ## Why the exhaustive gate is not local
 
@@ -63,7 +67,7 @@ GHA is a parallel scheduler of atomic `mise run <task>` steps. The local
 `ci` / `ci-fast` / `ci-all` composites are serial bundles of the same tasks; the
 workflow does not invoke those composites.
 
-Five independent leaf jobs plus a `status` aggregator:
+Six independent leaf jobs plus a `status` aggregator:
 
 - `verify` — `ci-go`: gofmt / go-vet / tidy-check / acceptance-style-check /
   test / test-examples. mise installs only Go; the runner image may still have
@@ -73,6 +77,11 @@ Five independent leaf jobs plus a `status` aggregator:
 - `js-verify` — `mise run js-ci` only.
 - `projectmodel-sidecar` — `mise run projectmodel-sidecar-acceptance` (builds
   the sidecar, then the real suite). Parallel with `js-verify`.
+- `ts-project-backend` — `mise run ts-project-backend-acceptance`, the
+  TS-dependent `cmd/coach` and `internal/codesignalcli` specs run against this
+  repo's own installed `js/semantics` compiler. Installs `strace` first,
+  because the specs assert that the analyzer subtree's file syscalls stay
+  inside a frozen allowlist. Allow 40 minutes.
 - `wasm-build` — `mise run wasm-build`.
 - `platform-smoke` — `platform-up` / `platform-smoke` / `platform-down` as three
   steps, so teardown still runs on failure.
@@ -80,3 +89,5 @@ Five independent leaf jobs plus a `status` aggregator:
   and fails unless each result is `success`.
 
 `platform-smoke` has no local composite; run the three platform tasks directly.
+Adding a leaf means adding it to `status.needs`, or the new leaf can fail while
+the required check stays green.

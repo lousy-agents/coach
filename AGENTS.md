@@ -125,10 +125,11 @@ mise run test
 mise run test-examples
 mise run js-ci
 mise run projectmodel-sidecar-acceptance
+mise run ts-project-backend-acceptance
 mise run wasm-build
 ```
 
-Run `ci-fast` inside an implement/review loop and `ci-all` when you want the whole thing locally. Neither is the pre-PR gate.
+Run `ci-fast` inside an implement/review loop and `ci-all` when you want the broadest local run. Neither is the pre-PR gate, and neither is complete: `ci-all` covers four of the six CI leaves, omitting `platform-smoke` and `ts-project-backend`.
 
 The exhaustive gate is GitHub Actions plus branch protection, not a local run. Since the `status` aggregator became a required check, a red tree cannot merge whatever any local check decides — so nothing gates PR creation locally. Commit and push everything before opening a PR so its evidence describes the tree you pushed; that is a discipline, not a mechanism. This arrangement is only safe while `status` is a required check on the base branch; if branch protection is removed, nothing gates a red merge.
 
@@ -240,4 +241,4 @@ A PR title follows the same rule as its commits. Agent tooling changes the way t
 
 ## CI shape (`.github/workflows/ci.yml`)
 
-Five independent leaf jobs (`verify`, `js-verify`, `projectmodel-sidecar`, `wasm-build`, `platform-smoke`) plus a `status` aggregator, which is the single required check. Branch protection should require `status` only. Adding a leaf means adding it to `status.needs`, or the new leaf can fail while the required check stays green. The job graph is detailed in [`docs/development/validation-and-ci.md`](docs/development/validation-and-ci.md).
+Six independent leaf jobs (`verify`, `js-verify`, `projectmodel-sidecar`, `ts-project-backend`, `wasm-build`, `platform-smoke`) plus a `status` aggregator, which is the single required check. Branch protection should require `status` only. Adding a leaf means adding it to `status.needs`, or the new leaf can fail while the required check stays green. The job graph is detailed in [`docs/development/validation-and-ci.md`](docs/development/validation-and-ci.md).

@@ -302,7 +302,7 @@ run = [
 # coverage, since `test` is `go test -race ./...` unfiltered, a superset of
 # -run Acceptance. Excludes platform-smoke: needs Docker and live services.
 [tasks.ci-all]
-description = "Everything CI proves except platform-smoke: sidecar-first Go slice + js-ci + wasm-build"
+description = "Broadest local run: sidecar-first Go slice + js-ci + wasm-build. Not everything CI proves -- platform-smoke and ts-project-backend have no local leg here"
 run = [
   { task = "project-sidecar-build" },
   { task = "ci-go" },
