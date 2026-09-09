@@ -20,7 +20,7 @@ The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) exposes one 
 
 ## Agent Skills (`.agents/skills/`)
 
-Sourced from `lousy-agents/skills` and pinned by `skills-lock.json`. Change them upstream and re-run `npx skills add`; edits made here are overwritten.
+Most are sourced from `lousy-agents/skills` and pinned by `skills-lock.json`: change those upstream and re-run `npx skills add`, because edits made here are overwritten. `correctness-review`, `product-quality-evaluation`, and `optimize-prompt-loop` are not in the lockfile and are edited here directly. Check `skills-lock.json` before editing a skill, so a local edit is not silently reverted by the next sync.
 
 - `feature-to-plan` — turn a feature request, PRD, or backlog issue into a structured EARS-format spec.
 - `go-testable-design` — guidance for writing/refactoring testable Go (table tests, constructor injection, boundaries, concurrency tests).
@@ -33,6 +33,9 @@ Sourced from `lousy-agents/skills` and pinned by `skills-lock.json`. Change them
 - `triaging-pr-reviews` — classify and triage PR review comments, including automated reviewer (e.g. Copilot) suggestions.
 - `correctness-review` — perform an evidence-backed GitHub pull-request correctness review against its linked issue's acceptance criteria, repository architecture, and downstream specs.
 - `issue-refine-loop` — refine an unrefined GitHub issue in place into an implementation-ready epic (problem statement, personas, EARS acceptance criteria, design, tasks, scope boundaries), then decompose it into child issues.
+- `plan-to-graph` — convert an approved spec or epic issue into a GitHub issue dependency graph with native sub-issues and blocking relationships.
+- `curate-release` — rewrite the commits on a PR's head branch so the generated changelog and release notes read as a coherent story.
+- `optimize-prompt-loop` — turn a fuzzy or overly broad request into a concise, reusable task prompt tuned to the current model and harness.
 
 ## Custom subagents
 
@@ -40,7 +43,7 @@ Some skills delegate to a named subagent rather than doing the work inline. Rout
 
 Each harness defines subagents in its own format:
 
-- `.claude/agents/*.md` — canonical Claude Code subagents (YAML frontmatter plus a markdown body used as the system prompt). `task-implementer`/`task-reviewer` back the `implement-issue` command; `product-sme` backs `product-quality-evaluation`; `ux-advocate` is a roster peer for customer-facing journey reading and does not back `designing-for-intent`. Edit these files when changing agent instructions. Exception: `ux-advocate` is a Coach host-binding wrapper over the lockfile-sourced `designing-for-intent` agent (host peer map, then the published charter inlined). Do not fork the charter here — change `lousy-agents/skills`, re-run `npx skills add`, and refresh the inlined body from `.agents/skills/designing-for-intent/agents/ux-advocate.md`. Edit only the host peer map in this wrapper.
+- `.claude/agents/*.md` — canonical Claude Code subagents (YAML frontmatter plus a markdown body used as the system prompt). `task-implementer`/`task-reviewer`, and `workflow-integration-reviewer` for the integrated diff, back the `implement-issue` command; `product-sme` backs `product-quality-evaluation`; `ux-advocate` is a roster peer for customer-facing journey reading and does not back `designing-for-intent`. Edit these files when changing agent instructions. Exception: `ux-advocate` is a Coach host-binding wrapper over the lockfile-sourced `designing-for-intent` agent (host peer map, then the published charter inlined). Do not fork the charter here — change `lousy-agents/skills`, re-run `npx skills add`, and refresh the inlined body from `.agents/skills/designing-for-intent/agents/ux-advocate.md`. Edit only the host peer map in this wrapper.
 - OpenCode — no separate agent or command body mirrors. `.opencode/plugin/claude-agents.ts` loads `.claude/agents/*.md` and `.claude/commands/*.md` at config time (agents: Claude `tools` → OpenCode `permission`, `maxTurns` → `steps`, `mode: subagent`; commands: frontmatter `description` plus body as `template`). Explicit entries in `opencode.json` / `.opencode/agents/` / `.opencode/command(s)/` win over the loader. `.opencode/plugin/implement-issue-gates.ts` mirrors the two review-loop hooks: `task` → `task-implementer` rework requires the literal `## Reviewer Findings` heading, and `task` → `task-reviewer` results are soft-gated so the first non-empty line is `PASS` or `FINDINGS`. Restart OpenCode after agent, command, or plugin changes.
 - `.codex/agents/*.toml` — Codex custom subagents (`name`, `description`, `sandbox_mode`, `developer_instructions`). Codex cannot import Claude markdown, so instruction text is mirrored from `.claude/agents/` and marked with a one-line sync comment — do not build codegen for a two-file mirror. `ux-advocate.toml` mirrors the Coach host-binding wrapper (refresh the inlined charter after a skills-lock update).
 - `.agents/skills/*/agents/<harness>.yaml` — optional, and separate from subagent definitions: a per-harness interface declaration (e.g. `display_name`/`default_prompt`) for how a skill surfaces in that harness's UI. Only add one where the harness actually reads it — Claude Code has no such mechanism today.
@@ -62,7 +65,7 @@ All tasks are defined in `mise.toml`; run them with `mise run <task>`, and list 
 | --- | --- |
 | `ci-gate` | fast local smoke (gofmt/vet/style, no tests, ~1s warm) |
 | `ci-fast` | the implement/review loop's per-cycle check: Go slice plus agent-tooling suites, sidecar built first. Narrower than CI, but not quick: `cmd/coach` alone runs minutes |
-| `ci` | `ci-go` + `js-ci`. Neither `wasm-build` nor a built sidecar |
+| `ci` | `ci-go` + `js-ci`. No `wasm-build`, and it builds the sidecar only after `test` has already run |
 | `ci-all` | everything CI proves except `platform-smoke` |
 | `test` | `go test -race ./...` |
 | `test-acceptance-fast` | the fast in-process Ginkgo/Gomega suites (offline, no real credentials) |
@@ -129,7 +132,7 @@ mise run ts-project-backend-acceptance
 mise run wasm-build
 ```
 
-Run `ci-fast` inside an implement/review loop and `ci-all` when you want the broadest local run. Neither is the pre-PR gate, and neither is complete: `ci-all` covers four of the six CI leaves, omitting `platform-smoke` and `ts-project-backend`.
+Run `ci-fast` inside an implement/review loop and `ci-all` when you want the broadest local run. Neither is the pre-PR gate. `ci-all` reaches `js-install` through its sidecar build, so the sidecar and TypeScript-backend specs do run inside `test` — but `test` carries no `-ginkgo.fail-on-empty`, so if their compiler preconditions fail they skip and `ci-all` stays green. The `projectmodel-sidecar` and `ts-project-backend` leaves exist to make that skip a failure; `platform-smoke` is the only leaf with no local coverage at all.
 
 The exhaustive gate is GitHub Actions plus branch protection, not a local run. Since the `status` aggregator became a required check, a red tree cannot merge whatever any local check decides — so nothing gates PR creation locally. Commit and push everything before opening a PR so its evidence describes the tree you pushed; that is a discipline, not a mechanism. This arrangement is only safe while `status` is a required check on the base branch; if branch protection is removed, nothing gates a red merge.
 
@@ -204,27 +207,9 @@ After a failing check, fix and rerun that specific command rather than the whole
 
 ### What `/implement-issue` guarantees, and what it does not
 
-The command's job is continuous review: every change is written by one agent and adversarially reviewed by another before it counts, and the integrated diff is reviewed again before a PR opens. It deliberately does not try to box agents in with control mechanisms — an earlier revision carried a git-write jail, a cycle-ceiling counter, a PR-creation gate, a hook trace, and a five-probe liveness ritual to prove them all live, and that apparatus spent more effort watching itself than reviewing code. It was removed. Merge safety belongs to branch protection plus the required `status` check, which run where no agent can reach them.
+The command's job is continuous review: every change is written by one agent and adversarially reviewed by another before it counts, and the integrated diff is reviewed again before a PR opens. Two things are load-bearing while a run is in progress. The review-fidelity hooks (`verify-review-verdict.sh`, `verify-context-relay.sh`) fire only on agents the main session spawns, which is why the implement/review loop stays there rather than moving into a workflow. And merge safety belongs to branch protection plus the required `status` check, which run where no agent can reach them — so a run that ignores its own prose rules produces a worse PR, not an unsafe merge.
 
-Deterministic, held by code:
-
-- **Planning.** `.claude/workflows/implement-issue-plan.js` produces the task DAG. Its arg validation, null guards, cycle and dangling-reference checks are JS, covered by `mise run workflow-test`, and mutation-tested.
-- **Review-loop fidelity.** Two small hooks, both scoped to the loop's conversation rather than to what agents may do: `verify-review-verdict.sh` (a reviewer's reply shall begin `PASS` or `FINDINGS`, so the orchestrator always receives a parseable verdict) and `verify-context-relay.sh` (a rework delegation shall carry the literal `## Reviewer Findings` block, so findings cannot be paraphrased away). They fire on agents this session spawns — agents inside a workflow never reach them, which is why the implement/review loop stays in the main session.
-- **Merge safety.** Branch protection and the required `status` aggregator on the base branch. This is the only gate that matters for an unattended run, and it runs on GitHub's side.
-
-Prose, held by the orchestrator following instructions:
-
-- The per-task cycle cap (3), the integration and repair caps, and the no-progress rule
-- Dependency ordering — that a task waits for its `dependsOn`
-- Which task receives a validation failure, and the invalidation rule after rework
-- That the `conventions` string reaches implementers unweakened
-- That implementers do not commit, push, or open PRs — the orchestrator owns git
-
-Those are instructions in `.claude/commands/implement-issue.md`. The specs in `internal/agentworkflows/` assert that the instruction is present and says the right thing — they cannot assert that a run obeyed it. A run that ignores them produces a worse PR, not an unsafe merge: the required checks still gate the merge.
-
-A PR opened by this flow asserts that every task reached reviewer `PASS`, that the integration reviewer passed the whole diff, and that the body records the per-task `ci-fast` output as its test evidence. It does not assert that the exhaustive suite passed locally — that no longer runs locally — nor `platform-smoke` or `test-acceptance-fast` results, nor that any prose-held rule above was obeyed. Read such a PR as a well-evidenced proposal, not a verified one. Branch protection is what makes it safe to open one unattended.
-
-One environment caveat: Claude Code binds `.claude/` — hooks, agents, and workflows alike — to the session's project directory at session start. A repository cloned into a session whose project directory is elsewhere never registers any of them, and attaching it mid-session reloads CLAUDE.md and skills but not hooks, agents, or workflows. In that state the two review-fidelity hooks are silently absent and the run degrades to prose-only review discipline — still merge-safe, because branch protection does not care, but weaker. Create sessions for this repo with the repo as the project directory.
+Read a PR from this flow as a well-evidenced proposal, not a verified one: it asserts reviewer `PASS` per task and an integration review of the whole diff, not that the exhaustive suite passed locally. The full split between what code holds and what prose holds, and the session-binding caveat that silently disables the hooks, are in [`docs/development/agent-review-loop.md`](docs/development/agent-review-loop.md).
 
 ## Pull requests
 

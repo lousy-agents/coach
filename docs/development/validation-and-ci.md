@@ -15,7 +15,7 @@ agent can otherwise derive from `mise.toml` and `.github/workflows/ci.yml`.
 | `ci` | `ci-go` + `js-ci` | no — sidecar is not built first | no |
 | `ci-all` | sidecar, then `ci-go` + `js-ci` + `wasm-build` | yes | yes |
 
-No local composite runs `ts-project-backend-acceptance` or the platform tasks, so `ci-all` covers four of the six CI leaves. Run `mise run ts-project-backend-acceptance` directly when you touch `cmd/coach` or `internal/codesignalcli`; it needs `strace` on PATH, because the specs assert on the analyzer subtree's file syscalls.
+`ci-all` reaches `js-install` through `project-sidecar-build`, so the sidecar and TypeScript-backend specs do run inside `test` rather than being absent. What `ci-all` lacks is the proof: `test` carries no `-ginkgo.fail-on-empty`, so those specs skip gracefully when their compiler preconditions fail and `ci-all` stays green anyway. The `projectmodel-sidecar` and `ts-project-backend` leaves add that flag, which is what turns a silent skip into a failure. Run `mise run ts-project-backend-acceptance` directly when you touch `cmd/coach` or `internal/codesignalcli`; it needs `strace` on PATH, because the specs assert on the analyzer subtree's file syscalls.
 
 Two gaps `mise run ci` alone does not close, which is why `ci-all` exists:
 
@@ -30,9 +30,8 @@ rewrites `go.mod`/`go.sum` in place and a smoke check should not mutate the tree
 `ci-all` deliberately excludes `test-acceptance-fast` (its ambient-credential
 preflight cannot pass where `GITHUB_TOKEN`/`GH_TOKEN` or `~/.aws/config` are
 present, and `test` already runs every acceptance suite unfiltered) and
-`platform-smoke` (Docker plus live services). It also omits
-`ts-project-backend`, which is a gap rather than a decision: that leaf needs
-`strace`, so it was never given a local composite.
+`platform-smoke` (Docker plus live services), which is the only leaf with no
+local coverage at all.
 
 ## Why the exhaustive gate is not local
 
