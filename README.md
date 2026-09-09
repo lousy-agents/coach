@@ -149,6 +149,12 @@ that cannot resolve a supported compiler or host Node exits `2` with empty
 stdout and one stderr line naming that same invocation. The interactive
 authoring session writes nothing until you say so.
 
+Coach's supported Node majors are exactly `24` and `26` — every release within
+either major passes the `--check-project` Node/runtime check with no code and
+no warning. Any other major is the `node_unsupported` readiness gap.
+`@lousy-agents/coach-semantics` declares this as `engines.node: "^24 || ^26"`,
+and CI runs the real TypeScript analyzer under both Node 24 and Node 26.
+
 Still being built — do not expect these to work yet: consented package-manager
 / mise compiler setup for the scanned project, Bun as a project runtime, and a
 packaged foreign-repository TypeScript journey.

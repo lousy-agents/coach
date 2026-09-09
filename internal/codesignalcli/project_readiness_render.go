@@ -29,12 +29,13 @@ func RenderReadinessText(result *ReadinessResult) string {
 	renderReadinessCheckLine(&b, "project_shape", result.Checks.ProjectShape)
 	renderReadinessCheckLine(&b, "policy", result.Checks.Policy)
 	renderReadinessCheckLine(&b, "node", result.Checks.Node)
+	renderReadinessCheckLine(&b, "runtime", result.Checks.Runtime)
 	renderReadinessCheckLine(&b, "compiler", result.Checks.Compiler)
 	renderReadinessCheckLine(&b, "package_manager", result.Checks.PackageManager)
 
 	renderReadinessCodeList(&b, "Gaps", gapCodes(result.Gaps))
 	renderReadinessWarnings(&b, result.Warnings)
-	renderReadinessCodeList(&b, "Next actions", nextActionKinds(result.NextActions))
+	renderReadinessNextActions(&b, result.NextActions)
 	renderReadinessDirtyWorktree(&b, result.DirtyWorktree)
 
 	return b.String()

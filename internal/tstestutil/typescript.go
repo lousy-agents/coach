@@ -101,8 +101,25 @@ func hostNodeMajorOnPath() (int, bool) {
 	return major, true
 }
 
+// AllowedAnalysisNodeMajors is the set of Node majors
+// prependAllowedAnalysisNodeToPath treats as already acceptable on the host
+// PATH. It must be kept equal to codesignalcli.SupportedNodeMajors --
+// tstestutil cannot import codesignalcli directly without an import cycle,
+// so cmd/coach's TestTSTestutilAllowedNodeMajorsMatchesSupportedNodeMajors
+// binds the two together.
+var AllowedAnalysisNodeMajors = []int{24, 26}
+
+func allowedAnalysisNodeMajor(major int) bool {
+	for _, allowed := range AllowedAnalysisNodeMajors {
+		if allowed == major {
+			return true
+		}
+	}
+	return false
+}
+
 func prependAllowedAnalysisNodeToPath() {
-	if major, ok := hostNodeMajorOnPath(); ok && (major == 24 || major == 26) {
+	if major, ok := hostNodeMajorOnPath(); ok && allowedAnalysisNodeMajor(major) {
 		return
 	}
 	bin := filepath.Join(os.Getenv("HOME"), ".local", "share", "mise", "installs", "node", "24", "bin")
