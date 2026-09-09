@@ -30,8 +30,9 @@ rewrites `go.mod`/`go.sum` in place and a smoke check should not mutate the tree
 `ci-all` deliberately excludes `test-acceptance-fast` (its ambient-credential
 preflight cannot pass where `GITHUB_TOKEN`/`GH_TOKEN` or `~/.aws/config` are
 present, and `test` already runs every acceptance suite unfiltered) and
-`platform-smoke` (Docker plus live services), which is the only leaf with no
-local coverage at all.
+`platform-smoke` (Docker plus live services), which has no local equivalent at
+all. No local composite pins Node 26 either, so `ts-project-backend-node26` is
+reproducible locally only by writing that `mise.local.toml` yourself.
 
 ## Why the exhaustive gate is not local
 
@@ -66,7 +67,7 @@ GHA is a parallel scheduler of atomic `mise run <task>` steps. The local
 `ci` / `ci-fast` / `ci-all` composites are serial bundles of the same tasks; the
 workflow does not invoke those composites.
 
-Six independent leaf jobs plus a `status` aggregator:
+Seven independent leaf jobs plus a `status` aggregator:
 
 - `verify` — `ci-go`: gofmt / go-vet / tidy-check / acceptance-style-check /
   test / test-examples. mise installs only Go; the runner image may still have
@@ -81,6 +82,10 @@ Six independent leaf jobs plus a `status` aggregator:
   repo's own installed `js/semantics` compiler. Installs `strace` first,
   because the specs assert that the analyzer subtree's file syscalls stay
   inside a frozen allowlist. Allow 40 minutes.
+- `ts-project-backend-node26` — the same `mise run ts-project-backend-acceptance` task, with a
+  `mise.local.toml` written first to pin Node 26. It asserts the resolved major is 26 before
+  running, because a mise regression that declined the override would otherwise re-run the
+  Node 24 leg and stay green, leaving the supported {24,26} set half-proven.
 - `wasm-build` — `mise run wasm-build`.
 - `platform-smoke` — `platform-up` / `platform-smoke` / `platform-down` as three
   steps, so teardown still runs on failure.
