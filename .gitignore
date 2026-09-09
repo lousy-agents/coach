@@ -72,6 +72,13 @@ js/semantics/vendor/wasm_exec.js
 deploy/compose/thinproof/output/*
 !deploy/compose/thinproof/output/.gitkeep
 
+# Per-machine mise overrides. mise.local.toml has higher precedence than
+# mise.toml, so a committed copy would silently override pins (e.g. the
+# Node major) for every job/contributor, not just the one job that writes it
+# on purpose (coach#355 Task 14, ts-project-backend-node26).
+mise.local.toml
+.mise.local.toml
+
 # Per-machine Claude Code overrides. Claude Code loads this file and it can
 # override .claude/settings.json, so committing one developer's copy would
 # silently change every teammate's hook and permission behavior.

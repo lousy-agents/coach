@@ -125,6 +125,54 @@ jobs:
       - name: ts-project-backend-acceptance
         run: mise run ts-project-backend-acceptance
 
+  # coach#355 Task 14 (AC-3): owner decision "both promised majors carry
+  # execution evidence" -- ts-project-backend above already runs the real
+  # analyzer under Node 24 via mise.toml's shared [tools].node pin. This job
+  # runs the identical task under Node 26 specifically, without changing that
+  # pin (and without changing any other job's Node major): a git-ignored
+  # mise.local.toml written into this job's own checkout overrides node to
+  # "26" for this job only. mise.local.toml has higher precedence than
+  # mise.toml and is never committed, so mise.toml's pin keeps meaning "24"
+  # for every other job (gofmt/vet/test/js-ci/wasm-build/etc.). Parallel with
+  # ts-project-backend and the other Node-needing jobs; none waits on
+  # another.
+  ts-project-backend-node26:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: pin Node 26 for this job only
+        run: printf '[tools]\nnode = "26"\n' > mise.local.toml
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          experimental: true
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: install file-syscall tracer
+        run: sudo apt-get update && sudo apt-get install -y strace
+
+      # Guards against mise silently declining the mise.local.toml override
+      # above: without this, a mise regression would leave this job re-running
+      # the Node 24 leg while staying green, so AC-3's "both promised majors
+      # carry execution evidence" would be unproven.
+      - name: verify resolved Node major is 26
+        run: |
+          major="$(mise exec -- node -p 'process.versions.node.split(".")[0]')"
+          test "$major" = "26" || { echo "expected Node 26, got $major"; exit 1; }
+
+      - name: ts-project-backend-acceptance
+        run: mise run ts-project-backend-acceptance
+
   # Proves pkg/semantics compiles for GOOS=js GOARCH=wasm via the pure-Go
   # gotreesitter engine, with no TinyGo.
   wasm-build:
@@ -170,7 +218,7 @@ jobs:
   # failed leaf still produces a failed status rather than a missing check.
   status:
     if: always()
-    needs: [verify, js-verify, projectmodel-sidecar, ts-project-backend, wasm-build, platform-smoke]
+    needs: [verify, js-verify, projectmodel-sidecar, ts-project-backend, ts-project-backend-node26, wasm-build, platform-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
