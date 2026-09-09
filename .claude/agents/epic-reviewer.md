@@ -1,6 +1,6 @@
 ---
 name: epic-reviewer
-description: Orchestrates a three-agent mixture-of-experts design review for a new feature or epic specification, driving reviewer, system-design expert, and product SME to convergence and writing agreed edits back to local Markdown specs.
+description: Orchestrates a three-agent mixture-of-experts design review for a new feature or epic specification, driving reviewer, system-design expert, and product SME to convergence and writing agreed edits back to local Markdown specs. Use for a full convergence loop that changes the spec; use spec-review-agent alone for read-only findings on one already-drafted spec.
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
