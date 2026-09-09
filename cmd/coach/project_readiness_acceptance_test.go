@@ -22,11 +22,14 @@ type readinessRootFindingDoc struct {
 type readinessCheckDoc struct {
 	State             string                    `json:"state"`
 	Code              string                    `json:"code"`
+	Kind              string                    `json:"kind"`
 	Version           string                    `json:"version"`
 	ExpectedVersion   string                    `json:"expected_version"`
 	FoundVersion      string                    `json:"found_version"`
 	SupportedVersions []string                  `json:"supported_versions"`
 	RootFindings      []readinessRootFindingDoc `json:"root_findings"`
+	Origin            string                    `json:"origin"`
+	Detail            string                    `json:"detail"`
 }
 
 type readinessResultDoc struct {
@@ -42,6 +45,7 @@ type readinessResultDoc struct {
 		ProjectShape   readinessCheckDoc `json:"project_shape"`
 		Policy         readinessCheckDoc `json:"policy"`
 		Node           readinessCheckDoc `json:"node"`
+		Runtime        readinessCheckDoc `json:"runtime"`
 		Compiler       readinessCheckDoc `json:"compiler"`
 		PackageManager readinessCheckDoc `json:"package_manager"`
 	} `json:"checks"`
@@ -50,17 +54,21 @@ type readinessResultDoc struct {
 	} `json:"gaps"`
 	Warnings []struct {
 		Code              string `json:"code"`
-		FoundMajor        int    `json:"found_major"`
-		TestedMajor       int    `json:"tested_major"`
-		FloorMajor        int    `json:"floor_major"`
 		DeclaredVersion   string `json:"declared_version"`
 		FoundVersion      string `json:"found_version"`
 		DeclarationOrigin string `json:"declaration_origin"`
 		Root              string `json:"root"`
 	} `json:"warnings"`
-	NextActions []struct {
-		Kind string `json:"kind"`
-	} `json:"next_actions"`
+	NextActions []readinessNextActionDoc `json:"next_actions"`
+}
+
+type readinessNextActionDoc struct {
+	Kind         string   `json:"kind"`
+	Executable   bool     `json:"executable"`
+	RuntimeKind  string   `json:"runtime_kind"`
+	Supported    []string `json:"supported"`
+	FoundVersion string   `json:"found_version"`
+	Detail       string   `json:"detail"`
 }
 
 func gapCodes(doc readinessResultDoc) []string {
@@ -201,6 +209,82 @@ func pathWithHangingNode() string {
 	return writeHangingNodeScript() + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
 }
 
+// writeFailingNodeScript writes an executable `node` script that exits
+// non-zero on any invocation without printing a parsable version, returning
+// the directory containing it. This drives detectHostNodeMajor's
+// exitErr != nil branch specifically, distinct from a timeout (hangs, never
+// exits) or an unparsable-but-successful probe (exits 0 with junk output).
+func writeFailingNodeScript() string {
+	dir, err := os.MkdirTemp("", "coach-acceptance-failnode-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, dir)
+
+	script := "#!/bin/sh\nexit 3\n"
+	Expect(os.WriteFile(filepath.Join(dir, "node"), []byte(script), 0o755)).To(Succeed())
+	return dir
+}
+
+// pathWithFailingNode returns a PATH whose first entry is a stub `node`
+// that exits non-zero on `--version` without printing output, with every
+// directory containing a real node/npm/mise executable removed so the stub
+// is the only "node" the child process can resolve.
+func pathWithFailingNode() string {
+	return writeFailingNodeScript() + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+}
+
+// writeUnstartableNodeScript writes an executable file named `node` whose
+// shebang names an interpreter that does not exist, returning the directory
+// containing it. exec.Cmd.Start() resolves the name via LookPath (it is
+// executable, so LookPath succeeds) but the subsequent fork/exec fails,
+// distinct from writeFailingNodeScript's case (the process starts and exits
+// non-zero) and driving detectHostNodeMajor's cmd.Start() failure path
+// specifically.
+func writeUnstartableNodeScript() string {
+	dir, err := os.MkdirTemp("", "coach-acceptance-unstartnode-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, dir)
+
+	script := "#!/nonexistent/interpreter\n"
+	Expect(os.WriteFile(filepath.Join(dir, "node"), []byte(script), 0o755)).To(Succeed())
+	return dir
+}
+
+// pathWithUnstartableNode returns a PATH whose first entry is a stub `node`
+// that resolves via LookPath but fails to start (a shebang naming a missing
+// interpreter), with every directory containing a real node/npm/mise
+// executable removed so the stub is the only "node" the child process can
+// resolve.
+func pathWithUnstartableNode() string {
+	return writeUnstartableNodeScript() + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+}
+
+// writeOversizedUnparsableNodeScript writes an executable `node` script
+// whose `--version` output is a non-parsable blob at maxNodeVersionProbeOutput
+// (4 KiB) -- the largest detectHostNodeMajor's own probe budget allows
+// without erroring -- returning the directory containing it. This drives
+// nodeUnverifiableDetail's rawVersion-embedding branch with the widest input
+// it can actually receive, rather than a short literal like "weird-build-2024".
+func writeOversizedUnparsableNodeScript() string {
+	dir, err := os.MkdirTemp("", "coach-acceptance-bignode-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, dir)
+
+	script := "#!/bin/sh\nhead -c 4096 </dev/zero | tr '\\0' x\n"
+	Expect(os.WriteFile(filepath.Join(dir, "node"), []byte(script), 0o755)).To(Succeed())
+	return dir
+}
+
+// pathWithOversizedUnparsableNode returns a PATH whose first entry is a stub
+// `node` printing a 4 KiB unparsable blob on any invocation (including
+// `--version`), with every directory containing a real node/npm/mise
+// executable removed so the stub is the only "node" the child process can
+// resolve.
+func pathWithOversizedUnparsableNode() string {
+	return writeOversizedUnparsableNodeScript() + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+}
+
+// stubMiseInvocationLog is the filename writeStubMiseScript's stub appends
+// each invocation's argv to, one line per call.
 const stubMiseInvocationLog = "mise-invocations.log"
 const stubMiseCwdLog = "mise-probe-cwd.log"
 
@@ -626,7 +710,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 	})
 
 	When("Node cannot be found on the child process's PATH at all", func() {
-		It("reports the node check as fail/node_missing deterministically", func() {
+		It("reports the node check as fail/node_missing deterministically, mirrored exactly by checks.runtime, with an install_supported_runtime next action", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
 			writeInstalledTypescript(repo, "7.0.2")
@@ -642,12 +726,40 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
 			Expect(doc.Checks.Node.State).To(Equal("fail"))
 			Expect(doc.Checks.Node.Code).To(Equal("node_missing"))
+			Expect(doc.Checks.Node.Kind).To(BeEmpty(), "checks.node must never mirror kind")
+			Expect(doc.Checks.Node.Origin).To(BeEmpty(), "checks.node must never mirror origin")
+			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
+			Expect(doc.Checks.Runtime.Code).To(Equal("node_missing"))
+			Expect(doc.Checks.Runtime.Kind).To(Equal("node"))
+			Expect(doc.Checks.Runtime.Origin).To(Equal("path"))
+			Expect(doc.Checks.Node.State).To(Equal(doc.Checks.Runtime.State))
+			Expect(doc.Checks.Node.Code).To(Equal(doc.Checks.Runtime.Code))
+			Expect(doc.Checks.Node.Version).To(Equal(doc.Checks.Runtime.Version))
 			Expect(doc.Status).To(Equal("needs_prerequisite"))
+
+			var action readinessNextActionDoc
+			for _, a := range doc.NextActions {
+				if a.Kind == "install_supported_runtime" {
+					action = a
+				}
+			}
+			Expect(action.Kind).To(Equal("install_supported_runtime"))
+			Expect(action.Executable).To(BeFalse())
+			Expect(action.RuntimeKind).To(Equal("node"))
+			Expect(action.Supported).To(Equal([]string{"24", "26"}))
+			Expect(action.FoundVersion).To(BeEmpty(), "node_missing has no probed version to report")
+			Expect(action.Detail).To(BeEmpty(), "install_supported_runtime carries no detail field")
+
+			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
+			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
+			text := string(textStdout)
+			Expect(text).To(ContainSubstring("runtime: fail (node_missing) kind=node origin=path"))
+			Expect(text).To(ContainSubstring("install_supported_runtime (executable=false) runtime_kind=node supported=24,26"))
 		})
 	})
 
-	When("the resolvable Node's major version is below the minimum supported major", func() {
-		It("reports the node check as fail/node_below_minimum with the found version, deterministically", func() {
+	When("the resolvable Node's major version is outside the supported set, below every member", func() {
+		It("reports the node check as fail/node_unsupported with the found version, deterministically", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
 			writeInstalledTypescript(repo, "7.0.2")
@@ -662,49 +774,55 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			var doc readinessResultDoc
 			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
 			Expect(doc.Checks.Node.State).To(Equal("fail"))
-			Expect(doc.Checks.Node.Code).To(Equal("node_below_minimum"))
-			Expect(doc.Checks.Node.FoundVersion).To(Equal("v22.10.0"))
+			Expect(doc.Checks.Node.Code).To(Equal("node_unsupported"))
+			Expect(doc.Checks.Node.Version).To(Equal("v22.10.0"))
+			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
+			Expect(doc.Checks.Runtime.Code).To(Equal("node_unsupported"))
+			Expect(doc.Checks.Runtime.Version).To(Equal("v22.10.0"))
+			Expect(doc.Checks.Runtime.Kind).To(Equal("node"))
+			Expect(doc.Checks.Runtime.Origin).To(Equal("path"))
 			Expect(doc.Status).To(Equal("needs_prerequisite"))
+
+			var action readinessNextActionDoc
+			for _, a := range doc.NextActions {
+				if a.Kind == "install_supported_runtime" {
+					action = a
+				}
+			}
+			Expect(action.Kind).To(Equal("install_supported_runtime"))
+			Expect(action.Executable).To(BeFalse())
+			Expect(action.RuntimeKind).To(Equal("node"))
+			Expect(action.Supported).To(Equal([]string{"24", "26"}))
+			Expect(action.FoundVersion).To(Equal("v22.10.0"), "node_unsupported carries the probed version that fell outside the supported set")
+			Expect(action.Detail).To(BeEmpty(), "install_supported_runtime carries no detail field")
 		})
 	})
 
-	When("the resolvable Node's major version is at or above the minimum but differs from the tested major", func() {
-		It("reports the node check as pass/node_untested with the found version, elevating status to ready_with_limits rather than a gap", func() {
+	When("the resolvable Node's major version is outside the supported set, above every member", func() {
+		It("reports the node check as fail/node_unsupported, proving the set membership swap fires above the set too, not merely below a retired floor", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
 			writeInstalledTypescript(repo, "7.0.2")
 			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 
-			path := pathWithStubNode("v26.0.0")
-			requireStubNodeVersion(path, "v26.0.0")
+			path := pathWithStubNode("v27.0.0")
+			requireStubNodeVersion(path, "v27.0.0")
 
 			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 
 			var doc readinessResultDoc
 			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Node.State).To(Equal("pass"))
-			Expect(doc.Checks.Node.Code).To(Equal("node_untested"))
-			Expect(doc.Checks.Node.Version).To(Equal("v26.0.0"))
-			Expect(gapCodes(doc)).To(BeEmpty(), "an above-floor, untested Node major is a warning, never a gap")
-			Expect(doc.Status).To(Equal("ready_with_limits"))
-			Expect(doc.Warnings).To(HaveLen(1), "the frozen warnings entry must be emitted for node_untested")
-			Expect(doc.Warnings[0].Code).To(Equal("node_untested"))
-			Expect(doc.Warnings[0].FoundMajor).To(Equal(26))
-			Expect(doc.Warnings[0].TestedMajor).To(Equal(24))
-			Expect(doc.Warnings[0].FloorMajor).To(Equal(24))
-
-			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
-			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
-			text := string(textStdout)
-			Expect(text).To(ContainSubstring("status: ready_with_limits"))
-			Expect(text).To(ContainSubstring("node: pass (node_untested) version=v26.0.0"))
-			Expect(text).To(ContainSubstring("node_untested (found_major=26 tested_major=24 floor_major=24)"))
+			Expect(doc.Checks.Node.State).To(Equal("fail"))
+			Expect(doc.Checks.Node.Code).To(Equal("node_unsupported"))
+			Expect(doc.Checks.Node.Version).To(Equal("v27.0.0"))
+			Expect(doc.Checks.Runtime.Code).To(Equal("node_unsupported"))
+			Expect(doc.Status).To(Equal("needs_prerequisite"))
 		})
 	})
 
-	When("Node resolves to exactly this build's tested major", func() {
-		It("reports the node check as pass with no code, warning, or gap", func() {
+	When("Node resolves to the supported major 24", func() {
+		It("reports the node check as pass with no code, warning, or gap, and checks.runtime carries kind/origin", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
 			writeInstalledTypescript(repo, "7.0.2")
@@ -721,12 +839,52 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(doc.Checks.Node.State).To(Equal("pass"))
 			Expect(doc.Checks.Node.Code).To(BeEmpty())
 			Expect(doc.Checks.Node.Version).To(Equal("v24.9.9"))
+			Expect(doc.Checks.Node.Kind).To(BeEmpty())
+			Expect(doc.Checks.Node.Origin).To(BeEmpty())
+			Expect(doc.Checks.Runtime.State).To(Equal("pass"))
+			Expect(doc.Checks.Runtime.Code).To(BeEmpty())
+			Expect(doc.Checks.Runtime.Version).To(Equal("v24.9.9"))
+			Expect(doc.Checks.Runtime.Kind).To(Equal("node"))
+			Expect(doc.Checks.Runtime.Origin).To(Equal("path"))
 			Expect(doc.Status).To(Equal("ready"))
-			Expect(doc.Warnings).To(BeEmpty(), "the tested major must never emit a node_untested warning")
+			Expect(doc.Warnings).To(BeEmpty(), "a supported Node major must never emit a warning")
 		})
 	})
 
-	When("two independently discoverable gaps exist at once (policy_missing and node_below_minimum)", func() {
+	When("Node resolves to the supported major 26", func() {
+		It("reports the node check as pass with no code, warning, or gap, proving 26 is a first-class supported major rather than an untested one", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
+			writeInstalledTypescript(repo, "7.0.2")
+			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
+
+			path := pathWithStubNode("v26.0.0")
+			requireStubNodeVersion(path, "v26.0.0")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.Node.State).To(Equal("pass"))
+			Expect(doc.Checks.Node.Code).To(BeEmpty())
+			Expect(doc.Checks.Node.Version).To(Equal("v26.0.0"))
+			Expect(doc.Checks.Runtime.State).To(Equal("pass"))
+			Expect(doc.Checks.Runtime.Code).To(BeEmpty())
+			Expect(doc.Checks.Runtime.Version).To(Equal("v26.0.0"))
+			Expect(doc.Status).To(Equal("ready"))
+			Expect(doc.Warnings).To(BeEmpty(), "a supported Node major must never emit a warning, and node_untested no longer exists")
+
+			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
+			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
+			text := string(textStdout)
+			Expect(text).To(ContainSubstring("status: ready"))
+			Expect(text).To(ContainSubstring("runtime: pass kind=node version=v26.0.0 origin=path"))
+			Expect(text).NotTo(ContainSubstring("node_untested"))
+		})
+	})
+
+	When("two independently discoverable gaps exist at once (policy_missing and node_unsupported)", func() {
 		It("reports both gaps in gaps[], with status reflecting only the higher-precedence one", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
@@ -740,9 +898,9 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 			var doc readinessResultDoc
 			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Status).To(Equal("needs_prerequisite"), "node_below_minimum must outrank the simultaneous policy_missing gap")
-			Expect(gapCodes(doc)).To(Equal([]string{"policy_missing", "node_below_minimum"}), "both independently discoverable gaps must be reported, never hidden by precedence")
-			Expect(nextActionKinds(doc)).To(ContainElements("author_policy", "install_node"))
+			Expect(doc.Status).To(Equal("needs_prerequisite"), "node_unsupported must outrank the simultaneous policy_missing gap")
+			Expect(gapCodes(doc)).To(Equal([]string{"policy_missing", "node_unsupported"}), "both independently discoverable gaps must be reported, never hidden by precedence")
+			Expect(nextActionKinds(doc)).To(ContainElements("author_policy", "install_supported_runtime"))
 		})
 	})
 
@@ -800,7 +958,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 	})
 
 	When("Node is on PATH but `node --version` hangs indefinitely", func() {
-		It("still exits within a bounded wall clock, reporting node fail/node_below_minimum with a timed-out found_version rather than hanging forever", func() {
+		It("still exits within a bounded wall clock, reporting node fail/node_unverifiable with a bounded stderr-free detail, and still produces the fit report", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
 			writeInstalledTypescript(repo, "7.0.2")
@@ -813,15 +971,136 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 			var doc readinessResultDoc
 			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.SchemaVersion).NotTo(BeEmpty(), "the readiness document must still be produced on a probe failure")
 			Expect(doc.Checks.Node.State).To(Equal("fail"))
-			Expect(doc.Checks.Node.Code).To(Equal("node_below_minimum"))
-			Expect(doc.Checks.Node.FoundVersion).To(Equal("timed out"))
+			Expect(doc.Checks.Node.Code).To(Equal("node_unverifiable"))
+			Expect(doc.Checks.Node.Detail).To(BeEmpty(), "checks.node must never mirror detail")
+			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
+			Expect(doc.Checks.Runtime.Code).To(Equal("node_unverifiable"))
+			Expect(doc.Checks.Runtime.Kind).To(Equal("node"))
+			Expect(doc.Checks.Runtime.Origin).To(Equal("path"))
+			Expect(doc.Checks.Runtime.Detail).To(Equal("node --version timed out"))
+			Expect(doc.Checks.Runtime.Detail).NotTo(ContainSubstring(string(os.PathSeparator)), "the detail must not leak the stub node's host path")
 			Expect(doc.Status).To(Equal("needs_prerequisite"))
+
+			var action readinessNextActionDoc
+			for _, a := range doc.NextActions {
+				if a.Kind == "repair_runtime_probe" {
+					action = a
+				}
+			}
+			Expect(action.Kind).To(Equal("repair_runtime_probe"))
+			Expect(action.Executable).To(BeFalse())
+			Expect(action.RuntimeKind).To(Equal("node"))
+			Expect(action.Supported).To(BeEmpty(), "repair_runtime_probe carries no supported field")
+			Expect(action.FoundVersion).To(BeEmpty(), "repair_runtime_probe carries no found_version field")
+			Expect(action.Detail).To(Equal("node --version timed out"))
+
+			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
+			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
+			text := string(textStdout)
+			Expect(text).To(ContainSubstring("runtime: fail (node_unverifiable) kind=node origin=path"))
+			Expect(text).To(ContainSubstring("repair_runtime_probe (executable=false) runtime_kind=node detail=node --version timed out"))
+		})
+	})
+
+	When("Node is on PATH but `node --version` exits non-zero", func() {
+		It("reports node fail/node_unverifiable with a bounded path-free detail and a repair_runtime_probe next action, not node_missing", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
+			writeInstalledTypescript(repo, "7.0.2")
+			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
+
+			path := pathWithFailingNode()
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.SchemaVersion).NotTo(BeEmpty(), "the readiness document must still be produced on a probe failure")
+			Expect(doc.Checks.Node.State).To(Equal("fail"))
+			Expect(doc.Checks.Node.Code).To(Equal("node_unverifiable"))
+			Expect(doc.Checks.Node.Detail).To(BeEmpty(), "checks.node must never mirror detail")
+			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
+			Expect(doc.Checks.Runtime.Code).To(Equal("node_unverifiable"))
+			Expect(doc.Checks.Runtime.Kind).To(Equal("node"))
+			Expect(doc.Checks.Runtime.Origin).To(Equal("path"))
+			Expect(doc.Checks.Runtime.Detail).To(Equal("node --version failed: running node --version: exit status 3"))
+			Expect(doc.Checks.Runtime.Detail).NotTo(ContainSubstring(string(os.PathSeparator)), "the detail must not leak the stub node's host path")
+			Expect(doc.Status).To(Equal("needs_prerequisite"))
+
+			var action readinessNextActionDoc
+			for _, a := range doc.NextActions {
+				if a.Kind == "repair_runtime_probe" {
+					action = a
+				}
+			}
+			Expect(action.Kind).To(Equal("repair_runtime_probe"))
+			Expect(action.Executable).To(BeFalse())
+			Expect(action.RuntimeKind).To(Equal("node"))
+			Expect(action.Supported).To(BeEmpty(), "repair_runtime_probe carries no supported field")
+			Expect(action.FoundVersion).To(BeEmpty(), "repair_runtime_probe carries no found_version field")
+			Expect(action.Detail).To(Equal("node --version failed: running node --version: exit status 3"))
+
+			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
+			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
+			text := string(textStdout)
+			Expect(text).To(ContainSubstring("runtime: fail (node_unverifiable) kind=node origin=path"))
+			Expect(text).To(ContainSubstring("repair_runtime_probe (executable=false) runtime_kind=node detail=node --version failed: running node --version: exit status 3"))
+		})
+	})
+
+	When("Node is on PATH but the `node --version` process cannot start", func() {
+		It("reports node fail/node_unverifiable with a bounded, path-free start-failure detail and a repair_runtime_probe next action", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
+			writeInstalledTypescript(repo, "7.0.2")
+			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
+
+			path := pathWithUnstartableNode()
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.SchemaVersion).NotTo(BeEmpty(), "the readiness document must still be produced on a probe failure")
+			Expect(doc.Checks.Node.State).To(Equal("fail"))
+			Expect(doc.Checks.Node.Code).To(Equal("node_unverifiable"))
+			Expect(doc.Checks.Node.Detail).To(BeEmpty(), "checks.node must never mirror detail")
+			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
+			Expect(doc.Checks.Runtime.Code).To(Equal("node_unverifiable"))
+			Expect(doc.Checks.Runtime.Kind).To(Equal("node"))
+			Expect(doc.Checks.Runtime.Origin).To(Equal("path"))
+			Expect(doc.Checks.Runtime.Detail).To(Equal("node --version failed to start: no such file or directory"))
+			Expect(doc.Checks.Runtime.Detail).NotTo(ContainSubstring(string(os.PathSeparator)), "the detail must not leak the stub node's host path")
+			Expect(doc.Checks.Runtime.Detail).NotTo(ContainSubstring("fork/exec"), "the detail must not leak the raw fork/exec diagnostic")
+			Expect(doc.Status).To(Equal("needs_prerequisite"))
+
+			var action readinessNextActionDoc
+			for _, a := range doc.NextActions {
+				if a.Kind == "repair_runtime_probe" {
+					action = a
+				}
+			}
+			Expect(action.Kind).To(Equal("repair_runtime_probe"))
+			Expect(action.Executable).To(BeFalse())
+			Expect(action.RuntimeKind).To(Equal("node"))
+			Expect(action.Supported).To(BeEmpty(), "repair_runtime_probe carries no supported field")
+			Expect(action.FoundVersion).To(BeEmpty(), "repair_runtime_probe carries no found_version field")
+			Expect(action.Detail).To(Equal("node --version failed to start: no such file or directory"))
+
+			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
+			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
+			text := string(textStdout)
+			Expect(text).To(ContainSubstring("runtime: fail (node_unverifiable) kind=node origin=path"))
+			Expect(text).To(ContainSubstring("repair_runtime_probe (executable=false) runtime_kind=node detail=node --version failed to start: no such file or directory"))
 		})
 	})
 
 	When("Node resolves and runs but prints output that is not a parsable version string", func() {
-		It("reports node fail/node_below_minimum with the raw observed output, not node_missing", func() {
+		It("reports node fail/node_unverifiable naming the raw observed output, not node_missing or node_unsupported", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
 			writeInstalledTypescript(repo, "7.0.2")
@@ -835,9 +1114,38 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 			var doc readinessResultDoc
 			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.SchemaVersion).NotTo(BeEmpty(), "the readiness document must still be produced on a probe failure")
 			Expect(doc.Checks.Node.State).To(Equal("fail"))
-			Expect(doc.Checks.Node.Code).To(Equal("node_below_minimum"))
-			Expect(doc.Checks.Node.FoundVersion).To(Equal("weird-build-2024"))
+			Expect(doc.Checks.Node.Code).To(Equal("node_unverifiable"))
+			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
+			Expect(doc.Checks.Runtime.Code).To(Equal("node_unverifiable"))
+			Expect(doc.Checks.Runtime.Detail).To(ContainSubstring("weird-build-2024"))
+			Expect(doc.Checks.Runtime.Detail).NotTo(ContainSubstring(string(os.PathSeparator)), "the detail must not leak the stub node's host path")
+			Expect(doc.Checks.Runtime.Version).To(BeEmpty(), "an unverifiable probe must not report a confirmed version")
+			Expect(doc.Status).To(Equal("needs_prerequisite"))
+		})
+	})
+
+	When("Node resolves and runs but prints an oversized unparsable version blob", func() {
+		It("reports node fail/node_unverifiable with a detail bounded well below the raw probe-output budget", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
+			writeInstalledTypescript(repo, "7.0.2")
+			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
+
+			path := pathWithOversizedUnparsableNode()
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
+			Expect(doc.Checks.Runtime.Code).To(Equal("node_unverifiable"))
+			Expect(doc.Checks.Runtime.Detail).NotTo(BeEmpty())
+			Expect(doc.Checks.Runtime.Detail).To(HavePrefix("node --version printed an unparsable version:"), "must land on the rawVersion-embedding branch, not the exceeded-probe-budget default")
+			Expect(doc.Checks.Runtime.Detail).To(ContainSubstring("...(truncated)"), "the oversized rawVersion must actually have been truncated")
+			Expect(len(doc.Checks.Runtime.Detail)).To(BeNumerically("<", 1<<10), "the probe-failure detail must be bounded even when the probed output is not")
 			Expect(doc.Status).To(Equal("needs_prerequisite"))
 		})
 	})
@@ -1043,6 +1351,19 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(doc.Checks.Compiler.SupportedVersions).To(Equal([]string{"7.0.2"}))
 			Expect(gapCodes(doc)).To(ContainElement("typescript_version_mismatch"))
 			Expect(nextActionKinds(doc)).To(ContainElement("prepare_compiler"))
+
+			var action readinessNextActionDoc
+			for _, a := range doc.NextActions {
+				if a.Kind == "prepare_compiler" {
+					action = a
+				}
+			}
+			Expect(action.Kind).To(Equal("prepare_compiler"))
+			Expect(action.Executable).To(BeTrue())
+			Expect(action.RuntimeKind).To(BeEmpty(), "prepare_compiler carries no runtime_kind field")
+			Expect(action.Supported).To(Equal([]string{"7.0.2"}))
+			Expect(action.FoundVersion).To(Equal("5.4.0"))
+			Expect(action.Detail).To(BeEmpty(), "prepare_compiler carries no detail field")
 		})
 	})
 

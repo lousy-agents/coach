@@ -1005,7 +1005,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 	})
 
 	When("host Node major is 25 at runtime preparation", func() {
-		It("exits 2 with empty stdout and node_missing, not node_unsupported or node_below_minimum", func() {
+		It("exits 2 with empty stdout and node_unsupported, matching the same stub's --check-project gap code", func() {
 			repo := newTempGitRepo()
 			commitNativePackageGapFixture(repo)
 			writeInstalledNativeTypescript(repo, "7.0.2")
@@ -1014,24 +1014,36 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
-			Expect(string(stderr)).NotTo(ContainSubstring("node_unsupported"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_unsupported: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+			Expect(string(stderr)).NotTo(ContainSubstring("node_missing"))
 			Expect(string(stderr)).NotTo(ContainSubstring("node_below_minimum"))
 			Expect(string(stderr)).NotTo(ContainSubstring("25"))
 			Expect(string(stderr)).NotTo(ContainSubstring("{24, 26}"))
 		})
 
-		It("still accepts the same stub under --check-project as node_untested and does not emit node_unsupported", func() {
+		It("reports the same stub under --check-project as node_unsupported and does not emit node_untested", func() {
 			repo := newTempGitRepo()
 			commitNativePackageGapFixture(repo)
 			writeInstalledNativeTypescript(repo, "7.0.2")
 
 			path := pathWithStubNode("v25.0.0")
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(string(stdout)).To(ContainSubstring("node_untested"))
-			Expect(string(stdout)).NotTo(ContainSubstring("node_unsupported"))
-			Expect(string(stdout)).NotTo(ContainSubstring("node_missing"))
+
+			jsonStdout, jsonStderr, jsonExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
+			Expect(jsonExit).To(Equal(0), "stderr: %s stdout: %s", jsonStderr, jsonStdout)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(jsonStdout, &doc)).To(Succeed(), "stdout: %s", jsonStdout)
+			Expect(doc.Status).To(Equal("needs_prerequisite"))
+			Expect(doc.Checks.Node.State).To(Equal("fail"))
+			Expect(doc.Checks.Node.Code).To(Equal("node_unsupported"))
+			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
+			Expect(doc.Checks.Runtime.Code).To(Equal("node_unsupported"))
+
+			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
+			Expect(textExit).To(Equal(0), "stderr: %s stdout: %s", textStderr, textStdout)
+			Expect(string(textStdout)).To(ContainSubstring("node_unsupported"))
+			Expect(string(textStdout)).NotTo(ContainSubstring("node_untested"))
+			Expect(string(textStdout)).NotTo(ContainSubstring("node_missing"))
 		})
 	})
 

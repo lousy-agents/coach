@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -11,10 +12,6 @@ import (
 )
 
 var errNodeNotFound = errors.New("node executable not found on PATH")
-
-// errNodeVersionProbeTimedOut signals that `node --version` did not
-// complete within nodeVersionProbeTimeout; see checkNodeReadiness's doc for
-// why this is classified separately from errNodeNotFound.
 var errNodeVersionProbeTimedOut = errors.New("node --version timed out")
 
 const (
@@ -22,10 +19,8 @@ const (
 	maxNodeVersionProbeOutput = 4 << 10
 )
 
-// detectHostNodeMajor is the Node-detection seam: it looks up `node` on
-// PATH and parses `node --version`'s major component. Tests may replace it
-// to exercise node_missing/node_below_minimum without depending on the host
-// environment's actual Node installation.
+// Test seam: replaced in tests to exercise node_missing/node_unsupported/
+// node_unverifiable without depending on the host's actual Node install.
 var detectHostNodeMajor = func() (rawVersion string, major int, err error) {
 	if _, lookErr := exec.LookPath("node"); lookErr != nil {
 		return "", 0, errNodeNotFound
@@ -56,36 +51,52 @@ func parseNodeMajor(rawVersion string) (int, error) {
 	return major, nil
 }
 
-// checkNodeReadiness compares the discovered host Node major against
-// MinimumSupportedNodeMajor and TestedNodeMajor: node_missing only when Node
-// cannot be found on PATH at all (errNodeNotFound). Every other
-// detectHostNodeMajor failure -- unparsable version output, a probe
-// timeout, or a run failure -- means Node is actually present and was
-// invoked but could not be confirmed to meet the floor, so it is reported
-// as node_below_minimum with whatever diagnostic was observed rather than
-// the misleading node_missing. A major below the floor is the same gap; a
-// major at or above the floor but different from TestedNodeMajor is the
-// node_untested warning, not a gap.
+const (
+	readinessNodeCheckKind   = "node"
+	readinessNodeCheckOrigin = "path"
+)
+
 func checkNodeReadiness() ReadinessCheck {
 	rawVersion, major, err := detectHostNodeMajor()
 	if err != nil {
 		if errors.Is(err, errNodeNotFound) {
-			return ReadinessCheck{State: ReadinessFail, Code: GapNodeMissing}
+			return ReadinessCheck{State: ReadinessFail, Code: GapNodeMissing, Kind: readinessNodeCheckKind, Origin: readinessNodeCheckOrigin}
 		}
-		foundVersion := rawVersion
-		switch {
-		case errors.Is(err, errNodeVersionProbeTimedOut):
-			foundVersion = "timed out"
-		case foundVersion == "":
-			foundVersion = fmt.Sprintf("unparsable: %s", err)
-		}
-		return ReadinessCheck{State: ReadinessFail, Code: GapNodeBelowMinimum, FoundVersion: foundVersion}
+		return ReadinessCheck{State: ReadinessFail, Code: GapNodeUnverifiable, Kind: readinessNodeCheckKind, Origin: readinessNodeCheckOrigin, Detail: nodeUnverifiableDetail(err, rawVersion)}
 	}
-	if major < MinimumSupportedNodeMajor {
-		return ReadinessCheck{State: ReadinessFail, Code: GapNodeBelowMinimum, FoundVersion: rawVersion}
+	if !nodeMajorSupported(major) {
+		return ReadinessCheck{State: ReadinessFail, Code: GapNodeUnsupported, Kind: readinessNodeCheckKind, Origin: readinessNodeCheckOrigin, Version: rawVersion}
 	}
-	if major != TestedNodeMajor {
-		return ReadinessCheck{State: ReadinessPass, Code: WarnNodeUntested, Version: rawVersion}
+	return ReadinessCheck{State: ReadinessPass, Kind: readinessNodeCheckKind, Origin: readinessNodeCheckOrigin, Version: rawVersion}
+}
+
+// A separate, smaller bound: maxNodeVersionProbeOutput (4 KiB) sizes the
+// subprocess read, not the rendered diagnostic, and %q escaping can inflate
+// it further.
+const maxNodeUnverifiableDetailRawVersion = 200
+
+func nodeUnverifiableDetail(err error, rawVersion string) string {
+	var pathErr *fs.PathError
+	switch {
+	case errors.Is(err, errNodeVersionProbeTimedOut):
+		return "node --version timed out"
+	case rawVersion != "":
+		return fmt.Sprintf("node --version printed an unparsable version: %q", truncateNodeUnverifiableRawVersion(rawVersion))
+	case errors.As(err, &pathErr):
+		return fmt.Sprintf("node --version failed to start: %s", truncateNodeUnverifiableRawVersion(pathErr.Err.Error()))
+	default:
+		return fmt.Sprintf("node --version failed: %s", err)
 	}
-	return ReadinessCheck{State: ReadinessPass, Version: rawVersion}
+}
+
+func truncateNodeUnverifiableRawVersion(rawVersion string) string {
+	if len(rawVersion) <= maxNodeUnverifiableDetailRawVersion {
+		return rawVersion
+	}
+	return rawVersion[:maxNodeUnverifiableDetailRawVersion] + "...(truncated)"
+}
+
+// Kind, Origin, and Detail are deliberately never mirrored onto checks.node.
+func nodeCompatibilityMirror(runtimeCheck ReadinessCheck) ReadinessCheck {
+	return ReadinessCheck{State: runtimeCheck.State, Code: runtimeCheck.Code, Version: runtimeCheck.Version}
 }

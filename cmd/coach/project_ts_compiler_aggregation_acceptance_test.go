@@ -579,6 +579,9 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 				Expect(doc.Checks.Compiler.State).To(Equal("pass"), "the installed compiler is the project origin's candidate whatever the manifest declares, got state=%s code=%s", doc.Checks.Compiler.State, doc.Checks.Compiler.Code)
 				Expect(doc.Checks.Compiler.Version).To(Equal("7.0.2"))
+				Expect(doc.Checks.Runtime.State).To(Equal("pass"))
+				Expect(doc.Checks.Runtime.Code).To(BeEmpty(), "Node 24 is a supported major and must carry no code or warning")
+				Expect(doc.Checks.Node.Code).To(BeEmpty())
 				Expect(warningCodes(doc)).To(BeEmpty(), "a range declaration is never warned about when the project origin wins, got %v", warningCodes(doc))
 				Expect(gapCodes(doc)).To(BeEmpty())
 				Expect(doc.Status).To(Equal("ready"))
@@ -618,6 +621,9 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 			Expect(doc.Checks.Compiler.State).To(Equal("pass"), "an out-of-set declaration governs setup choices only; the installed 7.0.2 is the candidate, got state=%s code=%s", doc.Checks.Compiler.State, doc.Checks.Compiler.Code)
 			Expect(doc.Checks.Compiler.Version).To(Equal("7.0.2"))
+			Expect(doc.Checks.Runtime.State).To(Equal("pass"))
+			Expect(doc.Checks.Runtime.Code).To(BeEmpty(), "Node 24 is a supported major and must carry no code or warning, even while the compiler warns")
+			Expect(doc.Checks.Node.Code).To(BeEmpty())
 			Expect(doc.Status).To(Equal("ready_with_limits"))
 
 			declared, found, origin, present := declarationMismatchWarning(doc)
@@ -625,6 +631,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(declared).To(Equal("5.4.0"))
 			Expect(found).To(Equal("7.0.2"))
 			Expect(origin).To(Equal("manifest"))
+			Expect(len(warningCodes(doc))).To(Equal(1), "only the compiler warning may be present -- a supported Node major never contributes one, got %v", warningCodes(doc))
 
 			Expect(text).To(ContainSubstring("compiler: pass (compiler_declaration_mismatch) version=7.0.2"))
 			Expect(text).To(ContainSubstring("compiler_declaration_mismatch (declared_version=5.4.0 found_version=7.0.2 declaration_origin=manifest root=.)"))

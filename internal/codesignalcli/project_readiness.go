@@ -2,6 +2,7 @@ package codesignalcli
 
 import (
 	"errors"
+	"strconv"
 )
 
 const (
@@ -9,19 +10,24 @@ const (
 	defaultProjectConfigPath = "project.json"
 )
 
-// MinimumSupportedNodeMajor is the floor this build of coach requires for
-// TypeScript readiness checks, mirroring js/semantics/package.json's
-// restated engines minimum (">=24"). TestedNodeMajor is the Node major this
-// repository's own CI actually exercises (mise.toml's node pin). Both are
-// compiled-in constants, not read from either file at runtime: an analyzed
-// repository has neither this repo's package.json nor its mise.toml, and a
-// runtime read would conflate "the host running coach" with "the host being
-// checked." See TestNodeVersionConstantsMatchDeclaredPins for the pinned
-// invariant these must satisfy.
-const (
-	MinimumSupportedNodeMajor = 24
-	TestedNodeMajor           = 24
-)
+var SupportedNodeMajors = []int{24, 26}
+
+func nodeMajorSupported(major int) bool {
+	for _, supported := range SupportedNodeMajors {
+		if supported == major {
+			return true
+		}
+	}
+	return false
+}
+
+func supportedNodeMajorsCopy() []string {
+	out := make([]string, len(SupportedNodeMajors))
+	for i, major := range SupportedNodeMajors {
+		out[i] = strconv.Itoa(major)
+	}
+	return out
+}
 
 type ReadinessState string
 
@@ -41,15 +47,11 @@ const (
 	StatusReady             ReadinessStatus = "ready"
 )
 
-// Gap codes map 1:1 to a ReadinessStatus via statusForGapCode. The
-// package-manager codes are declared here as vocabulary that later work will
-// plug real detection into; checkPackageManager never produces them itself
-// yet. The compiler codes are produced by resolveCompiler
-// (project_ts_compiler_resolve.go).
 const (
 	GapUnsupportedRepositoryShape       = "unsupported_repository_shape"
 	GapNodeMissing                      = "node_missing"
-	GapNodeBelowMinimum                 = "node_below_minimum"
+	GapNodeUnsupported                  = "node_unsupported"
+	GapNodeUnverifiable                 = "node_unverifiable"
 	GapTypescriptCompilerMissing        = "typescript_compiler_missing"
 	GapTypescriptVersionMismatch        = "typescript_version_mismatch"
 	GapTypescriptVersionConflict        = "typescript_version_conflict"
@@ -58,13 +60,6 @@ const (
 	GapPolicyMissing                    = "policy_missing"
 	GapPolicyInvalid                    = "policy_invalid"
 )
-
-// WarnNodeUntested is not part of the gap-code vocabulary: it never appears
-// in gaps[] or drives a status above ready_with_limits. It marks a
-// ReadinessCheck.Code on a passing node check whose major differs from
-// TestedNodeMajor -- the limit-class condition contributes only
-// ready_with_limits, alongside a relevant dirty worktree.
-const WarnNodeUntested = "node_untested"
 
 // WarnCompilerDeclarationMismatch is the limit-class warning when a
 // selected root's manifest declares a typescript version other than the
@@ -100,15 +95,18 @@ type ReadinessDeclarationMismatch struct {
 // ReadinessCheck is one entry in ReadinessChecks. Which optional fields
 // accompany which code is the frozen compiler-check contract, pinned by
 // cmd/coach's aggregation acceptance table; the json:"-" fields never
-// serialize and reach the customer as rendered text only.
+// serialize and reach the customer as rendered text only. Kind and Origin
+// are additive and omitempty, populated only on Runtime.
 type ReadinessCheck struct {
 	State             ReadinessState           `json:"state"`
 	Code              string                   `json:"code,omitempty"`
+	Kind              string                   `json:"kind,omitempty"`
 	Version           string                   `json:"version,omitempty"`
 	ExpectedVersion   string                   `json:"expected_version,omitempty"`
 	FoundVersion      string                   `json:"found_version,omitempty"`
 	SupportedVersions []string                 `json:"supported_versions,omitempty"`
 	RootFindings      []ReadinessRootFinding   `json:"root_findings,omitempty"`
+	Origin            string                   `json:"origin,omitempty"`
 	Detail            string                   `json:"detail,omitempty"`
 	DeclaredVersion   string                   `json:"-"`
 	DeclarationOrigin string                   `json:"-"`
@@ -117,13 +115,11 @@ type ReadinessCheck struct {
 	DeclarationMismatches []ReadinessDeclarationMismatch `json:"-"`
 }
 
-// ReadinessChecks is the fixed set of independently discoverable checks:
-// every field always runs and reports pass/fail/not_checked, regardless of
-// any other field's outcome.
 type ReadinessChecks struct {
 	ProjectShape   ReadinessCheck `json:"project_shape"`
 	Policy         ReadinessCheck `json:"policy"`
 	Node           ReadinessCheck `json:"node"`
+	Runtime        ReadinessCheck `json:"runtime"`
 	Compiler       ReadinessCheck `json:"compiler"`
 	PackageManager ReadinessCheck `json:"package_manager"`
 }
@@ -137,9 +133,6 @@ type ReadinessGap struct {
 // code populates its own subset of the fields below.
 type ReadinessWarning struct {
 	Code              string `json:"code"`
-	FoundMajor        int    `json:"found_major,omitempty"`
-	TestedMajor       int    `json:"tested_major,omitempty"`
-	FloorMajor        int    `json:"floor_major,omitempty"`
 	DeclaredVersion   string `json:"declared_version,omitempty"`
 	FoundVersion      string `json:"found_version,omitempty"`
 	DeclarationOrigin string `json:"declaration_origin,omitempty"`
@@ -147,21 +140,19 @@ type ReadinessWarning struct {
 }
 
 type ReadinessNextAction struct {
-	Kind string `json:"kind"`
+	Kind         string   `json:"kind"`
+	Executable   bool     `json:"executable"`
+	RuntimeKind  string   `json:"runtime_kind,omitempty"`
+	Supported    []string `json:"supported,omitempty"`
+	FoundVersion string   `json:"found_version,omitempty"`
+	Detail       string   `json:"detail,omitempty"`
 }
 
-// ReadinessDirtyWorktree reports uncommitted/untracked paths relevant to the
-// readiness result. Its presence is informational only: it never feeds into
-// any check, and RelevantChanges contributes only the ready_with_limits
-// limit class, never a gap.
 type ReadinessDirtyWorktree struct {
 	RelevantChanges bool     `json:"relevant_changes"`
 	Paths           []string `json:"paths"`
 }
 
-// ReadinessResult is the read-only output of CheckProjectReadiness, rendered
-// verbatim (same struct, no drift) by both RenderReadinessText and
-// RenderReadinessJSON.
 type ReadinessResult struct {
 	SchemaVersion string                 `json:"schema_version"`
 	Status        ReadinessStatus        `json:"status"`
@@ -174,28 +165,14 @@ type ReadinessResult struct {
 	NextActions   []ReadinessNextAction  `json:"next_actions"`
 }
 
-// CheckProjectReadiness produces a read-only TypeScript project-readiness
-// result at revision. Snapshot checks (project_shape, policy) read only
-// committed content at revision via Git plumbing; the Node host check reads
-// only host state; the Compiler check reads worktree content (package.json,
-// mise.toml, node_modules/typescript) directly rather than the Git
-// snapshot -- these are host-readiness reads of worktree state that setup
-// would mutate; they never become analysis input. Other worktree paths are
-// inspected only to report their existence, never their content. configPath
-// is the --project-config value; an empty string resolves to the default
-// "project.json" at revision.
 func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, error) {
 	policyPath := configPath
 	if policyPath == "" {
 		policyPath = defaultProjectConfigPath
 	}
 
-	// checkPolicy must run before checkProjectShape: the latter needs to know
-	// whether a policy validated successfully, and which roots it declared,
-	// to recognize a legitimate non-root TypeScript project. Reordering this
-	// back would silently make project_shape revert to its root-only
-	// heuristic and contradict a passing policy that already names where the
-	// project lives.
+	// checkPolicy must run before checkProjectShape: reordering silently
+	// reverts project_shape to its root-only heuristic.
 	policy, roots, err := checkPolicy(dir, revision, policyPath)
 	if err != nil {
 		return nil, err
@@ -204,7 +181,8 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 	if err != nil {
 		return nil, err
 	}
-	node := checkNodeReadiness()
+	runtime := checkNodeReadiness()
+	node := nodeCompatibilityMirror(runtime)
 	compiler := resolveCompiler(dir, roots)
 	packageManager := checkPackageManager()
 
@@ -212,6 +190,7 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 		ProjectShape:   projectShape,
 		Policy:         policy,
 		Node:           node,
+		Runtime:        runtime,
 		Compiler:       compiler,
 		PackageManager: packageManager,
 	}
@@ -265,11 +244,7 @@ func checkPolicy(dir, revision, policyPath string) (ReadinessCheck, []string, er
 	return ReadinessCheck{State: ReadinessPass}, config.Roots, nil
 }
 
-// checkPackageManager always reports not_checked. Real package-manager
-// discovery (the package_manager_ambiguous /
-// package_manager_config_unverifiable gap codes) is a seam for a later
-// task to plug in; fabricating a pass or fail here would misreport a
-// check that does not exist yet.
+// Stub: a seam for a later task. Not a bug.
 func checkPackageManager() ReadinessCheck {
 	return ReadinessCheck{State: ReadinessNotChecked}
 }

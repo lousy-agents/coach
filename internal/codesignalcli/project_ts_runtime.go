@@ -123,8 +123,11 @@ var resolveHostNode = func(ctx context.Context) (execPath, rawVersion string, er
 }
 
 func mapHostNodeResolveError(err error) error {
-	if errors.Is(err, errHostNodeNotFound) || errors.Is(err, errHostNodeMajorDisallowed) {
+	if errors.Is(err, errHostNodeNotFound) {
 		return compilerUnresolved(GapNodeMissing)
+	}
+	if errors.Is(err, errHostNodeMajorDisallowed) {
+		return compilerUnresolved(GapNodeUnsupported)
 	}
 	return fmt.Errorf("coach: resolving host Node runtime for TypeScript analysis: %w", err)
 }

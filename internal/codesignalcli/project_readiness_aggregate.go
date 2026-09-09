@@ -1,52 +1,74 @@
 package codesignalcli
 
 func aggregateReadiness(checks ReadinessChecks, dirtyRelevant bool) (ReadinessStatus, []ReadinessGap, []ReadinessNextAction, []ReadinessWarning) {
-	codes := failingReadinessCodes(checks)
-	gaps, nextActions, status := readinessFromGapCodes(codes)
+	failing := failingReadinessChecks(checks)
+	gaps, nextActions, status := readinessFromGapChecks(failing)
 	if len(gaps) == 0 && hasReadinessLimitWarning(checks, dirtyRelevant) {
 		status = StatusReadyWithLimits
 	}
 	return status, gaps, nextActions, readinessWarnings(checks)
 }
 
-func failingReadinessCodes(checks ReadinessChecks) []string {
-	var codes []string
-	for _, check := range []ReadinessCheck{checks.ProjectShape, checks.Policy, checks.Node, checks.Compiler, checks.PackageManager} {
+// failingReadinessChecks reads checks.Runtime rather than checks.Node: the
+// two always carry the same State/Code (see nodeCompatibilityMirror), and
+// including both here would double-report every Node gap.
+func failingReadinessChecks(checks ReadinessChecks) []ReadinessCheck {
+	var failing []ReadinessCheck
+	for _, check := range []ReadinessCheck{checks.ProjectShape, checks.Policy, checks.Runtime, checks.Compiler, checks.PackageManager} {
 		if check.State == ReadinessFail {
-			codes = append(codes, check.Code)
+			failing = append(failing, check)
 		}
 	}
-	return codes
+	return failing
 }
 
-func readinessFromGapCodes(codes []string) ([]ReadinessGap, []ReadinessNextAction, ReadinessStatus) {
-	gaps := make([]ReadinessGap, 0, len(codes))
-	nextActions := make([]ReadinessNextAction, 0, len(codes))
+func readinessFromGapChecks(failing []ReadinessCheck) ([]ReadinessGap, []ReadinessNextAction, ReadinessStatus) {
+	gaps := make([]ReadinessGap, 0, len(failing))
+	nextActions := make([]ReadinessNextAction, 0, len(failing))
 	seenActions := map[string]bool{}
 	status := StatusReady
-	for _, code := range codes {
-		gaps = append(gaps, ReadinessGap{Code: code})
-		if candidate := statusForGapCode(code); statusRank(candidate) > statusRank(status) {
+	for _, check := range failing {
+		gaps = append(gaps, ReadinessGap{Code: check.Code})
+		if candidate := statusForGapCode(check.Code); statusRank(candidate) > statusRank(status) {
 			status = candidate
 		}
-		if kind, ok := nextActionForGapCode(code); ok && !seenActions[kind] {
+		if kind, ok := nextActionForGapCode(check.Code); ok && !seenActions[kind] {
 			seenActions[kind] = true
-			nextActions = append(nextActions, ReadinessNextAction{Kind: kind})
+			nextActions = append(nextActions, nextActionForCheck(kind, check))
 		}
 	}
 	return gaps, nextActions, status
 }
 
+// nextActionForCheck fills each kind's frozen payload variant (SA-280-032):
+// no field appears on a kind that does not list it in the parent epic's
+// gap-to-action table.
+func nextActionForCheck(kind string, check ReadinessCheck) ReadinessNextAction {
+	action := ReadinessNextAction{Kind: kind, Executable: nextActionExecutable(kind)}
+	switch kind {
+	case nextActionKindInstallSupportedRuntime:
+		action.RuntimeKind = readinessNodeCheckKind
+		action.Supported = supportedNodeMajorsCopy()
+		if check.Code == GapNodeUnsupported {
+			action.FoundVersion = check.Version
+		}
+	case nextActionKindRepairRuntimeProbe:
+		action.RuntimeKind = readinessNodeCheckKind
+		action.Detail = check.Detail
+	case nextActionKindPrepareCompiler:
+		action.Supported = supportedTypescriptVersionsCopy()
+		action.FoundVersion = check.FoundVersion
+	}
+	return action
+}
+
 func hasReadinessLimitWarning(checks ReadinessChecks, dirtyRelevant bool) bool {
-	return dirtyRelevant || checks.Node.Code == WarnNodeUntested || checks.Compiler.Code == WarnCompilerDeclarationMismatch
+	return dirtyRelevant || checks.Compiler.Code == WarnCompilerDeclarationMismatch
 }
 
 func readinessWarnings(checks ReadinessChecks) []ReadinessWarning {
 	warnings := make([]ReadinessWarning, 0, 1)
 	warnings = append(warnings, compilerDeclarationWarnings(checks.Compiler)...)
-	if warning, ok := nodeUntestedWarning(checks.Node); ok {
-		warnings = append(warnings, warning)
-	}
 	return warnings
 }
 
@@ -65,26 +87,4 @@ func compilerDeclarationWarnings(check ReadinessCheck) []ReadinessWarning {
 		})
 	}
 	return warnings
-}
-
-func nodeUntestedWarning(check ReadinessCheck) (ReadinessWarning, bool) {
-	if check.Code != WarnNodeUntested {
-		return ReadinessWarning{}, false
-	}
-	// checkNodeReadiness only ever sets WarnNodeUntested after successfully
-	// parsing checks.Node.Version to compare its major against
-	// TestedNodeMajor, so re-parsing it here to populate found_major cannot
-	// fail in practice; the error is still checked so a future change to
-	// that invariant fails closed (no warning emitted) rather than
-	// panicking or fabricating a zero found_major.
-	foundMajor, err := parseNodeMajor(check.Version)
-	if err != nil {
-		return ReadinessWarning{}, false
-	}
-	return ReadinessWarning{
-		Code:        WarnNodeUntested,
-		FoundMajor:  foundMajor,
-		TestedMajor: TestedNodeMajor,
-		FloorMajor:  MinimumSupportedNodeMajor,
-	}, true
 }

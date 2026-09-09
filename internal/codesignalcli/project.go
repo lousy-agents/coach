@@ -505,55 +505,66 @@ func hasDuplicateOrOverlappingPaths(paths []string) bool {
 // supposedly frozen config schema depend on parser details.
 func rejectDuplicateJSONKeys(data []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	var walk func(depth int) error
-	walk = func(depth int) error {
-		if depth > maxProjectConfigJSONDepth {
-			return fmt.Errorf("document exceeds JSON nesting budget of %d", maxProjectConfigJSONDepth)
-		}
-		token, err := decoder.Token()
-		if err != nil {
-			return err
-		}
-		switch delimiter := token.(type) {
-		case json.Delim:
-			switch delimiter {
-			case '{':
-				seen := map[string]struct{}{}
-				for decoder.More() {
-					keyToken, err := decoder.Token()
-					if err != nil {
-						return err
-					}
-					key := keyToken.(string)
-					if _, exists := seen[key]; exists {
-						return fmt.Errorf("duplicate object key %q", key)
-					}
-					seen[key] = struct{}{}
-					if err := walk(depth + 1); err != nil {
-						return err
-					}
-				}
-				_, err = decoder.Token()
-				return err
-			case '[':
-				for decoder.More() {
-					if err := walk(depth + 1); err != nil {
-						return err
-					}
-				}
-				_, err = decoder.Token()
-				return err
-			}
-		}
-		return nil
-	}
-	if err := walk(1); err != nil {
+	if err := walkJSONValue(decoder, 1); err != nil {
 		return err
 	}
 	if _, err := decoder.Token(); err == nil {
 		return fmt.Errorf("document must contain exactly one JSON value")
 	}
 	return nil
+}
+
+// walkJSONValue reads and validates the next JSON value from decoder,
+// rejecting duplicate object keys and nesting deeper than depth's budget.
+func walkJSONValue(decoder *json.Decoder, depth int) error {
+	if depth > maxProjectConfigJSONDepth {
+		return fmt.Errorf("document exceeds JSON nesting budget of %d", maxProjectConfigJSONDepth)
+	}
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delimiter, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delimiter {
+	case '{':
+		return walkJSONObject(decoder, depth)
+	case '[':
+		return walkJSONArray(decoder, depth)
+	}
+	return nil
+}
+
+func walkJSONObject(decoder *json.Decoder, depth int) error {
+	seen := map[string]struct{}{}
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		key := keyToken.(string)
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("duplicate object key %q", key)
+		}
+		seen[key] = struct{}{}
+		if err := walkJSONValue(decoder, depth+1); err != nil {
+			return err
+		}
+	}
+	_, err := decoder.Token()
+	return err
+}
+
+func walkJSONArray(decoder *json.Decoder, depth int) error {
+	for decoder.More() {
+		if err := walkJSONValue(decoder, depth+1); err != nil {
+			return err
+		}
+	}
+	_, err := decoder.Token()
+	return err
 }
 
 // ResolveProjectBackend reports whether a project-analysis backend is
