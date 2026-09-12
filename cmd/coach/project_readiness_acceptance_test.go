@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +14,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli"
 )
 
 type readinessRootFindingDoc struct {
@@ -50,7 +54,8 @@ type readinessResultDoc struct {
 		PackageManager readinessCheckDoc `json:"package_manager"`
 	} `json:"checks"`
 	Gaps []struct {
-		Code string `json:"code"`
+		Code               string `json:"code"`
+		PackageManagerKind string `json:"package_manager_kind"`
 	} `json:"gaps"`
 	Warnings []struct {
 		Code              string `json:"code"`
@@ -63,12 +68,14 @@ type readinessResultDoc struct {
 }
 
 type readinessNextActionDoc struct {
-	Kind         string   `json:"kind"`
-	Executable   bool     `json:"executable"`
-	RuntimeKind  string   `json:"runtime_kind"`
-	Supported    []string `json:"supported"`
-	FoundVersion string   `json:"found_version"`
-	Detail       string   `json:"detail"`
+	Kind               string   `json:"kind"`
+	Executable         bool     `json:"executable"`
+	RuntimeKind        string   `json:"runtime_kind"`
+	Supported          []string `json:"supported"`
+	FoundVersion       string   `json:"found_version"`
+	Detail             string   `json:"detail"`
+	PackageManagerKind string   `json:"package_manager_kind"`
+	Choices            []string `json:"choices"`
 }
 
 func gapCodes(doc readinessResultDoc) []string {
@@ -304,7 +311,10 @@ func writeStubMiseScript(version string) string {
 	Expect(os.MkdirAll(nativeDir, 0o755)).To(Succeed())
 	Expect(os.WriteFile(filepath.Join(nativeDir, "package.json"), []byte(fmt.Sprintf(`{"name":%q,"version":%q}`+"\n", "@typescript/"+nativeUnscoped, version)), 0o644)).To(Succeed())
 
-	script := fmt.Sprintf("#!/bin/sh\necho \"$PWD\" >> %q\necho \"$@\" >> %q\nif [ \"$1\" = \"where\" ]; then echo %q; exit 0; fi\necho %s\n", filepath.Join(dir, stubMiseCwdLog), filepath.Join(dir, stubMiseInvocationLog), installDir, version)
+	script := fmt.Sprintf("#!/bin/sh\necho \"$PWD\" >> %q\necho \"$@\" >> %q\n"+
+		"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n"+
+		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n"+
+		"if [ \"$1\" = \"where\" ]; then echo %q; exit 0; fi\necho %s\n", filepath.Join(dir, stubMiseCwdLog), filepath.Join(dir, stubMiseInvocationLog), installDir, version)
 	Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755)).To(Succeed())
 	return dir
 }
@@ -1187,6 +1197,57 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 	)
 })
 
+var _ = Describe("coach codesignal --baseline --prepare-compiler --project-language typescript", func() {
+	DescribeTable("invalid --prepare-compiler argument combinations exit 2 for the specific reason validatePrepareCompilerFlags reports",
+		func(args []string, wantMessage string) {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+
+			stdout, stderr, exitCode := runCoachSuggest(repo, args...)
+			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
+			Expect(string(stderr)).To(ContainSubstring(wantMessage))
+		},
+		Entry("missing --baseline and --project-language",
+			[]string{"--prepare-compiler"},
+			"coach: --prepare-compiler requires --baseline"),
+		Entry("missing --baseline",
+			[]string{"--prepare-compiler", "--project-language", "typescript"},
+			"coach: --prepare-compiler requires --baseline"),
+		Entry("missing --project-language",
+			[]string{"--baseline", "--prepare-compiler"},
+			`coach: --prepare-compiler requires --project-language typescript (got "go")`),
+		Entry("--project-language go is not typescript",
+			[]string{"--baseline", "--prepare-compiler", "--project-language", "go"},
+			`coach: --prepare-compiler requires --project-language typescript (got "go")`),
+		Entry("duplicate --prepare-compiler",
+			[]string{"--baseline", "--prepare-compiler", "--project-language", "typescript", "--prepare-compiler"},
+			"coach: --prepare-compiler may only be provided once"),
+		Entry("--prepare-compiler cannot be combined with --check-project",
+			[]string{"--baseline", "--prepare-compiler", "--project-language", "typescript", "--check-project"},
+			"coach: --prepare-compiler cannot be combined with --check-project"),
+		Entry("--prepare-compiler does not accept positional arguments",
+			[]string{"--baseline", "--prepare-compiler", "--project-language", "typescript", "extra-positional-arg"},
+			"coach: --prepare-compiler does not accept positional arguments"),
+		Entry("--project-config is an absolute path",
+			[]string{"--baseline", "--prepare-compiler", "--project-language", "typescript", "--project-config", "/etc/passwd"},
+			`coach: --project-config "/etc/passwd" is invalid: path must be a non-empty repository-relative path`),
+	)
+
+	When("--prepare-compiler is supplied with --baseline and --project-language typescript, but stdin has no controlling terminal", func() {
+		It("reaches the real interactive compiler-setup dispatch, which refuses without a controlling terminal, proving the flag is genuinely wired into the compiled binary's flag parser (AC-SET-24)", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+
+			stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--prepare-compiler", "--project-language", "typescript")
+
+			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
+			Expect(stdout).To(BeEmpty())
+			Expect(string(stderr)).To(ContainSubstring("no controlling terminal is available"))
+			Expect(string(stderr)).To(ContainSubstring("coach codesignal --baseline --prepare-compiler --project-language typescript"))
+		})
+	})
+})
+
 // writeWorktreeFile writes name with contents directly into the worktree at
 // repo without committing or `git add`ing it. The compiler check reads
 // package.json/mise.toml/node_modules as host-readiness state of the
@@ -1287,9 +1348,15 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(doc.Checks.Compiler.Code).To(BeEmpty())
 			Expect(doc.Checks.Compiler.Version).To(Equal("7.0.2"))
 			Expect(readStubMiseInvocations(miseDir)).To(Equal([]string{
+				"--version",
+				"--version",
+				"config ls -J",
 				"config get tools.npm:typescript -g",
 				"where npm:typescript@7.0.2",
-			}), "the frozen global-mise mechanic must invoke only read-only detection and location commands, never mise install/use or any other mutating subcommand")
+				"--version",
+				"--version",
+				"config ls -J",
+			}), "the frozen global-mise mechanic must invoke only read-only detection, trust, and location commands, never mise install/use or any other mutating subcommand; the duplication is evaluateCompilerOrigins' and evaluateMiseSetupChoices' independent trust probes for the global scope")
 		})
 	})
 
@@ -1694,6 +1761,588 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			for _, cwd := range readStubMiseCwds(miseDir) {
 				Expect(cwd).NotTo(Equal(repo), "mise probes must not run with the analyzed repository as cwd, got %q", cwd)
 			}
+		})
+	})
+})
+
+var _ = Describe("coach codesignal --baseline --check-project --project-language typescript: package-manager setup scoping (SA-280-045)", func() {
+	When("a committed yarn.lock exists and the project's TypeScript compiler already resolves as installed and supported", func() {
+		It("reports checks.package_manager fail/package_manager_version_unsupported for information only, contributing no gap and no resolve_package_manager action", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
+			commitFile(repo, "yarn.lock", "# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.\n")
+			writeInstalledTypescript(repo, "7.0.2")
+			commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.Compiler.State).To(Equal("pass"), "the compiler must resolve for this fixture to isolate the SA-280-045 suppression rule, stdout=%s", stdout)
+			Expect(doc.Checks.PackageManager.State).To(Equal("fail"), "the rejected Yarn adapter is still reported on checks.package_manager for information, stdout=%s", stdout)
+			Expect(doc.Checks.PackageManager.Code).To(Equal("package_manager_version_unsupported"))
+			Expect(doc.Checks.PackageManager.Kind).To(Equal("yarn"))
+			Expect(gapCodes(doc)).NotTo(ContainElement("package_manager_version_unsupported"), "a package_manager_* code must not become a gap while the compiler already resolves (SA-280-045), stdout=%s", stdout)
+			Expect(nextActionKinds(doc)).NotTo(ContainElement("resolve_package_manager"))
+		})
+	})
+
+	When("a committed yarn.lock exists and no TypeScript compiler resolves, with no verifiable mise origin on PATH", func() {
+		It("reports package_manager_version_unsupported as a gap with a resolve_package_manager action naming yarn, and withholds prepare_compiler since no other installation choice is verified", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+			commitFile(repo, "yarn.lock", "# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.Compiler.State).To(Equal("fail"))
+			Expect(doc.Checks.Compiler.Code).To(Equal("typescript_compiler_missing"))
+			Expect(doc.Checks.PackageManager.State).To(Equal("fail"))
+			Expect(doc.Checks.PackageManager.Code).To(Equal("package_manager_version_unsupported"))
+			Expect(gapCodes(doc)).To(ContainElements("typescript_compiler_missing", "package_manager_version_unsupported"), "got %+v stdout=%s", doc.Gaps, stdout)
+			Expect(doc.NextActions).To(ContainElement(HaveField("PackageManagerKind", "yarn")), "the resolve_package_manager action must name which adapter was rejected, got %+v stdout=%s", doc.NextActions, stdout)
+			Expect(nextActionKinds(doc)).To(ContainElement("resolve_package_manager"))
+			Expect(nextActionKinds(doc)).NotTo(ContainElement("prepare_compiler"), "prepare_compiler must be withheld when the only installation choice (the Yarn adapter) is rejected and no mise origin is verified (SA-280-045), got %+v stdout=%s", doc.NextActions, stdout)
+		})
+	})
+
+	When("a committed yarn.lock exists and no TypeScript compiler resolves, rendered in the default text format", func() {
+		It("keeps the package_manager_kind discriminator on both the Gaps line and the resolve_package_manager next-action line", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+			commitFile(repo, "yarn.lock", "# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			text := string(stdout)
+			Expect(text).To(ContainSubstring("package_manager_version_unsupported package_manager_kind=yarn"), "the Gaps list must carry the same package_manager_kind discriminator as the JSON gaps[] entry (AC-12), got:\n%s", text)
+			Expect(text).To(ContainSubstring("resolve_package_manager (executable=false) package_manager_kind=yarn"), "got:\n%s", text)
+			Expect(text).To(ContainSubstring("\n  typescript_compiler_missing\n"), "a gap with no package_manager_kind must still render as a bare code, got:\n%s", text)
+		})
+	})
+})
+
+// writeStatefulStubMiseScript mirrors writeStubMiseScript's shape but models
+// mise's own real pre/post-install state transition, offline: `mise where`
+// fails until an `install` invocation for toolSpec has actually run
+// (moving a pre-staged fixture into place), so a spec can prove AC-SET-6's
+// rerun genuinely observes a state change caused by the install it
+// confirmed, without a real network-dependent mise install. Every
+// invocation's argv is logged exactly like writeStubMiseScript's, so
+// readStubMiseInvocations/miseInvocationsIncludeInstall work identically.
+func writeStatefulStubMiseScript(version string) (dir string) {
+	dir, err := os.MkdirTemp("", "coach-acceptance-statefulmise-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, dir)
+
+	staging := filepath.Join(dir, "staging")
+	Expect(os.MkdirAll(filepath.Join(staging, "node_modules", "typescript"), 0o755)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(staging, "node_modules", "typescript", "package.json"), []byte(fmt.Sprintf(`{"name":"typescript","version":%q}`+"\n", version)), 0o644)).To(Succeed())
+	nativeUnscoped := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
+	nativeDir := filepath.Join(staging, "node_modules", "@typescript", nativeUnscoped)
+	Expect(os.MkdirAll(nativeDir, 0o755)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(nativeDir, "package.json"), []byte(fmt.Sprintf(`{"name":%q,"version":%q}`+"\n", "@typescript/"+nativeUnscoped, version)), 0o644)).To(Succeed())
+
+	installDir := filepath.Join(dir, "install")
+	script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\n"+
+		"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n"+
+		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n"+
+		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ]; then exit 1; fi\n"+
+		"if [ \"$1\" = \"install\" ]; then mv %q %q; exit 0; fi\n"+
+		"if [ \"$1\" = \"where\" ]; then if [ -d %q ]; then echo %q; exit 0; else exit 1; fi; fi\n"+
+		"echo %s\n",
+		filepath.Join(dir, stubMiseInvocationLog), staging, installDir, installDir, installDir, version)
+	Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755)).To(Succeed())
+	return dir
+}
+
+// pathWithStatefulStubNodeAndMise mirrors pathWithStubNodeAndMise, backed by
+// writeStatefulStubMiseScript instead of writeStubMiseScript.
+func pathWithStatefulStubNodeAndMise(nodeVersion, tsVersion string) (path, miseDir string) {
+	miseDir = writeStatefulStubMiseScript(tsVersion)
+	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	return path, miseDir
+}
+
+// writeFailingInstallStubMiseScript mirrors writeStatefulStubMiseScript's
+// shape, but its `install` subcommand always exits 1 without ever moving
+// the staged fixture into place, modeling a genuine `mise install` failure
+// (AC-SET-7) rather than a declined/cancelled selection.
+func writeFailingInstallStubMiseScript() (dir string) {
+	dir, err := os.MkdirTemp("", "coach-acceptance-failinstallmise-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, dir)
+
+	script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\n"+
+		"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n"+
+		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n"+
+		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ]; then exit 1; fi\n"+
+		"if [ \"$1\" = \"install\" ]; then exit 1; fi\n",
+		filepath.Join(dir, stubMiseInvocationLog))
+	Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755)).To(Succeed())
+	return dir
+}
+
+// pathWithFailingInstallStubNodeAndMise mirrors pathWithStatefulStubNodeAndMise,
+// backed by writeFailingInstallStubMiseScript instead of
+// writeStatefulStubMiseScript.
+func pathWithFailingInstallStubNodeAndMise(nodeVersion string) (path, miseDir string) {
+	miseDir = writeFailingInstallStubMiseScript()
+	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	return path, miseDir
+}
+
+// writeIneligibleInstallStubMiseScript mirrors writeFailingInstallStubMiseScript's
+// shape, but its `install` subcommand exits 0 without ever moving a staged
+// fixture into place, and `where` always exits 1 -- modeling a genuine mise
+// exit-zero install (coach#328 Task 5 integration repair, Finding 2) whose
+// freshly-installed compiler is never actually locatable, so
+// classifyCompilerCandidate classifies it compilerClassAbsent rather than
+// eligible. This is deliberately distinct from
+// writeFailingInstallStubMiseScript's own always-exit-1 `install`: that
+// models the subprocess itself failing, this models the subprocess
+// succeeding while verification still fails.
+func writeIneligibleInstallStubMiseScript() (dir string) {
+	dir, err := os.MkdirTemp("", "coach-acceptance-ineligibleinstallmise-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, dir)
+
+	script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\n"+
+		"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n"+
+		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n"+
+		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ]; then exit 1; fi\n"+
+		"if [ \"$1\" = \"install\" ]; then exit 0; fi\n"+
+		"if [ \"$1\" = \"where\" ]; then exit 1; fi\n",
+		filepath.Join(dir, stubMiseInvocationLog))
+	Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755)).To(Succeed())
+	return dir
+}
+
+// pathWithIneligibleInstallStubNodeAndMise mirrors
+// pathWithFailingInstallStubNodeAndMise, backed by
+// writeIneligibleInstallStubMiseScript instead of
+// writeFailingInstallStubMiseScript.
+func pathWithIneligibleInstallStubNodeAndMise(nodeVersion string) (path, miseDir string) {
+	miseDir = writeIneligibleInstallStubMiseScript()
+	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	return path, miseDir
+}
+
+// gitStatusPorcelain reports repo's worktree status, so a spec can prove no
+// file inside it was created, modified, or removed between two points in
+// time -- the no-rollback half of AC-SET-7: a failed install must never
+// leave Coach itself having touched the repository.
+func gitStatusPorcelain(repo string) string {
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = repo
+	output, err := cmd.Output()
+	Expect(err).NotTo(HaveOccurred())
+	return string(output)
+}
+
+// miseInvocationsIncludeInstall reports whether any invocation logged at
+// miseDir began with "install". Unlike readStubMiseInvocations, a missing
+// log file (no invocation at all yet) is not a test failure here -- it
+// simply means no install happened, which is exactly what a "no mutation"
+// assertion needs to tolerate.
+func miseInvocationsIncludeInstall(miseDir string) bool {
+	data, err := os.ReadFile(filepath.Join(miseDir, stubMiseInvocationLog))
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		if strings.HasPrefix(line, "install ") {
+			return true
+		}
+	}
+	return false
+}
+
+// noSupportedCompilerRepo commits a minimal TypeScript-shaped, policy-ready
+// repository with no installed or declared compiler at all, so
+// checks.compiler fails with typescript_compiler_missing and neither mise
+// scope has anything configured -- the fixture every prepare_compiler mise
+// spec below starts from.
+func noSupportedCompilerRepo() string {
+	repo := newTempGitRepo()
+	commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+	commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
+	commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
+	return repo
+}
+
+var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatch (coach#328 Task 5, AC-SET-1..AC-SET-8/19/22/23/24)", func() {
+	When("both mise_project and mise_global are executable and verified, and the user selects one and then declines the install confirmation", func() {
+		It("shows the full AC-SET-2 preview naming both offered choices, then exits 2 with empty stdout and no mise mutation on decline (AC-SET-2, AC-SET-5, AC-SET-8)", func() {
+			repo := noSupportedCompilerRepo()
+			path, miseDir := pathWithStatefulStubNodeAndMise("v24.9.9", "7.0.2")
+			GinkgoT().Setenv("PATH", path)
+			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
+
+			stdin := authoringStdin("mise_project\ndecline\n")
+			defer stdin.Close()
+			stdoutFile, stderrFile, readStdout, readStderr := authoringOutputFiles()
+			defer stdoutFile.Close()
+			defer stderrFile.Close()
+
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+
+			Expect(exitCode).To(Equal(2))
+			Expect(readStdout()).To(BeEmpty(), "no report must ever reach stdout from this flow")
+
+			transcript := readStderr()
+			Expect(transcript).To(ContainSubstring("mise_project"), "transcript: %s", transcript)
+			Expect(transcript).To(ContainSubstring("mise_global"), "both verified choices must be listed so selection has no default, transcript: %s", transcript)
+
+			Expect(transcript).To(ContainSubstring("Executable: mise"), "transcript: %s", transcript)
+			Expect(transcript).To(ContainSubstring("Arguments: install npm:typescript@7.0.2"), "transcript: %s", transcript)
+			Expect(transcript).To(ContainSubstring("Working directory:"), "transcript: %s", transcript)
+			Expect(transcript).To(ContainSubstring("Expected mise changes:"), "transcript: %s", transcript)
+			Expect(transcript).To(ContainSubstring("Network use:"), "transcript: %s", transcript)
+			Expect(transcript).To(ContainSubstring("Lifecycle-script policy:"), "transcript: %s", transcript)
+			Expect(transcript).To(ContainSubstring("Timeout: 5m0s"), "transcript: %s", transcript)
+
+			Expect(transcript).To(ContainSubstring("cancelled"), "transcript: %s", transcript)
+			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeFalse(), "a declined confirmation must never invoke `mise install`")
+		})
+	})
+
+	When("the choice-selection answer names neither offered mise scope", func() {
+		It("cancels without ever showing the install preview, proving there is no default choice (AC-SET-5, AC-SET-8)", func() {
+			repo := noSupportedCompilerRepo()
+			path, miseDir := pathWithStatefulStubNodeAndMise("v24.9.9", "7.0.2")
+			GinkgoT().Setenv("PATH", path)
+			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
+
+			stdin := authoringStdin("not-a-real-choice\n")
+			defer stdin.Close()
+			stdoutFile, stderrFile, readStdout, readStderr := authoringOutputFiles()
+			defer stdoutFile.Close()
+			defer stderrFile.Close()
+
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+
+			Expect(exitCode).To(Equal(2))
+			Expect(readStdout()).To(BeEmpty())
+
+			transcript := readStderr()
+			Expect(transcript).NotTo(ContainSubstring("Executable: mise"), "an unrecognized selection must never reach the install preview, transcript: %s", transcript)
+			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeFalse(), "an unrecognized selection must never invoke `mise install`")
+		})
+	})
+
+	When("there is no controlling terminal on stdin", func() {
+		It("never prompts, never mutates mise state, and exits 2 (AC-SET-24)", func() {
+			repo := noSupportedCompilerRepo()
+			path, miseDir := pathWithStatefulStubNodeAndMise("v24.9.9", "7.0.2")
+			// Deliberately exported to PATH, unlike a spec that never
+			// touches PATH: the point of this spec is that mise is never
+			// invoked even when it IS reachable, so the "no invocation"
+			// assertion below only has teeth if the stub mise was actually
+			// on PATH the whole time.
+			GinkgoT().Setenv("PATH", path)
+			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
+
+			stdin := authoringStdin("mise_project\ninstall\n")
+			defer stdin.Close()
+			stdoutFile, stderrFile, readStdout, readStderr := authoringOutputFiles()
+			defer stdoutFile.Close()
+			defer stderrFile.Close()
+
+			exitCode := runPrepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+
+			Expect(exitCode).To(Equal(2))
+			Expect(readStdout()).To(BeEmpty())
+			Expect(readStderr()).To(ContainSubstring("controlling terminal"))
+			_, statErr := os.Stat(filepath.Join(miseDir, stubMiseInvocationLog))
+			Expect(os.IsNotExist(statErr)).To(BeTrue(), "no controlling terminal must mean mise is never invoked at all, not even for a read-only probe")
+		})
+	})
+
+	When("the project mise.toml already declares the frozen TypeScript version but it is not yet installed, and the user selects mise_project and confirms", func() {
+		It("installs it, reruns readiness, and the fresh result reports the compiler check passing at that version (AC-SET-3, AC-SET-6, AC-SET-19, AC-SET-23)", func() {
+			repo := noSupportedCompilerRepo()
+			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"7.0.2\"\n")
+			path, miseDir := pathWithStatefulStubNodeAndMise("v24.9.9", "7.0.2")
+			GinkgoT().Setenv("PATH", path)
+			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
+
+			revision, err := codesignalcli.ResolveBaselineRevision(repo)
+			Expect(err).NotTo(HaveOccurred())
+			before, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(before.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail), "sanity: the fixture must start without a usable compiler")
+			Expect(before.Checks.Compiler.Code).To(Equal(codesignalcli.GapTypescriptCompilerMissing))
+
+			stdin := authoringStdin("mise_project\ninstall\n")
+			defer stdin.Close()
+			stdoutFile, stderrFile, readStdout, readStderr := authoringOutputFiles()
+			defer stdoutFile.Close()
+			defer stderrFile.Close()
+
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+
+			transcript := readStderr()
+			Expect(exitCode).To(Equal(0), "stderr: %s", transcript)
+			Expect(readStdout()).To(BeEmpty(), "no report must ever reach stdout from this flow")
+			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeTrue(), "a confirmed selection must invoke `mise install`")
+
+			// Observing the flow's own transcript, rather than re-deriving
+			// the fact with a second CheckProjectReadiness call, is what
+			// actually proves the flow itself reran readiness and reflected
+			// AC-SET-6/AC-SET-23: this string is only ever produced from
+			// result.PostInstallReadiness and result.Origin.
+			Expect(transcript).To(ContainSubstring("installed TypeScript 7.0.2 via mise_project; rerun readiness reports compiler check pass (version=7.0.2)"), "transcript: %s", transcript)
+		})
+	})
+
+	When("the project mise.toml already declares the frozen TypeScript version but `mise install` itself fails, and the user selects mise_project and confirms", func() {
+		It("exits 2 with empty stdout, a transcript naming the version and scope, and no repository or mise-store mutation from Coach itself (AC-SET-7)", func() {
+			repo := noSupportedCompilerRepo()
+			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"7.0.2\"\n")
+			path, miseDir := pathWithFailingInstallStubNodeAndMise("v24.9.9")
+			GinkgoT().Setenv("PATH", path)
+			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
+
+			statusBefore := gitStatusPorcelain(repo)
+
+			stdin := authoringStdin("mise_project\ninstall\n")
+			defer stdin.Close()
+			stdoutFile, stderrFile, readStdout, readStderr := authoringOutputFiles()
+			defer stdoutFile.Close()
+			defer stderrFile.Close()
+
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+
+			transcript := readStderr()
+			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", readStdout(), transcript)
+			Expect(readStdout()).To(BeEmpty(), "no report must ever reach stdout from this flow")
+			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeTrue(), "a confirmed selection must still invoke `mise install`, even though it fails")
+
+			Expect(transcript).To(MatchRegexp(`mise install failed; mise's install store may now contain a partial or failed install of TypeScript 7\.0\.2 under the mise_project scope`), "the failure message must name the actual version and scope that may have been partially installed, not an empty string, transcript: %s", transcript)
+			Expect(transcript).To(ContainSubstring("Coach does not attempt to clean this up"))
+
+			Expect(gitStatusPorcelain(repo)).To(Equal(statusBefore), "a failed install must never leave Coach itself having mutated the repository (no rollback is attempted, but none should be needed)")
+		})
+	})
+
+	When("the project mise.toml already declares the frozen TypeScript version and `mise install` itself exits 0, but the freshly-installed compiler never becomes locatable/eligible, and the user selects mise_project and confirms", func() {
+		It("exits 2 with empty stdout and a transcript that names the real verification failure, never the wrong 'mise install failed' wording (coach#328 Task 5 integration repair, Finding 2)", func() {
+			repo := noSupportedCompilerRepo()
+			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"7.0.2\"\n")
+			path, miseDir := pathWithIneligibleInstallStubNodeAndMise("v24.9.9")
+			GinkgoT().Setenv("PATH", path)
+			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
+
+			stdin := authoringStdin("mise_project\ninstall\n")
+			defer stdin.Close()
+			stdoutFile, stderrFile, readStdout, readStderr := authoringOutputFiles()
+			defer stdoutFile.Close()
+			defer stderrFile.Close()
+
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+
+			transcript := readStderr()
+			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", readStdout(), transcript)
+			Expect(readStdout()).To(BeEmpty(), "no report must ever reach stdout from this flow")
+			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeTrue(), "a confirmed selection must still invoke `mise install`, even though verification later fails")
+
+			Expect(transcript).To(ContainSubstring("mise install exited 0 but the installed TypeScript 7.0.2 is not eligible (absent); expected the native platform package "+codesignalcli.NativeTypescriptPackageName()+" alongside it -- Coach does not attempt to repair or clean this up."), "transcript: %s", transcript)
+			Expect(transcript).NotTo(ContainSubstring("mise install failed"), "a subprocess that exited 0 must never be described as having failed, transcript: %s", transcript)
+		})
+	})
+
+	When("mise install could never even be started because its own private working directory could not be created", func() {
+		It("reports the install could not even be started, naming the insulation-failure gap code, distinctly from a subprocess that actually ran and failed (coach#328 Task 5 integration repair, Finding 5)", func() {
+			stdoutFile, stderrFile, readStdout, readStderr := authoringOutputFiles()
+			defer stdoutFile.Close()
+			defer stderrFile.Close()
+
+			// Driving os.MkdirTemp's own failure through the full CLI
+			// dispatch is not viable here: runMiseInstallInsulated and every
+			// mise trust/version probe this flow runs first
+			// (project_ts_compiler_mise_probe.go) share the same
+			// os.MkdirTemp("", ...) confinement mechanism, so breaking TMPDIR
+			// widely enough to fail the install's own MkdirTemp call would
+			// also fail every trust probe that must run and succeed before
+			// it, landing on the "scope refused" branch instead of this one.
+			// Calling reportPrepareCompilerMiseResult directly instead still
+			// exercises the actual, previously-unverified boundary named by
+			// the finding: this function's own message text.
+			result := codesignalcli.PrepareCompilerMiseResult{
+				Trusted: true,
+				Code:    codesignalcli.GapPackageManagerConfigUnverifiable,
+			}
+
+			exitCode := reportPrepareCompilerMiseResult(result, stderrFile)
+
+			transcript := readStderr()
+			Expect(exitCode).To(Equal(2), "stderr: %s", transcript)
+			Expect(readStdout()).To(BeEmpty(), "no report must ever reach stdout from this flow")
+			Expect(transcript).To(ContainSubstring("mise install could not even be started (package_manager_config_unverifiable)."), "transcript: %s", transcript)
+			Expect(transcript).NotTo(ContainSubstring("mise install failed"), "an install that never started must never be described as having failed, transcript: %s", transcript)
+		})
+	})
+
+	// writeStatefulStubMiseScriptGlobalAware extends
+	// writeStatefulStubMiseScript's own pre/post-install state transition
+	// (`mise where` failing until `install` has actually moved the staged
+	// fixture into place) with an always-succeeding `mise config get
+	// tools.npm:typescript -g`. The production install path never runs
+	// `mise use -g` (it only runs `mise install npm:typescript@<version>`,
+	// and the flow's own preview text promises it never modifies any global
+	// mise configuration file), so `config get -g` cannot genuinely start
+	// succeeding as a side effect of that install; the faithful pre-install
+	// state this models is "the global mise config already declares
+	// npm:typescript@<version> but it is not yet installed". Only `where`
+	// -- backed by the staged/installed directory switch -- is gated on the
+	// install actually having happened, mirroring writeStatefulStubMiseScript's
+	// pattern of a single genuine state transition.
+	writeStatefulStubMiseScriptGlobalAware := func(version string) (dir string) {
+		dir, err := os.MkdirTemp("", "coach-acceptance-statefulmiseglobal-*")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(os.RemoveAll, dir)
+
+		staging := filepath.Join(dir, "staging")
+		Expect(os.MkdirAll(filepath.Join(staging, "node_modules", "typescript"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(staging, "node_modules", "typescript", "package.json"), []byte(fmt.Sprintf(`{"name":"typescript","version":%q}`+"\n", version)), 0o644)).To(Succeed())
+		nativeUnscoped := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
+		nativeDir := filepath.Join(staging, "node_modules", "@typescript", nativeUnscoped)
+		Expect(os.MkdirAll(nativeDir, 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(nativeDir, "package.json"), []byte(fmt.Sprintf(`{"name":%q,"version":%q}`+"\n", "@typescript/"+nativeUnscoped, version)), 0o644)).To(Succeed())
+
+		installDir := filepath.Join(dir, "install")
+		script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\n"+
+			"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n"+
+			"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n"+
+			"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ]; then echo %s; exit 0; fi\n"+
+			"if [ \"$1\" = \"install\" ]; then mv %q %q; exit 0; fi\n"+
+			"if [ \"$1\" = \"where\" ]; then if [ -d %q ]; then echo %q; exit 0; else exit 1; fi; fi\n"+
+			"exit 1\n",
+			filepath.Join(dir, stubMiseInvocationLog), version, staging, installDir, installDir, installDir)
+		Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755)).To(Succeed())
+		return dir
+	}
+
+	// Every install-success/failure spec above only ever selects
+	// mise_project; mise_global's own trust/install path
+	// (evaluateMiseGlobalTrust/installMiseTypescriptGlobal) was previously
+	// only exercised at the internal/codesignalcli package level
+	// (project_ts_compiler_mise_command_acceptance_test.go), never through
+	// this CLI dispatch end to end. The project mise.toml here is
+	// deliberately hazardous so mise_project is withheld and mise_global is
+	// the only offered/confirmed choice, making this a genuinely distinct
+	// row rather than the same scope under a different name.
+	When("the project mise scope is untrusted (a hazardous mise.toml) so only mise_global is offered, and the user selects it and confirms", func() {
+		It("installs via the global scope, reruns readiness, and the fresh result reports the compiler check passing at that version (AC-SET-3, AC-SET-6, AC-SET-19, AC-SET-23)", func() {
+			repo := noSupportedCompilerRepo()
+			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"7.0.2\"\n\n[hooks]\npostinstall = \"echo pwned\"\n")
+			miseDir := writeStatefulStubMiseScriptGlobalAware("7.0.2")
+			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+			GinkgoT().Setenv("PATH", path)
+			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
+
+			revision, err := codesignalcli.ResolveBaselineRevision(repo)
+			Expect(err).NotTo(HaveOccurred())
+			before, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(before.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail), "sanity: the fixture must start without a usable compiler")
+
+			stdin := authoringStdin("mise_global\ninstall\n")
+			defer stdin.Close()
+			stdoutFile, stderrFile, readStdout, readStderr := authoringOutputFiles()
+			defer stdoutFile.Close()
+			defer stderrFile.Close()
+
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+
+			transcript := readStderr()
+			// The hazardous project mise.toml must withhold mise_project from
+			// the offered choices entirely -- proving the install below
+			// genuinely went through the global scope's own trust/install
+			// path (evaluateMiseGlobalTrust/installMiseTypescriptGlobal),
+			// not merely that mise_global was typed as an answer while
+			// mise_project was still silently available too.
+			Expect(transcript).To(ContainSubstring("  - mise_global"), "transcript: %s", transcript)
+			Expect(transcript).NotTo(ContainSubstring("  - mise_project"), "the hazardous project mise.toml must withhold mise_project from the offered choices, transcript: %s", transcript)
+
+			Expect(exitCode).To(Equal(0), "stderr: %s", transcript)
+			Expect(readStdout()).To(BeEmpty(), "no report must ever reach stdout from this flow")
+			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeTrue(), "a confirmed selection must invoke `mise install`")
+
+			Expect(transcript).To(ContainSubstring("installed TypeScript 7.0.2 via mise_global; rerun readiness reports compiler check pass (version=7.0.2)"), "transcript: %s", transcript)
+		})
+	})
+
+	// miseInstallTimeout (5m, project_ts_compiler_mise_command.go) is a
+	// package-level const, not overridable from this test file, and a real
+	// 5-minute wait is unacceptable in this suite. RunPrepareCompilerMiseSetup
+	// accepts its own ctx, and context.WithTimeout composes: supplying a
+	// short-deadline ctx here (rather than the CLI dispatch's hardcoded
+	// context.Background()) lets the shorter deadline win without touching
+	// miseInstallTimeout or any file outside this task's scope. `exec sleep`
+	// (rather than plain `sleep`) mirrors writeHangingNodeScript's own
+	// rationale above: replacing the shell's process image so the context
+	// deadline's kill lands on the sleep itself, not an orphaned child.
+	When("the caller supplies a context deadline shorter than mise's own five-minute install timeout, and `mise install` runs long enough to exceed it", func() {
+		It("cuts the install off at that shorter deadline: attempted but never observed, well before the stub's own sleep would otherwise finish", func() {
+			repo := noSupportedCompilerRepo()
+			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"7.0.2\"\n")
+			miseDir, err := os.MkdirTemp("", "coach-acceptance-slowinstallmise-*")
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(os.RemoveAll, miseDir)
+			script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\n"+
+				"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n"+
+				"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n"+
+				"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ]; then exit 1; fi\n"+
+				"if [ \"$1\" = \"install\" ]; then exec sleep 30; fi\n"+
+				"exit 1\n", filepath.Join(miseDir, stubMiseInvocationLog))
+			Expect(os.WriteFile(filepath.Join(miseDir, "mise"), []byte(script), 0o755)).To(Succeed())
+			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+			GinkgoT().Setenv("PATH", path)
+			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
+
+			revision, err := codesignalcli.ResolveBaselineRevision(repo)
+			Expect(err).NotTo(HaveOccurred())
+			readiness, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(readiness.Checks.Compiler.Code).To(Equal(codesignalcli.GapTypescriptCompilerMissing), "sanity: the fixture must start without a usable compiler")
+
+			start := time.Now()
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			stdin := authoringStdin("mise_project\ninstall\n")
+			defer stdin.Close()
+			var transcript bytes.Buffer
+
+			result := codesignalcli.RunPrepareCompilerMiseSetup(ctx, repo, revision, "", readiness, stdin, &transcript)
+			elapsed := time.Since(start)
+
+			// Both bounds matter, not just the upper one: a lower bound near
+			// the supplied 2s deadline is what actually distinguishes a
+			// genuine deadline cutoff from some unrelated fast failure that
+			// would trivially satisfy "attempted but not succeeded" too
+			// (e.g. mise being unreachable) without ever exercising
+			// runBoundedMiseInstallSubprocess's ctx.Err() ==
+			// context.DeadlineExceeded branch at all.
+			Expect(elapsed).To(BeNumerically(">=", 2*time.Second), "the install must run at least as long as the supplied context deadline, not fail some unrelated, faster way, got elapsed=%s transcript=%s", elapsed, transcript.String())
+			Expect(elapsed).To(BeNumerically("<", 15*time.Second), "a 2s context deadline must cut the install off well before the stub's 30s sleep would otherwise finish, got elapsed=%s transcript=%s", elapsed, transcript.String())
+			Expect(result.Trusted).To(BeTrue(), "%+v", result)
+			Expect(result.Attempted).To(BeTrue(), "the install subprocess must have actually started: %+v", result)
+			Expect(result.Succeeded).To(BeFalse(), "a deadline-cut install must never be reported as succeeded: %+v", result)
+			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeTrue())
 		})
 	})
 })
