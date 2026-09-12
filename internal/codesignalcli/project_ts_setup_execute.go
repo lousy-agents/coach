@@ -207,12 +207,18 @@ const (
 // status read otherwise failed): callers must treat that case as "Coach
 // could not determine what changed", not as "nothing changed" or as an
 // ordinary successful (if possibly empty) disclosure.
+//
+// PostInstallReadiness is populated only when Kind is SetupOutcomeSucceeded,
+// by RunConfirmedSetupAndRecheckReadiness (AC-SET-6): it is nil on every
+// other path, including a plain RunConfirmedSetup call, since only that
+// wrapper reruns readiness.
 type SetupOutcome struct {
-	Kind           SetupOutcomeKind
-	ExitCode       int
-	Execution      SetupExecutionResult
-	ChangedPaths   []string
-	ResidueUnknown bool
+	Kind                 SetupOutcomeKind
+	ExitCode             int
+	Execution            SetupExecutionResult
+	ChangedPaths         []string
+	ResidueUnknown       bool
+	PostInstallReadiness *ReadinessResult
 }
 
 // RunConfirmedSetup translates a single confirmation decision into the
@@ -263,6 +269,32 @@ func RunConfirmedSetup(ctx context.Context, preview SetupPreview, confirmed bool
 		}, nil
 	}
 	return SetupOutcome{Kind: SetupOutcomeSucceeded, Execution: execution}, nil
+}
+
+// RunConfirmedSetupAndRecheckReadiness runs RunConfirmedSetup and, only when
+// it succeeds, reruns the complete readiness check via CheckProjectReadiness
+// (AC-SET-6) using the same dir/revision/configPath that produced the stale
+// readiness result which offered this setup in the first place, attaching
+// the fresh result to the returned SetupOutcome's PostInstallReadiness. A
+// cancelled or failed outcome (and a RunConfirmedSetup error) is returned
+// unchanged, with PostInstallReadiness left nil: nothing was installed, so
+// there is nothing new to recheck. If the recheck itself errors, the
+// outcome's Kind still reflects the install's own success, but the error is
+// returned and PostInstallReadiness is left nil -- a caller must treat that
+// as "the recheck itself failed", not as "the install failed" or as a clean
+// readiness result. Deciding what happens with a populated
+// PostInstallReadiness (or a failed recheck) belongs to a later task.
+func RunConfirmedSetupAndRecheckReadiness(ctx context.Context, preview SetupPreview, confirmed bool, dir, revision, configPath string) (SetupOutcome, error) {
+	outcome, err := RunConfirmedSetup(ctx, preview, confirmed)
+	if err != nil || outcome.Kind != SetupOutcomeSucceeded {
+		return outcome, err
+	}
+	readiness, readinessErr := CheckProjectReadiness(dir, revision, configPath)
+	if readinessErr != nil {
+		return outcome, readinessErr
+	}
+	outcome.PostInstallReadiness = readiness
+	return outcome, nil
 }
 
 // Bounds for setupResidueChangedPaths' read-only `git status` call: a small
