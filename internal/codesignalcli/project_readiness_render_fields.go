@@ -2,9 +2,19 @@ package codesignalcli
 
 import "strings"
 
+// gapCodes renders each gap for RenderReadinessText's Gaps list. A gap
+// carrying PackageManagerKind (SA-280-045: independent mise_project/
+// mise_global choices sharing a code with the project adapter, or with each
+// other) renders it alongside the code, so the text output does not collapse
+// two distinct package-manager gaps into indistinguishable lines the way a
+// bare code list would.
 func gapCodes(gaps []ReadinessGap) []string {
 	codes := make([]string, len(gaps))
 	for i, gap := range gaps {
+		if gap.PackageManagerKind != "" {
+			codes[i] = gap.Code + " package_manager_kind=" + gap.PackageManagerKind
+			continue
+		}
 		codes[i] = gap.Code
 	}
 	return codes

@@ -350,7 +350,7 @@ func TestAggregateReadinessPrecedence(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			status, gaps, _, _ := aggregateReadiness(tc.checks, tc.dirtyRelevant)
+			status, gaps, _, _ := aggregateReadiness(tc.checks, tc.dirtyRelevant, nil)
 			if status != tc.wantStatus {
 				t.Fatalf("status = %q, want %q", status, tc.wantStatus)
 			}
@@ -377,7 +377,7 @@ func TestAggregateReadinessOrdersNextActionsPolicyBeforeCompiler(t *testing.T) {
 		Policy:   ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
 		Compiler: ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
 	}
-	_, _, nextActions, _ := aggregateReadiness(checks, false)
+	_, _, nextActions, _ := aggregateReadiness(checks, false, nil)
 	want := []ReadinessNextAction{
 		{Kind: "author_policy", Executable: false},
 		{Kind: "prepare_compiler", Executable: true, Supported: []string{"7.0.2"}},
@@ -409,7 +409,7 @@ func TestAggregateReadinessEmitsCompilerDeclarationMismatchWarningShape(t *testi
 			},
 		},
 	}
-	_, _, _, warnings := aggregateReadiness(checks, false)
+	_, _, _, warnings := aggregateReadiness(checks, false, nil)
 	if len(warnings) != 1 {
 		t.Fatalf("warnings = %#v, want exactly one entry", warnings)
 	}
@@ -437,7 +437,7 @@ func TestAggregateReadinessOmitsWarningsForNodeChecks(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			checks := ReadinessChecks{Runtime: tc.runtime, Node: nodeCompatibilityMirror(tc.runtime)}
-			_, _, _, warnings := aggregateReadiness(checks, false)
+			_, _, _, warnings := aggregateReadiness(checks, false, nil)
 			if len(warnings) != 0 {
 				t.Fatalf("warnings = %#v, want none", warnings)
 			}
@@ -446,13 +446,18 @@ func TestAggregateReadinessOmitsWarningsForNodeChecks(t *testing.T) {
 }
 
 // TestGapCodeMappings proves statusForGapCode and nextActionForGapCode agree
-// with the frozen gap-code table for all 11 gap codes, not just the ones
-// reachable through today's checks. GapTypescriptCompilerMissing,
-// GapTypescriptVersionMismatch, GapTypescriptVersionConflict,
-// GapPackageManagerAmbiguous, and GapPackageManagerConfigUnverifiable are
-// unreachable via the CLI until later work implements real compiler/
-// package-manager verification, but the mapping-table entries already exist
-// and must not silently drift.
+// with the frozen gap-code table for all 13 gap codes, not just the ones
+// reachable through today's checks. GapTypescriptCompilerMissing and
+// GapPackageManagerVersionUnsupported are reachable via resolveCompiler/
+// checkPackageManager's Yarn detection; GapPackageManagerVersionUnverifiable
+// and GapPackageManagerConfigUnverifiable are reachable via
+// CheckProjectReadiness's own evaluateMiseSetupChoices call
+// (evaluateMiseProjectTrust/evaluateMiseGlobalTrust, see
+// project_ts_compiler_mise_version_test.go and
+// project_ts_compiler_mise_command_acceptance_test.go's trust-gate specs).
+// GapTypescriptVersionMismatch, GapTypescriptVersionConflict, and
+// GapPackageManagerAmbiguous remain unreachable via the CLI until later work,
+// but every entry in the mapping table must not silently drift regardless.
 func TestGapCodeMappings(t *testing.T) {
 	cases := []struct {
 		code           string
@@ -467,6 +472,8 @@ func TestGapCodeMappings(t *testing.T) {
 		{GapTypescriptVersionMismatch, StatusNeedsPrerequisite, "prepare_compiler"},
 		{GapTypescriptVersionConflict, StatusNeedsPrerequisite, "prepare_compiler"},
 		{GapPackageManagerAmbiguous, StatusNeedsPrerequisite, "resolve_package_manager"},
+		{GapPackageManagerVersionUnverifiable, StatusNeedsPrerequisite, "resolve_package_manager"},
+		{GapPackageManagerVersionUnsupported, StatusNeedsPrerequisite, "resolve_package_manager"},
 		{GapPackageManagerConfigUnverifiable, StatusNeedsPrerequisite, "resolve_package_manager"},
 		{GapPolicyMissing, StatusNeedsPolicy, "author_policy"},
 		{GapPolicyInvalid, StatusNeedsPolicy, "author_policy"},
@@ -486,6 +493,159 @@ func TestGapCodeMappings(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAggregateReadinessKeepsPrepareCompilerWithVerifiedMiseChoice proves
+// the seam mise version/config-hazard verification plugs into: a rejected
+// project adapter never withholds prepare_compiler while a
+// ReadinessMiseChoice reports a distinct, verified mise origin (AC-13,
+// AC-20). CheckProjectReadiness now feeds aggregateReadiness a real
+// evaluateMiseSetupChoices result (project_readiness.go); this test
+// constructs that seam's input directly so aggregateReadiness's own
+// contract is proven independently of mise's actual availability in the
+// test environment.
+func TestAggregateReadinessKeepsPrepareCompilerWithVerifiedMiseChoice(t *testing.T) {
+	checks := ReadinessChecks{
+		Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
+		PackageManager: ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerVersionUnsupported, Kind: "yarn"},
+	}
+	miseChoices := []ReadinessMiseChoice{{Kind: "mise_project", Verified: true}}
+
+	status, gaps, nextActions, _ := aggregateReadiness(checks, false, miseChoices)
+
+	if status != StatusNeedsPrerequisite {
+		t.Fatalf("status = %q, want %q", status, StatusNeedsPrerequisite)
+	}
+	wantGaps := []ReadinessGap{
+		{Code: GapTypescriptCompilerMissing},
+		{Code: GapPackageManagerVersionUnsupported, PackageManagerKind: "yarn"},
+	}
+	if !reflect.DeepEqual(gaps, wantGaps) {
+		t.Fatalf("gaps = %#v, want %#v", gaps, wantGaps)
+	}
+
+	prepare, ok := findNextAction(nextActions, nextActionKindPrepareCompiler)
+	if !ok {
+		t.Fatalf("prepare_compiler missing from %#v, want it present with the verified mise choice", nextActions)
+	}
+	if !reflect.DeepEqual(prepare.Choices, []string{"mise_project"}) {
+		t.Fatalf("prepare_compiler.Choices = %#v, want [mise_project] (the rejected yarn adapter must not appear)", prepare.Choices)
+	}
+
+	resolve, ok := findNextAction(nextActions, nextActionKindResolvePackageManager)
+	if !ok {
+		t.Fatalf("resolve_package_manager missing from %#v", nextActions)
+	}
+	if resolve.PackageManagerKind != "yarn" {
+		t.Fatalf("resolve_package_manager.PackageManagerKind = %q, want %q", resolve.PackageManagerKind, "yarn")
+	}
+}
+
+// TestAggregateReadinessKeepsProjectAndGlobalMiseChoicesDistinct proves
+// AC-12/AC-9's plumbing: an adapter rejection, a rejected mise_project
+// choice, and a verified mise_global choice each surface as their own gap
+// and next-action entry rather than colliding on a shared "resolve_package_manager"
+// key, and prepare_compiler's surviving Choices names only the verified
+// mise_global origin.
+func TestAggregateReadinessKeepsProjectAndGlobalMiseChoicesDistinct(t *testing.T) {
+	checks := ReadinessChecks{
+		Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
+		PackageManager: ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerVersionUnsupported, Kind: "yarn"},
+	}
+	miseChoices := []ReadinessMiseChoice{
+		{Kind: "mise_project", Verified: false, Code: GapPackageManagerConfigUnverifiable},
+		{Kind: "mise_global", Verified: true},
+	}
+
+	_, gaps, nextActions, _ := aggregateReadiness(checks, false, miseChoices)
+
+	wantGaps := []ReadinessGap{
+		{Code: GapTypescriptCompilerMissing},
+		{Code: GapPackageManagerVersionUnsupported, PackageManagerKind: "yarn"},
+		{Code: GapPackageManagerConfigUnverifiable, PackageManagerKind: "mise_project"},
+	}
+	if !reflect.DeepEqual(gaps, wantGaps) {
+		t.Fatalf("gaps = %#v, want %#v", gaps, wantGaps)
+	}
+
+	var resolveKinds []string
+	for _, action := range nextActions {
+		if action.Kind == nextActionKindResolvePackageManager {
+			resolveKinds = append(resolveKinds, action.PackageManagerKind)
+		}
+	}
+	wantResolveKinds := []string{"yarn", "mise_project"}
+	if !reflect.DeepEqual(resolveKinds, wantResolveKinds) {
+		t.Fatalf("resolve_package_manager PackageManagerKind values = %#v, want %#v (yarn and mise_project must not collide into one entry)", resolveKinds, wantResolveKinds)
+	}
+
+	prepare, ok := findNextAction(nextActions, nextActionKindPrepareCompiler)
+	if !ok {
+		t.Fatalf("prepare_compiler missing from %#v, want it present with the verified mise_global choice", nextActions)
+	}
+	if !reflect.DeepEqual(prepare.Choices, []string{"mise_global"}) {
+		t.Fatalf("prepare_compiler.Choices = %#v, want [mise_global] (project mise is rejected and distinct from global)", prepare.Choices)
+	}
+}
+
+// TestAggregateReadinessWithholdsPrepareCompilerWhenNoChoiceVerified proves
+// SA-280-045's other edge: when the only package-manager-related
+// installation choices are rejected and none is verified, prepare_compiler
+// disappears entirely rather than being offered with no usable choice.
+func TestAggregateReadinessWithholdsPrepareCompilerWhenNoChoiceVerified(t *testing.T) {
+	checks := ReadinessChecks{
+		Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
+		PackageManager: ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerVersionUnsupported, Kind: "yarn"},
+	}
+
+	_, _, nextActions, _ := aggregateReadiness(checks, false, nil)
+
+	if _, ok := findNextAction(nextActions, nextActionKindPrepareCompiler); ok {
+		t.Fatalf("prepare_compiler present in %#v, want withheld: no installation choice is verified", nextActions)
+	}
+}
+
+// TestAggregateReadinessKeepsPrepareCompilerWhenAdapterNotYetChecked proves
+// SA-280-045's other edge: an ordinary npm/pnpm/Bun project, whose
+// checkPackageManager adapter has not verified yet (ReadinessNotChecked, the
+// state for every non-Yarn repository shape today), must never have
+// prepare_compiler withheld merely because a mise setup choice was rejected.
+// Only an adapter actually evaluated and rejected (ReadinessFail) counts
+// toward "no installation choice exists" -- a not-yet-checked adapter must
+// not.
+func TestAggregateReadinessKeepsPrepareCompilerWhenAdapterNotYetChecked(t *testing.T) {
+	checks := ReadinessChecks{
+		Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
+		PackageManager: ReadinessCheck{State: ReadinessNotChecked},
+	}
+	miseChoices := []ReadinessMiseChoice{{Kind: "mise_project", Verified: false, Code: GapPackageManagerConfigUnverifiable}}
+
+	_, gaps, nextActions, _ := aggregateReadiness(checks, false, miseChoices)
+
+	wantGaps := []ReadinessGap{
+		{Code: GapTypescriptCompilerMissing},
+		{Code: GapPackageManagerConfigUnverifiable, PackageManagerKind: "mise_project"},
+	}
+	if !reflect.DeepEqual(gaps, wantGaps) {
+		t.Fatalf("gaps = %#v, want %#v", gaps, wantGaps)
+	}
+
+	prepare, ok := findNextAction(nextActions, nextActionKindPrepareCompiler)
+	if !ok {
+		t.Fatalf("prepare_compiler missing from %#v, want it present: the package manager adapter has not been evaluated and rejected, so a rejected mise choice alone must not withhold it", nextActions)
+	}
+	if prepare.Choices != nil {
+		t.Fatalf("prepare_compiler.Choices = %#v, want nil: no adapter rejection occurred, so Choices must stay unrestricted", prepare.Choices)
+	}
+}
+
+func findNextAction(actions []ReadinessNextAction, kind string) (ReadinessNextAction, bool) {
+	for _, action := range actions {
+		if action.Kind == kind {
+			return action, true
+		}
+	}
+	return ReadinessNextAction{}, false
 }
 
 // TestNodeMajorSupportedMatchesAnalysisGate binds checkNodeReadiness's
