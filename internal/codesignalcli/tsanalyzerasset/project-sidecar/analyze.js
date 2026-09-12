@@ -1,15 +1,11 @@
 import { canonicalizeDiagnostics, canonicalizeEdges } from "./canonical.js";
 import { describeErrorWithoutPaths } from "./describe-error.js";
-import { discoverTsconfigPaths } from "./discover.js";
+import { discoverTsconfigPaths, isWithinRoot, normalizeRoot } from "./discover.js";
 import { extractEdgesForProject } from "./edges.js";
-import { SIDECAR_PHASE } from "./protocol.js";
+import { SIDECAR_PHASE, } from "./protocol.js";
 import { canonicalizeCallGraph, canonicalizeReachabilityFacts, extractReachabilityForProject } from "./reachability.js";
 import { buildProjectSnapshot, fromVirtualPath, toVirtualPath, VIRTUAL_ROOT } from "./vfs.js";
-/** Thrown only for genuine backend-startup failures (e.g. the bundled
- * native tsgo binary failing to spawn); main.ts turns this into a
- * whole-request Response.Error rather than crashing the process, since a
- * missing/unspawnable backend is an operational condition analogous to
- * pkg/projectmodel's own DiagBackendUnavailable, not a programming bug. */
+/** Thrown only for genuine backend-startup failures (e.g. the bundled native tsgo binary failing to spawn); main.ts turns this into a Response.Error rather than crashing the process. */
 export class SidecarBackendError extends Error {
 }
 export function analyzeProject(opts) {
@@ -18,10 +14,10 @@ export function analyzeProject(opts) {
     const tsconfigPaths = discoverTsconfigPaths(opts.files, opts.roots);
     const counts = { files_seen: opts.files.length, tsconfig_count: tsconfigPaths.length };
     if (tsconfigPaths.length === 0) {
-        return emptyComplete(counts, opts.files);
+        return emptyComplete(counts, opts.files, opts.roots, snapshot);
     }
     if (deadline !== undefined && Date.now() >= deadline) {
-        return timeoutBeforeStart(counts, opts.timeoutMs ?? 0);
+        return timeoutBeforeStart(counts, opts.timeoutMs ?? 0, opts.roots, snapshot);
     }
     const api = startAnalysisAPI(snapshot, opts.compiler.api, opts.tsserverPath);
     try {
@@ -31,41 +27,42 @@ export function analyzeProject(opts) {
         api.close();
     }
 }
-function emptyComplete(counts, files) {
+function emptyComplete(counts, files, roots, snapshot) {
     const hasTsSources = files.some((f) => f.path.endsWith(".ts") || f.path.endsWith(".tsx"));
-    return hasTsSources ? sourcesWithNoProjectConfigResult(counts) : vacuousProjectResult(counts);
+    return hasTsSources
+        ? sourcesWithNoProjectConfigResult(counts, roots, snapshot)
+        : vacuousProjectResult(counts, roots, snapshot);
 }
-function vacuousProjectResult(counts) {
-    return { edges: [], callGraph: [], reachabilityFacts: [], coverage: { phase: SIDECAR_PHASE, complete: true, counts } };
-}
-function sourcesWithNoProjectConfigResult(counts) {
+function emptyAnalysisResult(coverage, roots, snapshot) {
     return {
         edges: [],
         callGraph: [],
         reachabilityFacts: [],
-        coverage: {
-            phase: SIDECAR_PHASE,
-            complete: false,
-            counts,
-            diagnostics: [
-                { code: "ts_no_project_config", message: "no tsconfig.json was discovered while .ts/.tsx sources were provided" },
-            ],
-        },
+        coverage,
+        rootScopes: computeRootScopes(roots, [], snapshot, new Set()),
     };
 }
-function timeoutBeforeStart(counts, timeoutMs) {
-    return {
-        edges: [],
-        callGraph: [],
-        reachabilityFacts: [],
-        coverage: {
-            phase: SIDECAR_PHASE,
-            complete: false,
-            counts,
-            budgets: { timeout_ms: timeoutMs },
-            diagnostics: [{ code: "ts_sidecar_timeout", message: "timeout_ms exceeded before analysis started" }],
-        },
-    };
+function vacuousProjectResult(counts, roots, snapshot) {
+    return emptyAnalysisResult({ phase: SIDECAR_PHASE, complete: true, counts }, roots, snapshot);
+}
+function sourcesWithNoProjectConfigResult(counts, roots, snapshot) {
+    return emptyAnalysisResult({
+        phase: SIDECAR_PHASE,
+        complete: false,
+        counts,
+        diagnostics: [
+            { code: "ts_no_project_config", message: "no tsconfig.json was discovered while .ts/.tsx sources were provided" },
+        ],
+    }, roots, snapshot);
+}
+function timeoutBeforeStart(counts, timeoutMs, roots, snapshot) {
+    return emptyAnalysisResult({
+        phase: SIDECAR_PHASE,
+        complete: false,
+        counts,
+        budgets: { timeout_ms: timeoutMs },
+        diagnostics: [{ code: "ts_sidecar_timeout", message: "timeout_ms exceeded before analysis started" }],
+    }, roots, snapshot);
 }
 function startAnalysisAPI(snapshot, ApiCtor, tsserverPath) {
     try {
@@ -113,22 +110,6 @@ function runProjects(api, snapshot, tsconfigPaths, opts, deadline, counts) {
         const reachResult = processProjectReachability(project, snapshot, reachVisited, reachSourcesVisited, configResult.diagnostics.length > 0, opts.compiler);
         callGraph.push(...reachResult.callGraph);
         reachabilityFacts.push(...reachResult.facts);
-        // A ts_reachability_*_gap diagnostic (see processProjectReachability)
-        // means one hop's reachability was deliberately left unverified, not
-        // that import/config analysis for this project failed -- unlike Go's
-        // Complete gate (unresolved interface/function-value/framework-
-        // registration sites there are also counts+diagnostics, never a
-        // Complete flip; see pkg/projectmodel/go_callgraph.go), a routine
-        // one-hop delegation into a helper/service function is the ordinary
-        // shape of layered code, not a rare failure. Folding it into this
-        // project-wide Complete bit would mark most real TS trees incomplete
-        // and, via internal/codesignalcli/project_ts_backend.go's passthrough,
-        // degrade an unrelated already-shipped architecture.layer_violation to
-        // lifecycle unknown. Reachability's own incompleteness is reported
-        // independently on ReachabilityResult.Coverage/LayerBypassResult.Coverage
-        // instead (see pkg/projectmodel/ts_reachability.go, ts_layer_bypass.go)
-        // -- so, unlike configResult's diagnostics above, these never set
-        // complete = false here.
         diagnostics.push(...reachResult.diagnostics);
         projectsProcessed += 1;
     }
@@ -147,6 +128,39 @@ function runProjects(api, snapshot, tsconfigPaths, opts, deadline, counts) {
             budgets: deadline !== undefined ? { timeout_ms: opts.timeoutMs ?? 0 } : undefined,
             diagnostics: diagnostics.length > 0 ? canonicalizeDiagnostics(diagnostics) : undefined,
         },
+        rootScopes: computeRootScopes(opts.roots, projects, snapshot, visited),
+    };
+}
+function computeRootScopes(roots, projects, snapshot, visited) {
+    if (!roots || roots.length === 0)
+        return undefined;
+    const normalizedRoots = [...new Set(roots.map(normalizeRoot))].sort();
+    return normalizedRoots.map((root) => rootScopeFor(root, projects, snapshot, visited));
+}
+function rootScopeFor(root, projects, snapshot, visited) {
+    const candidates = new Set();
+    for (const project of projects) {
+        const configRepoPath = fromVirtualPath(project.configFileName);
+        if (configRepoPath === undefined || !isWithinRoot(configRepoPath, root))
+            continue;
+        for (const virtualPath of project.rootFiles) {
+            candidates.add(snapshot.canonicalizeVirtualPath(virtualPath));
+        }
+    }
+    const analyzedPaths = [];
+    const unanalyzedPaths = [];
+    for (const candidate of candidates) {
+        const repoPath = fromVirtualPath(candidate) ?? candidate;
+        (visited.has(candidate) ? analyzedPaths : unanalyzedPaths).push(repoPath);
+    }
+    analyzedPaths.sort();
+    unanalyzedPaths.sort();
+    return {
+        root,
+        candidate_files: candidates.size,
+        analyzed_files: analyzedPaths.length,
+        analyzed_paths: analyzedPaths.length > 0 ? analyzedPaths : undefined,
+        unanalyzed_paths: unanalyzedPaths.length > 0 ? unanalyzedPaths : undefined,
     };
 }
 // A project whose own config failed to parse never got a real Program

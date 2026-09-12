@@ -56,6 +56,16 @@ func diagnosticWithCode(diags []projectmodel.Diagnostic, code string) (projectmo
 	return projectmodel.Diagnostic{}, false
 }
 
+func diagnosticsWithCode(diags []projectmodel.Diagnostic, code string) []projectmodel.Diagnostic {
+	var out []projectmodel.Diagnostic
+	for _, d := range diags {
+		if d.Code == code {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
 var _ = Describe("BuildTypeScriptModelViaSidecar", func() {
 	When("the sidecar produces a valid response", func() {
 		It("translates raw import facts into a Model without error, sending every snapshot file and preserving its exact content across the base64 boundary", func() {
@@ -214,7 +224,7 @@ var _ = Describe("BuildTypeScriptModelViaSidecar", func() {
 		})
 	})
 
-	When("the sidecar reports reachability coverage gaps alongside a resolved fact", func() {
+	When("the sidecar reports reachability coverage gaps alongside a fully-analyzed root scope (AC-6 regression guard)", func() {
 		It("passes the gap diagnostic through unchanged while still translating the fact that was resolved", func() {
 			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsSidecarSnapshot(), testMeta(), sidecarOptsWithMode("reachability_gap"))
 			Expect(err).NotTo(HaveOccurred())
@@ -226,6 +236,33 @@ var _ = Describe("BuildTypeScriptModelViaSidecar", func() {
 
 			Expect(model.ReachabilityFacts).To(HaveLen(1), "expected the one resolved fact to still translate despite the coexisting gap")
 			Expect(model.CallFacts).To(HaveLen(1))
+
+			Expect(model.RootScopes).To(ContainElement(projectmodel.RootScope{Root: ".", CandidateFiles: 2, AnalyzedFiles: 2}), "expected Model.RootScopes to be populated 1:1 from the sidecar response's RootScopes even when a reachability gap is also present")
+			_, hasRootScopeDiag := diagnosticWithCode(model.Coverage.Diagnostics, projectmodel.DiagRootScopeIncomplete)
+			Expect(hasRootScopeDiag).To(BeFalse(), "expected no root-scope-incomplete diagnostic for a fully-analyzed root scope")
+		})
+	})
+
+	When("the sidecar reports a root scope where fewer files were analyzed than were candidates", func() {
+		It("marks model coverage incomplete and records one diagnostic per unanalyzed candidate file (SA-280-025)", func() {
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsSidecarSnapshot(), testMeta(), sidecarOptsWithMode("unanalyzable_candidate"))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(model.RootScopes).To(ContainElement(projectmodel.RootScope{
+				Root:            ".",
+				CandidateFiles:  3,
+				AnalyzedFiles:   2,
+				AnalyzedPaths:   []string{"src/a.ts", "src/b.ts"},
+				UnanalyzedPaths: []string{"src/c.tsx"},
+			}), "expected Model.RootScopes to be populated 1:1 from the sidecar response's RootScopes")
+
+			Expect(model.Coverage.Complete).To(BeFalse(), "expected a candidate file never incorporated into the import model to mark model coverage incomplete per SA-280-025, even though the sidecar's own Coverage.Complete reported true")
+
+			diags := diagnosticsWithCode(model.Coverage.Diagnostics, projectmodel.DiagRootScopeIncomplete)
+			Expect(diags).To(HaveLen(1), "expected exactly one root-scope-incomplete diagnostic, one per unanalyzed candidate file, got %+v", model.Coverage.Diagnostics)
+			Expect(diags[0].Path).To(Equal("src/c.tsx"), "expected the diagnostic's Path to name the specific unanalyzed file, not the root")
+			Expect(diags[0].Message).To(ContainSubstring("."), "expected the message to still name the root")
+			Expect(diags[0].Message).To(ContainSubstring("src/c.tsx"))
 		})
 	})
 

@@ -9,86 +9,29 @@ import (
 	"github.com/lousy-agents/coach/internal/projectbridge"
 )
 
-// DiagBackendUnavailable is the stable diagnostic code for every TypeScript
-// sidecar transport failure: missing binary, failed start, non-zero exit,
-// malformed/oversized output, or timeout/cancellation. It reuses the exact
+// DiagBackendUnavailable must stay byte-identical to the
 // "project_backend_unavailable" string embedded in
-// internal/codesignalcli.ProjectBackendUnavailableError's message so the
-// CLI layer and this package's own sidecar diagnostics agree on one
-// identifier, per issue #214's requirement that missing or failed sidecar
-// behavior follow one stable backend-unavailable diagnostic.
+// internal/codesignalcli.ProjectBackendUnavailableError's message.
 const DiagBackendUnavailable = "project_backend_unavailable"
 
-// maxTSSidecarResponseBytes bounds the single NDJSON response line read
-// from the sidecar's stdout, mirroring the bounded-read spirit of
-// runGitBytesBoundedWith in internal/codesignalcli/project.go: an
-// oversized or hung sidecar must fail closed rather than let the client
-// buffer unbounded memory.
+const DiagRootScopeIncomplete = "project_root_scope_incomplete"
+
 const maxTSSidecarResponseBytes = 8 << 20 // 8 MiB
 
-// maxTSSidecarStderrBytes bounds how much of the sidecar child's stderr is
-// retained for inclusion in a crash diagnostic. A misbehaving child's
-// stderr is untrusted, unbounded input, so it is capped the same way
-// maxTSSidecarResponseBytes caps stdout.
 const maxTSSidecarStderrBytes = 4 << 10 // 4 KiB
 
-// tsSidecarPhase is Model.Coverage.Phase for every BuildTypeScriptModelViaSidecar
-// call, mirroring BuildGoModel's "go_model_build" convention.
 const tsSidecarPhase = "ts_sidecar_build"
 
-// TSSidecarOptions bounds one BuildTypeScriptModelViaSidecar call.
 type TSSidecarOptions struct {
-	// BinaryPath is the executable spawned for the sidecar, not a $PATH
-	// lookup. Production TypeScript analysis passes the resolved Node
-	// binary; tests pass a fake sidecar binary.
 	BinaryPath string
 	Path       string
-	// Dir is the child's working directory. Empty inherits the parent
-	// process cwd. Production TypeScript analysis sets this to the
-	// materialized private analyzer directory.
-	Dir string
-	// Roots optionally scopes file collection and sidecar analysis to
-	// specific repository-relative project roots; empty scans the whole
-	// snapshot.
-	Roots []string
-	// Args are extra command-line arguments passed to the sidecar binary
-	// verbatim. The request itself always travels over stdin, not argv;
-	// this exists for flags the sidecar binary itself needs (e.g. a
-	// future --project flag), not for protocol data.
-	Args []string
-	// Timeout bounds both the client-side context deadline for the
-	// sidecar subprocess and the TimeoutMS the sidecar is asked to
-	// self-enforce (internal/projectbridge.Request.TimeoutMS), mirroring
-	// internal/jsbridge's context.WithTimeout convention. Zero means no
-	// deadline; since an oversized-output read can otherwise block
-	// indefinitely on a stalled child, callers should always set a
-	// positive Timeout in production.
-	Timeout time.Duration
-	// Budgets bounds collectTSSidecarFiles's input walk before any file is
-	// sent to the sidecar, mirroring GoBuildOptions.Budgets -- only
-	// MaxInputFiles and MaxInputBytes are enforced here (the same two
-	// dimensions BuildGoModel enforces); the rest of GoBudgets' fields are
-	// reserved for this backend the same way they are for Go's. A zero
-	// value is unbounded, matching GoBudgets' own no-implicit-default
-	// convention.
-	Budgets GoBudgets
+	Dir        string
+	Roots      []string
+	Args       []string
+	Timeout    time.Duration
+	Budgets    GoBudgets
 }
 
-// BuildTypeScriptModelViaSidecar builds a Model's raw TypeScript/TSX
-// import facts by spawning opts.BinaryPath as a subprocess, sending it one
-// internal/projectbridge.Request over stdin, and reading one Response back
-// from stdout. It performs no TypeScript analysis itself -- resolving
-// tsconfig project references, path aliases, and package.json exports/
-// re-exports is the sidecar's job (issue #214 Task 2); this function is
-// pure transport plus response translation.
-//
-// Mirroring BuildGoModel's contract, BuildTypeScriptModelViaSidecar never
-// returns a non-nil error for an unavailable, crashed, malformed, or
-// timed-out sidecar -- those are operational conditions, not programming
-// errors, and are reported as a DiagBackendUnavailable entry in the
-// returned Model's Coverage.Diagnostics (Coverage.Complete false) instead.
-// A non-nil error is reserved for genuine programming-error conditions,
-// such as a nil snapshot.
 func BuildTypeScriptModelViaSidecar(ctx context.Context, snapshot fs.FS, meta SnapshotMeta, opts TSSidecarOptions) (Model, error) {
 	if snapshot == nil {
 		return Model{}, fmt.Errorf("projectmodel: snapshot must not be nil")
@@ -123,13 +66,6 @@ func BuildTypeScriptModelViaSidecar(ctx context.Context, snapshot fs.FS, meta Sn
 	return model, nil
 }
 
-// applyTSSidecarInputBudgetTruncation marks model incomplete and appends a
-// DiagFileBudgetExceeded diagnostic when opts.Budgets truncated
-// collectTSSidecarFiles's input walk, regardless of which outcome branch
-// (successful response, resp.Error, or transport failure) produced model --
-// a truncated input snapshot never represents complete facts, even if the
-// sidecar itself reported success over the smaller set it was actually
-// given.
 func applyTSSidecarInputBudgetTruncation(model Model) Model {
 	model.Coverage = canonicalCoverage(Coverage{
 		Phase:    model.Coverage.Phase,
@@ -145,6 +81,14 @@ func applyTSSidecarInputBudgetTruncation(model Model) Model {
 }
 
 func modelFromTSSidecarResponse(meta SnapshotMeta, opts TSSidecarOptions, resp projectbridge.Response, files []projectbridge.ProjectFile) Model {
+	rootScopes := rootScopesFromWire(resp.RootScopes)
+	complete := resp.Coverage.Complete
+	diagnostics := diagnosticsFromWire(resp.Coverage.Diagnostics)
+	if gaps := rootScopeIncompleteDiagnostics(rootScopes); len(gaps) > 0 {
+		complete = false
+		diagnostics = append(diagnostics, gaps...)
+	}
+
 	return Model{
 		SchemaVersion:     SchemaVersion,
 		Repository:        meta.Repository,
@@ -154,14 +98,61 @@ func modelFromTSSidecarResponse(meta SnapshotMeta, opts TSSidecarOptions, resp p
 		ImportEdges:       importEdgesFromWire(resp.ImportEdges),
 		CallFacts:         callFactsFromWire(resp.CallGraph),
 		ReachabilityFacts: reachabilityFactsFromWire(resp.ReachabilityFacts),
+		RootScopes:        rootScopes,
 		Coverage: canonicalCoverage(Coverage{
 			Phase:       tsSidecarPhase,
-			Complete:    resp.Coverage.Complete,
+			Complete:    complete,
 			Counts:      resp.Coverage.Counts,
 			Budgets:     resp.Coverage.Budgets,
-			Diagnostics: diagnosticsFromWire(resp.Coverage.Diagnostics),
+			Diagnostics: diagnostics,
 		}),
 	}
+}
+
+func rootScopesFromWire(in []projectbridge.RootScopeFact) []RootScope {
+	if len(in) == 0 {
+		return nil
+	}
+	scopes := make([]RootScope, 0, len(in))
+	for _, rs := range in {
+		scopes = append(scopes, RootScope{
+			Root:            rs.Root,
+			CandidateFiles:  rs.CandidateFiles,
+			AnalyzedFiles:   rs.AnalyzedFiles,
+			AnalyzedPaths:   rs.AnalyzedPaths,
+			UnanalyzedPaths: rs.UnanalyzedPaths,
+		})
+	}
+	return scopes
+}
+
+// rootScopeIncompleteDiagnostics never reads reachability diagnostics --
+// model completeness and reachability completeness are independent axes.
+// The per-root fallback below covers a RootScope with counts but no path
+// lists (a sidecar response predating UnanalyzedPaths).
+func rootScopeIncompleteDiagnostics(scopes []RootScope) []Diagnostic {
+	var diags []Diagnostic
+	for _, scope := range scopes {
+		if scope.AnalyzedFiles >= scope.CandidateFiles {
+			continue
+		}
+		if len(scope.UnanalyzedPaths) > 0 {
+			for _, path := range scope.UnanalyzedPaths {
+				diags = append(diags, Diagnostic{
+					Code:    DiagRootScopeIncomplete,
+					Message: fmt.Sprintf("root %q: candidate file %q was never incorporated into the import model", scope.Root, path),
+					Path:    path,
+				})
+			}
+			continue
+		}
+		diags = append(diags, Diagnostic{
+			Code:    DiagRootScopeIncomplete,
+			Message: fmt.Sprintf("root %q: only %d of %d candidate files were incorporated into the import model", scope.Root, scope.AnalyzedFiles, scope.CandidateFiles),
+			Path:    scope.Root,
+		})
+	}
+	return diags
 }
 
 func importEdgesFromWire(in []projectbridge.ImportEdgeFact) []ImportEdge {
@@ -172,12 +163,6 @@ func importEdgesFromWire(in []projectbridge.ImportEdgeFact) []ImportEdge {
 	return edges
 }
 
-// callFactsFromWire translates the sidecar's raw call-graph edges into
-// Model.CallFacts. Every non-error Response has attempted call-graph
-// collection (analyze_project always tries it alongside import-edge
-// extraction), so this always returns a non-nil slice -- an empty result set
-// is "selected but found nothing", matching CallFacts' documented
-// nil-vs-empty-slice contract, never "not selected".
 func callFactsFromWire(in []projectbridge.CallGraphEdgeFact) []CallFact {
 	facts := make([]CallFact, 0, len(in))
 	for _, f := range in {
@@ -186,18 +171,6 @@ func callFactsFromWire(in []projectbridge.CallGraphEdgeFact) []CallFact {
 	return facts
 }
 
-// reachabilityFactsFromWire translates the sidecar's raw
-// possible-call-reachability facts into Model.ReachabilityFacts, mirroring
-// callFactsFromWire's always-non-nil contract. It deliberately drops the
-// wire's Backend field: every Model BuildTypeScriptModelViaSidecar returns
-// is TS-sourced by construction, so that provenance is already visible at
-// the Model level (Coverage.Phase, Workspace/File.Language) without needing
-// a per-fact field on projectmodel.ReachabilityFact, which has no Backend
-// field today (see go_reachability.go). This mirrors the established
-// wire-vs-model asymmetry documented on
-// wire_bridge_parity_test.go's TestReachabilityBypassWireFieldParity: every
-// projectbridge wire type in this family adds a trailing Backend provenance
-// field with no projectmodel counterpart.
 func reachabilityFactsFromWire(in []projectbridge.ReachabilityFactWire) []ReachabilityFact {
 	facts := make([]ReachabilityFact, 0, len(in))
 	for _, f := range in {
@@ -230,10 +203,6 @@ func diagnosticsFromWire(in []projectbridge.Diagnostic) []Diagnostic {
 	return out
 }
 
-// tsSidecarModel returns the mostly-empty Model produced for a transport
-// failure or a resp.Error whole-request failure: Coverage.Complete false
-// with diags, per BuildTypeScriptModelViaSidecar's
-// fail-open-with-diagnostics contract.
 func tsSidecarModel(meta SnapshotMeta, opts TSSidecarOptions, filesSeen int, diags ...Diagnostic) Model {
 	return Model{
 		SchemaVersion: SchemaVersion,
@@ -249,13 +218,6 @@ func tsSidecarModel(meta SnapshotMeta, opts TSSidecarOptions, filesSeen int, dia
 	}
 }
 
-// tsSidecarErrorDiagnostics translates a resp.Error whole-request failure
-// into diagnostics: one DiagBackendUnavailable entry carrying the error's
-// message plus its Kind (Kind never changes the diagnostic code -- every
-// Kind collapses to DiagBackendUnavailable per
-// internal/projectbridge.ErrorPayload's contract -- so it is folded into
-// the message instead), followed by whatever partial resp.Coverage.
-// Diagnostics the sidecar collected before failing.
 func tsSidecarErrorDiagnostics(resp projectbridge.Response) []Diagnostic {
 	message := resp.Error.Message
 	if resp.Error.Kind != "" {

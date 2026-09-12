@@ -25,6 +25,7 @@ type modeHandler func(req projectbridge.Request)
 
 func main() {
 	mode := parseMode(os.Args[1:])
+	recordInvocation(parseFlag(os.Args[1:], "--invocation-counter-file="))
 	req := readRequest()
 	handler, ok := modeHandlers[mode]
 	if !ok {
@@ -41,6 +42,35 @@ func parseMode(args []string) string {
 		}
 	}
 	return mode
+}
+
+// parseFlag returns the value following prefix in the first matching arg, or
+// "" if prefix appears nowhere.
+func parseFlag(args []string, prefix string) string {
+	for _, arg := range args {
+		if rest, ok := strings.CutPrefix(arg, prefix); ok {
+			return rest
+		}
+	}
+	return ""
+}
+
+// recordInvocation appends one line to counterFile per process invocation,
+// letting an acceptance test count how many separate sidecar subprocess
+// round trips a call sequence actually made. A no-op when counterFile is ""
+// (the flag unset), so every existing mode/spec that never sets
+// --invocation-counter-file is unaffected.
+func recordInvocation(counterFile string) {
+	if counterFile == "" {
+		return
+	}
+	f, err := os.OpenFile(counterFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fake_ts_sidecar: recording invocation:", err)
+		return
+	}
+	defer f.Close()
+	fmt.Fprintln(f, "1")
 }
 
 func readRequest() projectbridge.Request {
@@ -75,6 +105,7 @@ var modeHandlers = map[string]modeHandler{
 	"layer_bypass_dual":      modeLayerBypassDual,
 	"layer_bypass_cycle":     modeLayerBypassCycle,
 	"layer_bypass_gap":       modeLayerBypassGap,
+	"unanalyzable_candidate": modeUnanalyzableCandidate,
 }
 
 // reachabilityFixtureFact is the one resolved call-graph edge/reachability
@@ -128,6 +159,9 @@ func modeReachabilityGap(req projectbridge.Request) {
 		ID:                req.ID,
 		CallGraph:         []projectbridge.CallGraphEdgeFact{{From: fact.Source, To: fact.Sink}},
 		ReachabilityFacts: []projectbridge.ReachabilityFactWire{fact},
+		RootScopes: []projectbridge.RootScopeFact{
+			{Root: ".", CandidateFiles: 2, AnalyzedFiles: 2},
+		},
 		Coverage: projectbridge.Coverage{
 			Phase:    "ts_sidecar_fake",
 			Complete: true,
@@ -346,6 +380,32 @@ func modeLayerBypassGap(req projectbridge.Request) {
 					Path:    "src/app.ts",
 				},
 			},
+		},
+	})
+}
+
+// modeUnanalyzableCandidate reports Coverage.Complete: true from the
+// sidecar's own perspective, alongside a RootScopes entry whose
+// AnalyzedFiles is less than its CandidateFiles -- proving SA-280-025's
+// strict model completeness check (not the sidecar's own Coverage.Complete)
+// is what must flip Model.Coverage.Complete to false for this fixture.
+func modeUnanalyzableCandidate(req projectbridge.Request) {
+	writeResponse(projectbridge.Response{
+		Version: req.Version,
+		ID:      req.ID,
+		RootScopes: []projectbridge.RootScopeFact{
+			{
+				Root:            ".",
+				CandidateFiles:  3,
+				AnalyzedFiles:   2,
+				AnalyzedPaths:   []string{"src/a.ts", "src/b.ts"},
+				UnanalyzedPaths: []string{"src/c.tsx"},
+			},
+		},
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: true,
+			Counts:   map[string]int{"files_seen": len(req.Files)},
 		},
 	})
 }

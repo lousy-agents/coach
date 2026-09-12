@@ -2,12 +2,43 @@ package projectmodel_test
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
+
+// sidecarOptsWithModeAndCounter extends sidecarOptsWithMode with the fake
+// sidecar's --invocation-counter-file flag, letting a spec assert exactly
+// how many separate subprocess round trips a call sequence made.
+func sidecarOptsWithModeAndCounter(mode, counterFile string) projectmodel.TSSidecarOptions {
+	opts := sidecarOptsWithMode(mode)
+	opts.Args = append(opts.Args, "--invocation-counter-file="+counterFile)
+	return opts
+}
+
+// invocationCount reads the fake sidecar's invocation counter file (one line
+// appended per subprocess invocation) and reports how many invocations it
+// recorded. A missing file (no invocation yet) counts as zero.
+func invocationCount(counterFile string) int {
+	data, err := os.ReadFile(counterFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0
+		}
+		Fail(fmt.Sprintf("reading invocation counter file %s: %v", counterFile, err))
+	}
+	trimmed := strings.TrimRight(string(data), "\n")
+	if trimmed == "" {
+		return 0
+	}
+	return len(strings.Split(trimmed, "\n"))
+}
 
 var _ = Describe("BuildTypeScriptReachability", func() {
 	When("a TS route handler has a resolved call path to a pinned query-shaped sink", func() {
@@ -79,6 +110,42 @@ var _ = Describe("BuildTypeScriptReachability", func() {
 			Expect(result.Coverage.Complete).To(BeFalse())
 			_, ok := diagnosticWithCode(result.Coverage.Diagnostics, projectmodel.DiagBackendUnavailable)
 			Expect(ok).To(BeTrue(), "expected a project_backend_unavailable diagnostic, got %+v", result.Coverage.Diagnostics)
+		})
+	})
+})
+
+var _ = Describe("deriving a ReachabilityResult from an already-built Model (AC-RUN-5: one analyzer invocation per revision)", func() {
+	When("a caller calls the public BuildTypeScriptReachability wrapper more than once", func() {
+		It("invokes the sidecar once per call, reproducing the independent-round-trip cost this task eliminates", func() {
+			counterFile := filepath.Join(GinkgoT().TempDir(), "invocations.log")
+			opts := sidecarOptsWithModeAndCounter("reachability", counterFile)
+
+			_, err := projectmodel.BuildTypeScriptReachability(context.Background(), tsSidecarSnapshot(), testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = projectmodel.BuildTypeScriptReachability(context.Background(), tsSidecarSnapshot(), testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(invocationCount(counterFile)).To(Equal(2),
+				"each call to the public wrapper legitimately re-builds the Model; this pins the baseline the Model-reuse spec below eliminates and proves the counter instrumentation itself works")
+		})
+	})
+
+	When("a caller builds the Model once via BuildTypeScriptModelViaSidecar and derives ReachabilityResult from it", func() {
+		It("invokes the sidecar exactly once, deriving Facts/Sources/Coverage purely from the already-built Model", func() {
+			counterFile := filepath.Join(GinkgoT().TempDir(), "invocations.log")
+			opts := sidecarOptsWithModeAndCounter("reachability", counterFile)
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsSidecarSnapshot(), testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+
+			result := projectmodel.BuildTypeScriptReachabilityFromModel(model)
+			Expect(result.Algorithm).To(Equal("ts-source-sink-registry@1"))
+			Expect(result.Facts).To(HaveLen(1))
+			Expect(result.Sources).To(Equal([]string{"file:src/app.ts#getUsers"}))
+			Expect(result.Coverage.Complete).To(BeTrue())
+
+			Expect(invocationCount(counterFile)).To(Equal(1),
+				"expected exactly one sidecar invocation: BuildTypeScriptReachabilityFromModel must derive purely from the passed-in Model without any sidecar round trip of its own")
 		})
 	})
 })

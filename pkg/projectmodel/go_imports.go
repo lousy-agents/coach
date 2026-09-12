@@ -365,15 +365,30 @@ func shouldSkipModuleWalkDir(p, moduleDir string, moduleDirs map[string]bool) bo
 // exclude, which outranks require, since a module path can legally appear in
 // more than one of those lists (e.g. required and then excluded).
 func classifyGoImport(importPath string, owner *modfile.File, allModules map[string]*modfile.File, packageDirs map[string][]string) (kind, to string) {
-	// Iterate module directories in sorted order (never Go's randomized map
-	// order) and keep the longest matching module path so results are
-	// deterministic and reproducible across processes: two modules can
-	// legally declare colliding module paths, or a nested module whose
-	// directory doesn't mirror its module path, and either can otherwise
-	// leave the choice of which one "wins" to map iteration order.
+	if pkgDir, ok := bestInternalModulePackage(importPath, allModules, packageDirs); ok {
+		return "internal", "package:" + pkgDir
+	}
+	if isStdlibImport(importPath) {
+		return "stdlib", importPath
+	}
+	if owner != nil {
+		if kind, to, ok := classifyGoImportViaOwner(importPath, owner); ok {
+			return kind, to
+		}
+	}
+	return "unresolved", importPath
+}
+
+// bestInternalModulePackage finds importPath's owning package directory
+// among allModules's declared modules, iterating in sorted directory order
+// (never Go's randomized map order) and keeping the longest matching
+// module path so the result is deterministic and reproducible across
+// processes: two modules can legally declare colliding module paths, or a
+// nested module whose directory doesn't mirror its module path, and either
+// can otherwise leave the choice of which one "wins" to map iteration
+// order.
+func bestInternalModulePackage(importPath string, allModules map[string]*modfile.File, packageDirs map[string][]string) (pkgDir string, ok bool) {
 	bestModPath := ""
-	bestPkgDir := ""
-	matched := false
 	for _, mdir := range mapKeysSorted(allModules) {
 		mf := allModules[mdir]
 		if mf.Module == nil {
@@ -384,44 +399,39 @@ func classifyGoImport(importPath string, owner *modfile.File, allModules map[str
 			continue
 		}
 		sub := strings.TrimPrefix(strings.TrimPrefix(importPath, modPath), "/")
-		pkgDir := mdir
+		candidateDir := mdir
 		if sub != "" {
-			pkgDir = path.Join(mdir, sub)
+			candidateDir = path.Join(mdir, sub)
 		}
-		if _, ok := packageDirs[pkgDir]; !ok {
+		if _, exists := packageDirs[candidateDir]; !exists {
 			continue
 		}
-		if !matched || len(modPath) > len(bestModPath) {
-			bestModPath, bestPkgDir, matched = modPath, pkgDir, true
+		if !ok || len(modPath) > len(bestModPath) {
+			bestModPath, pkgDir, ok = modPath, candidateDir, true
 		}
 	}
-	if matched {
-		return "internal", "package:" + bestPkgDir
-	}
+	return pkgDir, ok
+}
 
-	if isStdlibImport(importPath) {
-		return "stdlib", importPath
-	}
-
-	if owner != nil {
-		for _, r := range owner.Replace {
-			if matchesModulePrefix(importPath, r.Old.Path) {
-				return "replaced", importPath
-			}
-		}
-		for _, e := range owner.Exclude {
-			if matchesModulePrefix(importPath, e.Mod.Path) {
-				return "excluded", importPath
-			}
-		}
-		for _, req := range owner.Require {
-			if matchesModulePrefix(importPath, req.Mod.Path) {
-				return "external", importPath
-			}
+// classifyGoImportViaOwner checks importPath against owner's own
+// replace/exclude/require directives, in that precedence order.
+func classifyGoImportViaOwner(importPath string, owner *modfile.File) (kind, to string, ok bool) {
+	for _, r := range owner.Replace {
+		if matchesModulePrefix(importPath, r.Old.Path) {
+			return "replaced", importPath, true
 		}
 	}
-
-	return "unresolved", importPath
+	for _, e := range owner.Exclude {
+		if matchesModulePrefix(importPath, e.Mod.Path) {
+			return "excluded", importPath, true
+		}
+	}
+	for _, req := range owner.Require {
+		if matchesModulePrefix(importPath, req.Mod.Path) {
+			return "external", importPath, true
+		}
+	}
+	return "", "", false
 }
 
 func matchesModulePrefix(importPath, modPath string) bool {

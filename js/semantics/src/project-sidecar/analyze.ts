@@ -2,20 +2,21 @@ import type { Project } from "typescript/unstable/sync";
 
 import { canonicalizeDiagnostics, canonicalizeEdges } from "./canonical.js";
 import { describeErrorWithoutPaths } from "./describe-error.js";
-import { discoverTsconfigPaths } from "./discover.js";
+import { discoverTsconfigPaths, isWithinRoot, normalizeRoot } from "./discover.js";
 import { extractEdgesForProject } from "./edges.js";
-import { SIDECAR_PHASE, type CallGraphEdgeFact, type Coverage, type Diagnostic, type ImportEdgeFact, type ProjectFile, type ReachabilityFactWire } from "./protocol.js";
+import {
+  SIDECAR_PHASE,
+  type CallGraphEdgeFact,
+  type Coverage,
+  type Diagnostic,
+  type ImportEdgeFact,
+  type ProjectFile,
+  type ReachabilityFactWire,
+  type RootScopeFact,
+} from "./protocol.js";
 import { canonicalizeCallGraph, canonicalizeReachabilityFacts, extractReachabilityForProject } from "./reachability.js";
 import { buildProjectSnapshot, fromVirtualPath, toVirtualPath, VIRTUAL_ROOT, type ProjectSnapshot } from "./vfs.js";
 
-/**
- * The exact resolved TypeScript compiler this request must run against
- * (coach#326 Task 2), assembled once by main.ts's dynamic-import bootstrap
- * from an explicit, host-provided compiler module location instead of this
- * package's own `typescript` devDependency. Every module below receives
- * the pieces it needs from this bundle as parameters rather than statically
- * importing "typescript/unstable/*" itself.
- */
 export interface CompilerBundle {
   api: typeof import("typescript/unstable/sync").API;
   symbolFlags: typeof import("typescript/unstable/sync").SymbolFlags;
@@ -25,11 +26,7 @@ export interface CompilerBundle {
 
 type ApiInstance = InstanceType<CompilerBundle["api"]>;
 
-/** Thrown only for genuine backend-startup failures (e.g. the bundled
- * native tsgo binary failing to spawn); main.ts turns this into a
- * whole-request Response.Error rather than crashing the process, since a
- * missing/unspawnable backend is an operational condition analogous to
- * pkg/projectmodel's own DiagBackendUnavailable, not a programming bug. */
+/** Thrown only for genuine backend-startup failures (e.g. the bundled native tsgo binary failing to spawn); main.ts turns this into a Response.Error rather than crashing the process. */
 export class SidecarBackendError extends Error {}
 
 export interface AnalyzeOptions {
@@ -51,6 +48,7 @@ export interface AnalyzeResult {
   callGraph: CallGraphEdgeFact[];
   reachabilityFacts: ReachabilityFactWire[];
   coverage: Coverage;
+  rootScopes?: RootScopeFact[];
 }
 
 export function analyzeProject(opts: AnalyzeOptions): AnalyzeResult {
@@ -60,10 +58,10 @@ export function analyzeProject(opts: AnalyzeOptions): AnalyzeResult {
   const counts: Record<string, number> = { files_seen: opts.files.length, tsconfig_count: tsconfigPaths.length };
 
   if (tsconfigPaths.length === 0) {
-    return emptyComplete(counts, opts.files);
+    return emptyComplete(counts, opts.files, opts.roots, snapshot);
   }
   if (deadline !== undefined && Date.now() >= deadline) {
-    return timeoutBeforeStart(counts, opts.timeoutMs ?? 0);
+    return timeoutBeforeStart(counts, opts.timeoutMs ?? 0, opts.roots, snapshot);
   }
 
   const api = startAnalysisAPI(snapshot, opts.compiler.api, opts.tsserverPath);
@@ -74,21 +72,47 @@ export function analyzeProject(opts: AnalyzeOptions): AnalyzeResult {
   }
 }
 
-function emptyComplete(counts: Record<string, number>, files: readonly ProjectFile[]): AnalyzeResult {
+function emptyComplete(
+  counts: Record<string, number>,
+  files: readonly ProjectFile[],
+  roots: readonly string[] | undefined,
+  snapshot: ProjectSnapshot,
+): AnalyzeResult {
   const hasTsSources = files.some((f) => f.path.endsWith(".ts") || f.path.endsWith(".tsx"));
-  return hasTsSources ? sourcesWithNoProjectConfigResult(counts) : vacuousProjectResult(counts);
+  return hasTsSources
+    ? sourcesWithNoProjectConfigResult(counts, roots, snapshot)
+    : vacuousProjectResult(counts, roots, snapshot);
 }
 
-function vacuousProjectResult(counts: Record<string, number>): AnalyzeResult {
-  return { edges: [], callGraph: [], reachabilityFacts: [], coverage: { phase: SIDECAR_PHASE, complete: true, counts } };
-}
-
-function sourcesWithNoProjectConfigResult(counts: Record<string, number>): AnalyzeResult {
+function emptyAnalysisResult(
+  coverage: Coverage,
+  roots: readonly string[] | undefined,
+  snapshot: ProjectSnapshot,
+): AnalyzeResult {
   return {
     edges: [],
     callGraph: [],
     reachabilityFacts: [],
-    coverage: {
+    coverage,
+    rootScopes: computeRootScopes(roots, [], snapshot, new Set()),
+  };
+}
+
+function vacuousProjectResult(
+  counts: Record<string, number>,
+  roots: readonly string[] | undefined,
+  snapshot: ProjectSnapshot,
+): AnalyzeResult {
+  return emptyAnalysisResult({ phase: SIDECAR_PHASE, complete: true, counts }, roots, snapshot);
+}
+
+function sourcesWithNoProjectConfigResult(
+  counts: Record<string, number>,
+  roots: readonly string[] | undefined,
+  snapshot: ProjectSnapshot,
+): AnalyzeResult {
+  return emptyAnalysisResult(
+    {
       phase: SIDECAR_PHASE,
       complete: false,
       counts,
@@ -96,22 +120,28 @@ function sourcesWithNoProjectConfigResult(counts: Record<string, number>): Analy
         { code: "ts_no_project_config", message: "no tsconfig.json was discovered while .ts/.tsx sources were provided" },
       ],
     },
-  };
+    roots,
+    snapshot,
+  );
 }
 
-function timeoutBeforeStart(counts: Record<string, number>, timeoutMs: number): AnalyzeResult {
-  return {
-    edges: [],
-    callGraph: [],
-    reachabilityFacts: [],
-    coverage: {
+function timeoutBeforeStart(
+  counts: Record<string, number>,
+  timeoutMs: number,
+  roots: readonly string[] | undefined,
+  snapshot: ProjectSnapshot,
+): AnalyzeResult {
+  return emptyAnalysisResult(
+    {
       phase: SIDECAR_PHASE,
       complete: false,
       counts,
       budgets: { timeout_ms: timeoutMs },
       diagnostics: [{ code: "ts_sidecar_timeout", message: "timeout_ms exceeded before analysis started" }],
     },
-  };
+    roots,
+    snapshot,
+  );
 }
 
 function startAnalysisAPI(snapshot: ProjectSnapshot, ApiCtor: CompilerBundle["api"], tsserverPath: string): ApiInstance {
@@ -171,22 +201,6 @@ function runProjects(
     );
     callGraph.push(...reachResult.callGraph);
     reachabilityFacts.push(...reachResult.facts);
-    // A ts_reachability_*_gap diagnostic (see processProjectReachability)
-    // means one hop's reachability was deliberately left unverified, not
-    // that import/config analysis for this project failed -- unlike Go's
-    // Complete gate (unresolved interface/function-value/framework-
-    // registration sites there are also counts+diagnostics, never a
-    // Complete flip; see pkg/projectmodel/go_callgraph.go), a routine
-    // one-hop delegation into a helper/service function is the ordinary
-    // shape of layered code, not a rare failure. Folding it into this
-    // project-wide Complete bit would mark most real TS trees incomplete
-    // and, via internal/codesignalcli/project_ts_backend.go's passthrough,
-    // degrade an unrelated already-shipped architecture.layer_violation to
-    // lifecycle unknown. Reachability's own incompleteness is reported
-    // independently on ReachabilityResult.Coverage/LayerBypassResult.Coverage
-    // instead (see pkg/projectmodel/ts_reachability.go, ts_layer_bypass.go)
-    // -- so, unlike configResult's diagnostics above, these never set
-    // complete = false here.
     diagnostics.push(...reachResult.diagnostics);
     projectsProcessed += 1;
   }
@@ -206,6 +220,49 @@ function runProjects(
       budgets: deadline !== undefined ? { timeout_ms: opts.timeoutMs ?? 0 } : undefined,
       diagnostics: diagnostics.length > 0 ? canonicalizeDiagnostics(diagnostics) : undefined,
     },
+    rootScopes: computeRootScopes(opts.roots, projects, snapshot, visited),
+  };
+}
+
+function computeRootScopes(
+  roots: readonly string[] | undefined,
+  projects: readonly Project[],
+  snapshot: ProjectSnapshot,
+  visited: ReadonlySet<string>,
+): RootScopeFact[] | undefined {
+  if (!roots || roots.length === 0) return undefined;
+  const normalizedRoots = [...new Set(roots.map(normalizeRoot))].sort();
+  return normalizedRoots.map((root) => rootScopeFor(root, projects, snapshot, visited));
+}
+
+function rootScopeFor(
+  root: string,
+  projects: readonly Project[],
+  snapshot: ProjectSnapshot,
+  visited: ReadonlySet<string>,
+): RootScopeFact {
+  const candidates = new Set<string>();
+  for (const project of projects) {
+    const configRepoPath = fromVirtualPath(project.configFileName);
+    if (configRepoPath === undefined || !isWithinRoot(configRepoPath, root)) continue;
+    for (const virtualPath of project.rootFiles) {
+      candidates.add(snapshot.canonicalizeVirtualPath(virtualPath));
+    }
+  }
+  const analyzedPaths: string[] = [];
+  const unanalyzedPaths: string[] = [];
+  for (const candidate of candidates) {
+    const repoPath = fromVirtualPath(candidate) ?? candidate;
+    (visited.has(candidate) ? analyzedPaths : unanalyzedPaths).push(repoPath);
+  }
+  analyzedPaths.sort();
+  unanalyzedPaths.sort();
+  return {
+    root,
+    candidate_files: candidates.size,
+    analyzed_files: analyzedPaths.length,
+    analyzed_paths: analyzedPaths.length > 0 ? analyzedPaths : undefined,
+    unanalyzed_paths: unanalyzedPaths.length > 0 ? unanalyzedPaths : undefined,
   };
 }
 

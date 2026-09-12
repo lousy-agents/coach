@@ -285,10 +285,9 @@ func extractTar(dir string, archive []byte) error {
 		if err != nil {
 			return err
 		}
-		path := filepath.Join(dir, filepath.FromSlash(header.Name))
-		rel, err := filepath.Rel(dir, path)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("unsafe archive path %q", header.Name)
+		path, err := safeTarEntryPath(dir, header.Name)
+		if err != nil {
+			return err
 		}
 		switch header.Typeflag {
 		case tar.TypeXGlobalHeader, tar.TypeXHeader:
@@ -300,32 +299,51 @@ func extractTar(dir string, archive []byte) error {
 				return err
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			if err := extractTarRegularFile(path, header, reader); err != nil {
 				return err
-			}
-			file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
-			if err != nil {
-				return err
-			}
-			_, copyErr := io.Copy(file, reader)
-			closeErr := file.Close()
-			if copyErr != nil {
-				return copyErr
-			}
-			if closeErr != nil {
-				return closeErr
 			}
 		case tar.TypeSymlink:
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-				return err
-			}
-			if err := os.Symlink(header.Linkname, path); err != nil {
+			if err := extractTarSymlink(path, header); err != nil {
 				return err
 			}
 		default:
 			return fmt.Errorf("unsupported archive entry %q", header.Name)
 		}
 	}
+}
+
+// safeTarEntryPath joins name onto dir and rejects any result that would
+// escape dir (a path-traversal entry such as "../../etc/passwd").
+func safeTarEntryPath(dir, name string) (string, error) {
+	path := filepath.Join(dir, filepath.FromSlash(name))
+	rel, err := filepath.Rel(dir, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("unsafe archive path %q", name)
+	}
+	return path, nil
+}
+
+func extractTarRegularFile(path string, header *tar.Header, reader io.Reader) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(file, reader)
+	closeErr := file.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
+}
+
+func extractTarSymlink(path string, header *tar.Header) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.Symlink(header.Linkname, path)
 }
 
 type tsConfig struct {
@@ -386,28 +404,31 @@ func loadTSConfig(dir string) (tsConfig, bool, error) {
 	snapshotRoot, currentDir, extends := resolvedDir, dir, config.Extends
 	for extends != "" {
 		base, baseDir, basePath, ok := resolveExtendedTSConfig(snapshotRoot, currentDir, extends)
-		if !ok {
-			return tsConfig{}, false, nil
-		}
-		if visited[basePath] {
+		if !ok || visited[basePath] {
 			return tsConfig{}, false, nil
 		}
 		visited[basePath] = true
 
-		if config.Include == nil {
-			config.Include = rebaseTSConfigPatterns(snapshotRoot, baseDir, base.Include)
-		}
-		if config.Exclude == nil {
-			config.Exclude = rebaseTSConfigPatterns(snapshotRoot, baseDir, base.Exclude)
-		}
-		if config.Files == nil && base.Files != nil {
-			rebased := rebaseTSConfigPatterns(snapshotRoot, baseDir, *base.Files)
-			config.Files = &rebased
-		}
-
+		config = applyTSConfigBase(config, snapshotRoot, baseDir, base)
 		currentDir, extends = baseDir, base.Extends
 	}
 	return config, true, nil
+}
+
+// applyTSConfigBase fills whichever of config's Include/Exclude/Files the
+// child left unset with base's own, rebased to base's directory.
+func applyTSConfigBase(config tsConfig, snapshotRoot, baseDir string, base tsConfig) tsConfig {
+	if config.Include == nil {
+		config.Include = rebaseTSConfigPatterns(snapshotRoot, baseDir, base.Include)
+	}
+	if config.Exclude == nil {
+		config.Exclude = rebaseTSConfigPatterns(snapshotRoot, baseDir, base.Exclude)
+	}
+	if config.Files == nil && base.Files != nil {
+		rebased := rebaseTSConfigPatterns(snapshotRoot, baseDir, *base.Files)
+		config.Files = &rebased
+	}
+	return config
 }
 
 // resolveExtendedTSConfig joins extends relative to dir, then enforces the
@@ -506,15 +527,7 @@ func stripJSONCComments(data []byte) []byte {
 	for i := 0; i < len(data); i++ {
 		b := data[i]
 		if inString {
-			out.WriteByte(b)
-			switch {
-			case escaped:
-				escaped = false
-			case b == '\\':
-				escaped = true
-			case b == '"':
-				inString = false
-			}
+			inString, escaped = advanceInsideJSONString(&out, b, escaped)
 			continue
 		}
 		switch {
@@ -522,26 +535,62 @@ func stripJSONCComments(data []byte) []byte {
 			inString = true
 			out.WriteByte(b)
 		case b == '/' && i+1 < len(data) && data[i+1] == '/':
-			for i < len(data) && data[i] != '\n' {
-				i++
-			}
+			i = skipJSONCLineComment(data, i)
 			if i < len(data) {
 				out.WriteByte('\n')
 			}
 		case b == '/' && i+1 < len(data) && data[i+1] == '*':
-			i += 2
-			for i+1 < len(data) && !(data[i] == '*' && data[i+1] == '/') {
-				i++
-			}
-			if i+1 >= len(data) {
+			next, ok := skipJSONCBlockComment(data, i)
+			if !ok {
 				return data
 			}
-			i++
+			i = next
 		default:
 			out.WriteByte(b)
 		}
 	}
 	return stripTrailingCommas(out.Bytes())
+}
+
+// advanceInsideJSONString writes b (already known to be inside a JSON
+// string literal) to out and returns the string/escape state after
+// consuming it. Shared by stripJSONCComments and stripTrailingCommas so
+// neither strips a comment- or comma-like byte that only appears inside a
+// string value.
+func advanceInsideJSONString(out *bytes.Buffer, b byte, escaped bool) (stillInString, stillEscaped bool) {
+	out.WriteByte(b)
+	switch {
+	case escaped:
+		return true, false
+	case b == '\\':
+		return true, true
+	case b == '"':
+		return false, false
+	}
+	return true, false
+}
+
+// skipJSONCLineComment returns the index of the '\n' terminating the "//"
+// comment starting at data[i], or len(data) if it runs to EOF.
+func skipJSONCLineComment(data []byte, i int) int {
+	for i < len(data) && data[i] != '\n' {
+		i++
+	}
+	return i
+}
+
+// skipJSONCBlockComment returns the index of the '/' closing the "/* */"
+// comment starting at data[i:i+2]. ok is false when the comment is
+// unterminated.
+func skipJSONCBlockComment(data []byte, i int) (newIndex int, ok bool) {
+	i += 2
+	for i+1 < len(data) && !(data[i] == '*' && data[i+1] == '/') {
+		i++
+	}
+	if i+1 >= len(data) {
+		return 0, false
+	}
+	return i + 1, true
 }
 
 func stripTrailingCommas(data []byte) []byte {
@@ -551,15 +600,7 @@ func stripTrailingCommas(data []byte) []byte {
 	for i := 0; i < len(data); i++ {
 		b := data[i]
 		if inString {
-			out.WriteByte(b)
-			switch {
-			case escaped:
-				escaped = false
-			case b == '\\':
-				escaped = true
-			case b == '"':
-				inString = false
-			}
+			inString, escaped = advanceInsideJSONString(&out, b, escaped)
 			continue
 		}
 		if b == '"' {
@@ -567,18 +608,23 @@ func stripTrailingCommas(data []byte) []byte {
 			out.WriteByte(b)
 			continue
 		}
-		if b == ',' {
-			j := i + 1
-			for j < len(data) && (data[j] == ' ' || data[j] == '\t' || data[j] == '\n' || data[j] == '\r') {
-				j++
-			}
-			if j < len(data) && (data[j] == '}' || data[j] == ']') {
-				continue
-			}
+		if b == ',' && trailingCommaFollowedByClose(data, i) {
+			continue
 		}
 		out.WriteByte(b)
 	}
 	return out.Bytes()
+}
+
+// trailingCommaFollowedByClose reports whether the comma at data[i] is
+// followed only by whitespace before a closing '}' or ']', making it a
+// JSONC trailing comma to drop rather than emit.
+func trailingCommaFollowedByClose(data []byte, i int) bool {
+	j := i + 1
+	for j < len(data) && (data[j] == ' ' || data[j] == '\t' || data[j] == '\n' || data[j] == '\r') {
+		j++
+	}
+	return j < len(data) && (data[j] == '}' || data[j] == ']')
 }
 
 // matchesInclude is the union of files and include (TS semantics). Match-all

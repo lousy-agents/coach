@@ -27,6 +27,15 @@ const (
 	tsLayerBackendVersion = "ts-layer-policy@1"
 )
 
+// Identity constants for architecture.layer_bypass ProjectChanges emitted by
+// tsProjectBackend, mirroring goBypassRuleVersion/goBypassBackendVersion's
+// split (see project_go_backend.go) for the TypeScript backend's own
+// evaluation/build wiring.
+const (
+	tsBypassRuleVersion    = "1"
+	tsBypassBackendVersion = "ts-layer-bypass@1"
+)
+
 // tsProjectBudgets is goProjectBudgets, reused as-is: the TS sidecar backend
 // tracks the same resource-default table as the Go in-process build.
 var tsProjectBudgets = goProjectBudgets
@@ -65,6 +74,7 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 		return nil, fmt.Errorf("coach: decoding validated project config: %w", err)
 	}
 	policy := layerPolicyFromConfig(config)
+	bypassLayer, hasBypassLayer := goBypassLayerFromConfig(config)
 
 	// req.Dir need not be the repository root; repositoryRoot failing here
 	// means req.Dir is not inside a Git work tree at all, which is the same
@@ -91,13 +101,15 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	}
 	defer cleanup()
 
-	headChanges, headCoverage, err := b.evaluateRevision(ctx, req.Dir, req.HeadRevision, runtime, config.Roots, policy, req.ConfigDigest)
+	headChanges, headFacts, headDiagnostics, headCoverage, err := b.evaluateRevision(ctx, req.Dir, req.HeadRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &ProjectBackendResult{
 		HeadChanges:     headChanges,
+		HeadDiagnostics: headDiagnostics,
+		Facts:           headFacts,
 		HeadCoverage:    &headCoverage,
 		RuntimeKind:     runtime.Kind,
 		RuntimeVersion:  runtime.Version,
@@ -109,27 +121,35 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 		return result, nil
 	}
 
-	baseChanges, baseCoverage, err := b.evaluateRevision(ctx, req.Dir, req.BaseRevision, runtime, config.Roots, policy, req.ConfigDigest)
+	// ProjectBackendResult.Facts has no base-side counterpart (reachability
+	// facts describe the current call graph, not a head/base lifecycle diff),
+	// so only the head-side facts above ever reach the report; the base
+	// revision still derives its own facts here (discarded) so every
+	// evaluator runs identically regardless of which revision is being
+	// evaluated (AC-12).
+	baseChanges, _, baseDiagnostics, baseCoverage, err := b.evaluateRevision(ctx, req.Dir, req.BaseRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {
 		return nil, err
 	}
 	result.BaseChanges = baseChanges
+	result.BaseDiagnostics = baseDiagnostics
 	result.BaseCoverage = &baseCoverage
 	result.BaseAnalyzed = true
 	return result, nil
 }
 
-// evaluateRevision builds a TypeScript project model at revision and
-// evaluates it against policy, returning one architecture.layer_violation
-// ProjectChange per violating (importer file, importee file) pair plus the
-// model's own Coverage. NewGoSnapshotFS is reused as-is despite its Go-
-// specific name: it is a plain immutable Git-revision fs.FS with no
-// Go-specific behavior, the same snapshot mechanism goProjectBackend uses.
-// The analyzer is spawned as runtime.ExecPath with runtime.ExecArgs.
-func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, runtime *tsRuntime, roots []string, policy codesignal.LayerPolicy, configDigest string) ([]codesignal.ProjectChange, projectmodel.Coverage, error) {
+// evaluateRevision builds a TypeScript project model at revision ONCE
+// (AC-RUN-5) and derives every observation from that single Model: layer
+// violations (always), layer bypass (only when hasBypassLayer, see
+// evaluateLayerBypass), and possible-call-reachability ProjectFacts
+// (always) -- reachability's own Coverage never folds into the returned
+// Coverage, so a routine reachability gap alone stays visible only through
+// model.Coverage.Diagnostics and the returned facts, never degrading an
+// otherwise complete layer finding (AC-3/AC-14).
+func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, runtime *tsRuntime, roots []string, policy codesignal.LayerPolicy, bypassLayer projectmodel.BypassLayer, hasBypassLayer bool, configDigest string) ([]codesignal.ProjectChange, []codesignal.ProjectFact, []codesignal.Diagnostic, projectmodel.Coverage, error) {
 	snapshot, err := NewGoSnapshotFS(dir, revision)
 	if err != nil {
-		return nil, projectmodel.Coverage{}, fmt.Errorf("coach: building TypeScript snapshot at revision %q: %w", revision, err)
+		return nil, nil, nil, projectmodel.Coverage{}, fmt.Errorf("coach: building TypeScript snapshot at revision %q: %w", revision, err)
 	}
 
 	model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, projectmodel.SnapshotMeta{
@@ -145,9 +165,83 @@ func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 		Budgets:    tsProjectBudgets,
 	})
 	if err != nil {
-		return nil, projectmodel.Coverage{}, fmt.Errorf("coach: building TypeScript project model at revision %q: %w", revision, err)
+		return nil, nil, nil, projectmodel.Coverage{}, fmt.Errorf("coach: building TypeScript project model at revision %q: %w", revision, err)
 	}
 
 	changes, _ := codesignal.EvaluateTypeScriptLayerViolations(model, policy, tsLayerRuleVersion, tsLayerBackendVersion, configDigest)
-	return changes, model.Coverage, nil
+	coverage := model.Coverage
+	var diagnostics []codesignal.Diagnostic
+
+	if hasBypassLayer {
+		var bypassChanges []codesignal.ProjectChange
+		bypassChanges, diagnostics, coverage = b.evaluateLayerBypass(ctx, model, bypassLayer, configDigest)
+		changes = append(changes, bypassChanges...)
+	}
+
+	reachability := projectmodel.BuildTypeScriptReachabilityFromModel(model)
+	facts := codesignal.ReachabilityProjectFacts(reachability, "typescript")
+
+	return changes, facts, diagnostics, coverage, nil
+}
+
+// evaluateLayerBypass folds bypassResult.Coverage into model.Coverage via
+// tsBypassCoverageForFold rather than verbatim: BuildTypeScriptLayerBypassFromModel
+// folds a routine, per-hop reachability gap into its own Coverage.Complete,
+// which is not itself a project-model or requested-bypass failure --
+// folding that in unchanged would wrongly degrade an otherwise complete
+// layer-violation finding to lifecycle "unknown" over the ordinary shape of
+// layered code, exactly what AC-3/AC-14 forbid.
+func (b *tsProjectBackend) evaluateLayerBypass(ctx context.Context, model projectmodel.Model, bypassLayer projectmodel.BypassLayer, configDigest string) ([]codesignal.ProjectChange, []codesignal.Diagnostic, projectmodel.Coverage) {
+	bypassResult := projectmodel.BuildTypeScriptLayerBypassFromModel(ctx, model, bypassLayer)
+	bypassChanges, bypassDiagnostics := codesignal.EvaluateTypeScriptLayerBypass(bypassResult, tsBypassRuleVersion, tsBypassBackendVersion, configDigest)
+	coverage := combineProjectCoverage(model.Coverage, tsBypassCoverageForFold(model.Coverage, bypassResult.Coverage))
+	return bypassChanges, bypassDiagnostics, coverage
+}
+
+// tsBypassCoverageForFold strips BuildTypeScriptLayerBypassFromModel's own
+// reachability-gap term back out of bypassCoverage.Complete (recomputing it
+// from modelCoverage plus only the bypass-specific budget/ambiguous-layer
+// diagnostic codes) and drops the model diagnostics
+// BuildTypeScriptLayerBypassFromModel re-copies onto its own Coverage, so a
+// model diagnostic is never listed twice once combineProjectCoverage folds
+// the result in.
+func tsBypassCoverageForFold(modelCoverage, bypassCoverage projectmodel.Coverage) projectmodel.Coverage {
+	adjusted := bypassCoverage
+	adjusted.Complete = modelCoverage.Complete && !bypassSearchWasTruncatedOrAmbiguous(bypassCoverage.Diagnostics)
+	adjusted.Diagnostics = diagnosticsExcluding(bypassCoverage.Diagnostics, modelCoverage.Diagnostics)
+	return adjusted
+}
+
+func bypassSearchWasTruncatedOrAmbiguous(diagnostics []projectmodel.Diagnostic) bool {
+	return containsProjectDiagnosticCode(diagnostics, projectmodel.DiagLayerBypassBudgetExceeded) ||
+		containsProjectDiagnosticCode(diagnostics, projectmodel.DiagLayerBypassAmbiguousLayer)
+}
+
+func containsProjectDiagnosticCode(diagnostics []projectmodel.Diagnostic, code string) bool {
+	for _, d := range diagnostics {
+		if d.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func diagnosticsExcluding(diagnostics, alreadyReported []projectmodel.Diagnostic) []projectmodel.Diagnostic {
+	if len(diagnostics) == 0 {
+		return nil
+	}
+	var out []projectmodel.Diagnostic
+	for _, d := range diagnostics {
+		found := false
+		for _, e := range alreadyReported {
+			if d == e {
+				found = true
+				break
+			}
+		}
+		if !found {
+			out = append(out, d)
+		}
+	}
+	return out
 }

@@ -1,10 +1,8 @@
 /**
  * Wire types mirroring internal/projectbridge/protocol.go exactly (field
- * names, JSON shape, constant values). This is the frozen spec for the
- * stdin/stdout NDJSON boundary between pkg/projectmodel's Go client
- * (Task 1, already merged) and this sidecar (Task 2) -- do not rename a
- * field here without updating the Go side, since the two are not generated
- * from a shared schema.
+ * names, JSON shape, constant values) -- do not rename a field here without
+ * updating the Go side, since the two are not generated from a shared
+ * schema.
  */
 
 export const PROTOCOL_VERSION = 1;
@@ -76,6 +74,15 @@ export interface CallGraphEdgeFact {
   to: string;
 }
 
+/** Mirrors internal/projectbridge.RootScopeFact exactly. */
+export interface RootScopeFact {
+  root: string;
+  candidate_files: number;
+  analyzed_files: number;
+  analyzed_paths?: string[];
+  unanalyzed_paths?: string[];
+}
+
 export const KIND_POSSIBLE_CALL_REACHABILITY = "possible_call_reachability";
 
 /** One node in a ReachabilityFactWire.path, mirroring internal/projectbridge.ReachabilityStepFact. */
@@ -83,12 +90,7 @@ export interface ReachabilityStepFact {
   node_id: string;
 }
 
-/**
- * One possible-call-reachability observation, mirroring
- * internal/projectbridge.ReachabilityFactWire exactly, including the
- * `backend` field carrying AC-1's backend provenance / AC-6's language
- * provenance.
- */
+/** Mirrors internal/projectbridge.ReachabilityFactWire exactly, including the `backend` field carrying language provenance. */
 export interface ReachabilityFactWire {
   id: string;
   kind: string;
@@ -123,15 +125,11 @@ export interface Response {
   version: number;
   id: number;
   import_edges?: ImportEdgeFact[];
-  /**
-   * call_graph and reachability_facts are populated from this sidecar's
-   * route-to-sink possible-call-reachability walk (reachability.ts).
-   */
   call_graph?: CallGraphEdgeFact[];
   reachability_facts?: ReachabilityFactWire[];
+  root_scopes?: RootScopeFact[];
   coverage: Coverage;
   error?: ErrorPayload;
 }
 
-/** Coverage.phase for every analyze_project response this sidecar produces. */
 export const SIDECAR_PHASE = "ts_project_sidecar";

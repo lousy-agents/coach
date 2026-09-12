@@ -23,20 +23,13 @@ type modelWire struct {
 	ImportEdges       []ImportEdge    `json:"import_edges,omitempty"`
 	CallFacts         json.RawMessage `json:"call_facts,omitempty"`
 	ReachabilityFacts json.RawMessage `json:"reachability_facts,omitempty"`
+	RootScopes        []RootScope     `json:"root_scopes,omitempty"`
 	Coverage          Coverage        `json:"coverage"`
 }
 
-// MarshalJSON implements the nil-vs-empty-slice CallFacts contract
-// documented on Model.CallFacts and canonicalizes slice order so producers
-// that traverse a repository differently still yield byte-identical JSON
-// for the same semantic snapshot.
 func (m Model) MarshalJSON() ([]byte, error) {
 	snapshot := m.Snapshot
-	if len(snapshot.SelectedRoots) > 0 {
-		roots := append([]string(nil), snapshot.SelectedRoots...)
-		sort.Strings(roots)
-		snapshot.SelectedRoots = roots
-	}
+	snapshot.SelectedRoots = sortedStrings(snapshot.SelectedRoots)
 	wire := modelWire{
 		SchemaVersion: m.SchemaVersion,
 		Repository:    m.Repository,
@@ -46,6 +39,7 @@ func (m Model) MarshalJSON() ([]byte, error) {
 		Packages:      canonicalPackages(m.Packages),
 		Files:         canonicalFiles(m.Files),
 		ImportEdges:   canonicalImportEdges(m.ImportEdges),
+		RootScopes:    canonicalRootScopes(m.RootScopes),
 		Coverage:      canonicalCoverage(m.Coverage),
 	}
 	if m.CallFacts != nil {
@@ -65,9 +59,6 @@ func (m Model) MarshalJSON() ([]byte, error) {
 	return json.Marshal(wire)
 }
 
-// UnmarshalJSON is the inverse of MarshalJSON: an absent call_facts key
-// decodes to a nil Model.CallFacts, and a present (possibly empty) array
-// decodes to a non-nil slice.
 func (m *Model) UnmarshalJSON(data []byte) error {
 	var wire modelWire
 	if err := json.Unmarshal(data, &wire); err != nil {
@@ -82,6 +73,7 @@ func (m *Model) UnmarshalJSON(data []byte) error {
 		Packages:      wire.Packages,
 		Files:         wire.Files,
 		ImportEdges:   wire.ImportEdges,
+		RootScopes:    wire.RootScopes,
 		Coverage:      wire.Coverage,
 	}
 	if len(wire.CallFacts) > 0 {
@@ -107,11 +99,7 @@ func canonicalWorkspaces(in []Workspace) []Workspace {
 	}
 	out := append([]Workspace(nil), in...)
 	for i := range out {
-		if len(out[i].Projects) > 0 {
-			projects := append([]string(nil), out[i].Projects...)
-			sort.Strings(projects)
-			out[i].Projects = projects
-		}
+		out[i].Projects = sortedStrings(out[i].Projects)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].ID != out[j].ID {
@@ -131,11 +119,7 @@ func canonicalModules(in []Module) []Module {
 	}
 	out := append([]Module(nil), in...)
 	for i := range out {
-		if len(out[i].Files) > 0 {
-			files := append([]string(nil), out[i].Files...)
-			sort.Strings(files)
-			out[i].Files = files
-		}
+		out[i].Files = sortedStrings(out[i].Files)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].ID != out[j].ID {
@@ -152,11 +136,7 @@ func canonicalPackages(in []Package) []Package {
 	}
 	out := append([]Package(nil), in...)
 	for i := range out {
-		if len(out[i].Files) > 0 {
-			files := append([]string(nil), out[i].Files...)
-			sort.Strings(files)
-			out[i].Files = files
-		}
+		out[i].Files = sortedStrings(out[i].Files)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].ID != out[j].ID {
@@ -215,6 +195,33 @@ func canonicalImportEdges(in []ImportEdge) []ImportEdge {
 	return out
 }
 
+// canonicalRootScopes assumes Root is unique per Model, mirroring
+// project_scope.go's scopeByRoot lookup (last write wins on a duplicate);
+// a duplicate Root is unsupported input with unspecified relative order.
+func canonicalRootScopes(in []RootScope) []RootScope {
+	if len(in) == 0 {
+		return in
+	}
+	out := append([]RootScope(nil), in...)
+	for i := range out {
+		out[i].AnalyzedPaths = sortedStrings(out[i].AnalyzedPaths)
+		out[i].UnanalyzedPaths = sortedStrings(out[i].UnanalyzedPaths)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Root < out[j].Root
+	})
+	return out
+}
+
+func sortedStrings(in []string) []string {
+	if len(in) == 0 {
+		return in
+	}
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
+}
+
 func canonicalCallFacts(in []CallFact) []CallFact {
 	if len(in) == 0 {
 		return in
@@ -229,12 +236,6 @@ func canonicalCallFacts(in []CallFact) []CallFact {
 	return out
 }
 
-// canonicalReachabilityFacts sorts by Source then Sink then ID, mirroring
-// BuildGoReachability's own Source/Sink ordering (go_reachability.go) with ID
-// as a final tie-breaker for the rare case of multiple facts sharing a
-// source/sink pair with differing AlgorithmVersion (both producers derive ID
-// as "reach:<source>-><sink>@<algorithm>", so a shared Source/Sink pair only
-// diverges in ID when AlgorithmVersion does).
 func canonicalReachabilityFacts(in []ReachabilityFact) []ReachabilityFact {
 	if len(in) == 0 {
 		return in
