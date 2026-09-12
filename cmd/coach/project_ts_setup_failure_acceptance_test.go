@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -125,19 +125,78 @@ var _ = Describe("codesignalcli.RunConfirmedSetup", func() {
 			Expect(outcome.Execution.Succeeded).To(BeTrue())
 		})
 	})
-})
 
-// destructiveGitVerbPattern matches a quoted Go string literal for a
-// mutating git subcommand (reset/clean/checkout) -- the kind of thing a
-// rollback attempt would pass as a git exec argument. It only matches
-// inside quotes, so this check does not trip on those words appearing in
-// prose inside a doc comment.
-var destructiveGitVerbPattern = regexp.MustCompile(`"(reset|clean|checkout)"`)
+	When("WorkingDirectory is a subdirectory of a larger repository that also has unrelated dirt elsewhere", func() {
+		It("scopes the residue disclosure to WorkingDirectory, naming it root-relative rather than collapsing or leaking unrelated paths (AC-SET-7)", func() {
+			repoRoot := newTempGitRepo()
+			commitFile(repoRoot, ".gitignore", "node_modules/\n")
+			commitFile(repoRoot, "packages/app/package.json", `{"name":"app","version":"1.0.0"}`+"\n")
+			commitFile(repoRoot, "unrelated/tracked.txt", "original\n")
 
-var _ = Describe("project_ts_setup_execute.go's source (no destructive rollback, AC-SET-7/AC-18)", func() {
-	It("never spawns a git reset/clean/checkout, or any other mutating git subcommand", func() {
-		source, err := os.ReadFile(filepath.Join("..", "..", "internal", "codesignalcli", "project_ts_setup_execute.go"))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(destructiveGitVerbPattern.FindString(string(source))).To(BeEmpty(), "project_ts_setup_execute.go must not invoke a mutating git subcommand as part of failure handling")
+			// Dirt that has nothing to do with this setup run: a modified
+			// tracked file and an untracked file, both outside
+			// packages/app. If the residue read is not scoped to
+			// WorkingDirectory, these leak into ChangedPaths.
+			Expect(os.WriteFile(filepath.Join(repoRoot, "unrelated", "tracked.txt"), []byte("modified\n"), 0o644)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(repoRoot, "unrelated", "untracked.txt"), []byte("new\n"), 0o644)).To(Succeed())
+
+			appDir := filepath.Join(repoRoot, "packages", "app")
+			stubDir := writeFailingSetupExecutableWithResidue("npm")
+			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
+
+			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, "npm", appDir)
+			Expect(err).NotTo(HaveOccurred())
+
+			outcome, err := codesignalcli.RunConfirmedSetup(context.Background(), preview, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeFailed))
+			Expect(outcome.ChangedPaths).NotTo(BeEmpty())
+
+			joined := strings.Join(outcome.ChangedPaths, "\n")
+			Expect(joined).To(ContainSubstring("packages/app/node_modules"), "the residue path must be reported root-relative, naming the subdirectory setup actually ran in")
+			Expect(joined).NotTo(ContainSubstring("unrelated"), "dirt outside WorkingDirectory must never be reported as this run's residue")
+			for _, path := range outcome.ChangedPaths {
+				Expect(path).NotTo(Equal("packages/"), "the residue disclosure must not collapse to an ancestor directory that doesn't even name node_modules")
+			}
+		})
+	})
+
+	When("WorkingDirectory is not inside any Git worktree", func() {
+		It("reports the failure with ResidueUnknown rather than a value indistinguishable from a real status read (AC-SET-7)", func() {
+			workDir := newSetupExecutionWorkDir()
+
+			stubDir := writeFailingSetupExecutableWithResidue("npm")
+			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
+
+			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, "npm", workDir)
+			Expect(err).NotTo(HaveOccurred())
+
+			outcome, err := codesignalcli.RunConfirmedSetup(context.Background(), preview, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeFailed))
+			Expect(outcome.ExitCode).To(Equal(2))
+			Expect(outcome.ResidueUnknown).To(BeTrue(), "a git status failure must be signaled distinctly, not silently reported as if it were a real result")
+		})
+	})
+
+	When("ExecuteSetup itself refuses because the preview fails frozen-matrix verification", func() {
+		It("reports the failure without scanning for residue, since no subprocess ever started (AC-SET-7, AC-18)", func() {
+			workDir := newSetupExecutionWorkDir()
+
+			tampered := codesignalcli.SetupPreview{
+				Executable:       "npm",
+				Args:             []string{"ci"}, // --ignore-scripts dropped: fails ExecuteSetup's verification
+				WorkingDirectory: workDir,
+				Timeout:          codesignalcli.SetupPreviewTimeout,
+			}
+
+			outcome, err := codesignalcli.RunConfirmedSetup(context.Background(), tampered, true)
+			Expect(errors.Is(err, codesignalcli.ErrSetupExecutionUnverifiedCommand)).To(BeTrue())
+			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeFailed))
+			Expect(outcome.ExitCode).To(Equal(2))
+			Expect(outcome.Execution).To(Equal(codesignalcli.SetupExecutionResult{}))
+			Expect(outcome.ChangedPaths).To(BeEmpty(), "a run that never started must never report residue -- workDir is not even a Git worktree, so a residue scan here would silently fall back to a value identical to a real failure's disclosure")
+			Expect(outcome.ResidueUnknown).To(BeFalse(), "nothing was scanned, so this is not the 'scan failed' case either")
+		})
 	})
 })

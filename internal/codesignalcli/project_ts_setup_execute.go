@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 )
@@ -173,30 +172,47 @@ func ExecuteSetup(ctx context.Context, preview SetupPreview, confirmed bool) (Se
 }
 
 // SetupOutcomeKind classifies the caller-facing policy decision
-// RunConfirmedSetup returns. SetupOutcomeCancelled and SetupOutcomeFailed
-// both mean the caller must exit 2 and emit no CodeSignal report (AC-SET-7,
+// RunConfirmedSetup returns. SetupOutcomeUnknown is the zero value and is
+// never returned by RunConfirmedSetup: it exists so a zero-initialized
+// SetupOutcome (for example a variable declared but not yet assigned) cannot
+// be misread as SetupOutcomeCancelled, whose own zero-valued ExitCode would
+// otherwise look identical to "cancelled with exit code 0" instead of "not
+// yet a real outcome". SetupOutcomeCancelled and SetupOutcomeFailed both
+// mean the caller must exit 2 and emit no CodeSignal report (AC-SET-7,
 // AC-SET-8's cancellation clause); SetupOutcomeSucceeded means the caller
 // may proceed -- a later task's post-install readiness recheck decides what
 // happens next.
 type SetupOutcomeKind int
 
 const (
-	SetupOutcomeCancelled SetupOutcomeKind = iota
+	SetupOutcomeUnknown SetupOutcomeKind = iota
+	SetupOutcomeCancelled
 	SetupOutcomeFailed
 	SetupOutcomeSucceeded
 )
 
 // SetupOutcome is RunConfirmedSetup's result: the caller-facing policy
 // decision (Kind, ExitCode), plus enough detail to act on it. Execution is
-// the zero SetupExecutionResult when Kind is SetupOutcomeCancelled, since
-// ExecuteSetup is never called in that case. ChangedPaths is populated only
-// when Kind is SetupOutcomeFailed, identifying files that may have changed
-// (AC-SET-7) -- nothing here attempts to undo them.
+// the zero SetupExecutionResult both when Kind is SetupOutcomeCancelled
+// (ExecuteSetup is never called) and when ExecuteSetup itself refused to run
+// (Kind is SetupOutcomeFailed, but no subprocess ever started).
+//
+// ChangedPaths is populated only when Kind is SetupOutcomeFailed *and* a
+// subprocess actually ran, identifying files that may have changed
+// (AC-SET-7) -- nothing here attempts to undo them. Its paths are
+// repository-root-relative, not WorkingDirectory-relative (see
+// setupResidueChangedPaths' doc comment), since they come from `git
+// status`. ResidueUnknown is true when that disclosure itself could not be
+// produced (WorkingDirectory is not inside a Git worktree, or the bounded
+// status read otherwise failed): callers must treat that case as "Coach
+// could not determine what changed", not as "nothing changed" or as an
+// ordinary successful (if possibly empty) disclosure.
 type SetupOutcome struct {
-	Kind         SetupOutcomeKind
-	ExitCode     int
-	Execution    SetupExecutionResult
-	ChangedPaths []string
+	Kind           SetupOutcomeKind
+	ExitCode       int
+	Execution      SetupExecutionResult
+	ChangedPaths   []string
+	ResidueUnknown bool
 }
 
 // RunConfirmedSetup translates a single confirmation decision into the
@@ -212,10 +228,16 @@ type SetupOutcome struct {
 // an accident of what ExecuteSetup happens to also do.
 //
 // When confirmed is true, RunConfirmedSetup calls ExecuteSetup and
-// classifies the result: a verification/spawn error, or a completed run
-// that did not succeed (non-zero exit or timeout), both become
-// SetupOutcomeFailed, with ChangedPaths populated from a best-effort read of
-// preview.WorkingDirectory. A successful run becomes SetupOutcomeSucceeded.
+// classifies the result. If ExecuteSetup itself returns an error, no
+// subprocess ever started (an unconfirmed call this function never actually
+// makes, or a preview that failed frozen-matrix verification), so
+// RunConfirmedSetup reports SetupOutcomeFailed without scanning for residue
+// at all: a run that never began cannot have changed anything, and scanning
+// anyway would misattribute whatever was already dirty in the worktree to
+// it. If ExecuteSetup runs but does not succeed (non-zero exit or timeout),
+// RunConfirmedSetup reports SetupOutcomeFailed with ChangedPaths and
+// ResidueUnknown from a best-effort, WorkingDirectory-scoped read of what
+// may have changed. A successful run becomes SetupOutcomeSucceeded.
 func RunConfirmedSetup(ctx context.Context, preview SetupPreview, confirmed bool) (SetupOutcome, error) {
 	if !confirmed {
 		return SetupOutcome{Kind: SetupOutcomeCancelled, ExitCode: 2}, nil
@@ -224,18 +246,19 @@ func RunConfirmedSetup(ctx context.Context, preview SetupPreview, confirmed bool
 	execution, err := ExecuteSetup(ctx, preview, confirmed)
 	if err != nil {
 		return SetupOutcome{
-			Kind:         SetupOutcomeFailed,
-			ExitCode:     2,
-			Execution:    execution,
-			ChangedPaths: setupResidueChangedPaths(preview.WorkingDirectory),
+			Kind:      SetupOutcomeFailed,
+			ExitCode:  2,
+			Execution: execution,
 		}, err
 	}
 	if !execution.Succeeded {
+		changedPaths, residueUnknown := setupResidueChangedPaths(preview.WorkingDirectory)
 		return SetupOutcome{
-			Kind:         SetupOutcomeFailed,
-			ExitCode:     2,
-			Execution:    execution,
-			ChangedPaths: setupResidueChangedPaths(preview.WorkingDirectory),
+			Kind:           SetupOutcomeFailed,
+			ExitCode:       2,
+			Execution:      execution,
+			ChangedPaths:   changedPaths,
+			ResidueUnknown: residueUnknown,
 		}, nil
 	}
 	return SetupOutcome{Kind: SetupOutcomeSucceeded, Execution: execution}, nil
@@ -252,35 +275,59 @@ const (
 
 // setupResidueChangedPaths returns the untracked, modified, and gitignored
 // paths (`--ignored`, since a package-manager install typically leaves a
-// gitignored node_modules/ partially populated) that `git status --porcelain`
-// reports for workingDirectory, for AC-SET-7's "identify files that may have
-// changed" disclosure after a failed setup. This only ever reads: it never
-// invokes `git reset`/`git clean`/`git checkout` or any other command that
-// could mutate workingDirectory.
+// gitignored node_modules/ partially populated) that `git status --porcelain
+// -z` reports under workingDirectory, for AC-SET-7's "identify files that
+// may have changed" disclosure after a failed setup. The read is scoped to
+// workingDirectory with a trailing `-- .` pathspec, so unrelated dirt
+// elsewhere in a larger repository (workingDirectory can be a package
+// directory inside a monorepo) is never reported. Returned paths are
+// repository-root-relative, not workingDirectory-relative -- that is simply
+// what `git status` reports, and a caller printing a path next to
+// workingDirectory must account for the difference (a monorepo package at
+// packages/app reports "packages/app/node_modules/", not "node_modules/").
+// This only ever reads: it never invokes `git reset`/`git clean`/`git
+// checkout` or any other command that could mutate workingDirectory.
 //
-// It is best-effort and fails closed toward disclosure, not toward silence:
-// if workingDirectory is not inside a Git worktree, or the bounded git
-// status call otherwise fails, it reports workingDirectory itself as the one
-// path a caller should inspect, rather than claiming nothing changed.
-func setupResidueChangedPaths(workingDirectory string) []string {
-	output, err := runGitBytesBounded(workingDirectory, maxSetupResidueGitBytes, maxSetupResidueGitStderr, setupResidueGitTimeout, "status", "--porcelain", "--ignored")
+// The returned bool is true when the disclosure itself could not be
+// produced -- workingDirectory is not inside a Git worktree, or the bounded
+// git status call otherwise failed -- in which case the returned paths are a
+// best-effort fallback (workingDirectory itself) that a caller must not
+// mistake for a real status read: "Coach could not determine what changed",
+// not "nothing changed" and not an ordinary (if empty) result.
+func setupResidueChangedPaths(workingDirectory string) ([]string, bool) {
+	output, err := runGitBytesBounded(workingDirectory, maxSetupResidueGitBytes, maxSetupResidueGitStderr, setupResidueGitTimeout, "status", "--porcelain", "-z", "--ignored", "--", ".")
 	if err != nil {
-		return []string{workingDirectory}
+		return []string{workingDirectory}, true
 	}
-	return parseSetupResidueStatusPaths(output)
+	return parseSetupResidueStatusPaths(output), false
 }
 
-// parseSetupResidueStatusPaths extracts the path from each
-// `git status --porcelain` line ("XY<space><path>", XY being two status
-// characters), returning nil rather than an empty non-nil slice when there
-// is nothing to report.
+// parseSetupResidueStatusPaths extracts the path from each NUL-delimited
+// `git status --porcelain -z` record ("XY<space><path>\0", XY being two
+// status characters). Unlike the newline-delimited "--porcelain" format
+// alone, -z never C-quotes or octal-escapes a path, so a path containing a
+// space, non-ASCII byte, or literal quote character survives unmodified. A
+// rename or copy record (status 'R' or 'C' in either column) emits the
+// origin path as an additional NUL-delimited field immediately after the
+// status/path field; that field is the path *before* the change, so it is
+// consumed and discarded here -- only the resulting path is a "may have
+// changed" location worth disclosing. Returns nil rather than an empty
+// non-nil slice when there is nothing to report.
 func parseSetupResidueStatusPaths(output []byte) []string {
+	fields := bytes.Split(bytes.TrimRight(output, "\x00"), []byte{0})
+	if len(fields) == 1 && len(fields[0]) == 0 {
+		return nil
+	}
 	var paths []string
-	for _, line := range strings.Split(strings.TrimRight(string(output), "\n"), "\n") {
-		if len(line) < 4 {
+	for i := 0; i < len(fields); i++ {
+		entry := fields[i]
+		if len(entry) < 4 {
 			continue
 		}
-		paths = append(paths, strings.TrimSpace(line[3:]))
+		paths = append(paths, string(entry[3:]))
+		if entry[0] == 'R' || entry[0] == 'C' || entry[1] == 'R' || entry[1] == 'C' {
+			i++ // skip the rename/copy record's origin-path field
+		}
 	}
 	return paths
 }
