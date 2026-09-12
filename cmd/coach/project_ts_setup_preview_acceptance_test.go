@@ -55,7 +55,7 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 	})
 
 	DescribeTable("truthfully discloses argv, on-disk effect, network, script policy, and timeout per package-manager kind (SA-280-012)",
-		func(kind, wantExecutable string, wantArgs []string, wantLockfileBasename string) {
+		func(kind, wantExecutable string, wantArgs []string, wantLockfileBasename string, wantSuppressionSubstrings []string) {
 			preview, err := codesignalcli.BuildSetupPreview(
 				codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage},
 				kind,
@@ -81,12 +81,14 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 			}
 
 			Expect(preview.NetworkDisclosure).To(And(ContainSubstring("network"), ContainSubstring("registry")), "must truthfully disclose that this command may reach the package registry")
-			Expect(preview.ScriptSuppressionPolicy).To(ContainSubstring("--ignore-scripts"), "must name the flag suppressing lifecycle scripts")
+			for _, wantSuppression := range wantSuppressionSubstrings {
+				Expect(preview.ScriptSuppressionPolicy).To(ContainSubstring(wantSuppression), "must truthfully disclose every flag this row's argv actually passes to suppress scripts/config hazards -- a shared, one-size-fits-all disclosure string would silently under-disclose a row like pnpm's that carries an extra flag")
+			}
 			Expect(preview.Timeout).To(Equal(codesignalcli.SetupPreviewTimeout), "must disclose the bounded timeout that will actually be enforced")
 		},
-		Entry("npm", "npm", "npm", []string{"ci", "--ignore-scripts"}, "package-lock.json"),
-		Entry("pnpm", "pnpm", "pnpm", []string{"install", "--frozen-lockfile", "--ignore-scripts", "--ignore-pnpmfile"}, "pnpm-lock.yaml"),
-		Entry("bun", "bun", "bun", []string{"install", "--frozen-lockfile", "--ignore-scripts"}, ""),
+		Entry("npm", "npm", "npm", []string{"ci", "--ignore-scripts"}, "package-lock.json", []string{"--ignore-scripts"}),
+		Entry("pnpm", "pnpm", "pnpm", []string{"install", "--frozen-lockfile", "--ignore-scripts", "--ignore-pnpmfile"}, "pnpm-lock.yaml", []string{"--ignore-scripts", "--ignore-pnpmfile"}),
+		Entry("bun", "bun", "bun", []string{"install", "--frozen-lockfile", "--ignore-scripts"}, "", []string{"--ignore-scripts"}),
 	)
 
 	When("the selected choice is not project-package", func() {

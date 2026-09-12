@@ -104,6 +104,26 @@ func writeOutlivingSetupExecutable(name string, backgroundSeconds int) string {
 	return dir
 }
 
+// writeSucceedingSetupExecutableWithOutlivingDescendant writes an executable
+// named `name` that models a real, successful install that happens to leave
+// an orphaned background process behind (pnpm's store server, npm's
+// update-notifier check, etc.): it forks a background descendant (detached
+// via `&`, inheriting the same stdout/stderr pipe as the direct child) that
+// outlives backgroundSeconds, then the direct process itself exits 0
+// immediately -- unlike writeOutlivingSetupExecutable, the direct child never
+// blocks. This is exec.ErrWaitDelay's real trigger: Go's os/exec docs record
+// that the direct child can exit successfully while cmd.Wait still blocks
+// because a descendant inherited its output pipe and kept it open.
+func writeSucceedingSetupExecutableWithOutlivingDescendant(name string, backgroundSeconds int) string {
+	dir, err := os.MkdirTemp("", "coach-acceptance-stubsetup-succeed-outlive-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, dir)
+
+	script := fmt.Sprintf("#!/bin/sh\n(sleep %d) &\nexit 0\n", backgroundSeconds)
+	Expect(os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755)).To(Succeed())
+	return dir
+}
+
 func newSetupExecutionWorkDir() string {
 	dir, err := os.MkdirTemp("", "coach-acceptance-setupexec-*")
 	Expect(err).NotTo(HaveOccurred())
@@ -312,6 +332,33 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			Expect(result.TimedOut).To(BeTrue())
 			Expect(result.ExitCode).To(Equal(-1))
 			Expect(result.Succeeded).To(BeFalse())
+		})
+	})
+
+	When("the command exits successfully on its own but a background descendant keeps the output pipe open past WaitDelay", func() {
+		It("still reports the real exit-0 outcome, recovering it from cmd.ProcessState rather than misreporting exec.ErrWaitDelay as a failure", func() {
+			workDir := newSetupExecutionWorkDir()
+			// The direct child exits 0 immediately; only its background
+			// descendant survives, and only long enough to still be holding
+			// the pipe open once setupExecutionWaitDelay elapses -- so
+			// cmd.Wait returns exec.ErrWaitDelay even though the run
+			// genuinely succeeded. Nothing here cancels ctx, so
+			// runCtx.Err() is nil: this is not the timeout path above.
+			stubDir := writeSucceedingSetupExecutableWithOutlivingDescendant("npm", 20)
+			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
+
+			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, "npm", workDir)
+			Expect(err).NotTo(HaveOccurred())
+
+			start := time.Now()
+			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
+			elapsed := time.Since(start)
+
+			Expect(execErr).NotTo(HaveOccurred())
+			Expect(elapsed).To(BeNumerically("<", 8*time.Second), "must not block on the surviving background descendant, only on setupExecutionWaitDelay")
+			Expect(result.TimedOut).To(BeFalse(), "the run was never cancelled by ctx or the preview timeout -- only its output pipe stayed open")
+			Expect(result.Succeeded).To(BeTrue(), "the direct child exited 0; a still-open pipe held by an unrelated background descendant must not turn a successful install into a reported failure. output: %s", result.Output)
+			Expect(result.ExitCode).To(Equal(0))
 		})
 	})
 })
