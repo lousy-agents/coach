@@ -223,7 +223,7 @@ The command's job is **continuous review**: every change is written by one agent
 
 **Deterministic, held by code:**
 
-- **Planning.** `.claude/workflows/implement-issue-plan.js` produces the task DAG. Its arg validation, null guards, cycle and dangling-reference checks are JS, covered by `mise run workflow-test`, and mutation-tested.
+- **Planning.** `.claude/workflows/implement-issue-plan.js` produces the task DAG. Everything decidable from the plan alone is JS rather than an auditor prompt — arg validation, null and empty-result guards on every agent, cycle and dangling-reference detection, duplicate task/criterion IDs, unscoped tasks, and criterion coverage — covered by `mise run workflow-test`, and mutation-tested. The two semantic lenses (false parallelism, coverage) run as agents, and run again against the repaired DAG so a repair cannot return clean unverified; whatever it failed to fix comes back as `residualDefects`.
 - **Review-loop fidelity.** Two small hooks, both scoped to the loop's conversation rather than to what agents may do: `verify-review-verdict.sh` (a reviewer's reply must begin `PASS` or `FINDINGS`, so the orchestrator always receives a parseable verdict) and `verify-context-relay.sh` (a rework delegation must carry the literal `## Reviewer Findings` block, so findings cannot be paraphrased away). They fire on agents this session spawns — agents inside a workflow never reach them, which is why the implement/review loop stays in the main session.
 - **Merge safety.** Branch protection and the required `status` aggregator on the base branch. This is the only gate that matters for an unattended run, and it runs on GitHub's side.
 
