@@ -34,8 +34,8 @@ const CRITERION = {
   required: ['id', 'text'],
   additionalProperties: false,
   properties: {
-    id: { type: 'string', description: 'Stable ID, e.g. AC-1. Referenced by tasks and by the PR evidence table.' },
-    text: { type: 'string' },
+    id: { type: 'string', minLength: 1, description: 'Stable ID, e.g. AC-1. Referenced by tasks and by the PR evidence table.' },
+    text: { type: 'string', minLength: 1 },
   },
 }
 
@@ -58,15 +58,16 @@ const PLAN_SCHEMA = {
         required: ['id', 'title', 'files', 'criteriaIds', 'dependsOn', 'acceptanceTest'],
         additionalProperties: false,
         properties: {
-          id: { type: 'string' },
-          title: { type: 'string' },
+          id: { type: 'string', minLength: 1 },
+          title: { type: 'string', minLength: 1 },
           // minItems guards the independence rule below: two tasks that each
           // name no file share no file, so both read as parallelizable.
-          files: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'Every file the task may touch.' },
-          criteriaIds: { type: 'array', minItems: 1, items: { type: 'string' } },
+          files: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 }, description: 'Every file the task may touch.' },
+          criteriaIds: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } },
           dependsOn: { type: 'array', items: { type: 'string' } },
           acceptanceTest: {
             type: 'string',
+            minLength: 1,
             description: 'The externally observable behavior whose absence the implementer must demonstrate as a failing test first.',
           },
         },
@@ -87,7 +88,7 @@ const AUDIT_SCHEMA = {
         required: ['kind', 'detail'],
         additionalProperties: false,
         properties: {
-          kind: { type: 'string', enum: ['false-parallelism', 'uncovered-criterion', 'unbuildable-order', 'scope-creep', 'unscoped-task'] },
+          kind: { type: 'string', enum: ['false-parallelism', 'uncovered-criterion', 'unbuildable-order', 'scope-creep', 'unscoped-task', 'blank-field'] },
           detail: { type: 'string' },
         },
       },
@@ -151,6 +152,9 @@ function checkGraph(candidate) {
   // The executor keys task state by id, so a repeated id is not a cosmetic
   // duplicate -- two tasks collide on one status and one of them is never run.
   const duplicates = (values) => [...new Set(values.filter((v, i) => values.indexOf(v) !== i))]
+  const fileSet = (task) => new Set(((task && task.files) || [])
+    .filter((f) => typeof f === 'string' && f.trim() !== '')
+    .map((f) => f.trim()))
   for (const id of duplicates(tasks.map((t) => t.id))) {
     found.push({ kind: 'unbuildable-order', detail: `duplicate task id ${id}: the executor tracks tasks by id and cannot hold two` })
   }
@@ -158,8 +162,34 @@ function checkGraph(candidate) {
     found.push({ kind: 'uncovered-criterion', detail: `duplicate acceptance criterion id ${id}: a task citing it names two different requirements` })
   }
 
+  // A schema minLength is the first line of defence, but it only constrains a
+  // real agent's output -- nothing validates a plan that reaches checkGraph by
+  // another route, and whitespace satisfies minLength anyway. acceptanceTest is
+  // the one that matters most: /implement-issue hands it to an implementer as
+  // the behavior to demonstrate failing first, so a blank one strips the
+  // acceptance-test-first policy from that task without breaking anything.
+  const blank = (value) => typeof value !== 'string' || value.trim() === ''
+  for (const c of (candidate && candidate.acceptanceCriteria) || []) {
+    if (blank(c.id)) {
+      found.push({ kind: 'unbuildable-order', detail: 'an acceptance criterion has a blank id, so no task can cite it' })
+    } else if (blank(c.text)) {
+      found.push({ kind: 'blank-field', detail: `acceptance criterion ${c.id} has no text, so nothing states what it requires or evidences it` })
+    }
+  }
+
   const cited = new Set()
   for (const task of tasks) {
+    // A blank task id is unbuildable, not cosmetic: the executor addresses
+    // tasks by id, so it can neither start nor report this one.
+    if (blank(task.id)) {
+      found.push({ kind: 'unbuildable-order', detail: 'a task has a blank id, so the executor cannot address, order, or report it' })
+    }
+    if (blank(task.title)) {
+      found.push({ kind: 'blank-field', detail: `task ${task.id} has a blank title` })
+    }
+    if (blank(task.acceptanceTest)) {
+      found.push({ kind: 'blank-field', detail: `task ${task.id} has a blank acceptanceTest, so its implementer is told to demonstrate nothing failing first` })
+    }
     for (const dep of task.dependsOn || []) {
       if (!ids.has(dep)) {
         found.push({ kind: 'unbuildable-order', detail: `task ${task.id} depends on ${dep}, which no task defines` })
@@ -172,8 +202,9 @@ function checkGraph(candidate) {
       }
     }
     // A task naming no file is outside the independence rule the plan is built
-    // on: two such tasks share no file, so both read as safely parallel.
-    if (!(task.files || []).length) {
+    // on: two such tasks share no file, so both read as safely parallel. A
+    // whitespace path scopes nothing, so it does not count as naming one.
+    if (!fileSet(task).size) {
       found.push({ kind: 'unscoped-task', detail: `task ${task.id} names no file, so nothing constrains what it may touch or what it conflicts with` })
     }
   }
@@ -183,6 +214,45 @@ function checkGraph(candidate) {
   for (const cid of criteria) {
     if (!cited.has(cid)) {
       found.push({ kind: 'uncovered-criterion', detail: `acceptance criterion ${cid} is covered by no task` })
+    }
+  }
+
+  // Two tasks conflict when they share a file and neither is ordered before the
+  // other. The auditor prompt keeps the half that needs judgment -- one task
+  // consuming what another produces -- but this half is set intersection over
+  // `files` plus reachability over `dependsOn`, which a loop decides exactly
+  // and a prompt only estimates.
+  //
+  // Reachability must be transitive: T1 -> T2 -> T3 orders T1 and T3 even
+  // though neither names the other, and flagging that pair would make every
+  // serial chain look unbuildable.
+  const reaches = new Map(tasks.map((t) => [t.id, new Set()]))
+  for (let grew = true; grew;) {
+    grew = false
+    for (const task of tasks) {
+      const seen = reaches.get(task.id)
+      for (const dep of (task.dependsOn || []).filter((d) => ids.has(d))) {
+        for (const id of [dep, ...(reaches.get(dep) || [])]) {
+          if (!seen.has(id)) {
+            seen.add(id)
+            grew = true
+          }
+        }
+      }
+    }
+  }
+  const ordered = (a, b) => Boolean(reaches.get(a.id)?.has(b.id) || reaches.get(b.id)?.has(a.id))
+  for (let i = 0; i < tasks.length; i += 1) {
+    for (let j = i + 1; j < tasks.length; j += 1) {
+      if (ordered(tasks[i], tasks[j])) continue
+      const other = fileSet(tasks[j])
+      const shared = [...fileSet(tasks[i])].filter((f) => other.has(f))
+      if (shared.length) {
+        found.push({
+          kind: 'false-parallelism',
+          detail: `tasks ${tasks[i].id} and ${tasks[j].id} are unordered but both touch ${shared.join(', ')}`,
+        })
+      }
     }
   }
 
@@ -268,7 +338,8 @@ phase('Self-check')
 // recover from on its own -- everything else its per-task review still catches.
 const auditRound = (candidate, pass) => parallel([
   () => agent(
-    `Find tasks marked independent that are not. Two tasks conflict if they share a file, or if one consumes what the other produces.\n\nPLAN:\n${JSON.stringify(candidate)}`
+    `Find tasks marked independent (neither in the other's dependsOn, directly or transitively) where one consumes what the other produces -- a symbol, file, fixture, or migration one task creates and the other needs. ` +
+    `Shared 'files' entries are already checked exactly in code; do not re-report those. Report only conflicts the file lists do not show.\n\nPLAN:\n${JSON.stringify(candidate)}`
     + NO_MUTATION,
     { label: `false parallelism${pass}`, phase: 'Self-check', agentType: READ_ONLY, schema: AUDIT_SCHEMA },
   ),

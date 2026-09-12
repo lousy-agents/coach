@@ -318,3 +318,86 @@ test('a repair that leaves a coverage gap is reported, not thrown away', async (
     `expected AC-2 reported as residual, got ${JSON.stringify(result.residualDefects)}`)
   assert.equal(result.repairApplied, true)
 })
+
+// --- F1: load-bearing strings must not be blank ------------------------------
+//
+// The schema types these as plain strings, and a schema constraint is invisible
+// to this harness anyway (the responder returns objects without validating),
+// so the decidable part belongs in checkGraph like every other check there.
+// acceptanceTest is the worst of them: /implement-issue hands it to an
+// implementer as the behavior to demonstrate failing first, so a blank one
+// strips the acceptance-test-first policy from that task without breaking it.
+
+for (const [field, task] of [
+  ['acceptanceTest', { id: 'T1', title: 'a', files: ['a.go'], criteriaIds: ['AC-1'], dependsOn: [], acceptanceTest: '  ' }],
+  ['id', { id: '  ', title: 'a', files: ['a.go'], criteriaIds: ['AC-1'], dependsOn: [], acceptanceTest: 'x' }],
+  ['title', { id: 'T1', title: '', files: ['a.go'], criteriaIds: ['AC-1'], dependsOn: [], acceptanceTest: 'x' }],
+]) {
+  test(`a task with a blank ${field} is caught`, async () => {
+    const { result, error } = await drive({ issue: '250' }, planning(withTasks([task])))
+    const defects = result ? result.defects : []
+    assert.ok(error === undefined || /implement-issue-plan/.test(error.message))
+    assert.ok(defects.some((d) => new RegExp(field).test(d.detail)),
+      `expected a defect naming ${field}, got ${JSON.stringify(defects)} / ${error && error.message}`)
+  })
+}
+
+test('a blank file path in a task is caught', async () => {
+  const { result } = await drive({ issue: '250' }, planning(withTasks([
+    { id: 'T1', title: 'a', files: ['   '], criteriaIds: ['AC-1'], dependsOn: [], acceptanceTest: 'x' },
+  ])))
+  assert.ok(result.defects.some((d) => d.kind === 'unscoped-task'),
+    `a whitespace path scopes nothing; got ${JSON.stringify(result.defects)}`)
+})
+
+test('a criterion with blank id or text is caught', async () => {
+  const { result } = await drive({ issue: '250' }, planning({
+    ...PLAN,
+    acceptanceCriteria: [{ id: 'AC-1', text: '   ' }],
+  }))
+  assert.ok(result.defects.some((d) => /text/.test(d.detail) && /AC-1/.test(d.detail)),
+    `a criterion with no text cannot be implemented or evidenced; got ${JSON.stringify(result.defects)}`)
+})
+
+// --- F2: the exact half of the false-parallelism check ----------------------
+//
+// "Two tasks conflict if they share a file" is set intersection plus
+// reachability over dependsOn -- exact in a loop, a guess in a prompt. The
+// auditor keeps the half that needs judgment (one consumes the other's output).
+// Both tests below have every auditor report clean, so only checkGraph can pass
+// them.
+
+const noAuditors = (plan) => (opts) => {
+  if (!opts?.schema) return 'ingest text'
+  if (opts.label === 'task DAG') return plan
+  if (opts.label === 'repair') return plan
+  return { defects: [] }
+}
+
+test('two unordered tasks sharing a file are caught in code, not left to an auditor', async () => {
+  const { result } = await drive({ issue: '250' }, noAuditors(withTasks([
+    { id: 'T1', title: 'a', files: ['a.go', 'b.go'], criteriaIds: ['AC-1'], dependsOn: [], acceptanceTest: 'x' },
+    { id: 'T2', title: 'b', files: ['b.go'], criteriaIds: ['AC-1'], dependsOn: [], acceptanceTest: 'x' },
+  ])))
+  assert.ok(result.defects.some((d) => d.kind === 'false-parallelism' && /b\.go/.test(d.detail)),
+    `expected a false-parallelism defect naming b.go, got ${JSON.stringify(result.defects)}`)
+})
+
+test('tasks sharing a file are fine when one depends on the other', async () => {
+  const { result } = await drive({ issue: '250' }, noAuditors(withTasks([
+    { id: 'T1', title: 'a', files: ['a.go'], criteriaIds: ['AC-1'], dependsOn: [], acceptanceTest: 'x' },
+    { id: 'T2', title: 'b', files: ['a.go'], criteriaIds: ['AC-1'], dependsOn: ['T1'], acceptanceTest: 'x' },
+  ])))
+  assert.deepEqual(result.defects, [], 'a direct dependency orders the two edits')
+})
+
+// Transitivity matters: T1 -> T2 -> T3 orders T1 and T3 even though neither
+// names the other. Flagging that pair would make every serial chain unbuildable.
+test('a transitive dependency also orders two tasks sharing a file', async () => {
+  const { result } = await drive({ issue: '250' }, noAuditors(withTasks([
+    { id: 'T1', title: 'a', files: ['a.go'], criteriaIds: ['AC-1'], dependsOn: [], acceptanceTest: 'x' },
+    { id: 'T2', title: 'b', files: ['b.go'], criteriaIds: ['AC-1'], dependsOn: ['T1'], acceptanceTest: 'x' },
+    { id: 'T3', title: 'c', files: ['a.go'], criteriaIds: ['AC-1'], dependsOn: ['T2'], acceptanceTest: 'x' },
+  ])))
+  assert.deepEqual(result.defects, [], 'T1 and T3 are ordered through T2')
+})
