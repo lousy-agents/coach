@@ -446,12 +446,7 @@ func TestAggregateReadinessOmitsWarningsForNodeChecks(t *testing.T) {
 }
 
 // TestGapCodeMappings proves statusForGapCode and nextActionForGapCode agree
-// with the frozen gap-code table for all 13 gap codes, not just the ones
-// reachable through today's checks. GapTypescriptCompilerMissing,
-// GapTypescriptVersionMismatch, and GapTypescriptVersionConflict are
-// unreachable via the CLI until later work implements real compiler
-// verification, but the mapping-table entries already exist and must not
-// silently drift.
+// with the frozen gap-code table for all 13 gap codes.
 func TestGapCodeMappings(t *testing.T) {
 	cases := []struct {
 		code           string
