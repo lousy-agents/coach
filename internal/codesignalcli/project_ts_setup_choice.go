@@ -15,6 +15,8 @@ const (
 const (
 	setupChoiceReasonManifestDeclaration = "manifest_declaration"
 	setupChoiceReasonMiseUnconfigured    = "mise_unconfigured"
+	setupChoiceReasonMiseUnverifiable    = "mise_unverifiable"
+	setupChoiceReasonOriginUnverified    = "origin_unverified"
 )
 
 // SetupChoice is one entry AvailableSetupChoices offers as executable in the
@@ -32,8 +34,8 @@ type WithheldSetupChoice struct {
 }
 
 // SetupChoiceMenu is AvailableSetupChoices' result. Choices never carries a
-// selected or recommended entry: an ambiguous package manager or workspace
-// ownership sets RequiresExplicitSelection instead of defaulting to one.
+// selected or recommended entry: an ambiguous package manager sets
+// RequiresExplicitSelection instead of defaulting to one.
 type SetupChoiceMenu struct {
 	Choices                   []SetupChoice
 	Withheld                  []WithheldSetupChoice
@@ -48,13 +50,13 @@ type SetupChoiceMenu struct {
 // no choices and no withheld entries means checks.compiler is not failing,
 // so no setup is needed.
 func AvailableSetupChoices(readiness ReadinessResult) SetupChoiceMenu {
+	if readiness.Checks.Compiler.State != ReadinessFail {
+		return SetupChoiceMenu{}
+	}
+
 	menu := SetupChoiceMenu{
 		RequiresExplicitSelection: readiness.Checks.PackageManager.Code == GapPackageManagerAmbiguous,
 	}
-	if readiness.Checks.Compiler.State != ReadinessFail {
-		return menu
-	}
-
 	appendProjectPackageChoice(&menu, readiness.Checks)
 	appendMiseChoice(&menu, readiness.Checks.Compiler, compilerOriginMiseProject, SetupChoiceProjectMise)
 	appendMiseChoice(&menu, readiness.Checks.Compiler, compilerOriginMiseGlobal, SetupChoiceGlobalMise)
@@ -67,6 +69,10 @@ func AvailableSetupChoices(readiness ReadinessResult) SetupChoiceMenu {
 // (SA-280-012), or the selected manifest declares a disqualifying typescript
 // version (AC-SET-11) -- installing through that manifest's own package
 // manager would just reinstall the already-declared, disqualifying version.
+// DeclaredVersion is populated on both the typescript_compiler_missing and
+// typescript_version_mismatch outcomes (compilerCheckFromAggregate), so this
+// checks the declaration itself rather than the failing code: an in-set
+// exact declaration surfaced on the mismatch outcome is not disqualifying.
 // Neither reason changes which compiler a scan uses if one is already
 // installed (owner decision D4); both only withhold a setup choice.
 func appendProjectPackageChoice(menu *SetupChoiceMenu, checks ReadinessChecks) {
@@ -74,7 +80,7 @@ func appendProjectPackageChoice(menu *SetupChoiceMenu, checks ReadinessChecks) {
 		menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: SetupChoiceProjectPackage, Reason: checks.PackageManager.Code})
 		return
 	}
-	if checks.Compiler.Code == GapTypescriptCompilerMissing && checks.Compiler.DeclaredVersion != "" {
+	if disqualifyingDeclaration(checks.Compiler.DeclaredVersion) {
 		menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: SetupChoiceProjectPackage, Reason: setupChoiceReasonManifestDeclaration})
 		return
 	}
@@ -84,23 +90,29 @@ func appendProjectPackageChoice(menu *SetupChoiceMenu, checks ReadinessChecks) {
 // appendMiseChoice offers kind when origin appears in the compiler
 // resolution's candidate set with something configured to act on.
 // OriginFindings only populates on a typescript_compiler_missing outcome
-// (missingCompilerCheckFromAggregate); any other failing outcome carries no
-// origin findings, so a mise choice is offered by default there rather than
-// withheld for lack of evidence.
+// (missingCompilerCheckFromAggregate); any other failing outcome -- notably
+// typescript_version_conflict and typescript_version_mismatch -- carries no
+// origin findings at all, including the ambiguous-mise-config case that
+// produced typescript_version_conflict in the first place. Fail-closed: with
+// no evidence for or against an origin, it is withheld as unverifiable
+// rather than offered as a default.
 func appendMiseChoice(menu *SetupChoiceMenu, compiler ReadinessCheck, origin string, kind SetupChoiceKind) {
 	if len(compiler.OriginFindings) == 0 {
-		menu.Choices = append(menu.Choices, SetupChoice{Kind: kind})
+		menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: kind, Reason: setupChoiceReasonOriginUnverified})
 		return
 	}
 	for _, finding := range compiler.OriginFindings {
 		if finding.Origin != origin {
 			continue
 		}
-		if finding.Class == compilerClassUnconfigured {
+		switch finding.Class {
+		case compilerClassUnconfigured:
 			menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: kind, Reason: setupChoiceReasonMiseUnconfigured})
-			return
+		case compilerClassUnreadable:
+			menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: kind, Reason: setupChoiceReasonMiseUnverifiable})
+		default:
+			menu.Choices = append(menu.Choices, SetupChoice{Kind: kind})
 		}
-		menu.Choices = append(menu.Choices, SetupChoice{Kind: kind})
 		return
 	}
 }

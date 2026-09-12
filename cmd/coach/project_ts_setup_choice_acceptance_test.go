@@ -159,6 +159,178 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 		})
 	})
 
+	When("an unsupported compiler is installed and the manifest declares a non-exact version", func() {
+		It("withholds project-package for the disqualifying declaration (AC-SET-11), even though the failure code is typescript_version_mismatch rather than typescript_compiler_missing", func() {
+			readiness := codesignalcli.ReadinessResult{
+				Checks: codesignalcli.ReadinessChecks{
+					PackageManager: passingPackageManager,
+					Compiler: codesignalcli.ReadinessCheck{
+						State:           codesignalcli.ReadinessFail,
+						Code:            codesignalcli.GapTypescriptVersionMismatch,
+						DeclaredVersion: "^5.0.0",
+						FoundVersion:    "5.4.0",
+					},
+				},
+			}
+
+			menu := codesignalcli.AvailableSetupChoices(readiness)
+
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectPackage),
+				"a non-exact manifest declaration disqualifies project-package regardless of which failing compiler code produced it")
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage))
+		})
+	})
+
+	When("checks.compiler fails with typescript_version_conflict and carries no origin findings", func() {
+		It("withholds both mise choices as unverifiable rather than offering them by default (fail-closed)", func() {
+			readiness := codesignalcli.ReadinessResult{
+				Checks: codesignalcli.ReadinessChecks{
+					PackageManager: passingPackageManager,
+					Compiler: codesignalcli.ReadinessCheck{
+						State: codesignalcli.ReadinessFail,
+						Code:  codesignalcli.GapTypescriptVersionConflict,
+					},
+				},
+			}
+
+			menu := codesignalcli.AvailableSetupChoices(readiness)
+
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectMise),
+				"an ambiguous mise configuration must never be offered as an executable origin merely because evidence is absent")
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceGlobalMise))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectMise))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceGlobalMise))
+		})
+	})
+
+	When("checks.compiler fails with typescript_version_mismatch and carries no origin findings", func() {
+		It("withholds both mise choices as unverifiable rather than offering them by default (fail-closed)", func() {
+			readiness := codesignalcli.ReadinessResult{
+				Checks: codesignalcli.ReadinessChecks{
+					PackageManager: passingPackageManager,
+					Compiler: codesignalcli.ReadinessCheck{
+						State:           codesignalcli.ReadinessFail,
+						Code:            codesignalcli.GapTypescriptVersionMismatch,
+						DeclaredVersion: "7.0.2",
+						FoundVersion:    "5.4.0",
+					},
+				},
+			}
+
+			menu := codesignalcli.AvailableSetupChoices(readiness)
+
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectMise))
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceGlobalMise))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectMise))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceGlobalMise))
+		})
+	})
+
+	When("the project mise origin's mise.toml exists but could not be read", func() {
+		It("withholds project-mise as unverifiable rather than offering an origin Coach could not verify (AC-15)", func() {
+			readiness := codesignalcli.ReadinessResult{
+				Checks: codesignalcli.ReadinessChecks{
+					PackageManager: passingPackageManager,
+					Compiler: codesignalcli.ReadinessCheck{
+						State: codesignalcli.ReadinessFail,
+						Code:  codesignalcli.GapTypescriptCompilerMissing,
+						OriginFindings: []codesignalcli.ReadinessOriginFinding{
+							{Origin: "project", Class: "absent"},
+							{Origin: "mise_project", Class: "unreadable"},
+							{Origin: "mise_global", Class: "absent"},
+						},
+					},
+				},
+			}
+
+			menu := codesignalcli.AvailableSetupChoices(readiness)
+
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectMise),
+				"an unreadable mise.toml is an unverifiable origin, not an executable one")
+			var reason string
+			for _, w := range menu.Withheld {
+				if w.Kind == codesignalcli.SetupChoiceProjectMise {
+					reason = w.Reason
+				}
+			}
+			Expect(reason).To(Equal("mise_unverifiable"))
+		})
+	})
+
+	When("no mise.toml exists, no global mise typescript pin exists, and the manifest declares nothing", func() {
+		It("offers project-package and cancel -- project-package is the correct choice here (AC-1)", func() {
+			readiness := codesignalcli.ReadinessResult{
+				Checks: codesignalcli.ReadinessChecks{
+					PackageManager: passingPackageManager,
+					Compiler: codesignalcli.ReadinessCheck{
+						State: codesignalcli.ReadinessFail,
+						Code:  codesignalcli.GapTypescriptCompilerMissing,
+						OriginFindings: []codesignalcli.ReadinessOriginFinding{
+							{Origin: "project", Class: "unconfigured"},
+							{Origin: "mise_project", Class: "unconfigured"},
+							{Origin: "mise_global", Class: "unconfigured"},
+						},
+					},
+				},
+			}
+
+			menu := codesignalcli.AvailableSetupChoices(readiness)
+
+			Expect(choiceKinds(menu.Choices)).To(Equal([]codesignalcli.SetupChoiceKind{
+				codesignalcli.SetupChoiceProjectPackage,
+				codesignalcli.SetupChoiceCancel,
+			}))
+			Expect(withheldKinds(menu.Withheld)).To(ConsistOf(codesignalcli.SetupChoiceProjectMise, codesignalcli.SetupChoiceGlobalMise))
+		})
+	})
+
+	When("no mise.toml exists, no global mise typescript pin exists, and the manifest declares a disqualifying version", func() {
+		It("reduces to cancel alone -- there is no origin left that leaves the manifest unmodified (AC-SET-11), and this is intentional, not a bug", func() {
+			readiness := codesignalcli.ReadinessResult{
+				Checks: codesignalcli.ReadinessChecks{
+					PackageManager: passingPackageManager,
+					Compiler: codesignalcli.ReadinessCheck{
+						State:           codesignalcli.ReadinessFail,
+						Code:            codesignalcli.GapTypescriptCompilerMissing,
+						DeclaredVersion: "^5.0.0",
+						OriginFindings: []codesignalcli.ReadinessOriginFinding{
+							{Origin: "project", Class: "unconfigured"},
+							{Origin: "mise_project", Class: "unconfigured"},
+							{Origin: "mise_global", Class: "unconfigured"},
+						},
+					},
+				},
+			}
+
+			menu := codesignalcli.AvailableSetupChoices(readiness)
+
+			Expect(choiceKinds(menu.Choices)).To(Equal([]codesignalcli.SetupChoiceKind{codesignalcli.SetupChoiceCancel}))
+			Expect(withheldKinds(menu.Withheld)).To(ConsistOf(
+				codesignalcli.SetupChoiceProjectPackage,
+				codesignalcli.SetupChoiceProjectMise,
+				codesignalcli.SetupChoiceGlobalMise,
+			))
+		})
+	})
+
+	When("checks.compiler already passes and checks.package_manager is ambiguous", func() {
+		It("returns the zero menu -- no setup is needed, so no explicit selection can be required either", func() {
+			readiness := codesignalcli.ReadinessResult{
+				Status: codesignalcli.StatusReady,
+				Checks: codesignalcli.ReadinessChecks{
+					PackageManager: codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessFail, Code: codesignalcli.GapPackageManagerAmbiguous},
+					Compiler:       codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessPass, Version: "7.0.2"},
+				},
+			}
+
+			menu := codesignalcli.AvailableSetupChoices(readiness)
+
+			Expect(menu.Choices).To(BeEmpty())
+			Expect(menu.Withheld).To(BeEmpty())
+			Expect(menu.RequiresExplicitSelection).To(BeFalse(), "a ready repository never requires an explicit selection, even if package_manager happens to be ambiguous")
+		})
+	})
+
 	DescribeTable("never offers project-package when checks.package_manager fails under a rejected code",
 		func(rejectedCode string) {
 			readiness := codesignalcli.ReadinessResult{
