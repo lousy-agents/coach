@@ -69,6 +69,11 @@ var _ = Describe("codesignalcli.RunConfirmedSetup", func() {
 		It("returns exit 2 with no report and identifies files that may have changed, without any destructive rollback (AC-SET-7)", func() {
 			workDir := newTempGitRepo()
 			commitFile(workDir, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+			// node_modules/ must actually be gitignored, or this spec cannot
+			// distinguish "--ignored was passed to git status" from "the
+			// residue directory merely happened to be untracked" -- both
+			// look identical (`?? node_modules/`) without a .gitignore.
+			commitFile(workDir, ".gitignore", "node_modules/\n")
 			beforeHead := gitHeadSHA(workDir)
 
 			stubDir := writeFailingSetupExecutableWithResidue("npm")
