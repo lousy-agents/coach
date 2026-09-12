@@ -289,7 +289,7 @@ func RunConfirmedSetupAndRecheckReadiness(ctx context.Context, preview SetupPrev
 	if err != nil || outcome.Kind != SetupOutcomeSucceeded {
 		return outcome, err
 	}
-	readiness, readinessErr := CheckProjectReadiness(dir, revision, configPath)
+	readiness, readinessErr := CheckProjectReadiness(dir, revision, "")
 	if readinessErr != nil {
 		return outcome, readinessErr
 	}
