@@ -1253,4 +1253,40 @@ func Mut(c *C, n string) { c.N = n }
 				"ListFiles must include supported sources under top-level dot paths for GitHub parity; got %v", paths)
 		})
 	})
+
+	When("the local fixture's eligible file count equals MaxFiles exactly", func() {
+		It("admits all of them, and one file over MaxFiles trips the budget", func() {
+			root := GinkgoT().TempDir()
+			for i := 0; i < 3; i++ {
+				Expect(os.WriteFile(filepath.Join(root, fmt.Sprintf("f%d.go", i)), []byte("package f\n"), 0o644)).To(Succeed())
+			}
+
+			src := &coachapi.LocalFixtureTreeSource{Root: root}
+			entries, err := src.ListFiles(context.Background(), "o", "r", "", coachapi.BaselineListOptions{MaxFiles: 3})
+			Expect(err).NotTo(HaveOccurred(), "exactly MaxFiles eligible files must be admitted, not rejected")
+			Expect(entries).To(HaveLen(3))
+
+			Expect(os.WriteFile(filepath.Join(root, "f3.go"), []byte("package f\n"), 0o644)).To(Succeed())
+			_, err = src.ListFiles(context.Background(), "o", "r", "", coachapi.BaselineListOptions{MaxFiles: 3})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, githubingest.ErrTooLarge)).To(BeTrue(), "one file over MaxFiles must trip the budget; got %v", err)
+		})
+	})
+
+	When("the local fixture's eligible-file total size equals MaxTotalBytes exactly", func() {
+		It("admits it, and one byte over trips the budget", func() {
+			root := GinkgoT().TempDir()
+			content := []byte("package f\n")
+			Expect(os.WriteFile(filepath.Join(root, "f.go"), content, 0o644)).To(Succeed())
+
+			src := &coachapi.LocalFixtureTreeSource{Root: root}
+			entries, err := src.ListFiles(context.Background(), "o", "r", "", coachapi.BaselineListOptions{MaxTotalBytes: int64(len(content))})
+			Expect(err).NotTo(HaveOccurred(), "a fixture whose total size equals MaxTotalBytes exactly must be admitted, not rejected")
+			Expect(entries).To(HaveLen(1))
+
+			_, err = src.ListFiles(context.Background(), "o", "r", "", coachapi.BaselineListOptions{MaxTotalBytes: int64(len(content)) - 1})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, githubingest.ErrTooLarge)).To(BeTrue(), "one byte over MaxTotalBytes must trip the budget; got %v", err)
+		})
+	})
 })
