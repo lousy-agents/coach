@@ -55,6 +55,8 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(doc.Checks.PackageManager.Code).To(Equal("package_manager_version_unsupported"))
 			Expect(doc.Checks.PackageManager.Kind).To(Equal("npm"))
 			Expect(doc.Checks.PackageManager.FoundVersion).To(Equal("9.5.0"))
+			Expect(gapCodes(doc)).To(ContainElement("package_manager_version_unsupported"))
+			Expect(doc.Status).To(Equal("needs_prerequisite"))
 
 			var action readinessNextActionDoc
 			for _, a := range doc.NextActions {
@@ -140,6 +142,83 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(gapCodes(doc)).To(BeEmpty(), "a package-manager finding must never become a gap once a supported compiler already resolves")
 			Expect(nextActionKinds(doc)).NotTo(ContainElement("resolve_package_manager"))
 			Expect(doc.Status).To(Equal("ready"))
+		})
+	})
+
+	When("a package.json packageManager field pins npm but no lockfile is committed", func() {
+		It("reports checks.package_manager fail/package_manager_config_unverifiable, since npm ci --ignore-scripts requires a committed lockfile", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"npm@11.2.0"}`+"\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.PackageManager.State).To(Equal("fail"))
+			Expect(doc.Checks.PackageManager.Code).To(Equal("package_manager_config_unverifiable"))
+			Expect(doc.Checks.PackageManager.Kind).To(Equal("npm"))
+		})
+	})
+
+	When("committed npm metadata exists but .npmrc is a dangling symlink", func() {
+		It("reports checks.package_manager fail/package_manager_config_unverifiable rather than treating an unreadable hazard file as absent", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"npm@11.2.0"}`+"\n")
+			commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
+			Expect(os.Symlink(filepath.Join(repo, "does-not-exist-target"), filepath.Join(repo, ".npmrc"))).To(Succeed())
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.PackageManager.State).To(Equal("fail"))
+			Expect(doc.Checks.PackageManager.Code).To(Equal("package_manager_config_unverifiable"))
+			Expect(doc.Checks.PackageManager.Kind).To(Equal("npm"))
+		})
+	})
+
+	When("a committed .npmrc redirects a scoped registry via the @scope:registry form", func() {
+		It("reports checks.package_manager fail/package_manager_config_unverifiable", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"npm@11.2.0"}`+"\n")
+			commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
+			commitFile(repo, ".npmrc", "@scope:registry=https://mirror.example.invalid/npm/\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.PackageManager.State).To(Equal("fail"))
+			Expect(doc.Checks.PackageManager.Code).To(Equal("package_manager_config_unverifiable"))
+			Expect(doc.Checks.PackageManager.Kind).To(Equal("npm"))
+		})
+	})
+
+	When("a package.json packageManager field pins an npm prerelease build inside the numeric major range", func() {
+		It("reports checks.package_manager fail/package_manager_version_unsupported, since the frozen range >=11 <12 excludes prereleases", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"npm@11.0.0-rc.1"}`+"\n")
+			commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.PackageManager.State).To(Equal("fail"))
+			Expect(doc.Checks.PackageManager.Code).To(Equal("package_manager_version_unsupported"))
+			Expect(doc.Checks.PackageManager.FoundVersion).To(Equal("11.0.0-rc.1"))
 		})
 	})
 })

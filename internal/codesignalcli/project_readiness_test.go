@@ -446,13 +446,12 @@ func TestAggregateReadinessOmitsWarningsForNodeChecks(t *testing.T) {
 }
 
 // TestGapCodeMappings proves statusForGapCode and nextActionForGapCode agree
-// with the frozen gap-code table for all 11 gap codes, not just the ones
+// with the frozen gap-code table for all 13 gap codes, not just the ones
 // reachable through today's checks. GapTypescriptCompilerMissing,
-// GapTypescriptVersionMismatch, GapTypescriptVersionConflict,
-// GapPackageManagerAmbiguous, and GapPackageManagerConfigUnverifiable are
-// unreachable via the CLI until later work implements real compiler/
-// package-manager verification, but the mapping-table entries already exist
-// and must not silently drift.
+// GapTypescriptVersionMismatch, and GapTypescriptVersionConflict are
+// unreachable via the CLI until later work implements real compiler
+// verification, but the mapping-table entries already exist and must not
+// silently drift.
 func TestGapCodeMappings(t *testing.T) {
 	cases := []struct {
 		code           string
@@ -468,6 +467,8 @@ func TestGapCodeMappings(t *testing.T) {
 		{GapTypescriptVersionConflict, StatusNeedsPrerequisite, "prepare_compiler"},
 		{GapPackageManagerAmbiguous, StatusNeedsPrerequisite, "resolve_package_manager"},
 		{GapPackageManagerConfigUnverifiable, StatusNeedsPrerequisite, "resolve_package_manager"},
+		{GapPackageManagerVersionUnverifiable, StatusNeedsPrerequisite, "resolve_package_manager"},
+		{GapPackageManagerVersionUnsupported, StatusNeedsPrerequisite, "resolve_package_manager"},
 		{GapPolicyMissing, StatusNeedsPolicy, "author_policy"},
 		{GapPolicyInvalid, StatusNeedsPolicy, "author_policy"},
 	}

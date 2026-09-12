@@ -34,9 +34,9 @@ func packageManagerVersionSupported(kind, version string) bool {
 	}
 	switch kind {
 	case packageManagerKindNPM:
-		return major == 11
+		return major == 11 && !prerelease
 	case packageManagerKindPNPM:
-		return major == 10
+		return major == 10 && !prerelease
 	case packageManagerKindBun:
 		// Bun: stable >=1.0.0 <2.0.0, excluding prerelease/canary/commit
 		// builds, with no upper minor/patch bound inside 1.x.

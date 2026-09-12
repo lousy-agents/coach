@@ -2,6 +2,8 @@ package codesignalcli
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,9 +25,8 @@ func checkPackageManager(dir string) ReadinessCheck {
 	if detection.ambiguous {
 		return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerAmbiguous}
 	}
-	// Yarn is deliberately excluded from the matrix (owner decision): it is
-	// withheld unconditionally, without consulting hazards or version, since
-	// there is no supported row for it to satisfy.
+	// Yarn has no matrix row and is withheld before hazard/version checks
+	// are consulted.
 	if detection.kind == packageManagerKindYarn {
 		return ReadinessCheck{
 			State:  ReadinessFail,
@@ -132,26 +133,43 @@ func fileExists(path string) bool {
 }
 
 // detectPackageManagerHazard reports a non-empty detail describing a
-// repository-controlled configuration hazard matching kind's Hazards column
-// (SA-280-012), or "" if none is found. Only npm's ".npmrc registry
-// redirect" hazard class has dedicated fixture coverage today (issue #327
-// Task 1); the pnpm/Bun branches exist so their own hazard classes can be
-// added under Task 7 without restructuring this seam.
+// repository-controlled configuration hazard from kind's Hazards column
+// (SA-280-012), or "" if none. Only npm's hazard class is checked today;
+// pnpm and Bun each need their own fixtures before their rows are wired in.
 func detectPackageManagerHazard(root, kind string) string {
-	switch kind {
-	case packageManagerKindNPM, packageManagerKindPNPM:
-		return detectNpmrcHazard(root)
-	case packageManagerKindBun:
-		return detectBunHazard(root)
-	default:
+	if kind != packageManagerKindNPM {
 		return ""
 	}
+	if detail := detectNpmrcHazard(root); detail != "" {
+		return detail
+	}
+	return detectNpmLockfileHazard(root)
 }
 
+// detectNpmLockfileHazard reports a hazard detail when package-lock.json is
+// absent or unreadable: the locked argv npm ci --ignore-scripts cannot run
+// without it.
+func detectNpmLockfileHazard(root string) string {
+	if _, err := os.ReadFile(filepath.Join(root, "package-lock.json")); err != nil {
+		return "package-lock.json is missing or could not be read"
+	}
+	return ""
+}
+
+// detectNpmrcHazard reports a hazard detail for a committed .npmrc that
+// redirects the registry, re-enables lifecycle scripts, or overrides the
+// script shell. A .npmrc that exists but cannot be read (permission denied,
+// a directory, a dangling symlink) is a hazard in its own right, distinct
+// from no .npmrc existing at all -- fail-closed rather than treating an
+// unreadable hazard file as absent.
 func detectNpmrcHazard(root string) string {
-	data, err := os.ReadFile(filepath.Join(root, ".npmrc"))
+	path := filepath.Join(root, ".npmrc")
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return ""
+		if _, statErr := os.Lstat(path); errors.Is(statErr, fs.ErrNotExist) {
+			return ""
+		}
+		return "committed .npmrc could not be read"
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
@@ -162,49 +180,30 @@ func detectNpmrcHazard(root string) string {
 		if !found {
 			continue
 		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		switch key {
-		case "registry":
-			return "committed .npmrc redirects the package registry (registry=" + value + ")"
-		case "ignore-scripts":
-			if value == "false" {
-				return "committed .npmrc re-enables lifecycle scripts (ignore-scripts=false)"
+		key = strings.ToLower(strings.TrimSpace(key))
+		value = trimNpmrcValueQuotes(strings.TrimSpace(value))
+		switch {
+		case key == "registry" || strings.HasSuffix(key, ":registry"):
+			return "committed .npmrc redirects the package registry (" + key + "=" + value + ")"
+		case key == "ignore-scripts":
+			if value != "true" {
+				return "committed .npmrc re-enables lifecycle scripts (ignore-scripts=" + value + ")"
 			}
-		case "script-shell":
+		case key == "script-shell":
 			return "committed .npmrc overrides the lifecycle script shell (script-shell=" + value + ")"
 		}
 	}
 	return ""
 }
 
-func detectBunHazard(root string) string {
-	if hasTrustedDependencies(root) {
-		return "package.json declares trustedDependencies without a verified script-suppression proof"
-	}
-	data, err := os.ReadFile(filepath.Join(root, "bunfig.toml"))
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "registry") || strings.Contains(line, "install.registry") {
-			return "committed bunfig.toml redirects the package registry or an install hook"
+// trimNpmrcValueQuotes strips a single layer of matching double or single
+// quotes from an ini-style value, per npmrc's quoting rules.
+func trimNpmrcValueQuotes(value string) string {
+	if len(value) >= 2 {
+		first, last := value[0], value[len(value)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			return value[1 : len(value)-1]
 		}
 	}
-	return ""
-}
-
-func hasTrustedDependencies(root string) bool {
-	data, err := os.ReadFile(filepath.Join(root, "package.json"))
-	if err != nil {
-		return false
-	}
-	var manifest struct {
-		TrustedDependencies []string `json:"trustedDependencies"`
-	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return false
-	}
-	return len(manifest.TrustedDependencies) > 0
+	return value
 }
