@@ -1,0 +1,92 @@
+package codesignalcli
+
+import (
+	"errors"
+	"fmt"
+	"time"
+)
+
+// SetupPreviewTimeout bounds how long a project-package setup command may
+// run once a customer confirms it (AC-SET-2). BuildSetupPreview only
+// discloses this bound; enforcing it during execution is a later task's
+// concern.
+const SetupPreviewTimeout = 5 * time.Minute
+
+// setupCommandTemplate is one package-manager kind's frozen, non-executing
+// argv template (SA-280-012): the bare executable name -- never a resolved
+// absolute path -- plus its arguments and the lockfile that argv may rewrite.
+type setupCommandTemplate struct {
+	executable      string
+	args            []string
+	lockfileDisplay string
+}
+
+// setupCommandTemplates keys off the same manager-kind constants
+// checkPackageManager classifies against (project_ts_setup_matrix.go),
+// rather than re-typing a second copy of the frozen command strings.
+var setupCommandTemplates = map[string]setupCommandTemplate{
+	packageManagerKindNPM: {
+		executable:      "npm",
+		args:            []string{"ci", "--ignore-scripts"},
+		lockfileDisplay: "package-lock.json",
+	},
+	packageManagerKindPNPM: {
+		executable:      "pnpm",
+		args:            []string{"install", "--frozen-lockfile", "--ignore-scripts"},
+		lockfileDisplay: "pnpm-lock.yaml",
+	},
+	packageManagerKindBun: {
+		executable:      "bun",
+		args:            []string{"install", "--frozen-lockfile", "--ignore-scripts"},
+		lockfileDisplay: "bun.lock (or bun.lockb)",
+	},
+}
+
+// SetupPreview is the disclosure Coach must show before executing a
+// project-package setup choice (AC-SET-2): the exact command that will run,
+// where it will run, what it may change on disk, whether it reaches the
+// network, its lifecycle-script policy, and its bounded timeout. Building a
+// SetupPreview never spawns a process.
+type SetupPreview struct {
+	Executable              string
+	Args                    []string
+	WorkingDirectory        string
+	ExpectedChanges         string
+	NetworkDisclosure       string
+	ScriptSuppressionPolicy string
+	Timeout                 time.Duration
+}
+
+// ErrSetupPreviewUnavailable reports that choice carries no frozen preview:
+// either it is not a project-package choice, or packageManagerKind names a
+// manager outside the frozen adapter matrix (SA-280-012). Fail-closed: an
+// unrecognized kind never falls back to a guessed command.
+var ErrSetupPreviewUnavailable = errors.New("setup preview: no frozen command template for this choice")
+
+// BuildSetupPreview renders the pre-execution disclosure for choice,
+// resolved against packageManagerKind -- the same kind checkPackageManager
+// already classified onto checks.package_manager -- and workingDirectory,
+// the directory containing the manifest that owns the selected origin. It
+// performs no filesystem or network access and executes nothing.
+func BuildSetupPreview(choice SetupChoice, packageManagerKind, workingDirectory string) (SetupPreview, error) {
+	if choice.Kind != SetupChoiceProjectPackage {
+		return SetupPreview{}, fmt.Errorf("%w: choice kind %q", ErrSetupPreviewUnavailable, choice.Kind)
+	}
+	template, ok := setupCommandTemplates[packageManagerKind]
+	if !ok {
+		return SetupPreview{}, fmt.Errorf("%w: package manager kind %q", ErrSetupPreviewUnavailable, packageManagerKind)
+	}
+
+	return SetupPreview{
+		Executable:       template.executable,
+		Args:             append([]string(nil), template.args...),
+		WorkingDirectory: workingDirectory,
+		ExpectedChanges: fmt.Sprintf(
+			"may rewrite %s in place; never adds, removes, or updates the dependencies declared in package.json",
+			template.lockfileDisplay,
+		),
+		NetworkDisclosure:       "may reach the configured package registry over the network to download or verify dependencies",
+		ScriptSuppressionPolicy: "--ignore-scripts suppresses this package manager's lifecycle scripts (including dependency build scripts) for this run",
+		Timeout:                 SetupPreviewTimeout,
+	}, nil
+}
