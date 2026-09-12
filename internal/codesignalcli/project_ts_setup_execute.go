@@ -49,7 +49,12 @@ var ErrSetupExecutionUnverifiedCommand = errors.New("setup execution: preview do
 // Args/WorkingDirectory unchanged, plus the outcome. Succeeded is true only
 // on an exit-0 completion; a non-zero exit or a spawn failure leaves it
 // false with ExitCode carrying whatever detail is available (-1 when no
-// process exit code exists at all). Policy on how to react to a failed or
+// process exit code exists at all). This exit status is recovered from
+// cmd.ProcessState even when cmd.Wait itself returned exec.ErrWaitDelay
+// because a surviving descendant (not the direct child) kept the output
+// pipe open past setupExecutionWaitDelay: the direct child's own exit code
+// is not in doubt in that case, only how long its output goroutines took to
+// notice the pipe was closed. Policy on how to react to a failed or
 // timed-out run belongs to a later task -- ExecuteSetup only reports what
 // happened.
 type SetupExecutionResult struct {
@@ -131,6 +136,30 @@ func ExecuteSetup(ctx context.Context, preview SetupPreview, confirmed bool) (Se
 	}
 	if waitErr == nil {
 		result.Succeeded = true
+		return result, nil
+	}
+	// exec.ErrWaitDelay: the direct child already exited on its own (a
+	// successful npm/pnpm/bun run can leave a store-server or
+	// update-notifier descendant behind, still holding the inherited
+	// stdout/stderr pipe open) and setupExecutionWaitDelay elapsed before the
+	// output-copying goroutines finished, not before the process itself
+	// finished. Per os/exec's Wait, cmd.ProcessState is populated from
+	// cmd.Process.Wait() before the WaitDelay race even begins, so it still
+	// carries the child's real exit status here -- recovering it, rather
+	// than reporting ErrWaitDelay as a bare failure, is what keeps a
+	// genuinely successful install from being misreported as failed (which
+	// would incorrectly trip a later task's failure-handling path).
+	if errors.Is(waitErr, exec.ErrWaitDelay) {
+		if cmd.ProcessState != nil && cmd.ProcessState.Success() {
+			result.Succeeded = true
+			result.ExitCode = 0
+			return result, nil
+		}
+		if cmd.ProcessState != nil {
+			result.ExitCode = cmd.ProcessState.ExitCode()
+			return result, nil
+		}
+		result.ExitCode = -1
 		return result, nil
 	}
 	var exitErr *exec.ExitError
