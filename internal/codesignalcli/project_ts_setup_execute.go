@@ -245,10 +245,14 @@ func RunConfirmedSetup(ctx context.Context, preview SetupPreview, confirmed bool
 
 	execution, err := ExecuteSetup(ctx, preview, confirmed)
 	if err != nil {
+		// TEMP-RED-DEMO finding 4: residue scanned for a run that never started
+		changedPaths, residueUnknown := setupResidueChangedPaths(preview.WorkingDirectory)
 		return SetupOutcome{
-			Kind:      SetupOutcomeFailed,
-			ExitCode:  2,
-			Execution: execution,
+			Kind:           SetupOutcomeFailed,
+			ExitCode:       2,
+			Execution:      execution,
+			ChangedPaths:   changedPaths,
+			ResidueUnknown: residueUnknown,
 		}, err
 	}
 	if !execution.Succeeded {
