@@ -4,7 +4,7 @@ func statusForGapCode(code string) ReadinessStatus {
 	switch code {
 	case GapUnsupportedRepositoryShape:
 		return StatusOutsideSupport
-	case GapNodeMissing, GapNodeUnsupported, GapNodeUnverifiable, GapTypescriptCompilerMissing, GapTypescriptVersionMismatch, GapTypescriptVersionConflict, GapPackageManagerAmbiguous, GapPackageManagerConfigUnverifiable:
+	case GapNodeMissing, GapNodeUnsupported, GapNodeUnverifiable, GapTypescriptCompilerMissing, GapTypescriptVersionMismatch, GapTypescriptVersionConflict, GapPackageManagerAmbiguous, GapPackageManagerConfigUnverifiable, GapPackageManagerVersionUnverifiable, GapPackageManagerVersionUnsupported:
 		return StatusNeedsPrerequisite
 	case GapPolicyMissing, GapPolicyInvalid:
 		return StatusNeedsPolicy
@@ -35,6 +35,7 @@ const (
 	nextActionKindInstallSupportedRuntime = "install_supported_runtime"
 	nextActionKindRepairRuntimeProbe      = "repair_runtime_probe"
 	nextActionKindPrepareCompiler         = "prepare_compiler"
+	nextActionKindResolvePackageManager   = "resolve_package_manager"
 )
 
 func nextActionForGapCode(code string) (string, bool) {
@@ -47,8 +48,8 @@ func nextActionForGapCode(code string) (string, bool) {
 		return nextActionKindRepairRuntimeProbe, true
 	case GapTypescriptCompilerMissing, GapTypescriptVersionMismatch, GapTypescriptVersionConflict:
 		return nextActionKindPrepareCompiler, true
-	case GapPackageManagerAmbiguous, GapPackageManagerConfigUnverifiable:
-		return "resolve_package_manager", true
+	case GapPackageManagerAmbiguous, GapPackageManagerConfigUnverifiable, GapPackageManagerVersionUnverifiable, GapPackageManagerVersionUnsupported:
+		return nextActionKindResolvePackageManager, true
 	case GapPolicyMissing, GapPolicyInvalid:
 		return "author_policy", true
 	default:

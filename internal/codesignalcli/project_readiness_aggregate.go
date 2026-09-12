@@ -12,12 +12,20 @@ func aggregateReadiness(checks ReadinessChecks, dirtyRelevant bool) (ReadinessSt
 // failingReadinessChecks reads checks.Runtime rather than checks.Node: the
 // two always carry the same State/Code (see nodeCompatibilityMirror), and
 // including both here would double-report every Node gap.
+//
+// checks.PackageManager is excluded once checks.Compiler already passes
+// (SA-280-045): once a supported compiler resolves, a package-manager
+// finding stays visible on the check itself but contributes no gap, next
+// action, or status change.
 func failingReadinessChecks(checks ReadinessChecks) []ReadinessCheck {
 	var failing []ReadinessCheck
-	for _, check := range []ReadinessCheck{checks.ProjectShape, checks.Policy, checks.Runtime, checks.Compiler, checks.PackageManager} {
+	for _, check := range []ReadinessCheck{checks.ProjectShape, checks.Policy, checks.Runtime, checks.Compiler} {
 		if check.State == ReadinessFail {
 			failing = append(failing, check)
 		}
+	}
+	if checks.PackageManager.State == ReadinessFail && checks.Compiler.State != ReadinessPass {
+		failing = append(failing, checks.PackageManager)
 	}
 	return failing
 }
@@ -57,6 +65,9 @@ func nextActionForCheck(kind string, check ReadinessCheck) ReadinessNextAction {
 		action.Detail = check.Detail
 	case nextActionKindPrepareCompiler:
 		action.Supported = supportedTypescriptVersionsCopy()
+		action.FoundVersion = check.FoundVersion
+	case nextActionKindResolvePackageManager:
+		action.PackageManagerKind = check.Kind
 		action.FoundVersion = check.FoundVersion
 	}
 	return action

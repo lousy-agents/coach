@@ -48,17 +48,19 @@ const (
 )
 
 const (
-	GapUnsupportedRepositoryShape       = "unsupported_repository_shape"
-	GapNodeMissing                      = "node_missing"
-	GapNodeUnsupported                  = "node_unsupported"
-	GapNodeUnverifiable                 = "node_unverifiable"
-	GapTypescriptCompilerMissing        = "typescript_compiler_missing"
-	GapTypescriptVersionMismatch        = "typescript_version_mismatch"
-	GapTypescriptVersionConflict        = "typescript_version_conflict"
-	GapPackageManagerAmbiguous          = "package_manager_ambiguous"
-	GapPackageManagerConfigUnverifiable = "package_manager_config_unverifiable"
-	GapPolicyMissing                    = "policy_missing"
-	GapPolicyInvalid                    = "policy_invalid"
+	GapUnsupportedRepositoryShape        = "unsupported_repository_shape"
+	GapNodeMissing                       = "node_missing"
+	GapNodeUnsupported                   = "node_unsupported"
+	GapNodeUnverifiable                  = "node_unverifiable"
+	GapTypescriptCompilerMissing         = "typescript_compiler_missing"
+	GapTypescriptVersionMismatch         = "typescript_version_mismatch"
+	GapTypescriptVersionConflict         = "typescript_version_conflict"
+	GapPackageManagerAmbiguous           = "package_manager_ambiguous"
+	GapPackageManagerConfigUnverifiable  = "package_manager_config_unverifiable"
+	GapPackageManagerVersionUnverifiable = "package_manager_version_unverifiable"
+	GapPackageManagerVersionUnsupported  = "package_manager_version_unsupported"
+	GapPolicyMissing                     = "policy_missing"
+	GapPolicyInvalid                     = "policy_invalid"
 )
 
 // WarnCompilerDeclarationMismatch is the limit-class warning when a
@@ -96,7 +98,9 @@ type ReadinessDeclarationMismatch struct {
 // accompany which code is the frozen compiler-check contract, pinned by
 // cmd/coach's aggregation acceptance table; the json:"-" fields never
 // serialize and reach the customer as rendered text only. Kind and Origin
-// are additive and omitempty, populated only on Runtime.
+// are additive and omitempty, populated only on Runtime and PackageManager
+// (PackageManager's Kind names the detected manager: npm, pnpm, bun, or
+// yarn).
 type ReadinessCheck struct {
 	State             ReadinessState           `json:"state"`
 	Code              string                   `json:"code,omitempty"`
@@ -140,12 +144,13 @@ type ReadinessWarning struct {
 }
 
 type ReadinessNextAction struct {
-	Kind         string   `json:"kind"`
-	Executable   bool     `json:"executable"`
-	RuntimeKind  string   `json:"runtime_kind,omitempty"`
-	Supported    []string `json:"supported,omitempty"`
-	FoundVersion string   `json:"found_version,omitempty"`
-	Detail       string   `json:"detail,omitempty"`
+	Kind               string   `json:"kind"`
+	Executable         bool     `json:"executable"`
+	RuntimeKind        string   `json:"runtime_kind,omitempty"`
+	PackageManagerKind string   `json:"package_manager_kind,omitempty"`
+	Supported          []string `json:"supported,omitempty"`
+	FoundVersion       string   `json:"found_version,omitempty"`
+	Detail             string   `json:"detail,omitempty"`
 }
 
 type ReadinessDirtyWorktree struct {
@@ -184,7 +189,7 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 	runtime := checkNodeReadiness()
 	node := nodeCompatibilityMirror(runtime)
 	compiler := resolveCompiler(dir, roots)
-	packageManager := checkPackageManager()
+	packageManager := checkPackageManager(dir)
 
 	checks := ReadinessChecks{
 		ProjectShape:   projectShape,
@@ -242,11 +247,6 @@ func checkPolicy(dir, revision, policyPath string) (ReadinessCheck, []string, er
 		return ReadinessCheck{}, nil, err
 	}
 	return ReadinessCheck{State: ReadinessPass}, config.Roots, nil
-}
-
-// Stub: a seam for a later task. Not a bug.
-func checkPackageManager() ReadinessCheck {
-	return ReadinessCheck{State: ReadinessNotChecked}
 }
 
 // ValidateProjectConfigPath validates a --project-config value's shape using

@@ -51,6 +51,9 @@ func renderReadinessNextActionLine(b *strings.Builder, action ReadinessNextActio
 	if action.RuntimeKind != "" {
 		fmt.Fprintf(b, " runtime_kind=%s", action.RuntimeKind)
 	}
+	if action.PackageManagerKind != "" {
+		fmt.Fprintf(b, " package_manager_kind=%s", action.PackageManagerKind)
+	}
 	if len(action.Supported) > 0 {
 		fmt.Fprintf(b, " supported=%s", strings.Join(action.Supported, ","))
 	}

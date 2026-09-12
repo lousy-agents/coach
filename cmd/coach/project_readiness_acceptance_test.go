@@ -63,12 +63,13 @@ type readinessResultDoc struct {
 }
 
 type readinessNextActionDoc struct {
-	Kind         string   `json:"kind"`
-	Executable   bool     `json:"executable"`
-	RuntimeKind  string   `json:"runtime_kind"`
-	Supported    []string `json:"supported"`
-	FoundVersion string   `json:"found_version"`
-	Detail       string   `json:"detail"`
+	Kind               string   `json:"kind"`
+	Executable         bool     `json:"executable"`
+	RuntimeKind        string   `json:"runtime_kind"`
+	PackageManagerKind string   `json:"package_manager_kind"`
+	Supported          []string `json:"supported"`
+	FoundVersion       string   `json:"found_version"`
+	Detail             string   `json:"detail"`
 }
 
 func gapCodes(doc readinessResultDoc) []string {
