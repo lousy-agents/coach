@@ -106,6 +106,7 @@ var _ = Describe("codesignalcli's residue disclosure parsing", func() {
 		Expect(joined).NotTo(ContainSubstring(`\303\251`), "the raw octal escape from quoted porcelain output must never reach a caller")
 		Expect(joined).NotTo(ContainSubstring(`"`), "a quoted porcelain path must never reach a caller still wrapped in literal quote characters")
 
+		Expect(outcome.ChangedPaths).To(ConsistOf("README-renamed.md", "café/"), "no extra or truncated path may be synthesized")
 		Expect(outcome.ChangedPaths).To(ContainElement("README-renamed.md"), "a rename record's resulting path must be reported as a single clean path")
 		Expect(joined).NotTo(ContainSubstring("->"), "a rename record's arrow/origin-path syntax must never leak into the disclosure")
 		Expect(outcome.ChangedPaths).NotTo(ContainElement("README.md"), "a rename's origin path is not itself a residue location")

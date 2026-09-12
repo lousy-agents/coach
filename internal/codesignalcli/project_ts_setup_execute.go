@@ -236,8 +236,9 @@ type SetupOutcome struct {
 // anyway would misattribute whatever was already dirty in the worktree to
 // it. If ExecuteSetup runs but does not succeed (non-zero exit or timeout),
 // RunConfirmedSetup reports SetupOutcomeFailed with ChangedPaths and
-// ResidueUnknown from a best-effort, WorkingDirectory-scoped read of what
-// may have changed. A successful run becomes SetupOutcomeSucceeded.
+// ResidueUnknown populated from a best-effort, WorkingDirectory-scoped
+// residue read (see ResidueUnknown's doc). A successful run becomes
+// SetupOutcomeSucceeded.
 func RunConfirmedSetup(ctx context.Context, preview SetupPreview, confirmed bool) (SetupOutcome, error) {
 	if !confirmed {
 		return SetupOutcome{Kind: SetupOutcomeCancelled, ExitCode: 2}, nil
@@ -288,12 +289,11 @@ const (
 // This only ever reads: it never invokes `git reset`/`git clean`/`git
 // checkout` or any other command that could mutate workingDirectory.
 //
-// The returned bool is true when the disclosure itself could not be
-// produced -- workingDirectory is not inside a Git worktree, or the bounded
-// git status call otherwise failed -- in which case the returned paths are a
-// best-effort fallback (workingDirectory itself) that a caller must not
-// mistake for a real status read: "Coach could not determine what changed",
-// not "nothing changed" and not an ordinary (if empty) result.
+// The returned bool is SetupOutcome.ResidueUnknown (see its doc); it is true
+// when the disclosure itself could not be produced -- workingDirectory is
+// not inside a Git worktree, or the bounded git status call otherwise
+// failed -- in which case the returned paths are a best-effort fallback
+// (workingDirectory itself), not a real status read.
 func setupResidueChangedPaths(workingDirectory string) ([]string, bool) {
 	output, err := runGitBytesBounded(workingDirectory, maxSetupResidueGitBytes, maxSetupResidueGitStderr, setupResidueGitTimeout, "status", "--porcelain", "-z", "--ignored", "--", ".")
 	if err != nil {
