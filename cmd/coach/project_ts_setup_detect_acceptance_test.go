@@ -112,6 +112,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(doc.Checks.PackageManager.Kind).To(Equal("yarn"))
 			Expect(doc.Checks.PackageManager.Detail).NotTo(BeEmpty(), "Yarn's withholding must carry an informational note explaining why")
 
+			Expect(nextActionKinds(doc)).To(ContainElement("resolve_package_manager"), "the executable=false assertion below must run against a next action that actually exists")
 			for _, a := range doc.NextActions {
 				if a.PackageManagerKind == "yarn" {
 					Expect(a.Executable).To(BeFalse(), "Yarn must never be offered as an executable installation choice")
@@ -219,6 +220,123 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(doc.Checks.PackageManager.State).To(Equal("fail"))
 			Expect(doc.Checks.PackageManager.Code).To(Equal("package_manager_version_unsupported"))
 			Expect(doc.Checks.PackageManager.FoundVersion).To(Equal("11.0.0-rc.1"))
+		})
+	})
+
+	When("a committed .npmrc re-enables lifecycle scripts using an uppercase boolean value", func() {
+		It("reports checks.package_manager pass, since npm's ini parser treats TRUE/True/true identically", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"npm@11.2.0"}`+"\n")
+			commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
+			commitFile(repo, ".npmrc", "ignore-scripts=TRUE\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.PackageManager.State).To(Equal("pass"), "an uppercase TRUE must not be misread as a hazardous override")
+			Expect(doc.Checks.PackageManager.Kind).To(Equal("npm"))
+		})
+	})
+
+	When("committed npm metadata exists but package-lock.json is a dangling symlink", func() {
+		It("reports checks.package_manager fail/package_manager_config_unverifiable, distinct from a Stat-only presence check", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"npm@11.2.0"}`+"\n")
+			Expect(os.Symlink(filepath.Join(repo, "missing-target"), filepath.Join(repo, "package-lock.json"))).To(Succeed())
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.PackageManager.State).To(Equal("fail"))
+			Expect(doc.Checks.PackageManager.Code).To(Equal("package_manager_config_unverifiable"))
+			Expect(doc.Checks.PackageManager.Kind).To(Equal("npm"))
+		})
+	})
+
+	When("a package.json packageManager field pins pnpm but no pnpm-lock.yaml is committed", func() {
+		It("reports checks.package_manager fail/package_manager_config_unverifiable, since installability cannot be verified without a readable lockfile", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"pnpm@10.4.0"}`+"\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.PackageManager.State).To(Equal("fail"))
+			Expect(doc.Checks.PackageManager.Code).To(Equal("package_manager_config_unverifiable"))
+			Expect(doc.Checks.PackageManager.Kind).To(Equal("pnpm"))
+		})
+	})
+
+	When("a recognized npm lockfile and version pin exist with no .npmrc at all", func() {
+		It("reports checks.package_manager pass with no package_manager gap", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"npm@11.2.0"}`+"\n")
+			commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.PackageManager.State).To(Equal("pass"))
+			Expect(doc.Checks.PackageManager.Kind).To(Equal("npm"))
+			Expect(doc.Checks.PackageManager.Version).To(Equal("11.2.0"))
+			for _, code := range gapCodes(doc) {
+				Expect(code).NotTo(HavePrefix("package_manager_"))
+			}
+		})
+	})
+
+	When("a recognized pnpm lockfile and supported version pin are committed", func() {
+		It("reports checks.package_manager pass", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"pnpm@10.4.0"}`+"\n")
+			commitFile(repo, "pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.PackageManager.State).To(Equal("pass"))
+			Expect(doc.Checks.PackageManager.Kind).To(Equal("pnpm"))
+			Expect(doc.Checks.PackageManager.Version).To(Equal("10.4.0"))
+		})
+	})
+
+	When("a recognized pnpm lockfile pins an out-of-range pnpm major", func() {
+		It("reports checks.package_manager fail/package_manager_version_unsupported", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"pnpm@9.0.0"}`+"\n")
+			commitFile(repo, "pnpm-lock.yaml", "lockfileVersion: '6.0'\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.PackageManager.State).To(Equal("fail"))
+			Expect(doc.Checks.PackageManager.Code).To(Equal("package_manager_version_unsupported"))
+			Expect(doc.Checks.PackageManager.Kind).To(Equal("pnpm"))
+			Expect(doc.Checks.PackageManager.FoundVersion).To(Equal("9.0.0"))
 		})
 	})
 })

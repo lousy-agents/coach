@@ -38,6 +38,9 @@ func checkPackageManager(dir string) ReadinessCheck {
 	if detail := detectPackageManagerHazard(root, detection.kind); detail != "" {
 		return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerConfigUnverifiable, Kind: detection.kind, Detail: detail}
 	}
+	if detail := requireReadableLockfile(root, detection.kind); detail != "" {
+		return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerConfigUnverifiable, Kind: detection.kind, Detail: detail}
+	}
 	if detection.version == "" || !isExactVersion(detection.version) {
 		return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerVersionUnverifiable, Kind: detection.kind}
 	}
@@ -136,24 +139,31 @@ func fileExists(path string) bool {
 // repository-controlled configuration hazard from kind's Hazards column
 // (SA-280-012), or "" if none. Only npm's hazard class is checked today;
 // pnpm and Bun each need their own fixtures before their rows are wired in.
+// The lockfile-readability precondition itself is kind-agnostic; see
+// requireReadableLockfile.
 func detectPackageManagerHazard(root, kind string) string {
 	if kind != packageManagerKindNPM {
 		return ""
 	}
-	if detail := detectNpmrcHazard(root); detail != "" {
-		return detail
-	}
-	return detectNpmLockfileHazard(root)
+	return detectNpmrcHazard(root)
 }
 
-// detectNpmLockfileHazard reports a hazard detail when package-lock.json is
-// absent or unreadable: the locked argv npm ci --ignore-scripts cannot run
-// without it.
-func detectNpmLockfileHazard(root string) string {
-	if _, err := os.ReadFile(filepath.Join(root, "package-lock.json")); err != nil {
-		return "package-lock.json is missing or could not be read"
+// requireReadableLockfile reports a hazard detail unless at least one of
+// kind's recognized lockfile basenames (SA-280-012) exists and can be read
+// at root: none of the matrix-recognized managers' locked install argv can
+// run without one. A basename that is missing and one that exists but
+// cannot be read are treated identically -- both fail closed -- unlike
+// detectNpmrcHazard, where absence of the (optional) file is itself safe.
+func requireReadableLockfile(root, kind string) string {
+	for basename, k := range packageManagerLockfileBasenames {
+		if k != kind {
+			continue
+		}
+		if _, err := os.ReadFile(filepath.Join(root, basename)); err == nil {
+			return ""
+		}
 	}
-	return ""
+	return "no readable " + kind + " lockfile was found (SA-280-012)"
 }
 
 // detectNpmrcHazard reports a hazard detail for a committed .npmrc that
@@ -186,7 +196,7 @@ func detectNpmrcHazard(root string) string {
 		case key == "registry" || strings.HasSuffix(key, ":registry"):
 			return "committed .npmrc redirects the package registry (" + key + "=" + value + ")"
 		case key == "ignore-scripts":
-			if value != "true" {
+			if !strings.EqualFold(value, "true") {
 				return "committed .npmrc re-enables lifecycle scripts (ignore-scripts=" + value + ")"
 			}
 		case key == "script-shell":
