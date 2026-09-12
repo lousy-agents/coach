@@ -16,10 +16,9 @@ import (
 // nothing. The exported Go function is therefore the most meaningful public
 // boundary available for this behavior today; confirm/execute wiring (and
 // any CLI-facing rendering of a preview) is a later task.
-
 var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 	When("the selected setup choice is project-package, resolved to npm", func() {
-		It("discloses the exact npm argv, working directory, lockfile-only change, network reach, script suppression, and a bounded timeout, without invoking any subprocess (AC-SET-2)", func() {
+		It("discloses the exact npm argv, working directory, node_modules effect, network reach, script suppression, and a bounded timeout, without invoking any subprocess (AC-SET-2)", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"npm@11.2.0"}`+"\n")
 			commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
@@ -42,9 +41,12 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 			Expect(preview.Executable).To(Equal("npm"), "must be the bare binary name, not a resolved absolute path -- resolving/confining the executable is a later task")
 			Expect(preview.Args).To(Equal([]string{"ci", "--ignore-scripts"}))
 			Expect(preview.WorkingDirectory).To(Equal(repo), "must be the directory containing the manifest that owns the selected origin")
-			Expect(preview.ExpectedChanges).To(ContainSubstring("package-lock.json"), "must name the file this command may rewrite")
-			Expect(preview.ExpectedChanges).To(ContainSubstring("package.json"), "must state that package.json's declared dependencies are untouched")
-			Expect(preview.ExpectedChanges).To(ContainSubstring("never"), "npm ci never adds/removes/updates declared dependencies")
+			Expect(preview.ExpectedChanges).To(ContainSubstring("node_modules"), "npm ci's actual on-disk mutation is node_modules -- an existing node_modules is removed and recreated")
+			Expect(preview.ExpectedChanges).To(ContainSubstring("package-lock.json"), "must name the lockfile this command reads and never writes")
+			Expect(preview.ExpectedChanges).NotTo(
+				MatchRegexp(setupPreviewLockfileRewriteClaimPattern),
+				"npm ci cannot rewrite package-lock.json in place -- it fails instead when package.json and the lockfile disagree",
+			)
 			Expect(preview.NetworkDisclosure).To(And(ContainSubstring("network"), ContainSubstring("registry")), "must truthfully disclose that this command may reach the package registry -- none of the matrix commands are offline")
 			Expect(preview.ScriptSuppressionPolicy).To(ContainSubstring("--ignore-scripts"), "must name the flag suppressing lifecycle scripts")
 			Expect(preview.Timeout).To(BeNumerically(">", 0), "must disclose a bounded, non-zero timeout")
@@ -52,20 +54,39 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 		})
 	})
 
-	DescribeTable("sources the exact frozen argv per package-manager kind (SA-280-012)",
-		func(kind, wantExecutable string, wantArgs []string) {
+	DescribeTable("truthfully discloses argv, on-disk effect, network, script policy, and timeout per package-manager kind (SA-280-012)",
+		func(kind, wantExecutable string, wantArgs []string, wantLockfileBasename string) {
 			preview, err := codesignalcli.BuildSetupPreview(
 				codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage},
 				kind,
 				"/tmp/example-root",
 			)
 			Expect(err).NotTo(HaveOccurred())
+
 			Expect(preview.Executable).To(Equal(wantExecutable))
 			Expect(preview.Args).To(Equal(wantArgs))
+
+			Expect(preview.ExpectedChanges).To(ContainSubstring("node_modules"), "every frozen row's actual on-disk mutation is node_modules, not the lockfile")
+			Expect(preview.ExpectedChanges).NotTo(
+				MatchRegexp(setupPreviewLockfileRewriteClaimPattern),
+				"none of the frozen rows can rewrite a lockfile -- npm ci and pnpm/bun's --frozen-lockfile install all fail instead of writing one",
+			)
+			if wantLockfileBasename != "" {
+				Expect(preview.ExpectedChanges).To(ContainSubstring(wantLockfileBasename), "must name the lockfile basename this argv reads and never writes")
+			} else {
+				// Bun recognizes two lockfile variants (bun.lock, bun.lockb) and
+				// BuildSetupPreview is not told which this repository has --
+				// the disclosure must not cite either specific basename.
+				Expect(preview.ExpectedChanges).NotTo(Or(ContainSubstring("bun.lock"), ContainSubstring("bun.lockb")), "must not name a specific lockfile variant it cannot confirm exists")
+			}
+
+			Expect(preview.NetworkDisclosure).To(And(ContainSubstring("network"), ContainSubstring("registry")), "must truthfully disclose that this command may reach the package registry")
+			Expect(preview.ScriptSuppressionPolicy).To(ContainSubstring("--ignore-scripts"), "must name the flag suppressing lifecycle scripts")
+			Expect(preview.Timeout).To(Equal(codesignalcli.SetupPreviewTimeout), "must disclose the bounded timeout that will actually be enforced")
 		},
-		Entry("npm", "npm", "npm", []string{"ci", "--ignore-scripts"}),
-		Entry("pnpm", "pnpm", "pnpm", []string{"install", "--frozen-lockfile", "--ignore-scripts"}),
-		Entry("bun", "bun", "bun", []string{"install", "--frozen-lockfile", "--ignore-scripts"}),
+		Entry("npm", "npm", "npm", []string{"ci", "--ignore-scripts"}, "package-lock.json"),
+		Entry("pnpm", "pnpm", "pnpm", []string{"install", "--frozen-lockfile", "--ignore-scripts"}, "pnpm-lock.yaml"),
+		Entry("bun", "bun", "bun", []string{"install", "--frozen-lockfile", "--ignore-scripts"}, ""),
 	)
 
 	When("the selected choice is not project-package", func() {
@@ -90,3 +111,12 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 		})
 	})
 })
+
+// setupPreviewLockfileRewriteClaimPattern matches ExpectedChanges wording
+// that claims a lockfile may be rewritten, updated, or otherwise modified --
+// a claim that is false for every frozen row (SA-280-012): npm ci and
+// pnpm/bun's --frozen-lockfile install all fail instead of writing a
+// lockfile. Deliberately not anchored to "never"/"leaves ... unchanged"
+// phrasing, so a regression that reintroduces the false claim in either
+// polarity ("may rewrite" or "never modifies") is caught.
+const setupPreviewLockfileRewriteClaimPattern = `(?i)rewrite|update|modif\w+ (the )?(package-lock|pnpm-lock|bun\.lock)`

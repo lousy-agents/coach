@@ -14,11 +14,15 @@ const SetupPreviewTimeout = 5 * time.Minute
 
 // setupCommandTemplate is one package-manager kind's frozen, non-executing
 // argv template (SA-280-012): the bare executable name -- never a resolved
-// absolute path -- plus its arguments and the lockfile that argv may rewrite.
+// absolute path -- plus its arguments and the truthful on-disk-effect
+// disclosure for AC-SET-2. None of the three frozen rows can rewrite a
+// lockfile: npm ci and pnpm/bun's --frozen-lockfile install both fail
+// instead of writing one. What they do mutate is node_modules -- expected
+// Changes must disclose that, not a lockfile rewrite that cannot happen.
 type setupCommandTemplate struct {
 	executable      string
 	args            []string
-	lockfileDisplay string
+	expectedChanges string
 }
 
 // setupCommandTemplates keys off the same manager-kind constants
@@ -26,19 +30,26 @@ type setupCommandTemplate struct {
 // rather than re-typing a second copy of the frozen command strings.
 var setupCommandTemplates = map[string]setupCommandTemplate{
 	packageManagerKindNPM: {
-		executable:      "npm",
-		args:            []string{"ci", "--ignore-scripts"},
-		lockfileDisplay: "package-lock.json",
+		executable: "npm",
+		args:       []string{"ci", "--ignore-scripts"},
+		expectedChanges: "removes and recreates node_modules/ in the working directory from package-lock.json; " +
+			"leaves package-lock.json and package.json unchanged -- npm ci fails instead if they disagree",
 	},
 	packageManagerKindPNPM: {
-		executable:      "pnpm",
-		args:            []string{"install", "--frozen-lockfile", "--ignore-scripts"},
-		lockfileDisplay: "pnpm-lock.yaml",
+		executable: "pnpm",
+		args:       []string{"install", "--frozen-lockfile", "--ignore-scripts"},
+		expectedChanges: "installs packages into node_modules/ in the working directory (and pnpm's content-addressable store); " +
+			"leaves pnpm-lock.yaml and package.json unchanged -- fails instead of changing them",
 	},
 	packageManagerKindBun: {
-		executable:      "bun",
-		args:            []string{"install", "--frozen-lockfile", "--ignore-scripts"},
-		lockfileDisplay: "bun.lock (or bun.lockb)",
+		executable: "bun",
+		args:       []string{"install", "--frozen-lockfile", "--ignore-scripts"},
+		// Bun recognizes two lockfile variants (bun.lock, bun.lockb; see
+		// packageManagerLockfileBasenames) and BuildSetupPreview is not told
+		// which one this repository has, so this disclosure names neither --
+		// naming one would risk citing a file that does not exist here.
+		expectedChanges: "installs packages into node_modules/ in the working directory (and bun's install cache); " +
+			"leaves the lockfile and package.json unchanged -- disallows any lockfile changes",
 	},
 }
 
@@ -78,13 +89,10 @@ func BuildSetupPreview(choice SetupChoice, packageManagerKind, workingDirectory 
 	}
 
 	return SetupPreview{
-		Executable:       template.executable,
-		Args:             append([]string(nil), template.args...),
-		WorkingDirectory: workingDirectory,
-		ExpectedChanges: fmt.Sprintf(
-			"may rewrite %s in place; never adds, removes, or updates the dependencies declared in package.json",
-			template.lockfileDisplay,
-		),
+		Executable:              template.executable,
+		Args:                    append([]string(nil), template.args...),
+		WorkingDirectory:        workingDirectory,
+		ExpectedChanges:         template.expectedChanges,
 		NetworkDisclosure:       "may reach the configured package registry over the network to download or verify dependencies",
 		ScriptSuppressionPolicy: "--ignore-scripts suppresses this package manager's lifecycle scripts (including dependency build scripts) for this run",
 		Timeout:                 SetupPreviewTimeout,
