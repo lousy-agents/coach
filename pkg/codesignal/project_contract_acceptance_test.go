@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -252,19 +252,22 @@ var _ = Describe("project observation identity and lifecycle", func() {
 // "library-only" paragraph). BuildGoLayerBypass/EvaluateGoLayerBypass were
 // wired into the real Go backend (issue #253) and are no longer guarded
 // here; BuildGoReachability stays unwired precedent.
-// BuildTypeScriptReachability/BuildTypeScriptLayerBypass/
-// EvaluateTypeScriptLayerBypass/ReachabilityProjectFacts (issue #216) follow
-// the same still-unwired rule -- #253 scopes wiring to the Go backend only.
+// EvaluateTypeScriptLayerBypass/ReachabilityProjectFacts (issue #216) were
+// wired into the TypeScript backend via their own …FromModel-derived inputs
+// (issue #331 T7, the TS equivalent of #253's Go wiring) and are no longer
+// guarded here. BuildTypeScriptReachability and BuildTypeScriptLayerBypass
+// themselves stay guarded: T7 wires only the FromModel variants
+// (BuildTypeScriptReachabilityFromModel/BuildTypeScriptLayerBypassFromModel),
+// which derive from an already-built Model; the bare names each still
+// perform their own independent BuildTypeScriptModelViaSidecar round trip,
+// so a CLI-layer reference to either would be a direct AC-RUN-5/AC-1
+// regression.
 var guardedUnwiredProjectSymbols = []string{
 	"BuildGoReachability",
 	"BuildTypeScriptReachability",
 	"BuildTypeScriptLayerBypass",
-	"EvaluateTypeScriptLayerBypass",
-	"ReachabilityProjectFacts",
 }
 
-// platformSurfaceGuardDirs returns internal/codesignalcli and cmd/coach,
-// resolved relative to this test file's own path.
 func platformSurfaceGuardDirs() []string {
 	_, thisFile, _, ok := runtime.Caller(0)
 	Expect(ok).To(BeTrue(), "runtime.Caller(0) failed")
@@ -275,10 +278,21 @@ func platformSurfaceGuardDirs() []string {
 	}
 }
 
-// scanForGuardedSymbols does a plain substring scan (no AST) of every .go
-// file under each of dirs, recursively, for each of symbols, returning a map
-// of file path -> symbols found.
+// scanForGuardedSymbols does a plain regex scan (no AST) of every .go file
+// under each of dirs, recursively, for each of symbols, returning a map of
+// file path -> symbols found. Each symbol is matched on word boundaries
+// (\b), not as a bare substring, so a guarded bare name (e.g.
+// "BuildTypeScriptReachability") never matches a longer identifier that
+// merely starts with it (e.g. the wired
+// "BuildTypeScriptReachabilityFromModel") -- see
+// guardedUnwiredProjectSymbols's own doc comment for why that distinction
+// matters here.
 func scanForGuardedSymbols(dirs []string, symbols []string) map[string][]string {
+	patterns := make([]*regexp.Regexp, len(symbols))
+	for i, symbol := range symbols {
+		patterns[i] = regexp.MustCompile(`\b` + regexp.QuoteMeta(symbol) + `\b`)
+	}
+
 	hits := map[string][]string{}
 	for _, dir := range dirs {
 		err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
@@ -292,8 +306,8 @@ func scanForGuardedSymbols(dirs []string, symbols []string) map[string][]string 
 			if err != nil {
 				return err
 			}
-			for _, symbol := range symbols {
-				if strings.Contains(string(content), symbol) {
+			for i, symbol := range symbols {
+				if patterns[i].Match(content) {
 					hits[path] = append(hits[path], symbol)
 				}
 			}
@@ -318,25 +332,32 @@ var _ = Describe("reachability/layer-bypass entry points remain library-only (is
 	// a real source file.
 	It("would fail the same check if a CLI-layer file referenced a guarded symbol", func() {
 		dir := GinkgoT().TempDir()
-		fixture := "package codesignalcli\n\nimport \"github.com/lousy-agents/coach/pkg/projectmodel\"\n\nvar _ = projectmodel.BuildTypeScriptReachability\n"
+		fixture := "package codesignalcli\n\nimport \"github.com/lousy-agents/coach/pkg/projectmodel\"\n\nvar _ = projectmodel.BuildGoReachability\n"
 		Expect(os.WriteFile(filepath.Join(dir, "fake_wire.go"), []byte(fixture), 0o644)).To(Succeed())
 
 		hits := scanForGuardedSymbols([]string{dir}, guardedUnwiredProjectSymbols)
 		Expect(hits).NotTo(BeEmpty(), "the guard must detect a reference when one exists")
 	})
 
-	// Regression proof for the guard's own recursion: a guarded reference
-	// nested under a subdirectory (e.g. a future internal/codesignalcli/foo/
-	// package) must still be caught, since internal/codesignalcli and
-	// cmd/coach are not guaranteed to stay flat.
+	// internal/codesignalcli and cmd/coach are not guaranteed to stay flat,
+	// so the guard's recursion into subdirectories must also be proven.
 	It("would fail the same check if a guarded symbol were referenced from a subdirectory", func() {
 		dir := GinkgoT().TempDir()
 		subdir := filepath.Join(dir, "wire")
 		Expect(os.MkdirAll(subdir, 0o755)).To(Succeed())
-		fixture := "package wire\n\nimport \"github.com/lousy-agents/coach/pkg/projectmodel\"\n\nvar _ = projectmodel.BuildTypeScriptReachability\n"
+		fixture := "package wire\n\nimport \"github.com/lousy-agents/coach/pkg/projectmodel\"\n\nvar _ = projectmodel.BuildGoReachability\n"
 		Expect(os.WriteFile(filepath.Join(subdir, "wire.go"), []byte(fixture), 0o644)).To(Succeed())
 
 		hits := scanForGuardedSymbols([]string{dir}, guardedUnwiredProjectSymbols)
 		Expect(hits).NotTo(BeEmpty(), "the guard must detect a reference nested under a subdirectory")
+	})
+
+	It("does not flag a CLI-layer file that only references the wired …FromModel variant", func() {
+		dir := GinkgoT().TempDir()
+		fixture := "package codesignalcli\n\nimport \"github.com/lousy-agents/coach/pkg/projectmodel\"\n\nvar _ = projectmodel.BuildTypeScriptReachabilityFromModel\nvar _ = projectmodel.BuildTypeScriptLayerBypassFromModel\n"
+		Expect(os.WriteFile(filepath.Join(dir, "fake_wire.go"), []byte(fixture), 0o644)).To(Succeed())
+
+		hits := scanForGuardedSymbols([]string{dir}, guardedUnwiredProjectSymbols)
+		Expect(hits).To(BeEmpty(), "the …FromModel variants must not trip their bare-name siblings' guard, got %+v", hits)
 	})
 })

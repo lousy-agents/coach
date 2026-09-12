@@ -84,6 +84,53 @@ var _ = Describe("canonical project-model wire shape", func() {
 		Expect(files[0]).To(HaveKey("language"))
 	})
 
+	It("canonicalizes root scope entries by root path regardless of insertion order", func() {
+		base := projectmodel.Model{
+			SchemaVersion: projectmodel.SchemaVersion,
+			Snapshot: projectmodel.Snapshot{
+				Revision:      "head-sha",
+				TreeID:        "tree-sha",
+				ConfigDigest:  "cfg-digest",
+				BackendDigest: "backend-digest",
+			},
+			Coverage: projectmodel.Coverage{Phase: "complete", Complete: true},
+		}
+
+		forward := base
+		forward.RootScopes = []projectmodel.RootScope{
+			{Root: "services/payments", CandidateFiles: 4, AnalyzedFiles: 4},
+			{Root: ".", CandidateFiles: 12, AnalyzedFiles: 9},
+		}
+
+		reversed := base
+		reversed.RootScopes = []projectmodel.RootScope{
+			{Root: ".", CandidateFiles: 12, AnalyzedFiles: 9},
+			{Root: "services/payments", CandidateFiles: 4, AnalyzedFiles: 4},
+		}
+
+		forwardEncoded, err := json.Marshal(forward)
+		Expect(err).NotTo(HaveOccurred())
+		reversedEncoded, err := json.Marshal(reversed)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(forwardEncoded).To(MatchJSON(reversedEncoded))
+
+		var document map[string]json.RawMessage
+		Expect(json.Unmarshal(forwardEncoded, &document)).To(Succeed())
+		var rootScopes []map[string]json.RawMessage
+		Expect(json.Unmarshal(document["root_scopes"], &rootScopes)).To(Succeed())
+		Expect(rootScopes).To(HaveLen(2))
+		Expect(string(rootScopes[0]["root"])).To(Equal(`"."`), "expected the entries to sort by root path regardless of insertion order")
+		Expect(string(rootScopes[1]["root"])).To(Equal(`"services/payments"`))
+
+		var decoded projectmodel.Model
+		Expect(json.Unmarshal(forwardEncoded, &decoded)).To(Succeed())
+		Expect(decoded.RootScopes).To(Equal([]projectmodel.RootScope{
+			{Root: ".", CandidateFiles: 12, AnalyzedFiles: 9},
+			{Root: "services/payments", CandidateFiles: 4, AnalyzedFiles: 4},
+		}), "decoding root_scopes JSON back into a Model must round-trip through Model.UnmarshalJSON, not silently drop the field")
+	})
+
 	It("uses code rather than a policy-shaped kind for fact diagnostics", func() {
 		encoded, err := json.Marshal(projectmodel.Coverage{
 			Phase:    "imports",

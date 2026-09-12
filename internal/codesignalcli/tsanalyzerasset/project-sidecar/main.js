@@ -6,11 +6,6 @@ import { describeErrorWithoutPaths } from "./describe-error.js";
 import { KIND_INTERNAL, OP_ANALYZE_PROJECT, PROTOCOL_VERSION, SIDECAR_PHASE } from "./protocol.js";
 import { readRequestLine, writeResponseLine } from "./stdio.js";
 import { applyTestHook, readTestDelayHook } from "./test-hook.js";
-/**
- * Genuine internal bugs propagate to the top-level catch, which fails
- * loudly, rather than emitting a response that could misrepresent a broken
- * analysis as a clean one.
- */
 async function main() {
     const line = await readRequestLine(process.stdin);
     let req;
@@ -34,18 +29,15 @@ async function main() {
         tsserverPath = await resolveNativeTsserverPath(argv);
     }
     catch (err) {
-        // A CompilerLoadError's own .message is already constructed to be
-        // path-free (its throw sites already run any wrapped raw fs/import
-        // error through describeErrorWithoutPaths below), so it is reported
-        // verbatim; anything else reaching here is an unanticipated failure
-        // whose .message is not trusted to be path-free.
+        // Only CompilerLoadError's own .message is trusted to already be
+        // path-free; anything else must be scrubbed before it can be reported.
         const detail = err instanceof CompilerLoadError ? err.message : describeErrorWithoutPaths(err);
         writeErrorResponse(req, `failed to load resolved TypeScript compiler module: ${detail}`);
         return;
     }
     await applyTestHook(process.argv.slice(2));
     try {
-        const { edges, callGraph, reachabilityFacts, coverage } = analyzeProject({
+        const { edges, callGraph, reachabilityFacts, coverage, rootScopes } = analyzeProject({
             files: req.files ?? [],
             roots: req.roots,
             timeoutMs: req.timeout_ms,
@@ -59,6 +51,7 @@ async function main() {
             import_edges: edges.length > 0 ? edges : undefined,
             call_graph: callGraph.length > 0 ? callGraph : undefined,
             reachability_facts: reachabilityFacts.length > 0 ? reachabilityFacts : undefined,
+            root_scopes: rootScopes,
             coverage,
         };
         writeResponseLine(process.stdout, response);

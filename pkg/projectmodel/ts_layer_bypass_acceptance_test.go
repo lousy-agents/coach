@@ -2,6 +2,7 @@ package projectmodel_test
 
 import (
 	"context"
+	"path/filepath"
 	"testing/fstest"
 	"time"
 
@@ -79,24 +80,15 @@ var _ = Describe("BuildTypeScriptLayerBypass", func() {
 			Expect(witness.Sink).To(Equal("(PrismaClient).findMany"))
 			Expect(witness.RequiredLayer).To(Equal("service"))
 
-			// False-green control: Handler's two routes (via AlphaQuery and
-			// BetaQuery) are the same length, so bfsShortestPaths' tie-break
-			// decides the winner via sorted adjacency: "file:src/app.ts#AlphaQuery"
-			// < "file:src/app.ts#BetaQuery" ('A' < 'B'), so AlphaQuery is
-			// enqueued and reaches the sink first. The unrelated
-			// "file:service/unused.ts#Unused" edge, sorting before both (since
-			// "file:se" < "file:sr"), is removed from adjacency entirely as a
-			// required-layer node -- a broken node-removal step would leave it
-			// in adjacency without changing this assertion, so the removal is
-			// exercised by result.Coverage.Counts below, not by this path shape
-			// alone.
+			// AlphaQuery wins bfsShortestPaths' tie-break over the
+			// equal-length BetaQuery route via sorted adjacency ('A' < 'B').
 			Expect(witness.Path).To(HaveLen(3), "expected Handler, AlphaQuery, and the sink, got %+v", witness.Path)
 			Expect(witness.Path[0].NodeID).To(Equal("file:src/app.ts#Handler"))
 			Expect(witness.Path[1].NodeID).To(Equal("file:src/app.ts#AlphaQuery"))
 			Expect(witness.Path[2].NodeID).To(Equal("(PrismaClient).findMany"))
 
 			Expect(result.Coverage.Counts).To(HaveKeyWithValue("required_layer_nodes_matched", 1),
-				"expected exactly the Unused node to be classified under the required layer, got %+v", result.Coverage.Counts)
+				"expected exactly the Unused node removed from adjacency as a required-layer node (a broken removal wouldn't change the path assertion above), got %+v", result.Coverage.Counts)
 
 			Expect(result.Coverage.Complete).To(BeTrue())
 		})
@@ -113,10 +105,8 @@ var _ = Describe("BuildTypeScriptLayerBypass", func() {
 			Expect(witness.Path).To(HaveLen(3), "expected Handler, QueryDB, and the sink, got %+v", witness.Path)
 			Expect(witness.Path[1].NodeID).To(Equal("file:src/app.ts#QueryDB"))
 
-			// A cycle that infinite-loops the BFS or double-visits nodes would
-			// inflate this well past the handful of local functions this
-			// fixture actually has (Handler, CycleA, CycleB, QueryDB).
-			Expect(result.Coverage.Counts["search_nodes_visited"]).To(BeNumerically("<", 20))
+			Expect(result.Coverage.Counts["search_nodes_visited"]).To(BeNumerically("<", 20),
+				"a BFS that infinite-loops or double-visits nodes would inflate this well past the fixture's four local functions (Handler, CycleA, CycleB, QueryDB)")
 		}, SpecTimeout(20*time.Second))
 	})
 
@@ -173,6 +163,48 @@ var _ = Describe("BuildTypeScriptLayerBypass", func() {
 
 			Expect(result.Witnesses).To(HaveLen(1), "an unrelated project-wide coverage gap must not suppress this pair's own already-resolved witness, got %+v", result.Witnesses)
 			Expect(result.Coverage.Complete).To(BeFalse(), "the unrelated gap must still surface honestly at the aggregate level")
+		})
+	})
+})
+
+var _ = Describe("deriving a LayerBypassResult from an already-built Model (AC-RUN-5: one analyzer invocation per revision)", func() {
+	requiredServiceLayer := projectmodel.BypassLayer{Name: "service", Prefixes: []string{"service"}}
+
+	When("a caller calls the public Model, Reachability, and LayerBypass wrappers independently against the same snapshot", func() {
+		It("invokes the sidecar once per wrapper call, reproducing the three-independent-round-trips cost this task eliminates", func() {
+			counterFile := filepath.Join(GinkgoT().TempDir(), "invocations.log")
+			opts := sidecarOptsWithModeAndCounter("layer_bypass_direct", counterFile)
+
+			_, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsLayerBypassSnapshot(), testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = projectmodel.BuildTypeScriptReachability(context.Background(), tsLayerBypassSnapshot(), testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = projectmodel.BuildTypeScriptLayerBypass(context.Background(), tsLayerBypassSnapshot(), testMeta(), opts, requiredServiceLayer)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(invocationCount(counterFile)).To(Equal(3),
+				"each of the three public wrappers legitimately re-builds the Model on its own; this pins the baseline the one-Model-many-derivations spec below eliminates and proves the counter instrumentation itself works")
+		})
+	})
+
+	When("a caller builds the Model once and derives both ReachabilityResult and LayerBypassResult from it", func() {
+		It("invokes the sidecar exactly once, deriving import edges, reachability, and bypass witnesses all from that one response", func() {
+			counterFile := filepath.Join(GinkgoT().TempDir(), "invocations.log")
+			opts := sidecarOptsWithModeAndCounter("layer_bypass_direct", counterFile)
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(context.Background(), tsLayerBypassSnapshot(), testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+
+			reachability := projectmodel.BuildTypeScriptReachabilityFromModel(model)
+			Expect(reachability.Facts).To(HaveLen(1))
+
+			bypass := projectmodel.BuildTypeScriptLayerBypassFromModel(context.Background(), model, requiredServiceLayer)
+			Expect(bypass.Witnesses).To(HaveLen(1), "expected exactly one bypass witness, got %+v", bypass.Witnesses)
+			Expect(bypass.Witnesses[0].Source).To(Equal("file:src/handlers/app.ts#getUsers"))
+			Expect(bypass.Coverage.Complete).To(BeTrue())
+
+			Expect(invocationCount(counterFile)).To(Equal(1),
+				"expected exactly one sidecar invocation: both BuildTypeScriptReachabilityFromModel and BuildTypeScriptLayerBypassFromModel must derive purely from the one already-built Model without any sidecar round trip of their own")
 		})
 	})
 })

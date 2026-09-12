@@ -25,6 +25,7 @@ import {
   runSidecar,
   spawnSidecarWithoutResponse,
   type WireFile,
+  type WireResponse,
 } from "./project-sidecar-harness.js";
 
 const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -36,13 +37,6 @@ before(() => {
   execFileSync("npm", ["run", "build:project-sidecar"], { cwd: PACKAGE_ROOT, stdio: "pipe" });
 });
 
-/**
- * Copies the real, installed `typescript` devDependency into a fresh
- * scratch directory so `--compiler-module` acceptance specs can point the
- * sidecar at a compiler that is distinguishable from (or missing pieces
- * relative to) the bundled copy every static
- * `import ... from "typescript/unstable/*"` used to always resolve to.
- */
 function setupAlternateCompiler(opts: {
   includeNativePackage: boolean;
   patchIsImportDeclarationMarker?: boolean;
@@ -463,10 +457,11 @@ describe("imports", () => {
     assert.equal(edges.length, 1, JSON.stringify(response));
     assert.equal(edges[0]?.from, "file:app/src/a.ts");
     assert.equal(edges[0]?.resolution, "snapshot");
-    // Both projects were actually opened and walked by the sidecar (not just
-    // found as tsconfig.json files in the snapshot -- see counts.tsconfig_count
-    // for that, which is set before any project is opened).
-    assert.equal(response.coverage.counts?.projects_analyzed, 2, JSON.stringify(response.coverage));
+    assert.equal(
+      response.coverage.counts?.projects_analyzed,
+      2,
+      `expected both projects actually opened and walked (distinct from tsconfig_count), got ${JSON.stringify(response.coverage)}`,
+    );
   });
 
   test("a package.json exports map and barrel re-exports both resolve", async () => {
@@ -620,8 +615,124 @@ describe("coverage", () => {
   });
 });
 
+/**
+ * WireResponse (project-sidecar-harness.ts) does not yet declare root_scopes
+ * -- it mirrors only the fields exercised elsewhere in this suite -- so
+ * these specs read it through a local shape rather than widening the shared
+ * harness type.
+ */
+interface WireRootScope {
+  root: string;
+  candidate_files: number;
+  analyzed_files: number;
+  analyzed_paths?: string[];
+  unanalyzed_paths?: string[];
+}
+
+function rootScopes(response: WireResponse): WireRootScope[] {
+  return (response as unknown as { root_scopes?: WireRootScope[] }).root_scopes ?? [];
+}
+
+function assertRootScopePathInvariants(scope: WireRootScope): void {
+  const analyzed = scope.analyzed_paths ?? [];
+  const unanalyzed = scope.unanalyzed_paths ?? [];
+  assert.equal(analyzed.length, scope.analyzed_files, JSON.stringify(scope));
+  assert.equal(analyzed.length + unanalyzed.length, scope.candidate_files, JSON.stringify(scope));
+}
+
+describe("root_scopes", () => {
+  test("nested/overlapping roots each report their own candidate/analyzed counts, never summed", async () => {
+    const { response, exitCode } = await runSidecar({
+      roots: ["src", "src/app"],
+      files: [
+        file("src/tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" }, include: ["outer.ts"] })),
+        file("src/outer.ts", `export const outer = 1;\n`),
+        file("src/app/tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" }, include: ["app.ts"] })),
+        file("src/app/app.ts", `export const app = 1;\n`),
+      ],
+    });
+    assert.equal(exitCode, 0, JSON.stringify(response));
+    assert.equal(response.error, undefined, JSON.stringify(response));
+
+    const scopes = rootScopes(response);
+    assert.equal(scopes.length, 2, JSON.stringify(response));
+
+    // Root "src" is the outer root: its own tsconfig plus the nested
+    // "src/app" tsconfig both fall under it, so its candidate/analyzed
+    // counts include the file that "src/app" also reports on its own --
+    // the same file counted independently by both roots, never summed
+    // into one project-wide number.
+    const outer = scopes.find((s) => s.root === "src");
+    assert.ok(outer, JSON.stringify(scopes));
+    assert.equal(outer?.candidate_files, 2, JSON.stringify(scopes));
+    assert.equal(outer?.analyzed_files, 2, JSON.stringify(scopes));
+    assert.deepEqual(outer?.analyzed_paths, ["src/app/app.ts", "src/outer.ts"], JSON.stringify(scopes));
+    assert.equal(outer?.unanalyzed_paths, undefined, JSON.stringify(scopes));
+    assertRootScopePathInvariants(outer!);
+
+    const inner = scopes.find((s) => s.root === "src/app");
+    assert.ok(inner, JSON.stringify(scopes));
+    assert.equal(inner?.candidate_files, 1, JSON.stringify(scopes));
+    assert.equal(inner?.analyzed_files, 1, JSON.stringify(scopes));
+    assert.deepEqual(inner?.analyzed_paths, ["src/app/app.ts"], JSON.stringify(scopes));
+    assertRootScopePathInvariants(inner!);
+  });
+
+  test("a candidate file discovered by a root's tsconfig scope but never incorporated is counted in candidate_files, absent from analyzed_files", async () => {
+    const { response, exitCode } = await runSidecar({
+      roots: ["src"],
+      files: [
+        file(
+          "src/tsconfig.json",
+          JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10", allowJs: true } }),
+        ),
+        file("src/a.ts", `export const a = 1;\n`),
+        // A .js file matched by the tsconfig's own include scope (allowJs)
+        // becomes a project root file -- a real candidate -- but this
+        // sidecar's edge extraction only incorporates .ts/.tsx sources
+        // (see edges.ts), so it is never added to the analyzed/visited set.
+        file("src/legacy.js", `module.exports.b = 1;\n`),
+      ],
+    });
+    assert.equal(exitCode, 0, JSON.stringify(response));
+    assert.equal(response.error, undefined, JSON.stringify(response));
+
+    const scopes = rootScopes(response);
+    const src = scopes.find((s) => s.root === "src");
+    assert.ok(src, JSON.stringify(scopes));
+    assert.equal(src?.candidate_files, 2, JSON.stringify(scopes));
+    assert.equal(src?.analyzed_files, 1, JSON.stringify(scopes));
+    assert.deepEqual(src?.analyzed_paths, ["src/a.ts"], JSON.stringify(scopes));
+    assert.deepEqual(src?.unanalyzed_paths, ["src/legacy.js"], JSON.stringify(scopes));
+    assertRootScopePathInvariants(src!);
+  });
+
+  test("a roots-scoped request whose roots contain no tsconfig.json still reports one root_scopes entry per root", async () => {
+    const { response, exitCode } = await runSidecar({
+      roots: ["src"],
+      files: [
+        // The only tsconfig.json is at the repo root, outside "src", so
+        // discoverTsconfigPaths (scoped to roots) finds nothing and this
+        // request takes the "no project config" early-return path in
+        // analyze.ts rather than runProjects -- root_scopes must still be
+        // populated from opts.roots itself, not from a discovered project.
+        file("tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } })),
+        file("src/a.ts", `export const a = 1;\n`),
+      ],
+    });
+    assert.equal(exitCode, 0, JSON.stringify(response));
+
+    const scopes = rootScopes(response);
+    assert.equal(scopes.length, 1, JSON.stringify(response));
+    const src = scopes.find((s) => s.root === "src");
+    assert.ok(src, JSON.stringify(scopes));
+    assert.equal(src?.candidate_files, 0, JSON.stringify(scopes));
+    assert.equal(src?.analyzed_files, 0, JSON.stringify(scopes));
+  });
+});
+
 describe("snapshot confinement", () => {
-  test("an import resolving only via real disk is reported unresolved, never read", async () => {
+  test("an absolute disk path outside the snapshot resolves as external, never as snapshot", async () => {
     const realDir = mkdtempSync(join(tmpdir(), "coach-ts-sidecar-leak-"));
     const realFile = join(realDir, "leak-marker.ts");
     const marker = "LEAKED_MARKER_SHOULD_NEVER_APPEAR_IN_SIDECAR_OUTPUT";
@@ -639,11 +750,7 @@ describe("snapshot confinement", () => {
       assert.ok(!rawLine.includes("LEAKED_MARKER_SHOULD"), rawLine);
       const edges = response.import_edges ?? [];
       assert.equal(edges.length, 1, JSON.stringify(response));
-      // An absolute, non-relative specifier is classified "external" by this
-      // sidecar's resolver (see resolve.ts) -- the safety property under test
-      // is that it is never classified "snapshot"/`file:...`, i.e. never
-      // reported as if it were read from the real filesystem.
-      assert.notEqual(edges[0]?.resolution, "snapshot", JSON.stringify(response));
+      assert.notEqual(edges[0]?.resolution, "snapshot", `must never be reported as read from the real filesystem: ${JSON.stringify(response)}`);
       assert.ok(!edges[0]?.to.startsWith("file:"), JSON.stringify(response));
     } finally {
       rmSync(realDir, { recursive: true, force: true });
@@ -714,8 +821,8 @@ describe("limits", () => {
     assert.ok(elapsedMs < 20000, `analysis took ${elapsedMs}ms, expected well under 20s for ${fileCount} trivial files`);
   });
 
-  test("a small timeout_ms stops analysis early; 0 means no enforcement", async () => {
-    const twoProjectFiles: WireFile[] = [
+  function twoDelayableProjectFiles(): WireFile[] {
+    return [
       file("proj1/tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } })),
       file("proj1/src/a.ts", `import { b } from "./b";\nconsole.log(b);\n`),
       file("proj1/src/b.ts", `export const b = 1;\n`),
@@ -723,9 +830,11 @@ describe("limits", () => {
       file("proj2/src/a.ts", `import { b } from "./b";\nconsole.log(b);\n`),
       file("proj2/src/b.ts", `export const b = 1;\n`),
     ];
+  }
 
+  test("a small timeout_ms stops analysis early, reporting the deadline that was in effect", async () => {
     const delayed = await runSidecar(
-      { files: twoProjectFiles, timeout_ms: 5 },
+      { files: twoDelayableProjectFiles(), timeout_ms: 5 },
       { COACH_TS_SIDECAR_TEST_DELAY_MS: "200" },
     );
     assert.equal(delayed.exitCode, 0);
@@ -738,13 +847,16 @@ describe("limits", () => {
       (delayed.response.coverage.counts?.projects_analyzed ?? 0) < 2,
       JSON.stringify(delayed.response.coverage),
     );
-    // A deadline was in effect for this request, so it must be reported
-    // regardless of which of the two timeout-enforcement checks (pre-analysis
-    // vs. mid-loop) actually tripped -- this run trips the mid-loop one.
-    assert.equal(delayed.response.coverage.budgets?.timeout_ms, 5, JSON.stringify(delayed.response.coverage));
+    assert.equal(
+      delayed.response.coverage.budgets?.timeout_ms,
+      5,
+      `the deadline must be reported regardless of which of the two timeout-enforcement checks (pre-analysis vs. mid-loop) tripped -- this run trips the mid-loop one: ${JSON.stringify(delayed.response.coverage)}`,
+    );
+  });
 
+  test("timeout_ms: 0 means no enforcement", async () => {
     const unbounded = await runSidecar(
-      { files: twoProjectFiles, timeout_ms: 0 },
+      { files: twoDelayableProjectFiles(), timeout_ms: 0 },
       { COACH_TS_SIDECAR_TEST_DELAY_MS: "200" },
     );
     assert.equal(unbounded.exitCode, 0);
@@ -858,41 +970,49 @@ describe("TS reachability", () => {
     assert.equal(exitCode, 0, JSON.stringify(response));
     assert.equal(response.error, undefined, JSON.stringify(response));
 
-    // Resolved case: getUsers -> prisma.user.findMany() is a fully resolved
-    // possible-call-reachability fact, using the same vocabulary as Go's
-    // ReachabilityFact (Kind/Confidence/AlgorithmVersion), not an active Signal.
     const facts = response.reachability_facts ?? [];
     const resolved = facts.filter((f) => f.source.endsWith("#getUsers"));
     assert.equal(resolved.length, 1, JSON.stringify(response.reachability_facts));
     assert.equal(resolved[0]?.sink, "(PrismaClient).findMany", JSON.stringify(resolved[0]));
-    assert.equal(resolved[0]?.confidence, "resolved_direct", JSON.stringify(resolved[0]));
+    assert.equal(
+      resolved[0]?.confidence,
+      "resolved_direct",
+      `getUsers -> prisma.user.findMany() must be a fully resolved fact, not an active Signal: ${JSON.stringify(resolved[0])}`,
+    );
     assert.equal(resolved[0]?.kind, "possible_call_reachability", JSON.stringify(resolved[0]));
     assert.ok(resolved[0]?.algorithm_version, JSON.stringify(resolved[0]));
     assert.ok((resolved[0]?.path.length ?? 0) >= 2, JSON.stringify(resolved[0]));
-    // backend carries this sidecar's own language/backend provenance, the
-    // same way Coverage.phase does, so a fact can be attributed to "this TS
-    // sidecar" rather than looking indistinguishable from a Go-side fact.
-    assert.equal(resolved[0]?.backend, "ts_project_sidecar", JSON.stringify(resolved[0]));
+    assert.equal(
+      resolved[0]?.backend,
+      "ts_project_sidecar",
+      `backend must carry this sidecar's own provenance, distinguishing the fact from a Go-side one: ${JSON.stringify(resolved[0])}`,
+    );
 
-    // No fabricated facts for the dynamic-import, unresolved-external-type, or
-    // type-only handlers -- their absence must come with an explicit coverage
-    // gap below, not silence.
-    assert.equal(facts.some((f) => f.source.endsWith("#callsTypeOnly")), false, JSON.stringify(facts));
-    assert.equal(facts.some((f) => f.source.endsWith("#callsUnresolvedExternal")), false, JSON.stringify(facts));
-    assert.equal(facts.some((f) => f.source.includes("dynamic")), false, JSON.stringify(facts));
+    assert.equal(
+      facts.some((f) => f.source.endsWith("#callsTypeOnly")),
+      false,
+      `a type-only handler must produce no fabricated fact, only the gap diagnostic asserted below: ${JSON.stringify(facts)}`,
+    );
+    assert.equal(
+      facts.some((f) => f.source.endsWith("#callsUnresolvedExternal")),
+      false,
+      `an unresolved-external-type handler must produce no fabricated fact, only the gap diagnostic asserted below: ${JSON.stringify(facts)}`,
+    );
+    assert.equal(
+      facts.some((f) => f.source.includes("dynamic")),
+      false,
+      `a dynamic-import handler must produce no fabricated fact, only the gap diagnostic asserted below: ${JSON.stringify(facts)}`,
+    );
 
     const diagCodes = new Set((response.coverage.diagnostics ?? []).map((d) => d.code));
     assert.ok(diagCodes.has("ts_reachability_type_only_gap"), JSON.stringify(response.coverage));
     assert.ok(diagCodes.has("ts_reachability_unresolved_type_gap"), JSON.stringify(response.coverage));
     assert.ok(diagCodes.has("ts_reachability_dynamic_import_gap"), JSON.stringify(response.coverage));
 
-    // A ts_reachability_*_gap diagnostic means one hop was deliberately left
-    // unverified, not that import/config analysis for this project failed, so
-    // it must not flip this project-wide Complete bit -- that would mark most
-    // real layered TS trees incomplete for the ordinary shape of their code
-    // (see analyze.ts's runProjects). The diagnostics above still surface;
-    // reachability's own incompleteness is a Go-side concern (see
-    // pkg/projectmodel/ts_reachability.go's tsReachabilityGapDiagnosticCodes).
+    // A ts_reachability_*_gap diagnostic must not flip this project-wide
+    // Complete bit: reachability's own incompleteness is a Go-side concern
+    // (pkg/projectmodel/ts_reachability.go's tsReachabilityGapDiagnosticCodes),
+    // not a signal that this project's import/config analysis itself failed.
     assert.equal(response.coverage.complete, true, JSON.stringify(response.coverage));
 
     const callGraph = response.call_graph ?? [];
@@ -1134,13 +1254,8 @@ describe("TS reachability", () => {
     assert.equal(exitCode, 0, JSON.stringify(response));
     assert.equal(response.error, undefined, JSON.stringify(response));
 
-    // shared/handler.ts#getUsers is reachable via a route registration in
-    // BOTH proj1/reg.ts and proj2/reg.ts -- each project's own tsconfig
-    // pulls it into a separate Program, but it is one function at one repo
-    // path, so it must be walked, and its fact/edge emitted, exactly once
-    // across the whole request, not once per project.
     const facts = response.reachability_facts ?? [];
-    assert.equal(facts.length, 1, JSON.stringify(facts));
+    assert.equal(facts.length, 1, `expected one function at one repo path walked once across the whole request, not once per project's own Program: ${JSON.stringify(facts)}`);
     assert.equal(facts[0]?.source, "file:shared/handler.ts#getUsers", JSON.stringify(facts));
     assert.equal(facts[0]?.sink, "(PrismaClient).findMany", JSON.stringify(facts));
 
@@ -1186,12 +1301,9 @@ describe("TS reachability", () => {
     assert.equal(facts.some((f) => f.sink === "(PrismaClient).delete"), false, JSON.stringify(facts));
     const callGraph = response.call_graph ?? [];
     assert.equal(callGraph.some((e) => e.to === "(PrismaClient).delete"), false, JSON.stringify(callGraph));
-    // The call is not silently dropped either: since it resolves to an
-    // in-snapshot method this depth-1 walk does not follow, it surfaces as
-    // an explicit truncation gap instead of a false "nothing reachable" claim.
     assert.ok(
       response.coverage.diagnostics?.some((d) => d.code === "ts_reachability_local_call_not_followed_gap"),
-      JSON.stringify(response.coverage),
+      `expected the call surfaced as an explicit truncation gap instead of silently dropped: ${JSON.stringify(response.coverage)}`,
     );
   });
 });
@@ -1222,11 +1334,9 @@ describe("diagnostics", () => {
     for (const d of configDiagnostics) {
       assert.ok(!d.message.includes("/coach-snapshot"), `diagnostic message leaked the virtual root: ${d.message}`);
     }
-    // The diagnostic's own path field stays repo-relative regardless (see the
-    // "invalid config" spec above); this spec is specifically about message text.
     assert.ok(
       configDiagnostics.some((d) => d.path === "packages/api/tsconfig.json"),
-      JSON.stringify(response.coverage),
+      `expected the diagnostic's path field to stay repo-relative even though this test only checks message text: ${JSON.stringify(response.coverage)}`,
     );
   });
 });

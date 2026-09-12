@@ -227,10 +227,7 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 			Expect(err).NotTo(HaveOccurred())
 			Expect(model.Coverage.Complete).To(BeTrue(), "%+v", model.Coverage)
 
-			// files_seen now counts both the .ts source file and the forwarded
-			// tsconfig.json config file (collectTSSidecarFiles's fixed contract,
-			// proven in ts_sidecar_acceptance_test.go).
-			Expect(model.Coverage.Counts).To(HaveKeyWithValue("files_seen", 2))
+			Expect(model.Coverage.Counts).To(HaveKeyWithValue("files_seen", 2), "expected files_seen to count both the .ts source and the forwarded tsconfig.json")
 			Expect(model.Coverage.Counts).To(HaveKeyWithValue("tsconfig_count", 1), "expected the forwarded tsconfig.json to be discovered by the real sidecar")
 			Expect(model.Coverage.Counts).To(HaveKeyWithValue("projects_analyzed", 1), "expected the discovered project to actually be opened and walked")
 		})
@@ -331,12 +328,51 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 			model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), realOpts())
 			Expect(err).NotTo(HaveOccurred())
 
-			// 3 = tsconfig.json + src/a.ts + my-node_modules/tsconfig.json; the
-			// three node_modules/** entries must be dropped, while
-			// my-node_modules/tsconfig.json (a non-node_modules directory that
-			// merely shares a name prefix) must be kept, pinning the exclusion's
-			// segment-wise (not substring) matching.
-			Expect(model.Coverage.Counts).To(HaveKeyWithValue("files_seen", 3), "expected node_modules/** excluded but my-node_modules/tsconfig.json kept, got %+v", model.Coverage.Counts)
+			Expect(model.Coverage.Counts).To(HaveKeyWithValue("files_seen", 3), "expected the three node_modules/** entries excluded (segment-wise, not substring match) but tsconfig.json, src/a.ts, and my-node_modules/tsconfig.json kept, got %+v", model.Coverage.Counts)
+		})
+	})
+
+	When("a tsconfig lists a JSON file as an explicit root file (resolveJsonModule) alongside a normal .ts source, and Roots is set", func() {
+		It("reports a real root-scope candidate/analyzed mismatch that marks model coverage incomplete per SA-280-025", func() {
+			// package.json (forwarded to the sidecar as a config file, per
+			// collectTSSidecarFiles) is also declared as an explicit compiler
+			// root file here via "files" + resolveJsonModule. TypeScript accepts
+			// it into the Program's root file set, but
+			// js/semantics/src/project-sidecar/edges.ts's extractEdgesFromRootFile
+			// only ever visits .ts/.tsx root files -- so this genuinely produces
+			// a candidate (package.json) that the real compiler never analyzes,
+			// without any artificial delay or timeout race.
+			snapshot := fstest.MapFS{
+				"tsconfig.json": tsconfigJSON(map[string]any{
+					"compilerOptions": map[string]any{
+						"module": "commonjs", "moduleResolution": "node10", "resolveJsonModule": true,
+					},
+					"files": []string{"package.json", "src/a.ts"},
+				}),
+				"package.json": tsconfigJSON(map[string]any{"name": "fixture"}),
+				"src/a.ts":     file("export const a = 1;\n"),
+			}
+			opts := realOpts()
+			opts.Roots = []string{"."}
+
+			model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), opts)
+			Expect(err).NotTo(HaveOccurred())
+
+			var rootScope projectmodel.RootScope
+			found := false
+			for _, rs := range model.RootScopes {
+				if rs.Root == "." {
+					rootScope, found = rs, true
+				}
+			}
+			Expect(found).To(BeTrue(), "expected a root_scopes entry for \".\", got %+v", model.RootScopes)
+			Expect(rootScope.AnalyzedFiles).To(BeNumerically("<", rootScope.CandidateFiles), "expected package.json to be counted as a candidate root file but never analyzed, got %+v", rootScope)
+
+			Expect(model.Coverage.Complete).To(BeFalse(), "expected the real candidate/analyzed mismatch to mark model coverage incomplete per SA-280-025, got %+v", model.Coverage)
+			Expect(rootScope.UnanalyzedPaths).To(ConsistOf("package.json"), "expected package.json identified by path as the one candidate never analyzed, got %+v", rootScope)
+			diag, ok := diagnosticWithCode(model.Coverage.Diagnostics, projectmodel.DiagRootScopeIncomplete)
+			Expect(ok).To(BeTrue(), "expected a root-scope-incomplete diagnostic, got %+v", model.Coverage.Diagnostics)
+			Expect(diag.Path).To(Equal("package.json"), "expected the diagnostic's Path to name the specific unanalyzed file, not the root")
 		})
 	})
 
@@ -669,10 +705,6 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 			_, hasBackendUnavailable := diagnosticWithCode(model.Coverage.Diagnostics, projectmodel.DiagBackendUnavailable)
 			Expect(hasBackendUnavailable).To(BeFalse(), "an invalid config is a degraded-but-successful analysis, not a transport/backend failure")
 
-			// AC-13: a tsconfig load failure must never invent a partial
-			// call/reachability graph over a project the sidecar never actually
-			// built (see analyze.ts's own config-diagnostic gate on reachability
-			// extraction).
 			Expect(model.CallFacts).To(BeEmpty(), "expected no fabricated call facts when tsconfig failed to load")
 			Expect(model.ReachabilityFacts).To(BeEmpty(), "expected no fabricated reachability facts when tsconfig failed to load")
 		})
@@ -765,14 +797,9 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 	When("BuildTypeScriptLayerBypass runs against a snapshot with one compliant handler (whose depth-1 walk hits a routine local-call-not-followed gap) and one unrelated, fully-resolved, genuinely direct bypass handler", func() {
 		// Reproduces issue #216's layer-bypass review finding: a project-wide
 		// Coverage.Complete gate must not suppress a different, unrelated
-		// pair's already-found witness. getUsersCompliant delegates into the
-		// required "service" layer via a local call this depth-1 walk does
-		// not itself follow (a real ts_reachability_local_call_not_followed_gap,
-		// the ordinary shape of layered code, not a rare failure), while
-		// getUsersBypass calls the pinned ORM sink directly and never touches
-		// "service" at all. Only getUsersBypass's pair should ever be
-		// evaluated -- it has one resolved CallFact edge -- and it must still
-		// produce a witness despite the compliant handler's unrelated gap.
+		// pair's already-found witness. getUsersCompliant's gap is a real
+		// ts_reachability_local_call_not_followed_gap -- the ordinary shape
+		// of layered code, not a rare failure.
 		It("still produces the unrelated bypass witness instead of suppressing it project-wide", func() {
 			snapshot := fstest.MapFS{
 				"tsconfig.json": tsconfigJSON(map[string]any{
@@ -858,10 +885,7 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 			Expect(witness.RequiredLayer).To(Equal("service"))
 			Expect(witness.Confidence).To(Equal(projectmodel.LayerBypassConfidenceHigh))
 
-			// The aggregate result must still honestly report incompleteness
-			// -- the fix must scope the gate per-pair, not erase the signal
-			// that some other part of this same run was truncated.
-			Expect(result.Coverage.Complete).To(BeFalse(), "expected the unrelated gap to still surface as aggregate incompleteness, got %+v", result.Coverage)
+			Expect(result.Coverage.Complete).To(BeFalse(), "expected the unrelated gap to still surface as aggregate incompleteness -- the per-pair gate must not erase the signal that some other part of this run was truncated, got %+v", result.Coverage)
 		})
 	})
 
@@ -959,8 +983,6 @@ var _ = Describe("BuildTypeScriptModelViaSidecar against the real compiled Node/
 		It("fails open to project_backend_unavailable instead of hanging or panicking", func() {
 			strippedPath := pathExcludingExecutables("node", "npm")
 
-			// Belt-and-suspenders: prove node and npm are genuinely unreachable
-			// under strippedPath before trusting the assertion below.
 			probe := exec.Command("sh", "-c", "command -v node || command -v npm")
 			probe.Env = []string{"PATH=" + strippedPath}
 			Expect(probe.Run()).To(HaveOccurred(), "expected neither node nor npm to be found on the stripped PATH used for this spec")

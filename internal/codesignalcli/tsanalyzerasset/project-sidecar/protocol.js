@@ -1,10 +1,8 @@
 /**
  * Wire types mirroring internal/projectbridge/protocol.go exactly (field
- * names, JSON shape, constant values). This is the frozen spec for the
- * stdin/stdout NDJSON boundary between pkg/projectmodel's Go client
- * (Task 1, already merged) and this sidecar (Task 2) -- do not rename a
- * field here without updating the Go side, since the two are not generated
- * from a shared schema.
+ * names, JSON shape, constant values) -- do not rename a field here without
+ * updating the Go side, since the two are not generated from a shared
+ * schema.
  */
 export const PROTOCOL_VERSION = 1;
 export const OP_ANALYZE_PROJECT = "analyze_project";
@@ -44,6 +42,5 @@ export const RESOLUTION_SNAPSHOT = "snapshot";
 export const RESOLUTION_EXTERNAL = "external";
 export const RESOLUTION_UNRESOLVED = "unresolved";
 export const KIND_POSSIBLE_CALL_REACHABILITY = "possible_call_reachability";
-/** Coverage.phase for every analyze_project response this sidecar produces. */
 export const SIDECAR_PHASE = "ts_project_sidecar";
 //# sourceMappingURL=protocol.js.map
