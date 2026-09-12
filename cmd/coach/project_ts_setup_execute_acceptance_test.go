@@ -178,7 +178,10 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			Expect(observedKeys).NotTo(ContainElement("npm_config_registry"), "an ambient registry override must never reach the child")
 			Expect(observedKeys).To(ContainElement("PATH"), "the child needs PATH to resolve npm and node")
 			for _, key := range observedKeys {
-				Expect(key).To(Or(Equal("PATH"), Equal("HOME")), "the child's environment must contain nothing beyond PATH and HOME, observed %q", key)
+				// PWD is synthesized by the /bin/sh stub itself (dash/bash both
+				// export it unconditionally), not something ExecuteSetup passed
+				// through -- it is not a confinement leak.
+				Expect(key).To(Or(Equal("PATH"), Equal("HOME"), Equal("PWD")), "the child's environment must contain nothing beyond PATH, HOME, and the shell's own PWD, observed %q", key)
 			}
 		})
 	})
@@ -277,6 +280,38 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			Expect(errors.Is(execErr, codesignalcli.ErrSetupExecutionUnverifiedCommand)).To(BeTrue())
 			Expect(result).To(Equal(codesignalcli.SetupExecutionResult{}))
 			Expect(stubSetupInvoked(stubDir, "npm")).To(BeFalse(), "a command that dropped --ignore-scripts must never execute")
+		})
+	})
+
+	When("the command outlives its deadline and leaves a background descendant holding the output pipe open", func() {
+		It("still returns within a bounded time, reporting TimedOut and ExitCode -1 (AC-SET-2)", func() {
+			workDir := newSetupExecutionWorkDir()
+			// The background descendant outlives the assertion bound below by
+			// a wide margin, so a pre-fix run (no WaitDelay) would still be
+			// blocked in cmd.Wait when the assertion's deadline is checked --
+			// this is what makes the bound below a genuine proof, not a race.
+			stubDir := writeOutlivingSetupExecutable("npm", 20)
+			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
+
+			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, "npm", workDir)
+			Expect(err).NotTo(HaveOccurred())
+
+			// preview.Timeout stays the frozen SetupPreviewTimeout (5 minutes,
+			// required by ExecuteSetup's matrix verification); the short
+			// deadline that actually bounds this run comes from ctx, whose
+			// earlier deadline wins once ExecuteSetup derives runCtx from it.
+			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			defer cancel()
+
+			start := time.Now()
+			result, execErr := codesignalcli.ExecuteSetup(ctx, preview, true)
+			elapsed := time.Since(start)
+
+			Expect(execErr).NotTo(HaveOccurred())
+			Expect(elapsed).To(BeNumerically("<", 8*time.Second), "ExecuteSetup must force-close the output pipe via WaitDelay rather than block on a surviving background descendant")
+			Expect(result.TimedOut).To(BeTrue())
+			Expect(result.ExitCode).To(Equal(-1))
+			Expect(result.Succeeded).To(BeFalse())
 		})
 	})
 })
@@ -447,4 +482,56 @@ var _ = Describe("codesignalcli.ExecuteSetup script suppression (AC-4)", func() 
 			requireSentinelMarkerAbsent(markerPath, "bun install --frozen-lockfile --ignore-scripts")
 		})
 	})
+
+	// pnpm loads and executes a committed .pnpmfile.cjs during install --
+	// including its module top level -- independently of --ignore-scripts;
+	// --ignore-pnpmfile is the separate opt-out. Bun's analogous vector, a
+	// bunfig.toml "preload" entry, was checked and does not fire on
+	// `bun install` (only on `bun run`/the bun runtime), so it needs no
+	// equivalent spec here.
+	When("a committed .pnpmfile.cjs would create a marker file if pnpm ever loaded it", func() {
+		It("suppresses it under pnpm's --ignore-pnpmfile adapter (AC-4)", func() {
+			requireRealPackageManager("pnpm")
+
+			repoDir := newSetupExecutionWorkDir()
+			Expect(os.WriteFile(filepath.Join(repoDir, "package.json"), []byte(`{"name":"example","version":"1.0.0"}`+"\n"), 0o644)).To(Succeed())
+			markerPath := writePnpmfileHazardFixture(repoDir)
+
+			generate := exec.Command("pnpm", "install", "--lockfile-only", "--ignore-scripts", "--ignore-pnpmfile")
+			generate.Dir = repoDir
+			out, genErr := generate.CombinedOutput()
+			Expect(genErr).NotTo(HaveOccurred(), "generating the pnpm lockfile fixture: %s", out)
+			_, markerAfterGenerate := os.Stat(markerPath)
+			Expect(os.IsNotExist(markerAfterGenerate)).To(BeTrue(), "generating the fixture lockfile must itself use --ignore-pnpmfile, or the negative control below would prove nothing")
+
+			// Negative control: --ignore-scripts alone does not stop pnpm from
+			// loading and running a committed .pnpmfile.cjs.
+			control := exec.Command("pnpm", "install", "--frozen-lockfile", "--ignore-scripts")
+			control.Dir = repoDir
+			out, ctrlErr := control.CombinedOutput()
+			Expect(ctrlErr).NotTo(HaveOccurred(), "control pnpm install: %s", out)
+			requireSentinelMarkerAppeared(markerPath)
+			resetSentinelInstall(repoDir, markerPath)
+
+			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, "pnpm", repoDir)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(preview.Args).To(ContainElement("--ignore-pnpmfile"), "the frozen pnpm template must suppress .pnpmfile.cjs execution")
+
+			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
+			Expect(execErr).NotTo(HaveOccurred())
+			Expect(result.Succeeded).To(BeTrue(), "output: %s", result.Output)
+
+			requireSentinelMarkerAbsent(markerPath, "pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile")
+		})
+	})
 })
+
+// writePnpmfileHazardFixture writes a .pnpmfile.cjs at repoDir whose module
+// top level -- code pnpm runs merely by loading the file, before any hook is
+// even called -- writes markerPath if pnpm ever actually loads it.
+func writePnpmfileHazardFixture(repoDir string) (markerPath string) {
+	markerPath = filepath.Join(repoDir, "pnpmfile-ran.marker")
+	doc := fmt.Sprintf("require('fs').writeFileSync(%q, 'ran');\n", markerPath)
+	Expect(os.WriteFile(filepath.Join(repoDir, ".pnpmfile.cjs"), []byte(doc), 0o644)).To(Succeed())
+	return markerPath
+}
