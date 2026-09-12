@@ -178,27 +178,37 @@ func referencesGinkgoSpec(f *ast.File, importNames map[string]struct{}) bool {
 		if !ok {
 			return true
 		}
-		switch fun := call.Fun.(type) {
-		case *ast.Ident:
-			if _, dot := importNames["."]; !dot {
-				return true
-			}
-			if _, ok := ginkgoSpecIdents[fun.Name]; ok {
-				found = true
-			}
-		case *ast.SelectorExpr:
-			pkg, ok := fun.X.(*ast.Ident)
-			if !ok {
-				return true
-			}
-			if _, ok := importNames[pkg.Name]; !ok {
-				return true
-			}
-			if _, ok := ginkgoSpecIdents[fun.Sel.Name]; ok {
-				found = true
-			}
+		if callInvokesGinkgoSpecIdent(call.Fun, importNames) {
+			found = true
 		}
 		return true
 	})
 	return found
+}
+
+// callInvokesGinkgoSpecIdent reports whether fun is a call to one of
+// ginkgoSpecIdents, either as a dot-imported bare identifier (Describe(...))
+// or as a qualified selector on a name importNames recognizes as the ginkgo
+// package (ginkgo.Describe(...)).
+func callInvokesGinkgoSpecIdent(fun ast.Expr, importNames map[string]struct{}) bool {
+	switch fun := fun.(type) {
+	case *ast.Ident:
+		if _, dot := importNames["."]; !dot {
+			return false
+		}
+		_, ok := ginkgoSpecIdents[fun.Name]
+		return ok
+	case *ast.SelectorExpr:
+		pkg, ok := fun.X.(*ast.Ident)
+		if !ok {
+			return false
+		}
+		if _, ok := importNames[pkg.Name]; !ok {
+			return false
+		}
+		_, ok = ginkgoSpecIdents[fun.Sel.Name]
+		return ok
+	default:
+		return false
+	}
 }
