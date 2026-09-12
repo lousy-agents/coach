@@ -72,6 +72,10 @@ run = "go mod tidy && git diff --exit-code go.mod go.sum"
 description = "Build the Go stdio backend binary consumed by js/semantics"
 run = "go build -o js/semantics/bin/coach-semantics-json ./cmd/semantics-json"
 
+[tasks.coach-build]
+description = "Build the coach CLI binary (./coach, gitignored) for local codesignal scans"
+run = "go build -o coach ./cmd/coach"
+
 [tasks.project-sidecar-build]
 description = "Build the pinned Node/TypeScript project sidecar binary consumed by pkg/projectmodel (issue #214 Task 3)"
 run = "npm run build:project-sidecar"
