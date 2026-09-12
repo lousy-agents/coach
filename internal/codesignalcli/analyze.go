@@ -273,36 +273,50 @@ func parseChangedRanges(diff []byte) ([]codesignal.LineRange, error) {
 			continue
 		}
 
-		match := hunkHeaderPattern.FindStringSubmatch(line)
-		if match == nil {
-			return nil, fmt.Errorf("unparsable hunk header: %q", line)
-		}
-
-		newStart, err := strconv.Atoi(match[1])
+		r, ok, err := parseHunkHeaderRange(line)
 		if err != nil {
-			return nil, fmt.Errorf("invalid hunk new-start in %q: %w", line, err)
+			return nil, err
 		}
-
-		newCount := 1
-		if match[2] != "" {
-			newCount, err = strconv.Atoi(match[2])
-			if err != nil {
-				return nil, fmt.Errorf("invalid hunk new-count in %q: %w", line, err)
-			}
+		if ok {
+			ranges = append(ranges, r)
 		}
-
-		if newCount == 0 {
-			continue
-		}
-
-		ranges = append(ranges, codesignal.LineRange{
-			StartRow: uint(newStart - 1),
-			EndRow:   uint(newStart + newCount - 2),
-		})
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 
 	return ranges, nil
+}
+
+// parseHunkHeaderRange parses one unified-diff hunk header line ("@@
+// -a,b +c,d @@") into the LineRange its "new" (post-image) side describes.
+// ok is false, with no error, for a zero-length new side (a pure deletion
+// hunk), which contributes no changed lines to report.
+func parseHunkHeaderRange(line string) (r codesignal.LineRange, ok bool, err error) {
+	match := hunkHeaderPattern.FindStringSubmatch(line)
+	if match == nil {
+		return codesignal.LineRange{}, false, fmt.Errorf("unparsable hunk header: %q", line)
+	}
+
+	newStart, err := strconv.Atoi(match[1])
+	if err != nil {
+		return codesignal.LineRange{}, false, fmt.Errorf("invalid hunk new-start in %q: %w", line, err)
+	}
+
+	newCount := 1
+	if match[2] != "" {
+		newCount, err = strconv.Atoi(match[2])
+		if err != nil {
+			return codesignal.LineRange{}, false, fmt.Errorf("invalid hunk new-count in %q: %w", line, err)
+		}
+	}
+
+	if newCount == 0 {
+		return codesignal.LineRange{}, false, nil
+	}
+
+	return codesignal.LineRange{
+		StartRow: uint(newStart - 1),
+		EndRow:   uint(newStart + newCount - 2),
+	}, true, nil
 }
