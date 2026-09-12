@@ -31,7 +31,7 @@ because the two review-fidelity hooks (`verify-review-verdict.sh`,
 
    In Claude Code, delegate this: call the `implement-issue-plan` workflow with
    `args: {issue: "$1"}`. It fans the research out in parallel, self-checks the
-   result, and returns `{issue, plan, defects, repairApplied}`.
+   result, and returns `{issue, plan, defects, residualDefects, repairApplied}`.
 
    Without a Workflow tool — OpenCode, or any other harness this file is
    mirrored into — do the same work inline instead: read the issue with
@@ -51,7 +51,10 @@ because the two review-fidelity hooks (`verify-review-verdict.sh`,
 
    The workflow reports its own findings as `defects` and repairs them; read
    them before proceeding. They mark where the decomposition was fragile, which
-   is where to be skeptical of a PASS later.
+   is where to be skeptical of a PASS later. `residualDefects` is the stricter
+   list: it re-audits the repaired DAG and reports what the single repair pass
+   did **not** fix, so those tasks are already known-fragile before any agent
+   starts on them. It is always present, empty when there was nothing to fix.
 
    If the issue is genuinely trivial, say so and run a single implement→review
    cycle rather than performing a task graph.
