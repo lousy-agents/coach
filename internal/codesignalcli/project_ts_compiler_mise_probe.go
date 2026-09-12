@@ -2,6 +2,7 @@ package codesignalcli
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,7 +57,7 @@ func miseProbeEnv() []string {
 // TypeScript version. A non-zero exit means the key is unset, not that the
 // probe failed.
 var detectGlobalMiseTypescriptVersion = func(ctx context.Context) (version string, found bool) {
-	out, _, ok := runMiseProbe(ctx, "config", "get", "tools.npm:typescript", "-g")
+	out, _, ok := runMiseProbe(ctx, "config", "get", "tools."+miseNpmTypescriptTool, "-g")
 	if !ok || out == "" {
 		return "", false
 	}
@@ -68,7 +69,7 @@ var detectGlobalMiseTypescriptVersion = func(ctx context.Context) (version strin
 // directory: the `typescript` package lives at
 // <install-root>/node_modules/typescript.
 var locateMiseTypescriptInstall = func(ctx context.Context, version string) (string, bool) {
-	toolRoot, exitErr, ok := runMiseProbe(ctx, "where", "npm:typescript@"+version)
+	toolRoot, exitErr, ok := runMiseProbe(ctx, "where", miseNpmTypescriptTool+"@"+version)
 	if !ok || exitErr != nil || toolRoot == "" {
 		return "", false
 	}
@@ -77,4 +78,67 @@ var locateMiseTypescriptInstall = func(ctx context.Context, version string) (str
 		return "", false
 	}
 	return pkgDir, true
+}
+
+// probeMiseToolVersion runs the confined `mise --version` probe. It reports
+// the raw trimmed output; extracting the leading calver token is
+// project_ts_compiler_mise_version.go's concern, kept separate so this
+// function stays a pure I/O probe like its siblings above. ok is false
+// whenever the probe could not be confined, mise is absent from PATH, or the
+// probe exited non-zero -- every one of those is "undetectable", never
+// "unsupported".
+var probeMiseToolVersion = func(ctx context.Context) (string, bool) {
+	out, exitErr, ok := runMiseProbe(ctx, "--version")
+	if !ok || exitErr != nil || out == "" {
+		return "", false
+	}
+	return out, true
+}
+
+// miseConfigListEntry mirrors the one field of `mise config ls -J` this
+// package reads: the absolute path of each config file mise actually loaded.
+type miseConfigListEntry struct {
+	Path string `json:"path"`
+}
+
+// probeMiseGlobalConfigHazard scans every mise config file that resolves
+// ambiently -- i.e. from runMiseProbe's own private, empty working
+// directory, which by construction has no project-local mise.toml of its
+// own -- for the same execution/redirection constructs hasMiseConfigHazard
+// checks in a project's mise.toml (AC-9's repository-controlled framing,
+// extended here for defense in depth per project_ts_compiler_mise_version.go's
+// package comment). It fails closed: any inability to enumerate or read
+// those files (mise config ls erroring, unparseable JSON, an unreadable
+// listed file) is treated as a hazard rather than silently reported as safe.
+var probeMiseGlobalConfigHazard = func(ctx context.Context) bool {
+	out, exitErr, ok := runMiseProbe(ctx, "config", "ls", "-J")
+	if !ok || exitErr != nil {
+		return true
+	}
+	var entries []miseConfigListEntry
+	if err := json.Unmarshal([]byte(out), &entries); err != nil {
+		return true
+	}
+	for _, entry := range entries {
+		data, err := os.ReadFile(entry.Path)
+		if err != nil {
+			return true
+		}
+		if hasMiseConfigHazard(string(data)) {
+			return true
+		}
+	}
+	return false
+}
+
+// readMiseProjectConfigFile reads a project's mise.toml for hazard scanning.
+// A missing or unreadable file is not itself a hazard signal here --
+// evaluateMiseProjectOrigin already reports that distinctly (unconfigured or
+// unreadable); this just has nothing to scan.
+func readMiseProjectConfigFile(dir string) (string, bool) {
+	data, err := os.ReadFile(filepath.Join(dir, "mise.toml"))
+	if err != nil {
+		return "", false
+	}
+	return string(data), true
 }

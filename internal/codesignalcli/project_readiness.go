@@ -48,17 +48,19 @@ const (
 )
 
 const (
-	GapUnsupportedRepositoryShape       = "unsupported_repository_shape"
-	GapNodeMissing                      = "node_missing"
-	GapNodeUnsupported                  = "node_unsupported"
-	GapNodeUnverifiable                 = "node_unverifiable"
-	GapTypescriptCompilerMissing        = "typescript_compiler_missing"
-	GapTypescriptVersionMismatch        = "typescript_version_mismatch"
-	GapTypescriptVersionConflict        = "typescript_version_conflict"
-	GapPackageManagerAmbiguous          = "package_manager_ambiguous"
-	GapPackageManagerConfigUnverifiable = "package_manager_config_unverifiable"
-	GapPolicyMissing                    = "policy_missing"
-	GapPolicyInvalid                    = "policy_invalid"
+	GapUnsupportedRepositoryShape        = "unsupported_repository_shape"
+	GapNodeMissing                       = "node_missing"
+	GapNodeUnsupported                   = "node_unsupported"
+	GapNodeUnverifiable                  = "node_unverifiable"
+	GapTypescriptCompilerMissing         = "typescript_compiler_missing"
+	GapTypescriptVersionMismatch         = "typescript_version_mismatch"
+	GapTypescriptVersionConflict         = "typescript_version_conflict"
+	GapPackageManagerAmbiguous           = "package_manager_ambiguous"
+	GapPackageManagerVersionUnverifiable = "package_manager_version_unverifiable"
+	GapPackageManagerVersionUnsupported  = "package_manager_version_unsupported"
+	GapPackageManagerConfigUnverifiable  = "package_manager_config_unverifiable"
+	GapPolicyMissing                     = "policy_missing"
+	GapPolicyInvalid                     = "policy_invalid"
 )
 
 // WarnCompilerDeclarationMismatch is the limit-class warning when a
@@ -124,8 +126,15 @@ type ReadinessChecks struct {
 	PackageManager ReadinessCheck `json:"package_manager"`
 }
 
+// ReadinessGap names one gap code. PackageManagerKind discriminates between
+// independent package_manager_* findings that may coexist in gaps[] --
+// "npm"/"pnpm"/"bun"/"yarn" for the project adapter (checks.package_manager)
+// or "mise_project"/"mise_global" for a mise setup choice (SA-280-045),
+// which never occupies checks.package_manager. It is empty for every other
+// gap code.
 type ReadinessGap struct {
-	Code string `json:"code"`
+	Code               string `json:"code"`
+	PackageManagerKind string `json:"package_manager_kind,omitempty"`
 }
 
 // ReadinessWarning never blocks readiness on its own, elevating status only
@@ -139,13 +148,22 @@ type ReadinessWarning struct {
 	Root              string `json:"root,omitempty"`
 }
 
+// ReadinessNextAction is one remediation entry. PackageManagerKind names
+// which installation choice a resolve_package_manager entry is about (see
+// ReadinessGap); a rejected adapter and a rejected mise origin surface as
+// two distinctly keyed entries rather than colliding into one. Choices
+// lists the still-verified installation-choice kinds a prepare_compiler
+// entry may use once a package_manager_* finding has withheld another one
+// (SA-280-045); it is nil when no package_manager_* finding applies.
 type ReadinessNextAction struct {
-	Kind         string   `json:"kind"`
-	Executable   bool     `json:"executable"`
-	RuntimeKind  string   `json:"runtime_kind,omitempty"`
-	Supported    []string `json:"supported,omitempty"`
-	FoundVersion string   `json:"found_version,omitempty"`
-	Detail       string   `json:"detail,omitempty"`
+	Kind               string   `json:"kind"`
+	Executable         bool     `json:"executable"`
+	RuntimeKind        string   `json:"runtime_kind,omitempty"`
+	Supported          []string `json:"supported,omitempty"`
+	FoundVersion       string   `json:"found_version,omitempty"`
+	Detail             string   `json:"detail,omitempty"`
+	PackageManagerKind string   `json:"package_manager_kind,omitempty"`
+	Choices            []string `json:"choices,omitempty"`
 }
 
 type ReadinessDirtyWorktree struct {
@@ -184,7 +202,10 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 	runtime := checkNodeReadiness()
 	node := nodeCompatibilityMirror(runtime)
 	compiler := resolveCompiler(dir, roots)
-	packageManager := checkPackageManager()
+	packageManager, err := checkPackageManager(dir, revision)
+	if err != nil {
+		return nil, err
+	}
 
 	checks := ReadinessChecks{
 		ProjectShape:   projectShape,
@@ -200,7 +221,7 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 		return nil, err
 	}
 
-	status, gaps, nextActions, warnings := aggregateReadiness(checks, dirty.RelevantChanges)
+	status, gaps, nextActions, warnings := aggregateReadiness(checks, dirty.RelevantChanges, evaluateMiseSetupChoices(dir, roots))
 
 	return &ReadinessResult{
 		SchemaVersion: ReadinessSchemaVersion,
@@ -244,9 +265,31 @@ func checkPolicy(dir, revision, policyPath string) (ReadinessCheck, []string, er
 	return ReadinessCheck{State: ReadinessPass}, config.Roots, nil
 }
 
-// Stub: a seam for a later task. Not a bug.
-func checkPackageManager() ReadinessCheck {
-	return ReadinessCheck{State: ReadinessNotChecked}
+// packageManagerKindYarn identifies the project adapter's Yarn finding.
+// Yarn is excluded from the frozen adapter matrix entirely
+// (SA-280-009/SA-280-012): it has no supported-version row, so any Yarn
+// metadata at revision unconditionally reports
+// package_manager_version_unsupported (SA-280-015), regardless of which
+// Yarn version is actually in use.
+const packageManagerKindYarn = "yarn"
+
+// checkPackageManager reports the project package-manager adapter's
+// finding. A committed yarn.lock is the only signal checked today; that is
+// a real, complete, version-independent rule (see packageManagerKindYarn),
+// not a partial implementation of the broader adapter matrix.
+//
+// Stub: a seam for a later task. Not a bug. Detecting and version-checking
+// npm/pnpm/Bun adapters is a later task's scope, so every other repository
+// shape stays not_checked here.
+func checkPackageManager(dir, revision string) (ReadinessCheck, error) {
+	yarnLock, err := fileExistsAtRevision(dir, revision, "yarn.lock")
+	if err != nil {
+		return ReadinessCheck{}, err
+	}
+	if yarnLock {
+		return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerVersionUnsupported, Kind: packageManagerKindYarn}, nil
+	}
+	return ReadinessCheck{State: ReadinessNotChecked}, nil
 }
 
 // ValidateProjectConfigPath validates a --project-config value's shape using
