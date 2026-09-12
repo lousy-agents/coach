@@ -85,7 +85,7 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 			Expect(preview.Timeout).To(Equal(codesignalcli.SetupPreviewTimeout), "must disclose the bounded timeout that will actually be enforced")
 		},
 		Entry("npm", "npm", "npm", []string{"ci", "--ignore-scripts"}, "package-lock.json"),
-		Entry("pnpm", "pnpm", "pnpm", []string{"install", "--frozen-lockfile", "--ignore-scripts"}, "pnpm-lock.yaml"),
+		Entry("pnpm", "pnpm", "pnpm", []string{"install", "--frozen-lockfile", "--ignore-scripts", "--ignore-pnpmfile"}, "pnpm-lock.yaml"),
 		Entry("bun", "bun", "bun", []string{"install", "--frozen-lockfile", "--ignore-scripts"}, ""),
 	)
 

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"slices"
 	"sync"
+	"time"
 )
 
 // maxSetupExecutionOutput bounds the combined stdout+stderr ExecuteSetup
@@ -18,16 +19,29 @@ import (
 // code is still authoritative.
 const maxSetupExecutionOutput = 1 << 20
 
+// setupExecutionWaitDelay bounds how long cmd.Wait may keep waiting for
+// output-copying goroutines to finish after the run's deadline (or an
+// external ctx cancellation) fires. exec.CommandContext only SIGKILLs the
+// direct child; npm/pnpm/bun all spawn node children, and pnpm runs a
+// background store server, any of which can outlive the direct child while
+// still holding the inherited stdout/stderr pipe open. Without a WaitDelay,
+// cmd.Wait blocks until every process sharing that pipe exits, which can be
+// indefinitely -- so the "bounded timeout" this package promises would not
+// actually be bounded.
+const setupExecutionWaitDelay = 2 * time.Second
+
 // ErrSetupExecutionNotConfirmed reports that ExecuteSetup was called without
 // confirmed set (AC-SET-3): no subprocess is started.
 var ErrSetupExecutionNotConfirmed = errors.New("setup execution: not confirmed")
 
-// ErrSetupExecutionUnverifiedCommand reports that preview's executable and
-// argv do not match one of the three frozen adapter rows exactly
-// (SA-280-012): no subprocess is started. This covers both an executable
-// outside {npm, pnpm, bun} and a preview whose Args were altered after
-// BuildSetupPreview produced it -- ExecuteSetup never re-derives or trusts a
-// command it did not itself verify against the frozen matrix.
+// ErrSetupExecutionUnverifiedCommand reports that preview's executable,
+// argv, or timeout do not match one of the three frozen adapter rows
+// exactly (SA-280-012): no subprocess is started. This covers an executable
+// outside {npm, pnpm, bun}, a preview whose Args or Timeout were altered
+// after BuildSetupPreview produced it, and a manager kind whose adapter row
+// executable does not equal the kind's own name -- ExecuteSetup never
+// re-derives or trusts a command it did not itself verify against the
+// frozen matrix.
 var ErrSetupExecutionUnverifiedCommand = errors.New("setup execution: preview does not match a frozen adapter command")
 
 // SetupExecutionResult is what actually ran, or would have run, for a
@@ -50,8 +64,9 @@ type SetupExecutionResult struct {
 
 // ExecuteSetup runs preview's exact command after a single explicit
 // confirmation (AC-SET-3): it takes preview's Executable/Args/
-// WorkingDirectory as-is, verifies them against the frozen adapter matrix
-// (setupCommandTemplates) that produced them, and refuses -- spawning
+// WorkingDirectory/Timeout as-is, verifies them against the frozen adapter
+// matrix (setupCommandTemplates) that produced them -- executable, kind,
+// argv, and timeout all must match exactly -- and refuses -- spawning
 // nothing -- if confirmed is false or that verification fails. It never
 // rebuilds a shell command string and never invokes a shell: the child
 // process is started directly via exec.CommandContext with argv set from
@@ -60,27 +75,33 @@ type SetupExecutionResult struct {
 //
 // The child runs with an explicit, minimal environment (PATH and HOME
 // only) rather than this process's ambient environment, so a
-// repository-controlled variable (for example an npm/pnpm registry
-// override) cannot influence the run underneath the displayed command.
+// repository-controlled or otherwise ambient environment variable (for
+// example an npm/pnpm registry override) cannot influence the run
+// underneath the displayed command. This says nothing about
+// preview.WorkingDirectory's on-disk package-manager configuration (.npmrc,
+// .pnpmfile.cjs, bunfig.toml, pnpm-workspace.yaml): those are read from the
+// working directory regardless of environment confinement. ExecuteSetup
+// assumes that configuration was already hazard-checked by
+// checkPackageManager before this choice was ever offered to the caller --
+// today that check is npm-only and rooted at the repository's worktree
+// root, not at an arbitrary WorkingDirectory inside a monorepo, so a
+// package-level .npmrc in a monorepo subdirectory is not covered by it.
 func ExecuteSetup(ctx context.Context, preview SetupPreview, confirmed bool) (SetupExecutionResult, error) {
 	if !confirmed {
 		return SetupExecutionResult{}, ErrSetupExecutionNotConfirmed
 	}
 	template, ok := setupCommandTemplates[preview.Executable]
-	if !ok || !slices.Equal(preview.Args, template.args) {
-		return SetupExecutionResult{}, fmt.Errorf("%w: executable %q args %v", ErrSetupExecutionUnverifiedCommand, preview.Executable, preview.Args)
+	if !ok || template.executable != preview.Executable || !slices.Equal(preview.Args, template.args) || preview.Timeout != SetupPreviewTimeout {
+		return SetupExecutionResult{}, fmt.Errorf("%w: executable %q args %v timeout %s", ErrSetupExecutionUnverifiedCommand, preview.Executable, preview.Args, preview.Timeout)
 	}
 
-	timeout := preview.Timeout
-	if timeout <= 0 {
-		timeout = SetupPreviewTimeout
-	}
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	runCtx, cancel := context.WithTimeout(ctx, preview.Timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, preview.Executable, preview.Args...)
 	cmd.Dir = preview.WorkingDirectory
 	cmd.Env = setupExecutionEnv()
+	cmd.WaitDelay = setupExecutionWaitDelay
 
 	output := &boundedOutputSink{limit: maxSetupExecutionOutput}
 	cmd.Stdout = output
@@ -136,9 +157,14 @@ func setupExecutionEnv() []string {
 }
 
 // boundedOutputSink is an io.Writer that keeps at most limit bytes,
-// silently discarding anything past that bound. It is safe for concurrent
-// use because os/exec copies a Cmd's Stdout and Stderr pipes on separate
-// goroutines whenever they are not the same *os.File.
+// silently discarding anything past that bound. ExecuteSetup assigns the
+// same *boundedOutputSink to both cmd.Stdout and cmd.Stderr; os/exec
+// detects that the two writers are identical (via interfaceEqual, not
+// identical-*os.File) and collapses them onto a single pipe read by a
+// single copier goroutine, so in practice Write is never called
+// concurrently here. The mutex guards Bytes() against a future change that
+// gives Stdout and Stderr distinct writers, which would restore concurrent
+// Writes.
 type boundedOutputSink struct {
 	mu    sync.Mutex
 	buf   bytes.Buffer

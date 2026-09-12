@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -18,20 +19,23 @@ import (
 
 // writeStubSetupExecutable writes an executable script named `name` into a
 // fresh temp directory that, on every invocation, records its working
-// directory and its argv (one argument per line, so a shell that folded
+// directory, its argv (one argument per line, so a shell that folded
 // multiple tokens into one string would show up as a single logged line
-// instead of several) into two log files inside that same directory, then
-// exits 0 without doing anything else. Returns the directory.
+// instead of several), and its entire environment (one "KEY=VALUE" line per
+// variable, via the `env` builtin) into three log files inside that same
+// directory, then exits 0 without doing anything else. Returns the
+// directory.
 func writeStubSetupExecutable(name string) string {
 	dir, err := os.MkdirTemp("", "coach-acceptance-stubsetup-*")
 	Expect(err).NotTo(HaveOccurred())
 	DeferCleanup(os.RemoveAll, dir)
 
 	script := fmt.Sprintf(
-		"#!/bin/sh\nprintf '%%s' \"$PWD\" > %q\n: > %q\nfor a in \"$@\"; do printf '%%s\\n' \"$a\" >> %q; done\nexit 0\n",
+		"#!/bin/sh\nprintf '%%s' \"$PWD\" > %q\n: > %q\nfor a in \"$@\"; do printf '%%s\\n' \"$a\" >> %q; done\nenv > %q\nexit 0\n",
 		filepath.Join(dir, name+".cwd"),
 		filepath.Join(dir, name+".argv"),
 		filepath.Join(dir, name+".argv"),
+		filepath.Join(dir, name+".env"),
 	)
 	Expect(os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755)).To(Succeed())
 	return dir
@@ -40,6 +44,22 @@ func writeStubSetupExecutable(name string) string {
 func stubSetupInvoked(dir, name string) bool {
 	_, err := os.Stat(filepath.Join(dir, name+".argv"))
 	return err == nil
+}
+
+// readStubSetupEnvKeys returns the set of environment-variable names the
+// stub named `name` observed, parsed from its "KEY=VALUE" env dump.
+func readStubSetupEnvKeys(dir, name string) []string {
+	data, err := os.ReadFile(filepath.Join(dir, name+".env"))
+	Expect(err).NotTo(HaveOccurred(), "expected the stub %s to have recorded its environment", name)
+	var keys []string
+	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		key, _, _ := strings.Cut(line, "=")
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func readStubSetupCwd(dir, name string) string {
@@ -63,6 +83,25 @@ func readStubSetupArgv(dir, name string) []string {
 // controls exactly which one of those names resolves.
 func setupExecutionOnlyPath() string {
 	return pathExcludingExecutables("npm", "pnpm", "bun", "yarn")
+}
+
+// writeOutlivingSetupExecutable writes an executable named `name` that
+// models npm/pnpm/bun's real failure mode under a deadline: it forks a
+// background descendant (detached via `&`, inheriting the same stdout/
+// stderr pipe as the direct child) that outlives backgroundSeconds, then the
+// direct process itself sleeps past any reasonable deadline. exec.
+// CommandContext only ever signals the direct child, so with no WaitDelay
+// the background descendant alone keeps the shared pipe open and cmd.Wait
+// blocks for the entirety of backgroundSeconds regardless of the run's
+// context deadline.
+func writeOutlivingSetupExecutable(name string, backgroundSeconds int) string {
+	dir, err := os.MkdirTemp("", "coach-acceptance-stubsetup-outlive-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, dir)
+
+	script := fmt.Sprintf("#!/bin/sh\n(sleep %d) &\nsleep %d\n", backgroundSeconds, backgroundSeconds)
+	Expect(os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755)).To(Succeed())
+	return dir
 }
 
 func newSetupExecutionWorkDir() string {
@@ -109,6 +148,56 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 
 			Expect(readStubSetupCwd(stubDir, "npm")).To(Equal(workDir))
 			Expect(readStubSetupArgv(stubDir, "npm")).To(Equal(preview.Args))
+		})
+	})
+
+	When("a hostile ambient environment variable is set", func() {
+		It("confines the child to exactly PATH and HOME, dropping every ambient variable (SA-280-012)", func() {
+			workDir := newSetupExecutionWorkDir()
+			stubDir := writeStubSetupExecutable("npm")
+			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
+
+			// Each of these would, if forwarded, re-enable or redirect the
+			// very thing --ignore-scripts and the frozen argv are supposed to
+			// guarantee: a re-enabled lifecycle-script setting, an injected
+			// Node startup flag, and a registry override.
+			GinkgoT().Setenv("npm_config_ignore_scripts", "false")
+			GinkgoT().Setenv("NODE_OPTIONS", "--require ./evil.js")
+			GinkgoT().Setenv("npm_config_registry", "http://127.0.0.1:9/attacker")
+
+			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, "npm", workDir)
+			Expect(err).NotTo(HaveOccurred())
+
+			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
+			Expect(execErr).NotTo(HaveOccurred())
+			Expect(result.Succeeded).To(BeTrue(), "output: %s", result.Output)
+
+			observedKeys := readStubSetupEnvKeys(stubDir, "npm")
+			Expect(observedKeys).NotTo(ContainElement("npm_config_ignore_scripts"), "an ambient lifecycle-script override must never reach the child")
+			Expect(observedKeys).NotTo(ContainElement("NODE_OPTIONS"), "an ambient Node startup-flag injection must never reach the child")
+			Expect(observedKeys).NotTo(ContainElement("npm_config_registry"), "an ambient registry override must never reach the child")
+			Expect(observedKeys).To(ContainElement("PATH"), "the child needs PATH to resolve npm and node")
+			for _, key := range observedKeys {
+				Expect(key).To(Or(Equal("PATH"), Equal("HOME")), "the child's environment must contain nothing beyond PATH and HOME, observed %q", key)
+			}
+		})
+	})
+
+	When("the preview's timeout has been altered from the frozen matrix's timeout", func() {
+		It("refuses to execute a command whose disclosed timeout it did not itself verify (AC-14, AC-17)", func() {
+			workDir := newSetupExecutionWorkDir()
+			stubDir := writeStubSetupExecutable("npm")
+			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
+
+			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, "npm", workDir)
+			Expect(err).NotTo(HaveOccurred())
+			tampered := preview
+			tampered.Timeout = 1000 * time.Hour // a preview claiming 5 minutes must never actually run unbounded
+
+			result, execErr := codesignalcli.ExecuteSetup(context.Background(), tampered, true)
+			Expect(errors.Is(execErr, codesignalcli.ErrSetupExecutionUnverifiedCommand)).To(BeTrue())
+			Expect(result).To(Equal(codesignalcli.SetupExecutionResult{}))
+			Expect(stubSetupInvoked(stubDir, "npm")).To(BeFalse(), "a command whose disclosed timeout was altered must never execute")
 		})
 	})
 

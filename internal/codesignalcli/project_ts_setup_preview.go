@@ -20,26 +20,39 @@ const SetupPreviewTimeout = 5 * time.Minute
 // instead of writing one. What they do mutate is node_modules -- expected
 // Changes must disclose that, not a lockfile rewrite that cannot happen.
 type setupCommandTemplate struct {
-	executable      string
-	args            []string
-	expectedChanges string
+	executable              string
+	args                    []string
+	expectedChanges         string
+	scriptSuppressionPolicy string
 }
 
 // setupCommandTemplates keys off the same manager-kind constants
 // checkPackageManager classifies against (project_ts_setup_matrix.go),
 // rather than re-typing a second copy of the frozen command strings.
+//
+// pnpm's row also carries --ignore-pnpmfile: --ignore-scripts alone does
+// not stop pnpm from loading and running a committed .pnpmfile.cjs (module
+// top level and any hooks.readPackage hook) during install -- that is a
+// separate opt-out, and detectPackageManagerHazard does not vet pnpm
+// configuration, so this row is pnpm's only line of defense against it.
+// Bun's analogous vector, a bunfig.toml "preload" entry, was verified not
+// to fire on `bun install` (only on `bun run`/the bun runtime), so bun's
+// row needs no equivalent flag.
 var setupCommandTemplates = map[string]setupCommandTemplate{
 	packageManagerKindNPM: {
 		executable: "npm",
 		args:       []string{"ci", "--ignore-scripts"},
 		expectedChanges: "removes and recreates node_modules/ in the working directory from package-lock.json; " +
 			"leaves package-lock.json and package.json unchanged -- npm ci fails instead if they disagree",
+		scriptSuppressionPolicy: "--ignore-scripts suppresses this package manager's lifecycle scripts (including dependency build scripts) for this run",
 	},
 	packageManagerKindPNPM: {
 		executable: "pnpm",
-		args:       []string{"install", "--frozen-lockfile", "--ignore-scripts"},
+		args:       []string{"install", "--frozen-lockfile", "--ignore-scripts", "--ignore-pnpmfile"},
 		expectedChanges: "installs packages into node_modules/ in the working directory (and pnpm's content-addressable store); " +
 			"leaves pnpm-lock.yaml and package.json unchanged -- fails instead of changing them",
+		scriptSuppressionPolicy: "--ignore-scripts suppresses this package manager's lifecycle scripts (including dependency build scripts) for this run; " +
+			"--ignore-pnpmfile additionally skips loading and running a committed .pnpmfile.cjs, which pnpm would otherwise execute (including its hooks.readPackage hook) during install regardless of --ignore-scripts",
 	},
 	packageManagerKindBun: {
 		executable: "bun",
@@ -50,6 +63,7 @@ var setupCommandTemplates = map[string]setupCommandTemplate{
 		// naming one would risk citing a file that does not exist here.
 		expectedChanges: "installs packages into node_modules/ in the working directory (and bun's install cache); " +
 			"leaves the lockfile and package.json unchanged -- disallows any lockfile changes",
+		scriptSuppressionPolicy: "--ignore-scripts suppresses this package manager's lifecycle scripts (including dependency build scripts) for this run",
 	},
 }
 
@@ -94,7 +108,7 @@ func BuildSetupPreview(choice SetupChoice, packageManagerKind, workingDirectory 
 		WorkingDirectory:        workingDirectory,
 		ExpectedChanges:         template.expectedChanges,
 		NetworkDisclosure:       "may reach the configured package registry over the network to download or verify dependencies",
-		ScriptSuppressionPolicy: "--ignore-scripts suppresses this package manager's lifecycle scripts (including dependency build scripts) for this run",
+		ScriptSuppressionPolicy: template.scriptSuppressionPolicy,
 		Timeout:                 SetupPreviewTimeout,
 	}, nil
 }
