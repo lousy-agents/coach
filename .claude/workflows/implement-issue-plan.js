@@ -299,7 +299,7 @@ const [spec, code, conventions] = (await parallel([
   ),
   () => agent(
     `Read AGENTS.md and any nested AGENTS.md or package-level convention docs. Return, verbatim, the conventions and validation commands an implementer must follow: ` +
-    `the acceptance-test-first policy and its required Ginkgo form, the architecture dependency rules, the outbound-HTTP and fail-closed policies, the Go comment policy, and the exact validation commands. ` +
+    `the acceptance-test-first policy and its required Ginkgo form, the architecture dependency rules, the outbound-HTTP and fail-closed policies, the comment policy, and the exact validation commands. ` +
     `Quote them; do not paraphrase or soften them.`
     + NO_MUTATION,
     { label: 'conventions', phase: 'Ingest', agentType: READ_ONLY },

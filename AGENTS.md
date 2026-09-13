@@ -2,21 +2,23 @@
 
 Canonical project instructions for coding agents working in this repository (Codex, and any other Agent Skills-compatible harness). Claude Code loads this file via the `@./AGENTS.md` import at the top of `CLAUDE.md` — edit guidance here, not there, so the two never drift apart.
 
-Obligation in this file is carried by three words and nothing else. `shall` marks a requirement or invariant; `should` marks a recommendation you may depart from with a reason; `will` states a fact or an external condition. Bare imperatives ("run", "do not") are requirements too. Emphasis is never a priority marker, so do not read bold as urgency or add it to create urgency.
+Obligation in this file is carried by three words and nothing else. `shall` marks a requirement or invariant; `should` marks a recommendation an agent may depart from with a reason; `will` states a fact or an external condition. Bare imperatives ("run", "do not") are requirements too. Emphasis is never a priority marker, so do not read bold as urgency or add it to create urgency.
 
 ## What this is
 
-Experimental AI coach for humans making software with agents. Two independent Go packages, plus a TypeScript wrapper for one of them:
+Experimental AI coach for humans making software with agents. Analysis packages (`pkg/semantics`, `pkg/codesignal`, `pkg/projectmodel`) plus an optional GitHub reader (`pkg/githubingest`) and TypeScript bindings (`js/semantics`):
 
 - `pkg/semantics` — deterministic structural analysis of raw Go/TypeScript/TSX source bytes (syntax validity, imports, branching metrics, constructor-like patterns) via Tree-sitter. No GitHub dependency.
+- `pkg/codesignal` — deterministic signal reports for a git diff (`--base`) or a repository baseline (`--baseline`), consumed by `coach codesignal`.
+- `pkg/projectmodel` — Go and TypeScript project graphs for project-mode analysis.
 - `pkg/githubingest` — optional GitHub App-authenticated single-file reader via the GitHub Contents API.
 - `js/semantics` — Node/TS bindings for `pkg/semantics` (`@lousy-agents/coach-semantics`, not published to npm), talking newline-delimited JSON to a Go binary over stdin/stdout.
 
 **Dependency rule**: `pkg/semantics` shall not import `pkg/githubingest` (or `go-github`/`ghinstallation`), and `pkg/githubingest` shall not import `pkg/semantics` back. Keep it that way — this is what lets a consumer that only needs source analysis avoid pulling in a GitHub client.
 
-The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) exposes one subcommand, `codesignal`, which produces deterministic signal reports for a git diff (`--base`) or a repository baseline (`--baseline`) via the `pkg/semantics` → `pkg/codesignal` pipeline. Product direction lives in `docs/product/prd.md`; system design in `docs/architecture/system-overview.md`.
+The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) exposes one subcommand, `codesignal`, via the `pkg/semantics` → `pkg/codesignal` pipeline. Product direction lives in `docs/product/prd.md`; system design in `docs/architecture/system-overview.md`.
 
-**Living product evaluation**: `docs/product/evaluations/codesignal-pilot-readiness.html` is the current leave-pilot evidence, not a historical snapshot. Closing a #282 child or merging user-facing `coach codesignal` behavior means updating it: re-run the affected claim against HEAD, move closed gaps to the archive (do not delete them), restamp date / HEAD / `#282 · N / 24`, and re-rank only after a run. GitHub `CLOSED` is not sufficient evidence.
+**Living product evaluation**: `docs/product/evaluations/codesignal-pilot-readiness.html` is the current leave-pilot evidence, not a historical snapshot. Closing a #282 child or merging user-facing `coach codesignal` behavior means updating it: re-run the affected claim against HEAD, move closed gaps to the archive and keep them there, restamp date / HEAD / `#282 · N / 24`, and re-rank only after a run. GitHub `CLOSED` is not sufficient evidence.
 
 ## Agent Skills (`.agents/skills/`)
 
@@ -62,14 +64,14 @@ Two invariants apply to anything a workflow does:
 
 ## Commands
 
-All tasks are defined in `mise.toml`; run them with `mise run <task>`, and list them with `mise tasks` (each carries its own description). mise also pins `go` and `node`, and CI installs mise, so both share one tool-version source of truth. The tasks worth knowing before you read that list:
+All tasks are defined in `mise.toml`; run them with `mise run <task>`, and list them with `mise tasks` (each carries its own description). mise also pins `go` and `node`, and CI installs mise, so both share one tool-version source of truth. The tasks worth knowing before that list:
 
 | Task | Use it for |
 | --- | --- |
 | `ci-gate` | fast local smoke (gofmt/vet/style, no tests, ~1s warm) |
 | `ci-fast` | the implement/review loop's per-cycle check: Go slice plus agent-tooling suites, sidecar built first. Narrower than CI, but not quick: `cmd/coach` alone runs minutes |
 | `ci` | `ci-go` + `js-ci`. No `wasm-build`, and it builds the sidecar only after `test` has already run |
-| `ci-all` | everything CI proves except `platform-smoke` |
+| `ci-all` | sidecar-first Go slice + `js-ci` + `wasm-build`; not `platform-smoke` |
 | `test` | `go test -race ./...` |
 | `test-acceptance-fast` | the fast in-process Ginkgo/Gomega suites (offline, no real credentials) |
 
@@ -118,7 +120,7 @@ Single entry point `ReadFile`, authenticated via a GitHub App installation (`ghi
 
 ## Validation
 
-### Validation Suite (mandatory before commit)
+### Validation suite
 
 Run these before commit. Each is an atomic `mise run <task>` step CI also runs in `.github/workflows/ci.yml`; CI additionally runs `platform-up`/`platform-smoke`/`platform-down`, which are left out here because they need Docker and live services:
 
@@ -135,13 +137,13 @@ mise run ts-project-backend-acceptance
 mise run wasm-build
 ```
 
-Run `ci-fast` inside an implement/review loop and `ci-all` when you want the broadest local run. Neither is the pre-PR gate. `ci-all` reaches `js-install` through its sidecar build, so the sidecar and TypeScript-backend specs do run inside `test` — but `test` carries no `-ginkgo.fail-on-empty`, so if their compiler preconditions fail they skip and `ci-all` stays green. The `projectmodel-sidecar` and `ts-project-backend` leaves exist to make that skip a failure. `platform-smoke` has no local equivalent at all, and no local composite pins Node 26, so `ts-project-backend-node26` proves nothing you can reproduce locally without writing that `mise.local.toml` yourself.
+Run `ci-fast` inside an implement/review loop and `ci-all` for the broadest local run. Neither is the pre-PR gate. `ci-all` reaches `js-install` through its sidecar build, so the sidecar and TypeScript-backend specs do run inside `test` — but `test` carries no `-ginkgo.fail-on-empty`, so if their compiler preconditions fail they skip and `ci-all` stays green. The `projectmodel-sidecar` and `ts-project-backend` leaves exist to make that skip a failure. `platform-smoke` has no local equivalent at all, and no local composite pins Node 26, so `ts-project-backend-node26` proves nothing a local run can reproduce without writing that `mise.local.toml`.
 
-The exhaustive gate is GitHub Actions plus branch protection, not a local run. Since the `status` aggregator became a required check, a red tree cannot merge whatever any local check decides — so nothing gates PR creation locally. Commit and push everything before opening a PR so its evidence describes the tree you pushed; that is a discipline, not a mechanism. This arrangement is only safe while `status` is a required check on the base branch; if branch protection is removed, nothing gates a red merge.
+The exhaustive gate is GitHub Actions plus branch protection, not a local run. Since the `status` aggregator became a required check, a red tree cannot merge whatever any local check decides — so nothing gates PR creation locally. Commit and push everything before opening a PR so its evidence describes the tree that was pushed; that is a discipline, not a mechanism. This arrangement is only safe while `status` is a required check on the base branch; if branch protection is removed, nothing gates a red merge.
 
 Task closure, the gaps between `ci` and `ci-all`, the measured wall times, and the GHA job graph are in [`docs/development/validation-and-ci.md`](docs/development/validation-and-ci.md). Read it before concluding that a green local run means CI will pass.
 
-### Acceptance-test-first (required policy)
+### Acceptance-test-first
 
 Every new feature and every bug fix shall begin with a failing acceptance test, written before production implementation changes are made.
 
@@ -150,7 +152,7 @@ Every new feature and every bug fix shall begin with a failing acceptance test, 
 - The test shall exercise the relevant public behavior at the most meaningful available boundary; a unit test alone is not an acceptance test unless that unit is itself the public contract.
 - An unrun test, a test written after implementation, and a test that already passes do not satisfy this policy. If the required test cannot be made to fail before implementation, stop and resolve the discrepancy with the requester rather than proceeding.
 
-**Go acceptance form (mandatory)**:
+**Go acceptance form**:
 
 - Use Ginkgo v2 + Gomega (`github.com/onsi/ginkgo/v2`, `github.com/onsi/gomega`).
 - Spec style: `Describe` / `When` / `It` (and `DescribeTable` when useful) that read as EARS/acceptance-criteria statements.
@@ -164,41 +166,33 @@ Every new feature and every bug fix shall begin with a failing acceptance test, 
 
 For delegated work, the `task-implementer`/`task-reviewer` pair (`.claude/agents/`) operationalizes this policy step by step: the implementer writes and fails a Ginkgo acceptance test before implementing, and the reviewer gates on red-then-green evidence plus the form and false-green rules above. Subagent prompts shall not relax AGENTS.md — do not tell implementers that stdlib table tests substitute for Ginkgo acceptance tests. Copy conventions from here rather than inventing weaker ones.
 
-### Outbound HTTP (required policy)
+### Outbound HTTP
 
 Production defaults for upstream HTTP clients shall set a finite `Timeout`, so a hung upstream cannot pin a caller indefinitely. Do not use a bare `http.DefaultClient` for a request path that can hang.
 
 Inbound servers are the mirror of this rule: every production `http.Server` shall set `ReadHeaderTimeout`, because the Go default is unbounded and a slowloris-style client can otherwise hold an idle listener open. See `cmd/coach-api/main.go` and `internal/modelgateway/httpstub.go`.
 
-### Store/dependency fail-closed (required policy)
+### Store/dependency fail-closed
 
-Applies to the `coach-api` request paths. When a required store or dependency errors — as distinct from a clean miss or not-found — protected and auth paths shall return 503 with the stable JSON error envelope, so a partial read never reads as an authorized empty result. Do not skip the check, and do not treat store errors as a soft 500 in one path while failing closed in an analogous one.
+Applies to the `coach-api` request paths. When a required store or dependency errors — as distinct from a clean miss or not-found — protected and auth paths shall return 503 with the stable JSON error envelope, so a partial read never reads as an authorized empty result. Check store errors on every protected and auth path; analogous paths share the 503 envelope.
 
-### Go comments (required policy)
+### Comment policy
 
-Applies to Go only. Default to no comment unless it helps a human or coding agent use or change the code correctly.
+Write code that explains its own mechanics through names, types, structure, and tests.
 
-Keep or write a comment where it encodes a non-local contract:
+Before finishing an implementation, review every newly added or modified code comment.
+Keep a comment only when it preserves non-obvious information that the code cannot:
+- rationale for a decision or trade-off;
+- an invariant, compatibility constraint, security boundary, or surprising edge case;
+- an externally imposed workaround, including a link or issue identifier when available.
 
-- Exported API behavior callers cannot infer from the name (errors, auth, zero value, concurrency, special cases)
-- Intentional simplifications and external wire quirks (e.g. go-github response shapes, GitHub API limits)
-- Invariants that tests or agents will otherwise "fix" wrongly (race guards, auth-mode recording, false-green traps)
+Remove comments that:
+- restate what the adjacent code does;
+- narrate the current change, prompt, migration stage, or previous implementation;
+- explain ordinary framework or language behavior;
+- describe a current caller rather than the component's own contract.
 
-Form (godoc):
-
-- Doc comments sit immediately above the declaration, are complete sentences, and start with the symbol name (`Package foo…`, `ClassifyToken reports…`)
-- Prefer short paragraphs; use end-of-line comments for map keys and enum values where that is enough
-- Attach notes to a declaration — no orphan `// NOTE` blocks
-- Follow [Go doc comments](https://go.dev/doc/comment). Epic and issue narrative belongs in `docs/`, the PR, or the commit message, not in code
-
-Delete, and never add:
-
-- Restatements of the identifier or of the next line of code
-- Step-by-step narration of obvious control flow
-- Long essays duplicated across handlers — factor one shared helper, doc, or package comment
-- Test comments that only paraphrase `It("…")` or subtest names; prefer structure and names (see `go-testable-design`), and keep only subtle assertion traps
-
-Comment unexported symbols only for the contracts and traps above, not for routine helpers.
+This policy overrides verbose comment conventions in neighboring code. Preserve existing comments unless the task explicitly asks to edit or remove them.
 
 ### Verification
 
@@ -206,7 +200,7 @@ Passing checks prove nothing broke; they do not prove new behavior is correct. F
 
 ### Feedback loop
 
-After a failing check, fix and rerun that specific command rather than the whole suite — `go test -race ./... -run TestName` narrows to one test. Do not move on to the next validation step until the current one is clean.
+After a failing check, fix and rerun that specific command rather than the whole suite — `go test -race ./... -run TestName` narrows to one test. Stay on that command until it is clean.
 
 ### What `/implement-issue` guarantees, and what it does not
 
@@ -216,9 +210,9 @@ Read a PR from this flow as a well-evidenced proposal, not a verified one: it as
 
 ## Pull requests
 
-Before `gh pr create` / `create_pull_request`, read and fill every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). That file is the PR contract for coding agents: linked issue, single concern, acceptance-criteria → evidence table, red-then-green acceptance proof, and the validation commands you actually ran. Do not open a PR with blank sections or placeholder text.
+Before `gh pr create` / `create_pull_request`, read and fill every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). That file is the PR contract for coding agents: linked issue, single concern, acceptance-criteria → evidence table, red-then-green acceptance proof, and the validation commands actually run. Fill every section with facts from this change.
 
-### Commit types (required policy)
+### Commit types
 
 Conventional Commits, chosen by who the change is for — GoReleaser builds release notes from commit subjects, so the type decides whether a change is described to `coach` users as part of the CLI.
 

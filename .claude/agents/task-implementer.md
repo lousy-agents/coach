@@ -33,7 +33,7 @@ Steps:
    tasks. If a covering acceptance test already exists and already passes, stop
    and tell the orchestrator instead of proceeding.
 
-   Go acceptance form (mandatory): use Ginkgo v2 + Gomega
+   Go acceptance form: use Ginkgo v2 + Gomega
    (`Describe` / `When` / `It`, EARS/AC-readable), in `*_acceptance_test.go`
    plus `acceptance_suite_test.go` with a `TestXxxAcceptance` entrypoint so
    `mise run test-acceptance-fast` picks it up. Match
@@ -41,26 +41,22 @@ Steps:
    Stdlib `testing` table tests are fine for unit tests only; they do not
    substitute for the acceptance suite of a feature or bug fix.
 
-   False-green ban: the failing (and later passing) case shall hit the intended
-   branch or failure mode. Shared clocks and fakes that make a different path
-   produce the same status or outcome do not count — for example, advancing time
-   so a "denylisted" case actually fails on expiry.
+   False-green ban: the failing (and later passing) case hits the intended
+   branch or failure mode, or it does not count. Shared clocks and fakes that
+   make a different path produce the same status or outcome do not count — for
+   example, advancing time so a "denylisted" case actually fails on expiry.
 3. Make the smallest change that turns that test green and otherwise satisfies
-   the task's acceptance criteria. Follow the repo's existing conventions and
-   patterns — match what is already there. For Go, comment only per AGENTS.md's
-   Go comments policy (useful godoc and contracts; no bloat or narration).
+    the task's acceptance criteria. Follow the repo's existing conventions and
+    patterns — match what is already there. Comment only per AGENTS.md's
+    comment policy, which overrides neighboring comment density.
 
-   Where the task involves outbound HTTP or dependency stores, also satisfy
-   AGENTS.md's policies: production default HTTP clients shall set a finite
-   `Timeout` (no bare `http.DefaultClient` on hangable paths), and
-   store/dependency errors on protected or auth paths shall fail closed with 503
-   and the stable JSON error envelope where that is the package contract. Do not
-   skip the check, and do not soften to 500 inconsistently with analogous paths.
-4. Run the repo's lint and test commands. Fix anything you broke.
+   Where the task involves outbound HTTP or dependency stores, satisfy
+   AGENTS.md's HTTP timeout and store fail-closed policies.
+4. Run `mise run ci-fast`. Fix anything it reports.
 5. Report back under a `## Implementer Report` heading: the files you changed,
    a one-line rationale per change, the failing-test output from step 2, and
    the final lint/test output. If you could not satisfy a criterion, say so
    explicitly rather than expanding scope to force it.
 
-Do not touch files outside your scope. Do not refactor adjacent code. Do not
-commit, push, or open PRs — the orchestrator owns git.
+Change only files in the task's scope, matching existing conventions. The
+orchestrator owns git.
