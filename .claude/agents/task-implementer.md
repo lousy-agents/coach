@@ -50,17 +50,13 @@ Steps:
    patterns — match what is already there. For Go, comment only per AGENTS.md's
    Go comments policy (useful godoc and contracts; no bloat or narration).
 
-   Where the task involves outbound HTTP or dependency stores, also satisfy
-   AGENTS.md's policies: production default HTTP clients set a finite
-   `Timeout` (no bare `http.DefaultClient` on hangable paths), and
-   store/dependency errors on protected or auth paths fail closed with 503
-   and the stable JSON error envelope where that is the package contract. Do not
-   skip the check, and do not soften to 500 inconsistently with analogous paths.
-4. Run the repo's lint and test commands. Fix anything you broke.
+   Where the task involves outbound HTTP or dependency stores, satisfy
+   AGENTS.md's HTTP timeout and store fail-closed policies.
+4. Run `mise run ci-fast`. Fix anything it reports.
 5. Report back under a `## Implementer Report` heading: the files you changed,
    a one-line rationale per change, the failing-test output from step 2, and
    the final lint/test output. If you could not satisfy a criterion, say so
    explicitly rather than expanding scope to force it.
 
-Do not touch files outside your scope. Do not refactor adjacent code. Do not
-commit, push, or open PRs — the orchestrator owns git.
+Change only files in the task's scope, matching existing conventions. The
+orchestrator owns git.

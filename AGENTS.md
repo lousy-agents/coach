@@ -16,9 +16,9 @@ Experimental AI coach for humans making software with agents. Analysis packages 
 
 **Dependency rule**: `pkg/semantics` shall not import `pkg/githubingest` (or `go-github`/`ghinstallation`), and `pkg/githubingest` shall not import `pkg/semantics` back. Keep it that way — this is what lets a consumer that only needs source analysis avoid pulling in a GitHub client.
 
-The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) exposes one subcommand, `codesignal`, which produces deterministic signal reports for a git diff (`--base`) or a repository baseline (`--baseline`) via the `pkg/semantics` → `pkg/codesignal` pipeline. Product direction lives in `docs/product/prd.md`; system design in `docs/architecture/system-overview.md`.
+The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) exposes one subcommand, `codesignal`, via the `pkg/semantics` → `pkg/codesignal` pipeline. Product direction lives in `docs/product/prd.md`; system design in `docs/architecture/system-overview.md`.
 
-**Living product evaluation**: `docs/product/evaluations/codesignal-pilot-readiness.html` is the current leave-pilot evidence, not a historical snapshot. Closing a #282 child or merging user-facing `coach codesignal` behavior means updating it: re-run the affected claim against HEAD, move closed gaps to the archive (do not delete them), restamp date / HEAD / `#282 · N / 24`, and re-rank only after a run. GitHub `CLOSED` is not sufficient evidence.
+**Living product evaluation**: `docs/product/evaluations/codesignal-pilot-readiness.html` is the current leave-pilot evidence, not a historical snapshot. Closing a #282 child or merging user-facing `coach codesignal` behavior means updating it: re-run the affected claim against HEAD, move closed gaps to the archive and keep them there, restamp date / HEAD / `#282 · N / 24`, and re-rank only after a run. GitHub `CLOSED` is not sufficient evidence.
 
 ## Agent Skills (`.agents/skills/`)
 
@@ -174,7 +174,7 @@ Inbound servers are the mirror of this rule: every production `http.Server` shal
 
 ### Store/dependency fail-closed
 
-Applies to the `coach-api` request paths. When a required store or dependency errors — as distinct from a clean miss or not-found — protected and auth paths shall return 503 with the stable JSON error envelope, so a partial read never reads as an authorized empty result. Do not skip the check, and do not treat store errors as a soft 500 in one path while failing closed in an analogous one.
+Applies to the `coach-api` request paths. When a required store or dependency errors — as distinct from a clean miss or not-found — protected and auth paths shall return 503 with the stable JSON error envelope, so a partial read never reads as an authorized empty result. Check store errors on every protected and auth path; analogous paths share the 503 envelope.
 
 ### Go comments
 
@@ -208,7 +208,7 @@ Passing checks prove nothing broke; they do not prove new behavior is correct. F
 
 ### Feedback loop
 
-After a failing check, fix and rerun that specific command rather than the whole suite — `go test -race ./... -run TestName` narrows to one test. Do not move on to the next validation step until the current one is clean.
+After a failing check, fix and rerun that specific command rather than the whole suite — `go test -race ./... -run TestName` narrows to one test. Stay on that command until it is clean.
 
 ### What `/implement-issue` guarantees, and what it does not
 
@@ -218,7 +218,7 @@ Read a PR from this flow as a well-evidenced proposal, not a verified one: it as
 
 ## Pull requests
 
-Before `gh pr create` / `create_pull_request`, read and fill every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). That file is the PR contract for coding agents: linked issue, single concern, acceptance-criteria → evidence table, red-then-green acceptance proof, and the validation commands actually run. Do not open a PR with blank sections or placeholder text.
+Before `gh pr create` / `create_pull_request`, read and fill every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). That file is the PR contract for coding agents: linked issue, single concern, acceptance-criteria → evidence table, red-then-green acceptance proof, and the validation commands actually run. Fill every section with facts from this change.
 
 ### Commit types
 

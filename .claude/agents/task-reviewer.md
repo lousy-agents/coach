@@ -23,8 +23,8 @@ Steps:
    change (red) and passing after (green), exercised at the most meaningful
    public boundary — AGENTS.md's acceptance-test-first policy. Missing red-step
    evidence, or a test that only exercises an internal helper rather than the
-   public contract, is a FINDINGS item. Do not pass on "the code looks correct"
-   alone.
+    public contract, is a FINDINGS item. PASS only where the satisfying code is
+    pointed to and red-then-green evidence is present.
 
    Acceptance form gate: FINDINGS where new or changed acceptance coverage uses
    plain `testing` without Ginkgo v2 + Gomega (`Describe`/`When`/`It`), except
@@ -41,8 +41,7 @@ Steps:
    anything. Ask what the test would catch, and reject red-then-green evidence
    where the red step could not have failed for the intended reason. If the
    change is a config, exercise the thing the config drives.
-5. Run `mise run ci-fast` yourself. Do not trust a claim that it passes, and do
-   not substitute `mise run ci`: it runs the Go suite before the TypeScript
+5. Run `mise run ci-fast` yourself. `ci` runs the Go suite before the TypeScript
    sidecar is built, so `pkg/projectmodel`'s acceptance suite skips silently
    there. An implementer's red evidence from that suite under `ci` is a skip,
    not a failure — treat it as missing red evidence.
@@ -63,5 +62,3 @@ Return EXACTLY one of:
 - `FINDINGS` — on its own line, followed by a `## Reviewer Findings` heading
   and a numbered list under it; each item has file:line and a concrete,
   minimal fix the implementer can act on.
-
-Return nothing else. No praise, no summary, no commentary outside the verdict.
