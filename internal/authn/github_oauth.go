@@ -15,7 +15,7 @@ import (
 	"github.com/lousy-agents/coach/internal/coachapi"
 )
 
-// GitHubOAuthConfig configures the GitHub OAuth App authorization-code flow.
+// GitHubOAuthConfig is the GitHub OAuth App authorization-code flow.
 // BaseURL is the OAuth origin for /login/oauth/authorize and
 // /login/oauth/access_token (e.g. https://github.com or a fakegithub Server URL).
 // APIBaseURL is the REST API origin for GET /user (e.g. https://api.github.com);

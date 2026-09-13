@@ -11,9 +11,9 @@ import (
 // AGENTS.md's outbound-network timeout policy.
 const defaultDialTimeout = 5 * time.Second
 
-// Config configures a Redis Streams-backed Queue, matching ADR-006's
-// "Provider configuration" Redis Streams shape (address, consumerGroup,
-// claimAfter; docs/architecture/ADR-006-watermill-queue-abstraction.md).
+// Config matches ADR-006's "Provider configuration" Redis Streams shape
+// (address, consumerGroup, claimAfter;
+// docs/architecture/ADR-006-watermill-queue-abstraction.md).
 type Config struct {
 	// Address is the Redis server address (host:port), e.g. "redis:6379".
 	Address string

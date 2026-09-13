@@ -9,7 +9,7 @@ import (
 )
 
 // ToolPackResult is the JSON envelope returned by multi-finding pack tool calls
-// for hidden_mutation_contextualization. Task 3 (coachapi handler) should parse
+// for hidden_mutation_contextualization. The coachapi handler should parse
 // this via ParseToolPackResult and map each Results[i] like a singular
 // ToolResult, using FindingRef as the hash discriminator for PayloadHash.
 type ToolPackResult struct {
@@ -38,7 +38,7 @@ type batchItemJudgment struct {
 }
 
 // HiddenMutationBatchOutputSchema returns the batch envelope OutputSchema used
-// when a pack contains multiple findings (Story 1).
+// when a pack contains multiple findings.
 func HiddenMutationBatchOutputSchema() json.RawMessage {
 	return mustSchema(schemaHiddenMutationBatchV1)
 }
@@ -77,7 +77,7 @@ func IsToolPackResult(raw json.RawMessage) bool {
 }
 
 // AssembleHiddenMutationPackMessages builds gateway Messages for a multi-finding
-// pack with short-rationale guidance (Story 3) and per-item span-local evidence.
+// pack with short-rationale guidance and per-item span-local evidence.
 func AssembleHiddenMutationPackMessages(ev HiddenMutationPackEvidence) []modelgateway.Message {
 	var b strings.Builder
 	b.WriteString("## Hidden-mutation judgment pack\n")

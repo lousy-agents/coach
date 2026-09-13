@@ -8,7 +8,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-// Options configures a Builder.
 type Options struct {
 	IncludeResolved bool `json:"include_resolved"`
 	Baseline        bool `json:"baseline"`
@@ -160,9 +159,6 @@ func assembleReport(
 	return report
 }
 
-// buildProjectReportSurface classifies project observations, drops anchorless
-// and (optionally) resolved entries, projects anchored findings onto the shared
-// signals surface, and returns schema-2 project report fields plus diagnostics.
 func buildProjectReportSurface(input Input, noBaseLifecycle Lifecycle, includeResolved bool) (
 	projectChanges []ProjectChange,
 	projectFacts []ProjectFact,

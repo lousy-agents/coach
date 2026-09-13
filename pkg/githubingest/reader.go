@@ -24,7 +24,7 @@ const maxContentSize = 1 << 20 // 1 MiB
 // production hang bound.
 const DefaultGitHubFileReaderHTTPTimeout = 10 * time.Second
 
-// GitHubAppConfig configures a GitHubFileReader's GitHub App authentication.
+// GitHubAppConfig is GitHub App authentication for GitHubFileReader.
 type GitHubAppConfig struct {
 	AppID          int64
 	InstallationID int64

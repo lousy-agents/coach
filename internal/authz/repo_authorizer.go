@@ -18,7 +18,6 @@ import (
 // by the shared CredentialResolver's own timeout.
 const DefaultGitHubRepoAuthorizerHTTPTimeout = 10 * time.Second
 
-// GitHubRepoAuthorizerConfig configures a GitHubRepoAuthorizer.
 type GitHubRepoAuthorizerConfig struct {
 	// Credentials is the shared installation-token seam (ADR-002 rule 5).
 	Credentials *githubingest.CredentialResolver

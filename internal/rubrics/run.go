@@ -13,10 +13,10 @@ import (
 //
 // On schema validation failure or gateway unavailability/timeout it returns a
 // Diagnostic and no Judgment (and a nil error) so the job can complete with
-// deterministic-only findings (Story 5).
+// deterministic-only findings.
 //
 // context.Canceled — including Unavailable errors caused by cancel — is a
-// lifecycle abort, not Story 5 degrade: Run returns that error with an empty
+// lifecycle abort, not a soft-degrade: Run returns that error with an empty
 // Result so callers do not CompleteJob as deterministic-only success.
 func Run(ctx context.Context, gw modelgateway.Gateway, def Definition, messages []modelgateway.Message) (Result, error) {
 	if err := lifecycleAbortErr(ctx.Err()); err != nil {
@@ -40,8 +40,8 @@ func Run(ctx context.Context, gw modelgateway.Gateway, def Definition, messages 
 		return Result{}, abort
 	}
 	// Wall-budget deadline on the tool op context: propagate so agentloop.mapWallErr
-	// rewrites to ErrBudgetExceeded (Story 2). Gateway timeouts while ctx is still
-	// live remain Story 5 soft-degrade via degradeFromErr below.
+	// rewrites to ErrBudgetExceeded. Gateway timeouts while ctx is still
+	// live remain a soft-degrade via degradeFromErr below.
 	if err != nil && isOpDeadlineExceeded(ctx) {
 		return Result{}, err
 	}
@@ -64,7 +64,7 @@ func Run(ctx context.Context, gw modelgateway.Gateway, def Definition, messages 
 
 // lifecycleAbortErr returns a non-nil error when err represents owning-context
 // cancellation. DeadlineExceeded is not a cancel abort: when the op context is
-// still live it soft-degrades (Story 5); when the op context itself timed out
+// still live it soft-degrades; when the op context itself timed out
 // (judgment wall), callers propagate via isOpDeadlineExceeded for mapWallErr.
 func lifecycleAbortErr(err error) error {
 	if err == nil {

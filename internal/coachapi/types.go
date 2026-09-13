@@ -33,7 +33,7 @@ const (
 	FindingSourceAgent         FindingSource = "agent"
 )
 
-// Stable machine-readable API error codes (Story 1).
+// Stable machine-readable API error codes.
 const (
 	ErrorCodeUnauthenticated    = "unauthenticated"
 	ErrorCodeUnauthorized       = "unauthorized"
@@ -128,7 +128,7 @@ type JobDiagnostic struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Finding is one report finding with Story 5 provenance fields.
+// Finding is one report finding with provenance fields.
 // Deterministic findings carry null rubric_id, rubric_version, and model_identity.
 type Finding struct {
 	Source        FindingSource   `json:"source"`
