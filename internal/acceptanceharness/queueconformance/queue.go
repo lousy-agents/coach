@@ -457,62 +457,81 @@ func runMultiWorkerScaling(t *testing.T, newQueue func(tb testing.TB, clock acce
 		}
 	}
 
-	var mu sync.Mutex
-	completions := make(map[string]int)
-	var errs []error
-	totalCompleted := 0
-
+	run := multiWorkerRun{completions: make(map[string]int), taskCount: taskCount}
 	var wg sync.WaitGroup
 	wg.Add(workerCount)
 	for w := 0; w < workerCount; w++ {
 		go func() {
 			defer wg.Done()
-			for {
-				mu.Lock()
-				done := totalCompleted >= taskCount
-				mu.Unlock()
-				if done {
-					return
-				}
-
-				claim, ok, err := q.Claim(ctx)
-				if err != nil {
-					mu.Lock()
-					errs = append(errs, fmt.Errorf("Claim: %w", err))
-					mu.Unlock()
-					return
-				}
-				if !ok {
-					select {
-					case <-ctx.Done():
-						return
-					case <-time.After(2 * time.Millisecond):
-					}
-					continue
-				}
-
-				if err := q.Complete(ctx, claim); err != nil {
-					mu.Lock()
-					errs = append(errs, fmt.Errorf("Complete(%s): %w", claim.TaskID, err))
-					mu.Unlock()
-					return
-				}
-				mu.Lock()
-				completions[claim.TaskID]++
-				totalCompleted++
-				mu.Unlock()
-			}
+			run.worker(ctx, q)
 		}()
 	}
 	wg.Wait()
+	run.report(t)
+}
 
-	for _, err := range errs {
+type multiWorkerRun struct {
+	mu             sync.Mutex
+	completions    map[string]int
+	errs           []error
+	totalCompleted int
+	taskCount      int
+}
+
+func (r *multiWorkerRun) worker(ctx context.Context, q Queue) {
+	for {
+		if r.finished() {
+			return
+		}
+		claim, ok, err := q.Claim(ctx)
+		if err != nil {
+			r.fail(fmt.Errorf("Claim: %w", err))
+			return
+		}
+		if !ok {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Millisecond):
+			}
+			continue
+		}
+		if err := q.Complete(ctx, claim); err != nil {
+			r.fail(fmt.Errorf("Complete(%s): %w", claim.TaskID, err))
+			return
+		}
+		r.record(claim.TaskID)
+	}
+}
+
+func (r *multiWorkerRun) finished() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.totalCompleted >= r.taskCount
+}
+
+func (r *multiWorkerRun) fail(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.errs = append(r.errs, err)
+}
+
+func (r *multiWorkerRun) record(taskID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.completions[taskID]++
+	r.totalCompleted++
+}
+
+func (r *multiWorkerRun) report(t *testing.T) {
+	t.Helper()
+	for _, err := range r.errs {
 		t.Errorf("worker error: %v", err)
 	}
-	if len(completions) != taskCount {
-		t.Fatalf("completed %d distinct tasks, want %d: %v", len(completions), taskCount, completions)
+	if len(r.completions) != r.taskCount {
+		t.Fatalf("completed %d distinct tasks, want %d: %v", len(r.completions), r.taskCount, r.completions)
 	}
-	for id, count := range completions {
+	for id, count := range r.completions {
 		if count != 1 {
 			t.Errorf("task %s completed %d times, want exactly 1", id, count)
 		}

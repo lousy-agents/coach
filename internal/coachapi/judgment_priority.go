@@ -54,7 +54,37 @@ func prioritizeAllRoundRobin(cands []rubrics.PackCandidate) []rubrics.PackCandid
 }
 
 func prioritizeRoundRobin(cands []rubrics.PackCandidate, max int) []rubrics.PackCandidate {
-	// Group by path preserving per-path priority order.
+	byPath := groupCandidatesByPath(cands)
+	paths := pathsByFindingCount(byPath)
+
+	// Round-robin indices into each path's ordered queue.
+	idx := make(map[string]int, len(paths))
+	selected := make([]rubrics.PackCandidate, 0, max)
+	for len(selected) < max {
+		progress := false
+		for _, path := range paths {
+			if len(selected) >= max {
+				break
+			}
+			i := idx[path]
+			items := byPath[path]
+			if i >= len(items) {
+				continue
+			}
+			selected = append(selected, items[i])
+			idx[path] = i + 1
+			progress = true
+		}
+		if !progress {
+			break
+		}
+	}
+	return selected
+}
+
+// groupCandidatesByPath buckets cands by path, each bucket in per-path
+// priority order (judgmentCandidateLess).
+func groupCandidatesByPath(cands []rubrics.PackCandidate) map[string][]rubrics.PackCandidate {
 	byPath := make(map[string][]rubrics.PackCandidate)
 	for _, c := range cands {
 		byPath[c.Path] = append(byPath[c.Path], c)
@@ -64,46 +94,24 @@ func prioritizeRoundRobin(cands []rubrics.PackCandidate, max int) []rubrics.Pack
 			return judgmentCandidateLess(byPath[path][i], byPath[path][j])
 		})
 	}
+	return byPath
+}
 
-	type pathGroup struct {
-		path  string
-		count int
+// pathsByFindingCount orders byPath's keys by finding count descending, then
+// path ascending -- a total order, so map iteration order never leaks into
+// the round-robin result.
+func pathsByFindingCount(byPath map[string][]rubrics.PackCandidate) []string {
+	paths := make([]string, 0, len(byPath))
+	for path := range byPath {
+		paths = append(paths, path)
 	}
-	groups := make([]pathGroup, 0, len(byPath))
-	for path, items := range byPath {
-		groups = append(groups, pathGroup{path: path, count: len(items)})
-	}
-	// Paths: finding count descending, then path ascending.
-	sort.SliceStable(groups, func(i, j int) bool {
-		if groups[i].count != groups[j].count {
-			return groups[i].count > groups[j].count
+	sort.SliceStable(paths, func(i, j int) bool {
+		if len(byPath[paths[i]]) != len(byPath[paths[j]]) {
+			return len(byPath[paths[i]]) > len(byPath[paths[j]])
 		}
-		return groups[i].path < groups[j].path
+		return paths[i] < paths[j]
 	})
-
-	// Round-robin indices into each path's ordered queue.
-	idx := make(map[string]int, len(groups))
-	selected := make([]rubrics.PackCandidate, 0, max)
-	for len(selected) < max {
-		progress := false
-		for _, g := range groups {
-			if len(selected) >= max {
-				break
-			}
-			i := idx[g.path]
-			items := byPath[g.path]
-			if i >= len(items) {
-				continue
-			}
-			selected = append(selected, items[i])
-			idx[g.path] = i + 1
-			progress = true
-		}
-		if !progress {
-			break
-		}
-	}
-	return selected
+	return paths
 }
 
 // judgmentCandidateLess reports whether a should be preferred before b within a path

@@ -123,6 +123,64 @@ func NewRepoBaselineScanHandler(cfg RepoBaselineScanConfig) BaselineJobHandler {
 	}
 }
 
+// newAnalyzeLoop builds the semantics + codesignal loop sized for fileCount.
+// Judgment uses a fresh loop of its own so analyze wall time never consumes
+// the judgment budget (Story 2).
+func newAnalyzeLoop(cfg RepoBaselineScanConfig, fileCount int) (*agentloop.Loop, error) {
+	analyzeMaxTools := fileCount + 1 /*codesignal*/ + 10 /*slack*/
+	if analyzeMaxTools < agentloop.DefaultMaxToolCalls {
+		analyzeMaxTools = agentloop.DefaultMaxToolCalls
+	}
+	analyzeLoop, err := agentloop.New(agentloop.Options{
+		Budget: agentloop.Budget{MaxToolCalls: analyzeMaxTools},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("coachapi: constructing analyze agent loop: %w", err)
+	}
+	if cfg.ConfigureLoop != nil {
+		cfg.ConfigureLoop(analyzeLoop)
+	}
+	return analyzeLoop, nil
+}
+
+// newJudgmentLoop builds the rubric-tool loop for hiddenCount
+// hidden-mutation findings, with its own wall budget so analyze wall time
+// never consumes it. MaxToolCalls scales for packs + cohesion + slack rather
+// than 1:1 with findings: the ceiling is one Call per finding (worst pack
+// size 1) plus cohesion plus slack.
+func newJudgmentLoop(cfg RepoBaselineScanConfig, hiddenCount int) (*agentloop.Loop, error) {
+	gw := cfg.Gateway
+	if gw == nil {
+		gw = modelgateway.NewStubGateway()
+	}
+
+	judgmentWall := cfg.JudgmentMaxWallTime
+	if judgmentWall <= 0 {
+		judgmentWall = DefaultJudgmentMaxWallTime
+	}
+	judgmentMaxTools := hiddenCount + 1 /*cohesion*/ + 10 /*slack*/
+	if judgmentMaxTools < agentloop.DefaultMaxToolCalls {
+		judgmentMaxTools = agentloop.DefaultMaxToolCalls
+	}
+
+	judgmentLoop, err := agentloop.New(agentloop.Options{
+		Budget: agentloop.Budget{
+			MaxToolCalls: judgmentMaxTools,
+			MaxWallTime:  judgmentWall,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("coachapi: constructing judgment agent loop: %w", err)
+	}
+	if err := rubrics.RegisterTools(judgmentLoop, gw); err != nil {
+		return nil, fmt.Errorf("coachapi: registering rubric tools: %w", err)
+	}
+	if cfg.ConfigureLoop != nil {
+		cfg.ConfigureLoop(judgmentLoop)
+	}
+	return judgmentLoop, nil
+}
+
 func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Job, w BaselineJobWriter) (*Completion, error) {
 	if job.Kind != JobKindRepoBaselineScan {
 		return nil, fmt.Errorf("coachapi: unsupported job kind %q for baseline handler", job.Kind)
@@ -161,20 +219,9 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 		return nil, err
 	}
 
-	// Analyze loop: semantics + codesignal only. Judgment uses a fresh loop so
-	// analyze wall time does not consume the judgment budget (Story 2).
-	analyzeMaxTools := len(entries) + 1 /*codesignal*/ + 10 /*slack*/
-	if analyzeMaxTools < agentloop.DefaultMaxToolCalls {
-		analyzeMaxTools = agentloop.DefaultMaxToolCalls
-	}
-	analyzeLoop, err := agentloop.New(agentloop.Options{
-		Budget: agentloop.Budget{MaxToolCalls: analyzeMaxTools},
-	})
+	analyzeLoop, err := newAnalyzeLoop(cfg, len(entries))
 	if err != nil {
-		return nil, fmt.Errorf("coachapi: constructing analyze agent loop: %w", err)
-	}
-	if cfg.ConfigureLoop != nil {
-		cfg.ConfigureLoop(analyzeLoop)
+		return nil, err
 	}
 
 	repoLabel := params.RepoOwner + "/" + params.RepoName
@@ -192,36 +239,9 @@ func runRepoBaselineScan(ctx context.Context, cfg RepoBaselineScanConfig, job Jo
 		return nil, err
 	}
 
-	gw := cfg.Gateway
-	if gw == nil {
-		gw = modelgateway.NewStubGateway()
-	}
-
-	judgmentWall := cfg.JudgmentMaxWallTime
-	if judgmentWall <= 0 {
-		judgmentWall = DefaultJudgmentMaxWallTime
-	}
-	// Scale judgment MaxToolCalls for packs + cohesion + slack (not 1:1 findings).
-	// Ceiling is one Call per finding (worst pack size 1) + cohesion + slack.
-	hiddenCount := countHiddenMutationFindings(detFindings)
-	judgmentMaxTools := hiddenCount + 1 /*cohesion*/ + 10 /*slack*/
-	if judgmentMaxTools < agentloop.DefaultMaxToolCalls {
-		judgmentMaxTools = agentloop.DefaultMaxToolCalls
-	}
-	judgmentLoop, err := agentloop.New(agentloop.Options{
-		Budget: agentloop.Budget{
-			MaxToolCalls: judgmentMaxTools,
-			MaxWallTime:  judgmentWall,
-		},
-	})
+	judgmentLoop, err := newJudgmentLoop(cfg, countHiddenMutationFindings(detFindings))
 	if err != nil {
-		return nil, fmt.Errorf("coachapi: constructing judgment agent loop: %w", err)
-	}
-	if err := rubrics.RegisterTools(judgmentLoop, gw); err != nil {
-		return nil, fmt.Errorf("coachapi: registering rubric tools: %w", err)
-	}
-	if cfg.ConfigureLoop != nil {
-		cfg.ConfigureLoop(judgmentLoop)
+		return nil, err
 	}
 
 	// Agent findings from hidden-mutation packs are inserted incrementally

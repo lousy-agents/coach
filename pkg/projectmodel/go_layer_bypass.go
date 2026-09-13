@@ -282,12 +282,13 @@ func searchLayerBypassWitnesses(ctx context.Context, sources, sinks []string, by
 		search.truncatedSearch = true
 		return search
 	}
+	budget := bfsBudget{max: opts.MaxSearchNodes}
 	for _, source := range sources {
 		if ctx.Err() != nil {
 			search.truncatedSearch = true
 			break
 		}
-		parents, hitBudget := bfsShortestPaths(ctx, source, bypassAdjacency, opts.MaxSearchNodes, &search.nodesVisited)
+		parents, hitBudget := budget.shortestPaths(ctx, source, bypassAdjacency)
 		if hitBudget {
 			search.truncatedSearch = true
 		}
@@ -296,6 +297,7 @@ func searchLayerBypassWitnesses(ctx context.Context, sources, sinks []string, by
 	if !search.truncatedSearch && ctx.Err() != nil {
 		search.truncatedSearch = true
 	}
+	search.nodesVisited = budget.visited
 	return search
 }
 

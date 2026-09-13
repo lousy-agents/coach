@@ -108,10 +108,12 @@ func tallyClassified(classified []SelectedFile) (kept []SelectedFile, excluded [
 // applying different policies for what happens to test_only/excluded files.
 func classifySourceFiles(dir, headSHA, buildTarget, scope string, files []SelectedFile) ([]SelectedFile, error) {
 	if scope == "all" {
-		for i := range files {
-			files[i].SourceScope = classifyFilename(files[i])
+		classified := make([]SelectedFile, len(files))
+		for i, file := range files {
+			file.SourceScope = classifyFilename(file)
+			classified[i] = file
 		}
-		return files, nil
+		return classified, nil
 	}
 
 	repositoryRoot, err := repositoryRoot(dir)
@@ -285,30 +287,30 @@ func extractTar(dir string, archive []byte) error {
 		if err != nil {
 			return err
 		}
-		path, err := safeTarEntryPath(dir, header.Name)
-		if err != nil {
+		if err := extractTarEntry(dir, header, reader); err != nil {
 			return err
 		}
-		switch header.Typeflag {
-		case tar.TypeXGlobalHeader, tar.TypeXHeader:
-			// Metadata headers are consumed by archive/tar and do not represent
-			// filesystem entries in the snapshot.
-			continue
-		case tar.TypeDir:
-			if err := os.MkdirAll(path, os.FileMode(header.Mode)); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			if err := extractTarRegularFile(path, header, reader); err != nil {
-				return err
-			}
-		case tar.TypeSymlink:
-			if err := extractTarSymlink(path, header); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("unsupported archive entry %q", header.Name)
-		}
+	}
+}
+
+func extractTarEntry(dir string, header *tar.Header, reader *tar.Reader) error {
+	path, err := safeTarEntryPath(dir, header.Name)
+	if err != nil {
+		return err
+	}
+	switch header.Typeflag {
+	case tar.TypeXGlobalHeader, tar.TypeXHeader:
+		// Metadata headers are consumed by archive/tar and do not represent
+		// filesystem entries in the snapshot.
+		return nil
+	case tar.TypeDir:
+		return os.MkdirAll(path, os.FileMode(header.Mode))
+	case tar.TypeReg:
+		return extractTarRegularFile(path, header, reader)
+	case tar.TypeSymlink:
+		return extractTarSymlink(path, header)
+	default:
+		return fmt.Errorf("unsupported archive entry %q", header.Name)
 	}
 }
 

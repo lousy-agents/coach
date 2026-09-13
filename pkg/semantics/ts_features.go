@@ -323,10 +323,10 @@ func collectTSFunctionScopedBindingNames(root, node engine.Node, source []byte, 
 func tsCollectFunctionScopedNodeNames(root, node engine.Node, source []byte, params, names map[string]bool) bool {
 	switch node.Kind() {
 	case "function_declaration", "generator_function_declaration":
-		collectTSFunctionDeclarationNames(root, node, source, params, names)
+		nameSet(names).collectFunctionDeclarationNames(root, node, source, params)
 		return true
 	case "variable_declaration":
-		collectTSFunctionScopedVarDeclarationNames(node, source, params, names)
+		nameSet(names).collectFunctionScopedVarDeclarationNames(node, source, params)
 		return true
 	case "lexical_declaration":
 		return true
@@ -343,22 +343,24 @@ func tsCollectFunctionScopedNodeNames(root, node engine.Node, source []byte, par
 // name-collection guard below is defensive and never fires (behavior
 // preserved verbatim from the pre-refactor collect closure) -- then
 // recursion into node's own children.
-func collectTSFunctionDeclarationNames(root, node engine.Node, source []byte, params, names map[string]bool) {
+type nameSet map[string]bool
+
+func (s nameSet) collectFunctionDeclarationNames(root, node engine.Node, source []byte, params map[string]bool) {
 	if node != root {
 		if name := node.ChildByFieldName("name"); name != nil {
-			names[name.Utf8Text(source)] = true
+			s[name.Utf8Text(source)] = true
 		}
 	}
 	count := node.ChildCount()
 	for i := 0; i < count; i++ {
-		collectTSFunctionScopedBindingNames(root, node.Child(i), source, params, names)
+		collectTSFunctionScopedBindingNames(root, node.Child(i), source, params, s)
 	}
 }
 
 // collectTSFunctionScopedVarDeclarationNames handles the
 // variable_declaration case of tsCollectFunctionScopedNodeNames: node's own
 // `var`-bound declarator names, excluding any already in params.
-func collectTSFunctionScopedVarDeclarationNames(node engine.Node, source []byte, params, names map[string]bool) {
+func (s nameSet) collectFunctionScopedVarDeclarationNames(node engine.Node, source []byte, params map[string]bool) {
 	varNames := map[string]bool{}
 	count := node.ChildCount()
 	for i := 0; i < count; i++ {
@@ -366,7 +368,7 @@ func collectTSFunctionScopedVarDeclarationNames(node engine.Node, source []byte,
 	}
 	for name := range varNames {
 		if !params[name] {
-			names[name] = true
+			s[name] = true
 		}
 	}
 }
@@ -469,7 +471,7 @@ func collectTSVariableDeclaratorNames(n engine.Node, source []byte, names map[st
 	}
 	if n.Kind() == "variable_declarator" {
 		if name := n.ChildByFieldName("name"); name != nil {
-			collectTSBindingPatternNames(name, source, names)
+			nameSet(names).collectBindingPatternNames(name, source)
 		}
 		return
 	}
@@ -489,10 +491,10 @@ func collectTSVariableDeclaratorNamesAfterStatement(n engine.Node, source []byte
 			return
 		}
 		if n.ChildByFieldName("value") == nil {
-			collectTSBindingPatternNamesExcept(name, source, currentParams, names)
+			nameSet(names).collectBindingPatternNamesExcept(name, source, currentParams)
 			return
 		}
-		collectTSBindingPatternNames(name, source, names)
+		nameSet(names).collectBindingPatternNames(name, source)
 		return
 	}
 	count := n.ChildCount()
@@ -501,44 +503,44 @@ func collectTSVariableDeclaratorNamesAfterStatement(n engine.Node, source []byte
 	}
 }
 
-func collectTSBindingPatternNamesExcept(n engine.Node, source []byte, except map[string]bool, names map[string]bool) {
-	all := map[string]bool{}
-	collectTSBindingPatternNames(n, source, all)
+func (s nameSet) collectBindingPatternNamesExcept(n engine.Node, source []byte, except map[string]bool) {
+	all := nameSet{}
+	all.collectBindingPatternNames(n, source)
 	for name := range all {
 		if except[name] {
 			continue
 		}
-		names[name] = true
+		s[name] = true
 	}
 }
 
-func collectTSBindingPatternNames(n engine.Node, source []byte, names map[string]bool) {
+func (s nameSet) collectBindingPatternNames(n engine.Node, source []byte) {
 	if n == nil {
 		return
 	}
 	switch n.Kind() {
 	case "identifier", "shorthand_property_identifier_pattern":
-		names[n.Utf8Text(source)] = true
+		s[n.Utf8Text(source)] = true
 		return
 	case "pair_pattern":
 		if value := n.ChildByFieldName("value"); value != nil {
-			collectTSBindingPatternNames(value, source, names)
+			s.collectBindingPatternNames(value, source)
 		}
 		return
 	case "rest_pattern":
 		if arg := n.ChildByFieldName("argument"); arg != nil {
-			collectTSBindingPatternNames(arg, source, names)
+			s.collectBindingPatternNames(arg, source)
 		}
 		return
 	case "assignment_pattern":
 		if left := n.ChildByFieldName("left"); left != nil {
-			collectTSBindingPatternNames(left, source, names)
+			s.collectBindingPatternNames(left, source)
 		}
 		return
 	default:
 		count := n.ChildCount()
 		for i := 0; i < count; i++ {
-			collectTSBindingPatternNames(n.Child(i), source, names)
+			s.collectBindingPatternNames(n.Child(i), source)
 		}
 	}
 }
@@ -549,7 +551,7 @@ func tsControlFlowBindingNames(n engine.Node, source []byte) map[string]bool {
 	}
 	names := map[string]bool{}
 	if left := n.ChildByFieldName("left"); left != nil {
-		collectTSBindingPatternNames(left, source, names)
+		nameSet(names).collectBindingPatternNames(left, source)
 	}
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
@@ -581,7 +583,7 @@ func tsReboundParameterNames(n engine.Node, source []byte) map[string]bool {
 		}
 		if node.Kind() == "assignment_expression" || node.Kind() == "augmented_assignment_expression" {
 			if left := node.ChildByFieldName("left"); left != nil {
-				collectTSReboundTargetNames(left, source, names)
+				nameSet(names).collectReboundTargetNames(left, source)
 			}
 			return
 		}
@@ -594,23 +596,23 @@ func tsReboundParameterNames(n engine.Node, source []byte) map[string]bool {
 	return names
 }
 
-func collectTSReboundTargetNames(n engine.Node, source []byte, names map[string]bool) {
+func (s nameSet) collectReboundTargetNames(n engine.Node, source []byte) {
 	if n == nil {
 		return
 	}
 	switch n.Kind() {
 	case "identifier", "shorthand_property_identifier_pattern":
-		names[n.Utf8Text(source)] = true
+		s[n.Utf8Text(source)] = true
 	case "pair_pattern":
-		collectTSReboundTargetNames(n.ChildByFieldName("value"), source, names)
+		s.collectReboundTargetNames(n.ChildByFieldName("value"), source)
 	case "assignment_pattern":
-		collectTSReboundTargetNames(n.ChildByFieldName("left"), source, names)
+		s.collectReboundTargetNames(n.ChildByFieldName("left"), source)
 	case "rest_pattern":
-		collectTSReboundTargetNames(n.ChildByFieldName("argument"), source, names)
+		s.collectReboundTargetNames(n.ChildByFieldName("argument"), source)
 	case "object_pattern", "array_pattern", "parenthesized_expression":
 		count := n.ChildCount()
 		for i := 0; i < count; i++ {
-			collectTSReboundTargetNames(n.Child(i), source, names)
+			s.collectReboundTargetNames(n.Child(i), source)
 		}
 	}
 }
@@ -646,8 +648,8 @@ func tsVarBindingNames(n engine.Node, source []byte, currentParams map[string]bo
 
 func tsCatchBindingNames(n engine.Node, source []byte) map[string]bool {
 	if p := n.ChildByFieldName("parameter"); p != nil {
-		names := map[string]bool{}
-		collectTSBindingPatternNames(p, source, names)
+		names := nameSet{}
+		names.collectBindingPatternNames(p, source)
 		return names
 	}
 	return nil

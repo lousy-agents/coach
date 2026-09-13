@@ -144,11 +144,10 @@ func NewGoSnapshotFS(dir, revision string) (fs.FS, error) {
 	fsys := &goSnapshotFS{
 		dir:      dir,
 		revision: revision,
-		isDir:    map[string]bool{".": true},
 		isFile:   map[string]bool{},
 		sizes:    map[string]int64{},
 	}
-	childSets := map[string]map[string]bool{}
+	paths := snapshotPaths{childSets: map[string]map[string]bool{}, isDir: map[string]bool{".": true}}
 
 	for _, entry := range splitNULPaths(output) {
 		p, size, err := parseSnapshotLsTreeEntry(entry)
@@ -160,10 +159,11 @@ func NewGoSnapshotFS(dir, revision string) (fs.FS, error) {
 		}
 		fsys.isFile[p] = true
 		fsys.sizes[p] = size
-		addSnapshotPath(childSets, fsys.isDir, p)
+		paths.add(p)
 	}
 
-	fsys.children = finalizeSnapshotChildren(childSets)
+	fsys.isDir = paths.isDir
+	fsys.children = finalizeSnapshotChildren(paths.childSets)
 	return fsys, nil
 }
 
@@ -218,22 +218,25 @@ func validateSnapshotPath(p string) error {
 	return nil
 }
 
-// addSnapshotPath records filePath's directory ancestry into childSets
-// (parent name -> child name -> isDir) and isDir (full directory paths).
-func addSnapshotPath(childSets map[string]map[string]bool, isDir map[string]bool, filePath string) {
+type snapshotPaths struct {
+	childSets map[string]map[string]bool
+	isDir     map[string]bool
+}
+
+func (s *snapshotPaths) add(filePath string) {
 	segments := strings.Split(filePath, "/")
 	parent := "."
 	for i, segment := range segments {
-		if childSets[parent] == nil {
-			childSets[parent] = map[string]bool{}
+		if s.childSets[parent] == nil {
+			s.childSets[parent] = map[string]bool{}
 		}
 		if i == len(segments)-1 {
-			childSets[parent][segment] = false
+			s.childSets[parent][segment] = false
 			return
 		}
-		childSets[parent][segment] = true
+		s.childSets[parent][segment] = true
 		parent = path.Join(parent, segment)
-		isDir[parent] = true
+		s.isDir[parent] = true
 	}
 }
 

@@ -45,6 +45,12 @@ func applyBudgetDefaults(b Budget) Budget {
 	return b
 }
 
+func (l *Loop) checkWall() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.checkWallLocked()
+}
+
 func (l *Loop) checkWallLocked() error {
 	if l.clock.Now().Sub(l.start) >= l.budget.MaxWallTime {
 		return fmt.Errorf("%w: max_wall_time %s", ErrBudgetExceeded, l.budget.MaxWallTime)

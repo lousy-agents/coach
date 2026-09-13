@@ -69,36 +69,48 @@ function parseFrontmatter(text: string): { data: Record<string, string>; body: s
 
   const fm = rest.slice(0, endMatch.index)
   const body = rest.slice(endMatch.index + endMatch[0].length)
-  const data: Record<string, string> = {}
-  let key: string | null = null
-  let buf: string[] = []
+  return { data: parseFrontmatterBlock(fm), body }
+}
 
-  const flush = () => {
-    if (key !== null) {
-      data[key] = buf.join("\n").trim()
-      key = null
-      buf = []
-    }
-  }
+class FrontmatterBlock {
+  readonly data: Record<string, string> = {}
+  private key: string | null = null
+  private buf: string[] = []
 
-  for (const line of fm.split(/\r?\n/)) {
-    if (key !== null && (/^\s/.test(line) || line.startsWith("- "))) {
-      buf.push(line)
-      continue
+  addLine(line: string): void {
+    if (this.key !== null && (/^\s/.test(line) || line.startsWith("- "))) {
+      this.buf.push(line)
+      return
     }
-    flush()
+    this.flush()
     const m = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/)
-    if (!m) continue
+    if (!m) return
     const [, k, raw] = m
     if (raw === "" || raw === "|" || raw === ">") {
-      key = k
-      buf = []
-    } else {
-      data[k] = raw.replace(/^["']|["']$/g, "")
+      this.key = k
+      this.buf = []
+      return
     }
+    this.data[k] = raw.replace(/^["']|["']$/g, "")
   }
-  flush()
-  return { data, body }
+
+  finish(): Record<string, string> {
+    this.flush()
+    return this.data
+  }
+
+  private flush(): void {
+    if (this.key === null) return
+    this.data[this.key] = this.buf.join("\n").trim()
+    this.key = null
+    this.buf = []
+  }
+}
+
+function parseFrontmatterBlock(fm: string): Record<string, string> {
+  const block = new FrontmatterBlock()
+  for (const line of fm.split(/\r?\n/)) block.addLine(line)
+  return block.finish()
 }
 
 function parseTools(raw: string | undefined): string[] {
@@ -146,35 +158,35 @@ async function loadClaudeAgents(agentsDir: string): Promise<Record<string, Agent
 
   for (const entry of entries) {
     if (!entry.endsWith(".md")) continue
-    const filePath = path.join(agentsDir, entry)
-    let text: string
-    try {
-      text = await fs.readFile(filePath, "utf8")
-    } catch {
-      continue
-    }
-
-    const parsed = parseFrontmatter(text)
-    if (!parsed || !parsed.body) continue
-
-    const name = agentName(parsed.data, filePath)
-    const tools = parseTools(parsed.data.tools)
-    const maxTurnsRaw =
-      parsed.data.maxTurns ?? parsed.data.max_turns ?? parsed.data["max-turns"]
-    const maxTurns = maxTurnsRaw ? Number.parseInt(maxTurnsRaw, 10) : undefined
-
-    const agent: AgentConfig = {
-      description: parsed.data.description?.trim() || `Claude agent ${name}`,
-      mode: "subagent",
-      prompt: parsed.body,
-      permission: permissionsFromTools(tools),
-    }
-    if (Number.isFinite(maxTurns) && maxTurns! > 0) {
-      agent.steps = maxTurns
-    }
-    out[name] = agent
+    const loaded = await loadClaudeAgentFile(path.join(agentsDir, entry))
+    if (loaded) out[loaded.name] = loaded.agent
   }
   return out
+}
+
+async function loadClaudeAgentFile(filePath: string): Promise<{ name: string; agent: AgentConfig } | null> {
+  let text: string
+  try {
+    text = await fs.readFile(filePath, "utf8")
+  } catch {
+    return null
+  }
+  const parsed = parseFrontmatter(text)
+  if (!parsed || !parsed.body) return null
+  const name = agentName(parsed.data, filePath)
+  const tools = parseTools(parsed.data.tools)
+  const maxTurnsRaw = parsed.data.maxTurns ?? parsed.data.max_turns ?? parsed.data["max-turns"]
+  const maxTurns = maxTurnsRaw ? Number.parseInt(maxTurnsRaw, 10) : undefined
+  const agent: AgentConfig = {
+    description: parsed.data.description?.trim() || `Claude agent ${name}`,
+    mode: "subagent",
+    prompt: parsed.body,
+    permission: permissionsFromTools(tools),
+  }
+  if (Number.isFinite(maxTurns) && maxTurns! > 0) {
+    agent.steps = maxTurns
+  }
+  return { name, agent }
 }
 
 function commandName(data: Record<string, string>, filePath: string): string {
@@ -215,6 +227,77 @@ async function loadClaudeCommands(commandsDir: string): Promise<Record<string, C
   return out
 }
 
+class ConfigDraft {
+  cfg: Config
+  constructor(cfg: Config) {
+    this.cfg = cfg
+  }
+
+  mergeAgents(loaded: Record<string, AgentConfig>): { found: number; injected: number; names: string[] } {
+    const names = Object.keys(loaded)
+    if (names.length === 0) return { found: 0, injected: 0, names }
+    const agent = { ...(this.cfg.agent ?? {}) }
+    let injected = 0
+    for (const [name, value] of Object.entries(loaded)) {
+      // Explicit OpenCode agent defs win over the Claude loader.
+      if (agent[name] !== undefined) continue
+      agent[name] = value
+      injected++
+    }
+    this.cfg.agent = agent
+    return { found: names.length, injected, names }
+  }
+
+  mergeCommands(loaded: Record<string, CommandConfig>): { found: number; injected: number; names: string[] } {
+    const names = Object.keys(loaded)
+    if (names.length === 0) return { found: 0, injected: 0, names }
+    const command = { ...(this.cfg.command ?? {}) }
+    let injected = 0
+    for (const [name, value] of Object.entries(loaded)) {
+      // Explicit OpenCode command defs win over the Claude loader.
+      if (command[name] !== undefined) continue
+      command[name] = value
+      injected++
+    }
+    this.cfg.command = command
+    return { found: names.length, injected, names }
+  }
+}
+
+async function injectLoadedAgents(
+  cfg: Config,
+  loadedAgents: Record<string, AgentConfig>,
+  client: PluginInput["client"],
+): Promise<void> {
+  const result = new ConfigDraft(cfg).mergeAgents(loadedAgents)
+  if (result.found === 0) {
+    await log(client, "debug", "no Claude agents found under .claude/agents")
+    return
+  }
+  await log(client, "info", "loaded Claude agents into OpenCode", {
+    found: result.found,
+    injected: result.injected,
+    names: result.names,
+  })
+}
+
+async function injectLoadedCommands(
+  cfg: Config,
+  loadedCommands: Record<string, CommandConfig>,
+  client: PluginInput["client"],
+): Promise<void> {
+  const result = new ConfigDraft(cfg).mergeCommands(loadedCommands)
+  if (result.found === 0) {
+    await log(client, "debug", "no Claude commands found under .claude/commands")
+    return
+  }
+  await log(client, "info", "loaded Claude commands into OpenCode", {
+    found: result.found,
+    injected: result.injected,
+    names: result.names,
+  })
+}
+
 async function log(
   client: PluginInput["client"],
   level: "debug" | "info" | "warn" | "error",
@@ -252,45 +335,8 @@ export default async (input: PluginInput) => {
         }
       }
 
-      const agentNames = Object.keys(loadedAgents)
-      if (agentNames.length === 0) {
-        await log(input.client, "debug", "no Claude agents found under .claude/agents")
-      } else {
-        cfg.agent = cfg.agent ?? {}
-        let injected = 0
-        for (const [name, agent] of Object.entries(loadedAgents)) {
-          // Explicit OpenCode agent defs win over the Claude loader.
-          if (cfg.agent[name] !== undefined) continue
-          cfg.agent[name] = agent
-          injected++
-        }
-
-        await log(input.client, "info", "loaded Claude agents into OpenCode", {
-          found: agentNames.length,
-          injected,
-          names: agentNames,
-        })
-      }
-
-      const commandNames = Object.keys(loadedCommands)
-      if (commandNames.length === 0) {
-        await log(input.client, "debug", "no Claude commands found under .claude/commands")
-      } else {
-        cfg.command = cfg.command ?? {}
-        let injected = 0
-        for (const [name, command] of Object.entries(loadedCommands)) {
-          // Explicit OpenCode command defs win over the Claude loader.
-          if (cfg.command[name] !== undefined) continue
-          cfg.command[name] = command
-          injected++
-        }
-
-        await log(input.client, "info", "loaded Claude commands into OpenCode", {
-          found: commandNames.length,
-          injected,
-          names: commandNames,
-        })
-      }
+      await injectLoadedAgents(cfg, loadedAgents, input.client)
+      await injectLoadedCommands(cfg, loadedCommands, input.client)
     },
   }
 }

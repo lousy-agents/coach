@@ -129,18 +129,20 @@ func tsLayerBypassRunSearch(ctx context.Context, sources, sinks []string, adjace
 		result.truncatedPairs = len(sources) * len(sinks)
 		result.truncatedSearch = true
 	} else {
+		budget := &bfsBudget{}
 		for _, source := range sources {
 			if ctx.Err() != nil {
 				result.truncatedSearch = true
 				break
 			}
-			sourceResult := tsLayerBypassSearchFromSource(ctx, source, sinks, adjacency, nodePositions, requiredLayer, &result.nodesVisited)
+			sourceResult := tsLayerBypassSearchFromSource(ctx, source, sinks, adjacency, nodePositions, requiredLayer, budget)
 			result.truncatedSearch = result.truncatedSearch || sourceResult.truncatedSearch
 			result.truncatedPairs += sourceResult.truncatedPairs
 			result.evaluated += sourceResult.evaluated
 			result.unclassifiedNodeSeen = result.unclassifiedNodeSeen || sourceResult.unclassifiedNodeSeen
 			result.witnesses = append(result.witnesses, sourceResult.witnesses...)
 		}
+		result.nodesVisited = budget.visited
 	}
 	if !result.truncatedSearch && ctx.Err() != nil {
 		result.truncatedSearch = true
@@ -160,8 +162,8 @@ type tsLayerBypassSourceResult struct {
 }
 
 // tsLayerBypassSearchFromSource runs source's BFS shortest-path tree and
-// evaluates every sink against it. nodesVisited is bfsShortestPaths' own
-// running budget counter, shared across every source in the search.
+// evaluates every sink against it. budget is the shared node-visit counter
+// across every source in the search.
 func tsLayerBypassSearchFromSource(
 	ctx context.Context,
 	source string,
@@ -169,10 +171,10 @@ func tsLayerBypassSearchFromSource(
 	adjacency map[string][]string,
 	nodePositions map[string]layerBypassNodePosition,
 	requiredLayer BypassLayer,
-	nodesVisited *int,
+	budget *bfsBudget,
 ) tsLayerBypassSourceResult {
 	var result tsLayerBypassSourceResult
-	parents, hitBudget := bfsShortestPaths(ctx, source, adjacency, 0, nodesVisited)
+	parents, hitBudget := budget.shortestPaths(ctx, source, adjacency)
 	if hitBudget {
 		result.truncatedSearch = true
 	}

@@ -244,12 +244,13 @@ type reachabilitySearch struct {
 
 func searchReachabilityFacts(ctx context.Context, sources, sinks []string, adjacency map[string][]string, maxSearchNodes int, callGraphIncomplete bool) reachabilitySearch {
 	var search reachabilitySearch
+	budget := bfsBudget{max: maxSearchNodes}
 	for _, source := range sources {
 		if ctx.Err() != nil {
 			search.truncatedSearch = true
 			break
 		}
-		parents, hitBudget := bfsShortestPaths(ctx, source, adjacency, maxSearchNodes, &search.nodesVisited)
+		parents, hitBudget := budget.shortestPaths(ctx, source, adjacency)
 		if hitBudget {
 			search.truncatedSearch = true
 		}
@@ -261,11 +262,12 @@ func searchReachabilityFacts(ctx context.Context, sources, sinks []string, adjac
 	if !search.truncatedSearch && ctx.Err() != nil {
 		search.truncatedSearch = true
 	}
+	search.nodesVisited = budget.visited
 	return search
 }
 
 // reachabilityFactsForSource evaluates source against every sink using
-// parents (source's own BFS parent map from bfsShortestPaths). skip is
+// parents (source's own BFS parent map from bfsBudget.shortestPaths). skip is
 // true when this source/sink evaluation cannot be trusted -- a budget was
 // hit, ctx was cancelled, or the underlying call graph itself is
 // incomplete -- in which case every pair counts as truncated rather than
@@ -305,44 +307,55 @@ func findGoReachabilitySourcesFromLoaded(ctx context.Context, loaded *loadedGoSn
 		return nil, false, []Diagnostic{{Code: DiagReachabilityBudgetExceeded}}
 	}
 
-	complete := loaded.discovery.Complete
-	var diagnostics []Diagnostic
-	seen := map[string]bool{}
-
+	search := goReachabilitySourceSearch{
+		seen:     map[string]bool{},
+		complete: loaded.discovery.Complete,
+	}
 	for _, root := range loaded.roots {
-		if ctx.Err() != nil {
-			complete = false
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagReachabilityBudgetExceeded, Path: root.dir})
+		if search.collectRoot(ctx, loaded, root) {
 			break
 		}
-		if root.loadErr != nil {
-			complete = false
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagReachabilitySourceLoadFailed, Path: root.dir, Message: stripTempDir(root.loadErr.Error(), loaded.tempDir)})
-			continue
-		}
-		for _, p := range root.pkgs {
-			if len(p.Errors) > 0 {
-				complete = false
-			}
-		}
+	}
+	return mapKeysSorted(search.seen), search.complete, search.diagnostics
+}
 
-		handlerSig := httpHandlerFuncSignature(root.prog, root.pkgs)
-		if handlerSig == nil {
-			continue
-		}
-		for _, fn := range sortedLocalFunctions(root.prog, root.localPkgPaths) {
-			if ctx.Err() != nil {
-				complete = false
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagReachabilityBudgetExceeded, Path: root.dir})
-				break
-			}
-			if types.Identical(fn.Signature, handlerSig) {
-				seen[fn.RelString(nil)] = true
-			}
+type goReachabilitySourceSearch struct {
+	seen        map[string]bool
+	diagnostics []Diagnostic
+	complete    bool
+}
+
+func (s *goReachabilitySourceSearch) collectRoot(ctx context.Context, loaded *loadedGoSnapshot, root loadedGoRoot) (stop bool) {
+	if ctx.Err() != nil {
+		s.complete = false
+		s.diagnostics = append(s.diagnostics, Diagnostic{Code: DiagReachabilityBudgetExceeded, Path: root.dir})
+		return true
+	}
+	if root.loadErr != nil {
+		s.complete = false
+		s.diagnostics = append(s.diagnostics, Diagnostic{Code: DiagReachabilitySourceLoadFailed, Path: root.dir, Message: stripTempDir(root.loadErr.Error(), loaded.tempDir)})
+		return false
+	}
+	for _, p := range root.pkgs {
+		if len(p.Errors) > 0 {
+			s.complete = false
 		}
 	}
-
-	return mapKeysSorted(seen), complete, diagnostics
+	handlerSig := httpHandlerFuncSignature(root.prog, root.pkgs)
+	if handlerSig == nil {
+		return false
+	}
+	for _, fn := range sortedLocalFunctions(root.prog, root.localPkgPaths) {
+		if ctx.Err() != nil {
+			s.complete = false
+			s.diagnostics = append(s.diagnostics, Diagnostic{Code: DiagReachabilityBudgetExceeded, Path: root.dir})
+			return true
+		}
+		if types.Identical(fn.Signature, handlerSig) {
+			s.seen[fn.RelString(nil)] = true
+		}
+	}
+	return false
 }
 
 // httpHandlerFuncSignature looks up net/http.HandlerFunc's underlying
@@ -393,16 +406,22 @@ func buildCallGraphAdjacency(facts []CallFact) map[string][]string {
 	return adjacency
 }
 
-// bfsShortestPaths runs a single breadth-first traversal from source over
+// bfsBudget is the shared node-visit counter for shortest-path walks.
+// visited is not reset per source: max bounds the total number of nodes
+// dequeued across the whole search.
+type bfsBudget struct {
+	visited int
+	max     int
+}
+
+// shortestPaths runs a single breadth-first traversal from source over
 // adjacency (whose neighbor lists must already be sorted), returning a
 // parent map spanning every node reached before a budget or context
 // deadline stopped the walk. Because neighbors are visited in sorted order
 // and each node is enqueued at most once (on first discovery), the
 // resulting shortest-path tree is deterministic even when multiple
-// equal-length paths exist. maxNodes bounds the total number of nodes
-// dequeued across the whole BuildGoReachability call (visited is shared via
-// the nodesVisited counter, not reset per source).
-func bfsShortestPaths(ctx context.Context, source string, adjacency map[string][]string, maxNodes int, nodesVisited *int) (map[string]string, bool) {
+// equal-length paths exist.
+func (b *bfsBudget) shortestPaths(ctx context.Context, source string, adjacency map[string][]string) (map[string]string, bool) {
 	parents := map[string]string{source: ""}
 	visited := map[string]bool{source: true}
 	queue := []string{source}
@@ -411,12 +430,12 @@ func bfsShortestPaths(ctx context.Context, source string, adjacency map[string][
 		if ctx.Err() != nil {
 			return parents, true
 		}
-		if maxNodes > 0 && *nodesVisited >= maxNodes {
+		if b.max > 0 && b.visited >= b.max {
 			return parents, true
 		}
 		node := queue[0]
 		queue = queue[1:]
-		*nodesVisited++
+		b.visited++
 
 		for _, next := range adjacency[node] {
 			if visited[next] {

@@ -92,41 +92,9 @@ func New(opts Options) (*Service, error) {
 	if dl == nil {
 		dl = NewMemoryDenylist()
 	}
-	var gh *GitHubOAuthConfig
-	var oauthState OAuthStateStore
-	oauthTTL := opts.OAuthStateTTL
-	var httpClient *http.Client
-	if opts.GitHubOAuth != nil {
-		if opts.GitHubOAuth.ClientID == "" || opts.GitHubOAuth.ClientSecret == "" {
-			return nil, errors.New("authn: GitHubOAuth ClientID and ClientSecret are required")
-		}
-		if opts.GitHubOAuth.BaseURL == "" {
-			return nil, errors.New("authn: GitHubOAuth BaseURL is required")
-		}
-		if err := requireAbsoluteURL("GitHubOAuth.BaseURL", opts.GitHubOAuth.BaseURL); err != nil {
-			return nil, err
-		}
-		if opts.GitHubOAuth.RedirectURI == "" {
-			return nil, errors.New("authn: GitHubOAuth RedirectURI is required")
-		}
-		cp := *opts.GitHubOAuth
-		if cp.APIBaseURL == "" {
-			cp.APIBaseURL = cp.BaseURL
-		} else if err := requireAbsoluteURL("GitHubOAuth.APIBaseURL", cp.APIBaseURL); err != nil {
-			return nil, err
-		}
-		gh = &cp
-		oauthState = opts.OAuthState
-		if oauthState == nil {
-			oauthState = NewMemoryOAuthState()
-		}
-		if oauthTTL <= 0 {
-			oauthTTL = 10 * time.Minute
-		}
-		httpClient = opts.GitHubOAuth.HTTPClient
-		if httpClient == nil {
-			httpClient = &http.Client{Timeout: DefaultGitHubHTTPClientTimeout}
-		}
+	gh, oauthState, oauthTTL, httpClient, err := githubOAuthFromOptions(opts)
+	if err != nil {
+		return nil, err
 	}
 	return &Service{
 		key:             append([]byte(nil), opts.SigningKey...),
@@ -140,6 +108,43 @@ func New(opts Options) (*Service, error) {
 		oauthStateTTL:   oauthTTL,
 		httpClient:      httpClient,
 	}, nil
+}
+
+func githubOAuthFromOptions(opts Options) (*GitHubOAuthConfig, OAuthStateStore, time.Duration, *http.Client, error) {
+	if opts.GitHubOAuth == nil {
+		return nil, nil, opts.OAuthStateTTL, nil, nil
+	}
+	if opts.GitHubOAuth.ClientID == "" || opts.GitHubOAuth.ClientSecret == "" {
+		return nil, nil, 0, nil, errors.New("authn: GitHubOAuth ClientID and ClientSecret are required")
+	}
+	if opts.GitHubOAuth.BaseURL == "" {
+		return nil, nil, 0, nil, errors.New("authn: GitHubOAuth BaseURL is required")
+	}
+	if err := requireAbsoluteURL("GitHubOAuth.BaseURL", opts.GitHubOAuth.BaseURL); err != nil {
+		return nil, nil, 0, nil, err
+	}
+	if opts.GitHubOAuth.RedirectURI == "" {
+		return nil, nil, 0, nil, errors.New("authn: GitHubOAuth RedirectURI is required")
+	}
+	cp := *opts.GitHubOAuth
+	if cp.APIBaseURL == "" {
+		cp.APIBaseURL = cp.BaseURL
+	} else if err := requireAbsoluteURL("GitHubOAuth.APIBaseURL", cp.APIBaseURL); err != nil {
+		return nil, nil, 0, nil, err
+	}
+	oauthState := opts.OAuthState
+	if oauthState == nil {
+		oauthState = NewMemoryOAuthState()
+	}
+	oauthTTL := opts.OAuthStateTTL
+	if oauthTTL <= 0 {
+		oauthTTL = 10 * time.Minute
+	}
+	httpClient := opts.GitHubOAuth.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: DefaultGitHubHTTPClientTimeout}
+	}
+	return &cp, oauthState, oauthTTL, httpClient, nil
 }
 
 // Issue creates a signed Coach JWT for p (HS256) with a fresh jti.

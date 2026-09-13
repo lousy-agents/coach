@@ -17,6 +17,7 @@ type tsProjectDiscovery struct {
 	// FilesSkipped counts the file that crosses MaxInputFiles/MaxInputBytes
 	// and everything after it, since the walk stops there (fs.SkipAll).
 	FilesSkipped int
+	truncated    bool
 }
 
 // discoverTSProject walks snapshot once, collecting every directory that
@@ -33,7 +34,6 @@ func discoverTSProject(snapshot fs.FS, budgets GoBudgets) *tsProjectDiscovery {
 		Complete:     true,
 	}
 
-	truncated := false
 	walkErr := fs.WalkDir(snapshot, ".", func(p string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return d.handleWalkError(p)
@@ -41,11 +41,11 @@ func discoverTSProject(snapshot fs.FS, budgets GoBudgets) *tsProjectDiscovery {
 		if entry.IsDir() {
 			return d.visitDiscoveryDir(p)
 		}
-		return d.visitDiscoveryFile(snapshot, p, budgets, &truncated)
+		return d.visitDiscoveryFile(snapshot, p, budgets)
 	})
 	_ = walkErr // walkFn only ever returns nil, fs.SkipDir, or fs.SkipAll, so WalkDir never propagates an error here.
 
-	if truncated {
+	if d.truncated {
 		d.Complete = false
 		d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagTSRootIncomplete})
 	}
@@ -78,10 +78,10 @@ func (d *tsProjectDiscovery) visitDiscoveryDir(p string) error {
 // are read, parsed, or interpreted -- discovery only needs to know a
 // directory holds one, and requires no TypeScript compiler to determine
 // that.
-func (d *tsProjectDiscovery) visitDiscoveryFile(snapshot fs.FS, p string, budgets GoBudgets, truncated *bool) error {
+func (d *tsProjectDiscovery) visitDiscoveryFile(snapshot fs.FS, p string, budgets GoBudgets) error {
 	d.FilesSeen++
 	if budgets.MaxInputFiles > 0 && d.FilesSeen > budgets.MaxInputFiles {
-		*truncated = true
+		d.truncated = true
 		d.FilesSkipped++
 		return fs.SkipAll
 	}
@@ -105,7 +105,7 @@ func (d *tsProjectDiscovery) visitDiscoveryFile(snapshot fs.FS, p string, budget
 	}
 	d.BytesSeen += info.Size()
 	if budgets.MaxInputBytes > 0 && d.BytesSeen > budgets.MaxInputBytes {
-		*truncated = true
+		d.truncated = true
 		d.FilesSkipped++
 		return fs.SkipAll
 	}

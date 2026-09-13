@@ -70,6 +70,51 @@ export const VERDICT_SOFT_FAIL_MESSAGE = [
   "Do not invent a PASS. Re-delegate the reviewer (fresh or continued) until the reply begins with PASS or FINDINGS verbatim.",
 ].join(" ")
 
+async function denyImplementerReworkWithoutRelay(
+  client: PluginInput["client"],
+  hookInput: { tool: string; sessionID: string; callID: string },
+  output: { args: Record<string, unknown> },
+): Promise<void> {
+  if (hookInput.tool !== "task") return
+  const args = output.args ?? {}
+  const subagentType = typeof args.subagent_type === "string" ? args.subagent_type : undefined
+  const prompt = typeof args.prompt === "string" ? args.prompt : undefined
+  if (!needsReviewerFindingsRelay(subagentType, prompt)) return
+  await log(client, "warn", "blocked implementer rework without findings relay", {
+    sessionID: hookInput.sessionID,
+  })
+  throw new Error(RELAY_DENY_REASON)
+}
+
+class ToolExecuteOutput {
+  slot: { output: string }
+  constructor(slot: { output: string }) {
+    this.slot = slot
+  }
+
+  rewrite(text: string) {
+    this.slot.output = text
+  }
+}
+
+async function rewriteMalformedReviewerVerdict(
+  client: PluginInput["client"],
+  hookInput: { tool: string; sessionID: string; callID: string; args?: Record<string, unknown> },
+  output: { title: string; output: string; metadata: unknown },
+): Promise<void> {
+  if (hookInput.tool !== "task") return
+  const args = hookInput.args ?? {}
+  if (!VERDICT_GATED_AGENTS.has(String(args.subagent_type))) return
+  const raw = typeof output.output === "string" ? output.output : ""
+  const text = extractTaskResultText(raw)
+  if (isValidReviewVerdict(text)) return
+  await log(client, "warn", "soft-failed malformed task-reviewer verdict", {
+    sessionID: hookInput.sessionID,
+    firstLine: firstNonEmptyLine(text),
+  })
+  new ToolExecuteOutput(output).rewrite(VERDICT_SOFT_FAIL_MESSAGE)
+}
+
 async function log(
   client: PluginInput["client"],
   level: "debug" | "info" | "warn" | "error",
@@ -91,36 +136,14 @@ export default async (input: PluginInput) => {
       hookInput: { tool: string; sessionID: string; callID: string },
       output: { args: Record<string, unknown> },
     ) => {
-      if (hookInput.tool !== "task") return
-      const args = output.args ?? {}
-      const subagentType =
-        typeof args.subagent_type === "string" ? args.subagent_type : undefined
-      const prompt = typeof args.prompt === "string" ? args.prompt : undefined
-      if (needsReviewerFindingsRelay(subagentType, prompt)) {
-        await log(input.client, "warn", "blocked implementer rework without findings relay", {
-          sessionID: hookInput.sessionID,
-        })
-        throw new Error(RELAY_DENY_REASON)
-      }
+      await denyImplementerReworkWithoutRelay(input.client, hookInput, output)
     },
 
     "tool.execute.after": async (
       hookInput: { tool: string; sessionID: string; callID: string; args?: Record<string, unknown> },
       output: { title: string; output: string; metadata: unknown },
     ) => {
-      if (hookInput.tool !== "task") return
-      const args = hookInput.args ?? {}
-      if (!VERDICT_GATED_AGENTS.has(String(args.subagent_type))) return
-
-      const raw = typeof output.output === "string" ? output.output : ""
-      const text = extractTaskResultText(raw)
-      if (isValidReviewVerdict(text)) return
-
-      await log(input.client, "warn", "soft-failed malformed task-reviewer verdict", {
-        sessionID: hookInput.sessionID,
-        firstLine: firstNonEmptyLine(text),
-      })
-      output.output = VERDICT_SOFT_FAIL_MESSAGE
+      await rewriteMalformedReviewerVerdict(input.client, hookInput, output)
     },
   }
 }

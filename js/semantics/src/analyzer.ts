@@ -72,25 +72,7 @@ export function createAnalyzerWithBackend(
       if (disposed) {
         throw new SemanticsError("internal", "analyzer has been disposed");
       }
-      const request: WireRequest = {
-        id: allocateRequestID(),
-        op: "analyze",
-        language: input.language,
-        content_b64: encodeContent(input.content),
-        options: {},
-      };
-      if (input.path !== undefined) {
-        request.path = input.path;
-      }
-      if (opts.languages !== undefined && opts.languages.length > 0) {
-        request.options.languages = opts.languages;
-      }
-      if (opts.maxFileBytes !== undefined && opts.maxFileBytes > 0) {
-        request.options.max_file_bytes = opts.maxFileBytes;
-      }
-      if (input.timeoutMs !== undefined && input.timeoutMs > 0) {
-        request.timeout_ms = input.timeoutMs;
-      }
+      const request = buildAnalyzeRequest(input, opts);
       const responseJson = await backend.analyze(JSON.stringify(request));
       return decodeResponse(responseJson);
     },
@@ -106,6 +88,37 @@ export function createAnalyzerWithBackend(
       }
     },
   };
+}
+
+/**
+ * Build one analyze request. Every optional field is omitted rather than sent
+ * as a zero value: the Go side distinguishes "unset" from an explicit 0 or
+ * empty list, so an omitted field is what selects its default.
+ */
+function buildAnalyzeRequest(
+  input: FileInput,
+  opts: AnalyzerOptions,
+): WireRequest {
+  const request: WireRequest = {
+    id: allocateRequestID(),
+    op: "analyze",
+    language: input.language,
+    content_b64: encodeContent(input.content),
+    options: {},
+  };
+  if (input.path !== undefined) {
+    request.path = input.path;
+  }
+  if (opts.languages !== undefined && opts.languages.length > 0) {
+    request.options.languages = opts.languages;
+  }
+  if (opts.maxFileBytes !== undefined && opts.maxFileBytes > 0) {
+    request.options.max_file_bytes = opts.maxFileBytes;
+  }
+  if (input.timeoutMs !== undefined && input.timeoutMs > 0) {
+    request.timeout_ms = input.timeoutMs;
+  }
+  return request;
 }
 
 /**

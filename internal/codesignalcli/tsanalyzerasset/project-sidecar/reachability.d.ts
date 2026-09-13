@@ -17,7 +17,7 @@ export interface ReachabilityExtractionResult {
  * alreadyVisitedSources is seeded from every prior project's own walk in
  * this request, so a handler registered as a route from more than one
  * tsconfig project is walked exactly once -- without this,
- * MutableAccumulator's factKeys/seenGapSites dedup only within a single
+ * ReachabilityAccumulator's factKeys/seenGapSites dedup only within a single
  * project's own walk, so the same handler walked again from a second
  * project would emit a second, duplicate ReachabilityFact/CallGraphEdgeFact
  * sharing the first one's ID, which

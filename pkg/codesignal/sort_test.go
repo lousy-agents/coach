@@ -79,7 +79,7 @@ func TestChangedRangeOverlap_MarkChangedNeverMarksResolvedSignals(t *testing.T) 
 		{Lifecycle: "introduced", Location: semantics.Location{StartRow: 5, EndRow: 5}},
 	}
 
-	markChanged(signals, ranges)
+	signals = markChanged(signals, ranges)
 
 	if signals[0].Changed {
 		t.Errorf("resolved signal must never have Changed=true: %+v", signals[0])
@@ -95,7 +95,7 @@ func TestChangedRangeOverlap_MarkChangedOutsideAllRanges(t *testing.T) {
 		{Lifecycle: "existing", Location: semantics.Location{StartRow: 1, EndRow: 1}},
 	}
 
-	markChanged(signals, ranges)
+	signals = markChanged(signals, ranges)
 
 	if signals[0].Changed {
 		t.Errorf("signal outside all ranges must have Changed=false: %+v", signals[0])

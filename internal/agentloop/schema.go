@@ -84,10 +84,6 @@ func validateAgainstSchema(path string, value any, sch *argsSchemaDoc) error {
 	if sch == nil {
 		return nil
 	}
-	if sch.Type != "" && sch.Type != "object" && sch.Type != "array" {
-		return nil
-	}
-
 	switch sch.Type {
 	case "", "object":
 		return validateObjectAgainstSchema(path, value, sch)
@@ -98,22 +94,28 @@ func validateAgainstSchema(path string, value any, sch *argsSchemaDoc) error {
 	}
 }
 
+func rootLabel(path string) string {
+	if path == "" {
+		return "args"
+	}
+	return path
+}
+
+func qualifiedLabel(path, name string) string {
+	if path == "" {
+		return name
+	}
+	return path + "." + name
+}
+
 func validateObjectAgainstSchema(path string, value any, sch *argsSchemaDoc) error {
 	obj, ok := value.(map[string]any)
 	if !ok {
-		label := path
-		if label == "" {
-			label = "args"
-		}
-		return fmt.Errorf("%w: %s must be a JSON object", ErrInvalidArgs, label)
+		return fmt.Errorf("%w: %s must be a JSON object", ErrInvalidArgs, rootLabel(path))
 	}
 	for _, req := range sch.Required {
 		if _, present := obj[req]; !present {
-			label := req
-			if path != "" {
-				label = path + "." + req
-			}
-			return fmt.Errorf("%w: missing required property %q", ErrInvalidArgs, label)
+			return fmt.Errorf("%w: missing required property %q", ErrInvalidArgs, qualifiedLabel(path, req))
 		}
 	}
 	for name, prop := range sch.Properties {
@@ -121,10 +123,7 @@ func validateObjectAgainstSchema(path string, value any, sch *argsSchemaDoc) err
 		if !present {
 			continue
 		}
-		propPath := name
-		if path != "" {
-			propPath = path + "." + name
-		}
+		propPath := qualifiedLabel(path, name)
 		if err := checkPropType(propPath, raw, prop.types); err != nil {
 			return err
 		}
@@ -143,11 +142,7 @@ func validateArrayItems(path string, value any, itemSchema *argsSchemaDoc) error
 	}
 	arr, ok := value.([]any)
 	if !ok {
-		label := path
-		if label == "" {
-			label = "args"
-		}
-		return fmt.Errorf("%w: %s must be a JSON array", ErrInvalidArgs, label)
+		return fmt.Errorf("%w: %s must be a JSON array", ErrInvalidArgs, rootLabel(path))
 	}
 	for i, item := range arr {
 		itemPath := fmt.Sprintf("%s[%d]", path, i)

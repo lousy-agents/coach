@@ -83,35 +83,15 @@ function runProjects(api, snapshot, tsconfigPaths, opts, deadline, counts) {
     const reachabilityFacts = [];
     const diagnostics = [];
     const seenConfigDiagnostics = new Set();
-    let complete = true;
-    let projectsProcessed = 0;
+    const scan = new ProjectScan(visited, reachVisited, reachSourcesVisited, edges, callGraph, reachabilityFacts, diagnostics, seenConfigDiagnostics);
     for (const project of projects) {
         if (opts.testDelayMsPerProject)
             busyWaitMs(opts.testDelayMsPerProject);
         if (deadline !== undefined && Date.now() >= deadline) {
-            complete = false;
-            diagnostics.push({
-                code: "ts_sidecar_timeout",
-                message: `timeout_ms (${opts.timeoutMs}) exceeded after processing ${projectsProcessed} of ${projects.length} project(s)`,
-            });
+            scan.timedOut(opts.timeoutMs, projects.length);
             break;
         }
-        const configResult = collectConfigDiagnostics(project, seenConfigDiagnostics);
-        for (const key of configResult.newKeys)
-            seenConfigDiagnostics.add(key);
-        if (configResult.diagnostics.length > 0)
-            complete = false;
-        diagnostics.push(...configResult.diagnostics);
-        const result = extractEdgesForProject(project, snapshot, visited, opts.compiler.ast);
-        for (const path of result.newlyVisitedPaths)
-            visited.add(path);
-        edges.push(...result.edges);
-        diagnostics.push(...result.diagnostics);
-        const reachResult = processProjectReachability(project, snapshot, reachVisited, reachSourcesVisited, configResult.diagnostics.length > 0, opts.compiler);
-        callGraph.push(...reachResult.callGraph);
-        reachabilityFacts.push(...reachResult.facts);
-        diagnostics.push(...reachResult.diagnostics);
-        projectsProcessed += 1;
+        scan.ingest(project, snapshot, opts.compiler);
     }
     return {
         edges: canonicalizeEdges(edges),
@@ -119,11 +99,11 @@ function runProjects(api, snapshot, tsconfigPaths, opts, deadline, counts) {
         reachabilityFacts: canonicalizeReachabilityFacts(reachabilityFacts),
         coverage: {
             phase: SIDECAR_PHASE,
-            complete,
+            complete: scan.complete,
             counts: {
                 ...counts,
                 files_analyzed: visited.size,
-                projects_analyzed: projectsProcessed,
+                projects_analyzed: scan.projectsProcessed,
             },
             budgets: deadline !== undefined ? { timeout_ms: opts.timeoutMs ?? 0 } : undefined,
             diagnostics: diagnostics.length > 0 ? canonicalizeDiagnostics(diagnostics) : undefined,
@@ -163,20 +143,79 @@ function rootScopeFor(root, projects, snapshot, visited) {
         unanalyzed_paths: unanalyzedPaths.length > 0 ? unanalyzedPaths : undefined,
     };
 }
+class ProjectScan {
+    visited;
+    reachVisited;
+    reachSourcesVisited;
+    edges;
+    callGraph;
+    reachabilityFacts;
+    diagnostics;
+    seenConfigDiagnostics;
+    complete = true;
+    projectsProcessed = 0;
+    constructor(visited, reachVisited, reachSourcesVisited, edges, callGraph, reachabilityFacts, diagnostics, seenConfigDiagnostics) {
+        this.visited = visited;
+        this.reachVisited = reachVisited;
+        this.reachSourcesVisited = reachSourcesVisited;
+        this.edges = edges;
+        this.callGraph = callGraph;
+        this.reachabilityFacts = reachabilityFacts;
+        this.diagnostics = diagnostics;
+        this.seenConfigDiagnostics = seenConfigDiagnostics;
+    }
+    timedOut(timeoutMs, projectCount) {
+        this.complete = false;
+        this.diagnostics.push({
+            code: "ts_sidecar_timeout",
+            message: `timeout_ms (${timeoutMs}) exceeded after processing ${this.projectsProcessed} of ${projectCount} project(s)`,
+        });
+    }
+    ingest(project, snapshot, compiler) {
+        const ingested = ingestProject(project, snapshot, this.visited, this.reachVisited, this.reachSourcesVisited, this.seenConfigDiagnostics, compiler);
+        for (const key of ingested.configKeys)
+            this.seenConfigDiagnostics.add(key);
+        if (!ingested.configComplete)
+            this.complete = false;
+        this.diagnostics.push(...ingested.diagnostics);
+        for (const path of ingested.newlyVisited)
+            this.visited.add(path);
+        this.edges.push(...ingested.edges);
+        for (const path of ingested.reachNewlyVisited)
+            this.reachVisited.add(path);
+        for (const sourceId of ingested.reachSources)
+            this.reachSourcesVisited.add(sourceId);
+        this.callGraph.push(...ingested.callGraph);
+        this.reachabilityFacts.push(...ingested.reachabilityFacts);
+        this.projectsProcessed += 1;
+    }
+}
+function ingestProject(project, snapshot, visited, reachVisited, reachSourcesVisited, seenConfigDiagnostics, compiler) {
+    const configResult = collectConfigDiagnostics(project, seenConfigDiagnostics);
+    const result = extractEdgesForProject(project, snapshot, visited, compiler.ast);
+    const reachResult = processProjectReachability(project, snapshot, reachVisited, reachSourcesVisited, configResult.diagnostics.length > 0, compiler);
+    return {
+        configKeys: configResult.newKeys,
+        configComplete: configResult.diagnostics.length === 0,
+        diagnostics: [...configResult.diagnostics, ...result.diagnostics, ...reachResult.diagnostics],
+        newlyVisited: result.newlyVisitedPaths,
+        edges: result.edges,
+        reachNewlyVisited: reachResult.newlyVisitedPaths,
+        reachSources: reachResult.visitedSources,
+        callGraph: reachResult.callGraph,
+        reachabilityFacts: reachResult.facts,
+    };
+}
 // A project whose own config failed to parse never got a real Program
 // built, so no call-graph/reachability extraction is attempted for it.
 function processProjectReachability(project, snapshot, reachVisited, reachSourcesVisited, configDiagnosticsPresent, compiler) {
-    if (configDiagnosticsPresent)
-        return { callGraph: [], facts: [], diagnostics: [] };
-    const reachResult = extractReachabilityForProject(project, snapshot, reachVisited, reachSourcesVisited, {
+    if (configDiagnosticsPresent) {
+        return { callGraph: [], facts: [], diagnostics: [], newlyVisitedPaths: [], visitedSources: [] };
+    }
+    return extractReachabilityForProject(project, snapshot, reachVisited, reachSourcesVisited, {
         ast: compiler.ast,
         symbolFlags: compiler.symbolFlags,
     });
-    for (const path of reachResult.newlyVisitedPaths)
-        reachVisited.add(path);
-    for (const sourceId of reachResult.visitedSources)
-        reachSourcesVisited.add(sourceId);
-    return { callGraph: reachResult.callGraph, facts: reachResult.facts, diagnostics: reachResult.diagnostics };
 }
 function collectConfigDiagnostics(project, seen) {
     const configPath = fromVirtualPath(project.configFileName);

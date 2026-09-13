@@ -36,14 +36,17 @@ func overlapsAny(loc semantics.Location, ranges []LineRange) bool {
 	return false
 }
 
-func markChanged(signals []Signal, validRanges []LineRange) {
-	for i := range signals {
-		if signals[i].Lifecycle == "resolved" {
-			signals[i].Changed = false
-			continue
+func markChanged(signals []Signal, validRanges []LineRange) []Signal {
+	out := make([]Signal, len(signals))
+	for i, sig := range signals {
+		if sig.Lifecycle == "resolved" {
+			sig.Changed = false
+		} else {
+			sig.Changed = overlapsAny(sig.Location, validRanges)
 		}
-		signals[i].Changed = overlapsAny(signals[i].Location, validRanges)
+		out[i] = sig
 	}
+	return out
 }
 
 func signalPriorityGroup(sig Signal) int {
