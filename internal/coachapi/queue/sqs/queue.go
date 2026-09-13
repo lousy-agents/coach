@@ -339,7 +339,7 @@ func (q *Queue) Nack(ctx context.Context, claim queue.Claim, permanent bool) err
 // "Poison-task destination" section).
 func (q *Queue) PoisonTasks(ctx context.Context) ([]queue.Task, error) {
 	var tasks []queue.Task
-	seen := make(map[string]bool)
+	drain := poisonDrain{seen: make(map[string]bool)}
 
 	for round := 0; round < maxPoisonDrainRounds; round++ {
 		out, err := q.client.ReceiveMessage(ctx, &awssqs.ReceiveMessageInput{
@@ -355,20 +355,11 @@ func (q *Queue) PoisonTasks(ctx context.Context) ([]queue.Task, error) {
 			break
 		}
 
-		progressed := false
-		for _, msg := range out.Messages {
-			var wt wireTask
-			if err := json.Unmarshal([]byte(aws.ToString(msg.Body)), &wt); err != nil {
-				return nil, fmt.Errorf("sqs: decoding poison queue message body: %w", err)
-			}
-			key := aws.ToString(msg.MessageId)
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			progressed = true
-			tasks = append(tasks, queue.Task{ID: wt.ID, Payload: wt.Payload})
+		batch, progressed, err := drain.decodeRound(out.Messages)
+		if err != nil {
+			return nil, err
 		}
+		tasks = append(tasks, batch...)
 		if !progressed {
 			// Every message in this round was already seen: SQS is
 			// re-serving the same immediately-visible messages, so
@@ -378,6 +369,31 @@ func (q *Queue) PoisonTasks(ctx context.Context) ([]queue.Task, error) {
 	}
 
 	return tasks, nil
+}
+
+type poisonDrain struct {
+	seen map[string]bool
+}
+
+// decodeRound decodes one ReceiveMessage batch, skipping message IDs
+// already recorded on the drain. progressed is false when every message in
+// the batch was already seen -- SQS re-serving the same immediately-visible
+// messages, which means further rounds cannot make progress.
+func (d *poisonDrain) decodeRound(msgs []types.Message) (tasks []queue.Task, progressed bool, err error) {
+	for _, msg := range msgs {
+		var wt wireTask
+		if err := json.Unmarshal([]byte(aws.ToString(msg.Body)), &wt); err != nil {
+			return nil, false, fmt.Errorf("sqs: decoding poison queue message body: %w", err)
+		}
+		key := aws.ToString(msg.MessageId)
+		if d.seen[key] {
+			continue
+		}
+		d.seen[key] = true
+		progressed = true
+		tasks = append(tasks, queue.Task{ID: wt.ID, Payload: wt.Payload})
+	}
+	return tasks, progressed, nil
 }
 
 // isReceiptHandleInvalid reports whether err is SQS's ReceiptHandleIsInvalid

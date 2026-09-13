@@ -60,8 +60,6 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 	return builder.Build(ctx, input)
 }
 
-// AnalyzeBaseline uses a single long-lived `git cat-file --batch` process
-// (revisionFileReader) instead of one `git show` subprocess per file.
 func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, appliedScope string, coverage codesignal.Coverage, project *ProjectAnalysis) (*codesignal.Report, error) {
 	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
 	if err != nil {
@@ -80,11 +78,7 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []Selec
 	for _, sf := range files {
 		headBytes, err := reader.next(sf.Path)
 		if err != nil {
-			diagnostics = append(diagnostics, codesignal.Diagnostic{
-				Path:    sf.Path,
-				Kind:    "head_read_failed",
-				Message: fmt.Sprintf("reading head content for %q: %s", sf.Path, err),
-			})
+			diagnostics = append(diagnostics, readFailedDiagnostic(sf.Path, "head", err))
 			coverage.FilesUnanalyzable++
 			continue
 		}
@@ -125,11 +119,7 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []Selec
 func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, headSHA, mergeBaseSHA string, sf SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic) {
 	headBytes, err := runGitBytes(dir, "show", headSHA+":"+sf.Path)
 	if err != nil {
-		return nil, []codesignal.Diagnostic{{
-			Path:    sf.Path,
-			Kind:    "head_read_failed",
-			Message: fmt.Sprintf("reading head content for %q: %s", sf.Path, err),
-		}}
+		return nil, []codesignal.Diagnostic{readFailedDiagnostic(sf.Path, "head", err)}
 	}
 
 	headResult, headErr := analyzer.AnalyzeBytes(ctx, semantics.FileInput{Path: sf.Path, Language: sf.Language, Content: headBytes})
@@ -143,11 +133,7 @@ func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyze
 	if sf.Status == "modified" {
 		baseBytes, err := runGitBytes(dir, "show", mergeBaseSHA+":"+sf.Path)
 		if err != nil {
-			diagnostics = append(diagnostics, codesignal.Diagnostic{
-				Path:    sf.Path,
-				Kind:    "base_read_failed",
-				Message: fmt.Sprintf("reading base content for %q: %s", sf.Path, err),
-			})
+			diagnostics = append(diagnostics, readFailedDiagnostic(sf.Path, "base", err))
 		} else {
 			baseResult, baseErr := analyzer.AnalyzeBytes(ctx, semantics.FileInput{Path: sf.Path, Language: sf.Language, Content: baseBytes})
 			switch {
@@ -178,11 +164,7 @@ func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyze
 func analyzeRemovedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, mergeBaseSHA string, sf SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic) {
 	baseBytes, err := runGitBytes(dir, "show", mergeBaseSHA+":"+sf.Path)
 	if err != nil {
-		return nil, []codesignal.Diagnostic{{
-			Path:    sf.Path,
-			Kind:    "base_read_failed",
-			Message: fmt.Sprintf("reading base content for %q: %s", sf.Path, err),
-		}}
+		return nil, []codesignal.Diagnostic{readFailedDiagnostic(sf.Path, "base", err)}
 	}
 
 	baseResult, baseErr := analyzer.AnalyzeBytes(ctx, semantics.FileInput{Path: sf.Path, Language: sf.Language, Content: baseBytes})
@@ -193,6 +175,14 @@ func analyzeRemovedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, 
 		return nil, baseSyntaxDiagnostics(sf.Path, baseErr)
 	default:
 		return nil, []codesignal.Diagnostic{mapSemanticsError(sf.Path, baseErr)}
+	}
+}
+
+func readFailedDiagnostic(path, side string, err error) codesignal.Diagnostic {
+	return codesignal.Diagnostic{
+		Path:    path,
+		Kind:    side + "_read_failed",
+		Message: fmt.Sprintf("reading %s content for %q: %s", side, path, err),
 	}
 }
 
@@ -260,8 +250,6 @@ func computeChangedRanges(dir, mergeBaseSHA, path string) ([]codesignal.LineRang
 // heading ignored).
 var hunkHeaderPattern = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)
 
-// parseChangedRanges returns 0-based, inclusive codesignal.LineRange values
-// derived from each hunk's new-side start/count.
 func parseChangedRanges(diff []byte) ([]codesignal.LineRange, error) {
 	var ranges []codesignal.LineRange
 
@@ -273,36 +261,46 @@ func parseChangedRanges(diff []byte) ([]codesignal.LineRange, error) {
 			continue
 		}
 
-		match := hunkHeaderPattern.FindStringSubmatch(line)
-		if match == nil {
-			return nil, fmt.Errorf("unparsable hunk header: %q", line)
-		}
-
-		newStart, err := strconv.Atoi(match[1])
+		r, ok, err := parseHunkHeaderRange(line)
 		if err != nil {
-			return nil, fmt.Errorf("invalid hunk new-start in %q: %w", line, err)
+			return nil, err
 		}
-
-		newCount := 1
-		if match[2] != "" {
-			newCount, err = strconv.Atoi(match[2])
-			if err != nil {
-				return nil, fmt.Errorf("invalid hunk new-count in %q: %w", line, err)
-			}
+		if ok {
+			ranges = append(ranges, r)
 		}
-
-		if newCount == 0 {
-			continue
-		}
-
-		ranges = append(ranges, codesignal.LineRange{
-			StartRow: uint(newStart - 1),
-			EndRow:   uint(newStart + newCount - 2),
-		})
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 
 	return ranges, nil
+}
+
+func parseHunkHeaderRange(line string) (r codesignal.LineRange, ok bool, err error) {
+	match := hunkHeaderPattern.FindStringSubmatch(line)
+	if match == nil {
+		return codesignal.LineRange{}, false, fmt.Errorf("unparsable hunk header: %q", line)
+	}
+
+	newStart, err := strconv.Atoi(match[1])
+	if err != nil {
+		return codesignal.LineRange{}, false, fmt.Errorf("invalid hunk new-start in %q: %w", line, err)
+	}
+
+	newCount := 1
+	if match[2] != "" {
+		newCount, err = strconv.Atoi(match[2])
+		if err != nil {
+			return codesignal.LineRange{}, false, fmt.Errorf("invalid hunk new-count in %q: %w", line, err)
+		}
+	}
+
+	if newCount == 0 {
+		return codesignal.LineRange{}, false, nil
+	}
+
+	return codesignal.LineRange{
+		StartRow: uint(newStart - 1),
+		EndRow:   uint(newStart + newCount - 2),
+	}, true, nil
 }

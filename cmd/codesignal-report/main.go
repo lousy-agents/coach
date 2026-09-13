@@ -89,10 +89,28 @@ func run(ctx context.Context, in io.Reader, out io.Writer) error {
 		return fmt.Errorf("read stdin: %w", err)
 	}
 
+	files, fileDiagnostics, err := readFileChanges(ctx, analyzer, scanner)
+	if err != nil {
+		return err
+	}
+	diagnostics = append(diagnostics, fileDiagnostics...)
+
+	report, err := builder.Build(ctx, codesignal.Input{Scope: scope, Files: files, Diagnostics: diagnostics})
+	if err != nil {
+		return err
+	}
+	return writeJSONLine(out, report)
+}
+
+// readFileChanges drains scanner's remaining file-request lines. A per-line
+// decode or analysis failure is reported as a diagnostic rather than an
+// error; only a context cancellation or a stdin read failure stops the scan.
+func readFileChanges(ctx context.Context, analyzer *semantics.Analyzer, scanner *bufio.Scanner) ([]codesignal.FileChange, []codesignal.Diagnostic, error) {
 	var files []codesignal.FileChange
+	var diagnostics []codesignal.Diagnostic
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
-			return err
+			return nil, nil, err
 		}
 
 		line := scanner.Bytes()
@@ -107,14 +125,12 @@ func run(ctx context.Context, in io.Reader, out io.Writer) error {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("read stdin: %w", err)
+		return nil, nil, fmt.Errorf("read stdin: %w", err)
 	}
+	return files, diagnostics, nil
+}
 
-	report, err := builder.Build(ctx, codesignal.Input{Scope: scope, Files: files, Diagnostics: diagnostics})
-	if err != nil {
-		return err
-	}
-
+func writeJSONLine(out io.Writer, report any) error {
 	encoded, err := json.Marshal(report)
 	if err != nil {
 		return fmt.Errorf("marshal report: %w", err)

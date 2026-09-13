@@ -53,45 +53,60 @@ type TreeListOptions struct {
 // symlink or submodule could otherwise be used to escape the repository
 // boundary or double-count content.
 func (r *GitHubFileReader) ListFiles(ctx context.Context, ref GitHubTreeRef, opts TreeListOptions) ([]TreeEntry, error) {
-	entries := make([]TreeEntry, 0)
-	var totalBytes int64
-	if err := r.walkTree(ctx, ref, "", opts, &entries, &totalBytes); err != nil {
+	walk := treeWalk{reader: r, entries: make([]TreeEntry, 0)}
+	if err := walk.walk(ctx, ref, "", opts); err != nil {
 		return nil, err
 	}
-	return entries, nil
+	return walk.entries, nil
 }
 
-func (r *GitHubFileReader) walkTree(ctx context.Context, ref GitHubTreeRef, dir string, opts TreeListOptions, entries *[]TreeEntry, totalBytes *int64) error {
-	_, dirEntries, resp, err := r.client.Repositories.GetContents(ctx, ref.Owner, ref.Repo, dir, &github.RepositoryContentGetOptions{Ref: ref.Ref})
+type treeWalk struct {
+	reader     *GitHubFileReader
+	entries    []TreeEntry
+	totalBytes int64
+}
+
+func (w *treeWalk) walk(ctx context.Context, ref GitHubTreeRef, dir string, opts TreeListOptions) error {
+	_, dirEntries, resp, err := w.reader.client.Repositories.GetContents(ctx, ref.Owner, ref.Repo, dir, &github.RepositoryContentGetOptions{Ref: ref.Ref})
 	if err != nil {
 		return mapContentsAPIError(err, resp, fmt.Sprintf("listing %s at ref %s", dirLabel(ref, dir), ref.Ref))
 	}
 
 	for _, entry := range dirEntries {
-		switch entry.GetType() {
-		case "dir":
-			if err := r.walkTree(ctx, ref, entry.GetPath(), opts, entries, totalBytes); err != nil {
-				return err
-			}
-		case "file":
-			if opts.Filter != nil && !opts.Filter(entry.GetPath()) {
-				continue
-			}
-			if opts.MaxFiles > 0 && len(*entries)+1 > opts.MaxFiles {
-				return fmt.Errorf("githubingest: tree listing for %s/%s at ref %s exceeds the configured file-count budget of %d: %w", ref.Owner, ref.Repo, ref.Ref, opts.MaxFiles, ErrTooLarge)
-			}
-			newTotal := *totalBytes + int64(entry.GetSize())
-			if opts.MaxTotalBytes > 0 && newTotal > opts.MaxTotalBytes {
-				return fmt.Errorf("githubingest: tree listing for %s/%s at ref %s exceeds the configured byte budget of %d bytes: %w", ref.Owner, ref.Repo, ref.Ref, opts.MaxTotalBytes, ErrTooLarge)
-			}
-			*totalBytes = newTotal
-			*entries = append(*entries, TreeEntry{Path: entry.GetPath(), SHA: entry.GetSHA(), Size: entry.GetSize()})
-		default:
-			// symlink, submodule: skip. Do not recurse into or follow
-			// these, to avoid escaping the repository boundary the same
-			// way rejectIfPathIsSymlink's ReadFile check guards against.
+		if err := w.visitEntry(ctx, ref, opts, entry); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+func (w *treeWalk) visitEntry(ctx context.Context, ref GitHubTreeRef, opts TreeListOptions, entry *github.RepositoryContent) error {
+	switch entry.GetType() {
+	case "dir":
+		return w.walk(ctx, ref, entry.GetPath(), opts)
+	case "file":
+		return w.appendFile(ref, opts, entry)
+	default:
+		// symlink, submodule: skip. Do not recurse into or follow
+		// these, to avoid escaping the repository boundary the same
+		// way rejectIfPathIsSymlink's ReadFile check guards against.
+		return nil
+	}
+}
+
+func (w *treeWalk) appendFile(ref GitHubTreeRef, opts TreeListOptions, entry *github.RepositoryContent) error {
+	if opts.Filter != nil && !opts.Filter(entry.GetPath()) {
+		return nil
+	}
+	if opts.MaxFiles > 0 && len(w.entries)+1 > opts.MaxFiles {
+		return fmt.Errorf("githubingest: tree listing for %s/%s at ref %s exceeds the configured file-count budget of %d: %w", ref.Owner, ref.Repo, ref.Ref, opts.MaxFiles, ErrTooLarge)
+	}
+	newTotal := w.totalBytes + int64(entry.GetSize())
+	if opts.MaxTotalBytes > 0 && newTotal > opts.MaxTotalBytes {
+		return fmt.Errorf("githubingest: tree listing for %s/%s at ref %s exceeds the configured byte budget of %d bytes: %w", ref.Owner, ref.Repo, ref.Ref, opts.MaxTotalBytes, ErrTooLarge)
+	}
+	w.totalBytes = newTotal
+	w.entries = append(w.entries, TreeEntry{Path: entry.GetPath(), SHA: entry.GetSHA(), Size: entry.GetSize()})
 	return nil
 }
 

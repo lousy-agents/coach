@@ -218,7 +218,10 @@ func loadInfraConfigFromEnv() (InfraConfig, error) {
 		AuthzBypassOwner:    bypassOwner,
 		AuthzBypassRepo:     bypassRepo,
 	}
+	return withOptionalRedisEnv(cfg)
+}
 
+func withOptionalRedisEnv(cfg InfraConfig) (InfraConfig, error) {
 	if raw := os.Getenv("COACH_REDIS_DB"); raw != "" {
 		var db int
 		if _, err := fmt.Sscanf(raw, "%d", &db); err != nil {
@@ -233,7 +236,6 @@ func loadInfraConfigFromEnv() (InfraConfig, error) {
 		}
 		cfg.RedisClaimAfter = claimAfter
 	}
-
 	return cfg, nil
 }
 

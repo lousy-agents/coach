@@ -36,21 +36,59 @@ export interface ReachabilityExtractionResult {
   visitedSources: string[];
 }
 
-interface MutableAccumulator {
-  callGraph: CallGraphEdgeFact[];
-  facts: ReachabilityFactWire[];
-  diagnostics: Diagnostic[];
-  /** `${sourceId}->${sinkId}` pairs already emitted, so a source calling
-   * the same sink more than once yields exactly one fact/edge, matching
-   * Go's ReachabilityFact dedup (pkg/projectmodel/go_reachability.go). */
-  factKeys: Set<string>;
+class ReachabilityAccumulator {
+  readonly callGraph: CallGraphEdgeFact[] = [];
+  readonly facts: ReachabilityFactWire[] = [];
+  readonly diagnostics: Diagnostic[] = [];
+  readonly seenSources: Set<string>;
+  private readonly factKeys: Set<string>;
+  private readonly seenGapSites: Set<string>;
+
+  constructor(seenSources: Set<string>, factKeys: Set<string>, seenGapSites: Set<string>) {
+    this.seenSources = seenSources;
+    this.factKeys = factKeys;
+    this.seenGapSites = seenGapSites;
+  }
+
+  noteSource(sourceId: string): boolean {
+    if (this.seenSources.has(sourceId)) return false;
+    this.seenSources.add(sourceId);
+    return true;
+  }
+
+  recordFact(sourceId: string, sinkId: string): void {
+    const factKey = `${sourceId}->${sinkId}`;
+    if (this.factKeys.has(factKey)) return;
+    this.factKeys.add(factKey);
+    this.callGraph.push({ from: sourceId, to: sinkId });
+    this.facts.push({
+      id: `reach:${factKey}@${REACHABILITY_ALGORITHM}`,
+      kind: KIND_POSSIBLE_CALL_REACHABILITY,
+      confidence: CONFIDENCE_RESOLVED_DIRECT,
+      source: sourceId,
+      sink: sinkId,
+      path: [{ node_id: sourceId }, { node_id: sinkId }],
+      algorithm_version: REACHABILITY_ALGORITHM,
+      backend: REACHABILITY_BACKEND,
+    });
+  }
+
+  recordGap(code: string, message: string, node: astns.Node, sf: astns.SourceFile, snapshot: ProjectSnapshot): void {
+    const repoPath = snapshot.toRepoPath(sf.path);
+    const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+    const site = `${repoPath ?? sf.fileName}:${line + 1}`;
+    const key = `${code}|${site}`;
+    if (this.seenGapSites.has(key)) return;
+    this.seenGapSites.add(key);
+    this.diagnostics.push({ code, message, path: repoPath });
+  }
 }
 
 /**
  * alreadyVisitedSources is seeded from every prior project's own walk in
  * this request, so a handler registered as a route from more than one
  * tsconfig project is walked exactly once -- without this,
- * MutableAccumulator's factKeys/seenGapSites dedup only within a single
+ * ReachabilityAccumulator's factKeys/seenGapSites dedup only within a single
  * project's own walk, so the same handler walked again from a second
  * project would emit a second, duplicate ReachabilityFact/CallGraphEdgeFact
  * sharing the first one's ID, which
@@ -65,11 +103,9 @@ export function extractReachabilityForProject(
   alreadyVisitedSources: ReadonlySet<string>,
   compiler: AstCompiler,
 ): ReachabilityExtractionResult {
-  const out: MutableAccumulator = { callGraph: [], facts: [], diagnostics: [], factKeys: new Set() };
+  const acc = new ReachabilityAccumulator(new Set(alreadyVisitedSources), new Set(), new Set());
   const newlyVisitedPaths: string[] = [];
   const seen = new Set(alreadyVisited);
-  const seenSources = new Set(alreadyVisitedSources);
-  const seenGapSites = new Set<string>();
 
   for (const virtualPath of project.rootFiles) {
     const canonicalVirtual = snapshot.canonicalizeVirtualPath(virtualPath);
@@ -82,25 +118,29 @@ export function extractReachabilityForProject(
 
     const sf = project.program.getSourceFile(virtualPath) ?? project.program.getSourceFile(canonicalVirtual);
     if (!sf) continue;
-    collectRouteRegistrations(sf, project, snapshot, out, seenSources, seenGapSites, compiler);
+    collectRouteRegistrations(sf, project, snapshot, acc, compiler);
   }
 
-  return { ...out, newlyVisitedPaths, visitedSources: [...seenSources] };
+  return {
+    callGraph: acc.callGraph,
+    facts: acc.facts,
+    diagnostics: acc.diagnostics,
+    newlyVisitedPaths,
+    visitedSources: [...acc.seenSources],
+  };
 }
 
 function collectRouteRegistrations(
   sf: astns.SourceFile,
   project: Project,
   snapshot: ProjectSnapshot,
-  out: MutableAccumulator,
-  seenSources: Set<string>,
-  seenGapSites: Set<string>,
+  acc: ReachabilityAccumulator,
   compiler: AstCompiler,
 ): void {
   const { ast } = compiler;
   const visit = (node: astns.Node): void => {
     if (ast.isCallExpression(node) && isRouteRegistrationCall(node, project, compiler)) {
-      processRouteRegistration(node, sf, project, snapshot, out, seenSources, seenGapSites, compiler);
+      processRouteRegistration(node, sf, project, snapshot, acc, compiler);
     }
     node.forEachChild(visit);
   };
@@ -123,41 +163,34 @@ function processRouteRegistration(
   sf: astns.SourceFile,
   project: Project,
   snapshot: ProjectSnapshot,
-  out: MutableAccumulator,
-  seenSources: Set<string>,
-  seenGapSites: Set<string>,
+  acc: ReachabilityAccumulator,
   compiler: AstCompiler,
 ): void {
   const handlerArg = call.arguments[1];
   const fn = resolveHandlerFunction(handlerArg, project, compiler);
   if (fn) {
     const sourceId = functionSourceId(fn, snapshot);
-    if (sourceId && !seenSources.has(sourceId)) {
-      seenSources.add(sourceId);
-      walkSourceForReachability(fn, sourceId, out, snapshot, project, seenGapSites, compiler);
+    if (sourceId && acc.noteSource(sourceId)) {
+      walkSourceForReachability(fn, sourceId, acc, snapshot, project, compiler);
     }
     return;
   }
   if (containsDynamicImport(handlerArg, compiler.ast)) {
-    recordGapDiagnostic(
+    acc.recordGap(
       GAP_DYNAMIC_IMPORT,
       "route handler is resolved through a dynamic import, so it cannot be statically added as a reachability source",
       handlerArg,
       sf,
       snapshot,
-      out,
-      seenGapSites,
     );
     return;
   }
-  recordGapDiagnostic(
+  acc.recordGap(
     GAP_UNRESOLVED_HANDLER,
     "route handler did not resolve to a locally declared named function (e.g. an inline arrow/function expression, or a handler bound through something other than a direct or re-exported function declaration), so it cannot be statically added as a reachability source",
     handlerArg,
     sf,
     snapshot,
-    out,
-    seenGapSites,
   );
 }
 
@@ -196,10 +229,9 @@ function functionSourceId(fn: astns.FunctionDeclaration, snapshot: ProjectSnapsh
 function walkSourceForReachability(
   fn: astns.FunctionDeclaration,
   sourceId: string,
-  out: MutableAccumulator,
+  acc: ReachabilityAccumulator,
   snapshot: ProjectSnapshot,
   project: Project,
-  seenGapSites: Set<string>,
   compiler: AstCompiler,
 ): void {
   if (!fn.body) return;
@@ -207,7 +239,7 @@ function walkSourceForReachability(
   const sf = fn.getSourceFile();
   const visit = (node: astns.Node): void => {
     if (ast.isCallExpression(node)) {
-      handleCallInSource(node, sourceId, sf, project, snapshot, out, seenGapSites, compiler);
+      handleCallInSource(node, sourceId, sf, project, snapshot, acc, compiler);
     }
     node.forEachChild(visit);
   };
@@ -220,50 +252,30 @@ function handleCallInSource(
   sf: astns.SourceFile,
   project: Project,
   snapshot: ProjectSnapshot,
-  out: MutableAccumulator,
-  seenGapSites: Set<string>,
+  acc: ReachabilityAccumulator,
   compiler: AstCompiler,
 ): void {
   const declNode = resolvedCallDeclaration(call, project);
   const sinkId = declNode ? sinkIdForDeclaration(declNode, compiler.ast) : undefined;
   if (sinkId) {
-    recordReachabilityFact(sourceId, sinkId, out);
+    acc.recordFact(sourceId, sinkId);
     return;
   }
   const gap = classifyCalleeGap(call, project, snapshot, compiler);
   if (gap) {
     const { code, message } = gapDiagnosticInfo(gap);
-    recordGapDiagnostic(code, message, call, sf, snapshot, out, seenGapSites);
+    acc.recordGap(code, message, call, sf, snapshot);
     return;
   }
   if (declNode && isUnfollowedLocalCallee(declNode, snapshot, compiler.ast)) {
-    recordGapDiagnostic(
+    acc.recordGap(
       GAP_LOCAL_CALL_NOT_FOLLOWED,
       "call target resolves to a function declared within this snapshot that this depth-1 walk does not follow further, so multi-hop reachability from here is unverified",
       call,
       sf,
       snapshot,
-      out,
-      seenGapSites,
     );
   }
-}
-
-function recordReachabilityFact(sourceId: string, sinkId: string, out: MutableAccumulator): void {
-  const factKey = `${sourceId}->${sinkId}`;
-  if (out.factKeys.has(factKey)) return;
-  out.factKeys.add(factKey);
-  out.callGraph.push({ from: sourceId, to: sinkId });
-  out.facts.push({
-    id: `reach:${factKey}@${REACHABILITY_ALGORITHM}`,
-    kind: KIND_POSSIBLE_CALL_REACHABILITY,
-    confidence: CONFIDENCE_RESOLVED_DIRECT,
-    source: sourceId,
-    sink: sinkId,
-    path: [{ node_id: sourceId }, { node_id: sinkId }],
-    algorithm_version: REACHABILITY_ALGORITHM,
-    backend: REACHABILITY_BACKEND,
-  });
 }
 
 function resolvedCallDeclaration(call: astns.CallExpression, project: Project): astns.Node | undefined {
@@ -366,24 +378,6 @@ function enclosingImportDeclaration(node: astns.Node, ast: typeof astns): astns.
     cur = cur.parent;
   }
   return undefined;
-}
-
-function recordGapDiagnostic(
-  code: string,
-  message: string,
-  node: astns.Node,
-  sf: astns.SourceFile,
-  snapshot: ProjectSnapshot,
-  out: MutableAccumulator,
-  seenGapSites: Set<string>,
-): void {
-  const repoPath = snapshot.toRepoPath(sf.path);
-  const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-  const site = `${repoPath ?? sf.fileName}:${line + 1}`;
-  const key = `${code}|${site}`;
-  if (seenGapSites.has(key)) return;
-  seenGapSites.add(key);
-  out.diagnostics.push({ code, message, path: repoPath });
 }
 
 /** Sorts callGraph/facts by a stable key, mirroring canonical.ts's edge/diagnostic sorting so repeated runs are byte-identical. */

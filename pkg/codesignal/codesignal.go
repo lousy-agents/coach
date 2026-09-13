@@ -89,8 +89,7 @@ func processFileChanges(files []FileChange, seed []Diagnostic, noBaseLifecycle L
 		for i := range fileClassifiedSignals {
 			fileClassifiedSignals[i].SourceScope = fc.SourceScope
 		}
-		markChanged(fileClassifiedSignals, validRanges)
-		signals = append(signals, fileClassifiedSignals...)
+		signals = append(signals, markChanged(fileClassifiedSignals, validRanges)...)
 	}
 	return diagnostics, signals
 }

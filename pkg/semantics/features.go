@@ -36,6 +36,7 @@ type featureCollector struct {
 	// nested Stat-gated if on the same path resolves the same act call
 	// once per enclosing guard.
 	goToctouActSeen map[goToctouLocationKey]bool
+	mutatesSeen     map[mutatesInputKey]bool
 }
 
 // walk visits n and its descendants in pre-order, incrementing metrics
@@ -169,8 +170,8 @@ func (c *featureCollector) checkMutatesInput(decl engine.Node, source []byte) {
 		return
 	}
 
-	seen := map[mutatesInputKey]bool{}
-	c.findAssignments(body, source, funcName, mutableParams, seen)
+	c.mutatesSeen = map[mutatesInputKey]bool{}
+	c.findAssignments(body, source, funcName, mutableParams)
 }
 
 // mutatesInputKey dedupes findings by (parameter, mutation-expression
@@ -246,7 +247,7 @@ func mutableParamTypes(params engine.Node, source []byte) map[string]paramMutKin
 // a closure's own mutation of an outer mutable parameter is still a
 // caller-visible mutation of that parameter and is deliberately still
 // reported.
-func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcName string, mutableParams map[string]paramMutKind, seen map[mutatesInputKey]bool) {
+func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcName string, mutableParams map[string]paramMutKind) {
 	if n == nil {
 		return
 	}
@@ -265,12 +266,12 @@ func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcNam
 		if left != nil {
 			targetCount := left.ChildCount()
 			for i := 0; i < targetCount; i++ {
-				c.checkAssignmentTarget(left.Child(i), source, funcName, mutableParams, seen)
+				c.checkAssignmentTarget(left.Child(i), source, funcName, mutableParams)
 			}
 		}
 	}
 	if n.Kind() == "inc_statement" || n.Kind() == "dec_statement" {
-		c.checkAssignmentTarget(updateStatementTarget(n), source, funcName, mutableParams, seen)
+		c.checkAssignmentTarget(updateStatementTarget(n), source, funcName, mutableParams)
 	}
 	if n.Kind() == "func_literal" {
 		if params := n.ChildByFieldName("parameters"); params != nil {
@@ -280,7 +281,7 @@ func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcNam
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
 		child := n.Child(i)
-		c.findAssignments(child, source, funcName, mutableParams, seen)
+		c.findAssignments(child, source, funcName, mutableParams)
 		mutableParams = shadowLocalDeclarations(mutableParams, child, source)
 	}
 }
@@ -423,8 +424,8 @@ func identifiersInNodeField(n engine.Node, field string, source []byte) map[stri
 	if child == nil {
 		return nil
 	}
-	names := map[string]bool{}
-	collectIdentifiers(child, source, names)
+	names := identSet{}
+	names.collect(child, source)
 	return names
 }
 
@@ -437,7 +438,7 @@ func identifiersInVarDeclaration(n engine.Node, source []byte) map[string]bool {
 		}
 		if node.Kind() == "var_spec" {
 			if name := node.ChildByFieldName("name"); name != nil {
-				collectIdentifiers(name, source, names)
+				identSet(names).collect(name, source)
 			}
 			return
 		}
@@ -450,17 +451,19 @@ func identifiersInVarDeclaration(n engine.Node, source []byte) map[string]bool {
 	return names
 }
 
-func collectIdentifiers(n engine.Node, source []byte, names map[string]bool) {
+type identSet map[string]bool
+
+func (s identSet) collect(n engine.Node, source []byte) {
 	if n == nil {
 		return
 	}
 	if n.Kind() == "identifier" {
-		names[n.Utf8Text(source)] = true
+		s[n.Utf8Text(source)] = true
 		return
 	}
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
-		collectIdentifiers(n.Child(i), source, names)
+		s.collect(n.Child(i), source)
 	}
 }
 
@@ -497,12 +500,12 @@ func parameterNames(params engine.Node, source []byte) map[string]bool {
 	}
 	count := params.ChildCount()
 	for i := 0; i < count; i++ {
-		collectParameterNames(params.Child(i), source, names)
+		identSet(names).collectParams(params.Child(i), source)
 	}
 	return names
 }
 
-func collectParameterNames(n engine.Node, source []byte, names map[string]bool) {
+func (s identSet) collectParams(n engine.Node, source []byte) {
 	if n == nil {
 		return
 	}
@@ -512,21 +515,21 @@ func collectParameterNames(n engine.Node, source []byte, names map[string]bool) 
 		for i := 0; i < count; i++ {
 			child := n.Child(i)
 			if child.Kind() == "identifier" {
-				names[child.Utf8Text(source)] = true
+				s[child.Utf8Text(source)] = true
 			}
 		}
 		return
 	}
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
-		collectParameterNames(n.Child(i), source, names)
+		s.collectParams(n.Child(i), source)
 	}
 }
 
 // checkAssignmentTarget inspects a single assignment target (one of an
 // assignment_statement's possibly-multiple left-hand-side expressions) and
 // emits a "mutates_input" Finding if it writes through a mutable parameter.
-func (c *featureCollector) checkAssignmentTarget(target engine.Node, source []byte, funcName string, mutableParams map[string]paramMutKind, seen map[mutatesInputKey]bool) {
+func (c *featureCollector) checkAssignmentTarget(target engine.Node, source []byte, funcName string, mutableParams map[string]paramMutKind) {
 	if target == nil {
 		return
 	}
@@ -550,47 +553,43 @@ func (c *featureCollector) checkAssignmentTarget(target engine.Node, source []by
 	// detector; the root parameter being a pointer (or map/slice) at all
 	// already establishes that state reachable through it is
 	// caller-visible.
-	var paramName string
-	var requiredKind paramMutKind
 	switch target.Kind() {
 	case "parenthesized_expression":
 		inner := parenthesizedInner(target)
 		if inner == nil {
 			return
 		}
-		c.checkAssignmentTarget(inner, source, funcName, mutableParams, seen)
-		return
+		c.checkAssignmentTarget(inner, source, funcName, mutableParams)
 	case "selector_expression":
-		requiredKind = paramMutPointer
+		c.recordMutableSelectorOrIndex(target, source, funcName, mutableParams, paramMutPointer)
 	case "index_expression":
-		requiredKind = paramMutCollection
+		c.recordMutableSelectorOrIndex(target, source, funcName, mutableParams, paramMutCollection)
 	case "unary_expression":
-		op := target.ChildByFieldName("operator")
-		if op == nil || op.Utf8Text(source) != "*" {
-			return
-		}
-		operand := target.ChildByFieldName("operand")
-		if operand == nil || operand.Kind() != "identifier" {
-			return
-		}
-		paramName = operand.Utf8Text(source)
-		if mutableParams[paramName] != paramMutPointer {
-			return
-		}
-		loc := locationFromNode(target)
-		key := mutatesInputKey{paramName: paramName, startByte: loc.StartByte, endByte: loc.EndByte}
-		if seen[key] {
-			return
-		}
-		seen[key] = true
-		c.findings = append(c.findings, newMutatesInputFinding(funcName, paramName, target, source))
-		return
+		c.recordMutableDeref(target, source, funcName, mutableParams)
 	default:
 		// Plain identifier targets (cfg = other) rebind the local
 		// parameter variable rather than writing through it, and any
 		// other target kind is out of scope for this detector.
+	}
+}
+
+func (c *featureCollector) recordMutableDeref(target engine.Node, source []byte, funcName string, mutableParams map[string]paramMutKind) {
+	op := target.ChildByFieldName("operator")
+	if op == nil || op.Utf8Text(source) != "*" {
 		return
 	}
+	operand := target.ChildByFieldName("operand")
+	if operand == nil || operand.Kind() != "identifier" {
+		return
+	}
+	paramName := operand.Utf8Text(source)
+	if mutableParams[paramName] != paramMutPointer {
+		return
+	}
+	c.recordMutatesInput(funcName, paramName, target, source)
+}
+
+func (c *featureCollector) recordMutableSelectorOrIndex(target engine.Node, source []byte, funcName string, mutableParams map[string]paramMutKind, requiredKind paramMutKind) {
 	operand := target.ChildByFieldName("operand")
 	if operand == nil {
 		return
@@ -599,8 +598,7 @@ func (c *featureCollector) checkAssignmentTarget(target engine.Node, source []by
 	if base == nil {
 		return
 	}
-	paramName = base.Utf8Text(source)
-
+	paramName := base.Utf8Text(source)
 	kind := mutableParams[paramName]
 	if nested {
 		if kind == paramNotMutable {
@@ -609,14 +607,16 @@ func (c *featureCollector) checkAssignmentTarget(target engine.Node, source []by
 	} else if kind != requiredKind {
 		return
 	}
+	c.recordMutatesInput(funcName, paramName, target, source)
+}
 
+func (c *featureCollector) recordMutatesInput(funcName, paramName string, target engine.Node, source []byte) {
 	loc := locationFromNode(target)
 	key := mutatesInputKey{paramName: paramName, startByte: loc.StartByte, endByte: loc.EndByte}
-	if seen[key] {
+	if c.mutatesSeen[key] {
 		return
 	}
-	seen[key] = true
-
+	c.mutatesSeen[key] = true
 	c.findings = append(c.findings, newMutatesInputFinding(funcName, paramName, target, source))
 }
 

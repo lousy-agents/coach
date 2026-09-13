@@ -57,6 +57,22 @@ func oauthAuthorizeHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Ha
 	}
 }
 
+// exchangeOAuthCode looks up code and, on ScenarioOK, mints a single-use
+// token into Tokens and deletes the code. Lookup and mutate run under
+// fx.mu so concurrent exchanges of the same code cannot both succeed.
+func (fx *Fixture) exchangeOAuthCode(code string) (token string, entry OAuthCodeEntry, ok bool) {
+	fx.mu.Lock()
+	defer fx.mu.Unlock()
+	entry, ok = fx.OAuth.Codes[code]
+	if !ok || entry.Scenario != ScenarioOK {
+		return "", entry, ok
+	}
+	token = newFakeToken()
+	fx.OAuth.Tokens[token] = OAuthTokenEntry{IdentityLogin: entry.IdentityLogin, Scenario: ScenarioOK}
+	delete(fx.OAuth.Codes, code)
+	return token, entry, true
+}
+
 // oauthTokenHandler answers POST /login/oauth/access_token. On ScenarioOK it
 // mints a token into fx.OAuth.Tokens and deletes the code from Codes
 // (single-use). Lookup and mutate run under fx.mu so concurrent exchanges of
@@ -79,15 +95,7 @@ func oauthTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handle
 			return
 		}
 
-		fx.mu.Lock()
-		entry, ok := fx.OAuth.Codes[code]
-		var token string
-		if ok && entry.Scenario == ScenarioOK {
-			token = newFakeToken()
-			fx.OAuth.Tokens[token] = OAuthTokenEntry{IdentityLogin: entry.IdentityLogin, Scenario: ScenarioOK}
-			delete(fx.OAuth.Codes, code)
-		}
-		fx.mu.Unlock()
+		token, entry, ok := fx.exchangeOAuthCode(code)
 
 		if !ok {
 			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeNone))

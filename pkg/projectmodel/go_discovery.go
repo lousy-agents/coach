@@ -32,6 +32,7 @@ type goProjectDiscovery struct {
 	// ModulesSkipped counts go.mod files that were seen but failed to
 	// parse, distinct from go.work parse failures (which are not modules).
 	ModulesSkipped int
+	truncated      bool
 }
 
 // discoverGoProject walks snapshot once, collecting every go.work/go.mod
@@ -46,7 +47,6 @@ func discoverGoProject(snapshot fs.FS, budgets GoBudgets) *goProjectDiscovery {
 		Complete:   true,
 	}
 
-	truncated := false
 	walkErr := fs.WalkDir(snapshot, ".", func(p string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return d.handleWalkError(p)
@@ -54,11 +54,11 @@ func discoverGoProject(snapshot fs.FS, budgets GoBudgets) *goProjectDiscovery {
 		if entry.IsDir() {
 			return d.visitDiscoveryDir(p)
 		}
-		return d.visitDiscoveryFile(snapshot, p, budgets, &truncated)
+		return d.visitDiscoveryFile(snapshot, p, budgets)
 	})
 	_ = walkErr // walkFn only ever returns nil or fs.SkipAll, so WalkDir never propagates an error here.
 
-	if truncated {
+	if d.truncated {
 		d.Complete = false
 		d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagRootIncomplete})
 	}
@@ -92,10 +92,10 @@ func (d *goProjectDiscovery) visitDiscoveryDir(p string) error {
 // already covers for the top-level walk failure -- do not silently drop it,
 // or a multi-root discovery can go Complete with a wrong, truncated root set
 // instead of failing closed.
-func (d *goProjectDiscovery) visitDiscoveryFile(snapshot fs.FS, p string, budgets GoBudgets, truncated *bool) error {
+func (d *goProjectDiscovery) visitDiscoveryFile(snapshot fs.FS, p string, budgets GoBudgets) error {
 	d.FilesSeen++
 	if budgets.MaxInputFiles > 0 && d.FilesSeen > budgets.MaxInputFiles {
-		*truncated = true
+		d.truncated = true
 		d.FilesSkipped++
 		return fs.SkipAll
 	}
@@ -113,7 +113,7 @@ func (d *goProjectDiscovery) visitDiscoveryFile(snapshot fs.FS, p string, budget
 	}
 	d.BytesSeen += int64(len(data))
 	if budgets.MaxInputBytes > 0 && d.BytesSeen > budgets.MaxInputBytes {
-		*truncated = true
+		d.truncated = true
 		d.FilesSkipped++
 		return fs.SkipAll
 	}
@@ -166,39 +166,51 @@ func (d *goProjectDiscovery) recordGoFile(p, base string, data []byte) {
 // onto a known module directory (used to decide whether the workspace
 // itself is emitted as a root).
 func (d *goProjectDiscovery) resolveUseDirectives() ([]Diagnostic, map[string]bool) {
-	validWorkspaces := map[string]bool{}
-	var diagnostics []Diagnostic
-
-	dirs := mapKeysSorted(d.Workspaces)
-	ambiguousSeen := map[string]bool{}
-
-	for _, w := range dirs {
-		wf := d.Workspaces[w]
-		seenInWorkspace := map[string]bool{}
-		for _, use := range wf.Use {
-			resolved := path.Clean(path.Join(w, use.Path))
-			if resolved == ".." || strings.HasPrefix(resolved, "../") {
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagRootOutsideSnapshot, Path: resolved})
-				continue
-			}
-
-			if seenInWorkspace[resolved] {
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagRootDuplicate, Path: resolved})
-			}
-			seenInWorkspace[resolved] = true
-
-			if d.Workspaces[resolved] != nil && !ambiguousSeen[resolved] {
-				ambiguousSeen[resolved] = true
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagRootAmbiguous, Path: resolved})
-			}
-
-			if _, ok := d.Modules[resolved]; ok {
-				validWorkspaces[w] = true
-			}
-		}
+	resolution := useDirectiveResolution{
+		validWorkspaces: map[string]bool{},
+		ambiguousSeen:   map[string]bool{},
 	}
+	for _, w := range mapKeysSorted(d.Workspaces) {
+		resolution.resolveWorkspace(d, w)
+	}
+	return resolution.diagnostics, resolution.validWorkspaces
+}
 
-	return diagnostics, validWorkspaces
+type useDirectiveResolution struct {
+	diagnostics     []Diagnostic
+	validWorkspaces map[string]bool
+	ambiguousSeen   map[string]bool
+}
+
+func (r *useDirectiveResolution) resolveWorkspace(d *goProjectDiscovery, w string) {
+	ws := workspaceUseResolution{useDirectiveResolution: r, seen: map[string]bool{}}
+	for _, use := range d.Workspaces[w].Use {
+		ws.resolveUse(d, w, use.Path)
+	}
+}
+
+type workspaceUseResolution struct {
+	*useDirectiveResolution
+	seen map[string]bool
+}
+
+func (ws *workspaceUseResolution) resolveUse(d *goProjectDiscovery, w, usePath string) {
+	resolved := path.Clean(path.Join(w, usePath))
+	if resolved == ".." || strings.HasPrefix(resolved, "../") {
+		ws.diagnostics = append(ws.diagnostics, Diagnostic{Code: DiagRootOutsideSnapshot, Path: resolved})
+		return
+	}
+	if ws.seen[resolved] {
+		ws.diagnostics = append(ws.diagnostics, Diagnostic{Code: DiagRootDuplicate, Path: resolved})
+	}
+	ws.seen[resolved] = true
+	if d.Workspaces[resolved] != nil && !ws.ambiguousSeen[resolved] {
+		ws.ambiguousSeen[resolved] = true
+		ws.diagnostics = append(ws.diagnostics, Diagnostic{Code: DiagRootAmbiguous, Path: resolved})
+	}
+	if _, ok := d.Modules[resolved]; ok {
+		ws.validWorkspaces[w] = true
+	}
 }
 
 // roots returns the deduplicated, sorted set of every module directory plus
