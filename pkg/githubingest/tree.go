@@ -26,7 +26,7 @@ type TreeEntry struct {
 // language list.
 type FileFilter func(path string) bool
 
-// TreeListOptions configures GitHubFileReader.ListFiles's tree walk.
+// TreeListOptions is GitHubFileReader.ListFiles's tree-walk budget and filter.
 type TreeListOptions struct {
 	// Filter, if non-nil, restricts the result to paths for which it
 	// returns true. A nil Filter matches every regular file.

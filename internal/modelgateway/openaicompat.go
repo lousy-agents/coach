@@ -17,9 +17,8 @@ const DefaultHTTPClientTimeout = 10 * time.Second
 // when assistant content fails JSON parse or OutputSchema validation.
 const DefaultSchemaValidationAttempts = 3
 
-// OpenAICompatConfig configures the OpenAI-compatible HTTP Gateway adapter.
-// It is intentionally provider-neutral: base URL, logical model, optional
-// credentials/headers, and HTTP client only.
+// OpenAICompatConfig is intentionally provider-neutral: base URL, logical
+// model, optional credentials/headers, and HTTP client only.
 type OpenAICompatConfig struct {
 	BaseURL      string
 	LogicalModel string

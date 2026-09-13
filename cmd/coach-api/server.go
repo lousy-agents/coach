@@ -32,7 +32,7 @@ type Dependencies struct {
 
 // buildDependencies constructs the real Dependencies described by cfg: a
 // GitHub-App-authenticated authz.RepoAuthorizer (optionally wrapped in the
-// Story 3 credential-free-smoke BypassAuthorizer), a Redis Streams
+// credential-free-smoke BypassAuthorizer), a Redis Streams
 // queue.TaskQueue, and either a PostgresStore (cfg.PostgresDSN set) or a
 // MemoryStore. When App credentials are absent and the full authz bypass
 // pair is set, buildAuthorizer uses a fail-closed deny-all inner instead of
@@ -110,8 +110,8 @@ func buildAuthorizer(cfg InfraConfig) (authz.RepoAuthorizer, error) {
 }
 
 // wrapAuthorizerForBypass wraps authorizer in authz.NewBypassAuthorizer only
-// when both cfg.AuthzBypassOwner and cfg.AuthzBypassRepo are set (Story 3's
-// credential-free-smoke exception). A single one set alone must not
+// when both cfg.AuthzBypassOwner and cfg.AuthzBypassRepo are set
+// (credential-free-smoke exception). A single one set alone must not
 // partially enable the bypass -- authorizer is returned unwrapped in that
 // case, so it still fails closed.
 func wrapAuthorizerForBypass(authorizer authz.RepoAuthorizer, cfg InfraConfig) authz.RepoAuthorizer {
@@ -128,8 +128,7 @@ func wrapAuthorizerForBypass(authorizer authz.RepoAuthorizer, cfg InfraConfig) a
 // (see internal/coachapi/server.go's Handler doc comment). A request whose
 // path matches none of those registers on the "/" catch-all below, which
 // returns the same stable not_found envelope every other unmatched route in
-// this API returns (epic #97 Story 1: "All unmatched routes ... return the
-// envelope with code not_found").
+// this API returns.
 func buildHandler(cfg Config, deps Dependencies) (http.Handler, error) {
 	if deps.Store == nil {
 		return nil, errors.New("coach-api: Dependencies.Store is required")

@@ -15,7 +15,6 @@ import (
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
 )
 
-// ServerConfig configures a Server.
 type ServerConfig struct {
 	Store      JobStore
 	Authorizer authz.RepoAuthorizer
@@ -24,7 +23,7 @@ type ServerConfig struct {
 	NewJobID   func() string
 }
 
-// Server is the /v1/jobs... HTTP surface (Task 2 / GitHub issue #103).
+// Server is the /v1/jobs HTTP surface.
 type Server struct {
 	store      JobStore
 	authorizer authz.RepoAuthorizer
@@ -33,8 +32,7 @@ type Server struct {
 	newJobID   func() string
 }
 
-// NewServer builds a Server. cfg.Store, cfg.Authorizer, and cfg.Queue are
-// required.
+// NewServer requires cfg.Store, cfg.Authorizer, and cfg.Queue.
 func NewServer(cfg ServerConfig) (*Server, error) {
 	if cfg.Store == nil {
 		return nil, errors.New("coachapi: ServerConfig.Store is required")
@@ -62,13 +60,9 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	}, nil
 }
 
-// Handler returns the /v1/jobs... HTTP surface. It expects to be wrapped by
-// an auth middleware that attaches a Principal via WithPrincipal before a
-// request reaches it (internal/authn.Service.Middleware, composed by
-// cmd/coach-api's main.go -- not by this package, to avoid an import cycle
-// between internal/coachapi and internal/authn). If no Principal is present,
-// Handler responds 401 unauthenticated defensively, but this should not
-// happen in a correctly composed deployment.
+// Handler is the /v1/jobs HTTP surface. It expects a Principal via
+// WithPrincipal. This package does not wrap itself, to avoid an import cycle
+// with internal/authn. Missing Principal yields 401.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/jobs", s.handleCreateJob)

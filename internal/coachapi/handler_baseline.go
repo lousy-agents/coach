@@ -32,7 +32,7 @@ type BaselineFileEntry struct {
 	Size int
 }
 
-// BaselineListOptions configures tree listing budgets for a baseline scan.
+// BaselineListOptions is tree listing budgets for a baseline scan.
 type BaselineListOptions struct {
 	MaxFiles      int
 	MaxTotalBytes int64
@@ -59,7 +59,6 @@ type BaselineJobWriter interface {
 // BaselineJobHandler runs one repo_baseline_scan attempt.
 type BaselineJobHandler func(ctx context.Context, job Job, w BaselineJobWriter) (*Completion, error)
 
-// RepoBaselineScanConfig configures NewRepoBaselineScanHandler.
 type RepoBaselineScanConfig struct {
 	// TreeSource is used when the job is not the operator smoke fixture pair.
 	TreeSource BaselineTreeSource
@@ -81,8 +80,7 @@ type RepoBaselineScanConfig struct {
 	// (analyze loop, then judgment loop when judgment runs).
 	ObserveLoop func(*agentloop.Loop)
 
-	// ConfigureLoop, if set, runs after tool registration on each loop
-	// (tests inject failures).
+	// ConfigureLoop, if set, runs after tool registration on each loop.
 	ConfigureLoop func(*agentloop.Loop)
 
 	// PackConfig controls hidden-mutation judgment packing. Zero fields use
@@ -95,7 +93,7 @@ type RepoBaselineScanConfig struct {
 	JudgmentMaxWallTime time.Duration
 
 	// MaxHiddenMutationJudgments caps how many hidden_input_mutation signals
-	// receive model judgment per baseline job (Story 3 priority cap).
+	// receive model judgment per baseline job.
 	// Zero means DefaultMaxHiddenMutationJudgments (16). Negative means unlimited.
 	MaxHiddenMutationJudgments int
 
@@ -116,16 +114,14 @@ type loadedBaselineFile struct {
 	Result   *semantics.Result
 }
 
-// NewRepoBaselineScanHandler returns the handler for repo_baseline_scan jobs.
 func NewRepoBaselineScanHandler(cfg RepoBaselineScanConfig) BaselineJobHandler {
 	return func(ctx context.Context, job Job, w BaselineJobWriter) (*Completion, error) {
 		return runRepoBaselineScan(ctx, cfg, job, w)
 	}
 }
 
-// newAnalyzeLoop builds the semantics + codesignal loop sized for fileCount.
-// Judgment uses a fresh loop of its own so analyze wall time never consumes
-// the judgment budget (Story 2).
+// Analyze wall time never consumes the judgment budget: judgment uses a
+// fresh loop of its own.
 func newAnalyzeLoop(cfg RepoBaselineScanConfig, fileCount int) (*agentloop.Loop, error) {
 	analyzeMaxTools := fileCount + 1 /*codesignal*/ + 10 /*slack*/
 	if analyzeMaxTools < agentloop.DefaultMaxToolCalls {

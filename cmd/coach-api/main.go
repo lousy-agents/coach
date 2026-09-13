@@ -1,9 +1,9 @@
 // Command coach-api is the composition-root HTTP service for the coach
-// platform (Task 2 / GitHub issue #103, epic #97): it wires internal/authn
-// (Coach JWT auth, optional GitHub OAuth login, config-gated test mint) and
-// internal/coachapi (POST /v1/jobs, GET /v1/jobs/{id}, GET
-// /v1/jobs/{id}/report) behind a live authz.RepoAuthorizer and a Redis
-// Streams queue.TaskQueue into one runnable server.
+// platform: it wires internal/authn (Coach JWT auth, optional GitHub OAuth
+// login, config-gated test mint) and internal/coachapi (POST /v1/jobs,
+// GET /v1/jobs/{id}, GET /v1/jobs/{id}/report) behind a live
+// authz.RepoAuthorizer and a Redis Streams queue.TaskQueue into one runnable
+// server.
 package main
 
 import (

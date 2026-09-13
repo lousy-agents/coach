@@ -7,8 +7,7 @@
 // no-op EventBus; broker adapters and the black-box conformance suite that
 // exercises them live in their own packages (see
 // internal/acceptanceharness/queueconformance, which defines the
-// Enqueue/Claim/Complete subset of this contract reused here, and GitHub
-// issue #100, part of epic #97).
+// Enqueue/Claim/Complete subset of this contract reused here).
 package queue
 
 import (

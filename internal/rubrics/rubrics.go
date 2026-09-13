@@ -52,7 +52,7 @@ type Diagnostic struct {
 }
 
 // Judgment is a successful schema-valid rubric judgment with provenance fields
-// suitable for later source=agent findings (Task 8 persistence).
+// suitable for later source=agent findings.
 type Judgment struct {
 	RubricID       string
 	RubricVersion  string
@@ -71,7 +71,7 @@ type Result struct {
 }
 
 // ToolResult is the JSON envelope returned by rubric agent-loop tools.
-// On success Judgment is set and Diagnostic is null; on Story 5 degrade
+// On success Judgment is set and Diagnostic is null; on soft-degrade
 // Judgment is null and Diagnostic is set. Schema/unavailable judgment
 // failures do not hard-error the tool call so handlers can finish with
 // deterministic evidence. context.Canceled is returned as a hard tool error

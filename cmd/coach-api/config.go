@@ -71,7 +71,7 @@ type InfraConfig struct {
 
 	// AuthzBypassOwner/AuthzBypassRepo, when both set, wrap the live
 	// authz.RepoAuthorizer in authz.NewBypassAuthorizer for that exact pair
-	// (Story 3's credential-free smoke exception). Must default to unset.
+	// (credential-free smoke exception). Must default to unset.
 	AuthzBypassOwner string
 	AuthzBypassRepo  string
 }
