@@ -5,7 +5,6 @@ import (
 	"fmt"
 )
 
-// AnalyzerOptions configures a new Analyzer.
 type AnalyzerOptions struct {
 	// Languages restricts AnalyzeBytes to this set of grammars. Empty means
 	// "all supported" (LanguageGo, LanguageTypeScript, and LanguageTSX).

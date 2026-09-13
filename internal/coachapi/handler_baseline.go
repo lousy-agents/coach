@@ -59,7 +59,6 @@ type BaselineJobWriter interface {
 // BaselineJobHandler runs one repo_baseline_scan attempt.
 type BaselineJobHandler func(ctx context.Context, job Job, w BaselineJobWriter) (*Completion, error)
 
-// RepoBaselineScanConfig configures NewRepoBaselineScanHandler.
 type RepoBaselineScanConfig struct {
 	// TreeSource is used when the job is not the operator smoke fixture pair.
 	TreeSource BaselineTreeSource
@@ -116,16 +115,14 @@ type loadedBaselineFile struct {
 	Result   *semantics.Result
 }
 
-// NewRepoBaselineScanHandler returns the handler for repo_baseline_scan jobs.
 func NewRepoBaselineScanHandler(cfg RepoBaselineScanConfig) BaselineJobHandler {
 	return func(ctx context.Context, job Job, w BaselineJobWriter) (*Completion, error) {
 		return runRepoBaselineScan(ctx, cfg, job, w)
 	}
 }
 
-// newAnalyzeLoop builds the semantics + codesignal loop sized for fileCount.
-// Judgment uses a fresh loop of its own so analyze wall time never consumes
-// the judgment budget (Story 2).
+// Analyze wall time never consumes the judgment budget: judgment uses a
+// fresh loop of its own.
 func newAnalyzeLoop(cfg RepoBaselineScanConfig, fileCount int) (*agentloop.Loop, error) {
 	analyzeMaxTools := fileCount + 1 /*codesignal*/ + 10 /*slack*/
 	if analyzeMaxTools < agentloop.DefaultMaxToolCalls {

@@ -15,7 +15,6 @@ import (
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
 )
 
-// ServerConfig configures a Server.
 type ServerConfig struct {
 	Store      JobStore
 	Authorizer authz.RepoAuthorizer
@@ -24,7 +23,7 @@ type ServerConfig struct {
 	NewJobID   func() string
 }
 
-// Server is the /v1/jobs... HTTP surface (Task 2 / GitHub issue #103).
+// Server is the /v1/jobs HTTP surface.
 type Server struct {
 	store      JobStore
 	authorizer authz.RepoAuthorizer
