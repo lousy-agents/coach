@@ -7,6 +7,12 @@
       "skillPath": "skills/curate-release/SKILL.md",
       "computedHash": "a223fade925197b236cc432b564ced726ce75b82d832502d8cd75f8d987c79d0"
     },
+    "customer-strategy-forge": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/customer-strategy-forge/SKILL.md",
+      "computedHash": "d4cf1bb010bec1b9da88c6e3059278cc516df8ef1a12f1de2a8d1370677dfdd7"
+    },
     "designing-for-intent": {
       "source": "lousy-agents/skills",
       "sourceType": "github",
@@ -24,6 +30,12 @@
       "sourceType": "github",
       "skillPath": "skills/go-testable-design/SKILL.md",
       "computedHash": "a9a36f821b37d51b7f2d02429e14d4af382f46c245e2b918af2ea659cec2c071"
+    },
+    "instruction-style": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/instruction-style/SKILL.md",
+      "computedHash": "b0a5f1f17a34377d7b21eb74ae6e2659dbef11b0a191df0c36b6049fe991c4c7"
     },
     "issue-refine-loop": {
       "source": "lousy-agents/skills",
