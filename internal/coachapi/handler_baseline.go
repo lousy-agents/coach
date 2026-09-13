@@ -115,6 +115,9 @@ type loadedBaselineFile struct {
 }
 
 func NewRepoBaselineScanHandler(cfg RepoBaselineScanConfig) BaselineJobHandler {
+	if cfg.Now == nil {
+		cfg.Now = func() time.Time { return time.Now().UTC() }
+	}
 	return func(ctx context.Context, job Job, w BaselineJobWriter) (*Completion, error) {
 		return runRepoBaselineScan(ctx, cfg, job, w)
 	}
@@ -313,10 +316,7 @@ func completeAfterJudgmentError(ctx context.Context, cfg RepoBaselineScanConfig,
 }
 
 func baselineCompletion(cfg RepoBaselineScanConfig, w BaselineJobWriter, commitSHA string) *Completion {
-	now := time.Now().UTC()
-	if cfg.Now != nil {
-		now = cfg.Now().UTC()
-	}
+	now := cfg.Now().UTC()
 	lease := w.Lease()
 	return &Completion{
 		Attempt:   lease.Attempt,

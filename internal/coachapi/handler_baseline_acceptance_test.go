@@ -382,6 +382,30 @@ var _ = Describe("repo_baseline_scan job handler", func() {
 			Expect(observed).NotTo(BeNil(), "handler must construct an agentloop for the analysis path")
 		})
 
+		It("stamps completion times from an injected clock rather than the wall clock", func() {
+			stamp := time.Date(2026, 9, 13, 15, 4, 5, 0, time.UTC)
+			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
+				SmokeFixturePath: baselineFixtureRoot(),
+				SmokeRepoOwner:   "smoke-owner",
+				SmokeRepoName:    "smoke-repo",
+				Gateway:          modelgateway.NewStubGateway(),
+				Now:              func() time.Time { return stamp },
+			})
+			job := baselineJob(coachapi.RepoBaselineScanParams{
+				RepoOwner: "smoke-owner",
+				RepoName:  "smoke-repo",
+				Ref:       "main",
+			})
+			_, w := newMemoryFencedWriter(job)
+			completion, err := h(context.Background(), job, w)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(completion).NotTo(BeNil())
+			Expect(completion.FinishedAt).To(Equal(stamp),
+				"injected Now should stamp FinishedAt: got %v want %v", completion.FinishedAt, stamp)
+			Expect(completion.GeneratedAt).To(Equal(stamp),
+				"injected Now should stamp GeneratedAt: got %v want %v", completion.GeneratedAt, stamp)
+		})
+
 		It("persists distinct agent payload_hash values for multiple hidden_mutation signals", func() {
 			// Fixture has ≥2 hidden_input_mutation signals; stub judgments are identical,
 			// so payload_hash needs a per-signal discriminator for store UNIQUE.
