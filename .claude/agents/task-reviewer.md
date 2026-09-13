@@ -45,10 +45,11 @@ Steps:
    sidecar is built, so `pkg/projectmodel`'s acceptance suite skips silently
    there. An implementer's red evidence from that suite under `ci` is a skip,
    not a failure — treat it as missing red evidence.
-6. Look for: silent scope creep, over-broad error handling, sequencing bugs (e.g.
-   transform-before-filter), missing edge-case coverage, Go comment bloat or
-   missing godoc on non-obvious exported contracts (AGENTS.md Go comments
-   policy), and any recurring patterns named in your prompt.
+ 6. Look for: silent scope creep, over-broad error handling, sequencing bugs (e.g.
+    transform-before-filter), missing edge-case coverage, comments that violate
+    AGENTS.md's comment policy (new restatements or change narration; existing
+    comments removed without the task asking), and any recurring patterns named
+    in your prompt.
 
    Watch patterns (AGENTS.md): a production-default upstream HTTP client with no
    finite `Timeout` (or a bare `http.DefaultClient` on a hangable path); a

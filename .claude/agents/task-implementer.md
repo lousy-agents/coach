@@ -46,9 +46,9 @@ Steps:
    make a different path produce the same status or outcome do not count — for
    example, advancing time so a "denylisted" case actually fails on expiry.
 3. Make the smallest change that turns that test green and otherwise satisfies
-   the task's acceptance criteria. Follow the repo's existing conventions and
-   patterns — match what is already there. For Go, comment only per AGENTS.md's
-   Go comments policy (useful godoc and contracts; no bloat or narration).
+    the task's acceptance criteria. Follow the repo's existing conventions and
+    patterns — match what is already there. Comment only per AGENTS.md's
+    comment policy, which overrides neighboring comment density.
 
    Where the task involves outbound HTTP or dependency stores, satisfy
    AGENTS.md's HTTP timeout and store fail-closed policies.

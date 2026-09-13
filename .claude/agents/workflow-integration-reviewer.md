@@ -38,8 +38,8 @@ review structurally cannot see.
    `pkg/semantics` does not import `pkg/githubingest`/`go-github`/`ghinstallation`;
     `pkg/githubingest` does not import `pkg/semantics`; public JSON and error
    sentinels unchanged unless intentional and tested; production HTTP clients keep
-   a finite `Timeout`; store/dependency errors on protected paths fail closed with
-   503 and the stable envelope; no Go comments that merely restate code.
+    a finite `Timeout`; store/dependency errors on protected paths fail closed with
+    503 and the stable envelope; comments follow AGENTS.md's comment policy.
 
 5. Run `mise run ci-fast`. Treat an unverified pass claim as missing evidence.
 

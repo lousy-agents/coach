@@ -176,31 +176,23 @@ Inbound servers are the mirror of this rule: every production `http.Server` shal
 
 Applies to the `coach-api` request paths. When a required store or dependency errors — as distinct from a clean miss or not-found — protected and auth paths shall return 503 with the stable JSON error envelope, so a partial read never reads as an authorized empty result. Check store errors on every protected and auth path; analogous paths share the 503 envelope.
 
-### Go comments
+### Comment policy
 
-Applies to Go only. Default to no comment unless it helps a human or coding agent use or change the code correctly.
+Write code that explains its own mechanics through names, types, structure, and tests.
 
-Keep or write a comment where it encodes a non-local contract:
+Before finishing an implementation, review every newly added or modified code comment.
+Keep a comment only when it preserves non-obvious information that the code cannot:
+- rationale for a decision or trade-off;
+- an invariant, compatibility constraint, security boundary, or surprising edge case;
+- an externally imposed workaround, including a link or issue identifier when available.
 
-- Exported API behavior callers cannot infer from the name (errors, auth, zero value, concurrency, special cases)
-- Intentional simplifications and external wire quirks (e.g. go-github response shapes, GitHub API limits)
-- Invariants that tests or agents will otherwise "fix" wrongly (race guards, auth-mode recording, false-green traps)
+Remove comments that:
+- restate what the adjacent code does;
+- narrate the current change, prompt, migration stage, or previous implementation;
+- explain ordinary framework or language behavior;
+- describe a current caller rather than the component's own contract.
 
-Form (godoc):
-
-- Doc comments sit immediately above the declaration, are complete sentences, and start with the symbol name (`Package foo…`, `ClassifyToken reports…`)
-- Prefer short paragraphs; use end-of-line comments for map keys and enum values where that is enough
-- Attach notes to a declaration — no orphan `// NOTE` blocks
-- Follow [Go doc comments](https://go.dev/doc/comment). Epic and issue narrative belongs in `docs/`, the PR, or the commit message, not in code
-
-Delete, and never add:
-
-- Restatements of the identifier or of the next line of code
-- Step-by-step narration of obvious control flow
-- Long essays duplicated across handlers — factor one shared helper, doc, or package comment
-- Test comments that only paraphrase `It("…")` or subtest names; prefer structure and names (see `go-testable-design`), and keep only subtle assertion traps
-
-Comment unexported symbols only for the contracts and traps above, not for routine helpers.
+This policy overrides verbose comment conventions in neighboring code. Preserve existing comments unless the task explicitly asks to edit or remove them.
 
 ### Verification
 

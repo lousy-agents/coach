@@ -44,7 +44,7 @@ Closes <!-- #N -->
 - [ ] Public JSON / error sentinels unchanged, or change is intentional and tested
 - [ ] Production HTTP clients keep a finite `Timeout` (no bare `http.DefaultClient`)
 - [ ] Store/dependency errors on protected paths fail closed (503 + stable envelope)
-- [ ] No new Go comments that restate code; comments only for non-local contracts
+- [ ] New comments follow AGENTS.md comment policy; existing comments left unless the task asks
 
 ## Acceptance criteria → evidence
 <!-- One row per criterion from the linked issue (or provisional contract).
