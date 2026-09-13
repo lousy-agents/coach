@@ -365,8 +365,10 @@ func readProcessEnviron(pid int) (string, bool) {
 		}
 		return strings.ReplaceAll(string(data), "\x00", "\n"), true
 	}
-	out, err := exec.Command("ps", "-wwwE", "-p", strconv.Itoa(pid), "-o", "command=").Output()
-	if err != nil || strings.TrimSpace(string(out)) == "" {
+	// Darwin: `ps -E -o command=` is argv only. BSD `ps eww` appends the
+	// environment after the command so PATH= is observable.
+	out, err := exec.Command("ps", "eww", "-p", strconv.Itoa(pid)).Output()
+	if err != nil || !strings.Contains(string(out), "PATH=") {
 		return "", false
 	}
 	return string(out), true
