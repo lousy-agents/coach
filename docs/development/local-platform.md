@@ -27,7 +27,7 @@ coach-worker (internal/modelgateway OpenAI client)
 ```
 
 - **Product policy** (schema validation, typed unavailable errors, degrade-to-deterministic) stays in Go `internal/modelgateway`.
-- **ai-gateway** is a transparent OpenAI-compatible data-plane proxy (token/access-log shape for production parity). It must **not** rewrite upstream 5xx into 202 (see `docs/architecture/system-overview.md` pilot wake path).
+- **ai-gateway** is a **local extra hop** on this compose path (token/access-log shape). It is not the AWS proof-of-value data plane and not production parity. `docs/architecture/system-overview.md` still forbids Envoy on the AWS PoV path. aigw must **not** rewrite upstream 5xx into 202.
 - Reference Gateway API config: [`deploy/compose/platform/aigw/config.yaml`](../../deploy/compose/platform/aigw/config.yaml). Compose starts aigw with `OPENAI_BASE_URL` / `OPENAI_API_KEY` (env-synthesized route, same as upstream aigw examples).
 
 ## mise tasks
@@ -67,7 +67,7 @@ falsely.
 | `COACH_AUTH_TEST_MINT` | `1` | Enable `POST /v1/auth/test-mint` (non-production) |
 | `COACH_REDIS_ADDR` | `redis:6379` | Redis Streams |
 | `COACH_REDIS_STREAM` | `coach-jobs` | Shared with worker |
-| `COACH_REDIS_CONSUMER_GROUP` | `coach-api` | Enqueue-side group name |
+| `COACH_REDIS_CONSUMER_GROUP` | `coach-api` | Redis adapter group name on the API process. The API's `TaskQueue` role is **enqueue**; this extra Streams subscriber is a current adapter leak, not the intended SQS publisher shape. |
 | `COACH_PG_DSN` | `postgres://coach:coach@postgres:5432/coach?sslmode=disable` | Job store |
 | `COACH_AUTHZ_BYPASS_OWNER` | `coach-smoke` | Submit-time authz bypass owner |
 | `COACH_AUTHZ_BYPASS_REPO` | `fixture-repo` | Submit-time authz bypass repo |
@@ -92,7 +92,7 @@ Path C sets App + OAuth in `.env` while bypass remains for fixture smoke.
 | `COACH_WORKER_ID` | `platform-worker-1` | Lease / consumer identity |
 | `COACH_REDIS_ADDR` | `redis:6379` | Redis Streams |
 | `COACH_REDIS_STREAM` | `coach-jobs` | **Same stream as API** |
-| `COACH_REDIS_CONSUMER_GROUP` | `coach-workers` | Consume-side group — **must differ** from API (`coach-api`); both open a Redis Streams subscriber today, so a shared group lets the API drain work before the worker |
+| `COACH_REDIS_CONSUMER_GROUP` | `coach-workers` | Worker consume group (ADR-006). **Must differ** from the API's group while both processes open a Redis Streams subscriber; a shared group lets the API drain work before the worker |
 | `COACH_PG_DSN` | same as API | Shared job store |
 | `COACH_SMOKE_FIXTURE_PATH` | `/fixtures/smoke-repo` | Mounted fixture tree |
 | `COACH_SMOKE_REPO_OWNER` | `coach-smoke` | Owner pair → fixture path |
@@ -140,7 +140,7 @@ Host ports: `1975` (proxy), `1064` (admin).
 | `COACH_PLATFORM_SMOKE_BASE_URL` | `http://127.0.0.1:8080` | API base URL |
 | `COACH_SMOKE_REPO_OWNER` | `coach-smoke` | Must match bypass + worker pair |
 | `COACH_SMOKE_REPO_NAME` | `fixture-repo` | Must match bypass + worker pair |
-| `COACH_PLATFORM_SMOKE_TIMEOUT` | `2m` | Overall smoke deadline |
+| `COACH_PLATFORM_SMOKE_TIMEOUT` | `2m` | Overall smoke deadline (stub-model Path A only; too short for Path B judgment) |
 
 Flow: mint token → `POST /v1/jobs` `repo_baseline_scan` for the fixture
 owner/name (**no client-supplied clone URL**) → poll → `GET …/report` → require

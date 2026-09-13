@@ -9,7 +9,7 @@
 
 ## Context
 
-Coach targets heterogeneous customer deployments: AWS ECS, AWS EKS, Docker Compose, kind, GKE, and self-hosted Kubernetes. Not every customer will use SQS. Some will prefer Redis as a durable work queue, especially in non-AWS or self-hosted environments. The queue strategy must therefore support multiple backends from the start, not treat one as a local stand-in for the other.
+Groundwork first-class queue deployments are Docker Compose / Redis Streams (daily) and AWS SQS (adapter + conformance). kind, GKE, and EKS are out of scope until an ADR says otherwise (`docs/architecture/system-overview.md`). Not every later customer will use SQS; some will prefer Redis as a durable work queue. The queue strategy must therefore support multiple backends from the start, not treat one as a local stand-in for the other.
 
 Recent research recommended [Watermill](https://watermill.io/) as a Go-native messaging layer with adapters for SQS, Redis Streams, Google Cloud Pub/Sub, NATS JetStream, RabbitMQ, Kafka, and PostgreSQL. The research emphasized:
 
@@ -137,7 +137,7 @@ Resource provisioning (queue/stream creation) is kept outside the worker whereve
 
 - Acceptance tests prove two concurrent workers never process the same job simultaneously (`go test -race`).
 - Acceptance tests prove crash-after-partial-findings-persist then reclaim yields a completed report with no duplicate findings.
-- Redis-backed integration tests run in the compose CI job (today: via the existing `verify` CI job's `go test -race ./...`, not a dedicated Compose job — Task 10 introduces Compose).
-- LocalStack-backed SQS integration tests run in CI (today: same `verify` job's `go test -race ./...`, not a dedicated LocalStack CI step).
+- Redis-backed integration tests run inside `go test -race ./...` on the `verify` CI leaf (not a dedicated Compose job). Compose E2E is the separate `platform-smoke` leaf.
+- LocalStack-backed SQS adapter conformance runs where Docker is available (`mise run test-queue-conformance`); it is not a dedicated LocalStack CI step.
 - A black-box provider conformance suite runs against real Redis and LocalStack-backed SQS, exercising: enqueue, multi-worker scaling, worker-kill mid-task, redelivery, duplicate injection, permanent failure handling, poison-task delivery, and graceful shutdown. (Delivered by Baseline Task 3a: `internal/acceptanceharness/queueconformance.Run`, exercised against real providers by `internal/coachapi/queue/redisstream` and `internal/coachapi/queue/sqs`, wired into `mise run test-queue-conformance`.)
 - The worker is specified to consume jobs only through the `TaskQueue` port, not via direct broker calls.
