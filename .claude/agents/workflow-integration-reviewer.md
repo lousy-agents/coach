@@ -35,8 +35,8 @@ review structurally cannot see.
    - scope creep visible only in aggregate
 
 4. Check the architecture invariants in `.github/PULL_REQUEST_TEMPLATE.md`:
-   `pkg/semantics` must not import `pkg/githubingest`/`go-github`/`ghinstallation`;
-   `pkg/githubingest` must not import `pkg/semantics`; public JSON and error
+   `pkg/semantics` does not import `pkg/githubingest`/`go-github`/`ghinstallation`;
+    `pkg/githubingest` does not import `pkg/semantics`; public JSON and error
    sentinels unchanged unless intentional and tested; production HTTP clients keep
    a finite `Timeout`; store/dependency errors on protected paths fail closed with
    503 and the stable envelope; no Go comments that merely restate code.

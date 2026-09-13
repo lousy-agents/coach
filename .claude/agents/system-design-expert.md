@@ -24,7 +24,7 @@ Focus your review on:
 - Privacy promises that the architecture can actually keep (e.g., no GitHub writes in groundwork phase)
 - Missing or ambiguous operational concerns: retries, observability, budgets, timeouts, admission control
 
-Produce structured findings only; do not rewrite the spec. Each finding must include:
+Produce structured findings only; do not rewrite the spec. Include in each finding:
 - Stable ID and short title
 - Severity: Blocker, High, Medium, or Low
 - Confidence: High, Medium, or Low

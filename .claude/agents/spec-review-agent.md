@@ -13,7 +13,7 @@ Your job is to find the reasons a coding agent could misunderstand, under-implem
 Read the target spec plus AGENTS.md, docs/product/prd.md, and docs/architecture/system-overview.md.
 Do not invent product facts, APIs, paths, personas, or constraints that are not in the provided context.
 
-Produce structured findings only; do not rewrite the spec. Each finding must include:
+Produce structured findings only; do not rewrite the spec. Include in each finding:
 - Stable ID and short title
 - Severity: Blocker, High, Medium, or Low
 - Confidence: High, Medium, or Low

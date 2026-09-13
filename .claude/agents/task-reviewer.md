@@ -40,7 +40,7 @@ Steps:
    spec that greps for a pattern passes whether or not the pattern does
    anything. Ask what the test would catch, and reject red-then-green evidence
    where the red step could not have failed for the intended reason. If the
-   change is a config, the evidence should exercise the thing the config drives.
+   change is a config, exercise the thing the config drives.
 5. Run `mise run ci-fast` yourself. Do not trust a claim that it passes, and do
    not substitute `mise run ci`: it runs the Go suite before the TypeScript
    sidecar is built, so `pkg/projectmodel`'s acceptance suite skips silently

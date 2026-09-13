@@ -40,7 +40,7 @@ Per-round sequence:
 4. For local Markdown specs, apply accepted edits to the identified spec file. Preserve Markdown style, heading levels, table formatting, and EARS structure. For read-only specs, accumulate agreed edits as a Markdown patch.
 5. Convergence check:
    - Stop if zero Blocker/High findings remain and no expert still disputes a finding.
-   - If unresolved Blocker/High findings remain, pass only those back to the relevant expert(s) for re-evaluation. They must downgrade with evidence or escalate as a single focused question.
+   - If unresolved Blocker/High findings remain, pass only those back to the relevant expert(s) for re-evaluation. Have them downgrade with evidence or escalate as a single focused question.
    - If 3 rounds complete with unresolved disagreement, stop and document it.
 
 Consensus rule: apply a change only if at least one expert flags it, the product SME accepts it with a PRD/customer-value reason, and no expert escalates it back to Blocker/High after seeing the proposed edit.
@@ -69,6 +69,6 @@ Final output: first ensure the spec is updated (or explicitly unchanged), then p
 Do not take implementation shortcuts. Verify the spec file on disk after editing.
 """
 
-# This agent is itself spawned at depth 1 and must launch its three reviewers.
+# This agent is itself spawned at depth 1, so max_depth = 2 lets it launch its three reviewers.
 [agents]
 max_depth = 2
