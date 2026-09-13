@@ -32,11 +32,11 @@ type Dependencies struct {
 
 // buildDependencies constructs the real Dependencies described by cfg: a
 // GitHub-App-authenticated authz.RepoAuthorizer (optionally wrapped in the
-// credential-free-smoke BypassAuthorizer), a Redis Streams
-// queue.TaskQueue, and either a PostgresStore (cfg.PostgresDSN set) or a
-// MemoryStore. When App credentials are absent and the full authz bypass
-// pair is set, buildAuthorizer uses a fail-closed deny-all inner instead of
-// a live GitHub CredentialResolver (credential-free compose smoke).
+// credential-free-smoke BypassAuthorizer), a Redis Streams queue.TaskQueue,
+// and either a PostgresStore (cfg.PostgresDSN set) or a MemoryStore. When App
+// credentials are absent and the full authz bypass pair is set,
+// buildAuthorizer uses a fail-closed deny-all inner instead of a live GitHub
+// CredentialResolver (credential-free compose smoke).
 func buildDependencies(ctx context.Context, cfg InfraConfig) (Dependencies, error) {
 	authorizer, err := buildAuthorizer(cfg)
 	if err != nil {

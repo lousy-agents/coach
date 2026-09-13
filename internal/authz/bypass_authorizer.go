@@ -6,9 +6,9 @@ import (
 
 // BypassAuthorizer wraps inner and skips the live authorization check only
 // for one exact, case-sensitive (owner, repo) pair -- the credential-free
-// smoke / test-mint exception. It must be constructed
-// explicitly by config-gated wiring (e.g. cmd/coach-api); this package never
-// uses it as a default.
+// smoke / test-mint exception. It must be constructed explicitly by
+// config-gated wiring (e.g. cmd/coach-api); this package never uses it as a
+// default.
 type BypassAuthorizer struct {
 	inner RepoAuthorizer
 	owner string
