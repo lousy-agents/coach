@@ -10,17 +10,17 @@ This is a reference doc, not a restatement of the spec: it records the decisions
 
 ## 1. Test-layer taxonomy
 
-Feature Zero defines the **full eventual taxonomy** so later epics (Baseline Scan, PR History Scan, and beyond) don't invent alternate task names or re-litigate layer boundaries. Only the first row has a real, runnable `mise` task today. The rest are named and reserved here; Feature Zero shall not invent placeholder `coach-api`/`coach-worker` services merely to make a reserved category green (spec, "Test layers and task categories").
+Feature Zero defines the **full eventual taxonomy** so later epics (Baseline Scan, PR History Scan, and beyond) don't invent alternate task names or re-litigate layer boundaries. Several rows now have runnable tasks (groundwork). Feature Zero still shall not invent placeholder services merely to make a reserved category green (spec, "Test layers and task categories").
 
 | Layer | Boundary | Task category | Status in this repo today |
 | --- | --- | --- | --- |
 | Fast acceptance | Existing public Go package/CLI boundaries, in-process fakes/transports | `mise run test-acceptance-fast` | **Runnable now** (the eleven existing `*Acceptance` suites, including `internal/acceptanceharness`'s and `internal/fakegithub`'s own contract tests — see section 1's subsection below for the full list) |
 | Thin offline Compose proof | External runner + fake GitHub + `pkg/githubingest` + CodeSignal; no API/worker binaries | `mise run test-acceptance-thin-proof` | **Runnable now** (Task 0.3): `cmd/thinproof-runner` against `cmd/fakegithub-server` as a Compose service, no image pull, no egress |
-| HTTP contract acceptance | Public HTTP routes, controlled fakes, deterministic store/time | `test-acceptance-core` | Reserved name; lands once `coach-api` exists (Baseline) |
-| Platform workflow acceptance | Compose API + worker + Postgres + Redis Streams + model stub + fake GitHub + fixture repo + external runner | `test-acceptance` (full workflow leg) | Reserved name; lands once API + worker exist (Baseline) |
+| HTTP contract acceptance | Public HTTP routes, controlled fakes, deterministic store/time | `test-acceptance-core` | Reserved name; in-process `coach-api` acceptance lives under `go test -race ./... -run Acceptance` today. This task name was never added to `mise.toml`. |
+| Platform workflow acceptance | Compose API + worker + Postgres + Redis Streams + model stub + fake GitHub + fixture repo + external runner | `test-acceptance` (full workflow leg) | Reserved name; current compose E2E proof is `mise run platform-smoke`, not this task. |
 | Queue-provider conformance | Black-box contract against real Redis Streams + LocalStack SQS | `test-queue-conformance` | **Runnable now**: harness self-test against the in-memory reference adapter (Task 0.4), plus the `redisstream` and `sqs` adapters' own conformance tests against real Docker-spun-up Redis Streams / LocalStack SQS wherever Docker is available, skipping gracefully otherwise (Baseline Task 3a) |
-| Operator smoke | Narrow credential-free Compose submission/poll path | a `platform-smoke`-style task | Reserved name; lands once smoke path exists (Baseline) |
-| Native model validation | Operator-run Compose/native OpenAI-compatible server validation (llama.cpp, Ollama; Qwen/Gemma-class), schema-focused; judgment packing/caps per local-LLM judgment spec | a `platform-llm-validate`-style task | Reserved name; lands once Baseline's model path exists; must not assume 1:1 judgment-per-finding |
+| Operator smoke | Narrow credential-free Compose submission/poll path | `mise run platform-smoke` | **Runnable now** (CI leaf): stub model, fixture repo, requires both `source=deterministic` and `source=agent`. |
+| Native model validation | Operator-run Compose/native OpenAI-compatible server validation (llama.cpp, Ollama; Qwen/Gemma-class), schema-focused; judgment packing/caps per local-LLM judgment spec | `mise run platform-llm-validate` | **Runnable now** (operator-only, not CI); must not assume 1:1 judgment-per-finding |
 
 A lower layer passing is never evidence that a higher layer has run — each layer proves a different boundary, and `test-acceptance` (once it exists) must not silently omit a leg whose consumer (API, worker, queue adapter) is actually present.
 

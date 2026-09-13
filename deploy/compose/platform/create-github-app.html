@@ -45,8 +45,10 @@ python3 -m http.server 8765
     <pre id="convert-cmd"></pre>
     <p>
       That writes <code>secrets/github-app.pem</code> and prints the App ID.
-      Install the App on the account or org that owns the repos you will scan,
-      then continue with Path C in <code>docs/pilot-local-quickstart.md</code>.
+      Install the App on the account or org that owns the repos you will scan.
+      Grant a single repository unless you intentionally accept all-repos
+      read. Then continue with Path C in
+      <code>docs/pilot-local-quickstart.md</code>.
     </p>
   </div>
 
@@ -54,7 +56,15 @@ python3 -m http.server 8765
     <h2>1. Register on your user account</h2>
     <p class="muted">
       You can rename the app if <code>Coach Local Pilot</code> is taken.
-      Permissions: Contents, Metadata, and Administration (read). Webhooks off.
+      Permissions requested: Contents (read), Metadata (read), and
+      Administration (read). Administration is for GitHub's
+      collaborators/permission API at submit time — GitHub may show this as
+      an Admin-related grant, not “read source files.” Webhooks off.
+    </p>
+    <p class="muted">
+      After register you will install the App. Prefer <strong>one
+      repository</strong>. “All repositories” grants org- or account-wide
+      read; that is optional and wider than Path C needs.
     </p>
     <form id="form-user" action="https://github.com/settings/apps/new" method="post">
       <input type="hidden" name="manifest" id="manifest-user" />

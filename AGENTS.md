@@ -11,7 +11,7 @@ Experimental AI coach for humans making software with agents. Analysis packages 
 - `pkg/semantics` — deterministic structural analysis of raw Go/TypeScript/TSX source bytes (syntax validity, imports, branching metrics, constructor-like patterns) via Tree-sitter. No GitHub dependency.
 - `pkg/codesignal` — deterministic signal reports for a git diff (`--base`) or a repository baseline (`--baseline`), consumed by `coach codesignal`.
 - `pkg/projectmodel` — Go and TypeScript project graphs for project-mode analysis.
-- `pkg/githubingest` — optional GitHub App-authenticated single-file reader via the GitHub Contents API.
+- `pkg/githubingest` — optional GitHub App-authenticated repository reader (`ReadFile`, `ListFiles`) and installation-token seam (`CredentialResolver`) via the GitHub Contents API.
 - `js/semantics` — Node/TS bindings for `pkg/semantics` (`@lousy-agents/coach-semantics`, not published to npm), talking newline-delimited JSON to a Go binary over stdin/stdout.
 
 **Dependency rule**: `pkg/semantics` shall not import `pkg/githubingest` (or `go-github`/`ghinstallation`), and `pkg/githubingest` shall not import `pkg/semantics` back. Keep it that way — this is what lets a consumer that only needs source analysis avoid pulling in a GitHub client.
@@ -116,7 +116,13 @@ A `Backend` seam (`src/backend.ts`) abstracts the transport; `src/backend-cli.ts
 
 ### `pkg/githubingest`
 
-Single entry point `ReadFile`, authenticated via a GitHub App installation (`ghinstallation` + `go-github`). Each call issues two Contents API requests: the file fetch, plus a listing of the parent directory to detect in-repo symlinks GitHub's Contents API would otherwise silently resolve as a plain file (`reader.go`'s `rejectIfPathIsSymlink`). That listing is capped at GitHub's 1,000-entries-per-directory limit with no truncation signal, so a symlink in a very large directory can go undetected — an accepted, documented limitation for v1. Error sentinels: `ErrNotFound`, `ErrAuth`, `ErrUnsupportedContent`, `ErrTooLarge` (>1 MiB), `ErrEmptyContent`.
+App-authenticated reads and credentials (`ghinstallation` + `go-github`):
+
+- `ReadFile` — single file via the Contents API, plus a listing of the parent directory to detect in-repo symlinks GitHub would otherwise silently resolve as a plain file (`reader.go`'s `rejectIfPathIsSymlink`). That listing is capped at GitHub's 1,000-entries-per-directory limit with no truncation signal, so a symlink in a very large directory can go undetected — an accepted, documented limitation for v1.
+- `ListFiles` — recursive Contents API tree walk; skips symlink and submodule entries; optional `FileFilter` and size/count budgets (`ErrTooLarge`). Callers that want language filtering supply their own filter (`pkg/githubingest` shall not import `pkg/semantics`).
+- `CredentialResolver` — single installation-token minting seam (ADR-002). `NewGitHubFileReaderFromToken` builds a reader from a pre-minted token.
+
+Error sentinels: `ErrNotFound`, `ErrAuth`, `ErrUnsupportedContent`, `ErrTooLarge` (>1 MiB), `ErrEmptyContent`.
 
 ## Validation
 

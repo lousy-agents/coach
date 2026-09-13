@@ -228,7 +228,7 @@ Results include analyzer/rule version, repository and commit identities, file ha
 
 #### CLI preview
 
-`coach codesignal` (`cmd/coach`, `internal/codesignalcli`) is a local-only, deterministic validation surface over the same `pkg/semantics` -> `pkg/codesignal` pipeline, run directly against a checked-out Git revision instead of through the worker/queue path above. It exists to make this fast path usable and testable before the broader delivery infrastructure (job worker, queue, GitHub App integration) is adopted. It does not replace the CodeSignal Worker described elsewhere in this document, and it never contacts a queue or GitHub: it reads two Git revisions from the local worktree with `git show`/`git diff`, analyzes each changed file, and prints (or emits as JSON) the resulting report.
+`coach codesignal` (`cmd/coach`, `internal/codesignalcli`) is a local-only, deterministic validation surface over the same `pkg/semantics` -> `pkg/codesignal` pipeline, run directly against a checked-out Git revision instead of through the worker/queue path above. It remains a local-only preview **alongside** groundwork (`coach-api`, worker, `TaskQueue`, GitHub App reads), not a stand-in that exists only until those land. It does not replace the CodeSignal Worker described elsewhere in this document, and it never contacts a queue or GitHub: it reads committed Git objects from the local checkout, analyzes each selected file, and prints (or emits as JSON) the resulting report.
 
 ```mermaid
 flowchart LR
@@ -478,7 +478,9 @@ Compose has lower memory/operational overhead, faster rebuild/debug loops, and p
 | **Groundwork (current)** | `coach-api`, `coach-worker`, Postgres, Redis, model stub; optional host OpenAI-compatible LLM (llama.cpp / Ollama; Qwen 3.5, Gemma 4, …) via `host.docker.internal` | Watermill → Redis Streams (SQS adapter via conformance suite, not required in daily compose) | GitHub OAuth App + Coach-JWT; config-gated test mint for smoke | Daily pilot path; see Baseline Scan spec Story 4 and local-LLM judgment spec |
 | **Webhook platform (v1+)** | Webhook ingestor, control-plane workers, Postgres, LocalStack (SQS/DynamoDB/S3), model stub; optional llama.cpp | SQS (+ DynamoDB delivery/outbox) | GitHub App webhooks + installation broker | After groundwork E2E validation |
 
-The groundwork stack does **not** require LocalStack, DynamoDB, S3 quarantine, or webhook replay. The diagram below is the **v1+ webhook-platform** local topology.
+The groundwork stack does **not** require LocalStack, DynamoDB, S3 quarantine, or webhook replay. Daily groundwork compose is `core` / `llm` via `mise run platform-up` / `platform-smoke` / `platform-down` — see `docs/development/local-platform.md`. Current `core` also runs Envoy AI Gateway (`ai-gateway`) as a **local extra hop** in front of the stub; that is not the AWS proof-of-value Envoy prohibition in §8 and is not production parity.
+
+The diagram, memory table, and mise task list below describe the **deferred v1+ webhook-platform** local topology. Do not treat `up-core` / webhook replay as the current developer interface.
 
 ```mermaid
 flowchart TB
@@ -501,11 +503,12 @@ flowchart TB
 | Optional native Q4 4B model | approximately 2.5–3.5 GB unified memory |
 | Optional native KV/runtime headroom | 0.5–1.5 GB |
 
-`core+agent` works offline without model weights or network using the deterministic stub. Observability is off by default. Optional llama.cpp runs natively to use Metal and avoid Docker overhead, with serial inference, 2–4K context, bounded KV cache, and measured memory-pressure/latency acceptance. Profiles: `core`, `agent`, optional `real-inference`, and optional `observability`.
+**Deferred v1+ local topology** (not current): `core+agent` works offline without model weights or network using the deterministic stub. Observability is off by default. Optional llama.cpp runs natively to use Metal and avoid Docker overhead, with serial inference, 2–4K context, bounded KV cache, and measured memory-pressure/latency acceptance. Profiles: `core`, `agent`, optional `real-inference`, and optional `observability`.
 
-Use `mise` and versioned `mise.toml` tasks as the developer interface. Tasks encapsulate the Compose profiles and other local commands so the workflow stays consistent across macOS, CI, and future ECS/AWS integration gates.
+Those names are not the groundwork `core` / `llm` profiles. The mise tasks below are reserved for the webhook platform; they are not in today's `mise.toml`.
 
 ```text
+# deferred v1+ webhook-platform — do not run these for groundwork
 mise run bootstrap
 mise run up-core
 mise run up-agent
@@ -623,9 +626,9 @@ Parent index: `.github/specs/coach-api-platform-groundwork.spec.md`. Vertical sl
 2. Worker over an application-owned `TaskQueue` port over Watermill, with Redis Streams and SQS adapters, heartbeat/crash recovery, and a black-box provider conformance suite (ADR-006). Job state, findings, diagnostics, and the JWT `jti` denylist remain in Postgres. DynamoDB and transactional outbox machinery stay deferred until the webhook-driven platform.
 3. Model gateway seam with deterministic stub (default) and llama.cpp OpenAI-compatible client; SGLang slots in later behind the same contract.
 4. Minimal bounded agent tool loop over typed tools (semantics, codesignal; GitHub PR tools when the PR History slice lands); model text never becomes an arbitrary action (ADR-005). `adk-go` remains the later production agent runtime.
-5. `repo_baseline_scan` in the Baseline slice requires tree enumeration + file reads in `pkg/githubingest` (beyond today’s single-file `ReadFile`). PR listing/file retrieval and `pr_history_scan` in the PR History slice.
+5. `repo_baseline_scan` in the Baseline slice uses `pkg/githubingest` tree enumeration (`ListFiles`) plus file reads (`ReadFile`) and the ADR-002 `CredentialResolver` installation-token seam. PR listing/file retrieval and `pr_history_scan` remain in the PR History slice.
 6. Two seed LLM-as-judge rubrics, versioned and schema-validated, with strict deterministic/agent provenance separation.
-7. Docker Compose stack for groundwork: `core` = coach-api + coach-worker + Postgres + Redis Streams + deterministic model stub (no weights, no LocalStack required); `llm` profile adds llama.cpp. End-to-end smoke in CI against `core`.
+7. Docker Compose stack for groundwork: `core` = coach-api + coach-worker + Postgres + Redis Streams + deterministic model stub (no weights, no LocalStack required) plus a local Envoy AI Gateway extra hop that is not the AWS PoV data plane; `llm` profile adds llama.cpp. End-to-end smoke in CI against `core`.
 
 ### v1
 

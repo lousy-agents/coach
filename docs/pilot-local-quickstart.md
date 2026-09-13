@@ -4,15 +4,15 @@ Run Coach on your laptop with Docker Compose. You submit a baseline scan, wait f
 
 This guide covers three paths:
 
-| Path | What you do | What you need |
-| --- | --- | --- |
-| **A** | Smoke test with a built-in sample repo and a fake model | Docker, mise |
-| **B** | Same smoke test with a real local model (Qwen 3.5 or Gemma 4) | Path A plus Ollama or similar |
-| **C** | Scan a real GitHub.com repo without cloning it | Path A plus GitHub OAuth App and GitHub App |
+| Path | What you do | What you need | Status |
+| --- | --- | --- | --- |
+| **A** | Smoke test with a built-in sample repo and a fake model | Docker, mise | **Verified in CI** (`platform-smoke`) |
+| **B** | Same fixture job with a real local model (Qwen 3.5 or Gemma 4) | Path A plus Ollama or similar | Operator lab (not CI) |
+| **C** | Scan a real GitHub.com repo without cloning it | Path A plus GitHub OAuth App and GitHub App | Operator lab (not CI) |
 
-Path A takes about 10–15 minutes the first time (image builds dominate). Paths B and C add setup on top.
+Path A takes about 10–15 minutes the first time (image builds dominate). Paths B and C add setup on top. Do not treat B or C as the default product; the local [`coach codesignal` CLI](../README.md#run) needs no Docker.
 
-For deterministic analysis of a local git checkout with no Docker, use the [`coach codesignal` CLI](../README.md#coach-codesignal-cli-preview) instead.
+For deterministic analysis of a local git checkout with no Docker, use that CLI instead.
 
 ---
 
@@ -213,6 +213,8 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/v1/me
 
 `mise run platform-up` uses the **core** profile. With no Path B keys in `.env`, aigw still targets model-stub. For a real model, put Path B keys in `.env` and use `--profile llm` as above.
 
+`mise run platform-smoke` is the stub-model proof (overall deadline `2m`). Path B jobs can exceed that and the default `MODEL_GATEWAY_TIMEOUT` of `120s` while the judgment wall is `10m`. For a real model, poll `GET /v1/jobs/:id` until `completed` instead of relying on smoke, and raise `MODEL_GATEWAY_TIMEOUT` so it is not shorter than a single pack.
+
 On Linux, if the gateway cannot reach the host, run the model in a container on the same compose network and set `AIGW_OPENAI_BASE_URL=http://<service>:<port>/v1` in `.env`.
 
 ### Path B env reference
@@ -273,13 +275,15 @@ Leave scopes empty. Save the **Client ID** and create a **Client secret**.
 
 ### 2. GitHub App (repo read)
 
-Use the manifest in this repo so permissions match what Coach needs:
+Use the manifest in this repo so permissions match what Coach needs.
+
+**Decide install scope before you click Register.** GitHub will later ask whether to grant the App **one repository** or **all repositories** in the account/org. Prefer a single repo. Administration (read) is wider than Contents: it is requested so Coach can call GitHub's collaborators/permission API at submit time. On GitHub's consent screen this may appear as an Admin-related permission, not as "read source files."
 
 | Permission | Why |
 | --- | --- |
 | Contents (read) | List and read source files |
 | Metadata (read) | Basic repo metadata |
-| Administration (read) | Check your access level on the repo |
+| Administration (read) | Check your access level on the repo (`collaborators/{username}/permission`) |
 
 Webhooks are inactive. The App is private to you.
 
@@ -309,7 +313,7 @@ Open http://127.0.0.1:8765/create-github-app.html
    - `secrets/github-app.pem`
    - `secrets/github-app.json` (includes App ID)
 
-5. **Install** the App on the owner of the target repo (link is printed by the script). Grant that repo (or all repos, if you accept the wider access).
+5. **Install** the App on the owner of the target repo (link is printed by the script). Grant **only that repo** unless you intentionally accept org- or account-wide read.
 
 **Manual fallback:** create a GitHub App in the UI with the same homepage, inactive webhook, Contents / Metadata / Administration read, not public. Download a private key to `secrets/github-app.pem`.
 
@@ -343,7 +347,7 @@ COACH_GITHUB_APP_PRIVATE_KEY_PATH=/secrets/github-app.pem
 # COACH_BASELINE_MAX_TOTAL_BYTES=104857600
 ```
 
-Fixture authz bypass and test-mint stay enabled in `compose.yaml` so Path A smoke still works alongside Path C.
+Fixture authz bypass and test-mint stay enabled in `compose.yaml` so Path A smoke still works alongside Path C. Anyone who can reach `:8080` can mint a lab principal. Use OAuth for real-repo jobs. Do not expose this stack on a public network.
 
 ```sh
 mkdir -p secrets
@@ -373,7 +377,9 @@ export TOKEN='paste-coach-token-here'
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/v1/me | jq .
 ```
 
-You should see your GitHub login. Prefer this OAuth flow for real repos. Lab-only alternative: test-mint with your real GitHub `login` string still checks access via the App, but identity is not verified by GitHub login.
+You should see your GitHub login. Use this OAuth flow for real repos.
+
+Do **not** test-mint a real GitHub `login` against Path C. Test-mint still checks App access for that login string, but GitHub did not verify that you are that user. That shortcut is for the fixture smoke identity only.
 
 ### 5. Submit, poll, fetch report
 

@@ -2,25 +2,75 @@
 
 `coach` is an experimental AI coach for people (and agents) who write software.
 The thing you can use today is a local CLI: it reads a Git checkout, analyzes
-Go / TypeScript / TSX source, and prints advisory structural signals — code
-smells, design issues, and architecture-policy findings you opted into.
+Go / TypeScript / TSX source, and prints advisory structural signals.
 
-It does not execute your code, contact GitHub, or call a model unless you stand
-up the separate [local platform preview](#3-local-platform-including-agent-judgments).
-Coach stays on the 0.x line on purpose.
+Coach stays on the 0.x line on purpose. It does not contact GitHub or call a
+model on this path. File-local analysis is Tree-sitter over committed Git
+objects. TypeScript `--project-config` additionally runs a host Node process
+and the TypeScript compiler; that is still local, not the platform preview.
 
-## Quick start
+## Contract
 
-Install [mise](https://mise.jdx.dev/) if you do not already have it, then install
-the `coach` CLI from [GitHub Releases](https://github.com/lousy-agents/coach/releases)
-with mise's GitHub backend:
+- **Languages:** Go, TypeScript, TSX. Other files get an `unsupported_language` diagnostic and are skipped.
+- **Input:** committed Git objects at the selected revision, not the dirty worktree. Uncommitted edits are invisible.
+- **Git:** `git` must be on `PATH`. No Docker, no API key, no network for the default CLI path.
+- **Advisory:** a completed analysis exits `0` even when it found signals. Coach does not gate merges.
+- **Absence is not a clean bill of health.** An empty signal set means no matched rule for the inputs that were analyzed.
+
+Full flags, JSON schema, exit codes, rule IDs, and library quickstarts:
+[CLI contract](./docs/cli-codesignal.md).
+
+## Run
+
+From any Git worktree. Prefer a one-shot that does not mutate a global toolchain:
+
+```sh
+mise exec github:lousy-agents/coach -- coach codesignal --base main
+```
+
+```sh
+coach codesignal --base main          # diff HEAD against main
+coach codesignal --baseline           # every tracked Go/TS/TSX file at HEAD
+coach codesignal --base main --format json
+```
+
+`--base` can be any ref Git can resolve (branch, tag, or SHA). Default output is text. `--base` and `--baseline` are mutually exclusive.
+
+Default `--scope` is `production`. `--build-target <pattern>` further limits Go production reachability; it is a no-op under `--scope all`.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Analysis completed (signals or none). Not a quality gate. |
+| `1` | Operational failure (not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O). |
+| `2` | Usage or invalid `--project-config`, or a TypeScript scan that cannot resolve a supported compiler or host Node (empty stdout, one stderr line). |
+
+### What you should see
+
+A short text report per signal (`path`, `line`, `lifecycle`, `changed`,
+`evidence`, why it matters, recommendation), or a quiet report if nothing
+matched. `lifecycle` is `introduced` / `existing` / `resolved` / `unknown`.
+
+Diff-mode limits (do not treat these as a clean PR):
+
+- Added files are analyzed but classified `unknown`; they do not increment `introduced_signals`.
+- Renames and copies are skipped with an `unsupported_change_type` diagnostic.
+
+Text `line` is 1-based. JSON `location.start_row` is 0-based.
+
+## Install
+
+Install [mise](https://mise.jdx.dev/) if you do not already have it, then pin
+the CLI from [GitHub Releases](https://github.com/lousy-agents/coach/releases):
 
 ```sh
 curl https://mise.run | sh
 ~/.local/bin/mise use -g github:lousy-agents/coach
 ```
 
-Hook mise into your current shell so `coach` is on `PATH` (pick the one you use):
+That mutates a **global** mise config. Hook mise into your shell so `coach` is
+on `PATH` (pick the one you use):
 
 ```sh
 echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc && eval "$(~/.local/bin/mise activate bash)"
@@ -32,26 +82,6 @@ Pin a release if you want a fixed binary (latest published tag is `v0.5.0`):
 
 ```sh
 mise use -g github:lousy-agents/coach@v0.5.0
-```
-
-From any Git worktree:
-
-```sh
-coach codesignal --base main          # diff HEAD against main
-coach codesignal --baseline           # every tracked Go/TS/TSX file at HEAD
-coach codesignal --base main --format json
-```
-
-`--base` can be any ref Git can resolve (branch, tag, or SHA). Text output is
-the default. A completed analysis exits `0` even when it found signals — this
-is advisory, not a gate.
-
-You need `git` on `PATH`. No Docker, no API key, no network.
-
-One-shot without writing a mise config or activating your shell:
-
-```sh
-mise exec github:lousy-agents/coach -- coach codesignal --base main
 ```
 
 Release archives exist for `darwin_arm64`, `darwin_x86_64`, `linux_x86_64`, and
@@ -77,33 +107,15 @@ mise exec -- go install ./cmd/coach
 
 Download the archive for your platform from
 [Releases](https://github.com/lousy-agents/coach/releases), verify
-`checksums.txt` with cosign, then put `coach` on your `PATH`. The exact
-commands live in the [CLI contract](./docs/cli-codesignal.md).
+`checksums.txt` with cosign, then put `coach` on your `PATH`. Commands:
+[CLI contract](./docs/cli-codesignal.md#signed-archive-without-mise).
 
 </details>
 
-### What you should see
-
-A short text report per signal (`path`, `line`, `lifecycle`, `changed`,
-`evidence`, why it matters, recommendation), or a quiet report if the analyzed
-files produced no active signals. `lifecycle` is `introduced` / `existing` /
-`resolved` / `unknown` relative to the merge-base.
-
-- **Advisory only.** Coach does not judge correctness or block merges.
-- **Go, TypeScript, and TSX only.** Other languages are skipped with an
-  `unsupported_language` diagnostic.
-- **Static and local.** It reads source bytes via `git show`. File-local unless
-  you pass `--project-config`.
-- **Absence is not a clean bill of health.** An empty signal set means no
-  matched rule for the inputs that were analyzed.
-
-Full flag, schema, and exit-status contract: [CLI contract](./docs/cli-codesignal.md).
-
 ## Preview — experimental, try it now
 
-These commands work on the current CLI or local stack. They are under active
-development, may change without a 1.0 promise, and are here so you can kick
-the tires. Absence of findings is not compliance.
+These commands work on the current CLI. They may change without a 1.0 promise.
+Absence of findings is not compliance.
 
 ### 1. Project-level architecture policy
 
@@ -122,8 +134,9 @@ coach codesignal --baseline --project-config project.json --project-language typ
 `--project-config` is read from the **analyzed revision**, not your dirty
 worktree. An uncommitted candidate is invisible to the scan. A valid config
 switches the report to `schema_version: "2"` and can emit
-`architecture.layer_violation`. For Go only, `required_layer` can also emit
-`architecture.layer_bypass` on a narrow handler→SQL registry.
+`architecture.layer_violation`. `required_layer` can also emit
+`architecture.layer_bypass` (Go and TypeScript) on a narrow handler→SQL
+registry.
 
 TypeScript `--project-config` uses Coach's embedded analyzer and a host-resolved
 compiler whose own `package.json` version is in the supported set (`7.0.2`
@@ -132,74 +145,49 @@ vendored Coach's analyzer under the analyzed repository, you can delete that
 copy. `--suggest-project-config` never invents `layers` or `forbidden_imports`,
 and it never auto-applies a config.
 
-### 2. TypeScript project readiness
+Go `--suggest-project-config` prints a candidate. TypeScript
+`--suggest-project-config --project-language typescript` is an **interactive
+TTY session** and writes nothing until you confirm. Do not run it unattended.
 
-A guided on-ramp for first-class TypeScript project analysis
-([epic #280](https://github.com/lousy-agents/coach/issues/280), in flight).
+### 2. TypeScript project readiness
 
 ```sh
 coach codesignal --baseline --check-project --project-language typescript
 coach codesignal --baseline --suggest-project-config --project-language typescript
 ```
 
-Run `--check-project` first. It is the diagnostic for compiler, Node, and
-policy fit, and it is read-only: it reports readiness gaps and exits `0` so you
-inspect the result instead of treating the process status as a gate. A scan
-that cannot resolve a supported compiler or host Node exits `2` with empty
-stdout and one stderr line naming that same invocation. The interactive
-authoring session writes nothing until you say so.
+Run `--check-project` first. It is read-only: it reports compiler, Node, and
+policy fit and exits `0` so you inspect the result instead of treating process
+status as a gate. It is not a scan. A **scan** that cannot resolve a supported
+compiler or host Node exits `2` with empty stdout and one stderr line.
 
-Coach's supported Node majors are exactly `24` and `26` — every release within
-either major passes the `--check-project` Node/runtime check with no code and
-no warning. Any other major is the `node_unsupported` readiness gap.
-`@lousy-agents/coach-semantics` declares this as `engines.node: "^24 || ^26"`,
-and CI runs the real TypeScript analyzer under both Node 24 and Node 26.
+Coach's supported Node majors are exactly `24` and `26`. Any other major is the
+`node_unsupported` readiness gap. `@lousy-agents/coach-semantics` declares this
+as `engines.node: "^24 || ^26"`.
 
-Still being built — do not expect these to work yet: consented package-manager
-/ mise compiler setup for the scanned project, Bun as a project runtime, and a
-packaged foreign-repository TypeScript journey.
+`--prepare-compiler` is a consented, interactive mise TypeScript compiler-setup
+session (requires a TTY; refuses otherwise). It prompts before installing.
 
-### 3. Local platform, including agent judgments
+Still being built — do not expect these to work yet: unattended package-manager
+setup for the scanned project, Bun as a project runtime, and a packaged
+foreign-repository TypeScript journey.
 
-The CLI above never calls a model. The local API + worker stack can, if you
-want a preview of deterministic findings *plus* agent judgments on a baseline
-scan.
+## Separate lab: local platform
 
-```sh
-git clone https://github.com/lousy-agents/coach.git && cd coach
-mise install
-mise run platform-up
-mise run platform-smoke    # expect: platform-smoke: ok
-```
+The CLI above is the default product. A Docker API + worker stack can add
+agent judgments on a baseline scan. That path uses Docker, may call a model,
+and may read GitHub. It is not the default install.
 
-Full paths (stub model, local Qwen, GitHub.com scan without cloning):
+Verified in CI: Path A (`mise run platform-up` / `platform-smoke`) with the
+stub model. Paths B (real local model) and C (live GitHub.com) are operator
+labs. Findings are tagged `source=deterministic` or `source=agent`; agent
+output cannot suppress a deterministic finding.
+
 [Local Coach quickstart](./docs/pilot-local-quickstart.md).
-This is a pilot, not the default install. Findings are tagged
-`source=deterministic` or `source=agent`; agent output cannot suppress a
-deterministic finding.
-
-Working in a Claude Code cloud session? See
-[Claude Code cloud development](./docs/development/claude-code-cloud.md).
 
 ## Libraries
 
-If you want the analyzer as a library rather than the CLI:
+Analyzer as a library rather than the CLI — not required to run `coach`:
 
-- [`pkg/semantics`](./pkg/semantics) — deterministic structural analysis of Go,
-  TypeScript, and TSX source bytes. [Quickstart](./docs/cli-codesignal.md#pkgsemantics-quickstart).
-- [`pkg/githubingest`](./pkg/githubingest) — optional GitHub App-authenticated
-  single-file reader.
-- `@lousy-agents/coach-semantics` — Node ESM bindings. Not published to npm yet;
-  clone and build locally. [JS/TS Quickstart](./docs/cli-codesignal.md#javascript--typescript-quickstart).
-
-```sh
-go get github.com/lousy-agents/coach/pkg/semantics
-go get github.com/lousy-agents/coach/pkg/githubingest
-```
-
----
-
-## `coach codesignal` CLI Preview
-
-The full flag, schema, exit-status, and `--project-config` contract now lives in
-[`docs/cli-codesignal.md`](./docs/cli-codesignal.md).
+- [`pkg/semantics`](./pkg/semantics) — Go/TypeScript/TSX source bytes. [Quickstart](./docs/cli-codesignal.md#pkgsemantics-quickstart).
+- `@lousy-agents/coach-semantics` — Node ESM bindings. Not published to npm; clone and build locally. [JS/TS Quickstart](./docs/cli-codesignal.md#javascript--typescript-quickstart).
