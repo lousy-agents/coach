@@ -24,7 +24,7 @@ import (
 // Coverage.Counts["callgraph_static_nodes"] as a cross-check. The version
 // suffix is pinned to go.mod's golang.org/x/tools requirement; see
 // TestCallGraphAlgorithmVersionMatchesGoMod, which fails if they drift.
-const CallGraphAlgorithm = "go-callgraph-static@1+golang.org/x/tools@v0.49.0"
+const CallGraphAlgorithm = "go-callgraph-static@1+golang.org/x/tools@v0.50.0"
 
 // Stable call-site diagnostic codes for CallGraphResult.Coverage.Diagnostics[i].Code.
 const (
