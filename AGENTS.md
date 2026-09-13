@@ -28,6 +28,7 @@ Most are sourced from `lousy-agents/skills` and pinned by `skills-lock.json`: ch
 - `rugged-evil-tester` — generate adversarial/negative/chaos tests for TypeScript code.
 - `product-quality-evaluation` — get a candid, evidence-grounded product/release-readiness assessment via the `product-sme` subagent.
 - `designing-for-intent` — review a UX/onboarding/consent artifact for intent map, delegation boundary, and agency risks before implementation. Complementary to the `ux-advocate` roster seat (customer-reading of copy/sequencing), not a wrapper around it.
+- `customer-strategy-forge` — turn customer evidence into personas, journeys, and validation plans without reverse-engineering needs from a product inventory.
 - `skill-reviewer` — lint and review Agent Skills `SKILL.md` files across harnesses.
 - `spec-auditor` — adversarially review specs/PRDs/plans before coding.
 - `triaging-pr-reviews` — classify and triage PR review comments, including automated reviewer (e.g. Copilot) suggestions.
@@ -36,6 +37,7 @@ Most are sourced from `lousy-agents/skills` and pinned by `skills-lock.json`: ch
 - `plan-to-graph` — convert an approved spec or epic issue into a GitHub issue dependency graph with native sub-issues and blocking relationships.
 - `curate-release` — rewrite the commits on a PR's head branch so the generated changelog and release notes read as a coherent story.
 - `optimize-prompt-loop` — turn a fuzzy or overly broad request into a concise, reusable task prompt tuned to the current model and harness.
+- `instruction-style` — author or revise durable instruction prose so priority, rationale, and scope survive.
 
 ## Custom subagents
 
