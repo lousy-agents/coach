@@ -68,7 +68,7 @@ commands:
 
 run "coach codesignal --help" for command-specific help.`
 
-const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]"
+const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]\n   or: coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>]"
 
 type codesignalFlags struct {
 	base                 string
@@ -83,6 +83,7 @@ type codesignalFlags struct {
 	output               string
 	outputSet            bool
 	checkProject         bool
+	prepareCompiler      bool
 }
 
 func runCodesignal(args []string, stdout, stderr *os.File) int {
@@ -102,6 +103,10 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 			return runAuthorProjectConfigTypeScript(dir, parsed, stdout, stderr)
 		}
 		return runSuggestProjectConfig(dir, parsed, stdout, stderr)
+	}
+
+	if parsed.prepareCompiler {
+		return runPrepareCompilerMiseTypeScript(dir, os.Stdin, stdout, stderr, parsed.projectConfig)
 	}
 
 	if parsed.checkProject {
@@ -213,6 +218,7 @@ type codesignalFlagHolders struct {
 	suggestProjectConfig *countingBoolFlag
 	output               *countingStringFlag
 	checkProject         *countingBoolFlag
+	prepareCompiler      *countingBoolFlag
 }
 
 func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
@@ -227,10 +233,12 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		suggestProjectConfig: &countingBoolFlag{},
 		output:               &countingStringFlag{},
 		checkProject:         &countingBoolFlag{},
+		prepareCompiler:      &countingBoolFlag{},
 	}
 	flags.Var(h.suggestProjectConfig, "suggest-project-config", "generate a project-config candidate JSON from Go module/workspace discovery at HEAD (requires --baseline; human-reviewed candidate only, never auto-applied); combined with --project-language typescript, runs an interactive guided-authoring session over discovered TypeScript roots instead of emitting a Go candidate directly")
 	flags.Var(h.output, "output", "write the --suggest-project-config candidate to this repository-relative path instead of stdout (create-only)")
 	flags.Var(h.checkProject, "check-project", "report a read-only TypeScript project-readiness result for the selected revision (requires --baseline and --project-language typescript)")
+	flags.Var(h.prepareCompiler, "prepare-compiler", "run the interactive, consented mise TypeScript compiler-setup session for the selected revision, prompting before any installation (requires --baseline and --project-language typescript)")
 	return h
 }
 
@@ -268,6 +276,7 @@ func codesignalFlagsFromHolders(h codesignalFlagHolders, setFlags map[string]boo
 		output:               h.output.value,
 		outputSet:            setFlags["output"],
 		checkProject:         h.checkProject.value,
+		prepareCompiler:      h.prepareCompiler.value,
 	}
 }
 
@@ -282,6 +291,15 @@ func finishCodesignalFlagParse(flags *flag.FlagSet, h codesignalFlagHolders, std
 	if parsed.suggestProjectConfig {
 		if errMsg := validateSuggestProjectConfigFlags(parsed, setFlags, flags.Args(), h.suggestProjectConfig.count, h.output.count); errMsg != "" {
 			writeSuggestInvalidArguments(stderr, errMsg)
+			return codesignalFlags{}, 2, false
+		}
+		return parsed, 0, true
+	}
+
+	if parsed.prepareCompiler {
+		if errMsg := validatePrepareCompilerFlags(parsed, setFlags, flags.Args(), h.prepareCompiler.count); errMsg != "" {
+			fmt.Fprintln(stderr, codesignalUsage)
+			fmt.Fprintln(stderr, errMsg)
 			return codesignalFlags{}, 2, false
 		}
 		return parsed, 0, true
@@ -330,9 +348,6 @@ func parseCodesignalFlags(args []string, stdout, stderr *os.File) (codesignalFla
 	return finishCodesignalFlagParse(flags, holders, stderr)
 }
 
-// sortedFlagNames orders setFlags' keys deterministically, so a caller that
-// reports the first disallowed flag doesn't depend on Go's randomized map
-// iteration order.
 func sortedFlagNames(setFlags map[string]bool) []string {
 	names := make([]string, 0, len(setFlags))
 	for name := range setFlags {
@@ -342,46 +357,43 @@ func sortedFlagNames(setFlags map[string]bool) []string {
 	return names
 }
 
-// validateSuggestProjectConfigFlags never picks a precedence between
-// --suggest-project-config and a conflicting flag; it rejects the
-// combination outright. Rather than enumerating every flag known to
-// conflict (which silently stops protecting a newly added codesignal
-// flag), it walks setFlags -- the flags actually supplied -- against the
-// fixed allowlist {baseline, output, suggest-project-config}, so any other
-// flag is rejected by construction. --project-language is allowed only
-// when its value is "typescript" (the guided TypeScript authoring
-// dispatch); an explicit --project-language go, or any other value, is
-// rejected exactly as before this flag existed at all.
+func firstDisallowedFlag(setFlags, allowed map[string]bool) (string, bool) {
+	for _, name := range sortedFlagNames(setFlags) {
+		if !allowed[name] {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func rejectPositionalArgs(flagName string, positional []string, suffix string) string {
+	if len(positional) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("coach: --%s does not accept positional arguments%s", flagName, suffix)
+}
+
 func validateSuggestProjectConfigFlags(f codesignalFlags, setFlags map[string]bool, positional []string, suggestCount, outputCount int) string {
+	const suffix = " (project_config_suggestion_invalid_arguments)"
 	if suggestCount > 1 {
-		return "coach: --suggest-project-config may only be provided once (project_config_suggestion_invalid_arguments)"
+		return "coach: --suggest-project-config may only be provided once" + suffix
 	}
 	if outputCount > 1 {
-		return "coach: --output may only be provided once (project_config_suggestion_invalid_arguments)"
+		return "coach: --output may only be provided once" + suffix
 	}
 	if !f.baseline {
-		return "coach: --suggest-project-config requires --baseline (project_config_suggestion_invalid_arguments)"
+		return "coach: --suggest-project-config requires --baseline" + suffix
 	}
 	allowedWithSuggest := map[string]bool{"suggest-project-config": true, "output": true, "baseline": true}
 	if f.projectLanguage == "typescript" {
 		allowedWithSuggest["project-language"] = true
 	}
-	for _, name := range sortedFlagNames(setFlags) {
-		if !allowedWithSuggest[name] {
-			return fmt.Sprintf("coach: --suggest-project-config cannot be combined with --%s (project_config_suggestion_invalid_arguments)", name)
-		}
+	if name, disallowed := firstDisallowedFlag(setFlags, allowedWithSuggest); disallowed {
+		return fmt.Sprintf("coach: --suggest-project-config cannot be combined with --%s%s", name, suffix)
 	}
-	if len(positional) > 0 {
-		return "coach: --suggest-project-config does not accept positional arguments (project_config_suggestion_invalid_arguments)"
-	}
-	return ""
+	return rejectPositionalArgs("suggest-project-config", positional, suffix)
 }
 
-// validateCheckProjectFlags mirrors validateSuggestProjectConfigFlags'
-// allowlist shape: rather than enumerating every flag known to conflict, it
-// walks setFlags -- the flags actually supplied -- against a fixed
-// allowlist, so a newly added codesignal flag is rejected by construction
-// unless explicitly allowed here.
 func validateCheckProjectFlags(f codesignalFlags, setFlags map[string]bool, positional []string, checkProjectCount int) string {
 	if checkProjectCount > 1 {
 		return "coach: --check-project may only be provided once"
@@ -401,15 +413,34 @@ func validateCheckProjectFlags(f codesignalFlags, setFlags map[string]bool, posi
 		}
 	}
 	allowedWithCheckProject := map[string]bool{"check-project": true, "baseline": true, "project-language": true, "project-config": true, "format": true}
-	for _, name := range sortedFlagNames(setFlags) {
-		if !allowedWithCheckProject[name] {
-			return fmt.Sprintf("coach: --check-project cannot be combined with --%s", name)
+	if name, disallowed := firstDisallowedFlag(setFlags, allowedWithCheckProject); disallowed {
+		return fmt.Sprintf("coach: --check-project cannot be combined with --%s", name)
+	}
+	return rejectPositionalArgs("check-project", positional, "")
+}
+
+// validatePrepareCompilerFlags omits --format from its allowlist: this flow
+// never renders a report, so there is no format to choose.
+func validatePrepareCompilerFlags(f codesignalFlags, setFlags map[string]bool, positional []string, prepareCompilerCount int) string {
+	if prepareCompilerCount > 1 {
+		return "coach: --prepare-compiler may only be provided once"
+	}
+	if !f.baseline {
+		return "coach: --prepare-compiler requires --baseline"
+	}
+	if f.projectLanguage != "typescript" {
+		return fmt.Sprintf("coach: --prepare-compiler requires --project-language typescript (got %q)", f.projectLanguage)
+	}
+	if f.projectConfigSet {
+		if err := codesignalcli.ValidateProjectConfigPath(f.projectConfig); err != nil {
+			return fmt.Sprintf("coach: --project-config %q is invalid: %s", f.projectConfig, err)
 		}
 	}
-	if len(positional) > 0 {
-		return "coach: --check-project does not accept positional arguments"
+	allowedWithPrepareCompiler := map[string]bool{"prepare-compiler": true, "baseline": true, "project-language": true, "project-config": true}
+	if name, disallowed := firstDisallowedFlag(setFlags, allowedWithPrepareCompiler); disallowed {
+		return fmt.Sprintf("coach: --prepare-compiler cannot be combined with --%s", name)
 	}
-	return ""
+	return rejectPositionalArgs("prepare-compiler", positional, "")
 }
 
 // runCheckProject dispatches `coach codesignal --check-project`: resolve
@@ -559,12 +590,6 @@ func withProjectDiagnostic(report *codesignal.Report, diag *codesignal.Diagnosti
 	return &out
 }
 
-// prepareProjectAnalysis resolves the typed project handoff. When the flag is
-// omitted, all results are zero. A --project-config load/validation failure
-// propagates as the returned error (opErr) so classifyAnalysisError classifies
-// it as a configuration error (exit 2, nothing on stdout); a valid config
-// naming an unavailable backend still returns a diagnostic and exit code
-// while keeping project nil so file-local analysis stays schema-1.
 func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configPath, language string) (*codesignalcli.ProjectAnalysis, *codesignal.Diagnostic, int, error) {
 	if !projectConfigSet {
 		return nil, nil, 0, nil
