@@ -25,8 +25,7 @@ type CredentialResolver struct {
 	client *github.Client
 }
 
-// CredentialResolverConfig configures a CredentialResolver's GitHub App
-// authentication.
+// CredentialResolverConfig is GitHub App authentication for a CredentialResolver.
 type CredentialResolverConfig struct {
 	AppID      int64
 	PrivateKey []byte            // PEM (PKCS#1), never logged

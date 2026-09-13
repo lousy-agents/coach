@@ -32,7 +32,7 @@ type BaselineFileEntry struct {
 	Size int
 }
 
-// BaselineListOptions configures tree listing budgets for a baseline scan.
+// BaselineListOptions is tree listing budgets for a baseline scan.
 type BaselineListOptions struct {
 	MaxFiles      int
 	MaxTotalBytes int64
@@ -94,7 +94,7 @@ type RepoBaselineScanConfig struct {
 	JudgmentMaxWallTime time.Duration
 
 	// MaxHiddenMutationJudgments caps how many hidden_input_mutation signals
-	// receive model judgment per baseline job (Story 3 priority cap).
+	// receive model judgment per baseline job.
 	// Zero means DefaultMaxHiddenMutationJudgments (16). Negative means unlimited.
 	MaxHiddenMutationJudgments int
 

@@ -18,7 +18,7 @@ import (
 // GitHubOAuthConfig.HTTPClient is nil.
 const DefaultGitHubHTTPClientTimeout = 10 * time.Second
 
-// Options configures Coach JWT auth, optional test-mint, and optional GitHub OAuth.
+// Options is Coach JWT auth, optional test-mint, and optional GitHub OAuth.
 type Options struct {
 	SigningKey      []byte
 	Issuer          string
@@ -70,9 +70,8 @@ var (
 	ErrDenylistStore   = errors.New("authn: denylist store error")
 )
 
-// New constructs a Service. SigningKey and Issuer are required; Denylist
-// defaults to an in-memory store; Now defaults to time.Now; TokenTTL defaults
-// to 1 hour.
+// New requires SigningKey and Issuer. Denylist defaults to an in-memory
+// store; Now defaults to time.Now; TokenTTL defaults to 1 hour.
 func New(opts Options) (*Service, error) {
 	if len(opts.SigningKey) == 0 {
 		return nil, errors.New("authn: SigningKey is required")

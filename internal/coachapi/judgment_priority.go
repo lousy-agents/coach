@@ -22,7 +22,7 @@ func resolveMaxHiddenMutationJudgments(n int) int {
 }
 
 // PrioritizeJudgmentCandidates selects up to max candidates under the binding
-// Story 3 policy:
+// policy:
 //  1. Sort paths by finding count descending, then path ascending.
 //  2. Within each path: severity desc, confidence desc, start_row asc, FindingRef asc.
 //  3. Round-robin one finding per path until the cap is reached.

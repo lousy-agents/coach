@@ -14,8 +14,8 @@ import (
 // AGENTS.md's outbound-HTTP policy.
 const defaultHTTPTimeout = 10 * time.Second
 
-// Config configures a Queue against one SQS queue, matching ADR-006's
-// "Provider configuration" aws-sqs shape (region/queueURL/visibilityTimeout).
+// Config matches ADR-006's "Provider configuration" aws-sqs shape
+// (region/queueURL/visibilityTimeout).
 type Config struct {
 	Region            string
 	QueueURL          string

@@ -16,7 +16,7 @@ import (
 //
 // hidden_mutation_contextualization accepts legacy singular {finding,file} or
 // pack {items:[{finding_ref,finding,file},...]} args. Multi-item packs return
-// a ToolPackResult envelope ({"results":[ToolResult...]}) for Task 3 handlers.
+// a ToolPackResult envelope ({"results":[ToolResult...]}) for coachapi handlers.
 func RegisterTools(loop *agentloop.Loop, gw modelgateway.Gateway) error {
 	if loop == nil {
 		return fmt.Errorf("rubrics: loop is required")
@@ -158,7 +158,7 @@ func runHiddenMutationPack(ctx context.Context, gw modelgateway.Gateway, def Def
 	if abort := firstLifecycleAbort(err, ctx.Err()); abort != nil {
 		return nil, abort
 	}
-	// Wall-budget deadline: surface to agentloop.mapWallErr (Story 2). Do not
+	// Wall-budget deadline: surface to agentloop.mapWallErr. Do not
 	// soft-degrade wall expiry as pack-level gateway-unavailable diagnostics.
 	if err != nil && isOpDeadlineExceeded(ctx) {
 		return nil, err

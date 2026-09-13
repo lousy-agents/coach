@@ -101,7 +101,7 @@ func judgeHiddenMutationFindings(
 		byRef[c.FindingRef] = metas[i]
 	}
 
-	// Priority cap before packing (Story 3): select subset, then pack.
+	// Priority cap before packing: select subset, then pack.
 	var diagnostics []JobDiagnostic
 	selected, omitted := PrioritizeJudgmentCandidates(cands, maxJudgments)
 	if omitted > 0 {
@@ -129,7 +129,7 @@ func judgeHiddenMutationFindings(
 		agentFindings = append(agentFindings, packFindings...)
 		diagnostics = append(diagnostics, packDiags...)
 		// Count successful agent rows only — diagnostics-only packs must not
-		// inflate judged= in the Story 2 budget diagnostic.
+		// inflate judged= in the budget diagnostic.
 		judged += len(packFindings)
 	}
 	return agentFindings, diagnostics, nil
