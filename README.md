@@ -28,10 +28,10 @@ echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc && eval "$(~/.loca
 # ~/.local/bin/mise activate fish | source
 ```
 
-Pin a release if you want a fixed binary (latest published tag is `v0.4.0`):
+Pin a release if you want a fixed binary (latest published tag is `v0.5.0`):
 
 ```sh
-mise use -g github:lousy-agents/coach@v0.4.0
+mise use -g github:lousy-agents/coach@v0.5.0
 ```
 
 From any Git worktree:
