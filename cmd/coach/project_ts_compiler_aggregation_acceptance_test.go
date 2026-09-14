@@ -122,7 +122,7 @@ func writeVersionedStubMiseScript(tsVersion, toolVersionOutput, configLsJSON, gl
 
 func pathWithVersionedStubMise(nodeVersion, tsVersion, toolVersionOutput, configLsJSON, globalConfigVersion string) (path, miseDir string) {
 	miseDir = writeVersionedStubMiseScript(tsVersion, toolVersionOutput, configLsJSON, globalConfigVersion)
-	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 	return path, miseDir
 }
 

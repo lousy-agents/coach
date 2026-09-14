@@ -45,7 +45,12 @@ func missingCompilerCheckFromAggregate(aggregate compilerAggregate) ReadinessChe
 		detail = NativeTypescriptPackageName()
 	}
 
-	check := missingCompilerCheck(found, aggregate.project.rejectedDeclaration)
+	// namedDeclaration, not rejectedDeclaration alone: appendProjectPackageChoice
+	// gates on whether the manifest declares a version a frozen install could
+	// realize, which cannot be answered from the disqualifying declarations
+	// only -- an in-set declaration has to reach it too, or every repository
+	// would look like one that declares nothing.
+	check := missingCompilerCheck(found, aggregate.namedDeclaration())
 	check.Detail = detail
 	check.OriginFindings = aggregate.originFindings()
 	return check

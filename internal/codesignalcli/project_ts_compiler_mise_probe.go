@@ -141,3 +141,16 @@ func readMiseProjectConfigFile(dir string) (string, bool) {
 	}
 	return string(data), true
 }
+
+func miseProjectConfigReadable(dir string) bool {
+	_, ok := readMiseProjectConfigFile(dir)
+	return ok
+}
+
+// miseProjectConfigExists distinguishes a scope that configures nothing from
+// one Coach cannot verify: Lstat, not Stat, so a dangling symlink counts as
+// present-but-unreadable rather than absent.
+func miseProjectConfigExists(dir string) bool {
+	_, err := os.Lstat(filepath.Join(dir, "mise.toml"))
+	return err == nil
+}
