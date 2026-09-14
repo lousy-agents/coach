@@ -64,7 +64,7 @@ Two invariants apply to anything a workflow does:
 
 ## Commands
 
-All tasks are defined in `mise.toml`; run them with `mise run <task>`, and list them with `mise tasks` (each carries its own description). mise also pins `go` and `node`, and CI installs mise, so both share one tool-version source of truth. The tasks worth knowing before that list:
+All tasks are defined in `mise.toml`; run them with `mise run <task>`, and list them with `mise tasks` (each carries its own description). mise also pins `go` and `node`, plus `pnpm` and `bun` for the real-execution sentinel-script proofs that fail rather than skip when their binary is absent, and CI installs mise, so local and CI share one tool-version source of truth. The tasks worth knowing before that list:
 
 | Task | Use it for |
 | --- | --- |

@@ -6,6 +6,14 @@ experimental = true
 [tools]
 go = "1.27.1"
 node = "24"
+# pnpm and bun are test toolchain, not build toolchain: cmd/coach's frozen
+# adapter rows are only proven to suppress a dependency's lifecycle scripts by
+# running the real binary against a sentinel fixture
+# (project_ts_setup_execute_acceptance_test.go), and those proofs now fail
+# rather than skip when the binary is absent. The majors match the frozen
+# support matrix (SA-280-012).
+pnpm = "10"
+bun = "1"
 
 [tasks.gofmt]
 description = "Fail if any Go file needs formatting"

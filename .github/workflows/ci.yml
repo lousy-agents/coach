@@ -18,6 +18,13 @@ jobs:
   # mise; ubuntu-latest still has a runner Node, so the sidecar suite typically
   # skips because the sidecar build fails (no npm ci), not because node is
   # absent. The real suite lives in projectmodel-sidecar.
+  #
+  # pnpm and bun are named here because `mise run test` carries cmd/coach's
+  # real-execution sentinel-script proofs for the frozen adapter rows, and
+  # those proofs fail rather than skip when their binary is absent
+  # (requireRealPackageManager). npm needs no entry: the first `mise run` step
+  # installs every remaining tool mise.toml declares, Node among them, and npm
+  # ships with it.
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -26,7 +33,7 @@ jobs:
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install_args: go
+          install_args: go pnpm bun
           experimental: true
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
