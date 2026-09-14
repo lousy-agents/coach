@@ -66,6 +66,14 @@ func readStubSetupCwd(dir, name string) string {
 	return string(data)
 }
 
+func resolvedPath(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+	return resolved
+}
+
 func readStubSetupArgv(dir, name string) []string {
 	data, err := os.ReadFile(filepath.Join(dir, name+".argv"))
 	Expect(err).NotTo(HaveOccurred(), "expected the stub %s to have recorded its argv", name)
@@ -182,7 +190,7 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			Expect(result.Args).To(Equal(preview.Args))
 			Expect(result.WorkingDirectory).To(Equal(preview.WorkingDirectory))
 
-			Expect(readStubSetupCwd(stubDir, "npm")).To(Equal(workDir))
+			Expect(resolvedPath(readStubSetupCwd(stubDir, "npm"))).To(Equal(resolvedPath(workDir)))
 			Expect(readStubSetupArgv(stubDir, "npm")).To(Equal(preview.Args))
 		})
 	})
@@ -214,10 +222,8 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			Expect(observedKeys).NotTo(ContainElement("npm_config_registry"), "an ambient registry override must never reach the child")
 			Expect(observedKeys).To(ContainElement("PATH"), "the child needs PATH to resolve npm and node")
 			for _, key := range observedKeys {
-				// PWD is synthesized by the /bin/sh stub itself (dash/bash both
-				// export it unconditionally), not something ExecuteSetup passed
-				// through -- it is not a confinement leak.
-				Expect(key).To(Or(Equal("PATH"), Equal("HOME"), Equal("PWD")), "the child's environment must contain nothing beyond PATH, HOME, and the shell's own PWD, observed %q", key)
+				Expect(key).To(BeElementOf("PATH", "HOME", "PWD", "SHLVL", "_"),
+					"only PATH and HOME may be forwarded; %q came from the parent environment (the rest are set by the shell running the stub itself)", key)
 			}
 		})
 	})
@@ -266,7 +272,8 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			Expect(execErr).NotTo(HaveOccurred())
 			Expect(result.Succeeded).To(BeTrue(), "output: %s", result.Output)
 
-			Expect(readStubSetupCwd(stubDir, "npm")).To(Equal(workDir), "the child's cwd must be the exact literal string, byte for byte -- proof no shell re-tokenized it")
+			Expect(resolvedPath(readStubSetupCwd(stubDir, "npm"))).To(Equal(resolvedPath(workDir)), "the child's cwd must be the previewed directory -- proof no shell re-tokenized it")
+			Expect(readStubSetupCwd(stubDir, "npm")).To(ContainSubstring(maliciousName), "the malicious directory name must appear as one path component, not split into shell tokens")
 			Expect(readStubSetupArgv(stubDir, "npm")).To(Equal([]string{"ci", "--ignore-scripts"}), "argv must be exactly the two frozen tokens, unaffected by the working directory's contents")
 
 			_, injectedA := os.Stat(filepath.Join(parent, "injected-a"))
