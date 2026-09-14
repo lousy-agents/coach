@@ -430,10 +430,10 @@ func TestAggregateReadinessOmitsWarningsForNodeChecks(t *testing.T) {
 
 // TestGapCodeMappings proves statusForGapCode and nextActionForGapCode agree
 // with the frozen gap-code table for all 13 gap codes, not just the ones
-// reachable through today's checks. GapTypescriptCompilerMissing and
-// GapPackageManagerVersionUnsupported are reachable via resolveCompiler/
-// checkPackageManager's Yarn detection; GapPackageManagerVersionUnverifiable
-// and GapPackageManagerConfigUnverifiable are reachable via
+// reachable through today's checks. GapTypescriptCompilerMissing is
+// reachable via resolveCompiler; GapPackageManagerVersionUnverifiable,
+// GapPackageManagerVersionUnsupported, and GapPackageManagerConfigUnverifiable
+// are reachable via checkPackageManager's npm/pnpm/Bun/Yarn detection and via
 // CheckProjectReadiness's own evaluateMiseSetupChoices call
 // (evaluateMiseProjectTrust/evaluateMiseGlobalTrust, see
 // project_ts_compiler_mise_version_test.go and

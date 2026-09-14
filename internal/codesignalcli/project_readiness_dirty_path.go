@@ -11,7 +11,10 @@ var alwaysRelevantMetadataBasenames = map[string]bool{
 	"yarn.lock":           true,
 	"pnpm-lock.yaml":      true,
 	"npm-shrinkwrap.json": true,
+	"bun.lock":            true,
 	"bun.lockb":           true,
+	".npmrc":              true,
+	"bunfig.toml":         true,
 }
 
 func isRelevantDirtyPath(candidate string, roots []string, policyPath string) bool {

@@ -44,6 +44,7 @@ func readinessCheckFields(check ReadinessCheck) []readinessCheckField {
 		{label: "origin", value: check.Origin},
 		{label: "expected_version", value: check.ExpectedVersion},
 		{label: "found_version", value: check.FoundVersion},
+		{label: "pinned_version", value: check.PinnedVersion},
 		{label: "declared_version", value: declaredVersion},
 		{label: "supported_versions", value: strings.Join(check.SupportedVersions, ",")},
 		{label: "root_findings", value: formatRootFindings(check.RootFindings)},

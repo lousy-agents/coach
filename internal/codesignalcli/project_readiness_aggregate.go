@@ -6,11 +6,15 @@ package codesignalcli
 // withholdable. Verified means mise itself resolved a supported,
 // hazard-free compiler-install origin at Kind; when Verified is false, Code
 // names the package_manager_* gap that rejects this specific choice,
-// without touching any other choice.
+// without touching any other choice. Reason is what AvailableSetupChoices
+// tells a customer when it withholds this scope from the setup menu, and is
+// deliberately not Code: a trusted scope that simply pins nothing installable
+// is withheld with no gap code at all, which Code alone cannot express.
 type ReadinessMiseChoice struct {
 	Kind     string
 	Verified bool
 	Code     string
+	Reason   string
 }
 
 func aggregateReadiness(checks ReadinessChecks, dirtyRelevant bool, miseChoices []ReadinessMiseChoice) (ReadinessStatus, []ReadinessGap, []ReadinessNextAction, []ReadinessWarning) {
@@ -33,8 +37,9 @@ func aggregateReadiness(checks ReadinessChecks, dirtyRelevant bool, miseChoices 
 // two always carry the same State/Code (see nodeCompatibilityMirror), and
 // including both here would double-report every Node gap. checks.PackageManager
 // is deliberately excluded here -- its package_manager_* finding is
-// setup-scoped and handled separately by packageManagerGapEntries, not by
-// this table-driven path.
+// setup-scoped (SA-280-045) and handled separately by packageManagerGapEntries,
+// not by this table-driven path; including it here as well would double-report
+// it.
 func failingReadinessChecks(checks ReadinessChecks) []ReadinessCheck {
 	var failing []ReadinessCheck
 	for _, check := range []ReadinessCheck{checks.ProjectShape, checks.Policy, checks.Runtime, checks.Compiler} {
@@ -62,7 +67,7 @@ func packageManagerGapEntries(checks ReadinessChecks, miseChoices []ReadinessMis
 		verified = append(verified, checks.PackageManager.Kind)
 	}
 	if checks.PackageManager.State == ReadinessFail && isPackageManagerGapCode(checks.PackageManager.Code) {
-		gaps, actions, status = appendPackageManagerFinding(gaps, actions, status, checks.PackageManager.Code, checks.PackageManager.Kind)
+		gaps, actions, status = appendPackageManagerFinding(gaps, actions, status, checks.PackageManager.Code, checks.PackageManager.Kind, checks.PackageManager.FoundVersion)
 	}
 
 	for _, choice := range miseChoices {
@@ -73,7 +78,7 @@ func packageManagerGapEntries(checks ReadinessChecks, miseChoices []ReadinessMis
 		if !isPackageManagerGapCode(choice.Code) {
 			continue
 		}
-		gaps, actions, status = appendPackageManagerFinding(gaps, actions, status, choice.Code, choice.Kind)
+		gaps, actions, status = appendPackageManagerFinding(gaps, actions, status, choice.Code, choice.Kind, "")
 	}
 
 	return gaps, actions, status, verified
@@ -86,10 +91,13 @@ func raiseStatus(status, candidate ReadinessStatus) ReadinessStatus {
 	return status
 }
 
-func appendPackageManagerFinding(gaps []ReadinessGap, actions []ReadinessNextAction, status ReadinessStatus, code, kind string) ([]ReadinessGap, []ReadinessNextAction, ReadinessStatus) {
+// appendPackageManagerFinding's foundVersion is set only for the project
+// adapter's own finding: ReadinessMiseChoice carries no version, since a
+// rejected mise scope is unverifiable before any version is ever read.
+func appendPackageManagerFinding(gaps []ReadinessGap, actions []ReadinessNextAction, status ReadinessStatus, code, kind, foundVersion string) ([]ReadinessGap, []ReadinessNextAction, ReadinessStatus) {
 	gaps = append(gaps, ReadinessGap{Code: code, PackageManagerKind: kind})
 	if actionKind, ok := nextActionForGapCode(code); ok {
-		actions = append(actions, ReadinessNextAction{Kind: actionKind, Executable: nextActionExecutable(actionKind), PackageManagerKind: kind})
+		actions = append(actions, ReadinessNextAction{Kind: actionKind, Executable: nextActionExecutable(actionKind), PackageManagerKind: kind, FoundVersion: foundVersion})
 	}
 	status = raiseStatus(status, statusForGapCode(code))
 	return gaps, actions, status
@@ -100,11 +108,10 @@ func appendPackageManagerFinding(gaps []ReadinessGap, actions []ReadinessNextAct
 // ReadinessFail, passed as adapterRejected), a rejected installation choice
 // never appears in prepare_compiler's Choices, and prepare_compiler is
 // withheld entirely when no verified installation choice remains. An
-// adapter that has not been evaluated yet (ReadinessNotChecked, the state
-// for every repository shape a later adapter-detection task has not yet
-// reached) must never by itself count as "no installation choice exists"
-// -- only a genuine rejection does, so this is a no-op unless
-// adapterRejected is true.
+// adapter that has not been evaluated (ReadinessNotChecked -- no recognized
+// packageManager field or lockfile at all) must never by itself count as
+// "no installation choice exists" -- only a genuine rejection does, so this
+// is a no-op unless adapterRejected is true.
 func restrictPrepareCompilerChoices(actions []ReadinessNextAction, adapterRejected bool, verified []string) []ReadinessNextAction {
 	if !adapterRejected {
 		return actions
@@ -154,6 +161,9 @@ func nextActionForCheck(kind string, check ReadinessCheck) ReadinessNextAction {
 		action.Detail = check.Detail
 	case nextActionKindPrepareCompiler:
 		action.Supported = supportedTypescriptVersionsCopy()
+		action.FoundVersion = check.FoundVersion
+	case nextActionKindResolvePackageManager:
+		action.PackageManagerKind = check.Kind
 		action.FoundVersion = check.FoundVersion
 	}
 	return action

@@ -56,9 +56,9 @@ const (
 	GapTypescriptVersionMismatch         = "typescript_version_mismatch"
 	GapTypescriptVersionConflict         = "typescript_version_conflict"
 	GapPackageManagerAmbiguous           = "package_manager_ambiguous"
+	GapPackageManagerConfigUnverifiable  = "package_manager_config_unverifiable"
 	GapPackageManagerVersionUnverifiable = "package_manager_version_unverifiable"
 	GapPackageManagerVersionUnsupported  = "package_manager_version_unsupported"
-	GapPackageManagerConfigUnverifiable  = "package_manager_config_unverifiable"
 	GapPolicyMissing                     = "policy_missing"
 	GapPolicyInvalid                     = "policy_invalid"
 )
@@ -87,6 +87,16 @@ type ReadinessDeclarationMismatch struct {
 	Declared string
 }
 
+// ReadinessCheck is one entry in ReadinessChecks. Which optional fields
+// accompany which code is the frozen compiler-check contract, pinned by
+// cmd/coach's aggregation acceptance table; the json:"-" fields never
+// serialize and reach the customer as rendered text only. Kind and Origin
+// are additive and omitempty, populated only on Runtime and PackageManager
+// (PackageManager's Kind names the detected manager: npm, pnpm, bun, or
+// yarn). PinnedVersion is PackageManager's alone: it records package.json's
+// packageManager pin, which is reported but never classified against, since
+// the frozen adapter rows run whichever binary PATH resolves (see
+// checkPackageManager).
 type ReadinessCheck struct {
 	State             ReadinessState           `json:"state"`
 	Code              string                   `json:"code,omitempty"`
@@ -94,6 +104,7 @@ type ReadinessCheck struct {
 	Version           string                   `json:"version,omitempty"`
 	ExpectedVersion   string                   `json:"expected_version,omitempty"`
 	FoundVersion      string                   `json:"found_version,omitempty"`
+	PinnedVersion     string                   `json:"pinned_version,omitempty"`
 	SupportedVersions []string                 `json:"supported_versions,omitempty"`
 	RootFindings      []ReadinessRootFinding   `json:"root_findings,omitempty"`
 	Origin            string                   `json:"origin,omitempty"`
@@ -143,10 +154,10 @@ type ReadinessNextAction struct {
 	Kind               string   `json:"kind"`
 	Executable         bool     `json:"executable"`
 	RuntimeKind        string   `json:"runtime_kind,omitempty"`
+	PackageManagerKind string   `json:"package_manager_kind,omitempty"`
 	Supported          []string `json:"supported,omitempty"`
 	FoundVersion       string   `json:"found_version,omitempty"`
 	Detail             string   `json:"detail,omitempty"`
-	PackageManagerKind string   `json:"package_manager_kind,omitempty"`
 	Choices            []string `json:"choices,omitempty"`
 }
 
@@ -165,6 +176,12 @@ type ReadinessResult struct {
 	Gaps          []ReadinessGap         `json:"gaps"`
 	Warnings      []ReadinessWarning     `json:"warnings"`
 	NextActions   []ReadinessNextAction  `json:"next_actions"`
+
+	// MiseChoices is the verified mise setup choices this run computed
+	// (evaluateMiseSetupChoices, owner decision D5). It never serializes:
+	// AvailableSetupChoices reads it so the menu and the readiness gaps are
+	// the same computation rather than two that can disagree.
+	MiseChoices []ReadinessMiseChoice `json:"-"`
 }
 
 func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, error) {
@@ -184,10 +201,7 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 	runtime := checkNodeReadiness()
 	node := nodeCompatibilityMirror(runtime)
 	compiler := resolveCompiler(dir, roots)
-	packageManager, err := checkPackageManager(dir, revision)
-	if err != nil {
-		return nil, err
-	}
+	packageManager := checkPackageManager(dir, roots)
 
 	checks := ReadinessChecks{
 		ProjectShape:   projectShape,
@@ -203,7 +217,8 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 		return nil, err
 	}
 
-	status, gaps, nextActions, warnings := aggregateReadiness(checks, dirty.RelevantChanges, evaluateMiseSetupChoices(dir, roots))
+	miseChoices := evaluateMiseSetupChoices(dir, roots)
+	status, gaps, nextActions, warnings := aggregateReadiness(checks, dirty.RelevantChanges, miseChoices)
 
 	return &ReadinessResult{
 		SchemaVersion: ReadinessSchemaVersion,
@@ -215,6 +230,7 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 		Gaps:          gaps,
 		Warnings:      warnings,
 		NextActions:   nextActions,
+		MiseChoices:   miseChoices,
 	}, nil
 }
 
@@ -238,27 +254,12 @@ func checkPolicy(dir, revision, policyPath string) (ReadinessCheck, []string, er
 	return ReadinessCheck{State: ReadinessPass}, config.Roots, nil
 }
 
-// packageManagerKindYarn has no supported-version row in the adapter
-// matrix, so any Yarn metadata at revision unconditionally reports
-// package_manager_version_unsupported regardless of which Yarn version is
-// actually in use.
-const packageManagerKindYarn = "yarn"
-
-// checkPackageManager only checks for a committed yarn.lock. This is
-// deliberate, not a partial implementation to finish here: detecting and
-// version-checking npm/pnpm/Bun adapters is a separate task's scope, so
-// every other repository shape stays not_checked.
-func checkPackageManager(dir, revision string) (ReadinessCheck, error) {
-	yarnLock, err := fileExistsAtRevision(dir, revision, "yarn.lock")
-	if err != nil {
-		return ReadinessCheck{}, err
-	}
-	if yarnLock {
-		return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerVersionUnsupported, Kind: packageManagerKindYarn}, nil
-	}
-	return ReadinessCheck{State: ReadinessNotChecked}, nil
-}
-
+// ValidateProjectConfigPath validates a --project-config value's shape using
+// the same rules LoadProjectConfig enforces, without touching Git or the
+// filesystem. --check-project's argument validation calls this before any
+// readiness check runs, so an invalid path (absolute, containing "..", or
+// using a backslash separator) is rejected at argument time rather than
+// surfacing as a false policy_missing/policy_invalid readiness gap.
 func ValidateProjectConfigPath(repoPath string) error {
 	return validateProjectConfigPath(repoPath)
 }

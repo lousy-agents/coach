@@ -30,6 +30,7 @@ type readinessCheckDoc struct {
 	Version           string                    `json:"version"`
 	ExpectedVersion   string                    `json:"expected_version"`
 	FoundVersion      string                    `json:"found_version"`
+	PinnedVersion     string                    `json:"pinned_version"`
 	SupportedVersions []string                  `json:"supported_versions"`
 	RootFindings      []readinessRootFindingDoc `json:"root_findings"`
 	Origin            string                    `json:"origin"`
@@ -71,10 +72,10 @@ type readinessNextActionDoc struct {
 	Kind               string   `json:"kind"`
 	Executable         bool     `json:"executable"`
 	RuntimeKind        string   `json:"runtime_kind"`
+	PackageManagerKind string   `json:"package_manager_kind"`
 	Supported          []string `json:"supported"`
 	FoundVersion       string   `json:"found_version"`
 	Detail             string   `json:"detail"`
-	PackageManagerKind string   `json:"package_manager_kind"`
 	Choices            []string `json:"choices"`
 }
 
@@ -110,17 +111,84 @@ func writeStubNodeScript(version string) string {
 	return dir
 }
 
-// pathWithStubNode strips every real node/npm/mise directory, so a spec on
-// this PATH has no global-mise candidate however the host is configured.
-func pathWithStubNode(version string) string {
-	return writeStubNodeScript(version) + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+// pathExcludingToolchain strips every real node/npm/mise directory, so a spec
+// on this PATH has no global-mise candidate however the host is configured.
+// The package managers are stripped alongside them because
+// checkPackageManager probes whichever npm/pnpm/bun/yarn the child can
+// resolve: leaving the host's own installation reachable would make a
+// package-manager classification depend on which manager this machine happens
+// to have.
+func pathExcludingToolchain() string {
+	return pathExcludingExecutables("node", "npm", "mise", "pnpm", "bun", "yarn")
 }
 
-// pathWithoutNode returns a PATH with every node/npm/mise directory removed,
-// so checkNodeReadiness deterministically reports node_missing regardless of
-// the host's actual Node installation.
+func pathWithStubNode(version string) string {
+	return writeStubNodeScript(version) + string(os.PathListSeparator) + pathExcludingToolchain()
+}
+
+// writeStubPackageManagerScript writes an executable `kind` script into a
+// fresh temp directory that prints version on `--version` and exits non-zero
+// on anything else, and returns that directory. It never installs anything:
+// no spec drives a real install through a stub.
+func writeStubPackageManagerScript(kind, version string) string {
+	dir, err := os.MkdirTemp("", "coach-acceptance-stubmanager-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, dir)
+
+	script := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo %s; exit 0; fi\nexit 1\n", version)
+	Expect(os.WriteFile(filepath.Join(dir, kind), []byte(script), 0o755)).To(Succeed())
+	return dir
+}
+
+// pathWithStubNodeAndPackageManager returns pathWithStubNode's PATH with a
+// stub `kind` reporting managerVersion ahead of it, so a spec controls the
+// version checks.package_manager classifies rather than inheriting the
+// host's.
+func pathWithStubNodeAndPackageManager(nodeVersion, kind, managerVersion string) string {
+	return writeStubPackageManagerScript(kind, managerVersion) + string(os.PathListSeparator) + pathWithStubNode(nodeVersion)
+}
+
+const (
+	stubPackageManagerCwdLog = "cwd.log"
+	stubPackageManagerEnvLog = "env.log"
+)
+
+// writeRecordingStubPackageManagerScript extends
+// writeStubPackageManagerScript with a record of the working directory and
+// the environment variable names each invocation actually saw, so a spec can
+// assert how the probe confined the subprocess rather than only what it
+// returned.
+func writeRecordingStubPackageManagerScript(kind, version string) string {
+	dir, err := os.MkdirTemp("", "coach-acceptance-recordingmanager-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(os.RemoveAll, dir)
+
+	script := fmt.Sprintf("#!/bin/sh\necho \"$PWD\" >> %q\nenv | sed 's/=.*//' >> %q\n"+
+		"if [ \"$1\" = \"--version\" ]; then echo %s; exit 0; fi\nexit 1\n",
+		filepath.Join(dir, stubPackageManagerCwdLog), filepath.Join(dir, stubPackageManagerEnvLog), version)
+	Expect(os.WriteFile(filepath.Join(dir, kind), []byte(script), 0o755)).To(Succeed())
+	return dir
+}
+
+func readStubPackageManagerCwds(managerDir string) []string {
+	return readStubPackageManagerLog(managerDir, stubPackageManagerCwdLog)
+}
+
+func readStubPackageManagerEnv(managerDir string) []string {
+	return readStubPackageManagerLog(managerDir, stubPackageManagerEnvLog)
+}
+
+func readStubPackageManagerLog(managerDir, name string) []string {
+	data, err := os.ReadFile(filepath.Join(managerDir, name))
+	Expect(err).NotTo(HaveOccurred(), "expected the stub package manager at %s to have recorded %s", managerDir, name)
+	return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+}
+
+// pathWithoutNode names pathExcludingToolchain from the perspective of the
+// node_missing specs: with no node reachable, checkNodeReadiness reports
+// node_missing regardless of the host's actual Node installation.
 func pathWithoutNode() string {
-	return pathExcludingExecutables("node", "npm", "mise")
+	return pathExcludingToolchain()
 }
 
 // requireStubNodeVersion is the belt-and-suspenders probe mirroring
@@ -213,7 +281,7 @@ func writeHangingNodeScript() string {
 // real node/npm/mise executable removed so the stub is the only "node" the
 // child process can resolve.
 func pathWithHangingNode() string {
-	return writeHangingNodeScript() + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	return writeHangingNodeScript() + string(os.PathListSeparator) + pathExcludingToolchain()
 }
 
 // writeFailingNodeScript writes an executable `node` script that exits
@@ -236,7 +304,7 @@ func writeFailingNodeScript() string {
 // directory containing a real node/npm/mise executable removed so the stub
 // is the only "node" the child process can resolve.
 func pathWithFailingNode() string {
-	return writeFailingNodeScript() + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	return writeFailingNodeScript() + string(os.PathListSeparator) + pathExcludingToolchain()
 }
 
 // writeUnstartableNodeScript writes an executable file named `node` whose
@@ -262,7 +330,7 @@ func writeUnstartableNodeScript() string {
 // executable removed so the stub is the only "node" the child process can
 // resolve.
 func pathWithUnstartableNode() string {
-	return writeUnstartableNodeScript() + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	return writeUnstartableNodeScript() + string(os.PathListSeparator) + pathExcludingToolchain()
 }
 
 // writeOversizedUnparsableNodeScript writes an executable `node` script
@@ -287,11 +355,9 @@ func writeOversizedUnparsableNodeScript() string {
 // executable removed so the stub is the only "node" the child process can
 // resolve.
 func pathWithOversizedUnparsableNode() string {
-	return writeOversizedUnparsableNodeScript() + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	return writeOversizedUnparsableNodeScript() + string(os.PathListSeparator) + pathExcludingToolchain()
 }
 
-// stubMiseInvocationLog is the filename writeStubMiseScript's stub appends
-// each invocation's argv to, one line per call.
 const stubMiseInvocationLog = "mise-invocations.log"
 const stubMiseCwdLog = "mise-probe-cwd.log"
 
@@ -319,8 +385,6 @@ func writeStubMiseScript(version string) string {
 	return dir
 }
 
-// readStubMiseInvocations reads the argv line(s) writeStubMiseScript's stub
-// recorded for miseDir, one entry per invocation.
 func readStubMiseInvocations(miseDir string) []string {
 	data, err := os.ReadFile(filepath.Join(miseDir, stubMiseInvocationLog))
 	Expect(err).NotTo(HaveOccurred(), "expected the stub mise at %s to have recorded at least one invocation", miseDir)
@@ -340,7 +404,7 @@ func readStubMiseCwds(miseDir string) []string {
 // spec can inspect its recorded invocations via readStubMiseInvocations.
 func pathWithStubNodeAndMise(nodeVersion, miseVersion string) (path, miseDir string) {
 	miseDir = writeStubMiseScript(miseVersion)
-	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 	return path, miseDir
 }
 
@@ -577,6 +641,33 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement(HavePrefix("node_modules")))
 		})
 	})
+
+	DescribeTable("lists an uncommitted package-manager setup input at the repository root as a relevant dirty path even when the selected root is nested (SA-280-027)",
+		func(relPath, contents string) {
+			repo := newTempGitRepo()
+			commitFile(repo, "app/package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
+			writeInstalledTypescriptUnder(repo, "app", "7.0.2")
+			commitFile(repo, "app/tsconfig.json", `{"compilerOptions":{}}`+"\n")
+			commitFile(repo, "project.json", `{"schema_version":"1","roots":["app"]}`+"\n")
+			writeWorktreeFile(repo, relPath, contents)
+			writeWorktreeFile(repo, "unrelated.txt", "not a setup input\n")
+
+			path := pathWithStubNode("v24.9.9")
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.DirtyWorktree.RelevantChanges).To(BeTrue())
+			Expect(doc.DirtyWorktree.Paths).To(ContainElement(relPath),
+				"readiness reads this file as a package-manager setup input, so an uncommitted copy must be listed even when it sits outside the selected root")
+			Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement("unrelated.txt"),
+				"a nested selected root must not make every uncommitted path relevant")
+		},
+		Entry(".npmrc", ".npmrc", "# comment-only npmrc; not a registry redirect\n"),
+		Entry("bunfig.toml", "bunfig.toml", "telemetry = false\n"),
+		Entry("bun.lock", "bun.lock", "{\n  \"lockfileVersion\": 0,\n}\n"),
+	)
 
 	When("HEAD has a committed directory named package.json and no package.json blob", func() {
 		It("reports project_shape fail/unsupported_repository_shape rather than treating the tree as a project manifest", func() {
@@ -1434,7 +1525,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 				"if [ \"$1\" = \"where\" ]; then echo %q; exit 0; fi\n", toolRoot)
 			Expect(os.WriteFile(filepath.Join(miseDir, "mise"), []byte(script), 0o755)).To(Succeed())
 
-			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 
 			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
@@ -1918,7 +2009,7 @@ func writeStatefulStubMiseScript(version string) (dir string) {
 
 func pathWithStatefulStubNodeAndMise(nodeVersion, tsVersion string) (path, miseDir string) {
 	miseDir = writeStatefulStubMiseScript(tsVersion)
-	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 	return path, miseDir
 }
 
@@ -1958,7 +2049,7 @@ func writeStatefulStubMiseScriptGlobalAware(version string) (dir string) {
 
 func pathWithStatefulStubNodeAndMiseGlobalAware(nodeVersion, tsVersion string) (path, miseDir string) {
 	miseDir = writeStatefulStubMiseScriptGlobalAware(tsVersion)
-	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 	return path, miseDir
 }
 
@@ -1983,7 +2074,7 @@ func writeFailingInstallStubMiseScript() (dir string) {
 
 func pathWithFailingInstallStubNodeAndMise(nodeVersion string) (path, miseDir string) {
 	miseDir = writeFailingInstallStubMiseScript()
-	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 	return path, miseDir
 }
 
@@ -2014,7 +2105,7 @@ func writeIneligibleInstallStubMiseScript() (dir string) {
 
 func pathWithIneligibleInstallStubNodeAndMise(nodeVersion string) (path, miseDir string) {
 	miseDir = writeIneligibleInstallStubMiseScript()
-	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 	return path, miseDir
 }
 
@@ -2372,7 +2463,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			repo := noSupportedCompilerRepo()
 			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"7.0.2\"\n\n[hooks]\npostinstall = \"echo pwned\"\n")
 			miseDir := writeStatefulStubMiseScriptGlobalAware("7.0.2")
-			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
 
@@ -2432,7 +2523,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 				"if [ \"$1\" = \"install\" ]; then exec sleep 30; fi\n"+
 				"exit 1\n", filepath.Join(miseDir, stubMiseInvocationLog))
 			Expect(os.WriteFile(filepath.Join(miseDir, "mise"), []byte(script), 0o755)).To(Succeed())
-			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingExecutables("node", "npm", "mise")
+			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
 
