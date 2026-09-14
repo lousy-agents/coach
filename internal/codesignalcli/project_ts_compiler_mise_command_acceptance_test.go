@@ -1,9 +1,20 @@
 package codesignalcli
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha1"
+	"crypto/sha512"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +32,12 @@ import (
 // lifecycleSentinelFile is the file coach-lifecycle-sentinel's pre/postinstall
 // scripts write if ever executed (see the fixture's own package.json).
 const lifecycleSentinelFile = "LIFECYCLE_SCRIPT_RAN"
+
+const (
+	lifecycleSentinelPackageName = "coach-lifecycle-sentinel"
+	lifecycleSentinelVersion     = "1.2.3"
+	lifecycleSentinelToolSpec    = "npm:" + lifecycleSentinelPackageName + "@" + lifecycleSentinelVersion
+)
 
 // lifecycleSentinelFixtureDir is the checked-in local npm package
 // (cmd/coach/testdata/mise/lifecycle-sentinel/lifecycle-sentinel@1.2.3)
@@ -159,9 +176,93 @@ func freshMiseInstallEnv() (dataDir, configDir string) {
 	return dataDir, configDir
 }
 
+func lifecycleSentinelTarball() []byte {
+	pkgJSON, err := os.ReadFile(filepath.Join(lifecycleSentinelFixtureDir(), "package.json"))
+	Expect(err).NotTo(HaveOccurred())
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	hdr := &tar.Header{
+		Name:     "package/package.json",
+		Mode:     0o644,
+		Size:     int64(len(pkgJSON)),
+		Typeflag: tar.TypeReg,
+	}
+	Expect(tw.WriteHeader(hdr)).To(Succeed())
+	_, err = tw.Write(pkgJSON)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(tw.Close()).To(Succeed())
+	Expect(gz.Close()).To(Succeed())
+	return buf.Bytes()
+}
+
+func startLifecycleSentinelRegistry() *httptest.Server {
+	tarball := lifecycleSentinelTarball()
+	sha1sum := sha1.Sum(tarball)
+	sha512sum := sha512.Sum512(tarball)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	Expect(err).NotTo(HaveOccurred())
+	baseURL := "http://" + ln.Addr().String()
+	tarballPath := "/" + lifecycleSentinelPackageName + "/-/" + lifecycleSentinelPackageName + "-" + lifecycleSentinelVersion + ".tgz"
+	tarballURL := baseURL + tarballPath
+	versionDoc := map[string]any{
+		"name":    lifecycleSentinelPackageName,
+		"version": lifecycleSentinelVersion,
+		"dist": map[string]any{
+			"tarball":   tarballURL,
+			"shasum":    hex.EncodeToString(sha1sum[:]),
+			"integrity": "sha512-" + base64.StdEncoding.EncodeToString(sha512sum[:]),
+		},
+	}
+	packument, err := json.Marshal(map[string]any{
+		"name": lifecycleSentinelPackageName,
+		"dist-tags": map[string]string{
+			"latest": lifecycleSentinelVersion,
+		},
+		"versions": map[string]any{
+			lifecycleSentinelVersion: versionDoc,
+		},
+	})
+	Expect(err).NotTo(HaveOccurred())
+	versionJSON, err := json.Marshal(versionDoc)
+	Expect(err).NotTo(HaveOccurred())
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimSuffix(r.URL.Path, "/")
+		switch path {
+		case "/" + lifecycleSentinelPackageName:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(packument)
+		case "/" + lifecycleSentinelPackageName + "/" + lifecycleSentinelVersion:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(versionJSON)
+		case tarballPath:
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(tarball)
+		default:
+			GinkgoWriter.Printf("lifecycle-sentinel registry: unexpected %s %s\n", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	srv.Listener = ln
+	srv.Start()
+	DeferCleanup(srv.Close)
+	return srv
+}
+
+func writeHomeNpmrcRegistry(registryURL string) {
+	home := os.Getenv("HOME")
+	Expect(home).NotTo(BeEmpty(), "freshMiseInstallEnv must run before writing HOME/.npmrc")
+	if !strings.HasSuffix(registryURL, "/") {
+		registryURL += "/"
+	}
+	Expect(os.WriteFile(filepath.Join(home, ".npmrc"), []byte("registry="+registryURL+"\n"), 0o644)).To(Succeed())
+}
+
 var _ = Describe("mise npm-backend install command construction: lifecycle-script suppression (coach#328 Task 4, AC-4/AC-15)", func() {
-	When("mise's default (aube) backend installs a copy of a local fixture package whose pre/postinstall scripts would touch a sentinel file", func() {
-		It("never runs the fixture's lifecycle scripts, checked at both the file: package's own real landing site and under MISE_DATA_DIR", func() {
+	When("mise's default (aube) backend installs the lifecycle-sentinel fixture from a loopback npm registry", func() {
+		It("never runs the fixture's lifecycle scripts, checked at the tarball's landing site under MISE_DATA_DIR", func() {
 			if _, err := exec.LookPath("mise"); err != nil {
 				Skip(fmt.Sprintf("mise not found on PATH; skipping the real mise install lifecycle-suppression spec (%s)", err))
 			}
@@ -169,25 +270,16 @@ var _ = Describe("mise npm-backend install command construction: lifecycle-scrip
 				Skip(fmt.Sprintf("npm not found on PATH; skipping the real mise install lifecycle-suppression spec (%s)", err))
 			}
 			dataDir, _ := freshMiseInstallEnv()
+			writeHomeNpmrcRegistry(startLifecycleSentinelRegistry().URL)
 			assertLifecycleSentinelFixtureIsLive(GinkgoT().TempDir())
 
-			// A `file:` package's lifecycle scripts run with cwd set to the
-			// package's own source directory, not anywhere under
-			// MISE_DATA_DIR (verified empirically) -- so a real
-			// suppression regression must be caught at that directory, not
-			// only under MISE_DATA_DIR. Installing from a fresh copy rather
-			// than the checked-in fixture keeps that real landing site
-			// disposable.
-			fixtureDir := copyLifecycleSentinelFixture(GinkgoT().TempDir())
-
-			attempt := runMiseInstallInsulated(context.Background(), "npm:file:"+fixtureDir)
+			attempt := runMiseInstallInsulated(context.Background(), lifecycleSentinelToolSpec)
 			attempted, observed, exitErr := attempt.attempted, attempt.observed, attempt.exitErr
 			Expect(attempted).To(BeTrue(), "expected the install subprocess to actually start (mise confined and reachable)")
 			Expect(observed).To(BeTrue(), "expected the install subprocess's outcome to be observable")
 			Expect(exitErr).NotTo(HaveOccurred(), "mise install of the local fixture package must itself succeed")
 
-			Expect(anyFileNamed(fixtureDir, lifecycleSentinelFile)).To(BeFalse(), "the fixture's pre/postinstall script must never run under mise's npm backend suppression, checked at its real landing site (the file: package's own source directory)")
-			Expect(anyFileNamed(dataDir, lifecycleSentinelFile)).To(BeFalse(), "the fixture's pre/postinstall script must never run under mise's npm backend suppression")
+			Expect(anyFileNamed(dataDir, lifecycleSentinelFile)).To(BeFalse(), "the fixture's pre/postinstall script must never run under mise's npm backend suppression, checked at the tarball's landing site under MISE_DATA_DIR")
 		})
 	})
 
@@ -200,24 +292,22 @@ var _ = Describe("mise npm-backend install command construction: lifecycle-scrip
 				Skip(fmt.Sprintf("npm not found on PATH; skipping the mise npm.shell_out=true lifecycle-suppression spec (%s)", err))
 			}
 			dataDir, configDir := freshMiseInstallEnv()
+			writeHomeNpmrcRegistry(startLifecycleSentinelRegistry().URL)
 			assertLifecycleSentinelFixtureIsLive(GinkgoT().TempDir())
 			// Exactly "config.toml" -- verified empirically that real mise
 			// silently ignores the same [settings] table written to
 			// "settings.toml" instead.
 			Expect(os.WriteFile(filepath.Join(configDir, "config.toml"), []byte("[settings]\nnpm.shell_out = true\n"), 0o644)).To(Succeed())
 
-			fixtureDir := copyLifecycleSentinelFixture(GinkgoT().TempDir())
-
-			attempt := runMiseInstallInsulated(context.Background(), "npm:file:"+fixtureDir)
+			attempt := runMiseInstallInsulated(context.Background(), lifecycleSentinelToolSpec)
 			attempted, observed, exitErr := attempt.attempted, attempt.observed, attempt.exitErr
 			Expect(attempted).To(BeTrue(), "expected the install subprocess to actually start (mise confined and reachable)")
 			Expect(observed).To(BeTrue(), "expected the install subprocess's outcome to be observable")
 			Expect(exitErr).NotTo(HaveOccurred(), "mise install of the local fixture package must itself succeed under the shell_out=true backend")
 
-			Expect(npmGlobalStyleInstallPresent(dataDir, "coach-lifecycle-sentinel")).To(BeTrue(), "expected the npm.shell_out=true backend's real `npm install -g` layout under MISE_DATA_DIR, proving this spec actually reached that branch rather than silently falling back to the default backend")
+			Expect(npmGlobalStyleInstallPresent(dataDir, lifecycleSentinelPackageName)).To(BeTrue(), "expected the npm.shell_out=true backend's real `npm install -g` layout under MISE_DATA_DIR, proving this spec actually reached that branch rather than silently falling back to the default backend")
 
-			Expect(anyFileNamed(fixtureDir, lifecycleSentinelFile)).To(BeFalse(), "the fixture's pre/postinstall script must never run under the real npm invocation mise's shell_out=true backend shells out to")
-			Expect(anyFileNamed(dataDir, lifecycleSentinelFile)).To(BeFalse(), "the fixture's pre/postinstall script must never run under the real npm invocation mise's shell_out=true backend shells out to")
+			Expect(anyFileNamed(dataDir, lifecycleSentinelFile)).To(BeFalse(), "the fixture's pre/postinstall script must never run under the real npm invocation mise's shell_out=true backend shells out to, checked at the tarball's landing site under MISE_DATA_DIR")
 		})
 	})
 })
@@ -229,6 +319,7 @@ var _ = Describe("mise npm-backend install command construction: insulated worki
 				Skip(fmt.Sprintf("mise not found on PATH; skipping the real mise insulated-working-directory spec (%s)", err))
 			}
 			freshMiseInstallEnv()
+			writeHomeNpmrcRegistry(startLifecycleSentinelRegistry().URL)
 
 			repo := GinkgoT().TempDir()
 			sentinel := filepath.Join(repo, "mise-config-side-effect")
@@ -246,14 +337,12 @@ var _ = Describe("mise npm-backend install command construction: insulated worki
 			trustOut, trustErr := trustCmd.CombinedOutput()
 			Expect(trustErr).NotTo(HaveOccurred(), "mise trust: %s", trustOut)
 
-			fixtureDir := copyLifecycleSentinelFixture(GinkgoT().TempDir())
-
 			// Positive control: proves the decoy's env exec() template is
 			// live and genuinely fires for a real mise invocation whose
 			// working directory is the repository -- the exact regression
 			// AC-16 exists to catch -- so the negative assertion below
 			// cannot pass merely because the decoy never fires at all.
-			controlCmd := exec.Command("mise", "install", "npm:file:"+fixtureDir)
+			controlCmd := exec.Command("mise", "install", lifecycleSentinelToolSpec)
 			controlCmd.Dir = repo
 			controlOut, controlErr := controlCmd.CombinedOutput()
 			Expect(controlErr).NotTo(HaveOccurred(), "mise install (positive control, cwd=repo): %s", controlOut)
@@ -264,7 +353,7 @@ var _ = Describe("mise npm-backend install command construction: insulated worki
 			// mise discover the repository's config at all, because its own
 			// working directory is a private, neutral temp directory, never
 			// the repository being analyzed.
-			attempt := runMiseInstallInsulated(context.Background(), "npm:file:"+fixtureDir)
+			attempt := runMiseInstallInsulated(context.Background(), lifecycleSentinelToolSpec)
 			attempted, observed, exitErr := attempt.attempted, attempt.observed, attempt.exitErr
 			Expect(attempted).To(BeTrue())
 			Expect(observed).To(BeTrue())
