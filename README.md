@@ -78,10 +78,10 @@ echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc && eval "$(~/.loca
 # ~/.local/bin/mise activate fish | source
 ```
 
-Pin a release if you want a fixed binary (latest published tag is `v0.5.0`):
+Pin a release if you want a fixed binary (latest published tag is `v0.6.0`):
 
 ```sh
-mise use -g github:lousy-agents/coach@v0.5.0
+mise use -g github:lousy-agents/coach@v0.6.0
 ```
 
 Release archives exist for `darwin_arm64`, `darwin_x86_64`, `linux_x86_64`, and
