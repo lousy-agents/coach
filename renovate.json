@@ -46,6 +46,11 @@
             "matchPackageNames": [
                 "/^golang\\.org/x//"
             ]
+        },
+        {
+            "description": "Bump mise.toml min_version and every CI jdx/mise-action version together",
+            "matchPackageNames": ["jdx/mise"],
+            "groupName": "jdx/mise"
         }
     ],
     "customManagers": [
@@ -83,6 +88,18 @@
             ],
             "matchStrings": [
                 "min_version\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+            ],
+            "depNameTemplate": "jdx/mise",
+            "datasourceTemplate": "github-releases"
+        },
+        {
+            "description": "Track jdx/mise-action version pin in ci.yml so it bumps with mise.toml min_version",
+            "customType": "regex",
+            "managerFilePatterns": [
+                "/(^|/)\\.github/workflows/ci\\.yml$/"
+            ],
+            "matchStrings": [
+                "uses: jdx/mise-action[^\\n]+\\n\\s+with:\\n\\s+version:\\s*\"(?<currentValue>[^\"]+)\""
             ],
             "depNameTemplate": "jdx/mise",
             "datasourceTemplate": "github-releases"
