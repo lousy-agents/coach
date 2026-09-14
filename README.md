@@ -9,6 +9,29 @@ model on this path. File-local analysis is Tree-sitter over committed Git
 objects. TypeScript `--project-config` additionally runs a host Node process
 and the TypeScript compiler; that is still local, not the platform preview.
 
+## Quick start (TypeScript)
+
+Scan committed `.ts` / `.tsx`. No API key, no model, no merge gate. Uncommitted edits are invisible.
+
+```sh
+mise exec github:lousy-agents/coach -- coach codesignal --baseline
+```
+
+File-local mode is Tree-sitter over committed Git objects. It reports structural signals (`structure.react_component_orchestration_density`, `coupling.deep_relative_import`, `security.toctou_check_then_act`). It does not know your layers.
+
+Project scanning is a different contract from ESLint boundary plugins, dependency-cruiser, or repo-chat. Those lint the worktree, infer a module graph, or guess architecture from retrieved files. Coach does not guess. You declare `roots`, `layers`, and `forbidden_imports`. Coach evaluates those edges with a host-resolved TypeScript compiler against the **revision you named** and emits versioned `architecture.layer_violation` signals — JSON `schema_version: "2"` that an agent can parse.
+
+```sh
+coach codesignal --baseline --check-project --project-language typescript
+coach codesignal --baseline --suggest-project-config --project-language typescript
+# commit the JSON at the analyzed revision, then:
+coach codesignal --baseline --project-config project.json --project-language typescript --format json
+```
+
+`--check-project` is readiness, not a scan (exit `0` even with gaps). `--suggest-project-config` is an interactive TTY and writes nothing until you confirm. Project mode needs that committed policy plus a supported compiler and Node 24 or 26. An empty `signals` array is not compliance.
+
+Full flags and schema: [CLI contract](./docs/cli-codesignal.md).
+
 ## Contract
 
 - **Languages:** Go, TypeScript, TSX. Other files get an `unsupported_language` diagnostic and are skipped.
