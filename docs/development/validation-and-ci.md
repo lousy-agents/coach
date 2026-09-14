@@ -70,9 +70,13 @@ workflow does not invoke those composites.
 Seven independent leaf jobs plus a `status` aggregator:
 
 - `verify` — `ci-go`: gofmt / go-vet / tidy-check / acceptance-style-check /
-  test / test-examples. mise installs only Go; the runner image may still have
-  Node, so the sidecar suite usually skips because the sidecar is not built,
-  not because `node` is missing. Toolchain comes from `mise.toml`
+  test / test-examples. `install_args` names Go, pnpm, and bun; the first
+  `mise run` step then installs whatever else `mise.toml` declares, Node
+  included, so the sidecar suite skips because the sidecar is not built, not
+  because `node` is missing. pnpm and bun are named because `test` carries
+  `cmd/coach`'s real-execution sentinel-script proofs for the frozen adapter
+  rows, and those fail rather than skip when their binary is absent; npm needs
+  no entry because it ships with Node. Toolchain comes from `mise.toml`
   (`go = "1.26.6"`), not `go.mod`'s language version.
 - `js-verify` — `mise run js-ci` only.
 - `projectmodel-sidecar` — `mise run projectmodel-sidecar-acceptance` (builds

@@ -1,16 +1,10 @@
 package codesignalcli
 
 func statusForGapCode(code string) ReadinessStatus {
-	switch code {
-	case GapUnsupportedRepositoryShape:
-		return StatusOutsideSupport
-	case GapNodeMissing, GapNodeUnsupported, GapNodeUnverifiable, GapTypescriptCompilerMissing, GapTypescriptVersionMismatch, GapTypescriptVersionConflict, GapPackageManagerAmbiguous, GapPackageManagerVersionUnverifiable, GapPackageManagerVersionUnsupported, GapPackageManagerConfigUnverifiable:
-		return StatusNeedsPrerequisite
-	case GapPolicyMissing, GapPolicyInvalid:
-		return StatusNeedsPolicy
-	default:
-		return StatusReady
+	if info, ok := gapCodeTable[code]; ok {
+		return info.status
 	}
+	return StatusReady
 }
 
 func statusRank(status ReadinessStatus) int {
@@ -39,22 +33,11 @@ const (
 )
 
 func nextActionForGapCode(code string) (string, bool) {
-	switch code {
-	case GapUnsupportedRepositoryShape:
-		return "confirm_repository_shape", true
-	case GapNodeMissing, GapNodeUnsupported:
-		return nextActionKindInstallSupportedRuntime, true
-	case GapNodeUnverifiable:
-		return nextActionKindRepairRuntimeProbe, true
-	case GapTypescriptCompilerMissing, GapTypescriptVersionMismatch, GapTypescriptVersionConflict:
-		return nextActionKindPrepareCompiler, true
-	case GapPackageManagerAmbiguous, GapPackageManagerVersionUnverifiable, GapPackageManagerVersionUnsupported, GapPackageManagerConfigUnverifiable:
-		return nextActionKindResolvePackageManager, true
-	case GapPolicyMissing, GapPolicyInvalid:
-		return "author_policy", true
-	default:
+	info, ok := gapCodeTable[code]
+	if !ok {
 		return "", false
 	}
+	return info.nextActionKind, true
 }
 
 func nextActionExecutable(kind string) bool {
@@ -67,10 +50,32 @@ func nextActionExecutable(kind string) bool {
 // installation choice (project adapter or a specific mise origin) without
 // disturbing any other verified choice.
 func isPackageManagerGapCode(code string) bool {
-	switch code {
-	case GapPackageManagerAmbiguous, GapPackageManagerVersionUnverifiable, GapPackageManagerVersionUnsupported, GapPackageManagerConfigUnverifiable:
-		return true
-	default:
-		return false
-	}
+	return gapCodeTable[code].isPackageManagerGap
+}
+
+// gapCodeTable is the single source of truth statusForGapCode,
+// nextActionForGapCode, and isPackageManagerGapCode each look up: previously
+// three separate switches enumerated overlapping subsets of the same 13 gap
+// codes, which TestGapCodeMappings could only catch drifting apart after the
+// fact rather than prevent by construction.
+type gapCodeInfo struct {
+	status              ReadinessStatus
+	nextActionKind      string
+	isPackageManagerGap bool
+}
+
+var gapCodeTable = map[string]gapCodeInfo{
+	GapUnsupportedRepositoryShape:        {status: StatusOutsideSupport, nextActionKind: "confirm_repository_shape"},
+	GapNodeMissing:                       {status: StatusNeedsPrerequisite, nextActionKind: nextActionKindInstallSupportedRuntime},
+	GapNodeUnsupported:                   {status: StatusNeedsPrerequisite, nextActionKind: nextActionKindInstallSupportedRuntime},
+	GapNodeUnverifiable:                  {status: StatusNeedsPrerequisite, nextActionKind: nextActionKindRepairRuntimeProbe},
+	GapTypescriptCompilerMissing:         {status: StatusNeedsPrerequisite, nextActionKind: nextActionKindPrepareCompiler},
+	GapTypescriptVersionMismatch:         {status: StatusNeedsPrerequisite, nextActionKind: nextActionKindPrepareCompiler},
+	GapTypescriptVersionConflict:         {status: StatusNeedsPrerequisite, nextActionKind: nextActionKindPrepareCompiler},
+	GapPackageManagerAmbiguous:           {status: StatusNeedsPrerequisite, nextActionKind: nextActionKindResolvePackageManager, isPackageManagerGap: true},
+	GapPackageManagerConfigUnverifiable:  {status: StatusNeedsPrerequisite, nextActionKind: nextActionKindResolvePackageManager, isPackageManagerGap: true},
+	GapPackageManagerVersionUnverifiable: {status: StatusNeedsPrerequisite, nextActionKind: nextActionKindResolvePackageManager, isPackageManagerGap: true},
+	GapPackageManagerVersionUnsupported:  {status: StatusNeedsPrerequisite, nextActionKind: nextActionKindResolvePackageManager, isPackageManagerGap: true},
+	GapPolicyMissing:                     {status: StatusNeedsPolicy, nextActionKind: "author_policy"},
+	GapPolicyInvalid:                     {status: StatusNeedsPolicy, nextActionKind: "author_policy"},
 }
