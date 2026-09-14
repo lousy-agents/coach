@@ -13,6 +13,9 @@ concurrency:
 permissions:
   contents: read
 
+# Pin mise itself, not only the action digest. Unpinned jdx/mise-action
+# installs the latest mise release. The pin must equal mise.toml
+# min_version (enforced by the validationtasks acceptance spec).
 jobs:
   # Atomic mise tasks matching `ci-go`. This job does not install Node via
   # mise; ubuntu-latest still has a runner Node, so the sidecar suite typically
@@ -33,6 +36,7 @@ jobs:
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
+          version: "2026.9.6"
           install_args: go pnpm bun
           experimental: true
 
@@ -71,6 +75,7 @@ jobs:
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
+          version: "2026.9.6"
           experimental: true
 
       - name: js-ci
@@ -85,6 +90,7 @@ jobs:
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
+          version: "2026.9.6"
           experimental: true
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -115,6 +121,7 @@ jobs:
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
+          version: "2026.9.6"
           experimental: true
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -154,6 +161,7 @@ jobs:
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
+          version: "2026.9.6"
           experimental: true
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -190,6 +198,7 @@ jobs:
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
+          version: "2026.9.6"
           install_args: go
           experimental: true
 
@@ -207,6 +216,7 @@ jobs:
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
+          version: "2026.9.6"
           install_args: go
           experimental: true
 
