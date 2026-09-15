@@ -607,7 +607,7 @@ var _ = Describe("coach codesignal --baseline --project-language typescript: the
 	})
 
 	When("the table reports typescript_compiler_missing", func() {
-		It("refuses the scan with exit 2 and that same gap code on one stderr line, with no root finding to name", func() {
+		It("refuses the scan with exit 2 and that same gap code on the D3 stderr line plus AC-SET-9's appended remediation, with no root finding to name", func() {
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
 
 			path := pathWithStubNode("v24.9.9")
@@ -615,7 +615,8 @@ var _ = Describe("coach codesignal --baseline --project-language typescript: the
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty())
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_compiler_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_compiler_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n" +
+				"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"))
 		})
 	})
 
@@ -628,7 +629,8 @@ var _ = Describe("coach codesignal --baseline --project-language typescript: the
 
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_version_mismatch: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"),
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_version_mismatch: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n"+
+				"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"),
 				"a mismatch a mise origin caused must not attribute the unsupported compiler to a selected root that resolved nothing, got %q", stderr)
 		})
 	})

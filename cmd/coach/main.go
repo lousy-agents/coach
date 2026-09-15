@@ -649,16 +649,34 @@ func renderReport(report *codesignal.Report, format string, stdout, stderr *os.F
 
 // classifyAnalysisError never sees a project_backend_unavailable (exit 3)
 // error -- prepareProjectAnalysis handles that case separately by returning
-// a diagnostic instead of an error.
-func classifyAnalysisError(err error, stderr *os.File) int {
+// a diagnostic instead of an error. D3 fixes the CompilerUnresolvedError/
+// ProjectConfigError message it has always printed; AC-SET-9 (#330) appends
+// one further line naming the supported interactive-setup command, only
+// while no controlling terminal is available to run it, without changing
+// the exit code. The ProjectConfigError append is withheld outside a
+// TypeScript scan: SuggestProjectConfigRemediation names a TypeScript-only
+// interactive flow that would misdirect a Go-language --project-config
+// failure, which reaches this same branch via loadProjectConfig running
+// before any language-specific dispatch.
+func classifyAnalysisError(err error, stderr *os.File, projectLanguage string) int {
+	hasControllingTerminal := codesignalcli.HasControllingTerminal(os.Stdin)
+
 	var unresolved *codesignalcli.CompilerUnresolvedError
 	if errors.As(err, &unresolved) {
 		fmt.Fprintln(stderr, unresolved.RemediationLine())
+		if line := codesignalcli.AppendedRemediationLine(hasControllingTerminal, codesignalcli.PrepareCompilerRemediation(unresolved.ConfigPath)); line != "" {
+			fmt.Fprintln(stderr, line)
+		}
 		return 2
 	}
 	var configErr *codesignalcli.ProjectConfigError
 	if errors.As(err, &configErr) {
 		fmt.Fprintln(stderr, configErr.Message)
+		if projectLanguage == "typescript" {
+			if line := codesignalcli.AppendedRemediationLine(hasControllingTerminal, codesignalcli.SuggestProjectConfigRemediation()); line != "" {
+				fmt.Fprintln(stderr, line)
+			}
+		}
 		return 2
 	}
 	var opErr *codesignalcli.OperationalError

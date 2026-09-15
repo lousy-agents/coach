@@ -89,8 +89,12 @@ func runCoachCodesignalBaselineEnv(repo, path string, extraArgs ...string) (stdo
 	return runCoachBinary(commandPath, repo, stubToolchainEnv(path), append([]string{"codesignal", "--baseline"}, extraArgs...)...)
 }
 
+// codesignalArgsFromRemediationLine reads only stderr's first line: since
+// AC-SET-9 (#330), a no-controlling-terminal scan appends a second
+// interactive-setup line after the fit-check invocation this parses.
 func codesignalArgsFromRemediationLine(stderr []byte) []string {
-	line := strings.TrimSpace(string(stderr))
+	firstLine, _, _ := strings.Cut(string(stderr), "\n")
+	line := strings.TrimSpace(firstLine)
 	_, invocation, found := strings.Cut(line, ": run ")
 	Expect(found).To(BeTrue(), "stderr must print a runnable fit-check invocation, got %q", line)
 	fields := strings.Fields(invocation)
@@ -156,7 +160,8 @@ func plantCanaryExecutable(exe, marker string) {
 func expectTypescriptCompilerMissingScan(stdout, stderr []byte, exitCode int) {
 	Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 	Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-	Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_compiler_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+	Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_compiler_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n" +
+		"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"))
 	Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
 	Expect(string(stderr)).NotTo(ContainSubstring("@typescript/"))
 }
@@ -538,7 +543,8 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_compiler_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_compiler_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n" +
+				"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"))
 			Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
 		})
 
@@ -553,7 +559,8 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_compiler_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_compiler_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n" +
+				"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"))
 			Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
 		})
 
@@ -591,7 +598,8 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n" +
+				"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"))
 			Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
 		})
 
@@ -609,7 +617,8 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n" +
+				"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"))
 			Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
 		})
 	})
@@ -628,9 +637,10 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_version_mismatch (.@5.4.0): run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_version_mismatch (.@5.4.0): run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n" +
+				"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"))
 			Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
-			Expect(strings.Count(strings.TrimSpace(string(stderr)), "\n")).To(Equal(0), "the refusal stays one line, got %q", stderr)
+			Expect(strings.Count(strings.TrimSpace(string(stderr)), "\n")).To(Equal(1), "the D3 refusal line plus AC-SET-9's appended remediation, got %q", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring(repo), "the refusal must never print a filesystem path, got %q", stderr)
 		})
 	})
@@ -651,9 +661,10 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_version_conflict (apps/web@7.0.2,apps/api@5.4.0): run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_version_conflict (apps/web@7.0.2,apps/api@5.4.0): run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n" +
+				"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"))
 			Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
-			Expect(strings.Count(strings.TrimSpace(string(stderr)), "\n")).To(Equal(0), "the refusal stays one line, got %q", stderr)
+			Expect(strings.Count(strings.TrimSpace(string(stderr)), "\n")).To(Equal(1), "the D3 refusal line plus AC-SET-9's appended remediation, got %q", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring(repo), "the refusal must never print a filesystem path, got %q", stderr)
 		})
 	})
@@ -1016,7 +1027,8 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_unsupported: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_unsupported: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n" +
+				"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"))
 			Expect(string(stderr)).NotTo(ContainSubstring("node_missing"))
 			Expect(string(stderr)).NotTo(ContainSubstring("node_below_minimum"))
 			Expect(string(stderr)).NotTo(ContainSubstring("25"))
