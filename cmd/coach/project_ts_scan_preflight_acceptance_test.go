@@ -94,6 +94,54 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 			Expect(lines[1]).To(Equal("coach codesignal --baseline --suggest-project-config --project-language typescript"), "AC-SET-9's appended command must never combine --suggest-project-config with --project-config (validateSuggestProjectConfigFlags rejects that combination)")
 		})
 	})
+
+	When("a --baseline scan's explicit --project-config names a policy that was never committed, while the repository is genuinely TypeScript-shaped and has no installed TypeScript compiler either (AC-SET-13)", func() {
+		It("reports the existing policy message unchanged, additionally reports the masked compiler gap, and still offers only guided policy authoring -- never --prepare-compiler -- as the interactive next step", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+			commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
+			// project.json is deliberately never committed, and no TypeScript
+			// compiler is installed: the policy check and the compiler check
+			// both fail at the same revision, but loadProjectConfig's short
+			// circuit (prepareProjectAnalysis) means only the policy failure
+			// would ever reach classifyAnalysisError without AC-SET-13's
+			// readiness-aware wrapping.
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+
+			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
+			Expect(stdout).To(BeEmpty())
+
+			lines := stderrLines(stderr)
+			Expect(lines).To(HaveLen(3), "stderr: %s", stderr)
+			Expect(lines[0]).To(ContainSubstring("project.json"), "the existing project_config_invalid message must still name the path")
+			Expect(lines[1]).To(Equal("typescript_compiler_missing: also failing; run coach codesignal --baseline --check-project --project-language typescript --project-config project.json once the policy above is authored and committed"), "AC-SET-13 requires reporting the compiler gap that loadProjectConfig's short circuit would otherwise mask")
+			Expect(lines[2]).To(Equal("coach codesignal --baseline --suggest-project-config --project-language typescript"), "the only offered interactive action must still be guided policy authoring, never --prepare-compiler, until a policy is reviewed and committed")
+		})
+	})
+
+	When("a --baseline scan's explicit --project-config names a policy that was never committed, and the repository is not TypeScript-shaped at all", func() {
+		It("never fabricates a compiler gap report, since project_shape itself is already the real failure", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "README.md", "seed\n")
+			// Deliberately no package.json anywhere: project_shape fails
+			// (unsupported_repository_shape), so any compiler-check result
+			// readiness also computes is not a real, independent finding.
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+
+			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
+			Expect(stdout).To(BeEmpty())
+
+			lines := stderrLines(stderr)
+			Expect(lines).To(HaveLen(2), "stderr: %s", stderr)
+			Expect(lines[1]).To(Equal("coach codesignal --baseline --suggest-project-config --project-language typescript"))
+		})
+	})
 })
 
 // stderrLines splits stderr on newlines after trimming exactly one trailing

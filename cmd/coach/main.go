@@ -596,6 +596,9 @@ func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configP
 	}
 	config, err := loadProjectConfig(dir, revision, configPath)
 	if err != nil {
+		if language == "typescript" {
+			err = codesignalcli.WrapProjectConfigErrorWithReadiness(err, dir, revision, configPath)
+		}
 		return nil, nil, 0, err
 	}
 	if err := resolveProjectBackend(language); err != nil {
@@ -649,13 +652,16 @@ func renderReport(report *codesignal.Report, format string, stdout, stderr *os.F
 
 // classifyAnalysisError never sees a project_backend_unavailable (exit 3)
 // error -- prepareProjectAnalysis handles that case separately by returning
-// a diagnostic instead of an error. The ProjectConfigError append is
-// unconditional on --project-language: loadProjectConfig runs before
-// resolveProjectBackend
-// and never receives --project-language (see prepareProjectAnalysis), so a
-// class-2 config failure is language-independent by construction
+// a diagnostic instead of an error. The base ProjectConfigError message and
+// AC-SET-9's appended remediation stay unconditional on --project-language:
+// loadProjectConfig runs before resolveProjectBackend and never receives
+// --project-language (see prepareProjectAnalysis), so a class-2 config
+// failure is language-independent by construction
 // (project_contract_acceptance_test.go guards this invariant) and must stay
-// that way even once AC-SET-9's line is appended.
+// that way. ProjectConfigErrorWithReadiness's extra AC-SET-13 gap-report
+// line is the one language-scoped exception: prepareProjectAnalysis only
+// attaches it for --project-language typescript, since readiness itself is
+// TypeScript-specific.
 func classifyAnalysisError(err error, stderr *os.File) int {
 	hasControllingTerminal := codesignalcli.HasControllingTerminal(os.Stdin)
 
@@ -663,6 +669,17 @@ func classifyAnalysisError(err error, stderr *os.File) int {
 	if errors.As(err, &unresolved) {
 		fmt.Fprintln(stderr, unresolved.RemediationLine())
 		if line := codesignalcli.AppendedRemediationLine(hasControllingTerminal, codesignalcli.PrepareCompilerRemediation(unresolved.Code, unresolved.ConfigPath)); line != "" {
+			fmt.Fprintln(stderr, line)
+		}
+		return 2
+	}
+	var configErrWithReadiness *codesignalcli.ProjectConfigErrorWithReadiness
+	if errors.As(err, &configErrWithReadiness) {
+		fmt.Fprintln(stderr, configErrWithReadiness.Message)
+		if line := codesignalcli.AlsoFailingCompilerGapLine(configErrWithReadiness.Readiness.Checks, configErrWithReadiness.ConfigPath); line != "" {
+			fmt.Fprintln(stderr, line)
+		}
+		if line := codesignalcli.AppendedRemediationLine(hasControllingTerminal, codesignalcli.SuggestProjectConfigRemediation()); line != "" {
 			fmt.Fprintln(stderr, line)
 		}
 		return 2
