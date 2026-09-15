@@ -38,28 +38,54 @@ func TestSuggestProjectConfigRemediation(t *testing.T) {
 }
 
 func TestAlsoFailingCompilerGapLine(t *testing.T) {
-	failingCompilerShaped := ReadinessChecks{
-		ProjectShape: ReadinessCheck{State: ReadinessPass},
-		Compiler:     ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
+	failingCompilerShaped := &ReadinessResult{
+		Checks: ReadinessChecks{
+			ProjectShape: ReadinessCheck{State: ReadinessPass},
+			Compiler:     ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
+		},
+		Gaps: []ReadinessGap{{Code: GapTypescriptCompilerMissing}},
 	}
 	if got, want := AlsoFailingCompilerGapLine(failingCompilerShaped, "project.json"), "typescript_compiler_missing: also failing; run coach codesignal --baseline --check-project --project-language typescript --project-config project.json once the policy above is authored and committed"; got != want {
 		t.Fatalf("AlsoFailingCompilerGapLine(shaped, %q) = %q, want %q", "project.json", got, want)
 	}
 
-	passingCompiler := ReadinessChecks{
-		ProjectShape: ReadinessCheck{State: ReadinessPass},
-		Compiler:     ReadinessCheck{State: ReadinessPass},
+	passingCompiler := &ReadinessResult{
+		Checks: ReadinessChecks{
+			ProjectShape: ReadinessCheck{State: ReadinessPass},
+			Compiler:     ReadinessCheck{State: ReadinessPass},
+		},
 	}
 	if got := AlsoFailingCompilerGapLine(passingCompiler, "project.json"); got != "" {
 		t.Fatalf("AlsoFailingCompilerGapLine(passing compiler) = %q, want empty", got)
 	}
 
-	notShaped := ReadinessChecks{
-		ProjectShape: ReadinessCheck{State: ReadinessFail, Code: GapUnsupportedRepositoryShape},
-		Compiler:     ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
+	// checks.Compiler runs unconditionally on checks.ProjectShape's own
+	// result (CheckProjectReadiness), so an unsupported repository shape
+	// must never withhold a compiler gap readiness's own gaps[] still names.
+	notShapedButGapped := &ReadinessResult{
+		Checks: ReadinessChecks{
+			ProjectShape: ReadinessCheck{State: ReadinessFail, Code: GapUnsupportedRepositoryShape},
+			Compiler:     ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
+		},
+		Gaps: []ReadinessGap{{Code: GapUnsupportedRepositoryShape}, {Code: GapTypescriptCompilerMissing}},
 	}
-	if got := AlsoFailingCompilerGapLine(notShaped, "project.json"); got != "" {
-		t.Fatalf("AlsoFailingCompilerGapLine(unsupported repository shape) = %q, want empty: an unshaped repository has no independent compiler gap to report", got)
+	if got, want := AlsoFailingCompilerGapLine(notShapedButGapped, "project.json"), "typescript_compiler_missing: also failing; run coach codesignal --baseline --check-project --project-language typescript --project-config project.json once the policy above is authored and committed"; got != want {
+		t.Fatalf("AlsoFailingCompilerGapLine(unsupported repository shape, still gapped) = %q, want %q: readiness's own gaps[] must not be second-guessed by a shape signal", got, want)
+	}
+
+	// Defensive: a failing compiler check whose code readiness.Gaps does not
+	// carry at all is not a real, independent finding to report.
+	compilerFailingButNotInGaps := &ReadinessResult{
+		Checks: ReadinessChecks{
+			Compiler: ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
+		},
+	}
+	if got := AlsoFailingCompilerGapLine(compilerFailingButNotInGaps, "project.json"); got != "" {
+		t.Fatalf("AlsoFailingCompilerGapLine(compiler failing, code absent from gaps) = %q, want empty", got)
+	}
+
+	if got := AlsoFailingCompilerGapLine(nil, "project.json"); got != "" {
+		t.Fatalf("AlsoFailingCompilerGapLine(nil) = %q, want empty", got)
 	}
 }
 

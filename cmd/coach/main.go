@@ -676,7 +676,7 @@ func classifyAnalysisError(err error, stderr *os.File) int {
 	var configErrWithReadiness *codesignalcli.ProjectConfigErrorWithReadiness
 	if errors.As(err, &configErrWithReadiness) {
 		fmt.Fprintln(stderr, configErrWithReadiness.Message)
-		if line := codesignalcli.AlsoFailingCompilerGapLine(configErrWithReadiness.Readiness.Checks, configErrWithReadiness.ConfigPath); line != "" {
+		if line := codesignalcli.AlsoFailingCompilerGapLine(configErrWithReadiness.Readiness, configErrWithReadiness.ConfigPath); line != "" {
 			fmt.Fprintln(stderr, line)
 		}
 		if line := codesignalcli.AppendedRemediationLine(hasControllingTerminal, codesignalcli.SuggestProjectConfigRemediation()); line != "" {

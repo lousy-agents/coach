@@ -37,19 +37,36 @@ func WrapProjectConfigErrorWithReadiness(err error, dir, revision, configPath st
 }
 
 // AlsoFailingCompilerGapLine names readiness's compiler gap alongside a
-// masking policy failure (AC-SET-13's "report all gaps"). It withholds the
-// line unless the repository is genuinely TypeScript-shaped
-// (checks.project_shape passing): otherwise the compiler check's result is
-// not a real, independent finding, only a byproduct of the shape gap the
-// policy failure already coexists with. It never suggests
-// --prepare-compiler: AC-SET-13 requires a reviewed, committed policy before
-// compiler setup is offered at all, so this line is informational rather
-// than an offered command like PrepareCompilerRemediation.
-func AlsoFailingCompilerGapLine(checks ReadinessChecks, configPath string) string {
-	if checks.ProjectShape.State != ReadinessPass || checks.Compiler.State != ReadinessFail {
+// masking policy failure (AC-SET-13's "report all gaps"). It reports the
+// line whenever readiness.Gaps already names checks.Compiler's own code:
+// prepareProjectAnalysis's loadProjectConfig short circuit means only the
+// policy failure would otherwise ever reach classifyAnalysisError, and
+// checks.Compiler runs unconditionally on checks.ProjectShape's own result
+// (CheckProjectReadiness), so gating this line on project_shape passing
+// would silently drop a gap readiness itself reports for every repository
+// whose TypeScript manifest is not resolvable from an unvalidated root (e.g.
+// a monorepo package nested under an as-yet-unreviewed policy's roots). It
+// never suggests --prepare-compiler: AC-SET-13 requires a reviewed,
+// committed policy before compiler setup is offered at all, so this line is
+// informational rather than an offered command like PrepareCompilerRemediation.
+func AlsoFailingCompilerGapLine(readiness *ReadinessResult, configPath string) string {
+	if readiness == nil || readiness.Checks.Compiler.State != ReadinessFail {
 		return ""
 	}
-	return checks.Compiler.Code + ": also failing; run " + typescriptInvocation("--check-project", configPath) + " once the policy above is authored and committed"
+	code := readiness.Checks.Compiler.Code
+	if !readinessGapsContainCode(readiness.Gaps, code) {
+		return ""
+	}
+	return code + ": also failing; run " + typescriptInvocation("--check-project", configPath) + " once the policy above is authored and committed"
+}
+
+func readinessGapsContainCode(gaps []ReadinessGap, code string) bool {
+	for _, gap := range gaps {
+		if gap.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 // PrepareCompilerRemediation names the interactive, consented mise
