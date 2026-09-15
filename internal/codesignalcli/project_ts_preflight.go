@@ -41,12 +41,10 @@ func WrapProjectConfigErrorWithReadiness(err error, dir, revision, configPath st
 // line unless the repository is genuinely TypeScript-shaped
 // (checks.project_shape passing): otherwise the compiler check's result is
 // not a real, independent finding, only a byproduct of the shape gap the
-// policy failure already coexists with (see the
-// unsupported_repository_shape case in
-// cmd/coach/project_ts_scan_preflight_acceptance_test.go). It never
-// suggests --prepare-compiler: AC-SET-13 requires a reviewed, committed
-// policy before compiler setup is offered at all, so this line is
-// informational rather than an offered command like PrepareCompilerRemediation.
+// policy failure already coexists with. It never suggests
+// --prepare-compiler: AC-SET-13 requires a reviewed, committed policy before
+// compiler setup is offered at all, so this line is informational rather
+// than an offered command like PrepareCompilerRemediation.
 func AlsoFailingCompilerGapLine(checks ReadinessChecks, configPath string) string {
 	if checks.ProjectShape.State != ReadinessPass || checks.Compiler.State != ReadinessFail {
 		return ""
