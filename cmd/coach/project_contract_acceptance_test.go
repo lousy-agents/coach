@@ -42,16 +42,24 @@ var _ = Describe("coach project-analysis failure reports", func() {
 	})
 
 	// loadProjectConfig runs before resolveProjectBackend and never receives
-	// --project-language (main.go:465-469), so class-2 config failures are
-	// language-independent by construction. This spec guards against a
-	// reordering that would break that invariant.
-	It("produces the same class-2 shape for --project-language go and --project-language typescript given the same invalid config", func() {
+	// --project-language (main.go:465-469), so the underlying class-2 config
+	// message and the appended --suggest-project-config remediation stay
+	// language-independent by construction. The one exception is AC-SET-13's
+	// additional readiness-gap line: prepareProjectAnalysis wraps a class-2
+	// TypeScript failure with a fresh readiness snapshot so a simultaneous
+	// compiler gap is reported rather than masked, but "go" never computes
+	// readiness at all. This spec pins that boundary (first and last stderr
+	// lines match; TypeScript alone may carry one readiness-gap line between
+	// them) rather than asserting byte-identical stderr.
+	It("produces the same class-2 message and remediation for --project-language go and --project-language typescript given the same invalid config", func() {
 		repo := newTempGitRepo()
 		commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
 		configSHA := commitFile(repo, "project.json", "not valid json")
 
 		goStdout, goStderr, goExitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "go", "--format=json")
-		tsStdout, tsStderr, tsExitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+
+		path := pathWithStubNode("v24.9.9")
+		tsStdout, tsStderr, tsExitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 
 		Expect(goExitCode).To(Equal(2))
 		Expect(tsExitCode).To(Equal(2))
@@ -66,7 +74,13 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		Expect(string(tsStderr)).To(ContainSubstring("project.json"), "typescript: stderr must identify the --project-config path")
 		Expect(string(goStderr)).To(ContainSubstring(configSHA), "go: stderr must identify the analyzed revision")
 		Expect(string(tsStderr)).To(ContainSubstring(configSHA), "typescript: stderr must identify the analyzed revision")
-		Expect(string(tsStderr)).To(Equal(string(goStderr)), "class-2 config failures must produce the same message regardless of --project-language")
+
+		goLines := stderrLines(goStderr)
+		tsLines := stderrLines(tsStderr)
+		Expect(goLines).To(HaveLen(2), "go's class-2 report is the config message plus AC-SET-9's appended remediation")
+		Expect(tsLines[0]).To(Equal(goLines[0]), "the underlying class-2 config message must stay language-independent")
+		Expect(tsLines[len(tsLines)-1]).To(Equal(goLines[len(goLines)-1]), "the appended --suggest-project-config remediation must stay language-independent")
+		Expect(len(tsLines)).To(BeNumerically(">=", len(goLines)), "TypeScript may additionally carry AC-SET-13's readiness-gap line; it must never carry fewer lines than go's report")
 	})
 
 	// "go" and "typescript" both have registered backends now, so no real
