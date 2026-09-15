@@ -94,6 +94,12 @@ func hiddenMutationInput() Input {
 	}
 }
 
+func addedFileInput() Input {
+	input := hiddenMutationInput()
+	input.Files[0].Status = "added"
+	return input
+}
+
 func lifecycleScenarioInput() Input {
 	return Input{
 		Scope: Scope{Repository: "example/repo", Revision: "def456", Base: "main"},
@@ -328,6 +334,7 @@ func TestGolden(t *testing.T) {
 	}{
 		{"MinimalReport", Input{}, Options{}, "testdata/golden/minimal_report.json"},
 		{"HiddenMutation", hiddenMutationInput(), Options{}, "testdata/golden/hidden_mutation.json"},
+		{"AddedFile", addedFileInput(), Options{}, "testdata/golden/added_file.json"},
 		{"LifecycleExcludingResolved", lifecycleScenarioInput(), Options{IncludeResolved: false}, "testdata/golden/lifecycle_excluding_resolved.json"},
 		{"LifecycleIncludingResolved", lifecycleScenarioInput(), Options{IncludeResolved: true}, "testdata/golden/lifecycle_including_resolved.json"},
 		{"Diagnostics", diagnosticsInput(), Options{}, "testdata/golden/diagnostics.json"},
@@ -404,7 +411,7 @@ var frozenReportJSONFieldNames = map[string]struct{}{
 	// Summary
 	"files_analyzed": {}, "files_with_diagnostics": {}, "active_signals": {},
 	"introduced_signals": {}, "existing_signals": {}, "resolved_signals": {},
-	"baseline_signals": {},
+	"baseline_signals": {}, "unknown_signals": {},
 	// Signal
 	"id": {}, "fingerprint": {}, "rule_id": {}, "rule_version": {}, "kind": {},
 	"category": {}, "severity": {}, "confidence": {}, "lifecycle": {}, "changed": {},

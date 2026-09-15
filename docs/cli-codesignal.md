@@ -62,9 +62,25 @@ status as a gate.
 ## Diff-mode caveats
 
 - Dirty / uncommitted files are ignored.
-- Added files are analyzed but classified `lifecycle: unknown` and do not increment `introduced_signals`.
 - Renames and copies are not analyzed; they emit `unsupported_change_type`.
-- `lifecycle` is relative to the merge-base for modified files (`introduced` / `existing` / `resolved` / `unknown`).
+- Added (`A`) files are `lifecycle: introduced` and increment `introduced_signals`.
+- `lifecycle` is relative to the merge-base (`introduced` / `existing` / `resolved` / `unknown`). `unknown` means the merge-base side existed but could not be analyzed (unreadable / syntax / analysis error); that path has a `base_read_failed`, `base_syntax_errors`, or `base_analysis_failed` diagnostic.
+
+## Lifecycle and counters
+
+Every entry in `signals[]` is counted in exactly one of `introduced_signals`,
+`existing_signals`, `resolved_signals`, `baseline_signals`,
+`unknown_signals`. `summary.unknown_signals` counts `unknown` lifecycle
+signals. `active_signals` is `len(signals)` after the include-resolved
+filter. That relationship holds for both `--base` and `--baseline`:
+
+- `--base` includes `resolved` in `signals[]` by default, so `active_signals`
+  includes them. That field is not "problems present at HEAD".
+- `--baseline` does not include `resolved`. Signals there are `baseline`.
+
+A consumer who wants problems present at HEAD should sum `introduced` +
+`existing` + `unknown` (and `baseline` under `--baseline`), not trust
+`active_signals` alone in diff mode.
 
 ## JSON report
 
@@ -79,7 +95,8 @@ Always present on a successful scan:
 `project_summary`, and `project_coverage`.
 
 `summary` counts: `files_analyzed`, `files_with_diagnostics`, `active_signals`,
-`introduced_signals`, `existing_signals`, `resolved_signals`, `baseline_signals`.
+`introduced_signals`, `existing_signals`, `resolved_signals`, `baseline_signals`,
+`unknown_signals`.
 
 Each signal includes `id`, `fingerprint`, `rule_id`, `rule_version`, `kind`,
 `category`, `severity`, `confidence`, `lifecycle`, `changed`, `path`,
