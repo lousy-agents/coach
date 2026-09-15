@@ -2,8 +2,15 @@ package codesignalcli
 
 // PrepareCompilerRemediation names the interactive, consented mise
 // TypeScript compiler-setup command that resolves a CompilerUnresolvedError
-// gap, for AC-SET-9's appended no-controlling-terminal remediation line.
-func PrepareCompilerRemediation(configPath string) string {
+// gap, for AC-SET-9's appended no-controlling-terminal remediation line. It
+// returns "" for a gap code whose next action is not the executable
+// prepare-compiler kind (e.g. node_missing, node_unsupported): Coach has no
+// setup command that fixes a runtime-boundary gap, so appending one would
+// name a command that either does nothing or targets the wrong problem.
+func PrepareCompilerRemediation(gapCode, configPath string) string {
+	if !gapCodeIsExecutablePrepareCompiler(gapCode) {
+		return ""
+	}
 	return typescriptInvocation("--prepare-compiler", configPath)
 }
 
@@ -25,6 +32,15 @@ func AppendedRemediationLine(hasControllingTerminal bool, line string) string {
 		return ""
 	}
 	return line
+}
+
+// gapCodeIsExecutablePrepareCompiler reports whether gapCode's next action,
+// per the authoritative gapCodeTable, is the executable prepare-compiler
+// kind -- the only kind Coach can actually run a command for
+// (nextActionExecutable).
+func gapCodeIsExecutablePrepareCompiler(gapCode string) bool {
+	kind, ok := nextActionForGapCode(gapCode)
+	return ok && nextActionExecutable(kind)
 }
 
 func typescriptInvocation(flag, projectConfigPath string) string {

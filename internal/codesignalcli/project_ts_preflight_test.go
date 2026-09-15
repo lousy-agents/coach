@@ -14,11 +14,20 @@ func TestAppendedRemediationLine(t *testing.T) {
 }
 
 func TestPrepareCompilerRemediation(t *testing.T) {
-	if got, want := PrepareCompilerRemediation("project.json"), "coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"; got != want {
-		t.Fatalf("PrepareCompilerRemediation(%q) = %q, want %q", "project.json", got, want)
+	if got, want := PrepareCompilerRemediation(GapTypescriptCompilerMissing, "project.json"), "coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"; got != want {
+		t.Fatalf("PrepareCompilerRemediation(%q, %q) = %q, want %q", GapTypescriptCompilerMissing, "project.json", got, want)
 	}
-	if got, want := PrepareCompilerRemediation(""), "coach codesignal --baseline --prepare-compiler --project-language typescript"; got != want {
-		t.Fatalf("PrepareCompilerRemediation(\"\") = %q, want %q", got, want)
+	if got, want := PrepareCompilerRemediation(GapTypescriptVersionMismatch, ""), "coach codesignal --baseline --prepare-compiler --project-language typescript"; got != want {
+		t.Fatalf("PrepareCompilerRemediation(%q, \"\") = %q, want %q", GapTypescriptVersionMismatch, got, want)
+	}
+	if got, want := PrepareCompilerRemediation(GapTypescriptVersionConflict, "project.json"), "coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"; got != want {
+		t.Fatalf("PrepareCompilerRemediation(%q, %q) = %q, want %q", GapTypescriptVersionConflict, "project.json", got, want)
+	}
+	if got := PrepareCompilerRemediation(GapNodeMissing, "project.json"); got != "" {
+		t.Fatalf("PrepareCompilerRemediation(%q, %q) = %q, want empty: Coach has no executable remediation for a runtime-boundary gap", GapNodeMissing, "project.json", got)
+	}
+	if got := PrepareCompilerRemediation(GapNodeUnsupported, "project.json"); got != "" {
+		t.Fatalf("PrepareCompilerRemediation(%q, %q) = %q, want empty: Coach has no executable remediation for a runtime-boundary gap", GapNodeUnsupported, "project.json", got)
 	}
 }
 

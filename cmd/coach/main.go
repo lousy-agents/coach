@@ -649,12 +649,9 @@ func renderReport(report *codesignal.Report, format string, stdout, stderr *os.F
 
 // classifyAnalysisError never sees a project_backend_unavailable (exit 3)
 // error -- prepareProjectAnalysis handles that case separately by returning
-// a diagnostic instead of an error. D3 fixes the CompilerUnresolvedError/
-// ProjectConfigError message it has always printed; AC-SET-9 (#330) appends
-// one further line naming the supported interactive-setup command, only
-// while no controlling terminal is available to run it, without changing
-// the exit code. The ProjectConfigError append is unconditional on
-// --project-language: loadProjectConfig runs before resolveProjectBackend
+// a diagnostic instead of an error. The ProjectConfigError append is
+// unconditional on --project-language: loadProjectConfig runs before
+// resolveProjectBackend
 // and never receives --project-language (see prepareProjectAnalysis), so a
 // class-2 config failure is language-independent by construction
 // (project_contract_acceptance_test.go guards this invariant) and must stay
@@ -665,7 +662,7 @@ func classifyAnalysisError(err error, stderr *os.File) int {
 	var unresolved *codesignalcli.CompilerUnresolvedError
 	if errors.As(err, &unresolved) {
 		fmt.Fprintln(stderr, unresolved.RemediationLine())
-		if line := codesignalcli.AppendedRemediationLine(hasControllingTerminal, codesignalcli.PrepareCompilerRemediation(unresolved.ConfigPath)); line != "" {
+		if line := codesignalcli.AppendedRemediationLine(hasControllingTerminal, codesignalcli.PrepareCompilerRemediation(unresolved.Code, unresolved.ConfigPath)); line != "" {
 			fmt.Fprintln(stderr, line)
 		}
 		return 2

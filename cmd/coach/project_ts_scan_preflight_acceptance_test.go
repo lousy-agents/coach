@@ -12,9 +12,7 @@ import (
 // scan's CompilerUnresolvedError/ProjectConfigError, and requires Task 7
 // (#330) to append its own supported interactive-setup command while a
 // controlling terminal is unavailable, without changing that first line or
-// the exit code. These specs exercise the appended line only -- every
-// existing exact-match assertion elsewhere in this package for the
-// unchanged first line was updated alongside this file to expect it too.
+// the exit code. These specs exercise the appended line only.
 var _ = Describe("coach codesignal (real scan): appended interactive-setup remediation (AC-SET-9)", func() {
 	When("a --baseline scan's explicit --project-config resolves no TypeScript compiler and no controlling terminal is available", func() {
 		It("keeps the existing --check-project remediation line unchanged, appends the --prepare-compiler remediation, leaves stdout empty, and exits 2", func() {
@@ -32,6 +30,27 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 			Expect(lines).To(HaveLen(2), "stderr: %s", stderr)
 			Expect(lines[0]).To(Equal("typescript_compiler_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"), "the existing D3 remediation line must not change")
 			Expect(lines[1]).To(Equal("coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"), "AC-SET-9's appended command must be the interactive setup flow that resolves this exact gap")
+		})
+	})
+
+	When("a --baseline scan's explicit --project-config resolves node_missing and no controlling terminal is available", func() {
+		It("keeps the existing --check-project remediation as the only stderr line, since Coach has no executable remediation for a runtime-boundary gap", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
+			writeInstalledTypescript(repo, "7.0.2")
+
+			path := pathWithoutNode()
+			requireNodeUnreachable(path)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+
+			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
+			Expect(stdout).To(BeEmpty(), "stdout must stay reserved for the final report; none was produced")
+
+			lines := stderrLines(stderr)
+			Expect(lines).To(HaveLen(1), "node_missing has no executable prepare-compiler remediation, so no line must be appended; stderr: %s", stderr)
+			Expect(lines[0]).To(Equal("node_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
 		})
 	})
 
