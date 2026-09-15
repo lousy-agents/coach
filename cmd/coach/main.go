@@ -113,6 +113,12 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return runCheckProject(dir, parsed, stdout, stderr)
 	}
 
+	if parsed.projectLanguage == "typescript" && !parsed.projectConfigSet {
+		if exitCode, blocked := runProjectTSScanPreflight(dir, parsed, stderr); blocked {
+			return exitCode
+		}
+	}
+
 	var report *codesignal.Report
 	var projectExitCode int
 	if parsed.baseline {
@@ -477,6 +483,42 @@ func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int
 		return 1
 	}
 	return 0
+}
+
+// runProjectTSScanPreflight enforces AC-SET-9 for a normal (non
+// --check-project, non --prepare-compiler, no explicit --project-config)
+// TypeScript-language scan: while no controlling terminal is available and
+// readiness shows guided policy authoring or compiler setup would be
+// required to proceed, it prints the supported remediation commands to
+// stderr and reports exit 2, leaving stdout untouched. It performs no
+// setup mutation of its own -- PreflightScanPreparation's readiness
+// computation is read-only -- and does nothing (letting the caller continue
+// to full analysis) when a controlling terminal is available, revision
+// resolution fails, readiness computation errors, or no such gap exists.
+func runProjectTSScanPreflight(dir string, f codesignalFlags, stderr *os.File) (exitCode int, blocked bool) {
+	revision, err := resolveScanRevision(dir, f)
+	if err != nil {
+		return 0, false
+	}
+
+	outcome, err := codesignalcli.PreflightScanPreparation(dir, revision, f.projectConfig, codesignalcli.HasControllingTerminal(os.Stdin))
+	if err != nil || !outcome.Blocked {
+		return 0, false
+	}
+
+	fmt.Fprintln(stderr, "coach codesignal: no controlling terminal is available; TypeScript project setup or policy authoring is required before this scan can proceed. Run one of the following from a terminal:")
+	for _, line := range outcome.RemediationLines {
+		fmt.Fprintf(stderr, "  %s\n", line)
+	}
+	return 2, true
+}
+
+func resolveScanRevision(dir string, f codesignalFlags) (string, error) {
+	if f.baseline {
+		return codesignalcli.ResolveBaselineRevision(dir)
+	}
+	headSHA, _, err := codesignalcli.ResolveRevisions(dir, f.base)
+	return headSHA, err
 }
 
 func runSuggestProjectConfig(dir string, f codesignalFlags, stdout, stderr *os.File) int {
