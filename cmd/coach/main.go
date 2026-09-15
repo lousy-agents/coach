@@ -121,7 +121,7 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		report, projectExitCode, err = runDiffAnalysis(dir, parsed, stderr)
 	}
 	if err != nil {
-		return classifyAnalysisError(err, stderr, parsed.projectLanguage)
+		return classifyAnalysisError(err, stderr)
 	}
 	if report == nil {
 		if projectExitCode != 0 {
@@ -451,12 +451,12 @@ func validatePrepareCompilerFlags(f codesignalFlags, setFlags map[string]bool, p
 func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int {
 	revision, err := codesignalcli.ResolveBaselineRevision(dir)
 	if err != nil {
-		return classifyAnalysisError(err, stderr, f.projectLanguage)
+		return classifyAnalysisError(err, stderr)
 	}
 
 	result, err := codesignalcli.CheckProjectReadiness(dir, revision, f.projectConfig)
 	if err != nil {
-		return classifyAnalysisError(err, stderr, f.projectLanguage)
+		return classifyAnalysisError(err, stderr)
 	}
 
 	if f.format == "json" {
@@ -653,12 +653,13 @@ func renderReport(report *codesignal.Report, format string, stdout, stderr *os.F
 // ProjectConfigError message it has always printed; AC-SET-9 (#330) appends
 // one further line naming the supported interactive-setup command, only
 // while no controlling terminal is available to run it, without changing
-// the exit code. The ProjectConfigError append is withheld outside a
-// TypeScript scan: SuggestProjectConfigRemediation names a TypeScript-only
-// interactive flow that would misdirect a Go-language --project-config
-// failure, which reaches this same branch via loadProjectConfig running
-// before any language-specific dispatch.
-func classifyAnalysisError(err error, stderr *os.File, projectLanguage string) int {
+// the exit code. The ProjectConfigError append is unconditional on
+// --project-language: loadProjectConfig runs before resolveProjectBackend
+// and never receives --project-language (see prepareProjectAnalysis), so a
+// class-2 config failure is language-independent by construction
+// (project_contract_acceptance_test.go guards this invariant) and must stay
+// that way even once AC-SET-9's line is appended.
+func classifyAnalysisError(err error, stderr *os.File) int {
 	hasControllingTerminal := codesignalcli.HasControllingTerminal(os.Stdin)
 
 	var unresolved *codesignalcli.CompilerUnresolvedError
@@ -672,10 +673,8 @@ func classifyAnalysisError(err error, stderr *os.File, projectLanguage string) i
 	var configErr *codesignalcli.ProjectConfigError
 	if errors.As(err, &configErr) {
 		fmt.Fprintln(stderr, configErr.Message)
-		if projectLanguage == "typescript" {
-			if line := codesignalcli.AppendedRemediationLine(hasControllingTerminal, codesignalcli.SuggestProjectConfigRemediation()); line != "" {
-				fmt.Fprintln(stderr, line)
-			}
+		if line := codesignalcli.AppendedRemediationLine(hasControllingTerminal, codesignalcli.SuggestProjectConfigRemediation()); line != "" {
+			fmt.Fprintln(stderr, line)
 		}
 		return 2
 	}
