@@ -598,8 +598,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n" +
-				"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
 			Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
 		})
 
@@ -617,8 +616,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n" +
-				"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
 			Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
 		})
 	})
@@ -1027,8 +1025,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_unsupported: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json\n" +
-				"coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"))
+			Expect(strings.TrimSpace(string(stderr))).To(Equal("node_unsupported: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
 			Expect(string(stderr)).NotTo(ContainSubstring("node_missing"))
 			Expect(string(stderr)).NotTo(ContainSubstring("node_below_minimum"))
 			Expect(string(stderr)).NotTo(ContainSubstring("25"))
