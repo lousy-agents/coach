@@ -51,7 +51,7 @@ func PreflightScanPreparation(dir, revision, projectConfigPath string, hasContro
 func interactiveSetupRemediationLines(readiness *ReadinessResult, projectConfigPath string) []string {
 	switch readiness.Status {
 	case StatusNeedsPolicy:
-		return []string{suggestProjectConfigTypescriptInvocation(projectConfigPath)}
+		return []string{suggestProjectConfigTypescriptInvocation()}
 	case StatusNeedsPrerequisite:
 		for _, action := range readiness.NextActions {
 			if nextActionExecutable(action.Kind) {
@@ -62,8 +62,12 @@ func interactiveSetupRemediationLines(readiness *ReadinessResult, projectConfigP
 	return nil
 }
 
-func suggestProjectConfigTypescriptInvocation(projectConfigPath string) string {
-	return typescriptInvocation("--suggest-project-config", projectConfigPath)
+// suggestProjectConfigTypescriptInvocation never appends a --project-config
+// suffix: validateSuggestProjectConfigFlags rejects --suggest-project-config
+// combined with --project-config, so naming one here would suggest a
+// command Coach itself refuses.
+func suggestProjectConfigTypescriptInvocation() string {
+	return typescriptInvocation("--suggest-project-config", "")
 }
 
 func prepareCompilerTypescriptInvocation(projectConfigPath string) string {

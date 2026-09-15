@@ -113,7 +113,7 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return runCheckProject(dir, parsed, stdout, stderr)
 	}
 
-	if parsed.projectLanguage == "typescript" && !parsed.projectConfigSet {
+	if parsed.projectLanguage == "typescript" && parsed.projectConfigSet {
 		if exitCode, blocked := runProjectTSScanPreflight(dir, parsed, stderr); blocked {
 			return exitCode
 		}
@@ -486,15 +486,15 @@ func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int
 }
 
 // runProjectTSScanPreflight enforces AC-SET-9 for a normal (non
-// --check-project, non --prepare-compiler, no explicit --project-config)
-// TypeScript-language scan: while no controlling terminal is available and
-// readiness shows guided policy authoring or compiler setup would be
-// required to proceed, it prints the supported remediation commands to
-// stderr and reports exit 2, leaving stdout untouched. It performs no
-// setup mutation of its own -- PreflightScanPreparation's readiness
-// computation is read-only -- and does nothing (letting the caller continue
-// to full analysis) when a controlling terminal is available, revision
-// resolution fails, readiness computation errors, or no such gap exists.
+// --check-project, non --prepare-compiler) TypeScript-language scan that
+// carries an explicit --project-config -- the only case where the scan
+// itself will actually consume a policy or resolve a compiler, since
+// prepareProjectAnalysis is a no-op without one: while no controlling
+// terminal is available and readiness shows guided policy authoring or
+// compiler setup would be required to proceed, it prints the supported
+// remediation commands to stderr and reports exit 2, leaving stdout
+// untouched. It performs no setup mutation of its own --
+// PreflightScanPreparation's readiness computation is read-only.
 func runProjectTSScanPreflight(dir string, f codesignalFlags, stderr *os.File) (exitCode int, blocked bool) {
 	revision, err := resolveScanRevision(dir, f)
 	if err != nil {
