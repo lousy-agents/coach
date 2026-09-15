@@ -39,12 +39,38 @@ const (
 	maxProjectConfigRoots = 256
 )
 
+// ProjectConfigErrorKind discriminates why a *ProjectConfigError was
+// produced, distinct from its human-facing Message (which stays frozen). A
+// caller that needs to react differently to "no policy was ever committed"
+// than to a usage error, an uncommitted-in-worktree file, or a transient git
+// failure reads Kind rather than pattern-matching Message.
+type ProjectConfigErrorKind int
+
+const (
+	// ProjectConfigNotFound means repoPath does not exist at revision and is
+	// not present in the worktree either: no policy was ever authored or
+	// committed.
+	ProjectConfigNotFound ProjectConfigErrorKind = iota
+	// ProjectConfigInvalid means repoPath itself failed shape validation, or
+	// content read at revision failed to parse or validate against the
+	// schema.
+	ProjectConfigInvalid
+	// ProjectConfigUncommitted means repoPath exists in the worktree but not
+	// at the analyzed revision.
+	ProjectConfigUncommitted
+	// ProjectConfigUnreadable means a runGitBytesBoundedWith timeout or
+	// output-budget bound tripped while reading repoPath: a transient
+	// operational condition, not a defect in the file's content.
+	ProjectConfigUnreadable
+)
+
 // ProjectConfigError signals a --project-config value that is missing,
 // unreadable, or does not satisfy the frozen v1 schema. It maps to exit code
 // 2 and is reported as a single stderr message; no report is written to
 // stdout.
 type ProjectConfigError struct {
 	Message string
+	Kind    ProjectConfigErrorKind
 }
 
 func (e *ProjectConfigError) Error() string { return e.Message }
@@ -132,12 +158,12 @@ func LoadProjectConfig(dir, revision, repoPath string) (json.RawMessage, error) 
 func projectConfigGitError(dir, revision, repoPath string, gitErr error) error {
 	var boundErr *gitOperationalBoundError
 	if errors.As(gitErr, &boundErr) {
-		return &ProjectConfigError{Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
+		return &ProjectConfigError{Kind: ProjectConfigUnreadable, Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
 	}
 	if configExistsInWorktree(dir, repoPath) {
-		return &ProjectConfigError{Message: fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision)}
+		return &ProjectConfigError{Kind: ProjectConfigUncommitted, Message: fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision)}
 	}
-	return &ProjectConfigError{Message: fmt.Sprintf("coach codesignal: --project-config %q was not found at revision %q (project_config_invalid)", repoPath, revision)}
+	return &ProjectConfigError{Kind: ProjectConfigNotFound, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found at revision %q (project_config_invalid)", repoPath, revision)}
 }
 
 // configExistsInWorktree reports whether repoPath is readable in the
@@ -245,7 +271,7 @@ func runGitBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args 
 }
 
 func projectConfigError(repoPath, revision, reason string) error {
-	return &ProjectConfigError{Message: fmt.Sprintf("coach codesignal: --project-config %q is invalid at revision %q (project_config_invalid): %s", repoPath, revision, reason)}
+	return &ProjectConfigError{Kind: ProjectConfigInvalid, Message: fmt.Sprintf("coach codesignal: --project-config %q is invalid at revision %q (project_config_invalid): %s", repoPath, revision, reason)}
 }
 
 func validateProjectConfigPath(repoPath string) error {

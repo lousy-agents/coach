@@ -58,20 +58,32 @@ func runAuthorProjectConfigTypeScript(dir string, f codesignalFlags, stdout, std
 
 // scanShouldAuthorProjectConfig reports whether a real scan's (not
 // --check-project/--suggest-project-config/--prepare-compiler) analysis
-// error is AC-POL-8's guided-authoring case: a TypeScript policy gap
-// (*codesignalcli.ProjectConfigError, whether or not T2 has wrapped it in a
+// error is AC-POL-8's guided-authoring case: a TypeScript policy that was
+// never committed at all (*codesignalcli.ProjectConfigError with Kind ==
+// ProjectConfigNotFound, whether or not it has been wrapped in a
 // *ProjectConfigErrorWithReadiness for AC-SET-13) with a controlling
-// terminal available on stdin. A CompilerUnresolvedError (T5's
-// compiler-setup offer owns that gap instead), any other error, a
-// non-TypeScript --project-language (the guided session below is
-// TypeScript-specific), or no controlling terminal all fall through to
-// classifyAnalysisError's existing message-only path unchanged.
-func scanShouldAuthorProjectConfig(err error, language string) bool {
+// terminal available on stdin. An unusable configPath is rejected before
+// even inspecting err, since ValidateProjectConfigPath's own failure is a
+// usage error, not an absent policy. Every other *ProjectConfigError kind
+// (a usage error that reached classifyAnalysisError some other way, a file
+// that exists uncommitted in the worktree, or a transient git operational
+// failure), a CompilerUnresolvedError (--prepare-compiler's compiler-setup
+// flow owns that gap instead), any other error, a non-TypeScript
+// --project-language (the guided session below is TypeScript-specific), or
+// no controlling terminal all fall through to classifyAnalysisError's
+// existing message-only path unchanged.
+func scanShouldAuthorProjectConfig(err error, language, configPath string) bool {
 	if language != "typescript" {
+		return false
+	}
+	if codesignalcli.ValidateProjectConfigPath(configPath) != nil {
 		return false
 	}
 	var configErr *codesignalcli.ProjectConfigError
 	if !errors.As(err, &configErr) {
+		return false
+	}
+	if configErr.Kind != codesignalcli.ProjectConfigNotFound {
 		return false
 	}
 	return codesignalcli.HasControllingTerminal(os.Stdin)
@@ -86,10 +98,7 @@ func scanShouldAuthorProjectConfig(err error, language string) bool {
 // same candidate has not been reviewed or committed yet, so this
 // invocation must still refuse to analyze it -- exit 2, no CodeSignal
 // report (none is ever rendered on this path), and an instruction to
-// review, commit, and rerun. Every other authorProjectConfigTypeScript
-// outcome (declined, cancelled, or a revision/snapshot/discovery failure)
-// already returns a non-zero exit with its own stderr message and is
-// passed through unchanged.
+// review, commit, and rerun.
 func runScanProjectConfigAuthoring(dir string, f codesignalFlags, stdout, stderr *os.File) int {
 	exitCode := authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr)
 	if exitCode != 0 {
