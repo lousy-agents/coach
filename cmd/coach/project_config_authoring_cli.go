@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,6 +54,49 @@ func runAuthorProjectConfigTypeScript(dir string, f codesignalFlags, stdout, std
 		return 2
 	}
 	return authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr)
+}
+
+// scanShouldAuthorProjectConfig reports whether a real scan's (not
+// --check-project/--suggest-project-config/--prepare-compiler) analysis
+// error is AC-POL-8's guided-authoring case: a TypeScript policy gap
+// (*codesignalcli.ProjectConfigError, whether or not T2 has wrapped it in a
+// *ProjectConfigErrorWithReadiness for AC-SET-13) with a controlling
+// terminal available on stdin. A CompilerUnresolvedError (T5's
+// compiler-setup offer owns that gap instead), any other error, a
+// non-TypeScript --project-language (the guided session below is
+// TypeScript-specific), or no controlling terminal all fall through to
+// classifyAnalysisError's existing message-only path unchanged.
+func scanShouldAuthorProjectConfig(err error, language string) bool {
+	if language != "typescript" {
+		return false
+	}
+	var configErr *codesignalcli.ProjectConfigError
+	if !errors.As(err, &configErr) {
+		return false
+	}
+	return codesignalcli.HasControllingTerminal(os.Stdin)
+}
+
+// runScanProjectConfigAuthoring implements AC-POL-8. It reuses the exact
+// guided authoring session `--suggest-project-config --project-language
+// typescript` runs (authorProjectConfigTypeScript) rather than re-deriving
+// authoring logic, but overrides that command's own success exit code: a
+// successful, approved session there returns 0 because the standalone
+// command's job is done once the candidate is written, whereas here the
+// same candidate has not been reviewed or committed yet, so this
+// invocation must still refuse to analyze it -- exit 2, no CodeSignal
+// report (none is ever rendered on this path), and an instruction to
+// review, commit, and rerun. Every other authorProjectConfigTypeScript
+// outcome (declined, cancelled, or a revision/snapshot/discovery failure)
+// already returns a non-zero exit with its own stderr message and is
+// passed through unchanged.
+func runScanProjectConfigAuthoring(dir string, f codesignalFlags, stdout, stderr *os.File) int {
+	exitCode := authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr)
+	if exitCode != 0 {
+		return exitCode
+	}
+	fmt.Fprintln(stderr, "coach codesignal: a TypeScript project-config candidate was created; review it, commit it, then rerun this scan once it is committed.")
+	return 2
 }
 
 // rejectUnusableAuthoringOutput fails fast on --output shape or an existing

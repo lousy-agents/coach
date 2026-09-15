@@ -121,6 +121,9 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		report, projectExitCode, err = runDiffAnalysis(dir, parsed, stderr)
 	}
 	if err != nil {
+		if scanShouldAuthorProjectConfig(err, parsed.projectLanguage) {
+			return runScanProjectConfigAuthoring(dir, parsed, stdout, stderr)
+		}
 		return classifyAnalysisError(err, stderr)
 	}
 	if report == nil {
