@@ -113,12 +113,6 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return runCheckProject(dir, parsed, stdout, stderr)
 	}
 
-	if parsed.projectLanguage == "typescript" && !parsed.projectConfigSet && parsed.baseline {
-		if exitCode, blocked := runProjectTSScanPreflight(dir, parsed, stderr); blocked {
-			return exitCode
-		}
-	}
-
 	var report *codesignal.Report
 	var projectExitCode int
 	if parsed.baseline {
@@ -127,7 +121,7 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		report, projectExitCode, err = runDiffAnalysis(dir, parsed, stderr)
 	}
 	if err != nil {
-		return classifyAnalysisError(err, stderr)
+		return classifyAnalysisError(err, stderr, parsed.projectLanguage)
 	}
 	if report == nil {
 		if projectExitCode != 0 {
@@ -457,12 +451,12 @@ func validatePrepareCompilerFlags(f codesignalFlags, setFlags map[string]bool, p
 func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int {
 	revision, err := codesignalcli.ResolveBaselineRevision(dir)
 	if err != nil {
-		return classifyAnalysisError(err, stderr)
+		return classifyAnalysisError(err, stderr, f.projectLanguage)
 	}
 
 	result, err := codesignalcli.CheckProjectReadiness(dir, revision, f.projectConfig)
 	if err != nil {
-		return classifyAnalysisError(err, stderr)
+		return classifyAnalysisError(err, stderr, f.projectLanguage)
 	}
 
 	if f.format == "json" {
@@ -483,45 +477,6 @@ func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int
 		return 1
 	}
 	return 0
-}
-
-// runProjectTSScanPreflight enforces AC-SET-9 for a --baseline TypeScript-
-// language scan with no explicit --project-config (non --check-project, non
-// --prepare-compiler): while no controlling terminal is available and
-// readiness shows guided policy authoring or compiler setup would be
-// required before adopting project-config-driven TypeScript project
-// analysis, it prints the supported remediation commands to stderr and
-// reports exit 2, leaving stdout untouched. It performs no setup mutation
-// of its own -- PreflightScanPreparation's readiness computation is
-// read-only. Its caller deliberately excludes a --base diff scan and any
-// scan already carrying an explicit --project-config: prepareProjectAnalysis
-// is a no-op without one regardless of --base/--baseline, so gating a
-// --base scan here would block a scan that was always going to succeed as
-// the unchanged schema-1 no-op the CLI contract promises.
-func runProjectTSScanPreflight(dir string, f codesignalFlags, stderr *os.File) (exitCode int, blocked bool) {
-	revision, err := resolveScanRevision(dir, f)
-	if err != nil {
-		return 0, false
-	}
-
-	outcome, err := codesignalcli.PreflightScanPreparation(dir, revision, f.projectConfig, codesignalcli.HasControllingTerminal(os.Stdin))
-	if err != nil || !outcome.Blocked {
-		return 0, false
-	}
-
-	fmt.Fprintln(stderr, "coach codesignal: no controlling terminal is available; TypeScript project setup or policy authoring is required before this scan can proceed. Run one of the following from a terminal:")
-	for _, line := range outcome.RemediationLines {
-		fmt.Fprintf(stderr, "  %s\n", line)
-	}
-	return 2, true
-}
-
-func resolveScanRevision(dir string, f codesignalFlags) (string, error) {
-	if f.baseline {
-		return codesignalcli.ResolveBaselineRevision(dir)
-	}
-	headSHA, _, err := codesignalcli.ResolveRevisions(dir, f.base)
-	return headSHA, err
 }
 
 func runSuggestProjectConfig(dir string, f codesignalFlags, stdout, stderr *os.File) int {
