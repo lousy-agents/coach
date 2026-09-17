@@ -13,8 +13,8 @@ require (
 	github.com/google/go-github/v92 v92.0.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/odvcencio/gotreesitter v0.52.0
-	github.com/onsi/ginkgo/v2 v2.32.2
-	github.com/onsi/gomega v1.43.0
+	github.com/onsi/ginkgo/v2 v2.33.0
+	github.com/onsi/gomega v1.43.1
 	github.com/redis/go-redis/v9 v9.22.0
 	golang.org/x/mod v0.41.0
 	golang.org/x/sys v0.48.0
@@ -45,7 +45,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/vmihailenco/msgpack v4.0.4+incompatible // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
