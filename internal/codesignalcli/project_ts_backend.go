@@ -39,7 +39,7 @@ const (
 // tsBypassPhaseNotRequested is ProjectBackendResult's Head/BaseBypassCoverage
 // Phase value when the config has no required_layer, so a consumer can tell
 // "the bypass phase was never run" apart from "it ran and completed" or "it
-// ran and did not" (issue #332 Task 9 T2, AC-4).
+// ran and did not".
 const tsBypassPhaseNotRequested = "not_requested"
 
 // tsProjectBudgets is goProjectBudgets, reused as-is: the TS sidecar backend
@@ -136,7 +136,7 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	// so only the head-side facts above ever reach the report; the base
 	// revision still derives its own facts here (discarded) so every
 	// evaluator runs identically regardless of which revision is being
-	// evaluated (AC-12). ProjectScope, unlike Facts, does have a base-side
+	// evaluated. ProjectScope, unlike Facts, does have a base-side
 	// counterpart: BaseProjectScope is kept.
 	baseChanges, _, baseDiagnostics, baseCoverage, baseScope, basePhases, err := b.evaluateRevision(ctx, req.Dir, req.BaseRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {
@@ -155,22 +155,21 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 
 // tsPhaseCoverage groups the three independent per-phase Coverage
 // observations evaluateRevision derives from one analyzer response, carried
-// onto ProjectBackendResult's Head/Base*Coverage fields (issue #332 Task 9
-// T2).
+// onto ProjectBackendResult's Head/Base*Coverage fields.
 type tsPhaseCoverage struct {
 	model        projectmodel.Coverage
 	bypass       projectmodel.Coverage
 	reachability projectmodel.Coverage
 }
 
-// evaluateRevision builds a TypeScript project model at revision ONCE
-// (AC-RUN-5) and derives every observation from that single Model: layer
-// violations (always), layer bypass (only when hasBypassLayer, see
+// evaluateRevision builds a TypeScript project model at revision ONCE and
+// derives every observation from that single Model: layer violations
+// (always), layer bypass (only when hasBypassLayer, see
 // evaluateLayerBypass), and possible-call-reachability ProjectFacts
 // (always) -- reachability's own Coverage never folds into the returned
 // Coverage, so a routine reachability gap alone stays visible only through
 // model.Coverage.Diagnostics and the returned facts, never degrading an
-// otherwise complete layer finding (AC-3/AC-14).
+// otherwise complete layer finding.
 func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, runtime *tsRuntime, roots []string, policy codesignal.LayerPolicy, bypassLayer projectmodel.BypassLayer, hasBypassLayer bool, configDigest string) ([]codesignal.ProjectChange, []codesignal.ProjectFact, []codesignal.Diagnostic, projectmodel.Coverage, *projectmodel.ProjectScope, tsPhaseCoverage, error) {
 	snapshot, err := NewGoSnapshotFS(dir, revision)
 	if err != nil {
@@ -193,14 +192,18 @@ func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 		return nil, nil, nil, projectmodel.Coverage{}, nil, tsPhaseCoverage{}, fmt.Errorf("coach: building TypeScript project model at revision %q: %w", revision, err)
 	}
 
-	// ProjectScopeFromModel is only attempted when the sidecar actually
-	// echoed back root_scopes data. A crashed/unavailable analyzer (see
-	// projectmodel.DiagBackendUnavailable) reports zero RootScopes entirely,
-	// which already degrades HeadCoverage/BaseCoverage to incomplete via the
-	// diagnostics below -- ProjectScopeFromModel would reject every policy
-	// root as unmatched in that case, which is not a distinct project_scope
-	// failure and must not turn an already-reported, gracefully qualified
-	// analysis into a harder operational failure.
+	// Deliberate decision on empty vs. mismatched RootScopes: total absence
+	// (zero RootScopes entries) is a soft-skip to a nil project scope,
+	// because it is the pre-existing crashed/unavailable-analyzer degrade
+	// (projectmodel.DiagBackendUnavailable) already reported via
+	// HeadCoverage/BaseCoverage below -- ProjectScopeFromModel would reject
+	// every policy root as unmatched in that case, which is not a distinct
+	// project_scope failure and must not turn an already-reported,
+	// gracefully qualified analysis into a harder operational failure. A
+	// non-empty but incomplete response -- some roots present, a specific
+	// policy root missing -- is a genuine mismatch and is not soft-skipped:
+	// it reaches ProjectScopeFromModel below, whose error is returned as a
+	// real Go error (surfacing as CLI exit 1).
 	var scope *projectmodel.ProjectScope
 	if len(model.RootScopes) > 0 {
 		resolved, err := projectmodel.ProjectScopeFromModel(model, projectScopePolicyFromConfig(roots, policy))
@@ -255,8 +258,7 @@ func projectScopePolicyFromConfig(roots []string, policy codesignal.LayerPolicy)
 // which is not itself a project-model or requested-bypass failure --
 // folding that in unchanged would wrongly degrade an otherwise complete
 // layer-violation finding to lifecycle "unknown" over the ordinary shape of
-// layered code, exactly what AC-3/AC-14 forbid. Its fourth return value is
-// the pre-fold bypass coverage (issue #332 Task 9 T2).
+// layered code. Its fourth return value is the pre-fold bypass coverage.
 func (b *tsProjectBackend) evaluateLayerBypass(ctx context.Context, model projectmodel.Model, bypassLayer projectmodel.BypassLayer, configDigest string) ([]codesignal.ProjectChange, []codesignal.Diagnostic, projectmodel.Coverage, projectmodel.Coverage) {
 	bypassResult := projectmodel.BuildTypeScriptLayerBypassFromModel(ctx, model, bypassLayer)
 	bypassChanges, bypassDiagnostics := codesignal.EvaluateTypeScriptLayerBypass(bypassResult, tsBypassRuleVersion, tsBypassBackendVersion, configDigest)

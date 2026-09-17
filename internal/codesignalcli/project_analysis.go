@@ -70,7 +70,7 @@ type ProjectBackendResult struct {
 	// BaseBypassCoverage, and HeadReachabilityCoverage/BaseReachabilityCoverage
 	// carry each analyzed revision's three phase-specific Coverage
 	// observations independently of HeadCoverage/BaseCoverage's existing
-	// combined fold (issue #332 Task 9 T2): model (the project model's own
+	// combined fold: model (the project model's own
 	// Coverage), bypass (the layer-bypass search's own completeness after
 	// tsBypassCoverageForFold's reachability-gap exclusion, or Phase
 	// "not_requested" -- never nil -- when the config has no required_layer),
