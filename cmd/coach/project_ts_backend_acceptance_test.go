@@ -314,12 +314,6 @@ func analyzerChildPIDs() []int {
 // analyzer children with the same --compiler-module= marker; without the
 // ancestry check those foreign pids get counted alongside this package's,
 // inflating the per-invocation counts these specs assert against.
-//
-// This ancestry-filtering fix is bundled into this PR because it was
-// discovered as a direct consequence of this PR's own new specs running
-// concurrently with sibling packages under `mise run ci-fast`, not as a
-// drive-by unrelated fix; every spec in this file that counts analyzer
-// invocations depends on it being correct.
 func analyzerChildPIDsFromProc() ([]int, bool) {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -1366,6 +1360,11 @@ func assertReachabilityNeverSignalOrChange(report *codesignal.Report) {
 // renderProjectCoverageSection in that order with no further section
 // markers this helper splits on, so factsSection is "Facts: through end of
 // output", not ProjectFacts alone.
+//
+// Callers pair this with a JSON-decoded assertion on the same fixture first:
+// the JSON checks are the structural source of truth, and the text-format
+// checks this helper supports only confirm the text renderer doesn't
+// diverge from what JSON already proved, not an independent proof.
 func splitTextFindingsAndFacts(text string) (findingsSection, factsSection string) {
 	idx := strings.Index(text, "\nFacts:\n")
 	ExpectWithOffset(1, idx).To(BeNumerically(">", 0), "expected a \"Facts:\" section in text output, got %q", text)
@@ -1413,10 +1412,6 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			Expect(report.ProjectFacts[0].Kind).To(Equal("possible_call_reachability"))
 			assertReachabilityNeverSignalOrChange(report)
 
-			// The JSON-decoded checks above are the structural source of
-			// truth for this behavior; the text-format checks below only
-			// confirm the text renderer doesn't diverge from what JSON
-			// already proved, not an independent proof.
 			textSampler := startAnalyzerEnvironSampler()
 			textStdout, textStderr, textExitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
 			textEnvirons := textSampler.halt()

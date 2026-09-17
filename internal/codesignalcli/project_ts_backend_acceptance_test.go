@@ -2,6 +2,7 @@ package codesignalcli
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,6 +52,11 @@ var _ = Describe("tsProjectBackend.evaluateRevision", func() {
 			Expect(scope).To(BeNil())
 			Expect(err.Error()).To(ContainSubstring("deriving TypeScript project scope"))
 			Expect(err.Error()).To(ContainSubstring("pkg/handlers"), "expected the error to name the unmatched policy root")
+
+			var unresolved *CompilerUnresolvedError
+			var cfgErr *ProjectConfigError
+			Expect(errors.As(err, &unresolved)).To(BeFalse(), "classifyAnalysisError maps *CompilerUnresolvedError to exit 2; this error must not be that type")
+			Expect(errors.As(err, &cfgErr)).To(BeFalse(), "classifyAnalysisError maps *ProjectConfigError to exit 2; this error must not be that type")
 		})
 	})
 })
