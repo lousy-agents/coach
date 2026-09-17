@@ -55,8 +55,8 @@ var _ = Describe("tsProjectBackend.evaluateRevision", func() {
 
 			var unresolved *CompilerUnresolvedError
 			Expect(errors.As(err, &unresolved)).To(BeFalse(),
-				"runBaselineAnalysis/runDiffAnalysis (cmd/coach/main.go) re-return an error to run() only when it is *CompilerUnresolvedError, which classifyAnalysisError then maps to exit 2; "+
-					"every other error -- this one included -- is printed to stderr and swallowed to (nil, 0, nil), which run() turns into exit 1 via its report==nil fallback")
+				"runBaselineAnalysis/runDiffAnalysis (cmd/coach/main.go) re-return an AnalyzeBaseline/AnalyzeChanges error to run() only when it is *CompilerUnresolvedError, which classifyAnalysisError then maps to exit 2; "+
+					"every other error from that call -- this one included -- is printed to stderr and swallowed to (nil, 0, nil), which run() turns into exit 1 via its report==nil fallback")
 		})
 	})
 })
