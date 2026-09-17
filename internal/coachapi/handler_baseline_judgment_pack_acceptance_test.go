@@ -362,9 +362,9 @@ var _ = Describe("repo_baseline_scan packed judgment (local-LLM)", func() {
 		It("persists agent findings from completed packs, records a judgment budget diagnostic, keeps deterministic findings, and completes the job", func() {
 			root := multiHiddenMutationFixtureRoot()
 			recGW := newRecordingJudgeGateway(modelgateway.NewStubGateway())
-			// Each pack Judge sleeps long enough that a short judgment wall
-			// allows only the first pack (or first few) before ErrBudgetExceeded.
-			recGW.delay = 80 * time.Millisecond
+			// Pack 1 returns immediately; later packs block on ctx.Done() so the
+			// wall expires after at least one successful persist.
+			recGW.blockAfterN = 1
 
 			h := coachapi.NewRepoBaselineScanHandler(coachapi.RepoBaselineScanConfig{
 				SmokeFixturePath:    root,
