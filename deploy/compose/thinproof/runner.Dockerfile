@@ -4,7 +4,7 @@
 # `mise run thinproof-build` runs `go mod vendor` (host-side, online) before
 # this build, so the build stage below needs no network access at all --
 # it builds with -mod=vendor against the vendor/ directory COPY . . picks up.
-FROM golang:1.27-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS build
+FROM golang:1.27-alpine@sha256:e9bbdf282b51ac8b34c46e5f31d2d56e7bad60366c35f08d2f295b921b13388b AS build
 WORKDIR /src
 COPY . .
 RUN CGO_ENABLED=0 go build -mod=vendor -o /out/thinproof-runner ./cmd/thinproof-runner
