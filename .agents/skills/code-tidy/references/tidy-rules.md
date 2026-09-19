@@ -182,7 +182,8 @@ security, and interoperation code, more stay, but only the ones you
 cannot reduce. A comment in a test has the same bar, or a harder one.
 
 Decide every comment in every file in this pass's work set, then mark the file
-`clean`.
+`clean` unless it is already `ruling (permission)` or `ruling (decision)`,
+or still carries leftover Stage-B — never overwrite those with `clean`.
 
 ## Ruling required
 

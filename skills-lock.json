@@ -5,7 +5,7 @@
       "source": "lousy-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/code-tidy/SKILL.md",
-      "computedHash": "50b29589c78be381a0cdbc24db67a36237958fa2741902400b6473daa25644c4"
+      "computedHash": "4f44d6713286c489e349687bfb0f5191d21f3c979ab6158ea660aac7dad4c25c"
     },
     "curate-release": {
       "source": "lousy-agents/skills",
