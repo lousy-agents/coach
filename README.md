@@ -67,7 +67,8 @@ Default `--scope` is `production`. `--build-target <pattern>` further limits Go 
 | --- | --- |
 | `0` | Analysis completed (signals or none). Not a quality gate. |
 | `1` | Operational failure (not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O). |
-| `2` | Usage or invalid `--project-config`, or a TypeScript scan that cannot resolve a supported compiler or host Node (empty stdout, one stderr line). |
+| `2` | Usage or invalid `--project-config`, or a TypeScript scan that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
+| `3` | `--prepare-compiler` only: operational failure resolving the revision or computing readiness — a documented exception to the scan contract's `1`, kept with the flag's own suggestion-mode table. |
 
 ### What you should see
 
@@ -182,14 +183,56 @@ coach codesignal --baseline --suggest-project-config --project-language typescri
 Run `--check-project` first. It is read-only: it reports compiler, Node, and
 policy fit and exits `0` so you inspect the result instead of treating process
 status as a gate. It is not a scan. A **scan** that cannot resolve a supported
-compiler or host Node exits `2` with empty stdout and one stderr line.
+compiler or host Node exits `2` with empty stdout except the policy-candidate
+document on the guided-authoring path, and one or more stderr lines. On a
+controlling terminal, a TypeScript scan whose `--project-config` names a
+policy that was never committed instead opens a guided-authoring session;
+with `--format json` this session's exit-2 output is
+a JSON object carrying `"schema_version": "1"` and `roots`, not a CodeSignal
+report — the absent `scope`/`signals`/`coverage` keys distinguish it.
 
 Coach's supported Node majors are exactly `24` and `26`. Any other major is the
 `node_unsupported` readiness gap. `@lousy-agents/coach-semantics` declares this
 as `engines.node: "^24 || ^26"`.
 
 `--prepare-compiler` is a consented, interactive mise TypeScript compiler-setup
-session (requires a TTY; refuses otherwise). It prompts before installing.
+session (requires a TTY; refuses otherwise). It prompts before installing. It
+also refuses, naming the gap without opening a menu, when the readiness gap is
+a runtime boundary (missing or unsupported host Node): Coach has no setup
+command for a Node version problem, and the flag shares that gate with the
+scan's own compiler-setup offer so the two paths cannot disagree on it. The
+flag remains **mise-only**, so it is narrower than the scan's offer in what it
+can install; Coach never names it as remediation for a gap only the project
+package manager could resolve.
+
+A **scan** (`--baseline`/`--base` with `--project-config`, `--project-language
+typescript`, a committed policy, and an unresolved compiler) offers a superset
+of that setup interactively when it runs on a controlling terminal: it names
+the failing check and what happens after a successful install, then shows a
+menu of up to four choices —
+`project_package` (run the project's own package-manager install, e.g. `npm
+ci --ignore-scripts`), `project_mise`/`global_mise` (run `mise install` for a
+project- or globally-pinned supported TypeScript version), and `cancel`. A
+choice that would open only to report nothing to do is withheld from the
+menu, and a gap with nothing installable never opens a prompt at all. Picking
+`project_package` shows a preview (exact executable, arguments, working
+directory, expected on-disk changes, network use, and a bounded 5-minute
+timeout) before a separate, single-use `confirm`/`install` answer is
+required to actually run it — typing anything else, or a second leftover
+answer, cancels or is ignored rather than running twice. On cancel, nothing
+runs and the scan exits 2 with the original remediation. On failure, the scan
+exits 2, reports the failure, and never modifies the repository's tracked
+files. On success, Coach reruns the full readiness check and only continues
+the same scan through to a report if that rerun is clear; a rerun that still
+reports a gap still exits 2 with no report.
+
+Pass `--no-interactive`, or set a non-empty `CI` environment variable, to make
+Coach treat the run as unattended even when a real controlling terminal is
+attached — for example, a pty-allocating CI runner (`docker run -t`, `ssh -t`)
+with nobody at the keyboard. A scan then falls straight through to the same
+message-only remediation a piped invocation gets, and
+`--suggest-project-config` / `--prepare-compiler` refuse with exit `2` rather
+than opening a prompt nobody will answer.
 
 Still being built — do not expect these to work yet: unattended package-manager
 setup for the scanned project, Bun as a project runtime, and a packaged

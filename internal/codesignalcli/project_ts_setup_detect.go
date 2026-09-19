@@ -26,8 +26,23 @@ import (
 // classifying by the pin would clear a row for a binary that is not there.
 // The pin is still recorded, and BuildSetupPreview discloses it whenever it
 // disagrees with the probe.
-func checkPackageManager(dir string, roots []string) ReadinessCheck {
-	contexts := packageManagerContexts(compilerWorktreeRoot(dir), roots)
+//
+// A manifest that packageManagerContexts actually resolves -- whether under
+// a validated root or, absent one, the default "." context's own nearest
+// package.json -- is real evidence and is classified regardless of
+// policyPassed, the same way checkProjectShape trusts a root-level
+// package.json unconditionally. But when no context resolves any manifest
+// at all, packageManagerContexts falls back to classifying whatever bare
+// metadata sits at the worktree root, a directory a genuine monorepo's
+// policy may never actually select. Without a validated policy that
+// fallback is unjustified, so policyPassed false skips it and reports
+// not_checked instead of a package_manager_* gap this check has no real
+// root context to justify (R1, mirroring checkProjectShape's own gate).
+func checkPackageManager(dir string, roots []string, policyPassed bool) ReadinessCheck {
+	contexts, fellBackToWorktreeRoot := packageManagerContexts(compilerWorktreeRoot(dir), roots)
+	if fellBackToWorktreeRoot && !policyPassed {
+		return ReadinessCheck{State: ReadinessNotChecked}
+	}
 
 	detection, ok := detectPackageManagerAcrossContexts(contexts)
 	if !ok {
@@ -67,21 +82,24 @@ func checkPackageManager(dir string, roots []string) ReadinessCheck {
 // (resolveProjectRoot). A root with no manifest at or above it contributes no
 // context; when no root contributes one, the worktree root stands in, so a
 // repository whose only metadata is a top-level lockfile beside no
-// package.json is still classified rather than silently unchecked.
-func packageManagerContexts(worktreeRoot string, roots []string) []string {
+// package.json is still classified rather than silently unchecked --
+// fellBack reports when that stand-in fired, so a caller without a
+// validated policy can tell that classification apart from one resolveCompiler
+// actually found a manifest for (checkPackageManager's own R1 gate).
+func packageManagerContexts(worktreeRoot string, roots []string) (contexts []string, fellBack bool) {
 	if len(roots) == 0 {
 		roots = []string{"."}
 	}
-	contexts := make([]string, 0, len(roots))
+	contexts = make([]string, 0, len(roots))
 	for _, root := range roots {
 		if manifestDir, ok := nearestPackageJSONDir(selectedRootAbs(worktreeRoot, root), worktreeRoot); ok {
 			contexts = append(contexts, manifestDir)
 		}
 	}
 	if len(contexts) == 0 {
-		return []string{worktreeRoot}
+		return []string{worktreeRoot}, true
 	}
-	return dedupeStrings(contexts)
+	return dedupeStrings(contexts), false
 }
 
 // detectPackageManagerAcrossContexts reduces the selected roots' package
@@ -387,15 +405,36 @@ func detectNpmrcRegistryHazard(root string) string {
 // other TOML encoding trick; the structured cases above remain only for
 // their more specific, actionable detail text.
 func detectBunfigHazard(root string) string {
+	data, detail, present := readCommittedBunfig(root)
+	if !present {
+		return detail
+	}
+	if hazard := bunfigRedirectHazard(data); hazard != "" {
+		return hazard
+	}
+	return bunfigUnverifiableHazard(data)
+}
+
+// readCommittedBunfig reads root's bunfig.toml. present is false both when
+// there is genuinely no file (detail "": nothing to be hazardous) and when
+// one exists but cannot be read (detail names the hazard) -- the fail-closed
+// half AC-SET-12 requires, since an unreadable config is not a safe one.
+func readCommittedBunfig(root string) (data []byte, detail string, present bool) {
 	path := filepath.Join(root, "bunfig.toml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if _, statErr := os.Lstat(path); errors.Is(statErr, fs.ErrNotExist) {
-			return ""
+			return nil, "", false
 		}
-		return "committed bunfig.toml could not be read"
+		return nil, "committed bunfig.toml could not be read", false
 	}
-	data = bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF"))
+	return bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF")), "", true
+}
+
+// bunfigRedirectHazard names the redirection it can read directly out of the
+// file, walking it as Bun does rather than parsing TOML: a section header
+// followed by key/value lines.
+func bunfigRedirectHazard(data []byte) string {
 	section := ""
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
@@ -403,16 +442,7 @@ func detectBunfigHazard(root string) string {
 			continue
 		}
 		if strings.HasPrefix(line, "[") {
-			// A table header's name runs up to its closing ']', not to the
-			// end of the line -- real Bun 1.3.11 also honors a trailing
-			// comment after the header (`[install] # hi`), which
-			// strings.HasSuffix(line, "]") would reject outright, leaving
-			// section unset and the redirect below unseen. TOML also
-			// permits whitespace inside the brackets ([ install ]) and a
-			// quoted table name (["install"]); both are honored the same
-			// way and handled by the same Trim below.
-			name, _, _ := strings.Cut(line[1:], "]")
-			section = strings.ToLower(strings.Trim(strings.TrimSpace(name), `"'`))
+			section = bunfigSectionName(line)
 			continue
 		}
 		key, value, found := strings.Cut(line, "=")
@@ -430,18 +460,37 @@ func detectBunfigHazard(root string) string {
 			return "committed bunfig.toml redirects a scoped install registry (" + key + "=" + value + ")"
 		}
 	}
+	return ""
+}
+
+// bunfigSectionName reads a table header's name. The name runs up to its
+// closing ']', not to the end of the line -- real Bun 1.3.11 also honors a
+// trailing comment after the header (`[install] # hi`), which
+// strings.HasSuffix(line, "]") would reject outright, leaving the section
+// unset and a redirect below it unseen. TOML also permits whitespace inside
+// the brackets ([ install ]) and a quoted table name (["install"]); both are
+// honored the same way by the same Trim.
+func bunfigSectionName(line string) string {
+	name, _, _ := strings.Cut(line[1:], "]")
+	return strings.ToLower(strings.Trim(strings.TrimSpace(name), `"'`))
+}
+
+// bunfigUnverifiableHazard fails closed on a file this reader cannot claim to
+// have understood, rather than on a redirect it recognized.
+func bunfigUnverifiableHazard(data []byte) string {
+	const unverifiable = "committed bunfig.toml could not be verified to leave package resolution unredirected"
 	// Every TOML escape sequence (\uXXXX, \xHH, octal \NNN, and any future
 	// form Bun adds) requires a backslash to invoke, in either a quoted
 	// table name or a quoted key -- a general check for the mechanism, not
 	// an enumeration of its spellings. A legitimate bunfig.toml's forward-
 	// slash paths and settings never need one.
 	if strings.Contains(string(data), `\`) {
-		return "committed bunfig.toml could not be verified to leave package resolution unredirected"
+		return unverifiable
 	}
 	lower := strings.ToLower(string(data))
 	for _, keyword := range []string{"install", "registry", "scopes", "cache"} {
 		if strings.Contains(lower, keyword) {
-			return "committed bunfig.toml could not be verified to leave package resolution unredirected"
+			return unverifiable
 		}
 	}
 	return ""

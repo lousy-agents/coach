@@ -201,7 +201,7 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 	runtime := checkNodeReadiness()
 	node := nodeCompatibilityMirror(runtime)
 	compiler := resolveCompiler(dir, roots)
-	packageManager := checkPackageManager(dir, roots)
+	packageManager := checkPackageManager(dir, roots, policy.State == ReadinessPass)
 
 	checks := ReadinessChecks{
 		ProjectShape:   projectShape,

@@ -97,6 +97,11 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 			unresolved.ConfigPath = req.ConfigPath
 			return nil, unresolved
 		}
+		var runtimeErr *RuntimeUnresolvedError
+		if errors.As(err, &runtimeErr) {
+			runtimeErr.ConfigPath = req.ConfigPath
+			return nil, runtimeErr
+		}
 		return nil, err
 	}
 	defer cleanup()

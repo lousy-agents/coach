@@ -68,7 +68,7 @@ commands:
 
 run "coach codesignal --help" for command-specific help.`
 
-const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]\n   or: coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>]"
+const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>] [--no-interactive]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]\n   or: coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>] [--no-interactive]"
 
 type codesignalFlags struct {
 	base                 string
@@ -84,6 +84,7 @@ type codesignalFlags struct {
 	outputSet            bool
 	checkProject         bool
 	prepareCompiler      bool
+	noInteractive        bool
 }
 
 func runCodesignal(args []string, stdout, stderr *os.File) int {
@@ -106,34 +107,14 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 	}
 
 	if parsed.prepareCompiler {
-		return runPrepareCompilerMiseTypeScript(dir, os.Stdin, stdout, stderr, parsed.projectConfig)
+		return runPrepareCompilerMiseTypeScript(dir, parsed, os.Stdin, stdout, stderr)
 	}
 
 	if parsed.checkProject {
 		return runCheckProject(dir, parsed, stdout, stderr)
 	}
 
-	var report *codesignal.Report
-	var projectExitCode int
-	if parsed.baseline {
-		report, projectExitCode, err = runBaselineAnalysis(dir, parsed, stderr)
-	} else {
-		report, projectExitCode, err = runDiffAnalysis(dir, parsed, stderr)
-	}
-	if err != nil {
-		return classifyAnalysisError(err, stderr)
-	}
-	if report == nil {
-		if projectExitCode != 0 {
-			return projectExitCode
-		}
-		return 1
-	}
-
-	if exitCode := renderReport(report, parsed.format, stdout, stderr); exitCode != 0 {
-		return exitCode
-	}
-	return projectExitCode
+	return runCodesignalScan(dir, parsed, stdout, stderr, newScanOfferBudget())
 }
 
 // countingBoolFlag is a flag.Value wrapper that counts how many times Set
@@ -219,6 +200,7 @@ type codesignalFlagHolders struct {
 	output               *countingStringFlag
 	checkProject         *countingBoolFlag
 	prepareCompiler      *countingBoolFlag
+	noInteractive        *bool
 }
 
 func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
@@ -234,6 +216,7 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		output:               &countingStringFlag{},
 		checkProject:         &countingBoolFlag{},
 		prepareCompiler:      &countingBoolFlag{},
+		noInteractive:        flags.Bool("no-interactive", false, "treat this invocation as non-interactive even if a controlling terminal is attached: a scan's interactive compiler-setup and guided-policy-authoring offers are skipped in favor of the plain message-only remediation a piped invocation gets, and --suggest-project-config/--prepare-compiler refuse instead of prompting (also honored via a non-empty CI environment variable)"),
 	}
 	flags.Var(h.suggestProjectConfig, "suggest-project-config", "generate a project-config candidate JSON from Go module/workspace discovery at HEAD (requires --baseline; human-reviewed candidate only, never auto-applied); combined with --project-language typescript, runs an interactive guided-authoring session over discovered TypeScript roots instead of emitting a Go candidate directly")
 	flags.Var(h.output, "output", "write the --suggest-project-config candidate to this repository-relative path instead of stdout (create-only)")
@@ -277,6 +260,7 @@ func codesignalFlagsFromHolders(h codesignalFlagHolders, setFlags map[string]boo
 		outputSet:            setFlags["output"],
 		checkProject:         h.checkProject.value,
 		prepareCompiler:      h.prepareCompiler.value,
+		noInteractive:        *h.noInteractive,
 	}
 }
 
@@ -386,7 +370,11 @@ func validateSuggestProjectConfigFlags(f codesignalFlags, setFlags map[string]bo
 	}
 	allowedWithSuggest := map[string]bool{"suggest-project-config": true, "output": true, "baseline": true}
 	if f.projectLanguage == "typescript" {
+		// --no-interactive rides with the language: only the TypeScript
+		// path prompts, so accepting it for a Go candidate would advertise
+		// a guard over a flow that never opens a session.
 		allowedWithSuggest["project-language"] = true
+		allowedWithSuggest["no-interactive"] = true
 	}
 	if name, disallowed := firstDisallowedFlag(setFlags, allowedWithSuggest); disallowed {
 		return fmt.Sprintf("coach: --suggest-project-config cannot be combined with --%s%s", name, suffix)
@@ -436,7 +424,7 @@ func validatePrepareCompilerFlags(f codesignalFlags, setFlags map[string]bool, p
 			return fmt.Sprintf("coach: --project-config %q is invalid: %s", f.projectConfig, err)
 		}
 	}
-	allowedWithPrepareCompiler := map[string]bool{"prepare-compiler": true, "baseline": true, "project-language": true, "project-config": true}
+	allowedWithPrepareCompiler := map[string]bool{"prepare-compiler": true, "baseline": true, "project-language": true, "project-config": true, "no-interactive": true}
 	if name, disallowed := firstDisallowedFlag(setFlags, allowedWithPrepareCompiler); disallowed {
 		return fmt.Sprintf("coach: --prepare-compiler cannot be combined with --%s", name)
 	}
@@ -451,12 +439,12 @@ func validatePrepareCompilerFlags(f codesignalFlags, setFlags map[string]bool, p
 func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int {
 	revision, err := codesignalcli.ResolveBaselineRevision(dir)
 	if err != nil {
-		return classifyAnalysisError(err, stderr)
+		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
 	}
 
 	result, err := codesignalcli.CheckProjectReadiness(dir, revision, f.projectConfig)
 	if err != nil {
-		return classifyAnalysisError(err, stderr)
+		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
 	}
 
 	if f.format == "json" {
@@ -539,12 +527,7 @@ func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codes
 	}
 	report, err := codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, nil, f.scope, coverage, project)
 	if err != nil {
-		var unresolved *codesignalcli.CompilerUnresolvedError
-		if errors.As(err, &unresolved) {
-			return nil, 0, unresolved
-		}
-		fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
-		return nil, 0, nil
+		return nil, 0, wrapScanAnalysisError(err, dir, revisionSHA, f.projectConfig, stderr)
 	}
 	return withProjectDiagnostic(report, diag), projectExitCode, nil
 }
@@ -570,12 +553,7 @@ func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesigna
 	}
 	report, err := codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, f.scope, excluded, project)
 	if err != nil {
-		var unresolved *codesignalcli.CompilerUnresolvedError
-		if errors.As(err, &unresolved) {
-			return nil, 0, unresolved
-		}
-		fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
-		return nil, 0, nil
+		return nil, 0, wrapScanAnalysisError(err, dir, headSHA, f.projectConfig, stderr)
 	}
 	return withProjectDiagnostic(report, diag), projectExitCode, nil
 }
@@ -596,6 +574,9 @@ func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configP
 	}
 	config, err := loadProjectConfig(dir, revision, configPath)
 	if err != nil {
+		if language == "typescript" {
+			err = codesignalcli.WrapProjectConfigErrorWithReadiness(err, dir, revision, configPath)
+		}
 		return nil, nil, 0, err
 	}
 	if err := resolveProjectBackend(language); err != nil {
@@ -645,27 +626,4 @@ func renderReport(report *codesignal.Report, format string, stdout, stderr *os.F
 		return 1
 	}
 	return 0
-}
-
-// classifyAnalysisError never sees a project_backend_unavailable (exit 3)
-// error -- prepareProjectAnalysis handles that case separately by returning
-// a diagnostic instead of an error.
-func classifyAnalysisError(err error, stderr *os.File) int {
-	var unresolved *codesignalcli.CompilerUnresolvedError
-	if errors.As(err, &unresolved) {
-		fmt.Fprintln(stderr, unresolved.RemediationLine())
-		return 2
-	}
-	var configErr *codesignalcli.ProjectConfigError
-	if errors.As(err, &configErr) {
-		fmt.Fprintln(stderr, configErr.Message)
-		return 2
-	}
-	var opErr *codesignalcli.OperationalError
-	if errors.As(err, &opErr) {
-		fmt.Fprintln(stderr, opErr.Message)
-		return 1
-	}
-	fmt.Fprintln(stderr, err)
-	return 1
 }
