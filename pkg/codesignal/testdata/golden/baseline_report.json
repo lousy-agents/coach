@@ -11,7 +11,8 @@
     "introduced_signals": 0,
     "existing_signals": 0,
     "resolved_signals": 0,
-    "baseline_signals": 1
+    "baseline_signals": 1,
+    "unknown_signals": 0
   },
   "signals": [
     {

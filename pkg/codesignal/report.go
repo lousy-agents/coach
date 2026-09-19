@@ -100,6 +100,7 @@ type Summary struct {
 	ExistingSignals      int `json:"existing_signals"`
 	ResolvedSignals      int `json:"resolved_signals"`
 	BaselineSignals      int `json:"baseline_signals"`
+	UnknownSignals       int `json:"unknown_signals"`
 }
 
 type Category string

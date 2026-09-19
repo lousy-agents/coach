@@ -129,6 +129,20 @@ var _ = Describe("Lifecycle classification", func() {
 		Expect(report.Signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
 	})
 
+	It("marks head signals introduced when the file is added", func() {
+		report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{Path: "f.go", Status: "added", Head: cleanResult("f.go", mutation("Update", 1))}}})
+		Expect(report.Signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
+		Expect(report.Summary.IntroducedSignals).To(Equal(1))
+		Expect(report.Summary.UnknownSignals).To(Equal(0))
+	})
+
+	It("keeps added-file signals as baseline in a repository baseline run", func() {
+		report := build(codesignal.Options{Baseline: true}, codesignal.Input{Files: []codesignal.FileChange{{Path: "f.go", Status: "added", Head: cleanResult("f.go", mutation("Update", 1))}}})
+		Expect(report.Signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("baseline")))
+		Expect(report.Summary.BaselineSignals).To(Equal(1))
+		Expect(report.Summary.IntroducedSignals).To(Equal(0))
+	})
+
 	It("leaves duplicate head occurrences beyond the base count unknown", func() {
 		base := mutation("Update", 1)
 		head := mutation("Update", 9)
