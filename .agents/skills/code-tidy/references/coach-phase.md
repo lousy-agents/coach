@@ -107,9 +107,19 @@ scope instead of re-emitting a DONE that no coach scan ever backed
 fetch for a verification you could not perform. `cosign` absent with
 no PATH coach is exactly that case.
 
-Dogfood **only** when `./cmd/coach` exists in cwd (the repository *is*
-coach): `mise exec -- go build -o "$(mktemp)" ./cmd/coach` and use
-that binary. Do not call `go build ./cmd/coach` in any other repo.
+Scratch-build **only** when `./cmd/coach` exists in cwd (the
+repository *is* coach): `mise exec -- go build -o "$(mktemp)"
+./cmd/coach` and use that binary. Do not call `go build ./cmd/coach`
+in any other repo.
+
+**Push-per-cycle (optional):** push after each Stage-B cycle commit
+when the invocation includes `push` / `open the PR` **and** the
+branch tracks a remote (`git push` to the tracking remote). Ordinary
+PR tidy stays commit-only without that license; do not silently push
+on a foreign PR. The same `push` / `open the PR` license also covers
+the finalize push (loop-protocol). Never `--force`. Scratch
+`go build ./cmd/coach` when `./cmd/coach` exists remains an
+acquisition detail only — it does not gate push.
 
 Delete every scratch clone and binary on every exit path. If none of
 the paths runs, coach is skipped (`coach: skipped (<reason>)`) and
@@ -185,9 +195,11 @@ Exit codes (coach contract):
 
 Coach analyzes **committed Git objects**, not the dirty worktree.
 Commit a Stage-B fix before the next scan or coach will not see it.
-Do not edit for Stage-B unless the invocation said
-`allow-behavior-fix`; otherwise list the finding under
-`questions` and leave the tree unchanged.
+Stage-B production edits are **on by default**. Opt out with
+`solid-only` / `no-behavior-change` / prune-comments-only: classify
+Stage-B, list under `questions`, leave the tree unchanged. Legacy
+`allow-behavior-fix` / `allow-behavior-change` is a redundant alias
+for the default coach-loop.
 
 ## Stage classification
 
@@ -196,9 +208,9 @@ Do not edit for Stage-B unless the invocation said
   failure, or a misleading result, **and** the file is in tidy scope
   (or a mechanical call-site of an in-scope fix), **and** the remedy
   is a production-code change. Coach-first **may change behavior**
-  when the finding is a real defect, **only with**
-  `allow-behavior-fix`. Prefer improving production code over
-  silencing the scanner.
+  when the finding is a real defect — **on by default**. Prefer
+  improving production code over silencing the scanner. Opt out with
+  `solid-only` / `no-behavior-change` / prune-comments-only.
 - Style, naming, unsupported-language diagnostics, informational
   coverage, and metric/density rules (`complexity.*`, density-gated
   `structure.*`) → stay Stage A. Generic "harder to follow / easy
@@ -297,24 +309,29 @@ sees the test files. If `--scope all` is also 0, record
 that are in the git scope even when coach `--scope production`
 excluded them (`coverage.excluded` reason `test_only`).
 
-`--project-language` without `--project-config` is a silent no-op on a
-scan (coach default language is `go`). Do not add it in Tier 1 unless
-`--help` shows a reason to. File-local rules still fire on Go/TS/TSX
-paths from the diff.
+Add `--project-language typescript` in Tier 1 when the in-scope set
+contains TS/TSX **and** `--help` lists that flag (normal coach
+scan-set item; do not invent flags). Without `--project-config` some
+coach builds treat language as a no-op — still bind to `--help`.
+File-local rules still fire on Go/TS/TSX paths from the diff.
 
-Cycle ≤5:
+Cycle ≤5 (skip the edit/commit steps under solid-only opt-out —
+classify and list only):
 
-`resolve-binary → scan-set → classify Stage A then B → edit in-scope Stage-B paths → regression guard per fix → commit only if guarded edits landed → same scan-set`
+`resolve-binary → scan-set → classify Stage A then B → edit in-scope Stage-B paths → regression guard per fix → commit only if guarded edits landed → [push-per-cycle when licensed] → same scan-set`
 
 Do not commit a no-op cycle, and do not commit a fix that failed the
-regression guard. Stop Tier 1 when Stage-B is empty after a fresh simple
+regression guard. Prefer production-code fixes over silencing. Stop Tier 1 when Stage-B is empty after a fresh simple
 scan, or 5 cycles have run, or the simple scan cannot execute. Leftover
 Stage-B after the cap does not skip SOLID — list each leftover under
-`questions`, then continue. After the tier, Read `.cleanup-loop.md` and
+`questions`, keep those paths `todo` (do not mark them
+`clean`), then continue. After the tier, Read `.cleanup-loop.md` and
 Edit the Tier 1 coach section.
 
-Git during this phase: same as the cleanup loop (commit only, trailer,
-no push).
+Git during this phase: same as the cleanup loop (commit only by
+default, trailer; push-per-cycle under the rule above when `push` /
+`open the PR` + tracking). Never `--force`. Finalize push is SKILL.md
+step 6, not a coach-cycle action.
 
 ## Tier 2 — detect a trusted project config, or propose one
 
@@ -400,9 +417,11 @@ commit one. Do not overwrite an existing worktree `project.json`.
 
 ### Readiness probe (TypeScript in scope)
 
-Run only when Tier 2 detected a trusted config and the blob bind
-passed. The bind applies to this probe, not only to Tier 3 scans.
-No trusted config → skip the probe entirely (do not default to HEAD).
+Coach scan-set item (readiness probe): informational readiness only —
+not a Stage A/B scan-fix loop, not a gate, not Tier 3. Run only when
+Tier 2 detected a trusted config and the blob bind passed. The bind
+applies to this probe, not only to Tier 3 scans. No trusted config →
+skip the probe entirely (do not default to HEAD).
 
 ```bash
 <binary> codesignal --format json \
@@ -542,7 +561,8 @@ Prefer improving production code over editing or silencing
 a finding.
 
 Stop Tier 3 when Stage-B is empty after a fresh project scan, or 5
-cycles have run, or the project scan cannot execute. After the tier,
+cycles have run, or the project scan cannot execute. Leftover Stage-B
+after the cap stays `todo` as in Tier 1. After the tier,
 Read `.cleanup-loop.md` and Edit the Tier 3 coach section.
 
 ## After all coach tiers

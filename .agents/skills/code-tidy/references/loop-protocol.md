@@ -79,10 +79,10 @@ Keep these sections, in order:
    method. Step 5 reviews `git diff <solid-base> HEAD`: 4e commits as
    it goes, so by then a bare `git diff` is empty and proves nothing,
    while the merge base would drag the PR's own feature work and
-   coach's licensed Stage-B fixes into a gate that exists to forbid
+   coach's default Stage-B fixes into a gate that exists to forbid
    behavior change.
 4. **Scope list** — one line per file:
-   `path  <todo|in-work|clean|ruling (category)|ruling (decision)>  [limit/reason]`.
+   `path  <todo|in-work|clean|ruling (category)|ruling (decision)|ruling (permission)>  [limit/reason]`.
 5. **Structure findings** — one line per accepted SOLID finding, in
    the `solid-diagnostics.md` form ending `apply` or `defer
    (<reason>)`; written before the 4c edits, kept across passes;
@@ -150,10 +150,12 @@ would sit in the same author-controlled diff.
   asked for, and a shortcut that looks only at content re-emits the
   old report and stops before reconciliation can act on it — the
   operator would have to invent a dummy commit to be heard. A
-  newly-supplied `allow-behavior-fix` or `allow-unverified-coach` is
-  the same act: the report asked for it by name. Re-emitting DONE at
-  a licence the last pass requested answers "I supplied the flag you
-  advertised" with the old report.
+  newly-supplied `allow-unverified-coach`, or a default (non-opt-out)
+  invoke after a `ruling (permission)` / solid-only withhold, is the
+  same act: the report asked for it by name. Re-emitting DONE at a
+  licence the last pass requested answers "I supplied what you
+  advertised" with the old report. Legacy `allow-behavior-fix` /
+  `allow-behavior-change` is treated like default (redundant).
   Reopening for any of these reasons restarts the cap window the same
   way. Otherwise start pass N+1: new paths enter as `todo`, re-admitted paths return to `todo`,
   every other status is kept. A developer commit that only adds a
@@ -317,10 +319,11 @@ permanent. A **category** ruling (`config/docs — these rules do not
 apply`) says the rules never applied to that file. A **decision**
 ruling says one production file is waiting on a human answer. A
 **permission** ruling says the remedy is known and withheld: coach
-classified a Stage-B defect on that path and the invocation did not
-say `allow-behavior-fix`. Write the kind on the line — `ruling
-(category)`, `ruling (decision)`, or `ruling (permission)` — because
-they reconcile differently.
+classified a Stage-B defect on that path and this invocation opted
+out (`solid-only` / `no-behavior-change` / prune-comments-only).
+Write the kind on the line — `ruling (category)`, `ruling
+(decision)`, or `ruling (permission)` — because they reconcile
+differently.
 
 Three invalidations:
 
@@ -341,15 +344,16 @@ passes).
   file has changed is stale — re-diagnose it rather than reusing the
   old evidence.
 - A `ruling (permission)` path returns to `todo` when its content
-  differs, **or** when this invocation supplies the token it was
-  waiting on. That is the whole point of asking: the operator read
-  `questions`, passed `allow-behavior-fix`, and expects the fix this
-  loop already described. Without this the gate is a trap — the pass
-  reports the defect, marks the file finished, and no later
-  invocation can reach it, because coach only touches `todo` /
-  `in-work`. Re-admission is not blanket authorization here either:
-  any `ruling (decision)` on the same file stays a restriction on
-  that item.
+  differs, **or** when this invocation does **not** opt out of
+  Stage-B (no `solid-only` / `no-behavior-change` /
+  prune-comments-only). That is the whole point of asking: the
+  operator read `questions`, re-invoked on the default coach-loop,
+  and expects the fix this loop already described. Without this the
+  opt-out is a trap — the pass reports the defect, marks the file
+  finished, and no later default invoke can reach it, because coach
+  only touches `todo` / `in-work`. Re-admission is not blanket
+  authorization here either: any `ruling (decision)` on the same
+  file stays a restriction on that item.
 - A `ruling (category)` path never re-admits on content. The rules
   still do not apply to a rewritten lockfile or workflow.
 
@@ -408,14 +412,17 @@ under `questions` and left alone.
 
 Unit of scope = the whole file. Set `in-work` when you start a file.
 Set `clean` only after every comment in it has a decision and the other
-rules agree. Set `ruling (decision)` when an open ruling blocks it,
+rules agree. Never replace `ruling (permission)` or `ruling (decision)`
+with `clean`, and never mark `clean` on a path that still carries
+leftover in-scope Stage-B. Set `ruling (decision)` when an open ruling blocks it,
 naming the item in Pending rulings; that status is a pause, not a
 verdict, and it lifts when the content changes or the decision arrives.
 Set `ruling (permission)`, never `clean`, on a path carrying a Stage-B
-item this pass withheld for want of `allow-behavior-fix`: the file is
+item this pass withheld because the invocation opted out
+(`solid-only` / `no-behavior-change` / prune-comments-only): the file is
 still tidied everywhere else, but calling it `clean` would certify work
 the pass declined to do. DONE across re-invokes is when no file is
-`todo`.
+`todo` and no `ruling (permission)` remains.
 
 A coach phase skipped for want of `allow-unverified-coach` leaves a
 wider claim unmet: nothing in scope was scanned at all. Record
@@ -623,10 +630,14 @@ Unvisited `todo` files are not in the metric.
   report. The report cannot embed this commit's own SHA, so `commits`
   lists source commits only; the finalize commit is always the last
   match of `git log --grep="Cleanup-Loop: pass=N$"`.
-- No push unless the invocation said `push` / `open the PR`. When it
-  did, push after the finalize commit: `git push` to the tracking
+- Commit only by default. Push is opt-in via `push` / `open the PR`.
+  When that license is present **and** the branch tracks a remote,
+  push after each Stage-B cycle commit (push-per-cycle); never
+  silently on a foreign PR. When `push` / `open the PR` was licensed,
+  also push after the finalize commit: `git push` to the tracking
   remote, or `git push origin HEAD` when no upstream is set. Never
-  `--force`.
+  `--force`. Scratch `./cmd/coach` builds are acquisition only — they
+  do not gate push.
 - No amend, rebase, squash, reword, force, branch create/delete, PR
   title/body/label/review changes.
 - Remove committed work with `git revert`. Discard uncommitted work
@@ -750,14 +761,21 @@ Field semantics for the Output block in SKILL.md.
   `BLOCKED` and one `questions` line naming the blocker. It is not
   appended to `.cleanup-loop.md`; a blocker never touches the state
   file.
-  - PR mode: `DONE — thorough` iff every scope file is `clean` or
-    `ruling`; else `PASS n/5`. A `ruling (decision)` whose content
-    changed, or whose ruling was resolved, is `todo` by then and
-    cannot be counted as finished.
-  - Branch mode: `DONE — thorough` iff no `todo` remains across
-    re-invokes. A pass that finished only its work set and left other
-    `todo` files is `PASS n/5` with the remaining count under
-    `questions`. Never mark unvisited files `clean` to reach DONE.
+  - PR mode: `DONE — thorough` iff every scope file is `clean`,
+    `ruling (category)`, or `ruling (decision)` **and** no in-scope
+    Stage-B remains; else `PASS n/5`. A `ruling (permission)`
+    (solid-only Stage-B withhold) or leftover Stage-B kept as
+    `todo` does **not** count as finished. A
+    `ruling (decision)` whose content changed, or whose ruling was
+    resolved, is `todo` by then and cannot be counted as finished.
+  - Branch mode: `DONE — thorough` iff no `todo` and no
+    `ruling (permission)` remain across re-invokes. A pass that
+    finished only its work set and left other `todo` /
+    permission-ruling files is `PASS n/5` with the remaining count
+    under `questions`. Never mark unvisited files `clean` to reach DONE.
+  - Lead with `stage-b  fixed <n>  remaining <n>  shas <…>`. Comment
+    deletes alone never certify thorough while in-scope Stage-B
+    remains or was left open / opted out.
   - After any Stage-B commit this pass, `DONE — thorough` requires a
     `questions` disclosure that behavior may have changed, naming
     those SHAs; otherwise `PASS n/5`.
@@ -766,7 +784,9 @@ Field semantics for the Output block in SKILL.md.
   finalize commit is excluded (see Git).
 - `kept comments` lists only non-obvious keeps.
 - `questions` one line each with a recommendation; omit the section if
-  none. Every deferred structure finding has a line here.
+  none. Every deferred structure finding has a line here. Stage-B
+  items withheld under solid-only opt-out, and leftover Stage-B after
+  the coach cap, appear here.
 
 Narration: one line per completed Work step, ≤10 words. Blockers in
 one line at the time they are found. The person reading can see the
