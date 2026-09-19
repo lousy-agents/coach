@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "code-tidy": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/code-tidy/SKILL.md",
+      "computedHash": "50b29589c78be381a0cdbc24db67a36237958fa2741902400b6473daa25644c4"
+    },
     "curate-release": {
       "source": "lousy-agents/skills",
       "sourceType": "github",
