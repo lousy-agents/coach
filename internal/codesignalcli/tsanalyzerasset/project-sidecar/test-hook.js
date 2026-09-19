@@ -3,18 +3,31 @@
  * reader can see every hook that can alter its behavior. Coach never passes
  * the flag and scrubs the environment before spawning (AC-RUN-4); the
  * failure modes exist so AC-RUN-9's controls can provoke them.
+ * root-scope-missing follows the same discipline as crash-partway/hang, but
+ * lets the real analysis complete and instead drops one root_scopes entry
+ * from the real response, provoking a genuine root_scopes/policy mismatch
+ * rather than total analyzer unavailability.
  */
 const TEST_HOOK_FLAG_PREFIX = "--coach-test-hook=";
 const TEST_HOOK_CRASH_PARTWAY = "crash-partway";
 const TEST_HOOK_HANG = "hang";
+const TEST_HOOK_ROOT_SCOPE_MISSING_PREFIX = "root-scope-missing:";
 /** Long enough that the caller's wall-clock budget always expires first. */
 const TEST_HOOK_HANG_MS = 600_000;
-/** The two post-preflight failure modes AC-RUN-9's controls provoke. */
+/** Set by the root-scope-missing mode to the one root computeRootScopes must
+ * omit from its response; undefined leaves computeRootScopes unaffected. */
+export let testHookDropRoot;
+/** The post-preflight failure/degrade modes AC-RUN-9's controls provoke. */
 export async function applyTestHook(argv) {
     const flag = argv.find((a) => a.startsWith(TEST_HOOK_FLAG_PREFIX));
     if (!flag)
         return;
-    switch (flag.slice(TEST_HOOK_FLAG_PREFIX.length)) {
+    const mode = flag.slice(TEST_HOOK_FLAG_PREFIX.length);
+    if (mode.startsWith(TEST_HOOK_ROOT_SCOPE_MISSING_PREFIX)) {
+        testHookDropRoot = mode.slice(TEST_HOOK_ROOT_SCOPE_MISSING_PREFIX.length);
+        return;
+    }
+    switch (mode) {
         case TEST_HOOK_CRASH_PARTWAY:
             setImmediate(() => {
                 throw new Error("coach-ts-project-sidecar test hook: crashing partway through analysis");
