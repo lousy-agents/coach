@@ -9,11 +9,11 @@
     "files_analyzed": 1,
     "files_with_diagnostics": 0,
     "active_signals": 1,
-    "introduced_signals": 0,
+    "introduced_signals": 1,
     "existing_signals": 0,
     "resolved_signals": 0,
     "baseline_signals": 0,
-    "unknown_signals": 1
+    "unknown_signals": 0
   },
   "signals": [
     {
@@ -25,7 +25,7 @@
       "category": "state_management",
       "severity": "medium",
       "confidence": "high",
-      "lifecycle": "unknown",
+      "lifecycle": "introduced",
       "changed": true,
       "path": "pkg/example/service.go",
       "subject": "ApplyDefaults",

@@ -390,12 +390,23 @@ func detectBunfigHazard(root string) string {
 	path := filepath.Join(root, "bunfig.toml")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if _, statErr := os.Lstat(path); errors.Is(statErr, fs.ErrNotExist) {
-			return ""
-		}
-		return "committed bunfig.toml could not be read"
+		return bunfigReadHazard(path)
 	}
 	data = bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF"))
+	if reason := bunfigInstallRedirect(data); reason != "" {
+		return reason
+	}
+	return bunfigUnverifiedRedirect(data)
+}
+
+func bunfigReadHazard(path string) string {
+	if _, statErr := os.Lstat(path); errors.Is(statErr, fs.ErrNotExist) {
+		return ""
+	}
+	return "committed bunfig.toml could not be read"
+}
+
+func bunfigInstallRedirect(data []byte) string {
 	section := ""
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
@@ -403,45 +414,61 @@ func detectBunfigHazard(root string) string {
 			continue
 		}
 		if strings.HasPrefix(line, "[") {
-			// A table header's name runs up to its closing ']', not to the
-			// end of the line -- real Bun 1.3.11 also honors a trailing
-			// comment after the header (`[install] # hi`), which
-			// strings.HasSuffix(line, "]") would reject outright, leaving
-			// section unset and the redirect below unseen. TOML also
-			// permits whitespace inside the brackets ([ install ]) and a
-			// quoted table name (["install"]); both are honored the same
-			// way and handled by the same Trim below.
-			name, _, _ := strings.Cut(line[1:], "]")
-			section = strings.ToLower(strings.Trim(strings.TrimSpace(name), `"'`))
+			section = bunfigTableName(line)
 			continue
 		}
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			continue
-		}
-		key = strings.ToLower(strings.TrimSpace(key))
-		value = trimConfigValueQuotes(strings.TrimSpace(value))
-		switch {
-		case section == "install" && key == "registry":
-			return "committed bunfig.toml redirects the install registry (registry=" + value + ")"
-		case section == "install" && key == "scopes":
-			return "committed bunfig.toml redirects scoped install registries (scopes=" + value + ")"
-		case section == "install.scopes":
-			return "committed bunfig.toml redirects a scoped install registry (" + key + "=" + value + ")"
+		if reason := bunfigInstallRedirectLine(section, line); reason != "" {
+			return reason
 		}
 	}
+	return ""
+}
+
+func bunfigTableName(line string) string {
+	// A table header's name runs up to its closing ']', not to the
+	// end of the line -- real Bun 1.3.11 also honors a trailing
+	// comment after the header (`[install] # hi`), which
+	// strings.HasSuffix(line, "]") would reject outright, leaving
+	// section unset and the redirect below unseen. TOML also
+	// permits whitespace inside the brackets ([ install ]) and a
+	// quoted table name (["install"]); both are honored the same
+	// way and handled by the same Trim below.
+	name, _, _ := strings.Cut(line[1:], "]")
+	return strings.ToLower(strings.Trim(strings.TrimSpace(name), `"'`))
+}
+
+func bunfigInstallRedirectLine(section, line string) string {
+	key, value, found := strings.Cut(line, "=")
+	if !found {
+		return ""
+	}
+	key = strings.ToLower(strings.TrimSpace(key))
+	value = trimConfigValueQuotes(strings.TrimSpace(value))
+	switch {
+	case section == "install" && key == "registry":
+		return "committed bunfig.toml redirects the install registry (registry=" + value + ")"
+	case section == "install" && key == "scopes":
+		return "committed bunfig.toml redirects scoped install registries (scopes=" + value + ")"
+	case section == "install.scopes":
+		return "committed bunfig.toml redirects a scoped install registry (" + key + "=" + value + ")"
+	}
+	return ""
+}
+
+func bunfigUnverifiedRedirect(data []byte) string {
+	const unverified = "committed bunfig.toml could not be verified to leave package resolution unredirected"
 	// Every TOML escape sequence (\uXXXX, \xHH, octal \NNN, and any future
 	// form Bun adds) requires a backslash to invoke, in either a quoted
 	// table name or a quoted key -- a general check for the mechanism, not
 	// an enumeration of its spellings. A legitimate bunfig.toml's forward-
 	// slash paths and settings never need one.
 	if strings.Contains(string(data), `\`) {
-		return "committed bunfig.toml could not be verified to leave package resolution unredirected"
+		return unverified
 	}
 	lower := strings.ToLower(string(data))
 	for _, keyword := range []string{"install", "registry", "scopes", "cache"} {
 		if strings.Contains(lower, keyword) {
-			return "committed bunfig.toml could not be verified to leave package resolution unredirected"
+			return unverified
 		}
 	}
 	return ""

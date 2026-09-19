@@ -73,14 +73,37 @@ Default `--scope` is `production`. `--build-target <pattern>` further limits Go 
 
 A short text report per signal (`path`, `line`, `lifecycle`, `changed`,
 `evidence`, why it matters, recommendation), or a quiet report if nothing
-matched. `lifecycle` is `introduced` / `existing` / `resolved` / `unknown`.
+matched. `lifecycle` is `introduced` / `existing` / `resolved` / `unknown`
+(and `baseline` under `--baseline`).
 
 Diff-mode limits (do not treat these as a clean PR):
 
-- Added files are analyzed but classified `unknown`; they do not increment `introduced_signals`.
 - Renames and copies are skipped with an `unsupported_change_type` diagnostic.
 
 Text `line` is 1-based. JSON `location.start_row` is 0-based.
+
+### Lifecycle and counters
+
+JSON `summary` counts every `signals[]` entry in exactly one of
+`introduced_signals`, `existing_signals`, `resolved_signals`,
+`baseline_signals`, `unknown_signals`. `active_signals` is `len(signals)`
+after the include-resolved filter. That relationship holds for both
+`--base` and `--baseline`:
+
+- `--base` includes `resolved` in `signals[]` by default, so
+  `active_signals` includes them. That total is not "problems present at
+  HEAD".
+- `--baseline` does not include `resolved`. Signals there are `baseline`.
+
+Problems present at HEAD are `introduced_signals` + `existing_signals` +
+`unknown_signals` (and `baseline_signals` under `--baseline`). Do not trust
+`active_signals` alone in diff mode.
+
+Added (`A`) files in `--base` mode are `lifecycle: introduced` and count in
+`introduced_signals`. `unknown` means the merge-base side existed but could
+not be analyzed (unreadable / syntax / analysis error); that path has a
+`base_read_failed`, `base_syntax_errors`, or `base_analysis_failed`
+diagnostic, counted in `unknown_signals`.
 
 ## Install
 

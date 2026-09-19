@@ -51,20 +51,28 @@ func detectTSBareStatementTokens(root engine.Node) []SyntaxIssue {
 		if n == nil {
 			return
 		}
-		if tsStatementContainerKinds[n.Kind()] {
-			count := n.ChildCount()
-			for i := 0; i < count; i++ {
-				child := n.Child(i)
-				if child != nil && tsBareTokenKinds[child.Kind()] {
-					issues = append(issues, SyntaxIssue{Kind: "error", Location: locationFromNode(child)})
-				}
-			}
-		}
+		issues = append(issues, tsBareTokenIssues(n)...)
 		count := n.ChildCount()
 		for i := 0; i < count; i++ {
 			walk(n.Child(i))
 		}
 	}
 	walk(root)
+	return issues
+}
+
+func tsBareTokenIssues(n engine.Node) []SyntaxIssue {
+	if !tsStatementContainerKinds[n.Kind()] {
+		return nil
+	}
+	var issues []SyntaxIssue
+	count := n.ChildCount()
+	for i := 0; i < count; i++ {
+		child := n.Child(i)
+		if child == nil || !tsBareTokenKinds[child.Kind()] {
+			continue
+		}
+		issues = append(issues, SyntaxIssue{Kind: "error", Location: locationFromNode(child)})
+	}
 	return issues
 }
