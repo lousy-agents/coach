@@ -106,6 +106,7 @@ var modeHandlers = map[string]modeHandler{
 	"layer_bypass_cycle":     modeLayerBypassCycle,
 	"layer_bypass_gap":       modeLayerBypassGap,
 	"unanalyzable_candidate": modeUnanalyzableCandidate,
+	"root_scope_missing":     modeRootScopeMissing,
 }
 
 // reachabilityFixtureFact is the one resolved call-graph edge/reachability
@@ -401,6 +402,26 @@ func modeUnanalyzableCandidate(req projectbridge.Request) {
 				AnalyzedPaths:   []string{"src/a.ts", "src/b.ts"},
 				UnanalyzedPaths: []string{"src/c.tsx"},
 			},
+		},
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: true,
+			Counts:   map[string]int{"files_seen": len(req.Files)},
+		},
+	})
+}
+
+// modeRootScopeMissing reports Coverage.Complete: true with a single
+// RootScopes entry for "." only, regardless of how many roots the caller
+// requested -- proving a caller whose policy names a second root (e.g.
+// "pkg/handlers") has a genuine, wire-round-tripped root_scopes mismatch
+// rather than the total absence a crashed/unavailable analyzer produces.
+func modeRootScopeMissing(req projectbridge.Request) {
+	writeResponse(projectbridge.Response{
+		Version: req.Version,
+		ID:      req.ID,
+		RootScopes: []projectbridge.RootScopeFact{
+			{Root: ".", CandidateFiles: 1, AnalyzedFiles: 1},
 		},
 		Coverage: projectbridge.Coverage{
 			Phase:    "ts_sidecar_fake",

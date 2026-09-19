@@ -15,6 +15,7 @@ import {
   type RootScopeFact,
 } from "./protocol.js";
 import { canonicalizeCallGraph, canonicalizeReachabilityFacts, extractReachabilityForProject } from "./reachability.js";
+import { testHookDropRoot } from "./test-hook.js";
 import { buildProjectSnapshot, fromVirtualPath, toVirtualPath, VIRTUAL_ROOT, type ProjectSnapshot } from "./vfs.js";
 
 export interface CompilerBundle {
@@ -208,7 +209,8 @@ function computeRootScopes(
 ): RootScopeFact[] | undefined {
   if (!roots || roots.length === 0) return undefined;
   const normalizedRoots = [...new Set(roots.map(normalizeRoot))].sort();
-  return normalizedRoots.map((root) => rootScopeFor(root, projects, snapshot, visited));
+  const dropRoot = testHookDropRoot !== undefined ? normalizeRoot(testHookDropRoot) : undefined;
+  return normalizedRoots.filter((root) => root !== dropRoot).map((root) => rootScopeFor(root, projects, snapshot, visited));
 }
 
 function rootScopeFor(

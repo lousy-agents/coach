@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -316,11 +317,18 @@ func analyzerChildPIDs() []int {
 	return analyzerChildPIDsFromPS()
 }
 
+// analyzerChildPIDsFromProc restricts matches to descendants of this test
+// binary's own process. go test ./... runs internal/codesignalcli and
+// pkg/projectmodel acceptance suites concurrently, and they spawn their own
+// analyzer children with the same --compiler-module= marker; without the
+// ancestry check those foreign pids get counted alongside this package's,
+// inflating the per-invocation counts these specs assert against.
 func analyzerChildPIDsFromProc() ([]int, bool) {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return nil, false
 	}
+	self := os.Getpid()
 	var pids []int
 	for _, entry := range entries {
 		pid, err := strconv.Atoi(entry.Name())
@@ -331,35 +339,121 @@ func analyzerChildPIDsFromProc() ([]int, bool) {
 		if err != nil {
 			continue
 		}
-		if bytes.Contains(data, []byte(analyzerChildArgMarker)) {
-			pids = append(pids, pid)
+		if !bytes.Contains(data, []byte(analyzerChildArgMarker)) {
+			continue
 		}
+		if !isDescendantOfProcess(pid, self) {
+			continue
+		}
+		pids = append(pids, pid)
 	}
 	return pids, true
 }
 
+// isDescendantOfProcess reports whether pid's parent chain, read from
+// /proc/<pid>/stat, reaches ancestor before hitting PID 1 or a read failure.
+func isDescendantOfProcess(pid, ancestor int) bool {
+	seen := make(map[int]bool)
+	for {
+		if pid == ancestor {
+			return true
+		}
+		if pid <= 1 || seen[pid] {
+			return false
+		}
+		seen[pid] = true
+		ppid, ok := processParentPID(pid)
+		if !ok {
+			return false
+		}
+		pid = ppid
+	}
+}
+
+// processParentPID reads a process's parent PID from /proc/<pid>/stat. The
+// comm field can itself contain spaces and parentheses, so the parse anchors
+// on the stat format's guaranteed last ')' rather than splitting on spaces.
+func processParentPID(pid int) (int, bool) {
+	data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return 0, false
+	}
+	idx := bytes.LastIndexByte(data, ')')
+	if idx < 0 || idx+2 >= len(data) {
+		return 0, false
+	}
+	fields := strings.Fields(string(data[idx+2:]))
+	if len(fields) < 2 {
+		return 0, false
+	}
+	ppid, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return 0, false
+	}
+	return ppid, true
+}
+
+// analyzerChildPIDsFromPS is the non-/proc fallback (e.g. Darwin), applying
+// the same ancestry restriction as analyzerChildPIDsFromProc via ppid=.
 func analyzerChildPIDsFromPS() []int {
-	out, err := exec.Command("ps", "-axww", "-o", "pid=,args=").Output()
+	out, err := exec.Command("ps", "-axww", "-o", "pid=,ppid=,args=").Output()
 	if err != nil {
 		return nil
 	}
-	var pids []int
+	parents := make(map[int]int)
+	var candidates []int
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" || !strings.Contains(line, analyzerChildArgMarker) {
+		if line == "" {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) == 0 {
+		if len(fields) < 3 {
 			continue
 		}
 		pid, err := strconv.Atoi(fields[0])
 		if err != nil {
 			continue
 		}
-		pids = append(pids, pid)
+		ppid, err := strconv.Atoi(fields[1])
+		if err != nil {
+			continue
+		}
+		parents[pid] = ppid
+		args := strings.Join(fields[2:], " ")
+		if strings.Contains(args, analyzerChildArgMarker) {
+			candidates = append(candidates, pid)
+		}
+	}
+	self := os.Getpid()
+	var pids []int
+	for _, pid := range candidates {
+		if isDescendantOfProcessTree(pid, self, parents) {
+			pids = append(pids, pid)
+		}
 	}
 	return pids
+}
+
+// isDescendantOfProcessTree is isDescendantOfProcess's variant for a
+// pre-collected pid->ppid map, used where re-reading each ancestor's state
+// (as /proc allows) is not available.
+func isDescendantOfProcessTree(pid, ancestor int, parents map[int]int) bool {
+	seen := make(map[int]bool)
+	for {
+		if pid == ancestor {
+			return true
+		}
+		if pid <= 1 || seen[pid] {
+			return false
+		}
+		seen[pid] = true
+		ppid, ok := parents[pid]
+		if !ok {
+			return false
+		}
+		pid = ppid
+	}
 }
 
 // readProcessEnviron reports a process's environment, or false when none
@@ -1236,12 +1330,54 @@ func countProjectModelDiagnosticCode(diagnostics []projectmodel.Diagnostic, code
 	return count
 }
 
+// diagnosticMessageForKind returns the Message of the first report
+// diagnostic matching kind, or "" if none matches.
+func diagnosticMessageForKind(diagnostics []codesignal.Diagnostic, kind string) string {
+	for _, d := range diagnostics {
+		if d.Kind == kind {
+			return d.Message
+		}
+	}
+	return ""
+}
+
 func projectChangeRuleIDs(changes []codesignal.ProjectChange) map[string]bool {
 	seen := map[string]bool{}
 	for _, change := range changes {
 		seen[change.RuleID] = true
 	}
 	return seen
+}
+
+// AC-12.
+func assertReachabilityNeverSignalOrChange(report *codesignal.Report) {
+	for _, signal := range report.Signals {
+		Expect(signal.RuleID).NotTo(Equal("possible_call_reachability"), "reachability must never surface as a Signal, got %+v", signal)
+		Expect(signal.Kind).NotTo(Equal("possible_call_reachability"), "reachability must never surface as a Signal, got %+v", signal)
+	}
+	for _, change := range report.ProjectChanges {
+		Expect(change.RuleID).NotTo(Equal("possible_call_reachability"), "reachability must never surface as a ProjectChange, got %+v", change)
+		Expect(change.Kind).NotTo(Equal("possible_call_reachability"), "reachability must never surface as a ProjectChange, got %+v", change)
+	}
+}
+
+// splitTextFindingsAndFacts splits RenderText's output at its "\nFacts:\n"
+// section marker (render.go's renderProjectFacts), so a spec can assert
+// separately about the findings section (Signals + "Project findings:"
+// ProjectChanges) and everything from "Facts:" onward: RenderText writes
+// renderProjectFacts, renderDiagnosticsSection, renderCoverageSection, and
+// renderProjectCoverageSection in that order with no further section
+// markers this helper splits on, so factsSection is "Facts: through end of
+// output", not ProjectFacts alone.
+//
+// Callers pair this with a JSON-decoded assertion on the same fixture first:
+// the JSON checks are the structural source of truth, and the text-format
+// checks this helper supports only confirm the text renderer doesn't
+// diverge from what JSON already proved, not an independent proof.
+func splitTextFindingsAndFacts(text string) (findingsSection, factsSection string) {
+	idx := strings.Index(text, "\nFacts:\n")
+	ExpectWithOffset(1, idx).To(BeNumerically(">", 0), "expected a \"Facts:\" section in text output, got %q", text)
+	return text[:idx], text[idx:]
 }
 
 // T7 (issue #331 Task 8): one analyzer response per revision must feed
@@ -1268,7 +1404,7 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			commitFile(repo, "vendor/prisma-client/package.json", tsPrismaClientPackageJSON)
 			commitFile(repo, "vendor/prisma-client/index.ts", tsPrismaClientIndexTS)
 			commitFile(repo, "pkg/handlers/bypass.ts", tsHandlersBypassFile)
-			commitFile(repo, "project.json", tsLayerBypassRequiredConfigJSON)
+			headSHA := commitFile(repo, "project.json", tsLayerBypassRequiredConfigJSON)
 			installRealTypescriptCompiler(repo, true)
 
 			sampler := startAnalyzerEnvironSampler()
@@ -1283,6 +1419,42 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			Expect(ruleIDs).To(HaveKey("architecture.layer_bypass"), "expected a layer-bypass ProjectChange derived from the same single analyzer response, got %+v", report.ProjectChanges)
 			Expect(report.ProjectFacts).NotTo(BeEmpty(), "expected reachability facts derived from the same single analyzer response")
 			Expect(report.ProjectFacts[0].Kind).To(Equal("possible_call_reachability"))
+			assertReachabilityNeverSignalOrChange(report)
+
+			textSampler := startAnalyzerEnvironSampler()
+			textStdout, textStderr, textExitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
+			textEnvirons := textSampler.halt()
+			Expect(textExitCode).To(Equal(0), "stderr: %s stdout: %s", textStderr, textStdout)
+			Expect(len(textEnvirons)).To(Equal(1), "expected exactly one analyzer invocation for the text-format rendering of the same baseline analysis, observed pids: %+v", textEnvirons)
+
+			findingsSection, factsSection := splitTextFindingsAndFacts(string(textStdout))
+			Expect(findingsSection).To(ContainSubstring("rule_id: architecture.layer_violation"), "got %q", findingsSection)
+			Expect(findingsSection).To(ContainSubstring("rule_id: architecture.layer_bypass"), "got %q", findingsSection)
+			Expect(findingsSection).NotTo(ContainSubstring("possible_call_reachability"), "reachability must never appear in the Signals/ProjectChanges findings section, got %q", findingsSection)
+			Expect(factsSection).To(ContainSubstring("kind: possible_call_reachability"), "got %q", factsSection)
+			Expect(factsSection).NotTo(ContainSubstring("rule_id:"), "the Facts section must never carry a rule_id, which would make a fact indistinguishable from a Signal/ProjectChange, got %q", factsSection)
+
+			// AC-11: a single-invocation ProjectBackendResult for the same
+			// fixture must itself carry HeadChanges, Facts, project_scope, and
+			// all three phase-coverage observations together, proving one
+			// per-revision analyzer response backs all five jointly rather than
+			// each being checked against a coincidentally-matching, separately
+			// derived value.
+			scopeSampler := startAnalyzerEnvironSampler()
+			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, tsLayerBypassRequiredConfigJSON)
+			scopeEnvirons := scopeSampler.halt()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(scopeEnvirons)).To(Equal(1), "expected exactly one analyzer invocation for the direct-result inspection of the same baseline analysis, observed pids: %+v", scopeEnvirons)
+
+			resultRuleIDs := projectChangeRuleIDs(result.HeadChanges)
+			Expect(resultRuleIDs).To(HaveKey("architecture.layer_violation"), "the same single-invocation result must carry the layer-violation change, got %+v", result.HeadChanges)
+			Expect(resultRuleIDs).To(HaveKey("architecture.layer_bypass"), "the same single-invocation result must carry the layer-bypass change, got %+v", result.HeadChanges)
+			Expect(result.Facts).NotTo(BeEmpty(), "the same single-invocation result must carry the reachability fact")
+			Expect(result.Facts[0].Kind).To(Equal("possible_call_reachability"))
+			Expect(result.HeadProjectScope).NotTo(BeNil(), "the same single-invocation result must carry project_scope (AC-11)")
+			Expect(result.HeadModelCoverage).NotTo(BeNil(), "the same single-invocation result must carry model-phase coverage (AC-11)")
+			Expect(result.HeadBypassCoverage).NotTo(BeNil(), "the same single-invocation result must carry bypass-phase coverage (AC-11)")
+			Expect(result.HeadReachabilityCoverage).NotTo(BeNil(), "the same single-invocation result must carry reachability-phase coverage (AC-11)")
 		})
 	})
 
@@ -1299,7 +1471,7 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			commitFile(repo, "vendor/prisma-client/index.ts", tsPrismaClientIndexTS)
 			commitFile(repo, "pkg/handlers/bypass.ts", tsHandlersBypassFile)
 			baseSHA := commitFile(repo, "project.json", tsLayerBypassRequiredConfigJSON)
-			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
+			headSHA := commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
 			installRealTypescriptCompiler(repo, true)
 
 			sampler := startAnalyzerEnvironSampler()
@@ -1313,6 +1485,44 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			Expect(ruleIDs).To(HaveKey("architecture.layer_violation"), "got %+v", report.ProjectChanges)
 			Expect(ruleIDs).To(HaveKey("architecture.layer_bypass"), "expected a layer-bypass ProjectChange present on both revisions, got %+v", report.ProjectChanges)
 			Expect(report.ProjectFacts).NotTo(BeEmpty())
+			assertReachabilityNeverSignalOrChange(report)
+
+			textSampler := startAnalyzerEnvironSampler()
+			textStdout, textStderr, textExitCode := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
+			textEnvirons := textSampler.halt()
+			Expect(textExitCode).To(Equal(0), "stderr: %s stdout: %s", textStderr, textStdout)
+			Expect(len(textEnvirons)).To(Equal(2), "expected exactly one analyzer invocation per revision for the text-format rendering of the same diff, observed pids: %+v", textEnvirons)
+
+			findingsSection, factsSection := splitTextFindingsAndFacts(string(textStdout))
+			Expect(findingsSection).To(ContainSubstring("rule_id: architecture.layer_violation"), "got %q", findingsSection)
+			Expect(findingsSection).To(ContainSubstring("rule_id: architecture.layer_bypass"), "got %q", findingsSection)
+			Expect(findingsSection).NotTo(ContainSubstring("possible_call_reachability"), "reachability must never appear in the Signals/ProjectChanges findings section, got %q", findingsSection)
+			Expect(factsSection).To(ContainSubstring("kind: possible_call_reachability"), "got %q", factsSection)
+			Expect(factsSection).NotTo(ContainSubstring("rule_id:"), "the Facts section must never carry a rule_id, which would make a fact indistinguishable from a Signal/ProjectChange, got %q", factsSection)
+
+			// AC-11: a single Analyze() call/ProjectBackendResult for the same
+			// diff (2 analyzer invocations total, one per revision) must itself
+			// carry HeadChanges, Facts, and both revisions' project_scope and
+			// all three phase-coverage observations together.
+			scopeSampler := startAnalyzerEnvironSampler()
+			result, err := analyzeTSProjectBackend(repo, headSHA, baseSHA, false, tsLayerBypassRequiredConfigJSON)
+			scopeEnvirons := scopeSampler.halt()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(scopeEnvirons)).To(Equal(2), "expected exactly one analyzer invocation per revision for the direct-result inspection of the same diff, observed pids: %+v", scopeEnvirons)
+
+			resultRuleIDs := projectChangeRuleIDs(result.HeadChanges)
+			Expect(resultRuleIDs).To(HaveKey("architecture.layer_violation"), "the same single Analyze() result must carry the head-side layer-violation change, got %+v", result.HeadChanges)
+			Expect(resultRuleIDs).To(HaveKey("architecture.layer_bypass"), "the same single Analyze() result must carry the head-side layer-bypass change, got %+v", result.HeadChanges)
+			Expect(result.Facts).NotTo(BeEmpty(), "the same single Analyze() result must carry the reachability fact")
+			Expect(result.Facts[0].Kind).To(Equal("possible_call_reachability"))
+			Expect(result.HeadProjectScope).NotTo(BeNil(), "the same single Analyze() result must carry head-side project_scope (AC-11)")
+			Expect(result.BaseProjectScope).NotTo(BeNil(), "the same single Analyze() result must carry base-side project_scope (AC-11)")
+			Expect(result.HeadModelCoverage).NotTo(BeNil(), "the same single Analyze() result must carry head-side model-phase coverage (AC-11)")
+			Expect(result.BaseModelCoverage).NotTo(BeNil(), "the same single Analyze() result must carry base-side model-phase coverage (AC-11)")
+			Expect(result.HeadBypassCoverage).NotTo(BeNil(), "the same single Analyze() result must carry head-side bypass-phase coverage (AC-11)")
+			Expect(result.BaseBypassCoverage).NotTo(BeNil(), "the same single Analyze() result must carry base-side bypass-phase coverage (AC-11)")
+			Expect(result.HeadReachabilityCoverage).NotTo(BeNil(), "the same single Analyze() result must carry head-side reachability-phase coverage (AC-11)")
+			Expect(result.BaseReachabilityCoverage).NotTo(BeNil(), "the same single Analyze() result must carry base-side reachability-phase coverage (AC-11)")
 		})
 	})
 
@@ -1320,7 +1530,19 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 		It("degrades HeadCoverage to incomplete and every project-change lifecycle to unknown (AC-2/AC-14)", func() {
 			repo := newTempGitRepo()
 			version := realTypescriptVersion()
-			commitRealTSLayerFixture(repo, version)
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
+			commitFile(repo, "vendor/prisma-client/package.json", tsPrismaClientPackageJSON)
+			commitFile(repo, "vendor/prisma-client/index.ts", tsPrismaClientIndexTS)
+			// tsHandlersBypassFile gives this fixture a genuine bypass
+			// candidate (a fully resolvable handler->sink path) that the
+			// ambiguous required_layer must still suppress, unlike
+			// commitRealTSLayerFixture alone, which has no sink/source pair
+			// at all and would pass this spec's suppression assertions
+			// vacuously regardless of whether suppression actually works.
+			commitFile(repo, "pkg/handlers/bypass.ts", tsHandlersBypassFile)
 			commitFile(repo, "project.json", tsLayerBypassAmbiguousConfigJSON)
 			installRealTypescriptCompiler(repo, true)
 
@@ -1339,6 +1561,20 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_lifecycle_indeterminate")))
 			Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_coverage_incomplete")))
 			Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_layer_bypass_coverage_incomplete")))
+
+			// AC-7/AC-17: an unresolved bypass search (ambiguous required
+			// layer, so BuildTypeScriptLayerBypassFromModel's search never
+			// reaches a fully-classified, LayerBypassConfidenceHigh witness --
+			// the only confidence value the TS/Go backends ever produce, see
+			// ts_layer_bypass.go's tsLayerBypassSearchFromSource (its
+			// Confidence: LayerBypassConfidenceHigh assignment) -- must never
+			// surface an architecture.layer_bypass entry.
+			jsonRuleIDs := projectChangeRuleIDs(report.ProjectChanges)
+			Expect(jsonRuleIDs).NotTo(HaveKey("architecture.layer_bypass"), "an unresolved bypass search must stay suppressed in JSON, got %+v", report.ProjectChanges)
+
+			textStdout, textStderr, textExitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
+			Expect(textExitCode).To(Equal(0), "stderr: %s stdout: %s", textStderr, textStdout)
+			Expect(string(textStdout)).NotTo(ContainSubstring("architecture.layer_bypass"), "an unresolved bypass search must stay suppressed in text too, got %q", textStdout)
 		})
 	})
 
@@ -1462,6 +1698,375 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			Expect(string(report.ProjectChanges[0].Lifecycle)).To(Equal("unknown"), "base-side model incompleteness must still degrade the diff's project-change lifecycle to unknown")
 
 			Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_lifecycle_indeterminate")))
+		})
+	})
+
+	// AC-24/AC-EVD-4: the mirror of the base-side case immediately above --
+	// codesignal.projectLifecycleState checks input.ProjectCoverage (head)
+	// and input.BaseProjectCoverage (base) in two separate conditions
+	// (pkg/codesignal/codesignal.go), so proving indeterminacy from
+	// head-side incompleteness alone exercises a distinct branch from the
+	// base-side case, not a coincidentally-identical outcome from the same
+	// condition.
+	When("a --base diff has the SA-280-025 root-scope mismatch only on the head revision, with the base revision fully complete", Label("ts-project-backend"), func() {
+		It("degrades the diff's project-change lifecycle to unknown even though the base revision's own coverage is complete", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersWithoutImport)
+			baseSHA := commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+			commitFile(repo, "tsconfig.json", tsRootScopeGapTSConfigJSON)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
+			installRealTypescriptCompiler(repo, true)
+
+			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+
+			report := decodeCoachReport(stdout)
+			Expect(report.ProjectCoverage).NotTo(BeNil())
+			Expect(report.ProjectCoverage.Complete).To(BeFalse(), "expected the head-side root-scope mismatch to mark head coverage incomplete, got %+v", report.ProjectCoverage)
+
+			Expect(report.ProjectChanges).To(HaveLen(1))
+			Expect(string(report.ProjectChanges[0].Lifecycle)).To(Equal("unknown"), "head-side model incompleteness must degrade the diff's project-change lifecycle to unknown even though base coverage is complete")
+
+			// Pins this spec to the head-side branch of projectLifecycleState
+			// it claims to exercise, not the base side, which this fixture
+			// commits complete with tsProjectTSConfigJSON before baseSHA:
+			// projectLifecycleDiagnosticMessage (pkg/codesignal/codesignal.go)
+			// only ever mentions "base coverage incomplete" when the base side
+			// itself was incomplete.
+			lifecycleMessage := diagnosticMessageForKind(report.Diagnostics, "project_lifecycle_indeterminate")
+			Expect(lifecycleMessage).To(ContainSubstring("head coverage incomplete"), "expected the indeterminacy reason to name head coverage, got %q", lifecycleMessage)
+			Expect(lifecycleMessage).NotTo(ContainSubstring("base coverage incomplete"), "the base revision is fully complete in this fixture; the indeterminacy reason must not blame it too, got %q", lifecycleMessage)
+		})
+	})
+})
+
+// analyzeTSProjectBackend calls the exported tsProjectBackend contract
+// (NewTSProjectBackend/ProjectBackend.Analyze) directly, in-process, rather
+// than through the compiled coach binary: project_scope is not yet rendered
+// through codesignal.Input/Report (issue #332 Task 10's job, not Task 9
+// T1's), so ProjectBackendResult -- the public contract at this boundary --
+// is the most meaningful place to observe HeadProjectScope/BaseProjectScope.
+// Calling Analyze in-process still spawns the real analyzer subprocess
+// (BuildTypeScriptModelViaSidecar), and the analyzer child is still a
+// descendant of this test binary, so startAnalyzerEnvironSampler's
+// descendant-restricted PID scan observes it exactly as it would through the
+// compiled binary.
+func analyzeTSProjectBackend(dir, headRevision, baseRevision string, baseline bool, configJSON string) (*codesignalcli.ProjectBackendResult, error) {
+	config := json.RawMessage(configJSON)
+	backend := codesignalcli.NewTSProjectBackend()
+	return backend.Analyze(context.Background(), codesignalcli.ProjectBackendRequest{
+		Dir:          dir,
+		HeadRevision: headRevision,
+		BaseRevision: baseRevision,
+		Baseline:     baseline,
+		ConfigPath:   "project.json",
+		Config:       config,
+		ConfigDigest: codesignalcli.ConfigDigest(config),
+		Language:     "typescript",
+	})
+}
+
+// tsHandlersExtraFile is a second real file under pkg/handlers/, alongside
+// tsRealHandlersImportingDB, so a root scoped to pkg/handlers (see
+// tsNestedRootsScopeConfigJSON) has a distinct, independently-verifiable
+// file count from the outer "." root that also contains pkg/db/d.ts.
+const tsHandlersExtraFile = "export const extra = 1;\n"
+
+// tsUtilMiscFile lives under a prefix no layer in goLayerPolicyConfigJSON
+// declares (only "handlers" and "db" are configured), reproducing AC-5's
+// "a file outside every layer" fixture: it must still be counted as an
+// ordinary candidate/analyzed file, without spuriously creating or
+// expanding any layer's matched set.
+const tsUtilMiscFile = "export const misc = 1;\n"
+
+// tsNestedRootsScopeConfigJSON declares two roots where the second
+// ("pkg/handlers") nests inside the first ("."), plus a third layer
+// ("unused") whose prefix matches no file the fixtures below ever commit --
+// reproducing SA-280-005/SA-280-025's independent per-root accounting and
+// matched_layers/unmatched_layers split in one fixture.
+const tsNestedRootsScopeConfigJSON = `{"schema_version":"1","roots":[".","pkg/handlers"],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]},{"name":"unused","prefixes":["pkg/does-not-exist"]}],"forbidden_imports":[{"from":"handlers","to":"db"}]}`
+
+// T1 (issue #332 Task 9): ProjectScopeFromModel is wired into
+// tsProjectBackend.evaluateRevision and its result carried per analyzed
+// revision on ProjectBackendResult, derived from the same single analyzer
+// response the layer-violation/layer-bypass/reachability evidence families
+// above already share (AC-RUN-5's one-invocation-per-revision instrumentation
+// applies here unchanged).
+var _ = Describe("coach codesignal --project-language typescript carries project_scope on ProjectBackendResult, derived from the same analyzer response as the other evidence families (coach#332 Task 9 T1)", func() {
+	BeforeEach(func() {
+		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+			Skip(reason)
+		}
+	})
+
+	When("a baseline analysis runs against a multi-root policy with a nested root", Label("ts-project-backend"), func() {
+		It("derives HeadProjectScope with independent per-root candidate/analyzed counts, matched_layers, unmatched_layers, inclusion_rule, and pattern_set from one analyzer response (AC-3/AC-15/AC-25/AC-26)", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "pkg/handlers/tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersWithoutImport)
+			commitFile(repo, "pkg/handlers/extra.ts", tsHandlersExtraFile)
+			headSHA := commitFile(repo, "project.json", tsNestedRootsScopeConfigJSON)
+			installRealTypescriptCompiler(repo, true)
+
+			sampler := startAnalyzerEnvironSampler()
+			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, tsNestedRootsScopeConfigJSON)
+			environs := sampler.halt()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(environs)).To(Equal(1), "expected exactly one analyzer invocation for a baseline analysis (AC-RUN-5), observed pids: %+v", environs)
+
+			Expect(result.HeadProjectScope).NotTo(BeNil())
+			scope := *result.HeadProjectScope
+			Expect(scope.InclusionRule).To(Equal(projectmodel.InclusionRuleTSConfigIncludesNoTestClassification))
+			Expect(scope.PatternSet).To(Equal(projectmodel.TSReachabilityAlgorithm))
+			Expect(scope.Roots).To(HaveLen(2), "got %+v", scope.Roots)
+
+			byRoot := map[string]projectmodel.ProjectScopeRoot{}
+			for _, r := range scope.Roots {
+				byRoot[r.Root] = r
+			}
+			rootDot, ok := byRoot["."]
+			Expect(ok).To(BeTrue(), "expected a root_scope entry for \".\", got %+v", scope.Roots)
+			Expect(rootDot.CandidateFiles).To(Equal(3), "expected d.ts, h.ts, extra.ts under \".\", got %+v", rootDot)
+			Expect(rootDot.AnalyzedFiles).To(Equal(3), "got %+v", rootDot)
+
+			rootHandlers, ok := byRoot["pkg/handlers"]
+			Expect(ok).To(BeTrue(), "expected a root_scope entry for pkg/handlers, got %+v", scope.Roots)
+			Expect(rootHandlers.CandidateFiles).To(Equal(2), "expected h.ts, extra.ts under pkg/handlers, counted independently from \".\", got %+v", rootHandlers)
+			Expect(rootHandlers.AnalyzedFiles).To(Equal(2), "got %+v", rootHandlers)
+
+			Expect(scope.MatchedLayers).To(ConsistOf("handlers", "db"), "got %+v", scope.MatchedLayers)
+			Expect(scope.UnmatchedLayers).To(ConsistOf("unused"), "a layer whose prefix matches no analyzed file must land in unmatched_layers, got %+v", scope.UnmatchedLayers)
+		})
+	})
+
+	When("a --base diff analyzes two revisions under the same multi-root policy", Label("ts-project-backend"), func() {
+		It("invokes the analyzer exactly twice, once per revision, and carries both HeadProjectScope and BaseProjectScope (AC-3/AC-RUN-5)", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "pkg/handlers/tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersWithoutImport)
+			commitFile(repo, "pkg/handlers/extra.ts", tsHandlersExtraFile)
+			baseSHA := commitFile(repo, "project.json", tsNestedRootsScopeConfigJSON)
+			headSHA := commitFile(repo, "pkg/handlers/extra.ts", tsHandlersExtraFile+"export const more = 2;\n")
+			installRealTypescriptCompiler(repo, true)
+
+			sampler := startAnalyzerEnvironSampler()
+			result, err := analyzeTSProjectBackend(repo, headSHA, baseSHA, false, tsNestedRootsScopeConfigJSON)
+			environs := sampler.halt()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(environs)).To(Equal(2), "expected exactly one analyzer invocation per revision (head + base), no second analyzer pass just to derive project_scope, observed pids: %+v", environs)
+
+			Expect(result.HeadProjectScope).NotTo(BeNil(), "head-side project_scope must be carried")
+			Expect(result.BaseProjectScope).NotTo(BeNil(), "base-side project_scope must be carried under --base")
+			Expect(result.HeadProjectScope.Roots).To(HaveLen(2))
+			Expect(result.BaseProjectScope.Roots).To(HaveLen(2))
+		})
+	})
+
+	When("the tsRootScopeGapTSConfigJSON fixture accepts a candidate file into the compiler's Program that is never actually analyzed", Label("ts-project-backend"), func() {
+		It("counts the unanalyzable candidate file in candidate_files but not analyzed_files, and names it in its own diagnostic (AC-5/AC-25)", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "tsconfig.json", tsRootScopeGapTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
+			headSHA := commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+			installRealTypescriptCompiler(repo, true)
+
+			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, goLayerPolicyConfigJSON)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.HeadProjectScope).NotTo(BeNil())
+			Expect(result.HeadProjectScope.Roots).To(HaveLen(1))
+			root := result.HeadProjectScope.Roots[0]
+			Expect(root.Root).To(Equal("."))
+			Expect(root.CandidateFiles).To(Equal(3), "expected package.json, d.ts, and h.ts as candidates, got %+v", root)
+			Expect(root.AnalyzedFiles).To(Equal(2), "expected package.json to be counted as a candidate but never actually analyzed, got %+v", root)
+
+			Expect(result.HeadCoverage).NotTo(BeNil())
+			var found bool
+			var message string
+			for _, diag := range result.HeadCoverage.Diagnostics {
+				if diag.Code == projectmodel.DiagRootScopeIncomplete {
+					found = true
+					message = diag.Message
+				}
+			}
+			Expect(found).To(BeTrue(), "expected a %s diagnostic, got %+v", projectmodel.DiagRootScopeIncomplete, result.HeadCoverage.Diagnostics)
+			Expect(message).To(ContainSubstring("package.json"), "the unanalyzable candidate file must be named in its own diagnostic, got %q", message)
+		})
+	})
+
+	When("a fixture file matches none of the configured layers' prefixes", Label("ts-project-backend"), func() {
+		It("counts the file as an ordinary candidate/analyzed file without it appearing in any layer's matched set (AC-5)", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
+			commitFile(repo, "pkg/util/misc.ts", tsUtilMiscFile)
+			headSHA := commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+			installRealTypescriptCompiler(repo, true)
+
+			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, goLayerPolicyConfigJSON)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.HeadProjectScope).NotTo(BeNil())
+			Expect(result.HeadProjectScope.Roots).To(HaveLen(1))
+			root := result.HeadProjectScope.Roots[0]
+			Expect(root.CandidateFiles).To(Equal(3), "expected d.ts, h.ts, and misc.ts (outside every configured layer) as candidates, got %+v", root)
+			Expect(root.AnalyzedFiles).To(Equal(3), "got %+v", root)
+
+			Expect(result.HeadProjectScope.MatchedLayers).To(ConsistOf("handlers", "db"), "a file outside every configured layer must not spuriously create or expand a layer match, got %+v", result.HeadProjectScope.MatchedLayers)
+			Expect(result.HeadProjectScope.UnmatchedLayers).To(BeEmpty())
+		})
+	})
+})
+
+// T2 (issue #332 Task 9): ProjectBackendResult carries each analyzed
+// revision's model/bypass/reachability Coverage independently of
+// HeadCoverage/BaseCoverage's existing combined fold (PR #386), which stays
+// unchanged. analyzeTSProjectBackend is reused from T1 above: these fields
+// are not yet rendered through codesignal.Input/Report either, so
+// ProjectBackendResult remains the most meaningful boundary to observe them.
+var _ = Describe("coach codesignal --project-language typescript carries per-phase (model, bypass, reachability) coverage per revision on ProjectBackendResult, additive to the existing fold (coach#332 Task 9 T2)", func() {
+	BeforeEach(func() {
+		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+			Skip(reason)
+		}
+	})
+
+	When("the tsRootScopeGapTSConfigJSON fixture accepts a candidate file into the compiler's Program that is never actually analyzed, with no bypass configured", Label("ts-project-backend"), func() {
+		It("marks model-phase coverage incomplete while leaving the existing folded HeadCoverage exactly as it already was (SA-280-025, AC-9/AC-13/AC-18/AC-28)", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "tsconfig.json", tsRootScopeGapTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
+			headSHA := commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+			installRealTypescriptCompiler(repo, true)
+
+			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, goLayerPolicyConfigJSON)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.HeadModelCoverage).NotTo(BeNil())
+			Expect(result.HeadModelCoverage.Complete).To(BeFalse(), "an unanalyzable candidate file must never be reported as complete model-phase coverage, got %+v", result.HeadModelCoverage)
+			Expect(containsProjectModelDiagnosticCode(result.HeadModelCoverage.Diagnostics, projectmodel.DiagRootScopeIncomplete)).To(BeTrue(), "got %+v", result.HeadModelCoverage.Diagnostics)
+
+			Expect(result.HeadCoverage).NotTo(BeNil())
+			Expect(result.HeadCoverage.Complete).To(BeFalse(), "the existing folded HeadCoverage must stay incomplete exactly as PR #386 already produces it")
+			Expect(*result.HeadCoverage).To(Equal(*result.HeadModelCoverage), "with no bypass configured the existing fold is exactly the model coverage, unchanged by this task's additive fields")
+		})
+	})
+
+	When("a required_layer is configured and its bypass search finds a genuine witness, with an unrelated routine reachability gap elsewhere in the snapshot", Label("ts-project-backend"), func() {
+		It("carries the bypass search's own reachability-gap-excluded completeness (tsBypassCoverageForFold), not BuildTypeScriptLayerBypassFromModel's raw gap-folded Coverage, as a phase distinct from the existing folded HeadCoverage (AC-4/AC-16)", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
+			commitFile(repo, "pkg/service/svc.ts", tsServiceNoopFile)
+			commitFile(repo, "vendor/prisma-client/package.json", tsPrismaClientPackageJSON)
+			commitFile(repo, "vendor/prisma-client/index.ts", tsPrismaClientIndexTS)
+			commitFile(repo, "pkg/handlers/reach.ts", tsHandlersReachabilityFile)
+			commitFile(repo, "pkg/handlers/helper.ts", tsHandlersLocalGapHelperFile)
+			commitFile(repo, "pkg/handlers/gap.ts", tsHandlersLocalGapFile)
+			headSHA := commitFile(repo, "project.json", tsLayerBypassRequiredConfigJSON)
+			installRealTypescriptCompiler(repo, true)
+
+			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, tsLayerBypassRequiredConfigJSON)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.HeadModelCoverage).NotTo(BeNil())
+			Expect(result.HeadBypassCoverage).NotTo(BeNil())
+			Expect(result.HeadCoverage).NotTo(BeNil())
+
+			Expect(result.HeadBypassCoverage.Phase).To(Equal("ts_layer_bypass"), "the bypass-phase coverage must be the bypass search's own Coverage (tsBypassCoverageForFold), not the folded model Coverage, got %+v", result.HeadBypassCoverage)
+			Expect(result.HeadBypassCoverage.Complete).To(BeTrue(), "tsBypassCoverageForFold must exclude the routine reachability-gap term from the bypass search's own completeness; BuildTypeScriptLayerBypassFromModel's raw Coverage folds the gap in via tsReachabilityHasGap and would report false here, got %+v", result.HeadBypassCoverage)
+			Expect(result.HeadCoverage.Phase).To(Equal(result.HeadModelCoverage.Phase), "the existing folded HeadCoverage keeps the model's own Phase unchanged, per combineProjectCoverage's documented convention")
+			Expect(*result.HeadBypassCoverage).NotTo(Equal(*result.HeadCoverage), "the bypass-phase coverage and the existing folded model+bypass HeadCoverage are different values")
+		})
+	})
+
+	When("no required_layer is configured, and the analyzed repository has a routine, per-hop reachability gap but no model incompleteness", Label("ts-project-backend"), func() {
+		It("reports bypass-phase coverage as exactly not_requested and lets reachability-phase coverage go incomplete independently of model-phase and the existing folded HeadCoverage, both of which stay complete (AC-4/AC-16)", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
+			commitFile(repo, "vendor/prisma-client/package.json", tsPrismaClientPackageJSON)
+			commitFile(repo, "vendor/prisma-client/index.ts", tsPrismaClientIndexTS)
+			commitFile(repo, "pkg/handlers/reach.ts", tsHandlersReachabilityFile)
+			commitFile(repo, "pkg/handlers/helper.ts", tsHandlersLocalGapHelperFile)
+			commitFile(repo, "pkg/handlers/gap.ts", tsHandlersLocalGapFile)
+			headSHA := commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+			installRealTypescriptCompiler(repo, true)
+
+			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, goLayerPolicyConfigJSON)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.HeadBypassCoverage).NotTo(BeNil())
+			Expect(result.HeadBypassCoverage.Phase).To(Equal("not_requested"), "no required_layer is configured, so the bypass phase must never claim it ran, got %+v", result.HeadBypassCoverage)
+			Expect(result.HeadBypassCoverage.Complete).To(BeTrue(), "a phase that was never requested is not itself an incompleteness")
+
+			Expect(result.HeadModelCoverage).NotTo(BeNil())
+			Expect(result.HeadModelCoverage.Complete).To(BeTrue(), "a routine reachability gap must never mark model-phase coverage incomplete, got %+v", result.HeadModelCoverage)
+
+			Expect(result.HeadCoverage).NotTo(BeNil())
+			Expect(result.HeadCoverage.Complete).To(BeTrue(), "a routine reachability gap must never mark the existing folded HeadCoverage incomplete, got %+v", result.HeadCoverage)
+
+			Expect(result.HeadReachabilityCoverage).NotTo(BeNil())
+			Expect(result.HeadReachabilityCoverage.Complete).To(BeFalse(), "BuildTypeScriptReachabilityFromModel folds the routine gap into its own Coverage.Complete, independently of model-phase and the existing folded HeadCoverage, got %+v", result.HeadReachabilityCoverage)
+		})
+	})
+
+	When("a --base diff has the SA-280-025 root-scope mismatch only on the base revision, with no bypass configured", Label("ts-project-backend"), func() {
+		It("carries base-revision-specific model/bypass/reachability coverage independently of the head revision's own values (AC-4/AC-16)", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "tsconfig.json", tsRootScopeGapTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
+			baseSHA := commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+			headSHA := commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
+			installRealTypescriptCompiler(repo, true)
+
+			result, err := analyzeTSProjectBackend(repo, headSHA, baseSHA, false, goLayerPolicyConfigJSON)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.BaseModelCoverage).NotTo(BeNil())
+			Expect(result.HeadModelCoverage).NotTo(BeNil())
+			Expect(result.BaseModelCoverage.Complete).To(BeFalse(), "the base revision's own unanalyzable candidate file must degrade base-phase model coverage independently of the head revision, got %+v", result.BaseModelCoverage)
+			Expect(result.HeadModelCoverage.Complete).To(BeTrue(), "sanity: the head revision's own model coverage must be complete, or this spec is not isolating the base-side failure it claims to, got %+v", result.HeadModelCoverage)
+
+			Expect(result.BaseBypassCoverage).NotTo(BeNil())
+			Expect(result.HeadBypassCoverage).NotTo(BeNil())
+			Expect(result.BaseBypassCoverage.Phase).To(Equal("not_requested"), "no required_layer is configured, so the base-side bypass phase must never claim it ran either, got %+v", result.BaseBypassCoverage)
+			Expect(result.HeadBypassCoverage.Phase).To(Equal("not_requested"), "got %+v", result.HeadBypassCoverage)
+
+			Expect(result.BaseReachabilityCoverage).NotTo(BeNil())
+			Expect(result.HeadReachabilityCoverage).NotTo(BeNil())
+			Expect(result.BaseReachabilityCoverage.Complete).To(BeFalse(), "tsReachabilityCoverage folds the base revision's own model.Coverage.Complete term into reachability-phase coverage, so the base-only root-scope mismatch must degrade it independently of the head revision, got %+v", result.BaseReachabilityCoverage)
+			Expect(result.HeadReachabilityCoverage.Complete).To(BeTrue(), "sanity: the head revision's own reachability-phase coverage must be complete, or this spec is not isolating the base-side failure it claims to, got %+v", result.HeadReachabilityCoverage)
 		})
 	})
 })
