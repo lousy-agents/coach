@@ -13,11 +13,13 @@ const (
 )
 
 const (
-	setupChoiceReasonManifestDeclaration      = "manifest_declaration"
-	setupChoiceReasonMiseUnconfigured         = "mise_unconfigured"
-	setupChoiceReasonMiseUnverifiable         = "mise_unverifiable"
-	setupChoiceReasonOriginUnverified         = "origin_unverified"
-	setupChoiceReasonPackageManagerNotChecked = "package_manager_not_checked"
+	setupChoiceReasonManifestDeclaration       = "manifest_declaration"
+	setupChoiceReasonMiseUnconfigured          = "mise_unconfigured"
+	setupChoiceReasonMiseUnverifiable          = "mise_unverifiable"
+	setupChoiceReasonOriginUnverified          = "origin_unverified"
+	setupChoiceReasonPackageManagerNotChecked  = "package_manager_not_checked"
+	setupChoiceReasonManifestContextAmbiguous  = "manifest_context_ambiguous"
+	setupChoiceReasonManifestContextUnresolved = "manifest_context_unresolved"
 )
 
 // SetupChoice is one entry AvailableSetupChoices offers as executable in the
@@ -58,9 +60,9 @@ func AvailableSetupChoices(readiness ReadinessResult) SetupChoiceMenu {
 	menu := SetupChoiceMenu{
 		RequiresExplicitSelection: readiness.Checks.PackageManager.Code == GapPackageManagerAmbiguous,
 	}
-	appendProjectPackageChoice(&menu, readiness.Checks)
-	appendMiseChoice(&menu, readiness.MiseChoices, compilerOriginMiseProject, SetupChoiceProjectMise)
-	appendMiseChoice(&menu, readiness.MiseChoices, compilerOriginMiseGlobal, SetupChoiceGlobalMise)
+	menu = appendProjectPackageChoice(menu, readiness.Checks)
+	menu = appendMiseChoice(menu, readiness.MiseChoices, compilerOriginMiseProject, SetupChoiceProjectMise)
+	menu = appendMiseChoice(menu, readiness.MiseChoices, compilerOriginMiseGlobal, SetupChoiceGlobalMise)
 	menu.Choices = append(menu.Choices, SetupChoice{Kind: SetupChoiceCancel})
 	return menu
 }
@@ -88,20 +90,21 @@ func AvailableSetupChoices(readiness ReadinessResult) SetupChoiceMenu {
 // than the failing code. No reason here changes which compiler a scan uses if
 // one is already installed (owner decision D4); all only withhold a setup
 // choice.
-func appendProjectPackageChoice(menu *SetupChoiceMenu, checks ReadinessChecks) {
+func appendProjectPackageChoice(menu SetupChoiceMenu, checks ReadinessChecks) SetupChoiceMenu {
 	if checks.PackageManager.State == ReadinessFail {
 		menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: SetupChoiceProjectPackage, Reason: checks.PackageManager.Code})
-		return
+		return menu
 	}
 	if checks.PackageManager.State != ReadinessPass {
 		menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: SetupChoiceProjectPackage, Reason: setupChoiceReasonPackageManagerNotChecked})
-		return
+		return menu
 	}
 	if !installableDeclaration(checks.Compiler.DeclaredVersion) {
 		menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: SetupChoiceProjectPackage, Reason: setupChoiceReasonManifestDeclaration})
-		return
+		return menu
 	}
 	menu.Choices = append(menu.Choices, SetupChoice{Kind: SetupChoiceProjectPackage})
+	return menu
 }
 
 // installableDeclaration reports whether a frozen project-package row could
@@ -123,17 +126,18 @@ func installableDeclaration(declaration string) bool {
 // Fail-closed: an origin the pipeline reported nothing about at all is
 // withheld as unverifiable rather than offered as a default, which is what a
 // caller sees when compiler-origin evaluation never reached mise.
-func appendMiseChoice(menu *SetupChoiceMenu, miseChoices []ReadinessMiseChoice, origin string, kind SetupChoiceKind) {
+func appendMiseChoice(menu SetupChoiceMenu, miseChoices []ReadinessMiseChoice, origin string, kind SetupChoiceKind) SetupChoiceMenu {
 	for _, choice := range miseChoices {
 		if choice.Kind != origin {
 			continue
 		}
 		if choice.Verified {
 			menu.Choices = append(menu.Choices, SetupChoice{Kind: kind})
-			return
+			return menu
 		}
 		menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: kind, Reason: choice.Reason})
-		return
+		return menu
 	}
 	menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: kind, Reason: setupChoiceReasonOriginUnverified})
+	return menu
 }

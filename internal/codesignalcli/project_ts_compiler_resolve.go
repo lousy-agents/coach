@@ -92,10 +92,10 @@ type compilerRuntimeResolution struct {
 }
 
 // CompilerUnresolvedError is the typed scan-time failure the CLI maps to
-// exit 2 with one stderr remediation line. A host-runtime probe failure
-// that is not a clean miss stays an operational error, not this type.
-// RootFindings entries are repository-relative policy roots, never
-// filesystem paths.
+// exit 2 with one stderr remediation line. Host-runtime clean misses are
+// RuntimeUnresolvedError, not this type. Other host-runtime probe failures
+// stay operational errors. RootFindings entries are repository-relative
+// policy roots, never filesystem paths.
 type CompilerUnresolvedError struct {
 	Code         string
 	ConfigPath   string
@@ -107,11 +107,31 @@ func (e *CompilerUnresolvedError) Error() string {
 }
 
 func (e *CompilerUnresolvedError) RemediationLine() string {
+	return gapRemediationLine(e.Code, e.ConfigPath, e.RootFindings)
+}
+
+// RuntimeUnresolvedError is a host-runtime miss (node_missing / node_unsupported).
+// It is not a CompilerUnresolvedError: the compiler-setup offer must not
+// errors.As it, because Coach has no runtime installer.
+type RuntimeUnresolvedError struct {
+	Code       string
+	ConfigPath string
+}
+
+func (e *RuntimeUnresolvedError) Error() string {
+	return e.RemediationLine()
+}
+
+func (e *RuntimeUnresolvedError) RemediationLine() string {
+	return gapRemediationLine(e.Code, e.ConfigPath, nil)
+}
+
+func gapRemediationLine(code, configPath string, findings []ReadinessRootFinding) string {
 	invocation := "coach codesignal --baseline --check-project --project-language typescript"
-	if e.ConfigPath != "" {
-		invocation += " --project-config " + e.ConfigPath
+	if configPath != "" {
+		invocation += " --project-config " + configPath
 	}
-	return e.Code + formatRemediationRootFindings(e.RootFindings) + ": run " + invocation
+	return code + formatRemediationRootFindings(findings) + ": run " + invocation
 }
 
 func formatRemediationRootFindings(findings []ReadinessRootFinding) string {

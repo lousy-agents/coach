@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 
@@ -12,15 +11,16 @@ const prepareCompilerMiseUsagePrefix = "coach codesignal --baseline --prepare-co
 
 // runPrepareCompilerMiseTypeScript dispatches `coach codesignal --baseline
 // --prepare-compiler --project-language typescript`'s consented mise
-// compiler-setup flow. The controlling-terminal check on stdin runs before
-// any revision resolution or readiness computation: without a controlling
-// terminal, this never prompts and never mutates mise state.
-func runPrepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, projectConfigPath string) int {
-	if !codesignalcli.HasControllingTerminal(stdin) {
-		fmt.Fprintf(stderr, "%s: no controlling terminal is available; refusing to enter interactive compiler setup or mutate mise state.\n", prepareCompilerMiseUsagePrefix)
+// compiler-setup flow. The interactivity check on stdin runs before any
+// revision resolution or readiness computation: with no controlling terminal
+// -- or with one nobody is attending, which nonInteractiveRequested is what
+// detects -- this never prompts and never mutates mise state.
+func runPrepareCompilerMiseTypeScript(dir string, f codesignalFlags, stdin, stdout, stderr *os.File) int {
+	if reason := interactiveRefusalReason(f, stdin); reason != "" {
+		fmt.Fprintf(stderr, "%s: %s; refusing to enter interactive compiler setup or mutate mise state.\n", prepareCompilerMiseUsagePrefix, reason)
 		return 2
 	}
-	return prepareCompilerMiseTypeScript(dir, stdin, stdout, stderr, projectConfigPath)
+	return prepareCompilerMiseTypeScript(dir, stdin, stdout, stderr, f.projectConfig)
 }
 
 // prepareCompilerMiseTypeScript writes its entire interactive transcript
@@ -41,13 +41,19 @@ func prepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, p
 		return 3
 	}
 
-	result := codesignalcli.RunPrepareCompilerMiseSetup(context.Background(), dir, revision, projectConfigPath, readiness, stdin, stderr)
+	ctx, stop := interruptibleContext()
+	defer stop()
+	result := codesignalcli.RunPrepareCompilerMiseSetup(ctx, dir, revision, projectConfigPath, readiness, stdin, stderr)
 	return reportPrepareCompilerMiseResult(result, stderr)
 }
 
 func reportPrepareCompilerMiseResult(result codesignalcli.PrepareCompilerMiseResult, stderr *os.File) int {
 	if result.PolicyRequired {
 		fmt.Fprintf(stderr, "%s: a reviewed, committed policy is required before compiler setup; run guided policy authoring first (author_policy).\n", prepareCompilerMiseUsagePrefix)
+		return 2
+	}
+	if result.RuntimeGapCode != "" {
+		fmt.Fprintf(stderr, "%s: %s is a runtime-boundary gap; Coach has no compiler-setup command for it. Resolve the host Node runtime, then rerun --check-project.\n", prepareCompilerMiseUsagePrefix, result.RuntimeGapCode)
 		return 2
 	}
 	if result.NoChoicesOffered {

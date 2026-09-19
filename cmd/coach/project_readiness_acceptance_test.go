@@ -669,8 +669,8 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 		Entry("bun.lock", "bun.lock", "{\n  \"lockfileVersion\": 0,\n}\n"),
 	)
 
-	When("HEAD has a committed directory named package.json and no package.json blob", func() {
-		It("reports project_shape fail/unsupported_repository_shape rather than treating the tree as a project manifest", func() {
+	When("HEAD has a committed directory named package.json and no package.json blob, with no policy committed", func() {
+		It("reports project_shape not_checked rather than unsupported_repository_shape, since without a validated policy this check has no basis to condemn the shape (R1)", func() {
 			repo := newTempGitRepo()
 			Expect(os.Mkdir(filepath.Join(repo, "package.json"), 0o755)).To(Succeed())
 			commitFile(repo, "package.json/inner.txt", "not a manifest\n")
@@ -681,14 +681,14 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 			var doc readinessResultDoc
 			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.ProjectShape.State).To(Equal("fail"))
-			Expect(doc.Checks.ProjectShape.Code).To(Equal("unsupported_repository_shape"))
-			Expect(doc.Status).To(Equal("outside_support"))
+			Expect(doc.Checks.ProjectShape.State).To(Equal("not_checked"))
+			Expect(doc.Checks.ProjectShape.Code).To(BeEmpty())
+			Expect(doc.Status).NotTo(Equal("outside_support"))
 		})
 	})
 
-	When("HEAD has no committed package.json at all", func() {
-		It("exits 0 and reports the top-precedence status outside_support with an unsupported_repository_shape gap and confirm_repository_shape next action", func() {
+	When("HEAD has no committed package.json at all, and no policy is committed either", func() {
+		It("exits 0 and reports project_shape not_checked, never unsupported_repository_shape or confirm_repository_shape, since this check cannot tell a genuinely unsupported shape apart from an as-yet-uncommitted monorepo policy (R1)", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "README.md", "no package.json here\n")
 
@@ -699,11 +699,47 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 			var doc readinessResultDoc
 			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Status).To(Equal("outside_support"))
-			Expect(doc.Checks.ProjectShape.State).To(Equal("fail"))
-			Expect(doc.Checks.ProjectShape.Code).To(Equal("unsupported_repository_shape"))
-			Expect(gapCodes(doc)).To(ContainElement("unsupported_repository_shape"))
-			Expect(nextActionKinds(doc)).To(ContainElement("confirm_repository_shape"))
+			Expect(doc.Status).NotTo(Equal("outside_support"))
+			Expect(doc.Checks.ProjectShape.State).To(Equal("not_checked"))
+			Expect(doc.Checks.ProjectShape.Code).To(BeEmpty())
+			Expect(gapCodes(doc)).NotTo(ContainElement("unsupported_repository_shape"))
+			Expect(nextActionKinds(doc)).NotTo(ContainElement("confirm_repository_shape"))
+			Expect(gapCodes(doc)).To(ContainElement("policy_missing"))
+		})
+	})
+
+	When("HEAD is a two-package monorepo (each package under packages/<name>) with no root package.json, no committed policy, and no toolchain at all reachable on PATH", func() {
+		It("reports status needs_prerequisite with policy_missing and typescript_compiler_missing, never unsupported_repository_shape or a package_manager_* gap sourced from checkPackageManager's own worktree-root fallback (R1)", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "packages/app/package.json", `{"name":"app","version":"1.0.0"}`+"\n")
+			commitFile(repo, "packages/app/tsconfig.json", `{"compilerOptions":{}}`+"\n")
+			commitFile(repo, "packages/app/src/index.ts", "export const x = 1;\n")
+
+			path := pathWithStubNode("v24.9.9")
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Status).To(Equal("needs_prerequisite"))
+			Expect(doc.Checks.ProjectShape.State).To(Equal("not_checked"))
+			Expect(doc.Checks.PackageManager.State).To(Equal("not_checked"))
+			Expect(gapCodes(doc)).To(ContainElement("policy_missing"))
+			Expect(gapCodes(doc)).To(ContainElement("typescript_compiler_missing"))
+			Expect(gapCodes(doc)).NotTo(ContainElement("unsupported_repository_shape"))
+			// The two mise scopes have no mise binary on PATH here at all, so
+			// their trust check independently reports
+			// package_manager_version_unverifiable -- a real, environment-level
+			// finding, distinct from checkPackageManager's own npm/pnpm/Bun
+			// adapter check (checks.package_manager), which stays not_checked
+			// above and contributes no gap of its own. Every package_manager_*
+			// gap this readiness reports is scoped to mise, never bare.
+			for _, gap := range doc.Gaps {
+				if strings.HasPrefix(gap.Code, "package_manager_") {
+					Expect(gap.PackageManagerKind).To(HavePrefix("mise_"), "a bare package_manager_* gap with no mise_* kind would mean checkPackageManager's own worktree-root fallback fired without a validated policy")
+				}
+			}
 		})
 	})
 
@@ -751,7 +787,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 	})
 
 	When("HEAD has an invalid project.json policy (policy_invalid) declaring a non-root root, with package.json present under that root", func() {
-		It("still reports project_shape fail/unsupported_repository_shape and status outside_support end-to-end, when checkPolicy's invalid-policy path also returns nil roots", func() {
+		It("reports project_shape not_checked end-to-end, when checkPolicy's invalid-policy path also returns nil roots, rather than condemning a shape this check never got to walk (R1)", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "project.json", `{"schema_version":"2","roots":["sub"]}`+"\n")
 			commitFile(repo, "sub/package.json", `{"name":"example","version":"1.0.0"}`+"\n")
@@ -766,10 +802,10 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
 			Expect(doc.Checks.Policy.State).To(Equal("fail"))
 			Expect(doc.Checks.Policy.Code).To(Equal("policy_invalid"))
-			Expect(doc.Checks.ProjectShape.State).To(Equal("fail"))
-			Expect(doc.Checks.ProjectShape.Code).To(Equal("unsupported_repository_shape"))
-			Expect(doc.Status).To(Equal("outside_support"))
-			Expect(gapCodes(doc)).To(ContainElement("unsupported_repository_shape"))
+			Expect(doc.Checks.ProjectShape.State).To(Equal("not_checked"))
+			Expect(doc.Checks.ProjectShape.Code).To(BeEmpty())
+			Expect(doc.Status).NotTo(Equal("outside_support"))
+			Expect(gapCodes(doc)).NotTo(ContainElement("unsupported_repository_shape"))
 		})
 	})
 
@@ -803,10 +839,10 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
 			Expect(doc.Checks.Policy.State).To(Equal("fail"))
 			Expect(doc.Checks.Policy.Code).To(Equal("policy_invalid"))
-			Expect(doc.Checks.ProjectShape.State).To(Equal("fail"))
-			Expect(doc.Checks.ProjectShape.Code).To(Equal("unsupported_repository_shape"), "with the policy rejected, roots must never be consulted for project_shape, leaving only the root-level package.json check")
-			Expect(doc.Status).To(Equal("outside_support"), "unsupported_repository_shape outranks the simultaneous policy_invalid gap")
-			Expect(gapCodes(doc)).To(ConsistOf("policy_invalid", "unsupported_repository_shape"))
+			Expect(doc.Checks.ProjectShape.State).To(Equal("not_checked"), "with the policy rejected, project_shape has no validated roots to walk and reports not_checked instead of guessing (R1)")
+			Expect(doc.Checks.ProjectShape.Code).To(BeEmpty())
+			Expect(doc.Status).To(Equal("needs_policy"))
+			Expect(gapCodes(doc)).To(ConsistOf("policy_invalid"))
 		})
 	})
 
@@ -2159,6 +2195,11 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			path, miseDir := pathWithStatefulStubNodeAndMise("v24.9.9", "7.0.2")
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
+			// interactiveRefusalReason also refuses on a non-empty CI,
+			// which this in-process spec would inherit from the test binary's
+			// own environment on a CI runner -- passing for a reason that has
+			// nothing to do with the controlling-terminal branch it pins.
+			GinkgoT().Setenv("CI", "")
 
 			stdin := authoringStdin("mise_project\ninstall\n")
 			defer stdin.Close()
@@ -2250,6 +2291,12 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			// on PATH the whole time.
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
+			// interactiveRefusalReason also refuses on a non-empty CI, and
+			// this spec inherits the test
+			// binary's own environment -- so on a CI runner the refusal below
+			// would fire from the CI half and this spec would pass without
+			// exercising the controlling-terminal branch it exists to pin.
+			GinkgoT().Setenv("CI", "")
 
 			stdin := authoringStdin("mise_project\ninstall\n")
 			defer stdin.Close()
@@ -2257,7 +2304,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			exitCode := runPrepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+			exitCode := runPrepareCompilerMiseTypeScript(repo, codesignalFlags{}, stdin, stdoutFile, stderrFile)
 
 			Expect(exitCode).To(Equal(2))
 			Expect(readStdout()).To(BeEmpty())

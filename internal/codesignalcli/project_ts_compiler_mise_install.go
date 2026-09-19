@@ -71,6 +71,15 @@ type PrepareCompilerMiseResult struct {
 	// is not rolled back; this only means the fresh readiness verdict could
 	// not be computed.
 	PostInstallReadinessError error
+
+	// RuntimeGapCode is set when readiness.Checks.Runtime independently fails
+	// with a gap this flow has no setup command for (node_missing,
+	// node_unsupported): a runtime-boundary gap takes priority over a
+	// simultaneously offerable prepare_compiler action, mirroring the real
+	// scan's own priority (PrepareTSRuntime resolves host Node before ever
+	// attempting compiler resolution). No prompt is ever shown when this is
+	// set.
+	RuntimeGapCode string
 }
 
 // VerificationFailed reports whether the install subprocess itself exited
@@ -106,6 +115,9 @@ func (r PrepareCompilerMiseResult) NeverStarted() bool {
 func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath string, readiness *ReadinessResult, in io.Reader, out io.Writer) PrepareCompilerMiseResult {
 	if readiness != nil && readiness.Checks.Policy.State != ReadinessPass {
 		return PrepareCompilerMiseResult{PolicyRequired: true}
+	}
+	if code, blocking := readinessHasBlockingRuntimeGap(readiness); blocking {
+		return PrepareCompilerMiseResult{RuntimeGapCode: code}
 	}
 	action, ok := prepareCompilerNextAction(readiness)
 	if !ok || !action.Executable {
@@ -158,6 +170,32 @@ func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath 
 	outcome.PostInstallReadiness = postInstall
 	outcome.PostInstallReadinessError = err
 	return outcome
+}
+
+// readinessHasBlockingRuntimeGap reports whether readiness.Checks.Runtime
+// independently fails with a gap code that is not the executable
+// prepare-compiler kind, through the same gapCodeIsExecutablePrepareCompiler
+// predicate the real scan's own compiler-setup gate uses
+// (project_ts_preflight.go). readinessFromGapChecks (project_readiness_
+// aggregate.go) derives Runtime's and Compiler's next actions independently
+// of one another, so a failing runtime check can coexist in NextActions with
+// a genuinely executable prepare_compiler entry; without this check,
+// RunPrepareCompilerMiseSetup would offer to install a compiler while the
+// host Node runtime that would run it is still missing or unsupported --
+// exactly the gap a real scan's own PrepareTSRuntime never reaches, since it
+// resolves host Node first and fails fast there.
+func readinessHasBlockingRuntimeGap(readiness *ReadinessResult) (string, bool) {
+	if readiness == nil {
+		return "", false
+	}
+	code := readiness.Checks.Runtime.Code
+	if readiness.Checks.Runtime.State != ReadinessFail || code == "" {
+		return "", false
+	}
+	if gapCodeIsExecutablePrepareCompiler(code) {
+		return "", false
+	}
+	return code, true
 }
 
 func prepareCompilerNextAction(readiness *ReadinessResult) (ReadinessNextAction, bool) {
