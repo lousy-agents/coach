@@ -16,11 +16,11 @@ coach --version
 The only subcommand is `codesignal`.
 
 ```text
-coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript]
+coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive]
 coach codesignal --baseline --suggest-project-config [--output <path>]
-coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>]
+coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>] [--no-interactive]
 coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]
-coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>]
+coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>] [--no-interactive]
 ```
 
 `--base` and `--baseline` are mutually exclusive. `--check-project`,
@@ -39,7 +39,8 @@ that suggest/prepare still require `--baseline`).
 | `--suggest-project-config` | | Go: print a human-reviewed candidate (never auto-applied, never invents layers). TypeScript: interactive TTY authoring; writes nothing until confirmed. |
 | `--output <path>` | stdout | Create-only path for a suggest candidate. |
 | `--check-project` | | Read-only TypeScript readiness. Exits `0` on gaps. Not a scan. |
-| `--prepare-compiler` | | Interactive consented mise TypeScript compiler setup. Requires a TTY; refuses otherwise. |
+| `--prepare-compiler` | | Interactive consented **mise-only** TypeScript compiler setup. Requires a TTY and an attended session; refuses otherwise. Also refuses, naming the gap, for a runtime-boundary gap (`node_missing`/`node_unsupported`) — the same restriction the scan path's own compiler-setup offer applies, so the two cannot disagree. It is narrower than the scan's offer, which also runs the project package manager: a repository whose only executable choice is `project_package` is never handed this command as remediation, because it would exit `0` reporting nothing to set up. |
+| `--no-interactive` | `false` | Treat the invocation as unattended even with a controlling terminal attached. On a scan, the interactive compiler-setup and guided-policy-authoring offers are skipped, falling through to the same message-only remediation a piped invocation gets; the TypeScript form of `--suggest-project-config`, and `--prepare-compiler`, refuse with exit `2` instead of prompting (the Go form of `--suggest-project-config` never prompts, and rejects the flag as a usage error). Also triggered by a non-empty `CI` environment variable, so a pty-allocating runner cannot hang on an unanswered prompt. |
 
 Requires `git` on `PATH`. Analyzes **committed Git objects**, not the dirty
 worktree. TypeScript project mode also inspects worktree `package.json` /
@@ -54,10 +55,66 @@ before any extra tokens.
 | --- | --- |
 | `0` | Completed analysis, readiness report, successful suggest/prepare, or `--help` / `--version`. Signals do not change this. |
 | `1` | Operational: not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O. |
-| `2` | Usage, invalid `--project-config` (empty stdout, stderr names the path/revision), unsupported `--project-language`, or a TypeScript **scan** that cannot resolve a supported compiler or host Node (empty stdout, one stderr line). |
+| `2` | Usage, invalid `--project-config` (empty stdout, stderr names the path/revision), unsupported `--project-language`, or a TypeScript **scan** that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
+| `3` | `--prepare-compiler` only: operational failure while resolving the baseline revision or computing readiness. A deliberate exception to the scan contract's `1`, kept because the flag follows suggestion mode's table rather than the scan's; every other surface uses `1`. |
 
 `--check-project` exits `0` so you inspect the payload; do not treat that
 status as a gate.
+
+On a controlling terminal, a TypeScript scan whose `--project-config` names a
+policy that was never committed opens a guided-authoring session instead of
+only printing a remediation line. With
+`--format json` this session's exit-2 output is a JSON object carrying
+`"schema_version": "1"` and `roots`, not a CodeSignal report — the absent
+`scope`/`signals`/`coverage` keys distinguish it. A scan cannot pass
+`--output`, so the approved candidate is written to **stdout** and no file is
+created: save it to the `--project-config` path yourself, review it, commit
+it, then rerun.
+
+Prompts and setup transcripts go to stderr. Redirecting stderr away from your
+terminal (`2>run.log`) therefore hides the prompts while the session still
+waits for an answer; pass `--no-interactive` when you redirect stderr and do
+not intend to answer.
+
+Every command Coach appends as remediation on that exit-2 path is itself
+interactive, so each is printed prefixed with `on a terminal:` — running one
+from the same piped context that printed it exits `2` without making progress.
+With no policy, `checks.project_shape` and `checks.package_manager` report
+`not_checked` rather than guessing from the worktree root in place of the
+roots a policy would have selected, so every other gap readiness reports
+alongside a missing policy is already independent of that missing policy —
+the line simply names the `--check-project` rerun with no hedge about
+whether committing a policy would change it.
+
+On a controlling terminal, a TypeScript scan with a committed policy whose
+compiler check fails offers interactive setup covering everything
+`--prepare-compiler` runs standalone, plus the project package manager. It
+names the failing check and states that a confirmed, successful choice makes
+Coach recheck readiness and resume the same scan, then shows a menu of up to
+four choices (`project_package`, `project_mise`, `global_mise`, `cancel`),
+each labelled with what it would touch. A choice that would open only to
+report nothing to do is withheld, and a gap offering nothing installable never
+opens a prompt — it reports why each choice was ruled out instead. A
+`project_package` install whose policy selects more than one manifest context
+is withheld too: one consented command runs in one directory, and the
+readiness rerun would still report the gap.
+Selecting `project_package` shows a preview (executable, arguments, working
+directory, expected on-disk changes, network disclosure, script-suppression
+policy, and `SetupPreviewTimeout` = 5 minutes) and requires a separate,
+single-use `confirm`/`install` answer before running; any other answer, or a
+second leftover answer, cancels or is ignored. Cancelling or failing exits 2
+with no report and (on failure) no change to the repository's tracked files.
+Succeeding reruns the full readiness check and continues the same scan to a
+report only if that rerun reports no gap; the offer runs at most once per
+invocation even then.
+
+Without a controlling terminal, a compiler gap whose only genuinely
+executable setup choice is `project_package` cannot be resolved by
+`--prepare-compiler` — it runs mise scopes only — so the scan instead
+appends `on a terminal: coach codesignal --baseline --project-config <path>
+--project-language typescript -- offers project-package setup`, naming the
+same scan invocation rather than a standalone subcommand: rerunning it on a
+terminal is what opens the combined setup offer above.
 
 ## Diff-mode caveats
 
