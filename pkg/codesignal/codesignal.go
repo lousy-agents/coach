@@ -68,6 +68,13 @@ func lifecycleWithoutBase(baseline bool) Lifecycle {
 	return Lifecycle("unknown")
 }
 
+func noBaseLifecycleForFile(fc FileChange, noBaseLifecycle Lifecycle) Lifecycle {
+	if fc.Status == "added" && noBaseLifecycle != "baseline" {
+		return "introduced"
+	}
+	return noBaseLifecycle
+}
+
 func processFileChanges(files []FileChange, seed []Diagnostic, noBaseLifecycle Lifecycle) ([]Diagnostic, []Signal) {
 	diagnostics := make([]Diagnostic, 0, len(seed))
 	diagnostics = append(diagnostics, seed...)
@@ -84,7 +91,7 @@ func processFileChanges(files []FileChange, seed []Diagnostic, noBaseLifecycle L
 		if !eligibleForLifecycleClassification(fc) {
 			continue
 		}
-		fileClassifiedSignals := classifyFileSignals(baseUsableForLifecycle(fc), fileSignals, extractBaseSignals(fc), noBaseLifecycle)
+		fileClassifiedSignals := classifyFileSignals(baseUsableForLifecycle(fc), fileSignals, extractBaseSignals(fc), noBaseLifecycleForFile(fc, noBaseLifecycle))
 		for i := range fileClassifiedSignals {
 			fileClassifiedSignals[i].SourceScope = fc.SourceScope
 		}
@@ -108,6 +115,8 @@ func finalizeSignals(signals []Signal, filesAnalyzed int, files []FileChange, di
 			summary.ResolvedSignals++
 		case "baseline":
 			summary.BaselineSignals++
+		case "unknown":
+			summary.UnknownSignals++
 		}
 	}
 	if !includeResolved {

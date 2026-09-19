@@ -94,6 +94,12 @@ func hiddenMutationInput() Input {
 	}
 }
 
+func addedFileInput() Input {
+	input := hiddenMutationInput()
+	input.Files[0].Status = "added"
+	return input
+}
+
 func lifecycleScenarioInput() Input {
 	return Input{
 		Scope: Scope{Repository: "example/repo", Revision: "def456", Base: "main"},
@@ -328,6 +334,7 @@ func TestGolden(t *testing.T) {
 	}{
 		{"MinimalReport", Input{}, Options{}, "testdata/golden/minimal_report.json"},
 		{"HiddenMutation", hiddenMutationInput(), Options{}, "testdata/golden/hidden_mutation.json"},
+		{"AddedFile", addedFileInput(), Options{}, "testdata/golden/added_file.json"},
 		{"LifecycleExcludingResolved", lifecycleScenarioInput(), Options{IncludeResolved: false}, "testdata/golden/lifecycle_excluding_resolved.json"},
 		{"LifecycleIncludingResolved", lifecycleScenarioInput(), Options{IncludeResolved: true}, "testdata/golden/lifecycle_including_resolved.json"},
 		{"Diagnostics", diagnosticsInput(), Options{}, "testdata/golden/diagnostics.json"},
@@ -395,43 +402,29 @@ func reflectJSONFieldNames(t reflect.Type, seen map[reflect.Type]bool, out map[s
 }
 
 var frozenReportJSONFieldNames = map[string]struct{}{
-	// Report
 	"schema_version": {}, "scope": {}, "summary": {}, "signals": {},
 	"diagnostics": {}, "coverage": {}, "project_changes": {}, "project_facts": {},
 	"project_summary": {}, "project_coverage": {},
-	// Scope
 	"repository": {}, "revision": {}, "base": {}, "applied_scope": {}, "baseline": {},
-	// Summary
 	"files_analyzed": {}, "files_with_diagnostics": {}, "active_signals": {},
 	"introduced_signals": {}, "existing_signals": {}, "resolved_signals": {},
-	"baseline_signals": {},
-	// Signal
+	"baseline_signals": {}, "unknown_signals": {},
 	"id": {}, "fingerprint": {}, "rule_id": {}, "rule_version": {}, "kind": {},
 	"category": {}, "severity": {}, "confidence": {}, "lifecycle": {}, "changed": {},
 	"path": {}, "source_scope": {}, "subject": {}, "location": {}, "evidence": {},
 	"why_it_matters": {}, "recommendation": {}, "suggested_skill": {}, "provenance": {},
 	"machine_evidence": {}, "related_locations": {}, "path_steps": {}, "coverage_refs": {},
-	// Provenance
 	"producer": {}, "finding_kind": {}, "language": {},
-	// Diagnostic
-	"message": {},
-	// Coverage
+	"message":                  {},
 	"tracked_files_discovered": {}, "files_unanalyzable": {}, "unsupported": {}, "excluded": {},
-	// CoverageGroup
 	"reason": {}, "count": {},
-	// ProjectChange
 	"semantic_key": {}, "backend_version": {}, "algorithm_version": {}, "config_digest": {},
 	"causal_evidence_digest": {}, "primary_anchor": {},
-	// ProjectPathStep
 	"node_id": {}, "display_name": {}, "resolution": {}, "source_locations": {},
-	// ProjectSummary
 	"active_changes": {}, "introduced_changes": {}, "existing_changes": {},
 	"resolved_changes": {}, "baseline_changes": {},
-	// semantics.Location
 	"start_byte": {}, "end_byte": {}, "start_row": {}, "start_col": {}, "end_row": {}, "end_col": {},
-	// projectmodel.Coverage
 	"phase": {}, "complete": {}, "counts": {}, "budgets": {},
-	// projectmodel.Diagnostic
 	"code": {},
 }
 

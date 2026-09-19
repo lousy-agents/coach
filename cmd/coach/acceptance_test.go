@@ -56,8 +56,6 @@ func removeFile(repo, name string) string {
 	return string(bytes.TrimSpace(output))
 }
 
-// runCoachCodesignal builds and runs `coach codesignal --base <base>` in
-// repo, decoding stdout as one codesignal.Report.
 func runCoachCodesignal(repo, base string) (*codesignal.Report, string) {
 	command := exec.Command(commandPath, "codesignal", "--base", base, "--format=json")
 	command.Dir = repo
@@ -487,6 +485,129 @@ var _ = Describe("coach codesignal", func() {
 		})
 	})
 
+	When("head adds a new file containing a hidden-input-mutation finding", func() {
+		It("classifies every signal from that file as introduced", func() {
+			repo := newTempGitRepo()
+			initialSHA := commitFile(repo, "seed.go", "package seed\n")
+			commitFile(repo, "new.go", "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n")
+
+			report, _ := runCoachCodesignal(repo, initialSHA)
+
+			signals := signalsForPath(report, "new.go")
+			Expect(signals).To(HaveLen(1))
+			Expect(signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
+			Expect(report.Summary.IntroducedSignals).To(Equal(1))
+		})
+	})
+
+	When("one commit deletes a risky file and adds a structurally different risky file", func() {
+		It("classifies the added file's signals as introduced", func() {
+			repo := newTempGitRepo()
+			deleted := "package gone\n\nfunc Update(input *int) {\n\t*input = 1\n}\n"
+			added := `package fresh
+
+func tangle(n int) {
+	if n > 0 {
+		if n > 1 {
+			if n > 2 {
+				if n > 3 {
+					if n > 4 {
+						if n > 5 {
+							return
+						}
+					}
+				}
+			}
+		}
+	}
+}
+`
+			initialSHA := commitFile(repo, "gone.go", deleted)
+
+			rmCmd := exec.Command("git", "rm", "gone.go")
+			rmCmd.Dir = repo
+			output, err := rmCmd.CombinedOutput()
+			Expect(err).NotTo(HaveOccurred(), "git rm: %s", output)
+
+			Expect(os.WriteFile(filepath.Join(repo, "fresh.go"), []byte(added), 0o644)).To(Succeed())
+			addCmd := exec.Command("git", "add", "fresh.go")
+			addCmd.Dir = repo
+			output, err = addCmd.CombinedOutput()
+			Expect(err).NotTo(HaveOccurred(), "git add: %s", output)
+
+			commitCmd := exec.Command("git", "commit", "-m", "replace gone.go with fresh.go")
+			commitCmd.Dir = repo
+			commitCmd.Env = commitEnv
+			output, err = commitCmd.CombinedOutput()
+			Expect(err).NotTo(HaveOccurred(), "git commit: %s", output)
+
+			statusCmd := exec.Command("git", "diff", "--name-status", initialSHA, "HEAD")
+			statusCmd.Dir = repo
+			statusOut, err := statusCmd.Output()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.Split(strings.TrimSpace(string(statusOut)), "\n")).To(ConsistOf("A\tfresh.go", "D\tgone.go"))
+
+			report, _ := runCoachCodesignal(repo, initialSHA)
+
+			Expect(hasDiagnostic(report, "unsupported_change_type", "fresh.go")).To(BeFalse())
+			Expect(report.Summary.IntroducedSignals).To(BeNumerically(">", 0),
+				"an added file must contribute introduced signals; got introduced=%d resolved=%d for %d signals",
+				report.Summary.IntroducedSignals, report.Summary.ResolvedSignals, len(report.Signals))
+
+			freshSignals := signalsForPath(report, "fresh.go")
+			Expect(freshSignals).NotTo(BeEmpty())
+			for i := range freshSignals {
+				Expect(freshSignals[i].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
+			}
+
+			goneSignals := signalsForPath(report, "gone.go")
+			Expect(goneSignals).NotTo(BeEmpty())
+			for i := range goneSignals {
+				Expect(goneSignals[i].Lifecycle).To(Equal(codesignal.Lifecycle("resolved")))
+			}
+		})
+	})
+
+	When("a modified file's merge-base content cannot be analyzed", func() {
+		It("counts every signal in exactly one lifecycle bucket including unknown_signals", func() {
+			repo := newTempGitRepo()
+			initialSHA := commitFile(repo, "a.go", "package a\n\nfunc B(\n")
+			commitFile(repo, "a.go", "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n")
+
+			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			var document struct {
+				Signals []json.RawMessage `json:"signals"`
+				Summary struct {
+					IntroducedSignals int `json:"introduced_signals"`
+					ExistingSignals   int `json:"existing_signals"`
+					ResolvedSignals   int `json:"resolved_signals"`
+					BaselineSignals   int `json:"baseline_signals"`
+					UnknownSignals    int `json:"unknown_signals"`
+				} `json:"summary"`
+			}
+			Expect(json.Unmarshal(stdout, &document)).To(Succeed(), "stdout should be one JSON report: %s", stdout)
+
+			bucketSum := document.Summary.IntroducedSignals +
+				document.Summary.ExistingSignals +
+				document.Summary.ResolvedSignals +
+				document.Summary.BaselineSignals +
+				document.Summary.UnknownSignals
+			Expect(bucketSum).To(Equal(len(document.Signals)),
+				"lifecycle buckets must count every signal; got introduced=%d existing=%d resolved=%d baseline=%d unknown=%d for len(signals)=%d",
+				document.Summary.IntroducedSignals, document.Summary.ExistingSignals,
+				document.Summary.ResolvedSignals, document.Summary.BaselineSignals,
+				document.Summary.UnknownSignals, len(document.Signals))
+			Expect(document.Summary.UnknownSignals).To(BeNumerically(">", 0),
+				"unanalyzable merge-base signals must be counted in summary.unknown_signals")
+
+			var report codesignal.Report
+			Expect(json.Unmarshal(stdout, &report)).To(Succeed())
+			Expect(hasDiagnostic(&report, "base_syntax_errors", "a.go")).To(BeTrue())
+		})
+	})
+
 	When("one selected file fails analysis alongside a healthy file that introduces a signal", func() {
 		It("exits 0, continues analyzing the healthy file, and reports a diagnostic for the failed one", func() {
 			repo := newTempGitRepo()
@@ -785,8 +906,6 @@ var _ = Describe("coach codesignal", func() {
 	})
 })
 
-// runCoachRaw runs `coach <args...>` with no working directory requirement,
-// returning raw stdout/stderr and exit code.
 func runCoachRaw(args ...string) (stdout, stderr []byte, exitCode int) {
 	command := exec.Command(commandPath, args...)
 	var outBuf, errBuf bytes.Buffer
