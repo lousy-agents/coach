@@ -4,6 +4,7 @@ import { discoverTsconfigPaths, isWithinRoot, normalizeRoot } from "./discover.j
 import { extractEdgesForProject } from "./edges.js";
 import { SIDECAR_PHASE, } from "./protocol.js";
 import { canonicalizeCallGraph, canonicalizeReachabilityFacts, extractReachabilityForProject } from "./reachability.js";
+import { testHookDropRoot } from "./test-hook.js";
 import { buildProjectSnapshot, fromVirtualPath, toVirtualPath, VIRTUAL_ROOT } from "./vfs.js";
 /** Thrown only for genuine backend-startup failures (e.g. the bundled native tsgo binary failing to spawn); main.ts turns this into a Response.Error rather than crashing the process. */
 export class SidecarBackendError extends Error {
@@ -115,7 +116,8 @@ function computeRootScopes(roots, projects, snapshot, visited) {
     if (!roots || roots.length === 0)
         return undefined;
     const normalizedRoots = [...new Set(roots.map(normalizeRoot))].sort();
-    return normalizedRoots.map((root) => rootScopeFor(root, projects, snapshot, visited));
+    const dropRoot = testHookDropRoot !== undefined ? normalizeRoot(testHookDropRoot) : undefined;
+    return normalizedRoots.filter((root) => root !== dropRoot).map((root) => rootScopeFor(root, projects, snapshot, visited));
 }
 function rootScopeFor(root, projects, snapshot, visited) {
     const candidates = new Set();

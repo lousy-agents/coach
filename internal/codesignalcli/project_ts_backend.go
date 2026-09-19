@@ -36,6 +36,12 @@ const (
 	tsBypassBackendVersion = "ts-layer-bypass@1"
 )
 
+// tsBypassPhaseNotRequested is ProjectBackendResult's Head/BaseBypassCoverage
+// Phase value when the config has no required_layer, so a consumer can tell
+// "the bypass phase was never run" apart from "it ran and completed" or "it
+// ran and did not".
+const tsBypassPhaseNotRequested = "not_requested"
+
 // tsProjectBudgets is goProjectBudgets, reused as-is: the TS sidecar backend
 // tracks the same resource-default table as the Go in-process build.
 var tsProjectBudgets = goProjectBudgets
@@ -106,21 +112,25 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	}
 	defer cleanup()
 
-	headChanges, headFacts, headDiagnostics, headCoverage, err := b.evaluateRevision(ctx, req.Dir, req.HeadRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
+	headChanges, headFacts, headDiagnostics, headCoverage, headScope, headPhases, err := b.evaluateRevision(ctx, req.Dir, req.HeadRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &ProjectBackendResult{
-		HeadChanges:     headChanges,
-		HeadDiagnostics: headDiagnostics,
-		Facts:           headFacts,
-		HeadCoverage:    &headCoverage,
-		RuntimeKind:     runtime.Kind,
-		RuntimeVersion:  runtime.Version,
-		RuntimeOrigin:   runtime.Origin,
-		CompilerVersion: runtime.CompilerVersion,
-		CompilerOrigin:  runtime.CompilerOrigin,
+		HeadChanges:              headChanges,
+		HeadDiagnostics:          headDiagnostics,
+		Facts:                    headFacts,
+		HeadCoverage:             &headCoverage,
+		HeadProjectScope:         headScope,
+		HeadModelCoverage:        &headPhases.model,
+		HeadBypassCoverage:       &headPhases.bypass,
+		HeadReachabilityCoverage: &headPhases.reachability,
+		RuntimeKind:              runtime.Kind,
+		RuntimeVersion:           runtime.Version,
+		RuntimeOrigin:            runtime.Origin,
+		CompilerVersion:          runtime.CompilerVersion,
+		CompilerOrigin:           runtime.CompilerOrigin,
 	}
 	if req.Baseline {
 		return result, nil
@@ -131,30 +141,44 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	// so only the head-side facts above ever reach the report; the base
 	// revision still derives its own facts here (discarded) so every
 	// evaluator runs identically regardless of which revision is being
-	// evaluated (AC-12).
-	baseChanges, _, baseDiagnostics, baseCoverage, err := b.evaluateRevision(ctx, req.Dir, req.BaseRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
+	// evaluated. ProjectScope, unlike Facts, does have a base-side
+	// counterpart: BaseProjectScope is kept.
+	baseChanges, _, baseDiagnostics, baseCoverage, baseScope, basePhases, err := b.evaluateRevision(ctx, req.Dir, req.BaseRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {
 		return nil, err
 	}
 	result.BaseChanges = baseChanges
 	result.BaseDiagnostics = baseDiagnostics
 	result.BaseCoverage = &baseCoverage
+	result.BaseProjectScope = baseScope
+	result.BaseModelCoverage = &basePhases.model
+	result.BaseBypassCoverage = &basePhases.bypass
+	result.BaseReachabilityCoverage = &basePhases.reachability
 	result.BaseAnalyzed = true
 	return result, nil
 }
 
-// evaluateRevision builds a TypeScript project model at revision ONCE
-// (AC-RUN-5) and derives every observation from that single Model: layer
-// violations (always), layer bypass (only when hasBypassLayer, see
+// tsPhaseCoverage groups the three independent per-phase Coverage
+// observations evaluateRevision derives from one analyzer response, carried
+// onto ProjectBackendResult's Head/Base*Coverage fields.
+type tsPhaseCoverage struct {
+	model        projectmodel.Coverage
+	bypass       projectmodel.Coverage
+	reachability projectmodel.Coverage
+}
+
+// evaluateRevision builds a TypeScript project model at revision ONCE and
+// derives every observation from that single Model: layer violations
+// (always), layer bypass (only when hasBypassLayer, see
 // evaluateLayerBypass), and possible-call-reachability ProjectFacts
 // (always) -- reachability's own Coverage never folds into the returned
 // Coverage, so a routine reachability gap alone stays visible only through
 // model.Coverage.Diagnostics and the returned facts, never degrading an
-// otherwise complete layer finding (AC-3/AC-14).
-func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, runtime *tsRuntime, roots []string, policy codesignal.LayerPolicy, bypassLayer projectmodel.BypassLayer, hasBypassLayer bool, configDigest string) ([]codesignal.ProjectChange, []codesignal.ProjectFact, []codesignal.Diagnostic, projectmodel.Coverage, error) {
+// otherwise complete layer finding.
+func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, runtime *tsRuntime, roots []string, policy codesignal.LayerPolicy, bypassLayer projectmodel.BypassLayer, hasBypassLayer bool, configDigest string) ([]codesignal.ProjectChange, []codesignal.ProjectFact, []codesignal.Diagnostic, projectmodel.Coverage, *projectmodel.ProjectScope, tsPhaseCoverage, error) {
 	snapshot, err := NewGoSnapshotFS(dir, revision)
 	if err != nil {
-		return nil, nil, nil, projectmodel.Coverage{}, fmt.Errorf("coach: building TypeScript snapshot at revision %q: %w", revision, err)
+		return nil, nil, nil, projectmodel.Coverage{}, nil, tsPhaseCoverage{}, fmt.Errorf("coach: building TypeScript snapshot at revision %q: %w", revision, err)
 	}
 
 	model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, projectmodel.SnapshotMeta{
@@ -170,23 +194,67 @@ func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 		Budgets:    tsProjectBudgets,
 	})
 	if err != nil {
-		return nil, nil, nil, projectmodel.Coverage{}, fmt.Errorf("coach: building TypeScript project model at revision %q: %w", revision, err)
+		return nil, nil, nil, projectmodel.Coverage{}, nil, tsPhaseCoverage{}, fmt.Errorf("coach: building TypeScript project model at revision %q: %w", revision, err)
+	}
+
+	// Deliberate decision on empty vs. mismatched RootScopes: total absence
+	// (zero RootScopes entries) is a soft-skip to a nil project scope,
+	// because it is the pre-existing crashed/unavailable-analyzer degrade
+	// (projectmodel.DiagBackendUnavailable) already reported via
+	// HeadCoverage/BaseCoverage below -- ProjectScopeFromModel would reject
+	// every policy root as unmatched in that case, which is not a distinct
+	// project_scope failure and must not turn an already-reported,
+	// gracefully qualified analysis into a harder operational failure. A
+	// non-empty but incomplete response -- some roots present, a specific
+	// policy root missing -- is a genuine mismatch and is not soft-skipped:
+	// it reaches ProjectScopeFromModel below, whose error is returned as a
+	// real Go error (surfacing as CLI exit 1).
+	var scope *projectmodel.ProjectScope
+	if len(model.RootScopes) > 0 {
+		resolved, err := projectmodel.ProjectScopeFromModel(model, projectScopePolicyFromConfig(roots, policy))
+		if err != nil {
+			return nil, nil, nil, projectmodel.Coverage{}, nil, tsPhaseCoverage{}, fmt.Errorf("coach: deriving TypeScript project scope at revision %q: %w", revision, err)
+		}
+		scope = &resolved
 	}
 
 	changes, _ := codesignal.EvaluateTypeScriptLayerViolations(model, policy, tsLayerRuleVersion, tsLayerBackendVersion, configDigest)
-	coverage := model.Coverage
+	modelCoverage := model.Coverage
+	coverage := modelCoverage
 	var diagnostics []codesignal.Diagnostic
+	bypassPhaseCoverage := projectmodel.Coverage{Phase: tsBypassPhaseNotRequested, Complete: true}
 
 	if hasBypassLayer {
 		var bypassChanges []codesignal.ProjectChange
-		bypassChanges, diagnostics, coverage = b.evaluateLayerBypass(ctx, model, bypassLayer, configDigest)
+		bypassChanges, diagnostics, coverage, bypassPhaseCoverage = b.evaluateLayerBypass(ctx, model, bypassLayer, configDigest)
 		changes = append(changes, bypassChanges...)
 	}
 
 	reachability := projectmodel.BuildTypeScriptReachabilityFromModel(model)
 	facts := codesignal.ReachabilityProjectFacts(reachability, "typescript")
 
-	return changes, facts, diagnostics, coverage, nil
+	phases := tsPhaseCoverage{
+		model:        modelCoverage,
+		bypass:       bypassPhaseCoverage,
+		reachability: reachability.Coverage,
+	}
+
+	return changes, facts, diagnostics, coverage, scope, phases, nil
+}
+
+// projectScopePolicyFromConfig translates roots (config.Roots) and policy
+// (already built by layerPolicyFromConfig) into the
+// projectmodel.ProjectScopePolicy ProjectScopeFromModel expects. It shares
+// roots/policy with the sidecar request and layer-violation evaluation
+// above rather than re-reading config, so project_scope's own root/layer
+// selection can never diverge from what the rest of evaluateRevision used
+// for this same analyzer response.
+func projectScopePolicyFromConfig(roots []string, policy codesignal.LayerPolicy) projectmodel.ProjectScopePolicy {
+	layers := make([]projectmodel.ProjectScopePolicyLayer, len(policy.Layers))
+	for i, layer := range policy.Layers {
+		layers[i] = projectmodel.ProjectScopePolicyLayer{Name: layer.Name, Prefixes: layer.Prefixes}
+	}
+	return projectmodel.ProjectScopePolicy{Roots: roots, Layers: layers}
 }
 
 // evaluateLayerBypass folds bypassResult.Coverage into model.Coverage via
@@ -195,12 +263,13 @@ func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 // which is not itself a project-model or requested-bypass failure --
 // folding that in unchanged would wrongly degrade an otherwise complete
 // layer-violation finding to lifecycle "unknown" over the ordinary shape of
-// layered code, exactly what AC-3/AC-14 forbid.
-func (b *tsProjectBackend) evaluateLayerBypass(ctx context.Context, model projectmodel.Model, bypassLayer projectmodel.BypassLayer, configDigest string) ([]codesignal.ProjectChange, []codesignal.Diagnostic, projectmodel.Coverage) {
+// layered code. Its fourth return value is the pre-fold bypass coverage.
+func (b *tsProjectBackend) evaluateLayerBypass(ctx context.Context, model projectmodel.Model, bypassLayer projectmodel.BypassLayer, configDigest string) ([]codesignal.ProjectChange, []codesignal.Diagnostic, projectmodel.Coverage, projectmodel.Coverage) {
 	bypassResult := projectmodel.BuildTypeScriptLayerBypassFromModel(ctx, model, bypassLayer)
 	bypassChanges, bypassDiagnostics := codesignal.EvaluateTypeScriptLayerBypass(bypassResult, tsBypassRuleVersion, tsBypassBackendVersion, configDigest)
-	coverage := combineProjectCoverage(model.Coverage, tsBypassCoverageForFold(model.Coverage, bypassResult.Coverage))
-	return bypassChanges, bypassDiagnostics, coverage
+	bypassPhaseCoverage := tsBypassCoverageForFold(model.Coverage, bypassResult.Coverage)
+	coverage := combineProjectCoverage(model.Coverage, bypassPhaseCoverage)
+	return bypassChanges, bypassDiagnostics, coverage, bypassPhaseCoverage
 }
 
 // tsBypassCoverageForFold strips BuildTypeScriptLayerBypassFromModel's own

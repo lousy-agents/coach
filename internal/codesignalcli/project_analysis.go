@@ -57,12 +57,40 @@ type ProjectBackendResult struct {
 	BaseDiagnostics []codesignal.Diagnostic
 	HeadCoverage    *projectmodel.Coverage
 	BaseCoverage    *projectmodel.Coverage
-	BaseAnalyzed    bool
-	RuntimeKind     string
-	RuntimeVersion  string
-	RuntimeOrigin   string
-	CompilerVersion string
-	CompilerOrigin  string
+	// HeadProjectScope/BaseProjectScope carry the per-revision
+	// projectmodel.ProjectScopeFromModel result (candidate_files/
+	// analyzed_files accounting per policy root, matched/unmatched layers).
+	// Unlike HeadCoverage/BaseCoverage, a nil value here means no
+	// project_scope could be derived for that revision (e.g. the analyzer
+	// produced no root_scopes data at all), not that scope is unpopulated by
+	// omission -- see tsProjectBackend.evaluateRevision.
+	HeadProjectScope *projectmodel.ProjectScope
+	BaseProjectScope *projectmodel.ProjectScope
+	// HeadModelCoverage/BaseModelCoverage, HeadBypassCoverage/
+	// BaseBypassCoverage, and HeadReachabilityCoverage/BaseReachabilityCoverage
+	// carry each analyzed revision's three phase-specific Coverage
+	// observations independently of HeadCoverage/BaseCoverage's existing
+	// combined fold: model (the project model's own
+	// Coverage), bypass (the layer-bypass search's own completeness after
+	// tsBypassCoverageForFold's reachability-gap exclusion, or Phase
+	// "not_requested" -- never nil -- when the config has no required_layer),
+	// and reachability (BuildTypeScriptReachabilityFromModel(model).Coverage).
+	// None of the three replaces or alters HeadCoverage/BaseCoverage; they
+	// are additive, read-only observations of the same single analyzer
+	// response tsProjectBackend.evaluateRevision already builds. Currently
+	// only populated by the TypeScript backend.
+	HeadModelCoverage        *projectmodel.Coverage
+	BaseModelCoverage        *projectmodel.Coverage
+	HeadBypassCoverage       *projectmodel.Coverage
+	BaseBypassCoverage       *projectmodel.Coverage
+	HeadReachabilityCoverage *projectmodel.Coverage
+	BaseReachabilityCoverage *projectmodel.Coverage
+	BaseAnalyzed             bool
+	RuntimeKind              string
+	RuntimeVersion           string
+	RuntimeOrigin            string
+	CompilerVersion          string
+	CompilerOrigin           string
 }
 
 // ConfigDigest returns a stable hex digest of validated project-config bytes.
