@@ -248,8 +248,9 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 			wantAbsent:   []string{"incomplete"},
 		},
 		{
-			name: "names the distinct affected-path count when diagnostics are present",
+			name: "names the unanalyzed count from Summary, not every diagnostic path",
 			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesUnanalyzed: 1},
 				Diagnostics: []codesignal.Diagnostic{
 					{Path: "a.go", Kind: "unsupported_change_type", Message: "m"},
 				},
@@ -279,8 +280,22 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 			wantAbsent: []string{"not analyzed"},
 		},
 		{
+			name: "does not call an analyzed diagnostic path unanalyzed when FilesUnanalyzed is zero",
+			report: &codesignal.Report{
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "moved.go", Kind: "syntax_errors", Message: "m"},
+				},
+			},
+			wantContains: []string{
+				"No active CodeSignal findings, but the analysis is incomplete",
+				"additional diagnostics were recorded",
+			},
+			wantAbsent: []string{"not analyzed"},
+		},
+		{
 			name: "counts one affected path when four diagnostics share it",
 			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesUnanalyzed: 1},
 				Diagnostics: []codesignal.Diagnostic{
 					{Path: "a.go", Kind: "base_syntax_errors", Message: "m1"},
 					{Path: "a.go", Kind: "base_syntax_errors", Message: "m2"},
@@ -314,6 +329,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 		{
 			name: "states both causes when diagnostics and incomplete project coverage co-occur",
 			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesUnanalyzed: 2},
 				Diagnostics: []codesignal.Diagnostic{
 					{Path: "a.go", Kind: "unsupported_change_type", Message: "m"},
 					{Path: "b.go", Kind: "unsupported_change_type", Message: "m"},

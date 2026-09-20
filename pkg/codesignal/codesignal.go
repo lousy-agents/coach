@@ -104,6 +104,7 @@ func finalizeSignals(signals []Signal, filesAnalyzed int, files []FileChange, di
 	summary := Summary{
 		FilesAnalyzed:        filesAnalyzed,
 		FilesWithDiagnostics: countFilesWithDiagnostics(files, diagnostics),
+		FilesUnanalyzed:      countUnanalyzedFiles(files, diagnostics),
 	}
 	for _, sig := range signals {
 		switch sig.Lifecycle {
@@ -459,23 +460,32 @@ func validateFileChange(fc FileChange) []Diagnostic {
 	return diagnostics
 }
 
-func countFilesWithDiagnostics(files []FileChange, diagnostics []Diagnostic) int {
-	withDiagnostics := make(map[string]bool, len(diagnostics))
-	for _, d := range diagnostics {
-		withDiagnostics[d.Path] = true
-	}
+func countFilesWithDiagnostics(_ []FileChange, diagnostics []Diagnostic) int {
+	return len(distinctDiagnosticPaths(diagnostics))
+}
 
-	count := 0
-	seen := make(map[string]bool, len(files))
+func countUnanalyzedFiles(files []FileChange, diagnostics []Diagnostic) int {
+	inFiles := make(map[string]bool, len(files))
 	for _, fc := range files {
-		if seen[fc.Path] {
-			continue
+		if fc.Path != "" {
+			inFiles[fc.Path] = true
 		}
-		seen[fc.Path] = true
-		if withDiagnostics[fc.Path] {
+	}
+	count := 0
+	for path := range distinctDiagnosticPaths(diagnostics) {
+		if !inFiles[path] {
 			count++
 		}
 	}
-
 	return count
+}
+
+func distinctDiagnosticPaths(diagnostics []Diagnostic) map[string]struct{} {
+	paths := make(map[string]struct{})
+	for _, d := range diagnostics {
+		if d.Path != "" {
+			paths[d.Path] = struct{}{}
+		}
+	}
+	return paths
 }

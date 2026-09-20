@@ -7,7 +7,8 @@
   },
   "summary": {
     "files_analyzed": 4,
-    "files_with_diagnostics": 4,
+    "files_with_diagnostics": 5,
+    "files_unanalyzed": 1,
     "active_signals": 0,
     "introduced_signals": 0,
     "existing_signals": 0,

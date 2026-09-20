@@ -95,12 +95,16 @@ func nonNilCoverage(in *Coverage) Coverage {
 type Summary struct {
 	FilesAnalyzed        int `json:"files_analyzed"`
 	FilesWithDiagnostics int `json:"files_with_diagnostics"`
-	ActiveSignals        int `json:"active_signals"`
-	IntroducedSignals    int `json:"introduced_signals"`
-	ExistingSignals      int `json:"existing_signals"`
-	ResolvedSignals      int `json:"resolved_signals"`
-	BaselineSignals      int `json:"baseline_signals"`
-	UnknownSignals       int `json:"unknown_signals"`
+	// FilesUnanalyzed counts distinct diagnostic paths that never became
+	// an analyzed FileChange. Zero is omitted so unchanged ranges stay
+	// byte-identical.
+	FilesUnanalyzed   int `json:"files_unanalyzed,omitempty"`
+	ActiveSignals     int `json:"active_signals"`
+	IntroducedSignals int `json:"introduced_signals"`
+	ExistingSignals   int `json:"existing_signals"`
+	ResolvedSignals   int `json:"resolved_signals"`
+	BaselineSignals   int `json:"baseline_signals"`
+	UnknownSignals    int `json:"unknown_signals"`
 }
 
 type Category string
