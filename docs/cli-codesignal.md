@@ -119,9 +119,18 @@ terminal is what opens the combined setup offer above.
 ## Diff-mode caveats
 
 - Dirty / uncommitted files are ignored.
-- Renames and copies are not analyzed; they emit `unsupported_change_type`.
+- Diff mode passes `--find-renames` (default 50% similarity) and
+  `--find-copies-harder` (unmodified files are copy-source candidates) to
+  `git diff --name-status`. Rename (`R`) and copy (`C`) new paths are
+  analyzed. A pure git rename or copy without old-path continuity yields
+  `lifecycle: unknown` plus a `continuity_not_determined` path diagnostic.
+  Old-path continuity is not established. Adopters who only watch
+  `introduced_signals` shall treat that path as incomplete, not green.
+- Statuses the CLI does not analyze (`T`, `U`, `X`, `B`) emit
+  `unsupported_change_type`, increment `summary.files_unanalyzed` and
+  `summary.files_with_diagnostics`, and qualify the text all-clear.
 - Added (`A`) files are `lifecycle: introduced` and increment `introduced_signals`.
-- `lifecycle` is relative to the merge-base (`introduced` / `existing` / `resolved` / `unknown`). `unknown` is residual classification, not "new in this diff." An unanalyzable merge-base carries a `base_read_failed`, `base_syntax_errors`, or `base_analysis_failed` diagnostic; other `unknown` signals do not.
+- `lifecycle` is relative to the merge-base (`introduced` / `existing` / `resolved` / `unknown`). `unknown` is residual classification, not "new in this diff." An unanalyzable merge-base carries a `base_read_failed`, `base_syntax_errors`, or `base_analysis_failed` diagnostic. A rename or copy without old-path continuity is also `unknown` and carries `continuity_not_determined`; that is not a green `introduced_signals` miss.
 
 ## Lifecycle and counters
 
