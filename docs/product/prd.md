@@ -1,14 +1,15 @@
-# Coach PRD — Local CodeSignal Pilot (v3)
+# Coach PRD - Local CodeSignal Pilot (v3)
 
 This document supersedes the v2 Platform Groundwork PRD from 20 July 2026.
 
-The v2 document described an async analysis platform with a hosted application programming interface. That work is not the current product. The product that ships today is a local command-line tool.
+The v2 document described an async analysis platform with a hosted service. That hosted service is not the current product. The product that ships today is a local command-line tool.
 
 ## Evidence cutoff
 
 - Latest published release: `v0.7.0` (19 September 2026).
-- Leave-pilot evaluation: [`evaluations/codesignal-pilot-readiness.html`](evaluations/codesignal-pilot-readiness.html), last reviewed 19 September 2026 at `HEAD` `a27f470`.
-- Pilot-exit epic: [#282](https://github.com/lousy-agents/coach/issues/282). The standing decision is to stay in pilot.
+- Leave-pilot evaluation: [`evaluations/codesignal-pilot-readiness.html`](evaluations/codesignal-pilot-readiness.html). Masthead date 19 September 2026. Named evaluation `HEAD` is `a27f470`. That pass is a focused restamp, not a full corpus replay.
+- This document is written against `main` at the v3 refresh. Do not treat the evaluation SHA as the current default-branch SHA.
+- Pilot-exit epic: [#282](https://github.com/lousy-agents/coach/issues/282). Standing decision: stay in pilot. Closed children: 7 of 24 on the evaluation masthead.
 - Command contract: [`docs/cli-codesignal.md`](../cli-codesignal.md).
 
 A behavior is **implemented** only when a passing acceptance test locks it. A release note is not enough. A specification without a passing test is a **bet**.
@@ -24,7 +25,6 @@ Typical defects stay hidden until a person reads the diff:
 - hidden mutation of caller input
 - tight coupling in constructors
 - dense structure that hides change scope
-- tests that copy implementation instead of behavior
 - imports that cross a layer the team already named
 - a check-then-act race on a filesystem path
 
@@ -34,7 +34,9 @@ Current tools do not close this gap for a private, local workflow.
 - Linters enforce style and local rules. They do not report change lifecycle.
 - Continuous integration gates pass or fail. They do not explain structural risk.
 
-The engineer needs a private report over recent work. The report must mark each finding as a reproducible rule result or as model judgment. The report must not pretend that absence of a finding is proof of safety.
+The engineer needs a private report over recent committed work. The current product reports deterministic rule results only. The report must not treat absence of a finding as proof of safety.
+
+Behavioral test gaps remain a real problem. This era does not claim to detect them.
 
 ## 2. Who this era serves
 
@@ -42,14 +44,14 @@ The user is the project owner or a small set of engineers who scan their own Git
 
 The user runs Coach on a repository they already have on disk. The default command path does not call GitHub. The default command path does not call a model.
 
-This era has no manager view. This era has no team roll-out. This era has no anonymous audience.
+This era has no manager view. This era has no team rollout. This era has no anonymous audience.
 
 ## 3. Current workaround
 
 Without Coach the user does one or more of these actions:
 
 - read every assistant-generated diff by hand
-- paste fragments into a chat model and hope the answer is grounded
+- paste fragments into a chat model and accept an ungrounded answer
 - wait for a public review bot to comment on an open pull request
 - run a general linter and treat a clean run as a review
 
@@ -57,14 +59,14 @@ Those workarounds leak privacy, mix opinion with evidence, or miss structural de
 
 ## 4. Outcome and how this product dies
 
-Desired outcome: a pilot engineer runs a second scan after the first report, without a request from the product owner.
+Desired outcome: a pilot user who did not write Coach runs a second scan after the first report, without a request from the product owner.
 
-The outcome is **not** a count of rules. The outcome is **not** a hosted service. The outcome is **not** a merge gate.
+The outcome is not a count of rules. The outcome is not a hosted service. The outcome is not a merge gate.
 
 Named tests that kill the current bet:
 
-- Value: after a first report, pilot engineers do not run Coach again.
-- Usability: an engineer who did not write Coach cannot start a TypeScript project scan from the published README without a hidden step.
+- Value: after a first report, that user does not run Coach again.
+- Usability: a user who did not write Coach cannot start a TypeScript project scan from the published README without a hidden step.
 - Feasibility: an incomplete analysis still prints an unqualified all-clear.
 - Business viability: Coach writes to GitHub, scores a person, or blocks a merge.
 
@@ -83,34 +85,36 @@ In scope:
 
 Out of scope in this era:
 
-- a hosted Coach application programming interface as the default product
+- a hosted Coach service as the default product
 - a web user interface
 - harness hooks as a supported product
 - AWS or other cloud deployment
 - new analysis languages
 - a review-readiness verdict
+- model judgment on the default command path
 - live GitHub reads or writes on the default command path
 
 ## 6. Non-goals
 
 These limits do not expire with this era unless a later document replaces them.
 
-- Coach shall not score people. Coach shall not rank productivity.
-- Coach shall not approve a merge. Coach shall not replace continuous integration.
-- Coach shall not claim complete security coverage.
-- Coach shall not treat a missing signal as a safety verdict.
-- Coach shall not write comments, checks, or other GitHub objects in this era.
-- Coach shall not invent architecture. The user declares roots, layers, and forbidden imports.
-- Coach shall not guess willingness to pay or market size.
+- Coach does not score people. Coach does not rank productivity.
+- Coach does not approve a merge. Coach does not replace continuous integration.
+- Coach does not claim complete security coverage.
+- Coach does not treat a missing signal as a safety verdict.
+- Coach does not write comments, checks, or other GitHub objects in this era.
+- Coach does not invent architecture. The user declares roots, layers, and forbidden imports.
+- Coach does not guess willingness to pay or market size.
+- Coach does not detect behavioral test gaps in this era.
 
 ## 7. Trust rules
 
 - Self-serve: the user scans a local checkout they already control.
-- Provenance: a deterministic finding stays a deterministic finding. Model output shall not hide it.
+- Provenance on the default path: every finding is a deterministic rule result. Model output is not part of that path.
 - Coverage honesty: an empty signal set means no matched rule for the analyzed inputs.
 - Advisory security: a security-category rule describes a narrow, reproducible pattern. It is not runtime proof.
 - Consent for mutation: compiler or package setup that changes the machine needs a terminal and an explicit confirm step.
-- Degrade in public: if a later agent path fails schema checks, the deterministic report still ships and the failure is a diagnostic.
+- Default file-local analysis does not need a network connection. Project-policy setup may use the network after the user confirms.
 
 ## 8. Requirements
 
@@ -120,9 +124,11 @@ These requirements describe the local pilot product. They do not specify storage
 
 The Coach CLI shall analyze only committed Git objects at the named revision.
 
-WHEN the user requests a baseline scan, THE Coach CLI shall examine tracked Go, TypeScript, and TSX files at `HEAD`.
+WHEN the user requests a baseline scan, THE Coach CLI shall analyze committed Go, TypeScript, and TSX files that pass the active scope filter at `HEAD`.
 
-WHEN the user requests a diff scan against a Git ref, THE Coach CLI shall compare `HEAD` to that ref.
+WHEN the user omits `--scope`, THE Coach CLI shall use production scope.
+
+WHEN the user requests a diff scan against a Git ref, THE Coach CLI shall analyze the change between the merge base of that ref and `HEAD`.
 
 IF the working tree contains uncommitted edits, THEN THE Coach CLI shall ignore those edits.
 
@@ -132,19 +138,21 @@ THE Coach CLI shall complete a successful analysis with process status `0` even 
 
 ### 8.2 Findings and lifecycle
 
-THE Coach CLI shall tag every signal with a rule identity and a rule version.
+THE Coach CLI shall include a rule identity and a rule version on every signal in the JSON report.
 
-WHEN a file is added in a diff scan, THE Coach CLI shall classify matching signals as `introduced`.
+WHEN a diff scan sees a Git added file, THE Coach CLI shall classify matching signals as `introduced`.
 
 WHEN a signal exists at the merge base and at `HEAD`, THE Coach CLI shall classify that signal as `existing`.
 
 WHEN a signal exists at the merge base and not at `HEAD`, THE Coach CLI shall classify that signal as `resolved`.
 
-WHEN the CLI cannot classify a signal, THE Coach CLI shall classify that signal as `unknown` and shall not treat `unknown` as a new defect.
+WHEN a diff scan cannot determine old-path continuity for a rename or copy, THE Coach CLI shall classify matching signals as `unknown` and shall record a continuity diagnostic.
+
+WHEN the CLI cannot otherwise classify a signal, THE Coach CLI shall classify that signal as `unknown` and shall not treat `unknown` as a new defect.
 
 WHILE a baseline scan runs, THE Coach CLI shall classify signals as `baseline` and shall not emit `resolved` signals.
 
-THE Coach CLI shall count every signal in exactly one summary field among `introduced_signals`, `existing_signals`, `resolved_signals`, `baseline_signals`, and `unknown_signals`.
+THE Coach CLI shall count every JSON signal in exactly one summary field among `introduced_signals`, `existing_signals`, `resolved_signals`, `baseline_signals`, and `unknown_signals`.
 
 ### 8.3 Honesty under failure
 
@@ -162,11 +170,15 @@ WHERE the user passes a committed project policy, THE Coach CLI shall evaluate o
 
 THE Coach CLI shall not invent layers or forbidden imports.
 
-WHEN a committed policy is valid, THE Coach CLI shall emit report schema version `2` and may emit `architecture.layer_violation`.
+WHEN a committed policy is valid, THE Coach CLI shall emit report schema version `2`.
 
-WHERE the policy names a required layer, THE Coach CLI shall evaluate the narrow handler-to-SQL bypass registry and may emit `architecture.layer_bypass`.
+WHEN a committed policy is valid and an import edge violates a named forbidden pair, THE Coach CLI shall emit `architecture.layer_violation`.
+
+WHERE the policy names a required layer and a matching handler-to-SQL path exists, THE Coach CLI shall emit `architecture.layer_bypass`.
 
 IF the policy file is not committed at the analyzed revision, THEN THE Coach CLI shall not treat the worktree copy as the scan policy.
+
+Absence of an architecture signal is not compliance.
 
 ### 8.5 TypeScript project setup
 
@@ -190,14 +202,6 @@ THE Coach CLI shall not call a model on the default command path.
 
 WHILE the user runs file-local analysis without a project policy, THE Coach CLI shall not require a network connection.
 
-### 8.7 Provenance for a future agent path
-
-WHERE an optional local platform path adds model judgments, THE product shall tag each finding as `deterministic` or `agent`.
-
-IF a model judgment fails schema validation, THEN THE product shall still return the deterministic report and shall record the failure as a diagnostic.
-
-THE product shall not let agent output suppress a deterministic finding.
-
 ## 9. Shipped behavior
 
 Status uses the evidence rule in the cutoff section.
@@ -205,19 +209,20 @@ Status uses the evidence rule in the cutoff section.
 | Behavior | Evidence |
 | --- | --- |
 | File-local structural analysis for Go, TypeScript, and TSX | Implemented in the published CLI through `v0.7.0`. Rule list lives in `docs/cli-codesignal.md`. |
-| Diff scan and baseline scan with lifecycle fields | Implemented. Added files count as `introduced` as of `v0.7.0` ([#262](https://github.com/lousy-agents/coach/issues/262)). |
+| Diff scan and baseline scan with lifecycle fields | Implemented. Git added files count as `introduced` as of `v0.7.0` ([#262](https://github.com/lousy-agents/coach/issues/262)). Rename or copy without old-path continuity stays `unknown`. |
 | Opt-in project policy and `architecture.layer_violation` | Implemented from `v0.4.0`. Coach does not guess architecture. |
 | `architecture.layer_bypass` on the narrow handler-to-SQL registry | Implemented for Go and TypeScript. Absence of a finding is not compliance. |
 | TypeScript readiness check and guided policy authoring | Implemented from `v0.5.0`. Authoring needs a terminal. |
-| Consented TypeScript compiler setup | Implemented as `--prepare-compiler` in `v0.6.0` and as a scan-time offer in `v0.7.0`. Mise-only on the standalone flag. |
+| Consented TypeScript compiler setup | Implemented as `--prepare-compiler` in `v0.6.0` and as a scan-time offer in `v0.7.0`. The standalone flag is mise-only. |
 | Unattended path that refuses prompts | Implemented as `--no-interactive` and a non-empty `CI` variable in `v0.7.0`. |
+| JSON signals carry rule identity and rule version | Implemented. Default text output still omits `rule_id` and `severity` for file-local signals ([#279](https://github.com/lousy-agents/coach/issues/279)). |
 | Local platform lab with a stub model smoke | Specified and partially verified. README names this path as a separate lab, not the default product. |
-| Hosted application programming interface, OAuth identity, and cloud deploy | Bet. Not the current product. |
-| Versioned LLM-as-judge rubrics on the default path | Bet. Not present on the default CLI path. |
+| Hosted Coach service, identity federation, and cloud deploy | Bet. Not the current product. |
+| Model judgment on the default path | Bet. Not present on the default CLI path. |
 
 ## 10. Open bets and parked work
 
-Stay in pilot while [#282](https://github.com/lousy-agents/coach/issues/282) remains open. Closed children of that epic do not end the pilot by themselves. Re-run the affected evaluation claim against `HEAD` before any leave-pilot decision.
+Stay in pilot while [#282](https://github.com/lousy-agents/coach/issues/282) remains open. Closed children of that epic do not end the pilot by themselves. Re-run the affected evaluation claim against current `HEAD` before any leave-pilot decision.
 
 Known remaining risks from the evaluation and the epic:
 
@@ -225,12 +230,16 @@ Known remaining risks from the evaluation and the epic:
 - A TypeScript journey on an arbitrary foreign repository is not a packaged product ([#280](https://github.com/lousy-agents/coach/issues/280)).
 - Suppression of accepted findings is still missing ([#50](https://github.com/lousy-agents/coach/issues/50)).
 - A precision census for security-category rules is still missing ([#260](https://github.com/lousy-agents/coach/issues/260), [#205](https://github.com/lousy-agents/coach/issues/205)).
+- Default text output still omits `rule_id` and `severity` for file-local signals ([#279](https://github.com/lousy-agents/coach/issues/279)).
 
 Parked on purpose:
 
 - Review-readiness digest with a readiness verdict. The verdict had no defensible decision rule.
-- Behavioral test-gap detection as a primary claim. That work needs rubric infrastructure that this era does not ship on the default path.
-- Harness hooks and a web user interface. Those surfaces may consume a later interface. They are not this era.
+- Behavioral test-gap detection as a primary claim.
+- Model judgment, rubric scoring, and provenance split on a hosted path.
+- Harness hooks and a web user interface.
+
+If a later path adds model judgments, each finding must stay tagged as deterministic or agent. Agent output must not hide a deterministic finding. A schema failure on the agent path must still return the deterministic report. That contract is not a requirement of the default CLI path.
 
 ## 11. Risks as tests
 
@@ -238,7 +247,7 @@ Do not treat this table as a substitute for customer evidence. Each row is a tes
 
 | Risk | Question | Cheapest test that kills the bet |
 | --- | --- | --- |
-| Value | Will a pilot engineer choose this report over hand review or a chat paste? | After one report, the engineer does not run a second scan and cannot name one action they took. |
+| Value | Will a pilot user choose this report over hand review or a chat paste? | After one report, the user does not run a second scan and cannot name one action they took. |
 | Usability | Can a first-time TypeScript user complete readiness and a first scan from the README? | The user hits a hidden step, a prompt with no terminal, or a false clean result. |
 | Feasibility | Can the shipped analyzer examine the change the user asked about? | A requested path is skipped and the text still reads as complete and clean. |
 | Business viability | Does this stay a private advisory tool? | A GitHub write, a person score, or a merge block lands on the default path. |
@@ -247,9 +256,9 @@ Do not treat this table as a substitute for customer evidence. Each row is a tes
 
 Leave pilot only when all of these statements are true:
 
-- Every child of [#282](https://github.com/lousy-agents/coach/issues/282) is closed **and** the evaluation restamp against `HEAD` agrees.
+- Every child of [#282](https://github.com/lousy-agents/coach/issues/282) is closed, and a new evaluation restamp against current `HEAD` agrees.
 - A first-time user can follow the published README and obtain either a report or a clear next action. The user does not receive a false all-clear.
-- At least one pilot engineer outside the author set runs a second scan without a prompt from the owner.
+- A user who did not write Coach runs a second scan without a prompt from the owner.
 - Security-category claims have a recorded precision review on a named corpus. The review includes true positives, false positives, and known misses.
 - The default command path still writes nothing to GitHub and still scores no person.
 
