@@ -165,6 +165,12 @@ func assembleReport(
 		report.ProjectFacts = projectFacts
 		report.ProjectSummary = projectSummary
 		report.ProjectCoverage = projectCoverage
+
+		prov := buildProjectProvenance(input, options)
+		report.ProjectProvenance = prov
+		report.ProjectScope = buildProjectScope(input)
+		cnm := isCompleteNoMatch(options, prov, input, projectSummary, projectChanges)
+		report.ProjectNextActions = buildNextActions(options, cnm, diagnostics)
 	}
 	return report
 }

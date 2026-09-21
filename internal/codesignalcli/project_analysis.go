@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
+	"github.com/lousy-agents/coach/internal/projectbridge"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
@@ -91,6 +92,7 @@ type ProjectBackendResult struct {
 	RuntimeOrigin            string
 	CompilerVersion          string
 	CompilerOrigin           string
+	AnalyzerProtocolVersion  int
 }
 
 // ConfigDigest returns a stable hex digest of validated project-config bytes.
@@ -131,6 +133,10 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		diagnostics = append(append([]codesignal.Diagnostic(nil), input.Diagnostics...), result.HeadDiagnostics...)
 		diagnostics = append(diagnostics, baseProjectDiagnostics(result.BaseDiagnostics)...)
 	}
+	analyzerProtocolVersion := result.AnalyzerProtocolVersion
+	if project.Language == "typescript" && analyzerProtocolVersion == 0 {
+		analyzerProtocolVersion = projectbridge.ProtocolVersion
+	}
 	merged := codesignal.Input{
 		Scope:               input.Scope,
 		Files:               input.Files,
@@ -147,8 +153,32 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		RuntimeOrigin:       result.RuntimeOrigin,
 		CompilerVersion:     result.CompilerVersion,
 		CompilerOrigin:      result.CompilerOrigin,
+
+		HeadProjectScope:         result.HeadProjectScope,
+		BaseProjectScope:         result.BaseProjectScope,
+		HeadModelCoverage:        result.HeadModelCoverage,
+		BaseModelCoverage:        result.BaseModelCoverage,
+		HeadBypassCoverage:       result.HeadBypassCoverage,
+		BaseBypassCoverage:       result.BaseBypassCoverage,
+		HeadReachabilityCoverage: result.HeadReachabilityCoverage,
+		BaseReachabilityCoverage: result.BaseReachabilityCoverage,
+		Language:                 project.Language,
+		ConfigDigest:             project.ConfigDigest,
+		SelectedRoots:            selectedRootsFromConfig(project.Config),
+		AnalyzerProtocolVersion:  analyzerProtocolVersion,
 	}
 	return merged, enabled, nil
+}
+
+func selectedRootsFromConfig(config json.RawMessage) []string {
+	if len(config) == 0 {
+		return nil
+	}
+	cfg, err := parseProjectConfig(config)
+	if err != nil {
+		return nil
+	}
+	return cfg.Roots
 }
 
 // baseProjectDiagnostics prefixes each diagnostic's Kind with "base_",
