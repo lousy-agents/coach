@@ -7,9 +7,9 @@ The v2 document described an async analysis platform with a hosted service. That
 ## Evidence cutoff
 
 - Latest published release: `v0.7.0` (19 September 2026).
-- Leave-pilot evaluation: [`evaluations/codesignal-pilot-readiness.html`](evaluations/codesignal-pilot-readiness.html). Masthead date 19 September 2026. Named evaluation `HEAD` is `a27f470`. That pass is a focused restamp, not a full corpus replay.
-- This document is written against `main` at the v3 refresh. Do not treat the evaluation SHA as the current default-branch SHA.
-- Pilot-exit epic: [#282](https://github.com/lousy-agents/coach/issues/282). Standing decision: stay in pilot. Closed children: 7 of 24 on the evaluation masthead.
+- Leave-pilot evaluation: [`evaluations/codesignal-pilot-readiness.html`](evaluations/codesignal-pilot-readiness.html). Masthead date 19 September 2026. Named evaluation revision is `a27f470`. That pass is a focused restamp, not a full corpus replay.
+- This document is written against current `main` at the v3 refresh. Do not treat the evaluation revision as the current default-branch revision.
+- Pilot-exit epic: [#282](https://github.com/lousy-agents/coach/issues/282). Standing decision: stay in pilot. Read the live epic for the closed-child count.
 - Command contract: [`docs/cli-codesignal.md`](../cli-codesignal.md).
 
 A behavior is **implemented** only when a passing acceptance test locks it. A release note is not enough. A specification without a passing test is a **bet**.
@@ -122,7 +122,7 @@ These requirements describe the local pilot product. They do not specify storage
 
 ### 8.1 Analysis contract
 
-The Coach CLI shall analyze only committed Git objects at the named revision.
+WHEN the Coach CLI analyzes source for a CodeSignal report, THE Coach CLI shall read committed Git objects at the named revision.
 
 WHEN the user requests a baseline scan, THE Coach CLI shall analyze committed Go, TypeScript, and TSX files that pass the active scope filter at `HEAD`.
 
@@ -130,9 +130,11 @@ WHEN the user omits `--scope`, THE Coach CLI shall use production scope.
 
 WHEN the user requests a diff scan against a Git ref, THE Coach CLI shall analyze the change between the merge base of that ref and `HEAD`.
 
-IF the working tree contains uncommitted edits, THEN THE Coach CLI shall ignore those edits.
+IF the working tree contains uncommitted source edits, THEN THE Coach CLI shall ignore those edits in the CodeSignal report.
 
 IF a path uses a language other than Go, TypeScript, or TSX, THEN THE Coach CLI shall skip that path and record an `unsupported_language` diagnostic.
+
+WHERE the user requests TypeScript project readiness, THE Coach CLI may read the host compiler and worktree manifests. Those reads are readiness checks. They are not source analysis.
 
 THE Coach CLI shall complete a successful analysis with process status `0` even when the report contains signals.
 
@@ -160,7 +162,7 @@ IF analysis of a requested path is incomplete, THEN THE Coach CLI shall not prin
 
 IF the user supplies an invalid project policy, THEN THE Coach CLI shall exit with status `2`, write the error to standard error, and write no report to standard output.
 
-IF a TypeScript project scan cannot resolve a supported compiler or a supported host Node major, THEN THE Coach CLI shall exit with status `2` and shall not emit a CodeSignal report.
+IF a TypeScript project scan cannot resolve a supported compiler or a supported host Node major, and no interactive setup offer runs, THEN THE Coach CLI shall exit with status `2` and shall not emit a CodeSignal report.
 
 WHERE the environment has a non-empty `CI` variable, or the user passes `--no-interactive`, THE Coach CLI shall not open a prompt.
 
@@ -170,7 +172,9 @@ WHERE the user passes a committed project policy, THE Coach CLI shall evaluate o
 
 THE Coach CLI shall not invent layers or forbidden imports.
 
-WHEN a committed policy is valid, THE Coach CLI shall emit report schema version `2`.
+WHEN the user sets project language and omits a project policy, THE Coach CLI shall keep file-local analysis.
+
+WHEN a committed policy is valid, THE Coach CLI shall emit a project-policy report that is distinct from the file-local report.
 
 WHEN a committed policy is valid and an import edge violates a named forbidden pair, THE Coach CLI shall emit `architecture.layer_violation`.
 
@@ -182,7 +186,13 @@ Absence of an architecture signal is not compliance.
 
 ### 8.5 TypeScript project setup
 
-WHEN a TypeScript project scan runs on a controlling terminal and the committed policy is missing, THE Coach CLI shall offer guided policy authoring and shall write no file until the user confirms.
+WHEN a TypeScript scan on a controlling terminal passes `--project-config` and that policy is not committed at the analyzed revision, THE Coach CLI shall offer guided policy authoring.
+
+WHEN that scan authoring path runs, THE Coach CLI shall write the candidate to standard output, shall reject `--output`, and shall not write a repository file.
+
+WHEN the user runs standalone TypeScript policy authoring on a controlling terminal, THE Coach CLI shall write no repository file until the user confirms.
+
+WHEN a TypeScript scan omits `--project-config`, THE Coach CLI shall stay file-local and shall not open policy authoring.
 
 WHEN a TypeScript project scan runs on a controlling terminal, the policy is committed, and a supported compiler is missing, THE Coach CLI shall offer a bounded setup menu and shall require a second confirm step before any install.
 
@@ -210,13 +220,13 @@ Status uses the evidence rule in the cutoff section.
 | --- | --- |
 | File-local structural analysis for Go, TypeScript, and TSX | Implemented in the published CLI through `v0.7.0`. Rule list lives in `docs/cli-codesignal.md`. |
 | Diff scan and baseline scan with lifecycle fields | Implemented. Git added files count as `introduced` as of `v0.7.0` ([#262](https://github.com/lousy-agents/coach/issues/262)). Rename or copy without old-path continuity stays `unknown`. |
-| Opt-in project policy and `architecture.layer_violation` | Implemented from `v0.4.0`. Coach does not guess architecture. |
+| Opt-in project policy and `architecture.layer_violation` | Implemented from `v0.4.0`. Coach does not guess architecture. A language flag without a policy stays file-local. |
 | `architecture.layer_bypass` on the narrow handler-to-SQL registry | Implemented for Go and TypeScript. Absence of a finding is not compliance. |
-| TypeScript readiness check and guided policy authoring | Implemented from `v0.5.0`. Authoring needs a terminal. |
+| TypeScript readiness check and guided policy authoring | Implemented from `v0.5.0`. Scan authoring needs `--project-config` and a terminal. The scan prints a candidate on standard output. |
 | Consented TypeScript compiler setup | Implemented as `--prepare-compiler` in `v0.6.0` and as a scan-time offer in `v0.7.0`. The standalone flag is mise-only. |
 | Unattended path that refuses prompts | Implemented as `--no-interactive` and a non-empty `CI` variable in `v0.7.0`. |
 | JSON signals carry rule identity and rule version | Implemented. Default text output still omits `rule_id` and `severity` for file-local signals ([#279](https://github.com/lousy-agents/coach/issues/279)). |
-| Local platform lab with a stub model smoke | Specified and partially verified. README names this path as a separate lab, not the default product. |
+| Local platform lab, Path A stub smoke | Verified in CI. README names this path as a separate lab, not the default product. Paths B and C are operator labs. |
 | Hosted Coach service, identity federation, and cloud deploy | Bet. Not the current product. |
 | Model judgment on the default path | Bet. Not present on the default CLI path. |
 
