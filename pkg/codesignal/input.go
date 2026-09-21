@@ -55,7 +55,15 @@ type Input struct {
 	// AnalyzerProtocolVersion identifies the protocol version the analyzer used
 	// to produce project observations. For TypeScript reports, buildProjectProvenance
 	// defaults this to 1 when the caller leaves it zero.
-	AnalyzerProtocolVersion int `json:"analyzer_protocol_version,omitempty"`
+	AnalyzerProtocolVersion int    `json:"analyzer_protocol_version,omitempty"`
+	AnalyzerVersion         string `json:"analyzer_version,omitempty"`
+	AnalyzerDigest          string `json:"analyzer_digest,omitempty"`
+
+	// PackageManager* describe the package manager detected from the analyzed
+	// snapshot's committed metadata. Version is omitted when unverifiable from PATH.
+	PackageManagerKind    string `json:"package_manager_kind,omitempty"`
+	PackageManagerVersion string `json:"package_manager_version,omitempty"`
+	PackageManagerOrigin  string `json:"package_manager_origin,omitempty"`
 
 	// HeadProjectScope and BaseProjectScope carry the per-revision scope
 	// classification result from the project backend. A nil HeadProjectScope

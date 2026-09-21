@@ -53,11 +53,23 @@ func buildProjectProvenance(input Input, opts Options) *ProjectProvenance {
 	if analyzerProtocolVersion == 0 {
 		analyzerProtocolVersion = 1
 	}
+	var packageManager *ProvenancePackageManager
+	if input.PackageManagerKind != "" {
+		packageManager = &ProvenancePackageManager{
+			Kind:    input.PackageManagerKind,
+			Version: input.PackageManagerVersion,
+			Origin:  input.PackageManagerOrigin,
+		}
+	}
+
 	prov := &ProjectProvenance{
-		Language:      "typescript",
-		ConfigDigest:  input.ConfigDigest,
-		SelectedRoots: input.SelectedRoots,
+		Language:       "typescript",
+		ConfigDigest:   input.ConfigDigest,
+		SelectedRoots:  input.SelectedRoots,
+		PackageManager: packageManager,
 		Analyzer: ProvenanceAnalyzer{
+			Version:         input.AnalyzerVersion,
+			Digest:          input.AnalyzerDigest,
 			ProtocolVersion: analyzerProtocolVersion,
 		},
 		Runtime: ProvenanceRuntime{
@@ -170,6 +182,40 @@ func isCompleteNoMatch(opts Options, prov *ProjectProvenance, input Input, proje
 		}
 	}
 	return true
+}
+
+// RequiredCoverageIncomplete reports whether required project coverage is
+// incomplete for any analyzed side of the report. Model or bypass
+// incompleteness on any side counts; reachability incompleteness alone does
+// not. When ProjectProvenance is absent, a project_backend_unavailable
+// diagnostic is treated as incomplete so schema-1 reports (which carry no
+// provenance) still satisfy the predicate.
+func RequiredCoverageIncomplete(report *Report) bool {
+	if report == nil {
+		return false
+	}
+	if report.ProjectProvenance != nil {
+		prov := report.ProjectProvenance
+		headOK := prov.Head.Coverage.Model == "complete" &&
+			(prov.Head.Coverage.Bypass == "complete" || prov.Head.Coverage.Bypass == "not_requested")
+		if !headOK {
+			return true
+		}
+		if prov.Base != nil {
+			baseOK := prov.Base.Coverage.Model == "complete" &&
+				(prov.Base.Coverage.Bypass == "complete" || prov.Base.Coverage.Bypass == "not_requested")
+			if !baseOK {
+				return true
+			}
+		}
+		return false
+	}
+	for _, d := range report.Diagnostics {
+		if d.Kind == "project_backend_unavailable" {
+			return true
+		}
+	}
+	return false
 }
 
 // buildNextActions constructs the project_next_actions list when

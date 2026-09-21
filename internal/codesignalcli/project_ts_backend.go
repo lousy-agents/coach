@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/lousy-agents/coach/internal/projectbridge"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
@@ -112,6 +113,13 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	}
 	defer cleanup()
 
+	digest, digestErr := TSAnalyzerAssetDigest()
+	if digestErr != nil {
+		return nil, fmt.Errorf("coach: computing TypeScript analyzer digest: %w", digestErr)
+	}
+
+	pmKind, pmVersion, pmOrigin := snapshotPackageManagerAtRevision(req.Dir, req.HeadRevision, config.Roots)
+
 	headChanges, headFacts, headDiagnostics, headCoverage, headScope, headPhases, err := b.evaluateRevision(ctx, req.Dir, req.HeadRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {
 		return nil, err
@@ -131,6 +139,12 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 		RuntimeOrigin:            runtime.Origin,
 		CompilerVersion:          runtime.CompilerVersion,
 		CompilerOrigin:           runtime.CompilerOrigin,
+		AnalyzerVersion:          tsAnalyzerShimAssetPath,
+		AnalyzerDigest:           "sha256:" + digest,
+		AnalyzerProtocolVersion:  projectbridge.ProtocolVersion,
+		PackageManagerKind:       pmKind,
+		PackageManagerVersion:    pmVersion,
+		PackageManagerOrigin:     pmOrigin,
 	}
 	if req.Baseline {
 		return result, nil

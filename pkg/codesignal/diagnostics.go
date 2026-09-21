@@ -19,6 +19,7 @@ type Diagnostic struct {
 const (
 	DiagKindProjectCoverageIncomplete     = "project_coverage_incomplete"
 	DiagKindProjectLifecycleIndeterminate = "project_lifecycle_indeterminate"
+	DiagKindWorktreeChangesNotAnalyzed    = "worktree_changes_not_analyzed"
 )
 
 // SortDiagnostics orders diagnostics by path, kind, location, then message.
