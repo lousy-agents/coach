@@ -31,7 +31,7 @@ x-pg-dsn: &pg-dsn "postgres://coach:coach@postgres:5432/coach?sslmode=disable"
 services:
   postgres:
     profiles: ["core", "llm"]
-    image: postgres:18-alpine@sha256:6c538e7206ea40ff740ef27883529390a690b6ead6ba96b44c67a9f7c638e8fd
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     environment:
       POSTGRES_USER: coach
       POSTGRES_PASSWORD: coach
