@@ -1,160 +1,256 @@
-# Coach PRD — Platform Groundwork Era (v2)
+# Coach PRD — Local CodeSignal Pilot (v3)
 
-> Supersedes the v1 "Private Review-Readiness Coach" draft PRD. This revision reflects the product direction set in July 2026: decouple end-user consumption from the feedback platform, validate the full agentic flow locally before cloud investment, and park review-readiness verdicts in favor of async code-quality analysis. Implementation status claims follow the evidence hierarchy: only behavior locked by passing acceptance tests counts as implemented.
+This document supersedes the v2 Platform Groundwork PRD from 20 July 2026.
 
-> **Shipped-behavior evidence:** [`evaluations/codesignal-pilot-readiness.html`](evaluations/codesignal-pilot-readiness.html) is the living leave-pilot evaluation of the shipped `coach codesignal` CLI — last reviewed 2026-08-31 at `main` = `e5bfa4a`. Gaps are tracked in epic [#282](https://github.com/lousy-agents/coach/issues/282); the standing decision is that all of them close before CodeSignal leaves pilot.
+The v2 document described an async analysis platform with a hosted application programming interface. That work is not the current product. The product that ships today is a local command-line tool.
 
-## 1. Product Purpose
+## Evidence cutoff
 
-AI coding assistants make it easy to produce large code changes quickly, but they do not reliably produce changes that are easy for humans to review, trust, or maintain. Coach helps engineers understand and improve the quality of AI-assisted code.
+- Latest published release: `v0.7.0` (19 September 2026).
+- Leave-pilot evaluation: [`evaluations/codesignal-pilot-readiness.html`](evaluations/codesignal-pilot-readiness.html), last reviewed 19 September 2026 at `HEAD` `a27f470`.
+- Pilot-exit epic: [#282](https://github.com/lousy-agents/coach/issues/282). The standing decision is to stay in pilot.
+- Command contract: [`docs/cli-codesignal.md`](../cli-codesignal.md).
 
-Coach is built as two separable things:
+A behavior is **implemented** only when a passing acceptance test locks it. A release note is not enough. A specification without a passing test is a **bet**.
 
-1. **A feedback platform** — deterministic structural analysis (`pkg/semantics` → `pkg/codesignal`) combined with LLM-as-judge rubric evaluation, exposed through a versioned Coach API that runs analysis jobs asynchronously.
-2. **Consumption surfaces** — how people receive that feedback. Today: a local CLI (`coach codesignal`). Next: the Coach API consumed directly. Later: hooks into agent harnesses and a web UI for viewing feedback.
+Do not treat an empty signal set as a safety result.
 
-This separation is deliberate: the platform earns trust through the quality of its analysis, while consumption surfaces can multiply without changing it.
+## 1. Problem
 
-For the current release posture, the local `coach codesignal` CLI is the verified
-consumer for deterministic signals. The API and worker surfaces are specified
-future consumers; implementing a rule in the shared analyzer/report packages is
-not, by itself, evidence that a hosted or API job path delivers that rule.
+Engineers now produce large code changes with assistants. Many of those changes are hard to review and hard to trust.
 
-## 2. One-Sentence Positioning
+Typical defects stay hidden until a person reads the diff:
 
-An async code-quality coach that combines deterministic structural analysis with LLM-as-judge rubric evaluation over your recent pull requests and repositories — private to you, and honest about what is evidence versus opinion.
+- hidden mutation of caller input
+- tight coupling in constructors
+- dense structure that hides change scope
+- tests that copy implementation instead of behavior
+- imports that cross a layer the team already named
+- a check-then-act race on a filesystem path
 
-For deterministic analysis, “evidence” means reproducible output for pinned
-source, analyzer, and rule versions. It does not mean semantic completeness,
-runtime proof, or the absence of false positives and false negatives.
+Current tools do not close this gap for a private, local workflow.
 
-## 3. Target User (this era)
+- Public review bots write comments that other people can see.
+- Linters enforce style and local rules. They do not report change lifecycle.
+- Continuous integration gates pass or fail. They do not explain structural risk.
 
-The primary customer right now is the project owner and a small pool of like-minded engineers who want to experiment and give feedback. Everything is self-serve: an engineer scans **their own** recent PRs or a repository they have a role in per GitHub (the Coach GitHub App must also be installed for that repository — part of pilot onboarding). There is no team rollout, no manager view, and no anonymous audience to design for yet.
+The engineer needs a private report over recent work. The report must mark each finding as a reproducible rule result or as model judgment. The report must not pretend that absence of a finding is proof of safety.
 
-This constraint is a feature: it keeps the trust posture simple (you see your own results), keeps feedback loops short, and defers every multi-tenant question until the analysis itself proves valuable.
+## 2. Who this era serves
 
-## 4. Core Problem
+The user is the project owner or a small set of engineers who scan their own Git checkout.
 
-AI-generated changes often carry structural quality problems that are invisible until review: hidden input mutation, tangled coupling, unclear change scope, tests that mirror implementation instead of behavior. Engineers lack a fast, private way to get evidence-grounded quality feedback across their recent work — not one PR at a time in public review comments, but asynchronously, across the last N changes, with a clear line between reproducible findings and model judgment.
+The user runs Coach on a repository they already have on disk. The default command path does not call GitHub. The default command path does not call a model.
 
-Filesystem check-then-act races are one concrete security and correctness pattern
-in this problem space: a path is checked and then used later under the assumption
-that the checked state still holds.
+This era has no manager view. This era has no team roll-out. This era has no anonymous audience.
 
-## 5. Product Hypothesis
+## 3. Current workaround
 
-If an engineer can ask a private platform "analyze my last 10 PRs" or "baseline this repo" and get back a report that combines deterministic signals with well-reasoned rubric judgments, they will act on it and come back voluntarily. Voluntary repeat use by the pilot pool is the proof point — not coverage, not verdicts.
+Without Coach the user does one or more of these actions:
 
-## 6. Differentiated Wedge
+- read every assistant-generated diff by hand
+- paste fragments into a chat model and hope the answer is grounded
+- wait for a public review bot to comment on an open pull request
+- run a general linter and treat a clean run as a review
 
-Most AI review tools comment publicly on open PRs. Linters enforce rules. CI gates pass/fail. Coach's wedge in this era:
+Those workarounds leak privacy, mix opinion with evidence, or miss structural defects that span files.
 
-1. **Async and retrospective** — analysis over a person's recent history and repo baselines, not just the PR currently under review.
-2. **Provenance-separated** — every finding is tagged `deterministic` (reproducible, rule-versioned) or `agent` (rubric id + version + model identity); agent output can never overwrite or suppress a deterministic finding.
-3. **Self-serve and private** — results go only to the authenticated requester. The platform performs no GitHub writes: no comments, no checks, nothing a teammate can see.
-4. **Locally verifiable** — the entire stack (API, worker, Postgres, Redis queue, and a deterministic model stub — optionally native llama.cpp for real judgments) runs on a laptop via Docker Compose before any cloud deployment exists.
+## 4. Outcome and how this product dies
 
-## 7. Product Surface (this era)
+Desired outcome: a pilot engineer runs a second scan after the first report, without a request from the product owner.
 
-The intended Coach API (`/v1`), fronting an async job platform, is the next
-consumption surface after the local CLI preview:
+The outcome is **not** a count of rules. The outcome is **not** a hosted service. The outcome is **not** a merge gate.
 
-- `repo_baseline_scan` — analyze a whole repository at a ref. **Roadmap order: first API slice**: it validates every load-bearing platform seam (auth, queue, worker, agent loop, gateway, rubrics, compose smoke) against the smallest GitHub-ingestion surface.
-- `pr_history_scan` — analyze the last 10 open-or-merged PRs authored by the requester in a repository they have a role in. **Roadmap order: second API slice**, on the validated platform.
+Named tests that kill the current bet:
 
-Reports combine deterministic codesignal findings with LLM-as-judge rubric judgments. Full contracts: `.github/specs/coach-api-platform-baseline.spec.md` and `.github/specs/coach-api-platform-pr-history.spec.md` (index: `.github/specs/coach-api-platform-groundwork.spec.md`).
+- Value: after a first report, pilot engineers do not run Coach again.
+- Usability: an engineer who did not write Coach cannot start a TypeScript project scan from the published README without a hidden step.
+- Feasibility: an incomplete analysis still prints an unqualified all-clear.
+- Business viability: Coach writes to GitHub, scores a person, or blocks a merge.
 
-The local CLI is the current verified deterministic consumption surface. The
-specified API/worker report path is intended to reuse the same signal contract,
-but TOCTOU-specific API/worker delivery is not independently verified yet. The
-TOCTOU rule adds no endpoint, job kind, queue message, model-gateway call,
-schema migration, or GitHub write.
+If a kill test fails, stay in pilot. Do not name a new audience.
 
-Across consumption surfaces, an empty deterministic signal set means that no
-matched signal was produced for the inputs that were analyzed. Unsupported,
-skipped, or unanalyzable inputs remain distinct diagnostics; an empty set is not
-a safety verdict.
+## 5. Scope this era
 
-Consumption is pull-only (submit, poll, fetch report). Harness hooks and a web UI are future consumers of this same API, not part of this era.
+In scope:
 
-## 8. Core Capabilities
+- local `coach codesignal` on a Git checkout
+- Go, TypeScript, and TSX source that is already committed
+- file-local structural signals
+- opt-in project policy that the user writes and commits
+- consented setup for a missing TypeScript compiler when a terminal is present
+- an honest report when analysis is incomplete
 
-Status in this table describes evidence at each layer: **Implemented** means
-package or CLI behavior is locked by passing acceptance tests; **pilot/preview**
-qualifies the current release posture; **Specified** means intended platform
-behavior without feature-specific acceptance evidence.
+Out of scope in this era:
 
-| Capability | Status (evidence standard: passing acceptance tests) |
+- a hosted Coach application programming interface as the default product
+- a web user interface
+- harness hooks as a supported product
+- AWS or other cloud deployment
+- new analysis languages
+- a review-readiness verdict
+- live GitHub reads or writes on the default command path
+
+## 6. Non-goals
+
+These limits do not expire with this era unless a later document replaces them.
+
+- Coach shall not score people. Coach shall not rank productivity.
+- Coach shall not approve a merge. Coach shall not replace continuous integration.
+- Coach shall not claim complete security coverage.
+- Coach shall not treat a missing signal as a safety verdict.
+- Coach shall not write comments, checks, or other GitHub objects in this era.
+- Coach shall not invent architecture. The user declares roots, layers, and forbidden imports.
+- Coach shall not guess willingness to pay or market size.
+
+## 7. Trust rules
+
+- Self-serve: the user scans a local checkout they already control.
+- Provenance: a deterministic finding stays a deterministic finding. Model output shall not hide it.
+- Coverage honesty: an empty signal set means no matched rule for the analyzed inputs.
+- Advisory security: a security-category rule describes a narrow, reproducible pattern. It is not runtime proof.
+- Consent for mutation: compiler or package setup that changes the machine needs a terminal and an explicit confirm step.
+- Degrade in public: if a later agent path fails schema checks, the deterministic report still ships and the failure is a diagnostic.
+
+## 8. Requirements
+
+These requirements describe the local pilot product. They do not specify storage, queues, or cloud layout.
+
+### 8.1 Analysis contract
+
+The Coach CLI shall analyze only committed Git objects at the named revision.
+
+WHEN the user requests a baseline scan, THE Coach CLI shall examine tracked Go, TypeScript, and TSX files at `HEAD`.
+
+WHEN the user requests a diff scan against a Git ref, THE Coach CLI shall compare `HEAD` to that ref.
+
+IF the working tree contains uncommitted edits, THEN THE Coach CLI shall ignore those edits.
+
+IF a path uses a language other than Go, TypeScript, or TSX, THEN THE Coach CLI shall skip that path and record an `unsupported_language` diagnostic.
+
+THE Coach CLI shall complete a successful analysis with process status `0` even when the report contains signals.
+
+### 8.2 Findings and lifecycle
+
+THE Coach CLI shall tag every signal with a rule identity and a rule version.
+
+WHEN a file is added in a diff scan, THE Coach CLI shall classify matching signals as `introduced`.
+
+WHEN a signal exists at the merge base and at `HEAD`, THE Coach CLI shall classify that signal as `existing`.
+
+WHEN a signal exists at the merge base and not at `HEAD`, THE Coach CLI shall classify that signal as `resolved`.
+
+WHEN the CLI cannot classify a signal, THE Coach CLI shall classify that signal as `unknown` and shall not treat `unknown` as a new defect.
+
+WHILE a baseline scan runs, THE Coach CLI shall classify signals as `baseline` and shall not emit `resolved` signals.
+
+THE Coach CLI shall count every signal in exactly one summary field among `introduced_signals`, `existing_signals`, `resolved_signals`, `baseline_signals`, and `unknown_signals`.
+
+### 8.3 Honesty under failure
+
+IF analysis of a requested path is incomplete, THEN THE Coach CLI shall not print an unqualified all-clear.
+
+IF the user supplies an invalid project policy, THEN THE Coach CLI shall exit with status `2`, write the error to standard error, and write no report to standard output.
+
+IF a TypeScript project scan cannot resolve a supported compiler or a supported host Node major, THEN THE Coach CLI shall exit with status `2` and shall not emit a CodeSignal report.
+
+WHERE the environment has a non-empty `CI` variable, or the user passes `--no-interactive`, THE Coach CLI shall not open a prompt.
+
+### 8.4 Project policy
+
+WHERE the user passes a committed project policy, THE Coach CLI shall evaluate only the layers and forbidden imports that the policy names.
+
+THE Coach CLI shall not invent layers or forbidden imports.
+
+WHEN a committed policy is valid, THE Coach CLI shall emit report schema version `2` and may emit `architecture.layer_violation`.
+
+WHERE the policy names a required layer, THE Coach CLI shall evaluate the narrow handler-to-SQL bypass registry and may emit `architecture.layer_bypass`.
+
+IF the policy file is not committed at the analyzed revision, THEN THE Coach CLI shall not treat the worktree copy as the scan policy.
+
+### 8.5 TypeScript project setup
+
+WHEN a TypeScript project scan runs on a controlling terminal and the committed policy is missing, THE Coach CLI shall offer guided policy authoring and shall write no file until the user confirms.
+
+WHEN a TypeScript project scan runs on a controlling terminal, the policy is committed, and a supported compiler is missing, THE Coach CLI shall offer a bounded setup menu and shall require a second confirm step before any install.
+
+IF the user cancels setup or the install fails, THEN THE Coach CLI shall exit with status `2` and shall not emit a CodeSignal report.
+
+IF setup succeeds, THEN THE Coach CLI shall rerun readiness and shall resume the original scan only when readiness is `ready` or `ready_with_limits`.
+
+THE Coach CLI shall not install Node.
+
+THE Coach CLI shall treat host Node majors `24` and `26` as the only supported majors.
+
+### 8.6 Privacy and writes
+
+THE Coach CLI shall not write comments, checks, or other objects to GitHub on the default command path.
+
+THE Coach CLI shall not call a model on the default command path.
+
+WHILE the user runs file-local analysis without a project policy, THE Coach CLI shall not require a network connection.
+
+### 8.7 Provenance for a future agent path
+
+WHERE an optional local platform path adds model judgments, THE product shall tag each finding as `deterministic` or `agent`.
+
+IF a model judgment fails schema validation, THEN THE product shall still return the deterministic report and shall record the failure as a diagnostic.
+
+THE product shall not let agent output suppress a deterministic finding.
+
+## 9. Shipped behavior
+
+Status uses the evidence rule in the cutoff section.
+
+| Behavior | Evidence |
 | --- | --- |
-| Deterministic structural analysis, Go/TS/TSX (`pkg/semantics`) | **Implemented** — metrics, imports, findings; frozen JSON contract |
-| Diff-aware deterministic signal reports with lifecycle (`pkg/codesignal` + `coach codesignal` CLI) | **Implemented — pilot/preview** — merge-base diffing, scope filtering, baseline mode, and versioned signals across state, coupling, structure, complexity, and security categories |
-| TOCTOU check-then-act security signal (Go/TS/TSX) | **Implemented — pilot/preview advisory** — `security.toctou_check_then_act` emits a medium-severity, provenance-tagged signal with evidence, remediation guidance, and existing diff/baseline lifecycle handling for selected syntactic filesystem patterns |
-| Single-file GitHub App ingestion (`pkg/githubingest`) | **Implemented** |
-| Coach API, worker, job model | **Specified** — see baseline spec |
-| GitHub OAuth identity → Coach-signed JWT (`Principal`, `jti` revocation, job ownership) | **Specified** — ADR-001/002/004 |
-| `TaskQueue` port over Watermill (Redis Streams + SQS adapters) | **Specified** — ADR-006 |
-| PR listing / PR file retrieval | **Specified** — see PR History spec |
-| Minimal agent tool loop + model gateway (stub, llama.cpp) | **Specified** |
-| LLM-as-judge rubrics (versioned, schema-validated) | **Specified** — two seed rubrics |
-| Docker Compose stack + E2E smoke | **Specified** |
-| Deterministic rule coverage and precision follow-up | **Planned/ongoing** — prioritize additional supported patterns and false-positive/false-negative work from pilot-corpus evidence; TOCTOU coverage and TypeScript binding precision remain follow-up work in [#205](https://github.com/lousy-agents/coach/issues/205) |
-| SGLang/Qwen serving, AWS deployment | **Planned** — gated on compose-stack validation |
-| Harness hooks, web UI | **Planned** — future API consumers |
+| File-local structural analysis for Go, TypeScript, and TSX | Implemented in the published CLI through `v0.7.0`. Rule list lives in `docs/cli-codesignal.md`. |
+| Diff scan and baseline scan with lifecycle fields | Implemented. Added files count as `introduced` as of `v0.7.0` ([#262](https://github.com/lousy-agents/coach/issues/262)). |
+| Opt-in project policy and `architecture.layer_violation` | Implemented from `v0.4.0`. Coach does not guess architecture. |
+| `architecture.layer_bypass` on the narrow handler-to-SQL registry | Implemented for Go and TypeScript. Absence of a finding is not compliance. |
+| TypeScript readiness check and guided policy authoring | Implemented from `v0.5.0`. Authoring needs a terminal. |
+| Consented TypeScript compiler setup | Implemented as `--prepare-compiler` in `v0.6.0` and as a scan-time offer in `v0.7.0`. Mise-only on the standalone flag. |
+| Unattended path that refuses prompts | Implemented as `--no-interactive` and a non-empty `CI` variable in `v0.7.0`. |
+| Local platform lab with a stub model smoke | Specified and partially verified. README names this path as a separate lab, not the default product. |
+| Hosted application programming interface, OAuth identity, and cloud deploy | Bet. Not the current product. |
+| Versioned LLM-as-judge rubrics on the default path | Bet. Not present on the default CLI path. |
 
-The current deterministic CodeSignal report path can emit these versioned rule
-IDs: `state.hidden_input_mutation`, `coupling.tight_constructor_init`,
-`structure.constructor_density`, `structure.pointer_return_density`,
-`security.toctou_check_then_act`, `complexity.max_nesting_depth`,
-`complexity.branch_density`, `coupling.deep_relative_import`,
-`complexity.cognitive_complexity`, and
-`structure.react_component_orchestration_density`. This inventory is not a
-claim that every rule matches every file; individual rules remain language-,
-threshold-, and pattern-specific.
+## 10. Open bets and parked work
 
-## 9. Explicitly Parked: Review-Readiness Digest
+Stay in pilot while [#282](https://github.com/lousy-agents/coach/issues/282) remains open. Closed children of that epic do not end the pilot by themselves. Re-run the affected evaluation claim against `HEAD` before any leave-pilot decision.
 
-The v1 PRD's centerpiece — a five-section review-readiness digest with a readiness verdict — is parked, not abandoned. Reasons, from the grounded analysis:
+Known remaining risks from the evaluation and the epic:
 
-- The readiness verdict had no defensible decision rule; a wrong verdict burns trust faster than no verdict.
-- Behavioral test-gap detection (the declared primary capability) is a judgment task with no v1-honest deterministic proxy yet; rubric infrastructure built in this era is the prerequisite for attempting it credibly.
-- The "private digest on a draft PR" delivery story conflicted with GitHub's visibility model (checks/comments are repo-visible). The pull-only API resolves privacy by construction; the digest can return when a delivery channel that honors it exists.
+- Diff mode is not ready to sell as an advisory pull-request check to a named audience.
+- A TypeScript journey on an arbitrary foreign repository is not a packaged product ([#280](https://github.com/lousy-agents/coach/issues/280)).
+- Suppression of accepted findings is still missing ([#50](https://github.com/lousy-agents/coach/issues/50)).
+- A precision census for security-category rules is still missing ([#260](https://github.com/lousy-agents/coach/issues/260), [#205](https://github.com/lousy-agents/coach/issues/205)).
 
-Behavioral evidence remains the long-term differentiator. This era builds the platform it will run on.
+Parked on purpose:
 
-## 10. Non-Goals (unchanged in spirit from v1)
+- Review-readiness digest with a readiness verdict. The verdict had no defensible decision rule.
+- Behavioral test-gap detection as a primary claim. That work needs rubric infrastructure that this era does not ship on the default path.
+- Harness hooks and a web user interface. Those surfaces may consume a later interface. They are not this era.
 
-- No management dashboard; no developer scoring; no per-person productivity metrics — ever. The API shape enforces self-serve scans (OAuth-verified author identity: scans are bound to the GitHub login Coach verified at sign-in, plus a GitHub-role check on the target repository) precisely so the platform cannot quietly become surveillance.
-- No auto-approval, no merge blocking, no CI replacement.
-- No comprehensive security scanner or TOCTOU completeness guarantee; absence of a deterministic signal is not a safety verdict.
-- No GitHub writes of any kind in this era.
-- No style policing; no universal architecture enforcement.
-- No new analysis languages this era (Go/TS/TSX only, per the `pkg/semantics` registry).
+## 11. Risks as tests
 
-## 11. Trust Principles
+Do not treat this table as a substitute for customer evidence. Each row is a test. A failed test blocks expansion of audience.
 
-- **Self-serve by construction** — you scan yourself or a repo you have a role in (per GitHub); the API refuses cross-author scans and unauthorized repositories.
-- **Provenance over polish** — deterministic output is reproducible and rule-versioned; it is not semantic proof or a completeness claim, and model opinion is never blended into it.
-- **Behavior over style** — rubrics judge structural and behavioral quality, not formatting.
-- **Coverage honesty** — an absent signal may mean an unsupported pattern, skipped or unanalyzable input, or no match; it is never a safety verdict.
-- **Fewer, better findings** — a short, actionable report is a pilot hypothesis to measure, not proof that the analysis is better.
-- **Advisory security signals** — security-category rules explain narrow, reproducible patterns; they do not provide runtime proof, block CI or merges, or trigger GitHub writes.
-- **Degrade honestly** — if the model fails rubric schema validation, the deterministic report still ships, with the failure recorded as a diagnostic.
+| Risk | Question | Cheapest test that kills the bet |
+| --- | --- | --- |
+| Value | Will a pilot engineer choose this report over hand review or a chat paste? | After one report, the engineer does not run a second scan and cannot name one action they took. |
+| Usability | Can a first-time TypeScript user complete readiness and a first scan from the README? | The user hits a hidden step, a prompt with no terminal, or a false clean result. |
+| Feasibility | Can the shipped analyzer examine the change the user asked about? | A requested path is skipped and the text still reads as complete and clean. |
+| Business viability | Does this stay a private advisory tool? | A GitHub write, a person score, or a merge block lands on the default path. |
 
-## 12. Success Signals (this era)
+## 12. Release criteria for leaving pilot
 
-- The compose stack's E2E smoke passes in CI against the core (stub) profile **and** on the operator's machine against the `llm` (llama.cpp) profile with at least one schema-valid agent judgment — together, the gate for SGLang/AWS investment. A stub-only smoke proves plumbing, not real-model rubric behavior.
-- Pilot engineers run scans voluntarily more than once, and at least one rubric judgment per scan is rated useful by its requester (collected out-of-band during pilot check-ins; no in-product feedback mechanism this era).
-- Pilot-corpus review records confirmed true positives, false positives, known misses, and user action for new deterministic rules—especially security-category rules—before broader coverage or security claims are made.
-- Zero findings presented as deterministic that are not reproducible from the recorded analyzer/rule versions and the report's pinned commit SHA (per-PR scans pin base/head SHAs).
-- The operator can add a new rubric or tool to the platform without touching the API contract or worker lifecycle (the groundwork seams hold).
+Leave pilot only when all of these statements are true:
 
-## 13. Roadmap
+- Every child of [#282](https://github.com/lousy-agents/coach/issues/282) is closed **and** the evaluation restamp against `HEAD` agrees.
+- A first-time user can follow the published README and obtain either a report or a clear next action. The user does not receive a false all-clear.
+- At least one pilot engineer outside the author set runs a second scan without a prompt from the owner.
+- Security-category claims have a recorded precision review on a named corpus. The review includes true positives, false positives, and known misses.
+- The default command path still writes nothing to GitHub and still scores no person.
 
-1. **Now — platform groundwork**: the Baseline Scan slice first (shared platform + `repo_baseline_scan` + compose smoke), then the PR History slice (`pr_history_scan`) — see the spec index at `.github/specs/coach-api-platform-groundwork.spec.md`.
-2. **Next**: deterministic-rule coverage and precision follow-up based on pilot evidence (including [TOCTOU follow-up #205](https://github.com/lousy-agents/coach/issues/205)); more rubrics; SGLang/Qwen behind the same gateway; AWS deployment per the architecture doc; additional platform tools/skills.
-3. **Later**: harness hooks (e.g., an MCP surface over the API), web UI for viewing feedback, revisiting the review-readiness digest — including behavioral test-gap detection — on top of proven rubric infrastructure, and the GitHub-event-driven ingestion plane.
-
-## 14. Relationship to the System Design
-
-`docs/architecture/system-overview.md` describes the full GitHub-native, webhook-driven platform (ingestion, orchestration, SGLang serving, AWS deployment). This PRD's era implements a deliberately trimmed slice of it — same principles (deterministic-before-inference, provenance separation, gateway-contract model access, no scoring), smaller machinery (API trigger instead of webhooks, an application-owned `TaskQueue` port over Watermill with Redis Streams and SQS adapters instead of raw SQS, llama.cpp instead of SGLang). Job state, findings, diagnostics, and the JWT `jti` denylist remain in Postgres. The design doc's §14 phasing records where the groundwork phase sits relative to the rest.
+If those statements are not true, the correct product action is to stay in pilot.
