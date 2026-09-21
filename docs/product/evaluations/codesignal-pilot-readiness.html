@@ -318,23 +318,23 @@
     <h1>Can CodeSignal leave pilot?</h1>
     <p class="lede prose">A hands-on product assessment of the shipped CLI. First published 16 Aug 2026; this page is the current leave-pilot evidence, not a historical snapshot. Gap ids stay stable — closed items move to the archive below, they are not deleted.</p>
     <div class="meta">
-      <span>Last reviewed 18 Sep 2026</span>
-      <span>HEAD c935a85</span>
-      <span>~66 CLI runs</span>
+      <span>Last reviewed 19 Sep 2026</span>
+      <span>HEAD a27f470</span>
+      <span>~70 CLI runs</span>
       <span>6 repositories</span>
-      <span>16th verification pass</span>
-      <span>#282 · 6 / 24 closed</span>
+      <span>18th verification pass</span>
+      <span>#282 · 7 / 24 closed</span>
     </div>
   </header>
 
   <div class="verdict">
     <p class="eyebrow">Verdict</p>
     <p class="verdict-word">Stay in pilot.</p>
-    <p>Not because the analysis is bad. The engine is faster and more honest than it was on 16 August. The blocker is narrower and sharper: <strong>a renamed or copied file is still not analyzed.</strong> The headline admits the skip, but the machine summary still says the change introduced nothing. Diff mode is the capability that would make this a PR check. It still cannot tell a customer what a typical AI-assisted rename introduced.</p>
-    <p>The honesty fix changed the <em>presentation</em> of visible skips. It did not change the <em>job</em>. Do not expand to a named advisory PR-check audience. The current self-serve Go pilot can keep using baseline and configured layer policy.</p>
+    <p>Not because the analysis is bad. Added files count as introduced. A rename or copy’s HEAD path is examined as content, with <code>lifecycle: unknown</code> and a <code>continuity_not_determined</code> diagnostic until old-path continuity exists. The remaining leave-pilot gaps are obtain, noise, and report ergonomics — not a silent skip of the change itself. Diff mode can still not be sold as an advisory PR check until a named audience can be told an honest job on a fresh corpus.</p>
+    <p>Do not expand to a named advisory PR-check audience on this restamp. The current self-serve Go pilot can keep using baseline, configured layer policy, and now file-local diff mode on adds, modifications, deletes, renames, and copies.</p>
     <div class="tracks">
       <span class="tracks-label">Tracked in</span>
-      <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/282">epic #282 — 6 of 24 closed</a>
+      <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/282">epic #282 — 7 of 24 closed</a>
     </div>
   </div>
 
@@ -355,7 +355,7 @@
       <p class="eyebrow">Method</p>
       <h2>What was verified, and how</h2>
     </div>
-      <p class="prose">Pass 1 (16 Aug, <code>19b6628</code>) was a functional evaluation against a locally built binary. Pass 2 re-verified every single-observation claim before filing issues. <strong>Pass 3 (23 Aug, <code>62480d2</code>) replayed the protocol against current <code>main</code></strong> — this repository, five foreign repos, and purpose-built repros — then handed the run log to an independent product evaluator. <strong>Pass 4 (31 Aug, <code>e5bfa4a</code>) is a focused G4 restamp after v0.4.0, not a full corpus replay.</strong> <strong>Pass 5 (1 Sep, <code>47399d6</code>) is a focused G4 restamp after root-scoped resolution, including walk-up and mixed-root conflict verification.</strong>       <strong>Pass 6 (1 Sep, <code>6c6bcff</code>) names each root in <code>typescript_version_conflict</code> and corrects the analysis-phase host-stat claim.</strong> <strong>Pass 7 (5 Sep, <code>defc6f3</code>) is a focused G4 restamp after walk-up project_shape, native-startup path scrub, and execute-code wording; it named analysis-phase host reads as then-open Task 3 work.</strong> <strong>Pass 8 (5 Sep, <code>8c3225c</code>) is a focused G4 restamp after the supported-set compiler check, exit-2 unresolved-compiler scans, and fixture-backed foreign-repository wording. Earlier stamps named <code>5796acb</code> and <code>ff25939</code>, which history rewrites removed from this branch.</strong> <strong>Pass 9 (6 Sep, <code>8d509cb</code>) is a focused G4 restamp after Linux CI offline/allowed-set evidence and a foreign-repository re-clone. It does not replay the full corpus. Linux CI evidence is not a customer Mac run. This restamp does not claim the target TypeScript journey ships.</strong> <strong>Pass 10 (7 Sep) is a focused G4 restamp after compiler-origin aggregation, run from one GoReleaser snapshot artifact built on the closing branch against a packaged-binary fixture repository. The masthead names <code>b237766</code> because that is the <code>main</code> revision the branch merges; the aggregation behavior this pass describes lands with the closing PR and does not hold at that revision alone. One packaged run, no corpus replay; a fixture repository is not a customer clone, and this restamp does not claim the target TypeScript journey ships.</strong> <strong>Pass 11 (8 Sep) is a focused G4 restamp after owner decision D4 made the installed compiler the project origin's candidate, run from a fresh GoReleaser snapshot artifact on the closing branch against the same packaged-binary fixture repository. The masthead names <code>71e8439</code> because that is the <code>main</code> revision the branch merges; the D4 behavior this pass describes lands with the closing PR and does not hold at that revision alone. One packaged run, no corpus replay; a fixture repository is not a customer clone, and this restamp does not claim the target TypeScript journey ships.</strong> <strong>Pass 12 (8 Sep, <code>55ca224</code>) is a focused G4 restamp after the supported-Node-majors {24, 26} contract: <code>--check-project</code> was re-run on a Go-built binary against a stub host Node reporting v25.0.0, confirming <code>node_unsupported</code> on both <code>checks.node</code> and <code>checks.runtime</code>, with <code>install_supported_runtime</code> naming <code>supported: ["24","26"]</code>. The masthead names <code>55ca224</code>, the <code>main</code> revision this branch merges (which now includes Pass 11's D4 work); the Node-majors behavior this pass describes lands with the closing PR and does not hold at that revision alone. One direct binary run, no corpus replay; this restamp does not claim the target TypeScript journey ships.</strong> <strong>Pass 13 (9 Sep, <code>edd0b67</code>) corrects the closed Go-bypass claim above: Task 8 (<a href="https://github.com/lousy-agents/coach/issues/331">#331</a>) wired <code>architecture.layer_bypass</code> into the TypeScript CLI backend (<code>internal/codesignalcli/project_ts_backend.go</code>), so TypeScript <code>required_layer</code> is no longer library-only. This is a source-verified correction of that one claim, not a new CLI run; it does not replay the corpus.</strong> <strong>Pass 14 (10 Sep, <code>6bd1dbb</code>) corrects this page's own masthead: it named a branch commit (<code>edd0b67</code>) as HEAD instead of the <code>main</code> revision the branch merges. The masthead names <code>6bd1dbb</code>; the per-file <code>root_scopes</code> identity fix (<code>analyzed_paths</code>/<code>unanalyzed_paths</code>, review findings REV-386-01/02 on the #331 PR) lands with the closing PR and does not hold at that revision alone. This is a source-verified correction, not a new CLI run; it does not replay the corpus.</strong> <strong>Pass 15 (18 Sep, <code>0f7222a</code>) is a focused restamp for two TypeScript project-readiness contract fixes verified on a Go-built binary against purpose-built repros: (1) with no committed policy, <code>checks.project_shape</code> and <code>checks.package_manager</code> now report <code>not_checked</code> instead of guessing from the worktree root, so a genuine two-package monorepo with no root manifest no longer reports a false <code>unsupported_repository_shape</code> gap alongside <code>policy_missing</code>; and (2) a no-TTY scan whose compiler gap is resolvable only by the project package manager now appends <code>on a terminal: coach codesignal --baseline --project-config &lt;path&gt; --project-language typescript -- offers project-package setup</code>, since <code>--prepare-compiler</code> can never run that choice. The masthead names <code>0f7222a</code>, the <code>main</code> revision this branch merges; both fixes land with the closing PR and do not hold at that revision alone. Direct binary runs plus new Ginkgo acceptance coverage, not a full corpus replay.</strong> <strong>Pass 16 (15 Sep, <code>0a437ce</code>) is a focused G1 restamp after added-file lifecycle, not a full corpus replay. The masthead names <code>c935a85</code>, the <code>main</code> revision this branch merges; the added-file classification this pass describes is on the closing branch’s working tree and does not hold at that revision alone.</strong> <span class="chip verified">re-verified</span> means reproduced on this binary, <span class="chip closed">closed</span> means the claim no longer holds, <span class="chip reported">agent-run</span> means observed but not the focus of this pass, and <span class="chip refuted">corrected</span> marks a prior claim that did not survive.</p>
+      <p class="prose">Pass 1 (16 Aug, <code>19b6628</code>) was a functional evaluation against a locally built binary. Pass 2 re-verified every single-observation claim before filing issues. <strong>Pass 3 (23 Aug, <code>62480d2</code>) replayed the protocol against current <code>main</code></strong> — this repository, five foreign repos, and purpose-built repros — then handed the run log to an independent product evaluator. <strong>Pass 4 (31 Aug, <code>e5bfa4a</code>) is a focused G4 restamp after v0.4.0, not a full corpus replay.</strong> <strong>Pass 5 (1 Sep, <code>47399d6</code>) is a focused G4 restamp after root-scoped resolution, including walk-up and mixed-root conflict verification.</strong>       <strong>Pass 6 (1 Sep, <code>6c6bcff</code>) names each root in <code>typescript_version_conflict</code> and corrects the analysis-phase host-stat claim.</strong> <strong>Pass 7 (5 Sep, <code>defc6f3</code>) is a focused G4 restamp after walk-up project_shape, native-startup path scrub, and execute-code wording; it named analysis-phase host reads as then-open Task 3 work.</strong> <strong>Pass 8 (5 Sep, <code>8c3225c</code>) is a focused G4 restamp after the supported-set compiler check, exit-2 unresolved-compiler scans, and fixture-backed foreign-repository wording. Earlier stamps named <code>5796acb</code> and <code>ff25939</code>, which history rewrites removed from this branch.</strong> <strong>Pass 9 (6 Sep, <code>8d509cb</code>) is a focused G4 restamp after Linux CI offline/allowed-set evidence and a foreign-repository re-clone. It does not replay the full corpus. Linux CI evidence is not a customer Mac run. This restamp does not claim the target TypeScript journey ships.</strong> <strong>Pass 10 (7 Sep) is a focused G4 restamp after compiler-origin aggregation, run from one GoReleaser snapshot artifact built on the closing branch against a packaged-binary fixture repository. The masthead names <code>b237766</code> because that is the <code>main</code> revision the branch merges; the aggregation behavior this pass describes lands with the closing PR and does not hold at that revision alone. One packaged run, no corpus replay; a fixture repository is not a customer clone, and this restamp does not claim the target TypeScript journey ships.</strong> <strong>Pass 11 (8 Sep) is a focused G4 restamp after owner decision D4 made the installed compiler the project origin's candidate, run from a fresh GoReleaser snapshot artifact on the closing branch against the same packaged-binary fixture repository. The masthead names <code>71e8439</code> because that is the <code>main</code> revision the branch merges; the D4 behavior this pass describes lands with the closing PR and does not hold at that revision alone. One packaged run, no corpus replay; a fixture repository is not a customer clone, and this restamp does not claim the target TypeScript journey ships.</strong> <strong>Pass 12 (8 Sep, <code>55ca224</code>) is a focused G4 restamp after the supported-Node-majors {24, 26} contract: <code>--check-project</code> was re-run on a Go-built binary against a stub host Node reporting v25.0.0, confirming <code>node_unsupported</code> on both <code>checks.node</code> and <code>checks.runtime</code>, with <code>install_supported_runtime</code> naming <code>supported: ["24","26"]</code>. The masthead names <code>55ca224</code>, the <code>main</code> revision this branch merges (which now includes Pass 11's D4 work); the Node-majors behavior this pass describes lands with the closing PR and does not hold at that revision alone. One direct binary run, no corpus replay; this restamp does not claim the target TypeScript journey ships.</strong> <strong>Pass 13 (9 Sep, <code>edd0b67</code>) corrects the closed Go-bypass claim above: Task 8 (<a href="https://github.com/lousy-agents/coach/issues/331">#331</a>) wired <code>architecture.layer_bypass</code> into the TypeScript CLI backend (<code>internal/codesignalcli/project_ts_backend.go</code>), so TypeScript <code>required_layer</code> is no longer library-only. This is a source-verified correction of that one claim, not a new CLI run; it does not replay the corpus.</strong> <strong>Pass 14 (10 Sep, <code>6bd1dbb</code>) corrects this page's own masthead: it named a branch commit (<code>edd0b67</code>) as HEAD instead of the <code>main</code> revision the branch merges. The masthead names <code>6bd1dbb</code>; the per-file <code>root_scopes</code> identity fix (<code>analyzed_paths</code>/<code>unanalyzed_paths</code>, review findings REV-386-01/02 on the #331 PR) lands with the closing PR and does not hold at that revision alone. This is a source-verified correction, not a new CLI run; it does not replay the corpus.</strong> <strong>Pass 15 (18 Sep, <code>0f7222a</code>) is a focused restamp for two TypeScript project-readiness contract fixes verified on a Go-built binary against purpose-built repros: (1) with no committed policy, <code>checks.project_shape</code> and <code>checks.package_manager</code> now report <code>not_checked</code> instead of guessing from the worktree root, so a genuine two-package monorepo with no root manifest no longer reports a false <code>unsupported_repository_shape</code> gap alongside <code>policy_missing</code>; and (2) a no-TTY scan whose compiler gap is resolvable only by the project package manager now appends <code>on a terminal: coach codesignal --baseline --project-config &lt;path&gt; --project-language typescript -- offers project-package setup</code>, since <code>--prepare-compiler</code> can never run that choice. The masthead names <code>0f7222a</code>, the <code>main</code> revision this branch merges; both fixes land with the closing PR and do not hold at that revision alone. Direct binary runs plus new Ginkgo acceptance coverage, not a full corpus replay.</strong> <strong>Pass 16 (15 Sep, <code>0a437ce</code>) is a focused G1 restamp after added-file lifecycle, not a full corpus replay. The masthead names <code>c935a85</code>, the <code>main</code> revision this branch merges; the added-file classification this pass describes is on the closing branch’s working tree and does not hold at that revision alone.</strong> <strong>Pass 17 (19 Sep, <code>a27f470</code>) is a focused G2 restamp after rename/copy HEAD analysis. A purpose-built <code>R100</code> rename of a hidden-input-mutation file and a <code>C100</code> copy of a padded twin both analyze the new path, classify the finding <code>introduced</code>, and increment <code>introduced_signals</code>. A typechange still reports <code>files_unanalyzed: 1</code> and a qualified headline. The masthead names <code>a27f470</code>, the <code>main</code> revision this branch merges; the rename/copy analysis this pass describes lands with the closing PR and does not hold at that revision alone. Direct binary runs plus new Ginkgo acceptance coverage, not a full corpus replay.</strong> <strong>Pass 18 (19 Sep, <code>a27f470</code>) restamps G2 after AC-2: the same <code>R100</code> fixture now reports <code>lifecycle: unknown</code>, <code>unknown_signals: 1</code>, and a path-attributed <code>continuity_not_determined</code> diagnostic. The masthead still names <code>a27f470</code>, the <code>main</code> merge-base of this branch; the unknown+diagnostic classification lands with the closing PR. Direct binary run plus rewritten Ginkgo R/C specs, not a full corpus replay.</strong> <span class="chip verified">re-verified</span> means reproduced on this binary, <span class="chip closed">closed</span> means the claim no longer holds, <span class="chip reported">agent-run</span> means observed but not the focus of this pass, and <span class="chip refuted">corrected</span> marks a prior claim that did not survive.</p>
 
     <p class="prose">Corpus: this repo; <code>learn-go-with-tests</code> (the original 304-file repo); <code>lousy-iam</code>; <code>lousy-api-eval</code>; <code>lousy-agents</code>; <code>lousy-docs</code>. Local binary prints <code>dev</code>, as expected.</p>
   </section>
@@ -365,7 +365,7 @@
       <p class="eyebrow">Already closed</p>
       <h2>What 16–22 Aug actually unlocked</h2>
     </div>
-    <p class="prose">Six of twenty-four #282 children, plus Go layer-bypass as a real CLI feature. A customer can now trust these outcomes. They do not unlock a PR check.</p>
+    <p class="prose">Seven of twenty-four #282 children, plus Go layer-bypass as a real CLI feature. A customer can now trust these outcomes. They do not unlock a PR check.</p>
 
     <div class="gaps">
 
@@ -483,6 +483,34 @@
         </div>
       </article>
 
+      <article class="gap sev-closed">
+        <div class="gap-id">G2</div>
+        <div class="gap-body">
+          <div class="gap-title">
+            <h3>Renamed and copied HEAD paths are analyzed without false continuity</h3>
+            <span class="chip closed">closed</span>
+            <span class="chip verified">verified</span>
+          </div>
+          <p>Purpose-built repros on a Go-built binary. A <code>git mv</code> of a hidden-input-mutation file reports <code>R100</code> under coach’s <code>--find-renames --find-copies-harder</code> flags. The new path is analyzed, the finding is <code>lifecycle: unknown</code>, <code>unknown_signals</code> is 1, and the path carries a <code>continuity_not_determined</code> diagnostic. An untouched-source copy reports <code>C100</code> and is classified the same way. A typechange still increments <code>files_unanalyzed</code> and qualifies the headline. Old-path continuity (<code>existing</code> on a pure move) is out of scope.</p>
+          <div class="code"><span class="c">$ git diff --name-status --find-renames --find-copies-harder HEAD~1 HEAD</span>
+R100	renamed.go	moved.go
+
+<span class="c">$ coach codesignal --base HEAD~1 --format json</span>
+"summary": {
+  "files_analyzed":     1,
+  "active_signals":     1,
+  "introduced_signals": 0,
+  <span class="ok">"unknown_signals":     1</span>
+}
+  unknown  state.hidden_input_mutation  moved.go
+  continuity_not_determined  moved.go</div>
+          <div class="tracks">
+            <span class="tracks-label">Closed by</span>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/264">#264</a>
+          </div>
+        </div>
+      </article>
+
     </div>
   </section>
 
@@ -493,36 +521,6 @@
     </div>
 
     <div class="gaps">
-
-      <article class="gap sev-block">
-        <div class="gap-id">G2</div>
-        <div class="gap-body">
-          <div class="gap-title">
-            <h3>Renamed files are still skipped</h3>
-            <span class="chip verified">re-verified</span>
-          </div>
-          <p>Git reports <code>R087</code>. The tool analyzes nothing. The headline is now honest — that is #267, closed — but the file is still not examined, and the machine summary still says the change introduced nothing.</p>
-          <div class="code"><span class="c">$ git diff --name-status -M HEAD~1 HEAD</span>
-R087	renamed.go	moved.go
-
-<span class="c">$ coach codesignal --base HEAD~1</span>
-scope: production, filtered: 0, <span class="hi">files analyzed: 0, active signals: 0</span>, diagnostics: 1
-<span class="ok">No active CodeSignal findings, but the analysis is incomplete: 1 path was not analyzed.</span>
-
-Diagnostics:
-path: moved.go, kind: unsupported_change_type,
-message: change status "R087" (rename/copy) is not supported</div>
-          <p>Still self-inflicted. Last 200 non-merge commits on this repo:</p>
-          <div class="code">coach's flags : A=412  M=633  <span class="hi">C=8</span>   D=16
-git's default : A=420  M=633  <span class="ok">C=0</span>   D=16</div>
-          <p><code>fbfa1a0</code> still drops a new production <code>.ts</code> file as <code>C058</code> and reports <code>introduced: 0, resolved: 2</code>.</p>
-          <p class="gap-cost"><b>Sequencing:</b> classifying a rename as content would not dump those findings into unknown. The skip itself is still open.</p>
-          <div class="tracks">
-            <span class="tracks-label">Tracked in</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/264">#264 — renamed/copied files dropped</a>
-          </div>
-        </div>
-      </article>
 
       <article class="gap sev-warn">
         <div class="gap-id">G4</div>
@@ -596,7 +594,7 @@ git's default : A=420  M=633  <span class="ok">C=0</span>   D=16</div>
       <p class="eyebrow">Root cause</p>
       <h2>One table still explains the blocker</h2>
     </div>
-    <p class="prose">Diff mode’s correctness is still a function of how git labels the change. One of the four labels still mishandles toward silence. G0 and G1 used to be further mechanisms; they are closed.</p>
+    <p class="prose">Diff mode’s correctness is no longer a function of whether git labels the change <code>A</code>, <code>M</code>, <code>D</code>, <code>R</code>, or <code>C</code>. G0, G1, and G2 are closed. Statuses the CLI still does not analyze (<code>T</code>/<code>U</code>/<code>X</code>/<code>B</code>) are counted, not silently all-cleared.</p>
     <div class="tbl-wrap">
       <table>
         <thead>
@@ -606,11 +604,11 @@ git's default : A=420  M=633  <span class="ok">C=0</span>   D=16</div>
           <tr><td class="m">M — modified</td><td class="good">yes</td><td class="m">introduced / existing</td><td class="m">correctly</td><td class="good">✓ correct</td></tr>
           <tr><td class="m">D — deleted</td><td class="good">yes</td><td class="m">resolved</td><td class="m">resolved</td><td class="good">✓ correct</td></tr>
           <tr><td class="m">A — added</td><td class="good">yes</td><td class="m">introduced</td><td class="m">introduced</td><td class="good">✓ correct</td></tr>
-          <tr><td class="m">R / C — renamed</td><td class="bad">no</td><td class="m bad">—</td><td class="m bad">nothing</td><td class="m">introduced / existing</td></tr>
+          <tr><td class="m">R / C — renamed</td><td class="good">yes</td><td class="m">unknown + continuity diagnostic</td><td class="m">unknown</td><td class="good">✓ analyzed; continuity not claimed</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="prose">The R/C row is the remaining silence that dominates agent-authored diffs. The <em>headline</em> is qualified. Machine consumers still see <code>introduced: 0</code> on a rename.</p>
+    <p class="prose">The four labels that dominate agent-authored diffs now analyze HEAD content. A pure rename is classified unknown, not introduced or existing — continuity against the old path remains out of scope.</p>
   </section>
 
   <section>
@@ -663,21 +661,11 @@ git's default : A=420  M=633  <span class="ok">C=0</span>   D=16</div>
       <p class="eyebrow">Path to yes · in order</p>
       <h2>The shortest credible route out of pilot</h2>
     </div>
-    <p class="prose">A new file’s findings count as introduced (#262). Do not wait on every remaining #282 child. Re-open the leave-pilot decision when these remaining customer outcomes are true on a fresh CLI corpus.</p>
+    <p class="prose">A new file’s findings count as introduced (#262). The head side of a rename or copy is examined as content, marked unknown until continuity exists (#264). Do not wait on every remaining #282 child. Re-open the leave-pilot decision when a named audience can be told an honest job on a fresh CLI corpus.</p>
     <ol class="path prose">
       <li>
         <div>
-          <p><strong>The head side of a rename or copy is examined as content</strong>, and ordinary adds are not recategorized into skipped copies. If a path is still unanalyzable, the headline <em>and</em> the machine summary both say so.</p>
-          <p class="step-gate">Unlocks → agent-authored diffs stop being a special silence</p>
-          <div class="tracks">
-            <span class="tracks-label">Issues</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/264">#264 — renames dropped</a>
-          </div>
-        </div>
-      </li>
-      <li>
-        <div>
-          <p><strong>A named audience can be told an honest job.</strong> Until the row above holds, that job is not “advisory PR check.” A later pass then judges whether vendor/test noise, dirty-tree silence, TypeScript obtain, and report ergonomics still keep it in pilot.</p>
+          <p><strong>A named audience can be told an honest job.</strong> The two silent-diff rows are closed. A later pass then judges whether vendor/test noise, dirty-tree silence, TypeScript obtain, and report ergonomics still keep it in pilot.</p>
           <p class="step-gate">Unlocks → the leave-pilot question is worth asking again</p>
           <div class="tracks">
             <span class="tracks-label">Then</span>
@@ -689,7 +677,7 @@ git's default : A=420  M=633  <span class="ok">C=0</span>   D=16</div>
         </div>
       </li>
     </ol>
-    <p class="prose">“Expand to Go teams as an advisory PR check” is not unlocked. Advisory-versus-blocking does not save it: a rename still produces a successful-looking report that the change introduced nothing. You cannot caveat “ignore the change counters on renames” and still offer a PR check.</p>
+    <p class="prose">“Expand to Go teams as an advisory PR check” is not unlocked on this restamp. The remaining blockers are obtain, noise, and report ergonomics, not a rename that reports the change introduced nothing.</p>
   </section>
 
 </div>

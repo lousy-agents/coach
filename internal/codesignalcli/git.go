@@ -110,13 +110,16 @@ type SelectedFile struct {
 
 // SelectChangedFiles diffs mergeBaseSHA against HEAD in dir and returns the
 // files eligible for analysis, plus diagnostics for changes that are out of
-// scope (renames/copies, other unsupported statuses, unsupported
-// languages). A malformed diff stream is returned as an *OperationalError.
+// scope (unsupported statuses such as T/U/X/B, unsupported languages).
+// Rename and copy new paths are selected so HEAD content is analyzed.
+// They are not marked added: that would inherit #262's introduced
+// lifecycle. Continuity against the old path is out of scope, so each
+// selected R/C path also gets a continuity_not_determined diagnostic.
 func SelectChangedFiles(dir, mergeBaseSHA string) ([]SelectedFile, []codesignal.Diagnostic, error) {
-	// Request both rename and copy detection. Git enables rename detection by
-	// default in many configurations, but copy detection requires an explicit
-	// option (and --find-copies-harder lets an unchanged source be recognized).
-	// Both change types are deliberately excluded from lifecycle analysis.
+	// --find-renames uses git's default 50% threshold. --find-copies-harder
+	// also considers unmodified files as copy sources, which is more
+	// aggressive than git's defaults; the extra R/C records are analyzed
+	// rather than dropped.
 	output, err := runGitBytes(dir, "diff", "--name-status", "-z", "--find-renames", "--find-copies-harder", mergeBaseSHA, "HEAD")
 	if err != nil {
 		return nil, nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: git diff failed: %s", err)}
@@ -133,28 +136,25 @@ func SelectChangedFiles(dir, mergeBaseSHA string) ([]SelectedFile, []codesignal.
 	for _, record := range records {
 		switch {
 		case strings.HasPrefix(record.status, "R") || strings.HasPrefix(record.status, "C"):
-			newPath := record.paths[len(record.paths)-1]
-			diagnostics = append(diagnostics, codesignal.Diagnostic{
-				Kind:    "unsupported_change_type",
-				Path:    newPath,
-				Message: fmt.Sprintf("change status %q (rename/copy) is not supported", record.status),
-			})
-		case record.status == "A" || record.status == "M" || record.status == "D":
-			path := record.paths[0]
-			lang, ok := semantics.LanguageForExtension(filepath.Ext(path))
+			path := record.paths[len(record.paths)-1]
+			sf, diag, ok := selectSupportedPath(path, "")
 			if !ok {
-				diagnostics = append(diagnostics, codesignal.Diagnostic{
-					Kind:    "unsupported_language",
-					Path:    path,
-					Message: fmt.Sprintf("file extension %q is not a supported language", filepath.Ext(path)),
-				})
+				diagnostics = append(diagnostics, diag)
 				continue
 			}
-			selected = append(selected, SelectedFile{
-				Path:     path,
-				Status:   statusToChangeStatus(record.status),
-				Language: lang,
+			selected = append(selected, sf)
+			diagnostics = append(diagnostics, codesignal.Diagnostic{
+				Kind:    "continuity_not_determined",
+				Path:    path,
+				Message: "rename/copy lifecycle continuity was not determined",
 			})
+		case record.status == "A" || record.status == "M" || record.status == "D":
+			sf, diag, ok := selectSupportedPath(record.paths[0], statusToChangeStatus(record.status))
+			if !ok {
+				diagnostics = append(diagnostics, diag)
+				continue
+			}
+			selected = append(selected, sf)
 		default:
 			diagnostics = append(diagnostics, codesignal.Diagnostic{
 				Kind:    "unsupported_change_type",
@@ -165,6 +165,18 @@ func SelectChangedFiles(dir, mergeBaseSHA string) ([]SelectedFile, []codesignal.
 	}
 
 	return selected, diagnostics, nil
+}
+
+func selectSupportedPath(path string, status codesignal.ChangeStatus) (SelectedFile, codesignal.Diagnostic, bool) {
+	lang, ok := semantics.LanguageForExtension(filepath.Ext(path))
+	if !ok {
+		return SelectedFile{}, codesignal.Diagnostic{
+			Kind:    "unsupported_language",
+			Path:    path,
+			Message: fmt.Sprintf("file extension %q is not a supported language", filepath.Ext(path)),
+		}, false
+	}
+	return SelectedFile{Path: path, Status: status, Language: lang}, codesignal.Diagnostic{}, true
 }
 
 // DiscoverTrackedFiles lists every file tracked by Git at revisionSHA (via

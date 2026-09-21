@@ -63,9 +63,8 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 		return
 	}
 
-	skippedPaths := distinctDiagnosticPaths(report.Diagnostics)
 	var causes []string
-	if n := len(skippedPaths); n > 0 {
+	if n := report.Summary.FilesUnanalyzed; n > 0 {
 		causes = append(causes, pathCountClause(n))
 	}
 	if incompleteProject {
@@ -82,16 +81,6 @@ func pathCountClause(n int) string {
 		return "1 path was not analyzed"
 	}
 	return fmt.Sprintf("%d paths were not analyzed", n)
-}
-
-func distinctDiagnosticPaths(diagnostics []codesignal.Diagnostic) map[string]struct{} {
-	paths := make(map[string]struct{})
-	for _, d := range diagnostics {
-		if d.Path != "" {
-			paths[d.Path] = struct{}{}
-		}
-	}
-	return paths
 }
 
 func hasProjectLifecycleDiagnostic(diagnostics []codesignal.Diagnostic) bool {

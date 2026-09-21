@@ -108,6 +108,26 @@ func TestBuild_InvalidFileChangeEmitsDiagnostic(t *testing.T) {
 	}
 }
 
+func TestBuild_DiagnosticPathOutsideFilesCountsInSummary(t *testing.T) {
+	b, err := New(Options{})
+	if err != nil {
+		t.Fatalf("New returned unexpected error: %v", err)
+	}
+
+	report, err := b.Build(context.Background(), Input{
+		Diagnostics: []Diagnostic{{Path: "moved.go", Kind: "unsupported_change_type", Message: "typechange"}},
+	})
+	if err != nil {
+		t.Fatalf("Build returned unexpected error: %v", err)
+	}
+	if report.Summary.FilesWithDiagnostics != 1 {
+		t.Errorf("FilesWithDiagnostics: got %d, want 1 for a diagnostic path that is not in Files", report.Summary.FilesWithDiagnostics)
+	}
+	if report.Summary.FilesUnanalyzed != 1 {
+		t.Errorf("FilesUnanalyzed: got %d, want 1 for a diagnostic path that is not in Files", report.Summary.FilesUnanalyzed)
+	}
+}
+
 func TestBuild_DoesNotMutateInput(t *testing.T) {
 	b, err := New(Options{})
 	if err != nil {

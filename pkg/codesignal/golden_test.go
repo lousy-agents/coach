@@ -406,7 +406,7 @@ var frozenReportJSONFieldNames = map[string]struct{}{
 	"diagnostics": {}, "coverage": {}, "project_changes": {}, "project_facts": {},
 	"project_summary": {}, "project_coverage": {},
 	"repository": {}, "revision": {}, "base": {}, "applied_scope": {}, "baseline": {},
-	"files_analyzed": {}, "files_with_diagnostics": {}, "active_signals": {},
+	"files_analyzed": {}, "files_with_diagnostics": {}, "files_unanalyzed": {}, "active_signals": {},
 	"introduced_signals": {}, "existing_signals": {}, "resolved_signals": {},
 	"baseline_signals": {}, "unknown_signals": {},
 	"id": {}, "fingerprint": {}, "rule_id": {}, "rule_version": {}, "kind": {},
