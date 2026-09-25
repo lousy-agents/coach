@@ -12,7 +12,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-github/v92 v92.0.0
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/odvcencio/gotreesitter v0.53.0
+	github.com/odvcencio/gotreesitter v0.55.0
 	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.43.1
 	github.com/redis/go-redis/v9 v9.22.0
