@@ -33,13 +33,13 @@ func worktreeStatusFailureDiagnostic(err error) codesignal.Diagnostic {
 }
 
 func disclosureDiagnostics(entries []worktreeStatusEntry) []codesignal.Diagnostic {
-	var untracked, staged, modified, unsupported []string
+	var untracked, staged, modified, unmerged, unsupported []string
 	for _, entry := range entries {
 		if entry.path == "" {
 			continue
 		}
-		isUntracked, isStaged, isModified := classifyWorktreeStatus(entry.code)
-		if !isUntracked && !isStaged && !isModified {
+		isUntracked, isStaged, isModified, isUnmerged := classifyWorktreeStatus(entry.code)
+		if !isUntracked && !isStaged && !isModified && !isUnmerged {
 			continue
 		}
 		if !supportedWorktreePath(entry.path) {
@@ -55,15 +55,20 @@ func disclosureDiagnostics(entries []worktreeStatusEntry) []codesignal.Diagnosti
 		if isModified {
 			modified = append(modified, entry.path)
 		}
+		if isUnmerged {
+			unmerged = append(unmerged, entry.path)
+		}
 	}
 	sort.Strings(untracked)
 	sort.Strings(staged)
 	sort.Strings(modified)
+	sort.Strings(unmerged)
 
 	var diagnostics []codesignal.Diagnostic
 	diagnostics = appendCategory(diagnostics, "untracked", untracked)
 	diagnostics = appendCategory(diagnostics, "staged", staged)
 	diagnostics = appendCategory(diagnostics, "modified", modified)
+	diagnostics = appendCategory(diagnostics, "unmerged", unmerged)
 	if len(diagnostics) > 0 {
 		return diagnostics
 	}
@@ -94,14 +99,21 @@ func worktreeDisclosureDiagnostic(kind, message string) codesignal.Diagnostic {
 	return codesignal.Diagnostic{Kind: kind, Message: message}
 }
 
-func classifyWorktreeStatus(code string) (untracked, staged, modified bool) {
+func classifyWorktreeStatus(code string) (untracked, staged, modified, unmerged bool) {
 	if len(code) < 2 || code == "!!" {
-		return false, false, false
+		return false, false, false, false
 	}
 	if code == "??" {
-		return true, false, false
+		return true, false, false, false
 	}
-	return false, worktreeIndexStaged(code[0]), worktreeColumnModified(code[1])
+	if worktreeColumnUnmerged(code[0]) || worktreeColumnUnmerged(code[1]) {
+		return false, false, false, true
+	}
+	return false, worktreeIndexStaged(code[0]), worktreeColumnModified(code[1]), false
+}
+
+func worktreeColumnUnmerged(column byte) bool {
+	return column == 'U'
 }
 
 func worktreeIndexStaged(column byte) bool {

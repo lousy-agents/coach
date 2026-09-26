@@ -143,12 +143,7 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		analyzerProtocolVersion = projectbridge.ProtocolVersion
 	}
 	roots := selectedRootsFromConfig(project.Config)
-	if dirty, err := detectRelevantDirtyWorktree(dir, roots, project.ConfigPath); err != nil || dirty.RelevantChanges {
-		diagnostics = append(append([]codesignal.Diagnostic(nil), diagnostics...), codesignal.Diagnostic{
-			Kind:    codesignal.DiagKindWorktreeChangesNotAnalyzed,
-			Message: "report reflects committed HEAD; uncommitted worktree changes were not analyzed",
-		})
-	}
+	diagnostics = appendProjectWorktreeDiagnostic(diagnostics, dir, roots, project.ConfigPath)
 
 	merged := codesignal.Input{
 		Scope:               input.Scope,
@@ -187,6 +182,49 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		AnalyzerProtocolVersion:  analyzerProtocolVersion,
 	}
 	return merged, enabled, nil
+}
+
+func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, dir string, roots []string, configPath string) []codesignal.Diagnostic {
+	entries, err := gitWorktreeStatus(dir)
+	if err != nil {
+		if hasDiagnosticKind(diagnostics, codesignal.DiagKindWorktreeStatusCheckFailed) ||
+			hasDiagnosticKind(diagnostics, codesignal.DiagKindWorktreeNotClean) {
+			return diagnostics
+		}
+		return appendDiagnosticCopy(diagnostics, worktreeStatusFailureDiagnostic(err))
+	}
+	if !hasRelevantDirtyWorktree(entries, roots, configPath) {
+		return diagnostics
+	}
+	if hasDiagnosticKind(diagnostics, codesignal.DiagKindWorktreeReportReflectsCommittedHEAD) {
+		return diagnostics
+	}
+	return appendDiagnosticCopy(diagnostics, codesignal.Diagnostic{
+		Kind:    codesignal.DiagKindWorktreeReportReflectsCommittedHEAD,
+		Message: "report reflects committed HEAD",
+	})
+}
+
+func hasRelevantDirtyWorktree(entries []worktreeStatusEntry, roots []string, configPath string) bool {
+	for _, entry := range entries {
+		if isRelevantDirtyPath(entry.path, roots, configPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasDiagnosticKind(diagnostics []codesignal.Diagnostic, kind string) bool {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func appendDiagnosticCopy(diagnostics []codesignal.Diagnostic, extra codesignal.Diagnostic) []codesignal.Diagnostic {
+	return append(append([]codesignal.Diagnostic(nil), diagnostics...), extra)
 }
 
 func selectedRootsFromConfig(config json.RawMessage) []string {

@@ -25,8 +25,9 @@ const (
 // Dirty-tree notices other than "changes were not analyzed".
 // These kind strings must not contain "not_analyzed".
 const (
-	DiagKindWorktreeNotClean          = "worktree_not_clean"
-	DiagKindWorktreeStatusCheckFailed = "worktree_status_check_failed"
+	DiagKindWorktreeNotClean                    = "worktree_not_clean"
+	DiagKindWorktreeStatusCheckFailed           = "worktree_status_check_failed"
+	DiagKindWorktreeReportReflectsCommittedHEAD = "worktree_report_reflects_committed_head"
 )
 
 // SortDiagnostics orders diagnostics by path, kind, location, then message.

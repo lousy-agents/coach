@@ -27,7 +27,7 @@ func runCoachBaselineProjectJSON(repo, projectConfig string, extraArgs ...string
 // commitNpmFixture commits a minimal npm TypeScript project into repo.
 // A .gitignore ignoring node_modules/ is committed so that the TypeScript
 // compiler installed by installRealTypescriptCompiler does not appear in
-// git status as untracked files that would trigger worktree_changes_not_analyzed.
+// git status as untracked files that would trigger a worktree diagnostic.
 func commitNpmFixture(repo, version string) {
 	commitFile(repo, ".gitignore", "node_modules/\n")
 	commitFile(repo, "package.json", `{"name":"example","devDependencies":{"typescript":"`+version+`"}}`)
@@ -77,19 +77,21 @@ var _ = Describe("coach codesignal --baseline TypeScript project provenance", La
 				Expect(report.ProjectProvenance.PackageManager.Origin).To(Equal("lockfile"))
 			})
 
-			It("emits worktree_changes_not_analyzed diagnostic", func() {
+			It("emits worktree_report_reflects_committed_head diagnostic", func() {
 				kinds := make([]string, len(report.Diagnostics))
 				for i, d := range report.Diagnostics {
 					kinds[i] = d.Kind
 				}
-				Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed),
-					"diagnostics must include worktree_changes_not_analyzed; got %v", kinds)
+				Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeReportReflectsCommittedHEAD),
+					"diagnostics must include worktree_report_reflects_committed_head; got %v", kinds)
+				Expect(kinds).NotTo(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed),
+					"unsupported lockfile dirt must not use the file-local skip kind; got %v", kinds)
 			})
 
 			It("diagnostic message states the report applies to committed HEAD", func() {
 				var msg string
 				for _, d := range report.Diagnostics {
-					if d.Kind == codesignal.DiagKindWorktreeChangesNotAnalyzed {
+					if d.Kind == codesignal.DiagKindWorktreeReportReflectsCommittedHEAD {
 						msg = d.Message
 					}
 				}
@@ -149,12 +151,13 @@ var _ = Describe("coach codesignal --baseline TypeScript project provenance", La
 				Expect(report.ProjectProvenance.PackageManager.Kind).To(Equal("bun"))
 			})
 
-			It("emits worktree_changes_not_analyzed diagnostic", func() {
+			It("emits worktree_report_reflects_committed_head diagnostic", func() {
 				kinds := make([]string, len(report.Diagnostics))
 				for i, d := range report.Diagnostics {
 					kinds[i] = d.Kind
 				}
-				Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed))
+				Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeReportReflectsCommittedHEAD))
+				Expect(kinds).NotTo(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed))
 			})
 		})
 	})
@@ -194,10 +197,12 @@ var _ = Describe("coach codesignal --baseline TypeScript project provenance", La
 					"package_manager.version must be a semver string when npm is on PATH; got %q", report.ProjectProvenance.PackageManager.Version)
 			})
 
-			It("does not emit worktree_changes_not_analyzed for a clean worktree", func() {
+			It("does not emit a worktree skip or provenance diagnostic for a clean worktree", func() {
 				for _, d := range report.Diagnostics {
 					Expect(d.Kind).NotTo(Equal(codesignal.DiagKindWorktreeChangesNotAnalyzed),
 						"clean worktree must not trigger worktree_changes_not_analyzed")
+					Expect(d.Kind).NotTo(Equal(codesignal.DiagKindWorktreeReportReflectsCommittedHEAD),
+						"clean worktree must not trigger worktree_report_reflects_committed_head")
 				}
 			})
 
