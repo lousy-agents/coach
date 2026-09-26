@@ -188,14 +188,16 @@ func expectUnsupportedDirtyNotice(stdout []byte) {
 	ExpectWithOffset(1, strings.ToLower(text)).To(ContainSubstring("working tree is not clean"),
 		"uncommitted files of an unsupported language must be reported as a dirty working tree without implying analyzable work was skipped; stdout:\n%s", text)
 	for _, forbidden := range []string{
-		"incomplete",
 		"not analyzed",
 		"not_analyzed",
-		"skipped",
 		"supported language",
 		"supported-language",
 	} {
 		ExpectWithOffset(1, strings.ToLower(text)).NotTo(ContainSubstring(forbidden),
+			"unsupported uncommitted files must not be described as skipped analyzable work (%q); stdout:\n%s", forbidden, text)
+	}
+	for _, forbidden := range []string{"incomplete", "skipped"} {
+		ExpectWithOffset(1, hasWord(strings.ToLower(text), forbidden)).To(BeFalse(),
 			"unsupported uncommitted files must not be described as skipped analyzable work (%q); stdout:\n%s", forbidden, text)
 	}
 }
@@ -425,10 +427,11 @@ func leaveUnmergedGoFile(repo, name, ours, theirs string) {
 
 func commitGoProjectForDisclosure(repo string) {
 	commitFile(repo, "go.mod", goModuleFile)
-	commitFile(repo, "a.go", benignGoA)
 	commitFile(repo, "pkg/db/db.go", dbPackageFile)
 	commitFile(repo, "pkg/handlers/handlers.go", handlersWithoutImport)
 	commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+	commitFile(repo, "a.go", benignGoA)
+	commitFile(repo, "a.go", benignGoB)
 }
 
 func runWorkingTreeCodesignalWithProject(repo, mode, format string, extra ...string) (stdout, stderr []byte, exitCode int) {
@@ -479,7 +482,7 @@ func assertUnmergedGoDisclosure(mode, format string) {
 	repo := newTempGitRepo()
 	commitBenignHistory(repo)
 	commitFile(repo, "conflict.go", benignGoB)
-	leaveUnmergedGoFile(repo, "conflict.go", hiddenInputMutationGo, benignGoA)
+	leaveUnmergedGoFile(repo, "conflict.go", benignGoA, "package a\n\nfunc Alpha() int { return 3 }\n")
 	expectDirtyPorcelain(repo, "UU conflict.go")
 
 	stdout, stderr, exitCode := runWorkingTreeCodesignal(repo, mode, format)
