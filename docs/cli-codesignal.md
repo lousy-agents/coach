@@ -16,7 +16,7 @@ coach --version
 The only subcommand is `codesignal`.
 
 ```text
-coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive]
+coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive] [--fail-on-incomplete-coverage]
 coach codesignal --baseline --suggest-project-config [--output <path>]
 coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>] [--no-interactive]
 coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]
@@ -41,6 +41,7 @@ that suggest/prepare still require `--baseline`).
 | `--check-project` | | Read-only TypeScript readiness. Exits `0` on gaps. Not a scan. |
 | `--prepare-compiler` | | Interactive consented **mise-only** TypeScript compiler setup. Requires a TTY and an attended session; refuses otherwise. Also refuses, naming the gap, for a runtime-boundary gap (`node_missing`/`node_unsupported`) — the same restriction the scan path's own compiler-setup offer applies, so the two cannot disagree. It is narrower than the scan's offer, which also runs the project package manager: a repository whose only executable choice is `project_package` is never handed this command as remediation, because it would exit `0` reporting nothing to set up. |
 | `--no-interactive` | `false` | Treat the invocation as unattended even with a controlling terminal attached. On a scan, the interactive compiler-setup and guided-policy-authoring offers are skipped, falling through to the same message-only remediation a piped invocation gets; the TypeScript form of `--suggest-project-config`, and `--prepare-compiler`, refuse with exit `2` instead of prompting (the Go form of `--suggest-project-config` never prompts, and rejects the flag as a usage error). Also triggered by a non-empty `CI` environment variable, so a pty-allocating runner cannot hang on an unanswered prompt. |
+| `--fail-on-incomplete-coverage` | `false` | Exit `3` when required project coverage (model or bypass phase, on any analyzed side) is incomplete — including when the project backend is unavailable. The report is always written to stdout first. Valid only on scan modes (`--base` / `--baseline`). |
 
 Requires `git` on `PATH`. Analyzes **committed Git objects**, not the dirty
 worktree. TypeScript project mode also inspects worktree `package.json` /
@@ -56,7 +57,7 @@ before any extra tokens.
 | `0` | Completed analysis, readiness report, successful suggest/prepare, or `--help` / `--version`. Signals do not change this. |
 | `1` | Operational: not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O. |
 | `2` | Usage, invalid `--project-config` (empty stdout, stderr names the path/revision), unsupported `--project-language`, or a TypeScript **scan** that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
-| `3` | `--prepare-compiler` only: operational failure while resolving the baseline revision or computing readiness. A deliberate exception to the scan contract's `1`, kept because the flag follows suggestion mode's table rather than the scan's; every other surface uses `1`. |
+| `3` | Required project coverage (model or bypass, on any analyzed side) is incomplete **and** `--fail-on-incomplete-coverage` was supplied — the report is still written to stdout. Also: `--prepare-compiler` operational failure resolving the baseline revision or computing readiness (a deliberate exception to the scan contract's `1`, kept because the flag follows suggestion mode's table). |
 
 `--check-project` exits `0` so you inspect the payload; do not treat that
 status as a gate.
@@ -118,7 +119,7 @@ terminal is what opens the combined setup offer above.
 
 ## Diff-mode caveats
 
-- Dirty / uncommitted files are ignored.
+- Dirty / uncommitted files are ignored as analysis input. A TypeScript project scan emits `worktree_changes_not_analyzed` when relevant worktree changes exist; the report still applies to committed HEAD.
 - Diff mode passes `--find-renames` (default 50% similarity) and
   `--find-copies-harder` (unmodified files are copy-source candidates) to
   `git diff --name-status`. Rename (`R`) and copy (`C`) new paths are
@@ -158,7 +159,10 @@ Always present on a successful scan:
 - `scope`, `summary`, `signals`, `diagnostics`, `coverage`.
 
 `schema_version: "2"` also includes `project_changes`, `project_facts`,
-`project_summary`, and `project_coverage`.
+`project_summary`, and `project_coverage`. TypeScript project reports
+additionally include `project_provenance` and `project_scope`, and
+`project_next_actions` when a complete scan finds no configured covered
+match. Go schema-2 reports omit those keys.
 
 `summary` counts: `files_analyzed`, `files_with_diagnostics`, `active_signals`,
 `introduced_signals`, `existing_signals`, `resolved_signals`, `baseline_signals`,

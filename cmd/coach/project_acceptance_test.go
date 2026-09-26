@@ -233,12 +233,10 @@ var _ = Describe("coach codesignal project-mode exit-code classification", func(
 	})
 
 	When("resolveProjectBackend fails with an error that is not a *codesignalcli.ProjectBackendUnavailableError", func() {
-		// This asserts only the negative classification (exit code must not
-		// be 3). The positive project_backend_unavailable/exit-3 case is
-		// covered by "writes a local report and structured diagnostic when
-		// the selected backend is unavailable" in
-		// project_contract_acceptance_test.go.
-		It("does not classify it as project-backend-unavailable (exit 3); it falls back to the operational-error path", func() {
+		// This asserts only the negative classification (operational exit 1,
+		// empty stdout). The project_backend_unavailable diagnostic-on-report
+		// path is covered in project_contract_acceptance_test.go.
+		It("falls back to the operational-error path rather than a project-backend-unavailable diagnostic", func() {
 			loadProjectConfig = func(string, string, string) (json.RawMessage, error) {
 				return json.RawMessage(`{"schema_version":"1","roots":["."]}`), nil
 			}
@@ -249,7 +247,7 @@ var _ = Describe("coach codesignal project-mode exit-code classification", func(
 
 			stdout, stderr, exitCode := runInProcess("codesignal", "--baseline", "--project-config", "project.json")
 
-			Expect(exitCode).NotTo(Equal(3), "an error of an unexpected type must not be classified as project_backend_unavailable purely because it came from the --project-language call site")
+			Expect(exitCode).To(Equal(1), "an error of an unexpected type must fall back to the operational-error path (exit 1), not be classified as project_backend_unavailable")
 			Expect(stdout).To(BeEmpty())
 			Expect(string(stderr)).To(ContainSubstring("boom: not a ProjectBackendUnavailableError"))
 		})

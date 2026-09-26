@@ -155,6 +155,22 @@ type packageManagerDetection struct {
 	ambiguous bool
 }
 
+// reconcilePackageManagerDetection is the single cross-check rule shared by
+// the worktree and snapshot detection paths so they cannot diverge (SA-280-012).
+func reconcilePackageManagerDetection(fieldKind, fieldPin string, fieldOK bool, lockKind string, lockOK, lockAmbiguous bool) (packageManagerDetection, bool) {
+	if lockAmbiguous || (fieldOK && lockOK && fieldKind != lockKind) {
+		return packageManagerDetection{ambiguous: true}, true
+	}
+	switch {
+	case fieldOK:
+		return packageManagerDetection{kind: fieldKind, pin: fieldPin}, true
+	case lockOK:
+		return packageManagerDetection{kind: lockKind}, true
+	default:
+		return packageManagerDetection{}, false
+	}
+}
+
 // detectPackageManager identifies the repository's package manager from its
 // recognized metadata (SA-280-012): a package.json "packageManager" pin and a
 // bare lockfile are equally good evidence of which manager a repository uses,
@@ -164,20 +180,7 @@ type packageManagerDetection struct {
 func detectPackageManager(root string) (packageManagerDetection, bool) {
 	fieldKind, fieldVersion, fieldOK := readPackageManagerField(root)
 	lockKind, lockAmbiguous, lockOK := detectPackageManagerLockfile(root)
-
-	if lockAmbiguous {
-		return packageManagerDetection{ambiguous: true}, true
-	}
-	switch {
-	case fieldOK && lockOK && fieldKind != lockKind:
-		return packageManagerDetection{ambiguous: true}, true
-	case fieldOK:
-		return packageManagerDetection{kind: fieldKind, pin: fieldVersion}, true
-	case lockOK:
-		return packageManagerDetection{kind: lockKind}, true
-	default:
-		return packageManagerDetection{}, false
-	}
+	return reconcilePackageManagerDetection(fieldKind, fieldVersion, fieldOK, lockKind, lockOK, lockAmbiguous)
 }
 
 // readPackageManagerField reads package.json's Corepack-style

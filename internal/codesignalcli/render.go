@@ -14,11 +14,14 @@ import (
 func RenderText(report *codesignal.Report) string {
 	var b strings.Builder
 	renderReportSummary(&b, report)
+	renderProjectScopeSection(&b, report.ProjectScope)
 	renderActiveFindings(&b, report)
 	renderProjectFacts(&b, report.ProjectFacts)
 	renderDiagnosticsSection(&b, report.Diagnostics)
 	renderCoverageSection(&b, report.Coverage)
 	renderProjectCoverageSection(&b, report.ProjectCoverage)
+	renderProjectProvenanceSection(&b, report.ProjectProvenance)
+	renderProjectNextActionsSection(&b, report.ProjectNextActions)
 	return b.String()
 }
 
@@ -55,6 +58,15 @@ func renderActiveFindings(b *strings.Builder, report *codesignal.Report) {
 // coverage, and a diff's base side can be incomplete while the head side is
 // complete, which the Complete field alone cannot see.
 func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report) {
+	if len(report.ProjectNextActions) > 0 {
+		if report.Summary.FilesUnanalyzed == 0 {
+			b.WriteString("Complete scan found no configured covered match.\n")
+			return
+		}
+		fmt.Fprintf(b, "Complete scan found no configured covered match, but %s.\n", pathCountClause(report.Summary.FilesUnanalyzed))
+		return
+	}
+
 	incompleteProject := (report.ProjectCoverage != nil && !report.ProjectCoverage.Complete) ||
 		hasProjectLifecycleDiagnostic(report.Diagnostics)
 	hasDiagnostics := len(report.Diagnostics) > 0

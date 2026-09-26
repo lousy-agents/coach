@@ -68,7 +68,7 @@ Default `--scope` is `production`. `--build-target <pattern>` further limits Go 
 | `0` | Analysis completed (signals or none). Not a quality gate. |
 | `1` | Operational failure (not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O). |
 | `2` | Usage or invalid `--project-config`, or a TypeScript scan that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
-| `3` | `--prepare-compiler` only: operational failure resolving the revision or computing readiness — a documented exception to the scan contract's `1`, kept with the flag's own suggestion-mode table. |
+| `3` | Required project coverage incomplete and `--fail-on-incomplete-coverage` was supplied (report still written to stdout); or `--prepare-compiler` operational failure resolving the revision or computing readiness. |
 
 ### What you should see
 

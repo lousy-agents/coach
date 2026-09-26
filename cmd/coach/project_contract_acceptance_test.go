@@ -138,7 +138,7 @@ var _ = Describe("coach project-analysis failure reports", func() {
 
 		stdout, stderr, exitCode := runInProcess("codesignal", "--baseline", "--project-config", "project.json", "--format=json")
 
-		Expect(exitCode).To(Equal(3))
+		Expect(exitCode).To(Equal(0))
 		Expect(stderr).To(BeEmpty())
 		var report struct {
 			SchemaVersion string `json:"schema_version"`

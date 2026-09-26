@@ -261,17 +261,24 @@ type analyzerEnvironSampler struct {
 	done  chan struct{}
 	mu    sync.Mutex
 	byPID map[int]string
+	seen  map[string]struct{}
 }
 
-func startAnalyzerEnvironSampler() *analyzerEnvironSampler {
-	s := &analyzerEnvironSampler{
+func newIdleAnalyzerEnvironSampler() *analyzerEnvironSampler {
+	return &analyzerEnvironSampler{
 		stop:  make(chan struct{}),
 		done:  make(chan struct{}),
 		byPID: make(map[int]string),
+		seen:  make(map[string]struct{}),
 	}
+}
+
+func startAnalyzerEnvironSampler() *analyzerEnvironSampler {
+	s := newIdleAnalyzerEnvironSampler()
 	go func() {
 		defer close(s.done)
-		ticker := time.NewTicker(5 * time.Millisecond)
+		s.capture()
+		ticker := time.NewTicker(time.Millisecond)
 		defer ticker.Stop()
 		for {
 			select {
@@ -298,16 +305,66 @@ func (s *analyzerEnvironSampler) halt() map[int]string {
 	return out
 }
 
+func (s *analyzerEnvironSampler) invocations() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.seen)
+}
+
+// record counts a cmdline-matched analyzer child even when its environ
+// cannot be read. The kernel returns an empty environ for a task that has
+// already torn down its address space; treating that as no observation
+// (see readProcessEnviron) is right for PATH assertions and wrong for
+// invocation counts, because a warm second spawn is often only visible
+// during teardown. A starttime-keyed sample and a later pid-only sample
+// of the same PID are one invocation (stat can fail at teardown); two
+// starttimes for the same PID are two sequential children.
+func (s *analyzerEnvironSampler) record(pid int, startTime, env string, envOK bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pidKey := strconv.Itoa(pid)
+	if startTime != "" {
+		delete(s.seen, pidKey)
+		s.seen[pidKey+":"+startTime] = struct{}{}
+	} else if !hasStartTimeKeyedObservation(s.seen, pidKey) {
+		s.seen[pidKey] = struct{}{}
+	}
+	if envOK {
+		s.byPID[pid] = env
+	}
+}
+
+func hasStartTimeKeyedObservation(seen map[string]struct{}, pidKey string) bool {
+	prefix := pidKey + ":"
+	for key := range seen {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *analyzerEnvironSampler) capture() {
 	for _, pid := range analyzerChildPIDs() {
 		env, ok := readProcessEnviron(pid)
-		if !ok {
-			continue
-		}
-		s.mu.Lock()
-		s.byPID[pid] = env
-		s.mu.Unlock()
+		s.record(pid, processStartTime(pid), env, ok)
 	}
+}
+
+func processStartTime(pid int) string {
+	data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return ""
+	}
+	idx := bytes.LastIndexByte(data, ')')
+	if idx < 0 || idx+2 >= len(data) {
+		return ""
+	}
+	fields := strings.Fields(string(data[idx+2:]))
+	if len(fields) < 20 {
+		return ""
+	}
+	return fields[19]
 }
 
 func analyzerChildPIDs() []int {
@@ -1411,7 +1468,7 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			environs := sampler.halt()
 			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(len(environs)).To(Equal(1), "expected exactly one analyzer invocation for a baseline analysis, observed pids: %+v", environs)
+			Expect(sampler.invocations()).To(Equal(1), "expected exactly one analyzer invocation for a baseline analysis, observed pids: %+v", environs)
 
 			report := decodeCoachReport(stdout)
 			ruleIDs := projectChangeRuleIDs(report.ProjectChanges)
@@ -1425,7 +1482,7 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			textStdout, textStderr, textExitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
 			textEnvirons := textSampler.halt()
 			Expect(textExitCode).To(Equal(0), "stderr: %s stdout: %s", textStderr, textStdout)
-			Expect(len(textEnvirons)).To(Equal(1), "expected exactly one analyzer invocation for the text-format rendering of the same baseline analysis, observed pids: %+v", textEnvirons)
+			Expect(textSampler.invocations()).To(Equal(1), "expected exactly one analyzer invocation for the text-format rendering of the same baseline analysis, observed pids: %+v", textEnvirons)
 
 			findingsSection, factsSection := splitTextFindingsAndFacts(string(textStdout))
 			Expect(findingsSection).To(ContainSubstring("rule_id: architecture.layer_violation"), "got %q", findingsSection)
@@ -1444,7 +1501,7 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, tsLayerBypassRequiredConfigJSON)
 			scopeEnvirons := scopeSampler.halt()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(scopeEnvirons)).To(Equal(1), "expected exactly one analyzer invocation for the direct-result inspection of the same baseline analysis, observed pids: %+v", scopeEnvirons)
+			Expect(scopeSampler.invocations()).To(Equal(1), "expected exactly one analyzer invocation for the direct-result inspection of the same baseline analysis, observed pids: %+v", scopeEnvirons)
 
 			resultRuleIDs := projectChangeRuleIDs(result.HeadChanges)
 			Expect(resultRuleIDs).To(HaveKey("architecture.layer_violation"), "the same single-invocation result must carry the layer-violation change, got %+v", result.HeadChanges)
@@ -1478,7 +1535,7 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			environs := sampler.halt()
 			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(len(environs)).To(Equal(2), "expected exactly one analyzer invocation per revision (head + base), observed pids: %+v", environs)
+			Expect(sampler.invocations()).To(Equal(2), "expected exactly one analyzer invocation per revision (head + base), observed pids: %+v", environs)
 
 			report := decodeCoachReport(stdout)
 			ruleIDs := projectChangeRuleIDs(report.ProjectChanges)
@@ -1491,7 +1548,7 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			textStdout, textStderr, textExitCode := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
 			textEnvirons := textSampler.halt()
 			Expect(textExitCode).To(Equal(0), "stderr: %s stdout: %s", textStderr, textStdout)
-			Expect(len(textEnvirons)).To(Equal(2), "expected exactly one analyzer invocation per revision for the text-format rendering of the same diff, observed pids: %+v", textEnvirons)
+			Expect(textSampler.invocations()).To(Equal(2), "expected exactly one analyzer invocation per revision for the text-format rendering of the same diff, observed pids: %+v", textEnvirons)
 
 			findingsSection, factsSection := splitTextFindingsAndFacts(string(textStdout))
 			Expect(findingsSection).To(ContainSubstring("rule_id: architecture.layer_violation"), "got %q", findingsSection)
@@ -1508,7 +1565,7 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			result, err := analyzeTSProjectBackend(repo, headSHA, baseSHA, false, tsLayerBypassRequiredConfigJSON)
 			scopeEnvirons := scopeSampler.halt()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(scopeEnvirons)).To(Equal(2), "expected exactly one analyzer invocation per revision for the direct-result inspection of the same diff, observed pids: %+v", scopeEnvirons)
+			Expect(scopeSampler.invocations()).To(Equal(2), "expected exactly one analyzer invocation per revision for the direct-result inspection of the same diff, observed pids: %+v", scopeEnvirons)
 
 			resultRuleIDs := projectChangeRuleIDs(result.HeadChanges)
 			Expect(resultRuleIDs).To(HaveKey("architecture.layer_violation"), "the same single Analyze() result must carry the head-side layer-violation change, got %+v", result.HeadChanges)
@@ -1820,7 +1877,7 @@ var _ = Describe("coach codesignal --project-language typescript carries project
 			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, tsNestedRootsScopeConfigJSON)
 			environs := sampler.halt()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(environs)).To(Equal(1), "expected exactly one analyzer invocation for a baseline analysis (AC-RUN-5), observed pids: %+v", environs)
+			Expect(sampler.invocations()).To(Equal(1), "expected exactly one analyzer invocation for a baseline analysis (AC-RUN-5), observed pids: %+v", environs)
 
 			Expect(result.HeadProjectScope).NotTo(BeNil())
 			scope := *result.HeadProjectScope
@@ -1865,7 +1922,7 @@ var _ = Describe("coach codesignal --project-language typescript carries project
 			result, err := analyzeTSProjectBackend(repo, headSHA, baseSHA, false, tsNestedRootsScopeConfigJSON)
 			environs := sampler.halt()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(environs)).To(Equal(2), "expected exactly one analyzer invocation per revision (head + base), no second analyzer pass just to derive project_scope, observed pids: %+v", environs)
+			Expect(sampler.invocations()).To(Equal(2), "expected exactly one analyzer invocation per revision (head + base), no second analyzer pass just to derive project_scope, observed pids: %+v", environs)
 
 			Expect(result.HeadProjectScope).NotTo(BeNil(), "head-side project_scope must be carried")
 			Expect(result.BaseProjectScope).NotTo(BeNil(), "base-side project_scope must be carried under --base")

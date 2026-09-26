@@ -682,6 +682,40 @@ func (b identityHandoffBackend) Analyze(context.Context, ProjectBackendRequest) 
 	return b.result, nil
 }
 
+var _ = Describe("applyProjectBackend analyzer protocol version handoff", func() {
+	It("defaults AnalyzerProtocolVersion to 1 for typescript when backend returns a result without a protocol version", func() {
+		backend := identityHandoffBackend{result: &ProjectBackendResult{}}
+		input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, &ProjectAnalysis{
+			Backend:  backend,
+			Language: "typescript",
+		}, ".", "HEAD", "", true)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(input.AnalyzerProtocolVersion).To(Equal(1), "applyProjectBackend must default typescript AnalyzerProtocolVersion to 1 when backend returns 0")
+	})
+
+	It("copies a non-zero AnalyzerProtocolVersion from ProjectBackendResult onto codesignal.Input", func() {
+		backend := identityHandoffBackend{result: &ProjectBackendResult{
+			AnalyzerProtocolVersion: 1,
+		}}
+		input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, &ProjectAnalysis{
+			Backend:  backend,
+			Language: "typescript",
+		}, ".", "HEAD", "", true)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(input.AnalyzerProtocolVersion).To(Equal(1))
+	})
+
+	It("does not default AnalyzerProtocolVersion for non-typescript language", func() {
+		backend := identityHandoffBackend{result: &ProjectBackendResult{}}
+		input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, &ProjectAnalysis{
+			Backend:  backend,
+			Language: "go",
+		}, ".", "HEAD", "", true)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(input.AnalyzerProtocolVersion).To(Equal(0), "non-typescript backends must not get the typescript default")
+	})
+})
+
 var _ = Describe("applyProjectBackend runtime identity handoff", func() {
 	It("copies runtime kind, version, origin, compiler version, and compiler origin onto codesignal.Input", func() {
 		backend := identityHandoffBackend{result: &ProjectBackendResult{
@@ -700,6 +734,62 @@ var _ = Describe("applyProjectBackend runtime identity handoff", func() {
 		Expect(input.RuntimeOrigin).To(Equal(runtimeOriginPath))
 		Expect(input.CompilerVersion).To(Equal("7.0.2"))
 		Expect(input.CompilerOrigin).To(Equal(compilerOriginProject))
+	})
+
+	It("copies all six phase coverages, project scopes, language, config digest, and selected roots onto codesignal.Input", func() {
+		headScope := &projectmodel.ProjectScope{
+			InclusionRule:   projectmodel.InclusionRuleTSConfigIncludesNoTestClassification,
+			PatternSet:      projectmodel.TSReachabilityAlgorithm,
+			Roots:           []projectmodel.ProjectScopeRoot{{Root: "src", CandidateFiles: 5, AnalyzedFiles: 5}},
+			MatchedLayers:   []string{"api"},
+			UnmatchedLayers: []string{"store"},
+		}
+		baseScope := &projectmodel.ProjectScope{
+			InclusionRule:   projectmodel.InclusionRuleTSConfigIncludesNoTestClassification,
+			PatternSet:      projectmodel.TSReachabilityAlgorithm,
+			Roots:           []projectmodel.ProjectScopeRoot{{Root: "src", CandidateFiles: 4, AnalyzedFiles: 4}},
+			MatchedLayers:   []string{"api"},
+			UnmatchedLayers: []string{},
+		}
+		headModel := &projectmodel.Coverage{Phase: "model", Complete: true}
+		baseModel := &projectmodel.Coverage{Phase: "model", Complete: true}
+		headBypass := &projectmodel.Coverage{Phase: "bypass", Complete: true}
+		baseBypass := &projectmodel.Coverage{Phase: "not_requested", Complete: true}
+		headReach := &projectmodel.Coverage{Phase: "reachability", Complete: true}
+		baseReach := &projectmodel.Coverage{Phase: "reachability", Complete: false}
+
+		configJSON := json.RawMessage(`{"schema_version":"1","roots":["src"]}`)
+		digest := ConfigDigest(configJSON)
+
+		backend := identityHandoffBackend{result: &ProjectBackendResult{
+			HeadProjectScope:         headScope,
+			BaseProjectScope:         baseScope,
+			HeadModelCoverage:        headModel,
+			BaseModelCoverage:        baseModel,
+			HeadBypassCoverage:       headBypass,
+			BaseBypassCoverage:       baseBypass,
+			HeadReachabilityCoverage: headReach,
+			BaseReachabilityCoverage: baseReach,
+		}}
+		input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, &ProjectAnalysis{
+			Backend:      backend,
+			Language:     "typescript",
+			Config:       configJSON,
+			ConfigDigest: digest,
+		}, ".", "HEAD", "BASE", false)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(input.Language).To(Equal("typescript"), "Language must reach codesignal.Input from ProjectAnalysis")
+		Expect(input.ConfigDigest).To(Equal(digest), "ConfigDigest must reach codesignal.Input from ProjectAnalysis")
+		Expect(input.SelectedRoots).To(Equal([]string{"src"}), "SelectedRoots must be decoded from Config.roots and reach codesignal.Input")
+		Expect(input.HeadProjectScope).To(Equal(headScope), "HeadProjectScope must reach codesignal.Input from ProjectBackendResult")
+		Expect(input.BaseProjectScope).To(Equal(baseScope), "BaseProjectScope must reach codesignal.Input from ProjectBackendResult")
+		Expect(input.HeadModelCoverage).To(Equal(headModel), "HeadModelCoverage must reach codesignal.Input from ProjectBackendResult")
+		Expect(input.BaseModelCoverage).To(Equal(baseModel), "BaseModelCoverage must reach codesignal.Input from ProjectBackendResult")
+		Expect(input.HeadBypassCoverage).To(Equal(headBypass), "HeadBypassCoverage must reach codesignal.Input from ProjectBackendResult")
+		Expect(input.BaseBypassCoverage).To(Equal(baseBypass), "BaseBypassCoverage must reach codesignal.Input from ProjectBackendResult")
+		Expect(input.HeadReachabilityCoverage).To(Equal(headReach), "HeadReachabilityCoverage must reach codesignal.Input from ProjectBackendResult")
+		Expect(input.BaseReachabilityCoverage).To(Equal(baseReach), "BaseReachabilityCoverage must reach codesignal.Input from ProjectBackendResult")
 	})
 })
 
