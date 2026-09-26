@@ -766,7 +766,7 @@ sequenceDiagram
 
 ## Cross-Reference
 
-- PRD planned item: more deterministic complexity rules (`docs/product/prd.md` §8)
+- Shipped file-local rule `complexity.cognitive_complexity` (`docs/cli-codesignal.md`). PRD v3 no longer keeps a planned-item inventory.
 - Architecture: deterministic `pkg/semantics` → `pkg/codesignal` before inference (`docs/architecture/system-overview.md`)
 - Related existing rules: `complexity.max_nesting_depth`, `complexity.branch_density`
 - Dispatch pattern peer: `coupling.deep_relative_import` via `signalsFromImports`
