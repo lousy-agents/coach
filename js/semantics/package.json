@@ -28,7 +28,7 @@
     "prepare": "npm run build:backend && npm run build"
   },
   "devDependencies": {
-    "@types/node": "24.13.6",
+    "@types/node": "24.19.0",
     "typescript": "7.0.2"
   }
 }
