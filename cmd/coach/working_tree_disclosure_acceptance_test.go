@@ -188,6 +188,7 @@ func expectUnsupportedDirtyNotice(stdout []byte) {
 	ExpectWithOffset(1, strings.ToLower(text)).To(ContainSubstring("working tree is not clean"),
 		"uncommitted files of an unsupported language must be reported as a dirty working tree without implying analyzable work was skipped; stdout:\n%s", text)
 	for _, forbidden := range []string{
+		"incomplete",
 		"not analyzed",
 		"not_analyzed",
 		"skipped",
@@ -374,6 +375,127 @@ func assertStagedGoDisclosure(mode, format string) {
 			"staged bytes must not be rendered as a hidden-input-mutation finding; stdout:\n%s", stdout)
 	}
 	expectSupportedWorktreeDisclosure(stdout, format, []string{"indexed.go"}, "staged", "untracked", "modified")
+}
+
+func currentBranch(repo string) string {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = repo
+	output, err := cmd.Output()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "git rev-parse --abbrev-ref HEAD: %s", output)
+	return strings.TrimSpace(string(output))
+}
+
+func commitWorktreePath(repo, name, message string) {
+	add := exec.Command("git", "add", "--", name)
+	add.Dir = repo
+	output, err := add.CombinedOutput()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "git add %s: %s", name, output)
+
+	commit := exec.Command("git", "commit", "-m", message)
+	commit.Dir = repo
+	commit.Env = commitEnv
+	output, err = commit.CombinedOutput()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "git commit %s: %s", name, output)
+}
+
+// leaveUnmergedGoFile requires name to already exist on HEAD so a merge
+// produces UU (both modified), not AA (both added).
+func leaveUnmergedGoFile(repo, name, ours, theirs string) {
+	start := currentBranch(repo)
+
+	checkoutTheirs := exec.Command("git", "checkout", "-b", "review-unmerged-theirs")
+	checkoutTheirs.Dir = repo
+	output, err := checkoutTheirs.CombinedOutput()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "git checkout -b: %s", output)
+	ExpectWithOffset(1, os.WriteFile(filepath.Join(repo, name), []byte(theirs), 0o644)).To(Succeed())
+	commitWorktreePath(repo, name, "theirs "+name)
+
+	checkoutOurs := exec.Command("git", "checkout", start)
+	checkoutOurs.Dir = repo
+	output, err = checkoutOurs.CombinedOutput()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "git checkout %s: %s", start, output)
+	ExpectWithOffset(1, os.WriteFile(filepath.Join(repo, name), []byte(ours), 0o644)).To(Succeed())
+	commitWorktreePath(repo, name, "ours "+name)
+
+	merge := exec.Command("git", "merge", "--no-ff", "review-unmerged-theirs")
+	merge.Dir = repo
+	merge.Env = commitEnv
+	_ = merge.Run()
+}
+
+func commitGoProjectForDisclosure(repo string) {
+	commitFile(repo, "go.mod", goModuleFile)
+	commitFile(repo, "a.go", benignGoA)
+	commitFile(repo, "pkg/db/db.go", dbPackageFile)
+	commitFile(repo, "pkg/handlers/handlers.go", handlersWithoutImport)
+	commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+}
+
+func runWorkingTreeCodesignalWithProject(repo, mode, format string, extra ...string) (stdout, stderr []byte, exitCode int) {
+	args := append([]string{"--project-config", "project.json", "--format=" + format}, extra...)
+	switch mode {
+	case codesignalModeBaseline:
+		return runCoachCodesignalBaselineRaw(repo, args...)
+	case codesignalModeBase:
+		return runCoachCodesignalRaw(repo, "HEAD~1", args...)
+	default:
+		Fail("unknown codesignal mode " + mode)
+		return nil, nil, -1
+	}
+}
+
+func diagnosticKinds(stdout []byte, format string) []string {
+	if format == "json" {
+		report := decodeCoachReport(stdout)
+		kinds := make([]string, len(report.Diagnostics))
+		for i, diagnostic := range report.Diagnostics {
+			kinds[i] = diagnostic.Kind
+		}
+		return kinds
+	}
+	var kinds []string
+	for _, line := range strings.Split(string(stdout), "\n") {
+		_, rest, ok := strings.Cut(line, "kind: ")
+		if !ok {
+			continue
+		}
+		kind, _, _ := strings.Cut(rest, ",")
+		kinds = append(kinds, strings.TrimSpace(kind))
+	}
+	return kinds
+}
+
+func countKind(kinds []string, kind string) int {
+	n := 0
+	for _, got := range kinds {
+		if got == kind {
+			n++
+		}
+	}
+	return n
+}
+
+func assertUnmergedGoDisclosure(mode, format string) {
+	repo := newTempGitRepo()
+	commitBenignHistory(repo)
+	commitFile(repo, "conflict.go", benignGoB)
+	leaveUnmergedGoFile(repo, "conflict.go", hiddenInputMutationGo, benignGoA)
+	expectDirtyPorcelain(repo, "UU conflict.go")
+
+	stdout, stderr, exitCode := runWorkingTreeCodesignal(repo, mode, format)
+	ExpectWithOffset(1, exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
+	ExpectWithOffset(1, stderr).To(BeEmpty())
+	if format == "json" {
+		report := decodeCoachReport(stdout)
+		ExpectWithOffset(1, len(report.Diagnostics)).To(BeNumerically(">", 0),
+			"UU conflict.go must not be a silent all-clear; diagnostics: %+v", report.Diagnostics)
+		ExpectWithOffset(1, signalsForPath(report, "conflict.go")).To(BeEmpty(),
+			"unmerged bytes must not become a signal; signals: %+v", report.Signals)
+	} else {
+		ExpectWithOffset(1, string(stdout)).NotTo(MatchRegexp(`diagnostics: 0\nNo active CodeSignal findings\.\n\z`),
+			"UU conflict.go must not print an unqualified all-clear with diagnostics:0; stdout:\n%s", stdout)
+	}
+	expectSupportedWorktreeDisclosure(stdout, format, []string{"conflict.go"}, "unmerged", "untracked", "staged", "modified")
 }
 
 func assertModifiedGoDisclosure(mode, format string) {
@@ -610,6 +732,97 @@ var _ = Describe("coach codesignal working tree disclosure", func() {
 					"a failed working-tree status check must not fail the run; stderr: %s\nstdout: %s", stderr, stdout)
 				Expect(stdout).NotTo(BeEmpty())
 				expectStatusCheckFailureDiagnostic(stdout, format)
+			},
+			Entry("baseline text", codesignalModeBaseline, "text"),
+			Entry("baseline json", codesignalModeBaseline, "json"),
+			Entry("--base HEAD~1 text", codesignalModeBase, "text"),
+			Entry("--base HEAD~1 json", codesignalModeBase, "json"),
+		)
+	})
+
+	When("a supported-language file is unmerged (UU)", func() {
+		DescribeTable("coach codesignal reports the unmerged file and does not print a silent all-clear",
+			func(mode, format string) {
+				assertUnmergedGoDisclosure(mode, format)
+			},
+			Entry("baseline text", codesignalModeBaseline, "text"),
+			Entry("baseline json", codesignalModeBaseline, "json"),
+			Entry("--base HEAD~1 text", codesignalModeBase, "text"),
+			Entry("--base HEAD~1 json", codesignalModeBase, "json"),
+		)
+	})
+
+	When("file-local disclosure runs with --project-config on unsupported dirt", func() {
+		DescribeTable("notes.md or bun.lock stay a not-clean notice without a skip kind",
+			func(mode, format, name, contents string) {
+				repo := newTempGitRepo()
+				commitGoProjectForDisclosure(repo)
+				writeUntrackedFile(repo, name, contents)
+				expectDirtyPorcelain(repo, "?? "+name)
+
+				stdout, stderr, exitCode := runWorkingTreeCodesignalWithProject(repo, mode, format)
+				Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
+				Expect(stderr).To(BeEmpty())
+				expectUnsupportedDirtyNotice(stdout)
+				Expect(countKind(diagnosticKinds(stdout, format), codesignal.DiagKindWorktreeChangesNotAnalyzed)).To(Equal(0),
+					"unsupported dirt must not pick up the project skip kind; kinds=%v stdout:\n%s", diagnosticKinds(stdout, format), stdout)
+			},
+			Entry("baseline text notes.md", codesignalModeBaseline, "text", "notes.md", "# notes\n"),
+			Entry("baseline json notes.md", codesignalModeBaseline, "json", "notes.md", "# notes\n"),
+			Entry("--base HEAD~1 text bun.lock", codesignalModeBase, "text", "bun.lock", "# bun lockfile\n"),
+			Entry("--base HEAD~1 json bun.lock", codesignalModeBase, "json", "bun.lock", "# bun lockfile\n"),
+		)
+	})
+
+	When("file-local disclosure runs with --project-config on a supported untracked Go file", func() {
+		DescribeTable("the skip kind appears at most once, with an optional provenance kind",
+			func(mode, format string) {
+				repo := newTempGitRepo()
+				commitGoProjectForDisclosure(repo)
+				writeUntrackedFile(repo, "pending.go", hiddenInputMutationGo)
+				expectDirtyPorcelain(repo, "?? pending.go")
+
+				stdout, stderr, exitCode := runWorkingTreeCodesignalWithProject(repo, mode, format)
+				Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
+				Expect(stderr).To(BeEmpty())
+				expectSupportedWorktreeDisclosure(stdout, format, []string{"pending.go"}, "untracked", "staged", "modified", "unmerged")
+				kinds := diagnosticKinds(stdout, format)
+				Expect(countKind(kinds, codesignal.DiagKindWorktreeChangesNotAnalyzed)).To(BeNumerically("<=", 1),
+					"must not emit two copies of the skip kind; kinds=%v stdout:\n%s", kinds, stdout)
+				Expect(countKind(kinds, codesignal.DiagKindWorktreeChangesNotAnalyzed)).To(BeNumerically(">=", 1))
+			},
+			Entry("baseline text", codesignalModeBaseline, "text"),
+			Entry("baseline json", codesignalModeBaseline, "json"),
+			Entry("--base HEAD~1 text", codesignalModeBase, "text"),
+			Entry("--base HEAD~1 json", codesignalModeBase, "json"),
+		)
+	})
+
+	When("the working-tree status check fails during a --project-config run", func() {
+		DescribeTable("the CLI records one status-failure and does not say work was not analyzed",
+			func(mode, format string) {
+				repo := newTempGitRepo()
+				commitGoProjectForDisclosure(repo)
+				Expect(strings.TrimSpace(gitPorcelain(repo))).To(BeEmpty())
+
+				binDir, env := installGitStatusFailureWrapper()
+				expectStatusWrapperBehavior(filepath.Join(binDir, "git"), repo)
+
+				args := []string{"codesignal", "--project-config", "project.json", "--format=" + format}
+				if mode == codesignalModeBaseline {
+					args = append(args, "--baseline")
+				} else {
+					args = append(args, "--base", "HEAD~1")
+				}
+				stdout, stderr, exitCode := runCoachBinary(commandPath, repo, env, args...)
+				Expect(exitCode).To(Equal(0),
+					"a failed working-tree status check must not fail the run; stderr: %s\nstdout: %s", stderr, stdout)
+				Expect(stdout).NotTo(BeEmpty())
+				expectStatusCheckFailureDiagnostic(stdout, format)
+				Expect(strings.ToLower(string(stdout))).NotTo(ContainSubstring("not analyzed"),
+					"a status-check failure must not be described as skipped analysis; stdout:\n%s", stdout)
+				Expect(countKind(diagnosticKinds(stdout, format), codesignal.DiagKindWorktreeChangesNotAnalyzed)).To(Equal(0),
+					"status failure must not emit the skip kind; kinds=%v stdout:\n%s", diagnosticKinds(stdout, format), stdout)
 			},
 			Entry("baseline text", codesignalModeBaseline, "text"),
 			Entry("baseline json", codesignalModeBaseline, "json"),

@@ -85,6 +85,22 @@ func TestWorktreeDisclosureDiagnostics(t *testing.T) {
 			}},
 		},
 		{
+			name:   "unmerged UU go file is disclosed as unmerged and not analyzed",
+			output: porcelainZ("UU conflict.go"),
+			want: []codesignal.Diagnostic{{
+				Kind:    codesignal.DiagKindWorktreeChangesNotAnalyzed,
+				Message: "1 unmerged file was not analyzed: conflict.go",
+			}},
+		},
+		{
+			name:   "unmerged UA is unmerged only, not staged",
+			output: porcelainZ("UA added.go"),
+			want: []codesignal.Diagnostic{{
+				Kind:    codesignal.DiagKindWorktreeChangesNotAnalyzed,
+				Message: "1 unmerged file was not analyzed: added.go",
+			}},
+		},
+		{
 			name:   "unsupported files are a dirty tree without a not-analyzed kind",
 			output: porcelainZ("?? readme.txt", "?? notes.md"),
 			want: []codesignal.Diagnostic{{
