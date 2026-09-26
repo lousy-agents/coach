@@ -529,7 +529,8 @@ func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codes
 	if opErr != nil {
 		return nil, opErr
 	}
-	report, err := codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, nil, f.scope, coverage, project)
+	disclosure := codesignalcli.WorkingTreeDisclosureDiagnostics(dir)
+	report, err := codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, disclosure, f.scope, coverage, project)
 	if err != nil {
 		return nil, wrapScanAnalysisError(err, dir, revisionSHA, f.projectConfig, stderr)
 	}
@@ -550,6 +551,7 @@ func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesigna
 	if err != nil {
 		return nil, err
 	}
+	diagnostics = append(diagnostics, codesignalcli.WorkingTreeDisclosureDiagnostics(dir)...)
 
 	project, diag, opErr := prepareProjectAnalysis(dir, headSHA, f.projectConfigSet, f.projectConfig, f.projectLanguage)
 	if opErr != nil {

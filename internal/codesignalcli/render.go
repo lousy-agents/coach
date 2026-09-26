@@ -74,6 +74,10 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 		b.WriteString("No active CodeSignal findings.\n")
 		return
 	}
+	if !incompleteProject && report.Summary.FilesUnanalyzed == 0 && onlyWorktreeCleanlinessDiagnostics(report.Diagnostics) {
+		b.WriteString("No active CodeSignal findings.\n")
+		return
+	}
 
 	var causes []string
 	if n := report.Summary.FilesUnanalyzed; n > 0 {
@@ -102,6 +106,20 @@ func hasProjectLifecycleDiagnostic(diagnostics []codesignal.Diagnostic) bool {
 		}
 	}
 	return false
+}
+
+func onlyWorktreeCleanlinessDiagnostics(diagnostics []codesignal.Diagnostic) bool {
+	if len(diagnostics) == 0 {
+		return false
+	}
+	for _, d := range diagnostics {
+		switch d.Kind {
+		case codesignal.DiagKindWorktreeNotClean, codesignal.DiagKindWorktreeReportReflectsCommittedHEAD:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func renderFileLocalSignals(b *strings.Builder, signals []codesignal.Signal, projectSignalIDs map[string]struct{}) bool {

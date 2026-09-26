@@ -119,7 +119,7 @@ terminal is what opens the combined setup offer above.
 
 ## Diff-mode caveats
 
-- Dirty / uncommitted files are ignored as analysis input. A TypeScript project scan emits `worktree_changes_not_analyzed` when relevant worktree changes exist; the report still applies to committed HEAD.
+- Dirty / uncommitted files are ignored as analysis input. A TypeScript project scan emits `worktree_report_reflects_committed_head` when relevant worktree changes exist; the report still applies to committed HEAD. Supported-language file-local dirt uses `worktree_changes_not_analyzed`. Unsupported dirt uses `worktree_not_clean`. A status-check failure uses `worktree_status_check_failed`.
 - Diff mode passes `--find-renames` (default 50% similarity) and
   `--find-copies-harder` (unmodified files are copy-source candidates) to
   `git diff --name-status`. Rename (`R`) and copy (`C`) new paths are
