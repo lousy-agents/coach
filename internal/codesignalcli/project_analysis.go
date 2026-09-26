@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
+	"github.com/lousy-agents/coach/internal/projectbridge"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
@@ -91,6 +92,12 @@ type ProjectBackendResult struct {
 	RuntimeOrigin            string
 	CompilerVersion          string
 	CompilerOrigin           string
+	AnalyzerProtocolVersion  int
+	AnalyzerVersion          string
+	AnalyzerDigest           string
+	PackageManagerKind       string
+	PackageManagerVersion    string
+	PackageManagerOrigin     string
 }
 
 // ConfigDigest returns a stable hex digest of validated project-config bytes.
@@ -131,6 +138,18 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		diagnostics = append(append([]codesignal.Diagnostic(nil), input.Diagnostics...), result.HeadDiagnostics...)
 		diagnostics = append(diagnostics, baseProjectDiagnostics(result.BaseDiagnostics)...)
 	}
+	analyzerProtocolVersion := result.AnalyzerProtocolVersion
+	if project.Language == "typescript" && analyzerProtocolVersion == 0 {
+		analyzerProtocolVersion = projectbridge.ProtocolVersion
+	}
+	roots := selectedRootsFromConfig(project.Config)
+	if dirty, err := detectRelevantDirtyWorktree(dir, roots, project.ConfigPath); err != nil || dirty.RelevantChanges {
+		diagnostics = append(append([]codesignal.Diagnostic(nil), diagnostics...), codesignal.Diagnostic{
+			Kind:    codesignal.DiagKindWorktreeChangesNotAnalyzed,
+			Message: "report reflects committed HEAD; uncommitted worktree changes were not analyzed",
+		})
+	}
+
 	merged := codesignal.Input{
 		Scope:               input.Scope,
 		Files:               input.Files,
@@ -147,8 +166,38 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		RuntimeOrigin:       result.RuntimeOrigin,
 		CompilerVersion:     result.CompilerVersion,
 		CompilerOrigin:      result.CompilerOrigin,
+		AnalyzerVersion:     result.AnalyzerVersion,
+		AnalyzerDigest:      result.AnalyzerDigest,
+
+		PackageManagerKind:    result.PackageManagerKind,
+		PackageManagerVersion: result.PackageManagerVersion,
+		PackageManagerOrigin:  result.PackageManagerOrigin,
+
+		HeadProjectScope:         result.HeadProjectScope,
+		BaseProjectScope:         result.BaseProjectScope,
+		HeadModelCoverage:        result.HeadModelCoverage,
+		BaseModelCoverage:        result.BaseModelCoverage,
+		HeadBypassCoverage:       result.HeadBypassCoverage,
+		BaseBypassCoverage:       result.BaseBypassCoverage,
+		HeadReachabilityCoverage: result.HeadReachabilityCoverage,
+		BaseReachabilityCoverage: result.BaseReachabilityCoverage,
+		Language:                 project.Language,
+		ConfigDigest:             project.ConfigDigest,
+		SelectedRoots:            roots,
+		AnalyzerProtocolVersion:  analyzerProtocolVersion,
 	}
 	return merged, enabled, nil
+}
+
+func selectedRootsFromConfig(config json.RawMessage) []string {
+	if len(config) == 0 {
+		return nil
+	}
+	cfg, err := parseProjectConfig(config)
+	if err != nil {
+		return nil
+	}
+	return cfg.Roots
 }
 
 // baseProjectDiagnostics prefixes each diagnostic's Kind with "base_",

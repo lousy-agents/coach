@@ -15,12 +15,18 @@ import (
 )
 
 func verdictLine(text string) string {
-	idx := strings.Index(text, "No active CodeSignal findings")
-	ExpectWithOffset(1, idx).To(BeNumerically(">=", 0), "expected a rendered verdict line in: %s", text)
-	rest := text[idx:]
-	end := strings.IndexByte(rest, '\n')
-	ExpectWithOffset(1, end).To(BeNumerically(">=", 0))
-	return rest[:end+1]
+	for _, prefix := range []string{"No active CodeSignal findings", "Complete scan found"} {
+		idx := strings.Index(text, prefix)
+		if idx < 0 {
+			continue
+		}
+		rest := text[idx:]
+		end := strings.IndexByte(rest, '\n')
+		ExpectWithOffset(1, end).To(BeNumerically(">=", 0))
+		return rest[:end+1]
+	}
+	ExpectWithOffset(1, -1).To(BeNumerically(">=", 0), "expected a rendered verdict line in: %s", text)
+	return ""
 }
 
 // oversizedGoModuleFilePaddingBytes exceeds maxSnapshotFileBytes (the 32 MiB
@@ -39,7 +45,7 @@ func oversizedGoModuleFile() string {
 	return goModuleFile + strings.Repeat("x", oversizedGoModuleFilePaddingBytes)
 }
 
-func expectIncompleteVerdictDiscrimination(cleanRepo, incompleteRepo, exitCodeReason, cause string, extraArgs ...string) (cleanReport, incompleteReport *codesignal.Report) {
+func expectIncompleteVerdictDiscrimination(cleanRepo, incompleteRepo, exitCodeReason, cause, expectedCleanVerdict string, extraArgs ...string) (cleanReport, incompleteReport *codesignal.Report) {
 	runBoth := func(repo, format string) ([]byte, []byte, int) {
 		args := append(append([]string{"--project-config", "project.json"}, extraArgs...), format)
 		return runCoachCodesignalBaselineRaw(repo, args...)
@@ -67,7 +73,7 @@ func expectIncompleteVerdictDiscrimination(cleanRepo, incompleteRepo, exitCodeRe
 	incompleteVerdict := verdictLine(string(incompleteTextOut))
 
 	ExpectWithOffset(1, incompleteVerdict).NotTo(Equal(cleanVerdict), "a user reading either rendered report must see different verdict text for a genuinely clean run versus one with a real unreported violation")
-	ExpectWithOffset(1, cleanVerdict).To(Equal("No active CodeSignal findings.\n"))
+	ExpectWithOffset(1, cleanVerdict).To(Equal(expectedCleanVerdict))
 	ExpectWithOffset(1, incompleteVerdict).To(Equal("No active CodeSignal findings, but the analysis is incomplete: project analysis did not complete.\n"))
 
 	verdictIdx := strings.Index(string(incompleteTextOut), "incomplete")
@@ -118,6 +124,7 @@ var _ = Describe("coach codesignal rendered verdict, negative control: incomplet
 			expectIncompleteVerdictDiscrimination(cleanRepo, incompleteRepo,
 				"this backend intentionally keeps exit 0 for a degraded-but-nonfatal compiler startup failure; exit status alone cannot discriminate these two runs",
 				"the native package present and version-equal but unloadable",
+				"Complete scan found no configured covered match.\n",
 				"--project-language", "typescript")
 		})
 	})
@@ -139,7 +146,8 @@ var _ = Describe("coach codesignal rendered verdict, negative control: incomplet
 
 			_, incompleteReport := expectIncompleteVerdictDiscrimination(cleanRepo, incompleteRepo,
 				"discoverGoProject reports the unreadable go.mod through Coverage/Diagnostics rather than a hard error; exit status alone cannot discriminate these two runs",
-				"the unreadable go.mod")
+				"the unreadable go.mod",
+				"No active CodeSignal findings.\n")
 
 			foundRootUnavailable := false
 			for _, diag := range incompleteReport.ProjectCoverage.Diagnostics {

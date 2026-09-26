@@ -93,7 +93,7 @@ func interruptibleContext() (context.Context, context.CancelFunc) {
 }
 
 func runCodesignalScan(dir string, f codesignalFlags, stdout, stderr *os.File, budget scanOfferBudget) int {
-	report, projectExitCode, err := runOneScan(dir, f, stderr)
+	report, err := runOneScan(dir, f, stderr)
 	if err != nil {
 		noInteractive := nonInteractiveRequested(f)
 		if scanShouldAuthorProjectConfig(err, f.projectLanguage, f.projectConfig, noInteractive) {
@@ -107,10 +107,10 @@ func runCodesignalScan(dir string, f codesignalFlags, stdout, stderr *os.File, b
 	if result := runOptionalScanPreparation(dir, f, stdout, stderr); !shouldRenderAfterOptionalPreparation(result) {
 		return 2
 	}
-	return renderScanResult(report, projectExitCode, f.format, stdout, stderr)
+	return renderScanResult(report, f.failOnIncompleteCoverage, f.format, stdout, stderr)
 }
 
-func runOneScan(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, int, error) {
+func runOneScan(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, error) {
 	if f.baseline {
 		return runBaselineAnalysis(dir, f, stderr)
 	}
@@ -130,17 +130,17 @@ func wrapScanAnalysisError(err error, dir, revision, configPath string, stderr *
 	return nil
 }
 
-func renderScanResult(report *codesignal.Report, projectExitCode int, format string, stdout, stderr *os.File) int {
+func renderScanResult(report *codesignal.Report, failOnIncompleteCoverage bool, format string, stdout, stderr *os.File) int {
 	if report == nil {
-		if projectExitCode != 0 {
-			return projectExitCode
-		}
 		return 1
 	}
 	if exitCode := renderReport(report, format, stdout, stderr); exitCode != 0 {
 		return exitCode
 	}
-	return projectExitCode
+	if failOnIncompleteCoverage && codesignal.RequiredCoverageIncomplete(report) {
+		return 3
+	}
+	return 0
 }
 
 // withheldSetupChoicesLine renders AvailableSetupChoices' own reasons for
@@ -283,8 +283,8 @@ func shouldContinueAfterSetup(result codesignalcli.CompilerSetupOfferResult) boo
 	return result.Succeeded && result.PostInstallReadiness != nil && readinessAllowsScan(result.PostInstallReadiness.Status)
 }
 
-// classifyAnalysisError never sees a project_backend_unavailable (exit 3)
-// error -- prepareProjectAnalysis handles that case separately by returning
+// classifyAnalysisError never sees a project_backend_unavailable error --
+// prepareProjectAnalysis handles that case separately by returning
 // a diagnostic instead of an error. The base ProjectConfigError message
 // stays unconditional on --project-language: loadProjectConfig runs before
 // resolveProjectBackend and never receives --project-language (see

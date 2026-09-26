@@ -426,6 +426,15 @@ var frozenReportJSONFieldNames = map[string]struct{}{
 	"start_byte": {}, "end_byte": {}, "start_row": {}, "start_col": {}, "end_row": {}, "end_col": {},
 	"phase": {}, "complete": {}, "counts": {}, "budgets": {},
 	"code": {},
+
+	"project_provenance": {}, "project_scope": {}, "project_next_actions": {},
+	"selected_roots": {}, "analyzer": {}, "runtime": {}, "package_manager": {}, "head": {},
+	"version": {}, "digest": {}, "protocol_version": {},
+	"origin": {}, "compiler_version": {}, "compiler_origin": {}, "declared_version": {},
+	"model": {}, "bypass": {}, "reachability": {},
+	"inclusion_rule": {}, "pattern_set": {},
+	"roots": {}, "matched_layers": {}, "unmatched_layers": {},
+	"root": {}, "candidate_files": {}, "analyzed_files": {},
 }
 
 // TestFrozenSchema_FieldNames locks Report's JSON field names (across every

@@ -19,6 +19,10 @@ type Report struct {
 	ProjectFacts    []ProjectFact          `json:"project_facts"`
 	ProjectSummary  *ProjectSummary        `json:"project_summary"`
 	ProjectCoverage *projectmodel.Coverage `json:"project_coverage"`
+
+	ProjectProvenance  *ProjectProvenance  `json:"project_provenance,omitempty"`
+	ProjectScope       *ProjectScopeReport `json:"project_scope,omitempty"`
+	ProjectNextActions []ProjectNextAction `json:"project_next_actions,omitempty"`
 }
 
 type reportWireV1 struct {
@@ -36,6 +40,10 @@ type reportWireV2 struct {
 	ProjectFacts    []ProjectFact          `json:"project_facts"`
 	ProjectSummary  *ProjectSummary        `json:"project_summary"`
 	ProjectCoverage *projectmodel.Coverage `json:"project_coverage"`
+
+	ProjectProvenance  *ProjectProvenance  `json:"project_provenance,omitempty"`
+	ProjectScope       *ProjectScopeReport `json:"project_scope,omitempty"`
+	ProjectNextActions []ProjectNextAction `json:"project_next_actions,omitempty"`
 }
 
 func (r Report) MarshalJSON() ([]byte, error) {
@@ -60,12 +68,35 @@ func (r Report) MarshalJSON() ([]byte, error) {
 		projectSummary = &ProjectSummary{}
 	}
 	return json.Marshal(reportWireV2{
-		reportWireV1:    base,
-		ProjectChanges:  nonNilSlice(r.ProjectChanges),
-		ProjectFacts:    nonNilSlice(r.ProjectFacts),
-		ProjectSummary:  projectSummary,
-		ProjectCoverage: projectCoverage,
+		reportWireV1:       base,
+		ProjectChanges:     nonNilSlice(r.ProjectChanges),
+		ProjectFacts:       nonNilSlice(r.ProjectFacts),
+		ProjectSummary:     projectSummary,
+		ProjectCoverage:    projectCoverage,
+		ProjectProvenance:  normalizeProvenance(r.ProjectProvenance),
+		ProjectScope:       normalizeScope(r.ProjectScope),
+		ProjectNextActions: r.ProjectNextActions,
 	})
+}
+
+func normalizeScope(s *ProjectScopeReport) *ProjectScopeReport {
+	if s == nil {
+		return nil
+	}
+	cp := *s
+	cp.Head = normalizeRevisionReport(cp.Head)
+	if cp.Base != nil {
+		base := normalizeRevisionReport(*cp.Base)
+		cp.Base = &base
+	}
+	return &cp
+}
+
+func normalizeRevisionReport(r ProjectScopeRevisionReport) ProjectScopeRevisionReport {
+	r.Roots = nonNilSlice(r.Roots)
+	r.MatchedLayers = nonNilSlice(r.MatchedLayers)
+	r.UnmatchedLayers = nonNilSlice(r.UnmatchedLayers)
+	return r
 }
 
 func nonNilSlice[T any](in []T) []T {

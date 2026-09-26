@@ -161,29 +161,76 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 			expectedKeys = reportJSONTagNames(reflect.TypeOf(codesignal.Report{}))
 		})
 
-		It("keeps schema_version \"2\"'s marshalled key set in sync with every one of Report's own json tags", func() {
-			schema2 := codesignal.Report{SchemaVersion: "2"}
-			Expect(rawReportKeys(&schema2)).To(ConsistOf(expectedKeys))
-		})
+		// project_* keys that schema-1 never emits:
+		// - project_changes/facts/summary/coverage: schema-2 always-present keys
+		// - project_provenance/scope/project_next_actions: schema-2 optional (omitempty); nil in an empty report
+		schema1ExcludedKeys := []string{
+			"project_changes", "project_facts", "project_summary", "project_coverage",
+			"project_provenance", "project_scope", "project_next_actions",
+		}
 
-		It("keeps schema_version \"1\"'s marshalled key set in sync with Report's own json tags minus the four project_* keys", func() {
-			projectKeys := []string{"project_changes", "project_facts", "project_summary", "project_coverage"}
-			expectedSchema1Keys := make([]string, 0, len(expectedKeys))
+		// optional project keys that schema-2 omits when nil/empty (omitempty)
+		schema2OptionalKeys := []string{
+			"project_provenance", "project_scope", "project_next_actions",
+		}
+
+		It("keeps schema_version \"2\"'s marshalled key set in sync with Report's own json tags minus the omitempty-optional project keys", func() {
+			expectedSchema2Keys := make([]string, 0, len(expectedKeys))
 			for _, name := range expectedKeys {
-				isProjectKey := false
-				for _, p := range projectKeys {
+				isOptional := false
+				for _, p := range schema2OptionalKeys {
 					if name == p {
-						isProjectKey = true
+						isOptional = true
 						break
 					}
 				}
-				if !isProjectKey {
+				if !isOptional {
+					expectedSchema2Keys = append(expectedSchema2Keys, name)
+				}
+			}
+
+			schema2 := codesignal.Report{SchemaVersion: "2"}
+			Expect(rawReportKeys(&schema2)).To(ConsistOf(expectedSchema2Keys))
+		})
+
+		It("keeps schema_version \"1\"'s marshalled key set in sync with Report's own json tags minus the project_* keys", func() {
+			expectedSchema1Keys := make([]string, 0, len(expectedKeys))
+			for _, name := range expectedKeys {
+				isExcluded := false
+				for _, p := range schema1ExcludedKeys {
+					if name == p {
+						isExcluded = true
+						break
+					}
+				}
+				if !isExcluded {
 					expectedSchema1Keys = append(expectedSchema1Keys, name)
 				}
 			}
 
 			schema1 := codesignal.Report{SchemaVersion: "1"}
 			Expect(rawReportKeys(&schema1)).To(ConsistOf(expectedSchema1Keys))
+		})
+
+		It("excludes project_provenance, project_scope, and project_next_actions from schema-1 output even when all three are populated", func() {
+			report := &codesignal.Report{
+				SchemaVersion: "1",
+				ProjectProvenance: &codesignal.ProjectProvenance{
+					Language: "typescript",
+				},
+				ProjectScope: &codesignal.ProjectScopeReport{
+					InclusionRule: "x",
+					PatternSet:    "y",
+					Head: codesignal.ProjectScopeRevisionReport{
+						Revision: "H",
+					},
+				},
+				ProjectNextActions: []codesignal.ProjectNextAction{{Kind: "review_policy_coverage"}},
+			}
+			fields := rawReportFields(report)
+			Expect(fields).NotTo(HaveKey("project_provenance"))
+			Expect(fields).NotTo(HaveKey("project_scope"))
+			Expect(fields).NotTo(HaveKey("project_next_actions"))
 		})
 	})
 

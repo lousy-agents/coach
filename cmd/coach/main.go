@@ -68,23 +68,24 @@ commands:
 
 run "coach codesignal --help" for command-specific help.`
 
-const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>] [--no-interactive]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]\n   or: coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>] [--no-interactive]"
+const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive] [--fail-on-incomplete-coverage]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>] [--no-interactive]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]\n   or: coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>] [--no-interactive]"
 
 type codesignalFlags struct {
-	base                 string
-	baseline             bool
-	format               string
-	scope                string
-	buildTarget          string
-	projectConfig        string
-	projectLanguage      string
-	projectConfigSet     bool
-	suggestProjectConfig bool
-	output               string
-	outputSet            bool
-	checkProject         bool
-	prepareCompiler      bool
-	noInteractive        bool
+	base                     string
+	baseline                 bool
+	format                   string
+	scope                    string
+	buildTarget              string
+	projectConfig            string
+	projectLanguage          string
+	projectConfigSet         bool
+	suggestProjectConfig     bool
+	output                   string
+	outputSet                bool
+	checkProject             bool
+	prepareCompiler          bool
+	noInteractive            bool
+	failOnIncompleteCoverage bool
 }
 
 func runCodesignal(args []string, stdout, stderr *os.File) int {
@@ -189,34 +190,36 @@ func writeSuggestInvalidArguments(stderr *os.File, message string) {
 }
 
 type codesignalFlagHolders struct {
-	base                 *string
-	baseline             *bool
-	format               *string
-	scope                *string
-	buildTarget          *string
-	projectConfig        *string
-	projectLanguage      *string
-	suggestProjectConfig *countingBoolFlag
-	output               *countingStringFlag
-	checkProject         *countingBoolFlag
-	prepareCompiler      *countingBoolFlag
-	noInteractive        *bool
+	base                     *string
+	baseline                 *bool
+	format                   *string
+	scope                    *string
+	buildTarget              *string
+	projectConfig            *string
+	projectLanguage          *string
+	suggestProjectConfig     *countingBoolFlag
+	output                   *countingStringFlag
+	checkProject             *countingBoolFlag
+	prepareCompiler          *countingBoolFlag
+	noInteractive            *bool
+	failOnIncompleteCoverage *bool
 }
 
 func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 	h := codesignalFlagHolders{
-		base:                 flags.String("base", "", "git ref to diff against (mutually exclusive with --baseline)"),
-		baseline:             flags.Bool("baseline", false, "scan every tracked file at HEAD instead of diffing against --base"),
-		format:               flags.String("format", "text", "output format: text or json"),
-		scope:                flags.String("scope", "production", "source scope: production or all"),
-		buildTarget:          flags.String("build-target", "", "Go package pattern used to determine production reachability"),
-		projectConfig:        flags.String("project-config", "", "repository-relative path to a project-analysis config at the selected revision; enables opt-in cross-module project facts"),
-		projectLanguage:      flags.String("project-language", "go", "project-analysis language: go or typescript"),
-		suggestProjectConfig: &countingBoolFlag{},
-		output:               &countingStringFlag{},
-		checkProject:         &countingBoolFlag{},
-		prepareCompiler:      &countingBoolFlag{},
-		noInteractive:        flags.Bool("no-interactive", false, "treat this invocation as non-interactive even if a controlling terminal is attached: a scan's interactive compiler-setup and guided-policy-authoring offers are skipped in favor of the plain message-only remediation a piped invocation gets, and --suggest-project-config/--prepare-compiler refuse instead of prompting (also honored via a non-empty CI environment variable)"),
+		base:                     flags.String("base", "", "git ref to diff against (mutually exclusive with --baseline)"),
+		baseline:                 flags.Bool("baseline", false, "scan every tracked file at HEAD instead of diffing against --base"),
+		format:                   flags.String("format", "text", "output format: text or json"),
+		scope:                    flags.String("scope", "production", "source scope: production or all"),
+		buildTarget:              flags.String("build-target", "", "Go package pattern used to determine production reachability"),
+		projectConfig:            flags.String("project-config", "", "repository-relative path to a project-analysis config at the selected revision; enables opt-in cross-module project facts"),
+		projectLanguage:          flags.String("project-language", "go", "project-analysis language: go or typescript"),
+		suggestProjectConfig:     &countingBoolFlag{},
+		output:                   &countingStringFlag{},
+		checkProject:             &countingBoolFlag{},
+		prepareCompiler:          &countingBoolFlag{},
+		noInteractive:            flags.Bool("no-interactive", false, "treat this invocation as non-interactive even if a controlling terminal is attached: a scan's interactive compiler-setup and guided-policy-authoring offers are skipped in favor of the plain message-only remediation a piped invocation gets, and --suggest-project-config/--prepare-compiler refuse instead of prompting (also honored via a non-empty CI environment variable)"),
+		failOnIncompleteCoverage: flags.Bool("fail-on-incomplete-coverage", false, "exit 3 when required project coverage (model or bypass, on any analyzed side) is incomplete; the report is still written to stdout"),
 	}
 	flags.Var(h.suggestProjectConfig, "suggest-project-config", "generate a project-config candidate JSON from Go module/workspace discovery at HEAD (requires --baseline; human-reviewed candidate only, never auto-applied); combined with --project-language typescript, runs an interactive guided-authoring session over discovered TypeScript roots instead of emitting a Go candidate directly")
 	flags.Var(h.output, "output", "write the --suggest-project-config candidate to this repository-relative path instead of stdout (create-only)")
@@ -247,20 +250,21 @@ func handleCodesignalHelp(args []string, flags *flag.FlagSet, suggestRequested b
 
 func codesignalFlagsFromHolders(h codesignalFlagHolders, setFlags map[string]bool) codesignalFlags {
 	return codesignalFlags{
-		base:                 *h.base,
-		baseline:             *h.baseline,
-		format:               *h.format,
-		scope:                *h.scope,
-		buildTarget:          *h.buildTarget,
-		projectConfig:        *h.projectConfig,
-		projectLanguage:      *h.projectLanguage,
-		projectConfigSet:     setFlags["project-config"],
-		suggestProjectConfig: h.suggestProjectConfig.value,
-		output:               h.output.value,
-		outputSet:            setFlags["output"],
-		checkProject:         h.checkProject.value,
-		prepareCompiler:      h.prepareCompiler.value,
-		noInteractive:        *h.noInteractive,
+		base:                     *h.base,
+		baseline:                 *h.baseline,
+		format:                   *h.format,
+		scope:                    *h.scope,
+		buildTarget:              *h.buildTarget,
+		projectConfig:            *h.projectConfig,
+		projectLanguage:          *h.projectLanguage,
+		projectConfigSet:         setFlags["project-config"],
+		suggestProjectConfig:     h.suggestProjectConfig.value,
+		output:                   h.output.value,
+		outputSet:                setFlags["output"],
+		checkProject:             h.checkProject.value,
+		prepareCompiler:          h.prepareCompiler.value,
+		noInteractive:            *h.noInteractive,
+		failOnIncompleteCoverage: *h.failOnIncompleteCoverage,
 	}
 }
 
@@ -506,56 +510,56 @@ func validateCodesignalFlags(f codesignalFlags) string {
 	return ""
 }
 
-func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, int, error) {
+func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, error) {
 	revisionSHA, err := codesignalcli.ResolveBaselineRevision(dir)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	discovered, coverage, err := codesignalcli.DiscoverTrackedFiles(dir, revisionSHA)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	kept, excluded, err := codesignalcli.ApplyBaselineSourceScope(dir, revisionSHA, f.buildTarget, f.scope, discovered)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	coverage.Excluded = excluded
 
-	project, diag, projectExitCode, opErr := prepareProjectAnalysis(dir, revisionSHA, f.projectConfigSet, f.projectConfig, f.projectLanguage)
+	project, diag, opErr := prepareProjectAnalysis(dir, revisionSHA, f.projectConfigSet, f.projectConfig, f.projectLanguage)
 	if opErr != nil {
-		return nil, 0, opErr
+		return nil, opErr
 	}
 	report, err := codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, nil, f.scope, coverage, project)
 	if err != nil {
-		return nil, 0, wrapScanAnalysisError(err, dir, revisionSHA, f.projectConfig, stderr)
+		return nil, wrapScanAnalysisError(err, dir, revisionSHA, f.projectConfig, stderr)
 	}
-	return withProjectDiagnostic(report, diag), projectExitCode, nil
+	return withProjectDiagnostic(report, diag), nil
 }
 
-func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, int, error) {
+func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, error) {
 	headSHA, mergeBaseSHA, err := codesignalcli.ResolveRevisions(dir, f.base)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	selected, diagnostics, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	selected, excluded, err := codesignalcli.ApplySourceScope(dir, headSHA, f.buildTarget, f.scope, selected)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	project, diag, projectExitCode, opErr := prepareProjectAnalysis(dir, headSHA, f.projectConfigSet, f.projectConfig, f.projectLanguage)
+	project, diag, opErr := prepareProjectAnalysis(dir, headSHA, f.projectConfigSet, f.projectConfig, f.projectLanguage)
 	if opErr != nil {
-		return nil, 0, opErr
+		return nil, opErr
 	}
 	report, err := codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, f.scope, excluded, project)
 	if err != nil {
-		return nil, 0, wrapScanAnalysisError(err, dir, headSHA, f.projectConfig, stderr)
+		return nil, wrapScanAnalysisError(err, dir, headSHA, f.projectConfig, stderr)
 	}
-	return withProjectDiagnostic(report, diag), projectExitCode, nil
+	return withProjectDiagnostic(report, diag), nil
 }
 
 func withProjectDiagnostic(report *codesignal.Report, diag *codesignal.Diagnostic) *codesignal.Report {
@@ -568,27 +572,27 @@ func withProjectDiagnostic(report *codesignal.Report, diag *codesignal.Diagnosti
 	return &out
 }
 
-func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configPath, language string) (*codesignalcli.ProjectAnalysis, *codesignal.Diagnostic, int, error) {
+func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configPath, language string) (*codesignalcli.ProjectAnalysis, *codesignal.Diagnostic, error) {
 	if !projectConfigSet {
-		return nil, nil, 0, nil
+		return nil, nil, nil
 	}
 	config, err := loadProjectConfig(dir, revision, configPath)
 	if err != nil {
 		if language == "typescript" {
 			err = codesignalcli.WrapProjectConfigErrorWithReadiness(err, dir, revision, configPath)
 		}
-		return nil, nil, 0, err
+		return nil, nil, err
 	}
 	if err := resolveProjectBackend(language); err != nil {
 		var backendErr *codesignalcli.ProjectBackendUnavailableError
 		if !errors.As(err, &backendErr) {
-			return nil, nil, 0, err
+			return nil, nil, err
 		}
 		return nil, &codesignal.Diagnostic{
 			Kind:    "project_backend_unavailable",
 			Path:    configPath,
 			Message: backendErr.Message,
-		}, 3, nil
+		}, nil
 	}
 	backend := lookupProjectBackend(language)
 	if backend == nil {
@@ -596,7 +600,7 @@ func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configP
 			Kind:    "project_backend_unavailable",
 			Path:    configPath,
 			Message: fmt.Sprintf("coach codesignal: no project-analysis backend is available for language %q yet (project_backend_unavailable)", language),
-		}, 3, nil
+		}, nil
 	}
 	return &codesignalcli.ProjectAnalysis{
 		ConfigPath:   configPath,
@@ -604,7 +608,7 @@ func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configP
 		Config:       append(json.RawMessage(nil), config...),
 		ConfigDigest: codesignalcli.ConfigDigest(config),
 		Backend:      backend,
-	}, nil, 0, nil
+	}, nil, nil
 }
 
 func renderReport(report *codesignal.Report, format string, stdout, stderr *os.File) int {
