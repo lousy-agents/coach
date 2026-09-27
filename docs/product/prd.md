@@ -252,7 +252,7 @@ Status uses the evidence rule in the cutoff section.
 
 ## 10. Open bets and parked work
 
-Stay in pilot while [#282](https://github.com/lousy-agents/coach/issues/282) remains open. Closed children of that epic do not end the pilot by themselves. Re-run the affected evaluation claim against current `HEAD` before any leave-pilot decision.
+Stay in pilot until every statement in section 12 is true. [#282](https://github.com/lousy-agents/coach/issues/282) tracks the gaps. Its state is not the gate.
 
 Known remaining risks from the evaluation and the epic:
 
@@ -288,7 +288,7 @@ Do not treat this table as a substitute for customer evidence. Each row is a tes
 
 ## 12. Release criteria for leaving pilot
 
-The governing leave-pilot rule is owner decision 4: the living evaluation's restamp against `HEAD`. Stay in pilot until a named audience can be told an honest job on a fresh CLI corpus. Closed children of [#282](https://github.com/lousy-agents/coach/issues/282) do not end the pilot. GitHub `CLOSED` is not the gate.
+Owner decision, 26 September 2026: the living evaluation's restamp against `HEAD` governs leaving pilot. Stay in pilot until a named audience can be told an honest job on a fresh CLI corpus. Closed children of [#282](https://github.com/lousy-agents/coach/issues/282) do not end the pilot. GitHub `CLOSED` is not the gate.
 
 Leave pilot only when all of these statements are true:
 
