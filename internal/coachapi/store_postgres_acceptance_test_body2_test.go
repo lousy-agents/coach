@@ -282,7 +282,7 @@ func body_storePostgresAcceptanceTest_coachapiPostgresStore_96() {
 	// Reviewer finding #1: fenced inserts must not succeed if ClaimJob reclaim
 	// commits between the fence check and the INSERT (TOCTOU).
 	When("InsertFindings holds an open fenced insert transaction and another connection reclaims the job", func() {
-		It("returns ErrClaimLost and does not persist the zombie worker's findings", (&sigbodystorePostgresAcceptanceTestcoachapiPostgresStore96617{ctx: ctx, store: store}).call) // Completing as B with no findings must yield an empty report —
+		It("returns ErrClaimLost and does not persist the zombie worker's findings", (&sigbodystorePostgresAcceptanceTestcoachapiPostgresStore96617{ctx: &ctx, store: &store}).call) // Completing as B with no findings must yield an empty report —
 		// the zombie row must not have been committed.
 
 	})

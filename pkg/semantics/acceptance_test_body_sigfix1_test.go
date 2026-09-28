@@ -7,18 +7,18 @@ import (
 )
 
 type sigbodyacceptanceTestwhenSourceContainsEveryGoImportFormAC31 struct {
-	result *semantics.
-		Result
+	result **semantics.Result
 }
 
 func (sigRecv *sigbodyacceptanceTestwhenSourceContainsEveryGoImportFormAC31) call(wantPath, wantAlias string) {
+	res := *sigRecv.result
 	var found *semantics.ImportFeature
-	for i := range sigRecv.result.Imports {
-		if sigRecv.result.Imports[i].Path == wantPath {
-			found = &sigRecv.result.Imports[i]
+	for i := range res.Imports {
+		if res.Imports[i].Path == wantPath {
+			found = &res.Imports[i]
 			break
 		}
 	}
-	Expect(found).NotTo(BeNil(), "expected an import with path %q, got %+v", wantPath, sigRecv.result.Imports)
+	Expect(found).NotTo(BeNil(), "expected an import with path %q, got %+v", wantPath, res.Imports)
 	Expect(found.Alias).To(Equal(wantAlias))
 }

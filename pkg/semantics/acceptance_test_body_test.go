@@ -137,7 +137,7 @@ func F() {}
 `)
 	})
 
-	DescribeTable("extracts the import's path and alias", (&sigbodyacceptanceTestwhenSourceContainsEveryGoImportFormAC31{result: result}).call, Entry("plain single-quoted import", "fmt", ""),
+	DescribeTable("extracts the import's path and alias", (&sigbodyacceptanceTestwhenSourceContainsEveryGoImportFormAC31{result: &result}).call, Entry("plain single-quoted import", "fmt", ""),
 		Entry("aliased import", "os", "o"),
 		Entry("dot import", "strings", "."),
 		Entry("blank import", "unicode", "_"),
