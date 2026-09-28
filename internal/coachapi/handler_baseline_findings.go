@@ -1,8 +1,6 @@
 package coachapi
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 
@@ -85,29 +83,6 @@ func findingsFromCodeSignalReport(report *codesignal.Report) []JobFinding {
 	return out
 }
 
-func diagnosticsFromCodeSignal(report *codesignal.Report) []JobDiagnostic {
-	if report == nil || len(report.Diagnostics) == 0 {
-		return nil
-	}
-	out := make([]JobDiagnostic, 0, len(report.Diagnostics))
-	for _, d := range report.Diagnostics {
-		scope := "codesignal"
-		if d.Kind != "" {
-			scope = "codesignal:" + d.Kind
-		}
-		msg := d.Message
-		if d.Path != "" {
-			msg = d.Path + ": " + msg
-		}
-		out = append(out, JobDiagnostic{
-			ID:      watermill.NewUUID(),
-			Scope:   scope,
-			Message: msg,
-		})
-	}
-	return out
-}
-
 func seedRubricVersions() map[string]string {
 	seed := rubrics.Seed()
 	out := make(map[string]string, len(seed))
@@ -115,15 +90,4 @@ func seedRubricVersions() map[string]string {
 		out[def.ID] = def.Version
 	}
 	return out
-}
-
-func stablePayloadHash(parts ...string) string {
-	h := sha256.New()
-	for i, p := range parts {
-		if i > 0 {
-			_, _ = h.Write([]byte{0})
-		}
-		_, _ = h.Write([]byte(p))
-	}
-	return hex.EncodeToString(h.Sum(nil))
 }

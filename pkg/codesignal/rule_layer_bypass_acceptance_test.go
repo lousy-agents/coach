@@ -5,7 +5,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -26,23 +26,23 @@ const (
 // layerBypassWitness builds a synthetic LayerBypassWitness the way
 // BuildGoLayerBypass would (see pkg/projectmodel/go_layer_bypass.go), without
 // needing real Go source: Task A already proved the evaluator itself.
-func layerBypassWitness(source, sink, requiredLayer string, path []string) projectmodel.LayerBypassWitness {
-	steps := make([]projectmodel.LayerBypassStep, len(path))
+func layerBypassWitness(source, sink, requiredLayer string, path []string) domain.LayerBypassWitness {
+	steps := make([]domain.LayerBypassStep, len(path))
 	for i, nodeID := range path {
-		steps[i] = projectmodel.LayerBypassStep{NodeID: nodeID}
+		steps[i] = domain.LayerBypassStep{NodeID: nodeID}
 	}
 	if len(steps) > 0 {
 		steps[0].Path = layerBypassSourcePath
 		steps[0].Line = layerBypassSourceLine
 	}
-	return projectmodel.LayerBypassWitness{
-		ID:               "bypass:" + requiredLayer + ":" + source + "->" + sink + "@" + projectmodel.LayerBypassAlgorithm,
+	return domain.LayerBypassWitness{
+		ID:               "bypass:" + requiredLayer + ":" + source + "->" + sink + "@" + domain.LayerBypassAlgorithm,
 		Source:           source,
 		Sink:             sink,
 		RequiredLayer:    requiredLayer,
 		Path:             steps,
-		Confidence:       projectmodel.LayerBypassConfidenceHigh,
-		AlgorithmVersion: projectmodel.LayerBypassAlgorithm,
+		Confidence:       domain.LayerBypassConfidenceHigh,
+		AlgorithmVersion: domain.LayerBypassAlgorithm,
 	}
 }
 
@@ -52,29 +52,29 @@ func layerBypassWitness(source, sink, requiredLayer string, path []string) proje
 // they opt into "search completed" explicitly rather than relying on
 // Coverage's own zero value (Complete: false), which would otherwise trip
 // the project_layer_bypass_coverage_incomplete diagnostic on every spec.
-func layerBypassResult(witnesses ...projectmodel.LayerBypassWitness) projectmodel.LayerBypassResult {
-	return projectmodel.LayerBypassResult{
+func layerBypassResult(witnesses ...domain.LayerBypassWitness) domain.LayerBypassResult {
+	return domain.LayerBypassResult{
 		Witnesses: witnesses,
-		Algorithm: projectmodel.LayerBypassAlgorithm,
-		Coverage:  projectmodel.Coverage{Phase: "go_layer_bypass", Complete: true},
+		Algorithm: domain.LayerBypassAlgorithm,
+		Coverage:  domain.Coverage{Phase: "go_layer_bypass", Complete: true},
 	}
 }
 
 var _ = Describe("EvaluateGoLayerBypass", func() {
 	When("a single high-confidence witness is supplied", func() {
 		It("emits exactly one architecture.layer_bypass ProjectChange anchored on the witness's real source position", func() {
-			witness := projectmodel.LayerBypassWitness{
-				ID:            "bypass:service:example.com/app/handlers.Handler->(*database/sql.DB).Query@" + projectmodel.LayerBypassAlgorithm,
+			witness := domain.LayerBypassWitness{
+				ID:            "bypass:service:example.com/app/handlers.Handler->(*database/sql.DB).Query@" + domain.LayerBypassAlgorithm,
 				Source:        "example.com/app/handlers.Handler",
 				Sink:          "(*database/sql.DB).Query",
 				RequiredLayer: "service",
-				Path: []projectmodel.LayerBypassStep{
+				Path: []domain.LayerBypassStep{
 					{NodeID: "example.com/app/handlers.Handler", Path: "pkg/handlers/handlers.go", Line: 3},
 					{NodeID: "example.com/app/direct.Query", Path: "pkg/direct/direct.go", Line: 10},
 					{NodeID: "(*database/sql.DB).Query"},
 				},
-				Confidence:       projectmodel.LayerBypassConfidenceHigh,
-				AlgorithmVersion: projectmodel.LayerBypassAlgorithm,
+				Confidence:       domain.LayerBypassConfidenceHigh,
+				AlgorithmVersion: domain.LayerBypassAlgorithm,
 			}
 			result := layerBypassResult(witness)
 
@@ -92,7 +92,7 @@ var _ = Describe("EvaluateGoLayerBypass", func() {
 			Expect(change.RuleVersion).To(Equal("1"))
 			Expect(change.BackendVersion).To(Equal("backend-1"))
 			Expect(change.ConfigDigest).To(Equal("digest-1"))
-			Expect(change.AlgorithmVersion).To(Equal(projectmodel.LayerBypassAlgorithm))
+			Expect(change.AlgorithmVersion).To(Equal(domain.LayerBypassAlgorithm))
 			Expect(change.SemanticKey).To(Equal(
 				"architecture.layer_bypass:service:example.com/app/handlers.Handler->(*database/sql.DB).Query",
 			))
@@ -143,18 +143,18 @@ var _ = Describe("EvaluateGoLayerBypass", func() {
 
 	When("the source step's position is unresolvable but a later step's is not", func() {
 		It("anchors on the first path step with a resolvable position instead of fabricating one", func() {
-			witness := projectmodel.LayerBypassWitness{
-				ID:            "bypass:service:example.com/app/handlers.Handler->(*database/sql.DB).Query@" + projectmodel.LayerBypassAlgorithm,
+			witness := domain.LayerBypassWitness{
+				ID:            "bypass:service:example.com/app/handlers.Handler->(*database/sql.DB).Query@" + domain.LayerBypassAlgorithm,
 				Source:        "example.com/app/handlers.Handler",
 				Sink:          "(*database/sql.DB).Query",
 				RequiredLayer: "service",
-				Path: []projectmodel.LayerBypassStep{
+				Path: []domain.LayerBypassStep{
 					{NodeID: "example.com/app/handlers.Handler"}, // unresolvable, e.g. a synthetic wrapper
 					{NodeID: "example.com/app/direct.Query", Path: "pkg/direct/direct.go", Line: 10},
 					{NodeID: "(*database/sql.DB).Query"},
 				},
-				Confidence:       projectmodel.LayerBypassConfidenceHigh,
-				AlgorithmVersion: projectmodel.LayerBypassAlgorithm,
+				Confidence:       domain.LayerBypassConfidenceHigh,
+				AlgorithmVersion: domain.LayerBypassAlgorithm,
 			}
 
 			changes, diagnostics := codesignal.EvaluateGoLayerBypass(layerBypassResult(witness), "1", "backend-1", "digest-1")
@@ -170,17 +170,17 @@ var _ = Describe("EvaluateGoLayerBypass", func() {
 
 	When("no path step has a resolvable position", func() {
 		It("leaves PrimaryAnchor empty rather than fabricating one, so Build's shared anchorless filter drops the change", func() {
-			witness := projectmodel.LayerBypassWitness{
-				ID:            "bypass:service:example.com/app/handlers.Handler->(*database/sql.DB).Query@" + projectmodel.LayerBypassAlgorithm,
+			witness := domain.LayerBypassWitness{
+				ID:            "bypass:service:example.com/app/handlers.Handler->(*database/sql.DB).Query@" + domain.LayerBypassAlgorithm,
 				Source:        "example.com/app/handlers.Handler",
 				Sink:          "(*database/sql.DB).Query",
 				RequiredLayer: "service",
-				Path: []projectmodel.LayerBypassStep{
+				Path: []domain.LayerBypassStep{
 					{NodeID: "example.com/app/handlers.Handler"},
 					{NodeID: "(*database/sql.DB).Query"},
 				},
-				Confidence:       projectmodel.LayerBypassConfidenceHigh,
-				AlgorithmVersion: projectmodel.LayerBypassAlgorithm,
+				Confidence:       domain.LayerBypassConfidenceHigh,
+				AlgorithmVersion: domain.LayerBypassAlgorithm,
 			}
 
 			changes, diagnostics := codesignal.EvaluateGoLayerBypass(layerBypassResult(witness), "1", "backend-1", "digest-1")
@@ -190,7 +190,7 @@ var _ = Describe("EvaluateGoLayerBypass", func() {
 
 			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 				ProjectChanges:  changes,
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 
 			Expect(report.ProjectChanges).To(BeEmpty())
@@ -212,10 +212,10 @@ var _ = Describe("EvaluateGoLayerBypass", func() {
 				"service",
 				[]string{"example.com/app/handlers.Handler", "(*database/sql.DB).Query"},
 			)
-			result := projectmodel.LayerBypassResult{
-				Witnesses: []projectmodel.LayerBypassWitness{witness},
-				Algorithm: projectmodel.LayerBypassAlgorithm,
-				Coverage:  projectmodel.Coverage{Phase: "go_layer_bypass", Complete: false},
+			result := domain.LayerBypassResult{
+				Witnesses: []domain.LayerBypassWitness{witness},
+				Algorithm: domain.LayerBypassAlgorithm,
+				Coverage:  domain.Coverage{Phase: "go_layer_bypass", Complete: false},
 			}
 
 			changes, diagnostics := codesignal.EvaluateGoLayerBypass(result, "1", "backend-1", "digest-1")
@@ -228,9 +228,9 @@ var _ = Describe("EvaluateGoLayerBypass", func() {
 
 	When("BuildGoLayerBypass's search coverage was incomplete and found zero witnesses", func() {
 		It("still emits the coverage-incomplete diagnostic, so the absence is not read as a sound 'no bypass' claim", func() {
-			result := projectmodel.LayerBypassResult{
-				Algorithm: projectmodel.LayerBypassAlgorithm,
-				Coverage:  projectmodel.Coverage{Phase: "go_layer_bypass", Complete: false},
+			result := domain.LayerBypassResult{
+				Algorithm: domain.LayerBypassAlgorithm,
+				Coverage:  domain.Coverage{Phase: "go_layer_bypass", Complete: false},
 			}
 
 			changes, diagnostics := codesignal.EvaluateGoLayerBypass(result, "1", "backend-1", "digest-1")
@@ -299,8 +299,8 @@ var _ = Describe("EvaluateGoLayerBypass", func() {
 	})
 
 	Describe("lifecycle classification via the shared Build entrypoint", func() {
-		coverage := func() *projectmodel.Coverage {
-			return &projectmodel.Coverage{Phase: "full", Complete: true}
+		coverage := func() *domain.Coverage {
+			return &domain.Coverage{Phase: "full", Complete: true}
 		}
 
 		When("the identical witness (same path) is present on both head and base", func() {
@@ -450,22 +450,22 @@ var _ = Describe("EvaluateGoLayerBypass", func() {
 var _ = Describe("EvaluateTypeScriptLayerBypass", func() {
 	When("a single high-confidence TS witness is supplied", func() {
 		It("emits exactly one architecture.layer_bypass ProjectChange tagged with language typescript", func() {
-			witness := projectmodel.LayerBypassWitness{
-				ID:            "bypass:service:file:src/handlers/app.ts#getUsers->(PrismaClient).findMany@" + projectmodel.TSLayerBypassAlgorithm,
+			witness := domain.LayerBypassWitness{
+				ID:            "bypass:service:file:src/handlers/app.ts#getUsers->(PrismaClient).findMany@" + domain.TSLayerBypassAlgorithm,
 				Source:        "file:src/handlers/app.ts#getUsers",
 				Sink:          "(PrismaClient).findMany",
 				RequiredLayer: "service",
-				Path: []projectmodel.LayerBypassStep{
+				Path: []domain.LayerBypassStep{
 					{NodeID: "file:src/handlers/app.ts#getUsers", Path: "src/handlers/app.ts"},
 					{NodeID: "(PrismaClient).findMany"},
 				},
-				Confidence:       projectmodel.LayerBypassConfidenceHigh,
-				AlgorithmVersion: projectmodel.TSLayerBypassAlgorithm,
+				Confidence:       domain.LayerBypassConfidenceHigh,
+				AlgorithmVersion: domain.TSLayerBypassAlgorithm,
 			}
-			result := projectmodel.LayerBypassResult{
-				Witnesses: []projectmodel.LayerBypassWitness{witness},
-				Algorithm: projectmodel.TSLayerBypassAlgorithm,
-				Coverage:  projectmodel.Coverage{Phase: "ts_layer_bypass", Complete: true},
+			result := domain.LayerBypassResult{
+				Witnesses: []domain.LayerBypassWitness{witness},
+				Algorithm: domain.TSLayerBypassAlgorithm,
+				Coverage:  domain.Coverage{Phase: "ts_layer_bypass", Complete: true},
 			}
 
 			changes, diagnostics := codesignal.EvaluateTypeScriptLayerBypass(result, "1", "backend-1", "digest-1")
@@ -479,7 +479,7 @@ var _ = Describe("EvaluateTypeScriptLayerBypass", func() {
 			Expect(change.Category).To(Equal(codesignal.Category("architecture")))
 			Expect(change.Severity).To(Equal(codesignal.Severity("advisory")))
 			Expect(change.Confidence).To(Equal(codesignal.Confidence("high")))
-			Expect(change.AlgorithmVersion).To(Equal(projectmodel.TSLayerBypassAlgorithm))
+			Expect(change.AlgorithmVersion).To(Equal(domain.TSLayerBypassAlgorithm))
 			Expect(change.SemanticKey).To(Equal(
 				"architecture.layer_bypass:service:file:src/handlers/app.ts#getUsers->(PrismaClient).findMany",
 			))
@@ -504,19 +504,19 @@ var _ = Describe("EvaluateTypeScriptLayerBypass", func() {
 
 	When("a TS witness's Confidence is not LayerBypassConfidenceHigh", func() {
 		It("emits zero ProjectChanges (defensive re-check, not decoration)", func() {
-			witness := projectmodel.LayerBypassWitness{
-				ID:               "bypass:service:file:src/handlers/app.ts#getUsers->(PrismaClient).findMany@" + projectmodel.TSLayerBypassAlgorithm,
+			witness := domain.LayerBypassWitness{
+				ID:               "bypass:service:file:src/handlers/app.ts#getUsers->(PrismaClient).findMany@" + domain.TSLayerBypassAlgorithm,
 				Source:           "file:src/handlers/app.ts#getUsers",
 				Sink:             "(PrismaClient).findMany",
 				RequiredLayer:    "service",
-				Path:             []projectmodel.LayerBypassStep{{NodeID: "file:src/handlers/app.ts#getUsers"}, {NodeID: "(PrismaClient).findMany"}},
+				Path:             []domain.LayerBypassStep{{NodeID: "file:src/handlers/app.ts#getUsers"}, {NodeID: "(PrismaClient).findMany"}},
 				Confidence:       "medium", // BuildTypeScriptLayerBypass never produces this; constructed directly to exercise the guard.
-				AlgorithmVersion: projectmodel.TSLayerBypassAlgorithm,
+				AlgorithmVersion: domain.TSLayerBypassAlgorithm,
 			}
-			result := projectmodel.LayerBypassResult{
-				Witnesses: []projectmodel.LayerBypassWitness{witness},
-				Algorithm: projectmodel.TSLayerBypassAlgorithm,
-				Coverage:  projectmodel.Coverage{Phase: "ts_layer_bypass", Complete: true},
+			result := domain.LayerBypassResult{
+				Witnesses: []domain.LayerBypassWitness{witness},
+				Algorithm: domain.TSLayerBypassAlgorithm,
+				Coverage:  domain.Coverage{Phase: "ts_layer_bypass", Complete: true},
 			}
 
 			changes, _ := codesignal.EvaluateTypeScriptLayerBypass(result, "1", "backend-1", "digest-1")
@@ -527,19 +527,19 @@ var _ = Describe("EvaluateTypeScriptLayerBypass", func() {
 
 	When("BuildTypeScriptLayerBypass's search coverage was incomplete", func() {
 		It("still emits the witness's ProjectChange but also a coverage-incomplete diagnostic", func() {
-			witness := projectmodel.LayerBypassWitness{
-				ID:               "bypass:service:file:src/handlers/app.ts#getUsers->(PrismaClient).findMany@" + projectmodel.TSLayerBypassAlgorithm,
+			witness := domain.LayerBypassWitness{
+				ID:               "bypass:service:file:src/handlers/app.ts#getUsers->(PrismaClient).findMany@" + domain.TSLayerBypassAlgorithm,
 				Source:           "file:src/handlers/app.ts#getUsers",
 				Sink:             "(PrismaClient).findMany",
 				RequiredLayer:    "service",
-				Path:             []projectmodel.LayerBypassStep{{NodeID: "file:src/handlers/app.ts#getUsers"}, {NodeID: "(PrismaClient).findMany"}},
-				Confidence:       projectmodel.LayerBypassConfidenceHigh,
-				AlgorithmVersion: projectmodel.TSLayerBypassAlgorithm,
+				Path:             []domain.LayerBypassStep{{NodeID: "file:src/handlers/app.ts#getUsers"}, {NodeID: "(PrismaClient).findMany"}},
+				Confidence:       domain.LayerBypassConfidenceHigh,
+				AlgorithmVersion: domain.TSLayerBypassAlgorithm,
 			}
-			result := projectmodel.LayerBypassResult{
-				Witnesses: []projectmodel.LayerBypassWitness{witness},
-				Algorithm: projectmodel.TSLayerBypassAlgorithm,
-				Coverage:  projectmodel.Coverage{Phase: "ts_layer_bypass", Complete: false},
+			result := domain.LayerBypassResult{
+				Witnesses: []domain.LayerBypassWitness{witness},
+				Algorithm: domain.TSLayerBypassAlgorithm,
+				Coverage:  domain.Coverage{Phase: "ts_layer_bypass", Complete: false},
 			}
 
 			changes, diagnostics := codesignal.EvaluateTypeScriptLayerBypass(result, "1", "backend-1", "digest-1")
@@ -552,9 +552,9 @@ var _ = Describe("EvaluateTypeScriptLayerBypass", func() {
 
 	When("the required layer was ambiguous, so BuildTypeScriptLayerBypass found zero witnesses", func() {
 		It("emits zero ProjectChanges and a coverage-incomplete diagnostic, matching an ambiguous-layer run's Coverage.Complete false", func() {
-			result := projectmodel.LayerBypassResult{
-				Algorithm: projectmodel.TSLayerBypassAlgorithm,
-				Coverage:  projectmodel.Coverage{Phase: "ts_layer_bypass", Complete: false},
+			result := domain.LayerBypassResult{
+				Algorithm: domain.TSLayerBypassAlgorithm,
+				Coverage:  domain.Coverage{Phase: "ts_layer_bypass", Complete: false},
 			}
 
 			changes, diagnostics := codesignal.EvaluateTypeScriptLayerBypass(result, "1", "backend-1", "digest-1")
@@ -567,9 +567,9 @@ var _ = Describe("EvaluateTypeScriptLayerBypass", func() {
 
 	When("no witnesses are supplied", func() {
 		It("emits zero ProjectChanges (negative control)", func() {
-			result := projectmodel.LayerBypassResult{
-				Algorithm: projectmodel.TSLayerBypassAlgorithm,
-				Coverage:  projectmodel.Coverage{Phase: "ts_layer_bypass", Complete: true},
+			result := domain.LayerBypassResult{
+				Algorithm: domain.TSLayerBypassAlgorithm,
+				Coverage:  domain.Coverage{Phase: "ts_layer_bypass", Complete: true},
 			}
 
 			changes, diagnostics := codesignal.EvaluateTypeScriptLayerBypass(result, "1", "backend-1", "digest-1")
@@ -580,33 +580,33 @@ var _ = Describe("EvaluateTypeScriptLayerBypass", func() {
 	})
 
 	Describe("lifecycle classification via the shared Build entrypoint", func() {
-		coverage := func() *projectmodel.Coverage {
-			return &projectmodel.Coverage{Phase: "full", Complete: true}
+		coverage := func() *domain.Coverage {
+			return &domain.Coverage{Phase: "full", Complete: true}
 		}
 
-		tsWitness := func(source, sink, requiredLayer string, path []string) projectmodel.LayerBypassWitness {
-			steps := make([]projectmodel.LayerBypassStep, len(path))
+		tsWitness := func(source, sink, requiredLayer string, path []string) domain.LayerBypassWitness {
+			steps := make([]domain.LayerBypassStep, len(path))
 			for i, nodeID := range path {
-				steps[i] = projectmodel.LayerBypassStep{NodeID: nodeID}
+				steps[i] = domain.LayerBypassStep{NodeID: nodeID}
 			}
 			if len(steps) > 0 {
 				steps[0].Path = layerBypassSourcePath
 			}
-			return projectmodel.LayerBypassWitness{
-				ID:               "bypass:" + requiredLayer + ":" + source + "->" + sink + "@" + projectmodel.TSLayerBypassAlgorithm,
+			return domain.LayerBypassWitness{
+				ID:               "bypass:" + requiredLayer + ":" + source + "->" + sink + "@" + domain.TSLayerBypassAlgorithm,
 				Source:           source,
 				Sink:             sink,
 				RequiredLayer:    requiredLayer,
 				Path:             steps,
-				Confidence:       projectmodel.LayerBypassConfidenceHigh,
-				AlgorithmVersion: projectmodel.TSLayerBypassAlgorithm,
+				Confidence:       domain.LayerBypassConfidenceHigh,
+				AlgorithmVersion: domain.TSLayerBypassAlgorithm,
 			}
 		}
-		tsResult := func(witnesses ...projectmodel.LayerBypassWitness) projectmodel.LayerBypassResult {
-			return projectmodel.LayerBypassResult{
+		tsResult := func(witnesses ...domain.LayerBypassWitness) domain.LayerBypassResult {
+			return domain.LayerBypassResult{
 				Witnesses: witnesses,
-				Algorithm: projectmodel.TSLayerBypassAlgorithm,
-				Coverage:  projectmodel.Coverage{Phase: "ts_layer_bypass", Complete: true},
+				Algorithm: domain.TSLayerBypassAlgorithm,
+				Coverage:  domain.Coverage{Phase: "ts_layer_bypass", Complete: true},
 			}
 		}
 

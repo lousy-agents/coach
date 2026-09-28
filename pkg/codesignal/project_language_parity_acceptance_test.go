@@ -5,7 +5,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 )
 
 // crossLangBypassWitness returns a LayerBypassWitness whose Source, Sink,
@@ -14,30 +14,30 @@ import (
 // helper are structurally equivalent by construction -- any difference
 // between the two evaluators' output must come from the evaluator called,
 // not from a fixture difference.
-func crossLangBypassWitness(algorithmVersion string) projectmodel.LayerBypassWitness {
-	return projectmodel.LayerBypassWitness{
+func crossLangBypassWitness(algorithmVersion string) domain.LayerBypassWitness {
+	return domain.LayerBypassWitness{
 		ID:            "bypass:service:example.com/app/handlers.Handler->(*database/sql.DB).Query@" + algorithmVersion,
 		Source:        "example.com/app/handlers.Handler",
 		Sink:          "(*database/sql.DB).Query",
 		RequiredLayer: "service",
-		Path: []projectmodel.LayerBypassStep{
+		Path: []domain.LayerBypassStep{
 			{NodeID: "example.com/app/handlers.Handler", Path: "pkg/handlers/handlers.go", Line: 3},
 			{NodeID: "(*database/sql.DB).Query"},
 		},
-		Confidence:       projectmodel.LayerBypassConfidenceHigh,
+		Confidence:       domain.LayerBypassConfidenceHigh,
 		AlgorithmVersion: algorithmVersion,
 	}
 }
 
-func crossLangBypassResult(phase string, witnesses ...projectmodel.LayerBypassWitness) projectmodel.LayerBypassResult {
-	algorithm := projectmodel.LayerBypassAlgorithm
+func crossLangBypassResult(phase string, witnesses ...domain.LayerBypassWitness) domain.LayerBypassResult {
+	algorithm := domain.LayerBypassAlgorithm
 	if len(witnesses) > 0 {
 		algorithm = witnesses[0].AlgorithmVersion
 	}
-	return projectmodel.LayerBypassResult{
+	return domain.LayerBypassResult{
 		Witnesses: witnesses,
 		Algorithm: algorithm,
-		Coverage:  projectmodel.Coverage{Phase: phase, Complete: true},
+		Coverage:  domain.Coverage{Phase: phase, Complete: true},
 	}
 }
 
@@ -58,8 +58,8 @@ func machineEvidenceWithoutLanguage(evidence map[string]string) map[string]strin
 var _ = Describe("Go/TypeScript cross-language rule parity (issue #216 AC-6)", func() {
 	Describe("architecture.layer_bypass: EvaluateGoLayerBypass vs EvaluateTypeScriptLayerBypass", func() {
 		It("shares RuleID/Category/Severity/Confidence/lifecycle-relevant shape and differs only in language provenance", func() {
-			goResult := crossLangBypassResult("go_layer_bypass", crossLangBypassWitness(projectmodel.LayerBypassAlgorithm))
-			tsResult := crossLangBypassResult("ts_layer_bypass", crossLangBypassWitness(projectmodel.TSLayerBypassAlgorithm))
+			goResult := crossLangBypassResult("go_layer_bypass", crossLangBypassWitness(domain.LayerBypassAlgorithm))
+			tsResult := crossLangBypassResult("ts_layer_bypass", crossLangBypassWitness(domain.TSLayerBypassAlgorithm))
 
 			goChanges, goDiagnostics := codesignal.EvaluateGoLayerBypass(goResult, "1", "backend-1", "digest-1")
 			tsChanges, tsDiagnostics := codesignal.EvaluateTypeScriptLayerBypass(tsResult, "1", "backend-1", "digest-1")
@@ -92,8 +92,8 @@ var _ = Describe("Go/TypeScript cross-language rule parity (issue #216 AC-6)", f
 			// this fixture tags per-language) and MachineEvidence["language"]
 			// (set by layerBypassChange only for the TS evaluator -- see
 			// rule_layer_bypass.go).
-			Expect(goChange.AlgorithmVersion).To(Equal(projectmodel.LayerBypassAlgorithm))
-			Expect(tsChange.AlgorithmVersion).To(Equal(projectmodel.TSLayerBypassAlgorithm))
+			Expect(goChange.AlgorithmVersion).To(Equal(domain.LayerBypassAlgorithm))
+			Expect(tsChange.AlgorithmVersion).To(Equal(domain.TSLayerBypassAlgorithm))
 			Expect(goChange.MachineEvidence).NotTo(HaveKey("language"))
 			Expect(tsChange.MachineEvidence).To(HaveKeyWithValue("language", "typescript"))
 			Expect(machineEvidenceWithoutLanguage(tsChange.MachineEvidence)).To(Equal(goChange.MachineEvidence))
@@ -107,37 +107,37 @@ var _ = Describe("Go/TypeScript cross-language rule parity (issue #216 AC-6)", f
 	// MachineEvidence["language"].
 	Describe("possible_call_reachability: ReachabilityProjectFacts language provenance", func() {
 		It("produces identically-shaped facts for Go- and TS-sourced results, differing only in Provenance.Language", func() {
-			goResult := projectmodel.ReachabilityResult{
-				Facts: []projectmodel.ReachabilityFact{{
-					ID:         "reach:example.com/app/handlers.Handler->(*database/sql.DB).Query@" + projectmodel.ReachabilityAlgorithm,
-					Kind:       projectmodel.KindPossibleCallReachability,
-					Confidence: projectmodel.ReachabilityConfidenceResolvedDirect,
+			goResult := domain.ReachabilityResult{
+				Facts: []domain.ReachabilityFact{{
+					ID:         "reach:example.com/app/handlers.Handler->(*database/sql.DB).Query@" + domain.ReachabilityAlgorithm,
+					Kind:       domain.KindPossibleCallReachability,
+					Confidence: domain.ReachabilityConfidenceResolvedDirect,
 					Source:     "example.com/app/handlers.Handler",
 					Sink:       "(*database/sql.DB).Query",
-					Path: []projectmodel.ReachabilityStep{
+					Path: []domain.ReachabilityStep{
 						{NodeID: "example.com/app/handlers.Handler"},
 						{NodeID: "(*database/sql.DB).Query"},
 					},
-					AlgorithmVersion: projectmodel.ReachabilityAlgorithm,
+					AlgorithmVersion: domain.ReachabilityAlgorithm,
 				}},
-				Algorithm: projectmodel.ReachabilityAlgorithm,
-				Coverage:  projectmodel.Coverage{Phase: "go_model_build", Complete: true},
+				Algorithm: domain.ReachabilityAlgorithm,
+				Coverage:  domain.Coverage{Phase: "go_model_build", Complete: true},
 			}
-			tsResult := projectmodel.ReachabilityResult{
-				Facts: []projectmodel.ReachabilityFact{{
-					ID:         "reach:file:src/app.ts#getUsers->(PrismaClient).findMany@" + projectmodel.TSReachabilityAlgorithm,
-					Kind:       projectmodel.KindPossibleCallReachability,
-					Confidence: projectmodel.ReachabilityConfidenceResolvedDirect,
+			tsResult := domain.ReachabilityResult{
+				Facts: []domain.ReachabilityFact{{
+					ID:         "reach:file:src/app.ts#getUsers->(PrismaClient).findMany@" + domain.TSReachabilityAlgorithm,
+					Kind:       domain.KindPossibleCallReachability,
+					Confidence: domain.ReachabilityConfidenceResolvedDirect,
 					Source:     "file:src/app.ts#getUsers",
 					Sink:       "(PrismaClient).findMany",
-					Path: []projectmodel.ReachabilityStep{
+					Path: []domain.ReachabilityStep{
 						{NodeID: "file:src/app.ts#getUsers"},
 						{NodeID: "(PrismaClient).findMany"},
 					},
-					AlgorithmVersion: projectmodel.TSReachabilityAlgorithm,
+					AlgorithmVersion: domain.TSReachabilityAlgorithm,
 				}},
-				Algorithm: projectmodel.TSReachabilityAlgorithm,
-				Coverage:  projectmodel.Coverage{Phase: "ts_sidecar_build", Complete: true},
+				Algorithm: domain.TSReachabilityAlgorithm,
+				Coverage:  domain.Coverage{Phase: "ts_sidecar_build", Complete: true},
 			}
 
 			goFacts := codesignal.ReachabilityProjectFacts(goResult, "go")
@@ -147,7 +147,7 @@ var _ = Describe("Go/TypeScript cross-language rule parity (issue #216 AC-6)", f
 			goFact, tsFact := goFacts[0], tsFacts[0]
 
 			Expect(tsFact.Kind).To(Equal(goFact.Kind))
-			Expect(tsFact.Kind).To(Equal(projectmodel.KindPossibleCallReachability))
+			Expect(tsFact.Kind).To(Equal(domain.KindPossibleCallReachability))
 			Expect(tsFact.PathSteps[0].Confidence).To(Equal(goFact.PathSteps[0].Confidence))
 
 			// The only field that differs is the one that actually carries
@@ -173,9 +173,9 @@ var _ = Describe("Go/TypeScript cross-language rule parity (issue #216 AC-6)", f
 	// below; the real evaluators must not.
 	Describe("false-green control: the high-confidence filter fires on both language paths", func() {
 		It("suppresses a non-high-confidence witness and surfaces its high-confidence sibling on both Go and TS", func() {
-			mediumGo := crossLangBypassWitness(projectmodel.LayerBypassAlgorithm)
+			mediumGo := crossLangBypassWitness(domain.LayerBypassAlgorithm)
 			mediumGo.Confidence = "medium" // BuildGoLayerBypass never produces this; constructed directly to prove the guard fires.
-			mediumTS := crossLangBypassWitness(projectmodel.TSLayerBypassAlgorithm)
+			mediumTS := crossLangBypassWitness(domain.TSLayerBypassAlgorithm)
 			mediumTS.Confidence = "medium" // BuildTypeScriptLayerBypass never produces this either.
 
 			goSuppressed, _ := codesignal.EvaluateGoLayerBypass(crossLangBypassResult("go_layer_bypass", mediumGo), "1", "backend-1", "digest-1")
@@ -183,8 +183,8 @@ var _ = Describe("Go/TypeScript cross-language rule parity (issue #216 AC-6)", f
 			Expect(goSuppressed).To(BeEmpty(), "a naive mapping with no confidence filter would have surfaced this witness")
 			Expect(tsSuppressed).To(BeEmpty(), "a naive mapping with no confidence filter would have surfaced this witness")
 
-			goSurfaced, _ := codesignal.EvaluateGoLayerBypass(crossLangBypassResult("go_layer_bypass", crossLangBypassWitness(projectmodel.LayerBypassAlgorithm)), "1", "backend-1", "digest-1")
-			tsSurfaced, _ := codesignal.EvaluateTypeScriptLayerBypass(crossLangBypassResult("ts_layer_bypass", crossLangBypassWitness(projectmodel.TSLayerBypassAlgorithm)), "1", "backend-1", "digest-1")
+			goSurfaced, _ := codesignal.EvaluateGoLayerBypass(crossLangBypassResult("go_layer_bypass", crossLangBypassWitness(domain.LayerBypassAlgorithm)), "1", "backend-1", "digest-1")
+			tsSurfaced, _ := codesignal.EvaluateTypeScriptLayerBypass(crossLangBypassResult("ts_layer_bypass", crossLangBypassWitness(domain.TSLayerBypassAlgorithm)), "1", "backend-1", "digest-1")
 			Expect(goSurfaced).To(HaveLen(1), "the otherwise-identical high-confidence witness must surface on the Go path")
 			Expect(tsSurfaced).To(HaveLen(1), "the otherwise-identical high-confidence witness must surface on the TS path")
 		})

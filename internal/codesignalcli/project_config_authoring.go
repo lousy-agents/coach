@@ -2,10 +2,10 @@ package codesignalcli
 
 import (
 	"bufio"
-	"encoding/json"
+
 	"fmt"
 	"io"
-	"strconv"
+
 	"strings"
 
 	"github.com/lousy-agents/coach/pkg/projectmodel"
@@ -96,63 +96,12 @@ type AuthoringResult struct {
 // receives only the approved document when outputSet is false -- mixing
 // those streams makes a captured candidate unparseable. Collection never
 // preselects roots or infers layers.
-func AuthorProjectConfig(dir string, in io.Reader, out io.Writer, candidateOut io.Writer, discovered projectmodel.TSRootDiscoveryResult, outputPath string, outputSet bool) AuthoringResult {
-	result := collectAuthoringAnswers(in, out, discovered)
-	if !result.Approved {
-		return result
-	}
-	return finalizeApprovedCandidate(result, dir, candidateOut, outputPath, outputSet)
-}
-
-func collectAuthoringAnswers(in io.Reader, transcript io.Writer, discovered projectmodel.TSRootDiscoveryResult) AuthoringResult {
-	reader := bufio.NewReader(in)
-	roots, cancelled := promptForRoots(transcript, reader, discovered)
-	if cancelled {
-		return AuthoringResult{Cancelled: true}
-	}
-
-	layers, cancelled := promptForLayers(transcript, reader)
-	if cancelled {
-		return AuthoringResult{Roots: roots, Layers: layers, Cancelled: true}
-	}
-
-	forbidden, cancelled := promptForForbiddenImports(transcript, reader, layers)
-	if cancelled {
-		return AuthoringResult{Roots: roots, Layers: layers, ForbiddenImports: forbidden, Cancelled: true}
-	}
-
-	requiredLayer, cancelled := promptForRequiredLayer(transcript, reader, layers)
-	if cancelled {
-		return AuthoringResult{Roots: roots, Layers: layers, ForbiddenImports: forbidden, Cancelled: true}
-	}
-
-	approved := promptForApproval(transcript, reader, discovered, roots, layers, forbidden, requiredLayer)
-	return AuthoringResult{Roots: roots, Layers: layers, ForbiddenImports: forbidden, RequiredLayer: requiredLayer, Approved: approved}
-}
 
 // buildApprovedCandidate renders the collected fields as the schema-1
 // project-config document and runs it through parseProjectConfig -- the same
 // validator LoadProjectConfig applies to a committed --project-config file
 // -- before treating it as valid. source_sink_pack is never populated: it is
 // a reserved field this feature must not touch.
-func buildApprovedCandidate(roots []string, layers []projectConfigLayer, forbidden []projectForbiddenImport, requiredLayer string) ([]byte, error) {
-	candidate := projectConfig{
-		SchemaVersion:    "1",
-		Roots:            roots,
-		Layers:           layers,
-		ForbiddenImports: forbidden,
-		RequiredLayer:    requiredLayer,
-	}
-	data, err := json.MarshalIndent(candidate, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	data = append(data, '\n')
-	if _, err := parseProjectConfig(data); err != nil {
-		return nil, err
-	}
-	return data, nil
-}
 
 // finalizeApprovedCandidate validates result's collected fields and either
 // create-only writes them to outputPath (outputSet true) or emits them to
@@ -212,63 +161,11 @@ func promptForApproval(out io.Writer, reader *bufio.Reader, discovered projectmo
 	return strings.EqualFold(strings.TrimSpace(answer), "approve")
 }
 
-func printCandidateSummary(out io.Writer, roots []string, layers []projectConfigLayer, forbidden []projectForbiddenImport, requiredLayer string) {
-	fmt.Fprintln(out, "Candidate project config:")
-	fmt.Fprintf(out, "  roots: %s\n", formatStringList(roots))
-	if len(layers) == 0 {
-		fmt.Fprintln(out, "  layers: (none)")
-	} else {
-		fmt.Fprintln(out, "  layers:")
-		for _, layer := range layers {
-			fmt.Fprintf(out, "    - %s: %s\n", layer.Name, strings.Join(layer.Prefixes, ", "))
-		}
-	}
-	if len(forbidden) == 0 {
-		fmt.Fprintln(out, "  forbidden_imports: (none)")
-	} else {
-		fmt.Fprintln(out, "  forbidden_imports:")
-		for _, pair := range forbidden {
-			fmt.Fprintf(out, "    - %s -> %s\n", pair.From, pair.To)
-		}
-	}
-	if requiredLayer == "" {
-		fmt.Fprintln(out, "  required_layer: (none)")
-	} else {
-		fmt.Fprintf(out, "  required_layer: %s\n", requiredLayer)
-	}
-}
-
-func printCoveragePreview(out io.Writer, discovered projectmodel.TSRootDiscoveryResult, layers []projectConfigLayer) {
-	dirs := discoveredDirectories(discovered)
-
-	fmt.Fprintln(out, "Coverage preview:")
-	for _, layer := range layers {
-		matched := matchingDiscoveredDirectories(layer, dirs)
-		fmt.Fprintf(out, "  layer %q (prefixes: %s) matches: %s\n", layer.Name, strings.Join(layer.Prefixes, ", "), formatStringList(matched))
-	}
-
-	uncovered := uncoveredDiscoveredDirectories(dirs, layers)
-	fmt.Fprintf(out, "  discovered directories no declared layer matches: %s\n", formatStringList(uncovered))
-}
-
 // discoveredDirectories returns discovered.Roots and discovered.Candidates
 // combined into one ordered, deduplicated list -- the coverage preview
 // treats every directory DiscoverTSRoots found as something the eventual
 // policy should account for, not only the ones it called out as tsconfig
 // roots.
-func discoveredDirectories(discovered projectmodel.TSRootDiscoveryResult) []string {
-	var all []string
-	seen := map[string]bool{}
-	for _, group := range [][]string{discovered.Roots, discovered.Candidates} {
-		for _, dir := range group {
-			if !seen[dir] {
-				seen[dir] = true
-				all = append(all, dir)
-			}
-		}
-	}
-	return all
-}
 
 // directoryHasPrefix reports whether prefix matches dir the same way a real
 // layer-violation evaluation would (pkg/codesignal/rule_layer_violation_match.go's
@@ -276,49 +173,6 @@ func discoveredDirectories(discovered projectmodel.TSRootDiscoveryResult) []stri
 // is ".", the universal repository-root ancestor.
 func directoryHasPrefix(dir, prefix string) bool {
 	return prefix == "." || dir == prefix || strings.HasPrefix(dir, prefix+"/")
-}
-
-func layerMatchesDirectory(layer projectConfigLayer, dir string) bool {
-	for _, prefix := range layer.Prefixes {
-		if directoryHasPrefix(dir, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func matchingDiscoveredDirectories(layer projectConfigLayer, dirs []string) []string {
-	var matched []string
-	for _, dir := range dirs {
-		if layerMatchesDirectory(layer, dir) {
-			matched = append(matched, dir)
-		}
-	}
-	return matched
-}
-
-func uncoveredDiscoveredDirectories(dirs []string, layers []projectConfigLayer) []string {
-	var uncovered []string
-	for _, dir := range dirs {
-		covered := false
-		for _, layer := range layers {
-			if layerMatchesDirectory(layer, dir) {
-				covered = true
-				break
-			}
-		}
-		if !covered {
-			uncovered = append(uncovered, dir)
-		}
-	}
-	return uncovered
-}
-
-func formatStringList(items []string) string {
-	if len(items) == 0 {
-		return "(none)"
-	}
-	return strings.Join(items, ", ")
 }
 
 // promptForRoots prints discovered.Roots/Candidates as a suggestion, then
@@ -332,27 +186,6 @@ func formatStringList(items []string) string {
 // every remaining stage and the approval gate had already been answered. It
 // never returns discovered.Roots itself when the user selects nothing: an
 // accepted selection is always something the user typed or picked.
-func promptForRoots(out io.Writer, reader *bufio.Reader, discovered projectmodel.TSRootDiscoveryResult) (roots []string, cancelled bool) {
-	printRootSuggestions(out, discovered)
-
-	for {
-		fmt.Fprintln(out, "Select the roots to include: enter comma-separated numbers from the list above and/or directory paths, then press Enter. At least one repository-relative root is required.")
-		fmt.Fprint(out, "> ")
-
-		answer, _ := readLine(reader)
-		selected, parseErr := parseRootSelection(answer, discovered.Roots)
-		if parseErr == nil {
-			parseErr = validateRootSelection(selected)
-		}
-		if parseErr != nil {
-			if promptRetryOrCancel(out, reader, parseErr.Error()) {
-				return nil, true
-			}
-			continue
-		}
-		return selected, false
-	}
-}
 
 func printRootSuggestions(out io.Writer, discovered projectmodel.TSRootDiscoveryResult) {
 	if len(discovered.Roots) > 0 {
@@ -371,21 +204,6 @@ func printRootSuggestions(out io.Writer, discovered projectmodel.TSRootDiscovery
 	}
 }
 
-func validateRootSelection(selected []string) error {
-	if len(selected) == 0 {
-		return fmt.Errorf("at least one repository-relative root must be selected")
-	}
-	if len(selected) > maxProjectConfigRoots {
-		return fmt.Errorf("roots exceed budget of %d entries", maxProjectConfigRoots)
-	}
-	for _, root := range selected {
-		if err := validateProjectConfigDirectory(root); err != nil {
-			return fmt.Errorf("root %q: %s", root, err)
-		}
-	}
-	return nil
-}
-
 // readLine sets unreadable on any read error, not only io.EOF: a closed
 // stdin or detached tty will never produce a different answer later, and
 // treating only io.EOF as exhausted would spin promptRetryOrCancel forever.
@@ -402,25 +220,6 @@ func readLine(reader *bufio.Reader) (line string, unreadable bool) {
 // it as anything but cancellation would spin the caller's prompt loop
 // forever. Any other reply -- including "retry" -- is treated as a request
 // to retry, so the caller's own prompt loop asks the field again.
-func promptRetryOrCancel(out io.Writer, reader *bufio.Reader, explanation string) bool {
-	fmt.Fprintf(out, "That answer is invalid: %s\n", explanation)
-	fmt.Fprintln(out, "Type 'retry' to try again, or 'cancel' to cancel authoring:")
-	fmt.Fprint(out, "> ")
-	reply, unreadable := readLine(reader)
-	if unreadable {
-		return true
-	}
-	return strings.EqualFold(strings.TrimSpace(reply), "cancel")
-}
-
-func layerNameDeclared(name string, layers []projectConfigLayer) bool {
-	for _, layer := range layers {
-		if layer.Name == name {
-			return true
-		}
-	}
-	return false
-}
 
 // promptForLayers collects named layers and their prefixes, one at a time,
 // until the user leaves a layer name blank. It never suggests a name or a
@@ -429,169 +228,6 @@ func layerNameDeclared(name string, layers []projectConfigLayer) bool {
 // name-uniqueness and prefix-overlap rules the frozen project-config schema
 // itself enforces (validateProjectConfigLayers), so a mistake is caught and
 // explained here rather than deferred to a later validation pass.
-func promptForLayers(out io.Writer, reader *bufio.Reader) (layers []projectConfigLayer, cancelled bool) {
-	fmt.Fprintln(out, "Define named layers for architecture-boundary policy. Each layer needs a name and one or more repository-relative path prefixes.")
-	for {
-		name, done, cancelled := promptLayerName(out, reader, layers)
-		if cancelled {
-			return layers, true
-		}
-		if done {
-			return layers, false
-		}
-
-		prefixes, cancelled := promptLayerPrefixes(out, reader, name, layers)
-		if cancelled {
-			return layers, true
-		}
-		layers = append(layers, projectConfigLayer{Name: name, Prefixes: prefixes})
-	}
-}
-
-func promptLayerName(out io.Writer, reader *bufio.Reader, existing []projectConfigLayer) (name string, done, cancelled bool) {
-	for {
-		fmt.Fprintln(out, "Enter a layer name, or leave blank to finish defining layers:")
-		fmt.Fprint(out, "> ")
-		answer, _ := readLine(reader)
-		answer = strings.TrimSpace(answer)
-		if answer == "" {
-			return "", true, false
-		}
-		if layerNameDeclared(answer, existing) {
-			if promptRetryOrCancel(out, reader, fmt.Sprintf("layer name %q is already used", answer)) {
-				return "", false, true
-			}
-			continue
-		}
-		return answer, false, false
-	}
-}
-
-func promptLayerPrefixes(out io.Writer, reader *bufio.Reader, name string, existing []projectConfigLayer) (prefixes []string, cancelled bool) {
-	for {
-		fmt.Fprintf(out, "Enter comma-separated repository-relative path prefixes for layer %q:\n", name)
-		fmt.Fprint(out, "> ")
-		answer, _ := readLine(reader)
-		candidate := splitTrimmedNonEmpty(answer, ",")
-		if err := validateLayerPrefixCandidate(name, candidate, existing); err != nil {
-			if promptRetryOrCancel(out, reader, err.Error()) {
-				return nil, true
-			}
-			continue
-		}
-		return candidate, false
-	}
-}
-
-func validateLayerPrefixCandidate(name string, prefixes []string, existing []projectConfigLayer) error {
-	if len(prefixes) == 0 {
-		return fmt.Errorf("layer %q must contain at least one prefix", name)
-	}
-	var allPrefixes []string
-	for _, layer := range existing {
-		allPrefixes = append(allPrefixes, layer.Prefixes...)
-	}
-	for _, prefix := range prefixes {
-		if err := validateProjectConfigDirectory(prefix); err != nil {
-			return fmt.Errorf("prefix %q: %s", prefix, err)
-		}
-		allPrefixes = append(allPrefixes, prefix)
-	}
-	if len(allPrefixes) > maxProjectConfigLayerPrefixes {
-		return fmt.Errorf("layer prefixes exceed budget of %d entries", maxProjectConfigLayerPrefixes)
-	}
-	if hasDuplicateOrOverlappingPaths(allPrefixes) {
-		return fmt.Errorf("layer prefixes must be unique and non-overlapping across all layers")
-	}
-	return nil
-}
-
-func promptForForbiddenImports(out io.Writer, reader *bufio.Reader, layers []projectConfigLayer) (forbidden []projectForbiddenImport, cancelled bool) {
-	fmt.Fprintln(out, "Define forbidden layer-import pairs (a source layer that may not import a destination layer). Leave the source blank to finish.")
-	for {
-		from, to, done, cancelled := promptForbiddenPair(out, reader, layers, forbidden)
-		if cancelled {
-			return forbidden, true
-		}
-		if done {
-			return forbidden, false
-		}
-		forbidden = append(forbidden, projectForbiddenImport{From: from, To: to})
-	}
-}
-
-func promptForbiddenPair(out io.Writer, reader *bufio.Reader, layers []projectConfigLayer, existing []projectForbiddenImport) (from, to string, done, cancelled bool) {
-	for {
-		fmt.Fprintln(out, "Enter the source layer name for a forbidden import pair, or leave blank to finish:")
-		fmt.Fprint(out, "> ")
-		fromAnswer, _ := readLine(reader)
-		fromAnswer = strings.TrimSpace(fromAnswer)
-		if fromAnswer == "" {
-			return "", "", true, false
-		}
-
-		fmt.Fprintln(out, "Enter the destination layer name that the source layer may not import:")
-		fmt.Fprint(out, "> ")
-		toAnswer, _ := readLine(reader)
-		toAnswer = strings.TrimSpace(toAnswer)
-
-		if err := validateForbiddenPairCandidate(fromAnswer, toAnswer, layers, existing); err != nil {
-			if promptRetryOrCancel(out, reader, err.Error()) {
-				return "", "", false, true
-			}
-			continue
-		}
-		return fromAnswer, toAnswer, false, false
-	}
-}
-
-func validateForbiddenPairCandidate(from, to string, layers []projectConfigLayer, existing []projectForbiddenImport) error {
-	if from == "" || to == "" {
-		return fmt.Errorf("forbidden import pairs require a non-empty source and destination layer")
-	}
-	if !layerNameDeclared(from, layers) {
-		return fmt.Errorf("forbidden import pair references undefined layer %q", from)
-	}
-	if !layerNameDeclared(to, layers) {
-		return fmt.Errorf("forbidden import pair references undefined layer %q", to)
-	}
-	for _, pair := range existing {
-		if pair.From == from && pair.To == to {
-			return fmt.Errorf("forbidden import pairs must be unique")
-		}
-	}
-	return nil
-}
-
-func promptForRequiredLayer(out io.Writer, reader *bufio.Reader, layers []projectConfigLayer) (requiredLayer string, cancelled bool) {
-	for {
-		fmt.Fprintln(out, "Enter the name of a required intermediary layer, or leave blank for none:")
-		fmt.Fprint(out, "> ")
-		answer, _ := readLine(reader)
-		answer = strings.TrimSpace(answer)
-		if answer == "" {
-			return "", false
-		}
-		if !layerNameDeclared(answer, layers) {
-			if promptRetryOrCancel(out, reader, fmt.Sprintf("required_layer references undefined layer %q", answer)) {
-				return "", true
-			}
-			continue
-		}
-		return answer, false
-	}
-}
-
-func splitTrimmedNonEmpty(s, sep string) []string {
-	var result []string
-	for _, piece := range strings.Split(s, sep) {
-		piece = strings.TrimSpace(piece)
-		if piece != "" {
-			result = append(result, piece)
-		}
-	}
-	return result
-}
 
 // parseRootSelection turns one line of user input into an ordered,
 // deduplicated root list. A token that parses as a 1-based index into
@@ -602,27 +238,3 @@ func splitTrimmedNonEmpty(s, sep string) []string {
 // selection non-empty and so pass validateRootSelection unnoticed, meaning
 // the customer's typo (or a stale suggestion list) silently selects fewer
 // roots than they asked for with no indication anything was wrong.
-func parseRootSelection(answer string, discoveredRoots []string) ([]string, error) {
-	answer = strings.TrimSpace(answer)
-	if answer == "" {
-		return nil, nil
-	}
-
-	var selected []string
-	seen := map[string]bool{}
-	for _, token := range splitTrimmedNonEmpty(answer, ",") {
-		root := token
-		if idx, err := strconv.Atoi(token); err == nil {
-			if idx < 1 || idx > len(discoveredRoots) {
-				return nil, fmt.Errorf("%q is not a valid root number: only 1-%d are listed above", token, len(discoveredRoots))
-			}
-			root = discoveredRoots[idx-1]
-		}
-		if seen[root] {
-			continue
-		}
-		seen[root] = true
-		selected = append(selected, root)
-	}
-	return selected, nil
-}

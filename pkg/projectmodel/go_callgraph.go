@@ -2,11 +2,9 @@ package projectmodel
 
 import (
 	"context"
-	"fmt"
-	"go/token"
+
 	"io/fs"
-	"os"
-	"path/filepath"
+
 	"sort"
 	"strings"
 
@@ -217,32 +215,10 @@ func stripTempDir(msg, tempDir string) string {
 	return strings.ReplaceAll(msg, tempDir, "")
 }
 
-func relCallSitePath(tempDir string, pos token.Position) string {
-	if pos.Filename == "" {
-		return ""
-	}
-	rel, err := filepath.Rel(tempDir, pos.Filename)
-	if err != nil {
-		return ""
-	}
-	return fmt.Sprintf("%s:%d", filepath.ToSlash(rel), pos.Line)
-}
-
 // materializeSnapshot copies snapshot into a new temporary directory so
 // golang.org/x/tools/go/packages (which shells out to the Go toolchain) has
 // real files to load; the caller must invoke the returned cleanup func.
-func materializeSnapshot(snapshot fs.FS) (string, func(), error) {
-	dir, err := os.MkdirTemp("", "projectmodel-callgraph-*")
-	if err != nil {
-		return "", func() {}, err
-	}
-	cleanup := func() { _ = os.RemoveAll(dir) }
-	if err := os.CopyFS(dir, snapshot); err != nil {
-		cleanup()
-		// dir is still returned (already removed by cleanup above) so a
-		// caller can strip it from err's embedded absolute path via
-		// stripTempDir before surfacing err in a diagnostic.
-		return dir, func() {}, err
-	}
-	return dir, cleanup, nil
-}
+
+// dir is still returned (already removed by cleanup above) so a
+// caller can strip it from err's embedded absolute path via
+// stripTempDir before surfacing err in a diagnostic.

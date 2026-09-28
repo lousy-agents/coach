@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/gomega/gstruct"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -40,7 +40,7 @@ var _ = Describe("project observation identity and lifecycle", func() {
 		for _, change := range variants {
 			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 				ProjectChanges:  []codesignal.ProjectChange{change},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			identities = append(identities, report.ProjectChanges[0].ID+"/"+report.ProjectChanges[0].Fingerprint)
 		}
@@ -58,8 +58,8 @@ var _ = Describe("project observation identity and lifecycle", func() {
 			ProjectChanges:      []codesignal.ProjectChange{head},
 			BaseProjectChanges:  []codesignal.ProjectChange{base},
 			ProjectBaseAnalyzed: true,
-			ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-			BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+			ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+			BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 		})
 		Expect(report.ProjectChanges).To(HaveLen(1))
 		Expect(report.ProjectChanges[0].Changed).To(BeFalse())
@@ -69,8 +69,8 @@ var _ = Describe("project observation identity and lifecycle", func() {
 			ProjectChanges:      []codesignal.ProjectChange{head},
 			BaseProjectChanges:  []codesignal.ProjectChange{base},
 			ProjectBaseAnalyzed: true,
-			ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-			BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+			ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+			BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 		})
 		Expect(report.ProjectChanges[0].Changed).To(BeTrue())
 	})
@@ -79,8 +79,8 @@ var _ = Describe("project observation identity and lifecycle", func() {
 		report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 			BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 			ProjectBaseAnalyzed: true,
-			ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-			BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: false},
+			ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+			BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: false},
 		})
 
 		Expect(report.ProjectChanges).To(HaveLen(1))
@@ -96,7 +96,7 @@ var _ = Describe("project observation identity and lifecycle", func() {
 			ProjectChanges:      []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 			BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 			ProjectBaseAnalyzed: false,
-			ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
+			ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
 		})
 		Expect(report.ProjectChanges).To(HaveLen(1))
 		Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
@@ -139,7 +139,7 @@ var _ = Describe("project observation identity and lifecycle", func() {
 			},
 		}}
 
-		cov := &projectmodel.Coverage{Phase: "full", Complete: true}
+		cov := &domain.Coverage{Phase: "full", Complete: true}
 		leftReport := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 			ProjectChanges:  []codesignal.ProjectChange{left},
 			ProjectCoverage: cov,
@@ -187,7 +187,7 @@ var _ = Describe("project observation identity and lifecycle", func() {
 		input := codesignal.Input{
 			ProjectChanges:  []codesignal.ProjectChange{change},
 			ProjectFacts:    []codesignal.ProjectFact{fact},
-			ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+			ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 		}
 		callerRelated := input.ProjectChanges[0].RelatedLocations
 		callerChangeSteps := input.ProjectChanges[0].PathSteps
@@ -228,7 +228,7 @@ var _ = Describe("project observation identity and lifecycle", func() {
 			Provenance: codesignal.Provenance{Producer: "projectmodel"},
 		}
 
-		cov := &projectmodel.Coverage{Phase: "full", Complete: true}
+		cov := &domain.Coverage{Phase: "full", Complete: true}
 		leftReport := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 			ProjectFacts:    []codesignal.ProjectFact{left},
 			ProjectCoverage: cov,

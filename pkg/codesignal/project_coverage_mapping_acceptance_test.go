@@ -7,15 +7,15 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 )
 
 // headProjectScope returns a minimal non-nil ProjectScope for use in tests.
-func headProjectScope() *projectmodel.ProjectScope {
-	return &projectmodel.ProjectScope{
-		InclusionRule:   projectmodel.InclusionRuleTSConfigIncludesNoTestClassification,
-		PatternSet:      projectmodel.TSReachabilityAlgorithm,
-		Roots:           []projectmodel.ProjectScopeRoot{{Root: ".", CandidateFiles: 10, AnalyzedFiles: 10}},
+func headProjectScope() *domain.ProjectScope {
+	return &domain.ProjectScope{
+		InclusionRule:   domain.InclusionRuleTSConfigIncludesNoTestClassification,
+		PatternSet:      domain.TSReachabilityAlgorithm,
+		Roots:           []domain.ProjectScopeRoot{{Root: ".", CandidateFiles: 10, AnalyzedFiles: 10}},
 		MatchedLayers:   []string{"handlers"},
 		UnmatchedLayers: []string{"db"},
 	}
@@ -24,40 +24,40 @@ func headProjectScope() *projectmodel.ProjectScope {
 // baseProjectScope returns a distinct ProjectScope for the base revision in diff-mode tests.
 // Its candidate_files (7) and layers differ from headProjectScope's so base/head conflation
 // is detectable without asserting pointer equality.
-func baseProjectScope() *projectmodel.ProjectScope {
-	return &projectmodel.ProjectScope{
-		InclusionRule:   projectmodel.InclusionRuleTSConfigIncludesNoTestClassification,
-		PatternSet:      projectmodel.TSReachabilityAlgorithm,
-		Roots:           []projectmodel.ProjectScopeRoot{{Root: ".", CandidateFiles: 7, AnalyzedFiles: 5}},
+func baseProjectScope() *domain.ProjectScope {
+	return &domain.ProjectScope{
+		InclusionRule:   domain.InclusionRuleTSConfigIncludesNoTestClassification,
+		PatternSet:      domain.TSReachabilityAlgorithm,
+		Roots:           []domain.ProjectScopeRoot{{Root: ".", CandidateFiles: 7, AnalyzedFiles: 5}},
 		MatchedLayers:   []string{"api"},
 		UnmatchedLayers: []string{"cache", "db"},
 	}
 }
 
 // completeCoverage returns a complete Coverage for a given phase name.
-func completeCoverage(phase string) *projectmodel.Coverage {
-	return &projectmodel.Coverage{Phase: phase, Complete: true}
+func completeCoverage(phase string) *domain.Coverage {
+	return &domain.Coverage{Phase: phase, Complete: true}
 }
 
 // incompleteCoverage returns an incomplete Coverage for a given phase name.
-func incompleteCoverage(phase string) *projectmodel.Coverage {
-	return &projectmodel.Coverage{Phase: phase, Complete: false}
+func incompleteCoverage(phase string) *domain.Coverage {
+	return &domain.Coverage{Phase: phase, Complete: false}
 }
 
 // notRequestedCoverage returns a Coverage with Phase="not_requested" and Complete=true,
 // as the TypeScript backend produces when no required_layer is configured.
-func notRequestedCoverage() *projectmodel.Coverage {
-	return &projectmodel.Coverage{Phase: "not_requested", Complete: true}
+func notRequestedCoverage() *domain.Coverage {
+	return &domain.Coverage{Phase: "not_requested", Complete: true}
 }
 
 // backendUnavailableCoverage returns a Coverage containing DiagBackendUnavailable,
 // as produced when the TS sidecar cannot be reached.
-func backendUnavailableCoverage() *projectmodel.Coverage {
-	return &projectmodel.Coverage{
+func backendUnavailableCoverage() *domain.Coverage {
+	return &domain.Coverage{
 		Phase:    "model",
 		Complete: false,
-		Diagnostics: []projectmodel.Diagnostic{
-			{Code: projectmodel.DiagBackendUnavailable, Message: "sidecar unavailable"},
+		Diagnostics: []domain.Diagnostic{
+			{Code: domain.DiagBackendUnavailable, Message: "sidecar unavailable"},
 		},
 	}
 }
@@ -127,7 +127,7 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				HeadModelCoverage:        completeCoverage("model"),
 				HeadBypassCoverage:       notRequestedCoverage(),
 				HeadReachabilityCoverage: incompleteCoverage("reachability"),
-				ProjectCoverage:          &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:          &domain.Coverage{Phase: "full", Complete: true},
 				RuntimeKind:              "node",
 				RuntimeVersion:           "v24.9.9",
 				RuntimeOrigin:            "path",
@@ -200,7 +200,7 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				HeadModelCoverage:        incompleteCoverage("model"),
 				HeadBypassCoverage:       notRequestedCoverage(),
 				HeadReachabilityCoverage: completeCoverage("reachability"),
-				ProjectCoverage:          &projectmodel.Coverage{Phase: "full", Complete: false},
+				ProjectCoverage:          &domain.Coverage{Phase: "full", Complete: false},
 			})
 		})
 
@@ -295,8 +295,8 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				Scope:              codesignal.Scope{Revision: "HEAD_SHA"},
 				HeadProjectScope:   headProjectScope(),
 				HeadModelCoverage:  completeCoverage("model"),
-				HeadBypassCoverage: &projectmodel.Coverage{Phase: "not_requested", Complete: true},
-				ProjectCoverage:    &projectmodel.Coverage{Phase: "full", Complete: true},
+				HeadBypassCoverage: &domain.Coverage{Phase: "not_requested", Complete: true},
+				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 			})
 			cov := extractHeadCoverage(report)
 			var bypass string
@@ -323,8 +323,8 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				BaseModelCoverage:        completeCoverage("model"),
 				BaseBypassCoverage:       notRequestedCoverage(),
 				BaseReachabilityCoverage: incompleteCoverage("reachability"),
-				ProjectCoverage:          &projectmodel.Coverage{Phase: "full", Complete: true},
-				BaseProjectCoverage:      &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:          &domain.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage:      &domain.Coverage{Phase: "full", Complete: true},
 			})
 		})
 
@@ -347,9 +347,9 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 
 			var inclusionRule, patternSet string
 			Expect(json.Unmarshal(scope["inclusion_rule"], &inclusionRule)).To(Succeed())
-			Expect(inclusionRule).To(Equal(string(projectmodel.InclusionRuleTSConfigIncludesNoTestClassification)))
+			Expect(inclusionRule).To(Equal(string(domain.InclusionRuleTSConfigIncludesNoTestClassification)))
 			Expect(json.Unmarshal(scope["pattern_set"], &patternSet)).To(Succeed())
-			Expect(patternSet).To(Equal(string(projectmodel.TSReachabilityAlgorithm)))
+			Expect(patternSet).To(Equal(string(domain.TSReachabilityAlgorithm)))
 
 			var head map[string]json.RawMessage
 			Expect(json.Unmarshal(scope["head"], &head)).To(Succeed())
@@ -416,7 +416,7 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				HeadProjectScope:   headProjectScope(),
 				HeadModelCoverage:  completeCoverage("model"),
 				HeadBypassCoverage: notRequestedCoverage(),
-				ProjectCoverage:    &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 				Diagnostics: []codesignal.Diagnostic{
 					{Kind: "project_coverage_incomplete", Message: "some partial coverage"},
 				},
@@ -443,8 +443,8 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				BaseModelCoverage:        incompleteCoverage("model"),
 				BaseBypassCoverage:       notRequestedCoverage(),
 				BaseReachabilityCoverage: completeCoverage("reachability"),
-				ProjectCoverage:          &projectmodel.Coverage{Phase: "full", Complete: true},
-				BaseProjectCoverage:      &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:          &domain.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage:      &domain.Coverage{Phase: "full", Complete: true},
 			})
 		})
 
@@ -476,7 +476,7 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				HeadProjectScope:   headProjectScope(),
 				HeadModelCoverage:  completeCoverage("model"),
 				HeadBypassCoverage: incompleteCoverage("bypass"),
-				ProjectCoverage:    &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 			})
 		})
 
@@ -503,7 +503,7 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				HeadProjectScope:   headProjectScope(),
 				HeadModelCoverage:  completeCoverage("model"),
 				HeadBypassCoverage: notRequestedCoverage(),
-				ProjectCoverage:    &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 				ProjectChanges:     []codesignal.ProjectChange{layerViolationChange(ruleID)},
 			})
 			fields := rawReportFields(report)
@@ -523,7 +523,7 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				HeadProjectScope:   headProjectScope(),
 				HeadModelCoverage:  completeCoverage("model"),
 				HeadBypassCoverage: notRequestedCoverage(),
-				ProjectCoverage:    &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 				// AnalyzerProtocolVersion deliberately left as zero value
 			})
 			prov := extractProvenance(report)
@@ -543,7 +543,7 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				HeadProjectScope:        headProjectScope(),
 				HeadModelCoverage:       completeCoverage("model"),
 				HeadBypassCoverage:      notRequestedCoverage(),
-				ProjectCoverage:         &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:         &domain.Coverage{Phase: "full", Complete: true},
 				AnalyzerProtocolVersion: 1,
 			})
 			prov := extractProvenance(report)
@@ -565,7 +565,7 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 					Scope:             codesignal.Scope{Revision: "HEAD_SHA"},
 					HeadProjectScope:  headProjectScope(),
 					HeadModelCoverage: completeCoverage("model"),
-					ProjectCoverage:   &projectmodel.Coverage{Phase: "full", Complete: true},
+					ProjectCoverage:   &domain.Coverage{Phase: "full", Complete: true},
 				})
 				fields := rawReportFields(report)
 				Expect(fields).NotTo(HaveKey("project_provenance"))
@@ -594,8 +594,8 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				HeadBypassCoverage:  notRequestedCoverage(),
 				BaseModelCoverage:   completeCoverage("model"),
 				BaseBypassCoverage:  notRequestedCoverage(),
-				ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-				BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 				BaseProjectChanges:  []codesignal.ProjectChange{layerViolationChange("architecture.layer_violation")},
 			})
 			Expect(report.ProjectSummary.ResolvedChanges).To(Equal(1), "the base-only violation must be counted as resolved")
@@ -616,7 +616,7 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				HeadProjectScope:   headProjectScope(),
 				HeadModelCoverage:  completeCoverage("model"),
 				HeadBypassCoverage: notRequestedCoverage(),
-				ProjectCoverage:    &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 				Files: []codesignal.FileChange{
 					{Path: "src/state.go", Status: "modified", Head: cleanResult("src/state.go", mutation("Update", 1))},
 				},

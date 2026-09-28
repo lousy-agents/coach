@@ -3,7 +3,7 @@ package coachapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
+
 	"fmt"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -28,52 +28,7 @@ func (e *judgmentBudgetExceededError) Error() string {
 
 func (e *judgmentBudgetExceededError) Unwrap() error { return e.Err }
 
-func judgeBaselineViaLoop(
-	ctx context.Context,
-	loop *agentloop.Loop,
-	files []loadedBaselineFile,
-	detFindings []JobFinding,
-	w BaselineJobWriter,
-	packCfg rubrics.PackConfig,
-	maxHiddenMutationJudgments int,
-) ([]JobFinding, []JobDiagnostic, error) {
-	byPath := make(map[string]loadedBaselineFile, len(files))
-	fileMetas := make([]rubrics.FileMeta, 0, len(files))
-	for _, f := range files {
-		byPath[f.Path] = f
-		fileMetas = append(fileMetas, rubrics.FileMeta{
-			Path:     f.Path,
-			Language: string(f.Language),
-		})
-	}
-
-	packCfg = rubrics.ApplyPackConfigDefaults(packCfg)
-	maxJudgments := resolveMaxHiddenMutationJudgments(maxHiddenMutationJudgments)
-
-	agentFindings, diagnostics, err := judgeHiddenMutationFindings(ctx, loop, byPath, detFindings, w, packCfg, maxJudgments)
-	if err != nil {
-		return agentFindings, diagnostics, err
-	}
-
-	cohesionFindings, cohesionDiags, err := judgeChangeCohesion(ctx, loop, fileMetas, detFindings)
-	if err != nil {
-		if errors.Is(err, agentloop.ErrBudgetExceeded) {
-			// HM packs finished; wall died on cohesion. Report HM agent rows as judged.
-			return agentFindings, diagnostics, &judgmentBudgetExceededError{
-				Judged:    len(agentFindings),
-				Remaining: 0,
-				Err:       err,
-			}
-		}
-		return agentFindings, diagnostics, err
-	}
-	if err := insertBaselineFindings(ctx, w, cohesionFindings); err != nil {
-		return agentFindings, diagnostics, err
-	}
-	agentFindings = append(agentFindings, cohesionFindings...)
-	diagnostics = append(diagnostics, cohesionDiags...)
-	return agentFindings, diagnostics, nil
-}
+// HM packs finished; wall died on cohesion. Report HM agent rows as judged.
 
 // hiddenMutationCandidate pairs a deterministic finding with the decoded
 // signal driving its judgment-pack membership.
@@ -82,245 +37,32 @@ type hiddenMutationCandidate struct {
 	sig     codesignal.Signal
 }
 
-func judgeHiddenMutationFindings(
-	ctx context.Context,
-	loop *agentloop.Loop,
-	byPath map[string]loadedBaselineFile,
-	detFindings []JobFinding,
-	w BaselineJobWriter,
-	packCfg rubrics.PackConfig,
-	maxJudgments int,
-) ([]JobFinding, []JobDiagnostic, error) {
-	cands, metas := collectHiddenMutationCandidates(byPath, detFindings, packCfg)
-	if len(cands) == 0 {
-		return nil, nil, nil
-	}
+// Priority cap before packing: select subset, then pack.
 
-	byRef := make(map[string]hiddenMutationCandidate, len(metas))
-	for i, c := range cands {
-		byRef[c.FindingRef] = metas[i]
-	}
-
-	// Priority cap before packing: select subset, then pack.
-	var diagnostics []JobDiagnostic
-	selected, omitted := PrioritizeJudgmentCandidates(cands, maxJudgments)
-	if omitted > 0 {
-		diagnostics = append(diagnostics, judgmentCapDiagnostic(len(selected), omitted))
-	}
-	cands = selected
-
-	packs := rubrics.PackJudgmentCandidates(cands, packCfg)
-	total := len(cands)
-	var (
-		agentFindings []JobFinding
-		judged        int
-	)
-
-	for _, pack := range packs {
-		items := hiddenMutationPackItems(pack, byRef, byPath, packCfg)
-		if len(items) == 0 {
-			continue
-		}
-
-		packFindings, packDiags, err := callHiddenMutationPack(ctx, loop, w, items, total, judged)
-		if err != nil {
-			return agentFindings, diagnostics, err
-		}
-		agentFindings = append(agentFindings, packFindings...)
-		diagnostics = append(diagnostics, packDiags...)
-		// Count successful agent rows only — diagnostics-only packs must not
-		// inflate judged= in the budget diagnostic.
-		judged += len(packFindings)
-	}
-	return agentFindings, diagnostics, nil
-}
+// Count successful agent rows only — diagnostics-only packs must not
+// inflate judged= in the budget diagnostic.
 
 // collectHiddenMutationCandidates builds one PackCandidate (plus its
 // originating finding/signal) per deterministic hidden_input_mutation
 // finding in detFindings.
-func collectHiddenMutationCandidates(
-	byPath map[string]loadedBaselineFile,
-	detFindings []JobFinding,
-	packCfg rubrics.PackConfig,
-) ([]rubrics.PackCandidate, []hiddenMutationCandidate) {
-	var (
-		cands []rubrics.PackCandidate
-		metas []hiddenMutationCandidate
-	)
-	for _, f := range detFindings {
-		if f.Source != FindingSourceDeterministic {
-			continue
-		}
-		sig, ok := hiddenMutationSignal(f.Payload)
-		if !ok {
-			continue
-		}
-		lf, found := byPath[sig.Path]
-		if !found {
-			lf = loadedBaselineFile{Path: sig.Path}
-		}
-		startRow := int(sig.Location.StartRow)
-		window := rubrics.FormatSpanWindow(lf.Content, startRow, packCfg.EvidenceWindowLines)
-		cands = append(cands, rubrics.PackCandidate{
-			FindingRef:    f.PayloadHash,
-			Path:          sig.Path,
-			StartRow:      startRow,
-			Severity:      string(sig.Severity),
-			Confidence:    string(sig.Confidence),
-			PayloadJSON:   append([]byte(nil), f.Payload...),
-			EvidenceChars: len(window),
-		})
-		metas = append(metas, hiddenMutationCandidate{finding: f, sig: sig})
-	}
-	return cands, metas
-}
 
 // hiddenMutationPackItems assembles one judgment pack's rubric items,
 // skipping any FindingRef no longer present in byRef.
-func hiddenMutationPackItems(
-	pack rubrics.JudgmentPack,
-	byRef map[string]hiddenMutationCandidate,
-	byPath map[string]loadedBaselineFile,
-	packCfg rubrics.PackConfig,
-) []rubrics.HiddenMutationPackItem {
-	items := make([]rubrics.HiddenMutationPackItem, 0, len(pack.FindingRefs))
-	for _, ref := range pack.FindingRefs {
-		meta, ok := byRef[ref]
-		if !ok {
-			continue
-		}
-		lf, found := byPath[meta.sig.Path]
-		if !found {
-			lf = loadedBaselineFile{Path: meta.sig.Path}
-		}
-		window := rubrics.FormatSpanWindow(lf.Content, int(meta.sig.Location.StartRow), packCfg.EvidenceWindowLines)
-		items = append(items, rubrics.HiddenMutationPackItem{
-			FindingRef: ref,
-			Finding:    append(json.RawMessage(nil), meta.finding.Payload...),
-			File: rubrics.FileContext{
-				Path:     lf.Path,
-				Language: string(lf.Language),
-				Content:  window,
-			},
-		})
-	}
-	return items
-}
 
 // callHiddenMutationPack invokes the hidden-mutation-contextualization
 // rubric for one pack and persists its findings incrementally, so a
 // mid-phase budget stop keeps every already-completed pack.
-func callHiddenMutationPack(
-	ctx context.Context,
-	loop *agentloop.Loop,
-	w BaselineJobWriter,
-	items []rubrics.HiddenMutationPackItem,
-	total, judged int,
-) ([]JobFinding, []JobDiagnostic, error) {
-	args, err := json.Marshal(map[string]any{"items": items})
-	if err != nil {
-		return nil, nil, err
-	}
-	raw, err := loop.Call(ctx, agentloop.CallSourceHandler, rubrics.IDHiddenMutationContextualization, args)
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil, nil, err
-		}
-		if errors.Is(err, agentloop.ErrBudgetExceeded) {
-			return nil, nil, &judgmentBudgetExceededError{
-				Judged:    judged,
-				Remaining: total - judged,
-				Err:       err,
-			}
-		}
-		return nil, nil, fmt.Errorf("coachapi: rubric %s: %w", rubrics.IDHiddenMutationContextualization, err)
-	}
-
-	packFindings, packDiags, err := jobOutcomesFromHiddenMutationResult(raw)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := insertBaselineFindings(ctx, w, packFindings); err != nil {
-		return nil, nil, err
-	}
-	return packFindings, packDiags, nil
-}
 
 // jobOutcomesFromHiddenMutationResult maps a singular ToolResult or pack
 // {"results":[...]} envelope to job findings/diagnostics. Pack items use
 // FindingRef (deterministic PayloadHash) as the payload_hash discriminator.
-func jobOutcomesFromHiddenMutationResult(raw json.RawMessage) ([]JobFinding, []JobDiagnostic, error) {
-	if rubrics.IsToolPackResult(raw) {
-		pack, err := rubrics.ParseToolPackResult(raw)
-		if err != nil {
-			return nil, nil, err
-		}
-		return jobOutcomesFromToolPack(pack)
-	}
-	return jobOutcomeFromSingularToolResult(raw)
-}
-
-func jobOutcomesFromToolPack(pack rubrics.ToolPackResult) ([]JobFinding, []JobDiagnostic, error) {
-	var findings []JobFinding
-	var diags []JobDiagnostic
-	for _, tr := range pack.Results {
-		itemRaw, err := json.Marshal(tr)
-		if err != nil {
-			return nil, nil, err
-		}
-		af, d, err := jobOutcomeFromRubricTool(itemRaw, tr.FindingRef)
-		if err != nil {
-			return nil, nil, err
-		}
-		findings, diags = appendJobOutcome(findings, diags, af, d)
-	}
-	return findings, diags, nil
-}
 
 // jobOutcomeFromSingularToolResult handles the non-pack envelope (a
 // one-item pack may also take this path). FindingRef is omitted as a
 // discriminator entirely when empty, unlike jobOutcomesFromToolPack's
 // per-item FindingRef, which is always passed even when empty.
-func jobOutcomeFromSingularToolResult(raw json.RawMessage) ([]JobFinding, []JobDiagnostic, error) {
-	var tr rubrics.ToolResult
-	if err := json.Unmarshal(raw, &tr); err != nil {
-		return nil, nil, fmt.Errorf("coachapi: decoding rubric tool result: %w", err)
-	}
-	var disc []string
-	if tr.FindingRef != "" {
-		disc = []string{tr.FindingRef}
-	}
-	af, d, err := jobOutcomeFromRubricTool(raw, disc...)
-	if err != nil {
-		return nil, nil, err
-	}
-	var findings []JobFinding
-	var diags []JobDiagnostic
-	findings, diags = appendJobOutcome(findings, diags, af, d)
-	return findings, diags, nil
-}
 
 // appendJobOutcome appends af/d onto findings/diags; either may be nil.
-func appendJobOutcome(findings []JobFinding, diags []JobDiagnostic, af *JobFinding, d *JobDiagnostic) ([]JobFinding, []JobDiagnostic) {
-	if af != nil {
-		findings = append(findings, *af)
-	}
-	if d != nil {
-		diags = append(diags, *d)
-	}
-	return findings, diags
-}
-
-func hiddenMutationSignal(payload json.RawMessage) (codesignal.Signal, bool) {
-	var sig codesignal.Signal
-	if err := json.Unmarshal(payload, &sig); err != nil {
-		return codesignal.Signal{}, false
-	}
-	if sig.Kind != "hidden_input_mutation" && sig.RuleID != "state.hidden_input_mutation" {
-		return codesignal.Signal{}, false
-	}
-	return sig, true
-}
 
 func judgeChangeCohesion(ctx context.Context, loop *agentloop.Loop, fileMetas []rubrics.FileMeta, detFindings []JobFinding) ([]JobFinding, []JobDiagnostic, error) {
 	detPayloads := make([]json.RawMessage, 0, len(detFindings))

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/projectbridge"
+	"github.com/lousy-agents/coach/pkg/domain"
 )
 
 // TestModelWireFieldParity guards the invariant documented on modelWire:
@@ -21,7 +22,7 @@ import (
 // implementation detail, not externally observable behavior.
 func TestModelWireFieldParity(t *testing.T) {
 	modelType := reflect.TypeOf(Model{})
-	wireType := reflect.TypeOf(modelWire{})
+	wireType := reflect.TypeOf(domain.ModelWire{})
 
 	t.Run("Model and modelWire fields mirror 1:1", func(t *testing.T) {
 		if modelType.NumField() != wireType.NumField() {

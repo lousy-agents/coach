@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -260,7 +260,7 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 					Path: "state.go", Status: "modified", Head: cleanResult("state.go", finding),
 				}},
 				ProjectChanges:  []codesignal.ProjectChange{change},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(report.Signals).To(HaveLen(2))
 

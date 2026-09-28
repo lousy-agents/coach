@@ -1,6 +1,6 @@
 package codesignal
 
-import "github.com/lousy-agents/coach/pkg/projectmodel"
+import "github.com/lousy-agents/coach/pkg/domain"
 
 // mapCoveragePhase converts a phase-specific Coverage observation to one of
 // the four frozen D7 vocabulary strings: complete, incomplete, not_run,
@@ -11,14 +11,14 @@ import "github.com/lousy-agents/coach/pkg/projectmodel"
 // is true and the coverage carries DiagBackendUnavailable, the outcome is
 // "not_run" rather than "incomplete", distinguishing "never ran" from
 // "ran but found coverage gaps".
-func mapCoveragePhase(cov *projectmodel.Coverage, scopeNil bool) string {
+func mapCoveragePhase(cov *domain.Coverage, scopeNil bool) string {
 	if cov == nil {
 		return "not_run"
 	}
 	if cov.Phase == "not_requested" {
 		return "not_requested"
 	}
-	if scopeNil && hasDiagCode(cov, projectmodel.DiagBackendUnavailable) {
+	if scopeNil && hasDiagCode(cov, domain.DiagBackendUnavailable) {
 		return "not_run"
 	}
 	if cov.Complete {
@@ -27,7 +27,7 @@ func mapCoveragePhase(cov *projectmodel.Coverage, scopeNil bool) string {
 	return "incomplete"
 }
 
-func hasDiagCode(cov *projectmodel.Coverage, code string) bool {
+func hasDiagCode(cov *domain.Coverage, code string) bool {
 	for _, d := range cov.Diagnostics {
 		if d.Code == code {
 			return true

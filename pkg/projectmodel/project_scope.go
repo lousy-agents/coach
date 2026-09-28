@@ -6,35 +6,17 @@ import (
 	"strings"
 )
 
-const InclusionRuleTSConfigIncludesNoTestClassification = "tsconfig_includes_no_test_classification"
-
 type ProjectScopePolicyLayer struct {
 	Name     string
 	Prefixes []string
 }
 
-// ProjectScopePolicy is not pkg/codesignal.LayerPolicy: pkg/codesignal
-// already imports pkg/projectmodel (rule_layer_violation.go), so importing
-// pkg/codesignal from here to reuse its type would create an import cycle.
-// Keep this type's Layers field shape in sync with ArchitectureLayer by
-// hand if that one changes.
+// ProjectScopePolicy is not pkg/codesignal.LayerPolicy. This package is an
+// adapter and must not import the use-case package. Keep this type's Layers
+// field shape in sync with ArchitectureLayer by hand if that one changes.
 type ProjectScopePolicy struct {
 	Roots  []string
 	Layers []ProjectScopePolicyLayer
-}
-
-type ProjectScopeRoot struct {
-	Root           string `json:"root"`
-	CandidateFiles int    `json:"candidate_files"`
-	AnalyzedFiles  int    `json:"analyzed_files"`
-}
-
-type ProjectScope struct {
-	InclusionRule   string             `json:"inclusion_rule"`
-	PatternSet      string             `json:"pattern_set"`
-	Roots           []ProjectScopeRoot `json:"roots"`
-	MatchedLayers   []string           `json:"matched_layers"`
-	UnmatchedLayers []string           `json:"unmatched_layers"`
 }
 
 func ProjectScopeFromModel(model Model, policy ProjectScopePolicy) (ProjectScope, error) {

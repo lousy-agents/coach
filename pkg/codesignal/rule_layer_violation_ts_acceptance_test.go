@@ -5,15 +5,15 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 	When("a value-level import edge crosses a forbidden layer boundary", func() {
 		It("emits exactly one architecture.layer_violation ProjectChange tagged with language typescript", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "file:pkg/handlers/h.ts",
 						To:         "file:pkg/db/d.ts",
@@ -59,8 +59,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("a reexport edge crosses a forbidden layer boundary", func() {
 		It("emits exactly one architecture.layer_violation ProjectChange", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "file:pkg/handlers/h.ts",
 						To:         "file:pkg/db/d.ts",
@@ -80,8 +80,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("the edge is type-only", func() {
 		It("emits zero ProjectChanges and zero diagnostics (negative control: type-only import must not be a runtime violation)", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "file:pkg/handlers/h.ts",
 						To:         "file:pkg/db/d.ts",
@@ -101,8 +101,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("the edge is a commonjs_require", func() {
 		It("emits zero ProjectChanges (negative control: commonjs_require is not eligible)", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "file:pkg/handlers/h.ts",
 						To:         "file:pkg/db/d.ts",
@@ -122,8 +122,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("a dynamic_import edge crosses a forbidden layer boundary but resolves outside the snapshot", func() {
 		It("emits zero ProjectChanges and zero diagnostics (silent coverage gap, matching Go's convention)", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "file:pkg/handlers/h.ts",
 						To:         "unresolved:pkg/db/d",
@@ -143,8 +143,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("a dynamic_import edge crosses a forbidden layer boundary and resolves within the snapshot", func() {
 		It("emits zero ProjectChanges (negative control: dynamic_import is not eligible even when file-addressed)", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "file:pkg/handlers/h.ts",
 						To:         "file:pkg/db/d.ts",
@@ -164,8 +164,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("an import edge resolves to an external package", func() {
 		It("emits zero ProjectChanges and zero diagnostics (silent coverage gap: external: targets carry no file: prefix and are skipped)", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "file:pkg/handlers/h.ts",
 						To:         "external:some-lib",
@@ -185,8 +185,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("the import direction is allowed by policy", func() {
 		It("emits zero ProjectChanges (negative control: allowed inter-layer import)", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "file:pkg/db/d.ts",
 						To:         "file:pkg/handlers/h.ts",
@@ -206,8 +206,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("an endpoint's file is not covered by any configured layer", func() {
 		It("emits zero ProjectChanges and zero diagnostics (negative control: unmapped file)", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "file:pkg/handlers/h.ts",
 						To:         "file:pkg/other/o.ts",
@@ -227,8 +227,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("an edge would otherwise violate the forbidden layer pair but neither endpoint carries the file: prefix", func() {
 		It("emits zero ProjectChanges and zero diagnostics (silent coverage gap: non-file-addressed edges are skipped)", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "pkg/handlers/h.ts",
 						To:         "pkg/db/d.ts",
@@ -256,8 +256,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 					{From: "app", To: "app"},
 				},
 			}
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "file:pkg/handlers/h.ts",
 						To:         "external:lodash",
@@ -277,8 +277,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("the importer lacks the file: prefix but the importee carries it", func() {
 		It("emits zero ProjectChanges and zero diagnostics (the importer-side file: prefix check alone excludes this edge)", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "pkg/handlers/h.ts",
 						To:         "file:pkg/db/d.ts",
@@ -298,8 +298,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("a file-addressed import edge crosses a forbidden layer boundary but carries no Resolution value", func() {
 		It("still emits a ProjectChange (Resolution is not part of the eligibility rule; file: addressing alone is sufficient)", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From: "file:pkg/handlers/h.ts",
 						To:   "file:pkg/db/d.ts",
@@ -319,8 +319,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("multiple eligible edges share the same (importer file, importee file) pair", func() {
 		It("collapses them into one ProjectChange with the lexicographically-first site as PrimaryAnchor and the rest as RelatedLocations", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{
 						From:       "file:pkg/handlers/h.ts",
 						To:         "file:pkg/db/d.ts",
@@ -367,8 +367,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 					{From: "handlers", To: "db"},
 				},
 			}
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{From: "file:pkg/api/a.ts", To: "file:pkg/store/s.ts", Kind: "import", Resolution: "snapshot", Site: "pkg/api/a.ts:1"},
 					{From: "file:pkg/handlers/h.ts", To: "file:pkg/store/s.ts", Kind: "import", Resolution: "snapshot", Site: "pkg/handlers/h.ts:1"},
 					{From: "file:pkg/handlers/h.ts", To: "file:pkg/db/d.ts", Kind: "import", Resolution: "snapshot", Site: "pkg/handlers/h.ts:1"},
@@ -393,8 +393,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 	When("the policy has no layers or no forbidden imports configured", func() {
 		It("returns nil, nil immediately regardless of how many edges the model has", func() {
-			model := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{From: "file:pkg/handlers/h.ts", To: "file:pkg/db/d.ts", Kind: "import", Resolution: "snapshot", Site: "pkg/handlers/h.ts:10"},
 				},
 			}

@@ -3,13 +3,12 @@ package codesignalcli
 import (
 	"context"
 	"fmt"
-	"io"
+
 	"io/fs"
-	"os"
+
 	"os/exec"
 	"path"
-	"sort"
-	"strconv"
+
 	"strings"
 	"time"
 )
@@ -56,20 +55,6 @@ var runSnapshotGit = func(dir string, maxStdout, maxStderr int64, timeout time.D
 // repository, which needs none of them, and forwarding them would be an
 // unnecessary vector for those settings to influence a read that must stay
 // local and hermetic.
-func sanitizedSnapshotGitEnv() []string {
-	env := []string{
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_NO_LAZY_FETCH=1",
-	}
-	if value, ok := os.LookupEnv("PATH"); ok {
-		env = append(env, "PATH="+value)
-	}
-	if value, ok := os.LookupEnv("HOME"); ok {
-		env = append(env, "HOME="+value)
-	}
-	return env
-}
 
 // goSnapshotFS is a read-only fs.FS over one immutable Git revision. Every
 // tracked path is enumerated once at construction; file reads are served
@@ -181,21 +166,6 @@ func NewGoSnapshotFS(dir, revision string) (fs.FS, error) {
 // here would discard the specific path the caller needs to report -- the
 // existing per-path failure instead surfaces naturally, with that path
 // intact, the moment something actually tries to read the blob's content.
-func parseSnapshotLsTreeEntry(entry string) (path string, size int64, err error) {
-	meta, p, found := strings.Cut(entry, "\t")
-	if !found {
-		return "", 0, fmt.Errorf("missing tab-separated path")
-	}
-	fields := strings.Fields(meta)
-	if len(fields) < 4 {
-		return "", 0, fmt.Errorf("expected mode/type/object/size, got %q", meta)
-	}
-	parsedSize, err := strconv.ParseInt(fields[3], 10, 64)
-	if err != nil {
-		return p, 0, nil
-	}
-	return p, parsedSize, nil
-}
 
 // validateSnapshotPath defensively rejects any git-reported path that would
 // escape the snapshot root when used as an fs.FS name. `git ls-tree`
@@ -223,124 +193,15 @@ type snapshotPaths struct {
 	isDir     map[string]bool
 }
 
-func (s *snapshotPaths) add(filePath string) {
-	segments := strings.Split(filePath, "/")
-	parent := "."
-	for i, segment := range segments {
-		if s.childSets[parent] == nil {
-			s.childSets[parent] = map[string]bool{}
-		}
-		if i == len(segments)-1 {
-			s.childSets[parent][segment] = false
-			return
-		}
-		s.childSets[parent][segment] = true
-		parent = path.Join(parent, segment)
-		s.isDir[parent] = true
-	}
-}
-
-func finalizeSnapshotChildren(childSets map[string]map[string]bool) map[string][]fs.DirEntry {
-	out := make(map[string][]fs.DirEntry, len(childSets))
-	for dir, names := range childSets {
-		entries := make([]fs.DirEntry, 0, len(names))
-		for name, isDir := range names {
-			entries = append(entries, snapshotDirEntry{name: name, isDir: isDir})
-		}
-		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-		out[dir] = entries
-	}
-	return out
-}
-
 // normalizeSnapshotName validates a caller-supplied fs.FS name per the
 // io/fs contract (slash-separated, no ./.. elements); "." denotes the
 // snapshot root.
-func normalizeSnapshotName(name string) (string, error) {
-	if name == "." {
-		return ".", nil
-	}
-	if !fs.ValidPath(name) {
-		return "", fmt.Errorf("invalid path %q", name)
-	}
-	return name, nil
-}
-
-func (f *goSnapshotFS) Open(name string) (fs.File, error) {
-	clean, err := normalizeSnapshotName(name)
-	if err != nil {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
-	}
-	if f.isDir[clean] {
-		return &snapshotDirFile{name: clean, entries: f.children[clean]}, nil
-	}
-	if f.isFile[clean] {
-		data, err := f.readFile(clean)
-		if err != nil {
-			return nil, err
-		}
-		return &snapshotFile{name: clean, data: data}, nil
-	}
-	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
-}
 
 // Stat implements fs.StatFS entirely from the listing cached at
 // construction, with no git child process of its own -- in particular, it
 // never falls back to Open+git-show the way the io/fs package's own
 // fs.Stat helper would if this method were absent, which would buffer an
 // entire blob's content just to report its length.
-func (f *goSnapshotFS) Stat(name string) (fs.FileInfo, error) {
-	clean, err := normalizeSnapshotName(name)
-	if err != nil {
-		return nil, &fs.PathError{Op: "stat", Path: name, Err: fs.ErrInvalid}
-	}
-	if f.isDir[clean] {
-		return snapshotDirInfo{name: path.Base(clean)}, nil
-	}
-	if f.isFile[clean] {
-		return snapshotFileInfo{name: path.Base(clean), size: f.sizes[clean]}, nil
-	}
-	return nil, &fs.PathError{Op: "stat", Path: name, Err: fs.ErrNotExist}
-}
-
-func (f *goSnapshotFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	clean, err := normalizeSnapshotName(name)
-	if err != nil {
-		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrInvalid}
-	}
-	if !f.isDir[clean] {
-		if f.isFile[clean] {
-			return nil, &fs.PathError{Op: "readdir", Path: name, Err: fmt.Errorf("not a directory")}
-		}
-		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrNotExist}
-	}
-	entries := f.children[clean]
-	out := make([]fs.DirEntry, len(entries))
-	copy(out, entries)
-	return out, nil
-}
-
-func (f *goSnapshotFS) ReadFile(name string) ([]byte, error) {
-	clean, err := normalizeSnapshotName(name)
-	if err != nil {
-		return nil, &fs.PathError{Op: "readfile", Path: name, Err: fs.ErrInvalid}
-	}
-	if f.isDir[clean] {
-		return nil, &fs.PathError{Op: "read", Path: name, Err: fmt.Errorf("is a directory")}
-	}
-	if !f.isFile[clean] {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
-	}
-	return f.readFile(clean)
-}
-
-func (f *goSnapshotFS) readFile(clean string) ([]byte, error) {
-	data, err := runSnapshotGit(f.dir, maxSnapshotFileBytes, maxSnapshotGitStderr, snapshotGitTimeout, "show", f.revision+":"+clean)
-	if err != nil {
-		return nil, &fs.PathError{Op: "read", Path: clean, Err: fmt.Errorf("git show %s:%s: %w", f.revision, clean, err)}
-	}
-	return data, nil
-}
 
 type snapshotDirEntry struct {
 	name  string
@@ -355,12 +216,6 @@ func (e snapshotDirEntry) Type() fs.FileMode {
 	}
 	return 0
 }
-func (e snapshotDirEntry) Info() (fs.FileInfo, error) {
-	if e.isDir {
-		return snapshotDirInfo{name: e.name}, nil
-	}
-	return snapshotFileInfo{name: e.name}, nil
-}
 
 type snapshotFile struct {
 	name string
@@ -370,15 +225,6 @@ type snapshotFile struct {
 
 func (sf *snapshotFile) Stat() (fs.FileInfo, error) {
 	return snapshotFileInfo{name: path.Base(sf.name), size: int64(len(sf.data))}, nil
-}
-
-func (sf *snapshotFile) Read(b []byte) (int, error) {
-	if sf.pos >= len(sf.data) {
-		return 0, io.EOF
-	}
-	n := copy(b, sf.data[sf.pos:])
-	sf.pos += n
-	return n, nil
 }
 
 func (sf *snapshotFile) Close() error { return nil }
@@ -398,24 +244,6 @@ func (sd *snapshotDirFile) Read([]byte) (int, error) {
 }
 
 func (sd *snapshotDirFile) Close() error { return nil }
-
-func (sd *snapshotDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
-	if n <= 0 {
-		remaining := sd.entries[sd.offset:]
-		sd.offset = len(sd.entries)
-		return remaining, nil
-	}
-	if sd.offset >= len(sd.entries) {
-		return nil, io.EOF
-	}
-	end := sd.offset + n
-	if end > len(sd.entries) {
-		end = len(sd.entries)
-	}
-	batch := sd.entries[sd.offset:end]
-	sd.offset = end
-	return batch, nil
-}
 
 type snapshotFileInfo struct {
 	name string

@@ -38,21 +38,6 @@ type compilerAggregate struct {
 	project projectOriginContext
 }
 
-func evaluateCompilerOrigins(dir string, roots []string) compilerAggregate {
-	worktreeRoot := compilerWorktreeRoot(dir)
-	project, rootContext := evaluateProjectOrigin(worktreeRoot, roots)
-
-	aggregate := compilerAggregate{project: rootContext}
-	if aggregate.tryOrigin(project) {
-		return aggregate
-	}
-	if aggregate.tryOrigin(evaluateMiseProjectOriginGated(worktreeRoot)) {
-		return aggregate
-	}
-	aggregate.tryOrigin(gatedMiseOriginEvaluation(compilerOriginMiseGlobal, evaluateMiseGlobalTrust(context.Background()), evaluateMiseGlobalOrigin))
-	return aggregate
-}
-
 // tryOrigin records evaluation's candidate and reports whether the search
 // across origins should stop here: a conflict, or an eligible winner.
 func (a *compilerAggregate) tryOrigin(evaluation originEvaluation) bool {
@@ -89,20 +74,6 @@ func compilerOutcomeFromAggregate(aggregate compilerAggregate) (code string, fin
 	return GapTypescriptCompilerMissing, nil
 }
 
-func conflictFindings(origin, selectedRoots []ReadinessRootFinding) []ReadinessRootFinding {
-	if len(origin) > 0 {
-		return origin
-	}
-	return selectedRoots
-}
-
-func mismatchRootFindings(unsupported compilerCandidate, findings []ReadinessRootFinding) []ReadinessRootFinding {
-	if unsupported.origin != compilerOriginProject {
-		return nil
-	}
-	return findings
-}
-
 // miseSetupTrust is the shared gate applied at every point mise would
 // otherwise be asked for a TypeScript version, whether resolving
 // checks.compiler (gatedMiseOriginEvaluation, below) or reporting a
@@ -123,12 +94,6 @@ type miseSetupTrust struct {
 // origin already produces: an untrusted mise origin must never be
 // distinguishable, from checks.compiler's perspective, from one that simply
 // has nothing configured.
-func gatedMiseOriginEvaluation(origin string, trust miseSetupTrust, evaluate func() originEvaluation) originEvaluation {
-	if !trust.trusted {
-		return noCandidateEvaluation(origin, compilerClassUnconfigured)
-	}
-	return evaluate()
-}
 
 // evaluateMiseProjectOriginGated is the trust-gated entry point for the
 // project mise scope. A project mise.toml declaring more than one exact
@@ -139,23 +104,6 @@ func gatedMiseOriginEvaluation(origin string, trust miseSetupTrust, evaluate fun
 // tool itself happens to be unverifiable. Every other case (zero or one
 // candidate version) is gated on miseSetupTrust as usual: reading that one
 // version's installed location is where mise's own trustworthiness matters.
-func evaluateMiseProjectOriginGated(worktreeRoot string) originEvaluation {
-	if localMiseProjectVersionsConflict(worktreeRoot) {
-		return evaluateMiseProjectOrigin(worktreeRoot)
-	}
-	return gatedMiseOriginEvaluation(compilerOriginMiseProject, evaluateMiseProjectTrust(context.Background(), worktreeRoot), func() originEvaluation {
-		return evaluateMiseProjectOrigin(worktreeRoot)
-	})
-}
-
-func localMiseProjectVersionsConflict(worktreeRoot string) bool {
-	data, ok := readMiseProjectConfigFile(worktreeRoot)
-	if !ok {
-		return false
-	}
-	versions := dedupeStrings(filterExactVersions(parseMiseToolsTypescriptVersions(data)))
-	return len(versions) > 1
-}
 
 // evaluateMiseProjectTrust checks the mise tool version plus the repository-
 // controlled project mise.toml -- the primary threat, since a repository an
@@ -188,14 +136,6 @@ func miseTrustFromChecks(toolReadiness miseToolReadiness, hazardCheck func() boo
 	return miseSetupTrust{trusted: true}
 }
 
-func projectMiseConfigHazard(worktreeRoot string) bool {
-	data, ok := readMiseProjectConfigFile(worktreeRoot)
-	if !ok {
-		return false
-	}
-	return hasMiseConfigHazard(data)
-}
-
 // evaluateMiseSetupChoices computes the two mise ReadinessMiseChoice entries
 // CheckProjectReadiness feeds to aggregateReadiness: whether each of the
 // project and global mise scopes may be offered as a prepare_compiler
@@ -211,18 +151,6 @@ func projectMiseConfigHazard(worktreeRoot string) bool {
 // evaluateCompilerOrigins' frozen contract is that such a disagreement never
 // evaluates mise at all, so a second, independent computation of setup
 // choices must honor the same rule rather than quietly reaching mise anyway.
-func evaluateMiseSetupChoices(dir string, roots []string) []ReadinessMiseChoice {
-	worktreeRoot := compilerWorktreeRoot(dir)
-	project, _ := evaluateProjectOrigin(worktreeRoot, roots)
-	if project.conflict {
-		return nil
-	}
-	ctx := context.Background()
-	return []ReadinessMiseChoice{
-		miseSetupChoice(compilerOriginMiseProject, worktreeRoot, evaluateMiseProjectTrust(ctx, worktreeRoot)),
-		miseSetupChoice(compilerOriginMiseGlobal, worktreeRoot, evaluateMiseGlobalTrust(ctx)),
-	}
-}
 
 // miseSetupChoice withholds a trusted scope that has no installable pin
 // without inventing a package_manager_* gap: missing configuration is not a
@@ -231,17 +159,6 @@ func evaluateMiseSetupChoices(dir string, roots []string) []ReadinessMiseChoice 
 // silent. Reason is the finer distinction Code cannot carry, since the
 // no-pin case has no gap code at all: it is what AvailableSetupChoices names
 // when it withholds this scope from the menu.
-func miseSetupChoice(kind, worktreeRoot string, trust miseSetupTrust) ReadinessMiseChoice {
-	if !trust.trusted {
-		choice := miseReadinessChoice(kind, trust)
-		choice.Reason = setupChoiceReasonMiseUnverifiable
-		return choice
-	}
-	if reason := miseScopeSetupWithholdReason(kind, worktreeRoot); reason != "" {
-		return ReadinessMiseChoice{Kind: kind, Reason: reason}
-	}
-	return miseReadinessChoice(kind, trust)
-}
 
 // miseScopeSetupWithholdReason reports why a trusted mise scope cannot be
 // offered as an installation choice, or "" when it already declares exactly
@@ -249,15 +166,6 @@ func miseSetupChoice(kind, worktreeRoot string, trust miseSetupTrust) ReadinessM
 // cannot be read is unverifiable rather than unconfigured: Coach has no basis
 // to say what it declares, which is a different thing from knowing it
 // declares nothing.
-func miseScopeSetupWithholdReason(origin, worktreeRoot string) string {
-	if origin == compilerOriginMiseProject && !miseProjectConfigReadable(worktreeRoot) && miseProjectConfigExists(worktreeRoot) {
-		return setupChoiceReasonMiseUnverifiable
-	}
-	if _, ok := miseScopeDeclaresInstallableCompiler(origin, worktreeRoot); !ok {
-		return setupChoiceReasonMiseUnconfigured
-	}
-	return ""
-}
 
 // miseScopeDeclaresInstallableCompiler reports the exact supported-set
 // TypeScript version a mise scope already pins. Origin evaluation locates
