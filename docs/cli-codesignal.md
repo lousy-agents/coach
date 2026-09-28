@@ -127,6 +127,19 @@ terminal is what opens the combined setup offer above.
   `lifecycle: unknown` plus a `continuity_not_determined` path diagnostic.
   Old-path continuity is not established. Adopters who only watch
   `introduced_signals` shall treat that path as incomplete, not green.
+- A `--base` diagnostic that names a path preventing a trustworthy comparison
+  — `continuity_not_determined` on a rename/copy, the
+  `project_root_scope_incomplete` / `base_project_root_scope_incomplete`
+  model-coverage diagnostics, the CLI's
+  `project_layer_bypass_coverage_incomplete` /
+  `base_project_layer_bypass_coverage_incomplete` diagnostics, and
+  `project_change_lifecycle_indeterminate` for a project change degraded to
+  `lifecycle: unknown` — additionally carries optional `side` (`"head"` or
+  `"base"`) and `revision` (that side's resolved commit SHA — for `base`, the
+  merge-base, not the `--base` argument) JSON fields. Text
+  output renders the same attribution as a trailing `, side: <head|base>,
+  revision: <sha>` clause on that diagnostic's line; a diagnostic without
+  those fields set renders unchanged.
 - Statuses the CLI does not analyze (`T`, `U`, `X`, `B`) emit
   `unsupported_change_type`, increment `summary.files_unanalyzed` and
   `summary.files_with_diagnostics`, and qualify the text all-clear.
