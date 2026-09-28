@@ -1,18 +1,20 @@
 # Local Coach quickstart
 
-Run Coach on your laptop with Docker Compose. You submit a baseline scan, wait for the job to finish, and download a report. The report labels each finding as either **deterministic** (rule-based, same inputs → same result) or **agent** (model judgment).
+This page is a Docker lab. It is not how you try Coach on a Git checkout already on your machine.
 
-This guide covers three paths:
+If you want a report on that checkout, stop. Use [`coach codesignal`](../README.md#run). File-local analysis covers committed Go, TypeScript, and TSX. [TypeScript project checks](../README.md#quick-start-typescript) are a separate CLI contract: you write and commit the policy, Node must be major version 24 or 26, the installed compiler must be TypeScript 7.0.2, and a terminal confirm comes before any compiler install. They are not Path A, B, or C. The lab does not read a project policy, does not report layer violations, and does not run your compiler. A report with no findings is not proof the code is correct.
+
+The lab submits a baseline scan, waits for the job to finish, and lets you download a report. The report labels each finding as either **deterministic** (rule-based, same inputs → same result) or **agent** (model judgment).
+
+This guide covers three lab paths:
 
 | Path | What you do | What you need | Status |
 | --- | --- | --- | --- |
-| **A** | Smoke test with a built-in sample repo and a fake model | Docker, mise | **Verified in CI** (`platform-smoke`) |
-| **B** | Same fixture job with a real local model (Qwen 3.5 or Gemma 4) | Path A plus Ollama or similar | Operator lab (not CI) |
-| **C** | Scan a real GitHub.com repo without cloning it | Path A plus GitHub OAuth App and GitHub App | Operator lab (not CI) |
+| **A** | Smoke-test the fixture repo (`coach-smoke` / `fixture-repo`) with a fake model. Not your code. | Docker, mise | **Verified in CI** (`platform-smoke`) |
+| **B** | Same fixture job with a real local model (Qwen 3.5 or Gemma 4). Not your code. | Path A plus Ollama or similar | Operator lab (not CI) |
+| **C** | Scan a remote GitHub ref. Not your working copy, and not uncommitted files. | Path A plus GitHub OAuth App and GitHub App | Operator lab (not CI) |
 
-Path A takes about 10–15 minutes the first time (image builds dominate). Paths B and C add setup on top. Do not treat B or C as the default product; the local [`coach codesignal` CLI](../README.md#run) needs no Docker.
-
-For deterministic analysis of a local git checkout with no Docker, use that CLI instead.
+Path A takes about 10–15 minutes the first time (image builds dominate). Paths B and C add setup on top. Do not treat any path on this page as the default product.
 
 ---
 
@@ -20,7 +22,7 @@ For deterministic analysis of a local git checkout with no Docker, use that CLI 
 
 - API on `http://127.0.0.1:8080`
 - Background worker, Postgres, Redis, and a model gateway
-- Job type: `repo_baseline_scan` (Go, TypeScript, and TSX files only)
+- Job type: `repo_baseline_scan` only. The lab reads Go, TypeScript, and TSX files in the fixture or the remote ref. That is file-local analysis plus optional model judgment. It is not a project check.
 - No writes to GitHub (no PR comments, checks, or status updates)
 - Paths A and B analyze a small fixture repo (`coach-smoke` / `fixture-repo`), not your code
 - Path C reads a remote repo over the GitHub API into the worker on your machine
@@ -113,6 +115,8 @@ If nothing is listening, the command exits non-zero (connection refused or timeo
 Containers running without that report is not a pass. The fake model returns fixed, valid agent JSON so you can verify the pipeline without downloading weights. Those agent texts are not real analysis.
 
 ### Optional: inspect a report yourself
+
+This mint is the fixture identity only. Do not put a real GitHub login in `test-mint`. GitHub does not check that you are that user. Real repos use the [Path C sign-in](#4-sign-in).
 
 ```sh
 TOKEN=$(curl -s -X POST http://127.0.0.1:8080/v1/auth/test-mint \
@@ -234,25 +238,40 @@ On Linux, if the gateway cannot reach the host, run the model in a container on 
 
 Full commented list: [`.env.example`](../.env.example). If jobs hit the judgment wall with few agent rows, lower `COACH_MAX_HIDDEN_MUTATION_JUDGMENTS` or raise `COACH_JUDGMENT_MAX_WALL_TIME` / `MODEL_GATEWAY_TIMEOUT`—do not only shrink pack size.
 
-### 3. Smoke again
+### 3. Poll the fixture job
+
+Do not use `mise run platform-smoke` as the pass signal for a real model. That command is the Path A stub proof. Its deadline is `2m`. A slow local model can fail it while the lab is fine.
+
+Mint a token and submit the fixture job as in [Optional: inspect a report yourself](#optional-inspect-a-report-yourself). Then poll until the job finishes:
 
 ```sh
-mise run platform-smoke
+while true; do
+  STATUS=$(curl -s -H "Authorization: Bearer $TOKEN" \
+    "http://127.0.0.1:8080/v1/jobs/$JOB" | jq -r .status)
+  echo "status=$STATUS"
+  case "$STATUS" in
+    completed|failed) break ;;
+  esac
+  sleep 2
+done
 ```
+
+The target is still `coach-smoke` / `fixture-repo`, not your code.
 
 | | Path A | Path B |
 | --- | --- | --- |
 | Agent text | Fixed sample JSON | From your local model |
 | `source` labels | `deterministic` / `agent` | Same |
 | `MODEL_GATEWAY_MODEL` | `local` (default) | Must match the server’s model id (Qwen 3.5 or Gemma 4 example above) |
+| Pass signal | `platform-smoke: ok` | Poll until `completed`. Do not use `platform-smoke`. |
 
-Wrong model id, unreachable URL, or invalid model JSON → missing `source=agent` → smoke fails.
+Wrong model id, unreachable URL, or invalid model JSON means no `source=agent` rows. If you still run smoke, it fails.
 
 ---
 
 ## Path C: Scan a GitHub.com repository
 
-Scan a remote repo (for example `https://github.com/lousy-agents/coach`) without cloning it. Finish Path A first.
+Scan a remote repo (for example `https://github.com/lousy-agents/coach`) without cloning it. Finish Path A first. Do not start here to try Coach on a Go or TypeScript checkout on disk. A remote scan is not a project check. It does not read a local checkout, a committed policy, or your TypeScript compiler.
 
 Coach accepts the job only if:
 
@@ -420,7 +439,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 `ref` is optional (default branch if omitted). Do not send `git_url` or `clone_url` (rejected with `400`).
 
-Success: status `completed`, a `commit_sha`, and findings you can read. Large repos are slow and may hit size limits; raise `COACH_BASELINE_MAX_*` on the worker or pick a smaller repo.
+Success: status `completed`, a `commit_sha`, and findings you can read. That is a remote ref, not your working copy, and not uncommitted files. If you did not set Path B model keys, `source=agent` rows come from the stub. They are not analysis from a model that read the repository. Large repos are slow and may hit size limits; raise `COACH_BASELINE_MAX_*` on the worker or pick a smaller repo.
 
 ### Path C problems
 
@@ -451,8 +470,9 @@ Paths A and B only touch the fixture repo. Path C fetches the remote tree over G
 - Local lab only (test login, fixed signing key, fixture bypass). Keep it on localhost.
 - Advisory reports only; not a CI gate or merge blocker.
 - No GitHub writes.
-- Go, TypeScript, TSX only.
-- No PR-history scan or web UI in this guide.
+- Go, TypeScript, and TSX only, and only as a file filter on the fixture or the remote ref.
+- No PR-history scan. That job is not available.
+- No web UI. There is no hosted API. The API on this page stays on localhost.
 - You cannot scan arbitrary public OSS without a role on the repo and an App install.
 
 ---
@@ -467,7 +487,8 @@ Paths A and B only touch the fixture repo. Path C fetches the remote tree over G
 | No `source=deterministic` | Fixture pair mismatch (`coach-smoke` / `fixture-repo`) |
 | Host model unreachable | Use `host.docker.internal`, not `localhost`, from inside Docker |
 | Postgres errors after git pull | `docker compose --profile core --profile llm down -v` then start again |
-| Smoke never sees your GitHub repo | Expected; use Path C |
+| Smoke never sees your GitHub repo | Expected for Path A and B. A remote GitHub repo is Path C, and only with a role plus an App install. |
+| Smoke never sees the checkout on disk | Expected. That job is [`coach codesignal`](../README.md#run), not this lab. |
 | Path C `403` on a public repo | Need a role + App install, not just public read |
 
 ---
@@ -489,7 +510,7 @@ docker compose --profile core --profile llm down -v --remove-orphans
 ## FAQ
 
 **Do I need GitHub apps for the first try?**  
-No. Paths A and B use the fixture only. Path C needs OAuth App + GitHub App.
+No, if the first try is this lab. Paths A and B use the fixture only. Path C needs OAuth App + GitHub App. If the first try is a checkout on your machine, skip this page and use [`coach codesignal`](../README.md#run).
 
 **Does Coach comment on PRs?**  
 No. You pull the report from the local API.
@@ -501,14 +522,19 @@ Yes (Path C). You need a role on that repo and an installed App that can read it
 Fake model proves the pipeline. Qwen 3.5 or Gemma 4 produces real agent text. Both stay labeled `source=agent`.
 
 **What languages?**  
-Go, TypeScript, TSX. Baseline scan only in this guide.
+Go, TypeScript, and TSX in the fixture or the remote ref. That is a file filter, not a TypeScript project check. Project checks are the CLI. See [Quick start (TypeScript)](../README.md#quick-start-typescript).
 
 **How do I know it worked?**  
-A/B: `platform-smoke: ok` and both finding sources. C: job `completed`, `commit_sha` set, report from `/v1/jobs/{id}/report`.
+A: `platform-smoke: ok` means the lab pipeline finished on `coach-smoke` / `fixture-repo`. Agent text on that path is not analysis of your code. B: poll until `completed` on that same fixture. Do not treat `platform-smoke` as the pass signal. C: `completed` means a remote ref was read. It is not your local checkout.
+
+**I want to analyze the repo on my laptop.**  
+Stop. Use [`coach codesignal`](../README.md#run) for committed Go, TypeScript, and TSX. TypeScript project checks are [a separate CLI contract](../README.md#quick-start-typescript), not Path A, B, or C.
 
 ---
 
 ## Commands
+
+These commands do not scan the checkout you are working in.
 
 ```sh
 # Path A
@@ -523,7 +549,7 @@ cp .env.example .env
 ollama pull qwen3.5:4b
 mkdir -p secrets
 docker compose --profile llm up -d --build   # recreate after .env changes
-mise run platform-smoke
+# poll the fixture job until completed; do not use platform-smoke
 
 # Path C (after App registration + Path C keys in .env)
 cd deploy/compose/platform && python3 -m http.server 8765
