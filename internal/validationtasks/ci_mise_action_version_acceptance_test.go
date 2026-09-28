@@ -41,17 +41,8 @@ func miseActionStepBodies(yml string) []string {
 		}
 		indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " \t"))
 		end := i + 1
-		for end < len(lines) {
-			if strings.TrimSpace(lines[end]) == "" {
-				end++
-				continue
-			}
-			lineIndent := len(lines[end]) - len(strings.TrimLeft(lines[end], " \t"))
-			if lineIndent <= indent {
-				break
-			}
-			end++
-		}
+		(&sigmiseActionStepBodiesS4{end: &end, indent: indent, lines: lines}).call()
+
 		bodies = append(bodies, strings.Join(lines[i:end], "\n"))
 		i = end - 1
 	}

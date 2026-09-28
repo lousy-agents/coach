@@ -40,9 +40,8 @@ func TestPrepareCompilerRemediationOffersOnlyExecutablePrepareCompilerGaps(t *te
 	for code, wantExecutable := range wantCommand {
 		got := PrepareCompilerRemediation(code, "project.json")
 		if wantExecutable {
-			if got == "" {
-				t.Errorf("PrepareCompilerRemediation(%q, ...) = \"\", want a non-empty --prepare-compiler command", code)
-			}
+			(&sigTestPrepareCompilerRemediationOffersOnlyExecutablePrepare{code: code, got: got, t: t}).call()
+
 			continue
 		}
 		if got != "" {

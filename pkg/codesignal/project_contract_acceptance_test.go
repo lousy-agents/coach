@@ -269,24 +269,7 @@ func scanForGuardedSymbols(dirs []string, symbols []string) map[string][]string 
 
 	hits := map[string][]string{}
 	for _, dir := range dirs {
-		err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" {
-				return nil
-			}
-			content, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			for i, symbol := range symbols {
-				if patterns[i].Match(content) {
-					hits[path] = append(hits[path], symbol)
-				}
-			}
-			return nil
-		})
+		err := filepath.WalkDir(dir, (&sigscanForGuardedSymbols31948627{hits: hits, patterns: patterns, symbols: symbols}).call)
 		Expect(err).NotTo(HaveOccurred())
 	}
 	return hits

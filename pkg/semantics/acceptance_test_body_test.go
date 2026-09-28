@@ -137,19 +137,7 @@ func F() {}
 `)
 	})
 
-	DescribeTable("extracts the import's path and alias",
-		func(wantPath, wantAlias string) {
-			var found *semantics.ImportFeature
-			for i := range result.Imports {
-				if result.Imports[i].Path == wantPath {
-					found = &result.Imports[i]
-					break
-				}
-			}
-			Expect(found).NotTo(BeNil(), "expected an import with path %q, got %+v", wantPath, result.Imports)
-			Expect(found.Alias).To(Equal(wantAlias))
-		},
-		Entry("plain single-quoted import", "fmt", ""),
+	DescribeTable("extracts the import's path and alias", (&sigbodyacceptanceTestwhenSourceContainsEveryGoImportFormAC31{result: result}).call, Entry("plain single-quoted import", "fmt", ""),
 		Entry("aliased import", "os", "o"),
 		Entry("dot import", "strings", "."),
 		Entry("blank import", "unicode", "_"),

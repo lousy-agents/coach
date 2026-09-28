@@ -18,20 +18,11 @@ func body_ruleHiddenInputMutationPart2Test_43(t *testing.T, tt struct {
 	result := mustAnalyzeFixture(t, tt.srcPath, tt.resultPath, tt.lang)
 
 	var wantFinding *semantics.Finding
-	for i := range result.Findings {
-		if result.Findings[i].Kind == "mutates_input" {
-			wantFinding = &result.Findings[i]
-			break
-		}
-	}
-	if wantFinding == nil {
-		t.Fatalf("fixture %s produced no mutates_input findings; test fixture assumption is stale", tt.srcPath)
-	}
+	(&sigbodyruleHiddenInputMutationPart2Test43S2{result: result, wantFinding: &wantFinding}).call()
+	(&sigbodyruleHiddenInputMutationPart2Test43S3{t: t, tt: tt, wantFinding: wantFinding}).call()
 
 	b, err := New(Options{})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	(&sigbodyruleHiddenInputMutationPart2Test43S5{err: err, t: t}).call()
 
 	report, err := b.Build(context.Background(), Input{
 		Files: []FileChange{
@@ -42,30 +33,15 @@ func body_ruleHiddenInputMutationPart2Test_43(t *testing.T, tt struct {
 			},
 		},
 	})
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
+	(&sigbodyruleHiddenInputMutationPart2Test43S7{err: err, t: t}).call()
 
 	var got *Signal
-	for i := range report.Signals {
-		if report.Signals[i].Subject == wantFinding.Name {
-			got = &report.Signals[i]
-			break
-		}
-	}
-	if got == nil {
-		t.Fatalf("Report.Signals does not contain a signal for finding %q: %+v", wantFinding.Name, report.Signals)
-	}
+	(&sigbodyruleHiddenInputMutationPart2Test43S9{got: &got, report: report, wantFinding: wantFinding}).call()
+	(&sigbodyruleHiddenInputMutationPart2Test43S10{got: got, report: report, t: t, wantFinding: wantFinding}).call()
+	(&sigbodyruleHiddenInputMutationPart2Test43S11{got: got, t: t}).call()
+	(&sigbodyruleHiddenInputMutationPart2Test43S12{got: got, t: t}).call()
+	(&sigbodyruleHiddenInputMutationPart2Test43S13{got: got, t: t}).call()
 
-	if got.RuleID != "state.hidden_input_mutation" {
-		t.Errorf("Signal.RuleID: got %q, want %q", got.RuleID, "state.hidden_input_mutation")
-	}
-	if got.RuleVersion != "1" {
-		t.Errorf("Signal.RuleVersion: got %q, want %q", got.RuleVersion, "1")
-	}
-	if got.Kind != "hidden_input_mutation" {
-		t.Errorf("Signal.Kind: got %q, want %q", got.Kind, "hidden_input_mutation")
-	}
 	if got.Category != "state_management" {
 		t.Errorf("Signal.Category: got %q, want %q", got.Category, "state_management")
 	}

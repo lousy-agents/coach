@@ -23,12 +23,7 @@ func body_registryAcceptanceTest_isSafeUnderRaceAndEveryCallIsRecorded_113() {
 	var wg sync.WaitGroup
 	wg.Add(workers)
 	for i := 0; i < workers; i++ {
-		go func(worker int) {
-			defer wg.Done()
-			for j := 0; j < iterationsPerWorker; j++ {
-				_, _ = registry.Call(context.Background(), agentloopharness.CallSourceModel, "concurrent_tool", json.RawMessage(`{}`))
-			}
-		}(i)
+		go (&sigbodyregistryAcceptanceTestisSafeUnderRaceAndEveryCallIsRe{iterationsPerWorker: iterationsPerWorker, registry: registry, wg: wg}).call(i)
 	}
 	wg.Wait()
 

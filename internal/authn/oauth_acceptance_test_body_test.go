@@ -90,22 +90,7 @@ func body_oauthAcceptanceTest_exchangesTheCodeOnBaseURLFetchesUserOnAPIBaseURL_1
 	}))
 	DeferCleanup(oauthSrv.Close)
 
-	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/user" {
-			http.Error(w, "not found on api host: "+r.URL.Path, http.StatusNotFound)
-			return
-		}
-		userHits++
-		if r.Header.Get("Authorization") != "Bearer "+ghAccessToken {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id":    ghUserID,
-			"login": ghLogin,
-		})
-	}))
+	apiSrv := httptest.NewServer(http.HandlerFunc((&sigbodyoauthAcceptanceTestexchangesTheCodeOnBaseURLFetchesUs{ghAccessToken: ghAccessToken, ghUserID: ghUserID, ghLogin: ghLogin, userHits: &userHits}).call))
 	DeferCleanup(apiSrv.Close)
 
 	svc, err := authn.New(authn.Options{

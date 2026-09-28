@@ -3,8 +3,6 @@ package codesignalcli
 import (
 	"bytes"
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -20,26 +18,17 @@ import (
 // field for a passing compiler check.
 func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 	installDir := t.TempDir()
-	if err := os.RemoveAll(installDir); err != nil {
-		t.Fatalf("remove placeholder install dir: %v", err)
-	}
+	(&sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun0{installDir: installDir, t: t}).call()
+
 	writeStatefulStubMiseOnPath(t, installDir, "7.0.2")
 
 	originalLocate := locateMiseTypescriptInstall
 	defer func() { locateMiseTypescriptInstall = originalLocate }()
-	locateMiseTypescriptInstall = func(context.Context, string) (string, bool) {
-		pkgDir := filepath.Join(installDir, "node_modules", "typescript")
-		if _, statErr := os.Stat(filepath.Join(pkgDir, "package.json")); statErr != nil {
-			return "", false
-		}
-		return pkgDir, true
-	}
+	locateMiseTypescriptInstall = (&sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun{installDir: installDir}).call
 
 	repo := newTempGitRepoT(t)
 	revision := commitFileT(t, repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-	if err := os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644); err != nil {
-		t.Fatalf("write mise.toml: %v", err)
-	}
+	(&sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun1{repo: repo, t: t}).call()
 
 	before, err := CheckProjectReadiness(repo, revision, "")
 	if err != nil {

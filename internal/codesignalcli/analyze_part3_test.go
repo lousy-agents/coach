@@ -43,23 +43,18 @@ func TestAnalyzeBaselineInterleavedReadFailures(t *testing.T) {
 	wantSubjectByPath := map[string]string{"a.go": "UpdateA:input", "b.go": "UpdateB:input", "c.go": "UpdateC:input"}
 	foundSubjectByPath := map[string]string{}
 	for _, sig := range report.Signals {
-		if sig.RuleID == "state.hidden_input_mutation" {
-			foundSubjectByPath[sig.Path] = sig.Subject
-		}
+		(&sigTestAnalyzeBaselineInterleavedReadFailuresS044185478{foundSubjectByPath: foundSubjectByPath, sig: sig}).call()
+
 	}
 	for path, wantSubject := range wantSubjectByPath {
-		if got := foundSubjectByPath[path]; got != wantSubject {
-			t.Errorf("hidden_input_mutation signal for %q has Subject = %q, want %q (content misaligned across the batch read)", path, got, wantSubject)
-		}
+		(&sigTestAnalyzeBaselineInterleavedReadFailuresS044248654{foundSubjectByPath: foundSubjectByPath, path: path, t: t, wantSubject: wantSubject}).call()
+
 	}
 
 	for _, missing := range []string{"missing1.go", "missing2.go"} {
 		found := false
-		for _, d := range report.Diagnostics {
-			if d.Path == missing && d.Kind == "head_read_failed" {
-				found = true
-			}
-		}
+		(&sigTestAnalyzeBaselineInterleavedReadFailuresS144847592{found: &found, missing: missing, report: report}).call()
+
 		if !found {
 			t.Errorf("report.Diagnostics = %#v, want a head_read_failed diagnostic for %q", report.Diagnostics, missing)
 		}

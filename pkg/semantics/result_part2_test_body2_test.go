@@ -6,9 +6,8 @@ import (
 
 func body_resultPart2Test_65(t *testing.T, r Result) {
 	t.Helper()
-	if r.ParseStatus != ParseStatus("ok") {
-		t.Errorf("AC-4.4: golden react_components Result.ParseStatus: got %q, want %q", r.ParseStatus, "ok")
-	}
+	(&sigbodyresultPart2Test65S121892662{r: r, t: t}).call()
+
 	if r.Language != LanguageTSX {
 		t.Errorf("AC-4.4: golden react_components Result.Language: got %q, want %q", r.Language, LanguageTSX)
 	}

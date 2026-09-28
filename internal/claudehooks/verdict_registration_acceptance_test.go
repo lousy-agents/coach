@@ -33,11 +33,8 @@ func verdictRegistrationMatchers() []string {
 
 	var matchers []string
 	for _, reg := range settings.Hooks.SubagentStop {
-		for _, h := range reg.Hooks {
-			if strings.Contains(strings.Join(h.Args, " "), "verify-review-verdict.sh") {
-				matchers = append(matchers, reg.Matcher)
-			}
-		}
+		(&sigverdictRegistrationMatchersS0{matchers: &matchers, reg: reg}).call()
+
 	}
 	return matchers
 }

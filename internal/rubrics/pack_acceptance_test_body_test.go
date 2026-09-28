@@ -18,13 +18,8 @@ func body_packAcceptanceTest_emitsAStablePackCountAndNeverMergesTheHotPathWit_59
 		paths := pathsInPack(p.FindingRefs, byPath)
 		hasHot := false
 		hasOther := false
-		for _, path := range paths {
-			if path == hotPath {
-				hasHot = true
-			} else {
-				hasOther = true
-			}
-		}
+		(&sigbodypackAcceptanceTestemitsAStablePackCountAndNeverMerges{hasHot: &hasHot, hasOther: &hasOther, hotPath: hotPath, paths: paths}).call()
+
 		Expect(hasHot && hasOther).To(BeFalse(),
 			"hot path must not share a pack with other paths; pack=%v paths=%v",
 			p.FindingRefs, paths)

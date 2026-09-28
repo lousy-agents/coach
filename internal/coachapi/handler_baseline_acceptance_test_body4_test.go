@@ -71,12 +71,8 @@ func Mut(c *C, n string) { c.N = n }
 	var analyzeLoop *agentloop.Loop
 	analyzeCalls := 0
 	for _, loop := range observed {
-		for _, c := range loop.Calls() {
-			if c.Source == agentloop.CallSourceHandler && c.Name == agentloop.ToolSemanticsAnalyze {
-				analyzeCalls++
-				analyzeLoop = loop
-			}
-		}
+		(&sigbodyhandlerBaselineAcceptanceTestcompletesDeterministicFi{analyzeCalls: &analyzeCalls, analyzeLoop: &analyzeLoop, loop: loop}).call()
+
 	}
 	Expect(analyzeLoop).NotTo(BeNil())
 	Expect(analyzeLoop.Budget().MaxToolCalls).To(BeNumerically(">", agentloop.DefaultMaxToolCalls),

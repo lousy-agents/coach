@@ -9,31 +9,39 @@ import (
 )
 
 func exactAncestorComponents(dirs ...string) []string {
-	seen := map[string]struct{}{"/tmp": {}}
-	out := []string{"/tmp"}
-	add := func(path string) {
-		path = filepath.Clean(path)
-		if path == "." || path == string(os.PathSeparator) {
-			return
-		}
-		if _, ok := seen[path]; ok {
-			return
-		}
-		seen[path] = struct{}{}
-		out = append(out, path)
-	}
+	acc := &ancestorAcc{seen: map[string]struct{}{"/tmp": {}}, out: []string{"/tmp"}}
 	for _, dir := range dirs {
-		d := filepath.Clean(dir)
-		for {
-			parent := filepath.Dir(d)
-			if parent == d || parent == "." || parent == string(os.PathSeparator) {
-				break
-			}
-			add(parent)
-			d = parent
-		}
+		acc.addChain(filepath.Clean(dir))
 	}
-	return out
+	return acc.out
+}
+
+type ancestorAcc struct {
+	seen map[string]struct{}
+	out  []string
+}
+
+func (a *ancestorAcc) addChain(d string) {
+	for {
+		parent := filepath.Dir(d)
+		if parent == d || parent == "." || parent == string(os.PathSeparator) {
+			return
+		}
+		a.remember(parent)
+		d = parent
+	}
+}
+
+func (a *ancestorAcc) remember(path string) {
+	path = filepath.Clean(path)
+	if path == "." || path == string(os.PathSeparator) {
+		return
+	}
+	if _, ok := a.seen[path]; ok {
+		return
+	}
+	a.seen[path] = struct{}{}
+	a.out = append(a.out, path)
 }
 
 func analyzerSubtreePIDs(recs []straceRecord, rootPID int) map[int]struct{} {
@@ -50,15 +58,28 @@ func analyzerSubtreePIDs(recs []straceRecord, rootPID int) map[int]struct{} {
 	for len(stack) > 0 {
 		p := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		for _, c := range children[p] {
-			if _, seen := out[c]; seen {
-				continue
-			}
-			out[c] = struct{}{}
-			stack = append(stack, c)
-		}
+		stack = pushUnseenChildren(&pidTree{out: out}, stack, children[p])
 	}
 	return out
+}
+
+type pidTree struct {
+	out map[int]struct{}
+}
+
+func pushUnseenChildren(tree *pidTree, stack []int, children []int) []int {
+	for _, c := range children {
+		stack = tree.pushUnseen(stack, c)
+	}
+	return stack
+}
+
+func (tree *pidTree) pushUnseen(stack []int, child int) []int {
+	if _, seen := tree.out[child]; seen {
+		return stack
+	}
+	tree.out[child] = struct{}{}
+	return append(stack, child)
 }
 
 func parseStraceLines(lines []string) []straceRecord {

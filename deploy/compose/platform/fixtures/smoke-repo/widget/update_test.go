@@ -1,8 +1,7 @@
 package widget
 
-// UpdateName mutates cfg through its pointer parameter instead of
-// returning a new value. This fixture exists so a scan of these bytes
-// emits mutates_input.
-func UpdateName(cfg *Config, name string) {
+// UpdateName returns a config with Name set to name.
+func UpdateName(cfg Config, name string) Config {
 	cfg.Name = name
+	return cfg
 }

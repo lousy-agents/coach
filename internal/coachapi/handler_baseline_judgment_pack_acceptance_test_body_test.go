@@ -59,9 +59,8 @@ func body_handlerBaselineJudgmentPackAcceptanceTest_issuesStrictlyFewerHiddenMut
 	Expect(len(paths)).To(BeNumerically(">=", 3), "fixture paths: %v", paths)
 	var maxPath int
 	for _, c := range paths {
-		if c > maxPath {
-			maxPath = c
-		}
+		(&sigbodyhandlerBaselineJudgmentPackAcceptanceTestissuesStrict{c: c, maxPath: &maxPath}).call()
+
 	}
 	Expect(maxPath).To(BeNumerically(">=", 6), "hot path finding count; paths=%v", paths)
 
@@ -78,17 +77,8 @@ func body_handlerBaselineJudgmentPackAcceptanceTest_issuesStrictlyFewerHiddenMut
 		if loop == nil {
 			continue
 		}
-		for _, c := range loop.Calls() {
-			if c.Name != rubrics.IDHiddenMutationContextualization {
-				continue
-			}
-			var args struct {
-				Items []json.RawMessage `json:"items"`
-			}
-			if json.Unmarshal(c.Args, &args) == nil && len(args.Items) >= 2 {
-				sawMultiPackArgs = true
-			}
-		}
+		(&sigbodyhandlerBaselineJudgmentPackAcceptanceTestissuesStrict0{loop: loop, sawMultiPackArgs: &sawMultiPackArgs}).call()
+
 	}
 	Expect(sawMultiPackArgs).To(BeTrue(),
 		"at least one multi-finding pack tool call is required")

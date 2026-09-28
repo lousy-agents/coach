@@ -2,7 +2,6 @@ package coachapi_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 	"github.com/lousy-agents/coach/internal/agentloop"
 	"github.com/lousy-agents/coach/internal/coachapi"
 	"github.com/lousy-agents/coach/internal/modelgateway"
-	"github.com/lousy-agents/coach/internal/rubrics"
 )
 
 func body_handlerBaselineJudgmentPackAcceptanceTest_embedsSpanWindowEvidenceInPackArgsRatherThanFull_145() {
@@ -52,40 +50,8 @@ func body_handlerBaselineJudgmentPackAcceptanceTest_embedsSpanWindowEvidenceInPa
 		if loop == nil {
 			continue
 		}
-		for _, c := range loop.Calls() {
-			if c.Name != rubrics.IDHiddenMutationContextualization {
-				continue
-			}
-			var args struct {
-				Items []struct {
-					File struct {
-						Content string `json:"content"`
-					} `json:"file"`
-				} `json:"items"`
-				File struct {
-					Content string `json:"content"`
-				} `json:"file"`
-			}
-			Expect(json.Unmarshal(c.Args, &args)).To(Succeed())
-			contents := []string{}
-			for _, it := range args.Items {
-				contents = append(contents, it.File.Content)
-			}
-			if args.File.Content != "" {
-				contents = append(contents, args.File.Content)
-			}
-			for _, content := range contents {
-				if content == "" {
-					continue
-				}
-				checked++
+		(&sigbodyhandlerBaselineJudgmentPackAcceptanceTestembedsSpanWi{checked: &checked, loop: loop}).call()
 
-				Expect(content).To(MatchRegexp(`(?m)^[> ]\s*\d+\|`),
-					"evidence should be FormatSpanWindow-numbered, not raw full file")
-				Expect(content).NotTo(ContainSubstring("pad-line-79-unique-marker-FULLFILE"),
-					"default evidence must not embed the entire padded file")
-			}
-		}
 	}
 	Expect(checked).To(BeNumerically(">=", 1), "expected at least one pack item with file content")
 }

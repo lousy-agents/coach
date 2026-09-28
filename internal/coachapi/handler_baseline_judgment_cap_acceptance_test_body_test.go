@@ -2,7 +2,6 @@ package coachapi_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 	"github.com/lousy-agents/coach/internal/agentloop"
 	"github.com/lousy-agents/coach/internal/coachapi"
 	"github.com/lousy-agents/coach/internal/modelgateway"
-	"github.com/lousy-agents/coach/internal/rubrics"
 )
 
 func body_handlerBaselineJudgmentCapAcceptanceTest_judgesARoundRobinPrioritizedSubsetAcrossPathsNot_22() {
@@ -80,20 +78,8 @@ func body_handlerBaselineJudgmentCapAcceptanceTest_judgesARoundRobinPrioritizedS
 		if loop == nil {
 			continue
 		}
-		for _, c := range loop.Calls() {
-			if c.Name != rubrics.IDHiddenMutationContextualization {
-				continue
-			}
-			var args struct {
-				Items []json.RawMessage `json:"items"`
-			}
-			if json.Unmarshal(c.Args, &args) == nil && len(args.Items) > 0 {
-				judgedRefs += len(args.Items)
-				continue
-			}
+		(&sigbodyhandlerBaselineJudgmentCapAcceptanceTestjudgesARoundR{judgedRefs: &judgedRefs, loop: loop}).call()
 
-			judgedRefs++
-		}
 	}
 	Expect(judgedRefs).To(Equal(16),
 		"only the prioritized subset is packed/judged; packed items=%d", judgedRefs)

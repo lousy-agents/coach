@@ -39,34 +39,7 @@ func body_gatewayAcceptanceTest_isTheOnlyNonTestPackageThatOwnsTheChatCompletion
 	Expect(root).NotTo(BeEmpty())
 
 	var offenders []string
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			base := d.Name()
-			if base == ".git" || base == "node_modules" || base == "vendor" || base == "dist" || base == "dist-test" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		rel, relErr := filepath.Rel(root, path)
-		Expect(relErr).NotTo(HaveOccurred())
-		if strings.HasPrefix(rel, "internal"+string(filepath.Separator)+"modelgateway"+string(filepath.Separator)) {
-			return nil
-		}
-		raw, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
-		}
-		if strings.Contains(string(raw), "/v1/chat/completions") {
-			offenders = append(offenders, rel)
-		}
-		return nil
-	})
+	err := filepath.WalkDir(root, (&sigbodygatewayAcceptanceTestisTheOnlyNonTestPackageThatOwnsT{offenders: &offenders, root: root}).call)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(offenders).To(BeEmpty(), "chat-completions path must stay inside internal/modelgateway: %v", offenders)
 }

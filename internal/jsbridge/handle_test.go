@@ -3,10 +3,7 @@ package jsbridge
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"flag"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/lousy-agents/coach/pkg/semantics"
@@ -40,39 +37,7 @@ type parityCase struct {
 // gotreesitter's current actual output so drift is visible, not a spec.
 func TestParityFixtures(t *testing.T) {
 	for _, tc := range loadManifest(t) {
-		t.Run(tc.Name, func(t *testing.T) {
-			content, err := os.ReadFile(filepath.Join("testdata", "parity", tc.Src))
-			if err != nil {
-				t.Fatalf("read src: %v", err)
-			}
-			resp := Handle(context.Background(), Request{
-				Op:         OpAnalyze,
-				Path:       tc.Path,
-				Language:   tc.Language,
-				ContentB64: base64.StdEncoding.EncodeToString(content),
-				Options:    tc.Options,
-			})
-			got, err := json.MarshalIndent(resp, "", "  ")
-			if err != nil {
-				t.Fatalf("marshal response: %v", err)
-			}
-			got = append(got, '\n')
-
-			expectedPath := filepath.Join("testdata", "parity", tc.Expected)
-			if *update {
-				if err := os.WriteFile(expectedPath, got, 0o644); err != nil {
-					t.Fatalf("write expected: %v", err)
-				}
-				return
-			}
-			want, err := os.ReadFile(expectedPath)
-			if err != nil {
-				t.Fatalf("read expected (run with -update to generate): %v", err)
-			}
-			if string(got) != string(want) {
-				t.Errorf("response drifted from %s\ngot:\n%s\nwant:\n%s", tc.Expected, got, want)
-			}
-		})
+		t.Run(tc.Name, (&sigTestParityFixtures12322523{tc: tc}).call)
 	}
 }
 

@@ -3,8 +3,6 @@ package sqs_test
 import (
 	"context"
 
-	"encoding/json"
-	"io"
 	"net/http"
 	"os/exec"
 
@@ -90,18 +88,10 @@ func waitForLocalStackReady(t *testing.T, endpoint string) bool {
 	deadline := time.Now().Add(localstackReadyTimeout)
 	for time.Now().Before(deadline) {
 		resp, err := client.Get(endpoint + "/_localstack/health")
-		if err == nil {
-			var health struct {
-				Services map[string]string `json:"services"`
-			}
-			body, readErr := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			if readErr == nil && json.Unmarshal(body, &health) == nil {
-				if status := health.Services["sqs"]; status == "available" || status == "running" {
-					return true
-				}
-			}
+		if sigR0, sigRet := (&sigwaitForLocalStackReadyS1{err: err, resp: resp}).call(); sigRet {
+			return sigR0
 		}
+
 		time.Sleep(500 * time.Millisecond)
 	}
 	return false

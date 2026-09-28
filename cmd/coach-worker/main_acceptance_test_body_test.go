@@ -33,11 +33,7 @@ func body_mainAcceptanceTest_doesNotImportRedisSQSClientsOutsideTheQueueAdapt_99
 		path := filepath.Join(dir, e.Name())
 		f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
 		Expect(err).NotTo(HaveOccurred(), path)
-		for _, imp := range f.Imports {
-			p := strings.Trim(imp.Path.Value, `"`)
-			for _, b := range bannedDirect {
-				Expect(p).NotTo(HavePrefix(b), "%s must not import %s directly", e.Name(), b)
-			}
-		}
+		(&sigbodymainAcceptanceTestdoesNotImportRedisSQSClientsOutside{bannedDirect: bannedDirect, e: e, f: f}).call()
+
 	}
 }

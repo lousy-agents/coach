@@ -28,12 +28,8 @@ func pathExcludingExecutables(names ...string) string {
 			continue
 		}
 		excluded := false
-		for _, name := range names {
-			if info, err := os.Stat(filepath.Join(dir, name)); err == nil && !info.IsDir() {
-				excluded = true
-				break
-			}
-		}
+		(&sigpathExcludingExecutablesS2{dir: dir, excluded: &excluded, names: names}).call()
+
 		if !excluded {
 			kept = append(kept, dir)
 		}

@@ -1,6 +1,6 @@
 package widget
 
-// Config is the value the mutation fixtures write through.
+// Config is the value UpdateName and ResetName copy.
 type Config struct {
 	Name string
 }

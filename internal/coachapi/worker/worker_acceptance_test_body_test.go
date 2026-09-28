@@ -202,14 +202,7 @@ func body_workerAcceptanceTest_hasNoDirectRedisOrSQSClientImportsOutsideQueueAd_
 		path := filepath.Join(dir, e.Name())
 		f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
 		Expect(err).NotTo(HaveOccurred(), path)
-		for _, imp := range f.Imports {
-			path := strings.Trim(imp.Path.Value, `"`)
-			for _, b := range banned {
-				Expect(path).NotTo(HavePrefix(b), "%s must not import %s (use queue.TaskQueue only)", e.Name(), b)
-			}
+		(&sigbodyworkerAcceptanceTesthasNoDirectRedisOrSQSClientImport{banned: banned, e: e, f: f}).call()
 
-			Expect(path).NotTo(ContainSubstring("/queue/redisstream"), e.Name())
-			Expect(path).NotTo(ContainSubstring("/queue/sqs"), e.Name())
-		}
 	}
 }

@@ -37,17 +37,7 @@ func body_tsSidecarIntegrationAcceptanceTest_populatesModelFilesForEveryAnalyzed
 	Expect(paths).To(HaveKeyWithValue("src/a.ts", "typescript"))
 	Expect(paths).To(HaveKeyWithValue("src/lib/util.ts", "typescript"))
 
-	fileIDs := map[string]bool{}
-	for _, f := range model.Files {
-		fileIDs[f.ID] = true
-	}
-	for _, e := range model.ImportEdges {
-		for _, endpoint := range []string{e.From, e.To} {
-			if strings.HasPrefix(endpoint, "file:") {
-				Expect(fileIDs).To(HaveKey(endpoint), "edge endpoint %q has no corresponding Model.Files entry, got %+v", endpoint, model.Files)
-			}
-		}
-	}
+	expectImportEdgesHaveFileNodes(model)
 
 	first, err := json.Marshal(model)
 	Expect(err).NotTo(HaveOccurred())
@@ -84,15 +74,23 @@ func body_tsSidecarIntegrationAcceptanceTest_includesThoseConfigFileEdgeEndpoint
 	Expect(ok).To(BeTrue(), "expected an edge to file:tsconfig.json, got %+v", model.ImportEdges)
 	Expect(tsconfigEdge).NotTo(BeZero())
 
+	expectImportEdgesHaveFileNodes(model)
+}
+
+func expectImportEdgesHaveFileNodes(model projectmodel.Model) {
 	fileIDs := map[string]bool{}
 	for _, f := range model.Files {
 		fileIDs[f.ID] = true
 	}
 	for _, e := range model.ImportEdges {
-		for _, endpoint := range []string{e.From, e.To} {
-			if strings.HasPrefix(endpoint, "file:") {
-				Expect(fileIDs).To(HaveKey(endpoint), "edge endpoint %q has no corresponding Model.Files entry, got %+v", endpoint, model.Files)
-			}
+		expectFileEndpointsKnown(fileIDs, model, e.From, e.To)
+	}
+}
+
+func expectFileEndpointsKnown(fileIDs map[string]bool, model projectmodel.Model, endpoints ...string) {
+	for _, endpoint := range endpoints {
+		if strings.HasPrefix(endpoint, "file:") {
+			Expect(fileIDs).To(HaveKey(endpoint), "edge endpoint %q has no corresponding Model.Files entry, got %+v", endpoint, model.Files)
 		}
 	}
 }

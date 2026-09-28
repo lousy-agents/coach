@@ -52,15 +52,8 @@ func body_handlerBaselineJudgmentPackAcceptanceTest_persistsAgentFindingsFromCom
 	for _, d := range w.diagnostics {
 		msg := strings.ToLower(d.Message)
 		scope := strings.ToLower(d.Scope)
-		if strings.Contains(msg, "judgment_budget_exceeded") ||
-			(strings.Contains(msg, "judged=") && strings.Contains(msg, "remaining=")) ||
-			(strings.Contains(scope, "judgment") && strings.Contains(scope, "budget")) {
-			sawBudgetDiag = true
+		(&sigbodyhandlerBaselineJudgmentPackAcceptanceTestpersistsAgen{d: d, msg: msg, sawBudgetDiag: &sawBudgetDiag, scope: scope}).call()
 
-			if strings.Contains(d.Message, "judged=") {
-				Expect(d.Message).To(ContainSubstring("remaining="))
-			}
-		}
 	}
 	Expect(sawBudgetDiag).To(BeTrue(),
 		"must record judgment budget diagnostic with judged/remaining; got %#v", w.diagnostics)

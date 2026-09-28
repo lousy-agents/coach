@@ -38,15 +38,7 @@ func body_handlerBaselineJudgmentPackAcceptanceTest_appliesJudgmentMaxWallTimeDe
 
 	// Judgment loop is the one that recorded hidden_mutation calls and
 	// must carry JudgmentMaxWallTime (not the residual analyze wall).
-	var judgmentLoop *agentloop.Loop
-	for _, loop := range observed {
-		for _, c := range loop.Calls() {
-			if c.Name == rubrics.IDHiddenMutationContextualization {
-				judgmentLoop = loop
-				break
-			}
-		}
-	}
+	judgmentLoop := firstLoopCalling(observed, rubrics.IDHiddenMutationContextualization)
 	Expect(judgmentLoop).NotTo(BeNil(), "judgment loop must be observed")
 	Expect(judgmentLoop.Budget().MaxWallTime).To(Equal(7*time.Minute),
 		"judgment loop wall must come from JudgmentMaxWallTime, not shared analyze residual")
@@ -67,16 +59,26 @@ func body_handlerBaselineJudgmentPackAcceptanceTest_appliesJudgmentMaxWallTimeDe
 		RepoName:  "pack-repo",
 	}), newCaptureWriter())
 	Expect(err).NotTo(HaveOccurred())
-	var jDefault *agentloop.Loop
-	for _, loop := range observedDefault {
-		for _, c := range loop.Calls() {
-			if c.Name == rubrics.IDHiddenMutationContextualization {
-				jDefault = loop
-				break
-			}
-		}
-	}
+	jDefault := firstLoopCalling(observedDefault, rubrics.IDHiddenMutationContextualization)
 	Expect(jDefault).NotTo(BeNil())
 	Expect(jDefault.Budget().MaxWallTime).To(Equal(10*time.Minute),
 		"zero JudgmentMaxWallTime must default to 10m")
+}
+
+func firstLoopCalling(loops []*agentloop.Loop, name string) *agentloop.Loop {
+	for _, loop := range loops {
+		if loopHasCall(loop, name) {
+			return loop
+		}
+	}
+	return nil
+}
+
+func loopHasCall(loop *agentloop.Loop, name string) bool {
+	for _, c := range loop.Calls() {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
 }

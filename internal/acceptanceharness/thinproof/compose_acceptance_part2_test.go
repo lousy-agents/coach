@@ -8,8 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
-
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
 )
 
 // TestThinProofComposeAcceptance drives issue #79's Task 0.3 thin offline
@@ -55,38 +53,5 @@ func TestThinProofComposeAcceptance(t *testing.T) {
 	if err := json.Unmarshal(resultBytes, &result); err != nil {
 		t.Fatalf("unmarshaling %s: %v", outputPath, err)
 	}
-
-	if result.GuardResult.Rejected() {
-		t.Errorf("expected an empty guard_result inside the clean container, got %+v", result.GuardResult)
-	}
-
-	if len(result.BlockedRequests) != 0 {
-		t.Errorf("expected no blocked_requests, got %+v", result.BlockedRequests)
-	}
-
-	var sawInstallationContentsRead bool
-	for _, rec := range result.FakeGitHubRecords {
-		if rec.AuthMode == acceptanceharness.AuthModeInstallation {
-			sawInstallationContentsRead = true
-		}
-	}
-	if !sawInstallationContentsRead {
-		t.Errorf("expected at least one fake_github_records entry with auth_mode %q, got %+v", acceptanceharness.AuthModeInstallation, result.FakeGitHubRecords)
-	}
-
-	goldenPath := filepath.Join("testdata", "golden", "report_v1.json")
-	goldenBytes, err := os.ReadFile(goldenPath)
-	if err != nil {
-		t.Fatalf("reading golden %s: %v", goldenPath, err)
-	}
-
-	gotReport, err := json.MarshalIndent(result.Report, "", "  ")
-	if err != nil {
-		t.Fatalf("marshaling result.Report for golden comparison: %v", err)
-	}
-	gotReport = append(gotReport, '\n')
-
-	if string(gotReport) != string(goldenBytes) {
-		t.Errorf("report did not match golden %s:\n--- got ---\n%s\n--- want ---\n%s", goldenPath, gotReport, goldenBytes)
-	}
+	assertThinProofResult(t, result)
 }

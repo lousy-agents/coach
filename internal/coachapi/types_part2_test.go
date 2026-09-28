@@ -12,27 +12,18 @@ import (
 // including nullable top-level error and finding provenance fields.
 func TestReport_MarshalMatchesGoldenFile(t *testing.T) {
 	got, err := json.MarshalIndent(goldenReport(), "", "  ")
-	if err != nil {
-		t.Fatalf("marshaling the golden Report must not fail: %v", err)
-	}
+	(&sigTestReportMarshalMatchesGoldenFileS158059557{err: err, t: t}).call()
+
 	got = append(got, '\n')
 
 	want, err := os.ReadFile("testdata/report_golden.json")
-	if err != nil {
-		t.Fatalf("reading testdata/report_golden.json must not fail: %v", err)
-	}
-
-	if string(got) != string(want) {
-		t.Errorf("Report JSON must match golden file byte-for-byte.\ngot:\n%s\nwant:\n%s", got, want)
-	}
+	(&sigTestReportMarshalMatchesGoldenFileS455697778{err: err, t: t}).call()
+	(&sigTestReportMarshalMatchesGoldenFileS561530703{got: got, t: t, want: want}).call()
 
 	var roundTripped Report
-	if err := json.Unmarshal(want, &roundTripped); err != nil {
-		t.Fatalf("golden file must unmarshal back into a Report: %v", err)
-	}
-	if roundTripped.ReportVersion != ReportVersion1 {
-		t.Errorf("Report.report_version: got %q, want %q", roundTripped.ReportVersion, ReportVersion1)
-	}
+	(&sigTestReportMarshalMatchesGoldenFileS761534661{roundTripped: &roundTripped, t: t, want: want}).call()
+	(&sigTestReportMarshalMatchesGoldenFileS855176925{roundTripped: roundTripped, t: t}).call()
+
 	if roundTripped.Kind != JobKindRepoBaselineScan {
 		t.Errorf("Report.kind: got %q, want %q", roundTripped.Kind, JobKindRepoBaselineScan)
 	}

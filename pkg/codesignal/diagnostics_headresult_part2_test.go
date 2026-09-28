@@ -39,9 +39,8 @@ func TestDiagnostics_SyntaxErrorsProduceOneDiagnosticPerIssue(t *testing.T) {
 
 	var syntaxDiagnostics []Diagnostic
 	for _, d := range report.Diagnostics {
-		if d.Kind == "syntax_errors" {
-			syntaxDiagnostics = append(syntaxDiagnostics, d)
-		}
+		(&sigTestDiagnosticsSyntaxErrorsProduceOneDiagnosticPerIssueS0{d: d, syntaxDiagnostics: &syntaxDiagnostics}).call()
+
 	}
 	if len(syntaxDiagnostics) != len(issues) {
 		t.Fatalf("syntax_errors diagnostics: got %d, want %d: %+v", len(syntaxDiagnostics), len(issues), syntaxDiagnostics)
@@ -49,20 +48,8 @@ func TestDiagnostics_SyntaxErrorsProduceOneDiagnosticPerIssue(t *testing.T) {
 
 	for _, issue := range issues {
 		found := false
-		for _, d := range syntaxDiagnostics {
-			if d.Path != "broken.go" {
-				t.Errorf("Diagnostic.Path: got %q, want %q", d.Path, "broken.go")
-			}
-			if d.Message == "" {
-				t.Errorf("Diagnostic.Message must not be empty for %+v", d)
-			}
-			if d.Location == nil {
-				t.Fatalf("Diagnostic.Location must not be nil for a syntax_errors diagnostic: %+v", d)
-			}
-			if *d.Location == issue.Location {
-				found = true
-			}
-		}
+		(&sigTestDiagnosticsSyntaxErrorsProduceOneDiagnosticPerIssueS1{found: &found, issue: issue, syntaxDiagnostics: syntaxDiagnostics, t: t}).call()
+
 		if !found {
 			t.Errorf("no syntax_errors diagnostic found with Location matching issue %+v; got diagnostics %+v", issue, syntaxDiagnostics)
 		}

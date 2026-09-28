@@ -38,9 +38,8 @@ func TestAnalyzeBaseline(t *testing.T) {
 
 	foundHeadReadFailed := false
 	for _, d := range report.Diagnostics {
-		if d.Path == "missing.go" && d.Kind == "head_read_failed" {
-			foundHeadReadFailed = true
-		}
+		(&sigTestAnalyzeBaselineS044942786{d: d, foundHeadReadFailed: &foundHeadReadFailed}).call()
+
 	}
 	if !foundHeadReadFailed {
 		t.Errorf("report.Diagnostics = %#v, want a head_read_failed diagnostic for missing.go", report.Diagnostics)
@@ -48,9 +47,8 @@ func TestAnalyzeBaseline(t *testing.T) {
 
 	foundSyntaxErrors := false
 	for _, d := range report.Diagnostics {
-		if d.Path == "broken.go" && d.Kind == "syntax_errors" {
-			foundSyntaxErrors = true
-		}
+		(&sigTestAnalyzeBaselineS044059074{d: d, foundSyntaxErrors: &foundSyntaxErrors}).call()
+
 	}
 	if !foundSyntaxErrors {
 		t.Errorf("report.Diagnostics = %#v, want a syntax_errors diagnostic for broken.go", report.Diagnostics)
@@ -68,12 +66,8 @@ func TestAnalyzeBaseline(t *testing.T) {
 
 	foundBaselineSignal := false
 	for _, sig := range report.Signals {
-		if sig.Path == "clean.go" {
-			if sig.Lifecycle != "baseline" {
-				t.Errorf("signal for clean.go has Lifecycle = %q, want %q", sig.Lifecycle, "baseline")
-			}
-			foundBaselineSignal = true
-		}
+		(&sigTestAnalyzeBaselineS044484681{foundBaselineSignal: &foundBaselineSignal, sig: sig, t: t}).call()
+
 	}
 	if !foundBaselineSignal {
 		t.Errorf("report.Signals = %#v, want a signal for clean.go", report.Signals)

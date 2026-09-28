@@ -15,7 +15,6 @@ import (
 	"github.com/lousy-agents/coach/internal/agentloop"
 
 	"github.com/lousy-agents/coach/internal/modelgateway"
-	"github.com/lousy-agents/coach/internal/rubrics"
 )
 
 func (g *recordingJudgeGateway) Judge(ctx context.Context, req modelgateway.JudgmentRequest) (modelgateway.JudgmentResponse, error) {
@@ -65,11 +64,8 @@ func countHiddenMutationToolCalls(loops []*agentloop.Loop) int {
 		if loop == nil {
 			continue
 		}
-		for _, c := range loop.Calls() {
-			if c.Source == agentloop.CallSourceHandler && c.Name == rubrics.IDHiddenMutationContextualization {
-				n++
-			}
-		}
+		(&sigcountHiddenMutationToolCallsS1{loop: loop, n: &n}).call()
+
 	}
 	return n
 }

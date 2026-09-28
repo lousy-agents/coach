@@ -131,9 +131,7 @@ func TestReadFile_DirectoryListingFailureMapsToSentinel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reader := newTestReader(t, func(req *http.Request) *http.Response {
-				return body_readerPart4Test_138(req, fileContents, tt)
-			})
+			reader := newTestReader(t, (&sigTestReadFileDirectoryListingFailureMapsToSentinel43067476{fileContents: fileContents, tt: tt}).call)
 
 			ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "dir/hello.txt"}
 			_, _, err := reader.ReadFile(context.Background(), ref)

@@ -18,18 +18,7 @@ func body_fixtureAcceptanceTest_isSafeUnderRaceAndEveryRecordIsPreservedMirrorsC
 	var wg sync.WaitGroup
 	wg.Add(workers)
 	for i := 0; i < workers; i++ {
-		go func(worker int) {
-			defer wg.Done()
-			for j := 0; j < iterationsPerWorker; j++ {
-				recorder.Record(acceptanceharness.NewRequestRecord(
-					"fixture-concurrent",
-					"concurrent-scenario",
-					"GET",
-					"/concurrent",
-					acceptanceharness.AuthModeNone,
-				))
-			}
-		}(i)
+		go (&sigbodyfixtureAcceptanceTestisSafeUnderRaceAndEveryRecordIsP{iterationsPerWorker: iterationsPerWorker, recorder: recorder, wg: wg}).call(i)
 	}
 	wg.Wait()
 

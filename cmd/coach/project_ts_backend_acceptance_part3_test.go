@@ -10,13 +10,10 @@ func pathValueFromEnviron(env string) string {
 		if strings.HasPrefix(part, "PATH=") {
 			return strings.TrimSpace(strings.TrimPrefix(part, "PATH="))
 		}
-		if i := strings.Index(part, "PATH="); i >= 0 {
-			rest := part[i+5:]
-			if j := strings.IndexAny(rest, " \t"); j >= 0 {
-				return rest[:j]
-			}
-			return rest
+		if sigR0, sigRet := (&sigpathValueFromEnvironS2{part: part}).call(); sigRet {
+			return sigR0
 		}
+
 	}
 	if i := strings.Index(env, "PATH="); i >= 0 {
 		rest := env[i+5:]

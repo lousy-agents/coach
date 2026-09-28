@@ -11,16 +11,10 @@ import (
 func body_reportShapeAcceptanceTest_keepsSchemaVersion2SMarshalledKeySetInSyncWithRe_114(expectedKeys []string, schema2OptionalKeys []string) {
 	expectedSchema2Keys := make([]string, 0, len(expectedKeys))
 	for _, name := range expectedKeys {
-		isOptional := false
-		for _, p := range schema2OptionalKeys {
-			if name == p {
-				isOptional = true
-				break
-			}
+		if schemaKeyDropped(name, schema2OptionalKeys) {
+			continue
 		}
-		if !isOptional {
-			expectedSchema2Keys = append(expectedSchema2Keys, name)
-		}
+		expectedSchema2Keys = append(expectedSchema2Keys, name)
 	}
 
 	schema2 := codesignal.Report{SchemaVersion: "2"}
@@ -30,20 +24,23 @@ func body_reportShapeAcceptanceTest_keepsSchemaVersion2SMarshalledKeySetInSyncWi
 func body_reportShapeAcceptanceTest_keepsSchemaVersion1SMarshalledKeySetInSyncWithRe_133(expectedKeys []string, schema1ExcludedKeys []string) {
 	expectedSchema1Keys := make([]string, 0, len(expectedKeys))
 	for _, name := range expectedKeys {
-		isExcluded := false
-		for _, p := range schema1ExcludedKeys {
-			if name == p {
-				isExcluded = true
-				break
-			}
+		if schemaKeyDropped(name, schema1ExcludedKeys) {
+			continue
 		}
-		if !isExcluded {
-			expectedSchema1Keys = append(expectedSchema1Keys, name)
-		}
+		expectedSchema1Keys = append(expectedSchema1Keys, name)
 	}
 
 	schema1 := codesignal.Report{SchemaVersion: "1"}
 	Expect(rawReportKeys(&schema1)).To(ConsistOf(expectedSchema1Keys))
+}
+
+func schemaKeyDropped(name string, dropped []string) bool {
+	for _, p := range dropped {
+		if name == p {
+			return true
+		}
+	}
+	return false
 }
 
 func body_reportShapeAcceptanceTest_210(rawSignals []json.RawMessage) map[string]json.RawMessage {

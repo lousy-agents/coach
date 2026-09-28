@@ -17,13 +17,8 @@ func body_projectConfigAuthoringPart5Test_aBlankPrefixAnswerIsNeverSilentlyFille
 	)
 
 	for _, layer := range result.Layers {
-		for _, prefix := range layer.Prefixes {
-			for _, root := range discovered.Roots {
-				if prefix == root {
-					t.Fatalf("layer %q silently adopted discovered root %q as a prefix, Layers = %+v", layer.Name, root, result.Layers)
-				}
-			}
-		}
+		(&sigbodyprojectConfigAuthoringPart5TestaBlankPrefixAnswerIsNe{discovered: discovered, layer: layer, result: result, t: t}).call()
+
 	}
 	if len(result.Layers) != 0 {
 		t.Fatalf("expected no layer to be recorded when its prefix answer was blank and then cancelled, got %+v", result.Layers)

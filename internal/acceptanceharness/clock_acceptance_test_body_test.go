@@ -42,18 +42,13 @@ func body_clockAcceptanceTest_firesEveryRegisteredWaiterExactlyOnceWithNoDataR_9
 	var producers sync.WaitGroup
 	producers.Add(workers)
 	for i := 0; i < workers; i++ {
-		go func() {
-			defer producers.Done()
-			for j := 0; j < iterationsPerWorker; j++ {
-				ch := clock.After(time.Millisecond)
-				// Concurrent Now() reads from a producer goroutine,
-				// racing with the Advance loop below, are exactly
-				// the "heartbeat ticker under test" scenario the
-				// FakeClock doc comment claims is safe.
-				_ = clock.Now()
-				fired <- <-ch
-			}
-		}()
+		go (&sigbodyclockAcceptanceTestfiresEveryRegisteredWaiterExactlyO{iterationsPerWorker: iterationsPerWorker, clock: clock, fired: fired,
+
+			// Concurrent Now() reads from a producer goroutine,
+			// racing with the Advance loop below, are exactly
+			// the "heartbeat ticker under test" scenario the
+			// FakeClock doc comment claims is safe.
+			producers: producers}).call()
 	}
 
 	stopAdvancing := make(chan struct{})

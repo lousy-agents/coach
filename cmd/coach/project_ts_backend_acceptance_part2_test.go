@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bufio"
-
 	"encoding/json"
 	"fmt"
 	"net"
@@ -13,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -48,9 +45,8 @@ func analyzerChildPIDsFromPS() []int {
 		}
 		parents[pid] = ppid
 		args := strings.Join(fields[2:], " ")
-		if strings.Contains(args, analyzerChildArgMarker) {
-			candidates = append(candidates, pid)
-		}
+		(&siganalyzerChildPIDsFromPSS10{args: args, candidates: &candidates, pid: pid}).call()
+
 	}
 	self := os.Getpid()
 	var pids []int
@@ -69,25 +65,7 @@ func startRecordingProxyListener() *recordingProxyListener {
 	rec := &recordingProxyListener{addr: ln.Addr().String()}
 	var inflight sync.WaitGroup
 	acceptDone := make(chan struct{})
-	go func() {
-		defer close(acceptDone)
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			inflight.Add(1)
-			go func(c net.Conn) {
-				defer inflight.Done()
-				defer c.Close()
-				_ = c.SetDeadline(time.Now().Add(2 * time.Second))
-				line, _ := bufio.NewReader(c).ReadString('\n')
-				rec.mu.Lock()
-				rec.hits = append(rec.hits, strings.TrimSpace(line))
-				rec.mu.Unlock()
-			}(conn)
-		}
-	}()
+	go (&sigstartRecordingProxyListener39957725{acceptDone: acceptDone, inflight: inflight, ln: ln, rec: rec}).call()
 	rec.stop = func() {
 		_ = ln.Close()
 		<-acceptDone

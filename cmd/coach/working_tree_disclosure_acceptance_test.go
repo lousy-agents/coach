@@ -317,11 +317,8 @@ func worktreeDisclosureBody(stdout []byte, format string) string {
 	if format == "json" {
 		report := decodeCoachReport(stdout)
 		var b strings.Builder
-		for _, diagnostic := range report.Diagnostics {
-			if diagnostic.Kind == codesignal.DiagKindWorktreeChangesNotAnalyzed {
-				fmt.Fprintf(&b, "%s %s\n", diagnostic.Path, diagnostic.Message)
-			}
-		}
+		(&sigworktreeDisclosureBodyS2{b: &b, report: report}).call()
+
 		return b.String()
 	}
 	var b strings.Builder

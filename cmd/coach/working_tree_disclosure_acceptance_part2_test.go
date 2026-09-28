@@ -14,11 +14,8 @@ func expectStatusCheckFailureDiagnostic(stdout []byte, format string) {
 		report := decodeCoachReport(stdout)
 		ExpectWithOffset(1, report.SchemaVersion).NotTo(BeEmpty(), "stdout must still be a report:\n%s", stdout)
 		found := false
-		for _, diagnostic := range report.Diagnostics {
-			if recordsStatusCheckFailure(diagnostic.Kind, diagnostic.Message) {
-				found = true
-			}
-		}
+		(&sigexpectStatusCheckFailureDiagnosticS3{found: &found, report: report}).call()
+
 		ExpectWithOffset(1, found).To(BeTrue(),
 			"a failed working-tree status check must be recorded as a diagnostic; diagnostics: %+v\nstdout:\n%s",
 			report.Diagnostics, stdout)

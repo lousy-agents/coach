@@ -89,9 +89,16 @@ func baselineFixtureRoot() string {
 	GinkgoHelper()
 	_, thisFile, _, ok := runtime.Caller(0)
 	Expect(ok).To(BeTrue())
-	root := filepath.Join(filepath.Dir(thisFile), "testdata", "baseline_fixture")
-	_, err := os.Stat(root)
-	Expect(err).NotTo(HaveOccurred(), "baseline fixture root must exist at %s", root)
+	src := filepath.Join(filepath.Dir(thisFile), "testdata", "baseline_fixture")
+	_, err := os.Stat(src)
+	Expect(err).NotTo(HaveOccurred(), "baseline fixture root must exist at %s", src)
+	// The committed tree returns new values. Handler specs still need two
+	// hidden-input signals, so the scan root is a copy with those writes
+	// overlaid. The overlay is not part of the repository scan corpus.
+	root := GinkgoT().TempDir()
+	Expect(os.CopyFS(root, os.DirFS(src))).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(root, "widget", "update_test.go"), []byte(baselineMutatingUpdateGo), 0o644)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(root, "widget", "reset_test.go"), []byte(baselineMutatingResetGo), 0o644)).To(Succeed())
 	return root
 }
 

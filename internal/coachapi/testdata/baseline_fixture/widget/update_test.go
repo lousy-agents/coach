@@ -5,8 +5,8 @@ type Config struct {
 	Name string
 }
 
-// UpdateName mutates cfg through its pointer parameter instead of
-// returning a new value.
-func UpdateName(cfg *Config, name string) {
+// UpdateName returns a config with Name set to name.
+func UpdateName(cfg Config, name string) Config {
 	cfg.Name = name
+	return cfg
 }

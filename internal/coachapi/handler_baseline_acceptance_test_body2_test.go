@@ -45,19 +45,7 @@ func body_handlerBaselineAcceptanceTest_analyzesOnlySemanticsSupportedPathsGoTsT
 	Expect(completion).NotTo(BeNil())
 	Expect(observed).NotTo(BeEmpty())
 
-	analyzed := map[string]struct{}{}
-	for _, loop := range observed {
-		for _, c := range loop.Calls() {
-			if c.Source != agentloop.CallSourceHandler || c.Name != agentloop.ToolSemanticsAnalyze {
-				continue
-			}
-			var args struct {
-				Path string `json:"path"`
-			}
-			Expect(json.Unmarshal(c.Args, &args)).To(Succeed(), "semantics_analyze args must be JSON with path")
-			analyzed[args.Path] = struct{}{}
-		}
-	}
+	analyzed := semanticsPathsFromLoops(observed)
 	Expect(analyzed).To(HaveKey("main.go"))
 	Expect(analyzed).To(HaveKey("util.ts"))
 	Expect(analyzed).To(HaveKey("Widget.tsx"))
@@ -123,19 +111,7 @@ func Mut(c *C, n string) { c.N = n }
 	Expect(names).To(ContainElement(agentloop.ToolSemanticsAnalyze))
 	Expect(names).To(ContainElement(agentloop.ToolCodeSignalReport))
 
-	analyzed := map[string]struct{}{}
-	for _, loop := range observed {
-		for _, c := range loop.Calls() {
-			if c.Source != agentloop.CallSourceHandler || c.Name != agentloop.ToolSemanticsAnalyze {
-				continue
-			}
-			var args struct {
-				Path string `json:"path"`
-			}
-			Expect(json.Unmarshal(c.Args, &args)).To(Succeed())
-			analyzed[args.Path] = struct{}{}
-		}
-	}
+	analyzed := semanticsPathsFromLoops(observed)
 	Expect(analyzed).To(HaveKey("main.go"))
 	Expect(analyzed).To(HaveKey("mutate.go"))
 	Expect(analyzed).NotTo(HaveKey("notes.md"),
@@ -149,4 +125,29 @@ func Mut(c *C, n string) { c.N = n }
 	}
 	Expect(det).To(BeNumerically(">=", 1),
 		"Contents-backed tree must produce deterministic findings from mutate.go")
+}
+
+func semanticsPathsFromLoops(loops []*agentloop.Loop) map[string]struct{} {
+	analyzed := map[string]struct{}{}
+	for _, loop := range loops {
+		for _, path := range semanticsPathsFromLoop(loop) {
+			analyzed[path] = struct{}{}
+		}
+	}
+	return analyzed
+}
+
+func semanticsPathsFromLoop(loop *agentloop.Loop) []string {
+	var paths []string
+	for _, c := range loop.Calls() {
+		if c.Source != agentloop.CallSourceHandler || c.Name != agentloop.ToolSemanticsAnalyze {
+			continue
+		}
+		var args struct {
+			Path string `json:"path"`
+		}
+		Expect(json.Unmarshal(c.Args, &args)).To(Succeed(), "semantics_analyze args must be JSON with path")
+		paths = append(paths, args.Path)
+	}
+	return paths
 }

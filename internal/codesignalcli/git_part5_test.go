@@ -15,11 +15,10 @@ func recordsEqual(a, b []nameStatusRecord) bool {
 		if len(a[i].paths) != len(b[i].paths) {
 			return false
 		}
-		for j := range a[i].paths {
-			if a[i].paths[j] != b[i].paths[j] {
-				return false
-			}
+		if sigR0, sigRet := (&sigrecordsEqualS244641246{a: a, b: b, i: i}).call(); sigRet {
+			return sigR0
 		}
+
 	}
 	return true
 }

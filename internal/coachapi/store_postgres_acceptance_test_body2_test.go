@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -283,64 +282,9 @@ func body_storePostgresAcceptanceTest_coachapiPostgresStore_96() {
 	// Reviewer finding #1: fenced inserts must not succeed if ClaimJob reclaim
 	// commits between the fence check and the INSERT (TOCTOU).
 	When("InsertFindings holds an open fenced insert transaction and another connection reclaims the job", func() {
-		It("returns ErrClaimLost and does not persist the zombie worker's findings", func() {
-			job := pgQueuedJob("99999999-9999-9999-9999-999999999999")
-			Expect(store.CreateJob(ctx, job)).To(Succeed())
+		It("returns ErrClaimLost and does not persist the zombie worker's findings", (&sigbodystorePostgresAcceptanceTestcoachapiPostgresStore96617{ctx: ctx, store: store}).call) // Completing as B with no findings must yield an empty report —
+		// the zombie row must not have been committed.
 
-			start := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
-			lease1, err := store.ClaimJob(ctx, job.ID, "worker-a", start, 60*time.Second)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(lease1.Attempt).To(Equal(1))
-
-			entered := make(chan struct{})
-			release := make(chan struct{})
-			coachapi.SetFenceHoldForTest(func() {
-				close(entered)
-				<-release
-			})
-			DeferCleanup(func() { coachapi.SetFenceHoldForTest(nil) })
-
-			var insertErr error
-			var wg sync.WaitGroup
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				insertErr = store.InsertFindings(ctx, job.ID, "worker-a", 1, []coachapi.JobFinding{{
-					ID:          "99999999-0000-0000-0000-000000000001",
-					JobID:       job.ID,
-					Attempt:     1,
-					Source:      coachapi.FindingSourceDeterministic,
-					Payload:     json.RawMessage(`{"rule_id":"zombie"}`),
-					PayloadHash: "hash-zombie",
-					CreatedAt:   start,
-				}})
-			}()
-
-			Eventually(entered).Should(BeClosed())
-
-			reclaimAt := start.Add(61 * time.Second)
-			lease2, err := store.ClaimJob(ctx, job.ID, "worker-b", reclaimAt, 60*time.Second)
-			Expect(err).NotTo(HaveOccurred(), "reclaim must commit while the zombie insert tx is open past its fence check")
-			Expect(lease2.Attempt).To(Equal(2))
-
-			close(release)
-			wg.Wait()
-
-			Expect(errors.Is(insertErr, coachapi.ErrClaimLost)).To(BeTrue(), "zombie InsertFindings err = %v", insertErr)
-
-			// Completing as B with no findings must yield an empty report —
-			// the zombie row must not have been committed.
-			Expect(store.CompleteJob(ctx, job.ID, "worker-b", 2, coachapi.Completion{
-				Attempt:     2,
-				CommitSHA:   "abc123def4567890abc123def4567890abc123de",
-				Versions:    coachapi.ReportVersions{Analyzer: "codesignal@1"},
-				FinishedAt:  reclaimAt,
-				GeneratedAt: reclaimAt,
-			})).To(Succeed())
-			report, err := store.GetReport(ctx, job.ID)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(report.Findings).To(BeEmpty(), "zombie findings must not pollute the reclaimed attempt's report")
-		})
 	})
 
 	// Reviewer finding #2: inserts must stamp lease jobID/attempt, not client fields.

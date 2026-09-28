@@ -27,17 +27,26 @@ func changelogExcludes() []string {
 			inExclude = true
 			continue
 		}
-		if inExclude {
-			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-				continue
-			}
-			if !strings.HasPrefix(trimmed, "- ") {
-				break
-			}
-			patterns = append(patterns, strings.Trim(strings.TrimPrefix(trimmed, "- "), "'\""))
+		if !inExclude {
+			continue
+		}
+		next, stop := takeExcludePattern(trimmed, patterns)
+		patterns = next
+		if stop {
+			break
 		}
 	}
 	return patterns
+}
+
+func takeExcludePattern(trimmed string, patterns []string) ([]string, bool) {
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return patterns, false
+	}
+	if !strings.HasPrefix(trimmed, "- ") {
+		return patterns, true
+	}
+	return append(patterns, strings.Trim(strings.TrimPrefix(trimmed, "- "), "'\"")), false
 }
 
 // isExcluded reports whether GoReleaser would drop this commit subject from the

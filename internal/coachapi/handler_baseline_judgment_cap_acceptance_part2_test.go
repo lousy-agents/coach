@@ -3,8 +3,6 @@ package coachapi_test
 import (
 	"encoding/json"
 
-	"strings"
-
 	"github.com/lousy-agents/coach/internal/coachapi"
 
 	"github.com/lousy-agents/coach/internal/rubrics"
@@ -14,21 +12,8 @@ import (
 // PayloadHash as finding_ref (pack path stores deterministic hash on agent row).
 func agentHiddenPathsViaJudgedRefs(findings []coachapi.JobFinding) map[string]int {
 	detByHash := map[string]string{}
-	for _, f := range findings {
-		if f.Source != coachapi.FindingSourceDeterministic {
-			continue
-		}
-		if !strings.Contains(string(f.Payload), "hidden_input_mutation") {
-			continue
-		}
-		var sig struct {
-			Path string `json:"path"`
-		}
-		if json.Unmarshal(f.Payload, &sig) != nil || sig.Path == "" {
-			continue
-		}
-		detByHash[f.PayloadHash] = sig.Path
-	}
+	(&sigagentHiddenPathsViaJudgedRefsS1{detByHash: detByHash, findings: findings}).call()
+
 	paths := map[string]int{}
 	for _, f := range findings {
 		if f.Source != coachapi.FindingSourceAgent {
@@ -51,9 +36,8 @@ func agentHiddenPathsViaJudgedRefs(findings []coachapi.JobFinding) map[string]in
 			paths[body.Path]++
 			continue
 		}
-		if p, ok := detByHash[body.FindingRef]; ok {
-			paths[p]++
-		}
+		(&sigagentHiddenPathsViaJudgedRefsS6{body: body, detByHash: detByHash, paths: paths}).call()
+
 	}
 	return paths
 }

@@ -10,9 +10,7 @@ import (
 
 func TestInputImmutability_BuildDoesNotMutateInput(t *testing.T) {
 	b, err := New(Options{IncludeResolved: true})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	(&sigTestInputImmutabilityBuildDoesNotMutateInputS10{err: err, t: t}).call()
 
 	input := richImmutabilityInput()
 
@@ -31,22 +29,15 @@ func TestInputImmutability_BuildDoesNotMutateInput(t *testing.T) {
 	}
 
 	filesSnapshot := make([]FileChange, len(input.Files))
-	for i, fc := range input.Files {
-		cp := fc
-		cp.ChangedRanges = append([]LineRange(nil), fc.ChangedRanges...)
-		filesSnapshot[i] = cp
-	}
+	(&sigTestInputImmutabilityBuildDoesNotMutateInputS7{filesSnapshot: filesSnapshot, input: input}).call()
+
 	diagnosticsSnapshot := append([]Diagnostic(nil), input.Diagnostics...)
 	diagnosticsLen, diagnosticsCap := len(input.Diagnostics), cap(input.Diagnostics)
 	var diagnosticsFirstAddr *Diagnostic
-	if len(input.Diagnostics) > 0 {
-		diagnosticsFirstAddr = &input.Diagnostics[0]
-	}
+	(&sigTestInputImmutabilityBuildDoesNotMutateInputS11{diagnosticsFirstAddr: &diagnosticsFirstAddr, input: input}).call()
 
 	report, err := b.Build(context.Background(), input)
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
+	(&sigTestInputImmutabilityBuildDoesNotMutateInputS13{err: err, t: t}).call()
 
 	for i, fc := range input.Files {
 		want := perFile[i]
@@ -63,26 +54,11 @@ func TestInputImmutability_BuildDoesNotMutateInput(t *testing.T) {
 			t.Errorf("Files[%d].Head pointee mutated in place: got %+v, want %+v", i, fc.Head, want.headSnap)
 		}
 	}
+	(&sigTestInputImmutabilityBuildDoesNotMutateInputS15{filesSnapshot: filesSnapshot, input: input, t: t}).call()
+	(&sigTestInputImmutabilityBuildDoesNotMutateInputS16{filesSnapshot: filesSnapshot, input: input, t: t}).call()
+	(&sigTestInputImmutabilityBuildDoesNotMutateInputS17{diagnosticsCap: diagnosticsCap, diagnosticsLen: diagnosticsLen, input: input, t: t}).call()
+	(&sigTestInputImmutabilityBuildDoesNotMutateInputS18{diagnosticsFirstAddr: diagnosticsFirstAddr, input: input, t: t}).call()
 
-	if len(input.Files) != len(filesSnapshot) {
-		t.Fatalf("Input.Files length changed: got %d, want %d", len(input.Files), len(filesSnapshot))
-	}
-	for i, fc := range input.Files {
-		want := filesSnapshot[i]
-		if fc.Path != want.Path || fc.Status != want.Status {
-			t.Errorf("Files[%d] Path/Status mutated: got %+v, want %+v", i, fc, want)
-		}
-		if !reflect.DeepEqual(fc.ChangedRanges, want.ChangedRanges) {
-			t.Errorf("Files[%d].ChangedRanges mutated: got %+v, want %+v", i, fc.ChangedRanges, want.ChangedRanges)
-		}
-	}
-
-	if len(input.Diagnostics) != diagnosticsLen || cap(input.Diagnostics) != diagnosticsCap {
-		t.Errorf("Input.Diagnostics len/cap changed: got %d/%d, want %d/%d", len(input.Diagnostics), cap(input.Diagnostics), diagnosticsLen, diagnosticsCap)
-	}
-	if len(input.Diagnostics) > 0 && &input.Diagnostics[0] != diagnosticsFirstAddr {
-		t.Errorf("Input.Diagnostics backing array changed (first element address differs)")
-	}
 	if !reflect.DeepEqual([]Diagnostic(input.Diagnostics), diagnosticsSnapshot) {
 		t.Errorf("Input.Diagnostics contents mutated: got %+v, want %+v", input.Diagnostics, diagnosticsSnapshot)
 	}
