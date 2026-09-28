@@ -10,110 +10,8 @@ import (
 	"github.com/lousy-agents/coach/pkg/domain"
 )
 
-// headProjectScope returns a minimal non-nil ProjectScope for use in tests.
-func headProjectScope() *domain.ProjectScope {
-	return &domain.ProjectScope{
-		InclusionRule:   domain.InclusionRuleTSConfigIncludesNoTestClassification,
-		PatternSet:      domain.TSReachabilityAlgorithm,
-		Roots:           []domain.ProjectScopeRoot{{Root: ".", CandidateFiles: 10, AnalyzedFiles: 10}},
-		MatchedLayers:   []string{"handlers"},
-		UnmatchedLayers: []string{"db"},
-	}
-}
-
-// baseProjectScope returns a distinct ProjectScope for the base revision in diff-mode tests.
-// Its candidate_files (7) and layers differ from headProjectScope's so base/head conflation
-// is detectable without asserting pointer equality.
-func baseProjectScope() *domain.ProjectScope {
-	return &domain.ProjectScope{
-		InclusionRule:   domain.InclusionRuleTSConfigIncludesNoTestClassification,
-		PatternSet:      domain.TSReachabilityAlgorithm,
-		Roots:           []domain.ProjectScopeRoot{{Root: ".", CandidateFiles: 7, AnalyzedFiles: 5}},
-		MatchedLayers:   []string{"api"},
-		UnmatchedLayers: []string{"cache", "db"},
-	}
-}
-
-// completeCoverage returns a complete Coverage for a given phase name.
-func completeCoverage(phase string) *domain.Coverage {
-	return &domain.Coverage{Phase: phase, Complete: true}
-}
-
-// incompleteCoverage returns an incomplete Coverage for a given phase name.
-func incompleteCoverage(phase string) *domain.Coverage {
-	return &domain.Coverage{Phase: phase, Complete: false}
-}
-
-// notRequestedCoverage returns a Coverage with Phase="not_requested" and Complete=true,
-// as the TypeScript backend produces when no required_layer is configured.
-func notRequestedCoverage() *domain.Coverage {
-	return &domain.Coverage{Phase: "not_requested", Complete: true}
-}
-
-// backendUnavailableCoverage returns a Coverage containing DiagBackendUnavailable,
-// as produced when the TS sidecar cannot be reached.
-func backendUnavailableCoverage() *domain.Coverage {
-	return &domain.Coverage{
-		Phase:    "model",
-		Complete: false,
-		Diagnostics: []domain.Diagnostic{
-			{Code: domain.DiagBackendUnavailable, Message: "sidecar unavailable"},
-		},
-	}
-}
-
-// extractProvenance unmarshals the project_provenance key from a report's JSON.
-func extractProvenance(report *codesignal.Report) map[string]json.RawMessage {
-	fields := rawReportFields(report)
-	if _, ok := fields["project_provenance"]; !ok {
-		return nil
-	}
-	var prov map[string]json.RawMessage
-	Expect(json.Unmarshal(fields["project_provenance"], &prov)).To(Succeed())
-	return prov
-}
-
-// extractHeadCoverage reads project_provenance.head.coverage from a report.
-func extractHeadCoverage(report *codesignal.Report) map[string]json.RawMessage {
-	prov := extractProvenance(report)
-	Expect(prov).NotTo(BeNil(), "project_provenance must be present")
-	var head map[string]json.RawMessage
-	Expect(json.Unmarshal(prov["head"], &head)).To(Succeed())
-	var cov map[string]json.RawMessage
-	Expect(json.Unmarshal(head["coverage"], &cov)).To(Succeed())
-	return cov
-}
-
-// nextActionKinds returns the kind strings from project_next_actions.
-func nextActionKinds(report *codesignal.Report) []string {
-	fields := rawReportFields(report)
-	raw, ok := fields["project_next_actions"]
-	if !ok {
-		return nil
-	}
-	var actions []map[string]json.RawMessage
-	Expect(json.Unmarshal(raw, &actions)).To(Succeed())
-	kinds := make([]string, 0, len(actions))
-	for _, a := range actions {
-		var kind string
-		Expect(json.Unmarshal(a["kind"], &kind)).To(Succeed())
-		kinds = append(kinds, kind)
-	}
-	return kinds
-}
-
-// layerViolationChange returns a ProjectChange with the given rule ID
-// (architecture.layer_violation or architecture.layer_bypass) that has a
-// valid anchor so it reaches the active report set.
-func layerViolationChange(ruleID string) codesignal.ProjectChange {
-	return projectChange("layer:domain->infra", ruleID)
-}
-
 var _ = Describe("Project coverage mapping, provenance, scope, and next-actions (AC-EVD-2/6/9/10, AC-D7)", func() {
 
-	// AC-1: TypeScript baseline with complete model, bypass not_requested,
-	// and incomplete reachability. Reachability incompleteness must not
-	// block complete_no_match.
 	When("a TypeScript baseline report has complete model, bypass=not_requested, and incomplete reachability", func() {
 		var report *codesignal.Report
 
@@ -187,8 +85,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		})
 	})
 
-	// AC-2: incomplete model phase blocks complete_no_match and omits next_actions,
-	// but project_scope still appears because HeadProjectScope is non-nil.
 	When("the model phase is incomplete", func() {
 		var report *codesignal.Report
 
@@ -222,8 +118,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		})
 	})
 
-	// AC-3: HeadProjectScope nil AND HeadModelCoverage with DiagBackendUnavailable
-	// → model="not_run", no project_scope, no project_next_actions.
 	When("HeadProjectScope is nil and model coverage carries DiagBackendUnavailable", func() {
 		var report *codesignal.Report
 
@@ -254,8 +148,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		})
 	})
 
-	// AC-D7 conjunction pins: "not_run" requires BOTH scopeNil AND DiagBackendUnavailable.
-	// Removing either operand from mapCoveragePhase must make these specs fail.
 	When("HeadProjectScope is nil but model coverage carries no DiagBackendUnavailable", func() {
 		It("maps model=incomplete, not not_run, because the diagnostic operand is absent", func() {
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
@@ -286,8 +178,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		})
 	})
 
-	// AC-4: bypass Coverage with Phase="not_requested" maps to "not_requested"
-	// even when Complete=true.
 	When("HeadBypassCoverage has Phase=not_requested with Complete=true", func() {
 		It("maps bypass=not_requested regardless of Complete value", func() {
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
@@ -305,8 +195,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		})
 	})
 
-	// AC-5: diff mode, complete both sides, zero introduced/resolved/existing changes
-	// → next_actions=[review_policy_coverage] only (no record_baseline).
 	When("diff mode with complete coverage on both sides and zero project changes", func() {
 		var report *codesignal.Report
 
@@ -373,7 +261,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 			Expect(baseRevision).To(Equal("BASE_SHA"))
 		})
 
-		// Base scope must be populated from BaseProjectScope, not conflated with HeadProjectScope.
 		It("maps base scope roots[0].candidate_files from BaseProjectScope, distinct from head's 10", func() {
 			fields := rawReportFields(report)
 			var scope map[string]json.RawMessage
@@ -393,7 +280,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 			Expect(matchedLayers).To(Equal([]string{"api"}), "base matched_layers must differ from head's [handlers]")
 		})
 
-		// Base provenance coverage must be populated from BaseXxxCoverage, not HeadXxxCoverage.
 		It("maps project_provenance.base.coverage.reachability from BaseReachabilityCoverage, distinct from head's complete", func() {
 			prov := extractProvenance(report)
 			var base map[string]json.RawMessage
@@ -406,8 +292,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		})
 	})
 
-	// AC-6: baseline complete_no_match PLUS a non-empty diagnostics list →
-	// inspect_diagnostics appears last in next_actions.
 	When("baseline complete_no_match holds and the report has a diagnostic", func() {
 		It("includes inspect_diagnostics as the last next_action", func() {
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
@@ -426,7 +310,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		})
 	})
 
-	// Base-side model incompleteness blocks complete_no_match in diff mode.
 	When("diff mode has complete head coverage but incomplete base model coverage", func() {
 		var report *codesignal.Report
 
@@ -465,7 +348,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		})
 	})
 
-	// Head bypass incompleteness blocks complete_no_match even when the model is complete.
 	When("baseline has complete head model but incomplete head bypass coverage", func() {
 		var report *codesignal.Report
 
@@ -493,8 +375,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		})
 	})
 
-	// AC-7: an active layer-rule ProjectChange blocks complete_no_match even when coverage is
-	// fully complete; the table exercises both rule IDs.
 	DescribeTable("omits project_next_actions when an active layer-rule finding is present",
 		func(ruleID string) {
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
@@ -513,8 +393,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		Entry("architecture.layer_bypass", "architecture.layer_bypass"),
 	)
 
-	// analyzer.protocol_version defaults to 1 for TypeScript reports when
-	// Input.AnalyzerProtocolVersion is the zero value.
 	When("a TypeScript baseline has AnalyzerProtocolVersion not explicitly set (zero value)", func() {
 		It("emits analyzer.protocol_version == 1 in project_provenance by default for typescript", func() {
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
@@ -524,7 +402,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				HeadModelCoverage:  completeCoverage("model"),
 				HeadBypassCoverage: notRequestedCoverage(),
 				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
-				// AnalyzerProtocolVersion deliberately left as zero value
 			})
 			prov := extractProvenance(report)
 			var analyzer map[string]json.RawMessage
@@ -555,8 +432,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		})
 	})
 
-	// AC-8: Options.ProjectEnabled with Language="" or "go" → project_provenance,
-	// project_scope, and project_next_actions are omitted even when HeadProjectScope is set.
 	When("ProjectEnabled is true but Language is not typescript", func() {
 		DescribeTable("omits project_provenance, project_scope, and project_next_actions",
 			func(language string) {
@@ -577,11 +452,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		)
 	})
 
-	// AC-EVD-6: diff mode with IncludeResolved:false and a base-only
-	// architecture.layer_violation classified as resolved. The resolved change
-	// is filtered out of the active set, so complete_no_match must still be
-	// blocked — ResolvedChanges on the summary (counted before the filter) must
-	// prevent it.
 	When("diff mode has a base-only architecture.layer_violation with IncludeResolved:false", func() {
 		It("omits project_next_actions because the resolved change blocks complete_no_match", func() {
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: false}, codesignal.Input{
@@ -605,9 +475,6 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 		})
 	})
 
-	// AC-9: file-local Signals with complete TS coverage and zero project
-	// findings still trigger complete_no_match (facts-only observations do not
-	// block it either).
 	When("a file-local Signal is present alongside complete TS project coverage with no project findings", func() {
 		It("still holds complete_no_match and emits project_next_actions", func() {
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
@@ -687,3 +554,61 @@ var _ = DescribeTable("RequiredCoverageIncomplete (AC-EVD-7 predicate contract)"
 			Head: codesignal.ProvenanceRevision{Coverage: codesignal.ProvenanceCoverage{Model: "complete", Bypass: "not_run"}},
 		}}, true),
 )
+
+// nextActionKinds returns the kind strings from project_next_actions.
+func nextActionKinds(report *codesignal.Report) []string {
+	fields := rawReportFields(report)
+	raw, ok := fields["project_next_actions"]
+	if !ok {
+		return nil
+	}
+	var actions []map[string]json.RawMessage
+	Expect(json.Unmarshal(raw, &actions)).To(Succeed())
+	kinds := make([]string, 0, len(actions))
+	for _, a := range actions {
+		var kind string
+		Expect(json.Unmarshal(a["kind"], &kind)).To(Succeed())
+		kinds = append(kinds, kind)
+	}
+	return kinds
+}
+
+// extractProvenance unmarshals the project_provenance key from a report's JSON.
+func extractProvenance(report *codesignal.Report) map[string]json.RawMessage {
+	fields := rawReportFields(report)
+	if _, ok := fields["project_provenance"]; !ok {
+		return nil
+	}
+	var prov map[string]json.RawMessage
+	Expect(json.Unmarshal(fields["project_provenance"], &prov)).To(Succeed())
+	return prov
+}
+
+// headProjectScope returns a minimal non-nil ProjectScope for use in tests.
+func headProjectScope() *domain.ProjectScope {
+	return &domain.ProjectScope{
+		InclusionRule:   domain.InclusionRuleTSConfigIncludesNoTestClassification,
+		PatternSet:      domain.TSReachabilityAlgorithm,
+		Roots:           []domain.ProjectScopeRoot{{Root: ".", CandidateFiles: 10, AnalyzedFiles: 10}},
+		MatchedLayers:   []string{"handlers"},
+		UnmatchedLayers: []string{"db"},
+	}
+}
+
+// extractHeadCoverage reads project_provenance.head.coverage from a report.
+func extractHeadCoverage(report *codesignal.Report) map[string]json.RawMessage {
+	prov := extractProvenance(report)
+	Expect(prov).NotTo(BeNil(), "project_provenance must be present")
+	var head map[string]json.RawMessage
+	Expect(json.Unmarshal(prov["head"], &head)).To(Succeed())
+	var cov map[string]json.RawMessage
+	Expect(json.Unmarshal(head["coverage"], &cov)).To(Succeed())
+	return cov
+}
+
+// layerViolationChange returns a ProjectChange with the given rule ID
+// (architecture.layer_violation or architecture.layer_bypass) that has a
+// valid anchor so it reaches the active report set.
+func layerViolationChange(ruleID string) codesignal.ProjectChange {
+	return projectChange("layer:domain->infra", ruleID)
+}

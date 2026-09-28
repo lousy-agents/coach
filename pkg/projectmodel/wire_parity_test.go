@@ -1,18 +1,33 @@
 package projectmodel
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"reflect"
 	"regexp"
-	"runtime"
-	"strings"
+
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/projectbridge"
 	"github.com/lousy-agents/coach/pkg/domain"
 )
+
+// wireField is one struct field's json-wire identity: its json tag name
+// (without ",omitempty") and whether that tag carries ",omitempty".
+type wireField struct {
+	Name     string
+	Optional bool
+}
+
+// tsInterfaceFieldPattern matches one TS interface property declaration
+// line: leading whitespace, an identifier, an optional "?", then ":".
+var tsInterfaceFieldPattern = regexp.MustCompile(`(?m)^\s*([A-Za-z_][A-Za-z0-9_]*)(\??):`)
+
+// gapCodeConstPattern matches one `export const GAP_<NAME> = "<code>";` line
+// in reachability-registry.ts.
+var gapCodeConstPattern = regexp.MustCompile(`(?m)^export const GAP_[A-Z_]+ = "([a-z0-9_]+)";$`)
+
+// reachabilityAlgorithmConstPattern matches reachability-registry.ts's
+// `export const REACHABILITY_ALGORITHM = "<value>";` declaration.
+var reachabilityAlgorithmConstPattern = regexp.MustCompile(`(?m)^export const REACHABILITY_ALGORITHM = "([^"]+)";$`)
 
 // TestModelWireFieldParity guards the invariant documented on modelWire:
 // every field of Model must be mirrored in modelWire in the same order and
@@ -25,86 +40,23 @@ func TestModelWireFieldParity(t *testing.T) {
 	wireType := reflect.TypeOf(domain.ModelWire{})
 
 	t.Run("Model and modelWire fields mirror 1:1", func(t *testing.T) {
-		if modelType.NumField() != wireType.NumField() {
-			t.Fatalf("Model has %d fields but modelWire has %d fields; every Model field must be mirrored in modelWire (see modelWire's doc comment)", modelType.NumField(), wireType.NumField())
-		}
-
-		for i := 0; i < modelType.NumField(); i++ {
-			modelField := modelType.Field(i)
-			wireField := wireType.Field(i)
-
-			if modelField.Name != wireField.Name {
-				t.Errorf("field %d: Model has %q but modelWire has %q; fields must mirror in name and order", i, modelField.Name, wireField.Name)
-			}
-			if got, want := wireField.Tag.Get("json"), modelField.Tag.Get("json"); got != want {
-				t.Errorf("field %q: modelWire json tag %q does not match Model json tag %q", modelField.Name, got, want)
-			}
-		}
+		body_wireParityTest_ModelAndModelWireFieldsMirror11_42(t, modelType, wireType)
 	})
 
 	t.Run("RootScopes element type mirrors RootScopeFact", func(t *testing.T) {
-		rootScopesField, ok := modelType.FieldByName("RootScopes")
-		if !ok {
-			t.Fatal("Model has no RootScopes field")
-		}
-		if rootScopesField.Type.Kind() != reflect.Slice {
-			t.Fatalf("Model.RootScopes has type %s, want a slice", rootScopesField.Type)
-		}
-		rootScopeType := rootScopesField.Type.Elem()
-		bridgeRootScopeType := reflect.TypeOf(projectbridge.RootScopeFact{})
-		if rootScopeType.NumField() != bridgeRootScopeType.NumField() {
-			t.Fatalf("Model's root scope element type %s has %d fields but projectbridge.RootScopeFact has %d fields; they must mirror 1:1", rootScopeType, rootScopeType.NumField(), bridgeRootScopeType.NumField())
-		}
-		for i := 0; i < rootScopeType.NumField(); i++ {
-			got := rootScopeType.Field(i)
-			want := bridgeRootScopeType.Field(i)
-			if got.Name != want.Name {
-				t.Errorf("field %d: Model's root scope element type has %q but projectbridge.RootScopeFact has %q", i, got.Name, want.Name)
-			}
-			if gotTag, wantTag := got.Tag.Get("json"), want.Tag.Get("json"); gotTag != wantTag {
-				t.Errorf("field %q: Model's root scope element type json tag %q does not match projectbridge.RootScopeFact json tag %q", got.Name, gotTag, wantTag)
-			}
-		}
+		body_wireParityTest_RootScopesElementTypeMirrorsRootScopeFact_60(t, modelType)
 	})
 }
 
-// TestRootScopePathInvariants guards RootScope's per-file identity contract
-// (issue #331 review findings REV-386-01/02) across a JSON round trip:
-// len(AnalyzedPaths) must equal AnalyzedFiles, and AnalyzedPaths plus
-// UnanalyzedPaths must together equal CandidateFiles.
-func TestRootScopePathInvariants(t *testing.T) {
-	model := Model{
-		RootScopes: []RootScope{
-			{
-				Root:            ".",
-				CandidateFiles:  3,
-				AnalyzedFiles:   2,
-				AnalyzedPaths:   []string{"a.ts", "b.ts"},
-				UnanalyzedPaths: []string{"c.tsx"},
-			},
-		},
-		Coverage: Coverage{Phase: "test"},
-	}
-
-	data, err := json.Marshal(model)
-	if err != nil {
-		t.Fatalf("marshaling model: %s", err)
-	}
-
-	var decoded Model
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("unmarshaling model: %s", err)
-	}
-	if len(decoded.RootScopes) != 1 {
-		t.Fatalf("expected exactly one decoded root scope, got %+v", decoded.RootScopes)
-	}
-
-	got := decoded.RootScopes[0]
-	if len(got.AnalyzedPaths) != got.AnalyzedFiles {
-		t.Errorf("len(analyzed_paths)=%d does not equal analyzed_files=%d, got %+v", len(got.AnalyzedPaths), got.AnalyzedFiles, got)
-	}
-	if len(got.AnalyzedPaths)+len(got.UnanalyzedPaths) != got.CandidateFiles {
-		t.Errorf("len(analyzed_paths)+len(unanalyzed_paths)=%d does not equal candidate_files=%d, got %+v", len(got.AnalyzedPaths)+len(got.UnanalyzedPaths), got.CandidateFiles, got)
+// assertGoTSStructFieldsMatch asserts structType's own json-tagged field
+// names/optionality (in declaration order) match tsInterfaceName's fields in
+// tsSource.
+func assertGoTSStructFieldsMatch(t *testing.T, structType reflect.Type, tsSource []byte, tsInterfaceName string) {
+	t.Helper()
+	goFields := goWireFields(t, structType)
+	tsFields := tsInterfaceFields(t, tsSource, tsInterfaceName)
+	if !reflect.DeepEqual(goFields, tsFields) {
+		t.Fatalf("%s json fields %v do not match protocol.ts interface %s fields %v", structType, goFields, tsInterfaceName, tsFields)
 	}
 }
 
@@ -143,214 +95,4 @@ func TestProtocolGoTSFieldParity(t *testing.T) {
 	t.Run("Response.RootScopes", func(t *testing.T) {
 		assertGoFieldMatchesTS(t, respType, "RootScopes", tsSource, "RootScopeFact")
 	})
-}
-
-// readProtocolTSSource reads js/semantics/src/project-sidecar/protocol.ts
-// relative to this test file's own path, mirroring
-// ts_sidecar_integration_acceptance_test.go's repoRootFromThisFile
-// convention (that helper lives in the projectmodel_test package, so it is
-// not reachable from here).
-func readProtocolTSSource(t *testing.T) []byte {
-	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller(0) failed")
-	}
-	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..")
-	path := filepath.Join(repoRoot, "js", "semantics", "src", "project-sidecar", "protocol.ts")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %s", path, err)
-	}
-	return data
-}
-
-// assertGoTSStructFieldsMatch asserts structType's own json-tagged field
-// names/optionality (in declaration order) match tsInterfaceName's fields in
-// tsSource.
-func assertGoTSStructFieldsMatch(t *testing.T, structType reflect.Type, tsSource []byte, tsInterfaceName string) {
-	t.Helper()
-	goFields := goWireFields(t, structType)
-	tsFields := tsInterfaceFields(t, tsSource, tsInterfaceName)
-	if !reflect.DeepEqual(goFields, tsFields) {
-		t.Fatalf("%s json fields %v do not match protocol.ts interface %s fields %v", structType, goFields, tsInterfaceName, tsFields)
-	}
-}
-
-// assertGoFieldMatchesTS finds fieldName on parent (resolving through at
-// most one pointer/slice indirection to a struct type) and asserts its
-// json-tagged fields match tsInterfaceName's fields in tsSource. It fails
-// with a clear "no field" message -- not a compile error -- when fieldName
-// does not exist on parent yet, which is the expected red-test state before
-// this task's wire fields are added. It returns the resolved element struct
-// type so callers can assert further nested fields (e.g. a Path field's own
-// step type).
-func assertGoFieldMatchesTS(t *testing.T, parent reflect.Type, fieldName string, tsSource []byte, tsInterfaceName string) reflect.Type {
-	t.Helper()
-	f, ok := parent.FieldByName(fieldName)
-	if !ok {
-		t.Fatalf("%s has no field %q; the wire-protocol call-graph/reachability/bypass fields (issue #216 Task 1) are not implemented yet", parent, fieldName)
-	}
-	elemType := f.Type
-	for elemType.Kind() == reflect.Pointer || elemType.Kind() == reflect.Slice {
-		elemType = elemType.Elem()
-	}
-	if elemType.Kind() != reflect.Struct {
-		t.Fatalf("%s.%s resolves to non-struct type %s", parent, fieldName, elemType)
-	}
-	assertGoTSStructFieldsMatch(t, elemType, tsSource, tsInterfaceName)
-	return elemType
-}
-
-// wireField is one struct field's json-wire identity: its json tag name
-// (without ",omitempty") and whether that tag carries ",omitempty".
-type wireField struct {
-	Name     string
-	Optional bool
-}
-
-// goWireFields returns structType's exported fields' wireField values in
-// declaration order.
-func goWireFields(t *testing.T, structType reflect.Type) []wireField {
-	t.Helper()
-	fields := make([]wireField, 0, structType.NumField())
-	for i := 0; i < structType.NumField(); i++ {
-		f := structType.Field(i)
-		tag := f.Tag.Get("json")
-		if tag == "" {
-			t.Fatalf("%s field %q has no json tag", structType, f.Name)
-		}
-		name, opts, _ := strings.Cut(tag, ",")
-		fields = append(fields, wireField{Name: name, Optional: strings.Contains(opts, "omitempty")})
-	}
-	return fields
-}
-
-// tsInterfaceFieldPattern matches one TS interface property declaration
-// line: leading whitespace, an identifier, an optional "?", then ":".
-var tsInterfaceFieldPattern = regexp.MustCompile(`(?m)^\s*([A-Za-z_][A-Za-z0-9_]*)(\??):`)
-
-// tsInterfaceFields returns interfaceName's field list recovered from an
-// "export interface Name { ... }" block in source. The body is captured
-// with a negated class ([^}]*), so it stops at the first "}"; this assumes
-// (true for protocol.ts today) no interface body contains a nested "}".
-func tsInterfaceFields(t *testing.T, source []byte, interfaceName string) []wireField {
-	t.Helper()
-	blockPattern := regexp.MustCompile(`export interface ` + regexp.QuoteMeta(interfaceName) + `\s*\{([^}]*)\}`)
-	m := blockPattern.FindSubmatch(source)
-	if m == nil {
-		t.Fatalf("protocol.ts: no %q interface found; the wire-protocol call-graph/reachability/bypass fields (issue #216 Task 1) are not implemented yet", interfaceName)
-	}
-	matches := tsInterfaceFieldPattern.FindAllSubmatch(m[1], -1)
-	fields := make([]wireField, 0, len(matches))
-	for _, fm := range matches {
-		fields = append(fields, wireField{Name: string(fm[1]), Optional: string(fm[2]) == "?"})
-	}
-	return fields
-}
-
-// TestReachabilityGapDiagnosticCodeParity guards issue #216's coverage-honesty
-// invariant: tsReachabilityGapDiagnosticCodes (ts_reachability.go) must list
-// exactly the same diagnostic codes as js/semantics/src/project-sidecar/
-// reachability-registry.ts's GAP_* constants. Go cannot import that
-// TypeScript file, so it is read as source text (mirroring
-// TestProtocolGoTSFieldParity's approach for protocol.ts) -- a code present
-// on only one side means BuildTypeScriptReachability/BuildTypeScriptLayerBypass
-// either silently report Coverage.Complete: true for a genuinely unverified
-// hop (a code missing from the Go side) or over-report incompleteness for a
-// hop that was actually fully resolved (a code missing from the TS side).
-func TestReachabilityGapDiagnosticCodeParity(t *testing.T) {
-	tsSource := readReachabilityRegistryTSSource(t)
-	tsCodes := gapCodeConstPattern.FindAllSubmatch(tsSource, -1)
-	if len(tsCodes) == 0 {
-		t.Fatal("reachability-registry.ts: no GAP_* constants found; gapCodeConstPattern likely no longer matches the source")
-	}
-
-	tsSet := make(map[string]bool, len(tsCodes))
-	for _, m := range tsCodes {
-		tsSet[string(m[1])] = true
-	}
-
-	for code := range tsReachabilityGapDiagnosticCodes {
-		if !tsSet[code] {
-			t.Errorf("tsReachabilityGapDiagnosticCodes (ts_reachability.go) has %q, but reachability-registry.ts has no matching GAP_* constant", code)
-		}
-	}
-	for code := range tsSet {
-		if !tsReachabilityGapDiagnosticCodes[code] {
-			t.Errorf("reachability-registry.ts declares GAP_* constant %q, but tsReachabilityGapDiagnosticCodes (ts_reachability.go) does not include it", code)
-		}
-	}
-}
-
-// gapCodeConstPattern matches one `export const GAP_<NAME> = "<code>";` line
-// in reachability-registry.ts.
-var gapCodeConstPattern = regexp.MustCompile(`(?m)^export const GAP_[A-Z_]+ = "([a-z0-9_]+)";$`)
-
-// TestReachabilityAlgorithmWireParity guards SA-280-014 (issue #332 Task 9,
-// AC-8/AC-19/AC-27): ProjectScope.PatternSet (project_scope.go) is assigned
-// from TSReachabilityAlgorithm, which must keep mirroring
-// js/semantics/src/project-sidecar/reachability-registry.ts's
-// REACHABILITY_ALGORITHM constant -- the route-to-sink registry's own
-// identity -- the same cross-language text-read approach
-// TestReachabilityGapDiagnosticCodeParity uses for GAP_* codes. If the TS
-// registry's algorithm identity changed without a matching bump on the Go
-// side, pattern_set would silently keep reporting a stale registry version.
-//
-// pattern_set must never be sourced from SchemaVersion (the Model's own
-// wire-schema version, and the shape a future project_provenance.analyzer.
-// version field would carry): the two are independently-versioned identity
-// dimensions -- one names the route-to-sink registry, the other names the
-// project model's wire schema -- and ProjectScopeFromModel must never
-// accidentally alias PatternSet to it.
-func TestReachabilityAlgorithmWireParity(t *testing.T) {
-	tsSource := readReachabilityRegistryTSSource(t)
-	m := reachabilityAlgorithmConstPattern.FindSubmatch(tsSource)
-	if m == nil {
-		t.Fatal("reachability-registry.ts: no REACHABILITY_ALGORITHM constant found; reachabilityAlgorithmConstPattern likely no longer matches the source")
-	}
-	tsAlgorithm := string(m[1])
-
-	if tsAlgorithm != TSReachabilityAlgorithm {
-		t.Errorf("reachability-registry.ts REACHABILITY_ALGORITHM = %q, but projectmodel.TSReachabilityAlgorithm = %q; ProjectScope.PatternSet (project_scope.go) is assigned from TSReachabilityAlgorithm, so the two must match", tsAlgorithm, TSReachabilityAlgorithm)
-	}
-
-	if TSReachabilityAlgorithm == SchemaVersion {
-		t.Fatalf("TSReachabilityAlgorithm (%q) must not equal SchemaVersion (%q): pattern_set (the route-to-sink registry identity) and the project model's wire-schema version are independently-sourced identity dimensions, never one constant standing in for both", TSReachabilityAlgorithm, SchemaVersion)
-	}
-
-	policy := ProjectScopePolicy{Roots: []string{"."}}
-	model := Model{
-		SchemaVersion: SchemaVersion,
-		RootScopes:    []RootScope{{Root: ".", CandidateFiles: 1, AnalyzedFiles: 1}},
-	}
-	scope, err := ProjectScopeFromModel(model, policy)
-	if err != nil {
-		t.Fatalf("ProjectScopeFromModel: %s", err)
-	}
-	if scope.PatternSet != TSReachabilityAlgorithm {
-		t.Errorf("ProjectScope.PatternSet = %q, want TSReachabilityAlgorithm (%q)", scope.PatternSet, TSReachabilityAlgorithm)
-	}
-	if scope.PatternSet == model.SchemaVersion {
-		t.Errorf("ProjectScope.PatternSet (%q) must not equal Model.SchemaVersion (%q): pattern_set is never derived from the wire-schema version", scope.PatternSet, model.SchemaVersion)
-	}
-}
-
-// reachabilityAlgorithmConstPattern matches reachability-registry.ts's
-// `export const REACHABILITY_ALGORITHM = "<value>";` declaration.
-var reachabilityAlgorithmConstPattern = regexp.MustCompile(`(?m)^export const REACHABILITY_ALGORITHM = "([^"]+)";$`)
-
-func readReachabilityRegistryTSSource(t *testing.T) []byte {
-	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller(0) failed")
-	}
-	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..")
-	path := filepath.Join(repoRoot, "js", "semantics", "src", "project-sidecar", "reachability-registry.ts")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %s", path, err)
-	}
-	return data
 }

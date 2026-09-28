@@ -31,10 +31,7 @@ func Test_classifyStateDomain(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.binding, func(t *testing.T) {
-			got := classifyStateDomain(tc.binding)
-			if got != tc.want {
-				t.Errorf("classifyStateDomain(%q) = %q, want %q", tc.binding, got, tc.want)
-			}
+			body_ruleReactOrchestrationTest_33(t, tc)
 		})
 	}
 }

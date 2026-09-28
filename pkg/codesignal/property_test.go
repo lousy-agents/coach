@@ -9,90 +9,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func reorderingScenarioInput() Input {
-	return Input{
-		Scope: Scope{Repository: "example/repo", Revision: "rev1", Base: "main"},
-		Files: []FileChange{
-			{
-				Path:   "a.go",
-				Status: "modified",
-				Base: &semantics.Result{
-					Path:        "a.go",
-					ParseStatus: semantics.ParseStatus("ok"),
-					Findings: []semantics.Finding{
-						{Kind: "mutates_input", Name: "Dup", Location: semantics.Location{StartRow: 1}, Evidence: "x = 1"},
-					},
-				},
-				Head: &semantics.Result{
-					Path:        "a.go",
-					ParseStatus: semantics.ParseStatus("ok"),
-					Findings: []semantics.Finding{
-						// Two occurrences sharing the same key ("Dup", "x = 1") --
-						// exercises occurrence-ordinal grouping.
-						{Kind: "mutates_input", Name: "Dup", Location: semantics.Location{StartRow: 5}, Evidence: "x = 1"},
-						{Kind: "mutates_input", Name: "Dup", Location: semantics.Location{StartRow: 8}, Evidence: "x = 1"},
-						{Kind: "mutates_input", Name: "Alpha", Location: semantics.Location{StartRow: 12}, Evidence: "y = 2"},
-					},
-				},
-				ChangedRanges: []LineRange{{StartRow: 0, EndRow: 20}},
-			},
-			{
-				Path:   "b.go",
-				Status: "added",
-				Head: &semantics.Result{
-					Path:        "b.go",
-					ParseStatus: semantics.ParseStatus("ok"),
-					Findings: []semantics.Finding{
-						{Kind: "mutates_input", Name: "Beta", Location: semantics.Location{StartRow: 2}, Evidence: "z = 3"},
-						{Kind: "mutates_input", Name: "Gamma", Location: semantics.Location{StartRow: 4}, Evidence: "w = 4"},
-					},
-				},
-			},
-			{
-				Path:   "c.go",
-				Status: "removed",
-				Base: &semantics.Result{
-					Path:        "c.go",
-					ParseStatus: semantics.ParseStatus("ok"),
-					Findings: []semantics.Finding{
-						{Kind: "mutates_input", Name: "Delta", Location: semantics.Location{StartRow: 6}, Evidence: "v = 5"},
-					},
-				},
-			},
-		},
-	}
-}
-
-func reverseFileChanges(files []FileChange) []FileChange {
-	out := make([]FileChange, len(files))
-	for i, fc := range files {
-		reordered := fc
-		if fc.Base != nil {
-			baseCopy := *fc.Base
-			baseCopy.Findings = reverseFindings(fc.Base.Findings)
-			reordered.Base = &baseCopy
-		}
-		if fc.Head != nil {
-			headCopy := *fc.Head
-			headCopy.Findings = reverseFindings(fc.Head.Findings)
-			reordered.Head = &headCopy
-		}
-		out[len(files)-1-i] = reordered
-	}
-	return out
-}
-
-func reverseFindings(findings []semantics.Finding) []semantics.Finding {
-	if findings == nil {
-		return nil
-	}
-	out := make([]semantics.Finding, len(findings))
-	for i, f := range findings {
-		out[len(findings)-1-i] = f
-	}
-	return out
-}
-
 func TestProperty_ReorderingInputDoesNotChangeReportJSON(t *testing.T) {
 	b, err := New(Options{IncludeResolved: true})
 	if err != nil {
@@ -151,87 +67,60 @@ func TestProperty_RangeOverlapNeverPanics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b, err := New(Options{IncludeResolved: true})
-			if err != nil {
-				t.Fatalf("New: %v", err)
-			}
-
-			head := &semantics.Result{
-				Path:        "extreme.go",
-				ParseStatus: semantics.ParseStatus("ok"),
-				Findings: []semantics.Finding{
-					{Kind: "mutates_input", Name: "Extreme", Location: tt.loc, Evidence: "x = 1"},
-				},
-			}
-
-			report, err := b.Build(context.Background(), Input{
-				Files: []FileChange{
-					{Path: "extreme.go", Status: "modified", Head: head, ChangedRanges: tt.ranges},
-				},
-			})
-			if err != nil {
-				t.Fatalf("Build: %v", err)
-			}
-			if report == nil {
-				t.Fatalf("Build returned nil Report")
-			}
+			body_propertyTest_69(t, tt)
 		})
 	}
 }
 
-func TestProperty_ArbitraryEvidenceProducesValidJSON(t *testing.T) {
-	longEvidence := ""
-	for i := 0; i < 10000; i++ {
-		longEvidence += "x"
-	}
-
-	tests := []struct {
-		name     string
-		evidence string
-	}{
-		{"embedded double quotes", `cfg.Name = "hello \"world\""`},
-		{"backslashes", `path = "C:\\Users\\name"`},
-		{"multi-byte unicode", "变量.名前 =値"},
-		{"emoji", "cfg.Emoji = \"🎉🚀💥\""},
-		{"tab and newline control characters", "x = 1\t// comment\ny = 2"},
-		{"embedded null byte", "x\x00 = 1"},
-		{"very long string", longEvidence},
-		{"mixed adversarial", "x = \"\\n\\t\x00\" + 变量 + \"🎉\""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			b, err := New(Options{})
-			if err != nil {
-				t.Fatalf("New: %v", err)
-			}
-
-			head := &semantics.Result{
-				Path:        "evidence.go",
-				ParseStatus: semantics.ParseStatus("ok"),
-				Findings: []semantics.Finding{
-					{Kind: "mutates_input", Name: "Adversarial", Evidence: tt.evidence},
+func reorderingScenarioInput() Input {
+	return Input{
+		Scope: Scope{Repository: "example/repo", Revision: "rev1", Base: "main"},
+		Files: []FileChange{
+			{
+				Path:   "a.go",
+				Status: "modified",
+				Base: &semantics.Result{
+					Path:        "a.go",
+					ParseStatus: semantics.ParseStatus("ok"),
+					Findings: []semantics.Finding{
+						{Kind: "mutates_input", Name: "Dup", Location: semantics.Location{StartRow: 1}, Evidence: "x = 1"},
+					},
 				},
-			}
+				Head: &semantics.Result{
+					Path:        "a.go",
+					ParseStatus: semantics.ParseStatus("ok"),
+					Findings: []semantics.Finding{
 
-			report, err := b.Build(context.Background(), Input{
-				Files: []FileChange{
-					{Path: "evidence.go", Status: "modified", Head: head},
+						{Kind: "mutates_input", Name: "Dup", Location: semantics.Location{StartRow: 5}, Evidence: "x = 1"},
+						{Kind: "mutates_input", Name: "Dup", Location: semantics.Location{StartRow: 8}, Evidence: "x = 1"},
+						{Kind: "mutates_input", Name: "Alpha", Location: semantics.Location{StartRow: 12}, Evidence: "y = 2"},
+					},
 				},
-			})
-			if err != nil {
-				t.Fatalf("Build: %v", err)
-			}
-
-			raw, err := json.Marshal(report)
-			if err != nil {
-				t.Fatalf("json.Marshal(report) with Evidence %q must not fail: %v", tt.evidence, err)
-			}
-
-			var asMap map[string]any
-			if err := json.Unmarshal(raw, &asMap); err != nil {
-				t.Fatalf("json.Unmarshal back into map[string]any with Evidence %q must not fail: %v\nJSON: %s", tt.evidence, err, raw)
-			}
-		})
+				ChangedRanges: []LineRange{{StartRow: 0, EndRow: 20}},
+			},
+			{
+				Path:   "b.go",
+				Status: "added",
+				Head: &semantics.Result{
+					Path:        "b.go",
+					ParseStatus: semantics.ParseStatus("ok"),
+					Findings: []semantics.Finding{
+						{Kind: "mutates_input", Name: "Beta", Location: semantics.Location{StartRow: 2}, Evidence: "z = 3"},
+						{Kind: "mutates_input", Name: "Gamma", Location: semantics.Location{StartRow: 4}, Evidence: "w = 4"},
+					},
+				},
+			},
+			{
+				Path:   "c.go",
+				Status: "removed",
+				Base: &semantics.Result{
+					Path:        "c.go",
+					ParseStatus: semantics.ParseStatus("ok"),
+					Findings: []semantics.Finding{
+						{Kind: "mutates_input", Name: "Delta", Location: semantics.Location{StartRow: 6}, Evidence: "v = 5"},
+					},
+				},
+			},
+		},
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
+
 	"fmt"
 	"io"
 	"os"
@@ -23,102 +23,12 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 )
 
-// openPTYPair opens a real Linux pseudo-terminal pair via /dev/ptmx,
-// duplicating internal/codesignalcli/controlling_terminal_pty_linux_test.go's
-// openPTYSlave rather than importing it: it is a test-only fixture in a
-// different package, and pty allocation is a handful of ioctls, not shared
-// production logic. It returns both ends: master is written to by the spec
-// to script the child's interactive answers, slave becomes the child's
-// controlling terminal. Every failure calls Skip rather than Fail, so a
-// sandbox without pty support produces a loud, named skip in the suite's
-// own output -- never a silent pass that would prove nothing about
-// AC-POL-8's TTY-gated branch.
-func openPTYPair() (master, slave *os.File) {
-	m, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
-	if err != nil {
-		Skip(fmt.Sprintf("open /dev/ptmx: %v (no pty support in this sandbox; AC-POL-8's TTY-gated branch is unproven here)", err))
-	}
-	if err := unix.IoctlSetPointerInt(int(m.Fd()), unix.TIOCSPTLCK, 0); err != nil {
-		m.Close()
-		Skip(fmt.Sprintf("TIOCSPTLCK: %v (AC-POL-8's TTY-gated branch is unproven here)", err))
-	}
-	n, err := unix.IoctlGetInt(int(m.Fd()), unix.TIOCGPTN)
-	if err != nil {
-		m.Close()
-		Skip(fmt.Sprintf("TIOCGPTN: %v (AC-POL-8's TTY-gated branch is unproven here)", err))
-	}
-	slavePath := fmt.Sprintf("/dev/pts/%d", n)
-	s, err := os.OpenFile(slavePath, os.O_RDWR|syscall.O_NOCTTY, 0)
-	if err != nil {
-		m.Close()
-		Skip(fmt.Sprintf("open %s: %v (AC-POL-8's TTY-gated branch is unproven here)", slavePath, err))
-	}
-	return m, s
-}
-
 // controllingTerminalCommandTimeout bounds runCoachBinaryWithControllingTerminal's
 // child. Without a deadline, a prompt sequence the caller's stdinScript does
 // not fully answer leaves the child blocked reading the still-open pty
 // forever, and the failure only ever surfaces as the whole package's 10-minute
 // test timeout rather than a named spec failure.
 const controllingTerminalCommandTimeout = 15 * time.Second
-
-// runCoachBinaryWithControllingTerminal runs binary with its stdin attached
-// to a real controlling terminal (a pty slave) instead of a pipe, so
-// codesignalcli.HasControllingTerminal(os.Stdin) is genuinely true inside
-// the child -- the only way to exercise AC-POL-8's guided-authoring branch
-// from outside the process. stdinScript is written to the pty master before
-// the child starts reading; the kernel line discipline buffers it, so exact
-// interleaving with the child's own startup does not matter. Stdout/stderr
-// stay ordinary pipes: HasControllingTerminal only ever inspects stdin.
-// terminalTranscript is the master's own read side (the child's echo and any
-// of its output the line discipline reflects back); draining it concurrently
-// with Wait keeps the finite canonical-mode echo queue from ever
-// back-pressuring the child, and gives a future spec that answers
-// interleaved output rather than pre-scripting every answer a transcript to
-// assert on.
-func runCoachBinaryWithControllingTerminal(binary, workingDir string, env []string, stdinScript string, args ...string) (stdout, stderr, terminalTranscript []byte, exitCode int) {
-	master, slave := openPTYPair()
-	defer master.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), controllingTerminalCommandTimeout)
-	defer cancel()
-
-	command := exec.CommandContext(ctx, binary, args...)
-	command.Dir = workingDir
-	command.Env = env
-	command.Stdin = slave
-	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
-	var outBuf, errBuf bytes.Buffer
-	command.Stdout = &outBuf
-	command.Stderr = &errBuf
-
-	_, writeErr := master.WriteString(stdinScript)
-	Expect(writeErr).NotTo(HaveOccurred(), "writing scripted stdin to the pty master")
-
-	startErr := command.Start()
-	Expect(slave.Close()).To(Succeed())
-	Expect(startErr).NotTo(HaveOccurred(), "starting %s", binary)
-
-	var transcript bytes.Buffer
-	drained := make(chan struct{})
-	go func() {
-		io.Copy(&transcript, master)
-		close(drained)
-	}()
-
-	waitErr := command.Wait()
-	<-drained
-
-	Expect(ctx.Err()).NotTo(Equal(context.DeadlineExceeded), "coach did not exit within %s; it is likely blocked reading an unanswered prompt on the pty (stdout: %s, stderr: %s, terminal: %s)", controllingTerminalCommandTimeout, outBuf.String(), errBuf.String(), transcript.String())
-
-	if waitErr == nil {
-		return outBuf.Bytes(), errBuf.Bytes(), transcript.Bytes(), 0
-	}
-	var exitErr *exec.ExitError
-	Expect(errors.As(waitErr, &exitErr)).To(BeTrue(), "expected an ExitError, got: %s (stderr: %s)", waitErr, errBuf.String())
-	return outBuf.Bytes(), errBuf.Bytes(), transcript.Bytes(), exitErr.ExitCode()
-}
 
 // syncBuffer is a goroutine-safe bytes.Buffer: os/exec reads a command's
 // Stdout/Stderr pipes on their own internal goroutines, so a spec polling
@@ -128,24 +38,6 @@ func runCoachBinaryWithControllingTerminal(binary, workingDir string, env []stri
 type syncBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.buf.Write(p)
-}
-
-func (s *syncBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.buf.String()
-}
-
-func (s *syncBuffer) Bytes() []byte {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]byte(nil), s.buf.Bytes()...)
 }
 
 // controllingTerminalSession is runCoachBinaryWithControllingTerminal's
@@ -174,110 +66,6 @@ type controllingTerminalSession struct {
 
 	stdoutBuf *syncBuffer
 	stderrBuf *syncBuffer
-}
-
-// startCoachBinaryWithControllingTerminal starts binary with its stdin
-// attached to a real controlling terminal, exactly like
-// runCoachBinaryWithControllingTerminal, but returns control to the spec
-// before the child has necessarily produced any output, so the caller can
-// interleave waitForPrompt/writeLine calls with the child's own prompts
-// instead of pre-scripting every answer. waitForPrompt polls stderr, not
-// the pty's own transcript: every interactive prompt this package's CLI
-// dispatch prints goes to stderr (a regular pipe, distinct from the
-// terminal), and the pty transcript otherwise only carries the line
-// discipline's echo of what the spec itself typed.
-func startCoachBinaryWithControllingTerminal(binary, workingDir string, env []string, args ...string) *controllingTerminalSession {
-	master, slave := openPTYPair()
-
-	ctx, cancel := context.WithTimeout(context.Background(), controllingTerminalCommandTimeout)
-
-	command := exec.CommandContext(ctx, binary, args...)
-	command.Dir = workingDir
-	command.Env = env
-	command.Stdin = slave
-	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
-	outBuf, errBuf := &syncBuffer{}, &syncBuffer{}
-	command.Stdout = outBuf
-	command.Stderr = errBuf
-
-	startErr := command.Start()
-	Expect(slave.Close()).To(Succeed())
-	Expect(startErr).NotTo(HaveOccurred(), "starting %s", binary)
-
-	session := &controllingTerminalSession{
-		ctx: ctx, cancel: cancel, command: command, master: master,
-		drained: make(chan struct{}), stdoutBuf: outBuf, stderrBuf: errBuf,
-	}
-	go func() {
-		defer close(session.drained)
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := master.Read(buf)
-			if n > 0 {
-				session.mu.Lock()
-				session.transcript.Write(buf[:n])
-				session.mu.Unlock()
-			}
-			if readErr != nil {
-				return
-			}
-		}
-	}()
-	return session
-}
-
-func (s *controllingTerminalSession) transcriptSoFar() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.transcript.String()
-}
-
-// waitForPrompt blocks until substr has appeared anywhere in stderr read so
-// far, polling rather than requiring the production prompt text to be
-// flushed in any particular chunking. It fails the spec (by name) once the
-// session's shared ctx deadline elapses, instead of blocking forever on a
-// prompt the scripted answers never satisfy.
-func (s *controllingTerminalSession) waitForPrompt(substr string) {
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		if strings.Contains(s.stderrBuf.String(), substr) {
-			return
-		}
-		select {
-		case <-s.ctx.Done():
-			Fail(fmt.Sprintf("timed out waiting for prompt %q (stderr so far: %s, transcript so far: %s)", substr, s.stderrBuf.String(), s.transcriptSoFar()))
-		case <-ticker.C:
-		}
-	}
-}
-
-// writeLine sends line plus a trailing newline to the child's controlling
-// terminal, as if a person had typed it and pressed enter.
-func (s *controllingTerminalSession) writeLine(line string) {
-	_, err := s.master.WriteString(line + "\n")
-	Expect(err).NotTo(HaveOccurred(), "writing %q to the pty master", line)
-}
-
-// wait closes out the session -- waiting for the child to exit, draining
-// the rest of its terminal output, and checking the shared deadline was
-// never exceeded -- and returns stdout/stderr/transcript/exit code in the
-// same shape runCoachBinaryWithControllingTerminal returns, so a spec that
-// no longer needs to interleave answers can read the result identically.
-func (s *controllingTerminalSession) wait() (stdout, stderr, transcript []byte, exitCode int) {
-	defer s.cancel()
-	waitErr := s.command.Wait()
-	<-s.drained
-	s.master.Close()
-
-	Expect(s.ctx.Err()).NotTo(Equal(context.DeadlineExceeded), "coach did not exit within %s; it is likely blocked reading an unanswered prompt on the pty (stdout: %s, stderr: %s, terminal: %s)", controllingTerminalCommandTimeout, s.stdoutBuf.String(), s.stderrBuf.String(), s.transcriptSoFar())
-
-	if waitErr == nil {
-		return s.stdoutBuf.Bytes(), s.stderrBuf.Bytes(), []byte(s.transcriptSoFar()), 0
-	}
-	var exitErr *exec.ExitError
-	Expect(errors.As(waitErr, &exitErr)).To(BeTrue(), "expected an ExitError, got: %s (stderr: %s)", waitErr, s.stderrBuf.String())
-	return s.stdoutBuf.Bytes(), s.stderrBuf.Bytes(), []byte(s.transcriptSoFar()), exitErr.ExitCode()
 }
 
 // D3 already covers the no-controlling-terminal side of the same policy gap
@@ -317,13 +105,6 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring on a con
 				Expect(string(stderr)).To(ContainSubstring("no file was created"), "a scan never sets --output, so the approved candidate goes to stdout and nothing is written to disk; telling the customer a candidate \"was created\" names an artifact they cannot find, review, or commit. stderr: %s", stderr)
 				Expect(string(stderr)).To(ContainSubstring(`"project.json"`), "the instruction must name the path the scan itself required, so the customer knows where to save what they just approved; stderr: %s", stderr)
 
-				// AC-SET-13's "report all gaps" clause must hold on this
-				// controlling-terminal branch too, not only on the no-TTY path
-				// (project_ts_scan_preflight_acceptance_test.go): this fixture
-				// has no installed TypeScript compiler either, so both gaps
-				// are real and simultaneous. Reporting only the masking policy
-				// failure here would let the customer approve, commit, rerun,
-				// and only then discover the compiler is also missing.
 				Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "the masking policy failure must still be reported before guided authoring opens; stderr: %s", stderr)
 				Expect(string(stderr)).To(ContainSubstring("typescript_compiler_missing: also failing,"), "AC-SET-13 requires the simultaneously failing compiler gap to be reported too, not just the masking policy failure; stderr: %s", stderr)
 				gapIndex := strings.Index(string(stderr), "typescript_compiler_missing: also failing,")
@@ -545,20 +326,6 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard tr
 	})
 })
 
-// installInvocationCount counts miseDir's logged invocations that began
-// with "install", for the single-use-confirmation proof below: a second,
-// unread "install" answer left in the pty must never cause a second `mise
-// install` to run within the same coach invocation.
-func installInvocationCount(miseDir string) int {
-	count := 0
-	for _, line := range readStubMiseInvocations(miseDir) {
-		if strings.HasPrefix(line, "install ") {
-			count++
-		}
-	}
-	return count
-}
-
 // The interactive compiler-setup offer: a real scan's
 // CompilerUnresolvedError gap, on a controlling terminal, presents
 // AvailableSetupChoices' menu instead of only printing a remediation line
@@ -608,12 +375,7 @@ var _ = Describe("coach codesignal (real scan): interactive compiler setup offer
 
 			Expect(exitCode).To(Equal(0), "the fresh readiness rerun must let this trivial, otherwise-ready fixture's scan continue to completion; stderr: %s", stderr)
 			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeTrue())
-			// The gap code still appears once, as the diagnosis that opened
-			// the offer ("the compiler check reports typescript_compiler_missing").
-			// What must never survive a successful setup is the remediation
-			// line: "run --check-project" is stale advice the moment the
-			// scan resumes, and it is the only form a customer could read as
-			// "the compiler is still missing".
+
 			Expect(string(stderr)).NotTo(ContainSubstring("typescript_compiler_missing: run coach"), "a customer whose setup just succeeded must never be told to go and resolve the gap it resolved; stderr: %s", stderr)
 
 			var report map[string]any
@@ -635,10 +397,7 @@ var _ = Describe("coach codesignal (real scan): interactive compiler setup offer
 			session.writeLine("project_mise")
 			session.waitForPrompt("Type 'install' to run this setup command now")
 			session.writeLine("install")
-			// A second "install" answer is left unread on the terminal: if the
-			// confirmation gate were ever replayable, this would drive a second
-			// `mise install` (or reopen the confirmation prompt) within the same
-			// coach invocation.
+
 			session.writeLine("install")
 			stdout, stderr, _, exitCode := session.wait()
 
@@ -710,19 +469,7 @@ var _ = Describe("coach codesignal (real scan): the interactive compiler-setup o
 			path := nodeDir + string(os.PathListSeparator) + npmDir + string(os.PathListSeparator) + pathExcludingToolchain()
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
-			// Every other controlling-terminal spec in this suite spawns the
-			// coach binary as a subprocess with its own explicit env
-			// (stubToolchainEnv), which never passes the runner's own CI
-			// variable through -- so nonInteractiveRequested inside that
-			// child is driven only by --no-interactive/f.noInteractive.
-			// This spec instead calls runCodesignalScan in-process, which
-			// reads os.Getenv("CI") directly from the test binary's own
-			// environment: on a CI runner that ambient CI=true would make
-			// nonInteractiveRequested true regardless of the pty this spec
-			// sets up, so an empty offer budget would no longer be what
-			// withholds the offer, and the appended remediation assertion
-			// below would fail for a reason unrelated to what this spec
-			// claims to prove.
+
 			GinkgoT().Setenv("CI", "")
 
 			repo := newTempGitRepo()
@@ -736,10 +483,7 @@ var _ = Describe("coach codesignal (real scan): the interactive compiler-setup o
 			originalStdin := os.Stdin
 			os.Stdin = slave
 			DeferCleanup(func() { os.Stdin = originalStdin })
-			// Left unread on the pty: if the empty offer budget were ever ignored, the
-			// interactive offer would read this as its selection and cancel
-			// (rather than hang the test forever), producing a distinctly
-			// different, longer stderr this spec's assertions below catch.
+
 			_, writeErr := master.WriteString("cancel\n")
 			Expect(writeErr).NotTo(HaveOccurred())
 
@@ -933,25 +677,7 @@ var _ = Describe("coach codesignal: --no-interactive and a non-empty CI environm
 var _ = Describe("coach codesignal (real scan): a project-package install whose manifest context is ambiguous is never offered (AC-SET-5)", func() {
 	When("the policy selects two roots that each own a separate package.json manifest context, and neither has an installed compiler", func() {
 		It("withholds project_package with its reason rather than silently defaulting to the first context, and never opens the setup menu", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "project.json", `{"schema_version":"1","roots":["packages/a","packages/b"]}`+"\n")
-			manifest := fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", codesignalcli.SupportedTypescriptVersions[0])
-			for _, pkg := range []string{"packages/a", "packages/b"} {
-				commitFile(repo, pkg+"/package.json", manifest)
-				commitFile(repo, pkg+"/package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
-				commitFile(repo, pkg+"/tsconfig.json", `{"compilerOptions":{}}`+"\n")
-			}
-
-			npmDir := writeRecordingStubPackageManagerScript("npm", "11.0.0")
-			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + npmDir + string(os.PathListSeparator) + pathExcludingToolchain()
-
-			stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path), "",
-				"codesignal", "--baseline", "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-
-			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
-			Expect(stdout).To(BeEmpty(), "stdout must stay reserved for the final report; none was produced")
-			Expect(string(stderr)).NotTo(ContainSubstring("TypeScript compiler setup:"), "an install that can satisfy at most one of two selected roots must never be offered at all; stderr: %s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("manifest_context_ambiguous"), "the customer must be told why the project-package choice was ruled out, not silently handed a default; stderr: %s", stderr)
+			body_projectTsScanPolicyAuthoringAcceptanceTest_withholdsProjectPackageWithItsReasonRatherThanSi_679()
 		})
 	})
 })
@@ -965,32 +691,105 @@ var _ = Describe("coach codesignal (real scan): a project-package install whose 
 var _ = Describe("coach codesignal (real scan): a withheld project_package choice says why, when the menu still offers something else (AC-SET-1)", func() {
 	When("the policy selects two roots with separate manifests and a verified mise scope can still install the compiler", func() {
 		It("opens the menu without project_package and names the reason it was ruled out", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "project.json", `{"schema_version":"1","roots":["packages/a","packages/b"]}`+"\n")
-			manifest := fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", codesignalcli.SupportedTypescriptVersions[0])
-			for _, pkg := range []string{"packages/a", "packages/b"} {
-				commitFile(repo, pkg+"/package.json", manifest)
-				commitFile(repo, pkg+"/package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
-				commitFile(repo, pkg+"/tsconfig.json", `{"compilerOptions":{}}`+"\n")
-			}
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
-
-			npmDir := writeRecordingStubPackageManagerScript("npm", "11.0.0")
-			miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
-			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + npmDir + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
-
-			session := startCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path),
-				"codesignal", "--baseline", "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			session.waitForPrompt("an unrecognized or blank answer cancels.")
-			session.writeLine("cancel")
-			stdout, stderr, _, exitCode := session.wait()
-
-			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
-			Expect(stdout).To(BeEmpty(), "stdout must stay reserved for the final report; none was produced")
-			Expect(string(stderr)).To(ContainSubstring("project_package is not offered here (manifest_context_ambiguous)"), "a choice removed from a menu the customer can still see must say why; stderr: %s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("- project_mise"), "the surviving mise choice must still be offered; stderr: %s", stderr)
-			Expect(string(stderr)).NotTo(ContainSubstring("  - project_package"), "the unserviceable choice must not appear in the menu itself; stderr: %s", stderr)
-			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeFalse(), "cancelling must never invoke `mise install`")
+			body_projectTsScanPolicyAuthoringAcceptanceTest_opensTheMenuWithoutProjectPackageAndNamesTheReas_711()
 		})
 	})
 })
+
+// openPTYPair opens a real Linux pseudo-terminal pair via /dev/ptmx,
+// duplicating internal/codesignalcli/controlling_terminal_pty_linux_test.go's
+// openPTYSlave rather than importing it: it is a test-only fixture in a
+// different package, and pty allocation is a handful of ioctls, not shared
+// production logic. It returns both ends: master is written to by the spec
+// to script the child's interactive answers, slave becomes the child's
+// controlling terminal. Every failure calls Skip rather than Fail, so a
+// sandbox without pty support produces a loud, named skip in the suite's
+// own output -- never a silent pass that would prove nothing about
+// AC-POL-8's TTY-gated branch.
+func openPTYPair() (master, slave *os.File) {
+	m, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		Skip(fmt.Sprintf("open /dev/ptmx: %v (no pty support in this sandbox; AC-POL-8's TTY-gated branch is unproven here)", err))
+	}
+	if err := unix.IoctlSetPointerInt(int(m.Fd()), unix.TIOCSPTLCK, 0); err != nil {
+		m.Close()
+		Skip(fmt.Sprintf("TIOCSPTLCK: %v (AC-POL-8's TTY-gated branch is unproven here)", err))
+	}
+	n, err := unix.IoctlGetInt(int(m.Fd()), unix.TIOCGPTN)
+	if err != nil {
+		m.Close()
+		Skip(fmt.Sprintf("TIOCGPTN: %v (AC-POL-8's TTY-gated branch is unproven here)", err))
+	}
+	slavePath := fmt.Sprintf("/dev/pts/%d", n)
+	s, err := os.OpenFile(slavePath, os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		m.Close()
+		Skip(fmt.Sprintf("open %s: %v (AC-POL-8's TTY-gated branch is unproven here)", slavePath, err))
+	}
+	return m, s
+}
+
+// waitForPrompt blocks until substr has appeared anywhere in stderr read so
+// far, polling rather than requiring the production prompt text to be
+// flushed in any particular chunking. It fails the spec (by name) once the
+// session's shared ctx deadline elapses, instead of blocking forever on a
+// prompt the scripted answers never satisfy.
+func (s *controllingTerminalSession) waitForPrompt(substr string) {
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if strings.Contains(s.stderrBuf.String(), substr) {
+			return
+		}
+		select {
+		case <-s.ctx.Done():
+			Fail(fmt.Sprintf("timed out waiting for prompt %q (stderr so far: %s, transcript so far: %s)", substr, s.stderrBuf.String(), s.transcriptSoFar()))
+		case <-ticker.C:
+		}
+	}
+}
+
+// installInvocationCount counts miseDir's logged invocations that began
+// with "install", for the single-use-confirmation proof below: a second,
+// unread "install" answer left in the pty must never cause a second `mise
+// install` to run within the same coach invocation.
+func installInvocationCount(miseDir string) int {
+	count := 0
+	for _, line := range readStubMiseInvocations(miseDir) {
+		if strings.HasPrefix(line, "install ") {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
+func (s *syncBuffer) Bytes() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]byte(nil), s.buf.Bytes()...)
+}
+
+func (s *controllingTerminalSession) transcriptSoFar() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.transcript.String()
+}
+
+// writeLine sends line plus a trailing newline to the child's controlling
+// terminal, as if a person had typed it and pressed enter.
+func (s *controllingTerminalSession) writeLine(line string) {
+	_, err := s.master.WriteString(line + "\n")
+	Expect(err).NotTo(HaveOccurred(), "writing %q to the pty master", line)
+}

@@ -11,47 +11,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// goPackagePrefix wraps a Go function body fixture so AnalyzeBytes sees a
-// valid compilation unit (package + imports used by the worked examples).
-func goPackagePrefix(body string) []byte {
-	return []byte("package main\n\nimport \"fmt\"\n\n" + body)
-}
-
-func analyzeGoCC(analyzer *semantics.Analyzer, body string) *semantics.Result {
-	GinkgoHelper()
-	result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
-		Path:     "example.go",
-		Language: semantics.LanguageGo,
-		Content:  goPackagePrefix(body),
-	})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(result).NotTo(BeNil())
-	Expect(result.ParseStatus).To(Equal(semantics.ParseStatus("ok")))
-	return result
-}
-
-func analyzeTSCC(analyzer *semantics.Analyzer, source string) *semantics.Result {
-	GinkgoHelper()
-	result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
-		Path:     "example.ts",
-		Language: semantics.LanguageTypeScript,
-		Content:  []byte(source),
-	})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(result).NotTo(BeNil())
-	Expect(result.ParseStatus).To(Equal(semantics.ParseStatus("ok")))
-	return result
-}
-
-func ccByName(records []semantics.FunctionCognitiveComplexity, name string) (semantics.FunctionCognitiveComplexity, bool) {
-	for _, r := range records {
-		if r.Name == name {
-			return r, true
-		}
-	}
-	return semantics.FunctionCognitiveComplexity{}, false
-}
-
 var _ = Describe("Cognitive Complexity scoring (Story 4 worked examples)", func() {
 	var analyzer *semantics.Analyzer
 
@@ -323,7 +282,6 @@ OUTER:
 		})
 	})
 
-	// Story 1 contract edges beyond the worked-example arithmetic locks.
 	Describe("Story 1 Result contract", func() {
 		When("a function body has no flow-breaking structures", func() {
 			It("shall still attach a cognitive_complexity record with score 0", func() {
@@ -457,3 +415,31 @@ func (t *T) Method(n int) {
 		})
 	})
 })
+
+func ccByName(records []semantics.FunctionCognitiveComplexity, name string) (semantics.FunctionCognitiveComplexity, bool) {
+	for _, r := range records {
+		if r.Name == name {
+			return r, true
+		}
+	}
+	return semantics.FunctionCognitiveComplexity{}, false
+}
+
+// goPackagePrefix wraps a Go function body fixture so AnalyzeBytes sees a
+// valid compilation unit (package + imports used by the worked examples).
+func goPackagePrefix(body string) []byte {
+	return []byte("package main\n\nimport \"fmt\"\n\n" + body)
+}
+
+func analyzeGoCC(analyzer *semantics.Analyzer, body string) *semantics.Result {
+	GinkgoHelper()
+	result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+		Path:     "example.go",
+		Language: semantics.LanguageGo,
+		Content:  goPackagePrefix(body),
+	})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(result).NotTo(BeNil())
+	Expect(result.ParseStatus).To(Equal(semantics.ParseStatus("ok")))
+	return result
+}

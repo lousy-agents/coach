@@ -101,31 +101,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("HEAD carries only Yarn metadata and a verifiable project-mise origin, with no supported compiler installed", func() {
 		It("withholds project-package, named, and offers only the mise-family prepare_compiler choices (AC-SET-1 / SA-280-045)", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
-					PackageManager: codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessFail, Code: codesignalcli.GapPackageManagerVersionUnsupported, Kind: "yarn"},
-					Compiler: codesignalcli.ReadinessCheck{
-						State: codesignalcli.ReadinessFail,
-						Code:  codesignalcli.GapTypescriptCompilerMissing,
-					},
-				},
-				MiseChoices: []codesignalcli.ReadinessMiseChoice{
-					{Kind: "mise_project", Verified: true},
-					{Kind: "mise_global", Reason: "mise_unconfigured"},
-				},
-			}
-
-			menu := codesignalcli.AvailableSetupChoices(readiness)
-
-			Expect(choiceKinds(menu.Choices)).To(Equal([]codesignalcli.SetupChoiceKind{codesignalcli.SetupChoiceProjectMise, codesignalcli.SetupChoiceCancel}))
-
-			var projectPackageReason string
-			for _, w := range menu.Withheld {
-				if w.Kind == codesignalcli.SetupChoiceProjectPackage {
-					projectPackageReason = w.Reason
-				}
-			}
-			Expect(projectPackageReason).To(Equal(codesignalcli.GapPackageManagerVersionUnsupported), "the project adapter must be named, not merely omitted")
+			body_projectTsSetupChoiceAcceptanceTest_withholdsProjectPackageNamedAndOffersOnlyTheMise_103()
 		})
 	})
 
@@ -241,57 +217,13 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("the project mise origin's mise.toml exists but could not be read", func() {
 		It("withholds project-mise as unverifiable rather than offering an origin Coach could not verify (AC-15)", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
-					PackageManager: passingPackageManager,
-					Compiler: codesignalcli.ReadinessCheck{
-						State: codesignalcli.ReadinessFail,
-						Code:  codesignalcli.GapTypescriptCompilerMissing,
-					},
-				},
-				MiseChoices: []codesignalcli.ReadinessMiseChoice{
-					{Kind: "mise_project", Reason: "mise_unverifiable"},
-					{Kind: "mise_global", Verified: true},
-				},
-			}
-
-			menu := codesignalcli.AvailableSetupChoices(readiness)
-
-			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectMise),
-				"an unreadable mise.toml is an unverifiable origin, not an executable one")
-			var reason string
-			for _, w := range menu.Withheld {
-				if w.Kind == codesignalcli.SetupChoiceProjectMise {
-					reason = w.Reason
-				}
-			}
-			Expect(reason).To(Equal("mise_unverifiable"))
+			body_projectTsSetupChoiceAcceptanceTest_withholdsProjectMiseAsUnverifiableRatherThanOffe_243(passingPackageManager)
 		})
 	})
 
 	When("no mise.toml exists, no global mise typescript pin exists, and the manifest declares nothing", func() {
 		It("withholds project-package for manifest_declaration: the frozen rows install what the manifest already declares, and a manifest declaring no typescript cannot install one", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
-					PackageManager: passingPackageManager,
-					Compiler: codesignalcli.ReadinessCheck{
-						State: codesignalcli.ReadinessFail,
-						Code:  codesignalcli.GapTypescriptCompilerMissing,
-					},
-				},
-				MiseChoices: neitherMiseScopeConfigured,
-			}
-
-			menu := codesignalcli.AvailableSetupChoices(readiness)
-
-			Expect(choiceKinds(menu.Choices)).To(Equal([]codesignalcli.SetupChoiceKind{codesignalcli.SetupChoiceCancel}))
-			var projectPackageReason string
-			for _, w := range menu.Withheld {
-				if w.Kind == codesignalcli.SetupChoiceProjectPackage {
-					projectPackageReason = w.Reason
-				}
-			}
-			Expect(projectPackageReason).To(Equal("manifest_declaration"))
+			body_projectTsSetupChoiceAcceptanceTest_withholdsProjectPackageForManifestDeclarationThe_273(passingPackageManager, neitherMiseScopeConfigured)
 		})
 	})
 

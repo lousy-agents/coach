@@ -15,102 +15,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-// runCoachCodesignalRaw runs `coach codesignal --base <base> [extraArgs...]`
-// in repo, returning raw stdout/stderr without assuming success or a
-// particular --format.
-func runCoachCodesignalRaw(repo, base string, extraArgs ...string) (stdout, stderr []byte, exitCode int) {
-	args := append([]string{"codesignal", "--base", base}, extraArgs...)
-	command := exec.Command(commandPath, args...)
-	command.Dir = repo
-	var outBuf, errBuf bytes.Buffer
-	command.Stdout = &outBuf
-	command.Stderr = &errBuf
-
-	err := command.Run()
-	if err == nil {
-		return outBuf.Bytes(), errBuf.Bytes(), 0
-	}
-
-	var exitErr *exec.ExitError
-	Expect(errors.As(err, &exitErr)).To(BeTrue(), "expected an ExitError, got: %s (stderr: %s)", err, errBuf.String())
-	return outBuf.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
-}
-
-func removeFile(repo, name string) string {
-	rmCmd := exec.Command("git", "rm", name)
-	rmCmd.Dir = repo
-	output, err := rmCmd.CombinedOutput()
-	Expect(err).NotTo(HaveOccurred(), "git rm: %s", output)
-
-	commitCmd := exec.Command("git", "commit", "-m", "remove "+name)
-	commitCmd.Dir = repo
-	commitCmd.Env = commitEnv
-	output, err = commitCmd.CombinedOutput()
-	Expect(err).NotTo(HaveOccurred(), "git commit: %s", output)
-
-	revCmd := exec.Command("git", "rev-parse", "HEAD")
-	revCmd.Dir = repo
-	output, err = revCmd.Output()
-	Expect(err).NotTo(HaveOccurred())
-
-	return string(bytes.TrimSpace(output))
-}
-
-func runCoachCodesignal(repo, base string) (*codesignal.Report, string) {
-	command := exec.Command(commandPath, "codesignal", "--base", base, "--format=json")
-	command.Dir = repo
-	var stdout, stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
-
-	err := command.Run()
-	Expect(err).NotTo(HaveOccurred(), "stderr: %s", stderr.String())
-
-	var report codesignal.Report
-	Expect(json.Unmarshal(stdout.Bytes(), &report)).To(Succeed(), "stdout should be one JSON report: %s", stdout.String())
-
-	return &report, stderr.String()
-}
-
-func signalsForPath(report *codesignal.Report, path string) []codesignal.Signal {
-	var matches []codesignal.Signal
-	for _, sig := range report.Signals {
-		if sig.Path == path {
-			matches = append(matches, sig)
-		}
-	}
-	return matches
-}
-
-func hasDiagnostic(report *codesignal.Report, kind, path string) bool {
-	for _, d := range report.Diagnostics {
-		if d.Kind == kind && d.Path == path {
-			return true
-		}
-	}
-	return false
-}
-
-// sourceScopeForPath reads the customer-facing source_scope emitted with a
-// signal. It intentionally decodes the public JSON document rather than a Go
-// report type so this acceptance suite requires the label to be serialized.
-func sourceScopeForPath(stdout []byte, path string) string {
-	var document struct {
-		Signals []struct {
-			Path        string `json:"path"`
-			SourceScope string `json:"source_scope"`
-		} `json:"signals"`
-	}
-	Expect(json.Unmarshal(stdout, &document)).To(Succeed(), "stdout should be a JSON CodeSignal report: %s", stdout)
-
-	for _, signal := range document.Signals {
-		if signal.Path == path {
-			return signal.SourceScope
-		}
-	}
-	return ""
-}
-
 var _ = Describe("coach codesignal", func() {
 	When("--base is not provided", func() {
 		It("prints usage guidance to stderr and exits 2 without writing to stdout", func() {
@@ -419,36 +323,7 @@ var _ = Describe("coach codesignal", func() {
 
 	When("a change inserts a new function alongside an untouched one", func() {
 		It("marks the inserted finding changed and the untouched finding unchanged", func() {
-			repo := newTempGitRepo()
-			base := "package a\n\nfunc A(input *int) {\n\t*input = 1\n}\n\nfunc B(input *int) {\n\t*input = 2\n}\n"
-			head := "package a\n\nfunc A(input *int) {\n\t*input = 1\n}\n\nfunc C(input *int) {\n\t*input = 3\n}\n\nfunc B(input *int) {\n\t*input = 2\n}\n"
-			initialSHA := commitFile(repo, "a.go", base)
-			commitFile(repo, "a.go", head)
-
-			report, _ := runCoachCodesignal(repo, initialSHA)
-
-			signals := signalsForPath(report, "a.go")
-			Expect(signals).To(HaveLen(3))
-
-			var aSignal, bSignal, cSignal *codesignal.Signal
-			for i := range signals {
-				switch signals[i].Subject {
-				case "A:input":
-					aSignal = &signals[i]
-				case "B:input":
-					bSignal = &signals[i]
-				case "C:input":
-					cSignal = &signals[i]
-				}
-			}
-			Expect(aSignal).NotTo(BeNil())
-			Expect(bSignal).NotTo(BeNil())
-			Expect(cSignal).NotTo(BeNil())
-
-			Expect(aSignal.Changed).To(BeFalse())
-			Expect(bSignal.Changed).To(BeFalse())
-			Expect(cSignal.Changed).To(BeTrue())
-			Expect(cSignal.Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
+			body_acceptanceTest_marksTheInsertedFindingChangedAndTheUntouchedFin_325()
 		})
 	})
 
@@ -532,69 +407,7 @@ var _ = Describe("coach codesignal", func() {
 
 	When("one commit deletes a risky file and adds a structurally different risky file", func() {
 		It("classifies the added file's signals as introduced", func() {
-			repo := newTempGitRepo()
-			deleted := "package gone\n\nfunc Update(input *int) {\n\t*input = 1\n}\n"
-			added := `package fresh
-
-func tangle(n int) {
-	if n > 0 {
-		if n > 1 {
-			if n > 2 {
-				if n > 3 {
-					if n > 4 {
-						if n > 5 {
-							return
-						}
-					}
-				}
-			}
-		}
-	}
-}
-`
-			initialSHA := commitFile(repo, "gone.go", deleted)
-
-			rmCmd := exec.Command("git", "rm", "gone.go")
-			rmCmd.Dir = repo
-			output, err := rmCmd.CombinedOutput()
-			Expect(err).NotTo(HaveOccurred(), "git rm: %s", output)
-
-			Expect(os.WriteFile(filepath.Join(repo, "fresh.go"), []byte(added), 0o644)).To(Succeed())
-			addCmd := exec.Command("git", "add", "fresh.go")
-			addCmd.Dir = repo
-			output, err = addCmd.CombinedOutput()
-			Expect(err).NotTo(HaveOccurred(), "git add: %s", output)
-
-			commitCmd := exec.Command("git", "commit", "-m", "replace gone.go with fresh.go")
-			commitCmd.Dir = repo
-			commitCmd.Env = commitEnv
-			output, err = commitCmd.CombinedOutput()
-			Expect(err).NotTo(HaveOccurred(), "git commit: %s", output)
-
-			statusCmd := exec.Command("git", "diff", "--name-status", initialSHA, "HEAD")
-			statusCmd.Dir = repo
-			statusOut, err := statusCmd.Output()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(strings.Split(strings.TrimSpace(string(statusOut)), "\n")).To(ConsistOf("A\tfresh.go", "D\tgone.go"))
-
-			report, _ := runCoachCodesignal(repo, initialSHA)
-
-			Expect(hasDiagnostic(report, "unsupported_change_type", "fresh.go")).To(BeFalse())
-			Expect(report.Summary.IntroducedSignals).To(BeNumerically(">", 0),
-				"an added file must contribute introduced signals; got introduced=%d resolved=%d for %d signals",
-				report.Summary.IntroducedSignals, report.Summary.ResolvedSignals, len(report.Signals))
-
-			freshSignals := signalsForPath(report, "fresh.go")
-			Expect(freshSignals).NotTo(BeEmpty())
-			for i := range freshSignals {
-				Expect(freshSignals[i].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
-			}
-
-			goneSignals := signalsForPath(report, "gone.go")
-			Expect(goneSignals).NotTo(BeEmpty())
-			for i := range goneSignals {
-				Expect(goneSignals[i].Lifecycle).To(Equal(codesignal.Lifecycle("resolved")))
-			}
+			body_acceptanceTest_classifiesTheAddedFileSSignalsAsIntroduced_438()
 		})
 	})
 
@@ -879,123 +692,25 @@ func tangle(n int) {
 
 	When("a file containing a signal-producing construct is renamed with no content change", func() {
 		It("analyzes the HEAD path without establishing rename continuity", func() {
-			repo := newTempGitRepo()
-			initialSHA := commitFile(repo, "old.go", hiddenInputMutationGo)
-			renameFile(repo, "old.go", "new.go")
-			expectCoachStatusPrefix(repo, initialSHA, "new.go", "R")
-
-			report, _ := runCoachCodesignal(repo, initialSHA)
-
-			Expect(hasDiagnostic(report, "unsupported_change_type", "new.go")).To(BeFalse(),
-				"a rename's new path must be analyzed, not skipped as unsupported_change_type")
-			signals := signalsForPath(report, "new.go")
-			Expect(signals).NotTo(BeEmpty(), "HEAD content of a renamed file must yield signals")
-			for i := range signals {
-				Expect(signals[i].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")),
-					"rename continuity is not established, so signals must not inherit introduced from added-file policy")
-			}
-			Expect(hasDiagnostic(report, "continuity_not_determined", "new.go")).To(BeTrue(),
-				"the report must say continuity was not determined on the analyzed new path")
-			Expect(signalsForPath(report, "old.go")).To(BeEmpty(), "the old path no longer exists at HEAD and must not appear in the report")
-
-			textOut, textErr, textExit := runCoachCodesignalRaw(repo, initialSHA)
-			Expect(textExit).To(Equal(0), "stderr: %s", textErr)
-			Expect(string(textOut)).NotTo(ContainSubstring("not analyzed"),
-				"an analyzed rename must not be described as unanalyzed")
-			var document struct {
-				Summary struct {
-					FilesUnanalyzed *int `json:"files_unanalyzed"`
-				} `json:"summary"`
-			}
-			jsonOut, jsonErr, jsonExit := runCoachCodesignalRaw(repo, initialSHA, "--format=json")
-			Expect(jsonExit).To(Equal(0), "stderr: %s", jsonErr)
-			Expect(json.Unmarshal(jsonOut, &document)).To(Succeed())
-			Expect(document.Summary.FilesUnanalyzed).To(BeNil(),
-				"JSON must omit files_unanalyzed when every changed path was analyzed")
+			body_acceptanceTest_analyzesTheHEADPathWithoutEstablishingRenameCont_785()
 		})
 	})
 
 	When("a large file is renamed and new risky code is appended", func() {
 		It("still analyzes the HEAD path when git reports a scored rename rather than D+A", func() {
-			repo := newTempGitRepo()
-			base := paddedGoPackage("a", 60, "")
-			initialSHA := commitFile(repo, "carrier.go", base)
-			renameAndWrite(repo, "carrier.go", "relocated.go", paddedGoPackage("a", 60, hiddenInputMutationFn))
-			expectCoachStatusPrefix(repo, initialSHA, "relocated.go", "R")
-
-			report, _ := runCoachCodesignal(repo, initialSHA)
-
-			Expect(hasDiagnostic(report, "unsupported_change_type", "relocated.go")).To(BeFalse())
-			signals := signalsForPath(report, "relocated.go")
-			Expect(signals).NotTo(BeEmpty(), "new risky code on a renamed path must produce signals")
-			for i := range signals {
-				Expect(signals[i].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
-			}
-			Expect(hasDiagnostic(report, "continuity_not_determined", "relocated.go")).To(BeTrue())
+			body_acceptanceTest_stillAnalyzesTheHEADPathWhenGitReportsAScoredRen_823()
 		})
 	})
 
 	When("a file is copied from an untouched source and Git reports a copy", func() {
 		It("analyzes the copy's HEAD path without establishing copy continuity", func() {
-			repo := newTempGitRepo()
-			content := paddedGoPackage("a", 60, hiddenInputMutationFn)
-			initialSHA := commitFile(repo, "template.go", content)
-			commitFile(repo, "duplicate.go", content)
-			expectCoachStatusPrefix(repo, initialSHA, "duplicate.go", "C")
-
-			report, _ := runCoachCodesignal(repo, initialSHA)
-
-			Expect(hasDiagnostic(report, "unsupported_change_type", "duplicate.go")).To(BeFalse())
-			signals := signalsForPath(report, "duplicate.go")
-			Expect(signals).NotTo(BeEmpty(), "a copy-detected new file must be analyzed")
-			for i := range signals {
-				Expect(signals[i].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
-			}
-			Expect(hasDiagnostic(report, "continuity_not_determined", "duplicate.go")).To(BeTrue())
+			body_acceptanceTest_analyzesTheCopySHEADPathWithoutEstablishingCopyC_843()
 		})
 	})
 
 	When("a changed file has an unsupported git status such as typechange", func() {
 		It("qualifies the no-findings headline and counts the unanalyzed path in JSON", func() {
-			repo := newTempGitRepo()
-			initialSHA := commitFile(repo, "typed.go", "package typed\n\nfunc A() {}\n")
-			commitFile(repo, "target.go", "package target\n")
-			typechangeFileToSymlink(repo, "typed.go", "target.go")
-			expectCoachStatusPrefix(repo, initialSHA, "typed.go", "T")
-
-			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, initialSHA, "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var report codesignal.Report
-			Expect(json.Unmarshal(stdout, &report)).To(Succeed(), "stdout should be one JSON report: %s", stdout)
-			Expect(hasDiagnostic(&report, "unsupported_change_type", "typed.go")).To(BeTrue())
-			Expect(report.Summary.FilesWithDiagnostics).To(BeNumerically(">=", 1),
-				"a diagnostic on an unanalyzed path must count in files_with_diagnostics; got %d", report.Summary.FilesWithDiagnostics)
-
-			var document struct {
-				Summary struct {
-					FilesUnanalyzed *int `json:"files_unanalyzed"`
-				} `json:"summary"`
-			}
-			Expect(json.Unmarshal(stdout, &document)).To(Succeed())
-			Expect(document.Summary.FilesUnanalyzed).NotTo(BeNil(), "JSON must expose a numeric files_unanalyzed field when files were not analyzed")
-			Expect(*document.Summary.FilesUnanalyzed).To(BeNumerically(">=", 1),
-				"files_unanalyzed must count the typechanged path; got %d", *document.Summary.FilesUnanalyzed)
-
-			textOut, textErr, textExit := runCoachCodesignalRaw(repo, initialSHA)
-			Expect(textExit).To(Equal(0), "stderr: %s", textErr)
-			verdict := strings.SplitN(string(textOut), "\n", 2)[0]
-			// Skip the summary line; find the verdict.
-			for _, line := range strings.Split(string(textOut), "\n") {
-				if strings.HasPrefix(line, "No active CodeSignal findings") {
-					verdict = line
-					break
-				}
-			}
-			Expect(verdict).NotTo(Equal("No active CodeSignal findings."),
-				"unqualified all-clear must not appear when a file was not analyzed")
-			Expect(verdict).To(ContainSubstring("1 path was not analyzed"),
-				"text unanalyzed count must match JSON files_unanalyzed=%d; got %q", *document.Summary.FilesUnanalyzed, verdict)
+			body_acceptanceTest_qualifiesTheNoFindingsHeadlineAndCountsTheUnanal_863()
 		})
 	})
 
@@ -1069,22 +784,6 @@ func tangle(n int) {
 		})
 	})
 })
-
-func runCoachRaw(args ...string) (stdout, stderr []byte, exitCode int) {
-	command := exec.Command(commandPath, args...)
-	var outBuf, errBuf bytes.Buffer
-	command.Stdout = &outBuf
-	command.Stderr = &errBuf
-
-	err := command.Run()
-	if err == nil {
-		return outBuf.Bytes(), errBuf.Bytes(), 0
-	}
-
-	var exitErr *exec.ExitError
-	Expect(errors.As(err, &exitErr)).To(BeTrue(), "expected an ExitError, got: %s (stderr: %s)", err, errBuf.String())
-	return outBuf.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
-}
 
 var _ = Describe("coach top-level discoverability", func() {
 	When("--help is requested", func() {
@@ -1165,3 +864,49 @@ var _ = Describe("coach top-level discoverability", func() {
 		})
 	})
 })
+
+func signalsForPath(report *codesignal.Report, path string) []codesignal.Signal {
+	var matches []codesignal.Signal
+	for _, sig := range report.Signals {
+		if sig.Path == path {
+			matches = append(matches, sig)
+		}
+	}
+	return matches
+}
+
+func removeFile(repo, name string) string {
+	rmCmd := exec.Command("git", "rm", name)
+	rmCmd.Dir = repo
+	output, err := rmCmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "git rm: %s", output)
+
+	commitCmd := exec.Command("git", "commit", "-m", "remove "+name)
+	commitCmd.Dir = repo
+	commitCmd.Env = commitEnv
+	output, err = commitCmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "git commit: %s", output)
+
+	revCmd := exec.Command("git", "rev-parse", "HEAD")
+	revCmd.Dir = repo
+	output, err = revCmd.Output()
+	Expect(err).NotTo(HaveOccurred())
+
+	return string(bytes.TrimSpace(output))
+}
+
+func runCoachCodesignal(repo, base string) (*codesignal.Report, string) {
+	command := exec.Command(commandPath, "codesignal", "--base", base, "--format=json")
+	command.Dir = repo
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+
+	err := command.Run()
+	Expect(err).NotTo(HaveOccurred(), "stderr: %s", stderr.String())
+
+	var report codesignal.Report
+	Expect(json.Unmarshal(stdout.Bytes(), &report)).To(Succeed(), "stdout should be one JSON report: %s", stdout.String())
+
+	return &report, stderr.String()
+}

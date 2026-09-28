@@ -1,179 +1,24 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"net"
+
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
+
 	"strings"
 	"sync"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
-	"github.com/lousy-agents/coach/internal/tstestutil"
+
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
-
-func npmArchName() string {
-	return tstestutil.NPMArch()
-}
-
-func ensureRealTypeScriptCompilerAvailable() string {
-	return tstestutil.EnsureTypeScriptCompilerAvailable()
-}
-
-func realTypescriptVersion() string {
-	return tstestutil.TypeScriptVersion()
-}
-
-func installRealTypescriptCompiler(repo string, includeNativePackage bool) string {
-	return tstestutil.InstallTypeScriptCompiler(repo, includeNativePackage)
-}
-
-// breakCompilerExportSubpath removes subpath from packageDir/package.json's
-// exports map, mirroring js/semantics's own setupAlternateCompiler
-// removeExportSubpath option: it reproduces a resolved compiler whose
-// package.json no longer declares one of the "./unstable/*" exports the
-// analyzer's loadCompiler requires.
-func breakCompilerExportSubpath(packageDir, subpath string) {
-	pkgPath := filepath.Join(packageDir, "package.json")
-	data, err := os.ReadFile(pkgPath)
-	Expect(err).NotTo(HaveOccurred())
-	var pkg map[string]any
-	Expect(json.Unmarshal(data, &pkg)).To(Succeed())
-	exportsField, ok := pkg["exports"].(map[string]any)
-	Expect(ok).To(BeTrue(), "expected an exports map in %s", pkgPath)
-	_, has := exportsField[subpath]
-	Expect(has).To(BeTrue(), "expected %q in %s exports", subpath, pkgPath)
-	delete(exportsField, subpath)
-	out, err := json.MarshalIndent(pkg, "", "  ")
-	Expect(err).NotTo(HaveOccurred())
-	Expect(os.WriteFile(pkgPath, out, 0o644)).To(Succeed())
-}
-
-// repointCompilerExportSubpath rewrites packageDir/package.json's exports
-// map so subpath resolves to target -- a realistic partially-installed or
-// pruned compiler (e.g. `npm prune`-style tree shaking that removed a file
-// an exports entry still names), as distinct from breakCompilerExportSubpath
-// above, which removes the exports entry entirely. Node's own module
-// resolution failure for the missing target embeds target's own resolved
-// absolute path in its Error.message, which is the round-2 leak vector this
-// spec's compilerDir assertion guards against.
-func repointCompilerExportSubpath(packageDir, subpath, target string) {
-	pkgPath := filepath.Join(packageDir, "package.json")
-	data, err := os.ReadFile(pkgPath)
-	Expect(err).NotTo(HaveOccurred())
-	var pkg map[string]any
-	Expect(json.Unmarshal(data, &pkg)).To(Succeed())
-	exportsField, ok := pkg["exports"].(map[string]any)
-	Expect(ok).To(BeTrue(), "expected an exports map in %s", pkgPath)
-	_, has := exportsField[subpath]
-	Expect(has).To(BeTrue(), "expected %q in %s exports", subpath, pkgPath)
-	exportsField[subpath] = target
-	out, err := json.MarshalIndent(pkg, "", "  ")
-	Expect(err).NotTo(HaveOccurred())
-	Expect(os.WriteFile(pkgPath, out, 0o644)).To(Succeed())
-}
-
-func runCoachCodesignalBaselineEnv(repo, path string, extraArgs ...string) (stdout, stderr []byte, exitCode int) {
-	return runCoachBinary(commandPath, repo, stubToolchainEnv(path), append([]string{"codesignal", "--baseline"}, extraArgs...)...)
-}
-
-// codesignalArgsFromRemediationLine reads only stderr's first line: since
-// AC-SET-9 (#330), a no-controlling-terminal scan appends a second
-// interactive-setup line after the fit-check invocation this parses.
-func codesignalArgsFromRemediationLine(stderr []byte) []string {
-	firstLine, _, _ := strings.Cut(string(stderr), "\n")
-	line := strings.TrimSpace(firstLine)
-	_, invocation, found := strings.Cut(line, ": run ")
-	Expect(found).To(BeTrue(), "stderr must print a runnable fit-check invocation, got %q", line)
-	fields := strings.Fields(invocation)
-	Expect(len(fields)).To(BeNumerically(">=", 3), "printed invocation must be coach codesignal <flags>, got %q", invocation)
-	Expect(fields[0]).To(Equal("coach"), "printed invocation must start with coach so a customer can run it unchanged, got %q", invocation)
-	Expect(fields[1]).To(Equal("codesignal"), "printed invocation must invoke codesignal, got %q", invocation)
-	return fields[2:]
-}
-
-func nativeTypescriptPackageLookupName() string {
-	return fmt.Sprintf("@typescript/typescript-%s-%s", runtime.GOOS, npmArchName())
-}
-
-func writeInstalledNativeTypescript(repo, version string) {
-	writeInstalledNativeTypescriptUnder(repo, ".", version)
-}
-
-func commitNativePackageGapFixture(repo string) {
-	commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
-	commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersWithoutImport)
-	commitFile(repo, "project.json", goLayerPolicyConfigJSON)
-	commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
-	writeInstalledTypescriptCompilerOnly(repo, "7.0.2")
-}
-
-func pathValueFromEnviron(env string) string {
-	for _, part := range strings.FieldsFunc(env, func(r rune) bool { return r == '\n' || r == '\x00' }) {
-		part = strings.TrimSpace(part)
-		if strings.HasPrefix(part, "PATH=") {
-			return strings.TrimSpace(strings.TrimPrefix(part, "PATH="))
-		}
-		if i := strings.Index(part, "PATH="); i >= 0 {
-			rest := part[i+5:]
-			if j := strings.IndexAny(rest, " \t"); j >= 0 {
-				return rest[:j]
-			}
-			return rest
-		}
-	}
-	if i := strings.Index(env, "PATH="); i >= 0 {
-		rest := env[i+5:]
-		if j := strings.IndexAny(rest, " \n\t"); j >= 0 {
-			return rest[:j]
-		}
-		return rest
-	}
-	return ""
-}
-
-func wrapExecutableWithMarker(exe, marker string) {
-	real := exe + ".real"
-	Expect(os.Rename(exe, real)).To(Succeed())
-	script := fmt.Sprintf("#!/bin/sh\nprintf planted > %q\nexec %q \"$@\"\n", marker, real)
-	Expect(os.WriteFile(exe, []byte(script), 0o755)).To(Succeed())
-}
-
-func plantCanaryExecutable(exe, marker string) {
-	Expect(os.MkdirAll(filepath.Dir(exe), 0o755)).To(Succeed())
-	script := fmt.Sprintf("#!/bin/sh\nprintf canary > %q\nexit 1\n", marker)
-	Expect(os.WriteFile(exe, []byte(script), 0o755)).To(Succeed())
-}
-
-// expectTypescriptCompilerMissingScan's fixtures declare no package manager
-// and no mise scope at all, so readiness's own AvailableSetupChoices menu
-// offers nothing installable: the appended --prepare-compiler command is
-// correctly withheld (O2) rather than naming a command that would only open
-// to report it had nothing to do.
-func expectTypescriptCompilerMissingScan(stdout, stderr []byte, exitCode int) {
-	Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
-	Expect(stdout).To(BeEmpty(), "never producing a report means nothing is written to stdout")
-	Expect(strings.TrimSpace(string(stderr))).To(Equal("typescript_compiler_missing: run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"))
-	Expect(string(stderr)).NotTo(ContainSubstring("coach:"))
-	Expect(string(stderr)).NotTo(ContainSubstring("@typescript/"))
-}
-
-func tsRealCompilerPackageJSON(version string) string {
-	return fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version)
-}
 
 const tsProjectTSConfigJSON = `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`
 
@@ -186,21 +31,6 @@ const tsRealHandlersImportingDB = "import { Name } from \"../db/d\";\n\nexport f
 // to build a "clean" fixture with no forbidden edge at all.
 const tsRealHandlersWithoutImport = "export function use(): string {\n  return 'no import here';\n}\n"
 
-// commitRealTSLayerFixture commits the shared handlers/db/policy fixture
-// every spec below builds on: an actual value-level import from
-// pkg/handlers into pkg/db, forbidden by goLayerPolicyConfigJSON
-// (project_go_backend_acceptance_test.go). version is committed into
-// package.json so the "project" compiler-resolution origin's manifest/
-// installed-version match succeeds once installRealTypescriptCompiler
-// copies the matching compiler onto disk.
-func commitRealTSLayerFixture(repo, version string) {
-	commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
-	commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
-	commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
-	commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
-	commitFile(repo, "project.json", goLayerPolicyConfigJSON)
-}
-
 const analyzerChildArgMarker = "--compiler-module="
 
 type recordingProxyListener struct {
@@ -208,52 +38,6 @@ type recordingProxyListener struct {
 	mu   sync.Mutex
 	hits []string
 	stop func()
-}
-
-func startRecordingProxyListener() *recordingProxyListener {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	Expect(err).NotTo(HaveOccurred())
-
-	rec := &recordingProxyListener{addr: ln.Addr().String()}
-	var inflight sync.WaitGroup
-	acceptDone := make(chan struct{})
-	go func() {
-		defer close(acceptDone)
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			inflight.Add(1)
-			go func(c net.Conn) {
-				defer inflight.Done()
-				defer c.Close()
-				_ = c.SetDeadline(time.Now().Add(2 * time.Second))
-				line, _ := bufio.NewReader(c).ReadString('\n')
-				rec.mu.Lock()
-				rec.hits = append(rec.hits, strings.TrimSpace(line))
-				rec.mu.Unlock()
-			}(conn)
-		}
-	}()
-	rec.stop = func() {
-		_ = ln.Close()
-		<-acceptDone
-		inflight.Wait()
-	}
-	return rec
-}
-
-func (r *recordingProxyListener) proxyURL() string {
-	return "http://" + r.addr
-}
-
-func (r *recordingProxyListener) snapshot() []string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	out := make([]string, len(r.hits))
-	copy(out, r.hits)
-	return out
 }
 
 type analyzerEnvironSampler struct {
@@ -264,282 +48,10 @@ type analyzerEnvironSampler struct {
 	seen  map[string]struct{}
 }
 
-func newIdleAnalyzerEnvironSampler() *analyzerEnvironSampler {
-	return &analyzerEnvironSampler{
-		stop:  make(chan struct{}),
-		done:  make(chan struct{}),
-		byPID: make(map[int]string),
-		seen:  make(map[string]struct{}),
-	}
-}
-
-func startAnalyzerEnvironSampler() *analyzerEnvironSampler {
-	s := newIdleAnalyzerEnvironSampler()
-	go func() {
-		defer close(s.done)
-		s.capture()
-		ticker := time.NewTicker(time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-s.stop:
-				s.capture()
-				return
-			case <-ticker.C:
-				s.capture()
-			}
-		}
-	}()
-	return s
-}
-
-func (s *analyzerEnvironSampler) halt() map[int]string {
-	close(s.stop)
-	<-s.done
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make(map[int]string, len(s.byPID))
-	for pid, env := range s.byPID {
-		out[pid] = env
-	}
-	return out
-}
-
-func (s *analyzerEnvironSampler) invocations() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return len(s.seen)
-}
-
-// record counts a cmdline-matched analyzer child even when its environ
-// cannot be read. The kernel returns an empty environ for a task that has
-// already torn down its address space; treating that as no observation
-// (see readProcessEnviron) is right for PATH assertions and wrong for
-// invocation counts, because a warm second spawn is often only visible
-// during teardown. A starttime-keyed sample and a later pid-only sample
-// of the same PID are one invocation (stat can fail at teardown); two
-// starttimes for the same PID are two sequential children.
-func (s *analyzerEnvironSampler) record(pid int, startTime, env string, envOK bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	pidKey := strconv.Itoa(pid)
-	if startTime != "" {
-		delete(s.seen, pidKey)
-		s.seen[pidKey+":"+startTime] = struct{}{}
-	} else if !hasStartTimeKeyedObservation(s.seen, pidKey) {
-		s.seen[pidKey] = struct{}{}
-	}
-	if envOK {
-		s.byPID[pid] = env
-	}
-}
-
-func hasStartTimeKeyedObservation(seen map[string]struct{}, pidKey string) bool {
-	prefix := pidKey + ":"
-	for key := range seen {
-		if strings.HasPrefix(key, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *analyzerEnvironSampler) capture() {
-	for _, pid := range analyzerChildPIDs() {
-		env, ok := readProcessEnviron(pid)
-		s.record(pid, processStartTime(pid), env, ok)
-	}
-}
-
-func processStartTime(pid int) string {
-	data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-	if err != nil {
-		return ""
-	}
-	idx := bytes.LastIndexByte(data, ')')
-	if idx < 0 || idx+2 >= len(data) {
-		return ""
-	}
-	fields := strings.Fields(string(data[idx+2:]))
-	if len(fields) < 20 {
-		return ""
-	}
-	return fields[19]
-}
-
-func analyzerChildPIDs() []int {
-	if pids, ok := analyzerChildPIDsFromProc(); ok {
-		return pids
-	}
-	return analyzerChildPIDsFromPS()
-}
-
-// analyzerChildPIDsFromProc restricts matches to descendants of this test
-// binary's own process. go test ./... runs internal/codesignalcli and
-// pkg/projectmodel acceptance suites concurrently, and they spawn their own
-// analyzer children with the same --compiler-module= marker; without the
-// ancestry check those foreign pids get counted alongside this package's,
-// inflating the per-invocation counts these specs assert against.
-func analyzerChildPIDsFromProc() ([]int, bool) {
-	entries, err := os.ReadDir("/proc")
-	if err != nil {
-		return nil, false
-	}
-	self := os.Getpid()
-	var pids []int
-	for _, entry := range entries {
-		pid, err := strconv.Atoi(entry.Name())
-		if err != nil {
-			continue
-		}
-		data, err := os.ReadFile("/proc/" + entry.Name() + "/cmdline")
-		if err != nil {
-			continue
-		}
-		if !bytes.Contains(data, []byte(analyzerChildArgMarker)) {
-			continue
-		}
-		if !isDescendantOfProcess(pid, self) {
-			continue
-		}
-		pids = append(pids, pid)
-	}
-	return pids, true
-}
-
-// isDescendantOfProcess reports whether pid's parent chain, read from
-// /proc/<pid>/stat, reaches ancestor before hitting PID 1 or a read failure.
-func isDescendantOfProcess(pid, ancestor int) bool {
-	seen := make(map[int]bool)
-	for {
-		if pid == ancestor {
-			return true
-		}
-		if pid <= 1 || seen[pid] {
-			return false
-		}
-		seen[pid] = true
-		ppid, ok := processParentPID(pid)
-		if !ok {
-			return false
-		}
-		pid = ppid
-	}
-}
-
-// processParentPID reads a process's parent PID from /proc/<pid>/stat. The
-// comm field can itself contain spaces and parentheses, so the parse anchors
-// on the stat format's guaranteed last ')' rather than splitting on spaces.
-func processParentPID(pid int) (int, bool) {
-	data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-	if err != nil {
-		return 0, false
-	}
-	idx := bytes.LastIndexByte(data, ')')
-	if idx < 0 || idx+2 >= len(data) {
-		return 0, false
-	}
-	fields := strings.Fields(string(data[idx+2:]))
-	if len(fields) < 2 {
-		return 0, false
-	}
-	ppid, err := strconv.Atoi(fields[1])
-	if err != nil {
-		return 0, false
-	}
-	return ppid, true
-}
-
-// analyzerChildPIDsFromPS is the non-/proc fallback (e.g. Darwin), applying
-// the same ancestry restriction as analyzerChildPIDsFromProc via ppid=.
-func analyzerChildPIDsFromPS() []int {
-	out, err := exec.Command("ps", "-axww", "-o", "pid=,ppid=,args=").Output()
-	if err != nil {
-		return nil
-	}
-	parents := make(map[int]int)
-	var candidates []int
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 3 {
-			continue
-		}
-		pid, err := strconv.Atoi(fields[0])
-		if err != nil {
-			continue
-		}
-		ppid, err := strconv.Atoi(fields[1])
-		if err != nil {
-			continue
-		}
-		parents[pid] = ppid
-		args := strings.Join(fields[2:], " ")
-		if strings.Contains(args, analyzerChildArgMarker) {
-			candidates = append(candidates, pid)
-		}
-	}
-	self := os.Getpid()
-	var pids []int
-	for _, pid := range candidates {
-		if isDescendantOfProcessTree(pid, self, parents) {
-			pids = append(pids, pid)
-		}
-	}
-	return pids
-}
-
-// isDescendantOfProcessTree is isDescendantOfProcess's variant for a
-// pre-collected pid->ppid map, used where re-reading each ancestor's state
-// (as /proc allows) is not available.
-func isDescendantOfProcessTree(pid, ancestor int, parents map[int]int) bool {
-	seen := make(map[int]bool)
-	for {
-		if pid == ancestor {
-			return true
-		}
-		if pid <= 1 || seen[pid] {
-			return false
-		}
-		seen[pid] = true
-		ppid, ok := parents[pid]
-		if !ok {
-			return false
-		}
-		pid = ppid
-	}
-}
-
-// readProcessEnviron reports a process's environment, or false when none
-// could be observed. A successful read of zero bytes is not an observation:
-// the kernel returns an empty environ for a task that has already torn down
-// its address space, so a child that exits between being listed and being
-// read would otherwise be recorded as having no PATH at all.
-func readProcessEnviron(pid int) (string, bool) {
-	if data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/environ"); err == nil {
-		if len(data) == 0 {
-			return "", false
-		}
-		return strings.ReplaceAll(string(data), "\x00", "\n"), true
-	}
-	// Darwin: `ps -E -o command=` is argv only. BSD `ps eww` appends the
-	// environment after the command so PATH= is observable.
-	out, err := exec.Command("ps", "eww", "-p", strconv.Itoa(pid)).Output()
-	if err != nil || !strings.Contains(string(out), "PATH=") {
-		return "", false
-	}
-	return string(out), true
-}
-
 var _ = Describe("coach codesignal --project-language typescript against the private embedded analyzer and a confined, host-resolved compiler (coach#326 Task 3)", func() {
 	When("the analyzed repository vendors no js/semantics analyzer anywhere and declares a real, exactly-matching installed TypeScript compiler", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-				Skip(reason)
-			}
+			body_projectTsBackendAcceptanceTest_54()
 		})
 
 		It("completes the analysis via the private materialized analyzer and confined compiler, reporting the real layer violation without leaking the compiler's absolute path", func() {
@@ -574,62 +86,17 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 
 	When("the parent process spies via NODE_OPTIONS=--require and HTTP(S)_PROXY points at a recording listener", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-				Skip(reason)
-			}
+			body_projectTsBackendAcceptanceTest_91()
 		})
 
 		It("completes analysis without the spy running, without the analyzer child inheriting HTTP(S)_PROXY, and without the listener accepting a connection", func() {
-			repo := newTempGitRepo()
-			version := realTypescriptVersion()
-			commitRealTSLayerFixture(repo, version)
-			installRealTypescriptCompiler(repo, true)
-
-			markerDir, err := os.MkdirTemp("", "coach-ts-confinement-marker-*")
-			Expect(err).NotTo(HaveOccurred())
-			DeferCleanup(os.RemoveAll, markerDir)
-			marker := filepath.Join(markerDir, "leaked")
-			spy := filepath.Join(markerDir, "spy.cjs")
-			Expect(os.WriteFile(spy, []byte("require('fs').writeFileSync("+fmt.Sprintf("%q", marker)+", 'leaked\\n');\n"), 0o644)).To(Succeed())
-
-			listener := startRecordingProxyListener()
-			DeferCleanup(listener.stop)
-			proxyURL := listener.proxyURL()
-
-			GinkgoT().Setenv("NODE_OPTIONS", "--require "+spy)
-			GinkgoT().Setenv("HTTP_PROXY", proxyURL)
-			GinkgoT().Setenv("HTTPS_PROXY", proxyURL)
-			GinkgoT().Setenv("npm_config_registry", proxyURL+"/registry/")
-
-			sampler := startAnalyzerEnvironSampler()
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			environs := sampler.halt()
-
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-
-			_, statErr := os.Stat(marker)
-			Expect(os.IsNotExist(statErr)).To(BeTrue(), "NODE_OPTIONS --require spy must not run in the analyzer child; marker %s exists", marker)
-
-			Expect(environs).NotTo(BeEmpty(), "must observe the analyzer child (--compiler-module argv); a vacuous PID sample cannot prove HTTP(S)_PROXY was not forwarded")
-			for pid, env := range environs {
-				Expect(env).To(ContainSubstring("PATH="), "analyzer child pid %d environ was argv-only; PATH= is the AC-RUN-2 false-green guard", pid)
-				Expect(env).NotTo(ContainSubstring("HTTP_PROXY="), "analyzer child pid %d inherited HTTP_PROXY", pid)
-				Expect(env).NotTo(ContainSubstring("HTTPS_PROXY="), "analyzer child pid %d inherited HTTPS_PROXY", pid)
-			}
-			Expect(listener.snapshot()).To(BeEmpty(), "analyzer child must not dial the parent HTTP(S)_PROXY listener; hits: %v", listener.snapshot())
-
-			report := decodeCoachReport(stdout)
-			Expect(report.ProjectCoverage).NotTo(BeNil())
-			Expect(report.ProjectCoverage.Complete).To(BeTrue(), "%+v", report.ProjectCoverage)
-			Expect(report.ProjectChanges).To(HaveLen(1))
+			body_projectTsBackendAcceptanceTest_completesAnalysisWithoutTheSpyRunningWithoutTheA_97()
 		})
 	})
 
 	When("an uncommitted worktree edit would introduce a forbidden TypeScript layer edge that HEAD does not have", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-				Skip(reason)
-			}
+			body_projectTsBackendAcceptanceTest_144()
 		})
 
 		It("analyzes only the Git snapshot and does not report the worktree-only violation", func() {
@@ -655,9 +122,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 
 	When("diff mode introduces a forbidden TypeScript layer edge that did not exist at base", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-				Skip(reason)
-			}
+			body_projectTsBackendAcceptanceTest_172()
 		})
 
 		It("builds distinct head and base project models sharing one PrepareTSRuntime call and classifies the ProjectChange as lifecycle introduced", func() {
@@ -820,22 +285,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 
 	When("the worktree mise.toml carries an env exec template that would write a sentinel", func() {
 		It("produces no side effect during a scan because mise probes use a neutral working directory", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
-			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersWithoutImport)
-			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-			sentinel := filepath.Join(repo, "mise-exec-side-effect")
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = \"7.0.2\"\n\n[env]\nSIDE_EFFECT = \"{{ exec(command='touch %s') }}\"\n", sentinel))
-
-			path, miseDir := pathWithStubNodeAndMise("v24.9.9", "7.0.2")
-
-			_, stderr, _ := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			_, statErr := os.Stat(sentinel)
-			Expect(os.IsNotExist(statErr)).To(BeTrue(), "mise exec template must not run during a scan; stderr=%s", stderr)
-			for _, cwd := range readStubMiseCwds(miseDir) {
-				Expect(cwd).NotTo(Equal(repo), "mise probes must not run with the analyzed repository as cwd, got %q", cwd)
-			}
+			body_projectTsBackendAcceptanceTest_producesNoSideEffectDuringAScanBecauseMiseProbes_337()
 		})
 	})
 
@@ -914,50 +364,11 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 
 	When("the resolved native platform package is present and version-equal but unloadable", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-				Skip(reason)
-			}
+			body_projectTsBackendAcceptanceTest_431()
 		})
 
 		It("reports a qualified incomplete report at exit 0, not exit 2, without leaking the compiler's absolute path", func() {
-			repo := newTempGitRepo()
-			version := realTypescriptVersion()
-			commitRealTSLayerFixture(repo, version)
-			compilerDir := installRealTypescriptCompiler(repo, true)
-			nativeName := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
-			nativeDest := filepath.Join(repo, "node_modules", "@typescript", nativeName)
-			Expect(os.Remove(filepath.Join(nativeDest, "lib", "tsc"))).To(Succeed())
-
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(stderr).To(BeEmpty())
-
-			report := decodeCoachReport(stdout)
-			Expect(report.ProjectChanges).To(BeEmpty(), "a degraded compiler must never fabricate the layer violation it never actually reported")
-			Expect(report.ProjectCoverage).NotTo(BeNil())
-			Expect(report.ProjectCoverage.Complete).To(BeFalse())
-
-			var found bool
-			var message string
-			for _, diag := range report.ProjectCoverage.Diagnostics {
-				if diag.Code == projectmodel.DiagBackendUnavailable {
-					found = true
-					message = diag.Message
-				}
-			}
-			Expect(found).To(BeTrue(), "expected a %s diagnostic in ProjectCoverage.Diagnostics, got %+v", projectmodel.DiagBackendUnavailable, report.ProjectCoverage.Diagnostics)
-			Expect(message).To(Or(
-				ContainSubstring("failed to load resolved TypeScript compiler module"),
-				ContainSubstring("native TypeScript executable is missing"),
-				ContainSubstring("failed to start ts sidecar analysis backend"),
-			), "expected the missing-native-executable failure to surface, got: %s", message)
-
-			Expect(string(stdout)).NotTo(ContainSubstring(compilerDir), "the resolved compiler's absolute filesystem path must never appear in the serialized report")
-			Expect(string(stdout)).NotTo(ContainSubstring(nativeDest), "the native compiler executable path must never appear in the serialized report")
-			Expect(message).NotTo(ContainSubstring(repo), "diagnostic must not contain the repository path")
-			Expect(message).NotTo(ContainSubstring("coach-ts-analyzer-"), "diagnostic must not contain the analyzer temp-directory prefix")
-			Expect(message).NotTo(ContainSubstring("file://"))
-			Expect(message).NotTo(ContainSubstring("node:internal"))
+			body_projectTsBackendAcceptanceTest_reportsAQualifiedIncompleteReportAtExit0NotExit2_437()
 		})
 
 		It("renders a qualified verdict, not the unqualified clean-run sentence", func() {
@@ -982,85 +393,21 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 
 	When("the resolved compiler is missing a required unstable API export", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-				Skip(reason)
-			}
+			body_projectTsBackendAcceptanceTest_499()
 		})
 
 		It("reports the missing-unstable-export module-resolution failure specifically, not the pre-#326 generic sidecar-unavailable degrade or a crash", func() {
-			repo := newTempGitRepo()
-			version := realTypescriptVersion()
-			commitRealTSLayerFixture(repo, version)
-			compilerDir := installRealTypescriptCompiler(repo, true)
-			breakCompilerExportSubpath(compilerDir, "./unstable/fs")
-
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(stderr).To(BeEmpty())
-
-			report := decodeCoachReport(stdout)
-			Expect(report.ProjectChanges).To(BeEmpty(), "a degraded compiler must never fabricate the layer violation it never actually reported")
-			Expect(report.ProjectCoverage).NotTo(BeNil())
-			Expect(report.ProjectCoverage.Complete).To(BeFalse())
-
-			var found bool
-			var message string
-			for _, diag := range report.ProjectCoverage.Diagnostics {
-				if diag.Code == projectmodel.DiagBackendUnavailable {
-					found = true
-					message = diag.Message
-				}
-			}
-			Expect(found).To(BeTrue(), "expected a %s diagnostic in ProjectCoverage.Diagnostics, got %+v", projectmodel.DiagBackendUnavailable, report.ProjectCoverage.Diagnostics)
-			Expect(message).To(ContainSubstring(`does not declare a "./unstable/fs" export`), "expected the missing-unstable-API failure to surface, got: %s", message)
-
-			Expect(string(stdout)).NotTo(ContainSubstring(compilerDir), "the resolved compiler's absolute filesystem path must never appear in the serialized report")
-			Expect(message).NotTo(ContainSubstring(repo), "diagnostic must not contain the repository path")
-			Expect(message).NotTo(ContainSubstring("coach-ts-analyzer-"), "diagnostic must not contain the analyzer temp-directory prefix")
-			Expect(message).NotTo(ContainSubstring("file://"))
-			Expect(message).NotTo(ContainSubstring("node:internal"))
+			body_projectTsBackendAcceptanceTest_reportsTheMissingUnstableExportModuleResolutionF_505()
 		})
 	})
 
 	When("a declared unstable export subpath resolves to a file that does not exist (a broken exports entry, not a missing one)", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-				Skip(reason)
-			}
+			body_projectTsBackendAcceptanceTest_541()
 		})
 
 		It("reports a broken-export-target load failure, distinct from a missing export entry, when the compiler's own package.json points at a file that doesn't exist", func() {
-			repo := newTempGitRepo()
-			version := realTypescriptVersion()
-			commitRealTSLayerFixture(repo, version)
-			compilerDir := installRealTypescriptCompiler(repo, true)
-			repointCompilerExportSubpath(compilerDir, "./unstable/fs", "./lib/does-not-exist.js")
-
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(stderr).To(BeEmpty())
-
-			report := decodeCoachReport(stdout)
-			Expect(report.ProjectChanges).To(BeEmpty(), "a degraded compiler must never fabricate the layer violation it never actually reported")
-			Expect(report.ProjectCoverage).NotTo(BeNil())
-			Expect(report.ProjectCoverage.Complete).To(BeFalse())
-
-			var found bool
-			var message string
-			for _, diag := range report.ProjectCoverage.Diagnostics {
-				if diag.Code == projectmodel.DiagBackendUnavailable {
-					found = true
-					message = diag.Message
-				}
-			}
-			Expect(found).To(BeTrue(), "expected a %s diagnostic in ProjectCoverage.Diagnostics, got %+v", projectmodel.DiagBackendUnavailable, report.ProjectCoverage.Diagnostics)
-			Expect(message).To(ContainSubstring("failed to load typescript/unstable/fs from the resolved TypeScript compiler"), "expected the broken-export-target failure to surface, got: %s", message)
-
-			Expect(string(stdout)).NotTo(ContainSubstring(compilerDir), "the resolved compiler's absolute filesystem path must never appear in the serialized report")
-			Expect(message).NotTo(ContainSubstring(repo), "diagnostic must not contain the repository path")
-			Expect(message).NotTo(ContainSubstring("coach-ts-analyzer-"), "diagnostic must not contain the analyzer temp-directory prefix")
-			Expect(message).NotTo(ContainSubstring("file://"))
-			Expect(message).NotTo(ContainSubstring("node:internal"))
+			body_projectTsBackendAcceptanceTest_reportsABrokenExportTargetLoadFailureDistinctFro_547()
 		})
 	})
 
@@ -1080,89 +427,21 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 
 	When("a recording node shim is first on PATH", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-				Skip(reason)
-			}
+			body_projectTsBackendAcceptanceTest_597()
 		})
 
 		It("probes process.execPath and spawns that path so the shim log does not contain --compiler-module", func() {
-			repo := newTempGitRepo()
-			version := realTypescriptVersion()
-			commitRealTSLayerFixture(repo, version)
-			installRealTypescriptCompiler(repo, true)
-
-			realNode, err := exec.LookPath("node")
-			Expect(err).NotTo(HaveOccurred())
-			probe := exec.Command(realNode, "-p", "process.execPath")
-			probed, err := probe.Output()
-			Expect(err).NotTo(HaveOccurred())
-			execPath := strings.TrimSpace(string(probed))
-
-			shimDir, err := os.MkdirTemp("", "coach-recording-node-*")
-			Expect(err).NotTo(HaveOccurred())
-			DeferCleanup(os.RemoveAll, shimDir)
-			logPath := filepath.Join(shimDir, "shim.log")
-			script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\nexec %q \"$@\"\n", logPath, realNode)
-			Expect(os.WriteFile(filepath.Join(shimDir, "node"), []byte(script), 0o755)).To(Succeed())
-
-			path := shimDir + string(os.PathListSeparator) + pathExcludingExecutables("node")
-			sampler := startAnalyzerEnvironSampler()
-			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			environs := sampler.halt()
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-
-			logBytes, readErr := os.ReadFile(logPath)
-			Expect(readErr).NotTo(HaveOccurred())
-			Expect(string(logBytes)).NotTo(ContainSubstring("--compiler-module"), "analyzer child must be the probed execPath, not the PATH shim; log=%s", logBytes)
-
-			Expect(environs).NotTo(BeEmpty(), "must observe the analyzer child")
-			for _, env := range environs {
-				childPath := pathValueFromEnviron(env)
-				Expect(childPath).To(Equal(filepath.Dir(execPath)), "child PATH must equal the runtime directory exactly, got %q env=%q", childPath, env)
-				Expect(childPath).NotTo(ContainSubstring(shimDir), "recording shim directory must be absent from child PATH")
-			}
+			body_projectTsBackendAcceptanceTest_probesProcessExecPathAndSpawnsThatPathSoTheShimL_603()
 		})
 	})
 
 	When("ambient PATH includes a sibling directory containing a shim", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-				Skip(reason)
-			}
+			body_projectTsBackendAcceptanceTest_643()
 		})
 
 		It("sets the analyzer child PATH to the runtime directory with no extra components", func() {
-			repo := newTempGitRepo()
-			version := realTypescriptVersion()
-			commitRealTSLayerFixture(repo, version)
-			installRealTypescriptCompiler(repo, true)
-
-			realNode, err := exec.LookPath("node")
-			Expect(err).NotTo(HaveOccurred())
-			probe := exec.Command(realNode, "-p", "process.execPath")
-			probed, err := probe.Output()
-			Expect(err).NotTo(HaveOccurred())
-			runtimeDir := filepath.Dir(strings.TrimSpace(string(probed)))
-
-			sibling, err := os.MkdirTemp("", "coach-path-sibling-*")
-			Expect(err).NotTo(HaveOccurred())
-			DeferCleanup(os.RemoveAll, sibling)
-			Expect(os.WriteFile(filepath.Join(sibling, "node"), []byte("#!/bin/sh\necho sibling-shim\n"), 0o755)).To(Succeed())
-
-			path := os.Getenv("PATH")
-			GinkgoT().Setenv("PATH", path+string(os.PathListSeparator)+sibling)
-
-			sampler := startAnalyzerEnvironSampler()
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			environs := sampler.halt()
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(environs).NotTo(BeEmpty(), "must observe the analyzer child")
-			for _, env := range environs {
-				childPath := pathValueFromEnviron(env)
-				Expect(childPath).To(Equal(runtimeDir), "child PATH must equal the runtime directory exactly, got %q env=%q", childPath, env)
-				Expect(strings.Split(childPath, string(os.PathListSeparator))).To(Equal([]string{runtimeDir}))
-				Expect(childPath).NotTo(ContainSubstring(sibling), "planted sibling must be absent from child PATH")
-			}
+			body_projectTsBackendAcceptanceTest_setsTheAnalyzerChildPATHToTheRuntimeDirectoryWit_649()
 		})
 	})
 
@@ -1211,9 +490,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 
 	When("a wrong-version native package canary sits on the omit-tsserverPath walk", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-				Skip(reason)
-			}
+			body_projectTsBackendAcceptanceTest_728()
 		})
 
 		It("completes a real scan using the approved native path and never runs the canary", func() {
@@ -1251,9 +528,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 
 	When("TMPDIR contains typescript or package.json decoys", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-				Skip(reason)
-			}
+			body_projectTsBackendAcceptanceTest_768()
 		})
 
 		It("does not change the scan result when $TMPDIR/node_modules/typescript is a decoy", func() {
@@ -1275,27 +550,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 		})
 
 		It("does not change the scan result when $TMPDIR/package.json declares type commonjs", func() {
-			repo := newTempGitRepo()
-			version := realTypescriptVersion()
-			commitRealTSLayerFixture(repo, version)
-			installRealTypescriptCompiler(repo, true)
-
-			pkg := filepath.Join(os.TempDir(), "package.json")
-			_, existed := os.Stat(pkg)
-			if existed == nil {
-				prev, err := os.ReadFile(pkg)
-				Expect(err).NotTo(HaveOccurred())
-				DeferCleanup(func() { _ = os.WriteFile(pkg, prev, 0o644) })
-			} else {
-				DeferCleanup(os.Remove, pkg)
-			}
-			Expect(os.WriteFile(pkg, []byte(`{"type":"commonjs"}`+"\n"), 0o644)).To(Succeed())
-
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			report := decodeCoachReport(stdout)
-			Expect(report.ProjectCoverage.Complete).To(BeTrue(), "%+v", report.ProjectCoverage)
-			Expect(report.ProjectChanges).To(HaveLen(1))
+			body_projectTsBackendAcceptanceTest_doesNotChangeTheScanResultWhenTMPDIRPackageJsonD_792()
 		})
 	})
 })
@@ -1365,78 +620,6 @@ const tsLayerBypassAmbiguousConfigJSON = `{"schema_version":"1","roots":["."],"l
 // normally, unlike the narrower pkg/projectmodel-level fixture this mirrors.
 const tsRootScopeGapTSConfigJSON = `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10","resolveJsonModule":true},"files":["package.json"],"include":["**/*.ts"]}`
 
-func containsProjectModelDiagnosticCode(diagnostics []projectmodel.Diagnostic, code string) bool {
-	for _, d := range diagnostics {
-		if d.Code == code {
-			return true
-		}
-	}
-	return false
-}
-
-// countProjectModelDiagnosticCode asserts a model diagnostic is folded into
-// the reported ProjectCoverage exactly once (see tsBypassCoverageForFold in
-// internal/codesignalcli/project_ts_backend.go), not once per fold.
-func countProjectModelDiagnosticCode(diagnostics []projectmodel.Diagnostic, code string) int {
-	count := 0
-	for _, d := range diagnostics {
-		if d.Code == code {
-			count++
-		}
-	}
-	return count
-}
-
-// diagnosticMessageForKind returns the Message of the first report
-// diagnostic matching kind, or "" if none matches.
-func diagnosticMessageForKind(diagnostics []codesignal.Diagnostic, kind string) string {
-	for _, d := range diagnostics {
-		if d.Kind == kind {
-			return d.Message
-		}
-	}
-	return ""
-}
-
-func projectChangeRuleIDs(changes []codesignal.ProjectChange) map[string]bool {
-	seen := map[string]bool{}
-	for _, change := range changes {
-		seen[change.RuleID] = true
-	}
-	return seen
-}
-
-// AC-12.
-func assertReachabilityNeverSignalOrChange(report *codesignal.Report) {
-	for _, signal := range report.Signals {
-		Expect(signal.RuleID).NotTo(Equal("possible_call_reachability"), "reachability must never surface as a Signal, got %+v", signal)
-		Expect(signal.Kind).NotTo(Equal("possible_call_reachability"), "reachability must never surface as a Signal, got %+v", signal)
-	}
-	for _, change := range report.ProjectChanges {
-		Expect(change.RuleID).NotTo(Equal("possible_call_reachability"), "reachability must never surface as a ProjectChange, got %+v", change)
-		Expect(change.Kind).NotTo(Equal("possible_call_reachability"), "reachability must never surface as a ProjectChange, got %+v", change)
-	}
-}
-
-// splitTextFindingsAndFacts splits RenderText's output at its "\nFacts:\n"
-// section marker (render.go's renderProjectFacts), so a spec can assert
-// separately about the findings section (Signals + "Project findings:"
-// ProjectChanges) and everything from "Facts:" onward: RenderText writes
-// renderProjectFacts, renderDiagnosticsSection, renderCoverageSection, and
-// renderProjectCoverageSection in that order with no further section
-// markers this helper splits on, so factsSection is "Facts: through end of
-// output", not ProjectFacts alone.
-//
-// Callers pair this with a JSON-decoded assertion on the same fixture first:
-// the JSON checks are the structural source of truth, and the text-format
-// checks this helper supports only confirm the text renderer doesn't
-// diverge from what JSON already proved, not an independent proof.
-func splitTextFindingsAndFacts(text string) (findingsSection, factsSection string) {
-	idx := strings.Index(text, "\nFacts:\n")
-	ExpectWithOffset(1, idx).To(BeNumerically(">", 0), "expected a \"Facts:\" section in text output, got %q", text)
-	return text[:idx], text[idx:]
-}
-
 // T7 (issue #331 Task 8): one analyzer response per revision must feed
 // layer-violation, layer-bypass, and reachability-facts derivation alike,
 // and incompleteness in each must fold into (or, for reachability, stay out
@@ -1444,9 +627,7 @@ func splitTextFindingsAndFacts(text string) (findingsSection, factsSection strin
 // tsProjectBackend.evaluateRevision (internal/codesignalcli/project_ts_backend.go).
 var _ = Describe("coach codesignal --project-language typescript derives layer violations, layer bypass, and reachability facts from one analyzer response per revision (issue #331 Task 8 T7)", func() {
 	BeforeEach(func() {
-		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-			Skip(reason)
-		}
+		body_projectTsBackendAcceptanceTest_889()
 	})
 
 	When("a baseline (single-revision) analysis runs", Label("ts-project-backend"), func() {
@@ -1491,12 +672,6 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			Expect(factsSection).To(ContainSubstring("kind: possible_call_reachability"), "got %q", factsSection)
 			Expect(factsSection).NotTo(ContainSubstring("rule_id:"), "the Facts section must never carry a rule_id, which would make a fact indistinguishable from a Signal/ProjectChange, got %q", factsSection)
 
-			// AC-11: a single-invocation ProjectBackendResult for the same
-			// fixture must itself carry HeadChanges, Facts, project_scope, and
-			// all three phase-coverage observations together, proving one
-			// per-revision analyzer response backs all five jointly rather than
-			// each being checked against a coincidentally-matching, separately
-			// derived value.
 			scopeSampler := startAnalyzerEnvironSampler()
 			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, tsLayerBypassRequiredConfigJSON)
 			scopeEnvirons := scopeSampler.halt()
@@ -1557,10 +732,6 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			Expect(factsSection).To(ContainSubstring("kind: possible_call_reachability"), "got %q", factsSection)
 			Expect(factsSection).NotTo(ContainSubstring("rule_id:"), "the Facts section must never carry a rule_id, which would make a fact indistinguishable from a Signal/ProjectChange, got %q", factsSection)
 
-			// AC-11: a single Analyze() call/ProjectBackendResult for the same
-			// diff (2 analyzer invocations total, one per revision) must itself
-			// carry HeadChanges, Facts, and both revisions' project_scope and
-			// all three phase-coverage observations together.
 			scopeSampler := startAnalyzerEnvironSampler()
 			result, err := analyzeTSProjectBackend(repo, headSHA, baseSHA, false, tsLayerBypassRequiredConfigJSON)
 			scopeEnvirons := scopeSampler.halt()
@@ -1585,53 +756,7 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 
 	When("a required_layer is configured but its bypass search cannot resolve any file under that layer (an ambiguous, forced-incomplete search)", Label("ts-project-backend"), func() {
 		It("degrades HeadCoverage to incomplete and every project-change lifecycle to unknown (AC-2/AC-14)", func() {
-			repo := newTempGitRepo()
-			version := realTypescriptVersion()
-			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
-			commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
-			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
-			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
-			commitFile(repo, "vendor/prisma-client/package.json", tsPrismaClientPackageJSON)
-			commitFile(repo, "vendor/prisma-client/index.ts", tsPrismaClientIndexTS)
-			// tsHandlersBypassFile gives this fixture a genuine bypass
-			// candidate (a fully resolvable handler->sink path) that the
-			// ambiguous required_layer must still suppress, unlike
-			// commitRealTSLayerFixture alone, which has no sink/source pair
-			// at all and would pass this spec's suppression assertions
-			// vacuously regardless of whether suppression actually works.
-			commitFile(repo, "pkg/handlers/bypass.ts", tsHandlersBypassFile)
-			commitFile(repo, "project.json", tsLayerBypassAmbiguousConfigJSON)
-			installRealTypescriptCompiler(repo, true)
-
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-
-			report := decodeCoachReport(stdout)
-			Expect(report.ProjectCoverage).NotTo(BeNil())
-			Expect(report.ProjectCoverage.Complete).To(BeFalse(), "an ambiguous, forced-incomplete bypass search must degrade the reported project coverage")
-
-			Expect(report.ProjectChanges).NotTo(BeEmpty())
-			for _, change := range report.ProjectChanges {
-				Expect(string(change.Lifecycle)).To(Equal("unknown"), "a requested but incomplete bypass search must degrade every project-change lifecycle to unknown, got %+v", change)
-			}
-
-			Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_lifecycle_indeterminate")))
-			Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_coverage_incomplete")))
-			Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_layer_bypass_coverage_incomplete")))
-
-			// AC-7/AC-17: an unresolved bypass search (ambiguous required
-			// layer, so BuildTypeScriptLayerBypassFromModel's search never
-			// reaches a fully-classified, LayerBypassConfidenceHigh witness --
-			// the only confidence value the TS/Go backends ever produce, see
-			// ts_layer_bypass.go's tsLayerBypassSearchFromSource (its
-			// Confidence: LayerBypassConfidenceHigh assignment) -- must never
-			// surface an architecture.layer_bypass entry.
-			jsonRuleIDs := projectChangeRuleIDs(report.ProjectChanges)
-			Expect(jsonRuleIDs).NotTo(HaveKey("architecture.layer_bypass"), "an unresolved bypass search must stay suppressed in JSON, got %+v", report.ProjectChanges)
-
-			textStdout, textStderr, textExitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
-			Expect(textExitCode).To(Equal(0), "stderr: %s stdout: %s", textStderr, textStdout)
-			Expect(string(textStdout)).NotTo(ContainSubstring("architecture.layer_bypass"), "an unresolved bypass search must stay suppressed in text too, got %q", textStdout)
+			body_projectTsBackendAcceptanceTest_degradesHeadCoverageToIncompleteAndEveryProjectC_1020()
 		})
 	})
 
@@ -1672,37 +797,7 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 
 	When("a required_layer is configured and the analyzed repository has a routine, per-hop reachability gap but no bypass-search incompleteness", Label("ts-project-backend"), func() {
 		It("keeps ProjectCoverage complete and the layer-violation lifecycle determinate, and folds the gap diagnostic in exactly once (AC-3)", func() {
-			repo := newTempGitRepo()
-			version := realTypescriptVersion()
-			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
-			commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
-			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
-			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
-			commitFile(repo, "pkg/service/svc.ts", tsServiceNoopFile)
-			commitFile(repo, "vendor/prisma-client/package.json", tsPrismaClientPackageJSON)
-			commitFile(repo, "vendor/prisma-client/index.ts", tsPrismaClientIndexTS)
-			commitFile(repo, "pkg/handlers/reach.ts", tsHandlersReachabilityFile)
-			commitFile(repo, "pkg/handlers/helper.ts", tsHandlersLocalGapHelperFile)
-			commitFile(repo, "pkg/handlers/gap.ts", tsHandlersLocalGapFile)
-			commitFile(repo, "project.json", tsLayerBypassRequiredConfigJSON)
-			installRealTypescriptCompiler(repo, true)
-
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-
-			report := decodeCoachReport(stdout)
-			Expect(report.ProjectCoverage).NotTo(BeNil())
-			Expect(report.ProjectCoverage.Complete).To(BeTrue(), "a routine reachability gap must never mark project coverage incomplete even when a bypass search ran, got %+v", report.ProjectCoverage)
-			Expect(countProjectModelDiagnosticCode(report.ProjectCoverage.Diagnostics, "ts_reachability_local_call_not_followed_gap")).To(Equal(1), "expected the routine reachability gap diagnostic to be folded into ProjectCoverage exactly once, got %+v", report.ProjectCoverage.Diagnostics)
-
-			ruleIDs := projectChangeRuleIDs(report.ProjectChanges)
-			Expect(ruleIDs).To(HaveKey("architecture.layer_violation"), "got %+v", report.ProjectChanges)
-			for _, change := range report.ProjectChanges {
-				if change.RuleID != "architecture.layer_violation" {
-					continue
-				}
-				Expect(string(change.Lifecycle)).To(Equal("baseline"), "an unrelated reachability gap must never degrade an otherwise complete layer-violation finding's lifecycle when a bypass search also ran, got %+v", change)
-			}
+			body_projectTsBackendAcceptanceTest_keepsProjectCoverageCompleteAndTheLayerViolation_1095()
 		})
 	})
 
@@ -1758,13 +853,6 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 		})
 	})
 
-	// AC-24/AC-EVD-4: the mirror of the base-side case immediately above --
-	// codesignal.projectLifecycleState checks input.ProjectCoverage (head)
-	// and input.BaseProjectCoverage (base) in two separate conditions
-	// (pkg/codesignal/codesignal.go), so proving indeterminacy from
-	// head-side incompleteness alone exercises a distinct branch from the
-	// base-side case, not a coincidentally-identical outcome from the same
-	// condition.
 	When("a --base diff has the SA-280-025 root-scope mismatch only on the head revision, with the base revision fully complete", Label("ts-project-backend"), func() {
 		It("degrades the diff's project-change lifecycle to unknown even though the base revision's own coverage is complete", func() {
 			repo := newTempGitRepo()
@@ -1788,44 +876,12 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			Expect(report.ProjectChanges).To(HaveLen(1))
 			Expect(string(report.ProjectChanges[0].Lifecycle)).To(Equal("unknown"), "head-side model incompleteness must degrade the diff's project-change lifecycle to unknown even though base coverage is complete")
 
-			// Pins this spec to the head-side branch of projectLifecycleState
-			// it claims to exercise, not the base side, which this fixture
-			// commits complete with tsProjectTSConfigJSON before baseSHA:
-			// projectLifecycleDiagnosticMessage (pkg/codesignal/codesignal.go)
-			// only ever mentions "base coverage incomplete" when the base side
-			// itself was incomplete.
 			lifecycleMessage := diagnosticMessageForKind(report.Diagnostics, "project_lifecycle_indeterminate")
 			Expect(lifecycleMessage).To(ContainSubstring("head coverage incomplete"), "expected the indeterminacy reason to name head coverage, got %q", lifecycleMessage)
 			Expect(lifecycleMessage).NotTo(ContainSubstring("base coverage incomplete"), "the base revision is fully complete in this fixture; the indeterminacy reason must not blame it too, got %q", lifecycleMessage)
 		})
 	})
 })
-
-// analyzeTSProjectBackend calls the exported tsProjectBackend contract
-// (NewTSProjectBackend/ProjectBackend.Analyze) directly, in-process, rather
-// than through the compiled coach binary: project_scope is not yet rendered
-// through codesignal.Input/Report (issue #332 Task 10's job, not Task 9
-// T1's), so ProjectBackendResult -- the public contract at this boundary --
-// is the most meaningful place to observe HeadProjectScope/BaseProjectScope.
-// Calling Analyze in-process still spawns the real analyzer subprocess
-// (BuildTypeScriptModelViaSidecar), and the analyzer child is still a
-// descendant of this test binary, so startAnalyzerEnvironSampler's
-// descendant-restricted PID scan observes it exactly as it would through the
-// compiled binary.
-func analyzeTSProjectBackend(dir, headRevision, baseRevision string, baseline bool, configJSON string) (*codesignalcli.ProjectBackendResult, error) {
-	config := json.RawMessage(configJSON)
-	backend := codesignalcli.NewTSProjectBackend()
-	return backend.Analyze(context.Background(), codesignalcli.ProjectBackendRequest{
-		Dir:          dir,
-		HeadRevision: headRevision,
-		BaseRevision: baseRevision,
-		Baseline:     baseline,
-		ConfigPath:   "project.json",
-		Config:       config,
-		ConfigDigest: codesignalcli.ConfigDigest(config),
-		Language:     "typescript",
-	})
-}
 
 // tsHandlersExtraFile is a second real file under pkg/handlers/, alongside
 // tsRealHandlersImportingDB, so a root scoped to pkg/handlers (see
@@ -1855,52 +911,12 @@ const tsNestedRootsScopeConfigJSON = `{"schema_version":"1","roots":[".","pkg/ha
 // applies here unchanged).
 var _ = Describe("coach codesignal --project-language typescript carries project_scope on ProjectBackendResult, derived from the same analyzer response as the other evidence families (coach#332 Task 9 T1)", func() {
 	BeforeEach(func() {
-		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-			Skip(reason)
-		}
+		body_projectTsBackendAcceptanceTest_1239()
 	})
 
 	When("a baseline analysis runs against a multi-root policy with a nested root", Label("ts-project-backend"), func() {
 		It("derives HeadProjectScope with independent per-root candidate/analyzed counts, matched_layers, unmatched_layers, inclusion_rule, and pattern_set from one analyzer response (AC-3/AC-15/AC-25/AC-26)", func() {
-			repo := newTempGitRepo()
-			version := realTypescriptVersion()
-			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
-			commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
-			commitFile(repo, "pkg/handlers/tsconfig.json", tsProjectTSConfigJSON)
-			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
-			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersWithoutImport)
-			commitFile(repo, "pkg/handlers/extra.ts", tsHandlersExtraFile)
-			headSHA := commitFile(repo, "project.json", tsNestedRootsScopeConfigJSON)
-			installRealTypescriptCompiler(repo, true)
-
-			sampler := startAnalyzerEnvironSampler()
-			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, tsNestedRootsScopeConfigJSON)
-			environs := sampler.halt()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(sampler.invocations()).To(Equal(1), "expected exactly one analyzer invocation for a baseline analysis (AC-RUN-5), observed pids: %+v", environs)
-
-			Expect(result.HeadProjectScope).NotTo(BeNil())
-			scope := *result.HeadProjectScope
-			Expect(scope.InclusionRule).To(Equal(projectmodel.InclusionRuleTSConfigIncludesNoTestClassification))
-			Expect(scope.PatternSet).To(Equal(projectmodel.TSReachabilityAlgorithm))
-			Expect(scope.Roots).To(HaveLen(2), "got %+v", scope.Roots)
-
-			byRoot := map[string]projectmodel.ProjectScopeRoot{}
-			for _, r := range scope.Roots {
-				byRoot[r.Root] = r
-			}
-			rootDot, ok := byRoot["."]
-			Expect(ok).To(BeTrue(), "expected a root_scope entry for \".\", got %+v", scope.Roots)
-			Expect(rootDot.CandidateFiles).To(Equal(3), "expected d.ts, h.ts, extra.ts under \".\", got %+v", rootDot)
-			Expect(rootDot.AnalyzedFiles).To(Equal(3), "got %+v", rootDot)
-
-			rootHandlers, ok := byRoot["pkg/handlers"]
-			Expect(ok).To(BeTrue(), "expected a root_scope entry for pkg/handlers, got %+v", scope.Roots)
-			Expect(rootHandlers.CandidateFiles).To(Equal(2), "expected h.ts, extra.ts under pkg/handlers, counted independently from \".\", got %+v", rootHandlers)
-			Expect(rootHandlers.AnalyzedFiles).To(Equal(2), "got %+v", rootHandlers)
-
-			Expect(scope.MatchedLayers).To(ConsistOf("handlers", "db"), "got %+v", scope.MatchedLayers)
-			Expect(scope.UnmatchedLayers).To(ConsistOf("unused"), "a layer whose prefix matches no analyzed file must land in unmatched_layers, got %+v", scope.UnmatchedLayers)
+			body_projectTsBackendAcceptanceTest_derivesHeadProjectScopeWithIndependentPerRootCan_1246()
 		})
 	})
 
@@ -1933,36 +949,7 @@ var _ = Describe("coach codesignal --project-language typescript carries project
 
 	When("the tsRootScopeGapTSConfigJSON fixture accepts a candidate file into the compiler's Program that is never actually analyzed", Label("ts-project-backend"), func() {
 		It("counts the unanalyzable candidate file in candidate_files but not analyzed_files, and names it in its own diagnostic (AC-5/AC-25)", func() {
-			repo := newTempGitRepo()
-			version := realTypescriptVersion()
-			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
-			commitFile(repo, "tsconfig.json", tsRootScopeGapTSConfigJSON)
-			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
-			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
-			headSHA := commitFile(repo, "project.json", goLayerPolicyConfigJSON)
-			installRealTypescriptCompiler(repo, true)
-
-			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, goLayerPolicyConfigJSON)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(result.HeadProjectScope).NotTo(BeNil())
-			Expect(result.HeadProjectScope.Roots).To(HaveLen(1))
-			root := result.HeadProjectScope.Roots[0]
-			Expect(root.Root).To(Equal("."))
-			Expect(root.CandidateFiles).To(Equal(3), "expected package.json, d.ts, and h.ts as candidates, got %+v", root)
-			Expect(root.AnalyzedFiles).To(Equal(2), "expected package.json to be counted as a candidate but never actually analyzed, got %+v", root)
-
-			Expect(result.HeadCoverage).NotTo(BeNil())
-			var found bool
-			var message string
-			for _, diag := range result.HeadCoverage.Diagnostics {
-				if diag.Code == projectmodel.DiagRootScopeIncomplete {
-					found = true
-					message = diag.Message
-				}
-			}
-			Expect(found).To(BeTrue(), "expected a %s diagnostic, got %+v", projectmodel.DiagRootScopeIncomplete, result.HeadCoverage.Diagnostics)
-			Expect(message).To(ContainSubstring("package.json"), "the unanalyzable candidate file must be named in its own diagnostic, got %q", message)
+			body_projectTsBackendAcceptanceTest_countsTheUnanalyzableCandidateFileInCandidateFil_1317()
 		})
 	})
 
@@ -2001,9 +988,7 @@ var _ = Describe("coach codesignal --project-language typescript carries project
 // ProjectBackendResult remains the most meaningful boundary to observe them.
 var _ = Describe("coach codesignal --project-language typescript carries per-phase (model, bypass, reachability) coverage per revision on ProjectBackendResult, additive to the existing fold (coach#332 Task 9 T2)", func() {
 	BeforeEach(func() {
-		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-			Skip(reason)
-		}
+		body_projectTsBackendAcceptanceTest_1385()
 	})
 
 	When("the tsRootScopeGapTSConfigJSON fixture accepts a candidate file into the compiler's Program that is never actually analyzed, with no bypass configured", Label("ts-project-backend"), func() {

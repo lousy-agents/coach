@@ -1,6 +1,29 @@
 package semantics
 
-import "testing"
+import (
+	"testing"
+)
+
+// GitHub issue #179: each of the five documented act calls
+// (Open/OpenFile/Remove/RemoveAll/ReadFile) must be detected when gated
+// behind a matching os.Stat check.
+func TestGoTOCTOU_EachActCallName(t *testing.T) {
+	tests := []struct {
+		name    string
+		actExpr string
+	}{
+		{"Open", `os.Open(path)`},
+		{"OpenFile", `os.OpenFile(path, os.O_RDONLY, 0)`},
+		{"Remove", `os.Remove(path)`},
+		{"RemoveAll", `os.RemoveAll(path)`},
+		{"ReadFile", `os.ReadFile(path)`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body_toctouGoTest_22(t, tt)
+		})
+	}
+}
 
 // toctouFindingsOf filters findings down to "toctou_check_then_act" kind,
 // mirroring toctouFindings' role in the acceptance test package for this
@@ -38,50 +61,6 @@ func f(path string) {
 	}
 	if got[0].Name != "path" {
 		t.Errorf("os.Lstat check-then-act %q: Name = %q, want %q", source, got[0].Name, "path")
-	}
-}
-
-// GitHub issue #179: each of the five documented act calls
-// (Open/OpenFile/Remove/RemoveAll/ReadFile) must be detected when gated
-// behind a matching os.Stat check.
-func TestGoTOCTOU_EachActCallName(t *testing.T) {
-	tests := []struct {
-		name    string
-		actExpr string
-	}{
-		{"Open", `os.Open(path)`},
-		{"OpenFile", `os.OpenFile(path, os.O_RDONLY, 0)`},
-		{"Remove", `os.Remove(path)`},
-		{"RemoveAll", `os.RemoveAll(path)`},
-		{"ReadFile", `os.ReadFile(path)`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			source := []byte(`package main
-
-import "os"
-
-func f(path string) {
-	if _, err := os.Stat(path); err == nil {
-		` + tt.actExpr + `
-	}
-}
-`)
-			root, closeTree := mustParseGo(t, source)
-			defer closeTree()
-
-			_, findings := computeGoFeatures(root, source)
-			got := toctouFindingsOf(findings)
-			if len(got) != 1 {
-				t.Fatalf("os.Stat gating %s %q: got %d toctou_check_then_act findings, want 1: %+v", tt.name, source, len(got), findings)
-			}
-			if got[0].Confidence != "medium" {
-				t.Errorf("os.Stat gating %s: Confidence = %q, want %q", tt.name, got[0].Confidence, "medium")
-			}
-			if got[0].SuggestedSkill != "find-bugs" {
-				t.Errorf("os.Stat gating %s: SuggestedSkill = %q, want %q", tt.name, got[0].SuggestedSkill, "find-bugs")
-			}
-		})
 	}
 }
 
@@ -155,30 +134,5 @@ func f(path string) {
 	got := toctouFindingsOf(findings)
 	if len(got) != 1 {
 		t.Fatalf("plain-assignment initializer %q: got %d toctou_check_then_act findings, want 1: %+v", source, len(got), findings)
-	}
-}
-
-// GitHub issue #179: a nested Stat-gated if on the same path must dedupe to
-// a single Finding on the act call, mirroring the TS detector's nested-guard
-// dedup rule (see checkGoTOCTOUCheckThenAct's doc comment).
-func TestGoTOCTOU_NestedGuardsDedupeToOneFinding(t *testing.T) {
-	source := []byte(`package main
-
-import "os"
-
-func f(path string) {
-	if _, err := os.Stat(path); err == nil {
-		if _, err := os.Stat(path); err == nil {
-			os.Open(path)
-		}
-	}
-}
-`)
-	root, closeTree := mustParseGo(t, source)
-	defer closeTree()
-
-	_, findings := computeGoFeatures(root, source)
-	if got := toctouFindingsOf(findings); len(got) != 1 {
-		t.Errorf("nested Stat guards on same path %q: got %d toctou_check_then_act findings, want 1: %+v", source, len(got), got)
 	}
 }

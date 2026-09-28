@@ -76,12 +76,7 @@ var _ = Describe("reviewer verdict enforcement", func() {
 		})
 
 		It("registers every one of them with the verdict hook", func() {
-			matchers := verdictRegistrationMatchers()
-			Expect(matchers).NotTo(BeEmpty())
-			for _, agent := range reviewerAgents() {
-				Expect(matchers).To(ContainElement(agent),
-					"agent %q mandates the PASS/FINDINGS contract but no SubagentStop registration enforces it", agent)
-			}
+			body_verdictRegistrationAcceptanceTest_registersEveryOneOfThemWithTheVerdictHook_78()
 		})
 	})
 

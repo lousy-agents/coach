@@ -53,10 +53,7 @@ var _ = Describe("report-fixture provenance/versioning golden fixtures", func() 
 		})
 
 		It("contains only FindingSourceDeterministic findings", func() {
-			Expect(v1.Findings).NotTo(BeEmpty())
-			for _, finding := range v1.Findings {
-				Expect(finding.Source).To(Equal(acceptanceharness.FindingSourceDeterministic))
-			}
+			body_reportfixtureAcceptanceTest_containsOnlyFindingSourceDeterministicFindings_55(v1)
 		})
 
 		It("round-trips through NewReportFixture to the exact committed golden bytes", func() {
@@ -87,17 +84,7 @@ var _ = Describe("report-fixture provenance/versioning golden fixtures", func() 
 		})
 
 		It("contains at least one deterministic finding and at least one agent finding in the same fixture", func() {
-			var sawDeterministic, sawAgent bool
-			for _, finding := range v2.Findings {
-				switch finding.Source {
-				case acceptanceharness.FindingSourceDeterministic:
-					sawDeterministic = true
-				case acceptanceharness.FindingSourceAgent:
-					sawAgent = true
-				}
-			}
-			Expect(sawDeterministic).To(BeTrue(), "report_fixture_v2.json must retain at least one deterministic finding")
-			Expect(sawAgent).To(BeTrue(), "report_fixture_v2.json must additively include at least one agent finding")
+			body_reportfixtureAcceptanceTest_containsAtLeastOneDeterministicFindingAndAtLeast_89(v2)
 		})
 
 		It("round-trips through NewReportFixture to the exact committed golden bytes", func() {
@@ -112,18 +99,7 @@ var _ = Describe("report-fixture provenance/versioning golden fixtures", func() 
 
 	Context("prior report versions are preserved once a later version exists", func() {
 		It("report_fixture_v1.json's bytes are unaffected by the existence of report_fixture_v2.json", func() {
-			v1Bytes, err := os.ReadFile(filepath.Join(reportFixtureGoldenDir, "report_fixture_v1.json"))
-			Expect(err).NotTo(HaveOccurred())
-
-			var v1 acceptanceharness.ReportFixture
-			Expect(json.Unmarshal(v1Bytes, &v1)).To(Succeed())
-
-			for _, finding := range v1.Findings {
-				Expect(finding.Source).To(Equal(acceptanceharness.FindingSourceDeterministic), "adding report_fixture_v2.json must not have required reinterpreting or touching v1's deterministic-only findings")
-			}
-
-			_, err = os.ReadFile(filepath.Join(reportFixtureGoldenDir, "report_fixture_v2.json"))
-			Expect(err).NotTo(HaveOccurred(), "v2 must coexist alongside v1, not replace it")
+			body_reportfixtureAcceptanceTest_reportFixtureV1JsonSBytesAreUnaffectedByTheExist_114()
 		})
 	})
 })

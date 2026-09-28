@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -247,25 +245,7 @@ var _ = Describe("coachapi.MemoryStore", func() {
 
 	When("CreateJob and GetJob are called concurrently for distinct jobs", func() {
 		It("does not race", func() {
-			const n = 20
-			var wg sync.WaitGroup
-			errs := make(chan error, 2*n)
-			for i := 0; i < n; i++ {
-				wg.Add(1)
-				go func(i int) {
-					defer wg.Done()
-					id := fmt.Sprintf("job-%d", i)
-					job := newQueuedJob(id)
-					errs <- store.CreateJob(ctx, job)
-					_, err := store.GetJob(ctx, id)
-					errs <- err
-				}(i)
-			}
-			wg.Wait()
-			close(errs)
-			for err := range errs {
-				Expect(err).NotTo(HaveOccurred())
-			}
+			body_storeMemoryAcceptanceTest_doesNotRace_249(ctx, store)
 		})
 	})
 

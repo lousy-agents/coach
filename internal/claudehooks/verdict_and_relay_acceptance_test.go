@@ -87,20 +87,7 @@ var _ = Describe("reviewer verdict contract", func() {
 
 var _ = Describe("findings relay contract", func() {
 	relayDenied := func(subagentType, prompt string) bool {
-		GinkgoHelper()
-		out := runHookPayload("verify-context-relay.sh", map[string]any{
-			"tool_input": map[string]string{"subagent_type": subagentType, "prompt": prompt},
-		})
-		if strings.TrimSpace(out) == "" {
-			return false
-		}
-		var payload struct {
-			HookSpecificOutput struct {
-				PermissionDecision string `json:"permissionDecision"`
-			} `json:"hookSpecificOutput"`
-		}
-		Expect(json.Unmarshal([]byte(out), &payload)).To(Succeed())
-		return payload.HookSpecificOutput.PermissionDecision == "deny"
+		return body_verdictAndRelayAcceptanceTest_89(subagentType, prompt)
 	}
 
 	When("rework is delegated after a reviewer returned findings", func() {
