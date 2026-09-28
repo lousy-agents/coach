@@ -40,17 +40,7 @@ func buildWorkspaceFacts(workspaces map[string]*modfile.WorkFile, modules map[st
 	workspaceList := make([]Workspace, 0, len(workspaces))
 	for _, wdir := range mapKeysSorted(workspaces) {
 		wf := workspaces[wdir]
-		var projects []string
-		seen := map[string]bool{}
-		for _, use := range wf.Use {
-			resolved := path.Clean(path.Join(wdir, use.Path))
-			if _, ok := modules[resolved]; !ok || seen[resolved] {
-				continue
-			}
-			seen[resolved] = true
-			projects = append(projects, "module:"+resolved)
-		}
-		sort.Strings(projects)
+		projects := workspaceProjects(wdir, wf.Use, modules)
 		workspaceList = append(workspaceList, Workspace{
 			ID:       "workspace:" + wdir,
 			Language: "go",
@@ -59,6 +49,21 @@ func buildWorkspaceFacts(workspaces map[string]*modfile.WorkFile, modules map[st
 		})
 	}
 	return workspaceList
+}
+
+func workspaceProjects(wdir string, uses []*modfile.Use, modules map[string]*modfile.File) []string {
+	var projects []string
+	seen := map[string]bool{}
+	for _, use := range uses {
+		resolved := path.Clean(path.Join(wdir, use.Path))
+		if _, ok := modules[resolved]; !ok || seen[resolved] {
+			continue
+		}
+		seen[resolved] = true
+		projects = append(projects, "module:"+resolved)
+	}
+	sort.Strings(projects)
+	return projects
 }
 func buildPackageFacts(packageFiles map[string][]string, analyzed map[string]bool) []Package {
 	packageList := make([]Package, 0, len(packageFiles))

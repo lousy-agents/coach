@@ -13,12 +13,8 @@ func findGoToctouActCall(n engine.Node, source []byte, pathText string) engine.N
 	if n == nil {
 		return nil
 	}
-	if n.Kind() == "call_expression" {
-		if pkg, name, ok := goSelectorCallInfo(n, source); ok && pkg == "os" && goToctouActCallNames[name] {
-			if arg := goCallFirstArgument(n); arg != nil && arg.Utf8Text(source) == pathText {
-				return n
-			}
-		}
+	if goToctouActMatch(n, source, pathText) {
+		return n
 	}
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
@@ -27,6 +23,18 @@ func findGoToctouActCall(n engine.Node, source []byte, pathText string) engine.N
 		}
 	}
 	return nil
+}
+
+func goToctouActMatch(n engine.Node, source []byte, pathText string) bool {
+	if n.Kind() != "call_expression" {
+		return false
+	}
+	pkg, name, ok := goSelectorCallInfo(n, source)
+	if !ok || pkg != "os" || !goToctouActCallNames[name] {
+		return false
+	}
+	arg := goCallFirstArgument(n)
+	return arg != nil && arg.Utf8Text(source) == pathText
 }
 
 // goExpressionListValues returns list's non-punctuation children in source

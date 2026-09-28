@@ -13,12 +13,8 @@ func findTSToctouActCall(n engine.Node, source []byte, pathText string) engine.N
 	if n == nil {
 		return nil
 	}
-	if n.Kind() == "call_expression" {
-		if name, ok := tsCallFunctionName(n, source); ok && tsToctouActCallNames[name] {
-			if arg := tsCallFirstArgument(n); arg != nil && arg.Utf8Text(source) == pathText {
-				return n
-			}
-		}
+	if tsToctouActMatch(n, source, pathText) {
+		return n
 	}
 	count := n.ChildCount()
 	for i := 0; i < count; i++ {
@@ -27,6 +23,18 @@ func findTSToctouActCall(n engine.Node, source []byte, pathText string) engine.N
 		}
 	}
 	return nil
+}
+
+func tsToctouActMatch(n engine.Node, source []byte, pathText string) bool {
+	if n.Kind() != "call_expression" {
+		return false
+	}
+	name, ok := tsCallFunctionName(n, source)
+	if !ok || !tsToctouActCallNames[name] {
+		return false
+	}
+	arg := tsCallFirstArgument(n)
+	return arg != nil && arg.Utf8Text(source) == pathText
 }
 
 // tsCallFirstArgument returns call's "arguments" field's first non-

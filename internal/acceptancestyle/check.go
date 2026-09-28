@@ -67,30 +67,37 @@ func isAcceptanceTestFile(name string) bool {
 // ginkgo/v2 (non-blank) and reference a Ginkgo suite/spec API. Paths in
 // Violation.Path are slash-separated and relative to root when possible.
 func Check(root string) ([]Violation, error) {
-	var violations []Violation
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if _, skip := skipDirNames[d.Name()]; skip {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		violation, found, checkErr := violationForAcceptanceFile(root, path, d.Name())
-		if checkErr != nil {
-			return checkErr
-		}
-		if found {
-			violations = append(violations, violation)
-		}
-		return nil
-	})
+	walk := &acceptanceWalk{root: root}
+	err := filepath.WalkDir(root, walk.visit)
 	if err != nil {
 		return nil, err
 	}
-	return violations, nil
+	return walk.violations, nil
+}
+
+type acceptanceWalk struct {
+	root       string
+	violations []Violation
+}
+
+func (w *acceptanceWalk) visit(path string, d fs.DirEntry, err error) error {
+	if err != nil {
+		return err
+	}
+	if d.IsDir() {
+		if _, skip := skipDirNames[d.Name()]; skip {
+			return fs.SkipDir
+		}
+		return nil
+	}
+	violation, found, checkErr := violationForAcceptanceFile(w.root, path, d.Name())
+	if checkErr != nil {
+		return checkErr
+	}
+	if found {
+		w.violations = append(w.violations, violation)
+	}
+	return nil
 }
 
 // violationForAcceptanceFile reports path's style violation. found is false

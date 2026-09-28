@@ -116,37 +116,49 @@ func layerBypassNodePackageDirsFromLoaded(ctx context.Context, loaded *loadedGoS
 		return nil, false, []Diagnostic{{Code: DiagLayerBypassBudgetExceeded}}
 	}
 
-	complete := loaded.discovery.Complete
-	var diagnostics []Diagnostic
-	positions := map[string]layerBypassNodePosition{}
+	acc := &layerBypassPositionAcc{
+		positions: map[string]layerBypassNodePosition{},
+		complete:  loaded.discovery.Complete,
+		tempDir:   loaded.tempDir,
+	}
 
 	for _, root := range loaded.roots {
 		if ctx.Err() != nil {
-			complete = false
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded, Path: root.dir})
+			acc.complete = false
+			acc.diagnostics = append(acc.diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded, Path: root.dir})
 			break
 		}
 		if root.loadErr != nil {
-			complete = false
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassSourceLoadFailed, Path: root.dir, Message: stripTempDir(root.loadErr.Error(), loaded.tempDir)})
+			acc.complete = false
+			acc.diagnostics = append(acc.diagnostics, Diagnostic{Code: DiagLayerBypassSourceLoadFailed, Path: root.dir, Message: stripTempDir(root.loadErr.Error(), loaded.tempDir)})
 			continue
 		}
-
-		for _, fn := range sortedLocalFunctions(root.prog, root.localPkgPaths) {
-			if ctx.Err() != nil {
-				complete = false
-				diagnostics = append(diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded, Path: root.dir})
-				break
-			}
-			pos, ok := fnPosition(loaded.tempDir, fn)
-			if !ok {
-				continue
-			}
-			positions[fn.RelString(nil)] = pos
-		}
+		acc.addFunctions(ctx, root)
 	}
 
-	return positions, complete, diagnostics
+	return acc.positions, acc.complete, acc.diagnostics
+}
+
+type layerBypassPositionAcc struct {
+	positions   map[string]layerBypassNodePosition
+	diagnostics []Diagnostic
+	complete    bool
+	tempDir     string
+}
+
+func (a *layerBypassPositionAcc) addFunctions(ctx context.Context, root loadedGoRoot) {
+	for _, fn := range sortedLocalFunctions(root.prog, root.localPkgPaths) {
+		if ctx.Err() != nil {
+			a.complete = false
+			a.diagnostics = append(a.diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded, Path: root.dir})
+			return
+		}
+		pos, ok := fnPosition(a.tempDir, fn)
+		if !ok {
+			continue
+		}
+		a.positions[fn.RelString(nil)] = pos
+	}
 }
 
 // fnPosition resolves fn's declaration position to a repository-relative

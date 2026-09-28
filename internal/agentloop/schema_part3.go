@@ -15,17 +15,18 @@ func validateArrayItems(path string, value any, itemSchema *argsSchemaDoc) error
 	}
 	for i, item := range arr {
 		itemPath := fmt.Sprintf("%s[%d]", path, i)
-		if itemSchema.Type == "object" || itemSchema.Type == "" || len(itemSchema.Required) > 0 || len(itemSchema.Properties) > 0 {
-			if err := validateAgainstSchema(itemPath, item, itemSchema); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := checkPropType(itemPath, item, []string{itemSchema.Type}); err != nil {
+		if err := validateSchemaItem(itemPath, item, itemSchema); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func validateSchemaItem(itemPath string, item any, itemSchema *argsSchemaDoc) error {
+	if itemSchema.Type == "object" || itemSchema.Type == "" || len(itemSchema.Required) > 0 || len(itemSchema.Properties) > 0 {
+		return validateAgainstSchema(itemPath, item, itemSchema)
+	}
+	return checkPropType(itemPath, item, []string{itemSchema.Type})
 }
 func (p *argsPropSchema) UnmarshalJSON(data []byte) error {
 	type alias struct {

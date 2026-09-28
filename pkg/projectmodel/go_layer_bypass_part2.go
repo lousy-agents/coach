@@ -41,16 +41,21 @@ func removeLayerNodesFromAdjacency(adjacency map[string][]string, removed map[st
 		if removed[from] {
 			continue
 		}
-		var kept []string
-		for _, to := range tos {
-			if removed[to] {
-				continue
-			}
-			kept = append(kept, to)
-		}
+		kept := keptNeighbors(tos, removed)
 		if len(kept) > 0 {
 			out[from] = kept
 		}
 	}
 	return out
+}
+
+func keptNeighbors(tos []string, removed map[string]bool) []string {
+	var kept []string
+	for _, to := range tos {
+		if removed[to] {
+			continue
+		}
+		kept = append(kept, to)
+	}
+	return kept
 }

@@ -7,18 +7,26 @@ import (
 )
 
 func tsLayerBypassNodePositions(facts []CallFact) map[string]layerBypassNodePosition {
-	positions := map[string]layerBypassNodePosition{}
+	set := &nodePositionSet{positions: map[string]layerBypassNodePosition{}}
 	for _, f := range facts {
-		for _, nodeID := range [2]string{f.From, f.To} {
-			if _, ok := positions[nodeID]; ok {
-				continue
-			}
-			if pos, ok := tsLayerBypassNodePosition(nodeID); ok {
-				positions[nodeID] = pos
-			}
+		set.addPair(f.From, f.To)
+	}
+	return set.positions
+}
+
+type nodePositionSet struct {
+	positions map[string]layerBypassNodePosition
+}
+
+func (s *nodePositionSet) addPair(from, to string) {
+	for _, nodeID := range [2]string{from, to} {
+		if _, ok := s.positions[nodeID]; ok {
+			continue
+		}
+		if pos, ok := tsLayerBypassNodePosition(nodeID); ok {
+			s.positions[nodeID] = pos
 		}
 	}
-	return positions
 }
 func tsLayerBypassDiagnostics(base []Diagnostic, ambiguousLayer, unclassifiedNodeSeen, truncatedSearch bool) []Diagnostic {
 	diagnostics := append([]Diagnostic{}, base...)

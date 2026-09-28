@@ -41,17 +41,27 @@ func runDualWorkerExclusion(t *testing.T, newQueue func(tb testing.TB, clock acc
 
 	successCount := 0
 	for _, r := range results {
-		if r.err != nil {
-			t.Fatalf("Claim: %v", r.err)
-		}
-		if r.ok {
+		if claimSucceeded(t, r.claim, r.ok, r.err) {
 			successCount++
-			if r.claim.TaskID != "task-1" {
-				t.Fatalf("claimed unexpected task id %q, want %q", r.claim.TaskID, "task-1")
-			}
 		}
 	}
 	if successCount != 1 {
 		t.Fatalf("want exactly 1 successful concurrent claim, got %d", successCount)
 	}
+}
+
+func claimSucceeded(t *testing.T, claim Claim, ok bool, err error) bool {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+		return false
+	}
+	if !ok {
+		return false
+	}
+	if claim.TaskID != "task-1" {
+		t.Fatalf("claimed unexpected task id %q, want %q", claim.TaskID, "task-1")
+		return false
+	}
+	return true
 }

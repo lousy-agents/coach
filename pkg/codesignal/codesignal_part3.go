@@ -47,16 +47,20 @@ func finalizeSignals(signals []Signal, filesAnalyzed int, files []FileChange, di
 		}
 	}
 	if !includeResolved {
-		filtered := make([]Signal, 0, len(signals))
-		for _, sig := range signals {
-			if sig.Lifecycle == "resolved" {
-				continue
-			}
-			filtered = append(filtered, sig)
-		}
-		signals = filtered
+		signals = omitResolvedSignals(signals)
 	}
 	sortSignals(signals)
 	summary.ActiveSignals = len(signals)
 	return signals, summary
+}
+
+func omitResolvedSignals(signals []Signal) []Signal {
+	filtered := make([]Signal, 0, len(signals))
+	for _, sig := range signals {
+		if sig.Lifecycle == "resolved" {
+			continue
+		}
+		filtered = append(filtered, sig)
+	}
+	return filtered
 }

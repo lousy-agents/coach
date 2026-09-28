@@ -44,26 +44,30 @@ func AssembleHiddenMutationPackMessages(ev HiddenMutationPackEvidence) []modelga
 	b.WriteString(shortRationaleGuidance)
 	b.WriteByte('\n')
 	for _, it := range ev.Items {
-		b.WriteString("\n### Item\n")
-		b.WriteString("finding_ref: ")
-		b.WriteString(it.FindingRef)
-		b.WriteByte('\n')
-		b.WriteString("## Deterministic finding (hidden_input_mutation)\n")
-		b.WriteString(formatJSONEvidence(it.Finding))
-		b.WriteString("\n\n## Baseline file context\n")
-		b.WriteString(fmt.Sprintf("path: %s\n", it.File.Path))
-		b.WriteString(fmt.Sprintf("language: %s\n", it.File.Language))
-		if it.File.Content != "" {
-			b.WriteString("content (span window):\n```\n")
-			b.WriteString(it.File.Content)
-			if !strings.HasSuffix(it.File.Content, "\n") {
-				b.WriteByte('\n')
-			}
-			b.WriteString("```\n")
-		}
+		writeHiddenMutationItem(&b, it)
 	}
 	return []modelgateway.Message{
 		{Role: "system", Content: hiddenMutationPackSystemPrompt},
 		{Role: "user", Content: b.String()},
+	}
+}
+
+func writeHiddenMutationItem(b *strings.Builder, it HiddenMutationPackItem) {
+	b.WriteString("\n### Item\n")
+	b.WriteString("finding_ref: ")
+	b.WriteString(it.FindingRef)
+	b.WriteByte('\n')
+	b.WriteString("## Deterministic finding (hidden_input_mutation)\n")
+	b.WriteString(formatJSONEvidence(it.Finding))
+	b.WriteString("\n\n## Baseline file context\n")
+	b.WriteString(fmt.Sprintf("path: %s\n", it.File.Path))
+	b.WriteString(fmt.Sprintf("language: %s\n", it.File.Language))
+	if it.File.Content != "" {
+		b.WriteString("content (span window):\n```\n")
+		b.WriteString(it.File.Content)
+		if !strings.HasSuffix(it.File.Content, "\n") {
+			b.WriteByte('\n')
+		}
+		b.WriteString("```\n")
 	}
 }

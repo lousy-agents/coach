@@ -39,13 +39,17 @@ func tsCurrentFunctionParamNames(scopes []tsParamScope) map[string]bool {
 		if scopes[i].ownerName == "" {
 			continue
 		}
-		names := map[string]bool{}
-		for name, isParam := range scopes[i].bindings {
-			if isParam {
-				names[name] = true
-			}
-		}
-		return names
+		return paramNamesInScope(scopes[i].bindings)
 	}
 	return nil
+}
+
+func paramNamesInScope(bindings map[string]bool) map[string]bool {
+	names := map[string]bool{}
+	for name, isParam := range bindings {
+		if isParam {
+			names[name] = true
+		}
+	}
+	return names
 }

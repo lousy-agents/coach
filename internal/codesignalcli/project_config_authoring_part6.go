@@ -25,10 +25,11 @@ func promptForbiddenPair(out io.Writer, reader *bufio.Reader, layers []projectCo
 		toAnswer, _ := readLine(reader)
 		toAnswer = strings.TrimSpace(toAnswer)
 
-		if err := validateForbiddenPairCandidate(fromAnswer, toAnswer, layers, existing); err != nil {
-			if promptRetryOrCancel(out, reader, err.Error()) {
-				return "", "", false, true
-			}
+		err := validateForbiddenPairCandidate(fromAnswer, toAnswer, layers, existing)
+		if forbiddenPairCancelled(out, reader, err) {
+			return "", "", false, true
+		}
+		if err != nil {
 			continue
 		}
 		return fromAnswer, toAnswer, false, false
@@ -37,18 +38,28 @@ func promptForbiddenPair(out io.Writer, reader *bufio.Reader, layers []projectCo
 func uncoveredDiscoveredDirectories(dirs []string, layers []projectConfigLayer) []string {
 	var uncovered []string
 	for _, dir := range dirs {
-		covered := false
-		for _, layer := range layers {
-			if layerMatchesDirectory(layer, dir) {
-				covered = true
-				break
-			}
+		if directoryCovered(dir, layers) {
+			continue
 		}
-		if !covered {
-			uncovered = append(uncovered, dir)
-		}
+		uncovered = append(uncovered, dir)
 	}
 	return uncovered
+}
+
+func directoryCovered(dir string, layers []projectConfigLayer) bool {
+	for _, layer := range layers {
+		if layerMatchesDirectory(layer, dir) {
+			return true
+		}
+	}
+	return false
+}
+
+func forbiddenPairCancelled(out io.Writer, reader *bufio.Reader, err error) bool {
+	if err == nil {
+		return false
+	}
+	return promptRetryOrCancel(out, reader, err.Error())
 }
 
 // buildApprovedCandidate renders the collected fields as the schema-1

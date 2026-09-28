@@ -12,31 +12,42 @@ import (
 // resulting shortest-path tree is deterministic even when multiple
 // equal-length paths exist.
 func (b *bfsBudget) shortestPaths(ctx context.Context, source string, adjacency map[string][]string) (map[string]string, bool) {
-	parents := map[string]string{source: ""}
-	visited := map[string]bool{source: true}
-	queue := []string{source}
+	frontier := &bfsFrontier{
+		parents: map[string]string{source: ""},
+		visited: map[string]bool{source: true},
+		queue:   []string{source},
+	}
 
-	for len(queue) > 0 {
+	for len(frontier.queue) > 0 {
 		if ctx.Err() != nil {
-			return parents, true
+			return frontier.parents, true
 		}
 		if b.max > 0 && b.visited >= b.max {
-			return parents, true
+			return frontier.parents, true
 		}
-		node := queue[0]
-		queue = queue[1:]
+		node := frontier.queue[0]
+		frontier.queue = frontier.queue[1:]
 		b.visited++
-
-		for _, next := range adjacency[node] {
-			if visited[next] {
-				continue
-			}
-			visited[next] = true
-			parents[next] = node
-			queue = append(queue, next)
-		}
+		frontier.enqueue(adjacency[node], node)
 	}
-	return parents, false
+	return frontier.parents, false
+}
+
+type bfsFrontier struct {
+	parents map[string]string
+	visited map[string]bool
+	queue   []string
+}
+
+func (f *bfsFrontier) enqueue(nexts []string, node string) {
+	for _, next := range nexts {
+		if f.visited[next] {
+			continue
+		}
+		f.visited[next] = true
+		f.parents[next] = node
+		f.queue = append(f.queue, next)
+	}
 }
 
 // reconstructReachabilityPath walks parents (as built by bfsShortestPaths)

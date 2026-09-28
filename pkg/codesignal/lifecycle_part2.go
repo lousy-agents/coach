@@ -2,6 +2,8 @@ package codesignal
 
 import (
 	"sort"
+
+	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 // groupAndOrder groups signals by key and sorts each group by location to
@@ -17,17 +19,20 @@ func groupAndOrder(signals []Signal) map[signalKey][]Signal {
 		sorted := make([]Signal, len(group))
 		copy(sorted, group)
 		sort.SliceStable(sorted, func(i, j int) bool {
-			a, b := sorted[i].Location, sorted[j].Location
-			if a.StartRow != b.StartRow {
-				return a.StartRow < b.StartRow
-			}
-			if a.StartCol != b.StartCol {
-				return a.StartCol < b.StartCol
-			}
-			return a.StartByte < b.StartByte
+			return signalLocationLess(sorted[i].Location, sorted[j].Location)
 		})
 		groups[k] = sorted
 	}
 
 	return groups
+}
+
+func signalLocationLess(a, b semantics.Location) bool {
+	if a.StartRow != b.StartRow {
+		return a.StartRow < b.StartRow
+	}
+	if a.StartCol != b.StartCol {
+		return a.StartCol < b.StartCol
+	}
+	return a.StartByte < b.StartByte
 }

@@ -50,25 +50,29 @@ func tsLayerBypassRunSearch(ctx context.Context, sources, sinks []string, adjace
 		result.truncatedPairs = len(sources) * len(sinks)
 		result.truncatedSearch = true
 	} else {
-		budget := &bfsBudget{}
-		for _, source := range sources {
-			if ctx.Err() != nil {
-				result.truncatedSearch = true
-				break
-			}
-			sourceResult := tsLayerBypassSearchFromSource(ctx, source, sinks, adjacency, nodePositions, requiredLayer, budget)
-			result.truncatedSearch = result.truncatedSearch || sourceResult.truncatedSearch
-			result.truncatedPairs += sourceResult.truncatedPairs
-			result.evaluated += sourceResult.evaluated
-			result.unclassifiedNodeSeen = result.unclassifiedNodeSeen || sourceResult.unclassifiedNodeSeen
-			result.witnesses = append(result.witnesses, sourceResult.witnesses...)
-		}
-		result.nodesVisited = budget.visited
+		result.searchSources(ctx, sources, sinks, adjacency, nodePositions, requiredLayer)
 	}
 	if !result.truncatedSearch && ctx.Err() != nil {
 		result.truncatedSearch = true
 	}
 	return result
+}
+
+func (result *tsLayerBypassSearchResult) searchSources(ctx context.Context, sources, sinks []string, adjacency map[string][]string, nodePositions map[string]layerBypassNodePosition, requiredLayer BypassLayer) {
+	budget := &bfsBudget{}
+	for _, source := range sources {
+		if ctx.Err() != nil {
+			result.truncatedSearch = true
+			break
+		}
+		sourceResult := tsLayerBypassSearchFromSource(ctx, source, sinks, adjacency, nodePositions, requiredLayer, budget)
+		result.truncatedSearch = result.truncatedSearch || sourceResult.truncatedSearch
+		result.truncatedPairs += sourceResult.truncatedPairs
+		result.evaluated += sourceResult.evaluated
+		result.unclassifiedNodeSeen = result.unclassifiedNodeSeen || sourceResult.unclassifiedNodeSeen
+		result.witnesses = append(result.witnesses, sourceResult.witnesses...)
+	}
+	result.nodesVisited = budget.visited
 }
 
 // tsLayerBypassSourceResult is one source's contribution to a

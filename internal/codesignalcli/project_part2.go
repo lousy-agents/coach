@@ -25,15 +25,11 @@ func validateProjectConfigLayers(layers []projectConfigLayer) (map[string]struct
 			return nil, fmt.Errorf("layer names must be unique")
 		}
 		seenLayerNames[layer.Name] = struct{}{}
-		if len(layer.Prefixes) == 0 {
-			return nil, fmt.Errorf("layer %q must contain at least one prefix", layer.Name)
+		prefixes, err := collectLayerPrefixes(layer)
+		if err != nil {
+			return nil, err
 		}
-		for _, prefix := range layer.Prefixes {
-			if err := validateProjectConfigDirectory(prefix); err != nil {
-				return nil, fmt.Errorf("layer %q prefix %q: %s", layer.Name, prefix, err)
-			}
-			allPrefixes = append(allPrefixes, prefix)
-		}
+		allPrefixes = append(allPrefixes, prefixes...)
 	}
 	if len(allPrefixes) > maxProjectConfigLayerPrefixes {
 		return nil, fmt.Errorf("layer prefixes exceed budget of %d entries", maxProjectConfigLayerPrefixes)
@@ -42,6 +38,20 @@ func validateProjectConfigLayers(layers []projectConfigLayer) (map[string]struct
 		return nil, fmt.Errorf("layer prefixes must be unique and non-overlapping")
 	}
 	return seenLayerNames, nil
+}
+
+func collectLayerPrefixes(layer projectConfigLayer) ([]string, error) {
+	if len(layer.Prefixes) == 0 {
+		return nil, fmt.Errorf("layer %q must contain at least one prefix", layer.Name)
+	}
+	var prefixes []string
+	for _, prefix := range layer.Prefixes {
+		if err := validateProjectConfigDirectory(prefix); err != nil {
+			return nil, fmt.Errorf("layer %q prefix %q: %s", layer.Name, prefix, err)
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	return prefixes, nil
 }
 
 // projectConfigGitError classifies a runProjectConfigGit failure into a

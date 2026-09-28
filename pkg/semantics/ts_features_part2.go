@@ -13,16 +13,10 @@ import (
 // tsFormalParameterIdentifierName, whose doc comment is the source of
 // truth for what counts as identifier-bound.
 func tsIdentifierParams(decl engine.Node, source []byte) map[string]bool {
-	params := map[string]bool{}
-
-	if decl.Kind() == "arrow_function" {
-		if bare := decl.ChildByFieldName("parameter"); bare != nil {
-			if bare.Kind() == "identifier" {
-				params[bare.Utf8Text(source)] = true
-			}
-			return params
-		}
+	if params, ok := arrowBareParams(decl, source); ok {
+		return params
 	}
+	params := map[string]bool{}
 
 	formal := decl.ChildByFieldName("parameters")
 	if formal == nil {
@@ -36,6 +30,22 @@ func tsIdentifierParams(decl engine.Node, source []byte) map[string]bool {
 	}
 	return params
 }
+
+func arrowBareParams(decl engine.Node, source []byte) (map[string]bool, bool) {
+	if decl.Kind() != "arrow_function" {
+		return nil, false
+	}
+	bare := decl.ChildByFieldName("parameter")
+	if bare == nil {
+		return nil, false
+	}
+	params := map[string]bool{}
+	if bare.Kind() == "identifier" {
+		params[bare.Utf8Text(source)] = true
+	}
+	return params, true
+}
+
 func tsBlockScopedBindingNames(n engine.Node, source []byte) map[string]bool {
 	names := map[string]bool{}
 	count := n.ChildCount()

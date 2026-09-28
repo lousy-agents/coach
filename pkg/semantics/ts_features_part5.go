@@ -8,29 +8,35 @@ func tsVarBindingNames(n engine.Node, source []byte, currentParams map[string]bo
 	if n == nil {
 		return nil
 	}
-	names := map[string]bool{}
-	var collect func(engine.Node)
-	collect = func(node engine.Node) {
-		if node == nil {
-			return
-		}
-		if node.Kind() == "variable_declaration" {
-			count := node.ChildCount()
-			for i := 0; i < count; i++ {
-				collectTSVariableDeclaratorNamesAfterStatement(node.Child(i), source, currentParams, names)
-			}
-			return
-		}
-		if tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition" {
-			return
-		}
+	collected := &varBindingNames{source: source, currentParams: currentParams, names: map[string]bool{}}
+	collected.collect(n)
+	return collected.names
+}
+
+type varBindingNames struct {
+	source        []byte
+	currentParams map[string]bool
+	names         map[string]bool
+}
+
+func (v *varBindingNames) collect(node engine.Node) {
+	if node == nil {
+		return
+	}
+	if node.Kind() == "variable_declaration" {
 		count := node.ChildCount()
 		for i := 0; i < count; i++ {
-			collect(node.Child(i))
+			collectTSVariableDeclaratorNamesAfterStatement(node.Child(i), v.source, v.currentParams, v.names)
 		}
+		return
 	}
-	collect(n)
-	return names
+	if tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition" {
+		return
+	}
+	count := node.ChildCount()
+	for i := 0; i < count; i++ {
+		v.collect(node.Child(i))
+	}
 }
 func collectTSVariableDeclaratorNames(n engine.Node, source []byte, names map[string]bool) {
 	if n == nil {

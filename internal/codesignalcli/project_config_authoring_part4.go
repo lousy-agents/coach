@@ -28,12 +28,9 @@ func parseRootSelection(answer string, discoveredRoots []string) ([]string, erro
 	var selected []string
 	seen := map[string]bool{}
 	for _, token := range splitTrimmedNonEmpty(answer, ",") {
-		root := token
-		if idx, err := strconv.Atoi(token); err == nil {
-			if idx < 1 || idx > len(discoveredRoots) {
-				return nil, fmt.Errorf("%q is not a valid root number: only 1-%d are listed above", token, len(discoveredRoots))
-			}
-			root = discoveredRoots[idx-1]
+		root, err := resolveRootToken(token, discoveredRoots)
+		if err != nil {
+			return nil, err
 		}
 		if seen[root] {
 			continue
@@ -42,6 +39,17 @@ func parseRootSelection(answer string, discoveredRoots []string) ([]string, erro
 		selected = append(selected, root)
 	}
 	return selected, nil
+}
+
+func resolveRootToken(token string, discoveredRoots []string) (string, error) {
+	idx, err := strconv.Atoi(token)
+	if err != nil {
+		return token, nil
+	}
+	if idx < 1 || idx > len(discoveredRoots) {
+		return "", fmt.Errorf("%q is not a valid root number: only 1-%d are listed above", token, len(discoveredRoots))
+	}
+	return discoveredRoots[idx-1], nil
 }
 
 // promptForLayers collects named layers and their prefixes, one at a time,

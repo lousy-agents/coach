@@ -49,16 +49,23 @@ func ensureSupportedArrayProp(name string, prop propSchema) error {
 		return NewValidationError(name + " array items must be object")
 	}
 	for elemName, elemProp := range prop.Items.Properties {
-		for _, t := range elemProp.types {
-			if !supportedLeafPropType(t) {
-				return NewValidationError(name + " items." + elemName + " has unsupported schema type: " + t)
-			}
+		if t, bad := unsupportedLeafType(elemProp.types); bad {
+			return NewValidationError(name + " items." + elemName + " has unsupported schema type: " + t)
 		}
 		if elemProp.Items != nil {
 			return NewValidationError(name + " items." + elemName + " has unsupported nested array")
 		}
 	}
 	return nil
+}
+
+func unsupportedLeafType(types []string) (string, bool) {
+	for _, t := range types {
+		if !supportedLeafPropType(t) {
+			return t, true
+		}
+	}
+	return "", false
 }
 
 func supportedLeafPropType(t string) bool {

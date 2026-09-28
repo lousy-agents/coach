@@ -43,14 +43,7 @@ func buildProjectReportSurface(input Input, noBaseLifecycle Lifecycle, includeRe
 	}
 
 	if !includeResolved {
-		filtered := projectChanges[:0]
-		for _, change := range projectChanges {
-			if change.Lifecycle == "resolved" {
-				continue
-			}
-			filtered = append(filtered, change)
-		}
-		projectChanges = filtered
+		projectChanges = withoutResolvedProjectChanges(projectChanges)
 	}
 
 	projectChanges = sortProjectChanges(projectChanges)
@@ -60,6 +53,17 @@ func buildProjectReportSurface(input Input, noBaseLifecycle Lifecycle, includeRe
 	projectFacts = sortProjectFacts(append([]ProjectFact(nil), input.ProjectFacts...))
 	projectCoverage = cloneProjectCoverage(input.ProjectCoverage)
 	return projectChanges, projectFacts, projectSummary, projectCoverage, projectSignals, diagnostics
+}
+
+func withoutResolvedProjectChanges(projectChanges []ProjectChange) []ProjectChange {
+	filtered := projectChanges[:0]
+	for _, change := range projectChanges {
+		if change.Lifecycle == "resolved" {
+			continue
+		}
+		filtered = append(filtered, change)
+	}
+	return filtered
 }
 func countUnanalyzedFiles(files []FileChange, diagnostics []Diagnostic) int {
 	inFiles := make(map[string]bool, len(files))

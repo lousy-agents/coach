@@ -8,28 +8,33 @@ func tsReboundParameterNames(n engine.Node, source []byte) map[string]bool {
 	if n == nil {
 		return nil
 	}
-	names := map[string]bool{}
-	var collect func(engine.Node)
-	collect = func(node engine.Node) {
-		if node == nil {
-			return
-		}
-		if tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition" {
-			return
-		}
-		if node.Kind() == "assignment_expression" || node.Kind() == "augmented_assignment_expression" {
-			if left := node.ChildByFieldName("left"); left != nil {
-				nameSet(names).collectReboundTargetNames(left, source)
-			}
-			return
-		}
-		count := node.ChildCount()
-		for i := 0; i < count; i++ {
-			collect(node.Child(i))
-		}
+	collected := &reboundNames{source: source, names: map[string]bool{}}
+	collected.collect(n)
+	return collected.names
+}
+
+type reboundNames struct {
+	source []byte
+	names  map[string]bool
+}
+
+func (r *reboundNames) collect(node engine.Node) {
+	if node == nil {
+		return
 	}
-	collect(n)
-	return names
+	if tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition" {
+		return
+	}
+	if node.Kind() == "assignment_expression" || node.Kind() == "augmented_assignment_expression" {
+		if left := node.ChildByFieldName("left"); left != nil {
+			nameSet(r.names).collectReboundTargetNames(left, r.source)
+		}
+		return
+	}
+	count := node.ChildCount()
+	for i := 0; i < count; i++ {
+		r.collect(node.Child(i))
+	}
 }
 
 // walkEnterNode applies walk's per-node-kind metrics increments, the

@@ -129,13 +129,7 @@ func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcNam
 	}
 
 	if n.Kind() == "assignment_statement" {
-		left := n.ChildByFieldName("left")
-		if left != nil {
-			targetCount := left.ChildCount()
-			for i := 0; i < targetCount; i++ {
-				c.checkAssignmentTarget(left.Child(i), source, funcName, mutableParams)
-			}
-		}
+		c.checkAssignmentTargets(n.ChildByFieldName("left"), source, funcName, mutableParams)
 	}
 	if n.Kind() == "inc_statement" || n.Kind() == "dec_statement" {
 		c.checkAssignmentTarget(updateStatementTarget(n), source, funcName, mutableParams)
@@ -150,6 +144,16 @@ func (c *featureCollector) findAssignments(n engine.Node, source []byte, funcNam
 		child := n.Child(i)
 		c.findAssignments(child, source, funcName, mutableParams)
 		mutableParams = shadowLocalDeclarations(mutableParams, child, source)
+	}
+}
+
+func (c *featureCollector) checkAssignmentTargets(left engine.Node, source []byte, funcName string, mutableParams map[string]paramMutKind) {
+	if left == nil {
+		return
+	}
+	targetCount := left.ChildCount()
+	for i := 0; i < targetCount; i++ {
+		c.checkAssignmentTarget(left.Child(i), source, funcName, mutableParams)
 	}
 }
 

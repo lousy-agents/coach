@@ -16,16 +16,8 @@ func collectTSCCTargets(root engine.Node, source []byte) []tsCCTarget {
 	for len(stack) > 0 {
 		n := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		if isTSCCScoredKind(n.Kind()) {
-
-			if body := tsCCBody(n); body != nil {
-				out = append(out, tsCCTarget{
-					node:     n,
-					name:     tsCCName(n, source),
-					kind:     tsCCKind(n.Kind()),
-					topLevel: !tsIsNestedInScoredBody(n),
-				})
-			}
+		if target, ok := scoredTSCCTarget(n, source); ok {
+			out = append(out, target)
 		}
 		count := n.ChildCount()
 		for i := count - 1; i >= 0; i-- {
@@ -33,6 +25,21 @@ func collectTSCCTargets(root engine.Node, source []byte) []tsCCTarget {
 		}
 	}
 	return out
+}
+
+func scoredTSCCTarget(n engine.Node, source []byte) (tsCCTarget, bool) {
+	if !isTSCCScoredKind(n.Kind()) {
+		return tsCCTarget{}, false
+	}
+	if tsCCBody(n) == nil {
+		return tsCCTarget{}, false
+	}
+	return tsCCTarget{
+		node:     n,
+		name:     tsCCName(n, source),
+		kind:     tsCCKind(n.Kind()),
+		topLevel: !tsIsNestedInScoredBody(n),
+	}, true
 }
 
 // tsBoundIdentifierName returns the single identifier a lit/arrow is bound to

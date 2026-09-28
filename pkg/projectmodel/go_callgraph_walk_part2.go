@@ -10,19 +10,26 @@ import (
 
 func (w *callGraphWalk) walkFunction(fn *ssa.Function, root loadedGoRoot, loaded *loadedGoSnapshot, opts CallGraphOptions, httpHandlerIface *types.Interface) (stop bool) {
 	for _, blk := range fn.Blocks {
-		for _, instr := range blk.Instrs {
-			site, ok := instr.(ssa.CallInstruction)
-			if !ok {
-				continue
-			}
-			if opts.Budgets.MaxGraphEdges > 0 && w.edgesProcessed >= opts.Budgets.MaxGraphEdges {
-				w.noteBudgetExceeded(root.dir)
-				return true
-			}
-			w.edgesProcessed++
-			w.counts["call_sites_seen"]++
-			w.applyClassification(classifyCallSite(fn, site, loaded.tempDir, httpHandlerIface, root.localPkgPaths))
+		if w.walkBlock(fn, blk, root, loaded, opts, httpHandlerIface) {
+			return true
 		}
+	}
+	return false
+}
+
+func (w *callGraphWalk) walkBlock(fn *ssa.Function, blk *ssa.BasicBlock, root loadedGoRoot, loaded *loadedGoSnapshot, opts CallGraphOptions, httpHandlerIface *types.Interface) (stop bool) {
+	for _, instr := range blk.Instrs {
+		site, ok := instr.(ssa.CallInstruction)
+		if !ok {
+			continue
+		}
+		if opts.Budgets.MaxGraphEdges > 0 && w.edgesProcessed >= opts.Budgets.MaxGraphEdges {
+			w.noteBudgetExceeded(root.dir)
+			return true
+		}
+		w.edgesProcessed++
+		w.counts["call_sites_seen"]++
+		w.applyClassification(classifyCallSite(fn, site, loaded.tempDir, httpHandlerIface, root.localPkgPaths))
 	}
 	return false
 }

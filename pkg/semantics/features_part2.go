@@ -15,12 +15,8 @@ func typeSwitchGuardIdentifiers(n engine.Node, source []byte) map[string]bool {
 		if !strings.Contains(text, ":=") {
 			return nil
 		}
-		count := n.ChildCount()
-		for i := 0; i < count; i++ {
-			child := n.Child(i)
-			if child.Kind() == "identifier" {
-				return map[string]bool{child.Utf8Text(source): true}
-			}
+		if name, ok := firstChildIdentifier(n, source); ok {
+			return map[string]bool{name: true}
 		}
 		return nil
 	}
@@ -32,6 +28,18 @@ func typeSwitchGuardIdentifiers(n engine.Node, source []byte) map[string]bool {
 	}
 	return nil
 }
+
+func firstChildIdentifier(n engine.Node, source []byte) (string, bool) {
+	count := n.ChildCount()
+	for i := 0; i < count; i++ {
+		child := n.Child(i)
+		if child.Kind() == "identifier" {
+			return child.Utf8Text(source), true
+		}
+	}
+	return "", false
+}
+
 func (s identSet) collect(n engine.Node, source []byte) {
 	if n == nil {
 		return

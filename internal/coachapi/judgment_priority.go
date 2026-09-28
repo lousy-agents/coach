@@ -47,29 +47,43 @@ func prioritizeRoundRobin(cands []rubrics.PackCandidate, max int) []rubrics.Pack
 	byPath := groupCandidatesByPath(cands)
 	paths := pathsByFindingCount(byPath)
 
-	// Round-robin indices into each path's ordered queue.
-	idx := make(map[string]int, len(paths))
-	selected := make([]rubrics.PackCandidate, 0, max)
-	for len(selected) < max {
-		progress := false
-		for _, path := range paths {
-			if len(selected) >= max {
-				break
-			}
-			i := idx[path]
-			items := byPath[path]
-			if i >= len(items) {
-				continue
-			}
-			selected = append(selected, items[i])
-			idx[path] = i + 1
-			progress = true
-		}
-		if !progress {
+	pick := &roundRobinPick{
+		idx:      make(map[string]int, len(paths)),
+		selected: make([]rubrics.PackCandidate, 0, max),
+		max:      max,
+		byPath:   byPath,
+	}
+	for len(pick.selected) < max {
+		if !pick.sweep(paths) {
 			break
 		}
 	}
-	return selected
+	return pick.selected
+}
+
+type roundRobinPick struct {
+	idx      map[string]int
+	selected []rubrics.PackCandidate
+	max      int
+	byPath   map[string][]rubrics.PackCandidate
+}
+
+func (p *roundRobinPick) sweep(paths []string) bool {
+	progress := false
+	for _, path := range paths {
+		if len(p.selected) >= p.max {
+			break
+		}
+		i := p.idx[path]
+		items := p.byPath[path]
+		if i >= len(items) {
+			continue
+		}
+		p.selected = append(p.selected, items[i])
+		p.idx[path] = i + 1
+		progress = true
+	}
+	return progress
 }
 
 // groupCandidatesByPath buckets cands by path, each bucket in per-path

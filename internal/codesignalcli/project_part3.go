@@ -26,14 +26,19 @@ func hasDuplicateOrOverlappingPaths(paths []string) bool {
 			continue
 		}
 
-		if i+1 < len(sorted) {
-			left, right := sorted[i], sorted[i+1]
-			if left == right || strings.HasPrefix(right, left+"/") {
-				return true
-			}
+		if adjacentPathsOverlap(sorted, i) {
+			return true
 		}
 	}
 	return false
+}
+
+func adjacentPathsOverlap(sorted []string, i int) bool {
+	if i+1 >= len(sorted) {
+		return false
+	}
+	left, right := sorted[i], sorted[i+1]
+	return left == right || strings.HasPrefix(right, left+"/")
 }
 
 // loadProjectConfigForReadiness reads and validates repoPath at revision

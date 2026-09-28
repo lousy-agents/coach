@@ -70,10 +70,8 @@ func typesPackageByPath(prog *ssa.Program, pkgs []*packages.Package, pkgPath str
 		if p.PkgPath == pkgPath {
 			return p.Types
 		}
-		for _, ip := range p.Types.Imports() {
-			if ip.Path() == pkgPath {
-				return ip
-			}
+		if pkg := importByPath(p.Types, pkgPath); pkg != nil {
+			return pkg
 		}
 	}
 	return nil

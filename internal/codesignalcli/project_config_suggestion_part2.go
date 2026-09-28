@@ -22,10 +22,8 @@ func suggestPrimaryRootDiagnostic(result projectmodel.RootDiscoveryResult) (code
 		}
 	}
 	if !result.Complete {
-		for _, diag := range result.Coverage.Diagnostics {
-			if diag.Code == projectmodel.DiagRootIncomplete {
-				return SuggestDiagIncomplete, diag.Path, suggestDiagnosticMessage(diag), false
-			}
+		if code, path, message, found := incompleteRootDiagnostic(result.Coverage.Diagnostics); found {
+			return code, path, message, false
 		}
 		return SuggestDiagIncomplete, "", "coach codesignal --suggest-project-config: Go root discovery did not complete within its resource budget", false
 	}
@@ -33,6 +31,15 @@ func suggestPrimaryRootDiagnostic(result projectmodel.RootDiscoveryResult) (code
 		return SuggestDiagNoGoModules, "", "coach codesignal --suggest-project-config: no Go module or workspace root was found at HEAD", false
 	}
 	return "", "", "", true
+}
+
+func incompleteRootDiagnostic(diags []projectmodel.Diagnostic) (code, path, message string, found bool) {
+	for _, diag := range diags {
+		if diag.Code == projectmodel.DiagRootIncomplete {
+			return SuggestDiagIncomplete, diag.Path, suggestDiagnosticMessage(diag), true
+		}
+	}
+	return "", "", "", false
 }
 
 // prepareSuggestOutputPath validates --output shape/parent confinement before

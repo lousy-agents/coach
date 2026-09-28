@@ -101,19 +101,25 @@ func rootScopeIncompleteDiagnostics(scopes []RootScope) []Diagnostic {
 			continue
 		}
 		if len(scope.UnanalyzedPaths) > 0 {
-			for _, path := range scope.UnanalyzedPaths {
-				diags = append(diags, Diagnostic{
-					Code:    DiagRootScopeIncomplete,
-					Message: fmt.Sprintf("root %q: candidate file %q was never incorporated into the import model", scope.Root, path),
-					Path:    path,
-				})
-			}
+			diags = append(diags, incompletePathDiagnostics(scope)...)
 			continue
 		}
 		diags = append(diags, Diagnostic{
 			Code:    DiagRootScopeIncomplete,
 			Message: fmt.Sprintf("root %q: only %d of %d candidate files were incorporated into the import model", scope.Root, scope.AnalyzedFiles, scope.CandidateFiles),
 			Path:    scope.Root,
+		})
+	}
+	return diags
+}
+
+func incompletePathDiagnostics(scope RootScope) []Diagnostic {
+	diags := make([]Diagnostic, 0, len(scope.UnanalyzedPaths))
+	for _, path := range scope.UnanalyzedPaths {
+		diags = append(diags, Diagnostic{
+			Code:    DiagRootScopeIncomplete,
+			Message: fmt.Sprintf("root %q: candidate file %q was never incorporated into the import model", scope.Root, path),
+			Path:    path,
 		})
 	}
 	return diags

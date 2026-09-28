@@ -15,17 +15,34 @@ import (
 // policy should account for, not only the ones it called out as tsconfig
 // roots.
 func discoveredDirectories(discovered projectmodel.TSRootDiscoveryResult) []string {
-	var all []string
-	seen := map[string]bool{}
-	for _, group := range [][]string{discovered.Roots, discovered.Candidates} {
-		for _, dir := range group {
-			if !seen[dir] {
-				seen[dir] = true
-				all = append(all, dir)
-			}
+	acc := &directoryAccumulator{seen: map[string]bool{}}
+	acc.add(discovered.Roots)
+	acc.add(discovered.Candidates)
+	return acc.all
+}
+
+func layerPrefixAttemptFailed(out io.Writer, reader *bufio.Reader, err error) (retry, cancelled bool) {
+	if err == nil {
+		return false, false
+	}
+	if promptRetryOrCancel(out, reader, err.Error()) {
+		return false, true
+	}
+	return true, false
+}
+
+type directoryAccumulator struct {
+	seen map[string]bool
+	all  []string
+}
+
+func (a *directoryAccumulator) add(group []string) {
+	for _, dir := range group {
+		if !a.seen[dir] {
+			a.seen[dir] = true
+			a.all = append(a.all, dir)
 		}
 	}
-	return all
 }
 func promptForForbiddenImports(out io.Writer, reader *bufio.Reader, layers []projectConfigLayer) (forbidden []projectForbiddenImport, cancelled bool) {
 	fmt.Fprintln(out, "Define forbidden layer-import pairs (a source layer that may not import a destination layer). Leave the source blank to finish.")
@@ -46,10 +63,12 @@ func promptLayerPrefixes(out io.Writer, reader *bufio.Reader, name string, exist
 		fmt.Fprint(out, "> ")
 		answer, _ := readLine(reader)
 		candidate := splitTrimmedNonEmpty(answer, ",")
-		if err := validateLayerPrefixCandidate(name, candidate, existing); err != nil {
-			if promptRetryOrCancel(out, reader, err.Error()) {
-				return nil, true
-			}
+		err := validateLayerPrefixCandidate(name, candidate, existing)
+		retry, cancelled := layerPrefixAttemptFailed(out, reader, err)
+		if cancelled {
+			return nil, true
+		}
+		if retry {
 			continue
 		}
 		return candidate, false

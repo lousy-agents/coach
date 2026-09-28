@@ -49,17 +49,7 @@ func globMatch(pattern, path string) bool {
 	for i := 0; i < len(pattern); i++ {
 		switch pattern[i] {
 		case '*':
-			if i+1 < len(pattern) && pattern[i+1] == '*' {
-				i++
-				if i+1 < len(pattern) && pattern[i+1] == '/' {
-					i++
-					expression.WriteString("(?:.*/)?")
-				} else {
-					expression.WriteString(".*")
-				}
-			} else {
-				expression.WriteString("[^/]*")
-			}
+			i = writeGlobStar(&expression, pattern, i)
 		case '?':
 			expression.WriteString("[^/]")
 		default:
@@ -68,4 +58,19 @@ func globMatch(pattern, path string) bool {
 	}
 	expression.WriteString("$")
 	return regexp.MustCompile(expression.String()).MatchString(filepath.ToSlash(path))
+}
+
+func writeGlobStar(expression *strings.Builder, pattern string, i int) int {
+	if i+1 < len(pattern) && pattern[i+1] == '*' {
+		i++
+		if i+1 < len(pattern) && pattern[i+1] == '/' {
+			i++
+			expression.WriteString("(?:.*/)?")
+			return i
+		}
+		expression.WriteString(".*")
+		return i
+	}
+	expression.WriteString("[^/]*")
+	return i
 }

@@ -51,11 +51,16 @@ func validateObjectAgainstSchema(path string, value any, sch *argsSchemaDoc) err
 		if err := checkPropType(propPath, raw, prop.types); err != nil {
 			return err
 		}
-		if prop.Items != nil {
-			if err := validateArrayItems(propPath, raw, prop.Items); err != nil {
-				return err
-			}
+		if err := validateArrayItemsIfPresent(propPath, raw, prop.Items); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func validateArrayItemsIfPresent(propPath string, raw any, items *argsSchemaDoc) error {
+	if items == nil {
+		return nil
+	}
+	return validateArrayItems(propPath, raw, items)
 }

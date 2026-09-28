@@ -111,17 +111,20 @@ func cloneProjectCoverage(in *domain.Coverage) *domain.Coverage {
 	if len(in.Diagnostics) > 0 {
 		out.Diagnostics = append([]domain.Diagnostic(nil), in.Diagnostics...)
 		sort.SliceStable(out.Diagnostics, func(i, j int) bool {
-			a, b := out.Diagnostics[i], out.Diagnostics[j]
-			if a.Code != b.Code {
-				return a.Code < b.Code
-			}
-			if a.Path != b.Path {
-				return a.Path < b.Path
-			}
-			return a.Message < b.Message
+			return diagnosticLess(out.Diagnostics[i], out.Diagnostics[j])
 		})
 	}
 	return &out
+}
+
+func diagnosticLess(a, b domain.Diagnostic) bool {
+	if a.Code != b.Code {
+		return a.Code < b.Code
+	}
+	if a.Path != b.Path {
+		return a.Path < b.Path
+	}
+	return a.Message < b.Message
 }
 
 func completeProjectCoverage(coverage *domain.Coverage) bool {

@@ -47,15 +47,21 @@ func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int
 }
 func suggestProjectConfigRequested(args []string) bool {
 	for _, arg := range args {
-		if arg == "--suggest-project-config" || arg == "-suggest-project-config" {
-			return true
-		}
-		if value, ok := suggestProjectConfigFlagValue(arg); ok {
-			if requested, err := strconv.ParseBool(value); err == nil && !requested {
-				continue
-			}
+		if suggestFlagRequestsConfig(arg) {
 			return true
 		}
 	}
 	return false
+}
+
+func suggestFlagRequestsConfig(arg string) bool {
+	if arg == "--suggest-project-config" || arg == "-suggest-project-config" {
+		return true
+	}
+	value, ok := suggestProjectConfigFlagValue(arg)
+	if !ok {
+		return false
+	}
+	requested, err := strconv.ParseBool(value)
+	return err != nil || requested
 }

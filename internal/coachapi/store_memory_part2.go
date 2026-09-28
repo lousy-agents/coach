@@ -14,14 +14,7 @@ import (
 func summarizeFindings(findings []JobFinding) ReportSummary {
 	counts := map[string]map[string]int{}
 	for _, f := range findings {
-		var key string
-		if f.Source == FindingSourceAgent {
-			if f.RubricID != nil {
-				key = *f.RubricID
-			}
-		} else {
-			key = findingRuleID(f.Payload)
-		}
+		key := findingSummaryKey(f)
 		if key == "" {
 			continue
 		}
@@ -32,6 +25,16 @@ func summarizeFindings(findings []JobFinding) ReportSummary {
 		counts[source][key]++
 	}
 	return ReportSummary{FindingCounts: counts}
+}
+
+func findingSummaryKey(f JobFinding) string {
+	if f.Source == FindingSourceAgent {
+		if f.RubricID != nil {
+			return *f.RubricID
+		}
+		return ""
+	}
+	return findingRuleID(f.Payload)
 }
 
 // ClaimJob implements WorkerJobStore.

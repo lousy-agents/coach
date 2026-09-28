@@ -25,7 +25,7 @@ func goProductionFiles(snapshotDir, repositoryRoot, invocationDir, buildTarget s
 		return nil, fmt.Errorf("determining Go production files for %q: %w", buildTarget, err)
 	}
 
-	var files = make(map[string]bool)
+	listed := &listedGoFiles{root: snapshotDir, files: make(map[string]bool)}
 	decoder := json.NewDecoder(bytes.NewReader(output))
 	for decoder.More() {
 		var pkg struct {
@@ -36,14 +36,23 @@ func goProductionFiles(snapshotDir, repositoryRoot, invocationDir, buildTarget s
 		if err := decoder.Decode(&pkg); err != nil {
 			return nil, fmt.Errorf("decoding go list output: %w", err)
 		}
-		for _, name := range append(pkg.GoFiles, pkg.CgoFiles...) {
-			path, err := filepath.Rel(snapshotDir, filepath.Join(pkg.Dir, name))
-			if err == nil && !strings.HasPrefix(path, ".."+string(filepath.Separator)) {
-				files[filepath.ToSlash(path)] = true
-			}
+		listed.add(pkg.Dir, append(pkg.GoFiles, pkg.CgoFiles...))
+	}
+	return listed.files, nil
+}
+
+type listedGoFiles struct {
+	root  string
+	files map[string]bool
+}
+
+func (l *listedGoFiles) add(dir string, names []string) {
+	for _, name := range names {
+		path, err := filepath.Rel(l.root, filepath.Join(dir, name))
+		if err == nil && !strings.HasPrefix(path, ".."+string(filepath.Separator)) {
+			l.files[filepath.ToSlash(path)] = true
 		}
 	}
-	return files, nil
 }
 
 // rebaseTSConfigPatterns prefixes patterns with baseDir relative to snapshotRoot
