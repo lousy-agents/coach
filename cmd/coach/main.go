@@ -543,7 +543,7 @@ func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesigna
 		return nil, err
 	}
 
-	selected, diagnostics, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA)
+	selected, diagnostics, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA, headSHA)
 	if err != nil {
 		return nil, err
 	}

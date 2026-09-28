@@ -40,16 +40,83 @@ func indexProjectChangesByKey(changes []ProjectChange) (map[string]ProjectChange
 // affects lifecycle identity or Changed.
 const indeterminateLifecycleEvidenceNote = ` (lifecycle is "unknown": see the project_lifecycle_indeterminate diagnostic for why)`
 
+// DiagKindProjectChangeLifecycleIndeterminate identifies a diagnostic that
+// names one specific degraded ProjectChange's own repository-relative path
+// (change.PrimaryAnchor.Path) together with the comparison Side/Revision
+// that made it indeterminate. This is additive to, not a replacement for,
+// the single generic project_lifecycle_indeterminate diagnostic
+// projectLifecycleState emits once per report and
+// indeterminateLifecycleEvidenceNote's per-change Evidence pointer to it.
+const DiagKindProjectChangeLifecycleIndeterminate = "project_change_lifecycle_indeterminate"
+
+// projectLifecycleIndeterminacy carries the lifecycle-indeterminacy
+// condition broken out per contributing cause, so classifyProjectChanges can
+// attribute each degraded change's diagnostic to the specific comparison
+// side(s) responsible instead of only knowing that something, somewhere,
+// was wrong. baseIncomplete and inconsistentBase are mutually exclusive:
+// baseIncomplete is only ever computed when ProjectBaseAnalyzed is true.
+type projectLifecycleIndeterminacy struct {
+	headIncomplete   bool
+	baseIncomplete   bool
+	inconsistentBase bool
+	headRevision     string
+	baseRevision     string
+}
+
+func (s projectLifecycleIndeterminacy) any() bool {
+	return s.headIncomplete || s.baseIncomplete || s.inconsistentBase
+}
+
+// degradedProjectChangeDiagnostics names path (a change already forced to
+// lifecycle "unknown") with one Diagnostic per comparison side state
+// implicates, so a consumer keying off Side never misses that a side was
+// involved even when both head and base are independently incomplete.
+func degradedProjectChangeDiagnostics(path string, state projectLifecycleIndeterminacy) []Diagnostic {
+	var diagnostics []Diagnostic
+	if state.headIncomplete {
+		diagnostics = append(diagnostics, Diagnostic{
+			Path:     path,
+			Kind:     DiagKindProjectChangeLifecycleIndeterminate,
+			Message:  "project change lifecycle is \"unknown\": head revision " + state.headRevision + " project analysis coverage is incomplete",
+			Side:     "head",
+			Revision: state.headRevision,
+		})
+	}
+	if state.baseIncomplete {
+		diagnostics = append(diagnostics, Diagnostic{
+			Path:     path,
+			Kind:     DiagKindProjectChangeLifecycleIndeterminate,
+			Message:  "project change lifecycle is \"unknown\": base revision " + state.baseRevision + " project analysis coverage is incomplete",
+			Side:     "base",
+			Revision: state.baseRevision,
+		})
+	}
+	if state.inconsistentBase {
+		diagnostics = append(diagnostics, Diagnostic{
+			Path:     path,
+			Kind:     DiagKindProjectChangeLifecycleIndeterminate,
+			Message:  "project change lifecycle is \"unknown\": base revision " + state.baseRevision + " supplied project observations without a completed base analysis",
+			Side:     "base",
+			Revision: state.baseRevision,
+		})
+	}
+	return diagnostics
+}
+
 // classifyProjectChanges computes identity, lifecycle, and causal Changed
 // state for every project change on either side of a comparison. When
-// lifecycleIndeterminate is true, no observation is promoted to introduced,
-// existing, or resolved because one of the compared project models is not
-// complete. Duplicate SemanticKeys on either side produce diagnostics and
-// keep the first occurrence only.
-func classifyProjectChanges(hasBase, lifecycleIndeterminate bool, headChanges, baseChanges []ProjectChange, noBaseLifecycle Lifecycle) ([]ProjectChange, []Diagnostic) {
+// state.any() is true, no observation is promoted to introduced, existing,
+// or resolved because one of the compared project models is not complete;
+// each degraded change additionally gets its own
+// DiagKindProjectChangeLifecycleIndeterminate diagnostic(s) via
+// degradedProjectChangeDiagnostics. Duplicate SemanticKeys on either side
+// produce diagnostics and keep the first occurrence only.
+func classifyProjectChanges(hasBase bool, state projectLifecycleIndeterminacy, headChanges, baseChanges []ProjectChange, noBaseLifecycle Lifecycle) ([]ProjectChange, []Diagnostic) {
 	headByKey, headDiags := indexProjectChangesByKey(headChanges)
 	baseByKey, baseDiags := indexProjectChangesByKey(baseChanges)
 	diagnostics := append(headDiags, baseDiags...)
+
+	lifecycleIndeterminate := state.any()
 
 	result := make([]ProjectChange, 0, len(headByKey)+len(baseByKey))
 
@@ -61,6 +128,7 @@ func classifyProjectChanges(hasBase, lifecycleIndeterminate bool, headChanges, b
 			change.Lifecycle = "unknown"
 			change.Changed = false
 			change.Evidence += indeterminateLifecycleEvidenceNote
+			diagnostics = append(diagnostics, degradedProjectChangeDiagnostics(change.PrimaryAnchor.Path, state)...)
 		case !hasBase:
 			change.Lifecycle = noBaseLifecycle
 			change.Changed = false
@@ -89,6 +157,7 @@ func classifyProjectChanges(hasBase, lifecycleIndeterminate bool, headChanges, b
 			// misattributed to a determinate change.
 			change.Lifecycle = "unknown"
 			change.Evidence += indeterminateLifecycleEvidenceNote
+			diagnostics = append(diagnostics, degradedProjectChangeDiagnostics(change.PrimaryAnchor.Path, state)...)
 		} else {
 			change.Lifecycle = "resolved"
 		}

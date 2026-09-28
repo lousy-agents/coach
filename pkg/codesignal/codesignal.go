@@ -183,11 +183,12 @@ func buildProjectReportSurface(input Input, noBaseLifecycle Lifecycle, includeRe
 	projectSignals []Signal,
 	diagnostics []Diagnostic,
 ) {
-	lifecycleIndeterminate, diagnostics := projectLifecycleState(input)
+	lifecycleState, diagnostics := projectLifecycleState(input)
+	diagnostics = append(diagnostics, modelCoverageDiagnostics(input)...)
 
 	projectChanges, classifyDiags := classifyProjectChanges(
 		input.ProjectBaseAnalyzed,
-		lifecycleIndeterminate,
+		lifecycleState,
 		input.ProjectChanges,
 		input.BaseProjectChanges,
 		noBaseLifecycle,
@@ -235,18 +236,21 @@ func buildProjectReportSurface(input Input, noBaseLifecycle Lifecycle, includeRe
 	return projectChanges, projectFacts, projectSummary, projectCoverage, projectSignals, diagnostics
 }
 
-func projectLifecycleState(input Input) (indeterminate bool, diagnostics []Diagnostic) {
+func projectLifecycleState(input Input) (state projectLifecycleIndeterminacy, diagnostics []Diagnostic) {
+	state.headRevision = input.Scope.Revision
+	state.baseRevision = input.Scope.Base
+
 	// Complete coverage is required before any normal lifecycle claim.
 	if !completeProjectCoverage(input.ProjectCoverage) {
-		indeterminate = true
+		state.headIncomplete = true
 	}
 	if input.ProjectBaseAnalyzed && !completeProjectCoverage(input.BaseProjectCoverage) {
-		indeterminate = true
+		state.baseIncomplete = true
 	}
 	// Non-empty base observations without ProjectBaseAnalyzed are inconsistent.
 	// A non-nil empty slice is not: callers commonly initialize with make/append.
 	if !input.ProjectBaseAnalyzed && len(input.BaseProjectChanges) > 0 {
-		indeterminate = true
+		state.inconsistentBase = true
 	}
 	if input.ProjectCoverage != nil && !input.ProjectCoverage.Complete {
 		diagnostics = append(diagnostics, Diagnostic{
@@ -254,13 +258,63 @@ func projectLifecycleState(input Input) (indeterminate bool, diagnostics []Diagn
 			Message: "project analysis coverage is incomplete; project observations may be partial",
 		})
 	}
-	if indeterminate {
+	if state.any() {
 		diagnostics = append(diagnostics, Diagnostic{
 			Kind:    DiagKindProjectLifecycleIndeterminate,
 			Message: projectLifecycleDiagnosticMessage(input),
 		})
 	}
-	return indeterminate, diagnostics
+	return state, diagnostics
+}
+
+// modelCoverageDiagnostics promotes each per-revision model-phase Coverage's
+// own projectmodel.DiagRootScopeIncomplete entries (one per repository-relative
+// path the analyzer accepted as a candidate but never incorporated) into
+// report.Diagnostics[], stamped with the comparison side and that side's
+// resolved revision (AC-VER-3).
+func modelCoverageDiagnostics(input Input) []Diagnostic {
+	diagnostics := sideModelCoverageDiagnostics(input.HeadModelCoverage, "head", input.Scope.Revision)
+	if input.ProjectBaseAnalyzed {
+		diagnostics = append(diagnostics, sideModelCoverageDiagnostics(input.BaseModelCoverage, "base", input.Scope.Base)...)
+	}
+	return diagnostics
+}
+
+// sideModelCoverageDiagnostics promotes only coverage.Diagnostics entries
+// whose Code is projectmodel.DiagRootScopeIncomplete. Model coverage also
+// carries codes that are not incompleteness at all -- e.g. the
+// ts_reachability_*_gap codes documented on
+// tsReachabilityGapDiagnosticCodes (pkg/projectmodel/ts_reachability.go),
+// which are routine, per-hop reachability gaps that deliberately never flip
+// Coverage.Complete -- and promoting those here would misreport a normal
+// reachability gap as a side-attributed coverage failure.
+//
+// A base-side Kind is prefixed with "base_", mirroring
+// internal/codesignalcli/project_analysis.go's baseProjectDiagnostics, so a
+// diff-mode run whose backend finds the same incompleteness on both
+// revisions stays distinguishable by Kind alone.
+func sideModelCoverageDiagnostics(coverage *projectmodel.Coverage, side, revision string) []Diagnostic {
+	if coverage == nil {
+		return nil
+	}
+	var diagnostics []Diagnostic
+	for _, d := range coverage.Diagnostics {
+		if d.Code != projectmodel.DiagRootScopeIncomplete {
+			continue
+		}
+		kind := d.Code
+		if side == "base" {
+			kind = "base_" + kind
+		}
+		diagnostics = append(diagnostics, Diagnostic{
+			Path:     d.Path,
+			Kind:     kind,
+			Message:  side + " revision " + revision + " project model coverage: " + d.Message,
+			Side:     side,
+			Revision: revision,
+		})
+	}
+	return diagnostics
 }
 
 func filterAnchorlessProjectChanges(changes []ProjectChange) ([]ProjectChange, []Diagnostic) {
@@ -489,6 +543,13 @@ func countUnanalyzedFiles(files []FileChange, diagnostics []Diagnostic) int {
 func distinctDiagnosticPaths(diagnostics []Diagnostic) map[string]struct{} {
 	paths := make(map[string]struct{})
 	for _, d := range diagnostics {
+		// A project_change_lifecycle_indeterminate diagnostic's Path is a
+		// degraded project change's own anchor, not a file the diagnostics
+		// pipeline analyzed or skipped, so it must not feed file-level
+		// counters.
+		if d.Kind == DiagKindProjectChangeLifecycleIndeterminate {
+			continue
+		}
 		if d.Path != "" {
 			paths[d.Path] = struct{}{}
 		}

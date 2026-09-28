@@ -114,8 +114,11 @@ type SelectedFile struct {
 // Rename and copy new paths are selected so HEAD content is analyzed.
 // They are not marked added: that would inherit #262's introduced
 // lifecycle. Continuity against the old path is out of scope, so each
-// selected R/C path also gets a continuity_not_determined diagnostic.
-func SelectChangedFiles(dir, mergeBaseSHA string) ([]SelectedFile, []codesignal.Diagnostic, error) {
+// selected R/C path also gets a continuity_not_determined diagnostic; that
+// detection is head-side only (it never inspects headSHA's base
+// counterpart), so headSHA is threaded through only to identify the
+// diagnostic's comparison side and revision, not to select a different path.
+func SelectChangedFiles(dir, mergeBaseSHA, headSHA string) ([]SelectedFile, []codesignal.Diagnostic, error) {
 	// --find-renames uses git's default 50% threshold. --find-copies-harder
 	// also considers unmodified files as copy sources, which is more
 	// aggressive than git's defaults; the extra R/C records are analyzed
@@ -144,9 +147,11 @@ func SelectChangedFiles(dir, mergeBaseSHA string) ([]SelectedFile, []codesignal.
 			}
 			selected = append(selected, sf)
 			diagnostics = append(diagnostics, codesignal.Diagnostic{
-				Kind:    "continuity_not_determined",
-				Path:    path,
-				Message: "rename/copy lifecycle continuity was not determined",
+				Kind:     "continuity_not_determined",
+				Path:     path,
+				Message:  fmt.Sprintf("rename/copy lifecycle continuity was not determined at head revision %s", headSHA),
+				Side:     "head",
+				Revision: headSHA,
 			})
 		case record.status == "A" || record.status == "M" || record.status == "D":
 			sf, diag, ok := selectSupportedPath(record.paths[0], statusToChangeStatus(record.status))

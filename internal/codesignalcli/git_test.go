@@ -124,9 +124,9 @@ func TestSelectChangedFilesLanguageFiltering(t *testing.T) {
 	dir := newTempGitRepoT(t)
 	initialSHA := commitFileT(t, dir, "keep.go", "package keep\n")
 	commitFileT(t, dir, "keep.go", "package keep\n\nfunc F() {}\n")
-	commitFileT(t, dir, "unsupported.txt", "plain text\n")
+	headSHA := commitFileT(t, dir, "unsupported.txt", "plain text\n")
 
-	selected, diagnostics, err := SelectChangedFiles(dir, initialSHA)
+	selected, diagnostics, err := SelectChangedFiles(dir, initialSHA, headSHA)
 	if err != nil {
 		t.Fatalf("SelectChangedFiles: unexpected error: %v", err)
 	}
@@ -146,9 +146,9 @@ func TestSelectChangedFilesLanguageFiltering(t *testing.T) {
 func TestSelectChangedFilesRenameSelectsNewPathWithoutAddedStatus(t *testing.T) {
 	dir := newTempGitRepoT(t)
 	initialSHA := commitFileT(t, dir, "old.go", "package old\n// padding so rename detection kicks in\n// more padding\n// more padding\n// more padding\n")
-	renameFileT(t, dir, "old.go", "new.go")
+	headSHA := renameFileT(t, dir, "old.go", "new.go")
 
-	selected, diagnostics, err := SelectChangedFiles(dir, initialSHA)
+	selected, diagnostics, err := SelectChangedFiles(dir, initialSHA, headSHA)
 	if err != nil {
 		t.Fatalf("SelectChangedFiles: unexpected error: %v", err)
 	}
@@ -167,6 +167,12 @@ func TestSelectChangedFilesRenameSelectsNewPathWithoutAddedStatus(t *testing.T) 
 		}
 		if d.Kind == "continuity_not_determined" && d.Path == "new.go" {
 			foundContinuity = true
+			if d.Side != "head" {
+				t.Errorf("continuity diagnostic Side = %q, want %q (continuity detection is head-side only)", d.Side, "head")
+			}
+			if d.Revision != headSHA {
+				t.Errorf("continuity diagnostic Revision = %q, want %q", d.Revision, headSHA)
+			}
 		}
 	}
 	if !foundContinuity {
@@ -462,7 +468,7 @@ func commitFileT(t *testing.T, dir, name, contents string) string {
 	return strings.TrimSpace(string(output))
 }
 
-func renameFileT(t *testing.T, dir, from, to string) {
+func renameFileT(t *testing.T, dir, from, to string) string {
 	t.Helper()
 
 	mvCmd := exec.Command("git", "mv", from, to)
@@ -477,4 +483,13 @@ func renameFileT(t *testing.T, dir, from, to string) {
 	if output, err := commitCmd.CombinedOutput(); err != nil {
 		t.Fatalf("git commit rename: %v: %s", err, output)
 	}
+
+	revCmd := exec.Command("git", "rev-parse", "HEAD")
+	revCmd.Dir = dir
+	output, err := revCmd.Output()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD: %v", err)
+	}
+
+	return strings.TrimSpace(string(output))
 }
