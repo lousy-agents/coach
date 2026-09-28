@@ -22,7 +22,7 @@ The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) exposes one 
 
 ## Agent Skills (`.agents/skills/`)
 
-Most are sourced from `lousy-agents/skills` and pinned by `skills-lock.json`: change those upstream and re-run `npx skills add`, because edits made here are overwritten. `correctness-review`, `product-quality-evaluation`, and `optimize-prompt-loop` are not in the lockfile and are edited here directly. Check `skills-lock.json` before editing a skill, so a local edit is not silently reverted by the next sync.
+Most are sourced from `lousy-agents/skills` and pinned by `skills-lock.json`: change those upstream and re-run `npx skills add`, because edits made here are overwritten. `correctness-review`, `cut-release`, `product-quality-evaluation`, and `optimize-prompt-loop` are not in the lockfile and are edited here directly. Check `skills-lock.json` before editing a skill, so a local edit is not silently reverted by the next sync.
 
 - `feature-to-plan` — turn a feature request, PRD, or backlog issue into a structured EARS-format spec.
 - `go-testable-design` — guidance for writing/refactoring testable Go (table tests, constructor injection, boundaries, concurrency tests).
@@ -38,6 +38,7 @@ Most are sourced from `lousy-agents/skills` and pinned by `skills-lock.json`: ch
 - `issue-refine-loop` — refine an unrefined GitHub issue in place into an implementation-ready epic (problem statement, personas, EARS acceptance criteria, design, tasks, scope boundaries), then decompose it into child issues.
 - `plan-to-graph` — convert an approved spec or epic issue into a GitHub issue dependency graph with native sub-issues and blocking relationships.
 - `curate-release` — rewrite the commits on a PR's head branch so the generated changelog and release notes read as a coherent story.
+- `cut-release` — propose the next 0.x version, draft customer release notes, hand off an annotated tag to the GoReleaser `release` job, and replace its commit changelog with the confirmed notes.
 - `optimize-prompt-loop` — turn a fuzzy or overly broad request into a concise, reusable task prompt tuned to the current model and harness.
 - `instruction-style` — author or revise durable instruction prose so priority, rationale, and scope survive.
 
