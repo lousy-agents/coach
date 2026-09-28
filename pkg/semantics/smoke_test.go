@@ -43,10 +43,7 @@ func TestSmoke_TSGrammarExposesExpectedTightCouplingNodeKinds(t *testing.T) {
 	}
 
 	var hasConstructorField bool
-	var walkFields func(n engine.Node)
-	walkFields = (&sigTestSmokeTSGrammarExposesExpectedTightCouplingNodeKinds21{hasConstructorField: &hasConstructorField, walkFields: walkFields}).call
-
-	walkFields(root)
+	(&sigTestSmokeTSGrammarExposesExpectedTightCouplingNodeKinds21{hasConstructorField: &hasConstructorField}).call(root)
 
 	for _, kind := range []string{"assignment_expression", "new_expression"} {
 		if !kinds[kind] {

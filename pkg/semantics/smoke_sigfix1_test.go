@@ -4,9 +4,6 @@ import "github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 
 type sigTestSmokeTSGrammarExposesExpectedTightCouplingNodeKinds21 struct {
 	hasConstructorField *bool
-	walkFields          func(
-		n engine.
-			Node)
 }
 
 func (sigRecv *sigTestSmokeTSGrammarExposesExpectedTightCouplingNodeKinds21) call(n engine.Node) {
@@ -17,6 +14,6 @@ func (sigRecv *sigTestSmokeTSGrammarExposesExpectedTightCouplingNodeKinds21) cal
 		*sigRecv.hasConstructorField = true
 	}
 	for i := 0; i < n.ChildCount(); i++ {
-		sigRecv.walkFields(n.Child(i))
+		sigRecv.call(n.Child(i))
 	}
 }
