@@ -47,7 +47,7 @@ func startNamespaceDialListener() (*namespaceDialListener, string, int) {
 	tcpAddr := ln.Addr().(*net.TCPAddr)
 	var inflight sync.WaitGroup
 	acceptDone := make(chan struct{})
-	go (&sigstartNamespaceDialListener40498254{acceptDone: acceptDone, inflight: inflight, ln: ln, rec: rec}).call()
+	go (&sigstartNamespaceDialListener40498254{acceptDone: acceptDone, inflight: &inflight, ln: ln, rec: rec}).call()
 	rec.stop = func() {
 		_ = ln.Close()
 		<-acceptDone

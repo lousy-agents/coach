@@ -8,10 +8,8 @@ import (
 
 type sigbodyfixtureAcceptanceTestisSafeUnderRaceAndEveryRecordIsP struct {
 	iterationsPerWorker int
-	recorder            acceptanceharness.
-				Recorder
-	wg sync.
-		WaitGroup
+	recorder            *acceptanceharness.Recorder
+	wg                  *sync.WaitGroup
 }
 
 func (sigRecv *sigbodyfixtureAcceptanceTestisSafeUnderRaceAndEveryRecordIsP) call(worker int) {

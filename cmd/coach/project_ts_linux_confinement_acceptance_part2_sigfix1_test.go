@@ -10,10 +10,9 @@ import (
 type sigstartNamespaceDialListener40498254 struct {
 	acceptDone chan struct {
 	}
-	inflight sync.
-			WaitGroup
-	ln net.
-		Listener
+	inflight *sync.WaitGroup
+	ln       net.
+			Listener
 	rec *namespaceDialListener
 }
 

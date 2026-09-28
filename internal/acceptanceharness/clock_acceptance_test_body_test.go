@@ -48,7 +48,7 @@ func body_clockAcceptanceTest_firesEveryRegisteredWaiterExactlyOnceWithNoDataR_9
 			// racing with the Advance loop below, are exactly
 			// the "heartbeat ticker under test" scenario the
 			// FakeClock doc comment claims is safe.
-			producers: producers}).call()
+			producers: &producers}).call()
 	}
 
 	stopAdvancing := make(chan struct{})

@@ -65,7 +65,7 @@ func startRecordingProxyListener() *recordingProxyListener {
 	rec := &recordingProxyListener{addr: ln.Addr().String()}
 	var inflight sync.WaitGroup
 	acceptDone := make(chan struct{})
-	go (&sigstartRecordingProxyListener39957725{acceptDone: acceptDone, inflight: inflight, ln: ln, rec: rec}).call()
+	go (&sigstartRecordingProxyListener39957725{acceptDone: acceptDone, inflight: &inflight, ln: ln, rec: rec}).call()
 	rec.stop = func() {
 		_ = ln.Close()
 		<-acceptDone

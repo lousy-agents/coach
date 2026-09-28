@@ -18,7 +18,7 @@ func body_fixtureAcceptanceTest_isSafeUnderRaceAndEveryRecordIsPreservedMirrorsC
 	var wg sync.WaitGroup
 	wg.Add(workers)
 	for i := 0; i < workers; i++ {
-		go (&sigbodyfixtureAcceptanceTestisSafeUnderRaceAndEveryRecordIsP{iterationsPerWorker: iterationsPerWorker, recorder: recorder, wg: wg}).call(i)
+		go (&sigbodyfixtureAcceptanceTestisSafeUnderRaceAndEveryRecordIsP{iterationsPerWorker: iterationsPerWorker, recorder: &recorder, wg: &wg}).call(i)
 	}
 	wg.Wait()
 

@@ -11,10 +11,9 @@ import (
 type sigstartRecordingProxyListener39957725 struct {
 	acceptDone chan struct {
 	}
-	inflight sync.
-			WaitGroup
-	ln net.
-		Listener
+	inflight *sync.WaitGroup
+	ln       net.
+			Listener
 	rec *recordingProxyListener
 }
 

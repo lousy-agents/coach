@@ -12,8 +12,7 @@ type sigbodyregistryAcceptanceTestisSafeUnderRaceAndEveryCallIsRe struct {
 	iterationsPerWorker int
 	registry            *agentloopharness.
 				RecordingToolRegistry
-	wg sync.
-		WaitGroup
+	wg *sync.WaitGroup
 }
 
 func (sigRecv *sigbodyregistryAcceptanceTestisSafeUnderRaceAndEveryCallIsRe) call(worker int) {

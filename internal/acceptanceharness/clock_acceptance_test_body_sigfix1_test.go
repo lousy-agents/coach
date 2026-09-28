@@ -13,8 +13,7 @@ type sigbodyclockAcceptanceTestfiresEveryRegisteredWaiterExactlyO struct {
 				FakeClock
 	fired chan time.
 		Time
-	producers sync.
-			WaitGroup
+	producers *sync.WaitGroup
 }
 
 func (sigRecv *sigbodyclockAcceptanceTestfiresEveryRegisteredWaiterExactlyO) call() {
