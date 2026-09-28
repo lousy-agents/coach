@@ -23,38 +23,42 @@ const oversizedWireSize = 1<<20 + 1
 // AuthModeInstallation (credential was valid; resource outcome differs).
 func contentsHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token := extractBearerToken(r)
-		if fx.ClassifyToken(token) != TokenInstallation {
-			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
-			writeJSONError(w, http.StatusUnauthorized, "Bad credentials")
-			return
-		}
+		writeContentsResponse(fx, rec, w, r)
+	}
+}
 
-		reqPath := r.PathValue("path")
-		key := contentsKey(r.PathValue("owner"), r.PathValue("repo"), r.URL.Query().Get("ref"), reqPath)
+func writeContentsResponse(fx *Fixture, rec *acceptanceharness.Recorder, w http.ResponseWriter, r *http.Request) {
+	token := extractBearerToken(r)
+	if fx.ClassifyToken(token) != TokenInstallation {
+		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
+		writeJSONError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
 
-		if entry, ok := fx.Contents.Files[key]; ok {
-			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, string(entry.Scenario), r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
-			if entry.Scenario == ScenarioOversized {
-				writeContentsFileResponse(w, reqPath, entry)
-				return
-			}
-			if writeScenarioStatus(w, entry.Scenario) {
-				return
-			}
+	reqPath := r.PathValue("path")
+	key := contentsKey(r.PathValue("owner"), r.PathValue("repo"), r.URL.Query().Get("ref"), reqPath)
+
+	if entry, ok := fx.Contents.Files[key]; ok {
+		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, string(entry.Scenario), r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
+		if entry.Scenario == ScenarioOversized {
 			writeContentsFileResponse(w, reqPath, entry)
 			return
 		}
-
-		if dirEntries, ok := fx.Contents.Dirs[key]; ok {
-			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
-			writeContentsDirResponse(w, reqPath, dirEntries)
+		if writeScenarioStatus(w, entry.Scenario) {
 			return
 		}
-
-		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
-		writeJSONError(w, http.StatusNotFound, "Not Found")
+		writeContentsFileResponse(w, reqPath, entry)
+		return
 	}
+
+	if dirEntries, ok := fx.Contents.Dirs[key]; ok {
+		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
+		writeContentsDirResponse(w, reqPath, dirEntries)
+		return
+	}
+
+	rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
+	writeJSONError(w, http.StatusNotFound, "Not Found")
 }
 
 // contentsKey builds the "owner/repo/ref/path" lookup key shared by Files and
