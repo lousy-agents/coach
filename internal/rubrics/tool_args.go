@@ -22,22 +22,9 @@ func parseHiddenMutationArgs(args json.RawMessage) (hiddenMutationArgs, error) {
 		return hiddenMutationArgs{}, fmt.Errorf("%w: %v", agentloop.ErrInvalidArgs, err)
 	}
 	if len(in.Items) > 0 {
-		for i, it := range in.Items {
-			if it.FindingRef == "" {
-				return hiddenMutationArgs{}, fmt.Errorf("%w: items[%d].finding_ref is required", agentloop.ErrInvalidArgs, i)
-			}
-			if len(it.Finding) == 0 {
-				return hiddenMutationArgs{}, fmt.Errorf("%w: items[%d].finding is required", agentloop.ErrInvalidArgs, i)
-			}
-		}
-		// Defensive copies so callers retain unmodified buffers.
-		items := make([]HiddenMutationPackItem, len(in.Items))
-		for i, it := range in.Items {
-			items[i] = HiddenMutationPackItem{
-				FindingRef: it.FindingRef,
-				Finding:    append(json.RawMessage(nil), it.Finding...),
-				File:       it.File,
-			}
+		items, err := parseHiddenMutationItems(in.Items)
+		if err != nil {
+			return hiddenMutationArgs{}, err
 		}
 		return hiddenMutationArgs{Items: items}, nil
 	}
@@ -48,6 +35,29 @@ func parseHiddenMutationArgs(args json.RawMessage) (hiddenMutationArgs, error) {
 		Finding: append(json.RawMessage(nil), in.Finding...),
 		File:    in.File,
 	}, nil
+}
+
+// parseHiddenMutationItems validates items (each must carry a finding_ref
+// and a finding) and returns defensive copies so callers retain unmodified
+// buffers.
+func parseHiddenMutationItems(items []HiddenMutationPackItem) ([]HiddenMutationPackItem, error) {
+	for i, it := range items {
+		if it.FindingRef == "" {
+			return nil, fmt.Errorf("%w: items[%d].finding_ref is required", agentloop.ErrInvalidArgs, i)
+		}
+		if len(it.Finding) == 0 {
+			return nil, fmt.Errorf("%w: items[%d].finding is required", agentloop.ErrInvalidArgs, i)
+		}
+	}
+	out := make([]HiddenMutationPackItem, len(items))
+	for i, it := range items {
+		out[i] = HiddenMutationPackItem{
+			FindingRef: it.FindingRef,
+			Finding:    append(json.RawMessage(nil), it.Finding...),
+			File:       it.File,
+		}
+	}
+	return out, nil
 }
 
 func assembleHiddenMutationArgs(args json.RawMessage) ([]modelgateway.Message, error) {
