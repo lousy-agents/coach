@@ -42,7 +42,7 @@ so that I can **see recurring code-quality signals across my recent work**.
 
 PR diff analysis does not require a local git checkout. The worker fetches base and head contents for each changed file via `pkg/githubingest` and invokes the `codesignal_report` tool with that content; the tool produces PR-level deterministic findings through the existing `pkg/semantics` → `pkg/codesignal` pipeline.
 
-The self-serve constraint encodes the no-surveillance principle (PRD §11, architecture doc §11 "no developer scoring") into the API shape itself. Enforcement rests on **verified GitHub identity from the OAuth App login** ([Baseline Scan spec Story 1](coach-api-platform-baseline.spec.md#story-1-authenticate-with-github-and-use-the-async-analysis-api)), not on operator-provisioned static token bindings. The user's OAuth grant authenticates them *to Coach*; it is not used as the worker's credential to read repositories—that remains the GitHub App installation path in `pkg/githubingest`.
+The self-serve constraint encodes the no-surveillance principle (PRD v3 §6 non-goals, architecture doc §2 "no developer scoring") into the API shape itself. Enforcement rests on **verified GitHub identity from the OAuth App login** ([Baseline Scan spec Story 1](coach-api-platform-baseline.spec.md#story-1-authenticate-with-github-and-use-the-async-analysis-api)), not on operator-provisioned static token bindings. The user's OAuth grant authenticates them *to Coach*; it is not used as the worker's credential to read repositories—that remains the GitHub App installation path in `pkg/githubingest`.
 
 ### Story 5: Trustworthy provenance (applied)
 

@@ -19,7 +19,7 @@ All three specs preserve the architecture doc's load-bearing principles: determi
 |-----|------|
 | [system-overview.md](../../docs/architecture/system-overview.md) §1, §9 (groundwork topology), §14 Groundwork | Phase placement, compose topology, deferred webhook/DynamoDB/outbox |
 | [ADR-001](../../docs/architecture/ADR-001-coach-api-authentication.md) … [ADR-006](../../docs/architecture/ADR-006-watermill-queue-abstraction.md) | Binding groundwork decisions (auth, credential split, repo authz, job ownership, agent loop, TaskQueue) |
-| [prd.md](../../docs/product/prd.md) | Product intent for this era (self-serve, private, pull-only API) |
+| [prd.md](../../docs/product/prd.md) | Local CLI pilot (v3). This spec is the parked API lab, not the current product. |
 
 ## Spec files
 
