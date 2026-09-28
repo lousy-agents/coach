@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -11,7 +10,6 @@ import (
 	"github.com/lousy-agents/coach/internal/coachapi"
 	"github.com/lousy-agents/coach/internal/coachapi/worker"
 	"github.com/lousy-agents/coach/internal/modelgateway"
-	"github.com/lousy-agents/coach/internal/rubrics"
 	"github.com/lousy-agents/coach/pkg/githubingest"
 )
 
@@ -26,50 +24,6 @@ func stubJobHandler(_ context.Context, _ coachapi.Job, w worker.JobWriter) (*coa
 		Versions:    coachapi.ReportVersions{Analyzer: "stub@0"},
 		FinishedAt:  now,
 		GeneratedAt: now,
-	}, nil
-}
-
-func buildJobHandler(cfg Config) (worker.JobHandler, error) {
-	baselineCfg := coachapi.RepoBaselineScanConfig{
-		SmokeFixturePath:           cfg.SmokeFixturePath,
-		SmokeRepoOwner:             cfg.SmokeRepoOwner,
-		SmokeRepoName:              cfg.SmokeRepoName,
-		MaxFiles:                   cfg.BaselineMaxFiles,
-		MaxTotalBytes:              cfg.BaselineMaxTotalBytes,
-		Gateway:                    buildModelGateway(),
-		JudgmentMaxWallTime:        cfg.JudgmentMaxWallTime,
-		MaxHiddenMutationJudgments: cfg.MaxHiddenMutationJudgments,
-		PackConfig: rubrics.PackConfig{
-			MaxFindingsPerJudgmentPack:      cfg.MaxFindingsPerJudgmentPack,
-			MaxJudgmentPromptTokens:         cfg.MaxJudgmentPromptTokens,
-			JudgmentFileAffinityMinFindings: cfg.JudgmentFileAffinityMinFindings,
-			EvidenceWindowLines:             cfg.JudgmentEvidenceWindowLines,
-		},
-	}
-
-	if cfg.GitHubAppID > 0 && len(cfg.GitHubPrivateKey) > 0 {
-		resolver, err := githubingest.NewCredentialResolver(githubingest.CredentialResolverConfig{
-			AppID:      cfg.GitHubAppID,
-			PrivateKey: cfg.GitHubPrivateKey,
-			BaseURL:    cfg.GitHubBaseURL,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("coach-worker: constructing GitHub credential resolver: %w", err)
-		}
-		// InstallationID is optional thinproof override; zero resolves per repo.
-		baselineCfg.TreeSource = &coachapi.ResolvingGitHubBaselineTreeSource{
-			Credentials:    resolver,
-			BaseURL:        cfg.GitHubBaseURL,
-			InstallationID: cfg.GitHubInstallationID,
-		}
-	} else if cfg.SmokeFixturePath == "" {
-		log.Printf("coach-worker: warning: no COACH_SMOKE_FIXTURE_PATH and no GitHub App credentials; non-smoke baseline jobs will fail")
-	}
-
-	h := coachapi.NewRepoBaselineScanHandler(baselineCfg)
-	return func(ctx context.Context, job coachapi.Job, w worker.JobWriter) (*coachapi.Completion, error) {
-		completion, err := h(ctx, job, w)
-		return completion, classifyBaselineHandlerError(err)
 	}, nil
 }
 
