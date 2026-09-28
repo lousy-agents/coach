@@ -19,13 +19,13 @@ func hasDuplicateOrOverlappingPaths(paths []string) bool {
 	sorted := append([]string(nil), paths...)
 	sort.Strings(sorted)
 	for i := 0; i < len(sorted); i++ {
+		if sorted[i] == "." && len(sorted) > 1 {
+			return true
+		}
 		if sorted[i] == "." {
-
-			if len(sorted) > 1 {
-				return true
-			}
 			continue
 		}
+
 		if i+1 < len(sorted) {
 			left, right := sorted[i], sorted[i+1]
 			if left == right || strings.HasPrefix(right, left+"/") {

@@ -20,12 +20,14 @@ func promptLayerName(out io.Writer, reader *bufio.Reader, existing []projectConf
 		if answer == "" {
 			return "", true, false
 		}
-		if layerNameDeclared(answer, existing) {
-			if promptRetryOrCancel(out, reader, fmt.Sprintf("layer name %q is already used", answer)) {
-				return "", false, true
-			}
+		declared := layerNameDeclared(answer, existing)
+		if declared && promptRetryOrCancel(out, reader, fmt.Sprintf("layer name %q is already used", answer)) {
+			return "", false, true
+		}
+		if declared {
 			continue
 		}
+
 		return answer, false, false
 	}
 }

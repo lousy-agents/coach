@@ -20,12 +20,14 @@ func promptForRequiredLayer(out io.Writer, reader *bufio.Reader, layers []projec
 		if answer == "" {
 			return "", false
 		}
-		if !layerNameDeclared(answer, layers) {
-			if promptRetryOrCancel(out, reader, fmt.Sprintf("required_layer references undefined layer %q", answer)) {
-				return "", true
-			}
+		known := layerNameDeclared(answer, layers)
+		if !known && promptRetryOrCancel(out, reader, fmt.Sprintf("required_layer references undefined layer %q", answer)) {
+			return "", true
+		}
+		if !known {
 			continue
 		}
+
 		return answer, false
 	}
 }
@@ -53,12 +55,13 @@ func promptForRoots(out io.Writer, reader *bufio.Reader, discovered projectmodel
 		if parseErr == nil {
 			parseErr = validateRootSelection(selected)
 		}
+		if parseErr != nil && promptRetryOrCancel(out, reader, parseErr.Error()) {
+			return nil, true
+		}
 		if parseErr != nil {
-			if promptRetryOrCancel(out, reader, parseErr.Error()) {
-				return nil, true
-			}
 			continue
 		}
+
 		return selected, false
 	}
 }

@@ -34,8 +34,8 @@ export class CliBackend implements Backend {
   private readonly session: CliChildSession;
   private disposed = false;
 
-  constructor(binaryUrl: URL = BINARY_URL) {
-    this.session = new CliChildSession(binaryUrl);
+  constructor(binaryUrl: URL = BINARY_URL, session: CliChildSession = new CliChildSession(binaryUrl)) {
+    this.session = session;
   }
 
   /** Live child process, so a caller can observe lifetime across a crash and the next call's respawn. */

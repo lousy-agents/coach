@@ -48,18 +48,18 @@ func (s *PostgresStore) ClaimJob(ctx context.Context, jobID, workerID string, no
 		string(JobStatusRunning), workerID, now, jobID,
 		string(JobStatusQueued), string(JobStatusRunning), staleBefore,
 	).Scan(&attempt)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// Distinguish not-found from not-claimable.
-			var exists bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM jobs WHERE id = $1)`, jobID).Scan(&exists); err != nil {
-				return ClaimLease{}, fmt.Errorf("coachapi: claim job %q: %w", jobID, err)
-			}
-			if !exists {
-				return ClaimLease{}, fmt.Errorf("coachapi: job %q: %w", jobID, ErrJobNotFound)
-			}
-			return ClaimLease{}, fmt.Errorf("coachapi: job %q: %w", jobID, ErrNotClaimable)
+	if err != nil && errors.Is(err, pgx.ErrNoRows) {
+		// Distinguish not-found from not-claimable.
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM jobs WHERE id = $1)`, jobID).Scan(&exists); err != nil {
+			return ClaimLease{}, fmt.Errorf("coachapi: claim job %q: %w", jobID, err)
 		}
+		if !exists {
+			return ClaimLease{}, fmt.Errorf("coachapi: job %q: %w", jobID, ErrJobNotFound)
+		}
+		return ClaimLease{}, fmt.Errorf("coachapi: job %q: %w", jobID, ErrNotClaimable)
+	}
+	if err != nil {
 		return ClaimLease{}, fmt.Errorf("coachapi: claim job %q: %w", jobID, err)
 	}
 

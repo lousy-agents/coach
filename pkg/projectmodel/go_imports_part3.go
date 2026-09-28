@@ -40,12 +40,13 @@ func moduleGoFiles(snapshot fs.FS, moduleDir string, moduleDirs map[string]bool)
 		if err != nil {
 			return nil
 		}
+		if entry.IsDir() && shouldSkipModuleWalkDir(p, moduleDir, moduleDirs) {
+			return fs.SkipDir
+		}
 		if entry.IsDir() {
-			if shouldSkipModuleWalkDir(p, moduleDir, moduleDirs) {
-				return fs.SkipDir
-			}
 			return nil
 		}
+
 		if strings.HasSuffix(p, ".go") {
 			files = append(files, p)
 		}

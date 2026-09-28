@@ -105,12 +105,13 @@ func satisfiesGinkgoStyle(path string) (ok bool, reason string, err error) {
 	}
 
 	importNames, hasNonBlank, hasBlank := ginkgoImportNames(f)
+	if !hasNonBlank && hasBlank {
+		return false, "blank import of " + ginkgoImportPath + " is not enough; reference RunSpecs/Describe/It (or be allowlisted)", nil
+	}
 	if !hasNonBlank {
-		if hasBlank {
-			return false, "blank import of " + ginkgoImportPath + " is not enough; reference RunSpecs/Describe/It (or be allowlisted)", nil
-		}
 		return false, "must import " + ginkgoImportPath + " and reference RunSpecs/Describe/It (or be allowlisted)", nil
 	}
+
 	if !referencesGinkgoSpec(f, importNames) {
 		return false, "must reference a Ginkgo suite/spec API (RunSpecs, Describe, It, …); import alone is not enough", nil
 	}
