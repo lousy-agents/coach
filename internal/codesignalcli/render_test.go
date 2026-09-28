@@ -239,6 +239,34 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 			wantAbsent: []string{"incomplete"},
 		},
 		{
+			name: "unsupported-only dirty trees keep the all-clear and do not say analysis is incomplete",
+			report: &codesignal.Report{
+				Diagnostics: []codesignal.Diagnostic{
+					{Kind: codesignal.DiagKindWorktreeNotClean, Message: "working tree is not clean: notes.md"},
+				},
+			},
+			wantContains: []string{
+				"No active CodeSignal findings.\n",
+				"working tree is not clean: notes.md",
+			},
+			wantAbsent: []string{"incomplete", "not analyzed"},
+		},
+		{
+			name: "worktree cleanliness plus provenance still avoid the incomplete headline",
+			report: &codesignal.Report{
+				Diagnostics: []codesignal.Diagnostic{
+					{Kind: codesignal.DiagKindWorktreeNotClean, Message: "working tree is not clean: notes.md"},
+					{Kind: codesignal.DiagKindWorktreeReportReflectsCommittedHEAD, Message: "report reflects committed HEAD"},
+				},
+			},
+			wantContains: []string{
+				"No active CodeSignal findings.\n",
+				"working tree is not clean: notes.md",
+				"report reflects committed HEAD",
+			},
+			wantAbsent: []string{"incomplete", "not analyzed"},
+		},
+		{
 			name: "prints the unqualified verdict when project coverage is non-nil but complete",
 			report: &codesignal.Report{
 				Summary:         codesignal.Summary{FilesAnalyzed: 1},

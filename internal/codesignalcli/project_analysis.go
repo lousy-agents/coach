@@ -143,12 +143,7 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		analyzerProtocolVersion = projectbridge.ProtocolVersion
 	}
 	roots := selectedRootsFromConfig(project.Config)
-	if dirty, err := detectRelevantDirtyWorktree(dir, roots, project.ConfigPath); err != nil || dirty.RelevantChanges {
-		diagnostics = append(append([]codesignal.Diagnostic(nil), diagnostics...), codesignal.Diagnostic{
-			Kind:    codesignal.DiagKindWorktreeChangesNotAnalyzed,
-			Message: "report reflects committed HEAD; uncommitted worktree changes were not analyzed",
-		})
-	}
+	diagnostics = appendProjectWorktreeDiagnostic(diagnostics, dir, roots, project.ConfigPath)
 
 	merged := codesignal.Input{
 		Scope:               input.Scope,

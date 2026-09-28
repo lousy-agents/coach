@@ -13,7 +13,7 @@ import (
 
 var _ = Describe("applyProjectBackend dirty-worktree diagnostic and package manager provenance", func() {
 	When("the worktree has relevant uncommitted changes and the project backend returns results", func() {
-		It("appends a worktree_changes_not_analyzed diagnostic to input", func() {
+		It("appends a worktree_report_reflects_committed_head diagnostic to input", func() {
 			original := runDirtyWorktreeGit
 			runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
 				return []byte("M  bun.lock\x00"), nil
@@ -43,11 +43,13 @@ var _ = Describe("applyProjectBackend dirty-worktree diagnostic and package mana
 			for i, d := range input.Diagnostics {
 				kinds[i] = d.Kind
 			}
-			Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed),
-				"a dirty relevant path must trigger the worktree_changes_not_analyzed diagnostic; diagnostics=%v", input.Diagnostics)
+			Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeReportReflectsCommittedHEAD),
+				"a dirty relevant path must trigger the worktree_report_reflects_committed_head diagnostic; diagnostics=%v", input.Diagnostics)
+			Expect(kinds).NotTo(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed),
+				"project provenance must not reuse the file-local skip kind; diagnostics=%v", input.Diagnostics)
 		})
 
-		It("worktree_changes_not_analyzed message references committed HEAD", func() {
+		It("worktree_report_reflects_committed_head message references committed HEAD", func() {
 			original := runDirtyWorktreeGit
 			runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
 				return []byte("?? bun.lock\x00"), nil
@@ -72,7 +74,7 @@ var _ = Describe("applyProjectBackend dirty-worktree diagnostic and package mana
 
 			var msg string
 			for _, d := range input.Diagnostics {
-				if d.Kind == codesignal.DiagKindWorktreeChangesNotAnalyzed {
+				if d.Kind == codesignal.DiagKindWorktreeReportReflectsCommittedHEAD {
 					msg = d.Message
 				}
 			}
@@ -80,7 +82,7 @@ var _ = Describe("applyProjectBackend dirty-worktree diagnostic and package mana
 			Expect(msg).To(ContainSubstring("HEAD"), "message must reference committed HEAD; got %q", msg)
 		})
 
-		It("does not emit worktree_changes_not_analyzed when the worktree is clean", func() {
+		It("does not emit a worktree provenance diagnostic when the worktree is clean", func() {
 			original := runDirtyWorktreeGit
 			runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
 				return []byte{}, nil
@@ -105,7 +107,9 @@ var _ = Describe("applyProjectBackend dirty-worktree diagnostic and package mana
 
 			for _, d := range input.Diagnostics {
 				Expect(d.Kind).NotTo(Equal(codesignal.DiagKindWorktreeChangesNotAnalyzed),
-					"clean worktree must not trigger the diagnostic")
+					"clean worktree must not trigger the skip diagnostic")
+				Expect(d.Kind).NotTo(Equal(codesignal.DiagKindWorktreeReportReflectsCommittedHEAD),
+					"clean worktree must not trigger the provenance diagnostic")
 			}
 		})
 	})
@@ -147,7 +151,7 @@ var _ = Describe("applyProjectBackend dirty-worktree diagnostic and package mana
 
 var _ = Describe("applyProjectBackend dirty-worktree diagnostic: error handling", func() {
 	When("the git status seam returns an error", func() {
-		It("still emits worktree_changes_not_analyzed rather than silently omitting the AC-VER-4 warning", func() {
+		It("emits worktree_status_check_failed rather than describing the error as skipped analysis", func() {
 			original := runDirtyWorktreeGit
 			runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
 				return nil, errors.New("simulated git status failure")
@@ -174,8 +178,10 @@ var _ = Describe("applyProjectBackend dirty-worktree diagnostic: error handling"
 			for i, d := range input.Diagnostics {
 				kinds[i] = d.Kind
 			}
-			Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed),
-				"a git status error must conservatively emit the worktree_changes_not_analyzed diagnostic; diagnostics=%v", input.Diagnostics)
+			Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeStatusCheckFailed),
+				"a git status error must emit worktree_status_check_failed; diagnostics=%v", input.Diagnostics)
+			Expect(kinds).NotTo(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed),
+				"a git status error must not be described as skipped analysis; diagnostics=%v", input.Diagnostics)
 		})
 	})
 })

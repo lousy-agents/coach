@@ -138,7 +138,7 @@ WHERE the user requests TypeScript project readiness, THE Coach CLI shall read t
 
 WHEN a TypeScript project scan produces a report, THE Coach CLI shall include `project_provenance` and `project_scope`.
 
-WHEN a TypeScript project scan sees relevant dirty worktree changes, THE Coach CLI shall emit `worktree_changes_not_analyzed`.
+WHEN a TypeScript project scan sees relevant dirty worktree changes, THE Coach CLI shall emit `worktree_report_reflects_committed_head`. File-local scans emit `worktree_changes_not_analyzed` for dirty supported-language files.
 
 THE Coach CLI shall complete a successful analysis with process status `0` even when the report contains signals, except where `--fail-on-incomplete-coverage` applies.
 
@@ -245,7 +245,7 @@ Status uses the evidence rule in the cutoff section.
 | Consented TypeScript compiler setup | Implemented as `--prepare-compiler` in `v0.6.0` and as a scan-time offer in `v0.7.0`. The standalone flag is mise-only. Locked by `cmd/coach/project_ts_setup_execute_acceptance_test.go` and `cmd/coach/project_ts_setup_preview_acceptance_test.go`. |
 | Unattended path that refuses prompts | Implemented as `--no-interactive` and a non-empty `CI` variable in `v0.7.0`. Locked by `cmd/coach/project_ts_scan_policy_authoring_acceptance_test.go`. |
 | JSON signals carry rule identity and rule version | Implemented. Default text output still omits `rule_id` and `severity` for file-local signals ([#279](https://github.com/lousy-agents/coach/issues/279)). Locked by `pkg/codesignal/report_shape_acceptance_test.go`. |
-| TypeScript project `project_provenance`, `project_scope`, `worktree_changes_not_analyzed`, complete no-match `project_next_actions`, and `--fail-on-incomplete-coverage` exit `3` | Implemented in `v0.8.0`. Locked by `cmd/coach/project_scope_cli_acceptance_test.go`, `cmd/coach/project_provenance_worktree_acceptance_test.go`, and `cmd/coach/fail_on_incomplete_coverage_acceptance_test.go`. |
+| TypeScript project `project_provenance`, `project_scope`, `worktree_report_reflects_committed_head`, complete no-match `project_next_actions`, and `--fail-on-incomplete-coverage` exit `3`; file-local `worktree_changes_not_analyzed` and `worktree_not_clean` | `project_provenance`, `project_scope`, `project_next_actions`, and `--fail-on-incomplete-coverage` implemented in `v0.8.0`. `worktree_report_reflects_committed_head`, `worktree_changes_not_analyzed`, and `worktree_not_clean` ship in the release that carries this PR. Locked by `cmd/coach/project_scope_cli_acceptance_test.go`, `cmd/coach/project_provenance_worktree_acceptance_test.go`, `cmd/coach/working_tree_disclosure_acceptance_test.go`, and `cmd/coach/fail_on_incomplete_coverage_acceptance_test.go`. |
 | Local API, worker, and OAuth lab | Implemented and CI-verified. Not the default product. Path A stub smoke is locked by `cmd/platform-smoke/smoke_acceptance_test.go`. README names this path as a separate lab. Paths B and C are operator labs. |
 | Cloud deploy and SGLang | Bet. Not the current product. |
 | Model judgment on the default path | Bet. Not present on the default CLI path. |

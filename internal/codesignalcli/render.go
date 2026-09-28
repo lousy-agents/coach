@@ -69,8 +69,7 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 
 	incompleteProject := (report.ProjectCoverage != nil && !report.ProjectCoverage.Complete) ||
 		hasProjectLifecycleDiagnostic(report.Diagnostics)
-	hasDiagnostics := len(report.Diagnostics) > 0
-	if !hasDiagnostics && !incompleteProject {
+	if keepUnqualifiedAllClear(report, incompleteProject) {
 		b.WriteString("No active CodeSignal findings.\n")
 		return
 	}
