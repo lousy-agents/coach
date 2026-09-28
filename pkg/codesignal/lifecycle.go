@@ -66,18 +66,21 @@ func classifyFileSignals(hasBase bool, headSignals, baseSignals []Signal, noBase
 	}
 
 	for _, k := range sortedKeys(baseGroups) {
-		baseGroup := baseGroups[k]
-		headGroup := headGroups[k]
-		nh := len(headGroup)
-		for i, sig := range baseGroup {
-			if i >= nh {
-				sig.Lifecycle = "resolved"
-				sig.Fingerprint = computeFingerprint(sig.RuleID, sig.Path, sig.Subject, sig.Evidence, i)
-				sig.ID = computeSignalID(sig.RuleID, sig.Path, sig.Subject, sig.Evidence, sig.Location.StartRow, sig.Location.StartCol, i)
-				result = append(result, sig)
-			}
-		}
+		result = appendResolvedBaseSignals(result, baseGroups[k], headGroups[k])
 	}
 
+	return result
+}
+
+func appendResolvedBaseSignals(result, baseGroup, headGroup []Signal) []Signal {
+	nh := len(headGroup)
+	for i, sig := range baseGroup {
+		if i >= nh {
+			sig.Lifecycle = "resolved"
+			sig.Fingerprint = computeFingerprint(sig.RuleID, sig.Path, sig.Subject, sig.Evidence, i)
+			sig.ID = computeSignalID(sig.RuleID, sig.Path, sig.Subject, sig.Evidence, sig.Location.StartRow, sig.Location.StartCol, i)
+			result = append(result, sig)
+		}
+	}
 	return result
 }

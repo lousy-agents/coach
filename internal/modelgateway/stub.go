@@ -66,22 +66,31 @@ var findingRefLine = regexp.MustCompile(`(?m)(?:^|\s)finding_ref:\s*(\S+)`)
 
 func extractFindingRefsFromMessages(msgs []Message) []string {
 	var refs []string
-	seen := make(map[string]struct{})
 	for _, m := range msgs {
-		for _, match := range findingRefLine.FindAllStringSubmatch(m.Content, -1) {
-			if len(match) < 2 {
-				continue
-			}
-			ref := strings.TrimSpace(match[1])
-			if ref == "" {
-				continue
-			}
-			if _, ok := seen[ref]; ok {
-				continue
-			}
-			seen[ref] = struct{}{}
-			refs = append(refs, ref)
-		}
+		refs = appendUniqueFindingRefs(refs, m.Content)
 	}
 	return refs
+}
+
+func appendUniqueFindingRefs(refs []string, content string) []string {
+	for _, match := range findingRefLine.FindAllStringSubmatch(content, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		ref := strings.TrimSpace(match[1])
+		if ref == "" || containsFindingRef(refs, ref) {
+			continue
+		}
+		refs = append(refs, ref)
+	}
+	return refs
+}
+
+func containsFindingRef(refs []string, ref string) bool {
+	for _, existing := range refs {
+		if existing == ref {
+			return true
+		}
+	}
+	return false
 }

@@ -62,29 +62,43 @@ func ProjectScopeFromModel(model Model, policy ProjectScopePolicy) (ProjectScope
 }
 
 func analyzedFilePathsFromRootScopes(scopes []RootScope) []string {
-	seen := make(map[string]struct{})
-	var paths []string
+	acc := &analyzedPathAccumulator{seen: make(map[string]struct{})}
 	for _, scope := range scopes {
-		for _, p := range scope.AnalyzedPaths {
-			if _, exists := seen[p]; exists {
-				continue
-			}
-			seen[p] = struct{}{}
-			paths = append(paths, p)
-		}
+		acc.add(scope.AnalyzedPaths)
 	}
-	return paths
+	return acc.paths
+}
+
+type analyzedPathAccumulator struct {
+	seen  map[string]struct{}
+	paths []string
+}
+
+func (a *analyzedPathAccumulator) add(analyzed []string) {
+	for _, p := range analyzed {
+		if _, exists := a.seen[p]; exists {
+			continue
+		}
+		a.seen[p] = struct{}{}
+		a.paths = append(a.paths, p)
+	}
 }
 
 // layerMatchesAnyPath must stay in sync with pkg/codesignal's matchLayer
 // (see ProjectScopePolicy) -- an import cycle prevents sharing one
 // implementation.
 func layerMatchesAnyPath(layer ProjectScopePolicyLayer, paths []string) bool {
+	matched := false
 	for _, prefix := range layer.Prefixes {
-		for _, path := range paths {
-			if prefix == "." || path == prefix || strings.HasPrefix(path, prefix+"/") {
-				return true
-			}
+		matched = matched || prefixMatchesAnyPath(prefix, paths)
+	}
+	return matched
+}
+
+func prefixMatchesAnyPath(prefix string, paths []string) bool {
+	for _, path := range paths {
+		if prefix == "." || path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
 		}
 	}
 	return false
