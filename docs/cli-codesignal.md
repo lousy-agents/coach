@@ -47,8 +47,8 @@ Requires `git` on `PATH`. Analyzes **committed Git objects**, not the dirty
 worktree. TypeScript project mode also inspects worktree `package.json` /
 `node_modules` / `mise.toml` for compiler and Node readiness.
 
-Positional arguments after `--baseline` can swallow later flags. Put all flags
-before any extra tokens.
+`coach codesignal` takes no positional operands. An unexpected positional
+argument is a usage error: exit 2, usage on stderr, and nothing on stdout.
 
 ## Exit codes
 
