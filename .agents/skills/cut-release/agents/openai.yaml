@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cut Release"
+  short_description: "Tag a coach release and publish customer notes"
+  default_prompt: "Use $cut-release to propose the next coach version, draft the release notes, and hand off the tag."
