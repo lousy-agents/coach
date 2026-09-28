@@ -1,0 +1,1 @@
+{"version":3,"file":"reachability-canonical.d.ts","sourceRoot":"","sources":["../../src/project-sidecar/reachability-canonical.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,iBAAiB,EAAE,oBAAoB,EAAE,MAAM,eAAe,CAAC;AAE7E,mIAAmI;AACnI,wBAAgB,qBAAqB,CAAC,KAAK,EAAE,SAAS,iBAAiB,EAAE,GAAG,iBAAiB,EAAE,CAE9F;AAED,wBAAgB,6BAA6B,CAAC,KAAK,EAAE,SAAS,oBAAoB,EAAE,GAAG,oBAAoB,EAAE,CAE5G"}
