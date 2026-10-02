@@ -36,7 +36,7 @@ jobs:
 
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
-          version: "2026.9.18"
+          version: "2026.10.0"
           install_args: go pnpm bun
           experimental: true
 
@@ -75,7 +75,7 @@ jobs:
 
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
-          version: "2026.9.18"
+          version: "2026.10.0"
           experimental: true
 
       - name: js-ci
@@ -90,7 +90,7 @@ jobs:
 
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
-          version: "2026.9.18"
+          version: "2026.10.0"
           experimental: true
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -121,7 +121,7 @@ jobs:
 
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
-          version: "2026.9.18"
+          version: "2026.10.0"
           experimental: true
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -161,7 +161,7 @@ jobs:
 
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
-          version: "2026.9.18"
+          version: "2026.10.0"
           experimental: true
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -198,7 +198,7 @@ jobs:
 
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
-          version: "2026.9.18"
+          version: "2026.10.0"
           install_args: go
           experimental: true
 
@@ -216,7 +216,7 @@ jobs:
 
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
-          version: "2026.9.18"
+          version: "2026.10.0"
           install_args: go
           experimental: true
 
