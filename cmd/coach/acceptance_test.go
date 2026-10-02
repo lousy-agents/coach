@@ -91,6 +91,15 @@ func hasDiagnostic(report *codesignal.Report, kind, path string) bool {
 	return false
 }
 
+func diagnosticFor(report *codesignal.Report, kind, path string) (codesignal.Diagnostic, bool) {
+	for _, d := range report.Diagnostics {
+		if d.Kind == kind && d.Path == path {
+			return d, true
+		}
+	}
+	return codesignal.Diagnostic{}, false
+}
+
 // sourceScopeForPath reads the customer-facing source_scope emitted with a
 // signal. It intentionally decodes the public JSON document rather than a Go
 // report type so this acceptance suite requires the label to be serialized.
@@ -881,7 +890,7 @@ func tangle(n int) {
 		It("analyzes the HEAD path without establishing rename continuity", func() {
 			repo := newTempGitRepo()
 			initialSHA := commitFile(repo, "old.go", hiddenInputMutationGo)
-			renameFile(repo, "old.go", "new.go")
+			headSHA := renameFile(repo, "old.go", "new.go")
 			expectCoachStatusPrefix(repo, initialSHA, "new.go", "R")
 
 			report, _ := runCoachCodesignal(repo, initialSHA)
@@ -896,12 +905,22 @@ func tangle(n int) {
 			}
 			Expect(hasDiagnostic(report, "continuity_not_determined", "new.go")).To(BeTrue(),
 				"the report must say continuity was not determined on the analyzed new path")
+			continuity, found := diagnosticFor(report, "continuity_not_determined", "new.go")
+			Expect(found).To(BeTrue())
+			Expect(continuity.Side).To(Equal("head"),
+				"rename/copy continuity detection is head-side only, so the diagnostic must identify head as the comparison side")
+			Expect(continuity.Revision).To(Equal(headSHA),
+				"the diagnostic's machine-readable revision must be the actual HEAD SHA the rename was analyzed at")
+			Expect(continuity.Message).To(ContainSubstring("head revision "+headSHA),
+				"the diagnostic's text must name the same side and revision as its machine-readable Side and Revision fields")
 			Expect(signalsForPath(report, "old.go")).To(BeEmpty(), "the old path no longer exists at HEAD and must not appear in the report")
 
 			textOut, textErr, textExit := runCoachCodesignalRaw(repo, initialSHA)
 			Expect(textExit).To(Equal(0), "stderr: %s", textErr)
 			Expect(string(textOut)).NotTo(ContainSubstring("not analyzed"),
 				"an analyzed rename must not be described as unanalyzed")
+			Expect(string(textOut)).To(ContainSubstring("head revision "+headSHA),
+				"text output must name the same side and revision as the diagnostic's machine-readable Side and Revision fields")
 			var document struct {
 				Summary struct {
 					FilesUnanalyzed *int `json:"files_unanalyzed"`

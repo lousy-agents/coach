@@ -314,4 +314,50 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 			Expect(string(nonProjectSignal["suggested_skill"])).To(Equal(`""`))
 		})
 	})
+
+	When("a Diagnostic carries the comparison side and revision that prevented completeness (AC-VER-3)", func() {
+		It("marshals side and revision as their exact machine-readable values", func() {
+			var diag codesignal.Diagnostic
+			Expect(json.Unmarshal([]byte(`{
+				"path": "pkg/a/a.go",
+				"kind": "project_lifecycle_indeterminate",
+				"message": "head analysis incomplete at pkg/a/a.go",
+				"side": "head",
+				"revision": "abc1234"
+			}`), &diag)).To(Succeed())
+
+			raw, err := json.Marshal(diag)
+			Expect(err).NotTo(HaveOccurred())
+
+			var fields map[string]json.RawMessage
+			Expect(json.Unmarshal(raw, &fields)).To(Succeed())
+
+			Expect(fields).To(HaveKey("side"))
+			var side string
+			Expect(json.Unmarshal(fields["side"], &side)).To(Succeed())
+			Expect(side).To(Equal("head"))
+
+			Expect(fields).To(HaveKey("revision"))
+			var revision string
+			Expect(json.Unmarshal(fields["revision"], &revision)).To(Succeed())
+			Expect(revision).To(Equal("abc1234"))
+		})
+
+		It("omits side and revision when left as zero values", func() {
+			diag := codesignal.Diagnostic{
+				Path:    "pkg/b/b.go",
+				Kind:    codesignal.DiagKindProjectLifecycleIndeterminate,
+				Message: "base analysis incomplete at pkg/b/b.go",
+			}
+
+			raw, err := json.Marshal(diag)
+			Expect(err).NotTo(HaveOccurred())
+
+			var fields map[string]json.RawMessage
+			Expect(json.Unmarshal(raw, &fields)).To(Succeed())
+
+			Expect(fields).NotTo(HaveKey("side"))
+			Expect(fields).NotTo(HaveKey("revision"))
+		})
+	})
 })

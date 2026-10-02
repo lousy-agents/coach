@@ -154,6 +154,10 @@ WHEN a signal exists at the merge base and not at `HEAD`, THE Coach CLI shall cl
 
 WHEN a diff scan cannot determine old-path continuity for a rename or copy, THE Coach CLI shall classify matching signals as `unknown` and record a continuity diagnostic.
 
+WHEN a `--base` comparison is degraded because either side is incomplete, THE Coach CLI shall record a diagnostic naming the affected path together with machine-readable `side` (`head` or `base`) and `revision` fields identifying which comparison side and revision caused the degradation.
+
+WHEN a `--base` comparison's lifecycle or counts are degraded by an incomplete comparison side, THE Coach CLI shall report the affected lifecycle as `unknown` and the affected counts as indeterminate rather than asserting an improvement or a regression.
+
 WHEN the CLI cannot otherwise classify a signal, THE Coach CLI shall classify that signal as `unknown`. THE Coach CLI shall not treat `unknown` as a new defect.
 
 WHILE a baseline scan runs, THE Coach CLI shall classify signals as `baseline`. THE Coach CLI shall not emit `resolved` signals during a baseline scan.

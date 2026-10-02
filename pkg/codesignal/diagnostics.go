@@ -12,6 +12,13 @@ type Diagnostic struct {
 	Kind     string              `json:"kind"`
 	Message  string              `json:"message"`
 	Location *semantics.Location `json:"location,omitempty"`
+
+	// Side identifies which comparison side this diagnostic concerns: "head"
+	// or "base".
+	Side string `json:"side,omitempty"`
+	// Revision is Side's git revision (e.g. commit SHA), so the diagnostic's
+	// text-named side/revision has a machine-readable counterpart.
+	Revision string `json:"revision,omitempty"`
 }
 
 // Diagnostic.Kind values projectLifecycleState (codesignal.go) emits when
