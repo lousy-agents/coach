@@ -3,7 +3,7 @@ package codesignal
 import (
 	"strings"
 
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 )
 
 type layerPairKey struct {
@@ -11,29 +11,13 @@ type layerPairKey struct {
 	importee string
 }
 
-func groupForbiddenInternalEdges(edges []projectmodel.ImportEdge, policy LayerPolicy) (map[layerPairKey][]projectmodel.ImportEdge, map[layerPairKey][2]string) {
+func groupForbiddenInternalEdges(edges []domain.ImportEdge, policy LayerPolicy) (map[layerPairKey][]domain.ImportEdge, map[layerPairKey][2]string) {
 	forbidden := buildForbiddenLayerPairSet(policy)
 
-	groups := make(map[layerPairKey][]projectmodel.ImportEdge)
+	groups := make(map[layerPairKey][]domain.ImportEdge)
 	groupLayers := make(map[layerPairKey][2]string)
 	for _, edge := range edges {
 		key, layers, ok := forbiddenInternalPair(edge, policy.Layers, forbidden)
-		if !ok {
-			continue
-		}
-		groups[key] = append(groups[key], edge)
-		groupLayers[key] = layers
-	}
-	return groups, groupLayers
-}
-
-func groupForbiddenTSEdges(edges []projectmodel.ImportEdge, policy LayerPolicy) (map[layerPairKey][]projectmodel.ImportEdge, map[layerPairKey][2]string) {
-	forbidden := buildForbiddenLayerPairSet(policy)
-
-	groups := make(map[layerPairKey][]projectmodel.ImportEdge)
-	groupLayers := make(map[layerPairKey][2]string)
-	for _, edge := range edges {
-		key, layers, ok := forbiddenTSPair(edge, policy.Layers, forbidden)
 		if !ok {
 			continue
 		}
@@ -51,7 +35,7 @@ func buildForbiddenLayerPairSet(policy LayerPolicy) map[[2]string]struct{} {
 	return forbidden
 }
 
-func forbiddenInternalPair(edge projectmodel.ImportEdge, layers []ArchitectureLayer, forbidden map[[2]string]struct{}) (layerPairKey, [2]string, bool) {
+func forbiddenInternalPair(edge domain.ImportEdge, layers []ArchitectureLayer, forbidden map[[2]string]struct{}) (layerPairKey, [2]string, bool) {
 	if edge.Kind != "internal" {
 		return layerPairKey{}, [2]string{}, false
 	}
@@ -74,7 +58,7 @@ func forbiddenInternalPair(edge projectmodel.ImportEdge, layers []ArchitectureLa
 
 // forbiddenTSPair implements the eligibility rule documented on
 // EvaluateTypeScriptLayerViolations.
-func forbiddenTSPair(edge projectmodel.ImportEdge, layers []ArchitectureLayer, forbidden map[[2]string]struct{}) (layerPairKey, [2]string, bool) {
+func forbiddenTSPair(edge domain.ImportEdge, layers []ArchitectureLayer, forbidden map[[2]string]struct{}) (layerPairKey, [2]string, bool) {
 	if edge.Kind != "import" && edge.Kind != "reexport" {
 		return layerPairKey{}, [2]string{}, false
 	}
@@ -103,20 +87,3 @@ func forbiddenTSPair(edge projectmodel.ImportEdge, layers []ArchitectureLayer, f
 // Prefix "." is the universal repository-root ancestor: it matches every
 // package directory, consistent with config validation treating "." as an
 // ancestor of every other prefix (hasDuplicateOrOverlappingPaths).
-func matchLayer(layers []ArchitectureLayer, dir string) (ArchitectureLayer, bool) {
-	for _, layer := range layers {
-		if layerContainsDir(layer, dir) {
-			return layer, true
-		}
-	}
-	return ArchitectureLayer{}, false
-}
-
-func layerContainsDir(layer ArchitectureLayer, dir string) bool {
-	for _, prefix := range layer.Prefixes {
-		if prefix == "." || dir == prefix || strings.HasPrefix(dir, prefix+"/") {
-			return true
-		}
-	}
-	return false
-}

@@ -2,11 +2,8 @@ package codesignal
 
 import (
 	"sort"
-	"strconv"
-	"strings"
 
-	"github.com/lousy-agents/coach/pkg/projectmodel"
-	"github.com/lousy-agents/coach/pkg/semantics"
+	"github.com/lousy-agents/coach/pkg/domain"
 )
 
 // ruleLayerViolationID identifies the architecture.layer_violation
@@ -53,7 +50,7 @@ type LayerPolicy struct {
 //
 // If policy has no Layers or no ForbiddenImports, EvaluateGoLayerViolations
 // returns (nil, nil) immediately: there is no policy to evaluate.
-func EvaluateGoLayerViolations(model projectmodel.Model, policy LayerPolicy, ruleVersion, backendVersion, configDigest string) ([]ProjectChange, []Diagnostic) {
+func EvaluateGoLayerViolations(model domain.Model, policy LayerPolicy, ruleVersion, backendVersion, configDigest string) ([]ProjectChange, []Diagnostic) {
 	if len(policy.Layers) == 0 || len(policy.ForbiddenImports) == 0 {
 		return nil, nil
 	}
@@ -91,7 +88,7 @@ func EvaluateGoLayerViolations(model projectmodel.Model, policy LayerPolicy, rul
 //
 // If policy has no Layers or no ForbiddenImports, EvaluateTypeScriptLayerViolations
 // returns (nil, nil) immediately: there is no policy to evaluate.
-func EvaluateTypeScriptLayerViolations(model projectmodel.Model, policy LayerPolicy, ruleVersion, backendVersion, configDigest string) ([]ProjectChange, []Diagnostic) {
+func EvaluateTypeScriptLayerViolations(model domain.Model, policy LayerPolicy, ruleVersion, backendVersion, configDigest string) ([]ProjectChange, []Diagnostic) {
 	if len(policy.Layers) == 0 || len(policy.ForbiddenImports) == 0 {
 		return nil, nil
 	}
@@ -110,27 +107,13 @@ func EvaluateTypeScriptLayerViolations(model projectmodel.Model, policy LayerPol
 	return changes, nil
 }
 
-func sortedLayerPairKeys(groups map[layerPairKey][]projectmodel.ImportEdge) []layerPairKey {
-	keys := make([]layerPairKey, 0, len(groups))
-	for key := range groups {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].importer != keys[j].importer {
-			return keys[i].importer < keys[j].importer
-		}
-		return keys[i].importee < keys[j].importee
-	})
-	return keys
-}
-
 // layerViolationChange builds the shared architecture.layer_violation
 // ProjectChange shape for both language evaluators. language is added to
 // MachineEvidence["language"] only when non-empty, so Go's evaluator (which
 // passes "") keeps its already-frozen MachineEvidence keys (issue #211)
 // while EvaluateTypeScriptLayerViolations gains a "language": "typescript"
 // entry.
-func layerViolationChange(key layerPairKey, edges []projectmodel.ImportEdge, layerFromName, layerToName, ruleVersion, backendVersion, configDigest, language string) ProjectChange {
+func layerViolationChange(key layerPairKey, edges []domain.ImportEdge, layerFromName, layerToName, ruleVersion, backendVersion, configDigest, language string) ProjectChange {
 	sites := make([]string, 0, len(edges))
 	for _, edge := range edges {
 		sites = append(sites, edge.Site)
@@ -178,15 +161,3 @@ func layerViolationChange(key layerPairKey, edges []projectmodel.ImportEdge, lay
 // the last colon (file paths never contain one, but this stays defensive)
 // and converts the 1-based line to the 0-based StartRow ProjectLocation
 // uses elsewhere in this package.
-func parseSiteLocation(site string) ProjectLocation {
-	idx := strings.LastIndex(site, ":")
-	if idx < 0 {
-		return ProjectLocation{Path: site}
-	}
-	path := site[:idx]
-	row, err := strconv.Atoi(site[idx+1:])
-	if err != nil || row <= 0 {
-		return ProjectLocation{Path: path}
-	}
-	return ProjectLocation{Path: path, Location: semantics.Location{StartRow: uint(row - 1)}}
-}

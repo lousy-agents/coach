@@ -21,24 +21,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func layerPrefixConfigJSON(n int) []byte {
-	var b strings.Builder
-	b.WriteString(`{"schema_version":"1","roots":["."],"layers":[{"name":"L","prefixes":[`)
-	for i := 0; i < n; i++ {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		fmt.Fprintf(&b, `"p%04d"`, i)
-	}
-	b.WriteString(`]}]}`)
-	return []byte(b.String())
-}
-
-func TestProjectTextAcceptance(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "project text renderer acceptance suite")
-}
-
 var _ = Describe("project-analysis text rendering", func() {
 	It("renders active project observations, structured paths, and project coverage", func() {
 		report := &codesignal.Report{
@@ -201,40 +183,6 @@ type recordingProjectBackend struct {
 	result   *ProjectBackendResult
 }
 
-func (b *recordingProjectBackend) Analyze(_ context.Context, req ProjectBackendRequest) (*ProjectBackendResult, error) {
-	b.requests = append(b.requests, req)
-	return b.result, nil
-}
-
-func acceptanceTempGitRepo() string {
-	dir := GinkgoT().TempDir()
-	cmd := exec.Command("git", "init")
-	cmd.Dir = dir
-	output, err := cmd.CombinedOutput()
-	Expect(err).NotTo(HaveOccurred(), "git init: %s", output)
-	return dir
-}
-
-func acceptanceCommitFile(dir, name, contents string) string {
-	target := filepath.Join(dir, name)
-	Expect(os.MkdirAll(filepath.Dir(target), 0o755)).To(Succeed())
-	Expect(os.WriteFile(target, []byte(contents), 0o644)).To(Succeed())
-	addCmd := exec.Command("git", "add", name)
-	addCmd.Dir = dir
-	output, err := addCmd.CombinedOutput()
-	Expect(err).NotTo(HaveOccurred(), "git add: %s", output)
-	commitCmd := exec.Command("git", "commit", "-m", "commit "+name)
-	commitCmd.Dir = dir
-	commitCmd.Env = commitTestEnv
-	output, err = commitCmd.CombinedOutput()
-	Expect(err).NotTo(HaveOccurred(), "git commit: %s", output)
-	revCmd := exec.Command("git", "rev-parse", "HEAD")
-	revCmd.Dir = dir
-	sha, err := revCmd.Output()
-	Expect(err).NotTo(HaveOccurred())
-	return strings.TrimSpace(string(sha))
-}
-
 var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges", func() {
 	It("threads baseline project results into a schema-2 report and skips the seam when project is nil", func() {
 		dir := acceptanceTempGitRepo()
@@ -340,8 +288,6 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(backend.requests[0].Baseline).To(BeFalse())
 	})
 
-	// See pkg/codesignal/project_contract_acceptance_test.go for
-	// codesignal.Build's own contract on incomplete head coverage.
 	It("threads an incomplete HeadCoverage into a lifecycle-indeterminate report rather than claiming baseline", func() {
 		dir := acceptanceTempGitRepo()
 		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
@@ -413,8 +359,6 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(text).NotTo(ContainSubstring("not analyzed"), "project_coverage_incomplete/project_lifecycle_indeterminate diagnostics carry no Path, so no path count must be claimed")
 	})
 
-	// See pkg/codesignal/codesignal.go's projectLifecycleState for when
-	// base-side incompleteness marks lifecycle indeterminate.
 	It("renders project-incomplete for a real report whose base-side coverage was incomplete even though head coverage is complete", func() {
 		dir := acceptanceTempGitRepo()
 		baseSHA := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
@@ -447,8 +391,6 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		Expect(text).To(ContainSubstring("project analysis did not complete"), "the verdict must not fall back to the generic 'additional diagnostics were recorded' clause when the diagnostic itself names project-analysis incompleteness")
 	})
 
-	// See pkg/codesignal/codesignal.go's filterAnchorlessProjectChanges for
-	// the project_observation_missing_primary_path diagnostic this pins.
 	It("renders the generic incomplete-analysis fallback for a real report whose only diagnostic is an anchorless project observation", func() {
 		dir := acceptanceTempGitRepo()
 		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
@@ -460,7 +402,6 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 				RuleID:      "architecture.layer_violation",
 				Kind:        "project_layer_violation",
 				Provenance:  codesignal.Provenance{Producer: "fake-backend"},
-				// PrimaryAnchor deliberately left zero-value: Path == "".
 			}},
 			HeadCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
 		}}
@@ -485,18 +426,6 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	})
 })
 
-func tsAcceptanceRealTypescriptVersion() string {
-	return tstestutil.TypeScriptVersion()
-}
-
-func ensureRealTypeScriptCompilerAvailable() string {
-	return tstestutil.EnsureTypeScriptCompilerAvailable()
-}
-
-func installRealTypescriptCompilerAt(repoDir string) {
-	tstestutil.InstallTypeScriptCompiler(repoDir, true)
-}
-
 // Mutation testing showed that swapping filepath.Join(req.Dir, ...) for a
 // bare repository-root-relative lookup left the whole cmd/coach acceptance
 // suite green, because every existing test happens to run with the
@@ -505,9 +434,7 @@ func installRealTypescriptCompilerAt(repoDir string) {
 // cwd differs from req.Dir.
 var _ = Describe("tsProjectBackend compiler resolution", Label("ts-project-backend"), func() {
 	BeforeEach(func() {
-		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-			Skip(reason)
-		}
+		body_projectAcceptanceTest_436()
 	})
 
 	When("ProjectBackendRequest.Dir differs from the test process's own working directory", func() {
@@ -550,9 +477,7 @@ var _ = Describe("tsProjectBackend compiler resolution", Label("ts-project-backe
 
 var _ = Describe("tsProjectBackend compiler resolution from a subdirectory invocation", Label("ts-project-backend"), func() {
 	BeforeEach(func() {
-		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-			Skip(reason)
-		}
+		body_projectAcceptanceTest_481()
 	})
 
 	When("ProjectBackendRequest.Dir is a subdirectory of the repository, not its root", func() {
@@ -588,9 +513,7 @@ var _ = Describe("tsProjectBackend compiler resolution from a subdirectory invoc
 
 var _ = Describe("tsProjectBackend compiler resolution from a nested TypeScript project", Label("ts-project-backend"), func() {
 	BeforeEach(func() {
-		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-			Skip(reason)
-		}
+		body_projectAcceptanceTest_519()
 	})
 
 	When("the repository has no top-level package.json and the policy names a nested js/semantics-shaped root that pins an exact installed compiler", func() {
@@ -628,9 +551,7 @@ var _ = Describe("tsProjectBackend compiler resolution from a nested TypeScript 
 
 var _ = Describe("PrepareTSRuntime resolved-runtime provenance", Label("ts-project-backend"), func() {
 	BeforeEach(func() {
-		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-			Skip(reason)
-		}
+		body_projectAcceptanceTest_559()
 	})
 
 	It("records node version, compiler version, compiler origin, and the materialized analyzer directory on the prepared runtime", func() {
@@ -676,10 +597,6 @@ var _ = Describe("PrepareTSRuntime resolved-runtime provenance", Label("ts-proje
 
 type identityHandoffBackend struct {
 	result *ProjectBackendResult
-}
-
-func (b identityHandoffBackend) Analyze(context.Context, ProjectBackendRequest) (*ProjectBackendResult, error) {
-	return b.result, nil
 }
 
 var _ = Describe("applyProjectBackend analyzer protocol version handoff", func() {
@@ -832,17 +749,7 @@ var _ = Describe("project-config boundary budgets", func() {
 	})
 
 	It("rejects documents that exceed the JSON nesting budget", func() {
-		var b strings.Builder
-		for i := 0; i < maxProjectConfigJSONDepth+2; i++ {
-			b.WriteString(`{"a":`)
-		}
-		b.WriteString(`1`)
-		for i := 0; i < maxProjectConfigJSONDepth+2; i++ {
-			b.WriteByte('}')
-		}
-		err := validateProjectConfigJSON([]byte(b.String()))
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("nesting budget"))
+		body_projectAcceptanceTest_rejectsDocumentsThatExceedTheJSONNestingBudget_759()
 	})
 
 	It("surfaces a timed-out git child as project_config_invalid", func() {
@@ -903,10 +810,6 @@ var _ = Describe("project-config boundary budgets", func() {
 		Expect(err.Error()).To(ContainSubstring("stdout exceeded"))
 	})
 
-	// Sequential stdout-then-stderr reads deadlock when the child fills the
-	// stderr pipe before closing stdout. Bounded project-config I/O must
-	// drain both pipes concurrently so a chatty git child cannot stall the
-	// CLI until the wall-time budget fires.
 	It("drains git stdout and stderr concurrently so a large stderr write cannot deadlock", func() {
 		originalGit := gitCommandContext
 		DeferCleanup(func() {
@@ -935,74 +838,7 @@ sys.stdout.flush()
 
 var _ = Describe("source_sink_pack config field disposition", func() {
 	It("never changes which findings the real Go backend produces or their content, but does change config_digest/id/fingerprint", func() {
-		dir := acceptanceTempGitRepo()
-		acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
-		acceptanceCommitFile(dir, "pkg/db/db.go", "package db\n\nvar Name = \"db\"\n")
-		sha := acceptanceCommitFile(dir, "pkg/handlers/handlers.go", "package handlers\n\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n")
-		files := []SelectedFile{
-			{Path: "pkg/db/db.go", Language: "go", Status: "added"},
-			{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"},
-		}
-
-		withoutField := json.RawMessage(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}]}`)
-		withPack := json.RawMessage(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}],"source_sink_pack":"builtin-v1"}`)
-		Expect(validateProjectConfigJSON(withoutField)).To(Succeed())
-		Expect(validateProjectConfigJSON(withPack)).To(Succeed())
-
-		buildReport := func(cfg json.RawMessage) *codesignal.Report {
-			project := &ProjectAnalysis{
-				ConfigPath:   "project.json",
-				Language:     "go",
-				Config:       cfg,
-				ConfigDigest: ConfigDigest(cfg),
-				Backend:      NewGoProjectBackend(),
-			}
-			report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 2}, project)
-			Expect(err).NotTo(HaveOccurred())
-			return report
-		}
-
-		withoutReport := buildReport(withoutField)
-		withReport := buildReport(withPack)
-
-		Expect(withoutReport.ProjectChanges).NotTo(BeEmpty(), "fixture must produce at least one real project finding, or this comparison cannot catch source_sink_pack being wired to change evaluation")
-		Expect(withReport.ProjectChanges).To(HaveLen(len(withoutReport.ProjectChanges)))
-
-		for i := range withoutReport.ProjectChanges {
-			without := withoutReport.ProjectChanges[i]
-			with := withReport.ProjectChanges[i]
-
-			Expect(with.SemanticKey).To(Equal(without.SemanticKey))
-			Expect(with.RuleID).To(Equal(without.RuleID))
-			Expect(with.Kind).To(Equal(without.Kind))
-			Expect(with.Severity).To(Equal(without.Severity))
-			Expect(with.Confidence).To(Equal(without.Confidence))
-			Expect(with.Lifecycle).To(Equal(without.Lifecycle))
-			Expect(with.Evidence).To(Equal(without.Evidence))
-			Expect(with.PrimaryAnchor).To(Equal(without.PrimaryAnchor))
-			Expect(with.RelatedLocations).To(Equal(without.RelatedLocations))
-			Expect(with.PathSteps).To(Equal(without.PathSteps))
-			Expect(with.MachineEvidence).To(Equal(without.MachineEvidence))
-
-			// source_sink_pack is still part of the raw config bytes
-			// ConfigDigest hashes, and ConfigDigest feeds both
-			// ProjectChange.ID and ProjectChange.Fingerprint (see
-			// pkg/codesignal/project_fingerprint.go), so identity fields
-			// must genuinely differ even though evaluation content above
-			// does not.
-			Expect(with.ConfigDigest).NotTo(Equal(without.ConfigDigest))
-			Expect(with.ID).NotTo(Equal(without.ID))
-			Expect(with.Fingerprint).NotTo(Equal(without.Fingerprint))
-		}
-
-		Expect(withReport.ProjectSummary).To(Equal(withoutReport.ProjectSummary))
-		Expect(withReport.ProjectCoverage).To(Equal(withoutReport.ProjectCoverage))
-
-		withoutJSON, err := RenderJSON(withoutReport)
-		Expect(err).NotTo(HaveOccurred())
-		withJSON, err := RenderJSON(withReport)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(withJSON).NotTo(Equal(withoutJSON), "config_digest/id/fingerprint differ, so the full rendered JSON documents must differ too")
+		body_projectAcceptanceTest_neverChangesWhichFindingsTheRealGoBackendProduce_858()
 	})
 })
 
@@ -1027,16 +863,6 @@ var goLayerBypassFakeWitness = projectmodel.LayerBypassWitness{
 	},
 	Confidence:       projectmodel.LayerBypassConfidenceHigh,
 	AlgorithmVersion: "go-layer-bypass-registry@1",
-}
-
-func countDiagnosticsOfKind(diagnostics []codesignal.Diagnostic, kind string) int {
-	count := 0
-	for _, d := range diagnostics {
-		if d.Kind == kind {
-			count++
-		}
-	}
-	return count
 }
 
 var _ = Describe("Go layer-bypass search coverage folding into project lifecycle", func() {
@@ -1108,50 +934,13 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(calls).To(Equal(1), "the bypass seam must actually have been invoked, or the MaxSearchNodes assertion below is vacuous")
-		// Pinned at 0; see goLayerBypassMaxSearchNodes's doc comment in
-		// project_go_backend.go before making this finite.
+
 		Expect(capturedMaxSearchNodes).To(Equal(0))
 		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_layer_bypass_coverage_incomplete")).To(Equal(0))
 	})
 
 	It("degrades only the base-side coverage-incomplete diagnostic to base_-prefixed and still marks the report indeterminate when only the base revision's search is incomplete", func() {
-		callCount := 0
-		buildGoLayerBypass = func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error) {
-			callCount++
-			if callCount == 1 {
-				// First call is always the head revision (goProjectBackend.Analyze
-				// evaluates HeadRevision before BaseRevision).
-				return projectmodel.LayerBypassResult{
-					Witnesses: []projectmodel.LayerBypassWitness{goLayerBypassFakeWitness},
-					Coverage:  projectmodel.Coverage{Phase: "layer_bypass_search", Complete: true},
-				}, nil
-			}
-			return projectmodel.LayerBypassResult{Coverage: projectmodel.Coverage{Phase: "layer_bypass_search", Complete: false}}, nil
-		}
-
-		dir := acceptanceTempGitRepo()
-		baseSHA := acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
-		headSHA := acceptanceCommitFile(dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
-		files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
-
-		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
-			Language:     "go",
-			Config:       goLayerBypassSearchConfigJSON,
-			ConfigDigest: ConfigDigest(goLayerBypassSearchConfigJSON),
-			Backend:      NewGoProjectBackend(),
-		}
-		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
-		Expect(err).NotTo(HaveOccurred())
-
-		Expect(report.ProjectChanges).To(HaveLen(1))
-		Expect(string(report.ProjectChanges[0].Lifecycle)).To(Equal("unknown"), "the base revision's own incomplete search must degrade the whole report's lifecycle claims, including the head-side witness")
-
-		Expect(report.ProjectCoverage).NotTo(BeNil())
-		Expect(report.ProjectCoverage.Complete).To(BeTrue(), "sanity: the head-side search alone must have completed cleanly, or this spec would not be isolating the base-side failure it claims to")
-		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_layer_bypass_coverage_incomplete")).To(Equal(0), "the head-side search completed, so it must not also report incomplete coverage")
-		Expect(countDiagnosticsOfKind(report.Diagnostics, "base_project_layer_bypass_coverage_incomplete")).To(Equal(1))
-		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_lifecycle_indeterminate")).To(Equal(1))
+		body_projectAcceptanceTest_degradesOnlyTheBaseSideCoverageIncompleteDiagnos_1021()
 	})
 
 	It("keeps head- and base-side coverage-incomplete diagnostics distinct when both revisions' searches are incomplete", func() {
@@ -1178,3 +967,67 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 		Expect(countDiagnosticsOfKind(report.Diagnostics, "base_project_layer_bypass_coverage_incomplete")).To(Equal(1))
 	})
 })
+
+func layerPrefixConfigJSON(n int) []byte {
+	var b strings.Builder
+	b.WriteString(`{"schema_version":"1","roots":["."],"layers":[{"name":"L","prefixes":[`)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, `"p%04d"`, i)
+	}
+	b.WriteString(`]}]}`)
+	return []byte(b.String())
+}
+
+func TestProjectTextAcceptance(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "project text renderer acceptance suite")
+}
+
+func (b *recordingProjectBackend) Analyze(_ context.Context, req ProjectBackendRequest) (*ProjectBackendResult, error) {
+	b.requests = append(b.requests, req)
+	return b.result, nil
+}
+
+func acceptanceTempGitRepo() string {
+	dir := GinkgoT().TempDir()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "git init: %s", output)
+	return dir
+}
+
+func acceptanceCommitFile(dir, name, contents string) string {
+	target := filepath.Join(dir, name)
+	Expect(os.MkdirAll(filepath.Dir(target), 0o755)).To(Succeed())
+	Expect(os.WriteFile(target, []byte(contents), 0o644)).To(Succeed())
+	addCmd := exec.Command("git", "add", name)
+	addCmd.Dir = dir
+	output, err := addCmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "git add: %s", output)
+	commitCmd := exec.Command("git", "commit", "-m", "commit "+name)
+	commitCmd.Dir = dir
+	commitCmd.Env = commitTestEnv
+	output, err = commitCmd.CombinedOutput()
+	Expect(err).NotTo(HaveOccurred(), "git commit: %s", output)
+	revCmd := exec.Command("git", "rev-parse", "HEAD")
+	revCmd.Dir = dir
+	sha, err := revCmd.Output()
+	Expect(err).NotTo(HaveOccurred())
+	return strings.TrimSpace(string(sha))
+}
+
+func tsAcceptanceRealTypescriptVersion() string {
+	return tstestutil.TypeScriptVersion()
+}
+
+func ensureRealTypeScriptCompilerAvailable() string {
+	return tstestutil.EnsureTypeScriptCompilerAvailable()
+}
+
+func installRealTypescriptCompilerAt(repoDir string) {
+	tstestutil.InstallTypeScriptCompiler(repoDir, true)
+}

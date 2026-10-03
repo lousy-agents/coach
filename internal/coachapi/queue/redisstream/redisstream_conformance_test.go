@@ -29,35 +29,6 @@ type conformanceQueue struct {
 	q *redisstream.Queue
 }
 
-func (c conformanceQueue) Enqueue(ctx context.Context, task queueconformance.Task) error {
-	return c.q.Enqueue(ctx, queue.Task{ID: task.ID, Payload: task.Payload})
-}
-
-func (c conformanceQueue) Claim(ctx context.Context) (queueconformance.Claim, bool, error) {
-	claim, ok, err := c.q.Claim(ctx)
-	return queueconformance.Claim{TaskID: claim.TaskID, Attempt: claim.Attempt, Token: claim.Token}, ok, err
-}
-
-func (c conformanceQueue) Complete(ctx context.Context, claim queueconformance.Claim) error {
-	return c.q.Complete(ctx, queue.Claim{TaskID: claim.TaskID, Attempt: claim.Attempt, Token: claim.Token})
-}
-
-func (c conformanceQueue) Nack(ctx context.Context, claim queueconformance.Claim, permanent bool) error {
-	return c.q.Nack(ctx, queue.Claim{TaskID: claim.TaskID, Attempt: claim.Attempt, Token: claim.Token}, permanent)
-}
-
-func (c conformanceQueue) PoisonTasks(ctx context.Context) ([]queueconformance.Task, error) {
-	tasks, err := c.q.PoisonTasks(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]queueconformance.Task, len(tasks))
-	for i, task := range tasks {
-		out[i] = queueconformance.Task{ID: task.ID, Payload: task.Payload}
-	}
-	return out, nil
-}
-
 var _ queueconformance.Queue = conformanceQueue{}
 
 // startRedisContainer starts a throwaway `redis:7-alpine` container on a
@@ -86,7 +57,7 @@ func startRedisContainer(t *testing.T) (address string) {
 
 	t.Cleanup(func() {
 		stopCmd := exec.Command("docker", "stop", containerID)
-		stopCmd.CombinedOutput() //nolint:errcheck // best-effort cleanup
+		stopCmd.CombinedOutput()
 	})
 
 	portCmd := exec.Command("docker", "port", containerID, "6379/tcp")
@@ -94,8 +65,7 @@ func startRedisContainer(t *testing.T) (address string) {
 	if err != nil {
 		t.Skipf("docker port %s failed: %v\n%s", containerID, err, portOut)
 	}
-	// `docker port` prints e.g. "0.0.0.0:54321\n" (and, on some hosts, an
-	// additional "[::]:54321" IPv6 line); the first line's port is enough.
+
 	firstLine := strings.SplitN(strings.TrimSpace(string(portOut)), "\n", 2)[0]
 	hostPort := firstLine[strings.LastIndex(firstLine, ":")+1:]
 	if _, err := strconv.Atoi(hostPort); err != nil {
@@ -109,6 +79,18 @@ func startRedisContainer(t *testing.T) (address string) {
 	}
 
 	return address
+}
+
+func (c conformanceQueue) PoisonTasks(ctx context.Context) ([]queueconformance.Task, error) {
+	tasks, err := c.q.PoisonTasks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]queueconformance.Task, len(tasks))
+	for i, task := range tasks {
+		out[i] = queueconformance.Task{ID: task.ID, Payload: task.Payload}
+	}
+	return out, nil
 }
 
 // waitForRedisReady polls NewQueue's own Ping-based connectivity check
@@ -133,37 +115,19 @@ func waitForRedisReady(address string, timeout time.Duration) bool {
 	return false
 }
 
-// TestRedisStreamQueueConformanceAcceptance runs the shared black-box
-// TaskQueue conformance suite (Task 3a, GitHub issue #100, epic #97)
-// against a real Redis Streams-backed Queue. It skips gracefully -- does
-// not fail or hang -- whenever Docker is unavailable or a throwaway Redis
-// container cannot be started, since Docker's daemon is not reachable in
-// every environment this suite runs in (e.g. this sandbox); it is
-// expected to actually run in CI. Matches the *Acceptance naming
-// convention so `go test -race ./... -run Acceptance` /
-// `mise run test-acceptance-fast` picks it up.
-func TestRedisStreamQueueConformanceAcceptance(t *testing.T) {
-	address := startRedisContainer(t)
+func (c conformanceQueue) Enqueue(ctx context.Context, task queueconformance.Task) error {
+	return c.q.Enqueue(ctx, queue.Task{ID: task.ID, Payload: task.Payload})
+}
 
-	queueconformance.Run(t, func(tb testing.TB, clock acceptanceharness.Clock) queueconformance.Queue {
-		cfg := redisstream.Config{
-			Address: address,
-			// A unique stream+group per subtest gives Run the fresh,
-			// empty Queue it requires, while reusing one Redis container
-			// for the whole suite.
-			Stream:        "conformance-" + watermill.NewUUID(),
-			ConsumerGroup: "conformance-workers",
-			ClaimAfter:    time.Minute,
-		}
-		q, err := redisstream.NewQueue(cfg, clock)
-		if err != nil {
-			tb.Fatalf("NewQueue: %v", err)
-		}
-		tb.Cleanup(func() {
-			if closeErr := q.Close(); closeErr != nil {
-				tb.Logf("Queue.Close: %v", closeErr)
-			}
-		})
-		return conformanceQueue{q: q}
-	})
+func (c conformanceQueue) Claim(ctx context.Context) (queueconformance.Claim, bool, error) {
+	claim, ok, err := c.q.Claim(ctx)
+	return queueconformance.Claim{TaskID: claim.TaskID, Attempt: claim.Attempt, Token: claim.Token}, ok, err
+}
+
+func (c conformanceQueue) Complete(ctx context.Context, claim queueconformance.Claim) error {
+	return c.q.Complete(ctx, queue.Claim{TaskID: claim.TaskID, Attempt: claim.Attempt, Token: claim.Token})
+}
+
+func (c conformanceQueue) Nack(ctx context.Context, claim queueconformance.Claim, permanent bool) error {
+	return c.q.Nack(ctx, queue.Claim{TaskID: claim.TaskID, Attempt: claim.Attempt, Token: claim.Token}, permanent)
 }

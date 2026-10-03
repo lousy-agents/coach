@@ -3,73 +3,14 @@ package codesignal_test
 import (
 	"encoding/json"
 	"reflect"
-	"sort"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
-
-// reportJSONTagNames returns the json tag names declared on t, in
-// declaration order, recursing into embedded fields. Used to derive the
-// expected key set directly from Report's own struct tags rather than a
-// hand-maintained list, so a field added to Report is caught here without
-// this test needing an update.
-func reportJSONTagNames(t reflect.Type) []string {
-	names := make([]string, 0, t.NumField())
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if f.Anonymous {
-			names = append(names, reportJSONTagNames(f.Type)...)
-			continue
-		}
-		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
-		if name == "" || name == "-" {
-			continue
-		}
-		names = append(names, name)
-	}
-	return names
-}
-
-func rawReportKeys(report *codesignal.Report) []string {
-	fields := rawReportFields(report)
-	keys := make([]string, 0, len(fields))
-	for k := range fields {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
-func rawReportFields(report *codesignal.Report) map[string]json.RawMessage {
-	raw, err := json.Marshal(report)
-	Expect(err).NotTo(HaveOccurred())
-	var fields map[string]json.RawMessage
-	Expect(json.Unmarshal(raw, &fields)).To(Succeed())
-	return fields
-}
-
-func rawCoverageFields(fields map[string]json.RawMessage) map[string]json.RawMessage {
-	Expect(fields).To(HaveKey("coverage"))
-	var coverage map[string]json.RawMessage
-	Expect(json.Unmarshal(fields["coverage"], &coverage)).To(Succeed())
-	return coverage
-}
-
-func rawSignalKeys(raw json.RawMessage) []string {
-	var m map[string]json.RawMessage
-	Expect(json.Unmarshal(raw, &m)).To(Succeed())
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
 
 var _ = Describe("Report shape: always-present top-level keys, Coverage members, and Signal key sets (issue #269)", func() {
 	When("a schema-1 diff-mode Input has zero files, diagnostics, and coverage exclusions", func() {
@@ -161,55 +102,21 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 			expectedKeys = reportJSONTagNames(reflect.TypeOf(codesignal.Report{}))
 		})
 
-		// project_* keys that schema-1 never emits:
-		// - project_changes/facts/summary/coverage: schema-2 always-present keys
-		// - project_provenance/scope/project_next_actions: schema-2 optional (omitempty); nil in an empty report
 		schema1ExcludedKeys := []string{
 			"project_changes", "project_facts", "project_summary", "project_coverage",
 			"project_provenance", "project_scope", "project_next_actions",
 		}
 
-		// optional project keys that schema-2 omits when nil/empty (omitempty)
 		schema2OptionalKeys := []string{
 			"project_provenance", "project_scope", "project_next_actions",
 		}
 
 		It("keeps schema_version \"2\"'s marshalled key set in sync with Report's own json tags minus the omitempty-optional project keys", func() {
-			expectedSchema2Keys := make([]string, 0, len(expectedKeys))
-			for _, name := range expectedKeys {
-				isOptional := false
-				for _, p := range schema2OptionalKeys {
-					if name == p {
-						isOptional = true
-						break
-					}
-				}
-				if !isOptional {
-					expectedSchema2Keys = append(expectedSchema2Keys, name)
-				}
-			}
-
-			schema2 := codesignal.Report{SchemaVersion: "2"}
-			Expect(rawReportKeys(&schema2)).To(ConsistOf(expectedSchema2Keys))
+			body_reportShapeAcceptanceTest_keepsSchemaVersion2SMarshalledKeySetInSyncWithRe_114(expectedKeys, schema2OptionalKeys)
 		})
 
 		It("keeps schema_version \"1\"'s marshalled key set in sync with Report's own json tags minus the project_* keys", func() {
-			expectedSchema1Keys := make([]string, 0, len(expectedKeys))
-			for _, name := range expectedKeys {
-				isExcluded := false
-				for _, p := range schema1ExcludedKeys {
-					if name == p {
-						isExcluded = true
-						break
-					}
-				}
-				if !isExcluded {
-					expectedSchema1Keys = append(expectedSchema1Keys, name)
-				}
-			}
-
-			schema1 := codesignal.Report{SchemaVersion: "1"}
-			Expect(rawReportKeys(&schema1)).To(ConsistOf(expectedSchema1Keys))
+			body_reportShapeAcceptanceTest_keepsSchemaVersion1SMarshalledKeySetInSyncWithRe_133(expectedKeys, schema1ExcludedKeys)
 		})
 
 		It("excludes project_provenance, project_scope, and project_next_actions from schema-1 output even when all three are populated", func() {
@@ -260,7 +167,7 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 					Path: "state.go", Status: "modified", Head: cleanResult("state.go", finding),
 				}},
 				ProjectChanges:  []codesignal.ProjectChange{change},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(report.Signals).To(HaveLen(2))
 
@@ -271,18 +178,7 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 		})
 
 		findNonProjectSignal := func() map[string]json.RawMessage {
-			for _, r := range rawSignals {
-				var m map[string]json.RawMessage
-				Expect(json.Unmarshal(r, &m)).To(Succeed())
-				var subject string
-				if raw, ok := m["subject"]; ok {
-					Expect(json.Unmarshal(raw, &subject)).To(Succeed())
-				}
-				if subject == "Update" {
-					return m
-				}
-			}
-			return nil
+			return body_reportShapeAcceptanceTest_210(rawSignals)
 		}
 
 		It("carries the identical key set on both entries regardless of origin", func() {
@@ -290,18 +186,7 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 		})
 
 		It("marshals every entry with the full always-present key set", func() {
-			for _, r := range rawSignals {
-				var m map[string]json.RawMessage
-				Expect(json.Unmarshal(r, &m)).To(Succeed())
-
-				Expect(m).To(HaveKey("why_it_matters"))
-				Expect(m).To(HaveKey("recommendation"))
-				Expect(m).To(HaveKey("suggested_skill"))
-				Expect(m).To(HaveKey("machine_evidence"))
-				Expect(m).To(HaveKey("related_locations"))
-				Expect(m).To(HaveKey("path_steps"))
-				Expect(m).To(HaveKey("coverage_refs"))
-			}
+			body_reportShapeAcceptanceTest_marshalsEveryEntryWithTheFullAlwaysPresentKeySet_229(rawSignals)
 		})
 
 		It("emits empty-typed, not null, evidence fields for a non-project-origin signal", func() {

@@ -85,37 +85,11 @@ func (c *tsFeatureCollector) checkTOCTOUCheckThenAct(n engine.Node, source []byt
 // syntactic call/argument-text matching) for a call_expression named in
 // tsToctouActCallNames whose first argument's source text equals pathText,
 // returning the first one found or nil.
-func findTSToctouActCall(n engine.Node, source []byte, pathText string) engine.Node {
-	if n == nil {
-		return nil
-	}
-	if n.Kind() == "call_expression" {
-		if name, ok := tsCallFunctionName(n, source); ok && tsToctouActCallNames[name] {
-			if arg := tsCallFirstArgument(n); arg != nil && arg.Utf8Text(source) == pathText {
-				return n
-			}
-		}
-	}
-	count := n.ChildCount()
-	for i := 0; i < count; i++ {
-		if found := findTSToctouActCall(n.Child(i), source, pathText); found != nil {
-			return found
-		}
-	}
-	return nil
-}
 
 // tsToctouCallArg returns call's first argument node if call is a
 // call_expression named wantName -- a bare identifier callee (`wantName(...)`)
 // or a member_expression callee whose "property" field's text is wantName
 // (`<obj>.wantName(...)`), for any object -- or nil otherwise.
-func tsToctouCallArg(call engine.Node, source []byte, wantName string) engine.Node {
-	name, ok := tsCallFunctionName(call, source)
-	if !ok || name != wantName {
-		return nil
-	}
-	return tsCallFirstArgument(call)
-}
 
 // tsCallFunctionName resolves call's callee name: the bare identifier
 // (`existsSync`) or the "property" field's text for a member_expression
@@ -147,22 +121,6 @@ func tsCallFunctionName(call engine.Node, source []byte) (name string, ok bool) 
 // tsCallFirstArgument returns call's "arguments" field's first non-
 // punctuation child (the first argument expression), or nil if call has no
 // arguments.
-func tsCallFirstArgument(call engine.Node) engine.Node {
-	args := call.ChildByFieldName("arguments")
-	if args == nil {
-		return nil
-	}
-	count := args.ChildCount()
-	for i := 0; i < count; i++ {
-		child := args.Child(i)
-		switch child.Kind() {
-		case "(", ")", ",":
-			continue
-		}
-		return child
-	}
-	return nil
-}
 
 // newTOCTOUCheckThenActFinding builds a "toctou_check_then_act" Finding
 // (Story 1, CWE-367) for an existsSync-style checkCall guarding actCall (a

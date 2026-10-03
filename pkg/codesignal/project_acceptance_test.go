@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -36,7 +36,7 @@ var _ = Describe("Project-analysis report generation", func() {
 				Files:              []codesignal.FileChange{{Path: "a.go", Status: "modified", Head: cleanResult("a.go", mutation("Update", 1))}},
 				ProjectChanges:     []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 				BaseProjectChanges: []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
-				ProjectCoverage:    &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 			}
 
 			withoutProjectData := build(codesignal.Options{}, codesignal.Input{Files: input.Files})
@@ -63,7 +63,7 @@ var _ = Describe("Project-analysis report generation", func() {
 		It("classifies changes unknown, assigns stable identity, and reports schema 2", func() {
 			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 				ProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 
 			Expect(report.SchemaVersion).To(Equal("2"))
@@ -110,8 +110,8 @@ var _ = Describe("Project-analysis report generation", func() {
 				ProjectChanges:      []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 				BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 				ProjectBaseAnalyzed: true,
-				ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-				BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(report.ProjectChanges).To(HaveLen(1))
 			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("existing")))
@@ -123,8 +123,8 @@ var _ = Describe("Project-analysis report generation", func() {
 				ProjectChanges:      []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 				BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/c<->pkg/d", "project.import_cycle")},
 				ProjectBaseAnalyzed: true,
-				ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-				BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(report.ProjectChanges).To(HaveLen(1))
 			Expect(report.ProjectChanges[0].SemanticKey).To(Equal("cycle:pkg/a<->pkg/b"))
@@ -137,8 +137,8 @@ var _ = Describe("Project-analysis report generation", func() {
 			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 				BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 				ProjectBaseAnalyzed: true,
-				ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-				BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(report.ProjectChanges).To(BeEmpty())
 			Expect(report.ProjectSummary.ResolvedChanges).To(Equal(1))
@@ -149,8 +149,8 @@ var _ = Describe("Project-analysis report generation", func() {
 			report := build(codesignal.Options{ProjectEnabled: true, IncludeResolved: true}, codesignal.Input{
 				BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 				ProjectBaseAnalyzed: true,
-				ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-				BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(report.ProjectChanges).To(HaveLen(1))
 			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("resolved")))
@@ -164,8 +164,8 @@ var _ = Describe("Project-analysis report generation", func() {
 				ProjectChanges:      []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 				BaseProjectChanges:  nil,
 				ProjectBaseAnalyzed: true,
-				ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-				BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(report.ProjectChanges).To(HaveLen(1))
 			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
@@ -175,7 +175,7 @@ var _ = Describe("Project-analysis report generation", func() {
 		It("marks head-only changes baseline when Options.Baseline is set and head coverage is complete", func() {
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				ProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(report.ProjectChanges).To(HaveLen(1))
 			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("baseline")))
@@ -192,7 +192,7 @@ var _ = Describe("Project-analysis report generation", func() {
 				ProjectChanges:      []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 				BaseProjectChanges:  []codesignal.ProjectChange{},
 				ProjectBaseAnalyzed: false,
-				ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(report.ProjectChanges).To(HaveLen(1))
 			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("baseline")))
@@ -214,7 +214,7 @@ var _ = Describe("Project-analysis report generation", func() {
 		It("does not claim baseline when head coverage is incomplete", func() {
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				ProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: false},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: false},
 			})
 			Expect(report.ProjectChanges).To(HaveLen(1))
 			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
@@ -227,20 +227,7 @@ var _ = Describe("Project-analysis report generation", func() {
 		// only the head-side coverage failure, not invent "base coverage
 		// unavailable" for a side that was never expected.
 		It("names only head coverage in the indeterminate diagnostic for an incomplete baseline run", func() {
-			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
-				ProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: false},
-			})
-			var message string
-			for _, d := range report.Diagnostics {
-				if d.Kind == "project_lifecycle_indeterminate" {
-					message = d.Message
-					break
-				}
-			}
-			Expect(message).NotTo(BeEmpty())
-			Expect(message).To(ContainSubstring("head coverage incomplete"))
-			Expect(message).NotTo(ContainSubstring("base coverage"))
+			body_projectAcceptanceTest_namesOnlyHeadCoverageInTheIndeterminateDiagnosti_229()
 		})
 
 		It("does not claim introduced/existing when base coverage is incomplete", func() {
@@ -248,8 +235,8 @@ var _ = Describe("Project-analysis report generation", func() {
 				ProjectChanges:      []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 				BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 				ProjectBaseAnalyzed: true,
-				ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-				BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: false},
+				ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: false},
 			})
 			Expect(report.ProjectChanges).To(HaveLen(1))
 			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
@@ -266,7 +253,7 @@ var _ = Describe("Project-analysis report generation", func() {
 		It("points from a degraded finding's own Evidence to the project_lifecycle_indeterminate diagnostic that explains why", func() {
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				ProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: false},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: false},
 			})
 			Expect(report.ProjectChanges).To(HaveLen(1))
 			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
@@ -277,7 +264,7 @@ var _ = Describe("Project-analysis report generation", func() {
 		It("leaves Evidence exactly as the producer supplied it when lifecycle is a normal, determinate claim", func() {
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				ProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(report.ProjectChanges).To(HaveLen(1))
 			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("baseline")))
@@ -293,8 +280,8 @@ var _ = Describe("Project-analysis report generation", func() {
 			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 				BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 				ProjectBaseAnalyzed: true,
-				ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-				BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: false},
+				ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: false},
 			})
 			Expect(report.ProjectChanges).To(HaveLen(1))
 			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
@@ -334,7 +321,7 @@ var _ = Describe("Project-analysis report generation", func() {
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				ProjectChanges:  []codesignal.ProjectChange{active},
 				ProjectFacts:    []codesignal.ProjectFact{fact},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 
 			Expect(report.Signals).To(HaveLen(1))
@@ -375,7 +362,7 @@ var _ = Describe("Project-analysis report generation", func() {
 			// Facts must not inflate active signal counters.
 			factsOnly := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				ProjectFacts:    []codesignal.ProjectFact{fact},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(factsOnly.Signals).To(BeEmpty())
 			Expect(factsOnly.Summary.ActiveSignals).To(Equal(0))
@@ -386,34 +373,7 @@ var _ = Describe("Project-analysis report generation", func() {
 		// path; anchorless observations stay facts/coverage only — not Signals,
 		// not project_changes, and not ProjectSummary active counters.
 		It("does not promote a ProjectChange with an empty primary anchor path to a Signal", func() {
-			anchorless := projectChange("cycle:pkg/a<->pkg/b", "architecture.layer_violation")
-			anchorless.PrimaryAnchor = codesignal.ProjectLocation{}
-
-			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
-				ProjectChanges:  []codesignal.ProjectChange{anchorless},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
-			})
-
-			Expect(report.Signals).To(BeEmpty())
-			Expect(report.Summary.ActiveSignals).To(Equal(0))
-			Expect(report.Summary.BaselineSignals).To(Equal(0))
-			Expect(report.ProjectChanges).To(BeEmpty(), "anchorless observations must not appear as project findings")
-			Expect(report.ProjectSummary.ActiveChanges).To(Equal(0))
-			Expect(report.ProjectSummary.BaselineChanges).To(Equal(0))
-			Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_observation_missing_primary_path")))
-			for _, sig := range report.Signals {
-				Expect(sig.Path).NotTo(BeEmpty())
-			}
-
-			// Control: the same observation with a real anchor still maps once.
-			anchored := projectChange("cycle:pkg/a<->pkg/b", "architecture.layer_violation")
-			control := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
-				ProjectChanges:  []codesignal.ProjectChange{anchored},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
-			})
-			Expect(control.Signals).To(HaveLen(1))
-			Expect(control.Signals[0].Path).To(Equal("pkg/a/a.go"))
-			Expect(control.Summary.ActiveSignals).To(Equal(1))
+			body_projectAcceptanceTest_doesNotPromoteAProjectChangeWithAnEmptyPrimaryAn_388()
 		})
 	})
 
@@ -427,7 +387,7 @@ var _ = Describe("Project-analysis report generation", func() {
 
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				ProjectChanges:  []codesignal.ProjectChange{first, second},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 
 			Expect(report.ProjectChanges).To(HaveLen(1))
@@ -452,7 +412,7 @@ var _ = Describe("Project-analysis report generation", func() {
 
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				ProjectChanges:  []codesignal.ProjectChange{change},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 
 			Expect(report.ProjectChanges).To(HaveLen(1))
@@ -486,18 +446,18 @@ var _ = Describe("Project-analysis report generation", func() {
 				Evidence:   "b",
 				Provenance: codesignal.Provenance{Producer: "projectmodel"},
 			}
-			covLeft := &projectmodel.Coverage{
+			covLeft := &domain.Coverage{
 				Phase:    "full",
 				Complete: false,
-				Diagnostics: []projectmodel.Diagnostic{
+				Diagnostics: []domain.Diagnostic{
 					{Code: "z_code", Message: "z", Path: "z.go"},
 					{Code: "a_code", Message: "a", Path: "a.go"},
 				},
 			}
-			covRight := &projectmodel.Coverage{
+			covRight := &domain.Coverage{
 				Phase:    "full",
 				Complete: false,
-				Diagnostics: []projectmodel.Diagnostic{
+				Diagnostics: []domain.Diagnostic{
 					{Code: "a_code", Message: "a", Path: "a.go"},
 					{Code: "z_code", Message: "z", Path: "z.go"},
 				},
@@ -536,7 +496,7 @@ var _ = Describe("Project-analysis report generation", func() {
 			}
 			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 				ProjectFacts:    []codesignal.ProjectFact{fact},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 
 			Expect(report.ProjectFacts).To(HaveLen(1))
@@ -569,7 +529,7 @@ var _ = Describe("Project-analysis report generation", func() {
 					{Kind: "possible_call_reachability", SemanticKey: "a", Provenance: codesignal.Provenance{Producer: "projectmodel"}},
 					{Kind: "other_fact", SemanticKey: "m", Provenance: codesignal.Provenance{Producer: "projectmodel"}},
 				},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(report.ProjectFacts).To(HaveLen(3))
 			Expect(report.ProjectFacts[0].Kind).To(Equal("other_fact"))
@@ -580,14 +540,14 @@ var _ = Describe("Project-analysis report generation", func() {
 
 	Describe("TypeScript reachability facts mapped into ProjectFact", func() {
 		It("maps a resolved TS possible-call-reachability fact with projectmodel/kind provenance and produces no active Signal/Change through the shared pipeline", func() {
-			result := projectmodel.ReachabilityResult{
-				Facts: []projectmodel.ReachabilityFact{{
+			result := domain.ReachabilityResult{
+				Facts: []domain.ReachabilityFact{{
 					ID:         "reach:file:src/app.ts#getUsers->(PrismaClient).findMany@ts-source-sink-registry@1",
-					Kind:       projectmodel.KindPossibleCallReachability,
-					Confidence: projectmodel.ReachabilityConfidenceResolvedDirect,
+					Kind:       domain.KindPossibleCallReachability,
+					Confidence: domain.ReachabilityConfidenceResolvedDirect,
 					Source:     "file:src/app.ts#getUsers",
 					Sink:       "(PrismaClient).findMany",
-					Path: []projectmodel.ReachabilityStep{
+					Path: []domain.ReachabilityStep{
 						{NodeID: "file:src/app.ts#getUsers"},
 						{NodeID: "(PrismaClient).findMany"},
 					},
@@ -595,15 +555,15 @@ var _ = Describe("Project-analysis report generation", func() {
 				}},
 				Sources:   []string{"file:src/app.ts#getUsers"},
 				Algorithm: "ts-source-sink-registry@1",
-				Coverage:  projectmodel.Coverage{Phase: "ts_sidecar_build", Complete: true},
+				Coverage:  domain.Coverage{Phase: "ts_sidecar_build", Complete: true},
 			}
 
 			facts := codesignal.ReachabilityProjectFacts(result, "typescript")
 			Expect(facts).To(HaveLen(1))
 			fact := facts[0]
-			Expect(fact.Kind).To(Equal(projectmodel.KindPossibleCallReachability))
+			Expect(fact.Kind).To(Equal(domain.KindPossibleCallReachability))
 			Expect(fact.Provenance.Producer).To(Equal("projectmodel"))
-			Expect(fact.Provenance.FindingKind).To(Equal(projectmodel.KindPossibleCallReachability))
+			Expect(fact.Provenance.FindingKind).To(Equal(domain.KindPossibleCallReachability))
 			Expect(fact.Provenance.Language).To(Equal("typescript"))
 			Expect(fact.SemanticKey).To(Equal("possible_call_reachability:file:src/app.ts#getUsers->(PrismaClient).findMany"))
 			Expect(fact.PathSteps).To(HaveLen(2))
@@ -619,7 +579,7 @@ var _ = Describe("Project-analysis report generation", func() {
 			// ProjectSummary counter.
 			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 				ProjectFacts:    facts,
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 			Expect(report.ProjectFacts).To(HaveLen(1))
 			Expect(report.ProjectFacts[0].Provenance.Producer).To(Equal("projectmodel"))
@@ -636,7 +596,7 @@ var _ = Describe("Project-analysis report generation", func() {
 			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 				ProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 				ProjectFacts:    []codesignal.ProjectFact{{Kind: "possible_call_reachability", SemanticKey: "reach:a->b", Provenance: codesignal.Provenance{Producer: "projectmodel"}}},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 			})
 
 			raw, err := json.Marshal(report)

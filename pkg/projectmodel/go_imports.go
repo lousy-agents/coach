@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
-	"sort"
+
 	"strings"
 
 	"golang.org/x/mod/modfile"
@@ -125,64 +125,6 @@ func BuildGoModel(snapshot fs.FS, meta SnapshotMeta, opts GoBuildOptions) (Model
 	}, nil
 }
 
-func countDistinctRoots(modules map[string]*modfile.File, workspaces map[string]*modfile.WorkFile) int {
-	seen := make(map[string]bool, len(modules)+len(workspaces))
-	for dir := range modules {
-		seen[dir] = true
-	}
-	for dir := range workspaces {
-		seen[dir] = true
-	}
-	return len(seen)
-}
-
-func collectGoSourceInventory(snapshot fs.FS, modules map[string]*modfile.File, moduleDirs []string) (moduleFileList map[string][]string, allFiles []string, packageFiles map[string][]string, fileModule map[string]string) {
-	moduleDirSet := make(map[string]bool, len(modules))
-	for dir := range modules {
-		moduleDirSet[dir] = true
-	}
-
-	moduleFileList = make(map[string][]string, len(moduleDirs))
-	for _, mdir := range moduleDirs {
-		mfiles := moduleGoFiles(snapshot, mdir, moduleDirSet)
-		moduleFileList[mdir] = mfiles
-		allFiles = append(allFiles, mfiles...)
-	}
-	sort.Strings(allFiles)
-
-	packageFiles = map[string][]string{}
-	fileModule = map[string]string{}
-	for mdir, mfiles := range moduleFileList {
-		for _, f := range mfiles {
-			pkgDir := path.Dir(f)
-			packageFiles[pkgDir] = append(packageFiles[pkgDir], f)
-			fileModule[f] = mdir
-		}
-	}
-	for pkgDir := range packageFiles {
-		sort.Strings(packageFiles[pkgDir])
-	}
-	return moduleFileList, allFiles, packageFiles, fileModule
-}
-
-func analyzeGoSources(
-	snapshot fs.FS,
-	analyzer *semantics.Analyzer,
-	allFiles []string,
-	modules map[string]*modfile.File,
-	packageFiles map[string][]string,
-	fileModule map[string]string,
-	budgets GoBudgets,
-) (files []File, edges []ImportEdge, unresolvedEdges, excludedEdges int, truncated bool, diagnostics []Diagnostic) {
-	analysis := goSourceAnalysis{files: make([]File, 0, len(allFiles))}
-	for _, f := range allFiles {
-		if analysis.consume(snapshot, analyzer, f, modules, packageFiles, fileModule, budgets) {
-			break
-		}
-	}
-	return analysis.files, analysis.edges, analysis.unresolvedEdges, analysis.excludedEdges, analysis.truncated, analysis.diagnostics
-}
-
 type goSourceAnalysis struct {
 	files           []File
 	edges           []ImportEdge
@@ -256,119 +198,19 @@ func (a *goSourceAnalysis) consume(
 	return false
 }
 
-func filePathSet(files []File) map[string]bool {
-	out := make(map[string]bool, len(files))
-	for _, f := range files {
-		out[f.Path] = true
-	}
-	return out
-}
-
-func buildWorkspaceFacts(workspaces map[string]*modfile.WorkFile, modules map[string]*modfile.File) []Workspace {
-	workspaceList := make([]Workspace, 0, len(workspaces))
-	for _, wdir := range mapKeysSorted(workspaces) {
-		wf := workspaces[wdir]
-		var projects []string
-		seen := map[string]bool{}
-		for _, use := range wf.Use {
-			resolved := path.Clean(path.Join(wdir, use.Path))
-			if _, ok := modules[resolved]; !ok || seen[resolved] {
-				continue
-			}
-			seen[resolved] = true
-			projects = append(projects, "module:"+resolved)
-		}
-		sort.Strings(projects)
-		workspaceList = append(workspaceList, Workspace{
-			ID:       "workspace:" + wdir,
-			Language: "go",
-			Root:     wdir,
-			Projects: projects,
-		})
-	}
-	return workspaceList
-}
-
-func buildModuleFacts(moduleDirs []string, moduleFileList map[string][]string, analyzed map[string]bool) []Module {
-	moduleList := make([]Module, 0, len(moduleDirs))
-	for _, mdir := range moduleDirs {
-		moduleList = append(moduleList, Module{
-			ID:       "module:" + mdir,
-			Path:     mdir,
-			Language: "go",
-			Files:    filterAnalyzedPaths(moduleFileList[mdir], analyzed),
-		})
-	}
-	return moduleList
-}
-
-func buildPackageFacts(packageFiles map[string][]string, analyzed map[string]bool) []Package {
-	packageList := make([]Package, 0, len(packageFiles))
-	for _, pdir := range mapKeysSorted(packageFiles) {
-		kept := filterAnalyzedPaths(packageFiles[pdir], analyzed)
-		if len(kept) == 0 {
-			continue
-		}
-		packageList = append(packageList, Package{
-			ID:       "package:" + pdir,
-			Path:     pdir,
-			Language: "go",
-			Files:    kept,
-		})
-	}
-	return packageList
-}
-
 // selectedRootsFrom cleans and sorts roots for Snapshot.SelectedRoots, so
 // callers passing the same roots in a different order still produce
 // byte-identical canonical Model JSON. A nil/empty roots yields a nil
 // slice, matching Snapshot.SelectedRoots' omitempty contract.
-func selectedRootsFrom(roots []string) []string {
-	if len(roots) == 0 {
-		return nil
-	}
-	out := make([]string, len(roots))
-	for i, r := range roots {
-		out[i] = path.Clean(r)
-	}
-	sort.Strings(out)
-	return out
-}
 
 // moduleGoFiles returns every .go file under moduleDir, repository-relative
 // and sorted, excluding any subtree that is itself a different module's
 // root (moduleDirs), plus any testdata/, vendor/, or dot-prefixed
 // subdirectory -- the same directories the go tool itself never walks into.
-func moduleGoFiles(snapshot fs.FS, moduleDir string, moduleDirs map[string]bool) []string {
-	var files []string
-	_ = fs.WalkDir(snapshot, moduleDir, func(p string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if entry.IsDir() {
-			if shouldSkipModuleWalkDir(p, moduleDir, moduleDirs) {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if strings.HasSuffix(p, ".go") {
-			files = append(files, p)
-		}
-		return nil
-	})
-	sort.Strings(files)
-	return files
-}
 
 // shouldSkipModuleWalkDir reports whether the moduleGoFiles walk should
 // prune p: nested module roots plus the same testdata/vendor/dot dirs
 // discovery skips. The module root itself is never pruned.
-func shouldSkipModuleWalkDir(p, moduleDir string, moduleDirs map[string]bool) bool {
-	if p == moduleDir {
-		return false
-	}
-	return moduleDirs[p] || shouldSkipDiscoveryDir(p)
-}
 
 // classifyGoImport assigns importPath one of the six frozen ImportEdge.Kind
 // values ("internal", "stdlib", "external", "replaced", "excluded",
@@ -384,20 +226,6 @@ func shouldSkipModuleWalkDir(p, moduleDir string, moduleDirs map[string]bool) bo
 // accepted, vanishingly rare trade-off. Beyond that, replace outranks
 // exclude, which outranks require, since a module path can legally appear in
 // more than one of those lists (e.g. required and then excluded).
-func classifyGoImport(importPath string, owner *modfile.File, allModules map[string]*modfile.File, packageDirs map[string][]string) (kind, to string) {
-	if pkgDir, ok := bestInternalModulePackage(importPath, allModules, packageDirs); ok {
-		return "internal", "package:" + pkgDir
-	}
-	if isStdlibImport(importPath) {
-		return "stdlib", importPath
-	}
-	if owner != nil {
-		if kind, to, ok := classifyGoImportViaOwner(importPath, owner); ok {
-			return kind, to
-		}
-	}
-	return "unresolved", importPath
-}
 
 // bestInternalModulePackage finds importPath's owning package directory
 // among allModules's declared modules, iterating in sorted directory order
@@ -407,52 +235,9 @@ func classifyGoImport(importPath string, owner *modfile.File, allModules map[str
 // nested module whose directory doesn't mirror its module path, and either
 // can otherwise leave the choice of which one "wins" to map iteration
 // order.
-func bestInternalModulePackage(importPath string, allModules map[string]*modfile.File, packageDirs map[string][]string) (pkgDir string, ok bool) {
-	bestModPath := ""
-	for _, mdir := range mapKeysSorted(allModules) {
-		mf := allModules[mdir]
-		if mf.Module == nil {
-			continue
-		}
-		modPath := mf.Module.Mod.Path
-		if !matchesModulePrefix(importPath, modPath) {
-			continue
-		}
-		sub := strings.TrimPrefix(strings.TrimPrefix(importPath, modPath), "/")
-		candidateDir := mdir
-		if sub != "" {
-			candidateDir = path.Join(mdir, sub)
-		}
-		if _, exists := packageDirs[candidateDir]; !exists {
-			continue
-		}
-		if !ok || len(modPath) > len(bestModPath) {
-			bestModPath, pkgDir, ok = modPath, candidateDir, true
-		}
-	}
-	return pkgDir, ok
-}
 
 // classifyGoImportViaOwner checks importPath against owner's own
 // replace/exclude/require directives, in that precedence order.
-func classifyGoImportViaOwner(importPath string, owner *modfile.File) (kind, to string, ok bool) {
-	for _, r := range owner.Replace {
-		if matchesModulePrefix(importPath, r.Old.Path) {
-			return "replaced", importPath, true
-		}
-	}
-	for _, e := range owner.Exclude {
-		if matchesModulePrefix(importPath, e.Mod.Path) {
-			return "excluded", importPath, true
-		}
-	}
-	for _, req := range owner.Require {
-		if matchesModulePrefix(importPath, req.Mod.Path) {
-			return "external", importPath, true
-		}
-	}
-	return "", "", false
-}
 
 func matchesModulePrefix(importPath, modPath string) bool {
 	return importPath == modPath || strings.HasPrefix(importPath, modPath+"/")
@@ -464,55 +249,7 @@ func matchesModulePrefix(importPath, modPath string) bool {
 // imports. It cannot distinguish a stdlib name from a dotless module path
 // (`go mod init myapp`), so callers must match workspace module paths first
 // — see classifyGoImport.
-func isStdlibImport(importPath string) bool {
-	first := importPath
-	if idx := strings.Index(importPath, "/"); idx >= 0 {
-		first = importPath[:idx]
-	}
-	return !strings.Contains(first, ".")
-}
 
-func filterToRoots(modules map[string]*modfile.File, workspaces map[string]*modfile.WorkFile, roots []string) (map[string]*modfile.File, map[string]*modfile.WorkFile) {
-	allowed := func(dir string) bool {
-		for _, r := range roots {
-			r = path.Clean(r)
-			// "." is the snapshot root and is an ancestor of every
-			// repository-relative path; r+"/" would be "./", which never
-			// prefixes normal paths like "modulea".
-			if r == "." || dir == r || strings.HasPrefix(dir, r+"/") {
-				return true
-			}
-		}
-		return false
-	}
-
-	fm := make(map[string]*modfile.File, len(modules))
-	for k, v := range modules {
-		if allowed(k) {
-			fm[k] = v
-		}
-	}
-	fw := make(map[string]*modfile.WorkFile, len(workspaces))
-	for k, v := range workspaces {
-		if allowed(k) {
-			fw[k] = v
-		}
-	}
-	return fm, fw
-}
-
-func filterAnalyzedPaths(paths []string, analyzed map[string]bool) []string {
-	if len(paths) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(paths))
-	for _, p := range paths {
-		if analyzed[p] {
-			out = append(out, p)
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
+// "." is the snapshot root and is an ancestor of every
+// repository-relative path; r+"/" would be "./", which never
+// prefixes normal paths like "modulea".

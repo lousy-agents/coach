@@ -1,11 +1,6 @@
 package codesignalcli
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,21 +81,6 @@ func checkPackageManager(dir string, roots []string, policyPassed bool) Readines
 // fellBack reports when that stand-in fired, so a caller without a
 // validated policy can tell that classification apart from one resolveCompiler
 // actually found a manifest for (checkPackageManager's own R1 gate).
-func packageManagerContexts(worktreeRoot string, roots []string) (contexts []string, fellBack bool) {
-	if len(roots) == 0 {
-		roots = []string{"."}
-	}
-	contexts = make([]string, 0, len(roots))
-	for _, root := range roots {
-		if manifestDir, ok := nearestPackageJSONDir(selectedRootAbs(worktreeRoot, root), worktreeRoot); ok {
-			contexts = append(contexts, manifestDir)
-		}
-	}
-	if len(contexts) == 0 {
-		return []string{worktreeRoot}, true
-	}
-	return dedupeStrings(contexts), false
-}
 
 // detectPackageManagerAcrossContexts reduces the selected roots' package
 // contexts to one detection. Contexts naming different managers are reported
@@ -109,44 +89,9 @@ func packageManagerContexts(worktreeRoot string, roots []string) (contexts []str
 // honest way to serve two. A context with no recognized metadata contributes
 // nothing and is not itself a disagreement. ok is false only when no context
 // recognized anything at all.
-func detectPackageManagerAcrossContexts(contexts []string) (packageManagerDetection, bool) {
-	var resolved packageManagerDetection
-	found := false
-	for _, packageDir := range contexts {
-		detection, ok := detectPackageManager(packageDir)
-		if !ok {
-			continue
-		}
-		if detection.ambiguous {
-			return packageManagerDetection{ambiguous: true}, true
-		}
-		if !found {
-			resolved, found = detection, true
-			continue
-		}
-		if detection.kind != resolved.kind {
-			return packageManagerDetection{ambiguous: true}, true
-		}
-		if resolved.pin == "" {
-			resolved.pin = detection.pin
-		}
-	}
-	return resolved, found
-}
 
 func packageManagerConfigUnverifiable(detection packageManagerDetection, detail string) ReadinessCheck {
 	return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerConfigUnverifiable, Kind: detection.kind, PinnedVersion: detection.pin, Detail: detail}
-}
-
-func classifyProbedPackageManagerVersion(detection packageManagerDetection) ReadinessCheck {
-	version, probed := probePackageManagerVersion(context.Background(), detection.kind)
-	if !probed || !isExactVersion(version) {
-		return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerVersionUnverifiable, Kind: detection.kind, PinnedVersion: detection.pin}
-	}
-	if !packageManagerVersionSupported(detection.kind, version) {
-		return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerVersionUnsupported, Kind: detection.kind, FoundVersion: version, PinnedVersion: detection.pin}
-	}
-	return ReadinessCheck{State: ReadinessPass, Kind: detection.kind, Version: version, PinnedVersion: detection.pin}
 }
 
 type packageManagerDetection struct {
@@ -157,19 +102,6 @@ type packageManagerDetection struct {
 
 // reconcilePackageManagerDetection is the single cross-check rule shared by
 // the worktree and snapshot detection paths so they cannot diverge (SA-280-012).
-func reconcilePackageManagerDetection(fieldKind, fieldPin string, fieldOK bool, lockKind string, lockOK, lockAmbiguous bool) (packageManagerDetection, bool) {
-	if lockAmbiguous || (fieldOK && lockOK && fieldKind != lockKind) {
-		return packageManagerDetection{ambiguous: true}, true
-	}
-	switch {
-	case fieldOK:
-		return packageManagerDetection{kind: fieldKind, pin: fieldPin}, true
-	case lockOK:
-		return packageManagerDetection{kind: lockKind}, true
-	default:
-		return packageManagerDetection{}, false
-	}
-}
 
 // detectPackageManager identifies the repository's package manager from its
 // recognized metadata (SA-280-012): a package.json "packageManager" pin and a
@@ -187,50 +119,11 @@ func detectPackageManager(root string) (packageManagerDetection, bool) {
 // "packageManager": "<name>@<version>" field. An unrecognized manager name
 // is treated the same as an absent field, falling back to lockfile
 // detection instead.
-func readPackageManagerField(root string) (kind, version string, ok bool) {
-	data, err := os.ReadFile(filepath.Join(root, "package.json"))
-	if err != nil {
-		return "", "", false
-	}
-	var manifest struct {
-		PackageManager string `json:"packageManager"`
-	}
-	if err := json.Unmarshal(data, &manifest); err != nil || manifest.PackageManager == "" {
-		return "", "", false
-	}
-	name, rest, found := strings.Cut(manifest.PackageManager, "@")
-	if !found || rest == "" {
-		return "", "", false
-	}
-	switch name {
-	case packageManagerKindNPM, packageManagerKindPNPM, packageManagerKindBun, packageManagerKindYarn:
-		return name, rest, true
-	default:
-		return "", "", false
-	}
-}
 
 // detectPackageManagerLockfile reports the manager kind implied by a
 // recognized lockfile basename present at root. More than one distinct
 // kind's lockfile committed simultaneously is reported as ambiguous rather
 // than picking one arbitrarily.
-func detectPackageManagerLockfile(root string) (kind string, ambiguous bool, ok bool) {
-	found := map[string]bool{}
-	for basename, k := range packageManagerLockfileBasenames {
-		if fileExists(filepath.Join(root, basename)) {
-			found[k] = true
-		}
-	}
-	switch len(found) {
-	case 0:
-		return "", false, false
-	case 1:
-		for k := range found {
-			return k, false, true
-		}
-	}
-	return "", true, true
-}
 
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
@@ -241,27 +134,13 @@ func fileExists(path string) bool {
 // repository-controlled configuration hazard from kind's Hazards column
 // (SA-280-012), or "" if none. The lockfile-readability precondition itself
 // is kind-agnostic; see requireReadableLockfile.
-func detectPackageManagerHazard(root, kind string) string {
-	switch kind {
-	case packageManagerKindNPM:
-		return detectNpmrcHazard(root)
-	case packageManagerKindPNPM:
-		return detectNpmrcRegistryHazard(root)
-	case packageManagerKindBun:
-		// Bun resolves its install registry from a committed .npmrc the same
-		// way npm/pnpm do, on top of bunfig.toml rather than instead of it
-		// (verified empirically against real Bun 1.3.11: `bun install
-		// --ignore-scripts` still fails with ConnectionRefused against a
-		// .npmrc-redirected host with no bunfig.toml present at all) -- so
-		// both must be checked, not just bunfig.toml.
-		if detail := detectNpmrcRegistryHazard(root); detail != "" {
-			return detail
-		}
-		return detectBunfigHazard(root)
-	default:
-		return ""
-	}
-}
+
+// Bun resolves its install registry from a committed .npmrc the same
+// way npm/pnpm do, on top of bunfig.toml rather than instead of it
+// (verified empirically against real Bun 1.3.11: `bun install
+// --ignore-scripts` still fails with ConnectionRefused against a
+// .npmrc-redirected host with no bunfig.toml present at all) -- so
+// both must be checked, not just bunfig.toml.
 
 // requireReadableLockfile reports a hazard detail unless at least one of
 // kind's recognized lockfile basenames (SA-280-012) exists and can be read
@@ -290,32 +169,6 @@ func requireReadableLockfile(root, kind string) string {
 // read (permission denied, a directory, a dangling symlink) is a hazard in
 // its own right, distinct from no .npmrc existing at all -- fail-closed
 // rather than treating an unreadable hazard file as absent.
-func scanNpmrcLines(root string, handle func(key, value string) string) string {
-	path := filepath.Join(root, ".npmrc")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if _, statErr := os.Lstat(path); errors.Is(statErr, fs.ErrNotExist) {
-			return ""
-		}
-		return "committed .npmrc could not be read"
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			continue
-		}
-		key = strings.ToLower(strings.TrimSpace(key))
-		value = trimConfigValueQuotes(strings.TrimSpace(value))
-		if detail := handle(key, value); detail != "" {
-			return detail
-		}
-	}
-	return ""
-}
 
 // isNpmrcRegistryKey reports whether key is .npmrc's global "registry"
 // setting or a scoped "@scope:registry" override. Shared between npm's
@@ -328,21 +181,6 @@ func isNpmrcRegistryKey(key string) bool {
 // detectNpmrcHazard reports a hazard detail for a committed .npmrc that
 // redirects the registry, re-enables lifecycle scripts, or overrides the
 // script shell -- npm's full Hazards column (SA-280-012).
-func detectNpmrcHazard(root string) string {
-	return scanNpmrcLines(root, func(key, value string) string {
-		switch {
-		case isNpmrcRegistryKey(key):
-			return "committed .npmrc redirects the package registry (" + key + "=" + value + ")"
-		case key == "ignore-scripts":
-			if !strings.EqualFold(value, "true") {
-				return "committed .npmrc re-enables lifecycle scripts (ignore-scripts=" + value + ")"
-			}
-		case key == "script-shell":
-			return "committed .npmrc overrides the lifecycle script shell (script-shell=" + value + ")"
-		}
-		return ""
-	})
-}
 
 // detectNpmrcRegistryHazard reports a hazard detail for a committed .npmrc
 // that redirects the package registry, shared between pnpm and Bun's
@@ -356,14 +194,6 @@ func detectNpmrcHazard(root string) string {
 // --frozen-lockfile --ignore-scripts --ignore-pnpmfile` argv -- neither is
 // checked here, since refusing on a setting that is not an actual bypass
 // would be inventing a hazard rather than fail-closed.
-func detectNpmrcRegistryHazard(root string) string {
-	return scanNpmrcLines(root, func(key, value string) string {
-		if isNpmrcRegistryKey(key) {
-			return "committed .npmrc redirects the package registry (" + key + "=" + value + ")"
-		}
-		return ""
-	})
-}
 
 // detectBunfigHazard reports a hazard detail for a committed bunfig.toml
 // that carries any unverified [install]-namespaced configuration: a registry
@@ -407,64 +237,15 @@ func detectNpmrcRegistryHazard(root string) string {
 // close it for every possible future [install]-namespaced key or every
 // other TOML encoding trick; the structured cases above remain only for
 // their more specific, actionable detail text.
-func detectBunfigHazard(root string) string {
-	data, detail, present := readCommittedBunfig(root)
-	if !present {
-		return detail
-	}
-	if hazard := bunfigRedirectHazard(data); hazard != "" {
-		return hazard
-	}
-	return bunfigUnverifiableHazard(data)
-}
 
 // readCommittedBunfig reads root's bunfig.toml. present is false both when
 // there is genuinely no file (detail "": nothing to be hazardous) and when
 // one exists but cannot be read (detail names the hazard) -- the fail-closed
 // half AC-SET-12 requires, since an unreadable config is not a safe one.
-func readCommittedBunfig(root string) (data []byte, detail string, present bool) {
-	path := filepath.Join(root, "bunfig.toml")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if _, statErr := os.Lstat(path); errors.Is(statErr, fs.ErrNotExist) {
-			return nil, "", false
-		}
-		return nil, "committed bunfig.toml could not be read", false
-	}
-	return bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF")), "", true
-}
 
 // bunfigRedirectHazard names the redirection it can read directly out of the
 // file, walking it as Bun does rather than parsing TOML: a section header
 // followed by key/value lines.
-func bunfigRedirectHazard(data []byte) string {
-	section := ""
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.HasPrefix(line, "[") {
-			section = bunfigSectionName(line)
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			continue
-		}
-		key = strings.ToLower(strings.TrimSpace(key))
-		value = trimConfigValueQuotes(strings.TrimSpace(value))
-		switch {
-		case section == "install" && key == "registry":
-			return "committed bunfig.toml redirects the install registry (registry=" + value + ")"
-		case section == "install" && key == "scopes":
-			return "committed bunfig.toml redirects scoped install registries (scopes=" + value + ")"
-		case section == "install.scopes":
-			return "committed bunfig.toml redirects a scoped install registry (" + key + "=" + value + ")"
-		}
-	}
-	return ""
-}
 
 // bunfigSectionName reads a table header's name. The name runs up to its
 // closing ']', not to the end of the line -- real Bun 1.3.11 also honors a
@@ -480,35 +261,14 @@ func bunfigSectionName(line string) string {
 
 // bunfigUnverifiableHazard fails closed on a file this reader cannot claim to
 // have understood, rather than on a redirect it recognized.
-func bunfigUnverifiableHazard(data []byte) string {
-	const unverifiable = "committed bunfig.toml could not be verified to leave package resolution unredirected"
-	// Every TOML escape sequence (\uXXXX, \xHH, octal \NNN, and any future
-	// form Bun adds) requires a backslash to invoke, in either a quoted
-	// table name or a quoted key -- a general check for the mechanism, not
-	// an enumeration of its spellings. A legitimate bunfig.toml's forward-
-	// slash paths and settings never need one.
-	if strings.Contains(string(data), `\`) {
-		return unverifiable
-	}
-	lower := strings.ToLower(string(data))
-	for _, keyword := range []string{"install", "registry", "scopes", "cache"} {
-		if strings.Contains(lower, keyword) {
-			return unverifiable
-		}
-	}
-	return ""
-}
+
+// Every TOML escape sequence (\uXXXX, \xHH, octal \NNN, and any future
+// form Bun adds) requires a backslash to invoke, in either a quoted
+// table name or a quoted key -- a general check for the mechanism, not
+// an enumeration of its spellings. A legitimate bunfig.toml's forward-
+// slash paths and settings never need one.
 
 // trimConfigValueQuotes strips a single layer of matching double or single
 // quotes from a config value, per .npmrc's ini quoting rules -- also
 // sufficient for a TOML basic/literal string's outer quotes in
 // detectBunfigHazard's narrow scan.
-func trimConfigValueQuotes(value string) string {
-	if len(value) >= 2 {
-		first, last := value[0], value[len(value)-1]
-		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
-			return value[1 : len(value)-1]
-		}
-	}
-	return value
-}

@@ -22,13 +22,8 @@ func parseHiddenMutationArgs(args json.RawMessage) (hiddenMutationArgs, error) {
 		return hiddenMutationArgs{}, fmt.Errorf("%w: %v", agentloop.ErrInvalidArgs, err)
 	}
 	if len(in.Items) > 0 {
-		for i, it := range in.Items {
-			if it.FindingRef == "" {
-				return hiddenMutationArgs{}, fmt.Errorf("%w: items[%d].finding_ref is required", agentloop.ErrInvalidArgs, i)
-			}
-			if len(it.Finding) == 0 {
-				return hiddenMutationArgs{}, fmt.Errorf("%w: items[%d].finding is required", agentloop.ErrInvalidArgs, i)
-			}
+		if err := validateHiddenMutationItems(in.Items); err != nil {
+			return hiddenMutationArgs{}, err
 		}
 		// Defensive copies so callers retain unmodified buffers.
 		items := make([]HiddenMutationPackItem, len(in.Items))
@@ -48,6 +43,18 @@ func parseHiddenMutationArgs(args json.RawMessage) (hiddenMutationArgs, error) {
 		Finding: append(json.RawMessage(nil), in.Finding...),
 		File:    in.File,
 	}, nil
+}
+
+func validateHiddenMutationItems(items []HiddenMutationPackItem) error {
+	for i, it := range items {
+		if it.FindingRef == "" {
+			return fmt.Errorf("%w: items[%d].finding_ref is required", agentloop.ErrInvalidArgs, i)
+		}
+		if len(it.Finding) == 0 {
+			return fmt.Errorf("%w: items[%d].finding is required", agentloop.ErrInvalidArgs, i)
+		}
+	}
+	return nil
 }
 
 func assembleHiddenMutationArgs(args json.RawMessage) ([]modelgateway.Message, error) {

@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+
 	"os/exec"
 	"slices"
 	"sync"
@@ -271,31 +271,6 @@ type SetupOutcome struct {
 // ResidueUnknown populated from a best-effort, WorkingDirectory-scoped
 // residue read (see ResidueUnknown's doc). A successful run becomes
 // SetupOutcomeSucceeded.
-func RunConfirmedSetup(ctx context.Context, preview SetupPreview, confirmed bool) (SetupOutcome, error) {
-	if !confirmed {
-		return SetupOutcome{Kind: SetupOutcomeCancelled, ExitCode: 2}, nil
-	}
-
-	execution, err := ExecuteSetup(ctx, preview, confirmed)
-	if err != nil {
-		return SetupOutcome{
-			Kind:      SetupOutcomeFailed,
-			ExitCode:  2,
-			Execution: execution,
-		}, err
-	}
-	if !execution.Succeeded {
-		changedPaths, residueUnknown := setupResidueChangedPaths(preview.WorkingDirectory)
-		return SetupOutcome{
-			Kind:           SetupOutcomeFailed,
-			ExitCode:       2,
-			Execution:      execution,
-			ChangedPaths:   changedPaths,
-			ResidueUnknown: residueUnknown,
-		}, nil
-	}
-	return SetupOutcome{Kind: SetupOutcomeSucceeded, Execution: execution}, nil
-}
 
 // RunConfirmedSetupAndRecheckReadiness runs RunConfirmedSetup and, only when
 // it succeeds, reruns the complete readiness check via CheckProjectReadiness
@@ -311,18 +286,6 @@ func RunConfirmedSetup(ctx context.Context, preview SetupPreview, confirmed bool
 // readiness result. This function does not interpret PostInstallReadiness; a
 // caller decides whether the fresh result clears the gap that offered this
 // setup.
-func RunConfirmedSetupAndRecheckReadiness(ctx context.Context, preview SetupPreview, confirmed bool, dir, revision, configPath string) (SetupOutcome, error) {
-	outcome, err := RunConfirmedSetup(ctx, preview, confirmed)
-	if err != nil || outcome.Kind != SetupOutcomeSucceeded {
-		return outcome, err
-	}
-	readiness, readinessErr := CheckProjectReadiness(dir, revision, configPath)
-	if readinessErr != nil {
-		return outcome, readinessErr
-	}
-	outcome.PostInstallReadiness = readiness
-	return outcome, nil
-}
 
 // Bounds for setupResidueChangedPaths' read-only `git status` call: a small
 // timeout and small output caps, since this is a status listing for a single
@@ -353,13 +316,6 @@ const (
 // not inside a Git worktree, or the bounded git status call otherwise
 // failed -- in which case the returned paths are a best-effort fallback
 // (workingDirectory itself), not a real status read.
-func setupResidueChangedPaths(workingDirectory string) ([]string, bool) {
-	output, err := runGitBytesBounded(workingDirectory, maxSetupResidueGitBytes, maxSetupResidueGitStderr, setupResidueGitTimeout, "status", "--porcelain", "-z", "--ignored", "--", ".")
-	if err != nil {
-		return []string{workingDirectory}, true
-	}
-	return parseSetupResidueStatusPaths(output), false
-}
 
 // parseSetupResidueStatusPaths extracts the path from each NUL-delimited
 // `git status --porcelain -z` record ("XY<space><path>\0", XY being two
@@ -372,24 +328,6 @@ func setupResidueChangedPaths(workingDirectory string) ([]string, bool) {
 // consumed and discarded here -- only the resulting path is a "may have
 // changed" location worth disclosing. Returns nil rather than an empty
 // non-nil slice when there is nothing to report.
-func parseSetupResidueStatusPaths(output []byte) []string {
-	fields := bytes.Split(bytes.TrimRight(output, "\x00"), []byte{0})
-	if len(fields) == 1 && len(fields[0]) == 0 {
-		return nil
-	}
-	var paths []string
-	for i := 0; i < len(fields); i++ {
-		entry := fields[i]
-		if len(entry) < 4 {
-			continue
-		}
-		paths = append(paths, string(entry[3:]))
-		if entry[0] == 'R' || entry[0] == 'C' || entry[1] == 'R' || entry[1] == 'C' {
-			i++
-		}
-	}
-	return paths
-}
 
 // setupExecutionEnv is the child process's entire environment: PATH so the
 // package manager can resolve itself and node, and HOME for its config/cache
@@ -397,13 +335,6 @@ func parseSetupResidueStatusPaths(output []byte) []string {
 // otherwise ambient variable (npm_config_*, PNPM_*, registry overrides, a
 // re-enabled lifecycle-script setting) can never reach the child -- this
 // mirrors project_ts_compiler_mise_probe.go's confinement pattern.
-func setupExecutionEnv() []string {
-	env := []string{"PATH=" + os.Getenv("PATH")}
-	if home := os.Getenv("HOME"); home != "" {
-		env = append(env, "HOME="+home)
-	}
-	return env
-}
 
 // boundedOutputSink is an io.Writer that keeps at most limit bytes,
 // silently discarding anything past that bound. ExecuteSetup assigns the
@@ -418,19 +349,6 @@ type boundedOutputSink struct {
 	mu    sync.Mutex
 	buf   bytes.Buffer
 	limit int
-}
-
-func (s *boundedOutputSink) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if remaining := s.limit - s.buf.Len(); remaining > 0 {
-		if len(p) > remaining {
-			s.buf.Write(p[:remaining])
-		} else {
-			s.buf.Write(p)
-		}
-	}
-	return len(p), nil
 }
 
 func (s *boundedOutputSink) Bytes() []byte {

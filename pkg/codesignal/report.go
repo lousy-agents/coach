@@ -3,7 +3,7 @@ package codesignal
 import (
 	"encoding/json"
 
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -15,10 +15,10 @@ type Report struct {
 	Diagnostics   []Diagnostic `json:"diagnostics"`
 	Coverage      *Coverage    `json:"coverage"`
 
-	ProjectChanges  []ProjectChange        `json:"project_changes"`
-	ProjectFacts    []ProjectFact          `json:"project_facts"`
-	ProjectSummary  *ProjectSummary        `json:"project_summary"`
-	ProjectCoverage *projectmodel.Coverage `json:"project_coverage"`
+	ProjectChanges  []ProjectChange  `json:"project_changes"`
+	ProjectFacts    []ProjectFact    `json:"project_facts"`
+	ProjectSummary  *ProjectSummary  `json:"project_summary"`
+	ProjectCoverage *domain.Coverage `json:"project_coverage"`
 
 	ProjectProvenance  *ProjectProvenance  `json:"project_provenance,omitempty"`
 	ProjectScope       *ProjectScopeReport `json:"project_scope,omitempty"`
@@ -36,10 +36,10 @@ type reportWireV1 struct {
 
 type reportWireV2 struct {
 	reportWireV1
-	ProjectChanges  []ProjectChange        `json:"project_changes"`
-	ProjectFacts    []ProjectFact          `json:"project_facts"`
-	ProjectSummary  *ProjectSummary        `json:"project_summary"`
-	ProjectCoverage *projectmodel.Coverage `json:"project_coverage"`
+	ProjectChanges  []ProjectChange  `json:"project_changes"`
+	ProjectFacts    []ProjectFact    `json:"project_facts"`
+	ProjectSummary  *ProjectSummary  `json:"project_summary"`
+	ProjectCoverage *domain.Coverage `json:"project_coverage"`
 
 	ProjectProvenance  *ProjectProvenance  `json:"project_provenance,omitempty"`
 	ProjectScope       *ProjectScopeReport `json:"project_scope,omitempty"`
@@ -61,7 +61,7 @@ func (r Report) MarshalJSON() ([]byte, error) {
 
 	projectCoverage := r.ProjectCoverage
 	if projectCoverage == nil {
-		projectCoverage = &projectmodel.Coverage{}
+		projectCoverage = &domain.Coverage{}
 	}
 	projectSummary := r.ProjectSummary
 	if projectSummary == nil {

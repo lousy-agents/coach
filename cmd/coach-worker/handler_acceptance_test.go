@@ -103,10 +103,7 @@ var _ = Describe("coach-worker baseline handler wiring", func() {
 		})
 
 		It("keeps ErrAuth and ErrTooLarge permanent", func() {
-			for _, sent := range []error{githubingest.ErrAuth, githubingest.ErrTooLarge} {
-				err := classifyBaselineHandlerError(fmt.Errorf("coachapi: baseline fetch failed: %w", sent))
-				Expect(worker.IsRetryable(err)).To(BeFalse(), "sentinel %v", sent)
-			}
+			body_handlerAcceptanceTest_keepsErrAuthAndErrTooLargePermanent_105()
 		})
 
 		It("keeps bad params permanent", func() {

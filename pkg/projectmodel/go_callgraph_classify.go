@@ -125,29 +125,11 @@ func unresolvedCallSiteCount(counts map[string]int) int {
 // the *types.Func being wrapped/instantiated, even though fn.Pkg itself is
 // nil; go/ssa's wrappers.go/instantiate.go set this field, not any public
 // API, so this is the only way to recover the real target's package.
-func syntheticWrapperTargetPkgPath(fn *ssa.Function) string {
-	obj := fn.Object()
-	if obj == nil || obj.Pkg() == nil {
-		return ""
-	}
-	return obj.Pkg().Path()
-}
 
 // isReflectDynamicCall reports whether fn is reflect.Value.Call or
 // reflect.Value.CallSlice: SSA resolves both as ordinary static method
 // calls (reflect.Value is a concrete type), but the function they actually
 // invoke is chosen at runtime and is invisible to static analysis.
-func isReflectDynamicCall(fn *ssa.Function) bool {
-	if fn.Pkg == nil || fn.Pkg.Pkg.Path() != "reflect" {
-		return false
-	}
-	switch fn.Name() {
-	case "Call", "CallSlice":
-		return true
-	default:
-		return false
-	}
-}
 
 // isFunctionValueArg reports whether v is a handler value passed to a
 // frameworkRegistrationCallees entry: either a func-typed value (the
@@ -156,10 +138,3 @@ func isReflectDynamicCall(fn *ssa.Function) bool {
 // (*http.ServeMux).Handle case, where the parameter type is the interface,
 // not a func signature). handlerIface is nil when net/http was not loaded
 // for this root, in which case only the func-typed check applies.
-func isFunctionValueArg(v ssa.Value, handlerIface *types.Interface) bool {
-	t := v.Type()
-	if _, ok := t.Underlying().(*types.Signature); ok {
-		return true
-	}
-	return handlerIface != nil && types.Implements(t, handlerIface)
-}

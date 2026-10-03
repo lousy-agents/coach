@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -15,38 +14,6 @@ import (
 
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
-
-// authoringStdin writes content to a fresh temp file, rewinds it, and
-// returns it as an *os.File -- authorProjectConfigTypeScript takes stdin as
-// an *os.File (not an io.Reader) so it stays callable with the same real
-// terminal-detection contract runAuthorProjectConfigTypeScript uses for
-// os.Stdin. The caller is responsible for closing the returned file.
-func authoringStdin(content string) *os.File {
-	f, err := os.CreateTemp(GinkgoT().TempDir(), "authoring-stdin")
-	Expect(err).NotTo(HaveOccurred())
-	_, err = f.WriteString(content)
-	Expect(err).NotTo(HaveOccurred())
-	_, err = f.Seek(0, 0)
-	Expect(err).NotTo(HaveOccurred())
-	return f
-}
-
-func authoringOutputFiles() (stdout, stderr *os.File, readStdout, readStderr func() string) {
-	var err error
-	stdout, err = os.CreateTemp(GinkgoT().TempDir(), "authoring-stdout")
-	Expect(err).NotTo(HaveOccurred())
-	stderr, err = os.CreateTemp(GinkgoT().TempDir(), "authoring-stderr")
-	Expect(err).NotTo(HaveOccurred())
-
-	read := func(f *os.File) string {
-		_, err := f.Seek(0, 0)
-		Expect(err).NotTo(HaveOccurred())
-		data, err := io.ReadAll(f)
-		Expect(err).NotTo(HaveOccurred())
-		return string(data)
-	}
-	return stdout, stderr, func() string { return read(stdout) }, func() string { return read(stderr) }
-}
 
 var _ = Describe("coach codesignal --baseline --suggest-project-config --project-language typescript", func() {
 	When("no controlling terminal is available on stdin", func() {
@@ -69,27 +36,14 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			runErr := command.Run()
 			var exitErr *exec.ExitError
 			Expect(errors.As(runErr, &exitErr)).To(BeTrue(), "expected an ExitError, got: %s (stderr: %s)", runErr, stderr.String())
-			// The controlling-terminal gate is documented to share
-			// --suggest-project-config's usage/discovery-rejection exit code
-			// (2), never the snapshot/revision-failure exit code (3): pin the
-			// exact value so a regression back to a different exit-code
-			// family (e.g. classifyAnalysisError's 1/2/3 table) is caught,
-			// not just "any non-zero code".
+
 			Expect(exitErr.ExitCode()).To(Equal(2))
 			Expect(stdout.String()).To(BeEmpty(), "no candidate/prompt output must reach stdout when there is no controlling terminal")
 			Expect(stderr.String()).To(ContainSubstring("controlling terminal"), "stderr: %s", stderr.String())
-			// A coding agent without a terminal must be steered toward
-			// drafting the documented schema-1 policy itself and handing it
-			// to a human to review, commit, and rerun -- not toward faking a
-			// PTY and inventing architecture on the human's behalf (AC-POL-3).
+
 			Expect(stderr.String()).To(ContainSubstring("--project-config"), "stderr must name the non-interactive alternative: %s", stderr.String())
 			Expect(stderr.String()).To(ContainSubstring("review"), "stderr must instruct a human to review the drafted policy: %s", stderr.String())
 
-			// --output is supplied above specifically so this assertion can fail
-			// for the intended reason: without --output, AuthorProjectConfig never
-			// writes a file on any path (it emits the candidate to stdout instead),
-			// so this check would pass even if the controlling-terminal gate did
-			// not run at all.
 			_, statErr := os.Stat(filepath.Join(repo, "project.json"))
 			Expect(os.IsNotExist(statErr)).To(BeTrue(), "no policy config file must be written when there is no controlling terminal")
 		})
@@ -157,8 +111,6 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			commitFile(repo, "package.json", "{}\n")
 			commitFile(repo, "tsconfig.json", "{}\n")
 
-			// stdin is never read: this spec's whole point is that the
-			// session must refuse before it ever tries.
 			stdin, err := os.Open(os.DevNull)
 			Expect(err).NotTo(HaveOccurred())
 			defer stdin.Close()
@@ -366,11 +318,6 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			cleanStdout, cleanStderr, cleanExit := runAuthoring()
 			Expect(cleanExit).To(Equal(0), "stderr: %s", cleanStderr)
 
-			// Modify the tracked tsconfig.json's content (discovery only cares
-			// about a manifest's existence, never its content), add an
-			// untracked tsconfig.json in a new directory (a second root that
-			// must never appear), and add a gitignored directory with its own
-			// tsconfig.json (equally uncommitted, equally invisible).
 			Expect(os.WriteFile(filepath.Join(repo, "tsconfig.json"), []byte(`{"compilerOptions":{}}`), 0o644)).To(Succeed())
 			Expect(os.MkdirAll(filepath.Join(repo, "untracked-app"), 0o755)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(repo, "untracked-app", "tsconfig.json"), []byte("{}\n"), 0o644)).To(Succeed())
@@ -411,3 +358,18 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config (Go path 
 		})
 	})
 })
+
+// authoringStdin writes content to a fresh temp file, rewinds it, and
+// returns it as an *os.File -- authorProjectConfigTypeScript takes stdin as
+// an *os.File (not an io.Reader) so it stays callable with the same real
+// terminal-detection contract runAuthorProjectConfigTypeScript uses for
+// os.Stdin. The caller is responsible for closing the returned file.
+func authoringStdin(content string) *os.File {
+	f, err := os.CreateTemp(GinkgoT().TempDir(), "authoring-stdin")
+	Expect(err).NotTo(HaveOccurred())
+	_, err = f.WriteString(content)
+	Expect(err).NotTo(HaveOccurred())
+	_, err = f.Seek(0, 0)
+	Expect(err).NotTo(HaveOccurred())
+	return f
+}

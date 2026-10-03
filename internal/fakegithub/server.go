@@ -1,7 +1,6 @@
 package fakegithub
 
 import (
-	"net/http"
 	"net/http/httptest"
 	"net/url"
 
@@ -35,30 +34,12 @@ func requireFixture(caller string, fixture *Fixture) {
 // server topology (e.g. a standalone process serving real HTTP, rather than
 // an in-process httptest.Server) can use Handler directly. fixture must
 // outlive the returned handler (it is not copied). Panics if fixture is nil.
-func Handler(fixture *Fixture) (http.Handler, *acceptanceharness.Recorder) {
-	requireFixture("Handler", fixture)
 
-	rec := &acceptanceharness.Recorder{}
+// /user is github.com's public path (raw net/http tests).
+// /api/v3/user is what go-github emits with WithEnterpriseURLs (api/v3 prefix).
+// OAuth authorize/token stay on bare paths; App/repos APIs use api/v3.
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /login/oauth/authorize", oauthAuthorizeHandler(fixture, rec))
-	mux.HandleFunc("POST /login/oauth/access_token", oauthTokenHandler(fixture, rec))
-	// /user is github.com's public path (raw net/http tests).
-	// /api/v3/user is what go-github emits with WithEnterpriseURLs (api/v3 prefix).
-	// OAuth authorize/token stay on bare paths; App/repos APIs use api/v3.
-	mux.HandleFunc("GET /user", oauthUserHandler(fixture, rec))
-	mux.HandleFunc("GET /api/v3/user", oauthUserHandler(fixture, rec))
-
-	mux.HandleFunc("POST /api/v3/app/installations/{id}/access_tokens", installationTokenHandler(fixture, rec))
-	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/installation", installationResolutionHandler(fixture, rec))
-	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission", permissionHandler(fixture, rec))
-	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/contents/{path...}", contentsHandler(fixture, rec))
-	// Register commits before bare repo so the more-specific path wins.
-	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/commits/{ref}", commitHandler(fixture, rec))
-	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}", repoMetaHandler(fixture, rec))
-
-	return mux, rec
-}
+// Register commits before bare repo so the more-specific path wins.
 
 // NewServer starts a Server backed by fixture. fixture must outlive the
 // Server (it is not copied). Callers must Close when done. Panics if fixture
@@ -86,7 +67,5 @@ func (s *Server) Host() string {
 func (s *Server) Close() { s.http.Close() }
 
 // Recorder returns the request recorder for sequence/auth assertions.
-func (s *Server) Recorder() *acceptanceharness.Recorder { return s.recorder }
 
 // Fixture returns the Fixture passed to NewServer.
-func (s *Server) Fixture() *Fixture { return s.fixture }

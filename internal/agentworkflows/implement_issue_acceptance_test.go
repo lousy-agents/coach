@@ -3,7 +3,6 @@ package agentworkflows
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -24,14 +23,7 @@ func readRepoFile(path string) string {
 var _ = Describe("implement-issue planner workflow", func() {
 	When("the workflow is committed", func() {
 		It("declares the meta block the Workflow tool requires", func() {
-			planner := readRepoFile(plannerPath)
-			Expect(planner).To(HavePrefix("export const meta = {"),
-				"the Workflow tool requires meta as the first statement")
-			for _, field := range []string{"name:", "description:", "phases:"} {
-				Expect(planner).To(ContainSubstring(field))
-			}
-			Expect(planner).To(ContainSubstring("name: 'implement-issue-plan'"),
-				"the command invokes the workflow by this name")
+			body_implementIssueAcceptanceTest_declaresTheMetaBlockTheWorkflowToolRequires_26()
 		})
 
 		It("constrains its planning output to a schema", func() {
@@ -53,20 +45,11 @@ var _ = Describe("implement-issue planner workflow", func() {
 	// loop lost its fidelity checks.
 	When("the planner is asked to do more than plan", func() {
 		It("never spawns the implementer or reviewer agents itself", func() {
-			planner := readRepoFile(plannerPath)
-			for _, agent := range []string{"task-implementer", "task-reviewer", "workflow-integration-reviewer"} {
-				Expect(planner).NotTo(MatchRegexp(`agentType:\s*['"]`+regexp.QuoteMeta(agent)),
-					"%s must be spawned by the main session, or its SubagentStop hook never fires", agent)
-			}
+			body_implementIssueAcceptanceTest_neverSpawnsTheImplementerOrReviewerAgentsItself_55()
 		})
 
 		It("grants its own agents no way to mutate the repository", func() {
-			planner := readRepoFile(plannerPath)
-			for _, mutator := range []string{"Edit", "Write", "NotebookEdit"} {
-				Expect(planner).NotTo(MatchRegexp(`['"]` + regexp.QuoteMeta(mutator) + `['"]`))
-			}
-			Expect(planner).NotTo(ContainSubstring("isolation: 'worktree'"),
-				"a worktree exists to keep parallel mutations from colliding; needing one would mean the planner writes")
+			body_implementIssueAcceptanceTest_grantsItsOwnAgentsNoWayToMutateTheRepository_63()
 		})
 	})
 })

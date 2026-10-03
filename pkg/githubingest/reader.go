@@ -1,13 +1,10 @@
 package githubingest
 
 import (
-	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
-	"path"
-	"strings"
+
 	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
@@ -103,95 +100,12 @@ func NewGitHubFileReader(cfg GitHubAppConfig) (*GitHubFileReader, error) {
 // pre-minted installation access token (from CredentialResolver.InstallationToken).
 // baseURL is optional (GitHub Enterprise). Prefer this over NewGitHubFileReader
 // when the caller already holds a token via the ADR-002 CredentialResolver seam.
-func NewGitHubFileReaderFromToken(token, baseURL string) (*GitHubFileReader, error) {
-	if token == "" {
-		return nil, fmt.Errorf("githubingest: installation access token must be set")
-	}
-	opts := []github.ClientOptionsFunc{
-		github.WithTimeout(DefaultGitHubFileReaderHTTPTimeout),
-		github.WithAuthToken(token),
-	}
-	if baseURL != "" {
-		opts = append(opts, github.WithEnterpriseURLs(baseURL, baseURL))
-	}
-	client, err := github.NewClient(opts...)
-	if err != nil {
-		return nil, fmt.Errorf("githubingest: building GitHub client from token: %w", err)
-	}
-	return &GitHubFileReader{client: client}, nil
-}
 
 // ResolveCommitSHA resolves ref to a commit object SHA for owner/repo.
 // Empty ref resolves the repository default branch tip (not the literal "HEAD").
 // Branch names, tags, and already-resolved SHAs are accepted via the Commits API.
-func (r *GitHubFileReader) ResolveCommitSHA(ctx context.Context, owner, repo, ref string) (string, error) {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		repository, resp, err := r.client.Repositories.Get(ctx, owner, repo)
-		if err != nil {
-			return "", mapContentsAPIError(err, resp, fmt.Sprintf("resolving default branch for %s/%s", owner, repo))
-		}
-		ref = strings.TrimSpace(repository.GetDefaultBranch())
-		if ref == "" {
-			return "", fmt.Errorf("githubingest: %s/%s has an empty default branch", owner, repo)
-		}
-	}
-	commit, resp, err := r.client.Repositories.GetCommit(ctx, owner, repo, ref, nil)
-	if err != nil {
-		return "", mapContentsAPIError(err, resp, fmt.Sprintf("resolving commit SHA for %s/%s at ref %s", owner, repo, ref))
-	}
-	sha := commit.GetSHA()
-	if sha == "" {
-		return "", fmt.Errorf("githubingest: resolved empty commit SHA for %s/%s at ref %s", owner, repo, ref)
-	}
-	return sha, nil
-}
 
 // ReadFile fetches the raw bytes and metadata of a single file at ref.
-func (r *GitHubFileReader) ReadFile(ctx context.Context, ref GitHubFileRef) ([]byte, FileMetadata, error) {
-	fileContent, dirContent, resp, err := r.client.Repositories.GetContents(ctx, ref.Owner, ref.Repo, ref.Path, &github.RepositoryContentGetOptions{Ref: ref.Ref})
-	if err != nil {
-		return nil, FileMetadata{}, mapContentsAPIError(err, resp, fmt.Sprintf("fetching %s at ref %s", ref.Path, ref.Ref))
-	}
-
-	if dirContent != nil || fileContent == nil {
-		return nil, FileMetadata{}, fmt.Errorf("githubingest: %s at ref %s is a directory listing: %w", ref.Path, ref.Ref, ErrUnsupportedContent)
-	}
-
-	switch fileContent.GetType() {
-	case "dir", "symlink", "submodule":
-		return nil, FileMetadata{}, fmt.Errorf("githubingest: %s at ref %s is a %s, not a regular file: %w", ref.Path, ref.Ref, fileContent.GetType(), ErrUnsupportedContent)
-	}
-
-	if err := r.rejectIfPathIsSymlink(ctx, ref); err != nil {
-		return nil, FileMetadata{}, err
-	}
-
-	if fileContent.GetSize() > maxContentSize {
-		return nil, FileMetadata{}, fmt.Errorf("githubingest: %s at ref %s is %d bytes, exceeding the %d byte limit: %w", ref.Path, ref.Ref, fileContent.GetSize(), maxContentSize, ErrTooLarge)
-	}
-
-	if fileContent.Content == nil {
-		return nil, FileMetadata{}, fmt.Errorf("githubingest: %s at ref %s: response had no content field", ref.Path, ref.Ref)
-	}
-
-	decoded, err := base64.StdEncoding.DecodeString(*fileContent.Content)
-	if err != nil {
-		return nil, FileMetadata{}, fmt.Errorf("githubingest: decoding content for %s at ref %s: %w", ref.Path, ref.Ref, err)
-	}
-
-	if len(decoded) == 0 {
-		return nil, FileMetadata{}, fmt.Errorf("githubingest: %s at ref %s decoded to empty content: %w", ref.Path, ref.Ref, ErrEmptyContent)
-	}
-
-	meta := FileMetadata{
-		Path: fileContent.GetPath(),
-		Ref:  ref.Ref,
-		SHA:  fileContent.GetSHA(),
-		Size: fileContent.GetSize(),
-	}
-	return decoded, meta, nil
-}
 
 // isTokenMintFailure reports whether err originates from a failed
 // ghinstallation installation-token mint, as opposed to a genuine Contents
@@ -219,19 +133,6 @@ func isTokenMintFailure(err error) bool {
 //     token-mint endpoint's.
 //   - anything else: err wrapped with action for context, matching no
 //     sentinel.
-func mapContentsAPIError(err error, resp *github.Response, action string) error {
-	if resp != nil {
-		switch resp.StatusCode {
-		case http.StatusNotFound:
-			return fmt.Errorf("githubingest: %s: %w", action, ErrNotFound)
-		case http.StatusUnauthorized, http.StatusForbidden:
-			return fmt.Errorf("githubingest: %s rejected with status %d: %w", action, resp.StatusCode, ErrAuth)
-		}
-	} else if isTokenMintFailure(err) {
-		return fmt.Errorf("githubingest: authenticating GitHub App installation while %s: %w", action, ErrAuth)
-	}
-	return fmt.Errorf("githubingest: %s: %w", action, err)
-}
 
 // rejectIfPathIsSymlink closes AC-5.7's gap where the Contents API
 // transparently resolves an in-repo symlink target and reports it as a
@@ -250,22 +151,3 @@ func mapContentsAPIError(err error, resp *github.Response, action string) error 
 // listing rather than a whole-repository recursive tree, so it does not
 // carry the earlier tree-walk approach's cost (a full recursive tree
 // payload per read) or truncation blind spot for large repositories.
-func (r *GitHubFileReader) rejectIfPathIsSymlink(ctx context.Context, ref GitHubFileRef) error {
-	dir := path.Dir(ref.Path)
-	if dir == "." {
-		dir = ""
-	}
-
-	_, dirEntries, resp, err := r.client.Repositories.GetContents(ctx, ref.Owner, ref.Repo, dir, &github.RepositoryContentGetOptions{Ref: ref.Ref})
-	if err != nil {
-		return mapContentsAPIError(err, resp, fmt.Sprintf("listing the directory containing %s at ref %s", ref.Path, ref.Ref))
-	}
-
-	base := path.Base(ref.Path)
-	for _, entry := range dirEntries {
-		if entry.GetName() == base && entry.GetType() == "symlink" {
-			return fmt.Errorf("githubingest: %s at ref %s is a symlink: %w", ref.Path, ref.Ref, ErrUnsupportedContent)
-		}
-	}
-	return nil
-}
