@@ -302,7 +302,7 @@ func finishCodesignalFlagParse(flags *flag.FlagSet, h codesignalFlagHolders, std
 		return parsed, 0, true
 	}
 
-	if errMsg := validateCodesignalFlags(parsed); errMsg != "" {
+	if errMsg := validateCodesignalFlags(parsed, flags.Args()); errMsg != "" {
 		fmt.Fprintln(stderr, codesignalUsage)
 		fmt.Fprintln(stderr, errMsg)
 		return codesignalFlags{}, 2, false
@@ -488,7 +488,7 @@ func runSuggestProjectConfig(dir string, f codesignalFlags, stdout, stderr *os.F
 	return result.ExitCode
 }
 
-func validateCodesignalFlags(f codesignalFlags) string {
+func validateCodesignalFlags(f codesignalFlags, positional []string) string {
 	if f.outputSet {
 		return "coach: --output requires --suggest-project-config"
 	}
@@ -506,6 +506,9 @@ func validateCodesignalFlags(f codesignalFlags) string {
 	}
 	if f.projectLanguage != "go" && f.projectLanguage != "typescript" {
 		return fmt.Sprintf("coach: invalid --project-language value %q: must be \"go\" or \"typescript\"", f.projectLanguage)
+	}
+	if len(positional) > 0 {
+		return fmt.Sprintf("coach: unexpected positional argument %q", positional[0])
 	}
 	return ""
 }
