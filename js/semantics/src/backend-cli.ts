@@ -1,9 +1,8 @@
-import { spawn, type ChildProcessByStdio } from "node:child_process";
-import { existsSync } from "node:fs";
+import type { ChildProcessByStdio } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
-import { fileURLToPath } from "node:url";
 
 import type { Backend } from "./backend.js";
+import { CliChildSession, type PendingCall } from "./backend-cli-child.js";
 import { SemanticsError } from "./errors.js";
 
 /**
@@ -24,12 +23,6 @@ const BACKSTOP_SLACK_MS = 500;
  */
 const MAX_TIMER_MS = 2 ** 31 - 1;
 
-interface PendingCall {
-  resolve: (responseJson: string) => void;
-  reject: (err: Error) => void;
-  timer?: NodeJS.Timeout;
-}
-
 /**
  * Backend that talks newline-delimited protocol JSON to a single long-lived
  * cmd/semantics-json child process. One child is shared per backend; calls
@@ -38,14 +31,21 @@ interface PendingCall {
  * by dispose() (graceful stdin close, since the server exits 0 on EOF).
  */
 export class CliBackend implements Backend {
-  private readonly binaryUrl: URL;
-  private child: ChildProcessByStdio<Writable, Readable, null> | undefined;
-  private readonly pending = new Map<number, PendingCall>();
-  private stdoutBuffer = "";
+  private readonly session: CliChildSession;
   private disposed = false;
 
-  constructor(binaryUrl: URL = BINARY_URL) {
-    this.binaryUrl = binaryUrl;
+  constructor(binaryUrl: URL = BINARY_URL, session: CliChildSession = new CliChildSession(binaryUrl)) {
+    this.session = session;
+  }
+
+  /** Live child process, so a caller can observe lifetime across a crash and the next call's respawn. */
+  get child(): CliChildSession["child"] {
+    return this.session.child;
+  }
+
+  /** In-flight calls, so a caller can see whether a backstop timer was armed. */
+  get pending(): CliChildSession["pending"] {
+    return this.session.pending;
   }
 
   analyze(requestJson: string): Promise<string> {
@@ -65,7 +65,7 @@ export class CliBackend implements Backend {
 
     let child: ChildProcessByStdio<Writable, Readable, null>;
     try {
-      child = this.ensureChild();
+      child = this.session.ensure();
     } catch (err) {
       return Promise.reject(err instanceof Error ? err : new Error(String(err)));
     }
@@ -78,17 +78,17 @@ export class CliBackend implements Backend {
         // killed and lazily respawned. Killing rejects every pending call.
         const delayMs = Math.min(timeoutMs + BACKSTOP_SLACK_MS, MAX_TIMER_MS);
         call.timer = setTimeout(() => {
-          this.failAllPending(
+          this.session.failAll(
             new SemanticsError("canceled", `backend did not respond within ${timeoutMs}ms; child killed`),
           );
-          this.killChild();
+          this.session.kill();
         }, delayMs);
         call.timer.unref?.();
       }
-      this.pending.set(id, call);
+      this.session.track(id, call);
       child.stdin.write(requestJson + "\n", (err) => {
         if (err) {
-          this.settle(id)?.reject(new SemanticsError("internal", `write to backend failed: ${err.message}`));
+          this.session.rejectSettled(id, new SemanticsError("internal", `write to backend failed: ${err.message}`));
         }
       });
     });
@@ -99,117 +99,9 @@ export class CliBackend implements Backend {
       return;
     }
     this.disposed = true;
-    this.failAllPending(new SemanticsError("internal", "backend disposed with calls in flight"));
-    if (this.child) {
-      this.child.stdin.end();
-      this.child = undefined;
-    }
-  }
-
-  private ensureChild(): ChildProcessByStdio<Writable, Readable, null> {
-    if (this.child) {
-      return this.child;
-    }
-    if (!existsSync(this.binaryUrl)) {
-      throw new SemanticsError(
-        "backend_unavailable",
-        `semantics backend binary not found at ${fileURLToPath(this.binaryUrl)}; ` +
-          "build it with `npm run build:backend` in js/semantics (or `mise run backend-build` at the repo root)",
-      );
-    }
-
-    const child = spawn(fileURLToPath(this.binaryUrl), [], {
-      stdio: ["pipe", "pipe", "inherit"],
-    });
-    child.stdout.setEncoding("utf-8");
-    child.stdout.on("data", (chunk: string) => {
-      this.onStdout(chunk);
-    });
-    const onGone = (cause: string) => {
-      if (this.child === child) {
-        this.child = undefined;
-        this.stdoutBuffer = "";
-      }
-      this.failAllPending(new SemanticsError("internal", `semantics backend ${cause}`));
-    };
-    child.on("error", (err) => {
-      onGone(`failed: ${err.message}`);
-    });
-    child.on("exit", (code, signal) => {
-      onGone(`exited (code ${code ?? "null"}, signal ${signal ?? "null"})`);
-    });
-    // Deliberately not unref()ed: the child must keep the event loop alive
-    // while calls are in flight (as of Node 22.23, unref() detaches the
-    // stdio pipes from the loop too, letting the process exit mid-call).
-    // dispose() is the documented way to let the process exit.
-    this.child = child;
-    return child;
-  }
-
-  private onStdout(chunk: string): void {
-    this.stdoutBuffer += chunk;
-    for (;;) {
-      const newline = this.stdoutBuffer.indexOf("\n");
-      if (newline === -1) {
-        return;
-      }
-      const line = this.stdoutBuffer.slice(0, newline);
-      this.stdoutBuffer = this.stdoutBuffer.slice(newline + 1);
-      if (line.trim() === "") {
-        continue;
-      }
-      this.onResponseLine(line);
-    }
-  }
-
-  private onResponseLine(line: string): void {
-    let id: number;
-    try {
-      id = (JSON.parse(line) as { id: number }).id;
-    } catch {
-      id = 0;
-    }
-    const call = this.settle(id);
-    if (call) {
-      call.resolve(line);
-      return;
-    }
-    // id 0 (unattributable server-side failure) or an id we no longer track:
-    // the stream can't be trusted to stay correlated, so drop the child and
-    // fail everything; the next call respawns.
-    this.failAllPending(
-      new SemanticsError("internal", `backend sent an uncorrelated response (id ${id}); child restarted`),
-    );
-    this.killChild();
-  }
-
-  /** Remove and return one pending call, clearing its backstop timer. */
-  private settle(id: number): PendingCall | undefined {
-    const call = this.pending.get(id);
-    if (!call) {
-      return undefined;
-    }
-    this.pending.delete(id);
-    if (call.timer !== undefined) {
-      clearTimeout(call.timer);
-    }
-    return call;
-  }
-
-  private failAllPending(err: SemanticsError): void {
-    for (const id of [...this.pending.keys()]) {
-      this.settle(id)?.reject(err);
-    }
-  }
-
-  private killChild(): void {
-    if (this.child) {
-      const child = this.child;
-      this.child = undefined;
-      this.stdoutBuffer = "";
-      child.removeAllListeners("exit");
-      child.removeAllListeners("error");
-      child.kill("SIGKILL");
+    this.session.failAll(new SemanticsError("internal", "backend disposed with calls in flight"));
+    if (this.session.child) {
+      this.session.closeStdin();
     }
   }
 }
