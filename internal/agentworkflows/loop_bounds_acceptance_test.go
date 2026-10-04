@@ -3,7 +3,6 @@ package agentworkflows
 import (
 	"regexp"
 	"strconv"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -37,13 +36,7 @@ var _ = Describe("implement/review loop bounds", func() {
 	// document, the step-2 cap is satisfied by the step-4 repair cap and vice
 	// versa, so deleting either one alone still passes.
 	step := func(n string) string {
-		start := strings.Index(command, "\n"+n+". **")
-		Expect(start).To(BeNumerically(">", -1), "step %s not found", n)
-		rest := command[start+1:]
-		if end := regexp.MustCompile(`\n\d+\. \*\*`).FindStringIndex(rest); end != nil {
-			return rest[:end[0]]
-		}
-		return rest
+		return body_loopBoundsAcceptanceTest_39(n, command)
 	}
 
 	When("a task's reviewer keeps returning findings", func() {
@@ -64,10 +57,7 @@ var _ = Describe("implement/review loop bounds", func() {
 		})
 
 		It("stops with a reason drawn from a named set", func() {
-			for _, reason := range []string{"repeated-finding", "agent-failure", "ambiguous-product-decision"} {
-				Expect(step("2")).To(ContainSubstring(reason),
-					"an untyped stop tells the next reader nothing about what to do")
-			}
+			body_loopBoundsAcceptanceTest_stopsWithAReasonDrawnFromANamedSet_66(step)
 		})
 
 		It("reports the stop rather than opening a PR anyway", func() {

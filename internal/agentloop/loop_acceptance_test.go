@@ -87,10 +87,14 @@ func mustJSON(s string) string {
 	return string(b)
 }
 
-func recordingHandler(name string, calls *[]agentloopharness.RecordedCall) agentloop.ToolHandler {
+type recordedCalls struct {
+	items []agentloopharness.RecordedCall
+}
+
+func (r *recordedCalls) handler(name string) agentloop.ToolHandler {
 	return func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 		result := json.RawMessage(`{"tool":` + mustJSON(name) + `,"ok":true}`)
-		*calls = append(*calls, agentloopharness.RecordedCall{
+		r.items = append(r.items, agentloopharness.RecordedCall{
 			Name:   name,
 			Args:   append(json.RawMessage(nil), args...),
 			Result: append(json.RawMessage(nil), result...),
@@ -99,12 +103,12 @@ func recordingHandler(name string, calls *[]agentloopharness.RecordedCall) agent
 	}
 }
 
-func newLoopWithRecordingCore(opts agentloop.Options, calls *[]agentloopharness.RecordedCall) *agentloop.Loop {
+func newLoopWithRecordingCore(opts agentloop.Options, calls *recordedCalls) *agentloop.Loop {
 	if opts.SemanticsAnalyze == nil {
-		opts.SemanticsAnalyze = recordingHandler(agentloop.ToolSemanticsAnalyze, calls)
+		opts.SemanticsAnalyze = calls.handler(agentloop.ToolSemanticsAnalyze)
 	}
 	if opts.CodeSignalReport == nil {
-		opts.CodeSignalReport = recordingHandler(agentloop.ToolCodeSignalReport, calls)
+		opts.CodeSignalReport = calls.handler(agentloop.ToolCodeSignalReport)
 	}
 	loop, err := agentloop.New(opts)
 	Expect(err).NotTo(HaveOccurred())
@@ -115,8 +119,8 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 	Describe("handler-driven tool calls", func() {
 		When("a handler invokes registered core tools through the loop registry", func() {
 			It("executes only via the registry and records CallSourceHandler", func() {
-				var handlerCalls []agentloopharness.RecordedCall
-				loop := newLoopWithRecordingCore(agentloop.Options{}, &handlerCalls)
+				handlerCalls := &recordedCalls{}
+				loop := newLoopWithRecordingCore(agentloop.Options{}, handlerCalls)
 
 				semArgs := validSemanticsArgs("a.go")
 				csArgs := json.RawMessage(`{"files":[{"path":"a.go"}],"baseline":true}`)
@@ -129,9 +133,9 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(csResult).To(MatchJSON(`{"tool":"codesignal_report","ok":true}`))
 
-				Expect(handlerCalls).To(HaveLen(2))
-				Expect(handlerCalls[0].Name).To(Equal(agentloop.ToolSemanticsAnalyze))
-				Expect(handlerCalls[1].Name).To(Equal(agentloop.ToolCodeSignalReport))
+				Expect(handlerCalls.items).To(HaveLen(2))
+				Expect(handlerCalls.items[0].Name).To(Equal(agentloop.ToolSemanticsAnalyze))
+				Expect(handlerCalls.items[1].Name).To(Equal(agentloop.ToolCodeSignalReport))
 
 				recorded := loop.Calls()
 				Expect(recorded).To(HaveLen(2))
@@ -144,8 +148,8 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 
 		When("a handler registers a job-specific tool at loop start", func() {
 			It("makes the job-specific tool callable through the same registry", func() {
-				var coreCalls []agentloopharness.RecordedCall
-				loop := newLoopWithRecordingCore(agentloop.Options{}, &coreCalls)
+				coreCalls := &recordedCalls{}
+				loop := newLoopWithRecordingCore(agentloop.Options{}, coreCalls)
 
 				var jobInvoked atomic.Bool
 				err := loop.Register(agentloop.ToolSpec{
@@ -178,8 +182,8 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 	Describe("model-selected tool calls", func() {
 		When("a scripted gateway returns registered tool calls then a text-only turn", func() {
 			It("executes only the model-selected registered tools and stops without treating text as an action", func() {
-				var coreCalls []agentloopharness.RecordedCall
-				loop := newLoopWithRecordingCore(agentloop.Options{}, &coreCalls)
+				coreCalls := &recordedCalls{}
+				loop := newLoopWithRecordingCore(agentloop.Options{}, coreCalls)
 
 				scripted := agentloopharness.NewScriptedGateway(
 					agentloopharness.Response{
@@ -197,8 +201,8 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result.FinalText).To(Equal("done with judgment"))
 
-				Expect(coreCalls).To(HaveLen(1))
-				Expect(coreCalls[0].Name).To(Equal(agentloop.ToolSemanticsAnalyze))
+				Expect(coreCalls.items).To(HaveLen(1))
+				Expect(coreCalls.items[0].Name).To(Equal(agentloop.ToolSemanticsAnalyze))
 
 				recorded := loop.Calls()
 				Expect(recorded).To(HaveLen(1))
@@ -343,8 +347,8 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 
 		When("the model requests an unregistered tool name", func() {
 			It("ends the run with ErrUnknownTool and does not execute any freeform action", func() {
-				var coreCalls []agentloopharness.RecordedCall
-				loop := newLoopWithRecordingCore(agentloop.Options{}, &coreCalls)
+				coreCalls := &recordedCalls{}
+				loop := newLoopWithRecordingCore(agentloop.Options{}, coreCalls)
 
 				scripted := agentloopharness.NewScriptedGateway(
 					agentloopharness.Response{
@@ -358,7 +362,7 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 				_, err := loop.Run(context.Background(), harnessGateway{inner: scripted}, "prompt")
 				Expect(err).To(HaveOccurred())
 				Expect(errors.Is(err, agentloop.ErrUnknownTool)).To(BeTrue())
-				Expect(coreCalls).To(BeEmpty())
+				Expect(coreCalls.items).To(BeEmpty())
 
 				recorded := loop.Calls()
 				Expect(recorded).To(HaveLen(1))
@@ -439,11 +443,11 @@ var _ = Describe("internal/agentloop bounded tool executor", func() {
 				Expect(err.Error()).To(ContainSubstring(agentloop.ToolSemanticsAnalyze))
 
 				// Core handler still the one from Options, not replaced.
-				var coreCalls []agentloopharness.RecordedCall
-				loop2 := newLoopWithRecordingCore(agentloop.Options{}, &coreCalls)
+				coreCalls := &recordedCalls{}
+				loop2 := newLoopWithRecordingCore(agentloop.Options{}, coreCalls)
 				_, err = loop2.Call(context.Background(), agentloop.CallSourceHandler, agentloop.ToolSemanticsAnalyze, validSemanticsArgs("a.go"))
 				Expect(err).NotTo(HaveOccurred())
-				Expect(coreCalls).To(HaveLen(1))
+				Expect(coreCalls.items).To(HaveLen(1))
 			})
 		})
 	})

@@ -34,15 +34,7 @@ func contentsHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerF
 		key := contentsKey(r.PathValue("owner"), r.PathValue("repo"), r.URL.Query().Get("ref"), reqPath)
 
 		if entry, ok := fx.Contents.Files[key]; ok {
-			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, string(entry.Scenario), r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
-			if entry.Scenario == ScenarioOversized {
-				writeContentsFileResponse(w, reqPath, entry)
-				return
-			}
-			if writeScenarioStatus(w, entry.Scenario) {
-				return
-			}
-			writeContentsFileResponse(w, reqPath, entry)
+			writeInstalledFile(w, rec, fx, r, reqPath, entry)
 			return
 		}
 
@@ -55,6 +47,18 @@ func contentsHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerF
 		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
 		writeJSONError(w, http.StatusNotFound, "Not Found")
 	}
+}
+
+func writeInstalledFile(w http.ResponseWriter, rec *acceptanceharness.Recorder, fx *Fixture, r *http.Request, reqPath string, entry FileEntry) {
+	rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, string(entry.Scenario), r.Method, r.URL.Path, acceptanceharness.AuthModeInstallation))
+	if entry.Scenario == ScenarioOversized {
+		writeContentsFileResponse(w, reqPath, entry)
+		return
+	}
+	if writeScenarioStatus(w, entry.Scenario) {
+		return
+	}
+	writeContentsFileResponse(w, reqPath, entry)
 }
 
 // contentsKey builds the "owner/repo/ref/path" lookup key shared by Files and

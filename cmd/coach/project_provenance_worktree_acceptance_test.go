@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -49,9 +48,7 @@ func commitBunFixture(repo, version string) {
 
 var _ = Describe("coach codesignal --baseline TypeScript project provenance", Label("ts-project-backend"), func() {
 	BeforeEach(func() {
-		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-			Skip(reason)
-		}
+		body_projectProvenanceWorktreeAcceptanceTest_51()
 	})
 
 	Describe("snapshot package manager and worktree diagnostic (SA-280-033)", func() {
@@ -78,24 +75,11 @@ var _ = Describe("coach codesignal --baseline TypeScript project provenance", La
 			})
 
 			It("emits worktree_report_reflects_committed_head diagnostic", func() {
-				kinds := make([]string, len(report.Diagnostics))
-				for i, d := range report.Diagnostics {
-					kinds[i] = d.Kind
-				}
-				Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeReportReflectsCommittedHEAD),
-					"diagnostics must include worktree_report_reflects_committed_head; got %v", kinds)
-				Expect(kinds).NotTo(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed),
-					"unsupported lockfile dirt must not use the file-local skip kind; got %v", kinds)
+				body_projectProvenanceWorktreeAcceptanceTest_emitsWorktreeReportReflectsCommittedHeadDiagnost_80(report)
 			})
 
 			It("diagnostic message states the report applies to committed HEAD", func() {
-				var msg string
-				for _, d := range report.Diagnostics {
-					if d.Kind == codesignal.DiagKindWorktreeReportReflectsCommittedHEAD {
-						msg = d.Message
-					}
-				}
-				Expect(msg).To(ContainSubstring("HEAD"), "message must reference committed HEAD; got %q", msg)
+				body_projectProvenanceWorktreeAcceptanceTest_diagnosticMessageStatesTheReportAppliesToCommitt_91(report)
 			})
 
 			It("reports runtime.kind=node, runtime.origin=path, and a non-empty runtime.version", func() {
@@ -152,12 +136,7 @@ var _ = Describe("coach codesignal --baseline TypeScript project provenance", La
 			})
 
 			It("emits worktree_report_reflects_committed_head diagnostic", func() {
-				kinds := make([]string, len(report.Diagnostics))
-				for i, d := range report.Diagnostics {
-					kinds[i] = d.Kind
-				}
-				Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeReportReflectsCommittedHEAD))
-				Expect(kinds).NotTo(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed))
+				body_projectProvenanceWorktreeAcceptanceTest_emitsWorktreeReportReflectsCommittedHeadDiagnost_154(report)
 			})
 		})
 	})
@@ -189,21 +168,11 @@ var _ = Describe("coach codesignal --baseline TypeScript project provenance", La
 			})
 
 			It("reports package_manager.version as a semver string when npm is on PATH", func() {
-				if _, err := exec.LookPath("npm"); err != nil {
-					Skip("npm not on PATH: cannot assert version")
-				}
-				Expect(report.ProjectProvenance.PackageManager).NotTo(BeNil())
-				Expect(report.ProjectProvenance.PackageManager.Version).To(MatchRegexp(`^\d+\.\d+\.\d+`),
-					"package_manager.version must be a semver string when npm is on PATH; got %q", report.ProjectProvenance.PackageManager.Version)
+				body_projectProvenanceWorktreeAcceptanceTest_reportsPackageManagerVersionAsASemverStringWhenN_191(report)
 			})
 
 			It("does not emit a worktree skip or provenance diagnostic for a clean worktree", func() {
-				for _, d := range report.Diagnostics {
-					Expect(d.Kind).NotTo(Equal(codesignal.DiagKindWorktreeChangesNotAnalyzed),
-						"clean worktree must not trigger worktree_changes_not_analyzed")
-					Expect(d.Kind).NotTo(Equal(codesignal.DiagKindWorktreeReportReflectsCommittedHEAD),
-						"clean worktree must not trigger worktree_report_reflects_committed_head")
-				}
+				body_projectProvenanceWorktreeAcceptanceTest_doesNotEmitAWorktreeSkipOrProvenanceDiagnosticFo_200(report)
 			})
 
 			It("reports analyzer.digest with sha256: prefix and analyzer.version as stable identifier", func() {
@@ -231,9 +200,7 @@ func commitYarnFixture(repo, version string) {
 
 var _ = Describe("coach codesignal --baseline TypeScript project: yarn package manager (SA-280-033)", Label("ts-project-backend"), func() {
 	BeforeEach(func() {
-		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-			Skip(reason)
-		}
+		body_projectProvenanceWorktreeAcceptanceTest_233()
 	})
 
 	When("the committed project uses yarn (yarn.lock + packageManager field)", func() {

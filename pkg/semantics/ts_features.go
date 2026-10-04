@@ -1,8 +1,6 @@
 package semantics
 
 import (
-	"fmt"
-
 	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
@@ -125,66 +123,10 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 // (blockDepth, inFunc, inCtorBody, scopes) that walk threads through the
 // rest of n's subtree. See walk's own doc comment for the exact
 // reset/nesting contract each state field encodes.
-func (c *tsFeatureCollector) walkEnterNode(n engine.Node, source []byte, blockDepth int, inFunc bool, inCtorBody bool, scopes []tsParamScope) (int, bool, bool, []tsParamScope) {
-	switch {
-	case n.Kind() == "if_statement":
-		c.metrics.Ifs++
-		c.checkTOCTOUCheckThenAct(n, source)
-	case n.Kind() == "while_statement":
-		c.checkTOCTOUCheckThenAct(n, source)
-	case n.Kind() == "for_statement", n.Kind() == "for_in_statement":
-		c.metrics.Fors++
-	case n.Kind() == "switch_statement":
-		c.metrics.ExprSwitches++
-	case n.Kind() == "method_definition":
-		c.metrics.Methods++
-		inFunc = true
-		blockDepth = 0
-		inCtorBody = isConstructorMethod(n, source)
-		scope := newTSParamScope(n, source)
-		scopes = append(scopes, scope)
-		scopes = appendTSLocalBindings(scopes, tsFunctionScopedBindingNames(n, source, scope.bindings))
-	case tsFunctionLikeKinds[n.Kind()]:
-		c.metrics.Functions++
-		inFunc = true
-		blockDepth = 0
-		if n.Kind() != "arrow_function" {
-			inCtorBody = false
-		}
-		scope := newTSParamScope(n, source)
-		scopes = append(scopes, scope)
-		scopes = appendTSLocalBindings(scopes, tsFunctionScopedBindingNames(n, source, scope.bindings))
-	case n.Kind() == "statement_block":
-		if inFunc {
-			blockDepth++
-			if blockDepth > c.metrics.MaxNestingDepth {
-				c.metrics.MaxNestingDepth = blockDepth
-			}
-		}
-	case inCtorBody && n.Kind() == "assignment_expression":
-		c.checkTightCouplingAssignment(n, source)
-	}
-	return blockDepth, inFunc, inCtorBody, scopes
-}
 
 // checkMutatesInputForNode runs the mutates_input detector (Story 2)
 // matching n's own kind, when scopes has at least one enclosing
 // function-like/method scope to attribute a mutation to.
-func (c *tsFeatureCollector) checkMutatesInputForNode(n engine.Node, source []byte, scopes []tsParamScope) {
-	if len(scopes) == 0 {
-		return
-	}
-	switch n.Kind() {
-	case "assignment_expression", "augmented_assignment_expression":
-		c.checkMutatesInputAssignment(n, source, scopes)
-	case "unary_expression":
-		c.checkMutatesInputDelete(n, source, scopes)
-	case "call_expression":
-		c.checkMutatesInputCall(n, source, scopes)
-	case "update_expression":
-		c.checkMutatesInputUpdate(n, source, scopes)
-	}
-}
 
 // walkScopedChildBlock walks n's children in declaration order, threading a
 // scopes stack extended first by n's own hoisted binding names (scopeNames
@@ -193,18 +135,6 @@ func (c *tsFeatureCollector) checkMutatesInputForNode(n engine.Node, source []by
 // those three node kinds differ here) and then, after each child, that
 // child's own local/rebound/var binding after-effects -- so a later sibling
 // sees bindings a plain pre-order walk would not have introduced yet.
-func (c *tsFeatureCollector) walkScopedChildBlock(n engine.Node, source []byte, blockDepth int, inFunc bool, inCtorBody bool, scopes []tsParamScope, scopeNames func(engine.Node, []byte) map[string]bool) {
-	scopes = appendTSLocalBindings(scopes, scopeNames(n, source))
-	currentParams := tsCurrentFunctionParamNames(scopes)
-	count := n.ChildCount()
-	for i := 0; i < count; i++ {
-		child := n.Child(i)
-		c.walk(child, source, blockDepth, inFunc, inCtorBody, scopes)
-		scopes = appendTSLocalBindings(scopes, tsLocalBindingNames(child, source, currentParams))
-		scopes = appendTSLocalBindings(scopes, tsReboundParameterNames(child, source))
-		scopes = appendTSLocalBindings(scopes, tsVarBindingNames(child, source, currentParams))
-	}
-}
 
 // newTSParamScope builds decl's tsParamScope: its Finding-name half (own
 // "name" field's text, or "anonymous@<start_byte>" if it has none) and its
@@ -225,12 +155,6 @@ func newTSParamScope(decl engine.Node, source []byte) tsParamScope {
 // issue spec this deliberately does not borrow a name from an enclosing
 // variable_declarator (`const f = () => {}` still counts as anonymous):
 // only decl's own syntactic name field counts.
-func tsFunctionOwnerName(decl engine.Node, source []byte) string {
-	if nameNode := decl.ChildByFieldName("name"); nameNode != nil {
-		return nameNode.Utf8Text(source)
-	}
-	return fmt.Sprintf("anonymous@%d", decl.StartByte())
-}
 
 // tsIdentifierParams collects decl's plain-identifier-bound parameter
 // names (D5). arrow_function has two mutually exclusive parameter shapes:
@@ -240,49 +164,12 @@ func tsFunctionOwnerName(decl engine.Node, source []byte) string {
 // Each formal_parameters child is filtered per-parameter by
 // tsFormalParameterIdentifierName, whose doc comment is the source of
 // truth for what counts as identifier-bound.
-func tsIdentifierParams(decl engine.Node, source []byte) map[string]bool {
-	params := map[string]bool{}
-
-	if decl.Kind() == "arrow_function" {
-		if bare := decl.ChildByFieldName("parameter"); bare != nil {
-			if bare.Kind() == "identifier" {
-				params[bare.Utf8Text(source)] = true
-			}
-			return params
-		}
-	}
-
-	formal := decl.ChildByFieldName("parameters")
-	if formal == nil {
-		return params
-	}
-	count := formal.ChildCount()
-	for i := 0; i < count; i++ {
-		if name, ok := tsFormalParameterIdentifierName(formal.Child(i), source); ok {
-			params[name] = true
-		}
-	}
-	return params
-}
 
 // tsFormalParameterIdentifierName reports p's bound identifier name with ok
 // == true only when p is a required_parameter or optional_parameter with no
 // default "value" field (a default like `q = 1` is excluded, per D5, same
 // as a destructured or rest parameter) whose "pattern" field is itself a
 // plain, non-destructured identifier.
-func tsFormalParameterIdentifierName(p engine.Node, source []byte) (string, bool) {
-	if p.Kind() != "required_parameter" && p.Kind() != "optional_parameter" {
-		return "", false
-	}
-	if p.ChildByFieldName("value") != nil {
-		return "", false
-	}
-	pattern := p.ChildByFieldName("pattern")
-	if pattern == nil || pattern.Kind() != "identifier" {
-		return "", false
-	}
-	return pattern.Utf8Text(source), true
-}
 
 func tsFunctionScopedBindingNames(n engine.Node, source []byte, params map[string]bool) map[string]bool {
 	names := map[string]bool{}
@@ -320,20 +207,6 @@ func collectTSFunctionScopedBindingNames(root, node engine.Node, source []byte, 
 // child recursion for these three kinds (each either recurses itself, or --
 // lexical_declaration, since let/const are block-scoped, not hoisted --
 // must not recurse into its subtree at all).
-func tsCollectFunctionScopedNodeNames(root, node engine.Node, source []byte, params, names map[string]bool) bool {
-	switch node.Kind() {
-	case "function_declaration", "generator_function_declaration":
-		nameSet(names).collectFunctionDeclarationNames(root, node, source, params)
-		return true
-	case "variable_declaration":
-		nameSet(names).collectFunctionScopedVarDeclarationNames(node, source, params)
-		return true
-	case "lexical_declaration":
-		return true
-	default:
-		return false
-	}
-}
 
 // collectTSFunctionDeclarationNames handles the
 // function_declaration/generator_function_declaration case of
@@ -345,315 +218,9 @@ func tsCollectFunctionScopedNodeNames(root, node engine.Node, source []byte, par
 // recursion into node's own children.
 type nameSet map[string]bool
 
-func (s nameSet) collectFunctionDeclarationNames(root, node engine.Node, source []byte, params map[string]bool) {
-	if node != root {
-		if name := node.ChildByFieldName("name"); name != nil {
-			s[name.Utf8Text(source)] = true
-		}
-	}
-	count := node.ChildCount()
-	for i := 0; i < count; i++ {
-		collectTSFunctionScopedBindingNames(root, node.Child(i), source, params, s)
-	}
-}
-
 // collectTSFunctionScopedVarDeclarationNames handles the
 // variable_declaration case of tsCollectFunctionScopedNodeNames: node's own
 // `var`-bound declarator names, excluding any already in params.
-func (s nameSet) collectFunctionScopedVarDeclarationNames(node engine.Node, source []byte, params map[string]bool) {
-	varNames := map[string]bool{}
-	count := node.ChildCount()
-	for i := 0; i < count; i++ {
-		collectTSVariableDeclaratorNames(node.Child(i), source, varNames)
-	}
-	for name := range varNames {
-		if !params[name] {
-			s[name] = true
-		}
-	}
-}
-
-func tsBlockScopedBindingNames(n engine.Node, source []byte) map[string]bool {
-	names := map[string]bool{}
-	count := n.ChildCount()
-	for i := 0; i < count; i++ {
-		child := n.Child(i)
-		switch child.Kind() {
-		case "lexical_declaration":
-			for j := 0; j < child.ChildCount(); j++ {
-				collectTSVariableDeclaratorNames(child.Child(j), source, names)
-			}
-		case "function_declaration", "generator_function_declaration", "class_declaration":
-			if name := child.ChildByFieldName("name"); name != nil {
-				names[name.Utf8Text(source)] = true
-			}
-		}
-	}
-	return names
-}
-
-func tsSwitchBodyBindingNames(n engine.Node, source []byte) map[string]bool {
-	names := map[string]bool{}
-	count := n.ChildCount()
-	for i := 0; i < count; i++ {
-		child := n.Child(i)
-		if child.Kind() != "switch_case" && child.Kind() != "switch_default" {
-			continue
-		}
-		for name := range tsBlockScopedBindingNames(child, source) {
-			names[name] = true
-		}
-	}
-	return names
-}
-
-func appendTSLocalBindings(scopes []tsParamScope, names map[string]bool) []tsParamScope {
-	if len(names) == 0 || len(scopes) == 0 {
-		return scopes
-	}
-	bindings := make(map[string]bool, len(names))
-	for name := range names {
-		bindings[name] = false
-	}
-	return append(scopes, tsParamScope{bindings: bindings})
-}
-
-func tsCurrentFunctionParamNames(scopes []tsParamScope) map[string]bool {
-	for i := len(scopes) - 1; i >= 0; i-- {
-		if scopes[i].ownerName == "" {
-			continue
-		}
-		names := map[string]bool{}
-		for name, isParam := range scopes[i].bindings {
-			if isParam {
-				names[name] = true
-			}
-		}
-		return names
-	}
-	return nil
-}
-
-func tsLocalBindingNames(n engine.Node, source []byte, currentParams map[string]bool) map[string]bool {
-	if n == nil {
-		return nil
-	}
-	switch n.Kind() {
-	case "lexical_declaration":
-		names := map[string]bool{}
-		count := n.ChildCount()
-		for i := 0; i < count; i++ {
-			collectTSVariableDeclaratorNames(n.Child(i), source, names)
-		}
-		return names
-	case "variable_declaration":
-		names := map[string]bool{}
-		collectTSVariableDeclaratorNamesAfterStatement(n, source, currentParams, names)
-		return names
-	case "function_declaration", "generator_function_declaration":
-		if name := n.ChildByFieldName("name"); name != nil {
-			return map[string]bool{name.Utf8Text(source): true}
-		}
-		return nil
-	case "class_declaration":
-		if name := n.ChildByFieldName("name"); name != nil {
-			return map[string]bool{name.Utf8Text(source): true}
-		}
-		return nil
-	default:
-		return nil
-	}
-}
-
-func collectTSVariableDeclaratorNames(n engine.Node, source []byte, names map[string]bool) {
-	if n == nil {
-		return
-	}
-	if n.Kind() == "variable_declarator" {
-		if name := n.ChildByFieldName("name"); name != nil {
-			nameSet(names).collectBindingPatternNames(name, source)
-		}
-		return
-	}
-	count := n.ChildCount()
-	for i := 0; i < count; i++ {
-		collectTSVariableDeclaratorNames(n.Child(i), source, names)
-	}
-}
-
-func collectTSVariableDeclaratorNamesAfterStatement(n engine.Node, source []byte, currentParams map[string]bool, names map[string]bool) {
-	if n == nil {
-		return
-	}
-	if n.Kind() == "variable_declarator" {
-		name := n.ChildByFieldName("name")
-		if name == nil {
-			return
-		}
-		if n.ChildByFieldName("value") == nil {
-			nameSet(names).collectBindingPatternNamesExcept(name, source, currentParams)
-			return
-		}
-		nameSet(names).collectBindingPatternNames(name, source)
-		return
-	}
-	count := n.ChildCount()
-	for i := 0; i < count; i++ {
-		collectTSVariableDeclaratorNamesAfterStatement(n.Child(i), source, currentParams, names)
-	}
-}
-
-func (s nameSet) collectBindingPatternNamesExcept(n engine.Node, source []byte, except map[string]bool) {
-	all := nameSet{}
-	all.collectBindingPatternNames(n, source)
-	for name := range all {
-		if except[name] {
-			continue
-		}
-		s[name] = true
-	}
-}
-
-func (s nameSet) collectBindingPatternNames(n engine.Node, source []byte) {
-	if n == nil {
-		return
-	}
-	switch n.Kind() {
-	case "identifier", "shorthand_property_identifier_pattern":
-		s[n.Utf8Text(source)] = true
-		return
-	case "pair_pattern":
-		if value := n.ChildByFieldName("value"); value != nil {
-			s.collectBindingPatternNames(value, source)
-		}
-		return
-	case "rest_pattern":
-		if arg := n.ChildByFieldName("argument"); arg != nil {
-			s.collectBindingPatternNames(arg, source)
-		}
-		return
-	case "assignment_pattern":
-		if left := n.ChildByFieldName("left"); left != nil {
-			s.collectBindingPatternNames(left, source)
-		}
-		return
-	default:
-		count := n.ChildCount()
-		for i := 0; i < count; i++ {
-			s.collectBindingPatternNames(n.Child(i), source)
-		}
-	}
-}
-
-func tsControlFlowBindingNames(n engine.Node, source []byte) map[string]bool {
-	if n == nil || (n.Kind() != "for_statement" && n.Kind() != "for_in_statement") {
-		return nil
-	}
-	names := map[string]bool{}
-	if left := n.ChildByFieldName("left"); left != nil {
-		nameSet(names).collectBindingPatternNames(left, source)
-	}
-	count := n.ChildCount()
-	for i := 0; i < count; i++ {
-		child := n.Child(i)
-		switch child.Kind() {
-		case "statement_block":
-			return names
-		case "lexical_declaration", "variable_declaration":
-			for j := 0; j < child.ChildCount(); j++ {
-				collectTSVariableDeclaratorNames(child.Child(j), source, names)
-			}
-		}
-	}
-	return names
-}
-
-func tsReboundParameterNames(n engine.Node, source []byte) map[string]bool {
-	if n == nil {
-		return nil
-	}
-	names := map[string]bool{}
-	var collect func(engine.Node)
-	collect = func(node engine.Node) {
-		if node == nil {
-			return
-		}
-		if tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition" {
-			return
-		}
-		if node.Kind() == "assignment_expression" || node.Kind() == "augmented_assignment_expression" {
-			if left := node.ChildByFieldName("left"); left != nil {
-				nameSet(names).collectReboundTargetNames(left, source)
-			}
-			return
-		}
-		count := node.ChildCount()
-		for i := 0; i < count; i++ {
-			collect(node.Child(i))
-		}
-	}
-	collect(n)
-	return names
-}
-
-func (s nameSet) collectReboundTargetNames(n engine.Node, source []byte) {
-	if n == nil {
-		return
-	}
-	switch n.Kind() {
-	case "identifier", "shorthand_property_identifier_pattern":
-		s[n.Utf8Text(source)] = true
-	case "pair_pattern":
-		s.collectReboundTargetNames(n.ChildByFieldName("value"), source)
-	case "assignment_pattern":
-		s.collectReboundTargetNames(n.ChildByFieldName("left"), source)
-	case "rest_pattern":
-		s.collectReboundTargetNames(n.ChildByFieldName("argument"), source)
-	case "object_pattern", "array_pattern", "parenthesized_expression":
-		count := n.ChildCount()
-		for i := 0; i < count; i++ {
-			s.collectReboundTargetNames(n.Child(i), source)
-		}
-	}
-}
-
-func tsVarBindingNames(n engine.Node, source []byte, currentParams map[string]bool) map[string]bool {
-	if n == nil {
-		return nil
-	}
-	names := map[string]bool{}
-	var collect func(engine.Node)
-	collect = func(node engine.Node) {
-		if node == nil {
-			return
-		}
-		if node.Kind() == "variable_declaration" {
-			count := node.ChildCount()
-			for i := 0; i < count; i++ {
-				collectTSVariableDeclaratorNamesAfterStatement(node.Child(i), source, currentParams, names)
-			}
-			return
-		}
-		if tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition" {
-			return
-		}
-		count := node.ChildCount()
-		for i := 0; i < count; i++ {
-			collect(node.Child(i))
-		}
-	}
-	collect(n)
-	return names
-}
-
-func tsCatchBindingNames(n engine.Node, source []byte) map[string]bool {
-	if p := n.ChildByFieldName("parameter"); p != nil {
-		names := nameSet{}
-		names.collectBindingPatternNames(p, source)
-		return names
-	}
-	return nil
-}
 
 // isConstructorMethod reports whether method is a constructor: a
 // method_definition whose name field is a property_identifier with source

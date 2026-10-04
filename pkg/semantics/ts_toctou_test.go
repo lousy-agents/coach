@@ -25,35 +25,7 @@ func TestComputeTSFeatures_TOCTOUCheckThenAct_PositiveFinding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			source := "function f(p: string) {\n\tif (existsSync(p)) {\n\t\t" + tt.actCallText + ";\n\t}\n}\n"
-			root, closeTree := mustParseTS(t, []byte(source))
-			defer closeTree()
-
-			_, findings := computeTSFeatures(root, []byte(source))
-
-			var got []Finding
-			for _, f := range findings {
-				if f.Kind == "toctou_check_then_act" {
-					got = append(got, f)
-				}
-			}
-			if len(got) != 1 {
-				t.Fatalf("computeTSFeatures for %q: got %d toctou_check_then_act findings (%+v), want exactly 1", source, len(got), findings)
-			}
-			f := got[0]
-			if f.Kind != "toctou_check_then_act" {
-				t.Errorf("Finding.Kind = %q, want %q", f.Kind, "toctou_check_then_act")
-			}
-			if f.Confidence != "medium" {
-				t.Errorf("Finding.Confidence = %q, want %q", f.Confidence, "medium")
-			}
-			if f.SuggestedSkill != "find-bugs" {
-				t.Errorf("Finding.SuggestedSkill = %q, want %q", f.SuggestedSkill, "find-bugs")
-			}
-			gotText := source[f.Location.StartByte:f.Location.EndByte]
-			if gotText != tt.actCallText {
-				t.Errorf("Finding.Location text = %q, want %q (Location must point at the act call, not the check call)", gotText, tt.actCallText)
-			}
+			body_tsToctouTest_27(t, tt)
 		})
 	}
 }
@@ -135,80 +107,7 @@ func TestComputeTSFeatures_TOCTOUCheckThenAct_ExcludedCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			root, closeTree := mustParseTS(t, []byte(tt.source))
-			defer closeTree()
-
-			_, findings := computeTSFeatures(root, []byte(tt.source))
-			for _, f := range findings {
-				if f.Kind == "toctou_check_then_act" {
-					t.Fatalf("computeTSFeatures for %q: got toctou_check_then_act finding %+v, want none", tt.source, f)
-				}
-			}
+			body_tsToctouTest_137(t, tt)
 		})
-	}
-}
-
-// Regression guard: two nested existsSync(p) guards on the identical path,
-// both wrapping the same single act call, must still yield exactly one
-// toctou_check_then_act Finding, not one per enclosing guard. The outer
-// if's own checkTOCTOUCheckThenAct call resolves the readFileSync(p) act
-// call by searching its whole guarded body (which includes the nested
-// inner if), and the inner if's checkTOCTOUCheckThenAct call resolves the
-// very same act call independently -- both emission paths must dedupe
-// against the act call's Location.
-func TestComputeTSFeatures_TOCTOUCheckThenAct_DedupesNestedGuardsOnSamePath(t *testing.T) {
-	source := `function f(p: string) {
-	if (existsSync(p)) {
-		if (existsSync(p)) {
-			readFileSync(p);
-		}
-	}
-}
-`
-	root, closeTree := mustParseTS(t, []byte(source))
-	defer closeTree()
-
-	_, findings := computeTSFeatures(root, []byte(source))
-
-	var got []Finding
-	for _, f := range findings {
-		if f.Kind == "toctou_check_then_act" {
-			got = append(got, f)
-		}
-	}
-	if len(got) != 1 {
-		t.Fatalf("computeTSFeatures for %q: got %d toctou_check_then_act findings (%+v), want exactly 1 (nested guards on the same path must dedupe to a single Finding on the act call)", source, len(got), findings)
-	}
-}
-
-// TSX variant of the positive TOCTOU case: computeTSFeatures must detect
-// the same pattern in a TSX-parsed tree.
-func TestComputeTSFeatures_TOCTOUCheckThenAct_WorksOnTSXParsedTree(t *testing.T) {
-	source := []byte(`const Loader = (p: string) => {
-	if (existsSync(p)) {
-		const data = readFileSync(p, "utf8");
-		return <div>{data}</div>;
-	}
-	return null;
-};
-`)
-	root, closeTree := mustParseTSX(t, source)
-	defer closeTree()
-
-	_, findings := computeTSFeatures(root, source)
-
-	var got []Finding
-	for _, f := range findings {
-		if f.Kind == "toctou_check_then_act" {
-			got = append(got, f)
-		}
-	}
-	if len(got) != 1 {
-		t.Fatalf("computeTSFeatures on TSX tree for %q: got %d toctou_check_then_act findings (%+v), want exactly 1", source, len(got), findings)
-	}
-	wantText := `readFileSync(p, "utf8")`
-	gotText := string(source[got[0].Location.StartByte:got[0].Location.EndByte])
-	if gotText != wantText {
-		t.Errorf("computeTSFeatures on TSX tree for %q: Finding.Location text = %q, want %q", source, gotText, wantText)
 	}
 }

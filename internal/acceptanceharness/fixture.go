@@ -86,16 +86,6 @@ type RequestRecord struct {
 // "not-found") -- two different fixtures can legitimately share a scenario
 // name, and fixtureID is what keeps them distinguishable in the recorded
 // request.
-func NewRequestRecord(fixtureID, scenario, method, path string, mode AuthMode) RequestRecord {
-	return RequestRecord{
-		SchemaVersion: FixtureSchemaVersion,
-		FixtureID:     fixtureID,
-		Scenario:      scenario,
-		Method:        method,
-		Path:          path,
-		AuthMode:      mode,
-	}
-}
 
 // Recorder is a minimal, concurrency-safe, append-only log of
 // RequestRecords that a fixture-driven fake service should embed (or wrap)

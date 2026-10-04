@@ -8,63 +8,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"net/http"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
 	"github.com/lousy-agents/coach/internal/fakegithub"
 	"github.com/lousy-agents/coach/pkg/githubingest"
 )
-
-func contentsFixtureRSAKey() []byte {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	Expect(err).NotTo(HaveOccurred())
-
-	block := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
-	return pem.EncodeToMemory(block)
-}
-
-func newContentsFixture() *fakegithub.Fixture {
-	fx := fakegithub.NewFixture("contents-fixture")
-
-	fx.Installation.Installations[42] = fakegithub.InstallationEntry{Token: "contents-installation-token", Scenario: fakegithub.ScenarioOK}
-	fx.Installation.RepoMappings["acme/widgets"] = fakegithub.RepoInstallationEntry{InstallationID: 42, Scenario: fakegithub.ScenarioOK}
-
-	fx.Contents.Files["acme/widgets/main/dir/hello.txt"] = fakegithub.FileEntry{
-		Content:  []byte("hello world"),
-		SHA:      "abc123sha",
-		Scenario: fakegithub.ScenarioOK,
-	}
-	// ScenarioOversized alone is enough — Content may be nil.
-	fx.Contents.Files["acme/widgets/main/dir/big.bin"] = fakegithub.FileEntry{
-		SHA:      "bigsha",
-		Scenario: fakegithub.ScenarioOversized,
-	}
-	fx.Contents.Dirs["acme/widgets/main/dir"] = []fakegithub.DirEntry{
-		{Name: "hello.txt", Type: "file", SHA: "abc123sha", Size: len("hello world")},
-		{Name: "big.bin", Type: "file", SHA: "bigsha", Size: 1<<20 + 1},
-	}
-
-	fx.Contents.Files["acme/widgets/main/dir/authfail.txt"] = fakegithub.FileEntry{Scenario: fakegithub.ScenarioAuthFail}
-	fx.Contents.Files["acme/widgets/main/dir/transient.txt"] = fakegithub.FileEntry{Scenario: fakegithub.ScenarioTransient}
-	fx.Contents.Files["acme/widgets/main/dir/typo-scenario.txt"] = fakegithub.FileEntry{Scenario: "ok "}
-	// dir/missing.txt is omitted so ScenarioNotFound is natural absence.
-
-	return &fx
-}
-
-func newContentsReader(server *fakegithub.Server) *githubingest.GitHubFileReader {
-	reader, err := githubingest.NewGitHubFileReader(githubingest.GitHubAppConfig{
-		AppID:          12345,
-		InstallationID: 42,
-		PrivateKey:     contentsFixtureRSAKey(),
-		BaseURL:        server.URL(),
-	})
-	Expect(err).NotTo(HaveOccurred())
-	return reader
-}
 
 var _ = Describe("fake GitHub repository content reads, via pkg/githubingest's public API", func() {
 	var (
@@ -85,31 +35,7 @@ var _ = Describe("fake GitHub repository content reads, via pkg/githubingest's p
 
 	Context("when the file exists and is within the size limit (ScenarioOK)", func() {
 		It("returns the decoded bytes and metadata, and records both the file read and the parent-directory listing with AuthModeInstallation", func() {
-			ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "dir/hello.txt"}
-			data, meta, err := reader.ReadFile(context.Background(), ref)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(string(data)).To(Equal("hello world"))
-			Expect(meta).To(Equal(githubingest.FileMetadata{Path: "dir/hello.txt", Ref: "main", SHA: "abc123sha", Size: len("hello world")}))
-
-			records := server.Recorder().Records()
-			Expect(records).NotTo(BeEmpty())
-			Expect(records[0].FixtureID).To(Equal("contents-fixture"))
-
-			var sawFileRead, sawParentDirListing bool
-			for _, rec := range records {
-				if rec.AuthMode != acceptanceharness.AuthModeInstallation || rec.Method != http.MethodGet {
-					continue
-				}
-				if strings.HasSuffix(rec.Path, "/contents/dir/hello.txt") {
-					sawFileRead = true
-				}
-				if strings.HasSuffix(rec.Path, "/contents/dir") {
-					sawParentDirListing = true
-				}
-			}
-			Expect(sawFileRead).To(BeTrue(), "expected a recorded file contents GET, got %+v", records)
-			Expect(sawParentDirListing).To(BeTrue(), "expected a recorded parent-directory listing GET (symlink check), got %+v", records)
+			body_contentsAcceptanceTest_returnsTheDecodedBytesAndMetadataAndRecordsBothT_39(server, reader)
 		})
 	})
 
@@ -170,38 +96,49 @@ var _ = Describe("fake GitHub repository content reads, via pkg/githubingest's p
 
 	Context("when the file is registered as ScenarioAuthFail", func() {
 		It("returns githubingest.ErrAuth, and the failure comes from the contents handler itself (not from an earlier token-mint failure)", func() {
-			ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "dir/authfail.txt"}
-			_, _, err := reader.ReadFile(context.Background(), ref)
-
-			Expect(errors.Is(err, githubingest.ErrAuth)).To(BeTrue(), "got err %v, want errors.Is(err, ErrAuth)", err)
-
-			// ErrAuth alone is ambiguous (mint failure vs contents handler).
-			// Require a recorded /contents/ request with this scenario.
-			var sawContentsAuthFail bool
-			for _, rec := range server.Recorder().Records() {
-				if rec.Method == http.MethodGet && strings.Contains(rec.Path, "/contents/") && rec.Scenario == string(fakegithub.ScenarioAuthFail) {
-					sawContentsAuthFail = true
-				}
-			}
-			Expect(sawContentsAuthFail).To(BeTrue(), "expected a recorded GET request against a /contents/ path with scenario %q, got %+v", fakegithub.ScenarioAuthFail, server.Recorder().Records())
+			body_contentsAcceptanceTest_returnsGithubingestErrAuthAndTheFailureComesFrom_124(server, reader)
 		})
 	})
 
 	Context("when the file is registered as ScenarioTransient", func() {
 		It("returns a non-nil error that matches none of githubingest's documented sentinels", func() {
-			ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "dir/transient.txt"}
-			_, _, err := reader.ReadFile(context.Background(), ref)
-
-			Expect(err).To(HaveOccurred())
-			for _, sentinel := range []error{
-				githubingest.ErrAuth,
-				githubingest.ErrNotFound,
-				githubingest.ErrUnsupportedContent,
-				githubingest.ErrEmptyContent,
-				githubingest.ErrTooLarge,
-			} {
-				Expect(errors.Is(err, sentinel)).To(BeFalse(), "err %v unexpectedly matched sentinel %v", err, sentinel)
-			}
+			body_contentsAcceptanceTest_returnsANonNilErrorThatMatchesNoneOfGithubingest_143(reader)
 		})
 	})
 })
+
+func contentsFixtureRSAKey() []byte {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	Expect(err).NotTo(HaveOccurred())
+
+	block := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
+	return pem.EncodeToMemory(block)
+}
+
+func newContentsFixture() *fakegithub.Fixture {
+	fx := fakegithub.NewFixture("contents-fixture")
+
+	fx.Installation.Installations[42] = fakegithub.InstallationEntry{Token: "contents-installation-token", Scenario: fakegithub.ScenarioOK}
+	fx.Installation.RepoMappings["acme/widgets"] = fakegithub.RepoInstallationEntry{InstallationID: 42, Scenario: fakegithub.ScenarioOK}
+
+	fx.Contents.Files["acme/widgets/main/dir/hello.txt"] = fakegithub.FileEntry{
+		Content:  []byte("hello world"),
+		SHA:      "abc123sha",
+		Scenario: fakegithub.ScenarioOK,
+	}
+
+	fx.Contents.Files["acme/widgets/main/dir/big.bin"] = fakegithub.FileEntry{
+		SHA:      "bigsha",
+		Scenario: fakegithub.ScenarioOversized,
+	}
+	fx.Contents.Dirs["acme/widgets/main/dir"] = []fakegithub.DirEntry{
+		{Name: "hello.txt", Type: "file", SHA: "abc123sha", Size: len("hello world")},
+		{Name: "big.bin", Type: "file", SHA: "bigsha", Size: 1<<20 + 1},
+	}
+
+	fx.Contents.Files["acme/widgets/main/dir/authfail.txt"] = fakegithub.FileEntry{Scenario: fakegithub.ScenarioAuthFail}
+	fx.Contents.Files["acme/widgets/main/dir/transient.txt"] = fakegithub.FileEntry{Scenario: fakegithub.ScenarioTransient}
+	fx.Contents.Files["acme/widgets/main/dir/typo-scenario.txt"] = fakegithub.FileEntry{Scenario: "ok "}
+
+	return &fx
+}

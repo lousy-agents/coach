@@ -2,14 +2,8 @@ package codesignalcli
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
+
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
@@ -133,44 +127,11 @@ func SuggestProjectConfig(dir, outputPath string, outputSet bool) SuggestionResu
 // discovery. clean is the repository-relative form used later for the
 // create-only write; on a shape rejection clean is "" so the envelope path
 // stays repository-relative "when applicable" (issue #220/#210).
-func prepareSuggestOutputPath(revisionSHA, root, outputPath string, outputSet bool) (clean string, fail SuggestionResult, ok bool) {
-	if !outputSet {
-		return "", SuggestionResult{}, true
-	}
-	clean, valErr := validateOutputPath(root, outputPath)
-	if valErr != nil {
-		return "", suggestFailureBeforeDiscovery(revisionSHA, SuggestDiagOutputInvalid, clean, valErr.Error()), false
-	}
-	return clean, SuggestionResult{}, true
-}
 
 // writeSuggestCandidate performs the post-discovery create-only --output
 // write. An ordinary write failure (read-only directory, out of disk space,
 // name too long) is SuggestDiagOutputInvalid; only discovery-result
 // serialization maps to SuggestDiagFailed.
-func writeSuggestCandidate(root, cleanOutput, outputPath, revisionSHA string, result projectmodel.RootDiscoveryResult, candidate []byte) (fail SuggestionResult, ok bool) {
-	exists, writeErr := writeSuggestOutput(root, cleanOutput, candidate)
-	if exists {
-		return suggestFailureAfterDiscovery(revisionSHA, result, SuggestDiagOutputExists, outputPath, "coach codesignal --suggest-project-config: --output target already exists"), false
-	}
-	if writeErr != nil {
-		return suggestFailureAfterDiscovery(revisionSHA, result, SuggestDiagOutputInvalid, outputPath, writeErr.Error()), false
-	}
-	return SuggestionResult{}, true
-}
-
-func suggestSuccessResult(revisionSHA string, result projectmodel.RootDiscoveryResult, candidate []byte, outputSet bool) SuggestionResult {
-	envelope := buildSuggestEnvelope(revisionSHA, result.Roots, result.Coverage, projectmodel.Diagnostic{
-		Code:    SuggestDiagReady,
-		Message: "coach codesignal --suggest-project-config: candidate generated successfully",
-	})
-
-	out := SuggestionResult{Envelope: envelope, ExitCode: 0}
-	if !outputSet {
-		out.Candidate = candidate
-	}
-	return out
-}
 
 // InvalidArgumentsSuggestionEnvelope builds the stderr diagnostic/
 // provenance envelope for a --suggest-project-config invocation rejected
@@ -194,45 +155,11 @@ func suggestFailureAfterDiscovery(revision string, result projectmodel.RootDisco
 	return SuggestionResult{Envelope: envelope, ExitCode: suggestExitCodeFor(code)}
 }
 
-func suggestExitCodeFor(code string) int {
-	switch code {
-	case SuggestDiagSnapshotUnavailable, SuggestDiagFailed:
-		return 3
-	default:
-		return 2
-	}
-}
-
 // suggestPrimaryRootDiagnostic maps result's root-discovery diagnostics to
 // the single primary suggestion diagnostic per issue #220's fixed priority:
 // unavailable > (outside_snapshot|invalid|duplicate|ambiguous) > incomplete
 // > no-modules. ok is true only when result represents a usable, complete,
 // non-empty root set.
-func suggestPrimaryRootDiagnostic(result projectmodel.RootDiscoveryResult) (code, path, message string, ok bool) {
-	for _, diag := range result.Coverage.Diagnostics {
-		if diag.Code == projectmodel.DiagRootUnavailable {
-			return SuggestDiagSnapshotUnavailable, diag.Path, suggestDiagnosticMessage(diag), false
-		}
-	}
-	for _, diag := range result.Coverage.Diagnostics {
-		switch diag.Code {
-		case projectmodel.DiagRootOutsideSnapshot, projectmodel.DiagRootInvalid, projectmodel.DiagRootDuplicate, projectmodel.DiagRootAmbiguous:
-			return SuggestDiagAmbiguousRoots, diag.Path, suggestDiagnosticMessage(diag), false
-		}
-	}
-	if !result.Complete {
-		for _, diag := range result.Coverage.Diagnostics {
-			if diag.Code == projectmodel.DiagRootIncomplete {
-				return SuggestDiagIncomplete, diag.Path, suggestDiagnosticMessage(diag), false
-			}
-		}
-		return SuggestDiagIncomplete, "", "coach codesignal --suggest-project-config: Go root discovery did not complete within its resource budget", false
-	}
-	if len(result.Roots) == 0 {
-		return SuggestDiagNoGoModules, "", "coach codesignal --suggest-project-config: no Go module or workspace root was found at HEAD", false
-	}
-	return "", "", "", true
-}
 
 // snapshotUnavailableMessage builds the diagnostic message for a
 // SuggestDiagSnapshotUnavailable failure -- resolving HEAD, resolving the
@@ -269,40 +196,6 @@ func suggestPrimaryRootDiagnostic(result projectmodel.RootDiscoveryResult) (code
 // form because of '\'-separated paths). This is a no-op for the
 // *fs.PathError and *OperationalError cases, whose extracted reason never
 // contains a path in the first place.
-func snapshotUnavailableMessage(op string, underlyingErr error, knownAbsolutePaths ...string) string {
-	reason := underlyingErr.Error()
-
-	var pathErr *fs.PathError
-	var opErr *OperationalError
-	var listErr *snapshotListError
-	switch {
-	case errors.As(underlyingErr, &pathErr):
-		reason = pathErr.Err.Error()
-	case errors.As(underlyingErr, &opErr):
-		reason = opErr.Reason()
-	case errors.As(underlyingErr, &listErr):
-		reason = listErr.Unwrap().Error()
-	}
-
-	for _, absolutePath := range knownAbsolutePaths {
-		if absolutePath == "" {
-			continue
-		}
-		reason = strings.ReplaceAll(reason, absolutePath, ".")
-		if quoted := strconv.Quote(absolutePath); len(quoted) >= 2 {
-			reason = strings.ReplaceAll(reason, quoted[1:len(quoted)-1], ".")
-		}
-	}
-
-	return fmt.Sprintf("coach codesignal --suggest-project-config: could not %s: %s", op, reason)
-}
-
-func suggestDiagnosticMessage(diag projectmodel.Diagnostic) string {
-	if diag.Message != "" {
-		return diag.Message
-	}
-	return diag.Code
-}
 
 type suggestionCandidate struct {
 	SchemaVersion string   `json:"schema_version"`
@@ -312,35 +205,10 @@ type suggestionCandidate struct {
 // serializeSuggestionCandidate renders roots as the strict schema-1
 // project-config candidate: 2-space indent, one trailing newline, fixed
 // key order, sorted and deduplicated roots.
-func serializeSuggestionCandidate(roots []string) ([]byte, error) {
-	candidate := suggestionCandidate{
-		SchemaVersion: "1",
-		Roots:         normalizeSuggestionRoots(roots),
-	}
-	data, err := json.MarshalIndent(candidate, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	return append(data, '\n'), nil
-}
 
 // normalizeSuggestionRoots defensively re-sorts and deduplicates
 // DiscoverGoRoots' already-sorted, deduplicated Roots so the candidate
 // contract holds even if that upstream invariant is ever relaxed.
-func normalizeSuggestionRoots(roots []string) []string {
-	out := make([]string, 0, len(roots))
-	out = append(out, roots...)
-	sort.Strings(out)
-	deduped := out[:0]
-	var previous string
-	for i, root := range out {
-		if i == 0 || root != previous {
-			deduped = append(deduped, root)
-			previous = root
-		}
-	}
-	return deduped
-}
 
 type suggestionEnvelope struct {
 	DiagnosticVersion string                    `json:"diagnostic_version"`
@@ -435,50 +303,11 @@ func zeroSuggestCoverage() projectmodel.Coverage {
 // be a valid create-only target: empty, the literal "-", absolute, not
 // normalized, escaping the repository, or containing a ".git" component.
 // It returns the cleaned repository-relative path on success.
-func validateSuggestOutputPathShape(outputPath string) (string, error) {
-	if outputPath == "" {
-		return "", fmt.Errorf("must be a non-empty repository-relative path")
-	}
-	if outputPath == "-" {
-		return "", fmt.Errorf("must not be \"-\"")
-	}
-	if filepath.IsAbs(outputPath) {
-		return "", fmt.Errorf("must be relative to the repository root, not an absolute path")
-	}
-	clean := filepath.Clean(outputPath)
-	if clean != outputPath || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("must be a normalized path that stays inside the repository")
-	}
-	for _, segment := range strings.Split(filepath.ToSlash(clean), "/") {
-		if strings.EqualFold(segment, ".git") {
-			return "", fmt.Errorf("must not contain a \".git\" path component")
-		}
-	}
-	return clean, nil
-}
 
 // checkOutputParents walks every existing parent component of cleanOutput
 // (relative to repositoryRootDir) via os.Lstat -- not os.Stat -- so a
 // symlinked parent directory is rejected rather than silently followed. A
 // missing parent is also rejected: a create-only write must never mkdir -p.
-func checkOutputParents(repositoryRootDir, cleanOutput string) error {
-	segments := strings.Split(filepath.ToSlash(cleanOutput), "/")
-	current := repositoryRootDir
-	for i := 0; i < len(segments)-1; i++ {
-		current = filepath.Join(current, segments[i])
-		info, err := os.Lstat(current)
-		if err != nil {
-			return fmt.Errorf("parent directory %q does not exist", strings.Join(segments[:i+1], "/"))
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("parent path component %q is a symlink", strings.Join(segments[:i+1], "/"))
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("parent path component %q is not a directory", strings.Join(segments[:i+1], "/"))
-		}
-	}
-	return nil
-}
 
 // validateOutputPath performs the shape and parent-confinement stages of
 // --output validation only. Whether the target already exists is checked
@@ -492,16 +321,6 @@ func checkOutputParents(repositoryRootDir, cleanOutput string) error {
 // yet -- returns clean == "". Callers use this to avoid putting an
 // absolute or otherwise un-cleaned caller-supplied path into a
 // diagnostic's path field.
-func validateOutputPath(repositoryRootDir, outputPath string) (clean string, err error) {
-	clean, shapeErr := validateSuggestOutputPathShape(outputPath)
-	if shapeErr != nil {
-		return "", shapeErr
-	}
-	if parentErr := checkOutputParents(repositoryRootDir, clean); parentErr != nil {
-		return clean, parentErr
-	}
-	return clean, nil
-}
 
 func ValidateAuthoringOutputPath(repositoryRootDir, outputPath string) (clean string, err error) {
 	return validateOutputPath(repositoryRootDir, outputPath)
@@ -512,13 +331,6 @@ func ValidateAuthoringOutputPath(repositoryRootDir, outputPath string) (clean st
 // otherwise carries; every other diagnostic message in this feature is
 // repository-relative; err is returned unchanged if it is not a
 // *fs.PathError.
-func unwrapPathError(cleanOutput string, err error) error {
-	var pathErr *fs.PathError
-	if errors.As(err, &pathErr) {
-		return fmt.Errorf("%s: %w", cleanOutput, pathErr.Err)
-	}
-	return err
-}
 
 // writeSuggestOutput performs the authoritative create-only write: an
 // O_EXCL open that fails with fs.ErrExist when the target already exists.
@@ -535,24 +347,3 @@ func unwrapPathError(cleanOutput string, err error) error {
 // SuggestDiagOutputExists instead of surfacing the original write failure
 // again. Removal is best-effort -- its own error is never propagated, and
 // the original writeErr/closeErr is always what is returned.
-func writeSuggestOutput(repositoryRootDir, cleanOutput string, candidate []byte) (exists bool, err error) {
-	target := filepath.Join(repositoryRootDir, filepath.FromSlash(cleanOutput))
-	file, openErr := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if openErr != nil {
-		if errors.Is(openErr, fs.ErrExist) {
-			return true, nil
-		}
-		return false, unwrapPathError(cleanOutput, openErr)
-	}
-	_, writeErr := file.Write(candidate)
-	closeErr := file.Close()
-	if writeErr != nil {
-		os.Remove(target)
-		return false, unwrapPathError(cleanOutput, writeErr)
-	}
-	if closeErr != nil {
-		os.Remove(target)
-		return false, unwrapPathError(cleanOutput, closeErr)
-	}
-	return false, nil
-}

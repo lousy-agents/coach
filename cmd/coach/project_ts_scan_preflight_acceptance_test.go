@@ -263,46 +263,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices composes project_package a
 // unreachable from this real-scan boundary by design (tracked at the scan
 // boundary in #355) and is not asserted here.
 var _ = Describe("codesignalcli.CheckProjectReadiness never gates or warns on a selected supported-set Node release (AC-SET-10)", func() {
-	It("has more than one supported Node major, so the table below cannot silently degrade to exercising just one", func() {
-		Expect(len(codesignalcli.SupportedNodeMajors)).To(BeNumerically(">", 1), "codesignalcli.SupportedNodeMajors=%v", codesignalcli.SupportedNodeMajors)
-	})
-
-	tableArgs := []any{func(major int) {
-		version := fmt.Sprintf("v%d.0.0", major)
-		path := pathWithStubNode(version)
-		GinkgoT().Setenv("PATH", path)
-		GinkgoT().Setenv("HOME", os.Getenv("HOME"))
-
-		repo := newTempGitRepo()
-		head := commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-
-		readiness, err := codesignalcli.CheckProjectReadiness(repo, head, "")
-		Expect(err).NotTo(HaveOccurred())
-
-		Expect(readiness.Checks.Node.State).To(Equal(codesignalcli.ReadinessPass), "detail=%s", readiness.Checks.Node.Detail)
-		Expect(readiness.Checks.Node.Code).To(BeEmpty())
-		Expect(readiness.Checks.Runtime.State).To(Equal(codesignalcli.ReadinessPass), "detail=%s", readiness.Checks.Runtime.Detail)
-		Expect(readiness.Checks.Runtime.Code).To(BeEmpty())
-
-		for _, gap := range readiness.Gaps {
-			Expect(gap.Code).NotTo(HavePrefix("node_"), "a supported-set Node release must never contribute a node_* gap, got %q", gap.Code)
-		}
-		for _, warning := range readiness.Warnings {
-			Expect(warning.Code).NotTo(HavePrefix("node_"), "a supported-set Node release must never warn, got %q", warning.Code)
-		}
-		for _, action := range readiness.NextActions {
-			Expect(action.RuntimeKind).NotTo(Equal("node"), "a supported-set Node release must never contribute a runtime next action, got kind=%q", action.Kind)
-		}
-
-		_, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-		Expect(exitCode).To(Equal(2), "stdout/stderr: %s", stderr)
-		Expect(stderrLines(stderr)[0]).To(HavePrefix("typescript_compiler_missing:"), "the scan must fail on the later missing-compiler boundary, not on Node; stderr: %s", stderr)
-	}}
-	for _, major := range codesignalcli.SupportedNodeMajors {
-		tableArgs = append(tableArgs, Entry(fmt.Sprintf("Node major %d", major), major))
-	}
-
-	DescribeTable("passes node/runtime with no gap, no warning, and no runtime next action, and a real scan proceeds past the Node boundary to fail only on the later missing-compiler gap", tableArgs...)
+	body_projectTsScanPreflightAcceptanceTest_codesignalcliCheckProjectReadinessNeverGatesOrWa_265()
 })
 
 // R2: readinessFromGapChecks derives Runtime's and Compiler's next actions

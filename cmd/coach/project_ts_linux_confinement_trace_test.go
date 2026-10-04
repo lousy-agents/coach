@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -85,353 +84,6 @@ type straceRecord struct {
 	Paths    []string
 	Argv     []string
 	Pathname string
-}
-
-func frozenLinuxAllowlist(runtimeDir, compilerDir, nativeDir, analyzerDir string, analyzerRootPID int) linuxAllowlist {
-	runtimeDir = filepath.Clean(runtimeDir)
-	compilerDir = filepath.Clean(compilerDir)
-	nativeDir = filepath.Clean(nativeDir)
-	analyzerDir = filepath.Clean(analyzerDir)
-	return linuxAllowlist{
-		exact: []string{
-			"/etc/ld.so.cache",
-			"/dev/null",
-			"/dev/zero",
-			"/dev/urandom",
-			"/etc/nsswitch.conf",
-			"/etc/passwd",
-			"/etc/group",
-			"/etc/hosts",
-			"/proc/meminfo",
-			"/proc/version",
-			"/proc/version_signature",
-			"/proc/cpuinfo",
-			"/proc/stat",
-			"/proc/uptime",
-			"/proc/loadavg",
-		},
-		prefixes: []string{
-			runtimeDir,
-			compilerDir,
-			nativeDir,
-			analyzerDir,
-			"/lib",
-			"/lib64",
-			"/usr/lib",
-			"/usr/lib64",
-			"/usr/share/locale",
-			"/usr/lib/locale",
-			"/usr/share/i18n",
-			"/usr/share/zoneinfo",
-			"/etc/ssl",
-			"/proc/self",
-			"/proc/sys",
-			fmt.Sprintf("/proc/%d", analyzerRootPID),
-			"/sys/fs/cgroup",
-			"/sys/devices/system/cpu",
-			"/sys/kernel/mm",
-		},
-		ancestors: exactAncestorComponents(runtimeDir, compilerDir, nativeDir, analyzerDir),
-	}
-}
-
-func exactAncestorComponents(dirs ...string) []string {
-	seen := map[string]struct{}{"/tmp": {}}
-	out := []string{"/tmp"}
-	add := func(path string) {
-		path = filepath.Clean(path)
-		if path == "." || path == string(os.PathSeparator) {
-			return
-		}
-		if _, ok := seen[path]; ok {
-			return
-		}
-		seen[path] = struct{}{}
-		out = append(out, path)
-	}
-	for _, dir := range dirs {
-		d := filepath.Clean(dir)
-		for {
-			parent := filepath.Dir(d)
-			if parent == d || parent == "." || parent == string(os.PathSeparator) {
-				break
-			}
-			add(parent)
-			d = parent
-		}
-	}
-	return out
-}
-
-func linuxPathAllowed(allow linuxAllowlist, path string) bool {
-	clean := filepath.Clean(path)
-	for _, exact := range allow.exact {
-		if clean == filepath.Clean(exact) {
-			return true
-		}
-	}
-	for _, prefix := range allow.prefixes {
-		p := filepath.Clean(prefix)
-		if clean == p || strings.HasPrefix(clean, p+string(os.PathSeparator)) {
-			return true
-		}
-	}
-	return false
-}
-
-func linuxAncestorExact(allow linuxAllowlist, path string) bool {
-	clean := filepath.Clean(path)
-	for _, ancestor := range allow.ancestors {
-		if clean == filepath.Clean(ancestor) {
-			return true
-		}
-	}
-	return false
-}
-
-func linuxProbeAllowed(allow linuxAllowlist, syscall, path string) bool {
-	if linuxPathAllowed(allow, path) {
-		return true
-	}
-	if _, meta := linuxMetadataSyscalls[syscall]; meta && linuxAncestorExact(allow, path) {
-		return true
-	}
-	return false
-}
-
-func parseStraceFile(path string) []straceRecord {
-	f, err := os.Open(path)
-	Expect(err).NotTo(HaveOccurred(), "strace log %s", path)
-	defer f.Close()
-	var recs []straceRecord
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for sc.Scan() {
-		if rec, ok := parseStraceLine(sc.Text()); ok {
-			recs = append(recs, rec)
-		}
-	}
-	Expect(sc.Err()).NotTo(HaveOccurred())
-	return recs
-}
-
-func parseStraceLines(lines []string) []straceRecord {
-	var recs []straceRecord
-	for _, line := range lines {
-		rec, ok := parseStraceLine(line)
-		Expect(ok).To(BeTrue(), line)
-		recs = append(recs, rec)
-	}
-	return recs
-}
-
-func parseStraceLine(line string) (straceRecord, bool) {
-	line = strings.TrimSpace(line)
-	m := stracePIDLine.FindStringSubmatch(line)
-	if m == nil {
-		return straceRecord{}, false
-	}
-	pid, err := strconv.Atoi(m[1])
-	if err != nil {
-		return straceRecord{}, false
-	}
-	rest := m[2]
-	sys := straceSyscallAt.FindStringSubmatch(rest)
-	if sys == nil {
-		return straceRecord{}, false
-	}
-	name := sys[1]
-	if strings.HasPrefix(name, "...") {
-		return straceRecord{}, false
-	}
-	if strings.Contains(rest, "unfinished") && name != "execve" && name != "execveat" {
-		return straceRecord{}, false
-	}
-	rec := straceRecord{PID: pid, Syscall: name, Raw: line, Paths: stracePaths(rest)}
-	if rm := straceResultAt.FindStringSubmatch(rest); rm != nil {
-		rec.Result = rm[1]
-	}
-	if name == "execve" || name == "execveat" {
-		quoted := unescapeStraceQuoted(rest)
-		if len(quoted) > 0 {
-			rec.Pathname = quoted[0]
-		}
-		rec.Argv = execveArgv(rest)
-	}
-	return rec, true
-}
-
-func stracePaths(rest string) []string {
-	seen := map[string]struct{}{}
-	var paths []string
-	add := func(p string) {
-		p = unescapeC(p)
-		if p == "" || !strings.HasPrefix(p, "/") {
-			return
-		}
-		if _, ok := seen[p]; ok {
-			return
-		}
-		seen[p] = struct{}{}
-		paths = append(paths, p)
-	}
-	for _, q := range straceQuoted.FindAllStringSubmatch(rest, -1) {
-		add(q[1])
-	}
-	for _, q := range straceFdPath.FindAllStringSubmatch(rest, -1) {
-		add(q[1])
-	}
-	return paths
-}
-
-func execveArgv(rest string) []string {
-	start := strings.Index(rest, "[")
-	end := strings.Index(rest, "]")
-	if start < 0 || end <= start {
-		return unescapeStraceQuoted(rest)
-	}
-	return unescapeStraceQuoted(rest[start : end+1])
-}
-
-func unescapeStraceQuoted(s string) []string {
-	var out []string
-	for _, q := range straceQuoted.FindAllStringSubmatch(s, -1) {
-		out = append(out, unescapeC(q[1]))
-	}
-	return out
-}
-
-func unescapeC(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+1 < len(s) {
-			i++
-			switch s[i] {
-			case 'n':
-				b.WriteByte('\n')
-			case 't':
-				b.WriteByte('\t')
-			case '"', '\\':
-				b.WriteByte(s[i])
-			default:
-				b.WriteByte(s[i])
-			}
-			continue
-		}
-		b.WriteByte(s[i])
-	}
-	return b.String()
-}
-
-func straceSucceeded(rec straceRecord) bool {
-	if rec.Result == "" || strings.HasPrefix(rec.Result, "-") {
-		return false
-	}
-	if strings.Contains(rec.Raw, "ENOENT") || strings.Contains(rec.Raw, "ENOTDIR") {
-		return false
-	}
-	return true
-}
-
-func findAnalyzerIdentity(recs []straceRecord, execPath string) (straceRecord, bool) {
-	for _, rec := range recs {
-		if rec.Syscall != "execve" && rec.Syscall != "execveat" {
-			continue
-		}
-		if rec.Pathname != execPath {
-			continue
-		}
-		if !argvHasPrefix(rec.Argv, compilerModuleArgPrefix) || !argvHasPrefix(rec.Argv, nativePackageArgPrefix) {
-			continue
-		}
-		return rec, true
-	}
-	return straceRecord{}, false
-}
-
-func argvHasPrefix(argv []string, prefix string) bool {
-	for _, a := range argv {
-		if strings.HasPrefix(a, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func argvValue(argv []string, prefix string) string {
-	for _, a := range argv {
-		if strings.HasPrefix(a, prefix) {
-			return strings.TrimPrefix(a, prefix)
-		}
-	}
-	return ""
-}
-
-func linuxStraceTraceExpr() string {
-	return strings.Join(append(append([]string{}, linuxFileSyscalls...), "clone", "clone3", "fork", "vfork"), ",")
-}
-
-func cloneChildPID(rec straceRecord) (int, bool) {
-	switch rec.Syscall {
-	case "clone", "clone3", "fork", "vfork":
-	default:
-		return 0, false
-	}
-	if !straceSucceeded(rec) {
-		return 0, false
-	}
-	n, err := strconv.Atoi(rec.Result)
-	if err != nil || n <= 0 {
-		return 0, false
-	}
-	return n, true
-}
-
-func analyzerSubtreePIDs(recs []straceRecord, rootPID int) map[int]struct{} {
-	children := map[int][]int{}
-	for _, rec := range recs {
-		child, ok := cloneChildPID(rec)
-		if !ok {
-			continue
-		}
-		children[rec.PID] = append(children[rec.PID], child)
-	}
-	out := map[int]struct{}{rootPID: {}}
-	stack := []int{rootPID}
-	for len(stack) > 0 {
-		p := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		for _, c := range children[p] {
-			if _, seen := out[c]; seen {
-				continue
-			}
-			out[c] = struct{}{}
-			stack = append(stack, c)
-		}
-	}
-	return out
-}
-
-func unsharePathEnv(nodeExecPath, ambientPATH string) string {
-	dir := filepath.Dir(nodeExecPath)
-	if ambientPATH == "" {
-		return dir
-	}
-	return dir + string(os.PathListSeparator) + ambientPATH
-}
-
-func unshareEnvWrapper(pathEnv, home, tmpdir string) []string {
-	args := []string{"env", "PATH=" + pathEnv, "HOME=" + home}
-	if tmpdir != "" {
-		args = append(args, "TMPDIR="+tmpdir)
-	}
-	return args
-}
-
-func repositoryRoot() string {
-	_, file, _, ok := runtime.Caller(0)
-	Expect(ok).To(BeTrue())
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 }
 
 var _ = Describe("file-syscall trace parser", func() {
@@ -596,3 +248,119 @@ var _ = Describe("file-syscall trace parser", func() {
 		})
 	})
 })
+
+func parseStraceLine(line string) (straceRecord, bool) {
+	line = strings.TrimSpace(line)
+	m := stracePIDLine.FindStringSubmatch(line)
+	if m == nil {
+		return straceRecord{}, false
+	}
+	pid, err := strconv.Atoi(m[1])
+	if err != nil {
+		return straceRecord{}, false
+	}
+	rest := m[2]
+	sys := straceSyscallAt.FindStringSubmatch(rest)
+	if sys == nil {
+		return straceRecord{}, false
+	}
+	name := sys[1]
+	if strings.HasPrefix(name, "...") {
+		return straceRecord{}, false
+	}
+	if strings.Contains(rest, "unfinished") && name != "execve" && name != "execveat" {
+		return straceRecord{}, false
+	}
+	rec := straceRecord{PID: pid, Syscall: name, Raw: line, Paths: stracePaths(rest)}
+	if rm := straceResultAt.FindStringSubmatch(rest); rm != nil {
+		rec.Result = rm[1]
+	}
+	if name == "execve" || name == "execveat" {
+		quoted := unescapeStraceQuoted(rest)
+		if len(quoted) > 0 {
+			rec.Pathname = quoted[0]
+		}
+		rec.Argv = execveArgv(rest)
+	}
+	return rec, true
+}
+
+func unescapeC(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			i++
+			switch s[i] {
+			case 'n':
+				b.WriteByte('\n')
+			case 't':
+				b.WriteByte('\t')
+			case '"', '\\':
+				b.WriteByte(s[i])
+			default:
+				b.WriteByte(s[i])
+			}
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+func frozenLinuxAllowlist(runtimeDir, compilerDir, nativeDir, analyzerDir string, analyzerRootPID int) linuxAllowlist {
+	runtimeDir = filepath.Clean(runtimeDir)
+	compilerDir = filepath.Clean(compilerDir)
+	nativeDir = filepath.Clean(nativeDir)
+	analyzerDir = filepath.Clean(analyzerDir)
+	return linuxAllowlist{
+		exact: []string{
+			"/etc/ld.so.cache",
+			"/dev/null",
+			"/dev/zero",
+			"/dev/urandom",
+			"/etc/nsswitch.conf",
+			"/etc/passwd",
+			"/etc/group",
+			"/etc/hosts",
+			"/proc/meminfo",
+			"/proc/version",
+			"/proc/version_signature",
+			"/proc/cpuinfo",
+			"/proc/stat",
+			"/proc/uptime",
+			"/proc/loadavg",
+		},
+		prefixes: []string{
+			runtimeDir,
+			compilerDir,
+			nativeDir,
+			analyzerDir,
+			"/lib",
+			"/lib64",
+			"/usr/lib",
+			"/usr/lib64",
+			"/usr/share/locale",
+			"/usr/lib/locale",
+			"/usr/share/i18n",
+			"/usr/share/zoneinfo",
+			"/etc/ssl",
+			"/proc/self",
+			"/proc/sys",
+			fmt.Sprintf("/proc/%d", analyzerRootPID),
+			"/sys/fs/cgroup",
+			"/sys/devices/system/cpu",
+			"/sys/kernel/mm",
+		},
+		ancestors: exactAncestorComponents(runtimeDir, compilerDir, nativeDir, analyzerDir),
+	}
+}
+
+func linuxStraceTraceExpr() string {
+	return strings.Join(append(append([]string{}, linuxFileSyscalls...), "clone", "clone3", "fork", "vfork"), ",")
+}
+
+func repositoryRoot() string {
+	_, file, _, ok := runtime.Caller(0)
+	Expect(ok).To(BeTrue())
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+}

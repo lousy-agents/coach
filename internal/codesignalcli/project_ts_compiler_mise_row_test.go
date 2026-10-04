@@ -8,30 +8,6 @@ import (
 	"testing"
 )
 
-func TestIsMiseToolVersionInRow(t *testing.T) {
-	cases := []struct {
-		name    string
-		version string
-		want    bool
-	}{
-		{"matches the pinned year, patch zero", "2026.1.0", true},
-		{"matches the pinned year, exact tested release", "2026.9.5", true},
-		{"matches the pinned year, later patch", "2026.12.0", true},
-		{"older calver year is outside the row", "2025.12.1", false},
-		{"newer calver year is outside the row", "2027.1.0", false},
-		{"empty version is outside the row", "", false},
-		{"missing calver separator is outside the row", "2026", false},
-		{"non-numeric year is outside the row", "vnext.1.0", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := isMiseToolVersionInRow(tc.version); got != tc.want {
-				t.Errorf("isMiseToolVersionInRow(%q) = %v, want %v", tc.version, got, tc.want)
-			}
-		})
-	}
-}
-
 // miseTomlMinVersionPattern extracts mise.toml's min_version value, e.g.
 // `min_version = "2026.9.5"` -> "2026.9.5".
 var miseTomlMinVersionPattern = regexp.MustCompile(`(?m)^min_version\s*=\s*"([^"]+)"`)
@@ -78,40 +54,30 @@ func TestMiseTomlMinVersionYearExtraction(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := miseTomlMinVersionPattern.FindSubmatch([]byte(tc.toml))
-			var year string
-			var ok bool
-			if m != nil {
-				year, ok = miseCalverYear(string(m[1]))
-			}
-			if ok != tc.wantOK || year != tc.wantYear {
-				t.Errorf("extraction of %q = (%q, %v), want (%q, %v)", tc.toml, year, ok, tc.wantYear, tc.wantOK)
-			}
+			body_projectTsCompilerMiseRowTest_56(t, tc)
 		})
 	}
 }
 
-func TestMiseInstallCommandIsExactlyTheFrozenTemplate(t *testing.T) {
-	got := miseInstallCommand("7.0.2")
-	want := "mise install npm:typescript@7.0.2"
-	if got != want {
-		t.Errorf("miseInstallCommand(%q) = %q, want %q", "7.0.2", got, want)
+func TestIsMiseToolVersionInRow(t *testing.T) {
+	cases := []struct {
+		name    string
+		version string
+		want    bool
+	}{
+		{"matches the pinned year, patch zero", "2026.1.0", true},
+		{"matches the pinned year, exact tested release", "2026.9.5", true},
+		{"matches the pinned year, later patch", "2026.12.0", true},
+		{"older calver year is outside the row", "2025.12.1", false},
+		{"newer calver year is outside the row", "2027.1.0", false},
+		{"empty version is outside the row", "", false},
+		{"missing calver separator is outside the row", "2026", false},
+		{"non-numeric year is outside the row", "vnext.1.0", false},
 	}
-}
-
-func TestMiseWhereCommandIsExactlyTheFrozenTemplate(t *testing.T) {
-	if miseWhereCommand != "mise where" {
-		t.Errorf("miseWhereCommand = %q, want %q", miseWhereCommand, "mise where")
-	}
-}
-
-// TestMiseBackingNpmSuppressionFlagMatchesTheNpmRow pins that the mise
-// npm-backend row reuses the npm adapter row's own suppression mechanism
-// rather than a mise-specific flag invented separately, since mise installs
-// npm:typescript via npm's own resolution.
-func TestMiseBackingNpmSuppressionFlagMatchesTheNpmRow(t *testing.T) {
-	if miseBackingNpmSuppressionFlag != "--ignore-scripts" {
-		t.Errorf("miseBackingNpmSuppressionFlag = %q, want %q", miseBackingNpmSuppressionFlag, "--ignore-scripts")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body_projectTsCompilerMiseRowTest_86(t, tc)
+		})
 	}
 }
 

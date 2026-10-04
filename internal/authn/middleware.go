@@ -19,14 +19,15 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		p, err := s.Validate(r.Context(), raw)
+		if err != nil && errors.Is(err, ErrDenylistStore) {
+			writeAPIError(w, http.StatusServiceUnavailable, coachapi.ErrorCodeInternalError, "authentication temporarily unavailable")
+			return
+		}
 		if err != nil {
-			if errors.Is(err, ErrDenylistStore) {
-				writeAPIError(w, http.StatusServiceUnavailable, coachapi.ErrorCodeInternalError, "authentication temporarily unavailable")
-				return
-			}
 			writeAPIError(w, http.StatusUnauthorized, coachapi.ErrorCodeUnauthenticated, "unauthenticated")
 			return
 		}
+
 		ctx := coachapi.WithPrincipal(r.Context(), p)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -79,334 +78,14 @@ type readinessNextActionDoc struct {
 	Choices            []string `json:"choices"`
 }
 
-func gapCodes(doc readinessResultDoc) []string {
-	codes := make([]string, len(doc.Gaps))
-	for i, g := range doc.Gaps {
-		codes[i] = g.Code
-	}
-	return codes
-}
-
-func nextActionKinds(doc readinessResultDoc) []string {
-	kinds := make([]string, len(doc.NextActions))
-	for i, a := range doc.NextActions {
-		kinds[i] = a.Kind
-	}
-	return kinds
-}
-
-// writeStubNodeScript writes an executable `node` script into a fresh temp
-// directory that always prints version regardless of its arguments, and
-// returns that directory. checkNodeReadiness's detectHostNodeMajor shells
-// out to whatever `node` is first on the child process's PATH, so a spec
-// that wants a specific, host-independent Node major must control PATH with
-// a stub rather than depend on whatever Node happens to be installed.
-func writeStubNodeScript(version string) string {
-	dir, err := os.MkdirTemp("", "coach-acceptance-stubnode-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	script := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo %s; exit 0; fi\nif [ \"$1\" = \"-p\" ]; then echo \"$0\"; exit 0; fi\necho %s\n", version, version)
-	Expect(os.WriteFile(filepath.Join(dir, "node"), []byte(script), 0o755)).To(Succeed())
-	return dir
-}
-
-// pathExcludingToolchain strips every real node/npm/mise directory, so a spec
-// on this PATH has no global-mise candidate however the host is configured.
-// The package managers are stripped alongside them because
-// checkPackageManager probes whichever npm/pnpm/bun/yarn the child can
-// resolve: leaving the host's own installation reachable would make a
-// package-manager classification depend on which manager this machine happens
-// to have.
-func pathExcludingToolchain() string {
-	return pathExcludingExecutables("node", "npm", "mise", "pnpm", "bun", "yarn")
-}
-
-func pathWithStubNode(version string) string {
-	return writeStubNodeScript(version) + string(os.PathListSeparator) + pathExcludingToolchain()
-}
-
-// writeStubPackageManagerScript writes an executable `kind` script into a
-// fresh temp directory that prints version on `--version` and exits non-zero
-// on anything else, and returns that directory. It never installs anything:
-// no spec drives a real install through a stub.
-func writeStubPackageManagerScript(kind, version string) string {
-	dir, err := os.MkdirTemp("", "coach-acceptance-stubmanager-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	script := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo %s; exit 0; fi\nexit 1\n", version)
-	Expect(os.WriteFile(filepath.Join(dir, kind), []byte(script), 0o755)).To(Succeed())
-	return dir
-}
-
-// pathWithStubNodeAndPackageManager returns pathWithStubNode's PATH with a
-// stub `kind` reporting managerVersion ahead of it, so a spec controls the
-// version checks.package_manager classifies rather than inheriting the
-// host's.
-func pathWithStubNodeAndPackageManager(nodeVersion, kind, managerVersion string) string {
-	return writeStubPackageManagerScript(kind, managerVersion) + string(os.PathListSeparator) + pathWithStubNode(nodeVersion)
-}
-
 const (
 	stubPackageManagerCwdLog = "cwd.log"
 	stubPackageManagerEnvLog = "env.log"
 )
 
-// writeRecordingStubPackageManagerScript extends
-// writeStubPackageManagerScript with a record of the working directory and
-// the environment variable names each invocation actually saw, so a spec can
-// assert how the probe confined the subprocess rather than only what it
-// returned.
-func writeRecordingStubPackageManagerScript(kind, version string) string {
-	dir, err := os.MkdirTemp("", "coach-acceptance-recordingmanager-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	script := fmt.Sprintf("#!/bin/sh\necho \"$PWD\" >> %q\nenv | sed 's/=.*//' >> %q\n"+
-		"if [ \"$1\" = \"--version\" ]; then echo %s; exit 0; fi\nexit 1\n",
-		filepath.Join(dir, stubPackageManagerCwdLog), filepath.Join(dir, stubPackageManagerEnvLog), version)
-	Expect(os.WriteFile(filepath.Join(dir, kind), []byte(script), 0o755)).To(Succeed())
-	return dir
-}
-
-func readStubPackageManagerCwds(managerDir string) []string {
-	return readStubPackageManagerLog(managerDir, stubPackageManagerCwdLog)
-}
-
-func readStubPackageManagerEnv(managerDir string) []string {
-	return readStubPackageManagerLog(managerDir, stubPackageManagerEnvLog)
-}
-
-func readStubPackageManagerLog(managerDir, name string) []string {
-	data, err := os.ReadFile(filepath.Join(managerDir, name))
-	Expect(err).NotTo(HaveOccurred(), "expected the stub package manager at %s to have recorded %s", managerDir, name)
-	return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-}
-
-// pathWithoutNode names pathExcludingToolchain from the perspective of the
-// node_missing specs: with no node reachable, checkNodeReadiness reports
-// node_missing regardless of the host's actual Node installation.
-func pathWithoutNode() string {
-	return pathExcludingToolchain()
-}
-
-// requireStubNodeVersion is the belt-and-suspenders probe mirroring
-// node_absent_acceptance_test.go's pattern: it proves path's stub node is
-// genuinely the one that would be resolved and reports exactly version, so
-// a deterministic result below cannot be a false green caused by some other
-// node still being reachable.
-func requireStubNodeVersion(path, wantVersion string) {
-	probe := exec.Command("sh", "-c", "node --version")
-	probe.Env = []string{"PATH=" + path}
-	output, err := probe.Output()
-	Expect(err).NotTo(HaveOccurred(), "expected the stub node to be reachable on %q", path)
-	Expect(strings.TrimSpace(string(output))).To(Equal(wantVersion))
-}
-
-// requireNodeUnreachable mirrors node_absent_acceptance_test.go's probe: it
-// proves neither node nor npm resolves on path, so a deterministic
-// node_missing result below cannot be a false green.
-func requireNodeUnreachable(path string) {
-	probe := exec.Command("sh", "-c", "command -v node || command -v npm")
-	probe.Env = []string{"PATH=" + path}
-	Expect(probe.Run()).To(HaveOccurred(), "expected neither node nor npm to be found on %q", path)
-}
-
-// runCoachCheckProjectEnv runs `coach codesignal [args...]` in repo with a
-// caller-controlled PATH (plus the host's HOME, so git can find its global
-// config), returning raw stdout/stderr without assuming success. Unlike
-// runCoachSuggest, it does not inherit the test process's ambient
-// environment: checkNodeReadiness shells out to whatever `node` is first on
-// the child's PATH, so a deterministic node-dependent spec must control that
-// PATH.
-func runCoachCheckProjectEnv(workingDir, path string, args ...string) (stdout, stderr []byte, exitCode int) {
-	return runCoachBinary(commandPath, workingDir, stubToolchainEnv(path), append([]string{"codesignal"}, args...)...)
-}
-
-// corruptCommittedBlob deletes path's loose object file after it has been
-// committed, leaving the commit/tree objects (and thus revision resolution)
-// intact while making the blob itself unreadable.
-func corruptCommittedBlob(repo, path string) {
-	revCmd := exec.Command("git", "rev-parse", "HEAD:"+path)
-	revCmd.Dir = repo
-	output, err := revCmd.Output()
-	Expect(err).NotTo(HaveOccurred())
-	blobSHA := strings.TrimSpace(string(output))
-	Expect(blobSHA).To(HaveLen(40))
-
-	objectPath := filepath.Join(repo, ".git", "objects", blobSHA[:2], blobSHA[2:])
-	_, statErr := os.Stat(objectPath)
-	Expect(statErr).NotTo(HaveOccurred(), "expected a loose object at %s -- was the fixture repo gc'd?", objectPath)
-	Expect(os.Remove(objectPath)).To(Succeed())
-}
-
-// corruptCommittedTree deletes dirPath's own subtree loose object after it
-// has been committed, leaving the parent tree/commit objects (and thus
-// revision resolution) intact while making a path underneath dirPath
-// unresolvable. Unlike corruptCommittedBlob (which corrupts the leaf blob
-// itself), this exercises a git-plumbing call that only walks tree objects
-// without ever opening blob content.
-func corruptCommittedTree(repo, dirPath string) {
-	revCmd := exec.Command("git", "rev-parse", "HEAD:"+dirPath)
-	revCmd.Dir = repo
-	output, err := revCmd.Output()
-	Expect(err).NotTo(HaveOccurred())
-	treeSHA := strings.TrimSpace(string(output))
-	Expect(treeSHA).To(HaveLen(40))
-
-	objectPath := filepath.Join(repo, ".git", "objects", treeSHA[:2], treeSHA[2:])
-	_, statErr := os.Stat(objectPath)
-	Expect(statErr).NotTo(HaveOccurred(), "expected a loose object at %s -- was the fixture repo gc'd?", objectPath)
-	Expect(os.Remove(objectPath)).To(Succeed())
-}
-
-// writeHangingNodeScript writes an executable `node` script that never
-// terminates on its own, returning the directory containing it. `exec sleep
-// N` replaces the shell's own process image, so killing the script's PID
-// (as a context deadline does) kills the sleep directly instead of leaving
-// it as an orphaned child.
-func writeHangingNodeScript() string {
-	dir, err := os.MkdirTemp("", "coach-acceptance-hangnode-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	script := "#!/bin/sh\nexec sleep 30\n"
-	Expect(os.WriteFile(filepath.Join(dir, "node"), []byte(script), 0o755)).To(Succeed())
-	return dir
-}
-
-// pathWithHangingNode returns a PATH whose first entry is a stub `node`
-// that hangs indefinitely on `--version`, with every directory containing a
-// real node/npm/mise executable removed so the stub is the only "node" the
-// child process can resolve.
-func pathWithHangingNode() string {
-	return writeHangingNodeScript() + string(os.PathListSeparator) + pathExcludingToolchain()
-}
-
-// writeFailingNodeScript writes an executable `node` script that exits
-// non-zero on any invocation without printing a parsable version, returning
-// the directory containing it. This drives detectHostNodeMajor's
-// exitErr != nil branch specifically, distinct from a timeout (hangs, never
-// exits) or an unparsable-but-successful probe (exits 0 with junk output).
-func writeFailingNodeScript() string {
-	dir, err := os.MkdirTemp("", "coach-acceptance-failnode-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	script := "#!/bin/sh\nexit 3\n"
-	Expect(os.WriteFile(filepath.Join(dir, "node"), []byte(script), 0o755)).To(Succeed())
-	return dir
-}
-
-// pathWithFailingNode returns a PATH whose first entry is a stub `node`
-// that exits non-zero on `--version` without printing output, with every
-// directory containing a real node/npm/mise executable removed so the stub
-// is the only "node" the child process can resolve.
-func pathWithFailingNode() string {
-	return writeFailingNodeScript() + string(os.PathListSeparator) + pathExcludingToolchain()
-}
-
-// writeUnstartableNodeScript writes an executable file named `node` whose
-// shebang names an interpreter that does not exist, returning the directory
-// containing it. exec.Cmd.Start() resolves the name via LookPath (it is
-// executable, so LookPath succeeds) but the subsequent fork/exec fails,
-// distinct from writeFailingNodeScript's case (the process starts and exits
-// non-zero) and driving detectHostNodeMajor's cmd.Start() failure path
-// specifically.
-func writeUnstartableNodeScript() string {
-	dir, err := os.MkdirTemp("", "coach-acceptance-unstartnode-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	script := "#!/nonexistent/interpreter\n"
-	Expect(os.WriteFile(filepath.Join(dir, "node"), []byte(script), 0o755)).To(Succeed())
-	return dir
-}
-
-// pathWithUnstartableNode returns a PATH whose first entry is a stub `node`
-// that resolves via LookPath but fails to start (a shebang naming a missing
-// interpreter), with every directory containing a real node/npm/mise
-// executable removed so the stub is the only "node" the child process can
-// resolve.
-func pathWithUnstartableNode() string {
-	return writeUnstartableNodeScript() + string(os.PathListSeparator) + pathExcludingToolchain()
-}
-
-// writeOversizedUnparsableNodeScript writes an executable `node` script
-// whose `--version` output is a non-parsable blob at maxNodeVersionProbeOutput
-// (4 KiB) -- the largest detectHostNodeMajor's own probe budget allows
-// without erroring -- returning the directory containing it. This drives
-// nodeUnverifiableDetail's rawVersion-embedding branch with the widest input
-// it can actually receive, rather than a short literal like "weird-build-2024".
-func writeOversizedUnparsableNodeScript() string {
-	dir, err := os.MkdirTemp("", "coach-acceptance-bignode-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	script := "#!/bin/sh\nhead -c 4096 </dev/zero | tr '\\0' x\n"
-	Expect(os.WriteFile(filepath.Join(dir, "node"), []byte(script), 0o755)).To(Succeed())
-	return dir
-}
-
-// pathWithOversizedUnparsableNode returns a PATH whose first entry is a stub
-// `node` printing a 4 KiB unparsable blob on any invocation (including
-// `--version`), with every directory containing a real node/npm/mise
-// executable removed so the stub is the only "node" the child process can
-// resolve.
-func pathWithOversizedUnparsableNode() string {
-	return writeOversizedUnparsableNodeScript() + string(os.PathListSeparator) + pathExcludingToolchain()
-}
-
 const stubMiseInvocationLog = "mise-invocations.log"
+
 const stubMiseCwdLog = "mise-probe-cwd.log"
-
-// writeStubMiseScript answers every mise invocation with version and
-// records each invocation's argv and working directory, so a spec can pin
-// both the outcome and the read-only command that produced it.
-func writeStubMiseScript(version string) string {
-	dir, err := os.MkdirTemp("", "coach-acceptance-stubmise-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	installDir := filepath.Join(dir, "install")
-	Expect(os.MkdirAll(filepath.Join(installDir, "node_modules", "typescript"), 0o755)).To(Succeed())
-	Expect(os.WriteFile(filepath.Join(installDir, "node_modules", "typescript", "package.json"), []byte(fmt.Sprintf(`{"name":"typescript","version":%q}`+"\n", version)), 0o644)).To(Succeed())
-	nativeUnscoped := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
-	nativeDir := filepath.Join(installDir, "node_modules", "@typescript", nativeUnscoped)
-	Expect(os.MkdirAll(nativeDir, 0o755)).To(Succeed())
-	Expect(os.WriteFile(filepath.Join(nativeDir, "package.json"), []byte(fmt.Sprintf(`{"name":%q,"version":%q}`+"\n", "@typescript/"+nativeUnscoped, version)), 0o644)).To(Succeed())
-
-	script := fmt.Sprintf("#!/bin/sh\necho \"$PWD\" >> %q\necho \"$@\" >> %q\n"+
-		"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n"+
-		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n"+
-		"if [ \"$1\" = \"where\" ]; then echo %q; exit 0; fi\necho %s\n", filepath.Join(dir, stubMiseCwdLog), filepath.Join(dir, stubMiseInvocationLog), installDir, version)
-	Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755)).To(Succeed())
-	return dir
-}
-
-func readStubMiseInvocations(miseDir string) []string {
-	data, err := os.ReadFile(filepath.Join(miseDir, stubMiseInvocationLog))
-	Expect(err).NotTo(HaveOccurred(), "expected the stub mise at %s to have recorded at least one invocation", miseDir)
-	return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-}
-
-func readStubMiseCwds(miseDir string) []string {
-	data, err := os.ReadFile(filepath.Join(miseDir, stubMiseCwdLog))
-	Expect(err).NotTo(HaveOccurred(), "expected the stub mise at %s to have recorded probe working directories", miseDir)
-	return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-}
-
-// pathWithStubNodeAndMise returns a PATH whose first two entries are a stub
-// `node` reporting nodeVersion and a stub `mise` reporting miseVersion
-// (regardless of its arguments), with every directory containing a real
-// node/npm/mise executable removed, plus the stub mise's own directory so a
-// spec can inspect its recorded invocations via readStubMiseInvocations.
-func pathWithStubNodeAndMise(nodeVersion, miseVersion string) (path, miseDir string) {
-	miseDir = writeStubMiseScript(miseVersion)
-	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
-	return path, miseDir
-}
 
 var _ = Describe("coach codesignal --baseline --check-project --project-language typescript", func() {
 	When("HEAD has a TypeScript-shaped project (package.json) but no project.json policy, and Node is a supported major", func() {
@@ -710,36 +389,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 	When("HEAD is a two-package monorepo (each package under packages/<name>) with no root package.json, no committed policy, and no toolchain at all reachable on PATH", func() {
 		It("reports status needs_prerequisite with policy_missing and typescript_compiler_missing, never unsupported_repository_shape or a package_manager_* gap sourced from checkPackageManager's own worktree-root fallback (R1)", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "packages/app/package.json", `{"name":"app","version":"1.0.0"}`+"\n")
-			commitFile(repo, "packages/app/tsconfig.json", `{"compilerOptions":{}}`+"\n")
-			commitFile(repo, "packages/app/src/index.ts", "export const x = 1;\n")
-
-			path := pathWithStubNode("v24.9.9")
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Status).To(Equal("needs_prerequisite"))
-			Expect(doc.Checks.ProjectShape.State).To(Equal("not_checked"))
-			Expect(doc.Checks.PackageManager.State).To(Equal("not_checked"))
-			Expect(gapCodes(doc)).To(ContainElement("policy_missing"))
-			Expect(gapCodes(doc)).To(ContainElement("typescript_compiler_missing"))
-			Expect(gapCodes(doc)).NotTo(ContainElement("unsupported_repository_shape"))
-			// The two mise scopes have no mise binary on PATH here at all, so
-			// their trust check independently reports
-			// package_manager_version_unverifiable -- a real, environment-level
-			// finding, distinct from checkPackageManager's own npm/pnpm/Bun
-			// adapter check (checks.package_manager), which stays not_checked
-			// above and contributes no gap of its own. Every package_manager_*
-			// gap this readiness reports is scoped to mise, never bare.
-			for _, gap := range doc.Gaps {
-				if strings.HasPrefix(gap.Code, "package_manager_") {
-					Expect(gap.PackageManagerKind).To(HavePrefix("mise_"), "a bare package_manager_* gap with no mise_* kind would mean checkPackageManager's own worktree-root fallback fired without a validated policy")
-				}
-			}
+			body_projectReadinessAcceptanceTest_reportsStatusNeedsPrerequisiteWithPolicyMissingA_391()
 		})
 	})
 
@@ -811,127 +461,19 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 	When("HEAD has a committed project.json policy whose roots list exceeds the roots-count budget", func() {
 		It("reports policy fail/policy_invalid and exits 0 quickly, rather than fanning out into a git child process per declared root", func() {
-			repo := newTempGitRepo()
-
-			const oversizedRootsCount = 257
-			var roots strings.Builder
-			roots.WriteString(`{"schema_version":"1","roots":[`)
-			for i := 0; i < oversizedRootsCount; i++ {
-				if i > 0 {
-					roots.WriteByte(',')
-				}
-				fmt.Fprintf(&roots, `"root%d"`, i)
-			}
-			roots.WriteString(`]}` + "\n")
-			commitFile(repo, "project.json", roots.String())
-			By("relying on a locatable project mise.toml compiler so the compiler check passes cleanly, isolating this assertion to the roots budget")
-			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"7.0.2\"\n")
-
-			path, _ := pathWithStubNodeAndMise("v24.9.9", "7.0.2")
-
-			started := time.Now()
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
-			elapsed := time.Since(started)
-			Expect(exitCode).To(Equal(0), "stdout: %s stderr: %s", stdout, stderr)
-			Expect(elapsed).To(BeNumerically("<", 10*time.Second), "an oversized roots list must be rejected before fanning out into a git child process per root; elapsed=%s", elapsed)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Policy.State).To(Equal("fail"))
-			Expect(doc.Checks.Policy.Code).To(Equal("policy_invalid"))
-			Expect(doc.Checks.ProjectShape.State).To(Equal("not_checked"), "with the policy rejected, project_shape has no validated roots to walk and reports not_checked instead of guessing (R1)")
-			Expect(doc.Checks.ProjectShape.Code).To(BeEmpty())
-			Expect(doc.Status).To(Equal("needs_policy"))
-			Expect(gapCodes(doc)).To(ConsistOf("policy_invalid"))
+			body_projectReadinessAcceptanceTest_reportsPolicyFailPolicyInvalidAndExits0QuicklyRa_486()
 		})
 	})
 
 	When("Node cannot be found on the child process's PATH at all", func() {
 		It("reports the node check as fail/node_missing deterministically, mirrored exactly by checks.runtime, with an install_supported_runtime next action", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
-			writeInstalledTypescript(repo, "7.0.2")
-			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-
-			path := pathWithoutNode()
-			requireNodeUnreachable(path)
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Node.State).To(Equal("fail"))
-			Expect(doc.Checks.Node.Code).To(Equal("node_missing"))
-			Expect(doc.Checks.Node.Kind).To(BeEmpty(), "checks.node must never mirror kind")
-			Expect(doc.Checks.Node.Origin).To(BeEmpty(), "checks.node must never mirror origin")
-			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
-			Expect(doc.Checks.Runtime.Code).To(Equal("node_missing"))
-			Expect(doc.Checks.Runtime.Kind).To(Equal("node"))
-			Expect(doc.Checks.Runtime.Origin).To(Equal("path"))
-			Expect(doc.Checks.Node.State).To(Equal(doc.Checks.Runtime.State))
-			Expect(doc.Checks.Node.Code).To(Equal(doc.Checks.Runtime.Code))
-			Expect(doc.Checks.Node.Version).To(Equal(doc.Checks.Runtime.Version))
-			Expect(doc.Status).To(Equal("needs_prerequisite"))
-
-			var action readinessNextActionDoc
-			for _, a := range doc.NextActions {
-				if a.Kind == "install_supported_runtime" {
-					action = a
-				}
-			}
-			Expect(action.Kind).To(Equal("install_supported_runtime"))
-			Expect(action.Executable).To(BeFalse())
-			Expect(action.RuntimeKind).To(Equal("node"))
-			Expect(action.Supported).To(Equal([]string{"24", "26"}))
-			Expect(action.FoundVersion).To(BeEmpty(), "node_missing has no probed version to report")
-			Expect(action.Detail).To(BeEmpty(), "install_supported_runtime carries no detail field")
-
-			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
-			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
-			text := string(textStdout)
-			Expect(text).To(ContainSubstring("runtime: fail (node_missing) kind=node origin=path"))
-			Expect(text).To(ContainSubstring("install_supported_runtime (executable=false) runtime_kind=node supported=24,26"))
+			body_projectReadinessAcceptanceTest_reportsTheNodeCheckAsFailNodeMissingDeterministi_523()
 		})
 	})
 
 	When("the resolvable Node's major version is outside the supported set, below every member", func() {
 		It("reports the node check as fail/node_unsupported with the found version, deterministically", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
-			writeInstalledTypescript(repo, "7.0.2")
-			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-
-			path := pathWithStubNode("v22.10.0")
-			requireStubNodeVersion(path, "v22.10.0")
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Node.State).To(Equal("fail"))
-			Expect(doc.Checks.Node.Code).To(Equal("node_unsupported"))
-			Expect(doc.Checks.Node.Version).To(Equal("v22.10.0"))
-			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
-			Expect(doc.Checks.Runtime.Code).To(Equal("node_unsupported"))
-			Expect(doc.Checks.Runtime.Version).To(Equal("v22.10.0"))
-			Expect(doc.Checks.Runtime.Kind).To(Equal("node"))
-			Expect(doc.Checks.Runtime.Origin).To(Equal("path"))
-			Expect(doc.Status).To(Equal("needs_prerequisite"))
-
-			var action readinessNextActionDoc
-			for _, a := range doc.NextActions {
-				if a.Kind == "install_supported_runtime" {
-					action = a
-				}
-			}
-			Expect(action.Kind).To(Equal("install_supported_runtime"))
-			Expect(action.Executable).To(BeFalse())
-			Expect(action.RuntimeKind).To(Equal("node"))
-			Expect(action.Supported).To(Equal([]string{"24", "26"}))
-			Expect(action.FoundVersion).To(Equal("v22.10.0"), "node_unsupported carries the probed version that fell outside the supported set")
-			Expect(action.Detail).To(BeEmpty(), "install_supported_runtime carries no detail field")
+			body_projectReadinessAcceptanceTest_reportsTheNodeCheckAsFailNodeUnsupportedWithTheF_572()
 		})
 	})
 
@@ -1096,143 +638,19 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 	When("Node is on PATH but `node --version` hangs indefinitely", func() {
 		It("still exits within a bounded wall clock, reporting node fail/node_unverifiable with a bounded stderr-free detail, and still produces the fit report", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
-			writeInstalledTypescript(repo, "7.0.2")
-			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-
-			path := pathWithHangingNode()
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.SchemaVersion).NotTo(BeEmpty(), "the readiness document must still be produced on a probe failure")
-			Expect(doc.Checks.Node.State).To(Equal("fail"))
-			Expect(doc.Checks.Node.Code).To(Equal("node_unverifiable"))
-			Expect(doc.Checks.Node.Detail).To(BeEmpty(), "checks.node must never mirror detail")
-			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
-			Expect(doc.Checks.Runtime.Code).To(Equal("node_unverifiable"))
-			Expect(doc.Checks.Runtime.Kind).To(Equal("node"))
-			Expect(doc.Checks.Runtime.Origin).To(Equal("path"))
-			Expect(doc.Checks.Runtime.Detail).To(Equal("node --version timed out"))
-			Expect(doc.Checks.Runtime.Detail).NotTo(ContainSubstring(string(os.PathSeparator)), "the detail must not leak the stub node's host path")
-			Expect(doc.Status).To(Equal("needs_prerequisite"))
-
-			var action readinessNextActionDoc
-			for _, a := range doc.NextActions {
-				if a.Kind == "repair_runtime_probe" {
-					action = a
-				}
-			}
-			Expect(action.Kind).To(Equal("repair_runtime_probe"))
-			Expect(action.Executable).To(BeFalse())
-			Expect(action.RuntimeKind).To(Equal("node"))
-			Expect(action.Supported).To(BeEmpty(), "repair_runtime_probe carries no supported field")
-			Expect(action.FoundVersion).To(BeEmpty(), "repair_runtime_probe carries no found_version field")
-			Expect(action.Detail).To(Equal("node --version timed out"))
-
-			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
-			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
-			text := string(textStdout)
-			Expect(text).To(ContainSubstring("runtime: fail (node_unverifiable) kind=node origin=path"))
-			Expect(text).To(ContainSubstring("repair_runtime_probe (executable=false) runtime_kind=node detail=node --version timed out"))
+			body_projectReadinessAcceptanceTest_stillExitsWithinABoundedWallClockReportingNodeFa_771()
 		})
 	})
 
 	When("Node is on PATH but `node --version` exits non-zero", func() {
 		It("reports node fail/node_unverifiable with a bounded path-free detail and a repair_runtime_probe next action, not node_missing", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
-			writeInstalledTypescript(repo, "7.0.2")
-			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-
-			path := pathWithFailingNode()
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.SchemaVersion).NotTo(BeEmpty(), "the readiness document must still be produced on a probe failure")
-			Expect(doc.Checks.Node.State).To(Equal("fail"))
-			Expect(doc.Checks.Node.Code).To(Equal("node_unverifiable"))
-			Expect(doc.Checks.Node.Detail).To(BeEmpty(), "checks.node must never mirror detail")
-			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
-			Expect(doc.Checks.Runtime.Code).To(Equal("node_unverifiable"))
-			Expect(doc.Checks.Runtime.Kind).To(Equal("node"))
-			Expect(doc.Checks.Runtime.Origin).To(Equal("path"))
-			Expect(doc.Checks.Runtime.Detail).To(Equal("node --version failed: running node --version: exit status 3"))
-			Expect(doc.Checks.Runtime.Detail).NotTo(ContainSubstring(string(os.PathSeparator)), "the detail must not leak the stub node's host path")
-			Expect(doc.Status).To(Equal("needs_prerequisite"))
-
-			var action readinessNextActionDoc
-			for _, a := range doc.NextActions {
-				if a.Kind == "repair_runtime_probe" {
-					action = a
-				}
-			}
-			Expect(action.Kind).To(Equal("repair_runtime_probe"))
-			Expect(action.Executable).To(BeFalse())
-			Expect(action.RuntimeKind).To(Equal("node"))
-			Expect(action.Supported).To(BeEmpty(), "repair_runtime_probe carries no supported field")
-			Expect(action.FoundVersion).To(BeEmpty(), "repair_runtime_probe carries no found_version field")
-			Expect(action.Detail).To(Equal("node --version failed: running node --version: exit status 3"))
-
-			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
-			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
-			text := string(textStdout)
-			Expect(text).To(ContainSubstring("runtime: fail (node_unverifiable) kind=node origin=path"))
-			Expect(text).To(ContainSubstring("repair_runtime_probe (executable=false) runtime_kind=node detail=node --version failed: running node --version: exit status 3"))
+			body_projectReadinessAcceptanceTest_reportsNodeFailNodeUnverifiableWithABoundedPathF_818()
 		})
 	})
 
 	When("Node is on PATH but the `node --version` process cannot start", func() {
 		It("reports node fail/node_unverifiable with a bounded, path-free start-failure detail and a repair_runtime_probe next action", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
-			writeInstalledTypescript(repo, "7.0.2")
-			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-
-			path := pathWithUnstartableNode()
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.SchemaVersion).NotTo(BeEmpty(), "the readiness document must still be produced on a probe failure")
-			Expect(doc.Checks.Node.State).To(Equal("fail"))
-			Expect(doc.Checks.Node.Code).To(Equal("node_unverifiable"))
-			Expect(doc.Checks.Node.Detail).To(BeEmpty(), "checks.node must never mirror detail")
-			Expect(doc.Checks.Runtime.State).To(Equal("fail"))
-			Expect(doc.Checks.Runtime.Code).To(Equal("node_unverifiable"))
-			Expect(doc.Checks.Runtime.Kind).To(Equal("node"))
-			Expect(doc.Checks.Runtime.Origin).To(Equal("path"))
-			Expect(doc.Checks.Runtime.Detail).To(Equal("node --version failed to start: no such file or directory"))
-			Expect(doc.Checks.Runtime.Detail).NotTo(ContainSubstring(string(os.PathSeparator)), "the detail must not leak the stub node's host path")
-			Expect(doc.Checks.Runtime.Detail).NotTo(ContainSubstring("fork/exec"), "the detail must not leak the raw fork/exec diagnostic")
-			Expect(doc.Status).To(Equal("needs_prerequisite"))
-
-			var action readinessNextActionDoc
-			for _, a := range doc.NextActions {
-				if a.Kind == "repair_runtime_probe" {
-					action = a
-				}
-			}
-			Expect(action.Kind).To(Equal("repair_runtime_probe"))
-			Expect(action.Executable).To(BeFalse())
-			Expect(action.RuntimeKind).To(Equal("node"))
-			Expect(action.Supported).To(BeEmpty(), "repair_runtime_probe carries no supported field")
-			Expect(action.FoundVersion).To(BeEmpty(), "repair_runtime_probe carries no found_version field")
-			Expect(action.Detail).To(Equal("node --version failed to start: no such file or directory"))
-
-			textStdout, textStderr, textExit := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json")
-			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
-			text := string(textStdout)
-			Expect(text).To(ContainSubstring("runtime: fail (node_unverifiable) kind=node origin=path"))
-			Expect(text).To(ContainSubstring("repair_runtime_probe (executable=false) runtime_kind=node detail=node --version failed to start: no such file or directory"))
+			body_projectReadinessAcceptanceTest_reportsNodeFailNodeUnverifiableWithABoundedPathF_865()
 		})
 	})
 
@@ -1375,51 +793,6 @@ var _ = Describe("coach codesignal --baseline --prepare-compiler --project-langu
 	})
 })
 
-// writeWorktreeFile writes name with contents directly into the worktree at
-// repo without committing or `git add`ing it. The compiler check reads
-// package.json/mise.toml/node_modules as host-readiness state of the
-// worktree, never the Git snapshot, so these fixtures deliberately stay
-// uncommitted -- proving the resolver reads the worktree directly rather
-// than depending on anything reaching HEAD.
-func writeWorktreeFile(repo, name, contents string) {
-	full := filepath.Join(repo, name)
-	Expect(os.MkdirAll(filepath.Dir(full), 0o755)).To(Succeed())
-	Expect(os.WriteFile(full, []byte(contents), 0o644)).To(Succeed())
-}
-
-func writeInstalledTypescript(repo, version string) {
-	writeInstalledTypescriptUnder(repo, ".", version)
-}
-
-func writeInstalledTypescriptCompilerOnly(repo, version string) {
-	writeInstalledTypescriptCompilerUnder(repo, ".", version)
-}
-
-func writeInstalledTypescriptUnder(repo, relDir, version string) {
-	writeInstalledTypescriptCompilerUnder(repo, relDir, version)
-	writeInstalledNativeTypescriptUnder(repo, relDir, version)
-}
-
-func writeInstalledTypescriptCompilerUnder(repo, relDir, version string) {
-	if _, err := os.Stat(filepath.Join(repo, ".gitignore")); err != nil {
-		commitFile(repo, ".gitignore", "node_modules\n")
-	}
-	manifest := "node_modules/typescript/package.json"
-	if relDir != "." && relDir != "" {
-		manifest = relDir + "/" + manifest
-	}
-	writeWorktreeFile(repo, manifest, fmt.Sprintf(`{"name":"typescript","version":%q}`+"\n", version))
-}
-
-func writeInstalledNativeTypescriptUnder(repo, relDir, version string) {
-	unscoped := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
-	manifest := filepath.Join("node_modules", "@typescript", unscoped, "package.json")
-	if relDir != "." && relDir != "" {
-		manifest = relDir + "/" + manifest
-	}
-	writeWorktreeFile(repo, manifest, fmt.Sprintf(`{"name":%q,"version":%q}`+"\n", "@typescript/"+unscoped, version))
-}
-
 var _ = Describe("coach codesignal --baseline --check-project --project-language typescript: compiler resolution", func() {
 	When("the committed package.json declares a unique exact typescript version", func() {
 		It("reports the compiler check as pass with the resolved version, from the project manifest origin", func() {
@@ -1531,10 +904,6 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"7.0.2\"\n")
 
-			// Built at runtime, not committed: mirrors mise 2026.9's real
-			// layout, where mise's default npm backend hoists the compiler
-			// itself to a symlink but leaves its native optionalDependency
-			// sibling only beside the real (symlink-resolved) directory.
 			toolRoot := GinkgoT().TempDir()
 			realDir := filepath.Join(toolRoot, ".mise", "typescript@7.0.2", "node_modules", "typescript")
 			Expect(os.MkdirAll(realDir, 0o755)).To(Succeed())
@@ -1548,13 +917,9 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			Expect(os.MkdirAll(symlinkParent, 0o755)).To(Succeed())
 			symlinkPath := filepath.Join(symlinkParent, "typescript")
 			Expect(os.Symlink(realDir, symlinkPath)).To(Succeed())
-			// Deliberately no sibling beside the symlink itself
-			// (symlinkParent/@typescript must not exist).
 
 			miseDir := GinkgoT().TempDir()
-			// `mise where` reports the tool ROOT, not the package directory:
-			// locateMiseTypescriptInstall itself joins node_modules/typescript
-			// onto whatever this echoes (project_ts_compiler_mise_probe.go).
+
 			script := fmt.Sprintf("#!/bin/sh\n"+
 				"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n"+
 				"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n"+
@@ -1575,38 +940,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 	When("package.json's declared exact typescript version disagrees with the version actually installed under node_modules/typescript", func() {
 		It("reports the compiler check as fail/typescript_version_mismatch with both versions recorded", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"7.0.2"}}`+"\n")
-			writeInstalledTypescript(repo, "7.0.2")
-			writeWorktreeFile(repo, "node_modules/typescript/package.json", `{"name":"typescript","version":"5.4.0"}`+"\n")
-
-			path := pathWithStubNode("v24.9.9")
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Compiler.State).To(Equal("fail"))
-			Expect(doc.Checks.Compiler.Code).To(Equal("typescript_version_mismatch"))
-			Expect(doc.Checks.Compiler.ExpectedVersion).To(Equal("7.0.2"))
-			Expect(doc.Checks.Compiler.FoundVersion).To(Equal("5.4.0"))
-			Expect(doc.Checks.Compiler.SupportedVersions).To(Equal([]string{"7.0.2"}))
-			Expect(gapCodes(doc)).To(ContainElement("typescript_version_mismatch"))
-			Expect(nextActionKinds(doc)).To(ContainElement("prepare_compiler"))
-
-			var action readinessNextActionDoc
-			for _, a := range doc.NextActions {
-				if a.Kind == "prepare_compiler" {
-					action = a
-				}
-			}
-			Expect(action.Kind).To(Equal("prepare_compiler"))
-			Expect(action.Executable).To(BeTrue())
-			Expect(action.RuntimeKind).To(BeEmpty(), "prepare_compiler carries no runtime_kind field")
-			Expect(action.Supported).To(Equal([]string{"7.0.2"}))
-			Expect(action.FoundVersion).To(Equal("5.4.0"))
-			Expect(action.Detail).To(BeEmpty(), "prepare_compiler carries no detail field")
+			body_projectReadinessAcceptanceTest_reportsTheCompilerCheckAsFailTypescriptVersionMi_1197()
 		})
 	})
 
@@ -1862,39 +1196,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 	When("package.json declares an exact out-of-set typescript version, 7.0.2 is installed at the project origin, and project mise supplies 7.0.2", func() {
 		It("passes from the project origin, which outranks the mise pin, and warns that the manifest declares a stale exact version", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","devDependencies":{"typescript":"5.4.0"}}`+"\n")
-			writeInstalledTypescript(repo, "7.0.2")
-			writeWorktreeFile(repo, "mise.toml", "[tools]\n\"npm:typescript\" = \"7.0.2\"\n")
-
-			path, _ := pathWithStubNodeAndMise("v24.9.9", "7.0.2")
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "project.json", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(doc.Checks.Compiler.State).To(Equal("pass"), "the compiler installed at the project origin is its candidate whatever the manifest declares, got state=%s code=%s stdout=%s", doc.Checks.Compiler.State, doc.Checks.Compiler.Code, stdout)
-			Expect(doc.Checks.Compiler.Version).To(Equal("7.0.2"))
-			Expect(doc.Status).To(Equal("ready_with_limits"))
-			Expect(gapCodes(doc)).NotTo(ContainElement("compiler_declaration_mismatch"))
-			Expect(doc.Warnings).To(ContainElement(HaveField("Code", "compiler_declaration_mismatch")))
-			var warning struct {
-				DeclaredVersion   string
-				FoundVersion      string
-				DeclarationOrigin string
-			}
-			for _, w := range doc.Warnings {
-				if w.Code == "compiler_declaration_mismatch" {
-					warning.DeclaredVersion = w.DeclaredVersion
-					warning.FoundVersion = w.FoundVersion
-					warning.DeclarationOrigin = w.DeclarationOrigin
-				}
-			}
-			Expect(warning.DeclaredVersion).To(Equal("5.4.0"), "warning must name the stale exact pin, got %+v stdout=%s", warning, stdout)
-			Expect(warning.FoundVersion).To(Equal("7.0.2"))
-			Expect(warning.DeclarationOrigin).To(Equal("manifest"))
+			body_projectReadinessAcceptanceTest_passesFromTheProjectOriginWhichOutranksTheMisePi_1484()
 		})
 	})
 
@@ -1921,22 +1223,7 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 
 	When("the worktree mise.toml carries an env exec template that would write a sentinel", func() {
 		It("produces no side effect during --check-project because mise probes use a neutral working directory", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-			sentinel := filepath.Join(repo, "mise-exec-side-effect")
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = \"7.0.2\"\n\n[env]\nSIDE_EFFECT = \"{{ exec(command='touch %s') }}\"\n", sentinel))
-
-			path, miseDir := pathWithStubNodeAndMise("v24.9.9", "7.0.2")
-
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-			Expect(stdout).NotTo(BeEmpty())
-
-			_, statErr := os.Stat(sentinel)
-			Expect(os.IsNotExist(statErr)).To(BeTrue(), "mise exec template must not run during the fit check")
-			for _, cwd := range readStubMiseCwds(miseDir) {
-				Expect(cwd).NotTo(Equal(repo), "mise probes must not run with the analyzed repository as cwd, got %q", cwd)
-			}
+			body_projectReadinessAcceptanceTest_producesNoSideEffectDuringCheckProjectBecauseMis_1543()
 		})
 	})
 })
@@ -2009,185 +1296,6 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 	})
 })
 
-// writeStatefulStubMiseScript mirrors writeStubMiseScript's shape but models
-// mise's own real pre/post-install state transition, offline: `mise where`
-// fails until an `install` invocation for toolSpec has actually run
-// (moving a pre-staged fixture into place), so a spec can prove that a
-// post-install rerun genuinely observes a state change caused by the
-// install it confirmed, without a real network-dependent mise install.
-// Every invocation's argv is logged exactly like writeStubMiseScript's, so
-// readStubMiseInvocations/miseInvocationsIncludeInstall work identically.
-func writeStatefulStubMiseScript(version string) (dir string) {
-	dir, err := os.MkdirTemp("", "coach-acceptance-statefulmise-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	staging := filepath.Join(dir, "staging")
-	Expect(os.MkdirAll(filepath.Join(staging, "node_modules", "typescript"), 0o755)).To(Succeed())
-	Expect(os.WriteFile(filepath.Join(staging, "node_modules", "typescript", "package.json"), []byte(fmt.Sprintf(`{"name":"typescript","version":%q}`+"\n", version)), 0o644)).To(Succeed())
-	nativeUnscoped := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
-	nativeDir := filepath.Join(staging, "node_modules", "@typescript", nativeUnscoped)
-	Expect(os.MkdirAll(nativeDir, 0o755)).To(Succeed())
-	Expect(os.WriteFile(filepath.Join(nativeDir, "package.json"), []byte(fmt.Sprintf(`{"name":%q,"version":%q}`+"\n", "@typescript/"+nativeUnscoped, version)), 0o644)).To(Succeed())
-
-	installDir := filepath.Join(dir, "install")
-	script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\n"+
-		"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n"+
-		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n"+
-		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ]; then exit 1; fi\n"+
-		"if [ \"$1\" = \"install\" ]; then mv %q %q; exit 0; fi\n"+
-		"if [ \"$1\" = \"where\" ]; then if [ -d %q ]; then echo %q; exit 0; else exit 1; fi; fi\n"+
-		"echo %s\n",
-		filepath.Join(dir, stubMiseInvocationLog), staging, installDir, installDir, installDir, version)
-	Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755)).To(Succeed())
-	return dir
-}
-
-func pathWithStatefulStubNodeAndMise(nodeVersion, tsVersion string) (path, miseDir string) {
-	miseDir = writeStatefulStubMiseScript(tsVersion)
-	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
-	return path, miseDir
-}
-
-// writeStatefulStubMiseScriptGlobalAware extends writeStatefulStubMiseScript's
-// pre/post-install state transition (`mise where` failing until `install`
-// has actually moved the staged fixture into place) with an always-succeeding
-// `mise config get tools.npm:typescript -g`. The production install path
-// never runs `mise use -g`, so `config get -g` cannot start succeeding as a
-// side effect of that install; the faithful pre-install state this models is
-// "the global mise config already declares npm:typescript@<version> but it
-// is not yet installed".
-func writeStatefulStubMiseScriptGlobalAware(version string) (dir string) {
-	dir, err := os.MkdirTemp("", "coach-acceptance-statefulmiseglobal-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	staging := filepath.Join(dir, "staging")
-	Expect(os.MkdirAll(filepath.Join(staging, "node_modules", "typescript"), 0o755)).To(Succeed())
-	Expect(os.WriteFile(filepath.Join(staging, "node_modules", "typescript", "package.json"), []byte(fmt.Sprintf(`{"name":"typescript","version":%q}`+"\n", version)), 0o644)).To(Succeed())
-	nativeUnscoped := fmt.Sprintf("typescript-%s-%s", runtime.GOOS, npmArchName())
-	nativeDir := filepath.Join(staging, "node_modules", "@typescript", nativeUnscoped)
-	Expect(os.MkdirAll(nativeDir, 0o755)).To(Succeed())
-	Expect(os.WriteFile(filepath.Join(nativeDir, "package.json"), []byte(fmt.Sprintf(`{"name":%q,"version":%q}`+"\n", "@typescript/"+nativeUnscoped, version)), 0o644)).To(Succeed())
-
-	installDir := filepath.Join(dir, "install")
-	script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\n"+
-		"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n"+
-		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n"+
-		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ]; then echo %s; exit 0; fi\n"+
-		"if [ \"$1\" = \"install\" ]; then mv %q %q; exit 0; fi\n"+
-		"if [ \"$1\" = \"where\" ]; then if [ -d %q ]; then echo %q; exit 0; else exit 1; fi; fi\n"+
-		"exit 1\n",
-		filepath.Join(dir, stubMiseInvocationLog), version, staging, installDir, installDir, installDir)
-	Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755)).To(Succeed())
-	return dir
-}
-
-func pathWithStatefulStubNodeAndMiseGlobalAware(nodeVersion, tsVersion string) (path, miseDir string) {
-	miseDir = writeStatefulStubMiseScriptGlobalAware(tsVersion)
-	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
-	return path, miseDir
-}
-
-// writeFailingInstallStubMiseScript mirrors writeStatefulStubMiseScript's
-// shape, but its `install` subcommand always exits 1 without ever moving
-// the staged fixture into place, modeling a genuine `mise install` failure
-// rather than a declined/cancelled selection.
-func writeFailingInstallStubMiseScript() (dir string) {
-	dir, err := os.MkdirTemp("", "coach-acceptance-failinstallmise-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\n"+
-		"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n"+
-		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n"+
-		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ]; then exit 1; fi\n"+
-		"if [ \"$1\" = \"install\" ]; then exit 1; fi\n",
-		filepath.Join(dir, stubMiseInvocationLog))
-	Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755)).To(Succeed())
-	return dir
-}
-
-func pathWithFailingInstallStubNodeAndMise(nodeVersion string) (path, miseDir string) {
-	miseDir = writeFailingInstallStubMiseScript()
-	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
-	return path, miseDir
-}
-
-// writeIneligibleInstallStubMiseScript mirrors writeFailingInstallStubMiseScript's
-// shape, but its `install` subcommand exits 0 without ever moving a staged
-// fixture into place, and `where` always exits 1 -- modeling a genuine mise
-// exit-zero install whose freshly-installed compiler is never actually
-// locatable, so classifyCompilerCandidate classifies it compilerClassAbsent
-// rather than eligible. This is deliberately distinct from
-// writeFailingInstallStubMiseScript's own always-exit-1 `install`: that
-// models the subprocess itself failing, this models the subprocess
-// succeeding while verification still fails.
-func writeIneligibleInstallStubMiseScript() (dir string) {
-	dir, err := os.MkdirTemp("", "coach-acceptance-ineligibleinstallmise-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\n"+
-		"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n"+
-		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n"+
-		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ]; then exit 1; fi\n"+
-		"if [ \"$1\" = \"install\" ]; then exit 0; fi\n"+
-		"if [ \"$1\" = \"where\" ]; then exit 1; fi\n",
-		filepath.Join(dir, stubMiseInvocationLog))
-	Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755)).To(Succeed())
-	return dir
-}
-
-func pathWithIneligibleInstallStubNodeAndMise(nodeVersion string) (path, miseDir string) {
-	miseDir = writeIneligibleInstallStubMiseScript()
-	path = writeStubNodeScript(nodeVersion) + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
-	return path, miseDir
-}
-
-// gitStatusPorcelain reports repo's worktree status, so a spec can prove no
-// file inside it was created, modified, or removed between two points in
-// time: a failed install must never leave Coach itself having touched the
-// repository.
-func gitStatusPorcelain(repo string) string {
-	cmd := exec.Command("git", "status", "--porcelain")
-	cmd.Dir = repo
-	output, err := cmd.Output()
-	Expect(err).NotTo(HaveOccurred())
-	return string(output)
-}
-
-// miseInvocationsIncludeInstall reports whether any invocation logged at
-// miseDir began with "install". Unlike readStubMiseInvocations, a missing
-// log file (no invocation at all yet) is not a test failure here -- it
-// simply means no install happened, which is exactly what a "no mutation"
-// assertion needs to tolerate.
-func miseInvocationsIncludeInstall(miseDir string) bool {
-	data, err := os.ReadFile(filepath.Join(miseDir, stubMiseInvocationLog))
-	if err != nil {
-		return false
-	}
-	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
-		if strings.HasPrefix(line, "install ") {
-			return true
-		}
-	}
-	return false
-}
-
-// noSupportedCompilerRepo commits a minimal TypeScript-shaped, policy-ready
-// repository with no installed or declared compiler at all, so
-// checks.compiler fails with typescript_compiler_missing and neither mise
-// scope has anything configured -- the fixture every prepare_compiler mise
-// spec below starts from.
-func noSupportedCompilerRepo() string {
-	repo := newTempGitRepo()
-	commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-	commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
-	commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-	return repo
-}
-
 var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatch (coach#328 Task 5, AC-SET-1..AC-SET-8/19/22/23/24)", func() {
 	When("mise is trusted but neither scope declares an exact supported TypeScript version", func() {
 		It("offers no installation choice, exits 0, and never invokes mise install (AC-SET-1, AC-23)", func() {
@@ -2195,10 +1303,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			path, miseDir := pathWithStatefulStubNodeAndMise("v24.9.9", "7.0.2")
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
-			// interactiveRefusalReason also refuses on a non-empty CI,
-			// which this in-process spec would inherit from the test binary's
-			// own environment on a CI runner -- passing for a reason that has
-			// nothing to do with the controlling-terminal branch it pins.
+
 			GinkgoT().Setenv("CI", "")
 
 			stdin := authoringStdin("mise_project\ninstall\n")
@@ -2284,18 +1389,10 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 		It("never prompts, never mutates mise state, and exits 2 (AC-SET-24)", func() {
 			repo := noSupportedCompilerRepo()
 			path, miseDir := pathWithStatefulStubNodeAndMise("v24.9.9", "7.0.2")
-			// Deliberately exported to PATH, unlike a spec that never
-			// touches PATH: the point of this spec is that mise is never
-			// invoked even when it IS reachable, so the "no invocation"
-			// assertion below only has teeth if the stub mise was actually
-			// on PATH the whole time.
+
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
-			// interactiveRefusalReason also refuses on a non-empty CI, and
-			// this spec inherits the test
-			// binary's own environment -- so on a CI runner the refusal below
-			// would fire from the CI half and this spec would pass without
-			// exercising the controlling-terminal branch it exists to pin.
+
 			GinkgoT().Setenv("CI", "")
 
 			stdin := authoringStdin("mise_project\ninstall\n")
@@ -2316,58 +1413,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 
 	When("both a policy gap and a compiler gap exist (AC-SET-13)", func() {
 		It("lists no mise installation choice, exits 2, and stderr names author_policy as the required first action", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-			commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
-			// Deliberately no project.json: checks.policy fails (policy_missing)
-			// alongside checks.compiler (typescript_compiler_missing).
-			path, miseDir := pathWithStatefulStubNodeAndMise("v24.9.9", "7.0.2")
-			GinkgoT().Setenv("PATH", path)
-			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
-
-			stdin := authoringStdin("")
-			defer stdin.Close()
-			stdoutFile, stderrFile, readStdout, readStderr := authoringOutputFiles()
-			defer stdoutFile.Close()
-			defer stderrFile.Close()
-
-			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
-
-			Expect(exitCode).To(Equal(2))
-			Expect(readStdout()).To(BeEmpty(), "no report must ever reach stdout from this flow")
-
-			transcript := readStderr()
-			Expect(transcript).NotTo(ContainSubstring("mise_project"), "transcript: %s", transcript)
-			Expect(transcript).NotTo(ContainSubstring("mise_global"), "transcript: %s", transcript)
-			lines := strings.Split(strings.TrimRight(transcript, "\n"), "\n")
-			Expect(lines).To(HaveLen(1), "stderr must be exactly one line, transcript: %s", transcript)
-			Expect(transcript).To(ContainSubstring("author_policy"), "transcript: %s", transcript)
-			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeFalse(), "compiler setup must never be attempted while a policy gap remains")
-
-			// Assert the boundary: --check-project output is unchanged for the
-			// same fixture -- aggregateReadiness itself stays frozen (see
-			// TestAggregateReadinessOrdersNextActionsPolicyBeforeCompiler);
-			// only --prepare-compiler withholds the choice.
-			stdout, stderr, exitCodeCheck := runCoachCheckProjectEnv(repo, path, "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
-			Expect(exitCodeCheck).To(Equal(0), "stderr: %s", stderr)
-			var doc readinessResultDoc
-			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
-			Expect(gapCodes(doc)).To(ContainElement("policy_missing"))
-			Expect(gapCodes(doc)).To(ContainElement("typescript_compiler_missing"))
-			var prepareAction, policyAction readinessNextActionDoc
-			var foundPrepare, foundPolicy bool
-			for _, a := range doc.NextActions {
-				if a.Kind == "prepare_compiler" {
-					prepareAction, foundPrepare = a, true
-				}
-				if a.Kind == "author_policy" {
-					policyAction, foundPolicy = a, true
-				}
-			}
-			Expect(foundPolicy).To(BeTrue(), "next_actions: %+v", doc.NextActions)
-			Expect(foundPrepare).To(BeTrue(), "next_actions: %+v", doc.NextActions)
-			Expect(policyAction.Executable).To(BeFalse())
-			Expect(prepareAction.Executable).To(BeTrue(), "--check-project's own next_actions must be unaffected by --prepare-compiler's own withholding")
+			body_projectReadinessAcceptanceTest_listsNoMiseInstallationChoiceExits2AndStderrName_1748()
 		})
 	})
 
@@ -2399,11 +1445,6 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			Expect(readStdout()).To(BeEmpty(), "no report must ever reach stdout from this flow")
 			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeTrue(), "a confirmed selection must invoke `mise install`")
 
-			// Observing the flow's own transcript, rather than re-deriving
-			// the fact with a second CheckProjectReadiness call, is what
-			// actually proves the flow itself reran readiness and reflected
-			// it: this string is only ever produced from
-			// result.PostInstallReadiness and result.Origin.
 			Expect(transcript).To(ContainSubstring("installed TypeScript 7.0.2 via mise_project; rerun readiness reports compiler check pass (version=7.0.2)"), "transcript: %s", transcript)
 		})
 	})
@@ -2470,17 +1511,6 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			// Driving os.MkdirTemp's own failure through the full CLI
-			// dispatch is not viable here: runMiseInstallInsulated and every
-			// mise trust/version probe this flow runs first
-			// (project_ts_compiler_mise_probe.go) share the same
-			// os.MkdirTemp("", ...) confinement mechanism, so breaking TMPDIR
-			// widely enough to fail the install's own MkdirTemp call would
-			// also fail every trust probe that must run and succeed before
-			// it, landing on the "scope refused" branch instead of this one.
-			// Calling reportPrepareCompilerMiseResult directly instead still
-			// exercises the actual, previously-unverified boundary named by
-			// the finding: this function's own message text.
 			result := codesignalcli.PrepareCompilerMiseResult{
 				Trusted: true,
 				Code:    codesignalcli.GapPackageManagerConfigUnverifiable,
@@ -2496,15 +1526,6 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 		})
 	})
 
-	// Every install-success/failure spec above only ever selects
-	// mise_project; mise_global's own trust/install path
-	// (evaluateMiseGlobalTrust/installMiseTypescriptGlobal) was previously
-	// only exercised at the internal/codesignalcli package level
-	// (project_ts_compiler_mise_command_acceptance_test.go), never through
-	// this CLI dispatch end to end. The project mise.toml here is
-	// deliberately hazardous so mise_project is withheld and mise_global is
-	// the only offered/confirmed choice, making this a genuinely distinct
-	// row rather than the same scope under a different name.
 	When("the project mise scope is untrusted (a hazardous mise.toml) so only mise_global is offered, and the user selects it and confirms", func() {
 		It("installs via the global scope, reruns readiness, and the fresh result reports the compiler check passing at that version (AC-SET-3, AC-SET-6, AC-SET-19, AC-SET-23)", func() {
 			repo := noSupportedCompilerRepo()
@@ -2529,12 +1550,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
 
 			transcript := readStderr()
-			// The hazardous project mise.toml must withhold mise_project from
-			// the offered choices entirely -- proving the install below
-			// genuinely went through the global scope's own trust/install
-			// path (evaluateMiseGlobalTrust/installMiseTypescriptGlobal),
-			// not merely that mise_global was typed as an answer while
-			// mise_project was still silently available too.
+
 			Expect(transcript).To(ContainSubstring("  - mise_global"), "transcript: %s", transcript)
 			Expect(transcript).NotTo(ContainSubstring("  - mise_project"), "the hazardous project mise.toml must withhold mise_project from the offered choices, transcript: %s", transcript)
 
@@ -2546,16 +1562,6 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 		})
 	})
 
-	// miseInstallTimeout (5m, project_ts_compiler_mise_command.go) is a
-	// package-level const, not overridable from this test file, and a real
-	// 5-minute wait is unacceptable in this suite. RunPrepareCompilerMiseSetup
-	// accepts its own ctx, and context.WithTimeout composes: supplying a
-	// short-deadline ctx here (rather than the CLI dispatch's hardcoded
-	// context.Background()) lets the shorter deadline win without touching
-	// miseInstallTimeout or any file outside this task's scope. `exec sleep`
-	// (rather than plain `sleep`) mirrors writeHangingNodeScript's own
-	// rationale above: replacing the shell's process image so the context
-	// deadline's kill lands on the sleep itself, not an orphaned child.
 	When("the caller supplies a context deadline shorter than mise's own five-minute install timeout, and `mise install` runs long enough to exceed it", func() {
 		It("cuts the install off at that shorter deadline: attempted but never observed, well before the stub's own sleep would otherwise finish", func() {
 			repo := noSupportedCompilerRepo()
@@ -2591,13 +1597,6 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			result := codesignalcli.RunPrepareCompilerMiseSetup(ctx, repo, revision, "", readiness, stdin, &transcript)
 			elapsed := time.Since(start)
 
-			// Both bounds matter, not just the upper one: a lower bound near
-			// the supplied 2s deadline is what actually distinguishes a
-			// genuine deadline cutoff from some unrelated fast failure that
-			// would trivially satisfy "attempted but not succeeded" too
-			// (e.g. mise being unreachable) without ever exercising
-			// runBoundedMiseInstallSubprocess's ctx.Err() ==
-			// context.DeadlineExceeded branch at all.
 			Expect(elapsed).To(BeNumerically(">=", 2*time.Second), "the install must run at least as long as the supplied context deadline, not fail some unrelated, faster way, got elapsed=%s transcript=%s", elapsed, transcript.String())
 			Expect(elapsed).To(BeNumerically("<", 15*time.Second), "a 2s context deadline must cut the install off well before the stub's 30s sleep would otherwise finish, got elapsed=%s transcript=%s", elapsed, transcript.String())
 			Expect(result.Trusted).To(BeTrue(), "%+v", result)

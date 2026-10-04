@@ -37,32 +37,41 @@ func extractGoImports(lang engine.Language, root engine.Node, source []byte) ([]
 		if match == nil {
 			break
 		}
-		for _, capture := range match.Captures {
-			pathNode := capture.Node
-			path, unquoteErr := strconv.Unquote(pathNode.Utf8Text(source))
-			if unquoteErr != nil {
-				// The tree is already known to be free of syntax errors by
-				// the time extractGoImports runs (see AC-2.1's HasError gate),
-				// so every import_spec path node's text is a valid Go string
-				// literal; strconv.Unquote failing here means our
-				// grammar/query assumptions are wrong, not that the source
-				// is malformed. Surface it rather than silently falling back
-				// to naive delimiter stripping, which would mask the bug by
-				// returning wrong data instead of an error.
-				return nil, fmt.Errorf("semantics: unquoting import path %q: %w", pathNode.Utf8Text(source), unquoteErr)
-			}
-			imports = append(imports, ImportFeature{
-				Path:     path,
-				Alias:    importAlias(pathNode, source),
-				Location: locationFromNode(pathNode),
-			})
+		imported, err := importFeaturesFromCaptures(match.Captures, source)
+		if err != nil {
+			return nil, err
 		}
+		imports = append(imports, imported...)
 	}
 
 	sort.Slice(imports, func(i, j int) bool {
 		return imports[i].Location.StartByte < imports[j].Location.StartByte
 	})
 
+	return imports, nil
+}
+
+// The tree is already known to be free of syntax errors by the time
+// extractGoImports runs (see AC-2.1's HasError gate), so every import_spec
+// path node's text is a valid Go string literal; strconv.Unquote failing
+// here means our grammar/query assumptions are wrong, not that the source
+// is malformed. Surface it rather than silently falling back to naive
+// delimiter stripping, which would mask the bug by returning wrong data
+// instead of an error.
+func importFeaturesFromCaptures(captures []engine.QueryCapture, source []byte) ([]ImportFeature, error) {
+	var imports []ImportFeature
+	for _, capture := range captures {
+		pathNode := capture.Node
+		path, unquoteErr := strconv.Unquote(pathNode.Utf8Text(source))
+		if unquoteErr != nil {
+			return nil, fmt.Errorf("semantics: unquoting import path %q: %w", pathNode.Utf8Text(source), unquoteErr)
+		}
+		imports = append(imports, ImportFeature{
+			Path:     path,
+			Alias:    importAlias(pathNode, source),
+			Location: locationFromNode(pathNode),
+		})
+	}
 	return imports, nil
 }
 

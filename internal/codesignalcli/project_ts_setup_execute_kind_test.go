@@ -25,11 +25,7 @@ func TestExecuteSetupRefusesRowWhoseExecutableDiffersFromItsMapKey(t *testing.T)
 		args:       fakeArgs,
 	}
 	t.Cleanup(func() {
-		if hadOriginal {
-			setupCommandTemplates[fakeKind] = original
-		} else {
-			delete(setupCommandTemplates, fakeKind)
-		}
+		body_projectTsSetupExecuteKindTest_27(fakeKind, original, hadOriginal)
 	})
 
 	// A stub literally named fakeKind: if ExecuteSetup ever spawns

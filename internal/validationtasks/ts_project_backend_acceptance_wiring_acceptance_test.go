@@ -6,9 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli"
 )
 
 var _ = Describe("ts-project-backend-acceptance wiring", func() {

@@ -178,28 +178,9 @@ func NewQueue(cfg Config, clock acceptanceharness.Clock) (*Queue, error) {
 }
 
 // Close stops consuming and releases the underlying Redis connection.
-func (q *Queue) Close() error {
-	q.cancelSub()
-	subErr := q.subscriber.Close()
-	pubErr := q.publisher.Close()
-	if subErr != nil {
-		return subErr
-	}
-	return pubErr
-}
 
 // Enqueue publishes task onto the Redis Stream via the Watermill
 // Publisher (an XADD under the hood).
-func (q *Queue) Enqueue(ctx context.Context, task queue.Task) error {
-	msg := message.NewMessage(watermill.NewUUID(), task.Payload)
-	msg.Metadata.Set(taskIDMetadataKey, task.ID)
-	msg.SetContext(ctx)
-
-	if err := q.publisher.Publish(q.stream, msg); err != nil {
-		return fmt.Errorf("redisstream: enqueue task %q: %w", task.ID, err)
-	}
-	return nil
-}
 
 // Claim first reclaims any pending claim whose ClaimAfter has elapsed
 // (per the injected Clock), and only if none did, waits up to
@@ -234,28 +215,6 @@ func (q *Queue) Claim(ctx context.Context) (queue.Claim, bool, error) {
 // Either path invalidates the old Token, per TaskQueue.Complete/Nack's
 // stale-token contract, without touching the underlying Watermill
 // message's Ack/Nack channels (see pendingClaim's doc comment).
-func (q *Queue) reclaimExpired() (queue.Claim, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	now := q.clock.Now()
-	for token, pc := range q.pending {
-		if pc.readyForClaim {
-			pc.readyForClaim = false
-			return queue.Claim{TaskID: pc.taskID, Attempt: pc.attempt, Token: pc.token}, true
-		}
-		if now.Sub(pc.claimedAt) < q.claimAfter {
-			continue
-		}
-		delete(q.pending, token)
-		pc.attempt++
-		pc.token = watermill.NewUUID()
-		pc.claimedAt = now
-		q.pending[pc.token] = pc
-		return queue.Claim{TaskID: pc.taskID, Attempt: pc.attempt, Token: pc.token}, true
-	}
-	return queue.Claim{}, false
-}
 
 // trackNewClaim records a freshly delivered Watermill message as a new
 // pendingClaim (attempt 0) and returns its Claim.
@@ -280,17 +239,6 @@ func (q *Queue) trackNewClaim(msg *message.Message) queue.Claim {
 // Token, or ok=false if no such claim is currently outstanding (already
 // completed, poisoned, or superseded by a reclaim) -- the stale-token
 // condition Complete and Nack must both fail under.
-func (q *Queue) takePending(claim queue.Claim) (*pendingClaim, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	pc, ok := q.pending[claim.Token]
-	if !ok || pc.taskID != claim.TaskID {
-		return nil, false
-	}
-	delete(q.pending, claim.Token)
-	return pc, true
-}
 
 // Complete acknowledges claim's task attempt as durably finished. It
 // fails if claim.Token has been invalidated by a reclaim.
@@ -309,53 +257,16 @@ func (q *Queue) Complete(ctx context.Context, claim queue.Claim) error {
 // underlying message (ADR-006 rule 5) and republishes the task onto the
 // poison-task destination stream; PoisonTasks reads that stream back.
 // Nack fails under the same stale-token condition as Complete.
-func (q *Queue) Nack(ctx context.Context, claim queue.Claim, permanent bool) error {
-	pc, ok := q.takePending(claim)
-	if !ok {
-		return fmt.Errorf("redisstream: nack: claim token invalid or expired for task %q", claim.TaskID)
-	}
 
-	if permanent {
-		// Publish to the poison destination before acking the source
-		// message: if publishPoison fails, the source message stays
-		// pending (unacked) rather than being silently dropped, so a
-		// crash/retry can still recover the task instead of losing it.
-		if err := q.publishPoison(ctx, pc.taskID, pc.msg.Payload); err != nil {
-			q.mu.Lock()
-			q.pending[pc.token] = pc
-			q.mu.Unlock()
-			return err
-		}
-		pc.msg.Ack()
-		return nil
-	}
+// Publish to the poison destination before acking the source
+// message: if publishPoison fails, the source message stays
+// pending (unacked) rather than being silently dropped, so a
+// crash/retry can still recover the task instead of losing it.
 
-	pc.attempt++
-	pc.token = watermill.NewUUID()
-	pc.claimedAt = q.clock.Now()
-	// readyForClaim makes the retried task immediately reclaimable by the
-	// next Claim (see pendingClaim's doc comment), per TaskQueue's
-	// immediate-availability-after-retryable-Nack contract, instead of
-	// waiting out a fresh claimAfter window.
-	pc.readyForClaim = true
-
-	q.mu.Lock()
-	q.pending[pc.token] = pc
-	q.mu.Unlock()
-
-	return nil
-}
-
-func (q *Queue) publishPoison(ctx context.Context, taskID string, payload []byte) error {
-	msg := message.NewMessage(watermill.NewUUID(), payload)
-	msg.Metadata.Set(taskIDMetadataKey, taskID)
-	msg.SetContext(ctx)
-
-	if err := q.publisher.Publish(q.poisonStream, msg); err != nil {
-		return fmt.Errorf("redisstream: publishing task %q to poison destination %q: %w", taskID, q.poisonStream, err)
-	}
-	return nil
-}
+// readyForClaim makes the retried task immediately reclaimable by the
+// next Claim (see pendingClaim's doc comment), per TaskQueue's
+// immediate-availability-after-retryable-Nack contract, instead of
+// waiting out a fresh claimAfter window.
 
 // PoisonTasks returns every task a permanent Nack has routed to the
 // poison-task destination stream, oldest first. It is not part of
@@ -363,19 +274,3 @@ func (q *Queue) publishPoison(ctx context.Context, taskID string, payload []byte
 // requires it so both this package's own tests and the shared
 // conformance suite can assert the poison destination actually received a
 // task.
-func (q *Queue) PoisonTasks(ctx context.Context) ([]queue.Task, error) {
-	entries, err := q.client.XRange(ctx, q.poisonStream, "-", "+").Result()
-	if err != nil {
-		return nil, fmt.Errorf("redisstream: reading poison-task destination %q: %w", q.poisonStream, err)
-	}
-
-	tasks := make([]queue.Task, 0, len(entries))
-	for _, entry := range entries {
-		msg, err := q.unmarshaller.Unmarshal(entry.Values)
-		if err != nil {
-			return nil, fmt.Errorf("redisstream: decoding poison-task destination entry %s: %w", entry.ID, err)
-		}
-		tasks = append(tasks, queue.Task{ID: msg.Metadata.Get(taskIDMetadataKey), Payload: msg.Payload})
-	}
-	return tasks, nil
-}

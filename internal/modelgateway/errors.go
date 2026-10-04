@@ -31,10 +31,6 @@ func (e *ValidationError) detail() string {
 
 func (e *ValidationError) Unwrap() error { return ErrSchemaValidation }
 
-func NewValidationError(detail string) error {
-	return &ValidationError{Detail: detail}
-}
-
 // UnavailableError is a typed unavailable/transient failure.
 // errors.Is(err, ErrUnavailable) and errors.As(err, *UnavailableError) both work.
 type UnavailableError struct {

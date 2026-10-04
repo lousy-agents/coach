@@ -1,8 +1,6 @@
 package semantics
 
 import (
-	"strconv"
-
 	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
@@ -51,15 +49,6 @@ type tsMutatesInputKey struct {
 // conflict with Evidence staying short, and would also diverge from the Go
 // detector, whose evidence is likewise just the mutated selector/index
 // target (e.g. cfg.Name), never including the assigned value.
-func (c *tsFeatureCollector) checkMutatesInputAssignment(n engine.Node, source []byte, scopes []tsParamScope) {
-	left := n.ChildByFieldName("left")
-	base := tsMutationBase(left)
-	if base != nil {
-		c.recordMutatesInput(base, left, source, scopes)
-		return
-	}
-	c.recordMutatesInputAssignmentTargets(left, source, scopes)
-}
 
 // checkMutatesInputDelete emits a "mutates_input" Finding (Story 2) if n
 // (a unary_expression) is a `delete` of a property or index rooted at some
@@ -70,51 +59,6 @@ func (c *tsFeatureCollector) checkMutatesInputAssignment(n engine.Node, source [
 // extra unbounded content beyond its "delete" keyword and target argument,
 // so it is already short and bounded, and keeping the keyword makes the
 // evidence self-explanatory as a deletion rather than a read.
-func (c *tsFeatureCollector) checkMutatesInputDelete(n engine.Node, source []byte, scopes []tsParamScope) {
-	operator := n.ChildByFieldName("operator")
-	if operator == nil || operator.Utf8Text(source) != "delete" {
-		return
-	}
-	base := tsMutationBase(n.ChildByFieldName("argument"))
-	if base == nil {
-		return
-	}
-	c.recordMutatesInput(base, n, source, scopes)
-}
-
-func (c *tsFeatureCollector) checkMutatesInputUpdate(n engine.Node, source []byte, scopes []tsParamScope) {
-	target := n.ChildByFieldName("argument")
-	base := tsMutationBase(target)
-	if base == nil {
-		return
-	}
-	c.recordMutatesInput(base, target, source, scopes)
-}
-
-func (c *tsFeatureCollector) recordMutatesInputAssignmentTargets(n engine.Node, source []byte, scopes []tsParamScope) {
-	if n == nil {
-		return
-	}
-	if base := tsMutationBase(n); base != nil {
-		c.recordMutatesInput(base, n, source, scopes)
-		return
-	}
-	switch n.Kind() {
-	case "parenthesized_expression":
-		c.recordMutatesInputAssignmentTargets(tsWrappedExpressionInner(n), source, scopes)
-	case "pair_pattern":
-		c.recordMutatesInputAssignmentTargets(n.ChildByFieldName("value"), source, scopes)
-	case "assignment_pattern":
-		c.recordMutatesInputAssignmentTargets(n.ChildByFieldName("left"), source, scopes)
-	case "rest_pattern":
-		c.recordMutatesInputAssignmentTargets(n.ChildByFieldName("argument"), source, scopes)
-	case "object_pattern", "array_pattern":
-		count := n.ChildCount()
-		for i := 0; i < count; i++ {
-			c.recordMutatesInputAssignmentTargets(n.Child(i), source, scopes)
-		}
-	}
-}
 
 // checkMutatesInputCall emits a "mutates_input" Finding (Story 2) if n (a
 // call_expression) calls one of mutatingTSMethodNames on a receiver
@@ -128,52 +72,6 @@ func (c *tsFeatureCollector) recordMutatesInputAssignmentTargets(n engine.Node, 
 // (`p.items.push(someVeryLargeExpression())`), which would conflict with
 // Evidence staying short, and would also diverge from the Go detector's
 // bounded, target-only evidence.
-func (c *tsFeatureCollector) checkMutatesInputCall(n engine.Node, source []byte, scopes []tsParamScope) {
-	fn := n.ChildByFieldName("function")
-	if fn == nil {
-		return
-	}
-	object, methodName := tsMutatingMethodReceiver(fn, source)
-	if object == nil || !mutatingTSMethodNames[methodName] {
-		return
-	}
-	base := tsResolveRootIdentifier(object)
-	if base == nil {
-		return
-	}
-	c.recordMutatesInput(base, fn, source, scopes)
-}
-
-func tsMutatingMethodReceiver(fn engine.Node, source []byte) (engine.Node, string) {
-	switch fn.Kind() {
-	case "member_expression":
-		property := fn.ChildByFieldName("property")
-		if property == nil {
-			return nil, ""
-		}
-		return fn.ChildByFieldName("object"), property.Utf8Text(source)
-	case "subscript_expression":
-		index := fn.ChildByFieldName("index")
-		methodName, ok := tsStringLiteralText(index, source)
-		if !ok {
-			return nil, ""
-		}
-		return fn.ChildByFieldName("object"), methodName
-	default:
-		return nil, ""
-	}
-}
-
-func tsStringLiteralText(n engine.Node, source []byte) (string, bool) {
-	if n == nil || n.Kind() != "string" {
-		return "", false
-	}
-	value, err := strconv.Unquote(n.Utf8Text(source))
-	if err != nil {
-		return "", false
-	}
-	return value, true
-}
 
 // tsMutationBase resolves expr (a candidate mutation target/argument) down
 // to the root identifier it is ultimately rooted at, when expr is a
@@ -185,15 +83,6 @@ func tsStringLiteralText(n engine.Node, source []byte) (string, bool) {
 // a rebind, not a write-through) and a chain that bottoms out in something
 // other than a plain identifier (e.g. `f().x`), which is not resolved to a
 // root.
-func tsMutationBase(expr engine.Node) engine.Node {
-	if expr == nil {
-		return nil
-	}
-	if expr.Kind() != "member_expression" && expr.Kind() != "subscript_expression" {
-		return nil
-	}
-	return tsResolveRootIdentifier(expr.ChildByFieldName("object"))
-}
 
 // tsResolveRootIdentifier walks a chain of nested member_expression/
 // subscript_expression "object" fields, starting at expr, until it reaches
@@ -203,21 +92,6 @@ func tsMutationBase(expr engine.Node) engine.Node {
 // targets) and checkMutatesInputCall (method-call receivers) so nested
 // mutation targets/receivers rooted at a tracked parameter (`p.x.y = 1`,
 // `p.items.push(1)`) are resolved the same way.
-func tsResolveRootIdentifier(expr engine.Node) engine.Node {
-	for expr != nil {
-		switch expr.Kind() {
-		case "identifier":
-			return expr
-		case "member_expression", "subscript_expression":
-			expr = expr.ChildByFieldName("object")
-		case "parenthesized_expression", "non_null_expression":
-			expr = tsWrappedExpressionInner(expr)
-		default:
-			return nil
-		}
-	}
-	return nil
-}
 
 func tsWrappedExpressionInner(expr engine.Node) engine.Node {
 	for _, field := range []string{"expression", "operand", "argument"} {

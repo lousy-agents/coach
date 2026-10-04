@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ThreeDotsLabs/watermill"
-
 	"github.com/lousy-agents/coach/internal/authz"
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
 )
@@ -33,51 +31,16 @@ type Server struct {
 }
 
 // NewServer requires cfg.Store, cfg.Authorizer, and cfg.Queue.
-func NewServer(cfg ServerConfig) (*Server, error) {
-	if cfg.Store == nil {
-		return nil, errors.New("coachapi: ServerConfig.Store is required")
-	}
-	if cfg.Authorizer == nil {
-		return nil, errors.New("coachapi: ServerConfig.Authorizer is required")
-	}
-	if cfg.Queue == nil {
-		return nil, errors.New("coachapi: ServerConfig.Queue is required")
-	}
-	now := cfg.Now
-	if now == nil {
-		now = time.Now
-	}
-	newJobID := cfg.NewJobID
-	if newJobID == nil {
-		newJobID = watermill.NewUUID
-	}
-	return &Server{
-		store:      cfg.Store,
-		authorizer: cfg.Authorizer,
-		queue:      cfg.Queue,
-		now:        now,
-		newJobID:   newJobID,
-	}, nil
-}
 
 // Handler is the /v1/jobs HTTP surface. It expects a Principal via
 // WithPrincipal. This package does not wrap itself, to avoid an import cycle
 // with internal/authn. Missing Principal yields 401.
-func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/jobs", s.handleCreateJob)
-	mux.HandleFunc("GET /v1/jobs/{id}", s.handleGetJob)
-	mux.HandleFunc("GET /v1/jobs/{id}/report", s.handleGetReport)
-	// A "/" catch-all handles unmatched routes/methods with the stable 404
-	// envelope. Unlike looking up mux.Handler(r) and re-invoking it manually,
-	// letting mux.ServeHTTP dispatch directly is required for r.PathValue("id")
-	// to be populated on the {id} routes -- mux.Handler discards the match
-	// state ServeHTTP would otherwise attach to the request.
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		writeAPIError(w, http.StatusNotFound, ErrorCodeNotFound, "not found")
-	})
-	return mux
-}
+
+// A "/" catch-all handles unmatched routes/methods with the stable 404
+// envelope. Unlike looking up mux.Handler(r) and re-invoking it manually,
+// letting mux.ServeHTTP dispatch directly is required for r.PathValue("id")
+// to be populated on the {id} routes -- mux.Handler discards the match
+// state ServeHTTP would otherwise attach to the request.
 
 // TaskPayloadSchemaVersion1 is the supported queue.Task.Payload schema
 // version for this package. ADR-006 requires versioned queue payloads; the
@@ -96,12 +59,6 @@ type taskPayload struct {
 // MarshalTaskPayload returns the ADR-006 versioned queue.Task.Payload body for
 // jobID. POST /v1/jobs and the worker requeue reconciler must use this helper
 // so submit and recovery publish the same wire shape.
-func MarshalTaskPayload(jobID string) ([]byte, error) {
-	return json.Marshal(taskPayload{
-		SchemaVersion: TaskPayloadSchemaVersion1,
-		JobID:         jobID,
-	})
-}
 
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	principal, ok := PrincipalFromContext(r.Context())
@@ -192,95 +149,10 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, CreateJobResponse{ID: job.ID})
 }
 
-func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
-	principal, ok := PrincipalFromContext(r.Context())
-	if !ok {
-		writeAPIError(w, http.StatusUnauthorized, ErrorCodeUnauthenticated, "unauthenticated")
-		return
-	}
-
-	id := r.PathValue("id")
-	job, err := s.store.GetJob(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, ErrJobNotFound) {
-			writeAPIError(w, http.StatusNotFound, ErrorCodeJobNotFound, "job not found")
-			return
-		}
-		writeAPIError(w, http.StatusServiceUnavailable, ErrorCodeInternalError, "failed to load job")
-		return
-	}
-
-	if !ownsJob(principal, job) {
-		writeAPIError(w, http.StatusForbidden, ErrorCodeUnauthorized, "you are not authorized to view this job")
-		return
-	}
-
-	resp := JobStatusResponse{
-		ID:      job.ID,
-		Kind:    job.Kind,
-		Status:  job.Status,
-		Attempt: job.Attempt,
-		Error:   job.Error,
-	}
-	if job.Status == JobStatusCompleted {
-		resp.ReportURL = "/v1/jobs/" + id + "/report"
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
-
-func (s *Server) handleGetReport(w http.ResponseWriter, r *http.Request) {
-	principal, ok := PrincipalFromContext(r.Context())
-	if !ok {
-		writeAPIError(w, http.StatusUnauthorized, ErrorCodeUnauthenticated, "unauthenticated")
-		return
-	}
-
-	id := r.PathValue("id")
-	// GetJob first (not GetReport) so ownership/precedence is enforced before
-	// any report data -- including an incomplete job's existence -- is
-	// touched. 401 -> 404 -> 403 -> 409 is the required precedence order.
-	job, err := s.store.GetJob(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, ErrJobNotFound) {
-			writeAPIError(w, http.StatusNotFound, ErrorCodeJobNotFound, "job not found")
-			return
-		}
-		writeAPIError(w, http.StatusServiceUnavailable, ErrorCodeInternalError, "failed to load job")
-		return
-	}
-
-	if !ownsJob(principal, job) {
-		writeAPIError(w, http.StatusForbidden, ErrorCodeUnauthorized, "you are not authorized to view this job")
-		return
-	}
-
-	if job.Status != JobStatusCompleted {
-		writeAPIError(w, http.StatusConflict, ErrorCodeJobNotCompleted,
-			fmt.Sprintf("job is not yet completed (status: %s)", job.Status))
-		return
-	}
-
-	report, err := s.store.GetReport(r.Context(), id)
-	if err != nil {
-		writeAPIError(w, http.StatusServiceUnavailable, ErrorCodeInternalError, "failed to load report")
-		return
-	}
-	writeJSON(w, http.StatusOK, report)
-}
+// GetJob first (not GetReport) so ownership/precedence is enforced before
+// any report data -- including an incomplete job's existence -- is
+// touched. 401 -> 404 -> 403 -> 409 is the required precedence order.
 
 // ownsJob reports whether principal is the creator of job. Login is
 // deliberately excluded (a GitHub login can be renamed/reassigned); provider
 // plus the stable subject id is the identity comparison.
-func ownsJob(principal Principal, job Job) bool {
-	return principal.Provider == job.CreatedByProvider && principal.Subject == job.CreatedBySubject
-}
-
-func writeAPIError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, ErrorEnvelope{Error: APIError{Code: code, Message: message}})
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}

@@ -3,10 +3,10 @@ package codesignalcli
 import (
 	"bufio"
 	"context"
-	"errors"
+
 	"fmt"
 	"io"
-	"path/filepath"
+
 	"strings"
 )
 
@@ -32,17 +32,6 @@ func (e *ProjectConfigErrorWithReadiness) Unwrap() error { return e.ProjectConfi
 // *ProjectConfigError, or when readiness itself cannot be computed: a masked
 // compiler gap is a strictly smaller problem than losing the original
 // diagnostic entirely.
-func WrapProjectConfigErrorWithReadiness(err error, dir, revision, configPath string) error {
-	var configErr *ProjectConfigError
-	if !errors.As(err, &configErr) {
-		return err
-	}
-	readiness, readinessErr := CheckProjectReadiness(dir, revision, configPath)
-	if readinessErr != nil {
-		return err
-	}
-	return &ProjectConfigErrorWithReadiness{ProjectConfigError: configErr, Readiness: readiness, ConfigPath: configPath}
-}
 
 // CompilerUnresolvedErrorWithReadiness enriches a CompilerUnresolvedError
 // with the full TypeScript project-readiness snapshot computed for the same
@@ -75,17 +64,6 @@ func (e *CompilerUnresolvedErrorWithReadiness) Unwrap() error { return e.Compile
 // recomputing readiness here -- rather than threading a precomputed snapshot
 // down through that backend -- is what lets this wrapping live entirely in
 // this file.
-func WrapCompilerUnresolvedErrorWithReadiness(err error, dir, revision, configPath string) error {
-	var unresolved *CompilerUnresolvedError
-	if !errors.As(err, &unresolved) {
-		return err
-	}
-	readiness, readinessErr := CheckProjectReadiness(dir, revision, configPath)
-	if readinessErr != nil {
-		return err
-	}
-	return &CompilerUnresolvedErrorWithReadiness{CompilerUnresolvedError: unresolved, Readiness: readiness, Revision: revision}
-}
 
 // AlsoFailingGapLines is AC-SET-13's "report all gaps" clause: one line for
 // every gap readiness itself reports other than the policy failure the scan
@@ -106,21 +84,6 @@ func WrapCompilerUnresolvedErrorWithReadiness(err error, dir, revision, configPa
 //
 // readiness.Gaps is already emitted in the epic's frozen next-action order,
 // so iterating it preserves that ordering rather than inventing one here.
-func AlsoFailingGapLines(readiness *ReadinessResult, configPath string) []string {
-	if readiness == nil {
-		return nil
-	}
-	var lines []string
-	seen := make(map[string]bool, len(readiness.Gaps))
-	for _, gap := range readiness.Gaps {
-		if gap.Code == GapPolicyMissing || gap.Code == GapPolicyInvalid || seen[gap.Code] {
-			continue
-		}
-		seen[gap.Code] = true
-		lines = append(lines, alsoFailingGapLine(gap.Code, configPath))
-	}
-	return lines
-}
 
 func alsoFailingGapLine(code, configPath string) string {
 	return code + ": also failing, run " + typescriptInvocation("--check-project", configPath)
@@ -133,12 +96,6 @@ func alsoFailingGapLine(code, configPath string) string {
 // prepare-compiler kind (e.g. node_missing, node_unsupported): Coach has no
 // setup command that fixes a runtime-boundary gap, so appending one would
 // name a command that either does nothing or targets the wrong problem.
-func PrepareCompilerRemediation(gapCode, configPath string) string {
-	if !gapCodeIsExecutablePrepareCompiler(gapCode) {
-		return ""
-	}
-	return onATerminal(typescriptInvocation("--prepare-compiler", configPath))
-}
 
 // onATerminal qualifies a command that refuses without a controlling
 // terminal. Both commands Coach names as remediation are interactive, and
@@ -168,18 +125,6 @@ func onATerminal(invocation string) string {
 // PrepareCompilerRemediation's own gapCode-only decision, matching
 // WrapCompilerUnresolvedErrorWithReadiness's contract of returning the
 // original error unchanged when readiness itself could not be computed.
-func PrepareCompilerRemediationWithReadiness(gapCode, configPath string, readiness *ReadinessResult) string {
-	if readiness == nil {
-		return PrepareCompilerRemediation(gapCode, configPath)
-	}
-	if !gapCodeIsExecutablePrepareCompiler(gapCode) {
-		return ""
-	}
-	if !menuOffersExecutableMiseChoice(AvailableSetupChoices(*readiness)) {
-		return ""
-	}
-	return onATerminal(typescriptInvocation("--prepare-compiler", configPath))
-}
 
 // ScanSetupOfferRemediation names the interactive scan invocation itself
 // (R2) when a compiler gap's only genuinely executable setup choice is
@@ -194,28 +139,11 @@ func PrepareCompilerRemediationWithReadiness(gapCode, configPath string, readine
 // it. It returns "" whenever PrepareCompilerRemediationWithReadiness would
 // already offer its own command (a verified mise choice exists too), so the
 // two remediations are never both printed for the same gap.
-func ScanSetupOfferRemediation(gapCode, configPath string, readiness *ReadinessResult) string {
-	if readiness == nil || !gapCodeIsExecutablePrepareCompiler(gapCode) {
-		return ""
-	}
-	menu := AvailableSetupChoices(*readiness)
-	if !menuOffersExecutableChoice(menu) || menuOffersExecutableMiseChoice(menu) {
-		return ""
-	}
-	return onATerminal(typescriptScanInvocation(configPath) + " -- offers project-package setup")
-}
 
 // typescriptScanInvocation names the bare `coach codesignal --baseline`
 // scan itself, distinct from typescriptInvocation's own --check-project/
 // --prepare-compiler forms: R2's remediation points at rerunning the
 // original scan on a terminal, not at a standalone subcommand.
-func typescriptScanInvocation(configPath string) string {
-	invocation := "coach codesignal --baseline"
-	if configPath != "" {
-		invocation += " --project-config " + configPath
-	}
-	return invocation + " --project-language typescript"
-}
 
 // SuggestProjectConfigRemediation names the --suggest-project-config
 // invocation that resolves a ProjectConfigError gap for language, for
@@ -235,13 +163,6 @@ func typescriptScanInvocation(configPath string) string {
 // instruction -- draft the document, have it reviewed and committed -- is
 // the path actually open here, so it is stated alongside the command rather
 // than discovered by spending an invocation on it.
-func SuggestProjectConfigRemediation(language string) string {
-	if language == "typescript" {
-		return onATerminal(typescriptInvocation("--suggest-project-config", "")) +
-			" -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"
-	}
-	return "coach codesignal --baseline --suggest-project-config"
-}
 
 // AppendedRemediationLine withholds line whenever hasControllingTerminal is
 // true and language is "typescript": the interactive setup offer itself owns
@@ -249,12 +170,6 @@ func SuggestProjectConfigRemediation(language string) string {
 // controlling terminal is available to run it. No such offer exists for any
 // other language (only "go" reaches this today), so a controlling-terminal
 // user must still see the same appended remediation a piped invocation gets.
-func AppendedRemediationLine(hasControllingTerminal bool, language, line string) string {
-	if hasControllingTerminal && language == "typescript" {
-		return ""
-	}
-	return line
-}
 
 // gapCodeIsExecutablePrepareCompiler reports whether gapCode's next action,
 // per the authoritative gapCodeTable, is the executable prepare-compiler
@@ -263,14 +178,6 @@ func AppendedRemediationLine(hasControllingTerminal bool, language, line string)
 func gapCodeIsExecutablePrepareCompiler(gapCode string) bool {
 	kind, ok := nextActionForGapCode(gapCode)
 	return ok && nextActionExecutable(kind)
-}
-
-func typescriptInvocation(flag, projectConfigPath string) string {
-	invocation := "coach codesignal --baseline " + flag + " --project-language typescript"
-	if projectConfigPath != "" {
-		invocation += " --project-config " + projectConfigPath
-	}
-	return invocation
 }
 
 // CompilerSetupOfferResult is RunCompilerSetupOffer's outcome: the
@@ -436,14 +343,6 @@ func RunCompilerSetupOffer(ctx context.Context, dir, revision, configPath, gapCo
 // readiness's compiler check is not actually failing; a compiler gap with
 // nothing installable still produces a one-entry (cancel-only) menu, which
 // must not open an interactive prompt that can only ever be cancelled.
-func menuOffersExecutableChoice(menu SetupChoiceMenu) bool {
-	for _, choice := range menu.Choices {
-		if choice.Kind != SetupChoiceCancel {
-			return true
-		}
-	}
-	return false
-}
 
 // menuOffersExecutableMiseChoice narrows menuOffersExecutableChoice to the
 // kinds the interim --prepare-compiler flag can actually run. The scan's own
@@ -463,29 +362,6 @@ func menuOffersExecutableMiseChoice(menu SetupChoiceMenu) bool {
 // selection: an unrecognized or blank answer cancels rather than falling
 // back to any choice, mirroring promptForMiseSetupChoice's own contract
 // (project_ts_compiler_mise_install.go).
-func promptForCompilerSetupChoice(out io.Writer, reader *bufio.Reader, choices []SetupChoice) (SetupChoiceKind, bool) {
-	fmt.Fprintln(out, "TypeScript compiler setup: the following choices are offered to resolve the failing compiler check:")
-	for _, c := range choices {
-		fmt.Fprintf(out, "  - %s%s\n", c.Kind, setupChoiceScopeClause(c.Kind))
-	}
-	fmt.Fprintln(out, "Type the exact choice name to select it, or 'cancel' to cancel without making any change. There is no default: an unrecognized or blank answer cancels.")
-	fmt.Fprint(out, "> ")
-	answer, unreadable := readLine(reader)
-	if unreadable {
-		return "", true
-	}
-	answer = strings.TrimSpace(answer)
-	for _, c := range choices {
-		if answer != string(c.Kind) {
-			continue
-		}
-		if c.Kind == SetupChoiceCancel {
-			return "", true
-		}
-		return c.Kind, false
-	}
-	return "", true
-}
 
 // setupChoiceScopeClause names what each choice would touch, at the moment
 // the customer picks one. The full AC-SET-2 preview still precedes the
@@ -493,63 +369,10 @@ func promptForCompilerSetupChoice(out io.Writer, reader *bufio.Reader, choices [
 // selection itself is made from bare machine identifiers -- and
 // project_mise and global_mise differ in exactly the property a customer
 // would want to know before choosing between them.
-func setupChoiceScopeClause(kind SetupChoiceKind) string {
-	switch kind {
-	case SetupChoiceProjectPackage:
-		return " (runs this project's own package manager in the selected manifest context)"
-	case SetupChoiceProjectMise:
-		return " (installs the version this repository's mise configuration pins, into mise's shared tool store)"
-	case SetupChoiceGlobalMise:
-		return " (installs the version your global mise configuration pins, into mise's shared tool store)"
-	case SetupChoiceCancel:
-		return " (change nothing and stop this scan)"
-	default:
-		return ""
-	}
-}
 
 // runProjectPackageSetupOffer executes SetupChoiceProjectPackage through its
 // own library path (BuildSetupPreview/RunConfirmedSetupAndRecheckReadiness),
 // distinct from runMiseSetupOffer's mise install path.
-func runProjectPackageSetupOffer(ctx context.Context, dir, revision, configPath, workingDirectory string, packageManager ReadinessCheck, out io.Writer, reader *bufio.Reader) CompilerSetupOfferResult {
-	preview, err := BuildSetupPreview(SetupChoice{Kind: SetupChoiceProjectPackage}, packageManager, workingDirectory)
-	if err != nil {
-		return CompilerSetupOfferResult{Choice: SetupChoiceProjectPackage, FailureDetail: err.Error()}
-	}
-	printSetupPreview(out, preview)
-	confirmed := promptForSetupConfirmation(out, reader)
-
-	outcome, execErr := RunConfirmedSetupAndRecheckReadiness(ctx, preview, confirmed, dir, revision, configPath)
-	result := CompilerSetupOfferResult{
-		Choice:               SetupChoiceProjectPackage,
-		ChangedPaths:         repositoryRelativeChangedPaths(dir, outcome.ChangedPaths, outcome.ResidueUnknown),
-		ResidueUnknown:       outcome.ResidueUnknown,
-		PostInstallReadiness: outcome.PostInstallReadiness,
-	}
-	switch outcome.Kind {
-	case SetupOutcomeCancelled:
-		result.Cancelled = true
-	case SetupOutcomeSucceeded:
-		result.Succeeded = true
-	default:
-		result.FailureDetail = projectPackageSetupFailureDetail(outcome, execErr)
-	}
-	return result
-}
-
-func printSetupPreview(out io.Writer, preview SetupPreview) {
-	fmt.Fprintln(out, "Before this setup command runs, here is exactly what it will do:")
-	fmt.Fprintf(out, "  Executable: %s\n", preview.Executable)
-	fmt.Fprintf(out, "  Arguments: %s\n", strings.Join(preview.Args, " "))
-	fmt.Fprintf(out, "  Working directory: %s\n", preview.WorkingDirectory)
-	fmt.Fprintf(out, "  Expected changes: %s\n", preview.ExpectedChanges)
-	fmt.Fprintf(out, "  Network use: %s\n", preview.NetworkDisclosure)
-	fmt.Fprintf(out, "  Lifecycle-script policy: %s\n", preview.ScriptSuppressionPolicy)
-	if preview.PinDisclosure != "" {
-		fmt.Fprintf(out, "  Pin disclosure: %s\n", preview.PinDisclosure)
-	}
-	fmt.Fprintf(out, "  Timeout: %s\n", preview.Timeout)
-}
 
 // promptForSetupConfirmation is the single-use explicit confirmation gate
 // for a project_package setup command: only the exact token "confirm"
@@ -560,16 +383,6 @@ func promptForSetupConfirmation(out io.Writer, reader *bufio.Reader) bool {
 	fmt.Fprint(out, "> ")
 	answer, _ := readLine(reader)
 	return strings.EqualFold(strings.TrimSpace(answer), "confirm")
-}
-
-func projectPackageSetupFailureDetail(outcome SetupOutcome, err error) string {
-	if err != nil {
-		return err.Error()
-	}
-	if outcome.Execution.TimedOut {
-		return fmt.Sprintf("%s %s timed out", outcome.Execution.Executable, strings.Join(outcome.Execution.Args, " "))
-	}
-	return fmt.Sprintf("%s %s exited %d", outcome.Execution.Executable, strings.Join(outcome.Execution.Args, " "), outcome.Execution.ExitCode)
 }
 
 // projectPackageWorkingDirectory resolves BuildSetupPreview's required
@@ -589,28 +402,9 @@ func projectPackageSetupFailureDetail(outcome SetupOutcome, err error) string {
 // than falling back to the worktree root: the menu's eligibility was never
 // computed against that directory, so running an install there would consent
 // to something nobody previewed.
-func projectPackageWorkingDirectory(dir, revision, configPath string) (workingDirectory, withheldReason string) {
-	worktreeRoot := compilerWorktreeRoot(dir)
-	policyPath := configPath
-	if policyPath == "" {
-		policyPath = defaultProjectConfigPath
-	}
-	_, roots, err := checkPolicy(dir, revision, policyPath)
-	if err != nil {
-		return "", setupChoiceReasonManifestContextUnresolved
-	}
-	contexts, _ := packageManagerContexts(worktreeRoot, roots)
-	switch len(contexts) {
-	case 0:
-		// Defensive: packageManagerContexts falls back to the worktree root,
-		// so it does not return an empty slice today.
-		return "", setupChoiceReasonManifestContextUnresolved
-	case 1:
-		return contexts[0], ""
-	default:
-		return "", setupChoiceReasonManifestContextAmbiguous
-	}
-}
+
+// Defensive: packageManagerContexts falls back to the worktree root,
+// so it does not return an empty slice today.
 
 // withProjectPackageResolution re-decides the project_package entry against
 // the one fact AvailableSetupChoices cannot see: which manifest context the
@@ -618,34 +412,6 @@ func projectPackageWorkingDirectory(dir, revision, configPath string) (workingDi
 // readiness snapshot and has no dir/revision to resolve a working directory
 // with, so this is where an offer that cannot be previewed honestly is
 // converted into a withheld entry with its reason.
-func withProjectPackageResolution(menu SetupChoiceMenu, dir, revision, configPath string) (resolved SetupChoiceMenu, workingDirectory, withheldReason string) {
-	if !menuOffersChoice(menu, SetupChoiceProjectPackage) {
-		return menu, "", ""
-	}
-	workingDirectory, withheldReason = projectPackageWorkingDirectory(dir, revision, configPath)
-	if withheldReason == "" {
-		return menu, workingDirectory, ""
-	}
-	remaining := make([]SetupChoice, 0, len(menu.Choices))
-	for _, choice := range menu.Choices {
-		if choice.Kind == SetupChoiceProjectPackage {
-			continue
-		}
-		remaining = append(remaining, choice)
-	}
-	menu.Choices = remaining
-	menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: SetupChoiceProjectPackage, Reason: withheldReason})
-	return menu, "", withheldReason
-}
-
-func menuOffersChoice(menu SetupChoiceMenu, kind SetupChoiceKind) bool {
-	for _, choice := range menu.Choices {
-		if choice.Kind == kind {
-			return true
-		}
-	}
-	return false
-}
 
 // repositoryRelativeChangedPaths renders outcome.ChangedPaths for display.
 // Ordinarily they are already repository-root-relative (RunConfirmedSetup's
@@ -654,17 +420,6 @@ func menuOffersChoice(menu SetupChoiceMenu, kind SetupChoiceKind) bool {
 // true -- rewriting that single entry relative to the worktree root keeps
 // every path this function returns repository-relative, never leaking an
 // absolute filesystem path to the customer.
-func repositoryRelativeChangedPaths(dir string, changedPaths []string, residueUnknown bool) []string {
-	if !residueUnknown || len(changedPaths) != 1 {
-		return changedPaths
-	}
-	root := compilerWorktreeRoot(dir)
-	rel, err := filepath.Rel(root, changedPaths[0])
-	if err != nil {
-		return changedPaths
-	}
-	return []string{rel}
-}
 
 // runMiseSetupOffer executes a mise scope choice through its own library
 // path (miseScopeDeclaresInstallableCompiler/installMiseTypescriptProject/
@@ -674,48 +429,3 @@ func repositoryRelativeChangedPaths(dir string, changedPaths []string, residueUn
 // RunPrepareCompilerMiseSetup's standalone --prepare-compiler session uses,
 // so a customer sees identical wording regardless of which flow offered the
 // same mise scope.
-func runMiseSetupOffer(ctx context.Context, dir, revision, configPath string, kind SetupChoiceKind, out io.Writer, reader *bufio.Reader) CompilerSetupOfferResult {
-	origin := miseOriginForSetupChoiceKind(kind)
-	worktreeRoot := compilerWorktreeRoot(dir)
-	version, ok := miseScopeDeclaresInstallableCompiler(origin, worktreeRoot)
-	if !ok {
-		return CompilerSetupOfferResult{Choice: kind, FailureDetail: "the selected mise scope no longer declares an installable TypeScript version"}
-	}
-	printMisePreparePreview(out, origin, version)
-	if !promptForMiseInstallConfirmation(out, reader) {
-		return CompilerSetupOfferResult{Cancelled: true, Choice: kind}
-	}
-
-	installed := runSelectedMiseInstall(ctx, origin, worktreeRoot, version)
-	result := CompilerSetupOfferResult{Choice: kind}
-	if !installed.Trusted || !installed.Succeeded {
-		result.FailureDetail = miseSetupOfferFailureDetail(installed, version, origin)
-		return result
-	}
-
-	if postInstall, err := CheckProjectReadiness(dir, revision, configPath); err == nil {
-		result.PostInstallReadiness = postInstall
-	}
-	result.Succeeded = true
-	return result
-}
-
-func miseOriginForSetupChoiceKind(kind SetupChoiceKind) string {
-	if kind == SetupChoiceGlobalMise {
-		return compilerOriginMiseGlobal
-	}
-	return compilerOriginMiseProject
-}
-
-func miseSetupOfferFailureDetail(installed miseInstallResult, version, origin string) string {
-	switch {
-	case installed.Observed && installed.Class != "":
-		return fmt.Sprintf("mise install exited 0 but the installed TypeScript %s is not eligible (%s)", version, installed.Class)
-	case installed.Attempted:
-		return fmt.Sprintf("mise install failed for TypeScript %s under the %s scope", version, origin)
-	case installed.Code != "":
-		return fmt.Sprintf("mise install could not even be started (%s)", installed.Code)
-	default:
-		return "mise install could not even be started"
-	}
-}

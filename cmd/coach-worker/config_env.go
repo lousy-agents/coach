@@ -3,33 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
 )
-
-func applyOptionalEnv(cfg Config) (Config, error) {
-	var err error
-	cfg, err = parseRedisDB(cfg)
-	if err != nil {
-		return Config{}, err
-	}
-	cfg, err = parseDurationEnvs(cfg)
-	if err != nil {
-		return Config{}, err
-	}
-	cfg, err = parseMaxAttempts(cfg)
-	if err != nil {
-		return Config{}, err
-	}
-	cfg, err = parseBaselineBudgets(cfg)
-	if err != nil {
-		return Config{}, err
-	}
-	cfg, err = parseJudgmentEnv(cfg)
-	if err != nil {
-		return Config{}, err
-	}
-	return parseGitHubAppEnv(cfg)
-}
 
 func parseJudgmentEnv(cfg Config) (Config, error) {
 	d, ok, err := parseDurationEnv("COACH_JUDGMENT_MAX_WALL_TIME")
@@ -78,51 +52,7 @@ func parseJudgmentEnv(cfg Config) (Config, error) {
 	return cfg, nil
 }
 
-func parseBaselineBudgets(cfg Config) (Config, error) {
-	// 0 = unlimited (handler contract); negative rejected; unset keeps defaults.
-	if raw := os.Getenv("COACH_BASELINE_MAX_FILES"); raw != "" {
-		var n int
-		if _, err := fmt.Sscanf(raw, "%d", &n); err != nil || n < 0 {
-			return Config{}, fmt.Errorf("coach-worker: invalid COACH_BASELINE_MAX_FILES %q (must be integer >= 0; 0=unlimited)", raw)
-		}
-		cfg.BaselineMaxFiles = n
-	}
-	if raw := os.Getenv("COACH_BASELINE_MAX_TOTAL_BYTES"); raw != "" {
-		var n int64
-		if _, err := fmt.Sscanf(raw, "%d", &n); err != nil || n < 0 {
-			return Config{}, fmt.Errorf("coach-worker: invalid COACH_BASELINE_MAX_TOTAL_BYTES %q (must be integer >= 0; 0=unlimited)", raw)
-		}
-		cfg.BaselineMaxTotalBytes = n
-	}
-	return cfg, nil
-}
-
-func parseGitHubAppEnv(cfg Config) (Config, error) {
-	if raw := os.Getenv("COACH_GITHUB_APP_ID"); raw != "" {
-		var id int64
-		if _, err := fmt.Sscanf(raw, "%d", &id); err != nil || id < 1 {
-			return Config{}, fmt.Errorf("coach-worker: invalid COACH_GITHUB_APP_ID %q", raw)
-		}
-		cfg.GitHubAppID = id
-	}
-	if raw := os.Getenv("COACH_GITHUB_INSTALLATION_ID"); raw != "" {
-		var id int64
-		if _, err := fmt.Sscanf(raw, "%d", &id); err != nil || id < 1 {
-			return Config{}, fmt.Errorf("coach-worker: invalid COACH_GITHUB_INSTALLATION_ID %q", raw)
-		}
-		cfg.GitHubInstallationID = id
-	}
-	if pem := os.Getenv("COACH_GITHUB_APP_PRIVATE_KEY"); pem != "" {
-		cfg.GitHubPrivateKey = []byte(pem)
-	} else if path := os.Getenv("COACH_GITHUB_APP_PRIVATE_KEY_PATH"); path != "" {
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return Config{}, fmt.Errorf("coach-worker: reading COACH_GITHUB_APP_PRIVATE_KEY_PATH: %w", err)
-		}
-		cfg.GitHubPrivateKey = b
-	}
-	return cfg, nil
-}
+// 0 = unlimited (handler contract); negative rejected; unset keeps defaults.
 
 func parseRedisDB(cfg Config) (Config, error) {
 	raw := os.Getenv("COACH_REDIS_DB")
@@ -134,55 +64,5 @@ func parseRedisDB(cfg Config) (Config, error) {
 		return Config{}, fmt.Errorf("coach-worker: invalid COACH_REDIS_DB %q: %w", raw, err)
 	}
 	cfg.RedisDB = db
-	return cfg, nil
-}
-
-func parseDurationEnvs(cfg Config) (Config, error) {
-	type field struct {
-		env string
-		set func(Config, time.Duration) Config
-	}
-	fields := []field{
-		{"COACH_WORKER_HEARTBEAT_INTERVAL", func(c Config, d time.Duration) Config { c.HeartbeatInterval = d; return c }},
-		{"COACH_WORKER_STALE_AFTER", func(c Config, d time.Duration) Config { c.StaleAfter = d; return c }},
-		{"COACH_WORKER_RECONCILE_INTERVAL", func(c Config, d time.Duration) Config { c.ReconcileInterval = d; return c }},
-		{"COACH_WORKER_QUEUED_AGE_THRESHOLD", func(c Config, d time.Duration) Config { c.QueuedAgeThreshold = d; return c }},
-		{"COACH_WORKER_IDLE_POLL_INTERVAL", func(c Config, d time.Duration) Config { c.IdlePollInterval = d; return c }},
-		{"COACH_REDIS_CLAIM_AFTER", func(c Config, d time.Duration) Config { c.RedisClaimAfter = d; return c }},
-	}
-	for _, f := range fields {
-		d, ok, err := parseDurationEnv(f.env)
-		if err != nil {
-			return Config{}, err
-		}
-		if ok {
-			cfg = f.set(cfg, d)
-		}
-	}
-	return cfg, nil
-}
-
-func parseDurationEnv(env string) (time.Duration, bool, error) {
-	raw := os.Getenv(env)
-	if raw == "" {
-		return 0, false, nil
-	}
-	d, err := time.ParseDuration(raw)
-	if err != nil {
-		return 0, false, fmt.Errorf("coach-worker: invalid %s %q: %w", env, raw, err)
-	}
-	return d, true, nil
-}
-
-func parseMaxAttempts(cfg Config) (Config, error) {
-	raw := os.Getenv("COACH_WORKER_MAX_ATTEMPTS")
-	if raw == "" {
-		return cfg, nil
-	}
-	var n int
-	if _, err := fmt.Sscanf(raw, "%d", &n); err != nil || n < 1 {
-		return Config{}, fmt.Errorf("coach-worker: invalid COACH_WORKER_MAX_ATTEMPTS %q (must be integer >= 1)", raw)
-	}
-	cfg.MaxAttempts = n
 	return cfg, nil
 }
