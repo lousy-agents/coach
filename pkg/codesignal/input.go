@@ -1,7 +1,7 @@
 package codesignal
 
 import (
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -18,11 +18,11 @@ type Input struct {
 	// run). SemanticKey must be set by the caller on every entry -- it is
 	// ProjectChange's lifecycle identity, unlike Signal which derives its
 	// key from rule/path/subject/evidence.
-	ProjectChanges      []ProjectChange        `json:"project_changes,omitempty"`
-	BaseProjectChanges  []ProjectChange        `json:"base_project_changes,omitempty"`
-	ProjectFacts        []ProjectFact          `json:"project_facts,omitempty"`
-	ProjectCoverage     *projectmodel.Coverage `json:"project_coverage,omitempty"`
-	BaseProjectCoverage *projectmodel.Coverage `json:"base_project_coverage,omitempty"`
+	ProjectChanges      []ProjectChange  `json:"project_changes,omitempty"`
+	BaseProjectChanges  []ProjectChange  `json:"base_project_changes,omitempty"`
+	ProjectFacts        []ProjectFact    `json:"project_facts,omitempty"`
+	ProjectCoverage     *domain.Coverage `json:"project_coverage,omitempty"`
+	BaseProjectCoverage *domain.Coverage `json:"base_project_coverage,omitempty"`
 
 	// ProjectBaseAnalyzed reports whether a base-side project model was
 	// built at all; distinct from len(BaseProjectChanges) > 0, which cannot
@@ -70,17 +70,17 @@ type Input struct {
 	// means the backend never produced root_scopes data for that revision
 	// (distinct from an analyzed but empty scope). See ProjectBackendResult for
 	// the backend contract.
-	HeadProjectScope *projectmodel.ProjectScope `json:"head_project_scope,omitempty"`
-	BaseProjectScope *projectmodel.ProjectScope `json:"base_project_scope,omitempty"`
+	HeadProjectScope *domain.ProjectScope `json:"head_project_scope,omitempty"`
+	BaseProjectScope *domain.ProjectScope `json:"base_project_scope,omitempty"`
 
 	// Phase-specific coverage observations for each analyzed revision. A nil
 	// pointer means the phase was not observed (treat as not_run in D7 mapping).
-	HeadModelCoverage        *projectmodel.Coverage `json:"head_model_coverage,omitempty"`
-	BaseModelCoverage        *projectmodel.Coverage `json:"base_model_coverage,omitempty"`
-	HeadBypassCoverage       *projectmodel.Coverage `json:"head_bypass_coverage,omitempty"`
-	BaseBypassCoverage       *projectmodel.Coverage `json:"base_bypass_coverage,omitempty"`
-	HeadReachabilityCoverage *projectmodel.Coverage `json:"head_reachability_coverage,omitempty"`
-	BaseReachabilityCoverage *projectmodel.Coverage `json:"base_reachability_coverage,omitempty"`
+	HeadModelCoverage        *domain.Coverage `json:"head_model_coverage,omitempty"`
+	BaseModelCoverage        *domain.Coverage `json:"base_model_coverage,omitempty"`
+	HeadBypassCoverage       *domain.Coverage `json:"head_bypass_coverage,omitempty"`
+	BaseBypassCoverage       *domain.Coverage `json:"base_bypass_coverage,omitempty"`
+	HeadReachabilityCoverage *domain.Coverage `json:"head_reachability_coverage,omitempty"`
+	BaseReachabilityCoverage *domain.Coverage `json:"base_reachability_coverage,omitempty"`
 }
 
 // Scope identifies the repository and revision range an Input covers.

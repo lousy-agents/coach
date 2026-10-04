@@ -1,7 +1,6 @@
 package codesignal_test
 
 import (
-	"context"
 	"encoding/json"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -10,31 +9,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
-
-func cleanResult(path string, findings ...semantics.Finding) *semantics.Result {
-	return &semantics.Result{Path: path, Language: semantics.LanguageGo, ParseStatus: "ok", Findings: findings}
-}
-
-func mutation(name string, row uint) semantics.Finding {
-	return semantics.Finding{Kind: "mutates_input", Name: name, Location: semantics.Location{StartRow: row, EndRow: row}, Evidence: "input.value = 1"}
-}
-
-func build(options codesignal.Options, input codesignal.Input) *codesignal.Report {
-	builder, err := codesignal.New(options)
-	Expect(err).NotTo(HaveOccurred())
-	report, err := builder.Build(context.Background(), input)
-	Expect(err).NotTo(HaveOccurred())
-	return report
-}
-
-func diagnostic(report *codesignal.Report, kind, path string) *codesignal.Diagnostic {
-	for i := range report.Diagnostics {
-		if report.Diagnostics[i].Kind == kind && report.Diagnostics[i].Path == path {
-			return &report.Diagnostics[i]
-		}
-	}
-	return nil
-}
 
 var _ = Describe("CodeSignal report generation", func() {
 	When("caller-owned input is mutated", func() {
@@ -203,10 +177,7 @@ var _ = Describe("Report diagnostics", func() {
 	})
 
 	It("reports missing head results for added and modified files", func() {
-		for _, status := range []codesignal.ChangeStatus{"added", "modified"} {
-			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{{Path: string(status) + ".go", Status: status}}})
-			Expect(diagnostic(report, "missing_head_result", string(status)+".go")).NotTo(BeNil())
-		}
+		body_acceptanceTest_reportsMissingHeadResultsForAddedAndModifiedFile_179()
 	})
 
 	It("reports unsupported parse status and continues", func() {
@@ -326,3 +297,16 @@ var _ = Describe("Deterministic report output", func() {
 		}).To(Equal([]string{"kind first", "no location first", "earlier location", "later location", "last"}))
 	})
 })
+
+func diagnostic(report *codesignal.Report, kind, path string) *codesignal.Diagnostic {
+	for i := range report.Diagnostics {
+		if report.Diagnostics[i].Kind == kind && report.Diagnostics[i].Path == path {
+			return &report.Diagnostics[i]
+		}
+	}
+	return nil
+}
+
+func mutation(name string, row uint) semantics.Finding {
+	return semantics.Finding{Kind: "mutates_input", Name: name, Location: semantics.Location{StartRow: row, EndRow: row}, Evidence: "input.value = 1"}
+}

@@ -12,31 +12,6 @@ func keyOf(sig Signal) signalKey {
 
 // groupAndOrder groups signals by key and sorts each group by location to
 // assign occurrence ordinals.
-func groupAndOrder(signals []Signal) map[signalKey][]Signal {
-	groups := make(map[signalKey][]Signal)
-	for _, sig := range signals {
-		k := keyOf(sig)
-		groups[k] = append(groups[k], sig)
-	}
-
-	for k, group := range groups {
-		sorted := make([]Signal, len(group))
-		copy(sorted, group)
-		sort.SliceStable(sorted, func(i, j int) bool {
-			a, b := sorted[i].Location, sorted[j].Location
-			if a.StartRow != b.StartRow {
-				return a.StartRow < b.StartRow
-			}
-			if a.StartCol != b.StartCol {
-				return a.StartCol < b.StartCol
-			}
-			return a.StartByte < b.StartByte
-		})
-		groups[k] = sorted
-	}
-
-	return groups
-}
 
 func sortedKeys(groups map[signalKey][]Signal) []signalKey {
 	keys := make([]signalKey, 0, len(groups))
@@ -91,18 +66,21 @@ func classifyFileSignals(hasBase bool, headSignals, baseSignals []Signal, noBase
 	}
 
 	for _, k := range sortedKeys(baseGroups) {
-		baseGroup := baseGroups[k]
-		headGroup := headGroups[k]
-		nh := len(headGroup)
-		for i, sig := range baseGroup {
-			if i >= nh {
-				sig.Lifecycle = "resolved"
-				sig.Fingerprint = computeFingerprint(sig.RuleID, sig.Path, sig.Subject, sig.Evidence, i)
-				sig.ID = computeSignalID(sig.RuleID, sig.Path, sig.Subject, sig.Evidence, sig.Location.StartRow, sig.Location.StartCol, i)
-				result = append(result, sig)
-			}
-		}
+		result = appendResolvedBaseSignals(result, baseGroups[k], headGroups[k])
 	}
 
+	return result
+}
+
+func appendResolvedBaseSignals(result, baseGroup, headGroup []Signal) []Signal {
+	nh := len(headGroup)
+	for i, sig := range baseGroup {
+		if i >= nh {
+			sig.Lifecycle = "resolved"
+			sig.Fingerprint = computeFingerprint(sig.RuleID, sig.Path, sig.Subject, sig.Evidence, i)
+			sig.ID = computeSignalID(sig.RuleID, sig.Path, sig.Subject, sig.Evidence, sig.Location.StartRow, sig.Location.StartCol, i)
+			result = append(result, sig)
+		}
+	}
 	return result
 }

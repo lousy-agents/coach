@@ -3,11 +3,12 @@ package pkg
 import (
 	"fmt"
 
+	modbgreet "moduleab/greet"
+
 	exclpkg "github.com/excluded/pkg"
 	extpkg "github.com/external/pkg"
 	replpkg "github.com/replaced/pkg"
 	unresolvedpkg "github.com/unresolved/pkg"
-	modbgreet "moduleab/greet"
 )
 
 // UseAll references every import kind exercised by the go_dotless_module

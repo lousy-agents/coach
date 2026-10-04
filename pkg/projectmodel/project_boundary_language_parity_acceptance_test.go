@@ -1,4 +1,4 @@
-package codesignal_test
+package projectmodel_test
 
 import (
 	"context"
@@ -8,8 +8,32 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
+	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
+
+func machineEvidenceWithoutLanguage(evidence map[string]string) map[string]string {
+	out := make(map[string]string, len(evidence))
+	for k, v := range evidence {
+		if k == "language" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func twoLayerPolicy() codesignal.LayerPolicy {
+	return codesignal.LayerPolicy{
+		Layers: []codesignal.ArchitectureLayer{
+			{Name: "handlers", Prefixes: []string{"pkg/handlers"}},
+			{Name: "db", Prefixes: []string{"pkg/db"}},
+		},
+		ForbiddenImports: []codesignal.ForbiddenLayerImport{
+			{From: "handlers", To: "db"},
+		},
+	}
+}
 
 func arbitraryBoundaryParitySnapshotMeta() projectmodel.SnapshotMeta {
 	return projectmodel.SnapshotMeta{Revision: "rev", ConfigDigest: "digest-1"}
@@ -78,11 +102,11 @@ var _ = Describe("coach's project-analysis public boundary (codesignal.Builder.B
 			Expect(goDiags).To(BeEmpty())
 			Expect(goChanges).To(HaveLen(1))
 
-			tsModel := projectmodel.Model{
-				ImportEdges: []projectmodel.ImportEdge{
+			tsModel := domain.Model{
+				ImportEdges: []domain.ImportEdge{
 					{From: "file:pkg/handlers/h.ts", To: "file:pkg/db/d.ts", Kind: "import", Resolution: "snapshot", Site: "pkg/handlers/h.ts:3"},
 				},
-				Coverage: projectmodel.Coverage{Phase: "ts_sidecar_build", Complete: true},
+				Coverage: domain.Coverage{Phase: "ts_sidecar_build", Complete: true},
 			}
 			tsChanges, tsDiags := codesignal.EvaluateTypeScriptLayerViolations(tsModel, twoLayerPolicy(), "1", "backend-1", "digest-1")
 			Expect(tsDiags).To(BeEmpty())
@@ -114,70 +138,7 @@ var _ = Describe("coach's project-analysis public boundary (codesignal.Builder.B
 
 	When("a route handler has a statically resolved call path to a pinned sink, with no required-layer node on that path", func() {
 		It("emits one baseline architecture.layer_bypass ProjectChange on both languages' Reports, identically shaped apart from language provenance", func() {
-			ctx := context.Background()
-
-			goSnapshot := fstest.MapFS{
-				"go.mod":             &fstest.MapFile{Data: []byte("module example.com/app\n\ngo 1.25\n")},
-				"handler.go":         &fstest.MapFile{Data: []byte("package app\n\nimport (\n\t\"database/sql\"\n\t\"net/http\"\n\n\t\"example.com/app/service\"\n)\n\nfunc Handler(w http.ResponseWriter, r *http.Request) {\n\tservice.LoadUser()\n\tdirectQuery()\n}\n\nfunc directQuery() {\n\trawQuery()\n}\n\nfunc rawQuery() {\n\tvar db *sql.DB\n\tdb.Query(\"SELECT 1\")\n}\n")},
-				"service/service.go": &fstest.MapFile{Data: []byte("package service\n\nimport \"database/sql\"\n\nfunc LoadUser() {\n\tvar db *sql.DB\n\tdb.Query(\"SELECT 1\")\n}\n")},
-			}
-			goResult, err := projectmodel.BuildGoLayerBypass(ctx, goSnapshot, projectmodel.LayerBypassOptions{
-				RequiredLayer: projectmodel.BypassLayer{Name: "service", Prefixes: []string{"service"}},
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(goResult.Coverage.Complete).To(BeTrue())
-			Expect(goResult.Witnesses).To(HaveLen(1), "expected exactly one deterministic bypass witness, got %+v", goResult.Witnesses)
-
-			goChanges, goDiags := codesignal.EvaluateGoLayerBypass(goResult, "1", "backend-1", "digest-1")
-			Expect(goDiags).To(BeEmpty())
-			Expect(goChanges).To(HaveLen(1))
-
-			tsResult := projectmodel.LayerBypassResult{
-				Witnesses: []projectmodel.LayerBypassWitness{{
-					ID:            "bypass:service:file:src/handlers/app.ts#getUsers->(PrismaClient).findMany@" + projectmodel.TSLayerBypassAlgorithm,
-					Source:        "file:src/handlers/app.ts#getUsers",
-					Sink:          "(PrismaClient).findMany",
-					RequiredLayer: "service",
-					Path: []projectmodel.LayerBypassStep{
-						{NodeID: "file:src/handlers/app.ts#getUsers", Path: "src/handlers/app.ts"},
-						{NodeID: "(PrismaClient).findMany"},
-					},
-					Confidence:       projectmodel.LayerBypassConfidenceHigh,
-					AlgorithmVersion: projectmodel.TSLayerBypassAlgorithm,
-				}},
-				Algorithm: projectmodel.TSLayerBypassAlgorithm,
-				Coverage:  projectmodel.Coverage{Phase: "ts_sidecar_build", Complete: true},
-			}
-			tsChanges, tsDiags := codesignal.EvaluateTypeScriptLayerBypass(tsResult, "1", "backend-1", "digest-1")
-			Expect(tsDiags).To(BeEmpty())
-			Expect(tsChanges).To(HaveLen(1))
-
-			goReport := buildProjectReport(ctx, codesignal.Input{
-				Scope:           codesignal.Scope{Revision: "rev-go"},
-				ProjectChanges:  goChanges,
-				ProjectCoverage: &goResult.Coverage,
-			})
-			tsReport := buildProjectReport(ctx, codesignal.Input{
-				Scope:           codesignal.Scope{Revision: "rev-ts"},
-				ProjectChanges:  tsChanges,
-				ProjectCoverage: &tsResult.Coverage,
-			})
-
-			Expect(goReport.ProjectChanges).To(HaveLen(1))
-			Expect(tsReport.ProjectChanges).To(HaveLen(1))
-			Expect(goReport.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("baseline")))
-			Expect(tsReport.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("baseline")))
-
-			expectSharedArchitectureShape(goReport.ProjectChanges[0], tsReport.ProjectChanges[0], "architecture.layer_bypass")
-
-			Expect(goReport.ProjectChanges[0].PathSteps).NotTo(BeEmpty())
-			Expect(tsReport.ProjectChanges[0].PathSteps).NotTo(BeEmpty())
-			for _, step := range goReport.ProjectChanges[0].PathSteps {
-				Expect(step.Confidence).To(Equal(codesignal.Confidence("high")))
-			}
-			for _, step := range tsReport.ProjectChanges[0].PathSteps {
-				Expect(step.Confidence).To(Equal(codesignal.Confidence("high")))
-			}
+			body_projectBoundaryLanguageParityAcceptanceTest_emitsOneBaselineArchitectureLayerBypassProjectCh_140()
 		})
 	})
 
@@ -198,21 +159,21 @@ var _ = Describe("coach's project-analysis public boundary (codesignal.Builder.B
 
 			goFacts := codesignal.ReachabilityProjectFacts(goResult, "go")
 
-			tsResult := projectmodel.ReachabilityResult{
-				Facts: []projectmodel.ReachabilityFact{{
-					ID:         "reach:file:src/app.ts#getUsers->(PrismaClient).findMany@" + projectmodel.TSReachabilityAlgorithm,
-					Kind:       projectmodel.KindPossibleCallReachability,
-					Confidence: projectmodel.ReachabilityConfidenceResolvedDirect,
+			tsResult := domain.ReachabilityResult{
+				Facts: []domain.ReachabilityFact{{
+					ID:         "reach:file:src/app.ts#getUsers->(PrismaClient).findMany@" + domain.TSReachabilityAlgorithm,
+					Kind:       domain.KindPossibleCallReachability,
+					Confidence: domain.ReachabilityConfidenceResolvedDirect,
 					Source:     "file:src/app.ts#getUsers",
 					Sink:       "(PrismaClient).findMany",
-					Path: []projectmodel.ReachabilityStep{
+					Path: []domain.ReachabilityStep{
 						{NodeID: "file:src/app.ts#getUsers"},
 						{NodeID: "(PrismaClient).findMany"},
 					},
-					AlgorithmVersion: projectmodel.TSReachabilityAlgorithm,
+					AlgorithmVersion: domain.TSReachabilityAlgorithm,
 				}},
-				Algorithm: projectmodel.TSReachabilityAlgorithm,
-				Coverage:  projectmodel.Coverage{Phase: "ts_sidecar_build", Complete: true},
+				Algorithm: domain.TSReachabilityAlgorithm,
+				Coverage:  domain.Coverage{Phase: "ts_sidecar_build", Complete: true},
 			}
 			tsFacts := codesignal.ReachabilityProjectFacts(tsResult, "typescript")
 
@@ -239,7 +200,7 @@ var _ = Describe("coach's project-analysis public boundary (codesignal.Builder.B
 			goFact, tsFact := goReport.ProjectFacts[0], tsReport.ProjectFacts[0]
 
 			Expect(tsFact.Kind).To(Equal(goFact.Kind))
-			Expect(tsFact.Kind).To(Equal(projectmodel.KindPossibleCallReachability))
+			Expect(tsFact.Kind).To(Equal(domain.KindPossibleCallReachability))
 			Expect(tsFact.Provenance.Producer).To(Equal(goFact.Provenance.Producer))
 			Expect(tsFact.Provenance.FindingKind).To(Equal(goFact.Provenance.FindingKind))
 			Expect(tsFact.PathSteps[0].Confidence).To(Equal(goFact.PathSteps[0].Confidence))
@@ -254,12 +215,12 @@ var _ = Describe("coach's project-analysis public boundary (codesignal.Builder.B
 		It("never surfaces as architecture.layer_violation, while an otherwise-identical runtime/resolved edge still does (false-green control, in both languages)", func() {
 			ctx := context.Background()
 
-			tsForbiddenEdge := func(kind string) projectmodel.Model {
-				return projectmodel.Model{
-					ImportEdges: []projectmodel.ImportEdge{
+			tsForbiddenEdge := func(kind string) domain.Model {
+				return domain.Model{
+					ImportEdges: []domain.ImportEdge{
 						{From: "file:pkg/handlers/h.ts", To: "file:pkg/db/d.ts", Kind: kind, Resolution: "snapshot", Site: "pkg/handlers/h.ts:3"},
 					},
-					Coverage: projectmodel.Coverage{Phase: "ts_sidecar_build", Complete: true},
+					Coverage: domain.Coverage{Phase: "ts_sidecar_build", Complete: true},
 				}
 			}
 
@@ -338,7 +299,7 @@ var _ = Describe("coach's project-analysis public boundary (codesignal.Builder.B
 		})
 	})
 
-	// projectmodel.ImportEdge carries no field for the import statement's
+	// domain.ImportEdge carries no field for the import statement's
 	// original source specifier (e.g. a tsconfig path alias vs a relative
 	// import) -- only the resolved target and the reporting site -- so this
 	// spec cannot exercise specifier-transparency itself. What it does prove:
@@ -351,11 +312,11 @@ var _ = Describe("coach's project-analysis public boundary (codesignal.Builder.B
 			ctx := context.Background()
 
 			buildChangeForSite := func(site, to string) codesignal.ProjectChange {
-				model := projectmodel.Model{
-					ImportEdges: []projectmodel.ImportEdge{
+				model := domain.Model{
+					ImportEdges: []domain.ImportEdge{
 						{From: "file:pkg/handlers/h.ts", To: to, Kind: "import", Resolution: "snapshot", Site: site},
 					},
-					Coverage: projectmodel.Coverage{Phase: "ts_sidecar_build", Complete: true},
+					Coverage: domain.Coverage{Phase: "ts_sidecar_build", Complete: true},
 				}
 				changes, diags := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
 				Expect(diags).To(BeEmpty())
