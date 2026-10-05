@@ -89,6 +89,18 @@ var _ = Describe("source-layout checker", func() {
 		})
 	})
 
+	When("a fragment sits under a directory the go tool ignores", func() {
+		It("is not built as this module's source and is not reported", func() {
+			writeGoFile(root, ".claude/worktrees/agent/pkg/foo/main_part2.go", cleanGoFile)
+			writeGoFile(root, "_scratch/main_part2.go", cleanGoFile)
+
+			violations, err := sourcelayout.Check(root)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(violations).To(BeEmpty())
+		})
+	})
+
 	When("run against this repository", func() {
 		It("finds every Go source file named for its responsibility", func() {
 			repoRoot, err := filepath.Abs("../..")

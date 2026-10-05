@@ -20,7 +20,6 @@ type Violation struct {
 // testdata holds fixtures that are inputs to analysis, not this repository's
 // source, so their names are chosen by the scenario they model.
 var skipDirNames = map[string]struct{}{
-	".git":         {},
 	"vendor":       {},
 	"node_modules": {},
 	"testdata":     {},
@@ -34,7 +33,7 @@ func Check(root string) ([]Violation, error) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() {
+		if d.IsDir() && path != root {
 			return skipDir(d.Name())
 		}
 		if !strings.HasSuffix(d.Name(), ".go") {
@@ -50,8 +49,11 @@ func Check(root string) ([]Violation, error) {
 	return violations, err
 }
 
+// Directories the go tool ignores (leading "." or "_") are not built as this
+// module's source; that includes agent worktrees under .claude/worktrees.
 func skipDir(name string) error {
-	if _, skip := skipDirNames[name]; skip {
+	_, skip := skipDirNames[name]
+	if skip || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
 		return fs.SkipDir
 	}
 	return nil
