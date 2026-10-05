@@ -1,11 +1,10 @@
 package codesignal_test
 
 import (
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 const (
@@ -29,16 +28,6 @@ func ccRecord(name string, score int, loc semantics.Location) semantics.Function
 		Location: loc,
 		Score:    score,
 	}
-}
-
-func signalsByRule(report *codesignal.Report, ruleID string) []codesignal.Signal {
-	var out []codesignal.Signal
-	for _, s := range report.Signals {
-		if s.RuleID == ruleID {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 var _ = Describe("Story 2: complexity.cognitive_complexity codesignal rule", func() {

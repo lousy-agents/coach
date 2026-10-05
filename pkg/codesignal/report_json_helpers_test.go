@@ -6,9 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	. "github.com/onsi/gomega"
-
 	"github.com/lousy-agents/coach/pkg/codesignal"
+	. "github.com/onsi/gomega"
 )
 
 // reportJSONTagNames returns the json tag names declared on t, in

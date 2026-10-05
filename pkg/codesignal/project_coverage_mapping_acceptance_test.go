@@ -3,11 +3,10 @@ package codesignal_test
 import (
 	"encoding/json"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/domain"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("Project coverage mapping, provenance, scope, and next-actions (AC-EVD-2/6/9/10, AC-D7)", func() {
@@ -21,10 +20,10 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				ConfigDigest:             "pcfg_abc",
 				SelectedRoots:            []string{"."},
 				Scope:                    codesignal.Scope{Revision: "HEAD_SHA"},
-				HeadProjectScope:         headProjectScope(),
-				HeadModelCoverage:        completeCoverage("model"),
-				HeadBypassCoverage:       notRequestedCoverage(),
-				HeadReachabilityCoverage: incompleteCoverage("reachability"),
+				HeadProjectScope:         ref(headProjectScope()),
+				HeadModelCoverage:        ref(completeCoverage("model")),
+				HeadBypassCoverage:       ref(notRequestedCoverage()),
+				HeadReachabilityCoverage: ref(incompleteCoverage("reachability")),
 				ProjectCoverage:          &domain.Coverage{Phase: "full", Complete: true},
 				RuntimeKind:              "node",
 				RuntimeVersion:           "v24.9.9",
@@ -92,10 +91,10 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 			report = build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				Language:                 "typescript",
 				Scope:                    codesignal.Scope{Revision: "HEAD_SHA"},
-				HeadProjectScope:         headProjectScope(),
-				HeadModelCoverage:        incompleteCoverage("model"),
-				HeadBypassCoverage:       notRequestedCoverage(),
-				HeadReachabilityCoverage: completeCoverage("reachability"),
+				HeadProjectScope:         ref(headProjectScope()),
+				HeadModelCoverage:        ref(incompleteCoverage("model")),
+				HeadBypassCoverage:       ref(notRequestedCoverage()),
+				HeadReachabilityCoverage: ref(completeCoverage("reachability")),
 				ProjectCoverage:          &domain.Coverage{Phase: "full", Complete: false},
 			})
 		})
@@ -126,7 +125,7 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				Language:          "typescript",
 				Scope:             codesignal.Scope{Revision: "HEAD_SHA"},
 				HeadProjectScope:  nil,
-				HeadModelCoverage: backendUnavailableCoverage(),
+				HeadModelCoverage: ref(backendUnavailableCoverage()),
 			})
 		})
 
@@ -154,7 +153,7 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				Language:          "typescript",
 				Scope:             codesignal.Scope{Revision: "HEAD_SHA"},
 				HeadProjectScope:  nil,
-				HeadModelCoverage: incompleteCoverage("model"),
+				HeadModelCoverage: ref(incompleteCoverage("model")),
 			})
 			cov := extractHeadCoverage(report)
 			var model string
@@ -168,8 +167,8 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				Language:          "typescript",
 				Scope:             codesignal.Scope{Revision: "HEAD_SHA"},
-				HeadProjectScope:  headProjectScope(),
-				HeadModelCoverage: backendUnavailableCoverage(),
+				HeadProjectScope:  ref(headProjectScope()),
+				HeadModelCoverage: ref(backendUnavailableCoverage()),
 			})
 			cov := extractHeadCoverage(report)
 			var model string
@@ -183,8 +182,8 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				Language:           "typescript",
 				Scope:              codesignal.Scope{Revision: "HEAD_SHA"},
-				HeadProjectScope:   headProjectScope(),
-				HeadModelCoverage:  completeCoverage("model"),
+				HeadProjectScope:   ref(headProjectScope()),
+				HeadModelCoverage:  ref(completeCoverage("model")),
 				HeadBypassCoverage: &domain.Coverage{Phase: "not_requested", Complete: true},
 				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 			})
@@ -203,14 +202,14 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				Language:                 "typescript",
 				Scope:                    codesignal.Scope{Revision: "HEAD_SHA", Base: "BASE_SHA"},
 				ProjectBaseAnalyzed:      true,
-				HeadProjectScope:         headProjectScope(),
-				BaseProjectScope:         baseProjectScope(),
-				HeadModelCoverage:        completeCoverage("model"),
-				HeadBypassCoverage:       notRequestedCoverage(),
-				HeadReachabilityCoverage: completeCoverage("reachability"),
-				BaseModelCoverage:        completeCoverage("model"),
-				BaseBypassCoverage:       notRequestedCoverage(),
-				BaseReachabilityCoverage: incompleteCoverage("reachability"),
+				HeadProjectScope:         ref(headProjectScope()),
+				BaseProjectScope:         ref(baseProjectScope()),
+				HeadModelCoverage:        ref(completeCoverage("model")),
+				HeadBypassCoverage:       ref(notRequestedCoverage()),
+				HeadReachabilityCoverage: ref(completeCoverage("reachability")),
+				BaseModelCoverage:        ref(completeCoverage("model")),
+				BaseBypassCoverage:       ref(notRequestedCoverage()),
+				BaseReachabilityCoverage: ref(incompleteCoverage("reachability")),
 				ProjectCoverage:          &domain.Coverage{Phase: "full", Complete: true},
 				BaseProjectCoverage:      &domain.Coverage{Phase: "full", Complete: true},
 			})
@@ -297,9 +296,9 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				Language:           "typescript",
 				Scope:              codesignal.Scope{Revision: "HEAD_SHA"},
-				HeadProjectScope:   headProjectScope(),
-				HeadModelCoverage:  completeCoverage("model"),
-				HeadBypassCoverage: notRequestedCoverage(),
+				HeadProjectScope:   ref(headProjectScope()),
+				HeadModelCoverage:  ref(completeCoverage("model")),
+				HeadBypassCoverage: ref(notRequestedCoverage()),
 				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 				Diagnostics: []codesignal.Diagnostic{
 					{Kind: "project_coverage_incomplete", Message: "some partial coverage"},
@@ -318,14 +317,14 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				Language:                 "typescript",
 				Scope:                    codesignal.Scope{Revision: "HEAD_SHA", Base: "BASE_SHA"},
 				ProjectBaseAnalyzed:      true,
-				HeadProjectScope:         headProjectScope(),
-				BaseProjectScope:         baseProjectScope(),
-				HeadModelCoverage:        completeCoverage("model"),
-				HeadBypassCoverage:       notRequestedCoverage(),
-				HeadReachabilityCoverage: completeCoverage("reachability"),
-				BaseModelCoverage:        incompleteCoverage("model"),
-				BaseBypassCoverage:       notRequestedCoverage(),
-				BaseReachabilityCoverage: completeCoverage("reachability"),
+				HeadProjectScope:         ref(headProjectScope()),
+				BaseProjectScope:         ref(baseProjectScope()),
+				HeadModelCoverage:        ref(completeCoverage("model")),
+				HeadBypassCoverage:       ref(notRequestedCoverage()),
+				HeadReachabilityCoverage: ref(completeCoverage("reachability")),
+				BaseModelCoverage:        ref(incompleteCoverage("model")),
+				BaseBypassCoverage:       ref(notRequestedCoverage()),
+				BaseReachabilityCoverage: ref(completeCoverage("reachability")),
 				ProjectCoverage:          &domain.Coverage{Phase: "full", Complete: true},
 				BaseProjectCoverage:      &domain.Coverage{Phase: "full", Complete: true},
 			})
@@ -355,9 +354,9 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 			report = build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				Language:           "typescript",
 				Scope:              codesignal.Scope{Revision: "HEAD_SHA"},
-				HeadProjectScope:   headProjectScope(),
-				HeadModelCoverage:  completeCoverage("model"),
-				HeadBypassCoverage: incompleteCoverage("bypass"),
+				HeadProjectScope:   ref(headProjectScope()),
+				HeadModelCoverage:  ref(completeCoverage("model")),
+				HeadBypassCoverage: ref(incompleteCoverage("bypass")),
 				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 			})
 		})
@@ -380,9 +379,9 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				Language:           "typescript",
 				Scope:              codesignal.Scope{Revision: "HEAD_SHA"},
-				HeadProjectScope:   headProjectScope(),
-				HeadModelCoverage:  completeCoverage("model"),
-				HeadBypassCoverage: notRequestedCoverage(),
+				HeadProjectScope:   ref(headProjectScope()),
+				HeadModelCoverage:  ref(completeCoverage("model")),
+				HeadBypassCoverage: ref(notRequestedCoverage()),
 				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 				ProjectChanges:     []codesignal.ProjectChange{layerViolationChange(ruleID)},
 			})
@@ -398,9 +397,9 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				Language:           "typescript",
 				Scope:              codesignal.Scope{Revision: "HEAD_SHA"},
-				HeadProjectScope:   headProjectScope(),
-				HeadModelCoverage:  completeCoverage("model"),
-				HeadBypassCoverage: notRequestedCoverage(),
+				HeadProjectScope:   ref(headProjectScope()),
+				HeadModelCoverage:  ref(completeCoverage("model")),
+				HeadBypassCoverage: ref(notRequestedCoverage()),
 				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 			})
 			prov := extractProvenance(report)
@@ -417,9 +416,9 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				Language:                "typescript",
 				Scope:                   codesignal.Scope{Revision: "HEAD_SHA"},
-				HeadProjectScope:        headProjectScope(),
-				HeadModelCoverage:       completeCoverage("model"),
-				HeadBypassCoverage:      notRequestedCoverage(),
+				HeadProjectScope:        ref(headProjectScope()),
+				HeadModelCoverage:       ref(completeCoverage("model")),
+				HeadBypassCoverage:      ref(notRequestedCoverage()),
 				ProjectCoverage:         &domain.Coverage{Phase: "full", Complete: true},
 				AnalyzerProtocolVersion: 1,
 			})
@@ -438,8 +437,8 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 					Language:          language,
 					Scope:             codesignal.Scope{Revision: "HEAD_SHA"},
-					HeadProjectScope:  headProjectScope(),
-					HeadModelCoverage: completeCoverage("model"),
+					HeadProjectScope:  ref(headProjectScope()),
+					HeadModelCoverage: ref(completeCoverage("model")),
 					ProjectCoverage:   &domain.Coverage{Phase: "full", Complete: true},
 				})
 				fields := rawReportFields(report)
@@ -458,12 +457,12 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 				Language:            "typescript",
 				Scope:               codesignal.Scope{Revision: "HEAD_SHA", Base: "BASE_SHA"},
 				ProjectBaseAnalyzed: true,
-				HeadProjectScope:    headProjectScope(),
-				BaseProjectScope:    headProjectScope(),
-				HeadModelCoverage:   completeCoverage("model"),
-				HeadBypassCoverage:  notRequestedCoverage(),
-				BaseModelCoverage:   completeCoverage("model"),
-				BaseBypassCoverage:  notRequestedCoverage(),
+				HeadProjectScope:    ref(headProjectScope()),
+				BaseProjectScope:    ref(headProjectScope()),
+				HeadModelCoverage:   ref(completeCoverage("model")),
+				HeadBypassCoverage:  ref(notRequestedCoverage()),
+				BaseModelCoverage:   ref(completeCoverage("model")),
+				BaseBypassCoverage:  ref(notRequestedCoverage()),
 				ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
 				BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 				BaseProjectChanges:  []codesignal.ProjectChange{layerViolationChange("architecture.layer_violation")},
@@ -480,9 +479,9 @@ var _ = Describe("Project coverage mapping, provenance, scope, and next-actions 
 			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
 				Language:           "typescript",
 				Scope:              codesignal.Scope{Revision: "HEAD_SHA"},
-				HeadProjectScope:   headProjectScope(),
-				HeadModelCoverage:  completeCoverage("model"),
-				HeadBypassCoverage: notRequestedCoverage(),
+				HeadProjectScope:   ref(headProjectScope()),
+				HeadModelCoverage:  ref(completeCoverage("model")),
+				HeadBypassCoverage: ref(notRequestedCoverage()),
 				ProjectCoverage:    &domain.Coverage{Phase: "full", Complete: true},
 				Files: []codesignal.FileChange{
 					{Path: "src/state.go", Status: "modified", Head: cleanResult("src/state.go", mutation("Update", 1))},
@@ -582,17 +581,6 @@ func extractProvenance(report *codesignal.Report) map[string]json.RawMessage {
 	var prov map[string]json.RawMessage
 	Expect(json.Unmarshal(fields["project_provenance"], &prov)).To(Succeed())
 	return prov
-}
-
-// headProjectScope returns a minimal non-nil ProjectScope for use in tests.
-func headProjectScope() *domain.ProjectScope {
-	return &domain.ProjectScope{
-		InclusionRule:   domain.InclusionRuleTSConfigIncludesNoTestClassification,
-		PatternSet:      domain.TSReachabilityAlgorithm,
-		Roots:           []domain.ProjectScopeRoot{{Root: ".", CandidateFiles: 10, AnalyzedFiles: 10}},
-		MatchedLayers:   []string{"handlers"},
-		UnmatchedLayers: []string{"db"},
-	}
 }
 
 // extractHeadCoverage reads project_provenance.head.coverage from a report.
