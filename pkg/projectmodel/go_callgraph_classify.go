@@ -1,7 +1,10 @@
 package projectmodel
 
 import (
+	"fmt"
+	"go/token"
 	"go/types"
+	"path/filepath"
 
 	"golang.org/x/tools/go/ssa"
 )
@@ -64,6 +67,22 @@ func classifyCallSite(fn *ssa.Function, site ssa.CallInstruction, tempDir string
 	}
 }
 
+// isReflectDynamicCall reports whether fn is reflect.Value.Call or
+// reflect.Value.CallSlice: SSA resolves both as ordinary static method
+// calls (reflect.Value is a concrete type), but the function they actually
+// invoke is chosen at runtime and is invisible to static analysis.
+func isReflectDynamicCall(fn *ssa.Function) bool {
+	if fn.Pkg == nil || fn.Pkg.Pkg.Path() != "reflect" {
+		return false
+	}
+	switch fn.Name() {
+	case "Call", "CallSlice":
+		return true
+	default:
+		return false
+	}
+}
+
 // rewriteLocalSyntheticWrapper rewrites a call into a synthetic wrapper
 // (fn.Pkg == nil) whose real target is local to the snapshot. Generic
 // instantiations (Origin() != nil) route to the origin function
@@ -82,29 +101,30 @@ func rewriteLocalSyntheticWrapper(callee *ssa.Function, localPkgPaths map[string
 	return callee, true
 }
 
-func frameworkRegistrationDiagnostics(callee *ssa.Function, common *ssa.CallCommon, sitePath string, httpHandlerIface *types.Interface) []Diagnostic {
-	calleeID := callee.RelString(nil)
-	if !frameworkRegistrationCallees[calleeID] {
-		return nil
+// syntheticWrapperTargetPkgPath returns the package path of the function or
+// method a synthetic wrapper (fn.Pkg == nil) actually delegates to, or ""
+// if fn is not such a wrapper. Bound-method-value wrappers, promoted/
+// embedded-method thunks, and generic instantiations all set fn.Object() to
+// the *types.Func being wrapped/instantiated, even though fn.Pkg itself is
+// nil; go/ssa's wrappers.go/instantiate.go set this field, not any public
+// API, so this is the only way to recover the real target's package.
+func syntheticWrapperTargetPkgPath(fn *ssa.Function) string {
+	obj := fn.Object()
+	if obj == nil || obj.Pkg() == nil {
+		return ""
 	}
-	args := common.Args
-	if callee.Signature.Recv() != nil && len(args) > 0 {
-		// Method-form registration ((*http.ServeMux).Handle/
-		// HandleFunc): Args[0] is the receiver, not a handler
-		// argument -- see ssa.CallCommon.Args's doc ("If Value
-		// is a method, Args[0] contains the receiver
-		// parameter"). *http.ServeMux itself implements
-		// http.Handler, so skipping it here avoids
-		// double-counting the registration site.
-		args = args[1:]
+	return obj.Pkg().Path()
+}
+
+func relCallSitePath(tempDir string, pos token.Position) string {
+	if pos.Filename == "" {
+		return ""
 	}
-	var diags []Diagnostic
-	for _, arg := range args {
-		if isFunctionValueArg(arg, httpHandlerIface) {
-			diags = append(diags, Diagnostic{Code: DiagCallUnresolvedFrameworkRegistration, Path: sitePath})
-		}
+	rel, err := filepath.Rel(tempDir, pos.Filename)
+	if err != nil {
+		return ""
 	}
-	return diags
+	return fmt.Sprintf("%s:%d", filepath.ToSlash(rel), pos.Line)
 }
 
 // unresolvedCallSiteCount sums the five classifyCallSite unresolved-site
@@ -117,24 +137,3 @@ func unresolvedCallSiteCount(counts map[string]int) int {
 		counts["unresolved_framework_registration"] +
 		counts["unresolved_synthetic_wrapper"]
 }
-
-// syntheticWrapperTargetPkgPath returns the package path of the function or
-// method a synthetic wrapper (fn.Pkg == nil) actually delegates to, or ""
-// if fn is not such a wrapper. Bound-method-value wrappers, promoted/
-// embedded-method thunks, and generic instantiations all set fn.Object() to
-// the *types.Func being wrapped/instantiated, even though fn.Pkg itself is
-// nil; go/ssa's wrappers.go/instantiate.go set this field, not any public
-// API, so this is the only way to recover the real target's package.
-
-// isReflectDynamicCall reports whether fn is reflect.Value.Call or
-// reflect.Value.CallSlice: SSA resolves both as ordinary static method
-// calls (reflect.Value is a concrete type), but the function they actually
-// invoke is chosen at runtime and is invisible to static analysis.
-
-// isFunctionValueArg reports whether v is a handler value passed to a
-// frameworkRegistrationCallees entry: either a func-typed value (the
-// net/http.HandleFunc/(*http.ServeMux).HandleFunc case) or a value whose
-// type implements net/http.Handler (the net/http.Handle/
-// (*http.ServeMux).Handle case, where the parameter type is the interface,
-// not a func signature). handlerIface is nil when net/http was not loaded
-// for this root, in which case only the func-typed check applies.

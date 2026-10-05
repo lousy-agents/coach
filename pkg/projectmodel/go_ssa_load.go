@@ -1,7 +1,10 @@
 package projectmodel
 
 import (
-	"go/types"
+	"context"
+	"fmt"
+	"io/fs"
+	"strings"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
@@ -18,8 +21,16 @@ type loadedGoRoot struct {
 	loadErr       error
 }
 
-// loadedGoSnapshot is one materializeSnapshot + one packages.Load/SSA build
-// per module root. Callers must invoke cleanup.
+// goProgramLoader is the port loadGoSnapshot materializes a snapshot and
+// builds one SSA program per module root through. ssaload.Loader is the
+// production adapter.
+type goProgramLoader interface {
+	Materialize(snapshot fs.FS) (dir string, cleanup func(), err error)
+	LoadModule(ctx context.Context, dir, moduleDir string) ([]*packages.Package, *ssa.Program, map[string]bool, error)
+}
+
+// loadedGoSnapshot is one goProgramLoader.Materialize + one
+// packages.Load/SSA build per module root. Callers must invoke cleanup.
 type loadedGoSnapshot struct {
 	tempDir     string
 	cleanup     func()
@@ -44,35 +55,49 @@ func (s *loadedGoSnapshot) programsBuilt() int {
 // (loadStopped) without discarding roots already built. A non-nil error
 // means the snapshot could not be materialized; per-root load failures are
 // recorded on loadedGoRoot.loadErr instead.
-
-// loadGoSSAProgram loads moduleDir's own packages from tempDir/moduleDir and
-// builds an SSA program for them. The load mode is packages.LoadSyntax: typed
-// syntax for the snapshot's own packages, export data for dependencies.
-// NeedDeps+NeedSyntax is LoadAllSyntax and would parse the standard library
-// (net/http, database/sql, reflect) on every call; StaticCallee and stdlib
-// type identity only need those packages' types, not their syntax.
-
-// typesPackageByPath returns the *types.Package for pkgPath from prog if
-// ssautil created an SSA package for it, otherwise from the initial
-// packages' type-checker import graph. LoadSyntax does not populate
-// packages.Package.Types on dependencies, so prog.ImportedPackage can be
-// nil for net/http even when the fixture type-checked against it.
-func typesPackageByPath(prog *ssa.Program, pkgs []*packages.Package, pkgPath string) *types.Package {
-	if prog != nil {
-		if pkg := prog.ImportedPackage(pkgPath); pkg != nil {
-			return pkg.Pkg
-		}
+func loadGoSnapshot(ctx context.Context, loader goProgramLoader, snapshot fs.FS, roots []string, budgets GoBudgets) (*loadedGoSnapshot, error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	for _, p := range pkgs {
-		if p.Types == nil {
-			continue
-		}
-		if p.PkgPath == pkgPath {
-			return p.Types
-		}
-		if pkg := importByPath(p.Types, pkgPath); pkg != nil {
-			return pkg
-		}
+	discovery := discoverGoProject(snapshot, budgets)
+	modules := discovery.Modules
+	if len(roots) > 0 {
+		modules, _ = filterToRoots(modules, discovery.Workspaces, roots)
 	}
-	return nil
+	loaded := &loadedGoSnapshot{
+		cleanup:    func() {},
+		discovery:  discovery,
+		moduleDirs: mapKeysSorted(modules),
+	}
+	if ctx.Err() != nil {
+		loaded.loadStopped = true
+		return loaded, nil
+	}
+
+	tempDir, cleanup, err := loader.Materialize(snapshot)
+	if err != nil {
+		return nil, fmt.Errorf("projectmodel: materializing snapshot for call-graph build: %w", err)
+	}
+	loaded.tempDir = tempDir
+	loaded.cleanup = cleanup
+
+	for _, mdir := range loaded.moduleDirs {
+		if ctx.Err() != nil {
+			loaded.loadStopped = true
+			break
+		}
+		root := loadedGoRoot{dir: mdir}
+		root.pkgs, root.prog, root.localPkgPaths, root.loadErr = loader.LoadModule(ctx, tempDir, mdir)
+		loaded.roots = append(loaded.roots, root)
+	}
+	return loaded, nil
+}
+
+// stripTempDir removes the materialized snapshot's absolute temp-dir prefix
+// from msg (as embedded by go/packages error text), so
+// CallGraphResult.Coverage.Diagnostics stays deterministic across runs and
+// across different absolute snapshot roots -- mirroring relCallSitePath's
+// tempDir stripping for call-site paths.
+func stripTempDir(msg, tempDir string) string {
+	return strings.ReplaceAll(msg, tempDir, "")
 }
