@@ -20,7 +20,9 @@ func Handler(fixture *Fixture) (http.Handler, *acceptanceharness.Recorder) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /login/oauth/authorize", oauthAuthorizeHandler(fixture, rec))
 	mux.HandleFunc("POST /login/oauth/access_token", oauthTokenHandler(fixture, rec))
-
+	// /user is github.com's public path (raw net/http tests).
+	// /api/v3/user is what go-github emits with WithEnterpriseURLs (api/v3 prefix).
+	// OAuth authorize/token stay on bare paths; App/repos APIs use api/v3.
 	mux.HandleFunc("GET /user", oauthUserHandler(fixture, rec))
 	mux.HandleFunc("GET /api/v3/user", oauthUserHandler(fixture, rec))
 
@@ -28,7 +30,7 @@ func Handler(fixture *Fixture) (http.Handler, *acceptanceharness.Recorder) {
 	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/installation", installationResolutionHandler(fixture, rec))
 	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission", permissionHandler(fixture, rec))
 	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/contents/{path...}", contentsHandler(fixture, rec))
-
+	// Register commits before bare repo so the more-specific path wins.
 	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}/commits/{ref}", commitHandler(fixture, rec))
 	mux.HandleFunc("GET /api/v3/repos/{owner}/{repo}", repoMetaHandler(fixture, rec))
 

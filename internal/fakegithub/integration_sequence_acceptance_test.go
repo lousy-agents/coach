@@ -6,11 +6,10 @@ import (
 	"net/url"
 	"sync"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
 	"github.com/lousy-agents/coach/internal/fakegithub"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("recorder sequence across all five endpoint families", func() {
@@ -104,6 +103,7 @@ var _ = Describe("recorder sequence across all five endpoint families", func() {
 })
 
 var _ = Describe("concurrent requests against one Server", func() {
+	// Guards Fixture.mu on OAuth.Tokens/Codes under concurrent httptest handlers.
 	It("completes many concurrent authorize->exchange->/user cycles cleanly, with every identity resolved correctly", func() {
 		const concurrency = 50
 

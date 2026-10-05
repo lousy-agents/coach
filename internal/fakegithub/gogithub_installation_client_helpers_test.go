@@ -5,9 +5,8 @@ import (
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v92/github"
-	. "github.com/onsi/gomega"
-
 	"github.com/lousy-agents/coach/internal/fakegithub"
+	. "github.com/onsi/gomega"
 )
 
 func newInstallationClient(server *fakegithub.Server) *github.Client {

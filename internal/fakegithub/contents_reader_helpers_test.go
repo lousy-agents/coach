@@ -1,10 +1,9 @@
 package fakegithub_test
 
 import (
-	. "github.com/onsi/gomega"
-
 	"github.com/lousy-agents/coach/internal/fakegithub"
 	"github.com/lousy-agents/coach/pkg/githubingest"
+	. "github.com/onsi/gomega"
 )
 
 func newContentsReader(server *fakegithub.Server) *githubingest.GitHubFileReader {

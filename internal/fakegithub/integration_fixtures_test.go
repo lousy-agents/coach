@@ -6,9 +6,8 @@ import (
 	"net/http"
 	"net/url"
 
-	. "github.com/onsi/gomega"
-
 	"github.com/lousy-agents/coach/internal/fakegithub"
+	. "github.com/onsi/gomega"
 )
 
 func newIntegrationFixture() *fakegithub.Fixture {

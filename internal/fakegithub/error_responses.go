@@ -1,23 +1,17 @@
 package fakegithub
 
 import (
+	"encoding/json"
 	"net/http"
-
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
 )
 
-// rejectKnownNonAppBearer rejects OAuth, installation, and RejectedTokens
-// bearers on App-JWT routes. The fake does not verify App JWT signatures
-// (no key pair); TokenUnknown — including a missing header or unverifiable
-// App JWT — is allowed through. That is an accepted simplification.
-func rejectKnownNonAppBearer(fx *Fixture, rec *acceptanceharness.Recorder, w http.ResponseWriter, r *http.Request) bool {
-	kind := fx.ClassifyToken(extractBearerToken(r))
-	if kind == TokenOAuth || kind == TokenInstallation || kind == TokenRejected {
-		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
-		writeJSONError(w, http.StatusUnauthorized, "Bad credentials")
-		return true
-	}
-	return false
+// writeJSONError writes a GitHub-shaped JSON error body with application/json.
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(struct {
+		Message string `json:"message"`
+	}{Message: message})
 }
 
 // writeScenarioStatus maps a non-OK Scenario to its HTTP status and body
