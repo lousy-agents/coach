@@ -1,55 +1,9 @@
 package codesignal
 
 import (
-	"encoding/json"
 	"errors"
 	"slices"
 )
-
-// SignalsWithheld records what a narrowed view of a Report left out, so a
-// shortened signals list is never mistaken for a smaller analysis. It is nil on
-// an unnarrowed Report. A narrowing is in effect when its identifying field is
-// set: MinSeverity for the severity floor, Top for the cap; a zero count next to
-// a set identifier is still reported.
-//
-// It describes presentation narrowing only: Summary and Coverage keep
-// describing the full analysis. An analysis-level filter (suppression, vendor
-// exclusion) changes what was analyzed, so it must change Summary and Coverage
-// and shall not reuse this record.
-type SignalsWithheld struct {
-	MinSeverity      Severity `json:"min_severity,omitempty"`
-	BelowMinSeverity int      `json:"below_min_severity"`
-	Top              int      `json:"top,omitempty"`
-	BeyondTop        int      `json:"beyond_top"`
-}
-
-// MarshalJSON emits each narrowing's pair of fields only while that narrowing
-// is in effect, so a cap-only view carries no floor fields and vice versa.
-func (w SignalsWithheld) MarshalJSON() ([]byte, error) {
-	var wire struct {
-		MinSeverity      Severity `json:"min_severity,omitempty"`
-		BelowMinSeverity *int     `json:"below_min_severity,omitempty"`
-		Top              int      `json:"top,omitempty"`
-		BeyondTop        *int     `json:"beyond_top,omitempty"`
-	}
-	if w.MinSeverity != "" {
-		wire.MinSeverity = w.MinSeverity
-		wire.BelowMinSeverity = &w.BelowMinSeverity
-	}
-	if w.Top > 0 {
-		wire.Top = w.Top
-		wire.BeyondTop = &w.BeyondTop
-	}
-	return json.Marshal(wire)
-}
-
-// ParseSeverityFloor accepts exactly the severities the report can emit.
-func ParseSeverityFloor(value string) (Severity, bool) {
-	if floor := Severity(value); slices.Contains(severityOrder, floor) {
-		return floor, true
-	}
-	return "", false
-}
 
 var (
 	// ErrUnknownSeverityFloor reports a NarrowOptions.MinSeverity outside the
@@ -125,13 +79,10 @@ func (r *Report) validateNarrowing(opts NarrowOptions) error {
 }
 
 func atOrAboveFloor(signals []Signal, floor Severity) ([]Signal, int) {
-	kept := make([]Signal, 0, len(signals))
 	floorRank := severityRank(floor)
-	for _, signal := range signals {
-		if severityRank(signal.Severity) >= floorRank {
-			kept = append(kept, signal)
-		}
-	}
+	kept := slices.DeleteFunc(append(make([]Signal, 0, len(signals)), signals...), func(signal Signal) bool {
+		return severityRank(signal.Severity) < floorRank
+	})
 	return kept, len(signals) - len(kept)
 }
 
@@ -141,18 +92,12 @@ func leading(signals []Signal, n int) ([]Signal, int) {
 }
 
 func followSignals(changes []ProjectChange, kept []Signal) []ProjectChange {
-	if changes == nil {
-		return nil
-	}
 	keptIDs := make(map[string]struct{}, len(kept))
 	for _, signal := range kept {
 		keptIDs[signal.ID] = struct{}{}
 	}
-	followed := make([]ProjectChange, 0, len(changes))
-	for _, change := range changes {
-		if _, ok := keptIDs[change.ID]; ok {
-			followed = append(followed, change)
-		}
-	}
-	return followed
+	return slices.DeleteFunc(slices.Clone(changes), func(change ProjectChange) bool {
+		_, isKept := keptIDs[change.ID]
+		return !isKept
+	})
 }

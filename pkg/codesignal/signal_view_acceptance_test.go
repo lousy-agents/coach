@@ -10,8 +10,8 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func viewReport(severities ...codesignal.Severity) *codesignal.Report {
-	report := &codesignal.Report{
+func viewReport(severities ...codesignal.Severity) codesignal.Report {
+	report := codesignal.Report{
 		SchemaVersion: "2",
 		Summary:       codesignal.Summary{ActiveSignals: len(severities)},
 	}
@@ -24,7 +24,7 @@ func viewReport(severities ...codesignal.Severity) *codesignal.Report {
 // mixedLifecycleReport is built, not hand-assembled, so its order is the one
 // Build produces: a medium finding introduced by the change sorts ahead of a
 // high finding that already existed, because lifecycle outranks severity.
-func mixedLifecycleReport() *codesignal.Report {
+func mixedLifecycleReport() codesignal.Report {
 	introducedMedium := codesignal.FileChange{
 		Path:          "new.go",
 		Status:        "modified",
@@ -38,10 +38,10 @@ func mixedLifecycleReport() *codesignal.Report {
 		Base:   resultWithCognitiveComplexity("old.go", ccRecord("legacy", 40, semantics.Location{StartRow: 1, EndRow: 9})),
 		Head:   resultWithCognitiveComplexity("old.go", ccRecord("legacy", 40, semantics.Location{StartRow: 1, EndRow: 9})),
 	}
-	return build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{introducedMedium, existingHigh}})
+	return *build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{introducedMedium, existingHigh}})
 }
 
-func withheldWire(report *codesignal.Report) string {
+func withheldWire(report codesignal.Report) string {
 	encoded, err := json.Marshal(report)
 	Expect(err).NotTo(HaveOccurred())
 	var document map[string]json.RawMessage
@@ -49,10 +49,10 @@ func withheldWire(report *codesignal.Report) string {
 	return string(document["signals_withheld"])
 }
 
-func narrow(report *codesignal.Report, opts codesignal.NarrowOptions) *codesignal.Report {
+func narrow(report *codesignal.Report, opts codesignal.NarrowOptions) codesignal.Report {
 	view, err := report.Narrow(opts)
 	Expect(err).NotTo(HaveOccurred())
-	return view
+	return *view
 }
 
 var _ = Describe("Narrowed report views", func() {
@@ -70,7 +70,7 @@ var _ = Describe("Narrowed report views", func() {
 		It("keeps the high finding when a floor of high and a cap of one are requested together", func() {
 			report := mixedLifecycleReport()
 
-			view := narrow(report, codesignal.NarrowOptions{MinSeverity: "high", Top: 1})
+			view := narrow(&report, codesignal.NarrowOptions{MinSeverity: "high", Top: 1})
 
 			Expect(view.Signals).To(HaveLen(1))
 			Expect(view.Signals[0].Severity).To(Equal(codesignal.Severity("high")))
@@ -80,7 +80,9 @@ var _ = Describe("Narrowed report views", func() {
 		})
 
 		It("keeps the leading introduced finding when only the cap is requested", func() {
-			view := narrow(mixedLifecycleReport(), codesignal.NarrowOptions{Top: 1})
+			report := mixedLifecycleReport()
+
+			view := narrow(&report, codesignal.NarrowOptions{Top: 1})
 
 			Expect(view.Signals).To(HaveLen(1))
 			Expect(view.Signals[0].Severity).To(Equal(codesignal.Severity("medium")))
@@ -92,7 +94,7 @@ var _ = Describe("Narrowed report views", func() {
 		It("accounts for every signal once: the floor first, then the cap over what remains", func() {
 			report := viewReport("high", "high", "low", "low")
 
-			view := narrow(report, codesignal.NarrowOptions{MinSeverity: "high", Top: 1})
+			view := narrow(&report, codesignal.NarrowOptions{MinSeverity: "high", Top: 1})
 
 			Expect(view.Signals).To(HaveLen(1))
 			Expect(withheldWire(view)).To(Equal(
@@ -105,11 +107,12 @@ var _ = Describe("Narrowed report views", func() {
 		It("returns the report itself with no withheld record", func() {
 			report := viewReport("high", "low")
 
-			view := narrow(report, codesignal.NarrowOptions{})
+			view, err := report.Narrow(codesignal.NarrowOptions{})
 
-			Expect(view).To(BeIdenticalTo(report))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(view).To(BeIdenticalTo(&report))
 			Expect(view.SignalsWithheld).To(BeNil())
-			Expect(withheldWire(view)).To(BeEmpty())
+			Expect(withheldWire(*view)).To(BeEmpty())
 		})
 	})
 
@@ -132,7 +135,8 @@ var _ = Describe("Narrowed report views", func() {
 		)
 
 		It("refuses to narrow a report that is already narrowed", func() {
-			narrowed := narrow(viewReport("high", "medium", "low"), codesignal.NarrowOptions{MinSeverity: "medium"})
+			source := viewReport("high", "medium", "low")
+			narrowed := narrow(&source, codesignal.NarrowOptions{MinSeverity: "medium"})
 
 			view, err := narrowed.Narrow(codesignal.NarrowOptions{Top: 1})
 

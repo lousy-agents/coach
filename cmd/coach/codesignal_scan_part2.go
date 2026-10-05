@@ -68,14 +68,3 @@ func renderScanResult(report *codesignal.Report, f codesignalFlags, stdout, stde
 	}
 	return 0
 }
-
-func narrowOptionsFor(f codesignalFlags) codesignal.NarrowOptions {
-	var opts codesignal.NarrowOptions
-	if f.minSeveritySet {
-		opts.MinSeverity = codesignal.Severity(f.minSeverity)
-	}
-	if f.topSet {
-		opts.Top, _ = parseTopCap(f.top)
-	}
-	return opts
-}

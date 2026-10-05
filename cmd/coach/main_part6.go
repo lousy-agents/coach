@@ -2,13 +2,37 @@ package main
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 
 	"os"
 )
+
+// flagValueCheck is one flag value check; want completes the sentence
+// "must be ..." in the usage error.
+type flagValueCheck struct {
+	flag  string
+	value string
+	valid bool
+	want  string
+}
+
+func (c flagValueCheck) message() string {
+	return fmt.Sprintf("coach: invalid --%s value %q: must be %s", c.flag, c.value, c.want)
+}
+
+// flagValueChecks lists the value-checked flags in the order their errors are
+// reported.
+func flagValueChecks(f codesignalFlags) []flagValueCheck {
+	return []flagValueCheck{
+		{"format", f.format, f.format == "text" || f.format == "json", `"text" or "json"`},
+		{"scope", f.scope, f.scope == "production" || f.scope == "all", `"production" or "all"`},
+		{"min-severity", f.minSeverity, validMinSeverityFlag(f), `"high", "medium", "advisory", or "low"`},
+		{"top", f.top, validTopFlag(f), "a positive integer"},
+		{"project-language", f.projectLanguage, f.projectLanguage == "go" || f.projectLanguage == "typescript", `"go" or "typescript"`},
+	}
+}
 
 func validateCodesignalFlags(f codesignalFlags, positional []string) string {
 	if f.outputSet {
@@ -20,24 +44,10 @@ func validateCodesignalFlags(f codesignalFlags, positional []string) string {
 	if !f.baseline && f.base == "" {
 		return "coach: missing required --base flag"
 	}
-	if f.format != "text" && f.format != "json" {
-		return fmt.Sprintf("coach: invalid --format value %q: must be \"text\" or \"json\"", f.format)
-	}
-	if f.scope != "production" && f.scope != "all" {
-		return fmt.Sprintf("coach: invalid --scope value %q: must be \"production\" or \"all\"", f.scope)
-	}
-	if f.minSeveritySet {
-		if _, ok := codesignal.ParseSeverityFloor(f.minSeverity); !ok {
-			return fmt.Sprintf("coach: invalid --min-severity value %q: must be \"high\", \"medium\", \"advisory\", or \"low\"", f.minSeverity)
+	for _, check := range flagValueChecks(f) {
+		if !check.valid {
+			return check.message()
 		}
-	}
-	if f.topSet {
-		if _, ok := parseTopCap(f.top); !ok {
-			return fmt.Sprintf("coach: invalid --top value %q: must be a positive integer", f.top)
-		}
-	}
-	if f.projectLanguage != "go" && f.projectLanguage != "typescript" {
-		return fmt.Sprintf("coach: invalid --project-language value %q: must be \"go\" or \"typescript\"", f.projectLanguage)
 	}
 	if len(positional) > 0 {
 		return fmt.Sprintf("coach: unexpected positional argument %q", positional[0])
@@ -45,10 +55,6 @@ func validateCodesignalFlags(f codesignalFlags, positional []string) string {
 	return ""
 }
 
-func parseTopCap(value string) (int, bool) {
-	n, err := strconv.Atoi(value)
-	return n, err == nil && n > 0
-}
 func renderReport(report *codesignal.Report, format string, renderOptions codesignalcli.RenderOptions, stdout, stderr *os.File) int {
 	if format == "json" {
 		encoded, err := codesignalcli.RenderJSON(report)

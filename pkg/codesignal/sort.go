@@ -1,6 +1,10 @@
 package codesignal
 
-import "sort"
+import (
+	"cmp"
+	"math"
+	"slices"
+)
 
 func signalPriorityGroup(sig Signal) int {
 	switch sig.Lifecycle {
@@ -25,39 +29,32 @@ func signalPriorityGroup(sig Signal) int {
 // magnitude (signals with a magnitude first, larger ratio first), path,
 // location, rule, and ID.
 func sortSignals(signals []Signal) {
-	sort.SliceStable(signals, func(i, j int) bool {
-		a, b := signals[i], signals[j]
+	slices.SortStableFunc(signals, compareSignals)
+}
 
-		ga, gb := signalPriorityGroup(a), signalPriorityGroup(b)
-		if ga != gb {
-			return ga < gb
-		}
-		if ra, rb := severityRank(a.Severity), severityRank(b.Severity); ra != rb {
-			return ra > rb
-		}
-		if ra, rb := confidenceRank(a.Confidence), confidenceRank(b.Confidence); ra != rb {
-			return ra > rb
-		}
-		ma, hasMagnitudeA := signalMagnitude(a)
-		mb, hasMagnitudeB := signalMagnitude(b)
-		if hasMagnitudeA != hasMagnitudeB {
-			return hasMagnitudeA
-		}
-		if hasMagnitudeA && ma != mb {
-			return ma > mb
-		}
-		if a.Path != b.Path {
-			return a.Path < b.Path
-		}
-		if a.Location.StartRow != b.Location.StartRow {
-			return a.Location.StartRow < b.Location.StartRow
-		}
-		if a.Location.StartCol != b.Location.StartCol {
-			return a.Location.StartCol < b.Location.StartCol
-		}
-		if a.RuleID != b.RuleID {
-			return a.RuleID < b.RuleID
-		}
-		return a.ID < b.ID
-	})
+func compareSignals(a, b Signal) int {
+	return cmp.Or(
+		cmp.Compare(signalPriorityGroup(a), signalPriorityGroup(b)),
+		cmp.Compare(severityRank(b.Severity), severityRank(a.Severity)),
+		cmp.Compare(confidenceRank(b.Confidence), confidenceRank(a.Confidence)),
+		compareMagnitudeDescending(a, b),
+		cmp.Compare(a.Path, b.Path),
+		cmp.Compare(a.Location.StartRow, b.Location.StartRow),
+		cmp.Compare(a.Location.StartCol, b.Location.StartCol),
+		cmp.Compare(a.RuleID, b.RuleID),
+		cmp.Compare(a.ID, b.ID),
+	)
+}
+
+// compareMagnitudeDescending orders larger magnitudes first; signals without a
+// magnitude sort after every signal that has one.
+func compareMagnitudeDescending(a, b Signal) int {
+	return cmp.Compare(magnitudeSortKey(b), magnitudeSortKey(a))
+}
+
+func magnitudeSortKey(sig Signal) float64 {
+	if ratio, ok := signalMagnitude(sig); ok {
+		return ratio
+	}
+	return math.Inf(-1)
 }

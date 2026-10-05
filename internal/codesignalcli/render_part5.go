@@ -59,52 +59,6 @@ func renderBaselineSummary(b *strings.Builder, report *codesignal.Report) {
 	fmt.Fprintf(b, "tracked files discovered: %d, analyzed: %d, unsupported: %d, excluded: %d, unanalyzable: %d, active signals: %d, diagnostics: %d\n",
 		tracked, analyzed, unsupported, excluded, unanalyzable, report.Summary.ActiveSignals, len(report.Diagnostics))
 }
-
-// renderWithheldSignals writes the one line that says what a narrowed view
-// left out. seeAllCommand is the invocation that shows everything.
-func renderWithheldSignals(b *strings.Builder, withheld *codesignal.SignalsWithheld, seeAllCommand string) {
-	if withheld == nil {
-		return
-	}
-	var phrases []string
-	var counts []int
-	if withheld.MinSeverity != "" {
-		phrases = append(phrases, "below --min-severity "+string(withheld.MinSeverity))
-		counts = append(counts, withheld.BelowMinSeverity)
-	}
-	if withheld.Top > 0 {
-		phrases = append(phrases, fmt.Sprintf("beyond --top %d", withheld.Top))
-		counts = append(counts, withheld.BeyondTop)
-	}
-	if len(phrases) == 0 {
-		return
-	}
-
-	total := 0
-	for _, count := range counts {
-		total += count
-	}
-	fmt.Fprintf(b, "withheld: %s %s", signalCountNoun(total), withheldBreakdown(phrases, counts))
-	b.WriteString("; counts above describe the full analysis")
-	if total > 0 && seeAllCommand != "" {
-		fmt.Fprintf(b, "; see all: %s", seeAllCommand)
-	}
-	b.WriteString("\n")
-}
-
-func withheldBreakdown(phrases []string, counts []int) string {
-	if len(phrases) == 1 {
-		return phrases[0]
-	}
-	return fmt.Sprintf("(%d %s, %d %s)", counts[0], phrases[0], counts[1], phrases[1])
-}
-
-func signalCountNoun(n int) string {
-	if n == 1 {
-		return "1 signal"
-	}
-	return fmt.Sprintf("%d signals", n)
-}
 func pathCountClause(n int) string {
 	if n == 1 {
 		return "1 path was not analyzed"

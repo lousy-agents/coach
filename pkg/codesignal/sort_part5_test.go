@@ -58,3 +58,16 @@ func TestSortSignals_UnrecognizedConfidenceDoesNotPanicAndSortsLast(t *testing.T
 		t.Errorf("unrecognized Confidence must sort after low: got order %q,%q, want %q,%q", signals2[0].ID, signals2[1].ID, "d", "c")
 	}
 }
+
+func TestSortSignals_NegativeMagnitudeStillSortsBeforeNoMagnitude(t *testing.T) {
+	noMagnitude := sortableSignal("a", "r", "a.go", "existing", false, "medium", "high", 0, 0)
+	negativeMagnitude := sortableSignal("b", cognitiveComplexityRule.ruleID, "z.go", "existing", false, "medium", "high", 0, 0)
+	negativeMagnitude.Evidence = "cognitive_complexity=-15"
+
+	signals := []Signal{noMagnitude, negativeMagnitude}
+	sortSignals(signals)
+
+	if signals[0].ID != "b" || signals[1].ID != "a" {
+		t.Errorf("a signal with a magnitude must sort before one without, even when the ratio is negative: got order %q,%q, want %q,%q", signals[0].ID, signals[1].ID, "b", "a")
+	}
+}

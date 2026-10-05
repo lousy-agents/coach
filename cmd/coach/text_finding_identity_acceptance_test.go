@@ -33,20 +33,19 @@ func nestedIfs(name string, depth int) string {
 // a line in another block or in the summary.
 func findingBlockWith(text string, requiredLines ...string) string {
 	for _, block := range strings.Split(text, "\n\n") {
-		lines := strings.Split(block, "\n")
-		matches := true
-		for _, required := range requiredLines {
-			if !slices.Contains(lines, required) {
-				matches = false
-				break
-			}
-		}
-		if matches {
+		if carriesEveryLine(block, requiredLines) {
 			return block
 		}
 	}
 	Fail(fmt.Sprintf("no text block carries all of %q in:\n%s", requiredLines, text))
 	return ""
+}
+
+func carriesEveryLine(block string, requiredLines []string) bool {
+	lines := strings.Split(block, "\n")
+	return !slices.ContainsFunc(requiredLines, func(required string) bool {
+		return !slices.Contains(lines, required)
+	})
 }
 
 var _ = Describe("coach codesignal text finding identity", func() {

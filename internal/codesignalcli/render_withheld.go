@@ -1,0 +1,61 @@
+package codesignalcli
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/lousy-agents/coach/pkg/codesignal"
+)
+
+type withheldClause struct {
+	phrase string
+	count  int
+}
+
+func withheldClauses(withheld *codesignal.SignalsWithheld) []withheldClause {
+	var clauses []withheldClause
+	if withheld.MinSeverity != "" {
+		clauses = append(clauses, withheldClause{"below --min-severity " + string(withheld.MinSeverity), withheld.BelowMinSeverity})
+	}
+	if withheld.Top > 0 {
+		clauses = append(clauses, withheldClause{fmt.Sprintf("beyond --top %d", withheld.Top), withheld.BeyondTop})
+	}
+	return clauses
+}
+
+// renderWithheldSignals writes the one line that says what a narrowed view
+// left out. seeAllCommand is the invocation that shows everything.
+func renderWithheldSignals(b *strings.Builder, withheld *codesignal.SignalsWithheld, seeAllCommand string) {
+	if withheld == nil {
+		return
+	}
+	clauses := withheldClauses(withheld)
+	if len(clauses) == 0 {
+		return
+	}
+
+	total := 0
+	for _, clause := range clauses {
+		total += clause.count
+	}
+	fmt.Fprintf(b, "withheld: %s %s", signalCountNoun(total), withheldBreakdown(clauses))
+	b.WriteString("; counts above describe the full analysis")
+	if total > 0 && seeAllCommand != "" {
+		fmt.Fprintf(b, "; see all: %s", seeAllCommand)
+	}
+	b.WriteString("\n")
+}
+
+func withheldBreakdown(clauses []withheldClause) string {
+	if len(clauses) == 1 {
+		return clauses[0].phrase
+	}
+	return fmt.Sprintf("(%d %s, %d %s)", clauses[0].count, clauses[0].phrase, clauses[1].count, clauses[1].phrase)
+}
+
+func signalCountNoun(n int) string {
+	if n == 1 {
+		return "1 signal"
+	}
+	return fmt.Sprintf("%d signals", n)
+}

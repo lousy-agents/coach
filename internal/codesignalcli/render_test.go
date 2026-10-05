@@ -72,6 +72,13 @@ func TestRenderTextSignalsPresentRenderingIsPinnedExactly(t *testing.T) {
 	}
 }
 
+func requireContains(t *testing.T, got, want string) {
+	t.Helper()
+	if !strings.Contains(got, want) {
+		t.Fatalf("missing %q in:\n%s", want, got)
+	}
+}
+
 func TestRenderTextWithheldSignalsLine(t *testing.T) {
 	signal := codesignal.Signal{RuleID: "r", Severity: "high", Path: "a.go"}
 
@@ -151,12 +158,8 @@ func TestRenderTextWithheldSignalsLine(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := RenderTextWithOptions(tc.report, RenderOptions{SeeAllCommand: "coach codesignal --baseline"})
-			if !strings.Contains(got, tc.wantLine) {
-				t.Fatalf("missing %q in:\n%s", tc.wantLine, got)
-			}
-			if tc.wantLead != "" && !strings.Contains(got, tc.wantLead) {
-				t.Fatalf("missing %q in:\n%s", tc.wantLead, got)
-			}
+			requireContains(t, got, tc.wantLine)
+			requireContains(t, got, tc.wantLead)
 		})
 	}
 
