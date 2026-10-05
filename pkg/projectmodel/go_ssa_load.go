@@ -93,8 +93,8 @@ func loadGoSnapshot(ctx context.Context, loader goProgramLoader, snapshot fs.FS,
 	return loaded, nil
 }
 
-// stripTempDir removes the materialized snapshot's absolute temp-dir prefix from
-// msg (as embedded by go/packages error text), so
+// stripTempDir removes the materialized snapshot's absolute temp-dir prefix
+// from msg (as embedded by go/packages error text), so
 // CallGraphResult.Coverage.Diagnostics stays deterministic across runs and
 // across different absolute snapshot roots -- mirroring relCallSitePath's
 // tempDir stripping for call-site paths.

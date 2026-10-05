@@ -65,8 +65,9 @@ func (a *layerBypassPositionAcc) addFunctions(ctx context.Context, root loadedGo
 }
 
 // fnPosition resolves fn's declaration position to a repository-relative
-// package directory, file, and 1-based line, stripping the materialized snapshot's
-// absolute tempDir prefix the same way relCallSitePath does for call sites.
+// package directory, file, and 1-based line, stripping the materialized
+// snapshot's absolute tempDir prefix the same way relCallSitePath does for
+// call sites.
 // It reports false for a function with no resolvable position (e.g. a
 // synthetic wrapper).
 func fnPosition(tempDir string, fn *ssa.Function) (layerBypassNodePosition, bool) {
