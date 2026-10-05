@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/pkgmanager"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 	"github.com/lousy-agents/coach/internal/projectbridge"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
@@ -99,7 +101,7 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	// established convention rather than degrading to a
 	// DiagBackendUnavailable diagnostic. The resolved root is the walk
 	// ceiling for PrepareTSRuntime's compiler resolution (see
-	// resolveCompilerForRuntime), never the project-manifest origin and
+	// tstoolchain.ResolveCompilerForRuntime), never the project-manifest origin and
 	// never analysis input. Selected policy roots come from config.Roots.
 	root, err := gitrepo.RepositoryRoot(req.Dir)
 	if err != nil {
@@ -108,12 +110,12 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 
 	runtime, cleanup, err := PrepareTSRuntime(ctx, root, config.Roots)
 	if err != nil {
-		var unresolved *CompilerUnresolvedError
+		var unresolved *tstoolchain.CompilerUnresolvedError
 		if errors.As(err, &unresolved) {
 			unresolved.ConfigPath = req.ConfigPath
 			return nil, unresolved
 		}
-		var runtimeErr *RuntimeUnresolvedError
+		var runtimeErr *tstoolchain.RuntimeUnresolvedError
 		if errors.As(err, &runtimeErr) {
 			runtimeErr.ConfigPath = req.ConfigPath
 			return nil, runtimeErr
@@ -127,7 +129,7 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 		return nil, fmt.Errorf("coach: computing TypeScript analyzer digest: %w", digestErr)
 	}
 
-	pmKind, pmVersion, pmOrigin := snapshotPackageManagerAtRevision(ctx, req.Dir, req.HeadRevision, config.Roots)
+	pmKind, pmVersion, pmOrigin := pkgmanager.AtRevision(ctx, req.Dir, req.HeadRevision, config.Roots)
 
 	headChanges, headFacts, headDiagnostics, headCoverage, headScope, headPhases, err := b.evaluateRevision(ctx, req.Dir, req.HeadRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {

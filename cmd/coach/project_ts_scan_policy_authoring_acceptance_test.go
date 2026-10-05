@@ -20,8 +20,8 @@ import (
 	. "github.com/onsi/gomega"
 	"golang.org/x/sys/unix"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // controllingTerminalCommandTimeout bounds runCoachBinaryWithControllingTerminal's
@@ -160,8 +160,8 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring never mu
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 			commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
-			miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
+			miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 
 			answers := "1\n\n\n\napprove\n"
@@ -260,8 +260,8 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard le
 	When("a --baseline scan resolves no TypeScript compiler, a real mise scope is offered to set it up, and the offer is cancelled", func() {
 		It("presents the compiler-setup menu, leaves the pre-existing remediation line untouched, reports the cancellation distinctly from guided policy authoring's own, and never invokes mise install", func() {
 			repo := noSupportedCompilerRepo()
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
-			miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
+			miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 
 			session := startCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path),
@@ -338,7 +338,7 @@ var _ = Describe("coach codesignal (real scan): interactive compiler setup offer
 	When("a mise scope is selected and confirmed, but the mise install itself fails", func() {
 		It("exits 2, emits no CodeSignal report, and leaves the repository's tracked files unmodified (AC-18)", func() {
 			repo := noSupportedCompilerRepo()
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
 			miseDir := writeFailingInstallStubMiseScript()
 			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 			statusBefore := gitStatusPorcelain(repo)
@@ -362,8 +362,8 @@ var _ = Describe("coach codesignal (real scan): interactive compiler setup offer
 	When("a mise scope is selected and confirmed, and the mise install succeeds", func() {
 		It("reruns the complete readiness check (AC-SET-6/AC-7) and, since the rerun reports ready, continues the same scan through to a rendered CodeSignal report", func() {
 			repo := noSupportedCompilerRepo()
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
-			miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
+			miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 
 			session := startCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path),
@@ -388,8 +388,8 @@ var _ = Describe("coach codesignal (real scan): interactive compiler setup offer
 	When("a mise scope is selected and confirmed, the install succeeds, and a second unread confirmation answer is left over", func() {
 		It("never replays the leftover answer into a second execution within the same run (AC-11's single-use confirmation)", func() {
 			repo := noSupportedCompilerRepo()
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
-			miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
+			miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 
 			session := startCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path),
@@ -422,14 +422,14 @@ var _ = Describe("coach codesignal (real scan): confirming project_package from 
 		It("previews the exact npm command and working directory, exits 2 with no report, reports the failure, and never invokes mise install", func() {
 			nodeDir := writeStubNodeScript("v24.9.9")
 			npmDir := writeStubPackageManagerScript("npm", "11.0.0")
-			miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
+			miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 			path := nodeDir + string(os.PathListSeparator) + npmDir + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 
 			repo := newTempGitRepo()
 			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-			commitFile(repo, "package.json", fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", codesignalcli.SupportedTypescriptVersions[0]))
+			commitFile(repo, "package.json", fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", tstoolchain.SupportedTypescriptVersions[0]))
 			commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
 
 			session := startCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path),
 				"codesignal", "--baseline", "--project-config", "project.json", "--project-language", "typescript", "--format=json")
@@ -475,7 +475,7 @@ var _ = Describe("coach codesignal (real scan): the interactive compiler-setup o
 
 			repo := newTempGitRepo()
 			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-			commitFile(repo, "package.json", fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", codesignalcli.SupportedTypescriptVersions[0]))
+			commitFile(repo, "package.json", fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", tstoolchain.SupportedTypescriptVersions[0]))
 			commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
 
 			master, slave := openPTYPair()
@@ -527,8 +527,8 @@ var _ = Describe("coach codesignal (real scan): the interactive compiler-setup o
 	When("host Node is genuinely missing while the repository's mise scope independently declares an installable TypeScript version, and a controlling terminal is available", func() {
 		It("never opens the interactive compiler-setup prompt, printing only the node_missing remediation line and exiting 2", func() {
 			repo := noSupportedCompilerRepo()
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
-			miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
+			miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 			path := miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 			requireNodeUnreachable(path)
 
@@ -550,8 +550,8 @@ var _ = Describe("coach codesignal (real scan): the interactive compiler-setup o
 	When("host Node major is outside the supported set while the repository's mise scope independently declares an installable TypeScript version, and a controlling terminal is available", func() {
 		It("never opens the interactive compiler-setup prompt, printing only the node_unsupported remediation line and exiting 2", func() {
 			repo := noSupportedCompilerRepo()
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
-			miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
+			miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 			path := writeStubNodeScript("v25.0.0") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 
 			session := startCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path),
@@ -585,8 +585,8 @@ var _ = Describe("coach codesignal (real scan): --no-interactive and a non-empty
 			repo := newTempGitRepo()
 			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
-			miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
+			miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 
 			env := append(append([]string{}, stubToolchainEnv(path)...), extraEnv...)
@@ -624,8 +624,8 @@ var _ = Describe("coach codesignal: --no-interactive and a non-empty CI environm
 			repo := newTempGitRepo()
 			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
-			miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
+			miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 			path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 
 			env := append(append([]string{}, stubToolchainEnv(path)...), extraEnv...)

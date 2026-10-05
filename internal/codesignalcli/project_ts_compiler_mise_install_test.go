@@ -10,18 +10,19 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 func TestRunPrepareCompilerMiseSetupCancelsOnDeclinedConfirmation(t *testing.T) {
-	originalDetect := detectGlobalMiseTypescriptVersion
-	defer func() { detectGlobalMiseTypescriptVersion = originalDetect }()
-	detectGlobalMiseTypescriptVersion = func(context.Context) (string, bool) {
-		return newestSupportedTypescriptVersion(), true
+	originalDetect := tstoolchain.DetectGlobalMiseTypescriptVersion
+	defer func() { tstoolchain.DetectGlobalMiseTypescriptVersion = originalDetect }()
+	tstoolchain.DetectGlobalMiseTypescriptVersion = func(context.Context) (string, bool) {
+		return tstoolchain.NewestSupportedTypescriptVersion(), true
 	}
 
 	readiness := readinessWithPrepareCompilerAction(projectreadiness.NextAction{
 		Kind: projectreadiness.NextActionPrepareCompiler, Executable: true,
-		Choices: []string{compilerOriginMiseProject, compilerOriginMiseGlobal},
+		Choices: []string{tstoolchain.OriginMiseProject, tstoolchain.OriginMiseGlobal},
 	})
 	var transcript bytes.Buffer
 
@@ -30,8 +31,8 @@ func TestRunPrepareCompilerMiseSetupCancelsOnDeclinedConfirmation(t *testing.T) 
 	if !result.Cancelled {
 		t.Fatalf("Cancelled = false, want true: %+v", result)
 	}
-	if result.Choice != compilerOriginMiseGlobal {
-		t.Fatalf("Choice = %q, want %q", result.Choice, compilerOriginMiseGlobal)
+	if result.Choice != tstoolchain.OriginMiseGlobal {
+		t.Fatalf("Choice = %q, want %q", result.Choice, tstoolchain.OriginMiseGlobal)
 	}
 	if result.Attempted {
 		t.Fatalf("Attempted = true, want false: a declined confirmation must never invoke install: %+v", result)
@@ -68,7 +69,7 @@ func TestRunPrepareCompilerMiseSetupReportsRequestedVersionOnInstallFailure(t *t
 	}
 
 	readiness := readinessWithPrepareCompilerAction(projectreadiness.NextAction{
-		Kind: projectreadiness.NextActionPrepareCompiler, Executable: true, Choices: []string{compilerOriginMiseProject},
+		Kind: projectreadiness.NextActionPrepareCompiler, Executable: true, Choices: []string{tstoolchain.OriginMiseProject},
 	})
 	var transcript bytes.Buffer
 
@@ -83,8 +84,8 @@ func TestRunPrepareCompilerMiseSetupReportsRequestedVersionOnInstallFailure(t *t
 	if result.Succeeded {
 		t.Fatalf("Succeeded = true, want false: the stub install exits 1: %+v", result)
 	}
-	if result.Version != newestSupportedTypescriptVersion() {
-		t.Fatalf("Version = %q, want the requested version %q, not empty: %+v", result.Version, newestSupportedTypescriptVersion(), result)
+	if result.Version != tstoolchain.NewestSupportedTypescriptVersion() {
+		t.Fatalf("Version = %q, want the requested version %q, not empty: %+v", result.Version, tstoolchain.NewestSupportedTypescriptVersion(), result)
 	}
 }
 

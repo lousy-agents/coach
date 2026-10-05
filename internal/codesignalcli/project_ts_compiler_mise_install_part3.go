@@ -1,8 +1,10 @@
 package codesignalcli
 
 import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // readinessHasBlockingRuntimeGap reports whether readiness.Checks.Runtime
@@ -38,24 +40,24 @@ func readinessHasBlockingRuntimeGap(readiness *projectreadiness.Result) (string,
 func filterMiseChoiceKinds(choices []string) []string {
 	var mise []string
 	for _, choice := range choices {
-		if choice == compilerOriginMiseProject || choice == compilerOriginMiseGlobal {
+		if choice == tstoolchain.OriginMiseProject || choice == tstoolchain.OriginMiseGlobal {
 			mise = append(mise, choice)
 		}
 	}
 	return mise
 }
 
-// miseSetupChoicesForReadiness reuses checkPolicy exactly the way
-// CheckProjectReadiness itself derives roots -- never a second, independent
+// miseSetupChoicesForReadiness reuses projectcheck.CheckPolicy exactly the way
+// projectcheck.Run itself derives roots -- never a second, independent
 // notion of "roots".
 func miseSetupChoicesForReadiness(dir, revision, configPath string) []projectreadiness.MiseChoice {
 	policyPath := configPath
 	if policyPath == "" {
 		policyPath = projectconfig.DefaultPath
 	}
-	_, roots, err := checkPolicy(dir, revision, policyPath)
+	_, roots, err := projectcheck.CheckPolicy(dir, revision, policyPath)
 	if err != nil {
 		return nil
 	}
-	return evaluateMiseSetupChoices(dir, roots)
+	return tstoolchain.EvaluateMiseSetupChoices(dir, roots)
 }

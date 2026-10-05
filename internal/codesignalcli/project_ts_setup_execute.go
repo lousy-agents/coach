@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/pkgmanager"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -47,9 +48,9 @@ var ErrSetupExecutionUnverifiedCommand = errors.New("setup execution: preview do
 
 // ErrSetupExecutionHazardousWorkingDirectory reports that
 // preview.WorkingDirectory itself carries a package-manager configuration
-// hazard (detectPackageManagerHazard) -- a committed .npmrc or bunfig.toml
+// hazard (pkgmanager.DetectPackageManagerHazard) -- a committed .npmrc or bunfig.toml
 // that would redirect the registry or otherwise bypass the frozen adapter's
-// script suppression: no subprocess is started. checkPackageManager scans the
+// script suppression: no subprocess is started. pkgmanager.Check scans the
 // selected roots' package contexts (project_ts_setup_detect.go), which is not
 // necessarily where a caller points preview.WorkingDirectory; ExecuteSetup
 // re-runs the same hazard scan directly against the directory it is about to
@@ -107,9 +108,9 @@ type SetupExecutionResult struct {
 // preview.WorkingDirectory's on-disk package-manager configuration files
 // themselves (.npmrc, .pnpmfile.cjs, bunfig.toml, pnpm-workspace.yaml):
 // those are read from the working directory regardless of environment
-// confinement. ExecuteSetup re-runs detectPackageManagerHazard directly
+// confinement. ExecuteSetup re-runs pkgmanager.DetectPackageManagerHazard directly
 // against preview.WorkingDirectory (not only the selected roots' package
-// contexts, which is what checkPackageManager scans when deciding whether to
+// contexts, which is what pkgmanager.Check scans when deciding whether to
 // offer this choice at all) and refuses -- spawning nothing -- if it finds
 // a hazard there (ErrSetupExecutionHazardousWorkingDirectory), so a
 // package-level .npmrc/bunfig.toml in a directory no selected root resolved
@@ -123,7 +124,7 @@ func ExecuteSetup(ctx context.Context, preview SetupPreview, confirmed bool) (Se
 	if !ok || template.executable != preview.Executable || !slices.Equal(preview.Args, template.args) || preview.Timeout != SetupPreviewTimeout {
 		return SetupExecutionResult{}, fmt.Errorf("%w: executable %q args %v timeout %s", ErrSetupExecutionUnverifiedCommand, preview.Executable, preview.Args, preview.Timeout)
 	}
-	if detail := detectPackageManagerHazard(preview.WorkingDirectory, preview.Executable); detail != "" {
+	if detail := pkgmanager.DetectPackageManagerHazard(preview.WorkingDirectory, preview.Executable); detail != "" {
 		return SetupExecutionResult{}, fmt.Errorf("%w: %s", ErrSetupExecutionHazardousWorkingDirectory, detail)
 	}
 

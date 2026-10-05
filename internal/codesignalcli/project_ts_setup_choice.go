@@ -2,6 +2,7 @@ package codesignalcli
 
 import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // SetupChoiceKind names one selectable entry AvailableSetupChoices may offer
@@ -49,7 +50,7 @@ type SetupChoiceMenu struct {
 
 // AvailableSetupChoices reports the setup choices available to resolve
 // readiness's compiler check, if it is failing. It decides purely from
-// fields CheckProjectReadiness already populated -- checks.package_manager's
+// fields projectcheck.Run already populated -- checks.package_manager's
 // classification (SA-280-012), the compiler check's declared version, and
 // readiness.MiseChoices -- rather than repeating any detection itself. A menu
 // with no choices and no withheld entries means checks.compiler is not
@@ -63,8 +64,8 @@ func AvailableSetupChoices(readiness projectreadiness.Result) SetupChoiceMenu {
 		RequiresExplicitSelection: readiness.Checks.PackageManager.Code == projectreadiness.GapPackageManagerAmbiguous,
 	}
 	menu = appendProjectPackageChoice(menu, readiness.Checks)
-	menu = appendMiseChoice(menu, readiness.MiseChoices, compilerOriginMiseProject, SetupChoiceProjectMise)
-	menu = appendMiseChoice(menu, readiness.MiseChoices, compilerOriginMiseGlobal, SetupChoiceGlobalMise)
+	menu = appendMiseChoice(menu, readiness.MiseChoices, tstoolchain.OriginMiseProject, SetupChoiceProjectMise)
+	menu = appendMiseChoice(menu, readiness.MiseChoices, tstoolchain.OriginMiseGlobal, SetupChoiceGlobalMise)
 	menu.Choices = append(menu.Choices, SetupChoice{Kind: SetupChoiceCancel})
 	return menu
 }
@@ -75,7 +76,7 @@ func AvailableSetupChoices(readiness projectreadiness.Result) SetupChoiceMenu {
 // version, and checks.package_manager passed -- which is also what proves a
 // readable lockfile is present, since every frozen row's locked install
 // refuses to run without one (requireReadableLockfile). This mirrors the rule
-// the mise scopes already follow (miseScopeDeclaresInstallableCompiler): a
+// the mise scopes already follow (tstoolchain.MiseScopeDeclaresInstallableCompiler): a
 // row that installs what is declared cannot install what is not declared, so
 // a manifest declaring no typescript, a range, or an out-of-set version is
 // withheld as manifest_declaration rather than offered as a choice whose
@@ -115,11 +116,11 @@ func appendProjectPackageChoice(menu SetupChoiceMenu, checks projectreadiness.Ch
 // disqualifyingDeclaration's negative form (used for the separate D4
 // resolution question) deliberately does not say.
 func installableDeclaration(declaration string) bool {
-	return isExactVersion(declaration) && isSupportedTypescriptVersion(declaration)
+	return tstoolchain.IsExactVersion(declaration) && tstoolchain.IsSupportedTypescriptVersion(declaration)
 }
 
 // appendMiseChoice offers kind exactly when the readiness pipeline already
-// verified that scope as an installation choice (evaluateMiseSetupChoices,
+// verified that scope as an installation choice (tstoolchain.EvaluateMiseSetupChoices,
 // owner decision D5). It deliberately does not read checks.compiler's origin
 // classes: those answer a different question -- where a compiler already is
 // -- and a scope can be absent there (nothing installed) while being

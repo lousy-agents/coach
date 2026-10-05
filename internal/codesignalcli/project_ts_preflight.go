@@ -10,6 +10,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // ProjectConfigErrorWithReadiness enriches a projectconfig.ConfigError with the
@@ -28,22 +29,22 @@ type ProjectConfigErrorWithReadiness struct {
 
 func (e *ProjectConfigErrorWithReadiness) Unwrap() error { return e.ConfigError }
 
-// CompilerUnresolvedErrorWithReadiness enriches a CompilerUnresolvedError
+// CompilerUnresolvedErrorWithReadiness enriches a tstoolchain.CompilerUnresolvedError
 // with the full TypeScript project-readiness snapshot computed for the same
 // dir/revision/configPath, so a real scan's controlling-terminal branch can
 // drive the interactive compiler-setup offer from the same facts the gap
 // itself was raised from, without a second, possibly racing readiness
 // computation. Unwrap returns the original
-// *CompilerUnresolvedError so errors.As(err, &plainTarget) still matches
+// *tstoolchain.CompilerUnresolvedError so errors.As(err, &plainTarget) still matches
 // through this wrapper exactly as it did before wrapping existed -- in
 // particular, classifyAnalysisError's own no-controlling-terminal fallback
 // needs no change at all.
-// ConfigPath is deliberately absent: *CompilerUnresolvedError already
+// ConfigPath is deliberately absent: *tstoolchain.CompilerUnresolvedError already
 // carries the policy path RemediationLine() renders, and a second copy here
 // could drift from it, pointing the printed remediation and the setup
 // session it precedes at two different policies.
 type CompilerUnresolvedErrorWithReadiness struct {
-	*CompilerUnresolvedError
+	*tstoolchain.CompilerUnresolvedError
 	Readiness *projectreadiness.Result
 	Revision  string
 }
@@ -152,7 +153,7 @@ type CompilerSetupOfferResult struct {
 }
 
 // RunCompilerSetupOffer runs the interactive, combined compiler-setup
-// session a real scan's CompilerUnresolvedError gap offers when a
+// session a real scan's tstoolchain.CompilerUnresolvedError gap offers when a
 // controlling terminal is available (AC-SET-9, AC-11): present
 // every AvailableSetupChoices entry -- project_package and/or a verified
 // mise scope -- in one menu, require an explicit single selection with no
@@ -160,9 +161,9 @@ type CompilerSetupOfferResult struct {
 // run the confirmed choice through its own execution path, and rerun
 // readiness (AC-SET-6) only after a successful install.
 //
-// gapCode is the CompilerUnresolvedError's own Code, not
+// gapCode is the tstoolchain.CompilerUnresolvedError's own Code, not
 // readiness.Checks.Compiler.Code: the two are independent
-// CheckProjectReadiness reads (project_readiness.go resolves Node and the
+// projectcheck.Run reads (project_readiness.go resolves Node and the
 // compiler separately), so a runtime-boundary gap (node_missing,
 // node_unsupported) can coexist with a readiness snapshot whose compiler
 // check independently offers an installable menu entry. A blocking runtime
@@ -252,6 +253,3 @@ func promptForSetupConfirmation(out io.Writer, reader *bufio.Reader) bool {
 	answer, _ := prompt.ReadLine(reader)
 	return strings.EqualFold(strings.TrimSpace(answer), "confirm")
 }
-
-// Defensive: packageManagerContexts falls back to the worktree root,
-// so it does not return an empty slice today.

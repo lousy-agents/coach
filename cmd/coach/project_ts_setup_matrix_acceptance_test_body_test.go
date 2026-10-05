@@ -5,6 +5,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -12,7 +13,7 @@ func body_projectTsSetupMatrixAcceptanceTest_withholdsYarnSPackageManagerFinding
 	GinkgoT().Setenv("PATH", pathWithStubNode("v24.9.9"))
 	repo, head := packageManagerMatrixFixture("yarn")
 
-	readiness, err := codesignalcli.CheckProjectReadiness(repo, head, "")
+	readiness, err := projectcheck.Run(repo, head, "")
 	Expect(err).NotTo(HaveOccurred())
 	Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
 	Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))

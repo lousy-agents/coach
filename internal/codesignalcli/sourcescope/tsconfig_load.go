@@ -25,6 +25,7 @@ func loadTSConfig(dir string) (tsConfig, bool, error) {
 
 	visited := map[string]bool{filepath.Clean(filepath.Join(dir, "tsconfig.json")): true}
 
+	// EvalSymlinks so rebase math uses the same path space as baseDir.
 	resolvedDir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return tsConfig{}, false, nil

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // miseInstallTimeout bounds `mise install`. It is far longer than
@@ -18,7 +19,7 @@ import (
 const miseInstallTimeout = 5 * time.Minute
 
 // miseNpmScriptSuppressionEnvKey/Value apply the npm row's suppression
-// (miseBackingNpmSuppressionFlag, "--ignore-scripts") to the npm invocation
+// (tstoolchain.MiseBackingNpmSuppressionFlag, "--ignore-scripts") to the npm invocation
 // mise's npm backend may spawn internally, via npm's own env-var config
 // convention (npm_config_<key>) rather than a CLI flag: mise's npm backend
 // exposes no documented flag-passthrough mechanism for that internal
@@ -64,7 +65,7 @@ type miseInstallAttempt struct {
 // way runMiseProbe confines a read-only probe: a private per-call working
 // directory outside any repository (so a repository-controlled mise.toml,
 // including one carrying an env `exec()` template that
-// hasMiseConfigHazard's own scan does not flag, is never discovered by mise
+// tstoolchain.HasMiseConfigHazard's own scan does not flag, is never discovered by mise
 // walking up from cwd), and an environment limited to
 // PATH/HOME/MISE_DATA_DIR/MISE_CONFIG_DIR -- plus the npm lifecycle-script
 // suppression above.
@@ -85,7 +86,7 @@ func runMiseInstallInsulated(ctx context.Context, toolSpec string) miseInstallAt
 	}
 	defer func() { _ = os.RemoveAll(workDir) }()
 
-	env := append(append([]string{}, miseProbeEnv()...), miseNpmScriptSuppressionEnvKey+"="+miseNpmScriptSuppressionEnvValue)
+	env := append(append([]string{}, tstoolchain.MiseProbeEnv()...), miseNpmScriptSuppressionEnvKey+"="+miseNpmScriptSuppressionEnvValue)
 	attempted, observed, exitErr := runBoundedMiseInstallSubprocess(ctx, workDir, env, toolSpec)
 	return miseInstallAttempt{attempted: attempted, observed: observed, exitErr: exitErr}
 }
@@ -113,7 +114,7 @@ func runBoundedMiseInstallSubprocess(ctx context.Context, dir string, env []stri
 		return false, false, nil
 	}
 
-	data, readErr := io.ReadAll(io.LimitReader(stdout, maxMiseProbeOutput+1))
+	data, readErr := io.ReadAll(io.LimitReader(stdout, tstoolchain.MaxMiseProbeOutput+1))
 	waitErr := cmd.Wait()
 
 	// Checked ahead of readErr/waitErr for the same reason
@@ -125,7 +126,7 @@ func runBoundedMiseInstallSubprocess(ctx context.Context, dir string, env []stri
 	if readErr != nil {
 		return true, false, nil
 	}
-	if int64(len(data)) > maxMiseProbeOutput {
+	if int64(len(data)) > tstoolchain.MaxMiseProbeOutput {
 		return true, false, nil
 	}
 	return true, true, waitErr
@@ -133,17 +134,17 @@ func runBoundedMiseInstallSubprocess(ctx context.Context, dir string, env []stri
 
 // miseInstallToolSpec derives the frozen row's exact install argument
 // (miseInstallCommandTemplate) rather than re-concatenating
-// miseNpmTypescriptTool and version separately, so this file cannot drift
+// tstoolchain.MiseNpmTypescriptTool and version separately, so this file cannot drift
 // from the frozen template if it ever changes shape.
 func miseInstallToolSpec(version string) string {
-	return strings.TrimPrefix(miseInstallCommand(version), "mise install ")
+	return strings.TrimPrefix(tstoolchain.MiseInstallCommand(version), "mise install ")
 }
 
 // miseInstallResult reports the outcome of installMiseTypescriptProject or
 // installMiseTypescriptGlobal.
 type miseInstallResult struct {
 	// Trusted is false when the matching trust gate
-	// (evaluateMiseProjectTrust/evaluateMiseGlobalTrust) refused before
+	// (tstoolchain.EvaluateMiseProjectTrust/tstoolchain.EvaluateMiseGlobalTrust) refused before
 	// anything ran; Code then names the refusal and every field below is
 	// zero.
 	Trusted bool
@@ -164,8 +165,8 @@ type miseInstallResult struct {
 	Observed bool
 
 	// Succeeded is true only when install, `mise where`, and
-	// classifyCompilerCandidate all agree the freshly-installed TypeScript
-	// is compilerClassEligible.
+	// tstoolchain.ClassifyCandidate all agree the freshly-installed TypeScript
+	// is tstoolchain.ClassEligible.
 	Succeeded bool
 
 	// Code names why Trusted or Succeeded is false: the trust gate's gap
@@ -179,7 +180,7 @@ type miseInstallResult struct {
 	Code string
 
 	// Origin, Version, Path, NativePath, and Class mirror
-	// classifyCompilerCandidate's result for the freshly-installed
+	// tstoolchain.ClassifyCandidate's result for the freshly-installed
 	// location, populated once the install's outcome was observed and
 	// exited zero.
 	Origin     string
@@ -190,22 +191,22 @@ type miseInstallResult struct {
 }
 
 func installMiseTypescriptProject(ctx context.Context, worktreeRoot, version string) miseInstallResult {
-	return installMiseTypescript(ctx, compilerOriginMiseProject, version, evaluateMiseProjectTrust(ctx, worktreeRoot))
+	return installMiseTypescript(ctx, tstoolchain.OriginMiseProject, version, tstoolchain.EvaluateMiseProjectTrust(ctx, worktreeRoot))
 }
 
 func installMiseTypescriptGlobal(ctx context.Context, version string) miseInstallResult {
-	return installMiseTypescript(ctx, compilerOriginMiseGlobal, version, evaluateMiseGlobalTrust(ctx))
+	return installMiseTypescript(ctx, tstoolchain.OriginMiseGlobal, version, tstoolchain.EvaluateMiseGlobalTrust(ctx))
 }
 
 // installMiseTypescript runs the frozen row's command sequence: refuse
 // unless trust already verified this scope, then `mise install`, then
 // (mirroring every other mise-origin resolution in this package)
-// classifyCompilerCandidate against a `mise where`-backed locator to confirm
+// tstoolchain.ClassifyCandidate against a `mise where`-backed locator to confirm
 // the installed compiler is genuinely eligible rather than merely
 // exit-code-zero.
-func installMiseTypescript(ctx context.Context, origin, version string, trust miseSetupTrust) miseInstallResult {
-	if !trust.trusted {
-		return miseInstallResult{Code: trust.code}
+func installMiseTypescript(ctx context.Context, origin, version string, trust tstoolchain.MiseTrust) miseInstallResult {
+	if !trust.Trusted {
+		return miseInstallResult{Code: trust.Code}
 	}
 	attempt := runMiseInstallInsulated(ctx, miseInstallToolSpec(version))
 	result := miseInstallResult{Trusted: true, Attempted: attempt.attempted, Observed: attempt.observed}
@@ -217,14 +218,14 @@ func installMiseTypescript(ctx context.Context, origin, version string, trust mi
 		return result
 	}
 
-	candidate := classifyCompilerCandidate(origin, func() (string, bool) {
-		return locateMiseTypescriptInstall(ctx, version)
+	candidate := tstoolchain.ClassifyCandidate(origin, func() (string, bool) {
+		return tstoolchain.LocateMiseTypescriptInstall(ctx, version)
 	})
-	result.Origin = candidate.origin
-	result.Version = candidate.version
-	result.Path = candidate.path
-	result.NativePath = candidate.nativePath
-	result.Class = candidate.class
-	result.Succeeded = candidate.class == compilerClassEligible
+	result.Origin = candidate.Origin
+	result.Version = candidate.Version
+	result.Path = candidate.Path
+	result.NativePath = candidate.NativePath
+	result.Class = candidate.Class
+	result.Succeeded = candidate.Class == tstoolchain.ClassEligible
 	return result
 }

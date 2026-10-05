@@ -11,7 +11,7 @@ import (
 // AC-SET-13's report-all-gaps clause: every non-policy gap readiness.Gaps
 // carries is reported, in readiness's own order, and the line names the
 // --check-project rerun with no hedge about whether the gap outlives the
-// policy failure. Since R1, checkProjectShape and checkPackageManager
+// policy failure. Since R1, checkProjectShape and pkgmanager.Check
 // report not_checked instead of guessing from the worktree root when the
 // policy has failed, so nothing left in readiness.Gaps here is an artifact
 // of that guess to hedge about in the first place -- a package-manager

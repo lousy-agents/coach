@@ -12,7 +12,7 @@ import (
 // defense-in-depth guard that has no reachable counterexample in today's
 // frozen matrix (SA-280-012): all three real rows key setupCommandTemplates
 // by the same string as their own executable field. It exists for the day a
-// future row (for example packageManagerKindYarn, already declared but not
+// future row (for example pkgmanager.KindYarn, already declared but not
 // yet wired into the matrix) does not share that property. setupCommandTemplates
 // is mutated directly and restored via t.Cleanup, since the public API
 // (BuildSetupPreview) can never itself produce such a mismatched row.

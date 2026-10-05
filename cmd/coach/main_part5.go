@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/render"
 
 	"os"
@@ -23,7 +23,7 @@ func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int
 		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
 	}
 
-	result, err := codesignalcli.CheckProjectReadiness(dir, revision, f.projectConfig)
+	result, err := projectcheck.Run(dir, revision, f.projectConfig)
 	if err != nil {
 		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
 	}

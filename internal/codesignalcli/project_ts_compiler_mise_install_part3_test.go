@@ -8,6 +8,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 func writeFakeInstalledTypescriptForTest(t *testing.T, installDir, version string) {
@@ -19,11 +20,11 @@ func writeFakeInstalledTypescriptForTest(t *testing.T, installDir, version strin
 	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(`{"name":"typescript","version":"`+version+`"}`+"\n"), 0o644); err != nil {
 		t.Fatalf("write package.json: %v", err)
 	}
-	nativeDir := filepath.Join(installDir, "node_modules", "@typescript", nativeTypescriptUnscopedName())
+	nativeDir := filepath.Join(installDir, "node_modules", "@typescript", tstoolchain.NativeTypescriptUnscopedName())
 	if err := os.MkdirAll(nativeDir, 0o755); err != nil {
 		t.Fatalf("mkdir native: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(nativeDir, "package.json"), []byte(`{"name":"`+NativeTypescriptPackageName()+`","version":"`+version+`"}`+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(nativeDir, "package.json"), []byte(`{"name":"`+tstoolchain.NativeTypescriptPackageName()+`","version":"`+version+`"}`+"\n"), 0o644); err != nil {
 		t.Fatalf("write native package.json: %v", err)
 	}
 }
@@ -31,21 +32,21 @@ func writeFakeInstalledTypescriptForTest(t *testing.T, installDir, version strin
 // TestMiseChoicesForPrepareCompilerFallsBackToVerifiedChoicesWhenActionChoicesNil
 // proves that when action.Choices is nil (no package-manager-adapter
 // restriction has run), miseChoicesForPrepareCompiler recomputes the same
-// evaluateMiseSetupChoices verification CheckProjectReadiness itself uses,
+// tstoolchain.EvaluateMiseSetupChoices verification projectcheck.Run itself uses,
 // rather than assuming nothing is offered.
 func TestMiseChoicesForPrepareCompilerFallsBackToVerifiedChoicesWhenActionChoicesNil(t *testing.T) {
-	originalProbeVersion := probeMiseToolVersion
-	originalGlobalHazard := probeMiseGlobalConfigHazard
-	originalDetect := detectGlobalMiseTypescriptVersion
+	originalProbeVersion := tstoolchain.ProbeMiseToolVersion
+	originalGlobalHazard := tstoolchain.ProbeMiseGlobalConfigHazard
+	originalDetect := tstoolchain.DetectGlobalMiseTypescriptVersion
 	defer func() {
-		probeMiseToolVersion = originalProbeVersion
-		probeMiseGlobalConfigHazard = originalGlobalHazard
-		detectGlobalMiseTypescriptVersion = originalDetect
+		tstoolchain.ProbeMiseToolVersion = originalProbeVersion
+		tstoolchain.ProbeMiseGlobalConfigHazard = originalGlobalHazard
+		tstoolchain.DetectGlobalMiseTypescriptVersion = originalDetect
 	}()
-	probeMiseToolVersion = func(context.Context) (string, bool) { return "2026.9.5 linux-x64 (2026-09-10)", true }
-	probeMiseGlobalConfigHazard = func(context.Context) bool { return false }
-	detectGlobalMiseTypescriptVersion = func(context.Context) (string, bool) {
-		return newestSupportedTypescriptVersion(), true
+	tstoolchain.ProbeMiseToolVersion = func(context.Context) (string, bool) { return "2026.9.5 linux-x64 (2026-09-10)", true }
+	tstoolchain.ProbeMiseGlobalConfigHazard = func(context.Context) bool { return false }
+	tstoolchain.DetectGlobalMiseTypescriptVersion = func(context.Context) (string, bool) {
+		return tstoolchain.NewestSupportedTypescriptVersion(), true
 	}
 
 	repo := gitfixture.Init(t)
@@ -58,7 +59,7 @@ func TestMiseChoicesForPrepareCompilerFallsBackToVerifiedChoicesWhenActionChoice
 	action := projectreadiness.NextAction{Kind: projectreadiness.NextActionPrepareCompiler, Executable: true}
 	got := miseChoicesForPrepareCompiler(repo, revision, "", action)
 
-	want := []string{compilerOriginMiseProject, compilerOriginMiseGlobal}
+	want := []string{tstoolchain.OriginMiseProject, tstoolchain.OriginMiseGlobal}
 	if len(got) != len(want) {
 		t.Fatalf("miseChoicesForPrepareCompiler = %#v, want %#v", got, want)
 	}
@@ -75,7 +76,7 @@ func TestRunPrepareCompilerMiseSetupReportsNoChoicesOffered(t *testing.T) {
 		"no next actions at all":       {Checks: projectreadiness.Checks{Policy: projectreadiness.Check{State: projectreadiness.Pass}}},
 		"prepare_compiler not present": readinessWithPrepareCompilerAction(projectreadiness.NextAction{Kind: "install_supported_runtime", Executable: false}),
 		"prepare_compiler not executable": readinessWithPrepareCompilerAction(projectreadiness.NextAction{
-			Kind: projectreadiness.NextActionPrepareCompiler, Executable: false, Choices: []string{compilerOriginMiseProject},
+			Kind: projectreadiness.NextActionPrepareCompiler, Executable: false, Choices: []string{tstoolchain.OriginMiseProject},
 		}),
 		"choices restricted to a non-mise kind only": readinessWithPrepareCompilerAction(projectreadiness.NextAction{
 			Kind: projectreadiness.NextActionPrepareCompiler, Executable: true, Choices: []string{"npm_project"},

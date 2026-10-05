@@ -9,7 +9,9 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // AvailableSetupChoices is a pure function over ReadinessResult -- it makes
@@ -132,7 +134,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 					Compiler: projectreadiness.Check{
 						State:           projectreadiness.Fail,
 						Code:            projectreadiness.GapTypescriptCompilerMissing,
-						DeclaredVersion: codesignalcli.SupportedTypescriptVersions[0],
+						DeclaredVersion: tstoolchain.SupportedTypescriptVersions[0],
 					},
 				},
 				MiseChoices: bothMiseScopesVerified,
@@ -237,7 +239,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 					Compiler: projectreadiness.Check{
 						State:           projectreadiness.Fail,
 						Code:            projectreadiness.GapTypescriptCompilerMissing,
-						DeclaredVersion: codesignalcli.SupportedTypescriptVersions[0],
+						DeclaredVersion: tstoolchain.SupportedTypescriptVersions[0],
 					},
 				},
 				MiseChoices: neitherMiseScopeConfigured,
@@ -359,7 +361,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices over a real CheckProjectRe
 
 			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
-			readiness, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
+			readiness, err := projectcheck.Run(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "the fixture must genuinely need setup, or the menu assertion below proves nothing")
 
@@ -374,14 +376,14 @@ var _ = Describe("codesignalcli.AvailableSetupChoices over a real CheckProjectRe
 	When("the project mise.toml pins an exact supported typescript version that is not yet installed", func() {
 		It("offers project_mise, so the one shape the frozen `mise install` row can actually resolve stays reachable", func() {
 			repo := noSupportedCompilerRepo()
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
-			path, _ := pathWithStatefulStubNodeAndMise("v24.9.9", codesignalcli.SupportedTypescriptVersions[0])
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
+			path, _ := pathWithStatefulStubNodeAndMise("v24.9.9", tstoolchain.SupportedTypescriptVersions[0])
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
 
 			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
-			readiness, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
+			readiness, err := projectcheck.Run(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
 

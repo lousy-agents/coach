@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -70,7 +71,7 @@ func body_projectTsCompilerMiseCommandAcceptanceTest_neverExecutesItBecauseTheRe
 	decoy := fmt.Sprintf("[env]\nSIDE_EFFECT = \"{{ exec(command='touch %s') }}\"\n", sentinel)
 	Expect(os.WriteFile(filepath.Join(repo, "mise.toml"), []byte(decoy), 0o644)).To(Succeed())
 
-	Expect(hasMiseConfigHazard(decoy)).To(BeFalse(), "sanity: this decoy construct must not be one hasMiseConfigHazard already refuses on, or this spec would not isolate AC-16's insulation guarantee")
+	Expect(tstoolchain.HasMiseConfigHazard(decoy)).To(BeFalse(), "sanity: this decoy construct must not be one hasMiseConfigHazard already refuses on, or this spec would not isolate AC-16's insulation guarantee")
 
 	trustCmd := exec.Command("mise", "trust")
 	trustCmd.Dir = repo
@@ -104,7 +105,7 @@ func body_projectTsCompilerMiseCommandAcceptanceTest_classifiesTheFreshlyInstall
 	Expect(result.Trusted).To(BeTrue(), "expected the fresh, hazard-free global mise scope to be trusted: %+v", result)
 	Expect(result.Attempted).To(BeTrue(), "expected a real `mise install` subprocess to actually run: %+v", result)
 	Expect(result.Succeeded).To(BeTrue(), "a real `mise install npm:typescript@7.0.2` must classify as compilerClassEligible, not merely exit zero -- coach#328 Finding 1: mise's own default npm backend does not hoist the platform-native optionalDependency package to the top-level location classifyCompilerCandidate expects unless something completes that hoisting: %+v", result)
-	Expect(result.Class).To(Equal(compilerClassEligible), "%+v", result)
+	Expect(result.Class).To(Equal(tstoolchain.ClassEligible), "%+v", result)
 	Expect(result.NativePath).NotTo(BeEmpty(), "%+v", result)
 }
 

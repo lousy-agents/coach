@@ -7,8 +7,10 @@ import (
 	"io"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // PrepareCompilerMiseResult reports one interactive prepare_compiler mise
@@ -108,7 +110,7 @@ func (r PrepareCompilerMiseResult) NeverStarted() bool {
 // require an explicit selection with no default, show the full preview for
 // that choice, require single-use explicit confirmation, then run the
 // matching installMiseTypescriptProject/Global and, on success, rerun
-// CheckProjectReadiness. readiness must be the caller's already-computed
+// projectcheck.Run. readiness must be the caller's already-computed
 // projectreadiness.Result for dir/revision/configPath; it is never recomputed here
 // except after a successful install.
 //
@@ -137,8 +139,8 @@ func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath 
 		return PrepareCompilerMiseResult{Cancelled: true}
 	}
 
-	worktreeRoot := compilerWorktreeRoot(dir)
-	version, ok := miseScopeDeclaresInstallableCompiler(choice, worktreeRoot)
+	worktreeRoot := tstoolchain.WorktreeRoot(dir)
+	version, ok := tstoolchain.MiseScopeDeclaresInstallableCompiler(choice, worktreeRoot)
 	if !ok {
 		return PrepareCompilerMiseResult{Choice: choice}
 	}
@@ -169,7 +171,7 @@ func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath 
 		return outcome
 	}
 
-	postInstall, err := CheckProjectReadiness(dir, revision, configPath)
+	postInstall, err := projectcheck.Run(dir, revision, configPath)
 	outcome.PostInstallReadiness = postInstall
 	outcome.PostInstallReadinessError = err
 	return outcome
@@ -177,9 +179,9 @@ func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath 
 
 func runSelectedMiseInstall(ctx context.Context, choice, worktreeRoot, version string) miseInstallResult {
 	switch choice {
-	case compilerOriginMiseProject:
+	case tstoolchain.OriginMiseProject:
 		return installMiseTypescriptProject(ctx, worktreeRoot, version)
-	case compilerOriginMiseGlobal:
+	case tstoolchain.OriginMiseGlobal:
 		return installMiseTypescriptGlobal(ctx, version)
 	default:
 		return miseInstallResult{}

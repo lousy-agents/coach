@@ -16,7 +16,6 @@ type tsConfig struct {
 	Files *[]string `json:"files"`
 }
 
-// EvalSymlinks so rebase math uses the same path space as baseDir.
 // isTSConfigPathSpecifier is true for ./ ../ .\ ..\ or absolute paths only.
 func isTSConfigPathSpecifier(extends string) bool {
 	return strings.HasPrefix(extends, "./") ||

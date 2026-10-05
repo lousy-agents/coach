@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // TestRunCompilerSetupOfferNeverOpensForARuntimeBoundaryGap pins AC-13/
@@ -12,7 +13,7 @@ import (
 // not the executable prepare-compiler kind, even when the readiness snapshot
 // passed alongside it independently offers a genuine, installable menu
 // entry. gapCode and readiness.Checks.Compiler.Code are two independent
-// CheckProjectReadiness reads (project_readiness.go resolves Node and the
+// projectcheck.Run reads (project_readiness.go resolves Node and the
 // compiler separately), so a runtime-boundary gap can coexist with an
 // installable compiler menu; this is the fixture shape that previously drove
 // the interactive menu open for node_missing/node_unsupported. A literal
@@ -22,7 +23,7 @@ func TestRunCompilerSetupOfferNeverOpensForARuntimeBoundaryGap(t *testing.T) {
 	readiness := &projectreadiness.Result{
 		Checks: projectreadiness.Checks{
 			Policy:         projectreadiness.Check{State: projectreadiness.Pass},
-			Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
+			Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing, DeclaredVersion: tstoolchain.SupportedTypescriptVersions[0]},
 			PackageManager: projectreadiness.Check{State: projectreadiness.Pass},
 		},
 	}

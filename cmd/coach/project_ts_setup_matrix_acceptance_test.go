@@ -11,7 +11,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // This suite exercises checks.package_manager's frozen adapter matrix
@@ -26,7 +28,7 @@ import (
 
 // resultGapCodes mirrors gapCodes (project_readiness_acceptance_test.go),
 // which only reads the JSON-boundary readinessResultDoc; this suite calls
-// codesignalcli.CheckProjectReadiness directly so it can also feed the
+// projectcheck.Run directly so it can also feed the
 // result into codesignalcli.AvailableSetupChoices without a JSON round trip.
 func resultGapCodes(result projectreadiness.Result) []string {
 	codes := make([]string, len(result.Gaps))
@@ -48,7 +50,7 @@ func resultGapCodes(result projectreadiness.Result) []string {
 // about.
 func packageManagerMatrixFixture(kind string) (repo, head string) {
 	repo = newTempGitRepo()
-	commitFile(repo, "package.json", fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":"%s"}}`+"\n", codesignalcli.SupportedTypescriptVersions[0]))
+	commitFile(repo, "package.json", fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":"%s"}}`+"\n", tstoolchain.SupportedTypescriptVersions[0]))
 	switch kind {
 	case "npm":
 		head = commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
@@ -83,7 +85,7 @@ func expectPackageManagerMatrixRow(kind, version, wantCode string) {
 	GinkgoT().Setenv("PATH", packageManagerMatrixPath(kind, version))
 	repo, head := packageManagerMatrixFixture(kind)
 
-	readiness, err := codesignalcli.CheckProjectReadiness(repo, head, "")
+	readiness, err := projectcheck.Run(repo, head, "")
 	Expect(err).NotTo(HaveOccurred())
 	Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "the fixture must genuinely fail the compiler check, or the AvailableSetupChoices assertion below proves nothing")
 	Expect(readiness.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing))
@@ -150,7 +152,7 @@ var _ = Describe("checks.package_manager's frozen version-boundary matrix (SA-28
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"npm@11.19.0+sha512.48377f8478372aa1c4e47b763475b135836da82436a5700f2e5e8eb5084fc840f93c7b117eb3ad3b5f7d3194c81b6710a10d59448f6ddbcb21ac3fb672bdc003"}`+"\n")
 			head := commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
 
-			readiness, err := codesignalcli.CheckProjectReadiness(repo, head, "")
+			readiness, err := projectcheck.Run(repo, head, "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))
 			Expect(readiness.Checks.PackageManager.Code).To(Equal(projectreadiness.GapPackageManagerVersionUnsupported))
@@ -531,7 +533,7 @@ var _ = Describe("checks.package_manager's ambiguous-lockfile and lifecycle-scri
 			commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
 			head := commitFile(repo, "pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
 
-			readiness, err := codesignalcli.CheckProjectReadiness(repo, head, "")
+			readiness, err := projectcheck.Run(repo, head, "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
 			Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))

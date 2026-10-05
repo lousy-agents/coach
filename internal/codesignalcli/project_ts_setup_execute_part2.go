@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"os"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 )
 
 // parseSetupResidueStatusPaths extracts the path from each NUL-delimited
@@ -87,7 +89,7 @@ func RunConfirmedSetup(ctx context.Context, preview SetupPreview, confirmed bool
 }
 
 // RunConfirmedSetupAndRecheckReadiness runs RunConfirmedSetup and, only when
-// it succeeds, reruns the complete readiness check via CheckProjectReadiness
+// it succeeds, reruns the complete readiness check via projectcheck.Run
 // (AC-SET-6) using the same dir/revision/configPath that produced the stale
 // readiness result which offered this setup in the first place, attaching
 // the fresh result to the returned SetupOutcome's PostInstallReadiness. A
@@ -105,7 +107,7 @@ func RunConfirmedSetupAndRecheckReadiness(ctx context.Context, preview SetupPrev
 	if err != nil || outcome.Kind != SetupOutcomeSucceeded {
 		return outcome, err
 	}
-	readiness, readinessErr := CheckProjectReadiness(dir, revision, configPath)
+	readiness, readinessErr := projectcheck.Run(dir, revision, configPath)
 	if readinessErr != nil {
 		return outcome, readinessErr
 	}

@@ -9,8 +9,6 @@ import (
 	"strings"
 )
 
-// Metadata headers are consumed by archive/tar and do not represent
-// filesystem entries in the snapshot.
 func extractTarRegularFile(path string, header *tar.Header, reader io.Reader) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -52,7 +50,8 @@ func extractTarEntry(dir string, header *tar.Header, reader *tar.Reader) error {
 	}
 	switch header.Typeflag {
 	case tar.TypeXGlobalHeader, tar.TypeXHeader:
-
+		// Metadata headers are consumed by archive/tar and do not represent
+		// filesystem entries in the snapshot.
 		return nil
 	case tar.TypeDir:
 		return os.MkdirAll(path, os.FileMode(header.Mode))

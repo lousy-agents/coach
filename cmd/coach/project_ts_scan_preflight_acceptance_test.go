@@ -11,7 +11,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // D3 fixes the existing single-line remediation classifyAnalysisError has
@@ -27,9 +29,9 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 			commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
 
-			path, _ := pathWithStatefulStubNodeAndMise("v24.9.9", codesignalcli.SupportedTypescriptVersions[0])
+			path, _ := pathWithStatefulStubNodeAndMise("v24.9.9", tstoolchain.SupportedTypescriptVersions[0])
 
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 
@@ -47,7 +49,7 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 		It("keeps the existing --check-project remediation, and appends rerunning this same scan on a terminal (R2) rather than --prepare-compiler, since --prepare-compiler runs mise scopes only and would exit 0 having set nothing up", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-			commitFile(repo, "package.json", fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", codesignalcli.SupportedTypescriptVersions[0]))
+			commitFile(repo, "package.json", fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", tstoolchain.SupportedTypescriptVersions[0]))
 			commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
 
 			nodeDir := writeStubNodeScript("v24.9.9")
@@ -109,9 +111,9 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 			commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 			baseSHA := commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
 
-			path, _ := pathWithStatefulStubNodeAndMise("v24.9.9", codesignalcli.SupportedTypescriptVersions[0])
+			path, _ := pathWithStatefulStubNodeAndMise("v24.9.9", tstoolchain.SupportedTypescriptVersions[0])
 
 			stdout, stderr, exitCode := runCoachBinary(commandPath, repo, stubToolchainEnv(path), "codesignal", "--base", baseSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 
@@ -234,18 +236,18 @@ var _ = Describe("codesignalcli.AvailableSetupChoices composes project_package a
 	It("offers both SetupChoiceProjectPackage and SetupChoiceProjectMise when the project package manager passes and the project mise scope already pins an installable version", func() {
 		nodeDir := writeStubNodeScript("v24.9.9")
 		npmDir := writeStubPackageManagerScript("npm", "11.0.0")
-		miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
+		miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 		path := nodeDir + string(os.PathListSeparator) + npmDir + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 		GinkgoT().Setenv("PATH", path)
 		GinkgoT().Setenv("HOME", os.Getenv("HOME"))
 
 		repo := newTempGitRepo()
 		commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
-		commitFile(repo, "package.json", fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", codesignalcli.SupportedTypescriptVersions[0]))
+		commitFile(repo, "package.json", fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", tstoolchain.SupportedTypescriptVersions[0]))
 		head := commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
-		writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
+		writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
 
-		readiness, err := codesignalcli.CheckProjectReadiness(repo, head, "")
+		readiness, err := projectcheck.Run(repo, head, "")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "the fixture must genuinely need setup, or the menu assertion below proves nothing")
 		Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Pass), "detail=%s", readiness.Checks.PackageManager.Detail)
@@ -280,8 +282,8 @@ var _ = Describe("coach's interim standalone prepare_compiler dispatch refuses f
 	When("host Node is genuinely unreachable while the repository's mise scope independently declares an installable TypeScript version", func() {
 		It("refuses naming node_missing, never opens the interactive compiler-setup menu, and never invokes mise install", func() {
 			repo := noSupportedCompilerRepo()
-			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
-			miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
+			writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
+			miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 			path := miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 			requireNodeUnreachable(path)
 			GinkgoT().Setenv("PATH", path)

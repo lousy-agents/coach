@@ -8,6 +8,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -24,12 +25,12 @@ func analysisErrorReportFor(err error, language string, hasControllingTerminal b
 		return classTwoReport(unresolvedWithReadiness.RemediationLine(), nil,
 			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, remediation))
 	}
-	var unresolved *codesignalcli.CompilerUnresolvedError
+	var unresolved *tstoolchain.CompilerUnresolvedError
 	if errors.As(err, &unresolved) {
 		return classTwoReport(unresolved.RemediationLine(), nil,
 			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, codesignalcli.PrepareCompilerRemediation(unresolved.Code, unresolved.ConfigPath)))
 	}
-	var runtimeErr *codesignalcli.RuntimeUnresolvedError
+	var runtimeErr *tstoolchain.RuntimeUnresolvedError
 	if errors.As(err, &runtimeErr) {
 		return classTwoReport(runtimeErr.RemediationLine(), nil, "")
 	}

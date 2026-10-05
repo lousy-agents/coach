@@ -6,6 +6,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 
 	"os"
 
@@ -51,11 +52,11 @@ func setupResidueDisclosure(result codesignalcli.CompilerSetupOfferResult) strin
 	return "coach codesignal: the setup command may have changed: " + strings.Join(result.ChangedPaths, ", ")
 }
 func wrapScanAnalysisError(err error, dir, revision, configPath string, stderr *os.File) error {
-	var unresolved *codesignalcli.CompilerUnresolvedError
+	var unresolved *tstoolchain.CompilerUnresolvedError
 	if errors.As(err, &unresolved) {
 		return codesignalcli.WrapCompilerUnresolvedErrorWithReadiness(unresolved, dir, revision, configPath)
 	}
-	var runtimeErr *codesignalcli.RuntimeUnresolvedError
+	var runtimeErr *tstoolchain.RuntimeUnresolvedError
 	if errors.As(err, &runtimeErr) {
 		return runtimeErr
 	}

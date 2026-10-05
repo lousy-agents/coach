@@ -6,6 +6,8 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 const prepareCompilerMiseUsagePrefix = "coach codesignal --baseline --prepare-compiler --project-language typescript"
@@ -36,7 +38,7 @@ func prepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, p
 		return 3
 	}
 
-	readiness, err := codesignalcli.CheckProjectReadiness(dir, revision, projectConfigPath)
+	readiness, err := projectcheck.Run(dir, revision, projectConfigPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: could not compute project readiness: %s\n", prepareCompilerMiseUsagePrefix, err)
 		return 3
@@ -72,7 +74,7 @@ func reportPrepareCompilerMiseResult(result codesignalcli.PrepareCompilerMiseRes
 	if !result.Succeeded {
 		switch {
 		case result.VerificationFailed():
-			fmt.Fprintf(stderr, "%s: mise install exited 0 but the installed TypeScript %s is not eligible (%s); expected the native platform package %s alongside it -- Coach does not attempt to repair or clean this up.\n", prepareCompilerMiseUsagePrefix, result.Version, result.Class, codesignalcli.NativeTypescriptPackageName())
+			fmt.Fprintf(stderr, "%s: mise install exited 0 but the installed TypeScript %s is not eligible (%s); expected the native platform package %s alongside it -- Coach does not attempt to repair or clean this up.\n", prepareCompilerMiseUsagePrefix, result.Version, result.Class, tstoolchain.NativeTypescriptPackageName())
 		case result.AttemptFailed():
 			fmt.Fprintf(stderr, "%s: mise install failed; mise's install store may now contain a partial or failed install of TypeScript %s under the %s scope -- Coach does not attempt to clean this up.\n", prepareCompilerMiseUsagePrefix, result.Version, result.Choice)
 		case result.NeverStarted():

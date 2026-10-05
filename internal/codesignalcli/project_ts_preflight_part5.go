@@ -4,8 +4,10 @@ import (
 	"errors"
 	"path/filepath"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // ScanSetupOfferRemediation names the interactive scan invocation itself
@@ -43,7 +45,7 @@ func WrapProjectConfigErrorWithReadiness(err error, dir, revision, configPath st
 	if !errors.As(err, &configErr) {
 		return err
 	}
-	readiness, readinessErr := CheckProjectReadiness(dir, revision, configPath)
+	readiness, readinessErr := projectcheck.Run(dir, revision, configPath)
 	if readinessErr != nil {
 		return err
 	}
@@ -70,7 +72,7 @@ func repositoryRelativeChangedPaths(dir string, changedPaths []string, residueUn
 	if !residueUnknown || len(changedPaths) != 1 {
 		return changedPaths
 	}
-	root := compilerWorktreeRoot(dir)
+	root := tstoolchain.WorktreeRoot(dir)
 	rel, err := filepath.Rel(root, changedPaths[0])
 	if err != nil {
 		return changedPaths

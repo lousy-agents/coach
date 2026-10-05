@@ -145,18 +145,3 @@ func body_projectProvenanceAcceptanceTest_emitsWorktreeStatusCheckFailedRatherTh
 	Expect(kinds).NotTo(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed),
 		"a git status error must not be described as skipped analysis; diagnostics=%v", input.Diagnostics)
 }
-
-func body_projectProvenanceAcceptanceTest_234(dir string, args []string, originalRunner func(dir string, args ...string) ([]byte, error)) ([]byte, error) {
-	if len(args) > 0 && args[0] == "show" {
-		return nil, errors.New("simulated blob read failure")
-	}
-	return originalRunner(dir, args...)
-}
-
-func body_projectProvenanceAcceptanceTest_257(dir string, args []string, originalRunner func(dir string, args ...string) ([]byte, error)) ([]byte, error) {
-	// Fail ls-tree calls so gitrepo.FileExistsAtRevision errors on lockfile checks.
-	if len(args) > 0 && args[0] == "ls-tree" {
-		return nil, errors.New("simulated transient git failure")
-	}
-	return originalRunner(dir, args...)
-}

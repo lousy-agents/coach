@@ -14,6 +14,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/render"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 	"github.com/lousy-agents/coach/internal/tstestutil"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
@@ -475,7 +476,7 @@ var _ = Describe("tsProjectBackend compiler resolution", Label("ts-project-backe
 			Expect(result.RuntimeVersion).To(MatchRegexp(`^v?\d+\.\d+\.\d+`))
 			Expect(result.RuntimeOrigin).To(Equal(runtimeOriginPath))
 			Expect(result.CompilerVersion).To(Equal(version))
-			Expect(result.CompilerOrigin).To(Equal(compilerOriginProject))
+			Expect(result.CompilerOrigin).To(Equal(tstoolchain.OriginProject))
 		})
 	})
 })
@@ -549,7 +550,7 @@ var _ = Describe("tsProjectBackend compiler resolution from a nested TypeScript 
 			Expect(result.HeadCoverage).NotTo(BeNil())
 			Expect(result.HeadCoverage.Complete).To(BeTrue(), "the compiler must be resolved from the nested project's package.json")
 			Expect(result.CompilerVersion).To(Equal(version))
-			Expect(result.CompilerOrigin).To(Equal(compilerOriginProject))
+			Expect(result.CompilerOrigin).To(Equal(tstoolchain.OriginProject))
 		})
 	})
 })
@@ -583,7 +584,7 @@ var _ = Describe("PrepareTSRuntime resolved-runtime provenance", Label("ts-proje
 		Expect(rt.Kind).To(Equal(runtimeKindNode))
 		Expect(rt.Origin).To(Equal(runtimeOriginPath))
 		Expect(rt.CompilerVersion).To(Equal(version), "CompilerVersion must match the installed compiler's own package.json version")
-		Expect(rt.CompilerOrigin).To(Equal(compilerOriginProject), "the manifest/installed-version match must resolve via the project origin")
+		Expect(rt.CompilerOrigin).To(Equal(tstoolchain.OriginProject), "the manifest/installed-version match must resolve via the project origin")
 		wantCompiler, err := filepath.EvalSymlinks(filepath.Join(repo, "node_modules", "typescript"))
 		Expect(err).NotTo(HaveOccurred())
 		gotCompiler, err := filepath.EvalSymlinks(rt.CompilerModulePath)
@@ -591,12 +592,12 @@ var _ = Describe("PrepareTSRuntime resolved-runtime provenance", Label("ts-proje
 		Expect(gotCompiler).To(Equal(wantCompiler))
 		Expect(rt.AnalyzerDir).NotTo(BeEmpty())
 		Expect(rt.AnalyzerShimPath).To(HavePrefix(rt.AnalyzerDir))
-		wantNative, err := filepath.EvalSymlinks(filepath.Join(repo, "node_modules", "@typescript", nativeTypescriptUnscopedName()))
+		wantNative, err := filepath.EvalSymlinks(filepath.Join(repo, "node_modules", "@typescript", tstoolchain.NativeTypescriptUnscopedName()))
 		Expect(err).NotTo(HaveOccurred())
 		gotNative, err := filepath.EvalSymlinks(rt.NativePackagePath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(gotNative).To(Equal(wantNative))
-		Expect(NativeTypescriptPackageName()).To(Equal("@typescript/" + nativeTypescriptUnscopedName()))
+		Expect(tstoolchain.NativeTypescriptPackageName()).To(Equal("@typescript/" + tstoolchain.NativeTypescriptUnscopedName()))
 	})
 })
 
@@ -645,7 +646,7 @@ var _ = Describe("applyProjectBackend runtime identity handoff", func() {
 			RuntimeVersion:  "v24.9.9",
 			RuntimeOrigin:   runtimeOriginPath,
 			CompilerVersion: "7.0.2",
-			CompilerOrigin:  compilerOriginProject,
+			CompilerOrigin:  tstoolchain.OriginProject,
 		}}
 		input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, &ProjectAnalysis{
 			Backend: backend,
@@ -655,7 +656,7 @@ var _ = Describe("applyProjectBackend runtime identity handoff", func() {
 		Expect(input.RuntimeVersion).To(Equal("v24.9.9"))
 		Expect(input.RuntimeOrigin).To(Equal(runtimeOriginPath))
 		Expect(input.CompilerVersion).To(Equal("7.0.2"))
-		Expect(input.CompilerOrigin).To(Equal(compilerOriginProject))
+		Expect(input.CompilerOrigin).To(Equal(tstoolchain.OriginProject))
 	})
 
 	It("copies all six phase coverages, project scopes, language, config digest, and selected roots onto codesignal.Input", func() {

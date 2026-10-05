@@ -1,0 +1,101 @@
+package tstoolchain
+
+import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+)
+
+// projectRootSummary accumulates every per-root fact the project origin
+// decides on in a single pass over the selected roots.
+type projectRootSummary struct {
+	projectOriginContext
+
+	findings         []string
+	rootsWithFinding int
+	ambiguous        bool
+	disqualified     bool
+	unreadable       bool
+	installedDir     string
+	firstManifestDir string
+}
+
+func (s *projectRootSummary) close(roots int) {
+	s.someRootsResolvedNothing = s.rootsWithFinding > 0 && s.rootsWithFinding < roots
+}
+
+// evaluation classes the project origin by the compiler installed at the
+// selected roots' manifest context, whatever their manifests declare (epic
+// #280, owner decision D4). A root that declares a version without
+// installing it leaves the origin absent rather than unconfigured, since a
+// compiler was expected there.
+func (s projectRootSummary) evaluation() originEvaluation {
+	if s.ambiguous || len(DedupeStrings(s.findings)) > 1 {
+		return originEvaluation{conflict: true, findings: s.rootFindings}
+	}
+	if s.someRootsResolvedNothing || !s.expectsCompiler() {
+		return s.unavailable()
+	}
+	locate := projectCompilerLocator(s.installDir())
+	return originEvaluation{candidate: ClassifyCandidate(OriginProject, locate)}
+}
+
+func (s projectRootSummary) expectsCompiler() bool {
+	return s.installedDir != "" || (s.firstManifestDir != "" && len(s.declarations) > 0)
+}
+
+func (s projectRootSummary) unavailable() originEvaluation {
+	return noCandidateEvaluation(OriginProject, s.noCandidateClass())
+}
+
+func (s projectRootSummary) noCandidateClass() string {
+	if s.unreadable {
+		return ClassUnreadable
+	}
+	return ClassUnconfigured
+}
+
+// installDir prefers the root whose compiler is actually installed; a root
+// that only declares a supported version contributes its manifest directory
+// so the locator still has somewhere to look.
+func (s projectRootSummary) installDir() string {
+	if s.installedDir != "" {
+		return s.installedDir
+	}
+	return s.firstManifestDir
+}
+
+func (s *projectRootSummary) absorb(outcome projectRootOutcome) {
+	s.rootFindings = append(s.rootFindings, projectreadiness.RootFinding{Root: outcome.root, Version: outcome.finding})
+	if outcome.finding != "" {
+		s.rootsWithFinding++
+		s.findings = append(s.findings, outcome.finding)
+	}
+	if outcome.declaration != "" {
+		s.declarations = append(s.declarations, rootDeclaration{root: outcome.root, declared: outcome.declaration})
+	}
+	s.ambiguous = s.ambiguous || outcome.ambiguous
+	s.unreadable = s.unreadable || outcome.unreadable
+	s.absorbDisqualified(outcome)
+	s.absorbManifestDir(outcome)
+}
+
+func (s *projectRootSummary) absorbDisqualified(outcome projectRootOutcome) {
+	if !outcome.disqualified {
+		return
+	}
+	s.disqualified = true
+	if s.rejectedDeclaration == "" {
+		s.rejectedDeclaration = outcome.declaration
+	}
+}
+
+func (s *projectRootSummary) absorbManifestDir(outcome projectRootOutcome) {
+	if outcome.manifestDir == "" {
+		return
+	}
+	if outcome.installed && s.installedDir == "" {
+		s.installedDir = outcome.manifestDir
+	}
+	if s.firstManifestDir == "" {
+		s.firstManifestDir = outcome.manifestDir
+	}
+}

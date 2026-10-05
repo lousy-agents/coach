@@ -3,6 +3,8 @@ package codesignalcli
 import (
 	"errors"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 func body_projectTsRuntimeTest_18(t *testing.T, tc struct {
@@ -11,11 +13,11 @@ func body_projectTsRuntimeTest_18(t *testing.T, tc struct {
 	code string
 }) {
 	got := mapHostNodeResolveError(tc.err)
-	var compilerErr *CompilerUnresolvedError
+	var compilerErr *tstoolchain.CompilerUnresolvedError
 	if errors.As(got, &compilerErr) {
 		t.Fatalf("mapHostNodeResolveError(%v) satisfied errors.As(*CompilerUnresolvedError) with Code=%q; a host-runtime miss must not enter the compiler-setup offer", tc.err, compilerErr.Code)
 	}
-	var runtimeErr *RuntimeUnresolvedError
+	var runtimeErr *tstoolchain.RuntimeUnresolvedError
 	if !errors.As(got, &runtimeErr) {
 		t.Fatalf("mapHostNodeResolveError(%v) = %T %v, want *RuntimeUnresolvedError", tc.err, got, got)
 	}

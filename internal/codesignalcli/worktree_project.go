@@ -2,6 +2,7 @@ package codesignalcli
 
 import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -32,7 +33,7 @@ func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, dir st
 
 func hasRelevantDirtyWorktree(entries []gitrepo.WorktreeEntry, roots []string, configPath string) bool {
 	for _, entry := range entries {
-		if isRelevantDirtyPath(entry.Path, roots, configPath) {
+		if projectcheck.IsRelevantDirtyPath(entry.Path, roots, configPath) {
 			return true
 		}
 	}

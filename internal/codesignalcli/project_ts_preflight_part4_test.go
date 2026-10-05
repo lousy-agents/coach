@@ -7,6 +7,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // TestPrepareCompilerRemediationWithReadinessWithholdsADeadEndCommand pins
@@ -28,7 +29,7 @@ func TestPrepareCompilerRemediationWithReadinessWithholdsADeadEndCommand(t *test
 
 	projectPackageOnly := &projectreadiness.Result{
 		Checks: projectreadiness.Checks{
-			Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
+			Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing, DeclaredVersion: tstoolchain.SupportedTypescriptVersions[0]},
 			PackageManager: projectreadiness.Check{State: projectreadiness.Pass},
 		},
 	}
@@ -38,7 +39,7 @@ func TestPrepareCompilerRemediationWithReadinessWithholdsADeadEndCommand(t *test
 
 	miseOffered := &projectreadiness.Result{
 		Checks:      projectreadiness.Checks{Compiler: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing}},
-		MiseChoices: []projectreadiness.MiseChoice{{Kind: compilerOriginMiseProject, Verified: true}},
+		MiseChoices: []projectreadiness.MiseChoice{{Kind: tstoolchain.OriginMiseProject, Verified: true}},
 	}
 	want := "on a terminal: coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"
 	if got := PrepareCompilerRemediationWithReadiness(projectreadiness.GapTypescriptCompilerMissing, "project.json", miseOffered); got != want {
@@ -56,14 +57,14 @@ func TestPrepareCompilerRemediationWithReadinessWithholdsADeadEndCommand(t *test
 
 // TestWrapCompilerUnresolvedErrorWithReadinessUnwrapsToThePlainError pins
 // classifyAnalysisError's own no-controlling-terminal fallback: it locates a
-// *CompilerUnresolvedError via errors.As without any change, because
+// *tstoolchain.CompilerUnresolvedError via errors.As without any change, because
 // CompilerUnresolvedErrorWithReadiness.Unwrap returns the original value
 // unchanged.
 func TestWrapCompilerUnresolvedErrorWithReadinessUnwrapsToThePlainError(t *testing.T) {
 	repo := gitfixture.Init(t)
 	head := gitfixture.CommitFile(t, repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 
-	original := &CompilerUnresolvedError{Code: projectreadiness.GapTypescriptCompilerMissing, ConfigPath: "project.json"}
+	original := &tstoolchain.CompilerUnresolvedError{Code: projectreadiness.GapTypescriptCompilerMissing, ConfigPath: "project.json"}
 	wrapped := WrapCompilerUnresolvedErrorWithReadiness(original, repo, head, "project.json")
 
 	var withReadiness *CompilerUnresolvedErrorWithReadiness
@@ -77,7 +78,7 @@ func TestWrapCompilerUnresolvedErrorWithReadinessUnwrapsToThePlainError(t *testi
 		t.Fatalf("CompilerUnresolvedErrorWithReadiness = {Revision: %q, ConfigPath: %q}, want {%q, %q}", withReadiness.Revision, withReadiness.ConfigPath, head, "project.json")
 	}
 
-	var plain *CompilerUnresolvedError
+	var plain *tstoolchain.CompilerUnresolvedError
 	if !errors.As(wrapped, &plain) {
 		t.Fatalf("errors.As could not unwrap back to the original *CompilerUnresolvedError")
 	}

@@ -8,7 +8,9 @@ import (
 	"io"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // PrepareCompilerRemediationWithReadiness extends PrepareCompilerRemediation
@@ -45,19 +47,19 @@ func PrepareCompilerRemediationWithReadiness(gapCode, configPath string, readine
 
 // WrapCompilerUnresolvedErrorWithReadiness recomputes readiness for
 // dir/revision/configPath and wraps err with it. It returns err unchanged
-// when err is not a *CompilerUnresolvedError, or when readiness itself
+// when err is not a *tstoolchain.CompilerUnresolvedError, or when readiness itself
 // cannot be computed: an unofferable setup session is a strictly smaller
-// problem than losing the original diagnostic entirely. CompilerUnresolvedError
+// problem than losing the original diagnostic entirely. tstoolchain.CompilerUnresolvedError
 // is only ever constructed deep inside the TypeScript project backend, so
 // recomputing readiness here -- rather than threading a precomputed snapshot
 // down through that backend -- is what lets this wrapping live entirely in
 // this file.
 func WrapCompilerUnresolvedErrorWithReadiness(err error, dir, revision, configPath string) error {
-	var unresolved *CompilerUnresolvedError
+	var unresolved *tstoolchain.CompilerUnresolvedError
 	if !errors.As(err, &unresolved) {
 		return err
 	}
-	readiness, readinessErr := CheckProjectReadiness(dir, revision, configPath)
+	readiness, readinessErr := projectcheck.Run(dir, revision, configPath)
 	if readinessErr != nil {
 		return err
 	}
@@ -104,7 +106,7 @@ func projectPackageSetupFailureDetail(outcome SetupOutcome, err error) string {
 }
 
 // PrepareCompilerRemediation names the interactive, consented mise
-// TypeScript compiler-setup command that resolves a CompilerUnresolvedError
+// TypeScript compiler-setup command that resolves a tstoolchain.CompilerUnresolvedError
 // gap, for AC-SET-9's appended no-controlling-terminal remediation line. It
 // returns "" for a gap code whose next action is not the executable
 // prepare-compiler kind (e.g. node_missing, node_unsupported): Coach has no

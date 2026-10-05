@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 	. "github.com/onsi/ginkgo/v2"
@@ -53,7 +54,7 @@ var _ = Describe("tsProjectBackend.evaluateRevision", func() {
 			Expect(err.Error()).To(ContainSubstring("deriving TypeScript project scope"))
 			Expect(err.Error()).To(ContainSubstring("pkg/handlers"), "expected the error to name the unmatched policy root")
 
-			var unresolved *CompilerUnresolvedError
+			var unresolved *tstoolchain.CompilerUnresolvedError
 			Expect(errors.As(err, &unresolved)).To(BeFalse(),
 				"runBaselineAnalysis/runDiffAnalysis (cmd/coach/main.go) re-return an AnalyzeBaseline/AnalyzeChanges error to run() only when it is *CompilerUnresolvedError, which classifyAnalysisError then maps to exit 2; "+
 					"every other error from that call -- this one included -- is printed to stderr and swallowed to (nil, 0, nil), which run() turns into exit 1 via its report==nil fallback")

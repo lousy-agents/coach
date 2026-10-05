@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -20,7 +20,7 @@ func body_projectTsScanPreflightAcceptanceTest_270(major int) {
 	repo := newTempGitRepo()
 	head := commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 
-	readiness, err := codesignalcli.CheckProjectReadiness(repo, head, "")
+	readiness, err := projectcheck.Run(repo, head, "")
 	Expect(err).NotTo(HaveOccurred())
 
 	Expect(readiness.Checks.Node.State).To(Equal(projectreadiness.Pass), "detail=%s", readiness.Checks.Node.Detail)

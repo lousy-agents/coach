@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 func TestMiseInstallToolSpec(t *testing.T) {
@@ -16,7 +17,7 @@ func TestMiseInstallToolSpec(t *testing.T) {
 }
 
 func TestInstallMiseTypescriptRefusesWhenUntrusted(t *testing.T) {
-	result := installMiseTypescript(context.Background(), compilerOriginMiseProject, "7.0.2", miseSetupTrust{code: projectreadiness.GapPackageManagerConfigUnverifiable})
+	result := installMiseTypescript(context.Background(), tstoolchain.OriginMiseProject, "7.0.2", tstoolchain.MiseTrust{Code: projectreadiness.GapPackageManagerConfigUnverifiable})
 	if result.Trusted {
 		t.Fatalf("installMiseTypescript() = %+v, want Trusted=false", result)
 	}

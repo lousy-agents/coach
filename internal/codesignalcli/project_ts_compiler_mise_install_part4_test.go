@@ -9,12 +9,13 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 func TestRunPrepareCompilerMiseSetupCancelsOnUnrecognizedSelection(t *testing.T) {
 	readiness := readinessWithPrepareCompilerAction(projectreadiness.NextAction{
 		Kind: projectreadiness.NextActionPrepareCompiler, Executable: true,
-		Choices: []string{compilerOriginMiseProject, compilerOriginMiseGlobal},
+		Choices: []string{tstoolchain.OriginMiseProject, tstoolchain.OriginMiseGlobal},
 	})
 	var transcript bytes.Buffer
 
@@ -50,8 +51,8 @@ func writeFailingInstallStubMiseOnPath(t *testing.T) {
 }
 
 func TestFilterMiseChoiceKindsDropsNonMiseChoices(t *testing.T) {
-	got := filterMiseChoiceKinds([]string{"npm_project", compilerOriginMiseProject, "yarn", compilerOriginMiseGlobal})
-	want := []string{compilerOriginMiseProject, compilerOriginMiseGlobal}
+	got := filterMiseChoiceKinds([]string{"npm_project", tstoolchain.OriginMiseProject, "yarn", tstoolchain.OriginMiseGlobal})
+	want := []string{tstoolchain.OriginMiseProject, tstoolchain.OriginMiseGlobal}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("filterMiseChoiceKinds = %#v, want %#v", got, want)
 	}

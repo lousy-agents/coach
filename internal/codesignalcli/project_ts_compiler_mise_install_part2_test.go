@@ -7,16 +7,18 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun drives
 // RunPrepareCompilerMiseSetup's full confirmed-install path:
-// locateMiseTypescriptInstall only finds the compiler once installDir
+// tstoolchain.LocateMiseTypescriptInstall only finds the compiler once installDir
 // exists, which only happens once the stub mise's own `install` invocation
 // has actually run -- so the pre/post-install state genuinely differs the
 // way a real mise would, without any network dependency. It also directly
-// checks evaluateCompilerOrigins' own winner.origin after the rerun, since
+// checks EvaluateOrigins' own winner.origin after the rerun, since
 // the frozen checks.compiler JSON contract does not itself expose an origin
 // field for a passing compiler check.
 func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
@@ -25,15 +27,15 @@ func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 
 	writeStatefulStubMiseOnPath(t, installDir, "7.0.2")
 
-	originalLocate := locateMiseTypescriptInstall
-	defer func() { locateMiseTypescriptInstall = originalLocate }()
-	locateMiseTypescriptInstall = (&sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun{installDir: installDir}).call
+	originalLocate := tstoolchain.LocateMiseTypescriptInstall
+	defer func() { tstoolchain.LocateMiseTypescriptInstall = originalLocate }()
+	tstoolchain.LocateMiseTypescriptInstall = (&sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun{installDir: installDir}).call
 
 	repo := gitfixture.Init(t)
 	revision := gitfixture.CommitFile(t, repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 	(&sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun1{repo: repo, t: t}).call()
 
-	before, err := CheckProjectReadiness(repo, revision, "")
+	before, err := projectcheck.Run(repo, revision, "")
 	if err != nil {
 		t.Fatalf("CheckProjectReadiness (before): %v", err)
 	}
@@ -42,7 +44,7 @@ func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 	}
 
 	readiness := readinessWithPrepareCompilerAction(projectreadiness.NextAction{
-		Kind: projectreadiness.NextActionPrepareCompiler, Executable: true, Choices: []string{compilerOriginMiseProject},
+		Kind: projectreadiness.NextActionPrepareCompiler, Executable: true, Choices: []string{tstoolchain.OriginMiseProject},
 	})
 	var transcript bytes.Buffer
 
@@ -57,8 +59,8 @@ func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 	if !result.Succeeded {
 		t.Fatalf("Succeeded = false, want true: %+v", result)
 	}
-	if result.Origin != compilerOriginMiseProject {
-		t.Fatalf("Origin = %q, want %q", result.Origin, compilerOriginMiseProject)
+	if result.Origin != tstoolchain.OriginMiseProject {
+		t.Fatalf("Origin = %q, want %q", result.Origin, tstoolchain.OriginMiseProject)
 	}
 	if result.PostInstallReadiness == nil {
 		t.Fatalf("PostInstallReadiness is nil, want the rerun result")
@@ -70,11 +72,11 @@ func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 		t.Fatalf("rerun compiler version = %q, want 7.0.2", result.PostInstallReadiness.Checks.Compiler.Version)
 	}
 
-	aggregate := evaluateCompilerOrigins(repo, nil)
-	if aggregate.winner == nil {
+	aggregate := tstoolchain.EvaluateOrigins(repo, nil)
+	if aggregate.Winner == nil {
 		t.Fatalf("evaluateCompilerOrigins winner is nil after a successful install")
 	}
-	if aggregate.winner.origin != compilerOriginMiseProject {
-		t.Fatalf("winner.origin = %q, want %q", aggregate.winner.origin, compilerOriginMiseProject)
+	if aggregate.Winner.Origin != tstoolchain.OriginMiseProject {
+		t.Fatalf("winner.origin = %q, want %q", aggregate.Winner.Origin, tstoolchain.OriginMiseProject)
 	}
 }

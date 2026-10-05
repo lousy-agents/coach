@@ -11,7 +11,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // writeInstallingSetupExecutable writes an executable named `name` that
@@ -46,7 +48,7 @@ func writeInstallingSetupExecutable(name, version string) string {
 // itself resolves against -- so the fixture below cannot silently drift
 // from the compiler this build actually supports.
 func setupRecheckSupportedTypescriptVersion() string {
-	versions := codesignalcli.SupportedTypescriptVersions
+	versions := tstoolchain.SupportedTypescriptVersions
 	Expect(versions).NotTo(BeEmpty())
 	return versions[len(versions)-1]
 }
@@ -75,7 +77,7 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			commitFile(repo, "coach-project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 			head := commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
 
-			before, err := codesignalcli.CheckProjectReadiness(repo, head, "coach-project.json")
+			before, err := projectcheck.Run(repo, head, "coach-project.json")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(before.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
 			Expect(before.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing), "the fixture must genuinely start with a missing-compiler gap, or a later pass proves nothing")

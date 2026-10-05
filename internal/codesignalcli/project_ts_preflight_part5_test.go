@@ -8,6 +8,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 func TestAppendedRemediationLine(t *testing.T) {
@@ -43,7 +44,7 @@ func TestRunCompilerSetupOfferCancelsOnUnreadableSelection(t *testing.T) {
 	readiness := &projectreadiness.Result{
 		Checks: projectreadiness.Checks{
 			Policy:         projectreadiness.Check{State: projectreadiness.Pass},
-			Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
+			Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing, DeclaredVersion: tstoolchain.SupportedTypescriptVersions[0]},
 			PackageManager: projectreadiness.Check{State: projectreadiness.Pass},
 		},
 	}

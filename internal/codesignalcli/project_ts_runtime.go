@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
-	"github.com/lousy-agents/coach/internal/codesignalcli/subprocess"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // tsRuntime is the prepared runtime descriptor: everything tsProjectBackend
@@ -47,52 +45,18 @@ const (
 	runtimeOriginPath = "path"
 )
 
-var (
-	errHostNodeNotFound        = errors.New("node executable not found on PATH")
-	errHostNodeMajorDisallowed = errors.New("host node major is outside the analysis runtime set")
-)
-
-const (
-	hostNodeVersionProbeTimeout   = 10 * time.Second
-	maxHostNodeVersionProbeOutput = 4 << 10
-)
-
-func analysisNodeMajorAllowed(major int) bool {
-	return major == 24 || major == 26
-}
-
-func hostNodeProbeEnv() []string {
-	return []string{
-		"PATH=" + os.Getenv("PATH"),
-		"HOME=" + os.Getenv("HOME"),
-	}
-}
-
-func mapHostNodeProbeError(path, probe string, exitErr, probeErr error) error {
-	switch {
-	case errors.Is(probeErr, subprocess.ErrProbeTimedOut):
-		return fmt.Errorf("%s %s timed out", path, probe)
-	case probeErr != nil:
-		return probeErr
-	case exitErr != nil:
-		return fmt.Errorf("running %s %s: %w", path, probe, exitErr)
-	default:
-		return nil
-	}
-}
-
 func mapHostNodeResolveError(err error) error {
-	if errors.Is(err, errHostNodeNotFound) {
-		return &RuntimeUnresolvedError{Code: projectreadiness.GapNodeMissing}
+	if errors.Is(err, tstoolchain.ErrHostNodeNotFound) {
+		return &tstoolchain.RuntimeUnresolvedError{Code: projectreadiness.GapNodeMissing}
 	}
-	if errors.Is(err, errHostNodeMajorDisallowed) {
-		return &RuntimeUnresolvedError{Code: projectreadiness.GapNodeUnsupported}
+	if errors.Is(err, tstoolchain.ErrHostNodeMajorDisallowed) {
+		return &tstoolchain.RuntimeUnresolvedError{Code: projectreadiness.GapNodeUnsupported}
 	}
 	return fmt.Errorf("coach: resolving host Node runtime for TypeScript analysis: %w", err)
 }
 
 func mapCompilerRuntimeError(err error) error {
-	var unresolved *CompilerUnresolvedError
+	var unresolved *tstoolchain.CompilerUnresolvedError
 	if errors.As(err, &unresolved) {
 		return unresolved
 	}
@@ -102,33 +66,33 @@ func mapCompilerRuntimeError(err error) error {
 // PrepareTSRuntime resolves and materializes everything tsProjectBackend
 // needs to run one --project-language typescript analysis confined to a
 // private, host-approved runtime: the exact host Node executable, the exact
-// approved TypeScript compiler (see resolveCompilerForRuntime), and a
+// approved TypeScript compiler (see tstoolchain.ResolveCompilerForRuntime), and a
 // freshly materialized private analyzer directory (MaterializeTSAnalyzer).
 // On success, the caller owns the returned cleanup and must call it,
 // exactly like MaterializeTSAnalyzer's own contract -- it tears down the
 // materialized analyzer directory and is safe to call more than once.
 //
 // dir is the walk ceiling (repository root); roots are the selected
-// policy roots threaded into resolveCompilerForRuntime so readiness and
+// policy roots threaded into tstoolchain.ResolveCompilerForRuntime so readiness and
 // Analyze share one root-scoped project-manifest origin. Compiler-
 // resolution reads are host-readiness reads of the analyzed repository's
 // worktree (its package.json/mise.toml/node_modules), never analysis input
-// -- the same distinction CheckProjectReadiness's own resolveCompiler
+// -- the same distinction projectcheck.Run's own tstoolchain.ResolveCompiler
 // call documents.
 //
 // Every failure here is fatal (a non-nil error, cleanup a no-op), never a
 // soft projectmodel.DiagBackendUnavailable degrade. Analyze does not run
-// --check-project; the two share resolveCompiler's locatable-PASS rule so a
+// --check-project; the two share tstoolchain.ResolveCompiler's locatable-PASS rule so a
 // readiness-green repository cannot reach an unlocatable compiler here.
 // A clean miss of host Node or of a supported compiler is a
-// CompilerUnresolvedError (exit 2). Other probe failures stay operational.
+// tstoolchain.CompilerUnresolvedError (exit 2). Other probe failures stay operational.
 func PrepareTSRuntime(ctx context.Context, dir string, roots []string) (*tsRuntime, func(), error) {
-	nodePath, nodeVersion, err := resolveHostNode(ctx)
+	nodePath, nodeVersion, err := tstoolchain.ResolveHostNode(ctx)
 	if err != nil {
 		return nil, func() {}, mapHostNodeResolveError(err)
 	}
 
-	compiler, err := resolveCompilerForRuntime(dir, roots)
+	compiler, err := tstoolchain.ResolveCompilerForRuntime(dir, roots)
 	if err != nil {
 		return nil, func() {}, mapCompilerRuntimeError(err)
 	}

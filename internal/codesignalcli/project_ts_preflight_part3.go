@@ -5,12 +5,15 @@ import (
 	"context"
 	"io"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/pkgmanager"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // runMiseSetupOffer executes a mise scope choice through its own library
-// path (miseScopeDeclaresInstallableCompiler/installMiseTypescriptProject/
+// path (tstoolchain.MiseScopeDeclaresInstallableCompiler/installMiseTypescriptProject/
 // Global, project_ts_compiler_mise_install.go/project_ts_compiler_mise_command.go),
 // distinct from runProjectPackageSetupOffer's project-package path. Its
 // preview and confirmation prompt are the same ones
@@ -19,8 +22,8 @@ import (
 // same mise scope.
 func runMiseSetupOffer(ctx context.Context, dir, revision, configPath string, kind SetupChoiceKind, out io.Writer, reader *bufio.Reader) CompilerSetupOfferResult {
 	origin := miseOriginForSetupChoiceKind(kind)
-	worktreeRoot := compilerWorktreeRoot(dir)
-	version, ok := miseScopeDeclaresInstallableCompiler(origin, worktreeRoot)
+	worktreeRoot := tstoolchain.WorktreeRoot(dir)
+	version, ok := tstoolchain.MiseScopeDeclaresInstallableCompiler(origin, worktreeRoot)
 	if !ok {
 		return CompilerSetupOfferResult{Choice: kind, FailureDetail: "the selected mise scope no longer declares an installable TypeScript version"}
 	}
@@ -36,7 +39,7 @@ func runMiseSetupOffer(ctx context.Context, dir, revision, configPath string, ki
 		return result
 	}
 
-	if postInstall, err := CheckProjectReadiness(dir, revision, configPath); err == nil {
+	if postInstall, err := projectcheck.Run(dir, revision, configPath); err == nil {
 		result.PostInstallReadiness = postInstall
 	}
 	result.Succeeded = true
@@ -44,8 +47,8 @@ func runMiseSetupOffer(ctx context.Context, dir, revision, configPath string, ki
 }
 
 // projectPackageWorkingDirectory resolves BuildSetupPreview's required
-// directory the same way checkPackageManager itself does
-// (packageManagerContexts): the nearest package.json above a selected policy
+// directory the same way pkgmanager.Check itself does
+// (pkgmanager.Contexts): the nearest package.json above a selected policy
 // root. It resolves a directory only when exactly one context exists, and
 // names a withholding reason otherwise.
 //
@@ -61,19 +64,20 @@ func runMiseSetupOffer(ctx context.Context, dir, revision, configPath string, ki
 // computed against that directory, so running an install there would consent
 // to something nobody previewed.
 func projectPackageWorkingDirectory(dir, revision, configPath string) (workingDirectory, withheldReason string) {
-	worktreeRoot := compilerWorktreeRoot(dir)
+	worktreeRoot := tstoolchain.WorktreeRoot(dir)
 	policyPath := configPath
 	if policyPath == "" {
 		policyPath = projectconfig.DefaultPath
 	}
-	_, roots, err := checkPolicy(dir, revision, policyPath)
+	_, roots, err := projectcheck.CheckPolicy(dir, revision, policyPath)
 	if err != nil {
 		return "", setupChoiceReasonManifestContextUnresolved
 	}
-	contexts, _ := packageManagerContexts(worktreeRoot, roots)
+	contexts, _ := pkgmanager.Contexts(worktreeRoot, roots)
 	switch len(contexts) {
 	case 0:
-
+		// Defensive: pkgmanager.Contexts falls back to the worktree root,
+		// so it does not return an empty slice today.
 		return "", setupChoiceReasonManifestContextUnresolved
 	case 1:
 		return contexts[0], ""
@@ -88,7 +92,7 @@ func projectPackageWorkingDirectory(dir, revision, configPath string) (workingDi
 //
 // It is reached only alongside that policy failure
 // (ProjectConfigErrorWithReadiness is the sole production producer). Before
-// R1, a missing policy left checkProjectShape and checkPackageManager
+// R1, a missing policy left checkProjectShape and pkgmanager.Check
 // guessing from the worktree root in place of the roots a policy would have
 // selected, so a gap either of them raised might simply be an artifact of
 // that guess -- which is why this line used to hedge rather than assert the

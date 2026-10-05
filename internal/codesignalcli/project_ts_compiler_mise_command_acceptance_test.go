@@ -21,6 +21,7 @@ import (
 	"runtime"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -80,17 +81,17 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 	)
 
 	BeforeEach(func() {
-		originalProbeVersion = probeMiseToolVersion
-		originalGlobalHazard = probeMiseGlobalConfigHazard
-		originalLocate = locateMiseTypescriptInstall
-		probeMiseToolVersion = func(context.Context) (string, bool) { return "2026.9.5 linux-x64 (2026-09-10)", true }
-		probeMiseGlobalConfigHazard = func(context.Context) bool { return false }
+		originalProbeVersion = tstoolchain.ProbeMiseToolVersion
+		originalGlobalHazard = tstoolchain.ProbeMiseGlobalConfigHazard
+		originalLocate = tstoolchain.LocateMiseTypescriptInstall
+		tstoolchain.ProbeMiseToolVersion = func(context.Context) (string, bool) { return "2026.9.5 linux-x64 (2026-09-10)", true }
+		tstoolchain.ProbeMiseGlobalConfigHazard = func(context.Context) bool { return false }
 	})
 
 	AfterEach(func() {
-		probeMiseToolVersion = originalProbeVersion
-		probeMiseGlobalConfigHazard = originalGlobalHazard
-		locateMiseTypescriptInstall = originalLocate
+		tstoolchain.ProbeMiseToolVersion = originalProbeVersion
+		tstoolchain.ProbeMiseGlobalConfigHazard = originalGlobalHazard
+		tstoolchain.LocateMiseTypescriptInstall = originalLocate
 	})
 
 	Context("refuses before ever attempting install", func() {
@@ -131,7 +132,7 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 
 				installDir := GinkgoT().TempDir()
 				writeFakeInstalledTypescript(installDir, "7.0.2")
-				locateMiseTypescriptInstall = func(context.Context, string) (string, bool) {
+				tstoolchain.LocateMiseTypescriptInstall = func(context.Context, string) (string, bool) {
 					return filepath.Join(installDir, "node_modules", "typescript"), true
 				}
 
@@ -142,9 +143,9 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 				Expect(result.Trusted).To(BeTrue(), "%+v", result)
 				Expect(result.Attempted).To(BeTrue(), "%+v", result)
 				Expect(result.Succeeded).To(BeTrue(), "expected the freshly-installed compiler to classify as eligible: %+v", result)
-				Expect(result.Class).To(Equal(compilerClassEligible))
+				Expect(result.Class).To(Equal(tstoolchain.ClassEligible))
 				Expect(result.Version).To(Equal("7.0.2"))
-				Expect(result.Origin).To(Equal(compilerOriginMiseProject))
+				Expect(result.Origin).To(Equal(tstoolchain.OriginMiseProject))
 			})
 		})
 
@@ -155,7 +156,7 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 
 				installDir := GinkgoT().TempDir()
 				writeFakeInstalledTypescript(installDir, "7.0.2")
-				locateMiseTypescriptInstall = func(context.Context, string) (string, bool) {
+				tstoolchain.LocateMiseTypescriptInstall = func(context.Context, string) (string, bool) {
 					return filepath.Join(installDir, "node_modules", "typescript"), true
 				}
 
@@ -163,7 +164,7 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 				Expect(result.Trusted).To(BeTrue(), "%+v", result)
 				Expect(result.Attempted).To(BeTrue(), "%+v", result)
 				Expect(result.Succeeded).To(BeTrue(), "expected the freshly-installed compiler to classify as eligible: %+v", result)
-				Expect(result.Origin).To(Equal(compilerOriginMiseGlobal))
+				Expect(result.Origin).To(Equal(tstoolchain.OriginMiseGlobal))
 			})
 		})
 
@@ -190,7 +191,7 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 				stubDir := writeNoOpStubMise()
 				GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-				locateMiseTypescriptInstall = func(context.Context, string) (string, bool) {
+				tstoolchain.LocateMiseTypescriptInstall = func(context.Context, string) (string, bool) {
 					return "", false
 				}
 
@@ -349,8 +350,8 @@ func lifecycleSentinelTarball() []byte {
 // writeNoOpStubMise writes a `mise` executable that exits 0 for any
 // invocation without inspecting its arguments. The trust-gate and
 // compiler-verification specs below drive every mise-facing decision
-// through this package's own overridable probe vars (probeMiseToolVersion,
-// probeMiseGlobalConfigHazard, locateMiseTypescriptInstall) rather than a
+// through this package's own overridable probe vars (tstoolchain.ProbeMiseToolVersion,
+// tstoolchain.ProbeMiseGlobalConfigHazard, tstoolchain.LocateMiseTypescriptInstall) rather than a
 // real mise subprocess; the one exception is runMiseInstallInsulated's own
 // `mise install` call, which is not a var and always really executes --
 // this stub exists only to satisfy that one call cheaply and
@@ -364,28 +365,28 @@ func writeNoOpStubMise() (dir string) {
 
 // writeFakeInstalledTypescript writes a minimal installed-package layout
 // under installDir/node_modules/typescript (plus its matching native
-// platform package) that classifyCompilerCandidate's own filesystem reads
+// platform package) that tstoolchain.ClassifyCandidate's own filesystem reads
 // (readTypescriptVersionAt, resolveNativePackage) accept as
-// compilerClassEligible for version.
+// tstoolchain.ClassEligible for version.
 func writeFakeInstalledTypescript(installDir, version string) {
 	pkgDir := filepath.Join(installDir, "node_modules", "typescript")
 	Expect(os.MkdirAll(pkgDir, 0o755)).To(Succeed())
 	Expect(os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(fmt.Sprintf(`{"name":"typescript","version":%q}`+"\n", version)), 0o644)).To(Succeed())
 
-	nativeDir := filepath.Join(installDir, "node_modules", "@typescript", nativeTypescriptUnscopedName())
+	nativeDir := filepath.Join(installDir, "node_modules", "@typescript", tstoolchain.NativeTypescriptUnscopedName())
 	Expect(os.MkdirAll(nativeDir, 0o755)).To(Succeed())
-	Expect(os.WriteFile(filepath.Join(nativeDir, "package.json"), []byte(fmt.Sprintf(`{"name":%q,"version":%q}`+"\n", NativeTypescriptPackageName(), version)), 0o644)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(nativeDir, "package.json"), []byte(fmt.Sprintf(`{"name":%q,"version":%q}`+"\n", tstoolchain.NativeTypescriptPackageName(), version)), 0o644)).To(Succeed())
 }
 
 // writeStdoutOverflowStubMise writes a `mise` executable that always writes
-// more than maxMiseProbeOutput bytes to stdout before exiting 0, regardless
+// more than tstoolchain.MaxMiseProbeOutput bytes to stdout before exiting 0, regardless
 // of its arguments -- exercising runBoundedMiseInstallSubprocess's
 // stdout-budget-overflow branch (project_ts_compiler_mise_command.go's
-// `int64(len(data)) > maxMiseProbeOutput` check) deterministically, without
+// `int64(len(data)) > tstoolchain.MaxMiseProbeOutput` check) deterministically, without
 // a real, network-dependent, minutes-long mise install.
 func writeStdoutOverflowStubMise() (dir string) {
 	dir = GinkgoT().TempDir()
-	script := fmt.Sprintf("#!/bin/sh\nprintf '%%%ds' '' | tr ' ' 'x'\nexit 0\n", maxMiseProbeOutput+1024)
+	script := fmt.Sprintf("#!/bin/sh\nprintf '%%%ds' '' | tr ' ' 'x'\nexit 0\n", tstoolchain.MaxMiseProbeOutput+1024)
 	Expect(os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755)).To(Succeed())
 	return dir
 }

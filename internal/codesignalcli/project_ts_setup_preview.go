@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/pkgmanager"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -29,26 +30,26 @@ type setupCommandTemplate struct {
 }
 
 // setupCommandTemplates keys off the same manager-kind constants
-// checkPackageManager classifies against (project_ts_setup_matrix.go),
+// pkgmanager.Check classifies against (project_ts_setup_matrix.go),
 // rather than re-typing a second copy of the frozen command strings.
 //
 // pnpm's row also carries --ignore-pnpmfile: --ignore-scripts alone does
 // not stop pnpm from loading and running a committed .pnpmfile.cjs (module
 // top level and any hooks.readPackage hook) during install -- that is a
-// separate opt-out, and detectPackageManagerHazard's pnpm check only vets
+// separate opt-out, and pkgmanager.DetectPackageManagerHazard's pnpm check only vets
 // .npmrc's registry setting, not .pnpmfile.cjs, so this row is pnpm's only
 // line of defense against it. Bun's analogous vector, a bunfig.toml
 // "preload" entry, was verified not to fire on `bun install` (only on `bun
 // run`/the bun runtime), so bun's row needs no equivalent flag.
 var setupCommandTemplates = map[string]setupCommandTemplate{
-	packageManagerKindNPM: {
+	pkgmanager.KindNPM: {
 		executable: "npm",
 		args:       []string{"ci", "--ignore-scripts"},
 		expectedChanges: "removes and recreates node_modules/ in the working directory from package-lock.json; " +
 			"leaves package-lock.json and package.json unchanged -- npm ci fails instead if they disagree",
 		scriptSuppressionPolicy: "--ignore-scripts suppresses this package manager's lifecycle scripts (including dependency build scripts) for this run",
 	},
-	packageManagerKindPNPM: {
+	pkgmanager.KindPNPM: {
 		executable: "pnpm",
 		args:       []string{"install", "--frozen-lockfile", "--ignore-scripts", "--ignore-pnpmfile"},
 		expectedChanges: "installs packages into node_modules/ in the working directory (and pnpm's content-addressable store); " +
@@ -56,11 +57,11 @@ var setupCommandTemplates = map[string]setupCommandTemplate{
 		scriptSuppressionPolicy: "--ignore-scripts suppresses this package manager's lifecycle scripts (including dependency build scripts) for this run; " +
 			"--ignore-pnpmfile additionally skips loading and running a committed .pnpmfile.cjs, which pnpm would otherwise execute (including its hooks.readPackage hook) during install regardless of --ignore-scripts",
 	},
-	packageManagerKindBun: {
+	pkgmanager.KindBun: {
 		executable: "bun",
 		args:       []string{"install", "--frozen-lockfile", "--ignore-scripts"},
 		// Bun recognizes two lockfile variants (bun.lock, bun.lockb; see
-		// packageManagerLockfileBasenames) and BuildSetupPreview is not told
+		// pkgmanager.LockfileBasenames) and BuildSetupPreview is not told
 		// which one this repository has, so this disclosure names neither --
 		// naming one would risk citing a file that does not exist here.
 		expectedChanges: "installs packages into node_modules/ in the working directory (and bun's install cache); " +
@@ -95,7 +96,7 @@ var ErrSetupPreviewUnavailable = errors.New("setup preview: no frozen command te
 
 // BuildSetupPreview renders the pre-execution disclosure for choice,
 // resolved against packageManager -- the very projectreadiness.Check
-// checkPackageManager produced, so the preview's command, classified version,
+// pkgmanager.Check produced, so the preview's command, classified version,
 // and recorded pin cannot drift from what was actually classified -- and
 // workingDirectory, the directory containing the manifest that owns the
 // selected origin. It performs no filesystem or network access and executes

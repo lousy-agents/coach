@@ -2,6 +2,8 @@ package codesignalcli
 
 import (
 	"fmt"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // typescriptScanInvocation names the bare `coach codesignal --baseline`
@@ -86,9 +88,9 @@ func typescriptInvocation(flag, projectConfigPath string) string {
 
 func miseOriginForSetupChoiceKind(kind SetupChoiceKind) string {
 	if kind == SetupChoiceGlobalMise {
-		return compilerOriginMiseGlobal
+		return tstoolchain.OriginMiseGlobal
 	}
-	return compilerOriginMiseProject
+	return tstoolchain.OriginMiseProject
 }
 
 func miseSetupOfferFailureDetail(installed miseInstallResult, version, origin string) string {

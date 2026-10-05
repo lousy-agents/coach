@@ -48,10 +48,10 @@ func prepareCompilerNextAction(readiness *projectreadiness.Result) (projectreadi
 
 // miseChoicesForPrepareCompiler names which of mise_project/mise_global are
 // genuinely offered for action, consuming rather than re-deriving
-// CheckProjectReadiness' own verification data: action.Choices when the
+// projectcheck.Run' own verification data: action.Choices when the
 // package-manager-adapter restriction already populated it, or each mise
 // scope's own projectreadiness.MiseChoice.Verified (miseSetupChoicesForReadiness,
-// the same evaluateMiseSetupChoices call CheckProjectReadiness itself
+// the same tstoolchain.EvaluateMiseSetupChoices call projectcheck.Run itself
 // makes) when it did not -- action.Choices is nil exactly when no adapter
 // rejection has restricted it yet, not when nothing is offered (see
 // restrictPrepareCompilerChoices' own contract).
