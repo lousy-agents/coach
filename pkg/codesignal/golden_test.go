@@ -22,7 +22,7 @@ var frozenReportJSONFieldNames = map[string]struct{}{
 	"baseline_signals": {}, "unknown_signals": {},
 	"id": {}, "fingerprint": {}, "rule_id": {}, "rule_version": {}, "kind": {},
 	"category": {}, "severity": {}, "confidence": {}, "lifecycle": {}, "changed": {},
-	"path": {}, "source_scope": {}, "subject": {}, "location": {}, "evidence": {},
+	"path": {}, "source_scope": {}, "subject": {}, "location": {}, "evidence": {}, "side": {},
 	"why_it_matters": {}, "recommendation": {}, "suggested_skill": {}, "provenance": {},
 	"machine_evidence": {}, "related_locations": {}, "path_steps": {}, "coverage_refs": {},
 	"producer": {}, "finding_kind": {}, "language": {},

@@ -8,8 +8,16 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
+
+// goAmbiguousBypassPolicyConfigJSON declares a "service" layer whose prefix
+// ("pkg/nonexistent_service") matches no directory in either fixture
+// revision, so required_layer's ambiguous-layer guard (see
+// pkg/projectmodel/go_layer_bypass.go) fires on every revision regardless of
+// what a diff changes.
+const goAmbiguousBypassPolicyConfigJSON = `{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"service","prefixes":["pkg/nonexistent_service"]}],"required_layer":"service"}`
 
 // hostNodeVersion returns the trimmed output of `node --version`.
 func hostNodeVersion() string {
@@ -380,6 +388,81 @@ var _ = Describe("coach codesignal project_scope, provenance, and next_actions C
 			Expect(textStr).NotTo(ContainSubstring(repo), "text must not leak the repo absolute path")
 			Expect(textStr).NotTo(ContainSubstring("node:internal"), "text must not leak node:internal module URLs")
 			Expect(textStr).NotTo(ContainSubstring("file://"), "text must not leak file:// scheme URLs")
+		})
+	})
+
+	// AC-VER-3 (issue #334 Task 11): a project diagnostic produced on either
+	// side of a --base diff must identify its comparison side and that
+	// side's revision in machine-readable fields. goAmbiguousBypassPolicyConfigJSON's
+	// "service" layer prefix matches no directory in either revision's tree,
+	// so BuildGoLayerBypass's ambiguous-layer guard fires identically on both
+	// the base and head Go project models, independent of what the diff
+	// itself changed -- giving one project_layer_bypass_coverage_incomplete
+	// diagnostic per side without relying on a shared clock or fake to
+	// produce the same outcome on both.
+	When("a --base diff analyzes a Go project whose required_layer is configured but structurally ambiguous on both revisions", Label("go-project-backend"), func() {
+		var repo string
+		var baseSHA, headSHA string
+		var jsonOut []byte
+
+		BeforeEach(func() {
+			repo = newTempGitRepo()
+			commitFile(repo, "go.mod", goModuleFile)
+			commitFile(repo, "pkg/handlers/handlers.go", handlersWithoutImport)
+			baseSHA = commitFile(repo, "project.json", goAmbiguousBypassPolicyConfigJSON)
+			headSHA = commitFile(repo, "pkg/handlers/extra.go", "package handlers\n\nfunc Extra() string {\n\treturn \"\"\n}\n")
+
+			var exitCode int
+			jsonOut, _, exitCode = runCoachCodesignalRaw(repo, baseSHA,
+				"--project-config", "project.json", "--format=json")
+			Expect(exitCode).To(Equal(0))
+		})
+
+		It("stamps Side/Revision on the base-side diagnostic (in addition to its unchanged base_ Kind prefix) and the head-side diagnostic", func() {
+			report := decodeCoachReport(jsonOut)
+
+			var baseDiag, headDiag *codesignal.Diagnostic
+			for i := range report.Diagnostics {
+				d := &report.Diagnostics[i]
+				switch d.Kind {
+				case "base_project_layer_bypass_coverage_incomplete":
+					baseDiag = d
+				case "project_layer_bypass_coverage_incomplete":
+					headDiag = d
+				}
+			}
+
+			Expect(baseDiag).NotTo(BeNil(), "expected a base_project_layer_bypass_coverage_incomplete diagnostic, got %+v", report.Diagnostics)
+			Expect(baseDiag.Kind).To(Equal("base_project_layer_bypass_coverage_incomplete"), "the existing base_ Kind prefix must remain unchanged")
+			Expect(baseDiag.Side).To(Equal("base"))
+			Expect(baseDiag.Revision).To(Equal(baseSHA))
+
+			Expect(headDiag).NotTo(BeNil(), "expected an unprefixed project_layer_bypass_coverage_incomplete diagnostic, got %+v", report.Diagnostics)
+			Expect(headDiag.Side).To(Equal("head"))
+			Expect(headDiag.Revision).To(Equal(headSHA))
+		})
+
+		It("names the same side and revision in the text-format diagnostic lines", func() {
+			textOut, _, exitCode := runCoachCodesignalRaw(repo, baseSHA,
+				"--project-config", "project.json", "--format=text")
+			Expect(exitCode).To(Equal(0))
+
+			text := string(textOut)
+			var baseLine, headLine string
+			for _, line := range strings.Split(text, "\n") {
+				switch {
+				case strings.Contains(line, "kind: base_project_layer_bypass_coverage_incomplete"):
+					baseLine = line
+				case strings.Contains(line, "kind: project_layer_bypass_coverage_incomplete,"):
+					headLine = line
+				}
+			}
+
+			Expect(baseLine).NotTo(BeEmpty(), "expected a text line for base_project_layer_bypass_coverage_incomplete; text=\n%s", text)
+			Expect(baseLine).To(HaveSuffix(", side: base, revision: " + baseSHA))
+
+			Expect(headLine).NotTo(BeEmpty(), "expected a text line for project_layer_bypass_coverage_incomplete; text=\n%s", text)
+			Expect(headLine).To(HaveSuffix(", side: head, revision: " + headSHA))
 		})
 	})
 })

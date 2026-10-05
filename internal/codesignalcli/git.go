@@ -86,29 +86,34 @@ type SelectedFile struct {
 // Rename and copy new paths are selected so HEAD content is analyzed.
 // They are not marked added: that would inherit #262's introduced
 // lifecycle. Continuity against the old path is out of scope, so each
-// selected R/C path also gets a continuity_not_determined diagnostic.
-func SelectChangedFiles(dir, mergeBaseSHA string) ([]SelectedFile, []codesignal.Diagnostic, error) {
+// selected R/C path also gets a continuity_not_determined diagnostic; that
+// detection is head-side only (it never inspects headSHA's base
+// counterpart), so headSHA is threaded through only to identify the
+// diagnostic's comparison side and revision, not to select a different path.
+//
+// continuity returns every R/C pair, including unsupported-language and
+// later scope-excluded paths, because project analysis reads the whole
+// snapshot rather than only the selected files.
+func SelectChangedFiles(dir, mergeBaseSHA, headSHA string) (selected []SelectedFile, diagnostics []codesignal.Diagnostic, continuity []codesignal.PathContinuity, err error) {
 	// --find-renames uses git's default 50% threshold. --find-copies-harder
 	// also considers unmodified files as copy sources, which is more
 	// aggressive than git's defaults; the extra R/C records are analyzed
 	// rather than dropped.
 	output, err := runGitBytes(dir, "diff", "--name-status", "-z", "--find-renames", "--find-copies-harder", mergeBaseSHA, "HEAD")
 	if err != nil {
-		return nil, nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: git diff failed: %s", err)}
+		return nil, nil, nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: git diff failed: %s", err)}
 	}
 
 	records, err := parseNameStatusZ(output)
 	if err != nil {
-		return nil, nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
+		return nil, nil, nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
 	}
-
-	var selected []SelectedFile
-	var diagnostics []codesignal.Diagnostic
 
 	for _, record := range records {
 		switch {
 		case strings.HasPrefix(record.status, "R") || strings.HasPrefix(record.status, "C"):
 			path := record.paths[len(record.paths)-1]
+			continuity = append(continuity, codesignal.PathContinuity{Path: path, PreviousPath: record.paths[0]})
 			sf, diag, ok := selectSupportedPath(path, "")
 			if !ok {
 				diagnostics = append(diagnostics, diag)
@@ -116,9 +121,11 @@ func SelectChangedFiles(dir, mergeBaseSHA string) ([]SelectedFile, []codesignal.
 			}
 			selected = append(selected, sf)
 			diagnostics = append(diagnostics, codesignal.Diagnostic{
-				Kind:    "continuity_not_determined",
-				Path:    path,
-				Message: "rename/copy lifecycle continuity was not determined",
+				Kind:     "continuity_not_determined",
+				Path:     path,
+				Message:  fmt.Sprintf("rename/copy lifecycle continuity was not determined at head revision %s", headSHA),
+				Side:     "head",
+				Revision: headSHA,
 			})
 		case record.status == "A" || record.status == "M" || record.status == "D":
 			sf, diag, ok := selectSupportedPath(record.paths[0], statusToChangeStatus(record.status))
@@ -136,7 +143,7 @@ func SelectChangedFiles(dir, mergeBaseSHA string) ([]SelectedFile, []codesignal.
 		}
 	}
 
-	return selected, diagnostics, nil
+	return selected, diagnostics, continuity, nil
 }
 
 // DiscoverTrackedFiles lists every file tracked by Git at revisionSHA (via

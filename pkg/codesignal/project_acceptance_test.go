@@ -2,14 +2,27 @@ package codesignal_test
 
 import (
 	"encoding/json"
+	"reflect"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
+
+type sideAttribution struct {
+	side, revision string
+}
+
+func projectChangeAt(key, ruleID, path string) codesignal.ProjectChange {
+	change := projectChange(key, ruleID)
+	change.PrimaryAnchor.Path = path
+	return change
+}
 
 func projectChange(key, ruleID string) codesignal.ProjectChange {
 	return codesignal.ProjectChange{
@@ -288,6 +301,132 @@ var _ = Describe("Project-analysis report generation", func() {
 			Expect(report.ProjectChanges[0].Evidence).To(ContainSubstring("pkg/a -> pkg/b -> pkg/a"), "the producer's own evidence must survive, not be replaced")
 			Expect(report.ProjectChanges[0].Evidence).To(ContainSubstring("project_lifecycle_indeterminate"), "a base-only finding needs the same pointer as a head-side one")
 		})
+
+		// A project change's own diagnostic is anchored at that change's
+		// path so a reader can locate it, not because that path was itself
+		// unanalyzed or skipped -- so it must not be counted as such.
+		It("does not count a degraded project change's own diagnostic as an unanalyzed or skipped file", func() {
+			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
+				ProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: false},
+			})
+			Expect(report.ProjectChanges).To(HaveLen(1))
+			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
+			Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_change_lifecycle_indeterminate")))
+			Expect(report.Summary.FilesWithDiagnostics).To(Equal(0), "pkg/a/a.go is a project change's anchor, not a file the diagnostics pipeline analyzed or skipped")
+			Expect(report.Summary.FilesUnanalyzed).To(Equal(0), "pkg/a/a.go is a project change's anchor, not a file the diagnostics pipeline analyzed or skipped")
+		})
+
+		// A diagnostic naming this specific degraded change's own
+		// repository-relative path must identify -- in machine-readable
+		// Side/Revision fields, with text naming the same side and
+		// revision -- which comparison side was incomplete, at both the
+		// head-key classification site and the base-only (resolved
+		// candidate) site. A mutation swapping "head"/"base" in either
+		// branch must fail one of these rows.
+		DescribeTable("attributes each degraded change's diagnostic to the comparison side(s) actually responsible",
+			func(buildInput func() codesignal.Input, wantPath string, want []sideAttribution) {
+				report := build(codesignal.Options{ProjectEnabled: true}, buildInput())
+
+				var matches []codesignal.Diagnostic
+				for _, d := range report.Diagnostics {
+					if d.Kind == "project_change_lifecycle_indeterminate" && d.Path == wantPath {
+						matches = append(matches, d)
+					}
+				}
+				Expect(matches).To(HaveLen(len(want)), "expected exactly one diagnostic per implicated side naming %s", wantPath)
+
+				for _, exp := range want {
+					found := false
+					for i, m := range matches {
+						if m.Side == exp.side && m.Revision == exp.revision {
+							Expect(m.Message).To(ContainSubstring(exp.side))
+							Expect(m.Message).To(ContainSubstring(exp.revision))
+							matches = append(matches[:i], matches[i+1:]...)
+							found = true
+							break
+						}
+					}
+					Expect(found).To(BeTrue(), "expected a diagnostic with side %q revision %q naming %s", exp.side, exp.revision, wantPath)
+				}
+			},
+			Entry("head coverage incomplete, at the head-key site", func() codesignal.Input {
+				return codesignal.Input{
+					Scope:           codesignal.Scope{Revision: "head-sha"},
+					ProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+					ProjectCoverage: &domain.Coverage{Phase: "full", Complete: false},
+				}
+			}, "pkg/a/a.go", []sideAttribution{{"head", "head-sha"}}),
+			Entry("base coverage incomplete, at the head-key site", func() codesignal.Input {
+				return codesignal.Input{
+					Scope:               codesignal.Scope{Revision: "head-sha", Base: "base-sha"},
+					ProjectChanges:      []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+					BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+					ProjectBaseAnalyzed: true,
+					ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+					BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: false},
+				}
+			}, "pkg/a/a.go", []sideAttribution{{"base", "base-sha"}}),
+			Entry("base observations supplied without a completed base analysis, at the head-key site", func() codesignal.Input {
+				return codesignal.Input{
+					Scope:               codesignal.Scope{Revision: "head-sha", Base: "base-sha"},
+					ProjectChanges:      []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+					BaseProjectChanges:  []codesignal.ProjectChange{projectChangeAt("cycle:pkg/c<->pkg/d", "project.import_cycle", "pkg/c/c.go")},
+					ProjectBaseAnalyzed: false,
+					ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+				}
+			}, "pkg/a/a.go", []sideAttribution{{"base", "base-sha"}}),
+			Entry("head and base both incomplete emits one diagnostic per side for the same path", func() codesignal.Input {
+				return codesignal.Input{
+					Scope:               codesignal.Scope{Revision: "head-sha", Base: "base-sha"},
+					ProjectChanges:      []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+					BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+					ProjectBaseAnalyzed: true,
+					ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: false},
+					BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: false},
+				}
+			}, "pkg/a/a.go", []sideAttribution{{"head", "head-sha"}, {"base", "base-sha"}}),
+			Entry("a base-only key classified at the resolved-candidate site is attributed the same as a head-key one", func() codesignal.Input {
+				return codesignal.Input{
+					Scope:               codesignal.Scope{Revision: "head-sha"},
+					BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+					ProjectBaseAnalyzed: true,
+					ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: false},
+					BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
+				}
+			}, "pkg/a/a.go", []sideAttribution{{"head", "head-sha"}}),
+		)
+	})
+
+	// The control run below (base coverage complete) proves the
+	// incompleteness in the second run is what produces "unknown", rather
+	// than the fixture happening to produce it for an unrelated reason.
+	Describe("AC-VER-3: indeterminate lifecycle and counters instead of a false improvement claim", func() {
+		It("keeps a change unknown and uncounted, instead of existing, when base coverage is genuinely incomplete", func() {
+			fixture := func(baseCoverageComplete bool) codesignal.Input {
+				return codesignal.Input{
+					ProjectChanges:      []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+					BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+					ProjectBaseAnalyzed: true,
+					ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+					BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: baseCoverageComplete},
+				}
+			}
+
+			control := build(codesignal.Options{ProjectEnabled: true}, fixture(true))
+			Expect(control.ProjectChanges).To(HaveLen(1))
+			Expect(control.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("existing")), "control: a complete comparison must classify this key existing")
+			Expect(control.ProjectSummary.ExistingChanges).To(Equal(1))
+			Expect(control.ProjectSummary.IntroducedChanges).To(Equal(0))
+			Expect(control.ProjectSummary.ResolvedChanges).To(Equal(0))
+
+			report := build(codesignal.Options{ProjectEnabled: true}, fixture(false))
+			Expect(report.ProjectChanges).To(HaveLen(1))
+			Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")), "an incomplete base comparison must never claim a determinate lifecycle")
+			Expect(report.ProjectSummary.ExistingChanges).To(Equal(0), "an incomplete comparison must not claim the change is still existing")
+			Expect(report.ProjectSummary.IntroducedChanges).To(Equal(0), "an incomplete comparison must not claim the change was introduced")
+			Expect(report.ProjectSummary.ResolvedChanges).To(Equal(0), "an incomplete comparison must not claim the change was resolved")
+		})
 	})
 
 	// F-003: active project observations must appear on the shared signals
@@ -535,6 +674,116 @@ var _ = Describe("Project-analysis report generation", func() {
 			Expect(report.ProjectFacts[0].Kind).To(Equal("other_fact"))
 			Expect(report.ProjectFacts[1].SemanticKey).To(Equal("a"))
 			Expect(report.ProjectFacts[2].SemanticKey).To(Equal("z"))
+		})
+	})
+
+	// AC-VER-5/AC-VER-6 (#334, epic #280): reachability ProjectFacts describe
+	// current HEAD only and must never receive ProjectChange's lifecycle
+	// vocabulary (introduced/existing/resolved/baseline) or improvement
+	// framing when a fact's presence differs across a --base comparison.
+	Describe("reachability facts carry no lifecycle or improvement semantics (AC-VER-5, AC-VER-6)", func() {
+		It("has no Lifecycle-style field on ProjectFact", func() {
+			factType := reflect.TypeOf(codesignal.ProjectFact{})
+			forbidden := []string{"lifecycle", "introduced", "resolved", "improv", "baseline", "existing"}
+			for i := 0; i < factType.NumField(); i++ {
+				field := factType.Field(i)
+				lowerName := strings.ToLower(field.Name)
+				lowerTag := strings.ToLower(field.Tag.Get("json"))
+				for _, word := range forbidden {
+					Expect(lowerName).NotTo(ContainSubstring(word), "ProjectFact field %q must not carry lifecycle-style naming", field.Name)
+					Expect(lowerTag).NotTo(ContainSubstring(word), "ProjectFact JSON tag %q must not carry lifecycle-style naming", field.Tag.Get("json"))
+				}
+			}
+		})
+
+		It("carries facts through the pipeline on exactly one head-only field, with no base-side, resolved, removed, or previous fact field on Input, Report, or the project backend result", func() {
+			// A regression that added e.g. Input.BaseProjectFacts, or a
+			// Report.ResolvedProjectFacts/RemovedProjectFacts section, or
+			// ProjectBackendResult.BaseFacts would let base-side or
+			// lifecycle-classified facts flow into the pipeline without ever
+			// touching ProjectFact's own fields (checked above) or the
+			// with/without-fact rendering fixture below (which only ever
+			// builds head-only reports). Requiring exactly one
+			// "Fact"-named field per type, with the fixed name each type
+			// already uses, closes that gap regardless of what name or
+			// prefix a regression would pick.
+			assertOnlyFactField := func(t reflect.Type, allowedFieldName string) {
+				for i := 0; i < t.NumField(); i++ {
+					field := t.Field(i)
+					if !strings.Contains(field.Name, "Fact") {
+						continue
+					}
+					Expect(field.Name).To(Equal(allowedFieldName), "%s must carry facts on exactly one field named %q; found an additional fact-bearing field %q", t.Name(), allowedFieldName, field.Name)
+					for _, forbiddenPrefix := range []string{"Base", "Resolved", "Removed", "Previous"} {
+						Expect(field.Name).NotTo(HavePrefix(forbiddenPrefix), "%s.%s must not carry a %s-prefixed fact field", t.Name(), field.Name, forbiddenPrefix)
+					}
+				}
+			}
+
+			assertOnlyFactField(reflect.TypeOf(codesignal.Input{}), "ProjectFacts")
+			assertOnlyFactField(reflect.TypeOf(codesignal.Report{}), "ProjectFacts")
+			assertOnlyFactField(reflect.TypeOf(codesignalcli.ProjectBackendResult{}), "Facts")
+		})
+
+		It("renders a reachability fact's appearance/disappearance across two otherwise-identical head reports with no lifecycle or improvement wording, even alongside a genuinely resolved ProjectChange", func() {
+			fact := codesignal.ProjectFact{
+				Kind:        "possible_call_reachability",
+				SemanticKey: "reach:handler->query",
+				Evidence:    "Handler may reach Query",
+				Provenance:  codesignal.Provenance{Producer: "projectmodel"},
+			}
+			// A base-only ProjectChange that legitimately classifies "resolved"
+			// (see "surfaces a base-only key resolved when IncludeResolved is
+			// set" above) -- present in both reports below so the assertions
+			// can distinguish real lifecycle wording (which must appear, for
+			// the change) from wording that leaks onto the fact's own
+			// presence/absence (which must not).
+			resolvedInput := codesignal.Input{
+				BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
+				ProjectBaseAnalyzed: true,
+				ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
+			}
+			options := codesignal.Options{ProjectEnabled: true, IncludeResolved: true}
+
+			withFactInput := resolvedInput
+			withFactInput.ProjectFacts = []codesignal.ProjectFact{fact}
+			reportWithFact := build(options, withFactInput)
+			Expect(reportWithFact.ProjectChanges).To(HaveLen(1))
+			Expect(reportWithFact.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("resolved")), "fixture must exercise a real resolved ProjectChange alongside the fact")
+			Expect(reportWithFact.ProjectFacts).To(HaveLen(1))
+
+			withoutFactInput := resolvedInput // identical head-only input, but with the fact absent
+			reportWithoutFact := build(options, withoutFactInput)
+			Expect(reportWithoutFact.ProjectFacts).To(BeEmpty())
+			Expect(reportWithoutFact.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("resolved")))
+
+			// JSON: the fact's own serialized bytes must never carry
+			// ProjectChange's lifecycle vocabulary or improvement wording.
+			factRaw, err := json.Marshal(reportWithFact.ProjectFacts[0])
+			Expect(err).NotTo(HaveOccurred())
+			for _, word := range []string{"lifecycle", "introduced", "resolved", "improv", "baseline", "existing", "no_longer"} {
+				Expect(strings.ToLower(string(factRaw))).NotTo(ContainSubstring(word))
+			}
+
+			// TEXT: removing exactly the fact's own rendered block from the
+			// with-fact report's text must reproduce the without-fact report's
+			// text byte-for-byte. An implementation that reacted to the fact's
+			// disappearance by adding compensating prose (e.g. "no longer
+			// reachable, resolved") anywhere else in the report -- verdict,
+			// summary, or elsewhere -- would break this equality even though
+			// it never touches ProjectFact's own fields.
+			textWithFact := codesignalcli.RenderText(reportWithFact)
+			textWithoutFact := codesignalcli.RenderText(reportWithoutFact)
+			expectedFactBlock := "\nFacts:\nkind: possible_call_reachability\nsemantic_key: reach:handler->query\nevidence: Handler may reach Query\n"
+			Expect(textWithFact).To(ContainSubstring(expectedFactBlock))
+			Expect(textWithoutFact).NotTo(ContainSubstring("Facts:"))
+			Expect(strings.Replace(textWithFact, expectedFactBlock, "", 1)).To(Equal(textWithoutFact), "a fact's presence/absence must change only its own rendered block, never any other wording in the report")
+
+			for _, word := range []string{"no longer reachable", "improved", "fixed"} {
+				Expect(strings.ToLower(textWithFact)).NotTo(ContainSubstring(word))
+				Expect(strings.ToLower(textWithoutFact)).NotTo(ContainSubstring(word))
+			}
 		})
 	})
 

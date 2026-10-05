@@ -135,8 +135,8 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 	}
 	diagnostics := input.Diagnostics
 	if len(result.HeadDiagnostics) > 0 || len(result.BaseDiagnostics) > 0 {
-		diagnostics = append(append([]codesignal.Diagnostic(nil), input.Diagnostics...), result.HeadDiagnostics...)
-		diagnostics = append(diagnostics, baseProjectDiagnostics(result.BaseDiagnostics)...)
+		diagnostics = append(append([]codesignal.Diagnostic(nil), input.Diagnostics...), headProjectDiagnostics(result.HeadDiagnostics, headRevision)...)
+		diagnostics = append(diagnostics, baseProjectDiagnostics(result.BaseDiagnostics, baseRevision)...)
 	}
 	analyzerProtocolVersion := result.AnalyzerProtocolVersion
 	if project.Language == "typescript" && analyzerProtocolVersion == 0 {
@@ -180,6 +180,7 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		ConfigDigest:             project.ConfigDigest,
 		SelectedRoots:            roots,
 		AnalyzerProtocolVersion:  analyzerProtocolVersion,
+		UndeterminedContinuity:   input.UndeterminedContinuity,
 	}
 	return merged, enabled, nil
 }
@@ -195,20 +196,41 @@ func selectedRootsFromConfig(config json.RawMessage) []string {
 	return cfg.Roots
 }
 
+// headProjectDiagnostics stamps Side "head" and Revision headRevision onto
+// each of result.HeadDiagnostics, mirroring baseProjectDiagnostics'
+// Side/Revision stamping without its "base_" Kind prefix -- Kind stays
+// unprefixed for a head-side diagnostic, matching the pre-existing
+// convention that only base-side diagnostics get a marked Kind.
+func headProjectDiagnostics(diagnostics []codesignal.Diagnostic, headRevision string) []codesignal.Diagnostic {
+	if len(diagnostics) == 0 {
+		return nil
+	}
+	stamped := make([]codesignal.Diagnostic, len(diagnostics))
+	for i, d := range diagnostics {
+		d.Side = "head"
+		d.Revision = headRevision
+		stamped[i] = d
+	}
+	return stamped
+}
+
 // baseProjectDiagnostics prefixes each diagnostic's Kind with "base_",
 // mirroring analyze.go's baseSyntaxDiagnostics ("syntax_errors" ->
 // "base_syntax_errors"). Without this, a diff-mode run whose backend finds
 // the same incompleteness on both revisions (e.g. two
 // project_layer_bypass_coverage_incomplete diagnostics) would emit two
 // byte-identical Diagnostic entries with no way to tell which revision each
-// one describes.
-func baseProjectDiagnostics(diagnostics []codesignal.Diagnostic) []codesignal.Diagnostic {
+// one describes. Side "base" and Revision baseRevision are additive,
+// machine-readable versions of that same distinction (AC-VER-3).
+func baseProjectDiagnostics(diagnostics []codesignal.Diagnostic, baseRevision string) []codesignal.Diagnostic {
 	if len(diagnostics) == 0 {
 		return nil
 	}
 	prefixed := make([]codesignal.Diagnostic, len(diagnostics))
 	for i, d := range diagnostics {
 		d.Kind = "base_" + d.Kind
+		d.Side = "base"
+		d.Revision = baseRevision
 		prefixed[i] = d
 	}
 	return prefixed

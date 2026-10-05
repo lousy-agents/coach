@@ -89,7 +89,14 @@ func renderSignal(b *strings.Builder, signal codesignal.Signal) {
 }
 
 func renderDiagnostic(b *strings.Builder, diagnostic codesignal.Diagnostic) {
-	fmt.Fprintf(b, "path: %s, kind: %s, message: %s\n", diagnostic.Path, diagnostic.Kind, diagnostic.Message)
+	fmt.Fprintf(b, "path: %s, kind: %s, message: %s", diagnostic.Path, diagnostic.Kind, diagnostic.Message)
+	if diagnostic.Side != "" {
+		fmt.Fprintf(b, ", side: %s", diagnostic.Side)
+	}
+	if diagnostic.Revision != "" {
+		fmt.Fprintf(b, ", revision: %s", diagnostic.Revision)
+	}
+	b.WriteByte('\n')
 }
 
 // RenderJSON renders report as its canonical JSON representation followed

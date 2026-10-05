@@ -2,13 +2,70 @@ package codesignal_test
 
 import (
 	"encoding/json"
+	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/domain"
+	"github.com/lousy-agents/coach/pkg/semantics"
 )
+
+// lifecycleWireChange returns a minimal architecture.layer_bypass
+// ProjectChange tagged with the source language that produced it (via
+// Provenance.Language), standing in for
+// EvaluateGoLayerBypass/EvaluateTypeScriptLayerBypass output. Used to prove
+// (AC-VER-2, Task 11 of issue #334) that classifyProjectChanges
+// (project_lifecycle.go) assigns the same five frozen lifecycle wire values
+// regardless of which language produced the observation.
+func lifecycleWireChange(key, language string) codesignal.ProjectChange {
+	return codesignal.ProjectChange{
+		SemanticKey: key,
+		RuleID:      "architecture.layer_bypass",
+		RuleVersion: "1",
+		Kind:        "architecture.layer_bypass",
+		Category:    codesignal.Category("architecture"),
+		Severity:    codesignal.Severity("advisory"),
+		Confidence:  codesignal.Confidence("high"),
+		PrimaryAnchor: codesignal.ProjectLocation{
+			Path:     "pkg/handlers/handlers.go",
+			Location: semantics.Location{StartRow: 3},
+		},
+		Evidence:   "handler reaches sink via a statically resolved path that never passes through required layer \"service\"",
+		Provenance: codesignal.Provenance{Producer: "projectmodel", FindingKind: "architecture.layer_bypass", Language: language},
+	}
+}
+
+// projectChangeLifecycles returns the literal JSON string value of
+// project_changes[].lifecycle for every change in report, at the wire
+// boundary rather than via typed Go field access.
+func projectChangeLifecycles(report *codesignal.Report) []string {
+	fields := rawReportFields(report)
+	var changes []map[string]json.RawMessage
+	Expect(json.Unmarshal(fields["project_changes"], &changes)).To(Succeed())
+	out := make([]string, len(changes))
+	for i, c := range changes {
+		var lifecycle string
+		Expect(json.Unmarshal(c["lifecycle"], &lifecycle)).To(Succeed())
+		out[i] = lifecycle
+	}
+	return out
+}
+
+// expectMatchesGoldenFixture asserts report's marshaled JSON is byte-identical
+// to the golden fixture at path, mirroring golden_test.go's own
+// assertMatchesGolden (package-internal, unreachable from this
+// codesignal_test package) so this acceptance suite's green state is tied to
+// Task 11's cross-language golden fixtures actually existing and matching.
+func expectMatchesGoldenFixture(report *codesignal.Report, path string) {
+	got, err := json.MarshalIndent(report, "", "  ")
+	Expect(err).NotTo(HaveOccurred())
+	got = append(got, '\n')
+	want, err := os.ReadFile(path)
+	Expect(err).NotTo(HaveOccurred(), "golden fixture %s must exist and be regenerated via `go test ./pkg/codesignal/... -run TestGolden -update`", path)
+	Expect(string(got)).To(Equal(string(want)), "%s: report JSON must match golden fixture byte-for-byte", path)
+}
 
 var _ = Describe("Project coverage mapping, provenance, scope, and next-actions (AC-EVD-2/6/9/10, AC-D7)", func() {
 
@@ -612,3 +669,83 @@ func extractHeadCoverage(report *codesignal.Report) map[string]json.RawMessage {
 func layerViolationChange(ruleID string) codesignal.ProjectChange {
 	return projectChange("layer:domain->infra", ruleID)
 }
+
+// AC-VER-2 (issue #334, Task 11): layer violations and bypasses are
+// classified using the five existing project-change lifecycle wire values
+// unchanged -- introduced, existing, resolved, baseline, unknown -- with
+// ProjectSummary.ExistingChanges counting only "existing" as it always has,
+// and neither "remaining" (existing) nor "indeterminate" (unknown) ever
+// appearing as a project_changes[].lifecycle JSON value. Each It below pins
+// its report byte-identically against Task 11's cross-language golden
+// fixture (testdata/golden/project_lifecycle_*.json), mixing Go- and
+// TypeScript-sourced ProjectChanges so the proof is cross-language, not
+// merely single-language.
+var _ = Describe("Project-change lifecycle wire values (AC-VER-2)", func() {
+	When("a diff-mode comparison has a Go-sourced key on both sides, a TypeScript-sourced head-only key, and a Go-sourced base-only key", func() {
+		It("classifies them existing/introduced/resolved, counts existing_changes as exactly the existing-lifecycle change, and matches the golden fixture", func() {
+			report := build(codesignal.Options{ProjectEnabled: true, IncludeResolved: true}, codesignal.Input{
+				Scope: codesignal.Scope{Repository: "example/repo", Revision: "pqr678", Base: "main"},
+				ProjectChanges: []codesignal.ProjectChange{
+					lifecycleWireChange("bypass:service:go-A", "go"),
+					lifecycleWireChange("bypass:service:ts-B", "typescript"),
+				},
+				BaseProjectChanges: []codesignal.ProjectChange{
+					lifecycleWireChange("bypass:service:go-A", "go"),
+					lifecycleWireChange("bypass:service:go-C", "go"),
+				},
+				ProjectBaseAnalyzed: true,
+				ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+				BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
+			})
+
+			Expect(report.ProjectSummary.ExistingChanges).To(Equal(1))
+			Expect(report.ProjectSummary.IntroducedChanges).To(Equal(1))
+			Expect(report.ProjectSummary.ResolvedChanges).To(Equal(1))
+			Expect(report.ProjectSummary.ActiveChanges).To(Equal(3))
+
+			lifecycles := projectChangeLifecycles(report)
+			Expect(lifecycles).To(ConsistOf("existing", "introduced", "resolved"))
+			for _, lc := range lifecycles {
+				Expect(lc).NotTo(Equal("remaining"), `"existing" must never be rendered as "remaining" in JSON`)
+				Expect(lc).NotTo(Equal("indeterminate"), `"unknown" must never be rendered as "indeterminate" in JSON`)
+			}
+
+			expectMatchesGoldenFixture(report, "testdata/golden/project_lifecycle_diff.json")
+		})
+	})
+
+	When("Options.Baseline is set and a TypeScript-sourced head-only key has complete coverage", func() {
+		It("classifies it baseline and matches the golden fixture", func() {
+			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
+				Scope:           codesignal.Scope{Repository: "example/repo", Revision: "stu901"},
+				ProjectChanges:  []codesignal.ProjectChange{lifecycleWireChange("bypass:service:ts-D", "typescript")},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
+			})
+
+			Expect(report.ProjectSummary.BaselineChanges).To(Equal(1))
+			lifecycles := projectChangeLifecycles(report)
+			Expect(lifecycles).To(ConsistOf("baseline"))
+			Expect(lifecycles).NotTo(ContainElement("remaining"))
+			Expect(lifecycles).NotTo(ContainElement("indeterminate"))
+
+			expectMatchesGoldenFixture(report, "testdata/golden/project_lifecycle_baseline.json")
+		})
+	})
+
+	When("project coverage is incomplete for a Go-sourced head-only key", func() {
+		It("classifies it unknown, not resolved/introduced/existing/baseline, and matches the golden fixture", func() {
+			report := build(codesignal.Options{ProjectEnabled: true, Baseline: true}, codesignal.Input{
+				Scope:           codesignal.Scope{Repository: "example/repo", Revision: "vwx234"},
+				ProjectChanges:  []codesignal.ProjectChange{lifecycleWireChange("bypass:service:go-E", "go")},
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: false},
+			})
+
+			lifecycles := projectChangeLifecycles(report)
+			Expect(lifecycles).To(ConsistOf("unknown"))
+			Expect(lifecycles).NotTo(ContainElement("remaining"))
+			Expect(lifecycles).NotTo(ContainElement("indeterminate"))
+
+			expectMatchesGoldenFixture(report, "testdata/golden/project_lifecycle_unknown.json")
+		})
+	})
+})

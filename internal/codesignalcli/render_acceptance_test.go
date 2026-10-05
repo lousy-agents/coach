@@ -235,4 +235,34 @@ var _ = Describe("RenderText project scope, provenance, and next-actions section
 			Expect(text).NotTo(ContainSubstring("No active CodeSignal findings."))
 		})
 	})
+
+	When("a Diagnostic carries Side and Revision (AC-VER-3)", func() {
+		It("appends a side and revision clause to the diagnostic's own line", func() {
+			report := &codesignal.Report{
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "a.go", Kind: "base_syntax_errors", Message: "unexpected token", Side: "base", Revision: "abc1234"},
+				},
+			}
+
+			text := RenderText(report)
+
+			Expect(text).To(ContainSubstring("path: a.go, kind: base_syntax_errors, message: unexpected token, side: base, revision: abc1234\n"))
+		})
+	})
+
+	When("a Diagnostic has no Side or Revision set", func() {
+		It("renders exactly the original diagnostic line, with no side or revision clause", func() {
+			report := &codesignal.Report{
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "a.go", Kind: "syntax_errors", Message: "unexpected token"},
+				},
+			}
+
+			text := RenderText(report)
+
+			Expect(text).To(ContainSubstring("path: a.go, kind: syntax_errors, message: unexpected token\n"))
+			Expect(text).NotTo(ContainSubstring("side:"))
+			Expect(text).NotTo(ContainSubstring("revision:"))
+		})
+	})
 })
