@@ -6,6 +6,8 @@ import (
 	"github.com/lousy-agents/coach/internal/fakegithub"
 )
 
+// newOAuthFake starts a fakegithub server whose OAuth App accepts
+// oauthScenarioCode for the octocat identity.
 func newOAuthFake() (*fakegithub.Fixture, *fakegithub.Server) {
 	fx := fakegithub.NewFixture("authn-oauth")
 	fx.OAuth.ClientID = oauthClientID

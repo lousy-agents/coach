@@ -2,12 +2,39 @@ package authn
 
 import (
 	"errors"
-	"fmt"
-
-	"github.com/golang-jwt/jwt/v5"
-
+	"net/http"
 	"time"
 )
+
+// Options is Coach JWT auth, optional test-mint, and optional GitHub OAuth.
+type Options struct {
+	SigningKey      []byte
+	Issuer          string
+	TokenTTL        time.Duration
+	Now             func() time.Time
+	Denylist        Denylist
+	TestMintEnabled bool
+	// GitHubOAuth, when non-nil, registers unauthenticated OAuth start/callback routes.
+	GitHubOAuth *GitHubOAuthConfig
+	// OAuthState stores CSRF state for the OAuth flow; defaults to memory when GitHubOAuth is set.
+	OAuthState OAuthStateStore
+	// OAuthStateTTL is how long start-issued state remains valid; defaults to 10 minutes.
+	OAuthStateTTL time.Duration
+}
+
+// Service issues and validates Coach JWTs and serves auth HTTP routes.
+type Service struct {
+	key             []byte
+	issuer          string
+	ttl             time.Duration
+	now             func() time.Time
+	denylist        Denylist
+	testMintEnabled bool
+	githubOAuth     *GitHubOAuthConfig
+	oauthState      OAuthStateStore
+	oauthStateTTL   time.Duration
+	httpClient      *http.Client
+}
 
 // New requires SigningKey and Issuer. Denylist defaults to an in-memory
 // store; Now defaults to time.Now; TokenTTL defaults to 1 hour.
@@ -46,32 +73,4 @@ func New(opts Options) (*Service, error) {
 		oauthStateTTL:   oauthTTL,
 		httpClient:      httpClient,
 	}, nil
-}
-
-// InspectClaims returns Coach JWT claims without denylist checks (signature and
-// issuer still verified; expiry is not enforced so operators can inspect expired tokens).
-func (s *Service) InspectClaims(token string) (Claims, error) {
-	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
-	var cc coachClaims
-	parsed, err := parser.ParseWithClaims(token, &cc, s.keyFunc)
-	if err != nil {
-		return Claims{}, err
-	}
-	if !parsed.Valid {
-		return Claims{}, errors.New("authn: invalid token")
-	}
-	if cc.Issuer != s.issuer {
-		return Claims{}, fmt.Errorf("authn: unexpected issuer %q", cc.Issuer)
-	}
-	out := Claims{
-		Provider: cc.Provider,
-		Subject:  cc.Subject,
-		Login:    cc.Login,
-		Issuer:   cc.Issuer,
-		ID:       cc.ID,
-	}
-	if cc.ExpiresAt != nil {
-		out.ExpiresAt = cc.ExpiresAt.Time
-	}
-	return out, nil
 }

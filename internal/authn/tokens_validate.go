@@ -2,8 +2,6 @@ package authn
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -39,44 +37,33 @@ func (s *Service) Validate(ctx context.Context, token string) (coachapi.Principa
 	}, nil
 }
 
-// Issue creates a signed Coach JWT for p (HS256) with a fresh jti.
-func (s *Service) Issue(_ context.Context, p coachapi.Principal) (string, error) {
-	if p.Provider == "" || p.Subject == "" || p.Login == "" {
-		return "", errors.New("authn: principal provider, subject, and login are required")
-	}
-	jti, err := newJTI()
+func (s *Service) parseClaims(token string) (*coachClaims, error) {
+	// Skip library time validation so expiry uses the injected clock (tests and
+	// operators control Now); still restrict alg via WithValidMethods.
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithoutClaimsValidation(),
+	)
+	var cc coachClaims
+	parsed, err := parser.ParseWithClaims(token, &cc, s.keyFunc)
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	if !parsed.Valid {
+		return nil, errors.New("invalid token")
+	}
+	if cc.Issuer != s.issuer {
+		return nil, fmt.Errorf("unexpected issuer %q", cc.Issuer)
+	}
+	if cc.ExpiresAt == nil {
+		return nil, errors.New("missing exp")
 	}
 	now := s.now()
-	claims := coachClaims{
-		Provider: p.Provider,
-		Login:    p.Login,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    s.issuer,
-			Subject:   p.Subject,
-			ID:        jti,
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(s.ttl)),
-		},
+	if cc.ExpiresAt.Time.Before(now) || cc.ExpiresAt.Time.Equal(now) {
+		return nil, errors.New("token is expired")
 	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := tok.SignedString(s.key)
-	if err != nil {
-		return "", fmt.Errorf("authn: sign token: %w", err)
+	if cc.NotBefore != nil && cc.NotBefore.Time.After(now) {
+		return nil, errors.New("token not yet valid")
 	}
-	return signed, nil
-}
-func (s *Service) keyFunc(t *jwt.Token) (interface{}, error) {
-	if t.Method != jwt.SigningMethodHS256 {
-		return nil, fmt.Errorf("unexpected signing method %v", t.Header["alg"])
-	}
-	return s.key, nil
-}
-func newJTI() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("authn: generate jti: %w", err)
-	}
-	return hex.EncodeToString(b[:]), nil
+	return &cc, nil
 }

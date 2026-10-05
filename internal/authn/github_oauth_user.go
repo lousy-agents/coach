@@ -2,16 +2,17 @@ package authn
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-
 	"io"
 	"net/http"
-
 	"strings"
 )
+
+type githubUser struct {
+	ID    int64  `json:"id"`
+	Login string `json:"login"`
+}
 
 func (s *Service) fetchGitHubUser(ctx context.Context, accessToken string) (githubUser, error) {
 	base := strings.TrimRight(s.githubOAuth.APIBaseURL, "/")
@@ -39,11 +40,4 @@ func (s *Service) fetchGitHubUser(ctx context.Context, accessToken string) (gith
 		return githubUser{}, err
 	}
 	return u, nil
-}
-func newOAuthState() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("authn: generate oauth state: %w", err)
-	}
-	return hex.EncodeToString(b[:]), nil
 }

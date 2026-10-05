@@ -2,17 +2,21 @@ package authn
 
 import (
 	"context"
-
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-
-	"github.com/lousy-agents/coach/internal/coachapi"
-
 	"strings"
 )
+
+type githubTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	Scope       string `json:"scope"`
+	Error       string `json:"error"`
+	ErrorDesc   string `json:"error_description"`
+}
 
 func (s *Service) exchangeCode(ctx context.Context, code string) (string, error) {
 	base := strings.TrimRight(s.githubOAuth.BaseURL, "/")
@@ -52,25 +56,4 @@ func (s *Service) exchangeCode(ctx context.Context, code string) (string, error)
 		return "", fmt.Errorf("empty access_token")
 	}
 	return tr.AccessToken, nil
-}
-
-// handleGitHubOAuthStart begins the OAuth authorization-code flow: stores CSRF
-// state and redirects to GitHub's authorize URL with no scope.
-func (s *Service) handleGitHubOAuthStart(w http.ResponseWriter, r *http.Request) {
-	if s.githubOAuth == nil || s.oauthState == nil {
-		writeAPIError(w, http.StatusNotFound, coachapi.ErrorCodeNotFound, "not found")
-		return
-	}
-	state, err := newOAuthState()
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, coachapi.ErrorCodeInternalError, "failed to start oauth")
-		return
-	}
-	now := s.now()
-	if err := s.oauthState.Save(r.Context(), state, now.Add(s.oauthStateTTL)); err != nil {
-		writeAPIError(w, http.StatusServiceUnavailable, coachapi.ErrorCodeInternalError, "oauth state store unavailable")
-		return
-	}
-	authURL := s.authorizeURL(state)
-	http.Redirect(w, r, authURL, http.StatusFound)
 }
