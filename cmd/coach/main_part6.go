@@ -25,6 +25,11 @@ func validateCodesignalFlags(f codesignalFlags, positional []string) string {
 	if f.scope != "production" && f.scope != "all" {
 		return fmt.Sprintf("coach: invalid --scope value %q: must be \"production\" or \"all\"", f.scope)
 	}
+	if f.minSeveritySet {
+		if _, ok := codesignal.ParseSeverityFloor(f.minSeverity); !ok {
+			return fmt.Sprintf("coach: invalid --min-severity value %q: must be \"high\", \"medium\", \"advisory\", or \"low\"", f.minSeverity)
+		}
+	}
 	if f.projectLanguage != "go" && f.projectLanguage != "typescript" {
 		return fmt.Sprintf("coach: invalid --project-language value %q: must be \"go\" or \"typescript\"", f.projectLanguage)
 	}

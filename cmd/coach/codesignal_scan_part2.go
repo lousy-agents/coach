@@ -48,14 +48,19 @@ func analysisErrorReportFor(err error, language string, hasControllingTerminal b
 	}
 	return analysisErrorReport{lines: []string{err.Error()}, exitCode: 1}
 }
-func renderScanResult(report *codesignal.Report, failOnIncompleteCoverage bool, format string, stdout, stderr *os.File) int {
+func renderScanResult(report *codesignal.Report, f codesignalFlags, stdout, stderr *os.File) int {
 	if report == nil {
 		return 1
 	}
-	if exitCode := renderReport(report, format, stdout, stderr); exitCode != 0 {
+	incompleteCoverageFails := f.failOnIncompleteCoverage && codesignal.RequiredCoverageIncomplete(report)
+	view := report
+	if f.minSeveritySet {
+		view = report.WithMinSeverity(codesignal.Severity(f.minSeverity))
+	}
+	if exitCode := renderReport(view, f.format, stdout, stderr); exitCode != 0 {
 		return exitCode
 	}
-	if failOnIncompleteCoverage && codesignal.RequiredCoverageIncomplete(report) {
+	if incompleteCoverageFails {
 		return 3
 	}
 	return 0

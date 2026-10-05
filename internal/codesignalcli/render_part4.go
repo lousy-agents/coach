@@ -66,6 +66,7 @@ func renderDiffSummary(b *strings.Builder, report *codesignal.Report) {
 
 	fmt.Fprintf(b, "files analyzed: %d, active signals: %d, diagnostics: %d\n",
 		report.Summary.FilesAnalyzed, report.Summary.ActiveSignals, len(report.Diagnostics))
+	renderWithheldSignals(b, report.SignalsWithheld)
 }
 func renderOneProjectFact(b *strings.Builder, fact codesignal.ProjectFact) {
 	fmt.Fprintf(b, "kind: %s\n", fact.Kind)

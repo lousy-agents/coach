@@ -58,6 +58,19 @@ func renderBaselineSummary(b *strings.Builder, report *codesignal.Report) {
 
 	fmt.Fprintf(b, "tracked files discovered: %d, analyzed: %d, unsupported: %d, excluded: %d, unanalyzable: %d, active signals: %d, diagnostics: %d\n",
 		tracked, analyzed, unsupported, excluded, unanalyzable, report.Summary.ActiveSignals, len(report.Diagnostics))
+	renderWithheldSignals(b, report.SignalsWithheld)
+}
+
+func renderWithheldSignals(b *strings.Builder, withheld *codesignal.SignalsWithheld) {
+	if withheld == nil {
+		return
+	}
+	noun := "signals"
+	if withheld.BelowMinSeverity == 1 {
+		noun = "signal"
+	}
+	fmt.Fprintf(b, "withheld: %d %s below --min-severity %s (counts above describe the full analysis)\n",
+		withheld.BelowMinSeverity, noun, withheld.MinSeverity)
 }
 func pathCountClause(n int) string {
 	if n == 1 {

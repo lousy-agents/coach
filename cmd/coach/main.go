@@ -41,7 +41,7 @@ commands:
 
 run "coach codesignal --help" for command-specific help.`
 
-const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive] [--fail-on-incomplete-coverage]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>] [--no-interactive]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]\n   or: coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>] [--no-interactive]"
+const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--min-severity high|medium|advisory|low] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive] [--fail-on-incomplete-coverage]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>] [--no-interactive]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]\n   or: coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>] [--no-interactive]"
 
 type codesignalFlags struct {
 	base                     string
@@ -51,6 +51,8 @@ type codesignalFlags struct {
 	buildTarget              string
 	projectConfig            string
 	projectLanguage          string
+	minSeverity              string
+	minSeveritySet           bool
 	projectConfigSet         bool
 	suggestProjectConfig     bool
 	output                   string
@@ -95,6 +97,7 @@ type codesignalFlagHolders struct {
 	buildTarget              *string
 	projectConfig            *string
 	projectLanguage          *string
+	minSeverity              *string
 	suggestProjectConfig     *countingBoolFlag
 	output                   *countingStringFlag
 	checkProject             *countingBoolFlag
@@ -112,6 +115,7 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		buildTarget:              flags.String("build-target", "", "Go package pattern used to determine production reachability"),
 		projectConfig:            flags.String("project-config", "", "repository-relative path to a project-analysis config at the selected revision; enables opt-in cross-module project facts"),
 		projectLanguage:          flags.String("project-language", "go", "project-analysis language: go or typescript"),
+		minSeverity:              flags.String("min-severity", "", "render only signals at or above this severity (high, medium, advisory, or low) and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),
 		suggestProjectConfig:     &countingBoolFlag{},
 		output:                   &countingStringFlag{},
 		checkProject:             &countingBoolFlag{},
@@ -155,6 +159,8 @@ func codesignalFlagsFromHolders(h codesignalFlagHolders, setFlags map[string]boo
 		buildTarget:              *h.buildTarget,
 		projectConfig:            *h.projectConfig,
 		projectLanguage:          *h.projectLanguage,
+		minSeverity:              *h.minSeverity,
+		minSeveritySet:           setFlags["min-severity"],
 		projectConfigSet:         setFlags["project-config"],
 		suggestProjectConfig:     h.suggestProjectConfig.value,
 		output:                   h.output.value,

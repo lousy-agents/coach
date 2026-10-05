@@ -1,6 +1,7 @@
 package codesignalcli
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -69,4 +70,66 @@ func TestRenderTextSignalsPresentRenderingIsPinnedExactly(t *testing.T) {
 	if got != want {
 		t.Errorf("signals-present path changed; a diagnostic and incomplete ProjectCoverage must not alter it.\ngot:\n%s\nwant:\n%s", got, want)
 	}
+}
+
+func TestRenderTextWithheldSignalsLine(t *testing.T) {
+	signal := codesignal.Signal{RuleID: "r", Severity: "high", Path: "a.go"}
+
+	cases := []struct {
+		name     string
+		report   *codesignal.Report
+		wantLine string
+		wantLead string
+	}{
+		{
+			name: "baseline plural",
+			report: &codesignal.Report{
+				Scope:           codesignal.Scope{Baseline: true},
+				Signals:         []codesignal.Signal{signal},
+				SignalsWithheld: &codesignal.SignalsWithheld{MinSeverity: "high", BelowMinSeverity: 2},
+			},
+			wantLine: "withheld: 2 signals below --min-severity high (counts above describe the full analysis)\n",
+		},
+		{
+			name: "diff singular",
+			report: &codesignal.Report{
+				Signals:         []codesignal.Signal{signal},
+				SignalsWithheld: &codesignal.SignalsWithheld{MinSeverity: "medium", BelowMinSeverity: 1},
+			},
+			wantLine: "withheld: 1 signal below --min-severity medium (counts above describe the full analysis)\n",
+		},
+		{
+			name: "everything withheld scopes the all-clear to the floor",
+			report: &codesignal.Report{
+				SignalsWithheld: &codesignal.SignalsWithheld{MinSeverity: "high", BelowMinSeverity: 3},
+			},
+			wantLine: "withheld: 3 signals below --min-severity high",
+			wantLead: "No active CodeSignal findings at or above --min-severity high.\n",
+		},
+		{
+			name: "zero withheld keeps the unscoped all-clear",
+			report: &codesignal.Report{
+				SignalsWithheld: &codesignal.SignalsWithheld{MinSeverity: "low"},
+			},
+			wantLine: "withheld: 0 signals below --min-severity low",
+			wantLead: "No active CodeSignal findings.\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := RenderText(tc.report)
+			if !strings.Contains(got, tc.wantLine) {
+				t.Fatalf("missing %q in:\n%s", tc.wantLine, got)
+			}
+			if tc.wantLead != "" && !strings.Contains(got, tc.wantLead) {
+				t.Fatalf("missing %q in:\n%s", tc.wantLead, got)
+			}
+		})
+	}
+
+	t.Run("an unnarrowed report never mentions withheld", func(t *testing.T) {
+		if got := RenderText(&codesignal.Report{Signals: []codesignal.Signal{signal}}); strings.Contains(got, "withheld") {
+			t.Fatalf("unexpected withheld line in:\n%s", got)
+		}
+	})
 }

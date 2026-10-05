@@ -60,7 +60,7 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 	incompleteProject := (report.ProjectCoverage != nil && !report.ProjectCoverage.Complete) ||
 		hasProjectLifecycleDiagnostic(report.Diagnostics)
 	if keepUnqualifiedAllClear(report, incompleteProject) {
-		b.WriteString("No active CodeSignal findings.\n")
+		fmt.Fprintf(b, "%s.\n", noActiveFindingsLead(report))
 		return
 	}
 
@@ -74,7 +74,17 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 	if len(causes) == 0 {
 		causes = append(causes, "additional diagnostics were recorded")
 	}
-	fmt.Fprintf(b, "No active CodeSignal findings, but the analysis is incomplete: %s.\n", strings.Join(causes, "; "))
+	fmt.Fprintf(b, "%s, but the analysis is incomplete: %s.\n", noActiveFindingsLead(report), strings.Join(causes, "; "))
+}
+
+// noActiveFindingsLead scopes the all-clear to the severity floor: when a
+// floor withheld signals, "no active findings" would claim more than the
+// narrowed view can show.
+func noActiveFindingsLead(report *codesignal.Report) string {
+	if withheld := report.SignalsWithheld; withheld != nil && withheld.BelowMinSeverity > 0 {
+		return "No active CodeSignal findings at or above --min-severity " + string(withheld.MinSeverity)
+	}
+	return "No active CodeSignal findings"
 }
 
 func renderSignal(b *strings.Builder, signal codesignal.Signal) {
