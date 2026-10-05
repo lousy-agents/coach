@@ -7,11 +7,8 @@ import (
 	"time"
 
 	"github.com/lousy-agents/coach/internal/projectbridge"
+	"github.com/lousy-agents/coach/pkg/projectmodel/internal/tssidecar"
 )
-
-const maxTSSidecarResponseBytes = 8 << 20 // 8 MiB
-
-const maxTSSidecarStderrBytes = 4 << 10 // 4 KiB
 
 const tsSidecarPhase = "ts_sidecar_build"
 
@@ -25,7 +22,26 @@ type TSSidecarOptions struct {
 	Budgets    GoBudgets
 }
 
+// tsProjectAnalyzer is the port a TypeScript Model build sends its single
+// analyze_project request through. tssidecar.Process is the production
+// adapter; a returned error is a transport failure whose message becomes a
+// DiagBackendUnavailable diagnostic.
+type tsProjectAnalyzer interface {
+	Analyze(ctx context.Context, req projectbridge.Request) (projectbridge.Response, error)
+}
+
 func BuildTypeScriptModelViaSidecar(ctx context.Context, snapshot fs.FS, meta SnapshotMeta, opts TSSidecarOptions) (Model, error) {
+	analyzer := tssidecar.Process{
+		BinaryPath: opts.BinaryPath,
+		Path:       opts.Path,
+		Dir:        opts.Dir,
+		Args:       opts.Args,
+		Timeout:    opts.Timeout,
+	}
+	return buildTypeScriptModel(ctx, analyzer, snapshot, meta, opts)
+}
+
+func buildTypeScriptModel(ctx context.Context, analyzer tsProjectAnalyzer, snapshot fs.FS, meta SnapshotMeta, opts TSSidecarOptions) (Model, error) {
 	if snapshot == nil {
 		return Model{}, fmt.Errorf("projectmodel: snapshot must not be nil")
 	}
@@ -43,11 +59,11 @@ func BuildTypeScriptModelViaSidecar(ctx context.Context, snapshot fs.FS, meta Sn
 		TimeoutMS: opts.Timeout.Milliseconds(),
 	}
 
-	resp, diagMessage := callTSSidecar(ctx, opts, req)
+	resp, transportErr := analyzer.Analyze(ctx, req)
 	var model Model
 	switch {
-	case diagMessage != "":
-		model = tsSidecarModel(meta, opts, filesSeen, Diagnostic{Code: DiagBackendUnavailable, Message: diagMessage})
+	case transportErr != nil:
+		model = tsSidecarModel(meta, opts, filesSeen, Diagnostic{Code: DiagBackendUnavailable, Message: transportErr.Error()})
 	case resp.Error != nil:
 		model = tsSidecarModel(meta, opts, filesSeen, tsSidecarErrorDiagnostics(resp)...)
 	default:
@@ -71,58 +87,6 @@ func applyTSSidecarInputBudgetTruncation(model Model) Model {
 		}),
 	})
 	return model
-}
-
-func rootScopesFromWire(in []projectbridge.RootScopeFact) []RootScope {
-	if len(in) == 0 {
-		return nil
-	}
-	scopes := make([]RootScope, 0, len(in))
-	for _, rs := range in {
-		scopes = append(scopes, RootScope{
-			Root:            rs.Root,
-			CandidateFiles:  rs.CandidateFiles,
-			AnalyzedFiles:   rs.AnalyzedFiles,
-			AnalyzedPaths:   rs.AnalyzedPaths,
-			UnanalyzedPaths: rs.UnanalyzedPaths,
-		})
-	}
-	return scopes
-}
-
-// rootScopeIncompleteDiagnostics never reads reachability diagnostics --
-// model completeness and reachability completeness are independent axes.
-// The per-root fallback below covers a RootScope with counts but no path
-// lists (a sidecar response predating UnanalyzedPaths).
-func rootScopeIncompleteDiagnostics(scopes []RootScope) []Diagnostic {
-	var diags []Diagnostic
-	for _, scope := range scopes {
-		if scope.AnalyzedFiles >= scope.CandidateFiles {
-			continue
-		}
-		if len(scope.UnanalyzedPaths) > 0 {
-			diags = append(diags, incompletePathDiagnostics(scope)...)
-			continue
-		}
-		diags = append(diags, Diagnostic{
-			Code:    DiagRootScopeIncomplete,
-			Message: fmt.Sprintf("root %q: only %d of %d candidate files were incorporated into the import model", scope.Root, scope.AnalyzedFiles, scope.CandidateFiles),
-			Path:    scope.Root,
-		})
-	}
-	return diags
-}
-
-func incompletePathDiagnostics(scope RootScope) []Diagnostic {
-	diags := make([]Diagnostic, 0, len(scope.UnanalyzedPaths))
-	for _, path := range scope.UnanalyzedPaths {
-		diags = append(diags, Diagnostic{
-			Code:    DiagRootScopeIncomplete,
-			Message: fmt.Sprintf("root %q: candidate file %q was never incorporated into the import model", scope.Root, path),
-			Path:    path,
-		})
-	}
-	return diags
 }
 
 func tsSidecarModel(meta SnapshotMeta, opts TSSidecarOptions, filesSeen int, diags ...Diagnostic) Model {

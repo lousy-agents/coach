@@ -1,17 +1,11 @@
 package projectmodel
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"io/fs"
-	"path"
-
-	"strings"
-
-	"golang.org/x/mod/modfile"
 
 	"github.com/lousy-agents/coach/pkg/semantics"
+	"golang.org/x/mod/modfile"
 )
 
 // Stable file-level diagnostic codes for Model.Coverage.Diagnostics[i].Code,
@@ -22,18 +16,6 @@ const (
 	DiagFileUnavailable    = "project_file_unavailable"
 	DiagFileBudgetExceeded = "project_file_budget_exceeded"
 )
-
-// SnapshotMeta carries revision/config/backend identities the caller
-// already resolved (e.g. from Git) needed to populate Model.Snapshot.
-// BuildGoModel does not compute these itself.
-type SnapshotMeta struct {
-	Revision           string
-	TreeID             string
-	ConfigDigest       string
-	BackendDigest      string
-	BuildContextDigest string
-	Repository         string
-}
 
 // GoBuildOptions bounds one BuildGoModel call. Roots optionally scopes
 // discovery to specific repository-relative workspace/module roots; when
@@ -125,131 +107,13 @@ func BuildGoModel(snapshot fs.FS, meta SnapshotMeta, opts GoBuildOptions) (Model
 	}, nil
 }
 
-type goSourceAnalysis struct {
-	files           []File
-	edges           []ImportEdge
-	unresolvedEdges int
-	excludedEdges   int
-	truncated       bool
-	diagnostics     []Diagnostic
-	filesProcessed  int
-	bytesProcessed  int64
+func countDistinctRoots(modules map[string]*modfile.File, workspaces map[string]*modfile.WorkFile) int {
+	seen := make(map[string]bool, len(modules)+len(workspaces))
+	for dir := range modules {
+		seen[dir] = true
+	}
+	for dir := range workspaces {
+		seen[dir] = true
+	}
+	return len(seen)
 }
-
-func (a *goSourceAnalysis) consume(
-	snapshot fs.FS,
-	analyzer *semantics.Analyzer,
-	f string,
-	modules map[string]*modfile.File,
-	packageFiles map[string][]string,
-	fileModule map[string]string,
-	budgets GoBudgets,
-) (stop bool) {
-	if budgets.MaxInputFiles > 0 && a.filesProcessed >= budgets.MaxInputFiles {
-		a.truncated = true
-		return true
-	}
-	content, readErr := fs.ReadFile(snapshot, f)
-	if readErr != nil {
-		a.files = append(a.files, File{ID: "file:" + f, Path: f, Language: "go"})
-		a.diagnostics = append(a.diagnostics, Diagnostic{Code: DiagFileUnavailable, Path: f, Message: readErr.Error()})
-		a.filesProcessed++
-		return false
-	}
-	if budgets.MaxInputBytes > 0 && a.bytesProcessed+int64(len(content)) > budgets.MaxInputBytes {
-		a.truncated = true
-		return true
-	}
-	a.bytesProcessed += int64(len(content))
-	a.files = append(a.files, File{ID: "file:" + f, Path: f, Language: "go"})
-	a.filesProcessed++
-
-	result, analyzeErr := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
-		Path:     f,
-		Language: semantics.LanguageGo,
-		Content:  content,
-	})
-	if analyzeErr != nil {
-		code := DiagFileUnavailable
-		if errors.Is(analyzeErr, semantics.ErrSyntax) {
-			code = DiagFileSyntaxError
-		}
-		a.diagnostics = append(a.diagnostics, Diagnostic{Code: code, Path: f, Message: analyzeErr.Error()})
-		return false
-	}
-
-	fromID := "package:" + path.Dir(f)
-	owner := modules[fileModule[f]]
-	for _, imp := range result.Imports {
-		kind, to := classifyGoImport(imp.Path, owner, modules, packageFiles)
-		switch kind {
-		case "unresolved":
-			a.unresolvedEdges++
-		case "excluded":
-			a.excludedEdges++
-		}
-		a.edges = append(a.edges, ImportEdge{
-			From: fromID,
-			To:   to,
-			Kind: kind,
-			Site: fmt.Sprintf("%s:%d", f, imp.Location.StartRow+1),
-		})
-	}
-	return false
-}
-
-// selectedRootsFrom cleans and sorts roots for Snapshot.SelectedRoots, so
-// callers passing the same roots in a different order still produce
-// byte-identical canonical Model JSON. A nil/empty roots yields a nil
-// slice, matching Snapshot.SelectedRoots' omitempty contract.
-
-// moduleGoFiles returns every .go file under moduleDir, repository-relative
-// and sorted, excluding any subtree that is itself a different module's
-// root (moduleDirs), plus any testdata/, vendor/, or dot-prefixed
-// subdirectory -- the same directories the go tool itself never walks into.
-
-// shouldSkipModuleWalkDir reports whether the moduleGoFiles walk should
-// prune p: nested module roots plus the same testdata/vendor/dot dirs
-// discovery skips. The module root itself is never pruned.
-
-// classifyGoImport assigns importPath one of the six frozen ImportEdge.Kind
-// values ("internal", "stdlib", "external", "replaced", "excluded",
-// "unresolved") for a file owned by owner's module, and returns the
-// ImportEdge.To value that goes with that kind: a "package:" fact ID for
-// "internal" edges, the raw import path for every other kind.
-//
-// Classification order is deliberate: internal (workspace-local) module-path
-// matching is checked before the stdlib heuristic, because isStdlibImport is
-// a dot-only heuristic that can't distinguish a stdlib name from a dotless
-// workspace module path (e.g. "module myapp" from `go mod init myapp`). A
-// module path that shadows a stdlib name (e.g. `go mod init fmt`) is an
-// accepted, vanishingly rare trade-off. Beyond that, replace outranks
-// exclude, which outranks require, since a module path can legally appear in
-// more than one of those lists (e.g. required and then excluded).
-
-// bestInternalModulePackage finds importPath's owning package directory
-// among allModules's declared modules, iterating in sorted directory order
-// (never Go's randomized map order) and keeping the longest matching
-// module path so the result is deterministic and reproducible across
-// processes: two modules can legally declare colliding module paths, or a
-// nested module whose directory doesn't mirror its module path, and either
-// can otherwise leave the choice of which one "wins" to map iteration
-// order.
-
-// classifyGoImportViaOwner checks importPath against owner's own
-// replace/exclude/require directives, in that precedence order.
-
-func matchesModulePrefix(importPath, modPath string) bool {
-	return importPath == modPath || strings.HasPrefix(importPath, modPath+"/")
-}
-
-// isStdlibImport reports whether importPath looks like a standard-library
-// import: its first path segment has no dot. This is the same heuristic
-// goimports and similar tools use to separate stdlib from third-party
-// imports. It cannot distinguish a stdlib name from a dotless module path
-// (`go mod init myapp`), so callers must match workspace module paths first
-// — see classifyGoImport.
-
-// "." is the snapshot root and is an ancestor of every
-// repository-relative path; r+"/" would be "./", which never
-// prefixes normal paths like "modulea".

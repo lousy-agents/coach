@@ -2,6 +2,13 @@ package projectmodel
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
+	"runtime"
+	"sort"
+	"time"
+
+	"github.com/lousy-agents/coach/pkg/projectmodel/internal/ssaload"
 )
 
 // LayerBypassOptions bounds one BuildGoLayerBypass call. Roots and Budgets
@@ -38,141 +45,89 @@ type LayerBypassOptions struct {
 // failure or budget/context exhaustion; those are reported through
 // Coverage.Diagnostics/Coverage.Complete, matching BuildGoReachability's
 // fail-open-with-diagnostics contract.
+func BuildGoLayerBypass(ctx context.Context, snapshot fs.FS, opts LayerBypassOptions) (LayerBypassResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if opts.Budgets.WallTime > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, opts.Budgets.WallTime)
+		defer cancel()
+	}
 
-// ambiguousLayer guards against the false-positive case where an
-// unconfigured/unmatched RequiredLayer would remove nothing from
-// adjacency, silently turning this into an ordinary reachability search
-// that could misreport a genuinely compliant path as a bypass witness.
+	start := time.Now()
+	var memBefore, memAfter runtime.MemStats
+	runtime.ReadMemStats(&memBefore)
 
-// layerBypassSearch is the result of one source/sink witness search.
-// truncatedSearch reflects this search's own budget (MaxSearchNodes, ctx
-// wall-time/cancellation) plus the one non-budget case, ambiguousLayer,
-// where the search never runs at all. It does not reflect
-// callGraphIncomplete or !dirsComplete: both already carry their own
-// diagnostic and already force complete to false, and both already force
-// every pair to skip as truncated. Folding either into truncatedSearch
-// would additionally claim a project_layer_bypass_budget_exceeded that
-// never happened -- e.g. a call-graph dead end at a local-targeted
-// synthetic wrapper, or a root load failure.
-type layerBypassSearch struct {
-	witnesses            []LayerBypassWitness
-	evaluated            int
-	truncatedPairs       int
-	nodesVisited         int
-	truncatedSearch      bool
-	unclassifiedNodeSeen bool
+	loaded, err := loadGoSnapshot(ctx, ssaload.Loader{}, snapshot, opts.Roots, opts.Budgets)
+	if err != nil {
+		return LayerBypassResult{}, fmt.Errorf("projectmodel: building call graph for layer bypass: %w", err)
+	}
+	defer loaded.cleanup()
+
+	callGraph := buildGoCallGraphFromLoaded(ctx, loaded, CallGraphOptions{Roots: opts.Roots, Budgets: opts.Budgets})
+	sources, sourcesComplete, rawSourceDiagnostics := findGoReachabilitySourcesFromLoaded(ctx, loaded)
+	sourceDiagnostics := remapDiagnosticCodes(rawSourceDiagnostics, map[string]string{
+		DiagReachabilityBudgetExceeded:   DiagLayerBypassBudgetExceeded,
+		DiagReachabilitySourceLoadFailed: DiagLayerBypassSourceLoadFailed,
+	})
+
+	nodePositions, dirsComplete, dirDiagnostics := layerBypassNodePackageDirsFromLoaded(ctx, loaded)
+
+	adjacency := buildCallGraphAdjacency(callGraph.CallFacts)
+	sinks := append([]string(nil), ReachabilitySinkPatterns...)
+	sort.Strings(sinks)
+
+	callGraphIncomplete := !callGraph.Coverage.Complete
+
+	requiredLayerNodes := requiredLayerNodeSet(opts.RequiredLayer, nodePositions)
+	// ambiguousLayer guards against the false-positive case where an
+	// unconfigured/unmatched RequiredLayer would remove nothing from
+	// adjacency, silently turning this into an ordinary reachability search
+	// that could misreport a genuinely compliant path as a bypass witness.
+	ambiguousLayer := len(opts.RequiredLayer.Prefixes) == 0 || len(requiredLayerNodes) == 0
+
+	bypassAdjacency := adjacency
+	if !ambiguousLayer {
+		bypassAdjacency = removeLayerNodesFromAdjacency(adjacency, requiredLayerNodes)
+	}
+
+	search := searchLayerBypassWitnesses(ctx, sources, sinks, bypassAdjacency, nodePositions, opts, callGraphIncomplete, dirsComplete, ambiguousLayer)
+
+	runtime.ReadMemStats(&memAfter)
+	memDelta := int64(memAfter.TotalAlloc) - int64(memBefore.TotalAlloc)
+	if memDelta < 0 {
+		memDelta = 0
+	}
+
+	return assembleLayerBypassResult(loaded, callGraph, sources, sinks, requiredLayerNodes, search, sourceDiagnostics, dirDiagnostics, sourcesComplete, dirsComplete, ambiguousLayer, opts, start, memDelta), nil
 }
 
-// layerBypassContainsDir mirrors codesignal's layerContainsDir: "." matches
-// every directory, otherwise a prefix matches dir itself or any "/"-
-// separated descendant of it.
-
-// stepPathFullyClassified reports whether every non-sink node on stepPath
-// (i.e. every node but the last) has an entry in nodePositions. A node with
-// no entry has an unresolvable package directory (see fnPosition), so its
-// required-layer membership was never evaluated; the caller must treat that
-// as ambiguous rather than assume the node is outside RequiredLayer.
-func stepPathFullyClassified(stepPath []ReachabilityStep, nodePositions map[string]layerBypassNodePosition) bool {
-	if len(stepPath) == 0 {
-		return true
+func searchLayerBypassWitnesses(ctx context.Context, sources, sinks []string, bypassAdjacency map[string][]string, nodePositions map[string]layerBypassNodePosition, opts LayerBypassOptions, callGraphIncomplete, dirsComplete, ambiguousLayer bool) layerBypassSearch {
+	var search layerBypassSearch
+	if ambiguousLayer {
+		search.truncatedPairs = len(sources) * len(sinks)
+		search.truncatedSearch = true
+		return search
 	}
-	for _, step := range stepPath[:len(stepPath)-1] {
-		if _, ok := nodePositions[step.NodeID]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
-// layerBypassSteps converts stepPath (reconstructReachabilityPath's shared
-// ReachabilityStep shape) into LayerBypassSteps, filling Path/Line from
-// nodePositions for whichever nodes resolved a position -- leaving them
-// zero-valued for the rest (typically only the sink).
-
-// removeLayerNodesFromAdjacency returns adjacency with every node in
-// removed deleted, both as an edge source and as an edge destination, so a
-// BFS over the result can only find a path that never touches one of those
-// nodes. Surviving neighbor lists stay in the same sorted order adjacency
-// already used, preserving bfsShortestPaths' deterministic tie-breaking.
-
-// layerBypassNodePosition is one local function's resolved declaration
-// position: Dir drives RequiredLayer classification (see
-// layerBypassContainsDir), File/Line are the repository-relative position
-// LayerBypassStep.Path/Line carry into LayerBypassWitness.Path.
-type layerBypassNodePosition struct {
-	Dir  string
-	File string
-	Line int
-}
-
-// layerBypassNodePackageDirsFromLoaded walks loaded's local functions,
-// returning every local function's RelString(nil) identity mapped to its
-// resolved declaration position. This walk stays separate from the
-// call-graph walk because CallFact's From/To strings carry no directory or
-// position information, and separate from source identification because it
-// needs every local function, not just handler-shaped ones.
-func layerBypassNodePackageDirsFromLoaded(ctx context.Context, loaded *loadedGoSnapshot) (map[string]layerBypassNodePosition, bool, []Diagnostic) {
-	if ctx.Err() != nil {
-		return nil, false, []Diagnostic{{Code: DiagLayerBypassBudgetExceeded}}
-	}
-
-	acc := &layerBypassPositionAcc{
-		positions: map[string]layerBypassNodePosition{},
-		complete:  loaded.discovery.Complete,
-		tempDir:   loaded.tempDir,
-	}
-
-	for _, root := range loaded.roots {
+	budget := bfsBudget{max: opts.MaxSearchNodes}
+	for _, source := range sources {
 		if ctx.Err() != nil {
-			acc.complete = false
-			acc.diagnostics = append(acc.diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded, Path: root.dir})
+			search.truncatedSearch = true
 			break
 		}
-		if root.loadErr != nil {
-			acc.complete = false
-			acc.diagnostics = append(acc.diagnostics, Diagnostic{Code: DiagLayerBypassSourceLoadFailed, Path: root.dir, Message: stripTempDir(root.loadErr.Error(), loaded.tempDir)})
-			continue
+		parents, hitBudget := budget.shortestPaths(ctx, source, bypassAdjacency)
+		if hitBudget {
+			search.truncatedSearch = true
 		}
-		acc.addFunctions(ctx, root)
+		search.collectWitnesses(source, sinks, parents, nodePositions, opts.RequiredLayer.Name, hitBudget || ctx.Err() != nil || callGraphIncomplete || !dirsComplete)
 	}
-
-	return acc.positions, acc.complete, acc.diagnostics
-}
-
-type layerBypassPositionAcc struct {
-	positions   map[string]layerBypassNodePosition
-	diagnostics []Diagnostic
-	complete    bool
-	tempDir     string
-}
-
-func (a *layerBypassPositionAcc) addFunctions(ctx context.Context, root loadedGoRoot) {
-	for _, fn := range sortedLocalFunctions(root.prog, root.localPkgPaths) {
-		if ctx.Err() != nil {
-			a.complete = false
-			a.diagnostics = append(a.diagnostics, Diagnostic{Code: DiagLayerBypassBudgetExceeded, Path: root.dir})
-			return
-		}
-		pos, ok := fnPosition(a.tempDir, fn)
-		if !ok {
-			continue
-		}
-		a.positions[fn.RelString(nil)] = pos
+	if !search.truncatedSearch && ctx.Err() != nil {
+		search.truncatedSearch = true
 	}
+	search.nodesVisited = budget.visited
+	return search
 }
-
-// fnPosition resolves fn's declaration position to a repository-relative
-// package directory, file, and 1-based line, stripping materializeSnapshot's
-// absolute tempDir prefix the same way relCallSitePath does for call sites.
-// It reports false for a function with no resolvable position (e.g. a
-// synthetic wrapper).
-
-// remapDiagnosticCodes returns a copy of diags with every Code present in
-// codes rewritten to its mapped value, leaving any other diagnostic
-// untouched. It is used to fold a shared helper's diagnostics (e.g.
-// findGoReachabilitySources') into this evaluator's own diagnostic-code
-// vocabulary rather than leaking a different feature's codes into
-// LayerBypassResult.Coverage.
 
 // effectiveLayerBypassBudgets renders opts as LayerBypassResult.Coverage.Budgets,
 // mirroring effectiveReachabilityBudgets exactly: the full
