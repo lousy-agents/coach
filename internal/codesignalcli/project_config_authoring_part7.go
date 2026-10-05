@@ -6,11 +6,12 @@ import (
 	"io"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-func promptForRequiredLayer(out io.Writer, reader *bufio.Reader, layers []projectConfigLayer) (requiredLayer string, cancelled bool) {
+func promptForRequiredLayer(out io.Writer, reader *bufio.Reader, layers []projectconfig.Layer) (requiredLayer string, cancelled bool) {
 	for {
 		fmt.Fprintln(out, "Enter the name of a required intermediary layer, or leave blank for none:")
 		fmt.Fprint(out, "> ")
@@ -36,7 +37,7 @@ func promptForRequiredLayer(out io.Writer, reader *bufio.Reader, layers []projec
 // non-empty set of valid repository-relative directories -- the same
 // explain-and-retry-or-cancel treatment every other field (layers, forbidden
 // pairs, required layer) already gets. There is no answer that selects zero
-// roots: validateProjectConfigRoots (the same schema validator the write
+// roots: validateRoots (the same schema validator the write
 // stage applies) never accepts an empty root list, so accepting one here
 // would only defer a certain failure to the very end of the session, after
 // every remaining stage and the approval gate had already been answered. It
@@ -65,7 +66,7 @@ func promptForRoots(out io.Writer, reader *bufio.Reader, discovered projectmodel
 	}
 }
 
-func layerNameDeclared(name string, layers []projectConfigLayer) bool {
+func layerNameDeclared(name string, layers []projectconfig.Layer) bool {
 	for _, layer := range layers {
 		if layer.Name == name {
 			return true

@@ -5,9 +5,11 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-func body_projectTsCompilerMiseInstallPart3Test_85(t *testing.T, readiness *ReadinessResult) {
+func body_projectTsCompilerMiseInstallPart3Test_85(t *testing.T, readiness *projectreadiness.Result) {
 	result := RunPrepareCompilerMiseSetup(context.Background(), t.TempDir(), "HEAD", "", readiness, strings.NewReader(""), &bytes.Buffer{})
 	if !result.NoChoicesOffered {
 		t.Fatalf("NoChoicesOffered = false, want true: %+v", result)

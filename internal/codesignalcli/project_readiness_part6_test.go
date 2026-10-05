@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // nodeMajorsFromEnginesRangeUnion parses a "^N || ^M ..." engines.node
@@ -54,12 +56,12 @@ func assertSameNodeMajorSet(t *testing.T, label string, got, want []int) {
 // so the ordering assertion does not depend on constructing a real
 // typescript_compiler_missing fixture.
 func TestAggregateReadinessOrdersNextActionsPolicyBeforeCompiler(t *testing.T) {
-	checks := ReadinessChecks{
-		Policy:   ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
-		Compiler: ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
+	checks := projectreadiness.Checks{
+		Policy:   projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing},
+		Compiler: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing},
 	}
 	_, _, nextActions, _ := aggregateReadiness(checks, false, nil)
-	want := []ReadinessNextAction{
+	want := []projectreadiness.NextAction{
 		{Kind: "author_policy", Executable: false},
 		{Kind: "prepare_compiler", Executable: true, Supported: []string{"7.0.2"}},
 	}
@@ -74,13 +76,13 @@ func TestAggregateReadinessOrdersNextActionsPolicyBeforeCompiler(t *testing.T) {
 }
 
 func TestAggregateReadinessEmitsCompilerDeclarationMismatchWarningShape(t *testing.T) {
-	checks := ReadinessChecks{
-		Compiler: ReadinessCheck{
-			State:             ReadinessPass,
-			Code:              WarnCompilerDeclarationMismatch,
+	checks := projectreadiness.Checks{
+		Compiler: projectreadiness.Check{
+			State:             projectreadiness.Pass,
+			Code:              projectreadiness.WarnCompilerDeclarationMismatch,
 			Version:           "7.0.2",
 			DeclarationOrigin: compilerDeclarationOriginManifest,
-			DeclarationMismatches: []ReadinessDeclarationMismatch{
+			DeclarationMismatches: []projectreadiness.DeclarationMismatch{
 				{Root: ".", Declared: "5.4.0"},
 			},
 		},
@@ -89,7 +91,7 @@ func TestAggregateReadinessEmitsCompilerDeclarationMismatchWarningShape(t *testi
 	if len(warnings) != 1 {
 		t.Fatalf("warnings = %#v, want exactly one entry", warnings)
 	}
-	want := ReadinessWarning{Code: WarnCompilerDeclarationMismatch, DeclaredVersion: "5.4.0", FoundVersion: "7.0.2", DeclarationOrigin: compilerDeclarationOriginManifest, Root: "."}
+	want := projectreadiness.Warning{Code: projectreadiness.WarnCompilerDeclarationMismatch, DeclaredVersion: "5.4.0", FoundVersion: "7.0.2", DeclarationOrigin: compilerDeclarationOriginManifest, Root: "."}
 	if warnings[0] != want {
 		t.Fatalf("warnings[0] = %#v, want %#v", warnings[0], want)
 	}

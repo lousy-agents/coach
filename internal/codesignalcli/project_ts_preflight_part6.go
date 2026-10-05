@@ -17,7 +17,7 @@ func typescriptScanInvocation(configPath string) string {
 }
 
 // SuggestProjectConfigRemediation names the --suggest-project-config
-// invocation that resolves a ProjectConfigError gap for language, for
+// invocation that resolves a projectconfig.ConfigError gap for language, for
 // AC-SET-9's appended no-controlling-terminal remediation line. For
 // "typescript" this is the interactive, guided policy-authoring command; for
 // every other language (only "go" reaches this today) it is the plain batch

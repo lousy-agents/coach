@@ -16,6 +16,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 type readinessRootFindingDoc struct {
@@ -1430,8 +1431,8 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			Expect(err).NotTo(HaveOccurred())
 			before, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(before.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail), "sanity: the fixture must start without a usable compiler")
-			Expect(before.Checks.Compiler.Code).To(Equal(codesignalcli.GapTypescriptCompilerMissing))
+			Expect(before.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "sanity: the fixture must start without a usable compiler")
+			Expect(before.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing))
 
 			stdin := authoringStdin("mise_project\ninstall\n")
 			defer stdin.Close()
@@ -1514,7 +1515,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 
 			result := codesignalcli.PrepareCompilerMiseResult{
 				Trusted: true,
-				Code:    codesignalcli.GapPackageManagerConfigUnverifiable,
+				Code:    projectreadiness.GapPackageManagerConfigUnverifiable,
 			}
 
 			exitCode := reportPrepareCompilerMiseResult(result, stderrFile)
@@ -1540,7 +1541,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			Expect(err).NotTo(HaveOccurred())
 			before, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(before.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail), "sanity: the fixture must start without a usable compiler")
+			Expect(before.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "sanity: the fixture must start without a usable compiler")
 
 			stdin := authoringStdin("mise_global\ninstall\n")
 			defer stdin.Close()
@@ -1585,7 +1586,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			Expect(err).NotTo(HaveOccurred())
 			readiness, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(readiness.Checks.Compiler.Code).To(Equal(codesignalcli.GapTypescriptCompilerMissing), "sanity: the fixture must start without a usable compiler")
+			Expect(readiness.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing), "sanity: the fixture must start without a usable compiler")
 
 			start := time.Now()
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

@@ -7,34 +7,36 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // TestAggregateReadinessKeepsPrepareCompilerWhenAdapterNotYetChecked proves
 // an ordinary npm/pnpm/Bun project, whose checkPackageManager adapter has
-// not verified yet (ReadinessNotChecked, the
+// not verified yet (projectreadiness.NotChecked, the
 // state for every non-Yarn repository shape today), must never have
 // prepare_compiler withheld merely because a mise setup choice was rejected.
-// Only an adapter actually evaluated and rejected (ReadinessFail) counts
+// Only an adapter actually evaluated and rejected (projectreadiness.Fail) counts
 // toward "no installation choice exists" -- a not-yet-checked adapter must
 // not.
 func TestAggregateReadinessKeepsPrepareCompilerWhenAdapterNotYetChecked(t *testing.T) {
-	checks := ReadinessChecks{
-		Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
-		PackageManager: ReadinessCheck{State: ReadinessNotChecked},
+	checks := projectreadiness.Checks{
+		Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing},
+		PackageManager: projectreadiness.Check{State: projectreadiness.NotChecked},
 	}
-	miseChoices := []ReadinessMiseChoice{{Kind: "mise_project", Verified: false, Code: GapPackageManagerConfigUnverifiable}}
+	miseChoices := []projectreadiness.MiseChoice{{Kind: "mise_project", Verified: false, Code: projectreadiness.GapPackageManagerConfigUnverifiable}}
 
 	_, gaps, nextActions, _ := aggregateReadiness(checks, false, miseChoices)
 
-	wantGaps := []ReadinessGap{
-		{Code: GapTypescriptCompilerMissing},
-		{Code: GapPackageManagerConfigUnverifiable, PackageManagerKind: "mise_project"},
+	wantGaps := []projectreadiness.Gap{
+		{Code: projectreadiness.GapTypescriptCompilerMissing},
+		{Code: projectreadiness.GapPackageManagerConfigUnverifiable, PackageManagerKind: "mise_project"},
 	}
 	if !reflect.DeepEqual(gaps, wantGaps) {
 		t.Fatalf("gaps = %#v, want %#v", gaps, wantGaps)
 	}
 
-	prepare, ok := findNextAction(nextActions, nextActionKindPrepareCompiler)
+	prepare, ok := findNextAction(nextActions, projectreadiness.NextActionPrepareCompiler)
 	if !ok {
 		t.Fatalf("prepare_compiler missing from %#v, want it present: the package manager adapter has not been evaluated and rejected, so a rejected mise choice alone must not withhold it", nextActions)
 	}
@@ -46,13 +48,13 @@ func TestAggregateReadinessKeepsPrepareCompilerWhenAdapterNotYetChecked(t *testi
 func TestAggregateReadinessOmitsWarningsForNodeChecks(t *testing.T) {
 	cases := []struct {
 		name    string
-		runtime ReadinessCheck
+		runtime projectreadiness.Check
 	}{
-		{"passing at supported major 24", ReadinessCheck{State: ReadinessPass, Version: "v24.9.9"}},
-		{"passing at supported major 26", ReadinessCheck{State: ReadinessPass, Version: "v26.0.0"}},
-		{"failing node_missing", ReadinessCheck{State: ReadinessFail, Code: GapNodeMissing}},
-		{"failing node_unsupported", ReadinessCheck{State: ReadinessFail, Code: GapNodeUnsupported}},
-		{"failing node_unverifiable", ReadinessCheck{State: ReadinessFail, Code: GapNodeUnverifiable}},
+		{"passing at supported major 24", projectreadiness.Check{State: projectreadiness.Pass, Version: "v24.9.9"}},
+		{"passing at supported major 26", projectreadiness.Check{State: projectreadiness.Pass, Version: "v26.0.0"}},
+		{"failing node_missing", projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapNodeMissing}},
+		{"failing node_unsupported", projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapNodeUnsupported}},
+		{"failing node_unverifiable", projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapNodeUnverifiable}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -61,13 +63,13 @@ func TestAggregateReadinessOmitsWarningsForNodeChecks(t *testing.T) {
 	}
 }
 
-func findNextAction(actions []ReadinessNextAction, kind string) (ReadinessNextAction, bool) {
+func findNextAction(actions []projectreadiness.NextAction, kind string) (projectreadiness.NextAction, bool) {
 	for _, action := range actions {
 		if action.Kind == kind {
 			return action, true
 		}
 	}
-	return ReadinessNextAction{}, false
+	return projectreadiness.NextAction{}, false
 }
 
 // TestNodeMajorSupportedMatchesAnalysisGate binds checkNodeReadiness's

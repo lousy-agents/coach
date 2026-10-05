@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -49,7 +50,7 @@ func body_projectConfigAuthoringPart10Test_134(t *testing.T, discovered projectm
 	name       string
 	lines      []string
 	wantSubstr string
-	wantLayers []projectConfigLayer
+	wantLayers []projectconfig.Layer
 }) {
 	result, out := runAuthoringWithTimeout(t, watchdog, discovered, tc.lines...)
 	if !result.Cancelled {

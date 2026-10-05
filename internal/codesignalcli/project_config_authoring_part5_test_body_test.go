@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -59,7 +60,7 @@ func body_projectConfigAuthoringPart5Test_aDefinedLayerSPrefixesAreExactlyWhatTh
 		"",
 	)
 
-	wantLayers := []projectConfigLayer{{Name: "domain", Prefixes: []string{"internal/domain"}}}
+	wantLayers := []projectconfig.Layer{{Name: "domain", Prefixes: []string{"internal/domain"}}}
 	if !equalLayers(result.Layers, wantLayers) {
 		t.Fatalf("Layers = %+v, want exactly %+v with no discovered roots appended", result.Layers, wantLayers)
 	}

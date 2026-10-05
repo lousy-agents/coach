@@ -4,38 +4,40 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // TestAggregateReadinessKeepsPrepareCompilerWithVerifiedMiseChoice proves
 // the seam mise version/config-hazard verification plugs into: a rejected
 // project adapter never withholds prepare_compiler while a
-// ReadinessMiseChoice reports a distinct, verified mise origin.
+// projectreadiness.MiseChoice reports a distinct, verified mise origin.
 // CheckProjectReadiness now feeds aggregateReadiness a real
 // evaluateMiseSetupChoices result (project_readiness.go); this test
 // constructs that seam's input directly so aggregateReadiness's own
 // contract is proven independently of mise's actual availability in the
 // test environment.
 func TestAggregateReadinessKeepsPrepareCompilerWithVerifiedMiseChoice(t *testing.T) {
-	checks := ReadinessChecks{
-		Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
-		PackageManager: ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerVersionUnsupported, Kind: "yarn"},
+	checks := projectreadiness.Checks{
+		Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing},
+		PackageManager: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPackageManagerVersionUnsupported, Kind: "yarn"},
 	}
-	miseChoices := []ReadinessMiseChoice{{Kind: "mise_project", Verified: true}}
+	miseChoices := []projectreadiness.MiseChoice{{Kind: "mise_project", Verified: true}}
 
 	status, gaps, nextActions, _ := aggregateReadiness(checks, false, miseChoices)
 
-	if status != StatusNeedsPrerequisite {
-		t.Fatalf("status = %q, want %q", status, StatusNeedsPrerequisite)
+	if status != projectreadiness.StatusNeedsPrerequisite {
+		t.Fatalf("status = %q, want %q", status, projectreadiness.StatusNeedsPrerequisite)
 	}
-	wantGaps := []ReadinessGap{
-		{Code: GapTypescriptCompilerMissing},
-		{Code: GapPackageManagerVersionUnsupported, PackageManagerKind: "yarn"},
+	wantGaps := []projectreadiness.Gap{
+		{Code: projectreadiness.GapTypescriptCompilerMissing},
+		{Code: projectreadiness.GapPackageManagerVersionUnsupported, PackageManagerKind: "yarn"},
 	}
 	if !reflect.DeepEqual(gaps, wantGaps) {
 		t.Fatalf("gaps = %#v, want %#v", gaps, wantGaps)
 	}
 
-	prepare, ok := findNextAction(nextActions, nextActionKindPrepareCompiler)
+	prepare, ok := findNextAction(nextActions, projectreadiness.NextActionPrepareCompiler)
 	if !ok {
 		t.Fatalf("prepare_compiler missing from %#v, want it present with the verified mise choice", nextActions)
 	}
@@ -43,7 +45,7 @@ func TestAggregateReadinessKeepsPrepareCompilerWithVerifiedMiseChoice(t *testing
 		t.Fatalf("prepare_compiler.Choices = %#v, want [mise_project] (the rejected yarn adapter must not appear)", prepare.Choices)
 	}
 
-	resolve, ok := findNextAction(nextActions, nextActionKindResolvePackageManager)
+	resolve, ok := findNextAction(nextActions, projectreadiness.NextActionResolvePackageManager)
 	if !ok {
 		t.Fatalf("resolve_package_manager missing from %#v", nextActions)
 	}

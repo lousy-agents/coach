@@ -5,6 +5,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/render"
 
 	"os"
 
@@ -28,7 +29,7 @@ func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int
 	}
 
 	if f.format == "json" {
-		encoded, err := codesignalcli.RenderReadinessJSON(result)
+		encoded, err := render.ReadinessJSON(result)
 		if err != nil {
 			fmt.Fprintf(stderr, "coach codesignal --check-project: encoding result: %s\n", err)
 			return 1
@@ -40,7 +41,7 @@ func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int
 		return 0
 	}
 
-	if _, err := fmt.Fprint(stdout, codesignalcli.RenderReadinessText(result)); err != nil {
+	if _, err := fmt.Fprint(stdout, render.ReadinessText(result)); err != nil {
 		fmt.Fprintf(stderr, "coach codesignal --check-project: writing result: %s\n", err)
 		return 1
 	}

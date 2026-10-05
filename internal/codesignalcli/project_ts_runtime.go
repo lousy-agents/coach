@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/subprocess"
 )
 
@@ -82,10 +83,10 @@ func mapHostNodeProbeError(path, probe string, exitErr, probeErr error) error {
 
 func mapHostNodeResolveError(err error) error {
 	if errors.Is(err, errHostNodeNotFound) {
-		return &RuntimeUnresolvedError{Code: GapNodeMissing}
+		return &RuntimeUnresolvedError{Code: projectreadiness.GapNodeMissing}
 	}
 	if errors.Is(err, errHostNodeMajorDisallowed) {
-		return &RuntimeUnresolvedError{Code: GapNodeUnsupported}
+		return &RuntimeUnresolvedError{Code: projectreadiness.GapNodeUnsupported}
 	}
 	return fmt.Errorf("coach: resolving host Node runtime for TypeScript analysis: %w", err)
 }

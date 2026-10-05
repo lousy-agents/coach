@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun drives
@@ -36,12 +37,12 @@ func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CheckProjectReadiness (before): %v", err)
 	}
-	if before.Checks.Compiler.State != ReadinessFail || before.Checks.Compiler.Code != GapTypescriptCompilerMissing {
+	if before.Checks.Compiler.State != projectreadiness.Fail || before.Checks.Compiler.Code != projectreadiness.GapTypescriptCompilerMissing {
 		t.Fatalf("sanity: expected an initial typescript_compiler_missing gap, got %+v", before.Checks.Compiler)
 	}
 
-	readiness := readinessWithPrepareCompilerAction(ReadinessNextAction{
-		Kind: nextActionKindPrepareCompiler, Executable: true, Choices: []string{compilerOriginMiseProject},
+	readiness := readinessWithPrepareCompilerAction(projectreadiness.NextAction{
+		Kind: projectreadiness.NextActionPrepareCompiler, Executable: true, Choices: []string{compilerOriginMiseProject},
 	})
 	var transcript bytes.Buffer
 
@@ -62,7 +63,7 @@ func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 	if result.PostInstallReadiness == nil {
 		t.Fatalf("PostInstallReadiness is nil, want the rerun result")
 	}
-	if result.PostInstallReadiness.Checks.Compiler.State != ReadinessPass {
+	if result.PostInstallReadiness.Checks.Compiler.State != projectreadiness.Pass {
 		t.Fatalf("rerun compiler state = %q, want pass: %+v", result.PostInstallReadiness.Checks.Compiler.State, result.PostInstallReadiness.Checks.Compiler)
 	}
 	if result.PostInstallReadiness.Checks.Compiler.Version != "7.0.2" {

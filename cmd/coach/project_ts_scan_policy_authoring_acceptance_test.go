@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 )
 
 // controllingTerminalCommandTimeout bounds runCoachBinaryWithControllingTerminal's
@@ -318,7 +319,7 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard tr
 			os.Stdin = slave
 			DeferCleanup(func() { os.Stdin = originalStdin })
 
-			var zeroKindErr codesignalcli.ProjectConfigError
+			var zeroKindErr projectconfig.ConfigError
 			zeroKindErr.Message = `coach codesignal: --project-config "project.json" is invalid at revision "HEAD" (project_config_invalid): unclassified`
 
 			Expect(scanShouldAuthorProjectConfig(&zeroKindErr, "typescript", "project.json", false)).To(BeFalse(), "an error whose cause was never classified must not select guided authoring")

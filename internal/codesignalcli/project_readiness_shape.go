@@ -5,7 +5,15 @@ import (
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
+
+// runReadinessGit is the bounded git read behind --check-project's
+// committed-file presence checks, held to the policy document's read budget.
+var runReadinessGit = func(dir string, args ...string) ([]byte, error) {
+	return gitrepo.RunBytesBounded(dir, projectconfig.MaxBytes, projectconfig.MaxGitStderr, projectconfig.GitTimeout, args...)
+}
 
 // checkProjectShape reports whether revision looks like a Node/TypeScript
 // project at all: a committed package.json at the repository root, or, once
@@ -17,33 +25,33 @@ import (
 // evidence of an unsupported shape -- roots is untrusted input until a
 // policy has passed schema/content validation, so a genuine monorepo whose
 // manifests all live under an as-yet-uncommitted root would otherwise be
-// misreported as GapUnsupportedRepositoryShape purely because its policy is
+// misreported as projectreadiness.GapUnsupportedRepositoryShape purely because its policy is
 // missing. Reporting not_checked instead leaves the question open until a
 // policy lets the roots walk actually run, rather than asserting a verdict
 // this check has no basis for (R1, mirroring checkPackageManager's own
 // policyPassed gate).
-func checkProjectShape(dir, revision string, roots []string, policyPassed bool) (ReadinessCheck, error) {
-	exists, err := gitrepo.FileExistsAtRevision(runProjectConfigGit, dir, revision, "package.json")
+func checkProjectShape(dir, revision string, roots []string, policyPassed bool) (projectreadiness.Check, error) {
+	exists, err := gitrepo.FileExistsAtRevision(runReadinessGit, dir, revision, "package.json")
 	if err != nil {
-		return ReadinessCheck{}, err
+		return projectreadiness.Check{}, err
 	}
 	if exists {
-		return ReadinessCheck{State: ReadinessPass}, nil
+		return projectreadiness.Check{State: projectreadiness.Pass}, nil
 	}
 
 	if !policyPassed {
-		return ReadinessCheck{State: ReadinessNotChecked}, nil
+		return projectreadiness.Check{State: projectreadiness.NotChecked}, nil
 	}
 
 	found, err := packageJSONExistsUnderAnyRoot(dir, revision, roots)
 	if err != nil {
-		return ReadinessCheck{}, err
+		return projectreadiness.Check{}, err
 	}
 	if found {
-		return ReadinessCheck{State: ReadinessPass}, nil
+		return projectreadiness.Check{State: projectreadiness.Pass}, nil
 	}
 
-	return ReadinessCheck{State: ReadinessFail, Code: GapUnsupportedRepositoryShape}, nil
+	return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapUnsupportedRepositoryShape}, nil
 }
 
 // packageJSONExistsUnderAnyRoot reports whether a package.json blob exists
@@ -68,7 +76,7 @@ func packageJSONExistsWalkingUp(dir, revision, root string) (bool, error) {
 		return false, nil
 	}
 	for {
-		exists, err := gitrepo.FileExistsAtRevision(runProjectConfigGit, dir, revision, path.Join(current, "package.json"))
+		exists, err := gitrepo.FileExistsAtRevision(runReadinessGit, dir, revision, path.Join(current, "package.json"))
 		if err != nil || exists {
 			return exists, err
 		}

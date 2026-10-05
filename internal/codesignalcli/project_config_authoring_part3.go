@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 )
 
-func printCandidateSummary(out io.Writer, roots []string, layers []projectConfigLayer, forbidden []projectForbiddenImport, requiredLayer string) {
+func printCandidateSummary(out io.Writer, roots []string, layers []projectconfig.Layer, forbidden []projectconfig.ForbiddenImport, requiredLayer string) {
 	fmt.Fprintln(out, "Candidate project config:")
 	fmt.Fprintf(out, "  roots: %s\n", formatStringList(roots))
 	if len(layers) == 0 {
@@ -32,7 +34,7 @@ func printCandidateSummary(out io.Writer, roots []string, layers []projectConfig
 	}
 }
 
-func validateForbiddenPairCandidate(from, to string, layers []projectConfigLayer, existing []projectForbiddenImport) error {
+func validateForbiddenPairCandidate(from, to string, layers []projectconfig.Layer, existing []projectconfig.ForbiddenImport) error {
 	if from == "" || to == "" {
 		return fmt.Errorf("forbidden import pairs require a non-empty source and destination layer")
 	}

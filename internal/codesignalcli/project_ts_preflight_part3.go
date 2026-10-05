@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"context"
 	"io"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // runMiseSetupOffer executes a mise scope choice through its own library
@@ -61,7 +64,7 @@ func projectPackageWorkingDirectory(dir, revision, configPath string) (workingDi
 	worktreeRoot := compilerWorktreeRoot(dir)
 	policyPath := configPath
 	if policyPath == "" {
-		policyPath = defaultProjectConfigPath
+		policyPath = projectconfig.DefaultPath
 	}
 	_, roots, err := checkPolicy(dir, revision, policyPath)
 	if err != nil {
@@ -98,14 +101,14 @@ func projectPackageWorkingDirectory(dir, revision, configPath string) (workingDi
 //
 // readiness.Gaps is already emitted in the epic's frozen next-action order,
 // so iterating it preserves that ordering rather than inventing one here.
-func AlsoFailingGapLines(readiness *ReadinessResult, configPath string) []string {
+func AlsoFailingGapLines(readiness *projectreadiness.Result, configPath string) []string {
 	if readiness == nil {
 		return nil
 	}
 	var lines []string
 	seen := make(map[string]bool, len(readiness.Gaps))
 	for _, gap := range readiness.Gaps {
-		if gap.Code == GapPolicyMissing || gap.Code == GapPolicyInvalid || seen[gap.Code] {
+		if gap.Code == projectreadiness.GapPolicyMissing || gap.Code == projectreadiness.GapPolicyInvalid || seen[gap.Code] {
 			continue
 		}
 		seen[gap.Code] = true

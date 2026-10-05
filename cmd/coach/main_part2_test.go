@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // TestShouldContinueAfterSetup pins AC-SET-6/AC-7's continuation gate: the
@@ -12,12 +13,12 @@ import (
 // no gap. Every ReadinessStatus value is exercised, so a status this table
 // omits cannot silently regress to the wrong side of the gate.
 func TestShouldContinueAfterSetup(t *testing.T) {
-	allStatuses := []codesignalcli.ReadinessStatus{
-		codesignalcli.StatusOutsideSupport,
-		codesignalcli.StatusNeedsPrerequisite,
-		codesignalcli.StatusNeedsPolicy,
-		codesignalcli.StatusReadyWithLimits,
-		codesignalcli.StatusReady,
+	allStatuses := []projectreadiness.Status{
+		projectreadiness.StatusOutsideSupport,
+		projectreadiness.StatusNeedsPrerequisite,
+		projectreadiness.StatusNeedsPolicy,
+		projectreadiness.StatusReadyWithLimits,
+		projectreadiness.StatusReady,
 	}
 
 	t.Run("Succeeded false never continues, regardless of PostInstallReadiness", func(t *testing.T) {
@@ -30,7 +31,7 @@ func TestShouldContinueAfterSetup(t *testing.T) {
 
 	for _, status := range allStatuses {
 		status := status
-		want := status == codesignalcli.StatusReady || status == codesignalcli.StatusReadyWithLimits
+		want := status == projectreadiness.StatusReady || status == projectreadiness.StatusReadyWithLimits
 		t.Run("Succeeded true with PostInstallReadiness.Status="+string(status), func(t *testing.T) {
 			body_mainPart2Test_44(t, status, want)
 		})
@@ -38,7 +39,7 @@ func TestShouldContinueAfterSetup(t *testing.T) {
 }
 
 func TestAnalysisErrorReportForRuntimeUnresolvedError(t *testing.T) {
-	err := &codesignalcli.RuntimeUnresolvedError{Code: codesignalcli.GapNodeMissing, ConfigPath: "project.json"}
+	err := &codesignalcli.RuntimeUnresolvedError{Code: projectreadiness.GapNodeMissing, ConfigPath: "project.json"}
 	got := analysisErrorReportFor(err, "typescript", false)
 	if got.exitCode != 2 {
 		t.Fatalf("analysisErrorReportFor(RuntimeUnresolvedError).exitCode = %d, want 2", got.exitCode)
@@ -64,7 +65,7 @@ func TestWithheldSetupChoicesLine(t *testing.T) {
 }
 
 func TestScanShouldOfferCompilerSetupIgnoresRuntimeUnresolvedError(t *testing.T) {
-	err := &codesignalcli.RuntimeUnresolvedError{Code: codesignalcli.GapNodeMissing, ConfigPath: "project.json"}
+	err := &codesignalcli.RuntimeUnresolvedError{Code: projectreadiness.GapNodeMissing, ConfigPath: "project.json"}
 	if wrapped, ok := scanShouldOfferCompilerSetup(err, false); ok {
 		t.Fatalf("scanShouldOfferCompilerSetup(RuntimeUnresolvedError) = (%v, true), want false: a runtime gap must not enter the compiler-setup offer", wrapped)
 	}

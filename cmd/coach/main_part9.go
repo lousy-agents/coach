@@ -7,6 +7,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/sourcescope"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 
 	"os"
@@ -24,7 +25,7 @@ func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesigna
 	if err != nil {
 		return nil, err
 	}
-	selected, excluded, err := codesignalcli.ApplySourceScope(dir, headSHA, f.buildTarget, f.scope, selected)
+	selected, excluded, err := sourcescope.Apply(dir, headSHA, f.buildTarget, f.scope, selected)
 	if err != nil {
 		return nil, err
 	}

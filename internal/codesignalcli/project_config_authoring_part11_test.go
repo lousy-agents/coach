@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
 func TestAuthorProjectConfig_LayerPrefixesRejectOversizedBudget(t *testing.T) {
 	discovered := projectmodel.TSRootDiscoveryResult{Complete: true}
 
-	prefixes := make([]string, maxProjectConfigLayerPrefixes+1)
+	prefixes := make([]string, projectconfig.MaxLayerPrefixes+1)
 	for i := range prefixes {
 		prefixes[i] = fmt.Sprintf("dir%d", i)
 	}
@@ -32,8 +33,8 @@ func TestAuthorProjectConfig_LayerPrefixesRejectOversizedBudget(t *testing.T) {
 	if len(result.Layers) != 0 {
 		t.Fatalf("expected no layer to be recorded for a rejected oversized prefix list, got %+v", result.Layers)
 	}
-	if !strings.Contains(out, fmt.Sprintf("%d", maxProjectConfigLayerPrefixes)) {
-		t.Fatalf("expected the rejection explanation to reference the %d-entry budget, got:\n%s", maxProjectConfigLayerPrefixes, out)
+	if !strings.Contains(out, fmt.Sprintf("%d", projectconfig.MaxLayerPrefixes)) {
+		t.Fatalf("expected the rejection explanation to reference the %d-entry budget, got:\n%s", projectconfig.MaxLayerPrefixes, out)
 	}
 }
 

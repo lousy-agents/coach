@@ -1,13 +1,17 @@
 package codesignalcli
 
-func compilerCheckFromAggregate(aggregate compilerAggregate) ReadinessCheck {
+import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+)
+
+func compilerCheckFromAggregate(aggregate compilerAggregate) projectreadiness.Check {
 	code, findings := compilerOutcomeFromAggregate(aggregate)
 	switch code {
 	case "":
 		return passingCompilerCheck(aggregate)
-	case GapTypescriptVersionConflict:
-		return ReadinessCheck{State: ReadinessFail, Code: code, RootFindings: findings}
-	case GapTypescriptVersionMismatch:
+	case projectreadiness.GapTypescriptVersionConflict:
+		return projectreadiness.Check{State: projectreadiness.Fail, Code: code, RootFindings: findings}
+	case projectreadiness.GapTypescriptVersionMismatch:
 		unsupported, _ := aggregate.firstOfClass(compilerClassUnsupported)
 		check := mismatchCompilerCheck(unsupported.version)
 		check.DeclaredVersion = aggregate.namedDeclaration()
@@ -17,27 +21,27 @@ func compilerCheckFromAggregate(aggregate compilerAggregate) ReadinessCheck {
 	}
 }
 
-func passingCompilerCheck(aggregate compilerAggregate) ReadinessCheck {
-	check := ReadinessCheck{State: ReadinessPass, Version: aggregate.winner.version}
+func passingCompilerCheck(aggregate compilerAggregate) projectreadiness.Check {
+	check := projectreadiness.Check{State: projectreadiness.Pass, Version: aggregate.winner.version}
 	if mismatches := aggregate.declarationMismatches(); len(mismatches) > 0 {
-		check.Code = WarnCompilerDeclarationMismatch
+		check.Code = projectreadiness.WarnCompilerDeclarationMismatch
 		check.DeclarationOrigin = compilerDeclarationOriginManifest
 		check.DeclarationMismatches = mismatches
 	}
 	return check
 }
 
-func mismatchCompilerCheck(found string) ReadinessCheck {
-	return ReadinessCheck{
-		State:             ReadinessFail,
-		Code:              GapTypescriptVersionMismatch,
+func mismatchCompilerCheck(found string) projectreadiness.Check {
+	return projectreadiness.Check{
+		State:             projectreadiness.Fail,
+		Code:              projectreadiness.GapTypescriptVersionMismatch,
 		ExpectedVersion:   newestSupportedTypescriptVersion(),
 		FoundVersion:      found,
 		SupportedVersions: supportedTypescriptVersionsCopy(),
 	}
 }
 
-func missingCompilerCheckFromAggregate(aggregate compilerAggregate) ReadinessCheck {
+func missingCompilerCheckFromAggregate(aggregate compilerAggregate) projectreadiness.Check {
 	found := ""
 	detail := ""
 	if nativeInvalid, ok := aggregate.firstOfClass(compilerClassNativeInvalid); ok {
@@ -56,10 +60,10 @@ func missingCompilerCheckFromAggregate(aggregate compilerAggregate) ReadinessChe
 	return check
 }
 
-func missingCompilerCheck(found, declared string) ReadinessCheck {
-	check := ReadinessCheck{
-		State:           ReadinessFail,
-		Code:            GapTypescriptCompilerMissing,
+func missingCompilerCheck(found, declared string) projectreadiness.Check {
+	check := projectreadiness.Check{
+		State:           projectreadiness.Fail,
+		Code:            projectreadiness.GapTypescriptCompilerMissing,
 		ExpectedVersion: newestSupportedTypescriptVersion(),
 		DeclaredVersion: declared,
 	}

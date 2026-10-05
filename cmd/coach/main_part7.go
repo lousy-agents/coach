@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 
 	"strings"
@@ -46,7 +47,7 @@ func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configP
 		ConfigPath:   configPath,
 		Language:     language,
 		Config:       append(json.RawMessage(nil), config...),
-		ConfigDigest: codesignalcli.ConfigDigest(config),
+		ConfigDigest: projectconfig.Digest(config),
 		Backend:      backend,
 	}, nil, nil
 }

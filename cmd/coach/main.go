@@ -10,13 +10,14 @@ import (
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 )
 
 // version is overridden via -ldflags at release; a local build reports "dev".
 var version = "dev"
 
 var (
-	loadProjectConfig     = codesignalcli.LoadProjectConfig
+	loadProjectConfig     = projectconfig.Load
 	resolveProjectBackend = codesignalcli.ResolveProjectBackend
 	lookupProjectBackend  = func(language string) codesignalcli.ProjectBackend {
 		switch language {

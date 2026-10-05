@@ -6,11 +6,12 @@ import (
 	"io"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-func promptLayerName(out io.Writer, reader *bufio.Reader, existing []projectConfigLayer) (name string, done, cancelled bool) {
+func promptLayerName(out io.Writer, reader *bufio.Reader, existing []projectconfig.Layer) (name string, done, cancelled bool) {
 	for {
 		fmt.Fprintln(out, "Enter a layer name, or leave blank to finish defining layers:")
 		fmt.Fprint(out, "> ")
@@ -57,7 +58,7 @@ func collectAuthoringAnswers(in io.Reader, transcript io.Writer, discovered proj
 	return AuthoringResult{Roots: roots, Layers: layers, ForbiddenImports: forbidden, RequiredLayer: requiredLayer, Approved: approved}
 }
 
-func matchingDiscoveredDirectories(layer projectConfigLayer, dirs []string) []string {
+func matchingDiscoveredDirectories(layer projectconfig.Layer, dirs []string) []string {
 	var matched []string
 	for _, dir := range dirs {
 		if layerMatchesDirectory(layer, dir) {

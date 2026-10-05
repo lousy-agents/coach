@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -174,8 +175,8 @@ func runScanCompilerSetupOffer(dir string, f codesignalFlags, stdout, stderr *os
 	return 2
 }
 
-func readinessAllowsScan(status codesignalcli.ReadinessStatus) bool {
-	return status == codesignalcli.StatusReady || status == codesignalcli.StatusReadyWithLimits
+func readinessAllowsScan(status projectreadiness.Status) bool {
+	return status == projectreadiness.StatusReady || status == projectreadiness.StatusReadyWithLimits
 }
 
 // shouldContinueAfterSetup is AC-SET-6/AC-7's continuation gate: the same

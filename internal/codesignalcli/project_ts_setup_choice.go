@@ -1,5 +1,9 @@
 package codesignalcli
 
+import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+)
+
 // SetupChoiceKind names one selectable entry AvailableSetupChoices may offer
 // to resolve a failing compiler check. The four kinds are frozen: callers
 // switch on the constant, never on a compiler-resolution origin string.
@@ -14,8 +18,6 @@ const (
 
 const (
 	setupChoiceReasonManifestDeclaration       = "manifest_declaration"
-	setupChoiceReasonMiseUnconfigured          = "mise_unconfigured"
-	setupChoiceReasonMiseUnverifiable          = "mise_unverifiable"
 	setupChoiceReasonOriginUnverified          = "origin_unverified"
 	setupChoiceReasonPackageManagerNotChecked  = "package_manager_not_checked"
 	setupChoiceReasonManifestContextAmbiguous  = "manifest_context_ambiguous"
@@ -52,13 +54,13 @@ type SetupChoiceMenu struct {
 // readiness.MiseChoices -- rather than repeating any detection itself. A menu
 // with no choices and no withheld entries means checks.compiler is not
 // failing, so no setup is needed.
-func AvailableSetupChoices(readiness ReadinessResult) SetupChoiceMenu {
-	if readiness.Checks.Compiler.State != ReadinessFail {
+func AvailableSetupChoices(readiness projectreadiness.Result) SetupChoiceMenu {
+	if readiness.Checks.Compiler.State != projectreadiness.Fail {
 		return SetupChoiceMenu{}
 	}
 
 	menu := SetupChoiceMenu{
-		RequiresExplicitSelection: readiness.Checks.PackageManager.Code == GapPackageManagerAmbiguous,
+		RequiresExplicitSelection: readiness.Checks.PackageManager.Code == projectreadiness.GapPackageManagerAmbiguous,
 	}
 	menu = appendProjectPackageChoice(menu, readiness.Checks)
 	menu = appendMiseChoice(menu, readiness.MiseChoices, compilerOriginMiseProject, SetupChoiceProjectMise)
@@ -81,21 +83,21 @@ func AvailableSetupChoices(readiness ReadinessResult) SetupChoiceMenu {
 //
 // The other two withholding reasons are about the manager rather than the
 // declaration: checks.package_manager rejected the repository's manager
-// (SA-280-012), or never resolved one at all (ReadinessNotChecked -- no
+// (SA-280-012), or never resolved one at all (projectreadiness.NotChecked -- no
 // recognized packageManager field or lockfile at any selected root). Only
-// ReadinessPass carries a Kind BuildSetupPreview can resolve to a frozen
+// projectreadiness.Pass carries a Kind BuildSetupPreview can resolve to a frozen
 // adapter row. DeclaredVersion is populated on both the
 // typescript_compiler_missing and typescript_version_mismatch outcomes
 // (compilerCheckFromAggregate), so this reads the declaration itself rather
 // than the failing code. No reason here changes which compiler a scan uses if
 // one is already installed (owner decision D4); all only withhold a setup
 // choice.
-func appendProjectPackageChoice(menu SetupChoiceMenu, checks ReadinessChecks) SetupChoiceMenu {
-	if checks.PackageManager.State == ReadinessFail {
+func appendProjectPackageChoice(menu SetupChoiceMenu, checks projectreadiness.Checks) SetupChoiceMenu {
+	if checks.PackageManager.State == projectreadiness.Fail {
 		menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: SetupChoiceProjectPackage, Reason: checks.PackageManager.Code})
 		return menu
 	}
-	if checks.PackageManager.State != ReadinessPass {
+	if checks.PackageManager.State != projectreadiness.Pass {
 		menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: SetupChoiceProjectPackage, Reason: setupChoiceReasonPackageManagerNotChecked})
 		return menu
 	}
@@ -126,7 +128,7 @@ func installableDeclaration(declaration string) bool {
 // Fail-closed: an origin the pipeline reported nothing about at all is
 // withheld as unverifiable rather than offered as a default, which is what a
 // caller sees when compiler-origin evaluation never reached mise.
-func appendMiseChoice(menu SetupChoiceMenu, miseChoices []ReadinessMiseChoice, origin string, kind SetupChoiceKind) SetupChoiceMenu {
+func appendMiseChoice(menu SetupChoiceMenu, miseChoices []projectreadiness.MiseChoice, origin string, kind SetupChoiceKind) SetupChoiceMenu {
 	for _, choice := range miseChoices {
 		if choice.Kind != origin {
 			continue

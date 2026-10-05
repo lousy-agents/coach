@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -53,7 +54,7 @@ func TestAuthorProjectConfig_ExhaustedInputCancelsInsteadOfSpinning(t *testing.T
 	discovered := projectmodel.TSRootDiscoveryResult{Complete: true}
 	const watchdog = 3 * time.Second
 
-	declaredDomainLayer := []projectConfigLayer{{Name: "domain", Prefixes: []string{"internal/domain"}}}
+	declaredDomainLayer := []projectconfig.Layer{{Name: "domain", Prefixes: []string{"internal/domain"}}}
 
 	cases := []struct {
 		name       string
@@ -66,7 +67,7 @@ func TestAuthorProjectConfig_ExhaustedInputCancelsInsteadOfSpinning(t *testing.T
 		// instead (the case's own rejection text can otherwise stay
 		// identical either way, e.g. an undeclared-layer reference is
 		// undeclared whether zero or one other layer exists).
-		wantLayers []projectConfigLayer
+		wantLayers []projectconfig.Layer
 	}{
 		{
 			name:       "invalid (blank) layer prefixes, then input runs out at the retry prompt",

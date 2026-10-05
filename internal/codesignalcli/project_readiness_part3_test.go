@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // TestAggregateReadinessKeepsProjectAndGlobalMiseChoicesDistinct proves an
@@ -14,21 +16,21 @@ import (
 // key, and prepare_compiler's surviving Choices names only the verified
 // mise_global origin.
 func TestAggregateReadinessKeepsProjectAndGlobalMiseChoicesDistinct(t *testing.T) {
-	checks := ReadinessChecks{
-		Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing},
-		PackageManager: ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerVersionUnsupported, Kind: "yarn"},
+	checks := projectreadiness.Checks{
+		Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing},
+		PackageManager: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPackageManagerVersionUnsupported, Kind: "yarn"},
 	}
-	miseChoices := []ReadinessMiseChoice{
-		{Kind: "mise_project", Verified: false, Code: GapPackageManagerConfigUnverifiable},
+	miseChoices := []projectreadiness.MiseChoice{
+		{Kind: "mise_project", Verified: false, Code: projectreadiness.GapPackageManagerConfigUnverifiable},
 		{Kind: "mise_global", Verified: true},
 	}
 
 	_, gaps, nextActions, _ := aggregateReadiness(checks, false, miseChoices)
 
-	wantGaps := []ReadinessGap{
-		{Code: GapTypescriptCompilerMissing},
-		{Code: GapPackageManagerVersionUnsupported, PackageManagerKind: "yarn"},
-		{Code: GapPackageManagerConfigUnverifiable, PackageManagerKind: "mise_project"},
+	wantGaps := []projectreadiness.Gap{
+		{Code: projectreadiness.GapTypescriptCompilerMissing},
+		{Code: projectreadiness.GapPackageManagerVersionUnsupported, PackageManagerKind: "yarn"},
+		{Code: projectreadiness.GapPackageManagerConfigUnverifiable, PackageManagerKind: "mise_project"},
 	}
 	if !reflect.DeepEqual(gaps, wantGaps) {
 		t.Fatalf("gaps = %#v, want %#v", gaps, wantGaps)
@@ -36,7 +38,7 @@ func TestAggregateReadinessKeepsProjectAndGlobalMiseChoicesDistinct(t *testing.T
 
 	var resolveKinds []string
 	for _, action := range nextActions {
-		if action.Kind == nextActionKindResolvePackageManager {
+		if action.Kind == projectreadiness.NextActionResolvePackageManager {
 			resolveKinds = append(resolveKinds, action.PackageManagerKind)
 		}
 	}
@@ -45,7 +47,7 @@ func TestAggregateReadinessKeepsProjectAndGlobalMiseChoicesDistinct(t *testing.T
 		t.Fatalf("resolve_package_manager PackageManagerKind values = %#v, want %#v (yarn and mise_project must not collide into one entry)", resolveKinds, wantResolveKinds)
 	}
 
-	prepare, ok := findNextAction(nextActions, nextActionKindPrepareCompiler)
+	prepare, ok := findNextAction(nextActions, projectreadiness.NextActionPrepareCompiler)
 	if !ok {
 		t.Fatalf("prepare_compiler missing from %#v, want it present with the verified mise_global choice", nextActions)
 	}

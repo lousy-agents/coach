@@ -6,6 +6,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -92,7 +93,7 @@ var _ = Describe("applyProjectBackend diagnostics mutation contract", func() {
 				ConfigPath:   "project.json",
 				Language:     "typescript",
 				Config:       cfg,
-				ConfigDigest: ConfigDigest(cfg),
+				ConfigDigest: projectconfig.Digest(cfg),
 				Backend:      backend,
 			}
 

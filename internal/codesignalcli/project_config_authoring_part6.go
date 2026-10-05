@@ -7,10 +7,11 @@ import (
 	"io"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 )
 
-func promptForbiddenPair(out io.Writer, reader *bufio.Reader, layers []projectConfigLayer, existing []projectForbiddenImport) (from, to string, done, cancelled bool) {
+func promptForbiddenPair(out io.Writer, reader *bufio.Reader, layers []projectconfig.Layer, existing []projectconfig.ForbiddenImport) (from, to string, done, cancelled bool) {
 	for {
 		fmt.Fprintln(out, "Enter the source layer name for a forbidden import pair, or leave blank to finish:")
 		fmt.Fprint(out, "> ")
@@ -36,7 +37,7 @@ func promptForbiddenPair(out io.Writer, reader *bufio.Reader, layers []projectCo
 	}
 }
 
-func uncoveredDiscoveredDirectories(dirs []string, layers []projectConfigLayer) []string {
+func uncoveredDiscoveredDirectories(dirs []string, layers []projectconfig.Layer) []string {
 	var uncovered []string
 	for _, dir := range dirs {
 		if directoryCovered(dir, layers) {
@@ -47,7 +48,7 @@ func uncoveredDiscoveredDirectories(dirs []string, layers []projectConfigLayer) 
 	return uncovered
 }
 
-func directoryCovered(dir string, layers []projectConfigLayer) bool {
+func directoryCovered(dir string, layers []projectconfig.Layer) bool {
 	for _, layer := range layers {
 		if layerMatchesDirectory(layer, dir) {
 			return true
@@ -64,12 +65,12 @@ func forbiddenPairCancelled(out io.Writer, reader *bufio.Reader, err error) bool
 }
 
 // buildApprovedCandidate renders the collected fields as the schema-1
-// project-config document and runs it through parseProjectConfig -- the same
-// validator LoadProjectConfig applies to a committed --project-config file
+// project-config document and runs it through projectconfig.Parse -- the same
+// validator projectconfig.Load applies to a committed --project-config file
 // -- before treating it as valid. source_sink_pack is never populated: it is
 // a reserved field this feature must not touch.
-func buildApprovedCandidate(roots []string, layers []projectConfigLayer, forbidden []projectForbiddenImport, requiredLayer string) ([]byte, error) {
-	candidate := projectConfig{
+func buildApprovedCandidate(roots []string, layers []projectconfig.Layer, forbidden []projectconfig.ForbiddenImport, requiredLayer string) ([]byte, error) {
+	candidate := projectconfig.Config{
 		SchemaVersion:    "1",
 		Roots:            roots,
 		Layers:           layers,
@@ -81,7 +82,7 @@ func buildApprovedCandidate(roots []string, layers []projectConfigLayer, forbidd
 		return nil, err
 	}
 	data = append(data, '\n')
-	if _, err := parseProjectConfig(data); err != nil {
+	if _, err := projectconfig.Parse(data); err != nil {
 		return nil, err
 	}
 	return data, nil

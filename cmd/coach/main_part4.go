@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 
 	"os"
 )
@@ -21,7 +22,7 @@ func validatePrepareCompilerFlags(f codesignalFlags, setFlags map[string]bool, p
 		return fmt.Sprintf("coach: --prepare-compiler requires --project-language typescript (got %q)", f.projectLanguage)
 	}
 	if f.projectConfigSet {
-		if err := codesignalcli.ValidateProjectConfigPath(f.projectConfig); err != nil {
+		if err := projectconfig.ValidatePath(f.projectConfig); err != nil {
 			return fmt.Sprintf("coach: --project-config %q is invalid: %s", f.projectConfig, err)
 		}
 	}

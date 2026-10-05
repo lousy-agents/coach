@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -93,9 +94,9 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToCandidateOu
 		t.Fatalf("expected ValidationError = nil, got %v", result.ValidationError)
 	}
 
-	want := approvedCandidateBytes(t, projectConfig{
+	want := approvedCandidateBytes(t, projectconfig.Config{
 		Roots:  []string{"apps/api"},
-		Layers: []projectConfigLayer{{Name: "domain", Prefixes: []string{"internal/domain"}}},
+		Layers: []projectconfig.Layer{{Name: "domain", Prefixes: []string{"internal/domain"}}},
 	})
 	if !bytes.Equal(result.Document, want) {
 		t.Fatalf("Document = %s, want %s", result.Document, want)
@@ -111,7 +112,7 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToCandidateOu
 		body_projectConfigAuthoringTest_transcriptWriterDoesNotContainSchemaVersion_98(t, transcript)
 	})
 
-	var decoded projectConfig
+	var decoded projectconfig.Config
 	if err := json.Unmarshal(candidateOut.Bytes(), &decoded); err != nil {
 		t.Fatalf("expected the emitted document to be valid JSON, got error %v decoding %q", err, candidateOut.String())
 	}
@@ -121,7 +122,7 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToCandidateOu
 	if !equalStringSlices(decoded.Roots, []string{"apps/api"}) {
 		t.Fatalf("decoded roots = %v, want [apps/api]", decoded.Roots)
 	}
-	if !equalLayers(decoded.Layers, []projectConfigLayer{{Name: "domain", Prefixes: []string{"internal/domain"}}}) {
+	if !equalLayers(decoded.Layers, []projectconfig.Layer{{Name: "domain", Prefixes: []string{"internal/domain"}}}) {
 		t.Fatalf("decoded layers = %+v, want the declared domain layer", decoded.Layers)
 	}
 }

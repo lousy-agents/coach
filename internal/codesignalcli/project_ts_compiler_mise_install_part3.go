@@ -1,5 +1,10 @@
 package codesignalcli
 
+import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+)
+
 // readinessHasBlockingRuntimeGap reports whether readiness.Checks.Runtime
 // independently fails with a gap code that is not the executable
 // prepare-compiler kind, through the same gapCodeIsExecutablePrepareCompiler
@@ -12,12 +17,12 @@ package codesignalcli
 // host Node runtime that would run it is still missing or unsupported --
 // exactly the gap a real scan's own PrepareTSRuntime never reaches, since it
 // resolves host Node first and fails fast there.
-func readinessHasBlockingRuntimeGap(readiness *ReadinessResult) (string, bool) {
+func readinessHasBlockingRuntimeGap(readiness *projectreadiness.Result) (string, bool) {
 	if readiness == nil {
 		return "", false
 	}
 	code := readiness.Checks.Runtime.Code
-	if readiness.Checks.Runtime.State != ReadinessFail || code == "" {
+	if readiness.Checks.Runtime.State != projectreadiness.Fail || code == "" {
 		return "", false
 	}
 	if gapCodeIsExecutablePrepareCompiler(code) {
@@ -43,10 +48,10 @@ func filterMiseChoiceKinds(choices []string) []string {
 // miseSetupChoicesForReadiness reuses checkPolicy exactly the way
 // CheckProjectReadiness itself derives roots -- never a second, independent
 // notion of "roots".
-func miseSetupChoicesForReadiness(dir, revision, configPath string) []ReadinessMiseChoice {
+func miseSetupChoicesForReadiness(dir, revision, configPath string) []projectreadiness.MiseChoice {
 	policyPath := configPath
 	if policyPath == "" {
-		policyPath = defaultProjectConfigPath
+		policyPath = projectconfig.DefaultPath
 	}
 	_, roots, err := checkPolicy(dir, revision, policyPath)
 	if err != nil {

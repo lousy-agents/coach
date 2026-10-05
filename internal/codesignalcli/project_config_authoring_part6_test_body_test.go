@@ -3,6 +3,7 @@ package codesignalcli
 import (
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -18,7 +19,7 @@ func body_projectConfigAuthoringPart6Test_layersOnlyNoForbiddenPairsNoRequiredLa
 		"",
 	)
 
-	wantLayers := []projectConfigLayer{
+	wantLayers := []projectconfig.Layer{
 		{Name: "domain", Prefixes: []string{"internal/domain"}},
 		{Name: "app", Prefixes: []string{"internal/app"}},
 	}
@@ -47,14 +48,14 @@ func body_projectConfigAuthoringPart6Test_layersAndForbiddenPairsNoRequiredLayer
 		"",
 	)
 
-	wantLayers := []projectConfigLayer{
+	wantLayers := []projectconfig.Layer{
 		{Name: "domain", Prefixes: []string{"internal/domain"}},
 		{Name: "app", Prefixes: []string{"internal/app"}},
 	}
 	if !equalLayers(result.Layers, wantLayers) {
 		t.Fatalf("Layers = %+v, want %+v", result.Layers, wantLayers)
 	}
-	wantForbidden := []projectForbiddenImport{{From: "domain", To: "app"}}
+	wantForbidden := []projectconfig.ForbiddenImport{{From: "domain", To: "app"}}
 	if !equalForbiddenImports(result.ForbiddenImports, wantForbidden) {
 		t.Fatalf("ForbiddenImports = %+v, want %+v", result.ForbiddenImports, wantForbidden)
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
@@ -53,7 +54,7 @@ var tsAuthoringRootBudgets = projectmodel.GoBudgets{
 // scanShouldAuthorProjectConfig reports whether a real scan's (not
 // --check-project/--suggest-project-config/--prepare-compiler) analysis
 // error is AC-POL-8's guided-authoring case: a TypeScript policy that was
-// never committed at all (*codesignalcli.ProjectConfigError with Kind ==
+// never committed at all (*projectconfig.ConfigError with Kind ==
 // ProjectConfigNotFound, whether or not it has been wrapped in a
 // *ProjectConfigErrorWithReadiness for AC-SET-13) with a controlling
 // terminal available on stdin. An unusable configPath is rejected before
@@ -103,7 +104,7 @@ var tsAuthoringRootBudgets = projectmodel.GoBudgets{
 // was wrapped with a readiness snapshot -- before guided authoring takes over
 // stderr with its own prompts.
 func printProjectConfigGapBeforeAuthoring(scanErr error, stderr *os.File) {
-	var configErr *codesignalcli.ProjectConfigError
+	var configErr *projectconfig.ConfigError
 	if !errors.As(scanErr, &configErr) {
 		return
 	}
@@ -139,7 +140,7 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 		return 3
 	}
 
-	root, err := codesignalcli.AuthoringRepositoryRoot(dir)
+	root, err := gitrepo.RepositoryRoot(dir)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %s\n", authorTSUsagePrefix, err)
 		return 3

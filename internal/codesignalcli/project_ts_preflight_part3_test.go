@@ -2,6 +2,8 @@ package codesignalcli
 
 import (
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // TestRunCompilerSetupOfferNeverOpensForARuntimeBoundaryGap pins AC-13/
@@ -17,19 +19,19 @@ import (
 // per-code expectation, not one derived from gapCodeIsExecutablePrepareCompiler
 // itself, so a mutation to either cannot pass by construction.
 func TestRunCompilerSetupOfferNeverOpensForARuntimeBoundaryGap(t *testing.T) {
-	readiness := &ReadinessResult{
-		Checks: ReadinessChecks{
-			Policy:         ReadinessCheck{State: ReadinessPass},
-			Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
-			PackageManager: ReadinessCheck{State: ReadinessPass},
+	readiness := &projectreadiness.Result{
+		Checks: projectreadiness.Checks{
+			Policy:         projectreadiness.Check{State: projectreadiness.Pass},
+			Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
+			PackageManager: projectreadiness.Check{State: projectreadiness.Pass},
 		},
 	}
 
 	wantOffered := map[string]bool{
-		GapNodeMissing:               false,
-		GapNodeUnsupported:           false,
-		GapNodeUnverifiable:          false,
-		GapTypescriptCompilerMissing: true,
+		projectreadiness.GapNodeMissing:               false,
+		projectreadiness.GapNodeUnsupported:           false,
+		projectreadiness.GapNodeUnverifiable:          false,
+		projectreadiness.GapTypescriptCompilerMissing: true,
 	}
 
 	for gapCode, offered := range wantOffered {
@@ -40,19 +42,19 @@ func TestRunCompilerSetupOfferNeverOpensForARuntimeBoundaryGap(t *testing.T) {
 }
 
 func TestPrepareCompilerRemediation(t *testing.T) {
-	if got, want := PrepareCompilerRemediation(GapTypescriptCompilerMissing, "project.json"), "on a terminal: coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"; got != want {
-		t.Fatalf("PrepareCompilerRemediation(%q, %q) = %q, want %q", GapTypescriptCompilerMissing, "project.json", got, want)
+	if got, want := PrepareCompilerRemediation(projectreadiness.GapTypescriptCompilerMissing, "project.json"), "on a terminal: coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"; got != want {
+		t.Fatalf("PrepareCompilerRemediation(%q, %q) = %q, want %q", projectreadiness.GapTypescriptCompilerMissing, "project.json", got, want)
 	}
-	if got, want := PrepareCompilerRemediation(GapTypescriptVersionMismatch, ""), "on a terminal: coach codesignal --baseline --prepare-compiler --project-language typescript"; got != want {
-		t.Fatalf("PrepareCompilerRemediation(%q, \"\") = %q, want %q", GapTypescriptVersionMismatch, got, want)
+	if got, want := PrepareCompilerRemediation(projectreadiness.GapTypescriptVersionMismatch, ""), "on a terminal: coach codesignal --baseline --prepare-compiler --project-language typescript"; got != want {
+		t.Fatalf("PrepareCompilerRemediation(%q, \"\") = %q, want %q", projectreadiness.GapTypescriptVersionMismatch, got, want)
 	}
-	if got, want := PrepareCompilerRemediation(GapTypescriptVersionConflict, "project.json"), "on a terminal: coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"; got != want {
-		t.Fatalf("PrepareCompilerRemediation(%q, %q) = %q, want %q", GapTypescriptVersionConflict, "project.json", got, want)
+	if got, want := PrepareCompilerRemediation(projectreadiness.GapTypescriptVersionConflict, "project.json"), "on a terminal: coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"; got != want {
+		t.Fatalf("PrepareCompilerRemediation(%q, %q) = %q, want %q", projectreadiness.GapTypescriptVersionConflict, "project.json", got, want)
 	}
-	if got := PrepareCompilerRemediation(GapNodeMissing, "project.json"); got != "" {
-		t.Fatalf("PrepareCompilerRemediation(%q, %q) = %q, want empty: Coach has no executable remediation for a runtime-boundary gap", GapNodeMissing, "project.json", got)
+	if got := PrepareCompilerRemediation(projectreadiness.GapNodeMissing, "project.json"); got != "" {
+		t.Fatalf("PrepareCompilerRemediation(%q, %q) = %q, want empty: Coach has no executable remediation for a runtime-boundary gap", projectreadiness.GapNodeMissing, "project.json", got)
 	}
-	if got := PrepareCompilerRemediation(GapNodeUnsupported, "project.json"); got != "" {
-		t.Fatalf("PrepareCompilerRemediation(%q, %q) = %q, want empty: Coach has no executable remediation for a runtime-boundary gap", GapNodeUnsupported, "project.json", got)
+	if got := PrepareCompilerRemediation(projectreadiness.GapNodeUnsupported, "project.json"); got != "" {
+		t.Fatalf("PrepareCompilerRemediation(%q, %q) = %q, want empty: Coach has no executable remediation for a runtime-boundary gap", projectreadiness.GapNodeUnsupported, "project.json", got)
 	}
 }

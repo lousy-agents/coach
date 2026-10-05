@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // readCommittedBunfig reads root's bunfig.toml. present is false both when
@@ -46,15 +48,15 @@ func detectPackageManagerHazard(root, kind string) string {
 	}
 }
 
-func classifyProbedPackageManagerVersion(detection packageManagerDetection) ReadinessCheck {
+func classifyProbedPackageManagerVersion(detection packageManagerDetection) projectreadiness.Check {
 	version, probed := probePackageManagerVersion(context.Background(), detection.kind)
 	if !probed || !isExactVersion(version) {
-		return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerVersionUnverifiable, Kind: detection.kind, PinnedVersion: detection.pin}
+		return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPackageManagerVersionUnverifiable, Kind: detection.kind, PinnedVersion: detection.pin}
 	}
 	if !packageManagerVersionSupported(detection.kind, version) {
-		return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerVersionUnsupported, Kind: detection.kind, FoundVersion: version, PinnedVersion: detection.pin}
+		return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPackageManagerVersionUnsupported, Kind: detection.kind, FoundVersion: version, PinnedVersion: detection.pin}
 	}
-	return ReadinessCheck{State: ReadinessPass, Kind: detection.kind, Version: version, PinnedVersion: detection.pin}
+	return projectreadiness.Check{State: projectreadiness.Pass, Kind: detection.kind, Version: version, PinnedVersion: detection.pin}
 }
 
 // trimConfigValueQuotes strips a single layer of matching double or single

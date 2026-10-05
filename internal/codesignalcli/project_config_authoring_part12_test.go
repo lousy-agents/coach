@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-func equalLayers(a, b []projectConfigLayer) bool {
+func equalLayers(a, b []projectconfig.Layer) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -21,7 +22,7 @@ func equalLayers(a, b []projectConfigLayer) bool {
 	return true
 }
 
-func equalForbiddenImports(a, b []projectForbiddenImport) bool {
+func equalForbiddenImports(a, b []projectconfig.ForbiddenImport) bool {
 	if len(a) != len(b) {
 		return false
 	}

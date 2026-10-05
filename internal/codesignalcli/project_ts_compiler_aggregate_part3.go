@@ -2,9 +2,11 @@ package codesignalcli
 
 import (
 	"context"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-func mismatchRootFindings(unsupported compilerCandidate, findings []ReadinessRootFinding) []ReadinessRootFinding {
+func mismatchRootFindings(unsupported compilerCandidate, findings []projectreadiness.RootFinding) []projectreadiness.RootFinding {
 	if unsupported.origin != compilerOriginProject {
 		return nil
 	}

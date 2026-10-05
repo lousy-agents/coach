@@ -5,15 +5,16 @@ import (
 	"sort"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // detectRelevantDirtyWorktree lists uncommitted/untracked paths -- via `git
 // status`, path names only, never their content -- relevant to the
 // readiness result: see isRelevantDirtyPath for what counts as relevant.
-func detectRelevantDirtyWorktree(dir string, roots []string, policyPath string) (ReadinessDirtyWorktree, error) {
+func detectRelevantDirtyWorktree(dir string, roots []string, policyPath string) (projectreadiness.DirtyWorktree, error) {
 	entries, err := gitrepo.WorktreeStatus(dir)
 	if err != nil {
-		return ReadinessDirtyWorktree{}, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: git status failed: %s", err)}
+		return projectreadiness.DirtyWorktree{}, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: git status failed: %s", err)}
 	}
 
 	relevant := make([]string, 0, len(entries))
@@ -24,5 +25,5 @@ func detectRelevantDirtyWorktree(dir string, roots []string, policyPath string) 
 	}
 	sort.Strings(relevant)
 
-	return ReadinessDirtyWorktree{RelevantChanges: len(relevant) > 0, Paths: relevant}, nil
+	return projectreadiness.DirtyWorktree{RelevantChanges: len(relevant) > 0, Paths: relevant}, nil
 }

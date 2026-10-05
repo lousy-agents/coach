@@ -7,6 +7,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/sourcescope"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 
 	"os"
@@ -21,7 +22,7 @@ func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codes
 	if err != nil {
 		return nil, err
 	}
-	kept, excluded, err := codesignalcli.ApplyBaselineSourceScope(dir, revisionSHA, f.buildTarget, f.scope, discovered)
+	kept, excluded, err := sourcescope.ApplyBaseline(dir, revisionSHA, f.buildTarget, f.scope, discovered)
 	if err != nil {
 		return nil, err
 	}

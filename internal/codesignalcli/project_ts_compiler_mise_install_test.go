@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func TestRunPrepareCompilerMiseSetupCancelsOnDeclinedConfirmation(t *testing.T) {
@@ -18,8 +19,8 @@ func TestRunPrepareCompilerMiseSetupCancelsOnDeclinedConfirmation(t *testing.T) 
 		return newestSupportedTypescriptVersion(), true
 	}
 
-	readiness := readinessWithPrepareCompilerAction(ReadinessNextAction{
-		Kind: nextActionKindPrepareCompiler, Executable: true,
+	readiness := readinessWithPrepareCompilerAction(projectreadiness.NextAction{
+		Kind: projectreadiness.NextActionPrepareCompiler, Executable: true,
 		Choices: []string{compilerOriginMiseProject, compilerOriginMiseGlobal},
 	})
 	var transcript bytes.Buffer
@@ -66,8 +67,8 @@ func TestRunPrepareCompilerMiseSetupReportsRequestedVersionOnInstallFailure(t *t
 		t.Fatalf("write mise.toml: %v", err)
 	}
 
-	readiness := readinessWithPrepareCompilerAction(ReadinessNextAction{
-		Kind: nextActionKindPrepareCompiler, Executable: true, Choices: []string{compilerOriginMiseProject},
+	readiness := readinessWithPrepareCompilerAction(projectreadiness.NextAction{
+		Kind: projectreadiness.NextActionPrepareCompiler, Executable: true, Choices: []string{compilerOriginMiseProject},
 	})
 	var transcript bytes.Buffer
 
@@ -112,16 +113,16 @@ func writeStatefulStubMiseOnPath(t *testing.T, installDir, version string) {
 }
 
 // readinessWithPrepareCompilerAction models an already-passed policy check
-// (Checks.Policy.State: ReadinessPass): every case here is exercising
+// (Checks.Policy.State: projectreadiness.Pass): every case here is exercising
 // prepare_compiler's own selection/install machinery, not the policy gate
 // (see TestRunPrepareCompilerMiseSetupRequiresPolicyFirst for that), so a
 // zero-value Policy state (which RunPrepareCompilerMiseSetup treats as
 // not-yet-passed, fail-closed) would wrongly report PolicyRequired here
 // instead.
-func readinessWithPrepareCompilerAction(action ReadinessNextAction) *ReadinessResult {
-	return &ReadinessResult{
-		Checks:      ReadinessChecks{Policy: ReadinessCheck{State: ReadinessPass}},
-		NextActions: []ReadinessNextAction{action},
+func readinessWithPrepareCompilerAction(action projectreadiness.NextAction) *projectreadiness.Result {
+	return &projectreadiness.Result{
+		Checks:      projectreadiness.Checks{Policy: projectreadiness.Check{State: projectreadiness.Pass}},
+		NextActions: []projectreadiness.NextAction{action},
 	}
 }
 

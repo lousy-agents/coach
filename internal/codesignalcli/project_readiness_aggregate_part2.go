@@ -1,5 +1,9 @@
 package codesignalcli
 
+import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+)
+
 // failingReadinessChecks reads checks.Runtime rather than checks.Node: the
 // two always carry the same State/Code (see nodeCompatibilityMirror), and
 // including both here would double-report every Node gap. checks.PackageManager
@@ -7,25 +11,25 @@ package codesignalcli
 // setup-scoped (SA-280-045) and handled separately by packageManagerGapEntries,
 // not by this table-driven path; including it here as well would double-report
 // it.
-func failingReadinessChecks(checks ReadinessChecks) []ReadinessCheck {
-	var failing []ReadinessCheck
-	for _, check := range []ReadinessCheck{checks.ProjectShape, checks.Policy, checks.Runtime, checks.Compiler} {
-		if check.State == ReadinessFail {
+func failingReadinessChecks(checks projectreadiness.Checks) []projectreadiness.Check {
+	var failing []projectreadiness.Check
+	for _, check := range []projectreadiness.Check{checks.ProjectShape, checks.Policy, checks.Runtime, checks.Compiler} {
+		if check.State == projectreadiness.Fail {
 			failing = append(failing, check)
 		}
 	}
 	return failing
 }
 
-func readinessFromGapChecks(failing []ReadinessCheck) ([]ReadinessGap, []ReadinessNextAction, ReadinessStatus) {
-	gaps := make([]ReadinessGap, 0, len(failing))
-	nextActions := make([]ReadinessNextAction, 0, len(failing))
+func readinessFromGapChecks(failing []projectreadiness.Check) ([]projectreadiness.Gap, []projectreadiness.NextAction, projectreadiness.Status) {
+	gaps := make([]projectreadiness.Gap, 0, len(failing))
+	nextActions := make([]projectreadiness.NextAction, 0, len(failing))
 	seenActions := map[string]bool{}
-	status := StatusReady
+	status := projectreadiness.StatusReady
 	for _, check := range failing {
-		gaps = append(gaps, ReadinessGap{Code: check.Code})
-		status = raiseStatus(status, statusForGapCode(check.Code))
-		if kind, ok := nextActionForGapCode(check.Code); ok && !seenActions[kind] {
+		gaps = append(gaps, projectreadiness.Gap{Code: check.Code})
+		status = raiseStatus(status, projectreadiness.StatusForGapCode(check.Code))
+		if kind, ok := projectreadiness.NextActionForGapCode(check.Code); ok && !seenActions[kind] {
 			seenActions[kind] = true
 			nextActions = append(nextActions, nextActionForCheck(kind, check))
 		}
@@ -33,36 +37,36 @@ func readinessFromGapChecks(failing []ReadinessCheck) ([]ReadinessGap, []Readine
 	return gaps, nextActions, status
 }
 
-func nextActionForCheck(kind string, check ReadinessCheck) ReadinessNextAction {
-	action := ReadinessNextAction{Kind: kind, Executable: nextActionExecutable(kind)}
+func nextActionForCheck(kind string, check projectreadiness.Check) projectreadiness.NextAction {
+	action := projectreadiness.NextAction{Kind: kind, Executable: projectreadiness.NextActionExecutable(kind)}
 	switch kind {
-	case nextActionKindInstallSupportedRuntime:
+	case projectreadiness.NextActionInstallSupportedRuntime:
 		action.RuntimeKind = readinessNodeCheckKind
 		action.Supported = supportedNodeMajorsCopy()
-		if check.Code == GapNodeUnsupported {
+		if check.Code == projectreadiness.GapNodeUnsupported {
 			action.FoundVersion = check.Version
 		}
-	case nextActionKindRepairRuntimeProbe:
+	case projectreadiness.NextActionRepairRuntimeProbe:
 		action.RuntimeKind = readinessNodeCheckKind
 		action.Detail = check.Detail
-	case nextActionKindPrepareCompiler:
+	case projectreadiness.NextActionPrepareCompiler:
 		action.Supported = supportedTypescriptVersionsCopy()
 		action.FoundVersion = check.FoundVersion
-	case nextActionKindResolvePackageManager:
+	case projectreadiness.NextActionResolvePackageManager:
 		action.PackageManagerKind = check.Kind
 		action.FoundVersion = check.FoundVersion
 	}
 	return action
 }
 
-func compilerDeclarationWarnings(check ReadinessCheck) []ReadinessWarning {
-	if check.Code != WarnCompilerDeclarationMismatch {
+func compilerDeclarationWarnings(check projectreadiness.Check) []projectreadiness.Warning {
+	if check.Code != projectreadiness.WarnCompilerDeclarationMismatch {
 		return nil
 	}
-	warnings := make([]ReadinessWarning, 0, len(check.DeclarationMismatches))
+	warnings := make([]projectreadiness.Warning, 0, len(check.DeclarationMismatches))
 	for _, mismatch := range check.DeclarationMismatches {
-		warnings = append(warnings, ReadinessWarning{
-			Code:              WarnCompilerDeclarationMismatch,
+		warnings = append(warnings, projectreadiness.Warning{
+			Code:              projectreadiness.WarnCompilerDeclarationMismatch,
 			DeclaredVersion:   mismatch.Declared,
 			FoundVersion:      check.Version,
 			DeclarationOrigin: check.DeclarationOrigin,
@@ -72,21 +76,21 @@ func compilerDeclarationWarnings(check ReadinessCheck) []ReadinessWarning {
 	return warnings
 }
 
-func raiseStatus(status, candidate ReadinessStatus) ReadinessStatus {
-	if statusRank(candidate) > statusRank(status) {
+func raiseStatus(status, candidate projectreadiness.Status) projectreadiness.Status {
+	if projectreadiness.StatusRank(candidate) > projectreadiness.StatusRank(status) {
 		return candidate
 	}
 	return status
 }
 
 // appendPackageManagerFinding's foundVersion is set only for the project
-// adapter's own finding: ReadinessMiseChoice carries no version, since a
+// adapter's own finding: projectreadiness.MiseChoice carries no version, since a
 // rejected mise scope is unverifiable before any version is ever read.
-func appendPackageManagerFinding(gaps []ReadinessGap, actions []ReadinessNextAction, status ReadinessStatus, code, kind, foundVersion string) ([]ReadinessGap, []ReadinessNextAction, ReadinessStatus) {
-	gaps = append(gaps, ReadinessGap{Code: code, PackageManagerKind: kind})
-	if actionKind, ok := nextActionForGapCode(code); ok {
-		actions = append(actions, ReadinessNextAction{Kind: actionKind, Executable: nextActionExecutable(actionKind), PackageManagerKind: kind, FoundVersion: foundVersion})
+func appendPackageManagerFinding(gaps []projectreadiness.Gap, actions []projectreadiness.NextAction, status projectreadiness.Status, code, kind, foundVersion string) ([]projectreadiness.Gap, []projectreadiness.NextAction, projectreadiness.Status) {
+	gaps = append(gaps, projectreadiness.Gap{Code: code, PackageManagerKind: kind})
+	if actionKind, ok := projectreadiness.NextActionForGapCode(code); ok {
+		actions = append(actions, projectreadiness.NextAction{Kind: actionKind, Executable: projectreadiness.NextActionExecutable(actionKind), PackageManagerKind: kind, FoundVersion: foundVersion})
 	}
-	status = raiseStatus(status, statusForGapCode(code))
+	status = raiseStatus(status, projectreadiness.StatusForGapCode(code))
 	return gaps, actions, status
 }

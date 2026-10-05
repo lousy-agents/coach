@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // checkPackageManager detects and classifies the package manager of every
@@ -33,25 +35,25 @@ import (
 // fallback is unjustified, so policyPassed false skips it and reports
 // not_checked instead of a package_manager_* gap this check has no real
 // root context to justify (R1, mirroring checkProjectShape's own gate).
-func checkPackageManager(dir string, roots []string, policyPassed bool) ReadinessCheck {
+func checkPackageManager(dir string, roots []string, policyPassed bool) projectreadiness.Check {
 	contexts, fellBackToWorktreeRoot := packageManagerContexts(compilerWorktreeRoot(dir), roots)
 	if fellBackToWorktreeRoot && !policyPassed {
-		return ReadinessCheck{State: ReadinessNotChecked}
+		return projectreadiness.Check{State: projectreadiness.NotChecked}
 	}
 
 	detection, ok := detectPackageManagerAcrossContexts(contexts)
 	if !ok {
-		return ReadinessCheck{State: ReadinessNotChecked}
+		return projectreadiness.Check{State: projectreadiness.NotChecked}
 	}
 	if detection.ambiguous {
-		return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerAmbiguous}
+		return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPackageManagerAmbiguous}
 	}
 	// Yarn has no matrix row and is withheld before hazard/version checks
 	// are consulted.
 	if detection.kind == packageManagerKindYarn {
-		return ReadinessCheck{
-			State:         ReadinessFail,
-			Code:          GapPackageManagerVersionUnsupported,
+		return projectreadiness.Check{
+			State:         projectreadiness.Fail,
+			Code:          projectreadiness.GapPackageManagerVersionUnsupported,
 			Kind:          detection.kind,
 			PinnedVersion: detection.pin,
 			Detail:        "Yarn has no supported package-manager adapter row (SA-280-012); use npm, pnpm, or Bun instead.",
@@ -71,8 +73,8 @@ func checkPackageManager(dir string, roots []string, policyPassed bool) Readines
 	return classifyProbedPackageManagerVersion(detection)
 }
 
-func packageManagerConfigUnverifiable(detection packageManagerDetection, detail string) ReadinessCheck {
-	return ReadinessCheck{State: ReadinessFail, Code: GapPackageManagerConfigUnverifiable, Kind: detection.kind, PinnedVersion: detection.pin, Detail: detail}
+func packageManagerConfigUnverifiable(detection packageManagerDetection, detail string) projectreadiness.Check {
+	return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPackageManagerConfigUnverifiable, Kind: detection.kind, PinnedVersion: detection.pin, Detail: detail}
 }
 
 type packageManagerDetection struct {

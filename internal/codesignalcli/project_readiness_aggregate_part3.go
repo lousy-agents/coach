@@ -1,6 +1,10 @@
 package codesignalcli
 
-func aggregateReadiness(checks ReadinessChecks, dirtyRelevant bool, miseChoices []ReadinessMiseChoice) (ReadinessStatus, []ReadinessGap, []ReadinessNextAction, []ReadinessWarning) {
+import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+)
+
+func aggregateReadiness(checks projectreadiness.Checks, dirtyRelevant bool, miseChoices []projectreadiness.MiseChoice) (projectreadiness.Status, []projectreadiness.Gap, []projectreadiness.NextAction, []projectreadiness.Warning) {
 	failing := failingReadinessChecks(checks)
 	gaps, nextActions, status := readinessFromGapChecks(failing)
 
@@ -8,10 +12,10 @@ func aggregateReadiness(checks ReadinessChecks, dirtyRelevant bool, miseChoices 
 	gaps = append(gaps, pmGaps...)
 	nextActions = append(nextActions, pmActions...)
 	status = raiseStatus(status, pmStatus)
-	nextActions = restrictPrepareCompilerChoices(nextActions, checks.PackageManager.State == ReadinessFail, verifiedChoices)
+	nextActions = restrictPrepareCompilerChoices(nextActions, checks.PackageManager.State == projectreadiness.Fail, verifiedChoices)
 
 	if len(gaps) == 0 && hasReadinessLimitWarning(checks, dirtyRelevant) {
-		status = StatusReadyWithLimits
+		status = projectreadiness.StatusReadyWithLimits
 	}
 	return status, gaps, nextActions, readinessWarnings(checks)
 }

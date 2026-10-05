@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"io/fs"
-	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/render"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 	. "github.com/onsi/ginkgo/v2"
@@ -38,20 +39,6 @@ func body_projectAcceptanceTest_559() {
 	}
 }
 
-func body_projectAcceptanceTest_rejectsDocumentsThatExceedTheJSONNestingBudget_759() {
-	var b strings.Builder
-	for i := 0; i < maxProjectConfigJSONDepth+2; i++ {
-		b.WriteString(`{"a":`)
-	}
-	b.WriteString(`1`)
-	for i := 0; i < maxProjectConfigJSONDepth+2; i++ {
-		b.WriteByte('}')
-	}
-	err := validateProjectConfigJSON([]byte(b.String()))
-	Expect(err).To(HaveOccurred())
-	Expect(err.Error()).To(ContainSubstring("nesting budget"))
-}
-
 func body_projectAcceptanceTest_neverChangesWhichFindingsTheRealGoBackendProduce_858() {
 	dir := gitfixture.Init(GinkgoT())
 	gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
@@ -64,15 +51,17 @@ func body_projectAcceptanceTest_neverChangesWhichFindingsTheRealGoBackendProduce
 
 	withoutField := json.RawMessage(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}]}`)
 	withPack := json.RawMessage(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}],"source_sink_pack":"builtin-v1"}`)
-	Expect(validateProjectConfigJSON(withoutField)).To(Succeed())
-	Expect(validateProjectConfigJSON(withPack)).To(Succeed())
+	_, err := projectconfig.Parse(withoutField)
+	Expect(err).NotTo(HaveOccurred())
+	_, err = projectconfig.Parse(withPack)
+	Expect(err).NotTo(HaveOccurred())
 
 	buildReport := func(cfg json.RawMessage) *codesignal.Report {
 		project := &ProjectAnalysis{
 			ConfigPath:   "project.json",
 			Language:     "go",
 			Config:       cfg,
-			ConfigDigest: ConfigDigest(cfg),
+			ConfigDigest: projectconfig.Digest(cfg),
 			Backend:      NewGoProjectBackend(),
 		}
 		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 2}, project)
@@ -110,9 +99,9 @@ func body_projectAcceptanceTest_neverChangesWhichFindingsTheRealGoBackendProduce
 	Expect(withReport.ProjectSummary).To(Equal(withoutReport.ProjectSummary))
 	Expect(withReport.ProjectCoverage).To(Equal(withoutReport.ProjectCoverage))
 
-	withoutJSON, err := RenderJSON(withoutReport)
+	withoutJSON, err := render.ReportJSON(withoutReport)
 	Expect(err).NotTo(HaveOccurred())
-	withJSON, err := RenderJSON(withReport)
+	withJSON, err := render.ReportJSON(withReport)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(withJSON).NotTo(Equal(withoutJSON), "config_digest/id/fingerprint differ, so the full rendered JSON documents must differ too")
 }
@@ -140,7 +129,7 @@ func body_projectAcceptanceTest_degradesOnlyTheBaseSideCoverageIncompleteDiagnos
 		ConfigPath:   "project.json",
 		Language:     "go",
 		Config:       goLayerBypassSearchConfigJSON,
-		ConfigDigest: ConfigDigest(goLayerBypassSearchConfigJSON),
+		ConfigDigest: projectconfig.Digest(goLayerBypassSearchConfigJSON),
 		Backend:      NewGoProjectBackend(),
 	}
 	report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)

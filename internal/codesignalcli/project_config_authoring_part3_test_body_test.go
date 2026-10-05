@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -42,9 +43,9 @@ func body_projectConfigAuthoringPart3Test_targetDoesNotYetExistItIsCreatedWithTh
 		t.Fatalf("expected OutputExists = false for a target that did not previously exist")
 	}
 
-	want := approvedCandidateBytes(t, projectConfig{
+	want := approvedCandidateBytes(t, projectconfig.Config{
 		Roots:  []string{"apps/api"},
-		Layers: []projectConfigLayer{{Name: "domain", Prefixes: []string{"internal/domain"}}},
+		Layers: []projectconfig.Layer{{Name: "domain", Prefixes: []string{"internal/domain"}}},
 	})
 	if !bytes.Equal(result.Document, want) {
 		t.Fatalf("Document = %s, want %s", result.Document, want)

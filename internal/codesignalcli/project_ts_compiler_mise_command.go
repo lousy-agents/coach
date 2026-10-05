@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // miseInstallTimeout bounds `mise install`. It is far longer than
@@ -167,7 +169,7 @@ type miseInstallResult struct {
 	Succeeded bool
 
 	// Code names why Trusted or Succeeded is false: the trust gate's gap
-	// code when Trusted is false, or GapPackageManagerConfigUnverifiable
+	// code when Trusted is false, or projectreadiness.GapPackageManagerConfigUnverifiable
 	// when the install's own insulation (its private working directory)
 	// could not be established, before any subprocess ever started. A false
 	// Succeeded after a true Attempted has no frozen gap code of its own
@@ -208,7 +210,7 @@ func installMiseTypescript(ctx context.Context, origin, version string, trust mi
 	attempt := runMiseInstallInsulated(ctx, miseInstallToolSpec(version))
 	result := miseInstallResult{Trusted: true, Attempted: attempt.attempted, Observed: attempt.observed}
 	if attempt.insulationFailed {
-		result.Code = GapPackageManagerConfigUnverifiable
+		result.Code = projectreadiness.GapPackageManagerConfigUnverifiable
 		return result
 	}
 	if !attempt.observed || attempt.exitErr != nil {

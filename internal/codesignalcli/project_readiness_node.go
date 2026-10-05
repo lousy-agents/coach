@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/subprocess"
 )
 
@@ -59,18 +60,18 @@ const (
 	readinessNodeCheckOrigin = "path"
 )
 
-func checkNodeReadiness() ReadinessCheck {
+func checkNodeReadiness() projectreadiness.Check {
 	rawVersion, major, err := detectHostNodeMajor()
 	if err != nil {
 		if errors.Is(err, errNodeNotFound) {
-			return ReadinessCheck{State: ReadinessFail, Code: GapNodeMissing, Kind: readinessNodeCheckKind, Origin: readinessNodeCheckOrigin}
+			return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapNodeMissing, Kind: readinessNodeCheckKind, Origin: readinessNodeCheckOrigin}
 		}
-		return ReadinessCheck{State: ReadinessFail, Code: GapNodeUnverifiable, Kind: readinessNodeCheckKind, Origin: readinessNodeCheckOrigin, Detail: nodeUnverifiableDetail(err, rawVersion)}
+		return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapNodeUnverifiable, Kind: readinessNodeCheckKind, Origin: readinessNodeCheckOrigin, Detail: nodeUnverifiableDetail(err, rawVersion)}
 	}
 	if !nodeMajorSupported(major) {
-		return ReadinessCheck{State: ReadinessFail, Code: GapNodeUnsupported, Kind: readinessNodeCheckKind, Origin: readinessNodeCheckOrigin, Version: rawVersion}
+		return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapNodeUnsupported, Kind: readinessNodeCheckKind, Origin: readinessNodeCheckOrigin, Version: rawVersion}
 	}
-	return ReadinessCheck{State: ReadinessPass, Kind: readinessNodeCheckKind, Origin: readinessNodeCheckOrigin, Version: rawVersion}
+	return projectreadiness.Check{State: projectreadiness.Pass, Kind: readinessNodeCheckKind, Origin: readinessNodeCheckOrigin, Version: rawVersion}
 }
 
 // A separate, smaller bound: maxNodeVersionProbeOutput (4 KiB) sizes the
@@ -100,6 +101,6 @@ func truncateNodeUnverifiableRawVersion(rawVersion string) string {
 }
 
 // Kind, Origin, and Detail are deliberately never mirrored onto checks.node.
-func nodeCompatibilityMirror(runtimeCheck ReadinessCheck) ReadinessCheck {
-	return ReadinessCheck{State: runtimeCheck.State, Code: runtimeCheck.Code, Version: runtimeCheck.Version}
+func nodeCompatibilityMirror(runtimeCheck projectreadiness.Check) projectreadiness.Check {
+	return projectreadiness.Check{State: runtimeCheck.State, Code: runtimeCheck.Code, Version: runtimeCheck.Version}
 }

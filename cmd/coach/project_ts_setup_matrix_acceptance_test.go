@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // This suite exercises checks.package_manager's frozen adapter matrix
@@ -27,7 +28,7 @@ import (
 // which only reads the JSON-boundary readinessResultDoc; this suite calls
 // codesignalcli.CheckProjectReadiness directly so it can also feed the
 // result into codesignalcli.AvailableSetupChoices without a JSON round trip.
-func resultGapCodes(result codesignalcli.ReadinessResult) []string {
+func resultGapCodes(result projectreadiness.Result) []string {
 	codes := make([]string, len(result.Gaps))
 	for i, gap := range result.Gaps {
 		codes[i] = gap.Code
@@ -84,19 +85,19 @@ func expectPackageManagerMatrixRow(kind, version, wantCode string) {
 
 	readiness, err := codesignalcli.CheckProjectReadiness(repo, head, "")
 	Expect(err).NotTo(HaveOccurred())
-	Expect(readiness.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail), "the fixture must genuinely fail the compiler check, or the AvailableSetupChoices assertion below proves nothing")
-	Expect(readiness.Checks.Compiler.Code).To(Equal(codesignalcli.GapTypescriptCompilerMissing))
+	Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "the fixture must genuinely fail the compiler check, or the AvailableSetupChoices assertion below proves nothing")
+	Expect(readiness.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing))
 
 	menu := codesignalcli.AvailableSetupChoices(*readiness)
 
 	if wantCode == "" {
-		Expect(readiness.Checks.PackageManager.State).To(Equal(codesignalcli.ReadinessPass), "detail=%s", readiness.Checks.PackageManager.Detail)
+		Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Pass), "detail=%s", readiness.Checks.PackageManager.Detail)
 		Expect(readiness.Checks.PackageManager.Kind).To(Equal(kind))
 		Expect(choiceKinds(menu.Choices)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage), "an in-matrix package-manager version must remain offered as a setup choice")
 		return
 	}
 
-	Expect(readiness.Checks.PackageManager.State).To(Equal(codesignalcli.ReadinessFail))
+	Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))
 	Expect(readiness.Checks.PackageManager.Code).To(Equal(wantCode))
 	Expect(resultGapCodes(*readiness)).To(ContainElement(wantCode))
 	Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectPackage), "an out-of-matrix package manager must never be offered as a setup choice")
@@ -107,33 +108,33 @@ var _ = Describe("checks.package_manager's frozen version-boundary matrix (SA-28
 	DescribeTable("classifies each manager's version against its own frozen supported range, offering an in-matrix version as a project-package setup choice and withholding every out-of-matrix version (AvailableSetupChoices)",
 		expectPackageManagerMatrixRow,
 
-		Entry("npm 10.x is below the supported >=11 <12 range", "npm", "10.99.99", codesignalcli.GapPackageManagerVersionUnsupported),
+		Entry("npm 10.x is below the supported >=11 <12 range", "npm", "10.99.99", projectreadiness.GapPackageManagerVersionUnsupported),
 		Entry("npm 11.0.0 is the supported range's low boundary", "npm", "11.0.0", ""),
 		Entry("npm 11.99.99 is the supported range's high edge", "npm", "11.99.99", ""),
-		Entry("npm 12.0.0 is above the supported range", "npm", "12.0.0", codesignalcli.GapPackageManagerVersionUnsupported),
-		Entry("npm absent from PATH leaves its version undetectable", "npm", "", codesignalcli.GapPackageManagerVersionUnverifiable),
+		Entry("npm 12.0.0 is above the supported range", "npm", "12.0.0", projectreadiness.GapPackageManagerVersionUnsupported),
+		Entry("npm absent from PATH leaves its version undetectable", "npm", "", projectreadiness.GapPackageManagerVersionUnverifiable),
 
-		Entry("pnpm 9.x is below the supported >=10 <11 range", "pnpm", "9.99.99", codesignalcli.GapPackageManagerVersionUnsupported),
+		Entry("pnpm 9.x is below the supported >=10 <11 range", "pnpm", "9.99.99", projectreadiness.GapPackageManagerVersionUnsupported),
 		Entry("pnpm 10.0.0 is the supported range's low boundary", "pnpm", "10.0.0", ""),
 		Entry("pnpm 10.99.99 is the supported range's high edge", "pnpm", "10.99.99", ""),
-		Entry("pnpm 11.0.0 is above the supported range", "pnpm", "11.0.0", codesignalcli.GapPackageManagerVersionUnsupported),
-		Entry("pnpm absent from PATH leaves its version undetectable", "pnpm", "", codesignalcli.GapPackageManagerVersionUnverifiable),
+		Entry("pnpm 11.0.0 is above the supported range", "pnpm", "11.0.0", projectreadiness.GapPackageManagerVersionUnsupported),
+		Entry("pnpm absent from PATH leaves its version undetectable", "pnpm", "", projectreadiness.GapPackageManagerVersionUnverifiable),
 
-		Entry("bun below 1.0.0 is outside the supported range", "bun", "0.9.9", codesignalcli.GapPackageManagerVersionUnsupported),
+		Entry("bun below 1.0.0 is outside the supported range", "bun", "0.9.9", projectreadiness.GapPackageManagerVersionUnsupported),
 		Entry("bun 1.0.0 is the supported range's low boundary", "bun", "1.0.0", ""),
 		Entry("bun's current stable release is supported", "bun", "1.3.11", ""),
-		Entry("bun 2.0.0 is above the supported major", "bun", "2.0.0", codesignalcli.GapPackageManagerVersionUnsupported),
-		Entry("a prerelease/canary build inside the numeric 1.x range is still excluded", "bun", "1.2.0-canary.20240101", codesignalcli.GapPackageManagerVersionUnsupported),
+		Entry("bun 2.0.0 is above the supported major", "bun", "2.0.0", projectreadiness.GapPackageManagerVersionUnsupported),
+		Entry("a prerelease/canary build inside the numeric 1.x range is still excluded", "bun", "1.2.0-canary.20240101", projectreadiness.GapPackageManagerVersionUnsupported),
 		Entry("an exact in-range version with no prerelease suffix is accepted as-is", "bun", "1.2.0", ""),
-		Entry("bun absent from PATH leaves its version undetectable", "bun", "", codesignalcli.GapPackageManagerVersionUnverifiable),
+		Entry("bun absent from PATH leaves its version undetectable", "bun", "", projectreadiness.GapPackageManagerVersionUnverifiable),
 
-		Entry("npm build metadata (+build) is excluded, not treated as a plain stable release", "npm", "11.2.0+build.5", codesignalcli.GapPackageManagerVersionUnsupported),
-		Entry("pnpm build metadata (+build) is excluded, not treated as a plain stable release", "pnpm", "10.4.0+build.5", codesignalcli.GapPackageManagerVersionUnsupported),
-		Entry("bun build/commit metadata (+build) is excluded, not treated as a plain stable release", "bun", "1.2.3+a1b2c3d4", codesignalcli.GapPackageManagerVersionUnsupported),
+		Entry("npm build metadata (+build) is excluded, not treated as a plain stable release", "npm", "11.2.0+build.5", projectreadiness.GapPackageManagerVersionUnsupported),
+		Entry("pnpm build metadata (+build) is excluded, not treated as a plain stable release", "pnpm", "10.4.0+build.5", projectreadiness.GapPackageManagerVersionUnsupported),
+		Entry("bun build/commit metadata (+build) is excluded, not treated as a plain stable release", "bun", "1.2.3+a1b2c3d4", projectreadiness.GapPackageManagerVersionUnsupported),
 
-		Entry("npm reporting a non-semver version is unverifiable, not accepted", "npm", "latest", codesignalcli.GapPackageManagerVersionUnverifiable),
-		Entry("pnpm reporting a non-semver version is unverifiable, not accepted", "pnpm", "latest", codesignalcli.GapPackageManagerVersionUnverifiable),
-		Entry("bun reporting a non-semver version is unverifiable, not accepted", "bun", "latest", codesignalcli.GapPackageManagerVersionUnverifiable),
+		Entry("npm reporting a non-semver version is unverifiable, not accepted", "npm", "latest", projectreadiness.GapPackageManagerVersionUnverifiable),
+		Entry("pnpm reporting a non-semver version is unverifiable, not accepted", "pnpm", "latest", projectreadiness.GapPackageManagerVersionUnverifiable),
+		Entry("bun reporting a non-semver version is unverifiable, not accepted", "bun", "latest", projectreadiness.GapPackageManagerVersionUnverifiable),
 	)
 
 	// Corepack writes a sha512 integrity suffix into package.json's
@@ -151,8 +152,8 @@ var _ = Describe("checks.package_manager's frozen version-boundary matrix (SA-28
 
 			readiness, err := codesignalcli.CheckProjectReadiness(repo, head, "")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(readiness.Checks.PackageManager.State).To(Equal(codesignalcli.ReadinessFail))
-			Expect(readiness.Checks.PackageManager.Code).To(Equal(codesignalcli.GapPackageManagerVersionUnsupported))
+			Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))
+			Expect(readiness.Checks.PackageManager.Code).To(Equal(projectreadiness.GapPackageManagerVersionUnsupported))
 			Expect(readiness.Checks.PackageManager.FoundVersion).To(Equal("10.9.7"))
 			Expect(readiness.Checks.PackageManager.PinnedVersion).To(HavePrefix("11.19.0+sha512."))
 		})
@@ -532,10 +533,10 @@ var _ = Describe("checks.package_manager's ambiguous-lockfile and lifecycle-scri
 
 			readiness, err := codesignalcli.CheckProjectReadiness(repo, head, "")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(readiness.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail))
-			Expect(readiness.Checks.PackageManager.State).To(Equal(codesignalcli.ReadinessFail))
-			Expect(readiness.Checks.PackageManager.Code).To(Equal(codesignalcli.GapPackageManagerAmbiguous))
-			Expect(resultGapCodes(*readiness)).To(ContainElement(codesignalcli.GapPackageManagerAmbiguous))
+			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
+			Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))
+			Expect(readiness.Checks.PackageManager.Code).To(Equal(projectreadiness.GapPackageManagerAmbiguous))
+			Expect(resultGapCodes(*readiness)).To(ContainElement(projectreadiness.GapPackageManagerAmbiguous))
 
 			menu := codesignalcli.AvailableSetupChoices(*readiness)
 			Expect(menu.RequiresExplicitSelection).To(BeTrue(), "an ambiguous package manager must never resolve to a silent default")

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 const (
@@ -59,7 +60,7 @@ func dedupeStrings(values []string) []string {
 	return out
 }
 
-func resolveCompiler(dir string, roots []string) ReadinessCheck {
+func resolveCompiler(dir string, roots []string) projectreadiness.Check {
 	return compilerCheckFromAggregate(evaluateCompilerOrigins(dir, roots))
 }
 
@@ -101,7 +102,7 @@ type compilerRuntimeResolution struct {
 type CompilerUnresolvedError struct {
 	Code         string
 	ConfigPath   string
-	RootFindings []ReadinessRootFinding
+	RootFindings []projectreadiness.RootFinding
 }
 
 func (e *CompilerUnresolvedError) Error() string {
@@ -128,7 +129,7 @@ func (e *RuntimeUnresolvedError) RemediationLine() string {
 	return gapRemediationLine(e.Code, e.ConfigPath, nil)
 }
 
-func gapRemediationLine(code, configPath string, findings []ReadinessRootFinding) string {
+func gapRemediationLine(code, configPath string, findings []projectreadiness.RootFinding) string {
 	invocation := "coach codesignal --baseline --check-project --project-language typescript"
 	if configPath != "" {
 		invocation += " --project-config " + configPath
@@ -136,8 +137,8 @@ func gapRemediationLine(code, configPath string, findings []ReadinessRootFinding
 	return code + formatRemediationRootFindings(findings) + ": run " + invocation
 }
 
-func formatRemediationRootFindings(findings []ReadinessRootFinding) string {
-	formatted := formatRootFindings(findings)
+func formatRemediationRootFindings(findings []projectreadiness.RootFinding) string {
+	formatted := projectreadiness.FormatRootFindings(findings)
 	if formatted == "" {
 		return ""
 	}

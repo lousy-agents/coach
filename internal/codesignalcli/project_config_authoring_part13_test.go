@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -35,7 +36,7 @@ func TestAuthorProjectConfig_ApprovalGateTerminatesPromptlyOnExhaustedOrErroring
 // comparing against it actually checks AuthorProjectConfig's write-time
 // serialization rather than merely confirming two identical code paths
 // agree with each other.
-func approvedCandidateBytes(t *testing.T, config projectConfig) []byte {
+func approvedCandidateBytes(t *testing.T, config projectconfig.Config) []byte {
 	t.Helper()
 	config.SchemaVersion = "1"
 	data, err := json.MarshalIndent(config, "", "  ")
@@ -67,7 +68,7 @@ func TestBuildApprovedCandidate_RejectsEmptyRoots(t *testing.T) {
 }
 
 func TestBuildApprovedCandidate_RejectsForbiddenPairNamingUndeclaredLayer(t *testing.T) {
-	forbidden := []projectForbiddenImport{{From: "domain", To: "unknown-layer"}}
+	forbidden := []projectconfig.ForbiddenImport{{From: "domain", To: "unknown-layer"}}
 
 	_, err := buildApprovedCandidate([]string{"apps/api"}, nil, forbidden, "")
 	if err == nil {

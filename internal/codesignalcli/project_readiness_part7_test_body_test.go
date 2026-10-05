@@ -2,13 +2,15 @@ package codesignalcli
 
 import (
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func body_projectReadinessPart7Test_59(t *testing.T, tc struct {
 	name    string
-	runtime ReadinessCheck
+	runtime projectreadiness.Check
 }) {
-	checks := ReadinessChecks{Runtime: tc.runtime, Node: nodeCompatibilityMirror(tc.runtime)}
+	checks := projectreadiness.Checks{Runtime: tc.runtime, Node: nodeCompatibilityMirror(tc.runtime)}
 	_, _, _, warnings := aggregateReadiness(checks, false, nil)
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %#v, want none", warnings)

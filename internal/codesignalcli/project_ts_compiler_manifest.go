@@ -1,5 +1,9 @@
 package codesignalcli
 
+import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+)
+
 type projectRootOutcome struct {
 	root         string
 	candidate    string
@@ -13,7 +17,7 @@ type projectRootOutcome struct {
 }
 
 type projectOriginContext struct {
-	rootFindings             []ReadinessRootFinding
+	rootFindings             []projectreadiness.RootFinding
 	someRootsResolvedNothing bool
 	declarations             []rootDeclaration
 	rejectedDeclaration      string
@@ -29,7 +33,7 @@ func evaluateProjectOrigin(worktreeRoot string, roots []string) (originEvaluatio
 		roots = []string{"."}
 	}
 	summary := projectRootSummary{
-		projectOriginContext: projectOriginContext{rootFindings: make([]ReadinessRootFinding, 0, len(roots))},
+		projectOriginContext: projectOriginContext{rootFindings: make([]projectreadiness.RootFinding, 0, len(roots))},
 	}
 	for _, root := range roots {
 		summary.absorb(resolveProjectRoot(worktreeRoot, root))
@@ -98,7 +102,7 @@ func (s projectRootSummary) installDir() string {
 }
 
 func (s *projectRootSummary) absorb(outcome projectRootOutcome) {
-	s.rootFindings = append(s.rootFindings, ReadinessRootFinding{Root: outcome.root, Version: outcome.finding})
+	s.rootFindings = append(s.rootFindings, projectreadiness.RootFinding{Root: outcome.root, Version: outcome.finding})
 	if outcome.finding != "" {
 		s.rootsWithFinding++
 		s.findings = append(s.findings, outcome.finding)

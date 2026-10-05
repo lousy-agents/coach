@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 )
 
@@ -57,9 +58,9 @@ func resolveRootToken(token string, discoveredRoots []string) (string, error) {
 // prefix on the user's behalf: every layer in the returned slice came from
 // the user's own typed answers. Each candidate is checked with the same
 // name-uniqueness and prefix-overlap rules the frozen project-config schema
-// itself enforces (validateProjectConfigLayers), so a mistake is caught and
+// itself enforces (validateLayers), so a mistake is caught and
 // explained here rather than deferred to a later validation pass.
-func promptForLayers(out io.Writer, reader *bufio.Reader) (layers []projectConfigLayer, cancelled bool) {
+func promptForLayers(out io.Writer, reader *bufio.Reader) (layers []projectconfig.Layer, cancelled bool) {
 	fmt.Fprintln(out, "Define named layers for architecture-boundary policy. Each layer needs a name and one or more repository-relative path prefixes.")
 	for {
 		name, done, cancelled := promptLayerName(out, reader, layers)
@@ -74,7 +75,7 @@ func promptForLayers(out io.Writer, reader *bufio.Reader) (layers []projectConfi
 		if cancelled {
 			return layers, true
 		}
-		layers = append(layers, projectConfigLayer{Name: name, Prefixes: prefixes})
+		layers = append(layers, projectconfig.Layer{Name: name, Prefixes: prefixes})
 	}
 }
 

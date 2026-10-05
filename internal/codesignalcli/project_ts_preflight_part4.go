@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // PrepareCompilerRemediationWithReadiness extends PrepareCompilerRemediation
@@ -28,7 +30,7 @@ import (
 // PrepareCompilerRemediation's own gapCode-only decision, matching
 // WrapCompilerUnresolvedErrorWithReadiness's contract of returning the
 // original error unchanged when readiness itself could not be computed.
-func PrepareCompilerRemediationWithReadiness(gapCode, configPath string, readiness *ReadinessResult) string {
+func PrepareCompilerRemediationWithReadiness(gapCode, configPath string, readiness *projectreadiness.Result) string {
 	if readiness == nil {
 		return PrepareCompilerRemediation(gapCode, configPath)
 	}
@@ -65,7 +67,7 @@ func WrapCompilerUnresolvedErrorWithReadiness(err error, dir, revision, configPa
 // runProjectPackageSetupOffer executes SetupChoiceProjectPackage through its
 // own library path (BuildSetupPreview/RunConfirmedSetupAndRecheckReadiness),
 // distinct from runMiseSetupOffer's mise install path.
-func runProjectPackageSetupOffer(ctx context.Context, dir, revision, configPath, workingDirectory string, packageManager ReadinessCheck, out io.Writer, reader *bufio.Reader) CompilerSetupOfferResult {
+func runProjectPackageSetupOffer(ctx context.Context, dir, revision, configPath, workingDirectory string, packageManager projectreadiness.Check, out io.Writer, reader *bufio.Reader) CompilerSetupOfferResult {
 	preview, err := BuildSetupPreview(SetupChoice{Kind: SetupChoiceProjectPackage}, packageManager, workingDirectory)
 	if err != nil {
 		return CompilerSetupOfferResult{Choice: SetupChoiceProjectPackage, FailureDetail: err.Error()}

@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // D3 fixes the existing single-line remediation classifyAnalysisError has
@@ -246,8 +247,8 @@ var _ = Describe("codesignalcli.AvailableSetupChoices composes project_package a
 
 		readiness, err := codesignalcli.CheckProjectReadiness(repo, head, "")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(readiness.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail), "the fixture must genuinely need setup, or the menu assertion below proves nothing")
-		Expect(readiness.Checks.PackageManager.State).To(Equal(codesignalcli.ReadinessPass), "detail=%s", readiness.Checks.PackageManager.Detail)
+		Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "the fixture must genuinely need setup, or the menu assertion below proves nothing")
+		Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Pass), "detail=%s", readiness.Checks.PackageManager.Detail)
 
 		menu := codesignalcli.AvailableSetupChoices(*readiness)
 

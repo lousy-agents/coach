@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -19,7 +20,7 @@ func splitTrimmedNonEmpty(s, sep string) []string {
 	return result
 }
 
-func layerMatchesDirectory(layer projectConfigLayer, dir string) bool {
+func layerMatchesDirectory(layer projectconfig.Layer, dir string) bool {
 	for _, prefix := range layer.Prefixes {
 		if directoryHasPrefix(dir, prefix) {
 			return true
@@ -28,7 +29,7 @@ func layerMatchesDirectory(layer projectConfigLayer, dir string) bool {
 	return false
 }
 
-func printCoveragePreview(out io.Writer, discovered projectmodel.TSRootDiscoveryResult, layers []projectConfigLayer) {
+func printCoveragePreview(out io.Writer, discovered projectmodel.TSRootDiscoveryResult, layers []projectconfig.Layer) {
 	dirs := discoveredDirectories(discovered)
 
 	fmt.Fprintln(out, "Coverage preview:")

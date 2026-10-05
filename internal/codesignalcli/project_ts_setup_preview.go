@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // SetupPreviewTimeout bounds how long a project-package setup command may
@@ -92,13 +94,13 @@ type SetupPreview struct {
 var ErrSetupPreviewUnavailable = errors.New("setup preview: no frozen command template for this choice")
 
 // BuildSetupPreview renders the pre-execution disclosure for choice,
-// resolved against packageManager -- the very ReadinessCheck
+// resolved against packageManager -- the very projectreadiness.Check
 // checkPackageManager produced, so the preview's command, classified version,
 // and recorded pin cannot drift from what was actually classified -- and
 // workingDirectory, the directory containing the manifest that owns the
 // selected origin. It performs no filesystem or network access and executes
 // nothing.
-func BuildSetupPreview(choice SetupChoice, packageManager ReadinessCheck, workingDirectory string) (SetupPreview, error) {
+func BuildSetupPreview(choice SetupChoice, packageManager projectreadiness.Check, workingDirectory string) (SetupPreview, error) {
 	if choice.Kind != SetupChoiceProjectPackage {
 		return SetupPreview{}, fmt.Errorf("%w: choice kind %q", ErrSetupPreviewUnavailable, choice.Kind)
 	}
@@ -126,7 +128,7 @@ func BuildSetupPreview(choice SetupChoice, packageManager ReadinessCheck, workin
 // pin that names a different version would let them believe otherwise. A
 // repository with no pin, or one whose pin matches the probed version, has
 // nothing to disclose.
-func packageManagerPinDisclosure(packageManager ReadinessCheck) string {
+func packageManagerPinDisclosure(packageManager projectreadiness.Check) string {
 	pin := packageManager.PinnedVersion
 	if pin == "" || pin == packageManager.Version {
 		return ""

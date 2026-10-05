@@ -3,6 +3,7 @@ package codesignalcli
 import (
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -17,14 +18,14 @@ func body_projectConfigAuthoringPart6Test_layersForbiddenPairsAndARequiredLayer_
 		"domain",
 	)
 
-	wantLayers := []projectConfigLayer{
+	wantLayers := []projectconfig.Layer{
 		{Name: "domain", Prefixes: []string{"internal/domain"}},
 		{Name: "app", Prefixes: []string{"internal/app"}},
 	}
 	if !equalLayers(result.Layers, wantLayers) {
 		t.Fatalf("Layers = %+v, want %+v", result.Layers, wantLayers)
 	}
-	wantForbidden := []projectForbiddenImport{{From: "domain", To: "app"}}
+	wantForbidden := []projectconfig.ForbiddenImport{{From: "domain", To: "app"}}
 	if !equalForbiddenImports(result.ForbiddenImports, wantForbidden) {
 		t.Fatalf("ForbiddenImports = %+v, want %+v", result.ForbiddenImports, wantForbidden)
 	}
@@ -48,7 +49,7 @@ func body_projectConfigAuthoringPart6Test_keepsTheAcceptedRootAndLayerAfterLater
 	if !equalStringSlices(result.Roots, []string{"apps/api"}) {
 		t.Fatalf("Roots = %v, want [apps/api]", result.Roots)
 	}
-	wantLayers := []projectConfigLayer{{Name: "domain", Prefixes: []string{"internal/domain"}}}
+	wantLayers := []projectconfig.Layer{{Name: "domain", Prefixes: []string{"internal/domain"}}}
 	if !equalLayers(result.Layers, wantLayers) {
 		t.Fatalf("Layers = %+v, want %+v", result.Layers, wantLayers)
 	}

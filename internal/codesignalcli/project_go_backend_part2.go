@@ -1,18 +1,19 @@
 package codesignalcli
 
 import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
 // goBypassLayerFromConfig resolves config.RequiredLayer -- already validated
-// by LoadProjectConfig to either be empty or name a declared layer -- into
+// by projectconfig.Load to either be empty or name a declared layer -- into
 // the projectmodel.BypassLayer BuildGoLayerBypass expects. The second return
 // value is false when RequiredLayer is unset, in which case goProjectBackend
 // skips the layer-bypass search entirely: BuildGoLayerBypass would otherwise
 // treat a zero-value BypassLayer as ambiguous (see
 // projectmodel.DiagLayerBypassAmbiguousLayer) and report incomplete coverage
 // for a search the config never asked for.
-func goBypassLayerFromConfig(config projectConfig) (projectmodel.BypassLayer, bool) {
+func goBypassLayerFromConfig(config projectconfig.Config) (projectmodel.BypassLayer, bool) {
 	if config.RequiredLayer == "" {
 		return projectmodel.BypassLayer{}, false
 	}

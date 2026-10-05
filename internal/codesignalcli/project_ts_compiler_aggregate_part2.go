@@ -2,6 +2,8 @@ package codesignalcli
 
 import (
 	"context"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // miseSetupChoice withholds a trusted scope that has no installable pin
@@ -11,14 +13,14 @@ import (
 // silent. Reason is the finer distinction Code cannot carry, since the
 // no-pin case has no gap code at all: it is what AvailableSetupChoices names
 // when it withholds this scope from the menu.
-func miseSetupChoice(kind, worktreeRoot string, trust miseSetupTrust) ReadinessMiseChoice {
+func miseSetupChoice(kind, worktreeRoot string, trust miseSetupTrust) projectreadiness.MiseChoice {
 	if !trust.trusted {
 		choice := miseReadinessChoice(kind, trust)
-		choice.Reason = setupChoiceReasonMiseUnverifiable
+		choice.Reason = projectreadiness.ReasonMiseUnverifiable
 		return choice
 	}
 	if reason := miseScopeSetupWithholdReason(kind, worktreeRoot); reason != "" {
-		return ReadinessMiseChoice{Kind: kind, Reason: reason}
+		return projectreadiness.MiseChoice{Kind: kind, Reason: reason}
 	}
 	return miseReadinessChoice(kind, trust)
 }
@@ -31,10 +33,10 @@ func miseSetupChoice(kind, worktreeRoot string, trust miseSetupTrust) ReadinessM
 // declares nothing.
 func miseScopeSetupWithholdReason(origin, worktreeRoot string) string {
 	if origin == compilerOriginMiseProject && !miseProjectConfigReadable(worktreeRoot) && miseProjectConfigExists(worktreeRoot) {
-		return setupChoiceReasonMiseUnverifiable
+		return projectreadiness.ReasonMiseUnverifiable
 	}
 	if _, ok := miseScopeDeclaresInstallableCompiler(origin, worktreeRoot); !ok {
-		return setupChoiceReasonMiseUnconfigured
+		return projectreadiness.ReasonMiseUnconfigured
 	}
 	return ""
 }
@@ -63,7 +65,7 @@ func localMiseProjectVersionsConflict(worktreeRoot string) bool {
 	return len(versions) > 1
 }
 
-func conflictFindings(origin, selectedRoots []ReadinessRootFinding) []ReadinessRootFinding {
+func conflictFindings(origin, selectedRoots []projectreadiness.RootFinding) []projectreadiness.RootFinding {
 	if len(origin) > 0 {
 		return origin
 	}
@@ -78,7 +80,7 @@ func projectMiseConfigHazard(worktreeRoot string) bool {
 	return hasMiseConfigHazard(data)
 }
 
-// evaluateMiseSetupChoices computes the two mise ReadinessMiseChoice entries
+// evaluateMiseSetupChoices computes the two mise projectreadiness.MiseChoice entries
 // CheckProjectReadiness feeds to aggregateReadiness: whether each of the
 // project and global mise scopes may be offered as a prepare_compiler
 // installation choice. A scope is offered only when it is trusted and
@@ -93,14 +95,14 @@ func projectMiseConfigHazard(worktreeRoot string) bool {
 // evaluateCompilerOrigins' frozen contract is that such a disagreement never
 // evaluates mise at all, so a second, independent computation of setup
 // choices must honor the same rule rather than quietly reaching mise anyway.
-func evaluateMiseSetupChoices(dir string, roots []string) []ReadinessMiseChoice {
+func evaluateMiseSetupChoices(dir string, roots []string) []projectreadiness.MiseChoice {
 	worktreeRoot := compilerWorktreeRoot(dir)
 	project, _ := evaluateProjectOrigin(worktreeRoot, roots)
 	if project.conflict {
 		return nil
 	}
 	ctx := context.Background()
-	return []ReadinessMiseChoice{
+	return []projectreadiness.MiseChoice{
 		miseSetupChoice(compilerOriginMiseProject, worktreeRoot, evaluateMiseProjectTrust(ctx, worktreeRoot)),
 		miseSetupChoice(compilerOriginMiseGlobal, worktreeRoot, evaluateMiseGlobalTrust(ctx)),
 	}

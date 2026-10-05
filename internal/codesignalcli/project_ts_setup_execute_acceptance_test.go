@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -69,7 +70,7 @@ var _ = Describe("codesignalcli.RunConfirmedSetup's git usage", func() {
 			return originalGit(dir, args...)
 		}
 
-		preview, err := BuildSetupPreview(SetupChoice{Kind: SetupChoiceProjectPackage}, ReadinessCheck{State: ReadinessPass, Kind: "npm"}, workDir)
+		preview, err := BuildSetupPreview(SetupChoice{Kind: SetupChoiceProjectPackage}, projectreadiness.Check{State: projectreadiness.Pass, Kind: "npm"}, workDir)
 		Expect(err).NotTo(HaveOccurred())
 
 		outcome, err := RunConfirmedSetup(context.Background(), preview, true)
@@ -92,7 +93,7 @@ var _ = Describe("codesignalcli's residue disclosure parsing", func() {
 		stubDir := writeRecordingFailingSetupExecutable("npm")
 		GinkgoT().Setenv("PATH", setupExecutionAcceptancePath(stubDir))
 
-		preview, err := BuildSetupPreview(SetupChoice{Kind: SetupChoiceProjectPackage}, ReadinessCheck{State: ReadinessPass, Kind: "npm"}, workDir)
+		preview, err := BuildSetupPreview(SetupChoice{Kind: SetupChoiceProjectPackage}, projectreadiness.Check{State: projectreadiness.Pass, Kind: "npm"}, workDir)
 		Expect(err).NotTo(HaveOccurred())
 
 		outcome, err := RunConfirmedSetup(context.Background(), preview, true)

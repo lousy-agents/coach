@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
@@ -131,7 +132,7 @@ func NewGoProjectBackend() ProjectBackend {
 }
 
 func (b *goProjectBackend) Analyze(ctx context.Context, req ProjectBackendRequest) (*ProjectBackendResult, error) {
-	var config projectConfig
+	var config projectconfig.Config
 	if err := json.Unmarshal(req.Config, &config); err != nil {
 		return nil, fmt.Errorf("coach: decoding validated project config: %w", err)
 	}
@@ -223,10 +224,10 @@ func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 }
 
 // layerPolicyFromConfig translates the already-schema-validated
-// projectConfig layers/forbidden_imports into codesignal.LayerPolicy. It is
-// language-agnostic (projectConfig/LayerPolicy have no Go- or TS-specific
+// projectconfig.Config layers/forbidden_imports into codesignal.LayerPolicy. It is
+// language-agnostic (projectconfig.Config/LayerPolicy have no Go- or TS-specific
 // fields), so both goProjectBackend and tsProjectBackend share it.
-func layerPolicyFromConfig(config projectConfig) codesignal.LayerPolicy {
+func layerPolicyFromConfig(config projectconfig.Config) codesignal.LayerPolicy {
 	layers := make([]codesignal.ArchitectureLayer, len(config.Layers))
 	for i, layer := range config.Layers {
 		layers[i] = codesignal.ArchitectureLayer{

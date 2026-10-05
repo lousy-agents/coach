@@ -3,13 +3,14 @@ package codesignalcli
 import (
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
 type sigbodyprojectConfigAuthoringPart5TestaBlankPrefixAnswerIsNe struct {
 	discovered projectmodel.
 			TSRootDiscoveryResult
-	layer  projectConfigLayer
+	layer  projectconfig.Layer
 	result AuthoringResult
 	t      *testing.
 		T

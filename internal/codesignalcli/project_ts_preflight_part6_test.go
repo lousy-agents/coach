@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // TestRunCompilerSetupOfferRequiresPolicyFirst pins O3's defense-in-depth
@@ -15,15 +16,15 @@ import (
 // RunCompilerSetupOffer must refuse before ever printing a prompt while
 // readiness.Checks.Policy has not passed.
 func TestRunCompilerSetupOfferRequiresPolicyFirst(t *testing.T) {
-	readiness := &ReadinessResult{
-		Checks: ReadinessChecks{
-			Policy:         ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
-			Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
-			PackageManager: ReadinessCheck{State: ReadinessPass},
+	readiness := &projectreadiness.Result{
+		Checks: projectreadiness.Checks{
+			Policy:         projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing},
+			Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
+			PackageManager: projectreadiness.Check{State: projectreadiness.Pass},
 		},
 	}
 	var out strings.Builder
-	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
+	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
 
 	if !result.PolicyRequired {
 		t.Fatalf("PolicyRequired = false, want true: %+v", result)
@@ -42,15 +43,15 @@ func TestRunCompilerSetupOfferRequiresPolicyFirst(t *testing.T) {
 // must offer a genuine, non-cancel choice or the prompt this pins would
 // never open at all.
 func TestRunCompilerSetupOfferCancelsOnExplicitCancelChoice(t *testing.T) {
-	readiness := &ReadinessResult{
-		Checks: ReadinessChecks{
-			Policy:         ReadinessCheck{State: ReadinessPass},
-			Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
-			PackageManager: ReadinessCheck{State: ReadinessPass},
+	readiness := &projectreadiness.Result{
+		Checks: projectreadiness.Checks{
+			Policy:         projectreadiness.Check{State: projectreadiness.Pass},
+			Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
+			PackageManager: projectreadiness.Check{State: projectreadiness.Pass},
 		},
 	}
 	var out strings.Builder
-	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", GapTypescriptCompilerMissing, readiness, strings.NewReader("cancel\n"), &out)
+	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader("cancel\n"), &out)
 	if !result.Cancelled {
 		t.Fatalf("Cancelled = false, want true: %+v", result)
 	}
@@ -60,18 +61,18 @@ func TestRunCompilerSetupOfferCancelsOnExplicitCancelChoice(t *testing.T) {
 }
 
 func TestRunCompilerSetupOfferNeverOpensWhenReadinessRuntimeBlocks(t *testing.T) {
-	readiness := &ReadinessResult{
-		Checks: ReadinessChecks{
-			Policy:         ReadinessCheck{State: ReadinessPass},
-			Runtime:        ReadinessCheck{State: ReadinessFail, Code: GapNodeMissing},
-			Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
-			PackageManager: ReadinessCheck{State: ReadinessPass},
+	readiness := &projectreadiness.Result{
+		Checks: projectreadiness.Checks{
+			Policy:         projectreadiness.Check{State: projectreadiness.Pass},
+			Runtime:        projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapNodeMissing},
+			Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
+			PackageManager: projectreadiness.Check{State: projectreadiness.Pass},
 		},
 	}
 	var out strings.Builder
-	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", GapTypescriptCompilerMissing, readiness, strings.NewReader("cancel\n"), &out)
-	if result.RuntimeGapCode != GapNodeMissing {
-		t.Fatalf("RuntimeGapCode = %q, want %q: a compiler gapCode must not open the install menu while readiness.Checks.Runtime independently fails; result=%+v", result.RuntimeGapCode, GapNodeMissing, result)
+	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader("cancel\n"), &out)
+	if result.RuntimeGapCode != projectreadiness.GapNodeMissing {
+		t.Fatalf("RuntimeGapCode = %q, want %q: a compiler gapCode must not open the install menu while readiness.Checks.Runtime independently fails; result=%+v", result.RuntimeGapCode, projectreadiness.GapNodeMissing, result)
 	}
 	if out.Len() != 0 {
 		t.Fatalf("expected no prompt output while a runtime-boundary gap blocks compiler setup, got %q", out.String())

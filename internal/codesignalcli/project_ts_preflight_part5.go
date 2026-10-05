@@ -3,6 +3,9 @@ package codesignalcli
 import (
 	"errors"
 	"path/filepath"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // ScanSetupOfferRemediation names the interactive scan invocation itself
@@ -18,7 +21,7 @@ import (
 // it. It returns "" whenever PrepareCompilerRemediationWithReadiness would
 // already offer its own command (a verified mise choice exists too), so the
 // two remediations are never both printed for the same gap.
-func ScanSetupOfferRemediation(gapCode, configPath string, readiness *ReadinessResult) string {
+func ScanSetupOfferRemediation(gapCode, configPath string, readiness *projectreadiness.Result) string {
 	if readiness == nil || !gapCodeIsExecutablePrepareCompiler(gapCode) {
 		return ""
 	}
@@ -32,11 +35,11 @@ func ScanSetupOfferRemediation(gapCode, configPath string, readiness *ReadinessR
 // WrapProjectConfigErrorWithReadiness recomputes readiness for
 // dir/revision/configPath and wraps err with it, for AC-SET-13's
 // report-all-gaps requirement. It returns err unchanged when err is not a
-// *ProjectConfigError, or when readiness itself cannot be computed: a masked
+// *projectconfig.ConfigError, or when readiness itself cannot be computed: a masked
 // compiler gap is a strictly smaller problem than losing the original
 // diagnostic entirely.
 func WrapProjectConfigErrorWithReadiness(err error, dir, revision, configPath string) error {
-	var configErr *ProjectConfigError
+	var configErr *projectconfig.ConfigError
 	if !errors.As(err, &configErr) {
 		return err
 	}
@@ -44,7 +47,7 @@ func WrapProjectConfigErrorWithReadiness(err error, dir, revision, configPath st
 	if readinessErr != nil {
 		return err
 	}
-	return &ProjectConfigErrorWithReadiness{ProjectConfigError: configErr, Readiness: readiness, ConfigPath: configPath}
+	return &ProjectConfigErrorWithReadiness{ConfigError: configErr, Readiness: readiness, ConfigPath: configPath}
 }
 
 func menuOffersChoice(menu SetupChoiceMenu, kind SetupChoiceKind) bool {

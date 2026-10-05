@@ -4,10 +4,12 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func body_projectTsPreflightPart2Test_aPolicyOnlyGapListPrintsNothingExtra_48(t *testing.T) {
-	if got := AlsoFailingGapLines(&ReadinessResult{Gaps: []ReadinessGap{{Code: GapPolicyMissing}}}, "project.json"); len(got) != 0 {
+	if got := AlsoFailingGapLines(&projectreadiness.Result{Gaps: []projectreadiness.Gap{{Code: projectreadiness.GapPolicyMissing}}}, "project.json"); len(got) != 0 {
 		t.Fatalf("AlsoFailingGapLines(policy gap only) = %q, want none: the policy failure is already printed as the scan's own message", got)
 	}
 }
@@ -18,9 +20,9 @@ func body_projectTsPreflightPart2Test_nilReadinessPrintsNothingExtra_53(t *testi
 	}
 }
 
-func body_projectTsPreflightPart2Test_75(t *testing.T, readiness *ReadinessResult) {
+func body_projectTsPreflightPart2Test_75(t *testing.T, readiness *projectreadiness.Result) {
 	var out strings.Builder
-	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
+	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
 	if !result.NoChoicesOffered {
 		t.Fatalf("NoChoicesOffered = false, want true: %+v", result)
 	}

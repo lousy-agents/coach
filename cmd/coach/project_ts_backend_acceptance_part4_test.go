@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 )
 
 // analyzerChildPIDsFromProc restricts matches to descendants of this test
@@ -97,7 +98,7 @@ func analyzeTSProjectBackend(dir, headRevision, baseRevision string, baseline bo
 		Baseline:     baseline,
 		ConfigPath:   "project.json",
 		Config:       config,
-		ConfigDigest: codesignalcli.ConfigDigest(config),
+		ConfigDigest: projectconfig.Digest(config),
 		Language:     "typescript",
 	})
 }

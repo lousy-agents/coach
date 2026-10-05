@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func writeFakeInstalledTypescriptForTest(t *testing.T, installDir, version string) {
@@ -54,7 +55,7 @@ func TestMiseChoicesForPrepareCompilerFallsBackToVerifiedChoicesWhenActionChoice
 		t.Fatalf("write mise.toml: %v", err)
 	}
 
-	action := ReadinessNextAction{Kind: nextActionKindPrepareCompiler, Executable: true}
+	action := projectreadiness.NextAction{Kind: projectreadiness.NextActionPrepareCompiler, Executable: true}
 	got := miseChoicesForPrepareCompiler(repo, revision, "", action)
 
 	want := []string{compilerOriginMiseProject, compilerOriginMiseGlobal}
@@ -69,15 +70,15 @@ func TestMiseChoicesForPrepareCompilerFallsBackToVerifiedChoicesWhenActionChoice
 }
 
 func TestRunPrepareCompilerMiseSetupReportsNoChoicesOffered(t *testing.T) {
-	cases := map[string]*ReadinessResult{
+	cases := map[string]*projectreadiness.Result{
 		"nil readiness":                nil,
-		"no next actions at all":       {Checks: ReadinessChecks{Policy: ReadinessCheck{State: ReadinessPass}}},
-		"prepare_compiler not present": readinessWithPrepareCompilerAction(ReadinessNextAction{Kind: "install_supported_runtime", Executable: false}),
-		"prepare_compiler not executable": readinessWithPrepareCompilerAction(ReadinessNextAction{
-			Kind: nextActionKindPrepareCompiler, Executable: false, Choices: []string{compilerOriginMiseProject},
+		"no next actions at all":       {Checks: projectreadiness.Checks{Policy: projectreadiness.Check{State: projectreadiness.Pass}}},
+		"prepare_compiler not present": readinessWithPrepareCompilerAction(projectreadiness.NextAction{Kind: "install_supported_runtime", Executable: false}),
+		"prepare_compiler not executable": readinessWithPrepareCompilerAction(projectreadiness.NextAction{
+			Kind: projectreadiness.NextActionPrepareCompiler, Executable: false, Choices: []string{compilerOriginMiseProject},
 		}),
-		"choices restricted to a non-mise kind only": readinessWithPrepareCompilerAction(ReadinessNextAction{
-			Kind: nextActionKindPrepareCompiler, Executable: true, Choices: []string{"npm_project"},
+		"choices restricted to a non-mise kind only": readinessWithPrepareCompilerAction(projectreadiness.NextAction{
+			Kind: projectreadiness.NextActionPrepareCompiler, Executable: true, Choices: []string{"npm_project"},
 		}),
 	}
 

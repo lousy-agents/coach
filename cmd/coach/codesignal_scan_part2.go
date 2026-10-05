@@ -7,6 +7,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -38,7 +39,7 @@ func analysisErrorReportFor(err error, language string, hasControllingTerminal b
 			codesignalcli.AlsoFailingGapLines(configErrWithReadiness.Readiness, configErrWithReadiness.ConfigPath),
 			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, codesignalcli.SuggestProjectConfigRemediation(language)))
 	}
-	var configErr *codesignalcli.ProjectConfigError
+	var configErr *projectconfig.ConfigError
 	if errors.As(err, &configErr) {
 		return classTwoReport(configErr.Message, nil,
 			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, codesignalcli.SuggestProjectConfigRemediation(language)))

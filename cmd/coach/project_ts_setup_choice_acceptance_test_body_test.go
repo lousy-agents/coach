@@ -4,18 +4,19 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func body_projectTsSetupChoiceAcceptanceTest_withholdsProjectPackageNamedAndOffersOnlyTheMise_103() {
-	readiness := codesignalcli.ReadinessResult{
-		Checks: codesignalcli.ReadinessChecks{
-			PackageManager: codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessFail, Code: codesignalcli.GapPackageManagerVersionUnsupported, Kind: "yarn"},
-			Compiler: codesignalcli.ReadinessCheck{
-				State: codesignalcli.ReadinessFail,
-				Code:  codesignalcli.GapTypescriptCompilerMissing,
+	readiness := projectreadiness.Result{
+		Checks: projectreadiness.Checks{
+			PackageManager: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPackageManagerVersionUnsupported, Kind: "yarn"},
+			Compiler: projectreadiness.Check{
+				State: projectreadiness.Fail,
+				Code:  projectreadiness.GapTypescriptCompilerMissing,
 			},
 		},
-		MiseChoices: []codesignalcli.ReadinessMiseChoice{
+		MiseChoices: []projectreadiness.MiseChoice{
 			{Kind: "mise_project", Verified: true},
 			{Kind: "mise_global", Reason: "mise_unconfigured"},
 		},
@@ -31,19 +32,19 @@ func body_projectTsSetupChoiceAcceptanceTest_withholdsProjectPackageNamedAndOffe
 			projectPackageReason = w.Reason
 		}
 	}
-	Expect(projectPackageReason).To(Equal(codesignalcli.GapPackageManagerVersionUnsupported), "the project adapter must be named, not merely omitted")
+	Expect(projectPackageReason).To(Equal(projectreadiness.GapPackageManagerVersionUnsupported), "the project adapter must be named, not merely omitted")
 }
 
-func body_projectTsSetupChoiceAcceptanceTest_withholdsProjectMiseAsUnverifiableRatherThanOffe_243(passingPackageManager codesignalcli.ReadinessCheck) {
-	readiness := codesignalcli.ReadinessResult{
-		Checks: codesignalcli.ReadinessChecks{
+func body_projectTsSetupChoiceAcceptanceTest_withholdsProjectMiseAsUnverifiableRatherThanOffe_243(passingPackageManager projectreadiness.Check) {
+	readiness := projectreadiness.Result{
+		Checks: projectreadiness.Checks{
 			PackageManager: passingPackageManager,
-			Compiler: codesignalcli.ReadinessCheck{
-				State: codesignalcli.ReadinessFail,
-				Code:  codesignalcli.GapTypescriptCompilerMissing,
+			Compiler: projectreadiness.Check{
+				State: projectreadiness.Fail,
+				Code:  projectreadiness.GapTypescriptCompilerMissing,
 			},
 		},
-		MiseChoices: []codesignalcli.ReadinessMiseChoice{
+		MiseChoices: []projectreadiness.MiseChoice{
 			{Kind: "mise_project", Reason: "mise_unverifiable"},
 			{Kind: "mise_global", Verified: true},
 		},
@@ -62,13 +63,13 @@ func body_projectTsSetupChoiceAcceptanceTest_withholdsProjectMiseAsUnverifiableR
 	Expect(reason).To(Equal("mise_unverifiable"))
 }
 
-func body_projectTsSetupChoiceAcceptanceTest_withholdsProjectPackageForManifestDeclarationThe_273(passingPackageManager codesignalcli.ReadinessCheck, neitherMiseScopeConfigured []codesignalcli.ReadinessMiseChoice) {
-	readiness := codesignalcli.ReadinessResult{
-		Checks: codesignalcli.ReadinessChecks{
+func body_projectTsSetupChoiceAcceptanceTest_withholdsProjectPackageForManifestDeclarationThe_273(passingPackageManager projectreadiness.Check, neitherMiseScopeConfigured []projectreadiness.MiseChoice) {
+	readiness := projectreadiness.Result{
+		Checks: projectreadiness.Checks{
 			PackageManager: passingPackageManager,
-			Compiler: codesignalcli.ReadinessCheck{
-				State: codesignalcli.ReadinessFail,
-				Code:  codesignalcli.GapTypescriptCompilerMissing,
+			Compiler: projectreadiness.Check{
+				State: projectreadiness.Fail,
+				Code:  projectreadiness.GapTypescriptCompilerMissing,
 			},
 		},
 		MiseChoices: neitherMiseScopeConfigured,

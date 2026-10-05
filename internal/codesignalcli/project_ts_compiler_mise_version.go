@@ -3,6 +3,8 @@ package codesignalcli
 import (
 	"context"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // miseToolReadiness classifies whether the `mise` tool binary itself is a
@@ -14,8 +16,8 @@ import (
 // question about a different piece of software. Ready is true only when the
 // detected version falls within the frozen row (isMiseToolVersionInRow);
 // otherwise Code names which of the two split fail-closed gaps applies:
-// GapPackageManagerVersionUnverifiable when the version could not be
-// determined at all, GapPackageManagerVersionUnsupported when it was
+// projectreadiness.GapPackageManagerVersionUnverifiable when the version could not be
+// determined at all, projectreadiness.GapPackageManagerVersionUnsupported when it was
 // determined but falls outside the row.
 type miseToolReadiness struct {
 	ready bool
@@ -25,18 +27,18 @@ type miseToolReadiness struct {
 // evaluateMiseToolVersionReadiness probes and classifies the mise tool's own
 // version. It never distinguishes "mise absent from PATH" from "mise present
 // but --version failed or produced nothing parseable" -- both fail closed to
-// GapPackageManagerVersionUnverifiable.
+// projectreadiness.GapPackageManagerVersionUnverifiable.
 func evaluateMiseToolVersionReadiness(ctx context.Context) miseToolReadiness {
 	version, ok := probeMiseToolVersion(ctx)
 	if !ok {
-		return miseToolReadiness{code: GapPackageManagerVersionUnverifiable}
+		return miseToolReadiness{code: projectreadiness.GapPackageManagerVersionUnverifiable}
 	}
 	token, ok := miseToolVersionToken(version)
 	if !ok {
-		return miseToolReadiness{code: GapPackageManagerVersionUnverifiable}
+		return miseToolReadiness{code: projectreadiness.GapPackageManagerVersionUnverifiable}
 	}
 	if !isMiseToolVersionInRow(token) {
-		return miseToolReadiness{code: GapPackageManagerVersionUnsupported}
+		return miseToolReadiness{code: projectreadiness.GapPackageManagerVersionUnsupported}
 	}
 	return miseToolReadiness{ready: true}
 }

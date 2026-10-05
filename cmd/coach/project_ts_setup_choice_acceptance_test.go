@@ -9,6 +9,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // AvailableSetupChoices is a pure function over ReadinessResult -- it makes
@@ -41,30 +42,30 @@ func withheldKinds(withheld []codesignalcli.WithheldSetupChoice) []codesignalcli
 }
 
 var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
-	passingPackageManager := codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessPass, Kind: "npm", Version: "11.2.0"}
+	passingPackageManager := projectreadiness.Check{State: projectreadiness.Pass, Kind: "npm", Version: "11.2.0"}
 
 	// Both mise scopes verified: each already pins an exact supported-set
 	// TypeScript version the frozen `mise install` row could realize.
-	bothMiseScopesVerified := []codesignalcli.ReadinessMiseChoice{
+	bothMiseScopesVerified := []projectreadiness.MiseChoice{
 		{Kind: "mise_project", Verified: true},
 		{Kind: "mise_global", Verified: true},
 	}
 
 	// Neither scope pins anything installable -- the readiness pipeline
 	// reached both and found nothing to install.
-	neitherMiseScopeConfigured := []codesignalcli.ReadinessMiseChoice{
+	neitherMiseScopeConfigured := []projectreadiness.MiseChoice{
 		{Kind: "mise_project", Reason: "mise_unconfigured"},
 		{Kind: "mise_global", Reason: "mise_unconfigured"},
 	}
 
 	When("the selected manifest declares typescript at a disqualifying (non-exact-in-set) version and nothing is installed", func() {
 		It("withholds project-package for that manifest while still offering the mise origins (AC-SET-11)", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
 					PackageManager: passingPackageManager,
-					Compiler: codesignalcli.ReadinessCheck{
-						State:           codesignalcli.ReadinessFail,
-						Code:            codesignalcli.GapTypescriptCompilerMissing,
+					Compiler: projectreadiness.Check{
+						State:           projectreadiness.Fail,
+						Code:            projectreadiness.GapTypescriptCompilerMissing,
 						DeclaredVersion: "^5.0.0",
 					},
 				},
@@ -81,12 +82,12 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("checks.package_manager is ambiguous because two lockfiles are committed", func() {
 		It("requires an explicit selection with no default, and withholds project-package (AC-SET-5)", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
-					PackageManager: codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessFail, Code: codesignalcli.GapPackageManagerAmbiguous},
-					Compiler: codesignalcli.ReadinessCheck{
-						State: codesignalcli.ReadinessFail,
-						Code:  codesignalcli.GapTypescriptCompilerMissing,
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
+					PackageManager: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPackageManagerAmbiguous},
+					Compiler: projectreadiness.Check{
+						State: projectreadiness.Fail,
+						Code:  projectreadiness.GapTypescriptCompilerMissing,
 					},
 				},
 				MiseChoices: bothMiseScopesVerified,
@@ -108,11 +109,11 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("checks.compiler already passes with an installed supported compiler, alongside Yarn-only metadata", func() {
 		It("offers no setup choices at all -- the repository is ready (SA-280-045)", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Status: codesignalcli.StatusReady,
-				Checks: codesignalcli.ReadinessChecks{
-					PackageManager: codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessFail, Code: codesignalcli.GapPackageManagerVersionUnsupported, Kind: "yarn"},
-					Compiler:       codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessPass, Version: "7.0.2"},
+			readiness := projectreadiness.Result{
+				Status: projectreadiness.StatusReady,
+				Checks: projectreadiness.Checks{
+					PackageManager: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPackageManagerVersionUnsupported, Kind: "yarn"},
+					Compiler:       projectreadiness.Check{State: projectreadiness.Pass, Version: "7.0.2"},
 				},
 			}
 
@@ -125,12 +126,12 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("nothing is withheld", func() {
 		It("enumerates exactly project-package, project-mise, global-mise, and cancel, in that order", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
 					PackageManager: passingPackageManager,
-					Compiler: codesignalcli.ReadinessCheck{
-						State:           codesignalcli.ReadinessFail,
-						Code:            codesignalcli.GapTypescriptCompilerMissing,
+					Compiler: projectreadiness.Check{
+						State:           projectreadiness.Fail,
+						Code:            projectreadiness.GapTypescriptCompilerMissing,
 						DeclaredVersion: codesignalcli.SupportedTypescriptVersions[0],
 					},
 				},
@@ -151,12 +152,12 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("an unsupported compiler is installed and the manifest declares a non-exact version", func() {
 		It("withholds project-package for the disqualifying declaration (AC-SET-11), even though the failure code is typescript_version_mismatch rather than typescript_compiler_missing", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
 					PackageManager: passingPackageManager,
-					Compiler: codesignalcli.ReadinessCheck{
-						State:           codesignalcli.ReadinessFail,
-						Code:            codesignalcli.GapTypescriptVersionMismatch,
+					Compiler: projectreadiness.Check{
+						State:           projectreadiness.Fail,
+						Code:            projectreadiness.GapTypescriptVersionMismatch,
 						DeclaredVersion: "^5.0.0",
 						FoundVersion:    "5.4.0",
 					},
@@ -173,12 +174,12 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("checks.compiler fails with typescript_version_conflict and the pipeline reported no mise choices at all", func() {
 		It("withholds both mise choices as unverifiable rather than offering them by default (fail-closed)", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
 					PackageManager: passingPackageManager,
-					Compiler: codesignalcli.ReadinessCheck{
-						State: codesignalcli.ReadinessFail,
-						Code:  codesignalcli.GapTypescriptVersionConflict,
+					Compiler: projectreadiness.Check{
+						State: projectreadiness.Fail,
+						Code:  projectreadiness.GapTypescriptVersionConflict,
 					},
 				},
 			}
@@ -195,12 +196,12 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("checks.compiler fails with typescript_version_mismatch and the pipeline reported no mise choices at all", func() {
 		It("withholds both mise choices as unverifiable rather than offering them by default (fail-closed)", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
 					PackageManager: passingPackageManager,
-					Compiler: codesignalcli.ReadinessCheck{
-						State:           codesignalcli.ReadinessFail,
-						Code:            codesignalcli.GapTypescriptVersionMismatch,
+					Compiler: projectreadiness.Check{
+						State:           projectreadiness.Fail,
+						Code:            projectreadiness.GapTypescriptVersionMismatch,
 						DeclaredVersion: "7.0.2",
 						FoundVersion:    "5.4.0",
 					},
@@ -230,12 +231,12 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("the selected manifest declares exactly one exact supported-set typescript version and the lockfile is present", func() {
 		It("offers project-package -- this is the one shape where the frozen install command actually lands a supported compiler (AC-1)", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
 					PackageManager: passingPackageManager,
-					Compiler: codesignalcli.ReadinessCheck{
-						State:           codesignalcli.ReadinessFail,
-						Code:            codesignalcli.GapTypescriptCompilerMissing,
+					Compiler: projectreadiness.Check{
+						State:           projectreadiness.Fail,
+						Code:            projectreadiness.GapTypescriptCompilerMissing,
 						DeclaredVersion: codesignalcli.SupportedTypescriptVersions[0],
 					},
 				},
@@ -254,12 +255,12 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("no mise.toml exists, no global mise typescript pin exists, and the manifest declares a disqualifying version", func() {
 		It("reduces to cancel alone -- there is no origin left that leaves the manifest unmodified (AC-SET-11), and this is intentional, not a bug", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
 					PackageManager: passingPackageManager,
-					Compiler: codesignalcli.ReadinessCheck{
-						State:           codesignalcli.ReadinessFail,
-						Code:            codesignalcli.GapTypescriptCompilerMissing,
+					Compiler: projectreadiness.Check{
+						State:           projectreadiness.Fail,
+						Code:            projectreadiness.GapTypescriptCompilerMissing,
 						DeclaredVersion: "^5.0.0",
 					},
 				},
@@ -279,11 +280,11 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("checks.compiler already passes and checks.package_manager is ambiguous", func() {
 		It("returns the zero menu -- no setup is needed, so no explicit selection can be required either", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Status: codesignalcli.StatusReady,
-				Checks: codesignalcli.ReadinessChecks{
-					PackageManager: codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessFail, Code: codesignalcli.GapPackageManagerAmbiguous},
-					Compiler:       codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessPass, Version: "7.0.2"},
+			readiness := projectreadiness.Result{
+				Status: projectreadiness.StatusReady,
+				Checks: projectreadiness.Checks{
+					PackageManager: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPackageManagerAmbiguous},
+					Compiler:       projectreadiness.Check{State: projectreadiness.Pass, Version: "7.0.2"},
 				},
 			}
 
@@ -297,12 +298,12 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("checks.package_manager was never checked because no recognized metadata exists at all", func() {
 		It("withholds project-package as unexecutable rather than offering a choice with no package-manager kind to resolve it (AC-1, fail-closed)", func() {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
-					PackageManager: codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessNotChecked},
-					Compiler: codesignalcli.ReadinessCheck{
-						State: codesignalcli.ReadinessFail,
-						Code:  codesignalcli.GapTypescriptCompilerMissing,
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
+					PackageManager: projectreadiness.Check{State: projectreadiness.NotChecked},
+					Compiler: projectreadiness.Check{
+						State: projectreadiness.Fail,
+						Code:  projectreadiness.GapTypescriptCompilerMissing,
 					},
 				},
 				MiseChoices: bothMiseScopesVerified,
@@ -318,12 +319,12 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	DescribeTable("never offers project-package when checks.package_manager fails under a rejected code",
 		func(rejectedCode string) {
-			readiness := codesignalcli.ReadinessResult{
-				Checks: codesignalcli.ReadinessChecks{
-					PackageManager: codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessFail, Code: rejectedCode, Kind: "npm"},
-					Compiler: codesignalcli.ReadinessCheck{
-						State: codesignalcli.ReadinessFail,
-						Code:  codesignalcli.GapTypescriptCompilerMissing,
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
+					PackageManager: projectreadiness.Check{State: projectreadiness.Fail, Code: rejectedCode, Kind: "npm"},
+					Compiler: projectreadiness.Check{
+						State: projectreadiness.Fail,
+						Code:  projectreadiness.GapTypescriptCompilerMissing,
 					},
 				},
 				MiseChoices: bothMiseScopesVerified,
@@ -334,9 +335,9 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectPackage))
 			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage))
 		},
-		Entry("package_manager_version_unverifiable", codesignalcli.GapPackageManagerVersionUnverifiable),
-		Entry("package_manager_version_unsupported", codesignalcli.GapPackageManagerVersionUnsupported),
-		Entry("package_manager_config_unverifiable", codesignalcli.GapPackageManagerConfigUnverifiable),
+		Entry("package_manager_version_unverifiable", projectreadiness.GapPackageManagerVersionUnverifiable),
+		Entry("package_manager_version_unsupported", projectreadiness.GapPackageManagerVersionUnsupported),
+		Entry("package_manager_config_unverifiable", projectreadiness.GapPackageManagerConfigUnverifiable),
 	)
 })
 
@@ -360,7 +361,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices over a real CheckProjectRe
 			Expect(err).NotTo(HaveOccurred())
 			readiness, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(readiness.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail), "the fixture must genuinely need setup, or the menu assertion below proves nothing")
+			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "the fixture must genuinely need setup, or the menu assertion below proves nothing")
 
 			menu := codesignalcli.AvailableSetupChoices(*readiness)
 
@@ -382,7 +383,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices over a real CheckProjectRe
 			Expect(err).NotTo(HaveOccurred())
 			readiness, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(readiness.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail))
+			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
 
 			menu := codesignalcli.AvailableSetupChoices(*readiness)
 

@@ -4,12 +4,13 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-func body_mainPart2Test_SucceededFalseNeverContinuesRegardlessOfPostInst_23(t *testing.T, allStatuses []codesignalcli.ReadinessStatus) {
+func body_mainPart2Test_SucceededFalseNeverContinuesRegardlessOfPostInst_23(t *testing.T, allStatuses []projectreadiness.Status) {
 	for _, status := range allStatuses {
 		status := status
-		readiness := codesignalcli.ReadinessResult{Status: status}
+		readiness := projectreadiness.Result{Status: status}
 		result := codesignalcli.CompilerSetupOfferResult{Succeeded: false, PostInstallReadiness: &readiness}
 		if shouldContinueAfterSetup(result) {
 			t.Errorf("shouldContinueAfterSetup(Succeeded=false, PostInstallReadiness.Status=%s) = true, want false: an install that did not succeed must never let the scan continue", status)
@@ -24,8 +25,8 @@ func body_mainPart2Test_SucceededTrueWithANilPostInstallReadinessNeverCo_34(t *t
 	}
 }
 
-func body_mainPart2Test_44(t *testing.T, status codesignalcli.ReadinessStatus, want bool) {
-	readiness := codesignalcli.ReadinessResult{Status: status}
+func body_mainPart2Test_44(t *testing.T, status projectreadiness.Status, want bool) {
+	readiness := projectreadiness.Result{Status: status}
 	result := codesignalcli.CompilerSetupOfferResult{Succeeded: true, PostInstallReadiness: &readiness}
 	if got := shouldContinueAfterSetup(result); got != want {
 		t.Errorf("shouldContinueAfterSetup(Succeeded=true, PostInstallReadiness.Status=%s) = %v, want %v", status, got, want)

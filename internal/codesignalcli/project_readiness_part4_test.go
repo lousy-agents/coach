@@ -7,80 +7,81 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func TestAggregateReadinessPrecedence(t *testing.T) {
 	cases := []struct {
 		name          string
-		checks        ReadinessChecks
+		checks        projectreadiness.Checks
 		dirtyRelevant bool
-		wantStatus    ReadinessStatus
+		wantStatus    projectreadiness.Status
 		wantGapCodes  []string
 	}{
 		{
 			name:       "no gaps, clean worktree -> ready",
-			checks:     ReadinessChecks{},
-			wantStatus: StatusReady,
+			checks:     projectreadiness.Checks{},
+			wantStatus: projectreadiness.StatusReady,
 		},
 		{
 			name:          "no gaps, relevant dirty worktree -> ready_with_limits, not a gap",
-			checks:        ReadinessChecks{},
+			checks:        projectreadiness.Checks{},
 			dirtyRelevant: true,
-			wantStatus:    StatusReadyWithLimits,
+			wantStatus:    projectreadiness.StatusReadyWithLimits,
 		},
 		{
 			name: "no gaps, relevant dirty worktree with a supported Node major -> ready_with_limits, not a gap",
-			checks: ReadinessChecks{
-				Runtime: ReadinessCheck{State: ReadinessPass, Version: "v26.0.0"},
+			checks: projectreadiness.Checks{
+				Runtime: projectreadiness.Check{State: projectreadiness.Pass, Version: "v26.0.0"},
 			},
 			dirtyRelevant: true,
-			wantStatus:    StatusReadyWithLimits,
+			wantStatus:    projectreadiness.StatusReadyWithLimits,
 		},
 		{
 			name: "policy gap outranks a simultaneous dirty-worktree limit condition",
-			checks: ReadinessChecks{
-				Policy:  ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
-				Runtime: ReadinessCheck{State: ReadinessPass, Version: "v26.0.0"},
+			checks: projectreadiness.Checks{
+				Policy:  projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing},
+				Runtime: projectreadiness.Check{State: projectreadiness.Pass, Version: "v26.0.0"},
 			},
 			dirtyRelevant: true,
-			wantStatus:    StatusNeedsPolicy,
-			wantGapCodes:  []string{GapPolicyMissing},
+			wantStatus:    projectreadiness.StatusNeedsPolicy,
+			wantGapCodes:  []string{projectreadiness.GapPolicyMissing},
 		},
 		{
 			name: "policy gap alone -> needs_policy",
-			checks: ReadinessChecks{
-				Policy: ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
+			checks: projectreadiness.Checks{
+				Policy: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing},
 			},
-			wantStatus:   StatusNeedsPolicy,
-			wantGapCodes: []string{GapPolicyMissing},
+			wantStatus:   projectreadiness.StatusNeedsPolicy,
+			wantGapCodes: []string{projectreadiness.GapPolicyMissing},
 		},
 		{
 			name: "policy gap plus dirty worktree -> needs_policy wins over ready_with_limits",
-			checks: ReadinessChecks{
-				Policy: ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
+			checks: projectreadiness.Checks{
+				Policy: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing},
 			},
 			dirtyRelevant: true,
-			wantStatus:    StatusNeedsPolicy,
-			wantGapCodes:  []string{GapPolicyMissing},
+			wantStatus:    projectreadiness.StatusNeedsPolicy,
+			wantGapCodes:  []string{projectreadiness.GapPolicyMissing},
 		},
 		{
 			name: "node prerequisite gap outranks a simultaneous policy gap",
-			checks: ReadinessChecks{
-				Policy:  ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
-				Runtime: ReadinessCheck{State: ReadinessFail, Code: GapNodeUnsupported},
+			checks: projectreadiness.Checks{
+				Policy:  projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing},
+				Runtime: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapNodeUnsupported},
 			},
-			wantStatus:   StatusNeedsPrerequisite,
-			wantGapCodes: []string{GapPolicyMissing, GapNodeUnsupported},
+			wantStatus:   projectreadiness.StatusNeedsPrerequisite,
+			wantGapCodes: []string{projectreadiness.GapPolicyMissing, projectreadiness.GapNodeUnsupported},
 		},
 		{
 			name: "unsupported repository shape outranks every other simultaneous gap",
-			checks: ReadinessChecks{
-				ProjectShape: ReadinessCheck{State: ReadinessFail, Code: GapUnsupportedRepositoryShape},
-				Policy:       ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing},
-				Runtime:      ReadinessCheck{State: ReadinessFail, Code: GapNodeUnsupported},
+			checks: projectreadiness.Checks{
+				ProjectShape: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapUnsupportedRepositoryShape},
+				Policy:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing},
+				Runtime:      projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapNodeUnsupported},
 			},
-			wantStatus:   StatusOutsideSupport,
-			wantGapCodes: []string{GapUnsupportedRepositoryShape, GapPolicyMissing, GapNodeUnsupported},
+			wantStatus:   projectreadiness.StatusOutsideSupport,
+			wantGapCodes: []string{projectreadiness.GapUnsupportedRepositoryShape, projectreadiness.GapPolicyMissing, projectreadiness.GapNodeUnsupported},
 		},
 	}
 
@@ -105,7 +106,7 @@ func TestCheckProjectShapeWalksUpToParentPackageJSONWhenPolicyPassed(t *testing.
 	if err != nil {
 		t.Fatalf("checkProjectShape returned error: %v", err)
 	}
-	if got.State != ReadinessPass {
+	if got.State != projectreadiness.Pass {
 		t.Fatalf("State = %q code=%q, want pass (parent package.json via walk-up)", got.State, got.Code)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
@@ -15,9 +16,9 @@ type AuthoringResult struct {
 	// gave no answer -- selection always requires the user's own input.
 	Roots []string
 
-	Layers []projectConfigLayer
+	Layers []projectconfig.Layer
 
-	ForbiddenImports []projectForbiddenImport
+	ForbiddenImports []projectconfig.ForbiddenImport
 
 	RequiredLayer string
 
@@ -56,7 +57,7 @@ type AuthoringResult struct {
 
 	// Document holds the approved candidate rendered as the schema-1
 	// project-config document, once it has passed the same schema validator
-	// LoadProjectConfig itself uses. It is set only when Approved is true and
+	// projectconfig.Load itself uses. It is set only when Approved is true and
 	// ValidationError is nil; it is unaffected by whether writing that
 	// document to disk was itself refused or failed (see OutputExists,
 	// WriteError).
@@ -138,7 +139,7 @@ func finalizeApprovedCandidate(result AuthoringResult, dir string, candidateOut 
 // exhausted/erroring read, does not. There is no retry here: the point of
 // this gate is that the user either approves what was just shown or they
 // don't, so a single read is always enough to decide it.
-func promptForApproval(out io.Writer, reader *bufio.Reader, discovered projectmodel.TSRootDiscoveryResult, roots []string, layers []projectConfigLayer, forbidden []projectForbiddenImport, requiredLayer string) bool {
+func promptForApproval(out io.Writer, reader *bufio.Reader, discovered projectmodel.TSRootDiscoveryResult, roots []string, layers []projectconfig.Layer, forbidden []projectconfig.ForbiddenImport, requiredLayer string) bool {
 	printCandidateSummary(out, roots, layers, forbidden, requiredLayer)
 	printCoveragePreview(out, discovered, layers)
 

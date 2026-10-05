@@ -7,11 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func TestRunPrepareCompilerMiseSetupCancelsOnUnrecognizedSelection(t *testing.T) {
-	readiness := readinessWithPrepareCompilerAction(ReadinessNextAction{
-		Kind: nextActionKindPrepareCompiler, Executable: true,
+	readiness := readinessWithPrepareCompilerAction(projectreadiness.NextAction{
+		Kind: projectreadiness.NextActionPrepareCompiler, Executable: true,
 		Choices: []string{compilerOriginMiseProject, compilerOriginMiseGlobal},
 	})
 	var transcript bytes.Buffer

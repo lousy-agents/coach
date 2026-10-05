@@ -4,9 +4,11 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-func body_projectTsPreflightPart3Test_39(t *testing.T, readiness *ReadinessResult, gapCode string, offered bool) {
+func body_projectTsPreflightPart3Test_39(t *testing.T, readiness *projectreadiness.Result, gapCode string, offered bool) {
 	var out strings.Builder
 	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", gapCode, readiness, strings.NewReader("cancel\n"), &out)
 	if offered {

@@ -7,24 +7,26 @@ import (
 	"io"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 )
 
-// ProjectConfigErrorWithReadiness enriches a ProjectConfigError with the
+// ProjectConfigErrorWithReadiness enriches a projectconfig.ConfigError with the
 // full TypeScript project-readiness snapshot computed for the same
 // dir/revision/configPath. prepareProjectAnalysis's loadProjectConfig short
 // circuit means only the policy failure would otherwise ever reach
 // classifyAnalysisError, masking a simultaneous compiler gap (AC-SET-13).
-// Unwrap returns the original *ProjectConfigError so
+// Unwrap returns the original *projectconfig.ConfigError so
 // errors.As(err, &plainTarget) still matches through this wrapper exactly as
 // it did before wrapping existed.
 type ProjectConfigErrorWithReadiness struct {
-	*ProjectConfigError
-	Readiness  *ReadinessResult
+	*projectconfig.ConfigError
+	Readiness  *projectreadiness.Result
 	ConfigPath string
 }
 
-func (e *ProjectConfigErrorWithReadiness) Unwrap() error { return e.ProjectConfigError }
+func (e *ProjectConfigErrorWithReadiness) Unwrap() error { return e.ConfigError }
 
 // CompilerUnresolvedErrorWithReadiness enriches a CompilerUnresolvedError
 // with the full TypeScript project-readiness snapshot computed for the same
@@ -42,7 +44,7 @@ func (e *ProjectConfigErrorWithReadiness) Unwrap() error { return e.ProjectConfi
 // session it precedes at two different policies.
 type CompilerUnresolvedErrorWithReadiness struct {
 	*CompilerUnresolvedError
-	Readiness *ReadinessResult
+	Readiness *projectreadiness.Result
 	Revision  string
 }
 
@@ -62,12 +64,12 @@ func onATerminal(invocation string) string {
 }
 
 // gapCodeIsExecutablePrepareCompiler reports whether gapCode's next action,
-// per the authoritative gapCodeTable, is the executable prepare-compiler
+// per the authoritative projectreadiness.KnownGapCodes(), is the executable prepare-compiler
 // kind -- the only kind Coach can actually run a command for
-// (nextActionExecutable).
+// (projectreadiness.NextActionExecutable).
 func gapCodeIsExecutablePrepareCompiler(gapCode string) bool {
-	kind, ok := nextActionForGapCode(gapCode)
-	return ok && nextActionExecutable(kind)
+	kind, ok := projectreadiness.NextActionForGapCode(gapCode)
+	return ok && projectreadiness.NextActionExecutable(kind)
 }
 
 // CompilerSetupOfferResult is RunCompilerSetupOffer's outcome: the
@@ -139,7 +141,7 @@ type CompilerSetupOfferResult struct {
 	// (AC-SET-6): the complete readiness rerun a caller must consult before
 	// deciding whether the scan that offered this setup may continue
 	// (AC-7).
-	PostInstallReadiness *ReadinessResult
+	PostInstallReadiness *projectreadiness.Result
 
 	// RuntimeGapCode is set when readiness.Checks.Runtime independently fails
 	// with a gap this offer has no setup command for (node_missing,
@@ -176,11 +178,11 @@ type CompilerSetupOfferResult struct {
 // within the same call, and a leftover, unread answer left on in can never
 // trigger one either.
 //
-// readiness.Checks.Policy must already be ReadinessPass, mirroring
+// readiness.Checks.Policy must already be projectreadiness.Pass, mirroring
 // RunPrepareCompilerMiseSetup's own precondition: a reviewed, committed
 // policy is required before compiler setup is ever offered (AC-SET-13).
-func RunCompilerSetupOffer(ctx context.Context, dir, revision, configPath, gapCode string, readiness *ReadinessResult, in io.Reader, out io.Writer) CompilerSetupOfferResult {
-	if readiness != nil && readiness.Checks.Policy.State != ReadinessPass {
+func RunCompilerSetupOffer(ctx context.Context, dir, revision, configPath, gapCode string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) CompilerSetupOfferResult {
+	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
 		return CompilerSetupOfferResult{PolicyRequired: true}
 	}
 	if code, blocking := readinessHasBlockingRuntimeGap(readiness); blocking {

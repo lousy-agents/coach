@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/render"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 
 	"os"
@@ -35,7 +35,7 @@ func validateCodesignalFlags(f codesignalFlags, positional []string) string {
 }
 func renderReport(report *codesignal.Report, format string, stdout, stderr *os.File) int {
 	if format == "json" {
-		encoded, err := codesignalcli.RenderJSON(report)
+		encoded, err := render.ReportJSON(report)
 		if err != nil {
 			fmt.Fprintf(stderr, "coach codesignal: encoding report: %s\n", err)
 			return 1
@@ -47,7 +47,7 @@ func renderReport(report *codesignal.Report, format string, stdout, stderr *os.F
 		return 0
 	}
 
-	if _, err := fmt.Fprint(stdout, codesignalcli.RenderText(report)); err != nil {
+	if _, err := fmt.Fprint(stdout, render.ReportText(report)); err != nil {
 		fmt.Fprintf(stderr, "coach codesignal: writing report: %s\n", err)
 		return 1
 	}

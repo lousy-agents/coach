@@ -5,6 +5,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func body_projectTsSetupMatrixAcceptanceTest_withholdsYarnSPackageManagerFindingAsAProjectPac_162() {
@@ -13,9 +14,9 @@ func body_projectTsSetupMatrixAcceptanceTest_withholdsYarnSPackageManagerFinding
 
 	readiness, err := codesignalcli.CheckProjectReadiness(repo, head, "")
 	Expect(err).NotTo(HaveOccurred())
-	Expect(readiness.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail))
-	Expect(readiness.Checks.PackageManager.State).To(Equal(codesignalcli.ReadinessFail))
-	Expect(readiness.Checks.PackageManager.Code).To(Equal(codesignalcli.GapPackageManagerVersionUnsupported))
+	Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
+	Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))
+	Expect(readiness.Checks.PackageManager.Code).To(Equal(projectreadiness.GapPackageManagerVersionUnsupported))
 	Expect(readiness.Checks.PackageManager.Kind).To(Equal("yarn"))
 
 	menu := codesignalcli.AvailableSetupChoices(*readiness)
@@ -23,7 +24,7 @@ func body_projectTsSetupMatrixAcceptanceTest_withholdsYarnSPackageManagerFinding
 	Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage))
 	for _, w := range menu.Withheld {
 		if w.Kind == codesignalcli.SetupChoiceProjectPackage {
-			Expect(w.Reason).To(Equal(codesignalcli.GapPackageManagerVersionUnsupported))
+			Expect(w.Reason).To(Equal(projectreadiness.GapPackageManagerVersionUnsupported))
 		}
 	}
 }

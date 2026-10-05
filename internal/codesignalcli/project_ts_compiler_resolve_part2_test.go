@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // checks.compiler carries no origin field, so this is the only level that
@@ -56,7 +58,7 @@ func TestResolveCompilerForRuntimeFallsThroughAbsentProjectOriginToMise(t *testi
 	if got.Origin != compilerOriginMiseProject || got.Version != supported || got.Path != compilerDir {
 		t.Errorf("resolveCompilerForRuntime() = origin=%q version=%q path=%q, want origin=%q version=%q path=%q", got.Origin, got.Version, got.Path, compilerOriginMiseProject, supported, compilerDir)
 	}
-	if check := resolveCompiler(dir, nil); check.State != ReadinessPass || check.Version != supported {
+	if check := resolveCompiler(dir, nil); check.State != projectreadiness.Pass || check.Version != supported {
 		t.Errorf("resolveCompiler() = %+v, want a pass on the same compiler the runtime resolved", check)
 	}
 }

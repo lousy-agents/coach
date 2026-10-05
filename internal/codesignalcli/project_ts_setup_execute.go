@@ -9,6 +9,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // maxSetupExecutionOutput bounds the combined stdout+stderr ExecuteSetup
@@ -243,7 +245,7 @@ type SetupOutcome struct {
 	Execution            SetupExecutionResult
 	ChangedPaths         []string
 	ResidueUnknown       bool
-	PostInstallReadiness *ReadinessResult
+	PostInstallReadiness *projectreadiness.Result
 }
 
 // Bounds for setupResidueChangedPaths' read-only `git status` call: a small

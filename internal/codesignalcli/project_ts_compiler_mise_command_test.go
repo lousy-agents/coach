@@ -3,6 +3,8 @@ package codesignalcli
 import (
 	"context"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func TestMiseInstallToolSpec(t *testing.T) {
@@ -14,15 +16,15 @@ func TestMiseInstallToolSpec(t *testing.T) {
 }
 
 func TestInstallMiseTypescriptRefusesWhenUntrusted(t *testing.T) {
-	result := installMiseTypescript(context.Background(), compilerOriginMiseProject, "7.0.2", miseSetupTrust{code: GapPackageManagerConfigUnverifiable})
+	result := installMiseTypescript(context.Background(), compilerOriginMiseProject, "7.0.2", miseSetupTrust{code: projectreadiness.GapPackageManagerConfigUnverifiable})
 	if result.Trusted {
 		t.Fatalf("installMiseTypescript() = %+v, want Trusted=false", result)
 	}
 	if result.Attempted {
 		t.Errorf("installMiseTypescript() = %+v, an untrusted scope must never attempt mise install", result)
 	}
-	if result.Code != GapPackageManagerConfigUnverifiable {
-		t.Errorf("installMiseTypescript() Code = %q, want %q", result.Code, GapPackageManagerConfigUnverifiable)
+	if result.Code != projectreadiness.GapPackageManagerConfigUnverifiable {
+		t.Errorf("installMiseTypescript() Code = %q, want %q", result.Code, projectreadiness.GapPackageManagerConfigUnverifiable)
 	}
 }
 

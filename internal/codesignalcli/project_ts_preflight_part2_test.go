@@ -3,6 +3,8 @@ package codesignalcli
 import (
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // TestAlsoFailingGapLinesReportsEveryGapWithoutClaimingItSurvives pins
@@ -17,17 +19,17 @@ import (
 // and a shape finding that would have needed the guess is absent from
 // Gaps entirely rather than present and uncertain.
 func TestAlsoFailingGapLinesReportsEveryGapWithoutClaimingItSurvives(t *testing.T) {
-	readiness := &ReadinessResult{
-		Checks: ReadinessChecks{Policy: ReadinessCheck{State: ReadinessFail, Code: GapPolicyMissing}},
-		Gaps: []ReadinessGap{
-			{Code: GapPolicyMissing},
-			{Code: GapNodeUnsupported},
-			{Code: GapTypescriptCompilerMissing},
-			{Code: GapPackageManagerVersionUnsupported},
+	readiness := &projectreadiness.Result{
+		Checks: projectreadiness.Checks{Policy: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing}},
+		Gaps: []projectreadiness.Gap{
+			{Code: projectreadiness.GapPolicyMissing},
+			{Code: projectreadiness.GapNodeUnsupported},
+			{Code: projectreadiness.GapTypescriptCompilerMissing},
+			{Code: projectreadiness.GapPackageManagerVersionUnsupported},
 		},
 	}
 	got := AlsoFailingGapLines(readiness, "project.json")
-	want := []string{GapNodeUnsupported, GapTypescriptCompilerMissing, GapPackageManagerVersionUnsupported}
+	want := []string{projectreadiness.GapNodeUnsupported, projectreadiness.GapTypescriptCompilerMissing, projectreadiness.GapPackageManagerVersionUnsupported}
 	if len(got) != len(want) {
 		t.Fatalf("AlsoFailingGapLines() = %q, want one line for each of %q", got, want)
 	}
@@ -58,11 +60,11 @@ func TestAlsoFailingGapLinesReportsEveryGapWithoutClaimingItSurvives(t *testing.
 // AvailableSetupChoices offers only its always-appended cancel entry (no
 // package manager, no verified mise scope).
 func TestRunCompilerSetupOfferReportsNoChoicesOffered(t *testing.T) {
-	cases := map[string]*ReadinessResult{
+	cases := map[string]*projectreadiness.Result{
 		"nil readiness":          nil,
-		"compiler check passing": {Checks: ReadinessChecks{Policy: ReadinessCheck{State: ReadinessPass}, Compiler: ReadinessCheck{State: ReadinessPass}}},
+		"compiler check passing": {Checks: projectreadiness.Checks{Policy: projectreadiness.Check{State: projectreadiness.Pass}, Compiler: projectreadiness.Check{State: projectreadiness.Pass}}},
 		"compiler check failing but no choice is offerable": {
-			Checks: ReadinessChecks{Policy: ReadinessCheck{State: ReadinessPass}, Compiler: ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing}},
+			Checks: projectreadiness.Checks{Policy: projectreadiness.Check{State: projectreadiness.Pass}, Compiler: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing}},
 		},
 	}
 	for name, readiness := range cases {

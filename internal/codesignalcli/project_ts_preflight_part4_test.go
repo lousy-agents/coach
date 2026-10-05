@@ -6,6 +6,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // TestPrepareCompilerRemediationWithReadinessWithholdsADeadEndCommand pins
@@ -18,37 +19,37 @@ import (
 // exit 0 reporting it had nothing to set up while the compiler is still
 // missing.
 func TestPrepareCompilerRemediationWithReadinessWithholdsADeadEndCommand(t *testing.T) {
-	nothingOffered := &ReadinessResult{
-		Checks: ReadinessChecks{Compiler: ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing}},
+	nothingOffered := &projectreadiness.Result{
+		Checks: projectreadiness.Checks{Compiler: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing}},
 	}
-	if got := PrepareCompilerRemediationWithReadiness(GapTypescriptCompilerMissing, "project.json", nothingOffered); got != "" {
+	if got := PrepareCompilerRemediationWithReadiness(projectreadiness.GapTypescriptCompilerMissing, "project.json", nothingOffered); got != "" {
 		t.Fatalf("PrepareCompilerRemediationWithReadiness(dead-end menu) = %q, want empty", got)
 	}
 
-	projectPackageOnly := &ReadinessResult{
-		Checks: ReadinessChecks{
-			Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
-			PackageManager: ReadinessCheck{State: ReadinessPass},
+	projectPackageOnly := &projectreadiness.Result{
+		Checks: projectreadiness.Checks{
+			Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
+			PackageManager: projectreadiness.Check{State: projectreadiness.Pass},
 		},
 	}
-	if got := PrepareCompilerRemediationWithReadiness(GapTypescriptCompilerMissing, "project.json", projectPackageOnly); got != "" {
+	if got := PrepareCompilerRemediationWithReadiness(projectreadiness.GapTypescriptCompilerMissing, "project.json", projectPackageOnly); got != "" {
 		t.Fatalf("PrepareCompilerRemediationWithReadiness(project_package-only menu) = %q, want empty: --prepare-compiler runs mise scopes only, so it would exit 0 having set nothing up", got)
 	}
 
-	miseOffered := &ReadinessResult{
-		Checks:      ReadinessChecks{Compiler: ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing}},
-		MiseChoices: []ReadinessMiseChoice{{Kind: compilerOriginMiseProject, Verified: true}},
+	miseOffered := &projectreadiness.Result{
+		Checks:      projectreadiness.Checks{Compiler: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing}},
+		MiseChoices: []projectreadiness.MiseChoice{{Kind: compilerOriginMiseProject, Verified: true}},
 	}
 	want := "on a terminal: coach codesignal --baseline --prepare-compiler --project-language typescript --project-config project.json"
-	if got := PrepareCompilerRemediationWithReadiness(GapTypescriptCompilerMissing, "project.json", miseOffered); got != want {
+	if got := PrepareCompilerRemediationWithReadiness(projectreadiness.GapTypescriptCompilerMissing, "project.json", miseOffered); got != want {
 		t.Fatalf("PrepareCompilerRemediationWithReadiness(verified mise scope) = %q, want %q", got, want)
 	}
 
-	if got := PrepareCompilerRemediationWithReadiness(GapNodeMissing, "project.json", miseOffered); got != "" {
-		t.Fatalf("PrepareCompilerRemediationWithReadiness(%q, ...) = %q, want empty: a runtime-boundary gap code must still be withheld regardless of readiness", GapNodeMissing, got)
+	if got := PrepareCompilerRemediationWithReadiness(projectreadiness.GapNodeMissing, "project.json", miseOffered); got != "" {
+		t.Fatalf("PrepareCompilerRemediationWithReadiness(%q, ...) = %q, want empty: a runtime-boundary gap code must still be withheld regardless of readiness", projectreadiness.GapNodeMissing, got)
 	}
 
-	if got, want := PrepareCompilerRemediationWithReadiness(GapTypescriptCompilerMissing, "project.json", nil), PrepareCompilerRemediation(GapTypescriptCompilerMissing, "project.json"); got != want {
+	if got, want := PrepareCompilerRemediationWithReadiness(projectreadiness.GapTypescriptCompilerMissing, "project.json", nil), PrepareCompilerRemediation(projectreadiness.GapTypescriptCompilerMissing, "project.json"); got != want {
 		t.Fatalf("PrepareCompilerRemediationWithReadiness(nil readiness) = %q, want the plain PrepareCompilerRemediation fallback %q", got, want)
 	}
 }
@@ -62,7 +63,7 @@ func TestWrapCompilerUnresolvedErrorWithReadinessUnwrapsToThePlainError(t *testi
 	repo := gitfixture.Init(t)
 	head := gitfixture.CommitFile(t, repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 
-	original := &CompilerUnresolvedError{Code: GapTypescriptCompilerMissing, ConfigPath: "project.json"}
+	original := &CompilerUnresolvedError{Code: projectreadiness.GapTypescriptCompilerMissing, ConfigPath: "project.json"}
 	wrapped := WrapCompilerUnresolvedErrorWithReadiness(original, repo, head, "project.json")
 
 	var withReadiness *CompilerUnresolvedErrorWithReadiness

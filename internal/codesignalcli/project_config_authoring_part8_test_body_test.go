@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -18,7 +19,7 @@ func body_projectConfigAuthoringPart8Test_duplicateLayerNameExplainsTheErrorAndC
 	if !result.Cancelled {
 		t.Fatalf("expected Cancelled = true, got false")
 	}
-	wantLayers := []projectConfigLayer{{Name: "domain", Prefixes: []string{"internal/domain"}}}
+	wantLayers := []projectconfig.Layer{{Name: "domain", Prefixes: []string{"internal/domain"}}}
 	if !equalLayers(result.Layers, wantLayers) {
 		t.Fatalf("Layers = %+v, want only the first accepted layer %+v", result.Layers, wantLayers)
 	}
@@ -45,7 +46,7 @@ func body_projectConfigAuthoringPart8Test_overlappingPrefixExplainsTheErrorAndRe
 	if result.Cancelled {
 		t.Fatalf("expected Cancelled = false after a successful retry, got true")
 	}
-	wantLayers := []projectConfigLayer{
+	wantLayers := []projectconfig.Layer{
 		{Name: "domain", Prefixes: []string{"internal/domain"}},
 		{Name: "app", Prefixes: []string{"internal/app"}},
 	}

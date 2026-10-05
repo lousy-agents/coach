@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
 	"github.com/lousy-agents/coach/internal/projectbridge"
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -84,7 +85,7 @@ func NewTSProjectBackend() ProjectBackend {
 }
 
 func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendRequest) (*ProjectBackendResult, error) {
-	var config projectConfig
+	var config projectconfig.Config
 	if err := json.Unmarshal(req.Config, &config); err != nil {
 		return nil, fmt.Errorf("coach: decoding validated project config: %w", err)
 	}

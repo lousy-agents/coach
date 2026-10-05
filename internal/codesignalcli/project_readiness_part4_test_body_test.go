@@ -2,13 +2,15 @@ package codesignalcli
 
 import (
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func body_projectReadinessPart4Test_89(t *testing.T, tc struct {
 	name          string
-	checks        ReadinessChecks
+	checks        projectreadiness.Checks
 	dirtyRelevant bool
-	wantStatus    ReadinessStatus
+	wantStatus    projectreadiness.Status
 	wantGapCodes  []string
 }) {
 	status, gaps, _, _ := aggregateReadiness(tc.checks, tc.dirtyRelevant, nil)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 
 	"os"
@@ -13,7 +14,7 @@ import (
 // scanShouldAuthorProjectConfig reports whether a real scan's (not
 // --check-project/--suggest-project-config/--prepare-compiler) analysis
 // error is AC-POL-8's guided-authoring case: a TypeScript policy that was
-// never committed at all (*codesignalcli.ProjectConfigError with Kind ==
+// never committed at all (*projectconfig.ConfigError with Kind ==
 // ProjectConfigNotFound, whether or not it has been wrapped in a
 // *ProjectConfigErrorWithReadiness for AC-SET-13) with a controlling
 // terminal available on stdin. An unusable configPath is rejected before
@@ -32,14 +33,14 @@ func scanShouldAuthorProjectConfig(err error, language, configPath string, noInt
 	if language != "typescript" {
 		return false
 	}
-	if codesignalcli.ValidateProjectConfigPath(configPath) != nil {
+	if projectconfig.ValidatePath(configPath) != nil {
 		return false
 	}
-	var configErr *codesignalcli.ProjectConfigError
+	var configErr *projectconfig.ConfigError
 	if !errors.As(err, &configErr) {
 		return false
 	}
-	if configErr.Kind != codesignalcli.ProjectConfigNotFound {
+	if configErr.Kind != projectconfig.KindNotFound {
 		return false
 	}
 	if noInteractive {

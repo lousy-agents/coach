@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // BuildSetupPreview is a pure function over an already-selected SetupChoice,
@@ -21,8 +22,8 @@ import (
 // projectPackageManager is the passing checks.package_manager a preview or
 // execution spec hands BuildSetupPreview when the classification itself is
 // not what that spec exercises.
-func projectPackageManager(kind string) codesignalcli.ReadinessCheck {
-	return codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessPass, Kind: kind}
+func projectPackageManager(kind string) projectreadiness.Check {
+	return projectreadiness.Check{State: projectreadiness.Pass, Kind: kind}
 }
 
 var _ = Describe("codesignalcli.BuildSetupPreview", func() {
@@ -76,7 +77,7 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 		It("discloses that the pinned release is not what this command will run, naming both versions (AC-SET-2)", func() {
 			preview, err := codesignalcli.BuildSetupPreview(
 				codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage},
-				codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessPass, Kind: "npm", Version: "11.4.1", PinnedVersion: "11.2.0"},
+				projectreadiness.Check{State: projectreadiness.Pass, Kind: "npm", Version: "11.4.1", PinnedVersion: "11.2.0"},
 				"/tmp/example-root",
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -90,7 +91,7 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 		It("discloses nothing about a pin, since there is no divergence for a customer to weigh", func() {
 			unpinned, err := codesignalcli.BuildSetupPreview(
 				codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage},
-				codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessPass, Kind: "npm", Version: "11.4.1"},
+				projectreadiness.Check{State: projectreadiness.Pass, Kind: "npm", Version: "11.4.1"},
 				"/tmp/example-root",
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -98,7 +99,7 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 
 			agreeing, err := codesignalcli.BuildSetupPreview(
 				codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage},
-				codesignalcli.ReadinessCheck{State: codesignalcli.ReadinessPass, Kind: "npm", Version: "11.4.1", PinnedVersion: "11.4.1"},
+				projectreadiness.Check{State: projectreadiness.Pass, Kind: "npm", Version: "11.4.1", PinnedVersion: "11.4.1"},
 				"/tmp/example-root",
 			)
 			Expect(err).NotTo(HaveOccurred())

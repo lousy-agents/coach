@@ -3,6 +3,8 @@ package codesignalcli
 import (
 	"context"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func body_projectTsCompilerMiseVersionTest_22(t *testing.T, tc struct {
@@ -28,7 +30,7 @@ func body_projectTsCompilerMiseVersionTest_inRowVersionIsReady_41(t *testing.T) 
 func body_projectTsCompilerMiseVersionTest_outOfRowVersionIsUnsupported_49(t *testing.T) {
 	stubProbeMiseToolVersion(t, "2025.1.0 linux-x64 (2025-01-01)", true)
 	got := evaluateMiseToolVersionReadiness(context.Background())
-	if got.ready || got.code != GapPackageManagerVersionUnsupported {
+	if got.ready || got.code != projectreadiness.GapPackageManagerVersionUnsupported {
 		t.Errorf("evaluateMiseToolVersionReadiness() = %+v, want unsupported", got)
 	}
 }
@@ -36,7 +38,7 @@ func body_projectTsCompilerMiseVersionTest_outOfRowVersionIsUnsupported_49(t *te
 func body_projectTsCompilerMiseVersionTest_failedProbeIsUnverifiable_57(t *testing.T) {
 	stubProbeMiseToolVersion(t, "", false)
 	got := evaluateMiseToolVersionReadiness(context.Background())
-	if got.ready || got.code != GapPackageManagerVersionUnverifiable {
+	if got.ready || got.code != projectreadiness.GapPackageManagerVersionUnverifiable {
 		t.Errorf("evaluateMiseToolVersionReadiness() = %+v, want unverifiable", got)
 	}
 }
@@ -44,7 +46,7 @@ func body_projectTsCompilerMiseVersionTest_failedProbeIsUnverifiable_57(t *testi
 func body_projectTsCompilerMiseVersionTest_emptySuccessfulProbeOutputIsUnverifiableNotUnsup_65(t *testing.T) {
 	stubProbeMiseToolVersion(t, "   ", true)
 	got := evaluateMiseToolVersionReadiness(context.Background())
-	if got.ready || got.code != GapPackageManagerVersionUnverifiable {
+	if got.ready || got.code != projectreadiness.GapPackageManagerVersionUnverifiable {
 		t.Errorf("evaluateMiseToolVersionReadiness() = %+v, want unverifiable", got)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 )
 
@@ -66,7 +67,7 @@ type PrepareCompilerMiseResult struct {
 
 	// PostInstallReadiness holds the rerun readiness result computed after a
 	// successful install, nil otherwise.
-	PostInstallReadiness *ReadinessResult
+	PostInstallReadiness *projectreadiness.Result
 
 	// PostInstallReadinessError holds a failure rerunning readiness after an
 	// otherwise-successful install. The install itself already succeeded and
@@ -108,14 +109,14 @@ func (r PrepareCompilerMiseResult) NeverStarted() bool {
 // that choice, require single-use explicit confirmation, then run the
 // matching installMiseTypescriptProject/Global and, on success, rerun
 // CheckProjectReadiness. readiness must be the caller's already-computed
-// ReadinessResult for dir/revision/configPath; it is never recomputed here
+// projectreadiness.Result for dir/revision/configPath; it is never recomputed here
 // except after a successful install.
 //
 // It never itself checks for a controlling terminal -- that gate belongs to
 // the CLI caller, before readiness is even computed, mirroring
 // runAuthorProjectConfigTypeScript/authorProjectConfigTypeScript's split.
-func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath string, readiness *ReadinessResult, in io.Reader, out io.Writer) PrepareCompilerMiseResult {
-	if readiness != nil && readiness.Checks.Policy.State != ReadinessPass {
+func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) PrepareCompilerMiseResult {
+	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
 		return PrepareCompilerMiseResult{PolicyRequired: true}
 	}
 	if code, blocking := readinessHasBlockingRuntimeGap(readiness); blocking {

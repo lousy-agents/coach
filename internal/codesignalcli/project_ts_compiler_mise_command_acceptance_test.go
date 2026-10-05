@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -101,7 +102,7 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 				result := installMiseTypescriptProject(context.Background(), repo, "7.0.2")
 				Expect(result.Trusted).To(BeFalse(), "a hazardous project mise.toml must refuse before ever running mise: %+v", result)
 				Expect(result.Attempted).To(BeFalse(), "an untrusted scope must never attempt mise install: %+v", result)
-				Expect(result.Code).To(Equal(GapPackageManagerConfigUnverifiable))
+				Expect(result.Code).To(Equal(projectreadiness.GapPackageManagerConfigUnverifiable))
 			})
 		})
 
@@ -117,7 +118,7 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 				Expect(result.Trusted).To(BeTrue(), "the trust gate itself never touches the working directory: %+v", result)
 				Expect(result.Attempted).To(BeFalse(), "the install subprocess must never start when insulation could not be established: %+v", result)
 				Expect(result.Observed).To(BeFalse(), "%+v", result)
-				Expect(result.Code).To(Equal(GapPackageManagerConfigUnverifiable), "insulation failing before any subprocess starts must be distinguishable from mise simply being absent from PATH: %+v", result)
+				Expect(result.Code).To(Equal(projectreadiness.GapPackageManagerConfigUnverifiable), "insulation failing before any subprocess starts must be distinguishable from mise simply being absent from PATH: %+v", result)
 			})
 		})
 	})

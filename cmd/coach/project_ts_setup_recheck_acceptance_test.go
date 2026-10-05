@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // writeInstallingSetupExecutable writes an executable named `name` that
@@ -76,9 +77,9 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 
 			before, err := codesignalcli.CheckProjectReadiness(repo, head, "coach-project.json")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(before.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail))
-			Expect(before.Checks.Compiler.Code).To(Equal(codesignalcli.GapTypescriptCompilerMissing), "the fixture must genuinely start with a missing-compiler gap, or a later pass proves nothing")
-			Expect(before.Status).To(Equal(codesignalcli.StatusNeedsPrerequisite), "the pre-install snapshot must genuinely be blocked, or the post-install comparison proves nothing")
+			Expect(before.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
+			Expect(before.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing), "the fixture must genuinely start with a missing-compiler gap, or a later pass proves nothing")
+			Expect(before.Status).To(Equal(projectreadiness.StatusNeedsPrerequisite), "the pre-install snapshot must genuinely be blocked, or the post-install comparison proves nothing")
 
 			stubDir := writeInstallingSetupExecutable("npm", version)
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+pathWithStubNode("v24.9.9"))
@@ -100,23 +101,23 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			// mutant; asserting DirtyWorktree.Paths (which exist only because
 			// the stub install just wrote them) proves the second read hit the
 			// post-install filesystem rather than returning a canned result.
-			Expect(post.SchemaVersion).To(Equal(codesignalcli.ReadinessSchemaVersion))
+			Expect(post.SchemaVersion).To(Equal(projectreadiness.SchemaVersion))
 			Expect(post.Revision).To(Equal(head))
-			Expect(post.Status).To(Equal(codesignalcli.StatusReadyWithLimits), "must have advanced past the pre-install needs_prerequisite status")
+			Expect(post.Status).To(Equal(projectreadiness.StatusReadyWithLimits), "must have advanced past the pre-install needs_prerequisite status")
 
-			Expect(post.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessPass), "the recheck must observe the just-installed compiler, not the stale pre-install snapshot")
+			Expect(post.Checks.Compiler.State).To(Equal(projectreadiness.Pass), "the recheck must observe the just-installed compiler, not the stale pre-install snapshot")
 			Expect(post.Checks.Compiler.Version).To(Equal(version))
 
-			Expect(post.Checks.Runtime.State).To(Equal(codesignalcli.ReadinessPass))
+			Expect(post.Checks.Runtime.State).To(Equal(projectreadiness.Pass))
 			Expect(post.Checks.Runtime.Version).To(Equal("v24.9.9"))
 			Expect(post.Checks.Runtime.Origin).To(Equal("path"))
 			Expect(post.Checks.Node.Version).To(Equal("v24.9.9"))
 
-			Expect(post.Checks.Policy.State).To(Equal(codesignalcli.ReadinessPass), "a dropped/defaulted configPath would report policy_missing here instead")
-			Expect(post.Checks.ProjectShape.State).To(Equal(codesignalcli.ReadinessPass))
+			Expect(post.Checks.Policy.State).To(Equal(projectreadiness.Pass), "a dropped/defaulted configPath would report policy_missing here instead")
+			Expect(post.Checks.ProjectShape.State).To(Equal(projectreadiness.Pass))
 
-			Expect(post.Checks.PackageManager.State).To(Equal(codesignalcli.ReadinessFail))
-			Expect(post.Checks.PackageManager.Code).To(Equal(codesignalcli.GapPackageManagerVersionUnverifiable))
+			Expect(post.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))
+			Expect(post.Checks.PackageManager.Code).To(Equal(projectreadiness.GapPackageManagerVersionUnverifiable))
 			Expect(post.Checks.PackageManager.Kind).To(Equal("npm"))
 
 			Expect(post.DirtyWorktree.Paths).To(ContainElement("node_modules/typescript/package.json"), "these files exist only because the stub install just wrote them post-recheck")

@@ -7,6 +7,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -31,7 +32,7 @@ func body_projectProvenanceAcceptanceTest_appendsAWorktreeReportReflectsCommitte
 		ConfigPath:   "project.json",
 		Language:     "typescript",
 		Config:       cfg,
-		ConfigDigest: ConfigDigest(cfg),
+		ConfigDigest: projectconfig.Digest(cfg),
 		Backend:      backend,
 	}
 
@@ -64,7 +65,7 @@ func body_projectProvenanceAcceptanceTest_worktreeReportReflectsCommittedHeadMes
 		ConfigPath:   "project.json",
 		Language:     "typescript",
 		Config:       cfg,
-		ConfigDigest: ConfigDigest(cfg),
+		ConfigDigest: projectconfig.Digest(cfg),
 		Backend:      backend,
 	}
 
@@ -97,7 +98,7 @@ func body_projectProvenanceAcceptanceTest_doesNotEmitAWorktreeProvenanceDiagnost
 		ConfigPath:   "project.json",
 		Language:     "typescript",
 		Config:       cfg,
-		ConfigDigest: ConfigDigest(cfg),
+		ConfigDigest: projectconfig.Digest(cfg),
 		Backend:      backend,
 	}
 
@@ -128,7 +129,7 @@ func body_projectProvenanceAcceptanceTest_emitsWorktreeStatusCheckFailedRatherTh
 		ConfigPath:   "project.json",
 		Language:     "typescript",
 		Config:       cfg,
-		ConfigDigest: ConfigDigest(cfg),
+		ConfigDigest: projectconfig.Digest(cfg),
 		Backend:      backend,
 	}
 

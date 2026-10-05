@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func TestAppendedRemediationLine(t *testing.T) {
@@ -39,15 +40,15 @@ func TestSuggestProjectConfigRemediation(t *testing.T) {
 // passing package-manager check) or the prompt this pins would never open at
 // all.
 func TestRunCompilerSetupOfferCancelsOnUnreadableSelection(t *testing.T) {
-	readiness := &ReadinessResult{
-		Checks: ReadinessChecks{
-			Policy:         ReadinessCheck{State: ReadinessPass},
-			Compiler:       ReadinessCheck{State: ReadinessFail, Code: GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
-			PackageManager: ReadinessCheck{State: ReadinessPass},
+	readiness := &projectreadiness.Result{
+		Checks: projectreadiness.Checks{
+			Policy:         projectreadiness.Check{State: projectreadiness.Pass},
+			Compiler:       projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing, DeclaredVersion: SupportedTypescriptVersions[0]},
+			PackageManager: projectreadiness.Check{State: projectreadiness.Pass},
 		},
 	}
 	var out strings.Builder
-	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
+	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
 	if !result.Cancelled {
 		t.Fatalf("Cancelled = false, want true: %+v", result)
 	}

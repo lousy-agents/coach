@@ -2,6 +2,8 @@ package codesignalcli
 
 import (
 	"context"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 const (
@@ -25,7 +27,7 @@ type compilerCandidate struct {
 type originEvaluation struct {
 	candidate compilerCandidate
 	conflict  bool
-	findings  []ReadinessRootFinding
+	findings  []projectreadiness.RootFinding
 }
 
 type compilerAggregate struct {
@@ -33,7 +35,7 @@ type compilerAggregate struct {
 	candidates []compilerCandidate
 
 	conflict bool
-	findings []ReadinessRootFinding
+	findings []projectreadiness.RootFinding
 
 	// project holds the facts only the project origin produces; the fields
 	// above are true of every origin.
@@ -61,19 +63,19 @@ func (a *compilerAggregate) tryOrigin(evaluation originEvaluation) bool {
 // precedence between conflict, a winner, an unresolved root, an unsupported
 // candidate, and a missing compiler -- reordering the cases changes which
 // gap code wins for an input matching more than one.
-func compilerOutcomeFromAggregate(aggregate compilerAggregate) (code string, findings []ReadinessRootFinding) {
+func compilerOutcomeFromAggregate(aggregate compilerAggregate) (code string, findings []projectreadiness.RootFinding) {
 	switch {
 	case aggregate.conflict:
-		return GapTypescriptVersionConflict, aggregate.findings
+		return projectreadiness.GapTypescriptVersionConflict, aggregate.findings
 	case aggregate.winner != nil:
 		return "", nil
 	case aggregate.project.someRootsResolvedNothing:
-		return GapTypescriptVersionConflict, aggregate.project.rootFindings
+		return projectreadiness.GapTypescriptVersionConflict, aggregate.project.rootFindings
 	}
 	if unsupported, ok := aggregate.firstOfClass(compilerClassUnsupported); ok {
-		return GapTypescriptVersionMismatch, mismatchRootFindings(unsupported, aggregate.project.rootFindings)
+		return projectreadiness.GapTypescriptVersionMismatch, mismatchRootFindings(unsupported, aggregate.project.rootFindings)
 	}
-	return GapTypescriptCompilerMissing, nil
+	return projectreadiness.GapTypescriptCompilerMissing, nil
 }
 
 // miseSetupTrust is the shared gate applied at every point mise would
@@ -115,7 +117,7 @@ func miseTrustFromChecks(toolReadiness miseToolReadiness, hazardCheck func() boo
 		return miseSetupTrust{code: toolReadiness.code}
 	}
 	if hazardCheck() {
-		return miseSetupTrust{code: GapPackageManagerConfigUnverifiable}
+		return miseSetupTrust{code: projectreadiness.GapPackageManagerConfigUnverifiable}
 	}
 	return miseSetupTrust{trusted: true}
 }
@@ -148,8 +150,8 @@ func miseScopeDeclaresInstallableCompiler(origin, worktreeRoot string) (version 
 	}
 }
 
-func miseReadinessChoice(kind string, trust miseSetupTrust) ReadinessMiseChoice {
-	return ReadinessMiseChoice{Kind: kind, Verified: trust.trusted, Code: trust.code}
+func miseReadinessChoice(kind string, trust miseSetupTrust) projectreadiness.MiseChoice {
+	return projectreadiness.MiseChoice{Kind: kind, Verified: trust.trusted, Code: trust.code}
 }
 
 func (a compilerAggregate) firstOfClass(class string) (compilerCandidate, bool) {
@@ -166,12 +168,12 @@ func (a compilerAggregate) firstOfClass(class string) (compilerCandidate, bool) 
 // differing declaration; when the project origin itself wins, only a stale
 // exact pin disagrees -- range satisfaction is never evaluated (epic #280,
 // owner decision D4).
-func (a compilerAggregate) declarationMismatches() []ReadinessDeclarationMismatch {
+func (a compilerAggregate) declarationMismatches() []projectreadiness.DeclarationMismatch {
 	if a.winner == nil {
 		return nil
 	}
 	projectWon := a.winner.origin == compilerOriginProject
-	var mismatches []ReadinessDeclarationMismatch
+	var mismatches []projectreadiness.DeclarationMismatch
 	for _, declaration := range a.project.declarations {
 		if declaration.declared == a.winner.version {
 			continue
@@ -179,7 +181,7 @@ func (a compilerAggregate) declarationMismatches() []ReadinessDeclarationMismatc
 		if projectWon && !isExactVersion(declaration.declared) {
 			continue
 		}
-		mismatches = append(mismatches, ReadinessDeclarationMismatch{Root: declaration.root, Declared: declaration.declared})
+		mismatches = append(mismatches, projectreadiness.DeclarationMismatch{Root: declaration.root, Declared: declaration.declared})
 	}
 	return mismatches
 }
@@ -194,10 +196,10 @@ func (a compilerAggregate) namedDeclaration() string {
 	return ""
 }
 
-func (a compilerAggregate) originFindings() []ReadinessOriginFinding {
-	findings := make([]ReadinessOriginFinding, 0, len(a.candidates))
+func (a compilerAggregate) originFindings() []projectreadiness.OriginFinding {
+	findings := make([]projectreadiness.OriginFinding, 0, len(a.candidates))
 	for _, candidate := range a.candidates {
-		findings = append(findings, ReadinessOriginFinding{Origin: candidate.origin, Class: candidate.class})
+		findings = append(findings, projectreadiness.OriginFinding{Origin: candidate.origin, Class: candidate.class})
 	}
 	return findings
 }
