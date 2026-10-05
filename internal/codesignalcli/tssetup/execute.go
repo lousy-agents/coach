@@ -48,7 +48,7 @@ var ErrUnverifiedCommand = errors.New("setup execution: preview does not match a
 // hazard (pkgmanager.DetectPackageManagerHazard) -- a committed .npmrc or bunfig.toml
 // that would redirect the registry or otherwise bypass the frozen adapter's
 // script suppression: no subprocess is started. pkgmanager.Check scans the
-// selected roots' package contexts (project_ts_setup_detect.go), which is not
+// selected roots' package contexts (pkgmanager.Contexts), which is not
 // necessarily where a caller points preview.WorkingDirectory; Execute
 // re-runs the same hazard scan directly against the directory it is about to
 // run in, so the scan and the install can never be about different

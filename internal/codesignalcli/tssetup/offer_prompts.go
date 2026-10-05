@@ -24,7 +24,7 @@ func promptForSetupConfirmation(out io.Writer, reader *bufio.Reader) bool {
 // choice's exact kind name, or "cancel". There is no numbered/default
 // selection: an unrecognized or blank answer cancels rather than falling
 // back to any choice, mirroring promptForMiseSetupChoice's own contract
-// (project_ts_compiler_mise_install.go).
+// (prepare_compiler_prompts.go).
 func promptForCompilerSetupChoice(out io.Writer, reader *bufio.Reader, choices []Choice) (ChoiceKind, bool) {
 	fmt.Fprintln(out, "TypeScript compiler setup: the following choices are offered to resolve the failing compiler check:")
 	for _, c := range choices {

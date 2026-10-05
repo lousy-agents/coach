@@ -25,7 +25,7 @@ const (
 	// prefixes (a pure in-process string-comparison budget), each declared
 	// root can drive up to three git child-process spawns in
 	// checkProjectShape's non-root package.json probe
-	// (project_readiness.go), so this budget must stay small enough that
+	// (projectcheck/project_shape.go), so this budget must stay small enough that
 	// even the worst case (no package.json under any root) completes in a
 	// few seconds rather than fanning out into tens of thousands of git
 	// invocations from a config that is still well under

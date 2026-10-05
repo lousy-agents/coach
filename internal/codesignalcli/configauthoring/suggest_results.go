@@ -35,7 +35,7 @@ func suggestFailureAfterDiscovery(revision string, result projectmodel.RootDisco
 //     to just its errno-class Err, discarding Path entirely, since the path
 //     there was never known to the caller and cannot be stripped by
 //     substring match.
-//  2. *gitrepo.OperationalError (gitrepo.resolveHEAD's "not inside a Git worktree" case):
+//  2. *gitrepo.OperationalError (gitrepo.ResolveBaselineRevision's "not inside a Git worktree" case):
 //     its Reason() carries the same failure with no path interpolated.
 //  3. *revisionfs.ListError (revisionfs.New's ls-tree listing failure): its
 //     Unwrap() carries the underlying git failure alone, with dir dropped

@@ -45,7 +45,7 @@ func mustSubFS(f embed.FS, dir string) fs.FS {
 
 // materializeMkdirTemp creates the private directory each MaterializeTSAnalyzer
 // call copies the embedded asset into. It is a package-level var (test seam,
-// matching revisionfs.runSnapshotGit/revisionfs.snapshotGitCommandContext in project_snapshot.go)
+// matching runSnapshotGit/snapshotGitCommandContext in revisionfs)
 // so acceptance specs can capture the exact directory materializeFS creates
 // and assert it is removed after a failure or a cancelled context.
 var materializeMkdirTemp = os.MkdirTemp

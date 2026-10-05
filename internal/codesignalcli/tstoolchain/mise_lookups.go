@@ -36,7 +36,7 @@ var LocateMiseTypescriptInstall = func(ctx context.Context, version string) (str
 
 // ProbeMiseToolVersion runs the confined `mise --version` probe. It reports
 // the raw trimmed output; extracting the leading calver token is
-// project_ts_compiler_mise_version.go's concern, kept separate so this
+// mise_tool_support.go's concern, kept separate so this
 // function stays a pure I/O probe like its siblings above. ok is false
 // whenever the probe could not be confined, mise is absent from PATH, or the
 // probe exited non-zero -- every one of those is "undetectable", never

@@ -140,7 +140,7 @@ func RunConfirmedAndRecheckReadiness(ctx context.Context, preview Preview, confi
 // directories. Nothing else is forwarded, so a repository-controlled or
 // otherwise ambient variable (npm_config_*, PNPM_*, registry overrides, a
 // re-enabled lifecycle-script setting) can never reach the child -- this
-// mirrors project_ts_compiler_mise_probe.go's confinement pattern.
+// mirrors tstoolchain's mise probe confinement pattern.
 func setupExecutionEnv() []string {
 	env := []string{"PATH=" + os.Getenv("PATH")}
 	if home := os.Getenv("HOME"); home != "" {

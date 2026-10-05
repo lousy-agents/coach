@@ -15,7 +15,7 @@ import (
 // tracked path is enumerated once at construction; file reads are served
 // lazily via `git show` so a large repository is not fully prefetched into
 // memory. A later change could batch reads via `git cat-file --batch` (see
-// gitrepo.RevisionFileReader in catfile.go) if per-file `git show` latency becomes
+// gitrepo.RevisionFileReader) if per-file `git show` latency becomes
 // a measured problem; that is out of scope here.
 type revisionFS struct {
 	dir      string
@@ -57,8 +57,7 @@ func (e *ListError) Unwrap() error { return e.Err }
 // construction time (the `-l` long-format flag reuses the same listing call
 // to carry sizes too, rather than a second git invocation), then serves
 // individual file reads lazily via bounded `git show <revision>:<path>`
-// calls (reusing gitrepo.RunBytesBounded's shared implementation from
-// project.go). It implements fs.FS, fs.ReadDirFS, fs.ReadFileFS, and
+// calls (reusing gitrepo.RunBytesBounded's shared implementation). It implements fs.FS, fs.ReadDirFS, fs.ReadFileFS, and
 // fs.StatFS so that fs.WalkDir, fs.ReadFile, and fs.Stat all work
 // efficiently: fs.Stat in particular must resolve from the cached listing
 // alone, never by falling back to Open (which would run `git show` and

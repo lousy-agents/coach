@@ -37,7 +37,7 @@ func TestNodeVersionConstantsMatchDeclaredPins(t *testing.T) {
 // TestNodeMajorSupportedMatchesAnalysisGate binds CheckNode's
 // set-membership predicate (NodeMajorSupported, backed by
 // SupportedNodeMajors) to tsRuntime's independent AnalysisNodeMajorAllowed
-// (project_ts_runtime.go): the two are frozen to agree on {24, 26} today,
+// (host_node.go): the two are frozen to agree on {24, 26} today,
 // but nothing else ties them together, so a change to one that silently
 // diverges from the other would make the readiness verdict and the
 // analysis gate disagree on the same host Node major. This test must turn

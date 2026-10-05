@@ -25,7 +25,7 @@ func menuOffersExecutableMiseChoice(menu Menu) bool {
 
 // runMiseSetupOffer executes a mise scope choice through its own library
 // path (tstoolchain.MiseScopeDeclaresInstallableCompiler/installMiseTypescriptProject/
-// Global, project_ts_compiler_mise_install.go/project_ts_compiler_mise_command.go),
+// Global, prepare_compiler.go/mise_install.go),
 // distinct from runProjectPackageSetupOffer's project-package path. Its
 // preview and confirmation prompt are the same ones
 // RunPrepareCompilerMiseSetup's standalone --prepare-compiler session uses,

@@ -12,7 +12,7 @@ import (
 // project adapter never withholds prepare_compiler while a
 // projectreadiness.MiseChoice reports a distinct, verified mise origin.
 // Run now feeds aggregateReadiness a real
-// tstoolchain.EvaluateMiseSetupChoices result (project_readiness.go); this test
+// tstoolchain.EvaluateMiseSetupChoices result (check.go); this test
 // constructs that seam's input directly so aggregateReadiness's own
 // contract is proven independently of mise's actual availability in the
 // test environment.

@@ -122,7 +122,7 @@ func writeFakeInstalledTypescript(installDir, version string) {
 // writeStdoutOverflowStubMise writes a `mise` executable that always writes
 // more than tstoolchain.MaxMiseProbeOutput bytes to stdout before exiting 0, regardless
 // of its arguments -- exercising runBoundedMiseInstallSubprocess's
-// stdout-budget-overflow branch (project_ts_compiler_mise_command.go's
+// stdout-budget-overflow branch (mise_install.go's
 // `int64(len(data)) > tstoolchain.MaxMiseProbeOutput` check) deterministically, without
 // a real, network-dependent, minutes-long mise install.
 func writeStdoutOverflowStubMise() (dir string) {

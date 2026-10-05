@@ -59,7 +59,7 @@ func containsProjectModelDiagnosticCode(diagnostics []projectmodel.Diagnostic, c
 
 // countProjectModelDiagnosticCode asserts a model diagnostic is folded into
 // the reported ProjectCoverage exactly once (see tsBypassCoverageForFold in
-// internal/codesignalcli/project_ts_backend.go), not once per fold.
+// internal/codesignalcli/ts_project_revision.go), not once per fold.
 func countProjectModelDiagnosticCode(diagnostics []projectmodel.Diagnostic, code string) int {
 	count := 0
 	for _, d := range diagnostics {

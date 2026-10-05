@@ -75,7 +75,7 @@ func miseCalverYear(version string) (string, bool) {
 // supported version -- a prerequisite gate answered before mise's own
 // TypeScript-version detection is trusted, and before mise is offered as a
 // prepare_compiler installation choice. This is deliberately distinct from
-// ClassEligible/Unsupported in project_ts_compiler_aggregate.go,
+// ClassEligible/Unsupported in compiler_aggregate.go,
 // which classify the *TypeScript* version mise installed -- a different
 // question about a different piece of software. Ready is true only when the
 // detected version falls within the frozen row (isMiseToolVersionInRow);

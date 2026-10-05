@@ -14,7 +14,7 @@ import (
 
 // miseInstallTimeout bounds `mise install`. It is far longer than
 // miseProbeTimeout because installation does real network I/O (fetching a
-// package); the read-only probes in project_ts_compiler_mise_probe.go never
+// package); the read-only probes in tstoolchain's mise_probe.go never
 // do.
 const miseInstallTimeout = 5 * time.Minute
 
@@ -92,7 +92,7 @@ func runMiseInstallInsulated(ctx context.Context, toolSpec string) miseInstallAt
 }
 
 // runBoundedMiseInstallSubprocess mirrors subprocess.ProbeAt's
-// timeout/output-budget confinement (project_readiness_probe.go), but that
+// timeout/output-budget confinement (package subprocess), but that
 // shared probe helper collapses every post-Start failure into a single
 // opaque error and so cannot answer whether the subprocess actually started
 // -- exactly the distinction runMiseInstallInsulated's AC-SET-7 contract
@@ -174,7 +174,7 @@ type miseInstallResult struct {
 	// when the install's own insulation (its private working directory)
 	// could not be established, before any subprocess ever started. A false
 	// Succeeded after a true Attempted has no frozen gap code of its own
-	// (the decision table in project_ts_compiler_mise.go classifies origin
+	// (the decision table in tstoolchain's mise_origin.go classifies origin
 	// resolution, not a just-run install); Class below carries that detail
 	// instead, and Code stays empty in that case.
 	Code string

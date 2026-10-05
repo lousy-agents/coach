@@ -14,7 +14,7 @@ import (
 // snapshotUnavailableMessage's contract directly at the unit level: no
 // absolute host filesystem path may survive into the returned message,
 // regardless of whether the underlying error is a plain string that
-// happens to embed a known absolute path (as gitrepo.resolveHEAD's
+// happens to embed a known absolute path (as gitrepo.ResolveBaselineRevision's
 // "not inside a Git worktree" and revisionfs.New's "git ls-tree failed
 // ... in %q" both are) or an *fs.PathError carrying an absolute path the
 // caller never supplied (as filepath.EvalSymlinks' failure inside

@@ -698,7 +698,7 @@ var _ = Describe("coach codesignal (real scan): a withheld project_package choic
 })
 
 // openPTYPair opens a real Linux pseudo-terminal pair via /dev/ptmx,
-// duplicating internal/codesignalcli/controlling_terminal_pty_linux_test.go's
+// duplicating internal/codesignalcli/terminal/controlling_terminal_pty_linux_test.go's
 // openPTYSlave rather than importing it: it is a test-only fixture in a
 // different package, and pty allocation is a handful of ioctls, not shared
 // production logic. It returns both ends: master is written to by the spec

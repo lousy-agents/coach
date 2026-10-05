@@ -20,7 +20,7 @@ func onATerminal(invocation string) string {
 // AvailableChoices can still resolve to a menu --prepare-compiler cannot
 // act on. The test is what that flag would execute, not what the scan's own
 // combined menu offers: RunPrepareCompilerMiseSetup discards every non-mise
-// kind (filterMiseChoiceKinds, project_ts_compiler_mise_install.go), so a
+// kind (filterMiseChoiceKinds, prepare_compiler_choices.go), so a
 // menu whose only executable entry is project_package -- an npm/pnpm/Bun
 // repository that has simply never installed its declared compiler, and the
 // scan's own controlling-terminal offer resolves it -- is as much a dead end
@@ -63,7 +63,7 @@ func PrepareCompilerRemediation(gapCode, configPath string) string {
 // (R2) when a compiler gap's only genuinely executable setup choice is
 // project_package: --prepare-compiler can never resolve that choice, since
 // RunPrepareCompilerMiseSetup discards every non-mise kind
-// (project_ts_compiler_mise_install.go), so
+// (prepare_compiler_choices.go), so
 // PrepareCompilerRemediationWithReadiness withholds its own command for
 // exactly this menu. Without this, a no-TTY invocation whose only path
 // forward is project_package was told nothing beyond the bare

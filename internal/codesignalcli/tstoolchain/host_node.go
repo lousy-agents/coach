@@ -51,7 +51,7 @@ func mapHostNodeProbeError(path, probe string, exitErr, probeErr error) error {
 // spawns the analyzer with: process.execPath from a probe of the LookPath
 // result (never a version-manager shim) and its raw `node --version` output.
 // This is a separate probe from CheckNode/detectHostNodeMajor
-// (project_readiness.go): readiness only needs a major version for
+// (node_readiness.go): readiness only needs a major version for
 // --check-project, while runtime preparation needs the resolved absolute
 // path itself to spawn against, and the two are independent probes by
 // design -- see ResolveCompilerForRuntime's doc comment for the analogous

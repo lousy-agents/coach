@@ -44,7 +44,7 @@ func packageManagerVersionSupported(kind, version string) bool {
 
 // semverMajor extracts version's major component and whether it carries any
 // qualifier past its bare major.minor.patch core, reusing tstoolchain.IsExactVersion's
-// grammar (project_ts_compiler_resolve.go) rather than a second version
+// grammar (tstoolchain.IsExactVersion) rather than a second version
 // parser. qualified is true for a semver prerelease tag ("-") and for build
 // metadata ("+") alike: the frozen matrix (SA-280-012) covers bare stable
 // releases only, and a manager reporting build metadata for itself is

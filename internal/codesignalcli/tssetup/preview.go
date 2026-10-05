@@ -11,7 +11,7 @@ import (
 
 // PreviewTimeout bounds how long a project-package setup command may
 // run once a customer confirms it (AC-SET-2). BuildPreview only
-// discloses this bound; Execute (project_ts_setup_execute.go) enforces
+// discloses this bound; Execute (execute.go) enforces
 // it during execution.
 const PreviewTimeout = 5 * time.Minute
 
@@ -30,7 +30,7 @@ type setupCommandTemplate struct {
 }
 
 // setupCommandTemplates keys off the same manager-kind constants
-// pkgmanager.Check classifies against (project_ts_setup_matrix.go),
+// pkgmanager.Check classifies against (pkgmanager's version_support.go),
 // rather than re-typing a second copy of the frozen command strings.
 //
 // pnpm's row also carries --ignore-pnpmfile: --ignore-scripts alone does

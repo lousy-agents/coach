@@ -42,8 +42,8 @@ in ~426s wall clock, on compute that is not the session's.
 
 `cmd/coach` dominates `mise run test`'s wall time: `go test -race ./cmd/coach/...`
 measured ~239s, of which roughly 180s is deliberate blocking on
-`tsSidecarWallTime` (60s, `internal/codesignalcli/project_ts_backend.go`) and
-`snapshotGitTimeout` (30s, `internal/codesignalcli/project_snapshot.go`), each
+`tsSidecarWallTime` (60s, `internal/codesignalcli/ts_project_backend.go`) and
+`snapshotGitTimeout` (30s, `internal/codesignalcli/revisionfs/git_reads.go`), each
 paid twice across the project-backend and no-findings-verdict acceptance specs.
 Read `ci-fast` as "narrower than CI", not as "quick".
 

@@ -18,7 +18,7 @@ func resolveTSConfigExtendsTarget(target string) string {
 }
 
 // resolveExtendedTSConfig joins extends relative to dir, then enforces the
-// snapshotRoot boundary after EvalSymlinks (gitrepo.extractTar preserves symlinks;
+// snapshotRoot boundary after EvalSymlinks (gitrepo.ExtractRevision preserves symlinks;
 // a lexical-only check would read through an in-bounds symlink to a host
 // path). Boundary is snapshotRoot, not the current hop's directory.
 func resolveExtendedTSConfig(snapshotRoot, dir, extends string) (config tsConfig, baseDir, basePath string, ok bool) {

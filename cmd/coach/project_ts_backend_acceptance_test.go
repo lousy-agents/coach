@@ -624,7 +624,7 @@ const tsRootScopeGapTSConfigJSON = `{"compilerOptions":{"module":"commonjs","mod
 // layer-violation, layer-bypass, and reachability-facts derivation alike,
 // and incompleteness in each must fold into (or, for reachability, stay out
 // of) the project-change lifecycle exactly as documented on
-// tsProjectBackend.evaluateRevision (internal/codesignalcli/project_ts_backend.go).
+// tsProjectBackend.evaluateRevision (internal/codesignalcli/ts_project_revision.go).
 var _ = Describe("coach codesignal --project-language typescript derives layer violations, layer bypass, and reachability facts from one analyzer response per revision (issue #331 Task 8 T7)", func() {
 	BeforeEach(func() {
 		body_projectTsBackendAcceptanceTest_889()

@@ -38,7 +38,7 @@ var commandContext = func(ctx context.Context, dir string, args ...string) *exec
 // RunBytesBoundedWith is the shared bounded-git-read implementation
 // behind RunBytesBounded: a wall-time limit, hard stdout/stderr caps, and
 // concurrent pipe draining. buildCmd is the child-construction seam, letting
-// callers vary command/environment construction (e.g. project_snapshot.go's
+// callers vary command/environment construction (e.g. revisionfs's
 // sanitized-environment snapshot reads) without duplicating this I/O logic.
 func RunBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args ...string) *exec.Cmd, dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
 	if err := validateGitReadBounds(timeout, maxStdout, maxStderr); err != nil {

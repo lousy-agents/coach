@@ -15,7 +15,7 @@ import (
 // not the executable prepare-compiler kind, even when the readiness snapshot
 // passed alongside it independently offers a genuine, installable menu
 // entry. gapCode and readiness.Checks.Compiler.Code are two independent
-// projectcheck.Run reads (project_readiness.go resolves Node and the
+// projectcheck.Run reads (projectcheck.Run resolves Node and the
 // compiler separately), so a runtime-boundary gap can coexist with an
 // installable compiler menu; this is the fixture shape that previously drove
 // the interactive menu open for node_missing/node_unsupported. A literal

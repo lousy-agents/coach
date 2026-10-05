@@ -12,8 +12,8 @@ import (
 // are reachable via checkPackageManager's npm/pnpm/Bun/Yarn detection and via
 // CheckProjectReadiness's own evaluateMiseSetupChoices call
 // (evaluateMiseProjectTrust/evaluateMiseGlobalTrust, see
-// project_ts_compiler_mise_version_test.go and
-// project_ts_compiler_mise_command_acceptance_test.go's trust-gate specs).
+// tstoolchain's mise_tool_version_test.go and
+// tssetup's mise_install_acceptance_test.go trust-gate specs).
 // GapTypescriptVersionMismatch, GapTypescriptVersionConflict, and
 // GapPackageManagerAmbiguous remain unreachable via the CLI until later work,
 // but every entry in the mapping table must not silently drift regardless.

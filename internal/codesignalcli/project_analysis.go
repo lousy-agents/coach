@@ -194,7 +194,7 @@ func selectedRootsFromConfig(config json.RawMessage) []string {
 }
 
 // baseProjectDiagnostics prefixes each diagnostic's Kind with "base_",
-// mirroring analyze.go's baseSyntaxDiagnostics ("syntax_errors" ->
+// mirroring analyze_baseline.go's baseSyntaxDiagnostics ("syntax_errors" ->
 // "base_syntax_errors"). Without this, a diff-mode run whose backend finds
 // the same incompleteness on both revisions (e.g. two
 // project_layer_bypass_coverage_incomplete diagnostics) would emit two

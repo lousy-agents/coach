@@ -9,7 +9,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
-// Snapshot-read boundary budgets. Unlike maxProjectConfig* in project.go
+// Snapshot-read boundary budgets. Unlike projectconfig.MaxBytes
 // (sized for one small config document), these bound a whole-tree listing
 // and arbitrary tracked source files, so they are deliberately larger while
 // still finite: an oversized listing or file fails closed instead of
@@ -22,7 +22,7 @@ const (
 )
 
 // snapshotGitCommandContext builds the git child used by New's
-// reads. Unlike gitrepo.commandContext in project.go, it never inherits the
+// reads. Unlike gitrepo's default bounded-read command, it never inherits the
 // parent process's ambient environment (see sanitizedSnapshotGitEnv).
 var snapshotGitCommandContext = func(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
@@ -32,7 +32,7 @@ var snapshotGitCommandContext = func(ctx context.Context, dir string, args ...st
 
 // runSnapshotGit is the git seam used by New and its returned
 // fs.FS. Tests may replace it to exercise timeout and bound failures without
-// hanging, mirroring runProjectConfigGit in project.go.
+// hanging, mirroring projectconfig's runProjectConfigGit.
 var runSnapshotGit = func(dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
 	return gitrepo.RunBytesBoundedWith(snapshotGitCommandContext, dir, maxStdout, maxStderr, timeout, args...)
 }

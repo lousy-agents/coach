@@ -21,7 +21,7 @@ const tsSidecarWallTime = goProjectBuildWallTime
 
 // Identity constants for architecture.layer_violation ProjectChanges emitted
 // by tsProjectBackend, kept distinct from goLayerRuleVersion/
-// goLayerBackendVersion (see project_go_backend.go) since RuleVersion/
+// goLayerBackendVersion (see go_project_backend.go) since RuleVersion/
 // BackendVersion identify each language backend's own evaluation/build
 // wiring independently.
 const (
@@ -31,7 +31,7 @@ const (
 
 // Identity constants for architecture.layer_bypass ProjectChanges emitted by
 // tsProjectBackend, mirroring goBypassRuleVersion/goBypassBackendVersion's
-// split (see project_go_backend.go) for the TypeScript backend's own
+// split (see go_project_backend.go) for the TypeScript backend's own
 // evaluation/build wiring.
 const (
 	tsBypassRuleVersion    = "1"

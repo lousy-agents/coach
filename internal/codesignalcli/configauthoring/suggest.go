@@ -9,8 +9,8 @@ import (
 // suggestGoBudgets bounds the DiscoverGoRoots walk --suggest-project-config
 // runs over the immutable HEAD snapshot. A zero-value GoBudgets means
 // unbounded, which is unsafe for a CLI reading a repository-controlled
-// tree; this mirrors project_snapshot.go's revisionfs.MaxListBytes/
-// revisionfs.maxSnapshotFileBytes finite-input contract so a hostile or enormous tree
+// tree; this mirrors revisionfs.MaxListBytes/
+// revisionfs per-file finite-input contract so a hostile or enormous tree
 // truncates (surfaced as project_config_suggestion_incomplete) instead of
 // scanning without bound. 500,000 files comfortably covers even very large
 // monorepos while still being finite; MaxInputBytes reuses the existing

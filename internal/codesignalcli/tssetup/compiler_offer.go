@@ -23,7 +23,7 @@ import (
 type CompilerSetupOfferResult struct {
 	// PolicyRequired is true while readiness.Checks.Policy has not passed,
 	// mirroring RunPrepareCompilerMiseSetup's own AC-SET-13 precondition
-	// (project_ts_compiler_mise_install.go). The sole production caller
+	// (prepare_compiler.go). The sole production caller
 	// (runScanCompilerSetupOffer) only ever reaches this function downstream
 	// of a successful loadProjectConfig, so this never actually fires today;
 	// the guard exists so that invariant is enforced here too rather than
@@ -103,7 +103,7 @@ type CompilerSetupOfferResult struct {
 //
 // gapCode is the tstoolchain.CompilerUnresolvedError's own Code, not
 // readiness.Checks.Compiler.Code: the two are independent
-// projectcheck.Run reads (project_readiness.go resolves Node and the
+// projectcheck.Run reads (projectcheck.Run resolves Node and the
 // compiler separately), so a runtime-boundary gap (node_missing,
 // node_unsupported) can coexist with a readiness snapshot whose compiler
 // check independently offers an installable menu entry. A blocking runtime
@@ -172,7 +172,7 @@ func RunCompilerSetupOffer(ctx context.Context, dir, revision, configPath, gapCo
 
 // menuOffersExecutableChoice reports whether menu carries at least one
 // non-cancel choice. AvailableChoices always appends ChoiceCancel
-// (project_ts_setup_choice.go), so len(menu.Choices) == 0 is true only when
+// (choice_menu.go), so len(menu.Choices) == 0 is true only when
 // readiness's compiler check is not actually failing; a compiler gap with
 // nothing installable still produces a one-entry (cancel-only) menu, which
 // must not open an interactive prompt that can only ever be cancelled.

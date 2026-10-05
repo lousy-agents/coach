@@ -23,7 +23,7 @@ const goProjectBuildWallTime = 60 * time.Second
 
 // goProjectMaxInputBytes bounds the cumulative analyzed source bytes
 // BuildGoModel reads across all files. It is a dedicated constant, not a
-// reuse of revisionfs.MaxListBytes (project_snapshot.go's `git ls-tree -r`
+// reuse of revisionfs.MaxListBytes (revisionfs's `git ls-tree -r`
 // path-listing cap), because the two bound different dimensions: changing
 // the ls-tree cap must not silently change this model-build budget. Set to
 // 50 MiB per revision per epic #208's frozen "Snapshot/import facts" row;
@@ -59,8 +59,8 @@ const (
 // issue states corpus measurements "may revise them only through a
 // versioned contract update", so these values must track that table, not be
 // chosen independently. Repository-controlled input must never be read
-// unboundedly (see project_snapshot.go's
-// revisionfs.MaxListBytes/revisionfs.maxSnapshotFileBytes and project.go's git-read
+// unboundedly (see revisionfs's
+// revisionfs.MaxListBytes/maxSnapshotFileBytes and projectconfig's git-read
 // budgets for the same convention). MaxInputFiles and MaxInputBytes are
 // enforced by discoverGoProject (the snapshot walk both BuildGoModel and
 // BuildGoLayerBypass perform before doing anything else); WallTime is
@@ -85,8 +85,8 @@ var goProjectBudgets = projectmodel.GoBudgets{
 
 // buildGoLayerBypass is the BuildGoLayerBypass seam evaluateRevision calls.
 // Tests may replace it to inject a deterministic LayerBypassResult (e.g. an
-// incomplete Coverage) directly, mirroring project.go's
-// gitrepo.commandContext/runProjectConfigGit seam convention in this package,
+// incomplete Coverage) directly, mirroring the runProjectConfigGit seam
+// convention of the git readers,
 // instead of forcing the real search to truncate by giving
 // goLayerBypassMaxSearchNodes a finite value.
 var buildGoLayerBypass func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error) = projectmodel.BuildGoLayerBypass
@@ -179,7 +179,7 @@ func (b *goProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 // LayerBypassResult.Coverage is folded into the returned Coverage via
 // combineProjectCoverage so an incomplete bypass search degrades the
 // project's overall Coverage.Complete -- and therefore
-// projectLifecycleState's lifecycle-unknown gate (pkg/codesignal/codesignal.go)
+// projectLifecycleState's lifecycle-unknown gate (pkg/codesignal/project_lifecycle_state.go)
 // -- exactly like any other incomplete project-model phase, rather than
 // silently reporting a "resolved"/"introduced"/"existing" claim on a witness
 // that only disappeared because the search was truncated.

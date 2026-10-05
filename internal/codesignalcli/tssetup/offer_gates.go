@@ -8,7 +8,7 @@ import (
 // independently fails with a gap code that is not the executable
 // prepare-compiler kind, through the same gapCodeIsExecutablePrepareCompiler
 // predicate the real scan's own compiler-setup gate uses
-// (project_ts_preflight.go). readinessFromGapChecks (project_readiness_
+// (offer_gates.go). readinessFromGapChecks (projectcheck/
 // aggregate.go) derives Runtime's and Compiler's next actions independently
 // of one another, so a failing runtime check can coexist in NextActions with
 // a genuinely executable prepare_compiler entry; without this check,

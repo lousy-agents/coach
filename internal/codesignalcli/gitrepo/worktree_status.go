@@ -10,8 +10,8 @@ type WorktreeEntry struct {
 	Path string
 }
 
-// Dirty-worktree status boundary budgets, mirroring project.go's
-// maxProjectConfig* and project_snapshot.go's maxSnapshot*: `git status` on
+// Dirty-worktree status boundary budgets, mirroring projectconfig's
+// read budgets and revisionfs's snapshot budgets: `git status` on
 // a large or pathological worktree must fail closed instead of hanging the
 // CLI or exhausting memory, the same as every other git read this package
 // performs.
