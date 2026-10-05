@@ -26,7 +26,7 @@ Tags: `[O55 § H]` is the Opus 5.5 guide under heading H, and `[O55 <page> § H]
 - Safety classifiers cover cybersecurity, biology and reasoning extraction; a decline is `stop_reason: "refusal"` [O55 § Safeguard refusals].
 - Claude Code loads `CLAUDE.md` automatically and provides file read/edit, shell, search, web fetch and subagent tools. Context window is 1M tokens.
 - Tokenizer ratio versus earlier models: `undisclosed`. Whether the user sees tool output: `undisclosed`.
-- If the profiled harness is not Claude Code, judge G3 against that harness. In a direct-chat harness (no tools or workspace), C5 is N/A and C6 accepts an observable result in place of a command.
+- If the profiled harness is not Claude Code, judge G3 against that harness. In a harness with no repository or workspace (direct chat, including claude.ai with web or code-execution tools), C5 is N/A and C6 accepts an observable result in place of a command.
 
 ---
 
@@ -295,7 +295,7 @@ Inside optimize-prompt-loop the same agent judges and revises: it follows judge-
 1. no problems remain, setting aside any gap that only the user's answer can close (record those as assumptions or the one question);
 2. five judged passes.
 
-Return the last judged draft (except on a reversal, below); the final verdict is its band. When (2) ends the loop with problems left, report that verdict rather than continuing; a gate still failing reports `blocked`. If a criterion reverses direction across passes (1 → 3 → 1), keep the shorter of the two drafts, stop, and report that draft's judged verdict.
+Return the last judged draft (except on a reversal, below); the final verdict is its band. When (2) ends the loop with problems left, report that verdict rather than continuing; a gate still failing reports `blocked`. If a criterion reverses direction across passes (1 → 3 → 1), keep the shorter of the last two judged drafts, stop, and report that draft's judged verdict.
 
 ---
 
