@@ -7,10 +7,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
@@ -27,16 +27,16 @@ import (
 // cover command preview/execution, but no CLI-facing rendering of these
 // choices exists yet.
 
-func choiceKinds(choices []codesignalcli.SetupChoice) []codesignalcli.SetupChoiceKind {
-	kinds := make([]codesignalcli.SetupChoiceKind, len(choices))
+func choiceKinds(choices []tssetup.Choice) []tssetup.ChoiceKind {
+	kinds := make([]tssetup.ChoiceKind, len(choices))
 	for i, c := range choices {
 		kinds[i] = c.Kind
 	}
 	return kinds
 }
 
-func withheldKinds(withheld []codesignalcli.WithheldSetupChoice) []codesignalcli.SetupChoiceKind {
-	kinds := make([]codesignalcli.SetupChoiceKind, len(withheld))
+func withheldKinds(withheld []tssetup.WithheldChoice) []tssetup.ChoiceKind {
+	kinds := make([]tssetup.ChoiceKind, len(withheld))
 	for i, w := range withheld {
 		kinds[i] = w.Kind
 	}
@@ -74,11 +74,11 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 				MiseChoices: bothMiseScopesVerified,
 			}
 
-			menu := codesignalcli.AvailableSetupChoices(readiness)
+			menu := tssetup.AvailableChoices(readiness)
 
-			Expect(choiceKinds(menu.Choices)).To(ConsistOf(codesignalcli.SetupChoiceProjectMise, codesignalcli.SetupChoiceGlobalMise, codesignalcli.SetupChoiceCancel),
+			Expect(choiceKinds(menu.Choices)).To(ConsistOf(tssetup.ChoiceProjectMise, tssetup.ChoiceGlobalMise, tssetup.ChoiceCancel),
 				"project-package must be absent from the offered choices, mise origins must remain offered")
-			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceProjectPackage))
 		})
 	})
 
@@ -95,11 +95,11 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 				MiseChoices: bothMiseScopesVerified,
 			}
 
-			menu := codesignalcli.AvailableSetupChoices(readiness)
+			menu := tssetup.AvailableChoices(readiness)
 
 			Expect(menu.RequiresExplicitSelection).To(BeTrue(), "an ambiguous package manager must never resolve to a silent default")
-			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectPackage))
-			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage))
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceProjectPackage))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceProjectPackage))
 		})
 	})
 
@@ -119,7 +119,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 				},
 			}
 
-			menu := codesignalcli.AvailableSetupChoices(readiness)
+			menu := tssetup.AvailableChoices(readiness)
 
 			Expect(menu.Choices).To(BeEmpty())
 			Expect(menu.Withheld).To(BeEmpty())
@@ -140,13 +140,13 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 				MiseChoices: bothMiseScopesVerified,
 			}
 
-			menu := codesignalcli.AvailableSetupChoices(readiness)
+			menu := tssetup.AvailableChoices(readiness)
 
-			Expect(choiceKinds(menu.Choices)).To(Equal([]codesignalcli.SetupChoiceKind{
-				codesignalcli.SetupChoiceProjectPackage,
-				codesignalcli.SetupChoiceProjectMise,
-				codesignalcli.SetupChoiceGlobalMise,
-				codesignalcli.SetupChoiceCancel,
+			Expect(choiceKinds(menu.Choices)).To(Equal([]tssetup.ChoiceKind{
+				tssetup.ChoiceProjectPackage,
+				tssetup.ChoiceProjectMise,
+				tssetup.ChoiceGlobalMise,
+				tssetup.ChoiceCancel,
 			}))
 			Expect(menu.Withheld).To(BeEmpty())
 		})
@@ -166,11 +166,11 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 				},
 			}
 
-			menu := codesignalcli.AvailableSetupChoices(readiness)
+			menu := tssetup.AvailableChoices(readiness)
 
-			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectPackage),
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceProjectPackage),
 				"a non-exact manifest declaration disqualifies project-package regardless of which failing compiler code produced it")
-			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceProjectPackage))
 		})
 	})
 
@@ -186,13 +186,13 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 				},
 			}
 
-			menu := codesignalcli.AvailableSetupChoices(readiness)
+			menu := tssetup.AvailableChoices(readiness)
 
-			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectMise),
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceProjectMise),
 				"an ambiguous mise configuration must never be offered as an executable origin merely because evidence is absent")
-			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceGlobalMise))
-			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectMise))
-			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceGlobalMise))
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceGlobalMise))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceProjectMise))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceGlobalMise))
 		})
 	})
 
@@ -210,12 +210,12 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 				},
 			}
 
-			menu := codesignalcli.AvailableSetupChoices(readiness)
+			menu := tssetup.AvailableChoices(readiness)
 
-			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectMise))
-			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceGlobalMise))
-			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectMise))
-			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceGlobalMise))
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceProjectMise))
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceGlobalMise))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceProjectMise))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceGlobalMise))
 		})
 	})
 
@@ -245,13 +245,13 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 				MiseChoices: neitherMiseScopeConfigured,
 			}
 
-			menu := codesignalcli.AvailableSetupChoices(readiness)
+			menu := tssetup.AvailableChoices(readiness)
 
-			Expect(choiceKinds(menu.Choices)).To(Equal([]codesignalcli.SetupChoiceKind{
-				codesignalcli.SetupChoiceProjectPackage,
-				codesignalcli.SetupChoiceCancel,
+			Expect(choiceKinds(menu.Choices)).To(Equal([]tssetup.ChoiceKind{
+				tssetup.ChoiceProjectPackage,
+				tssetup.ChoiceCancel,
 			}))
-			Expect(withheldKinds(menu.Withheld)).To(ConsistOf(codesignalcli.SetupChoiceProjectMise, codesignalcli.SetupChoiceGlobalMise))
+			Expect(withheldKinds(menu.Withheld)).To(ConsistOf(tssetup.ChoiceProjectMise, tssetup.ChoiceGlobalMise))
 		})
 	})
 
@@ -269,13 +269,13 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 				MiseChoices: neitherMiseScopeConfigured,
 			}
 
-			menu := codesignalcli.AvailableSetupChoices(readiness)
+			menu := tssetup.AvailableChoices(readiness)
 
-			Expect(choiceKinds(menu.Choices)).To(Equal([]codesignalcli.SetupChoiceKind{codesignalcli.SetupChoiceCancel}))
+			Expect(choiceKinds(menu.Choices)).To(Equal([]tssetup.ChoiceKind{tssetup.ChoiceCancel}))
 			Expect(withheldKinds(menu.Withheld)).To(ConsistOf(
-				codesignalcli.SetupChoiceProjectPackage,
-				codesignalcli.SetupChoiceProjectMise,
-				codesignalcli.SetupChoiceGlobalMise,
+				tssetup.ChoiceProjectPackage,
+				tssetup.ChoiceProjectMise,
+				tssetup.ChoiceGlobalMise,
 			))
 		})
 	})
@@ -290,7 +290,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 				},
 			}
 
-			menu := codesignalcli.AvailableSetupChoices(readiness)
+			menu := tssetup.AvailableChoices(readiness)
 
 			Expect(menu.Choices).To(BeEmpty())
 			Expect(menu.Withheld).To(BeEmpty())
@@ -311,11 +311,11 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 				MiseChoices: bothMiseScopesVerified,
 			}
 
-			menu := codesignalcli.AvailableSetupChoices(readiness)
+			menu := tssetup.AvailableChoices(readiness)
 
-			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectPackage),
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceProjectPackage),
 				"an unchecked package manager has no resolved kind for BuildSetupPreview to build a command against, so offering it would be a choice with nothing to execute")
-			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceProjectPackage))
 		})
 	})
 
@@ -332,10 +332,10 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 				MiseChoices: bothMiseScopesVerified,
 			}
 
-			menu := codesignalcli.AvailableSetupChoices(readiness)
+			menu := tssetup.AvailableChoices(readiness)
 
-			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectPackage))
-			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage))
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceProjectPackage))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceProjectPackage))
 		},
 		Entry("package_manager_version_unverifiable", projectreadiness.GapPackageManagerVersionUnverifiable),
 		Entry("package_manager_version_unsupported", projectreadiness.GapPackageManagerVersionUnsupported),
@@ -365,11 +365,11 @@ var _ = Describe("codesignalcli.AvailableSetupChoices over a real CheckProjectRe
 			Expect(err).NotTo(HaveOccurred())
 			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "the fixture must genuinely need setup, or the menu assertion below proves nothing")
 
-			menu := codesignalcli.AvailableSetupChoices(*readiness)
+			menu := tssetup.AvailableChoices(*readiness)
 
-			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectMise),
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceProjectMise),
 				"an out-of-set pin is not an installable origin -- consenting to it would leave checks.compiler failing exactly as it was")
-			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectMise))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceProjectMise))
 		})
 	})
 
@@ -387,9 +387,9 @@ var _ = Describe("codesignalcli.AvailableSetupChoices over a real CheckProjectRe
 			Expect(err).NotTo(HaveOccurred())
 			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
 
-			menu := codesignalcli.AvailableSetupChoices(*readiness)
+			menu := tssetup.AvailableChoices(*readiness)
 
-			Expect(choiceKinds(menu.Choices)).To(ContainElement(codesignalcli.SetupChoiceProjectMise))
+			Expect(choiceKinds(menu.Choices)).To(ContainElement(tssetup.ChoiceProjectMise))
 		})
 	})
 })

@@ -8,6 +8,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 
 	"strings"
@@ -20,7 +21,7 @@ func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configP
 	config, err := loadProjectConfig(dir, revision, configPath)
 	if err != nil {
 		if language == "typescript" {
-			err = codesignalcli.WrapProjectConfigErrorWithReadiness(err, dir, revision, configPath)
+			err = tssetup.WrapProjectConfigErrorWithReadiness(err, dir, revision, configPath)
 		}
 		return nil, nil, err
 	}

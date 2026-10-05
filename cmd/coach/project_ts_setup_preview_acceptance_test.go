@@ -7,8 +7,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 )
 
 // BuildSetupPreview is a pure function over an already-selected SetupChoice,
@@ -41,8 +41,8 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 			probe := exec.Command("sh", "-c", "command -v npm || command -v pnpm || command -v bun")
 			Expect(probe.Run()).To(HaveOccurred(), "expected npm/pnpm/bun to be unreachable on the stripped PATH used for this spec")
 
-			preview, err := codesignalcli.BuildSetupPreview(
-				codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage},
+			preview, err := tssetup.BuildPreview(
+				tssetup.Choice{Kind: tssetup.ChoiceProjectPackage},
 				projectPackageManager("npm"),
 				repo,
 			)
@@ -75,8 +75,8 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 
 	When("checks.package_manager recorded a packageManager pin that differs from the version actually on PATH", func() {
 		It("discloses that the pinned release is not what this command will run, naming both versions (AC-SET-2)", func() {
-			preview, err := codesignalcli.BuildSetupPreview(
-				codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage},
+			preview, err := tssetup.BuildPreview(
+				tssetup.Choice{Kind: tssetup.ChoiceProjectPackage},
 				projectreadiness.Check{State: projectreadiness.Pass, Kind: "npm", Version: "11.4.1", PinnedVersion: "11.2.0"},
 				"/tmp/example-root",
 			)
@@ -89,16 +89,16 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 
 	When("checks.package_manager recorded no packageManager pin, or one matching the version on PATH", func() {
 		It("discloses nothing about a pin, since there is no divergence for a customer to weigh", func() {
-			unpinned, err := codesignalcli.BuildSetupPreview(
-				codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage},
+			unpinned, err := tssetup.BuildPreview(
+				tssetup.Choice{Kind: tssetup.ChoiceProjectPackage},
 				projectreadiness.Check{State: projectreadiness.Pass, Kind: "npm", Version: "11.4.1"},
 				"/tmp/example-root",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(unpinned.PinDisclosure).To(BeEmpty())
 
-			agreeing, err := codesignalcli.BuildSetupPreview(
-				codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage},
+			agreeing, err := tssetup.BuildPreview(
+				tssetup.Choice{Kind: tssetup.ChoiceProjectPackage},
 				projectreadiness.Check{State: projectreadiness.Pass, Kind: "npm", Version: "11.4.1", PinnedVersion: "11.4.1"},
 				"/tmp/example-root",
 			)
@@ -109,8 +109,8 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 
 	When("the selected choice is not project-package", func() {
 		It("fails closed rather than guessing a command", func() {
-			_, err := codesignalcli.BuildSetupPreview(
-				codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectMise},
+			_, err := tssetup.BuildPreview(
+				tssetup.Choice{Kind: tssetup.ChoiceProjectMise},
 				projectPackageManager("npm"),
 				"/tmp/example-root",
 			)
@@ -120,8 +120,8 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 
 	When("packageManagerKind names a manager outside the frozen adapter matrix", func() {
 		It("fails closed rather than guessing a command", func() {
-			_, err := codesignalcli.BuildSetupPreview(
-				codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage},
+			_, err := tssetup.BuildPreview(
+				tssetup.Choice{Kind: tssetup.ChoiceProjectPackage},
 				projectPackageManager("yarn"),
 				"/tmp/example-root",
 			)

@@ -10,9 +10,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
@@ -252,10 +252,10 @@ var _ = Describe("codesignalcli.AvailableSetupChoices composes project_package a
 		Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "the fixture must genuinely need setup, or the menu assertion below proves nothing")
 		Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Pass), "detail=%s", readiness.Checks.PackageManager.Detail)
 
-		menu := codesignalcli.AvailableSetupChoices(*readiness)
+		menu := tssetup.AvailableChoices(*readiness)
 
-		Expect(choiceKinds(menu.Choices)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage), "an installable manifest declaration plus a passing package-manager check must offer project_package")
-		Expect(choiceKinds(menu.Choices)).To(ContainElement(codesignalcli.SetupChoiceProjectMise), "an exact, supported project mise.toml pin must offer project_mise")
+		Expect(choiceKinds(menu.Choices)).To(ContainElement(tssetup.ChoiceProjectPackage), "an installable manifest declaration plus a passing package-manager check must offer project_package")
+		Expect(choiceKinds(menu.Choices)).To(ContainElement(tssetup.ChoiceProjectMise), "an exact, supported project mise.toml pin must offer project_mise")
 	})
 })
 

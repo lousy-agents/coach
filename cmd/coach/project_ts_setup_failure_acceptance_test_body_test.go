@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 )
 
 func body_projectTsSetupFailureAcceptanceTest_scopesTheResidueDisclosureToWorkingDirectoryNami_130() {
@@ -29,12 +29,12 @@ func body_projectTsSetupFailureAcceptanceTest_scopesTheResidueDisclosureToWorkin
 	stubDir := writeFailingSetupExecutableWithResidue("npm")
 	GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-	preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), appDir)
+	preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), appDir)
 	Expect(err).NotTo(HaveOccurred())
 
-	outcome, err := codesignalcli.RunConfirmedSetup(context.Background(), preview, true)
+	outcome, err := tssetup.RunConfirmed(context.Background(), preview, true)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeFailed))
+	Expect(outcome.Kind).To(Equal(tssetup.OutcomeFailed))
 	Expect(outcome.ChangedPaths).NotTo(BeEmpty())
 
 	joined := strings.Join(outcome.ChangedPaths, "\n")

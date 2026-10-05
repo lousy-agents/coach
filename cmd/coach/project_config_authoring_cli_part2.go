@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/configauthoring"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 
@@ -56,7 +56,7 @@ func scanShouldAuthorProjectConfig(err error, language, configPath string, noInt
 // existing-target, or write error is success. The approved candidate itself
 // has already reached stdout or disk inside AuthorProjectConfig -- there is
 // nothing left to write here.
-func reportAuthoringResult(result codesignalcli.AuthoringResult, stderr *os.File) int {
+func reportAuthoringResult(result configauthoring.Result, stderr *os.File) int {
 	if !result.Approved {
 		fmt.Fprintf(stderr, "%s: authoring was cancelled or not approved; no policy config was written\n", authorTSUsagePrefix)
 		return 2

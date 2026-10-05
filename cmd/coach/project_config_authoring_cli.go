@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/configauthoring"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -110,9 +111,9 @@ func printProjectConfigGapBeforeAuthoring(scanErr error, stderr *os.File) {
 	}
 	fmt.Fprintln(stderr, configErr.Message)
 
-	var withReadiness *codesignalcli.ProjectConfigErrorWithReadiness
+	var withReadiness *tssetup.ProjectConfigErrorWithReadiness
 	if errors.As(scanErr, &withReadiness) {
-		for _, line := range codesignalcli.AlsoFailingGapLines(withReadiness.Readiness, withReadiness.ConfigPath) {
+		for _, line := range tssetup.AlsoFailingGapLines(withReadiness.Readiness, withReadiness.ConfigPath) {
 			fmt.Fprintln(stderr, line)
 		}
 	}
@@ -184,7 +185,7 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 		return 2
 	}
 
-	result := codesignalcli.AuthorProjectConfig(root, stdin, stderr, stdout, discovered, f.output, f.outputSet)
+	result := configauthoring.Author(root, stdin, stderr, stdout, discovered, f.output, f.outputSet)
 	return reportAuthoringResult(result, stderr)
 }
 

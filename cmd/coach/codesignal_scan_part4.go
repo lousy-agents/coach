@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 
 	"os"
 
@@ -21,8 +21,8 @@ import (
 // straight through to the plain *CompilerUnresolvedError) is unchanged --
 // this is what keeps a pty-allocating but genuinely unattended invocation
 // (R1) from opening a prompt nobody will ever answer.
-func scanShouldOfferCompilerSetup(err error, noInteractive bool) (*codesignalcli.CompilerUnresolvedErrorWithReadiness, bool) {
-	var wrapped *codesignalcli.CompilerUnresolvedErrorWithReadiness
+func scanShouldOfferCompilerSetup(err error, noInteractive bool) (*tssetup.CompilerUnresolvedErrorWithReadiness, bool) {
+	var wrapped *tssetup.CompilerUnresolvedErrorWithReadiness
 	if !errors.As(err, &wrapped) {
 		return nil, false
 	}
@@ -61,7 +61,7 @@ func interactiveRefusalReason(f codesignalFlags, stdin *os.File) string {
 // manifest that declares no supported compiler, a rejected package manager)
 // there is nothing to act on. It returns "" when no menu was built, so the
 // runtime-boundary path's output is unchanged.
-func withheldSetupChoicesLine(withheld []codesignalcli.WithheldSetupChoice) string {
+func withheldSetupChoicesLine(withheld []tssetup.WithheldChoice) string {
 	if len(withheld) == 0 {
 		return ""
 	}

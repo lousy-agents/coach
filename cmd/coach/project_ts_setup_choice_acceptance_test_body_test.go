@@ -3,8 +3,8 @@ package main
 import (
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 )
 
 func body_projectTsSetupChoiceAcceptanceTest_withholdsProjectPackageNamedAndOffersOnlyTheMise_103() {
@@ -22,13 +22,13 @@ func body_projectTsSetupChoiceAcceptanceTest_withholdsProjectPackageNamedAndOffe
 		},
 	}
 
-	menu := codesignalcli.AvailableSetupChoices(readiness)
+	menu := tssetup.AvailableChoices(readiness)
 
-	Expect(choiceKinds(menu.Choices)).To(Equal([]codesignalcli.SetupChoiceKind{codesignalcli.SetupChoiceProjectMise, codesignalcli.SetupChoiceCancel}))
+	Expect(choiceKinds(menu.Choices)).To(Equal([]tssetup.ChoiceKind{tssetup.ChoiceProjectMise, tssetup.ChoiceCancel}))
 
 	var projectPackageReason string
 	for _, w := range menu.Withheld {
-		if w.Kind == codesignalcli.SetupChoiceProjectPackage {
+		if w.Kind == tssetup.ChoiceProjectPackage {
 			projectPackageReason = w.Reason
 		}
 	}
@@ -50,13 +50,13 @@ func body_projectTsSetupChoiceAcceptanceTest_withholdsProjectMiseAsUnverifiableR
 		},
 	}
 
-	menu := codesignalcli.AvailableSetupChoices(readiness)
+	menu := tssetup.AvailableChoices(readiness)
 
-	Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectMise),
+	Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceProjectMise),
 		"an unreadable mise.toml is an unverifiable origin, not an executable one")
 	var reason string
 	for _, w := range menu.Withheld {
-		if w.Kind == codesignalcli.SetupChoiceProjectMise {
+		if w.Kind == tssetup.ChoiceProjectMise {
 			reason = w.Reason
 		}
 	}
@@ -75,12 +75,12 @@ func body_projectTsSetupChoiceAcceptanceTest_withholdsProjectPackageForManifestD
 		MiseChoices: neitherMiseScopeConfigured,
 	}
 
-	menu := codesignalcli.AvailableSetupChoices(readiness)
+	menu := tssetup.AvailableChoices(readiness)
 
-	Expect(choiceKinds(menu.Choices)).To(Equal([]codesignalcli.SetupChoiceKind{codesignalcli.SetupChoiceCancel}))
+	Expect(choiceKinds(menu.Choices)).To(Equal([]tssetup.ChoiceKind{tssetup.ChoiceCancel}))
 	var projectPackageReason string
 	for _, w := range menu.Withheld {
-		if w.Kind == codesignalcli.SetupChoiceProjectPackage {
+		if w.Kind == tssetup.ChoiceProjectPackage {
 			projectPackageReason = w.Reason
 		}
 	}

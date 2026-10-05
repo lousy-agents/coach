@@ -10,9 +10,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
@@ -86,12 +86,12 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			stubDir := writeInstallingSetupExecutable("npm", version)
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+pathWithStubNode("v24.9.9"))
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), repo)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), repo)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := codesignalcli.RunConfirmedSetupAndRecheckReadiness(context.Background(), preview, true, repo, head, "coach-project.json")
+			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, true, repo, head, "coach-project.json")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeSucceeded))
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeSucceeded))
 
 			Expect(outcome.PostInstallReadiness).NotTo(BeNil(), "a successful install must trigger a real, in-process post-install readiness recheck (AC-SET-6)")
 			post := outcome.PostInstallReadiness
@@ -140,12 +140,12 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			stubDir := writeInstallingSetupExecutable("npm", version)
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+pathWithStubNode("v24.9.9"))
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), repo)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), repo)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := codesignalcli.RunConfirmedSetupAndRecheckReadiness(context.Background(), preview, false, repo, head, "project.json")
+			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, false, repo, head, "project.json")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeCancelled))
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeCancelled))
 			Expect(outcome.PostInstallReadiness).To(BeNil(), "a cancelled setup must never rerun readiness")
 
 			_, statErr := os.Stat(filepath.Join(repo, "node_modules"))
@@ -163,12 +163,12 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			stubDir := writeFailingSetupExecutableWithResidue("npm")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), repo)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), repo)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := codesignalcli.RunConfirmedSetupAndRecheckReadiness(context.Background(), preview, true, repo, head, "project.json")
+			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, true, repo, head, "project.json")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeFailed))
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeFailed))
 			Expect(outcome.PostInstallReadiness).To(BeNil(), "a failed install must never trigger a post-install readiness recheck")
 		})
 	})
@@ -186,7 +186,7 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			stubDir := writeInstallingSetupExecutable("npm", version)
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+pathWithStubNode("v24.9.9"))
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), repo)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), repo)
 			Expect(err).NotTo(HaveOccurred())
 
 			// A revision that does not exist in the repo: the install itself
@@ -195,9 +195,9 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			// cannot resolve it, so the recheck errors.
 			nonexistentRevision := "0000000000000000000000000000000000000000"
 
-			outcome, err := codesignalcli.RunConfirmedSetupAndRecheckReadiness(context.Background(), preview, true, repo, nonexistentRevision, "project.json")
+			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, true, repo, nonexistentRevision, "project.json")
 			Expect(err).To(HaveOccurred(), "the recheck must surface its own failure to resolve the given revision")
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeSucceeded), "the install itself succeeded; only the recheck failed")
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeSucceeded), "the install itself succeeded; only the recheck failed")
 			Expect(outcome.PostInstallReadiness).To(BeNil(), "a failed recheck must never attach a zero-valued or partial readiness result")
 		})
 	})

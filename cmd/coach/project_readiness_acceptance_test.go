@@ -14,10 +14,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
@@ -1515,7 +1515,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			result := codesignalcli.PrepareCompilerMiseResult{
+			result := tssetup.PrepareCompilerMiseResult{
 				Trusted: true,
 				Code:    projectreadiness.GapPackageManagerConfigUnverifiable,
 			}
@@ -1598,7 +1598,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdin.Close()
 			var transcript bytes.Buffer
 
-			result := codesignalcli.RunPrepareCompilerMiseSetup(ctx, repo, revision, "", readiness, stdin, &transcript)
+			result := tssetup.RunPrepareCompilerMiseSetup(ctx, repo, revision, "", readiness, stdin, &transcript)
 			elapsed := time.Since(start)
 
 			Expect(elapsed).To(BeNumerically(">=", 2*time.Second), "the install must run at least as long as the supplied context deadline, not fail some unrelated, faster way, got elapsed=%s transcript=%s", elapsed, transcript.String())

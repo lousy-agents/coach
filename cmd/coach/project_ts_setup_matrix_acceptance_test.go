@@ -10,9 +10,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
@@ -29,7 +29,7 @@ import (
 // resultGapCodes mirrors gapCodes (project_readiness_acceptance_test.go),
 // which only reads the JSON-boundary readinessResultDoc; this suite calls
 // projectcheck.Run directly so it can also feed the
-// result into codesignalcli.AvailableSetupChoices without a JSON round trip.
+// result into tssetup.AvailableChoices without a JSON round trip.
 func resultGapCodes(result projectreadiness.Result) []string {
 	codes := make([]string, len(result.Gaps))
 	for i, gap := range result.Gaps {
@@ -90,20 +90,20 @@ func expectPackageManagerMatrixRow(kind, version, wantCode string) {
 	Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "the fixture must genuinely fail the compiler check, or the AvailableSetupChoices assertion below proves nothing")
 	Expect(readiness.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing))
 
-	menu := codesignalcli.AvailableSetupChoices(*readiness)
+	menu := tssetup.AvailableChoices(*readiness)
 
 	if wantCode == "" {
 		Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Pass), "detail=%s", readiness.Checks.PackageManager.Detail)
 		Expect(readiness.Checks.PackageManager.Kind).To(Equal(kind))
-		Expect(choiceKinds(menu.Choices)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage), "an in-matrix package-manager version must remain offered as a setup choice")
+		Expect(choiceKinds(menu.Choices)).To(ContainElement(tssetup.ChoiceProjectPackage), "an in-matrix package-manager version must remain offered as a setup choice")
 		return
 	}
 
 	Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))
 	Expect(readiness.Checks.PackageManager.Code).To(Equal(wantCode))
 	Expect(resultGapCodes(*readiness)).To(ContainElement(wantCode))
-	Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectPackage), "an out-of-matrix package manager must never be offered as a setup choice")
-	Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage))
+	Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceProjectPackage), "an out-of-matrix package manager must never be offered as a setup choice")
+	Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceProjectPackage))
 }
 
 var _ = Describe("checks.package_manager's frozen version-boundary matrix (SA-280-012)", func() {
@@ -540,10 +540,10 @@ var _ = Describe("checks.package_manager's ambiguous-lockfile and lifecycle-scri
 			Expect(readiness.Checks.PackageManager.Code).To(Equal(projectreadiness.GapPackageManagerAmbiguous))
 			Expect(resultGapCodes(*readiness)).To(ContainElement(projectreadiness.GapPackageManagerAmbiguous))
 
-			menu := codesignalcli.AvailableSetupChoices(*readiness)
+			menu := tssetup.AvailableChoices(*readiness)
 			Expect(menu.RequiresExplicitSelection).To(BeTrue(), "an ambiguous package manager must never resolve to a silent default")
-			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(codesignalcli.SetupChoiceProjectPackage))
-			Expect(withheldKinds(menu.Withheld)).To(ContainElement(codesignalcli.SetupChoiceProjectPackage))
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceProjectPackage))
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceProjectPackage))
 		})
 	})
 

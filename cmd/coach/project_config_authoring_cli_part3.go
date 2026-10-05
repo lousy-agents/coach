@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/configauthoring"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -16,7 +16,7 @@ func rejectUnusableAuthoringOutput(root string, f codesignalFlags) error {
 	if !f.outputSet {
 		return nil
 	}
-	clean, err := codesignalcli.ValidateAuthoringOutputPath(root, f.output)
+	clean, err := configauthoring.ValidateAuthoringOutputPath(root, f.output)
 	if err != nil {
 		return err
 	}

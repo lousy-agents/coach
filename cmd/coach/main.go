@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/configauthoring"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 )
 
@@ -85,7 +86,7 @@ func (c *countingStringFlag) Set(s string) error {
 }
 
 func writeSuggestInvalidArguments(stderr *os.File, message string) {
-	stderr.Write(codesignalcli.InvalidArgumentsSuggestionEnvelope(message))
+	stderr.Write(configauthoring.InvalidArgumentsSuggestionEnvelope(message))
 }
 
 type codesignalFlagHolders struct {

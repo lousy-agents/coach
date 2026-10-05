@@ -5,9 +5,9 @@ import (
 
 	"os"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
@@ -16,34 +16,34 @@ import (
 // their wrappers require: each *WithReadiness wrapper comes before the type
 // its Unwrap would otherwise satisfy first.
 func analysisErrorReportFor(err error, language string, hasControllingTerminal bool) analysisErrorReport {
-	var unresolvedWithReadiness *codesignalcli.CompilerUnresolvedErrorWithReadiness
+	var unresolvedWithReadiness *tssetup.CompilerUnresolvedErrorWithReadiness
 	if errors.As(err, &unresolvedWithReadiness) {
-		remediation := codesignalcli.PrepareCompilerRemediationWithReadiness(unresolvedWithReadiness.Code, unresolvedWithReadiness.ConfigPath, unresolvedWithReadiness.Readiness)
+		remediation := tssetup.PrepareCompilerRemediationWithReadiness(unresolvedWithReadiness.Code, unresolvedWithReadiness.ConfigPath, unresolvedWithReadiness.Readiness)
 		if remediation == "" {
-			remediation = codesignalcli.ScanSetupOfferRemediation(unresolvedWithReadiness.Code, unresolvedWithReadiness.ConfigPath, unresolvedWithReadiness.Readiness)
+			remediation = tssetup.ScanSetupOfferRemediation(unresolvedWithReadiness.Code, unresolvedWithReadiness.ConfigPath, unresolvedWithReadiness.Readiness)
 		}
 		return classTwoReport(unresolvedWithReadiness.RemediationLine(), nil,
-			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, remediation))
+			tssetup.AppendedRemediationLine(hasControllingTerminal, language, remediation))
 	}
 	var unresolved *tstoolchain.CompilerUnresolvedError
 	if errors.As(err, &unresolved) {
 		return classTwoReport(unresolved.RemediationLine(), nil,
-			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, codesignalcli.PrepareCompilerRemediation(unresolved.Code, unresolved.ConfigPath)))
+			tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.PrepareCompilerRemediation(unresolved.Code, unresolved.ConfigPath)))
 	}
 	var runtimeErr *tstoolchain.RuntimeUnresolvedError
 	if errors.As(err, &runtimeErr) {
 		return classTwoReport(runtimeErr.RemediationLine(), nil, "")
 	}
-	var configErrWithReadiness *codesignalcli.ProjectConfigErrorWithReadiness
+	var configErrWithReadiness *tssetup.ProjectConfigErrorWithReadiness
 	if errors.As(err, &configErrWithReadiness) {
 		return classTwoReport(configErrWithReadiness.Message,
-			codesignalcli.AlsoFailingGapLines(configErrWithReadiness.Readiness, configErrWithReadiness.ConfigPath),
-			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, codesignalcli.SuggestProjectConfigRemediation(language)))
+			tssetup.AlsoFailingGapLines(configErrWithReadiness.Readiness, configErrWithReadiness.ConfigPath),
+			tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.SuggestProjectConfigRemediation(language)))
 	}
 	var configErr *projectconfig.ConfigError
 	if errors.As(err, &configErr) {
 		return classTwoReport(configErr.Message, nil,
-			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, codesignalcli.SuggestProjectConfigRemediation(language)))
+			tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.SuggestProjectConfigRemediation(language)))
 	}
 	var opErr *gitrepo.OperationalError
 	if errors.As(err, &opErr) {

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 
 	"os"
@@ -39,7 +39,7 @@ func runCodesignalScan(dir string, f codesignalFlags, stdout, stderr *os.File, b
 // finding. Saying so plainly is the difference between "nothing changed" and
 // "Coach does not know", which is exactly the distinction SetupOutcome's own
 // contract asks callers to preserve.
-func setupResidueDisclosure(result codesignalcli.CompilerSetupOfferResult) string {
+func setupResidueDisclosure(result tssetup.CompilerSetupOfferResult) string {
 	if result.ResidueUnknown {
 		if len(result.ChangedPaths) > 0 {
 			return "coach codesignal: Coach could not determine which files the setup command changed under " + strings.Join(result.ChangedPaths, ", ") + "; inspect it before rerunning."
@@ -54,7 +54,7 @@ func setupResidueDisclosure(result codesignalcli.CompilerSetupOfferResult) strin
 func wrapScanAnalysisError(err error, dir, revision, configPath string, stderr *os.File) error {
 	var unresolved *tstoolchain.CompilerUnresolvedError
 	if errors.As(err, &unresolved) {
-		return codesignalcli.WrapCompilerUnresolvedErrorWithReadiness(unresolved, dir, revision, configPath)
+		return tssetup.WrapCompilerUnresolvedErrorWithReadiness(unresolved, dir, revision, configPath)
 	}
 	var runtimeErr *tstoolchain.RuntimeUnresolvedError
 	if errors.As(err, &runtimeErr) {

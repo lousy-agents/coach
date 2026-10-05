@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
@@ -46,11 +46,11 @@ func prepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, p
 
 	ctx, stop := interruptibleContext()
 	defer stop()
-	result := codesignalcli.RunPrepareCompilerMiseSetup(ctx, dir, revision, projectConfigPath, readiness, stdin, stderr)
+	result := tssetup.RunPrepareCompilerMiseSetup(ctx, dir, revision, projectConfigPath, readiness, stdin, stderr)
 	return reportPrepareCompilerMiseResult(result, stderr)
 }
 
-func reportPrepareCompilerMiseResult(result codesignalcli.PrepareCompilerMiseResult, stderr *os.File) int {
+func reportPrepareCompilerMiseResult(result tssetup.PrepareCompilerMiseResult, stderr *os.File) int {
 	if result.PolicyRequired {
 		fmt.Fprintf(stderr, "%s: a reviewed, committed policy is required before compiler setup; run guided policy authoring first (author_policy).\n", prepareCompilerMiseUsagePrefix)
 		return 2
