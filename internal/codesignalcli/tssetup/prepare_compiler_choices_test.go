@@ -13,24 +13,6 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
-func writeFakeInstalledTypescriptForTest(t *testing.T, installDir, version string) {
-	t.Helper()
-	pkgDir := filepath.Join(installDir, "node_modules", "typescript")
-	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(`{"name":"typescript","version":"`+version+`"}`+"\n"), 0o644); err != nil {
-		t.Fatalf("write package.json: %v", err)
-	}
-	nativeDir := filepath.Join(installDir, "node_modules", "@typescript", tstoolchain.NativeTypescriptUnscopedName())
-	if err := os.MkdirAll(nativeDir, 0o755); err != nil {
-		t.Fatalf("mkdir native: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(nativeDir, "package.json"), []byte(`{"name":"`+tstoolchain.NativeTypescriptPackageName()+`","version":"`+version+`"}`+"\n"), 0o644); err != nil {
-		t.Fatalf("write native package.json: %v", err)
-	}
-}
-
 // TestMiseChoicesForPrepareCompilerFallsBackToVerifiedChoicesWhenActionChoicesNil
 // proves that when action.Choices is nil (no package-manager-adapter
 // restriction has run), miseChoicesForPrepareCompiler recomputes the same
@@ -120,24 +102,6 @@ func TestRunPrepareCompilerMiseSetupCancelsOnUnrecognizedSelection(t *testing.T)
 	if strings.Contains(transcript.String(), "Executable: mise") {
 		t.Fatalf("transcript reached the install preview despite an unrecognized selection (no default may be assumed): %s", transcript.String())
 	}
-}
-
-// writeFailingInstallStubMiseOnPath puts a `mise` executable on t's PATH
-// whose `install` subcommand always exits 1 without moving anything into
-// place, modeling a genuine `mise install` failure rather than a
-// declined/cancelled selection.
-func writeFailingInstallStubMiseOnPath(t *testing.T) {
-	t.Helper()
-	dir := t.TempDir()
-	script := "#!/bin/sh\n" +
-		"if [ \"$1\" = \"--version\" ]; then echo \"2026.9.5 linux-x64 (2026-09-10)\"; exit 0; fi\n" +
-		"if [ \"$1\" = \"config\" ] && [ \"$2\" = \"ls\" ]; then echo \"[]\"; exit 0; fi\n" +
-		"if [ \"$1\" = \"install\" ]; then exit 1; fi\n" +
-		"exit 0\n"
-	if err := os.WriteFile(filepath.Join(dir, "mise"), []byte(script), 0o755); err != nil {
-		t.Fatalf("write failing-install stub mise: %v", err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
 func TestFilterMiseChoiceKindsDropsNonMiseChoices(t *testing.T) {
