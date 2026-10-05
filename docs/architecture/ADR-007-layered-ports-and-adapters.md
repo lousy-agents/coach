@@ -47,14 +47,27 @@ flowchart LR
 
 ### Layer map
 
-| Layer | Packages | May import |
-| --- | --- | --- |
-| Domain | `pkg/domain`, `pkg/semantics`, `pkg/codesignal`, `pkg/projectmodel`, `internal/coachapi` (job, report, and API-contract types plus the `JobStore` / `WorkerJobStore` ports), `internal/codesignalcli/projectreadiness` (the readiness result model), `internal/codesignalcli/projectconfig` (project-config schema and validation) | Domain only |
-| Application | `internal/codesignalcli` (scan use cases and the `ProjectBackend` port), `internal/codesignalcli/projectcheck` (readiness), `internal/codesignalcli/tssetup` (compiler setup), `internal/codesignalcli/configauthoring`, `internal/codesignalcli/sourcescope`, `internal/coachapi/baseline` (repository baseline scan), `internal/coachapi/worker`, `internal/agentloop`, `internal/rubrics` | Domain, ports it declares, and (where noted below) adapters directly |
-| Driven adapters | `internal/codesignalcli/gitrepo`, `revisionfs`, `tstoolchain`, `pkgmanager`, `subprocess`, `terminal`, `prompt`; `pkg/projectmodel/internal/tssidecar`, `ssaload`; `pkg/semantics/internal/engine`; `internal/coachapi/store/memory`, `store/postgres`, `queue/redisstream`, `queue/sqs`; `pkg/githubingest`; `internal/modelgateway`; `internal/authn`, `internal/authz` | Domain and the port they implement; never another adapter's internals |
-| Entry | `cmd/*`, `internal/coachapi/httpapi`, `internal/codesignalcli/render` | Any inner layer; `cmd/*` is the only place that wires adapters into use cases |
+The direction is enforced at two grains.
 
-`internal/codesignalcli/layering_test.go` pins the CLI side of this graph, so a new import edge between its packages fails a test rather than eroding silently.
+**Rings across the module.** `project.json` is the repository's own project-analysis policy. It places top-level trees in four rings and forbids every outward import between them, and `coach codesignal --baseline --project-config project.json` reports any crossing as `architecture.layer_violation`. It reports none.
+
+| Ring (`project.json`) | Trees |
+| --- | --- |
+| entities | `pkg/domain`, `pkg/semantics` |
+| usecases | `pkg/codesignal` |
+| adapters | `pkg/githubingest`, `pkg/projectmodel`, `internal/codesignalcli`, `internal/coachapi`, `internal/jsbridge`, `internal/projectbridge` |
+| app | `cmd/*` |
+
+**Layers inside the application shells.** `internal/codesignalcli` (the CLI) and `internal/coachapi` (the platform API and worker) each sit in the adapters ring as a whole, because each wraps the inner rings for one delivery mechanism. Inside each shell, the same four-layer shape repeats at package grain:
+
+| Layer | `internal/codesignalcli/…` | `internal/coachapi/…` |
+| --- | --- | --- |
+| Model | `projectreadiness` (readiness result), `projectconfig` (policy schema) | root (job, report, API contract, `JobStore` / `WorkerJobStore` ports) |
+| Use case | root (scans, `ProjectBackend` port), `projectcheck`, `tssetup`, `configauthoring`, `sourcescope` | `baseline`, `worker` |
+| Driven adapter | `gitrepo`, `revisionfs`, `tstoolchain`, `pkgmanager`, `subprocess`, `terminal`, `prompt` | `store/memory`, `store/postgres`, `queue/redisstream`, `queue/sqs` |
+| Entry | `render` (wired from `cmd/coach`) | `httpapi` (wired from `cmd/coach-api`) |
+
+`internal/codesignalcli/layering_test.go` pins the CLI shell's graph, so a new import edge between its packages fails a test rather than eroding silently. The domain libraries keep their I/O in private adapter packages: `pkg/semantics/internal/engine` (Tree-sitter) and `pkg/projectmodel/internal/tssidecar` and `ssaload`.
 
 Where the migration stopped short of the rule, and why:
 
