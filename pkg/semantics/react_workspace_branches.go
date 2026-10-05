@@ -1,18 +1,35 @@
 package semantics
 
 import (
+	"sort"
+
 	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
-
-// reactDiscriminantOps is the set of equality operators a workspace-branch
-// discriminant condition may use.
-var reactDiscriminantOps = map[string]bool{"===": true, "!==": true, "==": true, "!=": true}
 
 // reactExtractWorkspaceBranches collects ReactWorkspaceBranch entries from
 // two disjoint constructs: discriminant ternary/if-else-if chains gated at
 // >=3 JSX-bearing branches per chain, and role="tabpanel" JSX elements
 // (ungated). Results are de-duplicated by the branch's own Location.StartByte
 // and ordered by that same start_byte.
+func reactExtractWorkspaceBranches(body engine.Node, source []byte) []ReactWorkspaceBranch {
+	var branches []ReactWorkspaceBranch
+	seen := map[uint]struct{}{}
+	addBranch := func(b ReactWorkspaceBranch) {
+		if _, dup := seen[b.Location.StartByte]; dup {
+			return
+		}
+		seen[b.Location.StartByte] = struct{}{}
+		branches = append(branches, b)
+	}
+
+	reactCollectDiscriminantBranches(body, source, addBranch)
+	reactCollectTabpanelBranches(body, source, addBranch)
+
+	sort.SliceStable(branches, func(i, j int) bool {
+		return branches[i].Location.StartByte < branches[j].Location.StartByte
+	})
+	return branches
+}
 
 func reactCollectDiscriminantBranches(body engine.Node, source []byte, add func(ReactWorkspaceBranch)) {
 	consumed := map[[2]uint]struct{}{}
@@ -43,51 +60,17 @@ func reactCollectDiscriminantBranches(body engine.Node, source []byte, add func(
 	})
 }
 
-// reactDiscriminantConditionBase reports whether n's "condition" field is a
-// binary_expression testing equality/inequality between a discriminant base
-// (a plain identifier, or a member_expression -- whose full text, not just
-// its property, is used as the base so structurally distinct discriminants
-// like props.v and other.v never compare equal) and a string/number
-// literal, and returns that base text.
-func reactDiscriminantConditionBase(n engine.Node, source []byte) (string, bool) {
-	cond := unwrapTSParen(n.ChildByFieldName("condition"))
-	if cond == nil || cond.Kind() != "binary_expression" {
-		return "", false
-	}
-	if !reactDiscriminantOps[tsBinaryOp(cond)] {
-		return "", false
-	}
-	left := cond.ChildByFieldName("left")
-	right := cond.ChildByFieldName("right")
-	if left == nil || right == nil {
-		return "", false
-	}
-	if base, ok := reactDiscriminantBase(left, right, source); ok {
-		return base, true
-	}
-	return reactDiscriminantBase(right, left, source)
-}
-
 // reactCollectDiscriminantChain walks n forward through same-base chained
 // ternary/if-else-if branches and returns the JSX-bearing branches found
 // plus every chain node visited (regardless of JSX-bearing outcome), so the
 // caller can mark the whole chain consumed even when the gate fails it.
-
-// Terminal residual alternative of the same-base chain (e.g. the
-// final `: <DefaultPanel />` arm). null/undefined/non-JSX yield no branch.
-
-// reactIfChainContinue returns the next if_statement in an else-if chain, or
-// a terminal residual branch when the chain ends in a final else body.
-
-// reactResidualBranch emits a workspace branch for a chain's terminal
-// residual alternative / final else body when it contains JSX. Label uses
-// Design precedence steps 2–3 only (no equality literal on residual arms).
-
-// reactWorkspaceBranchLabel applies the label precedence rule: the
-// discriminant condition's literal text first, else a capitalized primary
-// JSX child's tag name, else the "<branch>" sentinel.
-
-// reactTabpanelBranch reports whether n is a JSX opening/self-closing
-// element carrying role="tabpanel", and if so returns its branch: label is
-// its aria-label attribute's string value, else its id attribute's string
-// value, else the literal "tabpanel".
+func reactCollectDiscriminantChain(n engine.Node, base string, source []byte) ([]ReactWorkspaceBranch, []engine.Node) {
+	switch n.Kind() {
+	case "ternary_expression":
+		return reactCollectTernaryChain(n, base, source)
+	case "if_statement":
+		return reactCollectIfChain(n, base, source)
+	default:
+		return nil, nil
+	}
+}

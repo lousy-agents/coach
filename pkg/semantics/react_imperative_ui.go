@@ -23,86 +23,50 @@ var reactImperativeAPINames = map[string]bool{
 // `.` and `?.` uniformly, since optional chaining has no distinct node
 // kind) is in the closed reactImperativeAPINames set, ordered by the call's
 // own start_byte.
-
-// reactExtractSharedPanelDeps groups every `attr={identifier}` JSX
-// attribute (identifier value, not a member expression/spread/literal)
-// found on an uppercase-tag JSX element in body's scan set by identifier
-// name, and returns one ReactSharedPanelDep per identifier that is a known
-// state binding or in-component callback/handler name and is referenced this
-// way by >=2 distinct tag names, ordered by Name. Module-level constants and
-// other non-allowlisted identifiers never qualify (Supporting C isolation).
-
-type reactPanelDepRef struct {
-	tag string
-	id  string
-}
-
-func reactPanelDepTagIndex(body engine.Node, source []byte, allow map[string]struct{}) map[string]map[string]struct{} {
-	return reactBuildDepTags(reactCollectPanelDepRefs(body, source, allow))
-}
-
-func reactCollectPanelDepRefs(body engine.Node, source []byte, allow map[string]struct{}) []reactPanelDepRef {
-	var refs []reactPanelDepRef
+func reactExtractImperativeUI(body engine.Node, source []byte) []ReactImperativeUICall {
+	var calls []engine.Node
 	reactWalkScope(body, source, func(n engine.Node) {
-		refs = append(refs, reactPanelDepRefsFromNode(n, source, allow)...)
+		if n.Kind() != "call_expression" {
+			return
+		}
+		if reactImperativeAPI(n, source) != "" {
+			calls = append(calls, n)
+		}
 	})
-	return refs
-}
+	sort.SliceStable(calls, func(i, j int) bool {
+		return calls[i].StartByte() < calls[j].StartByte()
+	})
 
-func reactSharedDepsFromTags(depTags map[string]map[string]struct{}) []ReactSharedPanelDep {
-	var names []string
-	for name, tags := range depTags {
-		if len(tags) >= 2 {
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-
-	out := make([]ReactSharedPanelDep, 0, len(names))
-	for _, name := range names {
-		tags := depTags[name]
-		panels := make([]string, 0, len(tags))
-		for t := range tags {
-			panels = append(panels, t)
-		}
-		sort.Strings(panels)
-		out = append(out, ReactSharedPanelDep{Name: name, Panels: panels})
+	out := make([]ReactImperativeUICall, 0, len(calls))
+	for _, c := range calls {
+		out = append(out, ReactImperativeUICall{
+			API:      reactImperativeAPI(c, source),
+			Location: locationFromNode(c),
+		})
 	}
 	return out
 }
 
-// reactKnownSharedDepNames builds the allowlist for shared panel deps: every
-// non-empty useState binding name, plus every local function/arrow binding
-// name in body's scan set (known callbacks/handlers). Nested PascalCase
-// component names are excluded. Setters and non-function module values are
-// not included.
-
-func reactBoundIdentifierName(parent engine.Node, source []byte) (string, bool) {
-	if parent == nil {
-		return "", false
+func reactImperativeAPI(call engine.Node, source []byte) string {
+	fn := call.ChildByFieldName("function")
+	if fn == nil {
+		return ""
 	}
-	switch parent.Kind() {
-	case "variable_declarator":
-		nameNode := parent.ChildByFieldName("name")
-		if nameNode == nil || nameNode.Kind() != "identifier" {
-			return "", false
+	var api string
+	switch fn.Kind() {
+	case "member_expression":
+		prop := fn.ChildByFieldName("property")
+		if prop == nil {
+			return ""
 		}
-		nme := nameNode.Utf8Text(source)
-		if nme == "" {
-			return "", false
-		}
-		return nme, true
-	case "assignment_expression":
-		left := parent.ChildByFieldName("left")
-		if left == nil || left.Kind() != "identifier" {
-			return "", false
-		}
-		nme := left.Utf8Text(source)
-		if nme == "" {
-			return "", false
-		}
-		return nme, true
+		api = prop.Utf8Text(source)
+	case "identifier":
+		api = fn.Utf8Text(source)
 	default:
-		return "", false
+		return ""
 	}
+	if reactImperativeAPINames[api] {
+		return api
+	}
+	return ""
 }

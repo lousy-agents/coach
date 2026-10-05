@@ -26,16 +26,6 @@ type tsFeatureCollector struct {
 	toctouActSeen    map[tsLocationKey]bool
 }
 
-// tsParamScope is one function-like construct's Finding-name half
-// ("<function_or_method_name>") plus the set of identifier bindings visible
-// in that scope. A binding value of true means the identifier is a parameter
-// eligible for mutates_input; false means the identifier is a local binding
-// that shadows an outer parameter but is not itself reportable here.
-type tsParamScope struct {
-	ownerName string
-	bindings  map[string]bool
-}
-
 // tsFunctionLikeKinds is the D2a "function-like-but-not-method" set:
 // standalone/expression functions and arrows. Each one increments
 // Functions and opens a function scope for the nesting rule (D2b).
@@ -123,10 +113,47 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 // (blockDepth, inFunc, inCtorBody, scopes) that walk threads through the
 // rest of n's subtree. See walk's own doc comment for the exact
 // reset/nesting contract each state field encodes.
-
-// checkMutatesInputForNode runs the mutates_input detector (Story 2)
-// matching n's own kind, when scopes has at least one enclosing
-// function-like/method scope to attribute a mutation to.
+func (c *tsFeatureCollector) walkEnterNode(n engine.Node, source []byte, blockDepth int, inFunc bool, inCtorBody bool, scopes []tsParamScope) (int, bool, bool, []tsParamScope) {
+	switch {
+	case n.Kind() == "if_statement":
+		c.metrics.Ifs++
+		c.checkTOCTOUCheckThenAct(n, source)
+	case n.Kind() == "while_statement":
+		c.checkTOCTOUCheckThenAct(n, source)
+	case n.Kind() == "for_statement", n.Kind() == "for_in_statement":
+		c.metrics.Fors++
+	case n.Kind() == "switch_statement":
+		c.metrics.ExprSwitches++
+	case n.Kind() == "method_definition":
+		c.metrics.Methods++
+		inFunc = true
+		blockDepth = 0
+		inCtorBody = isConstructorMethod(n, source)
+		scope := newTSParamScope(n, source)
+		scopes = append(scopes, scope)
+		scopes = appendTSLocalBindings(scopes, tsFunctionScopedBindingNames(n, source, scope.bindings))
+	case tsFunctionLikeKinds[n.Kind()]:
+		c.metrics.Functions++
+		inFunc = true
+		blockDepth = 0
+		if n.Kind() != "arrow_function" {
+			inCtorBody = false
+		}
+		scope := newTSParamScope(n, source)
+		scopes = append(scopes, scope)
+		scopes = appendTSLocalBindings(scopes, tsFunctionScopedBindingNames(n, source, scope.bindings))
+	case n.Kind() == "statement_block":
+		if inFunc {
+			blockDepth++
+			if blockDepth > c.metrics.MaxNestingDepth {
+				c.metrics.MaxNestingDepth = blockDepth
+			}
+		}
+	case inCtorBody && n.Kind() == "assignment_expression":
+		c.checkTightCouplingAssignment(n, source)
+	}
+	return blockDepth, inFunc, inCtorBody, scopes
+}
 
 // walkScopedChildBlock walks n's children in declaration order, threading a
 // scopes stack extended first by n's own hoisted binding names (scopeNames
@@ -135,92 +162,18 @@ func (c *tsFeatureCollector) walk(n engine.Node, source []byte, blockDepth int, 
 // those three node kinds differ here) and then, after each child, that
 // child's own local/rebound/var binding after-effects -- so a later sibling
 // sees bindings a plain pre-order walk would not have introduced yet.
-
-// newTSParamScope builds decl's tsParamScope: its Finding-name half (own
-// "name" field's text, or "anonymous@<start_byte>" if it has none) and its
-// identifier-bound parameter set (tsIdentifierParams).
-func newTSParamScope(decl engine.Node, source []byte) tsParamScope {
-	return tsParamScope{
-		ownerName: tsFunctionOwnerName(decl, source),
-		bindings:  tsIdentifierParams(decl, source),
-	}
-}
-
-// tsFunctionOwnerName resolves decl's own Finding-name half: the source
-// text of its syntactic "name" field (function_declaration,
-// function_expression, generator_function[_declaration], and
-// method_definition all expose one when named) or, when decl has no name
-// field at all -- always true for arrow_function, and true for an
-// anonymous function_expression -- "anonymous@<start_byte>". Per the
-// issue spec this deliberately does not borrow a name from an enclosing
-// variable_declarator (`const f = () => {}` still counts as anonymous):
-// only decl's own syntactic name field counts.
-
-// tsIdentifierParams collects decl's plain-identifier-bound parameter
-// names (D5). arrow_function has two mutually exclusive parameter shapes:
-// a bare single identifier (`p => ...`, field "parameter") or a
-// parenthesized formal_parameters list (field "parameters"); every other
-// function-like kind and method_definition only ever have "parameters".
-// Each formal_parameters child is filtered per-parameter by
-// tsFormalParameterIdentifierName, whose doc comment is the source of
-// truth for what counts as identifier-bound.
-
-// tsFormalParameterIdentifierName reports p's bound identifier name with ok
-// == true only when p is a required_parameter or optional_parameter with no
-// default "value" field (a default like `q = 1` is excluded, per D5, same
-// as a destructured or rest parameter) whose "pattern" field is itself a
-// plain, non-destructured identifier.
-
-func tsFunctionScopedBindingNames(n engine.Node, source []byte, params map[string]bool) map[string]bool {
-	names := map[string]bool{}
-	collectTSFunctionScopedBindingNames(n, n, source, params, names)
-	return names
-}
-
-// collectTSFunctionScopedBindingNames recurses node's subtree relative to
-// root (the enclosing function-like/method_definition n started from in
-// tsFunctionScopedBindingNames), stopping without descending at any nested
-// function-like or method_definition boundary other than root itself, and
-// otherwise delegating node's own contribution to
-// tsCollectFunctionScopedNodeNames.
-func collectTSFunctionScopedBindingNames(root, node engine.Node, source []byte, params, names map[string]bool) {
-	if node == nil {
-		return
-	}
-	if node != root && (tsFunctionLikeKinds[node.Kind()] || node.Kind() == "method_definition") {
-		return
-	}
-	if tsCollectFunctionScopedNodeNames(root, node, source, params, names) {
-		return
-	}
-	count := node.ChildCount()
+func (c *tsFeatureCollector) walkScopedChildBlock(n engine.Node, source []byte, blockDepth int, inFunc bool, inCtorBody bool, scopes []tsParamScope, scopeNames func(engine.Node, []byte) map[string]bool) {
+	scopes = appendTSLocalBindings(scopes, scopeNames(n, source))
+	currentParams := tsCurrentFunctionParamNames(scopes)
+	count := n.ChildCount()
 	for i := 0; i < count; i++ {
-		collectTSFunctionScopedBindingNames(root, node.Child(i), source, params, names)
+		child := n.Child(i)
+		c.walk(child, source, blockDepth, inFunc, inCtorBody, scopes)
+		scopes = appendTSLocalBindings(scopes, tsLocalBindingNames(child, source, currentParams))
+		scopes = appendTSLocalBindings(scopes, tsReboundParameterNames(child, source))
+		scopes = appendTSLocalBindings(scopes, tsVarBindingNames(child, source, currentParams))
 	}
 }
-
-// tsCollectFunctionScopedNodeNames handles node's own hoisted-binding
-// contribution when node is a function_declaration/
-// generator_function_declaration, variable_declaration, or
-// lexical_declaration, reporting handled == true so
-// collectTSFunctionScopedBindingNames does not also apply its own generic
-// child recursion for these three kinds (each either recurses itself, or --
-// lexical_declaration, since let/const are block-scoped, not hoisted --
-// must not recurse into its subtree at all).
-
-// collectTSFunctionDeclarationNames handles the
-// function_declaration/generator_function_declaration case of
-// tsCollectFunctionScopedNodeNames: node is always root here --
-// collectTSFunctionScopedBindingNames' function-like boundary check already
-// stops at any nested function_declaration, so the node != root
-// name-collection guard below is defensive and never fires (behavior
-// preserved verbatim from the pre-refactor collect closure) -- then
-// recursion into node's own children.
-type nameSet map[string]bool
-
-// collectTSFunctionScopedVarDeclarationNames handles the
-// variable_declaration case of tsCollectFunctionScopedNodeNames: node's own
-// `var`-bound declarator names, excluding any already in params.
 
 // isConstructorMethod reports whether method is a constructor: a
 // method_definition whose name field is a property_identifier with source
