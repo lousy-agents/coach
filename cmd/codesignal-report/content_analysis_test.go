@@ -1,15 +1,8 @@
 package main
 
 import (
-	"bytes"
-	"context"
-
-	"encoding/json"
-
 	"strings"
 	"testing"
-
-	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
 func TestRun_InvalidBase64ComposesWithBuildDiagnostics(t *testing.T) {
@@ -32,30 +25,6 @@ func TestRun_InvalidBase64ComposesWithBuildDiagnostics(t *testing.T) {
 	}
 }
 
-func mustRun(t *testing.T, input string) (*codesignal.Report, []byte) {
-	t.Helper()
-
-	var out bytes.Buffer
-	if err := run(context.Background(), strings.NewReader(input), &out); err != nil {
-		t.Fatalf("run: unexpected error: %v", err)
-	}
-
-	var report codesignal.Report
-	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
-		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, out.String())
-	}
-	return &report, out.Bytes()
-}
-
-func hasDiagnostic(diagnostics []codesignal.Diagnostic, kind, path string) bool {
-	for _, d := range diagnostics {
-		if d.Kind == kind && d.Path == path {
-			return true
-		}
-	}
-	return false
-}
-
 func TestRun_BinaryHeadContentProducesAnalysisFailedDiagnostic(t *testing.T) {
 	binary := string([]byte{0x00, 0x01, 0x02, 'a', 'b', 'c'})
 	input := strings.Join([]string{
@@ -71,16 +40,5 @@ func TestRun_BinaryHeadContentProducesAnalysisFailedDiagnostic(t *testing.T) {
 	}
 	if len(report.Signals) != 0 {
 		t.Errorf("expected no signals for a file with failed analysis, got %+v", report.Signals)
-	}
-}
-
-func TestRun_EmptyStdin(t *testing.T) {
-	report, _ := mustRun(t, "")
-
-	if !hasDiagnostic(report.Diagnostics, "malformed_scope_header", "") {
-		t.Errorf("expected malformed_scope_header diagnostic, got %+v", report.Diagnostics)
-	}
-	if report.Summary.FilesAnalyzed != 0 {
-		t.Errorf("FilesAnalyzed = %d, want 0", report.Summary.FilesAnalyzed)
 	}
 }

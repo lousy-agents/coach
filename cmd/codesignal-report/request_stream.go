@@ -4,13 +4,45 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-
+	"encoding/json"
 	"fmt"
-	"io"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
+
+type scopeHeader struct {
+	Repository string `json:"repository"`
+	Revision   string `json:"revision"`
+	Base       string `json:"base"`
+}
+
+func readScopeHeader(scanner *bufio.Scanner) (codesignal.Scope, []codesignal.Diagnostic) {
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+
+		var header scopeHeader
+		if err := json.Unmarshal(line, &header); err != nil {
+			return codesignal.Scope{}, []codesignal.Diagnostic{{
+				Kind:    "malformed_scope_header",
+				Message: fmt.Sprintf("malformed scope header: %v", err),
+			}}
+		}
+		return codesignal.Scope{
+			Repository: header.Repository,
+			Revision:   header.Revision,
+			Base:       header.Base,
+		}, nil
+	}
+
+	return codesignal.Scope{}, []codesignal.Diagnostic{{
+		Kind:    "malformed_scope_header",
+		Message: "stdin ended before a scope header line was found",
+	}}
+}
 
 // readFileChanges drains scanner's remaining file-request lines. A per-line
 // decode or analysis failure is reported as a diagnostic rather than an
@@ -38,34 +70,4 @@ func readFileChanges(ctx context.Context, analyzer *semantics.Analyzer, scanner 
 		return nil, nil, fmt.Errorf("read stdin: %w", err)
 	}
 	return files, diagnostics, nil
-}
-func run(ctx context.Context, in io.Reader, out io.Writer) error {
-	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
-	if err != nil {
-		return err
-	}
-	builder, err := codesignal.New(codesignal.Options{})
-	if err != nil {
-		return err
-	}
-
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
-
-	scope, diagnostics := readScopeHeader(scanner)
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("read stdin: %w", err)
-	}
-
-	files, fileDiagnostics, err := readFileChanges(ctx, analyzer, scanner)
-	if err != nil {
-		return err
-	}
-	diagnostics = append(diagnostics, fileDiagnostics...)
-
-	report, err := builder.Build(ctx, codesignal.Input{Scope: scope, Files: files, Diagnostics: diagnostics})
-	if err != nil {
-		return err
-	}
-	return writeJSONLine(out, report)
 }
