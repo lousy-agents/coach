@@ -7,13 +7,15 @@ import (
 	"testing"
 )
 
-func body_tsResultPart2Test_76(t *testing.T, a *Analyzer, tt struct {
+type tsResultGoldenCase struct {
 	name              string
 	in                FileInput
 	goldenFile        string
 	wantErr           bool
 	checkRoundTripped func(t *testing.T, r Result)
-}) {
+}
+
+func expectTSResultMatchesGoldenFile(t *testing.T, a *Analyzer, tt tsResultGoldenCase) {
 	result, err := a.AnalyzeBytes(context.Background(), tt.in)
 	if tt.wantErr && err == nil {
 		t.Fatalf("AnalyzeBytes(%+v): got nil err, want non-nil", tt.in)

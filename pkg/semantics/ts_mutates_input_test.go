@@ -44,11 +44,7 @@ func TestTSMutatesInput_PropertyAssignment(t *testing.T) {
 // parameter must yield a mutates_input Finding; an arbitrary custom method
 // (setName) must not.
 func TestTSMutatesInput_MutatingMethodCalls(t *testing.T) {
-	tests := []struct {
-		name      string
-		source    string
-		wantCount int
-	}{
+	tests := []tsMethodCallCountCase{
 		{name: "copyWithin", source: "function f(arr) {\n\tarr.copyWithin(0, 1);\n}\n", wantCount: 1},
 		{name: "fill", source: "function f(arr) {\n\tarr.fill(1);\n}\n", wantCount: 1},
 		{name: "pop", source: "function f(arr) {\n\tarr.pop();\n}\n", wantCount: 1},
@@ -67,7 +63,7 @@ func TestTSMutatesInput_MutatingMethodCalls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputTest_69(t, tt)
+			expectMutatingMethodCallFindingCount(t, tt)
 		})
 	}
 }

@@ -8,11 +8,7 @@ import (
 // within a function body (the body's own braces are depth 1), and a
 // brace-less body contributes no additional depth.
 func TestComputeTSFeatures_MaxNestingDepth(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-		want   int
-	}{
+	tests := []tsMaxNestingDepthCase{
 		{
 			name:   "two braced nested ifs",
 			source: "function f() { if (a) { if (b) { } } }",
@@ -32,7 +28,7 @@ func TestComputeTSFeatures_MaxNestingDepth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsFeaturesPart2Test_34(t, tt)
+			expectTSMaxNestingDepth(t, tt)
 		})
 	}
 }

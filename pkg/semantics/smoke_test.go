@@ -42,8 +42,7 @@ func TestSmoke_TSGrammarExposesExpectedTightCouplingNodeKinds(t *testing.T) {
 		t.Fatalf("D3 discovery: fixture must parse cleanly to trust node-kind names, node kinds seen: %s", dumpKinds(kinds))
 	}
 
-	var hasConstructorField bool
-	(&sigTestSmokeTSGrammarExposesExpectedTightCouplingNodeKinds21{hasConstructorField: &hasConstructorField}).call(root)
+	hasConstructorField := anyNewExpressionHasConstructorField(root)
 
 	for _, kind := range []string{"assignment_expression", "new_expression"} {
 		if !kinds[kind] {

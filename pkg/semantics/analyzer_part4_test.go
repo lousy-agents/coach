@@ -2,6 +2,7 @@ package semantics
 
 import (
 	"context"
+	"errors"
 
 	"sync"
 	"testing"
@@ -14,11 +15,7 @@ import (
 // called it with the wrong arguments, would not have been caught by any
 // test. This drives each precondition through AnalyzeBytes itself.
 func TestAnalyzeBytes_RejectsInvalidInputThroughPublicFacade(t *testing.T) {
-	tests := []struct {
-		name    string
-		in      FileInput
-		wantErr error
-	}{
+	tests := []rejectedInputCase{
 		{
 			name:    "AC-1.4: empty content",
 			in:      FileInput{Language: LanguageGo, Content: []byte{}},
@@ -39,12 +36,25 @@ func TestAnalyzeBytes_RejectsInvalidInputThroughPublicFacade(t *testing.T) {
 	a := mustNewAnalyzer(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_analyzerPart4Test_43(t, a, tt)
+			expectAnalyzeBytesRejects(t, a, tt)
 		})
 	}
 
 	t.Run("AC-1.6: content over MaxFileBytes", func(t *testing.T) {
-		body_analyzerPart4Test_AC16ContentOverMaxFileBytes_55(t)
+		small, err := NewAnalyzer(AnalyzerOptions{MaxFileBytes: 4})
+		if err != nil {
+			t.Fatalf("NewAnalyzer(MaxFileBytes: 4): got err %v, want nil", err)
+		}
+
+		in := FileInput{Language: LanguageGo, Content: []byte("package main\n")}
+		result, err := small.AnalyzeBytes(context.Background(), in)
+
+		if result != nil {
+			t.Errorf("AnalyzeBytes(%+v) with MaxFileBytes=4: got non-nil result %+v, want nil", in, result)
+		}
+		if !errors.Is(err, ErrFileTooLarge) {
+			t.Errorf("AnalyzeBytes(%+v) with MaxFileBytes=4: got err %v, want errors.Is(err, ErrFileTooLarge) to hold", in, err)
+		}
 	})
 }
 

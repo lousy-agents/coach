@@ -4,10 +4,7 @@ import (
 	"testing"
 )
 
-func body_tsMutatesInputPart5Test_43(t *testing.T, tt struct {
-	name   string
-	source string
-}) {
+func expectNoFindingForPredeclaredLocal(t *testing.T, tt tsMutatesInputSourceCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 
@@ -20,10 +17,7 @@ func body_tsMutatesInputPart5Test_43(t *testing.T, tt struct {
 	}
 }
 
-func body_tsMutatesInputPart5Test_80(t *testing.T, tt struct {
-	name   string
-	source string
-}) {
+func expectNoFindingForDestructuringRead(t *testing.T, tt tsMutatesInputSourceCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 
@@ -35,10 +29,7 @@ func body_tsMutatesInputPart5Test_80(t *testing.T, tt struct {
 	}
 }
 
-func body_tsMutatesInputPart5Test_121(t *testing.T, tt struct {
-	name   string
-	source string
-}) {
+func expectFindingDespiteDestructuringAlias(t *testing.T, tt tsMutatesInputSourceCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 

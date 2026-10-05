@@ -4,17 +4,22 @@ import (
 	"testing"
 )
 
-func body_resultPart2Test_65(t *testing.T, r Result) {
+func checkGoldenReactComponentsRoundTrip(t *testing.T, r Result) {
 	t.Helper()
-	(&sigbodyresultPart2Test65S121892662{r: r, t: t}).call()
-
+	if r.ParseStatus != ParseStatus("ok") {
+		t.Errorf("AC-4.4: golden react_components Result.ParseStatus: got %q, want %q", r.ParseStatus, "ok")
+	}
 	if r.Language != LanguageTSX {
 		t.Errorf("AC-4.4: golden react_components Result.Language: got %q, want %q", r.Language, LanguageTSX)
 	}
 	if len(r.ReactComponents) != 1 {
 		t.Fatalf("AC-4.4: golden react_components length: got %d, want 1", len(r.ReactComponents))
 	}
-	rec := r.ReactComponents[0]
+	checkGoldenWorkspacePageRecord(t, r.ReactComponents[0])
+}
+
+func checkGoldenWorkspacePageRecord(t *testing.T, rec ReactComponentFacts) {
+	t.Helper()
 	if rec.Name != "WorkspacePage" || rec.ClientKind != "use_client_directive" {
 		t.Errorf("AC-4.4: golden react_components[0] name/client_kind: got %q/%q", rec.Name, rec.ClientKind)
 	}

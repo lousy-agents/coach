@@ -8,10 +8,7 @@ import (
 // (Open/OpenFile/Remove/RemoveAll/ReadFile) must be detected when gated
 // behind a matching os.Stat check.
 func TestGoTOCTOU_EachActCallName(t *testing.T) {
-	tests := []struct {
-		name    string
-		actExpr string
-	}{
+	tests := []goTOCTOUActCallCase{
 		{"Open", `os.Open(path)`},
 		{"OpenFile", `os.OpenFile(path, os.O_RDONLY, 0)`},
 		{"Remove", `os.Remove(path)`},
@@ -20,7 +17,7 @@ func TestGoTOCTOU_EachActCallName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_toctouGoTest_22(t, tt)
+			expectGoTOCTOUFindingForActCall(t, tt)
 		})
 	}
 }

@@ -4,12 +4,14 @@ import (
 	"testing"
 )
 
-func body_featuresPart3Test_81(t *testing.T, tt struct {
+type goMutatesInputFindingCase struct {
 	name     string
 	source   string
 	wantName string
 	evidence string
-}) {
+}
+
+func expectParenthesizedRootWriteFinding(t *testing.T, tt goMutatesInputFindingCase) {
 	root, closeTree := mustParseGo(t, []byte(tt.source))
 	defer closeTree()
 
@@ -24,12 +26,7 @@ func body_featuresPart3Test_81(t *testing.T, tt struct {
 	}
 }
 
-func body_featuresPart3Test_134(t *testing.T, tt struct {
-	name     string
-	source   string
-	wantName string
-	evidence string
-}) {
+func expectGoUpdateExpressionFinding(t *testing.T, tt goMutatesInputFindingCase) {
 	root, closeTree := mustParseGo(t, []byte(tt.source))
 	defer closeTree()
 

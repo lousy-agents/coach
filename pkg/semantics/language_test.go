@@ -6,11 +6,7 @@ import "testing"
 // and report ("", false) for anything unrecognized. AnalyzeBytes never
 // calls this helper itself (it is additive, caller-only).
 func TestLanguageForExtension(t *testing.T) {
-	tests := []struct {
-		ext      string
-		wantLang Language
-		wantOK   bool
-	}{
+	tests := []languageForExtensionCase{
 		{ext: ".ts", wantLang: LanguageTypeScript, wantOK: true},
 		{ext: ".TS", wantLang: LanguageTypeScript, wantOK: true},
 		{ext: ".tsx", wantLang: LanguageTSX, wantOK: true},
@@ -22,7 +18,7 @@ func TestLanguageForExtension(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.ext, func(t *testing.T) {
-			body_languageTest_24(t, tt)
+			expectLanguageForExtension(t, tt)
 		})
 	}
 }

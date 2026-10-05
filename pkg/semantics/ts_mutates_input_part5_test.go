@@ -6,10 +6,7 @@ import (
 )
 
 func TestTSMutatesInput_PredeclaredLocalBindingsShadowParameterForWholeScope(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-	}{
+	tests := []tsMutatesInputSourceCase{
 		{
 			name: "block lexical binding shadows before declaration",
 			source: `function f(p) {
@@ -41,16 +38,13 @@ func TestTSMutatesInput_PredeclaredLocalBindingsShadowParameterForWholeScope(t *
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputPart5Test_43(t, tt)
+			expectNoFindingForPredeclaredLocal(t, tt)
 		})
 	}
 }
 
 func TestTSMutatesInput_DestructuringAssignmentReadsDoNotCountAsTargets(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-	}{
+	tests := []tsMutatesInputSourceCase{
 		{
 			name: "computed object key reads parameter property",
 			source: `function f(p, src) {
@@ -69,16 +63,13 @@ func TestTSMutatesInput_DestructuringAssignmentReadsDoNotCountAsTargets(t *testi
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputPart5Test_80(t, tt)
+			expectNoFindingForDestructuringRead(t, tt)
 		})
 	}
 }
 
 func TestTSMutatesInput_DestructuringAliasDoesNotShadowParameter(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-	}{
+	tests := []tsMutatesInputSourceCase{
 		{
 			name: "object pattern alias",
 			source: `function f(p, source) {
@@ -102,7 +93,7 @@ func TestTSMutatesInput_DestructuringAliasDoesNotShadowParameter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputPart5Test_121(t, tt)
+			expectFindingDespiteDestructuringAlias(t, tt)
 		})
 	}
 }

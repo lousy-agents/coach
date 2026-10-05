@@ -30,10 +30,7 @@ func TestTSMutatesInput_Delete(t *testing.T) {
 }
 
 func TestTSMutatesInput_ReboundParameterIsNotTrackedForLaterWrites(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-	}{
+	tests := []tsMutatesInputSourceCase{
 		{
 			name: "assignment rebinding",
 			source: `function f(p) {
@@ -79,7 +76,7 @@ func TestTSMutatesInput_ReboundParameterIsNotTrackedForLaterWrites(t *testing.T)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputPart3Test_81(t, tt)
+			expectNoFindingAfterParameterRebind(t, tt)
 		})
 	}
 }
@@ -88,10 +85,7 @@ func TestTSMutatesInput_ReboundParameterIsNotTrackedForLaterWrites(t *testing.T)
 // function parameter. Mutating the local binding is not a mutation of the
 // caller's input parameter and must not be attributed to f:p.
 func TestTSMutatesInput_BlockLocalBindingShadowsParameter(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-	}{
+	tests := []tsMutatesInputSourceCase{
 		{
 			name: "let binding",
 			source: `function f(p) {
@@ -137,18 +131,13 @@ func TestTSMutatesInput_BlockLocalBindingShadowsParameter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputPart3Test_148(t, tt)
+			expectNoFindingForBlockLocalBinding(t, tt)
 		})
 	}
 }
 
 func TestTSMutatesInput_CompoundAssignment(t *testing.T) {
-	tests := []struct {
-		name     string
-		source   string
-		wantName string
-		evidence string
-	}{
+	tests := []tsMutatesInputFindingCase{
 		{
 			name: "property plus-equals",
 			source: `function f(p) {
@@ -180,7 +169,7 @@ func TestTSMutatesInput_CompoundAssignment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputPart3Test_200(t, tt)
+			expectCompoundAssignmentFinding(t, tt)
 		})
 	}
 }

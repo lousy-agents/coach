@@ -4,10 +4,7 @@ import (
 	"testing"
 )
 
-func body_tsMutatesInputPart4Test_104(t *testing.T, tt struct {
-	name   string
-	source string
-}) {
+func expectNoFindingForShadowingBinding(t *testing.T, tt tsMutatesInputSourceCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 
@@ -20,10 +17,7 @@ func body_tsMutatesInputPart4Test_104(t *testing.T, tt struct {
 	}
 }
 
-func body_tsMutatesInputPart4Test_147(t *testing.T, tt struct {
-	name   string
-	source string
-}) {
+func expectNoFindingForNonIdentifierParameter(t *testing.T, tt tsMutatesInputSourceCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 
@@ -35,12 +29,7 @@ func body_tsMutatesInputPart4Test_147(t *testing.T, tt struct {
 	}
 }
 
-func body_tsMutatesInputPart4Test_192(t *testing.T, tt struct {
-	name     string
-	source   string
-	wantName string
-	evidence string
-}) {
+func expectWrappedRootFinding(t *testing.T, tt tsMutatesInputFindingCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 

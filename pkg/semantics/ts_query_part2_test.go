@@ -10,10 +10,7 @@ import (
 // AC-R3.3: re-exports, require(...), and dynamic import(...) are all out
 // of scope for v1 and must produce no ImportFeature.
 func TestExtractTSImports_OutOfScopeFormsProduceNoImports(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-	}{
+	tests := []tsImportSourceCase{
 		{name: "re-export", source: `export { X } from "./x";`},
 		{name: "require", source: `const y = require("./y");`},
 		{name: "dynamic import", source: `async function f() { await import("./z"); }`},
@@ -21,7 +18,7 @@ func TestExtractTSImports_OutOfScopeFormsProduceNoImports(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsQueryPart2Test_23(t, tt)
+			expectNoTSImports(t, tt)
 		})
 	}
 }

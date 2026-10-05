@@ -4,11 +4,13 @@ import (
 	"testing"
 )
 
-func body_tsMutatesInputTest_69(t *testing.T, tt struct {
+type tsMethodCallCountCase struct {
 	name      string
 	source    string
 	wantCount int
-}) {
+}
+
+func expectMutatingMethodCallFindingCount(t *testing.T, tt tsMethodCallCountCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 

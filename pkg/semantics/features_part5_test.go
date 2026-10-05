@@ -71,10 +71,7 @@ func f(cfg *Config) {
 // closure's own mutation of its cfg must not be misattributed to the outer
 // function f's cfg.
 func TestGoMutatesInput_FuncLiteralShadowsOuterParameter(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-	}{
+	tests := []goShadowedParameterCase{
 		{
 			name: "ordinary parameter",
 			source: `package main
@@ -111,16 +108,13 @@ func f(cfg *Config) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_featuresPart5Test_113(t, tt)
+			expectClosureShadowedParameterIgnored(t, tt)
 		})
 	}
 }
 
 func TestGoMutatesInput_ControlFlowInitializerBindingsShadowOuterParameter(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-	}{
+	tests := []goShadowedParameterCase{
 		{
 			name: "range loop variable shadows outer parameter",
 			source: `package main
@@ -203,7 +197,7 @@ func f(cfg *Config, value any) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_featuresPart5Test_213(t, tt)
+			expectShadowedParameterIgnored(t, tt)
 		})
 	}
 }

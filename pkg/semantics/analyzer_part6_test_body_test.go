@@ -8,11 +8,13 @@ import (
 	"testing"
 )
 
-func body_analyzerPart6Test_48(t *testing.T, a *Analyzer, tt struct {
+type tsSourceCase struct {
 	name string
 	lang Language
 	src  string
-}) {
+}
+
+func expectTSSyntaxErrorReported(t *testing.T, a *Analyzer, tt tsSourceCase) {
 	result, err := a.AnalyzeBytes(context.Background(), FileInput{
 		Path:     "broken",
 		Language: tt.lang,
@@ -32,11 +34,7 @@ func body_analyzerPart6Test_48(t *testing.T, a *Analyzer, tt struct {
 	}
 }
 
-func body_analyzerPart6Test_98(t *testing.T, a *Analyzer, tt struct {
-	name string
-	lang Language
-	src  string
-}) {
+func expectTSParsesCleanly(t *testing.T, a *Analyzer, tt tsSourceCase) {
 	result, err := a.AnalyzeBytes(context.Background(), FileInput{
 		Path:     "ok",
 		Language: tt.lang,

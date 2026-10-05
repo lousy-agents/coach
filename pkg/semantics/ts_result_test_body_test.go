@@ -6,11 +6,13 @@ import (
 	"testing"
 )
 
-func body_tsResultTest_44(t *testing.T, tt struct {
+type goGoldenFileCase struct {
 	name       string
 	result     Result
 	goldenFile string
-}) {
+}
+
+func expectGoGoldenFileUnchanged(t *testing.T, tt goGoldenFileCase) {
 	got, err := json.MarshalIndent(tt.result, "", "  ")
 	if err != nil {
 		t.Fatalf("marshaling the Go %s fixture must not fail: %v", tt.name, err)

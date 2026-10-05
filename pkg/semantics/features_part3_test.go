@@ -43,12 +43,7 @@ func f(cfg *Config) {
 // change the write-through target. Selector and index writes rooted at
 // parenthesized pointer/map/slice parameters must still be detected.
 func TestGoMutatesInput_ParenthesizedRootWrites(t *testing.T) {
-	tests := []struct {
-		name     string
-		source   string
-		wantName string
-		evidence string
-	}{
+	tests := []goMutatesInputFindingCase{
 		{
 			name: "selector on parenthesized pointer parameter",
 			source: `package main
@@ -79,18 +74,13 @@ func g(items []int) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_featuresPart3Test_81(t, tt)
+			expectParenthesizedRootWriteFinding(t, tt)
 		})
 	}
 }
 
 func TestGoMutatesInput_UpdateExpressionsMutateParameterRoots(t *testing.T) {
-	tests := []struct {
-		name     string
-		source   string
-		wantName string
-		evidence string
-	}{
+	tests := []goMutatesInputFindingCase{
 		{
 			name: "pointer selector increment",
 			source: `package main
@@ -121,7 +111,7 @@ func f(items []int) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_featuresPart3Test_134(t, tt)
+			expectGoUpdateExpressionFinding(t, tt)
 		})
 	}
 }

@@ -12,10 +12,7 @@ import (
 // covers every name in tsToctouActCallNames so deleting any one of them
 // from that set fails a case here.
 func TestComputeTSFeatures_TOCTOUCheckThenAct_PositiveFinding(t *testing.T) {
-	tests := []struct {
-		name        string
-		actCallText string
-	}{
+	tests := []tsTOCTOUActCallCase{
 		{name: "readFileSync", actCallText: `readFileSync(p, "utf8")`},
 		{name: "writeFileSync", actCallText: `writeFileSync(p, "seed")`},
 		{name: "appendFileSync", actCallText: `appendFileSync(p, "more")`},
@@ -25,7 +22,7 @@ func TestComputeTSFeatures_TOCTOUCheckThenAct_PositiveFinding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsToctouTest_27(t, tt)
+			expectTSTOCTOUFindingForActCall(t, tt)
 		})
 	}
 }
@@ -35,10 +32,7 @@ func TestComputeTSFeatures_TOCTOUCheckThenAct_PositiveFinding(t *testing.T) {
 // identical path text" pattern, so each must yield zero
 // toctou_check_then_act findings.
 func TestComputeTSFeatures_TOCTOUCheckThenAct_ExcludedCases(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-	}{
+	tests := []tsTOCTOUSourceCase{
 		{
 			name: "path text differs between check and act",
 			source: `function f(a: string, b: string) {
@@ -107,7 +101,7 @@ func TestComputeTSFeatures_TOCTOUCheckThenAct_ExcludedCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsToctouTest_137(t, tt)
+			expectNoTSTOCTOUFinding(t, tt)
 		})
 	}
 }

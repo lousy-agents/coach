@@ -4,10 +4,12 @@ import (
 	"testing"
 )
 
-func body_tsMutatesInputPart3Test_81(t *testing.T, tt struct {
+type tsMutatesInputSourceCase struct {
 	name   string
 	source string
-}) {
+}
+
+func expectNoFindingAfterParameterRebind(t *testing.T, tt tsMutatesInputSourceCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 
@@ -20,10 +22,7 @@ func body_tsMutatesInputPart3Test_81(t *testing.T, tt struct {
 	}
 }
 
-func body_tsMutatesInputPart3Test_148(t *testing.T, tt struct {
-	name   string
-	source string
-}) {
+func expectNoFindingForBlockLocalBinding(t *testing.T, tt tsMutatesInputSourceCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 
@@ -36,12 +35,14 @@ func body_tsMutatesInputPart3Test_148(t *testing.T, tt struct {
 	}
 }
 
-func body_tsMutatesInputPart3Test_200(t *testing.T, tt struct {
+type tsMutatesInputFindingCase struct {
 	name     string
 	source   string
 	wantName string
 	evidence string
-}) {
+}
+
+func expectCompoundAssignmentFinding(t *testing.T, tt tsMutatesInputFindingCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 

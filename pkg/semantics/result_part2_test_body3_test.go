@@ -7,12 +7,14 @@ import (
 	"testing"
 )
 
-func body_resultPart2Test_100(t *testing.T, tt struct {
+type resultGoldenCase struct {
 	name              string
 	result            Result
 	goldenFile        string
 	checkRoundTripped func(t *testing.T, r Result)
-}) {
+}
+
+func expectResultMatchesGoldenFile(t *testing.T, tt resultGoldenCase) {
 	got, err := json.MarshalIndent(tt.result, "", "  ")
 	if err != nil {
 		t.Fatalf("AC-4.4: marshaling the %s Result must not fail: %v", tt.name, err)

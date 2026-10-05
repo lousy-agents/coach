@@ -15,18 +15,21 @@ import (
 // "fully populated" fixture would lock the JSON shape against a state
 // AnalyzeBytes can never actually produce.
 func TestResult_MarshalMatchesGoldenFile(t *testing.T) {
-	tests := []struct {
-		name              string
-		result            Result
-		goldenFile        string
-		checkRoundTripped func(t *testing.T, r Result)
-	}{
+	tests := []resultGoldenCase{
 		{
 			name:       "ok",
 			result:     goldenOkResult(),
 			goldenFile: "testdata/result_golden_ok.json",
 			checkRoundTripped: func(t *testing.T, r Result) {
-				body_resultPart2Test_31(t, r)
+				if r.ParseStatus != ParseStatus("ok") {
+					t.Errorf("AC-4.4: golden ok Result.ParseStatus: got %q, want %q", r.ParseStatus, "ok")
+				}
+				if len(r.Imports) != 1 {
+					t.Errorf("AC-4.4: golden ok Result.Imports length: got %d, want 1", len(r.Imports))
+				}
+				if len(r.SyntaxErrors) != 0 {
+					t.Errorf("AC-4.4: golden ok Result.SyntaxErrors: got %d, want 0", len(r.SyntaxErrors))
+				}
 			},
 		},
 		{
@@ -34,22 +37,28 @@ func TestResult_MarshalMatchesGoldenFile(t *testing.T) {
 			result:     goldenSyntaxErrorResult(),
 			goldenFile: "testdata/result_golden_syntax_errors.json",
 			checkRoundTripped: func(t *testing.T, r Result) {
-				body_resultPart2Test_48(t, r)
+				if r.ParseStatus != ParseStatus("syntax_errors") {
+					t.Errorf("AC-4.4: golden syntax_errors Result.ParseStatus: got %q, want %q", r.ParseStatus, "syntax_errors")
+				}
+				if got, want := r.SyntaxErrors[0].Location.StartByte, uint(10); got != want {
+					t.Errorf("AC-4.4: golden syntax_errors Result.SyntaxErrors[0].Location.StartByte: got %d, want %d", got, want)
+				}
+				if len(r.Imports) != 0 || len(r.Findings) != 0 {
+					t.Errorf("AC-4.4: golden syntax_errors Result.Imports/Findings: got %d/%d, want 0/0", len(r.Imports), len(r.Findings))
+				}
 			},
 		},
 		{
-			name:       "react_components",
-			result:     goldenReactComponentsResult(),
-			goldenFile: "testdata/result_golden_react_components.json",
-			checkRoundTripped: func(t *testing.T, r Result) {
-				body_resultPart2Test_65(t, r)
-			},
+			name:              "react_components",
+			result:            goldenReactComponentsResult(),
+			goldenFile:        "testdata/result_golden_react_components.json",
+			checkRoundTripped: checkGoldenReactComponentsRoundTrip,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_resultPart2Test_100(t, tt)
+			expectResultMatchesGoldenFile(t, tt)
 		})
 	}
 }

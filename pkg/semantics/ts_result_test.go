@@ -29,18 +29,14 @@ const tsGoldenSyntaxErrorSource = `const x = ;
 func TestGoGoldenFiles_UnchangedByTSSupport(t *testing.T) {
 	a := mustNewAnalyzer(t)
 
-	tests := []struct {
-		name       string
-		result     Result
-		goldenFile string
-	}{
+	tests := []goGoldenFileCase{
 		{name: "ok", result: goldenOkResult(), goldenFile: "testdata/result_golden_ok.json"},
 		{name: "syntax_errors", result: goldenSyntaxErrorResult(), goldenFile: "testdata/result_golden_syntax_errors.json"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsResultTest_44(t, tt)
+			expectGoGoldenFileUnchanged(t, tt)
 		})
 	}
 

@@ -14,11 +14,7 @@ import (
 func TestResult_ReactComponentsEmpty(t *testing.T) {
 	a := mustNewAnalyzer(t)
 
-	tests := []struct {
-		name       string
-		input      FileInput
-		wantStatus ParseStatus
-	}{
+	tests := []reactComponentsOmittedCase{
 		{
 			name: "go ok",
 			input: FileInput{
@@ -59,7 +55,7 @@ func TestResult_ReactComponentsEmpty(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_resultTest_63(t, a, tt)
+			expectReactComponentsOmitted(t, a, tt)
 		})
 	}
 }

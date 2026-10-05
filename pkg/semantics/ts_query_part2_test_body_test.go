@@ -4,10 +4,12 @@ import (
 	"testing"
 )
 
-func body_tsQueryPart2Test_23(t *testing.T, tt struct {
+type tsImportSourceCase struct {
 	name   string
 	source string
-}) {
+}
+
+func expectNoTSImports(t *testing.T, tt tsImportSourceCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 

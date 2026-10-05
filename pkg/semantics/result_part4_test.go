@@ -37,18 +37,14 @@ func TestResult_OmitsEmptyOptionalSlices(t *testing.T) {
 // AC-4.3: ParseStatus must serialize as exactly "ok" or "syntax_errors";
 // no other values exist in v1.
 func TestParseStatus_SerializesAsOkOrSyntaxErrors(t *testing.T) {
-	tests := []struct {
-		name   string
-		status ParseStatus
-		want   string
-	}{
+	tests := []parseStatusJSONCase{
 		{name: "ok status", status: ParseStatus("ok"), want: `"ok"`},
 		{name: "syntax_errors status", status: ParseStatus("syntax_errors"), want: `"syntax_errors"`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_resultPart4Test_50(t, tt)
+			expectParseStatusJSON(t, tt)
 		})
 	}
 }
@@ -81,11 +77,7 @@ func TestLocation_JSONHasZeroBasedByteAndRowColFields(t *testing.T) {
 // of issues, so log lines and top-level error messages are useful without
 // needing to inspect Issues directly.
 func TestSyntaxError_ErrorSummarizesIssueCount(t *testing.T) {
-	tests := []struct {
-		name   string
-		issues []SyntaxIssue
-		want   string
-	}{
+	tests := []syntaxErrorMessageCase{
 		{
 			name:   "one issue",
 			issues: []SyntaxIssue{{Kind: "error"}},
@@ -100,7 +92,7 @@ func TestSyntaxError_ErrorSummarizesIssueCount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_resultPart4Test_108(t, tt)
+			expectSyntaxErrorMessage(t, tt)
 		})
 	}
 }

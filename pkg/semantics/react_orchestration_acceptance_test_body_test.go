@@ -299,19 +299,6 @@ function B() {
 	}
 }
 
-func body_reactOrchestrationAcceptanceTest_shallStillEmitExactlyTheThreeEqualityWorkspaceBr_706(analyzer *semantics.Analyzer) {
-	result := analyzeTSX(analyzer, "WorkspacePage.tsx", reactOrchestrationP1)
-
-	rec, ok := reactComponentByName(result.ReactComponents, "WorkspacePage")
-	Expect(ok).To(BeTrue())
-	Expect(rec.WorkspaceBranches).To(HaveLen(3))
-	if len(rec.WorkspaceBranches) == 3 {
-		Expect(rec.WorkspaceBranches[0].Label).To(Equal("list"))
-		Expect(rec.WorkspaceBranches[1].Label).To(Equal("detail"))
-		Expect(rec.WorkspaceBranches[2].Label).To(Equal("settings"))
-	}
-}
-
 func body_reactOrchestrationAcceptanceTest_shallAttachARecordWithClientKindHooksAndJsx_721(analyzer *semantics.Analyzer) {
 	const src = `import { useState } from "react";
 

@@ -5,10 +5,7 @@ import (
 )
 
 func TestTSMutatesInput_ControlFlowAndFunctionBindingsShadowParameter(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-	}{
+	tests := []tsMutatesInputSourceCase{
 		{
 			name: "for-of lexical binding",
 			source: `function f(p, items) {
@@ -102,7 +99,7 @@ func TestTSMutatesInput_ControlFlowAndFunctionBindingsShadowParameter(t *testing
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputPart4Test_104(t, tt)
+			expectNoFindingForShadowingBinding(t, tt)
 		})
 	}
 }
@@ -112,10 +109,7 @@ func TestTSMutatesInput_ControlFlowAndFunctionBindingsShadowParameter(t *testing
 // looks like it mutates the pattern's inner bindings must not yield any
 // mutates_input finding.
 func TestTSMutatesInput_NonIdentifierParametersAreIgnored(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-	}{
+	tests := []tsMutatesInputSourceCase{
 		{
 			name:   "object pattern",
 			source: "function f({x}) {\n\tx.y = 1;\n}\n",
@@ -136,7 +130,7 @@ func TestTSMutatesInput_NonIdentifierParametersAreIgnored(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputPart4Test_147(t, tt)
+			expectNoFindingForNonIdentifierParameter(t, tt)
 		})
 	}
 }
@@ -145,12 +139,7 @@ func TestTSMutatesInput_NonIdentifierParametersAreIgnored(t *testing.T) {
 // change the write-through target. Parentheses and TypeScript non-null
 // assertions must still resolve to the parameter being mutated.
 func TestTSMutatesInput_WrappedParameterRoots(t *testing.T) {
-	tests := []struct {
-		name     string
-		source   string
-		wantName string
-		evidence string
-	}{
+	tests := []tsMutatesInputFindingCase{
 		{
 			name: "parenthesized property root",
 			source: `function f(p) {
@@ -173,7 +162,7 @@ func TestTSMutatesInput_WrappedParameterRoots(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputPart4Test_192(t, tt)
+			expectWrappedRootFinding(t, tt)
 		})
 	}
 }

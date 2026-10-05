@@ -4,10 +4,12 @@ import (
 	"testing"
 )
 
-func body_tsToctouTest_27(t *testing.T, tt struct {
+type tsTOCTOUActCallCase struct {
 	name        string
 	actCallText string
-}) {
+}
+
+func expectTSTOCTOUFindingForActCall(t *testing.T, tt tsTOCTOUActCallCase) {
 	source := "function f(p: string) {\n\tif (existsSync(p)) {\n\t\t" + tt.actCallText + ";\n\t}\n}\n"
 	root, closeTree := mustParseTS(t, []byte(source))
 	defer closeTree()
@@ -39,10 +41,12 @@ func body_tsToctouTest_27(t *testing.T, tt struct {
 	}
 }
 
-func body_tsToctouTest_137(t *testing.T, tt struct {
+type tsTOCTOUSourceCase struct {
 	name   string
 	source string
-}) {
+}
+
+func expectNoTSTOCTOUFinding(t *testing.T, tt tsTOCTOUSourceCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 

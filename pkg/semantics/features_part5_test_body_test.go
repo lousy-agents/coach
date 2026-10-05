@@ -4,10 +4,12 @@ import (
 	"testing"
 )
 
-func body_featuresPart5Test_113(t *testing.T, tt struct {
+type goShadowedParameterCase struct {
 	name   string
 	source string
-}) {
+}
+
+func expectClosureShadowedParameterIgnored(t *testing.T, tt goShadowedParameterCase) {
 	source := []byte(tt.source)
 	root, closeTree := mustParseGo(t, source)
 	defer closeTree()
@@ -19,10 +21,7 @@ func body_featuresPart5Test_113(t *testing.T, tt struct {
 	}
 }
 
-func body_featuresPart5Test_213(t *testing.T, tt struct {
-	name   string
-	source string
-}) {
+func expectShadowedParameterIgnored(t *testing.T, tt goShadowedParameterCase) {
 	source := []byte(tt.source)
 	root, closeTree := mustParseGo(t, source)
 	defer closeTree()

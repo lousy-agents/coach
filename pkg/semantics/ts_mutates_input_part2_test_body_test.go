@@ -4,12 +4,14 @@ import (
 	"testing"
 )
 
-func body_tsMutatesInputPart2Test_82(t *testing.T, tt struct {
+type tsIndexAssignmentCase struct {
 	name       string
 	source     string
 	wantParam  string
 	wantSuffix string
-}) {
+}
+
+func expectIndexAssignmentFinding(t *testing.T, tt tsIndexAssignmentCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 

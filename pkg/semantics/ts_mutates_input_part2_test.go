@@ -58,12 +58,7 @@ func mustFindTSMutatesInput(t *testing.T, source string, findings []Finding) Fin
 // `obj['k'] = 1` (string index) on an identifier-bound parameter must each
 // yield a mutates_input Finding.
 func TestTSMutatesInput_IndexAssignment(t *testing.T) {
-	tests := []struct {
-		name       string
-		source     string
-		wantParam  string
-		wantSuffix string
-	}{
+	tests := []tsIndexAssignmentCase{
 		{
 			name:       "numeric index",
 			source:     "function f(arr) {\n\tarr[0] = 1;\n}\n",
@@ -80,7 +75,7 @@ func TestTSMutatesInput_IndexAssignment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputPart2Test_82(t, tt)
+			expectIndexAssignmentFinding(t, tt)
 		})
 	}
 }

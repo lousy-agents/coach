@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -69,7 +70,19 @@ func NewFoo() *int {
 		})
 
 		It("orders syntax errors by document position (AC-1.10)", func() {
-			body_acceptanceTest_ordersSyntaxErrorsByDocumentPositionAC110_110(analyzer)
+			source := []byte("package main\nfunc f() {\nfunc g() {\n")
+
+			result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+				Path:     "main.go",
+				Language: semantics.LanguageGo,
+				Content:  source,
+			})
+			Expect(errors.Is(err, semantics.ErrSyntax)).To(BeTrue())
+
+			Expect(len(result.SyntaxErrors)).To(BeNumerically(">=", 2))
+			for i := 1; i < len(result.SyntaxErrors); i++ {
+				Expect(result.SyntaxErrors[i].Location.StartByte).To(BeNumerically(">=", result.SyntaxErrors[i-1].Location.StartByte))
+			}
 		})
 	})
 
@@ -114,7 +127,28 @@ func NewFoo() *int {
 
 	Context("when one Analyzer is used by multiple goroutines at once", func() {
 		It("is safe for concurrent callers (AC-1.9; run under go test -race)", func() {
-			body_acceptanceTest_isSafeForConcurrentCallersAC19RunUnderGoTestRace_168(analyzer)
+			source := []byte("package main\nfunc main() {}\n")
+			const goroutines = 8
+
+			results := make([]*semantics.Result, goroutines)
+			errs := make([]error, goroutines)
+			var wg sync.WaitGroup
+			wg.Add(goroutines)
+			for i := 0; i < goroutines; i++ {
+				go func(i int) {
+					defer wg.Done()
+					results[i], errs[i] = analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+						Language: semantics.LanguageGo,
+						Content:  source,
+					})
+				}(i)
+			}
+			wg.Wait()
+
+			for i := 0; i < goroutines; i++ {
+				Expect(errs[i]).NotTo(HaveOccurred())
+				Expect(results[i].ParseStatus).To(Equal(semantics.ParseStatus("ok")))
+			}
 		})
 	})
 })
@@ -165,7 +199,26 @@ var _ = Describe("syntax error reporting", func() {
 
 	Context("when the grammar's error recovery produces a zero-width MISSING node", func() {
 		It("reports a location where start_byte equals end_byte, without error (AC-2.5)", func() {
-			body_acceptanceTest_reportsALocationWhereStartByteEqualsEndByteWitho_240(analyzer)
+			source := []byte("package main\nfunc f() {\n\tg(1, 2\n}\n")
+
+			result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
+				Path:     "broken.go",
+				Language: semantics.LanguageGo,
+				Content:  source,
+			})
+
+			Expect(err).To(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			var missing *semantics.SyntaxIssue
+			for i := range result.SyntaxErrors {
+				if result.SyntaxErrors[i].Kind == "missing" {
+					missing = &result.SyntaxErrors[i]
+					break
+				}
+			}
+			Expect(missing).NotTo(BeNil(), "expected at least one \"missing\" syntax issue, got %+v", result.SyntaxErrors)
+			Expect(missing.Location.StartByte).To(Equal(missing.Location.EndByte))
 		})
 	})
 })
@@ -188,7 +241,29 @@ var _ = Describe("import, metric, and finding extraction", func() {
 	}
 
 	Context("when source contains every Go import form (AC-3.1, AC-3.2)", func() {
-		body_acceptanceTest_whenSourceContainsEveryGoImportFormAC31AC32_283(analyze)
+		var result *semantics.Result
+
+		BeforeEach(func() {
+			result = analyze(`package main
+
+import (
+	"fmt"
+	o "os"
+	. "strings"
+	_ "unicode"
+	` + "`unicode/utf8`" + `
+)
+
+func F() {}
+`)
+		})
+
+		DescribeTable("extracts the import's path and alias", (&sigbodyacceptanceTestwhenSourceContainsEveryGoImportFormAC31{result: &result}).call, Entry("plain single-quoted import", "fmt", ""),
+			Entry("aliased import", "os", "o"),
+			Entry("dot import", "strings", "."),
+			Entry("blank import", "unicode", "_"),
+			Entry("raw-string (backtick) import path", "unicode/utf8", ""),
+		)
 	})
 
 	It("computes exact structural metric counts for every tracked branching construct (AC-3.3)", func() {
@@ -262,7 +337,13 @@ func Newton() {}
 
 		DescribeTable("matches the documented ^New([A-Z0-9_]|$) pattern",
 			func(name string, wantMatch bool) {
-				body_acceptanceTest_matchesTheDocumentedNewAZ09Pattern_391(name, wantMatch, result)
+				found := false
+				for _, f := range result.Findings {
+					if f.Kind == "constructor_func" && f.Name == name {
+						found = true
+					}
+				}
+				Expect(found).To(Equal(wantMatch))
 			},
 			Entry("NewFoo matches", "NewFoo", true),
 			Entry("bare New matches", "New", true),
@@ -271,7 +352,26 @@ func Newton() {}
 	})
 
 	It("detects pointer-returning functions and methods (AC-3.6)", func() {
-		body_acceptanceTest_detectsPointerReturningFunctionsAndMethodsAC36_406(analyze)
+		result := analyze(`package main
+
+func NewThing() *int { return nil }
+
+type T struct{}
+
+func (t T) Get() *int { return nil }
+
+func Value() int { return 0 }
+`)
+
+		names := map[string]bool{}
+		for _, f := range result.Findings {
+			if f.Kind == "pointer_return" {
+				names[f.Name] = true
+			}
+		}
+		Expect(names).To(HaveKey("NewThing"))
+		Expect(names).To(HaveKey("Get"))
+		Expect(names).NotTo(HaveKey("Value"))
 	})
 })
 

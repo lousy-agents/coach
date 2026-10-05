@@ -2,18 +2,17 @@ package semantics
 
 import "github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 
-type sigTestSmokeTSGrammarExposesExpectedTightCouplingNodeKinds21 struct {
-	hasConstructorField *bool
-}
-
-func (sigRecv *sigTestSmokeTSGrammarExposesExpectedTightCouplingNodeKinds21) call(n engine.Node) {
+func anyNewExpressionHasConstructorField(n engine.Node) bool {
 	if n == nil {
-		return
+		return false
 	}
 	if n.Kind() == "new_expression" && n.ChildByFieldName("constructor") != nil {
-		*sigRecv.hasConstructorField = true
+		return true
 	}
 	for i := 0; i < n.ChildCount(); i++ {
-		sigRecv.call(n.Child(i))
+		if anyNewExpressionHasConstructorField(n.Child(i)) {
+			return true
+		}
 	}
+	return false
 }

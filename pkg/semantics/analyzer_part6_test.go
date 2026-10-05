@@ -16,11 +16,7 @@ import (
 func TestAnalyzeBytes_TSMissingInitializerFalseNegative(t *testing.T) {
 	a := mustNewAnalyzer(t)
 
-	tests := []struct {
-		name string
-		lang Language
-		src  string
-	}{
+	tests := []tsSourceCase{
 		{name: "const at top level", lang: LanguageTypeScript, src: "const x = ;\n"},
 		{name: "let at top level", lang: LanguageTypeScript, src: "let y = ;\n"},
 		{name: "var at top level", lang: LanguageTypeScript, src: "var z = ;\n"},
@@ -44,7 +40,7 @@ func TestAnalyzeBytes_TSMissingInitializerFalseNegative(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_analyzerPart6Test_48(t, a, tt)
+			expectTSSyntaxErrorReported(t, a, tt)
 		})
 	}
 }
@@ -61,11 +57,7 @@ func TestAnalyzeBytes_TSMissingInitializerFalseNegative(t *testing.T) {
 func TestAnalyzeBytes_TSPlainIdentifierDefaultParametersParseOK(t *testing.T) {
 	a := mustNewAnalyzer(t)
 
-	tests := []struct {
-		name string
-		lang Language
-		src  string
-	}{
+	tests := []tsSourceCase{
 		{name: "plain identifier default parameter", lang: LanguageTypeScript, src: "function f(x = 1) {}\n"},
 		{name: "arrow function plain identifier default parameter", lang: LanguageTypeScript, src: "const g = (a = 1) => {};\n"},
 		{name: "array destructuring default", lang: LanguageTypeScript, src: "const [a = 2] = z;\n"},
@@ -78,7 +70,7 @@ func TestAnalyzeBytes_TSPlainIdentifierDefaultParametersParseOK(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_analyzerPart6Test_98(t, a, tt)
+			expectTSParsesCleanly(t, a, tt)
 		})
 	}
 }

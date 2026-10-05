@@ -7,11 +7,13 @@ import (
 	"testing"
 )
 
-func body_resultTest_63(t *testing.T, a *Analyzer, tt struct {
+type reactComponentsOmittedCase struct {
 	name       string
 	input      FileInput
 	wantStatus ParseStatus
-}) {
+}
+
+func expectReactComponentsOmitted(t *testing.T, a *Analyzer, tt reactComponentsOmittedCase) {
 	result, _ := a.AnalyzeBytes(context.Background(), tt.input)
 	if result == nil {
 		t.Fatalf("AnalyzeBytes(%s): got nil result, want non-nil", tt.name)

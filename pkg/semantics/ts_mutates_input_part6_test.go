@@ -31,12 +31,7 @@ func TestTSMutatesInput_MutatingMethodCallOnNestedReceiver(t *testing.T) {
 }
 
 func TestTSMutatesInput_UpdateExpressionsMutateParameterRoots(t *testing.T) {
-	tests := []struct {
-		name     string
-		source   string
-		wantName string
-		evidence string
-	}{
+	tests := []tsMutatesInputFindingCase{
 		{
 			name: "postfix property increment",
 			source: `function f(p) {
@@ -59,7 +54,7 @@ func TestTSMutatesInput_UpdateExpressionsMutateParameterRoots(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputPart6Test_61(t, tt)
+			expectTSUpdateExpressionFinding(t, tt)
 		})
 	}
 }
@@ -111,12 +106,7 @@ func TestTSMutatesInput_EvidenceExcludesLongRHSAndArguments(t *testing.T) {
 }
 
 func TestTSMutatesInput_DestructuringAssignmentTargets(t *testing.T) {
-	tests := []struct {
-		name     string
-		source   string
-		wantName string
-		evidence string
-	}{
+	tests := []tsMutatesInputFindingCase{
 		{
 			name: "object pattern property target",
 			source: `function f(p, src) {
@@ -139,7 +129,7 @@ func TestTSMutatesInput_DestructuringAssignmentTargets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsMutatesInputPart6Test_149(t, tt)
+			expectDestructuringAssignmentFinding(t, tt)
 		})
 	}
 }

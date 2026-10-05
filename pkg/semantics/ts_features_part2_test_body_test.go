@@ -4,11 +4,13 @@ import (
 	"testing"
 )
 
-func body_tsFeaturesPart2Test_34(t *testing.T, tt struct {
+type tsMaxNestingDepthCase struct {
 	name   string
 	source string
 	want   int
-}) {
+}
+
+func expectTSMaxNestingDepth(t *testing.T, tt tsMaxNestingDepthCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 

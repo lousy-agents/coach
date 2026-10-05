@@ -4,12 +4,7 @@ import (
 	"testing"
 )
 
-func body_tsMutatesInputPart6Test_61(t *testing.T, tt struct {
-	name     string
-	source   string
-	wantName string
-	evidence string
-}) {
+func expectTSUpdateExpressionFinding(t *testing.T, tt tsMutatesInputFindingCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 
@@ -21,12 +16,7 @@ func body_tsMutatesInputPart6Test_61(t *testing.T, tt struct {
 	}
 }
 
-func body_tsMutatesInputPart6Test_149(t *testing.T, tt struct {
-	name     string
-	source   string
-	wantName string
-	evidence string
-}) {
+func expectDestructuringAssignmentFinding(t *testing.T, tt tsMutatesInputFindingCase) {
 	root, closeTree := mustParseTS(t, []byte(tt.source))
 	defer closeTree()
 

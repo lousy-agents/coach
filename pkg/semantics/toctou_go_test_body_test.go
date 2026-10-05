@@ -4,10 +4,12 @@ import (
 	"testing"
 )
 
-func body_toctouGoTest_22(t *testing.T, tt struct {
+type goTOCTOUActCallCase struct {
 	name    string
 	actExpr string
-}) {
+}
+
+func expectGoTOCTOUFindingForActCall(t *testing.T, tt goTOCTOUActCallCase) {
 	source := []byte(`package main
 
 import "os"

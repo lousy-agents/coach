@@ -13,13 +13,7 @@ import (
 func TestTSResult_MarshalMatchesGoldenFile(t *testing.T) {
 	a := mustNewAnalyzer(t)
 
-	tests := []struct {
-		name              string
-		in                FileInput
-		goldenFile        string
-		wantErr           bool
-		checkRoundTripped func(t *testing.T, r Result)
-	}{
+	tests := []tsResultGoldenCase{
 		{
 			name: "ok",
 			in: FileInput{
@@ -29,7 +23,18 @@ func TestTSResult_MarshalMatchesGoldenFile(t *testing.T) {
 			},
 			goldenFile: "testdata/result_golden_ts_ok.json",
 			checkRoundTripped: func(t *testing.T, r Result) {
-				body_tsResultPart2Test_34(t, r)
+				if r.ParseStatus != ParseStatus("ok") {
+					t.Errorf("AC-R6.1: golden TS ok Result.ParseStatus: got %q, want %q", r.ParseStatus, "ok")
+				}
+				if len(r.Imports) != 1 || r.Imports[0].Path != "./http" {
+					t.Errorf("AC-R6.1: golden TS ok Result.Imports: got %+v, want one import with Path %q", r.Imports, "./http")
+				}
+				if len(r.Findings) != 1 || r.Findings[0].Kind != "tight_coupling" || r.Findings[0].Name != "HttpClient" {
+					t.Errorf("AC-R6.1: golden TS ok Result.Findings: got %+v, want one tight_coupling finding named %q", r.Findings, "HttpClient")
+				}
+				if len(r.SyntaxErrors) != 0 {
+					t.Errorf("AC-R6.1: golden TS ok Result.SyntaxErrors: got %d, want 0", len(r.SyntaxErrors))
+				}
 			},
 		},
 		{
@@ -40,17 +45,15 @@ func TestTSResult_MarshalMatchesGoldenFile(t *testing.T) {
 				Content:  []byte(tsGoldenSyntaxErrorSource),
 			},
 
-			goldenFile: "testdata/result_golden_ts_syntax_errors.json",
-			wantErr:    true,
-			checkRoundTripped: func(t *testing.T, r Result) {
-				body_tsResultPart2Test_60(t, r)
-			},
+			goldenFile:        "testdata/result_golden_ts_syntax_errors.json",
+			wantErr:           true,
+			checkRoundTripped: checkTSSyntaxErrorGoldenRoundTrip,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsResultPart2Test_76(t, a, tt)
+			expectTSResultMatchesGoldenFile(t, a, tt)
 		})
 	}
 }
