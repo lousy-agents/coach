@@ -41,6 +41,10 @@ run = "go test -run Example ./..."
 description = "Fail if any *_acceptance_test.go lacks a ginkgo/v2 import (except the explicit allowlist)"
 run = "go run ./cmd/acceptance-style-guard"
 
+[tasks.source-layout-check]
+description = "Fail if any Go file or identifier is named by position or hash (main_part2.go, body_*, *_sigfix1_test.go) instead of responsibility (ADR-007)"
+run = "go run ./cmd/source-layout-guard"
+
 [tasks.test-acceptance-fast]
 description = "Run the fast, in-process Ginkgo/Gomega acceptance suites (public Go/CLI-boundary tests, offline, no real credentials) -- Feature Zero's runnable acceptance layer (see docs/architecture/acceptance-harness.md)"
 run = [
@@ -253,6 +257,7 @@ run = [
   { task = "go-vet" },
   { task = "tidy-check" },
   { task = "acceptance-style-check" },
+  { task = "source-layout-check" },
   { task = "test" },
   { task = "test-examples" },
 ]
@@ -302,6 +307,7 @@ run = [
   { task = "gofmt" },
   { task = "go-vet" },
   { task = "acceptance-style-check" },
+  { task = "source-layout-check" },
 ]
 
 # The single authoritative "everything CI proves" task. No longer the ship gate

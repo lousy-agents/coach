@@ -99,6 +99,12 @@ node --test "dist-test/**/*.test.js"
 
 Full design lives in `docs/architecture/system-overview.md`. What follows is only what a reader cannot infer from the code.
 
+### Layering and file naming
+
+Go code follows layered ports and adapters ([ADR-007](docs/architecture/ADR-007-layered-ports-and-adapters.md)): domain (`pkg/*`) ← application (use cases and the ports they declare) ← driven adapters (git, toolchain probes, GitHub, stores, queues), with `cmd/*` as the only place that wires adapters into use cases. Dependencies shall point inward, and a port shall be declared by the package that consumes it, because that is what lets a use case be tested against a fake instead of a real git repo or database.
+
+A file and a package shall be named for the responsibility they hold. When the self-scan density gate fires (12 branch points per file), split the file along a seam and name both halves; a family of files sharing a prefix is a capability that belongs in its own package. Ordinal fragments (`_part2.go`, `_test_body_test.go`, `_sigfix1_test.go`) and helpers named for their origin or a hash (`body_*`, `*39957725`) are rejected by `mise run source-layout-check`, because a name that carries no responsibility forces a reader to open every fragment to find anything.
+
 ### `pkg/semantics`
 
 `pkg/semantics` parses purely in Go via `github.com/odvcencio/gotreesitter` — no CGO, no C toolchain, and no dual-backend selection. Pipeline (`analyzer.go`): `AnalyzeBytes` = validate → parse → syntax-check → extract imports → compute metrics/findings → `Result`.
@@ -136,6 +142,7 @@ mise run gofmt
 mise run go-vet
 mise run tidy-check
 mise run acceptance-style-check
+mise run source-layout-check
 mise run test
 mise run test-examples
 mise run js-ci

@@ -697,6 +697,7 @@ The platform groundwork phase produced additional load-bearing decisions that ar
 | [ADR-004](ADR-004-job-ownership-isolation.md) | Job ownership and cross-principal read isolation | Accepted |
 | [ADR-005](ADR-005-agent-loop-orchestration-split.md) | Agent loop orchestration split (+ 2026-07-25 amendment: local-LLM judgment packing, judgment wall, partial agent persist, priority cap) | Accepted |
 | [ADR-006](ADR-006-watermill-queue-abstraction.md) | Watermill TaskQueue/EventBus ports with Redis Streams and SQS adapters | Accepted for groundwork phase |
+| [ADR-007](ADR-007-layered-ports-and-adapters.md) | Layered ports-and-adapters architecture; source files and packages named for their responsibility | Accepted |
 | Spec delta | [Local-LLM judgment effectiveness](../../.github/specs/coach-api-platform-local-llm-judgment.spec.md) | Draft / implement next |
 
 ## 16. Final adversarial-review summary

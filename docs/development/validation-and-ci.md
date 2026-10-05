@@ -70,8 +70,8 @@ workflow does not invoke those composites.
 Seven independent leaf jobs plus a `status` aggregator:
 
 - `verify` — `ci-go`: gofmt / go-vet / tidy-check / acceptance-style-check /
-  test / test-examples. `install_args` names Go, pnpm, and bun; the first
-  `mise run` step then installs whatever else `mise.toml` declares, Node
+  source-layout-check / test / test-examples. `install_args` names Go, pnpm,
+  and bun; the first `mise run` step then installs whatever else `mise.toml` declares, Node
   included, so the sidecar suite skips because the sidecar is not built, not
   because `node` is missing. pnpm and bun are named because `test` carries
   `cmd/coach`'s real-execution sentinel-script proofs for the frozen adapter
