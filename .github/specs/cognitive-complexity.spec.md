@@ -688,7 +688,7 @@ sequenceDiagram
 **Affected files**:
 
 - `pkg/codesignal/rule_cognitive_complexity.go` (new)
-- `pkg/codesignal/codesignal.go` (`processHeadResult` / `extractBaseSignals` wiring)
+- `pkg/codesignal/file_signals.go` (`processHeadResult` / `extractBaseSignals` wiring)
 - `pkg/codesignal/*_test.go` / acceptance as needed
 
 **Requirements**:

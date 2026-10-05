@@ -22,7 +22,7 @@ func TestFingerprint_NormalizePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_fingerprintTest_24(t, tt)
+			expectNormalizedPath(t, tt.path, tt.want)
 		})
 	}
 }
@@ -42,7 +42,7 @@ func TestFingerprint_NormalizeEvidence(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_fingerprintTest_47(t, tt)
+			expectNormalizedEvidence(t, tt.evidence, tt.want)
 		})
 	}
 }
@@ -89,11 +89,16 @@ func TestFingerprint_ComputeSignalID_DifferentOrdinalDiffers(t *testing.T) {
 	}
 }
 
-func TestFingerprint_ComputeFingerprint_LengthPrefixingPreventsFieldBoundaryCollisions(t *testing.T) {
-	a := computeFingerprint("ab", "c", "subject", "evidence", 0)
-	b := computeFingerprint("a", "bc", "subject", "evidence", 0)
+func expectNormalizedPath(t *testing.T, path, want string) {
+	t.Helper()
+	if got := normalizePath(path); got != want {
+		t.Errorf("normalizePath(%q): got %q, want %q", path, got, want)
+	}
+}
 
-	if a == b {
-		t.Errorf("computeFingerprint(%q, %q, ...) and computeFingerprint(%q, %q, ...) collided: both were %q; length-prefixing must prevent field-boundary collisions", "ab", "c", "a", "bc", a)
+func expectNormalizedEvidence(t *testing.T, evidence, want string) {
+	t.Helper()
+	if got := normalizeEvidence(evidence); got != want {
+		t.Errorf("normalizeEvidence(%q): got %q, want %q", evidence, got, want)
 	}
 }

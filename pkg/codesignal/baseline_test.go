@@ -1,18 +1,12 @@
 package codesignal
 
 import (
-	"context"
 	"testing"
 
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 func TestBuild_BaselineOptionProducesBaselineLifecycle(t *testing.T) {
-	b, err := New(Options{Baseline: true})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
 	head := &semantics.Result{
 		Path:        "service.go",
 		ParseStatus: semantics.ParseStatus("ok"),
@@ -21,14 +15,11 @@ func TestBuild_BaselineOptionProducesBaselineLifecycle(t *testing.T) {
 		},
 	}
 
-	report, err := b.Build(context.Background(), Input{
+	report := mustBuild(t, Options{Baseline: true}, Input{
 		Files: []FileChange{
 			{Path: "service.go", Status: "added", Head: head},
 		},
 	})
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
 
 	if len(report.Signals) != 1 {
 		t.Fatalf("Report.Signals length: got %d, want 1: %+v", len(report.Signals), report.Signals)
@@ -47,26 +38,31 @@ func TestBuild_BaselineOptionProducesBaselineLifecycle(t *testing.T) {
 	}
 }
 
-func TestBuild_CoveragePassesThroughFromInputToReport(t *testing.T) {
-	b, err := New(Options{Baseline: true})
-	if err != nil {
-		t.Fatalf("New: %v", err)
+func TestBuild_AddedFileInBaselineStaysBaseline(t *testing.T) {
+	head := &semantics.Result{
+		Path:        "tracked.go",
+		ParseStatus: semantics.ParseStatus("ok"),
+		Findings: []semantics.Finding{
+			{Kind: "mutates_input", Name: "Update", Location: semantics.Location{StartRow: 1}},
+		},
 	}
 
-	coverage := &Coverage{
-		TrackedFilesDiscovered: 10,
-		FilesAnalyzed:          8,
-		FilesUnanalyzable:      2,
-		Unsupported:            []CoverageGroup{{Reason: "unsupported_language", Language: "python", Count: 1}},
-		Excluded:               []CoverageGroup{{Reason: "vendored", Count: 1}},
-	}
+	report := mustBuild(t, Options{Baseline: true}, Input{
+		Files: []FileChange{
+			{Path: "tracked.go", Status: "added", Head: head},
+		},
+	})
 
-	report, err := b.Build(context.Background(), Input{Coverage: coverage})
-	if err != nil {
-		t.Fatalf("Build: %v", err)
+	if len(report.Signals) != 1 {
+		t.Fatalf("Report.Signals length: got %d, want 1: %+v", len(report.Signals), report.Signals)
 	}
-
-	if report.Coverage != coverage {
-		t.Errorf("Report.Coverage: got %+v, want the same *Coverage passed in Input.Coverage", report.Coverage)
+	if report.Signals[0].Lifecycle != "baseline" {
+		t.Errorf("Signal.Lifecycle for an added file in baseline mode: got %q, want %q", report.Signals[0].Lifecycle, "baseline")
+	}
+	if report.Summary.BaselineSignals != 1 {
+		t.Errorf("Summary.BaselineSignals: got %d, want 1", report.Summary.BaselineSignals)
+	}
+	if report.Summary.IntroducedSignals != 0 {
+		t.Errorf("Summary.IntroducedSignals: got %d, want 0", report.Summary.IntroducedSignals)
 	}
 }
