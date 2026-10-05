@@ -22,6 +22,7 @@ Tag convention used in the rubric:
 - `[O55 § H]` is the Opus 5.5 guide under heading H. `[O55 <page> § H]` is one of the pages in 4a–4e, which that guide links to for Opus 5.5.
 - `[O5 § H]` is the Opus 5 guide, which the Opus 5.5 guide names as "a reasonable starting point".
 - `[gen § H]` is the cross-model best-practices page.
+- `[CC <page>]` is a Claude Code docs page (only `model-config` is cited).
 - `[prior]` is the author's own knowledge, used only where no source speaks.
 
 ## 1. Heading ledger: Opus 5.5 guide

@@ -4,7 +4,7 @@ A scoring rubric for an LLM-as-judge step in a prompt-optimization loop. It scor
 
 Grounding: Anthropic's *Prompting Claude Opus 5.5*, the Opus 5.5 pages it links to (What's new, the Opus 5 → 5.5 migration guide, Effort, Thinking, Refusals and fallback), *Prompting Claude Opus 5* (which the Opus 5.5 guide names as the starting point), and the cross-model *Prompting best practices* page, read 2026-10-05.
 
-Tags: `[O55 § H]` is the Opus 5.5 guide under heading H, and `[O55 <page> § H]` is one of its linked Opus 5.5 pages. `[O5 § H]` is the Opus 5 guide. `[gen § H]` is cross-model guidance. `[prior]` is the author's judgment where no source speaks. API and harness settings are not scored. Source ledger, harness notes and Sonnet 5 differences are kept for maintainers in `../provenance/opus-5-5-rubric-provenance.md`; judging does not need them.
+Tags: `[O55 § H]` is the Opus 5.5 guide under heading H, and `[O55 <page> § H]` is one of its linked Opus 5.5 pages. `[O5 § H]` is the Opus 5 guide. `[CC …]` is a Claude Code docs page. `[gen § H]` is cross-model guidance. `[prior]` is the author's judgment where no source speaks. API and harness settings are not scored. Source ledger, harness notes and Sonnet 5 differences are kept for maintainers in `../provenance/opus-5-5-rubric-provenance.md`; judging does not need them.
 
 ---
 
@@ -21,7 +21,7 @@ Tags: `[O55 § H]` is the Opus 5.5 guide under heading H, and `[O55 <page> § H]
 
 **Runtime facts the judge assumes unless told otherwise:**
 
-- Model is Claude Opus 5.5. Adaptive thinking is always on and cannot be disabled [O55 What's new § Thinking can't be disabled]. Effort defaults to `medium` in Claude Code and on the API [O55 § Calibrate effort]; when effort is undisclosed, score C4 against `medium` and record `effort: undisclosed`.
+- Model is Claude Opus 5.5. Adaptive thinking is always on and cannot be disabled [O55 What's new § Thinking can't be disabled]. Effort defaults to `medium` in Claude Code and on the API [O55 § Calibrate effort] [CC model-config]; when effort is undisclosed, score C4 against `medium` and record `effort: undisclosed`.
 - Assistant prefill, non-default sampling, `budget_tokens`, disabled thinking, and forced `tool_choice` are rejected with a 400 [O55 Thinking § Limits and feature compatibility] [O55 What's new § Breaking changes].
 - Safety classifiers cover cybersecurity, biology and reasoning extraction; a decline is `stop_reason: "refusal"` [O55 § Safeguard refusals].
 - Claude Code loads `CLAUDE.md` automatically and provides file read/edit, shell, search, web fetch and subagent tools. Context window is 1M tokens.
@@ -87,7 +87,7 @@ Weights are relative. Conditional criteria drop out when N/A.
 
 | Score | Anchor |
 |---|---|
-| 3 | Bounds the change (files, packages, behaviours); asks for the task at the intended scope; unrelated findings are reported, not fixed; a mistaken-looking request is flagged in a sentence and the work continues as asked. |
+| 3 | Bounds the change (files, packages, behaviours); asks for the task at the intended scope; unrelated findings are reported, not fixed; a mistaken-looking request is flagged in a sentence and the work continues as asked. Or the task is narrow enough that expansion is unlikely and the prompt adds no scope lines. |
 | 2 | Bounds stated, but nothing on unrelated findings or on a request that looks wrong. |
 | 1 | Silent on scope for a task where expansion is likely (refactor, migration, cleanup, "fix the bug"). |
 | 0 | Invites open-ended improvement ("improve anything else you see fit"). |
@@ -246,7 +246,7 @@ Weights are relative. Conditional criteria drop out when N/A.
 
 ## 5. Judge procedure
 
-Inside optimize-prompt-loop the same agent judges and revises: it follows steps 1–6, keeps the JSON internal, and skips step 7 and §8, which are for an external judge.
+Inside optimize-prompt-loop the same agent judges and revises: it follows judge-procedure steps 1–6 below, keeps the JSON internal, and skips judge step 7 (Emit) and §8, which are for an external judge.
 
 1. **Read the runtime profile**: prompt type, effort, whether `CLAUDE.md` exists and what it covers, task class. Mark anything missing `undisclosed` and judge capability-neutral, except effort (see §1).
 2. **Run G1–G4.** On a failure, record it, still score the rest, cap at 40, set `blocked`.
@@ -295,7 +295,7 @@ Inside optimize-prompt-loop the same agent judges and revises: it follows steps 
 1. no problems remain, setting aside any gap that only the user's answer can close (record those as assumptions or the one question);
 2. five judged passes.
 
-Return the last judged draft; the final verdict is its band. When (2) ends the loop with problems left, report that verdict rather than continuing; a gate still failing reports `blocked`. A criterion that reverses direction across passes (1 → 3 → 1) is resolved in favour of the shorter draft.
+Return the last judged draft (except on a reversal, below); the final verdict is its band. When (2) ends the loop with problems left, report that verdict rather than continuing; a gate still failing reports `blocked`. If a criterion reverses direction across passes (1 → 3 → 1), keep the shorter of the two drafts, stop, and report that draft's judged verdict.
 
 ---
 
@@ -333,7 +333,7 @@ You are scoring a prompt intended for Claude Opus 5.5 running in Claude Code. Sc
 > Context: `CLAUDE.md` covers test and lint commands. `internal/logging/slog.go` already builds the shared logger.
 > Constraints: change only files under `internal/api/`; keep log levels and message text as they are; if a `logx` call has no direct `slog` equivalent, use the closest level and list it in your summary. If the plan looks wrong, say so in a sentence and continue as asked.
 > Work: read `CLAUDE.md` and `internal/logging/slog.go` first; make targeted edits; list unrelated problems at the end rather than fixing them. Commit on the current branch and leave pushing to me. End the turn when done, or when a decision only I can make blocks you.
-> Done when: `go test ./internal/api/...` passes and `grep -rn logx internal/api` returns nothing. If a test is wrong, say so instead of working around it.
+> Verification: `go test ./internal/api/...` passes and `grep -rn logx internal/api` returns nothing. If a test is wrong, say so instead of working around it.
 > Output: one line per file changed, then any calls you had to map by judgment and any unrelated problems.
 
 - G1–G4 pass; C10–C15 N/A.
@@ -344,7 +344,7 @@ You are scoring a prompt intended for Claude Opus 5.5 running in Claude Code. Sc
 > Objective: `pkg/report/render.go` renders the summary table with aligned columns for every row width; today rows longer than 40 characters break alignment (issue #212).
 > Context: `CLAUDE.md` covers commands. The golden files in `pkg/report/testdata/` define the expected output.
 > Work: read `CLAUDE.md`, `render.go` and the golden files first; fix the alignment; while you're in there, improve anything else in the package you think could be better.
-> Done when: `go test ./pkg/report/...` passes with a new golden case for a 60-character row. If a golden file is wrong, say so instead of regenerating it.
+> Verification: `go test ./pkg/report/...` passes with a new golden case for a 60-character row. If a golden file is wrong, say so instead of regenerating it.
 > Output: what changed and why, in at most five lines.
 
 - G1–G4 pass; C10–C15 N/A.
