@@ -25,6 +25,7 @@ func compareProjectFacts(a, b ProjectFact) int {
 	}
 	return comparePathStepSlices(a.PathSteps, b.PathSteps)
 }
+
 func comparePathStepSlices(a, b []ProjectPathStep) int {
 	n := len(a)
 	if len(b) < n {

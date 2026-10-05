@@ -1,31 +1,5 @@
 package codesignal
 
-func projectLifecycleState(input Input) (indeterminate bool, diagnostics []Diagnostic) {
-
-	if !completeProjectCoverage(input.ProjectCoverage) {
-		indeterminate = true
-	}
-	if input.ProjectBaseAnalyzed && !completeProjectCoverage(input.BaseProjectCoverage) {
-		indeterminate = true
-	}
-
-	if !input.ProjectBaseAnalyzed && len(input.BaseProjectChanges) > 0 {
-		indeterminate = true
-	}
-	if input.ProjectCoverage != nil && !input.ProjectCoverage.Complete {
-		diagnostics = append(diagnostics, Diagnostic{
-			Kind:    DiagKindProjectCoverageIncomplete,
-			Message: "project analysis coverage is incomplete; project observations may be partial",
-		})
-	}
-	if indeterminate {
-		diagnostics = append(diagnostics, Diagnostic{
-			Kind:    DiagKindProjectLifecycleIndeterminate,
-			Message: projectLifecycleDiagnosticMessage(input),
-		})
-	}
-	return indeterminate, diagnostics
-}
 func finalizeSignals(signals []Signal, filesAnalyzed int, files []FileChange, diagnostics []Diagnostic, includeResolved bool) ([]Signal, Summary) {
 	summary := Summary{
 		FilesAnalyzed:        filesAnalyzed,
@@ -63,4 +37,34 @@ func omitResolvedSignals(signals []Signal) []Signal {
 		filtered = append(filtered, sig)
 	}
 	return filtered
+}
+
+func countFilesWithDiagnostics(_ []FileChange, diagnostics []Diagnostic) int {
+	return len(distinctDiagnosticPaths(diagnostics))
+}
+
+func countUnanalyzedFiles(files []FileChange, diagnostics []Diagnostic) int {
+	inFiles := make(map[string]bool, len(files))
+	for _, fc := range files {
+		if fc.Path != "" {
+			inFiles[fc.Path] = true
+		}
+	}
+	count := 0
+	for path := range distinctDiagnosticPaths(diagnostics) {
+		if !inFiles[path] {
+			count++
+		}
+	}
+	return count
+}
+
+func distinctDiagnosticPaths(diagnostics []Diagnostic) map[string]struct{} {
+	paths := make(map[string]struct{})
+	for _, d := range diagnostics {
+		if d.Path != "" {
+			paths[d.Path] = struct{}{}
+		}
+	}
+	return paths
 }
