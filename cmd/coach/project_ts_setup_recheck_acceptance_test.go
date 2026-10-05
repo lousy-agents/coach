@@ -10,7 +10,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // writeInstallingSetupExecutable writes an executable named `name` that
@@ -45,7 +48,7 @@ func writeInstallingSetupExecutable(name, version string) string {
 // itself resolves against -- so the fixture below cannot silently drift
 // from the compiler this build actually supports.
 func setupRecheckSupportedTypescriptVersion() string {
-	versions := codesignalcli.SupportedTypescriptVersions
+	versions := tstoolchain.SupportedTypescriptVersions
 	Expect(versions).NotTo(BeEmpty())
 	return versions[len(versions)-1]
 }
@@ -74,21 +77,21 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			commitFile(repo, "coach-project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 			head := commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
 
-			before, err := codesignalcli.CheckProjectReadiness(repo, head, "coach-project.json")
+			before, err := projectcheck.Run(repo, head, "coach-project.json")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(before.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail))
-			Expect(before.Checks.Compiler.Code).To(Equal(codesignalcli.GapTypescriptCompilerMissing), "the fixture must genuinely start with a missing-compiler gap, or a later pass proves nothing")
-			Expect(before.Status).To(Equal(codesignalcli.StatusNeedsPrerequisite), "the pre-install snapshot must genuinely be blocked, or the post-install comparison proves nothing")
+			Expect(before.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
+			Expect(before.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing), "the fixture must genuinely start with a missing-compiler gap, or a later pass proves nothing")
+			Expect(before.Status).To(Equal(projectreadiness.StatusNeedsPrerequisite), "the pre-install snapshot must genuinely be blocked, or the post-install comparison proves nothing")
 
 			stubDir := writeInstallingSetupExecutable("npm", version)
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+pathWithStubNode("v24.9.9"))
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), repo)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), repo)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := codesignalcli.RunConfirmedSetupAndRecheckReadiness(context.Background(), preview, true, repo, head, "coach-project.json")
+			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, true, repo, head, "coach-project.json")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeSucceeded))
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeSucceeded))
 
 			Expect(outcome.PostInstallReadiness).NotTo(BeNil(), "a successful install must trigger a real, in-process post-install readiness recheck (AC-SET-6)")
 			post := outcome.PostInstallReadiness
@@ -100,23 +103,23 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			// mutant; asserting DirtyWorktree.Paths (which exist only because
 			// the stub install just wrote them) proves the second read hit the
 			// post-install filesystem rather than returning a canned result.
-			Expect(post.SchemaVersion).To(Equal(codesignalcli.ReadinessSchemaVersion))
+			Expect(post.SchemaVersion).To(Equal(projectreadiness.SchemaVersion))
 			Expect(post.Revision).To(Equal(head))
-			Expect(post.Status).To(Equal(codesignalcli.StatusReadyWithLimits), "must have advanced past the pre-install needs_prerequisite status")
+			Expect(post.Status).To(Equal(projectreadiness.StatusReadyWithLimits), "must have advanced past the pre-install needs_prerequisite status")
 
-			Expect(post.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessPass), "the recheck must observe the just-installed compiler, not the stale pre-install snapshot")
+			Expect(post.Checks.Compiler.State).To(Equal(projectreadiness.Pass), "the recheck must observe the just-installed compiler, not the stale pre-install snapshot")
 			Expect(post.Checks.Compiler.Version).To(Equal(version))
 
-			Expect(post.Checks.Runtime.State).To(Equal(codesignalcli.ReadinessPass))
+			Expect(post.Checks.Runtime.State).To(Equal(projectreadiness.Pass))
 			Expect(post.Checks.Runtime.Version).To(Equal("v24.9.9"))
 			Expect(post.Checks.Runtime.Origin).To(Equal("path"))
 			Expect(post.Checks.Node.Version).To(Equal("v24.9.9"))
 
-			Expect(post.Checks.Policy.State).To(Equal(codesignalcli.ReadinessPass), "a dropped/defaulted configPath would report policy_missing here instead")
-			Expect(post.Checks.ProjectShape.State).To(Equal(codesignalcli.ReadinessPass))
+			Expect(post.Checks.Policy.State).To(Equal(projectreadiness.Pass), "a dropped/defaulted configPath would report policy_missing here instead")
+			Expect(post.Checks.ProjectShape.State).To(Equal(projectreadiness.Pass))
 
-			Expect(post.Checks.PackageManager.State).To(Equal(codesignalcli.ReadinessFail))
-			Expect(post.Checks.PackageManager.Code).To(Equal(codesignalcli.GapPackageManagerVersionUnverifiable))
+			Expect(post.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))
+			Expect(post.Checks.PackageManager.Code).To(Equal(projectreadiness.GapPackageManagerVersionUnverifiable))
 			Expect(post.Checks.PackageManager.Kind).To(Equal("npm"))
 
 			Expect(post.DirtyWorktree.Paths).To(ContainElement("node_modules/typescript/package.json"), "these files exist only because the stub install just wrote them post-recheck")
@@ -137,12 +140,12 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			stubDir := writeInstallingSetupExecutable("npm", version)
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+pathWithStubNode("v24.9.9"))
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), repo)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), repo)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := codesignalcli.RunConfirmedSetupAndRecheckReadiness(context.Background(), preview, false, repo, head, "project.json")
+			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, false, repo, head, "project.json")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeCancelled))
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeCancelled))
 			Expect(outcome.PostInstallReadiness).To(BeNil(), "a cancelled setup must never rerun readiness")
 
 			_, statErr := os.Stat(filepath.Join(repo, "node_modules"))
@@ -160,12 +163,12 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			stubDir := writeFailingSetupExecutableWithResidue("npm")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), repo)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), repo)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := codesignalcli.RunConfirmedSetupAndRecheckReadiness(context.Background(), preview, true, repo, head, "project.json")
+			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, true, repo, head, "project.json")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeFailed))
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeFailed))
 			Expect(outcome.PostInstallReadiness).To(BeNil(), "a failed install must never trigger a post-install readiness recheck")
 		})
 	})
@@ -183,7 +186,7 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			stubDir := writeInstallingSetupExecutable("npm", version)
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+pathWithStubNode("v24.9.9"))
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), repo)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), repo)
 			Expect(err).NotTo(HaveOccurred())
 
 			// A revision that does not exist in the repo: the install itself
@@ -192,9 +195,9 @@ var _ = Describe("codesignalcli.RunConfirmedSetupAndRecheckReadiness (AC-SET-6)"
 			// cannot resolve it, so the recheck errors.
 			nonexistentRevision := "0000000000000000000000000000000000000000"
 
-			outcome, err := codesignalcli.RunConfirmedSetupAndRecheckReadiness(context.Background(), preview, true, repo, nonexistentRevision, "project.json")
+			outcome, err := tssetup.RunConfirmedAndRecheckReadiness(context.Background(), preview, true, repo, nonexistentRevision, "project.json")
 			Expect(err).To(HaveOccurred(), "the recheck must surface its own failure to resolve the given revision")
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeSucceeded), "the install itself succeeded; only the recheck failed")
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeSucceeded), "the install itself succeeded; only the recheck failed")
 			Expect(outcome.PostInstallReadiness).To(BeNil(), "a failed recheck must never attach a zero-valued or partial readiness result")
 		})
 	})

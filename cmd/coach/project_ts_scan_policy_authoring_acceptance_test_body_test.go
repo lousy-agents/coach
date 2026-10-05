@@ -8,13 +8,13 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 func body_projectTsScanPolicyAuthoringAcceptanceTest_withholdsProjectPackageWithItsReasonRatherThanSi_679() {
 	repo := newTempGitRepo()
 	commitFile(repo, "project.json", `{"schema_version":"1","roots":["packages/a","packages/b"]}`+"\n")
-	manifest := fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", codesignalcli.SupportedTypescriptVersions[0])
+	manifest := fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", tstoolchain.SupportedTypescriptVersions[0])
 	for _, pkg := range []string{"packages/a", "packages/b"} {
 		commitFile(repo, pkg+"/package.json", manifest)
 		commitFile(repo, pkg+"/package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
@@ -36,16 +36,16 @@ func body_projectTsScanPolicyAuthoringAcceptanceTest_withholdsProjectPackageWith
 func body_projectTsScanPolicyAuthoringAcceptanceTest_opensTheMenuWithoutProjectPackageAndNamesTheReas_711() {
 	repo := newTempGitRepo()
 	commitFile(repo, "project.json", `{"schema_version":"1","roots":["packages/a","packages/b"]}`+"\n")
-	manifest := fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", codesignalcli.SupportedTypescriptVersions[0])
+	manifest := fmt.Sprintf(`{"name":"example","version":"1.0.0","devDependencies":{"typescript":%q}}`+"\n", tstoolchain.SupportedTypescriptVersions[0])
 	for _, pkg := range []string{"packages/a", "packages/b"} {
 		commitFile(repo, pkg+"/package.json", manifest)
 		commitFile(repo, pkg+"/package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
 		commitFile(repo, pkg+"/tsconfig.json", `{"compilerOptions":{}}`+"\n")
 	}
-	writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", codesignalcli.SupportedTypescriptVersions[0]))
+	writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
 
 	npmDir := writeRecordingStubPackageManagerScript("npm", "11.0.0")
-	miseDir := writeStatefulStubMiseScript(codesignalcli.SupportedTypescriptVersions[0])
+	miseDir := writeStatefulStubMiseScript(tstoolchain.SupportedTypescriptVersions[0])
 	path := writeStubNodeScript("v24.9.9") + string(os.PathListSeparator) + npmDir + string(os.PathListSeparator) + miseDir + string(os.PathListSeparator) + pathExcludingToolchain()
 
 	session := startCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(path),

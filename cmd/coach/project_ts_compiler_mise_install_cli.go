@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 const prepareCompilerMiseUsagePrefix = "coach codesignal --baseline --prepare-compiler --project-language typescript"
@@ -29,13 +32,13 @@ func runPrepareCompilerMiseTypeScript(dir string, f codesignalFlags, stdin, stdo
 // parameter only for signature symmetry with the rest of this package's CLI
 // dispatch functions and is otherwise unused.
 func prepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, projectConfigPath string) int {
-	revision, err := codesignalcli.ResolveBaselineRevision(dir)
+	revision, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: could not resolve the baseline revision: %s\n", prepareCompilerMiseUsagePrefix, err)
 		return 3
 	}
 
-	readiness, err := codesignalcli.CheckProjectReadiness(dir, revision, projectConfigPath)
+	readiness, err := projectcheck.Run(dir, revision, projectConfigPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: could not compute project readiness: %s\n", prepareCompilerMiseUsagePrefix, err)
 		return 3
@@ -43,11 +46,11 @@ func prepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, p
 
 	ctx, stop := interruptibleContext()
 	defer stop()
-	result := codesignalcli.RunPrepareCompilerMiseSetup(ctx, dir, revision, projectConfigPath, readiness, stdin, stderr)
+	result := tssetup.RunPrepareCompilerMiseSetup(ctx, dir, revision, projectConfigPath, readiness, stdin, stderr)
 	return reportPrepareCompilerMiseResult(result, stderr)
 }
 
-func reportPrepareCompilerMiseResult(result codesignalcli.PrepareCompilerMiseResult, stderr *os.File) int {
+func reportPrepareCompilerMiseResult(result tssetup.PrepareCompilerMiseResult, stderr *os.File) int {
 	if result.PolicyRequired {
 		fmt.Fprintf(stderr, "%s: a reviewed, committed policy is required before compiler setup; run guided policy authoring first (author_policy).\n", prepareCompilerMiseUsagePrefix)
 		return 2
@@ -71,7 +74,7 @@ func reportPrepareCompilerMiseResult(result codesignalcli.PrepareCompilerMiseRes
 	if !result.Succeeded {
 		switch {
 		case result.VerificationFailed():
-			fmt.Fprintf(stderr, "%s: mise install exited 0 but the installed TypeScript %s is not eligible (%s); expected the native platform package %s alongside it -- Coach does not attempt to repair or clean this up.\n", prepareCompilerMiseUsagePrefix, result.Version, result.Class, codesignalcli.NativeTypescriptPackageName())
+			fmt.Fprintf(stderr, "%s: mise install exited 0 but the installed TypeScript %s is not eligible (%s); expected the native platform package %s alongside it -- Coach does not attempt to repair or clean this up.\n", prepareCompilerMiseUsagePrefix, result.Version, result.Class, tstoolchain.NativeTypescriptPackageName())
 		case result.AttemptFailed():
 			fmt.Fprintf(stderr, "%s: mise install failed; mise's install store may now contain a partial or failed install of TypeScript %s under the %s scope -- Coach does not attempt to clean this up.\n", prepareCompilerMiseUsagePrefix, result.Version, result.Choice)
 		case result.NeverStarted():

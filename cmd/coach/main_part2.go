@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 
 	"os"
 
@@ -24,7 +24,7 @@ func validateCheckProjectFlags(f codesignalFlags, setFlags map[string]bool, posi
 		return fmt.Sprintf("coach: invalid --format value %q: must be \"text\" or \"json\"", f.format)
 	}
 	if f.projectConfigSet {
-		if err := codesignalcli.ValidateProjectConfigPath(f.projectConfig); err != nil {
+		if err := projectconfig.ValidatePath(f.projectConfig); err != nil {
 			return fmt.Sprintf("coach: --project-config %q is invalid: %s", f.projectConfig, err)
 		}
 	}

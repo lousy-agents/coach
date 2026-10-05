@@ -28,7 +28,7 @@ func buildTestHookCoach(hook string, shortenSidecarBudget bool) string {
 
 	replace := map[string]string{}
 
-	runtimeSrc := filepath.Join(root, "internal", "codesignalcli", "project_ts_runtime.go")
+	runtimeSrc := filepath.Join(root, "internal", "codesignalcli", "ts_runtime.go")
 	runtimeBytes, err := os.ReadFile(runtimeSrc)
 	Expect(err).NotTo(HaveOccurred())
 	patchedRuntime := strings.Replace(string(runtimeBytes),
@@ -36,12 +36,12 @@ func buildTestHookCoach(hook string, shortenSidecarBudget bool) string {
 		`"--native-package=" + compiler.NativePackagePath,`+"\n\t\t\""+analyzerTestHookFlagPrefix+hook+`",`,
 		1)
 	Expect(patchedRuntime).NotTo(Equal(string(runtimeBytes)), "throwaway must spawn the analyzer through the argv test hook")
-	runtimeDst := filepath.Join(tmp, "project_ts_runtime.go")
+	runtimeDst := filepath.Join(tmp, "ts_runtime.go")
 	Expect(os.WriteFile(runtimeDst, []byte(patchedRuntime), 0o644)).To(Succeed())
 	replace[runtimeSrc] = runtimeDst
 
 	if shortenSidecarBudget {
-		backendSrc := filepath.Join(root, "internal", "codesignalcli", "project_ts_backend.go")
+		backendSrc := filepath.Join(root, "internal", "codesignalcli", "ts_project_backend.go")
 		backendBytes, err := os.ReadFile(backendSrc)
 		Expect(err).NotTo(HaveOccurred())
 		patchedBackend := strings.Replace(string(backendBytes),
@@ -49,7 +49,7 @@ func buildTestHookCoach(hook string, shortenSidecarBudget bool) string {
 			"const tsSidecarWallTime = goProjectBuildWallTime / 20",
 			1)
 		Expect(patchedBackend).NotTo(Equal(string(backendBytes)), "throwaway must shorten the analyzer wall-clock budget")
-		backendDst := filepath.Join(tmp, "project_ts_backend.go")
+		backendDst := filepath.Join(tmp, "ts_project_backend.go")
 		Expect(os.WriteFile(backendDst, []byte(patchedBackend), 0o644)).To(Succeed())
 		replace[backendSrc] = backendDst
 	}

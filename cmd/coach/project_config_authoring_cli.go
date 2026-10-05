@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/configauthoring"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -13,7 +17,7 @@ import (
 // same override-for-testing pattern as loadProjectConfig/resolveProjectBackend
 // in main.go: it lets tests drive authorProjectConfigTypeScript's
 // DiagTSRootUnavailable-vs-DiagTSRootIncomplete branch directly, since a real
-// Git snapshot (codesignalcli.NewGoSnapshotFS) can never itself produce
+// Git snapshot (revisionfs.New) can never itself produce
 // DiagTSRootUnavailable -- its root directory always opens successfully.
 var discoverTSRoots = projectmodel.DiscoverTSRoots
 
@@ -21,7 +25,7 @@ const authorTSUsagePrefix = "coach codesignal --baseline --suggest-project-confi
 
 // tsAuthoringRootBudgets bounds the DiscoverTSRoots walk the guided
 // TypeScript authoring dispatch runs over the immutable baseline snapshot,
-// mirroring the finite-budget contract project_config_suggestion.go's
+// mirroring the finite-budget contract configauthoring/suggest.go's
 // suggestGoBudgets already applies to the equivalent Go root-discovery walk.
 var tsAuthoringRootBudgets = projectmodel.GoBudgets{
 	MaxInputFiles: 500000,
@@ -51,7 +55,7 @@ var tsAuthoringRootBudgets = projectmodel.GoBudgets{
 // scanShouldAuthorProjectConfig reports whether a real scan's (not
 // --check-project/--suggest-project-config/--prepare-compiler) analysis
 // error is AC-POL-8's guided-authoring case: a TypeScript policy that was
-// never committed at all (*codesignalcli.ProjectConfigError with Kind ==
+// never committed at all (*projectconfig.ConfigError with Kind ==
 // ProjectConfigNotFound, whether or not it has been wrapped in a
 // *ProjectConfigErrorWithReadiness for AC-SET-13) with a controlling
 // terminal available on stdin. An unusable configPath is rejected before
@@ -101,15 +105,15 @@ var tsAuthoringRootBudgets = projectmodel.GoBudgets{
 // was wrapped with a readiness snapshot -- before guided authoring takes over
 // stderr with its own prompts.
 func printProjectConfigGapBeforeAuthoring(scanErr error, stderr *os.File) {
-	var configErr *codesignalcli.ProjectConfigError
+	var configErr *projectconfig.ConfigError
 	if !errors.As(scanErr, &configErr) {
 		return
 	}
 	fmt.Fprintln(stderr, configErr.Message)
 
-	var withReadiness *codesignalcli.ProjectConfigErrorWithReadiness
+	var withReadiness *tssetup.ProjectConfigErrorWithReadiness
 	if errors.As(scanErr, &withReadiness) {
-		for _, line := range codesignalcli.AlsoFailingGapLines(withReadiness.Readiness, withReadiness.ConfigPath) {
+		for _, line := range tssetup.AlsoFailingGapLines(withReadiness.Readiness, withReadiness.ConfigPath) {
 			fmt.Fprintln(stderr, line)
 		}
 	}
@@ -127,17 +131,17 @@ func printProjectConfigGapBeforeAuthoring(scanErr error, stderr *os.File) {
 // AuthorProjectConfig itself takes an io.Reader instead of a terminal: it
 // makes this function callable directly in a test with a controlling-
 // terminal *os.File standing in for the caller's stdin, without a real pty.
-// codesignalcli.HasControllingTerminal's own contract deliberately forbids
+// terminal.HasControllingTerminal's own contract deliberately forbids
 // faking its true result, so the gate stays in runAuthorProjectConfigTypeScript
 // and is not itself exercised this way -- only the logic downstream of it.
 func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout, stderr *os.File) int {
-	revision, err := codesignalcli.ResolveBaselineRevision(dir)
+	revision, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: could not resolve the baseline revision: %s\n", authorTSUsagePrefix, err)
 		return 3
 	}
 
-	root, err := codesignalcli.AuthoringRepositoryRoot(dir)
+	root, err := gitrepo.RepositoryRoot(dir)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %s\n", authorTSUsagePrefix, err)
 		return 3
@@ -148,7 +152,7 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 		return 2
 	}
 
-	snapshot, err := codesignalcli.NewGoSnapshotFS(root, revision)
+	snapshot, err := revisionfs.New(root, revision)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: could not read the baseline snapshot: %s\n", authorTSUsagePrefix, err)
 		return 3
@@ -181,7 +185,7 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 		return 2
 	}
 
-	result := codesignalcli.AuthorProjectConfig(root, stdin, stderr, stdout, discovered, f.output, f.outputSet)
+	result := configauthoring.Author(root, stdin, stderr, stdout, discovered, f.output, f.outputSet)
 	return reportAuthoringResult(result, stderr)
 }
 

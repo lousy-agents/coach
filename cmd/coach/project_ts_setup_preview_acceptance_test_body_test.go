@@ -3,12 +3,12 @@ package main
 import (
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 )
 
 func body_projectTsSetupPreviewAcceptanceTest_truthfullyDisclosesArgvOnDiskEffectNetworkScript_67(kind, wantExecutable string, wantArgs []string, wantLockfileBasename string, wantSuppressionSubstrings []string) {
-	preview, err := codesignalcli.BuildSetupPreview(
-		codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage},
+	preview, err := tssetup.BuildPreview(
+		tssetup.Choice{Kind: tssetup.ChoiceProjectPackage},
 		projectPackageManager(kind),
 		"/tmp/example-root",
 	)
@@ -35,5 +35,5 @@ func body_projectTsSetupPreviewAcceptanceTest_truthfullyDisclosesArgvOnDiskEffec
 	for _, wantSuppression := range wantSuppressionSubstrings {
 		Expect(preview.ScriptSuppressionPolicy).To(ContainSubstring(wantSuppression), "must truthfully disclose every flag this row's argv actually passes to suppress scripts/config hazards -- a shared, one-size-fits-all disclosure string would silently under-disclose a row like pnpm's that carries an extra flag")
 	}
-	Expect(preview.Timeout).To(Equal(codesignalcli.SetupPreviewTimeout), "must disclose the bounded timeout that will actually be enforced")
+	Expect(preview.Timeout).To(Equal(tssetup.PreviewTimeout), "must disclose the bounded timeout that will actually be enforced")
 }

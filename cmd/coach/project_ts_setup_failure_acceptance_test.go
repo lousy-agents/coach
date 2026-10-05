@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 )
 
 // writeFailingSetupExecutableWithResidue writes an executable named `name`
@@ -46,14 +46,14 @@ var _ = Describe("codesignalcli.RunConfirmedSetup", func() {
 			stubDir := writeStubSetupExecutable("npm")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := codesignalcli.RunConfirmedSetup(context.Background(), preview, false)
+			outcome, err := tssetup.RunConfirmed(context.Background(), preview, false)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeCancelled))
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeCancelled))
 			Expect(outcome.ExitCode).To(Equal(2))
-			Expect(outcome.Execution).To(Equal(codesignalcli.SetupExecutionResult{}))
+			Expect(outcome.Execution).To(Equal(tssetup.ExecutionResult{}))
 			Expect(outcome.ChangedPaths).To(BeEmpty())
 
 			Expect(stubSetupInvoked(stubDir, "npm")).To(BeFalse(), "cancellation must never start a subprocess")
@@ -79,12 +79,12 @@ var _ = Describe("codesignalcli.RunConfirmedSetup", func() {
 			stubDir := writeFailingSetupExecutableWithResidue("npm")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := codesignalcli.RunConfirmedSetup(context.Background(), preview, true)
+			outcome, err := tssetup.RunConfirmed(context.Background(), preview, true)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeFailed))
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeFailed))
 			Expect(outcome.ExitCode).To(Equal(2))
 			Expect(outcome.Execution.Succeeded).To(BeFalse())
 			Expect(outcome.Execution.ExitCode).To(Equal(1))
@@ -115,12 +115,12 @@ var _ = Describe("codesignalcli.RunConfirmedSetup", func() {
 			stubDir := writeStubSetupExecutable("npm")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := codesignalcli.RunConfirmedSetup(context.Background(), preview, true)
+			outcome, err := tssetup.RunConfirmed(context.Background(), preview, true)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeSucceeded))
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeSucceeded))
 			Expect(outcome.ExitCode).To(Equal(0))
 			Expect(outcome.Execution.Succeeded).To(BeTrue())
 		})
@@ -139,12 +139,12 @@ var _ = Describe("codesignalcli.RunConfirmedSetup", func() {
 			stubDir := writeFailingSetupExecutableWithResidue("npm")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
 			Expect(err).NotTo(HaveOccurred())
 
-			outcome, err := codesignalcli.RunConfirmedSetup(context.Background(), preview, true)
+			outcome, err := tssetup.RunConfirmed(context.Background(), preview, true)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeFailed))
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeFailed))
 			Expect(outcome.ExitCode).To(Equal(2))
 			Expect(outcome.ResidueUnknown).To(BeTrue(), "a git status failure must be signaled distinctly, not silently reported as if it were a real result")
 		})
@@ -154,18 +154,18 @@ var _ = Describe("codesignalcli.RunConfirmedSetup", func() {
 		It("reports the failure without scanning for residue, since no subprocess ever started (AC-SET-7, AC-18)", func() {
 			workDir := newSetupExecutionWorkDir()
 
-			tampered := codesignalcli.SetupPreview{
+			tampered := tssetup.Preview{
 				Executable:       "npm",
 				Args:             []string{"ci"}, // --ignore-scripts dropped: fails ExecuteSetup's verification
 				WorkingDirectory: workDir,
-				Timeout:          codesignalcli.SetupPreviewTimeout,
+				Timeout:          tssetup.PreviewTimeout,
 			}
 
-			outcome, err := codesignalcli.RunConfirmedSetup(context.Background(), tampered, true)
-			Expect(errors.Is(err, codesignalcli.ErrSetupExecutionUnverifiedCommand)).To(BeTrue())
-			Expect(outcome.Kind).To(Equal(codesignalcli.SetupOutcomeFailed))
+			outcome, err := tssetup.RunConfirmed(context.Background(), tampered, true)
+			Expect(errors.Is(err, tssetup.ErrUnverifiedCommand)).To(BeTrue())
+			Expect(outcome.Kind).To(Equal(tssetup.OutcomeFailed))
 			Expect(outcome.ExitCode).To(Equal(2))
-			Expect(outcome.Execution).To(Equal(codesignalcli.SetupExecutionResult{}))
+			Expect(outcome.Execution).To(Equal(tssetup.ExecutionResult{}))
 			Expect(outcome.ChangedPaths).To(BeEmpty(), "a run that never started must never report residue -- workDir is not even a Git worktree, so a residue scan here would silently fall back to a value identical to a real failure's disclosure")
 			Expect(outcome.ResidueUnknown).To(BeFalse(), "nothing was scanned, so this is not the 'scan failed' case either")
 		})

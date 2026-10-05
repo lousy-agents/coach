@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/configauthoring"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 
 	"os"
 )
@@ -12,7 +14,7 @@ import (
 // scanShouldAuthorProjectConfig reports whether a real scan's (not
 // --check-project/--suggest-project-config/--prepare-compiler) analysis
 // error is AC-POL-8's guided-authoring case: a TypeScript policy that was
-// never committed at all (*codesignalcli.ProjectConfigError with Kind ==
+// never committed at all (*projectconfig.ConfigError with Kind ==
 // ProjectConfigNotFound, whether or not it has been wrapped in a
 // *ProjectConfigErrorWithReadiness for AC-SET-13) with a controlling
 // terminal available on stdin. An unusable configPath is rejected before
@@ -31,20 +33,20 @@ func scanShouldAuthorProjectConfig(err error, language, configPath string, noInt
 	if language != "typescript" {
 		return false
 	}
-	if codesignalcli.ValidateProjectConfigPath(configPath) != nil {
+	if projectconfig.ValidatePath(configPath) != nil {
 		return false
 	}
-	var configErr *codesignalcli.ProjectConfigError
+	var configErr *projectconfig.ConfigError
 	if !errors.As(err, &configErr) {
 		return false
 	}
-	if configErr.Kind != codesignalcli.ProjectConfigNotFound {
+	if configErr.Kind != projectconfig.KindNotFound {
 		return false
 	}
 	if noInteractive {
 		return false
 	}
-	return codesignalcli.HasControllingTerminal(os.Stdin)
+	return terminal.HasControllingTerminal(os.Stdin)
 }
 
 // reportAuthoringResult translates one AuthorProjectConfig session outcome
@@ -54,7 +56,7 @@ func scanShouldAuthorProjectConfig(err error, language, configPath string, noInt
 // existing-target, or write error is success. The approved candidate itself
 // has already reached stdout or disk inside AuthorProjectConfig -- there is
 // nothing left to write here.
-func reportAuthoringResult(result codesignalcli.AuthoringResult, stderr *os.File) int {
+func reportAuthoringResult(result configauthoring.Result, stderr *os.File) int {
 	if !result.Approved {
 		fmt.Fprintf(stderr, "%s: authoring was cancelled or not approved; no policy config was written\n", authorTSUsagePrefix)
 		return 2

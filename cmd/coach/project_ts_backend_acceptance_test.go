@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
@@ -298,7 +298,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			expectTypescriptCompilerMissingScan(stdout, stderr, exitCode)
-			Expect(codesignalcli.NativeTypescriptPackageName()).To(Equal(nativeTypescriptPackageLookupName()))
+			Expect(tstoolchain.NativeTypescriptPackageName()).To(Equal(nativeTypescriptPackageLookupName()))
 		})
 
 		It("executes the printed fit-check invocation and reports typescript_compiler_missing naming the native package with the compiler found_version", func() {
@@ -341,7 +341,7 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
 			expectTypescriptCompilerMissingScan(stdout, stderr, exitCode)
 			Expect(string(stderr)).NotTo(ContainSubstring("typescript_version_mismatch"))
-			Expect(codesignalcli.NativeTypescriptPackageName()).To(Equal(packageName))
+			Expect(tstoolchain.NativeTypescriptPackageName()).To(Equal(packageName))
 
 			args := codesignalArgsFromRemediationLine(stderr)
 			checkStdout, checkStderr, checkExit := runCoachCheckProjectEnv(repo, path, args...)
@@ -624,7 +624,7 @@ const tsRootScopeGapTSConfigJSON = `{"compilerOptions":{"module":"commonjs","mod
 // layer-violation, layer-bypass, and reachability-facts derivation alike,
 // and incompleteness in each must fold into (or, for reachability, stay out
 // of) the project-change lifecycle exactly as documented on
-// tsProjectBackend.evaluateRevision (internal/codesignalcli/project_ts_backend.go).
+// tsProjectBackend.evaluateRevision (internal/codesignalcli/ts_project_revision.go).
 var _ = Describe("coach codesignal --project-language typescript derives layer violations, layer bypass, and reachability facts from one analyzer response per revision (issue #331 Task 8 T7)", func() {
 	BeforeEach(func() {
 		body_projectTsBackendAcceptanceTest_889()

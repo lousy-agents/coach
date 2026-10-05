@@ -213,11 +213,11 @@ func buildUnconfinedAnalyzerCoach() string {
 
 	vfsSrc := filepath.Join(root, "internal", "codesignalcli", "tsanalyzerasset", "project-sidecar", "vfs.js")
 	analyzeSrc := filepath.Join(root, "internal", "codesignalcli", "tsanalyzerasset", "project-sidecar", "analyze.js")
-	runtimeSrc := filepath.Join(root, "internal", "codesignalcli", "project_ts_runtime.go")
+	runtimeSrc := filepath.Join(root, "internal", "codesignalcli", "ts_runtime.go")
 
 	vfsDst := filepath.Join(tmp, "vfs.js")
 	analyzeDst := filepath.Join(tmp, "analyze.js")
-	runtimeDst := filepath.Join(tmp, "project_ts_runtime.go")
+	runtimeDst := filepath.Join(tmp, "ts_runtime.go")
 
 	vfs, err := os.ReadFile(vfsSrc)
 	Expect(err).NotTo(HaveOccurred())

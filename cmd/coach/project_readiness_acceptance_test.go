@@ -14,7 +14,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 type readinessRootFindingDoc struct {
@@ -1425,12 +1429,12 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
 
-			revision, err := codesignalcli.ResolveBaselineRevision(repo)
+			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
-			before, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
+			before, err := projectcheck.Run(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(before.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail), "sanity: the fixture must start without a usable compiler")
-			Expect(before.Checks.Compiler.Code).To(Equal(codesignalcli.GapTypescriptCompilerMissing))
+			Expect(before.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "sanity: the fixture must start without a usable compiler")
+			Expect(before.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing))
 
 			stdin := authoringStdin("mise_project\ninstall\n")
 			defer stdin.Close()
@@ -1500,7 +1504,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			Expect(readStdout()).To(BeEmpty(), "no report must ever reach stdout from this flow")
 			Expect(miseInvocationsIncludeInstall(miseDir)).To(BeTrue(), "a confirmed selection must still invoke `mise install`, even though verification later fails")
 
-			Expect(transcript).To(ContainSubstring("mise install exited 0 but the installed TypeScript 7.0.2 is not eligible (absent); expected the native platform package "+codesignalcli.NativeTypescriptPackageName()+" alongside it -- Coach does not attempt to repair or clean this up."), "transcript: %s", transcript)
+			Expect(transcript).To(ContainSubstring("mise install exited 0 but the installed TypeScript 7.0.2 is not eligible (absent); expected the native platform package "+tstoolchain.NativeTypescriptPackageName()+" alongside it -- Coach does not attempt to repair or clean this up."), "transcript: %s", transcript)
 			Expect(transcript).NotTo(ContainSubstring("mise install failed"), "a subprocess that exited 0 must never be described as having failed, transcript: %s", transcript)
 		})
 	})
@@ -1511,9 +1515,9 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			result := codesignalcli.PrepareCompilerMiseResult{
+			result := tssetup.PrepareCompilerMiseResult{
 				Trusted: true,
-				Code:    codesignalcli.GapPackageManagerConfigUnverifiable,
+				Code:    projectreadiness.GapPackageManagerConfigUnverifiable,
 			}
 
 			exitCode := reportPrepareCompilerMiseResult(result, stderrFile)
@@ -1535,11 +1539,11 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
 
-			revision, err := codesignalcli.ResolveBaselineRevision(repo)
+			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
-			before, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
+			before, err := projectcheck.Run(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(before.Checks.Compiler.State).To(Equal(codesignalcli.ReadinessFail), "sanity: the fixture must start without a usable compiler")
+			Expect(before.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "sanity: the fixture must start without a usable compiler")
 
 			stdin := authoringStdin("mise_global\ninstall\n")
 			defer stdin.Close()
@@ -1580,11 +1584,11 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
 
-			revision, err := codesignalcli.ResolveBaselineRevision(repo)
+			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
-			readiness, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
+			readiness, err := projectcheck.Run(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(readiness.Checks.Compiler.Code).To(Equal(codesignalcli.GapTypescriptCompilerMissing), "sanity: the fixture must start without a usable compiler")
+			Expect(readiness.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing), "sanity: the fixture must start without a usable compiler")
 
 			start := time.Now()
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -1594,7 +1598,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdin.Close()
 			var transcript bytes.Buffer
 
-			result := codesignalcli.RunPrepareCompilerMiseSetup(ctx, repo, revision, "", readiness, stdin, &transcript)
+			result := tssetup.RunPrepareCompilerMiseSetup(ctx, repo, revision, "", readiness, stdin, &transcript)
 			elapsed := time.Since(start)
 
 			Expect(elapsed).To(BeNumerically(">=", 2*time.Second), "the install must run at least as long as the supplied context deadline, not fail some unrelated, faster way, got elapsed=%s transcript=%s", elapsed, transcript.String())

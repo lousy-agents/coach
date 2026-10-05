@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
+	"github.com/lousy-agents/coach/internal/codesignalcli/render"
 
 	"os"
 
@@ -16,18 +18,18 @@ import (
 // readiness gap is still exit 0 -- the result IS the deliverable, and
 // callers must read status/gaps, not the exit code.
 func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int {
-	revision, err := codesignalcli.ResolveBaselineRevision(dir)
+	revision, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
 		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
 	}
 
-	result, err := codesignalcli.CheckProjectReadiness(dir, revision, f.projectConfig)
+	result, err := projectcheck.Run(dir, revision, f.projectConfig)
 	if err != nil {
 		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
 	}
 
 	if f.format == "json" {
-		encoded, err := codesignalcli.RenderReadinessJSON(result)
+		encoded, err := render.ReadinessJSON(result)
 		if err != nil {
 			fmt.Fprintf(stderr, "coach codesignal --check-project: encoding result: %s\n", err)
 			return 1
@@ -39,7 +41,7 @@ func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int
 		return 0
 	}
 
-	if _, err := fmt.Fprint(stdout, codesignalcli.RenderReadinessText(result)); err != nil {
+	if _, err := fmt.Fprint(stdout, render.ReadinessText(result)); err != nil {
 		fmt.Fprintf(stderr, "coach codesignal --check-project: writing result: %s\n", err)
 		return 1
 	}

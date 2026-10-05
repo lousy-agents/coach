@@ -234,7 +234,7 @@ func (s *analyzerEnvironSampler) invocations() int {
 }
 
 // splitTextFindingsAndFacts splits RenderText's output at its "\nFacts:\n"
-// section marker (render.go's renderProjectFacts), so a spec can assert
+// section marker (render/project_changes.go's renderProjectFacts), so a spec can assert
 // separately about the findings section (Signals + "Project findings:"
 // ProjectChanges) and everything from "Facts:" onward: RenderText writes
 // renderProjectFacts, renderDiagnosticsSection, renderCoverageSection, and

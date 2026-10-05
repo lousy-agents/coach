@@ -29,7 +29,7 @@ func verdictLine(text string) string {
 }
 
 // oversizedGoModuleFilePaddingBytes exceeds maxSnapshotFileBytes (the 32 MiB
-// git-read bound in internal/codesignalcli/project_snapshot.go), so go.mod's
+// git-read bound in internal/codesignalcli/revisionfs/git_reads.go), so go.mod's
 // read fails in pkg/projectmodel's discoverGoProject before modfile.Parse,
 // setting Complete=false without registering the module. Do not shrink this:
 // below the bound the read succeeds and reroutes through a different

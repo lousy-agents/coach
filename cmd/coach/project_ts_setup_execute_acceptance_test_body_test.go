@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 )
 
 func body_projectTsSetupExecuteAcceptanceTest_confinesTheChildToExactlyPATHAndHOMEDroppingEver_199() {
@@ -23,10 +23,10 @@ func body_projectTsSetupExecuteAcceptanceTest_confinesTheChildToExactlyPATHAndHO
 	GinkgoT().Setenv("NODE_OPTIONS", "--require ./evil.js")
 	GinkgoT().Setenv("npm_config_registry", "http://127.0.0.1:9/attacker")
 
-	preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+	preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
 	Expect(err).NotTo(HaveOccurred())
 
-	result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
+	result, execErr := tssetup.Execute(context.Background(), preview, true)
 	Expect(execErr).NotTo(HaveOccurred())
 	Expect(result.Succeeded).To(BeTrue(), "output: %s", result.Output)
 

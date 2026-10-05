@@ -3,7 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/configauthoring"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 
 	"os"
 )
@@ -21,7 +22,7 @@ func validatePrepareCompilerFlags(f codesignalFlags, setFlags map[string]bool, p
 		return fmt.Sprintf("coach: --prepare-compiler requires --project-language typescript (got %q)", f.projectLanguage)
 	}
 	if f.projectConfigSet {
-		if err := codesignalcli.ValidateProjectConfigPath(f.projectConfig); err != nil {
+		if err := projectconfig.ValidatePath(f.projectConfig); err != nil {
 			return fmt.Sprintf("coach: --project-config %q is invalid: %s", f.projectConfig, err)
 		}
 	}
@@ -32,7 +33,7 @@ func validatePrepareCompilerFlags(f codesignalFlags, setFlags map[string]bool, p
 	return rejectPositionalArgs("prepare-compiler", positional, "")
 }
 func runSuggestProjectConfig(dir string, f codesignalFlags, stdout, stderr *os.File) int {
-	result := codesignalcli.SuggestProjectConfig(dir, f.output, f.outputSet)
+	result := configauthoring.Suggest(dir, f.output, f.outputSet)
 	if len(result.Envelope) > 0 {
 		if _, writeErr := stderr.Write(result.Envelope); writeErr != nil {
 			fmt.Fprintf(stderr, "coach codesignal: writing diagnostic: %s\n", writeErr)

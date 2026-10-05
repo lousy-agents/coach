@@ -13,7 +13,8 @@ import (
 
 	"syscall"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -126,10 +127,10 @@ func runOneScan(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Rep
 // here -- RunCompilerSetupOffer is where it is known that a menu will
 // actually open, and diagnosing it here would also promise choices to a
 // customer about to be told there are none.
-func runScanCompilerSetupOffer(dir string, f codesignalFlags, stdout, stderr *os.File, wrapped *codesignalcli.CompilerUnresolvedErrorWithReadiness, budget scanOfferBudget) int {
+func runScanCompilerSetupOffer(dir string, f codesignalFlags, stdout, stderr *os.File, wrapped *tssetup.CompilerUnresolvedErrorWithReadiness, budget scanOfferBudget) int {
 	ctx, stop := interruptibleContext()
 	defer stop()
-	result := codesignalcli.RunCompilerSetupOffer(ctx, dir, wrapped.Revision, wrapped.ConfigPath, wrapped.Code, wrapped.Readiness, os.Stdin, stderr)
+	result := tssetup.RunCompilerSetupOffer(ctx, dir, wrapped.Revision, wrapped.ConfigPath, wrapped.Code, wrapped.Readiness, os.Stdin, stderr)
 
 	if shouldContinueAfterSetup(result) {
 		return runCodesignalScan(dir, f, stdout, stderr, budget.without(scanOfferCompilerSetup))
@@ -174,8 +175,8 @@ func runScanCompilerSetupOffer(dir string, f codesignalFlags, stdout, stderr *os
 	return 2
 }
 
-func readinessAllowsScan(status codesignalcli.ReadinessStatus) bool {
-	return status == codesignalcli.StatusReady || status == codesignalcli.StatusReadyWithLimits
+func readinessAllowsScan(status projectreadiness.Status) bool {
+	return status == projectreadiness.StatusReady || status == projectreadiness.StatusReadyWithLimits
 }
 
 // shouldContinueAfterSetup is AC-SET-6/AC-7's continuation gate: the same
@@ -185,7 +186,7 @@ func readinessAllowsScan(status codesignalcli.ReadinessStatus) bool {
 // successful install whose rerun still reports needs_prerequisite/
 // needs_policy/outside_support must still exit 2, not resume: the install
 // ran, but it did not resolve what the scan needed.
-func shouldContinueAfterSetup(result codesignalcli.CompilerSetupOfferResult) bool {
+func shouldContinueAfterSetup(result tssetup.CompilerSetupOfferResult) bool {
 	return result.Succeeded && result.PostInstallReadiness != nil && readinessAllowsScan(result.PostInstallReadiness.Status)
 }
 

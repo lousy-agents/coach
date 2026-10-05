@@ -10,13 +10,15 @@ import (
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/configauthoring"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 )
 
 // version is overridden via -ldflags at release; a local build reports "dev".
 var version = "dev"
 
 var (
-	loadProjectConfig     = codesignalcli.LoadProjectConfig
+	loadProjectConfig     = projectconfig.Load
 	resolveProjectBackend = codesignalcli.ResolveProjectBackend
 	lookupProjectBackend  = func(language string) codesignalcli.ProjectBackend {
 		switch language {
@@ -84,7 +86,7 @@ func (c *countingStringFlag) Set(s string) error {
 }
 
 func writeSuggestInvalidArguments(stderr *os.File, message string) {
-	stderr.Write(codesignalcli.InvalidArgumentsSuggestionEnvelope(message))
+	stderr.Write(configauthoring.InvalidArgumentsSuggestionEnvelope(message))
 }
 
 type codesignalFlagHolders struct {

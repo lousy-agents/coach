@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 )
 
 func body_mainTest_residueUnknownNamesTheUnreadableDirectoryWithout_17(t *testing.T) {
-	unknown := setupResidueDisclosure(codesignalcli.CompilerSetupOfferResult{ResidueUnknown: true, ChangedPaths: []string{"packages/app"}})
+	unknown := setupResidueDisclosure(tssetup.CompilerSetupOfferResult{ResidueUnknown: true, ChangedPaths: []string{"packages/app"}})
 	if !strings.Contains(unknown, "packages/app") {
 		t.Fatalf("setupResidueDisclosure(residue unknown) = %q, want it to name the directory Coach could not read -- the only location it has", unknown)
 	}
@@ -21,21 +21,21 @@ func body_mainTest_residueUnknownNamesTheUnreadableDirectoryWithout_17(t *testin
 }
 
 func body_mainTest_workingDirectoryFallbackAtTheRepositoryRootStill_30(t *testing.T) {
-	atRoot := setupResidueDisclosure(codesignalcli.CompilerSetupOfferResult{ResidueUnknown: true, ChangedPaths: []string{"."}})
+	atRoot := setupResidueDisclosure(tssetup.CompilerSetupOfferResult{ResidueUnknown: true, ChangedPaths: []string{"."}})
 	if !strings.Contains(atRoot, "could not determine") {
 		t.Fatalf("setupResidueDisclosure(residue unknown at the repository root) = %q, want a line saying Coach could not determine what changed", atRoot)
 	}
 }
 
 func body_mainTest_knownPathsListThemAsMayHaveChanged_37(t *testing.T) {
-	known := setupResidueDisclosure(codesignalcli.CompilerSetupOfferResult{ChangedPaths: []string{"mise.toml", "package-lock.json"}})
+	known := setupResidueDisclosure(tssetup.CompilerSetupOfferResult{ChangedPaths: []string{"mise.toml", "package-lock.json"}})
 	if known != "coach codesignal: the setup command may have changed: mise.toml, package-lock.json" {
 		t.Fatalf("setupResidueDisclosure(known paths) = %q", known)
 	}
 }
 
 func body_mainTest_nothingToDiscloseIsEmpty_44(t *testing.T) {
-	if got := setupResidueDisclosure(codesignalcli.CompilerSetupOfferResult{}); got != "" {
+	if got := setupResidueDisclosure(tssetup.CompilerSetupOfferResult{}); got != "" {
 		t.Fatalf("setupResidueDisclosure(nothing to disclose) = %q, want empty", got)
 	}
 }

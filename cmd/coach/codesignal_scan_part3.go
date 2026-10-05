@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 
 	"os"
 
@@ -37,7 +39,7 @@ func runCodesignalScan(dir string, f codesignalFlags, stdout, stderr *os.File, b
 // finding. Saying so plainly is the difference between "nothing changed" and
 // "Coach does not know", which is exactly the distinction SetupOutcome's own
 // contract asks callers to preserve.
-func setupResidueDisclosure(result codesignalcli.CompilerSetupOfferResult) string {
+func setupResidueDisclosure(result tssetup.CompilerSetupOfferResult) string {
 	if result.ResidueUnknown {
 		if len(result.ChangedPaths) > 0 {
 			return "coach codesignal: Coach could not determine which files the setup command changed under " + strings.Join(result.ChangedPaths, ", ") + "; inspect it before rerunning."
@@ -50,11 +52,11 @@ func setupResidueDisclosure(result codesignalcli.CompilerSetupOfferResult) strin
 	return "coach codesignal: the setup command may have changed: " + strings.Join(result.ChangedPaths, ", ")
 }
 func wrapScanAnalysisError(err error, dir, revision, configPath string, stderr *os.File) error {
-	var unresolved *codesignalcli.CompilerUnresolvedError
+	var unresolved *tstoolchain.CompilerUnresolvedError
 	if errors.As(err, &unresolved) {
-		return codesignalcli.WrapCompilerUnresolvedErrorWithReadiness(unresolved, dir, revision, configPath)
+		return tssetup.WrapCompilerUnresolvedErrorWithReadiness(unresolved, dir, revision, configPath)
 	}
-	var runtimeErr *codesignalcli.RuntimeUnresolvedError
+	var runtimeErr *tstoolchain.RuntimeUnresolvedError
 	if errors.As(err, &runtimeErr) {
 		return runtimeErr
 	}
@@ -93,7 +95,7 @@ func wrapScanAnalysisError(err error, dir, revision, configPath string, stderr *
 // rerunning this same scan on a terminal instead, so that repository is
 // still told a next step rather than only the bare --check-project line.
 func classifyAnalysisError(err error, language string, noInteractive bool, stderr *os.File) int {
-	report := analysisErrorReportFor(err, language, codesignalcli.HasControllingTerminal(os.Stdin) && !noInteractive)
+	report := analysisErrorReportFor(err, language, terminal.HasControllingTerminal(os.Stdin) && !noInteractive)
 	for _, line := range report.lines {
 		fmt.Fprintln(stderr, line)
 	}
