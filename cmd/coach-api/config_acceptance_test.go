@@ -33,9 +33,8 @@ func clearEnv(keys ...string) {
 	GinkgoHelper()
 	for _, key := range keys {
 		key := key
-		if v, ok := os.LookupEnv(key); ok {
-			DeferCleanup(func() { Expect(os.Setenv(key, v)).To(Succeed()) })
-		}
+		(&sigclearEnvS155930721{key: key}).call()
+
 		Expect(os.Unsetenv(key)).To(Succeed())
 	}
 }

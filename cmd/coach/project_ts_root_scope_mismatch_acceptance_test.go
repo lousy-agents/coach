@@ -16,9 +16,7 @@ const tsMultiRootPolicyConfigJSON = `{"schema_version":"1","roots":[".","pkg/han
 
 var _ = Describe("coach codesignal --project-language typescript: root_scopes mismatch after a real, otherwise-successful analysis (AC-RUN-9 project_scope)", Label("ts-project-backend"), func() {
 	BeforeEach(func() {
-		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-			Skip(reason)
-		}
+		body_projectTsRootScopeMismatchAcceptanceTest_18()
 	})
 
 	When("the analyzer completes the real compiler-backed scan but its response omits root_scopes for one of the policy's declared roots", func() {

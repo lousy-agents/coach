@@ -6,11 +6,11 @@ package main
 
 import (
 	"context"
-	"errors"
+
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
+
 	"syscall"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
@@ -40,15 +40,6 @@ func nonInteractiveRequested(f codesignalFlags) bool {
 // every job, so telling a genuinely piped invocation that it was declined
 // would point at an environment variable whose removal changes nothing --
 // there is still no terminal to prompt on.
-func interactiveRefusalReason(f codesignalFlags, stdin *os.File) string {
-	if !codesignalcli.HasControllingTerminal(stdin) {
-		return "no controlling terminal is available"
-	}
-	if nonInteractiveRequested(f) {
-		return "this invocation is non-interactive (--no-interactive, or a non-empty CI environment variable)"
-	}
-	return ""
-}
 
 type scanOfferKind string
 
@@ -62,15 +53,6 @@ func newScanOfferBudget() scanOfferBudget {
 
 func (b scanOfferBudget) allows(kind scanOfferKind) bool {
 	return b[kind]
-}
-
-func (b scanOfferBudget) without(kind scanOfferKind) scanOfferBudget {
-	next := make(scanOfferBudget, len(b))
-	for k, v := range b {
-		next[k] = v
-	}
-	next[kind] = false
-	return next
 }
 
 type optionalPreparationResult struct {
@@ -92,55 +74,11 @@ func interruptibleContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
-func runCodesignalScan(dir string, f codesignalFlags, stdout, stderr *os.File, budget scanOfferBudget) int {
-	report, err := runOneScan(dir, f, stderr)
-	if err != nil {
-		noInteractive := nonInteractiveRequested(f)
-		if scanShouldAuthorProjectConfig(err, f.projectLanguage, f.projectConfig, noInteractive) {
-			return runScanProjectConfigAuthoring(dir, f, err, stdout, stderr)
-		}
-		if wrapped, ok := scanShouldOfferCompilerSetup(err, noInteractive); budget.allows(scanOfferCompilerSetup) && ok {
-			return runScanCompilerSetupOffer(dir, f, stdout, stderr, wrapped, budget)
-		}
-		return classifyAnalysisError(err, f.projectLanguage, noInteractive, stderr)
-	}
-	if result := runOptionalScanPreparation(dir, f, stdout, stderr); !shouldRenderAfterOptionalPreparation(result) {
-		return 2
-	}
-	return renderScanResult(report, f.failOnIncompleteCoverage, f.format, stdout, stderr)
-}
-
 func runOneScan(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, error) {
 	if f.baseline {
 		return runBaselineAnalysis(dir, f, stderr)
 	}
 	return runDiffAnalysis(dir, f, stderr)
-}
-
-func wrapScanAnalysisError(err error, dir, revision, configPath string, stderr *os.File) error {
-	var unresolved *codesignalcli.CompilerUnresolvedError
-	if errors.As(err, &unresolved) {
-		return codesignalcli.WrapCompilerUnresolvedErrorWithReadiness(unresolved, dir, revision, configPath)
-	}
-	var runtimeErr *codesignalcli.RuntimeUnresolvedError
-	if errors.As(err, &runtimeErr) {
-		return runtimeErr
-	}
-	fmt.Fprintf(stderr, "coach codesignal: analysis failed: %s\n", err)
-	return nil
-}
-
-func renderScanResult(report *codesignal.Report, failOnIncompleteCoverage bool, format string, stdout, stderr *os.File) int {
-	if report == nil {
-		return 1
-	}
-	if exitCode := renderReport(report, format, stdout, stderr); exitCode != 0 {
-		return exitCode
-	}
-	if failOnIncompleteCoverage && codesignal.RequiredCoverageIncomplete(report) {
-		return 3
-	}
-	return 0
 }
 
 // withheldSetupChoicesLine renders AvailableSetupChoices' own reasons for
@@ -151,16 +89,6 @@ func renderScanResult(report *codesignal.Report, failOnIncompleteCoverage bool, 
 // manifest that declares no supported compiler, a rejected package manager)
 // there is nothing to act on. It returns "" when no menu was built, so the
 // runtime-boundary path's output is unchanged.
-func withheldSetupChoicesLine(withheld []codesignalcli.WithheldSetupChoice) string {
-	if len(withheld) == 0 {
-		return ""
-	}
-	reasons := make([]string, 0, len(withheld))
-	for _, entry := range withheld {
-		reasons = append(reasons, fmt.Sprintf("%s (%s)", entry.Kind, entry.Reason))
-	}
-	return "coach codesignal: no compiler-setup choice is executable here: " + strings.Join(reasons, ", ") + "."
-}
 
 // setupResidueDisclosure renders AC-SET-7's "identify files that may have
 // changed" for a failed setup. ResidueUnknown is not a quieter version of an
@@ -170,18 +98,6 @@ func withheldSetupChoicesLine(withheld []codesignalcli.WithheldSetupChoice) stri
 // finding. Saying so plainly is the difference between "nothing changed" and
 // "Coach does not know", which is exactly the distinction SetupOutcome's own
 // contract asks callers to preserve.
-func setupResidueDisclosure(result codesignalcli.CompilerSetupOfferResult) string {
-	if result.ResidueUnknown {
-		if len(result.ChangedPaths) > 0 {
-			return "coach codesignal: Coach could not determine which files the setup command changed under " + strings.Join(result.ChangedPaths, ", ") + "; inspect it before rerunning."
-		}
-		return "coach codesignal: Coach could not determine which files the setup command changed; inspect the working tree before rerunning."
-	}
-	if len(result.ChangedPaths) == 0 {
-		return ""
-	}
-	return "coach codesignal: the setup command may have changed: " + strings.Join(result.ChangedPaths, ", ")
-}
 
 // scanShouldOfferCompilerSetup reports whether err is a scan-time
 // CompilerUnresolvedError carrying its own readiness snapshot (wrapped by
@@ -192,16 +108,6 @@ func setupResidueDisclosure(result codesignalcli.CompilerSetupOfferResult) strin
 // straight through to the plain *CompilerUnresolvedError) is unchanged --
 // this is what keeps a pty-allocating but genuinely unattended invocation
 // (R1) from opening a prompt nobody will ever answer.
-func scanShouldOfferCompilerSetup(err error, noInteractive bool) (*codesignalcli.CompilerUnresolvedErrorWithReadiness, bool) {
-	var wrapped *codesignalcli.CompilerUnresolvedErrorWithReadiness
-	if !errors.As(err, &wrapped) {
-		return nil, false
-	}
-	if noInteractive || !codesignalcli.HasControllingTerminal(os.Stdin) {
-		return nil, false
-	}
-	return wrapped, true
-}
 
 // runScanCompilerSetupOffer implements the interactive compiler-setup offer
 // for a real scan's CompilerUnresolvedError gap (AC-SET-9): it consumes the
@@ -313,13 +219,6 @@ func shouldContinueAfterSetup(result codesignalcli.CompilerSetupOfferResult) boo
 // --prepare-compiler can never run -- ScanSetupOfferRemediation (R2) names
 // rerunning this same scan on a terminal instead, so that repository is
 // still told a next step rather than only the bare --check-project line.
-func classifyAnalysisError(err error, language string, noInteractive bool, stderr *os.File) int {
-	report := analysisErrorReportFor(err, language, codesignalcli.HasControllingTerminal(os.Stdin) && !noInteractive)
-	for _, line := range report.lines {
-		fmt.Fprintln(stderr, line)
-	}
-	return report.exitCode
-}
 
 // analysisErrorReport is what one classified analysis error produces: the
 // stderr lines in order, and the exit code. Separating the classification
@@ -333,52 +232,9 @@ type analysisErrorReport struct {
 // analysisErrorReportFor matches err against the error classes in the order
 // their wrappers require: each *WithReadiness wrapper comes before the type
 // its Unwrap would otherwise satisfy first.
-func analysisErrorReportFor(err error, language string, hasControllingTerminal bool) analysisErrorReport {
-	var unresolvedWithReadiness *codesignalcli.CompilerUnresolvedErrorWithReadiness
-	if errors.As(err, &unresolvedWithReadiness) {
-		remediation := codesignalcli.PrepareCompilerRemediationWithReadiness(unresolvedWithReadiness.Code, unresolvedWithReadiness.ConfigPath, unresolvedWithReadiness.Readiness)
-		if remediation == "" {
-			remediation = codesignalcli.ScanSetupOfferRemediation(unresolvedWithReadiness.Code, unresolvedWithReadiness.ConfigPath, unresolvedWithReadiness.Readiness)
-		}
-		return classTwoReport(unresolvedWithReadiness.RemediationLine(), nil,
-			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, remediation))
-	}
-	var unresolved *codesignalcli.CompilerUnresolvedError
-	if errors.As(err, &unresolved) {
-		return classTwoReport(unresolved.RemediationLine(), nil,
-			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, codesignalcli.PrepareCompilerRemediation(unresolved.Code, unresolved.ConfigPath)))
-	}
-	var runtimeErr *codesignalcli.RuntimeUnresolvedError
-	if errors.As(err, &runtimeErr) {
-		return classTwoReport(runtimeErr.RemediationLine(), nil, "")
-	}
-	var configErrWithReadiness *codesignalcli.ProjectConfigErrorWithReadiness
-	if errors.As(err, &configErrWithReadiness) {
-		return classTwoReport(configErrWithReadiness.Message,
-			codesignalcli.AlsoFailingGapLines(configErrWithReadiness.Readiness, configErrWithReadiness.ConfigPath),
-			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, codesignalcli.SuggestProjectConfigRemediation(language)))
-	}
-	var configErr *codesignalcli.ProjectConfigError
-	if errors.As(err, &configErr) {
-		return classTwoReport(configErr.Message, nil,
-			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, codesignalcli.SuggestProjectConfigRemediation(language)))
-	}
-	var opErr *codesignalcli.OperationalError
-	if errors.As(err, &opErr) {
-		return analysisErrorReport{lines: []string{opErr.Message}, exitCode: 1}
-	}
-	return analysisErrorReport{lines: []string{err.Error()}, exitCode: 1}
-}
 
 // classTwoReport assembles the shape every class-2 diagnostic shares (owner
 // decision D3): the gap's own message, then any further gaps AC-SET-13
 // requires reporting alongside it, then AC-SET-9's appended remediation when
 // one is offered. An unoffered remediation is dropped rather than printed as
 // a blank line.
-func classTwoReport(message string, alsoFailing []string, appended string) analysisErrorReport {
-	lines := append([]string{message}, alsoFailing...)
-	if appended != "" {
-		lines = append(lines, appended)
-	}
-	return analysisErrorReport{lines: lines, exitCode: 2}
-}

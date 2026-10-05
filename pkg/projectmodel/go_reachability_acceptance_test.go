@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"reflect"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -13,25 +11,6 @@ import (
 
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
-
-func hasReachabilityDiagnostic(diags []projectmodel.Diagnostic, code string) bool {
-	for _, d := range diags {
-		if d.Code == code {
-			return true
-		}
-	}
-	return false
-}
-
-func countReachabilityDiagnostic(diags []projectmodel.Diagnostic, code string) int {
-	n := 0
-	for _, d := range diags {
-		if d.Code == code {
-			n++
-		}
-	}
-	return n
-}
 
 var _ = Describe("BuildGoReachability", func() {
 	When("a source function calls through two intermediate functions to a pinned database sink", func() {
@@ -58,7 +37,6 @@ var _ = Describe("BuildGoReachability", func() {
 			Expect(result.Coverage.Counts).To(HaveKeyWithValue("ssa_programs_built", 1),
 				"call-graph and source identification must share one SSA program per root, got counts=%v", result.Coverage.Counts)
 
-			// Running twice, from a fresh call, must reproduce the same ID.
 			second, err := projectmodel.BuildGoReachability(context.Background(), snapshot, projectmodel.ReachabilityOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(second.Facts).To(HaveLen(1))
@@ -66,72 +44,13 @@ var _ = Describe("BuildGoReachability", func() {
 		})
 	})
 
-	// Negative control: the issue's core structural requirement is that no
-	// active dataflow.source_reaches_sink Signal or severity/lifecycle
-	// concept ever attaches to a reachability observation. Enforce this by
-	// reflection over the type itself, not just documentation, so a field
-	// added back later fails this test.
 	Describe("the facts-only structural contract", func() {
 		It("carries no severity, lifecycle, or active-finding-shaped field anywhere on ReachabilityFact", func() {
-			allowed := map[string]bool{
-				"ID":               true,
-				"Kind":             true,
-				"Confidence":       true,
-				"Source":           true,
-				"Sink":             true,
-				"Path":             true,
-				"AlgorithmVersion": true,
-			}
-			forbiddenSubstrings := []string{"severity", "lifecycle", "changed", "active", "finding", "status"}
-
-			factType := reflect.TypeOf(projectmodel.ReachabilityFact{})
-			seen := map[string]bool{}
-			for i := 0; i < factType.NumField(); i++ {
-				name := factType.Field(i).Name
-				seen[name] = true
-				Expect(allowed).To(HaveKey(name), "ReachabilityFact gained an unexpected field %q not on the reviewed allowlist", name)
-				lower := strings.ToLower(name)
-				for _, bad := range forbiddenSubstrings {
-					Expect(strings.Contains(lower, bad)).To(BeFalse(), "ReachabilityFact field %q looks severity/lifecycle/active-finding-shaped", name)
-				}
-			}
-			for name := range allowed {
-				Expect(seen).To(HaveKey(name), "expected allowlisted field %q to still exist on ReachabilityFact", name)
-			}
-
-			stepType := reflect.TypeOf(projectmodel.ReachabilityStep{})
-			for i := 0; i < stepType.NumField(); i++ {
-				name := stepType.Field(i).Name
-				lower := strings.ToLower(name)
-				for _, bad := range forbiddenSubstrings {
-					Expect(strings.Contains(lower, bad)).To(BeFalse(), "ReachabilityStep field %q looks severity/lifecycle/active-finding-shaped", name)
-				}
-			}
+			body_goReachabilityAcceptanceTest_carriesNoSeverityLifecycleOrActiveFindingShapedF_50()
 		})
 
 		It("carries no severity, lifecycle, or active-finding-shaped field anywhere on ReachabilityResult", func() {
-			allowedResultFields := map[string]bool{
-				"Facts":     true,
-				"Sources":   true,
-				"Algorithm": true,
-				"Coverage":  true,
-			}
-			forbiddenSubstrings := []string{"severity", "lifecycle", "changed", "active", "finding", "status"}
-
-			resultType := reflect.TypeOf(projectmodel.ReachabilityResult{})
-			seen := map[string]bool{}
-			for i := 0; i < resultType.NumField(); i++ {
-				name := resultType.Field(i).Name
-				seen[name] = true
-				Expect(allowedResultFields).To(HaveKey(name), "ReachabilityResult gained an unexpected field %q not on the reviewed allowlist", name)
-				lower := strings.ToLower(name)
-				for _, bad := range forbiddenSubstrings {
-					Expect(strings.Contains(lower, bad)).To(BeFalse(), "ReachabilityResult field %q looks severity/lifecycle/active-finding-shaped", name)
-				}
-			}
-			for name := range allowedResultFields {
-				Expect(seen).To(HaveKey(name), "expected allowlisted field %q to still exist on ReachabilityResult", name)
-			}
+			body_goReachabilityAcceptanceTest_carriesNoSeverityLifecycleOrActiveFindingShapedF_87()
 		})
 	})
 
@@ -207,25 +126,7 @@ var _ = Describe("BuildGoReachability", func() {
 
 	When("the underlying call-graph build itself is truncated by a graph-node budget", func() {
 		It("treats every pair as unevaluated rather than reporting a truncated call graph as a fully searched one", func() {
-			snapshot := os.DirFS("testdata/go_reachability_path")
-			result, err := projectmodel.BuildGoReachability(context.Background(), snapshot, projectmodel.ReachabilityOptions{
-				Budgets: projectmodel.GoBudgets{MaxGraphNodes: 1},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(result.Coverage.Complete).To(BeFalse())
-			Expect(result.Coverage.Counts["source_sink_pairs_evaluated"]).To(Equal(0),
-				"a pair searched against an incompletely built call graph must not count as conclusively evaluated")
-			Expect(result.Coverage.Counts["source_sink_pairs_truncated"]).To(BeNumerically(">", 0))
-
-			// The forwarded GoBudgets budget that actually truncated this run
-			// (graph_nodes) must survive effectiveReachabilityBudgets
-			// unmutated, alongside the full EffectiveGoBudgets vocabulary
-			// plus reachability's own search_nodes key.
-			Expect(result.Coverage.Budgets).To(HaveKeyWithValue("graph_nodes", 1))
-			for _, key := range []string{"wall_time_ms", "input_files", "input_bytes", "graph_nodes", "graph_edges", "working_set_bytes", "stderr_bytes", "search_nodes"} {
-				Expect(result.Coverage.Budgets).To(HaveKey(key), "expected effective budget key %q", key)
-			}
+			body_goReachabilityAcceptanceTest_treatsEveryPairAsUnevaluatedRatherThanReportingA_184()
 		})
 	})
 
@@ -303,8 +204,6 @@ var _ = Describe("BuildGoReachability", func() {
 			second, err := projectmodel.BuildGoReachability(context.Background(), snapshot, projectmodel.ReachabilityOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			// Guard against a vacuous pass: json.Marshal(nil) == json.Marshal(nil)
-			// would make this spec pass even if the traversal produced nothing.
 			Expect(first.Facts).NotTo(BeEmpty())
 			Expect(second.Facts).NotTo(BeEmpty())
 
@@ -314,9 +213,6 @@ var _ = Describe("BuildGoReachability", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(firstFactsJSON).To(Equal(secondFactsJSON))
 
-			// Exact golden assertion: pins the wire key names themselves
-			// (json.Marshal equality alone would still pass if node_id or
-			// algorithm_version were renamed on both runs identically).
 			Expect(string(firstFactsJSON)).To(Equal(`[{"id":"reach:example.com/reachabilitypath.Handler-\u003e(*database/sql.DB).Query@go-source-sink-registry@1","kind":"possible_call_reachability","confidence":"resolved_direct","source":"example.com/reachabilitypath.Handler","sink":"(*database/sql.DB).Query","path":[{"node_id":"example.com/reachabilitypath.Handler"},{"node_id":"example.com/reachabilitypath.loadUser"},{"node_id":"example.com/reachabilitypath.queryDB"},{"node_id":"(*database/sql.DB).Query"}],"algorithm_version":"go-source-sink-registry@1"}]`))
 
 			left := copyFixtureToTempDir("testdata/go_reachability_path")
@@ -339,10 +235,6 @@ var _ = Describe("BuildGoReachability", func() {
 			Expect(string(leftFactsJSON)).NotTo(ContainSubstring(left))
 			Expect(string(leftFactsJSON)).NotTo(ContainSubstring(right))
 
-			// runtime_ms/memory_bytes are wall-clock measurements and may
-			// legitimately differ between two separate builds; everything
-			// else in Coverage (including every other count and every
-			// diagnostic) must still be byte-identical.
 			leftCoverageJSON, err := json.Marshal(withoutWallClockCounts(leftResult.Coverage))
 			Expect(err).NotTo(HaveOccurred())
 			rightCoverageJSON, err := json.Marshal(withoutWallClockCounts(rightResult.Coverage))
@@ -354,14 +246,11 @@ var _ = Describe("BuildGoReachability", func() {
 	})
 })
 
-func withoutWallClockCounts(cov projectmodel.Coverage) projectmodel.Coverage {
-	counts := make(map[string]int, len(cov.Counts))
-	for k, v := range cov.Counts {
-		if k == "runtime_ms" || k == "memory_bytes" {
-			continue
+func hasReachabilityDiagnostic(diags []projectmodel.Diagnostic, code string) bool {
+	for _, d := range diags {
+		if d.Code == code {
+			return true
 		}
-		counts[k] = v
 	}
-	cov.Counts = counts
-	return cov
+	return false
 }

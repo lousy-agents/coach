@@ -104,56 +104,10 @@ func (c *featureCollector) checkGoTOCTOUCheckThenAct(n engine.Node, source []byt
 // any other initializer shape, a left side that doesn't bind exactly two
 // values, or a right side that isn't exactly one os.Stat/os.Lstat
 // call_expression.
-func goStatInitializerCall(ifStmt engine.Node, source []byte) (call engine.Node, errName string) {
-	init := ifStmt.ChildByFieldName("initializer")
-	if init == nil {
-		return nil, ""
-	}
-	switch init.Kind() {
-	case "short_var_declaration", "assignment_statement":
-	default:
-		return nil, ""
-	}
-
-	left := init.ChildByFieldName("left")
-	right := init.ChildByFieldName("right")
-	if left == nil || right == nil {
-		return nil, ""
-	}
-
-	targets := goExpressionListValues(left)
-	if len(targets) != 2 || targets[1].Kind() != "identifier" {
-		return nil, ""
-	}
-
-	values := goExpressionListValues(right)
-	if len(values) != 1 {
-		return nil, ""
-	}
-	rhs := values[0]
-	pkg, name, ok := goSelectorCallInfo(rhs, source)
-	if !ok || pkg != "os" || !goToctouStatCallNames[name] {
-		return nil, ""
-	}
-
-	return rhs, targets[1].Utf8Text(source)
-}
 
 // goExpressionListValues returns list's non-punctuation children in source
 // order (filtering out "," and any other literal tokens), i.e. the actual
 // expression nodes an expression_list holds.
-func goExpressionListValues(list engine.Node) []engine.Node {
-	var out []engine.Node
-	count := list.ChildCount()
-	for i := 0; i < count; i++ {
-		child := list.Child(i)
-		if child.Kind() == "," {
-			continue
-		}
-		out = append(out, child)
-	}
-	return out
-}
 
 // isGoErrNilGate reports whether cond is a direct nil-comparison
 // binary_expression on the identifier named errName -- `err == nil` or `nil
@@ -161,51 +115,12 @@ func goExpressionListValues(list engine.Node) []engine.Node {
 // other condition shape (`err != nil`, a sentinel check like
 // errors.Is(err, fs.ErrNotExist) or os.IsNotExist(err), a boolean
 // combination, etc.) reports false.
-func isGoErrNilGate(cond engine.Node, errName string, source []byte) bool {
-	if cond == nil || errName == "" || cond.Kind() != "binary_expression" {
-		return false
-	}
-	if goBinaryOp(cond, source) != "==" {
-		return false
-	}
-	left := cond.ChildByFieldName("left")
-	right := cond.ChildByFieldName("right")
-	if left == nil || right == nil {
-		return false
-	}
-	if left.Kind() == "nil" && right.Kind() == "identifier" && right.Utf8Text(source) == errName {
-		return true
-	}
-	if right.Kind() == "nil" && left.Kind() == "identifier" && left.Utf8Text(source) == errName {
-		return true
-	}
-	return false
-}
 
 // findGoToctouActCall searches n's subtree (including inside any nested
 // statements/if -- this detector does no scope resolution, only syntactic
 // call/argument-text matching) for a call_expression named in
 // goToctouActCallNames on the "os" package whose first argument's source
 // text equals pathText, returning the first one found or nil.
-func findGoToctouActCall(n engine.Node, source []byte, pathText string) engine.Node {
-	if n == nil {
-		return nil
-	}
-	if n.Kind() == "call_expression" {
-		if pkg, name, ok := goSelectorCallInfo(n, source); ok && pkg == "os" && goToctouActCallNames[name] {
-			if arg := goCallFirstArgument(n); arg != nil && arg.Utf8Text(source) == pathText {
-				return n
-			}
-		}
-	}
-	count := n.ChildCount()
-	for i := 0; i < count; i++ {
-		if found := findGoToctouActCall(n.Child(i), source, pathText); found != nil {
-			return found
-		}
-	}
-	return nil
-}
 
 // goSelectorCallInfo reports call's package and function name if call is a
 // call_expression whose callee is a selector_expression on a bare
@@ -232,22 +147,6 @@ func goSelectorCallInfo(call engine.Node, source []byte) (pkg, name string, ok b
 // goCallFirstArgument returns call's "arguments" field's first non-
 // punctuation child (the first argument expression), or nil if call has no
 // arguments.
-func goCallFirstArgument(call engine.Node) engine.Node {
-	args := call.ChildByFieldName("arguments")
-	if args == nil {
-		return nil
-	}
-	count := args.ChildCount()
-	for i := 0; i < count; i++ {
-		child := args.Child(i)
-		switch child.Kind() {
-		case "(", ")", ",":
-			continue
-		}
-		return child
-	}
-	return nil
-}
 
 // newGoTOCTOUCheckThenActFinding builds a "toctou_check_then_act" Finding
 // (Story 3, CWE-367) for an os.Stat/os.Lstat checkCall guarding actCall (a

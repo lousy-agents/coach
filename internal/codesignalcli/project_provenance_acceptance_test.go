@@ -3,7 +3,6 @@ package codesignalcli
 import (
 	"context"
 	"encoding/json"
-	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -14,103 +13,15 @@ import (
 var _ = Describe("applyProjectBackend dirty-worktree diagnostic and package manager provenance", func() {
 	When("the worktree has relevant uncommitted changes and the project backend returns results", func() {
 		It("appends a worktree_report_reflects_committed_head diagnostic to input", func() {
-			original := runDirtyWorktreeGit
-			runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
-				return []byte("M  bun.lock\x00"), nil
-			}
-			DeferCleanup(func() { runDirtyWorktreeGit = original })
-
-			dir := acceptanceTempGitRepo()
-			acceptanceCommitFile(dir, "a.go", "package a\n")
-
-			backend := identityHandoffBackend{result: &ProjectBackendResult{
-				RuntimeKind:   runtimeKindNode,
-				RuntimeOrigin: runtimeOriginPath,
-			}}
-			cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
-			project := &ProjectAnalysis{
-				ConfigPath:   "project.json",
-				Language:     "typescript",
-				Config:       cfg,
-				ConfigDigest: ConfigDigest(cfg),
-				Backend:      backend,
-			}
-
-			input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, project, dir, "HEAD", "", true)
-			Expect(err).NotTo(HaveOccurred())
-
-			kinds := make([]string, len(input.Diagnostics))
-			for i, d := range input.Diagnostics {
-				kinds[i] = d.Kind
-			}
-			Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeReportReflectsCommittedHEAD),
-				"a dirty relevant path must trigger the worktree_report_reflects_committed_head diagnostic; diagnostics=%v", input.Diagnostics)
-			Expect(kinds).NotTo(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed),
-				"project provenance must not reuse the file-local skip kind; diagnostics=%v", input.Diagnostics)
+			body_projectProvenanceAcceptanceTest_appendsAWorktreeReportReflectsCommittedHeadDiagn_16()
 		})
 
 		It("worktree_report_reflects_committed_head message references committed HEAD", func() {
-			original := runDirtyWorktreeGit
-			runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
-				return []byte("?? bun.lock\x00"), nil
-			}
-			DeferCleanup(func() { runDirtyWorktreeGit = original })
-
-			dir := acceptanceTempGitRepo()
-			acceptanceCommitFile(dir, "a.ts", "export const x = 1;\n")
-
-			backend := identityHandoffBackend{result: &ProjectBackendResult{}}
-			cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
-			project := &ProjectAnalysis{
-				ConfigPath:   "project.json",
-				Language:     "typescript",
-				Config:       cfg,
-				ConfigDigest: ConfigDigest(cfg),
-				Backend:      backend,
-			}
-
-			input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, project, dir, "HEAD", "", true)
-			Expect(err).NotTo(HaveOccurred())
-
-			var msg string
-			for _, d := range input.Diagnostics {
-				if d.Kind == codesignal.DiagKindWorktreeReportReflectsCommittedHEAD {
-					msg = d.Message
-				}
-			}
-			Expect(msg).NotTo(BeEmpty(), "diagnostic message must be set")
-			Expect(msg).To(ContainSubstring("HEAD"), "message must reference committed HEAD; got %q", msg)
+			body_projectProvenanceAcceptanceTest_worktreeReportReflectsCommittedHeadMessageRefere_52()
 		})
 
 		It("does not emit a worktree provenance diagnostic when the worktree is clean", func() {
-			original := runDirtyWorktreeGit
-			runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
-				return []byte{}, nil
-			}
-			DeferCleanup(func() { runDirtyWorktreeGit = original })
-
-			dir := acceptanceTempGitRepo()
-			acceptanceCommitFile(dir, "a.ts", "export const x = 1;\n")
-
-			backend := identityHandoffBackend{result: &ProjectBackendResult{}}
-			cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
-			project := &ProjectAnalysis{
-				ConfigPath:   "project.json",
-				Language:     "typescript",
-				Config:       cfg,
-				ConfigDigest: ConfigDigest(cfg),
-				Backend:      backend,
-			}
-
-			input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, project, dir, "HEAD", "", true)
-			Expect(err).NotTo(HaveOccurred())
-
-			for _, d := range input.Diagnostics {
-				Expect(d.Kind).NotTo(Equal(codesignal.DiagKindWorktreeChangesNotAnalyzed),
-					"clean worktree must not trigger the skip diagnostic")
-				Expect(d.Kind).NotTo(Equal(codesignal.DiagKindWorktreeReportReflectsCommittedHEAD),
-					"clean worktree must not trigger the provenance diagnostic")
-			}
+			body_projectProvenanceAcceptanceTest_doesNotEmitAWorktreeProvenanceDiagnosticWhenTheW_85()
 		})
 	})
 
@@ -152,36 +63,7 @@ var _ = Describe("applyProjectBackend dirty-worktree diagnostic and package mana
 var _ = Describe("applyProjectBackend dirty-worktree diagnostic: error handling", func() {
 	When("the git status seam returns an error", func() {
 		It("emits worktree_status_check_failed rather than describing the error as skipped analysis", func() {
-			original := runDirtyWorktreeGit
-			runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
-				return nil, errors.New("simulated git status failure")
-			}
-			DeferCleanup(func() { runDirtyWorktreeGit = original })
-
-			dir := acceptanceTempGitRepo()
-			acceptanceCommitFile(dir, "a.ts", "export const x = 1;\n")
-
-			backend := identityHandoffBackend{result: &ProjectBackendResult{}}
-			cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
-			project := &ProjectAnalysis{
-				ConfigPath:   "project.json",
-				Language:     "typescript",
-				Config:       cfg,
-				ConfigDigest: ConfigDigest(cfg),
-				Backend:      backend,
-			}
-
-			input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, project, dir, "HEAD", "", true)
-			Expect(err).NotTo(HaveOccurred())
-
-			kinds := make([]string, len(input.Diagnostics))
-			for i, d := range input.Diagnostics {
-				kinds[i] = d.Kind
-			}
-			Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeStatusCheckFailed),
-				"a git status error must emit worktree_status_check_failed; diagnostics=%v", input.Diagnostics)
-			Expect(kinds).NotTo(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed),
-				"a git status error must not be described as skipped analysis; diagnostics=%v", input.Diagnostics)
+			body_projectProvenanceAcceptanceTest_emitsWorktreeStatusCheckFailedRatherThanDescribi_154()
 		})
 	})
 })
@@ -232,10 +114,7 @@ var _ = Describe("snapshotReadPackageManagerField git error handling", func() {
 		It("returns ambiguous rather than treating the blob read failure as a clean absent field", func() {
 			originalRunner := runProjectConfigGit
 			runProjectConfigGit = func(dir string, args ...string) ([]byte, error) {
-				if len(args) > 0 && args[0] == "show" {
-					return nil, errors.New("simulated blob read failure")
-				}
-				return originalRunner(dir, args...)
+				return body_projectProvenanceAcceptanceTest_234(dir, args, originalRunner)
 			}
 			DeferCleanup(func() { runProjectConfigGit = originalRunner })
 
@@ -255,11 +134,7 @@ var _ = Describe("snapshotDetectLockfileAtRoot git error handling", func() {
 		It("returns ambiguous rather than treating the error as a clean absent lockfile", func() {
 			originalRunner := runProjectConfigGit
 			runProjectConfigGit = func(dir string, args ...string) ([]byte, error) {
-				// Fail ls-tree calls so fileExistsAtRevision errors on lockfile checks.
-				if len(args) > 0 && args[0] == "ls-tree" {
-					return nil, errors.New("simulated transient git failure")
-				}
-				return originalRunner(dir, args...)
+				return body_projectProvenanceAcceptanceTest_257(dir, args, originalRunner)
 			}
 			DeferCleanup(func() { runProjectConfigGit = originalRunner })
 

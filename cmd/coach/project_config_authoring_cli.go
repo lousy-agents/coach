@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
@@ -48,13 +47,6 @@ var tsAuthoringRootBudgets = projectmodel.GoBudgets{
 // human-facing text rather than the machine-readable NDJSON envelope
 // `--suggest-project-config` writes, and an absolute invocation-directory
 // path is acceptable in that text where it would not be in the envelope.
-func runAuthorProjectConfigTypeScript(dir string, f codesignalFlags, stdout, stderr *os.File) int {
-	if reason := interactiveRefusalReason(f, os.Stdin); reason != "" {
-		fmt.Fprintf(stderr, "%s: %s; refusing to enter guided policy authoring or write a policy config. Draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>.\n", authorTSUsagePrefix, reason)
-		return 2
-	}
-	return authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr)
-}
 
 // scanShouldAuthorProjectConfig reports whether a real scan's (not
 // --check-project/--suggest-project-config/--prepare-compiler) analysis
@@ -74,25 +66,6 @@ func runAuthorProjectConfigTypeScript(dir string, f codesignalFlags, stdout, std
 // --no-interactive or a non-empty CI environment variable, see
 // nonInteractiveRequested in main.go) all fall through to
 // classifyAnalysisError's existing message-only path unchanged.
-func scanShouldAuthorProjectConfig(err error, language, configPath string, noInteractive bool) bool {
-	if language != "typescript" {
-		return false
-	}
-	if codesignalcli.ValidateProjectConfigPath(configPath) != nil {
-		return false
-	}
-	var configErr *codesignalcli.ProjectConfigError
-	if !errors.As(err, &configErr) {
-		return false
-	}
-	if configErr.Kind != codesignalcli.ProjectConfigNotFound {
-		return false
-	}
-	if noInteractive {
-		return false
-	}
-	return codesignalcli.HasControllingTerminal(os.Stdin)
-}
 
 // runScanProjectConfigAuthoring implements AC-POL-8. It reuses the exact
 // guided authoring session `--suggest-project-config --project-language
@@ -121,16 +94,6 @@ func scanShouldAuthorProjectConfig(err error, language, configPath string, noInt
 // only on classifyAnalysisError's no-controlling-terminal path: without it, a
 // simultaneously failing compiler check would stay masked until the customer
 // approved, committed, and reran, discovering the compiler gap only then.
-func runScanProjectConfigAuthoring(dir string, f codesignalFlags, scanErr error, stdout, stderr *os.File) int {
-	printProjectConfigGapBeforeAuthoring(scanErr, stderr)
-
-	exitCode := authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr)
-	if exitCode != 0 {
-		return exitCode
-	}
-	fmt.Fprintf(stderr, "coach codesignal: the approved TypeScript project-config candidate was written to stdout and no file was created; save it to %q, review it, commit it, then rerun this scan once it is committed.\n", f.projectConfig)
-	return 2
-}
 
 // printProjectConfigGapBeforeAuthoring prints the same two lines
 // classifyAnalysisError would have printed for scanErr's class-2 config
@@ -155,19 +118,6 @@ func printProjectConfigGapBeforeAuthoring(scanErr error, stderr *os.File) {
 // rejectUnusableAuthoringOutput fails fast on --output shape or an existing
 // target before the session. writeSuggestOutput's O_EXCL remains the sole
 // existence authority against a concurrently created target.
-func rejectUnusableAuthoringOutput(root string, f codesignalFlags) error {
-	if !f.outputSet {
-		return nil
-	}
-	clean, err := codesignalcli.ValidateAuthoringOutputPath(root, f.output)
-	if err != nil {
-		return err
-	}
-	if _, err := os.Lstat(filepath.Join(root, clean)); err == nil {
-		return fmt.Errorf("--output target already exists")
-	}
-	return nil
-}
 
 // authorProjectConfigTypeScript performs runAuthorProjectConfigTypeScript's
 // work after the controlling-terminal gate: resolving the baseline
@@ -250,14 +200,6 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 // about the tree could not be established, so the roots collected around it
 // are not trusted as a complete picture either. Only DiagTSRootIncomplete is
 // safe to warn about and still show to the user.
-func tsRootDiscoverySnapshotUnavailable(discovered projectmodel.TSRootDiscoveryResult) (projectmodel.Diagnostic, bool) {
-	for _, diag := range discovered.Coverage.Diagnostics {
-		if diag.Code == projectmodel.DiagTSRootUnavailable {
-			return diag, true
-		}
-	}
-	return projectmodel.Diagnostic{}, false
-}
 
 // reportAuthoringResult translates one AuthorProjectConfig session outcome
 // into the process's exit code. A declined/cancelled session and every
@@ -266,22 +208,3 @@ func tsRootDiscoverySnapshotUnavailable(discovered projectmodel.TSRootDiscoveryR
 // existing-target, or write error is success. The approved candidate itself
 // has already reached stdout or disk inside AuthorProjectConfig -- there is
 // nothing left to write here.
-func reportAuthoringResult(result codesignalcli.AuthoringResult, stderr *os.File) int {
-	if !result.Approved {
-		fmt.Fprintf(stderr, "%s: authoring was cancelled or not approved; no policy config was written\n", authorTSUsagePrefix)
-		return 2
-	}
-	if result.ValidationError != nil {
-		fmt.Fprintf(stderr, "%s: %s\n", authorTSUsagePrefix, result.ValidationError)
-		return 2
-	}
-	if result.OutputExists {
-		fmt.Fprintf(stderr, "%s: --output target already exists\n", authorTSUsagePrefix)
-		return 2
-	}
-	if result.WriteError != nil {
-		fmt.Fprintf(stderr, "%s: %s\n", authorTSUsagePrefix, result.WriteError)
-		return 2
-	}
-	return 0
-}

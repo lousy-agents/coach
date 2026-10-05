@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 )
 
 var _ = Describe("Project provenance, scope, and next-actions frozen types (AC-EVD-1, AC-SHAPE)", func() {
@@ -182,7 +182,7 @@ var _ = Describe("Project provenance, scope, and next-actions frozen types (AC-E
 					PatternSet:    "ts-source-sink-registry@1",
 					Head: codesignal.ProjectScopeRevisionReport{
 						Revision: "HEAD_SHA",
-						Roots: []projectmodel.ProjectScopeRoot{
+						Roots: []domain.ProjectScopeRoot{
 							{Root: ".", CandidateFiles: 42, AnalyzedFiles: 42},
 						},
 						MatchedLayers:   []string{"handlers", "db"},
@@ -307,13 +307,13 @@ var _ = Describe("Project provenance, scope, and next-actions frozen types (AC-E
 					PatternSet:    "ts-source-sink-registry@1",
 					Head: codesignal.ProjectScopeRevisionReport{
 						Revision:        "HEAD_SHA",
-						Roots:           []projectmodel.ProjectScopeRoot{{Root: ".", CandidateFiles: 10, AnalyzedFiles: 10}},
+						Roots:           []domain.ProjectScopeRoot{{Root: ".", CandidateFiles: 10, AnalyzedFiles: 10}},
 						MatchedLayers:   []string{"handlers"},
 						UnmatchedLayers: []string{},
 					},
 					Base: &codesignal.ProjectScopeRevisionReport{
 						Revision:        "BASE_SHA",
-						Roots:           []projectmodel.ProjectScopeRoot{{Root: ".", CandidateFiles: 8, AnalyzedFiles: 8}},
+						Roots:           []domain.ProjectScopeRoot{{Root: ".", CandidateFiles: 8, AnalyzedFiles: 8}},
 						MatchedLayers:   []string{"handlers"},
 						UnmatchedLayers: []string{},
 					},

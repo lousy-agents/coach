@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -26,32 +23,6 @@ type changeCohesionJudgment struct {
 	Rationale      string  `json:"rationale"`
 	Confidence     string  `json:"confidence"`
 	SuggestedFocus *string `json:"suggested_focus"`
-}
-
-func hiddenMutationSchema() json.RawMessage {
-	return json.RawMessage(`{
-		"type": "object",
-		"required": ["judgment", "rationale", "confidence", "suggested_focus"],
-		"properties": {
-			"judgment": {"type": "string", "enum": ["concern", "acceptable", "unclear"]},
-			"rationale": {"type": "string"},
-			"confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-			"suggested_focus": {"type": ["string", "null"]}
-		}
-	}`)
-}
-
-func changeCohesionSchema() json.RawMessage {
-	return json.RawMessage(`{
-		"type": "object",
-		"required": ["judgment", "rationale", "confidence", "suggested_focus"],
-		"properties": {
-			"judgment": {"type": "string", "enum": ["focused", "diffuse", "unclear"]},
-			"rationale": {"type": "string"},
-			"confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-			"suggested_focus": {"type": ["string", "null"]}
-		}
-	}`)
 }
 
 var _ = Describe("modelgateway.Gateway", func() {
@@ -122,7 +93,6 @@ var _ = Describe("modelgateway.Gateway", func() {
 				Expect(asUnavail.Detail).NotTo(BeEmpty())
 				Expect(errors.As(valErr, &asUnavail)).To(BeFalse())
 
-				// Cover Judge classification, not only error constructors.
 				schemaFail := modelgateway.NewStubGateway(modelgateway.StubOptions{
 					JudgeErr: modelgateway.NewValidationError("fixture schema mismatch"),
 				})
@@ -154,83 +124,37 @@ var _ = Describe("modelgateway.Gateway", func() {
 
 	Describe("package surface", func() {
 		It("keeps production identifiers free of provider-specific names", func() {
-			dir, err := os.Getwd()
-			Expect(err).NotTo(HaveOccurred())
-
-			entries, err := os.ReadDir(dir)
-			Expect(err).NotTo(HaveOccurred())
-
-			forbidden := []string{"llamacpp", "llama.cpp", "sglang"}
-			for _, e := range entries {
-				name := e.Name()
-				if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-					continue
-				}
-				lowerName := strings.ToLower(name)
-				for _, f := range forbidden {
-					Expect(lowerName).NotTo(ContainSubstring(f), "production filename %s", name)
-				}
-				raw, readErr := os.ReadFile(filepath.Join(dir, name))
-				Expect(readErr).NotTo(HaveOccurred())
-				lower := strings.ToLower(string(raw))
-				for _, f := range forbidden {
-					Expect(lower).NotTo(ContainSubstring(f), "production file %s", name)
-				}
-			}
+			body_gatewayAcceptanceTest_keepsProductionIdentifiersFreeOfProviderSpecific_129()
 		})
 
 		It("is the only non-test package that owns the chat-completions wire path", func() {
-			root := findModuleRoot()
-			Expect(root).NotTo(BeEmpty())
-
-			var offenders []string
-			err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
-				if walkErr != nil {
-					return walkErr
-				}
-				if d.IsDir() {
-					base := d.Name()
-					if base == ".git" || base == "node_modules" || base == "vendor" || base == "dist" || base == "dist-test" {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-				if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-					return nil
-				}
-				rel, relErr := filepath.Rel(root, path)
-				Expect(relErr).NotTo(HaveOccurred())
-				if strings.HasPrefix(rel, "internal"+string(filepath.Separator)+"modelgateway"+string(filepath.Separator)) {
-					return nil
-				}
-				raw, readErr := os.ReadFile(path)
-				if readErr != nil {
-					return readErr
-				}
-				if strings.Contains(string(raw), "/v1/chat/completions") {
-					offenders = append(offenders, rel)
-				}
-				return nil
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(offenders).To(BeEmpty(), "chat-completions path must stay inside internal/modelgateway: %v", offenders)
+			body_gatewayAcceptanceTest_isTheOnlyNonTestPackageThatOwnsTheChatCompletion_155()
 		})
 	})
 })
 
-func findModuleRoot() string {
-	dir, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
+func hiddenMutationSchema() json.RawMessage {
+	return json.RawMessage(`{
+		"type": "object",
+		"required": ["judgment", "rationale", "confidence", "suggested_focus"],
+		"properties": {
+			"judgment": {"type": "string", "enum": ["concern", "acceptable", "unclear"]},
+			"rationale": {"type": "string"},
+			"confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+			"suggested_focus": {"type": ["string", "null"]}
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
+	}`)
+}
+
+func changeCohesionSchema() json.RawMessage {
+	return json.RawMessage(`{
+		"type": "object",
+		"required": ["judgment", "rationale", "confidence", "suggested_focus"],
+		"properties": {
+			"judgment": {"type": "string", "enum": ["focused", "diffuse", "unclear"]},
+			"rationale": {"type": "string"},
+			"confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+			"suggested_focus": {"type": ["string", "null"]}
 		}
-		dir = parent
-	}
+	}`)
 }

@@ -1,6 +1,8 @@
 package codesignal
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestFingerprint_NormalizePath(t *testing.T) {
 	tests := []struct {
@@ -20,10 +22,7 @@ func TestFingerprint_NormalizePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := normalizePath(tt.path)
-			if got != tt.want {
-				t.Errorf("normalizePath(%q): got %q, want %q", tt.path, got, tt.want)
-			}
+			body_fingerprintTest_24(t, tt)
 		})
 	}
 }
@@ -43,10 +42,7 @@ func TestFingerprint_NormalizeEvidence(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := normalizeEvidence(tt.evidence)
-			if got != tt.want {
-				t.Errorf("normalizeEvidence(%q): got %q, want %q", tt.evidence, got, tt.want)
-			}
+			body_fingerprintTest_47(t, tt)
 		})
 	}
 }
@@ -99,23 +95,5 @@ func TestFingerprint_ComputeFingerprint_LengthPrefixingPreventsFieldBoundaryColl
 
 	if a == b {
 		t.Errorf("computeFingerprint(%q, %q, ...) and computeFingerprint(%q, %q, ...) collided: both were %q; length-prefixing must prevent field-boundary collisions", "ab", "c", "a", "bc", a)
-	}
-}
-
-func TestFingerprint_ComputeSignalID_LengthPrefixingPreventsFieldBoundaryCollisions(t *testing.T) {
-	a := computeSignalID("ab", "c", "subject", "evidence", 0, 0, 0)
-	b := computeSignalID("a", "bc", "subject", "evidence", 0, 0, 0)
-
-	if a == b {
-		t.Errorf("computeSignalID(%q, %q, ...) and computeSignalID(%q, %q, ...) collided: both were %q; length-prefixing must prevent field-boundary collisions", "ab", "c", "a", "bc", a)
-	}
-}
-
-func TestFingerprint_ComputeFingerprint_EmbeddedNullByteDoesNotCollide(t *testing.T) {
-	a := computeFingerprint("rule", "path", "sub\x00ject", "evidence", 0)
-	b := computeFingerprint("rule", "path", "subject", "evidence", 0)
-
-	if a == b {
-		t.Errorf("computeFingerprint with an embedded null byte in subject must not collide with the same fields minus the null byte: both were %q", a)
 	}
 }

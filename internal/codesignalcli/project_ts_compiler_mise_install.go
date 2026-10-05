@@ -184,46 +184,10 @@ func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath 
 // host Node runtime that would run it is still missing or unsupported --
 // exactly the gap a real scan's own PrepareTSRuntime never reaches, since it
 // resolves host Node first and fails fast there.
-func readinessHasBlockingRuntimeGap(readiness *ReadinessResult) (string, bool) {
-	if readiness == nil {
-		return "", false
-	}
-	code := readiness.Checks.Runtime.Code
-	if readiness.Checks.Runtime.State != ReadinessFail || code == "" {
-		return "", false
-	}
-	if gapCodeIsExecutablePrepareCompiler(code) {
-		return "", false
-	}
-	return code, true
-}
-
-func prepareCompilerNextAction(readiness *ReadinessResult) (ReadinessNextAction, bool) {
-	if readiness == nil {
-		return ReadinessNextAction{}, false
-	}
-	for _, action := range readiness.NextActions {
-		if action.Kind == nextActionKindPrepareCompiler {
-			return action, true
-		}
-	}
-	return ReadinessNextAction{}, false
-}
 
 // miseSetupChoicesForReadiness reuses checkPolicy exactly the way
 // CheckProjectReadiness itself derives roots -- never a second, independent
 // notion of "roots".
-func miseSetupChoicesForReadiness(dir, revision, configPath string) []ReadinessMiseChoice {
-	policyPath := configPath
-	if policyPath == "" {
-		policyPath = defaultProjectConfigPath
-	}
-	_, roots, err := checkPolicy(dir, revision, policyPath)
-	if err != nil {
-		return nil
-	}
-	return evaluateMiseSetupChoices(dir, roots)
-}
 
 // miseChoicesForPrepareCompiler names which of mise_project/mise_global are
 // genuinely offered for action, consuming rather than re-deriving
@@ -234,32 +198,11 @@ func miseSetupChoicesForReadiness(dir, revision, configPath string) []ReadinessM
 // makes) when it did not -- action.Choices is nil exactly when no adapter
 // rejection has restricted it yet, not when nothing is offered (see
 // restrictPrepareCompilerChoices' own contract).
-func miseChoicesForPrepareCompiler(dir, revision, configPath string, action ReadinessNextAction) []string {
-	if action.Choices != nil {
-		return filterMiseChoiceKinds(action.Choices)
-	}
-	var offered []string
-	for _, choice := range miseSetupChoicesForReadiness(dir, revision, configPath) {
-		if choice.Verified {
-			offered = append(offered, choice.Kind)
-		}
-	}
-	return offered
-}
 
 // filterMiseChoiceKinds keeps only the mise origins this flow handles.
 // action.Choices may also name a project-package-manager choice from a
 // sibling task; that choice is a different installation-choice kind
 // entirely, not this flow's concern.
-func filterMiseChoiceKinds(choices []string) []string {
-	var mise []string
-	for _, choice := range choices {
-		if choice == compilerOriginMiseProject || choice == compilerOriginMiseGlobal {
-			mise = append(mise, choice)
-		}
-	}
-	return mise
-}
 
 func runSelectedMiseInstall(ctx context.Context, choice, worktreeRoot, version string) miseInstallResult {
 	switch choice {
@@ -276,25 +219,6 @@ func runSelectedMiseInstall(ctx context.Context, choice, worktreeRoot, version s
 // exact name, or "cancel". There is no numbered/default selection: an
 // unrecognized or blank answer cancels rather than falling back to any
 // choice, including when only one is offered.
-func promptForMiseSetupChoice(out io.Writer, reader *bufio.Reader, choices []string) (choice string, cancelled bool) {
-	fmt.Fprintln(out, "TypeScript compiler setup: the following mise installation choices are executable and verified in this environment:")
-	for _, c := range choices {
-		fmt.Fprintf(out, "  - %s\n", c)
-	}
-	fmt.Fprintln(out, "Type the exact choice name to select it, or 'cancel' to cancel without making any change. There is no default: an unrecognized or blank answer cancels.")
-	fmt.Fprint(out, "> ")
-	answer, unreadable := readLine(reader)
-	if unreadable {
-		return "", true
-	}
-	answer = strings.TrimSpace(answer)
-	for _, c := range choices {
-		if answer == c {
-			return c, false
-		}
-	}
-	return "", true
-}
 
 // printMisePreparePreview prints the preview: executable, arguments, working
 // directory, expected mise changes, network use, lifecycle-script policy,

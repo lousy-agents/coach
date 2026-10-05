@@ -45,24 +45,15 @@ type gtsLanguage struct {
 	forestOnce sync.Once
 }
 
-func (l *gtsLanguage) lang() *gotreesitter.Language {
-	lang := l.entry.Language()
-	if l.wantsForest {
-		l.forestOnce.Do(func() {
-			// gotreesitter's plain parse path misparses plain-identifier
-			// default parameters (e.g. `function f(x = 1) {}`) and
-			// array-destructuring defaults (e.g. `const [a = 2] = z;`) as
-			// syntax errors. WantsForest is gotreesitter's own documented
-			// opt-in (see gotreesitter's language.go) that routes parsing
-			// through its GSS-forest GLR path, which handles these shapes
-			// correctly and falls back to the existing parser automatically
-			// on any forest failure or error node, so it's a strict
-			// improvement with no regression risk.
-			lang.WantsForest = true
-		})
-	}
-	return lang
-}
+// gotreesitter's plain parse path misparses plain-identifier
+// default parameters (e.g. `function f(x = 1) {}`) and
+// array-destructuring defaults (e.g. `const [a = 2] = z;`) as
+// syntax errors. WantsForest is gotreesitter's own documented
+// opt-in (see gotreesitter's language.go) that routes parsing
+// through its GSS-forest GLR path, which handles these shapes
+// correctly and falls back to the existing parser automatically
+// on any forest failure or error node, so it's a strict
+// improvement with no regression risk.
 
 func (l *gtsLanguage) NewParser() (Parser, error) {
 	return &gtsParser{entry: l.entry, lang: l.lang()}, nil
@@ -160,14 +151,6 @@ func (n *gtsNode) ChildByFieldName(name string) Node {
 		return nil
 	}
 	return &gtsNode{n: c, lang: n.lang}
-}
-
-func (n *gtsNode) Parent() Node {
-	p := n.n.Parent()
-	if p == nil {
-		return nil
-	}
-	return &gtsNode{n: p, lang: n.lang}
 }
 
 func (n *gtsNode) StartPoint() (row, col uint) {

@@ -2,12 +2,6 @@ package main
 
 import (
 	"context"
-	"go/parser"
-	"go/token"
-	"os"
-	"path/filepath"
-	"runtime"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -97,34 +91,7 @@ var _ = Describe("cmd/coach-worker composition", func() {
 
 	When("inspecting cmd/coach-worker production source imports", func() {
 		It("does not import Redis/SQS clients outside the queue adapter package path", func() {
-			// Composition root may import redisstream (adapter); it must not
-			// reach for go-redis / aws-sdk directly.
-			_, thisFile, _, ok := runtime.Caller(0)
-			Expect(ok).To(BeTrue())
-			dir := filepath.Dir(thisFile)
-
-			bannedDirect := []string{
-				"github.com/redis/go-redis",
-				"github.com/aws/aws-sdk-go",
-				"github.com/aws/aws-sdk-go-v2",
-			}
-			fset := token.NewFileSet()
-			entries, err := os.ReadDir(dir)
-			Expect(err).NotTo(HaveOccurred())
-			for _, e := range entries {
-				if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
-					continue
-				}
-				path := filepath.Join(dir, e.Name())
-				f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
-				Expect(err).NotTo(HaveOccurred(), path)
-				for _, imp := range f.Imports {
-					p := strings.Trim(imp.Path.Value, `"`)
-					for _, b := range bannedDirect {
-						Expect(p).NotTo(HavePrefix(b), "%s must not import %s directly", e.Name(), b)
-					}
-				}
-			}
+			body_mainAcceptanceTest_doesNotImportRedisSQSClientsOutsideTheQueueAdapt_99()
 		})
 	})
 })

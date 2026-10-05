@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+
 	"io"
 	"net/http"
 )
@@ -99,31 +99,4 @@ func (c *OpenAICompatClient) newChatCompletionsRequest(ctx context.Context, body
 	return httpReq, nil
 }
 
-func (c *OpenAICompatClient) applyAuthHeaders(httpReq *http.Request) {
-	if c.authHeader != "" {
-		httpReq.Header.Set("Authorization", c.authHeader)
-		return
-	}
-	if c.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-}
-
-func classifyUpstreamStatus(status int) error {
-	if status >= 200 && status < 300 {
-		return nil
-	}
-	// 5xx, 408, 429, and other non-2xx are unavailability of inference for callers.
-	return NewUnavailableError(fmt.Sprintf("upstream HTTP %d", status), nil)
-}
-
-func parseChatCompletionBody(respBody []byte) (servedModel, content string, err error) {
-	var parsed chatCompletionResponse
-	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return "", "", NewUnavailableError("decode upstream response", err)
-	}
-	if len(parsed.Choices) == 0 {
-		return "", "", NewUnavailableError("upstream response missing choices", nil)
-	}
-	return parsed.Model, parsed.Choices[0].Message.Content, nil
-}
+// 5xx, 408, 429, and other non-2xx are unavailability of inference for callers.

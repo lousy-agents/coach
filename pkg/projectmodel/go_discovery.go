@@ -3,7 +3,7 @@ package projectmodel
 import (
 	"io/fs"
 	"path"
-	"sort"
+
 	"strings"
 	"time"
 
@@ -40,43 +40,12 @@ type goProjectDiscovery struct {
 // can't. It never returns an error: unreadable snapshots and truncated
 // walks are reported through Diagnostics/Complete instead, matching
 // DiscoverGoRoots' fail-open-with-diagnostics contract.
-func discoverGoProject(snapshot fs.FS, budgets GoBudgets) *goProjectDiscovery {
-	d := &goProjectDiscovery{
-		Workspaces: map[string]*modfile.WorkFile{},
-		Modules:    map[string]*modfile.File{},
-		Complete:   true,
-	}
 
-	walkErr := fs.WalkDir(snapshot, ".", func(p string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return d.handleWalkError(p)
-		}
-		if entry.IsDir() {
-			return d.visitDiscoveryDir(p)
-		}
-		return d.visitDiscoveryFile(snapshot, p, budgets)
-	})
-	_ = walkErr // walkFn only ever returns nil or fs.SkipAll, so WalkDir never propagates an error here.
-
-	if d.truncated {
-		d.Complete = false
-		d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagRootIncomplete})
-	}
-
-	return d
-}
+// walkFn only ever returns nil or fs.SkipAll, so WalkDir never propagates an error here.
 
 // handleWalkError applies DiscoverGoRoots' fail-open walk-error policy:
 // a failure at the snapshot root is DiagRootUnavailable + SkipAll; any
 // other unreadable subtree is skipped so the rest of the walk continues.
-func (d *goProjectDiscovery) handleWalkError(p string) error {
-	if p == "." {
-		d.Complete = false
-		d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagRootUnavailable, Path: "."})
-		return fs.SkipAll
-	}
-	return nil
-}
 
 func (d *goProjectDiscovery) visitDiscoveryDir(p string) error {
 	if shouldSkipDiscoveryDir(p) {
@@ -125,38 +94,11 @@ func (d *goProjectDiscovery) visitDiscoveryFile(snapshot fs.FS, p string, budget
 // shouldSkipDiscoveryDir reports whether the walk should prune the directory
 // at p: testdata/vendor fixtures and dot-prefixed directories (e.g. .git)
 // never contain go.mod/go.work files relevant to root discovery.
-func shouldSkipDiscoveryDir(p string) bool {
-	if p == "." {
-		return false
-	}
-	base := path.Base(p)
-	return base == "testdata" || base == "vendor" || strings.HasPrefix(base, ".")
-}
 
 // recordGoFile parses the go.mod/go.work file already read at p (data) and
 // records the successful module/workspace, or a DiagRootInvalid diagnostic
 // on parse failure. base must be "go.mod" or "go.work"; any other value is a
 // no-op, since the caller only invokes this after that check.
-func (d *goProjectDiscovery) recordGoFile(p, base string, data []byte) {
-	dir := path.Dir(p)
-	switch base {
-	case "go.mod":
-		mf, parseErr := modfile.Parse(p, data, nil)
-		if parseErr != nil {
-			d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagRootInvalid, Path: p, Message: parseErr.Error()})
-			d.ModulesSkipped++
-			return
-		}
-		d.Modules[dir] = mf
-	case "go.work":
-		wf, parseErr := modfile.ParseWork(p, data, nil)
-		if parseErr != nil {
-			d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagRootInvalid, Path: p, Message: parseErr.Error()})
-			return
-		}
-		d.Workspaces[dir] = wf
-	}
-}
 
 // resolveUseDirectives walks every discovered go.work's use directives in
 // deterministic (sorted-by-directory) order, resolving each entry relative
@@ -180,13 +122,6 @@ type useDirectiveResolution struct {
 	diagnostics     []Diagnostic
 	validWorkspaces map[string]bool
 	ambiguousSeen   map[string]bool
-}
-
-func (r *useDirectiveResolution) resolveWorkspace(d *goProjectDiscovery, w string) {
-	ws := workspaceUseResolution{useDirectiveResolution: r, seen: map[string]bool{}}
-	for _, use := range d.Workspaces[w].Use {
-		ws.resolveUse(d, w, use.Path)
-	}
 }
 
 type workspaceUseResolution struct {
@@ -215,21 +150,6 @@ func (ws *workspaceUseResolution) resolveUse(d *goProjectDiscovery, w, usePath s
 
 // roots returns the deduplicated, sorted set of every module directory plus
 // every workspace directory in validWorkspaces (see resolveUseDirectives).
-func (d *goProjectDiscovery) roots(validWorkspaces map[string]bool) []string {
-	seen := make(map[string]bool, len(d.Modules)+len(validWorkspaces))
-	for dir := range d.Modules {
-		seen[dir] = true
-	}
-	for dir := range validWorkspaces {
-		seen[dir] = true
-	}
-	out := make([]string, 0, len(seen))
-	for dir := range seen {
-		out = append(out, dir)
-	}
-	sort.Strings(out)
-	return out
-}
 
 // EffectiveGoBudgets renders b as the frozen budgets map vocabulary shared
 // by RootDiscoveryResult.Coverage.Budgets, Model.Coverage.Budgets,
@@ -254,13 +174,4 @@ func EffectiveGoBudgets(b GoBudgets) map[string]int {
 		"working_set_bytes": int(b.MaxWorkingSetBytes),
 		"stderr_bytes":      0,
 	}
-}
-
-func mapKeysSorted[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

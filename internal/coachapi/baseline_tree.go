@@ -3,7 +3,7 @@ package coachapi
 import (
 	"context"
 	"fmt"
-	"io/fs"
+
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,52 +22,6 @@ type GitHubBaselineTreeSource struct {
 	Reader *githubingest.GitHubFileReader
 }
 
-func (s *GitHubBaselineTreeSource) ResolveCommitSHA(ctx context.Context, owner, repo, ref string) (string, error) {
-	if s == nil || s.Reader == nil {
-		return "", fmt.Errorf("coachapi: GitHub tree source is not configured")
-	}
-	return s.Reader.ResolveCommitSHA(ctx, owner, repo, ref)
-}
-
-func (s *GitHubBaselineTreeSource) ListFiles(ctx context.Context, owner, repo, ref string, opts BaselineListOptions) ([]BaselineFileEntry, error) {
-	if s == nil || s.Reader == nil {
-		return nil, fmt.Errorf("coachapi: GitHub tree source is not configured")
-	}
-	entries, err := s.Reader.ListFiles(ctx, githubingest.GitHubTreeRef{
-		Owner: owner,
-		Repo:  repo,
-		Ref:   ref,
-	}, githubingest.TreeListOptions{
-		Filter:        supportedBaselinePath,
-		MaxFiles:      opts.MaxFiles,
-		MaxTotalBytes: opts.MaxTotalBytes,
-	})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]BaselineFileEntry, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, BaselineFileEntry{Path: e.Path, SHA: e.SHA, Size: e.Size})
-	}
-	return out, nil
-}
-
-func (s *GitHubBaselineTreeSource) ReadFile(ctx context.Context, owner, repo, ref, path string) ([]byte, string, error) {
-	if s == nil || s.Reader == nil {
-		return nil, "", fmt.Errorf("coachapi: GitHub tree source is not configured")
-	}
-	content, meta, err := s.Reader.ReadFile(ctx, githubingest.GitHubFileRef{
-		Owner: owner,
-		Repo:  repo,
-		Ref:   ref,
-		Path:  path,
-	})
-	if err != nil {
-		return nil, "", err
-	}
-	return content, meta.SHA, nil
-}
-
 // ResolvingGitHubBaselineTreeSource builds a Contents-API reader per owner/repo
 // via CredentialResolver (ResolveInstallationID → InstallationToken →
 // NewGitHubFileReaderFromToken). InstallationID, when non-zero, skips resolution
@@ -78,89 +32,12 @@ type ResolvingGitHubBaselineTreeSource struct {
 	InstallationID int64 // optional; zero means resolve per repo
 }
 
-func (s *ResolvingGitHubBaselineTreeSource) readerFor(ctx context.Context, owner, repo string) (*githubingest.GitHubFileReader, error) {
-	if s == nil || s.Credentials == nil {
-		return nil, fmt.Errorf("coachapi: resolving GitHub tree source is not configured")
-	}
-	installationID := s.InstallationID
-	if installationID == 0 {
-		id, err := s.Credentials.ResolveInstallationID(ctx, owner, repo)
-		if err != nil {
-			return nil, err
-		}
-		installationID = id
-	}
-	token, err := s.Credentials.InstallationToken(ctx, installationID)
-	if err != nil {
-		return nil, err
-	}
-	return githubingest.NewGitHubFileReaderFromToken(token, s.BaseURL)
-}
-
-func (s *ResolvingGitHubBaselineTreeSource) ResolveCommitSHA(ctx context.Context, owner, repo, ref string) (string, error) {
-	reader, err := s.readerFor(ctx, owner, repo)
-	if err != nil {
-		return "", err
-	}
-	return (&GitHubBaselineTreeSource{Reader: reader}).ResolveCommitSHA(ctx, owner, repo, ref)
-}
-
-func (s *ResolvingGitHubBaselineTreeSource) ListFiles(ctx context.Context, owner, repo, ref string, opts BaselineListOptions) ([]BaselineFileEntry, error) {
-	reader, err := s.readerFor(ctx, owner, repo)
-	if err != nil {
-		return nil, err
-	}
-	return (&GitHubBaselineTreeSource{Reader: reader}).ListFiles(ctx, owner, repo, ref, opts)
-}
-
-func (s *ResolvingGitHubBaselineTreeSource) ReadFile(ctx context.Context, owner, repo, ref, path string) ([]byte, string, error) {
-	reader, err := s.readerFor(ctx, owner, repo)
-	if err != nil {
-		return nil, "", err
-	}
-	return (&GitHubBaselineTreeSource{Reader: reader}).ReadFile(ctx, owner, repo, ref, path)
-}
-
 // LocalFixtureTreeSource walks an operator-configured directory tree.
 // owner/repo/ref are ignored; the fixture root is the sole content source.
 // Supported-language files under top-level dot paths (e.g. .github/) are kept
 // for parity with GitHub Contents.
 type LocalFixtureTreeSource struct {
 	Root string
-}
-
-func (s *LocalFixtureTreeSource) ResolveCommitSHA(_ context.Context, _, _, _ string) (string, error) {
-	if s == nil || s.Root == "" {
-		return "", fmt.Errorf("coachapi: local fixture path is not configured")
-	}
-	return localFixtureCommitSHA, nil
-}
-
-func (s *LocalFixtureTreeSource) ListFiles(_ context.Context, _, _, _ string, opts BaselineListOptions) ([]BaselineFileEntry, error) {
-	if s == nil || s.Root == "" {
-		return nil, fmt.Errorf("coachapi: local fixture path is not configured")
-	}
-	root, err := filepath.Abs(s.Root)
-	if err != nil {
-		return nil, fmt.Errorf("coachapi: resolving smoke fixture path: %w", err)
-	}
-	info, err := os.Stat(root)
-	if err != nil {
-		return nil, fmt.Errorf("coachapi: smoke fixture path %q: %w", root, err)
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("coachapi: smoke fixture path %q is not a directory", root)
-	}
-
-	walker := &localFixtureTreeWalker{root: root, opts: opts}
-	if err := filepath.WalkDir(root, walker.visit); err != nil {
-		return nil, err
-	}
-	out := walker.out
-	if out == nil {
-		out = []BaselineFileEntry{}
-	}
-	return out, nil
 }
 
 // localFixtureTreeWalker accumulates BaselineFileEntry rows across one
@@ -174,44 +51,7 @@ type localFixtureTreeWalker struct {
 	totalBytes int64
 }
 
-func (w *localFixtureTreeWalker) visit(path string, d fs.DirEntry, walkErr error) error {
-	if walkErr != nil {
-		return walkErr
-	}
-	// Do not follow symlinks (githubingest Contents parity; blocks root escape).
-	if d.Type()&fs.ModeSymlink != 0 {
-		return nil
-	}
-	if d.IsDir() {
-		return nil
-	}
-	rel, err := filepath.Rel(w.root, path)
-	if err != nil {
-		return err
-	}
-	rel = filepath.ToSlash(rel)
-	if !supportedBaselinePath(rel) {
-		return nil
-	}
-	fi, err := d.Info()
-	if err != nil {
-		return err
-	}
-	if !fi.Mode().IsRegular() {
-		return nil
-	}
-	size := int(fi.Size())
-	if w.opts.MaxFiles > 0 && len(w.out)+1 > w.opts.MaxFiles {
-		return fmt.Errorf("coachapi: local fixture tree exceeds the configured file-count budget of %d: %w", w.opts.MaxFiles, githubingest.ErrTooLarge)
-	}
-	newTotal := w.totalBytes + int64(size)
-	if w.opts.MaxTotalBytes > 0 && newTotal > w.opts.MaxTotalBytes {
-		return fmt.Errorf("coachapi: local fixture tree exceeds the configured byte budget of %d bytes: %w", w.opts.MaxTotalBytes, githubingest.ErrTooLarge)
-	}
-	w.totalBytes = newTotal
-	w.out = append(w.out, BaselineFileEntry{Path: rel, Size: size})
-	return nil
-}
+// Do not follow symlinks (githubingest Contents parity; blocks root escape).
 
 func (s *LocalFixtureTreeSource) ReadFile(_ context.Context, _, _, _, path string) ([]byte, string, error) {
 	if s == nil || s.Root == "" {

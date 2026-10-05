@@ -22,15 +22,19 @@ func deepRelativeImportDepth(path string) (depth int, isRelative bool) {
 
 	start := 0
 	for i := 0; i <= len(path); i++ {
-		if i == len(path) || path[i] == '/' {
-			segment := path[start:i]
-			if segment == ".." {
-				depth++
-			}
-			start = i + 1
-		}
+		start, depth = noteDotDotSegment(path, start, i, depth)
 	}
 	return depth, true
+}
+
+func noteDotDotSegment(path string, start, i, depth int) (int, int) {
+	if i == len(path) || path[i] == '/' {
+		if path[start:i] == ".." {
+			depth++
+		}
+		return i + 1, depth
+	}
+	return start, depth
 }
 
 // signalsFromImports maps one side's imports to Signals, restricted to

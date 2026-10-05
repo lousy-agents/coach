@@ -33,68 +33,6 @@ const (
 	serverTestSecret = "test-signing-secret-at-least-32-bytes!!"
 )
 
-func serverFixedNow(t time.Time) func() time.Time {
-	return func() time.Time { return t }
-}
-
-func newAuthnServiceForServer(opts authn.Options) *authn.Service {
-	if opts.SigningKey == nil {
-		opts.SigningKey = []byte(serverTestSecret)
-	}
-	if opts.Issuer == "" {
-		opts.Issuer = serverTestIssuer
-	}
-	if opts.TokenTTL == 0 {
-		opts.TokenTTL = time.Hour
-	}
-	if opts.Now == nil {
-		opts.Now = serverFixedNow(time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC))
-	}
-	if opts.Denylist == nil {
-		opts.Denylist = authn.NewMemoryDenylist()
-	}
-	svc, err := authn.New(opts)
-	Expect(err).NotTo(HaveOccurred())
-	return svc
-}
-
-func mustIssueToken(svc *authn.Service, p coachapi.Principal) string {
-	tok, err := svc.Issue(context.Background(), p)
-	Expect(err).NotTo(HaveOccurred())
-	return tok
-}
-
-func decodeServerEnvelope(body []byte) coachapi.ErrorEnvelope {
-	var env coachapi.ErrorEnvelope
-	Expect(json.Unmarshal(body, &env)).To(Succeed(), "body=%s", body)
-	return env
-}
-
-func doServerReq(h http.Handler, method, path, bearer string, body []byte) (int, []byte) {
-	var rdr io.Reader
-	if body != nil {
-		rdr = bytes.NewReader(body)
-	}
-	req := httptest.NewRequest(method, path, rdr)
-	if bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	return rec.Code, rec.Body.Bytes()
-}
-
-func expectEnvelope(code int, body []byte, wantStatus int, wantCode string) coachapi.ErrorEnvelope {
-	Expect(code).To(Equal(wantStatus), "body=%s", body)
-	env := decodeServerEnvelope(body)
-	Expect(env.Error.Code).To(Equal(wantCode))
-	Expect(strings.TrimSpace(env.Error.Message)).NotTo(BeEmpty())
-	return env
-}
-
 // stubRepoAuthorizer records every Authorize call and returns a configured
 // error (or nil) for every call.
 type stubRepoAuthorizer struct {
@@ -105,19 +43,6 @@ type stubRepoAuthorizer struct {
 
 type stubAuthorizeCall struct {
 	login, owner, repo string
-}
-
-func (s *stubRepoAuthorizer) Authorize(_ context.Context, login, owner, repo string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.calls = append(s.calls, stubAuthorizeCall{login: login, owner: owner, repo: repo})
-	return s.err
-}
-
-func (s *stubRepoAuthorizer) callCount() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return len(s.calls)
 }
 
 var _ authz.RepoAuthorizer = (*stubRepoAuthorizer)(nil)
@@ -131,32 +56,6 @@ type stubTaskQueue struct {
 	enqueued   []queue.Task
 }
 
-func (q *stubTaskQueue) Enqueue(_ context.Context, task queue.Task) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.enqueueErr != nil {
-		return q.enqueueErr
-	}
-	q.enqueued = append(q.enqueued, task)
-	return nil
-}
-
-func (q *stubTaskQueue) Claim(context.Context) (queue.Claim, bool, error) {
-	return queue.Claim{}, false, nil
-}
-
-func (q *stubTaskQueue) Complete(context.Context, queue.Claim) error { return nil }
-
-func (q *stubTaskQueue) Nack(context.Context, queue.Claim, bool) error { return nil }
-
-func (q *stubTaskQueue) enqueuedTasks() []queue.Task {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	out := make([]queue.Task, len(q.enqueued))
-	copy(out, q.enqueued)
-	return out
-}
-
 var _ queue.TaskQueue = (*stubTaskQueue)(nil)
 
 // spyJobStore wraps a MemoryStore and counts CreateJob invocations so tests
@@ -165,55 +64,6 @@ type spyJobStore struct {
 	*coachapi.MemoryStore
 	mu          sync.Mutex
 	createCalls int
-}
-
-func newSpyJobStore() *spyJobStore {
-	return &spyJobStore{MemoryStore: coachapi.NewMemoryStore()}
-}
-
-func (s *spyJobStore) CreateJob(ctx context.Context, job coachapi.Job) error {
-	s.mu.Lock()
-	s.createCalls++
-	s.mu.Unlock()
-	return s.MemoryStore.CreateJob(ctx, job)
-}
-
-func (s *spyJobStore) createJobCalls() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.createCalls
-}
-
-func sequentialJobIDs(prefix string) func() string {
-	n := 0
-	return func() string {
-		n++
-		return fmt.Sprintf("%s-%d", prefix, n)
-	}
-}
-
-func principalAlice() coachapi.Principal {
-	return coachapi.Principal{Provider: "github", Subject: "1001", Login: "alice"}
-}
-
-func principalBob() coachapi.Principal {
-	return coachapi.Principal{Provider: "github", Subject: "2002", Login: "bob"}
-}
-
-func validRepoBaselineScanBody() []byte {
-	return []byte(`{"kind":"repo_baseline_scan","params":{"repo_owner":"acme","repo_name":"widgets"}}`)
-}
-
-func newTestServer(store coachapi.JobStore, az authz.RepoAuthorizer, q queue.TaskQueue, now func() time.Time, newJobID func() string) *coachapi.Server {
-	srv, err := coachapi.NewServer(coachapi.ServerConfig{
-		Store:      store,
-		Authorizer: az,
-		Queue:      q,
-		Now:        now,
-		NewJobID:   newJobID,
-	})
-	Expect(err).NotTo(HaveOccurred())
-	return srv
 }
 
 var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}, GET /v1/jobs/{id}/report)", func() {
@@ -241,8 +91,6 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 			Expect(json.Unmarshal(body, &created)).To(Succeed())
 			Expect(created.ID).NotTo(BeEmpty())
 
-			// Story 1 / #103: created_by_* must come from the authenticated
-			// principal at submit — not defaults, not request body fields.
 			job, err := store.GetJob(context.Background(), created.ID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(job.CreatedByProvider).To(Equal(owner.Provider), "created_by_provider must equal principal.provider")
@@ -280,8 +128,7 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 			h := authnSvc.Middleware(srv.Handler())
 
 			tok := mustIssueToken(authnSvc, principalAlice())
-			// Padded identifiers authorize as acme/widgets; the worker must
-			// receive the same canonical pair, not the raw padded JSON.
+
 			paddedBody := []byte(`{"kind":"repo_baseline_scan","params":{"repo_owner":" acme ","repo_name":" widgets ","ref":"main"}}`)
 			code, body := doServerReq(h, http.MethodPost, "/v1/jobs", tok, paddedBody)
 			Expect(code).To(Equal(http.StatusAccepted), "body=%s", body)
@@ -299,7 +146,7 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 			Expect(stored.RepoOwner).To(Equal("acme"), "persisted owner must match the authorized canonical owner")
 			Expect(stored.RepoName).To(Equal("widgets"), "persisted name must match the authorized canonical name")
 			Expect(stored.Ref).To(Equal("main"), "intended ref semantics must be preserved")
-			// Reject any residual padding in the raw stored JSON.
+
 			Expect(string(job.Params)).NotTo(ContainSubstring(`" acme "`))
 			Expect(string(job.Params)).NotTo(ContainSubstring(`" widgets "`))
 		})
@@ -407,7 +254,7 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 
 			code, body := doServerReq(h, http.MethodPost, "/v1/jobs", tok, validRepoBaselineScanBody())
 			env := expectEnvelope(code, body, http.StatusForbidden, coachapi.ErrorCodeRepoNotAuthorized)
-			// Story 3: pilots must not report public-repo denial as a bug.
+
 			Expect(env.Error.Message).To(ContainSubstring("no role"))
 			Expect(env.Error.Message).To(ContainSubstring("public repositories"))
 			Expect(env.Error.Message).To(ContainSubstring("deliberately denied"))
@@ -449,8 +296,7 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 
 		It("returns 403 when bypass is unconfigured and the live authorizer denies (default-off)", func() {
 			store := newSpyJobStore()
-			// No BypassAuthorizer wrapper — production-like wiring when the
-			// smoke fixture pair is not configured.
+
 			az := &stubRepoAuthorizer{err: authz.ErrNotAuthorized}
 			q := &stubTaskQueue{}
 			srv := newTestServer(store, az, q, serverFixedNow(time.Now()), sequentialJobIDs("bypass-off"))
@@ -625,7 +471,6 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 			srv := newTestServer(store, az, q, serverFixedNow(time.Now()), sequentialJobIDs("rename"))
 			h := authnSvc.Middleware(srv.Handler())
 
-			// Job was created under the old login; token now carries the new login.
 			jobID := "rename-job-1"
 			Expect(store.CreateJob(context.Background(), coachapi.Job{
 				ID: jobID, Kind: coachapi.JobKindRepoBaselineScan,
@@ -837,8 +682,7 @@ var _ = Describe("coachapi.Server HTTP surface (POST /v1/jobs, GET /v1/jobs/{id}
 		})
 
 		It("returns 503 internal_error on GET report when GetJob succeeds but GetReport fails", func() {
-			// Ownership and completed status pass; only report assembly fails.
-			// Must not collapse into 404 job_not_found or leak as a bare 500.
+
 			mem := coachapi.NewMemoryStore()
 			owner := principalAlice()
 			jobID := "store-report-fail-1"
@@ -876,6 +720,50 @@ type errJobStore struct {
 	reportErr error
 }
 
+// serverErrDenylist always returns a store error from IsRevoked (fail-closed path).
+type serverErrDenylist struct {
+	err error
+	mu  sync.Mutex
+}
+
+func newAuthnServiceForServer(opts authn.Options) *authn.Service {
+	if opts.SigningKey == nil {
+		opts.SigningKey = []byte(serverTestSecret)
+	}
+	if opts.Issuer == "" {
+		opts.Issuer = serverTestIssuer
+	}
+	if opts.TokenTTL == 0 {
+		opts.TokenTTL = time.Hour
+	}
+	if opts.Now == nil {
+		opts.Now = serverFixedNow(time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC))
+	}
+	if opts.Denylist == nil {
+		opts.Denylist = authn.NewMemoryDenylist()
+	}
+	svc, err := authn.New(opts)
+	Expect(err).NotTo(HaveOccurred())
+	return svc
+}
+
+func doServerReq(h http.Handler, method, path, bearer string, body []byte) (int, []byte) {
+	var rdr io.Reader
+	if body != nil {
+		rdr = bytes.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, rdr)
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec.Code, rec.Body.Bytes()
+}
+
 func (s *errJobStore) CreateJob(ctx context.Context, job coachapi.Job) error {
 	if s.createErr != nil {
 		return s.createErr
@@ -886,44 +774,100 @@ func (s *errJobStore) CreateJob(ctx context.Context, job coachapi.Job) error {
 	return s.MemoryStore.CreateJob(ctx, job)
 }
 
-func (s *errJobStore) GetJob(ctx context.Context, id string) (coachapi.Job, error) {
-	if s.getErr != nil {
-		return coachapi.Job{}, s.getErr
+func (q *stubTaskQueue) Enqueue(_ context.Context, task queue.Task) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.enqueueErr != nil {
+		return q.enqueueErr
 	}
-	if s.MemoryStore == nil {
-		return coachapi.Job{}, errors.New("errJobStore: no backing MemoryStore for GetJob")
-	}
-	return s.MemoryStore.GetJob(ctx, id)
+	q.enqueued = append(q.enqueued, task)
+	return nil
 }
 
-func (s *errJobStore) GetReport(ctx context.Context, id string) (coachapi.Report, error) {
-	if s.reportErr != nil {
-		return coachapi.Report{}, s.reportErr
-	}
-	if s.MemoryStore == nil {
-		return coachapi.Report{}, errors.New("errJobStore: no backing MemoryStore for GetReport")
-	}
-	return s.MemoryStore.GetReport(ctx, id)
+func serverFixedNow(t time.Time) func() time.Time {
+	return func() time.Time { return t }
 }
 
-func (s *errJobStore) RecordCompletion(ctx context.Context, jobID string, completion coachapi.Completion) error {
-	if s.MemoryStore == nil {
-		return errors.New("errJobStore: no backing MemoryStore for RecordCompletion")
-	}
-	return s.MemoryStore.RecordCompletion(ctx, jobID, completion)
+func mustIssueToken(svc *authn.Service, p coachapi.Principal) string {
+	tok, err := svc.Issue(context.Background(), p)
+	Expect(err).NotTo(HaveOccurred())
+	return tok
 }
 
-func (s *errJobStore) RecordFailure(ctx context.Context, jobID string, errMsg string, finishedAt time.Time) error {
-	if s.MemoryStore == nil {
-		return errors.New("errJobStore: no backing MemoryStore for RecordFailure")
-	}
-	return s.MemoryStore.RecordFailure(ctx, jobID, errMsg, finishedAt)
+func decodeServerEnvelope(body []byte) coachapi.ErrorEnvelope {
+	var env coachapi.ErrorEnvelope
+	Expect(json.Unmarshal(body, &env)).To(Succeed(), "body=%s", body)
+	return env
 }
 
-// serverErrDenylist always returns a store error from IsRevoked (fail-closed path).
-type serverErrDenylist struct {
-	err error
-	mu  sync.Mutex
+func expectEnvelope(code int, body []byte, wantStatus int, wantCode string) coachapi.ErrorEnvelope {
+	Expect(code).To(Equal(wantStatus), "body=%s", body)
+	env := decodeServerEnvelope(body)
+	Expect(env.Error.Code).To(Equal(wantCode))
+	Expect(strings.TrimSpace(env.Error.Message)).NotTo(BeEmpty())
+	return env
+}
+
+func (s *stubRepoAuthorizer) Authorize(_ context.Context, login, owner, repo string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, stubAuthorizeCall{login: login, owner: owner, repo: repo})
+	return s.err
+}
+
+func (s *stubRepoAuthorizer) callCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.calls)
+}
+
+func (q *stubTaskQueue) Claim(context.Context) (queue.Claim, bool, error) {
+	return queue.Claim{}, false, nil
+}
+
+func (q *stubTaskQueue) Complete(context.Context, queue.Claim) error { return nil }
+
+func (q *stubTaskQueue) Nack(context.Context, queue.Claim, bool) error { return nil }
+
+func (q *stubTaskQueue) enqueuedTasks() []queue.Task {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	out := make([]queue.Task, len(q.enqueued))
+	copy(out, q.enqueued)
+	return out
+}
+
+func (s *spyJobStore) CreateJob(ctx context.Context, job coachapi.Job) error {
+	s.mu.Lock()
+	s.createCalls++
+	s.mu.Unlock()
+	return s.MemoryStore.CreateJob(ctx, job)
+}
+
+func (s *spyJobStore) createJobCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.createCalls
+}
+
+func sequentialJobIDs(prefix string) func() string {
+	n := 0
+	return func() string {
+		n++
+		return fmt.Sprintf("%s-%d", prefix, n)
+	}
+}
+
+func principalAlice() coachapi.Principal {
+	return coachapi.Principal{Provider: "github", Subject: "1001", Login: "alice"}
+}
+
+func principalBob() coachapi.Principal {
+	return coachapi.Principal{Provider: "github", Subject: "2002", Login: "bob"}
+}
+
+func validRepoBaselineScanBody() []byte {
+	return []byte(`{"kind":"repo_baseline_scan","params":{"repo_owner":"acme","repo_name":"widgets"}}`)
 }
 
 func (e *serverErrDenylist) IsRevoked(context.Context, string) (bool, error) {
