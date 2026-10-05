@@ -24,9 +24,9 @@ Tags: `[O55 § H]` is the Opus 5.5 guide under heading H, and `[O55 <page> § H]
 - Model is Claude Opus 5.5. Adaptive thinking is always on and cannot be disabled [O55 What's new § Thinking can't be disabled]. Effort defaults to `medium` in Claude Code and on the API [O55 § Calibrate effort] [CC model-config]; when effort is undisclosed, score C4 against `medium` and record `effort: undisclosed`.
 - Assistant prefill, non-default sampling, `budget_tokens`, disabled thinking, and forced `tool_choice` are rejected with a 400 [O55 Thinking § Limits and feature compatibility] [O55 What's new § Breaking changes].
 - Safety classifiers cover cybersecurity, biology and reasoning extraction; a decline is `stop_reason: "refusal"` [O55 § Safeguard refusals].
-- Claude Code loads `CLAUDE.md` automatically and provides file read/edit, shell, search, web fetch and subagent tools. Context window is 1M tokens.
+- When the profiled harness is Claude Code, it loads `CLAUDE.md` automatically and provides file read/edit, shell, search, web fetch and subagent tools. Context window is 1M tokens.
 - Tokenizer ratio versus earlier models: `undisclosed`. Whether the user sees tool output: `undisclosed`.
-- If the profiled harness is not Claude Code, judge G3 against that harness. In a harness with no repository or workspace (direct chat, including claude.ai with web or code-execution tools), C5 is N/A and C6 accepts an observable result in place of a command.
+- If the profiled harness is not Claude Code, judge G3 against that harness. In a harness with no repository or workspace (direct chat, including claude.ai with web or code-execution tools), C5 is N/A and C6 accepts an observable result in place of a command. If the harness is undisclosed, judge G3 capability-neutral and mark C5 N/A.
 
 ---
 
@@ -58,7 +58,7 @@ Tags: `[O55 § H]` is the Opus 5.5 guide under heading H, and `[O55 <page> § H]
 | **G1 Rejected-control dependency** | relies on a pre-seeded assistant turn, a temperature/top_p setting, a thinking budget, "thinking off", or a forced tool choice to get its result | Each is a 400 on Opus 5.5. Replace with a direct instruction; to get a tool call, "say in the prompt when the tool applies". `[O55 What's new § Forced tool use is not supported]` `[O55 Thinking § Response prefill and forced tool use]` |
 | **G2 Reasoning written into the response** | asks for the model's thinking or reasoning in the reply, verbatim or in a fixed format: a `<thinking>`/`<reasoning>` section, a reasoning field in JSON, a running log of its reasoning, "show your reasoning" | May be declined as `reasoning_extraction`, which has no fallback. A short explanation of the answer or a summary of actions taken is fine. `[O55 § Safeguard refusals]` `[O5 § Reasoning in the response]` |
 | **G3 Invented capability** | names a tool, flag, permission, hook or syntax the harness does not expose, or assumes a capability the runtime profile doesn't confirm | An instruction the agent cannot execute produces a stall, a fabricated action, or a question back. `[gen § Tool usage]` `[prior]` |
-| **G4 Authority conflict** | tries to override `CLAUDE.md`, system or safety instructions, or grants itself permissions ("you may force-push") | A user prompt cannot outrank them; the attempt wastes tokens. `[prior]` |
+| **G4 Authority conflict** | tries to override `CLAUDE.md`, system or safety instructions, or grants itself permissions those settings withhold ("you may force-push" where pushes need approval); stating boundaries within them is C7 | A user prompt cannot outrank them; the attempt wastes tokens. `[prior]` |
 
 ---
 
@@ -140,7 +140,7 @@ Weights are relative. Conditional criteria drop out when N/A.
 
 | Score | Anchor |
 |---|---|
-| 3 | Done-check stated as an acceptance condition (a command, a grep, an observable result); says to report a wrong test rather than work around it; no added verification step. |
+| 3 | Done-check stated as an acceptance condition (a command, a grep, an observable result); where tests or golden files exist, says to report a wrong one rather than work around it; no added verification step. |
 | 2 | Acceptance check generic ("tests pass"), or one extra verification step on top of a concrete check. |
 | 1 | Verification is a ritual only ("make sure it works"), or absent where the change needs one. |
 | 0 | Stacks verifier subagents or repeated verification passes, or invites passing tests by any means. |
@@ -293,9 +293,10 @@ Inside optimize-prompt-loop the same agent judges and revises: it follows judge-
 **Stop rule** (it replaces any other pass count for this rubric loop). A *problem* is a failed gate or an applicable criterion scoring below 3. Each pass judges the current draft, checks the stop conditions, and only then revises it to fix every problem a prompt edit can fix. Stop at the first of:
 
 1. no problems remain, setting aside any gap that only the user's answer can close (record those as assumptions or the one question);
-2. five judged passes.
+2. a criterion reverses direction across passes (1 → 3 → 1): keep the shorter of the last two judged drafts and report its judged verdict;
+3. five judged passes.
 
-Return the last judged draft (except on a reversal, below); the final verdict is its band. When (2) ends the loop with problems left, report that verdict rather than continuing; a gate still failing reports `blocked`. If a criterion reverses direction across passes (1 → 3 → 1), keep the shorter of the last two judged drafts, stop, and report that draft's judged verdict.
+Otherwise return the last judged draft; the final verdict is its band. When (3) ends the loop with problems left, report that verdict rather than continuing; a gate still failing reports `blocked`.
 
 ---
 
@@ -348,8 +349,8 @@ You are scoring a prompt intended for Claude Opus 5.5 running in Claude Code. Sc
 > Output: what changed and why, in at most five lines.
 
 - G1–G4 pass; C10–C15 N/A.
-- C1 = 2 (the open invitation adds a deliverable it never names). C2 = 0 ("improve anything else … you think could be better" invites open-ended work). C7 = 2 (no stop line; stop implicit in the done condition). All others = 3.
-- Aggregate ≈ 78 → `revise`; with C2 at 1 it is ≈ 82, still `revise`. Replacing the "while you're in there" clause with "list other problems at the end rather than fixing them" fixes C1 and C2 together.
+- C1 = 3 (a judge reading the open invitation as an unnamed deliverable may give 2; the verdict does not change). C2 = 0 ("improve anything else … you think could be better" invites open-ended work). C7 = 2 (no stop line; stop implicit in the done condition). All others = 3.
+- Aggregate ≈ 83 → `revise` (≈ 78 with C1 at 2). With C2 at 1 it is ≈ 88, but a criterion ≤ 1 still gives `revise`. Replacing the "while you're in there" clause with "list other problems at the end rather than fixing them" fixes C2.
 
 ---
 
