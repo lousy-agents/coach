@@ -181,7 +181,7 @@ No other `kind` strings in v1. Generators use `function`. Class methods use `met
 
 **Recommendation**: `Extract nested branches into named helpers, replace nested conditionals with early returns or lookup tables, and simplify boolean expressions so each function stays linearly readable.`
 
-**Threshold constant** (codesignal only): `cognitiveComplexityThreshold = 15` with emission when `score >= 15`.
+**Threshold** (codesignal only): `cognitiveComplexityRule.threshold` (15) in `pkg/codesignal/metric_rules.go`, with emission when `score >= 15`.
 
 **Analyzer versioning**: bumping semantics metrics/JSON is a deterministic contract change; codesignal `rule_version` starts at `"1"`. Report `analyzer` version strings used by the API worker remain whatever the platform already pins — this feature does not require a new job kind.
 
@@ -249,7 +249,7 @@ processHeadResult / extractBaseSignals (ParseStatus == "ok"):
 
 `signalsFromCognitiveComplexity`:
 
-- For each record with `score >= cognitiveComplexityThreshold` (15), append one `Signal` as specified in Story 2.
+- For each record with `score >= cognitiveComplexityRule.threshold` (15), append one `Signal` as specified in Story 2.
 - No registry entry in `metricsRuleRegistry` (wrong cardinality: one file-level metrics struct cannot name per-function subjects/locations).
 - No dependency on `Finding` conversion inside semantics for threshold gating.
 

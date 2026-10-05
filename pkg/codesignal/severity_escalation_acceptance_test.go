@@ -22,14 +22,6 @@ var escalationRules = map[string]escalationRule{
 		threshold:  15,
 		atMultiple: 30,
 	},
-	"branch_density": {
-		ruleID: "complexity.branch_density",
-		file: func(path string, metric int) codesignal.FileChange {
-			return metricsFile(path, semantics.StructuralMetrics{Ifs: metric})
-		},
-		threshold:  12,
-		atMultiple: 24,
-	},
 	"max_nesting_depth": {
 		ruleID: "complexity.max_nesting_depth",
 		file: func(path string, metric int) codesignal.FileChange {
@@ -65,7 +57,6 @@ var _ = Describe("Severity escalation for metric rules", func() {
 			}))
 		},
 		Entry("cognitive_complexity", "cognitive_complexity"),
-		Entry("branch_density", "branch_density"),
 		Entry("max_nesting_depth", "max_nesting_depth"),
 	)
 
@@ -85,9 +76,42 @@ var _ = Describe("Severity escalation for metric rules", func() {
 			}))
 		},
 		Entry("cognitive_complexity", "cognitive_complexity"),
-		Entry("branch_density", "branch_density"),
 		Entry("max_nesting_depth", "max_nesting_depth"),
 	)
+
+	When("a file's branch sum is far above twice the branch_density threshold", func() {
+		It("stays medium, because the branch sum is a whole-file total that grows with file length", func() {
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{
+				metricsFile("table_test.go", semantics.StructuralMetrics{Ifs: 36}),
+				metricsFile("barely.go", semantics.StructuralMetrics{Ifs: 12}),
+			}})
+
+			signals := signalsByRule(report, "complexity.branch_density")
+			Expect(signals).To(HaveLen(2))
+			Expect(severityByPath(signals)).To(Equal(map[string]codesignal.Severity{
+				"barely.go":     "medium",
+				"table_test.go": "medium",
+			}))
+		})
+
+		It("escalates the non-additive metric rules in the same report", func() {
+			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{
+				metricsFile("branchy.go", semantics.StructuralMetrics{Ifs: 36}),
+				metricsFile("deep.go", semantics.StructuralMetrics{MaxNestingDepth: 8}),
+				ccFile("tangled.go", 30),
+			}})
+
+			severities := map[string]codesignal.Severity{}
+			for _, s := range report.Signals {
+				severities[s.RuleID] = s.Severity
+			}
+			Expect(severities).To(Equal(map[string]codesignal.Severity{
+				"complexity.branch_density":       "medium",
+				"complexity.max_nesting_depth":    "high",
+				"complexity.cognitive_complexity": "high",
+			}))
+		})
+	})
 
 	When("a repository mixes escalated, barely-over, and low-severity findings", func() {
 		It("reports more than two distinct severity values", func() {
@@ -113,15 +137,17 @@ var _ = Describe("Severity escalation for metric rules", func() {
 		It("ranks severity above confidence", func() {
 			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{
 				ccFile("a.go", 29),
-				metricsFile("z.go", semantics.StructuralMetrics{Ifs: 24}),
+				metricsFile("z.go", semantics.StructuralMetrics{MaxNestingDepth: 8}),
 			}})
 
 			Expect(report.Signals).To(HaveLen(2))
 			Expect(evidenceAndPath(report.Signals)).To(Equal([]string{
-				"z.go branch_sum=24",
+				"z.go max_nesting_depth=8",
 				"a.go cognitive_complexity=29",
 			}))
 			Expect(report.Signals[0].Severity).To(Equal(codesignal.Severity("high")))
+			Expect(report.Signals[0].Confidence).To(Equal(codesignal.Confidence("medium")))
+			Expect(report.Signals[1].Severity).To(Equal(codesignal.Severity("medium")))
 			Expect(report.Signals[1].Confidence).To(Equal(codesignal.Confidence("high")))
 		})
 	})

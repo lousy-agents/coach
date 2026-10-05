@@ -76,7 +76,7 @@ func TestWithMinSeverityLeavesTheSourceReportAndFullAnalysisBlocksUntouched(t *t
 }
 
 func TestWithMinSeverityTreatsUnknownSeverityLikeLow(t *testing.T) {
-	report := reportWithSeverities("1", "critical")
+	report := reportWithSeverities("1", "bogus")
 
 	if got := report.WithMinSeverity("low"); len(got.Signals) != 1 {
 		t.Fatalf("unknown severity must survive a low floor, got %d signals", len(got.Signals))

@@ -1,6 +1,9 @@
 package codesignal
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"slices"
+)
 
 // SignalsWithheld records what a narrowed view of a Report left out, so a
 // shortened signals list is never mistaken for a smaller analysis. It is nil on
@@ -36,8 +39,7 @@ func (w SignalsWithheld) MarshalJSON() ([]byte, error) {
 
 // ParseSeverityFloor accepts exactly the severities the report can emit.
 func ParseSeverityFloor(value string) (Severity, bool) {
-	switch floor := Severity(value); floor {
-	case "high", "medium", "advisory", "low":
+	if floor := Severity(value); slices.Contains(severityOrder, floor) {
 		return floor, true
 	}
 	return "", false

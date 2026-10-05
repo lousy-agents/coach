@@ -1,36 +1,28 @@
 package codesignal
 
-import (
-	"strconv"
-
-	"github.com/lousy-agents/coach/pkg/semantics"
-)
-
-// maxNestingDepthThreshold is the minimum StructuralMetrics.MaxNestingDepth
-// value that triggers a complexity.max_nesting_depth signal.
-const maxNestingDepthThreshold = 4
+import "github.com/lousy-agents/coach/pkg/semantics"
 
 const maxNestingDepthWhyItMatters = "Deeply nested control flow is harder to read, harder to test exhaustively, and hides the function's actual branching structure behind indentation, making it easy to miss an edge case."
 
 const maxNestingDepthRecommendation = "Extract deeply nested blocks into named helper functions or invert conditionals with early returns to flatten the control flow."
 
 // newMaxNestingDepthSignal builds a complexity.max_nesting_depth signal from
-// metrics when MaxNestingDepth reaches maxNestingDepthThreshold, or reports
-// ok=false otherwise.
+// metrics when MaxNestingDepth reaches the maxNestingDepthRule threshold, or
+// reports ok=false otherwise.
 func newMaxNestingDepthSignal(path string, metrics semantics.StructuralMetrics) (signal Signal, ok bool) {
-	if metrics.MaxNestingDepth < maxNestingDepthThreshold {
+	if !maxNestingDepthRule.reaches(metrics.MaxNestingDepth) {
 		return Signal{}, false
 	}
 
 	return Signal{
-		RuleID:         "complexity.max_nesting_depth",
+		RuleID:         maxNestingDepthRule.ruleID,
 		RuleVersion:    "1",
 		Kind:           "max_nesting_depth",
 		Category:       "complexity",
-		Severity:       metricSeverity(metrics.MaxNestingDepth, maxNestingDepthThreshold),
+		Severity:       maxNestingDepthRule.severity(metrics.MaxNestingDepth),
 		Confidence:     "medium",
 		Path:           path,
-		Evidence:       "max_nesting_depth=" + strconv.Itoa(metrics.MaxNestingDepth),
+		Evidence:       maxNestingDepthRule.evidence(metrics.MaxNestingDepth),
 		WhyItMatters:   maxNestingDepthWhyItMatters,
 		Recommendation: maxNestingDepthRecommendation,
 		Provenance: Provenance{

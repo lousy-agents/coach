@@ -37,12 +37,15 @@ var _ = Describe("Magnitude ranking of same-tier signals", func() {
 		It("orders the higher-score signal first", func() {
 			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{
 				ccFile("a.go", 16),
-				ccFile("z.go", 120),
+				ccFile("z.go", 29),
 			}})
 
 			signals := signalsByRule(report, "complexity.cognitive_complexity")
+			Expect(signals).To(HaveLen(2))
+			Expect(signals[0].Severity).To(Equal(signals[1].Severity))
+			Expect(signals[0].Confidence).To(Equal(signals[1].Confidence))
 			Expect(evidenceAndPath(signals)).To(Equal([]string{
-				"z.go cognitive_complexity=120",
+				"z.go cognitive_complexity=29",
 				"a.go cognitive_complexity=16",
 			}))
 		})
