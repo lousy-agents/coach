@@ -1,7 +1,7 @@
 // Package engine defines the narrow tree-sitter surface pkg/semantics
 // relies on. It is deliberately not a general-purpose tree-sitter binding:
 // it exposes exactly the Node/Tree/Parser/Query
-// operations query.go, ts_query.go, features.go, ts_features.go, and
+// operations go_imports.go, ts_imports.go, go_features.go, ts_features.go, and
 // parser.go use today -- no NamedChild, no TreeCursor/Walk, no query
 // predicates, no incremental parsing.
 //

@@ -2,77 +2,74 @@ package semantics
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
-// AC-2.1, AC-2.2, AC-2.4: when the parse tree has any ERROR/MISSING node,
-// parseAndDetectSyntax must skip import extraction/metrics/findings (not
-// implemented until Tasks 4/5) and return a partial *Result with
-// ParseStatus "syntax_errors", SyntaxErrors populated via tree traversal
-// (not S-expression queries), and Imports/Findings/Metrics left
-// zero-valued.
-func TestSyntaxDetection_ErrorNodeYieldsPartialResultWithSyntaxErrorsStatus(t *testing.T) {
+// Precondition for the syntax-detection tests below: parsing valid Go
+// source through our own wrapper must produce a clean tree (no ERROR or
+// MISSING nodes), the same as the raw Tree-sitter smoke test already shows.
+func TestParse_ReturnsCleanTreeForValidSource(t *testing.T) {
 	sp := newSyntaxParser()
-	source := []byte("package main\nfunc {")
+	source := []byte("package main\nfunc main() {}\n")
 
-	result, _ := sp.parseAndDetectSyntax(context.Background(), source, LanguageGo)
-
-	if result == nil {
-		t.Fatalf("parseAndDetectSyntax for source with a syntax error %q: got nil result, want a partial *Result", source)
-	}
-	if result.ParseStatus != ParseStatus("syntax_errors") {
-		t.Errorf("parseAndDetectSyntax for source with a syntax error %q: ParseStatus = %q, want %q", source, result.ParseStatus, "syntax_errors")
-	}
-	if len(result.SyntaxErrors) == 0 {
-		t.Fatalf("parseAndDetectSyntax for source with a syntax error %q: SyntaxErrors is empty, want at least one issue", source)
-	}
-	foundErrorKind := false
-	for _, issue := range result.SyntaxErrors {
-		if issue.Kind == "error" {
-			foundErrorKind = true
-		}
-	}
-	if !foundErrorKind {
-		t.Errorf("parseAndDetectSyntax for source with a syntax error %q: SyntaxErrors = %+v, want at least one issue with Kind == %q", source, result.SyntaxErrors, "error")
-	}
-	if len(result.Imports) != 0 {
-		t.Errorf("parseAndDetectSyntax for source with a syntax error %q: Imports = %+v, want empty (extraction is out of scope for this task)", source, result.Imports)
-	}
-	if len(result.Findings) != 0 {
-		t.Errorf("parseAndDetectSyntax for source with a syntax error %q: Findings = %+v, want empty (extraction is out of scope for this task)", source, result.Findings)
-	}
-	if result.Metrics != (StructuralMetrics{}) {
-		t.Errorf("parseAndDetectSyntax for source with a syntax error %q: Metrics = %+v, want the zero value (extraction is out of scope for this task)", source, result.Metrics)
-	}
-}
-
-// parseAndDetectSyntax is test-only scaffolding retained from Task 3's
-// original pipeline design. It has no production caller: AnalyzeBytes (in
-// analyzer.go) is the sole production implementation of the
-// parse-then-detect-syntax-errors contract it exercises below, and the two
-// have since drifted (AnalyzeBytes's Result also carries Path). It is kept
-// here, rather than deleted, because it isolates that contract at the
-// syntaxParser level -- parses content as lang, walks the resulting tree for
-// ERROR/MISSING nodes (not via S-expression queries -- that mode is out of
-// scope for v1) -- one level below AnalyzeBytes's own inline copy, which the
-// tests below exercise directly.
-func (sp *syntaxParser) parseAndDetectSyntax(ctx context.Context, content []byte, lang Language) (*Result, error) {
-	tree, err := sp.parse(ctx, content, lang)
+	tree, err := sp.parse(context.Background(), source, LanguageGo)
 	if err != nil {
-		return nil, err
+		t.Fatalf("parse of valid source %q: got err %v, want nil", source, err)
+	}
+	if tree == nil {
+		t.Fatalf("parse of valid source %q: got nil tree, want a non-nil tree", source)
 	}
 	defer tree.Close()
 
-	root := tree.RootNode()
-	if !root.HasError() {
-		return &Result{Language: lang, ParseStatus: ParseStatus("ok")}, nil
+	if tree.RootNode().HasError() {
+		t.Errorf("parse of valid source %q: RootNode().HasError() = true, want false", source)
+	}
+}
+
+// Regression guard raised by review: parse's doc comment claimed a
+// cancelled context returns an error matching ErrParseFailure, but the
+// implementation returns ctx.Err() directly, matching validate's own
+// cancellation check. This pins down the actual behavior with a direct
+// test rather than leaving it only indirectly covered through validate and
+// AnalyzeBytes.
+func TestParse_ReturnsContextErrDirectlyOnAlreadyCancelledContext(t *testing.T) {
+	sp := newSyntaxParser()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tree, err := sp.parse(ctx, []byte("package main\n"), LanguageGo)
+
+	if tree != nil {
+		t.Errorf("parse with an already-cancelled context: got non-nil tree, want nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("parse with an already-cancelled context: got err %v, want errors.Is(err, context.Canceled)", err)
+	}
+	if errors.Is(err, ErrParseFailure) {
+		t.Errorf("parse with an already-cancelled context: got errors.Is(err, ErrParseFailure) = true, want false (cancellation is not a parse failure)")
+	}
+}
+
+// AC-6.2: if the underlying Tree-sitter Parse call returns a nil tree, parse
+// must report an error matching ErrParseFailure and must not dereference or
+// Close the nil tree. A real nil tree isn't reachable through normal
+// Parser.Parse calls with valid parser/content, so this test injects a
+// forced-nil parseFunc via the syntaxParser seam built for this purpose.
+func TestParse_ReturnsParseFailureErrorOnNilTreeWithoutDereferencing(t *testing.T) {
+	sp := newSyntaxParser()
+	sp.parseFunc = func(p engine.Parser, content []byte) (engine.Tree, error) {
+		return nil, nil
 	}
 
-	issues := collectSyntaxIssues(root)
-	result := &Result{
-		Language:     lang,
-		ParseStatus:  ParseStatus("syntax_errors"),
-		SyntaxErrors: issues,
+	tree, err := sp.parse(context.Background(), []byte("package main\n"), LanguageGo)
+
+	if tree != nil {
+		t.Fatalf("parse when the underlying Parse call returns nil: got non-nil tree %+v, want nil", tree)
 	}
-	return result, &SyntaxError{Issues: issues}
+	if !errors.Is(err, ErrParseFailure) {
+		t.Errorf("parse when the underlying Parse call returns nil: got err %v, want errors.Is(err, ErrParseFailure)", err)
+	}
 }

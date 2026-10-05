@@ -45,15 +45,24 @@ type gtsLanguage struct {
 	forestOnce sync.Once
 }
 
-// gotreesitter's plain parse path misparses plain-identifier
-// default parameters (e.g. `function f(x = 1) {}`) and
-// array-destructuring defaults (e.g. `const [a = 2] = z;`) as
-// syntax errors. WantsForest is gotreesitter's own documented
-// opt-in (see gotreesitter's language.go) that routes parsing
-// through its GSS-forest GLR path, which handles these shapes
-// correctly and falls back to the existing parser automatically
-// on any forest failure or error node, so it's a strict
-// improvement with no regression risk.
+func (l *gtsLanguage) lang() *gotreesitter.Language {
+	lang := l.entry.Language()
+	if l.wantsForest {
+		l.forestOnce.Do(func() {
+			// gotreesitter's plain parse path misparses plain-identifier
+			// default parameters (e.g. `function f(x = 1) {}`) and
+			// array-destructuring defaults (e.g. `const [a = 2] = z;`) as
+			// syntax errors. WantsForest is gotreesitter's own documented
+			// opt-in (see gotreesitter's language.go) that routes parsing
+			// through its GSS-forest GLR path, which handles these shapes
+			// correctly and falls back to the existing parser automatically
+			// on any forest failure or error node, so it's a strict
+			// improvement with no regression risk.
+			lang.WantsForest = true
+		})
+	}
+	return lang
+}
 
 func (l *gtsLanguage) NewParser() (Parser, error) {
 	return &gtsParser{entry: l.entry, lang: l.lang()}, nil
@@ -119,96 +128,3 @@ func (t *gtsTree) RootNode() Node {
 }
 
 func (t *gtsTree) Close() { t.t.Release() }
-
-// gtsNode carries lang alongside its *gotreesitter.Node because, unlike
-// go-tree-sitter's Node, gotreesitter's Type/ChildByFieldName resolve node
-// kind names and field lookups through an explicit *Language argument
-// rather than a language the node is intrinsically bound to.
-type gtsNode struct {
-	n    *gotreesitter.Node
-	lang *gotreesitter.Language
-}
-
-func (n *gtsNode) Kind() string    { return n.n.Type(n.lang) }
-func (n *gtsNode) HasError() bool  { return n.n.HasError() }
-func (n *gtsNode) IsError() bool   { return n.n.IsError() }
-func (n *gtsNode) IsMissing() bool { return n.n.IsMissing() }
-func (n *gtsNode) ChildCount() int { return n.n.ChildCount() }
-func (n *gtsNode) StartByte() uint { return uint(n.n.StartByte()) }
-func (n *gtsNode) EndByte() uint   { return uint(n.n.EndByte()) }
-
-func (n *gtsNode) Child(i int) Node {
-	c := n.n.Child(i)
-	if c == nil {
-		return nil
-	}
-	return &gtsNode{n: c, lang: n.lang}
-}
-
-func (n *gtsNode) ChildByFieldName(name string) Node {
-	c := n.n.ChildByFieldName(name, n.lang)
-	if c == nil {
-		return nil
-	}
-	return &gtsNode{n: c, lang: n.lang}
-}
-
-func (n *gtsNode) StartPoint() (row, col uint) {
-	p := n.n.StartPoint()
-	return uint(p.Row), uint(p.Column)
-}
-
-func (n *gtsNode) EndPoint() (row, col uint) {
-	p := n.n.EndPoint()
-	return uint(p.Row), uint(p.Column)
-}
-
-func (n *gtsNode) Utf8Text(source []byte) string { return n.n.Text(source) }
-
-// gtsQuery/gtsQueryCursor have no-op Close methods: gotreesitter is pure Go
-// and garbage-collected, so Query/QueryCursor hold no external resources to
-// release; Close exists only to satisfy the engine interfaces shared with
-// the CGO backend, whose Close calls do matter.
-type gtsQuery struct {
-	q *gotreesitter.Query
-}
-
-func (q *gtsQuery) Close() {}
-
-type gtsQueryCursor struct {
-	lang *gotreesitter.Language
-}
-
-func (c *gtsQueryCursor) Close() {}
-
-func (c *gtsQueryCursor) Matches(query Query, root Node, source []byte) QueryMatches {
-	q := query.(*gtsQuery).q
-	r := root.(*gtsNode).n
-	// Exec is bound to the cursor's own lang -- the language query was
-	// compiled against, via gtsLanguage.NewQuery/NewQueryCursor sharing one
-	// lang() value -- not derived from root, so a query executed against a
-	// tree parsed with a different (but node-kind-name-compatible) grammar
-	// yields no matches rather than misinterpreted symbol IDs, matching
-	// go-tree-sitter's cross-grammar behavior (confirmed empirically).
-	return &gtsQueryMatches{c: q.Exec(r, c.lang, source), lang: c.lang}
-}
-
-type gtsQueryMatches struct {
-	c    *gotreesitter.QueryCursor
-	lang *gotreesitter.Language
-}
-
-func (m *gtsQueryMatches) Next() *QueryMatch {
-	match, ok := m.c.NextMatch()
-	if !ok {
-		return nil
-	}
-	captures := make([]QueryCapture, len(match.Captures))
-	for i, c := range match.Captures {
-		captures[i] = QueryCapture{
-			Node:  &gtsNode{n: c.Node, lang: m.lang},
-			Index: uint32(i),
-		}
-	}
-	return &QueryMatch{Captures: captures}
-}

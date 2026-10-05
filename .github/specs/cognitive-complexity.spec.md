@@ -116,7 +116,7 @@ so that **scoring regressions fail CI before product code drifts**.
 - `pkg/semantics/` — compute Cognitive Complexity during `compute*Features` (or a helper invoked from those functions / analyzer wiring below); extend `Result` / `StructuralMetrics`; golden + acceptance tests.
 - `pkg/semantics/result.go` — additive JSON fields (file aggregates on metrics + top-level `cognitive_complexity` slice).
 - `pkg/semantics/language.go` / `pkg/semantics/analyzer.go` — wiring so `AnalyzeBytes` copies the new slice onto `Result` (see Analyzer wiring).
-- `pkg/semantics/features.go`, `pkg/semantics/ts_features.go`, and/or new `pkg/semantics/cognitive_complexity.go` — language-specific AST walks.
+- `pkg/semantics/go_features.go`, `pkg/semantics/ts_features.go`, and/or new `pkg/semantics/cognitive_complexity.go` — language-specific AST walks.
 - `pkg/codesignal/` — new rule file + `signalsFromCognitiveComplexity` dispatch from `processHeadResult` / `extractBaseSignals`; lifecycle/fingerprint tests.
 - `js/semantics/test/parity.test.ts` (+ protocol/types if mirrored) — parity lock.
 - `cognative-complexity-draft.md` — **non-normative reference only** (not shipped product docs).
@@ -625,8 +625,8 @@ sequenceDiagram
 
 - `pkg/semantics/result.go`
 - `pkg/semantics/language.go` / `pkg/semantics/analyzer.go` (wiring per Design — Analyzer wiring)
-- `pkg/semantics/features.go` and/or new `pkg/semantics/cognitive_complexity.go`
-- `pkg/semantics/result_test.go` (golden update)
+- `pkg/semantics/go_features.go` and/or new `pkg/semantics/cognitive_complexity.go`
+- `pkg/semantics/result_golden_test.go` (golden update)
 - `pkg/semantics/*_test.go` for edge cases (else-if normalization, naming, recursion, logical sequences)
 
 **Requirements**:
