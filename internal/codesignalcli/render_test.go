@@ -31,6 +31,8 @@ func TestRenderTextSignalsPresentRenderingIsPinnedExactly(t *testing.T) {
 		Summary: codesignal.Summary{FilesAnalyzed: 1, ActiveSignals: 1},
 		Signals: []codesignal.Signal{
 			{
+				RuleID:         "mutation.input_mutation",
+				Severity:       codesignal.Severity("medium"),
 				Path:           "a.go",
 				SourceScope:    "production",
 				Location:       semantics.Location{StartRow: 4},
@@ -48,6 +50,8 @@ func TestRenderTextSignalsPresentRenderingIsPinnedExactly(t *testing.T) {
 	got := RenderText(report)
 
 	want := "files analyzed: 1, active signals: 1, diagnostics: 1\n" +
+		"rule_id: mutation.input_mutation\n" +
+		"severity: medium\n" +
 		"path: a.go\n" +
 		"line: 5\n" +
 		"lifecycle: introduced\n" +

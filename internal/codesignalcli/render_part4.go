@@ -25,6 +25,7 @@ func writeSortedIntMap(b *strings.Builder, label string, values map[string]int) 
 func renderOneProjectChange(b *strings.Builder, change codesignal.ProjectChange) {
 	fmt.Fprintf(b, "semantic_key: %s\n", change.SemanticKey)
 	fmt.Fprintf(b, "rule_id: %s\n", change.RuleID)
+	fmt.Fprintf(b, "severity: %s\n", change.Severity)
 	fmt.Fprintf(b, "path: %s\n", change.PrimaryAnchor.Path)
 	fmt.Fprintf(b, "line: %d\n", change.PrimaryAnchor.Location.StartRow+1)
 	fmt.Fprintf(b, "lifecycle: %s\n", change.Lifecycle)
