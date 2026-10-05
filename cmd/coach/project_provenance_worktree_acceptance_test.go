@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -225,6 +226,63 @@ var _ = Describe("coach codesignal --baseline TypeScript project: yarn package m
 			prov := report.ProjectProvenance
 			Expect(prov.Runtime.Kind).To(Equal("node"))
 			Expect(prov.Analyzer.Version).NotTo(BeEmpty())
+		})
+	})
+})
+
+// AC-VER-1 (issue #334): when the customer runs the existing --base
+// <before-ref> flow, coach shall analyze base and HEAD using identical
+// analyzer, compiler, policy bytes, roots, and configuration digest.
+// project_provenance carries exactly one analyzer/runtime/config_digest/
+// selected_roots for the whole report (project_provenance.go), so this
+// spec's job is to prove that single shared value is genuinely HEAD's, not
+// silently re-derived from the base revision's own historical config: it
+// commits a materially different project.json at the base revision than at
+// HEAD and asserts the reported config_digest/selected_roots match HEAD's
+// committed bytes rather than base's.
+var _ = Describe("coach codesignal --base <before-ref>: identical analyzer/compiler/policy/roots/config-digest across base and HEAD (AC-VER-1)", Label("ts-project-backend"), func() {
+	BeforeEach(func() {
+		if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+			Skip(reason)
+		}
+	})
+
+	When("HEAD's committed project.json differs from the config committed at the analyzed base revision", func() {
+		It("reports HEAD's single config_digest, selected_roots, analyzer, and compiler identity as covering both revisions", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "pkg/handlers/tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersWithoutImport)
+			baseSHA := commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+			commitFile(repo, "project.json", tsNestedRootsScopeConfigJSON)
+			installRealTypescriptCompiler(repo, true)
+
+			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+
+			report := decodeCoachReport(stdout)
+			Expect(report.ProjectProvenance).NotTo(BeNil())
+			Expect(report.ProjectProvenance.Base).NotTo(BeNil(), "diff mode must populate project_provenance.base")
+			Expect(report.ProjectProvenance.Head.Revision).NotTo(Equal(report.ProjectProvenance.Base.Revision),
+				"sanity: head and base must be distinct revisions or this spec proves nothing")
+
+			headConfigDigest := codesignalcli.ConfigDigest([]byte(tsNestedRootsScopeConfigJSON))
+			baseConfigDigest := codesignalcli.ConfigDigest([]byte(goLayerPolicyConfigJSON))
+			Expect(headConfigDigest).NotTo(Equal(baseConfigDigest),
+				"sanity: the fixture's two project.json revisions must hash differently or this spec proves nothing")
+
+			Expect(report.ProjectProvenance.ConfigDigest).To(Equal(headConfigDigest),
+				"the single config_digest covering both head and base analysis must be HEAD's committed project.json, not the base revision's own historical config")
+			Expect(report.ProjectProvenance.SelectedRoots).To(Equal([]string{".", "pkg/handlers"}),
+				"selected_roots must reflect HEAD's committed roots, not the base revision's own historical roots")
+
+			Expect(report.ProjectProvenance.Analyzer.Version).NotTo(BeEmpty())
+			Expect(report.ProjectProvenance.Analyzer.Digest).To(HavePrefix("sha256:"))
+			Expect(report.ProjectProvenance.Runtime.CompilerVersion).To(Equal(version),
+				"the same resolved compiler version must back both head and base evaluations")
 		})
 	})
 })

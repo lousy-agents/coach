@@ -1,7 +1,8 @@
 package codesignal
 
 // isCompleteNoMatch reports whether the complete_no_match predicate holds:
-// required coverage is complete, no active layer findings, and (in diff mode)
+// required coverage is complete, no active layer findings, no project change
+// with an unknown lifecycle, and (in diff mode)
 // zero introduced/resolved/existing project changes in the pre-filter summary.
 //
 // projectSummary carries lifecycle counts before IncludeResolved filtering, so
@@ -24,7 +25,7 @@ func isCompleteNoMatch(opts Options, prov *ProjectProvenance, input Input, proje
 	) {
 		return false
 	}
-	if hasActiveLayerFinding(projectChanges) {
+	if hasActiveLayerFinding(projectChanges) || hasUnknownProjectChange(projectChanges) {
 		return false
 	}
 	if !opts.Baseline && hasPreFilterProjectChanges(projectSummary) {
@@ -36,6 +37,18 @@ func isCompleteNoMatch(opts Options, prov *ProjectProvenance, input Input, proje
 func hasActiveLayerFinding(projectChanges []ProjectChange) bool {
 	for _, ch := range projectChanges {
 		if ch.RuleID == ruleLayerViolationID || ch.RuleID == ruleLayerBypassID {
+			return true
+		}
+	}
+	return false
+}
+
+// hasUnknownProjectChange matters even with complete coverage: an
+// undetermined rename/copy leaves a change "unknown" whatever the coverage,
+// and a finding whose lifecycle is unknown is not an absence of findings.
+func hasUnknownProjectChange(projectChanges []ProjectChange) bool {
+	for _, ch := range projectChanges {
+		if ch.Lifecycle == "unknown" {
 			return true
 		}
 	}

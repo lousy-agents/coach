@@ -68,7 +68,7 @@ func commitFileT(t *testing.T, dir, name, contents string) string {
 	return strings.TrimSpace(string(output))
 }
 
-func renameFileT(t *testing.T, dir, from, to string) {
+func renameFileT(t *testing.T, dir, from, to string) string {
 	t.Helper()
 
 	mvCmd := exec.Command("git", "mv", from, to)
@@ -83,4 +83,13 @@ func renameFileT(t *testing.T, dir, from, to string) {
 	if output, err := commitCmd.CombinedOutput(); err != nil {
 		t.Fatalf("git commit rename: %v: %s", err, output)
 	}
+
+	revCmd := exec.Command("git", "rev-parse", "HEAD")
+	revCmd.Dir = dir
+	output, err := revCmd.Output()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD: %v", err)
+	}
+
+	return strings.TrimSpace(string(output))
 }

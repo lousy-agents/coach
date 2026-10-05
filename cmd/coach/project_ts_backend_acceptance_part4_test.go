@@ -26,6 +26,7 @@ func analyzerChildPIDsFromProc() ([]int, bool) {
 	}
 	self := os.Getpid()
 	var pids []int
+	parents := make(map[int]int)
 	for _, entry := range entries {
 		pid, err := strconv.Atoi(entry.Name())
 		if err != nil {
@@ -41,9 +42,12 @@ func analyzerChildPIDsFromProc() ([]int, bool) {
 		if !isDescendantOfProcess(pid, self) {
 			continue
 		}
+		if ppid, ok := processParentPID(pid); ok {
+			parents[pid] = ppid
+		}
 		pids = append(pids, pid)
 	}
-	return pids, true
+	return topLevelAnalyzerPIDs(pids, parents), true
 }
 
 // processParentPID reads a process's parent PID from /proc/<pid>/stat. The

@@ -12,6 +12,62 @@ import (
 // several signals sharing one composite key and assigns occurrence ordinals),
 // ProjectChange's SemanticKey is itself the lifecycle identity.
 
+// DiagKindProjectChangeLifecycleIndeterminate identifies a diagnostic naming
+// one degraded ProjectChange's own anchor path together with the comparison
+// Side/Revision that made it indeterminate. It is additive to the single
+// project_lifecycle_indeterminate diagnostic emitted once per report.
+const DiagKindProjectChangeLifecycleIndeterminate = "project_change_lifecycle_indeterminate"
+
+// projectLifecycleIndeterminacy breaks the indeterminacy condition out per
+// cause so each degraded change can be attributed to the responsible side(s).
+// baseIncomplete and inconsistentBase are mutually exclusive.
+type projectLifecycleIndeterminacy struct {
+	headIncomplete   bool
+	baseIncomplete   bool
+	inconsistentBase bool
+	headRevision     string
+	baseRevision     string
+}
+
+func (s projectLifecycleIndeterminacy) any() bool {
+	return s.headIncomplete || s.baseIncomplete || s.inconsistentBase
+}
+
+// degradedProjectChangeDiagnostics emits one Diagnostic per side the state
+// implicates, so a consumer keying off Side never misses a side when both
+// are independently incomplete.
+func degradedProjectChangeDiagnostics(path string, state projectLifecycleIndeterminacy) []Diagnostic {
+	var diagnostics []Diagnostic
+	if state.headIncomplete {
+		diagnostics = append(diagnostics, Diagnostic{
+			Path:     path,
+			Kind:     DiagKindProjectChangeLifecycleIndeterminate,
+			Message:  "project change lifecycle is \"unknown\": " + sideRevisionLabel("head", state.headRevision) + " project analysis coverage is incomplete",
+			Side:     "head",
+			Revision: state.headRevision,
+		})
+	}
+	if state.baseIncomplete {
+		diagnostics = append(diagnostics, Diagnostic{
+			Path:     path,
+			Kind:     DiagKindProjectChangeLifecycleIndeterminate,
+			Message:  "project change lifecycle is \"unknown\": " + sideRevisionLabel("base", state.baseRevision) + " project analysis coverage is incomplete",
+			Side:     "base",
+			Revision: state.baseRevision,
+		})
+	}
+	if state.inconsistentBase {
+		diagnostics = append(diagnostics, Diagnostic{
+			Path:     path,
+			Kind:     DiagKindProjectChangeLifecycleIndeterminate,
+			Message:  "project change lifecycle is \"unknown\": " + sideRevisionLabel("base", state.baseRevision) + " supplied project observations without a completed base analysis",
+			Side:     "base",
+			Revision: state.baseRevision,
+		})
+	}
+	return diagnostics
+}
+
 // indeterminateLifecycleEvidenceNote is appended to a ProjectChange's own
 // Evidence whenever classifyProjectChanges degrades it to lifecycle
 // "unknown", so a reader scanning findings one at a time can see why without

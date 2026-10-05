@@ -142,7 +142,7 @@ func body_projectAcceptanceTest_degradesOnlyTheBaseSideCoverageIncompleteDiagnos
 		ConfigDigest: ConfigDigest(goLayerBypassSearchConfigJSON),
 		Backend:      NewGoProjectBackend(),
 	}
-	report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
+	report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, nil, "all", nil, project)
 	Expect(err).NotTo(HaveOccurred())
 
 	Expect(report.ProjectChanges).To(HaveLen(1))

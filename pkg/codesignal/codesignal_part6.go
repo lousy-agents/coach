@@ -13,6 +13,10 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 
 	noBaseLifecycle := lifecycleWithoutBase(b.options.Baseline)
 	diagnostics, signals := processFileChanges(input.Files, input.Diagnostics, noBaseLifecycle)
+	// File-level counters see only file-pipeline diagnostics: a project
+	// surface Path (a degraded change's anchor, a model-coverage candidate or
+	// root directory) is not a changed file that was or was not analyzed.
+	fileDiagnostics := append([]Diagnostic(nil), diagnostics...)
 
 	var projectChanges []ProjectChange
 	var projectFacts []ProjectFact
@@ -28,7 +32,7 @@ func (b *Builder) Build(ctx context.Context, input Input) (*Report, error) {
 	}
 
 	sortDiagnostics(diagnostics)
-	signals, summary := finalizeSignals(signals, len(input.Files), input.Files, diagnostics, b.options.IncludeResolved)
+	signals, summary := finalizeSignals(signals, len(input.Files), input.Files, fileDiagnostics, b.options.IncludeResolved)
 	return assembleReport(b.options, input, signals, diagnostics, summary, projectChanges, projectFacts, projectSummary, projectCoverage), nil
 }
 func noBaseLifecycleForFile(fc FileChange, noBaseLifecycle Lifecycle) Lifecycle {

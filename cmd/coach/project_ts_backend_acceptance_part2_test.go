@@ -55,7 +55,7 @@ func analyzerChildPIDsFromPS() []int {
 			pids = append(pids, pid)
 		}
 	}
-	return pids
+	return topLevelAnalyzerPIDs(pids, parents)
 }
 
 func startRecordingProxyListener() *recordingProxyListener {

@@ -36,6 +36,13 @@ type Input struct {
 	// are inconsistent and force lifecycle-indeterminate.
 	ProjectBaseAnalyzed bool `json:"project_base_analyzed,omitempty"`
 
+	// UndeterminedContinuity lists rename/copy pairs whose old-path
+	// continuity was not determined. A project change that would otherwise
+	// be introduced at Path, or resolved at PreviousPath, is classified
+	// "unknown" instead: a path-keyed identity cannot tell a move from a
+	// fix plus a new defect.
+	UndeterminedContinuity []PathContinuity `json:"undetermined_continuity,omitempty"`
+
 	RuntimeKind     string `json:"runtime_kind,omitempty"`
 	RuntimeVersion  string `json:"runtime_version,omitempty"`
 	RuntimeOrigin   string `json:"runtime_origin,omitempty"`
@@ -93,6 +100,13 @@ type Scope struct {
 }
 
 type ChangeStatus string
+
+// PathContinuity is one git rename or copy: PreviousPath at the base
+// revision, Path at head.
+type PathContinuity struct {
+	Path         string `json:"path"`
+	PreviousPath string `json:"previous_path"`
+}
 
 // FileChange describes one file's before/after analysis results.
 type FileChange struct {

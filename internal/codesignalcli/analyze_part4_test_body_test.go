@@ -12,7 +12,7 @@ import (
 func body_analyzePart4Test_nonEmptyScopeAndExcluded_28(t *testing.T, dir string, initialSHA string, headSHA string, files []SelectedFile) {
 	excluded := []codesignal.CoverageGroup{{Reason: "test_only", Language: "go", Count: 1}}
 
-	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "production", excluded, nil)
+	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, nil, "production", excluded, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
 	}
@@ -29,7 +29,7 @@ func body_analyzePart4Test_nonEmptyScopeAndExcluded_28(t *testing.T, dir string,
 }
 
 func body_analyzePart4Test_nilExcludedLeavesCoverageNil_47(t *testing.T, dir string, initialSHA string, headSHA string, files []SelectedFile) {
-	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "", nil, nil)
+	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, nil, "", nil, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
 	}

@@ -23,7 +23,7 @@ func TestAnalyzeChangesSurvivesUnreadableFile(t *testing.T) {
 		{Path: "does-not-exist.go", Status: "modified", Language: semantics.LanguageGo},
 	}
 
-	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "", nil, nil)
+	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, nil, "", nil, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
 	}

@@ -12,6 +12,15 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
+func diagnosticFor(report *codesignal.Report, kind, path string) (codesignal.Diagnostic, bool) {
+	for _, d := range report.Diagnostics {
+		if d.Kind == kind && d.Path == path {
+			return d, true
+		}
+	}
+	return codesignal.Diagnostic{}, false
+}
+
 func hasDiagnostic(report *codesignal.Report, kind, path string) bool {
 	for _, d := range report.Diagnostics {
 		if d.Kind == kind && d.Path == path {

@@ -276,7 +276,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 			Backend:      backend,
 		}
 
-		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, nil, "all", nil, project)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(report.SchemaVersion).To(Equal("2"))
 		Expect(report.ProjectChanges).To(HaveLen(1))
@@ -379,7 +379,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 			Backend:      backend,
 		}
 
-		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, nil, "all", nil, project)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(report.ProjectChanges).To(BeEmpty(), "the backend returned no observations on either side")
 		Expect(report.Signals).To(BeEmpty(), "a comment-only change triggers no file-local finding")
@@ -960,7 +960,7 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 			ConfigDigest: ConfigDigest(goLayerBypassSearchConfigJSON),
 			Backend:      NewGoProjectBackend(),
 		}
-		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, nil, "all", nil, project)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_layer_bypass_coverage_incomplete")).To(Equal(1), "the head-side incompleteness must not be collapsed into or duplicated by the base-side one")
