@@ -66,7 +66,35 @@ var _ = Describe("codesignalcli.BuildSetupPreview", func() {
 
 	DescribeTable("truthfully discloses argv, on-disk effect, network, script policy, and timeout per package-manager kind (SA-280-012)",
 		func(kind, wantExecutable string, wantArgs []string, wantLockfileBasename string, wantSuppressionSubstrings []string) {
-			body_projectTsSetupPreviewAcceptanceTest_truthfullyDisclosesArgvOnDiskEffectNetworkScript_67(kind, wantExecutable, wantArgs, wantLockfileBasename, wantSuppressionSubstrings)
+			preview, err := tssetup.BuildPreview(
+				tssetup.Choice{Kind: tssetup.ChoiceProjectPackage},
+				projectPackageManager(kind),
+				"/tmp/example-root",
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(preview.Executable).To(Equal(wantExecutable))
+			Expect(preview.Args).To(Equal(wantArgs))
+
+			Expect(preview.ExpectedChanges).To(ContainSubstring("node_modules"), "every frozen row's actual on-disk mutation is node_modules, not the lockfile")
+			Expect(preview.ExpectedChanges).NotTo(
+				MatchRegexp(setupPreviewLockfileRewriteClaimPattern),
+				"none of the frozen rows can rewrite a lockfile -- npm ci and pnpm/bun's --frozen-lockfile install all fail instead of writing one",
+			)
+			if wantLockfileBasename != "" {
+				Expect(preview.ExpectedChanges).To(ContainSubstring(wantLockfileBasename), "must name the lockfile basename this argv reads and never writes")
+			} else {
+				// Bun recognizes two lockfile variants (bun.lock, bun.lockb) and
+				// BuildSetupPreview is not told which this repository has --
+				// the disclosure must not cite either specific basename.
+				Expect(preview.ExpectedChanges).NotTo(Or(ContainSubstring("bun.lock"), ContainSubstring("bun.lockb")), "must not name a specific lockfile variant it cannot confirm exists")
+			}
+
+			Expect(preview.NetworkDisclosure).To(And(ContainSubstring("network"), ContainSubstring("registry")), "must truthfully disclose that this command may reach the package registry")
+			for _, wantSuppression := range wantSuppressionSubstrings {
+				Expect(preview.ScriptSuppressionPolicy).To(ContainSubstring(wantSuppression), "must truthfully disclose every flag this row's argv actually passes to suppress scripts/config hazards -- a shared, one-size-fits-all disclosure string would silently under-disclose a row like pnpm's that carries an extra flag")
+			}
+			Expect(preview.Timeout).To(Equal(tssetup.PreviewTimeout), "must disclose the bounded timeout that will actually be enforced")
 		},
 		Entry("npm", "npm", "npm", []string{"ci", "--ignore-scripts"}, "package-lock.json", []string{"--ignore-scripts"}),
 		Entry("pnpm", "pnpm", "pnpm", []string{"install", "--frozen-lockfile", "--ignore-scripts", "--ignore-pnpmfile"}, "pnpm-lock.yaml", []string{"--ignore-scripts", "--ignore-pnpmfile"}),

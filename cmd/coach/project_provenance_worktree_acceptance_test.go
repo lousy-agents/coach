@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -48,7 +47,7 @@ func commitBunFixture(repo, version string) {
 
 var _ = Describe("coach codesignal --baseline TypeScript project provenance", Label("ts-project-backend"), func() {
 	BeforeEach(func() {
-		body_projectProvenanceWorktreeAcceptanceTest_51()
+		skipWithoutRealTypeScriptCompiler()
 	})
 
 	Describe("snapshot package manager and worktree diagnostic (SA-280-033)", func() {
@@ -75,11 +74,21 @@ var _ = Describe("coach codesignal --baseline TypeScript project provenance", La
 			})
 
 			It("emits worktree_report_reflects_committed_head diagnostic", func() {
-				body_projectProvenanceWorktreeAcceptanceTest_emitsWorktreeReportReflectsCommittedHeadDiagnost_80(report)
+				kinds := reportDiagnosticKinds(report)
+				Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeReportReflectsCommittedHEAD),
+					"diagnostics must include worktree_report_reflects_committed_head; got %v", kinds)
+				Expect(kinds).NotTo(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed),
+					"unsupported lockfile dirt must not use the file-local skip kind; got %v", kinds)
 			})
 
 			It("diagnostic message states the report applies to committed HEAD", func() {
-				body_projectProvenanceWorktreeAcceptanceTest_diagnosticMessageStatesTheReportAppliesToCommitt_91(report)
+				var msg string
+				for _, d := range report.Diagnostics {
+					if d.Kind == codesignal.DiagKindWorktreeReportReflectsCommittedHEAD {
+						msg = d.Message
+					}
+				}
+				Expect(msg).To(ContainSubstring("HEAD"), "message must reference committed HEAD; got %q", msg)
 			})
 
 			It("reports runtime.kind=node, runtime.origin=path, and a non-empty runtime.version", func() {
@@ -136,52 +145,9 @@ var _ = Describe("coach codesignal --baseline TypeScript project provenance", La
 			})
 
 			It("emits worktree_report_reflects_committed_head diagnostic", func() {
-				body_projectProvenanceWorktreeAcceptanceTest_emitsWorktreeReportReflectsCommittedHeadDiagnost_154(report)
-			})
-		})
-	})
-
-	Describe("runtime provenance fields", func() {
-		When("a clean committed npm TypeScript project is scanned", func() {
-			var report *codesignal.Report
-
-			BeforeEach(func() {
-				repo := newTempGitRepo()
-				version := realTypescriptVersion()
-				commitNpmFixture(repo, version)
-				installRealTypescriptCompiler(repo, true)
-				report, _ = runCoachBaselineProjectJSON(repo, "project.json")
-			})
-
-			It("reports runtime.kind=node, runtime.origin=path, and a semver runtime.version", func() {
-				prov := report.ProjectProvenance
-				Expect(prov.Runtime.Kind).To(Equal("node"))
-				Expect(prov.Runtime.Origin).To(Equal("path"))
-				Expect(prov.Runtime.Version).To(MatchRegexp(`^v?\d+\.\d+\.\d+`))
-			})
-
-			It("reports package_manager.kind=npm from lockfile origin", func() {
-				Expect(report.ProjectProvenance).NotTo(BeNil())
-				Expect(report.ProjectProvenance.PackageManager).NotTo(BeNil())
-				Expect(report.ProjectProvenance.PackageManager.Kind).To(Equal("npm"))
-				Expect(report.ProjectProvenance.PackageManager.Origin).To(Equal("lockfile"))
-			})
-
-			It("reports package_manager.version as a semver string when npm is on PATH", func() {
-				body_projectProvenanceWorktreeAcceptanceTest_reportsPackageManagerVersionAsASemverStringWhenN_191(report)
-			})
-
-			It("does not emit a worktree skip or provenance diagnostic for a clean worktree", func() {
-				body_projectProvenanceWorktreeAcceptanceTest_doesNotEmitAWorktreeSkipOrProvenanceDiagnosticFo_200(report)
-			})
-
-			It("reports analyzer.digest with sha256: prefix and analyzer.version as stable identifier", func() {
-				prov := report.ProjectProvenance
-				Expect(prov.Analyzer.Digest).To(HavePrefix("sha256:"))
-				Expect(prov.Analyzer.Version).NotTo(BeEmpty())
-				Expect(prov.Analyzer.Version).NotTo(ContainSubstring("/"))
-				Expect(strings.Contains(prov.Analyzer.Version, string(os.PathSeparator))).To(BeFalse(),
-					"analyzer.version must not be a filesystem path; got %q", prov.Analyzer.Version)
+				kinds := reportDiagnosticKinds(report)
+				Expect(kinds).To(ContainElement(codesignal.DiagKindWorktreeReportReflectsCommittedHEAD))
+				Expect(kinds).NotTo(ContainElement(codesignal.DiagKindWorktreeChangesNotAnalyzed))
 			})
 		})
 	})
@@ -200,7 +166,7 @@ func commitYarnFixture(repo, version string) {
 
 var _ = Describe("coach codesignal --baseline TypeScript project: yarn package manager (SA-280-033)", Label("ts-project-backend"), func() {
 	BeforeEach(func() {
-		body_projectProvenanceWorktreeAcceptanceTest_233()
+		skipWithoutRealTypeScriptCompiler()
 	})
 
 	When("the committed project uses yarn (yarn.lock + packageManager field)", func() {

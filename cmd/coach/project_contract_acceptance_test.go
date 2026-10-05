@@ -70,7 +70,7 @@ var _ = Describe("coach project-analysis failure reports", func() {
 	})
 
 	// loadProjectConfig runs before resolveProjectBackend and never receives
-	// --project-language (main.go:465-469), so the underlying class-2 config
+	// --project-language (prepareProjectAnalysis, project_analysis.go), so the underlying class-2 config
 	// message and the appended --suggest-project-config remediation stay
 	// language-independent by construction. The one exception is AC-SET-13's
 	// additional readiness-gap line: prepareProjectAnalysis wraps a class-2

@@ -26,7 +26,7 @@ import (
 // omits a typescript devDependency, and each row confirms both the raw
 // check and the menu AvailableSetupChoices derives from it.
 
-// resultGapCodes mirrors gapCodes (project_readiness_acceptance_test.go),
+// resultGapCodes mirrors gapCodes (readiness_result_doc_helpers_test.go),
 // which only reads the JSON-boundary readinessResultDoc; this suite calls
 // projectcheck.Run directly so it can also feed the
 // result into tssetup.AvailableChoices without a JSON round trip.
@@ -163,7 +163,24 @@ var _ = Describe("checks.package_manager's frozen version-boundary matrix (SA-28
 
 	When("HEAD carries only Yarn metadata, and checks.compiler is also failing", func() {
 		It("withholds Yarn's package-manager finding as a project-package setup choice, with no default selection (AvailableSetupChoices integration)", func() {
-			body_projectTsSetupMatrixAcceptanceTest_withholdsYarnSPackageManagerFindingAsAProjectPac_162()
+			GinkgoT().Setenv("PATH", pathWithStubNode("v24.9.9"))
+			repo, head := packageManagerMatrixFixture("yarn")
+
+			readiness, err := projectcheck.Run(repo, head, "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
+			Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))
+			Expect(readiness.Checks.PackageManager.Code).To(Equal(projectreadiness.GapPackageManagerVersionUnsupported))
+			Expect(readiness.Checks.PackageManager.Kind).To(Equal("yarn"))
+
+			menu := tssetup.AvailableChoices(*readiness)
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceProjectPackage), "Yarn must never resolve to an executable project-package choice")
+			Expect(withheldKinds(menu.Withheld)).To(ContainElement(tssetup.ChoiceProjectPackage))
+			for _, w := range menu.Withheld {
+				if w.Kind == tssetup.ChoiceProjectPackage {
+					Expect(w.Reason).To(Equal(projectreadiness.GapPackageManagerVersionUnsupported))
+				}
+			}
 		})
 	})
 })

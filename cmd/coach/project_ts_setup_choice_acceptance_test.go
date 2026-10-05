@@ -43,6 +43,18 @@ func withheldKinds(withheld []tssetup.WithheldChoice) []tssetup.ChoiceKind {
 	return kinds
 }
 
+// withheldReason returns the reason the last withheld entry of kind was
+// ruled out, or "" when kind was not withheld.
+func withheldReason(withheld []tssetup.WithheldChoice, kind tssetup.ChoiceKind) string {
+	reason := ""
+	for _, w := range withheld {
+		if w.Kind == kind {
+			reason = w.Reason
+		}
+	}
+	return reason
+}
+
 var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 	passingPackageManager := projectreadiness.Check{State: projectreadiness.Pass, Kind: "npm", Version: "11.2.0"}
 
@@ -105,7 +117,26 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("HEAD carries only Yarn metadata and a verifiable project-mise origin, with no supported compiler installed", func() {
 		It("withholds project-package, named, and offers only the mise-family prepare_compiler choices (AC-SET-1 / SA-280-045)", func() {
-			body_projectTsSetupChoiceAcceptanceTest_withholdsProjectPackageNamedAndOffersOnlyTheMise_103()
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
+					PackageManager: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPackageManagerVersionUnsupported, Kind: "yarn"},
+					Compiler: projectreadiness.Check{
+						State: projectreadiness.Fail,
+						Code:  projectreadiness.GapTypescriptCompilerMissing,
+					},
+				},
+				MiseChoices: []projectreadiness.MiseChoice{
+					{Kind: "mise_project", Verified: true},
+					{Kind: "mise_global", Reason: "mise_unconfigured"},
+				},
+			}
+
+			menu := tssetup.AvailableChoices(readiness)
+
+			Expect(choiceKinds(menu.Choices)).To(Equal([]tssetup.ChoiceKind{tssetup.ChoiceProjectMise, tssetup.ChoiceCancel}))
+
+			projectPackageReason := withheldReason(menu.Withheld, tssetup.ChoiceProjectPackage)
+			Expect(projectPackageReason).To(Equal(projectreadiness.GapPackageManagerVersionUnsupported), "the project adapter must be named, not merely omitted")
 		})
 	})
 
@@ -221,13 +252,47 @@ var _ = Describe("codesignalcli.AvailableSetupChoices", func() {
 
 	When("the project mise origin's mise.toml exists but could not be read", func() {
 		It("withholds project-mise as unverifiable rather than offering an origin Coach could not verify (AC-15)", func() {
-			body_projectTsSetupChoiceAcceptanceTest_withholdsProjectMiseAsUnverifiableRatherThanOffe_243(passingPackageManager)
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
+					PackageManager: passingPackageManager,
+					Compiler: projectreadiness.Check{
+						State: projectreadiness.Fail,
+						Code:  projectreadiness.GapTypescriptCompilerMissing,
+					},
+				},
+				MiseChoices: []projectreadiness.MiseChoice{
+					{Kind: "mise_project", Reason: "mise_unverifiable"},
+					{Kind: "mise_global", Verified: true},
+				},
+			}
+
+			menu := tssetup.AvailableChoices(readiness)
+
+			Expect(choiceKinds(menu.Choices)).NotTo(ContainElement(tssetup.ChoiceProjectMise),
+				"an unreadable mise.toml is an unverifiable origin, not an executable one")
+			reason := withheldReason(menu.Withheld, tssetup.ChoiceProjectMise)
+			Expect(reason).To(Equal("mise_unverifiable"))
 		})
 	})
 
 	When("no mise.toml exists, no global mise typescript pin exists, and the manifest declares nothing", func() {
 		It("withholds project-package for manifest_declaration: the frozen rows install what the manifest already declares, and a manifest declaring no typescript cannot install one", func() {
-			body_projectTsSetupChoiceAcceptanceTest_withholdsProjectPackageForManifestDeclarationThe_273(passingPackageManager, neitherMiseScopeConfigured)
+			readiness := projectreadiness.Result{
+				Checks: projectreadiness.Checks{
+					PackageManager: passingPackageManager,
+					Compiler: projectreadiness.Check{
+						State: projectreadiness.Fail,
+						Code:  projectreadiness.GapTypescriptCompilerMissing,
+					},
+				},
+				MiseChoices: neitherMiseScopeConfigured,
+			}
+
+			menu := tssetup.AvailableChoices(readiness)
+
+			Expect(choiceKinds(menu.Choices)).To(Equal([]tssetup.ChoiceKind{tssetup.ChoiceCancel}))
+			projectPackageReason := withheldReason(menu.Withheld, tssetup.ChoiceProjectPackage)
+			Expect(projectPackageReason).To(Equal("manifest_declaration"))
 		})
 	})
 
