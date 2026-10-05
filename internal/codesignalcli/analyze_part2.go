@@ -9,7 +9,7 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, appliedScope string, excluded []codesignal.CoverageGroup, project *ProjectAnalysis) (*codesignal.Report, error) {
+func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, continuity []codesignal.PathContinuity, appliedScope string, excluded []codesignal.CoverageGroup, project *ProjectAnalysis) (*codesignal.Report, error) {
 	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
 	if err != nil {
 		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
@@ -43,6 +43,8 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 		Files:       fileChanges,
 		Diagnostics: diagnostics,
 		Coverage:    coverage,
+
+		UndeterminedContinuity: continuity,
 	}
 	input, opts, err = applyProjectBackend(ctx, input, opts, project, dir, headSHA, mergeBaseSHA, false)
 	if err != nil {
