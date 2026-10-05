@@ -2,10 +2,7 @@ package acceptanceharness
 
 import (
 	"fmt"
-
 	"net/http"
-
-	"os"
 )
 
 // RoundTrip rejects any request whose host is not on the allowlist before
@@ -25,23 +22,4 @@ func (g *GuardedTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		return nil, fmt.Errorf("acceptanceharness: no fake transport configured for allowed host %q", host)
 	}
 	return g.fake.RoundTrip(req)
-}
-
-// ScanProcessEnv scans the real process environment (os.Environ()) for
-// ambient-credential variables, and the real home directory for default
-// ambient-credential files (AmbientCredentialFiles). If the home directory
-// cannot be resolved, the file check is skipped (Found still reflects the
-// environment-variable scan).
-func ScanProcessEnv() CredentialGuardResult {
-	result := ScanEnviron(os.Environ())
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return result
-	}
-	result.FoundFiles = ScanCredentialFiles(home, func(path string) bool {
-		_, statErr := os.Stat(path)
-		return statErr == nil
-	})
-	return result
 }
