@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/lousy-agents/coach/pkg/semantics"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 var _ = Describe("React component orchestration density facts (epic #139 Story 1/2): component records", func() {

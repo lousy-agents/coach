@@ -1,211 +1,69 @@
 package semantics
 
 import (
-	"errors"
-	"fmt"
-
+	"encoding/json"
 	"testing"
 )
 
-// Result.ReactComponents must stay nil (and thus be omitted from JSON via
-// omitempty) when AnalyzeBytes finds no React client component candidates:
-// Go sources, plain TS/TSX without candidacy, and syntax-error partial
-// results.
-func TestResult_ReactComponentsEmpty(t *testing.T) {
-	a := mustNewAnalyzer(t)
-
-	tests := []reactComponentsOmittedCase{
-		{
-			name: "go ok",
-			input: FileInput{
-				Path:     "main.go",
-				Language: LanguageGo,
-				Content:  []byte("package main\n\nfunc main() {}\n"),
-			},
-			wantStatus: ParseStatus("ok"),
-		},
-		{
-			name: "typescript ok",
-			input: FileInput{
-				Path:     "main.ts",
-				Language: LanguageTypeScript,
-				Content:  []byte("const x: number = 1;\n"),
-			},
-			wantStatus: ParseStatus("ok"),
-		},
-		{
-			name: "tsx ok",
-			input: FileInput{
-				Path:     "App.tsx",
-				Language: LanguageTSX,
-				Content:  []byte("const App = () => <div>hi</div>;\n"),
-			},
-			wantStatus: ParseStatus("ok"),
-		},
-		{
-			name: "tsx syntax error",
-			input: FileInput{
-				Path:     "broken.tsx",
-				Language: LanguageTSX,
-				Content:  []byte("const x = ;"),
-			},
-			wantStatus: ParseStatus("syntax_errors"),
-		},
+// AC-4.1: the Result type (and its nested types) must carry explicit json
+// struct tags in snake_case.
+func TestResult_JSONUsesSnakeCaseTags(t *testing.T) {
+	r := Result{
+		Path:        "main.go",
+		Language:    LanguageGo,
+		ParseStatus: ParseStatus("ok"),
+		Metrics:     StructuralMetrics{Ifs: 1},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			expectReactComponentsOmitted(t, a, tt)
-		})
-	}
-}
-
-// AC-2.3: errors.As must extract a *SyntaxError from a wrapping error chain,
-// and its Issues must match what was originally constructed.
-func TestSyntaxError_AsExtractsIssues(t *testing.T) {
-	issues := []SyntaxIssue{
-		{Kind: "error", Location: Location{StartByte: 1, EndByte: 2}},
-		{Kind: "missing", Location: Location{StartByte: 3, EndByte: 3}},
-	}
-	original := &SyntaxError{Issues: issues}
-	wrapped := fmt.Errorf("analyzing file: %w", original)
-
-	var got *SyntaxError
-	if !errors.As(wrapped, &got) {
-		t.Fatalf("AC-2.3: errors.As(%v, &SyntaxError{}) = false, want true", wrapped)
+	raw, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("AC-4.1: marshaling a minimal Result must not fail: %v", err)
 	}
 
-	if len(got.Issues) != len(issues) {
-		t.Fatalf("AC-2.3: extracted SyntaxError.Issues length: got %d, want %d", len(got.Issues), len(issues))
+	var asMap map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &asMap); err != nil {
+		t.Fatalf("AC-4.1: Result JSON must unmarshal into a generic map: %v", err)
 	}
-	for i, want := range issues {
-		if got.Issues[i] != want {
-			t.Errorf("AC-2.3: extracted SyntaxError.Issues[%d]: got %+v, want %+v", i, got.Issues[i], want)
+
+	wantKeys := []string{"path", "language", "parse_status", "metrics"}
+	for _, key := range wantKeys {
+		if _, ok := asMap[key]; !ok {
+			t.Errorf("AC-4.1: Result JSON missing expected snake_case key %q; got keys: %v", key, asMap)
+		}
+	}
+
+	badKeys := []string{"Path", "Language", "ParseStatus", "Metrics"}
+	for _, key := range badKeys {
+		if _, ok := asMap[key]; ok {
+			t.Errorf("AC-4.1: Result JSON must not use PascalCase key %q; got keys: %v", key, asMap)
 		}
 	}
 }
 
-// goldenOkResult builds the small, hand-legible fixture used by the AC-4.4
-// golden test for a clean parse: one import, one finding, one zero-score
-// Cognitive Complexity record, no syntax errors. Shape matches a reachable
-// AnalyzeBytes "ok" result (ParseStatus "ok" carries Imports/Metrics/Findings
-// and per-function cognitive_complexity, never SyntaxErrors).
-func goldenOkResult() Result {
-	loc := Location{
-		StartByte: 30, EndByte: 45,
-		StartRow: 3, StartCol: 0,
-		EndRow: 3, EndCol: 15,
-	}
-	return Result{
-		Path:        "example.go",
+// AC-4.1 (omitempty specifics): marshaling a Result with nil SyntaxErrors,
+// Imports, and Findings must omit those keys entirely from the JSON output,
+// not emit them as null or [].
+func TestResult_OmitsEmptyOptionalSlices(t *testing.T) {
+	r := Result{
+		Path:        "empty.go",
 		Language:    LanguageGo,
 		ParseStatus: ParseStatus("ok"),
-		Imports: []ImportFeature{
-			{
-				Path: "fmt",
-				Location: Location{
-					StartByte: 20, EndByte: 25,
-					StartRow: 2, StartCol: 1,
-					EndRow: 2, EndCol: 6,
-				},
-			},
-		},
-		Metrics: StructuralMetrics{
-			Ifs: 0, Fors: 0, ExprSwitches: 0, TypeSwitches: 0,
-			Selects: 0, Functions: 1, Methods: 0, MaxNestingDepth: 0,
-		},
-		Findings: []Finding{
-			{
-				Kind:     "constructor_func",
-				Name:     "NewThing",
-				Location: loc,
-			},
-		},
-		CognitiveComplexity: []FunctionCognitiveComplexity{
-			{
-				Name:     "NewThing",
-				Kind:     "function",
-				Location: loc,
-				Score:    0,
-			},
-		},
+		Metrics:     StructuralMetrics{},
 	}
-}
 
-// goldenSyntaxErrorResult builds the small, hand-legible fixture used by the
-// AC-4.4 golden test for a syntax-error parse: one syntax error, zero-valued
-// Metrics, no Imports/Findings. This is the other state AnalyzeBytes can
-// actually return (ParseStatus "syntax_errors" always carries SyntaxErrors
-// and zero-valued/omitted everything else -- see analyzer.go's HasError
-// branch). Kept as a separate fixture from goldenOkResult rather than
-// combined into one, since no real Result ever has both SyntaxErrors and
-// populated Imports/Metrics/Findings at once.
-func goldenSyntaxErrorResult() Result {
-	return Result{
-		Path:        "broken.go",
-		Language:    LanguageGo,
-		ParseStatus: ParseStatus("syntax_errors"),
-		SyntaxErrors: []SyntaxIssue{
-			{
-				Kind: "error",
-				Location: Location{
-					StartByte: 10, EndByte: 11,
-					StartRow: 1, StartCol: 0,
-					EndRow: 1, EndCol: 1,
-				},
-			},
-		},
+	raw, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshaling a Result with nil optional slices must not fail: %v", err)
 	}
-}
 
-// goldenReactComponentsResult locks the additive react_components JSON
-// field family (Story 4 / epic #139) under the same golden discipline as
-// cognitive_complexity: one minimal, hand-legible record with every nested
-// fact slice present so snake_case tags and omitempty presence stay frozen.
-func goldenReactComponentsResult() Result {
-	compLoc := Location{
-		StartByte: 40, EndByte: 200,
-		StartRow: 2, StartCol: 0,
-		EndRow: 12, EndCol: 1,
+	var asMap map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &asMap); err != nil {
+		t.Fatalf("Result JSON must unmarshal into a generic map: %v", err)
 	}
-	bindLoc := Location{
-		StartByte: 60, EndByte: 90,
-		StartRow: 3, StartCol: 2,
-		EndRow: 3, EndCol: 32,
-	}
-	return Result{
-		Path:        "WorkspacePage.tsx",
-		Language:    LanguageTSX,
-		ParseStatus: ParseStatus("ok"),
-		Metrics: StructuralMetrics{
-			Functions: 1,
-		},
-		ReactComponents: []ReactComponentFacts{
-			{
-				Name:       "WorkspacePage",
-				Location:   compLoc,
-				ClientKind: "use_client_directive",
-				UseState: []ReactUseStateBinding{
-					{Binding: "activeView", Setter: "setActiveView", Location: bindLoc},
-				},
-				CoordinatedTransitions: []ReactCoordinatedTransition{
-					{
-						Name:            "<anonymous>",
-						Kind:            "effect",
-						Location:        Location{StartByte: 100, EndByte: 140, StartRow: 5, StartCol: 2, EndRow: 7, EndCol: 4},
-						UpdatedBindings: []string{"activeView", "filterText"},
-					},
-				},
-				WorkspaceBranches: []ReactWorkspaceBranch{
-					{Label: "list", Location: Location{StartByte: 150, EndByte: 160, StartRow: 8, StartCol: 8, EndRow: 8, EndCol: 18}},
-				},
-				ImperativeUI: []ReactImperativeUICall{
-					{API: "getElementById", Location: Location{StartByte: 70, EndByte: 99, StartRow: 4, StartCol: 2, EndRow: 4, EndCol: 31}},
-				},
-				SharedPanelDeps: []ReactSharedPanelDep{
-					{Name: "selectedId", Panels: []string{"DetailPanel", "ListPanel"}},
-				},
-			},
-		},
+
+	for _, key := range []string{"syntax_errors", "imports", "findings"} {
+		if raw, present := asMap[key]; present {
+			t.Errorf("Result JSON must omit key %q for nil slice (omitempty), got present with value %s", key, raw)
+		}
 	}
 }

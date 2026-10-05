@@ -1,6 +1,8 @@
 package semantics
 
-import "testing"
+import (
+	"testing"
+)
 
 // AC-R2.5: LanguageForExtension must map known extensions case-insensitively
 // and report ("", false) for anything unrecognized. AnalyzeBytes never
@@ -20,5 +22,18 @@ func TestLanguageForExtension(t *testing.T) {
 		t.Run(tt.ext, func(t *testing.T) {
 			expectLanguageForExtension(t, tt)
 		})
+	}
+}
+
+type languageForExtensionCase struct {
+	ext      string
+	wantLang Language
+	wantOK   bool
+}
+
+func expectLanguageForExtension(t *testing.T, tt languageForExtensionCase) {
+	gotLang, gotOK := LanguageForExtension(tt.ext)
+	if gotLang != tt.wantLang || gotOK != tt.wantOK {
+		t.Errorf("LanguageForExtension(%q): got (%q, %v), want (%q, %v)", tt.ext, gotLang, gotOK, tt.wantLang, tt.wantOK)
 	}
 }
