@@ -2,7 +2,6 @@ package configauthoring
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -112,13 +111,4 @@ func expectNoPrefixAdoptsDiscoveredRoot(t *testing.T, result Result, discovered 
 			t.Fatalf("layer %q silently adopted discovered root %q as a prefix, Layers = %+v", layer.Name, root, result.Layers)
 		}
 	}
-}
-
-func adoptedDiscoveredRoot(prefixes, roots []string) (string, bool) {
-	for _, prefix := range prefixes {
-		if slices.Contains(roots, prefix) {
-			return prefix, true
-		}
-	}
-	return "", false
 }

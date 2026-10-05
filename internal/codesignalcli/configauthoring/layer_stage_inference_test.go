@@ -1,6 +1,7 @@
 package configauthoring
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -46,4 +47,13 @@ func checkLayerStageNeverInfersPreselectsRecommends(t *testing.T, tc struct {
 			t.Fatalf("expected discovered root %q to appear only once before the coverage preview (the root-selection suggestion), got it repeated in:\n%s", root, beforeCoveragePreview)
 		}
 	}
+}
+
+func adoptedDiscoveredRoot(prefixes, roots []string) (string, bool) {
+	for _, prefix := range prefixes {
+		if slices.Contains(roots, prefix) {
+			return prefix, true
+		}
+	}
+	return "", false
 }
