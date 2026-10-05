@@ -2,7 +2,6 @@ package sqs
 
 import (
 	"context"
-
 	"strconv"
 
 	awssqs "github.com/aws/aws-sdk-go-v2/service/sqs"

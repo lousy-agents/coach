@@ -3,7 +3,6 @@ package sqs
 import (
 	"context"
 	"encoding/json"
-
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -11,6 +10,28 @@ import (
 
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
 )
+
+// Complete implements internal/coachapi/queue.TaskQueue.
+func (q *Queue) Complete(ctx context.Context, claim queue.Claim) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	entry, ok := q.inflight[claim.Token]
+	if !ok || entry.taskID != claim.TaskID {
+		return fmt.Errorf("%w: task %q", errStaleClaim, claim.TaskID)
+	}
+
+	_, err := q.client.DeleteMessage(ctx, &awssqs.DeleteMessageInput{
+		QueueUrl:      aws.String(q.queueURL),
+		ReceiptHandle: aws.String(claim.Token),
+	})
+	if err != nil {
+		return fmt.Errorf("sqs: DeleteMessage for task %q: %w", claim.TaskID, err)
+	}
+
+	delete(q.inflight, claim.Token)
+	return nil
+}
 
 // Nack implements internal/coachapi/queue.TaskQueue. permanent=false resets
 // the message's SQS visibility to 0, making it immediately reclaimable.
@@ -55,43 +76,5 @@ func (q *Queue) Nack(ctx context.Context, claim queue.Claim, permanent bool) err
 		return fmt.Errorf("sqs: retryable Nack for task %q: %w", claim.TaskID, err)
 	}
 	delete(q.inflight, claim.Token)
-	return nil
-}
-
-// Complete implements internal/coachapi/queue.TaskQueue.
-func (q *Queue) Complete(ctx context.Context, claim queue.Claim) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	entry, ok := q.inflight[claim.Token]
-	if !ok || entry.taskID != claim.TaskID {
-		return fmt.Errorf("%w: task %q", errStaleClaim, claim.TaskID)
-	}
-
-	_, err := q.client.DeleteMessage(ctx, &awssqs.DeleteMessageInput{
-		QueueUrl:      aws.String(q.queueURL),
-		ReceiptHandle: aws.String(claim.Token),
-	})
-	if err != nil {
-		return fmt.Errorf("sqs: DeleteMessage for task %q: %w", claim.TaskID, err)
-	}
-
-	delete(q.inflight, claim.Token)
-	return nil
-}
-
-// Enqueue implements internal/coachapi/queue.TaskQueue.
-func (q *Queue) Enqueue(ctx context.Context, task queue.Task) error {
-	body, err := json.Marshal(wireTask{ID: task.ID, Payload: task.Payload})
-	if err != nil {
-		return fmt.Errorf("sqs: encoding task %q: %w", task.ID, err)
-	}
-	_, err = q.client.SendMessage(ctx, &awssqs.SendMessageInput{
-		QueueUrl:    aws.String(q.queueURL),
-		MessageBody: aws.String(string(body)),
-	})
-	if err != nil {
-		return fmt.Errorf("sqs: SendMessage for task %q: %w", task.ID, err)
-	}
 	return nil
 }

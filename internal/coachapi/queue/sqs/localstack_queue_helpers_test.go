@@ -3,10 +3,8 @@ package sqs_test
 import (
 	"crypto/rand"
 	"encoding/hex"
-
 	"io"
 	"net/http"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +24,8 @@ func createLocalStackQueue(t *testing.T, endpoint, queueName string) (string, bo
 		return "", false
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
+	// LocalStack's SQS query-protocol endpoint accepts unsigned requests
+	// with any Authorization header shape for local testing.
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=localstack-fake-access-key/20260101/us-east-1/sqs/aws4_request")
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -48,46 +47,6 @@ func createLocalStackQueue(t *testing.T, endpoint, queueName string) (string, bo
 		return "", false
 	}
 	return queueURL, true
-}
-
-// startLocalStack starts a throwaway LocalStack container with only the
-// SQS service enabled, publishing its edge port (4566) to a
-// Docker-assigned host port. ok=false means the whole test has already
-// been skipped (Docker daemon unreachable or the container failed to
-// start); callers must return immediately without further cleanup beyond
-// what startLocalStack itself already registered.
-func startLocalStack(t *testing.T) (endpoint, containerID string, ok bool) {
-	t.Helper()
-
-	runCmd := exec.Command("docker", "run", "--rm", "-d",
-		"-p", "0:4566",
-		"-e", "SERVICES=sqs",
-
-		"localstack/localstack:3.8",
-	)
-	out, err := runCmd.CombinedOutput()
-	if err != nil {
-		t.Skipf("docker run localstack/localstack:3.8 failed (Docker daemon likely unreachable in this environment); skipping: %v\n%s", err, out)
-		return "", "", false
-	}
-	containerID = strings.TrimSpace(string(out))
-
-	portCmd := exec.Command("docker", "port", containerID, "4566/tcp")
-	portOut, err := portCmd.CombinedOutput()
-	if err != nil {
-		exec.Command("docker", "rm", "-f", containerID).Run()
-		t.Skipf("docker port lookup for the LocalStack container failed; skipping: %v\n%s", err, portOut)
-		return "", "", false
-	}
-
-	hostPort := parseHostPort(string(portOut))
-	if hostPort == "" {
-		exec.Command("docker", "rm", "-f", containerID).Run()
-		t.Skipf("could not parse a host port from `docker port` output %q; skipping", portOut)
-		return "", "", false
-	}
-
-	return "http://127.0.0.1:" + hostPort, containerID, true
 }
 
 func deleteLocalStackQueue(endpoint, queueURL string) {
@@ -115,4 +74,20 @@ func randomSuffix(t *testing.T) string {
 		t.Fatalf("generating random suffix: %v", err)
 	}
 	return hex.EncodeToString(buf)
+}
+
+// extractQueueURL pulls <QueueUrl>...</QueueUrl> out of an SQS
+// CreateQueueResponse XML body.
+func extractQueueURL(body string) string {
+	const open, close = "<QueueUrl>", "</QueueUrl>"
+	start := strings.Index(body, open)
+	if start < 0 {
+		return ""
+	}
+	start += len(open)
+	end := strings.Index(body[start:], close)
+	if end < 0 {
+		return ""
+	}
+	return body[start : start+end]
 }

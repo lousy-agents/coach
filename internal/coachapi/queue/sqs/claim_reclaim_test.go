@@ -2,13 +2,8 @@ package sqs
 
 import (
 	"context"
-
-	"fmt"
-
 	"testing"
 	"time"
-
-	awssqs "github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
@@ -51,14 +46,24 @@ func TestQueueClaimDoesNotHoldLockDuringReclaimNetworkCall(t *testing.T) {
 		t.Fatalf("both claims returned the same task id %q, want task-1 and task-2", first.TaskID)
 	}
 
+	// Both claims are made *before* advancing the clock, so neither Claim
+	// call above went through reapExpired's blocked path. Advancing now
+	// makes both claims' deadlines stale, so the next Claim call (below,
+	// backgrounded) will try to reclaim one of them via a
+	// ChangeMessageVisibility call that blocks on unblock -- and whichever
+	// entry it picks, the *other* one (second, completed concurrently
+	// below) is still present in q.inflight until that blocked call
+	// resolves and reapExpired's delete phase runs.
 	clock.Advance(24 * time.Hour)
 
 	reclaimDone := make(chan error, 1)
 	go func() {
-		_, _, err := q.Claim(ctx)
+		_, _, err := q.Claim(ctx) // triggers reapExpired, which blocks on ChangeMessageVisibility
 		reclaimDone <- err
 	}()
 
+	// Give the reclaiming goroutine a moment to actually enter the blocked
+	// call before racing Complete against it.
 	time.Sleep(20 * time.Millisecond)
 
 	completeDone := make(chan error, 1)
@@ -81,30 +86,4 @@ func TestQueueClaimDoesNotHoldLockDuringReclaimNetworkCall(t *testing.T) {
 	if err := <-reclaimDone; err != nil {
 		t.Fatalf("reclaiming Claim call: %v", err)
 	}
-}
-
-func TestQueueClaimWrapsUnderlyingError(t *testing.T) {
-	ctx := context.Background()
-	q := newTestQueue(t, erroringSQS{newFakeSQS()}, acceptanceharness.NewFakeClock(time.Unix(0, 0)))
-
-	_, _, err := q.Claim(ctx)
-	if err == nil {
-		t.Fatal("Claim: want error, got nil")
-	}
-	if got := fmt.Sprint(err); got == "" {
-		t.Fatalf("Claim error message is empty")
-	}
-}
-
-func (f *fakeSQS) ChangeMessageVisibility(ctx context.Context, in *awssqs.ChangeMessageVisibilityInput, _ ...func(*awssqs.Options)) (*awssqs.ChangeMessageVisibilityOutput, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	url := *in.QueueUrl
-	msg := f.findByReceiptHandle(url, *in.ReceiptHandle)
-	if msg == nil {
-		return nil, fakeAPIError{code: "ReceiptHandleIsInvalid"}
-	}
-	msg.visible = in.VisibilityTimeout == 0
-	return &awssqs.ChangeMessageVisibilityOutput{}, nil
 }

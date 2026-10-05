@@ -2,7 +2,7 @@ package sqs
 
 import (
 	"context"
-
+	"fmt"
 	"testing"
 	"time"
 
@@ -54,11 +54,15 @@ func TestQueueDuplicateTaskIDClaimsAreTrackedIndependently(t *testing.T) {
 	}
 }
 
-func (f *fakeSQS) findByReceiptHandle(url, receiptHandle string) *fakeMessage {
-	for _, msg := range f.queues[url] {
-		if msg.receiptHandle == receiptHandle {
-			return msg
-		}
+func TestQueueClaimWrapsUnderlyingError(t *testing.T) {
+	ctx := context.Background()
+	q := newTestQueue(t, erroringSQS{newFakeSQS()}, acceptanceharness.NewFakeClock(time.Unix(0, 0)))
+
+	_, _, err := q.Claim(ctx)
+	if err == nil {
+		t.Fatal("Claim: want error, got nil")
 	}
-	return nil
+	if got := fmt.Sprint(err); got == "" {
+		t.Fatalf("Claim error message is empty")
+	}
 }
