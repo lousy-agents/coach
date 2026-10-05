@@ -107,6 +107,39 @@ func TestRenderTextWithheldSignalsLine(t *testing.T) {
 			wantLead: "No active CodeSignal findings at or above --min-severity high.\n",
 		},
 		{
+			name: "cap only names the command to see all",
+			report: &codesignal.Report{
+				Signals:         []codesignal.Signal{signal},
+				SignalsWithheld: &codesignal.SignalsWithheld{Top: 1, BeyondTop: 3},
+			},
+			wantLine: "withheld: 3 signals beyond --top 1 (counts above describe the full analysis); re-run without --top to see all\n",
+		},
+		{
+			name: "cap singular",
+			report: &codesignal.Report{
+				Signals:         []codesignal.Signal{signal},
+				SignalsWithheld: &codesignal.SignalsWithheld{Top: 2, BeyondTop: 1},
+			},
+			wantLine: "withheld: 1 signal beyond --top 2 (counts above describe the full analysis); re-run without --top to see all\n",
+		},
+		{
+			name: "cap at or above the signal count offers nothing more to see",
+			report: &codesignal.Report{
+				Signals:         []codesignal.Signal{signal},
+				SignalsWithheld: &codesignal.SignalsWithheld{Top: 5},
+			},
+			wantLine: "withheld: 0 signals beyond --top 5 (counts above describe the full analysis)\n",
+		},
+		{
+			name: "floor and cap report both counts and the total and drop both flags",
+			report: &codesignal.Report{
+				Scope:           codesignal.Scope{Baseline: true},
+				Signals:         []codesignal.Signal{signal},
+				SignalsWithheld: &codesignal.SignalsWithheld{MinSeverity: "high", BelowMinSeverity: 2, Top: 1, BeyondTop: 3},
+			},
+			wantLine: "withheld: 5 signals (2 below --min-severity high, 3 beyond --top 1) (counts above describe the full analysis); re-run without --min-severity and --top to see all\n",
+		},
+		{
 			name: "zero withheld keeps the unscoped all-clear",
 			report: &codesignal.Report{
 				SignalsWithheld: &codesignal.SignalsWithheld{MinSeverity: "low"},

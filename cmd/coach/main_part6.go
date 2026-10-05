@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -30,6 +31,11 @@ func validateCodesignalFlags(f codesignalFlags, positional []string) string {
 			return fmt.Sprintf("coach: invalid --min-severity value %q: must be \"high\", \"medium\", \"advisory\", or \"low\"", f.minSeverity)
 		}
 	}
+	if f.topSet {
+		if _, ok := parseTopCap(f.top); !ok {
+			return fmt.Sprintf("coach: invalid --top value %q: must be a positive integer", f.top)
+		}
+	}
 	if f.projectLanguage != "go" && f.projectLanguage != "typescript" {
 		return fmt.Sprintf("coach: invalid --project-language value %q: must be \"go\" or \"typescript\"", f.projectLanguage)
 	}
@@ -37,6 +43,11 @@ func validateCodesignalFlags(f codesignalFlags, positional []string) string {
 		return fmt.Sprintf("coach: unexpected positional argument %q", positional[0])
 	}
 	return ""
+}
+
+func parseTopCap(value string) (int, bool) {
+	n, err := strconv.Atoi(value)
+	return n, err == nil && n > 0
 }
 func renderReport(report *codesignal.Report, format string, stdout, stderr *os.File) int {
 	if format == "json" {

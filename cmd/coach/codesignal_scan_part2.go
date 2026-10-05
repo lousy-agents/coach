@@ -57,6 +57,10 @@ func renderScanResult(report *codesignal.Report, f codesignalFlags, stdout, stde
 	if f.minSeveritySet {
 		view = report.WithMinSeverity(codesignal.Severity(f.minSeverity))
 	}
+	if f.topSet {
+		top, _ := parseTopCap(f.top)
+		view = view.WithTop(top)
+	}
 	if exitCode := renderReport(view, f.format, stdout, stderr); exitCode != 0 {
 		return exitCode
 	}

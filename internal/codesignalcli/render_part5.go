@@ -65,12 +65,39 @@ func renderWithheldSignals(b *strings.Builder, withheld *codesignal.SignalsWithh
 	if withheld == nil {
 		return
 	}
-	noun := "signals"
-	if withheld.BelowMinSeverity == 1 {
-		noun = "signal"
+	var phrases, flags []string
+	total := 0
+	if withheld.MinSeverity != "" {
+		phrases = append(phrases, "below --min-severity "+string(withheld.MinSeverity))
+		flags = append(flags, "--min-severity")
+		total += withheld.BelowMinSeverity
 	}
-	fmt.Fprintf(b, "withheld: %d %s below --min-severity %s (counts above describe the full analysis)\n",
-		withheld.BelowMinSeverity, noun, withheld.MinSeverity)
+	if withheld.Top > 0 {
+		phrases = append(phrases, fmt.Sprintf("beyond --top %d", withheld.Top))
+		flags = append(flags, "--top")
+		total += withheld.BeyondTop
+	}
+	switch len(phrases) {
+	case 0:
+		return
+	case 1:
+		fmt.Fprintf(b, "withheld: %s %s", signalCountNoun(total), phrases[0])
+	default:
+		fmt.Fprintf(b, "withheld: %s (%d %s, %d %s)", signalCountNoun(total),
+			withheld.BelowMinSeverity, phrases[0], withheld.BeyondTop, phrases[1])
+	}
+	b.WriteString(" (counts above describe the full analysis)")
+	if withheld.Top > 0 && total > 0 {
+		fmt.Fprintf(b, "; re-run without %s to see all", strings.Join(flags, " and "))
+	}
+	b.WriteString("\n")
+}
+
+func signalCountNoun(n int) string {
+	if n == 1 {
+		return "1 signal"
+	}
+	return fmt.Sprintf("%d signals", n)
 }
 func pathCountClause(n int) string {
 	if n == 1 {
