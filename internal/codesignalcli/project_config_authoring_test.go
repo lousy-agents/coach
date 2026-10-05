@@ -3,15 +3,31 @@ package codesignalcli
 import (
 	"bytes"
 	"encoding/json"
-
 	"io"
-
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
+
+func (w *boundedWriter) Write(p []byte) (int, error) {
+	if remaining := w.cap - w.buf.Len(); remaining > 0 {
+		if remaining > len(p) {
+			remaining = len(p)
+		}
+		w.buf.Write(p[:remaining])
+	}
+	return len(p), nil
+}
+
+func (r *persistentErrorReader) Read(p []byte) (int, error) {
+	if !r.sent {
+		r.sent = true
+		return copy(p, r.data), nil
+	}
+	return 0, r.err
+}
 
 // recordingWriter and recordingReader append an event to a shared log every
 // time Write/Read is called, letting a test assert that the root-selection
@@ -30,7 +46,7 @@ type recordingReader struct {
 // persistentErrorReader supplies data exactly once, then fails with a fixed
 // non-io.EOF error on every subsequent Read -- simulating a real-world
 // exhausted reader that does not fail cleanly with io.EOF (a closed stdin
-// file descriptor, a detached tty, a reset network stream). readLine must
+// file descriptor, a detached tty, a reset network stream). prompt.ReadLine must
 // treat this the same as a clean io.EOF: as exhausted input, not as an
 // answer to keep retrying against.
 type persistentErrorReader struct {

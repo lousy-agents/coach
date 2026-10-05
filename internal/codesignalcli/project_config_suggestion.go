@@ -2,9 +2,10 @@ package codesignalcli
 
 import (
 	"encoding/json"
-
 	"sort"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -26,8 +27,8 @@ const (
 // suggestGoBudgets bounds the DiscoverGoRoots walk --suggest-project-config
 // runs over the immutable HEAD snapshot. A zero-value GoBudgets means
 // unbounded, which is unsafe for a CLI reading a repository-controlled
-// tree; this mirrors project_snapshot.go's maxSnapshotListBytes/
-// maxSnapshotFileBytes finite-input contract so a hostile or enormous tree
+// tree; this mirrors project_snapshot.go's revisionfs.MaxListBytes/
+// revisionfs.maxSnapshotFileBytes finite-input contract so a hostile or enormous tree
 // truncates (surfaced as project_config_suggestion_incomplete) instead of
 // scanning without bound. 500,000 files comfortably covers even very large
 // monorepos while still being finite; MaxInputBytes reuses the existing
@@ -35,7 +36,7 @@ const (
 // go.work content rather than inventing a new constant.
 var suggestGoBudgets = projectmodel.GoBudgets{
 	MaxInputFiles: 500000,
-	MaxInputBytes: maxSnapshotListBytes,
+	MaxInputBytes: revisionfs.MaxListBytes,
 }
 
 // SuggestionResult is the outcome of one SuggestProjectConfig call.
@@ -60,7 +61,7 @@ type SuggestionResult struct {
 // dir may be any directory inside the Git worktree, not necessarily its
 // root (issue #220 must support invocation from a subdirectory): the
 // repository root is resolved once and used both for --output path
-// resolution and as the root NewGoSnapshotFS enumerates from, so discovered
+// resolution and as the root revisionfs.New enumerates from, so discovered
 // roots and --output are always repository-root-relative regardless of the
 // invocation directory.
 //
@@ -72,12 +73,12 @@ type SuggestionResult struct {
 // the degenerate case of "resolved immutable snapshot cannot be read"
 // (SuggestDiagSnapshotUnavailable).
 func SuggestProjectConfig(dir, outputPath string, outputSet bool) SuggestionResult {
-	revisionSHA, err := ResolveBaselineRevision(dir)
+	revisionSHA, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
 		return suggestFailureBeforeDiscovery("", SuggestDiagSnapshotUnavailable, "", snapshotUnavailableMessage("resolve HEAD", err, dir))
 	}
 
-	root, err := repositoryRoot(dir)
+	root, err := gitrepo.RepositoryRoot(dir)
 	if err != nil {
 		return suggestFailureBeforeDiscovery(revisionSHA, SuggestDiagSnapshotUnavailable, "", snapshotUnavailableMessage("resolve the repository root", err, dir))
 	}
@@ -93,7 +94,7 @@ func SuggestProjectConfig(dir, outputPath string, outputSet bool) SuggestionResu
 		return prepFail
 	}
 
-	snapshot, err := NewGoSnapshotFS(root, revisionSHA)
+	snapshot, err := revisionfs.New(root, revisionSHA)
 	if err != nil {
 		return suggestFailureBeforeDiscovery(revisionSHA, SuggestDiagSnapshotUnavailable, "", snapshotUnavailableMessage("read the HEAD snapshot", err, root, dir))
 	}
@@ -123,16 +124,6 @@ func SuggestProjectConfig(dir, outputPath string, outputSet bool) SuggestionResu
 	return suggestSuccessResult(revisionSHA, result, candidate, outputSet)
 }
 
-// prepareSuggestOutputPath validates --output shape/parent confinement before
-// discovery. clean is the repository-relative form used later for the
-// create-only write; on a shape rejection clean is "" so the envelope path
-// stays repository-relative "when applicable" (issue #220/#210).
-
-// writeSuggestCandidate performs the post-discovery create-only --output
-// write. An ordinary write failure (read-only directory, out of disk space,
-// name too long) is SuggestDiagOutputInvalid; only discovery-result
-// serialization maps to SuggestDiagFailed.
-
 // InvalidArgumentsSuggestionEnvelope builds the stderr diagnostic/
 // provenance envelope for a --suggest-project-config invocation rejected
 // before any Git or discovery work runs (issue #220's failure precedence
@@ -155,60 +146,10 @@ func suggestFailureAfterDiscovery(revision string, result projectmodel.RootDisco
 	return SuggestionResult{Envelope: envelope, ExitCode: suggestExitCodeFor(code)}
 }
 
-// suggestPrimaryRootDiagnostic maps result's root-discovery diagnostics to
-// the single primary suggestion diagnostic per issue #220's fixed priority:
-// unavailable > (outside_snapshot|invalid|duplicate|ambiguous) > incomplete
-// > no-modules. ok is true only when result represents a usable, complete,
-// non-empty root set.
-
-// snapshotUnavailableMessage builds the diagnostic message for a
-// SuggestDiagSnapshotUnavailable failure -- resolving HEAD, resolving the
-// repository root, or opening the HEAD snapshot filesystem -- without ever
-// letting an absolute host filesystem path reach the NDJSON envelope.
-//
-// underlyingErr's text routinely embeds an absolute path. Three error
-// shapes are handled structurally, by extracting the failure reason from
-// data the error already carries, in priority order:
-//
-//  1. *fs.PathError (filepath.EvalSymlinks inside repositoryRoot): unwrapped
-//     to just its errno-class Err, discarding Path entirely, since the path
-//     there was never known to the caller and cannot be stripped by
-//     substring match.
-//  2. *OperationalError (resolveHEAD's "not inside a Git worktree" case):
-//     its Reason() carries the same failure with no path interpolated.
-//  3. *snapshotListError (NewGoSnapshotFS's ls-tree listing failure): its
-//     Unwrap() carries the underlying git failure alone, with dir dropped
-//     from the wrapping fmt.Errorf -- but git's own stderr text can still
-//     embed dir itself, so this case is not a guarantee, only a narrowing;
-//     see the scrub loop below.
-//
-// The structural extraction above narrows the surface a path could hide in,
-// but does not guarantee it: *snapshotListError.Unwrap() (and any other
-// error shape, e.g. repositoryRoot's own bare git-plumbing-failure text)
-// still carries raw git stderr, which can itself embed an absolute path
-// (e.g. `fatal: cannot change to '<dir>': No such file or directory`) that
-// no structural extraction step removes. So every path reaching this point
-// -- from every case, not just the unstructured fallback -- still has each
-// absolute path the caller does know about (its invocation directory and,
-// once resolved, the repository root) replaced with "." if present, both in
-// its raw form and in the %q-quoted form (via strconv.Quote, which escapes
-// '"', '\', and control bytes -- and on Windows always differs from the raw
-// form because of '\'-separated paths). This is a no-op for the
-// *fs.PathError and *OperationalError cases, whose extracted reason never
-// contains a path in the first place.
-
 type suggestionCandidate struct {
 	SchemaVersion string   `json:"schema_version"`
 	Roots         []string `json:"roots"`
 }
-
-// serializeSuggestionCandidate renders roots as the strict schema-1
-// project-config candidate: 2-space indent, one trailing newline, fixed
-// key order, sorted and deduplicated roots.
-
-// normalizeSuggestionRoots defensively re-sorts and deduplicates
-// DiscoverGoRoots' already-sorted, deduplicated Roots so the candidate
-// contract holds even if that upstream invariant is ever relaxed.
 
 type suggestionEnvelope struct {
 	DiagnosticVersion string                    `json:"diagnostic_version"`
@@ -299,51 +240,6 @@ func zeroSuggestCoverage() projectmodel.Coverage {
 	}
 }
 
-// validateSuggestOutputPathShape rejects an --output value that can never
-// be a valid create-only target: empty, the literal "-", absolute, not
-// normalized, escaping the repository, or containing a ".git" component.
-// It returns the cleaned repository-relative path on success.
-
-// checkOutputParents walks every existing parent component of cleanOutput
-// (relative to repositoryRootDir) via os.Lstat -- not os.Stat -- so a
-// symlinked parent directory is rejected rather than silently followed. A
-// missing parent is also rejected: a create-only write must never mkdir -p.
-
-// validateOutputPath performs the shape and parent-confinement stages of
-// --output validation only. Whether the target already exists is checked
-// separately, after discovery succeeds (see writeSuggestOutput's O_EXCL
-// create-only open): issue #220 places "an existing --output target" as
-// the last failure-precedence stage, after root discovery, not before it.
-//
-// clean is returned even on a parent-confinement error, since a valid
-// repository-relative form is already known once shape validation passes;
-// only a shape-validation failure -- where no valid relative form exists
-// yet -- returns clean == "". Callers use this to avoid putting an
-// absolute or otherwise un-cleaned caller-supplied path into a
-// diagnostic's path field.
-
 func ValidateAuthoringOutputPath(repositoryRootDir, outputPath string) (clean string, err error) {
 	return validateOutputPath(repositoryRootDir, outputPath)
 }
-
-// unwrapPathError rebuilds err as "<cleanOutput>: <errno>" when it is a
-// *fs.PathError, dropping the absolute host filesystem path the error
-// otherwise carries; every other diagnostic message in this feature is
-// repository-relative; err is returned unchanged if it is not a
-// *fs.PathError.
-
-// writeSuggestOutput performs the authoritative create-only write: an
-// O_EXCL open that fails with fs.ErrExist when the target already exists.
-// For the batch --suggest-project-config path specifically, this is the only
-// existence check for --output -- there is deliberately no preflight stat,
-// both because issue #220 puts "target already exists" last in the failure
-// precedence (after root discovery) and because O_EXCL leaves no TOCTOU
-// window: a concurrently created target is never clobbered, and a symlink at
-// the target position is never followed.
-//
-// A failed Write or Close (ENOSPC, EIO, ...) leaves target removed: the
-// O_EXCL create already succeeded, so without this cleanup a truncated file
-// would remain at target and make the next run fail with
-// SuggestDiagOutputExists instead of surfacing the original write failure
-// again. Removal is best-effort -- its own error is never propagated, and
-// the original writeErr/closeErr is always what is returned.

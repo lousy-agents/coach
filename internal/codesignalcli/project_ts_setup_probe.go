@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/subprocess"
 )
 
 const (
@@ -32,7 +34,7 @@ func runPackageManagerProbe(ctx context.Context, executable string, args ...stri
 	}
 	defer func() { _ = os.RemoveAll(probeDir) }()
 
-	data, exitErr, probeErr := runBoundedSubprocessProbeAt(ctx, packageManagerProbeTimeout, maxPackageManagerProbeOutput, probeDir, packageManagerProbeEnv(), executable, args...)
+	data, exitErr, probeErr := subprocess.ProbeAt(ctx, packageManagerProbeTimeout, maxPackageManagerProbeOutput, probeDir, packageManagerProbeEnv(), executable, args...)
 	if probeErr != nil {
 		return "", nil, false
 	}

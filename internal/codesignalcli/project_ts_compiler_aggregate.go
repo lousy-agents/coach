@@ -1,6 +1,8 @@
 package codesignalcli
 
-import "context"
+import (
+	"context"
+)
 
 const (
 	compilerClassEligible      = "eligible"
@@ -87,24 +89,6 @@ type miseSetupTrust struct {
 	code    string
 }
 
-// gatedMiseOriginEvaluation resolves origin as unavailable, without ever
-// invoking evaluate (and so without ever reading the config or TypeScript
-// version mise would otherwise report), whenever trust rejects it. This is
-// deliberately the same "no candidate" shape an absent or unconfigured mise
-// origin already produces: an untrusted mise origin must never be
-// distinguishable, from checks.compiler's perspective, from one that simply
-// has nothing configured.
-
-// evaluateMiseProjectOriginGated is the trust-gated entry point for the
-// project mise scope. A project mise.toml declaring more than one exact
-// npm:typescript version is a conflict detectable from the file alone, with
-// no need to trust or even reach the mise tool at all (evaluateMiseProjectOrigin
-// makes exactly this determination internally) -- so that case bypasses the
-// gate rather than being misreported as "unconfigured" whenever the mise
-// tool itself happens to be unverifiable. Every other case (zero or one
-// candidate version) is gated on miseSetupTrust as usual: reading that one
-// version's installed location is where mise's own trustworthiness matters.
-
 // evaluateMiseProjectTrust checks the mise tool version plus the repository-
 // controlled project mise.toml -- the primary threat, since a repository an
 // attacker influences can commit hazardous config directly.
@@ -136,37 +120,6 @@ func miseTrustFromChecks(toolReadiness miseToolReadiness, hazardCheck func() boo
 	return miseSetupTrust{trusted: true}
 }
 
-// evaluateMiseSetupChoices computes the two mise ReadinessMiseChoice entries
-// CheckProjectReadiness feeds to aggregateReadiness: whether each of the
-// project and global mise scopes may be offered as a prepare_compiler
-// installation choice. A scope is offered only when it is trusted and
-// already declares exactly one exact supported-set TypeScript version:
-// the frozen row is `mise install` then `mise where`, never `mise use`, so
-// an install cannot create the pin origin evaluation reads. Offering a
-// pin-less scope would let the user consent to an install that leaves
-// checks.compiler failing.
-//
-// It never probes mise when the project (manifest) origin itself disagrees
-// across selected roots (evaluateProjectOrigin's own conflict):
-// evaluateCompilerOrigins' frozen contract is that such a disagreement never
-// evaluates mise at all, so a second, independent computation of setup
-// choices must honor the same rule rather than quietly reaching mise anyway.
-
-// miseSetupChoice withholds a trusted scope that has no installable pin
-// without inventing a package_manager_* gap: missing configuration is not a
-// hazard, it is simply not an executable setup choice. Trust failures still
-// surface their own gap code so an untrusted or unverifiable mise is never
-// silent. Reason is the finer distinction Code cannot carry, since the
-// no-pin case has no gap code at all: it is what AvailableSetupChoices names
-// when it withholds this scope from the menu.
-
-// miseScopeSetupWithholdReason reports why a trusted mise scope cannot be
-// offered as an installation choice, or "" when it already declares exactly
-// one exact supported-set TypeScript version. A scope whose config exists but
-// cannot be read is unverifiable rather than unconfigured: Coach has no basis
-// to say what it declares, which is a different thing from knowing it
-// declares nothing.
-
 // miseScopeDeclaresInstallableCompiler reports the exact supported-set
 // TypeScript version a mise scope already pins. Origin evaluation locates
 // that pin after install; a missing, inexact, conflicting, or out-of-set
@@ -197,4 +150,54 @@ func miseScopeDeclaresInstallableCompiler(origin, worktreeRoot string) (version 
 
 func miseReadinessChoice(kind string, trust miseSetupTrust) ReadinessMiseChoice {
 	return ReadinessMiseChoice{Kind: kind, Verified: trust.trusted, Code: trust.code}
+}
+
+func (a compilerAggregate) firstOfClass(class string) (compilerCandidate, bool) {
+	for _, candidate := range a.candidates {
+		if candidate.class == class {
+			return candidate, true
+		}
+	}
+	return compilerCandidate{}, false
+}
+
+// declarationMismatches lists the selected roots whose manifest disagrees
+// with the winning compiler. A winning non-project origin disagrees with any
+// differing declaration; when the project origin itself wins, only a stale
+// exact pin disagrees -- range satisfaction is never evaluated (epic #280,
+// owner decision D4).
+func (a compilerAggregate) declarationMismatches() []ReadinessDeclarationMismatch {
+	if a.winner == nil {
+		return nil
+	}
+	projectWon := a.winner.origin == compilerOriginProject
+	var mismatches []ReadinessDeclarationMismatch
+	for _, declaration := range a.project.declarations {
+		if declaration.declared == a.winner.version {
+			continue
+		}
+		if projectWon && !isExactVersion(declaration.declared) {
+			continue
+		}
+		mismatches = append(mismatches, ReadinessDeclarationMismatch{Root: declaration.root, Declared: declaration.declared})
+	}
+	return mismatches
+}
+
+func (a compilerAggregate) namedDeclaration() string {
+	if a.project.rejectedDeclaration != "" {
+		return a.project.rejectedDeclaration
+	}
+	if len(a.project.declarations) > 0 {
+		return a.project.declarations[0].declared
+	}
+	return ""
+}
+
+func (a compilerAggregate) originFindings() []ReadinessOriginFinding {
+	findings := make([]ReadinessOriginFinding, 0, len(a.candidates))
+	for _, candidate := range a.candidates {
+		findings = append(findings, ReadinessOriginFinding{Origin: candidate.origin, Class: candidate.class})
+	}
+	return findings
 }

@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/subprocess"
 )
 
 // resolveHostNode resolves the exact host `node` executable PrepareTSRuntime
@@ -24,7 +26,7 @@ var resolveHostNode = func(ctx context.Context) (execPath, rawVersion string, er
 		return "", "", errHostNodeNotFound
 	}
 
-	data, exitErr, probeErr := runBoundedSubprocessProbeAt(ctx, hostNodeVersionProbeTimeout, maxHostNodeVersionProbeOutput, "", hostNodeProbeEnv(), path, "--version")
+	data, exitErr, probeErr := subprocess.ProbeAt(ctx, hostNodeVersionProbeTimeout, maxHostNodeVersionProbeOutput, "", hostNodeProbeEnv(), path, "--version")
 	if err := mapHostNodeProbeError(path, "--version", exitErr, probeErr); err != nil {
 		return "", "", err
 	}
@@ -38,7 +40,7 @@ var resolveHostNode = func(ctx context.Context) (execPath, rawVersion string, er
 		return "", "", errHostNodeMajorDisallowed
 	}
 
-	execData, execExitErr, execProbeErr := runBoundedSubprocessProbeAt(ctx, hostNodeVersionProbeTimeout, maxHostNodeVersionProbeOutput, "", hostNodeProbeEnv(), path, "-p", "process.execPath")
+	execData, execExitErr, execProbeErr := subprocess.ProbeAt(ctx, hostNodeVersionProbeTimeout, maxHostNodeVersionProbeOutput, "", hostNodeProbeEnv(), path, "-p", "process.execPath")
 	if err := mapHostNodeProbeError(path, "process.execPath probe", execExitErr, execProbeErr); err != nil {
 		return "", "", err
 	}

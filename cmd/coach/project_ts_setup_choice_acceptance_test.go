@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 // AvailableSetupChoices is a pure function over ReadinessResult -- it makes
@@ -355,7 +356,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices over a real CheckProjectRe
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
 
-			revision, err := codesignalcli.ResolveBaselineRevision(repo)
+			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
 			readiness, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
@@ -377,7 +378,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices over a real CheckProjectRe
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
 
-			revision, err := codesignalcli.ResolveBaselineRevision(repo)
+			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
 			readiness, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())

@@ -9,9 +9,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/subprocess"
 )
 
 var errNodeNotFound = errors.New("node executable not found on PATH")
+
 var errNodeVersionProbeTimedOut = errors.New("node --version timed out")
 
 const (
@@ -26,9 +29,9 @@ var detectHostNodeMajor = func() (rawVersion string, major int, err error) {
 		return "", 0, errNodeNotFound
 	}
 
-	data, exitErr, probeErr := runBoundedSubprocessProbe(context.Background(), nodeVersionProbeTimeout, maxNodeVersionProbeOutput, "node", "--version")
+	data, exitErr, probeErr := subprocess.Probe(context.Background(), nodeVersionProbeTimeout, maxNodeVersionProbeOutput, "node", "--version")
 	switch {
-	case errors.Is(probeErr, errBoundedProbeTimedOut):
+	case errors.Is(probeErr, subprocess.ErrProbeTimedOut):
 		return "", 0, errNodeVersionProbeTimedOut
 	case probeErr != nil:
 		return "", 0, probeErr

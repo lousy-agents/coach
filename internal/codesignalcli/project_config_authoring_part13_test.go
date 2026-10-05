@@ -3,9 +3,7 @@ package codesignalcli
 import (
 	"encoding/json"
 	"errors"
-
 	"io"
-
 	"strings"
 	"testing"
 	"time"
@@ -30,14 +28,6 @@ func TestAuthorProjectConfig_ApprovalGateTerminatesPromptlyOnExhaustedOrErroring
 		in := strings.NewReader("root\napiLayer\napps/api\n\n\n\n")
 		assertNotApprovedBeforeWatchdog(t, in)
 	})
-}
-
-func (r *persistentErrorReader) Read(p []byte) (int, error) {
-	if !r.sent {
-		r.sent = true
-		return copy(p, r.data), nil
-	}
-	return 0, r.err
 }
 
 // approvedCandidateBytes builds the expected schema-1 project-config

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-
 	"strings"
 )
 
@@ -91,6 +90,7 @@ func runProjectPackageSetupOffer(ctx context.Context, dir, revision, configPath,
 	}
 	return result
 }
+
 func projectPackageSetupFailureDetail(outcome SetupOutcome, err error) string {
 	if err != nil {
 		return err.Error()

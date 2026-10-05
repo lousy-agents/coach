@@ -2,10 +2,11 @@ package codesignalcli
 
 import (
 	"bufio"
-
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 )
 
 // promptForMiseSetupChoice requires the user to type one offered choice's
@@ -19,7 +20,7 @@ func promptForMiseSetupChoice(out io.Writer, reader *bufio.Reader, choices []str
 	}
 	fmt.Fprintln(out, "Type the exact choice name to select it, or 'cancel' to cancel without making any change. There is no default: an unrecognized or blank answer cancels.")
 	fmt.Fprint(out, "> ")
-	answer, unreadable := readLine(reader)
+	answer, unreadable := prompt.ReadLine(reader)
 	if unreadable {
 		return "", true
 	}
@@ -31,6 +32,7 @@ func promptForMiseSetupChoice(out io.Writer, reader *bufio.Reader, choices []str
 	}
 	return "", true
 }
+
 func prepareCompilerNextAction(readiness *ReadinessResult) (ReadinessNextAction, bool) {
 	if readiness == nil {
 		return ReadinessNextAction{}, false

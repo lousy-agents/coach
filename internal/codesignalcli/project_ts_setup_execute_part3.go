@@ -1,23 +1,14 @@
 package codesignalcli
 
-func (s *boundedOutputSink) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if remaining := s.limit - s.buf.Len(); remaining > 0 {
-		if len(p) > remaining {
-			s.buf.Write(p[:remaining])
-		} else {
-			s.buf.Write(p)
-		}
-	}
-	return len(p), nil
-}
+import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+)
 
 // runSetupResidueGit is the bounded git read behind setupResidueChangedPaths.
 // Tests may replace it to observe exactly which git commands a setup run
 // issues.
 var runSetupResidueGit = func(dir string, args ...string) ([]byte, error) {
-	return runGitBytesBounded(dir, maxSetupResidueGitBytes, maxSetupResidueGitStderr, setupResidueGitTimeout, args...)
+	return gitrepo.RunBytesBounded(dir, maxSetupResidueGitBytes, maxSetupResidueGitStderr, setupResidueGitTimeout, args...)
 }
 
 // setupResidueChangedPaths returns the untracked, modified, and gitignored

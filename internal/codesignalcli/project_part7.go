@@ -2,11 +2,8 @@ package codesignalcli
 
 import (
 	"encoding/json"
-
 	"fmt"
-
 	"path"
-
 	"strings"
 )
 
@@ -29,6 +26,7 @@ func LoadProjectConfig(dir, revision, repoPath string) (json.RawMessage, error) 
 	}
 	return json.RawMessage(data), nil
 }
+
 func validateProjectConfigCrossFields(config projectConfig, seenLayerNames map[string]struct{}) error {
 	if config.SourceSinkPack != "" && config.SourceSinkPack != "builtin-v1" {
 		return fmt.Errorf("source_sink_pack must be \"builtin-v1\" when supplied")
@@ -40,6 +38,7 @@ func validateProjectConfigCrossFields(config projectConfig, seenLayerNames map[s
 	}
 	return nil
 }
+
 func validateProjectConfigPath(repoPath string) error {
 	if repoPath == "" || path.IsAbs(repoPath) {
 		return fmt.Errorf("path must be a non-empty repository-relative path")

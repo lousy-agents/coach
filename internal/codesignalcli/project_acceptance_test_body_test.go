@@ -6,12 +6,12 @@ import (
 	"io/fs"
 	"strings"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 func body_projectAcceptanceTest_436() {
@@ -57,7 +57,7 @@ func body_projectAcceptanceTest_neverChangesWhichFindingsTheRealGoBackendProduce
 	gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
 	gitfixture.CommitFile(GinkgoT(), dir, "pkg/db/db.go", "package db\n\nvar Name = \"db\"\n")
 	sha := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n")
-	files := []SelectedFile{
+	files := []gitrepo.SelectedFile{
 		{Path: "pkg/db/db.go", Language: "go", Status: "added"},
 		{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"},
 	}
@@ -134,7 +134,7 @@ func body_projectAcceptanceTest_degradesOnlyTheBaseSideCoverageIncompleteDiagnos
 	dir := gitfixture.Init(GinkgoT())
 	baseSHA := gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
 	headSHA := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
-	files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
+	files := []gitrepo.SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
 
 	project := &ProjectAnalysis{
 		ConfigPath:   "project.json",

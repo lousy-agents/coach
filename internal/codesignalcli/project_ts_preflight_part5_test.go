@@ -2,7 +2,6 @@ package codesignalcli
 
 import (
 	"context"
-
 	"path/filepath"
 	"strings"
 	"testing"

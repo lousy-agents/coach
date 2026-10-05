@@ -6,10 +6,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/lousy-agents/coach/pkg/projectmodel"
-
-	"strings"
 )
 
 // checkOutputParents walks every existing parent component of cleanOutput

@@ -10,6 +10,7 @@ func unquoteMiseString(value string) (string, bool) {
 	}
 	return "", false
 }
+
 func miseLineDeclaresEnvSource(line string) bool {
 	key, _, ok := strings.Cut(line, "=")
 	if !ok {

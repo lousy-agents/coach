@@ -1,6 +1,8 @@
 package codesignalcli
 
-import "github.com/lousy-agents/coach/pkg/codesignal"
+import (
+	"github.com/lousy-agents/coach/pkg/codesignal"
+)
 
 func keepUnqualifiedAllClear(report *codesignal.Report, incompleteProject bool) bool {
 	if incompleteProject {

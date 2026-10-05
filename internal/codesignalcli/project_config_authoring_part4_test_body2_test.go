@@ -2,7 +2,6 @@ package codesignalcli
 
 import (
 	"fmt"
-
 	"strings"
 	"testing"
 	"time"

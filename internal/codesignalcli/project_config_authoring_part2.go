@@ -26,6 +26,7 @@ func validateLayerPrefixCandidate(name string, prefixes []string, existing []pro
 	}
 	return nil
 }
+
 func validateRootSelection(selected []string) error {
 	if len(selected) == 0 {
 		return fmt.Errorf("at least one repository-relative root must be selected")

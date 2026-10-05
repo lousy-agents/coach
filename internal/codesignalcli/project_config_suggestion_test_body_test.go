@@ -3,10 +3,11 @@ package codesignalcli
 import (
 	"fmt"
 	"io/fs"
-
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
 )
 
 func body_projectConfigSuggestionTest_plainErrorEmbeddingAKnownAbsolutePathIsStripped_24(t *testing.T, absoluteDir string) {
@@ -43,7 +44,7 @@ func body_projectConfigSuggestionTest_gitLsTreeErrorNamingTheResolvedRepositoryR
 func body_projectConfigSuggestionTest_snapshotListErrorWhoseWrappedGitStderrEmbedsAKno_55(t *testing.T, absoluteDir string) {
 
 	gitErr := fmt.Errorf("exit status 128: fatal: cannot change to '%s': No such file or directory", absoluteDir)
-	listErr := &snapshotListError{revision: "deadbeef", dir: absoluteDir, err: gitErr}
+	listErr := &revisionfs.ListError{Revision: "deadbeef", Dir: absoluteDir, Err: gitErr}
 	got := snapshotUnavailableMessage("read the HEAD snapshot", listErr, absoluteDir)
 	if strings.Contains(got, absoluteDir) {
 		t.Fatalf("snapshotUnavailableMessage(%v) = %q, still contains the absolute repository root embedded in git's own stderr", listErr, got)

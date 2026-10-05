@@ -2,11 +2,10 @@ package codesignalcli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
-
-	"strings"
 )
 
 func hasProjectLifecycleDiagnostic(diagnostics []codesignal.Diagnostic) bool {
@@ -17,6 +16,7 @@ func hasProjectLifecycleDiagnostic(diagnostics []codesignal.Diagnostic) bool {
 	}
 	return false
 }
+
 func renderProjectCoverageSection(b *strings.Builder, coverage *projectmodel.Coverage) {
 	if coverage == nil {
 		return
@@ -29,6 +29,7 @@ func renderProjectCoverageSection(b *strings.Builder, coverage *projectmodel.Cov
 		fmt.Fprintf(b, "  project diagnostic: %s: %s\n", diagnostic.Code, diagnostic.Message)
 	}
 }
+
 func projectChangeSignalIDs(changes []codesignal.ProjectChange) map[string]struct{} {
 	ids := make(map[string]struct{}, len(changes))
 	for _, change := range changes {
@@ -38,12 +39,14 @@ func projectChangeSignalIDs(changes []codesignal.ProjectChange) map[string]struc
 	}
 	return ids
 }
+
 func writeOptionalLine(b *strings.Builder, label, value string) {
 	if value == "" {
 		return
 	}
 	fmt.Fprintf(b, "%s: %s\n", label, value)
 }
+
 func renderBaselineSummary(b *strings.Builder, report *codesignal.Report) {
 	fmt.Fprintf(b, "Repository Baseline for revision %s (not a diff comparison)\n", report.Scope.Revision)
 
@@ -59,12 +62,14 @@ func renderBaselineSummary(b *strings.Builder, report *codesignal.Report) {
 	fmt.Fprintf(b, "tracked files discovered: %d, analyzed: %d, unsupported: %d, excluded: %d, unanalyzable: %d, active signals: %d, diagnostics: %d\n",
 		tracked, analyzed, unsupported, excluded, unanalyzable, report.Summary.ActiveSignals, len(report.Diagnostics))
 }
+
 func pathCountClause(n int) string {
 	if n == 1 {
 		return "1 path was not analyzed"
 	}
 	return fmt.Sprintf("%d paths were not analyzed", n)
 }
+
 func sumCoverageGroups(groups []codesignal.CoverageGroup) int {
 	total := 0
 	for _, g := range groups {

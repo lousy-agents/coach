@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -50,11 +51,11 @@ func porcelainZ(records ...string) []byte {
 func withWorktreeStatusOutput(t *testing.T, output []byte, err error) {
 	t.Helper()
 	original := listWorktreeStatus
-	listWorktreeStatus = func(string) ([]worktreeStatusEntry, error) {
+	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
 		if err != nil {
 			return nil, err
 		}
-		return parseWorktreeStatus(output), nil
+		return gitrepo.ParseWorktreeStatus(output), nil
 	}
 	t.Cleanup(func() { listWorktreeStatus = original })
 }

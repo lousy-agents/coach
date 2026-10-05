@@ -2,7 +2,6 @@ package codesignalcli
 
 import (
 	"errors"
-
 	"path/filepath"
 )
 
@@ -47,6 +46,7 @@ func WrapProjectConfigErrorWithReadiness(err error, dir, revision, configPath st
 	}
 	return &ProjectConfigErrorWithReadiness{ProjectConfigError: configErr, Readiness: readiness, ConfigPath: configPath}
 }
+
 func menuOffersChoice(menu SetupChoiceMenu, kind SetupChoiceKind) bool {
 	for _, choice := range menu.Choices {
 		if choice.Kind == kind {

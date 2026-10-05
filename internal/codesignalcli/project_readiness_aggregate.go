@@ -17,14 +17,6 @@ type ReadinessMiseChoice struct {
 	Reason   string
 }
 
-// failingReadinessChecks reads checks.Runtime rather than checks.Node: the
-// two always carry the same State/Code (see nodeCompatibilityMirror), and
-// including both here would double-report every Node gap. checks.PackageManager
-// is deliberately excluded here -- its package_manager_* finding is
-// setup-scoped (SA-280-045) and handled separately by packageManagerGapEntries,
-// not by this table-driven path; including it here as well would double-report
-// it.
-
 // packageManagerGapEntries: the four package_manager_* codes are
 // setup-scoped, reported only while checks.Compiler has not passed, and
 // rejecting one installation choice (the project adapter, or a specific
@@ -58,10 +50,6 @@ func packageManagerGapEntries(checks ReadinessChecks, miseChoices []ReadinessMis
 
 	return gaps, actions, status, verified
 }
-
-// appendPackageManagerFinding's foundVersion is set only for the project
-// adapter's own finding: ReadinessMiseChoice carries no version, since a
-// rejected mise scope is unverifiable before any version is ever read.
 
 // restrictPrepareCompilerChoices: once the project package-manager adapter
 // has actually been evaluated and rejected (checks.PackageManager.State ==

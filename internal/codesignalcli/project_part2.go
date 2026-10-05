@@ -3,12 +3,10 @@ package codesignalcli
 import (
 	"errors"
 	"fmt"
-
 	"os"
-
 	"path/filepath"
 
-	"time"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 // validateProjectConfigLayers returns the declared layer names so
@@ -56,13 +54,13 @@ func collectLayerPrefixes(layer projectConfigLayer) ([]string, error) {
 
 // projectConfigGitError classifies a runProjectConfigGit failure into a
 // user-facing message that never surfaces raw git stderr. A
-// *gitOperationalBoundError is our own timeout/output-budget text and is
+// *gitrepo.BoundError is our own timeout/output-budget text and is
 // safe to include verbatim. Any other failure means git itself reported the
 // read as failed; that case is further split by whether repoPath exists in
 // the worktree, so a user who forgot to commit a generated config is told to
 // commit it rather than shown a generic not-found message.
 func projectConfigGitError(dir, revision, repoPath string, gitErr error) error {
-	var boundErr *gitOperationalBoundError
+	var boundErr *gitrepo.BoundError
 	if errors.As(gitErr, &boundErr) {
 		return &ProjectConfigError{Kind: ProjectConfigUnreadable, Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
 	}
@@ -82,20 +80,11 @@ func configExistsInWorktree(dir, repoPath string) bool {
 	return statErr == nil
 }
 
-// runGitBytesBounded runs git with a wall-time limit and hard caps on
-// collected stdout and stderr, building the child via the package's default
-// gitCommandContext seam. The LimitReader stops after maxStdout+1 bytes so
-// an oversized blob is detected without buffering the entire child output.
-func runGitBytesBounded(dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
-	return runGitBytesBoundedWith(gitCommandContext, dir, maxStdout, maxStderr, timeout, args...)
-}
-func (e *gitOperationalBoundError) Error() string { return e.message }
 func projectConfigError(repoPath, revision, reason string) error {
 	return &ProjectConfigError{Kind: ProjectConfigInvalid, Message: fmt.Sprintf("coach codesignal: --project-config %q is invalid at revision %q (project_config_invalid): %s", repoPath, revision, reason)}
 }
-func (e *ProjectConfigError) Error() string { return e.Message }
+
 func validateProjectConfigJSON(data []byte) error {
 	_, err := parseProjectConfig(data)
 	return err
 }
-func (e *ProjectBackendUnavailableError) Error() string { return e.Message }

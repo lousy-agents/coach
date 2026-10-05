@@ -2,7 +2,6 @@ package codesignalcli
 
 import (
 	"os"
-
 	"reflect"
 	"sort"
 	"strconv"

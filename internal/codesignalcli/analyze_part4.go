@@ -3,13 +3,11 @@ package codesignalcli
 import (
 	"bufio"
 	"bytes"
-
 	"fmt"
-
-	"github.com/lousy-agents/coach/pkg/codesignal"
-
 	"strconv"
 	"strings"
+
+	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
 func parseChangedRanges(diff []byte) ([]codesignal.LineRange, error) {
@@ -37,6 +35,7 @@ func parseChangedRanges(diff []byte) ([]codesignal.LineRange, error) {
 
 	return ranges, nil
 }
+
 func parseHunkHeaderRange(line string) (r codesignal.LineRange, ok bool, err error) {
 	match := hunkHeaderPattern.FindStringSubmatch(line)
 	if match == nil {

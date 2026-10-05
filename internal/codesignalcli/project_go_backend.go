@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
@@ -21,7 +22,7 @@ const goProjectBuildWallTime = 60 * time.Second
 
 // goProjectMaxInputBytes bounds the cumulative analyzed source bytes
 // BuildGoModel reads across all files. It is a dedicated constant, not a
-// reuse of maxSnapshotListBytes (project_snapshot.go's `git ls-tree -r`
+// reuse of revisionfs.MaxListBytes (project_snapshot.go's `git ls-tree -r`
 // path-listing cap), because the two bound different dimensions: changing
 // the ls-tree cap must not silently change this model-build budget. Set to
 // 50 MiB per revision per epic #208's frozen "Snapshot/import facts" row;
@@ -58,7 +59,7 @@ const (
 // versioned contract update", so these values must track that table, not be
 // chosen independently. Repository-controlled input must never be read
 // unboundedly (see project_snapshot.go's
-// maxSnapshotListBytes/maxSnapshotFileBytes and project.go's git-read
+// revisionfs.MaxListBytes/revisionfs.maxSnapshotFileBytes and project.go's git-read
 // budgets for the same convention). MaxInputFiles and MaxInputBytes are
 // enforced by discoverGoProject (the snapshot walk both BuildGoModel and
 // BuildGoLayerBypass perform before doing anything else); WallTime is
@@ -84,7 +85,7 @@ var goProjectBudgets = projectmodel.GoBudgets{
 // buildGoLayerBypass is the BuildGoLayerBypass seam evaluateRevision calls.
 // Tests may replace it to inject a deterministic LayerBypassResult (e.g. an
 // incomplete Coverage) directly, mirroring project.go's
-// gitCommandContext/runProjectConfigGit seam convention in this package,
+// gitrepo.commandContext/runProjectConfigGit seam convention in this package,
 // instead of forcing the real search to truncate by giving
 // goLayerBypassMaxSearchNodes a finite value.
 var buildGoLayerBypass func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error) = projectmodel.BuildGoLayerBypass
@@ -123,7 +124,7 @@ type goProjectBackend struct{}
 // --project-language go. Analyze always builds the head-side model; when
 // req.Baseline is false (diff mode) it additionally builds the base-side
 // model and sets ProjectBackendResult.BaseAnalyzed. A revision that cannot
-// be read as a Git snapshot (see NewGoSnapshotFS) is returned as a real
+// be read as a Git snapshot (see revisionfs.New) is returned as a real
 // error, not swallowed into an empty result.
 func NewGoProjectBackend() ProjectBackend {
 	return &goProjectBackend{}
@@ -182,7 +183,7 @@ func (b *goProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 // silently reporting a "resolved"/"introduced"/"existing" claim on a witness
 // that only disappeared because the search was truncated.
 func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, roots []string, policy codesignal.LayerPolicy, bypassLayer projectmodel.BypassLayer, hasBypassLayer bool, configDigest string) ([]codesignal.ProjectChange, []codesignal.Diagnostic, projectmodel.Coverage, error) {
-	snapshot, err := NewGoSnapshotFS(dir, revision)
+	snapshot, err := revisionfs.New(dir, revision)
 	if err != nil {
 		return nil, nil, projectmodel.Coverage{}, fmt.Errorf("coach: building Go snapshot at revision %q: %w", revision, err)
 	}
@@ -220,26 +221,6 @@ func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 
 	return changes, diagnostics, coverage, nil
 }
-
-// combineProjectCoverage folds bypass (a LayerBypassResult's own Coverage)
-// into model (the Go project model's own Coverage): Complete is ANDed, since
-// either phase not completing means the combined result cannot claim a
-// complete project analysis, and Diagnostics is unioned so bypass's own
-// projectmodel-native diagnostics (e.g. a budget-exceeded or unresolved-root
-// code) stay visible on the reported Coverage rather than being dropped when
-// only one of the two phases actually failed. Phase/Counts/Budgets are kept
-// from model: the two phases measure different dimensions (project-model
-// build vs. one layer-bypass search), so merging their counts/budgets would
-// conflate incomparable numbers rather than clarify anything.
-
-// goBypassLayerFromConfig resolves config.RequiredLayer -- already validated
-// by LoadProjectConfig to either be empty or name a declared layer -- into
-// the projectmodel.BypassLayer BuildGoLayerBypass expects. The second return
-// value is false when RequiredLayer is unset, in which case goProjectBackend
-// skips the layer-bypass search entirely: BuildGoLayerBypass would otherwise
-// treat a zero-value BypassLayer as ambiguous (see
-// projectmodel.DiagLayerBypassAmbiguousLayer) and report incomplete coverage
-// for a search the config never asked for.
 
 // layerPolicyFromConfig translates the already-schema-validated
 // projectConfig layers/forbidden_imports into codesignal.LayerPolicy. It is

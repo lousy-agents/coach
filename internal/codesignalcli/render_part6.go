@@ -3,10 +3,9 @@ package codesignalcli
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-
-	"strings"
 )
 
 func renderProjectSummary(b *strings.Builder, summary *codesignal.ProjectSummary) {

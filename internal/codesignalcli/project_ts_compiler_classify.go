@@ -1,6 +1,8 @@
 package codesignalcli
 
-import "path/filepath"
+import (
+	"path/filepath"
+)
 
 func classifyCompilerCandidate(origin string, locate func() (string, bool)) compilerCandidate {
 	candidate := compilerCandidate{origin: origin, class: compilerClassAbsent}

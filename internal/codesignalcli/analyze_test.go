@@ -3,14 +3,14 @@ package codesignalcli
 import (
 	"context"
 	"errors"
-
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-// TestAnalyzeChangesSurvivesUnreadableFile verifies that a SelectedFile
+// TestAnalyzeChangesSurvivesUnreadableFile verifies that a gitrepo.SelectedFile
 // pointing at a path git show cannot read produces a diagnostic instead of
 // crashing the run, and that other files in the same batch are still
 // analyzed.
@@ -19,7 +19,7 @@ func TestAnalyzeChangesSurvivesUnreadableFile(t *testing.T) {
 	initialSHA := gitfixture.CommitFile(t, dir, "healthy.go", "package healthy\n")
 	headSHA := gitfixture.CommitFile(t, dir, "healthy.go", "package healthy\n\nfunc Update(input *int) { *input = 1 }\n")
 
-	files := []SelectedFile{
+	files := []gitrepo.SelectedFile{
 		{Path: "healthy.go", Status: "modified", Language: semantics.LanguageGo},
 		{Path: "does-not-exist.go", Status: "modified", Language: semantics.LanguageGo},
 	}

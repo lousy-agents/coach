@@ -35,6 +35,7 @@ const miseInstallTimeout = 5 * time.Minute
 // defaults, which the frozen row's own AC-4 gap code exists to guard
 // against if a future mise release ever changes them.
 const miseNpmScriptSuppressionEnvKey = "npm_config_ignore_scripts"
+
 const miseNpmScriptSuppressionEnvValue = "true"
 
 // miseInstallAttempt reports what happened attempting `mise install
@@ -87,7 +88,7 @@ func runMiseInstallInsulated(ctx context.Context, toolSpec string) miseInstallAt
 	return miseInstallAttempt{attempted: attempted, observed: observed, exitErr: exitErr}
 }
 
-// runBoundedMiseInstallSubprocess mirrors runBoundedSubprocessProbeAt's
+// runBoundedMiseInstallSubprocess mirrors subprocess.ProbeAt's
 // timeout/output-budget confinement (project_readiness_probe.go), but that
 // shared probe helper collapses every post-Start failure into a single
 // opaque error and so cannot answer whether the subprocess actually started
@@ -114,7 +115,7 @@ func runBoundedMiseInstallSubprocess(ctx context.Context, dir string, env []stri
 	waitErr := cmd.Wait()
 
 	// Checked ahead of readErr/waitErr for the same reason
-	// runBoundedSubprocessProbeAt does: killing the child on deadline makes
+	// subprocess.ProbeAt does: killing the child on deadline makes
 	// both of those non-nil too, but the deadline is the true cause.
 	if ctx.Err() == context.DeadlineExceeded {
 		return true, false, nil

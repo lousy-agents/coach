@@ -3,13 +3,13 @@ package codesignalcli
 import (
 	"errors"
 	"fmt"
-
 	"io/fs"
-
 	"path/filepath"
-
 	"strconv"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
 )
 
 // validateSuggestOutputPathShape rejects an --output value that can never
@@ -47,21 +47,21 @@ func validateSuggestOutputPathShape(outputPath string) (string, error) {
 // shapes are handled structurally, by extracting the failure reason from
 // data the error already carries, in priority order:
 //
-//  1. *fs.PathError (filepath.EvalSymlinks inside repositoryRoot): unwrapped
+//  1. *fs.PathError (filepath.EvalSymlinks inside gitrepo.RepositoryRoot): unwrapped
 //     to just its errno-class Err, discarding Path entirely, since the path
 //     there was never known to the caller and cannot be stripped by
 //     substring match.
-//  2. *OperationalError (resolveHEAD's "not inside a Git worktree" case):
+//  2. *gitrepo.OperationalError (gitrepo.resolveHEAD's "not inside a Git worktree" case):
 //     its Reason() carries the same failure with no path interpolated.
-//  3. *snapshotListError (NewGoSnapshotFS's ls-tree listing failure): its
+//  3. *revisionfs.ListError (revisionfs.New's ls-tree listing failure): its
 //     Unwrap() carries the underlying git failure alone, with dir dropped
 //     from the wrapping fmt.Errorf -- but git's own stderr text can still
 //     embed dir itself, so this case is not a guarantee, only a narrowing;
 //     see the scrub loop below.
 //
 // The structural extraction above narrows the surface a path could hide in,
-// but does not guarantee it: *snapshotListError.Unwrap() (and any other
-// error shape, e.g. repositoryRoot's own bare git-plumbing-failure text)
+// but does not guarantee it: *revisionfs.ListError.Unwrap() (and any other
+// error shape, e.g. gitrepo.RepositoryRoot's own bare git-plumbing-failure text)
 // still carries raw git stderr, which can itself embed an absolute path
 // (e.g. `fatal: cannot change to '<dir>': No such file or directory`) that
 // no structural extraction step removes. So every path reaching this point
@@ -71,14 +71,14 @@ func validateSuggestOutputPathShape(outputPath string) (string, error) {
 // its raw form and in the %q-quoted form (via strconv.Quote, which escapes
 // '"', '\', and control bytes -- and on Windows always differs from the raw
 // form because of '\'-separated paths). This is a no-op for the
-// *fs.PathError and *OperationalError cases, whose extracted reason never
+// *fs.PathError and *gitrepo.OperationalError cases, whose extracted reason never
 // contains a path in the first place.
 func snapshotUnavailableMessage(op string, underlyingErr error, knownAbsolutePaths ...string) string {
 	reason := underlyingErr.Error()
 
 	var pathErr *fs.PathError
-	var opErr *OperationalError
-	var listErr *snapshotListError
+	var opErr *gitrepo.OperationalError
+	var listErr *revisionfs.ListError
 	switch {
 	case errors.As(underlyingErr, &pathErr):
 		reason = pathErr.Err.Error()

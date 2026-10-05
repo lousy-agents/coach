@@ -3,6 +3,8 @@ package codesignalcli
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 // snapshotReadPackageManagerField reads package.json at repoPath within
@@ -10,7 +12,7 @@ import (
 // ambiguous is true when a git operational error prevents determining whether
 // the field is present, distinct from a clean absent file (ok=false, ambiguous=false).
 func snapshotReadPackageManagerField(dir, revision, repoPath string) (kind string, ok bool, ambiguous bool) {
-	exists, err := fileExistsAtRevision(runPackageManagerRevisionGit, dir, revision, repoPath)
+	exists, err := gitrepo.FileExistsAtRevision(runPackageManagerRevisionGit, dir, revision, repoPath)
 	if err != nil {
 		return "", false, true
 	}
@@ -48,7 +50,7 @@ func snapshotDetectLockfileAtRoot(dir, revision, root string) (kind string, ok b
 	found := map[string]bool{}
 	for basename, k := range packageManagerLockfileBasenames {
 		repoPath := joinRepoPath(root, basename)
-		exists, err := fileExistsAtRevision(runPackageManagerRevisionGit, dir, revision, repoPath)
+		exists, err := gitrepo.FileExistsAtRevision(runPackageManagerRevisionGit, dir, revision, repoPath)
 		if err != nil {
 			return "", false, true
 		}

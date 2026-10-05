@@ -2,12 +2,12 @@ package codesignalcli
 
 import (
 	"bufio"
-
 	"fmt"
-
 	"io"
 	"strconv"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 )
 
 // parseRootSelection turns one line of user input into an ordered,
@@ -90,7 +90,7 @@ func promptRetryOrCancel(out io.Writer, reader *bufio.Reader, explanation string
 	fmt.Fprintf(out, "That answer is invalid: %s\n", explanation)
 	fmt.Fprintln(out, "Type 'retry' to try again, or 'cancel' to cancel authoring:")
 	fmt.Fprint(out, "> ")
-	reply, unreadable := readLine(reader)
+	reply, unreadable := prompt.ReadLine(reader)
 	if unreadable {
 		return true
 	}

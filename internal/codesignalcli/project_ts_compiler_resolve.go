@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 const (
@@ -73,7 +75,7 @@ const (
 // a resolution failure here falls back to dir rather than blocking the
 // compiler check.
 func compilerWorktreeRoot(dir string) string {
-	output, err := runGitBytesBounded(dir, maxCompilerWorktreeRootOutput, maxCompilerWorktreeRootStderr, compilerWorktreeRootTimeout, "rev-parse", "--show-toplevel")
+	output, err := gitrepo.RunBytesBounded(dir, maxCompilerWorktreeRootOutput, maxCompilerWorktreeRootStderr, compilerWorktreeRootTimeout, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return dir
 	}

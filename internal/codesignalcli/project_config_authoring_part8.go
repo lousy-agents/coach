@@ -2,10 +2,10 @@ package codesignalcli
 
 import (
 	"bufio"
-
 	"fmt"
 	"io"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -44,6 +44,7 @@ func (a *directoryAccumulator) add(group []string) {
 		}
 	}
 }
+
 func promptForForbiddenImports(out io.Writer, reader *bufio.Reader, layers []projectConfigLayer) (forbidden []projectForbiddenImport, cancelled bool) {
 	fmt.Fprintln(out, "Define forbidden layer-import pairs (a source layer that may not import a destination layer). Leave the source blank to finish.")
 	for {
@@ -57,11 +58,12 @@ func promptForForbiddenImports(out io.Writer, reader *bufio.Reader, layers []pro
 		forbidden = append(forbidden, projectForbiddenImport{From: from, To: to})
 	}
 }
+
 func promptLayerPrefixes(out io.Writer, reader *bufio.Reader, name string, existing []projectConfigLayer) (prefixes []string, cancelled bool) {
 	for {
 		fmt.Fprintf(out, "Enter comma-separated repository-relative path prefixes for layer %q:\n", name)
 		fmt.Fprint(out, "> ")
-		answer, _ := readLine(reader)
+		answer, _ := prompt.ReadLine(reader)
 		candidate := splitTrimmedNonEmpty(answer, ",")
 		err := validateLayerPrefixCandidate(name, candidate, existing)
 		retry, cancelled := layerPrefixAttemptFailed(out, reader, err)

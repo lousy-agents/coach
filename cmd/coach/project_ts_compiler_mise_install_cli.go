@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 const prepareCompilerMiseUsagePrefix = "coach codesignal --baseline --prepare-compiler --project-language typescript"
@@ -29,7 +30,7 @@ func runPrepareCompilerMiseTypeScript(dir string, f codesignalFlags, stdin, stdo
 // parameter only for signature symmetry with the rest of this package's CLI
 // dispatch functions and is otherwise unused.
 func prepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, projectConfigPath string) int {
-	revision, err := codesignalcli.ResolveBaselineRevision(dir)
+	revision, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: could not resolve the baseline revision: %s\n", prepareCompilerMiseUsagePrefix, err)
 		return 3

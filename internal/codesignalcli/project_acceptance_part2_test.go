@@ -1,8 +1,6 @@
 package codesignalcli
 
 import (
-	"context"
-
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -14,8 +12,4 @@ func countDiagnosticsOfKind(diagnostics []codesignal.Diagnostic, kind string) in
 		}
 	}
 	return count
-}
-
-func (b identityHandoffBackend) Analyze(context.Context, ProjectBackendRequest) (*ProjectBackendResult, error) {
-	return b.result, nil
 }

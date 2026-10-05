@@ -2,12 +2,11 @@ package codesignalcli
 
 import (
 	"os"
-
 	"path/filepath"
-
 	"strings"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -29,7 +28,7 @@ func TestApplySourceScopeTSConfigExtendsSymlinkEscapingSnapshotFailsOpen(t *test
 	}
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -54,7 +53,7 @@ func TestApplySourceScopeTreatsGenuinelyInvalidTSConfigAsUnknown(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})

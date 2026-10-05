@@ -3,11 +3,12 @@ package codesignalcli
 import (
 	"fmt"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
 func computeChangedRanges(dir, mergeBaseSHA, path string) ([]codesignal.LineRange, *codesignal.Diagnostic) {
-	output, err := runGitBytes(dir, "diff", "--unified=0", "--no-ext-diff", mergeBaseSHA, "HEAD", "--", path)
+	output, err := gitrepo.RunBytes(dir, "diff", "--unified=0", "--no-ext-diff", mergeBaseSHA, "HEAD", "--", path)
 	if err != nil {
 		return nil, &codesignal.Diagnostic{
 			Path:    path,

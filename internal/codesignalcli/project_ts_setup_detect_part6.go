@@ -3,7 +3,6 @@ package codesignalcli
 import (
 	"bytes"
 	"context"
-
 	"errors"
 	"io/fs"
 	"os"
@@ -46,6 +45,7 @@ func detectPackageManagerHazard(root, kind string) string {
 		return ""
 	}
 }
+
 func classifyProbedPackageManagerVersion(detection packageManagerDetection) ReadinessCheck {
 	version, probed := probePackageManagerVersion(context.Background(), detection.kind)
 	if !probed || !isExactVersion(version) {

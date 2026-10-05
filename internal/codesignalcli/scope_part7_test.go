@@ -2,9 +2,9 @@ package codesignalcli
 
 import (
 	"path/filepath"
-
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -16,7 +16,7 @@ func TestApplySourceScopeResolvesGoTargetFromInvocationSubdirectory(t *testing.T
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(filepath.Join(repo, "cmd", "app"), head, ".", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(filepath.Join(repo, "cmd", "app"), head, ".", "production", []gitrepo.SelectedFile{
 		{Path: "cmd/app/main.go", Status: "modified", Language: semantics.LanguageGo},
 		{Path: "internal/app/app.go", Status: "modified", Language: semantics.LanguageGo},
 	})
@@ -42,7 +42,7 @@ func TestApplySourceScopeUsesHEADSnapshotAndTSConfigFiles(t *testing.T) {
 	head := scopeTestCommit(t, repo)
 
 	writeScopeTestFile(t, repo, "tsconfig.json", "not valid json")
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -65,7 +65,7 @@ func TestApplySourceScopeToleratesTSConfigComments(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -85,7 +85,7 @@ func TestApplySourceScopeToleratesTSConfigTrailingComma(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})

@@ -15,7 +15,6 @@ import (
 // entrypoint in project_acceptance_test.go: Ginkgo v2 does not support calling
 // RunSpecs more than once per test binary, so this file intentionally defines
 // no Test*Acceptance function of its own, per project_snapshot_acceptance_test.go.
-
 var _ = Describe("SetupOutcome's zero value", func() {
 	It("is SetupOutcomeUnknown, not a value indistinguishable from a real cancellation", func() {
 		var zero SetupOutcome

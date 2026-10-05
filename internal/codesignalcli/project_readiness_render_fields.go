@@ -1,6 +1,8 @@
 package codesignalcli
 
-import "strings"
+import (
+	"strings"
+)
 
 // gapCodes renders each gap for RenderReadinessText's Gaps list. A gap
 // carrying PackageManagerKind (an independent mise_project/mise_global

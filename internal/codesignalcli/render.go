@@ -2,7 +2,6 @@ package codesignalcli
 
 import (
 	"fmt"
-
 	"strings"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -91,6 +90,3 @@ func renderSignal(b *strings.Builder, signal codesignal.Signal) {
 func renderDiagnostic(b *strings.Builder, diagnostic codesignal.Diagnostic) {
 	fmt.Fprintf(b, "path: %s, kind: %s, message: %s\n", diagnostic.Path, diagnostic.Kind, diagnostic.Message)
 }
-
-// RenderJSON renders report as its canonical JSON representation followed
-// by exactly one trailing newline, with no CLI-only wrapper fields added.

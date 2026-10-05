@@ -2,20 +2,19 @@ package codesignalcli
 
 import (
 	"bufio"
-
 	"fmt"
 	"io"
-
-	"github.com/lousy-agents/coach/pkg/projectmodel"
-
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
+	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
 func promptLayerName(out io.Writer, reader *bufio.Reader, existing []projectConfigLayer) (name string, done, cancelled bool) {
 	for {
 		fmt.Fprintln(out, "Enter a layer name, or leave blank to finish defining layers:")
 		fmt.Fprint(out, "> ")
-		answer, _ := readLine(reader)
+		answer, _ := prompt.ReadLine(reader)
 		answer = strings.TrimSpace(answer)
 		if answer == "" {
 			return "", true, false
@@ -31,6 +30,7 @@ func promptLayerName(out io.Writer, reader *bufio.Reader, existing []projectConf
 		return answer, false, false
 	}
 }
+
 func collectAuthoringAnswers(in io.Reader, transcript io.Writer, discovered projectmodel.TSRootDiscoveryResult) AuthoringResult {
 	reader := bufio.NewReader(in)
 	roots, cancelled := promptForRoots(transcript, reader, discovered)
@@ -56,6 +56,7 @@ func collectAuthoringAnswers(in io.Reader, transcript io.Writer, discovered proj
 	approved := promptForApproval(transcript, reader, discovered, roots, layers, forbidden, requiredLayer)
 	return AuthoringResult{Roots: roots, Layers: layers, ForbiddenImports: forbidden, RequiredLayer: requiredLayer, Approved: approved}
 }
+
 func matchingDiscoveredDirectories(layer projectConfigLayer, dirs []string) []string {
 	var matched []string
 	for _, dir := range dirs {

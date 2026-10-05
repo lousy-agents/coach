@@ -5,17 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/codesignal"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 func body_projectProvenanceAcceptanceTest_appendsAWorktreeReportReflectsCommittedHeadDiagn_16() {
 	original := listWorktreeStatus
-	listWorktreeStatus = func(string) ([]worktreeStatusEntry, error) {
-		return parseWorktreeStatus([]byte("M  bun.lock\x00")), nil
+	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
+		return gitrepo.ParseWorktreeStatus([]byte("M  bun.lock\x00")), nil
 	}
 	DeferCleanup(func() { listWorktreeStatus = original })
 
@@ -50,8 +50,8 @@ func body_projectProvenanceAcceptanceTest_appendsAWorktreeReportReflectsCommitte
 
 func body_projectProvenanceAcceptanceTest_worktreeReportReflectsCommittedHeadMessageRefere_52() {
 	original := listWorktreeStatus
-	listWorktreeStatus = func(string) ([]worktreeStatusEntry, error) {
-		return parseWorktreeStatus([]byte("?? bun.lock\x00")), nil
+	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
+		return gitrepo.ParseWorktreeStatus([]byte("?? bun.lock\x00")), nil
 	}
 	DeferCleanup(func() { listWorktreeStatus = original })
 
@@ -83,8 +83,8 @@ func body_projectProvenanceAcceptanceTest_worktreeReportReflectsCommittedHeadMes
 
 func body_projectProvenanceAcceptanceTest_doesNotEmitAWorktreeProvenanceDiagnosticWhenTheW_85() {
 	original := listWorktreeStatus
-	listWorktreeStatus = func(string) ([]worktreeStatusEntry, error) {
-		return parseWorktreeStatus([]byte{}), nil
+	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
+		return gitrepo.ParseWorktreeStatus([]byte{}), nil
 	}
 	DeferCleanup(func() { listWorktreeStatus = original })
 
@@ -114,7 +114,7 @@ func body_projectProvenanceAcceptanceTest_doesNotEmitAWorktreeProvenanceDiagnost
 
 func body_projectProvenanceAcceptanceTest_emitsWorktreeStatusCheckFailedRatherThanDescribi_154() {
 	original := listWorktreeStatus
-	listWorktreeStatus = func(string) ([]worktreeStatusEntry, error) {
+	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
 		return nil, errors.New("simulated git status failure")
 	}
 	DeferCleanup(func() { listWorktreeStatus = original })
@@ -153,7 +153,7 @@ func body_projectProvenanceAcceptanceTest_234(dir string, args []string, origina
 }
 
 func body_projectProvenanceAcceptanceTest_257(dir string, args []string, originalRunner func(dir string, args ...string) ([]byte, error)) ([]byte, error) {
-	// Fail ls-tree calls so fileExistsAtRevision errors on lockfile checks.
+	// Fail ls-tree calls so gitrepo.FileExistsAtRevision errors on lockfile checks.
 	if len(args) > 0 && args[0] == "ls-tree" {
 		return nil, errors.New("simulated transient git failure")
 	}

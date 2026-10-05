@@ -4,6 +4,8 @@ import (
 	"context"
 	"path"
 	"time"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 const (
@@ -25,7 +27,7 @@ const (
 // snapshotPackageManagerAtRevision. Tests may replace it to inject git
 // failures into revision-scoped detection.
 var runPackageManagerRevisionGit = func(dir string, args ...string) ([]byte, error) {
-	return runGitBytesBounded(dir, maxPackageManagerRevisionBytes, maxPackageManagerRevisionStderr, packageManagerRevisionTimeout, args...)
+	return gitrepo.RunBytesBounded(dir, maxPackageManagerRevisionBytes, maxPackageManagerRevisionStderr, packageManagerRevisionTimeout, args...)
 }
 
 // snapshotProbePackageManagerVersion is the probe seam for

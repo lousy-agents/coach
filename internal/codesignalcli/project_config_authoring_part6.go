@@ -4,17 +4,17 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-
 	"io"
-
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 )
 
 func promptForbiddenPair(out io.Writer, reader *bufio.Reader, layers []projectConfigLayer, existing []projectForbiddenImport) (from, to string, done, cancelled bool) {
 	for {
 		fmt.Fprintln(out, "Enter the source layer name for a forbidden import pair, or leave blank to finish:")
 		fmt.Fprint(out, "> ")
-		fromAnswer, _ := readLine(reader)
+		fromAnswer, _ := prompt.ReadLine(reader)
 		fromAnswer = strings.TrimSpace(fromAnswer)
 		if fromAnswer == "" {
 			return "", "", true, false
@@ -22,7 +22,7 @@ func promptForbiddenPair(out io.Writer, reader *bufio.Reader, layers []projectCo
 
 		fmt.Fprintln(out, "Enter the destination layer name that the source layer may not import:")
 		fmt.Fprint(out, "> ")
-		toAnswer, _ := readLine(reader)
+		toAnswer, _ := prompt.ReadLine(reader)
 		toAnswer = strings.TrimSpace(toAnswer)
 
 		err := validateForbiddenPairCandidate(fromAnswer, toAnswer, layers, existing)
@@ -35,6 +35,7 @@ func promptForbiddenPair(out io.Writer, reader *bufio.Reader, layers []projectCo
 		return fromAnswer, toAnswer, false, false
 	}
 }
+
 func uncoveredDiscoveredDirectories(dirs []string, layers []projectConfigLayer) []string {
 	var uncovered []string
 	for _, dir := range dirs {

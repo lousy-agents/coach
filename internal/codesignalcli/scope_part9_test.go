@@ -2,11 +2,10 @@ package codesignalcli
 
 import (
 	"os"
-
 	"path/filepath"
-
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -21,7 +20,7 @@ func TestApplySourceScopeArrayExtendsPreservesChildOwnSettings(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -43,7 +42,7 @@ func TestApplySourceScopeExtendsExtensionlessPathResolves(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -62,7 +61,7 @@ func TestApplySourceScopeExcludesGoTestFilesWithoutBuildTarget(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "shipping/shipping.go", Status: "modified", Language: semantics.LanguageGo},
 		{Path: "shipping/shipping_test.go", Status: "modified", Language: semantics.LanguageGo},
 	})

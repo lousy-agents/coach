@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 type readinessRootFindingDoc struct {
@@ -1425,7 +1426,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
 
-			revision, err := codesignalcli.ResolveBaselineRevision(repo)
+			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
 			before, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
@@ -1535,7 +1536,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
 
-			revision, err := codesignalcli.ResolveBaselineRevision(repo)
+			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
 			before, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())
@@ -1580,7 +1581,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			GinkgoT().Setenv("PATH", path)
 			GinkgoT().Setenv("HOME", os.Getenv("HOME"))
 
-			revision, err := codesignalcli.ResolveBaselineRevision(repo)
+			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
 			readiness, err := codesignalcli.CheckProjectReadiness(repo, revision, "")
 			Expect(err).NotTo(HaveOccurred())

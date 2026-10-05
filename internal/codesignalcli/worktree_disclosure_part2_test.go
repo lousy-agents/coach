@@ -2,7 +2,6 @@ package codesignalcli
 
 import (
 	"errors"
-
 	"testing"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"

@@ -2,11 +2,11 @@ package codesignalcli
 
 import (
 	"bufio"
-
 	"fmt"
 	"io"
-
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 )
 
 // promptForCompilerSetupChoice requires the user to type one offered
@@ -21,7 +21,7 @@ func promptForCompilerSetupChoice(out io.Writer, reader *bufio.Reader, choices [
 	}
 	fmt.Fprintln(out, "Type the exact choice name to select it, or 'cancel' to cancel without making any change. There is no default: an unrecognized or blank answer cancels.")
 	fmt.Fprint(out, "> ")
-	answer, unreadable := readLine(reader)
+	answer, unreadable := prompt.ReadLine(reader)
 	if unreadable {
 		return "", true
 	}
@@ -63,6 +63,7 @@ func withProjectPackageResolution(menu SetupChoiceMenu, dir, revision, configPat
 	menu.Withheld = append(menu.Withheld, WithheldSetupChoice{Kind: SetupChoiceProjectPackage, Reason: withheldReason})
 	return menu, "", withheldReason
 }
+
 func printSetupPreview(out io.Writer, preview SetupPreview) {
 	fmt.Fprintln(out, "Before this setup command runs, here is exactly what it will do:")
 	fmt.Fprintf(out, "  Executable: %s\n", preview.Executable)

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -42,7 +43,7 @@ func analysisErrorReportFor(err error, language string, hasControllingTerminal b
 		return classTwoReport(configErr.Message, nil,
 			codesignalcli.AppendedRemediationLine(hasControllingTerminal, language, codesignalcli.SuggestProjectConfigRemediation(language)))
 	}
-	var opErr *codesignalcli.OperationalError
+	var opErr *gitrepo.OperationalError
 	if errors.As(err, &opErr) {
 		return analysisErrorReport{lines: []string{opErr.Message}, exitCode: 1}
 	}

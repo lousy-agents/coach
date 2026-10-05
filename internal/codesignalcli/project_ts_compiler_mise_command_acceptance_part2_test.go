@@ -2,11 +2,8 @@ package codesignalcli
 
 import (
 	"io/fs"
-
 	"os"
-
 	"path/filepath"
-
 	"strings"
 
 	. "github.com/onsi/gomega"

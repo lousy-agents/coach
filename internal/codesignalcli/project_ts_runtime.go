@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/subprocess"
 )
 
 // tsRuntime is the prepared runtime descriptor: everything tsProjectBackend
@@ -67,7 +69,7 @@ func hostNodeProbeEnv() []string {
 
 func mapHostNodeProbeError(path, probe string, exitErr, probeErr error) error {
 	switch {
-	case errors.Is(probeErr, errBoundedProbeTimedOut):
+	case errors.Is(probeErr, subprocess.ErrProbeTimedOut):
 		return fmt.Errorf("%s %s timed out", path, probe)
 	case probeErr != nil:
 		return probeErr

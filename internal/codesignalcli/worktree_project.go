@@ -1,10 +1,13 @@
 package codesignalcli
 
-import "github.com/lousy-agents/coach/pkg/codesignal"
+import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/pkg/codesignal"
+)
 
 // listWorktreeStatus is the worktree-status read behind the scan's
 // worktree diagnostics. Tests may replace it with canned porcelain entries.
-var listWorktreeStatus = gitWorktreeStatus
+var listWorktreeStatus = gitrepo.WorktreeStatus
 
 func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, dir string, roots []string, configPath string) []codesignal.Diagnostic {
 	entries, err := listWorktreeStatus(dir)
@@ -27,9 +30,9 @@ func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, dir st
 	})
 }
 
-func hasRelevantDirtyWorktree(entries []worktreeStatusEntry, roots []string, configPath string) bool {
+func hasRelevantDirtyWorktree(entries []gitrepo.WorktreeEntry, roots []string, configPath string) bool {
 	for _, entry := range entries {
-		if isRelevantDirtyPath(entry.path, roots, configPath) {
+		if isRelevantDirtyPath(entry.Path, roots, configPath) {
 			return true
 		}
 	}

@@ -2,10 +2,9 @@ package codesignalcli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-
-	"strings"
 )
 
 func renderPathSteps(b *strings.Builder, steps []codesignal.ProjectPathStep) {
@@ -26,6 +25,7 @@ func renderPathSteps(b *strings.Builder, steps []codesignal.ProjectPathStep) {
 		}
 	}
 }
+
 func renderCoverageSection(b *strings.Builder, coverage *codesignal.Coverage) {
 	if coverage == nil || (len(coverage.Unsupported) == 0 && len(coverage.Excluded) == 0) {
 		return
@@ -39,6 +39,7 @@ func renderCoverageSection(b *strings.Builder, coverage *codesignal.Coverage) {
 		fmt.Fprintf(b, "  excluded: %d %s %s files\n", g.Count, g.Reason, g.Language)
 	}
 }
+
 func renderProjectChanges(b *strings.Builder, report *codesignal.Report) {
 	b.WriteString("Project findings:\n")
 	for i, change := range report.ProjectChanges {

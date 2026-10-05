@@ -5,10 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"sort"
 
 	"github.com/lousy-agents/coach/pkg/projectmodel"
-
-	"sort"
 )
 
 // validateOutputPath performs the shape and parent-confinement stages of
@@ -51,6 +50,7 @@ func normalizeSuggestionRoots(roots []string) []string {
 	}
 	return deduped
 }
+
 func suggestExitCodeFor(code string) int {
 	switch code {
 	case SuggestDiagSnapshotUnavailable, SuggestDiagFailed:
@@ -59,6 +59,7 @@ func suggestExitCodeFor(code string) int {
 		return 2
 	}
 }
+
 func suggestDiagnosticMessage(diag projectmodel.Diagnostic) string {
 	if diag.Message != "" {
 		return diag.Message
@@ -93,6 +94,7 @@ func unwrapPathError(cleanOutput string, err error) error {
 	}
 	return err
 }
+
 func suggestSuccessResult(revisionSHA string, result projectmodel.RootDiscoveryResult, candidate []byte, outputSet bool) SuggestionResult {
 	envelope := buildSuggestEnvelope(revisionSHA, result.Roots, result.Coverage, projectmodel.Diagnostic{
 		Code:    SuggestDiagReady,

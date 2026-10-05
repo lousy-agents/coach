@@ -3,7 +3,6 @@ package codesignalcli
 import (
 	"path/filepath"
 	"reflect"
-
 	"testing"
 )
 

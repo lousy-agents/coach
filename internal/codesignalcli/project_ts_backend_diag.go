@@ -1,6 +1,8 @@
 package codesignalcli
 
-import "github.com/lousy-agents/coach/pkg/projectmodel"
+import (
+	"github.com/lousy-agents/coach/pkg/projectmodel"
+)
 
 func containsProjectDiagnosticCode(diagnostics []projectmodel.Diagnostic, code string) bool {
 	for _, d := range diagnostics {

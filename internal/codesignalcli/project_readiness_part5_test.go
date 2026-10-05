@@ -2,11 +2,8 @@ package codesignalcli
 
 import (
 	"encoding/json"
-
 	"os"
-
 	"path/filepath"
-
 	"testing"
 )
 

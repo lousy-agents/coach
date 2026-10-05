@@ -3,7 +3,6 @@ package codesignalcli
 import (
 	"bytes"
 	"context"
-
 	"os"
 )
 

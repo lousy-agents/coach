@@ -15,6 +15,7 @@ func renderReadinessWarningLine(b *strings.Builder, warning ReadinessWarning) {
 		return
 	}
 }
+
 func renderReadinessNextActions(b *strings.Builder, actions []ReadinessNextAction) {
 	if len(actions) == 0 {
 		return
@@ -24,6 +25,7 @@ func renderReadinessNextActions(b *strings.Builder, actions []ReadinessNextActio
 		renderReadinessNextActionLine(b, action)
 	}
 }
+
 func renderReadinessCodeList(b *strings.Builder, heading string, values []string) {
 	if len(values) == 0 {
 		return
@@ -33,6 +35,7 @@ func renderReadinessCodeList(b *strings.Builder, heading string, values []string
 		fmt.Fprintf(b, "  %s\n", value)
 	}
 }
+
 func renderReadinessDirtyWorktree(b *strings.Builder, dirty ReadinessDirtyWorktree) {
 	if !dirty.RelevantChanges {
 		return
@@ -43,6 +46,7 @@ func renderReadinessDirtyWorktree(b *strings.Builder, dirty ReadinessDirtyWorktr
 		fmt.Fprintf(b, "  %s\n", changedPath)
 	}
 }
+
 func renderReadinessWarnings(b *strings.Builder, warnings []ReadinessWarning) {
 	if len(warnings) == 0 {
 		return

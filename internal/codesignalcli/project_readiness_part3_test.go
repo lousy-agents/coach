@@ -2,7 +2,6 @@ package codesignalcli
 
 import (
 	"reflect"
-
 	"strconv"
 	"strings"
 	"testing"

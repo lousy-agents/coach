@@ -3,9 +3,8 @@ package codesignalcli
 import (
 	"strings"
 
-	. "github.com/onsi/gomega"
-
 	"github.com/lousy-agents/coach/pkg/codesignal"
+	. "github.com/onsi/gomega"
 )
 
 func body_renderAcceptanceTest_rendersTheProjectScopeBlockBEFOREAnyFindingsSect_68(report *codesignal.Report) {

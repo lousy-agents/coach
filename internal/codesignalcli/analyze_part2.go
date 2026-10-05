@@ -5,14 +5,15 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, appliedScope string, excluded []codesignal.CoverageGroup, project *ProjectAnalysis) (*codesignal.Report, error) {
+func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, files []gitrepo.SelectedFile, extraDiagnostics []codesignal.Diagnostic, appliedScope string, excluded []codesignal.CoverageGroup, project *ProjectAnalysis) (*codesignal.Report, error) {
 	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
 	if err != nil {
-		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
+		return nil, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
 	}
 
 	var fileChanges []codesignal.FileChange
@@ -54,6 +55,7 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 	}
 	return builder.Build(ctx, input)
 }
+
 func mapSemanticsError(path string, err error) codesignal.Diagnostic {
 	kind := "analysis_failed"
 	switch {

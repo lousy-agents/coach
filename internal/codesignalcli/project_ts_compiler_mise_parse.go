@@ -1,12 +1,10 @@
 package codesignalcli
 
-import "strings"
+import (
+	"strings"
+)
 
 const miseToolsSectionHeader = "[tools]"
-
-// parseMiseToolsTypescriptVersions is a line-based scan, not a TOML parse:
-// every section other than [tools] -- [hooks], [tasks], env directives --
-// must be skipped unread rather than interpreted.
 
 func typescriptVersionsFromMiseToolLine(line string) []string {
 	key, value, ok := strings.Cut(line, "=")
@@ -56,15 +54,6 @@ func hasMiseConfigHazard(data string) bool {
 	}
 	return false
 }
-
-// hazardousHeader strips prefix and any TOML quoting from a section-header
-// line, then reports whether what remains starts with one of names.
-
-// miseLineDeclaresHazardousInlineTable flags a bare top-level `hooks = { ... }`,
-// `tasks = { ... }`, or `registry = { ... }` key -- mise's inline-table
-// shorthand for declaring those tables without the bracketed `[hooks]`/
-// `[tasks]`/`[[registry.*]]` header syntax the two bracket-prefixed cases
-// above already catch.
 
 // miseLineDeclaresToolExecutionOverride flags an inline-table value (mise's
 // `tool = { ... }` shorthand, used both for [tools] entries with

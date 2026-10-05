@@ -100,13 +100,3 @@ func TestAuthorProjectConfig_ExhaustedInputCancelsInsteadOfSpinning(t *testing.T
 		})
 	}
 }
-
-func (w *boundedWriter) Write(p []byte) (int, error) {
-	if remaining := w.cap - w.buf.Len(); remaining > 0 {
-		if remaining > len(p) {
-			remaining = len(p)
-		}
-		w.buf.Write(p[:remaining])
-	}
-	return len(p), nil
-}

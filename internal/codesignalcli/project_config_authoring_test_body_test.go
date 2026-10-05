@@ -2,7 +2,6 @@ package codesignalcli
 
 import (
 	"bytes"
-
 	"strings"
 	"testing"
 )

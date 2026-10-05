@@ -3,10 +3,9 @@ package codesignalcli
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/lousy-agents/coach/pkg/projectmodel"
-
-	"strings"
 )
 
 func splitTrimmedNonEmpty(s, sep string) []string {
@@ -19,6 +18,7 @@ func splitTrimmedNonEmpty(s, sep string) []string {
 	}
 	return result
 }
+
 func layerMatchesDirectory(layer projectConfigLayer, dir string) bool {
 	for _, prefix := range layer.Prefixes {
 		if directoryHasPrefix(dir, prefix) {
@@ -27,6 +27,7 @@ func layerMatchesDirectory(layer projectConfigLayer, dir string) bool {
 	}
 	return false
 }
+
 func printCoveragePreview(out io.Writer, discovered projectmodel.TSRootDiscoveryResult, layers []projectConfigLayer) {
 	dirs := discoveredDirectories(discovered)
 
@@ -39,6 +40,7 @@ func printCoveragePreview(out io.Writer, discovered projectmodel.TSRootDiscovery
 	uncovered := uncoveredDiscoveredDirectories(dirs, layers)
 	fmt.Fprintf(out, "  discovered directories no declared layer matches: %s\n", formatStringList(uncovered))
 }
+
 func formatStringList(items []string) string {
 	if len(items) == 0 {
 		return "(none)"

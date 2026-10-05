@@ -6,17 +6,18 @@ import (
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 
 	"os"
 )
 
 func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, error) {
-	revisionSHA, err := codesignalcli.ResolveBaselineRevision(dir)
+	revisionSHA, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
 		return nil, err
 	}
-	discovered, coverage, err := codesignalcli.DiscoverTrackedFiles(dir, revisionSHA)
+	discovered, coverage, err := gitrepo.DiscoverTrackedFiles(dir, revisionSHA)
 	if err != nil {
 		return nil, err
 	}

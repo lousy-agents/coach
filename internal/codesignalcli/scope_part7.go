@@ -2,10 +2,10 @@ package codesignalcli
 
 import (
 	"bytes"
-
-	"github.com/lousy-agents/coach/pkg/codesignal"
-
 	"sort"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
 // tallyClassified splits classified (files already labeled by
@@ -13,11 +13,11 @@ import (
 // (excluded), grouped by (SourceScope reason, Language) pair. It is shared
 // by ApplySourceScope and ApplyBaselineSourceScope, whose only difference is
 // what they do with the two results.
-func tallyClassified(classified []SelectedFile) (kept []SelectedFile, excluded []codesignal.CoverageGroup) {
+func tallyClassified(classified []gitrepo.SelectedFile) (kept []gitrepo.SelectedFile, excluded []codesignal.CoverageGroup) {
 	type groupKey struct{ reason, language string }
 	counts := make(map[groupKey]int)
 
-	kept = make([]SelectedFile, 0, len(classified))
+	kept = make([]gitrepo.SelectedFile, 0, len(classified))
 	for _, file := range classified {
 		if file.SourceScope == SourceScopeTestOnly || file.SourceScope == SourceScopeExcluded {
 			counts[groupKey{reason: file.SourceScope, language: string(file.Language)}]++

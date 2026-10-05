@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 

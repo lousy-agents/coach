@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/subprocess"
 )
 
 const (
@@ -32,7 +34,7 @@ func runMiseProbe(ctx context.Context, args ...string) (out string, exitErr erro
 	}
 	defer func() { _ = os.RemoveAll(probeDir) }()
 
-	data, exitErr, probeErr := runBoundedSubprocessProbeAt(ctx, miseProbeTimeout, maxMiseProbeOutput, probeDir, miseProbeEnv(), "mise", args...)
+	data, exitErr, probeErr := subprocess.ProbeAt(ctx, miseProbeTimeout, maxMiseProbeOutput, probeDir, miseProbeEnv(), "mise", args...)
 	if probeErr != nil {
 		return "", nil, false
 	}

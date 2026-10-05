@@ -2,11 +2,10 @@ package codesignalcli
 
 import (
 	"fmt"
-
-	"github.com/lousy-agents/coach/pkg/codesignal"
-
 	"sort"
 	"strings"
+
+	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
 func writeSortedIntMap(b *strings.Builder, label string, values map[string]int) {
@@ -22,6 +21,7 @@ func writeSortedIntMap(b *strings.Builder, label string, values map[string]int) 
 		fmt.Fprintf(b, "  %s: %s=%d\n", label, key, values[key])
 	}
 }
+
 func renderOneProjectChange(b *strings.Builder, change codesignal.ProjectChange) {
 	fmt.Fprintf(b, "semantic_key: %s\n", change.SemanticKey)
 	fmt.Fprintf(b, "rule_id: %s\n", change.RuleID)
@@ -41,6 +41,7 @@ func renderOneProjectChange(b *strings.Builder, change codesignal.ProjectChange)
 	}
 	renderPathSteps(b, change.PathSteps)
 }
+
 func renderDiagnosticsSection(b *strings.Builder, diagnostics []codesignal.Diagnostic) {
 	if len(diagnostics) == 0 {
 		return
@@ -50,6 +51,7 @@ func renderDiagnosticsSection(b *strings.Builder, diagnostics []codesignal.Diagn
 		renderDiagnostic(b, diagnostic)
 	}
 }
+
 func renderDiffSummary(b *strings.Builder, report *codesignal.Report) {
 	switch report.Scope.AppliedScope {
 	case "all":
@@ -66,6 +68,7 @@ func renderDiffSummary(b *strings.Builder, report *codesignal.Report) {
 	fmt.Fprintf(b, "files analyzed: %d, active signals: %d, diagnostics: %d\n",
 		report.Summary.FilesAnalyzed, report.Summary.ActiveSignals, len(report.Diagnostics))
 }
+
 func renderOneProjectFact(b *strings.Builder, fact codesignal.ProjectFact) {
 	fmt.Fprintf(b, "kind: %s\n", fact.Kind)
 	writeOptionalLine(b, "semantic_key", fact.SemanticKey)

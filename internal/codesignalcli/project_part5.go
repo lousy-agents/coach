@@ -2,9 +2,7 @@ package codesignalcli
 
 import (
 	"bytes"
-
 	"encoding/json"
-
 	"fmt"
 )
 
@@ -15,6 +13,11 @@ func validateProjectConfigForbiddenImports(forbiddenImports []projectForbiddenIm
 			return fmt.Errorf("forbidden_imports entries require non-empty from and to")
 		}
 
+		// A forbidden_imports entry is an explicit user claim that a layer
+		// pair exists. Left unchecked, a typo'd from/to that names no
+		// declared layer would validate cleanly but can never match any
+		// evaluated (layerFrom, layerTo) pair, silently making that policy
+		// line a permanent no-op.
 		if _, ok := seenLayerNames[forbidden.From]; !ok {
 			return fmt.Errorf("forbidden_imports entry references undefined layer %q", forbidden.From)
 		}
@@ -29,6 +32,7 @@ func validateProjectConfigForbiddenImports(forbiddenImports []projectForbiddenIm
 	}
 	return nil
 }
+
 func decodeProjectConfig(data []byte) (projectConfig, error) {
 	if int64(len(data)) > maxProjectConfigBytes {
 		return projectConfig{}, fmt.Errorf("document exceeds %d-byte size budget", maxProjectConfigBytes)

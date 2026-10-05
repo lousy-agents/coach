@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func analyzeRemovedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, mergeBaseSHA string, sf SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic) {
-	baseBytes, err := runGitBytes(dir, "show", mergeBaseSHA+":"+sf.Path)
+func analyzeRemovedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, mergeBaseSHA string, sf gitrepo.SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic) {
+	baseBytes, err := gitrepo.RunBytes(dir, "show", mergeBaseSHA+":"+sf.Path)
 	if err != nil {
 		return nil, []codesignal.Diagnostic{readFailedDiagnostic(sf.Path, "base", err)}
 	}

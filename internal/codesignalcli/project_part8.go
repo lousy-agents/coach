@@ -2,11 +2,8 @@ package codesignalcli
 
 import (
 	"encoding/json"
-
 	"fmt"
-
 	"path"
-
 	"strings"
 )
 
@@ -20,6 +17,7 @@ func validateProjectConfigDirectory(value string) error {
 	}
 	return nil
 }
+
 func hasDuplicatePaths(paths []string) bool {
 	seen := make(map[string]struct{}, len(paths))
 	for _, p := range paths {
@@ -30,6 +28,7 @@ func hasDuplicatePaths(paths []string) bool {
 	}
 	return false
 }
+
 func walkJSONArray(decoder *json.Decoder, depth int) error {
 	for decoder.More() {
 		if err := walkJSONValue(decoder, depth+1); err != nil {

@@ -2,9 +2,7 @@ package codesignalcli
 
 import (
 	"bytes"
-
 	"encoding/json"
-
 	"fmt"
 )
 
@@ -30,6 +28,7 @@ func walkJSONValue(decoder *json.Decoder, depth int) error {
 	}
 	return nil
 }
+
 func walkJSONObject(decoder *json.Decoder, depth int) error {
 	seen := map[string]struct{}{}
 	for decoder.More() {

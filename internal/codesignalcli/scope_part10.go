@@ -2,23 +2,12 @@ package codesignalcli
 
 import (
 	"bytes"
-
 	"os"
-
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
-// matchesInclude is the union of files and include (TS semantics). Match-all
-// only when both are absent; explicit empty files selects nothing.
-func (c tsConfig) matchesInclude(path string) bool {
-	if c.Files != nil && matchesAny(path, *c.Files) {
-		return true
-	}
-	if len(c.Include) > 0 {
-		return matchesAny(path, c.Include)
-	}
-	return c.Files == nil
-}
 func matchesAny(path string, patterns []string) bool {
 	for _, pattern := range patterns {
 		if globMatch(pattern, path) {
@@ -49,7 +38,8 @@ func trailingCommaFollowedByClose(data []byte, i int) bool {
 	}
 	return j < len(data) && (data[j] == '}' || data[j] == ']')
 }
-func classifyFilename(file SelectedFile) string {
+
+func classifyFilename(file gitrepo.SelectedFile) string {
 	if strings.HasSuffix(file.Path, "_test.go") {
 		return SourceScopeTestOnly
 	}

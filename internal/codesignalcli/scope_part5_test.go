@@ -3,6 +3,7 @@ package codesignalcli
 import (
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -16,7 +17,7 @@ func TestApplySourceScopeTSConfigExtendsBareNpmSpecifierFailsOpen(t *testing.T) 
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -44,7 +45,7 @@ func TestApplySourceScopeTSConfigExtendsChainHittingNpmSpecifierMidChainFailsOpe
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -68,7 +69,7 @@ func TestApplyBaselineSourceScopeTalliesExcludedFiles(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	kept, excluded, err := ApplyBaselineSourceScope(repo, head, "", "production", []SelectedFile{
+	kept, excluded, err := ApplyBaselineSourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "shipping/shipping.go", Language: semantics.LanguageGo},
 		{Path: "shipping/shipping_test.go", Language: semantics.LanguageGo},
 	})

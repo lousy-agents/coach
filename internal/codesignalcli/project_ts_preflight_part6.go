@@ -75,6 +75,7 @@ func setupChoiceScopeClause(kind SetupChoiceKind) string {
 		return ""
 	}
 }
+
 func typescriptInvocation(flag, projectConfigPath string) string {
 	invocation := "coach codesignal --baseline " + flag + " --project-language typescript"
 	if projectConfigPath != "" {
@@ -82,12 +83,14 @@ func typescriptInvocation(flag, projectConfigPath string) string {
 	}
 	return invocation
 }
+
 func miseOriginForSetupChoiceKind(kind SetupChoiceKind) string {
 	if kind == SetupChoiceGlobalMise {
 		return compilerOriginMiseGlobal
 	}
 	return compilerOriginMiseProject
 }
+
 func miseSetupOfferFailureDetail(installed miseInstallResult, version, origin string) string {
 	switch {
 	case installed.Observed && installed.Class != "":

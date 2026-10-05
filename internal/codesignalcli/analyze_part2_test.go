@@ -2,9 +2,9 @@ package codesignalcli
 
 import (
 	"context"
-
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
@@ -22,7 +22,7 @@ func TestAnalyzeBaseline(t *testing.T) {
 	gitfixture.CommitFile(t, dir, "clean.go", "package clean\n\nfunc Update(input *int) { *input = 1 }\n")
 	headSHA := gitfixture.CommitFile(t, dir, "broken.go", "package broken\n\nfunc F( {\n")
 
-	files := []SelectedFile{
+	files := []gitrepo.SelectedFile{
 		{Path: "clean.go", Language: semantics.LanguageGo},
 		{Path: "broken.go", Language: semantics.LanguageGo},
 		{Path: "missing.go", Language: semantics.LanguageGo},

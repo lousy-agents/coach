@@ -3,6 +3,8 @@ package codesignalcli
 import (
 	"path"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 // checkProjectShape reports whether revision looks like a Node/TypeScript
@@ -21,7 +23,7 @@ import (
 // this check has no basis for (R1, mirroring checkPackageManager's own
 // policyPassed gate).
 func checkProjectShape(dir, revision string, roots []string, policyPassed bool) (ReadinessCheck, error) {
-	exists, err := fileExistsAtRevision(runProjectConfigGit, dir, revision, "package.json")
+	exists, err := gitrepo.FileExistsAtRevision(runProjectConfigGit, dir, revision, "package.json")
 	if err != nil {
 		return ReadinessCheck{}, err
 	}
@@ -45,7 +47,7 @@ func checkProjectShape(dir, revision string, roots []string, policyPassed bool) 
 }
 
 // packageJSONExistsUnderAnyRoot reports whether a package.json blob exists
-// at or above any of roots at revision. The walk uses fileExistsAtRevision
+// at or above any of roots at revision. The walk uses gitrepo.FileExistsAtRevision
 // (Git snapshot), never worktree os.Stat, so it matches compiler
 // nearest-manifest resolution without mixing host state into a snapshot
 // check. roots: ["."] is skipped here because the caller already probed
@@ -66,7 +68,7 @@ func packageJSONExistsWalkingUp(dir, revision, root string) (bool, error) {
 		return false, nil
 	}
 	for {
-		exists, err := fileExistsAtRevision(runProjectConfigGit, dir, revision, path.Join(current, "package.json"))
+		exists, err := gitrepo.FileExistsAtRevision(runProjectConfigGit, dir, revision, path.Join(current, "package.json"))
 		if err != nil || exists {
 			return exists, err
 		}

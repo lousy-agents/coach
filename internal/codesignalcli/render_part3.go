@@ -2,11 +2,10 @@ package codesignalcli
 
 import (
 	"fmt"
-
-	"github.com/lousy-agents/coach/pkg/codesignal"
-
 	"sort"
 	"strings"
+
+	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
 func renderProjectFacts(b *strings.Builder, facts []codesignal.ProjectFact) {
@@ -21,6 +20,7 @@ func renderProjectFacts(b *strings.Builder, facts []codesignal.ProjectFact) {
 		}
 	}
 }
+
 func renderMachineEvidence(b *strings.Builder, evidence map[string]string) {
 	if len(evidence) == 0 {
 		return
@@ -34,6 +34,7 @@ func renderMachineEvidence(b *strings.Builder, evidence map[string]string) {
 		fmt.Fprintf(b, "machine_evidence.%s: %s\n", key, evidence[key])
 	}
 }
+
 func renderFileLocalSignals(b *strings.Builder, signals []codesignal.Signal, projectSignalIDs map[string]struct{}) bool {
 	rendered := false
 	for _, signal := range signals {
@@ -48,6 +49,7 @@ func renderFileLocalSignals(b *strings.Builder, signals []codesignal.Signal, pro
 	}
 	return rendered
 }
+
 func renderReportSummary(b *strings.Builder, report *codesignal.Report) {
 	if report.Scope.Baseline {
 		renderBaselineSummary(b, report)

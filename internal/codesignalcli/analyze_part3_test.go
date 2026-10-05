@@ -2,9 +2,9 @@ package codesignalcli
 
 import (
 	"context"
-
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
@@ -28,7 +28,7 @@ func TestAnalyzeBaselineInterleavedReadFailures(t *testing.T) {
 	gitfixture.CommitFile(t, dir, "b.go", "package b\n\nfunc UpdateB(input *int) { *input = 2 }\n")
 	headSHA := gitfixture.CommitFile(t, dir, "c.go", "package c\n\nfunc UpdateC(input *int) { *input = 3 }\n")
 
-	files := []SelectedFile{
+	files := []gitrepo.SelectedFile{
 		{Path: "a.go", Language: semantics.LanguageGo},
 		{Path: "missing1.go", Language: semantics.LanguageGo},
 		{Path: "b.go", Language: semantics.LanguageGo},

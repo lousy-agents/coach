@@ -1,6 +1,8 @@
 package codesignalcli
 
-import "strings"
+import (
+	"strings"
+)
 
 func declaredTypescriptVersion(manifestFields map[string]string) (declaration string, conflict bool) {
 	var exactDeclared []string

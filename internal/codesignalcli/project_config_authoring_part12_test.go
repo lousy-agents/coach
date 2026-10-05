@@ -2,7 +2,6 @@ package codesignalcli
 
 import (
 	"errors"
-
 	"strings"
 	"testing"
 	"time"

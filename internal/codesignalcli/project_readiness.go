@@ -3,6 +3,8 @@ package codesignalcli
 import (
 	"errors"
 	"strconv"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 const (
@@ -235,7 +237,7 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 }
 
 func checkPolicy(dir, revision, policyPath string) (ReadinessCheck, []string, error) {
-	exists, err := fileExistsAtRevision(runProjectConfigGit, dir, revision, policyPath)
+	exists, err := gitrepo.FileExistsAtRevision(runProjectConfigGit, dir, revision, policyPath)
 	if err != nil {
 		return ReadinessCheck{}, nil, err
 	}

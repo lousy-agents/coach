@@ -1,20 +1,15 @@
 package codesignalcli
 
 import (
-	"archive/tar"
-
 	"encoding/json"
 	"fmt"
-
 	"os"
-
 	"path/filepath"
-
 	"strings"
 )
 
 // resolveExtendedTSConfig joins extends relative to dir, then enforces the
-// snapshotRoot boundary after EvalSymlinks (extractTar preserves symlinks;
+// snapshotRoot boundary after EvalSymlinks (gitrepo.extractTar preserves symlinks;
 // a lexical-only check would read through an in-bounds symlink to a host
 // path). Boundary is snapshotRoot, not the current hop's directory.
 func resolveExtendedTSConfig(snapshotRoot, dir, extends string) (config tsConfig, baseDir, basePath string, ok bool) {
@@ -61,10 +56,4 @@ func readTSConfigFile(path string) (tsConfig, bool, error) {
 		return tsConfig{}, false, nil
 	}
 	return config, true, nil
-}
-func extractTarSymlink(path string, header *tar.Header) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.Symlink(header.Linkname, path)
 }

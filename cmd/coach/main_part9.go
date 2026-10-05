@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 
 	"os"
@@ -14,12 +15,12 @@ import (
 )
 
 func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, error) {
-	headSHA, mergeBaseSHA, err := codesignalcli.ResolveRevisions(dir, f.base)
+	headSHA, mergeBaseSHA, err := gitrepo.ResolveRevisions(dir, f.base)
 	if err != nil {
 		return nil, err
 	}
 
-	selected, diagnostics, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA)
+	selected, diagnostics, err := gitrepo.SelectChangedFiles(dir, mergeBaseSHA)
 	if err != nil {
 		return nil, err
 	}

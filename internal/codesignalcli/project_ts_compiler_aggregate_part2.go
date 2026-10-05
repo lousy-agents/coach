@@ -38,6 +38,7 @@ func miseScopeSetupWithholdReason(origin, worktreeRoot string) string {
 	}
 	return ""
 }
+
 func evaluateCompilerOrigins(dir string, roots []string) compilerAggregate {
 	worktreeRoot := compilerWorktreeRoot(dir)
 	project, rootContext := evaluateProjectOrigin(worktreeRoot, roots)
@@ -52,6 +53,7 @@ func evaluateCompilerOrigins(dir string, roots []string) compilerAggregate {
 	aggregate.tryOrigin(gatedMiseOriginEvaluation(compilerOriginMiseGlobal, evaluateMiseGlobalTrust(context.Background()), evaluateMiseGlobalOrigin))
 	return aggregate
 }
+
 func localMiseProjectVersionsConflict(worktreeRoot string) bool {
 	data, ok := readMiseProjectConfigFile(worktreeRoot)
 	if !ok {
@@ -60,12 +62,14 @@ func localMiseProjectVersionsConflict(worktreeRoot string) bool {
 	versions := dedupeStrings(filterExactVersions(parseMiseToolsTypescriptVersions(data)))
 	return len(versions) > 1
 }
+
 func conflictFindings(origin, selectedRoots []ReadinessRootFinding) []ReadinessRootFinding {
 	if len(origin) > 0 {
 		return origin
 	}
 	return selectedRoots
 }
+
 func projectMiseConfigHazard(worktreeRoot string) bool {
 	data, ok := readMiseProjectConfigFile(worktreeRoot)
 	if !ok {

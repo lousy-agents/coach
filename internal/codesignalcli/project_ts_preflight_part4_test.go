@@ -2,9 +2,9 @@ package codesignalcli
 
 import (
 	"errors"
-
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
@@ -86,7 +86,7 @@ func TestWrapCompilerUnresolvedErrorWithReadinessUnwrapsToThePlainError(t *testi
 }
 
 func TestWrapProjectConfigErrorWithReadinessLeavesOtherErrorsUnchanged(t *testing.T) {
-	plain := &OperationalError{Message: "boom"}
+	plain := &gitrepo.OperationalError{Message: "boom"}
 	if got := WrapProjectConfigErrorWithReadiness(plain, ".", "HEAD", "project.json"); got != error(plain) {
 		t.Fatalf("WrapProjectConfigErrorWithReadiness(non-ProjectConfigError) = %v, want the original error unchanged", got)
 	}

@@ -2,10 +2,8 @@ package codesignalcli
 
 import (
 	"bytes"
-
 	"errors"
 	"fmt"
-
 	"strings"
 	"testing"
 	"time"

@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, headSHA, mergeBaseSHA string, sf SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic) {
-	headBytes, err := runGitBytes(dir, "show", headSHA+":"+sf.Path)
+func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, headSHA, mergeBaseSHA string, sf gitrepo.SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic) {
+	headBytes, err := gitrepo.RunBytes(dir, "show", headSHA+":"+sf.Path)
 	if err != nil {
 		return nil, []codesignal.Diagnostic{readFailedDiagnostic(sf.Path, "head", err)}
 	}
@@ -23,7 +24,7 @@ func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyze
 	var diagnostics []codesignal.Diagnostic
 
 	if sf.Status == "modified" {
-		baseBytes, err := runGitBytes(dir, "show", mergeBaseSHA+":"+sf.Path)
+		baseBytes, err := gitrepo.RunBytes(dir, "show", mergeBaseSHA+":"+sf.Path)
 		if err != nil {
 			diagnostics = append(diagnostics, readFailedDiagnostic(sf.Path, "base", err))
 		} else {

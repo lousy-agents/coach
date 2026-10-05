@@ -6,6 +6,8 @@ import (
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -13,7 +15,7 @@ import (
 // same override-for-testing pattern as loadProjectConfig/resolveProjectBackend
 // in main.go: it lets tests drive authorProjectConfigTypeScript's
 // DiagTSRootUnavailable-vs-DiagTSRootIncomplete branch directly, since a real
-// Git snapshot (codesignalcli.NewGoSnapshotFS) can never itself produce
+// Git snapshot (revisionfs.New) can never itself produce
 // DiagTSRootUnavailable -- its root directory always opens successfully.
 var discoverTSRoots = projectmodel.DiscoverTSRoots
 
@@ -131,7 +133,7 @@ func printProjectConfigGapBeforeAuthoring(scanErr error, stderr *os.File) {
 // faking its true result, so the gate stays in runAuthorProjectConfigTypeScript
 // and is not itself exercised this way -- only the logic downstream of it.
 func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout, stderr *os.File) int {
-	revision, err := codesignalcli.ResolveBaselineRevision(dir)
+	revision, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: could not resolve the baseline revision: %s\n", authorTSUsagePrefix, err)
 		return 3
@@ -148,7 +150,7 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 		return 2
 	}
 
-	snapshot, err := codesignalcli.NewGoSnapshotFS(root, revision)
+	snapshot, err := revisionfs.New(root, revision)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: could not read the baseline snapshot: %s\n", authorTSUsagePrefix, err)
 		return 3

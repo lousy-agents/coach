@@ -16,6 +16,7 @@ func failingReadinessChecks(checks ReadinessChecks) []ReadinessCheck {
 	}
 	return failing
 }
+
 func readinessFromGapChecks(failing []ReadinessCheck) ([]ReadinessGap, []ReadinessNextAction, ReadinessStatus) {
 	gaps := make([]ReadinessGap, 0, len(failing))
 	nextActions := make([]ReadinessNextAction, 0, len(failing))
@@ -31,6 +32,7 @@ func readinessFromGapChecks(failing []ReadinessCheck) ([]ReadinessGap, []Readine
 	}
 	return gaps, nextActions, status
 }
+
 func nextActionForCheck(kind string, check ReadinessCheck) ReadinessNextAction {
 	action := ReadinessNextAction{Kind: kind, Executable: nextActionExecutable(kind)}
 	switch kind {
@@ -52,6 +54,7 @@ func nextActionForCheck(kind string, check ReadinessCheck) ReadinessNextAction {
 	}
 	return action
 }
+
 func compilerDeclarationWarnings(check ReadinessCheck) []ReadinessWarning {
 	if check.Code != WarnCompilerDeclarationMismatch {
 		return nil
@@ -68,6 +71,7 @@ func compilerDeclarationWarnings(check ReadinessCheck) []ReadinessWarning {
 	}
 	return warnings
 }
+
 func raiseStatus(status, candidate ReadinessStatus) ReadinessStatus {
 	if statusRank(candidate) > statusRank(status) {
 		return candidate

@@ -2,11 +2,8 @@ package codesignalcli
 
 import (
 	"bytes"
-
 	"fmt"
-
 	"path/filepath"
-
 	"strings"
 )
 
@@ -37,6 +34,7 @@ func snapshotBuildTarget(target, repositoryRoot, invocationDir, snapshotDir stri
 	}
 	return filepath.Join(snapshotDir, relDir, target), nil
 }
+
 func stripTrailingCommas(data []byte) []byte {
 	var out bytes.Buffer
 	inString := false

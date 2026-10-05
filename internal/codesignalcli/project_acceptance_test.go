@@ -12,15 +12,19 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/tstestutil"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 	"github.com/lousy-agents/coach/pkg/semantics"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
+
+func (b identityHandoffBackend) Analyze(context.Context, ProjectBackendRequest) (*ProjectBackendResult, error) {
+	return b.result, nil
+}
 
 var _ = Describe("project-analysis text rendering", func() {
 	It("renders active project observations, structured paths, and project coverage", func() {
@@ -188,7 +192,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	It("threads baseline project results into a schema-2 report and skips the seam when project is nil", func() {
 		dir := gitfixture.Init(GinkgoT())
 		sha := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() {}\n")
-		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
+		files := []gitrepo.SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
 
 		backend := &recordingProjectBackend{result: &ProjectBackendResult{
 			HeadChanges: []codesignal.ProjectChange{{
@@ -240,7 +244,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		dir := gitfixture.Init(GinkgoT())
 		baseSHA := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() {}\n")
 		headSHA := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() { println(1) }\n")
-		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "modified"}}
+		files := []gitrepo.SelectedFile{{Path: "a.go", Language: "go", Status: "modified"}}
 
 		backend := &recordingProjectBackend{result: &ProjectBackendResult{
 			HeadChanges: []codesignal.ProjectChange{{
@@ -292,7 +296,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	It("threads an incomplete HeadCoverage into a lifecycle-indeterminate report rather than claiming baseline", func() {
 		dir := gitfixture.Init(GinkgoT())
 		sha := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() {}\n")
-		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
+		files := []gitrepo.SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
 
 		backend := &recordingProjectBackend{result: &ProjectBackendResult{
 			HeadChanges: []codesignal.ProjectChange{{
@@ -334,7 +338,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	It("renders the no-active-findings verdict as project-incomplete, not path-skipped, for a real incomplete-coverage report", func() {
 		dir := gitfixture.Init(GinkgoT())
 		sha := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() {}\n")
-		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
+		files := []gitrepo.SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
 
 		backend := &recordingProjectBackend{result: &ProjectBackendResult{
 			HeadCoverage: &projectmodel.Coverage{Phase: "go_model_build", Complete: false},
@@ -364,7 +368,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 		dir := gitfixture.Init(GinkgoT())
 		baseSHA := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() {}\n")
 		headSHA := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\n// note\nfunc A() {}\n")
-		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "modified"}}
+		files := []gitrepo.SelectedFile{{Path: "a.go", Language: "go", Status: "modified"}}
 
 		backend := &recordingProjectBackend{result: &ProjectBackendResult{
 			HeadCoverage: &projectmodel.Coverage{Phase: "go_model_build", Complete: true},
@@ -395,7 +399,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	It("renders the generic incomplete-analysis fallback for a real report whose only diagnostic is an anchorless project observation", func() {
 		dir := gitfixture.Init(GinkgoT())
 		sha := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() {}\n")
-		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
+		files := []gitrepo.SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
 
 		backend := &recordingProjectBackend{result: &ProjectBackendResult{
 			HeadChanges: []codesignal.ProjectChange{{
@@ -761,7 +765,7 @@ var _ = Describe("project-config boundary budgets", func() {
 			return exec.CommandContext(ctx, "sleep", "60")
 		}
 		runProjectConfigGit = func(dir string, args ...string) ([]byte, error) {
-			return runGitBytesBoundedWith(hungGit, dir, maxProjectConfigBytes, maxProjectConfigGitStderr, 50*time.Millisecond, args...)
+			return gitrepo.RunBytesBoundedWith(hungGit, dir, maxProjectConfigBytes, maxProjectConfigGitStderr, 50*time.Millisecond, args...)
 		}
 
 		_, err := LoadProjectConfig(".", "HEAD", "project.json")
@@ -843,7 +847,7 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 		dir := gitfixture.Init(GinkgoT())
 		gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
 		sha := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
-		files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
+		files := []gitrepo.SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
 
 		project := &ProjectAnalysis{
 			ConfigPath:   "project.json",
@@ -878,7 +882,7 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 		dir := gitfixture.Init(GinkgoT())
 		gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
 		sha := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
-		files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
+		files := []gitrepo.SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
 
 		project := &ProjectAnalysis{
 			ConfigPath:   "project.json",
@@ -908,7 +912,7 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 		dir := gitfixture.Init(GinkgoT())
 		baseSHA := gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
 		headSHA := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
-		files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
+		files := []gitrepo.SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
 
 		project := &ProjectAnalysis{
 			ConfigPath:   "project.json",

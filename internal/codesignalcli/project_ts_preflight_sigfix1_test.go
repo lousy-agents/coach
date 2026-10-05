@@ -1,6 +1,8 @@
 package codesignalcli
 
-import "testing"
+import (
+	"testing"
+)
 
 type sigTestPrepareCompilerRemediationOffersOnlyExecutablePrepare struct {
 	code string

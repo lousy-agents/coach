@@ -3,7 +3,6 @@ package codesignalcli
 import (
 	"path/filepath"
 	"regexp"
-
 	"strings"
 )
 
@@ -43,6 +42,7 @@ func loadTSConfig(dir string) (tsConfig, bool, error) {
 	}
 	return config, true, nil
 }
+
 func globMatch(pattern, path string) bool {
 	var expression strings.Builder
 	expression.WriteString("^")

@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-
 	"path/filepath"
-
 	"strings"
 )
 

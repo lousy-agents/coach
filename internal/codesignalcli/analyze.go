@@ -6,27 +6,28 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []SelectedFile, extraDiagnostics []codesignal.Diagnostic, appliedScope string, coverage codesignal.Coverage, project *ProjectAnalysis) (*codesignal.Report, error) {
+func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []gitrepo.SelectedFile, extraDiagnostics []codesignal.Diagnostic, appliedScope string, coverage codesignal.Coverage, project *ProjectAnalysis) (*codesignal.Report, error) {
 	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
 	if err != nil {
-		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
+		return nil, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal: %s", err)}
 	}
 
-	reader, err := newRevisionFileReader(dir, revisionSHA)
+	reader, err := gitrepo.NewRevisionFileReader(dir, revisionSHA)
 	if err != nil {
-		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: starting git cat-file --batch failed: %s", err)}
+		return nil, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal: starting git cat-file --batch failed: %s", err)}
 	}
-	defer func() { _ = reader.close() }()
+	defer func() { _ = reader.Close() }()
 
 	var fileChanges []codesignal.FileChange
 	diagnostics := append([]codesignal.Diagnostic(nil), extraDiagnostics...)
 
 	for _, sf := range files {
-		headBytes, err := reader.next(sf.Path)
+		headBytes, err := reader.Next(sf.Path)
 		if err != nil {
 			diagnostics = append(diagnostics, readFailedDiagnostic(sf.Path, "head", err))
 			coverage.FilesUnanalyzable++

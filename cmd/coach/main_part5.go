@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 
 	"os"
 
@@ -16,7 +17,7 @@ import (
 // readiness gap is still exit 0 -- the result IS the deliverable, and
 // callers must read status/gaps, not the exit code.
 func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int {
-	revision, err := codesignalcli.ResolveBaselineRevision(dir)
+	revision, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
 		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
 	}

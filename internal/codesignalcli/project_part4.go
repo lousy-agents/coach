@@ -17,6 +17,11 @@ func validateProjectConfigRoots(roots []string) error {
 		}
 	}
 
+	// Roots may nest (e.g. "." plus "services/payments"): a multi-module Go
+	// workspace treats a workspace root and a more specific module root as
+	// distinct configured roots. Exact duplicate
+	// identities remain invalid. Layer prefixes below stay non-overlapping
+	// because they partition policy membership, not discovery roots.
 	if hasDuplicatePaths(roots) {
 		return fmt.Errorf("roots must be unique")
 	}

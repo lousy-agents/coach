@@ -3,11 +3,11 @@ package codesignalcli
 import (
 	"bufio"
 	"context"
-
 	"fmt"
 	"io"
-
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 )
 
 // ProjectConfigErrorWithReadiness enriches a ProjectConfigError with the
@@ -25,13 +25,6 @@ type ProjectConfigErrorWithReadiness struct {
 }
 
 func (e *ProjectConfigErrorWithReadiness) Unwrap() error { return e.ProjectConfigError }
-
-// WrapProjectConfigErrorWithReadiness recomputes readiness for
-// dir/revision/configPath and wraps err with it, for AC-SET-13's
-// report-all-gaps requirement. It returns err unchanged when err is not a
-// *ProjectConfigError, or when readiness itself cannot be computed: a masked
-// compiler gap is a strictly smaller problem than losing the original
-// diagnostic entirely.
 
 // CompilerUnresolvedErrorWithReadiness enriches a CompilerUnresolvedError
 // with the full TypeScript project-readiness snapshot computed for the same
@@ -55,47 +48,9 @@ type CompilerUnresolvedErrorWithReadiness struct {
 
 func (e *CompilerUnresolvedErrorWithReadiness) Unwrap() error { return e.CompilerUnresolvedError }
 
-// WrapCompilerUnresolvedErrorWithReadiness recomputes readiness for
-// dir/revision/configPath and wraps err with it. It returns err unchanged
-// when err is not a *CompilerUnresolvedError, or when readiness itself
-// cannot be computed: an unofferable setup session is a strictly smaller
-// problem than losing the original diagnostic entirely. CompilerUnresolvedError
-// is only ever constructed deep inside the TypeScript project backend, so
-// recomputing readiness here -- rather than threading a precomputed snapshot
-// down through that backend -- is what lets this wrapping live entirely in
-// this file.
-
-// AlsoFailingGapLines is AC-SET-13's "report all gaps" clause: one line for
-// every gap readiness itself reports other than the policy failure the scan
-// has already printed as its own message.
-//
-// It is reached only alongside that policy failure
-// (ProjectConfigErrorWithReadiness is the sole production producer). Before
-// R1, a missing policy left checkProjectShape and checkPackageManager
-// guessing from the worktree root in place of the roots a policy would have
-// selected, so a gap either of them raised might simply be an artifact of
-// that guess -- which is why this line used to hedge rather than assert the
-// gap would still be there. Both checks now report not_checked instead of
-// guessing (R1), so every gap readiness.Gaps still carries here -- the
-// compiler check, the runtime check, and a mise-scope trust finding -- was
-// never roots-dependent in the first place, real and independent of the
-// policy either way. So this simply reports readiness.Gaps unchanged, with
-// no hedge left to state.
-//
-// readiness.Gaps is already emitted in the epic's frozen next-action order,
-// so iterating it preserves that ordering rather than inventing one here.
-
 func alsoFailingGapLine(code, configPath string) string {
 	return code + ": also failing, run " + typescriptInvocation("--check-project", configPath)
 }
-
-// PrepareCompilerRemediation names the interactive, consented mise
-// TypeScript compiler-setup command that resolves a CompilerUnresolvedError
-// gap, for AC-SET-9's appended no-controlling-terminal remediation line. It
-// returns "" for a gap code whose next action is not the executable
-// prepare-compiler kind (e.g. node_missing, node_unsupported): Coach has no
-// setup command that fixes a runtime-boundary gap, so appending one would
-// name a command that either does nothing or targets the wrong problem.
 
 // onATerminal qualifies a command that refuses without a controlling
 // terminal. Both commands Coach names as remediation are interactive, and
@@ -105,71 +60,6 @@ func alsoFailingGapLine(code, configPath string) string {
 func onATerminal(invocation string) string {
 	return "on a terminal: " + invocation
 }
-
-// PrepareCompilerRemediationWithReadiness extends PrepareCompilerRemediation
-// for a gap already wrapped with its own readiness snapshot
-// (CompilerUnresolvedErrorWithReadiness): gapCodeIsExecutablePrepareCompiler
-// alone is not enough to promise the printed command will do anything, since
-// AvailableSetupChoices can still resolve to a menu --prepare-compiler cannot
-// act on. The test is what that flag would execute, not what the scan's own
-// combined menu offers: RunPrepareCompilerMiseSetup discards every non-mise
-// kind (filterMiseChoiceKinds, project_ts_compiler_mise_install.go), so a
-// menu whose only executable entry is project_package -- an npm/pnpm/Bun
-// repository that has simply never installed its declared compiler, and the
-// scan's own controlling-terminal offer resolves it -- is as much a dead end
-// as an empty one. Printing the command in either case would open a session,
-// offer nothing, and exit 0 having changed nothing while the compiler is
-// still missing -- exactly the dead end PrepareCompilerRemediation's own doc
-// comment already promises never to name, and the one shape a piped CI
-// operator cannot tell apart from success. readiness == nil falls back to
-// PrepareCompilerRemediation's own gapCode-only decision, matching
-// WrapCompilerUnresolvedErrorWithReadiness's contract of returning the
-// original error unchanged when readiness itself could not be computed.
-
-// ScanSetupOfferRemediation names the interactive scan invocation itself
-// (R2) when a compiler gap's only genuinely executable setup choice is
-// project_package: --prepare-compiler can never resolve that choice, since
-// RunPrepareCompilerMiseSetup discards every non-mise kind
-// (project_ts_compiler_mise_install.go), so
-// PrepareCompilerRemediationWithReadiness withholds its own command for
-// exactly this menu. Without this, a no-TTY invocation whose only path
-// forward is project_package was told nothing beyond the bare
-// --check-project line, even though rerunning the same scan on a terminal
-// would open the combined setup offer (RunCompilerSetupOffer) and resolve
-// it. It returns "" whenever PrepareCompilerRemediationWithReadiness would
-// already offer its own command (a verified mise choice exists too), so the
-// two remediations are never both printed for the same gap.
-
-// typescriptScanInvocation names the bare `coach codesignal --baseline`
-// scan itself, distinct from typescriptInvocation's own --check-project/
-// --prepare-compiler forms: R2's remediation points at rerunning the
-// original scan on a terminal, not at a standalone subcommand.
-
-// SuggestProjectConfigRemediation names the --suggest-project-config
-// invocation that resolves a ProjectConfigError gap for language, for
-// AC-SET-9's appended no-controlling-terminal remediation line. For
-// "typescript" this is the interactive, guided policy-authoring command; for
-// every other language (only "go" reaches this today) it is the plain batch
-// candidate-generation command, since --project-language typescript would
-// name a command that language cannot run (AC-2: an offered remediation must
-// actually be supported for the language it is offered to). It never appends
-// a --project-config suffix: validateSuggestProjectConfigFlags rejects
-// --suggest-project-config combined with --project-config.
-//
-// The TypeScript form qualifies the command rather than naming it bare,
-// because this line is printed precisely when no controlling terminal is
-// available and guided authoring refuses without one: an agent or CI job
-// that runs it verbatim gets exit 2 and no policy. The refusal's own
-// instruction -- draft the document, have it reviewed and committed -- is
-// the path actually open here, so it is stated alongside the command rather
-// than discovered by spending an invocation on it.
-
-// AppendedRemediationLine withholds line whenever hasControllingTerminal is
-// true and language is "typescript": the interactive setup offer itself owns
-// that case there, so AC-SET-9's appended command is printed only when no
-// controlling terminal is available to run it. No such offer exists for any
-// other language (only "go" reaches this today), so a controlling-terminal
-// user must still see the same appended remediation a piped invocation gets.
 
 // gapCodeIsExecutablePrepareCompiler reports whether gapCode's next action,
 // per the authoritative gapCodeTable, is the executable prepare-compiler
@@ -337,13 +227,6 @@ func RunCompilerSetupOffer(ctx context.Context, dir, revision, configPath, gapCo
 	return runMiseSetupOffer(ctx, dir, revision, configPath, choice, out, reader)
 }
 
-// menuOffersExecutableChoice reports whether menu carries at least one
-// non-cancel choice. AvailableSetupChoices always appends SetupChoiceCancel
-// (project_ts_setup_choice.go), so len(menu.Choices) == 0 is true only when
-// readiness's compiler check is not actually failing; a compiler gap with
-// nothing installable still produces a one-entry (cancel-only) menu, which
-// must not open an interactive prompt that can only ever be cancelled.
-
 // menuOffersExecutableMiseChoice narrows menuOffersExecutableChoice to the
 // kinds the interim --prepare-compiler flag can actually run. The scan's own
 // offer (RunCompilerSetupOffer) executes every kind and so uses the wider
@@ -357,23 +240,6 @@ func menuOffersExecutableMiseChoice(menu SetupChoiceMenu) bool {
 	return false
 }
 
-// promptForCompilerSetupChoice requires the user to type one offered
-// choice's exact kind name, or "cancel". There is no numbered/default
-// selection: an unrecognized or blank answer cancels rather than falling
-// back to any choice, mirroring promptForMiseSetupChoice's own contract
-// (project_ts_compiler_mise_install.go).
-
-// setupChoiceScopeClause names what each choice would touch, at the moment
-// the customer picks one. The full AC-SET-2 preview still precedes the
-// confirmation, but it arrives only after a selection, so without this the
-// selection itself is made from bare machine identifiers -- and
-// project_mise and global_mise differ in exactly the property a customer
-// would want to know before choosing between them.
-
-// runProjectPackageSetupOffer executes SetupChoiceProjectPackage through its
-// own library path (BuildSetupPreview/RunConfirmedSetupAndRecheckReadiness),
-// distinct from runMiseSetupOffer's mise install path.
-
 // promptForSetupConfirmation is the single-use explicit confirmation gate
 // for a project_package setup command: only the exact token "confirm"
 // (case-insensitive) proceeds, read exactly once from reader -- there is no
@@ -381,51 +247,9 @@ func menuOffersExecutableMiseChoice(menu SetupChoiceMenu) bool {
 func promptForSetupConfirmation(out io.Writer, reader *bufio.Reader) bool {
 	fmt.Fprintln(out, "Type 'confirm' to run this setup command now, or anything else to cancel without making any change:")
 	fmt.Fprint(out, "> ")
-	answer, _ := readLine(reader)
+	answer, _ := prompt.ReadLine(reader)
 	return strings.EqualFold(strings.TrimSpace(answer), "confirm")
 }
 
-// projectPackageWorkingDirectory resolves BuildSetupPreview's required
-// directory the same way checkPackageManager itself does
-// (packageManagerContexts): the nearest package.json above a selected policy
-// root. It resolves a directory only when exactly one context exists, and
-// names a withholding reason otherwise.
-//
-// Plurality is not a tie to break. A single consented install runs one
-// previewed command in one directory, while the compiler check requires
-// every selected root's manifest context to resolve the same installed
-// version -- so with two contexts, whichever one is chosen, AC-SET-6's
-// mandatory rerun still reports the gap. Defaulting to the first would spend
-// the customer's single approval on a network install that cannot succeed,
-// which is exactly the silent default AC-SET-5 forbids where ownership is
-// ambiguous. An unresolvable policy is withheld for the same reason rather
-// than falling back to the worktree root: the menu's eligibility was never
-// computed against that directory, so running an install there would consent
-// to something nobody previewed.
-
 // Defensive: packageManagerContexts falls back to the worktree root,
 // so it does not return an empty slice today.
-
-// withProjectPackageResolution re-decides the project_package entry against
-// the one fact AvailableSetupChoices cannot see: which manifest context the
-// install would actually run in. AvailableSetupChoices decides purely from a
-// readiness snapshot and has no dir/revision to resolve a working directory
-// with, so this is where an offer that cannot be previewed honestly is
-// converted into a withheld entry with its reason.
-
-// repositoryRelativeChangedPaths renders outcome.ChangedPaths for display.
-// Ordinarily they are already repository-root-relative (RunConfirmedSetup's
-// own `git status` read), but setupResidueChangedPaths' documented fallback
-// names workingDirectory itself as an absolute path when residueUnknown is
-// true -- rewriting that single entry relative to the worktree root keeps
-// every path this function returns repository-relative, never leaking an
-// absolute filesystem path to the customer.
-
-// runMiseSetupOffer executes a mise scope choice through its own library
-// path (miseScopeDeclaresInstallableCompiler/installMiseTypescriptProject/
-// Global, project_ts_compiler_mise_install.go/project_ts_compiler_mise_command.go),
-// distinct from runProjectPackageSetupOffer's project-package path. Its
-// preview and confirmation prompt are the same ones
-// RunPrepareCompilerMiseSetup's standalone --prepare-compiler session uses,
-// so a customer sees identical wording regardless of which flow offered the
-// same mise scope.

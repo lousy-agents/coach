@@ -2,7 +2,6 @@ package codesignalcli
 
 import (
 	"io"
-
 	"testing"
 	"time"
 

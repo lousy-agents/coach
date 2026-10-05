@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/codesignal"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("applyProjectBackend dirty-worktree diagnostic and package manager provenance", func() {
@@ -73,8 +73,8 @@ var _ = Describe("applyProjectBackend diagnostics mutation contract", func() {
 	When("the backend returns no diagnostics and the worktree is dirty", func() {
 		It("does not mutate the caller's Input.Diagnostics backing array when appending the worktree diagnostic", func() {
 			original := listWorktreeStatus
-			listWorktreeStatus = func(string) ([]worktreeStatusEntry, error) {
-				return parseWorktreeStatus([]byte("M  bun.lock\x00")), nil
+			listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
+				return gitrepo.ParseWorktreeStatus([]byte("M  bun.lock\x00")), nil
 			}
 			DeferCleanup(func() { listWorktreeStatus = original })
 

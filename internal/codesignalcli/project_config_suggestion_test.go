@@ -8,11 +8,11 @@ import (
 // snapshotUnavailableMessage's contract directly at the unit level: no
 // absolute host filesystem path may survive into the returned message,
 // regardless of whether the underlying error is a plain string that
-// happens to embed a known absolute path (as resolveHEAD's
-// "not inside a Git worktree" and NewGoSnapshotFS's "git ls-tree failed
+// happens to embed a known absolute path (as gitrepo.resolveHEAD's
+// "not inside a Git worktree" and revisionfs.New's "git ls-tree failed
 // ... in %q" both are) or an *fs.PathError carrying an absolute path the
 // caller never supplied (as filepath.EvalSymlinks' failure inside
-// repositoryRoot is).
+// gitrepo.RepositoryRoot is).
 func TestSnapshotUnavailableMessageNeverLeaksAbsolutePath(t *testing.T) {
 	const absoluteDir = "/tmp/coach-acceptance-repo-123"
 

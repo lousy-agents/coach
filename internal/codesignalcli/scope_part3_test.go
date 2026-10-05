@@ -2,10 +2,10 @@ package codesignalcli
 
 import (
 	"os/exec"
-
 	"strings"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -18,7 +18,7 @@ func TestApplySourceScopeIncludeAndFilesAreAdditive(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "src/explicit.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "src/included/extra.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "src/other.ts", Status: "modified", Language: semantics.LanguageTypeScript},
@@ -54,7 +54,7 @@ func TestApplySourceScopeCircularExtendsChainFailsOpen(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})

@@ -2,11 +2,8 @@ package codesignalcli
 
 import (
 	"bytes"
-
 	"fmt"
-
 	"os/exec"
-
 	"strings"
 )
 

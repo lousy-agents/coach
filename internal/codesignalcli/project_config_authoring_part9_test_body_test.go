@@ -3,7 +3,6 @@ package codesignalcli
 import (
 	"bufio"
 	"bytes"
-
 	"os"
 	"path/filepath"
 	"strings"

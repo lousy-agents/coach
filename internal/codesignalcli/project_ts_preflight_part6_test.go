@@ -2,9 +2,10 @@ package codesignalcli
 
 import (
 	"context"
-
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 // TestRunCompilerSetupOfferRequiresPolicyFirst pins O3's defense-in-depth
@@ -78,7 +79,7 @@ func TestRunCompilerSetupOfferNeverOpensWhenReadinessRuntimeBlocks(t *testing.T)
 }
 
 func TestWrapCompilerUnresolvedErrorWithReadinessLeavesOtherErrorsUnchanged(t *testing.T) {
-	plain := &OperationalError{Message: "boom"}
+	plain := &gitrepo.OperationalError{Message: "boom"}
 	if got := WrapCompilerUnresolvedErrorWithReadiness(plain, ".", "HEAD", "project.json"); got != error(plain) {
 		t.Fatalf("WrapCompilerUnresolvedErrorWithReadiness(non-CompilerUnresolvedError) = %v, want the original error unchanged", got)
 	}

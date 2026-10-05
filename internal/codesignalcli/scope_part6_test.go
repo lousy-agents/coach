@@ -2,12 +2,11 @@ package codesignalcli
 
 import (
 	"os"
-
 	"path/filepath"
 	"reflect"
-
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -19,7 +18,7 @@ func TestApplySourceScopeTSConfigExtendsAbsolutePathOutsideSnapshotFailsOpen(t *
 	})
 	head := scopeTestCommit(t, repo)
 
-	files, _, err := ApplySourceScope(repo, head, "", "production", []SelectedFile{
+	files, _, err := ApplySourceScope(repo, head, "", "production", []gitrepo.SelectedFile{
 		{Path: "src/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 		{Path: "test/app.ts", Status: "modified", Language: semantics.LanguageTypeScript},
 	})
@@ -67,7 +66,7 @@ func TestApplyBaselineSourceScopeAllReturnsEverythingUnexcluded(t *testing.T) {
 	})
 	head := scopeTestCommit(t, repo)
 
-	kept, excluded, err := ApplyBaselineSourceScope(repo, head, "", "all", []SelectedFile{
+	kept, excluded, err := ApplyBaselineSourceScope(repo, head, "", "all", []gitrepo.SelectedFile{
 		{Path: "shipping/shipping.go", Language: semantics.LanguageGo},
 		{Path: "shipping/shipping_test.go", Language: semantics.LanguageGo},
 	})

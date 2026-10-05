@@ -13,6 +13,7 @@ func parseMiseToolArray(inner string) []string {
 	}
 	return values
 }
+
 func miseToolsSectionLines(data string) []string {
 	var lines []string
 	inTools := false
@@ -57,6 +58,7 @@ func miseLineDeclaresHazardousInlineTable(line string) bool {
 	}
 	return strings.HasPrefix(strings.TrimSpace(value), "{")
 }
+
 func parseMiseToolValue(value string) []string {
 	if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
 		return parseMiseToolArray(strings.TrimSuffix(strings.TrimPrefix(value, "["), "]"))

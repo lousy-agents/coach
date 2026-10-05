@@ -3,7 +3,6 @@ package codesignalcli
 import (
 	"bufio"
 	"context"
-
 	"io"
 )
 

@@ -2,20 +2,19 @@ package codesignalcli
 
 import (
 	"bufio"
-
 	"fmt"
 	"io"
-
-	"github.com/lousy-agents/coach/pkg/projectmodel"
-
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
+	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
 func promptForRequiredLayer(out io.Writer, reader *bufio.Reader, layers []projectConfigLayer) (requiredLayer string, cancelled bool) {
 	for {
 		fmt.Fprintln(out, "Enter the name of a required intermediary layer, or leave blank for none:")
 		fmt.Fprint(out, "> ")
-		answer, _ := readLine(reader)
+		answer, _ := prompt.ReadLine(reader)
 		answer = strings.TrimSpace(answer)
 		if answer == "" {
 			return "", false
@@ -50,7 +49,7 @@ func promptForRoots(out io.Writer, reader *bufio.Reader, discovered projectmodel
 		fmt.Fprintln(out, "Select the roots to include: enter comma-separated numbers from the list above and/or directory paths, then press Enter. At least one repository-relative root is required.")
 		fmt.Fprint(out, "> ")
 
-		answer, _ := readLine(reader)
+		answer, _ := prompt.ReadLine(reader)
 		selected, parseErr := parseRootSelection(answer, discovered.Roots)
 		if parseErr == nil {
 			parseErr = validateRootSelection(selected)
@@ -65,6 +64,7 @@ func promptForRoots(out io.Writer, reader *bufio.Reader, discovered projectmodel
 		return selected, false
 	}
 }
+
 func layerNameDeclared(name string, layers []projectConfigLayer) bool {
 	for _, layer := range layers {
 		if layer.Name == name {

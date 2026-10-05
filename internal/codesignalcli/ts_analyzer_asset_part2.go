@@ -2,7 +2,6 @@ package codesignalcli
 
 import (
 	"crypto/sha256"
-
 	"encoding/hex"
 	"fmt"
 	"io/fs"

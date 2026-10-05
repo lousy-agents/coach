@@ -2,9 +2,7 @@ package codesignalcli
 
 import (
 	"fmt"
-
 	"io"
-
 	"strings"
 )
 
@@ -33,6 +31,7 @@ func printCandidateSummary(out io.Writer, roots []string, layers []projectConfig
 		fmt.Fprintf(out, "  required_layer: %s\n", requiredLayer)
 	}
 }
+
 func validateForbiddenPairCandidate(from, to string, layers []projectConfigLayer, existing []projectForbiddenImport) error {
 	if from == "" || to == "" {
 		return fmt.Errorf("forbidden import pairs require a non-empty source and destination layer")

@@ -2,7 +2,6 @@ package codesignalcli
 
 import (
 	"bytes"
-
 	"os"
 	"path/filepath"
 	"strings"

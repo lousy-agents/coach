@@ -2,9 +2,7 @@ package codesignalcli
 
 import (
 	"context"
-
 	"embed"
-
 	"fmt"
 	"io/fs"
 	"os"
@@ -55,7 +53,7 @@ func TSAnalyzerAssetDigest() (string, error) {
 
 // materializeMkdirTemp creates the private directory each MaterializeTSAnalyzer
 // call copies the embedded asset into. It is a package-level var (test seam,
-// matching runSnapshotGit/snapshotGitCommandContext in project_snapshot.go)
+// matching revisionfs.runSnapshotGit/revisionfs.snapshotGitCommandContext in project_snapshot.go)
 // so acceptance specs can capture the exact directory materializeFS creates
 // and assert it is removed after a failure or a cancelled context.
 var materializeMkdirTemp = os.MkdirTemp

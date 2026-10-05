@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/prompt"
 )
 
 // PrepareCompilerMiseResult reports one interactive prepare_compiler mise
@@ -172,38 +174,6 @@ func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath 
 	return outcome
 }
 
-// readinessHasBlockingRuntimeGap reports whether readiness.Checks.Runtime
-// independently fails with a gap code that is not the executable
-// prepare-compiler kind, through the same gapCodeIsExecutablePrepareCompiler
-// predicate the real scan's own compiler-setup gate uses
-// (project_ts_preflight.go). readinessFromGapChecks (project_readiness_
-// aggregate.go) derives Runtime's and Compiler's next actions independently
-// of one another, so a failing runtime check can coexist in NextActions with
-// a genuinely executable prepare_compiler entry; without this check,
-// RunPrepareCompilerMiseSetup would offer to install a compiler while the
-// host Node runtime that would run it is still missing or unsupported --
-// exactly the gap a real scan's own PrepareTSRuntime never reaches, since it
-// resolves host Node first and fails fast there.
-
-// miseSetupChoicesForReadiness reuses checkPolicy exactly the way
-// CheckProjectReadiness itself derives roots -- never a second, independent
-// notion of "roots".
-
-// miseChoicesForPrepareCompiler names which of mise_project/mise_global are
-// genuinely offered for action, consuming rather than re-deriving
-// CheckProjectReadiness' own verification data: action.Choices when the
-// package-manager-adapter restriction already populated it, or each mise
-// scope's own ReadinessMiseChoice.Verified (miseSetupChoicesForReadiness,
-// the same evaluateMiseSetupChoices call CheckProjectReadiness itself
-// makes) when it did not -- action.Choices is nil exactly when no adapter
-// rejection has restricted it yet, not when nothing is offered (see
-// restrictPrepareCompilerChoices' own contract).
-
-// filterMiseChoiceKinds keeps only the mise origins this flow handles.
-// action.Choices may also name a project-package-manager choice from a
-// sibling task; that choice is a different installation-choice kind
-// entirely, not this flow's concern.
-
 func runSelectedMiseInstall(ctx context.Context, choice, worktreeRoot, version string) miseInstallResult {
 	switch choice {
 	case compilerOriginMiseProject:
@@ -214,11 +184,6 @@ func runSelectedMiseInstall(ctx context.Context, choice, worktreeRoot, version s
 		return miseInstallResult{}
 	}
 }
-
-// promptForMiseSetupChoice requires the user to type one offered choice's
-// exact name, or "cancel". There is no numbered/default selection: an
-// unrecognized or blank answer cancels rather than falling back to any
-// choice, including when only one is offered.
 
 // printMisePreparePreview prints the preview: executable, arguments, working
 // directory, expected mise changes, network use, lifecycle-script policy,
@@ -245,6 +210,6 @@ func printMisePreparePreview(out io.Writer, choice, version string) {
 func promptForMiseInstallConfirmation(out io.Writer, reader *bufio.Reader) bool {
 	fmt.Fprintln(out, "Type 'install' to run this setup command now, or anything else to cancel without making any change:")
 	fmt.Fprint(out, "> ")
-	answer, _ := readLine(reader)
+	answer, _ := prompt.ReadLine(reader)
 	return strings.EqualFold(strings.TrimSpace(answer), "install")
 }
