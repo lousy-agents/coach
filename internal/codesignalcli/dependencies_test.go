@@ -35,8 +35,7 @@ func isForbiddenDependency(dep string) (string, bool) {
 // TestNoExternalDependencies proves an import-graph boundary at build time:
 // neither cmd/coach nor internal/codesignalcli may (transitively) import a
 // GitHub client, an installation-auth library, or net/http. It does NOT
-// prove the OS or network is actually isolated at runtime -- see the
-// offline acceptance scenario in cmd/coach/acceptance_test.go for that.
+// prove the OS or network is actually isolated at runtime.
 func TestNoExternalDependencies(t *testing.T) {
 	packages := []string{
 		"./../../cmd/coach/...",

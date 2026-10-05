@@ -9,7 +9,7 @@ import (
 
 // TestRevisionFileReaderHandlesPathContainingNewline proves the batch
 // reader survives a tracked Git path that itself contains a literal
-// newline (Git permits this; cmd/coach/acceptance_test.go already proves
+// newline (Git permits this; cmd/coach/codesignal_diff_selection_acceptance_test.go already proves
 // the --base path preserves such a path exactly). Without the -Z flag,
 // `git cat-file --batch`'s newline-delimited protocol would treat the
 // embedded newline as ending the request early, splitting one legal path
