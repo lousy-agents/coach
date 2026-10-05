@@ -318,12 +318,12 @@
     <h1>Can CodeSignal leave pilot?</h1>
     <p class="lede prose">A reading of the shipped CLI, made by running it. First published 16 Aug 2026. This page is the evidence for leaving pilot. It is not an old snapshot. Closed gaps move to the archive. They are not deleted. The ids stay.</p>
     <div class="meta">
-      <span>Last reviewed 28 Sep 2026</span>
-      <span>HEAD 9507876</span>
-      <span>~100 CLI runs</span>
+      <span>Last reviewed 5 Oct 2026</span>
+      <span>HEAD c4064db</span>
+      <span>~120 CLI runs</span>
       <span>6 repositories</span>
-      <span>24th verification pass</span>
-      <span>#282 · 9 / 24 closed</span>
+      <span>25th verification pass</span>
+      <span>#282 · 10 / 24 closed</span>
     </div>
   </header>
 
@@ -334,7 +334,7 @@
     <p>Do not widen the audience on this restamp. The Go pilot that already runs can keep using baseline, a layer policy they wrote, and file-local diff mode on adds, modifications, deletes, renames, and copies.</p>
     <div class="tracks">
       <span class="tracks-label">Tracked in</span>
-      <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/282">epic #282 — 9 of 24 closed</a>
+      <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/282">epic #282 — 10 of 24 closed</a>
     </div>
   </div>
 
@@ -391,6 +391,7 @@
         <p><strong>Pass 22</strong> (27 Sep, <code>203810b</code>). A focused restamp after classifying AA/DD porcelain as unmerged, not staged, and correcting the G4 dirty-<code>bun.lock</code> kind. File-local AA/DD now emit <code>worktree_changes_not_analyzed</code> with classification unmerged. A committed-npm / dirty-<code>bun.lock</code> project scan emits <code>worktree_report_reflects_committed_head</code>, not the file-local skip kind. Not a full corpus replay. An earlier stamp named <code>203810b</code>. History rewrite removed it from this branch. The masthead names <code>00aa40f</code>, the main revision this branch merges.</p>
         <p><strong>Pass 23</strong> (27 Sep, <code>4b4027b</code>). A focused restamp after disclosing intent-to-add porcelain (<code> A</code> from <code>git add -N</code>) as untracked, rather than a silent all-clear. Not a full corpus replay. An earlier stamp named <code>4b4027b</code>. History rewrite removed it from this branch. The masthead names <code>00aa40f</code>, the main revision this branch merges.</p>
         <p><strong>Pass 24</strong> (28 Sep, <code>9507876</code>). A focused re-run of the #273 positional claim on a Go-built binary. Not a corpus replay. Four invocations (<code>go build -o /tmp/coach-273 ./cmd/coach</code>) against a two-commit fixture. <code>codesignal --baseline extra-positional-arg</code> exits 2 with empty stdout and usage on stderr quoting <code>"extra-positional-arg"</code>. <code>codesignal --baseline extra-positional-arg --format json</code> is rejected the same way, rather than discarding <code>--format</code> and emitting text. <code>codesignal --base HEAD~1 bogus</code> exits 2 quoting <code>"bogus"</code>. <code>codesignal --baseline foo bar --format json</code> exits 2 quoting the first residual token <code>"foo"</code>. The masthead names <code>9507876</code>, the <code>main</code> revision this branch merges. The positional rejection lands with the closing PR. It does not hold at that revision alone.</p>
+        <p><strong>Pass 25</strong> (5 Oct, <code>c4064db</code>). A focused re-run of the #272 claims on a Go-built binary. Not a corpus replay. One foreign repository, <code>learn-go-with-tests</code>, was re-cloned at <code>4675d96</code> and run once with the <code>c4064db</code> binary. <code>lousy-iam</code> was not re-cloned. <code>go build -o coach ./cmd/coach</code> at <code>c4064db</code>, plus a second binary built from <code>92fabd2</code>, the <code>main</code> revision before the branch, run against both the <code>c4064db</code> tree (the finding-order comparison) and the <code>92fabd2</code> tree (the 4-finding count). About twenty invocations in this repository: production and <code>--scope all</code> baselines in JSON and text, <code>--min-severity high</code>, <code>--top 3</code>, <code>--top 10</code>, both flags together, invalid values, and the flags beside <code>--check-project</code>, <code>--suggest-project-config</code>, and <code>--prepare-compiler</code>. The masthead names <code>c4064db</code>, the pre-merge head of the closing branch. The severity escalation, magnitude ranking, text <code>rule_id</code> and <code>severity</code>, <code>--min-severity</code>, and <code>--top</code> land with the closing PR. They do not hold at <code>92fabd2</code> alone. This pass does not claim that anyone reaches for the report a second time.</p>
         <p><span class="chip verified">re-verified</span> means reproduced on this binary. <span class="chip closed">closed</span> means the old claim no longer holds. <span class="chip reported">agent-run</span> means observed, but it was not the focus of this pass. <span class="chip refuted">corrected</span> marks a prior claim that did not survive.</p>
       </div>
     <p class="prose">The corpus is this repo, <code>learn-go-with-tests</code> (the original 304-file repo), <code>lousy-iam</code>, <code>lousy-api-eval</code>, <code>lousy-agents</code>, and <code>lousy-docs</code>. The local binary prints <code>dev</code>. That is expected.</p>
@@ -401,7 +402,7 @@
       <p class="eyebrow">Already closed</p>
       <h2>What 16–22 Aug actually unlocked</h2>
     </div>
-    <p class="prose">Nine of twenty-four #282 children are closed, and Go layer-bypass is a real CLI feature. A customer can trust these outcomes. They do not unlock a PR check.</p>
+    <p class="prose">Ten of twenty-four #282 children are closed, and Go layer-bypass is a real CLI feature. A customer can trust these outcomes. They do not unlock a PR check.</p>
 
     <div class="gaps">
 
@@ -628,6 +629,37 @@ path: , kind: worktree_not_clean, message: working tree is not clean: notes.md</
         </div>
       </article>
 
+      <article class="gap sev-closed">
+        <div class="gap-id">—</div>
+        <div class="gap-body">
+          <div class="gap-title">
+            <h3>Severity spreads, magnitude ranks, and the report can be narrowed</h3>
+            <span class="chip closed">closed</span>
+            <span class="chip verified">verified</span>
+          </div>
+          <p>Pass 25 on a binary built from <code>c4064db</code>, against this repository’s committed tree. The three metric rules escalate to <code>high</code> at twice their threshold (cognitive complexity 30, branch density 24, nesting depth 8) and stay <code>medium</code> just over it. <code>--scope all</code> reports <code>high</code> 1, <code>medium</code> 18, <code>low</code> 2: three values. The one <code>high</code> is <code>complexity.branch_density</code> at <code>branch_sum=37</code>. The same rule’s other five findings (17, 16, 15, 15, 12) are <code>medium</code>. The default production scope on this tree has no finding at twice a threshold, so it still shows two values (<code>medium</code> 12, <code>low</code> 2). Spread across more than two values is observed on <code>--scope all</code> only. At <code>92fabd2</code> this repository reports 4 findings under either scope, all <code>state.hidden_input_mutation</code> and all <code>medium</code>. Every metric finding above, including the one <code>high</code> in <code>pkg/codesignal/signal_view_test.go</code>, is in code this branch adds, so this repository is not a representative corpus for severity spread. On <code>learn-go-with-tests</code> (<code>4675d96</code>, production scope, <code>c4064db</code> binary) the same report carries 79 findings: <code>high</code> 20, <code>medium</code> 29, <code>low</code> 30, in magnitude order within each severity and confidence tier. All 20 <code>high</code> are inside <code>vendor/</code>. That is one foreign Go corpus, not a representative sample.</p>
+          <p>Within a tier, the larger metric-to-threshold ratio comes first. The five cognitive-complexity findings under <code>--scope all</code> read 18, 19, 21, 15, 19 on the <code>92fabd2</code> binary (path order) and 21, 19, 19, 18, 15 on <code>c4064db</code>. Production order at <code>c4064db</code> is confidence first, then magnitude: both cognitive findings (19, 18), then <code>branch_sum</code> 17, 16, 15, 15, 12, then <code>max_nesting_depth=4</code>. The two <code>15</code>s fall back to path.</p>
+          <p><code>--min-severity</code> and <code>--top</code> state what they withhold and leave the analysis counts alone. <code>--scope all --min-severity high</code> prints one finding and <code>withheld: 20 signals below --min-severity high (counts above describe the full analysis)</code>, with <code>active signals: 21</code> unchanged above it. <code>--scope all --top 3</code> prints three and <code>withheld: 18 signals beyond --top 3 …; re-run without --top to see all</code>. JSON carries <code>signals_withheld</code>. A floor that leaves nothing prints <code>No active CodeSignal findings at or above --min-severity high.</code> rather than the all-clear. Every run above exits 0. <code>--min-severity bogus</code> and <code>--top 0</code> exit 2. Each of the three non-scan modes rejects <code>--top</code> with exit 2. There is no flag that turns findings into an exit status.</p>
+          <div class="code"><span class="c">$ coach codesignal --baseline --scope all --format json | jq '.signals[0:2][] | [.severity, .rule_id, .evidence]'</span>
+["high",   "complexity.branch_density",      "branch_sum=37"]
+["medium", "complexity.cognitive_complexity", "cognitive_complexity=21"]
+
+<span class="c">$ coach codesignal --baseline --scope all --min-severity high --top 1 --format json | jq '.signals_withheld'</span>
+<span class="ok">{ "min_severity": "high", "below_min_severity": 20, "top": 1, "beyond_top": 0 }</span>
+
+<span class="c">$ coach codesignal --baseline --scope all --top 3</span>
+tracked files discovered: 1827, analyzed: 1434, ..., active signals: 21, diagnostics: 0
+<span class="ok">withheld: 18 signals beyond --top 3 (counts above describe the full analysis); re-run without --top to see all</span>
+rule_id: complexity.branch_density
+severity: high
+path: pkg/codesignal/signal_view_test.go</div>
+          <div class="tracks">
+            <span class="tracks-label">Closed by</span>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/272">#272</a>
+          </div>
+        </div>
+      </article>
+
     </div>
   </section>
 
@@ -691,19 +723,19 @@ no project_next_actions</div>
         <div class="gap-id">G5</div>
         <div class="gap-body">
           <div class="gap-title">
-            <h3>The report still can’t be ranked, capped, or suppressed</h3>
+            <h3>The report can be ranked and capped, but not suppressed; <code>lousy-iam</code> noise not re-measured</h3>
             <span class="chip verified">re-verified</span>
           </div>
-          <p>This repo, production baseline: <strong>250 findings across 281 files, in 1.02s.</strong> 191 are <code>medium</code>. 59 are <code>low</code>. None are <code>high</code> or <code>critical</code>. Magnitude still does not sort the list. The first nine cognitive values read 18, 15, 28, 19, 16, 17, 15, <strong>116</strong>, 33. Advisory rank is fixed. The rest of the noise is not.</p>
+          <p>This repo, production baseline at <code>c4064db</code>: <strong>14 findings across 688 analyzed files, in 3.9s</strong> (746 test-only Go files excluded). 12 are <code>medium</code>. 2 are <code>low</code>. None are <code>high</code>. Ranking and capping are no longer the gap: magnitude orders the list, and <code>--top</code> and <code>--min-severity</code> shorten it with a stated count (see the archive). The earlier figure of 250 findings across 281 files does not reproduce on this tree. At <code>92fabd2</code> (that revision’s binary on that revision’s tree) this repository reports 4 (<code>--scope all</code> also 4), all <code>state.hidden_input_mutation</code> and all <code>medium</code>, so the drop from 250 is not explained by #272, and this pass did not find out which change shrank it. The other 10 findings in the production baseline are in files this branch adds or changes, and so is the one <code>high</code> under <code>--scope all</code>. Spread and ranking on a representative corpus are therefore observed only on <code>learn-go-with-tests</code>, below.</p>
           <ul class="plain">
-            <li class="neg"><span><code>learn-go-with-tests</code> — <strong>60 of 79 findings (76%) are inside <code>vendor/</code></strong>. Production scope still does not exclude vendored code. 304 files analyzed in 0.56s.</span></li>
-            <li class="neg"><span><code>lousy-iam</code> — <strong>42 of 50 findings (84%) are one rule</strong>, <code>state.hidden_input_mutation</code>, 22 of them in a single file, 29 evidence strings <code>violations.push</code>. Same precision problem as 16 Aug.</span></li>
-            <li class="neg"><span><strong>59 of 250 findings (24%) carry empty <code>evidence</code></strong> — every density hit. Still not adjudicable.</span></li>
+            <li class="neg"><span><code>learn-go-with-tests</code> — <strong>60 of 79 findings (76%) are inside <code>vendor/</code></strong>. Production scope still does not exclude vendored code. Pass 25 re-cloned it at <code>4675d96</code>: 79 findings, 60 inside <code>vendor/</code>, 309 files analyzed in about 1.3s. All 20 <code>high</code> findings are vendored.</span></li>
+            <li class="neg"><span><code>lousy-iam</code> — <strong>42 of 50 findings (84%) are one rule</strong>, <code>state.hidden_input_mutation</code>, 22 of them in a single file, 29 evidence strings <code>violations.push</code>. Same precision problem as 16 Aug. Carried from earlier passes. Pass 25 did not re-clone it.</span></li>
+            <li class="neg"><span><strong>2 of 14 findings (14%) in this repo’s production baseline carry empty <code>evidence</code></strong> — both <code>structure.pointer_return_density</code> hits. Still not adjudicable. The earlier 24% was measured on the 250-finding tree.</span></li>
           </ul>
           <p>Suppression under #48 still closes one of five sub-problems. The <code>lousy-iam</code> case is why. The match is correct. The judgment is wrong.</p>
           <div class="tracks">
             <span class="tracks-label">Tracked in</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/272">#272 — severity spread &amp; ranking</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/272">#272 — severity spread &amp; ranking (closed, archived)</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/277">#277 — vendored dependencies</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/261">#261 — density rules, one per site</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/268">#268 — out-parameter precision</a>
@@ -717,14 +749,14 @@ no project_next_actions</div>
         <div class="gap-id">G6</div>
         <div class="gap-body">
           <div class="gap-title">
-            <h3>Text still drops file-local rule_id/severity; TypeScript project provenance now prints</h3>
+            <h3>Text prints rule_id and severity; subject, tool version, and diff-mode provenance are still missing</h3>
             <span class="chip verified">re-verified</span>
           </div>
           <p>TypeScript project provenance and scope now print in text and in JSON. Pass 20: <code>Project scope:</code> before findings, <code>runtime: node v24.21.0 (path)</code>, schema-2 <code>project_provenance</code> and <code>project_scope</code>. File-local text provenance is still open (#263, #279, #270).</p>
-          <p>A Go baseline of a hidden-input-mutation file still never prints <code>rule_id</code> or <code>severity</code>. JSON carries <code>state.hidden_input_mutation</code> and <code>medium</code>. Layer findings still print <code>rule_id</code> when a forbidden import is present. JSON still carries <code>revision</code> and <code>base</code> on a <code>--base</code> run from earlier restamps. This pass did not re-run a <code>--base</code> text header. The report still carries no tool version. Project-scope rendering does not close G6.</p>
+          <p>Pass 25: a file-local Go baseline now prints <code>rule_id:</code> and <code>severity:</code> on every finding. <code>--baseline --scope all</code> at <code>c4064db</code> prints 21 of each for 21 findings, ahead of <code>path:</code>. That part of #279 is observed closed. The same run prints no <code>subject:</code> line, although the JSON carries a <code>subject</code> on 11 of those findings (a function name, for example). Text still drops it. JSON still carries <code>revision</code> and <code>base</code> on a <code>--base</code> run from earlier restamps. This pass did not re-run a <code>--base</code> text header. The report still carries no tool version. Project-scope rendering does not close G6.</p>
           <div class="tracks">
             <span class="tracks-label">Tracked in</span>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/279">#279 — text omits rule_id, severity, subject</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/279">#279 — text omits subject (rule_id and severity now print)</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/263">#263 — diff-mode provenance</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/270">#270 — tool version in the report</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/63">#63 — README terms</a>
@@ -770,6 +802,7 @@ no project_next_actions</div>
       <li class="pos"><span><strong>Incomplete analysis is disclosed</strong> when the skip is visible as a diagnostic, including a file-local dirty tree (<code>worktree_changes_not_analyzed</code>). Config failures fail closed. Usage errors stay off stdout. Empty JSON collections stay present.</span></li>
       <li class="pos"><span><strong>Linux CI records an offline allowed-set for a TypeScript project scan</strong> — committed snapshot source, already-resolved host compiler and runtime files, Coach's own analyzer files, and ordinary system libraries, with no network during the scan. That observation is Linux-only. It is not a customer Mac proof, not a kernel sandbox, and not a claim the target TypeScript journey ships.</span></li>
       <li class="pos"><span><strong>TypeScript project reports now name scope, provenance, and honest no-match next actions.</strong> Schema-2 JSON on this branch carries <code>project_provenance</code> (<code>runtime.kind</code> node, origin path, probed version), <code>project_scope</code> with the #281 inclusion gap, and ordered <code>project_next_actions</code>. A complete scan with no configured match says exactly that — not architectural compliance — then offers <code>record_baseline</code> and <code>review_policy_coverage</code>.</span></li>
+      <li class="pos"><span><strong>The report has a read-this-first and a stated way to shorten it.</strong> Same-tier findings sort by how far the metric exceeds its threshold. Three metric rules reach <code>high</code> at twice the threshold. Text prints <code>rule_id</code> and <code>severity</code>. <code>--min-severity</code> and <code>--top</code> report what they withhold, and no flag changes the exit status. On this tree the production baseline is 14 findings, so the spread is thin there. <code>--scope all</code> shows <code>high</code>, <code>medium</code>, and <code>low</code>.</span></li>
       <li class="pos"><span><strong>The TOCTOU recommendation is still what actionable looks like</strong> — CWE-367, concrete Go API names, <code>errors.Is(err, fs.ErrNotExist)</code>, a pointer to <code>os.Root</code>.</span></li>
     </ul>
   </section>
@@ -797,8 +830,8 @@ no project_next_actions</div>
     <ul class="plain prose">
       <li class="unk"><span><strong>Packaged TypeScript obtain on a foreign repo.</strong> Earlier passes ran a GoReleaser snapshot artifact against a packaged-binary fixture repository and reproduced the layer finding on a git-root TypeScript repo with no <code>js/semantics/</code> tree. This pass used a Go-built binary only — it does not restamp packaged obtain. Provenance rendering is now in-repo evidenced (schema-2 <code>project_provenance</code> / <code>project_scope</code> / <code>project_next_actions</code> on this branch). Consented setup's in-repo orchestration shipped with #330; this pass did not re-run interactive setup on a customer clone, so obtain remains unproved. Do not read a Go-built scan as obtain, and do not read Linux CI as this item. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/280">#280</a></span></li>
       <li class="unk"><span><strong>The released binary in a real CI runner.</strong> This pass used a locally built macOS/arm64 binary. Linux/Windows, container startup, and the signed-release path are unverified. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/276">#276</a></span></li>
-      <li class="unk"><span><strong>No systematic precision census.</strong> Still the gate the PRD names. 24% of findings still carry empty evidence and are not adjudicable. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/260">#260</a></span></li>
-      <li class="unk"><span><strong>The noise judgment is inferred, not observed.</strong> The 84% and 76% numbers are measurements; “a named team will not run this twice” is an inference from them.</span></li>
+      <li class="unk"><span><strong>No systematic precision census.</strong> Still the gate the PRD names. 2 of 14 findings in this repo’s production baseline still carry empty evidence and are not adjudicable (24% on the earlier 250-finding tree). <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/260">#260</a></span></li>
+      <li class="unk"><span><strong>The noise judgment is inferred, not observed.</strong> The 76% figure was re-measured in Pass 25 on <code>learn-go-with-tests</code>; the 84% figure is a measurement from an earlier pass on <code>lousy-iam</code>, which Pass 25 did not replay; “a named team will not run this twice” is an inference from them.</span></li>
     </ul>
   </section>
 
@@ -821,8 +854,8 @@ no project_next_actions</div>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/280">#280 — TS obtain</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/281">#281 — TS test scope</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/277">#277 — vendor noise</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/272">#272 — ranking</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/279">#279 — text omits rule identity</a>          </div>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/272">#272 — ranking (closed; whether it is enough is still to judge)</a>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/279">#279 — text omits subject (rule_id and severity now print)</a>          </div>
         </div>
       </li>
       <li>

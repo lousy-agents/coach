@@ -16,7 +16,7 @@ coach --version
 The only subcommand is `codesignal`.
 
 ```text
-coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive] [--fail-on-incomplete-coverage]
+coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--min-severity high|medium|advisory|low] [--top N] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive] [--fail-on-incomplete-coverage]
 coach codesignal --baseline --suggest-project-config [--output <path>]
 coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>] [--no-interactive]
 coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]
@@ -33,6 +33,8 @@ that suggest/prepare still require `--baseline`).
 | `--baseline` | | Scan every tracked Go/TS/TSX file at HEAD. |
 | `--format` | `text` | `text` or `json`. |
 | `--scope` | `production` | `production` or `all`. |
+| `--min-severity <level>` | none | Render only signals at or above `high`, `medium`, `advisory`, or `low` (ranked `high` > `medium` > `advisory` > `low`). No floor by default. Any other value is a usage error: exit `2`. See [Narrowing the rendered report](#narrowing-the-rendered-report). |
+| `--top <N>` | none | Render only the first `N` signals in report order, after any `--min-severity` floor. No cap by default. `N` must be a positive integer; anything else is a usage error: exit `2`. |
 | `--build-target <pattern>` | empty | Go package pattern for production reachability. Silent no-op under `--scope all`. |
 | `--project-config <path>` | empty | Repository-relative path at the **analyzed revision**. Enables `schema_version: "2"`. |
 | `--project-language` | `go` | `go` or `typescript`. With no `--project-config`, a language flag on a scan is a silent no-op. |
@@ -54,9 +56,9 @@ argument is a usage error: exit 2, usage on stderr, and nothing on stdout.
 
 | Code | When |
 | --- | --- |
-| `0` | Completed analysis, readiness report, successful suggest/prepare, or `--help` / `--version`. Signals do not change this. |
+| `0` | Completed analysis, readiness report, successful suggest/prepare, or `--help` / `--version`. Signals, and narrowing the report with `--min-severity` or `--top`, do not change this. |
 | `1` | Operational: not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O. |
-| `2` | Usage, invalid `--project-config` (empty stdout, stderr names the path/revision), unsupported `--project-language`, or a TypeScript **scan** that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
+| `2` | Usage (including an invalid `--min-severity` or `--top` value), invalid `--project-config` (empty stdout, stderr names the path/revision), unsupported `--project-language`, or a TypeScript **scan** that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
 | `3` | Required project coverage (model or bypass, on any analyzed side) is incomplete **and** `--fail-on-incomplete-coverage` was supplied — the report is still written to stdout. Also: `--prepare-compiler` operational failure resolving the baseline revision or computing readiness (a deliberate exception to the scan contract's `1`, kept because the flag follows suggestion mode's table). |
 
 `--check-project` exits `0` so you inspect the payload; do not treat that
@@ -173,7 +175,76 @@ Each signal includes `id`, `fingerprint`, `rule_id`, `rule_version`, `kind`,
 `location`, `why_it_matters`, `recommendation`, `provenance`. JSON
 `location.start_row` is 0-based. Text `line` is `start_row + 1`.
 
-`rule_id` and `severity` appear in JSON. File-local text omits them.
+JSON and text both carry `rule_id` and `severity`. A text finding block prints
+`rule_id:` and `severity:` lines before `path:`, and a project finding block
+prints `severity:` beside its `rule_id:`.
+
+### Severity
+
+`severity` is one of `high`, `medium`, `advisory`, or `low`. There is no
+`critical`. Most rules emit a fixed value. Three metric rules emit `high` when
+the measured value is at least twice the rule's threshold and `medium` from the
+threshold up to just below twice it:
+
+| `rule_id` | Metric (evidence) | Threshold | `high` from |
+| --- | --- | --- | --- |
+| `complexity.cognitive_complexity` | `cognitive_complexity=N` | 15 | 30 |
+| `complexity.branch_density` | `branch_sum=N` | 12 | 24 |
+| `complexity.max_nesting_depth` | `max_nesting_depth=N` | 4 | 8 |
+
+Layer rules (`architecture.layer_violation`, `architecture.layer_bypass`) emit
+`advisory`; the density rules `structure.constructor_density` and
+`structure.pointer_return_density` emit `low`.
+
+### Report order
+
+`signals[]` is sorted by these keys, each breaking ties left by the one before:
+
+1. Lifecycle group: introduced and changed, existing and changed, introduced
+   and unchanged, existing and unchanged, resolved, then everything else
+   (`baseline`, `unknown`).
+2. Severity: `high`, `medium`, `advisory`, `low`.
+3. Confidence.
+4. Magnitude: signals from the three metric rules above come before signals
+   without a numeric metric, and among them a larger metric-to-threshold ratio
+   comes first. A `cognitive_complexity=28` finding precedes a
+   `cognitive_complexity=16` one regardless of path; `branch_sum` and
+   `max_nesting_depth` findings are compared by the same ratio.
+5. Path, start row, start column, `rule_id`, then `id`.
+
+Severity outranks magnitude, so a `medium` signal never precedes a `high` one
+because its metric is larger.
+
+### Narrowing the rendered report
+
+`--min-severity` and `--top` are opt-in and apply to the report after analysis.
+Without either flag the output is unchanged. They narrow `signals[]` (and, in a
+`schema_version: "2"` report, `project_changes[]`, which mirrors the project
+findings in `signals[]`) and nothing else:
+
+- `summary`, `coverage`, `diagnostics`, and the project coverage and summary
+  blocks keep describing the full analysis. `active_signals` is not reduced, so
+  it can exceed the number of signals shown.
+- The floor applies first, then the cap takes the first `N` of what remains.
+  The two compose.
+- The number withheld is never silent. JSON adds `signals_withheld` only when a
+  flag was supplied. Each flag contributes its own pair of keys:
+  `min_severity` with `below_min_severity`, and `top` with `beyond_top`. For
+  example, `{"min_severity":"high","below_min_severity":2,"top":2,"beyond_top":2}`.
+  A flag that withheld nothing still reports its count, as `0`.
+- Text prints a `withheld:` line in the summary. For `--min-severity` it reads
+  `withheld: 20 signals below --min-severity high (counts above describe the full analysis)`.
+  For `--top` it reads
+  `withheld: 18 signals beyond --top 3 (counts above describe the full analysis); re-run without --top to see all`.
+  With both flags it reports the total and each count, and the hint reads
+  `re-run without --min-severity and --top to see all`. A floor that leaves no
+  signals prints `No active CodeSignal findings at or above --min-severity <level>.`
+  instead of the all-clear.
+- Neither flag changes the exit status. Exit codes depend on analysis outcome
+  and `--fail-on-incomplete-coverage`, never on which signals a report holds or
+  hides.
+- Neither flag is accepted by `--check-project`, `--suggest-project-config`, or
+  `--prepare-compiler`.
 
 ## Rule IDs
 

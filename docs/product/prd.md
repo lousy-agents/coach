@@ -244,7 +244,7 @@ Status uses the evidence rule in the cutoff section.
 | Guided policy authoring | Implemented from `v0.5.0`. Scan authoring needs `--project-config` and a terminal. The scan prints a candidate on standard output. Locked by `cmd/coach/project_ts_scan_policy_authoring_acceptance_test.go`. |
 | Consented TypeScript compiler setup | Implemented as `--prepare-compiler` in `v0.6.0` and as a scan-time offer in `v0.7.0`. The standalone flag is mise-only. Locked by `cmd/coach/project_ts_setup_execute_acceptance_test.go` and `cmd/coach/project_ts_setup_preview_acceptance_test.go`. |
 | Unattended path that refuses prompts | Implemented as `--no-interactive` and a non-empty `CI` variable in `v0.7.0`. Locked by `cmd/coach/project_ts_scan_policy_authoring_acceptance_test.go`. |
-| JSON signals carry rule identity and rule version | Implemented. Default text output still omits `rule_id` and `severity` for file-local signals ([#279](https://github.com/lousy-agents/coach/issues/279)). Locked by `pkg/codesignal/report_shape_acceptance_test.go`. |
+| JSON signals carry rule identity and rule version | Implemented. Default text output prints `rule_id` and `severity` for file-local signals; `subject` and `source_scope` rendering remain open in [#279](https://github.com/lousy-agents/coach/issues/279). Locked by `pkg/codesignal/report_shape_acceptance_test.go`. |
 | TypeScript project `project_provenance`, `project_scope`, `worktree_report_reflects_committed_head`, complete no-match `project_next_actions`, and `--fail-on-incomplete-coverage` exit `3`; file-local `worktree_changes_not_analyzed` and `worktree_not_clean` | `project_provenance`, `project_scope`, `project_next_actions`, and `--fail-on-incomplete-coverage` implemented in `v0.8.0`. `worktree_report_reflects_committed_head`, `worktree_changes_not_analyzed`, and `worktree_not_clean` ship in the release that carries this PR. Locked by `cmd/coach/project_scope_cli_acceptance_test.go`, `cmd/coach/project_provenance_worktree_acceptance_test.go`, `cmd/coach/working_tree_disclosure_acceptance_test.go`, and `cmd/coach/fail_on_incomplete_coverage_acceptance_test.go`. |
 | Local API, worker, and OAuth lab | Implemented and CI-verified. Not the default product. Path A stub smoke is locked by `cmd/platform-smoke/smoke_acceptance_test.go`. README names this path as a separate lab. Paths B and C are operator labs. |
 | Cloud deploy and SGLang | Bet. Not the current product. |
@@ -260,11 +260,11 @@ Known remaining risks from the evaluation and the epic:
 - A TypeScript journey on an arbitrary foreign repository is not a packaged product ([#280](https://github.com/lousy-agents/coach/issues/280)).
 - Suppression of accepted findings is still missing ([#50](https://github.com/lousy-agents/coach/issues/50)).
 - A precision census for security-category rules is still missing ([#260](https://github.com/lousy-agents/coach/issues/260), [#205](https://github.com/lousy-agents/coach/issues/205)).
-- Default text output still omits `rule_id` and `severity` for file-local signals ([#279](https://github.com/lousy-agents/coach/issues/279)).
+- Default text output omits `subject` for file-local signals and does not collapse `source_scope` ([#279](https://github.com/lousy-agents/coach/issues/279)).
 - Vendored dependencies inflate production-scope noise ([#277](https://github.com/lousy-agents/coach/issues/277)).
 - Density rules emit one signal per site ([#261](https://github.com/lousy-agents/coach/issues/261)).
 - Out-parameter precision on hidden-input mutation is still missing ([#268](https://github.com/lousy-agents/coach/issues/268)).
-- Severity spread and magnitude ranking are still missing ([#272](https://github.com/lousy-agents/coach/issues/272)).
+- Severity spread is observed only on vendored code in the one foreign corpus re-run; whether magnitude ranking plus `--top` and `--min-severity` is enough is unjudged ([#272](https://github.com/lousy-agents/coach/issues/272) closed).
 
 Parked on purpose:
 
