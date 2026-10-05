@@ -4,19 +4,6 @@ import (
 	"fmt"
 )
 
-func checkPresentProperties(obj map[string]any, properties map[string]propSchema) error {
-	for name, prop := range properties {
-		raw, present := obj[name]
-		if !present {
-			continue
-		}
-		if err := checkProperty(name, raw, prop); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func checkArrayProperty(name string, raw any, prop propSchema) error {
 	if raw == nil {
 		return NewValidationError(name + " must not be null")
@@ -42,4 +29,14 @@ func checkArrayProperty(name string, raw any, prop propSchema) error {
 		}
 	}
 	return nil
+}
+
+func validationDetail(err error) string {
+	if ve, ok := err.(*ValidationError); ok && ve != nil && ve.Detail != "" {
+		return ve.Detail
+	}
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

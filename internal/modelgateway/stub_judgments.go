@@ -2,7 +2,6 @@ package modelgateway
 
 import (
 	"encoding/json"
-
 	"strings"
 )
 
@@ -31,10 +30,11 @@ func isBatchItemsOutputSchema(schema json.RawMessage) bool {
 	}
 	return strings.EqualFold(itemsProp.Type, "array")
 }
+
 func stubBatchJudgment(req JudgmentRequest) json.RawMessage {
 	refs := extractFindingRefsFromMessages(req.Messages)
 	if len(refs) == 0 {
-
+		// No refs in messages: emit a single stub item so schema shape is valid.
 		refs = []string{"stub-item-1"}
 	}
 	type item struct {
@@ -56,11 +56,12 @@ func stubBatchJudgment(req JudgmentRequest) json.RawMessage {
 	}
 	raw, err := json.Marshal(map[string]any{"items": items})
 	if err != nil {
-
+		// Unreachable with fixed structs; keep Judge from panicking.
 		return json.RawMessage(`{"items":[]}`)
 	}
 	return raw
 }
+
 func stubJudgmentForRubric(rubricID string) (json.RawMessage, bool) {
 	switch rubricID {
 	case "hidden_mutation", "hidden_mutation_contextualization":
@@ -80,14 +81,4 @@ func stubJudgmentForRubric(rubricID string) (json.RawMessage, bool) {
 	default:
 		return nil, false
 	}
-}
-
-// NewStubGateway returns a deterministic StubGateway. With no options it serves
-// canned schema-valid judgments; StubOptions.JudgeErr forces a typed error path.
-func NewStubGateway(opts ...StubOptions) *StubGateway {
-	g := &StubGateway{}
-	if len(opts) > 0 {
-		g.judgeErr = opts[0].JudgeErr
-	}
-	return g
 }
