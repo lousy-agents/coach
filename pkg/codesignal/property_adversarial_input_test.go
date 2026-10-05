@@ -30,20 +30,17 @@ func TestProperty_ArbitraryEvidenceProducesValidJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_propertyPart2Test_33(t, tt)
+			expectEvidenceSurvivesJSONRoundTrip(t, tt.evidence)
 		})
 	}
 }
 
-func body_propertyPart2Test_33(t *testing.T, tt struct {
-	name     string
-	evidence string
-}) {
+func expectEvidenceSurvivesJSONRoundTrip(t *testing.T, evidence string) {
 	head := &semantics.Result{
 		Path:        "evidence.go",
 		ParseStatus: semantics.ParseStatus("ok"),
 		Findings: []semantics.Finding{
-			{Kind: "mutates_input", Name: "Adversarial", Evidence: tt.evidence},
+			{Kind: "mutates_input", Name: "Adversarial", Evidence: evidence},
 		},
 	}
 
@@ -55,12 +52,12 @@ func body_propertyPart2Test_33(t *testing.T, tt struct {
 
 	raw, err := json.Marshal(report)
 	if err != nil {
-		t.Fatalf("json.Marshal(report) with Evidence %q must not fail: %v", tt.evidence, err)
+		t.Fatalf("json.Marshal(report) with Evidence %q must not fail: %v", evidence, err)
 	}
 
 	var asMap map[string]any
 	if err := json.Unmarshal(raw, &asMap); err != nil {
-		t.Fatalf("json.Unmarshal back into map[string]any with Evidence %q must not fail: %v\nJSON: %s", tt.evidence, err, raw)
+		t.Fatalf("json.Unmarshal back into map[string]any with Evidence %q must not fail: %v\nJSON: %s", evidence, err, raw)
 	}
 }
 
@@ -89,27 +86,23 @@ func TestProperty_RangeOverlapNeverPanics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_propertyTest_69(t, tt)
+			expectBuildSurvivesExtremeRange(t, tt.ranges, tt.loc)
 		})
 	}
 }
 
-func body_propertyTest_69(t *testing.T, tt struct {
-	name   string
-	ranges []LineRange
-	loc    semantics.Location
-}) {
+func expectBuildSurvivesExtremeRange(t *testing.T, ranges []LineRange, loc semantics.Location) {
 	head := &semantics.Result{
 		Path:        "extreme.go",
 		ParseStatus: semantics.ParseStatus("ok"),
 		Findings: []semantics.Finding{
-			{Kind: "mutates_input", Name: "Extreme", Location: tt.loc, Evidence: "x = 1"},
+			{Kind: "mutates_input", Name: "Extreme", Location: loc, Evidence: "x = 1"},
 		},
 	}
 
 	report := mustBuild(t, Options{IncludeResolved: true}, Input{
 		Files: []FileChange{
-			{Path: "extreme.go", Status: "modified", Head: head, ChangedRanges: tt.ranges},
+			{Path: "extreme.go", Status: "modified", Head: head, ChangedRanges: ranges},
 		},
 	})
 	if report == nil {

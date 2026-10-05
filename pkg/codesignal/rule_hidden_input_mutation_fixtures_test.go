@@ -8,6 +8,14 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
+type hiddenInputMutationFixture struct {
+	name           string
+	srcPath        string
+	resultPath     string
+	lang           semantics.Language
+	wantConfidence Confidence
+}
+
 func mustAnalyzeFixture(t *testing.T, srcPath, resultPath string, lang semantics.Language) *semantics.Result {
 	t.Helper()
 
@@ -31,4 +39,13 @@ func mustAnalyzeFixture(t *testing.T, srcPath, resultPath string, lang semantics
 	}
 
 	return result
+}
+
+func firstMutatesInputFinding(result *semantics.Result) (semantics.Finding, bool) {
+	for _, finding := range result.Findings {
+		if finding.Kind == "mutates_input" {
+			return finding, true
+		}
+	}
+	return semantics.Finding{}, false
 }

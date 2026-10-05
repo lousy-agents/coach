@@ -1,20 +1,13 @@
 package codesignal
 
 import (
-	"context"
 	"testing"
 
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 func TestHiddenInputMutation_EndToEndPerLanguage(t *testing.T) {
-	tests := []struct {
-		name           string
-		srcPath        string
-		resultPath     string
-		lang           semantics.Language
-		wantConfidence Confidence
-	}{
+	tests := []hiddenInputMutationFixture{
 		{
 			name:           "go",
 			srcPath:        "../../internal/jsbridge/testdata/parity/go_mutates_input.src",
@@ -40,28 +33,24 @@ func TestHiddenInputMutation_EndToEndPerLanguage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_ruleHiddenInputMutationPart2Test_43(t, tt)
+			expectFixtureRaisesHiddenInputMutation(t, tt)
 		})
 	}
 }
 
-func body_ruleHiddenInputMutationPart2Test_43(t *testing.T, tt struct {
-	name           string
-	srcPath        string
-	resultPath     string
-	lang           semantics.Language
-	wantConfidence Confidence
-}) {
+// expectFixtureRaisesHiddenInputMutation analyzes the fixture source through
+// pkg/semantics, builds a report from it, and checks the signal raised for
+// its first mutates_input finding.
+func expectFixtureRaisesHiddenInputMutation(t *testing.T, tt hiddenInputMutationFixture) {
+	t.Helper()
 	result := mustAnalyzeFixture(t, tt.srcPath, tt.resultPath, tt.lang)
 
-	var wantFinding *semantics.Finding
-	(&sigbodyruleHiddenInputMutationPart2Test43S2{result: result, wantFinding: &wantFinding}).call()
-	(&sigbodyruleHiddenInputMutationPart2Test43S3{t: t, tt: tt, wantFinding: wantFinding}).call()
+	wantFinding, ok := firstMutatesInputFinding(result)
+	if !ok {
+		t.Fatalf("fixture %s produced no mutates_input findings; test fixture assumption is stale", tt.srcPath)
+	}
 
-	b, err := New(Options{})
-	(&sigbodyruleHiddenInputMutationPart2Test43S5{err: err, t: t}).call()
-
-	report, err := b.Build(context.Background(), Input{
+	report := mustBuild(t, Options{}, Input{
 		Files: []FileChange{
 			{
 				Path:   tt.resultPath,
@@ -70,32 +59,37 @@ func body_ruleHiddenInputMutationPart2Test_43(t *testing.T, tt struct {
 			},
 		},
 	})
-	(&sigbodyruleHiddenInputMutationPart2Test43S7{err: err, t: t}).call()
 
-	var got *Signal
-	(&sigbodyruleHiddenInputMutationPart2Test43S9{got: &got, report: report, wantFinding: wantFinding}).call()
-	(&sigbodyruleHiddenInputMutationPart2Test43S10{got: got, report: report, t: t, wantFinding: wantFinding}).call()
-	(&sigbodyruleHiddenInputMutationPart2Test43S11{got: got, t: t}).call()
-	(&sigbodyruleHiddenInputMutationPart2Test43S12{got: got, t: t}).call()
-	(&sigbodyruleHiddenInputMutationPart2Test43S13{got: got, t: t}).call()
+	got, ok := signalWithSubject(report.Signals, wantFinding.Name)
+	if !ok {
+		t.Fatalf("Report.Signals does not contain a signal for finding %q: %+v", wantFinding.Name, report.Signals)
+	}
+	expectHiddenInputMutationSignal(t, got, tt, wantFinding)
+}
 
-	if got.Category != "state_management" {
-		t.Errorf("Signal.Category: got %q, want %q", got.Category, "state_management")
+func expectHiddenInputMutationSignal(t *testing.T, got Signal, tt hiddenInputMutationFixture, wantFinding semantics.Finding) {
+	t.Helper()
+	fields := []struct {
+		name      string
+		got, want string
+	}{
+		{"RuleID", got.RuleID, "state.hidden_input_mutation"},
+		{"RuleVersion", got.RuleVersion, "1"},
+		{"Kind", got.Kind, "hidden_input_mutation"},
+		{"Category", string(got.Category), "state_management"},
+		{"Severity", string(got.Severity), "medium"},
+		{"Confidence", string(got.Confidence), string(tt.wantConfidence)},
+		{"Path", got.Path, tt.resultPath},
+		{"Subject", got.Subject, wantFinding.Name},
+		{"Evidence", got.Evidence, wantFinding.Evidence},
+		{"SuggestedSkill", got.SuggestedSkill, wantFinding.SuggestedSkill},
+		{"Provenance.Producer", got.Provenance.Producer, "semantics"},
+		{"Provenance.FindingKind", got.Provenance.FindingKind, "mutates_input"},
 	}
-	if got.Severity != "medium" {
-		t.Errorf("Signal.Severity: got %q, want %q", got.Severity, "medium")
-	}
-	if got.Confidence != tt.wantConfidence {
-		t.Errorf("Signal.Confidence: got %q, want %q", got.Confidence, tt.wantConfidence)
-	}
-	if got.Path != tt.resultPath {
-		t.Errorf("Signal.Path: got %q, want %q", got.Path, tt.resultPath)
-	}
-	if got.Subject != wantFinding.Name {
-		t.Errorf("Signal.Subject: got %q, want %q", got.Subject, wantFinding.Name)
-	}
-	if got.Evidence != wantFinding.Evidence {
-		t.Errorf("Signal.Evidence: got %q, want %q", got.Evidence, wantFinding.Evidence)
+	for _, f := range fields {
+		if f.got != f.want {
+			t.Errorf("Signal.%s: got %q, want %q", f.name, f.got, f.want)
+		}
 	}
 	if wantFinding.Recommendation != "" && got.Recommendation != wantFinding.Recommendation {
 		t.Errorf("Signal.Recommendation: got %q, want (preserved from finding) %q", got.Recommendation, wantFinding.Recommendation)
@@ -103,156 +97,13 @@ func body_ruleHiddenInputMutationPart2Test_43(t *testing.T, tt struct {
 	if got.WhyItMatters != hiddenInputMutationWhyItMatters {
 		t.Errorf("Signal.WhyItMatters: got %q, want the deterministic rule-owned text", got.WhyItMatters)
 	}
-	if got.SuggestedSkill != wantFinding.SuggestedSkill {
-		t.Errorf("Signal.SuggestedSkill: got %q, want %q", got.SuggestedSkill, wantFinding.SuggestedSkill)
-	}
-	if got.Provenance.Producer != "semantics" {
-		t.Errorf("Signal.Provenance.Producer: got %q, want %q", got.Provenance.Producer, "semantics")
-	}
-	if got.Provenance.FindingKind != "mutates_input" {
-		t.Errorf("Signal.Provenance.FindingKind: got %q, want %q", got.Provenance.FindingKind, "mutates_input")
-	}
 }
 
-type sigbodyruleHiddenInputMutationPart2Test43S2 struct {
-	result *semantics.
-		Result
-	wantFinding **semantics.
-			Finding
-}
-
-func (sigRecv *sigbodyruleHiddenInputMutationPart2Test43S2) call() {
-
-	for i := range sigRecv.result.Findings {
-		if sigRecv.result.Findings[i].Kind == "mutates_input" {
-			*sigRecv.wantFinding = &sigRecv.result.Findings[i]
-			break
+func signalWithSubject(signals []Signal, subject string) (Signal, bool) {
+	for _, s := range signals {
+		if s.Subject == subject {
+			return s, true
 		}
 	}
-}
-
-type sigbodyruleHiddenInputMutationPart2Test43S3 struct {
-	t *testing.
-		T
-	tt struct {
-		name           string
-		srcPath        string
-		resultPath     string
-		lang           semantics.Language
-		wantConfidence Confidence
-	}
-	wantFinding *semantics.
-			Finding
-}
-
-func (sigRecv *sigbodyruleHiddenInputMutationPart2Test43S3) call() {
-
-	if sigRecv.wantFinding == nil {
-		sigRecv.t.
-			Fatalf("fixture %s produced no mutates_input findings; test fixture assumption is stale", sigRecv.tt.srcPath)
-	}
-}
-
-type sigbodyruleHiddenInputMutationPart2Test43S5 struct {
-	err error
-	t   *testing.
-		T
-}
-
-func (sigRecv *sigbodyruleHiddenInputMutationPart2Test43S5) call() {
-
-	if sigRecv.err != nil {
-		sigRecv.t.
-			Fatalf("New: %v", sigRecv.err)
-	}
-}
-
-type sigbodyruleHiddenInputMutationPart2Test43S7 struct {
-	err error
-	t   *testing.
-		T
-}
-
-func (sigRecv *sigbodyruleHiddenInputMutationPart2Test43S7) call() {
-
-	if sigRecv.err != nil {
-		sigRecv.t.
-			Fatalf("Build: %v", sigRecv.err)
-	}
-}
-
-type sigbodyruleHiddenInputMutationPart2Test43S9 struct {
-	got         **Signal
-	report      *Report
-	wantFinding *semantics.
-			Finding
-}
-
-func (sigRecv *sigbodyruleHiddenInputMutationPart2Test43S9) call() {
-
-	for i := range sigRecv.report.Signals {
-		if sigRecv.report.Signals[i].Subject == sigRecv.wantFinding.Name {
-			*sigRecv.got = &sigRecv.report.Signals[i]
-			break
-		}
-	}
-}
-
-type sigbodyruleHiddenInputMutationPart2Test43S10 struct {
-	got    *Signal
-	report *Report
-	t      *testing.
-		T
-	wantFinding *semantics.
-			Finding
-}
-
-func (sigRecv *sigbodyruleHiddenInputMutationPart2Test43S10) call() {
-
-	if sigRecv.got == nil {
-		sigRecv.t.
-			Fatalf("Report.Signals does not contain a signal for finding %q: %+v", sigRecv.wantFinding.Name, sigRecv.report.Signals)
-	}
-}
-
-type sigbodyruleHiddenInputMutationPart2Test43S11 struct {
-	got *Signal
-	t   *testing.
-		T
-}
-
-func (sigRecv *sigbodyruleHiddenInputMutationPart2Test43S11) call() {
-
-	if sigRecv.got.RuleID != "state.hidden_input_mutation" {
-		sigRecv.t.
-			Errorf("Signal.RuleID: got %q, want %q", sigRecv.got.RuleID, "state.hidden_input_mutation")
-	}
-}
-
-type sigbodyruleHiddenInputMutationPart2Test43S12 struct {
-	got *Signal
-	t   *testing.
-		T
-}
-
-func (sigRecv *sigbodyruleHiddenInputMutationPart2Test43S12) call() {
-
-	if sigRecv.got.RuleVersion != "1" {
-		sigRecv.t.
-			Errorf("Signal.RuleVersion: got %q, want %q", sigRecv.got.RuleVersion, "1")
-	}
-}
-
-type sigbodyruleHiddenInputMutationPart2Test43S13 struct {
-	got *Signal
-	t   *testing.
-		T
-}
-
-func (sigRecv *sigbodyruleHiddenInputMutationPart2Test43S13) call() {
-
-	if sigRecv.got.Kind != "hidden_input_mutation" {
-		sigRecv.t.
-			Errorf("Signal.Kind: got %q, want %q", sigRecv.got.Kind, "hidden_input_mutation")
-	}
+	return Signal{}, false
 }

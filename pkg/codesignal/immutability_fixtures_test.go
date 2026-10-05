@@ -1,8 +1,38 @@
 package codesignal
 
 import (
+	"reflect"
+	"testing"
+
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
+
+// snapshotFileChanges copies each FileChange and its ChangedRanges so a
+// later comparison sees in-place edits to the caller's slice elements.
+func snapshotFileChanges(files []FileChange) []FileChange {
+	snapshot := make([]FileChange, len(files))
+	for i, fc := range files {
+		cp := fc
+		cp.ChangedRanges = append([]LineRange(nil), fc.ChangedRanges...)
+		snapshot[i] = cp
+	}
+	return snapshot
+}
+
+func expectFileChangesUnchanged(t *testing.T, files, want []FileChange) {
+	t.Helper()
+	if len(files) != len(want) {
+		t.Fatalf("Input.Files length changed: got %d, want %d", len(files), len(want))
+	}
+	for i, fc := range files {
+		if fc.Path != want[i].Path || fc.Status != want[i].Status {
+			t.Errorf("Files[%d] Path/Status mutated: got %+v, want %+v", i, fc, want[i])
+		}
+		if !reflect.DeepEqual(fc.ChangedRanges, want[i].ChangedRanges) {
+			t.Errorf("Files[%d].ChangedRanges mutated: got %+v, want %+v", i, fc.ChangedRanges, want[i].ChangedRanges)
+		}
+	}
+}
 
 func richImmutabilityInput() Input {
 	return Input{
