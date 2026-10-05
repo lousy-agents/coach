@@ -27,7 +27,7 @@ func newMaxNestingDepthSignal(path string, metrics semantics.StructuralMetrics) 
 		RuleVersion:    "1",
 		Kind:           "max_nesting_depth",
 		Category:       "complexity",
-		Severity:       "medium",
+		Severity:       metricSeverity(metrics.MaxNestingDepth, maxNestingDepthThreshold),
 		Confidence:     "medium",
 		Path:           path,
 		Evidence:       "max_nesting_depth=" + strconv.Itoa(metrics.MaxNestingDepth),

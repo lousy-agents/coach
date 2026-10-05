@@ -35,7 +35,7 @@ func newBranchDensitySignal(path string, metrics semantics.StructuralMetrics) (s
 		RuleVersion:    "1",
 		Kind:           "branch_density",
 		Category:       "complexity",
-		Severity:       "medium",
+		Severity:       metricSeverity(sum, branchDensityThreshold),
 		Confidence:     "medium",
 		Path:           path,
 		Evidence:       "branch_sum=" + strconv.Itoa(sum),

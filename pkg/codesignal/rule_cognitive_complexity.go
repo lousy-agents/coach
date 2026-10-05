@@ -10,6 +10,18 @@ import (
 // that triggers a complexity.cognitive_complexity signal (score >= threshold).
 const cognitiveComplexityThreshold = 15
 
+// highSeverityThresholdMultiple is the multiple of a metric rule's threshold
+// at which its signal escalates from medium to high severity. The complexity
+// metric rules share it so one metric value ranks consistently across rules.
+const highSeverityThresholdMultiple = 2
+
+func metricSeverity(metric, threshold int) Severity {
+	if metric >= highSeverityThresholdMultiple*threshold {
+		return "high"
+	}
+	return "medium"
+}
+
 const cognitiveComplexityWhyItMatters = "High cognitive complexity means the control flow takes more mental effort to follow: nested branches, mixed logical sequences, and jumps compound so reviewers and authors miss paths."
 
 const cognitiveComplexityRecommendation = "Extract nested branches into named helpers, replace nested conditionals with early returns or lookup tables, and simplify boolean expressions so each function stays linearly readable."
@@ -33,7 +45,7 @@ func newCognitiveComplexitySignal(path string, rec semantics.FunctionCognitiveCo
 		RuleVersion:    "1",
 		Kind:           "cognitive_complexity",
 		Category:       "complexity",
-		Severity:       "medium",
+		Severity:       metricSeverity(rec.Score, cognitiveComplexityThreshold),
 		Confidence:     "high",
 		Path:           path,
 		Subject:        rec.Name,

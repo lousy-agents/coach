@@ -56,7 +56,7 @@ so that I can **see introduced/existing/resolved lifecycle on the same report su
   - `rule_version`: `1`
   - `kind`: `cognitive_complexity`
   - `category`: `complexity`
-  - `severity`: `medium`
+  - `severity`: `high` when `score >= 30` (twice the threshold), otherwise `medium`
   - `confidence`: `high` (fully deterministic rule application)
   - `path`: the file path passed into codesignal for that `FileChange`
   - `subject`: the record’s `name`
