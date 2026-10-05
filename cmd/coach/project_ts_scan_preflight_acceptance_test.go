@@ -259,7 +259,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices composes project_package a
 	})
 })
 
-// PrepareTSRuntime's resolveHostNode (project_ts_runtime.go) maps only
+// PrepareTSRuntime's tstoolchain.ResolveHostNode (tstoolchain/host_node.go) maps only
 // errHostNodeNotFound and errHostNodeMajorDisallowed into an actionable
 // CompilerUnresolvedError gap code; any other probe failure never reaches
 // classifyAnalysisError's remediation branch. So a node_unverifiable gap is
@@ -270,7 +270,7 @@ var _ = Describe("codesignalcli.CheckProjectReadiness never gates or warns on a 
 })
 
 // R2: readinessFromGapChecks derives Runtime's and Compiler's next actions
-// independently of one another (project_readiness_aggregate.go), so a
+// independently of one another (projectcheck/aggregate.go), so a
 // readiness snapshot can carry both a non-executable install_supported_runtime
 // action (Node genuinely missing) and a genuinely executable prepare_compiler
 // action (the repository's mise scope independently pins a supported

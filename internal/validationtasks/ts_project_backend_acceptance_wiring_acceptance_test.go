@@ -145,7 +145,7 @@ var _ = Describe("ts-project-backend-acceptance wiring", func() {
 		})
 
 		It("is actually applied to the internal/codesignalcli specs the task's filter selects", func() {
-			src, err := os.ReadFile(filepath.Join("..", "..", "internal", "codesignalcli", "project_acceptance_test.go"))
+			src, err := os.ReadFile(filepath.Join("..", "..", "internal", "codesignalcli", "ts_project_backend_compiler_acceptance_test.go"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(src)).To(ContainSubstring(`Label("ts-project-backend")`),
 				"the mise task's label filter is useless unless at least one Describe here carries this label")

@@ -20,10 +20,10 @@ import (
 // (rather than through the CLI's JSON boundary) because the fields this
 // function depends on -- checks.compiler's DeclaredVersion and the verified
 // MiseChoices -- are deliberately excluded from that JSON surface (json:"-"
-// in project_readiness.go) and reach a customer as rendered remediation text
+// in package projectreadiness) and reach a customer as rendered remediation text
 // only. The exported Go function is therefore the most meaningful public
 // boundary available for this behavior today; BuildSetupPreview and
-// ExecuteSetup (project_ts_setup_preview.go, project_ts_setup_execute.go)
+// ExecuteSetup (tssetup/preview.go, tssetup/execute.go)
 // cover command preview/execution, but no CLI-facing rendering of these
 // choices exists yet.
 

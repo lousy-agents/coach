@@ -16,7 +16,7 @@ import (
 // the manifest's directory -- it makes no filesystem or network call and
 // spawns nothing. The exported Go function is therefore the most meaningful
 // public boundary available for this behavior today; confirm/execute wiring
-// (ExecuteSetup, project_ts_setup_execute.go) exists in this same package,
+// (tssetup.Execute, tssetup/execute.go) exists in this same package,
 // but no CLI-facing rendering of a preview exists yet.
 
 // projectPackageManager is the passing checks.package_manager a preview or

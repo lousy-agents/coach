@@ -148,7 +148,7 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring on a con
 // This is not ordering coverage, and must not be read as such: a
 // never-committed policy always surfaces as a *ProjectConfigError before the
 // TypeScript backend ever runs its own compiler check (prepareProjectAnalysis's
-// loadProjectConfig short circuit, project.go), so a real scan's error here
+// loadProjectConfig short circuit, projectconfig/load.go), so a real scan's error here
 // is never simultaneously a *ProjectConfigError and a
 // *CompilerUnresolvedErrorWithReadiness. AC-10's guarantee is therefore
 // structural, not enforced by which `if` runs first in dispatchScanError
@@ -520,7 +520,7 @@ var _ = Describe("coach codesignal (real scan): the interactive compiler-setup o
 // A real repository can independently fail checks.compiler with a genuinely
 // installable mise scope while Node itself is absent -- Node resolution and
 // compiler resolution are two unrelated CheckProjectReadiness reads
-// (project_readiness.go) -- so this is a routine repository shape, not a
+// (projectcheck/project_shape.go) -- so this is a routine repository shape, not a
 // contrived one, and it must still resolve to the plain remediation line
 // rather than a prompt (AC-13, AC-SET-10).
 var _ = Describe("coach codesignal (real scan): the interactive compiler-setup offer never opens for a runtime-boundary gap (AC-13, AC-SET-10)", func() {

@@ -169,7 +169,7 @@ var _ = Describe("checks.package_manager's frozen version-boundary matrix (SA-28
 })
 
 // packageManagerCheckLine returns the single "  package_manager: ..." line
-// from RenderReadinessText's output (project_readiness_render_text.go), so a
+// from RenderReadinessText's output (render/readiness_text.go), so a
 // spec can compare the actual rendered remediation content rather than only
 // the JSON code.
 func packageManagerCheckLine(output []byte) string {

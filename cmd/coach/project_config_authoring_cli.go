@@ -25,7 +25,7 @@ const authorTSUsagePrefix = "coach codesignal --baseline --suggest-project-confi
 
 // tsAuthoringRootBudgets bounds the DiscoverTSRoots walk the guided
 // TypeScript authoring dispatch runs over the immutable baseline snapshot,
-// mirroring the finite-budget contract project_config_suggestion.go's
+// mirroring the finite-budget contract configauthoring/suggest.go's
 // suggestGoBudgets already applies to the equivalent Go root-discovery walk.
 var tsAuthoringRootBudgets = projectmodel.GoBudgets{
 	MaxInputFiles: 500000,
