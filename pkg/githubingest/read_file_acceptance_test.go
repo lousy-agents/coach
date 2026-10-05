@@ -9,16 +9,15 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/lousy-agents/coach/pkg/githubingest"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/lousy-agents/coach/pkg/githubingest"
 )
 
 // ginkgoRSAKey returns a freshly generated RSA private key, PKCS#1-PEM-
 // encoded the same way GitHub encodes App private keys it issues. It never
 // touches the network or any real credentials. Ginkgo-local variant of
-// testhelpers_test.go's generateTestRSAPrivateKeyPEM, which takes a concrete
+// test_reader_helpers_test.go's generateTestRSAPrivateKeyPEM, which takes a concrete
 // *testing.T that a Ginkgo spec (running under GinkgoT(), a testing.TB) does
 // not have.
 func ginkgoRSAKey() []byte {
@@ -32,7 +31,7 @@ func ginkgoRSAKey() []byte {
 // ginkgoTestReader builds a GitHubFileReader wired to an offline fake
 // transport (the ghinstallation token mint is answered automatically;
 // handleContents answers the Contents API call under test). Ginkgo-local
-// variant of testhelpers_test.go's newTestReader, for the same reason as
+// variant of test_reader_helpers_test.go's newTestReader, for the same reason as
 // ginkgoRSAKey above.
 func ginkgoTestReader(handleContents contentsHandlerFunc) *githubingest.GitHubFileReader {
 	reader, err := githubingest.NewGitHubFileReader(githubingest.GitHubAppConfig{
@@ -71,7 +70,7 @@ var _ = Describe("optional GitHub App file ingestion", func() {
 		})
 
 		It("targets a configured GitHub Enterprise BaseURL instead of github.com (AC-5.3)", func() {
-			body_acceptanceTest_targetsAConfiguredGitHubEnterpriseBaseURLInstead_73()
+			expectEnterpriseReaderTargetsOnlyTheAPIv3Base()
 		})
 	})
 
@@ -177,7 +176,56 @@ var _ = Describe("optional GitHub App file ingestion", func() {
 
 	Context("when the returned content fails to base64-decode (AC-5.11)", func() {
 		It("returns a wrapped API-failure error matching none of the defined sentinels", func() {
-			body_acceptanceTest_returnsAWrappedAPIFailureErrorMatchingNoneOfTheD_195()
+			expectUndecodableContentMatchesNoSentinel()
 		})
 	})
 })
+
+func expectEnterpriseReaderTargetsOnlyTheAPIv3Base() {
+	transport := &urlRecordingEnterpriseTransport{}
+	reader, err := githubingest.NewGitHubFileReader(githubingest.GitHubAppConfig{
+		AppID:          1,
+		InstallationID: 2,
+		PrivateKey:     ginkgoRSAKey(),
+		BaseURL:        "https://ghe.example.com/",
+		Transport:      transport,
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "hello.txt"}
+	_, _, err = reader.ReadFile(context.Background(), ref)
+	Expect(err).NotTo(HaveOccurred())
+
+	for _, u := range transport.seen {
+		Expect(u).To(HavePrefix("https://ghe.example.com/api/v3/"))
+	}
+}
+
+func expectUndecodableContentMatchesNoSentinel() {
+	const canned = `{
+				"type": "file",
+				"encoding": "base64",
+				"size": 5,
+				"name": "bad.txt",
+				"path": "dir/bad.txt",
+				"sha": "badsha",
+				"content": "!!!not-valid-base64!!!"
+			}`
+	reader := ginkgoTestReader(func(req *http.Request) *http.Response {
+		return jsonResponse(req, http.StatusOK, canned)
+	})
+
+	ref := githubingest.GitHubFileRef{Owner: "acme", Repo: "widgets", Ref: "main", Path: "dir/bad.txt"}
+	_, _, err := reader.ReadFile(context.Background(), ref)
+
+	Expect(err).To(HaveOccurred())
+	for _, sentinel := range []error{
+		githubingest.ErrAuth,
+		githubingest.ErrNotFound,
+		githubingest.ErrUnsupportedContent,
+		githubingest.ErrEmptyContent,
+		githubingest.ErrTooLarge,
+	} {
+		Expect(errors.Is(err, sentinel)).To(BeFalse(), "err %v unexpectedly matched sentinel %v", err, sentinel)
+	}
+}

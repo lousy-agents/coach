@@ -3,11 +3,25 @@ package githubingest
 import (
 	"context"
 	"encoding/base64"
-
 	"fmt"
 
 	"github.com/google/go-github/v92/github"
 )
+
+// maxContentSize is the GitHub Contents API's file size limit: files larger
+// than this are served with encoding "none" and no usable inline content.
+const maxContentSize = 1 << 20 // 1 MiB
+
+// GitHubFileRef identifies a single file within a repository at a ref.
+type GitHubFileRef struct{ Owner, Repo, Ref, Path string }
+
+// FileMetadata describes a file read via GitHubFileReader.ReadFile.
+type FileMetadata struct {
+	Path string `json:"path"`
+	Ref  string `json:"ref"`
+	SHA  string `json:"sha"`
+	Size int    `json:"size"`
+}
 
 // ReadFile fetches the raw bytes and metadata of a single file at ref.
 func (r *GitHubFileReader) ReadFile(ctx context.Context, ref GitHubFileRef) ([]byte, FileMetadata, error) {

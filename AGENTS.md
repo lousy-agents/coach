@@ -171,7 +171,7 @@ Every new feature and every bug fix shall begin with a failing acceptance test, 
 - Use Ginkgo v2 + Gomega (`github.com/onsi/ginkgo/v2`, `github.com/onsi/gomega`).
 - Spec style: `Describe` / `When` / `It` (and `DescribeTable` when useful) that read as EARS/acceptance-criteria statements.
 - Layout: `*_acceptance_test.go` plus `acceptance_suite_test.go` with a `TestXxxAcceptance` entrypoint, so `mise run test-acceptance-fast` (`go test … -run Acceptance`) picks them up.
-- Reference examples: `cmd/coach/baseline_acceptance_test.go`, `pkg/githubingest/acceptance_test.go`.
+- Reference examples: `cmd/coach/baseline_acceptance_test.go`, `pkg/githubingest/read_file_acceptance_test.go`.
 - Plain unit tests (`*_test.go` without the acceptance suite role) may use stdlib `testing` + table tests; that is not a substitute for acceptance coverage of new features or bug fixes.
 - Exception: thin stdlib `Test*Acceptance` wrappers that only call a shared harness (e.g. `internal/acceptanceharness/queueconformance/acceptance_test.go`) are allowed where they are not the behavioral specs themselves.
 - Mechanical guard (when present): `mise run acceptance-style-check`.
