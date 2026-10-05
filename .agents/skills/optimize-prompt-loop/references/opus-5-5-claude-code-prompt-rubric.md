@@ -43,7 +43,7 @@ Tags: `[O55 § H]` is the Opus 5.5 guide under heading H, and `[O55 <page> § H]
 | Aggregate | Verdict | Loop action |
 |---|---|---|
 | ≥ 85 and no criterion ≤ 1 | `pass` | Fit for Opus 5.5; fix any remaining problem per the stop rule. |
-| ≥ 70, or ≥ 85 with a criterion ≤ 1 | `revise` | Apply the top-3 fixes, re-judge. |
+| 70–84, or ≥ 85 with a criterion ≤ 1 | `revise` | Apply the top-3 fixes, re-judge. |
 | < 70 | `rework` | Structural rewrite using the skill's prompt shape, then re-judge. |
 | any, gate failed | `blocked` | Fix the gate first. |
 
@@ -114,7 +114,7 @@ Weights are relative. Conditional criteria drop out when N/A.
 
 | Score | Anchor |
 |---|---|
-| 3 | Prompt complexity matches the session effort: at `low`/`medium` an ordered work list and one narrow check; at `high`+ decision criteria and edge cases. No thinking-volume instructions ("think carefully", "think step by step", "don't overthink", "don't think"). |
+| 3 | Prompt complexity matches the session effort: at `low`/`medium` an ordered work list and narrow, concrete checks; at `high`+ decision criteria and edge cases. No thinking-volume instructions ("think carefully", "think step by step", "don't overthink", "don't think"). |
 | 2 | Fits the effort but carries one thinking-volume line or one over-prescribed reasoning script. |
 | 1 | Mismatched: an ambiguous multi-step task with no ordered work list at `low`, heavy reasoning scaffolding on a simple task, or two or more thinking-volume lines. |
 | 0 | Hand-scripts the whole thought process, or forbids thinking. (Asking for reasoning in the reply is G2.) |
@@ -171,7 +171,7 @@ Weights are relative. Conditional criteria drop out when N/A.
 
 | Score | Anchor |
 |---|---|
-| 3 | No sentence removable without changing behaviour; long inputs precede the ask; distinct content wrapped in tags; no duplicated project instructions. |
+| 3 | No sentence removable without changing behaviour; long inputs precede the ask; distinct content wrapped in tags or labelled sections; no restated project instructions (a pointer such as "`CLAUDE.md` covers the test commands", or an instruction to read it, is not duplication). |
 | 2 | Lean with minor redundancy, or one block that belongs in `CLAUDE.md`. |
 | 1 | Noticeable padding, repetition, or the ask buried under long input. |
 | 0 | Mostly filler, or duplicates `CLAUDE.md` at length. |
@@ -322,8 +322,8 @@ You are scoring a prompt intended for Claude Opus 5.5 running in Claude Code. Sc
 > You are an expert Go engineer. CRITICAL: you MUST think carefully and deeply before every edit. Clean up the logging in `internal/api/`. Think step by step through each file. When you're done, spawn two subagents to double-check your changes, then run a final verification pass yourself.
 
 - G1–G4 pass. C10 triggered (subagents); C11–C15 N/A.
-- C1 = 1 ("clean up" is an activity; no end state or done condition). C2 = 1 (silent on scope for a cleanup). C3 = 0 (persona, CRITICAL/MUST, double-check ritual). C4 = 1 (two thinking-volume lines; `[O55 § Calibrate effort]`). C5 = 2 (path named, no inspect-first step). C6 = 0 (verifier subagents plus a verification pass). C7 = 1 (no stop condition). C8 = 1 (no output target). C9 = 2. C10 = 0.
-- Aggregate ≈ 30 → `rework`. Top fixes: C3 and C6 (delete the persona, CRITICAL line and both verification sentences), C1 (end state and done condition). Most of the fix is deletion.
+- C1 = 1 ("clean up" is an activity; no end state or done condition). C2 = 2 (a directory bound, nothing on unrelated findings). C3 = 0 (persona, CRITICAL/MUST, double-check ritual). C4 = 1 (two thinking-volume lines; `[O55 § Calibrate effort]`). C5 = 2 (path named, no inspect-first step). C6 = 0 (verifier subagents plus a verification pass). C7 = 1 (no stop condition). C8 = 1 (no output target). C9 = 1 (persona and thinking lines are padding). C10 = 0.
+- Aggregate ≈ 32 → `rework`. Top fixes: C3 and C6 (delete the persona, CRITICAL line and both verification sentences), C1 (end state and done condition). Most of the fix is deletion.
 
 **Example B — fitted prompt (expect `pass`)**
 
@@ -346,8 +346,8 @@ You are scoring a prompt intended for Claude Opus 5.5 running in Claude Code. Sc
 > Output: what changed and why, in at most five lines.
 
 - G1–G4 pass; C10–C15 N/A.
-- C2 = 0 ("improve anything else … you think could be better" invites open-ended work). C7 = 2 (boundaries inherited, stop implicit in the done condition). All others = 3.
-- Aggregate ≈ 83 → `revise`. If a judge scores C2 at 1, the aggregate is ≈ 88 but a criterion ≤ 1 still gives `revise`. The single fix is to replace the "while you're in there" clause with "list other problems at the end rather than fixing them".
+- C1 = 2 (the open invitation adds a deliverable it never names). C2 = 0 ("improve anything else … you think could be better" invites open-ended work). C7 = 2 (no stop line; stop implicit in the done condition). All others = 3.
+- Aggregate ≈ 78 → `revise`; with C2 at 1 it is ≈ 82, still `revise`. Replacing the "while you're in there" clause with "list other problems at the end rather than fixing them" fixes C1 and C2 together.
 
 ---
 
