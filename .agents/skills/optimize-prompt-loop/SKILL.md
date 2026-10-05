@@ -47,8 +47,13 @@ Never invent a model name, effort level, tool, permission, or capability. Do not
    - In an agent harness, name only tools and actions the harness actually makes available. Tell the agent to inspect local instructions and current state before acting; do not prescribe unsupported syntax or capabilities.
    - For a direct-chat harness, remove repository/tool instructions and instead request the needed context in the response.
    - If model, harness, or effort is undisclosed, write capability-neutral instructions and label the uncertainty rather than guessing.
-6. **Return the optimized prompt.** Make it self-contained enough to paste into the same runtime. Include only sections that earn their place: `Objective`, `Context`, `Constraints`, `Assumptions or question`, `Work`, `Verification`, and `Output`.
-7. **Execute only when asked.** If the user asked to optimize and execute, use the optimized prompt once. Do not recursively optimize the optimization prompt. If a material answer is missing, ask the single question selected in step 3 instead of fabricating it.
+6. **Apply the target model's rubric.** This is the last optimization phase. The target model is the one the caller names as the model to optimize for; if the caller names none, it is the model the runtime profile discloses. Look it up in the table below. On a match, load the listed file and run its loop on the draft from steps 4–5: judge the draft against the rubric, revise it to fix every problem the rubric reports, and repeat until no problems remain or five passes have run, as the rubric's stop rule defines. Keep the scoring internal and do not emit the rubric's JSON; add one line to Notes: `- Rubric: <rubric_version>, final verdict <verdict>`. With no match, or a model that is `not disclosed`, skip this step; never infer the model from behavior.
+
+   | Target model | Rubric |
+   |---|---|
+   | Claude Opus 5.5 | `references/opus-5-5-claude-code-prompt-rubric.md` |
+7. **Return the optimized prompt.** Make it self-contained enough to paste into the same runtime. Include only sections that earn their place: `Objective`, `Context`, `Constraints`, `Assumptions or question`, `Work`, `Verification`, and `Output`.
+8. **Execute only when asked.** If the user asked to optimize and execute, use the optimized prompt once. Do not recursively optimize the optimization prompt. If a material answer is missing, ask the single question selected in step 3 instead of fabricating it.
 
 ## Prompt shape
 

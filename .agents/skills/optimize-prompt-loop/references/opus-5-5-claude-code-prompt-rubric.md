@@ -36,13 +36,13 @@ Tags: `[O55 § H]` is the Opus 5.5 guide under heading H, and `[O55 <page> § H]
 - Conditional criteria (C10–C15) are scored only when their trigger applies; otherwise mark `N/A` and exclude the weight.
 - **Aggregate** = `100 × Σ(weight × score) / Σ(weight × 3)` over applicable criteria.
 - A failed **hard gate** (Section 3) caps the aggregate at **40** and sets `verdict: "blocked"`.
-- Quote **evidence** (verbatim span, or "absent") for every score, and give **one fix** for every criterion scoring ≤ 1. A fix is an edit to the prompt, not advice to the user.
+- Quote **evidence** (verbatim span, or "absent") for every score, and give **one fix** for every criterion scoring below 3. A fix is an edit to the prompt, not advice to the user.
 
 **Verdict bands** (after gates):
 
 | Aggregate | Verdict | Loop action |
 |---|---|---|
-| ≥ 85 and no criterion ≤ 1 | `pass` | Stop. |
+| ≥ 85 and no criterion ≤ 1 | `pass` | Fit for Opus 5.5; fix any remaining problem per the stop rule. |
 | ≥ 70, or ≥ 85 with a criterion ≤ 1 | `revise` | Apply the top-3 fixes, re-judge. |
 | < 70 | `rework` | Structural rewrite using the skill's prompt shape, then re-judge. |
 | any, gate failed | `blocked` | Fix the gate first. |
@@ -116,7 +116,7 @@ Weights are relative. Conditional criteria drop out when N/A.
 |---|---|
 | 3 | Prompt complexity matches the session effort: at `low`/`medium` an ordered work list and one narrow check; at `high`+ decision criteria and edge cases. No thinking-volume instructions ("think carefully", "think step by step", "don't overthink", "don't think"). |
 | 2 | Fits the effort but carries one thinking-volume line or one over-prescribed reasoning script. |
-| 1 | Mismatched: an ambiguous multi-step task with no ordered work list at `low`, or heavy reasoning scaffolding on a simple task. |
+| 1 | Mismatched: an ambiguous multi-step task with no ordered work list at `low`, heavy reasoning scaffolding on a simple task, or two or more thinking-volume lines. |
 | 0 | Hand-scripts the whole thought process, or forbids thinking. (Asking for reasoning in the reply is G2.) |
 
 **Fix pattern:** delete thinking-volume lines; turn scripted reasoning into decision criteria. If the task needs more depth, note in `stop_reason` that effort should rise; do not lengthen the prompt for it.
@@ -249,7 +249,7 @@ Weights are relative. Conditional criteria drop out when N/A.
 1. **Read the runtime profile**: prompt type, effort, whether `CLAUDE.md` exists and what it covers, task class. Mark anything missing `undisclosed` and judge capability-neutral.
 2. **Run G1–G4.** On a failure, record it, still score the rest, cap at 40, set `blocked`.
 3. **Determine triggers** for C10–C15.
-4. **Score** each applicable criterion with quoted evidence; write one positive, prompt-edit fix for each score ≤ 1 that respects the anti-oscillation rule.
+4. **Score** each applicable criterion with quoted evidence; write one positive, prompt-edit fix for each score below 3 that respects the anti-oscillation rule.
 5. **Compute** the aggregate and verdict.
 6. **Rank the top three fixes** by `weight × (3 − score)`; on ties prefer deletions.
 7. **Emit** the JSON (Section 6), then a ≤ 5-line summary. The judge does not rewrite the prompt.
@@ -288,13 +288,12 @@ Weights are relative. Conditional criteria drop out when N/A.
 }
 ```
 
-**Stop rule** (the one rule a loop using this rubric follows; it replaces any separate pass count). Stop at the first of:
+**Stop rule** (the one rule a loop using this rubric follows; it replaces any separate pass count). A *problem* is a failed gate or an applicable criterion scoring below 3. Each pass judges the current draft, then revises it to fix every problem a prompt edit can fix. Stop at the first of:
 
-1. verdict `pass`;
-2. a pass after the first that raised the aggregate by fewer than 3 points with no gate failing (diminishing returns);
-3. the pass ceiling: 2 for a simple single-step task, 4 for ambiguous, high-stakes or multi-step work.
+1. no problems remain, setting aside any gap that only the user's answer can close (record those as assumptions or the one question);
+2. five judged passes.
 
-When (2) or (3) ends the loop below `pass`, the loop reports the last verdict to the user rather than continuing. A gate still failing at the ceiling reports `blocked`.
+The final verdict is the band of the last judged draft. When (2) ends the loop with problems left, report that verdict rather than continuing; a gate still failing reports `blocked`. A criterion that reverses direction across passes (1 → 3 → 1) is resolved in favour of the shorter draft.
 
 ---
 
@@ -311,11 +310,50 @@ When (2) or (3) ends the loop below `pass`, the loop reports the last verdict to
 ## 8. Judge system prompt (paste-ready)
 
 ```
-You are scoring a prompt intended for Claude Opus 5.5 running in Claude Code. Score the prompt, not any output you would produce from it. Apply the attached rubric exactly: run the four hard gates, mark conditional criteria N/A when their trigger is absent, score each applicable criterion 0-3 against its anchors, quote verbatim evidence or write "absent", and write one positive, prompt-edit fix for every criterion scoring 1 or below. Prefer fixes that delete text. Compute the weighted aggregate, the verdict band, and the top three fixes ranked by weight x (3 - score). If a previous result is provided, report the delta, flag any criterion whose score reversed direction, and apply the stop rule. Return the JSON first, then a summary of at most five lines. Do not rewrite the prompt.
+You are scoring a prompt intended for Claude Opus 5.5 running in Claude Code. Score the prompt, not any output you would produce from it. Apply the attached rubric exactly: run the four hard gates, mark conditional criteria N/A when their trigger is absent, score each applicable criterion 0-3 against its anchors, quote verbatim evidence or write "absent", and write one positive, prompt-edit fix for every criterion scoring below 3. Prefer fixes that delete text. Compute the weighted aggregate, the verdict band, and the top three fixes ranked by weight x (3 - score). If a previous result is provided, report the delta, flag any criterion whose score reversed direction, and apply the stop rule. Return the JSON first, then a summary of at most five lines. Do not rewrite the prompt.
 ```
 
 ---
 
 ## 9. Calibration examples (`task`, effort `medium`, `CLAUDE.md` present)
 
-**Example A — fails an Opus 5.5-specific gate (expect `blocked
+**Example A — inherited prompt; fails Opus 5.5-specific C4 (expect `rework`)**
+
+> You are an expert Go engineer. CRITICAL: you MUST think carefully and deeply before every edit. Clean up the logging in `internal/api/`. Think step by step through each file. When you're done, spawn two subagents to double-check your changes, then run a final verification pass yourself.
+
+- G1–G4 pass. C10 triggered (subagents); C11–C15 N/A.
+- C1 = 1 ("clean up" is an activity; no end state or done condition). C2 = 1 (silent on scope for a cleanup). C3 = 0 (persona, CRITICAL/MUST, double-check ritual). C4 = 1 (two thinking-volume lines; `[O55 § Calibrate effort]`). C5 = 2 (path named, no inspect-first step). C6 = 0 (verifier subagents plus a verification pass). C7 = 1 (no stop condition). C8 = 1 (no output target). C9 = 2. C10 = 0.
+- Aggregate ≈ 30 → `rework`. Top fixes: C3 and C6 (delete the persona, CRITICAL line and both verification sentences), C1 (end state and done condition). Most of the fix is deletion.
+
+**Example B — fitted prompt (expect `pass`)**
+
+> Objective: every HTTP handler under `internal/api/` (11 files) logs through `log/slog` instead of the deprecated `logx` package, so the platform team can turn on JSON log shipping next sprint.
+> Context: `CLAUDE.md` covers test and lint commands. `internal/logging/slog.go` already builds the shared logger.
+> Constraints: change only files under `internal/api/`; keep log levels and message text as they are; if a `logx` call has no direct `slog` equivalent, use the closest level and list it in your summary. If the plan looks wrong, say so in a sentence and continue as asked.
+> Work: read `CLAUDE.md` and `internal/logging/slog.go` first; make targeted edits; list unrelated problems at the end rather than fixing them. Commit on the current branch and leave pushing to me. End the turn when done, or when a decision only I can make blocks you.
+> Done when: `go test ./internal/api/...` passes and `grep -rn logx internal/api` returns nothing. If a test is wrong, say so instead of working around it.
+> Output: one line per file changed, then any calls you had to map by judgment and any unrelated problems.
+
+- G1–G4 pass; C10–C15 N/A.
+- C1–C9 = 3 (C4: ordered work list and one narrow check suit `medium`, no thinking-volume lines). Aggregate 100 → `pass`. A judge giving 2 on C8 or C9 still lands ≥ 95.
+
+**Example C — borderline (expect `revise`)**
+
+> Objective: `pkg/report/render.go` renders the summary table with aligned columns for every row width; today rows longer than 40 characters break alignment (issue #212).
+> Context: `CLAUDE.md` covers commands. The golden files in `pkg/report/testdata/` define the expected output.
+> Work: read `CLAUDE.md`, `render.go` and the golden files first; fix the alignment; while you're in there, improve anything else in the package you think could be better.
+> Done when: `go test ./pkg/report/...` passes with a new golden case for a 60-character row. If a golden file is wrong, say so instead of regenerating it.
+> Output: what changed and why, in at most five lines.
+
+- G1–G4 pass; C10–C15 N/A.
+- C2 = 0 ("improve anything else … you think could be better" invites open-ended work). C7 = 2 (boundaries inherited, stop implicit in the done condition). All others = 3.
+- Aggregate ≈ 83 → `revise`. If a judge scores C2 at 1, the aggregate is ≈ 88 but a criterion ≤ 1 still gives `revise`. The single fix is to replace the "while you're in there" clause with "list other problems at the end rather than fixing them".
+
+---
+
+## 10. Provenance and caveats
+
+- Read 2026-10-05. Every gate and criterion carries its source tag; the maintainer ledger is in `../provenance/opus-5-5-rubric-provenance.md`.
+- Opus 5 behaviours (`[O5]`) are used where the Opus 5.5 guide says Opus 5 prompts carry over and is otherwise silent.
+- API and harness configuration (`max_tokens`, `thinking.display`, effort selection, turn-scoped system messages, time budgets, pasted-content IDs, refusal fallback) is out of scope for scoring.
+- Weights are an impact ordering, not a measured regression; re-validate against your own evals.

@@ -114,6 +114,7 @@ Where Opus 5.5 guidance differs from a `sonnet5-cc-1.0` criterion, the rubric fo
 | No delegation criterion. | C10 delegation proportionality (conditional). | Opus 5 "delegates to subagents more readily than prior models" [O5 § Controlling subagent spawning]. |
 | No early-stop guidance. | C7 credits naming the stops wanted and the early stops to avoid. | [O55 § Unattended agentic runs] |
 | No pasted-content criterion. | C15 (conditional). | [O55 § Mark pasted text in user messages] |
+| `stop` is true on `pass`, on a gain under 3 points, or after 4 iterations. | One stop rule: loop until no gate fails and no criterion is below 3 (excluding gaps only the user can close), or five passes. Every score below 3 gets a fix. | Owner's requirement for optimize-prompt-loop's final phase; merges the skill's pass limit with the rubric's bands. |
 | Calibration targets `task` prompts only implicitly. | Calibrated for `task` prompts. The four prompt types are kept for skill-reviewer reuse. | Scope of this skill. |
 
 ## 6. Deferred
