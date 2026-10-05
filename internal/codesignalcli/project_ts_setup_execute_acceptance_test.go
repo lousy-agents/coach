@@ -3,7 +3,6 @@ package codesignalcli
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -63,11 +62,11 @@ var _ = Describe("codesignalcli.RunConfirmedSetup's git usage", func() {
 		GinkgoT().Setenv("PATH", setupExecutionAcceptancePath(stubDir))
 
 		var invocations [][]string
-		originalGit := gitCommandContext
-		DeferCleanup(func() { gitCommandContext = originalGit })
-		gitCommandContext = func(ctx context.Context, dir string, args ...string) *exec.Cmd {
+		originalGit := runSetupResidueGit
+		DeferCleanup(func() { runSetupResidueGit = originalGit })
+		runSetupResidueGit = func(dir string, args ...string) ([]byte, error) {
 			invocations = append(invocations, append([]string(nil), args...))
-			return originalGit(ctx, dir, args...)
+			return originalGit(dir, args...)
 		}
 
 		preview, err := BuildSetupPreview(SetupChoice{Kind: SetupChoiceProjectPackage}, ReadinessCheck{State: ReadinessPass, Kind: "npm"}, workDir)

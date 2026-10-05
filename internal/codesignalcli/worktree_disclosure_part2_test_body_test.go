@@ -12,9 +12,7 @@ func body_worktreeDisclosurePart2Test_154(t *testing.T, tt struct {
 	err    error
 	want   []codesignal.Diagnostic
 }) {
-	withDirtyWorktreeGit(t, func(string, ...string) ([]byte, error) {
-		return tt.output, tt.err
-	})
+	withWorktreeStatusOutput(t, tt.output, tt.err)
 
 	got := WorkingTreeDisclosureDiagnostics("repo")
 	if len(got) != len(tt.want) {

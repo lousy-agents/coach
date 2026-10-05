@@ -21,7 +21,7 @@ import (
 // this check has no basis for (R1, mirroring checkPackageManager's own
 // policyPassed gate).
 func checkProjectShape(dir, revision string, roots []string, policyPassed bool) (ReadinessCheck, error) {
-	exists, err := fileExistsAtRevision(dir, revision, "package.json")
+	exists, err := fileExistsAtRevision(runProjectConfigGit, dir, revision, "package.json")
 	if err != nil {
 		return ReadinessCheck{}, err
 	}
@@ -66,7 +66,7 @@ func packageJSONExistsWalkingUp(dir, revision, root string) (bool, error) {
 		return false, nil
 	}
 	for {
-		exists, err := fileExistsAtRevision(dir, revision, path.Join(current, "package.json"))
+		exists, err := fileExistsAtRevision(runProjectConfigGit, dir, revision, path.Join(current, "package.json"))
 		if err != nil || exists {
 			return exists, err
 		}

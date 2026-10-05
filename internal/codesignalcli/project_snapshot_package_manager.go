@@ -3,12 +3,30 @@ package codesignalcli
 import (
 	"context"
 	"path"
+	"time"
 )
 
 const (
 	packageManagerOriginField    = "package_manager_field"
 	packageManagerOriginLockfile = "lockfile"
 )
+
+// Committed-manifest read budgets for revision-scoped package-manager
+// detection: one small package.json or lockfile presence check, bounded the
+// same as the project-config read so a hostile manifest or hung git child
+// fails closed.
+const (
+	maxPackageManagerRevisionBytes  = 1 << 20  // 1 MiB
+	maxPackageManagerRevisionStderr = 64 << 10 // 64 KiB
+	packageManagerRevisionTimeout   = 30 * time.Second
+)
+
+// runPackageManagerRevisionGit is the bounded git read behind
+// snapshotPackageManagerAtRevision. Tests may replace it to inject git
+// failures into revision-scoped detection.
+var runPackageManagerRevisionGit = func(dir string, args ...string) ([]byte, error) {
+	return runGitBytesBounded(dir, maxPackageManagerRevisionBytes, maxPackageManagerRevisionStderr, packageManagerRevisionTimeout, args...)
+}
 
 // snapshotProbePackageManagerVersion is the probe seam for
 // snapshotPackageManagerAtRevision. Tests may replace it to verify that the

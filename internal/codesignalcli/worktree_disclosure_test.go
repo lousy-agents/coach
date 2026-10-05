@@ -12,9 +12,7 @@ func TestWorktreeDisclosureDiagnosticsBoundsTheSample(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		records = append(records, "?? bulk"+twoDigits(i)+".go")
 	}
-	withDirtyWorktreeGit(t, func(string, ...string) ([]byte, error) {
-		return porcelainZ(records...), nil
-	})
+	withWorktreeStatusOutput(t, porcelainZ(records...), nil)
 
 	got := WorkingTreeDisclosureDiagnostics("repo")
 	if len(got) != 1 {
@@ -49,11 +47,16 @@ func porcelainZ(records ...string) []byte {
 	return []byte(b.String())
 }
 
-func withDirtyWorktreeGit(t *testing.T, fn func(dir string, args ...string) ([]byte, error)) {
+func withWorktreeStatusOutput(t *testing.T, output []byte, err error) {
 	t.Helper()
-	original := runDirtyWorktreeGit
-	runDirtyWorktreeGit = fn
-	t.Cleanup(func() { runDirtyWorktreeGit = original })
+	original := listWorktreeStatus
+	listWorktreeStatus = func(string) ([]worktreeStatusEntry, error) {
+		if err != nil {
+			return nil, err
+		}
+		return parseWorktreeStatus(output), nil
+	}
+	t.Cleanup(func() { listWorktreeStatus = original })
 }
 
 func twoDigits(n int) string {

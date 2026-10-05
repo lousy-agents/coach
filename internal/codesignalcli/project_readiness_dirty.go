@@ -49,16 +49,21 @@ func detectRelevantDirtyWorktree(dir string, roots []string, policyPath string) 
 	return ReadinessDirtyWorktree{RelevantChanges: len(relevant) > 0, Paths: relevant}, nil
 }
 
-// gitWorktreeStatus parses `git status --porcelain=v1 --untracked-files=all
-// -z`. Rename/copy records emit two NUL-delimited fields (new path, then
-// old path); the old path is consumed and discarded since only path
-// identity, never diff content, is used by any caller.
+// gitWorktreeStatus lists every changed or untracked worktree path via
+// `git status --porcelain=v1 --untracked-files=all -z`.
 func gitWorktreeStatus(dir string) ([]worktreeStatusEntry, error) {
 	output, err := runDirtyWorktreeGit(dir, "status", "--porcelain=v1", "--untracked-files=all", "-z")
 	if err != nil {
 		return nil, err
 	}
+	return parseWorktreeStatus(output), nil
+}
 
+// parseWorktreeStatus parses `git status --porcelain=v1 -z` output.
+// Rename/copy records emit two NUL-delimited fields (new path, then old
+// path); the old path is consumed and discarded since only path identity,
+// never diff content, is used by any caller.
+func parseWorktreeStatus(output []byte) []worktreeStatusEntry {
 	fields := splitNULPaths(output)
 	entries := make([]worktreeStatusEntry, 0, len(fields))
 	for i := 0; i < len(fields); {
@@ -73,5 +78,5 @@ func gitWorktreeStatus(dir string) ([]worktreeStatusEntry, error) {
 			i++
 		}
 	}
-	return entries, nil
+	return entries
 }

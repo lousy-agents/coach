@@ -6,8 +6,8 @@ import (
 )
 
 // fileExistsAtRevision reports whether repoPath exists as a blob at
-// revision, without reading its content. It reuses runProjectConfigGit's
-// bounded git invocation rather than a bespoke exec call.
+// revision, without reading its content, through the caller's bounded git
+// runner rather than a bespoke exec call.
 //
 // The check runs in three steps because no single git-plumbing call
 // unambiguously reports "this path is absent" separately from "this
@@ -41,12 +41,12 @@ import (
 //     itself, so a corrupt/missing blob object still resolves a SHA there;
 //     any failure here means the object store itself is unreadable, which
 //     must also fail closed rather than report the path absent.
-func fileExistsAtRevision(dir, revision, repoPath string) (bool, error) {
-	if _, err := runProjectConfigGit(dir, "cat-file", "-e", revision+"^{commit}"); err != nil {
+func fileExistsAtRevision(run func(dir string, args ...string) ([]byte, error), dir, revision, repoPath string) (bool, error) {
+	if _, err := run(dir, "cat-file", "-e", revision+"^{commit}"); err != nil {
 		return false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: revision %q could not be verified: %s", revision, err)}
 	}
 
-	output, err := runProjectConfigGit(dir, "ls-tree", "--full-tree", revision, "--", repoPath)
+	output, err := run(dir, "ls-tree", "--full-tree", revision, "--", repoPath)
 	if err != nil {
 		return false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be resolved at revision %q: %s", repoPath, revision, err)}
 	}
@@ -55,7 +55,7 @@ func fileExistsAtRevision(dir, revision, repoPath string) (bool, error) {
 		return false, nil
 	}
 
-	if _, err := runProjectConfigGit(dir, "cat-file", "-e", blobSHA); err != nil {
+	if _, err := run(dir, "cat-file", "-e", blobSHA); err != nil {
 		return false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be read at revision %q: %s", repoPath, revision, err)}
 	}
 	return true, nil

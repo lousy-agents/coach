@@ -37,7 +37,7 @@ func TestFileExistsAtRevisionIgnoresTreeEntries(t *testing.T) {
 	}
 	revision := strings.TrimSpace(string(revOut))
 
-	exists, err := fileExistsAtRevision(repo, revision, "package.json")
+	exists, err := fileExistsAtRevision(runProjectConfigGit, repo, revision, "package.json")
 	if err != nil {
 		t.Fatalf("fileExistsAtRevision returned error: %v", err)
 	}

@@ -13,6 +13,13 @@ func (s *boundedOutputSink) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// runSetupResidueGit is the bounded git read behind setupResidueChangedPaths.
+// Tests may replace it to observe exactly which git commands a setup run
+// issues.
+var runSetupResidueGit = func(dir string, args ...string) ([]byte, error) {
+	return runGitBytesBounded(dir, maxSetupResidueGitBytes, maxSetupResidueGitStderr, setupResidueGitTimeout, args...)
+}
+
 // setupResidueChangedPaths returns the untracked, modified, and gitignored
 // paths (`--ignored`, since a package-manager install typically leaves a
 // gitignored node_modules/ partially populated) that `git status --porcelain
@@ -34,7 +41,7 @@ func (s *boundedOutputSink) Write(p []byte) (int, error) {
 // failed -- in which case the returned paths are a best-effort fallback
 // (workingDirectory itself), not a real status read.
 func setupResidueChangedPaths(workingDirectory string) ([]string, bool) {
-	output, err := runGitBytesBounded(workingDirectory, maxSetupResidueGitBytes, maxSetupResidueGitStderr, setupResidueGitTimeout, "status", "--porcelain", "-z", "--ignored", "--", ".")
+	output, err := runSetupResidueGit(workingDirectory, "status", "--porcelain", "-z", "--ignored", "--", ".")
 	if err != nil {
 		return []string{workingDirectory}, true
 	}

@@ -235,7 +235,7 @@ func CheckProjectReadiness(dir, revision, configPath string) (*ReadinessResult, 
 }
 
 func checkPolicy(dir, revision, policyPath string) (ReadinessCheck, []string, error) {
-	exists, err := fileExistsAtRevision(dir, revision, policyPath)
+	exists, err := fileExistsAtRevision(runProjectConfigGit, dir, revision, policyPath)
 	if err != nil {
 		return ReadinessCheck{}, nil, err
 	}

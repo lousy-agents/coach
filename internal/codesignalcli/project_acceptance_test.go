@@ -754,17 +754,13 @@ var _ = Describe("project-config boundary budgets", func() {
 
 	It("surfaces a timed-out git child as project_config_invalid", func() {
 		originalRunner := runProjectConfigGit
-		originalGit := gitCommandContext
-		DeferCleanup(func() {
-			runProjectConfigGit = originalRunner
-			gitCommandContext = originalGit
-		})
+		DeferCleanup(func() { runProjectConfigGit = originalRunner })
 
-		gitCommandContext = func(ctx context.Context, dir string, args ...string) *exec.Cmd {
+		hungGit := func(ctx context.Context, dir string, args ...string) *exec.Cmd {
 			return exec.CommandContext(ctx, "sleep", "60")
 		}
 		runProjectConfigGit = func(dir string, args ...string) ([]byte, error) {
-			return runGitBytesBounded(dir, maxProjectConfigBytes, maxProjectConfigGitStderr, 50*time.Millisecond, args...)
+			return runGitBytesBoundedWith(hungGit, dir, maxProjectConfigBytes, maxProjectConfigGitStderr, 50*time.Millisecond, args...)
 		}
 
 		_, err := LoadProjectConfig(".", "HEAD", "project.json")

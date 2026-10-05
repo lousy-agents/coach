@@ -12,11 +12,11 @@ import (
 )
 
 func body_projectProvenanceAcceptanceTest_appendsAWorktreeReportReflectsCommittedHeadDiagn_16() {
-	original := runDirtyWorktreeGit
-	runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
-		return []byte("M  bun.lock\x00"), nil
+	original := listWorktreeStatus
+	listWorktreeStatus = func(string) ([]worktreeStatusEntry, error) {
+		return parseWorktreeStatus([]byte("M  bun.lock\x00")), nil
 	}
-	DeferCleanup(func() { runDirtyWorktreeGit = original })
+	DeferCleanup(func() { listWorktreeStatus = original })
 
 	dir := acceptanceTempGitRepo()
 	acceptanceCommitFile(dir, "a.go", "package a\n")
@@ -48,11 +48,11 @@ func body_projectProvenanceAcceptanceTest_appendsAWorktreeReportReflectsCommitte
 }
 
 func body_projectProvenanceAcceptanceTest_worktreeReportReflectsCommittedHeadMessageRefere_52() {
-	original := runDirtyWorktreeGit
-	runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
-		return []byte("?? bun.lock\x00"), nil
+	original := listWorktreeStatus
+	listWorktreeStatus = func(string) ([]worktreeStatusEntry, error) {
+		return parseWorktreeStatus([]byte("?? bun.lock\x00")), nil
 	}
-	DeferCleanup(func() { runDirtyWorktreeGit = original })
+	DeferCleanup(func() { listWorktreeStatus = original })
 
 	dir := acceptanceTempGitRepo()
 	acceptanceCommitFile(dir, "a.ts", "export const x = 1;\n")
@@ -81,11 +81,11 @@ func body_projectProvenanceAcceptanceTest_worktreeReportReflectsCommittedHeadMes
 }
 
 func body_projectProvenanceAcceptanceTest_doesNotEmitAWorktreeProvenanceDiagnosticWhenTheW_85() {
-	original := runDirtyWorktreeGit
-	runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
-		return []byte{}, nil
+	original := listWorktreeStatus
+	listWorktreeStatus = func(string) ([]worktreeStatusEntry, error) {
+		return parseWorktreeStatus([]byte{}), nil
 	}
-	DeferCleanup(func() { runDirtyWorktreeGit = original })
+	DeferCleanup(func() { listWorktreeStatus = original })
 
 	dir := acceptanceTempGitRepo()
 	acceptanceCommitFile(dir, "a.ts", "export const x = 1;\n")
@@ -112,11 +112,11 @@ func body_projectProvenanceAcceptanceTest_doesNotEmitAWorktreeProvenanceDiagnost
 }
 
 func body_projectProvenanceAcceptanceTest_emitsWorktreeStatusCheckFailedRatherThanDescribi_154() {
-	original := runDirtyWorktreeGit
-	runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
+	original := listWorktreeStatus
+	listWorktreeStatus = func(string) ([]worktreeStatusEntry, error) {
 		return nil, errors.New("simulated git status failure")
 	}
-	DeferCleanup(func() { runDirtyWorktreeGit = original })
+	DeferCleanup(func() { listWorktreeStatus = original })
 
 	dir := acceptanceTempGitRepo()
 	acceptanceCommitFile(dir, "a.ts", "export const x = 1;\n")

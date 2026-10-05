@@ -71,11 +71,11 @@ var _ = Describe("applyProjectBackend dirty-worktree diagnostic: error handling"
 var _ = Describe("applyProjectBackend diagnostics mutation contract", func() {
 	When("the backend returns no diagnostics and the worktree is dirty", func() {
 		It("does not mutate the caller's Input.Diagnostics backing array when appending the worktree diagnostic", func() {
-			original := runDirtyWorktreeGit
-			runDirtyWorktreeGit = func(dir string, args ...string) ([]byte, error) {
-				return []byte("M  bun.lock\x00"), nil
+			original := listWorktreeStatus
+			listWorktreeStatus = func(string) ([]worktreeStatusEntry, error) {
+				return parseWorktreeStatus([]byte("M  bun.lock\x00")), nil
 			}
-			DeferCleanup(func() { runDirtyWorktreeGit = original })
+			DeferCleanup(func() { listWorktreeStatus = original })
 
 			dir := acceptanceTempGitRepo()
 			acceptanceCommitFile(dir, "a.ts", "export const x = 1;\n")
@@ -112,11 +112,11 @@ var _ = Describe("applyProjectBackend diagnostics mutation contract", func() {
 var _ = Describe("snapshotReadPackageManagerField git error handling", func() {
 	When("git show fails for package.json but ls-tree and cat-file succeed", func() {
 		It("returns ambiguous rather than treating the blob read failure as a clean absent field", func() {
-			originalRunner := runProjectConfigGit
-			runProjectConfigGit = func(dir string, args ...string) ([]byte, error) {
+			originalRunner := runPackageManagerRevisionGit
+			runPackageManagerRevisionGit = func(dir string, args ...string) ([]byte, error) {
 				return body_projectProvenanceAcceptanceTest_234(dir, args, originalRunner)
 			}
-			DeferCleanup(func() { runProjectConfigGit = originalRunner })
+			DeferCleanup(func() { runPackageManagerRevisionGit = originalRunner })
 
 			dir := acceptanceTempGitRepo()
 			acceptanceCommitFile(dir, "package.json", `{"name":"x","packageManager":"pnpm@10.0.0"}`)
@@ -132,11 +132,11 @@ var _ = Describe("snapshotReadPackageManagerField git error handling", func() {
 var _ = Describe("snapshotDetectLockfileAtRoot git error handling", func() {
 	When("fileExistsAtRevision returns an error for a lockfile basename", func() {
 		It("returns ambiguous rather than treating the error as a clean absent lockfile", func() {
-			originalRunner := runProjectConfigGit
-			runProjectConfigGit = func(dir string, args ...string) ([]byte, error) {
+			originalRunner := runPackageManagerRevisionGit
+			runPackageManagerRevisionGit = func(dir string, args ...string) ([]byte, error) {
 				return body_projectProvenanceAcceptanceTest_257(dir, args, originalRunner)
 			}
-			DeferCleanup(func() { runProjectConfigGit = originalRunner })
+			DeferCleanup(func() { runPackageManagerRevisionGit = originalRunner })
 
 			dir := acceptanceTempGitRepo()
 			revision := acceptanceCommitFile(dir, "package.json", `{"name":"x","packageManager":"npm@11.0.0"}`)

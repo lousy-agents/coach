@@ -10,14 +10,14 @@ import (
 // ambiguous is true when a git operational error prevents determining whether
 // the field is present, distinct from a clean absent file (ok=false, ambiguous=false).
 func snapshotReadPackageManagerField(dir, revision, repoPath string) (kind string, ok bool, ambiguous bool) {
-	exists, err := fileExistsAtRevision(dir, revision, repoPath)
+	exists, err := fileExistsAtRevision(runPackageManagerRevisionGit, dir, revision, repoPath)
 	if err != nil {
 		return "", false, true
 	}
 	if !exists {
 		return "", false, false
 	}
-	data, err := runProjectConfigGit(dir, "show", revision+":"+repoPath)
+	data, err := runPackageManagerRevisionGit(dir, "show", revision+":"+repoPath)
 	if err != nil {
 		return "", false, true
 	}
@@ -48,7 +48,7 @@ func snapshotDetectLockfileAtRoot(dir, revision, root string) (kind string, ok b
 	found := map[string]bool{}
 	for basename, k := range packageManagerLockfileBasenames {
 		repoPath := joinRepoPath(root, basename)
-		exists, err := fileExistsAtRevision(dir, revision, repoPath)
+		exists, err := fileExistsAtRevision(runPackageManagerRevisionGit, dir, revision, repoPath)
 		if err != nil {
 			return "", false, true
 		}
