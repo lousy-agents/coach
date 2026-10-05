@@ -108,10 +108,17 @@ func aDefinedLayersPrefixesAreExactlyWhatUser(t *testing.T) {
 func expectNoPrefixAdoptsDiscoveredRoot(t *testing.T, result Result, discovered projectmodel.TSRootDiscoveryResult) {
 	t.Helper()
 	for _, layer := range result.Layers {
-		for _, prefix := range layer.Prefixes {
-			if slices.Contains(discovered.Roots, prefix) {
-				t.Fatalf("layer %q silently adopted discovered root %q as a prefix, Layers = %+v", layer.Name, prefix, result.Layers)
-			}
+		if root, adopted := adoptedDiscoveredRoot(layer.Prefixes, discovered.Roots); adopted {
+			t.Fatalf("layer %q silently adopted discovered root %q as a prefix, Layers = %+v", layer.Name, root, result.Layers)
 		}
 	}
+}
+
+func adoptedDiscoveredRoot(prefixes, roots []string) (string, bool) {
+	for _, prefix := range prefixes {
+		if slices.Contains(roots, prefix) {
+			return prefix, true
+		}
+	}
+	return "", false
 }

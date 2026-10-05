@@ -16,17 +16,11 @@ func countDiagnosticsOfKind(diagnostics []codesignal.Diagnostic, kind string) in
 	return count
 }
 
-func (b identityHandoffBackend) Analyze(context.Context, ProjectBackendRequest) (*ProjectBackendResult, error) {
-	return b.result, nil
-}
-
+// recordingProjectBackend records every request it is handed and answers
+// each with the same result.
 type recordingProjectBackend struct {
 	requests []ProjectBackendRequest
 	result   *ProjectBackendResult
-}
-
-type identityHandoffBackend struct {
-	result *ProjectBackendResult
 }
 
 func (b *recordingProjectBackend) Analyze(_ context.Context, req ProjectBackendRequest) (*ProjectBackendResult, error) {
