@@ -299,7 +299,7 @@ flowchart LR
 
 **Affected files**:
 
-- `internal/coachapi/types.go`, `internal/coachapi/types_test.go`
+- `internal/coachapi/job.go`, `report.go`, `api_contract.go`, and their `_test.go` files
 - `internal/coachapi/migrations/0001_init.sql`
 
 **Requirements**:
@@ -369,7 +369,7 @@ flowchart LR
 
 **Affected files**:
 
-- `internal/coachapi/server.go`, `server_test.go`, `store.go`, `store_memory.go`, `store_postgres.go`
+- `internal/coachapi/httpapi/server.go`, `server_acceptance_test.go`, `internal/coachapi/store.go`, `store/memory/`, `store/postgres/`
 - `internal/authz/` (or seam interface used by server)
 - `cmd/coach-api/main.go`
 
@@ -574,7 +574,7 @@ flowchart LR
 
 **Affected files**:
 
-- `internal/coachapi/handler_baseline.go`, plus tests
+- `internal/coachapi/baseline/scan.go`, plus tests
 
 **Requirements**:
 
