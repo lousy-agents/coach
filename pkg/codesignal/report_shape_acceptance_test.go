@@ -101,11 +101,15 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 			expectedKeys = reportJSONTagNames(reflect.TypeOf(codesignal.Report{}))
 		})
 
+		// project_* keys that schema-1 never emits:
+		// - project_changes/facts/summary/coverage: schema-2 always-present keys
+		// - project_provenance/scope/project_next_actions: schema-2 optional (omitempty); nil in an empty report
 		schema1ExcludedKeys := []string{
 			"project_changes", "project_facts", "project_summary", "project_coverage",
 			"project_provenance", "project_scope", "project_next_actions",
 		}
 
+		// optional project keys that schema-2 omits when nil/empty (omitempty)
 		schema2OptionalKeys := []string{
 			"project_provenance", "project_scope", "project_next_actions",
 		}

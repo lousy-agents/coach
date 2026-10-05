@@ -30,6 +30,7 @@ func TestBuild_InvalidFileChangeEmitsDiagnostic(t *testing.T) {
 		t.Fatalf("Report.Diagnostics length: got %d, want 2: %+v", len(report.Diagnostics), report.Diagnostics)
 	}
 
+	// Sorted by Path: "a.go" before "b.go".
 	if report.Diagnostics[0].Path != "a.go" {
 		t.Errorf("Diagnostics[0].Path: got %q, want %q", report.Diagnostics[0].Path, "a.go")
 	}

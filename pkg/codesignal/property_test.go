@@ -59,7 +59,8 @@ func reorderingScenarioInput() Input {
 					Path:        "a.go",
 					ParseStatus: semantics.ParseStatus("ok"),
 					Findings: []semantics.Finding{
-
+						// Two occurrences sharing the same key ("Dup", "x = 1") --
+						// exercises occurrence-ordinal grouping.
 						{Kind: "mutates_input", Name: "Dup", Location: semantics.Location{StartRow: 5}, Evidence: "x = 1"},
 						{Kind: "mutates_input", Name: "Dup", Location: semantics.Location{StartRow: 8}, Evidence: "x = 1"},
 						{Kind: "mutates_input", Name: "Alpha", Location: semantics.Location{StartRow: 12}, Evidence: "y = 2"},

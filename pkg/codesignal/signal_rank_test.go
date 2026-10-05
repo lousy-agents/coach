@@ -21,7 +21,10 @@ func TestSortSignals_AdvisorySeverityRanksAboveLow(t *testing.T) {
 }
 
 func TestSortSignals_UnknownSeverityIsNotUniversalBottomRank(t *testing.T) {
-
+	// known is high/medium/low: the property under test is that an unknown
+	// severity ties with "low" (rank 1) rather than sinking below every known
+	// severity. advisory's own rank is asserted separately in
+	// TestSortSignals_AdvisorySeverityRanksAboveLow.
 	known := []Severity{"high", "medium", "low"}
 	unknownRank := severityRank(Severity("bogus"))
 
@@ -40,6 +43,9 @@ func TestSortSignals_UnknownSeverityIsNotUniversalBottomRank(t *testing.T) {
 		t.Fatalf("severityRank(%q) = %d must not be strictly below every known severity's rank (known ranks: %+v) -- issue #259 latent trap", "bogus", unknownRank, ranks)
 	}
 
+	// An unrecognized Severity must not panic sortSignals, and since it ties
+	// with "low" at rank 1, ordering must fall through to the ID tiebreak
+	// deterministically regardless of input order (issue #259).
 	bogus := sortableSignal("a", "r", "f.go", "existing", false, Severity("bogus"), "medium", 0, 0)
 	low := sortableSignal("b", "r", "f.go", "existing", false, "low", "medium", 0, 0)
 
