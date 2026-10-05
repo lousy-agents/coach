@@ -27,10 +27,12 @@ type NarrowOptions struct {
 // opts keeps, and whose SignalsWithheld records what it left out. r must be
 // non-nil and unnarrowed.
 //
-// The severity floor applies first and the cap takes the leading signals of
-// what remains. Signals sort by lifecycle group before severity, so the two
-// narrowings do not commute; Narrow is the only entry point and fixes the
-// order, so the record always describes the view that was produced.
+// When opts narrow anything, Narrow ranks its copy of the signals, so a report
+// in any order yields the same view. The severity floor applies first and the
+// cap takes the leading signals of what remains. Signals sort by lifecycle
+// group before severity, so the two narrowings do not commute; Narrow is the
+// only entry point and fixes the order, so the record always describes the view
+// that was produced.
 //
 // Summary, Coverage, Diagnostics and every project summary and coverage block
 // are shared with r untouched. ProjectChanges follow their mirrored signal by
@@ -48,7 +50,8 @@ func (r *Report) Narrow(opts NarrowOptions) (*Report, error) {
 	}
 
 	var withheld SignalsWithheld
-	kept := r.Signals
+	kept := slices.Clone(r.Signals)
+	sortSignals(kept)
 	if opts.MinSeverity != "" {
 		withheld.MinSeverity = opts.MinSeverity
 		kept, withheld.BelowMinSeverity = atOrAboveFloor(kept, opts.MinSeverity)

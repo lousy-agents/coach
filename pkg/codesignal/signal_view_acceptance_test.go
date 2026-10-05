@@ -90,6 +90,29 @@ var _ = Describe("Narrowed report views", func() {
 		})
 	})
 
+	When("the caller's report lists its signals in reverse rank order", func() {
+		It("keeps the highest-ranked signal under a cap of one", func() {
+			built := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{
+				ccFile("a.go", 16),
+				ccFile("z.go", 29),
+			}})
+			Expect(evidenceAndPath(built.Signals)).To(Equal([]string{
+				"z.go cognitive_complexity=29",
+				"a.go cognitive_complexity=16",
+			}))
+			report := *built
+			report.Signals = []codesignal.Signal{built.Signals[1], built.Signals[0]}
+
+			view := narrow(&report, codesignal.NarrowOptions{Top: 1})
+
+			Expect(evidenceAndPath(view.Signals)).To(Equal([]string{"z.go cognitive_complexity=29"}))
+			Expect(evidenceAndPath(report.Signals)).To(Equal([]string{
+				"a.go cognitive_complexity=16",
+				"z.go cognitive_complexity=29",
+			}))
+		})
+	})
+
 	When("both narrowings withhold signals", func() {
 		It("accounts for every signal once: the floor first, then the cap over what remains", func() {
 			report := viewReport("high", "high", "low", "low")

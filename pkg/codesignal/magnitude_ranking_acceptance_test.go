@@ -106,10 +106,10 @@ var _ = Describe("Magnitude ranking of same-tier signals", func() {
 	})
 
 	When("branch_density and max_nesting_depth signals share severity and confidence", func() {
-		It("ranks them by ratio-to-threshold rather than raw metric value", func() {
-			// branch_sum=14 is 14/12 of its threshold; max_nesting_depth=7 is 7/4.
-			// The raw value 14 exceeds 7 and a.go precedes z.go, so only the
-			// ratio puts z.go first.
+		It("never compares their magnitudes: each keeps its path position", func() {
+			// branch_sum=14 is 14/12 of its threshold and max_nesting_depth=7 is
+			// 7/4, but the two metrics are unlike and neither rule has a peer to
+			// swap with, so path order decides.
 			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{
 				metricsFile("a.go", semantics.StructuralMetrics{Ifs: 14}),
 				metricsFile("z.go", semantics.StructuralMetrics{MaxNestingDepth: 7}),
@@ -119,9 +119,40 @@ var _ = Describe("Magnitude ranking of same-tier signals", func() {
 			Expect(report.Signals[0].Severity).To(Equal(report.Signals[1].Severity))
 			Expect(report.Signals[0].Confidence).To(Equal(report.Signals[1].Confidence))
 			Expect(evidenceAndPath(report.Signals)).To(Equal([]string{
-				"z.go max_nesting_depth=7",
 				"a.go branch_sum=14",
+				"z.go max_nesting_depth=7",
 			}))
+		})
+	})
+
+	When("a tier mixes two peers of one metric rule with signals of other rules", func() {
+		It("swaps only the peers by magnitude and leaves every other signal at its path position", func() {
+			files := []codesignal.FileChange{
+				metricsFile("a.go", semantics.StructuralMetrics{Ifs: 14}),
+				{Path: "b.go", Status: "modified", Head: cleanResult("b.go", mutation("Update", 4))},
+				metricsFile("c.go", semantics.StructuralMetrics{MaxNestingDepth: 5}),
+				metricsFile("z.go", semantics.StructuralMetrics{Ifs: 36}),
+			}
+
+			report := build(codesignal.Options{}, codesignal.Input{Files: files})
+
+			Expect(report.Signals).To(HaveLen(4))
+			for _, signal := range report.Signals {
+				Expect(signal.Severity).To(Equal(codesignal.Severity("medium")))
+				Expect(signal.Confidence).To(Equal(codesignal.Confidence("medium")))
+			}
+			var got []string
+			for _, signal := range report.Signals {
+				got = append(got, signal.Path+" "+signal.RuleID)
+			}
+			Expect(got).To(Equal([]string{
+				"z.go complexity.branch_density",
+				"b.go state.hidden_input_mutation",
+				"c.go complexity.max_nesting_depth",
+				"a.go complexity.branch_density",
+			}))
+			Expect(report.Signals[0].Evidence).To(Equal("branch_sum=36"))
+			Expect(report.Signals[3].Evidence).To(Equal("branch_sum=14"))
 		})
 	})
 
@@ -176,7 +207,7 @@ var _ = Describe("Magnitude ranking of same-tier signals", func() {
 			Expect(report.Signals[2].RuleID).To(Equal("structure.constructor_density"))
 		})
 
-		It("places a magnitude-bearing signal ahead of a no-magnitude signal in the same tier", func() {
+		It("keeps a no-magnitude signal at its path position beside a magnitude-bearing signal of another rule", func() {
 			report := build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{
 				{Path: "a.go", Status: "modified", Head: cleanResult("a.go", mutation("Update", 4))},
 				metricsFile("z.go", semantics.StructuralMetrics{MaxNestingDepth: 5}),
@@ -185,8 +216,8 @@ var _ = Describe("Magnitude ranking of same-tier signals", func() {
 			Expect(report.Signals).To(HaveLen(2))
 			Expect(report.Signals[0].Severity).To(Equal(report.Signals[1].Severity))
 			Expect(report.Signals[0].Confidence).To(Equal(report.Signals[1].Confidence))
-			Expect(report.Signals[0].RuleID).To(Equal("complexity.max_nesting_depth"))
-			Expect(report.Signals[1].RuleID).To(Equal("state.hidden_input_mutation"))
+			Expect(report.Signals[0].RuleID).To(Equal("state.hidden_input_mutation"))
+			Expect(report.Signals[1].RuleID).To(Equal("complexity.max_nesting_depth"))
 		})
 	})
 })

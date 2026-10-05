@@ -51,7 +51,7 @@ func assertNarrowedView(t *testing.T, got Report, wantKept []Severity, wantWithh
 }
 
 func TestNarrowFloorKeepsAtOrAboveFloorInOrder(t *testing.T) {
-	report := reportWithSeverities("2", "high", "medium", "advisory", "low", "high")
+	report := reportWithSeverities("2", "high", "high", "medium", "advisory", "low")
 
 	cases := []struct {
 		floor        Severity
@@ -59,9 +59,9 @@ func TestNarrowFloorKeepsAtOrAboveFloorInOrder(t *testing.T) {
 		wantWithheld int
 	}{
 		{"high", []Severity{"high", "high"}, 3},
-		{"medium", []Severity{"high", "medium", "high"}, 2},
-		{"advisory", []Severity{"high", "medium", "advisory", "high"}, 1},
-		{"low", []Severity{"high", "medium", "advisory", "low", "high"}, 0},
+		{"medium", []Severity{"high", "high", "medium"}, 2},
+		{"advisory", []Severity{"high", "high", "medium", "advisory"}, 1},
+		{"low", []Severity{"high", "high", "medium", "advisory", "low"}, 0},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.floor), func(t *testing.T) {
