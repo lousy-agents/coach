@@ -2,15 +2,20 @@ package queueconformance
 
 import (
 	"context"
-
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
-
 	"testing"
 	"time"
+
+	"github.com/lousy-agents/coach/internal/acceptanceharness"
 )
 
 func runGracefulShutdownDoesNotLoseOrDuplicateClaim(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Clock) Queue) {
-
+	// This is deliberately a thin composition check, not a restatement
+	// of "kill-mid-attempt enables reclaim": it only confirms that a
+	// worker holding an active claim and simply going quiet (the
+	// "graceful shutdown" case, as opposed to a hard kill) does not
+	// have its claim reclaimed before the visibility timeout elapses,
+	// and that reclaim semantics still compose correctly once it
+	// eventually does.
 	clock := acceptanceharness.NewFakeClock(time.Unix(0, 0))
 	q := newQueue(t, clock)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -25,6 +30,9 @@ func runGracefulShutdownDoesNotLoseOrDuplicateClaim(t *testing.T, newQueue func(
 		t.Fatalf("initial Claim: ok=%v err=%v", ok, err)
 	}
 
+	// The shutting-down worker stops calling Claim, but the
+	// visibility timeout has not elapsed yet: no other worker should
+	// be able to claim task-1.
 	if _, ok, err := q.Claim(ctx); err != nil {
 		t.Fatalf("premature Claim: %v", err)
 	} else if ok {

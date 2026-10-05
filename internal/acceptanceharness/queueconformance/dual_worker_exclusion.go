@@ -2,7 +2,6 @@ package queueconformance
 
 import (
 	"context"
-
 	"sync"
 	"testing"
 	"time"

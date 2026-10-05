@@ -10,41 +10,6 @@ import (
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
 )
 
-func runKillMidAttemptEnablesReclaim(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Clock) Queue) {
-	clock := acceptanceharness.NewFakeClock(time.Unix(0, 0))
-	q := newQueue(t, clock)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := q.Enqueue(ctx, Task{ID: "task-1", Payload: []byte("payload")}); err != nil {
-		t.Fatalf("Enqueue: %v", err)
-	}
-
-	first, ok, err := q.Claim(ctx)
-	if err != nil {
-		t.Fatalf("first Claim: %v", err)
-	}
-	if !ok {
-		t.Fatalf("want first Claim to succeed")
-	}
-
-	clock.Advance(reclaimAdvance)
-
-	second, ok, err := q.Claim(ctx)
-	if err != nil {
-		t.Fatalf("reclaim Claim: %v", err)
-	}
-	if !ok {
-		t.Fatalf("want reclaim Claim to succeed once the visibility timeout has elapsed")
-	}
-	if second.TaskID != first.TaskID {
-		t.Fatalf("reclaimed task id = %q, want %q", second.TaskID, first.TaskID)
-	}
-	if second.Attempt != first.Attempt+1 {
-		t.Fatalf("reclaimed attempt = %d, want %d", second.Attempt, first.Attempt+1)
-	}
-}
-
 // runMultiWorkerScaling backs the "multi-worker scaling" subtest. Per
 // Queue.Claim's own doc comment, ok=false means only "nothing claimable
 // right now", not "the queue is fully drained" -- an adapter with any
@@ -82,4 +47,46 @@ func runMultiWorkerScaling(t *testing.T, newQueue func(tb testing.TB, clock acce
 	}
 	wg.Wait()
 	run.report(t)
+}
+
+type multiWorkerRun struct {
+	mu             sync.Mutex
+	completions    map[string]int
+	errs           []error
+	totalCompleted int
+	taskCount      int
+}
+
+func (r *multiWorkerRun) finished() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.totalCompleted >= r.taskCount
+}
+
+func (r *multiWorkerRun) fail(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.errs = append(r.errs, err)
+}
+
+func (r *multiWorkerRun) record(taskID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.completions[taskID]++
+	r.totalCompleted++
+}
+
+func (r *multiWorkerRun) report(t *testing.T) {
+	t.Helper()
+	for _, err := range r.errs {
+		t.Errorf("worker error: %v", err)
+	}
+	if len(r.completions) != r.taskCount {
+		t.Fatalf("completed %d distinct tasks, want %d: %v", len(r.completions), r.taskCount, r.completions)
+	}
+	for id, count := range r.completions {
+		if count != 1 {
+			t.Errorf("task %s completed %d times, want exactly 1", id, count)
+		}
+	}
 }

@@ -2,11 +2,10 @@ package queueconformance
 
 import (
 	"context"
-
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
-
 	"testing"
 	"time"
+
+	"github.com/lousy-agents/coach/internal/acceptanceharness"
 )
 
 func runPermanentFailureRoutesToPoisonTask(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Clock) Queue) {
@@ -42,6 +41,10 @@ func runPermanentFailureRoutesToPoisonTask(t *testing.T, newQueue func(tb testin
 		t.Fatalf("PoisonTasks() = %v, want it to contain task-1", poisoned)
 	}
 
+	// A permanently-failed task must never be claimable again, even
+	// after advancing well past any visibility timeout -- that is
+	// what distinguishes "poison" from an ordinary reclaimable
+	// failure.
 	clock.Advance(reclaimAdvance)
 	if _, ok, err := q.Claim(ctx); err != nil {
 		t.Fatalf("Claim after permanent Nack: %v", err)

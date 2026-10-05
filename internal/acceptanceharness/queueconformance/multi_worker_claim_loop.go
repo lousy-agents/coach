@@ -3,8 +3,6 @@ package queueconformance
 import (
 	"context"
 	"fmt"
-
-	"testing"
 	"time"
 )
 
@@ -31,19 +29,5 @@ func (r *multiWorkerRun) worker(ctx context.Context, q Queue) {
 			return
 		}
 		r.record(claim.TaskID)
-	}
-}
-func (r *multiWorkerRun) report(t *testing.T) {
-	t.Helper()
-	for _, err := range r.errs {
-		t.Errorf("worker error: %v", err)
-	}
-	if len(r.completions) != r.taskCount {
-		t.Fatalf("completed %d distinct tasks, want %d: %v", len(r.completions), r.taskCount, r.completions)
-	}
-	for id, count := range r.completions {
-		if count != 1 {
-			t.Errorf("task %s completed %d times, want exactly 1", id, count)
-		}
 	}
 }

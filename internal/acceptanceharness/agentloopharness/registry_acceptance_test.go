@@ -3,11 +3,11 @@ package agentloopharness_test
 import (
 	"context"
 	"encoding/json"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"sync"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness/agentloopharness"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("RecordingToolRegistry", func() {
@@ -110,7 +110,36 @@ var _ = Describe("RecordingToolRegistry", func() {
 
 	Context("when multiple goroutines call Call concurrently", func() {
 		It("is safe under -race and every call is recorded", func() {
-			body_registryAcceptanceTest_isSafeUnderRaceAndEveryCallIsRecorded_113()
+			expectConcurrentCallsAllRecorded()
 		})
 	})
 })
+
+func expectConcurrentCallsAllRecorded() {
+	registry := &agentloopharness.RecordingToolRegistry{}
+	registry.Register("concurrent_tool", func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{}`), nil
+	})
+
+	const workers = 8
+	const iterationsPerWorker = 50
+	const total = workers * iterationsPerWorker
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go callConcurrently(registry, iterationsPerWorker, &wg)
+	}
+	wg.Wait()
+
+	Expect(registry.Calls()).To(HaveLen(total))
+}
+
+// callConcurrently invokes concurrent_tool iterations times on registry and
+// marks wg done.
+func callConcurrently(registry *agentloopharness.RecordingToolRegistry, iterations int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for j := 0; j < iterations; j++ {
+		_, _ = registry.Call(context.Background(), agentloopharness.CallSourceModel, "concurrent_tool", json.RawMessage(`{}`))
+	}
+}

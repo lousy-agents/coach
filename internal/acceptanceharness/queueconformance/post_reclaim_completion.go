@@ -2,11 +2,10 @@ package queueconformance
 
 import (
 	"context"
-
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
-
 	"testing"
 	"time"
+
+	"github.com/lousy-agents/coach/internal/acceptanceharness"
 )
 
 func runPostReclaimSingleCompletion(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Clock) Queue) {
