@@ -25,7 +25,10 @@ func TestNewGitHubFileReader_RejectsIncompleteConfig(t *testing.T) {
 			AppID:          12345,
 			InstallationID: 67890,
 		},
-
+		// Regression guard raised by review: negative IDs are not valid
+		// GitHub App identifiers and must be rejected alongside zero/missing
+		// ones, rather than producing a reader with impossible configuration
+		// that only fails later during auth.
 		"negative AppID": {
 			AppID:          -1,
 			InstallationID: 67890,

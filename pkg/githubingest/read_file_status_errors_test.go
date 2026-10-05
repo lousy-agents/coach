@@ -59,7 +59,8 @@ func expectStatusRejectedAsErrAuth(t *testing.T, status int) {
 // ErrUnsupportedContent.
 func TestReadFile_UnsupportedContentTypeReturnsErrUnsupportedContent(t *testing.T) {
 	tests := map[string]string{
-
+		// A directory listing comes back as a JSON array rather than a
+		// single file object.
 		"directory listing (JSON array)": `[
 			{"type":"file","name":"a.txt","path":"dir/a.txt","sha":"a","size":1},
 			{"type":"file","name":"b.txt","path":"dir/b.txt","sha":"b","size":1}

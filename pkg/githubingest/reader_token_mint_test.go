@@ -19,7 +19,14 @@ func TestReadFile_TokenMintAuthFailureReturnsErrAuth(t *testing.T) {
 	statuses := map[string]int{
 		"401 Unauthorized": http.StatusUnauthorized,
 		"403 Forbidden":    http.StatusForbidden,
-
+		// Regression guard raised by review: a 404 from the token-mint
+		// endpoint (e.g. an unknown or revoked InstallationID) previously
+		// surfaced as ErrNotFound ("file not found"), misreporting a broken
+		// GitHub App installation as a missing file. AC-5.5's
+		// 404 -> ErrNotFound scope is the Contents API's own response, not
+		// the token-mint endpoint's -- any token-mint failure is an
+		// authentication/configuration problem, so it must be ErrAuth
+		// regardless of the specific status code involved.
 		"404 Not Found (wrong InstallationID)": http.StatusNotFound,
 	}
 
