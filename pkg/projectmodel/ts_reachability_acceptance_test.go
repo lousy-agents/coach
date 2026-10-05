@@ -2,43 +2,13 @@ package projectmodel_test
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
-
-// sidecarOptsWithModeAndCounter extends sidecarOptsWithMode with the fake
-// sidecar's --invocation-counter-file flag, letting a spec assert exactly
-// how many separate subprocess round trips a call sequence made.
-func sidecarOptsWithModeAndCounter(mode, counterFile string) projectmodel.TSSidecarOptions {
-	opts := sidecarOptsWithMode(mode)
-	opts.Args = append(opts.Args, "--invocation-counter-file="+counterFile)
-	return opts
-}
-
-// invocationCount reads the fake sidecar's invocation counter file (one line
-// appended per subprocess invocation) and reports how many invocations it
-// recorded. A missing file (no invocation yet) counts as zero.
-func invocationCount(counterFile string) int {
-	data, err := os.ReadFile(counterFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0
-		}
-		Fail(fmt.Sprintf("reading invocation counter file %s: %v", counterFile, err))
-	}
-	trimmed := strings.TrimRight(string(data), "\n")
-	if trimmed == "" {
-		return 0
-	}
-	return len(strings.Split(trimmed, "\n"))
-}
 
 var _ = Describe("BuildTypeScriptReachability", func() {
 	When("a TS route handler has a resolved call path to a pinned query-shaped sink", func() {

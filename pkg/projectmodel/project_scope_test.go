@@ -1,14 +1,13 @@
 package projectmodel
 
 import (
-	"os"
-	"path/filepath"
-	"reflect"
-
-	"runtime"
-
+	"regexp"
 	"testing"
 )
+
+// reachabilityAlgorithmConstPattern matches reachability-registry.ts's
+// `export const REACHABILITY_ALGORITHM = "<value>";` declaration.
+var reachabilityAlgorithmConstPattern = regexp.MustCompile(`(?m)^export const REACHABILITY_ALGORITHM = "([^"]+)";$`)
 
 // TestReachabilityAlgorithmWireParity guards SA-280-014 (issue #332 Task 9,
 // AC-8/AC-19/AC-27): ProjectScope.PatternSet (project_scope.go) is assigned
@@ -57,49 +56,4 @@ func TestReachabilityAlgorithmWireParity(t *testing.T) {
 	if scope.PatternSet == model.SchemaVersion {
 		t.Errorf("ProjectScope.PatternSet (%q) must not equal Model.SchemaVersion (%q): pattern_set is never derived from the wire-schema version", scope.PatternSet, model.SchemaVersion)
 	}
-}
-
-// assertGoFieldMatchesTS finds fieldName on parent (resolving through at
-// most one pointer/slice indirection to a struct type) and asserts its
-// json-tagged fields match tsInterfaceName's fields in tsSource. It fails
-// with a clear "no field" message -- not a compile error -- when fieldName
-// does not exist on parent yet, which is the expected red-test state before
-// this task's wire fields are added. It returns the resolved element struct
-// type so callers can assert further nested fields (e.g. a Path field's own
-// step type).
-func assertGoFieldMatchesTS(t *testing.T, parent reflect.Type, fieldName string, tsSource []byte, tsInterfaceName string) reflect.Type {
-	t.Helper()
-	f, ok := parent.FieldByName(fieldName)
-	if !ok {
-		t.Fatalf("%s has no field %q; the wire-protocol call-graph/reachability/bypass fields (issue #216 Task 1) are not implemented yet", parent, fieldName)
-	}
-	elemType := f.Type
-	for elemType.Kind() == reflect.Pointer || elemType.Kind() == reflect.Slice {
-		elemType = elemType.Elem()
-	}
-	if elemType.Kind() != reflect.Struct {
-		t.Fatalf("%s.%s resolves to non-struct type %s", parent, fieldName, elemType)
-	}
-	assertGoTSStructFieldsMatch(t, elemType, tsSource, tsInterfaceName)
-	return elemType
-}
-
-// readProtocolTSSource reads js/semantics/src/project-sidecar/protocol.ts
-// relative to this test file's own path, mirroring
-// ts_sidecar_integration_acceptance_test.go's repoRootFromThisFile
-// convention (that helper lives in the projectmodel_test package, so it is
-// not reachable from here).
-func readProtocolTSSource(t *testing.T) []byte {
-	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller(0) failed")
-	}
-	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..")
-	path := filepath.Join(repoRoot, "js", "semantics", "src", "project-sidecar", "protocol.ts")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %s", path, err)
-	}
-	return data
 }

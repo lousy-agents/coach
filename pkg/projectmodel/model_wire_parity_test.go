@@ -2,13 +2,32 @@ package projectmodel
 
 import (
 	"reflect"
-
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/projectbridge"
+	"github.com/lousy-agents/coach/pkg/domain"
 )
 
-func body_wireParityTest_ModelAndModelWireFieldsMirror11_42(t *testing.T, modelType reflect.Type, wireType reflect.Type) {
+// TestModelWireFieldParity guards the invariant documented on modelWire:
+// every field of Model must be mirrored in modelWire in the same order and
+// under the same json tag, or it is silently dropped from JSON output. This
+// is an internal (package-private) unit test rather than an acceptance
+// test because modelWire is unexported and the invariant it protects is an
+// implementation detail, not externally observable behavior.
+func TestModelWireFieldParity(t *testing.T) {
+	modelType := reflect.TypeOf(Model{})
+	wireType := reflect.TypeOf(domain.ModelWire{})
+
+	t.Run("Model and modelWire fields mirror 1:1", func(t *testing.T) {
+		assertModelFieldsMirroredByWire(t, modelType, wireType)
+	})
+
+	t.Run("RootScopes element type mirrors RootScopeFact", func(t *testing.T) {
+		assertRootScopeMirroredByBridgeFact(t, modelType)
+	})
+}
+
+func assertModelFieldsMirroredByWire(t *testing.T, modelType reflect.Type, wireType reflect.Type) {
 	if modelType.NumField() != wireType.NumField() {
 		t.Fatalf("Model has %d fields but modelWire has %d fields; every Model field must be mirrored in modelWire (see modelWire's doc comment)", modelType.NumField(), wireType.NumField())
 	}
@@ -26,7 +45,7 @@ func body_wireParityTest_ModelAndModelWireFieldsMirror11_42(t *testing.T, modelT
 	}
 }
 
-func body_wireParityTest_RootScopesElementTypeMirrorsRootScopeFact_60(t *testing.T, modelType reflect.Type) {
+func assertRootScopeMirroredByBridgeFact(t *testing.T, modelType reflect.Type) {
 	rootScopesField, ok := modelType.FieldByName("RootScopes")
 	if !ok {
 		t.Fatal("Model has no RootScopes field")

@@ -1,8 +1,6 @@
 package projectmodel
 
-import (
-	"time"
-)
+import "time"
 
 // GoBudgets bounds one Go discovery/build call. A zero field means
 // unbounded for that dimension -- there is no implicit default ceiling;

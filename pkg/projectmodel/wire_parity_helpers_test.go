@@ -46,6 +46,26 @@ func tsInterfaceFields(t *testing.T, source []byte, interfaceName string) []wire
 	return fields
 }
 
+// readProtocolTSSource reads js/semantics/src/project-sidecar/protocol.ts
+// relative to this test file's own path, mirroring
+// ts_sidecar_integration_fixtures_test.go's repoRootFromThisFile
+// convention (that helper lives in the projectmodel_test package, so it is
+// not reachable from here).
+func readProtocolTSSource(t *testing.T) []byte {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller(0) failed")
+	}
+	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..")
+	path := filepath.Join(repoRoot, "js", "semantics", "src", "project-sidecar", "protocol.ts")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %s", path, err)
+	}
+	return data
+}
+
 func readReachabilityRegistryTSSource(t *testing.T) []byte {
 	t.Helper()
 	_, thisFile, _, ok := runtime.Caller(0)

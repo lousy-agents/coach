@@ -2,73 +2,15 @@ package projectmodel_test
 
 import (
 	"context"
-
-	"fmt"
-	"path/filepath"
-	"runtime"
-
 	"strings"
 	"testing/fstest"
-	"time"
 
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-func body_tsSidecarIntegrationAcceptanceTest_47(sidecarPath string) projectmodel.TSSidecarOptions {
-	compilerModule := filepath.Join(jsSemanticsRoot(), "node_modules", "typescript")
-	arch := runtime.GOARCH
-	switch arch {
-	case "amd64":
-		arch = "x64"
-	case "386":
-		arch = "ia32"
-	}
-	nativePackage := filepath.Join(jsSemanticsRoot(), "node_modules", "@typescript", fmt.Sprintf("typescript-%s-%s", runtime.GOOS, arch))
-	return projectmodel.TSSidecarOptions{
-		BinaryPath: sidecarPath,
-		Args:       []string{"--compiler-module=" + compilerModule, "--native-package=" + nativePackage},
-		Timeout:    20 * time.Second,
-	}
-}
-
-func body_tsSidecarIntegrationAcceptanceTest_reportsARealRootScopeCandidateAnalyzedMismatchTh_183(ctx context.Context, realOpts func() projectmodel.TSSidecarOptions) {
-
-	snapshot := fstest.MapFS{
-		"tsconfig.json": tsconfigJSON(map[string]any{
-			"compilerOptions": map[string]any{
-				"module": "commonjs", "moduleResolution": "node10", "resolveJsonModule": true,
-			},
-			"files": []string{"package.json", "src/a.ts"},
-		}),
-		"package.json": tsconfigJSON(map[string]any{"name": "fixture"}),
-		"src/a.ts":     file("export const a = 1;\n"),
-	}
-	opts := realOpts()
-	opts.Roots = []string{"."}
-
-	model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), opts)
-	Expect(err).NotTo(HaveOccurred())
-
-	var rootScope projectmodel.RootScope
-	found := false
-	for _, rs := range model.RootScopes {
-		if rs.Root == "." {
-			rootScope, found = rs, true
-		}
-	}
-	Expect(found).To(BeTrue(), "expected a root_scopes entry for \".\", got %+v", model.RootScopes)
-	Expect(rootScope.AnalyzedFiles).To(BeNumerically("<", rootScope.CandidateFiles), "expected package.json to be counted as a candidate root file but never analyzed, got %+v", rootScope)
-
-	Expect(model.Coverage.Complete).To(BeFalse(), "expected the real candidate/analyzed mismatch to mark model coverage incomplete per SA-280-025, got %+v", model.Coverage)
-	Expect(rootScope.UnanalyzedPaths).To(ConsistOf("package.json"), "expected package.json identified by path as the one candidate never analyzed, got %+v", rootScope)
-	diag, ok := diagnosticWithCode(model.Coverage.Diagnostics, projectmodel.DiagRootScopeIncomplete)
-	Expect(ok).To(BeTrue(), "expected a root-scope-incomplete diagnostic, got %+v", model.Coverage.Diagnostics)
-	Expect(diag.Path).To(Equal("package.json"), "expected the diagnostic's Path to name the specific unanalyzed file, not the root")
-}
-
-func body_tsSidecarIntegrationAcceptanceTest_producesThreeEdgesWithThreeDistinctKindValues_329(ctx context.Context, realOpts func() projectmodel.TSSidecarOptions) {
+func expectRequireDynamicAndTypeOnlyImportKinds(ctx context.Context, realOpts func() projectmodel.TSSidecarOptions) {
 	snapshot := fstest.MapFS{
 		"tsconfig.json": tsconfigJSON(map[string]any{
 			"compilerOptions": map[string]any{"module": "commonjs", "moduleResolution": "node10"},
@@ -111,7 +53,7 @@ func body_tsSidecarIntegrationAcceptanceTest_producesThreeEdgesWithThreeDistinct
 	Expect(kinds).To(HaveLen(3), "expected 3 distinct kinds, got %+v", kinds)
 }
 
-func body_tsSidecarIntegrationAcceptanceTest_classifiesTheEdgeTypeOnlyNotAValueImportAndAMixe_374(ctx context.Context, realOpts func() projectmodel.TSSidecarOptions) {
+func expectInlineTypeOnlyBindingClassifiedTypeOnly(ctx context.Context, realOpts func() projectmodel.TSSidecarOptions) {
 	snapshot := fstest.MapFS{
 		"tsconfig.json": tsconfigJSON(map[string]any{
 			"compilerOptions": map[string]any{"module": "commonjs", "moduleResolution": "node10"},

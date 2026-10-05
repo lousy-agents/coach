@@ -2,9 +2,7 @@ package projectmodel_test
 
 import (
 	"context"
-
 	"encoding/json"
-
 	"strings"
 	"testing/fstest"
 
@@ -13,7 +11,42 @@ import (
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-func body_tsSidecarIntegrationAcceptanceTest_populatesModelFilesForEveryAnalyzedPathWithEvery_442(ctx context.Context, realOpts func() projectmodel.TSSidecarOptions) {
+func expectRootScopeMismatchMarksModelIncomplete(ctx context.Context, realOpts func() projectmodel.TSSidecarOptions) {
+
+	snapshot := fstest.MapFS{
+		"tsconfig.json": tsconfigJSON(map[string]any{
+			"compilerOptions": map[string]any{
+				"module": "commonjs", "moduleResolution": "node10", "resolveJsonModule": true,
+			},
+			"files": []string{"package.json", "src/a.ts"},
+		}),
+		"package.json": tsconfigJSON(map[string]any{"name": "fixture"}),
+		"src/a.ts":     file("export const a = 1;\n"),
+	}
+	opts := realOpts()
+	opts.Roots = []string{"."}
+
+	model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, testMeta(), opts)
+	Expect(err).NotTo(HaveOccurred())
+
+	var rootScope projectmodel.RootScope
+	found := false
+	for _, rs := range model.RootScopes {
+		if rs.Root == "." {
+			rootScope, found = rs, true
+		}
+	}
+	Expect(found).To(BeTrue(), "expected a root_scopes entry for \".\", got %+v", model.RootScopes)
+	Expect(rootScope.AnalyzedFiles).To(BeNumerically("<", rootScope.CandidateFiles), "expected package.json to be counted as a candidate root file but never analyzed, got %+v", rootScope)
+
+	Expect(model.Coverage.Complete).To(BeFalse(), "expected the real candidate/analyzed mismatch to mark model coverage incomplete per SA-280-025, got %+v", model.Coverage)
+	Expect(rootScope.UnanalyzedPaths).To(ConsistOf("package.json"), "expected package.json identified by path as the one candidate never analyzed, got %+v", rootScope)
+	diag, ok := diagnosticWithCode(model.Coverage.Diagnostics, projectmodel.DiagRootScopeIncomplete)
+	Expect(ok).To(BeTrue(), "expected a root-scope-incomplete diagnostic, got %+v", model.Coverage.Diagnostics)
+	Expect(diag.Path).To(Equal("package.json"), "expected the diagnostic's Path to name the specific unanalyzed file, not the root")
+}
+
+func expectModelFilesCoverEveryAnalyzedPath(ctx context.Context, realOpts func() projectmodel.TSSidecarOptions) {
 	snapshot := fstest.MapFS{
 		"tsconfig.json": tsconfigJSON(map[string]any{
 			"compilerOptions": map[string]any{
@@ -48,7 +81,7 @@ func body_tsSidecarIntegrationAcceptanceTest_populatesModelFilesForEveryAnalyzed
 	Expect(first).To(Equal(secondJSON), "expected canonical Model.Files JSON to be byte-identical across two runs")
 }
 
-func body_tsSidecarIntegrationAcceptanceTest_includesThoseConfigFileEdgeEndpointsInModelFiles_489(ctx context.Context, realOpts func() projectmodel.TSSidecarOptions) {
+func expectConfigFileEdgeEndpointsInModelFiles(ctx context.Context, realOpts func() projectmodel.TSSidecarOptions) {
 	snapshot := fstest.MapFS{
 		"tsconfig.json": tsconfigJSON(map[string]any{
 			"compilerOptions": map[string]any{"module": "commonjs", "moduleResolution": "node10"},

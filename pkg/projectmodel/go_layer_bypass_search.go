@@ -1,8 +1,6 @@
 package projectmodel
 
-import (
-	"fmt"
-)
+import "fmt"
 
 // layerBypassSearch is the result of one source/sink witness search.
 // truncatedSearch reflects this search's own budget (MaxSearchNodes, ctx

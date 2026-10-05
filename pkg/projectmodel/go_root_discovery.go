@@ -1,8 +1,6 @@
 package projectmodel
 
-import (
-	"io/fs"
-)
+import "io/fs"
 
 // Stable root-discovery diagnostic codes for RootDiscoveryResult.Coverage.Diagnostics[i].Code.
 const (

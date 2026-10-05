@@ -1,8 +1,6 @@
 package projectmodel
 
-import (
-	"sort"
-)
+import "sort"
 
 func mapKeysSorted[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))

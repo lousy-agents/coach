@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"io/fs"
 
-	"github.com/lousy-agents/coach/pkg/semantics"
 	"golang.org/x/mod/modfile"
+
+	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 // Stable file-level diagnostic codes for Model.Coverage.Diagnostics[i].Code,

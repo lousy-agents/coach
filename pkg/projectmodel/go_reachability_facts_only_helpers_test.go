@@ -1,8 +1,6 @@
 package projectmodel_test
 
 import (
-	"context"
-	"os"
 	"reflect"
 	"strings"
 
@@ -11,7 +9,7 @@ import (
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-func body_goReachabilityAcceptanceTest_carriesNoSeverityLifecycleOrActiveFindingShapedF_50() {
+func expectReachabilityFactIsFactsOnly() {
 	allowed := map[string]bool{
 		"ID":               true,
 		"Kind":             true,
@@ -48,7 +46,7 @@ func body_goReachabilityAcceptanceTest_carriesNoSeverityLifecycleOrActiveFinding
 	}
 }
 
-func body_goReachabilityAcceptanceTest_carriesNoSeverityLifecycleOrActiveFindingShapedF_87() {
+func expectReachabilityResultIsFactsOnly() {
 	allowedResultFields := map[string]bool{
 		"Facts":     true,
 		"Sources":   true,
@@ -70,23 +68,5 @@ func body_goReachabilityAcceptanceTest_carriesNoSeverityLifecycleOrActiveFinding
 	}
 	for name := range allowedResultFields {
 		Expect(seen).To(HaveKey(name), "expected allowlisted field %q to still exist on ReachabilityResult", name)
-	}
-}
-
-func body_goReachabilityAcceptanceTest_treatsEveryPairAsUnevaluatedRatherThanReportingA_184() {
-	snapshot := os.DirFS("testdata/go_reachability_path")
-	result, err := projectmodel.BuildGoReachability(context.Background(), snapshot, projectmodel.ReachabilityOptions{
-		Budgets: projectmodel.GoBudgets{MaxGraphNodes: 1},
-	})
-	Expect(err).NotTo(HaveOccurred())
-
-	Expect(result.Coverage.Complete).To(BeFalse())
-	Expect(result.Coverage.Counts["source_sink_pairs_evaluated"]).To(Equal(0),
-		"a pair searched against an incompletely built call graph must not count as conclusively evaluated")
-	Expect(result.Coverage.Counts["source_sink_pairs_truncated"]).To(BeNumerically(">", 0))
-
-	Expect(result.Coverage.Budgets).To(HaveKeyWithValue("graph_nodes", 1))
-	for _, key := range []string{"wall_time_ms", "input_files", "input_bytes", "graph_nodes", "graph_edges", "working_set_bytes", "stderr_bytes", "search_nodes"} {
-		Expect(result.Coverage.Budgets).To(HaveKey(key), "expected effective budget key %q", key)
 	}
 }

@@ -1,8 +1,6 @@
 package projectmodel
 
-import (
-	"context"
-)
+import "context"
 
 // bfsBudget is the shared node-visit counter for shortest-path walks.
 // visited is not reset per source: max bounds the total number of nodes
