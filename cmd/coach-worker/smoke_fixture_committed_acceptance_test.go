@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/lousy-agents/coach/internal/coachapi/store/memory"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -32,7 +34,7 @@ var _ = Describe("credential-free smoke fixture as committed", func() {
 				Params: []byte(`{"repo_owner":"coach-smoke","repo_name":"fixture-repo"}`),
 				Status: coachapi.JobStatusRunning,
 			}
-			store := coachapi.NewMemoryStore()
+			store := memory.NewStore()
 			Expect(store.CreateJob(context.Background(), coachapi.Job{
 				ID: job.ID, Kind: job.Kind, Params: job.Params,
 				Status:            coachapi.JobStatusQueued,
