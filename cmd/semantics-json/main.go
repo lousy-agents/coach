@@ -16,10 +16,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
+
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/lousy-agents/coach/internal/jsbridge"
 )
@@ -28,16 +27,6 @@ import (
 // is 2 MiB, which base64 inflates by 4/3; 8 MiB leaves generous slack for
 // the JSON envelope and larger caller-configured max_file_bytes.
 const maxLineBytes = 8 * 1024 * 1024
-
-func main() {
-	once := flag.Bool("once", false, "read exactly one request, respond, and exit")
-	flag.Parse()
-
-	if err := serve(context.Background(), os.Stdin, os.Stdout, *once); err != nil {
-		fmt.Fprintf(os.Stderr, "semantics-json: %v\n", err)
-		os.Exit(1)
-	}
-}
 
 // serve processes requests sequentially until EOF (or after one request in
 // once mode). Responses come back in request order; callers may still
@@ -71,18 +60,6 @@ func serve(ctx context.Context, in io.Reader, out io.Writer, once bool) error {
 // handleLine decodes one request line and runs it through the bridge. A
 // line that isn't valid Request JSON gets id 0 — unattributable, which the
 // JS side treats as fatal for its child process.
-func handleLine(ctx context.Context, line []byte) jsbridge.Response {
-	var req jsbridge.Request
-	if err := json.Unmarshal(line, &req); err != nil {
-		return jsbridge.Response{
-			Error: &jsbridge.ErrorPayload{
-				Kind:    jsbridge.KindInternal,
-				Message: fmt.Sprintf("semantics-json: malformed request line: %v", err),
-			},
-		}
-	}
-	return jsbridge.Handle(ctx, req)
-}
 
 func writeResponse(writer *bufio.Writer, resp jsbridge.Response) error {
 	encoded, err := json.Marshal(resp)

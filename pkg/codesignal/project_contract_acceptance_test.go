@@ -12,39 +12,13 @@ import (
 	. "github.com/onsi/gomega/gstruct"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 var _ = Describe("project observation identity and lifecycle", func() {
 	It("changes identity when rule, backend, or configuration identity changes", func() {
-		base := projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")
-		base.RuleVersion = "1"
-		base.BackendVersion = "go-backend-v1"
-		base.AlgorithmVersion = "cycle-v1"
-		base.ConfigDigest = "config-a"
-
-		variants := []codesignal.ProjectChange{base}
-		for _, mutate := range []func(*codesignal.ProjectChange){
-			func(change *codesignal.ProjectChange) { change.RuleVersion = "2" },
-			func(change *codesignal.ProjectChange) { change.BackendVersion = "go-backend-v2" },
-			func(change *codesignal.ProjectChange) { change.AlgorithmVersion = "cycle-v2" },
-			func(change *codesignal.ProjectChange) { change.ConfigDigest = "config-b" },
-		} {
-			variant := base
-			mutate(&variant)
-			variants = append(variants, variant)
-		}
-
-		identities := make([]string, 0, len(variants))
-		for _, change := range variants {
-			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
-				ProjectChanges:  []codesignal.ProjectChange{change},
-				ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
-			})
-			identities = append(identities, report.ProjectChanges[0].ID+"/"+report.ProjectChanges[0].Fingerprint)
-		}
-		Expect(identities[1:]).NotTo(ContainElement(identities[0]))
+		body_projectContractAcceptanceTest_changesIdentityWhenRuleBackendOrConfigurationIde_20()
 	})
 
 	It("derives changed from causal evidence rather than trusting a caller flag", func() {
@@ -58,8 +32,8 @@ var _ = Describe("project observation identity and lifecycle", func() {
 			ProjectChanges:      []codesignal.ProjectChange{head},
 			BaseProjectChanges:  []codesignal.ProjectChange{base},
 			ProjectBaseAnalyzed: true,
-			ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-			BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+			ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+			BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 		})
 		Expect(report.ProjectChanges).To(HaveLen(1))
 		Expect(report.ProjectChanges[0].Changed).To(BeFalse())
@@ -69,8 +43,8 @@ var _ = Describe("project observation identity and lifecycle", func() {
 			ProjectChanges:      []codesignal.ProjectChange{head},
 			BaseProjectChanges:  []codesignal.ProjectChange{base},
 			ProjectBaseAnalyzed: true,
-			ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-			BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+			ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+			BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 		})
 		Expect(report.ProjectChanges[0].Changed).To(BeTrue())
 	})
@@ -79,8 +53,8 @@ var _ = Describe("project observation identity and lifecycle", func() {
 		report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 			BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 			ProjectBaseAnalyzed: true,
-			ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
-			BaseProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: false},
+			ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+			BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: false},
 		})
 
 		Expect(report.ProjectChanges).To(HaveLen(1))
@@ -96,7 +70,7 @@ var _ = Describe("project observation identity and lifecycle", func() {
 			ProjectChanges:      []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 			BaseProjectChanges:  []codesignal.ProjectChange{projectChange("cycle:pkg/a<->pkg/b", "project.import_cycle")},
 			ProjectBaseAnalyzed: false,
-			ProjectCoverage:     &projectmodel.Coverage{Phase: "full", Complete: true},
+			ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
 		})
 		Expect(report.ProjectChanges).To(HaveLen(1))
 		Expect(report.ProjectChanges[0].Lifecycle).To(Equal(codesignal.Lifecycle("unknown")))
@@ -139,7 +113,7 @@ var _ = Describe("project observation identity and lifecycle", func() {
 			},
 		}}
 
-		cov := &projectmodel.Coverage{Phase: "full", Complete: true}
+		cov := &domain.Coverage{Phase: "full", Complete: true}
 		leftReport := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 			ProjectChanges:  []codesignal.ProjectChange{left},
 			ProjectCoverage: cov,
@@ -187,7 +161,7 @@ var _ = Describe("project observation identity and lifecycle", func() {
 		input := codesignal.Input{
 			ProjectChanges:  []codesignal.ProjectChange{change},
 			ProjectFacts:    []codesignal.ProjectFact{fact},
-			ProjectCoverage: &projectmodel.Coverage{Phase: "full", Complete: true},
+			ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
 		}
 		callerRelated := input.ProjectChanges[0].RelatedLocations
 		callerChangeSteps := input.ProjectChanges[0].PathSteps
@@ -228,7 +202,7 @@ var _ = Describe("project observation identity and lifecycle", func() {
 			Provenance: codesignal.Provenance{Producer: "projectmodel"},
 		}
 
-		cov := &projectmodel.Coverage{Phase: "full", Complete: true}
+		cov := &domain.Coverage{Phase: "full", Complete: true}
 		leftReport := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
 			ProjectFacts:    []codesignal.ProjectFact{left},
 			ProjectCoverage: cov,
@@ -295,24 +269,7 @@ func scanForGuardedSymbols(dirs []string, symbols []string) map[string][]string 
 
 	hits := map[string][]string{}
 	for _, dir := range dirs {
-		err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" {
-				return nil
-			}
-			content, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			for i, symbol := range symbols {
-				if patterns[i].Match(content) {
-					hits[path] = append(hits[path], symbol)
-				}
-			}
-			return nil
-		})
+		err := filepath.WalkDir(dir, (&sigscanForGuardedSymbols31948627{hits: hits, patterns: patterns, symbols: symbols}).call)
 		Expect(err).NotTo(HaveOccurred())
 	}
 	return hits

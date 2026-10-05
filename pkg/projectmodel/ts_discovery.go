@@ -4,7 +4,6 @@ import (
 	"io/fs"
 	"path"
 	"sort"
-	"strings"
 )
 
 type tsProjectDiscovery struct {
@@ -56,21 +55,6 @@ func discoverTSProject(snapshot fs.FS, budgets GoBudgets) *tsProjectDiscovery {
 // handleWalkError applies DiscoverTSRoots' fail-open walk-error policy: a
 // failure at the snapshot root is DiagTSRootUnavailable + SkipAll; any other
 // unreadable subtree is skipped so the rest of the walk continues.
-func (d *tsProjectDiscovery) handleWalkError(p string) error {
-	if p == "." {
-		d.Complete = false
-		d.Diagnostics = append(d.Diagnostics, Diagnostic{Code: DiagTSRootUnavailable, Path: "."})
-		return fs.SkipAll
-	}
-	return nil
-}
-
-func (d *tsProjectDiscovery) visitDiscoveryDir(p string) error {
-	if shouldSkipTSDiscoveryDir(p) {
-		return fs.SkipDir
-	}
-	return nil
-}
 
 // visitDiscoveryFile counts p against MaxInputFiles/MaxInputBytes and, for
 // tsconfig.json/package.json basenames, stats them to confirm they are
@@ -124,13 +108,6 @@ func (d *tsProjectDiscovery) visitDiscoveryFile(snapshot fs.FS, p string, budget
 // never the project's own tsconfig.json/package.json, and dot-prefixed
 // directories (e.g. .git) are never TS project roots -- mirroring
 // DiscoverGoRoots' vendor/dot-prefixed pruning convention for Go.
-func shouldSkipTSDiscoveryDir(p string) bool {
-	if p == "." {
-		return false
-	}
-	base := path.Base(p)
-	return base == "node_modules" || strings.HasPrefix(base, ".")
-}
 
 func (d *tsProjectDiscovery) rootsAndCandidates() (roots, candidates []string) {
 	roots = mapKeysSorted(d.TSConfigDirs)

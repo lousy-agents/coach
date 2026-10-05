@@ -1,13 +1,10 @@
 package codesignal
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"sort"
 	"strings"
 
-	"github.com/lousy-agents/coach/pkg/projectmodel"
-	"github.com/lousy-agents/coach/pkg/semantics"
+	"github.com/lousy-agents/coach/pkg/domain"
 )
 
 // diagLayerBypassCoverageIncomplete marks that result.Coverage (the
@@ -64,7 +61,7 @@ const layerBypassRecommendation = "Route the call through the required layer, or
 // degrades affected ProjectChanges to Lifecycle "unknown" rather than
 // emitting "resolved" for a witness that only disappeared because the search
 // was truncated, not because the bypass was actually fixed.
-func EvaluateGoLayerBypass(result projectmodel.LayerBypassResult, ruleVersion, backendVersion, configDigest string) ([]ProjectChange, []Diagnostic) {
+func EvaluateGoLayerBypass(result domain.LayerBypassResult, ruleVersion, backendVersion, configDigest string) ([]ProjectChange, []Diagnostic) {
 	var diagnostics []Diagnostic
 	if !result.Coverage.Complete {
 		diagnostics = append(diagnostics, Diagnostic{
@@ -73,9 +70,9 @@ func EvaluateGoLayerBypass(result projectmodel.LayerBypassResult, ruleVersion, b
 		})
 	}
 
-	witnesses := make([]projectmodel.LayerBypassWitness, 0, len(result.Witnesses))
+	witnesses := make([]domain.LayerBypassWitness, 0, len(result.Witnesses))
 	for _, witness := range result.Witnesses {
-		if witness.Confidence != projectmodel.LayerBypassConfidenceHigh {
+		if witness.Confidence != domain.LayerBypassConfidenceHigh {
 			continue
 		}
 		witnesses = append(witnesses, witness)
@@ -108,39 +105,6 @@ func EvaluateGoLayerBypass(result projectmodel.LayerBypassResult, ruleVersion, b
 // EvaluateGoLayerBypass's doc comment for the shared confidence-filtering,
 // anchoring, and coverage-incompleteness contract this function reuses
 // unchanged via layerBypassChange.
-func EvaluateTypeScriptLayerBypass(result projectmodel.LayerBypassResult, ruleVersion, backendVersion, configDigest string) ([]ProjectChange, []Diagnostic) {
-	var diagnostics []Diagnostic
-	if !result.Coverage.Complete {
-		diagnostics = append(diagnostics, Diagnostic{
-			Kind:    diagLayerBypassCoverageIncomplete,
-			Message: "typescript layer-bypass search coverage is incomplete; absence of a witness for a source/sink pair in this run does not mean no bypass exists",
-		})
-	}
-
-	witnesses := make([]projectmodel.LayerBypassWitness, 0, len(result.Witnesses))
-	for _, witness := range result.Witnesses {
-		if witness.Confidence != projectmodel.LayerBypassConfidenceHigh {
-			continue
-		}
-		witnesses = append(witnesses, witness)
-	}
-	if len(witnesses) == 0 {
-		return nil, diagnostics
-	}
-
-	sort.SliceStable(witnesses, func(i, j int) bool {
-		if witnesses[i].Source != witnesses[j].Source {
-			return witnesses[i].Source < witnesses[j].Source
-		}
-		return witnesses[i].Sink < witnesses[j].Sink
-	})
-
-	changes := make([]ProjectChange, 0, len(witnesses))
-	for _, witness := range witnesses {
-		changes = append(changes, layerBypassChange(witness, ruleVersion, backendVersion, configDigest, "typescript"))
-	}
-	return changes, diagnostics
-}
 
 // layerBypassChange builds the shared architecture.layer_bypass ProjectChange
 // shape for both language evaluators. language is added to
@@ -149,7 +113,7 @@ func EvaluateTypeScriptLayerBypass(result projectmodel.LayerBypassResult, ruleVe
 // EvaluateTypeScriptLayerBypass gains a "language": "typescript" entry --
 // mirroring rule_layer_violation.go's layerViolationChange split (issue
 // #215).
-func layerBypassChange(witness projectmodel.LayerBypassWitness, ruleVersion, backendVersion, configDigest, language string) ProjectChange {
+func layerBypassChange(witness domain.LayerBypassWitness, ruleVersion, backendVersion, configDigest, language string) ProjectChange {
 	nodeIDs := make([]string, len(witness.Path))
 	pathSteps := make([]ProjectPathStep, len(witness.Path))
 	for i, step := range witness.Path {
@@ -198,7 +162,7 @@ func layerBypassChange(witness projectmodel.LayerBypassWitness, ruleVersion, bac
 // or a zero ProjectLocation when no step resolves one (see
 // EvaluateGoLayerBypass's doc comment for what happens to the resulting
 // change downstream).
-func layerBypassPrimaryAnchor(steps []projectmodel.LayerBypassStep) ProjectLocation {
+func layerBypassPrimaryAnchor(steps []domain.LayerBypassStep) ProjectLocation {
 	for _, step := range steps {
 		if loc, ok := layerBypassStepLocation(step); ok {
 			return loc
@@ -207,37 +171,12 @@ func layerBypassPrimaryAnchor(steps []projectmodel.LayerBypassStep) ProjectLocat
 	return ProjectLocation{}
 }
 
-func layerBypassStepSourceLocations(step projectmodel.LayerBypassStep) []ProjectLocation {
-	loc, ok := layerBypassStepLocation(step)
-	if !ok {
-		return nil
-	}
-	return []ProjectLocation{loc}
-}
-
 // layerBypassStepLocation converts step's 1-based Line to the 0-based
 // StartRow ProjectLocation uses elsewhere in this package, mirroring
 // rule_layer_violation.go's parseSiteLocation. It reports false when step
 // carries no position (step.Path == ""), e.g. the sink.
-func layerBypassStepLocation(step projectmodel.LayerBypassStep) (ProjectLocation, bool) {
-	if step.Path == "" {
-		return ProjectLocation{}, false
-	}
-	if step.Line <= 0 {
-		return ProjectLocation{Path: step.Path}, true
-	}
-	return ProjectLocation{Path: step.Path, Location: semantics.Location{StartRow: uint(step.Line - 1)}}, true
-}
 
 // layerBypassCausalDigest hashes the ordered Path node-ID sequence so
 // projectChangeChanged (project_lifecycle.go) can detect a route change
 // (Changed == true) even when SemanticKey/Fingerprint identity, keyed only on
 // (RequiredLayer, Source, Sink), stays the same.
-func layerBypassCausalDigest(nodeIDs []string) string {
-	var buf []byte
-	for _, id := range nodeIDs {
-		buf = appendLengthPrefixed(buf, id)
-	}
-	sum := sha256.Sum256(buf)
-	return "cev_" + hex.EncodeToString(sum[:])
-}

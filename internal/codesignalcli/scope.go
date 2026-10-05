@@ -2,19 +2,13 @@ package codesignalcli
 
 import (
 	"archive/tar"
-	"bytes"
-	"encoding/json"
-	"fmt"
+
 	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"regexp"
-	"sort"
-	"strings"
 
-	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/semantics"
+	"path/filepath"
+
+	"strings"
 )
 
 const (
@@ -30,18 +24,6 @@ const (
 // the diff flow can record what was left out and why. Unknown files are
 // deliberately retained in kept so an incomplete project configuration
 // cannot silently hide a finding.
-func ApplySourceScope(dir, headSHA, buildTarget, scope string, files []SelectedFile) (kept []SelectedFile, excluded []codesignal.CoverageGroup, err error) {
-	classified, err := classifySourceFiles(dir, headSHA, buildTarget, scope, files)
-	if err != nil {
-		return nil, nil, err
-	}
-	if scope == "all" {
-		return classified, nil, nil
-	}
-
-	kept, excluded = tallyClassified(classified)
-	return kept, excluded, nil
-}
 
 // ApplyBaselineSourceScope labels each selected file according to the
 // source set it belongs to, same as ApplySourceScope, but instead of
@@ -49,58 +31,12 @@ func ApplySourceScope(dir, headSHA, buildTarget, scope string, files []SelectedF
 // grouped by (SourceScope reason, Language) pair, so a Repository Baseline
 // report can record what was left out and why. When scope is "all",
 // nothing is excluded, matching ApplySourceScope's "all" semantics.
-func ApplyBaselineSourceScope(dir, revisionSHA, buildTarget, scope string, files []SelectedFile) (kept []SelectedFile, excluded []codesignal.CoverageGroup, err error) {
-	classified, err := classifySourceFiles(dir, revisionSHA, buildTarget, scope, files)
-	if err != nil {
-		return nil, nil, err
-	}
-	if scope == "all" {
-		return classified, nil, nil
-	}
-
-	kept, excluded = tallyClassified(classified)
-	return kept, excluded, nil
-}
 
 // tallyClassified splits classified (files already labeled by
 // classifySourceFiles) into files that ship (kept) and files that don't
 // (excluded), grouped by (SourceScope reason, Language) pair. It is shared
 // by ApplySourceScope and ApplyBaselineSourceScope, whose only difference is
 // what they do with the two results.
-func tallyClassified(classified []SelectedFile) (kept []SelectedFile, excluded []codesignal.CoverageGroup) {
-	type groupKey struct{ reason, language string }
-	counts := make(map[groupKey]int)
-
-	kept = make([]SelectedFile, 0, len(classified))
-	for _, file := range classified {
-		if file.SourceScope == SourceScopeTestOnly || file.SourceScope == SourceScopeExcluded {
-			counts[groupKey{reason: file.SourceScope, language: string(file.Language)}]++
-			continue
-		}
-		kept = append(kept, file)
-	}
-
-	keys := make([]groupKey, 0, len(counts))
-	for key := range counts {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].reason != keys[j].reason {
-			return keys[i].reason < keys[j].reason
-		}
-		return keys[i].language < keys[j].language
-	})
-
-	for _, key := range keys {
-		excluded = append(excluded, codesignal.CoverageGroup{
-			Reason:   key.reason,
-			Language: key.language,
-			Count:    counts[key],
-		})
-	}
-
-	return kept, excluded
-}
 
 // classifySourceFiles labels each selected file's SourceScope without
 // filtering any of them out, so ApplySourceScope and
@@ -147,87 +83,8 @@ func classifySourceFiles(dir, headSHA, buildTarget, scope string, files []Select
 	return classified, nil
 }
 
-func classifyFilename(file SelectedFile) string {
-	if strings.HasSuffix(file.Path, "_test.go") {
-		return SourceScopeTestOnly
-	}
-	return SourceScopeUnknown
-}
-
-func classifySourceFile(file SelectedFile, goProduction map[string]bool, buildTarget string, config tsConfig, hasTSConfig bool) string {
-	switch file.Language {
-	case semantics.LanguageGo:
-		if goProduction[file.Path] {
-			return SourceScopeProduction
-		}
-		if strings.HasSuffix(file.Path, "_test.go") {
-			return SourceScopeTestOnly
-		}
-		if buildTarget == "" {
-			return SourceScopeUnknown
-		}
-		return SourceScopeExcluded
-	case semantics.LanguageTypeScript, semantics.LanguageTSX:
-		if !hasTSConfig {
-			return SourceScopeUnknown
-		}
-		if config.matchesExclude(file.Path) || !config.matchesInclude(file.Path) {
-			return SourceScopeTestOnly
-		}
-		return SourceScopeProduction
-	default:
-		return SourceScopeUnknown
-	}
-}
-
 // goProductionFiles returns Go source files selected by the requested target.
 // go list applies both dependency reachability and Go build constraints.
-func goProductionFiles(snapshotDir, repositoryRoot, invocationDir, buildTarget string) (map[string]bool, error) {
-	if buildTarget == "" {
-		return nil, nil
-	}
-	target, err := snapshotBuildTarget(buildTarget, repositoryRoot, invocationDir, snapshotDir)
-	if err != nil {
-		return nil, err
-	}
-	output, err := runCommand(snapshotDir, "go", "list", "-deps", "-json", target)
-	if err != nil {
-		return nil, fmt.Errorf("determining Go production files for %q: %w", buildTarget, err)
-	}
-
-	var files = make(map[string]bool)
-	decoder := json.NewDecoder(bytes.NewReader(output))
-	for decoder.More() {
-		var pkg struct {
-			Dir      string
-			GoFiles  []string
-			CgoFiles []string
-		}
-		if err := decoder.Decode(&pkg); err != nil {
-			return nil, fmt.Errorf("decoding go list output: %w", err)
-		}
-		for _, name := range append(pkg.GoFiles, pkg.CgoFiles...) {
-			path, err := filepath.Rel(snapshotDir, filepath.Join(pkg.Dir, name))
-			if err == nil && !strings.HasPrefix(path, ".."+string(filepath.Separator)) {
-				files[filepath.ToSlash(path)] = true
-			}
-		}
-	}
-	return files, nil
-}
-
-func repositoryRoot(dir string) (string, error) {
-	output, err := runGit(dir, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return "", fmt.Errorf("determining repository root: %w", err)
-	}
-	root := strings.TrimSpace(output)
-	resolved, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return "", fmt.Errorf("resolving repository root: %w", err)
-	}
-	return resolved, nil
-}
 
 func AuthoringRepositoryRoot(dir string) (string, error) {
 	return repositoryRoot(dir)
@@ -235,95 +92,12 @@ func AuthoringRepositoryRoot(dir string) (string, error) {
 
 // snapshotBuildTarget preserves the meaning of relative package patterns
 // supplied from a subdirectory while making them point at the HEAD snapshot.
-func snapshotBuildTarget(target, repositoryRoot, invocationDir, snapshotDir string) (string, error) {
-	resolvedInvocationDir, err := filepath.EvalSymlinks(invocationDir)
-	if err != nil {
-		return "", fmt.Errorf("resolving invocation directory: %w", err)
-	}
-	if filepath.IsAbs(target) {
-		resolvedTarget, err := filepath.EvalSymlinks(target)
-		if err != nil {
-			return "", fmt.Errorf("resolving build target: %w", err)
-		}
-		rel, err := filepath.Rel(repositoryRoot, resolvedTarget)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return "", fmt.Errorf("build target %q is outside the repository", target)
-		}
-		return filepath.Join(snapshotDir, rel), nil
-	}
-	if !strings.HasPrefix(target, ".") {
-		return target, nil
-	}
-	relDir, err := filepath.Rel(repositoryRoot, resolvedInvocationDir)
-	if err != nil {
-		return "", fmt.Errorf("resolving build target: %w", err)
-	}
-	return filepath.Join(snapshotDir, relDir, target), nil
-}
 
-func createSnapshot(repositoryRoot, revision string) (string, error) {
-	archive, err := runGitBytes(repositoryRoot, "archive", "--format=tar", revision)
-	if err != nil {
-		return "", fmt.Errorf("reading source snapshot %q: %w", revision, err)
-	}
-	dir, err := os.MkdirTemp("", "coach-codesignal-snapshot-*")
-	if err != nil {
-		return "", fmt.Errorf("creating source snapshot: %w", err)
-	}
-	if err := extractTar(dir, archive); err != nil {
-		os.RemoveAll(dir)
-		return "", fmt.Errorf("extracting source snapshot: %w", err)
-	}
-	return dir, nil
-}
-
-func extractTar(dir string, archive []byte) error {
-	reader := tar.NewReader(bytes.NewReader(archive))
-	for {
-		header, err := reader.Next()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if err := extractTarEntry(dir, header, reader); err != nil {
-			return err
-		}
-	}
-}
-
-func extractTarEntry(dir string, header *tar.Header, reader *tar.Reader) error {
-	path, err := safeTarEntryPath(dir, header.Name)
-	if err != nil {
-		return err
-	}
-	switch header.Typeflag {
-	case tar.TypeXGlobalHeader, tar.TypeXHeader:
-		// Metadata headers are consumed by archive/tar and do not represent
-		// filesystem entries in the snapshot.
-		return nil
-	case tar.TypeDir:
-		return os.MkdirAll(path, os.FileMode(header.Mode))
-	case tar.TypeReg:
-		return extractTarRegularFile(path, header, reader)
-	case tar.TypeSymlink:
-		return extractTarSymlink(path, header)
-	default:
-		return fmt.Errorf("unsupported archive entry %q", header.Name)
-	}
-}
+// Metadata headers are consumed by archive/tar and do not represent
+// filesystem entries in the snapshot.
 
 // safeTarEntryPath joins name onto dir and rejects any result that would
 // escape dir (a path-traversal entry such as "../../etc/passwd").
-func safeTarEntryPath(dir, name string) (string, error) {
-	path := filepath.Join(dir, filepath.FromSlash(name))
-	rel, err := filepath.Rel(dir, path)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("unsafe archive path %q", name)
-	}
-	return path, nil
-}
 
 func extractTarRegularFile(path string, header *tar.Header, reader io.Reader) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -341,13 +115,6 @@ func extractTarRegularFile(path string, header *tar.Header, reader io.Reader) er
 	return closeErr
 }
 
-func extractTarSymlink(path string, header *tar.Header) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.Symlink(header.Linkname, path)
-}
-
 type tsConfig struct {
 	// Path-only; npm package extends are not resolved. Non-string (e.g. TS 5
 	// multi-base arrays) is ignored so the rest of the file still parses.
@@ -360,139 +127,26 @@ type tsConfig struct {
 
 // UnmarshalJSON accepts only string extends; other shapes leave Extends empty
 // without failing the whole config.
-func (c *tsConfig) UnmarshalJSON(data []byte) error {
-	type tsConfigAlias tsConfig
-	var aux struct {
-		Extends json.RawMessage `json:"extends"`
-		tsConfigAlias
-	}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	*c = tsConfig(aux.tsConfigAlias)
-	if len(aux.Extends) > 0 {
-		var extends string
-		if err := json.Unmarshal(aux.Extends, &extends); err == nil {
-			c.Extends = extends
-		}
-	}
-	return nil
-}
 
 // loadTSConfig resolves path-shaped extends chains. Child fields override
 // base fields (no merge). Inherited patterns are rebased to the declaring
 // base's directory. Cycles, escapes, npm extends, and I/O failures fail open
 // (ok=false) — tsconfig is attacker-influenced (e.g. fork PR input).
-func loadTSConfig(dir string) (tsConfig, bool, error) {
-	config, ok, err := readTSConfigFile(filepath.Join(dir, "tsconfig.json"))
-	if err != nil {
-		return tsConfig{}, false, err
-	}
-	if !ok {
-		return tsConfig{}, false, nil
-	}
-	if config.Extends == "" {
-		return config, true, nil
-	}
 
-	visited := map[string]bool{filepath.Clean(filepath.Join(dir, "tsconfig.json")): true}
-
-	// EvalSymlinks so rebase math uses the same path space as baseDir.
-	resolvedDir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return tsConfig{}, false, nil
-	}
-
-	snapshotRoot, currentDir, extends := resolvedDir, dir, config.Extends
-	for extends != "" {
-		base, baseDir, basePath, ok := resolveExtendedTSConfig(snapshotRoot, currentDir, extends)
-		if !ok || visited[basePath] {
-			return tsConfig{}, false, nil
-		}
-		visited[basePath] = true
-
-		config = applyTSConfigBase(config, snapshotRoot, baseDir, base)
-		currentDir, extends = baseDir, base.Extends
-	}
-	return config, true, nil
-}
+// EvalSymlinks so rebase math uses the same path space as baseDir.
 
 // applyTSConfigBase fills whichever of config's Include/Exclude/Files the
 // child left unset with base's own, rebased to base's directory.
-func applyTSConfigBase(config tsConfig, snapshotRoot, baseDir string, base tsConfig) tsConfig {
-	if config.Include == nil {
-		config.Include = rebaseTSConfigPatterns(snapshotRoot, baseDir, base.Include)
-	}
-	if config.Exclude == nil {
-		config.Exclude = rebaseTSConfigPatterns(snapshotRoot, baseDir, base.Exclude)
-	}
-	if config.Files == nil && base.Files != nil {
-		rebased := rebaseTSConfigPatterns(snapshotRoot, baseDir, *base.Files)
-		config.Files = &rebased
-	}
-	return config
-}
 
 // resolveExtendedTSConfig joins extends relative to dir, then enforces the
 // snapshotRoot boundary after EvalSymlinks (extractTar preserves symlinks;
 // a lexical-only check would read through an in-bounds symlink to a host
 // path). Boundary is snapshotRoot, not the current hop's directory.
-func resolveExtendedTSConfig(snapshotRoot, dir, extends string) (config tsConfig, baseDir, basePath string, ok bool) {
-	if !isTSConfigPathSpecifier(extends) {
-		return tsConfig{}, "", "", false
-	}
-	target := extends
-	if !filepath.IsAbs(target) {
-		target = filepath.Join(dir, target)
-	}
-	target = resolveTSConfigExtendsTarget(target)
-
-	resolvedRoot, err := filepath.EvalSymlinks(snapshotRoot)
-	if err != nil {
-		return tsConfig{}, "", "", false
-	}
-	resolvedTarget, err := filepath.EvalSymlinks(target)
-	if err != nil {
-		return tsConfig{}, "", "", false
-	}
-	rel, err := filepath.Rel(resolvedRoot, resolvedTarget)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return tsConfig{}, "", "", false
-	}
-	base, found, err := readTSConfigFile(resolvedTarget)
-	if err != nil || !found {
-		return tsConfig{}, "", "", false
-	}
-	return base, filepath.Dir(resolvedTarget), filepath.Clean(resolvedTarget), true
-}
 
 // resolveTSConfigExtendsTarget retries with ".json" when the literal path is missing.
-func resolveTSConfigExtendsTarget(target string) string {
-	if strings.HasSuffix(target, ".json") {
-		return target
-	}
-	if info, err := os.Stat(target); err == nil && !info.IsDir() {
-		return target
-	}
-	return target + ".json"
-}
 
 // rebaseTSConfigPatterns prefixes patterns with baseDir relative to snapshotRoot
 // (TS resolves them against the declaring config's directory). Nil stays nil.
-func rebaseTSConfigPatterns(snapshotRoot, baseDir string, patterns []string) []string {
-	if patterns == nil {
-		return nil
-	}
-	relBaseDir, err := filepath.Rel(snapshotRoot, baseDir)
-	if err != nil {
-		return patterns
-	}
-	rebased := make([]string, len(patterns))
-	for i, pattern := range patterns {
-		rebased[i] = filepath.ToSlash(filepath.Join(relBaseDir, pattern))
-	}
-	return rebased
-}
 
 // isTSConfigPathSpecifier is true for ./ ../ .\ ..\ or absolute paths only.
 func isTSConfigPathSpecifier(extends string) bool {
@@ -505,188 +159,28 @@ func isTSConfigPathSpecifier(extends string) bool {
 
 // readTSConfigFile does not follow extends. Missing/malformed => ok=false;
 // other I/O errors are returned.
-func readTSConfigFile(path string) (tsConfig, bool, error) {
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return tsConfig{}, false, nil
-	}
-	if err != nil {
-		return tsConfig{}, false, fmt.Errorf("reading %s: %w", path, err)
-	}
-	var config tsConfig
-	if err := json.Unmarshal(stripJSONCComments(data), &config); err != nil {
-		return tsConfig{}, false, nil
-	}
-	return config, true, nil
-}
 
 // stripJSONCComments strips // and /* */ outside strings, then trailing commas.
 // Unterminated /* returns the original bytes so Unmarshal fails closed.
-func stripJSONCComments(data []byte) []byte {
-	var out bytes.Buffer
-	inString := false
-	escaped := false
-	for i := 0; i < len(data); i++ {
-		b := data[i]
-		if inString {
-			inString, escaped = advanceInsideJSONString(&out, b, escaped)
-			continue
-		}
-		switch {
-		case b == '"':
-			inString = true
-			out.WriteByte(b)
-		case b == '/' && i+1 < len(data) && data[i+1] == '/':
-			i = skipJSONCLineComment(data, i)
-			if i < len(data) {
-				out.WriteByte('\n')
-			}
-		case b == '/' && i+1 < len(data) && data[i+1] == '*':
-			next, ok := skipJSONCBlockComment(data, i)
-			if !ok {
-				return data
-			}
-			i = next
-		default:
-			out.WriteByte(b)
-		}
-	}
-	return stripTrailingCommas(out.Bytes())
-}
 
 // advanceInsideJSONString writes b (already known to be inside a JSON
 // string literal) to out and returns the string/escape state after
 // consuming it. Shared by stripJSONCComments and stripTrailingCommas so
 // neither strips a comment- or comma-like byte that only appears inside a
 // string value.
-func advanceInsideJSONString(out *bytes.Buffer, b byte, escaped bool) (stillInString, stillEscaped bool) {
-	out.WriteByte(b)
-	switch {
-	case escaped:
-		return true, false
-	case b == '\\':
-		return true, true
-	case b == '"':
-		return false, false
-	}
-	return true, false
-}
 
 // skipJSONCLineComment returns the index of the '\n' terminating the "//"
 // comment starting at data[i], or len(data) if it runs to EOF.
-func skipJSONCLineComment(data []byte, i int) int {
-	for i < len(data) && data[i] != '\n' {
-		i++
-	}
-	return i
-}
 
 // skipJSONCBlockComment returns the index of the '/' closing the "/* */"
 // comment starting at data[i:i+2]. ok is false when the comment is
 // unterminated.
-func skipJSONCBlockComment(data []byte, i int) (newIndex int, ok bool) {
-	i += 2
-	for i+1 < len(data) && !(data[i] == '*' && data[i+1] == '/') {
-		i++
-	}
-	if i+1 >= len(data) {
-		return 0, false
-	}
-	return i + 1, true
-}
-
-func stripTrailingCommas(data []byte) []byte {
-	var out bytes.Buffer
-	inString := false
-	escaped := false
-	for i := 0; i < len(data); i++ {
-		b := data[i]
-		if inString {
-			inString, escaped = advanceInsideJSONString(&out, b, escaped)
-			continue
-		}
-		if b == '"' {
-			inString = true
-			out.WriteByte(b)
-			continue
-		}
-		if b == ',' && trailingCommaFollowedByClose(data, i) {
-			continue
-		}
-		out.WriteByte(b)
-	}
-	return out.Bytes()
-}
 
 // trailingCommaFollowedByClose reports whether the comma at data[i] is
 // followed only by whitespace before a closing '}' or ']', making it a
 // JSONC trailing comma to drop rather than emit.
-func trailingCommaFollowedByClose(data []byte, i int) bool {
-	j := i + 1
-	for j < len(data) && (data[j] == ' ' || data[j] == '\t' || data[j] == '\n' || data[j] == '\r') {
-		j++
-	}
-	return j < len(data) && (data[j] == '}' || data[j] == ']')
-}
 
 // matchesInclude is the union of files and include (TS semantics). Match-all
 // only when both are absent; explicit empty files selects nothing.
-func (c tsConfig) matchesInclude(path string) bool {
-	if c.Files != nil && matchesAny(path, *c.Files) {
-		return true
-	}
-	if len(c.Include) > 0 {
-		return matchesAny(path, c.Include)
-	}
-	return c.Files == nil
-}
 
 func (c tsConfig) matchesExclude(path string) bool { return matchesAny(path, c.Exclude) }
-
-func matchesAny(path string, patterns []string) bool {
-	for _, pattern := range patterns {
-		if globMatch(pattern, path) {
-			return true
-		}
-	}
-	return false
-}
-
-func globMatch(pattern, path string) bool {
-	var expression strings.Builder
-	expression.WriteString("^")
-	for i := 0; i < len(pattern); i++ {
-		switch pattern[i] {
-		case '*':
-			if i+1 < len(pattern) && pattern[i+1] == '*' {
-				i++
-				if i+1 < len(pattern) && pattern[i+1] == '/' {
-					i++
-					expression.WriteString("(?:.*/)?")
-				} else {
-					expression.WriteString(".*")
-				}
-			} else {
-				expression.WriteString("[^/]*")
-			}
-		case '?':
-			expression.WriteString("[^/]")
-		default:
-			expression.WriteString(regexp.QuoteMeta(string(pattern[i])))
-		}
-	}
-	expression.WriteString("$")
-	return regexp.MustCompile(expression.String()).MatchString(filepath.ToSlash(path))
-}
-
-func runCommand(dir, name string, args ...string) ([]byte, error) {
-	command := exec.Command(name, args...)
-	command.Dir = dir
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	output, err := command.Output()
-	if err != nil && stderr.Len() > 0 {
-		return nil, fmt.Errorf("%s: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	return output, err
-}

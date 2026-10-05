@@ -21,9 +21,7 @@ var _ = Describe("cmd/coach-worker config", func() {
 	})
 
 	AfterEach(func() {
-		for _, k := range envKeys {
-			_ = os.Unsetenv(k)
-		}
+		body_configAcceptanceTest_23(envKeys)
 	})
 
 	When("required env vars are present", func() {

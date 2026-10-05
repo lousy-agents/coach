@@ -5,17 +5,6 @@ import (
 	"io/fs"
 )
 
-// TSReachabilityAlgorithm identifies the TypeScript sidecar's own
-// possible-call-reachability traversal, matching the exact string
-// js/semantics/src/project-sidecar/reachability-registry.ts's
-// REACHABILITY_ALGORITHM constant emits on every ReachabilityFactWire --
-// Go and TypeScript must report the same algorithm-version string only
-// when describing the same wire-produced facts, not two independently
-// Go-invented identifiers. It is distinct from Go's own ReachabilityAlgorithm
-// (go-source-sink-registry@1): the two traversal implementations evolve
-// independently.
-const TSReachabilityAlgorithm = "ts-source-sink-registry@1"
-
 // Deprecated: call BuildTypeScriptModelViaSidecar once and pass the Model to
 // BuildTypeScriptReachabilityFromModel / BuildTypeScriptLayerBypassFromModel
 // instead, so multiple derivations share one sidecar round trip.

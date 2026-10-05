@@ -16,9 +16,7 @@ func TestConfigValidate(t *testing.T) {
 	}
 
 	t.Run("valid config passes", func(t *testing.T) {
-		if err := baseValid().Validate(); err != nil {
-			t.Fatalf("Validate() = %v, want nil", err)
-		}
+		body_configTest_validConfigPasses_18(t, baseValid)
 	})
 
 	tests := []struct {
@@ -33,11 +31,7 @@ func TestConfigValidate(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := baseValid()
-			tc.mutate(&cfg)
-			if err := cfg.Validate(); err == nil {
-				t.Fatalf("Validate() = nil, want an error for %s", tc.name)
-			}
+			body_configTest_35(t, baseValid, tc)
 		})
 	}
 }

@@ -2,8 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -59,110 +57,11 @@ const handlersCompliantOnly = "package handlers\n\nimport (\n\t\"net/http\"\n\n\
 // fixture.
 const handlersCompliantAndBypass = "package handlers\n\nimport (\n\t\"database/sql\"\n\t\"net/http\"\n\n\t\"example.com/app/pkg/service\"\n)\n\nfunc Handler(w http.ResponseWriter, r *http.Request) {\n\tservice.LoadUser()\n\tdirectQuery()\n}\n\nfunc directQuery() {\n\trawQuery()\n}\n\nfunc rawQuery() {\n\tvar db *sql.DB\n\tdb.Query(\"SELECT 1\")\n}\n"
 
-// expectLayerBypassChange asserts the shared architecture.layer_bypass
-// ProjectChange shape (structured path steps, provenance, stable semantic
-// identity), leaving the caller to assert Lifecycle/Changed.
-func expectLayerBypassChange(change codesignal.ProjectChange) {
-	ExpectWithOffset(1, change.RuleID).To(Equal("architecture.layer_bypass"))
-	ExpectWithOffset(1, change.Kind).To(Equal("architecture.layer_bypass"))
-	ExpectWithOffset(1, change.Severity).To(Equal(codesignal.Severity("advisory")))
-	ExpectWithOffset(1, change.Confidence).To(Equal(codesignal.Confidence("high")))
-	ExpectWithOffset(1, change.SemanticKey).To(Equal("architecture.layer_bypass:service:example.com/app/pkg/handlers.Handler->(*database/sql.DB).Query"))
-	ExpectWithOffset(1, change.PrimaryAnchor.Path).To(Equal("pkg/handlers/handlers.go"))
-	ExpectWithOffset(1, change.PathSteps).NotTo(BeEmpty())
-	for _, step := range change.PathSteps {
-		ExpectWithOffset(1, step.NodeID).NotTo(BeEmpty())
-		ExpectWithOffset(1, step.Confidence).To(Equal(codesignal.Confidence("high")))
-	}
-	ExpectWithOffset(1, change.PathSteps[0].NodeID).To(Equal("example.com/app/pkg/handlers.Handler"))
-	ExpectWithOffset(1, change.PathSteps[len(change.PathSteps)-1].NodeID).To(Equal("(*database/sql.DB).Query"))
-	ExpectWithOffset(1, change.MachineEvidence).To(Equal(map[string]string{
-		"source":         "example.com/app/pkg/handlers.Handler",
-		"sink":           "(*database/sql.DB).Query",
-		"required_layer": "service",
-		"path":           strings.Join(layerBypassPathNodeIDs(change), "->"),
-	}))
-	ExpectWithOffset(1, change.WhyItMatters).NotTo(BeEmpty())
-	ExpectWithOffset(1, change.Recommendation).NotTo(BeEmpty())
-	ExpectWithOffset(1, change.Provenance).To(Equal(codesignal.Provenance{Producer: "projectmodel", FindingKind: "architecture.layer_bypass"}))
-}
-
-func layerBypassPathNodeIDs(change codesignal.ProjectChange) []string {
-	nodeIDs := make([]string, len(change.PathSteps))
-	for i, step := range change.PathSteps {
-		nodeIDs[i] = step.NodeID
-	}
-	return nodeIDs
-}
-
-func decodeCoachReport(stdout []byte) *codesignal.Report {
-	var report codesignal.Report
-	ExpectWithOffset(1, json.Unmarshal(stdout, &report)).To(Succeed(), "stdout should be one JSON report: %s", stdout)
-	return &report
-}
-
-func normalizeProjectChangesModulePath(changes []codesignal.ProjectChange, modulePath string) []string {
-	normalized := make([]string, len(changes))
-	for i, change := range changes {
-		raw, err := json.Marshal(change)
-		ExpectWithOffset(1, err).NotTo(HaveOccurred())
-		normalized[i] = strings.ReplaceAll(string(raw), modulePath, "<MODULE_PATH>")
-	}
-	return normalized
-}
-
 type disabledProjectAnalysisReportPair struct {
 	repoWithConfigFile      string
 	stdoutWithConfigFile    []byte
 	reportWithConfigFile    *codesignal.Report
 	reportWithoutConfigFile *codesignal.Report
-}
-
-func buildDisabledProjectAnalysisReportPair() disabledProjectAnalysisReportPair {
-	repoWithConfigFile := newTempGitRepo()
-	commitFile(repoWithConfigFile, "go.mod", goModuleFile)
-	commitFile(repoWithConfigFile, "pkg/db/db.go", dbPackageFile)
-	commitFile(repoWithConfigFile, "pkg/handlers/handlers.go", handlersImportingDB)
-	commitFile(repoWithConfigFile, "pkg/model/model.go", modelFileWithTwoConstructors)
-	commitFile(repoWithConfigFile, "project.json", goLayerPolicyConfigJSON)
-
-	repoWithoutConfigFile := newTempGitRepo()
-	commitFile(repoWithoutConfigFile, "go.mod", goModuleFile)
-	commitFile(repoWithoutConfigFile, "pkg/db/db.go", dbPackageFile)
-	commitFile(repoWithoutConfigFile, "pkg/handlers/handlers.go", handlersImportingDB)
-	commitFile(repoWithoutConfigFile, "pkg/model/model.go", modelFileWithTwoConstructors)
-
-	stdoutWithConfigFile, stderrWithConfigFile, exitWithConfigFile := runCoachCodesignalBaselineRaw(repoWithConfigFile, "--format=json")
-	ExpectWithOffset(1, exitWithConfigFile).To(Equal(0), "stderr: %s", stderrWithConfigFile)
-	ExpectWithOffset(1, stderrWithConfigFile).To(BeEmpty())
-	reportWithConfigFile := decodeCoachReport(stdoutWithConfigFile)
-
-	stdoutWithoutConfigFile, stderrWithoutConfigFile, exitWithoutConfigFile := runCoachCodesignalBaselineRaw(repoWithoutConfigFile, "--format=json")
-	ExpectWithOffset(1, exitWithoutConfigFile).To(Equal(0), "stderr: %s", stderrWithoutConfigFile)
-	ExpectWithOffset(1, stderrWithoutConfigFile).To(BeEmpty())
-	reportWithoutConfigFile := decodeCoachReport(stdoutWithoutConfigFile)
-
-	ExpectWithOffset(1, reportWithConfigFile.Coverage.TrackedFilesDiscovered).To(
-		Equal(reportWithoutConfigFile.Coverage.TrackedFilesDiscovered+1),
-		"an unreferenced project.json must add exactly one to TrackedFilesDiscovered")
-	expectedUnsupported := append(append([]codesignal.CoverageGroup{}, reportWithoutConfigFile.Coverage.Unsupported...),
-		codesignal.CoverageGroup{Reason: "unsupported_language", Language: ".json", Count: 1})
-	ExpectWithOffset(1, reportWithConfigFile.Coverage.Unsupported).To(ConsistOf(expectedUnsupported),
-		"an unreferenced project.json must add exactly one unsupported_language(.json) group and change nothing else in Unsupported")
-
-	reportWithConfigFile.Scope.Revision = reportWithoutConfigFile.Scope.Revision
-	reportWithConfigFile.Coverage.TrackedFilesDiscovered = reportWithoutConfigFile.Coverage.TrackedFilesDiscovered
-	reportWithConfigFile.Coverage.Unsupported = reportWithoutConfigFile.Coverage.Unsupported
-
-	ExpectWithOffset(1, reportWithConfigFile).To(Equal(reportWithoutConfigFile),
-		"an unreferenced project.json in the tree must not change the report when --project-config is not supplied")
-
-	return disabledProjectAnalysisReportPair{
-		repoWithConfigFile:      repoWithConfigFile,
-		stdoutWithConfigFile:    stdoutWithConfigFile,
-		reportWithConfigFile:    reportWithConfigFile,
-		reportWithoutConfigFile: reportWithoutConfigFile,
-	}
 }
 
 var _ = Describe("coach codesignal --project-config with the real Go project-language backend", func() {
@@ -191,29 +90,7 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 
 	When("the CLI is invoked without --project-config against a repository that could otherwise report an architecture.layer_violation and a structural finding", func() {
 		It("stays on the schema-1 path, matches a repository that never had a project-analysis config at all, and leaks no project_* keys, schema_version 2, or project-analysis-only text", func() {
-			pair := buildDisabledProjectAnalysisReportPair()
-
-			By("(a) staying on the schema-1 path and (c) leaking no project_* key in JSON")
-			var document map[string]json.RawMessage
-			Expect(json.Unmarshal(pair.stdoutWithConfigFile, &document)).To(Succeed())
-			var schemaVersion string
-			Expect(json.Unmarshal(document["schema_version"], &schemaVersion)).To(Succeed())
-			Expect(schemaVersion).To(Equal("1"), "disabled project analysis must stay on the schema-1 path")
-			for _, key := range []string{"project_changes", "project_facts", "project_summary", "project_coverage"} {
-				Expect(document).NotTo(HaveKey(key), "disabled project analysis must never leak %q", key)
-			}
-			Expect(string(pair.stdoutWithConfigFile)).NotTo(ContainSubstring(`"schema_version":"2"`))
-
-			By("(b) matching a repository that never had a project-analysis config present at all")
-			// Asserted inside buildDisabledProjectAnalysisReportPair, not here.
-
-			By("(c) leaking no project-analysis-only marker in text output")
-			textStdout, textStderr, textExit := runCoachCodesignalBaselineRaw(pair.repoWithConfigFile)
-			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
-			text := string(textStdout)
-			for _, marker := range []string{"Project findings:", "Project summary:", "Project coverage:", "Facts:", "coverage_ref:"} {
-				Expect(text).NotTo(ContainSubstring(marker), "disabled project analysis text output must never show %q", marker)
-			}
+			body_projectGoBackendAcceptanceTest_staysOnTheSchema1PathMatchesARepositoryThatNever_93()
 		})
 	})
 
@@ -437,9 +314,6 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 		})
 	})
 
-	// Overlap validation treats "." as ancestor of every other prefix, so a
-	// config may use it only as the sole layer prefix; matchLayer must honor
-	// that same ancestry.
 	When(`--baseline is run with a catch-all layer prefix of "."`, func() {
 		It("matches nested packages and emits architecture.layer_violation rather than a silent complete:true no-op", func() {
 			const catchAllRootConfigJSON = `{"schema_version":"1","roots":["."],"layers":[{"name":"app","prefixes":["."]}],"forbidden_imports":[{"from":"app","to":"app"}]}`
@@ -474,130 +348,19 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 
 	When("comparing JSON and text output for the same baseline layer-violation scenario", func() {
 		It("presents the same structured evidence in text as JSON, and legacy (no config) text stays schema-1", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", goModuleFile)
-			commitFile(repo, "pkg/db/db.go", dbPackageFile)
-			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
-			By("committing a second importer of pkg/db so the violation group has two sites and RelatedLocations is non-empty")
-			commitFile(repo, "pkg/handlers/other.go", "package handlers\n\nimport \"example.com/app/pkg/db\"\n\nfunc Other() string {\n\treturn db.Name\n}\n")
-			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
-
-			jsonStdout, jsonStderr, jsonExit := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
-			Expect(jsonExit).To(Equal(0), "stderr: %s", jsonStderr)
-			report := decodeCoachReport(jsonStdout)
-			Expect(report.ProjectChanges).To(HaveLen(1))
-
-			textStdout, textStderr, textExit := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json")
-			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
-			text := string(textStdout)
-
-			Expect(text).To(ContainSubstring("Project findings:"))
-			Expect(text).To(ContainSubstring("semantic_key: " + report.ProjectChanges[0].SemanticKey))
-			Expect(text).To(ContainSubstring("rule_id: architecture.layer_violation"))
-			Expect(text).To(ContainSubstring("path: pkg/handlers/handlers.go"))
-			Expect(text).To(ContainSubstring("lifecycle: baseline"))
-			Expect(text).To(ContainSubstring("machine_evidence.importer: pkg/handlers"))
-			Expect(text).To(ContainSubstring("machine_evidence.importee: pkg/db"))
-			Expect(text).To(ContainSubstring("Project summary: active=1"))
-			Expect(text).To(ContainSubstring("Project coverage: phase=go_model_build, complete=true"))
-
-			By("asserting signals[] carries the same structured machine_evidence text shows, so a consumer reading only signals gets full parity")
-			Expect(report.Signals).To(HaveLen(1))
-			sig := report.Signals[0]
-			Expect(sig.MachineEvidence).To(Equal(map[string]string{
-				"importer":   "pkg/handlers",
-				"importee":   "pkg/db",
-				"layer_from": "handlers",
-				"layer_to":   "db",
-				"rule":       "handlers->db",
-			}))
-			for key, value := range sig.MachineEvidence {
-				Expect(text).To(ContainSubstring("machine_evidence." + key + ": " + value))
-			}
-			Expect(sig.RelatedLocations).NotTo(BeEmpty())
-			Expect(sig.RelatedLocations).To(Equal(report.ProjectChanges[0].RelatedLocations))
-
-			By("asserting text shows the same related location JSON RelatedLocations carries, not only the primary anchor")
-			for _, location := range sig.RelatedLocations {
-				Expect(text).To(ContainSubstring(fmt.Sprintf("related: %s:%d", location.Path, location.Location.StartRow+1)))
-			}
-
-			legacyStdout, legacyStderr, legacyExit := runCoachCodesignalBaselineRaw(repo)
-			Expect(legacyExit).To(Equal(0), "stderr: %s", legacyStderr)
-			legacyText := string(legacyStdout)
-			Expect(legacyText).NotTo(ContainSubstring("Project findings:"))
-			Expect(legacyText).NotTo(ContainSubstring("Project coverage:"))
+			body_projectGoBackendAcceptanceTest_presentsTheSameStructuredEvidenceInTextAsJSONAnd_372()
 		})
 	})
 
 	When("a baseline scan produces both an architecture layer-violation finding and a low-severity structural finding in the same lifecycle group", func() {
 		It("orders the architecture finding ahead of the low-severity structural finding in signals[]", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", goModuleFile)
-			commitFile(repo, "pkg/db/db.go", dbPackageFile)
-			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
-			By("committing the structural finding so it naturally lands first in the pre-sort signals slice (Build appends file-local signals before project signals) -- sortSignals's sort.SliceStable would let that incidental order pass this test for the wrong reason unless the comparator itself is what decides the final order")
-			commitFile(repo, "pkg/model/model.go", modelFileWithTwoConstructors)
-			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
-
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(stderr).To(BeEmpty())
-
-			report := decodeCoachReport(stdout)
-
-			architectureIndex := -1
-			structuralIndex := -1
-			for i, sig := range report.Signals {
-				switch sig.RuleID {
-				case "architecture.layer_violation", "architecture.layer_bypass":
-					if architectureIndex == -1 {
-						architectureIndex = i
-					}
-				case "structure.constructor_density":
-					if structuralIndex == -1 {
-						structuralIndex = i
-					}
-				}
-			}
-
-			Expect(architectureIndex).To(BeNumerically(">=", 0), "expected an architecture.layer_violation or architecture.layer_bypass signal in signals[]: %s", stdout)
-			Expect(structuralIndex).To(BeNumerically(">=", 0), "expected a structure.constructor_density signal in signals[]: %s", stdout)
-
-			Expect(report.Signals[architectureIndex].Severity).To(Equal(codesignal.Severity("advisory")))
-			Expect(report.Signals[architectureIndex].Confidence).To(Equal(codesignal.Confidence("high")))
-			Expect(report.Signals[structuralIndex].Severity).To(Equal(codesignal.Severity("low")))
-			Expect(report.Signals[architectureIndex].Lifecycle).To(Equal(report.Signals[structuralIndex].Lifecycle), "both findings must belong to the same lifecycle group for this to test the severity comparator rather than group ordering")
-
-			Expect(architectureIndex).To(BeNumerically("<", structuralIndex), "an advisory-severity, high-confidence architecture finding must outrank a low-severity structural finding in signals[] order (issue #259)")
+			body_projectGoBackendAcceptanceTest_ordersTheArchitectureFindingAheadOfTheLowSeverit_430()
 		})
 	})
 
 	When("--baseline is run without --project-config against a revision that also carries an unreferenced project.json, a layer-violation import, and a low-severity structural finding", func() {
 		It("produces a report identical to an equivalent revision with no project.json at all, since no advisory signal can ever be produced without --project-config", func() {
-			pair := buildDisabledProjectAnalysisReportPair()
-			reportWithoutConfigFile := pair.reportWithoutConfigFile
-
-			By("also pinning today's exact signals[] sequence, so a future severityRank/comparator change that perturbs non-advisory ordering fails here even though it would perturb both reports above identically")
-			for _, sig := range reportWithoutConfigFile.Signals {
-				Expect(sig.Severity).NotTo(Equal(codesignal.Severity("advisory")), "no advisory signal can ever be produced without --project-config: %+v", sig)
-			}
-
-			type ruleIDPathSeverity struct {
-				RuleID   string
-				Path     string
-				Severity codesignal.Severity
-			}
-			gotSequence := make([]ruleIDPathSeverity, 0, len(reportWithoutConfigFile.Signals))
-			for _, sig := range reportWithoutConfigFile.Signals {
-				gotSequence = append(gotSequence, ruleIDPathSeverity{RuleID: sig.RuleID, Path: sig.Path, Severity: sig.Severity})
-			}
-			Expect(gotSequence).To(Equal([]ruleIDPathSeverity{
-				{RuleID: "structure.constructor_density", Path: "pkg/model/model.go", Severity: codesignal.Severity("low")},
-				{RuleID: "structure.pointer_return_density", Path: "pkg/model/model.go", Severity: codesignal.Severity("low")},
-				{RuleID: "structure.constructor_density", Path: "pkg/model/model.go", Severity: codesignal.Severity("low")},
-				{RuleID: "structure.pointer_return_density", Path: "pkg/model/model.go", Severity: codesignal.Severity("low")},
-			}), "the no-config-file signals[] sequence must stay this literal shape: one constructor_density/pointer_return_density pair per constructor (NewA, NewB) in modelFileWithTwoConstructors")
+			body_projectGoBackendAcceptanceTest_producesAReportIdenticalToAnEquivalentRevisionWi_473()
 		})
 	})
 
@@ -650,66 +413,13 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 
 	When("--baseline is run against a repository with a compliant route and a bypass route around a required intermediate layer", func() {
 		It("emits exactly one architecture.layer_bypass ProjectChange with baseline lifecycle, in signals[], counted in the summary, and exits 0", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", goModuleFile)
-			commitFile(repo, "pkg/service/service.go", servicePackageFile)
-			commitFile(repo, "pkg/handlers/handlers.go", handlersCompliantAndBypass)
-			commitFile(repo, "project.json", goLayerBypassPolicyConfigJSON)
-
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(stderr).To(BeEmpty())
-
-			report := decodeCoachReport(stdout)
-			Expect(report.ProjectChanges).To(HaveLen(1), "expected exactly one deterministic layer_bypass witness, got %+v", report.ProjectChanges)
-			change := report.ProjectChanges[0]
-			expectLayerBypassChange(change)
-			Expect(change.Lifecycle).To(Equal(codesignal.Lifecycle("baseline")))
-
-			Expect(report.ProjectSummary).NotTo(BeNil())
-			Expect(report.ProjectSummary.BaselineChanges).To(Equal(1))
-			Expect(report.ProjectSummary.ActiveChanges).To(Equal(1))
-
-			var found bool
-			for _, sig := range report.Signals {
-				if sig.RuleID == "architecture.layer_bypass" {
-					found = true
-					Expect(sig.Severity).To(Equal(codesignal.Severity("advisory")))
-					Expect(sig.Confidence).To(Equal(codesignal.Confidence("high")))
-				}
-			}
-			Expect(found).To(BeTrue(), "expected an architecture.layer_bypass entry in signals[]: %s", stdout)
+			body_projectGoBackendAcceptanceTest_emitsExactlyOneArchitectureLayerBypassProjectCha_548()
 		})
 	})
 
 	When("diff mode introduces a bypass route around a required intermediate layer that did not exist at base", func() {
 		It("emits exactly one architecture.layer_bypass ProjectChange classified as lifecycle introduced, and exits 0", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", goModuleFile)
-			commitFile(repo, "pkg/service/service.go", servicePackageFile)
-			commitFile(repo, "pkg/handlers/handlers.go", handlersCompliantOnly)
-			baseSHA := commitFile(repo, "project.json", goLayerBypassPolicyConfigJSON)
-			commitFile(repo, "pkg/handlers/handlers.go", handlersCompliantAndBypass)
-
-			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json", "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(stderr).To(BeEmpty())
-
-			report := decodeCoachReport(stdout)
-			Expect(report.ProjectChanges).To(HaveLen(1), "expected exactly one deterministic layer_bypass witness, got %+v", report.ProjectChanges)
-			change := report.ProjectChanges[0]
-			expectLayerBypassChange(change)
-			Expect(change.Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
-			Expect(change.Changed).To(BeTrue())
-			Expect(report.ProjectSummary.IntroducedChanges).To(Equal(1))
-
-			var found bool
-			for _, sig := range report.Signals {
-				if sig.RuleID == "architecture.layer_bypass" {
-					found = true
-				}
-			}
-			Expect(found).To(BeTrue(), "expected an architecture.layer_bypass entry in signals[]: %s", stdout)
+			body_projectGoBackendAcceptanceTest_emitsExactlyOneArchitectureLayerBypassProjectCha_582()
 		})
 	})
 })

@@ -22,10 +22,7 @@ func TestLanguageForExtension(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.ext, func(t *testing.T) {
-			gotLang, gotOK := LanguageForExtension(tt.ext)
-			if gotLang != tt.wantLang || gotOK != tt.wantOK {
-				t.Errorf("LanguageForExtension(%q): got (%q, %v), want (%q, %v)", tt.ext, gotLang, gotOK, tt.wantLang, tt.wantOK)
-			}
+			body_languageTest_24(t, tt)
 		})
 	}
 }

@@ -3,19 +3,13 @@ package main
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
+
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
-	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
 // version is overridden via -ldflags at release; a local build reports "dev".
@@ -38,27 +32,6 @@ var (
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
-}
-
-func run(args []string, stdout, stderr *os.File) int {
-	if len(args) == 0 {
-		fmt.Fprintln(stderr, topLevelUsage)
-		return 2
-	}
-
-	switch args[0] {
-	case "--help", "-h":
-		fmt.Fprintln(stdout, topLevelUsage)
-		return 0
-	case "--version":
-		fmt.Fprintln(stdout, version)
-		return 0
-	case "codesignal":
-		return runCodesignal(args[1:], stdout, stderr)
-	default:
-		fmt.Fprintf(stderr, "%s\ncoach: unknown command %q\n", topLevelUsage, args[0])
-		return 2
-	}
 }
 
 const topLevelUsage = `usage: coach <command> [flags]
@@ -88,36 +61,6 @@ type codesignalFlags struct {
 	failOnIncompleteCoverage bool
 }
 
-func runCodesignal(args []string, stdout, stderr *os.File) int {
-	parsed, exitCode, ok := parseCodesignalFlags(args, stdout, stderr)
-	if !ok {
-		return exitCode
-	}
-
-	dir, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintf(stderr, "coach codesignal: cannot determine working directory: %s\n", err)
-		return 1
-	}
-
-	if parsed.suggestProjectConfig {
-		if parsed.projectLanguage == "typescript" {
-			return runAuthorProjectConfigTypeScript(dir, parsed, stdout, stderr)
-		}
-		return runSuggestProjectConfig(dir, parsed, stdout, stderr)
-	}
-
-	if parsed.prepareCompiler {
-		return runPrepareCompilerMiseTypeScript(dir, parsed, os.Stdin, stdout, stderr)
-	}
-
-	if parsed.checkProject {
-		return runCheckProject(dir, parsed, stdout, stderr)
-	}
-
-	return runCodesignalScan(dir, parsed, stdout, stderr, newScanOfferBudget())
-}
-
 // countingBoolFlag is a flag.Value wrapper that counts how many times Set
 // was called, so parseCodesignalFlags can detect a flag supplied more than
 // once (flag.FlagSet's normal Bool/String accessors silently keep only the
@@ -127,21 +70,6 @@ type countingBoolFlag struct {
 	count int
 }
 
-func (c *countingBoolFlag) String() string {
-	if c == nil {
-		return "false"
-	}
-	return strconv.FormatBool(c.value)
-}
-func (c *countingBoolFlag) Set(s string) error {
-	v, err := strconv.ParseBool(s)
-	if err != nil {
-		return err
-	}
-	c.value = v
-	c.count++
-	return nil
-}
 func (c *countingBoolFlag) IsBoolFlag() bool { return true }
 
 type countingStringFlag struct {
@@ -149,40 +77,10 @@ type countingStringFlag struct {
 	count int
 }
 
-func (c *countingStringFlag) String() string {
-	if c == nil {
-		return ""
-	}
-	return c.value
-}
 func (c *countingStringFlag) Set(s string) error {
 	c.value = s
 	c.count++
 	return nil
-}
-
-func suggestProjectConfigRequested(args []string) bool {
-	for _, arg := range args {
-		if arg == "--suggest-project-config" || arg == "-suggest-project-config" {
-			return true
-		}
-		if value, ok := suggestProjectConfigFlagValue(arg); ok {
-			if requested, err := strconv.ParseBool(value); err == nil && !requested {
-				continue
-			}
-			return true
-		}
-	}
-	return false
-}
-
-func suggestProjectConfigFlagValue(arg string) (string, bool) {
-	for _, prefix := range []string{"--suggest-project-config=", "-suggest-project-config="} {
-		if strings.HasPrefix(arg, prefix) {
-			return arg[len(prefix):], true
-		}
-	}
-	return "", false
 }
 
 func writeSuggestInvalidArguments(stderr *os.File, message string) {
@@ -310,329 +208,15 @@ func finishCodesignalFlagParse(flags *flag.FlagSet, h codesignalFlagHolders, std
 	return parsed, 0, true
 }
 
-func parseCodesignalFlags(args []string, stdout, stderr *os.File) (codesignalFlags, int, bool) {
-	suggestRequested := suggestProjectConfigRequested(args)
-
-	flags := flag.NewFlagSet("codesignal", flag.ContinueOnError)
-	if suggestRequested {
-		flags.SetOutput(io.Discard)
-	} else {
-		flags.SetOutput(stderr)
-	}
-	holders := registerCodesignalFlags(flags)
-
-	if handled, code := handleCodesignalHelp(args, flags, suggestRequested, stdout, stderr); handled {
-		return codesignalFlags{}, code, false
-	}
-
-	if err := flags.Parse(args); err != nil {
-		if suggestRequested {
-			writeSuggestInvalidArguments(stderr, fmt.Sprintf("coach codesignal --suggest-project-config: invalid flags (project_config_suggestion_invalid_arguments): %s", err))
-			return codesignalFlags{}, 2, false
-		}
-		return codesignalFlags{}, 2, false
-	}
-
-	return finishCodesignalFlagParse(flags, holders, stderr)
-}
-
-func sortedFlagNames(setFlags map[string]bool) []string {
-	names := make([]string, 0, len(setFlags))
-	for name := range setFlags {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
-func firstDisallowedFlag(setFlags, allowed map[string]bool) (string, bool) {
-	for _, name := range sortedFlagNames(setFlags) {
-		if !allowed[name] {
-			return name, true
-		}
-	}
-	return "", false
-}
-
-func rejectPositionalArgs(flagName string, positional []string, suffix string) string {
-	if len(positional) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("coach: --%s does not accept positional arguments%s", flagName, suffix)
-}
-
-func validateSuggestProjectConfigFlags(f codesignalFlags, setFlags map[string]bool, positional []string, suggestCount, outputCount int) string {
-	const suffix = " (project_config_suggestion_invalid_arguments)"
-	if suggestCount > 1 {
-		return "coach: --suggest-project-config may only be provided once" + suffix
-	}
-	if outputCount > 1 {
-		return "coach: --output may only be provided once" + suffix
-	}
-	if !f.baseline {
-		return "coach: --suggest-project-config requires --baseline" + suffix
-	}
-	allowedWithSuggest := map[string]bool{"suggest-project-config": true, "output": true, "baseline": true}
-	if f.projectLanguage == "typescript" {
-		// --no-interactive rides with the language: only the TypeScript
-		// path prompts, so accepting it for a Go candidate would advertise
-		// a guard over a flow that never opens a session.
-		allowedWithSuggest["project-language"] = true
-		allowedWithSuggest["no-interactive"] = true
-	}
-	if name, disallowed := firstDisallowedFlag(setFlags, allowedWithSuggest); disallowed {
-		return fmt.Sprintf("coach: --suggest-project-config cannot be combined with --%s%s", name, suffix)
-	}
-	return rejectPositionalArgs("suggest-project-config", positional, suffix)
-}
-
-func validateCheckProjectFlags(f codesignalFlags, setFlags map[string]bool, positional []string, checkProjectCount int) string {
-	if checkProjectCount > 1 {
-		return "coach: --check-project may only be provided once"
-	}
-	if !f.baseline {
-		return "coach: --check-project requires --baseline"
-	}
-	if f.projectLanguage != "typescript" {
-		return fmt.Sprintf("coach: --check-project requires --project-language typescript (got %q)", f.projectLanguage)
-	}
-	if f.format != "text" && f.format != "json" {
-		return fmt.Sprintf("coach: invalid --format value %q: must be \"text\" or \"json\"", f.format)
-	}
-	if f.projectConfigSet {
-		if err := codesignalcli.ValidateProjectConfigPath(f.projectConfig); err != nil {
-			return fmt.Sprintf("coach: --project-config %q is invalid: %s", f.projectConfig, err)
-		}
-	}
-	allowedWithCheckProject := map[string]bool{"check-project": true, "baseline": true, "project-language": true, "project-config": true, "format": true}
-	if name, disallowed := firstDisallowedFlag(setFlags, allowedWithCheckProject); disallowed {
-		return fmt.Sprintf("coach: --check-project cannot be combined with --%s", name)
-	}
-	return rejectPositionalArgs("check-project", positional, "")
-}
+// --no-interactive rides with the language: only the TypeScript
+// path prompts, so accepting it for a Go candidate would advertise
+// a guard over a flow that never opens a session.
 
 // validatePrepareCompilerFlags omits --format from its allowlist: this flow
 // never renders a report, so there is no format to choose.
-func validatePrepareCompilerFlags(f codesignalFlags, setFlags map[string]bool, positional []string, prepareCompilerCount int) string {
-	if prepareCompilerCount > 1 {
-		return "coach: --prepare-compiler may only be provided once"
-	}
-	if !f.baseline {
-		return "coach: --prepare-compiler requires --baseline"
-	}
-	if f.projectLanguage != "typescript" {
-		return fmt.Sprintf("coach: --prepare-compiler requires --project-language typescript (got %q)", f.projectLanguage)
-	}
-	if f.projectConfigSet {
-		if err := codesignalcli.ValidateProjectConfigPath(f.projectConfig); err != nil {
-			return fmt.Sprintf("coach: --project-config %q is invalid: %s", f.projectConfig, err)
-		}
-	}
-	allowedWithPrepareCompiler := map[string]bool{"prepare-compiler": true, "baseline": true, "project-language": true, "project-config": true, "no-interactive": true}
-	if name, disallowed := firstDisallowedFlag(setFlags, allowedWithPrepareCompiler); disallowed {
-		return fmt.Sprintf("coach: --prepare-compiler cannot be combined with --%s", name)
-	}
-	return rejectPositionalArgs("prepare-compiler", positional, "")
-}
 
 // runCheckProject dispatches `coach codesignal --check-project`: resolve
 // HEAD, compute the read-only readiness result, and render it. A revision
 // resolution or repository-inspection failure exits 1; an actionable
 // readiness gap is still exit 0 -- the result IS the deliverable, and
 // callers must read status/gaps, not the exit code.
-func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int {
-	revision, err := codesignalcli.ResolveBaselineRevision(dir)
-	if err != nil {
-		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
-	}
-
-	result, err := codesignalcli.CheckProjectReadiness(dir, revision, f.projectConfig)
-	if err != nil {
-		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
-	}
-
-	if f.format == "json" {
-		encoded, err := codesignalcli.RenderReadinessJSON(result)
-		if err != nil {
-			fmt.Fprintf(stderr, "coach codesignal --check-project: encoding result: %s\n", err)
-			return 1
-		}
-		if _, err := stdout.Write(encoded); err != nil {
-			fmt.Fprintf(stderr, "coach codesignal --check-project: writing result: %s\n", err)
-			return 1
-		}
-		return 0
-	}
-
-	if _, err := fmt.Fprint(stdout, codesignalcli.RenderReadinessText(result)); err != nil {
-		fmt.Fprintf(stderr, "coach codesignal --check-project: writing result: %s\n", err)
-		return 1
-	}
-	return 0
-}
-
-func runSuggestProjectConfig(dir string, f codesignalFlags, stdout, stderr *os.File) int {
-	result := codesignalcli.SuggestProjectConfig(dir, f.output, f.outputSet)
-	if len(result.Envelope) > 0 {
-		if _, writeErr := stderr.Write(result.Envelope); writeErr != nil {
-			fmt.Fprintf(stderr, "coach codesignal: writing diagnostic: %s\n", writeErr)
-			return 1
-		}
-	}
-	if result.ExitCode == 0 && len(result.Candidate) > 0 {
-		if _, writeErr := stdout.Write(result.Candidate); writeErr != nil {
-			fmt.Fprintf(stderr, "coach codesignal: writing candidate: %s\n", writeErr)
-			return 1
-		}
-	}
-	return result.ExitCode
-}
-
-func validateCodesignalFlags(f codesignalFlags, positional []string) string {
-	if f.outputSet {
-		return "coach: --output requires --suggest-project-config"
-	}
-	if f.baseline && f.base != "" {
-		return "coach: --baseline and --base are mutually exclusive: choose a Repository Baseline scan (--baseline) or a diff comparison (--base), not both"
-	}
-	if !f.baseline && f.base == "" {
-		return "coach: missing required --base flag"
-	}
-	if f.format != "text" && f.format != "json" {
-		return fmt.Sprintf("coach: invalid --format value %q: must be \"text\" or \"json\"", f.format)
-	}
-	if f.scope != "production" && f.scope != "all" {
-		return fmt.Sprintf("coach: invalid --scope value %q: must be \"production\" or \"all\"", f.scope)
-	}
-	if f.projectLanguage != "go" && f.projectLanguage != "typescript" {
-		return fmt.Sprintf("coach: invalid --project-language value %q: must be \"go\" or \"typescript\"", f.projectLanguage)
-	}
-	if len(positional) > 0 {
-		return fmt.Sprintf("coach: unexpected positional argument %q", positional[0])
-	}
-	return ""
-}
-
-func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, error) {
-	revisionSHA, err := codesignalcli.ResolveBaselineRevision(dir)
-	if err != nil {
-		return nil, err
-	}
-	discovered, coverage, err := codesignalcli.DiscoverTrackedFiles(dir, revisionSHA)
-	if err != nil {
-		return nil, err
-	}
-	kept, excluded, err := codesignalcli.ApplyBaselineSourceScope(dir, revisionSHA, f.buildTarget, f.scope, discovered)
-	if err != nil {
-		return nil, err
-	}
-	coverage.Excluded = excluded
-
-	project, diag, opErr := prepareProjectAnalysis(dir, revisionSHA, f.projectConfigSet, f.projectConfig, f.projectLanguage)
-	if opErr != nil {
-		return nil, opErr
-	}
-	disclosure := codesignalcli.WorkingTreeDisclosureDiagnostics(dir)
-	report, err := codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, disclosure, f.scope, coverage, project)
-	if err != nil {
-		return nil, wrapScanAnalysisError(err, dir, revisionSHA, f.projectConfig, stderr)
-	}
-	return withProjectDiagnostic(report, diag), nil
-}
-
-func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, error) {
-	headSHA, mergeBaseSHA, err := codesignalcli.ResolveRevisions(dir, f.base)
-	if err != nil {
-		return nil, err
-	}
-
-	selected, diagnostics, err := codesignalcli.SelectChangedFiles(dir, mergeBaseSHA)
-	if err != nil {
-		return nil, err
-	}
-	selected, excluded, err := codesignalcli.ApplySourceScope(dir, headSHA, f.buildTarget, f.scope, selected)
-	if err != nil {
-		return nil, err
-	}
-	diagnostics = append(diagnostics, codesignalcli.WorkingTreeDisclosureDiagnostics(dir)...)
-
-	project, diag, opErr := prepareProjectAnalysis(dir, headSHA, f.projectConfigSet, f.projectConfig, f.projectLanguage)
-	if opErr != nil {
-		return nil, opErr
-	}
-	report, err := codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, f.scope, excluded, project)
-	if err != nil {
-		return nil, wrapScanAnalysisError(err, dir, headSHA, f.projectConfig, stderr)
-	}
-	return withProjectDiagnostic(report, diag), nil
-}
-
-func withProjectDiagnostic(report *codesignal.Report, diag *codesignal.Diagnostic) *codesignal.Report {
-	if report == nil || diag == nil {
-		return report
-	}
-	out := *report
-	out.Diagnostics = append(append([]codesignal.Diagnostic(nil), report.Diagnostics...), *diag)
-	codesignal.SortDiagnostics(out.Diagnostics)
-	return &out
-}
-
-func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configPath, language string) (*codesignalcli.ProjectAnalysis, *codesignal.Diagnostic, error) {
-	if !projectConfigSet {
-		return nil, nil, nil
-	}
-	config, err := loadProjectConfig(dir, revision, configPath)
-	if err != nil {
-		if language == "typescript" {
-			err = codesignalcli.WrapProjectConfigErrorWithReadiness(err, dir, revision, configPath)
-		}
-		return nil, nil, err
-	}
-	if err := resolveProjectBackend(language); err != nil {
-		var backendErr *codesignalcli.ProjectBackendUnavailableError
-		if !errors.As(err, &backendErr) {
-			return nil, nil, err
-		}
-		return nil, &codesignal.Diagnostic{
-			Kind:    "project_backend_unavailable",
-			Path:    configPath,
-			Message: backendErr.Message,
-		}, nil
-	}
-	backend := lookupProjectBackend(language)
-	if backend == nil {
-		return nil, &codesignal.Diagnostic{
-			Kind:    "project_backend_unavailable",
-			Path:    configPath,
-			Message: fmt.Sprintf("coach codesignal: no project-analysis backend is available for language %q yet (project_backend_unavailable)", language),
-		}, nil
-	}
-	return &codesignalcli.ProjectAnalysis{
-		ConfigPath:   configPath,
-		Language:     language,
-		Config:       append(json.RawMessage(nil), config...),
-		ConfigDigest: codesignalcli.ConfigDigest(config),
-		Backend:      backend,
-	}, nil, nil
-}
-
-func renderReport(report *codesignal.Report, format string, stdout, stderr *os.File) int {
-	if format == "json" {
-		encoded, err := codesignalcli.RenderJSON(report)
-		if err != nil {
-			fmt.Fprintf(stderr, "coach codesignal: encoding report: %s\n", err)
-			return 1
-		}
-		if _, err := stdout.Write(encoded); err != nil {
-			fmt.Fprintf(stderr, "coach codesignal: writing report: %s\n", err)
-			return 1
-		}
-		return 0
-	}
-
-	if _, err := fmt.Fprint(stdout, codesignalcli.RenderText(report)); err != nil {
-		fmt.Fprintf(stderr, "coach codesignal: writing report: %s\n", err)
-		return 1
-	}
-	return 0
-}

@@ -32,11 +32,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/base64"
+
 	"encoding/json"
-	"errors"
+
 	"fmt"
-	"io"
+
 	"os"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -71,80 +71,9 @@ type fileRequest struct {
 	ChangedRanges []lineRangeRequest `json:"changed_ranges"`
 }
 
-func run(ctx context.Context, in io.Reader, out io.Writer) error {
-	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
-	if err != nil {
-		return err
-	}
-	builder, err := codesignal.New(codesignal.Options{})
-	if err != nil {
-		return err
-	}
-
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
-
-	scope, diagnostics := readScopeHeader(scanner)
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("read stdin: %w", err)
-	}
-
-	files, fileDiagnostics, err := readFileChanges(ctx, analyzer, scanner)
-	if err != nil {
-		return err
-	}
-	diagnostics = append(diagnostics, fileDiagnostics...)
-
-	report, err := builder.Build(ctx, codesignal.Input{Scope: scope, Files: files, Diagnostics: diagnostics})
-	if err != nil {
-		return err
-	}
-	return writeJSONLine(out, report)
-}
-
 // readFileChanges drains scanner's remaining file-request lines. A per-line
 // decode or analysis failure is reported as a diagnostic rather than an
 // error; only a context cancellation or a stdin read failure stops the scan.
-func readFileChanges(ctx context.Context, analyzer *semantics.Analyzer, scanner *bufio.Scanner) ([]codesignal.FileChange, []codesignal.Diagnostic, error) {
-	var files []codesignal.FileChange
-	var diagnostics []codesignal.Diagnostic
-	for scanner.Scan() {
-		if err := ctx.Err(); err != nil {
-			return nil, nil, err
-		}
-
-		line := scanner.Bytes()
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
-		}
-
-		fileDiagnostics, fc := processFileRequestLine(ctx, analyzer, line)
-		diagnostics = append(diagnostics, fileDiagnostics...)
-		if fc != nil {
-			files = append(files, *fc)
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, nil, fmt.Errorf("read stdin: %w", err)
-	}
-	return files, diagnostics, nil
-}
-
-func writeJSONLine(out io.Writer, report any) error {
-	encoded, err := json.Marshal(report)
-	if err != nil {
-		return fmt.Errorf("marshal report: %w", err)
-	}
-
-	writer := bufio.NewWriter(out)
-	if _, err := writer.Write(encoded); err != nil {
-		return fmt.Errorf("write report: %w", err)
-	}
-	if err := writer.WriteByte('\n'); err != nil {
-		return fmt.Errorf("write report: %w", err)
-	}
-	return writer.Flush()
-}
 
 func readScopeHeader(scanner *bufio.Scanner) (codesignal.Scope, []codesignal.Diagnostic) {
 	for scanner.Scan() {
@@ -211,53 +140,4 @@ func processFileRequestLine(ctx context.Context, analyzer *semantics.Analyzer, l
 	}
 
 	return diagnostics, &fc
-}
-
-func deriveChangeStatus(head, base *string) codesignal.ChangeStatus {
-	switch {
-	case head != nil && base != nil:
-		return "modified"
-	case head != nil:
-		return "added"
-	case base != nil:
-		return "removed"
-	default:
-		return "unknown"
-	}
-}
-
-func convertChangedRanges(ranges []lineRangeRequest) []codesignal.LineRange {
-	if len(ranges) == 0 {
-		return nil
-	}
-	converted := make([]codesignal.LineRange, len(ranges))
-	for i, r := range ranges {
-		converted[i] = codesignal.LineRange{StartRow: r.StartRow, EndRow: r.EndRow}
-	}
-	return converted
-}
-
-func decodeAndAnalyze(ctx context.Context, analyzer *semantics.Analyzer, path, language, encoded string) (*codesignal.Diagnostic, *semantics.Result) {
-	decoded, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return &codesignal.Diagnostic{
-			Path:    path,
-			Kind:    "invalid_content_encoding",
-			Message: fmt.Sprintf("invalid base64 content: %v", err),
-		}, nil
-	}
-
-	result, err := analyzer.AnalyzeBytes(ctx, semantics.FileInput{
-		Path:     path,
-		Language: semantics.Language(language),
-		Content:  decoded,
-	})
-	if err != nil && !errors.Is(err, semantics.ErrSyntax) {
-		return &codesignal.Diagnostic{
-			Path:    path,
-			Kind:    "analysis_failed",
-			Message: err.Error(),
-		}, nil
-	}
-	return nil, result
 }

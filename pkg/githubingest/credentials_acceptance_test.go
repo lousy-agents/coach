@@ -15,38 +15,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/githubingest"
 )
 
-// credentialsRSAKey is the credentials.go-focused variant of ginkgoRSAKey
-// (acceptance_test.go): a freshly generated RSA private key, PKCS#1-PEM
-// encoded like a real GitHub App private key. Never touches the network.
-func credentialsRSAKey() []byte {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	Expect(err).NotTo(HaveOccurred())
-	block := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
-	return pem.EncodeToMemory(block)
-}
-
-func newCredentialsFixture() *fakegithub.Fixture {
-	fx := fakegithub.NewFixture("credentials-fixture")
-
-	fx.Installation.Installations[123] = fakegithub.InstallationEntry{Token: "credentials-installation-token", Scenario: fakegithub.ScenarioOK}
-
-	fx.Installation.RepoMappings["acme/widgets"] = fakegithub.RepoInstallationEntry{InstallationID: 123, Scenario: fakegithub.ScenarioOK}
-	fx.Installation.RepoMappings["acme/transient-repo"] = fakegithub.RepoInstallationEntry{InstallationID: 123, Scenario: fakegithub.ScenarioTransient}
-
-	return &fx
-}
-
-func newCredentialResolver(server *fakegithub.Server) *githubingest.CredentialResolver {
-	GinkgoHelper()
-	resolver, err := githubingest.NewCredentialResolver(githubingest.CredentialResolverConfig{
-		AppID:      12345,
-		PrivateKey: credentialsRSAKey(),
-		BaseURL:    server.URL(),
-	})
-	Expect(err).NotTo(HaveOccurred())
-	return resolver
-}
-
 var _ = Describe("CredentialResolver (ADR-002 rule 5's single installation-token seam)", func() {
 	var (
 		fx     *fakegithub.Fixture
@@ -100,3 +68,24 @@ var _ = Describe("CredentialResolver (ADR-002 rule 5's single installation-token
 		})
 	})
 })
+
+// credentialsRSAKey is the credentials.go-focused variant of ginkgoRSAKey
+// (acceptance_test.go): a freshly generated RSA private key, PKCS#1-PEM
+// encoded like a real GitHub App private key. Never touches the network.
+func credentialsRSAKey() []byte {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	Expect(err).NotTo(HaveOccurred())
+	block := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
+	return pem.EncodeToMemory(block)
+}
+
+func newCredentialsFixture() *fakegithub.Fixture {
+	fx := fakegithub.NewFixture("credentials-fixture")
+
+	fx.Installation.Installations[123] = fakegithub.InstallationEntry{Token: "credentials-installation-token", Scenario: fakegithub.ScenarioOK}
+
+	fx.Installation.RepoMappings["acme/widgets"] = fakegithub.RepoInstallationEntry{InstallationID: 123, Scenario: fakegithub.ScenarioOK}
+	fx.Installation.RepoMappings["acme/transient-repo"] = fakegithub.RepoInstallationEntry{InstallationID: 123, Scenario: fakegithub.ScenarioTransient}
+
+	return &fx
+}

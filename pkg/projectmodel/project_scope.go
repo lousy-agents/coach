@@ -6,35 +6,17 @@ import (
 	"strings"
 )
 
-const InclusionRuleTSConfigIncludesNoTestClassification = "tsconfig_includes_no_test_classification"
-
 type ProjectScopePolicyLayer struct {
 	Name     string
 	Prefixes []string
 }
 
-// ProjectScopePolicy is not pkg/codesignal.LayerPolicy: pkg/codesignal
-// already imports pkg/projectmodel (rule_layer_violation.go), so importing
-// pkg/codesignal from here to reuse its type would create an import cycle.
-// Keep this type's Layers field shape in sync with ArchitectureLayer by
-// hand if that one changes.
+// ProjectScopePolicy is not pkg/codesignal.LayerPolicy. This package is an
+// adapter and must not import the use-case package. Keep this type's Layers
+// field shape in sync with ArchitectureLayer by hand if that one changes.
 type ProjectScopePolicy struct {
 	Roots  []string
 	Layers []ProjectScopePolicyLayer
-}
-
-type ProjectScopeRoot struct {
-	Root           string `json:"root"`
-	CandidateFiles int    `json:"candidate_files"`
-	AnalyzedFiles  int    `json:"analyzed_files"`
-}
-
-type ProjectScope struct {
-	InclusionRule   string             `json:"inclusion_rule"`
-	PatternSet      string             `json:"pattern_set"`
-	Roots           []ProjectScopeRoot `json:"roots"`
-	MatchedLayers   []string           `json:"matched_layers"`
-	UnmatchedLayers []string           `json:"unmatched_layers"`
 }
 
 func ProjectScopeFromModel(model Model, policy ProjectScopePolicy) (ProjectScope, error) {
@@ -80,29 +62,43 @@ func ProjectScopeFromModel(model Model, policy ProjectScopePolicy) (ProjectScope
 }
 
 func analyzedFilePathsFromRootScopes(scopes []RootScope) []string {
-	seen := make(map[string]struct{})
-	var paths []string
+	acc := &analyzedPathAccumulator{seen: make(map[string]struct{})}
 	for _, scope := range scopes {
-		for _, p := range scope.AnalyzedPaths {
-			if _, exists := seen[p]; exists {
-				continue
-			}
-			seen[p] = struct{}{}
-			paths = append(paths, p)
-		}
+		acc.add(scope.AnalyzedPaths)
 	}
-	return paths
+	return acc.paths
+}
+
+type analyzedPathAccumulator struct {
+	seen  map[string]struct{}
+	paths []string
+}
+
+func (a *analyzedPathAccumulator) add(analyzed []string) {
+	for _, p := range analyzed {
+		if _, exists := a.seen[p]; exists {
+			continue
+		}
+		a.seen[p] = struct{}{}
+		a.paths = append(a.paths, p)
+	}
 }
 
 // layerMatchesAnyPath must stay in sync with pkg/codesignal's matchLayer
 // (see ProjectScopePolicy) -- an import cycle prevents sharing one
 // implementation.
 func layerMatchesAnyPath(layer ProjectScopePolicyLayer, paths []string) bool {
+	matched := false
 	for _, prefix := range layer.Prefixes {
-		for _, path := range paths {
-			if prefix == "." || path == prefix || strings.HasPrefix(path, prefix+"/") {
-				return true
-			}
+		matched = matched || prefixMatchesAnyPath(prefix, paths)
+	}
+	return matched
+}
+
+func prefixMatchesAnyPath(prefix string, paths []string) bool {
+	for _, path := range paths {
+		if prefix == "." || path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
 		}
 	}
 	return false

@@ -7,60 +7,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
-// mustParseGo parses source as Go and returns its root node plus a cleanup
-// function that closes the underlying tree. It reuses the syntaxParser seam
-// already exercised by parser_test.go rather than duplicating Tree-sitter
-// setup here.
-func mustParseGo(t *testing.T, source []byte) (engine.Node, func()) {
-	t.Helper()
-
-	sp := newSyntaxParser()
-	tree, err := sp.parse(context.Background(), source, LanguageGo)
-	if err != nil {
-		t.Fatalf("parsing Go source %q: got err %v, want nil", source, err)
-	}
-	return tree.RootNode(), tree.Close
-}
-
-// Smoke check (not itself an AC): the import-extraction query must compile
-// against the real Go grammar before any capture-matching logic is layered
-// on top, so a bad query surfaces as its own failure rather than being
-// buried inside a fixture test.
-func TestImportQuerySource_CompilesAgainstGoGrammar(t *testing.T) {
-	query, queryErr := languageRegistry[LanguageGo].engineLang.NewQuery(goImportQuerySource)
-	if queryErr != nil {
-		t.Fatalf("compiling import query %q against the Go grammar: got err %v, want nil", goImportQuerySource, queryErr)
-	}
-	defer query.Close()
-}
-
-// AC-3.1: a single import declaration must yield exactly one ImportFeature
-// with its quotes stripped from Path and no Alias.
-func TestExtractImports_SingleImport(t *testing.T) {
-	source := []byte("package main\n\nimport \"fmt\"\n")
-	root, closeTree := mustParseGo(t, source)
-	defer closeTree()
-
-	imports, err := extractGoImports(languageRegistry[LanguageGo].engineLang, root, source)
-	if err != nil {
-		t.Fatalf("extractGoImports for single import %q: got err %v, want nil", source, err)
-	}
-
-	if len(imports) != 1 {
-		t.Fatalf("extractGoImports for single import %q: got %d imports (%+v), want exactly 1", source, len(imports), imports)
-	}
-	got := imports[0]
-	if got.Path != "fmt" {
-		t.Errorf("extractGoImports for single import %q: Path = %q, want %q", source, got.Path, "fmt")
-	}
-	if got.Alias != "" {
-		t.Errorf("extractGoImports for single import %q: Alias = %q, want empty", source, got.Alias)
-	}
-	if got.Location.StartByte >= got.Location.EndByte {
-		t.Errorf("extractGoImports for single import %q: Location = %+v, want a non-zero-width span", source, got.Location)
-	}
-}
-
 // AC-3.1: a grouped import declaration must yield one ImportFeature per
 // spec, ordered by Location.StartByte ascending (AC-1.10), which here
 // matches source declaration order.
@@ -93,110 +39,6 @@ func TestExtractImports_GroupedImports(t *testing.T) {
 	}
 }
 
-// AC-3.2: an aliased import (`import f "fmt"`) must carry the alias
-// identifier in ImportFeature.Alias.
-func TestExtractImports_AliasedImport(t *testing.T) {
-	source := []byte("package main\n\nimport f \"fmt\"\n")
-	root, closeTree := mustParseGo(t, source)
-	defer closeTree()
-
-	imports, err := extractGoImports(languageRegistry[LanguageGo].engineLang, root, source)
-	if err != nil {
-		t.Fatalf("extractGoImports for aliased import %q: got err %v, want nil", source, err)
-	}
-	if len(imports) != 1 {
-		t.Fatalf("extractGoImports for aliased import %q: got %d imports (%+v), want exactly 1", source, len(imports), imports)
-	}
-	got := imports[0]
-	if got.Path != "fmt" {
-		t.Errorf("extractGoImports for aliased import %q: Path = %q, want %q", source, got.Path, "fmt")
-	}
-	if got.Alias != "f" {
-		t.Errorf("extractGoImports for aliased import %q: Alias = %q, want %q", source, got.Alias, "f")
-	}
-	if got.Location.StartByte >= got.Location.EndByte {
-		t.Errorf("extractGoImports for aliased import %q: Location = %+v, want a non-zero-width span", source, got.Location)
-	}
-}
-
-// AC-3.2: a dot import (`import . "fmt"`) must carry "." in
-// ImportFeature.Alias.
-func TestExtractImports_DotImport(t *testing.T) {
-	source := []byte("package main\n\nimport . \"fmt\"\n")
-	root, closeTree := mustParseGo(t, source)
-	defer closeTree()
-
-	imports, err := extractGoImports(languageRegistry[LanguageGo].engineLang, root, source)
-	if err != nil {
-		t.Fatalf("extractGoImports for dot import %q: got err %v, want nil", source, err)
-	}
-	if len(imports) != 1 {
-		t.Fatalf("extractGoImports for dot import %q: got %d imports (%+v), want exactly 1", source, len(imports), imports)
-	}
-	got := imports[0]
-	if got.Path != "fmt" {
-		t.Errorf("extractGoImports for dot import %q: Path = %q, want %q", source, got.Path, "fmt")
-	}
-	if got.Alias != "." {
-		t.Errorf("extractGoImports for dot import %q: Alias = %q, want %q", source, got.Alias, ".")
-	}
-	if got.Location.StartByte >= got.Location.EndByte {
-		t.Errorf("extractGoImports for dot import %q: Location = %+v, want a non-zero-width span", source, got.Location)
-	}
-}
-
-// AC-3.2: a blank import (`import _ "fmt"`) must carry "_" in
-// ImportFeature.Alias.
-func TestExtractImports_BlankImport(t *testing.T) {
-	source := []byte("package main\n\nimport _ \"fmt\"\n")
-	root, closeTree := mustParseGo(t, source)
-	defer closeTree()
-
-	imports, err := extractGoImports(languageRegistry[LanguageGo].engineLang, root, source)
-	if err != nil {
-		t.Fatalf("extractGoImports for blank import %q: got err %v, want nil", source, err)
-	}
-	if len(imports) != 1 {
-		t.Fatalf("extractGoImports for blank import %q: got %d imports (%+v), want exactly 1", source, len(imports), imports)
-	}
-	got := imports[0]
-	if got.Path != "fmt" {
-		t.Errorf("extractGoImports for blank import %q: Path = %q, want %q", source, got.Path, "fmt")
-	}
-	if got.Alias != "_" {
-		t.Errorf("extractGoImports for blank import %q: Alias = %q, want %q", source, got.Alias, "_")
-	}
-	if got.Location.StartByte >= got.Location.EndByte {
-		t.Errorf("extractGoImports for blank import %q: Location = %+v, want a non-zero-width span", source, got.Location)
-	}
-}
-
-// AC-3.2: a raw-string (backtick) import path must have its backticks
-// stripped from Path, with no Alias.
-func TestExtractImports_RawStringBacktickPath(t *testing.T) {
-	source := []byte("package main\n\nimport `fmt`\n")
-	root, closeTree := mustParseGo(t, source)
-	defer closeTree()
-
-	imports, err := extractGoImports(languageRegistry[LanguageGo].engineLang, root, source)
-	if err != nil {
-		t.Fatalf("extractGoImports for raw-string import %q: got err %v, want nil", source, err)
-	}
-	if len(imports) != 1 {
-		t.Fatalf("extractGoImports for raw-string import %q: got %d imports (%+v), want exactly 1", source, len(imports), imports)
-	}
-	got := imports[0]
-	if got.Path != "fmt" {
-		t.Errorf("extractGoImports for raw-string import %q: Path = %q, want %q (backticks stripped)", source, got.Path, "fmt")
-	}
-	if got.Alias != "" {
-		t.Errorf("extractGoImports for raw-string import %q: Alias = %q, want empty", source, got.Alias)
-	}
-	if got.Location.StartByte >= got.Location.EndByte {
-		t.Errorf("extractGoImports for raw-string import %q: Location = %+v, want a non-zero-width span", source, got.Location)
-	}
-}
-
 // Regression guard raised by review: stripping only the leading/trailing
 // delimiter leaves escape sequences (e.g. \x2f) in Path as raw source text
 // instead of interpreting them the way the Go compiler would. Path must be
@@ -221,4 +63,19 @@ import "example.com/foo\x2fbar"
 	if got.Path != want {
 		t.Errorf("extractGoImports for escaped import path %q: Path = %q, want %q (interpreted, not raw escape text)", source, got.Path, want)
 	}
+}
+
+// mustParseGo parses source as Go and returns its root node plus a cleanup
+// function that closes the underlying tree. It reuses the syntaxParser seam
+// already exercised by parser_test.go rather than duplicating Tree-sitter
+// setup here.
+func mustParseGo(t *testing.T, source []byte) (engine.Node, func()) {
+	t.Helper()
+
+	sp := newSyntaxParser()
+	tree, err := sp.parse(context.Background(), source, LanguageGo)
+	if err != nil {
+		t.Fatalf("parsing Go source %q: got err %v, want nil", source, err)
+	}
+	return tree.RootNode(), tree.Close
 }
