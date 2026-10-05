@@ -24,7 +24,7 @@ func tsconfigJSON(v any) *fstest.MapFile {
 
 // repoRootFromThisFile locates the repository root relative to this test
 // file's own path, mirroring pgMigrationFiles' runtime.Caller(0) convention
-// in internal/coachapi/store_postgres_acceptance_test.go.
+// in internal/coachapi/store/postgres/store_fixtures_test.go.
 func repoRootFromThisFile() string {
 	_, thisFile, _, ok := runtime.Caller(0)
 	Expect(ok).To(BeTrue(), "runtime.Caller(0) failed")

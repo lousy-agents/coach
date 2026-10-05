@@ -109,9 +109,9 @@ func (w *jsonFieldWalker) walk(t reflect.Type) {
 // presence/absence change is not a rename.
 //
 // This test freezes JSON field names only, for Report's JSON rendering path.
-// It says nothing about text-format output: internal/codesignalcli/render.go's
-// RenderText is pinned byte-for-byte only for the single scenario in
-// internal/codesignalcli/render_test.go's
+// It says nothing about text-format output: internal/codesignalcli/render/report_text.go's
+// ReportText is pinned byte-for-byte only for the single scenario in
+// internal/codesignalcli/render/signals_test.go's
 // TestRenderTextSignalsPresentRenderingIsPinnedExactly; there is no
 // exhaustive, field-name-level freeze of the text schema equivalent to this
 // test. That narrower gap is not something this test (or #218/T7, scoped to

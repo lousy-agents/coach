@@ -37,7 +37,7 @@ func BuildTypeScriptLayerBypass(ctx context.Context, snapshot fs.FS, meta Snapsh
 // case; see tsLayerBypassDiagnostics). A caller that treats this
 // LayerBypassResult as the customer-facing verdict must re-derive
 // completeness per findable witness the way
-// internal/codesignalcli/project_ts_backend.go's tsBypassCoverageForFold
+// internal/codesignalcli/ts_project_revision.go's tsBypassCoverageForFold
 // does, rather than trusting this field directly.
 func BuildTypeScriptLayerBypassFromModel(budgetCtx context.Context, model Model, requiredLayer BypassLayer) LayerBypassResult {
 	if budgetCtx == nil {
