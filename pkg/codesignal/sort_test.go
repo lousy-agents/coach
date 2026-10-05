@@ -6,79 +6,89 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func TestChangedRangeOverlap_ValidateChangedRangesSplitsInvalidFromValid(t *testing.T) {
-	fc := FileChange{
-		Path: "f.go",
-		ChangedRanges: []LineRange{
-			{StartRow: 1, EndRow: 3},
-			{StartRow: 5, EndRow: 2},
-			{StartRow: 10, EndRow: 10},
-			{StartRow: 8, EndRow: 4},
-		},
-	}
-
-	diagnostics, valid := validateChangedRanges(fc)
-
-	if len(diagnostics) != 2 {
-		t.Fatalf("diagnostics length: got %d, want 2: %+v", len(diagnostics), diagnostics)
-	}
-	for _, d := range diagnostics {
-		if d.Path != "f.go" {
-			t.Errorf("Diagnostic.Path: got %q, want %q", d.Path, "f.go")
-		}
-		if d.Kind != "invalid_changed_range" {
-			t.Errorf("Diagnostic.Kind: got %q, want %q", d.Kind, "invalid_changed_range")
-		}
-		if d.Message == "" {
-			t.Errorf("Diagnostic.Message must not be empty: %+v", d)
-		}
-	}
-
-	wantValid := []LineRange{
-		{StartRow: 1, EndRow: 3},
-		{StartRow: 10, EndRow: 10},
-	}
-	if len(valid) != len(wantValid) {
-		t.Fatalf("valid length: got %d, want %d: %+v", len(valid), len(wantValid), valid)
-	}
-	for i, r := range wantValid {
-		if valid[i] != r {
-			t.Errorf("valid[%d]: got %+v, want %+v", i, valid[i], r)
-		}
-	}
-}
-
-func TestChangedRangeOverlap_OverlapsAny(t *testing.T) {
-	ranges := []LineRange{{StartRow: 10, EndRow: 20}}
-
+func TestSortSignals_TiebreakersInOrder(t *testing.T) {
 	tests := []struct {
-		name string
-		loc  semantics.Location
-		want bool
+		name, order   string
+		first, second Signal
 	}{
-		{"strictly inside", semantics.Location{StartRow: 12, EndRow: 15}, true},
-		{"strictly outside before", semantics.Location{StartRow: 1, EndRow: 5}, false},
-		{"strictly outside after", semantics.Location{StartRow: 25, EndRow: 30}, false},
-		{"loc end row equals range start row", semantics.Location{StartRow: 5, EndRow: 10}, true},
-		{"loc start row equals range end row", semantics.Location{StartRow: 20, EndRow: 25}, true},
+		{"severity", "severity descending",
+			sortableSignal("a", "r", "f.go", "existing", false, "low", "medium", 0, 0),
+			sortableSignal("b", "r", "f.go", "existing", false, "high", "medium", 0, 0)},
+		{"confidence", "confidence descending",
+			sortableSignal("a", "r", "f.go", "existing", false, "medium", "low", 0, 0),
+			sortableSignal("b", "r", "f.go", "existing", false, "medium", "high", 0, 0)},
+		{"path", "path ascending",
+			sortableSignal("a", "r", "z.go", "existing", false, "medium", "medium", 0, 0),
+			sortableSignal("b", "r", "a.go", "existing", false, "medium", "medium", 0, 0)},
+		{"start row", "StartRow ascending",
+			sortableSignal("a", "r", "f.go", "existing", false, "medium", "medium", 10, 0),
+			sortableSignal("b", "r", "f.go", "existing", false, "medium", "medium", 1, 0)},
+		{"start col", "StartCol ascending",
+			sortableSignal("a", "r", "f.go", "existing", false, "medium", "medium", 1, 10),
+			sortableSignal("b", "r", "f.go", "existing", false, "medium", "medium", 1, 1)},
+		{"rule id", "RuleID ascending",
+			sortableSignal("a", "z.rule", "f.go", "existing", false, "medium", "medium", 0, 0),
+			sortableSignal("b", "a.rule", "f.go", "existing", false, "medium", "medium", 0, 0)},
+		{"id", "ID ascending",
+			sortableSignal("z", "r", "f.go", "existing", false, "medium", "medium", 0, 0),
+			sortableSignal("a", "r", "f.go", "existing", false, "medium", "medium", 0, 0)},
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			body_sortTest_66(t, ranges, tc)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expectSortPutsSecondFirst(t, tt.order, tt.first, tt.second)
 		})
 	}
 }
 
-func TestChangedRangeOverlap_MarkChangedOutsideAllRanges(t *testing.T) {
-	ranges := []LineRange{{StartRow: 10, EndRow: 20}}
-	signals := []Signal{
-		{Lifecycle: "existing", Location: semantics.Location{StartRow: 1, EndRow: 1}},
+// expectSortPutsSecondFirst sorts [first, second], which differ only in the
+// tiebreaker under test, and expects second to come out ahead.
+func expectSortPutsSecondFirst(t *testing.T, order string, first, second Signal) {
+	t.Helper()
+	signals := []Signal{first, second}
+	sortSignals(signals)
+	if signals[0].ID != second.ID || signals[1].ID != first.ID {
+		t.Errorf("%s: got order %q,%q, want %q,%q", order, signals[0].ID, signals[1].ID, second.ID, first.ID)
+	}
+}
+
+func TestSortSignals_PriorityGroupsInOrder(t *testing.T) {
+	introducedChanged := sortableSignal("1", "r", "f.go", "introduced", true, "medium", "medium", 0, 0)
+	existingChanged := sortableSignal("2", "r", "f.go", "existing", true, "medium", "medium", 0, 0)
+	introducedUnchanged := sortableSignal("3", "r", "f.go", "introduced", false, "medium", "medium", 0, 0)
+	existingUnchanged := sortableSignal("4", "r", "f.go", "existing", false, "medium", "medium", 0, 0)
+	resolved := sortableSignal("5", "r", "f.go", "resolved", false, "medium", "medium", 0, 0)
+	unknown := sortableSignal("6", "r", "f.go", "unknown", false, "medium", "medium", 0, 0)
+	bogus := sortableSignal("7", "r", "f.go", Lifecycle("bogus"), true, "medium", "medium", 0, 0)
+
+	signals := []Signal{bogus, resolved, existingUnchanged, unknown, introducedUnchanged, existingChanged, introducedChanged}
+	sortSignals(signals)
+
+	var gotIDs []string
+	for _, s := range signals {
+		gotIDs = append(gotIDs, s.ID)
 	}
 
-	signals = markChanged(signals, ranges)
+	want := []string{"1", "2", "3", "4", "5", "6", "7"}
+	if len(gotIDs) != len(want) {
+		t.Fatalf("sorted IDs: got %v, want %v", gotIDs, want)
+	}
+	for i := range want {
+		if gotIDs[i] != want[i] {
+			t.Errorf("sorted IDs: got %v, want %v", gotIDs, want)
+			break
+		}
+	}
+}
 
-	if signals[0].Changed {
-		t.Errorf("signal outside all ranges must have Changed=false: %+v", signals[0])
+func TestSortSignals_UnrecognizedConfidenceDoesNotPanicAndSortsLast(t *testing.T) {
+	bogusConfidence := sortableSignal("c", "r", "f.go", "existing", false, "medium", Confidence("bogus"), 0, 0)
+	lowConfidence := sortableSignal("d", "r", "f.go", "existing", false, "medium", "low", 0, 0)
+
+	signals2 := []Signal{bogusConfidence, lowConfidence}
+	sortSignals(signals2)
+
+	if signals2[0].ID != "d" || signals2[1].ID != "c" {
+		t.Errorf("unrecognized Confidence must sort after low: got order %q,%q, want %q,%q", signals2[0].ID, signals2[1].ID, "d", "c")
 	}
 }
 

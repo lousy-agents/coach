@@ -910,7 +910,22 @@ function C() {
 
 	When("L1: WorkspacePage.tsx gains a fourth useState binding between base and head", func() {
 		It("shall mark the base evidence resolved and the head evidence introduced", func() {
-			body_ruleReactOrchestrationAcceptanceTest_shallMarkTheBaseEvidenceResolvedAndTheHeadEviden_928()
+			base := analyzeTSXForCodesignal("WorkspacePage.tsx", reactOrchestrationRuleP1)
+			head := analyzeTSXForCodesignal("WorkspacePage.tsx", reactOrchestrationRuleP1WithDraft)
+
+			report := build(codesignal.Options{IncludeResolved: true}, codesignal.Input{Files: []codesignal.FileChange{{
+				Path: "WorkspacePage.tsx", Status: "modified", Base: base, Head: head,
+			}}})
+
+			signals := signalsByRule(report, reactOrchestrationRuleID)
+			Expect(signals).To(HaveLen(2), "expected a resolved base signal and an introduced head signal (distinct evidence keys)")
+
+			byLife := map[codesignal.Lifecycle]codesignal.Signal{}
+			for _, s := range signals {
+				byLife[s.Lifecycle] = s
+			}
+			Expect(byLife[codesignal.Lifecycle("resolved")].Evidence).To(Equal(reactOrchestrationEvidenceP1))
+			Expect(byLife[codesignal.Lifecycle("introduced")].Evidence).To(Equal(reactOrchestrationEvidenceL1Head))
 		})
 	})
 })
