@@ -200,7 +200,7 @@ func finishCodesignalFlagParse(flags *flag.FlagSet, h codesignalFlagHolders, std
 		return parsed, 0, true
 	}
 
-	if errMsg := validateCodesignalFlags(parsed); errMsg != "" {
+	if errMsg := validateCodesignalFlags(parsed, flags.Args()); errMsg != "" {
 		fmt.Fprintln(stderr, codesignalUsage)
 		fmt.Fprintln(stderr, errMsg)
 		return codesignalFlags{}, 2, false

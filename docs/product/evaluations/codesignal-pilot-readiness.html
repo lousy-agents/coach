@@ -318,12 +318,12 @@
     <h1>Can CodeSignal leave pilot?</h1>
     <p class="lede prose">A reading of the shipped CLI, made by running it. First published 16 Aug 2026. This page is the evidence for leaving pilot. It is not an old snapshot. Closed gaps move to the archive. They are not deleted. The ids stay.</p>
     <div class="meta">
-      <span>Last reviewed 27 Sep 2026</span>
-      <span>HEAD 00aa40f</span>
-      <span>~96 CLI runs</span>
+      <span>Last reviewed 28 Sep 2026</span>
+      <span>HEAD 9507876</span>
+      <span>~100 CLI runs</span>
       <span>6 repositories</span>
-      <span>23rd verification pass</span>
-      <span>#282 · 8 / 24 closed</span>
+      <span>24th verification pass</span>
+      <span>#282 · 9 / 24 closed</span>
     </div>
   </header>
 
@@ -334,7 +334,7 @@
     <p>Do not widen the audience on this restamp. The Go pilot that already runs can keep using baseline, a layer policy they wrote, and file-local diff mode on adds, modifications, deletes, renames, and copies.</p>
     <div class="tracks">
       <span class="tracks-label">Tracked in</span>
-      <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/282">epic #282 — 8 of 24 closed</a>
+      <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/282">epic #282 — 9 of 24 closed</a>
     </div>
   </div>
 
@@ -390,9 +390,9 @@
         <p><strong>Pass 21</strong> (26 Sep, <code>e94b3e1</code>). A focused restamp after file-local dirty-tree disclosure. Not a full corpus replay. The repro is two commits of one benign Go file, then a modified tracked <code>a.go</code>, a staged <code>indexed.go</code>, and an untracked <code>pending.go</code>, each a hidden-input mutation. <code>codesignal --baseline</code> and <code>--base HEAD~1</code> exit 0 in text and JSON. Each run names <code>worktree_changes_not_analyzed</code> with the classification and the path. <code>signals</code> stays empty. The same tree, cleaned, still prints the unqualified all-clear. Untracked <code>notes.md</code> alone says the working tree is not clean. It does not say the file was not analyzed. Twelve Go-built binary runs (<code>go build -o /tmp/coach-265 ./cmd/coach</code>). An earlier stamp named <code>e94b3e1</code>. History rewrite removed it from this branch. The masthead names <code>00aa40f</code>, the main revision this branch merges. Review-fix commits after that feat changed the project dirty-tree kind from <code>worktree_changes_not_analyzed</code> to <code>worktree_report_reflects_committed_head</code>.</p>
         <p><strong>Pass 22</strong> (27 Sep, <code>203810b</code>). A focused restamp after classifying AA/DD porcelain as unmerged, not staged, and correcting the G4 dirty-<code>bun.lock</code> kind. File-local AA/DD now emit <code>worktree_changes_not_analyzed</code> with classification unmerged. A committed-npm / dirty-<code>bun.lock</code> project scan emits <code>worktree_report_reflects_committed_head</code>, not the file-local skip kind. Not a full corpus replay. An earlier stamp named <code>203810b</code>. History rewrite removed it from this branch. The masthead names <code>00aa40f</code>, the main revision this branch merges.</p>
         <p><strong>Pass 23</strong> (27 Sep, <code>4b4027b</code>). A focused restamp after disclosing intent-to-add porcelain (<code> A</code> from <code>git add -N</code>) as untracked, rather than a silent all-clear. Not a full corpus replay. An earlier stamp named <code>4b4027b</code>. History rewrite removed it from this branch. The masthead names <code>00aa40f</code>, the main revision this branch merges.</p>
+        <p><strong>Pass 24</strong> (28 Sep, <code>9507876</code>). A focused re-run of the #273 positional claim on a Go-built binary. Not a corpus replay. Four invocations (<code>go build -o /tmp/coach-273 ./cmd/coach</code>) against a two-commit fixture. <code>codesignal --baseline extra-positional-arg</code> exits 2 with empty stdout and usage on stderr quoting <code>"extra-positional-arg"</code>. <code>codesignal --baseline extra-positional-arg --format json</code> is rejected the same way, rather than discarding <code>--format</code> and emitting text. <code>codesignal --base HEAD~1 bogus</code> exits 2 quoting <code>"bogus"</code>. <code>codesignal --baseline foo bar --format json</code> exits 2 quoting the first residual token <code>"foo"</code>. The masthead names <code>9507876</code>, the <code>main</code> revision this branch merges. The positional rejection lands with the closing PR. It does not hold at that revision alone.</p>
         <p><span class="chip verified">re-verified</span> means reproduced on this binary. <span class="chip closed">closed</span> means the old claim no longer holds. <span class="chip reported">agent-run</span> means observed, but it was not the focus of this pass. <span class="chip refuted">corrected</span> marks a prior claim that did not survive.</p>
       </div>
-
     <p class="prose">The corpus is this repo, <code>learn-go-with-tests</code> (the original 304-file repo), <code>lousy-iam</code>, <code>lousy-api-eval</code>, <code>lousy-agents</code>, and <code>lousy-docs</code>. The local binary prints <code>dev</code>. That is expected.</p>
   </section>
 
@@ -401,7 +401,7 @@
       <p class="eyebrow">Already closed</p>
       <h2>What 16–22 Aug actually unlocked</h2>
     </div>
-    <p class="prose">Eight of twenty-four #282 children are closed, and Go layer-bypass is a real CLI feature. A customer can trust these outcomes. They do not unlock a PR check.</p>
+    <p class="prose">Nine of twenty-four #282 children are closed, and Go layer-bypass is a real CLI feature. A customer can trust these outcomes. They do not unlock a PR check.</p>
 
     <div class="gaps">
 
@@ -612,6 +612,22 @@ path: , kind: worktree_not_clean, message: working tree is not clean: notes.md</
         </div>
       </article>
 
+      <article class="gap sev-closed">
+        <div class="gap-id">—</div>
+        <div class="gap-body">
+          <div class="gap-title">
+            <h3>Unexpected positional arguments are a usage error</h3>
+            <span class="chip closed">closed</span>
+            <span class="chip verified">verified</span>
+          </div>
+          <p>Pass 24 on <code>/tmp/coach-273</code>, built with <code>go build -o /tmp/coach-273 ./cmd/coach</code>, against a two-commit fixture. <code>codesignal --baseline extra-positional-arg</code> exits 2, writes nothing to stdout, and writes usage on stderr quoting <code>"extra-positional-arg"</code>. A flag after the positional is rejected rather than discarded: <code>codesignal --baseline extra-positional-arg --format json</code> and <code>codesignal --baseline foo bar --format json</code> also exit 2 with empty stdout, quoting <code>"extra-positional-arg"</code> and the first residual token <code>"foo"</code>. <code>codesignal --base HEAD~1 bogus</code> exits 2 quoting <code>"bogus"</code>.</p>
+          <div class="tracks">
+            <span class="tracks-label">Closed by</span>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/273">#273</a>
+          </div>
+        </div>
+      </article>
+
     </div>
   </section>
 
@@ -767,7 +783,6 @@ no project_next_actions</div>
       <li class="neg"><span><strong>Security-rule recall is still not a completeness claim.</strong> Supported if-init <code>Stat</code>/<code>Lstat</code>+<code>Open</code> fire; TypeScript <code>existsSync</code>+read and write-side fire. Missed: the idiomatic Go guard-clause, <code>os.IsNotExist</code>, Go write-side <code>Create</code>/<code>Rename</code>, TypeScript negated guard. Do not put the word “security” in front of a customer. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/205">#205</a></span></li>
       <li class="neg"><span><strong>Analysis still reads committed HEAD only.</strong> File-local disclosure names the uncommitted supported-language files. It does not scan them. That closed the false all-clear (<a class="chip issue" href="https://github.com/lousy-agents/coach/issues/265">#265</a>). It did not close the job. Working-tree scanning remains <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/168">#168</a>, and a confident leave for uncommitted work depends on it.</span></li>
       <li class="neg"><span><strong><code>--scope all --build-target</code> is byte-identical to <code>--scope all</code>.</strong> Filter policy and classifier evidence are still conflated. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/283">#283</a></span></li>
-      <li class="neg"><span><strong>Positional args still swallow every flag after them.</strong> <code>--baseline foo bar --format json</code> returns text, exit 0, empty stderr. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/273">#273</a></span></li>
       <li class="neg"><span><strong>The PRD rule inventory is more stale, not less</strong> — it still omits <code>architecture.layer_violation</code>, and now also omits the shipped Go <code>architecture.layer_bypass</code>. <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/274">#274</a></span></li>
       <li class="neg"><span><strong><code>source_sink_pack</code> is still a reserved no-op</strong> that changes project fingerprints without changing findings. Documented; still a footgun.</span></li>
     </ul>
@@ -807,8 +822,7 @@ no project_next_actions</div>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/281">#281 — TS test scope</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/277">#277 — vendor noise</a>
             <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/272">#272 — ranking</a>
-            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/279">#279 — text omits rule identity</a>
-          </div>
+            <a class="chip issue" href="https://github.com/lousy-agents/coach/issues/279">#279 — text omits rule identity</a>          </div>
         </div>
       </li>
       <li>
@@ -841,7 +855,7 @@ no project_next_actions</div>
         </div>
       </li>
     </ol>
-    <p class="prose">Worktree scanning is still open. <a href="https://github.com/lousy-agents/coach/issues/265">#265</a> closed the lie. The report now names Go, TypeScript, and TSX files it did not read. It still does not read them. <a href="https://github.com/lousy-agents/coach/issues/168">#168</a> is the capability, and it has no body. The question it has to answer is whether an uncommitted edit is a new mode, and what <code>lifecycle</code> means when there is no commit to compare. The current contract says those edits are ignored. A confident leave, for someone who has not committed yet, depends on that issue — or on a named audience that only wants the commit, and a restamp that shows they understood the warning. Positional arguments (<a href="https://github.com/lousy-agents/coach/issues/273">#273</a>) are still survivable. They are not this.</p>
+    <p class="prose">Worktree scanning is still open. <a href="https://github.com/lousy-agents/coach/issues/265">#265</a> closed the lie. The report now names Go, TypeScript, and TSX files it did not read. It still does not read them. <a href="https://github.com/lousy-agents/coach/issues/168">#168</a> is the capability, and it has no body. The question it has to answer is whether an uncommitted edit is a new mode, and what <code>lifecycle</code> means when there is no commit to compare. The current contract says those edits are ignored. A confident leave, for someone who has not committed yet, depends on that issue — or on a named audience that only wants the commit, and a restamp that shows they understood the warning.</p>
     <p class="prose">“Expand to Go teams as an advisory PR check” is not unlocked. The remaining reason is obtain, noise, a report that is hard to use, and uncommitted work that is named but not read. It is not a rename that says the change introduced nothing.</p>
   </section>
 

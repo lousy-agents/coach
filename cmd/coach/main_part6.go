@@ -9,7 +9,7 @@ import (
 	"os"
 )
 
-func validateCodesignalFlags(f codesignalFlags) string {
+func validateCodesignalFlags(f codesignalFlags, positional []string) string {
 	if f.outputSet {
 		return "coach: --output requires --suggest-project-config"
 	}
@@ -27,6 +27,9 @@ func validateCodesignalFlags(f codesignalFlags) string {
 	}
 	if f.projectLanguage != "go" && f.projectLanguage != "typescript" {
 		return fmt.Sprintf("coach: invalid --project-language value %q: must be \"go\" or \"typescript\"", f.projectLanguage)
+	}
+	if len(positional) > 0 {
+		return fmt.Sprintf("coach: unexpected positional argument %q", positional[0])
 	}
 	return ""
 }
