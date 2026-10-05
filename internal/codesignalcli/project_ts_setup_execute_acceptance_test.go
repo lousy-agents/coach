@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -54,9 +55,9 @@ func writeRecordingFailingSetupExecutable(name string) string {
 
 var _ = Describe("codesignalcli.RunConfirmedSetup's git usage", func() {
 	It("spawns git at most once, and only for a read-only status query -- never reset/clean/checkout (AC-SET-7, AC-18)", func() {
-		workDir := acceptanceTempGitRepo()
-		acceptanceCommitFile(workDir, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-		acceptanceCommitFile(workDir, "README.md", "hello\n")
+		workDir := gitfixture.Init(GinkgoT())
+		gitfixture.CommitFile(GinkgoT(), workDir, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+		gitfixture.CommitFile(GinkgoT(), workDir, "README.md", "hello\n")
 
 		stubDir := writeRecordingFailingSetupExecutable("npm")
 		GinkgoT().Setenv("PATH", setupExecutionAcceptancePath(stubDir))
@@ -84,10 +85,10 @@ var _ = Describe("codesignalcli.RunConfirmedSetup's git usage", func() {
 
 var _ = Describe("codesignalcli's residue disclosure parsing", func() {
 	It("reports a renamed path and a non-ASCII path without leaking git's porcelain quoting/rename syntax (AC-SET-7)", func() {
-		workDir := acceptanceTempGitRepo()
-		acceptanceCommitFile(workDir, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-		acceptanceCommitFile(workDir, "README.md", "hello\n")
-		acceptanceCommitFile(workDir, ".gitignore", "node_modules/\n")
+		workDir := gitfixture.Init(GinkgoT())
+		gitfixture.CommitFile(GinkgoT(), workDir, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+		gitfixture.CommitFile(GinkgoT(), workDir, "README.md", "hello\n")
+		gitfixture.CommitFile(GinkgoT(), workDir, ".gitignore", "node_modules/\n")
 
 		stubDir := writeRecordingFailingSetupExecutable("npm")
 		GinkgoT().Setenv("PATH", setupExecutionAcceptancePath(stubDir))

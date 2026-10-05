@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 func TestAggregateReadinessPrecedence(t *testing.T) {
@@ -93,11 +95,11 @@ func TestAggregateReadinessPrecedence(t *testing.T) {
 }
 
 func TestCheckProjectShapeWalksUpToParentPackageJSONWhenPolicyPassed(t *testing.T) {
-	repo := newTempGitRepoT(t)
+	repo := gitfixture.Init(t)
 	if err := os.MkdirAll(filepath.Join(repo, "js", "semantics", "src"), 0o755); err != nil {
 		t.Fatalf("mkdir nested src: %v", err)
 	}
-	revision := commitFileT(t, repo, "js/semantics/package.json", `{"name":"semantics","version":"1.0.0"}`+"\n")
+	revision := gitfixture.CommitFile(t, repo, "js/semantics/package.json", `{"name":"semantics","version":"1.0.0"}`+"\n")
 	if err := os.WriteFile(filepath.Join(repo, "js", "semantics", "src", "index.ts"), []byte("export const x = 1;\n"), 0o644); err != nil {
 		t.Fatalf("write index.ts: %v", err)
 	}

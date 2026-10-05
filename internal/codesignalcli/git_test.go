@@ -1,17 +1,8 @@
 package codesignalcli
 
 import (
-	"os"
-
 	"strings"
 	"testing"
-)
-
-var commitTestEnv = append(os.Environ(),
-	"GIT_AUTHOR_NAME=coach-test",
-	"GIT_AUTHOR_EMAIL=coach-test@example.com",
-	"GIT_COMMITTER_NAME=coach-test",
-	"GIT_COMMITTER_EMAIL=coach-test@example.com",
 )
 
 func TestResolveRevisions(t *testing.T) {

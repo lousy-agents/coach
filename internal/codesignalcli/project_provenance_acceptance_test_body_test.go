@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -18,8 +19,8 @@ func body_projectProvenanceAcceptanceTest_appendsAWorktreeReportReflectsCommitte
 	}
 	DeferCleanup(func() { listWorktreeStatus = original })
 
-	dir := acceptanceTempGitRepo()
-	acceptanceCommitFile(dir, "a.go", "package a\n")
+	dir := gitfixture.Init(GinkgoT())
+	gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n")
 
 	backend := identityHandoffBackend{result: &ProjectBackendResult{
 		RuntimeKind:   runtimeKindNode,
@@ -54,8 +55,8 @@ func body_projectProvenanceAcceptanceTest_worktreeReportReflectsCommittedHeadMes
 	}
 	DeferCleanup(func() { listWorktreeStatus = original })
 
-	dir := acceptanceTempGitRepo()
-	acceptanceCommitFile(dir, "a.ts", "export const x = 1;\n")
+	dir := gitfixture.Init(GinkgoT())
+	gitfixture.CommitFile(GinkgoT(), dir, "a.ts", "export const x = 1;\n")
 
 	backend := identityHandoffBackend{result: &ProjectBackendResult{}}
 	cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
@@ -87,8 +88,8 @@ func body_projectProvenanceAcceptanceTest_doesNotEmitAWorktreeProvenanceDiagnost
 	}
 	DeferCleanup(func() { listWorktreeStatus = original })
 
-	dir := acceptanceTempGitRepo()
-	acceptanceCommitFile(dir, "a.ts", "export const x = 1;\n")
+	dir := gitfixture.Init(GinkgoT())
+	gitfixture.CommitFile(GinkgoT(), dir, "a.ts", "export const x = 1;\n")
 
 	backend := identityHandoffBackend{result: &ProjectBackendResult{}}
 	cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
@@ -118,8 +119,8 @@ func body_projectProvenanceAcceptanceTest_emitsWorktreeStatusCheckFailedRatherTh
 	}
 	DeferCleanup(func() { listWorktreeStatus = original })
 
-	dir := acceptanceTempGitRepo()
-	acceptanceCommitFile(dir, "a.ts", "export const x = 1;\n")
+	dir := gitfixture.Init(GinkgoT())
+	gitfixture.CommitFile(GinkgoT(), dir, "a.ts", "export const x = 1;\n")
 
 	backend := identityHandoffBackend{result: &ProjectBackendResult{}}
 	cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)

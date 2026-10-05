@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 func TestRunPrepareCompilerMiseSetupCancelsOnDeclinedConfirmation(t *testing.T) {
@@ -58,8 +60,8 @@ func TestRunPrepareCompilerMiseSetupCancelsOnDeclinedConfirmation(t *testing.T) 
 func TestRunPrepareCompilerMiseSetupReportsRequestedVersionOnInstallFailure(t *testing.T) {
 	writeFailingInstallStubMiseOnPath(t)
 
-	repo := newTempGitRepoT(t)
-	revision := commitFileT(t, repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+	repo := gitfixture.Init(t)
+	revision := gitfixture.CommitFile(t, repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 	if err := os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644); err != nil {
 		t.Fatalf("write mise.toml: %v", err)
 	}

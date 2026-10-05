@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 func TestAppendedRemediationLine(t *testing.T) {
@@ -65,7 +67,7 @@ func TestRunCompilerSetupOfferCancelsOnUnreadableSelection(t *testing.T) {
 // fallback -- which names workingDirectory itself, an absolute path -- is
 // rewritten relative to the worktree root before it can reach the customer.
 func TestRepositoryRelativeChangedPathsOnlyRewritesTheResidueUnknownFallback(t *testing.T) {
-	root := newTempGitRepoT(t)
+	root := gitfixture.Init(t)
 	workingDirectory := filepath.Join(root, "packages", "app")
 
 	cases := []struct {

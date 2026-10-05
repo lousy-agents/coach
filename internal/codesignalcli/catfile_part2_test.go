@@ -3,6 +3,8 @@ package codesignalcli
 import (
 	"bytes"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 // TestRevisionFileReaderReadsFilesInRequestOrder is the acceptance test for
@@ -17,9 +19,9 @@ import (
 // the bytes for the path it was asked for -- proving state isn't corrupted
 // across a failure in the middle of a batch.
 func TestRevisionFileReaderReadsFilesInRequestOrder(t *testing.T) {
-	dir := newTempGitRepoT(t)
-	commitFileT(t, dir, "a.go", "package a\n\nfunc A() {}\n")
-	headSHA := commitFileT(t, dir, "b.go", "package b\n\nfunc B() {}\n")
+	dir := gitfixture.Init(t)
+	gitfixture.CommitFile(t, dir, "a.go", "package a\n\nfunc A() {}\n")
+	headSHA := gitfixture.CommitFile(t, dir, "b.go", "package b\n\nfunc B() {}\n")
 
 	reader, err := newRevisionFileReader(dir, headSHA)
 	if err != nil {

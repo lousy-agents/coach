@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
@@ -32,8 +33,8 @@ var _ = BeforeSuite(func() {
 var _ = Describe("tsProjectBackend.evaluateRevision", func() {
 	When("the analyzer's response has root_scopes entries but is missing one of the policy's requested roots", func() {
 		It("returns a real Go error wrapping ProjectScopeFromModel's mismatch, rather than soft-skipping to a nil project scope", func() {
-			dir := acceptanceTempGitRepo()
-			revision := acceptanceCommitFile(dir, "pkg/handlers/h.ts", "export const h = 1;\n")
+			dir := gitfixture.Init(GinkgoT())
+			revision := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/h.ts", "export const h = 1;\n")
 
 			runtimeDir := GinkgoT().TempDir()
 			runtime := &tsRuntime{

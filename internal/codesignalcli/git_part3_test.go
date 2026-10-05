@@ -3,13 +3,14 @@ package codesignalcli
 import (
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 func TestSelectChangedFilesRenameSelectsNewPathWithoutAddedStatus(t *testing.T) {
-	dir := newTempGitRepoT(t)
-	initialSHA := commitFileT(t, dir, "old.go", "package old\n// padding so rename detection kicks in\n// more padding\n// more padding\n// more padding\n")
-	renameFileT(t, dir, "old.go", "new.go")
+	dir := gitfixture.Init(t)
+	initialSHA := gitfixture.CommitFile(t, dir, "old.go", "package old\n// padding so rename detection kicks in\n// more padding\n// more padding\n// more padding\n")
+	gitfixture.Rename(t, dir, "old.go", "new.go")
 
 	selected, diagnostics, err := SelectChangedFiles(dir, initialSHA)
 	if err != nil {
@@ -38,10 +39,10 @@ func TestSelectChangedFilesRenameSelectsNewPathWithoutAddedStatus(t *testing.T) 
 }
 
 func TestSelectChangedFilesLanguageFiltering(t *testing.T) {
-	dir := newTempGitRepoT(t)
-	initialSHA := commitFileT(t, dir, "keep.go", "package keep\n")
-	commitFileT(t, dir, "keep.go", "package keep\n\nfunc F() {}\n")
-	commitFileT(t, dir, "unsupported.txt", "plain text\n")
+	dir := gitfixture.Init(t)
+	initialSHA := gitfixture.CommitFile(t, dir, "keep.go", "package keep\n")
+	gitfixture.CommitFile(t, dir, "keep.go", "package keep\n\nfunc F() {}\n")
+	gitfixture.CommitFile(t, dir, "unsupported.txt", "plain text\n")
 
 	selected, diagnostics, err := SelectChangedFiles(dir, initialSHA)
 	if err != nil {

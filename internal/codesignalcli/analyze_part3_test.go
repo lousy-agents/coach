@@ -5,6 +5,7 @@ import (
 
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
@@ -22,10 +23,10 @@ import (
 // TestAnalyzeBaseline) so a state leak from a mid-batch failure would have
 // somewhere to manifest.
 func TestAnalyzeBaselineInterleavedReadFailures(t *testing.T) {
-	dir := newTempGitRepoT(t)
-	commitFileT(t, dir, "a.go", "package a\n\nfunc UpdateA(input *int) { *input = 1 }\n")
-	commitFileT(t, dir, "b.go", "package b\n\nfunc UpdateB(input *int) { *input = 2 }\n")
-	headSHA := commitFileT(t, dir, "c.go", "package c\n\nfunc UpdateC(input *int) { *input = 3 }\n")
+	dir := gitfixture.Init(t)
+	gitfixture.CommitFile(t, dir, "a.go", "package a\n\nfunc UpdateA(input *int) { *input = 1 }\n")
+	gitfixture.CommitFile(t, dir, "b.go", "package b\n\nfunc UpdateB(input *int) { *input = 2 }\n")
+	headSHA := gitfixture.CommitFile(t, dir, "c.go", "package c\n\nfunc UpdateC(input *int) { *input = 3 }\n")
 
 	files := []SelectedFile{
 		{Path: "a.go", Language: semantics.LanguageGo},

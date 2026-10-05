@@ -3,6 +3,8 @@ package codesignalcli
 import (
 	"bytes"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 // TestRevisionFileReaderHandlesPathContainingNewline proves the batch
@@ -15,11 +17,11 @@ import (
 // for the rest of the batch -- this is the failure mode this test guards
 // against.
 func TestRevisionFileReaderHandlesPathContainingNewline(t *testing.T) {
-	dir := newTempGitRepoT(t)
+	dir := gitfixture.Init(t)
 	weirdPath := "weird\nname.txt"
-	commitFileT(t, dir, "before.go", "package before\n")
-	commitFileT(t, dir, weirdPath, "weird content\n")
-	headSHA := commitFileT(t, dir, "after.go", "package after\n")
+	gitfixture.CommitFile(t, dir, "before.go", "package before\n")
+	gitfixture.CommitFile(t, dir, weirdPath, "weird content\n")
+	headSHA := gitfixture.CommitFile(t, dir, "after.go", "package after\n")
 
 	reader, err := newRevisionFileReader(dir, headSHA)
 	if err != nil {

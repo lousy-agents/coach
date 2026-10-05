@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -77,8 +78,8 @@ var _ = Describe("applyProjectBackend diagnostics mutation contract", func() {
 			}
 			DeferCleanup(func() { listWorktreeStatus = original })
 
-			dir := acceptanceTempGitRepo()
-			acceptanceCommitFile(dir, "a.ts", "export const x = 1;\n")
+			dir := gitfixture.Init(GinkgoT())
+			gitfixture.CommitFile(GinkgoT(), dir, "a.ts", "export const x = 1;\n")
 
 			existing := codesignal.Diagnostic{Kind: "pre_existing", Message: "must survive"}
 			// Spare capacity lets append write into the backing array if it aliases.
@@ -118,9 +119,9 @@ var _ = Describe("snapshotReadPackageManagerField git error handling", func() {
 			}
 			DeferCleanup(func() { runPackageManagerRevisionGit = originalRunner })
 
-			dir := acceptanceTempGitRepo()
-			acceptanceCommitFile(dir, "package.json", `{"name":"x","packageManager":"pnpm@10.0.0"}`)
-			revision := acceptanceCommitFile(dir, "package-lock.json", `{"lockfileVersion":3}`)
+			dir := gitfixture.Init(GinkgoT())
+			gitfixture.CommitFile(GinkgoT(), dir, "package.json", `{"name":"x","packageManager":"pnpm@10.0.0"}`)
+			revision := gitfixture.CommitFile(GinkgoT(), dir, "package-lock.json", `{"lockfileVersion":3}`)
 
 			kind, _, _ := snapshotPackageManagerAtRevision(context.Background(), dir, revision, []string{"."})
 			Expect(kind).To(BeEmpty(),
@@ -138,9 +139,9 @@ var _ = Describe("snapshotDetectLockfileAtRoot git error handling", func() {
 			}
 			DeferCleanup(func() { runPackageManagerRevisionGit = originalRunner })
 
-			dir := acceptanceTempGitRepo()
-			revision := acceptanceCommitFile(dir, "package.json", `{"name":"x","packageManager":"npm@11.0.0"}`)
-			acceptanceCommitFile(dir, "package-lock.json", `{"lockfileVersion":3}`)
+			dir := gitfixture.Init(GinkgoT())
+			revision := gitfixture.CommitFile(GinkgoT(), dir, "package.json", `{"name":"x","packageManager":"npm@11.0.0"}`)
+			gitfixture.CommitFile(GinkgoT(), dir, "package-lock.json", `{"lockfileVersion":3}`)
 
 			kind, _, _ := snapshotPackageManagerAtRevision(context.Background(), dir, revision, []string{"."})
 			Expect(kind).To(BeEmpty(),
@@ -163,8 +164,8 @@ var _ = Describe("snapshotPackageManagerAtRevision context threading", func() {
 			}
 			DeferCleanup(func() { snapshotProbePackageManagerVersion = originalProbe })
 
-			dir := acceptanceTempGitRepo()
-			revision := acceptanceCommitFile(dir, "package-lock.json", `{"lockfileVersion":3}`)
+			dir := gitfixture.Init(GinkgoT())
+			revision := gitfixture.CommitFile(GinkgoT(), dir, "package-lock.json", `{"lockfileVersion":3}`)
 
 			snapshotPackageManagerAtRevision(scanCtx, dir, revision, []string{"."})
 

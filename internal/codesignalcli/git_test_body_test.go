@@ -4,12 +4,14 @@ import (
 	"os/exec"
 
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 func body_gitTest_validBase_19(t *testing.T) {
-	dir := newTempGitRepoT(t)
-	initialSHA := commitFileT(t, dir, "a.go", "package a\n")
-	headSHA := commitFileT(t, dir, "b.go", "package a\n\nfunc B() {}\n")
+	dir := gitfixture.Init(t)
+	initialSHA := gitfixture.CommitFile(t, dir, "a.go", "package a\n")
+	headSHA := gitfixture.CommitFile(t, dir, "b.go", "package a\n\nfunc B() {}\n")
 
 	gotHead, gotMergeBase, err := ResolveRevisions(dir, initialSHA)
 	if err != nil {
@@ -24,8 +26,8 @@ func body_gitTest_validBase_19(t *testing.T) {
 }
 
 func body_gitTest_invalidBase_36(t *testing.T) {
-	dir := newTempGitRepoT(t)
-	commitFileT(t, dir, "a.go", "package a\n")
+	dir := gitfixture.Init(t)
+	gitfixture.CommitFile(t, dir, "a.go", "package a\n")
 
 	_, _, err := ResolveRevisions(dir, "doesnotexist12345")
 	if err == nil {

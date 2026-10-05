@@ -4,6 +4,8 @@ import (
 	"errors"
 
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 // TestPrepareCompilerRemediationWithReadinessWithholdsADeadEndCommand pins
@@ -57,8 +59,8 @@ func TestPrepareCompilerRemediationWithReadinessWithholdsADeadEndCommand(t *test
 // CompilerUnresolvedErrorWithReadiness.Unwrap returns the original value
 // unchanged.
 func TestWrapCompilerUnresolvedErrorWithReadinessUnwrapsToThePlainError(t *testing.T) {
-	repo := newTempGitRepoT(t)
-	head := commitFileT(t, repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
+	repo := gitfixture.Init(t)
+	head := gitfixture.CommitFile(t, repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 
 	original := &CompilerUnresolvedError{Code: GapTypescriptCompilerMissing, ConfigPath: "project.json"}
 	wrapped := WrapCompilerUnresolvedErrorWithReadiness(original, repo, head, "project.json")

@@ -5,6 +5,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 // TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun drives
@@ -26,8 +28,8 @@ func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 	defer func() { locateMiseTypescriptInstall = originalLocate }()
 	locateMiseTypescriptInstall = (&sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun{installDir: installDir}).call
 
-	repo := newTempGitRepoT(t)
-	revision := commitFileT(t, repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+	repo := gitfixture.Init(t)
+	revision := gitfixture.CommitFile(t, repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 	(&sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun1{repo: repo, t: t}).call()
 
 	before, err := CheckProjectReadiness(repo, revision, "")

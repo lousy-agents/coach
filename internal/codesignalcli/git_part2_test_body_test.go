@@ -3,11 +3,13 @@ package codesignalcli
 import (
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 func body_gitPart2Test_validRepo_9(t *testing.T) {
-	dir := newTempGitRepoT(t)
-	headSHA := commitFileT(t, dir, "a.go", "package a\n")
+	dir := gitfixture.Init(t)
+	headSHA := gitfixture.CommitFile(t, dir, "a.go", "package a\n")
 
 	got, err := ResolveBaselineRevision(dir)
 	if err != nil {
@@ -35,7 +37,7 @@ func body_gitPart2Test_nonWorktreeDirectory_22(t *testing.T) {
 }
 
 func body_gitPart2Test_repositoryWithNoCommits_38(t *testing.T) {
-	dir := newTempGitRepoT(t)
+	dir := gitfixture.Init(t)
 
 	_, err := ResolveBaselineRevision(dir)
 	if err == nil {

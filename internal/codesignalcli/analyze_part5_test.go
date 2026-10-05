@@ -5,6 +5,7 @@ import (
 
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
@@ -16,9 +17,9 @@ import (
 // head result, rather than being silently treated as if the file had no
 // base content.
 func TestAnalyzeChangesBaseReadFailureForModifiedFile(t *testing.T) {
-	dir := newTempGitRepoT(t)
-	emptySHA := commitFileT(t, dir, "placeholder.go", "package placeholder\n")
-	headSHA := commitFileT(t, dir, "a.go", "package a\n\nfunc Update(input *int) { *input = 1 }\n")
+	dir := gitfixture.Init(t)
+	emptySHA := gitfixture.CommitFile(t, dir, "placeholder.go", "package placeholder\n")
+	headSHA := gitfixture.CommitFile(t, dir, "a.go", "package a\n\nfunc Update(input *int) { *input = 1 }\n")
 
 	files := []SelectedFile{
 		{Path: "a.go", Status: "modified", Language: semantics.LanguageGo},

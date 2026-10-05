@@ -2,14 +2,16 @@ package codesignalcli
 
 import (
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 func TestDiscoverTrackedFilesTalliesUnsupportedByExtension(t *testing.T) {
-	dir := newTempGitRepoT(t)
-	commitFileT(t, dir, "a.go", "package a\n")
-	commitFileT(t, dir, "notes.txt", "hello\n")
-	commitFileT(t, dir, "readme.md", "# hi\n")
-	headSHA := commitFileT(t, dir, "other.md", "# hi again\n")
+	dir := gitfixture.Init(t)
+	gitfixture.CommitFile(t, dir, "a.go", "package a\n")
+	gitfixture.CommitFile(t, dir, "notes.txt", "hello\n")
+	gitfixture.CommitFile(t, dir, "readme.md", "# hi\n")
+	headSHA := gitfixture.CommitFile(t, dir, "other.md", "# hi again\n")
 
 	files, coverage, err := DiscoverTrackedFiles(dir, headSHA)
 	if err != nil {
@@ -45,9 +47,9 @@ func TestDiscoverTrackedFilesTalliesUnsupportedByExtension(t *testing.T) {
 // an empty string that would be omitted from JSON and render as a blank in
 // text output.
 func TestDiscoverTrackedFilesLabelsExtensionlessFiles(t *testing.T) {
-	dir := newTempGitRepoT(t)
-	commitFileT(t, dir, "a.go", "package a\n")
-	headSHA := commitFileT(t, dir, "LICENSE", "MIT\n")
+	dir := gitfixture.Init(t)
+	gitfixture.CommitFile(t, dir, "a.go", "package a\n")
+	headSHA := gitfixture.CommitFile(t, dir, "LICENSE", "MIT\n")
 
 	_, coverage, err := DiscoverTrackedFiles(dir, headSHA)
 	if err != nil {

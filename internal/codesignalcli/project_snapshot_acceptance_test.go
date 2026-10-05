@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -52,11 +53,11 @@ var _ = Describe("NewGoSnapshotFS", func() {
 	var dir, sha string
 
 	BeforeEach(func() {
-		dir = acceptanceTempGitRepo()
+		dir = gitfixture.Init(GinkgoT())
 		Expect(os.MkdirAll(filepath.Join(dir, "pkg"), 0o755)).To(Succeed())
-		acceptanceCommitFile(dir, "main.go", "package main\n\nfunc main() {}\n")
-		acceptanceCommitFile(dir, "pkg/lib.go", "package pkg\n\nfunc Lib() {}\n")
-		sha = acceptanceCommitFile(dir, "README.md", "hello\n")
+		gitfixture.CommitFile(GinkgoT(), dir, "main.go", "package main\n\nfunc main() {}\n")
+		gitfixture.CommitFile(GinkgoT(), dir, "pkg/lib.go", "package pkg\n\nfunc Lib() {}\n")
+		sha = gitfixture.CommitFile(GinkgoT(), dir, "README.md", "hello\n")
 	})
 
 	It("lists every file tracked at revision, matching git ls-tree ground truth", func() {

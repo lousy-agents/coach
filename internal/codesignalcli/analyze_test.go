@@ -6,6 +6,7 @@ import (
 
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -14,9 +15,9 @@ import (
 // crashing the run, and that other files in the same batch are still
 // analyzed.
 func TestAnalyzeChangesSurvivesUnreadableFile(t *testing.T) {
-	dir := newTempGitRepoT(t)
-	initialSHA := commitFileT(t, dir, "healthy.go", "package healthy\n")
-	headSHA := commitFileT(t, dir, "healthy.go", "package healthy\n\nfunc Update(input *int) { *input = 1 }\n")
+	dir := gitfixture.Init(t)
+	initialSHA := gitfixture.CommitFile(t, dir, "healthy.go", "package healthy\n")
+	headSHA := gitfixture.CommitFile(t, dir, "healthy.go", "package healthy\n\nfunc Update(input *int) { *input = 1 }\n")
 
 	files := []SelectedFile{
 		{Path: "healthy.go", Status: "modified", Language: semantics.LanguageGo},

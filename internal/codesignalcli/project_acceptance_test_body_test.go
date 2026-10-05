@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
@@ -52,10 +53,10 @@ func body_projectAcceptanceTest_rejectsDocumentsThatExceedTheJSONNestingBudget_7
 }
 
 func body_projectAcceptanceTest_neverChangesWhichFindingsTheRealGoBackendProduce_858() {
-	dir := acceptanceTempGitRepo()
-	acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
-	acceptanceCommitFile(dir, "pkg/db/db.go", "package db\n\nvar Name = \"db\"\n")
-	sha := acceptanceCommitFile(dir, "pkg/handlers/handlers.go", "package handlers\n\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n")
+	dir := gitfixture.Init(GinkgoT())
+	gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
+	gitfixture.CommitFile(GinkgoT(), dir, "pkg/db/db.go", "package db\n\nvar Name = \"db\"\n")
+	sha := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n")
 	files := []SelectedFile{
 		{Path: "pkg/db/db.go", Language: "go", Status: "added"},
 		{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"},
@@ -130,9 +131,9 @@ func body_projectAcceptanceTest_degradesOnlyTheBaseSideCoverageIncompleteDiagnos
 		return projectmodel.LayerBypassResult{Coverage: projectmodel.Coverage{Phase: "layer_bypass_search", Complete: false}}, nil
 	}
 
-	dir := acceptanceTempGitRepo()
-	baseSHA := acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
-	headSHA := acceptanceCommitFile(dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
+	dir := gitfixture.Init(GinkgoT())
+	baseSHA := gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
+	headSHA := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
 	files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
 
 	project := &ProjectAnalysis{

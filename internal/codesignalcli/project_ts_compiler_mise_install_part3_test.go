@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 func writeFakeInstalledTypescriptForTest(t *testing.T, installDir, version string) {
@@ -45,9 +47,9 @@ func TestMiseChoicesForPrepareCompilerFallsBackToVerifiedChoicesWhenActionChoice
 		return newestSupportedTypescriptVersion(), true
 	}
 
-	repo := newTempGitRepoT(t)
-	revision := commitFileT(t, repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-	revision = commitFileT(t, repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
+	repo := gitfixture.Init(t)
+	revision := gitfixture.CommitFile(t, repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+	revision = gitfixture.CommitFile(t, repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 	if err := os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644); err != nil {
 		t.Fatalf("write mise.toml: %v", err)
 	}

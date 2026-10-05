@@ -8,6 +8,7 @@ import (
 
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
@@ -22,13 +23,13 @@ func TestSuggestProjectConfigIncompleteBudget(t *testing.T) {
 	suggestGoBudgets = projectmodel.GoBudgets{MaxInputFiles: 1}
 	t.Cleanup(func() { suggestGoBudgets = prev })
 
-	dir := newTempGitRepoT(t)
+	dir := gitfixture.Init(t)
 
 	for _, mod := range []string{"mod1", "mod2", "mod3"} {
 		if err := os.MkdirAll(filepath.Join(dir, mod), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", mod, err)
 		}
-		commitFileT(t, dir, filepath.Join(mod, "go.mod"), "module example.com/"+mod+"\n\ngo 1.25\n")
+		gitfixture.CommitFile(t, dir, filepath.Join(mod, "go.mod"), "module example.com/"+mod+"\n\ngo 1.25\n")
 	}
 
 	const outRel = "suggested-project.json"

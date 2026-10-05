@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/tstestutil"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
@@ -185,8 +186,8 @@ type recordingProjectBackend struct {
 
 var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges", func() {
 	It("threads baseline project results into a schema-2 report and skips the seam when project is nil", func() {
-		dir := acceptanceTempGitRepo()
-		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
+		dir := gitfixture.Init(GinkgoT())
+		sha := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() {}\n")
 		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
 
 		backend := &recordingProjectBackend{result: &ProjectBackendResult{
@@ -236,9 +237,9 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	})
 
 	It("threads diff head/base project observations and config identity into the builder", func() {
-		dir := acceptanceTempGitRepo()
-		baseSHA := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
-		headSHA := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() { println(1) }\n")
+		dir := gitfixture.Init(GinkgoT())
+		baseSHA := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() {}\n")
+		headSHA := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() { println(1) }\n")
 		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "modified"}}
 
 		backend := &recordingProjectBackend{result: &ProjectBackendResult{
@@ -289,8 +290,8 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	})
 
 	It("threads an incomplete HeadCoverage into a lifecycle-indeterminate report rather than claiming baseline", func() {
-		dir := acceptanceTempGitRepo()
-		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
+		dir := gitfixture.Init(GinkgoT())
+		sha := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() {}\n")
 		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
 
 		backend := &recordingProjectBackend{result: &ProjectBackendResult{
@@ -331,8 +332,8 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	})
 
 	It("renders the no-active-findings verdict as project-incomplete, not path-skipped, for a real incomplete-coverage report", func() {
-		dir := acceptanceTempGitRepo()
-		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
+		dir := gitfixture.Init(GinkgoT())
+		sha := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() {}\n")
 		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
 
 		backend := &recordingProjectBackend{result: &ProjectBackendResult{
@@ -360,9 +361,9 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	})
 
 	It("renders project-incomplete for a real report whose base-side coverage was incomplete even though head coverage is complete", func() {
-		dir := acceptanceTempGitRepo()
-		baseSHA := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
-		headSHA := acceptanceCommitFile(dir, "a.go", "package a\n\n// note\nfunc A() {}\n")
+		dir := gitfixture.Init(GinkgoT())
+		baseSHA := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() {}\n")
+		headSHA := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\n// note\nfunc A() {}\n")
 		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "modified"}}
 
 		backend := &recordingProjectBackend{result: &ProjectBackendResult{
@@ -392,8 +393,8 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	})
 
 	It("renders the generic incomplete-analysis fallback for a real report whose only diagnostic is an anchorless project observation", func() {
-		dir := acceptanceTempGitRepo()
-		sha := acceptanceCommitFile(dir, "a.go", "package a\n\nfunc A() {}\n")
+		dir := gitfixture.Init(GinkgoT())
+		sha := gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n\nfunc A() {}\n")
 		files := []SelectedFile{{Path: "a.go", Language: "go", Status: "added"}}
 
 		backend := &recordingProjectBackend{result: &ProjectBackendResult{
@@ -442,13 +443,13 @@ var _ = Describe("tsProjectBackend compiler resolution", Label("ts-project-backe
 			cwd, err := os.Getwd()
 			Expect(err).NotTo(HaveOccurred())
 
-			repo := acceptanceTempGitRepo()
+			repo := gitfixture.Init(GinkgoT())
 			Expect(repo).NotTo(Equal(cwd), "the temp repo must differ from the test process's cwd for this assertion to be meaningful")
 
 			version := tsAcceptanceRealTypescriptVersion()
-			acceptanceCommitFile(repo, "package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
-			acceptanceCommitFile(repo, "tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
-			sha := acceptanceCommitFile(repo, "a.ts", "export const a = 1;\n")
+			gitfixture.CommitFile(GinkgoT(), repo, "package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
+			gitfixture.CommitFile(GinkgoT(), repo, "tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
+			sha := gitfixture.CommitFile(GinkgoT(), repo, "a.ts", "export const a = 1;\n")
 			installRealTypescriptCompilerAt(repo)
 
 			cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
@@ -482,11 +483,11 @@ var _ = Describe("tsProjectBackend compiler resolution from a subdirectory invoc
 
 	When("ProjectBackendRequest.Dir is a subdirectory of the repository, not its root", func() {
 		It("still resolves the compiler declared and installed at the repository root", func() {
-			repo := acceptanceTempGitRepo()
+			repo := gitfixture.Init(GinkgoT())
 			version := tsAcceptanceRealTypescriptVersion()
-			acceptanceCommitFile(repo, "package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
-			acceptanceCommitFile(repo, "tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
-			sha := acceptanceCommitFile(repo, "a.ts", "export const a = 1;\n")
+			gitfixture.CommitFile(GinkgoT(), repo, "package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
+			gitfixture.CommitFile(GinkgoT(), repo, "tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
+			sha := gitfixture.CommitFile(GinkgoT(), repo, "a.ts", "export const a = 1;\n")
 			installRealTypescriptCompilerAt(repo)
 
 			subDir := filepath.Join(repo, "sub")
@@ -518,11 +519,11 @@ var _ = Describe("tsProjectBackend compiler resolution from a nested TypeScript 
 
 	When("the repository has no top-level package.json and the policy names a nested js/semantics-shaped root that pins an exact installed compiler", func() {
 		It("resolves that nested manifest's compiler and produces a complete analysis rather than failing with no locatable compiler", func() {
-			repo := acceptanceTempGitRepo()
+			repo := gitfixture.Init(GinkgoT())
 			version := tsAcceptanceRealTypescriptVersion()
-			acceptanceCommitFile(repo, "js/semantics/package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
-			acceptanceCommitFile(repo, "js/semantics/tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
-			sha := acceptanceCommitFile(repo, "js/semantics/a.ts", "export const a = 1;\n")
+			gitfixture.CommitFile(GinkgoT(), repo, "js/semantics/package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
+			gitfixture.CommitFile(GinkgoT(), repo, "js/semantics/tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
+			sha := gitfixture.CommitFile(GinkgoT(), repo, "js/semantics/a.ts", "export const a = 1;\n")
 			installRealTypescriptCompilerAt(filepath.Join(repo, "js", "semantics"))
 
 			_, statErr := os.Stat(filepath.Join(repo, "package.json"))
@@ -555,11 +556,11 @@ var _ = Describe("PrepareTSRuntime resolved-runtime provenance", Label("ts-proje
 	})
 
 	It("records node version, compiler version, compiler origin, and the materialized analyzer directory on the prepared runtime", func() {
-		repo := acceptanceTempGitRepo()
+		repo := gitfixture.Init(GinkgoT())
 		version := tsAcceptanceRealTypescriptVersion()
-		acceptanceCommitFile(repo, "package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
-		acceptanceCommitFile(repo, "tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
-		acceptanceCommitFile(repo, "a.ts", "export const a = 1;\n")
+		gitfixture.CommitFile(GinkgoT(), repo, "package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
+		gitfixture.CommitFile(GinkgoT(), repo, "tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
+		gitfixture.CommitFile(GinkgoT(), repo, "a.ts", "export const a = 1;\n")
 		installRealTypescriptCompilerAt(repo)
 
 		rt, cleanup, err := PrepareTSRuntime(context.Background(), repo, nil)
@@ -879,9 +880,9 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 			}, nil
 		}
 
-		dir := acceptanceTempGitRepo()
-		acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
-		sha := acceptanceCommitFile(dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
+		dir := gitfixture.Init(GinkgoT())
+		gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
+		sha := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
 		files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
 
 		project := &ProjectAnalysis{
@@ -914,9 +915,9 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 			return projectmodel.LayerBypassResult{Coverage: projectmodel.Coverage{Phase: "layer_bypass_search", Complete: true}}, nil
 		}
 
-		dir := acceptanceTempGitRepo()
-		acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
-		sha := acceptanceCommitFile(dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
+		dir := gitfixture.Init(GinkgoT())
+		gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
+		sha := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
 		files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
 
 		project := &ProjectAnalysis{
@@ -944,9 +945,9 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 			return projectmodel.LayerBypassResult{Coverage: projectmodel.Coverage{Phase: "layer_bypass_search", Complete: false}}, nil
 		}
 
-		dir := acceptanceTempGitRepo()
-		baseSHA := acceptanceCommitFile(dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
-		headSHA := acceptanceCommitFile(dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
+		dir := gitfixture.Init(GinkgoT())
+		baseSHA := gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
+		headSHA := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
 		files := []SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
 
 		project := &ProjectAnalysis{
@@ -985,35 +986,6 @@ func TestProjectTextAcceptance(t *testing.T) {
 func (b *recordingProjectBackend) Analyze(_ context.Context, req ProjectBackendRequest) (*ProjectBackendResult, error) {
 	b.requests = append(b.requests, req)
 	return b.result, nil
-}
-
-func acceptanceTempGitRepo() string {
-	dir := GinkgoT().TempDir()
-	cmd := exec.Command("git", "init")
-	cmd.Dir = dir
-	output, err := cmd.CombinedOutput()
-	Expect(err).NotTo(HaveOccurred(), "git init: %s", output)
-	return dir
-}
-
-func acceptanceCommitFile(dir, name, contents string) string {
-	target := filepath.Join(dir, name)
-	Expect(os.MkdirAll(filepath.Dir(target), 0o755)).To(Succeed())
-	Expect(os.WriteFile(target, []byte(contents), 0o644)).To(Succeed())
-	addCmd := exec.Command("git", "add", name)
-	addCmd.Dir = dir
-	output, err := addCmd.CombinedOutput()
-	Expect(err).NotTo(HaveOccurred(), "git add: %s", output)
-	commitCmd := exec.Command("git", "commit", "-m", "commit "+name)
-	commitCmd.Dir = dir
-	commitCmd.Env = commitTestEnv
-	output, err = commitCmd.CombinedOutput()
-	Expect(err).NotTo(HaveOccurred(), "git commit: %s", output)
-	revCmd := exec.Command("git", "rev-parse", "HEAD")
-	revCmd.Dir = dir
-	sha, err := revCmd.Output()
-	Expect(err).NotTo(HaveOccurred())
-	return strings.TrimSpace(string(sha))
 }
 
 func tsAcceptanceRealTypescriptVersion() string {

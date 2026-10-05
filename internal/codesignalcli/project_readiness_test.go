@@ -7,10 +7,12 @@ import (
 
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 func TestFileExistsAtRevisionIgnoresTreeEntries(t *testing.T) {
-	repo := newTempGitRepoT(t)
+	repo := gitfixture.Init(t)
 	if err := os.Mkdir(filepath.Join(repo, "package.json"), 0o755); err != nil {
 		t.Fatalf("mkdir package.json: %v", err)
 	}
@@ -25,7 +27,7 @@ func TestFileExistsAtRevisionIgnoresTreeEntries(t *testing.T) {
 	}
 	commitCmd := exec.Command("git", "commit", "-m", "tree named package.json")
 	commitCmd.Dir = repo
-	commitCmd.Env = commitTestEnv
+	commitCmd.Env = gitfixture.CommitEnv
 	if output, err := commitCmd.CombinedOutput(); err != nil {
 		t.Fatalf("git commit: %v: %s", err, output)
 	}
@@ -56,11 +58,11 @@ func TestFileExistsAtRevisionIgnoresTreeEntries(t *testing.T) {
 // live under an as-yet-uncommitted root must not be misreported as
 // GapUnsupportedRepositoryShape purely because its policy is missing.
 func TestCheckProjectShapeIgnoresRootsWhenPolicyNotPassed(t *testing.T) {
-	repo := newTempGitRepoT(t)
+	repo := gitfixture.Init(t)
 	if err := os.MkdirAll(filepath.Join(repo, "sub"), 0o755); err != nil {
 		t.Fatalf("mkdir sub: %v", err)
 	}
-	revision := commitFileT(t, repo, "sub/package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+	revision := gitfixture.CommitFile(t, repo, "sub/package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 
 	got, err := checkProjectShape(repo, revision, []string{"sub"}, false)
 	if err != nil {
