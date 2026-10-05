@@ -1,15 +1,8 @@
 package rubrics
 
-import "sort"
-
-// PackConfig controls deterministic judgment packing for local-LLM hidden-mutation
-// batches. Zero fields are filled by ApplyPackConfigDefaults.
-type PackConfig struct {
-	MaxFindingsPerJudgmentPack      int
-	MaxJudgmentPromptTokens         int
-	JudgmentFileAffinityMinFindings int
-	EvidenceWindowLines             int
-}
+import (
+	"sort"
+)
 
 // PackCandidate is one deterministic finding eligible for judgment packing.
 type PackCandidate struct {
@@ -26,20 +19,6 @@ type PackCandidate struct {
 type JudgmentPack struct {
 	FindingRefs []string
 }
-
-// Default pack knobs (local-LLM oriented; see coach-api-platform-local-llm-judgment spec).
-const (
-	DefaultMaxFindingsPerJudgmentPack      = 4
-	DefaultMaxJudgmentPromptTokens         = 3500
-	DefaultJudgmentFileAffinityMinFindings = 5
-	DefaultEvidenceWindowLines             = 15
-)
-
-// packPromptOverheadTokens is a fixed chars/4-style allowance for rubric/system
-// prompt text shared by every pack (not per finding).
-const packPromptOverheadTokens = 64
-
-// ApplyPackConfigDefaults returns cfg with zero-valued fields set to binding defaults.
 
 // PackJudgmentCandidates forms deterministic judgment packs from candidates.
 //
@@ -97,15 +76,4 @@ func PackJudgmentCandidates(cands []PackCandidate, cfg PackConfig) []JudgmentPac
 		packs = append(packs, packGreedy(mergeable, cfg)...)
 	}
 	return packs
-}
-
-// packGreedy fills packs left-to-right under max-findings and token caps.
-
-// estimateCandidateTokens uses a chars/4 estimator over payload bytes + evidence chars.
-func estimateCandidateTokens(c PackCandidate) int {
-	chars := len(c.PayloadJSON) + c.EvidenceChars
-	if chars <= 0 {
-		return 0
-	}
-	return (chars + 3) / 4
 }

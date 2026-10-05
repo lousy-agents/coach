@@ -1,5 +1,9 @@
 package rubrics
 
+// packPromptOverheadTokens is a fixed chars/4-style allowance for rubric/system
+// prompt text shared by every pack (not per finding).
+const packPromptOverheadTokens = 64
+
 // packGreedy fills packs left-to-right under max-findings and token caps.
 func packGreedy(cands []PackCandidate, cfg PackConfig) []JudgmentPack {
 	if len(cands) == 0 {
@@ -43,19 +47,11 @@ func packGreedy(cands []PackCandidate, cfg PackConfig) []JudgmentPack {
 	return packs
 }
 
-// ApplyPackConfigDefaults returns cfg with zero-valued fields set to binding defaults.
-func ApplyPackConfigDefaults(cfg PackConfig) PackConfig {
-	if cfg.MaxFindingsPerJudgmentPack == 0 {
-		cfg.MaxFindingsPerJudgmentPack = DefaultMaxFindingsPerJudgmentPack
+// estimateCandidateTokens uses a chars/4 estimator over payload bytes + evidence chars.
+func estimateCandidateTokens(c PackCandidate) int {
+	chars := len(c.PayloadJSON) + c.EvidenceChars
+	if chars <= 0 {
+		return 0
 	}
-	if cfg.MaxJudgmentPromptTokens == 0 {
-		cfg.MaxJudgmentPromptTokens = DefaultMaxJudgmentPromptTokens
-	}
-	if cfg.JudgmentFileAffinityMinFindings == 0 {
-		cfg.JudgmentFileAffinityMinFindings = DefaultJudgmentFileAffinityMinFindings
-	}
-	if cfg.EvidenceWindowLines == 0 {
-		cfg.EvidenceWindowLines = DefaultEvidenceWindowLines
-	}
-	return cfg
+	return (chars + 3) / 4
 }
