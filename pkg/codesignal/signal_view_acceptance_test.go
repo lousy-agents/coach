@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
+	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 func viewReport(severities ...codesignal.Severity) *codesignal.Report {
@@ -20,6 +21,26 @@ func viewReport(severities ...codesignal.Severity) *codesignal.Report {
 	return report
 }
 
+// mixedLifecycleReport is built, not hand-assembled, so its order is the one
+// Build produces: a medium finding introduced by the change sorts ahead of a
+// high finding that already existed, because lifecycle outranks severity.
+func mixedLifecycleReport() *codesignal.Report {
+	introducedMedium := codesignal.FileChange{
+		Path:          "new.go",
+		Status:        "modified",
+		Base:          cleanResult("new.go"),
+		Head:          resultWithCognitiveComplexity("new.go", ccRecord("fresh", 16, semantics.Location{StartRow: 1, EndRow: 9})),
+		ChangedRanges: []codesignal.LineRange{{StartRow: 0, EndRow: 10}},
+	}
+	existingHigh := codesignal.FileChange{
+		Path:   "old.go",
+		Status: "modified",
+		Base:   resultWithCognitiveComplexity("old.go", ccRecord("legacy", 40, semantics.Location{StartRow: 1, EndRow: 9})),
+		Head:   resultWithCognitiveComplexity("old.go", ccRecord("legacy", 40, semantics.Location{StartRow: 1, EndRow: 9})),
+	}
+	return build(codesignal.Options{}, codesignal.Input{Files: []codesignal.FileChange{introducedMedium, existingHigh}})
+}
+
 func withheldWire(report *codesignal.Report) string {
 	encoded, err := json.Marshal(report)
 	Expect(err).NotTo(HaveOccurred())
@@ -28,88 +49,96 @@ func withheldWire(report *codesignal.Report) string {
 	return string(document["signals_withheld"])
 }
 
+func narrow(report *codesignal.Report, opts codesignal.NarrowOptions) *codesignal.Report {
+	view, err := report.Narrow(opts)
+	Expect(err).NotTo(HaveOccurred())
+	return view
+}
+
 var _ = Describe("Narrowed report views", func() {
-	When("a cap below one is requested", func() {
-		DescribeTable("the view is the full report, never a silently emptied one",
-			func(n int) {
-				report := viewReport("high", "low")
+	When("a high finding that already existed ranks behind a medium finding the change introduced", func() {
+		It("has the lifecycle-first order the narrowing must survive", func() {
+			report := mixedLifecycleReport()
 
-				view := report.WithTop(n)
+			Expect(report.Signals).To(HaveLen(2))
+			Expect(report.Signals[0].Lifecycle).To(Equal(codesignal.Lifecycle("introduced")))
+			Expect(report.Signals[0].Severity).To(Equal(codesignal.Severity("medium")))
+			Expect(report.Signals[1].Lifecycle).To(Equal(codesignal.Lifecycle("existing")))
+			Expect(report.Signals[1].Severity).To(Equal(codesignal.Severity("high")))
+		})
 
-				Expect(view.Signals).To(HaveLen(2))
-				Expect(view.SignalsWithheld).To(BeNil())
-				Expect(withheldWire(view)).To(BeEmpty())
-			},
-			Entry("zero", 0),
-			Entry("negative", -1),
-		)
+		It("keeps the high finding when a floor of high and a cap of one are requested together", func() {
+			report := mixedLifecycleReport()
+
+			view := narrow(report, codesignal.NarrowOptions{MinSeverity: "high", Top: 1})
+
+			Expect(view.Signals).To(HaveLen(1))
+			Expect(view.Signals[0].Severity).To(Equal(codesignal.Severity("high")))
+			Expect(withheldWire(view)).To(Equal(
+				`{"min_severity":"high","below_min_severity":1,"top":1,"beyond_top":0}`))
+			Expect(report.Signals).To(HaveLen(2))
+		})
+
+		It("keeps the leading introduced finding when only the cap is requested", func() {
+			view := narrow(mixedLifecycleReport(), codesignal.NarrowOptions{Top: 1})
+
+			Expect(view.Signals).To(HaveLen(1))
+			Expect(view.Signals[0].Severity).To(Equal(codesignal.Severity("medium")))
+			Expect(withheldWire(view)).To(Equal(`{"top":1,"beyond_top":1}`))
+		})
 	})
 
-	When("a severity floor is not a severity the report can emit", func() {
-		DescribeTable("the view is the full report with no withheld record",
-			func(floor codesignal.Severity) {
-				report := viewReport("high", "low")
-
-				view := report.WithMinSeverity(floor)
-
-				Expect(view.Signals).To(HaveLen(2))
-				Expect(view.SignalsWithheld).To(BeNil())
-			},
-			Entry("empty", codesignal.Severity("")),
-			Entry("unknown", codesignal.Severity("urgent")),
-		)
-	})
-
-	When("the cap is applied before the severity floor", func() {
-		It("accounts for every signal that either narrowing withheld", func() {
+	When("both narrowings withhold signals", func() {
+		It("accounts for every signal once: the floor first, then the cap over what remains", func() {
 			report := viewReport("high", "high", "low", "low")
 
-			view := report.WithTop(3).WithMinSeverity("high")
+			view := narrow(report, codesignal.NarrowOptions{MinSeverity: "high", Top: 1})
 
-			Expect(view.Signals).To(HaveLen(2))
+			Expect(view.Signals).To(HaveLen(1))
 			Expect(withheldWire(view)).To(Equal(
-				`{"min_severity":"high","below_min_severity":1,"top":3,"beyond_top":1}`))
+				`{"min_severity":"high","below_min_severity":2,"top":1,"beyond_top":1}`))
 			Expect(report.Signals).To(HaveLen(4))
 		})
 	})
 
-	When("the cap is applied twice", func() {
-		It("reports the tighter cap and every signal withheld across both", func() {
-			report := viewReport("high", "high", "medium", "low")
+	When("no narrowing is requested", func() {
+		It("returns the report itself with no withheld record", func() {
+			report := viewReport("high", "low")
 
-			view := report.WithTop(3).WithTop(1)
+			view := narrow(report, codesignal.NarrowOptions{})
 
-			Expect(view.Signals).To(HaveLen(1))
-			Expect(withheldWire(view)).To(Equal(`{"top":1,"beyond_top":3}`))
-		})
-
-		It("keeps the tighter cap when a looser one is applied afterwards", func() {
-			report := viewReport("high", "high", "medium", "low")
-
-			view := report.WithTop(1).WithTop(3)
-
-			Expect(view.Signals).To(HaveLen(1))
-			Expect(withheldWire(view)).To(Equal(`{"top":1,"beyond_top":3}`))
+			Expect(view).To(BeIdenticalTo(report))
+			Expect(view.SignalsWithheld).To(BeNil())
+			Expect(withheldWire(view)).To(BeEmpty())
 		})
 	})
 
-	When("the severity floor is applied twice", func() {
-		It("reports the stricter floor and every signal withheld across both", func() {
-			report := viewReport("high", "medium", "low")
+	When("the request cannot be honoured", func() {
+		DescribeTable("it returns an error and no view rather than a different view than asked for",
+			func(opts codesignal.NarrowOptions, wantErr error) {
+				report := viewReport("high", "low")
 
-			view := report.WithMinSeverity("medium").WithMinSeverity("high")
+				view, err := report.Narrow(opts)
 
-			Expect(view.Signals).To(HaveLen(1))
-			Expect(withheldWire(view)).To(Equal(`{"min_severity":"high","below_min_severity":2}`))
-		})
+				Expect(err).To(MatchError(wantErr))
+				Expect(view).To(BeNil())
+				Expect(report.Signals).To(HaveLen(2))
+				Expect(report.SignalsWithheld).To(BeNil())
+			},
+			Entry("a floor outside the severities a report emits", codesignal.NarrowOptions{MinSeverity: "urgent"}, codesignal.ErrUnknownSeverityFloor),
+			Entry("a floor in the wrong case", codesignal.NarrowOptions{MinSeverity: "HIGH", Top: 1}, codesignal.ErrUnknownSeverityFloor),
+			Entry("a negative cap", codesignal.NarrowOptions{Top: -1}, codesignal.ErrNegativeTop),
+			Entry("a negative cap beside a valid floor", codesignal.NarrowOptions{MinSeverity: "high", Top: -3}, codesignal.ErrNegativeTop),
+		)
 
-		It("keeps the stricter floor when a looser one is applied afterwards", func() {
-			report := viewReport("high", "medium", "low")
+		It("refuses to narrow a report that is already narrowed", func() {
+			narrowed := narrow(viewReport("high", "medium", "low"), codesignal.NarrowOptions{MinSeverity: "medium"})
 
-			view := report.WithMinSeverity("high").WithMinSeverity("low")
+			view, err := narrowed.Narrow(codesignal.NarrowOptions{Top: 1})
 
-			Expect(view.Signals).To(HaveLen(1))
-			Expect(withheldWire(view)).To(Equal(`{"min_severity":"high","below_min_severity":2}`))
+			Expect(err).To(MatchError(codesignal.ErrAlreadyNarrowed))
+			Expect(view).To(BeNil())
+			Expect(withheldWire(narrowed)).To(Equal(`{"min_severity":"medium","below_min_severity":1}`))
 		})
 	})
 })

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 
 	"os"
 
@@ -53,19 +54,28 @@ func renderScanResult(report *codesignal.Report, f codesignalFlags, stdout, stde
 		return 1
 	}
 	incompleteCoverageFails := f.failOnIncompleteCoverage && codesignal.RequiredCoverageIncomplete(report)
-	view := report
-	if f.minSeveritySet {
-		view = report.WithMinSeverity(codesignal.Severity(f.minSeverity))
+	view, err := report.Narrow(narrowOptionsFor(f))
+	if err != nil {
+		fmt.Fprintf(stderr, "coach codesignal: narrowing report: %s\n", err)
+		return 1
 	}
-	if f.topSet {
-		top, _ := parseTopCap(f.top)
-		view = view.WithTop(top)
-	}
-	if exitCode := renderReport(view, f.format, stdout, stderr); exitCode != 0 {
+	renderOptions := codesignalcli.RenderOptions{SeeAllCommand: seeAllCommand(f.args)}
+	if exitCode := renderReport(view, f.format, renderOptions, stdout, stderr); exitCode != 0 {
 		return exitCode
 	}
 	if incompleteCoverageFails {
 		return 3
 	}
 	return 0
+}
+
+func narrowOptionsFor(f codesignalFlags) codesignal.NarrowOptions {
+	var opts codesignal.NarrowOptions
+	if f.minSeveritySet {
+		opts.MinSeverity = codesignal.Severity(f.minSeverity)
+	}
+	if f.topSet {
+		opts.Top, _ = parseTopCap(f.top)
+	}
+	return opts
 }

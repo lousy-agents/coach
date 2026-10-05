@@ -2,6 +2,7 @@ package codesignal
 
 import (
 	"encoding/json"
+	"errors"
 	"slices"
 )
 
@@ -10,6 +11,11 @@ import (
 // an unnarrowed Report. A narrowing is in effect when its identifying field is
 // set: MinSeverity for the severity floor, Top for the cap; a zero count next to
 // a set identifier is still reported.
+//
+// It describes presentation narrowing only: Summary and Coverage keep
+// describing the full analysis. An analysis-level filter (suppression, vendor
+// exclusion) changes what was analyzed, so it must change Summary and Coverage
+// and shall not reuse this record.
 type SignalsWithheld struct {
 	MinSeverity      Severity `json:"min_severity,omitempty"`
 	BelowMinSeverity int      `json:"below_min_severity"`
@@ -45,97 +51,108 @@ func ParseSeverityFloor(value string) (Severity, bool) {
 	return "", false
 }
 
-func (r *Report) withheldSoFar() SignalsWithheld {
-	if r.SignalsWithheld == nil {
-		return SignalsWithheld{}
-	}
-	return *r.SignalsWithheld
+var (
+	// ErrUnknownSeverityFloor reports a NarrowOptions.MinSeverity outside the
+	// severities a Report can emit.
+	ErrUnknownSeverityFloor = errors.New("codesignal: unknown severity floor")
+	// ErrNegativeTop reports a NarrowOptions.Top below zero.
+	ErrNegativeTop = errors.New("codesignal: negative top")
+	// ErrAlreadyNarrowed reports a Narrow of a Report that already carries a
+	// withheld record: a second narrowing could not say which view it produced.
+	ErrAlreadyNarrowed = errors.New("codesignal: report is already narrowed")
+)
+
+// NarrowOptions selects a presentation view of a Report. The zero value
+// narrows nothing: an empty MinSeverity is no floor and a zero Top is no cap.
+type NarrowOptions struct {
+	MinSeverity Severity
+	Top         int
 }
 
-// WithMinSeverity returns a copy of r whose Signals and ProjectChanges hold
-// only entries at or above floor. Summary, Coverage, Diagnostics and every
-// project coverage/summary block are shared with r untouched, so they keep
-// describing the full analysis.
+// Narrow returns a copy of r whose Signals and ProjectChanges hold only what
+// opts keeps, and whose SignalsWithheld records what it left out. r must be
+// non-nil and unnarrowed.
 //
-// A floor ParseSeverityFloor rejects returns r unchanged, so a bad value can
-// never record a narrowing that does not match what was kept. Narrowings
-// compose in either order: counts already withheld by r are kept, and the
-// stricter of an existing and the new floor is reported.
+// The severity floor applies first and the cap takes the leading signals of
+// what remains. Signals sort by lifecycle group before severity, so the two
+// narrowings do not commute; Narrow is the only entry point and fixes the
+// order, so the record always describes the view that was produced.
 //
-// Project changes are mirrored one-to-one in Signals, so SignalsWithheld counts
-// each withheld finding once and the project section narrows by the same rule.
-func (r *Report) WithMinSeverity(floor Severity) *Report {
-	if _, ok := ParseSeverityFloor(string(floor)); !ok {
-		return r
+// Summary, Coverage, Diagnostics and every project summary and coverage block
+// are shared with r untouched. ProjectChanges follow their mirrored signal by
+// ID, so each finding is counted once.
+//
+// Zero opts return r itself with no record. An unrecognised floor, a negative
+// Top, or an already narrowed r returns an error and no view, never a
+// different view than the one asked for.
+func (r *Report) Narrow(opts NarrowOptions) (*Report, error) {
+	if opts == (NarrowOptions{}) {
+		return r, nil
 	}
+	if err := r.validateNarrowing(opts); err != nil {
+		return nil, err
+	}
+
+	var withheld SignalsWithheld
+	kept := r.Signals
+	if opts.MinSeverity != "" {
+		withheld.MinSeverity = opts.MinSeverity
+		kept, withheld.BelowMinSeverity = atOrAboveFloor(kept, opts.MinSeverity)
+	}
+	if opts.Top > 0 {
+		withheld.Top = opts.Top
+		kept, withheld.BeyondTop = leading(kept, opts.Top)
+	}
+
 	narrowed := *r
-	floorRank := severityRank(floor)
-
-	narrowed.Signals = make([]Signal, 0, len(r.Signals))
-	withheld := 0
-	for _, signal := range r.Signals {
-		if severityRank(signal.Severity) < floorRank {
-			withheld++
-			continue
-		}
-		narrowed.Signals = append(narrowed.Signals, signal)
-	}
-
-	if r.ProjectChanges != nil {
-		narrowed.ProjectChanges = make([]ProjectChange, 0, len(r.ProjectChanges))
-		for _, change := range r.ProjectChanges {
-			if severityRank(change.Severity) >= floorRank {
-				narrowed.ProjectChanges = append(narrowed.ProjectChanges, change)
-			}
-		}
-	}
-
-	record := r.withheldSoFar()
-	if record.MinSeverity == "" || severityRank(floor) > severityRank(record.MinSeverity) {
-		record.MinSeverity = floor
-	}
-	record.BelowMinSeverity += withheld
-	narrowed.SignalsWithheld = &record
-	return &narrowed
-}
-
-// WithTop returns a copy of r whose Signals hold only the first n entries, the
-// highest-ranked because Build sorts them. Project changes follow their
-// mirrored signal, so a capped-out project finding leaves ProjectChanges too
-// and BeyondTop counts each finding once. Summary, Coverage and the other
-// full-analysis blocks are shared with r untouched.
-//
-// An n below 1 is no cap and returns r unchanged, so a bad value can never
-// read as an empty analysis. Narrowings compose in either order: counts
-// already withheld by r are kept, BeyondTop accumulates, and the tighter of an
-// existing and the new cap is reported.
-func (r *Report) WithTop(n int) *Report {
-	if n < 1 {
-		return r
-	}
-	narrowed := *r
-
-	kept := min(n, len(r.Signals))
-	narrowed.Signals = append(make([]Signal, 0, kept), r.Signals[:kept]...)
-
-	if r.ProjectChanges != nil {
-		keptIDs := make(map[string]struct{}, kept)
-		for _, signal := range narrowed.Signals {
-			keptIDs[signal.ID] = struct{}{}
-		}
-		narrowed.ProjectChanges = make([]ProjectChange, 0, len(r.ProjectChanges))
-		for _, change := range r.ProjectChanges {
-			if _, ok := keptIDs[change.ID]; ok {
-				narrowed.ProjectChanges = append(narrowed.ProjectChanges, change)
-			}
-		}
-	}
-
-	withheld := r.withheldSoFar()
-	if withheld.Top == 0 || n < withheld.Top {
-		withheld.Top = n
-	}
-	withheld.BeyondTop += len(r.Signals) - kept
+	narrowed.Signals = kept
+	narrowed.ProjectChanges = followSignals(r.ProjectChanges, kept)
 	narrowed.SignalsWithheld = &withheld
-	return &narrowed
+	return &narrowed, nil
+}
+
+func (r *Report) validateNarrowing(opts NarrowOptions) error {
+	if r.SignalsWithheld != nil {
+		return ErrAlreadyNarrowed
+	}
+	if opts.Top < 0 {
+		return ErrNegativeTop
+	}
+	if opts.MinSeverity != "" && !slices.Contains(severityOrder, opts.MinSeverity) {
+		return ErrUnknownSeverityFloor
+	}
+	return nil
+}
+
+func atOrAboveFloor(signals []Signal, floor Severity) ([]Signal, int) {
+	kept := make([]Signal, 0, len(signals))
+	floorRank := severityRank(floor)
+	for _, signal := range signals {
+		if severityRank(signal.Severity) >= floorRank {
+			kept = append(kept, signal)
+		}
+	}
+	return kept, len(signals) - len(kept)
+}
+
+func leading(signals []Signal, n int) ([]Signal, int) {
+	kept := min(n, len(signals))
+	return append(make([]Signal, 0, kept), signals[:kept]...), len(signals) - kept
+}
+
+func followSignals(changes []ProjectChange, kept []Signal) []ProjectChange {
+	if changes == nil {
+		return nil
+	}
+	keptIDs := make(map[string]struct{}, len(kept))
+	for _, signal := range kept {
+		keptIDs[signal.ID] = struct{}{}
+	}
+	followed := make([]ProjectChange, 0, len(changes))
+	for _, change := range changes {
+		if _, ok := keptIDs[change.ID]; ok {
+			followed = append(followed, change)
+		}
+	}
+	return followed
 }

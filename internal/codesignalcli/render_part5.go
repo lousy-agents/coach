@@ -58,39 +58,45 @@ func renderBaselineSummary(b *strings.Builder, report *codesignal.Report) {
 
 	fmt.Fprintf(b, "tracked files discovered: %d, analyzed: %d, unsupported: %d, excluded: %d, unanalyzable: %d, active signals: %d, diagnostics: %d\n",
 		tracked, analyzed, unsupported, excluded, unanalyzable, report.Summary.ActiveSignals, len(report.Diagnostics))
-	renderWithheldSignals(b, report.SignalsWithheld)
 }
 
-func renderWithheldSignals(b *strings.Builder, withheld *codesignal.SignalsWithheld) {
+// renderWithheldSignals writes the one line that says what a narrowed view
+// left out. seeAllCommand is the invocation that shows everything.
+func renderWithheldSignals(b *strings.Builder, withheld *codesignal.SignalsWithheld, seeAllCommand string) {
 	if withheld == nil {
 		return
 	}
-	var phrases, flags []string
-	total := 0
+	var phrases []string
+	var counts []int
 	if withheld.MinSeverity != "" {
 		phrases = append(phrases, "below --min-severity "+string(withheld.MinSeverity))
-		flags = append(flags, "--min-severity")
-		total += withheld.BelowMinSeverity
+		counts = append(counts, withheld.BelowMinSeverity)
 	}
 	if withheld.Top > 0 {
 		phrases = append(phrases, fmt.Sprintf("beyond --top %d", withheld.Top))
-		flags = append(flags, "--top")
-		total += withheld.BeyondTop
+		counts = append(counts, withheld.BeyondTop)
 	}
-	switch len(phrases) {
-	case 0:
+	if len(phrases) == 0 {
 		return
-	case 1:
-		fmt.Fprintf(b, "withheld: %s %s", signalCountNoun(total), phrases[0])
-	default:
-		fmt.Fprintf(b, "withheld: %s (%d %s, %d %s)", signalCountNoun(total),
-			withheld.BelowMinSeverity, phrases[0], withheld.BeyondTop, phrases[1])
 	}
-	b.WriteString(" (counts above describe the full analysis)")
-	if withheld.Top > 0 && total > 0 {
-		fmt.Fprintf(b, "; re-run without %s to see all", strings.Join(flags, " and "))
+
+	total := 0
+	for _, count := range counts {
+		total += count
+	}
+	fmt.Fprintf(b, "withheld: %s %s", signalCountNoun(total), withheldBreakdown(phrases, counts))
+	b.WriteString("; counts above describe the full analysis")
+	if total > 0 && seeAllCommand != "" {
+		fmt.Fprintf(b, "; see all: %s", seeAllCommand)
 	}
 	b.WriteString("\n")
+}
+
+func withheldBreakdown(phrases []string, counts []int) string {
+	if len(phrases) == 1 {
+		return phrases[0]
+	}
+	return fmt.Sprintf("(%d %s, %d %s)", counts[0], phrases[0], counts[1], phrases[1])
 }
 
 func signalCountNoun(n int) string {

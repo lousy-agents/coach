@@ -8,10 +8,25 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
+// RenderOptions carries what only the caller knows about how a report was
+// produced.
+type RenderOptions struct {
+	// SeeAllCommand is the invocation that shows every signal a narrowed
+	// report withheld. It is text-only presentation and never enters the JSON
+	// report. Empty means the withheld line names no command.
+	SeeAllCommand string
+}
+
 // RenderText renders report as deterministic, ANSI-free plain text.
 func RenderText(report *codesignal.Report) string {
+	return RenderTextWithOptions(report, RenderOptions{})
+}
+
+// RenderTextWithOptions is RenderText with caller-supplied RenderOptions.
+func RenderTextWithOptions(report *codesignal.Report, opts RenderOptions) string {
 	var b strings.Builder
 	renderReportSummary(&b, report)
+	renderWithheldSignals(&b, report.SignalsWithheld, opts.SeeAllCommand)
 	renderProjectScopeSection(&b, report.ProjectScope)
 	renderActiveFindings(&b, report)
 	renderProjectFacts(&b, report.ProjectFacts)

@@ -41,3 +41,29 @@ func TestValidateSuggestProjectConfigFlags(t *testing.T) {
 		body_mainTest_rejectsProjectLanguageWhenItsValueIsGo_85(t)
 	})
 }
+
+func TestSeeAllCommandDropsNarrowingFlagsInEverySpelling(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"separate values", []string{"--baseline", "--min-severity", "high", "--top", "2"}, "coach codesignal --baseline"},
+		{"inline values", []string{"--baseline", "--min-severity=high", "--top=2"}, "coach codesignal --baseline"},
+		{"single dash", []string{"-baseline", "-min-severity", "high", "-top=2"}, "coach codesignal -baseline"},
+		{"other flags keep their order", []string{"--top", "1", "--base", "origin/main", "--scope", "all"}, "coach codesignal --base origin/main --scope all"},
+		{"a value that looks like a narrowing flag stays with its flag", []string{"--build-target", "--top", "--top", "3"}, "coach codesignal --build-target --top"},
+		{"quotes a space", []string{"--project-config", "my config.json", "--top", "1"}, "coach codesignal --project-config 'my config.json'"},
+		{"quotes an apostrophe", []string{"--build-target", "it's", "--top", "1"}, `coach codesignal --build-target 'it'\''s'`},
+		{"quotes an empty value", []string{"--build-target", "", "--top", "1"}, "coach codesignal --build-target ''"},
+		{"quotes a leading equals that zsh would expand to a path", []string{"--base", "=ls", "--top", "1"}, "coach codesignal --base '=ls'"},
+		{"quotes a leading tilde", []string{"--base", "~/x", "--top", "1"}, "coach codesignal --base '~/x'"},
+		{"leaves an inner equals unquoted", []string{"--base", "a=b", "--top", "1"}, "coach codesignal --base a=b"},
+		{"no arguments", nil, "coach codesignal"},
+	}
+	for _, tc := range cases {
+		if got := seeAllCommand(tc.args); got != tc.want {
+			t.Errorf("%s: seeAllCommand(%q) = %q, want %q", tc.name, tc.args, got, tc.want)
+		}
+	}
+}

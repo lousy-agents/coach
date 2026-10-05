@@ -67,7 +67,7 @@ var _ = Describe("coach codesignal --top", func() {
 			Expect(text).NotTo(ContainSubstring("path: m.go"))
 			Expect(text).NotTo(ContainSubstring("path: a.go"))
 			Expect(strings.Count(text, "rule_id: ")).To(Equal(1))
-			Expect(text).To(ContainSubstring("withheld: 5 signals beyond --top 1 (counts above describe the full analysis); re-run without --top to see all\n"))
+			Expect(text).To(ContainSubstring("withheld: 5 signals beyond --top 1; counts above describe the full analysis; see all: coach codesignal --baseline\n"))
 			Expect(text).To(ContainSubstring("active signals: 6"))
 		})
 
@@ -97,8 +97,8 @@ var _ = Describe("coach codesignal --top", func() {
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 			text := string(stdout)
 			Expect(strings.Count(text, "rule_id: ")).To(Equal(6))
-			Expect(text).To(ContainSubstring("withheld: 0 signals beyond --top 6 (counts above describe the full analysis)\n"))
-			Expect(text).NotTo(ContainSubstring("re-run without"))
+			Expect(text).To(ContainSubstring("withheld: 0 signals beyond --top 6; counts above describe the full analysis\n"))
+			Expect(text).NotTo(ContainSubstring("see all"))
 
 			jsonStdout, _, jsonExit := runCoachCodesignalBaselineRaw(repo, "--format=json", "--top", "50")
 			Expect(jsonExit).To(Equal(0))
@@ -121,7 +121,7 @@ var _ = Describe("coach codesignal --top", func() {
 			textStdout, textStderr, textExit := runCoachCodesignalBaselineRaw(repo, "--min-severity", "high", "--top", "2")
 			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
 			text := string(textStdout)
-			Expect(text).To(ContainSubstring("withheld: 4 signals (2 below --min-severity high, 2 beyond --top 2) (counts above describe the full analysis); re-run without --min-severity and --top to see all\n"))
+			Expect(text).To(ContainSubstring("withheld: 4 signals (2 below --min-severity high, 2 beyond --top 2); counts above describe the full analysis; see all: coach codesignal --baseline\n"))
 			Expect(text).NotTo(ContainSubstring("path: a.go"))
 			Expect(text).NotTo(ContainSubstring("rule_id: " + nestingRule))
 		})
@@ -142,7 +142,7 @@ var _ = Describe("coach codesignal --top", func() {
 			Expect(text).NotTo(ContainSubstring("path: m.go"))
 			Expect(text).NotTo(ContainSubstring("path: a.go"))
 			Expect(text).To(ContainSubstring("active signals: 6"))
-			Expect(text).To(ContainSubstring("withheld: 5 signals beyond --top 1 (counts above describe the full analysis); re-run without --top to see all\n"))
+			Expect(text).To(ContainSubstring("withheld: 5 signals beyond --top 1; counts above describe the full analysis; see all: coach codesignal --base " + base + "\n"))
 		})
 	})
 

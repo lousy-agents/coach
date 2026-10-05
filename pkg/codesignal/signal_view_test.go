@@ -2,7 +2,6 @@ package codesignal
 
 import (
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"testing"
 )
@@ -29,7 +28,16 @@ func signalSeverities(signals []Signal) []Severity {
 	return out
 }
 
-func TestWithMinSeverityKeepsAtOrAboveFloorInOrder(t *testing.T) {
+func mustNarrow(t *testing.T, report *Report, opts NarrowOptions) *Report {
+	t.Helper()
+	view, err := report.Narrow(opts)
+	if err != nil {
+		t.Fatalf("Narrow(%+v): %v", opts, err)
+	}
+	return view
+}
+
+func TestNarrowFloorKeepsAtOrAboveFloorInOrder(t *testing.T) {
 	report := reportWithSeverities("2", "high", "medium", "advisory", "low", "high")
 
 	cases := []struct {
@@ -44,12 +52,12 @@ func TestWithMinSeverityKeepsAtOrAboveFloorInOrder(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.floor), func(t *testing.T) {
-			got := report.WithMinSeverity(tc.floor)
+			got := mustNarrow(t, report, NarrowOptions{MinSeverity: tc.floor})
 			if !reflect.DeepEqual(signalSeverities(got.Signals), tc.wantKept) {
 				t.Fatalf("signals = %v, want %v", signalSeverities(got.Signals), tc.wantKept)
 			}
 			if len(got.ProjectChanges) != len(tc.wantKept) {
-				t.Fatalf("project changes = %d, want %d (same rule as signals)", len(got.ProjectChanges), len(tc.wantKept))
+				t.Fatalf("project changes = %d, want %d (they follow their mirrored signal)", len(got.ProjectChanges), len(tc.wantKept))
 			}
 			want := &SignalsWithheld{MinSeverity: tc.floor, BelowMinSeverity: tc.wantWithheld}
 			if !reflect.DeepEqual(got.SignalsWithheld, want) {
@@ -59,10 +67,52 @@ func TestWithMinSeverityKeepsAtOrAboveFloorInOrder(t *testing.T) {
 	}
 }
 
-func TestWithMinSeverityLeavesTheSourceReportAndFullAnalysisBlocksUntouched(t *testing.T) {
+func TestNarrowCapKeepsTheLeadingSignalsAndTheirProjectChanges(t *testing.T) {
+	report := reportWithSeverities("2", "high", "medium", "advisory", "low")
+
+	cases := []struct {
+		n             int
+		wantKept      []Severity
+		wantBeyondTop int
+	}{
+		{1, []Severity{"high"}, 3},
+		{3, []Severity{"high", "medium", "advisory"}, 1},
+		{4, []Severity{"high", "medium", "advisory", "low"}, 0},
+		{99, []Severity{"high", "medium", "advisory", "low"}, 0},
+	}
+	for _, tc := range cases {
+		got := mustNarrow(t, report, NarrowOptions{Top: tc.n})
+		if !reflect.DeepEqual(signalSeverities(got.Signals), tc.wantKept) {
+			t.Fatalf("top %d: signals = %v, want %v", tc.n, signalSeverities(got.Signals), tc.wantKept)
+		}
+		if len(got.ProjectChanges) != len(tc.wantKept) {
+			t.Fatalf("top %d: project changes = %d, want %d", tc.n, len(got.ProjectChanges), len(tc.wantKept))
+		}
+		want := &SignalsWithheld{Top: tc.n, BeyondTop: tc.wantBeyondTop}
+		if !reflect.DeepEqual(got.SignalsWithheld, want) {
+			t.Fatalf("top %d: withheld = %+v, want %+v", tc.n, got.SignalsWithheld, want)
+		}
+	}
+}
+
+func TestNarrowFloorThenCapCountsEachWithheldSignalOnce(t *testing.T) {
+	report := reportWithSeverities("2", "high", "high", "high", "low")
+
+	got := mustNarrow(t, report, NarrowOptions{MinSeverity: "high", Top: 2})
+
+	want := &SignalsWithheld{MinSeverity: "high", BelowMinSeverity: 1, Top: 2, BeyondTop: 1}
+	if !reflect.DeepEqual(got.SignalsWithheld, want) {
+		t.Fatalf("withheld = %+v, want %+v", got.SignalsWithheld, want)
+	}
+	if len(got.Signals) != 2 || len(got.ProjectChanges) != 2 {
+		t.Fatalf("signals = %d, project changes = %d, want 2 each", len(got.Signals), len(got.ProjectChanges))
+	}
+}
+
+func TestNarrowLeavesTheSourceReportAndFullAnalysisBlocksUntouched(t *testing.T) {
 	report := reportWithSeverities("2", "high", "low")
 
-	got := report.WithMinSeverity("high")
+	got := mustNarrow(t, report, NarrowOptions{MinSeverity: "high", Top: 1})
 
 	if len(report.Signals) != 2 || len(report.ProjectChanges) != 2 || report.SignalsWithheld != nil {
 		t.Fatalf("source report was mutated: %+v", report)
@@ -75,46 +125,25 @@ func TestWithMinSeverityLeavesTheSourceReportAndFullAnalysisBlocksUntouched(t *t
 	}
 }
 
-func TestWithMinSeverityTreatsUnknownSeverityLikeLow(t *testing.T) {
-	report := reportWithSeverities("1", "bogus")
+func TestNarrowKeepsAbsentProjectChangesAbsent(t *testing.T) {
+	report := reportWithSeverities("2", "high", "low")
+	report.ProjectChanges = nil
 
-	if got := report.WithMinSeverity("low"); len(got.Signals) != 1 {
-		t.Fatalf("unknown severity must survive a low floor, got %d signals", len(got.Signals))
-	}
-	if got := report.WithMinSeverity("advisory"); len(got.Signals) != 0 || got.SignalsWithheld.BelowMinSeverity != 1 {
-		t.Fatalf("unknown severity must be withheld above low, got %+v", got)
+	got := mustNarrow(t, report, NarrowOptions{MinSeverity: "high"})
+
+	if got.ProjectChanges != nil {
+		t.Fatalf("project changes = %+v, want nil", got.ProjectChanges)
 	}
 }
 
-func TestSignalsWithheldWireShape(t *testing.T) {
-	for _, schemaVersion := range []string{"1", "2"} {
-		t.Run("schema "+schemaVersion, func(t *testing.T) {
-			report := reportWithSeverities(schemaVersion, "high", "low")
+func TestNarrowTreatsUnknownSeverityLikeLow(t *testing.T) {
+	report := reportWithSeverities("1", "bogus")
 
-			plain, err := json.Marshal(report)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var plainDoc map[string]json.RawMessage
-			if err := json.Unmarshal(plain, &plainDoc); err != nil {
-				t.Fatal(err)
-			}
-			if _, present := plainDoc["signals_withheld"]; present {
-				t.Fatalf("unnarrowed report must not emit signals_withheld: %s", plain)
-			}
-
-			narrowed, err := json.Marshal(report.WithMinSeverity("high"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			var narrowedDoc map[string]json.RawMessage
-			if err := json.Unmarshal(narrowed, &narrowedDoc); err != nil {
-				t.Fatal(err)
-			}
-			if got, want := string(narrowedDoc["signals_withheld"]), `{"min_severity":"high","below_min_severity":1}`; got != want {
-				t.Fatalf("signals_withheld = %s, want %s", got, want)
-			}
-		})
+	if got := mustNarrow(t, report, NarrowOptions{MinSeverity: "low"}); len(got.Signals) != 1 {
+		t.Fatalf("unknown severity must survive a low floor, got %d signals", len(got.Signals))
+	}
+	if got := mustNarrow(t, report, NarrowOptions{MinSeverity: "advisory"}); len(got.Signals) != 0 || got.SignalsWithheld.BelowMinSeverity != 1 {
+		t.Fatalf("unknown severity must be withheld above low, got %+v", got)
 	}
 }
 
@@ -131,88 +160,40 @@ func TestParseSeverityFloor(t *testing.T) {
 	}
 }
 
-func TestWithTopKeepsTheLeadingSignalsAndTheirProjectChanges(t *testing.T) {
-	report := reportWithSeverities("2", "high", "medium", "advisory", "low")
-
-	cases := []struct {
-		n             int
-		wantKept      []Severity
-		wantBeyondTop int
-	}{
-		{1, []Severity{"high"}, 3},
-		{3, []Severity{"high", "medium", "advisory"}, 1},
-		{4, []Severity{"high", "medium", "advisory", "low"}, 0},
-		{99, []Severity{"high", "medium", "advisory", "low"}, 0},
+func signalsWithheldWire(t *testing.T, report *Report) (string, bool) {
+	t.Helper()
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, n := range []int{0, -1} {
-		t.Run(fmt.Sprintf("n=%d is no cap", n), func(t *testing.T) {
-			got := report.WithTop(n)
-			if len(got.Signals) != 4 || len(got.ProjectChanges) != 4 || got.SignalsWithheld != nil {
-				t.Fatalf("WithTop(%d) must leave the report unnarrowed, got %+v", n, got)
-			}
-		})
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &document); err != nil {
+		t.Fatal(err)
 	}
-	for _, tc := range cases {
-		t.Run(fmt.Sprint(tc.n), func(t *testing.T) {
-			got := report.WithTop(tc.n)
-			if !reflect.DeepEqual(signalSeverities(got.Signals), tc.wantKept) {
-				t.Fatalf("signals = %v, want %v", signalSeverities(got.Signals), tc.wantKept)
-			}
-			if len(got.ProjectChanges) != len(tc.wantKept) {
-				t.Fatalf("project changes = %d, want %d (they follow their mirrored signal)", len(got.ProjectChanges), len(tc.wantKept))
-			}
-			want := &SignalsWithheld{Top: tc.n, BeyondTop: tc.wantBeyondTop}
-			if !reflect.DeepEqual(got.SignalsWithheld, want) {
-				t.Fatalf("withheld = %+v, want %+v", got.SignalsWithheld, want)
-			}
-			if got.Summary != report.Summary || got.Coverage != report.Coverage {
-				t.Fatal("summary and coverage must describe the full analysis")
-			}
-		})
-	}
-	if len(report.Signals) != 4 || len(report.ProjectChanges) != 4 || report.SignalsWithheld != nil {
-		t.Fatalf("source report was mutated: %+v", report)
-	}
-}
-
-func TestWithTopAfterWithMinSeverityKeepsTheFloorCount(t *testing.T) {
-	report := reportWithSeverities("2", "high", "high", "high", "low")
-
-	got := report.WithMinSeverity("high").WithTop(2)
-
-	want := &SignalsWithheld{MinSeverity: "high", BelowMinSeverity: 1, Top: 2, BeyondTop: 1}
-	if !reflect.DeepEqual(got.SignalsWithheld, want) {
-		t.Fatalf("withheld = %+v, want %+v", got.SignalsWithheld, want)
-	}
-	if len(got.Signals) != 2 || len(got.ProjectChanges) != 2 {
-		t.Fatalf("signals = %d, project changes = %d, want 2 each", len(got.Signals), len(got.ProjectChanges))
-	}
+	raw, present := document["signals_withheld"]
+	return string(raw), present
 }
 
 func TestSignalsWithheldWireShapePerNarrowing(t *testing.T) {
 	for _, schemaVersion := range []string{"1", "2"} {
 		report := reportWithSeverities(schemaVersion, "high", "high", "low")
+		if _, present := signalsWithheldWire(t, report); present {
+			t.Fatalf("schema %s: an unnarrowed report must not emit signals_withheld", schemaVersion)
+		}
 		cases := map[string]struct {
-			view *Report
+			opts NarrowOptions
 			want string
 		}{
-			"floor only":     {report.WithMinSeverity("high"), `{"min_severity":"high","below_min_severity":1}`},
-			"top only":       {report.WithTop(1), `{"top":1,"beyond_top":2}`},
-			"top above size": {report.WithTop(9), `{"top":9,"beyond_top":0}`},
-			"floor and top":  {report.WithMinSeverity("high").WithTop(1), `{"min_severity":"high","below_min_severity":1,"top":1,"beyond_top":1}`},
-			"floor, zero":    {report.WithMinSeverity("low"), `{"min_severity":"low","below_min_severity":0}`},
+			"floor only":     {NarrowOptions{MinSeverity: "high"}, `{"min_severity":"high","below_min_severity":1}`},
+			"top only":       {NarrowOptions{Top: 1}, `{"top":1,"beyond_top":2}`},
+			"top above size": {NarrowOptions{Top: 9}, `{"top":9,"beyond_top":0}`},
+			"floor and top":  {NarrowOptions{MinSeverity: "high", Top: 1}, `{"min_severity":"high","below_min_severity":1,"top":1,"beyond_top":1}`},
+			"floor, zero":    {NarrowOptions{MinSeverity: "low"}, `{"min_severity":"low","below_min_severity":0}`},
 		}
 		for name, tc := range cases {
 			t.Run("schema "+schemaVersion+" "+name, func(t *testing.T) {
-				encoded, err := json.Marshal(tc.view)
-				if err != nil {
-					t.Fatal(err)
-				}
-				var document map[string]json.RawMessage
-				if err := json.Unmarshal(encoded, &document); err != nil {
-					t.Fatal(err)
-				}
-				if got := string(document["signals_withheld"]); got != tc.want {
+				got, _ := signalsWithheldWire(t, mustNarrow(t, report, tc.opts))
+				if got != tc.want {
 					t.Fatalf("signals_withheld = %s, want %s", got, tc.want)
 				}
 			})

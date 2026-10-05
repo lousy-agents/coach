@@ -49,7 +49,7 @@ func parseTopCap(value string) (int, bool) {
 	n, err := strconv.Atoi(value)
 	return n, err == nil && n > 0
 }
-func renderReport(report *codesignal.Report, format string, stdout, stderr *os.File) int {
+func renderReport(report *codesignal.Report, format string, renderOptions codesignalcli.RenderOptions, stdout, stderr *os.File) int {
 	if format == "json" {
 		encoded, err := codesignalcli.RenderJSON(report)
 		if err != nil {
@@ -63,7 +63,7 @@ func renderReport(report *codesignal.Report, format string, stdout, stderr *os.F
 		return 0
 	}
 
-	if _, err := fmt.Fprint(stdout, codesignalcli.RenderText(report)); err != nil {
+	if _, err := fmt.Fprint(stdout, codesignalcli.RenderTextWithOptions(report, renderOptions)); err != nil {
 		fmt.Fprintf(stderr, "coach codesignal: writing report: %s\n", err)
 		return 1
 	}

@@ -63,6 +63,10 @@ type codesignalFlags struct {
 	prepareCompiler          bool
 	noInteractive            bool
 	failOnIncompleteCoverage bool
+
+	// args is the raw argument list the flags were parsed from, kept so a
+	// report can name the command that re-runs the same invocation.
+	args []string
 }
 
 // countingBoolFlag is a flag.Value wrapper that counts how many times Set

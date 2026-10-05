@@ -60,5 +60,7 @@ func parseCodesignalFlags(args []string, stdout, stderr *os.File) (codesignalFla
 		return codesignalFlags{}, 2, false
 	}
 
-	return finishCodesignalFlagParse(flags, holders, stderr)
+	parsed, exitCode, ok := finishCodesignalFlagParse(flags, holders, stderr)
+	parsed.args = args
+	return parsed, exitCode, ok
 }

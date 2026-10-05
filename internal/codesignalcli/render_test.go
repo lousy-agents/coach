@@ -88,7 +88,7 @@ func TestRenderTextWithheldSignalsLine(t *testing.T) {
 				Signals:         []codesignal.Signal{signal},
 				SignalsWithheld: &codesignal.SignalsWithheld{MinSeverity: "high", BelowMinSeverity: 2},
 			},
-			wantLine: "withheld: 2 signals below --min-severity high (counts above describe the full analysis)\n",
+			wantLine: "withheld: 2 signals below --min-severity high; counts above describe the full analysis; see all: coach codesignal --baseline\n",
 		},
 		{
 			name: "diff singular",
@@ -96,7 +96,7 @@ func TestRenderTextWithheldSignalsLine(t *testing.T) {
 				Signals:         []codesignal.Signal{signal},
 				SignalsWithheld: &codesignal.SignalsWithheld{MinSeverity: "medium", BelowMinSeverity: 1},
 			},
-			wantLine: "withheld: 1 signal below --min-severity medium (counts above describe the full analysis)\n",
+			wantLine: "withheld: 1 signal below --min-severity medium; counts above describe the full analysis; see all: coach codesignal --baseline\n",
 		},
 		{
 			name: "everything withheld scopes the all-clear to the floor",
@@ -112,7 +112,7 @@ func TestRenderTextWithheldSignalsLine(t *testing.T) {
 				Signals:         []codesignal.Signal{signal},
 				SignalsWithheld: &codesignal.SignalsWithheld{Top: 1, BeyondTop: 3},
 			},
-			wantLine: "withheld: 3 signals beyond --top 1 (counts above describe the full analysis); re-run without --top to see all\n",
+			wantLine: "withheld: 3 signals beyond --top 1; counts above describe the full analysis; see all: coach codesignal --baseline\n",
 		},
 		{
 			name: "cap singular",
@@ -120,7 +120,7 @@ func TestRenderTextWithheldSignalsLine(t *testing.T) {
 				Signals:         []codesignal.Signal{signal},
 				SignalsWithheld: &codesignal.SignalsWithheld{Top: 2, BeyondTop: 1},
 			},
-			wantLine: "withheld: 1 signal beyond --top 2 (counts above describe the full analysis); re-run without --top to see all\n",
+			wantLine: "withheld: 1 signal beyond --top 2; counts above describe the full analysis; see all: coach codesignal --baseline\n",
 		},
 		{
 			name: "cap at or above the signal count offers nothing more to see",
@@ -128,7 +128,7 @@ func TestRenderTextWithheldSignalsLine(t *testing.T) {
 				Signals:         []codesignal.Signal{signal},
 				SignalsWithheld: &codesignal.SignalsWithheld{Top: 5},
 			},
-			wantLine: "withheld: 0 signals beyond --top 5 (counts above describe the full analysis)\n",
+			wantLine: "withheld: 0 signals beyond --top 5; counts above describe the full analysis\n",
 		},
 		{
 			name: "floor and cap report both counts and the total and drop both flags",
@@ -137,7 +137,7 @@ func TestRenderTextWithheldSignalsLine(t *testing.T) {
 				Signals:         []codesignal.Signal{signal},
 				SignalsWithheld: &codesignal.SignalsWithheld{MinSeverity: "high", BelowMinSeverity: 2, Top: 1, BeyondTop: 3},
 			},
-			wantLine: "withheld: 5 signals (2 below --min-severity high, 3 beyond --top 1) (counts above describe the full analysis); re-run without --min-severity and --top to see all\n",
+			wantLine: "withheld: 5 signals (2 below --min-severity high, 3 beyond --top 1); counts above describe the full analysis; see all: coach codesignal --baseline\n",
 		},
 		{
 			name: "zero withheld keeps the unscoped all-clear",
@@ -150,7 +150,7 @@ func TestRenderTextWithheldSignalsLine(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := RenderText(tc.report)
+			got := RenderTextWithOptions(tc.report, RenderOptions{SeeAllCommand: "coach codesignal --baseline"})
 			if !strings.Contains(got, tc.wantLine) {
 				t.Fatalf("missing %q in:\n%s", tc.wantLine, got)
 			}
@@ -159,6 +159,16 @@ func TestRenderTextWithheldSignalsLine(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("without a caller-supplied command the line names none", func(t *testing.T) {
+		report := &codesignal.Report{
+			Signals:         []codesignal.Signal{signal},
+			SignalsWithheld: &codesignal.SignalsWithheld{Top: 1, BeyondTop: 3},
+		}
+		if got := RenderText(report); strings.Contains(got, "see all") {
+			t.Fatalf("unexpected command in:\n%s", got)
+		}
+	})
 
 	t.Run("an unnarrowed report never mentions withheld", func(t *testing.T) {
 		if got := RenderText(&codesignal.Report{Signals: []codesignal.Signal{signal}}); strings.Contains(got, "withheld") {
