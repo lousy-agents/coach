@@ -224,7 +224,8 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 // AvailableSetupChoices' combined-menu composition (AC-11) is otherwise
 // exercised only over hand-constructed ReadinessResult values
 // (project_ts_setup_choice_acceptance_test.go) or over a real readiness
-// result for a single mise scope alone (project_ts_setup_choice_acceptance_test.go:417-458).
+// result for a single mise scope alone (project_ts_setup_choice_acceptance_test.go's
+// "over a real CheckProjectReadiness result" specs).
 // This spec drives the whole pipeline -- a real CheckProjectReadiness result
 // whose checks.package_manager passes and whose project mise.toml already
 // pins an exact supported version -- to prove project_package and
@@ -266,7 +267,46 @@ var _ = Describe("codesignalcli.AvailableSetupChoices composes project_package a
 // unreachable from this real-scan boundary by design (tracked at the scan
 // boundary in #355) and is not asserted here.
 var _ = Describe("codesignalcli.CheckProjectReadiness never gates or warns on a selected supported-set Node release (AC-SET-10)", func() {
-	body_projectTsScanPreflightAcceptanceTest_codesignalcliCheckProjectReadinessNeverGatesOrWa_265()
+	It("has more than one supported Node major, so the table below cannot silently degrade to exercising just one", func() {
+		Expect(len(tstoolchain.SupportedNodeMajors)).To(BeNumerically(">", 1), "codesignalcli.SupportedNodeMajors=%v", tstoolchain.SupportedNodeMajors)
+	})
+
+	tableArgs := []any{func(major int) {
+		version := fmt.Sprintf("v%d.0.0", major)
+		path := pathWithStubNode(version)
+		GinkgoT().Setenv("PATH", path)
+		GinkgoT().Setenv("HOME", os.Getenv("HOME"))
+
+		repo := newTempGitRepo()
+		head := commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
+
+		readiness, err := projectcheck.Run(repo, head, "")
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(readiness.Checks.Node.State).To(Equal(projectreadiness.Pass), "detail=%s", readiness.Checks.Node.Detail)
+		Expect(readiness.Checks.Node.Code).To(BeEmpty())
+		Expect(readiness.Checks.Runtime.State).To(Equal(projectreadiness.Pass), "detail=%s", readiness.Checks.Runtime.Detail)
+		Expect(readiness.Checks.Runtime.Code).To(BeEmpty())
+
+		for _, gap := range readiness.Gaps {
+			Expect(gap.Code).NotTo(HavePrefix("node_"), "a supported-set Node release must never contribute a node_* gap, got %q", gap.Code)
+		}
+		for _, warning := range readiness.Warnings {
+			Expect(warning.Code).NotTo(HavePrefix("node_"), "a supported-set Node release must never warn, got %q", warning.Code)
+		}
+		for _, action := range readiness.NextActions {
+			Expect(action.RuntimeKind).NotTo(Equal("node"), "a supported-set Node release must never contribute a runtime next action, got kind=%q", action.Kind)
+		}
+
+		_, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+		Expect(exitCode).To(Equal(2), "stdout/stderr: %s", stderr)
+		Expect(stderrLines(stderr)[0]).To(HavePrefix("typescript_compiler_missing:"), "the scan must fail on the later missing-compiler boundary, not on Node; stderr: %s", stderr)
+	}}
+	for _, major := range tstoolchain.SupportedNodeMajors {
+		tableArgs = append(tableArgs, Entry(fmt.Sprintf("Node major %d", major), major))
+	}
+
+	DescribeTable("passes node/runtime with no gap, no warning, and no runtime next action, and a real scan proceeds past the Node boundary to fail only on the later missing-compiler gap", tableArgs...)
 })
 
 // R2: readinessFromGapChecks derives Runtime's and Compiler's next actions
@@ -314,9 +354,6 @@ func stderrLines(stderr []byte) []string {
 	return strings.Split(strings.TrimRight(string(stderr), "\n"), "\n")
 }
 
-// alsoFailingGapCodes extracts the gap codes from AC-SET-13's "also failing"
-// lines, so a spec can assert which gaps were reported and in what order
-// without restating the shared remediation sentence for each one.
 var _ = Describe("coach codesignal: optional preparation after a successful scan (SA-280-046)", func() {
 	When("an injected optional offer declines", func() {
 		It("still renders the CodeSignal report", func() {
@@ -384,6 +421,9 @@ var _ = Describe("coach codesignal: optional preparation after a successful scan
 	})
 })
 
+// alsoFailingGapCodes extracts the gap codes from AC-SET-13's "also failing"
+// lines, so a spec can assert which gaps were reported and in what order
+// without restating the shared remediation sentence for each one.
 func alsoFailingGapCodes(lines []string) []string {
 	var codes []string
 	for _, line := range lines {

@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
+	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
 func verdictLine(text string) string {
@@ -97,7 +98,7 @@ func expectIncompleteVerdictDiscrimination(cleanRepo, incompleteRepo, exitCodeRe
 var _ = Describe("coach codesignal rendered verdict, negative control: incomplete analysis versus a genuinely clean run", func() {
 	When("one run's TypeScript analysis resolves a fully working compiler over a fixture with no forbidden edge, and a second run's resolved native package is present and version-equal but unloadable over a fixture carrying a real forbidden-layer edge", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			body_noFindingsVerdictAcceptanceTest_100()
+			skipWithoutRealTypeScriptCompiler()
 		})
 
 		It("renders different verdict text for the two runs, not merely different coverage fields", func() {
@@ -110,7 +111,7 @@ var _ = Describe("coach codesignal rendered verdict, negative control: incomplet
 			commitFile(cleanRepo, "project.json", goLayerPolicyConfigJSON)
 			installRealTypescriptCompiler(cleanRepo, true)
 
-			By("using tsRealHandlersImportingDB: project_ts_backend_acceptance_test.go's positive spec already proves this exact fixture reports a real edge against a fully working compiler, so the unloadable native executable below suppresses a real finding, not an absent one")
+			By("using tsRealHandlersImportingDB: project_ts_embedded_analyzer_acceptance_test.go's positive spec already proves this exact fixture reports a real edge against a fully working compiler, so the unloadable native executable below suppresses a real finding, not an absent one")
 			incompleteRepo := newTempGitRepo()
 			incompleteVersion := realTypescriptVersion()
 			commitRealTSLayerFixture(incompleteRepo, incompleteVersion)
@@ -128,7 +129,31 @@ var _ = Describe("coach codesignal rendered verdict, negative control: incomplet
 
 	When("one run's Go backend evaluates a real forbidden-layer edge to completion, and a second run's real go.mod exceeds the single-file git-read bound before that same edge is ever evaluated", func() {
 		It("renders different verdict text for the two runs, not merely different coverage fields", func() {
-			body_noFindingsVerdictAcceptanceTest_rendersDifferentVerdictTextForTheTwoRunsNotMerel_133()
+			cleanRepo := newTempGitRepo()
+			commitFile(cleanRepo, "go.mod", goModuleFile)
+			commitFile(cleanRepo, "pkg/db/db.go", dbPackageFile)
+			commitFile(cleanRepo, "pkg/handlers/handlers.go", handlersWithoutImport)
+			commitFile(cleanRepo, "project.json", goLayerPolicyConfigJSON)
+
+			By("using db.go/handlersImportingDB: project_go_backend_acceptance_test.go's unambiguous-edge spec already proves this exact fixture reports with a normal-sized go.mod, so the oversized go.mod below suppresses a real finding, not an absent one")
+			incompleteRepo := newTempGitRepo()
+			commitFile(incompleteRepo, "go.mod", oversizedGoModuleFile())
+			commitFile(incompleteRepo, "pkg/db/db.go", dbPackageFile)
+			commitFile(incompleteRepo, "pkg/handlers/handlers.go", handlersImportingDB)
+			commitFile(incompleteRepo, "project.json", goLayerPolicyConfigJSON)
+
+			_, incompleteReport := expectIncompleteVerdictDiscrimination(cleanRepo, incompleteRepo,
+				"discoverGoProject reports the unreadable go.mod through Coverage/Diagnostics rather than a hard error; exit status alone cannot discriminate these two runs",
+				"the unreadable go.mod",
+				"No active CodeSignal findings.\n")
+
+			foundRootUnavailable := false
+			for _, diag := range incompleteReport.ProjectCoverage.Diagnostics {
+				if diag.Code == projectmodel.DiagRootUnavailable {
+					foundRootUnavailable = true
+				}
+			}
+			Expect(foundRootUnavailable).To(BeTrue(), "expected a %s diagnostic in ProjectCoverage.Diagnostics, got %+v", projectmodel.DiagRootUnavailable, incompleteReport.ProjectCoverage.Diagnostics)
 		})
 	})
 })

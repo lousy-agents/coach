@@ -110,7 +110,7 @@ func expectQualifiedIncompleteAnalyzerFailure(coachPath, repo, expectedDiagnosti
 
 var _ = Describe("coach codesignal --project-language typescript: analyzer failure after successful preflight (AC-RUN-9)", Label("ts-project-backend"), func() {
 	BeforeEach(func() {
-		body_projectTsAnalyzerFailureAcceptanceTest_112()
+		skipWithoutRealTypeScriptCompiler()
 	})
 
 	When("the analyzer crashes partway through analysis, after the resolved compiler and native package have loaded", func() {
