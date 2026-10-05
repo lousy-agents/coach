@@ -14,7 +14,6 @@
 package agentloop
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -30,39 +29,6 @@ const (
 	// CallSourceModel marks a model-selected call from the fixed allowlist.
 	CallSourceModel CallSource = "model"
 )
-
-// ToolCall is one model- or handler-requested invocation.
-type ToolCall struct {
-	Name string
-	Args json.RawMessage
-}
-
-// TurnResponse is one model generation result used by the loop's multi-turn seam.
-type TurnResponse struct {
-	Text      string
-	ToolCalls []ToolCall
-}
-
-// TurnGateway is the multi-turn model seam for tool-call sequences. Distinct from
-// modelgateway.Gateway (Judge-only); production wiring and tests inject adapters
-// without pulling LLM HTTP clients into this package.
-type TurnGateway interface {
-	Generate(ctx context.Context, prompt string) (TurnResponse, error)
-}
-
-// RunResult is the outcome of a multi-turn Run that ends on a text-only model turn.
-type RunResult struct {
-	FinalText string
-}
-
-// RecordedCall is one registry invocation observed by Calls().
-type RecordedCall struct {
-	Name   string
-	Source CallSource
-	Args   json.RawMessage
-	Result json.RawMessage
-	Err    error
-}
 
 // Options configures New. Core tool handlers may be injected; nil uses package defaults.
 // When adding a new always-on core tool, extend Options (if injectable) and coreToolDefs.
@@ -130,81 +96,24 @@ func (l *Loop) Register(spec ToolSpec) error {
 	return nil
 }
 
-// Call invokes a registered tool once under the given source and budgets.
-// Unknown tools, schema-invalid args, and budget exhaustion are typed errors.
-func (l *Loop) Call(ctx context.Context, source CallSource, name string, args json.RawMessage) (json.RawMessage, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	l.mu.Lock()
-	if err := l.checkWallLocked(); err != nil {
-		l.mu.Unlock()
-		return nil, err
-	}
-	if l.toolCalls >= l.budget.MaxToolCalls {
-		max := l.budget.MaxToolCalls
-		l.mu.Unlock()
-		return nil, fmt.Errorf("%w: max_tool_calls %d", ErrBudgetExceeded, max)
-	}
-	tool, ok := l.tools[name]
-	if !ok {
-		rec := RecordedCall{Name: name, Source: source, Args: cloneRawMessage(args), Err: ErrUnknownTool}
-		l.calls = append(l.calls, rec)
-		l.mu.Unlock()
-		return nil, ErrUnknownTool
-	}
-	schema := tool.schema
-	handler := tool.handler
-	// Reserve the tool-call slot before releasing the lock so concurrent Call
-	// cannot overshoot MaxToolCalls.
-	l.toolCalls++
-	l.mu.Unlock()
-
-	if err := validateToolArgs(schema, args); err != nil {
-		l.record(name, source, args, nil, err)
-		return nil, err
-	}
-
-	opCtx, cancel, err := l.wallBudgetContext(ctx)
-	if err != nil {
-		l.record(name, source, args, nil, err)
-		return nil, err
-	}
-	defer cancel()
-
-	result, err := handler(opCtx, args)
-	err = l.mapWallErr(ctx, opCtx, err)
-	l.record(name, source, args, result, err)
-	return result, err
-}
-
-// Run drives multi-turn model tool-call sequences until a text-only response
-// or a typed error (unknown tool, invalid args, budget). Model text is never
-// executed as an action — only registered tool calls are.
-
-// nextTurn reserves a model-call slot, generates one turn, and re-checks
-// wall time so a turn that overran (e.g. via injected clock) cannot succeed
-// as text-only or start tools.
-
-// reserveModelCall charges one model call against the budget. The wall-time
-// check, the ceiling check, and the increment share one lock hold so two
-// turns cannot both pass the ceiling before either increments.
-
-// runModelToolCalls executes calls in order and marshals their results into
-// the next turn's prompt. Model text never becomes an action; only
-// registered tool calls execute.
-
 // Calls returns a defensive copy of every registry invocation so far, in order.
-
-func (l *Loop) record(name string, source CallSource, args, result json.RawMessage, err error) {
+func (l *Loop) Calls() []RecordedCall {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.calls = append(l.calls, RecordedCall{
-		Name:   name,
-		Source: source,
-		Args:   cloneRawMessage(args),
-		Result: cloneRawMessage(result),
-		Err:    err,
-	})
+	out := make([]RecordedCall, len(l.calls))
+	copy(out, l.calls)
+	for i := range out {
+		out[i].Args = cloneRawMessage(out[i].Args)
+		out[i].Result = cloneRawMessage(out[i].Result)
+	}
+	return out
+}
+
+func cloneRawMessage(m json.RawMessage) json.RawMessage {
+	if m == nil {
+		return nil
+	}
+	out := make(json.RawMessage, len(m))
+	copy(out, m)
+	return out
 }

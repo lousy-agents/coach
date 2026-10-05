@@ -2,9 +2,33 @@ package agentloop
 
 import (
 	"context"
-
+	"encoding/json"
 	"fmt"
 )
+
+// ToolCall is one model- or handler-requested invocation.
+type ToolCall struct {
+	Name string
+	Args json.RawMessage
+}
+
+// TurnResponse is one model generation result used by the loop's multi-turn seam.
+type TurnResponse struct {
+	Text      string
+	ToolCalls []ToolCall
+}
+
+// TurnGateway is the multi-turn model seam for tool-call sequences. Distinct from
+// modelgateway.Gateway (Judge-only); production wiring and tests inject adapters
+// without pulling LLM HTTP clients into this package.
+type TurnGateway interface {
+	Generate(ctx context.Context, prompt string) (TurnResponse, error)
+}
+
+// RunResult is the outcome of a multi-turn Run that ends on a text-only model turn.
+type RunResult struct {
+	FinalText string
+}
 
 // Run drives multi-turn model tool-call sequences until a text-only response
 // or a typed error (unknown tool, invalid args, budget). Model text is never
