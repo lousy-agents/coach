@@ -49,30 +49,3 @@ func tsRootDiscoverySnapshotUnavailable(discovered projectmodel.TSRootDiscoveryR
 	}
 	return projectmodel.Diagnostic{}, false
 }
-
-// runAuthorProjectConfigTypeScript dispatches `coach codesignal --baseline
-// --suggest-project-config --project-language typescript`. The
-// controlling-terminal check runs before any revision resolution, snapshot
-// read, or discovery: without a controlling terminal on stdin, this function
-// never prompts and never writes a policy file.
-//
-// Exit codes deliberately match the plain `--suggest-project-config` family's
-// documented table (SuggestionResult/suggestExitCodeFor): 0 success, 2
-// usage/discovery rejection (no controlling terminal, or a declined/
-// cancelled/invalid guided-authoring outcome -- this dispatch's own
-// interactive-decision equivalent of a discovery rejection), 3 for a failure
-// resolving or reading the immutable revision/repository-root/snapshot this
-// dispatch discovers TypeScript roots over, or for root discovery itself
-// failing outright (as opposed to merely reporting an incomplete walk).
-// What deliberately does NOT match: the report shape. This dispatch is
-// interactive (it prompts over a real terminal), so its stderr is plain,
-// human-facing text rather than the machine-readable NDJSON envelope
-// `--suggest-project-config` writes, and an absolute invocation-directory
-// path is acceptable in that text where it would not be in the envelope.
-func runAuthorProjectConfigTypeScript(dir string, f codesignalFlags, stdout, stderr *os.File) int {
-	if reason := interactiveRefusalReason(f, os.Stdin); reason != "" {
-		fmt.Fprintf(stderr, "%s: %s; refusing to enter guided policy authoring or write a policy config. Draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>.\n", authorTSUsagePrefix, reason)
-		return 2
-	}
-	return authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr)
-}

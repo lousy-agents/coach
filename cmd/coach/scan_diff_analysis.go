@@ -2,17 +2,12 @@ package main
 
 import (
 	"context"
-
-	"fmt"
+	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/sourcescope"
 	"github.com/lousy-agents/coach/pkg/codesignal"
-
-	"os"
-	"sort"
-	"strconv"
 )
 
 func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, error) {
@@ -40,33 +35,4 @@ func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesigna
 		return nil, wrapScanAnalysisError(err, dir, headSHA, f.projectConfig, stderr)
 	}
 	return withProjectDiagnostic(report, diag), nil
-}
-func (c *countingBoolFlag) Set(s string) error {
-	v, err := strconv.ParseBool(s)
-	if err != nil {
-		return err
-	}
-	c.value = v
-	c.count++
-	return nil
-}
-func sortedFlagNames(setFlags map[string]bool) []string {
-	names := make([]string, 0, len(setFlags))
-	for name := range setFlags {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-func (c *countingStringFlag) String() string {
-	if c == nil {
-		return ""
-	}
-	return c.value
-}
-func rejectPositionalArgs(flagName string, positional []string, suffix string) string {
-	if len(positional) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("coach: --%s does not accept positional arguments%s", flagName, suffix)
 }

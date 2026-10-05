@@ -2,11 +2,6 @@ package main
 
 import (
 	"fmt"
-
-	"github.com/lousy-agents/coach/internal/codesignalcli/render"
-	"github.com/lousy-agents/coach/pkg/codesignal"
-
-	"os"
 )
 
 func validateCodesignalFlags(f codesignalFlags, positional []string) string {
@@ -32,24 +27,4 @@ func validateCodesignalFlags(f codesignalFlags, positional []string) string {
 		return fmt.Sprintf("coach: unexpected positional argument %q", positional[0])
 	}
 	return ""
-}
-func renderReport(report *codesignal.Report, format string, stdout, stderr *os.File) int {
-	if format == "json" {
-		encoded, err := render.ReportJSON(report)
-		if err != nil {
-			fmt.Fprintf(stderr, "coach codesignal: encoding report: %s\n", err)
-			return 1
-		}
-		if _, err := stdout.Write(encoded); err != nil {
-			fmt.Fprintf(stderr, "coach codesignal: writing report: %s\n", err)
-			return 1
-		}
-		return 0
-	}
-
-	if _, err := fmt.Fprint(stdout, render.ReportText(report)); err != nil {
-		fmt.Fprintf(stderr, "coach codesignal: writing report: %s\n", err)
-		return 1
-	}
-	return 0
 }

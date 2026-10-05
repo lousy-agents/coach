@@ -3,15 +3,27 @@ package main
 import (
 	"encoding/json"
 	"errors"
-
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/pkg/codesignal"
+)
 
-	"strings"
+var (
+	loadProjectConfig     = projectconfig.Load
+	resolveProjectBackend = codesignalcli.ResolveProjectBackend
+	lookupProjectBackend  = func(language string) codesignalcli.ProjectBackend {
+		switch language {
+		case "go":
+			return codesignalcli.NewGoProjectBackend()
+		case "typescript":
+			return codesignalcli.NewTSProjectBackend()
+		default:
+			return nil
+		}
+	}
 )
 
 func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configPath, language string) (*codesignalcli.ProjectAnalysis, *codesignal.Diagnostic, error) {
@@ -51,20 +63,4 @@ func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configP
 		ConfigDigest: projectconfig.Digest(config),
 		Backend:      backend,
 	}, nil, nil
-}
-func firstDisallowedFlag(setFlags, allowed map[string]bool) (string, bool) {
-	for _, name := range sortedFlagNames(setFlags) {
-		if !allowed[name] {
-			return name, true
-		}
-	}
-	return "", false
-}
-func suggestProjectConfigFlagValue(arg string) (string, bool) {
-	for _, prefix := range []string{"--suggest-project-config=", "-suggest-project-config="} {
-		if strings.HasPrefix(arg, prefix) {
-			return arg[len(prefix):], true
-		}
-	}
-	return "", false
 }

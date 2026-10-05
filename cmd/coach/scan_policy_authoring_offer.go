@@ -3,12 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli/configauthoring"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
-
-	"os"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 )
 
 // scanShouldAuthorProjectConfig reports whether a real scan's (not
@@ -27,7 +26,7 @@ import (
 // --project-language (the guided session below is TypeScript-specific), or
 // no controlling terminal, or noInteractive being true (R1's escape hatch:
 // --no-interactive or a non-empty CI environment variable, see
-// nonInteractiveRequested in main.go) all fall through to
+// nonInteractiveRequested in interactivity.go) all fall through to
 // classifyAnalysisError's existing message-only path unchanged.
 func scanShouldAuthorProjectConfig(err error, language, configPath string, noInteractive bool) bool {
 	if language != "typescript" {
@@ -47,33 +46,6 @@ func scanShouldAuthorProjectConfig(err error, language, configPath string, noInt
 		return false
 	}
 	return terminal.HasControllingTerminal(os.Stdin)
-}
-
-// reportAuthoringResult translates one AuthorProjectConfig session outcome
-// into the process's exit code. A declined/cancelled session and every
-// failure mode share exit 2, the same usage/discovery-failure exit code
-// --suggest-project-config already uses; only Approved with no validation,
-// existing-target, or write error is success. The approved candidate itself
-// has already reached stdout or disk inside AuthorProjectConfig -- there is
-// nothing left to write here.
-func reportAuthoringResult(result configauthoring.Result, stderr *os.File) int {
-	if !result.Approved {
-		fmt.Fprintf(stderr, "%s: authoring was cancelled or not approved; no policy config was written\n", authorTSUsagePrefix)
-		return 2
-	}
-	if result.ValidationError != nil {
-		fmt.Fprintf(stderr, "%s: %s\n", authorTSUsagePrefix, result.ValidationError)
-		return 2
-	}
-	if result.OutputExists {
-		fmt.Fprintf(stderr, "%s: --output target already exists\n", authorTSUsagePrefix)
-		return 2
-	}
-	if result.WriteError != nil {
-		fmt.Fprintf(stderr, "%s: %s\n", authorTSUsagePrefix, result.WriteError)
-		return 2
-	}
-	return 0
 }
 
 // runScanProjectConfigAuthoring implements AC-POL-8. It reuses the exact
@@ -112,4 +84,24 @@ func runScanProjectConfigAuthoring(dir string, f codesignalFlags, scanErr error,
 	}
 	fmt.Fprintf(stderr, "coach codesignal: the approved TypeScript project-config candidate was written to stdout and no file was created; save it to %q, review it, commit it, then rerun this scan once it is committed.\n", f.projectConfig)
 	return 2
+}
+
+// printProjectConfigGapBeforeAuthoring prints the same two lines
+// classifyAnalysisError would have printed for scanErr's class-2 config
+// failure -- its own message, plus AC-SET-13's masked-gap lines when scanErr
+// was wrapped with a readiness snapshot -- before guided authoring takes over
+// stderr with its own prompts.
+func printProjectConfigGapBeforeAuthoring(scanErr error, stderr *os.File) {
+	var configErr *projectconfig.ConfigError
+	if !errors.As(scanErr, &configErr) {
+		return
+	}
+	fmt.Fprintln(stderr, configErr.Message)
+
+	var withReadiness *tssetup.ProjectConfigErrorWithReadiness
+	if errors.As(scanErr, &withReadiness) {
+		for _, line := range tssetup.AlsoFailingGapLines(withReadiness.Readiness, withReadiness.ConfigPath) {
+			fmt.Fprintln(stderr, line)
+		}
+	}
 }

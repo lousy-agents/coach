@@ -4,10 +4,6 @@ import (
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
-
-	"os"
-
-	"strconv"
 )
 
 func validateCheckProjectFlags(f codesignalFlags, setFlags map[string]bool, positional []string, checkProjectCount int) string {
@@ -33,30 +29,4 @@ func validateCheckProjectFlags(f codesignalFlags, setFlags map[string]bool, posi
 		return fmt.Sprintf("coach: --check-project cannot be combined with --%s", name)
 	}
 	return rejectPositionalArgs("check-project", positional, "")
-}
-func run(args []string, stdout, stderr *os.File) int {
-	if len(args) == 0 {
-		fmt.Fprintln(stderr, topLevelUsage)
-		return 2
-	}
-
-	switch args[0] {
-	case "--help", "-h":
-		fmt.Fprintln(stdout, topLevelUsage)
-		return 0
-	case "--version":
-		fmt.Fprintln(stdout, version)
-		return 0
-	case "codesignal":
-		return runCodesignal(args[1:], stdout, stderr)
-	default:
-		fmt.Fprintf(stderr, "%s\ncoach: unknown command %q\n", topLevelUsage, args[0])
-		return 2
-	}
-}
-func (c *countingBoolFlag) String() string {
-	if c == nil {
-		return "false"
-	}
-	return strconv.FormatBool(c.value)
 }

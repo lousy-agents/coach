@@ -2,14 +2,11 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/render"
-
-	"os"
-
-	"strconv"
 )
 
 // runCheckProject dispatches `coach codesignal --check-project`: resolve
@@ -46,24 +43,4 @@ func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int
 		return 1
 	}
 	return 0
-}
-func suggestProjectConfigRequested(args []string) bool {
-	for _, arg := range args {
-		if suggestFlagRequestsConfig(arg) {
-			return true
-		}
-	}
-	return false
-}
-
-func suggestFlagRequestsConfig(arg string) bool {
-	if arg == "--suggest-project-config" || arg == "-suggest-project-config" {
-		return true
-	}
-	value, ok := suggestProjectConfigFlagValue(arg)
-	if !ok {
-		return false
-	}
-	requested, err := strconv.ParseBool(value)
-	return err != nil || requested
 }
