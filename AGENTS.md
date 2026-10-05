@@ -109,7 +109,7 @@ A file and a package shall be named for the responsibility they hold. When the s
 
 `pkg/semantics` parses purely in Go via `github.com/odvcencio/gotreesitter` — no CGO, no C toolchain, and no dual-backend selection. Pipeline (`analyzer.go`): `AnalyzeBytes` = validate → parse → syntax-check → extract imports → compute metrics/findings → `Result`.
 
-- **Backend seam** (`internal/engine/engine.go`): a deliberately narrow interface (`Node`, `Tree`, `Parser`, `Query`, `QueryCursor`, `Language`) exposing only the Tree-sitter operations the package actually uses (no `NamedChild`, no `TreeCursor`, no query predicates, no incremental parsing). The package is `internal`, so it is importable only from within `pkg/semantics`. There is exactly one implementation: `internal/engine/gotreesitter.go` (pure-Go, always compiled, no build tag).
+- **Backend seam** (`internal/engine/engine.go`): a deliberately narrow interface (`Node`, `Tree`, `Parser`, `Query`, `QueryCursor`, `Language`) exposing only the Tree-sitter operations the package actually uses (no `NamedChild`, no `TreeCursor`, no query predicates, no incremental parsing). The package is `internal`, so it is importable only from within `pkg/semantics`. There is exactly one implementation: `internal/engine/gotreesitter*.go` (pure-Go, always compiled, no build tag).
 - **Registry selection** (`language.go`): `languageSpec` bundles a backend-bound `engine.Language` handle with language-specific `extractImports`/`computeFeatures` functions. `languageRegistry` (`map[Language]languageSpec`) is defined unconditionally — no build tags, no per-backend variants. Adding a language means extending the registry plus its own `extract*Imports`/`compute*Features` pair (mirroring the Go or TS implementations), not touching `parser.go`/`analyzer.go`.
 - **Concurrency**: an `*Analyzer` holds no backend resources between calls — every `AnalyzeBytes` call creates and closes its own `Parser`/`Tree`/`Query`/`QueryCursor` — so a single `*Analyzer` is safe for concurrent use.
 - **Error contract**: syntax errors return a partial `*Result` (`ParseStatus == "syntax_errors"`) *and* a non-nil error satisfying `errors.Is(err, ErrSyntax)` (use `errors.As` for `*SyntaxError.Issues`). Other sentinels: `ErrEmptyContent`, `ErrUnsupportedLanguage`, `ErrFileTooLarge`, `ErrBinaryContent`, `ErrParseFailure`.
@@ -210,7 +210,7 @@ This policy overrides verbose comment conventions in neighboring code. Preserve 
 
 ### Verification
 
-Passing checks prove nothing broke; they do not prove new behavior is correct. For a `pkg/semantics` extraction or metric change, add or extend a case in the relevant `*_test.go` (`features_test.go`, `ts_features_test.go`, `query_test.go`, …) with a concrete before/after `Result`, not just a "does it run" assertion. For `js/semantics` changes, extend `parity.test.ts` so the Go and JS outputs are checked byte-identical rather than independently plausible.
+Passing checks prove nothing broke; they do not prove new behavior is correct. For a `pkg/semantics` extraction or metric change, add or extend a case in the relevant `*_test.go` (`go_features_test.go`, `ts_features_test.go`, `go_imports_test.go`, …) with a concrete before/after `Result`, not just a "does it run" assertion. For `js/semantics` changes, extend `parity.test.ts` so the Go and JS outputs are checked byte-identical rather than independently plausible.
 
 ### Feedback loop
 

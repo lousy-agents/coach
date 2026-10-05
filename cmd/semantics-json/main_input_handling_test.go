@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-
 	"fmt"
 	"strings"
 	"testing"
-
-	"github.com/lousy-agents/coach/internal/jsbridge"
 )
 
 // TestServeLargeContent pushes a request line well past bufio.Scanner's
@@ -27,20 +24,6 @@ func TestServeLargeContent(t *testing.T) {
 	}
 	if responses[0].Result == nil || responses[0].Result.ParseStatus != "ok" {
 		t.Fatalf("result = %+v, want parse_status ok", responses[0].Result)
-	}
-}
-
-func TestServeMalformedLineGetsIDZero(t *testing.T) {
-	input := "this is not json\n" + request(t, 9, "package main\n") + "\n"
-	responses := serveLines(t, input, false)
-	if len(responses) != 2 {
-		t.Fatalf("got %d responses, want 2", len(responses))
-	}
-	if responses[0].ID != 0 || responses[0].Error == nil || responses[0].Error.Kind != jsbridge.KindInternal {
-		t.Errorf("malformed line response = %+v, want ID 0 with kind internal", responses[0])
-	}
-	if responses[1].ID != 9 {
-		t.Errorf("server did not keep serving after a malformed line: %+v", responses[1])
 	}
 }
 

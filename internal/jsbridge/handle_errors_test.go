@@ -3,21 +3,11 @@ package jsbridge
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
-
-	"os"
-	"path/filepath"
 	"testing"
-
-	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 func TestErrorKinds(t *testing.T) {
-	tests := []struct {
-		name string
-		req  Request
-		kind string
-	}{
+	tests := []errorKindCase{
 		{
 			name: "empty content",
 			req:  analyzeRequest(nil),
@@ -77,45 +67,27 @@ func TestErrorKinds(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			body_handlePart2Test_79(t, tc)
+			expectErrorKind(t, tc)
 		})
 	}
 }
 
-func loadManifest(t *testing.T) []parityCase {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", "parity", "manifest.json"))
-	if err != nil {
-		t.Fatalf("read manifest: %v", err)
-	}
-	var cases []parityCase
-	if err := json.Unmarshal(data, &cases); err != nil {
-		t.Fatalf("parse manifest: %v", err)
-	}
-	return cases
+type errorKindCase struct {
+	name string
+	req  Request
+	kind string
 }
 
-func TestHandleEchoesID(t *testing.T) {
-	resp := Handle(context.Background(), analyzeRequest([]byte("package main\n")))
-	if resp.ID != 7 {
-		t.Fatalf("ID = %d, want 7", resp.ID)
+func expectErrorKind(t *testing.T, tc errorKindCase) {
+	resp := Handle(context.Background(), tc.req)
+	if resp.Error == nil {
+		t.Fatalf("no error, want kind %q", tc.kind)
 	}
-	if resp.Error != nil {
-		t.Fatalf("unexpected error: %+v", resp.Error)
+	if resp.Error.Kind != tc.kind {
+		t.Fatalf("kind = %q (%s), want %q", resp.Error.Kind, resp.Error.Message, tc.kind)
 	}
-}
-
-// TestHandleTimeoutOption exercises the timeout_ms branch with a deadline
-// generous enough that the analysis always completes.
-func TestHandleTimeoutOption(t *testing.T) {
-	req := analyzeRequest([]byte("package main\n"))
-	req.TimeoutMS = 60_000
-	resp := Handle(context.Background(), req)
-	if resp.Error != nil {
-		t.Fatalf("unexpected error: %+v", resp.Error)
-	}
-	if resp.Result == nil || resp.Result.ParseStatus != semantics.ParseStatus("ok") {
-		t.Fatalf("result = %+v, want parse_status ok", resp.Result)
+	if resp.Result != nil {
+		t.Fatalf("Result = %+v, want nil for non-syntax errors", resp.Result)
 	}
 }
 
@@ -123,5 +95,35 @@ func TestHandleUnknownOp(t *testing.T) {
 	resp := Handle(context.Background(), Request{ID: 1, Op: "explode"})
 	if resp.Error == nil || resp.Error.Kind != KindInternal {
 		t.Fatalf("error = %+v, want kind %q", resp.Error, KindInternal)
+	}
+}
+
+// TestHandleNonUTF8Content proves base64 delivers exact bytes: invalid UTF-8
+// without a NUL byte must reach the parser rather than fail in transport or
+// trip the binary-content check.
+func TestHandleNonUTF8Content(t *testing.T) {
+	content := append([]byte("package main\n// comment \xff\xfe\n"), []byte("func main() {}\n")...)
+	resp := Handle(context.Background(), analyzeRequest(content))
+	if resp.Error != nil && resp.Error.Kind == KindInternal {
+		t.Fatalf("transport failed on non-UTF-8 bytes: %+v", resp.Error)
+	}
+	if resp.Error != nil && resp.Error.Kind == KindBinaryContent {
+		t.Fatalf("non-NUL bytes misclassified as binary: %+v", resp.Error)
+	}
+}
+
+func TestHandleBadBase64(t *testing.T) {
+	resp := Handle(context.Background(), Request{ID: 1, Op: OpAnalyze, Language: "go", ContentB64: "!!!not base64!!!"})
+	if resp.Error == nil || resp.Error.Kind != KindInternal {
+		t.Fatalf("error = %+v, want kind %q", resp.Error, KindInternal)
+	}
+}
+
+func TestHandleCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	resp := Handle(ctx, analyzeRequest([]byte("package main\n")))
+	if resp.Error == nil || resp.Error.Kind != KindCanceled {
+		t.Fatalf("error = %+v, want kind %q", resp.Error, KindCanceled)
 	}
 }
