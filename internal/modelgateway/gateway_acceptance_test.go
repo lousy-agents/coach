@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/lousy-agents/coach/internal/modelgateway"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 type hiddenMutationJudgment struct {
@@ -93,6 +95,7 @@ var _ = Describe("modelgateway.Gateway", func() {
 				Expect(asUnavail.Detail).NotTo(BeEmpty())
 				Expect(errors.As(valErr, &asUnavail)).To(BeFalse())
 
+				// Cover Judge classification, not only error constructors.
 				schemaFail := modelgateway.NewStubGateway(modelgateway.StubOptions{
 					JudgeErr: modelgateway.NewValidationError("fixture schema mismatch"),
 				})
@@ -124,11 +127,11 @@ var _ = Describe("modelgateway.Gateway", func() {
 
 	Describe("package surface", func() {
 		It("keeps production identifiers free of provider-specific names", func() {
-			body_gatewayAcceptanceTest_keepsProductionIdentifiersFreeOfProviderSpecific_129()
+			expectProductionFilesFreeOfProviderNames()
 		})
 
 		It("is the only non-test package that owns the chat-completions wire path", func() {
-			body_gatewayAcceptanceTest_isTheOnlyNonTestPackageThatOwnsTheChatCompletion_155()
+			expectOnlyModelgatewayOwnsChatCompletionsPath()
 		})
 	})
 })
@@ -157,4 +160,30 @@ func changeCohesionSchema() json.RawMessage {
 			"suggested_focus": {"type": ["string", "null"]}
 		}
 	}`)
+}
+
+func expectProductionFilesFreeOfProviderNames() {
+	dir, err := os.Getwd()
+	Expect(err).NotTo(HaveOccurred())
+
+	entries, err := os.ReadDir(dir)
+	Expect(err).NotTo(HaveOccurred())
+
+	forbidden := []string{"llamacpp", "llama.cpp", "sglang"}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		lowerName := strings.ToLower(name)
+		for _, f := range forbidden {
+			Expect(lowerName).NotTo(ContainSubstring(f), "production filename %s", name)
+		}
+		raw, readErr := os.ReadFile(filepath.Join(dir, name))
+		Expect(readErr).NotTo(HaveOccurred())
+		lower := strings.ToLower(string(raw))
+		for _, f := range forbidden {
+			Expect(lower).NotTo(ContainSubstring(f), "production file %s", name)
+		}
+	}
 }

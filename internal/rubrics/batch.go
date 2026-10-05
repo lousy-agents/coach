@@ -3,8 +3,6 @@ package rubrics
 import (
 	"encoding/json"
 	"fmt"
-
-	"github.com/lousy-agents/coach/internal/modelgateway"
 )
 
 // ToolPackResult is the JSON envelope returned by multi-finding pack tool calls
@@ -56,97 +54,57 @@ func ParseToolPackResult(raw json.RawMessage) (ToolPackResult, error) {
 
 // IsToolPackResult reports whether raw is a multi-item pack results envelope
 // ({"results":[...]}). Singular ToolResult envelopes return false.
-
-// Discriminate from accidental singular payloads that might gain a results field later:
-// pack envelopes always use a JSON array for results.
-
-// AssembleHiddenMutationPackMessages builds gateway Messages for a multi-finding
-// pack with short-rationale guidance and per-item span-local evidence.
-
-// mapBatchJudgmentToPackResult maps a batch JudgmentJSON envelope onto one
-// ToolResult per expected finding_ref. Missing/invalid items become diagnostics
-// for that ref only (partial pack success).
-func mapBatchJudgmentToPackResult(def Definition, expectedRefs []string, resp modelgateway.JudgmentResponse) ToolPackResult {
-	byRef, parseDiags := parseBatchItems(resp.JudgmentJSON)
-	identity := FormatModelIdentity(resp.LogicalModelID, resp.ServedModelID)
-	logical := resp.LogicalModelID
-	var served *string
-	if resp.ServedModelID != "" {
-		s := resp.ServedModelID
-		served = &s
+func IsToolPackResult(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
 	}
-
-	results := make([]ToolResult, 0, len(expectedRefs))
-	seen := make(map[string]struct{}, len(expectedRefs))
-	for _, ref := range expectedRefs {
-		if ref == "" {
-			continue
-		}
-		if _, dup := seen[ref]; dup {
-			results = append(results, packItemDiagnostic(def, ref, "duplicate finding_ref in pack args"))
-			continue
-		}
-		seen[ref] = struct{}{}
-
-		if msg, bad := parseDiags[ref]; bad {
-			results = append(results, packItemDiagnostic(def, ref, msg))
-			continue
-		}
-		item, ok := byRef[ref]
-		if !ok {
-			results = append(results, packItemDiagnostic(def, ref, "batch response missing finding_ref"))
-			continue
-		}
-		if err := validateBatchItem(item); err != nil {
-			results = append(results, packItemDiagnostic(def, ref, err.Error()))
-			continue
-		}
-		judgmentJSON, err := marshalBatchItemJudgment(item)
-		if err != nil {
-			results = append(results, packItemDiagnostic(def, ref, "failed to encode item judgment"))
-			continue
-		}
-		id := identity
-		log := logical
-		results = append(results, ToolResult{
-			FindingRef:     ref,
-			RubricID:       def.ID,
-			RubricVersion:  def.Version,
-			ModelIdentity:  &id,
-			LogicalModelID: &log,
-			ServedModelID:  served,
-			Judgment:       judgmentJSON,
-		})
+	var probe struct {
+		Results json.RawMessage `json:"results"`
 	}
-	return ToolPackResult{Results: results}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return false
+	}
+	if len(probe.Results) == 0 {
+		return false
+	}
+	// Discriminate from accidental singular payloads that might gain a results field later:
+	// pack envelopes always use a JSON array for results.
+	var arr []json.RawMessage
+	return json.Unmarshal(probe.Results, &arr) == nil
 }
 
-// suggested_focus: string | null
-
-func marshalBatchItemJudgment(it batchItemJudgment) (json.RawMessage, error) {
-	// Emit singular v1 shape (no finding_ref) so payload matches seed schema consumers.
-	type wire struct {
-		Judgment       string          `json:"judgment"`
-		Rationale      string          `json:"rationale"`
-		Confidence     string          `json:"confidence"`
-		SuggestedFocus json.RawMessage `json:"suggested_focus"`
+func marshalToolPackResult(p ToolPackResult) (json.RawMessage, error) {
+	type itemWire struct {
+		FindingRef     string          `json:"finding_ref,omitempty"`
+		RubricID       string          `json:"rubric_id"`
+		RubricVersion  string          `json:"rubric_version"`
+		ModelIdentity  *string         `json:"model_identity"`
+		LogicalModelID *string         `json:"logical_model_id,omitempty"`
+		ServedModelID  *string         `json:"served_model_id,omitempty"`
+		Judgment       json.RawMessage `json:"judgment"`
+		Diagnostic     *Diagnostic     `json:"diagnostic"`
 	}
-	return json.Marshal(wire{
-		Judgment:       it.Judgment,
-		Rationale:      it.Rationale,
-		Confidence:     it.Confidence,
-		SuggestedFocus: it.SuggestedFocus,
-	})
-}
-
-func packItemDiagnostic(def Definition, ref, message string) ToolResult {
-	return ToolResult{
-		FindingRef:    ref,
-		RubricID:      def.ID,
-		RubricVersion: def.Version,
-		Diagnostic: &Diagnostic{
-			Scope:   diagnosticScope(def.ID),
-			Message: message,
-		},
+	wire := struct {
+		Results []itemWire `json:"results"`
+	}{
+		Results: make([]itemWire, len(p.Results)),
 	}
+	for i, r := range p.Results {
+		w := itemWire{
+			FindingRef:     r.FindingRef,
+			RubricID:       r.RubricID,
+			RubricVersion:  r.RubricVersion,
+			ModelIdentity:  r.ModelIdentity,
+			LogicalModelID: r.LogicalModelID,
+			ServedModelID:  r.ServedModelID,
+			Diagnostic:     r.Diagnostic,
+		}
+		if len(r.Judgment) == 0 {
+			w.Judgment = json.RawMessage("null")
+		} else {
+			w.Judgment = r.Judgment
+		}
+		wire.Results[i] = w
+	}
+	return json.Marshal(wire)
 }

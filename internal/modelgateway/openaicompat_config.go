@@ -1,0 +1,95 @@
+package modelgateway
+
+import (
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+)
+
+// DefaultHTTPClientTimeout bounds outbound chat-completions calls when
+// OpenAICompatConfig.HTTPClient is nil.
+const DefaultHTTPClientTimeout = 10 * time.Second
+
+// DefaultSchemaValidationAttempts is the maximum number of upstream calls
+// when assistant content fails JSON parse or OutputSchema validation.
+const DefaultSchemaValidationAttempts = 3
+
+// OpenAICompatConfig is intentionally provider-neutral: base URL, logical
+// model, optional credentials/headers, and HTTP client only.
+type OpenAICompatConfig struct {
+	BaseURL      string
+	LogicalModel string
+	APIKey       string
+	// AuthHeader, when set, is used as the Authorization header value as-is
+	// instead of "Bearer "+APIKey.
+	AuthHeader   string
+	ExtraHeaders map[string]string
+	// HTTPClient is optional; when nil a client with DefaultHTTPClientTimeout is used.
+	// When non-nil it must not be http.DefaultClient and must have Timeout > 0.
+	HTTPClient *http.Client
+	// SchemaValidationAttempts overrides DefaultSchemaValidationAttempts when > 0.
+	SchemaValidationAttempts int
+	// DisableThinking, when true, adds "think": false to chat-completions bodies
+	// (Ollama-style). When false, the field is omitted for portable OpenAI shape.
+	DisableThinking bool
+}
+
+// normalizeBaseURL trims whitespace and trailing slashes, and strips a single
+// trailing "/v1" so operators may pass either the origin or the OpenAI API root
+// without producing /v1/v1/chat/completions.
+func normalizeBaseURL(raw string) (string, error) {
+	base := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if strings.HasSuffix(base, "/v1") {
+		base = strings.TrimRight(strings.TrimSuffix(base, "/v1"), "/")
+	}
+	if base == "" {
+		return "", fmt.Errorf("modelgateway: BaseURL is required")
+	}
+	if _, err := url.ParseRequestURI(base); err != nil {
+		return "", fmt.Errorf("modelgateway: BaseURL is invalid: %w", err)
+	}
+	return base, nil
+}
+
+func resolveLogicalModel(requestModel, clientDefault string) string {
+	if m := strings.TrimSpace(requestModel); m != "" {
+		return m
+	}
+	if m := strings.TrimSpace(clientDefault); m != "" {
+		return m
+	}
+	return DefaultLogicalModel
+}
+
+func resolveSchemaAttempts(n int) int {
+	if n <= 0 {
+		return DefaultSchemaValidationAttempts
+	}
+	return n
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func resolveHTTPClient(c *http.Client) (*http.Client, error) {
+	if c == nil {
+		return &http.Client{Timeout: DefaultHTTPClientTimeout}, nil
+	}
+	if c == http.DefaultClient {
+		return nil, fmt.Errorf("modelgateway: HTTPClient must not be http.DefaultClient")
+	}
+	if c.Timeout <= 0 {
+		return nil, fmt.Errorf("modelgateway: HTTPClient.Timeout must be > 0")
+	}
+	return c, nil
+}
