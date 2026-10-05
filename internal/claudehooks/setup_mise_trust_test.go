@@ -3,7 +3,6 @@ package claudehooks
 import (
 	"bytes"
 	"os"
-
 	"path/filepath"
 	"strings"
 	"testing"
@@ -51,31 +50,4 @@ func TestSetupMise_TrustFailureContinuesInstall(t *testing.T) {
 	if len(bytes.TrimSpace(stdout)) != 0 {
 		t.Fatalf("expected empty stdout; got: %q", stdout)
 	}
-}
-
-// fakeMiseScriptRecording logs each invocation and can fail trust and/or bare install.
-// failBareInstall: exit 1 only when `install` is called with no tool args.
-func fakeMiseScriptRecording(logPath, version, binPaths string, failTrust, failBareInstall bool) string {
-	trustExit := "0"
-	if failTrust {
-		trustExit = "1"
-	}
-	bareFail := "false"
-	if failBareInstall {
-		bareFail = "true"
-	}
-	return `#!/bin/sh
-log=` + logPath + `
-echo "$*" >> "$log"
-if [ "$1" = "--version" ]; then echo "` + version + `"; exit 0; fi
-if [ "$1" = "trust" ]; then exit ` + trustExit + `; fi
-if [ "$1" = "install" ]; then
-  if [ "` + bareFail + `" = "true" ] && [ "$#" -eq 1 ]; then
-    exit 1
-  fi
-  exit 0
-fi
-if [ "$1" = "bin-paths" ]; then echo "` + binPaths + `"; exit 0; fi
-exit 0
-`
 }

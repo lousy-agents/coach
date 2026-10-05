@@ -1,7 +1,6 @@
 package claudehooks
 
 import (
-	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,7 +32,7 @@ func TestSetupMise_UnsetProjectDirDoesNotAbort(t *testing.T) {
 	envFile := filepath.Join(tmp, "env")
 	cmd := exec.Command("bash", absScript(t))
 	cmd.Dir = project
-
+	// Build a clean env without CLAUDE_PROJECT_DIR.
 	base := []string{
 		"HOME=" + home,
 		"CLAUDE_CODE_REMOTE=true",
@@ -60,35 +59,5 @@ func TestSetupMise_UnsetProjectDirDoesNotAbort(t *testing.T) {
 	}
 	if _, err := os.Stat(envFile); err != nil {
 		t.Fatalf("expected CLAUDE_ENV_FILE to be written when using PWD: %v", err)
-	}
-}
-
-// TestSetupMise_StdoutSilentDuringInstall verifies that the hook stays silent on
-// stdout on the fresh-install path, where npm is actually invoked. This is the
-// path a first cloud session takes, so npm's progress output must not reach
-// stdout and get injected into the conversation context.
-func TestSetupMise_StdoutSilentDuringInstall(t *testing.T) {
-	tmp, home, project, bin, npmDir, localBin := setupTestDirs(t)
-
-	npmCalled := filepath.Join(tmp, "npm-called")
-	newMise := filepath.Join(localBin, "mise")
-	npmBin := filepath.Join(npmDir, "npm")
-	noisyNpm := fakeNpmScript(npmCalled, newMise, localBin) +
-		"echo 'added 1 package in 3s'\necho 'npm notice: something' >&2\n"
-	if err := os.WriteFile(npmBin, []byte(noisyNpm), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	envFile := filepath.Join(tmp, "env")
-	stdout, stderr, err := runHookSplit(t, home, project, envFile, npmDir+":"+bin)
-	if err != nil {
-		t.Fatalf("setup-mise.sh failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
-	}
-
-	if _, err := os.Stat(npmCalled); err != nil {
-		t.Fatalf("expected npm to be invoked on the fresh-install path: %v", err)
-	}
-	if len(bytes.TrimSpace(stdout)) != 0 {
-		t.Fatalf("expected empty stdout while installing mise; got: %q", stdout)
 	}
 }

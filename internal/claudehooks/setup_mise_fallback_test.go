@@ -3,7 +3,6 @@ package claudehooks
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -51,32 +50,4 @@ func TestSetupMise_InstallFallbackToGoNode(t *testing.T) {
 	if len(bytes.TrimSpace(stdout)) != 0 {
 		t.Fatalf("expected empty stdout; got: %q", stdout)
 	}
-}
-
-func absScript(t *testing.T) string {
-	t.Helper()
-	scriptPath := filepath.Join("..", "..", ".claude", "hooks", "setup-mise.sh")
-	absScript, err := filepath.Abs(scriptPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return absScript
-}
-
-func runHook(t *testing.T, home, project, envFile, path string) []byte {
-	t.Helper()
-	cmd := exec.Command("bash", absScript(t))
-	cmd.Env = append(os.Environ(),
-		"HOME="+home,
-		"CLAUDE_CODE_REMOTE=true",
-		"CLAUDE_PROJECT_DIR="+project,
-		"CLAUDE_ENV_FILE="+envFile,
-	)
-	cmd.Env = append(cmd.Env, "PATH="+path+":/usr/bin:/bin")
-
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("setup-mise.sh failed: %v\n%s", err, out)
-	}
-	return out
 }

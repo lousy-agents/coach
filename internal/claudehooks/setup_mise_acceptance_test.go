@@ -83,7 +83,10 @@ node = "24"
 // fails whichever subcommands the caller names.
 func recordingMise(logPath, version, binPaths string, failing map[string]bool) string {
 	exitFor := func(sub string) string {
-		return body_setupMiseAcceptanceTest_85(sub, failing)
+		if failing[sub] {
+			return "1"
+		}
+		return "0"
 	}
 	return `#!/bin/sh
 echo "$*" >> ` + logPath + `
@@ -144,7 +147,7 @@ var _ = Describe("setup-mise.sh SessionStart hook", func() {
 
 		When("the hook runs repeatedly against a CLAUDE_ENV_FILE that persists", func() {
 			It("appends the PATH export only once", func() {
-				body_setupMiseAcceptanceTest_appendsThePATHExportOnlyOnce_149()
+				expectPATHExportAppendedOnce()
 			})
 		})
 	})
@@ -219,3 +222,22 @@ node = "24"
 		})
 	})
 })
+
+func expectPATHExportAppendedOnce() {
+	e := newHookEnv(pinnedMiseToml)
+	log := filepath.Join(e.tmp, "mise-log")
+	e.writeBin("mise", recordingMise(log, "2026.7.7", e.localBin, nil))
+
+	for i := 0; i < 3; i++ {
+		_, stderr, err := e.run(e.project)
+		Expect(err).NotTo(HaveOccurred(), "run %d failed; stderr: %s", i, stderr)
+	}
+
+	var exports int
+	for _, line := range strings.Split(e.envFileContents(), "\n") {
+		if strings.HasPrefix(line, "export PATH=") {
+			exports++
+		}
+	}
+	Expect(exports).To(Equal(1), "CLAUDE_ENV_FILE must not accumulate duplicate PATH exports")
+}
