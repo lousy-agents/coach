@@ -1,6 +1,6 @@
 //go:build !linux
 
-package codesignalcli
+package terminal
 
 import (
 	"os"

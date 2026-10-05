@@ -1,6 +1,6 @@
 //go:build linux || solaris
 
-package codesignalcli
+package terminal
 
 import "golang.org/x/sys/unix"
 

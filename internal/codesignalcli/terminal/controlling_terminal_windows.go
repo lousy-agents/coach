@@ -1,6 +1,6 @@
 //go:build windows
 
-package codesignalcli
+package terminal
 
 import (
 	"os"

@@ -42,7 +42,8 @@ var _ = Describe("ts-project-backend-acceptance wiring", func() {
 			body := taskBody(toml, "ts-project-backend-acceptance")
 			Expect(body).NotTo(BeEmpty())
 			Expect(body).To(ContainSubstring("./cmd/coach/..."))
-			Expect(body).To(ContainSubstring("./internal/codesignalcli/..."))
+			Expect(body).To(ContainSubstring("./internal/codesignalcli -run"),
+				"only the root codesignalcli package carries ts-project-backend specs; its sub-packages hold none, so fail-on-empty would fail them")
 			Expect(body).To(ContainSubstring("ginkgo.label-filter=ts-project-backend"),
 				"-run Acceptance alone would also run the specs that already skip gracefully without Node -- fail-on-empty below is what proves this filter still matches something")
 			Expect(body).To(ContainSubstring("ginkgo.fail-on-empty"),

@@ -56,7 +56,7 @@ func startCoachBinaryWithControllingTerminal(binary, workingDir string, env []st
 
 // runCoachBinaryWithControllingTerminal runs binary with its stdin attached
 // to a real controlling terminal (a pty slave) instead of a pipe, so
-// codesignalcli.HasControllingTerminal(os.Stdin) is genuinely true inside
+// terminal.HasControllingTerminal(os.Stdin) is genuinely true inside
 // the child -- the only way to exercise AC-POL-8's guided-authoring branch
 // from outside the process. stdinScript is written to the pty master before
 // the child starts reading; the kernel line discipline buffers it, so exact

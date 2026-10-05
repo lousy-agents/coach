@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 
 	"os"
 
@@ -93,7 +94,7 @@ func wrapScanAnalysisError(err error, dir, revision, configPath string, stderr *
 // rerunning this same scan on a terminal instead, so that repository is
 // still told a next step rather than only the bare --check-project line.
 func classifyAnalysisError(err error, language string, noInteractive bool, stderr *os.File) int {
-	report := analysisErrorReportFor(err, language, codesignalcli.HasControllingTerminal(os.Stdin) && !noInteractive)
+	report := analysisErrorReportFor(err, language, terminal.HasControllingTerminal(os.Stdin) && !noInteractive)
 	for _, line := range report.lines {
 		fmt.Fprintln(stderr, line)
 	}

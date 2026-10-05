@@ -1,4 +1,6 @@
-package codesignalcli
+// Package terminal detects whether a file is an interactive controlling
+// terminal, the precondition for every prompt the CLI shows.
+package terminal
 
 import "os"
 

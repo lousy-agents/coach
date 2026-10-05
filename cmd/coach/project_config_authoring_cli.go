@@ -127,7 +127,7 @@ func printProjectConfigGapBeforeAuthoring(scanErr error, stderr *os.File) {
 // AuthorProjectConfig itself takes an io.Reader instead of a terminal: it
 // makes this function callable directly in a test with a controlling-
 // terminal *os.File standing in for the caller's stdin, without a real pty.
-// codesignalcli.HasControllingTerminal's own contract deliberately forbids
+// terminal.HasControllingTerminal's own contract deliberately forbids
 // faking its true result, so the gate stays in runAuthorProjectConfigTypeScript
 // and is not itself exercised this way -- only the logic downstream of it.
 func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout, stderr *os.File) int {

@@ -1,6 +1,6 @@
 //go:build !linux && !solaris && !darwin && !dragonfly && !freebsd && !netbsd && !openbsd && !windows
 
-package codesignalcli
+package terminal
 
 import "os"
 

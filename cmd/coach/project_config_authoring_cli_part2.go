@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 
 	"os"
 )
@@ -44,7 +45,7 @@ func scanShouldAuthorProjectConfig(err error, language, configPath string, noInt
 	if noInteractive {
 		return false
 	}
-	return codesignalcli.HasControllingTerminal(os.Stdin)
+	return terminal.HasControllingTerminal(os.Stdin)
 }
 
 // reportAuthoringResult translates one AuthorProjectConfig session outcome

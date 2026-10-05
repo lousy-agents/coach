@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 
 	"os"
 
@@ -25,7 +26,7 @@ func scanShouldOfferCompilerSetup(err error, noInteractive bool) (*codesignalcli
 	if !errors.As(err, &wrapped) {
 		return nil, false
 	}
-	if noInteractive || !codesignalcli.HasControllingTerminal(os.Stdin) {
+	if noInteractive || !terminal.HasControllingTerminal(os.Stdin) {
 		return nil, false
 	}
 	return wrapped, true
@@ -43,7 +44,7 @@ func scanShouldOfferCompilerSetup(err error, noInteractive bool) (*codesignalcli
 // would point at an environment variable whose removal changes nothing --
 // there is still no terminal to prompt on.
 func interactiveRefusalReason(f codesignalFlags, stdin *os.File) string {
-	if !codesignalcli.HasControllingTerminal(stdin) {
+	if !terminal.HasControllingTerminal(stdin) {
 		return "no controlling terminal is available"
 	}
 	if nonInteractiveRequested(f) {

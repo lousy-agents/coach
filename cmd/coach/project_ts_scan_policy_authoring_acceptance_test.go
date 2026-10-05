@@ -303,7 +303,7 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard le
 
 // Exercising this requires a genuine controlling terminal on os.Stdin, since
 // scanShouldAuthorProjectConfig reads os.Stdin directly and
-// codesignalcli.HasControllingTerminal has no fake-injection mode by design
+// terminal.HasControllingTerminal has no fake-injection mode by design
 // (controlling_terminal.go) -- a pipe or regular file reports false
 // regardless of Kind, which would make this assertion pass whether or not
 // the guard is scoped correctly.
