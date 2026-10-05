@@ -21,12 +21,12 @@ Tags: `[O55 § H]` is the Opus 5.5 guide under heading H, and `[O55 <page> § H]
 
 **Runtime facts the judge assumes unless told otherwise:**
 
-- Model is Claude Opus 5.5. Adaptive thinking is always on and cannot be disabled [O55 What's new § Thinking can't be disabled]. Effort defaults to `medium` in Claude Code and on the API [O55 § Calibrate effort].
+- Model is Claude Opus 5.5. Adaptive thinking is always on and cannot be disabled [O55 What's new § Thinking can't be disabled]. Effort defaults to `medium` in Claude Code and on the API [O55 § Calibrate effort]; when effort is undisclosed, score C4 against `medium` and record `effort: undisclosed`.
 - Assistant prefill, non-default sampling, `budget_tokens`, disabled thinking, and forced `tool_choice` are rejected with a 400 [O55 Thinking § Limits and feature compatibility] [O55 What's new § Breaking changes].
 - Safety classifiers cover cybersecurity, biology and reasoning extraction; a decline is `stop_reason: "refusal"` [O55 § Safeguard refusals].
 - Claude Code loads `CLAUDE.md` automatically and provides file read/edit, shell, search, web fetch and subagent tools. Context window is 1M tokens.
 - Tokenizer ratio versus earlier models: `undisclosed`. Whether the user sees tool output: `undisclosed`.
-- If the profiled harness is not Claude Code, judge G3 and C5 against that harness instead.
+- If the profiled harness is not Claude Code, judge G3 against that harness. In a direct-chat harness (no tools or workspace), C5 is N/A and C6 accepts an observable result in place of a command.
 
 ---
 
@@ -43,8 +43,8 @@ Tags: `[O55 § H]` is the Opus 5.5 guide under heading H, and `[O55 <page> § H]
 | Aggregate | Verdict | Loop action |
 |---|---|---|
 | ≥ 85 and no criterion ≤ 1 | `pass` | Fit for Opus 5.5; fix any remaining problem per the stop rule. |
-| 70–84, or ≥ 85 with a criterion ≤ 1 | `revise` | Apply the top-3 fixes, re-judge. |
-| < 70 | `rework` | Structural rewrite using the skill's prompt shape, then re-judge. |
+| 70 ≤ aggregate < 85, or ≥ 85 with a criterion ≤ 1 | `revise` | Fix every problem (stop rule); the top-3 ranking orders the edits. |
+| aggregate < 70 | `rework` | Structural rewrite using the skill's prompt shape, then re-judge. |
 | any, gate failed | `blocked` | Fix the gate first. |
 
 **Anti-oscillation rule:** a fix that adds a verification step, a reasoning ritual ("think carefully"), or a generic prohibition is invalid unless the judge confirms it does not lower C3, C4, C6 or C8. Opus 5.5 already verifies and self-corrects [O5 § Self-correction], so additions of this kind usually trade one failure for another.
@@ -79,7 +79,7 @@ Weights are relative. Conditional criteria drop out when N/A.
 | 1 | Goal is an activity ("improve", "clean up", "look into") with no observable end state, or deliverables are ambiguous. |
 | 0 | Intent must be guessed. |
 
-**Fix pattern:** state the end state; enumerate or count the set; add "Done when: …"; add one sentence of why.
+**Fix pattern:** state the end state; enumerate or count the set; add a checkable done condition (under `Verification:` in the skill's prompt shape); add one sentence of why.
 
 #### C2. Scope fidelity — weight 12 `[O5 § Task scope and over-verification]` `[gen § Overeagerness]`
 
@@ -246,7 +246,9 @@ Weights are relative. Conditional criteria drop out when N/A.
 
 ## 5. Judge procedure
 
-1. **Read the runtime profile**: prompt type, effort, whether `CLAUDE.md` exists and what it covers, task class. Mark anything missing `undisclosed` and judge capability-neutral.
+Inside optimize-prompt-loop the same agent judges and revises: it follows steps 1–6, keeps the JSON internal, and skips step 7 and §8, which are for an external judge.
+
+1. **Read the runtime profile**: prompt type, effort, whether `CLAUDE.md` exists and what it covers, task class. Mark anything missing `undisclosed` and judge capability-neutral, except effort (see §1).
 2. **Run G1–G4.** On a failure, record it, still score the rest, cap at 40, set `blocked`.
 3. **Determine triggers** for C10–C15.
 4. **Score** each applicable criterion with quoted evidence; write one positive, prompt-edit fix for each score below 3 that respects the anti-oscillation rule.
@@ -288,16 +290,16 @@ Weights are relative. Conditional criteria drop out when N/A.
 }
 ```
 
-**Stop rule** (the one rule a loop using this rubric follows; it replaces any separate pass count). A *problem* is a failed gate or an applicable criterion scoring below 3. Each pass judges the current draft, then revises it to fix every problem a prompt edit can fix. Stop at the first of:
+**Stop rule** (it replaces any other pass count for this rubric loop). A *problem* is a failed gate or an applicable criterion scoring below 3. Each pass judges the current draft, checks the stop conditions, and only then revises it to fix every problem a prompt edit can fix. Stop at the first of:
 
 1. no problems remain, setting aside any gap that only the user's answer can close (record those as assumptions or the one question);
 2. five judged passes.
 
-The final verdict is the band of the last judged draft. When (2) ends the loop with problems left, report that verdict rather than continuing; a gate still failing reports `blocked`. A criterion that reverses direction across passes (1 → 3 → 1) is resolved in favour of the shorter draft.
+Return the last judged draft; the final verdict is its band. When (2) ends the loop with problems left, report that verdict rather than continuing; a gate still failing reports `blocked`. A criterion that reverses direction across passes (1 → 3 → 1) is resolved in favour of the shorter draft.
 
 ---
 
-## 7. Loop integration notes
+## 7. Loop integration notes (external loops)
 
 - **Pass the previous result to the judge** to compute the delta and catch oscillation (a criterion that goes 1 → 3 → 1 means fixes are fighting; prefer the shorter prompt).
 - **Deletions first.** Most inherited prompts improve by subtraction (C3, C4, C6). Try the deletion-only fix before an additive one.
@@ -307,7 +309,7 @@ The final verdict is the band of the last judged draft. When (2) ends the loop w
 
 ---
 
-## 8. Judge system prompt (paste-ready)
+## 8. Judge system prompt (external judges only)
 
 ```
 You are scoring a prompt intended for Claude Opus 5.5 running in Claude Code. Score the prompt, not any output you would produce from it. Apply the attached rubric exactly: run the four hard gates, mark conditional criteria N/A when their trigger is absent, score each applicable criterion 0-3 against its anchors, quote verbatim evidence or write "absent", and write one positive, prompt-edit fix for every criterion scoring below 3. Prefer fixes that delete text. Compute the weighted aggregate, the verdict band, and the top three fixes ranked by weight x (3 - score). If a previous result is provided, report the delta, flag any criterion whose score reversed direction, and apply the stop rule. Return the JSON first, then a summary of at most five lines. Do not rewrite the prompt.
@@ -353,7 +355,4 @@ You are scoring a prompt intended for Claude Opus 5.5 running in Claude Code. Sc
 
 ## 10. Provenance and caveats
 
-- Read 2026-10-05. Every gate and criterion carries its source tag; the maintainer ledger is in `../provenance/opus-5-5-rubric-provenance.md`.
-- Opus 5 behaviours (`[O5]`) are used where the Opus 5.5 guide says Opus 5 prompts carry over and is otherwise silent.
-- API and harness configuration (`max_tokens`, `thinking.display`, effort selection, turn-scoped system messages, time budgets, pasted-content IDs, refusal fallback) is out of scope for scoring.
-- Weights are an impact ordering, not a measured regression; re-validate against your own evals.
+Sources were read 2026-10-05; every tag is mapped in the maintainer ledger. Weights are an impact ordering, not a measured regression; re-validate against your own evals.

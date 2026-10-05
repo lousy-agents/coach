@@ -48,8 +48,9 @@ Every heading on the guide (the body has no H1, H3 or H4).
 
 | ID | Name | Tags | Notes |
 |---|---|---|---|
-| G1 | Rejected-control dependency | `[O55 What's new § Thinking can't be disabled]` `[O55 What's new § Forced tool use is not supported]` `[O55 Thinking § Sampling parameters]` `[O55 Thinking § Response prefill and forced tool use]` | Scores the prompt's dependence on prefill, sampling, a thinking budget or disabled thinking, or forced tool choice. The fix is prompt text: "say in the prompt when the tool applies". |
-| G2 | Reasoning written into the response | `[O55 § Safeguard refusals]` `[O55 § Prompts written for thinking disabled]` `[O5 § Reasoning in the response]` `[O55 Refusals § Keep reasoning in thinking blocks]` | New relative to Sonnet 5. The `reasoning_extraction` category has no recommended fallback, so the prompt has to change. |
+| §1 | Runtime facts | `[O55 What's new § Thinking can't be disabled]` `[O55 What's new § Breaking changes]` `[O55 Thinking § Limits and feature compatibility]` `[O55 § Calibrate effort]` `[O55 § Safeguard refusals]` | The Thinking page's § Sampling parameters and § Response prefill and forced tool use sit under § Limits and feature compatibility. |
+| G1 | Rejected-control dependency | `[O55 What's new § Forced tool use is not supported]` `[O55 Thinking § Response prefill and forced tool use]` | Scores the prompt's dependence on prefill, sampling, a thinking budget or disabled thinking, or forced tool choice. The fix is prompt text: "say in the prompt when the tool applies". |
+| G2 | Reasoning written into the response | `[O55 § Safeguard refusals]` `[O5 § Reasoning in the response]` | Also supported by [O55 § Prompts written for thinking disabled] and [O55 Refusals § Keep reasoning in thinking blocks]. New relative to Sonnet 5. The `reasoning_extraction` category has no recommended fallback, so the prompt has to change. |
 | G3 | Invented capability | `[gen § Tool usage]` `[prior]` | |
 | G4 | Authority conflict | `[prior]` | No source states it. Kept from the precedent. |
 | C1 | Complete specification and done condition | `[O5 § Capability improvements]` `[gen § Be clear and direct]` `[gen § Add context to improve performance]` | Folds in the precedent's C8 (front-loading). |

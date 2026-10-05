@@ -47,11 +47,11 @@ Never invent a model name, effort level, tool, permission, or capability. Do not
    - In an agent harness, name only tools and actions the harness actually makes available. Tell the agent to inspect local instructions and current state before acting; do not prescribe unsupported syntax or capabilities.
    - For a direct-chat harness, remove repository/tool instructions and instead request the needed context in the response.
    - If model, harness, or effort is undisclosed, write capability-neutral instructions and label the uncertainty rather than guessing.
-6. **Apply the target model's rubric.** This is the last optimization phase. The target model is the one the caller names as the model to optimize for; if the caller names none, it is the model the runtime profile discloses. Look it up in the table below. On a match, load the listed file and run its loop on the draft from steps 4–5: judge the draft against the rubric, revise it to fix every problem the rubric reports, and repeat until no problems remain or five passes have run, as the rubric's stop rule defines. Keep the scoring internal and do not emit the rubric's JSON; add one line to Notes: `- Rubric: <rubric_version>, final verdict <verdict>`. With no match, or a model that is `not disclosed`, skip this step; never infer the model from behavior.
+6. **Apply the target model's rubric.** This is the last optimization phase. The target model is the one the caller names as the model to optimize for; if the caller names none, it is the model the runtime profile discloses. Look it up in the table below by name or ID. On a match, load the listed file and run its loop on the draft from steps 4–5, judging it as prompt type `task`: judge the draft against the rubric, revise it to fix every problem the rubric reports, and repeat until no problems remain or five passes have run, as the rubric's stop rule defines. Within this step the rubric's fixes take precedence over "only material edits"; it still rejects additions that do not change behavior. Keep the scoring internal and do not emit the rubric's JSON. Report the result in the Notes `Rubric` line, and if the rubric says effort should rise, say so under Runtime fit. With no match, or a model that is `not disclosed`, skip this step; never infer the model from behavior.
 
-   | Target model | Rubric |
-   |---|---|
-   | Claude Opus 5.5 | `references/opus-5-5-claude-code-prompt-rubric.md` |
+   | Target model | Names and IDs | Rubric |
+   |---|---|---|
+   | Claude Opus 5.5 | `Claude Opus 5.5`, `Opus 5.5`, `claude-opus-5-5` | `references/opus-5-5-claude-code-prompt-rubric.md` |
 7. **Return the optimized prompt.** Make it self-contained enough to paste into the same runtime. Include only sections that earn their place: `Objective`, `Context`, `Constraints`, `Assumptions or question`, `Work`, `Verification`, and `Output`.
 8. **Execute only when asked.** If the user asked to optimize and execute, use the optimized prompt once. Do not recursively optimize the optimization prompt. If a material answer is missing, ask the single question selected in step 3 instead of fabricating it.
 
@@ -96,7 +96,10 @@ For optimization only, return:
 ## Notes
 - Runtime fit: <how model/harness/effort changed the prompt, or what was unknown>
 - Assumptions: <only material assumptions, if any>
+- Rubric: <rubric_version>, final verdict <verdict>
 ```
+
+Include the `Rubric` line only when step 6 applied a rubric.
 
 For optimization plus execution, append:
 
