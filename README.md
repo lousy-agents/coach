@@ -59,7 +59,7 @@ coach codesignal --base main --format json
 
 `--base` can be any ref Git can resolve (branch, tag, or SHA). Default output is text. `--base` and `--baseline` are mutually exclusive.
 
-Signals are ranked, with `severity` and `rule_id` printed on each. To read a long report, add `--min-severity high|medium|advisory|low` to hide lower severities or `--top N` to keep the first `N`. Both state how many signals they withheld, leave `summary` and `coverage` describing the full analysis, and never change the exit status. See the [CLI contract](./docs/cli-codesignal.md#narrowing-the-rendered-report).
+Signals are ranked, with `severity` and `rule_id` printed on each. To read a long report, add `--min-severity high|medium|advisory|low` to hide lower severities or `--top N` to keep the first `N`. Both state how many signals they withheld (text also prints the command that shows them all), leave `summary` and `coverage` describing the full analysis, and never change the exit status. See the [CLI contract](./docs/cli-codesignal.md#narrowing-the-rendered-report).
 
 Default `--scope` is `production`. `--build-target <pattern>` further limits Go production reachability; it is a no-op under `--scope all`.
 
@@ -102,13 +102,17 @@ Text `line` is 1-based. JSON `location.start_row` is 0-based.
 JSON `summary` counts every `signals[]` entry in exactly one of
 `introduced_signals`, `existing_signals`, `resolved_signals`,
 `baseline_signals`, `unknown_signals`. `active_signals` is `len(signals)`
-after the include-resolved filter. That relationship holds for both
-`--base` and `--baseline`:
+after the include-resolved filter, when no narrowing flag is set. That
+relationship holds for both `--base` and `--baseline`:
 
 - `--base` includes `resolved` in `signals[]` by default, so
   `active_signals` includes them. That total is not "problems present at
   HEAD".
 - `--baseline` does not include `resolved`. Signals there are `baseline`.
+
+With `--min-severity` or `--top`, `signals[]` can be shorter than `active_signals`.
+When `signals_withheld` is present, `active_signals == len(signals) +
+below_min_severity + beyond_top`, reading an absent key as `0`.
 
 Problems present at HEAD are `introduced_signals` + `existing_signals` +
 `unknown_signals` (and `baseline_signals` under `--baseline`). Do not trust

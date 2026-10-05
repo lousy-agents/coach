@@ -141,7 +141,8 @@ Every entry in `signals[]` is counted in exactly one of `introduced_signals`,
 `existing_signals`, `resolved_signals`, `baseline_signals`,
 `unknown_signals`. `summary.unknown_signals` counts `unknown` lifecycle
 signals. `active_signals` is `len(signals)` after the include-resolved
-filter. That relationship holds for both `--base` and `--baseline`:
+filter, when no narrowing flag is set. That relationship holds for both
+`--base` and `--baseline`:
 
 - `--base` includes `resolved` in `signals[]` by default, so `active_signals`
   includes them. That field is not "problems present at HEAD".
@@ -150,6 +151,11 @@ filter. That relationship holds for both `--base` and `--baseline`:
 A consumer who wants problems present at HEAD should sum `introduced` +
 `existing` + `unknown` (and `baseline` under `--baseline`), not trust
 `active_signals` alone in diff mode.
+
+With `--min-severity` or `--top`, `signals[]` can be shorter than `active_signals`.
+When `signals_withheld` is present, `active_signals == len(signals) +
+below_min_severity + beyond_top`, reading an absent key as `0`. See
+[Narrowing the rendered report](#narrowing-the-rendered-report).
 
 ## JSON report
 
@@ -182,15 +188,27 @@ prints `severity:` beside its `rule_id:`.
 ### Severity
 
 `severity` is one of `high`, `medium`, `advisory`, or `low`. There is no
-`critical`. Most rules emit a fixed value. Three metric rules emit `high` when
-the measured value is at least twice the rule's threshold and `medium` from the
-threshold up to just below twice it:
+`critical`. Most rules emit a fixed value. Three rules measure a metric against
+a threshold and emit `medium` from the threshold up. Two of them escalate to
+`high` when the measured value is at least twice the threshold:
 
 | `rule_id` | Metric (evidence) | Threshold | `high` from |
 | --- | --- | --- | --- |
 | `complexity.cognitive_complexity` | `cognitive_complexity=N` | 15 | 30 |
-| `complexity.branch_density` | `branch_sum=N` | 12 | 24 |
 | `complexity.max_nesting_depth` | `max_nesting_depth=N` | 4 | 8 |
+| `complexity.branch_density` | `branch_sum=N` | 12 | never; always `medium` |
+
+`complexity.branch_density` does not escalate because `branch_sum` is a
+whole-file additive total: it grows with file length and a split clears it, so
+twice the threshold says nothing about how hard the code is to follow. It is
+still ranked by magnitude (see Report order).
+
+`rule_version` tracks what a rule detects: its trigger and its evidence.
+Severity derivation is documented here and changing it does not bump
+`rule_version`. Fingerprints and `id`s are computed from the rule, path,
+subject, evidence, and occurrence ordinal (and, for `id`, start position), not
+from `severity` or `rule_version`, so a signal keeps its identity and lifecycle
+when its severity changes.
 
 Layer rules (`architecture.layer_violation`, `architecture.layer_bypass`) emit
 `advisory`; the density rules `structure.constructor_density` and
@@ -209,7 +227,9 @@ Layer rules (`architecture.layer_violation`, `architecture.layer_bypass`) emit
    without a numeric metric, and among them a larger metric-to-threshold ratio
    comes first. A `cognitive_complexity=28` finding precedes a
    `cognitive_complexity=16` one regardless of path; `branch_sum` and
-   `max_nesting_depth` findings are compared by the same ratio.
+   `max_nesting_depth` findings are compared by the same ratio. The ratio is
+   unitless, so it puts a file-level total (`branch_sum`) on the same scale as a
+   per-function depth (`max_nesting_depth`) within a tier.
 5. Path, start row, start column, `rule_id`, then `id`.
 
 Severity outranks magnitude, so a `medium` signal never precedes a `high` one
@@ -227,19 +247,31 @@ findings in `signals[]`) and nothing else:
   it can exceed the number of signals shown.
 - The floor applies first, then the cap takes the first `N` of what remains.
   The two compose.
+- `advisory` ranks below `medium`, so `--min-severity medium` withholds
+  declared `architecture.layer_violation` and `architecture.layer_bypass`
+  findings. That ordering is deliberate
+  ([#259](https://github.com/lousy-agents/coach/issues/259)).
 - The number withheld is never silent. JSON adds `signals_withheld` only when a
   flag was supplied. Each flag contributes its own pair of keys:
   `min_severity` with `below_min_severity`, and `top` with `beyond_top`. For
   example, `{"min_severity":"high","below_min_severity":2,"top":2,"beyond_top":2}`.
   A flag that withheld nothing still reports its count, as `0`.
+  `signals_withheld` describes presentation narrowing only. A filter that
+  changes what is analyzed, such as suppression or vendor exclusion, changes
+  `summary` and `coverage` and does not use it.
 - Text prints a `withheld:` line in the summary. For `--min-severity` it reads
-  `withheld: 20 signals below --min-severity high (counts above describe the full analysis)`.
+  `withheld: 2 signals below --min-severity high; counts above describe the full analysis; see all: coach codesignal --baseline`.
   For `--top` it reads
-  `withheld: 18 signals beyond --top 3 (counts above describe the full analysis); re-run without --top to see all`.
-  With both flags it reports the total and each count, and the hint reads
-  `re-run without --min-severity and --top to see all`. A floor that leaves no
-  signals prints `No active CodeSignal findings at or above --min-severity <level>.`
-  instead of the all-clear.
+  `withheld: 76 signals beyond --top 3; counts above describe the full analysis; see all: coach codesignal --baseline`.
+  With both flags it reports the total and each count:
+  `withheld: 4 signals (2 below --min-severity high, 2 beyond --top 2); counts above describe the full analysis; see all: coach codesignal --baseline`.
+  When nothing was withheld the line has no see-all command:
+  `withheld: 0 signals beyond --top 6; counts above describe the full analysis`.
+  The see-all command is the invocation that was run with every narrowing flag
+  removed, quoted for a POSIX shell. It is printed in text only; JSON carries
+  the counts, not the command. A floor that leaves no signals prints
+  `No active CodeSignal findings at or above --min-severity <level>.` instead of
+  the all-clear.
 - Neither flag changes the exit status. Exit codes depend on analysis outcome
   and `--fail-on-incomplete-coverage`, never on which signals a report holds or
   hides.
