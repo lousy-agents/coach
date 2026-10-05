@@ -1,6 +1,7 @@
 package gitrepo
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -19,12 +20,12 @@ func TestParseNameStatusZUnusualPaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_gitPart2Test_68(t, tt)
+			checkParseNameStatusZUnusualPaths(t, tt)
 		})
 	}
 }
 
-func body_gitPart2Test_68(t *testing.T, tt struct {
+func checkParseNameStatusZUnusualPaths(t *testing.T, tt struct {
 	name string
 	path string
 }) {
@@ -38,39 +39,10 @@ func body_gitPart2Test_68(t *testing.T, tt struct {
 	}
 }
 
-type sigrecordsEqualS244641246 struct {
-	a []nameStatusRecord
-	b []nameStatusRecord
-	i int
-}
-
-func (sigRecv *sigrecordsEqualS244641246) call() (bool, bool) {
-
-	for j := range sigRecv.a[sigRecv.i].paths {
-		if sigRecv.a[sigRecv.i].paths[j] != sigRecv.b[sigRecv.i].paths[j] {
-			return false, true
-		}
-	}
-	return false, false
-}
-
 func recordsEqual(a, b []nameStatusRecord) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].status != b[i].status {
-			return false
-		}
-		if len(a[i].paths) != len(b[i].paths) {
-			return false
-		}
-		if sigR0, sigRet := (&sigrecordsEqualS244641246{a: a, b: b, i: i}).call(); sigRet {
-			return sigR0
-		}
-
-	}
-	return true
+	return slices.EqualFunc(a, b, func(x, y nameStatusRecord) bool {
+		return x.status == y.status && slices.Equal(x.paths, y.paths)
+	})
 }
 
 func TestParseNameStatusZ(t *testing.T) {
@@ -140,12 +112,12 @@ func TestParseNameStatusZ(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_gitPart5Test_93(t, tt)
+			checkParseNameStatusZ(t, tt)
 		})
 	}
 }
 
-func body_gitPart5Test_93(t *testing.T, tt struct {
+func checkParseNameStatusZ(t *testing.T, tt struct {
 	name    string
 	payload []byte
 	want    []nameStatusRecord

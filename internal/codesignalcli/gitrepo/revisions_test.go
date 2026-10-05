@@ -9,20 +9,14 @@ import (
 )
 
 func TestResolveBaselineRevision(t *testing.T) {
-	t.Run("valid repo", func(t *testing.T) {
-		body_gitPart2Test_validRepo_9(t)
-	})
+	t.Run("valid repo", resolveBaselineRevisionValidRepo)
 
-	t.Run("non-worktree directory", func(t *testing.T) {
-		body_gitPart2Test_nonWorktreeDirectory_22(t)
-	})
+	t.Run("non-worktree directory", resolveBaselineRevisionNonWorktree)
 
-	t.Run("repository with no commits", func(t *testing.T) {
-		body_gitPart2Test_repositoryWithNoCommits_38(t)
-	})
+	t.Run("repository with no commits", resolveBaselineRevisionNoCommits)
 }
 
-func body_gitPart2Test_validRepo_9(t *testing.T) {
+func resolveBaselineRevisionValidRepo(t *testing.T) {
 	dir := gitfixture.Init(t)
 	headSHA := gitfixture.CommitFile(t, dir, "a.go", "package a\n")
 
@@ -35,7 +29,7 @@ func body_gitPart2Test_validRepo_9(t *testing.T) {
 	}
 }
 
-func body_gitPart2Test_nonWorktreeDirectory_22(t *testing.T) {
+func resolveBaselineRevisionNonWorktree(t *testing.T) {
 	dir := t.TempDir()
 
 	_, err := ResolveBaselineRevision(dir)
@@ -51,7 +45,7 @@ func body_gitPart2Test_nonWorktreeDirectory_22(t *testing.T) {
 	}
 }
 
-func body_gitPart2Test_repositoryWithNoCommits_38(t *testing.T) {
+func resolveBaselineRevisionNoCommits(t *testing.T) {
 	dir := gitfixture.Init(t)
 
 	_, err := ResolveBaselineRevision(dir)
@@ -68,21 +62,13 @@ func body_gitPart2Test_repositoryWithNoCommits_38(t *testing.T) {
 }
 
 func TestResolveRevisions(t *testing.T) {
-	t.Run("valid base", func(t *testing.T) {
-		body_gitTest_validBase_19(t)
-	})
+	t.Run("valid base", resolveRevisionsValidBase)
 
-	t.Run("invalid base", func(t *testing.T) {
-		body_gitTest_invalidBase_36(t)
-	})
+	t.Run("invalid base", resolveRevisionsInvalidBase)
 
-	t.Run("non-worktree directory", func(t *testing.T) {
-		body_gitTest_nonWorktreeDirectory_49(t)
-	})
+	t.Run("non-worktree directory", resolveRevisionsNonWorktree)
 
-	t.Run("bare repository", func(t *testing.T) {
-		body_gitTest_bareRepository_61(t)
-	})
+	t.Run("bare repository", resolveRevisionsBareRepository)
 }
 
 func operationalError(err error) (*OperationalError, bool) {
@@ -90,7 +76,7 @@ func operationalError(err error) (*OperationalError, bool) {
 	return opErr, ok
 }
 
-func body_gitTest_validBase_19(t *testing.T) {
+func resolveRevisionsValidBase(t *testing.T) {
 	dir := gitfixture.Init(t)
 	initialSHA := gitfixture.CommitFile(t, dir, "a.go", "package a\n")
 	headSHA := gitfixture.CommitFile(t, dir, "b.go", "package a\n\nfunc B() {}\n")
@@ -107,7 +93,7 @@ func body_gitTest_validBase_19(t *testing.T) {
 	}
 }
 
-func body_gitTest_invalidBase_36(t *testing.T) {
+func resolveRevisionsInvalidBase(t *testing.T) {
 	dir := gitfixture.Init(t)
 	gitfixture.CommitFile(t, dir, "a.go", "package a\n")
 
@@ -120,7 +106,7 @@ func body_gitTest_invalidBase_36(t *testing.T) {
 	}
 }
 
-func body_gitTest_nonWorktreeDirectory_49(t *testing.T) {
+func resolveRevisionsNonWorktree(t *testing.T) {
 	dir := t.TempDir()
 
 	_, _, err := ResolveRevisions(dir, "HEAD")
@@ -132,7 +118,7 @@ func body_gitTest_nonWorktreeDirectory_49(t *testing.T) {
 	}
 }
 
-func body_gitTest_bareRepository_61(t *testing.T) {
+func resolveRevisionsBareRepository(t *testing.T) {
 
 	dir := t.TempDir()
 	cmd := exec.Command("git", "init", "--bare")

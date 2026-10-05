@@ -153,7 +153,7 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_renderPart4Test_155(t, tt)
+			checkRenderTextNoActiveFindingsVerdict(t, tt)
 		})
 	}
 }
@@ -175,7 +175,7 @@ func TestRenderTextQualifiedVerdictPrecedesDiagnostics(t *testing.T) {
 	}
 }
 
-func body_renderPart4Test_155(t *testing.T, tt struct {
+func checkRenderTextNoActiveFindingsVerdict(t *testing.T, tt struct {
 	name         string
 	report       *codesignal.Report
 	wantContains []string

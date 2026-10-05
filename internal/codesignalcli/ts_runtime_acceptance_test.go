@@ -12,9 +12,7 @@ import (
 )
 
 var _ = Describe("PrepareTSRuntime resolved-runtime provenance", Label("ts-project-backend"), func() {
-	BeforeEach(func() {
-		body_projectAcceptanceTest_559()
-	})
+	BeforeEach(skipWithoutRealTypeScriptCompiler)
 
 	It("records node version, compiler version, compiler origin, and the materialized analyzer directory on the prepared runtime", func() {
 		repo := gitfixture.Init(GinkgoT())
@@ -56,9 +54,3 @@ var _ = Describe("PrepareTSRuntime resolved-runtime provenance", Label("ts-proje
 		Expect(tstoolchain.NativeTypescriptPackageName()).To(Equal("@typescript/" + tstoolchain.NativeTypescriptUnscopedName()))
 	})
 })
-
-func body_projectAcceptanceTest_559() {
-	if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-		Skip(reason)
-	}
-}

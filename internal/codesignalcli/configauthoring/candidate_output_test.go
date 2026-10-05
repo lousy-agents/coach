@@ -47,31 +47,31 @@ func TestAuthorProjectConfig_ApprovedAndOutputSet_WritesCreateOnly(t *testing.T)
 	discovered := projectmodel.TSRootDiscoveryResult{Roots: []string{"apps/api"}, Complete: true}
 
 	t.Run("target does not yet exist: it is created with the exact candidate content", func(t *testing.T) {
-		body_projectConfigAuthoringPart3Test_targetDoesNotYetExistItIsCreatedWithTheExactCand_17(t, discovered)
+		targetDoesNotYetExistCreatedExactCandidate(t, discovered)
 	})
 
 	t.Run("target already exists: the write is refused and the existing content is left untouched", func(t *testing.T) {
-		body_projectConfigAuthoringPart3Test_targetAlreadyExistsTheWriteIsRefusedAndTheExisti_66(t, discovered)
+		targetAlreadyExistsWriteRefusedExistingContentLeft(t, discovered)
 	})
 
 	t.Run("output path escapes the repository root: the write is refused and nothing is created outside dir", func(t *testing.T) {
-		body_projectConfigAuthoringPart3Test_outputPathEscapesTheRepositoryRootTheWriteIsRefu_105(t, discovered)
+		outputPathEscapesRepositoryRootWriteRefusedNothing(t, discovered)
 	})
 
 	t.Run("output path contains a .git component: the write is refused and nothing is created inside .git", func(t *testing.T) {
-		body_projectConfigAuthoringPart3Test_outputPathContainsAGitComponentTheWriteIsRefused_136(t, discovered)
+		outputPathContainsGitComponentWriteRefusedNothing(t, discovered)
 	})
 
 	t.Run("output path's parent directory does not exist: the write is refused and nothing is created", func(t *testing.T) {
-		body_projectConfigAuthoringPart3Test_outputPathSParentDirectoryDoesNotExistTheWriteIs_170(t, discovered)
+		outputPathsParentDirectoryDoesNotExistWrite(t, discovered)
 	})
 
 	t.Run("output path's parent is a symlink: the write is refused and nothing is created through it", func(t *testing.T) {
-		body_projectConfigAuthoringPart3Test_outputPathSParentIsASymlinkTheWriteIsRefusedAndN_201(t, discovered)
+		outputPathsParentSymlinkWriteRefusedNothingCreated(t, discovered)
 	})
 }
 
-func body_projectConfigAuthoringPart3Test_targetAlreadyExistsTheWriteIsRefusedAndTheExisti_66(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func targetAlreadyExistsWriteRefusedExistingContentLeft(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	dir := t.TempDir()
 	outputPath := "project.json"
 	preexisting := []byte("this is not a project config and must not be overwritten\n")
@@ -110,7 +110,7 @@ func body_projectConfigAuthoringPart3Test_targetAlreadyExistsTheWriteIsRefusedAn
 	}
 }
 
-func body_projectConfigAuthoringPart3Test_outputPathEscapesTheRepositoryRootTheWriteIsRefu_105(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func outputPathEscapesRepositoryRootWriteRefusedNothing(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	dir := t.TempDir()
 	outputPath := "../escaped.json"
 	out := &bytes.Buffer{}
@@ -141,7 +141,7 @@ func body_projectConfigAuthoringPart3Test_outputPathEscapesTheRepositoryRootTheW
 	}
 }
 
-func body_projectConfigAuthoringPart3Test_outputPathContainsAGitComponentTheWriteIsRefused_136(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func outputPathContainsGitComponentWriteRefusedNothing(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	dir := t.TempDir()
 
 	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
@@ -175,7 +175,7 @@ func body_projectConfigAuthoringPart3Test_outputPathContainsAGitComponentTheWrit
 	}
 }
 
-func body_projectConfigAuthoringPart3Test_outputPathSParentDirectoryDoesNotExistTheWriteIs_170(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func outputPathsParentDirectoryDoesNotExistWrite(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	dir := t.TempDir()
 	outputPath := "missing-parent/project.json"
 	out := &bytes.Buffer{}
@@ -206,7 +206,7 @@ func body_projectConfigAuthoringPart3Test_outputPathSParentDirectoryDoesNotExist
 	}
 }
 
-func body_projectConfigAuthoringPart3Test_outputPathSParentIsASymlinkTheWriteIsRefusedAndN_201(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func outputPathsParentSymlinkWriteRefusedNothingCreated(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	dir := t.TempDir()
 	outside := t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(dir, "link")); err != nil {
@@ -241,7 +241,7 @@ func body_projectConfigAuthoringPart3Test_outputPathSParentIsASymlinkTheWriteIsR
 	}
 }
 
-func body_projectConfigAuthoringPart3Test_targetDoesNotYetExistItIsCreatedWithTheExactCand_17(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func targetDoesNotYetExistCreatedExactCandidate(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	dir := t.TempDir()
 	outputPath := "config/project.json"
 	if err := os.MkdirAll(filepath.Join(dir, "config"), 0o755); err != nil {
@@ -321,13 +321,13 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToCandidateOu
 	}
 
 	t.Run("candidateOut is exactly the schema-1 document", func(t *testing.T) {
-		body_projectConfigAuthoringTest_candidateOutIsExactlyTheSchema1Document_88(t, candidateOut, want)
+		candidateOutExactlySchema1Document(t, candidateOut, want)
 	})
 	t.Run("transcript writer is non-empty", func(t *testing.T) {
-		body_projectConfigAuthoringTest_transcriptWriterIsNonEmpty_93(t, transcript)
+		transcriptWriterNonEmpty(t, transcript)
 	})
 	t.Run("transcript writer does not contain schema_version", func(t *testing.T) {
-		body_projectConfigAuthoringTest_transcriptWriterDoesNotContainSchemaVersion_98(t, transcript)
+		transcriptWriterDoesNotContainSchemaVersion(t, transcript)
 	})
 
 	var decoded projectconfig.Config
@@ -345,19 +345,19 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToCandidateOu
 	}
 }
 
-func body_projectConfigAuthoringTest_candidateOutIsExactlyTheSchema1Document_88(t *testing.T, candidateOut *bytes.Buffer, want []byte) {
+func candidateOutExactlySchema1Document(t *testing.T, candidateOut *bytes.Buffer, want []byte) {
 	if !bytes.Equal(candidateOut.Bytes(), want) {
 		t.Fatalf("candidateOut = %q, want exactly the candidate document %q", candidateOut.String(), want)
 	}
 }
 
-func body_projectConfigAuthoringTest_transcriptWriterIsNonEmpty_93(t *testing.T, transcript *bytes.Buffer) {
+func transcriptWriterNonEmpty(t *testing.T, transcript *bytes.Buffer) {
 	if transcript.Len() == 0 {
 		t.Fatalf("expected the interactive transcript to be written to the transcript writer, got none")
 	}
 }
 
-func body_projectConfigAuthoringTest_transcriptWriterDoesNotContainSchemaVersion_98(t *testing.T, transcript *bytes.Buffer) {
+func transcriptWriterDoesNotContainSchemaVersion(t *testing.T, transcript *bytes.Buffer) {
 	if strings.Contains(transcript.String(), `"schema_version"`) {
 		t.Fatalf("expected the candidate document to never appear in the transcript writer, got:\n%s", transcript.String())
 	}

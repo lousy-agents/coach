@@ -45,12 +45,12 @@ func TestNoExternalDependencies(t *testing.T) {
 
 	for _, pkg := range packages {
 		t.Run(pkg, func(t *testing.T) {
-			body_dependenciesTest_47(t, pkg)
+			checkNoExternalDependencies(t, pkg)
 		})
 	}
 }
 
-func body_dependenciesTest_47(t *testing.T, pkg string) {
+func checkNoExternalDependencies(t *testing.T, pkg string) {
 	cmd := exec.Command("go", "list", "-deps", pkg)
 	cmd.Dir = "."
 	output, err := cmd.Output()

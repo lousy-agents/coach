@@ -1,6 +1,7 @@
 package tssetup
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
@@ -70,26 +71,12 @@ func TestPrepareCompilerRemediationWithReadinessWithholdsADeadEndCommand(t *test
 	}
 }
 
-type sigTestPrepareCompilerRemediationOffersOnlyExecutablePrepare struct {
-	code string
-	got  string
-	t    *testing.
-		T
-}
-
-func (sigRecv *sigTestPrepareCompilerRemediationOffersOnlyExecutablePrepare) call() {
-
-	if sigRecv.got == "" {
-		sigRecv.t.
-			Errorf("PrepareCompilerRemediation(%q, ...) = \"\", want a non-empty --prepare-compiler command", sigRecv.code)
-	}
-}
-
 // TestPrepareCompilerRemediationOffersOnlyExecutablePrepareCompilerGaps pins
 // AC-SET-10's runtime-boundary installer suppression against every gap code
-// projectreadiness.KnownGapCodes() currently defines, via a literal per-code expectation rather
-// than an expression derived from production code: deriving "should offer a
-// command" from projectreadiness.NextActionExecutable/projectreadiness.KnownGapCodes() itself (as
+// projectreadiness.KnownGapCodes reports, via a literal per-code expectation
+// rather than an expression derived from production code: deriving "should
+// offer a command" from projectreadiness.NextActionExecutable or the gap-code
+// table itself (as
 // PrepareCompilerRemediation does) would make the assertion tautological and
 // unable to catch a mutation to either.
 func TestPrepareCompilerRemediationOffersOnlyExecutablePrepareCompilerGaps(t *testing.T) {
@@ -119,14 +106,21 @@ func TestPrepareCompilerRemediationOffersOnlyExecutablePrepareCompilerGaps(t *te
 	}
 
 	for code, wantExecutable := range wantCommand {
-		got := PrepareCompilerRemediation(code, "project.json")
-		if wantExecutable {
-			(&sigTestPrepareCompilerRemediationOffersOnlyExecutablePrepare{code: code, got: got, t: t}).call()
-
-			continue
-		}
-		if got != "" {
-			t.Errorf("PrepareCompilerRemediation(%q, ...) = %q, want empty: AC-SET-10 forbids offering a command for a non-prepare-compiler gap", code, got)
+		if problem := remediationOfferProblem(code, wantExecutable); problem != "" {
+			t.Error(problem)
 		}
 	}
+}
+
+// remediationOfferProblem describes how PrepareCompilerRemediation's answer
+// for code disagrees with wantExecutable, or returns "" when it agrees.
+func remediationOfferProblem(code string, wantExecutable bool) string {
+	got := PrepareCompilerRemediation(code, "project.json")
+	switch {
+	case wantExecutable && got == "":
+		return fmt.Sprintf("PrepareCompilerRemediation(%q, ...) = \"\", want a non-empty --prepare-compiler command", code)
+	case !wantExecutable && got != "":
+		return fmt.Sprintf("PrepareCompilerRemediation(%q, ...) = %q, want empty: AC-SET-10 forbids offering a command for a non-prepare-compiler gap", code, got)
+	}
+	return ""
 }

@@ -153,12 +153,12 @@ func TestWorktreeDisclosureDiagnostics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_worktreeDisclosurePart2Test_154(t, tt)
+			checkWorktreeDisclosureDiagnostics(t, tt)
 		})
 	}
 }
 
-func body_worktreeDisclosurePart2Test_154(t *testing.T, tt struct {
+func checkWorktreeDisclosureDiagnostics(t *testing.T, tt struct {
 	name   string
 	output []byte
 	err    error

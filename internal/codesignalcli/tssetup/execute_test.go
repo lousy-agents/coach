@@ -25,7 +25,7 @@ func TestExecuteSetupRefusesRowWhoseExecutableDiffersFromItsMapKey(t *testing.T)
 		args:       fakeArgs,
 	}
 	t.Cleanup(func() {
-		body_projectTsSetupExecuteKindTest_27(fakeKind, original, hadOriginal)
+		checkExecuteSetupRefusesRowWhoseExecutable(fakeKind, original, hadOriginal)
 	})
 
 	// A stub literally named fakeKind: if Execute ever spawns
@@ -59,7 +59,7 @@ func TestExecuteSetupRefusesRowWhoseExecutableDiffersFromItsMapKey(t *testing.T)
 	}
 }
 
-func body_projectTsSetupExecuteKindTest_27(fakeKind string, original setupCommandTemplate, hadOriginal bool) {
+func checkExecuteSetupRefusesRowWhoseExecutable(fakeKind string, original setupCommandTemplate, hadOriginal bool) {
 	if hadOriginal {
 		setupCommandTemplates[fakeKind] = original
 	} else {

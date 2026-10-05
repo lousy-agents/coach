@@ -25,12 +25,12 @@ func TestRunCompilerSetupOfferReportsNoChoicesOffered(t *testing.T) {
 	}
 	for name, readiness := range cases {
 		t.Run(name, func(t *testing.T) {
-			body_projectTsPreflightPart2Test_75(t, readiness)
+			checkRunCompilerSetupOfferReportsNo(t, readiness)
 		})
 	}
 }
 
-func body_projectTsPreflightPart2Test_75(t *testing.T, readiness *projectreadiness.Result) {
+func checkRunCompilerSetupOfferReportsNo(t *testing.T, readiness *projectreadiness.Result) {
 	var out strings.Builder
 	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
 	if !result.NoChoicesOffered {
@@ -74,12 +74,12 @@ func TestRunCompilerSetupOfferNeverOpensForARuntimeBoundaryGap(t *testing.T) {
 
 	for gapCode, offered := range wantOffered {
 		t.Run(gapCode, func(t *testing.T) {
-			body_projectTsPreflightPart3Test_39(t, readiness, gapCode, offered)
+			checkRunCompilerSetupOfferNeverOpens(t, readiness, gapCode, offered)
 		})
 	}
 }
 
-func body_projectTsPreflightPart3Test_39(t *testing.T, readiness *projectreadiness.Result, gapCode string, offered bool) {
+func checkRunCompilerSetupOfferNeverOpens(t *testing.T, readiness *projectreadiness.Result, gapCode string, offered bool) {
 	var out strings.Builder
 	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", gapCode, readiness, strings.NewReader("cancel\n"), &out)
 	if offered {

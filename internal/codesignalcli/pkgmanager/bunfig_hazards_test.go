@@ -33,12 +33,12 @@ func TestDetectBunfigHazard(t *testing.T) {
 		{"a file naming nothing about resolution is no hazard", "telemetry = false\n# a comment\n", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectTsSetupDetectBunfigTest_35(t, tc)
+			checkDetectBunfigHazard(t, tc)
 		})
 	}
 }
 
-func body_projectTsSetupDetectBunfigTest_35(t *testing.T, tc struct {
+func checkDetectBunfigHazard(t *testing.T, tc struct {
 	name     string
 	contents string
 	want     string

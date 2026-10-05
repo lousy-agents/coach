@@ -24,12 +24,12 @@ func TestIsExactVersion(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectTsCompilerResolvePart4Test_28(t, tc)
+			checkIsExactVersion(t, tc)
 		})
 	}
 }
 
-func body_projectTsCompilerResolvePart4Test_28(t *testing.T, tc struct {
+func checkIsExactVersion(t *testing.T, tc struct {
 	name  string
 	value string
 	want  bool

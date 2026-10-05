@@ -68,7 +68,7 @@ func TestMiseTomlMinVersionYearExtraction(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectTsCompilerMiseRowTest_56(t, tc)
+			checkMiseTomlMinVersionYearExtraction(t, tc)
 		})
 	}
 }
@@ -90,7 +90,7 @@ func TestIsMiseToolVersionInRow(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectTsCompilerMiseRowTest_86(t, tc)
+			checkIsMiseToolVersionRow(t, tc)
 		})
 	}
 }
@@ -113,7 +113,7 @@ func TestMiseInstallCommandTakesExactlyOneVersionParameter(t *testing.T) {
 	}
 }
 
-func body_projectTsCompilerMiseRowTest_56(t *testing.T, tc struct {
+func checkMiseTomlMinVersionYearExtraction(t *testing.T, tc struct {
 	name     string
 	toml     string
 	wantYear string
@@ -130,7 +130,7 @@ func body_projectTsCompilerMiseRowTest_56(t *testing.T, tc struct {
 	}
 }
 
-func body_projectTsCompilerMiseRowTest_86(t *testing.T, tc struct {
+func checkIsMiseToolVersionRow(t *testing.T, tc struct {
 	name    string
 	version string
 	want    bool

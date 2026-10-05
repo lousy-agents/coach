@@ -40,12 +40,12 @@ func TestRepositoryRelativeChangedPathsOnlyRewritesTheResidueUnknownFallback(t *
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			body_projectTsPreflightPart5Test_107(t, root, c)
+			checkRepositoryRelativeChangedPathsOnlyRewrites(t, root, c)
 		})
 	}
 }
 
-func body_projectTsPreflightPart5Test_107(t *testing.T, root string, c struct {
+func checkRepositoryRelativeChangedPathsOnlyRewrites(t *testing.T, root string, c struct {
 	name           string
 	changedPaths   []string
 	residueUnknown bool

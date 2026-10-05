@@ -45,21 +45,17 @@ func TestAlsoFailingGapLinesReportsEveryGapWithoutClaimingItSurvives(t *testing.
 		}
 	}
 
-	t.Run("a policy-only gap list prints nothing extra", func(t *testing.T) {
-		body_projectTsPreflightPart2Test_aPolicyOnlyGapListPrintsNothingExtra_48(t)
-	})
-	t.Run("nil readiness prints nothing extra", func(t *testing.T) {
-		body_projectTsPreflightPart2Test_nilReadinessPrintsNothingExtra_53(t)
-	})
+	t.Run("a policy-only gap list prints nothing extra", aPolicyOnlyGapListPrintsNothingExtra)
+	t.Run("nil readiness prints nothing extra", nilReadinessPrintsNothingExtra)
 }
 
-func body_projectTsPreflightPart2Test_aPolicyOnlyGapListPrintsNothingExtra_48(t *testing.T) {
+func aPolicyOnlyGapListPrintsNothingExtra(t *testing.T) {
 	if got := AlsoFailingGapLines(&projectreadiness.Result{Gaps: []projectreadiness.Gap{{Code: projectreadiness.GapPolicyMissing}}}, "project.json"); len(got) != 0 {
 		t.Fatalf("AlsoFailingGapLines(policy gap only) = %q, want none: the policy failure is already printed as the scan's own message", got)
 	}
 }
 
-func body_projectTsPreflightPart2Test_nilReadinessPrintsNothingExtra_53(t *testing.T) {
+func nilReadinessPrintsNothingExtra(t *testing.T) {
 	if got := AlsoFailingGapLines(nil, "project.json"); len(got) != 0 {
 		t.Fatalf("AlsoFailingGapLines(nil readiness) = %q, want none", got)
 	}
@@ -69,44 +65,40 @@ func TestAppendedRemediationLine(t *testing.T) {
 	const line = "on a terminal: coach codesignal --baseline --prepare-compiler --project-language typescript"
 
 	t.Run("without a controlling terminal prints the remediation line", func(t *testing.T) {
-		body_projectTsPreflightPart5Test_withoutAControllingTerminalPrintsTheRemediationL_15(t, line)
+		withoutControllingTerminalPrintsRemediationLine(t, line)
 	})
 	t.Run("a TypeScript controlling terminal withholds the line because the interactive offer owns it", func(t *testing.T) {
-		body_projectTsPreflightPart5Test_aTypeScriptControllingTerminalWithholdsTheLineBe_20(t, line)
+		aTypeScriptControllingTerminalWithholdsLineBecauseInteractive(t, line)
 	})
 	t.Run("a Go controlling terminal still prints the line because Go has no interactive offer", func(t *testing.T) {
-		body_projectTsPreflightPart5Test_aGoControllingTerminalStillPrintsTheLineBecauseG_25(t, line)
+		aGoControllingTerminalStillPrintsLineBecause(t, line)
 	})
 }
 
 func TestSuggestProjectConfigRemediation(t *testing.T) {
-	t.Run("TypeScript names the guided-authoring invocation plus the no-terminal path", func(t *testing.T) {
-		body_projectTsPreflightPart5Test_TypeScriptNamesTheGuidedAuthoringInvocationPlusT_33(t)
-	})
-	t.Run("Go is offered only the non-interactive suggest command", func(t *testing.T) {
-		body_projectTsPreflightPart5Test_GoIsOfferedOnlyTheNonInteractiveSuggestCommand_42(t)
-	})
+	t.Run("TypeScript names the guided-authoring invocation plus the no-terminal path", typeScriptNamesGuidedAuthoringInvocationPlusNoTerminal)
+	t.Run("Go is offered only the non-interactive suggest command", goOfferedOnlyNonInteractiveSuggestCommand)
 }
 
-func body_projectTsPreflightPart5Test_withoutAControllingTerminalPrintsTheRemediationL_15(t *testing.T, line string) {
+func withoutControllingTerminalPrintsRemediationLine(t *testing.T, line string) {
 	if got := AppendedRemediationLine(false, "typescript", line); got != line {
 		t.Fatalf("AppendedRemediationLine(false, %q, line) = %q, want %q", "typescript", got, line)
 	}
 }
 
-func body_projectTsPreflightPart5Test_aTypeScriptControllingTerminalWithholdsTheLineBe_20(t *testing.T, line string) {
+func aTypeScriptControllingTerminalWithholdsLineBecauseInteractive(t *testing.T, line string) {
 	if got := AppendedRemediationLine(true, "typescript", line); got != "" {
 		t.Fatalf("AppendedRemediationLine(true, %q, line) = %q, want empty: the interactive setup offer owns the controlling-terminal case for typescript", "typescript", got)
 	}
 }
 
-func body_projectTsPreflightPart5Test_aGoControllingTerminalStillPrintsTheLineBecauseG_25(t *testing.T, line string) {
+func aGoControllingTerminalStillPrintsLineBecause(t *testing.T, line string) {
 	if got := AppendedRemediationLine(true, "go", line); got != line {
 		t.Fatalf("AppendedRemediationLine(true, %q, line) = %q, want %q: go has no interactive setup offer to own the controlling-terminal case", "go", got, line)
 	}
 }
 
-func body_projectTsPreflightPart5Test_TypeScriptNamesTheGuidedAuthoringInvocationPlusT_33(t *testing.T) {
+func typeScriptNamesGuidedAuthoringInvocationPlusNoTerminal(t *testing.T) {
 	ts := SuggestProjectConfigRemediation("typescript")
 	if !strings.Contains(ts, "coach codesignal --baseline --suggest-project-config --project-language typescript") {
 		t.Fatalf("SuggestProjectConfigRemediation(%q) = %q, want it to still name the guided-authoring invocation", "typescript", ts)
@@ -116,31 +108,23 @@ func body_projectTsPreflightPart5Test_TypeScriptNamesTheGuidedAuthoringInvocatio
 	}
 }
 
-func body_projectTsPreflightPart5Test_GoIsOfferedOnlyTheNonInteractiveSuggestCommand_42(t *testing.T) {
+func goOfferedOnlyNonInteractiveSuggestCommand(t *testing.T) {
 	if got, want := SuggestProjectConfigRemediation("go"), "coach codesignal --baseline --suggest-project-config"; got != want {
 		t.Fatalf("SuggestProjectConfigRemediation(%q) = %q, want %q: a go scan must never be offered the TypeScript-only guided-authoring command (AC-2)", "go", got, want)
 	}
 }
 
 func TestAlsoFailingGapLinesFollowsReadinessGaps(t *testing.T) {
-	t.Run("a shaped failing compiler is reported from gaps", func(t *testing.T) {
-		body_projectTsPreflightTest_aShapedFailingCompilerIsReportedFromGaps_56(t)
-	})
+	t.Run("a shaped failing compiler is reported from gaps", aShapedFailingCompilerReportedFromGaps)
 
-	t.Run("a passing compiler with no gaps reports nothing", func(t *testing.T) {
-		body_projectTsPreflightTest_aPassingCompilerWithNoGapsReportsNothing_70(t)
-	})
+	t.Run("a passing compiler with no gaps reports nothing", aPassingCompilerNoGapsReportsNothing)
 
-	t.Run("an unsupported repository shape still reports every gap readiness names", func(t *testing.T) {
-		body_projectTsPreflightTest_anUnsupportedRepositoryShapeStillReportsEveryGap_82(t)
-	})
+	t.Run("an unsupported repository shape still reports every gap readiness names", anUnsupportedRepositoryShapeStillReportsEveryGap)
 
-	t.Run("a failing check absent from gaps is not reported", func(t *testing.T) {
-		body_projectTsPreflightTest_aFailingCheckAbsentFromGapsIsNotReported_96(t)
-	})
+	t.Run("a failing check absent from gaps is not reported", aFailingCheckAbsentFromGapsNotReported)
 }
 
-func body_projectTsPreflightTest_aShapedFailingCompilerIsReportedFromGaps_56(t *testing.T) {
+func aShapedFailingCompilerReportedFromGaps(t *testing.T) {
 	failingCompilerShaped := &projectreadiness.Result{
 		Checks: projectreadiness.Checks{
 			ProjectShape: projectreadiness.Check{State: projectreadiness.Pass},
@@ -154,7 +138,7 @@ func body_projectTsPreflightTest_aShapedFailingCompilerIsReportedFromGaps_56(t *
 	}
 }
 
-func body_projectTsPreflightTest_aPassingCompilerWithNoGapsReportsNothing_70(t *testing.T) {
+func aPassingCompilerNoGapsReportsNothing(t *testing.T) {
 	passingCompiler := &projectreadiness.Result{
 		Checks: projectreadiness.Checks{
 			ProjectShape: projectreadiness.Check{State: projectreadiness.Pass},
@@ -166,7 +150,7 @@ func body_projectTsPreflightTest_aPassingCompilerWithNoGapsReportsNothing_70(t *
 	}
 }
 
-func body_projectTsPreflightTest_anUnsupportedRepositoryShapeStillReportsEveryGap_82(t *testing.T) {
+func anUnsupportedRepositoryShapeStillReportsEveryGap(t *testing.T) {
 	notShapedButGapped := &projectreadiness.Result{
 		Checks: projectreadiness.Checks{
 			ProjectShape: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapUnsupportedRepositoryShape},
@@ -180,7 +164,7 @@ func body_projectTsPreflightTest_anUnsupportedRepositoryShapeStillReportsEveryGa
 	}
 }
 
-func body_projectTsPreflightTest_aFailingCheckAbsentFromGapsIsNotReported_96(t *testing.T) {
+func aFailingCheckAbsentFromGapsNotReported(t *testing.T) {
 	compilerFailingButNotInGaps := &projectreadiness.Result{
 		Checks: projectreadiness.Checks{
 			Compiler: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing},

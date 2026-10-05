@@ -2,6 +2,7 @@ package configauthoring
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -57,20 +58,16 @@ func TestAuthorProjectConfig_LayerStageNeverInfersPreselectsOrRecommends(t *test
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectConfigAuthoringPart5Test_30(t, tc)
+			checkLayerStageNeverInfersPreselectsRecommends(t, tc)
 		})
 	}
 
-	t.Run("a defined layer's prefixes are exactly what the user typed, never augmented with discovered roots", func(t *testing.T) {
-		body_projectConfigAuthoringPart5Test_aDefinedLayerSPrefixesAreExactlyWhatTheUserTyped_69(t)
-	})
+	t.Run("a defined layer's prefixes are exactly what the user typed, never augmented with discovered roots", aDefinedLayersPrefixesAreExactlyWhatUser)
 
-	t.Run("a blank prefix answer is never silently filled in with a discovered root", func(t *testing.T) {
-		body_projectConfigAuthoringPart5Test_aBlankPrefixAnswerIsNeverSilentlyFilledInWithADi_86(t)
-	})
+	t.Run("a blank prefix answer is never silently filled in with a discovered root", aBlankPrefixAnswerNeverSilentlyFilledDiscovered)
 }
 
-func body_projectConfigAuthoringPart5Test_aBlankPrefixAnswerIsNeverSilentlyFilledInWithADi_86(t *testing.T) {
+func aBlankPrefixAnswerNeverSilentlyFilledDiscovered(t *testing.T) {
 	discovered := projectmodel.TSRootDiscoveryResult{Roots: []string{"apps/api", "apps/web"}, Complete: true}
 
 	result, _ := runAuthoring(discovered,
@@ -80,10 +77,7 @@ func body_projectConfigAuthoringPart5Test_aBlankPrefixAnswerIsNeverSilentlyFille
 		"cancel",
 	)
 
-	for _, layer := range result.Layers {
-		(&sigbodyprojectConfigAuthoringPart5TestaBlankPrefixAnswerIsNe{discovered: discovered, layer: layer, result: result, t: t}).call()
-
-	}
+	expectNoPrefixAdoptsDiscoveredRoot(t, result, discovered)
 	if len(result.Layers) != 0 {
 		t.Fatalf("expected no layer to be recorded when its prefix answer was blank and then cancelled, got %+v", result.Layers)
 	}
@@ -92,7 +86,7 @@ func body_projectConfigAuthoringPart5Test_aBlankPrefixAnswerIsNeverSilentlyFille
 	}
 }
 
-func body_projectConfigAuthoringPart5Test_30(t *testing.T, tc struct {
+func checkLayerStageNeverInfersPreselectsRecommends(t *testing.T, tc struct {
 	name       string
 	discovered projectmodel.TSRootDiscoveryResult
 }) {
@@ -133,7 +127,7 @@ func body_projectConfigAuthoringPart5Test_30(t *testing.T, tc struct {
 	}
 }
 
-func body_projectConfigAuthoringPart5Test_aDefinedLayerSPrefixesAreExactlyWhatTheUserTyped_69(t *testing.T) {
+func aDefinedLayersPrefixesAreExactlyWhatUser(t *testing.T) {
 	discovered := projectmodel.TSRootDiscoveryResult{Roots: []string{"apps/api", "apps/web"}, Complete: true}
 
 	result, _ := runAuthoring(discovered,
@@ -154,23 +148,23 @@ func TestAuthorProjectConfig_CollectsLayersForbiddenPairsAndRequiredLayerInOrder
 	discovered := projectmodel.TSRootDiscoveryResult{Roots: []string{"apps/api"}, Complete: true}
 
 	t.Run("layers only: no forbidden pairs, no required layer", func(t *testing.T) {
-		body_projectConfigAuthoringPart6Test_layersOnlyNoForbiddenPairsNoRequiredLayer_12(t, discovered)
+		layersOnlyNoForbiddenPairsNoRequiredLayer(t, discovered)
 	})
 
 	t.Run("layers and forbidden pairs, no required layer", func(t *testing.T) {
-		body_projectConfigAuthoringPart6Test_layersAndForbiddenPairsNoRequiredLayer_42(t, discovered)
+		layersForbiddenPairsNoRequiredLayer(t, discovered)
 	})
 
 	t.Run("layers, forbidden pairs, and a required layer", func(t *testing.T) {
-		body_projectConfigAuthoringPart6Test_layersForbiddenPairsAndARequiredLayer_72(t, discovered)
+		layersForbiddenPairsRequiredLayer(t, discovered)
 	})
 
 	t.Run("keeps the accepted root and layer after later stages are left blank", func(t *testing.T) {
-		body_projectConfigAuthoringPart6Test_keepsTheAcceptedRootAndLayerAfterLaterStagesAreL_102(t, discovered)
+		keepsAcceptedRootLayerAfterLaterStagesAre(t, discovered)
 	})
 }
 
-func body_projectConfigAuthoringPart6Test_layersForbiddenPairsAndARequiredLayer_72(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func layersForbiddenPairsRequiredLayer(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, _ := runAuthoring(discovered,
 		"1",
 		"domain", "internal/domain",
@@ -200,7 +194,7 @@ func body_projectConfigAuthoringPart6Test_layersForbiddenPairsAndARequiredLayer_
 	}
 }
 
-func body_projectConfigAuthoringPart6Test_keepsTheAcceptedRootAndLayerAfterLaterStagesAreL_102(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func keepsAcceptedRootLayerAfterLaterStagesAre(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, _ := runAuthoring(discovered,
 		"1",
 		"domain", "internal/domain",
@@ -218,7 +212,7 @@ func body_projectConfigAuthoringPart6Test_keepsTheAcceptedRootAndLayerAfterLater
 	}
 }
 
-func body_projectConfigAuthoringPart6Test_layersOnlyNoForbiddenPairsNoRequiredLayer_12(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func layersOnlyNoForbiddenPairsNoRequiredLayer(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, _ := runAuthoring(discovered,
 		"1",
 		"domain",
@@ -248,7 +242,7 @@ func body_projectConfigAuthoringPart6Test_layersOnlyNoForbiddenPairsNoRequiredLa
 	}
 }
 
-func body_projectConfigAuthoringPart6Test_layersAndForbiddenPairsNoRequiredLayer_42(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func layersForbiddenPairsNoRequiredLayer(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, _ := runAuthoring(discovered,
 		"1",
 		"domain", "internal/domain",
@@ -278,35 +272,15 @@ func body_projectConfigAuthoringPart6Test_layersAndForbiddenPairsNoRequiredLayer
 	}
 }
 
-type sigcallS044425946 struct {
-	prefix    string
-	v44425814 *sigbodyprojectConfigAuthoringPart5TestaBlankPrefixAnswerIsNe
-}
-
-func (sigRecv *sigcallS044425946) call() {
-
-	for _, root := range sigRecv.v44425814.discovered.Roots {
-		if sigRecv.prefix == root {
-			sigRecv.v44425814.
-				t.
-				Fatalf("layer %q silently adopted discovered root %q as a prefix, Layers = %+v", sigRecv.v44425814.layer.Name, root, sigRecv.v44425814.result.Layers)
+// expectNoPrefixAdoptsDiscoveredRoot fails when any recorded layer prefix
+// is one of the discovered roots: a prefix must be what the user typed.
+func expectNoPrefixAdoptsDiscoveredRoot(t *testing.T, result Result, discovered projectmodel.TSRootDiscoveryResult) {
+	t.Helper()
+	for _, layer := range result.Layers {
+		for _, prefix := range layer.Prefixes {
+			if slices.Contains(discovered.Roots, prefix) {
+				t.Fatalf("layer %q silently adopted discovered root %q as a prefix, Layers = %+v", layer.Name, prefix, result.Layers)
+			}
 		}
-	}
-}
-
-type sigbodyprojectConfigAuthoringPart5TestaBlankPrefixAnswerIsNe struct {
-	discovered projectmodel.
-			TSRootDiscoveryResult
-	layer  projectconfig.Layer
-	result Result
-	t      *testing.
-		T
-}
-
-func (sigRecv *sigbodyprojectConfigAuthoringPart5TestaBlankPrefixAnswerIsNe) call() {
-
-	for _, prefix := range sigRecv.layer.Prefixes {
-		(&sigcallS044425946{prefix: prefix, v44425814: sigRecv}).call()
-
 	}
 }

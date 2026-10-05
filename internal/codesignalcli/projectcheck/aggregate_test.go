@@ -85,12 +85,12 @@ func TestAggregateReadinessPrecedence(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectReadinessPart4Test_89(t, tc)
+			checkAggregateReadinessPrecedence(t, tc)
 		})
 	}
 }
 
-func body_projectReadinessPart4Test_89(t *testing.T, tc struct {
+func checkAggregateReadinessPrecedence(t *testing.T, tc struct {
 	name          string
 	checks        projectreadiness.Checks
 	dirtyRelevant bool
@@ -172,12 +172,12 @@ func TestAggregateReadinessOmitsWarningsForNodeChecks(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectReadinessPart7Test_59(t, tc)
+			checkAggregateReadinessOmitsWarningsNodeChecks(t, tc)
 		})
 	}
 }
 
-func body_projectReadinessPart7Test_59(t *testing.T, tc struct {
+func checkAggregateReadinessOmitsWarningsNodeChecks(t *testing.T, tc struct {
 	name    string
 	runtime projectreadiness.Check
 }) {

@@ -50,9 +50,7 @@ var _ = Describe("project-config boundary budgets", func() {
 		Expect(err.Error()).To(ContainSubstring("layer prefixes exceed budget"))
 	})
 
-	It("rejects documents that exceed the JSON nesting budget", func() {
-		body_projectAcceptanceTest_rejectsDocumentsThatExceedTheJSONNestingBudget_759()
-	})
+	It("rejects documents that exceed the JSON nesting budget", rejectsDocumentsExceedJSONNestingBudget)
 
 	It("surfaces a timed-out git child as project_config_invalid", func() {
 		originalRunner := runProjectConfigGit
@@ -94,7 +92,7 @@ var _ = Describe("project-config boundary budgets", func() {
 	})
 })
 
-func body_projectAcceptanceTest_rejectsDocumentsThatExceedTheJSONNestingBudget_759() {
+func rejectsDocumentsExceedJSONNestingBudget() {
 	var b strings.Builder
 	for i := 0; i < maxJSONDepth+2; i++ {
 		b.WriteString(`{"a":`)

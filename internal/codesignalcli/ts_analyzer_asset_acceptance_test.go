@@ -63,9 +63,7 @@ var _ = Describe("TypeScript analyzer asset", func() {
 	})
 
 	Describe("MaterializeTSAnalyzer", func() {
-		It("produces a private temp directory whose contents are byte-identical to the embedded generated asset", func() {
-			body_tsAnalyzerAssetAcceptanceTest_producesAPrivateTempDirectoryWhoseContentsAreByt_66()
-		})
+		It("produces a private temp directory whose contents are byte-identical to the embedded generated asset", producesPrivateTempDirectoryWhoseContentsAre)
 
 		It("removes the materialized directory once the caller invokes cleanup after success", func() {
 			dir, cleanup, err := MaterializeTSAnalyzer(context.Background())
@@ -97,7 +95,7 @@ var _ = Describe("TypeScript analyzer asset", func() {
 			src := delayedFS{
 				FS: fakeTSAnalyzerFS(),
 				onOpen: func(name string) error {
-					return body_tsAnalyzerAssetAcceptanceTest_127(name, boom)
+					return failResolveJSCopy(name, boom)
 				},
 			}
 
@@ -157,7 +155,7 @@ var _ = Describe("TypeScript analyzer asset", func() {
 	})
 })
 
-func body_tsAnalyzerAssetAcceptanceTest_producesAPrivateTempDirectoryWhoseContentsAreByt_66() {
+func producesPrivateTempDirectoryWhoseContentsAre() {
 	dir, cleanup, err := MaterializeTSAnalyzer(context.Background())
 	Expect(err).NotTo(HaveOccurred())
 	defer cleanup()
@@ -189,7 +187,7 @@ func body_tsAnalyzerAssetAcceptanceTest_producesAPrivateTempDirectoryWhoseConten
 	Expect(string(pkg)).To(Equal("{\"type\":\"module\"}\n"))
 }
 
-func body_tsAnalyzerAssetAcceptanceTest_127(name string, boom error) error {
+func failResolveJSCopy(name string, boom error) error {
 	if name == "project-sidecar/resolve.js" {
 		return boom
 	}

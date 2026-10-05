@@ -14,43 +14,15 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
-type sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun struct {
-	installDir string
-}
-
-func (sigRecv *sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun) call(context.Context, string) (string, bool) {
-	pkgDir := filepath.Join(sigRecv.installDir, "node_modules", "typescript")
-	if _, statErr := os.Stat(filepath.Join(pkgDir, "package.json")); statErr != nil {
-		return "", false
-	}
-	return pkgDir, true
-}
-
-type sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun0 struct {
-	installDir string
-	t          *testing.
-			T
-}
-
-func (sigRecv *sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun0) call() {
-
-	if err := os.RemoveAll(sigRecv.installDir); err != nil {
-		sigRecv.t.
-			Fatalf("remove placeholder install dir: %v", err)
-	}
-}
-
-type sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun1 struct {
-	repo string
-	t    *testing.
-		T
-}
-
-func (sigRecv *sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun1) call() {
-
-	if err := os.WriteFile(filepath.Join(sigRecv.repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644); err != nil {
-		sigRecv.t.
-			Fatalf("write mise.toml: %v", err)
+// locateInstalledTypescriptUnder stands in for `mise where`: it finds the
+// compiler only once the stub mise's install has populated installDir.
+func locateInstalledTypescriptUnder(installDir string) func(context.Context, string) (string, bool) {
+	return func(context.Context, string) (string, bool) {
+		pkgDir := filepath.Join(installDir, "node_modules", "typescript")
+		if _, statErr := os.Stat(filepath.Join(pkgDir, "package.json")); statErr != nil {
+			return "", false
+		}
+		return pkgDir, true
 	}
 }
 
@@ -65,17 +37,21 @@ func (sigRecv *sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun1) ca
 // field for a passing compiler check.
 func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 	installDir := t.TempDir()
-	(&sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun0{installDir: installDir, t: t}).call()
+	if err := os.RemoveAll(installDir); err != nil {
+		t.Fatalf("remove placeholder install dir: %v", err)
+	}
 
 	writeStatefulStubMiseOnPath(t, installDir, "7.0.2")
 
 	originalLocate := tstoolchain.LocateMiseTypescriptInstall
 	defer func() { tstoolchain.LocateMiseTypescriptInstall = originalLocate }()
-	tstoolchain.LocateMiseTypescriptInstall = (&sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun{installDir: installDir}).call
+	tstoolchain.LocateMiseTypescriptInstall = locateInstalledTypescriptUnder(installDir)
 
 	repo := gitfixture.Init(t)
 	revision := gitfixture.CommitFile(t, repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
-	(&sigTestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun1{repo: repo, t: t}).call()
+	if err := os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644); err != nil {
+		t.Fatalf("write mise.toml: %v", err)
+	}
 
 	before, err := projectcheck.Run(repo, revision, "")
 	if err != nil {

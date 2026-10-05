@@ -19,12 +19,12 @@ func TestMapHostNodeResolveErrorIsNotACompilerUnresolvedError(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectTsRuntimeTest_18(t, tc)
+			checkMapHostNodeResolveErrorNot(t, tc)
 		})
 	}
 }
 
-func body_projectTsRuntimeTest_18(t *testing.T, tc struct {
+func checkMapHostNodeResolveErrorNot(t *testing.T, tc struct {
 	name string
 	err  error
 	code string

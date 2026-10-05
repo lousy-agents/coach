@@ -16,35 +16,35 @@ func TestAuthorProjectConfig_RootSelectionRejectsInvalidOrEmptyAndOffersRetryOrC
 	discovered := projectmodel.TSRootDiscoveryResult{Roots: []string{"apps/api"}, Complete: true}
 
 	t.Run("an empty selection is rejected and cancel stops the session before any later stage runs", func(t *testing.T) {
-		body_projectConfigAuthoringPart4Test_anEmptySelectionIsRejectedAndCancelStopsTheSessi_16(t, discovered)
+		anEmptySelectionRejectedCancelStopsSessionBefore(t, discovered)
 	})
 
 	t.Run("an empty selection is rejected and retry accepts a corrected answer", func(t *testing.T) {
-		body_projectConfigAuthoringPart4Test_anEmptySelectionIsRejectedAndRetryAcceptsACorrec_35(t, discovered)
+		anEmptySelectionRejectedRetryAcceptsCorrectedAnswer(t, discovered)
 	})
 
 	t.Run("an absolute path is rejected and cancel stops the session", func(t *testing.T) {
-		body_projectConfigAuthoringPart4Test_anAbsolutePathIsRejectedAndCancelStopsTheSession_52(t, discovered)
+		anAbsolutePathRejectedCancelStopsSession(t, discovered)
 	})
 
 	t.Run("a path escaping the repository is rejected and retry accepts a corrected answer", func(t *testing.T) {
-		body_projectConfigAuthoringPart4Test_aPathEscapingTheRepositoryIsRejectedAndRetryAcce_65(t, discovered)
+		aPathEscapingRepositoryRejectedRetryAcceptsCorrected(t, discovered)
 	})
 
 	t.Run("a non-normalized path is rejected and cancel stops the session", func(t *testing.T) {
-		body_projectConfigAuthoringPart4Test_aNonNormalizedPathIsRejectedAndCancelStopsTheSes_82(t, discovered)
+		aNonNormalizedPathRejectedCancelStopsSession(t, discovered)
 	})
 
 	t.Run("an out-of-range root number mixed with a valid one is rejected, not silently dropped, and cancel stops the session", func(t *testing.T) {
-		body_projectConfigAuthoringPart4Test_anOutOfRangeRootNumberMixedWithAValidOneIsReject_95(t, discovered)
+		anOutRangeRootNumberMixedValidOne(t, discovered)
 	})
 
 	t.Run("a root selection over the budget is rejected and cancel stops the session before any later stage runs", func(t *testing.T) {
-		body_projectConfigAuthoringPart4Test_aRootSelectionOverTheBudgetIsRejectedAndCancelSt_111(t, discovered)
+		aRootSelectionOverBudgetRejectedCancelStops(t, discovered)
 	})
 }
 
-func body_projectConfigAuthoringPart4Test_aNonNormalizedPathIsRejectedAndCancelStopsTheSes_82(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func aNonNormalizedPathRejectedCancelStopsSession(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, out := runAuthoring(discovered,
 		"src/",
 		"cancel",
@@ -57,7 +57,7 @@ func body_projectConfigAuthoringPart4Test_aNonNormalizedPathIsRejectedAndCancelS
 	}
 }
 
-func body_projectConfigAuthoringPart4Test_anOutOfRangeRootNumberMixedWithAValidOneIsReject_95(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func anOutRangeRootNumberMixedValidOne(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, out := runAuthoring(discovered,
 		"1,3",
 		"cancel",
@@ -73,7 +73,7 @@ func body_projectConfigAuthoringPart4Test_anOutOfRangeRootNumberMixedWithAValidO
 	}
 }
 
-func body_projectConfigAuthoringPart4Test_aRootSelectionOverTheBudgetIsRejectedAndCancelSt_111(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func aRootSelectionOverBudgetRejectedCancelStops(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	roots := make([]string, projectconfig.MaxRoots+1)
 	for i := range roots {
 		roots[i] = fmt.Sprintf("dir%d", i)
@@ -97,7 +97,7 @@ func body_projectConfigAuthoringPart4Test_aRootSelectionOverTheBudgetIsRejectedA
 	}
 }
 
-func body_projectConfigAuthoringPart4Test_anEmptySelectionIsRejectedAndCancelStopsTheSessi_16(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func anEmptySelectionRejectedCancelStopsSessionBefore(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, out := runAuthoring(discovered,
 		"",
 		"cancel",
@@ -116,7 +116,7 @@ func body_projectConfigAuthoringPart4Test_anEmptySelectionIsRejectedAndCancelSto
 	}
 }
 
-func body_projectConfigAuthoringPart4Test_anEmptySelectionIsRejectedAndRetryAcceptsACorrec_35(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func anEmptySelectionRejectedRetryAcceptsCorrectedAnswer(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, _ := runAuthoring(discovered,
 		"",
 		"retry",
@@ -133,7 +133,7 @@ func body_projectConfigAuthoringPart4Test_anEmptySelectionIsRejectedAndRetryAcce
 	}
 }
 
-func body_projectConfigAuthoringPart4Test_anAbsolutePathIsRejectedAndCancelStopsTheSession_52(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func anAbsolutePathRejectedCancelStopsSession(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, out := runAuthoring(discovered,
 		"/abs/path",
 		"cancel",
@@ -146,7 +146,7 @@ func body_projectConfigAuthoringPart4Test_anAbsolutePathIsRejectedAndCancelStops
 	}
 }
 
-func body_projectConfigAuthoringPart4Test_aPathEscapingTheRepositoryIsRejectedAndRetryAcce_65(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func aPathEscapingRepositoryRejectedRetryAcceptsCorrected(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, _ := runAuthoring(discovered,
 		"../x",
 		"retry",
@@ -171,31 +171,31 @@ func TestAuthorProjectConfig_SuggestsDiscoveredRootsWithoutPreselecting(t *testi
 	}
 
 	t.Run("prints discovered roots as a suggestion before reading any answer", func(t *testing.T) {
-		body_projectConfigAuthoringPart7Test_printsDiscoveredRootsAsASuggestionBeforeReadingA_19(t, discovered)
+		printsDiscoveredRootsSuggestionBeforeReadingAnyAnswer(t, discovered)
 	})
 
 	t.Run("selects the roots the user names by number", func(t *testing.T) {
-		body_projectConfigAuthoringPart7Test_selectsTheRootsTheUserNamesByNumber_52(t, discovered)
+		selectsRootsUserNamesNumber(t, discovered)
 	})
 
 	t.Run("selects only the single root the user names by number, not every discovered root", func(t *testing.T) {
-		body_projectConfigAuthoringPart7Test_selectsOnlyTheSingleRootTheUserNamesByNumberNotE_64(t, discovered)
+		selectsOnlySingleRootUserNamesNumberNot(t, discovered)
 	})
 
 	t.Run("selects a discovered root by number together with a literal path, in the order named", func(t *testing.T) {
-		body_projectConfigAuthoringPart7Test_selectsADiscoveredRootByNumberTogetherWithALiter_76(t, discovered)
+		selectsDiscoveredRootNumberTogetherLiteralPathOrder(t, discovered)
 	})
 
 	t.Run("cancels when the user never answers the prompt", func(t *testing.T) {
-		body_projectConfigAuthoringPart7Test_cancelsWhenTheUserNeverAnswersThePrompt_88(t, discovered)
+		cancelsUserNeverAnswersPrompt(t, discovered)
 	})
 
 	t.Run("selects a literal path the user types instead of a discovered root", func(t *testing.T) {
-		body_projectConfigAuthoringPart7Test_selectsALiteralPathTheUserTypesInsteadOfADiscove_102(t, discovered)
+		selectsLiteralPathUserTypesInsteadDiscoveredRoot(t, discovered)
 	})
 }
 
-func body_projectConfigAuthoringPart7Test_cancelsWhenTheUserNeverAnswersThePrompt_88(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func cancelsUserNeverAnswersPrompt(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	out := &bytes.Buffer{}
 	in := strings.NewReader("")
 
@@ -209,7 +209,7 @@ func body_projectConfigAuthoringPart7Test_cancelsWhenTheUserNeverAnswersThePromp
 	}
 }
 
-func body_projectConfigAuthoringPart7Test_selectsALiteralPathTheUserTypesInsteadOfADiscove_102(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func selectsLiteralPathUserTypesInsteadDiscoveredRoot(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	out := &bytes.Buffer{}
 	in := strings.NewReader("services/checkout\n")
 
@@ -221,7 +221,7 @@ func body_projectConfigAuthoringPart7Test_selectsALiteralPathTheUserTypesInstead
 	}
 }
 
-func body_projectConfigAuthoringPart7Test_printsDiscoveredRootsAsASuggestionBeforeReadingA_19(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func printsDiscoveredRootsSuggestionBeforeReadingAnyAnswer(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	var events []string
 	out := &recordingWriter{w: &bytes.Buffer{}, events: &events}
 	in := &recordingReader{r: strings.NewReader("1\n"), events: &events}
@@ -254,7 +254,7 @@ func body_projectConfigAuthoringPart7Test_printsDiscoveredRootsAsASuggestionBefo
 	}
 }
 
-func body_projectConfigAuthoringPart7Test_selectsTheRootsTheUserNamesByNumber_52(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func selectsRootsUserNamesNumber(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	out := &bytes.Buffer{}
 	in := strings.NewReader("1,2\n")
 
@@ -266,7 +266,7 @@ func body_projectConfigAuthoringPart7Test_selectsTheRootsTheUserNamesByNumber_52
 	}
 }
 
-func body_projectConfigAuthoringPart7Test_selectsOnlyTheSingleRootTheUserNamesByNumberNotE_64(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func selectsOnlySingleRootUserNamesNumberNot(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	out := &bytes.Buffer{}
 	in := strings.NewReader("2\n")
 
@@ -278,7 +278,7 @@ func body_projectConfigAuthoringPart7Test_selectsOnlyTheSingleRootTheUserNamesBy
 	}
 }
 
-func body_projectConfigAuthoringPart7Test_selectsADiscoveredRootByNumberTogetherWithALiter_76(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func selectsDiscoveredRootNumberTogetherLiteralPathOrder(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	out := &bytes.Buffer{}
 	in := strings.NewReader("2,services/checkout\n")
 
@@ -327,12 +327,12 @@ func TestAuthorProjectConfig_RootSelectionNeverProposesLayerBoundaries(t *testin
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectConfigAuthoringPart9Test_108(t, tc)
+			checkRootSelectionNeverProposesLayerBoundaries(t, tc)
 		})
 	}
 }
 
-func body_projectConfigAuthoringPart9Test_108(t *testing.T, tc struct {
+func checkRootSelectionNeverProposesLayerBoundaries(t *testing.T, tc struct {
 	name       string
 	discovered projectmodel.TSRootDiscoveryResult
 	answer     string

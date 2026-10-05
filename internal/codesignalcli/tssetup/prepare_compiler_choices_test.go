@@ -87,12 +87,12 @@ func TestRunPrepareCompilerMiseSetupReportsNoChoicesOffered(t *testing.T) {
 
 	for name, readiness := range cases {
 		t.Run(name, func(t *testing.T) {
-			body_projectTsCompilerMiseInstallPart3Test_85(t, readiness)
+			checkRunPrepareCompilerMiseSetupReports(t, readiness)
 		})
 	}
 }
 
-func body_projectTsCompilerMiseInstallPart3Test_85(t *testing.T, readiness *projectreadiness.Result) {
+func checkRunPrepareCompilerMiseSetupReports(t *testing.T, readiness *projectreadiness.Result) {
 	result := RunPrepareCompilerMiseSetup(context.Background(), t.TempDir(), "HEAD", "", readiness, strings.NewReader(""), &bytes.Buffer{})
 	if !result.NoChoicesOffered {
 		t.Fatalf("NoChoicesOffered = false, want true: %+v", result)

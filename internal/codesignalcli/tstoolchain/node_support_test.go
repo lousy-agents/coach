@@ -170,7 +170,7 @@ func assertSameNodeMajorSet(t *testing.T, label string, got, want []int) {
 func TestNodeMajorSupportedMatchesAnalysisGate(t *testing.T) {
 	for major := 20; major <= 30; major++ {
 		t.Run(strconv.Itoa(major), func(t *testing.T) {
-			body_projectReadinessPart7Test_88(t, major)
+			checkNodeMajorSupportedMatchesAnalysisGate(t, major)
 		})
 	}
 }
@@ -200,7 +200,7 @@ func readFileT(t *testing.T, path string) string {
 	return string(data)
 }
 
-func body_projectReadinessPart7Test_88(t *testing.T, major int) {
+func checkNodeMajorSupportedMatchesAnalysisGate(t *testing.T, major int) {
 	if got, want := NodeMajorSupported(major), AnalysisNodeMajorAllowed(major); got != want {
 		t.Fatalf("nodeMajorSupported(%d) = %t, analysisNodeMajorAllowed(%d) = %t: readiness and analysis gates disagree", major, got, major, want)
 	}

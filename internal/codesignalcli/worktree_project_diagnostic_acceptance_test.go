@@ -15,17 +15,11 @@ import (
 
 var _ = Describe("applyProjectBackend dirty-worktree diagnostic and package manager provenance", func() {
 	When("the worktree has relevant uncommitted changes and the project backend returns results", func() {
-		It("appends a worktree_report_reflects_committed_head diagnostic to input", func() {
-			body_projectProvenanceAcceptanceTest_appendsAWorktreeReportReflectsCommittedHeadDiagn_16()
-		})
+		It("appends a worktree_report_reflects_committed_head diagnostic to input", appendsWorktreeReportReflectsCommittedHeadDiagnostic)
 
-		It("worktree_report_reflects_committed_head message references committed HEAD", func() {
-			body_projectProvenanceAcceptanceTest_worktreeReportReflectsCommittedHeadMessageRefere_52()
-		})
+		It("worktree_report_reflects_committed_head message references committed HEAD", worktreeReportReflectsCommittedHeadMessageReferences)
 
-		It("does not emit a worktree provenance diagnostic when the worktree is clean", func() {
-			body_projectProvenanceAcceptanceTest_doesNotEmitAWorktreeProvenanceDiagnosticWhenTheW_85()
-		})
+		It("does not emit a worktree provenance diagnostic when the worktree is clean", doesNotEmitWorktreeProvenanceDiagnosticWorktree)
 	})
 
 	When("the backend result carries analyzer identity fields", func() {
@@ -65,9 +59,7 @@ var _ = Describe("applyProjectBackend dirty-worktree diagnostic and package mana
 
 var _ = Describe("applyProjectBackend dirty-worktree diagnostic: error handling", func() {
 	When("the git status seam returns an error", func() {
-		It("emits worktree_status_check_failed rather than describing the error as skipped analysis", func() {
-			body_projectProvenanceAcceptanceTest_emitsWorktreeStatusCheckFailedRatherThanDescribi_154()
-		})
+		It("emits worktree_status_check_failed rather than describing the error as skipped analysis", emitsWorktreeStatusCheckFailedRatherThan)
 	})
 })
 
@@ -112,7 +104,7 @@ var _ = Describe("applyProjectBackend diagnostics mutation contract", func() {
 	})
 })
 
-func body_projectProvenanceAcceptanceTest_appendsAWorktreeReportReflectsCommittedHeadDiagn_16() {
+func appendsWorktreeReportReflectsCommittedHeadDiagnostic() {
 	original := listWorktreeStatus
 	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
 		return gitrepo.ParseWorktreeStatus([]byte("M  bun.lock\x00")), nil
@@ -148,7 +140,7 @@ func body_projectProvenanceAcceptanceTest_appendsAWorktreeReportReflectsCommitte
 		"project provenance must not reuse the file-local skip kind; diagnostics=%v", input.Diagnostics)
 }
 
-func body_projectProvenanceAcceptanceTest_worktreeReportReflectsCommittedHeadMessageRefere_52() {
+func worktreeReportReflectsCommittedHeadMessageReferences() {
 	original := listWorktreeStatus
 	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
 		return gitrepo.ParseWorktreeStatus([]byte("?? bun.lock\x00")), nil
@@ -181,7 +173,7 @@ func body_projectProvenanceAcceptanceTest_worktreeReportReflectsCommittedHeadMes
 	Expect(msg).To(ContainSubstring("HEAD"), "message must reference committed HEAD; got %q", msg)
 }
 
-func body_projectProvenanceAcceptanceTest_doesNotEmitAWorktreeProvenanceDiagnosticWhenTheW_85() {
+func doesNotEmitWorktreeProvenanceDiagnosticWorktree() {
 	original := listWorktreeStatus
 	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
 		return gitrepo.ParseWorktreeStatus([]byte{}), nil
@@ -212,7 +204,7 @@ func body_projectProvenanceAcceptanceTest_doesNotEmitAWorktreeProvenanceDiagnost
 	}
 }
 
-func body_projectProvenanceAcceptanceTest_emitsWorktreeStatusCheckFailedRatherThanDescribi_154() {
+func emitsWorktreeStatusCheckFailedRatherThan() {
 	original := listWorktreeStatus
 	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
 		return nil, errors.New("simulated git status failure")

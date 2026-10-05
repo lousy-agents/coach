@@ -65,7 +65,7 @@ var _ = Describe("RenderText project scope, provenance, and next-actions section
 		})
 
 		It("renders the project_scope block BEFORE any findings section", func() {
-			body_renderAcceptanceTest_rendersTheProjectScopeBlockBEFOREAnyFindingsSect_68(report)
+			rendersProjectScopeBlockBEFOREAnyFindings(report)
 		})
 
 		It("renders project_scope BEFORE project findings when ProjectChanges are present", func() {
@@ -236,7 +236,7 @@ var _ = Describe("RenderText project scope, provenance, and next-actions section
 	})
 })
 
-func body_renderAcceptanceTest_rendersTheProjectScopeBlockBEFOREAnyFindingsSect_68(report *codesignal.Report) {
+func rendersProjectScopeBlockBEFOREAnyFindings(report *codesignal.Report) {
 	text := ReportText(report)
 
 	scopeIdx := strings.Index(text, "Project scope:")

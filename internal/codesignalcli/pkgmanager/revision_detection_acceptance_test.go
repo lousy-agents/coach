@@ -14,7 +14,7 @@ var _ = Describe("snapshotReadPackageManagerField git error handling", func() {
 		It("returns ambiguous rather than treating the blob read failure as a clean absent field", func() {
 			originalRunner := runPackageManagerRevisionGit
 			runPackageManagerRevisionGit = func(dir string, args ...string) ([]byte, error) {
-				return body_projectProvenanceAcceptanceTest_234(dir, args, originalRunner)
+				return failBlobShow(dir, args, originalRunner)
 			}
 			DeferCleanup(func() { runPackageManagerRevisionGit = originalRunner })
 
@@ -34,7 +34,7 @@ var _ = Describe("snapshotDetectLockfileAtRoot git error handling", func() {
 		It("returns ambiguous rather than treating the error as a clean absent lockfile", func() {
 			originalRunner := runPackageManagerRevisionGit
 			runPackageManagerRevisionGit = func(dir string, args ...string) ([]byte, error) {
-				return body_projectProvenanceAcceptanceTest_257(dir, args, originalRunner)
+				return failLsTree(dir, args, originalRunner)
 			}
 			DeferCleanup(func() { runPackageManagerRevisionGit = originalRunner })
 
@@ -75,14 +75,14 @@ var _ = Describe("snapshotPackageManagerAtRevision context threading", func() {
 	})
 })
 
-func body_projectProvenanceAcceptanceTest_234(dir string, args []string, originalRunner func(dir string, args ...string) ([]byte, error)) ([]byte, error) {
+func failBlobShow(dir string, args []string, originalRunner func(dir string, args ...string) ([]byte, error)) ([]byte, error) {
 	if len(args) > 0 && args[0] == "show" {
 		return nil, errors.New("simulated blob read failure")
 	}
 	return originalRunner(dir, args...)
 }
 
-func body_projectProvenanceAcceptanceTest_257(dir string, args []string, originalRunner func(dir string, args ...string) ([]byte, error)) ([]byte, error) {
+func failLsTree(dir string, args []string, originalRunner func(dir string, args ...string) ([]byte, error)) ([]byte, error) {
 	// Fail ls-tree calls so gitrepo.FileExistsAtRevision errors on lockfile checks.
 	if len(args) > 0 && args[0] == "ls-tree" {
 		return nil, errors.New("simulated transient git failure")

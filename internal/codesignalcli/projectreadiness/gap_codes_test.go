@@ -40,12 +40,12 @@ func TestGapCodeMappings(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.code, func(t *testing.T) {
-			body_projectReadinessPart5Test_66(t, tc)
+			checkGapCodeMappings(t, tc)
 		})
 	}
 }
 
-func body_projectReadinessPart5Test_66(t *testing.T, tc struct {
+func checkGapCodeMappings(t *testing.T, tc struct {
 	code           string
 	wantStatus     Status
 	wantNextAction string

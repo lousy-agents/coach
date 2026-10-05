@@ -71,12 +71,12 @@ func TestParseChangedRanges(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_analyzePart4Test_123(t, tt)
+			checkParseChangedRanges(t, tt)
 		})
 	}
 }
 
-func body_analyzePart4Test_123(t *testing.T, tt struct {
+func checkParseChangedRanges(t *testing.T, tt struct {
 	name    string
 	diff    string
 	want    []codesignal.LineRange

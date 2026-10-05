@@ -9,24 +9,16 @@ import (
 )
 
 func TestRenderTextSummaryLineScopeDisclosure(t *testing.T) {
-	t.Run("discloses the filtered count under production scope", func(t *testing.T) {
-		body_renderTest_disclosesTheFilteredCountUnderProductionScope_13(t)
-	})
+	t.Run("discloses the filtered count under production scope", disclosesFilteredCountUnderProductionScope)
 
-	t.Run("discloses zero filtered without claiming no scope was applied", func(t *testing.T) {
-		body_renderTest_disclosesZeroFilteredWithoutClaimingNoScopeWasAp_32(t)
-	})
+	t.Run("discloses zero filtered without claiming no scope was applied", disclosesZeroFilteredWithoutClaimingNoScopeWas)
 
-	t.Run("all scope discloses no filtering applied", func(t *testing.T) {
-		body_renderTest_allScopeDisclosesNoFilteringApplied_51(t)
-	})
+	t.Run("all scope discloses no filtering applied", allScopeDisclosesNoFilteringApplied)
 
-	t.Run("unset applied scope keeps original summary line unchanged", func(t *testing.T) {
-		body_renderTest_unsetAppliedScopeKeepsOriginalSummaryLineUnchang_70(t)
-	})
+	t.Run("unset applied scope keeps original summary line unchanged", unsetAppliedScopeKeepsOriginalSummaryLineUnchanged)
 }
 
-func body_renderTest_disclosesTheFilteredCountUnderProductionScope_13(t *testing.T) {
+func disclosesFilteredCountUnderProductionScope(t *testing.T) {
 	report := &codesignal.Report{
 		Scope:   codesignal.Scope{AppliedScope: "production"},
 		Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
@@ -45,7 +37,7 @@ func body_renderTest_disclosesTheFilteredCountUnderProductionScope_13(t *testing
 	}
 }
 
-func body_renderTest_disclosesZeroFilteredWithoutClaimingNoScopeWasAp_32(t *testing.T) {
+func disclosesZeroFilteredWithoutClaimingNoScopeWas(t *testing.T) {
 	report := &codesignal.Report{
 		Scope:   codesignal.Scope{AppliedScope: "production"},
 		Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
@@ -64,7 +56,7 @@ func body_renderTest_disclosesZeroFilteredWithoutClaimingNoScopeWasAp_32(t *test
 	}
 }
 
-func body_renderTest_allScopeDisclosesNoFilteringApplied_51(t *testing.T) {
+func allScopeDisclosesNoFilteringApplied(t *testing.T) {
 	report := &codesignal.Report{
 		Scope:   codesignal.Scope{AppliedScope: "all"},
 		Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
@@ -83,7 +75,7 @@ func body_renderTest_allScopeDisclosesNoFilteringApplied_51(t *testing.T) {
 	}
 }
 
-func body_renderTest_unsetAppliedScopeKeepsOriginalSummaryLineUnchang_70(t *testing.T) {
+func unsetAppliedScopeKeepsOriginalSummaryLineUnchanged(t *testing.T) {
 	report := &codesignal.Report{
 		Summary:     codesignal.Summary{FilesAnalyzed: 3, ActiveSignals: 2},
 		Diagnostics: []codesignal.Diagnostic{{Path: "a.go", Kind: "k", Message: "m"}},

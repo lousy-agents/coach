@@ -101,23 +101,17 @@ const (
 
 var _ = Describe("mise npm-backend install command construction: lifecycle-script suppression (coach#328 Task 4, AC-4/AC-15)", func() {
 	When("mise's default (aube) backend installs the lifecycle-sentinel fixture from a loopback npm registry", func() {
-		It("never runs the fixture's lifecycle scripts, checked at the tarball's landing site under MISE_DATA_DIR", func() {
-			body_projectTsCompilerMiseCommandAcceptanceTest_neverRunsTheFixtureSLifecycleScriptsCheckedAtThe_40()
-		})
+		It("never runs the fixture's lifecycle scripts, checked at the tarball's landing site under MISE_DATA_DIR", neverRunsFixturesLifecycleScriptsCheckedTarballs)
 	})
 
 	When("mise's npm.shell_out setting forces it to shell out to a real npm for the install", func() {
-		It("still never runs the fixture's lifecycle scripts under that real npm invocation", func() {
-			body_projectTsCompilerMiseCommandAcceptanceTest_stillNeverRunsTheFixtureSLifecycleScriptsUnderTh_62()
-		})
+		It("still never runs the fixture's lifecycle scripts under that real npm invocation", stillNeverRunsFixturesLifecycleScriptsUnder)
 	})
 })
 
 var _ = Describe("mise npm-backend install command construction: insulated working directory (coach#328 Task 4, AC-16)", func() {
 	When("the analyzed repository's mise.toml carries a trusted env exec template that would write a sentinel", func() {
-		It("never executes it, because the real install runs from a private neutral working directory that never discovers the repository's config", func() {
-			body_projectTsCompilerMiseCommandAcceptanceTest_neverExecutesItBecauseTheRealInstallRunsFromAPri_90()
-		})
+		It("never executes it, because the real install runs from a private neutral working directory that never discovers the repository's config", neverExecutesBecauseRealInstallRunsFrom)
 	})
 })
 
@@ -274,15 +268,13 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 
 var _ = Describe("mise npm-backend install command construction: real end-to-end native-package classification (coach#328 Task 5 integration repair, Finding 1)", func() {
 	When("mise's default npm backend genuinely installs the frozen row's TypeScript version, with no fabricated filesystem layout standing in for it", func() {
-		It("classifies the freshly-installed compiler as eligible, not merely as an install that exited zero", func() {
-			body_projectTsCompilerMiseCommandAcceptanceTest_classifiesTheFreshlyInstalledCompilerAsEligibleN_281()
-		})
+		It("classifies the freshly-installed compiler as eligible, not merely as an install that exited zero", classifiesFreshlyInstalledCompilerEligibleNotMerely)
 	})
 })
 
 func copyFileTree(src, dst string) {
 	Expect(filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		return body_projectTsCompilerMiseCommandAcceptanceTest_298(p, d, err, src, dst)
+		return copyFileTreeEntry(p, d, err, src, dst)
 	})).To(Succeed())
 }
 
@@ -318,7 +310,7 @@ func startLifecycleSentinelRegistry() *httptest.Server {
 	Expect(err).NotTo(HaveOccurred())
 
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body_projectTsCompilerMiseCommandAcceptanceTest_349(w, r, tarball, tarballPath, packument, versionJSON)
+		serveLifecycleSentinelRegistry(w, r, tarball, tarballPath, packument, versionJSON)
 	}))
 	srv.Listener = ln
 	srv.Start()
@@ -465,7 +457,7 @@ func writeNonZeroExitStubMise() (dir string) {
 	return dir
 }
 
-func body_projectTsCompilerMiseCommandAcceptanceTest_neverRunsTheFixtureSLifecycleScriptsCheckedAtThe_40() {
+func neverRunsFixturesLifecycleScriptsCheckedTarballs() {
 	if _, err := exec.LookPath("mise"); err != nil {
 		Skip(fmt.Sprintf("mise not found on PATH; skipping the real mise install lifecycle-suppression spec (%s)", err))
 	}
@@ -485,7 +477,7 @@ func body_projectTsCompilerMiseCommandAcceptanceTest_neverRunsTheFixtureSLifecyc
 	Expect(anyFileNamed(dataDir, lifecycleSentinelFile)).To(BeFalse(), "the fixture's pre/postinstall script must never run under mise's npm backend suppression, checked at the tarball's landing site under MISE_DATA_DIR")
 }
 
-func body_projectTsCompilerMiseCommandAcceptanceTest_stillNeverRunsTheFixtureSLifecycleScriptsUnderTh_62() {
+func stillNeverRunsFixturesLifecycleScriptsUnder() {
 	if _, err := exec.LookPath("mise"); err != nil {
 		Skip(fmt.Sprintf("mise not found on PATH; skipping the mise npm.shell_out=true lifecycle-suppression spec (%s)", err))
 	}
@@ -509,7 +501,7 @@ func body_projectTsCompilerMiseCommandAcceptanceTest_stillNeverRunsTheFixtureSLi
 	Expect(anyFileNamed(dataDir, lifecycleSentinelFile)).To(BeFalse(), "the fixture's pre/postinstall script must never run under the real npm invocation mise's shell_out=true backend shells out to, checked at the tarball's landing site under MISE_DATA_DIR")
 }
 
-func body_projectTsCompilerMiseCommandAcceptanceTest_neverExecutesItBecauseTheRealInstallRunsFromAPri_90() {
+func neverExecutesBecauseRealInstallRunsFrom() {
 	if _, err := exec.LookPath("mise"); err != nil {
 		Skip(fmt.Sprintf("mise not found on PATH; skipping the real mise insulated-working-directory spec (%s)", err))
 	}
@@ -545,7 +537,7 @@ func body_projectTsCompilerMiseCommandAcceptanceTest_neverExecutesItBecauseTheRe
 	Expect(os.IsNotExist(statErr)).To(BeTrue(), "the repository's mise.toml env exec template must never execute during the insulated install")
 }
 
-func body_projectTsCompilerMiseCommandAcceptanceTest_classifiesTheFreshlyInstalledCompilerAsEligibleN_281() {
+func classifiesFreshlyInstalledCompilerEligibleNotMerely() {
 	if _, err := exec.LookPath("mise"); err != nil {
 		Skip(fmt.Sprintf("mise not found on PATH; skipping the real end-to-end mise install classification spec (%s)", err))
 	}
@@ -559,7 +551,7 @@ func body_projectTsCompilerMiseCommandAcceptanceTest_classifiesTheFreshlyInstall
 	Expect(result.NativePath).NotTo(BeEmpty(), "%+v", result)
 }
 
-func body_projectTsCompilerMiseCommandAcceptanceTest_298(p string, d fs.DirEntry, err error, src string, dst string) error {
+func copyFileTreeEntry(p string, d fs.DirEntry, err error, src string, dst string) error {
 	if err != nil {
 		return err
 	}
@@ -578,7 +570,7 @@ func body_projectTsCompilerMiseCommandAcceptanceTest_298(p string, d fs.DirEntry
 	return os.WriteFile(target, content, 0o644)
 }
 
-func body_projectTsCompilerMiseCommandAcceptanceTest_349(w http.ResponseWriter, r *http.Request, tarball []byte, tarballPath string, packument []byte, versionJSON []byte) {
+func serveLifecycleSentinelRegistry(w http.ResponseWriter, r *http.Request, tarball []byte, tarballPath string, packument []byte, versionJSON []byte) {
 	path := strings.TrimSuffix(r.URL.Path, "/")
 	switch path {
 	case "/" + lifecycleSentinelPackageName:

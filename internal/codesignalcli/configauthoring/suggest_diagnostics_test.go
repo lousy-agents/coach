@@ -136,12 +136,12 @@ func TestSuggestPrimaryRootDiagnostic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_projectConfigSuggestionPart3Test_133(t, tt)
+			checkSuggestPrimaryRootDiagnostic(t, tt)
 		})
 	}
 }
 
-func body_projectConfigSuggestionPart3Test_133(t *testing.T, tt struct {
+func checkSuggestPrimaryRootDiagnostic(t *testing.T, tt struct {
 	name     string
 	result   projectmodel.RootDiscoveryResult
 	wantCode string
@@ -179,27 +179,25 @@ func TestSnapshotUnavailableMessageNeverLeaksAbsolutePath(t *testing.T) {
 	const absoluteDir = "/tmp/coach-acceptance-repo-123"
 
 	t.Run("plain error embedding a known absolute path is stripped", func(t *testing.T) {
-		body_projectConfigSuggestionTest_plainErrorEmbeddingAKnownAbsolutePathIsStripped_24(t, absoluteDir)
+		plainErrorEmbeddingKnownAbsolutePathStripped(t, absoluteDir)
 	})
 
 	t.Run("fs.PathError is unwrapped to its errno, discarding Path entirely", func(t *testing.T) {
-		body_projectConfigSuggestionTest_fsPathErrorIsUnwrappedToItsErrnoDiscardingPathEn_35(t, absoluteDir)
+		fsPathErrorUnwrappedErrnoDiscardingPathEntirely(t, absoluteDir)
 	})
 
 	t.Run("git ls-tree error naming the resolved repository root is stripped", func(t *testing.T) {
-		body_projectConfigSuggestionTest_gitLsTreeErrorNamingTheResolvedRepositoryRootIsS_47(t, absoluteDir)
+		gitLsTreeErrorNamingResolvedRepositoryRoot(t, absoluteDir)
 	})
 
 	t.Run("snapshotListError whose wrapped git stderr embeds a known absolute path is stripped", func(t *testing.T) {
-		body_projectConfigSuggestionTest_snapshotListErrorWhoseWrappedGitStderrEmbedsAKno_55(t, absoluteDir)
+		snapshotListErrorWhoseWrappedGitStderrEmbedsKnownAbsolute(t, absoluteDir)
 	})
 
-	t.Run("git ls-tree error whose %q-rendering needed escaping is stripped in both raw and escaped form", func(t *testing.T) {
-		body_projectConfigSuggestionTest_gitLsTreeErrorWhoseQRenderingNeededEscapingIsStr_65(t)
-	})
+	t.Run("git ls-tree error whose %q-rendering needed escaping is stripped in both raw and escaped form", gitLsTreeErrorWhoseQRenderingNeeded)
 }
 
-func body_projectConfigSuggestionTest_plainErrorEmbeddingAKnownAbsolutePathIsStripped_24(t *testing.T, absoluteDir string) {
+func plainErrorEmbeddingKnownAbsolutePathStripped(t *testing.T, absoluteDir string) {
 	err := fmt.Errorf("coach codesignal: %s is not inside a Git worktree", absoluteDir)
 	got := snapshotUnavailableMessage("resolve HEAD", err, absoluteDir)
 	if strings.Contains(got, absoluteDir) {
@@ -210,7 +208,7 @@ func body_projectConfigSuggestionTest_plainErrorEmbeddingAKnownAbsolutePathIsStr
 	}
 }
 
-func body_projectConfigSuggestionTest_fsPathErrorIsUnwrappedToItsErrnoDiscardingPathEn_35(t *testing.T, absoluteDir string) {
+func fsPathErrorUnwrappedErrnoDiscardingPathEntirely(t *testing.T, absoluteDir string) {
 	pathErr := &fs.PathError{Op: "lstat", Path: absoluteDir, Err: fs.ErrNotExist}
 	wrapped := fmt.Errorf("resolving repository root: %w", pathErr)
 	got := snapshotUnavailableMessage("resolve the repository root", wrapped, "")
@@ -222,7 +220,7 @@ func body_projectConfigSuggestionTest_fsPathErrorIsUnwrappedToItsErrnoDiscarding
 	}
 }
 
-func body_projectConfigSuggestionTest_gitLsTreeErrorNamingTheResolvedRepositoryRootIsS_47(t *testing.T, absoluteDir string) {
+func gitLsTreeErrorNamingResolvedRepositoryRoot(t *testing.T, absoluteDir string) {
 	err := fmt.Errorf("coach: git ls-tree failed for revision %q in %q: exit status 128: fatal: not a tree object", "deadbeef", absoluteDir)
 	got := snapshotUnavailableMessage("read the HEAD snapshot", err, absoluteDir)
 	if strings.Contains(got, absoluteDir) {
@@ -230,7 +228,7 @@ func body_projectConfigSuggestionTest_gitLsTreeErrorNamingTheResolvedRepositoryR
 	}
 }
 
-func body_projectConfigSuggestionTest_snapshotListErrorWhoseWrappedGitStderrEmbedsAKno_55(t *testing.T, absoluteDir string) {
+func snapshotListErrorWhoseWrappedGitStderrEmbedsKnownAbsolute(t *testing.T, absoluteDir string) {
 
 	gitErr := fmt.Errorf("exit status 128: fatal: cannot change to '%s': No such file or directory", absoluteDir)
 	listErr := &revisionfs.ListError{Revision: "deadbeef", Dir: absoluteDir, Err: gitErr}
@@ -240,7 +238,7 @@ func body_projectConfigSuggestionTest_snapshotListErrorWhoseWrappedGitStderrEmbe
 	}
 }
 
-func body_projectConfigSuggestionTest_gitLsTreeErrorWhoseQRenderingNeededEscapingIsStr_65(t *testing.T) {
+func gitLsTreeErrorWhoseQRenderingNeeded(t *testing.T) {
 	const quotableDir = `/tmp/coach-acceptance-repo-123"quote\dir`
 	err := fmt.Errorf("coach: git ls-tree failed for revision %q in %q: exit status 128: fatal: not a tree object", "deadbeef", quotableDir)
 	got := snapshotUnavailableMessage("read the HEAD snapshot", err, quotableDir)

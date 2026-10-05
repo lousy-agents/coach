@@ -9,20 +9,14 @@ import (
 )
 
 func TestRenderTextCoverageSection(t *testing.T) {
-	t.Run("baseline report with excluded files shows Coverage section", func(t *testing.T) {
-		body_renderPart3Test_baselineReportWithExcludedFilesShowsCoverageSect_37(t)
-	})
+	t.Run("baseline report with excluded files shows Coverage section", baselineReportExcludedFilesShowsCoverageSection)
 
-	t.Run("non-baseline report with excluded files shows Coverage section", func(t *testing.T) {
-		body_renderPart3Test_nonBaselineReportWithExcludedFilesShowsCoverageS_56(t)
-	})
+	t.Run("non-baseline report with excluded files shows Coverage section", nonBaselineReportExcludedFilesShowsCoverageSection)
 
-	t.Run("non-baseline report with nil Coverage omits Coverage section", func(t *testing.T) {
-		body_renderPart3Test_nonBaselineReportWithNilCoverageOmitsCoverageSec_75(t)
-	})
+	t.Run("non-baseline report with nil Coverage omits Coverage section", nonBaselineReportNilCoverageOmitsCoverageSection)
 }
 
-func body_renderPart3Test_baselineReportWithExcludedFilesShowsCoverageSect_37(t *testing.T) {
+func baselineReportExcludedFilesShowsCoverageSection(t *testing.T) {
 	report := &codesignal.Report{
 		Scope:   codesignal.Scope{Baseline: true, Revision: "abc123"},
 		Summary: codesignal.Summary{FilesAnalyzed: 3, ActiveSignals: 0},
@@ -41,7 +35,7 @@ func body_renderPart3Test_baselineReportWithExcludedFilesShowsCoverageSect_37(t 
 	}
 }
 
-func body_renderPart3Test_nonBaselineReportWithExcludedFilesShowsCoverageS_56(t *testing.T) {
+func nonBaselineReportExcludedFilesShowsCoverageSection(t *testing.T) {
 	report := &codesignal.Report{
 		Scope:   codesignal.Scope{AppliedScope: "production"},
 		Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},
@@ -60,7 +54,7 @@ func body_renderPart3Test_nonBaselineReportWithExcludedFilesShowsCoverageS_56(t 
 	}
 }
 
-func body_renderPart3Test_nonBaselineReportWithNilCoverageOmitsCoverageSec_75(t *testing.T) {
+func nonBaselineReportNilCoverageOmitsCoverageSection(t *testing.T) {
 	report := &codesignal.Report{
 		Scope:   codesignal.Scope{AppliedScope: "all"},
 		Summary: codesignal.Summary{FilesAnalyzed: 12, ActiveSignals: 2},

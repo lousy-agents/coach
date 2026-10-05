@@ -54,7 +54,7 @@ var _ = Describe("NewGoSnapshotFS", func() {
 	})
 
 	It("lists every file tracked at revision, matching git ls-tree ground truth", func() {
-		body_projectSnapshotAcceptanceTest_listsEveryFileTrackedAtRevisionMatchingGitLsTree_62(dir, sha)
+		listsEveryFileTrackedRevisionMatchingGit(dir, sha)
 	})
 
 	It("reads a file's content via the returned fs.FS matching git show ground truth", func() {
@@ -67,7 +67,7 @@ var _ = Describe("NewGoSnapshotFS", func() {
 	})
 
 	It("visits every tracked file exactly once in lexical order via fs.WalkDir", func() {
-		body_projectSnapshotAcceptanceTest_visitsEveryTrackedFileExactlyOnceInLexicalOrderV_88(dir, sha)
+		visitsEveryTrackedFileExactlyOnceLexical(dir, sha)
 	})
 
 	It("returns an fs.ErrNotExist-compatible error for a path not tracked at the revision", func() {
@@ -104,7 +104,7 @@ var _ = Describe("NewGoSnapshotFS", func() {
 	})
 
 	It("stats a file's size without ever running `git show` (must not buffer blob content just to size it)", func() {
-		body_projectSnapshotAcceptanceTest_statsAFileSSizeWithoutEverRunningGitShowMustNotB_140(dir, sha)
+		statsFilesSizeWithoutEverRunningGit(dir, sha)
 	})
 
 	It("returns an error rather than an empty FS for an unresolvable revision", func() {
@@ -143,7 +143,7 @@ var _ = Describe("NewGoSnapshotFS", func() {
 	})
 })
 
-func body_projectSnapshotAcceptanceTest_listsEveryFileTrackedAtRevisionMatchingGitLsTree_62(dir string, sha string) {
+func listsEveryFileTrackedRevisionMatchingGit(dir string, sha string) {
 	fsys, err := New(dir, sha)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -160,7 +160,7 @@ func body_projectSnapshotAcceptanceTest_listsEveryFileTrackedAtRevisionMatchingG
 	Expect(got).To(Equal(snapshotGroundTruthLsTree(dir, sha)))
 }
 
-func body_projectSnapshotAcceptanceTest_visitsEveryTrackedFileExactlyOnceInLexicalOrderV_88(dir string, sha string) {
+func visitsEveryTrackedFileExactlyOnceLexical(dir string, sha string) {
 	fsys, err := New(dir, sha)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -179,7 +179,7 @@ func body_projectSnapshotAcceptanceTest_visitsEveryTrackedFileExactlyOnceInLexic
 	Expect(visited).To(ConsistOf("README.md", "main.go", "pkg/lib.go"))
 }
 
-func body_projectSnapshotAcceptanceTest_statsAFileSSizeWithoutEverRunningGitShowMustNotB_140(dir string, sha string) {
+func statsFilesSizeWithoutEverRunningGit(dir string, sha string) {
 	var invokedArgs [][]string
 	originalRunner := runSnapshotGit
 	DeferCleanup(func() { runSnapshotGit = originalRunner })

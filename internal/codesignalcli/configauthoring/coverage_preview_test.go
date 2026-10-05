@@ -15,23 +15,23 @@ func TestAuthorProjectConfig_CoveragePreviewShowsCandidateAndDirectoryCoverage(t
 	}
 
 	t.Run("mixed layer matches", func(t *testing.T) {
-		body_projectConfigAuthoringPart2Test_mixedLayerMatches_17(t, discovered)
+		coveragePreviewMixedLayerMatches(t, discovered)
 	})
 
 	t.Run("no layers declared at all: every discovered directory is shown as uncovered", func(t *testing.T) {
-		body_projectConfigAuthoringPart2Test_noLayersDeclaredAtAllEveryDiscoveredDirectoryIsS_89(t, discovered)
+		noLayersDeclaredAllEveryDiscoveredDirectoryShown(t, discovered)
 	})
 
 	t.Run("complete candidate and gate order", func(t *testing.T) {
-		body_projectConfigAuthoringPart2Test_completeCandidateAndGateOrder_57(t, discovered)
+		completeCandidateGateOrder(t, discovered)
 	})
 
 	t.Run("a layer whose prefix is the universal root \".\" matches every discovered directory and leaves nothing uncovered", func(t *testing.T) {
-		body_projectConfigAuthoringPart2Test_aLayerWhosePrefixIsTheUniversalRootMatchesEveryD_180(t, discovered)
+		aLayerWhosePrefixUniversalRootMatchesEvery(t, discovered)
 	})
 }
 
-func body_projectConfigAuthoringPart2Test_uncoveredLineListsAppsWebAndLibsxLegacyOnly_72(t *testing.T, out string) {
+func uncoveredLineListsAppsWebLibsxLegacyOnly(t *testing.T, out string) {
 	uncoveredLine := lineContaining(out, "no declared layer matches")
 	if uncoveredLine == "" {
 		t.Fatalf("expected an uncovered-directories line, got:\n%s", out)
@@ -47,7 +47,7 @@ func body_projectConfigAuthoringPart2Test_uncoveredLineListsAppsWebAndLibsxLegac
 	}
 }
 
-func body_projectConfigAuthoringPart2Test_noLayersDeclaredAtAllEveryDiscoveredDirectoryIsS_89(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func noLayersDeclaredAllEveryDiscoveredDirectoryShown(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, out := runAuthoring(discovered,
 		"1,2",
 		"",
@@ -74,7 +74,7 @@ func body_projectConfigAuthoringPart2Test_noLayersDeclaredAtAllEveryDiscoveredDi
 	}
 }
 
-func body_projectConfigAuthoringPart2Test_printsEveryCollectedFieldInTheCandidateSummary_133(t *testing.T, out string) {
+func printsEveryCollectedFieldCandidateSummary(t *testing.T, out string) {
 	rootsLine := lineContaining(out, "roots:")
 	if rootsLine == "" {
 		t.Fatalf("expected the candidate summary's roots line, got:\n%s", out)
@@ -108,7 +108,7 @@ func body_projectConfigAuthoringPart2Test_printsEveryCollectedFieldInTheCandidat
 	}
 }
 
-func body_projectConfigAuthoringPart2Test_printsCandidateSummaryThenCoveragePreviewThenApp_167(t *testing.T, out string) {
+func printsCandidateSummaryThenCoveragePreviewThenApproval(t *testing.T, out string) {
 	candidateIdx := strings.Index(out, "Candidate project config:")
 	coverageIdx := strings.Index(out, "Coverage preview:")
 	approvalIdx := strings.Index(out, "Type 'approve'")
@@ -120,7 +120,7 @@ func body_projectConfigAuthoringPart2Test_printsCandidateSummaryThenCoveragePrev
 	}
 }
 
-func body_projectConfigAuthoringPart2Test_aLayerWhosePrefixIsTheUniversalRootMatchesEveryD_180(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func aLayerWhosePrefixUniversalRootMatchesEvery(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, out := runAuthoring(discovered,
 		"1,2",
 		"everything", ".",
@@ -153,7 +153,7 @@ func body_projectConfigAuthoringPart2Test_aLayerWhosePrefixIsTheUniversalRootMat
 	}
 }
 
-func body_projectConfigAuthoringPart2Test_mixedLayerMatches_17(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func coveragePreviewMixedLayerMatches(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, out := runAuthoring(discovered,
 		"1,2",
 		"libsLayer", "libs",
@@ -173,23 +173,23 @@ func body_projectConfigAuthoringPart2Test_mixedLayerMatches_17(t *testing.T, dis
 	}
 
 	t.Run("layer libs matches libs/shared and not string-prefix sibling libsx/legacy", func(t *testing.T) {
-		body_projectConfigAuthoringPart2Test_layerLibsMatchesLibsSharedAndNotStringPrefixSibl_36(t, out)
+		layerLibsMatchesLibsSharedNotStringPrefix(t, out)
 	})
 
 	t.Run("layer apiLayer lists only apps/api", func(t *testing.T) {
-		body_projectConfigAuthoringPart2Test_layerApiLayerListsOnlyAppsApi_49(t, out)
+		layerApiLayerListsOnlyAppsApi(t, out)
 	})
 
 	t.Run("layer unusedLayer matches no discovered directory", func(t *testing.T) {
-		body_projectConfigAuthoringPart2Test_layerUnusedLayerMatchesNoDiscoveredDirectory_62(t, out)
+		layerUnusedLayerMatchesNoDiscoveredDirectory(t, out)
 	})
 
 	t.Run("uncovered line lists apps/web and libsx/legacy only", func(t *testing.T) {
-		body_projectConfigAuthoringPart2Test_uncoveredLineListsAppsWebAndLibsxLegacyOnly_72(t, out)
+		uncoveredLineListsAppsWebLibsxLegacyOnly(t, out)
 	})
 }
 
-func body_projectConfigAuthoringPart2Test_completeCandidateAndGateOrder_57(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func completeCandidateGateOrder(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, out := runAuthoring(discovered,
 		"1,2",
 		"apiLayer", "apps/api",
@@ -207,15 +207,15 @@ func body_projectConfigAuthoringPart2Test_completeCandidateAndGateOrder_57(t *te
 	}
 
 	t.Run("prints every collected field in the candidate summary", func(t *testing.T) {
-		body_projectConfigAuthoringPart2Test_printsEveryCollectedFieldInTheCandidateSummary_133(t, out)
+		printsEveryCollectedFieldCandidateSummary(t, out)
 	})
 
 	t.Run("prints candidate summary, then coverage preview, then approval prompt", func(t *testing.T) {
-		body_projectConfigAuthoringPart2Test_printsCandidateSummaryThenCoveragePreviewThenApp_167(t, out)
+		printsCandidateSummaryThenCoveragePreviewThenApproval(t, out)
 	})
 }
 
-func body_projectConfigAuthoringPart2Test_layerLibsMatchesLibsSharedAndNotStringPrefixSibl_36(t *testing.T, out string) {
+func layerLibsMatchesLibsSharedNotStringPrefix(t *testing.T, out string) {
 	libsLine := lineContaining(out, `layer "libsLayer" (prefixes:`)
 	if libsLine == "" {
 		t.Fatalf("expected a coverage line for layer libsLayer, got:\n%s", out)
@@ -228,7 +228,7 @@ func body_projectConfigAuthoringPart2Test_layerLibsMatchesLibsSharedAndNotString
 	}
 }
 
-func body_projectConfigAuthoringPart2Test_layerApiLayerListsOnlyAppsApi_49(t *testing.T, out string) {
+func layerApiLayerListsOnlyAppsApi(t *testing.T, out string) {
 	apiLine := lineContaining(out, `layer "apiLayer" (prefixes:`)
 	if apiLine == "" {
 		t.Fatalf("expected a coverage line for layer apiLayer, got:\n%s", out)
@@ -241,7 +241,7 @@ func body_projectConfigAuthoringPart2Test_layerApiLayerListsOnlyAppsApi_49(t *te
 	}
 }
 
-func body_projectConfigAuthoringPart2Test_layerUnusedLayerMatchesNoDiscoveredDirectory_62(t *testing.T, out string) {
+func layerUnusedLayerMatchesNoDiscoveredDirectory(t *testing.T, out string) {
 	unusedLine := lineContaining(out, `layer "unusedLayer" (prefixes:`)
 	if unusedLine == "" {
 		t.Fatalf("expected a coverage line for layer unusedLayer, got:\n%s", out)

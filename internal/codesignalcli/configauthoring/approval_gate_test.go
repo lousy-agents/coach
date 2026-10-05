@@ -27,20 +27,20 @@ func TestAuthorProjectConfig_ApprovalGateRequiresExactApprovalToken(t *testing.T
 
 	for _, tc := range declineCases {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectConfigAuthoringPart10Test_24(t, discovered, tc)
+			checkApprovalGateRequiresExactApprovalToken(t, discovered, tc)
 		})
 	}
 
 	t.Run("approves with the exact approval token", func(t *testing.T) {
-		body_projectConfigAuthoringPart10Test_approvesWithTheExactApprovalToken_44(t, discovered)
+		approvesExactApprovalToken(t, discovered)
 	})
 
 	t.Run("approves case-insensitively", func(t *testing.T) {
-		body_projectConfigAuthoringPart10Test_approvesCaseInsensitively_58(t, discovered)
+		approvesCaseInsensitively(t, discovered)
 	})
 }
 
-func body_projectConfigAuthoringPart10Test_24(t *testing.T, discovered projectmodel.TSRootDiscoveryResult, tc struct {
+func checkApprovalGateRequiresExactApprovalToken(t *testing.T, discovered projectmodel.TSRootDiscoveryResult, tc struct {
 	name   string
 	answer string
 }) {
@@ -56,11 +56,11 @@ func body_projectConfigAuthoringPart10Test_24(t *testing.T, discovered projectmo
 		t.Fatalf("expected Approved = false for answer %q, got true", tc.answer)
 	}
 	t.Run("declining is not a cancellation", func(t *testing.T) {
-		body_projectConfigAuthoringPart10Test_decliningIsNotACancellation_36(t, tc, result)
+		decliningNotCancellation(t, tc, result)
 	})
 }
 
-func body_projectConfigAuthoringPart10Test_decliningIsNotACancellation_36(t *testing.T, tc struct {
+func decliningNotCancellation(t *testing.T, tc struct {
 	name   string
 	answer string
 }, result Result) {
@@ -69,7 +69,7 @@ func body_projectConfigAuthoringPart10Test_decliningIsNotACancellation_36(t *tes
 	}
 }
 
-func body_projectConfigAuthoringPart10Test_approvesWithTheExactApprovalToken_44(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func approvesExactApprovalToken(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, _ := runAuthoring(discovered,
 		"1",
 		"api", "apps/api",
@@ -83,7 +83,7 @@ func body_projectConfigAuthoringPart10Test_approvesWithTheExactApprovalToken_44(
 	}
 }
 
-func body_projectConfigAuthoringPart10Test_approvesCaseInsensitively_58(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func approvesCaseInsensitively(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	result, _ := runAuthoring(discovered,
 		"1",
 		"api", "apps/api",
@@ -102,7 +102,7 @@ func TestAuthorProjectConfig_ApprovalGateTerminatesPromptlyOnExhaustedOrErroring
 	const watchdog = 3 * time.Second
 
 	assertNotApprovedBeforeWatchdog := func(t *testing.T, in io.Reader) {
-		body_projectConfigAuthoringPart13Test_20(t, in, discovered, watchdog)
+		checkApprovalGateTerminatesPromptlyExhaustedErroring(t, in, discovered, watchdog)
 	}
 
 	t.Run("persistent non-EOF read error does not approve and returns before watchdog", func(t *testing.T) {
@@ -116,7 +116,7 @@ func TestAuthorProjectConfig_ApprovalGateTerminatesPromptlyOnExhaustedOrErroring
 	})
 }
 
-func body_projectConfigAuthoringPart13Test_20(t *testing.T, in io.Reader, discovered projectmodel.TSRootDiscoveryResult, watchdog time.Duration) {
+func checkApprovalGateTerminatesPromptlyExhaustedErroring(t *testing.T, in io.Reader, discovered projectmodel.TSRootDiscoveryResult, watchdog time.Duration) {
 	t.Helper()
 	type outcome struct {
 		result Result
@@ -140,15 +140,15 @@ func TestAuthorProjectConfig_DeclinedApprovalNeverReachesTheWritePath(t *testing
 	discovered := projectmodel.TSRootDiscoveryResult{Roots: []string{"apps/api"}, Complete: true}
 
 	t.Run("with --output set, no file is created", func(t *testing.T) {
-		body_projectConfigAuthoringPart9Test_withOutputSetNoFileIsCreated_18(t, discovered)
+		withOutputSetNoFileCreated(t, discovered)
 	})
 
 	t.Run("with --output unset, nothing beyond the interactive text is written to out", func(t *testing.T) {
-		body_projectConfigAuthoringPart9Test_withOutputUnsetNothingBeyondTheInteractiveTextIs_50(t, discovered)
+		withOutputUnsetNothingBeyondInteractiveTextWritten(t, discovered)
 	})
 }
 
-func body_projectConfigAuthoringPart9Test_withOutputSetNoFileIsCreated_18(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func withOutputSetNoFileCreated(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	dir := t.TempDir()
 	outputPath := "project-config.json"
 	out := &bytes.Buffer{}
@@ -180,7 +180,7 @@ func body_projectConfigAuthoringPart9Test_withOutputSetNoFileIsCreated_18(t *tes
 	}
 }
 
-func body_projectConfigAuthoringPart9Test_withOutputUnsetNothingBeyondTheInteractiveTextIs_50(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
+func withOutputUnsetNothingBeyondInteractiveTextWritten(t *testing.T, discovered projectmodel.TSRootDiscoveryResult) {
 	out := &bytes.Buffer{}
 	in := strings.NewReader(strings.Join([]string{
 		"1",

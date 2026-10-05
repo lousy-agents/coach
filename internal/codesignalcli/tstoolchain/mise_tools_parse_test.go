@@ -19,12 +19,12 @@ func TestParseMiseToolValue(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectTsCompilerResolvePart3Test_23(t, tc)
+			checkParseMiseToolValue(t, tc)
 		})
 	}
 }
 
-func body_projectTsCompilerResolvePart3Test_23(t *testing.T, tc struct {
+func checkParseMiseToolValue(t *testing.T, tc struct {
 	name  string
 	value string
 	want  []string

@@ -22,7 +22,7 @@ func TestMiseToolVersionToken(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectTsCompilerMiseVersionTest_22(t, tc)
+			checkMiseToolVersionToken(t, tc)
 		})
 	}
 }
@@ -37,24 +37,16 @@ func stubProbeMiseToolVersion(t *testing.T, version string, ok bool) {
 }
 
 func TestEvaluateMiseToolVersionReadiness(t *testing.T) {
-	t.Run("in-row version is ready", func(t *testing.T) {
-		body_projectTsCompilerMiseVersionTest_inRowVersionIsReady_41(t)
-	})
+	t.Run("in-row version is ready", miseVersionInRowReady)
 
-	t.Run("out-of-row version is unsupported", func(t *testing.T) {
-		body_projectTsCompilerMiseVersionTest_outOfRowVersionIsUnsupported_49(t)
-	})
+	t.Run("out-of-row version is unsupported", outRowVersionUnsupported)
 
-	t.Run("failed probe is unverifiable", func(t *testing.T) {
-		body_projectTsCompilerMiseVersionTest_failedProbeIsUnverifiable_57(t)
-	})
+	t.Run("failed probe is unverifiable", miseVersionFailedProbeUnverifiable)
 
-	t.Run("empty successful probe output is unverifiable, not unsupported", func(t *testing.T) {
-		body_projectTsCompilerMiseVersionTest_emptySuccessfulProbeOutputIsUnverifiableNotUnsup_65(t)
-	})
+	t.Run("empty successful probe output is unverifiable, not unsupported", emptySuccessfulProbeOutputUnverifiableNotUnsupported)
 }
 
-func body_projectTsCompilerMiseVersionTest_22(t *testing.T, tc struct {
+func checkMiseToolVersionToken(t *testing.T, tc struct {
 	name   string
 	input  string
 	want   string
@@ -66,7 +58,7 @@ func body_projectTsCompilerMiseVersionTest_22(t *testing.T, tc struct {
 	}
 }
 
-func body_projectTsCompilerMiseVersionTest_inRowVersionIsReady_41(t *testing.T) {
+func miseVersionInRowReady(t *testing.T) {
 	stubProbeMiseToolVersion(t, "2026.9.5 linux-x64 (2026-09-10)", true)
 	got := evaluateMiseToolVersionReadiness(context.Background())
 	if !got.ready || got.code != "" {
@@ -74,7 +66,7 @@ func body_projectTsCompilerMiseVersionTest_inRowVersionIsReady_41(t *testing.T) 
 	}
 }
 
-func body_projectTsCompilerMiseVersionTest_outOfRowVersionIsUnsupported_49(t *testing.T) {
+func outRowVersionUnsupported(t *testing.T) {
 	stubProbeMiseToolVersion(t, "2025.1.0 linux-x64 (2025-01-01)", true)
 	got := evaluateMiseToolVersionReadiness(context.Background())
 	if got.ready || got.code != projectreadiness.GapPackageManagerVersionUnsupported {
@@ -82,7 +74,7 @@ func body_projectTsCompilerMiseVersionTest_outOfRowVersionIsUnsupported_49(t *te
 	}
 }
 
-func body_projectTsCompilerMiseVersionTest_failedProbeIsUnverifiable_57(t *testing.T) {
+func miseVersionFailedProbeUnverifiable(t *testing.T) {
 	stubProbeMiseToolVersion(t, "", false)
 	got := evaluateMiseToolVersionReadiness(context.Background())
 	if got.ready || got.code != projectreadiness.GapPackageManagerVersionUnverifiable {
@@ -90,7 +82,7 @@ func body_projectTsCompilerMiseVersionTest_failedProbeIsUnverifiable_57(t *testi
 	}
 }
 
-func body_projectTsCompilerMiseVersionTest_emptySuccessfulProbeOutputIsUnverifiableNotUnsup_65(t *testing.T) {
+func emptySuccessfulProbeOutputUnverifiableNotUnsupported(t *testing.T) {
 	stubProbeMiseToolVersion(t, "   ", true)
 	got := evaluateMiseToolVersionReadiness(context.Background())
 	if got.ready || got.code != projectreadiness.GapPackageManagerVersionUnverifiable {

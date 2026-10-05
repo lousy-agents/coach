@@ -56,12 +56,12 @@ func TestRenderTextLineIsOneBasedFromStartRow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_renderPart2Test_94(t, tt)
+			checkRenderTextLineOneBasedFrom(t, tt)
 		})
 	}
 }
 
-func body_renderPart2Test_94(t *testing.T, tt struct {
+func checkRenderTextLineOneBasedFrom(t *testing.T, tt struct {
 	name     string
 	startRow uint
 	wantLine string

@@ -72,12 +72,12 @@ func TestAuthorProjectConfig_ExhaustedInputCancelsInsteadOfSpinning(t *testing.T
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body_projectConfigAuthoringPart10Test_134(t, discovered, watchdog, tc)
+			checkExhaustedInputCancelsInsteadSpinning(t, discovered, watchdog, tc)
 		})
 	}
 }
 
-func body_projectConfigAuthoringPart10Test_134(t *testing.T, discovered projectmodel.TSRootDiscoveryResult, watchdog time.Duration, tc struct {
+func checkExhaustedInputCancelsInsteadSpinning(t *testing.T, discovered projectmodel.TSRootDiscoveryResult, watchdog time.Duration, tc struct {
 	name       string
 	lines      []string
 	wantSubstr string

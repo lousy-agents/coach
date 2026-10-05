@@ -16,9 +16,7 @@ import (
 )
 
 var _ = Describe("source_sink_pack config field disposition", func() {
-	It("never changes which findings the real Go backend produces or their content, but does change config_digest/id/fingerprint", func() {
-		body_projectAcceptanceTest_neverChangesWhichFindingsTheRealGoBackendProduce_858()
-	})
+	It("never changes which findings the real Go backend produces or their content, but does change config_digest/id/fingerprint", neverChangesWhichFindingsRealGoBackend)
 })
 
 var _ = Describe("Go layer-bypass search coverage folding into project lifecycle", func() {
@@ -95,9 +93,7 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_layer_bypass_coverage_incomplete")).To(Equal(0))
 	})
 
-	It("degrades only the base-side coverage-incomplete diagnostic to base_-prefixed and still marks the report indeterminate when only the base revision's search is incomplete", func() {
-		body_projectAcceptanceTest_degradesOnlyTheBaseSideCoverageIncompleteDiagnos_1021()
-	})
+	It("degrades only the base-side coverage-incomplete diagnostic to base_-prefixed and still marks the report indeterminate when only the base revision's search is incomplete", degradesOnlyBaseSideCoverageIncompleteDiagnostic)
 
 	It("keeps head- and base-side coverage-incomplete diagnostics distinct when both revisions' searches are incomplete", func() {
 		buildGoLayerBypass = func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error) {
@@ -124,7 +120,7 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 	})
 })
 
-func body_projectAcceptanceTest_neverChangesWhichFindingsTheRealGoBackendProduce_858() {
+func neverChangesWhichFindingsRealGoBackend() {
 	dir := gitfixture.Init(GinkgoT())
 	gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
 	gitfixture.CommitFile(GinkgoT(), dir, "pkg/db/db.go", "package db\n\nvar Name = \"db\"\n")
@@ -191,7 +187,7 @@ func body_projectAcceptanceTest_neverChangesWhichFindingsTheRealGoBackendProduce
 	Expect(withJSON).NotTo(Equal(withoutJSON), "config_digest/id/fingerprint differ, so the full rendered JSON documents must differ too")
 }
 
-func body_projectAcceptanceTest_degradesOnlyTheBaseSideCoverageIncompleteDiagnos_1021() {
+func degradesOnlyBaseSideCoverageIncompleteDiagnostic() {
 	callCount := 0
 	buildGoLayerBypass = func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error) {
 		callCount++

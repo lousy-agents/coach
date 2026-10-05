@@ -22,9 +22,7 @@ import (
 // directly (bypassing the CLI's run() entrypoint) so the test process's own
 // cwd differs from req.Dir.
 var _ = Describe("tsProjectBackend compiler resolution", Label("ts-project-backend"), func() {
-	BeforeEach(func() {
-		body_projectAcceptanceTest_436()
-	})
+	BeforeEach(skipWithoutRealTypeScriptCompiler)
 
 	When("ProjectBackendRequest.Dir differs from the test process's own working directory", func() {
 		It("resolves the TypeScript compiler relative to req.Dir's repository root, not the process cwd", func() {
@@ -65,9 +63,7 @@ var _ = Describe("tsProjectBackend compiler resolution", Label("ts-project-backe
 })
 
 var _ = Describe("tsProjectBackend compiler resolution from a subdirectory invocation", Label("ts-project-backend"), func() {
-	BeforeEach(func() {
-		body_projectAcceptanceTest_481()
-	})
+	BeforeEach(skipWithoutRealTypeScriptCompiler)
 
 	When("ProjectBackendRequest.Dir is a subdirectory of the repository, not its root", func() {
 		It("still resolves the compiler declared and installed at the repository root", func() {
@@ -101,9 +97,7 @@ var _ = Describe("tsProjectBackend compiler resolution from a subdirectory invoc
 })
 
 var _ = Describe("tsProjectBackend compiler resolution from a nested TypeScript project", Label("ts-project-backend"), func() {
-	BeforeEach(func() {
-		body_projectAcceptanceTest_519()
-	})
+	BeforeEach(skipWithoutRealTypeScriptCompiler)
 
 	When("the repository has no top-level package.json and the policy names a nested js/semantics-shaped root that pins an exact installed compiler", func() {
 		It("resolves that nested manifest's compiler and produces a complete analysis rather than failing with no locatable compiler", func() {
@@ -138,19 +132,7 @@ var _ = Describe("tsProjectBackend compiler resolution from a nested TypeScript 
 	})
 })
 
-func body_projectAcceptanceTest_436() {
-	if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-		Skip(reason)
-	}
-}
-
-func body_projectAcceptanceTest_481() {
-	if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
-		Skip(reason)
-	}
-}
-
-func body_projectAcceptanceTest_519() {
+func skipWithoutRealTypeScriptCompiler() {
 	if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
 		Skip(reason)
 	}
