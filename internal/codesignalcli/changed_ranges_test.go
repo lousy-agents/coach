@@ -3,35 +3,8 @@ package codesignalcli
 import (
 	"testing"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
-	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/semantics"
 )
-
-// TestAnalyzeChangesThreadsScopeAndCoverage verifies that AnalyzeChanges
-// propagates its appliedScope and excluded parameters into the returned
-// Report: a non-empty appliedScope becomes report.Scope.AppliedScope, a
-// non-empty excluded becomes report.Coverage.Excluded, and an empty/nil
-// excluded leaves report.Coverage nil (rather than a non-nil Coverage with an
-// empty Excluded slice).
-func TestAnalyzeChangesThreadsScopeAndCoverage(t *testing.T) {
-	dir := gitfixture.Init(t)
-	initialSHA := gitfixture.CommitFile(t, dir, "healthy.go", "package healthy\n")
-	headSHA := gitfixture.CommitFile(t, dir, "healthy.go", "package healthy\n\nfunc Update(input *int) { *input = 1 }\n")
-
-	files := []gitrepo.SelectedFile{
-		{Path: "healthy.go", Status: "modified", Language: semantics.LanguageGo},
-	}
-
-	t.Run("non-empty scope and excluded", func(t *testing.T) {
-		body_analyzePart4Test_nonEmptyScopeAndExcluded_28(t, dir, initialSHA, headSHA, files)
-	})
-
-	t.Run("nil excluded leaves Coverage nil", func(t *testing.T) {
-		body_analyzePart4Test_nilExcludedLeavesCoverageNil_47(t, dir, initialSHA, headSHA, files)
-	})
-}
 
 func TestParseChangedRanges(t *testing.T) {
 	tests := []struct {
@@ -101,4 +74,37 @@ func TestParseChangedRanges(t *testing.T) {
 			body_analyzePart4Test_123(t, tt)
 		})
 	}
+}
+
+func body_analyzePart4Test_123(t *testing.T, tt struct {
+	name    string
+	diff    string
+	want    []codesignal.LineRange
+	wantErr bool
+}) {
+	got, err := parseChangedRanges([]byte(tt.diff))
+	if tt.wantErr {
+		if err == nil {
+			t.Fatalf("parseChangedRanges(%q): want error, got nil", tt.diff)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("parseChangedRanges(%q): unexpected error: %v", tt.diff, err)
+	}
+	if !rangesEqual(got, tt.want) {
+		t.Errorf("parseChangedRanges(%q) = %#v, want %#v", tt.diff, got, tt.want)
+	}
+}
+
+func rangesEqual(a, b []codesignal.LineRange) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

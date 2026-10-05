@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -97,8 +96,3 @@ func baseSyntaxDiagnostics(path string, baseErr error) []codesignal.Diagnostic {
 	}
 	return diagnostics
 }
-
-// hunkHeaderPattern matches a unified diff hunk header:
-// "@@ -oldStart[,oldCount] +newStart[,newCount] @@" (trailing section
-// heading ignored).
-var hunkHeaderPattern = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)

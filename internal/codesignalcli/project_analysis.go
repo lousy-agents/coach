@@ -1,3 +1,8 @@
+// Package codesignalcli is the scan use case behind `coach codesignal`: it
+// analyzes the selected files of a diff or a repository baseline, hands a
+// validated project policy to its language's project backend (Go or
+// TypeScript), and discloses worktree state the committed report cannot see.
+// The adapters and other use cases it builds on live in its sub-packages.
 package codesignalcli
 
 import (

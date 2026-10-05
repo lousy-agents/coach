@@ -4,11 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
+
+// hunkHeaderPattern matches a unified diff hunk header:
+// "@@ -oldStart[,oldCount] +newStart[,newCount] @@" (trailing section
+// heading ignored).
+var hunkHeaderPattern = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)
 
 func parseChangedRanges(diff []byte) ([]codesignal.LineRange, error) {
 	var ranges []codesignal.LineRange

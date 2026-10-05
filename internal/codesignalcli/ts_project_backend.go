@@ -5,16 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/pkgmanager"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
-	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 	"github.com/lousy-agents/coach/internal/projectbridge"
-	"github.com/lousy-agents/coach/pkg/codesignal"
-	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
 // tsSidecarWallTime is the TS sidecar call's TSSidecarOptions.Timeout: the
@@ -181,82 +177,4 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	result.BaseReachabilityCoverage = &basePhases.reachability
 	result.BaseAnalyzed = true
 	return result, nil
-}
-
-// evaluateRevision builds a TypeScript project model at revision ONCE and
-// derives every observation from that single Model: layer violations
-// (always), layer bypass (only when hasBypassLayer, see
-// evaluateLayerBypass), and possible-call-reachability ProjectFacts
-// (always) -- reachability's own Coverage never folds into the returned
-// Coverage, so a routine reachability gap alone stays visible only through
-// model.Coverage.Diagnostics and the returned facts, never degrading an
-// otherwise complete layer finding.
-func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, runtime *tsRuntime, roots []string, policy codesignal.LayerPolicy, bypassLayer projectmodel.BypassLayer, hasBypassLayer bool, configDigest string) ([]codesignal.ProjectChange, []codesignal.ProjectFact, []codesignal.Diagnostic, projectmodel.Coverage, *projectmodel.ProjectScope, tsPhaseCoverage, error) {
-	snapshot, err := revisionfs.New(dir, revision)
-	if err != nil {
-		return nil, nil, nil, projectmodel.Coverage{}, nil, tsPhaseCoverage{}, fmt.Errorf("coach: building TypeScript snapshot at revision %q: %w", revision, err)
-	}
-
-	model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, projectmodel.SnapshotMeta{
-		Revision:     revision,
-		ConfigDigest: configDigest,
-	}, projectmodel.TSSidecarOptions{
-		BinaryPath: runtime.ExecPath,
-		Args:       runtime.ExecArgs,
-		Dir:        runtime.AnalyzerDir,
-		Path:       filepath.Dir(runtime.ExecPath),
-		Roots:      roots,
-		Timeout:    tsSidecarWallTime,
-		Budgets:    tsProjectBudgets,
-	})
-	if err != nil {
-		return nil, nil, nil, projectmodel.Coverage{}, nil, tsPhaseCoverage{}, fmt.Errorf("coach: building TypeScript project model at revision %q: %w", revision, err)
-	}
-
-	resolved, hasScope, err := revisionProjectScope(model, roots, policy, revision)
-	if err != nil {
-		return nil, nil, nil, projectmodel.Coverage{}, nil, tsPhaseCoverage{}, err
-	}
-	var scope *projectmodel.ProjectScope
-	if hasScope {
-		scope = &resolved
-	}
-
-	changes, _ := codesignal.EvaluateTypeScriptLayerViolations(model, policy, tsLayerRuleVersion, tsLayerBackendVersion, configDigest)
-	modelCoverage := model.Coverage
-	coverage := modelCoverage
-	var diagnostics []codesignal.Diagnostic
-	bypassPhaseCoverage := projectmodel.Coverage{Phase: tsBypassPhaseNotRequested, Complete: true}
-
-	if hasBypassLayer {
-		var bypassChanges []codesignal.ProjectChange
-		bypassChanges, diagnostics, coverage, bypassPhaseCoverage = b.evaluateLayerBypass(ctx, model, bypassLayer, configDigest)
-		changes = append(changes, bypassChanges...)
-	}
-
-	reachability := projectmodel.BuildTypeScriptReachabilityFromModel(model)
-	facts := codesignal.ReachabilityProjectFacts(reachability, "typescript")
-
-	phases := tsPhaseCoverage{
-		model:        modelCoverage,
-		bypass:       bypassPhaseCoverage,
-		reachability: reachability.Coverage,
-	}
-
-	return changes, facts, diagnostics, coverage, scope, phases, nil
-}
-
-// evaluateLayerBypass folds bypassResult.Coverage into model.Coverage via
-// tsBypassCoverageForFold rather than verbatim: BuildTypeScriptLayerBypassFromModel
-// folds a routine, per-hop reachability gap into its own Coverage.Complete,
-// which is not itself a project-model or requested-bypass failure --
-// folding that in unchanged would wrongly degrade an otherwise complete
-// layer-violation finding to lifecycle "unknown" over the ordinary shape of
-// layered code. Its fourth return value is the pre-fold bypass coverage.
-func (b *tsProjectBackend) evaluateLayerBypass(ctx context.Context, model projectmodel.Model, bypassLayer projectmodel.BypassLayer, configDigest string) ([]codesignal.ProjectChange, []codesignal.Diagnostic, projectmodel.Coverage, projectmodel.Coverage) {
-	bypassResult := projectmodel.BuildTypeScriptLayerBypassFromModel(ctx, model, bypassLayer)
-	bypassChanges, bypassDiagnostics := codesignal.EvaluateTypeScriptLayerBypass(bypassResult, tsBypassRuleVersion, tsBypassBackendVersion, configDigest)
-	bypassPhaseCoverage := tsBypassCoverageForFold(model.Coverage, bypassResult.Coverage)
-	coverage := combineProjectCoverage(model.Coverage, bypassPhaseCoverage)
-	return bypassChanges, bypassDiagnostics, coverage, bypassPhaseCoverage
 }

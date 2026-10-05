@@ -222,22 +222,3 @@ func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 
 	return changes, diagnostics, coverage, nil
 }
-
-// layerPolicyFromConfig translates the already-schema-validated
-// projectconfig.Config layers/forbidden_imports into codesignal.LayerPolicy. It is
-// language-agnostic (projectconfig.Config/LayerPolicy have no Go- or TS-specific
-// fields), so both goProjectBackend and tsProjectBackend share it.
-func layerPolicyFromConfig(config projectconfig.Config) codesignal.LayerPolicy {
-	layers := make([]codesignal.ArchitectureLayer, len(config.Layers))
-	for i, layer := range config.Layers {
-		layers[i] = codesignal.ArchitectureLayer{
-			Name:     layer.Name,
-			Prefixes: append([]string(nil), layer.Prefixes...),
-		}
-	}
-	forbidden := make([]codesignal.ForbiddenLayerImport, len(config.ForbiddenImports))
-	for i, f := range config.ForbiddenImports {
-		forbidden[i] = codesignal.ForbiddenLayerImport{From: f.From, To: f.To}
-	}
-	return codesignal.LayerPolicy{Layers: layers, ForbiddenImports: forbidden}
-}

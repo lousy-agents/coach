@@ -3,29 +3,19 @@ package codesignalcli
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
-	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/render"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
-	"github.com/lousy-agents/coach/internal/tstestutil"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 	"github.com/lousy-agents/coach/pkg/semantics"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
-
-func (b identityHandoffBackend) Analyze(context.Context, ProjectBackendRequest) (*ProjectBackendResult, error) {
-	return b.result, nil
-}
 
 var _ = Describe("project-analysis text rendering", func() {
 	It("renders active project observations, structured paths, and project coverage", func() {
@@ -183,11 +173,6 @@ var _ = Describe("project-analysis text rendering", func() {
 		Expect(text).To(ContainSubstring("path step: package:pkg/a (pkg/a), resolution: resolved, confidence: high"))
 	})
 })
-
-type recordingProjectBackend struct {
-	requests []ProjectBackendRequest
-	result   *ProjectBackendResult
-}
 
 var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges", func() {
 	It("threads baseline project results into a schema-2 report and skips the seam when project is nil", func() {
@@ -432,179 +417,6 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 	})
 })
 
-// Mutation testing showed that swapping filepath.Join(req.Dir, ...) for a
-// bare repository-root-relative lookup left the whole cmd/coach acceptance
-// suite green, because every existing test happens to run with the
-// process's cwd equal to req.Dir. This spec calls tsProjectBackend.Analyze
-// directly (bypassing the CLI's run() entrypoint) so the test process's own
-// cwd differs from req.Dir.
-var _ = Describe("tsProjectBackend compiler resolution", Label("ts-project-backend"), func() {
-	BeforeEach(func() {
-		body_projectAcceptanceTest_436()
-	})
-
-	When("ProjectBackendRequest.Dir differs from the test process's own working directory", func() {
-		It("resolves the TypeScript compiler relative to req.Dir's repository root, not the process cwd", func() {
-			cwd, err := os.Getwd()
-			Expect(err).NotTo(HaveOccurred())
-
-			repo := gitfixture.Init(GinkgoT())
-			Expect(repo).NotTo(Equal(cwd), "the temp repo must differ from the test process's cwd for this assertion to be meaningful")
-
-			version := tsAcceptanceRealTypescriptVersion()
-			gitfixture.CommitFile(GinkgoT(), repo, "package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
-			gitfixture.CommitFile(GinkgoT(), repo, "tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
-			sha := gitfixture.CommitFile(GinkgoT(), repo, "a.ts", "export const a = 1;\n")
-			installRealTypescriptCompilerAt(repo)
-
-			cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
-			backend := NewTSProjectBackend()
-
-			result, err := backend.Analyze(context.Background(), ProjectBackendRequest{
-				Dir:          repo,
-				HeadRevision: sha,
-				Baseline:     true,
-				Config:       cfg,
-				ConfigDigest: projectconfig.Digest(cfg),
-				Language:     "typescript",
-			})
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.HeadCoverage).NotTo(BeNil())
-			Expect(result.HeadCoverage.Complete).To(BeTrue(), "the compiler must have been resolved and the analyzer invoked via req.Dir's repository-root-relative resolution")
-			Expect(result.RuntimeKind).To(Equal(runtimeKindNode))
-			Expect(result.RuntimeVersion).To(MatchRegexp(`^v?\d+\.\d+\.\d+`))
-			Expect(result.RuntimeOrigin).To(Equal(runtimeOriginPath))
-			Expect(result.CompilerVersion).To(Equal(version))
-			Expect(result.CompilerOrigin).To(Equal(tstoolchain.OriginProject))
-		})
-	})
-})
-
-var _ = Describe("tsProjectBackend compiler resolution from a subdirectory invocation", Label("ts-project-backend"), func() {
-	BeforeEach(func() {
-		body_projectAcceptanceTest_481()
-	})
-
-	When("ProjectBackendRequest.Dir is a subdirectory of the repository, not its root", func() {
-		It("still resolves the compiler declared and installed at the repository root", func() {
-			repo := gitfixture.Init(GinkgoT())
-			version := tsAcceptanceRealTypescriptVersion()
-			gitfixture.CommitFile(GinkgoT(), repo, "package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
-			gitfixture.CommitFile(GinkgoT(), repo, "tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
-			sha := gitfixture.CommitFile(GinkgoT(), repo, "a.ts", "export const a = 1;\n")
-			installRealTypescriptCompilerAt(repo)
-
-			subDir := filepath.Join(repo, "sub")
-			Expect(os.MkdirAll(subDir, 0o755)).To(Succeed())
-
-			cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
-			backend := NewTSProjectBackend()
-
-			result, err := backend.Analyze(context.Background(), ProjectBackendRequest{
-				Dir:          subDir,
-				HeadRevision: sha,
-				Baseline:     true,
-				Config:       cfg,
-				ConfigDigest: projectconfig.Digest(cfg),
-				Language:     "typescript",
-			})
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.HeadCoverage).NotTo(BeNil())
-			Expect(result.HeadCoverage.Complete).To(BeTrue(), "the compiler must be resolved via repository-root-relative resolution regardless of invocation subdirectory")
-		})
-	})
-})
-
-var _ = Describe("tsProjectBackend compiler resolution from a nested TypeScript project", Label("ts-project-backend"), func() {
-	BeforeEach(func() {
-		body_projectAcceptanceTest_519()
-	})
-
-	When("the repository has no top-level package.json and the policy names a nested js/semantics-shaped root that pins an exact installed compiler", func() {
-		It("resolves that nested manifest's compiler and produces a complete analysis rather than failing with no locatable compiler", func() {
-			repo := gitfixture.Init(GinkgoT())
-			version := tsAcceptanceRealTypescriptVersion()
-			gitfixture.CommitFile(GinkgoT(), repo, "js/semantics/package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
-			gitfixture.CommitFile(GinkgoT(), repo, "js/semantics/tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
-			sha := gitfixture.CommitFile(GinkgoT(), repo, "js/semantics/a.ts", "export const a = 1;\n")
-			installRealTypescriptCompilerAt(filepath.Join(repo, "js", "semantics"))
-
-			_, statErr := os.Stat(filepath.Join(repo, "package.json"))
-			Expect(os.IsNotExist(statErr)).To(BeTrue(), "nested-only fixture must not have a top-level package.json; that would exercise the already-green worktree-top origin")
-
-			cfg := json.RawMessage(`{"schema_version":"1","roots":["js/semantics"]}`)
-			backend := NewTSProjectBackend()
-
-			result, err := backend.Analyze(context.Background(), ProjectBackendRequest{
-				Dir:          repo,
-				HeadRevision: sha,
-				Baseline:     true,
-				Config:       cfg,
-				ConfigDigest: projectconfig.Digest(cfg),
-				Language:     "typescript",
-			})
-
-			Expect(err).NotTo(HaveOccurred(), "nested js/semantics-shaped analysis must locate the compiler from the selected root's manifest, not fail with no locatable compiler")
-			Expect(result.HeadCoverage).NotTo(BeNil())
-			Expect(result.HeadCoverage.Complete).To(BeTrue(), "the compiler must be resolved from the nested project's package.json")
-			Expect(result.CompilerVersion).To(Equal(version))
-			Expect(result.CompilerOrigin).To(Equal(tstoolchain.OriginProject))
-		})
-	})
-})
-
-var _ = Describe("PrepareTSRuntime resolved-runtime provenance", Label("ts-project-backend"), func() {
-	BeforeEach(func() {
-		body_projectAcceptanceTest_559()
-	})
-
-	It("records node version, compiler version, compiler origin, and the materialized analyzer directory on the prepared runtime", func() {
-		repo := gitfixture.Init(GinkgoT())
-		version := tsAcceptanceRealTypescriptVersion()
-		gitfixture.CommitFile(GinkgoT(), repo, "package.json", fmt.Sprintf(`{"devDependencies":{"typescript":%q}}`, version))
-		gitfixture.CommitFile(GinkgoT(), repo, "tsconfig.json", `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10"}}`)
-		gitfixture.CommitFile(GinkgoT(), repo, "a.ts", "export const a = 1;\n")
-		installRealTypescriptCompilerAt(repo)
-
-		rt, cleanup, err := PrepareTSRuntime(context.Background(), repo, nil)
-		Expect(err).NotTo(HaveOccurred())
-		defer cleanup()
-
-		Expect(rt.ExecPath).NotTo(BeEmpty())
-		Expect(filepath.IsAbs(rt.ExecPath)).To(BeTrue())
-		Expect(rt.ExecArgs).To(Equal([]string{
-			rt.AnalyzerShimPath,
-			"--compiler-module=" + rt.CompilerModulePath,
-			"--native-package=" + rt.NativePackagePath,
-		}))
-		Expect(rt.Version).NotTo(BeEmpty())
-		Expect(rt.Version).To(MatchRegexp(`^v?\d+\.\d+\.\d+`), "expected a real `node --version` output, got %q", rt.Version)
-		Expect(rt.Kind).To(Equal(runtimeKindNode))
-		Expect(rt.Origin).To(Equal(runtimeOriginPath))
-		Expect(rt.CompilerVersion).To(Equal(version), "CompilerVersion must match the installed compiler's own package.json version")
-		Expect(rt.CompilerOrigin).To(Equal(tstoolchain.OriginProject), "the manifest/installed-version match must resolve via the project origin")
-		wantCompiler, err := filepath.EvalSymlinks(filepath.Join(repo, "node_modules", "typescript"))
-		Expect(err).NotTo(HaveOccurred())
-		gotCompiler, err := filepath.EvalSymlinks(rt.CompilerModulePath)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(gotCompiler).To(Equal(wantCompiler))
-		Expect(rt.AnalyzerDir).NotTo(BeEmpty())
-		Expect(rt.AnalyzerShimPath).To(HavePrefix(rt.AnalyzerDir))
-		wantNative, err := filepath.EvalSymlinks(filepath.Join(repo, "node_modules", "@typescript", tstoolchain.NativeTypescriptUnscopedName()))
-		Expect(err).NotTo(HaveOccurred())
-		gotNative, err := filepath.EvalSymlinks(rt.NativePackagePath)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(gotNative).To(Equal(wantNative))
-		Expect(tstoolchain.NativeTypescriptPackageName()).To(Equal("@typescript/" + tstoolchain.NativeTypescriptUnscopedName()))
-	})
-})
-
-type identityHandoffBackend struct {
-	result *ProjectBackendResult
-}
-
 var _ = Describe("applyProjectBackend analyzer protocol version handoff", func() {
 	It("defaults AnalyzerProtocolVersion to 1 for typescript when backend returns a result without a protocol version", func() {
 		backend := identityHandoffBackend{result: &ProjectBackendResult{}}
@@ -715,157 +527,3 @@ var _ = Describe("applyProjectBackend runtime identity handoff", func() {
 		Expect(input.BaseReachabilityCoverage).To(Equal(baseReach), "BaseReachabilityCoverage must reach codesignal.Input from ProjectBackendResult")
 	})
 })
-
-var _ = Describe("source_sink_pack config field disposition", func() {
-	It("never changes which findings the real Go backend produces or their content, but does change config_digest/id/fingerprint", func() {
-		body_projectAcceptanceTest_neverChangesWhichFindingsTheRealGoBackendProduce_858()
-	})
-})
-
-// goLayerBypassSearchConfigJSON declares a handlers/service layer pair with
-// service as required_layer, matching goLayerBypassFakeWitness's
-// RequiredLayer/Source/Sink below.
-var goLayerBypassSearchConfigJSON = json.RawMessage(`{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"service","prefixes":["pkg/service"]}],"required_layer":"service"}`)
-
-// goLayerBypassFakeWitness is a minimal, validly anchored high-confidence
-// LayerBypassWitness: its Path has a step with a non-empty Path field, which
-// EvaluateGoLayerBypass requires to compute a PrimaryAnchor (see
-// pkg/codesignal/rule_layer_bypass.go) rather than dropping the witness as
-// anchorless.
-var goLayerBypassFakeWitness = projectmodel.LayerBypassWitness{
-	ID:            "witness-1",
-	Source:        "example.com/app/pkg/handlers.Handler",
-	Sink:          "(*database/sql.DB).Query",
-	RequiredLayer: "service",
-	Path: []projectmodel.LayerBypassStep{
-		{NodeID: "example.com/app/pkg/handlers.Handler", Path: "pkg/handlers/handlers.go", Line: 1},
-		{NodeID: "(*database/sql.DB).Query"},
-	},
-	Confidence:       projectmodel.LayerBypassConfidenceHigh,
-	AlgorithmVersion: "go-layer-bypass-registry@1",
-}
-
-var _ = Describe("Go layer-bypass search coverage folding into project lifecycle", func() {
-	var originalBuildGoLayerBypass func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error)
-
-	BeforeEach(func() {
-		originalBuildGoLayerBypass = buildGoLayerBypass
-		DeferCleanup(func() {
-			buildGoLayerBypass = originalBuildGoLayerBypass
-		})
-	})
-
-	It("degrades a found witness to lifecycle unknown and surfaces project_layer_bypass_coverage_incomplete when the search itself did not complete", func() {
-		buildGoLayerBypass = func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error) {
-			return projectmodel.LayerBypassResult{
-				Witnesses: []projectmodel.LayerBypassWitness{goLayerBypassFakeWitness},
-				Coverage:  projectmodel.Coverage{Phase: "layer_bypass_search", Complete: false},
-			}, nil
-		}
-
-		dir := gitfixture.Init(GinkgoT())
-		gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
-		sha := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
-		files := []gitrepo.SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
-
-		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
-			Language:     "go",
-			Config:       goLayerBypassSearchConfigJSON,
-			ConfigDigest: projectconfig.Digest(goLayerBypassSearchConfigJSON),
-			Backend:      NewGoProjectBackend(),
-		}
-		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
-		Expect(err).NotTo(HaveOccurred())
-
-		Expect(report.ProjectChanges).To(HaveLen(1), "the high-confidence witness must still surface as a ProjectChange even though the search was incomplete")
-		change := report.ProjectChanges[0]
-		Expect(change.RuleID).To(Equal("architecture.layer_bypass"))
-		Expect(string(change.Lifecycle)).To(Equal("unknown"), "an incomplete layer-bypass search must never let a witness claim a determinate lifecycle")
-		Expect(report.ProjectCoverage).NotTo(BeNil())
-		Expect(report.ProjectCoverage.Complete).To(BeFalse(), "combineProjectCoverage must fold the bypass search's own incomplete Coverage into the reported project coverage")
-
-		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_layer_bypass_coverage_incomplete")).To(Equal(1))
-		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_lifecycle_indeterminate")).To(Equal(1))
-	})
-
-	It("passes MaxSearchNodes as 0 (unbounded) deliberately, not goProjectBudgets.MaxGraphNodes", func() {
-		calls := 0
-		var capturedMaxSearchNodes int
-		buildGoLayerBypass = func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error) {
-			calls++
-			capturedMaxSearchNodes = opts.MaxSearchNodes
-			return projectmodel.LayerBypassResult{Coverage: projectmodel.Coverage{Phase: "layer_bypass_search", Complete: true}}, nil
-		}
-
-		dir := gitfixture.Init(GinkgoT())
-		gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
-		sha := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
-		files := []gitrepo.SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
-
-		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
-			Language:     "go",
-			Config:       goLayerBypassSearchConfigJSON,
-			ConfigDigest: projectconfig.Digest(goLayerBypassSearchConfigJSON),
-			Backend:      NewGoProjectBackend(),
-		}
-		report, err := AnalyzeBaseline(context.Background(), dir, sha, files, nil, "", codesignal.Coverage{TrackedFilesDiscovered: 1}, project)
-		Expect(err).NotTo(HaveOccurred())
-
-		Expect(calls).To(Equal(1), "the bypass seam must actually have been invoked, or the MaxSearchNodes assertion below is vacuous")
-
-		Expect(capturedMaxSearchNodes).To(Equal(0))
-		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_layer_bypass_coverage_incomplete")).To(Equal(0))
-	})
-
-	It("degrades only the base-side coverage-incomplete diagnostic to base_-prefixed and still marks the report indeterminate when only the base revision's search is incomplete", func() {
-		body_projectAcceptanceTest_degradesOnlyTheBaseSideCoverageIncompleteDiagnos_1021()
-	})
-
-	It("keeps head- and base-side coverage-incomplete diagnostics distinct when both revisions' searches are incomplete", func() {
-		buildGoLayerBypass = func(ctx context.Context, snapshot fs.FS, opts projectmodel.LayerBypassOptions) (projectmodel.LayerBypassResult, error) {
-			return projectmodel.LayerBypassResult{Coverage: projectmodel.Coverage{Phase: "layer_bypass_search", Complete: false}}, nil
-		}
-
-		dir := gitfixture.Init(GinkgoT())
-		baseSHA := gitfixture.CommitFile(GinkgoT(), dir, "go.mod", "module example.com/app\n\ngo 1.25\n")
-		headSHA := gitfixture.CommitFile(GinkgoT(), dir, "pkg/handlers/handlers.go", "package handlers\n\nfunc Handler() {}\n")
-		files := []gitrepo.SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
-
-		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
-			Language:     "go",
-			Config:       goLayerBypassSearchConfigJSON,
-			ConfigDigest: projectconfig.Digest(goLayerBypassSearchConfigJSON),
-			Backend:      NewGoProjectBackend(),
-		}
-		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
-		Expect(err).NotTo(HaveOccurred())
-
-		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_layer_bypass_coverage_incomplete")).To(Equal(1), "the head-side incompleteness must not be collapsed into or duplicated by the base-side one")
-		Expect(countDiagnosticsOfKind(report.Diagnostics, "base_project_layer_bypass_coverage_incomplete")).To(Equal(1))
-	})
-})
-
-func TestProjectTextAcceptance(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "project text renderer acceptance suite")
-}
-
-func (b *recordingProjectBackend) Analyze(_ context.Context, req ProjectBackendRequest) (*ProjectBackendResult, error) {
-	b.requests = append(b.requests, req)
-	return b.result, nil
-}
-
-func tsAcceptanceRealTypescriptVersion() string {
-	return tstestutil.TypeScriptVersion()
-}
-
-func ensureRealTypeScriptCompilerAvailable() string {
-	return tstestutil.EnsureTypeScriptCompilerAvailable()
-}
-
-func installRealTypescriptCompilerAt(repoDir string) {
-	tstestutil.InstallTypeScriptCompiler(repoDir, true)
-}
