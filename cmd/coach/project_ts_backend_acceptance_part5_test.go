@@ -75,3 +75,24 @@ func analyzerChildPIDs() []int {
 	}
 	return analyzerChildPIDsFromPS()
 }
+
+// topLevelAnalyzerPIDs drops any candidate whose parent is itself a
+// candidate. The analyzer's TypeScript 7 compiler forks a native `tsc --api`
+// child, and between fork and exec that child's cmdline is still the
+// analyzer's own argv (marker included); a 1ms poll intermittently lands in
+// that window and would count the compiler subprocess as a second analyzer
+// invocation.
+func topLevelAnalyzerPIDs(candidates []int, parents map[int]int) []int {
+	isCandidate := make(map[int]bool, len(candidates))
+	for _, pid := range candidates {
+		isCandidate[pid] = true
+	}
+	var out []int
+	for _, pid := range candidates {
+		if ppid, ok := parents[pid]; ok && isCandidate[ppid] {
+			continue
+		}
+		out = append(out, pid)
+	}
+	return out
+}
