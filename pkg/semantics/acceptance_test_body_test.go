@@ -8,7 +8,7 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func body_acceptanceTest_ordersImportsAndFindingsByDocumentPositionAC110_68(analyzer *semantics.Analyzer) {
+func expectImportsAndFindingsInDocumentOrder(analyzer *semantics.Analyzer) {
 	source := []byte(`package main
 
 import (

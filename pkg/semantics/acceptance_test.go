@@ -66,7 +66,7 @@ func NewFoo() *int {
 		})
 
 		It("orders imports and findings by document position (AC-1.10)", func() {
-			body_acceptanceTest_ordersImportsAndFindingsByDocumentPositionAC110_68(analyzer)
+			expectImportsAndFindingsInDocumentOrder(analyzer)
 		})
 
 		It("orders syntax errors by document position (AC-1.10)", func() {
@@ -258,7 +258,11 @@ func F() {}
 `)
 		})
 
-		DescribeTable("extracts the import's path and alias", (&sigbodyacceptanceTestwhenSourceContainsEveryGoImportFormAC31{result: &result}).call, Entry("plain single-quoted import", "fmt", ""),
+		DescribeTable("extracts the import's path and alias",
+			func(wantPath, wantAlias string) {
+				expectImportWithAlias(result, wantPath, wantAlias)
+			},
+			Entry("plain single-quoted import", "fmt", ""),
 			Entry("aliased import", "os", "o"),
 			Entry("dot import", "strings", "."),
 			Entry("blank import", "unicode", "_"),

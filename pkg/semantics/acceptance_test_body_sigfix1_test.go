@@ -1,24 +1,19 @@
 package semantics_test
 
 import (
-	"github.com/lousy-agents/coach/pkg/semantics"
-
 	. "github.com/onsi/gomega"
+
+	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-type sigbodyacceptanceTestwhenSourceContainsEveryGoImportFormAC31 struct {
-	result **semantics.Result
-}
-
-func (sigRecv *sigbodyacceptanceTestwhenSourceContainsEveryGoImportFormAC31) call(wantPath, wantAlias string) {
-	res := *sigRecv.result
+func expectImportWithAlias(result *semantics.Result, wantPath, wantAlias string) {
 	var found *semantics.ImportFeature
-	for i := range res.Imports {
-		if res.Imports[i].Path == wantPath {
-			found = &res.Imports[i]
+	for i := range result.Imports {
+		if result.Imports[i].Path == wantPath {
+			found = &result.Imports[i]
 			break
 		}
 	}
-	Expect(found).NotTo(BeNil(), "expected an import with path %q, got %+v", wantPath, res.Imports)
+	Expect(found).NotTo(BeNil(), "expected an import with path %q, got %+v", wantPath, result.Imports)
 	Expect(found.Alias).To(Equal(wantAlias))
 }
