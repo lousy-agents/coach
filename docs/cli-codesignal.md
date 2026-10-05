@@ -127,6 +127,32 @@ terminal is what opens the combined setup offer above.
   `lifecycle: unknown` plus a `continuity_not_determined` path diagnostic.
   Old-path continuity is not established. Adopters who only watch
   `introduced_signals` shall treat that path as incomplete, not green.
+- A project finding that a `--base` comparison would call `introduced` and
+  that touches a rename/copy new path, or would call `resolved` and touches
+  its old path, is reported `lifecycle: unknown` instead and counts toward
+  neither. A finding touches a path through any of its locations, or through
+  the importer or importee in its identity (for Go, the moved file's package
+  directory). Project identities
+  are path-keyed, so a moved finding is otherwise indistinguishable from a
+  fix plus a new defect. Each such path is named by a
+  `project_change_lifecycle_indeterminate` diagnostic: the new path with
+  `side: head`, the old path with `side: base`. A finding whose identity
+  survives the move (for Go, a rename inside one package directory) stays
+  `existing`.
+- A diagnostic that names a path preventing a trustworthy comparison
+  — `continuity_not_determined` on a rename/copy, the
+  `project_root_scope_incomplete` / `base_project_root_scope_incomplete`
+  model-coverage diagnostics, the CLI's
+  `project_layer_bypass_coverage_incomplete` /
+  `base_project_layer_bypass_coverage_incomplete` diagnostics, and
+  `project_change_lifecycle_indeterminate` for a project change degraded to
+  `lifecycle: unknown` — additionally carries optional `side` (`"head"` or
+  `"base"`) and `revision` (that side's resolved commit SHA — for `base`, the
+  merge-base, not the `--base` argument) JSON fields. A `--baseline` run
+  stamps the head-side ones the same way, with `side: head`. Text
+  output renders the same attribution as a trailing `, side: <head|base>,
+  revision: <sha>` clause on that diagnostic's line; a diagnostic without
+  those fields set renders unchanged.
 - Statuses the CLI does not analyze (`T`, `U`, `X`, `B`) emit
   `unsupported_change_type`, increment `summary.files_unanalyzed` and
   `summary.files_with_diagnostics`, and qualify the text all-clear.
