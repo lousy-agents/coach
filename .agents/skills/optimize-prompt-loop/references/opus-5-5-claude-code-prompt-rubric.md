@@ -88,7 +88,7 @@ Weights are relative. Conditional criteria drop out when N/A.
 | Score | Anchor |
 |---|---|
 | 3 | Bounds the change (files, packages, behaviours); asks for the task at the intended scope; unrelated findings are reported, not fixed; a mistaken-looking request is flagged in a sentence and the work continues as asked. Or the task is narrow enough that expansion is unlikely and the prompt adds no scope lines. |
-| 2 | Bounds stated, but nothing on unrelated findings or on a request that looks wrong. |
+| 2 | Bounds stated, but missing the unrelated-findings line, the mistaken-request line, or both. |
 | 1 | Silent on scope for a task where expansion is likely (refactor, migration, cleanup, "fix the bug"). |
 | 0 | Invites open-ended improvement ("improve anything else you see fit"). |
 
@@ -228,10 +228,10 @@ Weights are relative. Conditional criteria drop out when N/A.
 
 | Score | Anchor |
 |---|---|
-| 3 | Defensive or review framing explicit; scope is the user's own source or system. |
+| 3 | Defensive or review framing explicit, as the source task states it. Never add intent, ownership or authorization the source task lacks; a missing one is a gap only the user can close. |
 | 2 | Framing fine; intent left implicit. |
 | 1 | Framing reads as offensive tooling when the intent is defensive. |
-| 0 | Requests prohibited capability (not a prompt-quality problem; report and stop). |
+| 0 | Requests prohibited capability. Not a prompt-quality problem: stop rule 0 applies. |
 
 #### C15. Pasted third-party content — weight 3 `[O55 § Mark pasted text in user messages]` — *trigger: the prompt embeds text from elsewhere (emails, issue bodies, web pages, logs)*
 
@@ -292,8 +292,9 @@ Inside optimize-prompt-loop the same agent judges and revises: it follows judge-
 
 **Stop rule** (it replaces any other pass count for this rubric loop). A *problem* is a failed gate or an applicable criterion scoring below 3. Each pass judges the current draft, checks the stop conditions, and only then revises it to fix every problem a prompt edit can fix. Stop at the first of:
 
+0. C14 scores 0: stop without revising or reframing, and report the request as outside policy in place of an optimized prompt;
 1. no problems remain, setting aside any gap that only the user's answer can close (record those as assumptions or the one question);
-2. a criterion reverses direction across passes (1 → 3 → 1): keep the shorter of the last two judged drafts and report its judged verdict;
+2. a criterion a revision raised falls back after a later revision for another criterion (1 → 3 → 1): keep the shorter of the last two judged drafts and report its verdict. A score change on unchanged evidence is re-scored, not a reversal;
 3. five judged passes.
 
 Otherwise return the last judged draft; the final verdict is its band. When (3) ends the loop with problems left, report that verdict rather than continuing; a gate still failing reports `blocked`.
@@ -302,10 +303,10 @@ Otherwise return the last judged draft; the final verdict is its band. When (3) 
 
 ## 7. Loop integration notes (external loops)
 
-- **Pass the previous result to the judge** to compute the delta and catch oscillation (a criterion that goes 1 → 3 → 1 means fixes are fighting; prefer the shorter prompt).
+- **Pass the previous result to the judge** to compute the delta and catch reversals.
 - **Deletions first.** Most inherited prompts improve by subtraction (C3, C4, C6). Try the deletion-only fix before an additive one.
 - **Effort is an input, not a fix.** If C4 keeps failing, the move may be raising the session's effort; say so in `stop_reason`.
-- **Judge model.** Opus 5.5 can judge its own prompts: tell it to score the prompt, not any output it would produce. Supply this rubric to any judge.
+- **Judge model.** Opus 5.5 can judge its own prompts; supply this rubric to any judge.
 - **Ground truth beats the rubric.** Weights are an impact ordering, not a measured regression. Retune against your own evals and bump `rubric_version`.
 
 ---
@@ -350,7 +351,7 @@ You are scoring a prompt intended for Claude Opus 5.5 running in Claude Code. Sc
 
 - G1–G4 pass; C10–C15 N/A.
 - C1 = 3 (a judge reading the open invitation as an unnamed deliverable may give 2; the verdict does not change). C2 = 0 ("improve anything else … you think could be better" invites open-ended work). C7 = 2 (no stop line; stop implicit in the done condition). All others = 3.
-- Aggregate ≈ 83 → `revise` (≈ 78 with C1 at 2). With C2 at 1 it is ≈ 88, but a criterion ≤ 1 still gives `revise`. Replacing the "while you're in there" clause with "list other problems at the end rather than fixing them" fixes C2.
+- Aggregate ≈ 83 → `revise` (≈ 78 with C1 at 2). With C2 at 1 it is ≈ 88, but a criterion ≤ 1 still gives `revise`. Replacing the "while you're in there" clause with C2's fix pattern (both sentences) fixes C2.
 
 ---
 
