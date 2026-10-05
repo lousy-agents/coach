@@ -49,10 +49,19 @@ flowchart LR
 
 | Layer | Packages | May import |
 | --- | --- | --- |
-| Domain | `pkg/domain`, `pkg/semantics`, `pkg/codesignal`, `pkg/projectmodel` analysis | Domain only (`pkg/semantics/internal/engine` is semantics' private parser adapter) |
-| Application | `internal/codesignalcli` scan, readiness, setup, and config-authoring use cases; `internal/coachapi` job service; `internal/coachapi/worker`; `internal/agentloop`; `internal/rubrics` | Domain, and ports it declares itself |
-| Driven adapters | `internal/codesignalcli` git and toolchain adapters; `internal/coachapi` stores and queue adapters (`queue/redisstream`, `queue/sqs`); `pkg/githubingest`; `internal/modelgateway`; `internal/authn`, `internal/authz` | Domain and the port they implement; never another adapter's internals |
-| Entry | `cmd/*`, HTTP handlers, flag parsing, text/JSON rendering | Any inner layer; it is the only place that wires adapters into use cases |
+| Domain | `pkg/domain`, `pkg/semantics`, `pkg/codesignal`, `pkg/projectmodel`, `internal/coachapi` (job, report, and API-contract types plus the `JobStore` / `WorkerJobStore` ports), `internal/codesignalcli/projectreadiness` (the readiness result model), `internal/codesignalcli/projectconfig` (project-config schema and validation) | Domain only |
+| Application | `internal/codesignalcli` (scan use cases and the `ProjectBackend` port), `internal/codesignalcli/projectcheck` (readiness), `internal/codesignalcli/tssetup` (compiler setup), `internal/codesignalcli/configauthoring`, `internal/codesignalcli/sourcescope`, `internal/coachapi/baseline` (repository baseline scan), `internal/coachapi/worker`, `internal/agentloop`, `internal/rubrics` | Domain, ports it declares, and (where noted below) adapters directly |
+| Driven adapters | `internal/codesignalcli/gitrepo`, `revisionfs`, `tstoolchain`, `pkgmanager`, `subprocess`, `terminal`, `prompt`; `pkg/projectmodel/internal/tssidecar`, `ssaload`; `pkg/semantics/internal/engine`; `internal/coachapi/store/memory`, `store/postgres`, `queue/redisstream`, `queue/sqs`; `pkg/githubingest`; `internal/modelgateway`; `internal/authn`, `internal/authz` | Domain and the port they implement; never another adapter's internals |
+| Entry | `cmd/*`, `internal/coachapi/httpapi`, `internal/codesignalcli/render` | Any inner layer; `cmd/*` is the only place that wires adapters into use cases |
+
+`internal/codesignalcli/layering_test.go` pins the CLI side of this graph, so a new import edge between its packages fails a test rather than eroding silently.
+
+Where the migration stopped short of the rule, and why:
+
+- The CLI use cases (`projectcheck`, `tssetup`, `configauthoring`, root `codesignalcli`) import `gitrepo` directly, and `projectcheck`/`tssetup` call `tstoolchain` and `pkgmanager` probes. Each git read goes through a function-typed seam owned by its consumer, but the toolchain probes are still package variables that tests override; replacing them with constructor-injected ports means reshaping the use-case signatures and is the next step.
+- `internal/coachapi/baseline` constructs its local smoke-fixture tree source itself, because `ScanConfig.SmokeFixturePath` selects it; injecting the source would change worker configuration.
+- `internal/rubrics` uses `internal/modelgateway`'s `Gateway` interface rather than declaring its own port.
+- `pkg/projectmodel`'s exported entry points wire their default adapters (`tssidecar`, `ssaload`) because their signatures have no injection point and are public API.
 
 The existing dependency rule still holds: `pkg/semantics` and `pkg/githubingest` never import each other.
 
