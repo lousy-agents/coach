@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: '^- \**Rubric:?\**:? *`?opus55-cc-1\.0`?, final verdict `?pass`?\.?\s*$'
+pattern: '^- \**Rubric:?\**:? *`?opus55-cc-1\.0`?, final verdict `?pass`?\.?\s*(?![\s\S])'
 flags: m
 weight: 2
 ---

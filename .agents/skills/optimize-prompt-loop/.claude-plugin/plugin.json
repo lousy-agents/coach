@@ -1,0 +1,10 @@
+{
+  "name": "optimize-prompt-loop",
+  "displayName": "Optimize Prompt Loop",
+  "description": "Turn a fuzzy or overly broad request into a concise task prompt fitted to the current model, agent harness, and effort level",
+  "license": "BSD-2-Clause",
+  "repository": "https://github.com/lousy-agents/skills",
+  "homepage": "https://github.com/lousy-agents/skills#readme",
+  "skills": "./",
+  "keywords": ["prompts", "prompt-engineering", "optimization", "model-aware", "harness", "rubric"]
+}

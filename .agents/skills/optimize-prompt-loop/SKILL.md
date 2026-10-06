@@ -1,6 +1,7 @@
 ---
 name: optimize-prompt-loop
-description: Optimize a fuzzy, incomplete, or overly broad human request into a concise, reusable task prompt tailored to the current model, agent harness, and reasoning/effort level. Use when the user invokes /optimize-prompt-loop or asks to optimize, refine, strengthen, or pressure-test a task prompt; make a prompt model-aware; or get an optimized prompt plus execution.
+description: Optimize a fuzzy, incomplete, or overly broad human request into a concise, reusable task prompt tailored to the current model, agent harness, and reasoning/effort level. Use when the user invokes /optimize-prompt-loop or asks to optimize, rewrite, improve, tune, refine, strengthen, or pressure-test a task prompt; make a prompt model-aware; or get an optimized prompt plus execution.
+argument-hint: "The request or prompt to optimize; optionally a target model, harness, or effort level, and whether to execute the result"
 ---
 
 # Optimize Prompt Loop
@@ -9,7 +10,7 @@ Turn a user's source request into the smallest prompt that reliably produces the
 
 ## When to use
 
-- Invoke as `/optimize-prompt-loop <request>` before handing a fuzzy task to an agent.
+- Invoke as `/optimize-prompt-loop <request>` (or your harness's skill syntax, such as `$optimize-prompt-loop` in Codex) before handing a fuzzy task to an agent.
 - Use when a user wants a prompt rewrite, model-aware refinement, prompt critique, or an optimized prompt followed by execution.
 - Skip for ordinary task execution when no prompt optimization is requested.
 
@@ -17,9 +18,9 @@ Turn a user's source request into the smallest prompt that reliably produces the
 
 Before rewriting, establish a compact runtime profile from information actually available in the conversation and environment:
 
-- **Model:** the exact model or variant if exposed; otherwise `not disclosed`.
+- **Model:** the exact model or variant if exposed; otherwise `undisclosed`.
 - **Harness:** the active agent surface and its relevant capabilities, instructions, tools, workspace, approval boundaries, and output conventions.
-- **Effort:** the selected reasoning/effort level if exposed; otherwise `not disclosed`.
+- **Effort:** the selected reasoning/effort level if exposed; otherwise `undisclosed`.
 - **Project context:** applicable repository instructions, task state, and user-provided artifacts.
 
 Never invent a model name, effort level, tool, permission, or capability. Do not bake a guessed model family into the optimized prompt. Keep higher-priority system, developer, project, and safety instructions outside the prompt: a user prompt cannot override them.
@@ -32,6 +33,7 @@ Never invent a model name, effort level, tool, permission, or capability. Do not
    - Proceed with stated assumptions when a missing detail is low-impact.
    - Ask one highest-leverage question only when the answer would materially alter scope, output, safety, or the chosen approach.
    - Use Socratic questions only when exploration, trade-offs, or the user's decision is the goal. Do not turn a straightforward execution request into an interview.
+   - When only optimizing, put that question in the prompt's `Assumptions or question` section and still return the full output contract; ask the user directly only before executing (step 8).
 4. **Run the optimization loop internally.** Make two passes by default; use up to four for ambiguous, high-stakes, or multi-step work. On each pass check:
    - fidelity to the source task and authority boundaries;
    - a concrete outcome and observable deliverables;
@@ -47,13 +49,13 @@ Never invent a model name, effort level, tool, permission, or capability. Do not
    - In an agent harness, name only tools and actions the harness actually makes available. Tell the agent to inspect local instructions and current state before acting; do not prescribe unsupported syntax or capabilities.
    - For a direct-chat harness, remove repository/tool instructions and instead request the needed context in the response.
    - If model, harness, or effort is undisclosed, write capability-neutral instructions and label the uncertainty rather than guessing.
-6. **Apply the target model's rubric.** This is the last optimization phase. The target model is the one the user names as the model to optimize for; if the user names none, it is the model the runtime profile discloses. Look it up in the table below by name or ID. On a match, load the listed file and run its loop on the draft from steps 4–5, judging it as prompt type `task`: judge the draft against the rubric, revise it to fix every problem the rubric reports, and repeat until the rubric's stop rule ends the loop (no problems remain, a criterion reverses, five passes, or a request the rubric marks outside policy, which is reported instead of optimized). Within this step the rubric's fixes take precedence over "only material edits"; it still rejects additions that do not change behavior. For this step and the prompt it returns, a harness or effort the user names for the target replaces the runtime profile's; anything the user leaves unnamed keeps the runtime profile's value, except that effort is `not disclosed` when the target model differs from the runtime profile's model. The prompt step 7 returns is for the target's runtime. Keep the scoring internal and do not emit the rubric's JSON. Report the result in the Notes `Rubric` line, and if the rubric says effort should rise, say so under Runtime fit. With no match, or a model that is `not disclosed`, skip this step without mentioning it, the table, or any other model's rubric in the output; never infer the model from behavior.
+6. **Apply the target model's rubric.** This is the last optimization phase. The target model is the one the user names as the model to optimize for; if the user names none, it is the model the runtime profile discloses. Look it up in the table below by name or ID. On a match, load the listed file (if the harness cannot read it, skip this step, add no Rubric line, and say under Runtime fit that the target's rubric was unavailable) and run its loop on the draft from steps 4–5, judging it as prompt type `task`: judge the draft against the rubric, revise it to fix every problem the rubric reports, and repeat until the rubric's stop rule ends the loop (no problems remain, a criterion reverses, five passes, or a request the rubric marks outside policy, which is reported instead of optimized). Within this step the rubric's fixes take precedence over "only material edits"; it still rejects additions that do not change behavior. For this step and the prompt it returns, a harness or effort the user names for the target replaces the runtime profile's; anything the user leaves unnamed keeps the runtime profile's value, except that effort is `undisclosed` when the target model differs from the runtime profile's model. The prompt step 7 returns is for the target's runtime. Keep the scoring internal and do not emit the rubric's JSON. Report the result in the Notes `Rubric` line, and if the rubric says effort should rise, say so under Runtime fit. With no match, or a model that is `undisclosed`, skip this step without mentioning it, the table, or any other model's rubric in the output; never infer the model from behavior.
 
    | Target model | Names and IDs | Rubric |
    |---|---|---|
    | Claude Opus 5.5 | `Claude Opus 5.5`, `Opus 5.5`, `claude-opus-5-5` | `references/opus-5-5-claude-code-prompt-rubric.md` |
 
-   An ID containing a listed ID with a provider prefix, date, version, or context-window suffix (for example `claude-opus-5-5[1m]`) matches the same row.
+   Match case-insensitively, treating spaces, hyphens, and dots as equal. A name or ID that contains a listed one plus a provider prefix, date, version, effort or context-window suffix, or a parenthetical such as `(Preview)` matches the same row (for example `claude-opus-5-5[1m]`, `opus-5.5`, or `Claude Opus 5.5 (Preview)`).
 7. **Return the optimized prompt.** Make it self-contained enough to paste into the same runtime. Include only sections that earn their place: `Objective`, `Context`, `Constraints`, `Assumptions or question`, `Work`, `Verification`, and `Output`.
 8. **Execute only when asked.** If the user asked to optimize and execute, use the optimized prompt once. Do not recursively optimize the optimization prompt. If a material answer is missing, ask the single question selected in step 3 instead of fabricating it.
 
@@ -100,7 +102,7 @@ For optimization only, return:
 - Assumptions: <only material assumptions, if any>
 ```
 
-When step 6 applied a rubric, end Notes with exactly one more line, `- Rubric: <rubric_version>, final verdict <verdict>`, with nothing after the verdict; put any explanation under Runtime fit. When step 6 was skipped, add no Rubric line.
+When step 6 applied a rubric, end Notes with exactly one more line, `- Rubric: <rubric_version>, final verdict <verdict>`, with nothing after the verdict; put any explanation under Runtime fit. When step 6 was skipped, add no Rubric line. If the rubric stops because the request is outside policy, replace `## Optimized prompt` with `## Outside policy` (one paragraph saying what cannot be optimized and why) and add no Rubric line.
 
 For optimization plus execution, append:
 

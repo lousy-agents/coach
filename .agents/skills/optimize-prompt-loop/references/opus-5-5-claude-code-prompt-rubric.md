@@ -24,9 +24,9 @@ Tags: `[O55 § H]` is the Opus 5.5 guide under heading H, and `[O55 <page> § H]
 - Model is Claude Opus 5.5. Adaptive thinking is always on and cannot be disabled [O55 What's new § Thinking can't be disabled]. Effort defaults to `medium` in Claude Code and on the API [O55 § Calibrate effort] [CC model-config]; when effort is undisclosed, score C4 against `medium` and record `effort: undisclosed`.
 - Assistant prefill, non-default sampling, `budget_tokens`, disabled thinking, and forced `tool_choice` are rejected with a 400 [O55 Thinking § Limits and feature compatibility] [O55 What's new § Breaking changes].
 - Safety classifiers cover cybersecurity, biology and reasoning extraction; a decline is `stop_reason: "refusal"` [O55 § Safeguard refusals].
-- When the profiled harness is Claude Code, it loads `CLAUDE.md` automatically and provides file read/edit, shell, search, web fetch and subagent tools. Context window is 1M tokens.
+- When the profiled harness is Claude Code, it loads `CLAUDE.md` automatically and provides file read/edit, shell, search, web fetch and subagent tools. Context window: `undisclosed` unless the model ID carries a context-window suffix.
 - Tokenizer ratio versus earlier models: `undisclosed`. Whether the user sees tool output: `undisclosed`.
-- If the profiled harness is not Claude Code, judge G3 against that harness. In a harness with no repository or workspace (direct chat, including claude.ai with web or code-execution tools), C5 is N/A and C6 accepts an observable result in place of a command. If the harness is undisclosed, judge G3 capability-neutral and mark C5 N/A.
+- If the profiled harness is not Claude Code, judge G3 against that harness, and read `CLAUDE.md` throughout this rubric as that harness's project instruction file (for example `AGENTS.md`). In a harness with no repository or workspace (direct chat, including claude.ai with web or code-execution tools), C5 is N/A and C6 accepts an observable result in place of a command. If the harness is undisclosed, judge G3 capability-neutral and mark C5 N/A.
 
 ---
 

@@ -55,6 +55,12 @@
       "skillPath": "skills/mutation-hunter/SKILL.md",
       "computedHash": "14777d56ddeedb9788490d2c30cc344c9c7901faebf68dd73bbc6ad85b38b0ca"
     },
+    "optimize-prompt-loop": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/optimize-prompt-loop/SKILL.md",
+      "computedHash": "1ae8c05e0d81d254965855c874b7b0bb780c9b4d1bc240137d7137723e67b5b6"
+    },
     "plan-to-graph": {
       "source": "lousy-agents/skills",
       "sourceType": "github",

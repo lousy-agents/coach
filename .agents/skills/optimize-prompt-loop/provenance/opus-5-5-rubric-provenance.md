@@ -1,6 +1,6 @@
 # Provenance: Opus 5.5 prompt rubric (`opus55-cc-1.0`)
 
-Maintainer record for `../references/opus-5-5-claude-code-prompt-rubric.md`. The skill never loads this file and a judge does not need it. It records where each gate and criterion came from, what was left out and why, the harness-level facts that are kept out of scoring, and where the rubric departs from the Sonnet 5 precedent (`sonnet5-cc-1.0`).
+Maintainer record for `../references/opus-5-5-claude-code-prompt-rubric.md`. The skill never loads this file and a judge does not need it. It records where each gate and criterion came from, what was left out and why, the harness-level facts that are kept out of scoring, and where the rubric departs from the earlier Sonnet 5 rubric it was modelled on (`sonnet5-cc-1.0`, unpublished; §5 restates every criterion it compares, so that rubric is not needed to read this one).
 
 Sources were read on 2026-10-05, in precedence order:
 
@@ -31,7 +31,7 @@ Every heading on the guide (the body has no H1, H3 or H4).
 
 | Heading | Disposition | Evidence span |
 |---|---|---|
-| (intro, before first H2) | Rubric framing: Opus 5 guidance carries over. Grounds the `[O5]` tags on C1–C3, C6 and C8. | "Existing Claude Opus 5 prompts should perform well without changes, and the patterns in Prompting Claude Opus 5 remain a reasonable starting point." |
+| (intro, before first H2) | Rubric framing: Opus 5 guidance carries over. Grounds every `[O5]` tag (anti-oscillation rule, G2, C1–C3, C6, C8, C10, C11, C13). | "Existing Claude Opus 5 prompts should perform well without changes, and the patterns in Prompting Claude Opus 5 remain a reasonable starting point." |
 | Capabilities relevant to prompting | C11 (code review recall); C3 (vision workarounds). The rest is capability description with no prompt lever, so it is excluded. | "Early testers also reported stronger code review, with more bugs caught than on Claude Opus 5 and fewer false alarms" |
 | Calibrate effort | C4. `max_tokens`, effort choice and prompt-cache behaviour go to harness notes. | "To get less thinking, lower the effort level first. Lowering effort reduces thinking … more reliably than prompt instructions do." |
 | Prompts written for thinking disabled | G2 (reasoning written into the response); C4 (no-thinking rules). Reading responses by block type is a harness note. | "remove the no-thinking rule either way" |
@@ -49,12 +49,12 @@ Every heading on the guide (the body has no H1, H3 or H4).
 
 | ID | Name | Tags | Notes |
 |---|---|---|---|
-| §1 | Runtime facts | `[O55 What's new § Thinking can't be disabled]` `[O55 What's new § Breaking changes]` `[O55 Thinking § Limits and feature compatibility]` `[O55 § Calibrate effort]` `[O55 § Safeguard refusals]` | The Thinking page's § Sampling parameters and § Response prefill and forced tool use sit under § Limits and feature compatibility. |
+| §1 | Runtime facts | `[O55 What's new § Thinking can't be disabled]` `[O55 What's new § Breaking changes]` `[O55 Thinking § Limits and feature compatibility]` `[O55 § Calibrate effort]` `[O55 § Safeguard refusals]` `[CC model-config]` | The Thinking page's § Sampling parameters and § Response prefill and forced tool use sit under § Limits and feature compatibility. |
 | G1 | Rejected-control dependency | `[O55 What's new § Forced tool use is not supported]` `[O55 Thinking § Response prefill and forced tool use]` | Scores the prompt's dependence on prefill, sampling, a thinking budget or disabled thinking, or forced tool choice. The fix is prompt text: "say in the prompt when the tool applies". |
 | G2 | Reasoning written into the response | `[O55 § Safeguard refusals]` `[O5 § Reasoning in the response]` | Also supported by [O55 § Prompts written for thinking disabled] and [O55 Refusals § Keep reasoning in thinking blocks]. New relative to Sonnet 5. The `reasoning_extraction` category has no recommended fallback, so the prompt has to change. |
 | G3 | Invented capability | `[gen § Tool usage]` `[prior]` | |
-| G4 | Authority conflict | `[prior]` | No source states it. Kept from the precedent. |
-| C1 | Complete specification and done condition | `[O5 § Capability improvements]` `[gen § Be clear and direct]` `[gen § Add context to improve performance]` | Folds in the precedent's C8 (front-loading). |
+| G4 | Authority conflict | `[prior]` | No source states it. Kept from the Sonnet 5 rubric. |
+| C1 | Complete specification and done condition | `[O5 § Capability improvements]` `[gen § Be clear and direct]` `[gen § Add context to improve performance]` | Folds in the Sonnet 5 rubric's C8 (front-loading). |
 | C2 | Scope fidelity | `[O5 § Task scope and over-verification]` `[gen § Overeagerness]` | |
 | C3 | Inherited scaffolding removed | `[O5 § Self-correction]` `[O5 § Task scope and over-verification]` `[O55 § Tools for complex visual inputs]` `[gen § Tool usage]` | |
 | C4 | Effort and thinking fit | `[O55 § Calibrate effort]` `[O55 § Thinking instructions in chat system prompts]` `[O55 § Prompts written for thinking disabled]` `[gen § Leverage thinking & interleaved thinking capabilities]` | |
@@ -95,7 +95,7 @@ A prompt author cannot set any of these from a task prompt, so the rubric does n
 - **Whether a Claude Code task-prompt line can change thinking volume as reliably as effort.** The guide says prompt lines are less reliable than effort; it gives no Claude Code measurement.
 - **Whether the Opus 5 finding "changing effort does not reliably shorten responses" holds on Opus 5.5.** The Opus 5.5 pages are silent, so C8 relies on `[O5]`.
 
-## 5. Differences from the Sonnet 5 precedent
+## 5. Differences from the Sonnet 5 rubric
 
 Where Opus 5.5 guidance differs from a `sonnet5-cc-1.0` criterion, the rubric follows Opus 5.5.
 
@@ -116,10 +116,10 @@ Where Opus 5.5 guidance differs from a `sonnet5-cc-1.0` criterion, the rubric fo
 | No delegation criterion. | C10 delegation proportionality (conditional). | Opus 5 "delegates to subagents more readily than prior models" [O5 § Controlling subagent spawning]. |
 | No early-stop guidance. | C7 credits naming the stops wanted and the early stops to avoid. | [O55 § Unattended agentic runs] |
 | No pasted-content criterion. | C15 (conditional). | [O55 § Mark pasted text in user messages] |
-| `stop` is true on `pass`, on a gain under 3 points, or after 4 iterations. | One stop rule: loop until no gate fails and no criterion is below 3 (excluding gaps only the user can close), or five passes. Every score below 3 gets a fix. | Owner's requirement for optimize-prompt-loop's final phase; merges the skill's pass limit with the rubric's bands. |
+| `stop` is true on `pass`, on a gain under 3 points, or after 4 iterations. | One stop rule: loop until no gate fails and no criterion is below 3 (excluding gaps only the user can close), or five passes; it also stops on a criterion reversal (rule 2) or C14 = 0 (rule 0). Every score below 3 gets a fix. | Design choice for optimize-prompt-loop's final phase: merges the skill's pass limit with the rubric's bands. |
 | Calibration targets `task` prompts only implicitly. | Calibrated for `task` prompts. The four prompt types are kept for skill-reviewer reuse. | Scope of this skill. |
 
 ## 6. Deferred
 
-- Weights for `claude-md`, `skill` and `subagent` prompt types are carried from the precedent's type notes and are not calibrated. Calibrating them belongs to the skill-reviewer integration.
+- Weights for `claude-md`, `skill` and `subagent` prompt types are carried from the Sonnet 5 rubric's type notes and are not yet calibrated.
 - Whether skill-reviewer consumes the JSON schema as written.
