@@ -111,7 +111,7 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 
 		schema1OptionalKeys := []string{"signals_withheld"}
 
-		// optional project keys that schema-2 omits when nil/empty (omitempty)
+		// optional keys that schema-2 omits when nil/empty (omitempty)
 		schema2OptionalKeys := []string{
 			"project_provenance", "project_scope", "project_next_actions", "signals_withheld",
 		}
