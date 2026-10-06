@@ -17,7 +17,7 @@ skill, or the `gh` CLI via `Bash`.
 Three on-demand references back this skill:
 
 - [`references/epic-structure.md`](./references/epic-structure.md) — the canonical section set and
-  ordering, the full completeness rubric, EARS patterns, persona/value/task anatomy, diagram
+  ordering, the full completeness rubric, the EARS Contract (mirrored from `to-ears`), persona/value/task anatomy, diagram
   requirements, and Issue Graph Manifest anatomy. **Load before Phase 2 (Assess) and keep loaded
   through Phase 4; reload Manifest Anatomy in Phase 5–6 as needed.**
 - [`references/github-surface.md`](./references/github-surface.md) — surface probe details, abstract
@@ -125,7 +125,8 @@ by a named agent/skill or by the primary agent running a role-scoped reasoning p
 | Product value, personas, problem framing | `product-sme` | Role-scoped reasoning pass as product owner |
 | Architecture fit, components, data model | `system-design-expert` | Role-scoped pass against the repo's architecture docs |
 | Adversarial acceptance-criteria review | `epic-reviewer`, `spec-review-agent`, `spec-auditor` | Role-scoped pass using the rubric in the reference |
-| Spec structure and EARS formatting | `feature-to-plan` and its `references/spec-format.md` | The section and EARS rules in this skill's reference |
+| Spec structure and task anatomy | `feature-to-plan` and its `references/spec-format.md` | The section and anatomy rules in this skill's reference |
+| EARS criteria drafting, review, and verification mapping | `to-ears` (Embedded mode) | The EARS Contract block mirrored in this skill's reference |
 | Task → sub-issue orchestration | `plan-to-graph` | `create_child_issue` directly, per Phase 5 |
 
 Also read whatever product and engineering context the repo actually provides — for example
@@ -180,7 +181,7 @@ Each section gets one verdict — `present` or `missing` — plus the stated cou
 | 1 | Problem Statement | 2+ sentences naming the problem and its consequence, with no proposed solution | sentences |
 | 2 | Personas | A table with 1+ row, each row naming a role (not a person) and an explicit Positive/Negative/Neutral impact | rows |
 | 3 | Value Assessment | An explicit primary value type with a reason; secondary optional | value types |
-| 4 | User Stories | 1+ story in As-a / I-want / so-that form, **and every story carries 1+ acceptance criterion in an EARS pattern**, and 1+ criterion across the section covers an error or unwanted condition | stories, EARS criteria, error criteria |
+| 4 | User Stories | 1+ story in As-a / I-want / so-that form, **and every story carries 1+ acceptance criterion in an EARS pattern**, and 1+ criterion across the section covers an error or unwanted condition. `[non-EARS]` criteria and criteria whose unwanted condition is `[TBD]` do not count (see the rubric in full) | stories, EARS criteria, error criteria |
 | 5 | Design | All four present: components affected with concrete paths; dependencies; data model or state changes (or an explicit "none"); 1+ Mermaid diagram | components, dependencies, diagrams |
 | 6 | Tasks | 1+ task, each with a title and either the full six-part anatomy or a link to a child issue that carries it | tasks |
 | 7 | Out of Scope | 1+ explicit exclusion | exclusions |
@@ -294,8 +295,8 @@ full-graph `### Child issues created` table.
 
 | State | Condition | Actions |
 | --- | --- | --- |
-| `refined` | All eight rubric sections `present`, no Blocker or High finding remains, **and** the manifest gate above passes | `set_labels` → remove `refining` and `needs-refine` (and the `unrefined` alias if present), add `refined` |
-| `needs-human-input` | Rounds exhausted, or an ambiguity no assumption can safely resolve | Write every remaining Blocker/High finding into the body's Open Questions **with its severity**; `set_labels` → remove `refining` and `needs-refine` (and the `unrefined` alias if present), add `needs-human-input`. **Never apply `refined`.** |
+| `refined` | All eight rubric sections `present`, no Blocker or High finding remains (any `[TBD …]` clause and any Blocker or High Open Question counts as one), **and** the manifest gate above passes | `set_labels` → remove `refining` and `needs-refine` (and the `unrefined` alias if present), add `refined` |
+| `needs-human-input` | Rounds exhausted, or an ambiguity no assumption can safely resolve, including a `[TBD …]` clause or Blocker/High Open Question that only a human can decide | Write every remaining Blocker/High finding into the body's Open Questions **with its severity**; `set_labels` → remove `refining` and `needs-refine` (and the `unrefined` alias if present), add `needs-human-input`. **Never apply `refined`.** |
 | `aborted` | No write surface, unresolved repository, closed issue, or any stop-and-ask condition | Leave the issue unchanged beyond comments already posted. Do not add or remove labels beyond removing `refining` if this run set it. |
 
 **Epic labels.** Canonical lifecycle `needs-refine` → `refining` → `refined`, plus terminal

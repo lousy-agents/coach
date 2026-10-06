@@ -22,9 +22,10 @@ The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) exposes one 
 
 ## Agent Skills (`.agents/skills/`)
 
-Most are sourced from `lousy-agents/skills` and pinned by `skills-lock.json`: change those upstream and re-run `npx skills add`, because edits made here are overwritten. `correctness-review`, `cut-release`, `product-quality-evaluation`, and `optimize-prompt-loop` are not in the lockfile and are edited here directly. Check `skills-lock.json` before editing a skill, so a local edit is not silently reverted by the next sync.
+Most are sourced from `lousy-agents/skills` and pinned by `skills-lock.json`: change those upstream and re-run `npx skills add`, because edits made here are overwritten. `correctness-review`, `cut-release`, and `product-quality-evaluation` are not in the lockfile and are edited here directly. Check `skills-lock.json` before editing a skill, so a local edit is not silently reverted by the next sync.
 
 - `feature-to-plan` — turn a feature request, PRD, or backlog issue into a structured EARS-format spec.
+- `to-ears` — draft, convert, or review EARS acceptance criteria, or derive tests from them, without inventing behavior.
 - `go-testable-design` — guidance for writing/refactoring testable Go (table tests, constructor injection, boundaries, concurrency tests).
 - `mutation-hunter` — find TypeScript test-coverage gaps via semantic mutation testing.
 - `rugged-evil-tester` — generate adversarial/negative/chaos tests for TypeScript code.
