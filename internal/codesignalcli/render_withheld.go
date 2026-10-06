@@ -24,8 +24,6 @@ func withheldClauses(withheld *codesignal.SignalsWithheld) []withheldClause {
 	return clauses
 }
 
-// renderWithheldSignals writes the one line that says what a narrowed view
-// left out. seeAllCommand is the invocation that shows everything.
 func renderWithheldSignals(b *strings.Builder, withheld *codesignal.SignalsWithheld, seeAllCommand string) {
 	if withheld == nil {
 		return

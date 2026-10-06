@@ -24,9 +24,6 @@ func signalPriorityGroup(sig Signal) int {
 	}
 }
 
-// sortSignals sorts signals by priority group, severity, confidence, path,
-// location, rule, and ID, then ranks each metric rule's signals by magnitude
-// within every tier.
 func sortSignals(signals []Signal) {
 	slices.SortStableFunc(signals, compareSignals)
 	rankMetricRulesWithinTiers(signals)

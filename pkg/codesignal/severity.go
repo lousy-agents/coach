@@ -2,8 +2,9 @@ package codesignal
 
 import "slices"
 
-// severityOrder is the severity vocabulary, lowest priority first.
-// severityRank, ParseSeverityFloor and SeverityFloors all derive from it.
+// severityOrder is the single source of the severity vocabulary, lowest
+// priority first: a severity missing here is neither ranked nor accepted as a
+// floor.
 var severityOrder = []Severity{"low", "advisory", "medium", "high"}
 
 // severityRank maps a Severity to a sort priority (higher sorts first): its

@@ -22,8 +22,7 @@ func (c flagValueCheck) message() string {
 	return fmt.Sprintf("coach: invalid --%s value %q: must be %s", c.flag, c.value, c.want)
 }
 
-// flagValueChecks lists the value-checked flags in the order their errors are
-// reported.
+// flagValueChecks is ordered: the first invalid flag is the one reported.
 func flagValueChecks(f codesignalFlags) []flagValueCheck {
 	return []flagValueCheck{
 		{"format", f.format, f.format == "text" || f.format == "json", `"text" or "json"`},

@@ -5,8 +5,6 @@ import (
 	"strings"
 )
 
-// highSeverityThresholdMultiple is the multiple of an escalating metric rule's
-// threshold at which its signal becomes high severity.
 const highSeverityThresholdMultiple = 2
 
 // metricRule describes a rule whose Evidence carries a numeric metric measured
@@ -78,8 +76,6 @@ func (r metricRule) magnitude(sig Signal) (ratio float64, ok bool) {
 	return float64(metric) / float64(r.threshold), true
 }
 
-// signalMagnitude returns the signal's metric as a multiple of its rule
-// threshold, or ok=false when the rule has no numeric magnitude.
 func signalMagnitude(sig Signal) (ratio float64, ok bool) {
 	for _, rule := range metricRules {
 		if rule.ruleID == sig.RuleID {
