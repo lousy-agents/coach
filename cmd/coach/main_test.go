@@ -95,6 +95,13 @@ func TestSeeAllCommandOmitsTheCommandWhenAnyWordHoldsAControlCharacter(t *testin
 		{"right-to-left override", []string{"--base", "a\u202eb", "--top", "1"}},
 		{"left-to-right isolate", []string{"--base", "a\u2066b", "--top", "1"}},
 		{"right-to-left mark", []string{"--base", "a\u200fb", "--top", "1"}},
+		{"zero-width space", []string{"--base", "a\u200bb", "--top", "1"}},
+		{"word joiner", []string{"--base", "a\u2060b", "--top", "1"}},
+		{"byte order mark", []string{"--base", "a\ufeffb", "--top", "1"}},
+		{"soft hyphen", []string{"--base", "a\u00adb", "--top", "1"}},
+		{"tag character", []string{"--base", "a\U000e0041b", "--top", "1"}},
+		{"line separator", []string{"--base", "a\u2028b", "--top", "1"}},
+		{"paragraph separator", []string{"--base", "a\u2029b", "--top", "1"}},
 		{"a positional word", []string{"--top", "1", "--baseline", "--", "x\ny"}},
 	}
 	for _, tc := range cases {

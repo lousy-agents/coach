@@ -163,13 +163,46 @@ func TestRenderTextWithheldSignalsLine(t *testing.T) {
 		})
 	}
 
-	t.Run("without a caller-supplied command the line names none", func(t *testing.T) {
+	fallbackCases := []struct {
+		name     string
+		withheld *codesignal.SignalsWithheld
+		wantLine string
+	}{
+		{
+			name:     "cap alone",
+			withheld: &codesignal.SignalsWithheld{Top: 1, BeyondTop: 3},
+			wantLine: "withheld: 3 signals beyond --top 1; summary counts describe the full analysis; see all: re-run without --top\n",
+		},
+		{
+			name:     "floor alone",
+			withheld: &codesignal.SignalsWithheld{MinSeverity: "high", BelowMinSeverity: 2},
+			wantLine: "withheld: 2 signals below --min-severity high; summary counts describe the full analysis; see all: re-run without --min-severity\n",
+		},
+		{
+			name:     "floor and cap",
+			withheld: &codesignal.SignalsWithheld{MinSeverity: "high", BelowMinSeverity: 2, Top: 1, BeyondTop: 3},
+			wantLine: "withheld: 5 signals (2 below --min-severity high, 3 beyond --top 1); summary counts describe the full analysis; see all: re-run without --min-severity and --top\n",
+		},
+		{
+			name:     "floor and cap where only the floor withheld anything",
+			withheld: &codesignal.SignalsWithheld{MinSeverity: "high", BelowMinSeverity: 2, Top: 5},
+			wantLine: "withheld: 2 signals (2 below --min-severity high, 0 beyond --top 5); summary counts describe the full analysis; see all: re-run without --min-severity and --top\n",
+		},
+	}
+	for _, tc := range fallbackCases {
+		t.Run("without a caller-supplied command, "+tc.name+" names only the flags in effect", func(t *testing.T) {
+			got := RenderText(&codesignal.Report{Signals: []codesignal.Signal{signal}, SignalsWithheld: tc.withheld})
+			requireContains(t, got, tc.wantLine)
+		})
+	}
+
+	t.Run("without a caller-supplied command and nothing withheld the line offers no way to see more", func(t *testing.T) {
 		report := &codesignal.Report{
 			Signals:         []codesignal.Signal{signal},
-			SignalsWithheld: &codesignal.SignalsWithheld{Top: 1, BeyondTop: 3},
+			SignalsWithheld: &codesignal.SignalsWithheld{Top: 5},
 		}
 		if got := RenderText(report); strings.Contains(got, "see all") {
-			t.Fatalf("unexpected command in:\n%s", got)
+			t.Fatalf("unexpected see-all clause in:\n%s", got)
 		}
 	})
 

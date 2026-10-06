@@ -13,6 +13,14 @@ import (
 
 const withheldNote = "; summary counts describe the full analysis"
 
+const seeAllWithoutCap = "; see all: re-run without --top"
+
+const seeAllWithoutFloor = "; see all: re-run without --min-severity"
+
+const seeAllWithoutFloorAndCap = "; see all: re-run without --min-severity and --top"
+
+const unsafeBuildTarget = "x\ny"
+
 // withheldLine returns the single `withheld:` line of a text report.
 func withheldLine(text string) string {
 	var found []string
@@ -114,7 +122,7 @@ var _ = Describe("coach codesignal narrowing: the text line that says how to see
 	})
 
 	When("another argument holds a control character", func() {
-		It("omits the command rather than printing a line break or an escape into plain text", func() {
+		It("omits the command rather than printing a line break or an escape into plain text, and says how to see everything", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "go.mod", goModuleFile)
 			commitFile(repo, "pkg/db/db.go", dbPackageFile)
@@ -124,14 +132,14 @@ var _ = Describe("coach codesignal narrowing: the text line that says how to see
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "my\nconfig.json", "--min-severity", "medium")
 
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-			Expect(string(stdout)).NotTo(ContainSubstring("see all"))
+			Expect(string(stdout)).NotTo(ContainSubstring("coach codesignal"))
 			Expect(string(stdout)).NotTo(ContainSubstring("config.json"))
-			Expect(withheldLine(string(stdout))).To(Equal("withheld: 1 signal below --min-severity medium" + withheldNote))
+			Expect(withheldLine(string(stdout))).To(Equal("withheld: 1 signal below --min-severity medium" + withheldNote + seeAllWithoutFloor))
 		})
 	})
 
 	When("another argument holds a character a terminal or line reader would act on beyond C0 and DEL", func() {
-		DescribeTable("omits the command while the withheld line is still printed",
+		DescribeTable("omits the command while the withheld line is still printed and says how to see everything",
 			func(configName string) {
 				repo := newTempGitRepo()
 				commitFile(repo, "go.mod", goModuleFile)
@@ -142,12 +150,31 @@ var _ = Describe("coach codesignal narrowing: the text line that says how to see
 				stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", configName, "--min-severity", "medium")
 
 				Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-				Expect(string(stdout)).NotTo(ContainSubstring("see all"))
-				Expect(withheldLine(string(stdout))).To(Equal("withheld: 1 signal below --min-severity medium" + withheldNote))
+				Expect(string(stdout)).NotTo(ContainSubstring("coach codesignal"))
+				Expect(withheldLine(string(stdout))).To(Equal("withheld: 1 signal below --min-severity medium" + withheldNote + seeAllWithoutFloor))
 			},
 			Entry("a C1 control, the 8-bit CSI", "my\u009bconfig.json"),
 			Entry("a bidi override that reorders what a reader sees", "my\u202econfig.json"),
 			Entry("invalid UTF-8 that decodes as a replacement character", "my\x9bconfig.json"),
+			Entry("a zero-width space, which prints as nothing", "my\u200bconfig.json"),
+			Entry("a line separator, which a log viewer renders as a line break", "my\u2028config.json"),
+		)
+	})
+
+	When("an unsafe argument stops the command being printed", func() {
+		DescribeTable("the fallback names only the narrowing flags in effect",
+			func(repo func() string, withheld string, narrowing []string, wantFallback string) {
+				args := append([]string{"--scope", "all", "--build-target", unsafeBuildTarget}, narrowing...)
+
+				stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo(), args...)
+
+				Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+				Expect(string(stdout)).NotTo(ContainSubstring("coach codesignal"))
+				Expect(withheldLine(string(stdout))).To(Equal(withheld + withheldNote + wantFallback))
+			},
+			Entry("a cap alone", topCapFixture, "withheld: 5 signals beyond --top 1", []string{"--top", "1"}, seeAllWithoutCap),
+			Entry("a floor alone", severityFloorFixture, "withheld: 2 signals below --min-severity high", []string{"--min-severity", "high"}, seeAllWithoutFloor),
+			Entry("a floor and a cap that withholds nothing", severityFloorFixture, "withheld: 2 signals (2 below --min-severity high, 0 beyond --top 5)", []string{"--min-severity", "high", "--top", "5"}, seeAllWithoutFloorAndCap),
 		)
 	})
 

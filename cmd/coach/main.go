@@ -64,8 +64,6 @@ type codesignalFlags struct {
 	noInteractive            bool
 	failOnIncompleteCoverage bool
 
-	// args is the raw argument list the flags were parsed from, kept so a
-	// report can name the command that re-runs the same invocation.
 	args []string
 }
 
@@ -123,7 +121,7 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		projectConfig:            flags.String("project-config", "", "repository-relative path to a project-analysis config at the selected revision; enables opt-in cross-module project facts"),
 		projectLanguage:          flags.String("project-language", "go", "project-analysis language: go or typescript"),
 		minSeverity:              flags.String("min-severity", "", "render only signals at or above this severity ("+severityFloorsHelp()+") and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),
-		top:                      flags.String("top", "", "render only the N highest-ranked signals (a positive integer, applied after --min-severity) and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),
+		top:                      flags.String("top", "", "render only the first N signals in report order (a positive integer, applied after --min-severity; the order puts lifecycle group first, then severity) and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),
 		suggestProjectConfig:     &countingBoolFlag{},
 		output:                   &countingStringFlag{},
 		checkProject:             &countingBoolFlag{},

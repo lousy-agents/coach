@@ -13,7 +13,8 @@ import (
 type RenderOptions struct {
 	// SeeAllCommand is the invocation that shows every signal a narrowed
 	// report withheld. It is text-only presentation and never enters the JSON
-	// report. Empty means the withheld line names no command.
+	// report. Empty means that, when something was withheld, the line says to
+	// re-run without the narrowing flags in effect instead of naming a command.
 	SeeAllCommand string
 }
 

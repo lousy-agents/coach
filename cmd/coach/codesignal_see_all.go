@@ -20,11 +20,14 @@ var shellSafeWord = regexp.MustCompile(`^[A-Za-z0-9@%+:,./_-][A-Za-z0-9@%+=:,./_
 // keeping it would not show everything.
 //
 // It returns "" when any word could be reinterpreted by a terminal or a line
-// reader, because quoting only protects against a shell. That covers every
-// control character (C0, DEL and the C1 range, where U+009B is an 8-bit CSI),
-// bytes that are not valid UTF-8 (a terminal may read a stray 0x9b as a C1
-// control), and bidi controls, which reorder the printed command so it reads
-// differently from what a shell would run.
+// reader, because quoting only protects against a shell. That covers bytes that
+// are not valid UTF-8 (a terminal may read a stray 0x9b as a C1 control) and
+// every rune in Cc (C0, DEL and the C1 range, where U+009B is an 8-bit CSI),
+// Cf, Zl or Zp. Cf holds the bidi controls, which reorder the printed command,
+// and the invisible format characters (zero-width space, word joiner, byte
+// order mark, soft hyphen, tag characters), which make the printed command
+// differ from what a reader sees. Zl and Zp (U+2028, U+2029) render as a line
+// break in some line readers and log viewers.
 func seeAllCommand(args []string) string {
 	flags := flag.NewFlagSet("codesignal", flag.ContinueOnError)
 	registerCodesignalFlags(flags)
@@ -53,7 +56,7 @@ func seeAllCommand(args []string) string {
 
 func isUnsafeToPrint(word string) bool {
 	return !utf8.ValidString(word) || strings.IndexFunc(word, func(r rune) bool {
-		return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r)
+		return unicode.In(r, unicode.Cc, unicode.Cf, unicode.Zl, unicode.Zp)
 	}) >= 0
 }
 

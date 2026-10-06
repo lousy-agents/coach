@@ -284,7 +284,7 @@ an existing finding, an unanalyzable merge-base, a rename or copy without
 old-path continuity, or, in project mode, a project finding whose lifecycle is
 indeterminate (`project_lifecycle_indeterminate`)). An `unknown` finding still
 present at HEAD can therefore rank behind resolved findings, and a `--top` cap
-can withhold it; the withheld count and the see-all command still state that.
+can withhold it; the withheld count and the see-all clause still state that.
 
 ### Narrowing the rendered report
 
@@ -297,9 +297,9 @@ findings in `signals[]`) and nothing else:
   blocks keep describing the full analysis. `active_signals` is not reduced, so
   it can exceed the number of signals shown.
 - The floor applies first, then the cap takes the first `N` of what remains in
-  report order, so "highest-ranked" means lifecycle group first (in `--base`
-  mode, introduced and changed findings come first), then severity, confidence,
-  and path with within-rule magnitude. The two flags compose.
+  report order: lifecycle group first (in `--base` mode, introduced and changed
+  findings come first), then severity, confidence, and path with within-rule
+  magnitude. The two flags compose.
 - `advisory` ranks below `medium`, so `--min-severity medium` withholds
   `advisory` `architecture.layer_violation` and `architecture.layer_bypass`
   findings. That ordering is deliberate
@@ -318,16 +318,22 @@ findings in `signals[]`) and nothing else:
   `withheld: 76 signals beyond --top 3; summary counts describe the full analysis; see all: coach codesignal --baseline`.
   With both flags it reports the total and each count:
   `withheld: 4 signals (2 below --min-severity high, 2 beyond --top 2); summary counts describe the full analysis; see all: coach codesignal --baseline`.
-  When nothing was withheld the line has no see-all command:
+  When nothing was withheld the line has no see-all clause:
   `withheld: 0 signals beyond --top 6; summary counts describe the full analysis`.
   The see-all command is printed as `coach codesignal ...` with the user's own
   arguments minus the narrowing flags, quoted for a POSIX shell. It does not
-  echo a different binary path such as `./coach`, and it is omitted when any
-  argument is not valid UTF-8 or contains a control character (Unicode category
-  Cc: C0, DEL, or C1) or a bidirectional-formatting control character (Unicode
-  Bidi_Control), because quoting stops a shell from reinterpreting such a
-  character but not a terminal or a line reader. It is printed in text only; JSON
-  carries the counts, not the command. A floor that leaves no signals prints
+  echo a different binary path such as `./coach`. It is omitted when any
+  argument is not valid UTF-8 or contains a character in Unicode category Cc
+  (C0, DEL, or C1), Cf (format characters: bidirectional controls, zero-width
+  space, word joiner, byte order mark, soft hyphen, tag characters), Zl, or Zp
+  (line and paragraph separators), because quoting stops a shell from
+  reinterpreting such a character but not a terminal or a line reader, and an
+  invisible character makes the printed command differ from what a reader sees.
+  When the command is omitted and something was withheld, the line ends
+  `; see all: re-run without --top`, `... without --min-severity`, or
+  `... without --min-severity and --top` instead, naming only the flags given.
+  It is printed in text only; JSON carries the counts, not the command. A floor
+  that leaves no signals prints
   `No active CodeSignal findings at or above --min-severity <level>.` instead of
   the all-clear.
 - Neither flag changes the exit status. Exit codes depend on analysis outcome

@@ -8,6 +8,7 @@ import (
 )
 
 type withheldClause struct {
+	flag   string
 	phrase string
 	count  int
 }
@@ -15,10 +16,10 @@ type withheldClause struct {
 func withheldClauses(withheld *codesignal.SignalsWithheld) []withheldClause {
 	var clauses []withheldClause
 	if withheld.MinSeverity != "" {
-		clauses = append(clauses, withheldClause{"below --min-severity " + string(withheld.MinSeverity), withheld.BelowMinSeverity})
+		clauses = append(clauses, withheldClause{"--min-severity", "below --min-severity " + string(withheld.MinSeverity), withheld.BelowMinSeverity})
 	}
 	if withheld.Top > 0 {
-		clauses = append(clauses, withheldClause{fmt.Sprintf("beyond --top %d", withheld.Top), withheld.BeyondTop})
+		clauses = append(clauses, withheldClause{"--top", fmt.Sprintf("beyond --top %d", withheld.Top), withheld.BeyondTop})
 	}
 	return clauses
 }
@@ -40,10 +41,21 @@ func renderWithheldSignals(b *strings.Builder, withheld *codesignal.SignalsWithh
 	}
 	fmt.Fprintf(b, "withheld: %s %s", signalCountNoun(total), withheldBreakdown(clauses))
 	b.WriteString("; summary counts describe the full analysis")
-	if total > 0 && seeAllCommand != "" {
+	if total > 0 {
+		if seeAllCommand == "" {
+			seeAllCommand = seeAllWithoutFlags(clauses)
+		}
 		fmt.Fprintf(b, "; see all: %s", seeAllCommand)
 	}
 	b.WriteString("\n")
+}
+
+func seeAllWithoutFlags(clauses []withheldClause) string {
+	flags := make([]string, len(clauses))
+	for i, clause := range clauses {
+		flags[i] = clause.flag
+	}
+	return "re-run without " + strings.Join(flags, " and ")
 }
 
 func withheldBreakdown(clauses []withheldClause) string {
