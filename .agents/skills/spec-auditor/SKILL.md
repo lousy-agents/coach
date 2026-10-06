@@ -1,6 +1,6 @@
 ---
 name: spec-auditor
-description: Adversarially review feature specifications, implementation plans, GitHub issues, PRDs, or EARS-format specs before coding. Use when the user asks to audit, critique, stress-test, validate, review for ambiguity, find contradictions, identify gaps, harden acceptance criteria, prepare a spec for Codex, GitHub Copilot, Claude, or another coding agent, or produce a structured flaw list for a spec-improvement loop.
+description: Adversarially review feature specifications, implementation plans, GitHub issues, PRDs, or EARS-format specs before coding. Use when the user asks to audit, critique, stress-test, validate, review for ambiguity, find contradictions, identify gaps, harden acceptance criteria, prepare a spec for Codex, GitHub Copilot, Claude, or another coding agent, or produce a structured flaw list for a spec-improvement loop. For drafting, converting, or reviewing individual EARS criteria without auditing a whole spec, use to-ears.
 argument-hint: "Path to a spec, PRD, GitHub issue, or plan to audit (or paste the spec text); optionally request JSON output"
 allowed-tools: Read, Grep, Glob, Bash
 ---
@@ -107,7 +107,7 @@ When the user asks for machine-readable output, use the JSON schema in `./refere
 
 ## Optional Static Lint Script
 
-Use `./scripts/spec_audit_lint.py` only when the runtime can read local files and run Python. It performs deterministic checks for required sections, per-story acceptance criteria, EARS-like phrasing, prematurely completed checkboxes (drafts should use unchecked `[ ]`), placeholder markers, weak language, Mermaid diagram types, and task structure.
+Use `./scripts/spec_audit_lint.py` only when the runtime can read local files and run Python. It performs deterministic checks for required sections, per-story acceptance criteria, EARS-like phrasing, prematurely completed checkboxes (drafts should use unchecked `[ ]`; an answered `OQ-n` question may be `[x]`), placeholder markers, weak language, Mermaid diagram types, task structure, and the criterion-to-task trace.
 
 What it does and does not treat as spec content:
 
@@ -115,6 +115,9 @@ What it does and does not treat as spec content:
 - Heading levels matter, and a wrong level is reported rather than ignored: required document sections are level 2 (`## Tasks`), user stories and tasks level 3 (`### Story 1: <Title>`, `### Task N: <Title>`). A section, story, or task found at another level is named with the level it actually has.
 - `feature-to-plan` sanctions two title variations and both are accepted: `## Stakeholders` for `## Personas`, and `Acceptance` for `Acceptance Criteria` at whatever level the criteria sit. No other alternates are accepted.
 - Acceptance criteria are checked **per story**, so one well-covered story no longer hides a story that has none. Criteria are expected to nest one level under their story; criteria written at or above the story's own level are reported as a structure problem, because nothing distinguishes them from a separate section that merely follows the story.
+- EARS detection follows the EARS Contract owned by `to-ears`. A leading criterion ID (`AC-2.1:`) is stripped before the check. `During` counts as an alias for `While`. A bullet tagged `[non-EARS: <reason>]` is a declared exception: it is not flagged, but it still counts as a criterion. The weak-language list is the contract's vague-term list. A `[TBD: …]` marker is reported as an unresolved placeholder on purpose.
+- Open Questions in the contract's one-line format are held to its severity floors. An `assumption` below Medium is a Medium finding. A question that an inline `[TBD …]` points at, rated below High, is a Low finding, because that check is a heuristic.
+- When criteria use `AC-<story>.<n>` IDs, the script also checks the trace in both directions: duplicate IDs, criteria no task cites, tasks that cite an undefined ID, and criteria missing an ID while others have one. A spec with no IDs gets no trace findings.
 
 Finding ids (`SL-001`, ...) are run-local ordinals for referencing findings inside one lint report — unlike the `SA-NNN` ids your own audit emits, they are not stable across runs. The module docstring lists the script's known limitations.
 

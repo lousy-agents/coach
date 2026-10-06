@@ -29,7 +29,7 @@
       "source": "lousy-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/feature-to-plan/SKILL.md",
-      "computedHash": "4288b4a80ed9e0ef389acaa0a0d54c4debab7f8b8e1614b81fedda99bd7fc387"
+      "computedHash": "a8575f21a12df28da3f7304784196f779daac766b4f822b9ef9fe5740bbf0805"
     },
     "go-testable-design": {
       "source": "lousy-agents/skills",
@@ -47,7 +47,7 @@
       "source": "lousy-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/issue-refine-loop/SKILL.md",
-      "computedHash": "340f76266cb49186792700b47ba9228bdfde3a83fc3e34b2897af6050f8f05b3"
+      "computedHash": "4859da37f337ed03e20738e53c7226cb53a6777d7666ac7bf425a3222b8fda4f"
     },
     "mutation-hunter": {
       "source": "lousy-agents/skills",
@@ -83,7 +83,13 @@
       "source": "lousy-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/spec-auditor/SKILL.md",
-      "computedHash": "52b300f69d00357eb7fb7a9b14396bac5fb92e3735d4d51a8dca644b10cf5a34"
+      "computedHash": "8d9f21b7518334110302b93f6b84de7e3fc7f64cf19e73493ded6a95e24f545c"
+    },
+    "to-ears": {
+      "source": "lousy-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/to-ears/SKILL.md",
+      "computedHash": "bc149f3540763adf6ec5e7d4abc4c6174f0a05c6a5a60b27a39927971c46e89c"
     },
     "triaging-pr-reviews": {
       "source": "lousy-agents/skills",
