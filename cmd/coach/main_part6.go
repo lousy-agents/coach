@@ -28,7 +28,7 @@ func flagValueChecks(f codesignalFlags) []flagValueCheck {
 	return []flagValueCheck{
 		{"format", f.format, f.format == "text" || f.format == "json", `"text" or "json"`},
 		{"scope", f.scope, f.scope == "production" || f.scope == "all", `"production" or "all"`},
-		{"min-severity", f.minSeverity, validMinSeverityFlag(f), `"high", "medium", "advisory", or "low"`},
+		{"min-severity", f.minSeverity, validMinSeverityFlag(f), severityFloorsWant()},
 		{"top", f.top, validTopFlag(f), "a positive integer"},
 		{"project-language", f.projectLanguage, f.projectLanguage == "go" || f.projectLanguage == "typescript", `"go" or "typescript"`},
 	}

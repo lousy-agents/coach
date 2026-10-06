@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -15,6 +16,10 @@ var shellSafeWord = regexp.MustCompile(`^[A-Za-z0-9@%+:,./_-][A-Za-z0-9@%+=:,./_
 // narrowing flag removed. A flag that withheld nothing is dropped too: with the
 // floor gone a cap could withhold what the floor had already hidden, so
 // keeping it would not show everything.
+//
+// It returns "" when any word holds a control character: the command is printed
+// into plain text, where quoting stops a shell from reinterpreting a newline or
+// escape byte but not a terminal or a line reader.
 func seeAllCommand(args []string) string {
 	flags := flag.NewFlagSet("codesignal", flag.ContinueOnError)
 	registerCodesignalFlags(flags)
@@ -35,7 +40,14 @@ func seeAllCommand(args []string) string {
 		}
 		i += len(span) - 1
 	}
+	if slices.ContainsFunc(words, hasControlByte) {
+		return ""
+	}
 	return shellJoin(words)
+}
+
+func hasControlByte(word string) bool {
+	return strings.IndexFunc(word, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0
 }
 
 // splitFlagToken applies the flag package's token grammar: one or two leading

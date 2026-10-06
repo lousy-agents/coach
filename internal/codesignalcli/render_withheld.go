@@ -39,7 +39,7 @@ func renderWithheldSignals(b *strings.Builder, withheld *codesignal.SignalsWithh
 		total += clause.count
 	}
 	fmt.Fprintf(b, "withheld: %s %s", signalCountNoun(total), withheldBreakdown(clauses))
-	b.WriteString("; counts above describe the full analysis")
+	b.WriteString("; summary counts describe the full analysis")
 	if total > 0 && seeAllCommand != "" {
 		fmt.Fprintf(b, "; see all: %s", seeAllCommand)
 	}

@@ -41,7 +41,7 @@ commands:
 
 run "coach codesignal --help" for command-specific help.`
 
-const codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--min-severity high|medium|advisory|low] [--top N] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive] [--fail-on-incomplete-coverage]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>] [--no-interactive]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]\n   or: coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>] [--no-interactive]"
+var codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--min-severity " + severityFloorsUsage() + "] [--top N] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive] [--fail-on-incomplete-coverage]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>] [--no-interactive]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]\n   or: coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>] [--no-interactive]"
 
 type codesignalFlags struct {
 	base                     string
@@ -122,7 +122,7 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		buildTarget:              flags.String("build-target", "", "Go package pattern used to determine production reachability"),
 		projectConfig:            flags.String("project-config", "", "repository-relative path to a project-analysis config at the selected revision; enables opt-in cross-module project facts"),
 		projectLanguage:          flags.String("project-language", "go", "project-analysis language: go or typescript"),
-		minSeverity:              flags.String("min-severity", "", "render only signals at or above this severity (high, medium, advisory, or low) and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),
+		minSeverity:              flags.String("min-severity", "", "render only signals at or above this severity ("+severityFloorsHelp()+") and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),
 		top:                      flags.String("top", "", "render only the N highest-ranked signals (a positive integer, applied after --min-severity) and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),
 		suggestProjectConfig:     &countingBoolFlag{},
 		output:                   &countingStringFlag{},

@@ -49,6 +49,14 @@ func withheldWire(report codesignal.Report) string {
 	return string(document["signals_withheld"])
 }
 
+// narrowRecovering turns a panic into a returned value so a missing guard
+// fails the spec rather than aborting the suite.
+func narrowRecovering(report *codesignal.Report, opts codesignal.NarrowOptions) (view *codesignal.Report, err error, panicked any) {
+	defer func() { panicked = recover() }()
+	view, err = report.Narrow(opts)
+	return view, err, nil
+}
+
 func narrow(report *codesignal.Report, opts codesignal.NarrowOptions) codesignal.Report {
 	view, err := report.Narrow(opts)
 	Expect(err).NotTo(HaveOccurred())
@@ -167,5 +175,58 @@ var _ = Describe("Narrowed report views", func() {
 			Expect(view).To(BeNil())
 			Expect(withheldWire(narrowed)).To(Equal(`{"min_severity":"medium","below_min_severity":1}`))
 		})
+
+		It("refuses a request that narrows nothing when the report is already narrowed", func() {
+			source := viewReport("high", "medium", "low")
+			narrowed := narrow(&source, codesignal.NarrowOptions{MinSeverity: "medium"})
+
+			view, err := narrowed.Narrow(codesignal.NarrowOptions{})
+
+			Expect(err).To(MatchError(codesignal.ErrAlreadyNarrowed))
+			Expect(view).To(BeNil())
+		})
+
+		DescribeTable("refuses a nil report with an error rather than panicking",
+			func(opts codesignal.NarrowOptions) {
+				var report *codesignal.Report
+
+				view, err, panicked := narrowRecovering(report, opts)
+
+				Expect(panicked).To(BeNil())
+				Expect(err).To(MatchError(codesignal.ErrNilReport))
+				Expect(view).To(BeNil())
+			},
+			Entry("with a cap", codesignal.NarrowOptions{Top: 1}),
+			Entry("with a floor", codesignal.NarrowOptions{MinSeverity: "high"}),
+			Entry("with no narrowing", codesignal.NarrowOptions{}),
+		)
+
+		It("reports an invalid option on a narrowed report as already narrowed, the first thing wrong with the call", func() {
+			source := viewReport("high", "low")
+			narrowed := narrow(&source, codesignal.NarrowOptions{Top: 1})
+
+			_, err := narrowed.Narrow(codesignal.NarrowOptions{MinSeverity: "urgent"})
+
+			Expect(err).To(MatchError(codesignal.ErrAlreadyNarrowed))
+		})
 	})
+})
+
+var _ = Describe("A withheld record that Narrow cannot produce", func() {
+	DescribeTable("fails to encode rather than reading as an unnarrowed or smaller analysis",
+		func(withheld codesignal.SignalsWithheld) {
+			report := viewReport("high", "low")
+			report.SignalsWithheld = &withheld
+
+			encoded, err := json.Marshal(report)
+
+			Expect(err).To(MatchError(codesignal.ErrInvalidSignalsWithheld), "encoded as %s", encoded)
+		},
+		Entry("a floor count without its floor", codesignal.SignalsWithheld{BelowMinSeverity: 3}),
+		Entry("a cap count without its cap", codesignal.SignalsWithheld{BeyondTop: 2}),
+		Entry("a negative cap", codesignal.SignalsWithheld{Top: -2, BeyondTop: 1}),
+		Entry("a negative floor count", codesignal.SignalsWithheld{MinSeverity: "high", BelowMinSeverity: -1}),
+		Entry("a negative cap count", codesignal.SignalsWithheld{Top: 2, BeyondTop: -1}),
+		Entry("an empty record", codesignal.SignalsWithheld{}),
+	)
 })

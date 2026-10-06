@@ -2,6 +2,7 @@ package main
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
@@ -9,6 +10,36 @@ import (
 func validMinSeverityFlag(f codesignalFlags) bool {
 	_, ok := codesignal.ParseSeverityFloor(f.minSeverity)
 	return ok || !f.minSeveritySet
+}
+
+func severityFloorNames() []string {
+	floors := codesignal.SeverityFloors()
+	names := make([]string, len(floors))
+	for i, floor := range floors {
+		names[i] = string(floor)
+	}
+	return names
+}
+
+func severityFloorsUsage() string {
+	return strings.Join(severityFloorNames(), "|")
+}
+
+func severityFloorsHelp() string {
+	return joinOr(severityFloorNames())
+}
+
+func severityFloorsWant() string {
+	names := severityFloorNames()
+	for i, name := range names {
+		names[i] = strconv.Quote(name)
+	}
+	return joinOr(names)
+}
+
+func joinOr(words []string) string {
+	last := len(words) - 1
+	return strings.Join(words[:last], ", ") + ", or " + words[last]
 }
 
 func validTopFlag(f codesignalFlags) bool {

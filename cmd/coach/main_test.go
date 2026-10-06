@@ -1,7 +1,12 @@
 package main
 
 import (
+	"flag"
+	"strconv"
+	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
 // TestSetupResidueDisclosure pins AC-SET-7's two distinct answers apart.
@@ -65,5 +70,72 @@ func TestSeeAllCommandDropsNarrowingFlagsInEverySpelling(t *testing.T) {
 		if got := seeAllCommand(tc.args); got != tc.want {
 			t.Errorf("%s: seeAllCommand(%q) = %q, want %q", tc.name, tc.args, got, tc.want)
 		}
+	}
+}
+
+func TestSeeAllCommandOmitsTheCommandWhenAnyWordHoldsAControlCharacter(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"newline", []string{"--project-config", "a\nb", "--top", "1"}},
+		{"escape", []string{"--build-target", "\x1b[2J", "--top", "1"}},
+		{"carriage return", []string{"--base", "a\rb", "--top", "1"}},
+		{"tab", []string{"--base", "a\tb", "--top", "1"}},
+		{"delete", []string{"--base", "a\x7fb", "--top", "1"}},
+		{"nul", []string{"--base", "a\x00b", "--top", "1"}},
+		{"a positional word", []string{"--top", "1", "--baseline", "--", "x\ny"}},
+	}
+	for _, tc := range cases {
+		if got := seeAllCommand(tc.args); got != "" {
+			t.Errorf("%s: seeAllCommand(%q) = %q, want no command", tc.name, tc.args, got)
+		}
+	}
+}
+
+func TestSeeAllCommandKeepsPrintableNonASCIIWords(t *testing.T) {
+	got := seeAllCommand([]string{"--build-target", "pkg/ünï", "--top", "1"})
+
+	if want := "coach codesignal --build-target 'pkg/ünï'"; got != want {
+		t.Errorf("seeAllCommand = %q, want %q", got, want)
+	}
+}
+
+func TestSeverityFloorWordingFollowsTheAcceptedFloors(t *testing.T) {
+	floors := codesignal.SeverityFloors()
+	names := make([]string, len(floors))
+	quoted := make([]string, len(floors))
+	for i, floor := range floors {
+		names[i] = string(floor)
+		quoted[i] = strconv.Quote(string(floor))
+	}
+	last := len(names) - 1
+
+	flags := flag.NewFlagSet("codesignal", flag.ContinueOnError)
+	registerCodesignalFlags(flags)
+
+	var errorWant string
+	for _, check := range flagValueChecks(codesignalFlags{minSeverity: "urgent", minSeveritySet: true}) {
+		if check.flag == "min-severity" {
+			errorWant = check.want
+		}
+	}
+
+	cases := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"usage line", codesignalUsage, "[--min-severity " + strings.Join(names, "|") + "]"},
+		{"flag help", flags.Lookup("min-severity").Usage, "(" + strings.Join(names[:last], ", ") + ", or " + names[last] + ")"},
+		{"error text", errorWant, strings.Join(quoted[:last], ", ") + ", or " + quoted[last]},
+	}
+	for _, tc := range cases {
+		if !strings.Contains(tc.got, tc.want) {
+			t.Errorf("%s = %q, want it to list the accepted floors as %q", tc.name, tc.got, tc.want)
+		}
+	}
+	if errorWant == "" {
+		t.Fatal("no min-severity value check found")
 	}
 }

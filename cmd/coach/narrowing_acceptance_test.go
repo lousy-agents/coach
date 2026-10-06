@@ -11,7 +11,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 )
 
-const withheldNote = "; counts above describe the full analysis"
+const withheldNote = "; summary counts describe the full analysis"
 
 // withheldLine returns the single `withheld:` line of a text report.
 func withheldLine(text string) string {
@@ -110,6 +110,41 @@ var _ = Describe("coach codesignal narrowing: the text line that says how to see
 			Expect(withheldLine(string(stdout))).To(Equal(
 				"withheld: 1 signal below --min-severity medium" + withheldNote +
 					"; see all: coach codesignal --baseline --project-config 'my config.json'"))
+		})
+	})
+
+	When("another argument holds a control character", func() {
+		It("omits the command rather than printing a line break or an escape into plain text", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "go.mod", goModuleFile)
+			commitFile(repo, "pkg/db/db.go", dbPackageFile)
+			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
+			commitFile(repo, "my\nconfig.json", goLayerPolicyConfigJSON)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "my\nconfig.json", "--min-severity", "medium")
+
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			Expect(string(stdout)).NotTo(ContainSubstring("see all"))
+			Expect(string(stdout)).NotTo(ContainSubstring("config.json"))
+			Expect(withheldLine(string(stdout))).To(Equal("withheld: 1 signal below --min-severity medium" + withheldNote))
+		})
+	})
+
+	When("the report carries a project summary", func() {
+		It("states that the summary counts, not only the counts above the line, describe the full analysis", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "go.mod", goModuleFile)
+			commitFile(repo, "pkg/db/db.go", dbPackageFile)
+			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
+			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--min-severity", "medium")
+
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			text := string(stdout)
+			Expect(withheldLine(text)).To(ContainSubstring("; summary counts describe the full analysis"))
+			Expect(strings.Index(text, "Project summary:")).To(BeNumerically(">", strings.Index(text, "withheld: ")),
+				"the wording must hold where the project summary prints below the withheld line")
 		})
 	})
 

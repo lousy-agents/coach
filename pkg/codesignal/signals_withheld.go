@@ -2,8 +2,14 @@ package codesignal
 
 import (
 	"encoding/json"
-	"slices"
+	"errors"
+	"fmt"
 )
+
+// ErrInvalidSignalsWithheld reports a SignalsWithheld that Narrow cannot
+// produce, which would encode as a view that drops or misstates what it
+// withheld.
+var ErrInvalidSignalsWithheld = errors.New("codesignal: invalid signals_withheld record")
 
 // SignalsWithheld records what a narrowed view of a Report left out, so a
 // shortened signals list is never mistaken for a smaller analysis. It is nil on
@@ -22,9 +28,29 @@ type SignalsWithheld struct {
 	BeyondTop        int      `json:"beyond_top"`
 }
 
+func (w SignalsWithheld) validate() error {
+	switch {
+	case w.Top < 0 || w.BelowMinSeverity < 0 || w.BeyondTop < 0:
+		return fmt.Errorf("%w: negative cap or count", ErrInvalidSignalsWithheld)
+	case w.MinSeverity == "" && w.BelowMinSeverity != 0:
+		return fmt.Errorf("%w: floor count without a floor", ErrInvalidSignalsWithheld)
+	case w.Top == 0 && w.BeyondTop != 0:
+		return fmt.Errorf("%w: cap count without a cap", ErrInvalidSignalsWithheld)
+	case w.MinSeverity == "" && w.Top == 0:
+		return fmt.Errorf("%w: no narrowing named", ErrInvalidSignalsWithheld)
+	}
+	return nil
+}
+
 // MarshalJSON emits each narrowing's pair of fields only while that narrowing
-// is in effect, so a cap-only view carries no floor fields and vice versa.
+// is in effect, so a cap-only view carries no floor fields and vice versa. A
+// record that names no narrowing, counts withheld signals for one it does not
+// name, or holds a negative cap or count, is an error: Narrow cannot produce it,
+// and encoded it would drop or misstate what the view withheld.
 func (w SignalsWithheld) MarshalJSON() ([]byte, error) {
+	if err := w.validate(); err != nil {
+		return nil, err
+	}
 	var wire struct {
 		MinSeverity      Severity `json:"min_severity,omitempty"`
 		BelowMinSeverity *int     `json:"below_min_severity,omitempty"`
@@ -40,12 +66,4 @@ func (w SignalsWithheld) MarshalJSON() ([]byte, error) {
 		wire.BeyondTop = &w.BeyondTop
 	}
 	return json.Marshal(wire)
-}
-
-// ParseSeverityFloor accepts exactly the severities the report can emit.
-func ParseSeverityFloor(value string) (Severity, bool) {
-	if floor := Severity(value); slices.Contains(severityOrder, floor) {
-		return floor, true
-	}
-	return "", false
 }

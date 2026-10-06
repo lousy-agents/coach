@@ -6,6 +6,8 @@ import (
 )
 
 var (
+	// ErrNilReport reports a Narrow of a nil Report.
+	ErrNilReport = errors.New("codesignal: nil report")
 	// ErrUnknownSeverityFloor reports a NarrowOptions.MinSeverity outside the
 	// severities a Report can emit.
 	ErrUnknownSeverityFloor = errors.New("codesignal: unknown severity floor")
@@ -24,8 +26,7 @@ type NarrowOptions struct {
 }
 
 // Narrow returns a copy of r whose Signals and ProjectChanges hold only what
-// opts keeps, and whose SignalsWithheld records what it left out. r must be
-// non-nil and unnarrowed.
+// opts keeps, and whose SignalsWithheld records what it left out.
 //
 // When opts narrow anything, Narrow ranks its copy of the signals, so a report
 // in any order yields the same view. The severity floor applies first and the
@@ -38,15 +39,16 @@ type NarrowOptions struct {
 // are shared with r untouched. ProjectChanges follow their mirrored signal by
 // ID, so each finding is counted once.
 //
-// Zero opts return r itself with no record. An unrecognised floor, a negative
-// Top, or an already narrowed r returns an error and no view, never a
-// different view than the one asked for.
+// A nil r, an already narrowed r, an unrecognised floor or a negative Top
+// returns an error and no view, never a different view than the one asked for;
+// that holds for zero opts too. Valid zero opts then return r itself with no
+// record.
 func (r *Report) Narrow(opts NarrowOptions) (*Report, error) {
-	if opts == (NarrowOptions{}) {
-		return r, nil
-	}
 	if err := r.validateNarrowing(opts); err != nil {
 		return nil, err
+	}
+	if opts == (NarrowOptions{}) {
+		return r, nil
 	}
 
 	var withheld SignalsWithheld
@@ -69,13 +71,16 @@ func (r *Report) Narrow(opts NarrowOptions) (*Report, error) {
 }
 
 func (r *Report) validateNarrowing(opts NarrowOptions) error {
+	if r == nil {
+		return ErrNilReport
+	}
 	if r.SignalsWithheld != nil {
 		return ErrAlreadyNarrowed
 	}
 	if opts.Top < 0 {
 		return ErrNegativeTop
 	}
-	if opts.MinSeverity != "" && !slices.Contains(severityOrder, opts.MinSeverity) {
+	if _, known := ParseSeverityFloor(string(opts.MinSeverity)); opts.MinSeverity != "" && !known {
 		return ErrUnknownSeverityFloor
 	}
 	return nil
