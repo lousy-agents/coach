@@ -195,8 +195,10 @@ prints `severity:` beside its `rule_id:`.
 a threshold and emit `medium` from the threshold up. Two of them escalate to
 `high` when the measured value is at least twice the threshold. Escalation is
 part of the deterministic core, so coach-api baseline jobs, which share it
-(system-overview §3C), also carry the escalated severity and their baseline
-judgment priority sees `high` for those findings:
+(system-overview §3C), also carry the escalated severity in their stored
+findings. Baseline judgment prioritization covers only
+`state.hidden_input_mutation`, a rule that never escalates, so escalation does
+not change it:
 
 | `rule_id` | Metric (evidence) | Threshold | `high` from |
 | --- | --- | --- | --- |
@@ -255,8 +257,11 @@ Severity outranks magnitude, so a `medium` signal never precedes a `high` one
 because its metric is larger.
 
 The lifecycle group order predates severity ranking and has one consequence
-for `--base`: `resolved` findings rank ahead of `unknown` ones (a residual
-class carrying `continuity_not_determined` or base diagnostics). An `unknown`
+for `--base`: `resolved` findings rank ahead of `unknown` ones (residual
+classification: an extra occurrence of an existing finding, an unanalyzable
+merge-base, a rename or copy without old-path continuity, or, in project mode,
+a project finding whose lifecycle is indeterminate
+(`project_lifecycle_indeterminate`)). An `unknown`
 finding still present at HEAD can therefore rank behind resolved findings, and
 a `--top` cap can withhold it; the withheld count and the see-all command
 still state that.
