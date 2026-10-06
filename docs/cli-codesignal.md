@@ -33,7 +33,7 @@ that suggest/prepare still require `--baseline`).
 | `--baseline` | | Scan every tracked Go/TS/TSX file at HEAD. |
 | `--format` | `text` | `text` or `json`. |
 | `--scope` | `production` | `production` or `all`. |
-| `--min-severity <level>` | none | Render only signals at or above `high`, `medium`, `advisory`, or `low` (ranked `high` > `medium` > `advisory` > `low`). `advisory` ranks below `medium`, so `--min-severity medium` also withholds `advisory` `architecture.layer_violation` and `architecture.layer_bypass` findings. No floor by default. Any other value is a usage error: exit `2`. See [Narrowing the rendered report](#narrowing-the-rendered-report). |
+| `--min-severity <level>` | none | Render only signals at or above `high`, `medium`, `advisory`, or `low` (ranked `high` > `medium` > `advisory` > `low`). `advisory` ranks below `medium`, so `--min-severity medium` also withholds `advisory` `architecture.layer_violation` and `architecture.layer_bypass` findings. Only `complexity.cognitive_complexity` and `complexity.max_nesting_depth` can be `high`, so `--min-severity high` shows only those two rules ([Severity](#severity)). No floor by default. Any other value is a usage error: exit `2`. See [Narrowing the rendered report](#narrowing-the-rendered-report). |
 | `--top <N>` | none | Render only the first `N` signals in report order ([Report order](#report-order): lifecycle group first, then severity, confidence, and path with within-rule magnitude), after any `--min-severity` floor. No cap by default. `N` must be a positive integer; anything else is a usage error: exit `2`. |
 | `--build-target <pattern>` | empty | Go package pattern for production reachability. Silent no-op under `--scope all`. |
 | `--project-config <path>` | empty | Repository-relative path at the **analyzed revision**. Enables `schema_version: "2"`. |
@@ -154,7 +154,12 @@ A consumer who wants problems present at HEAD should sum `introduced` +
 
 With `--min-severity` or `--top`, `signals[]` can be shorter than `active_signals`.
 When `signals_withheld` is present, `active_signals == len(signals) +
-below_min_severity + beyond_top`, reading an absent key as `0`. See
+below_min_severity + beyond_top`, reading an absent key as `0`. In a
+`schema_version: "2"` report, `project_changes[]` is shortened to the changes
+whose mirrored signal survived, so `len(project_changes)` can also be below
+`project_summary.active_changes`, which keeps the full count. Each project
+change is also a signal, so the withheld ones are already counted in
+`below_min_severity` and `beyond_top`. See
 [Narrowing the rendered report](#narrowing-the-rendered-report).
 
 ## JSON report
@@ -212,6 +217,12 @@ twice the threshold says nothing about how hard the code is to follow. It is
 still ranked by magnitude among `complexity.branch_density` findings (see
 Report order).
 
+Only `complexity.cognitive_complexity` and `complexity.max_nesting_depth` can
+emit `high`, so `--min-severity high` shows only those two rules. Every other
+rule emits a fixed severity, including `security.toctou_check_then_act` and
+`state.hidden_input_mutation`, which are always `medium`, so a `high` floor
+withholds them.
+
 `max_nesting_depth` is the file-wide maximum nesting depth, not a per-function
 value: one deeply nested function sets it for the whole file.
 
@@ -234,8 +245,19 @@ Layer rules (`architecture.layer_violation`, `architecture.layer_bypass`) emit
    and unchanged, existing and unchanged, resolved, then everything else
    (`baseline`, `unknown`).
 2. Severity: `high`, `medium`, `advisory`, `low`.
-3. Confidence.
+3. Confidence: `high`, `medium`, `low`.
 4. Path, start row, start column, `rule_id`, then `id`.
+
+Confidence orders findings within a severity.
+`complexity.cognitive_complexity` carries `high` confidence and
+`complexity.branch_density` and `complexity.max_nesting_depth` carry `medium`,
+so cognitive-complexity findings precede `medium`-confidence findings,
+including every `complexity.branch_density` and
+`complexity.max_nesting_depth` finding, of the same severity and lifecycle
+group whatever their path.
+`structure.react_component_orchestration_density` also carries `high`
+confidence, so a `medium` cognitive-complexity finding and a React
+orchestration finding are ordered by path.
 
 Then, inside each tier of equal lifecycle group, severity, and confidence, the
 findings of each metric rule (`complexity.cognitive_complexity`,
@@ -249,15 +271,13 @@ Ranking is within a rule only. A signal with no numeric metric (for example
 `security.toctou_check_then_act` or `state.hidden_input_mutation`) keeps its
 path position, and findings of different rules are never compared by
 magnitude, so a whole-file `branch_sum` cannot outrank another rule's finding.
-Issue [#272](https://github.com/lousy-agents/coach/issues/272) left within-rule
-against across-rule ranking open; within-rule keeps the path order for signals
-without a magnitude and avoids comparing unlike metrics.
+Magnitude is a ratio to a rule's own threshold, so it means nothing across
+rules.
 
 Severity outranks magnitude, so a `medium` signal never precedes a `high` one
 because its metric is larger.
 
-The lifecycle group order predates severity ranking and has one consequence
-for `--base`: `resolved` findings rank ahead of `unknown` ones (residual
+The lifecycle group order has one consequence for `--base`: `resolved` findings rank ahead of `unknown` ones (residual
 classification: an extra occurrence of an existing finding, an unanalyzable
 merge-base, a rename or copy without old-path continuity, or, in project mode,
 a project finding whose lifecycle is indeterminate
@@ -303,7 +323,10 @@ findings in `signals[]`) and nothing else:
   The see-all command is printed as `coach codesignal ...` with the user's own
   arguments minus the narrowing flags, quoted for a POSIX shell. It does not
   echo a different binary path such as `./coach`, and it is omitted when any
-  argument contains a control character. It is printed in text only; JSON
+  argument is not valid UTF-8 or contains a control character (Unicode category
+  Cc: C0, DEL, or C1) or a bidirectional-formatting control character (Unicode
+  Bidi_Control), because quoting stops a shell from reinterpreting such a
+  character but not a terminal or a line reader. It is printed in text only; JSON
   carries the counts, not the command. A floor that leaves no signals prints
   `No active CodeSignal findings at or above --min-severity <level>.` instead of
   the all-clear.

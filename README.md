@@ -59,7 +59,7 @@ coach codesignal --base main --format json
 
 `--base` can be any ref Git can resolve (branch, tag, or SHA). Default output is text. `--base` and `--baseline` are mutually exclusive.
 
-Signals are ranked, with `severity` and `rule_id` printed on each: lifecycle group first (with `--base`, introduced and changed findings come first), then severity, confidence, and path, with findings of the same metric rule (cognitive complexity, branch density, nesting depth) ordered by how far each exceeds its threshold. To read a long report, add `--min-severity high|medium|advisory|low` to hide lower severities (`--min-severity medium` also hides `advisory` layer-rule findings) or `--top N` to keep the first `N` in that order. Both state how many signals they withheld (text also prints the command that shows them all), leave `summary` and `coverage` describing the full analysis, and never change the exit status. See the [CLI contract](./docs/cli-codesignal.md#narrowing-the-rendered-report).
+Signals are ranked, with `severity` and `rule_id` printed on each: lifecycle group first (with `--base`, introduced and changed findings come first), then severity, confidence, and path, with findings of the same metric rule (cognitive complexity, branch density, nesting depth) ordered by how far each exceeds its threshold. To read a long report, add `--min-severity high|medium|advisory|low` to hide lower severities (`--min-severity medium` also hides `advisory` layer-rule findings; only `complexity.cognitive_complexity` and `complexity.max_nesting_depth` findings can be `high`, so `--min-severity high` shows only those two rules; `security.toctou_check_then_act` and `state.hidden_input_mutation` are always `medium`, so a `high` floor withholds them) or `--top N` to keep the first `N` in that order (with `--base`, that order puts `resolved` findings ahead of `unknown` ones, so a cap can spend slots on findings already fixed; see [Report order](./docs/cli-codesignal.md#report-order)). Both state how many signals they withheld (text also prints the command that shows them all), leave `summary` and `coverage` describing the full analysis, and never change the exit status. See the [CLI contract](./docs/cli-codesignal.md#narrowing-the-rendered-report).
 
 Default `--scope` is `production`. `--build-target <pattern>` further limits Go production reachability; it is a no-op under `--scope all`.
 
@@ -74,9 +74,9 @@ Default `--scope` is `production`. `--build-target <pattern>` further limits Go 
 
 ### What you should see
 
-A short text report per signal (`path`, `line`, `lifecycle`, `changed`,
-`evidence`, why it matters, recommendation), or a quiet report if nothing
-matched. `lifecycle` is `introduced` / `existing` / `resolved` / `unknown`
+A short text report per signal (`rule_id`, `severity`, `path`, `line`,
+`lifecycle`, `source_scope`, `changed`, `evidence`, why it matters,
+recommendation), or a quiet report if nothing matched. `lifecycle` is `introduced` / `existing` / `resolved` / `unknown`
 (and `baseline` under `--baseline`).
 
 Diff-mode limits (do not treat these as a clean PR):
@@ -112,7 +112,10 @@ relationship holds for both `--base` and `--baseline`:
 
 With `--min-severity` or `--top`, `signals[]` can be shorter than `active_signals`.
 When `signals_withheld` is present, `active_signals == len(signals) +
-below_min_severity + beyond_top`, reading an absent key as `0`.
+below_min_severity + beyond_top`, reading an absent key as `0`. In a
+`schema_version: "2"` report, `project_changes[]` is shortened to match, while
+`project_summary.active_changes` keeps the full count; each project change is
+also a signal, so the withheld ones are already counted in `below_min_severity` and `beyond_top`.
 
 Problems present at HEAD are `introduced_signals` + `existing_signals` +
 `unknown_signals` (and `baseline_signals` under `--baseline`). Do not trust
