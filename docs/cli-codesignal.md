@@ -256,8 +256,9 @@ including every `complexity.branch_density` and
 `complexity.max_nesting_depth` finding, of the same severity and lifecycle
 group whatever their path.
 `structure.react_component_orchestration_density` also carries `high`
-confidence, so a `medium` cognitive-complexity finding and a React
-orchestration finding are ordered by path.
+confidence, so `medium` cognitive-complexity findings and React orchestration
+findings share a tier and interleave by path; the magnitude ranking below then
+reorders the cognitive-complexity findings only among the positions they hold.
 
 Then, inside each tier of equal lifecycle group, severity, and confidence, the
 findings of each metric rule (`complexity.cognitive_complexity`,
@@ -277,14 +278,13 @@ rules.
 Severity outranks magnitude, so a `medium` signal never precedes a `high` one
 because its metric is larger.
 
-The lifecycle group order has one consequence for `--base`: `resolved` findings rank ahead of `unknown` ones (residual
-classification: an extra occurrence of an existing finding, an unanalyzable
-merge-base, a rename or copy without old-path continuity, or, in project mode,
-a project finding whose lifecycle is indeterminate
-(`project_lifecycle_indeterminate`)). An `unknown`
-finding still present at HEAD can therefore rank behind resolved findings, and
-a `--top` cap can withhold it; the withheld count and the see-all command
-still state that.
+The lifecycle group order has one consequence for `--base`: `resolved` findings
+rank ahead of `unknown` ones (residual classification: an extra occurrence of
+an existing finding, an unanalyzable merge-base, a rename or copy without
+old-path continuity, or, in project mode, a project finding whose lifecycle is
+indeterminate (`project_lifecycle_indeterminate`)). An `unknown` finding still
+present at HEAD can therefore rank behind resolved findings, and a `--top` cap
+can withhold it; the withheld count and the see-all command still state that.
 
 ### Narrowing the rendered report
 
