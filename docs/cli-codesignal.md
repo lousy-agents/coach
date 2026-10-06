@@ -300,6 +300,11 @@ findings in `signals[]`) and nothing else:
   report order: lifecycle group first (in `--base` mode, introduced and changed
   findings come first), then severity, confidence, and path with within-rule
   magnitude. The two flags compose.
+- In `schema_version: "2"` text, the cap still keeps the first `N` in report
+  order, but the text prints every file-local finding first and then the project
+  findings. The printed order follows report order within each of those two
+  groups and is not rank order across them, so a project finding that outranks a
+  file-local one can print after it.
 - `advisory` ranks below `medium`, so `--min-severity medium` withholds
   `advisory` `architecture.layer_violation` and `architecture.layer_bypass`
   findings. That ordering is deliberate
