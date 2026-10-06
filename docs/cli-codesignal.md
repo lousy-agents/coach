@@ -34,7 +34,7 @@ that suggest/prepare still require `--baseline`).
 | `--format` | `text` | `text` or `json`. |
 | `--scope` | `production` | `production` or `all`. |
 | `--min-severity <level>` | none | Render only signals at or above `high`, `medium`, `advisory`, or `low` (ranked `high` > `medium` > `advisory` > `low`). `advisory` ranks below `medium`, so `--min-severity medium` also withholds `advisory` `architecture.layer_violation` and `architecture.layer_bypass` findings. Only `complexity.cognitive_complexity` and `complexity.max_nesting_depth` can be `high`, so `--min-severity high` shows only those two rules ([Severity](#severity)). No floor by default. Any other value is a usage error: exit `2`. See [Narrowing the rendered report](#narrowing-the-rendered-report). |
-| `--top <N>` | none | Render only the first `N` signals in report order ([Report order](#report-order): lifecycle group first, then severity, confidence, and path with within-rule magnitude), after any `--min-severity` floor. No cap by default. `N` must be a positive integer; anything else is a usage error: exit `2`. |
+| `--top <N>` | none | Render only the first `N` signals in report order ([Report order](#report-order): lifecycle group first, then severity, confidence, and path with within-rule magnitude), after any `--min-severity` floor. `advisory` findings rank below every `medium` one, so a cap can push out declared `architecture.layer_violation` and `architecture.layer_bypass` findings, just as `--min-severity medium` hides them. No cap by default. `N` must be a positive integer; anything else is a usage error: exit `2`. |
 | `--build-target <pattern>` | empty | Go package pattern for production reachability. Silent no-op under `--scope all`. |
 | `--project-config <path>` | empty | Repository-relative path at the **analyzed revision**. Enables `schema_version: "2"`. |
 | `--project-language` | `go` | `go` or `typescript`. With no `--project-config`, a language flag on a scan is a silent no-op. |
@@ -328,20 +328,28 @@ findings in `signals[]`) and nothing else:
   `withheld: 0 signals beyond --top 6; summary counts describe the full analysis`.
   The see-all command is printed as `coach codesignal ...` with the user's own
   arguments minus the narrowing flags, quoted for a POSIX shell. It does not
-  echo a different binary path such as `./coach`. It is omitted when any
+  echo a different binary path such as `./coach`, or the launcher you used. A
+  user without `coach` on `PATH` runs the printed command through the same
+  launcher, for example
+  `mise exec github:lousy-agents/coach -- coach codesignal --baseline`. It is omitted when any
   argument is not valid UTF-8 or contains a character in Unicode category Cc
   (C0, DEL, or C1), Cf (format characters: bidirectional controls, zero-width
   space, word joiner, byte order mark, soft hyphen, tag characters), Zl, or Zp
-  (line and paragraph separators), because quoting stops a shell from
-  reinterpreting such a character but not a terminal or a line reader, and an
-  invisible character makes the printed command differ from what a reader sees.
+  (line and paragraph separators). Quoting stops a shell from reinterpreting
+  such a character but not a terminal or a line reader: control characters can
+  drive the terminal, bidirectional controls reorder what it shows, other
+  format characters alter what a reader sees, and Zl and Zp break the printed
+  command across lines. The check is by category, not by visibility: some
+  invisible characters outside those categories, such as U+034F or U+3164,
+  still print.
   When the command is omitted and something was withheld, the line ends
   `; see all: re-run without --top`, `... without --min-severity`, or
   `... without --min-severity and --top` instead, naming only the flags given.
-  It is printed in text only; JSON carries the counts, not the command. A floor
-  that leaves no signals prints
-  `No active CodeSignal findings at or above --min-severity <level>.` instead of
-  the all-clear.
+  It is printed in text only; JSON carries the counts, not the command. When the
+  `--min-severity` floor withheld at least one signal and none remain, the text
+  prints `No active CodeSignal findings at or above --min-severity <level>.`
+  instead of the all-clear. A report with no findings at all prints the plain
+  all-clear, whatever the floor.
 - Neither flag changes the exit status. Exit codes depend on analysis outcome
   and `--fail-on-incomplete-coverage`, never on which signals a report holds or
   hides.
