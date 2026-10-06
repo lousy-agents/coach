@@ -64,6 +64,9 @@ func TestSeeAllCommandDropsNarrowingFlagsInEverySpelling(t *testing.T) {
 		{"quotes a leading equals that zsh would expand to a path", []string{"--base", "=ls", "--top", "1"}, "coach codesignal --base '=ls'"},
 		{"quotes a leading tilde", []string{"--base", "~/x", "--top", "1"}, "coach codesignal --base '~/x'"},
 		{"leaves an inner equals unquoted", []string{"--base", "a=b", "--top", "1"}, "coach codesignal --base a=b"},
+		{"keeps accented letters", []string{"--build-target", "café", "--top", "1"}, "coach codesignal --build-target 'café'"},
+		{"keeps CJK letters", []string{"--build-target", "日本語", "--top", "1"}, "coach codesignal --build-target '日本語'"},
+		{"keeps a no-break space", []string{"--build-target", "a\u00a0b", "--top", "1"}, "coach codesignal --build-target 'a\u00a0b'"},
 		{"no arguments", nil, "coach codesignal"},
 	}
 	for _, tc := range cases {
@@ -84,6 +87,14 @@ func TestSeeAllCommandOmitsTheCommandWhenAnyWordHoldsAControlCharacter(t *testin
 		{"tab", []string{"--base", "a\tb", "--top", "1"}},
 		{"delete", []string{"--base", "a\x7fb", "--top", "1"}},
 		{"nul", []string{"--base", "a\x00b", "--top", "1"}},
+		{"c1 control", []string{"--base", "a\u0080b", "--top", "1"}},
+		{"8-bit csi", []string{"--base", "a\u009bb", "--top", "1"}},
+		{"last c1 control", []string{"--base", "a\u009fb", "--top", "1"}},
+		{"invalid utf-8 byte", []string{"--base", "a\x9bb", "--top", "1"}},
+		{"truncated utf-8 sequence", []string{"--base", "a\xe2\x80", "--top", "1"}},
+		{"right-to-left override", []string{"--base", "a\u202eb", "--top", "1"}},
+		{"left-to-right isolate", []string{"--base", "a\u2066b", "--top", "1"}},
+		{"right-to-left mark", []string{"--base", "a\u200fb", "--top", "1"}},
 		{"a positional word", []string{"--top", "1", "--baseline", "--", "x\ny"}},
 	}
 	for _, tc := range cases {

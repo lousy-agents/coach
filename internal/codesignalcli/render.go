@@ -22,7 +22,9 @@ func RenderText(report *codesignal.Report) string {
 	return RenderTextWithOptions(report, RenderOptions{})
 }
 
-// RenderTextWithOptions is RenderText with caller-supplied RenderOptions.
+// RenderTextWithOptions renders like RenderText. SeeAllCommand is printed
+// verbatim into the report, so the caller shall have already made it safe for a
+// terminal.
 func RenderTextWithOptions(report *codesignal.Report, opts RenderOptions) string {
 	var b strings.Builder
 	renderReportSummary(&b, report)

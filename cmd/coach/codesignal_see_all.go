@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 var narrowingFlagNames = map[string]bool{"min-severity": true, "top": true}
@@ -17,9 +19,12 @@ var shellSafeWord = regexp.MustCompile(`^[A-Za-z0-9@%+:,./_-][A-Za-z0-9@%+=:,./_
 // floor gone a cap could withhold what the floor had already hidden, so
 // keeping it would not show everything.
 //
-// It returns "" when any word holds a control character: the command is printed
-// into plain text, where quoting stops a shell from reinterpreting a newline or
-// escape byte but not a terminal or a line reader.
+// It returns "" when any word could be reinterpreted by a terminal or a line
+// reader, because quoting only protects against a shell. That covers every
+// control character (C0, DEL and the C1 range, where U+009B is an 8-bit CSI),
+// bytes that are not valid UTF-8 (a terminal may read a stray 0x9b as a C1
+// control), and bidi controls, which reorder the printed command so it reads
+// differently from what a shell would run.
 func seeAllCommand(args []string) string {
 	flags := flag.NewFlagSet("codesignal", flag.ContinueOnError)
 	registerCodesignalFlags(flags)
@@ -40,14 +45,16 @@ func seeAllCommand(args []string) string {
 		}
 		i += len(span) - 1
 	}
-	if slices.ContainsFunc(words, hasControlByte) {
+	if slices.ContainsFunc(words, isUnsafeToPrint) {
 		return ""
 	}
 	return shellJoin(words)
 }
 
-func hasControlByte(word string) bool {
-	return strings.IndexFunc(word, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0
+func isUnsafeToPrint(word string) bool {
+	return !utf8.ValidString(word) || strings.IndexFunc(word, func(r rune) bool {
+		return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r)
+	}) >= 0
 }
 
 // splitFlagToken applies the flag package's token grammar: one or two leading

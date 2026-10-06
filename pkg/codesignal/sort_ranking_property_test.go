@@ -53,7 +53,10 @@ func randomRankingSignal(rng *rand.Rand, id int) Signal {
 }
 
 // pathOrder is the ordering that predates magnitude ranking, spelled out so the
-// properties do not follow the production comparator they check.
+// properties do not follow the production comparator they check. It copies the
+// tier keys on purpose: the properties check only movement within a tier, and
+// tier order itself is pinned independently by the magnitude-ranking and
+// severity-escalation acceptance specs.
 func pathOrder(a, b Signal) int {
 	return cmp.Or(
 		cmp.Compare(signalPriorityGroup(a), signalPriorityGroup(b)),

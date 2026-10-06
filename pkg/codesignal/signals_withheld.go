@@ -29,9 +29,12 @@ type SignalsWithheld struct {
 }
 
 func (w SignalsWithheld) validate() error {
+	_, knownFloor := ParseSeverityFloor(string(w.MinSeverity))
 	switch {
 	case w.Top < 0 || w.BelowMinSeverity < 0 || w.BeyondTop < 0:
 		return fmt.Errorf("%w: negative cap or count", ErrInvalidSignalsWithheld)
+	case w.MinSeverity != "" && !knownFloor:
+		return fmt.Errorf("%w: floor %q is not a severity", ErrInvalidSignalsWithheld, w.MinSeverity)
 	case w.MinSeverity == "" && w.BelowMinSeverity != 0:
 		return fmt.Errorf("%w: floor count without a floor", ErrInvalidSignalsWithheld)
 	case w.Top == 0 && w.BeyondTop != 0:
@@ -45,8 +48,9 @@ func (w SignalsWithheld) validate() error {
 // MarshalJSON emits each narrowing's pair of fields only while that narrowing
 // is in effect, so a cap-only view carries no floor fields and vice versa. A
 // record that names no narrowing, counts withheld signals for one it does not
-// name, or holds a negative cap or count, is an error: Narrow cannot produce it,
-// and encoded it would drop or misstate what the view withheld.
+// name, names a floor outside the severity vocabulary, or holds a negative cap
+// or count, is an error: Narrow cannot produce it, and encoded it would drop
+// or misstate what the view withheld.
 func (w SignalsWithheld) MarshalJSON() ([]byte, error) {
 	if err := w.validate(); err != nil {
 		return nil, err

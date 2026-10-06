@@ -130,6 +130,27 @@ var _ = Describe("coach codesignal narrowing: the text line that says how to see
 		})
 	})
 
+	When("another argument holds a character a terminal or line reader would act on beyond C0 and DEL", func() {
+		DescribeTable("omits the command while the withheld line is still printed",
+			func(configName string) {
+				repo := newTempGitRepo()
+				commitFile(repo, "go.mod", goModuleFile)
+				commitFile(repo, "pkg/db/db.go", dbPackageFile)
+				commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
+				commitFile(repo, configName, goLayerPolicyConfigJSON)
+
+				stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", configName, "--min-severity", "medium")
+
+				Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+				Expect(string(stdout)).NotTo(ContainSubstring("see all"))
+				Expect(withheldLine(string(stdout))).To(Equal("withheld: 1 signal below --min-severity medium" + withheldNote))
+			},
+			Entry("a C1 control, the 8-bit CSI", "my\u009bconfig.json"),
+			Entry("a bidi override that reorders what a reader sees", "my\u202econfig.json"),
+			Entry("invalid UTF-8 that decodes as a replacement character", "my\x9bconfig.json"),
+		)
+	})
+
 	When("the report carries a project summary", func() {
 		It("states that the summary counts, not only the counts above the line, describe the full analysis", func() {
 			repo := newTempGitRepo()

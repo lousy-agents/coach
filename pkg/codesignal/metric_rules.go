@@ -12,7 +12,8 @@ const highSeverityThresholdMultiple = 2
 // metricRule describes a rule whose Evidence carries a numeric metric measured
 // against a threshold. Rule constructors take rule ID, threshold, evidence, and
 // severity from it and the sort reads magnitude through it, so a rule cannot
-// escalate without ranking or rank without escalating by accident.
+// escalate without also ranking. Ranking alone is legitimate: a rule with
+// escalates false still ranks by magnitude but stays at medium severity.
 type metricRule struct {
 	ruleID         string
 	evidencePrefix string

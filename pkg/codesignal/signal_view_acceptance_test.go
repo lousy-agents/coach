@@ -228,5 +228,8 @@ var _ = Describe("A withheld record that Narrow cannot produce", func() {
 		Entry("a negative floor count", codesignal.SignalsWithheld{MinSeverity: "high", BelowMinSeverity: -1}),
 		Entry("a negative cap count", codesignal.SignalsWithheld{Top: 2, BeyondTop: -1}),
 		Entry("an empty record", codesignal.SignalsWithheld{}),
+		Entry("a floor outside the severity vocabulary", codesignal.SignalsWithheld{MinSeverity: "critical"}),
+		Entry("a known severity spelled in another case", codesignal.SignalsWithheld{MinSeverity: "HIGH", BelowMinSeverity: 1}),
+		Entry("an unknown floor beside an otherwise valid cap", codesignal.SignalsWithheld{MinSeverity: "urgent", BelowMinSeverity: 1, Top: 2, BeyondTop: 1}),
 	)
 })
