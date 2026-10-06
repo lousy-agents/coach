@@ -45,21 +45,14 @@ func (w *callGraphWalk) noteBudgetExceeded(path string) {
 	w.diagnostics = append(w.diagnostics, Diagnostic{Code: DiagCallGraphBudgetExceeded, Path: path})
 }
 
-func (w *callGraphWalk) applyClassification(result callSiteClassification) {
-	if result.Fact != nil {
-		w.facts = append(w.facts, *result.Fact)
-	}
-	for _, d := range result.Diagnostics {
-		w.diagnostics = append(w.diagnostics, d)
-		w.counts[callSiteDiagnosticCounts[d.Code]]++
-		if d.Code == DiagCallUnresolvedSyntheticWrapper {
-			// classifyCallSite only emits this diagnostic when the
-			// wrapper's real target is local, so unlike the other
-			// unresolved-call-site classes this always means a real
-			// local-to-local call edge was structurally present but
-			// never walked; mark the result incomplete rather than
-			// merely diagnosed.
-			w.complete = false
+func (w *callGraphWalk) walkRoots(ctx context.Context, loaded *loadedGoSnapshot, opts CallGraphOptions) {
+	for _, root := range loaded.roots {
+		if ctx.Err() != nil {
+			w.noteBudgetExceeded(root.dir)
+			return
+		}
+		if w.walkRoot(ctx, root, loaded, opts) {
+			return
 		}
 	}
 }
@@ -108,8 +101,3 @@ func (w *callGraphWalk) walkRoot(ctx context.Context, root loadedGoRoot, loaded 
 	}
 	return false
 }
-
-// httpHandlerInterface looks up net/http.Handler's interface type from
-// prog or the initial packages' type-checker import graph, returning nil
-// if net/http was not part of this root's build (so isFunctionValueArg
-// falls back to its func-typed check only).

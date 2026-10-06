@@ -18,49 +18,63 @@ type argsPropSchema struct {
 	types []string
 }
 
-func validateAgainstSchema(path string, value any, sch *argsSchemaDoc) error {
-	if sch == nil {
-		return nil
+func (p *argsPropSchema) UnmarshalJSON(data []byte) error {
+	type alias struct {
+		Type  json.RawMessage `json:"type"`
+		Items *argsSchemaDoc  `json:"items"`
 	}
-	switch sch.Type {
-	case "", "object":
-		return validateObjectAgainstSchema(path, value, sch)
-	case "array":
-		return validateArrayItems(path, value, sch.Items)
-	default:
-		return nil
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
 	}
-}
-
-func validateObjectAgainstSchema(path string, value any, sch *argsSchemaDoc) error {
-	obj, ok := value.(map[string]any)
-	if !ok {
-		return fmt.Errorf("%w: %s must be a JSON object", ErrInvalidArgs, rootLabel(path))
+	p.Type = a.Type
+	p.Items = a.Items
+	types, err := parseJSONTypes(p.Type)
+	if err != nil {
+		return err
 	}
-	for _, req := range sch.Required {
-		if _, present := obj[req]; !present {
-			return fmt.Errorf("%w: missing required property %q", ErrInvalidArgs, qualifiedLabel(path, req))
-		}
-	}
-	for name, prop := range sch.Properties {
-		raw, present := obj[name]
-		if !present {
-			continue
-		}
-		propPath := qualifiedLabel(path, name)
-		if err := checkPropType(propPath, raw, prop.types); err != nil {
-			return err
-		}
-		if err := validateArrayItemsIfPresent(propPath, raw, prop.Items); err != nil {
-			return err
-		}
-	}
+	p.types = types
 	return nil
 }
 
-func validateArrayItemsIfPresent(propPath string, raw any, items *argsSchemaDoc) error {
-	if items == nil {
+func parseJSONTypes(raw json.RawMessage) ([]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var single string
+	if err := json.Unmarshal(raw, &single); err == nil {
+		return []string{single}, nil
+	}
+	var multi []string
+	if err := json.Unmarshal(raw, &multi); err != nil {
+		return nil, err
+	}
+	return multi, nil
+}
+
+func validateToolArgs(schema json.RawMessage, args json.RawMessage) error {
+	if len(schema) == 0 {
+		if len(args) == 0 {
+			return nil
+		}
+		var v any
+		if err := json.Unmarshal(args, &v); err != nil {
+			return fmt.Errorf("%w: args are not valid JSON", ErrInvalidArgs)
+		}
 		return nil
 	}
-	return validateArrayItems(propPath, raw, items)
+
+	var sch argsSchemaDoc
+	if err := json.Unmarshal(schema, &sch); err != nil {
+		return fmt.Errorf("%w: tool schema is not valid JSON", ErrInvalidArgs)
+	}
+
+	if len(args) == 0 {
+		return fmt.Errorf("%w: args must be a JSON object", ErrInvalidArgs)
+	}
+	var value any
+	if err := json.Unmarshal(args, &value); err != nil {
+		return fmt.Errorf("%w: args are not valid JSON", ErrInvalidArgs)
+	}
+	return validateAgainstSchema("", value, &sch)
 }

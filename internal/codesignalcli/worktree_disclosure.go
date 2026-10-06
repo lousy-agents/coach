@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
@@ -18,7 +19,7 @@ const worktreeDisclosureSampleLimit = 5
 // snapshot scan does not read. A status-check failure is one diagnostic and
 // does not fail the scan. A clean tree returns nil.
 func WorkingTreeDisclosureDiagnostics(dir string) []codesignal.Diagnostic {
-	entries, err := gitWorktreeStatus(dir)
+	entries, err := listWorktreeStatus(dir)
 	if err != nil {
 		return []codesignal.Diagnostic{worktreeStatusFailureDiagnostic(err)}
 	}
@@ -32,25 +33,8 @@ func worktreeStatusFailureDiagnostic(err error) codesignal.Diagnostic {
 	)
 }
 
-func disclosureDiagnostics(entries []worktreeStatusEntry) []codesignal.Diagnostic {
+func disclosureDiagnostics(entries []gitrepo.WorktreeEntry) []codesignal.Diagnostic {
 	return collectWorktreePaths(entries).diagnostics()
-}
-
-func (s worktreePathSets) diagnostics() []codesignal.Diagnostic {
-	sort.Strings(s.untracked)
-	sort.Strings(s.staged)
-	sort.Strings(s.modified)
-	sort.Strings(s.unmerged)
-
-	var diagnostics []codesignal.Diagnostic
-	diagnostics = appendCategory(diagnostics, "untracked", s.untracked)
-	diagnostics = appendCategory(diagnostics, "staged", s.staged)
-	diagnostics = appendCategory(diagnostics, "modified", s.modified)
-	diagnostics = appendCategory(diagnostics, "unmerged", s.unmerged)
-	if len(diagnostics) > 0 {
-		return diagnostics
-	}
-	return unsupportedOnlyDiagnostic(s.unsupported)
 }
 
 func unsupportedOnlyDiagnostic(unsupported []string) []codesignal.Diagnostic {

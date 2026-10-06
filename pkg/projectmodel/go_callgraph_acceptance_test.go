@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -49,7 +50,16 @@ var _ = Describe("BuildGoCallGraph", func() {
 
 	When("a call site dispatches through an interface value", func() {
 		It("emits no CallFact for that site but records an unresolved-interface diagnostic", func() {
-			body_goCallgraphAcceptanceTest_emitsNoCallFactForThatSiteButRecordsAnUnresolved_52()
+			snapshot := os.DirFS("testdata/go_callgraph_interface")
+			result, err := projectmodel.BuildGoCallGraph(context.Background(), snapshot, projectmodel.CallGraphOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			for _, f := range result.CallFacts {
+				Expect(f.To).NotTo(ContainSubstring("Greet"), "an interface dispatch must not contribute a CallFact, got %+v", result.CallFacts)
+			}
+			Expect(hasCallGraphDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagCallUnresolvedInterface)).To(BeTrue(),
+				"expected a project_call_unresolved_interface diagnostic, got %+v", result.Coverage.Diagnostics)
+			Expect(result.Coverage.Counts).To(HaveKeyWithValue("unresolved_interface", 1))
 		})
 	})
 
@@ -67,7 +77,17 @@ var _ = Describe("BuildGoCallGraph", func() {
 
 	When("a call site dispatches through reflect.Value.Call", func() {
 		It("emits no CallFact for the reflected target but records an unresolved-reflection diagnostic", func() {
-			body_goCallgraphAcceptanceTest_emitsNoCallFactForTheReflectedTargetButRecordsAn_79()
+			snapshot := os.DirFS("testdata/go_callgraph_reflection")
+			result, err := projectmodel.BuildGoCallGraph(context.Background(), snapshot, projectmodel.CallGraphOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			for _, f := range result.CallFacts {
+				Expect(f.To).NotTo(Equal("example.com/callgraphreflection.Target"),
+					"a reflection-dispatched call must not contribute a direct CallFact to its target, got %+v", result.CallFacts)
+			}
+			Expect(hasCallGraphDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagCallUnresolvedReflection)).To(BeTrue(),
+				"expected a project_call_unresolved_reflection diagnostic, got %+v", result.Coverage.Diagnostics)
+			Expect(result.Coverage.Counts).To(HaveKeyWithValue("unresolved_reflection", 1))
 		})
 	})
 
@@ -123,19 +143,31 @@ var _ = Describe("BuildGoCallGraph", func() {
 
 	When("a function's only route to another local function is through a synthetic bound-method-value wrapper", func() {
 		It("does not silently dead-end at the wrapper: it reports an explicit unresolved-synthetic-wrapper diagnostic and marks the root's contribution incomplete instead of returning a dead-end CallFact", func() {
-			body_goCallgraphAcceptanceTest_doesNotSilentlyDeadEndAtTheWrapperItReportsAnExp_145()
+			snapshot := os.DirFS("testdata/go_callgraph_synthetic_wrapper")
+			result, err := projectmodel.BuildGoCallGraph(context.Background(), snapshot, projectmodel.CallGraphOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			for _, f := range result.CallFacts {
+				Expect(f.To).NotTo(ContainSubstring("$bound"),
+					"a call resolving to a synthetic bound-method wrapper must not surface as a CallFact whose target is never walked, got %+v", result.CallFacts)
+			}
+			Expect(hasCallGraphDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagCallUnresolvedSyntheticWrapper)).To(BeTrue(),
+				"expected a project_call_unresolved_synthetic_wrapper diagnostic for the call into the bound-method wrapper, got %+v", result.Coverage.Diagnostics)
+			Expect(result.Coverage.Counts).To(HaveKeyWithValue("unresolved_synthetic_wrapper", 1))
+			Expect(result.Coverage.Complete).To(BeFalse(),
+				"a call site that dead-ends at a synthetic wrapper must mark the root's contribution incomplete, not leave Coverage.Complete true")
 		})
 	})
 
 	When("a function's only route to an external function is through a synthetic bound-method-value wrapper whose real target lies outside the snapshot", func() {
 		It("does not treat the dead-end as a lost local edge: the wrapper's own CallFact survives and Coverage.Complete stays true", func() {
-			body_goCallgraphAcceptanceTest_doesNotTreatTheDeadEndAsALostLocalEdgeTheWrapper_163()
+			expectExternalWrapperTargetKeepsItsCallFact()
 		})
 	})
 
 	When("a function calls a local generic function through two different instantiations", func() {
 		It("routes each call site to the generic origin's own identity instead of an unresolved-synthetic-wrapper diagnostic, using one consistent identity across instantiations", func() {
-			body_goCallgraphAcceptanceTest_routesEachCallSiteToTheGenericOriginSOwnIdentity_186()
+			expectGenericInstantiationsRouteToTheirOrigin()
 		})
 	})
 
@@ -256,3 +288,51 @@ var _ = Describe("BuildGoCallGraph", func() {
 		}, SpecTimeout(20*time.Second))
 	})
 })
+
+func expectExternalWrapperTargetKeepsItsCallFact() {
+	snapshot := os.DirFS("testdata/go_callgraph_synthetic_wrapper_external")
+	result, err := projectmodel.BuildGoCallGraph(context.Background(), snapshot, projectmodel.CallGraphOptions{})
+	Expect(err).NotTo(HaveOccurred())
+
+	Expect(hasCallGraphDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagCallUnresolvedSyntheticWrapper)).To(BeFalse(),
+		"a wrapper whose real target is outside the snapshot was never going to be walked either way -- it must not be misclassified as a lost local edge, got %+v", result.Coverage.Diagnostics)
+	Expect(result.Coverage.Counts).To(HaveKeyWithValue("unresolved_synthetic_wrapper", 0))
+
+	found := false
+	for _, f := range result.CallFacts {
+		if f.From == "example.com/callgraphsyntheticwrapperexternal.CallExternalBound" && strings.Contains(f.To, "Done") {
+			found = true
+		}
+	}
+	Expect(found).To(BeTrue(), "expected a CallFact from CallExternalBound into the external bound-method wrapper, got %+v", result.CallFacts)
+
+	Expect(result.Coverage.Complete).To(BeTrue(),
+		"a call site whose synthetic wrapper targets a function outside the snapshot must not flip Coverage.Complete false")
+}
+
+func expectGenericInstantiationsRouteToTheirOrigin() {
+	snapshot := os.DirFS("testdata/go_callgraph_generic")
+	result, err := projectmodel.BuildGoCallGraph(context.Background(), snapshot, projectmodel.CallGraphOptions{})
+	Expect(err).NotTo(HaveOccurred())
+
+	Expect(hasCallGraphDiagnostic(result.Coverage.Diagnostics, projectmodel.DiagCallUnresolvedSyntheticWrapper)).To(BeFalse(),
+		"a call into a local generic function's own instantiation must not be treated as an unresolved synthetic wrapper, got %+v", result.Coverage.Diagnostics)
+	Expect(result.Coverage.Counts).To(HaveKeyWithValue("unresolved_synthetic_wrapper", 0))
+	Expect(result.Coverage.Complete).To(BeTrue(),
+		"a local generic call must not silently zero out Coverage.Complete for the whole snapshot")
+
+	genericEdgeCount := 0
+	for _, f := range result.CallFacts {
+		if f.From == "example.com/callgraphgeneric.CallGeneric" {
+			Expect(f.To).To(Equal("example.com/callgraphgeneric.Identity"),
+				"both Identity[int] and Identity[string] call sites must route to the same origin identity, got %+v", result.CallFacts)
+			genericEdgeCount++
+		}
+	}
+	Expect(genericEdgeCount).To(Equal(2), "expected one CallFact per instantiated call site, both routed to the same origin identity, got %+v", result.CallFacts)
+
+	Expect(hasCallFact(result.CallFacts,
+		"example.com/callgraphgeneric.Identity",
+		"example.com/callgraphgeneric.Sink",
+	)).To(BeTrue(), "expected the generic origin's own outgoing call to still be walked directly, got %+v", result.CallFacts)
+}

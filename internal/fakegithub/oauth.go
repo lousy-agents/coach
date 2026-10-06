@@ -1,6 +1,8 @@
 package fakegithub
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -53,10 +55,6 @@ func oauthAuthorizeHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Ha
 		w.WriteHeader(http.StatusFound)
 	}
 }
-
-// exchangeOAuthCode looks up code and, on ScenarioOK, mints a single-use
-// token into Tokens and deletes the code. Lookup and mutate run under
-// fx.mu so concurrent exchanges of the same code cannot both succeed.
 
 // oauthTokenHandler answers POST /login/oauth/access_token. On ScenarioOK it
 // mints a token into fx.OAuth.Tokens and deletes the code from Codes
@@ -115,57 +113,28 @@ func oauthTokenHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.Handle
 	}
 }
 
-// oauthUserHandler answers GET /user (and /api/v3/user). Installation,
-// unknown, and rejected tokens are AuthModeRejected; a registered OAuth
-// token dispatches on its Scenario.
-func oauthUserHandler(fx *Fixture, rec *acceptanceharness.Recorder) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		token := extractBearerToken(r)
-
-		switch fx.ClassifyToken(token) {
-		case TokenInstallation, TokenUnknown, TokenRejected:
-			rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, "", r.Method, r.URL.Path, acceptanceharness.AuthModeRejected))
-			http.Error(w, "fakegithub: invalid or unknown token", http.StatusUnauthorized)
-			return
-		}
-
-		fx.mu.Lock()
-		entry := fx.OAuth.Tokens[token]
-		fx.mu.Unlock()
-
-		rec.Record(acceptanceharness.NewRequestRecord(fx.Header.FixtureID, string(entry.Scenario), r.Method, r.URL.Path, acceptanceharness.AuthModeOAuth))
-
-		switch entry.Scenario {
-		case ScenarioOK:
-			identity, ok := fx.OAuth.Identities[entry.IdentityLogin]
-			if !ok {
-				http.Error(w, "fakegithub: token references an unregistered identity", http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(struct {
-				ID    int64  `json:"id"`
-				Login string `json:"login"`
-			}{
-				ID:    identity.ID,
-				Login: identity.Login,
-			})
-		case ScenarioNotFound:
-			http.Error(w, "fakegithub: identity not found", http.StatusNotFound)
-		case ScenarioAuthFail:
-			http.Error(w, "fakegithub: auth failure", http.StatusUnauthorized)
-		case ScenarioTransient:
-			http.Error(w, "fakegithub: transient upstream failure", http.StatusServiceUnavailable)
-		default:
-			http.Error(w, "fakegithub: unknown scenario "+string(entry.Scenario), http.StatusInternalServerError)
-		}
+// exchangeOAuthCode looks up code and, on ScenarioOK, mints a single-use
+// token into Tokens and deletes the code. Lookup and mutate run under
+// fx.mu so concurrent exchanges of the same code cannot both succeed.
+func (fx *Fixture) exchangeOAuthCode(code string) (token string, entry OAuthCodeEntry, ok bool) {
+	fx.mu.Lock()
+	defer fx.mu.Unlock()
+	entry, ok = fx.OAuth.Codes[code]
+	if !ok || entry.Scenario != ScenarioOK {
+		return "", entry, ok
 	}
+	token = newFakeToken()
+	fx.OAuth.Tokens[token] = OAuthTokenEntry{IdentityLogin: entry.IdentityLogin, Scenario: ScenarioOK}
+	delete(fx.OAuth.Codes, code)
+	return token, entry, true
 }
 
-// extractBearerToken returns the credential from Authorization using the
-// "token" or "Bearer" scheme, or "" if neither is present.
-
 // newFakeToken returns a non-guessable access token from crypto/rand.
-
-// Fail loud rather than mint a predictable token.
+func newFakeToken() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		// Fail loud rather than mint a predictable token.
+		panic("fakegithub: crypto/rand failure: " + err.Error())
+	}
+	return "fake-oauth-" + hex.EncodeToString(buf)
+}

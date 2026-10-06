@@ -48,7 +48,7 @@ type Config struct {
 	RedisConsumer      string
 	RedisClaimAfter    time.Duration
 
-	// PostgresDSN selects PostgresStore when set; MemoryStore when empty
+	// PostgresDSN selects postgres.Store when set; memory.Store when empty
 	// (local/dev only — production must set COACH_PG_DSN).
 	PostgresDSN string
 
@@ -61,7 +61,7 @@ type Config struct {
 	BaselineMaxFiles      int
 	BaselineMaxTotalBytes int64
 
-	// Judgment / packing knobs for RepoBaselineScanConfig (local-LLM oriented).
+	// Judgment / packing knobs for baseline.ScanConfig (local-LLM oriented).
 	// MaxHiddenMutationJudgments: 0 = handler default 16; negative = unlimited.
 	JudgmentMaxWallTime             time.Duration
 	MaxHiddenMutationJudgments      int

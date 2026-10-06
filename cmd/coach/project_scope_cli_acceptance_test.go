@@ -31,7 +31,7 @@ func findScopeRoot(roots []projectmodel.ProjectScopeRoot, rootPath string) *proj
 
 var _ = Describe("coach codesignal project_scope, provenance, and next_actions CLI golden contracts (issue #333 Task 10 T6)", func() {
 	BeforeEach(func() {
-		body_projectScopeCliAcceptanceTest_33()
+		skipWithoutRealTypeScriptCompiler()
 	})
 
 	// AC-1: Nested roots — project_scope.head.roots carries independent per-root
@@ -129,7 +129,15 @@ var _ = Describe("coach codesignal project_scope, provenance, and next_actions C
 		})
 
 		It("JSON project_next_actions is absent or empty because model coverage is incomplete", func() {
-			body_projectScopeCliAcceptanceTest_JSONProjectNextActionsIsAbsentOrEmptyBecauseMode_133(jsonOut)
+			report := decodeCoachReport(jsonOut)
+			Expect(report.ProjectChanges).To(BeEmpty(), "SA-280-025 must be proved without an active layer finding that would also suppress next_actions")
+			var doc map[string]json.RawMessage
+			Expect(json.Unmarshal(jsonOut, &doc)).To(Succeed())
+			if raw, ok := doc["project_next_actions"]; ok {
+				var actions []json.RawMessage
+				Expect(json.Unmarshal(raw, &actions)).To(Succeed())
+				Expect(actions).To(BeEmpty(), "project_next_actions must be absent or empty when model coverage is incomplete")
+			}
 		})
 
 		It("text verdict does not contain 'Complete scan found no configured covered match'", func() {
@@ -263,7 +271,19 @@ var _ = Describe("coach codesignal project_scope, provenance, and next_actions C
 		})
 
 		It("JSON project_next_actions is present, contains review_policy_coverage, and does not contain record_baseline (diff mode)", func() {
-			body_projectScopeCliAcceptanceTest_JSONProjectNextActionsIsPresentContainsReviewPol_275(jsonOut)
+			var doc map[string]json.RawMessage
+			Expect(json.Unmarshal(jsonOut, &doc)).To(Succeed())
+			Expect(doc).To(HaveKey("project_next_actions"), "project_next_actions must be present in diff mode")
+			var actions []struct {
+				Kind string `json:"kind"`
+			}
+			Expect(json.Unmarshal(doc["project_next_actions"], &actions)).To(Succeed())
+			kinds := make([]string, len(actions))
+			for i, a := range actions {
+				kinds[i] = a.Kind
+			}
+			Expect(kinds).To(Equal([]string{"review_policy_coverage"}),
+				"diff mode must emit exactly [review_policy_coverage], not record_baseline")
 		})
 
 		It("text does not contain 'record_baseline'", func() {

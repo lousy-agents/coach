@@ -2,7 +2,7 @@
 
 > The `feature-to-plan` skill loads this reference when the user wants a multi-turn collaborative walkthrough — phrases like "walk me through writing a spec", "let's design this feature together" — or when Phase 1 surfaces more than ~3 substantive ambiguities and a single-shot draft would be lossy.
 >
-> When invoked from the skill's Phase 1, follow this flow until the user approves the outline, then return control. This reference owns the **conversation**; the skill's Phase 2, Phase 3, and Create Gate own the **compose / validate / create** steps for whichever target was resolved.
+> When invoked from the skill's Phase 1, follow this flow until the outline is ready, then return control to the skill's Approval Gate. That gate is the one approval. This reference owns the **conversation**; the skill's Phase 2, Phase 3, and Create Gate own the **compose / validate / create** steps for whichever target was resolved.
 
 ## Posture
 
@@ -65,7 +65,14 @@ Ask:
 > - The API returns status 200 with payload z
 > - The UI displays component w"
 
-When they answer, reflect back the criteria you'll translate into EARS format. Identify any that should be expressed as **Unwanted** (error handling) or **State-driven** patterns rather than simple Event-driven.
+When they answer, translate the answers into criteria in the EARS Contract's line format. The contract is in [`spec-format.md`](./spec-format.md). If `to-ears` is installed, use it in Embedded mode.
+
+Reflect the criteria back to the user:
+
+- Give each criterion its `AC-<story>.<n>` ID and its provenance tag.
+- Choose each pattern from the behavior, not from the user's wording. A fault response is **Unwanted behavior**. A response that lasts for the duration of a runtime state is **State-driven**, even when the user said "when".
+- Run the contract's omission sweep. Ask about the gaps it finds, especially the deny path of every allow rule and the response to dependency failure.
+- When the user's example implies a value they never stated ("fast", "large files"), ask for it. If they don't know, write `[TBD …]` and open an Open Question. Never fill the value in yourself.
 
 ### 4. Clarifying Questions
 
@@ -88,6 +95,7 @@ If you haven't already, load the skill's [`spec-format.md`](./spec-format.md) re
 - One-line summary of each section's content
 - Persona table preview (Persona / Impact / Notes)
 - Value assessment preview (Primary / Secondary)
+- Every criterion line with its ID and provenance tag, plus each story's omission-sweep line
 - Task count and rough sizing
 
 Draft the outline only. Do **not** call `ExitPlanMode` and do not treat this step as approval — the skill's Approval Gate owns that, including issue-mode disclosures (`needs-refine` default-no, template bypass, "drafted, not refined").
@@ -105,6 +113,7 @@ Outline ready for the Approval Gate.
 - Sections: <count>, all required headers present
 - Personas: <count> (primary: <name>; secondary: <name>)
 - Value: <primary type> / <secondary type>
+- Criteria: <count> (src: <n>; inferred: <n>; TBD clauses: <n>)
 - Tasks: <N> tasks (rough sizing)
 - Open questions to capture: <count>
 - Post clarifying questions on issue #<N>? <yes/no>
@@ -113,6 +122,6 @@ Outline ready for the Approval Gate.
 ## Tool-Use Discipline
 
 - **Read engineering and product context before drafting.** Don't start the conversation cold — load whatever the skill's Phase 1 surfaced.
-- **Never invent product-specific facts.** Personas, metric definitions, internal schemas, or access policies you can't confirm from repo evidence must be flagged in Open Questions, not asserted.
+- **Never invent product-specific facts.** Personas, metric definitions, thresholds, internal schemas, or access policies that you can't confirm from repo evidence or from the user must be tagged and flagged in Open Questions, not asserted. This is the skill's Hard Constraint 8, and it applies in single-shot mode too.
 - **Use binary or small-choice prompts for hard decisions.** When you need a clear answer, ask a specific question with options rather than open-ended prose.
 - **Don't sprawl.** This is a conversation flow, not an implementation pass. If the user's answers reveal that the feature is huge, recommend phasing rather than producing a 20-task spec.

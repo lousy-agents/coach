@@ -30,13 +30,10 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-
 	"encoding/json"
-
 	"fmt"
-
+	"io"
 	"os"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -52,92 +49,49 @@ func main() {
 	}
 }
 
-type scopeHeader struct {
-	Repository string `json:"repository"`
-	Revision   string `json:"revision"`
-	Base       string `json:"base"`
+func run(ctx context.Context, in io.Reader, out io.Writer) error {
+	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
+	if err != nil {
+		return err
+	}
+	builder, err := codesignal.New(codesignal.Options{})
+	if err != nil {
+		return err
+	}
+
+	scanner := bufio.NewScanner(in)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
+
+	scope, diagnostics := readScopeHeader(scanner)
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read stdin: %w", err)
+	}
+
+	files, fileDiagnostics, err := readFileChanges(ctx, analyzer, scanner)
+	if err != nil {
+		return err
+	}
+	diagnostics = append(diagnostics, fileDiagnostics...)
+
+	report, err := builder.Build(ctx, codesignal.Input{Scope: scope, Files: files, Diagnostics: diagnostics})
+	if err != nil {
+		return err
+	}
+	return writeJSONLine(out, report)
 }
 
-type lineRangeRequest struct {
-	StartRow uint `json:"start_row"`
-	EndRow   uint `json:"end_row"`
-}
-
-type fileRequest struct {
-	Path          string             `json:"path"`
-	Language      string             `json:"language"`
-	HeadContent   *string            `json:"head_content"`
-	BaseContent   *string            `json:"base_content"`
-	ChangedRanges []lineRangeRequest `json:"changed_ranges"`
-}
-
-// readFileChanges drains scanner's remaining file-request lines. A per-line
-// decode or analysis failure is reported as a diagnostic rather than an
-// error; only a context cancellation or a stdin read failure stops the scan.
-
-func readScopeHeader(scanner *bufio.Scanner) (codesignal.Scope, []codesignal.Diagnostic) {
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
-		}
-
-		var header scopeHeader
-		if err := json.Unmarshal(line, &header); err != nil {
-			return codesignal.Scope{}, []codesignal.Diagnostic{{
-				Kind:    "malformed_scope_header",
-				Message: fmt.Sprintf("malformed scope header: %v", err),
-			}}
-		}
-		return codesignal.Scope{
-			Repository: header.Repository,
-			Revision:   header.Revision,
-			Base:       header.Base,
-		}, nil
+func writeJSONLine(out io.Writer, report any) error {
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		return fmt.Errorf("marshal report: %w", err)
 	}
 
-	return codesignal.Scope{}, []codesignal.Diagnostic{{
-		Kind:    "malformed_scope_header",
-		Message: "stdin ended before a scope header line was found",
-	}}
-}
-
-func processFileRequestLine(ctx context.Context, analyzer *semantics.Analyzer, line []byte) ([]codesignal.Diagnostic, *codesignal.FileChange) {
-	var req fileRequest
-	if err := json.Unmarshal(line, &req); err != nil {
-		return []codesignal.Diagnostic{{
-			Kind:    "malformed_file_request",
-			Message: fmt.Sprintf("malformed file request line: %v", err),
-		}}, nil
+	writer := bufio.NewWriter(out)
+	if _, err := writer.Write(encoded); err != nil {
+		return fmt.Errorf("write report: %w", err)
 	}
-	if req.Path == "" || req.Language == "" {
-		return []codesignal.Diagnostic{{
-			Kind:    "malformed_file_request",
-			Message: "file request line missing required \"path\" or \"language\"",
-		}}, nil
+	if err := writer.WriteByte('\n'); err != nil {
+		return fmt.Errorf("write report: %w", err)
 	}
-
-	fc := codesignal.FileChange{
-		Path:          req.Path,
-		Status:        deriveChangeStatus(req.HeadContent, req.BaseContent),
-		ChangedRanges: convertChangedRanges(req.ChangedRanges),
-	}
-
-	var diagnostics []codesignal.Diagnostic
-	if req.HeadContent != nil {
-		diag, result := decodeAndAnalyze(ctx, analyzer, req.Path, req.Language, *req.HeadContent)
-		if diag != nil {
-			diagnostics = append(diagnostics, *diag)
-		}
-		fc.Head = result
-	}
-	if req.BaseContent != nil {
-		diag, result := decodeAndAnalyze(ctx, analyzer, req.Path, req.Language, *req.BaseContent)
-		if diag != nil {
-			diagnostics = append(diagnostics, *diag)
-		}
-		fc.Base = result
-	}
-
-	return diagnostics, &fc
+	return writer.Flush()
 }

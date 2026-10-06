@@ -1,6 +1,8 @@
 package codesignal
 
-import "testing"
+import (
+	"testing"
+)
 
 // Test_classifyStateDomain locks the full epic classification table
 // (pkg/codesignal/rule_react_orchestration.go's reactStateDomainRules),
@@ -31,7 +33,14 @@ func Test_classifyStateDomain(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.binding, func(t *testing.T) {
-			body_ruleReactOrchestrationTest_33(t, tc)
+			expectStateDomain(t, tc.binding, tc.want)
 		})
+	}
+}
+
+func expectStateDomain(t *testing.T, binding, want string) {
+	t.Helper()
+	if got := classifyStateDomain(binding); got != want {
+		t.Errorf("classifyStateDomain(%q) = %q, want %q", binding, got, want)
 	}
 }

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -67,4 +71,16 @@ func openThinproofSession() (thinproofSession, error) {
 		client:      &http.Client{Transport: transport},
 		reader:      reader,
 	}, nil
+}
+
+// generateRSAPrivateKeyPEM mirrors
+// internal/acceptanceharness/testcreds.go's GenerateRSAPrivateKeyPEM, which
+// takes a testing.TB and so cannot be called from this non-test binary.
+func generateRSAPrivateKeyPEM() ([]byte, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, err
+	}
+	block := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
+	return pem.EncodeToMemory(block), nil
 }

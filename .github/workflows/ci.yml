@@ -36,7 +36,7 @@ jobs:
 
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: "2026.10.2"
+          version: "2026.10.3"
           install_args: go pnpm bun
           experimental: true
 
@@ -61,6 +61,9 @@ jobs:
       - name: acceptance-style-check
         run: mise run acceptance-style-check
 
+      - name: source-layout-check
+        run: mise run source-layout-check
+
       - name: test
         run: mise run test
 
@@ -75,7 +78,7 @@ jobs:
 
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: "2026.10.2"
+          version: "2026.10.3"
           experimental: true
 
       - name: js-ci
@@ -90,7 +93,7 @@ jobs:
 
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: "2026.10.2"
+          version: "2026.10.3"
           experimental: true
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -121,7 +124,7 @@ jobs:
 
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: "2026.10.2"
+          version: "2026.10.3"
           experimental: true
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -161,7 +164,7 @@ jobs:
 
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: "2026.10.2"
+          version: "2026.10.3"
           experimental: true
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -198,7 +201,7 @@ jobs:
 
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: "2026.10.2"
+          version: "2026.10.3"
           install_args: go
           experimental: true
 
@@ -216,7 +219,7 @@ jobs:
 
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: "2026.10.2"
+          version: "2026.10.3"
           install_args: go
           experimental: true
 

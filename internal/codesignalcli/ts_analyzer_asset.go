@@ -2,9 +2,7 @@ package codesignalcli
 
 import (
 	"context"
-
 	"embed"
-
 	"fmt"
 	"io/fs"
 	"os"
@@ -45,17 +43,9 @@ func mustSubFS(f embed.FS, dir string) fs.FS {
 	return sub
 }
 
-// TSAnalyzerAssetDigest returns a deterministic sha256 hex digest over
-// every file in the embedded TypeScript analyzer asset (path and content,
-// visited in path-sorted order), so the digest is stable across process
-// runs and only changes when the generated asset's content changes.
-func TSAnalyzerAssetDigest() (string, error) {
-	return digestFS(tsAnalyzerAssetFS)
-}
-
 // materializeMkdirTemp creates the private directory each MaterializeTSAnalyzer
 // call copies the embedded asset into. It is a package-level var (test seam,
-// matching runSnapshotGit/snapshotGitCommandContext in project_snapshot.go)
+// matching runSnapshotGit/snapshotGitCommandContext in revisionfs)
 // so acceptance specs can capture the exact directory materializeFS creates
 // and assert it is removed after a failure or a cancelled context.
 var materializeMkdirTemp = os.MkdirTemp

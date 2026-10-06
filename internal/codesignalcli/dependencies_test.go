@@ -1,6 +1,7 @@
 package codesignalcli
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -34,8 +35,7 @@ func isForbiddenDependency(dep string) (string, bool) {
 // TestNoExternalDependencies proves an import-graph boundary at build time:
 // neither cmd/coach nor internal/codesignalcli may (transitively) import a
 // GitHub client, an installation-auth library, or net/http. It does NOT
-// prove the OS or network is actually isolated at runtime -- see the
-// offline acceptance scenario in cmd/coach/acceptance_test.go for that.
+// prove the OS or network is actually isolated at runtime.
 func TestNoExternalDependencies(t *testing.T) {
 	packages := []string{
 		"./../../cmd/coach/...",
@@ -44,7 +44,26 @@ func TestNoExternalDependencies(t *testing.T) {
 
 	for _, pkg := range packages {
 		t.Run(pkg, func(t *testing.T) {
-			body_dependenciesTest_47(t, pkg)
+			checkNoExternalDependencies(t, pkg)
 		})
+	}
+}
+
+func checkNoExternalDependencies(t *testing.T, pkg string) {
+	cmd := exec.Command("go", "list", "-deps", pkg)
+	cmd.Dir = "."
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			t.Fatalf("go list -deps %s: %v: %s", pkg, err, exitErr.Stderr)
+		}
+		t.Fatalf("go list -deps %s: %v", pkg, err)
+	}
+
+	deps := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, dep := range deps {
+		if prefix, forbidden := isForbiddenDependency(dep); forbidden {
+			t.Errorf("go list -deps %s: found forbidden dependency %q (matches denylisted prefix %q)", pkg, dep, prefix)
+		}
 	}
 }

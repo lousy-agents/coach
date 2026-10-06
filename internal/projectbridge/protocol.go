@@ -1,5 +1,6 @@
 // Package projectbridge defines the JSON protocol between
-// pkg/projectmodel's TypeScript sidecar client and a pinned local
+// pkg/projectmodel's TypeScript sidecar client (the
+// pkg/projectmodel/internal/tssidecar process adapter) and a pinned local
 // Node/TypeScript sidecar subprocess that produces raw TypeScript/TSX
 // import facts from an immutable snapshot (issue #214).
 //

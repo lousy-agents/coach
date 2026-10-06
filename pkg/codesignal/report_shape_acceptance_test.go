@@ -4,12 +4,11 @@ import (
 	"encoding/json"
 	"reflect"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("Report shape: always-present top-level keys, Coverage members, and Signal key sets (issue #269)", func() {
@@ -102,6 +101,9 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 			expectedKeys = reportJSONTagNames(reflect.TypeOf(codesignal.Report{}))
 		})
 
+		// project_* keys that schema-1 never emits:
+		// - project_changes/facts/summary/coverage: schema-2 always-present keys
+		// - project_provenance/scope/project_next_actions: schema-2 optional (omitempty); nil in an empty report
 		schema1ExcludedKeys := []string{
 			"project_changes", "project_facts", "project_summary", "project_coverage",
 			"project_provenance", "project_scope", "project_next_actions",
@@ -109,16 +111,19 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 
 		schema1OptionalKeys := []string{"signals_withheld"}
 
+		// optional project keys that schema-2 omits when nil/empty (omitempty)
 		schema2OptionalKeys := []string{
 			"project_provenance", "project_scope", "project_next_actions", "signals_withheld",
 		}
 
 		It("keeps schema_version \"2\"'s marshalled key set in sync with Report's own json tags minus the omitempty-optional project keys and signals_withheld", func() {
-			body_reportShapeAcceptanceTest_keepsSchemaVersion2SMarshalledKeySetInSyncWithRe_114(expectedKeys, schema2OptionalKeys)
+			schema2 := codesignal.Report{SchemaVersion: "2"}
+			Expect(rawReportKeys(&schema2)).To(ConsistOf(keysWithout(expectedKeys, schema2OptionalKeys)))
 		})
 
 		It("keeps schema_version \"1\"'s marshalled key set in sync with Report's own json tags minus the project_* keys and the omitempty-optional signals_withheld", func() {
-			body_reportShapeAcceptanceTest_keepsSchemaVersion1SMarshalledKeySetInSyncWithRe_133(expectedKeys, append(append([]string{}, schema1ExcludedKeys...), schema1OptionalKeys...))
+			schema1 := codesignal.Report{SchemaVersion: "1"}
+			Expect(rawReportKeys(&schema1)).To(ConsistOf(keysWithout(expectedKeys, append(append([]string{}, schema1ExcludedKeys...), schema1OptionalKeys...))))
 		})
 
 		It("excludes project_provenance, project_scope, and project_next_actions from schema-1 output even when all three are populated", func() {
@@ -180,7 +185,7 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 		})
 
 		findNonProjectSignal := func() map[string]json.RawMessage {
-			return body_reportShapeAcceptanceTest_210(rawSignals)
+			return rawSignalWithSubject(rawSignals, "Update")
 		}
 
 		It("carries the identical key set on both entries regardless of origin", func() {
@@ -188,7 +193,18 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 		})
 
 		It("marshals every entry with the full always-present key set", func() {
-			body_reportShapeAcceptanceTest_marshalsEveryEntryWithTheFullAlwaysPresentKeySet_229(rawSignals)
+			for _, r := range rawSignals {
+				var m map[string]json.RawMessage
+				Expect(json.Unmarshal(r, &m)).To(Succeed())
+
+				Expect(m).To(HaveKey("why_it_matters"))
+				Expect(m).To(HaveKey("recommendation"))
+				Expect(m).To(HaveKey("suggested_skill"))
+				Expect(m).To(HaveKey("machine_evidence"))
+				Expect(m).To(HaveKey("related_locations"))
+				Expect(m).To(HaveKey("path_steps"))
+				Expect(m).To(HaveKey("coverage_refs"))
+			}
 		})
 
 		It("emits empty-typed, not null, evidence fields for a non-project-origin signal", func() {
@@ -202,3 +218,38 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 		})
 	})
 })
+
+func keysWithout(names, dropped []string) []string {
+	kept := make([]string, 0, len(names))
+	for _, name := range names {
+		if schemaKeyDropped(name, dropped) {
+			continue
+		}
+		kept = append(kept, name)
+	}
+	return kept
+}
+
+func schemaKeyDropped(name string, dropped []string) bool {
+	for _, p := range dropped {
+		if name == p {
+			return true
+		}
+	}
+	return false
+}
+
+func rawSignalWithSubject(rawSignals []json.RawMessage, wantSubject string) map[string]json.RawMessage {
+	for _, r := range rawSignals {
+		var m map[string]json.RawMessage
+		Expect(json.Unmarshal(r, &m)).To(Succeed())
+		var subject string
+		if raw, ok := m["subject"]; ok {
+			Expect(json.Unmarshal(raw, &subject)).To(Succeed())
+		}
+		if subject == wantSubject {
+			return m
+		}
+	}
+	return nil
+}

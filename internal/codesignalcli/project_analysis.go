@@ -1,11 +1,15 @@
+// Package codesignalcli is the scan use case behind `coach codesignal`: it
+// analyzes the selected files of a diff or a repository baseline, hands a
+// validated project policy to its language's project backend (Go or
+// TypeScript), and discloses worktree state the committed report cannot see.
+// The adapters and other use cases it builds on live in its sub-packages.
 package codesignalcli
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/projectbridge"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
@@ -100,12 +104,6 @@ type ProjectBackendResult struct {
 	PackageManagerOrigin     string
 }
 
-// ConfigDigest returns a stable hex digest of validated project-config bytes.
-func ConfigDigest(config json.RawMessage) string {
-	sum := sha256.Sum256(config)
-	return "pcfg_" + hex.EncodeToString(sum[:])
-}
-
 // applyProjectBackend returns input/options with project observations applied.
 // Callers pass values; results are new values (no in-place mutation).
 func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codesignal.Options, project *ProjectAnalysis, dir, headRevision, baseRevision string, baseline bool) (codesignal.Input, codesignal.Options, error) {
@@ -188,7 +186,7 @@ func selectedRootsFromConfig(config json.RawMessage) []string {
 	if len(config) == 0 {
 		return nil
 	}
-	cfg, err := parseProjectConfig(config)
+	cfg, err := projectconfig.Parse(config)
 	if err != nil {
 		return nil
 	}
@@ -196,7 +194,7 @@ func selectedRootsFromConfig(config json.RawMessage) []string {
 }
 
 // baseProjectDiagnostics prefixes each diagnostic's Kind with "base_",
-// mirroring analyze.go's baseSyntaxDiagnostics ("syntax_errors" ->
+// mirroring analyze_baseline.go's baseSyntaxDiagnostics ("syntax_errors" ->
 // "base_syntax_errors"). Without this, a diff-mode run whose backend finds
 // the same incompleteness on both revisions (e.g. two
 // project_layer_bypass_coverage_incomplete diagnostics) would emit two

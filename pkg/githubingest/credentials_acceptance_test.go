@@ -8,11 +8,10 @@ import (
 	"encoding/pem"
 	"errors"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
 	"github.com/lousy-agents/coach/internal/fakegithub"
 	"github.com/lousy-agents/coach/pkg/githubingest"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("CredentialResolver (ADR-002 rule 5's single installation-token seam)", func() {
@@ -70,7 +69,7 @@ var _ = Describe("CredentialResolver (ADR-002 rule 5's single installation-token
 })
 
 // credentialsRSAKey is the credentials.go-focused variant of ginkgoRSAKey
-// (acceptance_test.go): a freshly generated RSA private key, PKCS#1-PEM
+// (read_file_acceptance_test.go): a freshly generated RSA private key, PKCS#1-PEM
 // encoded like a real GitHub App private key. Never touches the network.
 func credentialsRSAKey() []byte {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

@@ -45,7 +45,7 @@ func tsReachabilitySourcesReachedASink(facts []ReachabilityFact) []string {
 // same way TSReachabilityAlgorithm mirrors REACHABILITY_ALGORITHM. Each one
 // means "this hop was deliberately left unverified by the depth-1 walk,"
 // never an import/config/budget failure, so Model.Coverage.Complete (what
-// internal/codesignalcli/project_ts_backend.go publishes as CLI
+// internal/codesignalcli/ts_project_backend.go publishes as CLI
 // ProjectCoverage) does not flip on their presence -- see analyze.ts's
 // runProjects. Reachability's own completeness is derived from them here
 // instead.

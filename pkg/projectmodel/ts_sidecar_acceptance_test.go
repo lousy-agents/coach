@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing/fstest"
 	"time"
@@ -16,55 +15,6 @@ import (
 	"github.com/lousy-agents/coach/internal/projectbridge"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
-
-var fakeTSSidecarPath string
-
-var _ = BeforeSuite(func() {
-	dir, err := os.MkdirTemp("", "fake-ts-sidecar-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-
-	fakeTSSidecarPath = filepath.Join(dir, "fake-ts-sidecar")
-	build := exec.Command("go", "build", "-o", fakeTSSidecarPath, "./testdata/fake_ts_sidecar")
-	output, err := build.CombinedOutput()
-	Expect(err).NotTo(HaveOccurred(), "building fake ts sidecar: %s", output)
-})
-
-func tsSidecarSnapshot() fstest.MapFS {
-	return fstest.MapFS{
-		"src/a.ts":     &fstest.MapFile{Data: []byte("import { b } from './b';\nexport const a = b;\n")},
-		"src/b.ts":     &fstest.MapFile{Data: []byte("export const b = 1;\n")},
-		"src/c.tsx":    &fstest.MapFile{Data: []byte("export const C = () => null;\n")},
-		"src/notes.md": &fstest.MapFile{Data: []byte("not a TypeScript source file\n")},
-	}
-}
-
-func sidecarOptsWithMode(mode string) projectmodel.TSSidecarOptions {
-	return projectmodel.TSSidecarOptions{
-		BinaryPath: fakeTSSidecarPath,
-		Args:       []string{"--mode=" + mode},
-		Timeout:    5 * time.Second,
-	}
-}
-
-func diagnosticWithCode(diags []projectmodel.Diagnostic, code string) (projectmodel.Diagnostic, bool) {
-	for _, d := range diags {
-		if d.Code == code {
-			return d, true
-		}
-	}
-	return projectmodel.Diagnostic{}, false
-}
-
-func diagnosticsWithCode(diags []projectmodel.Diagnostic, code string) []projectmodel.Diagnostic {
-	var out []projectmodel.Diagnostic
-	for _, d := range diags {
-		if d.Code == code {
-			out = append(out, d)
-		}
-	}
-	return out
-}
 
 var _ = Describe("BuildTypeScriptModelViaSidecar", func() {
 	When("the sidecar produces a valid response", func() {
