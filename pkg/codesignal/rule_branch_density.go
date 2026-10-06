@@ -13,6 +13,9 @@ func branchSum(metrics semantics.StructuralMetrics) int {
 	return metrics.Ifs + metrics.Fors + metrics.ExprSwitches + metrics.TypeSwitches + metrics.Selects
 }
 
+// newBranchDensitySignal builds a complexity.branch_density signal from
+// metrics when branchSum(metrics) reaches the branchDensityRule threshold, or
+// reports ok=false otherwise.
 func newBranchDensitySignal(path string, metrics semantics.StructuralMetrics) (signal Signal, ok bool) {
 	sum := branchSum(metrics)
 	if !branchDensityRule.reaches(sum) {
