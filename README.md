@@ -59,7 +59,7 @@ coach codesignal --base main --format json
 
 `--base` can be any ref Git can resolve (branch, tag, or SHA). Default output is text. `--base` and `--baseline` are mutually exclusive.
 
-Signals are ranked, with `severity` and `rule_id` printed on each. To read a long report, add `--min-severity high|medium|advisory|low` to hide lower severities or `--top N` to keep the first `N`. Both state how many signals they withheld (text also prints the command that shows them all), leave `summary` and `coverage` describing the full analysis, and never change the exit status. See the [CLI contract](./docs/cli-codesignal.md#narrowing-the-rendered-report).
+Signals are ranked, with `severity` and `rule_id` printed on each: lifecycle group first (with `--base`, introduced and changed findings come first), then severity, confidence, and path, with findings of the same metric rule (cognitive complexity, branch density, nesting depth) ordered by how far each exceeds its threshold. To read a long report, add `--min-severity high|medium|advisory|low` to hide lower severities (`--min-severity medium` also hides `advisory` layer-rule findings) or `--top N` to keep the first `N` in that order. Both state how many signals they withheld (text also prints the command that shows them all), leave `summary` and `coverage` describing the full analysis, and never change the exit status. See the [CLI contract](./docs/cli-codesignal.md#narrowing-the-rendered-report).
 
 Default `--scope` is `production`. `--build-target <pattern>` further limits Go production reachability; it is a no-op under `--scope all`.
 

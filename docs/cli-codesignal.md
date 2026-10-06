@@ -33,8 +33,8 @@ that suggest/prepare still require `--baseline`).
 | `--baseline` | | Scan every tracked Go/TS/TSX file at HEAD. |
 | `--format` | `text` | `text` or `json`. |
 | `--scope` | `production` | `production` or `all`. |
-| `--min-severity <level>` | none | Render only signals at or above `high`, `medium`, `advisory`, or `low` (ranked `high` > `medium` > `advisory` > `low`). No floor by default. Any other value is a usage error: exit `2`. See [Narrowing the rendered report](#narrowing-the-rendered-report). |
-| `--top <N>` | none | Render only the first `N` signals in report order, after any `--min-severity` floor. No cap by default. `N` must be a positive integer; anything else is a usage error: exit `2`. |
+| `--min-severity <level>` | none | Render only signals at or above `high`, `medium`, `advisory`, or `low` (ranked `high` > `medium` > `advisory` > `low`). `advisory` ranks below `medium`, so `--min-severity medium` also withholds `advisory` `architecture.layer_violation` and `architecture.layer_bypass` findings. No floor by default. Any other value is a usage error: exit `2`. See [Narrowing the rendered report](#narrowing-the-rendered-report). |
+| `--top <N>` | none | Render only the first `N` signals in report order ([Report order](#report-order): lifecycle group first, then severity, confidence, and path with within-rule magnitude), after any `--min-severity` floor. No cap by default. `N` must be a positive integer; anything else is a usage error: exit `2`. |
 | `--build-target <pattern>` | empty | Go package pattern for production reachability. Silent no-op under `--scope all`. |
 | `--project-config <path>` | empty | Repository-relative path at the **analyzed revision**. Enables `schema_version: "2"`. |
 | `--project-language` | `go` | `go` or `typescript`. With no `--project-config`, a language flag on a scan is a silent no-op. |
@@ -166,6 +166,9 @@ Always present on a successful scan:
 - `schema_version`: `"1"` without a valid `--project-config`; `"2"` with one.
 - `scope`, `summary`, `signals`, `diagnostics`, `coverage`.
 
+Present only when `--min-severity` or `--top` was supplied: `signals_withheld`
+(see [Narrowing the rendered report](#narrowing-the-rendered-report)).
+
 `schema_version: "2"` also includes `project_changes`, `project_facts`,
 `project_summary`, and `project_coverage`. TypeScript project reports
 additionally include `project_provenance` and `project_scope`, and
@@ -190,7 +193,10 @@ prints `severity:` beside its `rule_id:`.
 `severity` is one of `high`, `medium`, `advisory`, or `low`. There is no
 `critical`. Most rules emit a fixed value. Three rules measure a metric against
 a threshold and emit `medium` from the threshold up. Two of them escalate to
-`high` when the measured value is at least twice the threshold:
+`high` when the measured value is at least twice the threshold. Escalation is
+part of the deterministic core, so coach-api baseline jobs, which share it
+(system-overview §3C), also carry the escalated severity and their baseline
+judgment priority sees `high` for those findings:
 
 | `rule_id` | Metric (evidence) | Threshold | `high` from |
 | --- | --- | --- | --- |
@@ -201,7 +207,11 @@ a threshold and emit `medium` from the threshold up. Two of them escalate to
 `complexity.branch_density` does not escalate because `branch_sum` is a
 whole-file additive total: it grows with file length and a split clears it, so
 twice the threshold says nothing about how hard the code is to follow. It is
-still ranked by magnitude (see Report order).
+still ranked by magnitude among `complexity.branch_density` findings (see
+Report order).
+
+`max_nesting_depth` is the file-wide maximum nesting depth, not a per-function
+value: one deeply nested function sets it for the whole file.
 
 `rule_version` tracks what a rule detects: its trigger and its evidence.
 Severity derivation is documented here and changing it does not bump
@@ -223,17 +233,33 @@ Layer rules (`architecture.layer_violation`, `architecture.layer_bypass`) emit
    (`baseline`, `unknown`).
 2. Severity: `high`, `medium`, `advisory`, `low`.
 3. Confidence.
-4. Magnitude: signals from the three metric rules above come before signals
-   without a numeric metric, and among them a larger metric-to-threshold ratio
-   comes first. A `cognitive_complexity=28` finding precedes a
-   `cognitive_complexity=16` one regardless of path; `branch_sum` and
-   `max_nesting_depth` findings are compared by the same ratio. The ratio is
-   unitless, so it puts a file-level total (`branch_sum`) on the same scale as a
-   per-function depth (`max_nesting_depth`) within a tier.
-5. Path, start row, start column, `rule_id`, then `id`.
+4. Path, start row, start column, `rule_id`, then `id`.
+
+Then, inside each tier of equal lifecycle group, severity, and confidence, the
+findings of each metric rule (`complexity.cognitive_complexity`,
+`complexity.branch_density`, `complexity.max_nesting_depth`) are reordered by
+magnitude, the metric divided by the rule's threshold, highest first (ties keep
+path order). They are reordered across the positions that rule already occupies
+in the tier. A `cognitive_complexity=28` finding precedes a
+`cognitive_complexity=16` one in the same tier regardless of path.
+
+Ranking is within a rule only. A signal with no numeric metric (for example
+`security.toctou_check_then_act` or `state.hidden_input_mutation`) keeps its
+path position, and findings of different rules are never compared by
+magnitude, so a whole-file `branch_sum` cannot outrank another rule's finding.
+Issue [#272](https://github.com/lousy-agents/coach/issues/272) left within-rule
+against across-rule ranking open; within-rule keeps the path order for signals
+without a magnitude and avoids comparing unlike metrics.
 
 Severity outranks magnitude, so a `medium` signal never precedes a `high` one
 because its metric is larger.
+
+The lifecycle group order predates severity ranking and has one consequence
+for `--base`: `resolved` findings rank ahead of `unknown` ones (a residual
+class carrying `continuity_not_determined` or base diagnostics). An `unknown`
+finding still present at HEAD can therefore rank behind resolved findings, and
+a `--top` cap can withhold it; the withheld count and the see-all command
+still state that.
 
 ### Narrowing the rendered report
 
@@ -245,10 +271,12 @@ findings in `signals[]`) and nothing else:
 - `summary`, `coverage`, `diagnostics`, and the project coverage and summary
   blocks keep describing the full analysis. `active_signals` is not reduced, so
   it can exceed the number of signals shown.
-- The floor applies first, then the cap takes the first `N` of what remains.
-  The two compose.
+- The floor applies first, then the cap takes the first `N` of what remains in
+  report order, so "highest-ranked" means lifecycle group first (in `--base`
+  mode, introduced and changed findings come first), then severity, confidence,
+  and path with within-rule magnitude. The two flags compose.
 - `advisory` ranks below `medium`, so `--min-severity medium` withholds
-  declared `architecture.layer_violation` and `architecture.layer_bypass`
+  `advisory` `architecture.layer_violation` and `architecture.layer_bypass`
   findings. That ordering is deliberate
   ([#259](https://github.com/lousy-agents/coach/issues/259)).
 - The number withheld is never silent. JSON adds `signals_withheld` only when a
@@ -260,16 +288,18 @@ findings in `signals[]`) and nothing else:
   changes what is analyzed, such as suppression or vendor exclusion, changes
   `summary` and `coverage` and does not use it.
 - Text prints a `withheld:` line in the summary. For `--min-severity` it reads
-  `withheld: 2 signals below --min-severity high; counts above describe the full analysis; see all: coach codesignal --baseline`.
+  `withheld: 2 signals below --min-severity high; summary counts describe the full analysis; see all: coach codesignal --baseline`.
   For `--top` it reads
-  `withheld: 76 signals beyond --top 3; counts above describe the full analysis; see all: coach codesignal --baseline`.
+  `withheld: 76 signals beyond --top 3; summary counts describe the full analysis; see all: coach codesignal --baseline`.
   With both flags it reports the total and each count:
-  `withheld: 4 signals (2 below --min-severity high, 2 beyond --top 2); counts above describe the full analysis; see all: coach codesignal --baseline`.
+  `withheld: 4 signals (2 below --min-severity high, 2 beyond --top 2); summary counts describe the full analysis; see all: coach codesignal --baseline`.
   When nothing was withheld the line has no see-all command:
-  `withheld: 0 signals beyond --top 6; counts above describe the full analysis`.
-  The see-all command is the invocation that was run with every narrowing flag
-  removed, quoted for a POSIX shell. It is printed in text only; JSON carries
-  the counts, not the command. A floor that leaves no signals prints
+  `withheld: 0 signals beyond --top 6; summary counts describe the full analysis`.
+  The see-all command is printed as `coach codesignal ...` with the user's own
+  arguments minus the narrowing flags, quoted for a POSIX shell. It does not
+  echo a different binary path such as `./coach`, and it is omitted when any
+  argument contains a control character. It is printed in text only; JSON
+  carries the counts, not the command. A floor that leaves no signals prints
   `No active CodeSignal findings at or above --min-severity <level>.` instead of
   the all-clear.
 - Neither flag changes the exit status. Exit codes depend on analysis outcome
