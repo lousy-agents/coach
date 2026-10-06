@@ -302,9 +302,10 @@ findings in `signals[]`) and nothing else:
   magnitude. The two flags compose.
 - In `schema_version: "2"` text, the cap still keeps the first `N` in report
   order, but the text prints every file-local finding first and then the project
-  findings. The printed order follows report order within each of those two
-  groups and is not rank order across them, so a project finding that outranks a
-  file-local one can print after it.
+  findings. File-local findings print in report order. Project findings then
+  print in `project_changes[]` order (by `semantic_key`, then `rule_id`), not
+  rank order, so a higher-ranked project finding can print after a lower-ranked
+  one.
 - `advisory` ranks below `medium`, so `--min-severity medium` withholds
   `advisory` `architecture.layer_violation` and `architecture.layer_bypass`
   findings. That ordering is deliberate
