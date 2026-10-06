@@ -41,6 +41,10 @@ run = "go test -run Example ./..."
 description = "Fail if any *_acceptance_test.go lacks a ginkgo/v2 import (except the explicit allowlist)"
 run = "go run ./cmd/acceptance-style-guard"
 
+[tasks.source-layout-check]
+description = "Fail if any Go file or identifier is named by position or hash (main_part2.go, body_*, *_sigfix1_test.go) instead of responsibility (ADR-007)"
+run = "go run ./cmd/source-layout-guard"
+
 [tasks.test-acceptance-fast]
 description = "Run the fast, in-process Ginkgo/Gomega acceptance suites (public Go/CLI-boundary tests, offline, no real credentials) -- Feature Zero's runnable acceptance layer (see docs/architecture/acceptance-harness.md)"
 run = [
@@ -109,7 +113,7 @@ run = "go test -race ./pkg/projectmodel/... -run Acceptance -ginkgo.label-filter
 [tasks.ts-project-backend-acceptance]
 description = "Run cmd/coach and internal/codesignalcli's TS-dependent acceptance specs (coach#326 Task 3's remaining CI gap) against this repo's own installed js/semantics TypeScript compiler"
 depends = ["js-install"]
-run = "go test -race ./cmd/coach/... ./internal/codesignalcli/... -run Acceptance -ginkgo.label-filter=ts-project-backend -ginkgo.fail-on-empty"
+run = "go test -race ./cmd/coach/... ./internal/codesignalcli -run Acceptance -ginkgo.label-filter=ts-project-backend -ginkgo.fail-on-empty"
 
 [tasks.foreign-clone-snapshot-acceptance]
 description = "Run the GoReleaser snapshot foreign-repository TypeScript scan (AC-REL-1); not part of ts-project-backend"
@@ -253,6 +257,7 @@ run = [
   { task = "go-vet" },
   { task = "tidy-check" },
   { task = "acceptance-style-check" },
+  { task = "source-layout-check" },
   { task = "test" },
   { task = "test-examples" },
 ]
@@ -302,6 +307,7 @@ run = [
   { task = "gofmt" },
   { task = "go-vet" },
   { task = "acceptance-style-check" },
+  { task = "source-layout-check" },
 ]
 
 # The single authoritative "everything CI proves" task. No longer the ship gate

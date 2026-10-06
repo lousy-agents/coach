@@ -4,18 +4,6 @@ import (
 	"context"
 )
 
-type AnalyzerOptions struct {
-	// Languages restricts AnalyzeBytes to this set of grammars. Empty means
-	// "all supported" (LanguageGo, LanguageTypeScript, and LanguageTSX).
-	// Any entry that is not a recognized Language makes NewAnalyzer return
-	// an error.
-	Languages []Language
-	// MaxFileBytes caps the size of content AnalyzeBytes will parse. 0 uses
-	// the package default (2 MiB); negative values make NewAnalyzer return
-	// an error.
-	MaxFileBytes int
-}
-
 // Analyzer runs the parse -> syntax-check -> extract pipeline against raw
 // source bytes. It holds no C-backed resources between calls -- Parser,
 // Tree, Query, and QueryCursor are all created fresh inside AnalyzeBytes --
@@ -24,9 +12,6 @@ type Analyzer struct {
 	maxFileBytes int
 	languages    map[Language]bool // empty means "all supported"
 }
-
-// NewAnalyzer constructs an Analyzer from opts, validating that every
-// requested language is recognized and that MaxFileBytes is non-negative.
 
 // FileInput is one file to analyze. Path is opaque metadata: it is echoed
 // into the returned Result verbatim (empty is allowed) but never opened.

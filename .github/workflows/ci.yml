@@ -61,6 +61,9 @@ jobs:
       - name: acceptance-style-check
         run: mise run acceptance-style-check
 
+      - name: source-layout-check
+        run: mise run source-layout-check
+
       - name: test
         run: mise run test
 

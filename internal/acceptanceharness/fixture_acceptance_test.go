@@ -2,11 +2,11 @@ package acceptanceharness_test
 
 import (
 	"encoding/json"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"sync"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("shared fixture/recording contract", func() {
@@ -113,7 +113,38 @@ var _ = Describe("shared fixture/recording contract", func() {
 
 	Context("when multiple goroutines call Record concurrently", func() {
 		It("is safe under -race and every record is preserved (mirrors clock_acceptance_test.go's concurrency-proof pattern)", func() {
-			body_fixtureAcceptanceTest_isSafeUnderRaceAndEveryRecordIsPreservedMirrorsC_116()
+			expectConcurrentRecordsAllPreserved()
 		})
 	})
 })
+
+func expectConcurrentRecordsAllPreserved() {
+	var recorder acceptanceharness.Recorder
+
+	const workers = 8
+	const iterationsPerWorker = 50
+	const total = workers * iterationsPerWorker
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go recordConcurrently(&recorder, iterationsPerWorker, &wg)
+	}
+	wg.Wait()
+
+	Expect(recorder.Records()).To(HaveLen(total))
+}
+
+// recordConcurrently appends iterations records to recorder and marks wg done.
+func recordConcurrently(recorder *acceptanceharness.Recorder, iterations int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for j := 0; j < iterations; j++ {
+		recorder.Record(acceptanceharness.NewRequestRecord(
+			"fixture-concurrent",
+			"concurrent-scenario",
+			"GET",
+			"/concurrent",
+			acceptanceharness.AuthModeNone,
+		))
+	}
+}

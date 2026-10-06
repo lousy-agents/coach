@@ -37,7 +37,7 @@ Steps:
    (`Describe` / `When` / `It`, EARS/AC-readable), in `*_acceptance_test.go`
    plus `acceptance_suite_test.go` with a `TestXxxAcceptance` entrypoint so
    `mise run test-acceptance-fast` picks it up. Match
-   `cmd/coach/baseline_acceptance_test.go` / `pkg/githubingest/acceptance_test.go`.
+   `cmd/coach/baseline_acceptance_test.go` / `pkg/githubingest/read_file_acceptance_test.go`.
    Stdlib `testing` table tests are fine for unit tests only; they do not
    substitute for the acceptance suite of a feature or bug fix.
 

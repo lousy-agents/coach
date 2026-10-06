@@ -1,6 +1,8 @@
 package modelgateway
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 // validateOutputSchema checks OutputSchema shape and supported property types
 // without a judgment value. Callers use this to fail closed on static schema
@@ -42,4 +44,16 @@ func validateJudgmentJSON(judgment, schema json.RawMessage) error {
 		return err
 	}
 	return checkPresentProperties(obj, sch.Properties)
+}
+
+func parseJudgmentObject(judgment json.RawMessage) (map[string]any, error) {
+	var value any
+	if err := json.Unmarshal(judgment, &value); err != nil {
+		return nil, NewValidationError("judgment is not valid JSON")
+	}
+	obj, ok := value.(map[string]any)
+	if !ok {
+		return nil, NewValidationError("judgment must be a JSON object")
+	}
+	return obj, nil
 }

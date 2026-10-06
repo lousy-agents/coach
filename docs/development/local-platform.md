@@ -155,7 +155,7 @@ trigger deterministic analysis).
 
 SQL under `internal/coachapi/migrations/*.sql` is mounted into Postgres
 `docker-entrypoint-initdb.d` and applied **once** on first volume init (ordered
-by filename). `PostgresStore` does not auto-migrate. To re-apply from scratch:
+by filename). `postgres.Store` does not auto-migrate. To re-apply from scratch:
 
 ```sh
 docker compose --profile core down -v

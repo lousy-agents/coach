@@ -3,6 +3,7 @@ package agentworkflows
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -23,7 +24,7 @@ func readRepoFile(path string) string {
 var _ = Describe("implement-issue planner workflow", func() {
 	When("the workflow is committed", func() {
 		It("declares the meta block the Workflow tool requires", func() {
-			body_implementIssueAcceptanceTest_declaresTheMetaBlockTheWorkflowToolRequires_26()
+			expectWorkflowMetaBlockDeclared()
 		})
 
 		It("constrains its planning output to a schema", func() {
@@ -45,11 +46,11 @@ var _ = Describe("implement-issue planner workflow", func() {
 	// loop lost its fidelity checks.
 	When("the planner is asked to do more than plan", func() {
 		It("never spawns the implementer or reviewer agents itself", func() {
-			body_implementIssueAcceptanceTest_neverSpawnsTheImplementerOrReviewerAgentsItself_55()
+			expectPlannerNeverSpawnsLoopAgents()
 		})
 
 		It("grants its own agents no way to mutate the repository", func() {
-			body_implementIssueAcceptanceTest_grantsItsOwnAgentsNoWayToMutateTheRepository_63()
+			expectPlannerAgentsCannotMutateRepository()
 		})
 	})
 })
@@ -102,3 +103,31 @@ var _ = Describe("implement-issue command", func() {
 		})
 	})
 })
+
+func expectWorkflowMetaBlockDeclared() {
+	planner := readRepoFile(plannerPath)
+	Expect(planner).To(HavePrefix("export const meta = {"),
+		"the Workflow tool requires meta as the first statement")
+	for _, field := range []string{"name:", "description:", "phases:"} {
+		Expect(planner).To(ContainSubstring(field))
+	}
+	Expect(planner).To(ContainSubstring("name: 'implement-issue-plan'"),
+		"the command invokes the workflow by this name")
+}
+
+func expectPlannerNeverSpawnsLoopAgents() {
+	planner := readRepoFile(plannerPath)
+	for _, agent := range []string{"task-implementer", "task-reviewer", "workflow-integration-reviewer"} {
+		Expect(planner).NotTo(MatchRegexp(`agentType:\s*['"]`+regexp.QuoteMeta(agent)),
+			"%s must be spawned by the main session, or its SubagentStop hook never fires", agent)
+	}
+}
+
+func expectPlannerAgentsCannotMutateRepository() {
+	planner := readRepoFile(plannerPath)
+	for _, mutator := range []string{"Edit", "Write", "NotebookEdit"} {
+		Expect(planner).NotTo(MatchRegexp(`['"]` + regexp.QuoteMeta(mutator) + `['"]`))
+	}
+	Expect(planner).NotTo(ContainSubstring("isolation: 'worktree'"),
+		"a worktree exists to keep parallel mutations from colliding; needing one would mean the planner writes")
+}

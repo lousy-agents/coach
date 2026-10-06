@@ -42,8 +42,8 @@ in ~426s wall clock, on compute that is not the session's.
 
 `cmd/coach` dominates `mise run test`'s wall time: `go test -race ./cmd/coach/...`
 measured ~239s, of which roughly 180s is deliberate blocking on
-`tsSidecarWallTime` (60s, `internal/codesignalcli/project_ts_backend.go`) and
-`snapshotGitTimeout` (30s, `internal/codesignalcli/project_snapshot.go`), each
+`tsSidecarWallTime` (60s, `internal/codesignalcli/ts_project_backend.go`) and
+`snapshotGitTimeout` (30s, `internal/codesignalcli/revisionfs/git_reads.go`), each
 paid twice across the project-backend and no-findings-verdict acceptance specs.
 Read `ci-fast` as "narrower than CI", not as "quick".
 
@@ -70,8 +70,8 @@ workflow does not invoke those composites.
 Seven independent leaf jobs plus a `status` aggregator:
 
 - `verify` — `ci-go`: gofmt / go-vet / tidy-check / acceptance-style-check /
-  test / test-examples. `install_args` names Go, pnpm, and bun; the first
-  `mise run` step then installs whatever else `mise.toml` declares, Node
+  source-layout-check / test / test-examples. `install_args` names Go, pnpm,
+  and bun; the first `mise run` step then installs whatever else `mise.toml` declares, Node
   included, so the sidecar suite skips because the sidecar is not built, not
   because `node` is missing. pnpm and bun are named because `test` carries
   `cmd/coach`'s real-execution sentinel-script proofs for the frozen adapter

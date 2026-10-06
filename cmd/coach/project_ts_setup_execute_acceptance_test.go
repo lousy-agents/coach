@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 )
 
 // writeStubSetupExecutable writes an executable script named `name` into a
@@ -146,12 +146,12 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			stubDir := writeStubSetupExecutable("npm")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
 			Expect(err).NotTo(HaveOccurred())
 
-			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
-			Expect(errors.Is(execErr, codesignalcli.ErrSetupExecutionHazardousWorkingDirectory)).To(BeTrue())
-			Expect(result).To(Equal(codesignalcli.SetupExecutionResult{}))
+			result, execErr := tssetup.Execute(context.Background(), preview, true)
+			Expect(errors.Is(execErr, tssetup.ErrHazardousWorkingDirectory)).To(BeTrue())
+			Expect(result).To(Equal(tssetup.ExecutionResult{}))
 			Expect(stubSetupInvoked(stubDir, "npm")).To(BeFalse(), "a working directory carrying an unverified package-manager configuration hazard must never reach a subprocess, whether or not it is also the repository's worktree root")
 		})
 	})
@@ -162,12 +162,12 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			stubDir := writeStubSetupExecutable("npm")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
 			Expect(err).NotTo(HaveOccurred())
 
-			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, false)
-			Expect(errors.Is(execErr, codesignalcli.ErrSetupExecutionNotConfirmed)).To(BeTrue())
-			Expect(result).To(Equal(codesignalcli.SetupExecutionResult{}))
+			result, execErr := tssetup.Execute(context.Background(), preview, false)
+			Expect(errors.Is(execErr, tssetup.ErrNotConfirmed)).To(BeTrue())
+			Expect(result).To(Equal(tssetup.ExecutionResult{}))
 			Expect(stubSetupInvoked(stubDir, "npm")).To(BeFalse(), "no subprocess may start before a single explicit confirmation is supplied")
 		})
 	})
@@ -178,10 +178,10 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			stubDir := writeStubSetupExecutable("npm")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
 			Expect(err).NotTo(HaveOccurred())
 
-			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
+			result, execErr := tssetup.Execute(context.Background(), preview, true)
 			Expect(execErr).NotTo(HaveOccurred())
 			Expect(result.Succeeded).To(BeTrue(), "output: %s", result.Output)
 			Expect(result.ExitCode).To(Equal(0))
@@ -197,7 +197,34 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 
 	When("a hostile ambient environment variable is set", func() {
 		It("confines the child to exactly PATH and HOME, dropping every ambient variable (SA-280-012)", func() {
-			body_projectTsSetupExecuteAcceptanceTest_confinesTheChildToExactlyPATHAndHOMEDroppingEver_199()
+			workDir := newSetupExecutionWorkDir()
+			stubDir := writeStubSetupExecutable("npm")
+			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
+
+			// Each of these would, if forwarded, re-enable or redirect the
+			// very thing --ignore-scripts and the frozen argv are supposed to
+			// guarantee: a re-enabled lifecycle-script setting, an injected
+			// Node startup flag, and a registry override.
+			GinkgoT().Setenv("npm_config_ignore_scripts", "false")
+			GinkgoT().Setenv("NODE_OPTIONS", "--require ./evil.js")
+			GinkgoT().Setenv("npm_config_registry", "http://127.0.0.1:9/attacker")
+
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+			Expect(err).NotTo(HaveOccurred())
+
+			result, execErr := tssetup.Execute(context.Background(), preview, true)
+			Expect(execErr).NotTo(HaveOccurred())
+			Expect(result.Succeeded).To(BeTrue(), "output: %s", result.Output)
+
+			observedKeys := readStubSetupEnvKeys(stubDir, "npm")
+			Expect(observedKeys).NotTo(ContainElement("npm_config_ignore_scripts"), "an ambient lifecycle-script override must never reach the child")
+			Expect(observedKeys).NotTo(ContainElement("NODE_OPTIONS"), "an ambient Node startup-flag injection must never reach the child")
+			Expect(observedKeys).NotTo(ContainElement("npm_config_registry"), "an ambient registry override must never reach the child")
+			Expect(observedKeys).To(ContainElement("PATH"), "the child needs PATH to resolve npm and node")
+			for _, key := range observedKeys {
+				Expect(key).To(BeElementOf("PATH", "HOME", "PWD", "SHLVL", "_"),
+					"only PATH and HOME may be forwarded; %q came from the parent environment (the rest are set by the shell running the stub itself)", key)
+			}
 		})
 	})
 
@@ -207,14 +234,14 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			stubDir := writeStubSetupExecutable("npm")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
 			Expect(err).NotTo(HaveOccurred())
 			tampered := preview
 			tampered.Timeout = 1000 * time.Hour // a preview claiming 5 minutes must never actually run unbounded
 
-			result, execErr := codesignalcli.ExecuteSetup(context.Background(), tampered, true)
-			Expect(errors.Is(execErr, codesignalcli.ErrSetupExecutionUnverifiedCommand)).To(BeTrue())
-			Expect(result).To(Equal(codesignalcli.SetupExecutionResult{}))
+			result, execErr := tssetup.Execute(context.Background(), tampered, true)
+			Expect(errors.Is(execErr, tssetup.ErrUnverifiedCommand)).To(BeTrue())
+			Expect(result).To(Equal(tssetup.ExecutionResult{}))
 			Expect(stubSetupInvoked(stubDir, "npm")).To(BeFalse(), "a command whose disclosed timeout was altered must never execute")
 		})
 	})
@@ -238,10 +265,10 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			stubDir := writeStubSetupExecutable("npm")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
 			Expect(err).NotTo(HaveOccurred())
 
-			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
+			result, execErr := tssetup.Execute(context.Background(), preview, true)
 			Expect(execErr).NotTo(HaveOccurred())
 			Expect(result.Succeeded).To(BeTrue(), "output: %s", result.Output)
 
@@ -265,16 +292,16 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			stubDir := writeStubSetupExecutable("yarn")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview := codesignalcli.SetupPreview{
+			preview := tssetup.Preview{
 				Executable:       "yarn",
 				Args:             []string{"install", "--ignore-scripts"},
 				WorkingDirectory: workDir,
-				Timeout:          codesignalcli.SetupPreviewTimeout,
+				Timeout:          tssetup.PreviewTimeout,
 			}
 
-			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
-			Expect(errors.Is(execErr, codesignalcli.ErrSetupExecutionUnverifiedCommand)).To(BeTrue())
-			Expect(result).To(Equal(codesignalcli.SetupExecutionResult{}))
+			result, execErr := tssetup.Execute(context.Background(), preview, true)
+			Expect(errors.Is(execErr, tssetup.ErrUnverifiedCommand)).To(BeTrue())
+			Expect(result).To(Equal(tssetup.ExecutionResult{}))
 			Expect(stubSetupInvoked(stubDir, "yarn")).To(BeFalse(), "an adapter outside the frozen matrix must never reach a subprocess")
 		})
 	})
@@ -285,16 +312,16 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			stubDir := writeStubSetupExecutable("npm")
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			tampered := codesignalcli.SetupPreview{
+			tampered := tssetup.Preview{
 				Executable:       "npm",
 				Args:             []string{"ci"}, // --ignore-scripts dropped
 				WorkingDirectory: workDir,
-				Timeout:          codesignalcli.SetupPreviewTimeout,
+				Timeout:          tssetup.PreviewTimeout,
 			}
 
-			result, execErr := codesignalcli.ExecuteSetup(context.Background(), tampered, true)
-			Expect(errors.Is(execErr, codesignalcli.ErrSetupExecutionUnverifiedCommand)).To(BeTrue())
-			Expect(result).To(Equal(codesignalcli.SetupExecutionResult{}))
+			result, execErr := tssetup.Execute(context.Background(), tampered, true)
+			Expect(errors.Is(execErr, tssetup.ErrUnverifiedCommand)).To(BeTrue())
+			Expect(result).To(Equal(tssetup.ExecutionResult{}))
 			Expect(stubSetupInvoked(stubDir, "npm")).To(BeFalse(), "a command that dropped --ignore-scripts must never execute")
 		})
 	})
@@ -309,7 +336,7 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			stubDir := writeOutlivingSetupExecutable("npm", 20)
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
 			Expect(err).NotTo(HaveOccurred())
 
 			// preview.Timeout stays the frozen SetupPreviewTimeout (5 minutes,
@@ -320,7 +347,7 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			defer cancel()
 
 			start := time.Now()
-			result, execErr := codesignalcli.ExecuteSetup(ctx, preview, true)
+			result, execErr := tssetup.Execute(ctx, preview, true)
 			elapsed := time.Since(start)
 
 			Expect(execErr).NotTo(HaveOccurred())
@@ -343,11 +370,11 @@ var _ = Describe("codesignalcli.ExecuteSetup", func() {
 			stubDir := writeSucceedingSetupExecutableWithOutlivingDescendant("npm", 20)
 			GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+setupExecutionOnlyPath())
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), workDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), workDir)
 			Expect(err).NotTo(HaveOccurred())
 
 			start := time.Now()
-			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
+			result, execErr := tssetup.Execute(context.Background(), preview, true)
 			elapsed := time.Since(start)
 
 			Expect(execErr).NotTo(HaveOccurred())
@@ -475,10 +502,10 @@ var _ = Describe("codesignalcli.ExecuteSetup script suppression (AC-4)", func() 
 			requireSentinelMarkerAppeared(markerPath)
 			resetSentinelInstall(repoDir, markerPath)
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("npm"), repoDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("npm"), repoDir)
 			Expect(err).NotTo(HaveOccurred())
 
-			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
+			result, execErr := tssetup.Execute(context.Background(), preview, true)
 			Expect(execErr).NotTo(HaveOccurred())
 			Expect(result.Succeeded).To(BeTrue(), "output: %s", result.Output)
 
@@ -506,10 +533,10 @@ var _ = Describe("codesignalcli.ExecuteSetup script suppression (AC-4)", func() 
 			requireSentinelMarkerAppeared(markerPath)
 			resetSentinelInstall(repoDir, markerPath)
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("pnpm"), repoDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("pnpm"), repoDir)
 			Expect(err).NotTo(HaveOccurred())
 
-			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
+			result, execErr := tssetup.Execute(context.Background(), preview, true)
 			Expect(execErr).NotTo(HaveOccurred())
 			Expect(result.Succeeded).To(BeTrue(), "output: %s", result.Output)
 
@@ -536,10 +563,10 @@ var _ = Describe("codesignalcli.ExecuteSetup script suppression (AC-4)", func() 
 			requireSentinelMarkerAppeared(markerPath)
 			resetSentinelInstall(repoDir, markerPath)
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("bun"), repoDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("bun"), repoDir)
 			Expect(err).NotTo(HaveOccurred())
 
-			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
+			result, execErr := tssetup.Execute(context.Background(), preview, true)
 			Expect(execErr).NotTo(HaveOccurred())
 			Expect(result.Succeeded).To(BeTrue(), "output: %s", result.Output)
 
@@ -578,11 +605,11 @@ var _ = Describe("codesignalcli.ExecuteSetup script suppression (AC-4)", func() 
 			requireSentinelMarkerAppeared(markerPath)
 			resetSentinelInstall(repoDir, markerPath)
 
-			preview, err := codesignalcli.BuildSetupPreview(codesignalcli.SetupChoice{Kind: codesignalcli.SetupChoiceProjectPackage}, projectPackageManager("pnpm"), repoDir)
+			preview, err := tssetup.BuildPreview(tssetup.Choice{Kind: tssetup.ChoiceProjectPackage}, projectPackageManager("pnpm"), repoDir)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(preview.Args).To(ContainElement("--ignore-pnpmfile"), "the frozen pnpm template must suppress .pnpmfile.cjs execution")
 
-			result, execErr := codesignalcli.ExecuteSetup(context.Background(), preview, true)
+			result, execErr := tssetup.Execute(context.Background(), preview, true)
 			Expect(execErr).NotTo(HaveOccurred())
 			Expect(result.Succeeded).To(BeTrue(), "output: %s", result.Output)
 

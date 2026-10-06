@@ -18,10 +18,8 @@ var ErrNotAuthorized = errors.New("authz: principal not authorized for repositor
 // RepoAuthorizer decides whether the principal identified by login may
 // submit a scan of owner/repo. It takes a bare GitHub login rather than
 // coachapi.Principal so this package has no dependency on internal/coachapi
-// -- internal/coachapi/server.go depends on this package directly (to check
-// errors.Is(err, ErrNotAuthorized)), and internal/coachapi is what issues
-// Principal in the first place, so a Principal-typed parameter here would
-// create an import cycle.
+// -- internal/coachapi/httpapi depends on this package directly (to check
+// errors.Is(err, ErrNotAuthorized)).
 type RepoAuthorizer interface {
 	// Authorize returns nil if allowed. Returns an error satisfying
 	// errors.Is(err, ErrNotAuthorized) if the repo is nonexistent, the App

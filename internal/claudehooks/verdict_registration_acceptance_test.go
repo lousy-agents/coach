@@ -10,6 +10,11 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// subagentStopHook is one command a SubagentStop registration runs.
+type subagentStopHook struct {
+	Args []string `json:"args"`
+}
+
 // verdictRegistrationMatchers returns the SubagentStop matchers that route to
 // verify-review-verdict.sh -- i.e. the agent types whose final reply is
 // required to begin with PASS or FINDINGS.
@@ -22,10 +27,8 @@ func verdictRegistrationMatchers() []string {
 	var settings struct {
 		Hooks struct {
 			SubagentStop []struct {
-				Matcher string `json:"matcher"`
-				Hooks   []struct {
-					Args []string `json:"args"`
-				} `json:"hooks"`
+				Matcher string             `json:"matcher"`
+				Hooks   []subagentStopHook `json:"hooks"`
 			} `json:"SubagentStop"`
 		} `json:"hooks"`
 	}
@@ -33,8 +36,18 @@ func verdictRegistrationMatchers() []string {
 
 	var matchers []string
 	for _, reg := range settings.Hooks.SubagentStop {
-		(&sigverdictRegistrationMatchersS0{matchers: &matchers, reg: reg}).call()
+		matchers = appendVerdictMatchers(matchers, reg.Matcher, reg.Hooks)
+	}
+	return matchers
+}
 
+// appendVerdictMatchers appends matcher to matchers once for every hook in
+// hooks that runs verify-review-verdict.sh.
+func appendVerdictMatchers(matchers []string, matcher string, hooks []subagentStopHook) []string {
+	for _, h := range hooks {
+		if strings.Contains(strings.Join(h.Args, " "), "verify-review-verdict.sh") {
+			matchers = append(matchers, matcher)
+		}
 	}
 	return matchers
 }
@@ -73,7 +86,7 @@ var _ = Describe("reviewer verdict enforcement", func() {
 		})
 
 		It("registers every one of them with the verdict hook", func() {
-			body_verdictRegistrationAcceptanceTest_registersEveryOneOfThemWithTheVerdictHook_78()
+			expectEveryReviewerRegisteredWithVerdictHook()
 		})
 	})
 
@@ -89,3 +102,12 @@ var _ = Describe("reviewer verdict enforcement", func() {
 		})
 	})
 })
+
+func expectEveryReviewerRegisteredWithVerdictHook() {
+	matchers := verdictRegistrationMatchers()
+	Expect(matchers).NotTo(BeEmpty())
+	for _, agent := range reviewerAgents() {
+		Expect(matchers).To(ContainElement(agent),
+			"agent %q mandates the PASS/FINDINGS contract but no SubagentStop registration enforces it", agent)
+	}
+}

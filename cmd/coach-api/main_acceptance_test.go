@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/coachapi/store/memory"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -63,7 +65,7 @@ var _ queue.TaskQueue = (*stubTaskQueue)(nil)
 
 func newTestDependencies() Dependencies {
 	return Dependencies{
-		Store:      coachapi.NewMemoryStore(),
+		Store:      memory.NewStore(),
 		Authorizer: stubRepoAuthorizer{},
 		Queue:      &stubTaskQueue{},
 	}

@@ -2,14 +2,9 @@ package projectmodel
 
 import (
 	"context"
-
 	"io/fs"
 
-	"sort"
-	"strings"
-
-	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/go/ssa/ssautil"
+	"github.com/lousy-agents/coach/pkg/projectmodel/internal/ssaload"
 )
 
 // CallGraphAlgorithm identifies the pinned static-analysis backend
@@ -96,16 +91,6 @@ type CallGraphResult struct {
 	Coverage  Coverage
 }
 
-// frameworkRegistrationCallees are well-known HTTP registration functions
-// whose arguments include a handler value invoked later by the framework,
-// at a call site static analysis cannot see.
-var frameworkRegistrationCallees = map[string]bool{
-	"net/http.Handle":                 true,
-	"net/http.HandleFunc":             true,
-	"(*net/http.ServeMux).Handle":     true,
-	"(*net/http.ServeMux).HandleFunc": true,
-}
-
 // BuildGoCallGraph builds bounded, deterministic Go call-graph facts for
 // every module root under snapshot (or opts.Roots, if set) -- and only
 // snapshot. It loads and type-checks the snapshot's Go sources via
@@ -140,7 +125,7 @@ func BuildGoCallGraph(ctx context.Context, snapshot fs.FS, opts CallGraphOptions
 		defer cancel()
 	}
 
-	loaded, err := loadGoSnapshot(ctx, snapshot, opts.Roots, opts.Budgets)
+	loaded, err := loadGoSnapshot(ctx, ssaload.Loader{}, snapshot, opts.Roots, opts.Budgets)
 	if err != nil {
 		return CallGraphResult{}, err
 	}
@@ -185,40 +170,3 @@ func buildGoCallGraphFromLoaded(ctx context.Context, loaded *loadedGoSnapshot, o
 	}
 	return buildResult(walk.facts, walk.complete)
 }
-
-// sortedLocalFunctions returns every function with a body (fn.Blocks != nil)
-// belonging to a package in localPkgPaths, sorted by RelString(nil) so
-// budget truncation cuts the same trailing set on every call regardless of
-// ssa/go-types' internal map iteration order.
-func sortedLocalFunctions(prog *ssa.Program, localPkgPaths map[string]bool) []*ssa.Function {
-	all := ssautil.AllFunctions(prog)
-	out := make([]*ssa.Function, 0, len(all))
-	for fn := range all {
-		if fn.Blocks == nil || fn.Pkg == nil {
-			continue
-		}
-		if !localPkgPaths[fn.Pkg.Pkg.Path()] {
-			continue
-		}
-		out = append(out, fn)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].RelString(nil) < out[j].RelString(nil) })
-	return out
-}
-
-// stripTempDir removes materializeSnapshot's absolute temp-dir prefix from
-// msg (as embedded by go/packages error text), so
-// CallGraphResult.Coverage.Diagnostics stays deterministic across runs and
-// across different absolute snapshot roots -- mirroring relCallSitePath's
-// tempDir stripping for call-site paths.
-func stripTempDir(msg, tempDir string) string {
-	return strings.ReplaceAll(msg, tempDir, "")
-}
-
-// materializeSnapshot copies snapshot into a new temporary directory so
-// golang.org/x/tools/go/packages (which shells out to the Go toolchain) has
-// real files to load; the caller must invoke the returned cleanup func.
-
-// dir is still returned (already removed by cleanup above) so a
-// caller can strip it from err's embedded absolute path via
-// stripTempDir before surfacing err in a diagnostic.

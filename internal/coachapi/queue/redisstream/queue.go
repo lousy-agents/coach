@@ -178,99 +178,25 @@ func NewQueue(cfg Config, clock acceptanceharness.Clock) (*Queue, error) {
 }
 
 // Close stops consuming and releases the underlying Redis connection.
+func (q *Queue) Close() error {
+	q.cancelSub()
+	subErr := q.subscriber.Close()
+	pubErr := q.publisher.Close()
+	if subErr != nil {
+		return subErr
+	}
+	return pubErr
+}
 
 // Enqueue publishes task onto the Redis Stream via the Watermill
 // Publisher (an XADD under the hood).
+func (q *Queue) Enqueue(ctx context.Context, task queue.Task) error {
+	msg := message.NewMessage(watermill.NewUUID(), task.Payload)
+	msg.Metadata.Set(taskIDMetadataKey, task.ID)
+	msg.SetContext(ctx)
 
-// Claim first reclaims any pending claim whose ClaimAfter has elapsed
-// (per the injected Clock), and only if none did, waits up to
-// claimPollWindow for a newly delivered message. ok=false means neither
-// happened before the wait window (or ctx) elapsed.
-func (q *Queue) Claim(ctx context.Context) (queue.Claim, bool, error) {
-	if claim, ok := q.reclaimExpired(); ok {
-		return claim, true, nil
+	if err := q.publisher.Publish(q.stream, msg); err != nil {
+		return fmt.Errorf("redisstream: enqueue task %q: %w", task.ID, err)
 	}
-
-	timer := time.NewTimer(claimPollWindow)
-	defer timer.Stop()
-
-	select {
-	case msg, open := <-q.messages:
-		if !open {
-			return queue.Claim{}, false, fmt.Errorf("redisstream: subscriber channel closed")
-		}
-		return q.trackNewClaim(msg), true, nil
-	case <-timer.C:
-		return queue.Claim{}, false, nil
-	case <-ctx.Done():
-		return queue.Claim{}, false, ctx.Err()
-	}
-}
-
-// reclaimExpired looks for one pendingClaim that is either readyForClaim
-// (a retryable Nack already incremented Attempt and re-tokened it; see
-// pendingClaim's doc comment) or whose claimAfter has elapsed per
-// q.clock.Now(), and if found, returns it -- for the expiry case,
-// replacing it in place with a new token and an incremented attempt count.
-// Either path invalidates the old Token, per TaskQueue.Complete/Nack's
-// stale-token contract, without touching the underlying Watermill
-// message's Ack/Nack channels (see pendingClaim's doc comment).
-
-// trackNewClaim records a freshly delivered Watermill message as a new
-// pendingClaim (attempt 0) and returns its Claim.
-func (q *Queue) trackNewClaim(msg *message.Message) queue.Claim {
-	taskID := msg.Metadata.Get(taskIDMetadataKey)
-	token := watermill.NewUUID()
-
-	q.mu.Lock()
-	q.pending[token] = &pendingClaim{
-		taskID:    taskID,
-		attempt:   0,
-		token:     token,
-		claimedAt: q.clock.Now(),
-		msg:       msg,
-	}
-	q.mu.Unlock()
-
-	return queue.Claim{TaskID: taskID, Attempt: 0, Token: token}
-}
-
-// takePending removes and returns the pendingClaim matching claim's
-// Token, or ok=false if no such claim is currently outstanding (already
-// completed, poisoned, or superseded by a reclaim) -- the stale-token
-// condition Complete and Nack must both fail under.
-
-// Complete acknowledges claim's task attempt as durably finished. It
-// fails if claim.Token has been invalidated by a reclaim.
-func (q *Queue) Complete(ctx context.Context, claim queue.Claim) error {
-	pc, ok := q.takePending(claim)
-	if !ok {
-		return fmt.Errorf("redisstream: complete: claim token invalid or expired for task %q", claim.TaskID)
-	}
-	pc.msg.Ack()
 	return nil
 }
-
-// Nack reports claim's task attempt failed. A retryable failure
-// (permanent=false) makes the task claimable again with Attempt
-// incremented. A permanent failure (permanent=true) acknowledges the
-// underlying message (ADR-006 rule 5) and republishes the task onto the
-// poison-task destination stream; PoisonTasks reads that stream back.
-// Nack fails under the same stale-token condition as Complete.
-
-// Publish to the poison destination before acking the source
-// message: if publishPoison fails, the source message stays
-// pending (unacked) rather than being silently dropped, so a
-// crash/retry can still recover the task instead of losing it.
-
-// readyForClaim makes the retried task immediately reclaimable by the
-// next Claim (see pendingClaim's doc comment), per TaskQueue's
-// immediate-availability-after-retryable-Nack contract, instead of
-// waiting out a fresh claimAfter window.
-
-// PoisonTasks returns every task a permanent Nack has routed to the
-// poison-task destination stream, oldest first. It is not part of
-// queue.TaskQueue; internal/acceptanceharness/queueconformance.Queue
-// requires it so both this package's own tests and the shared
-// conformance suite can assert the poison destination actually received a
-// task.
