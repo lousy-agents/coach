@@ -4,7 +4,7 @@ min_version = "2026.10.4"
 experimental = true
 
 [tools]
-go = "1.27.1"
+go = "1.27.2"
 node = "24"
 # pnpm and bun are test toolchain, not build toolchain: cmd/coach's frozen
 # adapter rows are only proven to suppress a dependency's lifecycle scripts by
