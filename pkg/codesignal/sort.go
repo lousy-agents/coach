@@ -1,7 +1,8 @@
 package codesignal
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 )
 
 func signalPriorityGroup(sig Signal) int {
@@ -23,34 +24,80 @@ func signalPriorityGroup(sig Signal) int {
 	}
 }
 
-// sortSignals sorts signals by priority group, severity, confidence,
-// path, location, rule, and ID.
+// sortSignals sorts signals by priority group, severity, confidence, path,
+// location, rule, and ID, then ranks each metric rule's signals by magnitude
+// within every tier.
 func sortSignals(signals []Signal) {
-	sort.SliceStable(signals, func(i, j int) bool {
-		a, b := signals[i], signals[j]
+	slices.SortStableFunc(signals, compareSignals)
+	rankMetricRulesWithinTiers(signals)
+}
 
-		ga, gb := signalPriorityGroup(a), signalPriorityGroup(b)
-		if ga != gb {
-			return ga < gb
+func compareSignals(a, b Signal) int {
+	return cmp.Or(
+		cmp.Compare(signalPriorityGroup(a), signalPriorityGroup(b)),
+		cmp.Compare(severityRank(b.Severity), severityRank(a.Severity)),
+		cmp.Compare(confidenceRank(b.Confidence), confidenceRank(a.Confidence)),
+		cmp.Compare(a.Path, b.Path),
+		cmp.Compare(a.Location.StartRow, b.Location.StartRow),
+		cmp.Compare(a.Location.StartCol, b.Location.StartCol),
+		cmp.Compare(a.RuleID, b.RuleID),
+		cmp.Compare(a.ID, b.ID),
+	)
+}
+
+// peerKey identifies signals that compete on magnitude: one metric rule within
+// one tier. Magnitude is a ratio to the rule's own threshold, so it only ranks
+// a rule against its peers; comparing it across rules would put unlike metrics
+// (a whole-file branch total against nesting depth) ahead of signals that have
+// no magnitude at all.
+type peerKey struct {
+	group, severity, confidence int
+	ruleID                      string
+}
+
+type rankedSignal struct {
+	signal Signal
+	ratio  float64
+}
+
+// rankMetricRulesWithinTiers reorders each peer group across the positions it
+// already occupies in the path-ordered signals, so signals without a magnitude
+// and signals of other rules never move.
+func rankMetricRulesWithinTiers(signals []Signal) {
+	positions := make(map[peerKey][]int)
+	for i, signal := range signals {
+		if _, ok := signalMagnitude(signal); !ok {
+			continue
 		}
-		if ra, rb := severityRank(a.Severity), severityRank(b.Severity); ra != rb {
-			return ra > rb
+		key := peerKey{
+			group:      signalPriorityGroup(signal),
+			severity:   severityRank(signal.Severity),
+			confidence: confidenceRank(signal.Confidence),
+			ruleID:     signal.RuleID,
 		}
-		if ra, rb := confidenceRank(a.Confidence), confidenceRank(b.Confidence); ra != rb {
-			return ra > rb
+		positions[key] = append(positions[key], i)
+	}
+	reordered := slices.Clone(signals)
+	for _, peers := range positions {
+		for i, signal := range rankedByMagnitude(signals, peers) {
+			reordered[peers[i]] = signal
 		}
-		if a.Path != b.Path {
-			return a.Path < b.Path
-		}
-		if a.Location.StartRow != b.Location.StartRow {
-			return a.Location.StartRow < b.Location.StartRow
-		}
-		if a.Location.StartCol != b.Location.StartCol {
-			return a.Location.StartCol < b.Location.StartCol
-		}
-		if a.RuleID != b.RuleID {
-			return a.RuleID < b.RuleID
-		}
-		return a.ID < b.ID
+	}
+	copy(signals, reordered)
+}
+
+func rankedByMagnitude(signals []Signal, positions []int) []Signal {
+	ranked := make([]rankedSignal, len(positions))
+	for i, position := range positions {
+		ratio, _ := signalMagnitude(signals[position])
+		ranked[i] = rankedSignal{signal: signals[position], ratio: ratio}
+	}
+	slices.SortStableFunc(ranked, func(a, b rankedSignal) int {
+		return cmp.Compare(b.ratio, a.ratio)
 	})
+	out := make([]Signal, len(ranked))
+	for i, entry := range ranked {
+		out[i] = entry.signal
+	}
+	return out
 }

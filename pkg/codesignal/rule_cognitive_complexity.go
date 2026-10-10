@@ -1,14 +1,6 @@
 package codesignal
 
-import (
-	"strconv"
-
-	"github.com/lousy-agents/coach/pkg/semantics"
-)
-
-// cognitiveComplexityThreshold is the minimum FunctionCognitiveComplexity.Score
-// that triggers a complexity.cognitive_complexity signal (score >= threshold).
-const cognitiveComplexityThreshold = 15
+import "github.com/lousy-agents/coach/pkg/semantics"
 
 const cognitiveComplexityWhyItMatters = "High cognitive complexity means the control flow takes more mental effort to follow: nested branches, mixed logical sequences, and jumps compound so reviewers and authors miss paths."
 
@@ -19,7 +11,7 @@ const cognitiveComplexityRecommendation = "Extract nested branches into named he
 func signalsFromCognitiveComplexity(path string, records []semantics.FunctionCognitiveComplexity) []Signal {
 	var signals []Signal
 	for _, rec := range records {
-		if rec.Score < cognitiveComplexityThreshold {
+		if !cognitiveComplexityRule.reaches(rec.Score) {
 			continue
 		}
 		signals = append(signals, newCognitiveComplexitySignal(path, rec))
@@ -29,16 +21,16 @@ func signalsFromCognitiveComplexity(path string, records []semantics.FunctionCog
 
 func newCognitiveComplexitySignal(path string, rec semantics.FunctionCognitiveComplexity) Signal {
 	return Signal{
-		RuleID:         "complexity.cognitive_complexity",
+		RuleID:         cognitiveComplexityRule.ruleID,
 		RuleVersion:    "1",
 		Kind:           "cognitive_complexity",
 		Category:       "complexity",
-		Severity:       "medium",
+		Severity:       cognitiveComplexityRule.severity(rec.Score),
 		Confidence:     "high",
 		Path:           path,
 		Subject:        rec.Name,
 		Location:       rec.Location,
-		Evidence:       "cognitive_complexity=" + strconv.Itoa(rec.Score),
+		Evidence:       cognitiveComplexityRule.evidence(rec.Score),
 		WhyItMatters:   cognitiveComplexityWhyItMatters,
 		Recommendation: cognitiveComplexityRecommendation,
 		Provenance: Provenance{

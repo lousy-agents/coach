@@ -1,14 +1,6 @@
 package codesignal
 
-import (
-	"strconv"
-
-	"github.com/lousy-agents/coach/pkg/semantics"
-)
-
-// branchDensityThreshold is the minimum branch sum (see branchSum) that
-// triggers a complexity.branch_density signal.
-const branchDensityThreshold = 12
+import "github.com/lousy-agents/coach/pkg/semantics"
 
 const branchDensityWhyItMatters = "A large number of branching constructs concentrated in one file increases the number of paths a reader has to hold in mind at once and the number of cases tests need to cover."
 
@@ -22,23 +14,23 @@ func branchSum(metrics semantics.StructuralMetrics) int {
 }
 
 // newBranchDensitySignal builds a complexity.branch_density signal from
-// metrics when branchSum(metrics) reaches branchDensityThreshold, or reports
-// ok=false otherwise.
+// metrics when branchSum(metrics) reaches the branchDensityRule threshold, or
+// reports ok=false otherwise.
 func newBranchDensitySignal(path string, metrics semantics.StructuralMetrics) (signal Signal, ok bool) {
 	sum := branchSum(metrics)
-	if sum < branchDensityThreshold {
+	if !branchDensityRule.reaches(sum) {
 		return Signal{}, false
 	}
 
 	return Signal{
-		RuleID:         "complexity.branch_density",
+		RuleID:         branchDensityRule.ruleID,
 		RuleVersion:    "1",
 		Kind:           "branch_density",
 		Category:       "complexity",
-		Severity:       "medium",
+		Severity:       branchDensityRule.severity(sum),
 		Confidence:     "medium",
 		Path:           path,
-		Evidence:       "branch_sum=" + strconv.Itoa(sum),
+		Evidence:       branchDensityRule.evidence(sum),
 		WhyItMatters:   branchDensityWhyItMatters,
 		Recommendation: branchDensityRecommendation,
 		Provenance: Provenance{

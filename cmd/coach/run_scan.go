@@ -36,7 +36,7 @@ func runCodesignalScan(dir string, f codesignalFlags, stdout, stderr *os.File, b
 	if result := runOptionalScanPreparation(dir, f, stdout, stderr); !shouldRenderAfterOptionalPreparation(result) {
 		return 2
 	}
-	return renderScanResult(report, f.failOnIncompleteCoverage, f.format, stdout, stderr)
+	return renderScanResult(report, f, stdout, stderr)
 }
 
 func runOneScan(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, error) {

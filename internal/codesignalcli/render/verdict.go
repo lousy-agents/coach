@@ -24,7 +24,7 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 	incompleteProject := (report.ProjectCoverage != nil && !report.ProjectCoverage.Complete) ||
 		hasProjectLifecycleDiagnostic(report.Diagnostics)
 	if keepUnqualifiedAllClear(report, incompleteProject) {
-		b.WriteString("No active CodeSignal findings.\n")
+		fmt.Fprintf(b, "%s.\n", noActiveFindingsLead(report))
 		return
 	}
 
@@ -38,29 +38,15 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 	if len(causes) == 0 {
 		causes = append(causes, "additional diagnostics were recorded")
 	}
-	fmt.Fprintf(b, "No active CodeSignal findings, but the analysis is incomplete: %s.\n", strings.Join(causes, "; "))
+	fmt.Fprintf(b, "%s, but the analysis is incomplete: %s.\n", noActiveFindingsLead(report), strings.Join(causes, "; "))
 }
 
-func keepUnqualifiedAllClear(report *codesignal.Report, incompleteProject bool) bool {
-	if incompleteProject {
-		return false
+// noActiveFindingsLead scopes the all-clear to the severity floor: when a
+// floor withheld signals, "no active findings" would claim more than the
+// narrowed view can show.
+func noActiveFindingsLead(report *codesignal.Report) string {
+	if withheld := report.SignalsWithheld; withheld != nil && withheld.BelowMinSeverity > 0 {
+		return "No active CodeSignal findings at or above --min-severity " + string(withheld.MinSeverity)
 	}
-	if len(report.Diagnostics) == 0 {
-		return true
-	}
-	return report.Summary.FilesUnanalyzed == 0 && onlyWorktreeCleanlinessDiagnostics(report.Diagnostics)
-}
-
-func onlyWorktreeCleanlinessDiagnostics(diagnostics []codesignal.Diagnostic) bool {
-	if len(diagnostics) == 0 {
-		return false
-	}
-	for _, d := range diagnostics {
-		switch d.Kind {
-		case codesignal.DiagKindWorktreeNotClean, codesignal.DiagKindWorktreeReportReflectsCommittedHEAD:
-		default:
-			return false
-		}
-	}
-	return true
+	return "No active CodeSignal findings"
 }
