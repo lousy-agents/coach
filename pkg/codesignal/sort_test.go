@@ -92,6 +92,19 @@ func TestSortSignals_UnrecognizedConfidenceDoesNotPanicAndSortsLast(t *testing.T
 	}
 }
 
+func TestSortSignals_MetricSignalKeepsPathPositionBesideNoMagnitudeSignal(t *testing.T) {
+	noMagnitude := sortableSignal("a", "r", "a.go", "existing", false, "medium", "high", 0, 0)
+	metric := sortableSignal("b", cognitiveComplexityRule.ruleID, "z.go", "existing", false, "medium", "high", 0, 0)
+	metric.Evidence = "cognitive_complexity=-15"
+
+	signals := []Signal{metric, noMagnitude}
+	sortSignals(signals)
+
+	if signals[0].ID != "a" || signals[1].ID != "b" {
+		t.Errorf("a metric signal must not outrank a no-magnitude signal of another rule: got order %q,%q, want %q,%q", signals[0].ID, signals[1].ID, "a", "b")
+	}
+}
+
 func sortableSignal(id, ruleID, path string, lifecycle Lifecycle, changed bool, severity Severity, confidence Confidence, startRow, startCol uint) Signal {
 	return Signal{
 		ID:         id,
