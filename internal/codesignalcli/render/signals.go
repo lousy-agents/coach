@@ -9,6 +9,8 @@ import (
 )
 
 func renderSignal(b *strings.Builder, signal codesignal.Signal) {
+	fmt.Fprintf(b, "rule_id: %s\n", signal.RuleID)
+	fmt.Fprintf(b, "severity: %s\n", signal.Severity)
 	fmt.Fprintf(b, "path: %s\n", signal.Path)
 	fmt.Fprintf(b, "line: %d\n", signal.Location.StartRow+1)
 	fmt.Fprintf(b, "lifecycle: %s\n", signal.Lifecycle)

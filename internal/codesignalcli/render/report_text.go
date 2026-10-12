@@ -9,10 +9,28 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
+// TextOptions carries what only the caller knows about how a report was
+// produced.
+type TextOptions struct {
+	// SeeAllCommand is the invocation that shows every signal a narrowed
+	// report withheld. It is text-only presentation and never enters the JSON
+	// report. Empty means that, when something was withheld, the line says to
+	// re-run without the narrowing flags in effect instead of naming a command.
+	SeeAllCommand string
+}
+
 // ReportText renders report as deterministic, ANSI-free plain text.
 func ReportText(report *codesignal.Report) string {
+	return ReportTextWithOptions(report, TextOptions{})
+}
+
+// ReportTextWithOptions renders like ReportText. SeeAllCommand is printed
+// verbatim into the report, so the caller shall have already made it safe for a
+// terminal.
+func ReportTextWithOptions(report *codesignal.Report, opts TextOptions) string {
 	var b strings.Builder
 	renderReportSummary(&b, report)
+	renderWithheldSignals(&b, report.SignalsWithheld, opts.SeeAllCommand)
 	renderProjectScopeSection(&b, report.ProjectScope)
 	renderActiveFindings(&b, report)
 	renderProjectFacts(&b, report.ProjectFacts)
