@@ -38,7 +38,7 @@ func TestAnalyzeChangesThreadsScopeAndCoverage(t *testing.T) {
 func analyzeChangesNonEmptyScopeExcluded(t *testing.T, dir string, initialSHA string, headSHA string, files []gitrepo.SelectedFile) {
 	excluded := []codesignal.CoverageGroup{{Reason: "test_only", Language: "go", Count: 1}}
 
-	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "production", excluded, nil)
+	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, nil, "production", excluded, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
 	}
@@ -55,7 +55,7 @@ func analyzeChangesNonEmptyScopeExcluded(t *testing.T, dir string, initialSHA st
 }
 
 func nilExcludedLeavesCoverageNil(t *testing.T, dir string, initialSHA string, headSHA string, files []gitrepo.SelectedFile) {
-	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, "", nil, nil)
+	report, err := AnalyzeChanges(context.Background(), dir, headSHA, initialSHA, files, nil, nil, "", nil, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
 	}

@@ -33,7 +33,7 @@ func analyzerChildPIDsFromPS() []int {
 			pids = append(pids, pid)
 		}
 	}
-	return pids
+	return topLevelAnalyzerPIDs(pids, parents)
 }
 
 // parsePSProcessLine reads one `ps -o pid=,ppid=,args=` row, reporting false

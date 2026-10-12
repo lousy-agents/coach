@@ -16,7 +16,7 @@ func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesigna
 		return nil, err
 	}
 
-	selected, diagnostics, err := gitrepo.SelectChangedFiles(dir, mergeBaseSHA)
+	selected, diagnostics, continuity, err := gitrepo.SelectChangedFiles(dir, mergeBaseSHA, headSHA)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +30,7 @@ func runDiffAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesigna
 	if opErr != nil {
 		return nil, opErr
 	}
-	report, err := codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, f.scope, excluded, project)
+	report, err := codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, continuity, f.scope, excluded, project)
 	if err != nil {
 		return nil, wrapScanAnalysisError(err, dir, headSHA, f.projectConfig, stderr)
 	}

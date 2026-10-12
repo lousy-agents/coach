@@ -112,7 +112,7 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 			ConfigDigest: projectconfig.Digest(goLayerBypassSearchConfigJSON),
 			Backend:      NewGoProjectBackend(),
 		}
-		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, nil, "all", nil, project)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(countDiagnosticsOfKind(report.Diagnostics, "project_layer_bypass_coverage_incomplete")).To(Equal(1), "the head-side incompleteness must not be collapsed into or duplicated by the base-side one")
@@ -213,7 +213,7 @@ func degradesOnlyBaseSideCoverageIncompleteDiagnostic() {
 		ConfigDigest: projectconfig.Digest(goLayerBypassSearchConfigJSON),
 		Backend:      NewGoProjectBackend(),
 	}
-	report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
+	report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, nil, "all", nil, project)
 	Expect(err).NotTo(HaveOccurred())
 
 	Expect(report.ProjectChanges).To(HaveLen(1))

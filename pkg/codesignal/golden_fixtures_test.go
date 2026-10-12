@@ -1,6 +1,7 @@
 package codesignal
 
 import (
+	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
@@ -265,5 +266,73 @@ func metricsRulesInput() Input {
 				ChangedRanges: []LineRange{{StartRow: 0, EndRow: 40}},
 			},
 		},
+	}
+}
+
+// projectLifecycleChange returns a minimal architecture.layer_bypass
+// ProjectChange tagged with the source language that produced it (via
+// Provenance.Language), standing in for
+// EvaluateGoLayerBypass/EvaluateTypeScriptLayerBypass output. It exists to
+// prove (AC-VER-2, Task 11 of issue #334) that classifyProjectChanges
+// (project_lifecycle.go) assigns the same five frozen lifecycle wire values
+// -- introduced, existing, resolved, baseline, unknown -- regardless of
+// which language produced the observation; language is carried only as
+// provenance, never folded into lifecycle identity.
+func projectLifecycleChange(key, language string) ProjectChange {
+	return ProjectChange{
+		SemanticKey: key,
+		RuleID:      "architecture.layer_bypass",
+		RuleVersion: "1",
+		Kind:        "architecture.layer_bypass",
+		Category:    Category("architecture"),
+		Severity:    Severity("advisory"),
+		Confidence:  Confidence("high"),
+		PrimaryAnchor: ProjectLocation{
+			Path:     "pkg/handlers/handlers.go",
+			Location: semantics.Location{StartRow: 3},
+		},
+		Evidence:   "handler reaches sink via a statically resolved path that never passes through required layer \"service\"",
+		Provenance: Provenance{Producer: "projectmodel", FindingKind: "architecture.layer_bypass", Language: language},
+	}
+}
+
+// projectLifecycleDiffInput exercises existing/introduced/resolved together:
+// a Go-sourced key present on both sides (existing), a TypeScript-sourced
+// key present only on head (introduced), and a Go-sourced key present only
+// on base (resolved).
+func projectLifecycleDiffInput() Input {
+	return Input{
+		Scope: Scope{Repository: "example/repo", Revision: "pqr678", Base: "main"},
+		ProjectChanges: []ProjectChange{
+			projectLifecycleChange("bypass:service:go-A", "go"),
+			projectLifecycleChange("bypass:service:ts-B", "typescript"),
+		},
+		BaseProjectChanges: []ProjectChange{
+			projectLifecycleChange("bypass:service:go-A", "go"),
+			projectLifecycleChange("bypass:service:go-C", "go"),
+		},
+		ProjectBaseAnalyzed: true,
+		ProjectCoverage:     &domain.Coverage{Phase: "full", Complete: true},
+		BaseProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
+	}
+}
+
+// projectLifecycleBaselineInput exercises baseline: a TypeScript-sourced,
+// head-only key with complete coverage in Options.Baseline mode.
+func projectLifecycleBaselineInput() Input {
+	return Input{
+		Scope:           Scope{Repository: "example/repo", Revision: "stu901"},
+		ProjectChanges:  []ProjectChange{projectLifecycleChange("bypass:service:ts-D", "typescript")},
+		ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
+	}
+}
+
+// projectLifecycleUnknownInput exercises unknown: a Go-sourced, head-only
+// key degraded to indeterminate lifecycle by incomplete project coverage.
+func projectLifecycleUnknownInput() Input {
+	return Input{
+		Scope:           Scope{Repository: "example/repo", Revision: "vwx234"},
+		ProjectChanges:  []ProjectChange{projectLifecycleChange("bypass:service:go-E", "go")},
+		ProjectCoverage: &domain.Coverage{Phase: "full", Complete: false},
 	}
 }

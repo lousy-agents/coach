@@ -12,11 +12,13 @@ func buildProjectReportSurface(input Input, noBaseLifecycle Lifecycle, includeRe
 	projectSignals []Signal,
 	diagnostics []Diagnostic,
 ) {
-	lifecycleIndeterminate, diagnostics := projectLifecycleState(input)
+	lifecycleState, diagnostics := projectLifecycleState(input)
+	diagnostics = append(diagnostics, modelCoverageDiagnostics(input)...)
 
 	projectChanges, classifyDiags := classifyProjectChanges(
 		input.ProjectBaseAnalyzed,
-		lifecycleIndeterminate,
+		lifecycleState,
+		newUndeterminedContinuity(input.UndeterminedContinuity),
 		input.ProjectChanges,
 		input.BaseProjectChanges,
 		noBaseLifecycle,

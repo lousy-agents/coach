@@ -41,3 +41,14 @@ func TestAnalyzerEnvironSamplerDoesNotDoubleCountSamePIDWithAndWithoutStartTime(
 		t.Fatalf("invocations() = %d, want 1: a torn-down sample followed by a starttime sample of the same PID must be one invocation", got)
 	}
 }
+
+func TestTopLevelAnalyzerPIDsExcludesAnalyzerDescendants(t *testing.T) {
+	const self, analyzer, compiler = 1, 10, 11
+	parents := map[int]int{analyzer: self, compiler: analyzer}
+
+	got := topLevelAnalyzerPIDs([]int{analyzer, compiler}, parents)
+
+	if len(got) != 1 || got[0] != analyzer {
+		t.Fatalf("topLevelAnalyzerPIDs = %v, want [%d]: a child the analyzer forks still carries the analyzer's cmdline until it execs, so it must not count as a second invocation", got, analyzer)
+	}
+}

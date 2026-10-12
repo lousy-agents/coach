@@ -1,0 +1,107 @@
+{
+  "schema_version": "2",
+  "scope": {
+    "repository": "example/repo",
+    "revision": "stu901",
+    "baseline": true
+  },
+  "summary": {
+    "files_analyzed": 0,
+    "files_with_diagnostics": 0,
+    "active_signals": 1,
+    "introduced_signals": 0,
+    "existing_signals": 0,
+    "resolved_signals": 0,
+    "baseline_signals": 1,
+    "unknown_signals": 0
+  },
+  "signals": [
+    {
+      "id": "pchg_97dc3cc383303473a7426d598b4844c7c1c13a0b51f2978f3bc11369afe9488c",
+      "fingerprint": "pfp_97dc3cc383303473a7426d598b4844c7c1c13a0b51f2978f3bc11369afe9488c",
+      "rule_id": "architecture.layer_bypass",
+      "rule_version": "1",
+      "kind": "architecture.layer_bypass",
+      "category": "architecture",
+      "severity": "advisory",
+      "confidence": "high",
+      "lifecycle": "baseline",
+      "changed": false,
+      "path": "pkg/handlers/handlers.go",
+      "subject": "bypass:service:ts-D",
+      "location": {
+        "start_byte": 0,
+        "end_byte": 0,
+        "start_row": 3,
+        "start_col": 0,
+        "end_row": 0,
+        "end_col": 0
+      },
+      "evidence": "handler reaches sink via a statically resolved path that never passes through required layer \"service\"",
+      "why_it_matters": "",
+      "recommendation": "",
+      "suggested_skill": "",
+      "provenance": {
+        "producer": "projectmodel",
+        "finding_kind": "architecture.layer_bypass",
+        "language": "typescript"
+      },
+      "machine_evidence": {},
+      "related_locations": [],
+      "path_steps": [],
+      "coverage_refs": []
+    }
+  ],
+  "diagnostics": [],
+  "coverage": {
+    "tracked_files_discovered": 0,
+    "files_analyzed": 0,
+    "files_unanalyzable": 0,
+    "unsupported": [],
+    "excluded": []
+  },
+  "project_changes": [
+    {
+      "semantic_key": "bypass:service:ts-D",
+      "id": "pchg_97dc3cc383303473a7426d598b4844c7c1c13a0b51f2978f3bc11369afe9488c",
+      "fingerprint": "pfp_97dc3cc383303473a7426d598b4844c7c1c13a0b51f2978f3bc11369afe9488c",
+      "rule_id": "architecture.layer_bypass",
+      "rule_version": "1",
+      "kind": "architecture.layer_bypass",
+      "category": "architecture",
+      "severity": "advisory",
+      "confidence": "high",
+      "lifecycle": "baseline",
+      "changed": false,
+      "primary_anchor": {
+        "path": "pkg/handlers/handlers.go",
+        "location": {
+          "start_byte": 0,
+          "end_byte": 0,
+          "start_row": 3,
+          "start_col": 0,
+          "end_row": 0,
+          "end_col": 0
+        }
+      },
+      "evidence": "handler reaches sink via a statically resolved path that never passes through required layer \"service\"",
+      "provenance": {
+        "producer": "projectmodel",
+        "finding_kind": "architecture.layer_bypass",
+        "language": "typescript"
+      }
+    }
+  ],
+  "project_facts": [],
+  "project_summary": {
+    "active_changes": 1,
+    "introduced_changes": 0,
+    "existing_changes": 0,
+    "resolved_changes": 0,
+    "baseline_changes": 1
+  },
+  "project_coverage": {
+    "phase": "full",
+    "complete": true
+  }
+}

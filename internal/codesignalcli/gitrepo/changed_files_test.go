@@ -1,20 +1,25 @@
 package gitrepo
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 func TestSelectChangedFilesRenameSelectsNewPathWithoutAddedStatus(t *testing.T) {
 	dir := gitfixture.Init(t)
 	initialSHA := gitfixture.CommitFile(t, dir, "old.go", "package old\n// padding so rename detection kicks in\n// more padding\n// more padding\n// more padding\n")
-	gitfixture.Rename(t, dir, "old.go", "new.go")
+	headSHA := gitfixture.Rename(t, dir, "old.go", "new.go")
 
-	selected, diagnostics, err := SelectChangedFiles(dir, initialSHA)
+	selected, diagnostics, continuity, err := SelectChangedFiles(dir, initialSHA, headSHA)
 	if err != nil {
 		t.Fatalf("SelectChangedFiles: unexpected error: %v", err)
+	}
+	if want := []codesignal.PathContinuity{{Path: "new.go", PreviousPath: "old.go"}}; !reflect.DeepEqual(continuity, want) {
+		t.Errorf("continuity = %#v, want %#v", continuity, want)
 	}
 
 	if len(selected) != 1 {
@@ -31,6 +36,12 @@ func TestSelectChangedFilesRenameSelectsNewPathWithoutAddedStatus(t *testing.T) 
 		}
 		if d.Kind == "continuity_not_determined" && d.Path == "new.go" {
 			foundContinuity = true
+			if d.Side != "head" {
+				t.Errorf("continuity diagnostic Side = %q, want %q (continuity detection is head-side only)", d.Side, "head")
+			}
+			if d.Revision != headSHA {
+				t.Errorf("continuity diagnostic Revision = %q, want %q", d.Revision, headSHA)
+			}
 		}
 	}
 	if !foundContinuity {
@@ -42,11 +53,14 @@ func TestSelectChangedFilesLanguageFiltering(t *testing.T) {
 	dir := gitfixture.Init(t)
 	initialSHA := gitfixture.CommitFile(t, dir, "keep.go", "package keep\n")
 	gitfixture.CommitFile(t, dir, "keep.go", "package keep\n\nfunc F() {}\n")
-	gitfixture.CommitFile(t, dir, "unsupported.txt", "plain text\n")
+	headSHA := gitfixture.CommitFile(t, dir, "unsupported.txt", "plain text\n")
 
-	selected, diagnostics, err := SelectChangedFiles(dir, initialSHA)
+	selected, diagnostics, continuity, err := SelectChangedFiles(dir, initialSHA, headSHA)
 	if err != nil {
 		t.Fatalf("SelectChangedFiles: unexpected error: %v", err)
+	}
+	if len(continuity) != 0 {
+		t.Errorf("continuity = %#v, want none without a rename or copy", continuity)
 	}
 
 	if len(selected) != 1 {
@@ -58,5 +72,24 @@ func TestSelectChangedFilesLanguageFiltering(t *testing.T) {
 
 	if len(diagnostics) != 1 || diagnostics[0].Kind != "unsupported_language" || diagnostics[0].Path != "unsupported.txt" {
 		t.Errorf("diagnostics = %#v, want one unsupported_language diagnostic for unsupported.txt", diagnostics)
+	}
+}
+
+// Project analysis reads files the per-file selection rejects, so an
+// unsupported-language rename still has to report its pair.
+func TestSelectChangedFilesReportsContinuityForUnsupportedLanguageRename(t *testing.T) {
+	dir := gitfixture.Init(t)
+	initialSHA := gitfixture.CommitFile(t, dir, "old.js", "export const a = 1;\n// padding\n// more padding\n// more padding\n")
+	headSHA := gitfixture.Rename(t, dir, "old.js", "new.js")
+
+	selected, _, continuity, err := SelectChangedFiles(dir, initialSHA, headSHA)
+	if err != nil {
+		t.Fatalf("SelectChangedFiles: unexpected error: %v", err)
+	}
+	if len(selected) != 0 {
+		t.Errorf("selected = %#v, want no per-file analysis of an unsupported language", selected)
+	}
+	if want := []codesignal.PathContinuity{{Path: "new.js", PreviousPath: "old.js"}}; !reflect.DeepEqual(continuity, want) {
+		t.Errorf("continuity = %#v, want %#v", continuity, want)
 	}
 }

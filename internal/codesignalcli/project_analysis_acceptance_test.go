@@ -267,7 +267,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 			Backend:      backend,
 		}
 
-		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, nil, "all", nil, project)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(report.SchemaVersion).To(Equal("2"))
 		Expect(report.ProjectChanges).To(HaveLen(1))
@@ -370,7 +370,7 @@ var _ = Describe("project-analysis handoff into AnalyzeBaseline/AnalyzeChanges",
 			Backend:      backend,
 		}
 
-		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, "all", nil, project)
+		report, err := AnalyzeChanges(context.Background(), dir, headSHA, baseSHA, files, nil, nil, "all", nil, project)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(report.ProjectChanges).To(BeEmpty(), "the backend returned no observations on either side")
 		Expect(report.Signals).To(BeEmpty(), "a comment-only change triggers no file-local finding")

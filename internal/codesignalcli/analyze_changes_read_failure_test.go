@@ -24,7 +24,7 @@ func TestAnalyzeChangesBaseReadFailureForModifiedFile(t *testing.T) {
 		{Path: "a.go", Status: "modified", Language: semantics.LanguageGo},
 	}
 
-	report, err := AnalyzeChanges(context.Background(), dir, headSHA, emptySHA, files, nil, "", nil, nil)
+	report, err := AnalyzeChanges(context.Background(), dir, headSHA, emptySHA, files, nil, nil, "", nil, nil)
 	if err != nil {
 		t.Fatalf("AnalyzeChanges: unexpected error: %v", err)
 	}

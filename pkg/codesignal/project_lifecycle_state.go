@@ -6,18 +6,71 @@ import (
 	"github.com/lousy-agents/coach/pkg/domain"
 )
 
-func projectLifecycleState(input Input) (indeterminate bool, diagnostics []Diagnostic) {
+// projectLifecycleIndeterminacy breaks the indeterminacy condition out per
+// cause so each degraded change can be attributed to the responsible side(s).
+// baseIncomplete and inconsistentBase are mutually exclusive.
+type projectLifecycleIndeterminacy struct {
+	headIncomplete   bool
+	baseIncomplete   bool
+	inconsistentBase bool
+	headRevision     string
+	baseRevision     string
+}
+
+func (s projectLifecycleIndeterminacy) any() bool {
+	return s.headIncomplete || s.baseIncomplete || s.inconsistentBase
+}
+
+// degradedProjectChangeDiagnostics emits one Diagnostic per side the state
+// implicates, so a consumer keying off Side never misses a side when both
+// are independently incomplete.
+func degradedProjectChangeDiagnostics(path string, state projectLifecycleIndeterminacy) []Diagnostic {
+	var diagnostics []Diagnostic
+	if state.headIncomplete {
+		diagnostics = append(diagnostics, Diagnostic{
+			Path:     path,
+			Kind:     DiagKindProjectChangeLifecycleIndeterminate,
+			Message:  "project change lifecycle is \"unknown\": " + sideRevisionLabel("head", state.headRevision) + " project analysis coverage is incomplete",
+			Side:     "head",
+			Revision: state.headRevision,
+		})
+	}
+	if state.baseIncomplete {
+		diagnostics = append(diagnostics, Diagnostic{
+			Path:     path,
+			Kind:     DiagKindProjectChangeLifecycleIndeterminate,
+			Message:  "project change lifecycle is \"unknown\": " + sideRevisionLabel("base", state.baseRevision) + " project analysis coverage is incomplete",
+			Side:     "base",
+			Revision: state.baseRevision,
+		})
+	}
+	if state.inconsistentBase {
+		diagnostics = append(diagnostics, Diagnostic{
+			Path:     path,
+			Kind:     DiagKindProjectChangeLifecycleIndeterminate,
+			Message:  "project change lifecycle is \"unknown\": " + sideRevisionLabel("base", state.baseRevision) + " supplied project observations without a completed base analysis",
+			Side:     "base",
+			Revision: state.baseRevision,
+		})
+	}
+	return diagnostics
+}
+
+func projectLifecycleState(input Input) (state projectLifecycleIndeterminacy, diagnostics []Diagnostic) {
+	state.headRevision = input.Scope.Revision
+	state.baseRevision = input.Scope.Base
+
 	// Complete coverage is required before any normal lifecycle claim.
 	if !completeProjectCoverage(input.ProjectCoverage) {
-		indeterminate = true
+		state.headIncomplete = true
 	}
 	if input.ProjectBaseAnalyzed && !completeProjectCoverage(input.BaseProjectCoverage) {
-		indeterminate = true
+		state.baseIncomplete = true
 	}
 	// Non-empty base observations without ProjectBaseAnalyzed are inconsistent.
 	// A non-nil empty slice is not: callers commonly initialize with make/append.
 	if !input.ProjectBaseAnalyzed && len(input.BaseProjectChanges) > 0 {
-		indeterminate = true
+		state.inconsistentBase = true
 	}
 	if input.ProjectCoverage != nil && !input.ProjectCoverage.Complete {
 		diagnostics = append(diagnostics, Diagnostic{
@@ -25,13 +78,13 @@ func projectLifecycleState(input Input) (indeterminate bool, diagnostics []Diagn
 			Message: "project analysis coverage is incomplete; project observations may be partial",
 		})
 	}
-	if indeterminate {
+	if state.any() {
 		diagnostics = append(diagnostics, Diagnostic{
 			Kind:    DiagKindProjectLifecycleIndeterminate,
 			Message: projectLifecycleDiagnosticMessage(input),
 		})
 	}
-	return indeterminate, diagnostics
+	return state, diagnostics
 }
 
 func completeProjectCoverage(coverage *domain.Coverage) bool {

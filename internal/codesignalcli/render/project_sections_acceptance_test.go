@@ -234,6 +234,7 @@ var _ = Describe("RenderText project scope, provenance, and next-actions section
 			Expect(text).NotTo(ContainSubstring("No active CodeSignal findings."))
 		})
 	})
+
 })
 
 func rendersProjectScopeBlockBEFOREAnyFindings(report *codesignal.Report) {

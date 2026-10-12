@@ -1,0 +1,125 @@
+{
+  "schema_version": "2",
+  "scope": {
+    "repository": "example/repo",
+    "revision": "vwx234",
+    "baseline": true
+  },
+  "summary": {
+    "files_analyzed": 0,
+    "files_with_diagnostics": 0,
+    "active_signals": 1,
+    "introduced_signals": 0,
+    "existing_signals": 0,
+    "resolved_signals": 0,
+    "baseline_signals": 0,
+    "unknown_signals": 1
+  },
+  "signals": [
+    {
+      "id": "pchg_42c50944e8091cb686c41a1992fa5d50a91d5fbd8629444935e0ca743136bca9",
+      "fingerprint": "pfp_42c50944e8091cb686c41a1992fa5d50a91d5fbd8629444935e0ca743136bca9",
+      "rule_id": "architecture.layer_bypass",
+      "rule_version": "1",
+      "kind": "architecture.layer_bypass",
+      "category": "architecture",
+      "severity": "advisory",
+      "confidence": "high",
+      "lifecycle": "unknown",
+      "changed": false,
+      "path": "pkg/handlers/handlers.go",
+      "subject": "bypass:service:go-E",
+      "location": {
+        "start_byte": 0,
+        "end_byte": 0,
+        "start_row": 3,
+        "start_col": 0,
+        "end_row": 0,
+        "end_col": 0
+      },
+      "evidence": "handler reaches sink via a statically resolved path that never passes through required layer \"service\" (lifecycle is \"unknown\": see the project_lifecycle_indeterminate diagnostic for why)",
+      "why_it_matters": "",
+      "recommendation": "",
+      "suggested_skill": "",
+      "provenance": {
+        "producer": "projectmodel",
+        "finding_kind": "architecture.layer_bypass",
+        "language": "go"
+      },
+      "machine_evidence": {},
+      "related_locations": [],
+      "path_steps": [],
+      "coverage_refs": []
+    }
+  ],
+  "diagnostics": [
+    {
+      "path": "",
+      "kind": "project_coverage_incomplete",
+      "message": "project analysis coverage is incomplete; project observations may be partial"
+    },
+    {
+      "path": "",
+      "kind": "project_lifecycle_indeterminate",
+      "message": "project lifecycle is indeterminate: head coverage incomplete"
+    },
+    {
+      "path": "pkg/handlers/handlers.go",
+      "kind": "project_change_lifecycle_indeterminate",
+      "message": "project change lifecycle is \"unknown\": head revision vwx234 project analysis coverage is incomplete",
+      "side": "head",
+      "revision": "vwx234"
+    }
+  ],
+  "coverage": {
+    "tracked_files_discovered": 0,
+    "files_analyzed": 0,
+    "files_unanalyzable": 0,
+    "unsupported": [],
+    "excluded": []
+  },
+  "project_changes": [
+    {
+      "semantic_key": "bypass:service:go-E",
+      "id": "pchg_42c50944e8091cb686c41a1992fa5d50a91d5fbd8629444935e0ca743136bca9",
+      "fingerprint": "pfp_42c50944e8091cb686c41a1992fa5d50a91d5fbd8629444935e0ca743136bca9",
+      "rule_id": "architecture.layer_bypass",
+      "rule_version": "1",
+      "kind": "architecture.layer_bypass",
+      "category": "architecture",
+      "severity": "advisory",
+      "confidence": "high",
+      "lifecycle": "unknown",
+      "changed": false,
+      "primary_anchor": {
+        "path": "pkg/handlers/handlers.go",
+        "location": {
+          "start_byte": 0,
+          "end_byte": 0,
+          "start_row": 3,
+          "start_col": 0,
+          "end_row": 0,
+          "end_col": 0
+        }
+      },
+      "evidence": "handler reaches sink via a statically resolved path that never passes through required layer \"service\" (lifecycle is \"unknown\": see the project_lifecycle_indeterminate diagnostic for why)",
+      "provenance": {
+        "producer": "projectmodel",
+        "finding_kind": "architecture.layer_bypass",
+        "language": "go"
+      }
+    }
+  ],
+  "project_facts": [],
+  "project_summary": {
+    "active_changes": 1,
+    "introduced_changes": 0,
+    "existing_changes": 0,
+    "resolved_changes": 0,
+    "baseline_changes": 0
+  },
+  "project_coverage": {
+    "phase": "full",
+    "complete": false
+  }
+}

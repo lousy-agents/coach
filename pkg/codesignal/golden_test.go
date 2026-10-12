@@ -73,6 +73,9 @@ func TestGolden(t *testing.T) {
 		{"Baseline", baselineScenarioInput(), Options{Baseline: true}, "testdata/golden/baseline_report.json"},
 		{"MultiRule", multiRuleInput(), Options{}, "testdata/golden/multi_rule.json"},
 		{"MetricsRules", metricsRulesInput(), Options{}, "testdata/golden/metrics_rules.json"},
+		{"ProjectLifecycleDiffGoAndTS", projectLifecycleDiffInput(), Options{ProjectEnabled: true, IncludeResolved: true}, "testdata/golden/project_lifecycle_diff.json"},
+		{"ProjectLifecycleBaselineTS", projectLifecycleBaselineInput(), Options{ProjectEnabled: true, Baseline: true}, "testdata/golden/project_lifecycle_baseline.json"},
+		{"ProjectLifecycleUnknownGo", projectLifecycleUnknownInput(), Options{ProjectEnabled: true, Baseline: true}, "testdata/golden/project_lifecycle_unknown.json"},
 	}
 
 	for _, tt := range tests {

@@ -49,11 +49,13 @@ func CommitFile(t T, dir, name, contents string) string {
 	return strings.TrimSpace(run(t, dir, nil, "rev-parse", "HEAD"))
 }
 
-// Rename moves from to to with `git mv` and commits the rename.
-func Rename(t T, dir, from, to string) {
+// Rename moves from to to with `git mv`, commits the rename, and returns
+// the new HEAD commit SHA.
+func Rename(t T, dir, from, to string) string {
 	t.Helper()
 	run(t, dir, nil, "mv", from, to)
 	run(t, dir, CommitEnv, "commit", "-m", "rename "+from+" to "+to)
+	return strings.TrimSpace(run(t, dir, nil, "rev-parse", "HEAD"))
 }
 
 func run(t T, dir string, env []string, args ...string) string {
