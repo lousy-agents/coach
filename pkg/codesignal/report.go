@@ -15,6 +15,8 @@ type Report struct {
 	Diagnostics   []Diagnostic `json:"diagnostics"`
 	Coverage      *Coverage    `json:"coverage"`
 
+	SignalsWithheld *SignalsWithheld `json:"signals_withheld,omitempty"`
+
 	ProjectChanges  []ProjectChange  `json:"project_changes"`
 	ProjectFacts    []ProjectFact    `json:"project_facts"`
 	ProjectSummary  *ProjectSummary  `json:"project_summary"`
@@ -32,6 +34,8 @@ type reportWireV1 struct {
 	Signals       []Signal     `json:"signals"`
 	Diagnostics   []Diagnostic `json:"diagnostics"`
 	Coverage      Coverage     `json:"coverage"`
+
+	SignalsWithheld *SignalsWithheld `json:"signals_withheld,omitempty"`
 }
 
 type reportWireV2 struct {
@@ -54,6 +58,8 @@ func (r Report) MarshalJSON() ([]byte, error) {
 		Signals:       nonNilSlice(r.Signals),
 		Diagnostics:   nonNilSlice(r.Diagnostics),
 		Coverage:      nonNilCoverage(r.Coverage),
+
+		SignalsWithheld: r.SignalsWithheld,
 	}
 	if r.SchemaVersion != "2" {
 		return json.Marshal(base)

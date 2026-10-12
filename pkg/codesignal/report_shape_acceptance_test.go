@@ -109,19 +109,21 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 			"project_provenance", "project_scope", "project_next_actions",
 		}
 
-		// optional project keys that schema-2 omits when nil/empty (omitempty)
+		schema1OptionalKeys := []string{"signals_withheld"}
+
+		// optional keys that schema-2 omits when nil/empty (omitempty)
 		schema2OptionalKeys := []string{
-			"project_provenance", "project_scope", "project_next_actions",
+			"project_provenance", "project_scope", "project_next_actions", "signals_withheld",
 		}
 
-		It("keeps schema_version \"2\"'s marshalled key set in sync with Report's own json tags minus the omitempty-optional project keys", func() {
+		It("keeps schema_version \"2\"'s marshalled key set in sync with Report's own json tags minus the omitempty-optional project keys and signals_withheld", func() {
 			schema2 := codesignal.Report{SchemaVersion: "2"}
 			Expect(rawReportKeys(&schema2)).To(ConsistOf(keysWithout(expectedKeys, schema2OptionalKeys)))
 		})
 
-		It("keeps schema_version \"1\"'s marshalled key set in sync with Report's own json tags minus the project_* keys", func() {
+		It("keeps schema_version \"1\"'s marshalled key set in sync with Report's own json tags minus the project_* keys and the omitempty-optional signals_withheld", func() {
 			schema1 := codesignal.Report{SchemaVersion: "1"}
-			Expect(rawReportKeys(&schema1)).To(ConsistOf(keysWithout(expectedKeys, schema1ExcludedKeys)))
+			Expect(rawReportKeys(&schema1)).To(ConsistOf(keysWithout(expectedKeys, append(append([]string{}, schema1ExcludedKeys...), schema1OptionalKeys...))))
 		})
 
 		It("excludes project_provenance, project_scope, and project_next_actions from schema-1 output even when all three are populated", func() {
