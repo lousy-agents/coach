@@ -40,8 +40,8 @@
             "groupName": "onsi-test"
         },
         {
-            "description": "Group golang.org/x modules",
-            "matchManagers": ["gomod"],
+            "description": "Group golang.org/x modules and the call-graph backend provenance pin",
+            "matchManagers": ["gomod", "custom.regex"],
             "groupName": "golang-x",
             "matchPackageNames": [
                 "/^golang\\.org/x//"
@@ -54,6 +54,18 @@
         }
     ],
     "customManagers": [
+        {
+            "description": "Keep CallGraphAlgorithm's x/tools provenance version in sync with go.mod",
+            "customType": "regex",
+            "managerFilePatterns": [
+                "/^pkg/projectmodel/go_callgraph\\.go$/"
+            ],
+            "matchStrings": [
+                "const CallGraphAlgorithm = \"go-callgraph-static@1\\+golang\\.org/x/tools@(?<currentValue>[^\"]+)\""
+            ],
+            "depNameTemplate": "golang.org/x/tools",
+            "datasourceTemplate": "go"
+        },
         {
             "description": "Track Go version in mise.toml (custom manager because the native mise manager is disabled above)",
             "customType": "regex",
