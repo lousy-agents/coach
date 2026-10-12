@@ -46,6 +46,27 @@ func layerBypassWitness(source, sink, requiredLayer string, path []string) domai
 	}
 }
 
+// tsLayerBypassWitness is layerBypassWitness's TypeScript counterpart: the
+// same shape under TSLayerBypassAlgorithm, with a source path but no line.
+func tsLayerBypassWitness(source, sink, requiredLayer string, path []string) domain.LayerBypassWitness {
+	steps := make([]domain.LayerBypassStep, len(path))
+	for i, nodeID := range path {
+		steps[i] = domain.LayerBypassStep{NodeID: nodeID}
+	}
+	if len(steps) > 0 {
+		steps[0].Path = layerBypassSourcePath
+	}
+	return domain.LayerBypassWitness{
+		ID:               "bypass:" + requiredLayer + ":" + source + "->" + sink + "@" + domain.TSLayerBypassAlgorithm,
+		Source:           source,
+		Sink:             sink,
+		RequiredLayer:    requiredLayer,
+		Path:             steps,
+		Confidence:       domain.LayerBypassConfidenceHigh,
+		AlgorithmVersion: domain.TSLayerBypassAlgorithm,
+	}
+}
+
 // layerBypassResult wraps witnesses in a LayerBypassResult with a complete
 // Coverage, mirroring what a genuinely finished BuildGoLayerBypass search
 // reports -- most specs in this file are not exercising Coverage itself, so
@@ -170,7 +191,37 @@ var _ = Describe("EvaluateGoLayerBypass", func() {
 
 	When("no path step has a resolvable position", func() {
 		It("leaves PrimaryAnchor empty rather than fabricating one, so Build's shared anchorless filter drops the change", func() {
-			body_ruleLayerBypassAcceptanceTest_leavesPrimaryAnchorEmptyRatherThanFabricatingOne_172()
+			witness := domain.LayerBypassWitness{
+				ID:            "bypass:service:example.com/app/handlers.Handler->(*database/sql.DB).Query@" + domain.LayerBypassAlgorithm,
+				Source:        "example.com/app/handlers.Handler",
+				Sink:          "(*database/sql.DB).Query",
+				RequiredLayer: "service",
+				Path: []domain.LayerBypassStep{
+					{NodeID: "example.com/app/handlers.Handler"},
+					{NodeID: "(*database/sql.DB).Query"},
+				},
+				Confidence:       domain.LayerBypassConfidenceHigh,
+				AlgorithmVersion: domain.LayerBypassAlgorithm,
+			}
+
+			changes, diagnostics := codesignal.EvaluateGoLayerBypass(layerBypassResult(witness), "1", "backend-1", "digest-1")
+			Expect(diagnostics).To(BeEmpty())
+			Expect(changes).To(HaveLen(1))
+			Expect(changes[0].PrimaryAnchor).To(Equal(codesignal.ProjectLocation{}))
+
+			report := build(codesignal.Options{ProjectEnabled: true}, codesignal.Input{
+				ProjectChanges:  changes,
+				ProjectCoverage: &domain.Coverage{Phase: "full", Complete: true},
+			})
+
+			Expect(report.ProjectChanges).To(BeEmpty())
+			found := false
+			for _, d := range report.Diagnostics {
+				if d.Kind == "project_observation_missing_primary_path" {
+					found = true
+				}
+			}
+			Expect(found).To(BeTrue(), "expected a project_observation_missing_primary_path diagnostic, got %+v", report.Diagnostics)
 		})
 	})
 
@@ -554,9 +605,6 @@ var _ = Describe("EvaluateTypeScriptLayerBypass", func() {
 			return &domain.Coverage{Phase: "full", Complete: true}
 		}
 
-		tsWitness := func(source, sink, requiredLayer string, path []string) domain.LayerBypassWitness {
-			return body_ruleLayerBypassAcceptanceTest_587(source, sink, requiredLayer, path)
-		}
 		tsResult := func(witnesses ...domain.LayerBypassWitness) domain.LayerBypassResult {
 			return domain.LayerBypassResult{
 				Witnesses: witnesses,
@@ -567,7 +615,7 @@ var _ = Describe("EvaluateTypeScriptLayerBypass", func() {
 
 		When("a TS witness is present only on head", func() {
 			It("classifies introduced, sharing the ruleLayerBypassID vocabulary with the Go evaluator", func() {
-				witness := tsWitness("file:src/handlers/app.ts#getUsers", "(PrismaClient).findMany", "service",
+				witness := tsLayerBypassWitness("file:src/handlers/app.ts#getUsers", "(PrismaClient).findMany", "service",
 					[]string{"file:src/handlers/app.ts#getUsers", "(PrismaClient).findMany"})
 				headChanges, _ := codesignal.EvaluateTypeScriptLayerBypass(tsResult(witness), "1", "backend-1", "digest-1")
 
@@ -587,7 +635,7 @@ var _ = Describe("EvaluateTypeScriptLayerBypass", func() {
 
 		When("the identical TS witness is present on both head and base", func() {
 			It("classifies existing with Changed false", func() {
-				witness := tsWitness("file:src/handlers/app.ts#getUsers", "(PrismaClient).findMany", "service",
+				witness := tsLayerBypassWitness("file:src/handlers/app.ts#getUsers", "(PrismaClient).findMany", "service",
 					[]string{"file:src/handlers/app.ts#getUsers", "(PrismaClient).findMany"})
 				result := tsResult(witness)
 				changes, _ := codesignal.EvaluateTypeScriptLayerBypass(result, "1", "backend-1", "digest-1")

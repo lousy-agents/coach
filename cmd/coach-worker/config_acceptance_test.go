@@ -21,7 +21,7 @@ var _ = Describe("cmd/coach-worker config", func() {
 	})
 
 	AfterEach(func() {
-		body_configAcceptanceTest_23(envKeys)
+		unsetEnvKeys(envKeys)
 	})
 
 	When("required env vars are present", func() {
@@ -184,3 +184,10 @@ var _ = Describe("cmd/coach-worker config", func() {
 		})
 	})
 })
+
+// unsetEnvKeys clears every env var a spec set through setenv.
+func unsetEnvKeys(envKeys []string) {
+	for _, k := range envKeys {
+		_ = os.Unsetenv(k)
+	}
+}

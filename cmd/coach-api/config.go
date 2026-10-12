@@ -1,9 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/lousy-agents/coach/internal/authn"
@@ -65,7 +62,7 @@ type InfraConfig struct {
 	RedisConsumer      string
 	RedisClaimAfter    time.Duration
 
-	// PostgresDSN selects PostgresStore when set; MemoryStore when empty.
+	// PostgresDSN selects postgres.Store when set; memory.Store when empty.
 	PostgresDSN string
 
 	// AuthzBypassOwner/AuthzBypassRepo, when both set, wrap the live
@@ -73,82 +70,4 @@ type InfraConfig struct {
 	// (credential-free smoke exception). Must default to unset.
 	AuthzBypassOwner string
 	AuthzBypassRepo  string
-}
-
-// loadConfigFromEnv reads Config from the process environment. It fails
-// fast (a descriptive, non-nil error) if any required var is missing or
-// malformed, rather than silently defaulting a signing key or issuer.
-func loadConfigFromEnv() (Config, error) {
-	var missing []string
-
-	signingKey := os.Getenv("COACH_JWT_SIGNING_KEY")
-	if signingKey == "" {
-		missing = append(missing, "COACH_JWT_SIGNING_KEY")
-	}
-	issuer := os.Getenv("COACH_JWT_ISSUER")
-	if issuer == "" {
-		missing = append(missing, "COACH_JWT_ISSUER")
-	}
-	addr := os.Getenv("COACH_HTTP_ADDR")
-	if addr == "" {
-		missing = append(missing, "COACH_HTTP_ADDR")
-	}
-	if len(missing) > 0 {
-		return Config{}, fmt.Errorf("coach-api: missing required env var(s): %s", strings.Join(missing, ", "))
-	}
-
-	cfg := Config{
-		HTTPAddr:            addr,
-		JWTSigningKey:       []byte(signingKey),
-		JWTIssuer:           issuer,
-		AuthTestMintEnabled: os.Getenv("COACH_AUTH_TEST_MINT") == "1",
-	}
-
-	if raw := os.Getenv("COACH_JWT_TOKEN_TTL"); raw != "" {
-		ttl, err := time.ParseDuration(raw)
-		if err != nil {
-			return Config{}, fmt.Errorf("coach-api: invalid COACH_JWT_TOKEN_TTL %q: %w", raw, err)
-		}
-		cfg.JWTTokenTTL = ttl
-	}
-
-	oauthCfg, err := loadGitHubOAuthConfigFromEnv()
-	if err != nil {
-		return Config{}, err
-	}
-	cfg.GitHubOAuth = oauthCfg
-
-	return cfg, nil
-}
-
-// loadGitHubOAuthConfigFromEnv returns nil (OAuth routes disabled) unless
-// both COACH_GITHUB_OAUTH_CLIENT_ID and COACH_GITHUB_OAUTH_CLIENT_SECRET are
-// set -- OAuth against real GitHub is optional for operators.
-
-// loadInfraConfigFromEnv reads InfraConfig from the process environment. It
-// fails fast if any required var is missing or malformed, rather than
-// silently defaulting GitHub App credentials. GitHub App ID/private key are
-// optional only when both COACH_AUTHZ_BYPASS_OWNER and COACH_AUTHZ_BYPASS_REPO
-// are set (credential-free compose smoke); otherwise App credentials remain
-// required.
-
-// loadGitHubAppPrivateKeyFromEnv supports either a raw PEM value in
-// COACH_GITHUB_APP_PRIVATE_KEY, or a path to a PEM file in
-// COACH_GITHUB_APP_PRIVATE_KEY_PATH -- a multi-line PEM crammed into one env
-// var is awkward, so the file-path form is offered as well. Returns a nil
-// slice (not an error) if neither is set, so the caller can report the
-// missing-required-var case alongside its other missing vars.
-func loadGitHubAppPrivateKeyFromEnv() ([]byte, error) {
-	if raw := os.Getenv("COACH_GITHUB_APP_PRIVATE_KEY"); raw != "" {
-		return []byte(raw), nil
-	}
-	path := os.Getenv("COACH_GITHUB_APP_PRIVATE_KEY_PATH")
-	if path == "" {
-		return nil, nil
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("coach-api: reading COACH_GITHUB_APP_PRIVATE_KEY_PATH %q: %w", path, err)
-	}
-	return data, nil
 }

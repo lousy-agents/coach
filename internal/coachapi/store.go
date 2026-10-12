@@ -25,8 +25,8 @@ type Completion struct {
 }
 
 // JobStore is the persistence seam POST/GET /v1/jobs handlers depend on. It
-// has an in-memory implementation (store_memory.go) and, in a later task, a
-// Postgres implementation (store_postgres.go). No method may leak an
+// has an in-memory implementation (store/memory) and a Postgres
+// implementation (store/postgres). No method may leak an
 // in-memory-only detail (e.g. no method returns a pointer into internal map
 // storage) — implementations must return values a caller cannot use to
 // mutate the store's internal state.

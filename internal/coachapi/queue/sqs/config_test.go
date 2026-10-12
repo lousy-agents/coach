@@ -83,8 +83,17 @@ func TestConfigValidate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_configTest_85(t, tt)
+			expectValidateError(t, tt.mutate(validConfig()), tt.wantErr)
 		})
+	}
+}
+
+// expectValidateError requires cfg.Validate to fail exactly when wantErr.
+func expectValidateError(t *testing.T, cfg Config, wantErr bool) {
+	t.Helper()
+	err := cfg.Validate()
+	if (err != nil) != wantErr {
+		t.Fatalf("Validate() error = %v, wantErr %v", err, wantErr)
 	}
 }
 

@@ -46,11 +46,11 @@ var _ = Describe("BuildGoReachability", func() {
 
 	Describe("the facts-only structural contract", func() {
 		It("carries no severity, lifecycle, or active-finding-shaped field anywhere on ReachabilityFact", func() {
-			body_goReachabilityAcceptanceTest_carriesNoSeverityLifecycleOrActiveFindingShapedF_50()
+			expectReachabilityFactIsFactsOnly()
 		})
 
 		It("carries no severity, lifecycle, or active-finding-shaped field anywhere on ReachabilityResult", func() {
-			body_goReachabilityAcceptanceTest_carriesNoSeverityLifecycleOrActiveFindingShapedF_87()
+			expectReachabilityResultIsFactsOnly()
 		})
 	})
 
@@ -126,7 +126,21 @@ var _ = Describe("BuildGoReachability", func() {
 
 	When("the underlying call-graph build itself is truncated by a graph-node budget", func() {
 		It("treats every pair as unevaluated rather than reporting a truncated call graph as a fully searched one", func() {
-			body_goReachabilityAcceptanceTest_treatsEveryPairAsUnevaluatedRatherThanReportingA_184()
+			snapshot := os.DirFS("testdata/go_reachability_path")
+			result, err := projectmodel.BuildGoReachability(context.Background(), snapshot, projectmodel.ReachabilityOptions{
+				Budgets: projectmodel.GoBudgets{MaxGraphNodes: 1},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Coverage.Complete).To(BeFalse())
+			Expect(result.Coverage.Counts["source_sink_pairs_evaluated"]).To(Equal(0),
+				"a pair searched against an incompletely built call graph must not count as conclusively evaluated")
+			Expect(result.Coverage.Counts["source_sink_pairs_truncated"]).To(BeNumerically(">", 0))
+
+			Expect(result.Coverage.Budgets).To(HaveKeyWithValue("graph_nodes", 1))
+			for _, key := range []string{"wall_time_ms", "input_files", "input_bytes", "graph_nodes", "graph_edges", "working_set_bytes", "stderr_bytes", "search_nodes"} {
+				Expect(result.Coverage.Budgets).To(HaveKey(key), "expected effective budget key %q", key)
+			}
 		})
 	})
 
@@ -253,4 +267,26 @@ func hasReachabilityDiagnostic(diags []projectmodel.Diagnostic, code string) boo
 		}
 	}
 	return false
+}
+
+func countReachabilityDiagnostic(diags []projectmodel.Diagnostic, code string) int {
+	n := 0
+	for _, d := range diags {
+		if d.Code == code {
+			n++
+		}
+	}
+	return n
+}
+
+func withoutWallClockCounts(cov projectmodel.Coverage) projectmodel.Coverage {
+	counts := make(map[string]int, len(cov.Counts))
+	for k, v := range cov.Counts {
+		if k == "runtime_ms" || k == "memory_bytes" {
+			continue
+		}
+		counts[k] = v
+	}
+	cov.Counts = counts
+	return cov
 }

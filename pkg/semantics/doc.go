@@ -20,12 +20,12 @@
 // effect on the caller's value — but each language's detection is
 // necessarily different: Go parameter types are explicit in the source
 // (pointer_type/map_type/slice_type), so mutableParamTypes reads them
-// directly (features.go), while TS/TSX has no required type annotations, so
+// directly (go_mutates_input_params.go), while TS/TSX has no required type annotations, so
 // tsParamScope instead tracks which identifiers are bound to (non-
 // destructured, non-rest, non-defaulted) parameters and matches property/
 // index assignments, update expressions, deletes, and a fixed list of known
 // mutating collection methods (including bracket notation such as arr["push"])
-// (ts_features.go). Neither detector tracks aliases assigned to local
+// (ts_scope.go). Neither detector tracks aliases assigned to local
 // variables or follows values across function calls.
 //
 // The "toctou_check_then_act" finding (CWE-367) flags a filesystem
@@ -35,7 +35,7 @@
 // TS/TSX (ts_toctou.go) detects a bare existsSync/fs.existsSync call as an
 // if/while condition guarding a same-path act call (readFileSync,
 // writeFileSync, appendFileSync, unlinkSync, rmSync, bare or fs. form); Go
-// (toctou_go.go) detects an os.Stat/os.Lstat call bound by the if
+// (go_toctou.go) detects an os.Stat/os.Lstat call bound by the if
 // statement's own initializer (if _, err := os.Stat(p); err == nil) whose
 // error result is gated by a direct err == nil comparison guarding a
 // same-path act call (os.Open, os.OpenFile, os.Remove, os.RemoveAll,

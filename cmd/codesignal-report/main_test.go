@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-
-	"encoding/base64"
 	"encoding/json"
 	"os/exec"
 	"strings"
@@ -11,14 +9,6 @@ import (
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
-
-func TestRun_MalformedScopeHeaderDoesNotPoisonSubsequentLines(t *testing.T) {
-	for _, header := range []string{"not valid json", `["a","b"]`} {
-		t.Run(header, func(t *testing.T) {
-			body_mainTest_17(t, header)
-		})
-	}
-}
 
 func TestRun_SmokeViaGoRun(t *testing.T) {
 	if testing.Short() {
@@ -71,6 +61,21 @@ func TestRun_TwoValidFileRequestsWithScopeHeader(t *testing.T) {
 	}
 }
 
-func b64(s string) string {
-	return base64.StdEncoding.EncodeToString([]byte(s))
+func TestRun_ExactlyOneReportWritten(t *testing.T) {
+	input := strings.Join([]string{
+		"not valid json",
+		`{"path":"a.go","language":"go","head_content":"` + b64("package main\n") + `"}`,
+		`{"path":"missing-language"}`,
+		`{"path":"bad.go","language":"go","head_content":"not-valid-base64!!"}`,
+		``,
+	}, "\n")
+
+	_, raw := mustRun(t, input)
+
+	if count := bytes.Count(raw, []byte("schema_version")); count != 1 {
+		t.Errorf("expected exactly one report (one \"schema_version\" occurrence), got %d\noutput: %s", count, raw)
+	}
+	if lines := bytes.Count(raw, []byte("\n")); lines != 1 {
+		t.Errorf("expected exactly one output line, got %d\noutput: %s", lines, raw)
+	}
 }

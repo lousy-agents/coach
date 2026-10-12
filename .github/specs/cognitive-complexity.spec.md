@@ -56,7 +56,7 @@ so that I can **see introduced/existing/resolved lifecycle on the same report su
   - `rule_version`: `1`
   - `kind`: `cognitive_complexity`
   - `category`: `complexity`
-  - `severity`: `medium`
+  - `severity`: `high` when `score >= 30` (twice the threshold), otherwise `medium`
   - `confidence`: `high` (fully deterministic rule application)
   - `path`: the file path passed into codesignal for that `FileChange`
   - `subject`: the record’s `name`
@@ -116,7 +116,7 @@ so that **scoring regressions fail CI before product code drifts**.
 - `pkg/semantics/` — compute Cognitive Complexity during `compute*Features` (or a helper invoked from those functions / analyzer wiring below); extend `Result` / `StructuralMetrics`; golden + acceptance tests.
 - `pkg/semantics/result.go` — additive JSON fields (file aggregates on metrics + top-level `cognitive_complexity` slice).
 - `pkg/semantics/language.go` / `pkg/semantics/analyzer.go` — wiring so `AnalyzeBytes` copies the new slice onto `Result` (see Analyzer wiring).
-- `pkg/semantics/features.go`, `pkg/semantics/ts_features.go`, and/or new `pkg/semantics/cognitive_complexity.go` — language-specific AST walks.
+- `pkg/semantics/go_features.go`, `pkg/semantics/ts_features.go`, and/or new `pkg/semantics/cognitive_complexity.go` — language-specific AST walks.
 - `pkg/codesignal/` — new rule file + `signalsFromCognitiveComplexity` dispatch from `processHeadResult` / `extractBaseSignals`; lifecycle/fingerprint tests.
 - `js/semantics/test/parity.test.ts` (+ protocol/types if mirrored) — parity lock.
 - `cognative-complexity-draft.md` — **non-normative reference only** (not shipped product docs).
@@ -181,7 +181,7 @@ No other `kind` strings in v1. Generators use `function`. Class methods use `met
 
 **Recommendation**: `Extract nested branches into named helpers, replace nested conditionals with early returns or lookup tables, and simplify boolean expressions so each function stays linearly readable.`
 
-**Threshold constant** (codesignal only): `cognitiveComplexityThreshold = 15` with emission when `score >= 15`.
+**Threshold** (codesignal only): `cognitiveComplexityRule.threshold` (15) in `pkg/codesignal/metric_rules.go`, with emission when `score >= 15`.
 
 **Analyzer versioning**: bumping semantics metrics/JSON is a deterministic contract change; codesignal `rule_version` starts at `"1"`. Report `analyzer` version strings used by the API worker remain whatever the platform already pins — this feature does not require a new job kind.
 
@@ -249,7 +249,7 @@ processHeadResult / extractBaseSignals (ParseStatus == "ok"):
 
 `signalsFromCognitiveComplexity`:
 
-- For each record with `score >= cognitiveComplexityThreshold` (15), append one `Signal` as specified in Story 2.
+- For each record with `score >= cognitiveComplexityRule.threshold` (15), append one `Signal` as specified in Story 2.
 - No registry entry in `metricsRuleRegistry` (wrong cardinality: one file-level metrics struct cannot name per-function subjects/locations).
 - No dependency on `Finding` conversion inside semantics for threshold gating.
 
@@ -625,8 +625,8 @@ sequenceDiagram
 
 - `pkg/semantics/result.go`
 - `pkg/semantics/language.go` / `pkg/semantics/analyzer.go` (wiring per Design — Analyzer wiring)
-- `pkg/semantics/features.go` and/or new `pkg/semantics/cognitive_complexity.go`
-- `pkg/semantics/result_test.go` (golden update)
+- `pkg/semantics/go_features.go` and/or new `pkg/semantics/cognitive_complexity.go`
+- `pkg/semantics/result_golden_test.go` (golden update)
 - `pkg/semantics/*_test.go` for edge cases (else-if normalization, naming, recursion, logical sequences)
 
 **Requirements**:
@@ -688,7 +688,7 @@ sequenceDiagram
 **Affected files**:
 
 - `pkg/codesignal/rule_cognitive_complexity.go` (new)
-- `pkg/codesignal/codesignal.go` (`processHeadResult` / `extractBaseSignals` wiring)
+- `pkg/codesignal/file_signals.go` (`processHeadResult` / `extractBaseSignals` wiring)
 - `pkg/codesignal/*_test.go` / acceptance as needed
 
 **Requirements**:

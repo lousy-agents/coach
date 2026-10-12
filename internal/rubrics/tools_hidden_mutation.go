@@ -1,0 +1,85 @@
+package rubrics
+
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/lousy-agents/coach/internal/agentloop"
+	"github.com/lousy-agents/coach/internal/modelgateway"
+)
+
+func hiddenMutationToolHandler(gw modelgateway.Gateway, def Definition) agentloop.ToolHandler {
+	return func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+		in, err := parseHiddenMutationArgs(args)
+		if err != nil {
+			return nil, err
+		}
+		if len(in.Items) >= 2 {
+			return runHiddenMutationPack(ctx, gw, def, in.Items)
+		}
+		// Singular path: legacy args, or a one-item pack (may use singular schema).
+		var msgs []modelgateway.Message
+		if len(in.Items) == 1 {
+			msgs = AssembleHiddenMutationMessages(HiddenMutationEvidence{
+				Finding: in.Items[0].Finding,
+				File:    in.Items[0].File,
+			})
+		} else {
+			msgs = AssembleHiddenMutationMessages(HiddenMutationEvidence{
+				Finding: in.Finding,
+				File:    in.File,
+			})
+		}
+		result, err := Run(ctx, gw, def, msgs)
+		if err != nil {
+			return nil, err
+		}
+		tr := toolResultFromRun(def, result)
+		if len(in.Items) == 1 {
+			tr.FindingRef = in.Items[0].FindingRef
+		}
+		return marshalToolResult(tr)
+	}
+}
+
+func runHiddenMutationPack(ctx context.Context, gw modelgateway.Gateway, def Definition, items []HiddenMutationPackItem) (json.RawMessage, error) {
+	if err := lifecycleAbortErr(ctx.Err()); err != nil {
+		return nil, err
+	}
+	if gw == nil {
+		refs := packRefs(items)
+		return marshalToolPackResult(packResultsForGatewayDegrade(def, refs, degrade(def.ID, "model gateway is nil")))
+	}
+
+	msgs := AssembleHiddenMutationPackMessages(HiddenMutationPackEvidence{Items: items})
+	refs := packRefs(items)
+
+	resp, err := gw.Judge(ctx, modelgateway.JudgmentRequest{
+		RubricID:      def.ID,
+		RubricVersion: def.Version,
+		Messages:      msgs,
+		OutputSchema:  HiddenMutationBatchOutputSchema(),
+	})
+	if abort := firstLifecycleAbort(err, ctx.Err()); abort != nil {
+		return nil, abort
+	}
+	// Wall-budget deadline: surface to agentloop.mapWallErr. Do not
+	// soft-degrade wall expiry as pack-level gateway-unavailable diagnostics.
+	if err != nil && isOpDeadlineExceeded(ctx) {
+		return nil, err
+	}
+	if err != nil {
+		return marshalToolPackResult(packResultsForGatewayDegrade(def, refs, degradeFromErr(def.ID, err)))
+	}
+
+	pack := mapBatchJudgmentToPackResult(def, refs, resp)
+	return marshalToolPackResult(pack)
+}
+
+func packRefs(items []HiddenMutationPackItem) []string {
+	refs := make([]string, len(items))
+	for i, it := range items {
+		refs[i] = it.FindingRef
+	}
+	return refs
+}

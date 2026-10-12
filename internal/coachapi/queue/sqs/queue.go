@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
-	"strconv"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awssqs "github.com/aws/aws-sdk-go-v2/service/sqs"
-	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
@@ -25,12 +23,6 @@ import (
 // deadline elapsed (see the package doc comment's "Reclaim mechanism"
 // section).
 var errStaleClaim = errors.New("sqs: claim token is stale (already completed, nacked, or reclaimed)")
-
-// maxPoisonDrainRounds bounds PoisonTasks's ReceiveMessage loop so a
-// pathologically large poison queue cannot make a single call block
-// forever; each round can return up to 10 messages (SQS's own
-// MaxNumberOfMessages cap).
-const maxPoisonDrainRounds = 50
 
 // sqsAPI is the subset of *awssqs.Client this package calls, narrowed so
 // unit tests can substitute a fake without spinning up LocalStack.
@@ -91,130 +83,61 @@ var _ queue.TaskQueue = (*Queue)(nil)
 // deadline tracking; production callers pass acceptanceharness.RealClock{},
 // and this package's conformance test passes an
 // acceptanceharness.FakeClock.
+func NewQueue(ctx context.Context, cfg Config, clock acceptanceharness.Clock) (*Queue, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	if clock == nil {
+		clock = acceptanceharness.RealClock{}
+	}
+
+	httpClient := &http.Client{Timeout: cfg.httpTimeout()}
+	awsCfg := aws.Config{
+		Region:      cfg.Region,
+		Credentials: cfg.Credentials,
+		HTTPClient:  httpClient,
+	}
+	client := awssqs.NewFromConfig(awsCfg, func(o *awssqs.Options) {
+		if cfg.Endpoint != "" {
+			o.BaseEndpoint = aws.String(cfg.Endpoint)
+		}
+	})
+
+	q := &Queue{
+		client:            client,
+		queueURL:          cfg.QueueURL,
+		poisonQueueURL:    cfg.PoisonQueueURL,
+		visibilityTimeout: cfg.VisibilityTimeout,
+		clock:             clock,
+		inflight:          make(map[string]*inflightClaim),
+	}
+
+	if q.poisonQueueURL == "" {
+		poisonName := poisonQueueName(queueNameFromURL(cfg.QueueURL))
+		out, err := client.CreateQueue(ctx, &awssqs.CreateQueueInput{QueueName: aws.String(poisonName)})
+		if err != nil {
+			return nil, fmt.Errorf("sqs: creating poison queue %q: %w", poisonName, err)
+		}
+		q.poisonQueueURL = aws.ToString(out.QueueUrl)
+	}
+
+	return q, nil
+}
 
 // Enqueue implements internal/coachapi/queue.TaskQueue.
-
-// Claim implements internal/coachapi/queue.TaskQueue. It first reaps any
-// locally-tracked claim whose deadline (per the injected Clock) has passed
-// -- see the package doc comment's "Reclaim mechanism" section -- then
-// attempts to receive one message from the main queue. q.mu is held only
-// while reading or writing q.inflight itself (inside reapExpired's
-// snapshot/delete steps and this method's final map write below); every
-// SQS network call (reapExpired's ChangeMessageVisibility calls,
-// ReceiveMessage, and the JSON decode in between) runs unlocked, so a slow
-// or unreachable SQS endpoint cannot stall concurrent Complete/Nack/Claim
-// calls.
-func (q *Queue) Claim(ctx context.Context) (queue.Claim, bool, error) {
-	if err := q.reapExpired(ctx); err != nil {
-		return queue.Claim{}, false, err
+func (q *Queue) Enqueue(ctx context.Context, task queue.Task) error {
+	body, err := json.Marshal(wireTask{ID: task.ID, Payload: task.Payload})
+	if err != nil {
+		return fmt.Errorf("sqs: encoding task %q: %w", task.ID, err)
 	}
-
-	out, err := q.client.ReceiveMessage(ctx, &awssqs.ReceiveMessageInput{
-		QueueUrl:            aws.String(q.queueURL),
-		MaxNumberOfMessages: 1,
-		VisibilityTimeout:   int32(q.visibilityTimeout.Seconds()),
-		WaitTimeSeconds:     0,
-		MessageSystemAttributeNames: []types.MessageSystemAttributeName{
-			types.MessageSystemAttributeNameApproximateReceiveCount,
-		},
+	_, err = q.client.SendMessage(ctx, &awssqs.SendMessageInput{
+		QueueUrl:    aws.String(q.queueURL),
+		MessageBody: aws.String(string(body)),
 	})
 	if err != nil {
-		return queue.Claim{}, false, fmt.Errorf("sqs: ReceiveMessage: %w", err)
+		return fmt.Errorf("sqs: SendMessage for task %q: %w", task.ID, err)
 	}
-	if len(out.Messages) == 0 {
-		return queue.Claim{}, false, nil
-	}
-
-	msg := out.Messages[0]
-	var wt wireTask
-	if err := json.Unmarshal([]byte(aws.ToString(msg.Body)), &wt); err != nil {
-		return queue.Claim{}, false, fmt.Errorf("sqs: decoding received message body: %w", err)
-	}
-
-	// ApproximateReceiveCount is SQS's 1-based delivery count (first
-	// delivery is "1"). Queue.Claim reports 0-based Attempt, matching the
-	// redisstream adapter's first-claim convention (jobs.attempt in
-	// internal/coachapi/migrations/0001_init.sql), so callers see
-	// consistent semantics across both TaskQueue backends.
-	attempt := 0
-	if raw, ok := msg.Attributes[string(types.MessageSystemAttributeNameApproximateReceiveCount)]; ok {
-		if n, err := strconv.Atoi(raw); err == nil && n > 1 {
-			attempt = n - 1
-		}
-	}
-
-	token := aws.ToString(msg.ReceiptHandle)
-	q.mu.Lock()
-	q.inflight[token] = &inflightClaim{
-		taskID:        wt.ID,
-		receiptHandle: token,
-		payload:       wt.Payload,
-		attempt:       attempt,
-		deadline:      q.clock.Now().Add(q.visibilityTimeout),
-	}
-	q.mu.Unlock()
-
-	return queue.Claim{TaskID: wt.ID, Attempt: attempt, Token: token}, true, nil
-}
-
-// reapExpired resets SQS visibility to 0 for every locally-tracked claim
-// whose deadline (per the injected Clock) has passed, so the next
-// ReceiveMessage can redeliver it, then forgets the stale receipt handle so
-// a later Complete/Nack carrying it is rejected. It takes q.mu only to
-// snapshot the expired entries and again to remove them; the
-// ChangeMessageVisibility network calls in between run unlocked, so a
-// slow/unreachable SQS endpoint reclaiming one stale claim cannot stall a
-// concurrent Complete/Nack/Claim call on an unrelated claim.
-
-// Only delete if this token is still the entry we snapshotted: a
-// concurrent Complete/Nack may have already removed it (the
-// original worker finished just as its deadline was judged
-// expired here), and deleting an already-absent key is a no-op we
-// want to skip rather than risk racing a legitimate completion.
-
-// Complete implements internal/coachapi/queue.TaskQueue.
-
-// Nack implements internal/coachapi/queue.TaskQueue. permanent=false resets
-// the message's SQS visibility to 0, making it immediately reclaimable.
-// permanent=true copies the task to the poison-task destination queue and
-// deletes it from the main queue, so it can never be claimed again (see the
-// package doc comment's "Poison-task destination" section).
-
-// PoisonTasks returns the tasks currently observable on the poison-task
-// destination queue, up to maxPoisonDrainRounds drain rounds; it is a
-// bounded, best-effort enumeration, not guaranteed to be exhaustive under
-// pathological redelivery timing. It receives with VisibilityTimeout: 0
-// rather than deleting, so repeated calls keep observing the same poisoned
-// tasks instead of draining the queue (see the package doc comment's
-// "Poison-task destination" section).
-
-// Every message in this round was already seen: SQS is
-// re-serving the same immediately-visible messages, so
-// further rounds cannot make progress.
-
-type poisonDrain struct {
-	seen map[string]bool
-}
-
-// decodeRound decodes one ReceiveMessage batch, skipping message IDs
-// already recorded on the drain. progressed is false when every message in
-// the batch was already seen -- SQS re-serving the same immediately-visible
-// messages, which means further rounds cannot make progress.
-func (d *poisonDrain) decodeRound(msgs []types.Message) (tasks []queue.Task, progressed bool, err error) {
-	for _, msg := range msgs {
-		var wt wireTask
-		if err := json.Unmarshal([]byte(aws.ToString(msg.Body)), &wt); err != nil {
-			return nil, false, fmt.Errorf("sqs: decoding poison queue message body: %w", err)
-		}
-		key := aws.ToString(msg.MessageId)
-		if d.seen[key] {
-			continue
-		}
-		d.seen[key] = true
-		progressed = true
-		tasks = append(tasks, queue.Task{ID: wt.ID, Payload: wt.Payload})
-	}
-	return tasks, progressed, nil
+	return nil
 }
 
 // isReceiptHandleInvalid reports whether err is SQS's ReceiptHandleIsInvalid

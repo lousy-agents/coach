@@ -3,6 +3,7 @@ package rubrics
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/lousy-agents/coach/internal/agentloop"
 	"github.com/lousy-agents/coach/internal/modelgateway"
@@ -16,8 +17,37 @@ import (
 // hidden_mutation_contextualization accepts legacy singular {finding,file} or
 // pack {items:[{finding_ref,finding,file},...]} args. Multi-item packs return
 // a ToolPackResult envelope ({"results":[ToolResult...]}) for coachapi handlers.
+func RegisterTools(loop *agentloop.Loop, gw modelgateway.Gateway) error {
+	if loop == nil {
+		return fmt.Errorf("rubrics: loop is required")
+	}
+	specs, err := ToolSpecs(gw)
+	if err != nil {
+		return err
+	}
+	for _, spec := range specs {
+		if err := loop.Register(spec); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // ToolSpecs returns agentloop.ToolSpec values for the two seed rubrics.
+func ToolSpecs(gw modelgateway.Gateway) ([]agentloop.ToolSpec, error) {
+	if gw == nil {
+		return nil, fmt.Errorf("rubrics: gateway is required")
+	}
+	out := make([]agentloop.ToolSpec, 0, 2)
+	for _, cfg := range seedToolConfigs() {
+		spec, err := seedJudgmentTool(gw, cfg)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, spec)
+	}
+	return out, nil
+}
 
 type seedToolConfig struct {
 	id         string
@@ -43,70 +73,32 @@ func seedToolConfigs() []seedToolConfig {
 	}
 }
 
-func hiddenMutationToolHandler(gw modelgateway.Gateway, def Definition) agentloop.ToolHandler {
-	return func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
-		in, err := parseHiddenMutationArgs(args)
-		if err != nil {
-			return nil, err
-		}
-		if len(in.Items) >= 2 {
-			return runHiddenMutationPack(ctx, gw, def, in.Items)
-		}
-		// Singular path: legacy args, or a one-item pack (may use singular schema).
-		var msgs []modelgateway.Message
-		if len(in.Items) == 1 {
-			msgs = AssembleHiddenMutationMessages(HiddenMutationEvidence{
-				Finding: in.Items[0].Finding,
-				File:    in.Items[0].File,
-			})
-		} else {
-			msgs = AssembleHiddenMutationMessages(HiddenMutationEvidence{
-				Finding: in.Finding,
-				File:    in.File,
-			})
-		}
-		result, err := Run(ctx, gw, def, msgs)
-		if err != nil {
-			return nil, err
-		}
-		tr := toolResultFromRun(def, result)
-		if len(in.Items) == 1 {
-			tr.FindingRef = in.Items[0].FindingRef
-		}
-		return marshalToolResult(tr)
+func seedJudgmentTool(gw modelgateway.Gateway, cfg seedToolConfig) (agentloop.ToolSpec, error) {
+	def, ok := DefinitionByID(cfg.id)
+	if !ok {
+		return agentloop.ToolSpec{}, fmt.Errorf("rubrics: missing seed definition %q", cfg.id)
 	}
-}
-
-func runHiddenMutationPack(ctx context.Context, gw modelgateway.Gateway, def Definition, items []HiddenMutationPackItem) (json.RawMessage, error) {
-	if err := lifecycleAbortErr(ctx.Err()); err != nil {
-		return nil, err
+	if cfg.packAware {
+		return agentloop.ToolSpec{
+			Name:       cfg.id,
+			ArgsSchema: cfg.argsSchema,
+			Handler:    hiddenMutationToolHandler(gw, def),
+		}, nil
 	}
-	if gw == nil {
-		refs := packRefs(items)
-		return marshalToolPackResult(packResultsForGatewayDegrade(def, refs, degrade(def.ID, "model gateway is nil")))
-	}
-
-	msgs := AssembleHiddenMutationPackMessages(HiddenMutationPackEvidence{Items: items})
-	refs := packRefs(items)
-
-	resp, err := gw.Judge(ctx, modelgateway.JudgmentRequest{
-		RubricID:      def.ID,
-		RubricVersion: def.Version,
-		Messages:      msgs,
-		OutputSchema:  HiddenMutationBatchOutputSchema(),
-	})
-	if abort := firstLifecycleAbort(err, ctx.Err()); abort != nil {
-		return nil, abort
-	}
-	// Wall-budget deadline: surface to agentloop.mapWallErr. Do not
-	// soft-degrade wall expiry as pack-level gateway-unavailable diagnostics.
-	if err != nil && isOpDeadlineExceeded(ctx) {
-		return nil, err
-	}
-	if err != nil {
-		return marshalToolPackResult(packResultsForGatewayDegrade(def, refs, degradeFromErr(def.ID, err)))
-	}
-
-	pack := mapBatchJudgmentToPackResult(def, refs, resp)
-	return marshalToolPackResult(pack)
+	assemble := cfg.assemble
+	return agentloop.ToolSpec{
+		Name:       cfg.id,
+		ArgsSchema: cfg.argsSchema,
+		Handler: func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+			msgs, err := assemble(args)
+			if err != nil {
+				return nil, err
+			}
+			result, err := Run(ctx, gw, def, msgs)
+			if err != nil {
+				return nil, err
+			}
+			return marshalToolResult(toolResultFromRun(def, result))
+		},
+	}, nil
 }

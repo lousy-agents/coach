@@ -11,8 +11,9 @@ import (
 // contents routes this package implements. It is driven by a caller-supplied
 // [Fixture] and records every handled request via acceptanceharness.Recorder.
 //
-// Route paths stay here; handler bodies live in oauth.go, installation.go,
-// and contents.go.
+// Route paths live in routes.go; handler bodies live in the file named for
+// their API (oauth.go, oauth_user.go, installation.go, permission.go,
+// contents.go, repo_meta.go).
 type Server struct {
 	http     *httptest.Server
 	fixture  *Fixture
@@ -27,19 +28,6 @@ func requireFixture(caller string, fixture *Fixture) {
 		panic("fakegithub: " + caller + " called with a nil Fixture")
 	}
 }
-
-// Handler builds the http.Handler and Recorder that answer fixture's OAuth,
-// installation, and contents routes -- the same route table NewServer wraps
-// in an httptest.Server. Callers that need the fake embedded in their own
-// server topology (e.g. a standalone process serving real HTTP, rather than
-// an in-process httptest.Server) can use Handler directly. fixture must
-// outlive the returned handler (it is not copied). Panics if fixture is nil.
-
-// /user is github.com's public path (raw net/http tests).
-// /api/v3/user is what go-github emits with WithEnterpriseURLs (api/v3 prefix).
-// OAuth authorize/token stay on bare paths; App/repos APIs use api/v3.
-
-// Register commits before bare repo so the more-specific path wins.
 
 // NewServer starts a Server backed by fixture. fixture must outlive the
 // Server (it is not copied). Callers must Close when done. Panics if fixture
@@ -65,7 +53,3 @@ func (s *Server) Host() string {
 
 // Close releases the Server listener.
 func (s *Server) Close() { s.http.Close() }
-
-// Recorder returns the request recorder for sequence/auth assertions.
-
-// Fixture returns the Fixture passed to NewServer.

@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/render"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/domain"
 )
@@ -64,7 +64,7 @@ var _ = Describe("Side-attributed model-coverage diagnostics (AC-VER-3)", func()
 		})
 
 		It("names the same side and revision in each text line", func() {
-			text := codesignalcli.RenderText(report)
+			text := render.ReportText(report)
 
 			Expect(text).To(MatchRegexp(`(?m)^path: package\.json, kind: project_root_scope_incomplete, message: head revision head-sha .*, side: head, revision: head-sha$`))
 			Expect(text).To(MatchRegexp(`(?m)^path: package\.json, kind: base_project_root_scope_incomplete, message: base revision base-sha .*, side: base, revision: base-sha$`))

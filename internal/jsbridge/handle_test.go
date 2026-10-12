@@ -3,41 +3,42 @@ package jsbridge
 import (
 	"context"
 	"encoding/base64"
-	"flag"
 	"testing"
 
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-var update = flag.Bool("update", false, "regenerate testdata/parity expected files")
-
-// parityCase is one entry of testdata/parity/manifest.json. The manifest is
-// shared with js/semantics/test/parity.test.ts, so both sides of the bridge
-// replay exactly the same requests.
-type parityCase struct {
-	Name     string  `json:"name"`
-	Src      string  `json:"src"`
-	Path     string  `json:"path"`
-	Language string  `json:"language"`
-	Options  Options `json:"options"`
-	Expected string  `json:"expected"`
+func analyzeRequest(content []byte) Request {
+	return Request{
+		ID:         7,
+		Op:         OpAnalyze,
+		Path:       "main.go",
+		Language:   "go",
+		ContentB64: base64.StdEncoding.EncodeToString(content),
+	}
 }
 
-// TestParityFixtures locks the exact Response JSON for every manifest case.
-// The expected files are authoritative-by-construction: `go test -run
-// TestParityFixtures ./internal/jsbridge -update` regenerates them from
-// whatever Handle actually emits, and this test fails on any drift, so the
-// JS parity suite always compares against Go-canonical bytes.
-//
-// Exception: testdata/parity/ts_syntax_errors.expected.json's exact
-// syntax_errors byte positions/count are backend-implementation-defined and
-// not frozen across the CGO-vs-gotreesitter transition (issue #33) -- only
-// parse_status == "syntax_errors" with len(syntax_errors) >= 1 is the
-// frozen contract for that one case; the checked-in bytes just pin
-// gotreesitter's current actual output so drift is visible, not a spec.
-func TestParityFixtures(t *testing.T) {
-	for _, tc := range loadManifest(t) {
-		t.Run(tc.Name, (&sigTestParityFixtures12322523{tc: tc}).call)
+func TestHandleEchoesID(t *testing.T) {
+	resp := Handle(context.Background(), analyzeRequest([]byte("package main\n")))
+	if resp.ID != 7 {
+		t.Fatalf("ID = %d, want 7", resp.ID)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %+v", resp.Error)
+	}
+}
+
+// TestHandleTimeoutOption exercises the timeout_ms branch with a deadline
+// generous enough that the analysis always completes.
+func TestHandleTimeoutOption(t *testing.T) {
+	req := analyzeRequest([]byte("package main\n"))
+	req.TimeoutMS = 60_000
+	resp := Handle(context.Background(), req)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %+v", resp.Error)
+	}
+	if resp.Result == nil || resp.Result.ParseStatus != semantics.ParseStatus("ok") {
+		t.Fatalf("result = %+v, want parse_status ok", resp.Result)
 	}
 }
 
@@ -56,15 +57,5 @@ func TestHandleSyntaxDoubleReturn(t *testing.T) {
 	}
 	if len(resp.Result.SyntaxErrors) == 0 {
 		t.Fatal("partial result carries no syntax_errors")
-	}
-}
-
-func analyzeRequest(content []byte) Request {
-	return Request{
-		ID:         7,
-		Op:         OpAnalyze,
-		Path:       "main.go",
-		Language:   "go",
-		ContentB64: base64.StdEncoding.EncodeToString(content),
 	}
 }

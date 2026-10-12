@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/go-github/v92/github"
-
 	"github.com/lousy-agents/coach/pkg/githubingest"
 )
 
@@ -34,6 +32,16 @@ type GitHubRepoAuthorizer struct {
 }
 
 // NewGitHubRepoAuthorizer builds a GitHubRepoAuthorizer. cfg.Credentials is required.
+func NewGitHubRepoAuthorizer(cfg GitHubRepoAuthorizerConfig) (*GitHubRepoAuthorizer, error) {
+	if cfg.Credentials == nil {
+		return nil, errors.New("authz: GitHubRepoAuthorizerConfig.Credentials is required")
+	}
+	return &GitHubRepoAuthorizer{
+		credentials: cfg.Credentials,
+		baseURL:     cfg.BaseURL,
+		transport:   cfg.Transport,
+	}, nil
+}
 
 // Authorize implements ADR-003's three-step algorithm: resolve the governing
 // installation, mint an installation token, then check the principal's
@@ -94,22 +102,4 @@ var recognizedRepoPermissions = map[string]struct{}{
 func isRecognizedRepoPermission(permission string) bool {
 	_, ok := recognizedRepoPermissions[permission]
 	return ok
-}
-
-// permissionClient builds a go-github client authenticated with the freshly
-// minted installation token, targeting the same host as a.credentials.
-func (a *GitHubRepoAuthorizer) permissionClient(token string) (*github.Client, error) {
-	transport := a.transport
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
-	opts := []github.ClientOptionsFunc{
-		github.WithTransport(transport),
-		github.WithTimeout(DefaultGitHubRepoAuthorizerHTTPTimeout),
-		github.WithAuthToken(token),
-	}
-	if a.baseURL != "" {
-		opts = append(opts, github.WithEnterpriseURLs(a.baseURL, a.baseURL))
-	}
-	return github.NewClient(opts...)
 }

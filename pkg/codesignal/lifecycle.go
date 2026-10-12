@@ -1,37 +1,17 @@
 package codesignal
 
-import "sort"
-
-type signalKey struct {
-	ruleID, path, subject, evidence string
-}
-
-func keyOf(sig Signal) signalKey {
-	return signalKey{sig.RuleID, normalizePath(sig.Path), sig.Subject, normalizeEvidence(sig.Evidence)}
-}
-
-// groupAndOrder groups signals by key and sorts each group by location to
-// assign occurrence ordinals.
-
-func sortedKeys(groups map[signalKey][]Signal) []signalKey {
-	keys := make([]signalKey, 0, len(groups))
-	for k := range groups {
-		keys = append(keys, k)
+func lifecycleWithoutBase(baseline bool) Lifecycle {
+	if baseline {
+		return Lifecycle("baseline")
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		a, b := keys[i], keys[j]
-		if a.ruleID != b.ruleID {
-			return a.ruleID < b.ruleID
-		}
-		if a.path != b.path {
-			return a.path < b.path
-		}
-		if a.subject != b.subject {
-			return a.subject < b.subject
-		}
-		return a.evidence < b.evidence
-	})
-	return keys
+	return Lifecycle("unknown")
+}
+
+func noBaseLifecycleForFile(fc FileChange, noBaseLifecycle Lifecycle) Lifecycle {
+	if fc.Status == "added" && noBaseLifecycle != "baseline" {
+		return "introduced"
+	}
+	return noBaseLifecycle
 }
 
 // classifyFileSignals computes Fingerprint, ID, and Lifecycle for every

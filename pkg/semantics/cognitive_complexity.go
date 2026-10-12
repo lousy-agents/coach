@@ -1,7 +1,5 @@
 package semantics
 
-import "github.com/lousy-agents/coach/pkg/semantics/internal/engine"
-
 // applyCognitiveComplexityAggregates returns metrics with max (all records)
 // and sum set. When topLevel is nil, sum uses the Go convention (kind
 // function|method only). When topLevel is non-nil, it must match records
@@ -24,8 +22,4 @@ func applyCognitiveComplexityAggregates(metrics StructuralMetrics, records []Fun
 	metrics.MaxCognitiveComplexity = max
 	metrics.SumCognitiveComplexity = sum
 	return metrics
-}
-
-func sameNodeSpan(a, b engine.Node) bool {
-	return a.StartByte() == b.StartByte() && a.EndByte() == b.EndByte() && a.Kind() == b.Kind()
 }

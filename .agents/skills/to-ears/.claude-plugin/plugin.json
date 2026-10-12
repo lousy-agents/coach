@@ -1,0 +1,10 @@
+{
+  "name": "to-ears",
+  "displayName": "To EARS",
+  "description": "Draft, review, and derive tests from EARS requirements without inventing behavior — the canonical EARS contract other planning skills share",
+  "license": "BSD-2-Clause",
+  "repository": "https://github.com/lousy-agents/skills",
+  "homepage": "https://github.com/lousy-agents/skills#readme",
+  "skills": "./",
+  "keywords": ["EARS", "requirements", "acceptance-criteria", "testing", "traceability", "planning"]
+}

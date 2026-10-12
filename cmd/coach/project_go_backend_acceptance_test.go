@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -9,22 +10,11 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-const goLayerPolicyConfigJSON = `{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}]}`
-
-const goModuleFile = "module example.com/app\n\ngo 1.25\n"
-
 const goModuleFileDotless = "module app\n\ngo 1.25\n"
 
 const handlersImportingDBDotlessModule = "package handlers\n\nimport \"app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n"
 
-const dbPackageFile = "package db\n\n// Name is a placeholder export used by the layer-violation fixtures.\nvar Name = \"db\"\n"
-
-// The import sits on line 3 (0-based row 2).
-const handlersImportingDB = "package handlers\n\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n"
-
 const handlersImportingDBShifted = "package handlers\n\n// shifted\nimport \"example.com/app/pkg/db\"\n\nfunc Use() string {\n\treturn db.Name\n}\n"
-
-const handlersWithoutImport = "package handlers\n\nfunc Use() string {\n\treturn \"\"\n}\n"
 
 // classifyGoImport resolves this as Kind "unresolved", not "internal" --
 // pkg/db/missing is deliberately layer-mapped (unlike a made-up
@@ -38,62 +28,7 @@ const handlersImportingUnresolved = "package handlers\n\nimport \"example.com/ap
 // RelatedLocations rather than PrimaryAnchor.
 const handlersOtherImportingDB = "package handlers\n\n// second site\n// note\nimport \"example.com/app/pkg/db\"\n\nfunc UseOther() string {\n\treturn db.Name\n}\n"
 
-// Reaches structure.constructor_density's per-file density gate
-// (densityGateThreshold == 2 in registry.go); paired with
-// handlersImportingDB, exercises severity-based signal sort ordering.
-const modelFileWithTwoConstructors = "package model\n\ntype A struct{}\n\ntype B struct{}\n\nfunc NewA() *A {\n\treturn &A{}\n}\n\nfunc NewB() *B {\n\treturn &B{}\n}\n"
-
-// No forbidden_imports, so a layer_bypass finding is never accompanied by
-// an unrelated layer_violation finding.
-const goLayerBypassPolicyConfigJSON = `{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"service","prefixes":["pkg/service"]},{"name":"db","prefixes":["pkg/db"]}],"required_layer":"service"}`
-
-// Mirrors pkg/projectmodel's own
-// go_layer_bypass_compliant_and_bypass/service/service.go fixture.
-const servicePackageFile = "package service\n\nimport \"database/sql\"\n\n// LoadUser calls the pinned database-access sink through *sql.DB.\nfunc LoadUser() {\n\tvar db *sql.DB\n\tdb.Query(\"SELECT 1\")\n}\n"
-
-const handlersCompliantOnly = "package handlers\n\nimport (\n\t\"net/http\"\n\n\t\"example.com/app/pkg/service\"\n)\n\nfunc Handler(w http.ResponseWriter, r *http.Request) {\n\tservice.LoadUser()\n}\n"
-
-// Mirrors pkg/projectmodel's own go_layer_bypass_compliant_and_bypass
-// fixture.
-const handlersCompliantAndBypass = "package handlers\n\nimport (\n\t\"database/sql\"\n\t\"net/http\"\n\n\t\"example.com/app/pkg/service\"\n)\n\nfunc Handler(w http.ResponseWriter, r *http.Request) {\n\tservice.LoadUser()\n\tdirectQuery()\n}\n\nfunc directQuery() {\n\trawQuery()\n}\n\nfunc rawQuery() {\n\tvar db *sql.DB\n\tdb.Query(\"SELECT 1\")\n}\n"
-
-type disabledProjectAnalysisReportPair struct {
-	repoWithConfigFile      string
-	stdoutWithConfigFile    []byte
-	reportWithConfigFile    *codesignal.Report
-	reportWithoutConfigFile *codesignal.Report
-}
-
 var _ = Describe("coach codesignal --project-config with the real Go project-language backend", func() {
-	When("--baseline is run against a repository with no --project-config supplied", func() {
-		It("stays schema-1 even though the committed config would otherwise report a violation", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", goModuleFile)
-			commitFile(repo, "pkg/db/db.go", dbPackageFile)
-			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
-			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
-
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-			Expect(stderr).To(BeEmpty())
-
-			var document map[string]json.RawMessage
-			Expect(json.Unmarshal(stdout, &document)).To(Succeed())
-			var schemaVersion string
-			Expect(json.Unmarshal(document["schema_version"], &schemaVersion)).To(Succeed())
-			Expect(schemaVersion).To(Equal("1"))
-			Expect(document).NotTo(HaveKey("project_changes"))
-			Expect(document).NotTo(HaveKey("project_summary"))
-			Expect(document).NotTo(HaveKey("project_coverage"))
-		})
-	})
-
-	When("the CLI is invoked without --project-config against a repository that could otherwise report an architecture.layer_violation and a structural finding", func() {
-		It("stays on the schema-1 path, matches a repository that never had a project-analysis config at all, and leaks no project_* keys, schema_version 2, or project-analysis-only text", func() {
-			body_projectGoBackendAcceptanceTest_staysOnTheSchema1PathMatchesARepositoryThatNever_93()
-		})
-	})
-
 	When("--project-config's forbidden_imports references a layer name that was never declared", func() {
 		It("exits 2 with project_config_invalid instead of silently emitting zero findings", func() {
 			repo := newTempGitRepo()
@@ -346,24 +281,6 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 		})
 	})
 
-	When("comparing JSON and text output for the same baseline layer-violation scenario", func() {
-		It("presents the same structured evidence in text as JSON, and legacy (no config) text stays schema-1", func() {
-			body_projectGoBackendAcceptanceTest_presentsTheSameStructuredEvidenceInTextAsJSONAnd_372()
-		})
-	})
-
-	When("a baseline scan produces both an architecture layer-violation finding and a low-severity structural finding in the same lifecycle group", func() {
-		It("orders the architecture finding ahead of the low-severity structural finding in signals[]", func() {
-			body_projectGoBackendAcceptanceTest_ordersTheArchitectureFindingAheadOfTheLowSeverit_430()
-		})
-	})
-
-	When("--baseline is run without --project-config against a revision that also carries an unreferenced project.json, a layer-violation import, and a low-severity structural finding", func() {
-		It("produces a report identical to an equivalent revision with no project.json at all, since no advisory signal can ever be produced without --project-config", func() {
-			body_projectGoBackendAcceptanceTest_producesAReportIdenticalToAnEquivalentRevisionWi_473()
-		})
-	})
-
 	When("a dotless-module repository and an otherwise-identical dotted-module repository each trigger the same forbidden_imports layer violation", func() {
 		It("reports the same layer_violation finding in both, modulo the module path literal", func() {
 			dottedRepo := newTempGitRepo()
@@ -410,16 +327,14 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 			Expect(dotlessNormalized).To(Equal(dottedNormalized), "dotless and dotted module project findings must be identical apart from the module path literal")
 		})
 	})
-
-	When("--baseline is run against a repository with a compliant route and a bypass route around a required intermediate layer", func() {
-		It("emits exactly one architecture.layer_bypass ProjectChange with baseline lifecycle, in signals[], counted in the summary, and exits 0", func() {
-			body_projectGoBackendAcceptanceTest_emitsExactlyOneArchitectureLayerBypassProjectCha_548()
-		})
-	})
-
-	When("diff mode introduces a bypass route around a required intermediate layer that did not exist at base", func() {
-		It("emits exactly one architecture.layer_bypass ProjectChange classified as lifecycle introduced, and exits 0", func() {
-			body_projectGoBackendAcceptanceTest_emitsExactlyOneArchitectureLayerBypassProjectCha_582()
-		})
-	})
 })
+
+func normalizeProjectChangesModulePath(changes []codesignal.ProjectChange, modulePath string) []string {
+	normalized := make([]string, len(changes))
+	for i, change := range changes {
+		raw, err := json.Marshal(change)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		normalized[i] = strings.ReplaceAll(string(raw), modulePath, "<MODULE_PATH>")
+	}
+	return normalized
+}

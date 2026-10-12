@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 var _ = Describe("ts-project-backend-acceptance wiring", func() {
@@ -42,7 +42,8 @@ var _ = Describe("ts-project-backend-acceptance wiring", func() {
 			body := taskBody(toml, "ts-project-backend-acceptance")
 			Expect(body).NotTo(BeEmpty())
 			Expect(body).To(ContainSubstring("./cmd/coach/..."))
-			Expect(body).To(ContainSubstring("./internal/codesignalcli/..."))
+			Expect(body).To(ContainSubstring("./internal/codesignalcli -run"),
+				"only the root codesignalcli package carries ts-project-backend specs; its sub-packages hold none, so fail-on-empty would fail them")
 			Expect(body).To(ContainSubstring("ginkgo.label-filter=ts-project-backend"),
 				"-run Acceptance alone would also run the specs that already skip gracefully without Node -- fail-on-empty below is what proves this filter still matches something")
 			Expect(body).To(ContainSubstring("ginkgo.fail-on-empty"),
@@ -68,17 +69,17 @@ var _ = Describe("ts-project-backend-acceptance wiring", func() {
 
 	// coach#355 Task 14 (AC-3/AC-7): "both promised majors carry execution
 	// evidence" is only true if a spec ties CI wiring to
-	// codesignalcli.SupportedNodeMajors -- otherwise deleting the node26 job,
+	// tstoolchain.SupportedNodeMajors -- otherwise deleting the node26 job,
 	// or its printf override step, leaves every other spec in this suite
 	// green.
 	When("binding both promised Node majors to real CI execution evidence", func() {
 		It("has exactly the two legs this spec's mapping covers: mise.toml's shared pin, and one dedicated override job", func() {
-			Expect(codesignalcli.SupportedNodeMajors).To(HaveLen(2),
+			Expect(tstoolchain.SupportedNodeMajors).To(HaveLen(2),
 				"a third supported major needs a third leg (and a third spec here) before it can claim coverage; this spec cannot silently keep passing for a set it was not written against")
 		})
 
 		It("pins mise.toml's shared Node major to the first supported major, which ts-project-backend already exercises", func() {
-			first := fmt.Sprintf(`node = "%d"`, codesignalcli.SupportedNodeMajors[0])
+			first := fmt.Sprintf(`node = "%d"`, tstoolchain.SupportedNodeMajors[0])
 			Expect(toml).To(ContainSubstring(first),
 				"ts-project-backend runs under mise.toml's shared pin with no override, so that pin is the first major's only execution evidence")
 		})
@@ -95,7 +96,7 @@ var _ = Describe("ts-project-backend-acceptance wiring", func() {
 		It("overrides the Node major to the second supported major via a git-ignored mise.local.toml", func() {
 			jobYML := jobBody(yml, "ts-project-backend-node26")
 			Expect(jobYML).NotTo(BeEmpty())
-			second := fmt.Sprintf(`node = "%d"`, codesignalcli.SupportedNodeMajors[len(codesignalcli.SupportedNodeMajors)-1])
+			second := fmt.Sprintf(`node = "%d"`, tstoolchain.SupportedNodeMajors[len(tstoolchain.SupportedNodeMajors)-1])
 			Expect(jobYML).To(ContainSubstring(second),
 				"without this override the job would just re-run mise.toml's pinned major, and AC-7's two-major evidence would collapse to one")
 			Expect(jobYML).To(ContainSubstring("mise.local.toml"))
@@ -104,7 +105,7 @@ var _ = Describe("ts-project-backend-acceptance wiring", func() {
 		It("proves the resolved runtime Node major is actually 26 before running the acceptance step", func() {
 			jobYML := jobBody(yml, "ts-project-backend-node26")
 			Expect(jobYML).NotTo(BeEmpty())
-			secondMajor := fmt.Sprintf("%d", codesignalcli.SupportedNodeMajors[len(codesignalcli.SupportedNodeMajors)-1])
+			secondMajor := fmt.Sprintf("%d", tstoolchain.SupportedNodeMajors[len(tstoolchain.SupportedNodeMajors)-1])
 			Expect(jobYML).To(ContainSubstring(`mise exec -- node -p 'process.versions.node.split(".")[0]'`),
 				"without observing the resolved Node major at runtime, a silently-ignored mise.local.toml override would leave this job re-running the Node 24 leg while staying green")
 			Expect(jobYML).To(ContainSubstring(`test "$major" = "`+secondMajor+`"`),
@@ -144,7 +145,7 @@ var _ = Describe("ts-project-backend-acceptance wiring", func() {
 		})
 
 		It("is actually applied to the internal/codesignalcli specs the task's filter selects", func() {
-			src, err := os.ReadFile(filepath.Join("..", "..", "internal", "codesignalcli", "project_acceptance_test.go"))
+			src, err := os.ReadFile(filepath.Join("..", "..", "internal", "codesignalcli", "ts_project_backend_compiler_acceptance_test.go"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(src)).To(ContainSubstring(`Label("ts-project-backend")`),
 				"the mise task's label filter is useless unless at least one Describe here carries this label")

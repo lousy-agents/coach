@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/coachapi/store/memory"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -59,7 +61,7 @@ var _ = Describe("cmd/coach-worker composition", func() {
 	When("the stub handler is wired through worker.New like main does", func() {
 		It("completes a queued job end-to-end via TaskQueue only", func() {
 			ctx := context.Background()
-			store := coachapi.NewMemoryStore()
+			store := memory.NewStore()
 			tq := newMemoryQueue()
 			clock := acceptanceharness.NewFakeClock(time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC))
 
@@ -91,7 +93,7 @@ var _ = Describe("cmd/coach-worker composition", func() {
 
 	When("inspecting cmd/coach-worker production source imports", func() {
 		It("does not import Redis/SQS clients outside the queue adapter package path", func() {
-			body_mainAcceptanceTest_doesNotImportRedisSQSClientsOutsideTheQueueAdapt_99()
+			expectNoDirectBrokerClientImports()
 		})
 	})
 })

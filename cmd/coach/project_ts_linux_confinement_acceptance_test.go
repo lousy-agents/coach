@@ -1,15 +1,12 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
+	"runtime"
 
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -18,7 +15,13 @@ import (
 var _ = Describe("Linux file-syscall control of the TypeScript analyzer subtree", func() {
 	When("a TypeScript --baseline scan is file-syscall-traced on Linux", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			body_projectTsLinuxConfinementAcceptanceTest_21()
+			if runtime.GOOS != "linux" {
+				Skip(linuxConfinementElsewhereSkip)
+			}
+			ensureFileSyscallTracer()
+			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+				Skip(reason)
+			}
 		})
 
 		It("completes a confined --baseline scan whose analyzer-subtree file syscalls stay inside the frozen allowlist and never observe the typeRoots decoy", func() {
@@ -67,7 +70,10 @@ var _ = Describe("Linux file-syscall control of the TypeScript analyzer subtree"
 var _ = Describe("Linux network-namespace control of the TypeScript analyzer", func() {
 	When("a fake compiler dials a harness listener outside and inside a new network namespace", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			body_projectTsLinuxConfinementAcceptanceTest_76()
+			if runtime.GOOS != "linux" {
+				Skip(linuxConfinementElsewhereSkip)
+			}
+			ensureUnshareAvailable()
 		})
 
 		It("connects successfully outside any namespace and the listener snapshot is non-empty", func() {
@@ -80,13 +86,19 @@ var _ = Describe("Linux network-namespace control of the TypeScript analyzer", f
 		})
 
 		It("fails the identical dial inside unshare with a distinctive error the outside half does not produce", func() {
-			body_projectTsLinuxConfinementAcceptanceTest_failsTheIdenticalDialInsideUnshareWithADistincti_92()
+			expectNamespacedDialFailsDistinctly()
 		})
 	})
 
 	When("the production confined analyzer runs a real --baseline scan under unshare", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
-			body_projectTsLinuxConfinementAcceptanceTest_116()
+			if runtime.GOOS != "linux" {
+				Skip(linuxConfinementElsewhereSkip)
+			}
+			ensureUnshareAvailable()
+			if reason := ensureRealTypeScriptCompilerAvailable(); reason != "" {
+				Skip(reason)
+			}
 		})
 
 		It("emits the same complete report as the non-unshare baseline for that fixture", func() {
@@ -115,233 +127,26 @@ var _ = Describe("Linux network-namespace control of the TypeScript analyzer", f
 	})
 })
 
-type namespaceDialListener struct {
-	hits             []string
-	mu               sync.Mutex
-	stop             func()
-	loopbackFallback bool
-}
-
-var namespaceUnsharePrefix []string
-
-func scanAnalyzerSubtreeProbes(recs []straceRecord, subtree map[int]struct{}, allow linuxAllowlist, decoy, repo string, requireDecoy bool) (decoyHits, leaks []string) {
-	for _, rec := range recs {
-		if _, in := subtree[rec.PID]; !in {
-			continue
-		}
-		decoyHits = append(decoyHits, decoyHitsOn(rec, decoy)...)
-		if requireDecoy {
-			continue
-		}
-		if _, mut := linuxMutationSyscalls[rec.Syscall]; mut {
-			Fail(fmt.Sprintf("mutation syscall in confined analyzer subtree: %s", rec.Raw))
-		}
-		leaks = append(leaks, probeLeaksOn(allow, rec, repo)...)
+func expectNamespacedDialFailsDistinctly() {
+	listener, host, port := startNamespaceDialListener()
+	DeferCleanup(listener.stop)
+	mod := writeFakeCompilerDialModule(host, port)
+	hitsBefore := len(listener.snapshot())
+	stdout, stderr, err := runFakeCompilerDial(unsharePrefix(), mod)
+	Expect(err).To(HaveOccurred(), "removing unshare must fail this When because the inside dial then succeeds; stdout=%s stderr=%s", stdout, stderr)
+	msg := strings.ToUpper(stderr + stdout + err.Error())
+	if listener.loopbackFallback {
+		Expect(msg).To(Or(ContainSubstring("ECONNREFUSED"), ContainSubstring("ENETUNREACH"), ContainSubstring("EHOSTUNREACH")),
+			"inside dial distinctive error; ECONNREFUSED is never the sole signal: outside hit is required too. stdout=%s stderr=%s", stdout, stderr)
+		Expect(hitsBefore).To(Equal(0), "inside half must not be the only observation")
+		stdout2, stderr2, err2 := runFakeCompilerDial(nil, mod)
+		Expect(err2).NotTo(HaveOccurred(), "outside hit is required so ECONNREFUSED is not the sole signal; stdout=%s stderr=%s", stdout2, stderr2)
+		Expect(listener.snapshot()).NotTo(BeEmpty())
+		return
 	}
-	return decoyHits, leaks
-}
-
-func runCoachBaselineUnderStrace(repo, coachPath, traceFile string) (stdout, stderr []byte, exitCode int) {
-	args := []string{
-		"-f",
-		"-s", "65535",
-		"-y",
-		"-e", "trace=" + linuxStraceTraceExpr(),
-		"-o", traceFile,
-		"--",
-		coachPath,
-		"codesignal", "--baseline",
-		"--project-config", "project.json",
-		"--project-language", "typescript",
-		"--format=json",
-	}
-	cmd := exec.Command("strace", args...)
-	cmd.Dir = repo
-	var outBuf, errBuf strings.Builder
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-	err := cmd.Run()
-	stdout = []byte(outBuf.String())
-	stderr = []byte(errBuf.String())
-	if err == nil {
-		return stdout, stderr, 0
-	}
-	var exitErr *exec.ExitError
-	Expect(errors.As(err, &exitErr)).To(BeTrue(), "expected an ExitError, got: %s (stderr: %s)", err, errBuf.String())
-	return stdout, stderr, exitErr.ExitCode()
-}
-
-func newLinuxTypeRootsFixture() (repo, decoy string) {
-	repo = newTempGitRepo()
-	decoyDir, err := os.MkdirTemp("", "coach-d2-typeroots-decoy-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, decoyDir)
-	Expect(os.MkdirAll(filepath.Join(decoyDir, "child"), 0o755)).To(Succeed())
-	Expect(os.WriteFile(filepath.Join(decoyDir, "child", "index.d.ts"), []byte("export {};\n"), 0o644)).To(Succeed())
-	decoy = decoyDir
-
-	version := realTypescriptVersion()
-	tsconfig := fmt.Sprintf(`{"compilerOptions":{"module":"commonjs","moduleResolution":"node10","typeRoots":[%q],"types":["child"]}}`, filepath.ToSlash(decoy))
-	commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
-	commitFile(repo, "tsconfig.json", tsconfig+"\n")
-	commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
-	commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
-	commitFile(repo, "project.json", goLayerPolicyConfigJSON)
-	installRealTypescriptCompiler(repo, true)
-	return repo, decoy
-}
-
-func probedNodeExecPath() string {
-	out, err := exec.Command("node", "-p", "process.execPath").Output()
-	Expect(err).NotTo(HaveOccurred())
-	path := strings.TrimSpace(string(out))
-	Expect(filepath.IsAbs(path)).To(BeTrue(), "probed ExecPath must be absolute, got %q", path)
-	return path
-}
-
-func pathHasPrefix(path, prefix string) bool {
-	clean := filepath.Clean(path)
-	p := filepath.Clean(prefix)
-	return clean == p || strings.HasPrefix(clean, p+string(os.PathSeparator))
-}
-
-func buildUnconfinedAnalyzerCoach() string {
-	root := repositoryRoot()
-	tmp, err := os.MkdirTemp("", "coach-unconfined-analyzer-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, tmp)
-
-	vfsSrc := filepath.Join(root, "internal", "codesignalcli", "tsanalyzerasset", "project-sidecar", "vfs.js")
-	analyzeSrc := filepath.Join(root, "internal", "codesignalcli", "tsanalyzerasset", "project-sidecar", "analyze.js")
-	runtimeSrc := filepath.Join(root, "internal", "codesignalcli", "project_ts_runtime.go")
-
-	vfsDst := filepath.Join(tmp, "vfs.js")
-	analyzeDst := filepath.Join(tmp, "analyze.js")
-	runtimeDst := filepath.Join(tmp, "project_ts_runtime.go")
-
-	vfs, err := os.ReadFile(vfsSrc)
-	Expect(err).NotTo(HaveOccurred())
-	listingBlock := `        getAccessibleEntries: (directoryName) => {
-            const result = base.getAccessibleEntries ? base.getAccessibleEntries(directoryName) : undefined;
-            return result === undefined ? { files: [], directories: [] } : result;
-        },`
-	hostListing := `        getAccessibleEntries: (directoryName) => {
-            const result = base.getAccessibleEntries ? base.getAccessibleEntries(directoryName) : undefined;
-            if (result !== undefined) return result;
-            try {
-                const names = readdirSync(directoryName, { withFileTypes: true });
-                return {
-                    files: names.filter((d) => d.isFile() || d.isSymbolicLink()).map((d) => d.name),
-                    directories: names.filter((d) => d.isDirectory()).map((d) => d.name),
-                };
-            } catch {
-                return { files: [], directories: [] };
-            }
-        },`
-	patchedVFS := "import { readdirSync } from \"node:fs\";\n" + strings.Replace(string(vfs), listingBlock, hostListing, 1)
-	Expect(patchedVFS).NotTo(Equal(string(vfs)), "unconfined analyzer must restore host filesystem listing fall-through")
-	Expect(strings.Contains(patchedVFS, listingBlock)).To(BeFalse(), "confined empty-listing wrapper must be gone")
-	Expect(os.WriteFile(vfsDst, []byte(patchedVFS), 0o644)).To(Succeed())
-
-	analyze, err := os.ReadFile(analyzeSrc)
-	Expect(err).NotTo(HaveOccurred())
-	patchedAnalyze := strings.Replace(string(analyze), "return new ApiCtor({ fs: snapshot.fs, tsserverPath });", "return new ApiCtor({ fs: snapshot.fs });", 1)
-	Expect(patchedAnalyze).NotTo(Equal(string(analyze)), "unconfined analyzer must omit tsserverPath")
-	snapshotLine := "    const snapshot = buildProjectSnapshot(opts.files, opts.compiler.createVirtualFileSystem);\n"
-	typeRootsWalk := snapshotLine + `    for (const f of opts.files) {
-        if (!f.path.endsWith("tsconfig.json")) continue;
-        try {
-            const cfg = JSON.parse(Buffer.from(f.content_b64, "base64").toString("utf8"));
-            for (const root of cfg.compilerOptions?.typeRoots ?? []) {
-                snapshot.fs.getAccessibleEntries?.(root);
-            }
-        } catch { }
-    }
-`
-	Expect(strings.Contains(patchedAnalyze, snapshotLine)).To(BeTrue())
-	patchedAnalyze = strings.Replace(patchedAnalyze, snapshotLine, typeRootsWalk, 1)
-	Expect(os.WriteFile(analyzeDst, []byte(patchedAnalyze), 0o644)).To(Succeed())
-
-	runtimeBytes, err := os.ReadFile(runtimeSrc)
-	Expect(err).NotTo(HaveOccurred())
-	patchedRuntime := strings.Replace(string(runtimeBytes),
-		`"--native-package=" + compiler.NativePackagePath,`,
-		`"--native-package=" + compiler.NativePackagePath,`+"\n\t\t\""+unconfinedArgvHook+`",`,
-		1)
-	Expect(patchedRuntime).NotTo(Equal(string(runtimeBytes)), "throwaway must spawn through the go test-only argv hook")
-	Expect(os.WriteFile(runtimeDst, []byte(patchedRuntime), 0o644)).To(Succeed())
-
-	overlay := struct {
-		Replace map[string]string `json:"Replace"`
-	}{Replace: map[string]string{
-		vfsSrc:     vfsDst,
-		analyzeSrc: analyzeDst,
-		runtimeSrc: runtimeDst,
-	}}
-	overlayPath := filepath.Join(tmp, "overlay.json")
-	payload, err := json.Marshal(overlay)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(os.WriteFile(overlayPath, payload, 0o644)).To(Succeed())
-
-	bin := filepath.Join(tmp, "coach")
-	build := exec.Command("go", "build", "-a", "-overlay", overlayPath, "-o", bin, ".")
-	build.Dir = filepath.Join(root, "cmd", "coach")
-	out, err := build.CombinedOutput()
-	Expect(err).NotTo(HaveOccurred(), "building throwaway unconfined analyzer: %s", out)
-	Expect(bin).NotTo(HavePrefix(filepath.Join(root, "dist")), "throwaway must not be a GoReleaser dist path")
-	Expect(bin).NotTo(ContainSubstring("tsanalyzerasset"), "throwaway must not be the checked-in embed")
-	return bin
-}
-
-func (l *namespaceDialListener) snapshot() []string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	out := make([]string, len(l.hits))
-	copy(out, l.hits)
-	return out
-}
-
-func writeFakeCompilerDialModule(host string, port int) string {
-	dir, err := os.MkdirTemp("", "coach-d2-fake-compiler-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-	dial := fmt.Sprintf("import net from 'node:net';\ntry {\n  await new Promise((resolve, reject) => {\n    const socket = net.connect({host:%q, port:%d}, () => { socket.end(); resolve(); });\n    socket.on('error', reject);\n  });\n} catch (err) {\n  console.error(err.code || err.message);\n  process.exitCode = 1;\n}\n", host, port)
-	Expect(os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"fake-ts-compiler","type":"module","main":"dial.js"}`+"\n"), 0o644)).To(Succeed())
-	Expect(os.WriteFile(filepath.Join(dir, "dial.js"), []byte(dial), 0o644)).To(Succeed())
-	return dir
-}
-
-func fakeCompilerLoader() string {
-	dir, err := os.MkdirTemp("", "coach-d2-fake-loader-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, dir)
-	src := "import { pathToFileURL } from 'node:url';\nconst flag = process.argv.find((a)=>a.startsWith('--compiler-module='));\nif (!flag) { process.stderr.write('missing --compiler-module=\\n'); process.exit(2); }\nawait import(pathToFileURL(flag.slice('--compiler-module='.length)+'/dial.js').href);\n"
-	path := filepath.Join(dir, "load.mjs")
-	Expect(os.WriteFile(path, []byte(src), 0o644)).To(Succeed())
-	return path
-}
-
-func runFakeCompilerDial(prefix []string, moduleDir string) (stdout, stderr string, err error) {
-	loader := fakeCompilerLoader()
-	args := append(append([]string{}, prefix...), probedNodeExecPath(), loader, "--compiler-module="+moduleDir)
-	cmd := exec.Command(args[0], args[1:]...)
-	var outBuf, errBuf strings.Builder
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-	err = cmd.Run()
-	return outBuf.String(), errBuf.String(), err
-}
-
-func unsharePrefix() []string {
-	return append([]string{}, namespaceUnsharePrefix...)
-}
-
-func writeUnshareGitHome() string {
-	home, err := os.MkdirTemp("", "coach-unshare-home-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, home)
-	Expect(os.WriteFile(filepath.Join(home, ".gitconfig"), []byte("[safe]\n\tdirectory = *\n"), 0o644)).To(Succeed())
-	return home
+	Expect(msg).To(Or(ContainSubstring("ENETUNREACH"), ContainSubstring("EHOSTUNREACH")),
+		"preferred inside error is ENETUNREACH or EHOSTUNREACH, not ECONNREFUSED; stdout=%s stderr=%s", stdout, stderr)
+	Expect(listener.snapshot()).To(HaveLen(hitsBefore), "inside namespace must not reach the outside listener")
 }
 
 func judgeConfinedAnalyzerSubtree(recs []straceRecord, id straceRecord, execPath, decoy, repo string, requireDecoy bool) {

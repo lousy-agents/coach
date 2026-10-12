@@ -161,7 +161,7 @@ This spec inherits all decisions from the [Baseline Scan spec](coach-api-platfor
 
 **Affected files**:
 
-- `internal/coachapi/types.go`, golden fixtures, server/handler tests
+- `internal/coachapi/job.go`, `report.go`, golden fixtures, server/handler tests
 - migrations only if kind constraints are DB-enforced
 
 **Requirements**:

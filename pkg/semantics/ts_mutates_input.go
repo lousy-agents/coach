@@ -4,27 +4,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
-// mutatingTSMethodNames is the exact set of built-in Array/Map/Set method
-// names whose call on a parameter-rooted receiver is treated as an
-// in-place mutation of that parameter (Story 2). Arbitrary custom methods
-// (e.g. `user.setName()`) are deliberately not in this set and so are
-// never flagged.
-var mutatingTSMethodNames = map[string]bool{
-	"copyWithin": true,
-	"fill":       true,
-	"pop":        true,
-	"push":       true,
-	"reverse":    true,
-	"shift":      true,
-	"sort":       true,
-	"splice":     true,
-	"unshift":    true,
-	"set":        true,
-	"add":        true,
-	"delete":     true,
-	"clear":      true,
-}
-
 // tsMutatesInputKey dedupes mutates_input findings by (owning function,
 // parameter, mutation-expression location), mirroring the Go detector's
 // dedup rule: repeated mutation of the same parameter through the same
@@ -36,80 +15,23 @@ type tsMutatesInputKey struct {
 	endByte   uint
 }
 
-// checkMutatesInputAssignment emits a "mutates_input" Finding (Story 2) if
-// n's left-hand side writes through a property or index rooted at some
-// enclosing scope's identifier-bound parameter -- `p.x = ...`
-// (member_expression) or `p[...] = ...` (subscript_expression), each with
-// an "object" field resolving to a tracked parameter identifier. A plain
-// identifier left-hand side (`p = other`) rebinds the local parameter
-// variable rather than writing through it and is deliberately excluded.
-// Evidence/Location are taken from the target (left-hand side) alone, not
-// the whole assignment_expression: an assignment's right-hand side can be
-// arbitrarily long (`p.x = someVeryLargeExpression()`), which would
-// conflict with Evidence staying short, and would also diverge from the Go
-// detector, whose evidence is likewise just the mutated selector/index
-// target (e.g. cfg.Name), never including the assigned value.
-
-// checkMutatesInputDelete emits a "mutates_input" Finding (Story 2) if n
-// (a unary_expression) is a `delete` of a property or index rooted at some
-// enclosing scope's identifier-bound parameter (`delete p.x`,
-// `delete p['x']`). Unlike checkMutatesInputAssignment/checkMutatesInputCall,
-// Evidence/Location are taken from n itself (the whole "delete ..."
-// expression) rather than just the target: a delete unary_expression has no
-// extra unbounded content beyond its "delete" keyword and target argument,
-// so it is already short and bounded, and keeping the keyword makes the
-// evidence self-explanatory as a deletion rather than a read.
-
-// checkMutatesInputCall emits a "mutates_input" Finding (Story 2) if n (a
-// call_expression) calls one of mutatingTSMethodNames on a receiver
-// rooted at some enclosing scope's identifier-bound parameter, either
-// directly (`p.push(x)`, `arr.sort()`, `m.set(k, v)`) or through a chain of
-// nested member/subscript accesses (`p.items.push(1)`). Arbitrary custom
-// method calls (`user.setName()`) are not in mutatingTSMethodNames and so
-// never match. Evidence/Location are taken from fn (the receiver.method
-// member_expression, e.g. "p.items.push"), not the whole call_expression:
-// a call's arguments can be arbitrarily long or complex
-// (`p.items.push(someVeryLargeExpression())`), which would conflict with
-// Evidence staying short, and would also diverge from the Go detector's
-// bounded, target-only evidence.
-
-// tsMutationBase resolves expr (a candidate mutation target/argument) down
-// to the root identifier it is ultimately rooted at, when expr is a
-// member_expression or subscript_expression -- either directly (`p.x`,
-// `p[...]`) or through a chain of nested member_expression/
-// subscript_expression "object" fields (`p.x.y`, `p.items[0].name`) -- or
-// nil for any other shape, including a bare identifier (handled
-// separately, since a bare identifier as an assignment's left-hand side is
-// a rebind, not a write-through) and a chain that bottoms out in something
-// other than a plain identifier (e.g. `f().x`), which is not resolved to a
-// root.
-
-// tsResolveRootIdentifier walks a chain of nested member_expression/
-// subscript_expression "object" fields, starting at expr, until it reaches
-// a plain identifier -- the root -- or determines there is no such root
-// (e.g. the chain bottoms out in a call_expression like `f().x`), in which
-// case it returns nil. Used by both tsMutationBase (assignment/delete
-// targets) and checkMutatesInputCall (method-call receivers) so nested
-// mutation targets/receivers rooted at a tracked parameter (`p.x.y = 1`,
-// `p.items.push(1)`) are resolved the same way.
-
-func tsWrappedExpressionInner(expr engine.Node) engine.Node {
-	for _, field := range []string{"expression", "operand", "argument"} {
-		if child := expr.ChildByFieldName(field); child != nil {
-			return child
-		}
+// checkMutatesInputForNode runs the mutates_input detector (Story 2)
+// matching n's own kind, when scopes has at least one enclosing
+// function-like/method scope to attribute a mutation to.
+func (c *tsFeatureCollector) checkMutatesInputForNode(n engine.Node, source []byte, scopes []tsParamScope) {
+	if len(scopes) == 0 {
+		return
 	}
-	count := expr.ChildCount()
-	for i := 0; i < count; i++ {
-		child := expr.Child(i)
-		switch child.Kind() {
-		case "(", ")", "!":
-			continue
-		default:
-			return child
-		}
+	switch n.Kind() {
+	case "assignment_expression", "augmented_assignment_expression":
+		c.checkMutatesInputAssignment(n, source, scopes)
+	case "unary_expression":
+		c.checkMutatesInputDelete(n, source, scopes)
+	case "call_expression":
+		c.checkMutatesInputCall(n, source, scopes)
+	case "update_expression":
+		c.checkMutatesInputUpdate(n, source, scopes)
 	}
-	return nil
 }
 
 // recordMutatesInput resolves base's identifier name against scopes

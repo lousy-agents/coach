@@ -57,7 +57,7 @@ const layerBypassRecommendation = "Route the call through the required layer, or
 // same incomplete run is not a sound "no bypass" claim. Callers must fold
 // result.Coverage into Input.ProjectCoverage/BaseProjectCoverage (the two
 // Coverage values this rule's caller is responsible for combining, alongside
-// every other project evaluator's) so projectLifecycleState (codesignal.go)
+// every other project evaluator's) so projectLifecycleState (project_lifecycle_state.go)
 // degrades affected ProjectChanges to Lifecycle "unknown" rather than
 // emitting "resolved" for a witness that only disappeared because the search
 // was truncated, not because the bypass was actually fixed.
@@ -70,23 +70,10 @@ func EvaluateGoLayerBypass(result domain.LayerBypassResult, ruleVersion, backend
 		})
 	}
 
-	witnesses := make([]domain.LayerBypassWitness, 0, len(result.Witnesses))
-	for _, witness := range result.Witnesses {
-		if witness.Confidence != domain.LayerBypassConfidenceHigh {
-			continue
-		}
-		witnesses = append(witnesses, witness)
-	}
+	witnesses := highConfidenceWitnessesBySourceSink(result.Witnesses)
 	if len(witnesses) == 0 {
 		return nil, diagnostics
 	}
-
-	sort.SliceStable(witnesses, func(i, j int) bool {
-		if witnesses[i].Source != witnesses[j].Source {
-			return witnesses[i].Source < witnesses[j].Source
-		}
-		return witnesses[i].Sink < witnesses[j].Sink
-	})
 
 	changes := make([]ProjectChange, 0, len(witnesses))
 	for _, witness := range witnesses {
@@ -105,6 +92,43 @@ func EvaluateGoLayerBypass(result domain.LayerBypassResult, ruleVersion, backend
 // EvaluateGoLayerBypass's doc comment for the shared confidence-filtering,
 // anchoring, and coverage-incompleteness contract this function reuses
 // unchanged via layerBypassChange.
+func EvaluateTypeScriptLayerBypass(result domain.LayerBypassResult, ruleVersion, backendVersion, configDigest string) ([]ProjectChange, []Diagnostic) {
+	var diagnostics []Diagnostic
+	if !result.Coverage.Complete {
+		diagnostics = append(diagnostics, Diagnostic{
+			Kind:    diagLayerBypassCoverageIncomplete,
+			Message: "typescript layer-bypass search coverage is incomplete; absence of a witness for a source/sink pair in this run does not mean no bypass exists",
+		})
+	}
+
+	witnesses := highConfidenceWitnessesBySourceSink(result.Witnesses)
+	if len(witnesses) == 0 {
+		return nil, diagnostics
+	}
+
+	changes := make([]ProjectChange, 0, len(witnesses))
+	for _, witness := range witnesses {
+		changes = append(changes, layerBypassChange(witness, ruleVersion, backendVersion, configDigest, "typescript"))
+	}
+	return changes, diagnostics
+}
+
+func highConfidenceWitnessesBySourceSink(all []domain.LayerBypassWitness) []domain.LayerBypassWitness {
+	witnesses := make([]domain.LayerBypassWitness, 0, len(all))
+	for _, witness := range all {
+		if witness.Confidence != domain.LayerBypassConfidenceHigh {
+			continue
+		}
+		witnesses = append(witnesses, witness)
+	}
+	sort.SliceStable(witnesses, func(i, j int) bool {
+		if witnesses[i].Source != witnesses[j].Source {
+			return witnesses[i].Source < witnesses[j].Source
+		}
+		return witnesses[i].Sink < witnesses[j].Sink
+	})
+	return witnesses
+}
 
 // layerBypassChange builds the shared architecture.layer_bypass ProjectChange
 // shape for both language evaluators. language is added to
@@ -156,27 +180,3 @@ func layerBypassChange(witness domain.LayerBypassWitness, ruleVersion, backendVe
 		Provenance:           Provenance{Producer: "projectmodel", FindingKind: ruleLayerBypassID},
 	}
 }
-
-// layerBypassPrimaryAnchor returns the first path step with a resolvable
-// source position -- ordinarily steps[0] (the witness's Source function) --
-// or a zero ProjectLocation when no step resolves one (see
-// EvaluateGoLayerBypass's doc comment for what happens to the resulting
-// change downstream).
-func layerBypassPrimaryAnchor(steps []domain.LayerBypassStep) ProjectLocation {
-	for _, step := range steps {
-		if loc, ok := layerBypassStepLocation(step); ok {
-			return loc
-		}
-	}
-	return ProjectLocation{}
-}
-
-// layerBypassStepLocation converts step's 1-based Line to the 0-based
-// StartRow ProjectLocation uses elsewhere in this package, mirroring
-// rule_layer_violation.go's parseSiteLocation. It reports false when step
-// carries no position (step.Path == ""), e.g. the sink.
-
-// layerBypassCausalDigest hashes the ordered Path node-ID sequence so
-// projectChangeChanged (project_lifecycle.go) can detect a route change
-// (Changed == true) even when SemanticKey/Fingerprint identity, keyed only on
-// (RequiredLayer, Source, Sink), stays the same.

@@ -78,7 +78,9 @@ dependency order, then stop and ask before creating the rest. Report the remaini
 
 **After children exist, collapse the epic's Tasks section.** One `update_issue_body` replaces the
 inline six-part detail with a link list to the children plus a one-line note that per-task detail
-lives in each child. This is the shape the reference epic uses, and it is what keeps a multi-task
+lives in each child. Each link line keeps the criterion IDs its task cites, for example
+`- #101 — Task 1: Add reset endpoint (AC-1.1, AC-1.2)`. Without them the criterion-to-task trace,
+which `spec-auditor` checks, is lost from the epic body. This is the shape the reference epic uses, and it is what keeps a multi-task
 epic inside the body-size limit. Tasks still scores `present` under the Phase 2 rubric, because each
 entry links a child that carries the anatomy. Any task with no child — capped, declined, or already
 existing — keeps its inline detail so no requirement is lost.

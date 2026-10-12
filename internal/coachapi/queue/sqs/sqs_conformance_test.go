@@ -2,25 +2,17 @@ package sqs_test
 
 import (
 	"context"
-
-	"net/http"
 	"os/exec"
-
 	"testing"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/credentials"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
 	"github.com/lousy-agents/coach/internal/acceptanceharness/queueconformance"
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
 	sqsqueue "github.com/lousy-agents/coach/internal/coachapi/queue/sqs"
 )
-
-// localstackReadyTimeout bounds how long TestSQSQueueConformanceAcceptance
-// waits for a freshly started LocalStack container to report its SQS
-// service healthy before skipping (rather than failing) the whole test:
-// this sandbox and slow CI runners both need to be tolerated, and a hung
-// wait is worse than a graceful skip.
-const localstackReadyTimeout = 45 * time.Second
 
 // conformanceAdapter bridges *sqsqueue.Queue (which implements
 // internal/coachapi/queue.TaskQueue, the real port) to
@@ -51,11 +43,11 @@ func TestSQSQueueConformanceAcceptance(t *testing.T) {
 
 	endpoint, containerID, ok := startLocalStack(t)
 	if !ok {
-		return
+		return // already skipped with a reason by startLocalStack
 	}
 	t.Cleanup(func() {
 		stop := exec.Command("docker", "rm", "-f", containerID)
-		stop.CombinedOutput()
+		stop.CombinedOutput() //nolint:errcheck // best-effort cleanup
 	})
 
 	if !waitForLocalStackReady(t, endpoint) {
@@ -75,26 +67,29 @@ func TestSQSQueueConformanceAcceptance(t *testing.T) {
 	})
 
 	queueconformance.Run(t, func(tb testing.TB, clock acceptanceharness.Clock) queueconformance.Queue {
-		return body_sqsConformanceTest_81(tb, clock, endpoint, queueURL)
+		return newLocalStackConformanceQueue(tb, clock, endpoint, queueURL)
 	})
 }
 
-// waitForLocalStackReady polls LocalStack's health endpoint until the SQS
-// service reports "available"/"running", or localstackReadyTimeout elapses.
-func waitForLocalStackReady(t *testing.T, endpoint string) bool {
-	t.Helper()
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	deadline := time.Now().Add(localstackReadyTimeout)
-	for time.Now().Before(deadline) {
-		resp, err := client.Get(endpoint + "/_localstack/health")
-		if sigR0, sigRet := (&sigwaitForLocalStackReadyS1{err: err, resp: resp}).call(); sigRet {
-			return sigR0
-		}
-
-		time.Sleep(500 * time.Millisecond)
+// newLocalStackConformanceQueue builds the real adapter under test against
+// the LocalStack queue at queueURL.
+func newLocalStackConformanceQueue(tb testing.TB, clock acceptanceharness.Clock, endpoint, queueURL string) queueconformance.Queue {
+	cfg := sqsqueue.Config{
+		Region:            "us-east-1",
+		QueueURL:          queueURL,
+		VisibilityTimeout: time.Minute,
+		Endpoint:          endpoint,
+		// Explicit, hardcoded, obviously-fake credentials pinned at the
+		// LocalStack endpoint -- never the ambient AWS credential
+		// chain (see the package doc comment's "Credential safety"
+		// section).
+		Credentials: credentials.NewStaticCredentialsProvider("localstack-fake-access-key", "localstack-fake-secret-key", ""),
 	}
-	return false
+	q, err := sqsqueue.NewQueue(context.Background(), cfg, clock)
+	if err != nil {
+		tb.Fatalf("sqs.NewQueue: %v", err)
+	}
+	return conformanceAdapter{q: q}
 }
 
 func (a conformanceAdapter) PoisonTasks(ctx context.Context) ([]queueconformance.Task, error) {

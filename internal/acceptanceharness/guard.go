@@ -9,12 +9,9 @@ package acceptanceharness
 import (
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 // AmbientCredentialVars lists the environment variable names that, if
@@ -117,6 +114,25 @@ func ScanEnviron(environ []string) CredentialGuardResult {
 	return CredentialGuardResult{Found: found}
 }
 
+// ScanProcessEnv scans the real process environment (os.Environ()) for
+// ambient-credential variables, and the real home directory for default
+// ambient-credential files (AmbientCredentialFiles). If the home directory
+// cannot be resolved, the file check is skipped (Found still reflects the
+// environment-variable scan).
+func ScanProcessEnv() CredentialGuardResult {
+	result := ScanEnviron(os.Environ())
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return result
+	}
+	result.FoundFiles = ScanCredentialFiles(home, func(path string) bool {
+		_, statErr := os.Stat(path)
+		return statErr == nil
+	})
+	return result
+}
+
 // ScanCredentialFiles joins home with each AmbientCredentialFiles entry and
 // returns the ones for which exists(path) is true. It is a pure function
 // that never touches the real filesystem itself -- the caller-supplied
@@ -133,12 +149,6 @@ func ScanCredentialFiles(home string, exists func(path string) bool) []string {
 	}
 	return found
 }
-
-// ScanProcessEnv scans the real process environment (os.Environ()) for
-// ambient-credential variables, and the real home directory for default
-// ambient-credential files (AmbientCredentialFiles). If the home directory
-// cannot be resolved, the file check is skipped (Found still reflects the
-// environment-variable scan).
 
 // RejectAmbientCredentials is the guard's activation entry point: it scans
 // the real process environment and default ambient-credential file
@@ -176,59 +186,4 @@ func ScrubProcessEnv() []string {
 		os.Unsetenv(name)
 	}
 	return result.Found
-}
-
-// GuardedTransport is an http.RoundTripper that rejects any request whose
-// host is not on an explicit allowlist before the request is ever sent,
-// making an accidental public network call observable and failing rather
-// than merely discouraged. Requests to allowed hosts are delegated to an
-// injected fake http.RoundTripper for in-process fakes; GuardedTransport
-// itself never dials a real network connection.
-type GuardedTransport struct {
-	allowed map[string]bool
-	fake    http.RoundTripper
-
-	mu      sync.Mutex
-	blocked []string
-}
-
-// NewGuardedTransport builds a GuardedTransport permitting only requests
-// whose URL host (as reported by (*url.URL).Host, e.g. "127.0.0.1:9999")
-// appears in allowedHosts, delegating permitted requests to fake.
-
-// BlockedRequests returns a scrubbed, credential-free URL (as a string) of
-// every request this transport refused because its host was not on the
-// allowlist, in the order they were attempted, so a test can assert that an
-// accidental public request (e.g. to https://api.github.com/...) was
-// observed and blocked. Any userinfo, query string, or fragment embedded in
-// the original URL is stripped before recording, so this diagnostic never
-// leaks credentials accidentally embedded in a blocked URL; scheme, host,
-// and path are preserved.
-func (g *GuardedTransport) BlockedRequests() []string {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	out := make([]string, len(g.blocked))
-	copy(out, g.blocked)
-	return out
-}
-
-// RoundTrip rejects any request whose host is not on the allowlist before
-// ever attempting to send it -- no dial, real or otherwise, is attempted
-// for a blocked host. Allowed requests are delegated to the injected fake
-// transport.
-
-// scrubURL returns a credential-free string form of u: userinfo, query
-// string, and fragment are stripped, while scheme, host, and path are
-// preserved for diagnostics. This guards against a caller accidentally
-// embedding credentials in a blocked request's URL (e.g. userinfo or a
-// query-string access token) leaking into recorded diagnostics or error
-// messages.
-func scrubURL(u *url.URL) string {
-	scrubbed := *u
-	scrubbed.User = nil
-	scrubbed.RawQuery = ""
-	scrubbed.Fragment = ""
-	scrubbed.RawFragment = ""
-	return scrubbed.String()
 }

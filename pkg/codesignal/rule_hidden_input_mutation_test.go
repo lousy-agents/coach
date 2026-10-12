@@ -1,44 +1,12 @@
 package codesignal
 
 import (
-	"context"
-	"os"
 	"testing"
 
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func mustAnalyzeFixture(t *testing.T, srcPath, resultPath string, lang semantics.Language) *semantics.Result {
-	t.Helper()
-
-	content, err := os.ReadFile(srcPath)
-	if err != nil {
-		t.Fatalf("reading fixture %s: %v", srcPath, err)
-	}
-
-	analyzer, err := semantics.NewAnalyzer(semantics.AnalyzerOptions{})
-	if err != nil {
-		t.Fatalf("semantics.NewAnalyzer: %v", err)
-	}
-
-	result, err := analyzer.AnalyzeBytes(context.Background(), semantics.FileInput{
-		Path:     resultPath,
-		Language: lang,
-		Content:  content,
-	})
-	if err != nil {
-		t.Fatalf("AnalyzeBytes(%s): %v", srcPath, err)
-	}
-
-	return result
-}
-
 func TestHiddenInputMutation_OtherFindingKindsProduceNoSignals(t *testing.T) {
-	b, err := New(Options{})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
 	head := &semantics.Result{
 		Path:        "f.go",
 		Language:    semantics.LanguageGo,
@@ -50,14 +18,11 @@ func TestHiddenInputMutation_OtherFindingKindsProduceNoSignals(t *testing.T) {
 		},
 	}
 
-	report, err := b.Build(context.Background(), Input{
+	report := mustBuild(t, Options{}, Input{
 		Files: []FileChange{
 			{Path: "f.go", Status: "modified", Head: head},
 		},
 	})
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
 
 	if len(report.Signals) != 0 {
 		t.Errorf("Report.Signals for non-mutates_input findings: got %d, want 0: %+v", len(report.Signals), report.Signals)
@@ -75,7 +40,7 @@ func TestHiddenInputMutation_ConfidenceDefaultsToMedium(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_ruleHiddenInputMutationTest_77(t, tt)
+			expectHiddenInputMutationConfidence(t, tt.confidence, "medium")
 		})
 	}
 }
@@ -83,7 +48,7 @@ func TestHiddenInputMutation_ConfidenceDefaultsToMedium(t *testing.T) {
 func TestHiddenInputMutation_ConfidencePropagatesValidValues(t *testing.T) {
 	for _, confidence := range []string{"low", "medium", "high"} {
 		t.Run(confidence, func(t *testing.T) {
-			body_ruleHiddenInputMutationTest_91(t, confidence)
+			expectHiddenInputMutationConfidence(t, confidence, Confidence(confidence))
 		})
 	}
 }
@@ -95,5 +60,24 @@ func TestHiddenInputMutation_RecommendationDefaultsWhenEmpty(t *testing.T) {
 
 	if signal.Recommendation != defaultHiddenInputMutationRecommendation {
 		t.Errorf("newHiddenInputMutationSignal with empty Recommendation: got %q, want the rule default %q", signal.Recommendation, defaultHiddenInputMutationRecommendation)
+	}
+}
+
+func TestHiddenInputMutation_RecommendationPreservedWhenPresent(t *testing.T) {
+	finding := semantics.Finding{Kind: "mutates_input", Recommendation: "custom text"}
+
+	signal := newHiddenInputMutationSignal("f.go", finding)
+
+	if signal.Recommendation != "custom text" {
+		t.Errorf("newHiddenInputMutationSignal with Recommendation=%q: got %q, want it preserved verbatim", finding.Recommendation, signal.Recommendation)
+	}
+}
+
+func expectHiddenInputMutationConfidence(t *testing.T, confidence string, want Confidence) {
+	t.Helper()
+	finding := semantics.Finding{Kind: "mutates_input", Confidence: confidence}
+	signal := newHiddenInputMutationSignal("f.go", finding)
+	if signal.Confidence != want {
+		t.Errorf("newHiddenInputMutationSignal with Confidence=%q: got Confidence %q, want %q", confidence, signal.Confidence, want)
 	}
 }

@@ -2,8 +2,13 @@ package projectmodel
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
+	"runtime"
+	"sort"
+	"time"
 
-	"go/types"
+	"github.com/lousy-agents/coach/pkg/projectmodel/internal/ssaload"
 )
 
 // ReachabilitySinkPatterns is the pinned, deterministic registry of
@@ -57,129 +62,96 @@ type ReachabilityOptions struct {
 // taken before and after the call, so it includes GC'd churn and any
 // concurrent allocation elsewhere in the process during the call. Treat it
 // as an upper bound, not a peak or exclusive figure.
-
-// callGraphIncomplete means adjacency itself is missing edges the
-// underlying call-graph build could not resolve within its own budget
-// (CallGraphResult.Coverage.Complete false). A BFS over an incompletely
-// built adjacency can only prove "no path found within this partial
-// graph", never "no path found within the full traversal" -- so every
-// pair searched against it must count as truncated, not evaluated, or
-// Coverage would misreport a budget-truncated call graph the same way
-// it reports a genuinely complete one.
-
-// Only append the search-level marker if neither the call-graph layer
-// nor findGoReachabilitySources already recorded a
-// DiagReachabilityBudgetExceeded for this same ctx/budget exhaustion
-// (e.g. an already-cancelled ctx is observed at both call sites);
-// otherwise the same event would be reported twice.
-
-// reachabilitySearch is the result of one source/sink path search.
-// truncatedSearch only reflects this search's own budget (MaxSearchNodes,
-// ctx wall-time/cancellation), not callGraphIncomplete: the underlying
-// call graph's own incompleteness diagnostic (e.g.
-// DiagCallUnresolvedSyntheticWrapper) already surfaces via
-// callGraph.Coverage.Diagnostics, and callGraphIncomplete already forces
-// every pair to skip as truncated at reachabilityFactsForSource's call
-// site. Folding it into truncatedSearch too would additionally claim a
-// project_reachability_budget_exceeded that never happened.
-type reachabilitySearch struct {
-	facts           []ReachabilityFact
-	evaluated       int
-	truncatedPairs  int
-	nodesVisited    int
-	truncatedSearch bool
-}
-
-// reachabilityFactsForSource evaluates source against every sink using
-// parents (source's own BFS parent map from bfsBudget.shortestPaths). skip is
-// true when this source/sink evaluation cannot be trusted -- a budget was
-// hit, ctx was cancelled, or the underlying call graph itself is
-// incomplete -- in which case every pair counts as truncated rather than
-// evaluated, per BuildGoReachability's callGraphIncomplete contract.
-
-// findGoReachabilitySourcesFromLoaded walks loaded's local functions and
-// returns every function whose signature is identical to
-// net/http.HandlerFunc's underlying func(http.ResponseWriter, *http.Request).
-// Source identification needs each function's own signature, which
-// CallGraphResult's From/To strings do not carry, so this walk stays
-// separate from the call-graph walk rather than growing CallFact.
-
-type goReachabilitySourceSearch struct {
-	seen        map[string]bool
-	diagnostics []Diagnostic
-	complete    bool
-}
-
-func (s *goReachabilitySourceSearch) collectRoot(ctx context.Context, loaded *loadedGoSnapshot, root loadedGoRoot) (stop bool) {
-	if ctx.Err() != nil {
-		s.complete = false
-		s.diagnostics = append(s.diagnostics, Diagnostic{Code: DiagReachabilityBudgetExceeded, Path: root.dir})
-		return true
+func BuildGoReachability(ctx context.Context, snapshot fs.FS, opts ReachabilityOptions) (ReachabilityResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	if root.loadErr != nil {
-		s.complete = false
-		s.diagnostics = append(s.diagnostics, Diagnostic{Code: DiagReachabilitySourceLoadFailed, Path: root.dir, Message: stripTempDir(root.loadErr.Error(), loaded.tempDir)})
-		return false
+	if opts.Budgets.WallTime > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, opts.Budgets.WallTime)
+		defer cancel()
 	}
-	for _, p := range root.pkgs {
-		if len(p.Errors) > 0 {
-			s.complete = false
+
+	start := time.Now()
+	var memBefore, memAfter runtime.MemStats
+	runtime.ReadMemStats(&memBefore)
+
+	loaded, err := loadGoSnapshot(ctx, ssaload.Loader{}, snapshot, opts.Roots, opts.Budgets)
+	if err != nil {
+		return ReachabilityResult{}, fmt.Errorf("projectmodel: building call graph for reachability: %w", err)
+	}
+	defer loaded.cleanup()
+
+	callGraph := buildGoCallGraphFromLoaded(ctx, loaded, CallGraphOptions{Roots: opts.Roots, Budgets: opts.Budgets})
+	sources, sourcesComplete, sourceDiagnostics := findGoReachabilitySourcesFromLoaded(ctx, loaded)
+	adjacency := buildCallGraphAdjacency(callGraph.CallFacts)
+
+	sinks := append([]string(nil), ReachabilitySinkPatterns...)
+	sort.Strings(sinks)
+
+	// callGraphIncomplete means adjacency itself is missing edges the
+	// underlying call-graph build could not resolve within its own budget
+	// (CallGraphResult.Coverage.Complete false). A BFS over an incompletely
+	// built adjacency can only prove "no path found within this partial
+	// graph", never "no path found within the full traversal" -- so every
+	// pair searched against it must count as truncated, not evaluated, or
+	// Coverage would misreport a budget-truncated call graph the same way
+	// it reports a genuinely complete one.
+	callGraphIncomplete := !callGraph.Coverage.Complete
+
+	search := searchReachabilityFacts(ctx, sources, sinks, adjacency, opts.MaxSearchNodes, callGraphIncomplete)
+
+	runtime.ReadMemStats(&memAfter)
+	memDelta := int64(memAfter.TotalAlloc) - int64(memBefore.TotalAlloc)
+	if memDelta < 0 {
+		memDelta = 0
+	}
+
+	diagnostics := append([]Diagnostic{}, callGraph.Coverage.Diagnostics...)
+	diagnostics = append(diagnostics, sourceDiagnostics...)
+	// Only append the search-level marker if neither the call-graph layer
+	// nor findGoReachabilitySources already recorded a
+	// DiagReachabilityBudgetExceeded for this same ctx/budget exhaustion
+	// (e.g. an already-cancelled ctx is observed at both call sites);
+	// otherwise the same event would be reported twice.
+	if search.truncatedSearch && !containsDiagnosticCode(diagnostics, DiagReachabilityBudgetExceeded) {
+		diagnostics = append(diagnostics, Diagnostic{Code: DiagReachabilityBudgetExceeded})
+	}
+
+	complete := callGraph.Coverage.Complete && sourcesComplete && !search.truncatedSearch
+
+	sort.Slice(search.facts, func(i, j int) bool {
+		if search.facts[i].Source != search.facts[j].Source {
+			return search.facts[i].Source < search.facts[j].Source
 		}
-	}
-	handlerSig := httpHandlerFuncSignature(root.prog, root.pkgs)
-	if handlerSig == nil {
-		return false
-	}
-	for _, fn := range sortedLocalFunctions(root.prog, root.localPkgPaths) {
-		if ctx.Err() != nil {
-			s.complete = false
-			s.diagnostics = append(s.diagnostics, Diagnostic{Code: DiagReachabilityBudgetExceeded, Path: root.dir})
-			return true
-		}
-		if types.Identical(fn.Signature, handlerSig) {
-			s.seen[fn.RelString(nil)] = true
-		}
-	}
-	return false
+		return search.facts[i].Sink < search.facts[j].Sink
+	})
+
+	return ReachabilityResult{
+		Facts:     search.facts,
+		Sources:   sources,
+		Algorithm: ReachabilityAlgorithm,
+		Coverage: canonicalCoverage(Coverage{
+			Phase:    "go_reachability",
+			Complete: complete,
+			Counts: map[string]int{
+				"sources_identified":               len(sources),
+				"sinks_pinned":                     len(sinks),
+				"source_sink_pairs_total":          len(sources) * len(sinks),
+				"source_sink_pairs_evaluated":      search.evaluated,
+				"source_sink_pairs_truncated":      search.truncatedPairs,
+				"reachable_pairs":                  len(search.facts),
+				"underlying_call_sites_seen":       callGraph.Coverage.Counts["call_sites_seen"],
+				"underlying_unresolved_call_sites": unresolvedCallSiteCount(callGraph.Coverage.Counts),
+				"ssa_programs_built":               loaded.programsBuilt(),
+				"runtime_ms":                       int(time.Since(start) / time.Millisecond),
+				"memory_bytes":                     int(memDelta),
+			},
+			Budgets:     effectiveReachabilityBudgets(opts),
+			Diagnostics: diagnostics,
+		}),
+	}, nil
 }
-
-// httpHandlerFuncSignature looks up net/http.HandlerFunc's underlying
-// *types.Signature from prog or the initial packages' type-checker import
-// graph, returning nil if net/http was not part of this root's build.
-
-// containsDiagnosticCode reports whether diags already has an entry with the
-// given Code.
-func containsDiagnosticCode(diags []Diagnostic, code string) bool {
-	for _, d := range diags {
-		if d.Code == code {
-			return true
-		}
-	}
-	return false
-}
-
-// buildCallGraphAdjacency renders facts as a sorted, deduplicated adjacency
-// map so bfsShortestPaths' tie-breaking never depends on facts' input
-// order or Go map iteration order.
-
-// bfsBudget is the shared node-visit counter for shortest-path walks.
-// visited is not reset per source: max bounds the total number of nodes
-// dequeued across the whole search.
-type bfsBudget struct {
-	visited int
-	max     int
-}
-
-// shortestPaths runs a single breadth-first traversal from source over
-// adjacency (whose neighbor lists must already be sorted), returning a
-// parent map spanning every node reached before a budget or context
-// deadline stopped the walk. Because neighbors are visited in sorted order
-// and each node is enqueued at most once (on first discovery), the
-// resulting shortest-path tree is deterministic even when multiple
-// equal-length paths exist.
-
-// reconstructReachabilityPath walks parents (as built by bfsShortestPaths)
-// from sink back to source, returning the ordered source-to-sink path.
 
 // effectiveReachabilityBudgets renders opts as
 // ReachabilityResult.Coverage.Budgets: the full EffectiveGoBudgets(opts.Budgets)

@@ -7,15 +7,17 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"net/http"
+	"strings"
 
 	"github.com/google/go-github/v92/github"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
 	"github.com/lousy-agents/coach/internal/fakegithub"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
+// go-github + ghinstallation CD contract: production client stack against the
+// fake via WithEnterpriseURLs. Raw HTTP suites own scenario/AuthMode matrices.
 const (
 	contractAppID          int64 = 12345
 	contractInstallationID int64 = 99
@@ -86,7 +88,7 @@ var _ = Describe("fakegithub go-github client contract", func() {
 
 	Describe("Repositories API (installation token via ghinstallation.Transport)", func() {
 		It("reads collaborator permission with GetPermissionLevel", func() {
-			body_gogithubContractAcceptanceTest_readsCollaboratorPermissionWithGetPermissionLeve_89(server, ctx)
+			expectCollaboratorPermissionReadable(server, ctx)
 		})
 
 		It("reads a file with GetContents", func() {
@@ -146,7 +148,7 @@ var _ = Describe("fakegithub go-github client contract", func() {
 
 	Describe("end-to-end App JWT → install token → contents", func() {
 		It("mints via Apps API then reads contents with that token through go-github", func() {
-			body_gogithubContractAcceptanceTest_mintsViaAppsAPIThenReadsContentsWithThatTokenThr_164(server, ctx)
+			expectMintedTokenReadsContents(server, ctx)
 		})
 	})
 })
@@ -193,4 +195,50 @@ func newContractFixture() *fakegithub.Fixture {
 	}
 
 	return &fx
+}
+
+func expectCollaboratorPermissionReadable(server *fakegithub.Server, ctx context.Context) {
+	client := newInstallationClient(server)
+
+	level, resp, err := client.Repositories.GetPermissionLevel(ctx, "acme", "widgets", "octocat")
+	Expect(err).NotTo(HaveOccurred())
+	Expect(resp.StatusCode).To(Equal(http.StatusOK))
+	Expect(level.GetPermission()).To(Equal("write"))
+
+	var sawInstallation bool
+	for _, rec := range server.Recorder().Records() {
+		if rec.AuthMode == acceptanceharness.AuthModeInstallation &&
+			rec.Method == http.MethodGet &&
+			strings.Contains(rec.Path, "/collaborators/") {
+			sawInstallation = true
+		}
+	}
+	Expect(sawInstallation).To(BeTrue(), "permission check must record AuthModeInstallation, got %+v", server.Recorder().Records())
+}
+
+func expectMintedTokenReadsContents(server *fakegithub.Server, ctx context.Context) {
+	apps := newAppsClient(server)
+	tok, _, err := apps.Apps.CreateInstallationToken(ctx, contractInstallationID, nil)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Direct token auth (no auto-mint) proves the minted string is accepted.
+	client, err := github.NewClient(
+		github.WithEnterpriseURLs(server.URL(), server.URL()),
+		github.WithAuthToken(tok.GetToken()),
+	)
+	Expect(err).NotTo(HaveOccurred())
+
+	file, _, resp, err := client.Repositories.GetContents(ctx, "acme", "widgets", "src/main.go", &github.RepositoryContentGetOptions{Ref: "main"})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(resp.StatusCode).To(Equal(http.StatusOK))
+	content, err := file.GetContent()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(content).To(Equal("package main\n"))
+
+	var modes []acceptanceharness.AuthMode
+	for _, rec := range server.Recorder().Records() {
+		modes = append(modes, rec.AuthMode)
+	}
+	Expect(modes).To(ContainElement(acceptanceharness.AuthModeNone))
+	Expect(modes).To(ContainElement(acceptanceharness.AuthModeInstallation))
 }

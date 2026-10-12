@@ -4,14 +4,14 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 	"github.com/lousy-agents/coach/internal/tstestutil"
 )
 
 // TestTSTestutilAllowedNodeMajorsMatchesSupportedNodeMajors binds
 // tstestutil's PATH-repair fallback (which redirects TS-dependent specs onto
 // mise's Node 24 install whenever the host major is outside its own allowed
-// set) to codesignalcli.SupportedNodeMajors, the production analysis gate.
+// set) to tstoolchain.SupportedNodeMajors, the production analysis gate.
 // tstestutil cannot import codesignalcli directly (codesignalcli's own
 // tests import tstestutil, so the reverse import would cycle); cmd/coach
 // already imports both, so this is where the two copies are tied together.
@@ -21,7 +21,7 @@ import (
 // longer certifies, and every wiring spec would stay green regardless.
 func TestTSTestutilAllowedNodeMajorsMatchesSupportedNodeMajors(t *testing.T) {
 	got := append([]int(nil), tstestutil.AllowedAnalysisNodeMajors...)
-	want := append([]int(nil), codesignalcli.SupportedNodeMajors...)
+	want := append([]int(nil), tstoolchain.SupportedNodeMajors...)
 	sort.Ints(got)
 	sort.Ints(want)
 

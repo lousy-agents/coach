@@ -15,7 +15,7 @@ import (
 // black-box *_test.go coverage in this package -- see the acceptance-
 // coverage matrix in the PR description for which AC each style of test
 // carries. It reuses the offline test fixtures (generateTestRSAPrivateKeyPEM,
-// fakeGitHubTransport, jsonResponse, ...) defined in testhelpers_test.go: no
+// fakeGitHubTransport, jsonResponse, ...) defined in the *_helpers_test.go files: no
 // network access or real credentials are used anywhere in this package.
 func TestGitHubIngestAcceptance(t *testing.T) {
 	gomega.RegisterFailHandler(Fail)

@@ -332,35 +332,6 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config", func() 
 		Entry("duplicate --output", "--baseline", "--suggest-project-config", "--output", "a.json", "--output", "b.json"),
 	)
 
-	When("--output is given and discovery succeeds", func() {
-		It("writes the candidate bytes to the target, leaves stdout empty, and still writes the envelope to stderr", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", "module example.com/output\n\ngo 1.25\n")
-
-			stdout, stderr, exitCode := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output", "project.json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-			Expect(stdout).To(BeEmpty())
-
-			written, err := os.ReadFile(filepath.Join(repo, "project.json"))
-			Expect(err).NotTo(HaveOccurred())
-
-			var candidate suggestionCandidateDoc
-			Expect(json.Unmarshal(written, &candidate)).To(Succeed())
-			Expect(candidate.Roots).To(Equal([]string{"."}))
-			Expect(strings.HasSuffix(string(written), "\n")).To(BeTrue())
-
-			var envelope suggestionEnvelopeDoc
-			Expect(json.Unmarshal(stderr, &envelope)).To(Succeed(), "stderr: %s", stderr)
-			Expect(envelope.Diagnostics[0].Code).To(Equal("project_config_suggestion_ready"))
-		})
-	})
-
-	When("the --output write fails mid-write", func() {
-		It("removes the partially-written target and reports project_config_suggestion_output_invalid without leaking an absolute path", func() {
-			body_projectConfigSuggestionAcceptanceTest_removesThePartiallyWrittenTargetAndReportsProjec_360()
-		})
-	})
-
 	When("--baseline --suggest-project-config is run from a nested module subdirectory", func() {
 		It("discovers roots relative to the repository root, not the invocation directory", func() {
 			repo := newTempGitRepo()
@@ -377,128 +348,6 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config", func() 
 		})
 	})
 
-	When("--output is given while running from a subdirectory", func() {
-		It("resolves the output path against the repository root, not the current working directory", func() {
-			repo := newTempGitRepo()
-			// A module at the repo root and a module inside the
-			// subdirectory both exist; the roots assertion below pins that
-			// discovery is repository-root-relative even when invoked from
-			// the subdirectory, so this fixture can't silently regress to
-			// only discovering the invocation-directory-relative root.
-			commitFile(repo, "go.mod", "module example.com/subdir\n\ngo 1.25\n")
-			commitFile(repo, "services/payments/go.mod", "module example.com/subdir/services/payments\n\ngo 1.25\n")
-
-			subdir := filepath.Join(repo, "services", "payments")
-			stdout, stderr, exitCode := runCoachSuggest(subdir, "--baseline", "--suggest-project-config", "--output", "out.json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-			Expect(stdout).To(BeEmpty())
-
-			written, err := os.ReadFile(filepath.Join(repo, "out.json"))
-			Expect(err).NotTo(HaveOccurred(), "expected out.json at the repository root")
-
-			var candidate suggestionCandidateDoc
-			Expect(json.Unmarshal(written, &candidate)).To(Succeed(), "out.json: %s", written)
-			Expect(candidate.Roots).To(Equal([]string{".", "services/payments"}))
-
-			_, err = os.Stat(filepath.Join(subdir, "out.json"))
-			Expect(os.IsNotExist(err)).To(BeTrue(), "out.json must not be written under the invocation subdirectory")
-		})
-	})
-
-	When("--output points into a directory without write permission", func() {
-		It("exits 2 with project_config_suggestion_output_invalid instead of the defensive failed code", func() {
-			body_projectConfigSuggestionAcceptanceTest_exits2WithProjectConfigSuggestionOutputInvalidIn_436()
-		})
-	})
-
-	When("--output targets a path that already exists", func() {
-		It("exits 2 with project_config_suggestion_output_exists and leaves the target untouched", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", "module example.com/exists\n\ngo 1.25\n")
-			Expect(os.WriteFile(filepath.Join(repo, "already-there.json"), []byte("do-not-touch"), 0o644)).To(Succeed())
-
-			stdout, stderr, exitCode := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output", "already-there.json")
-			Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
-			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("project_config_suggestion_output_exists"))
-
-			untouched, err := os.ReadFile(filepath.Join(repo, "already-there.json"))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(string(untouched)).To(Equal("do-not-touch"))
-		})
-
-		It("rejects an existing directory target the same way", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", "module example.com/existsdir\n\ngo 1.25\n")
-			Expect(os.MkdirAll(filepath.Join(repo, "already-a-dir"), 0o755)).To(Succeed())
-
-			stdout, stderr, exitCode := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output", "already-a-dir")
-			Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
-			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("project_config_suggestion_output_exists"))
-		})
-
-		It("rejects an existing symlink target without following it", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", "module example.com/existssymlink\n\ngo 1.25\n")
-			elsewhere, err := os.MkdirTemp("", "coach-acceptance-symlink-target-*")
-			Expect(err).NotTo(HaveOccurred())
-			DeferCleanup(os.RemoveAll, elsewhere)
-			Expect(os.Symlink(filepath.Join(elsewhere, "nonexistent"), filepath.Join(repo, "already-a-symlink"))).To(Succeed())
-
-			stdout, stderr, exitCode := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output", "already-a-symlink")
-			Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
-			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("project_config_suggestion_output_exists"))
-
-			info, statErr := os.Lstat(filepath.Join(repo, "already-a-symlink"))
-			Expect(statErr).NotTo(HaveOccurred())
-			Expect(info.Mode()&os.ModeSymlink).NotTo(Equal(os.FileMode(0)), "the existing symlink target must be left untouched, not replaced")
-		})
-
-		It("reports no_go_modules, not output_exists, when the repository has no Go modules at all", func() {
-			// Issue #220's failure precedence puts "an existing --output
-			// target" at the LAST stage, after root discovery -- so a
-			// no-Go-module repository must fail on that first, even though
-			// an unrelated --output target already exists.
-			repo := newTempGitRepo()
-			commitFile(repo, "README.md", "no go here\n")
-			Expect(os.WriteFile(filepath.Join(repo, "taken.json"), []byte("do-not-touch"), 0o644)).To(Succeed())
-
-			stdout, stderr, exitCode := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output", "taken.json")
-			Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
-			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("project_config_suggestion_no_go_modules"))
-			Expect(string(stderr)).NotTo(ContainSubstring("project_config_suggestion_output_exists"))
-
-			untouched, err := os.ReadFile(filepath.Join(repo, "taken.json"))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(string(untouched)).To(Equal("do-not-touch"))
-		})
-	})
-
-	When("--output is an empty value or the literal \"-\"", func() {
-		It("rejects an explicit empty --output value", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", "module example.com/emptyoutput\n\ngo 1.25\n")
-
-			stdout, stderr, exitCode := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output=")
-			Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
-			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("project_config_suggestion_output_invalid"))
-		})
-
-		It("rejects the literal \"-\"", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", "module example.com/dashoutput\n\ngo 1.25\n")
-
-			stdout, stderr, exitCode := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output", "-")
-			Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
-			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("project_config_suggestion_output_invalid"))
-		})
-	})
-
 	When("HEAD contains an unparseable go.mod", func() {
 		It("exits 2 with project_config_suggestion_ambiguous_roots instead of a candidate", func() {
 			repo := newTempGitRepo()
@@ -511,65 +360,27 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config", func() 
 		})
 	})
 
-	When("--output escapes the repository, is absolute, or contains a .git component", func() {
-		It("rejects a ..-escaping path", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", "module example.com/escape\n\ngo 1.25\n")
-
-			stdout, stderr, exitCode := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output", "../escape.json")
-			Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
-			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("project_config_suggestion_output_invalid"))
-		})
-
-		It("rejects an absolute path without leaking it into the envelope's path field", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", "module example.com/abs\n\ngo 1.25\n")
-
-			stdout, stderr, exitCode := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output", "/tmp/coach-suggest-abs.json")
-			Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
-			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("project_config_suggestion_output_invalid"))
-
-			var envelope suggestionEnvelopeDoc
-			Expect(json.Unmarshal(stderr, &envelope)).To(Succeed(), "stderr: %s", stderr)
-			Expect(envelope.Diagnostics).To(HaveLen(1))
-			Expect(envelope.Diagnostics[0].Path).To(BeEmpty(), "no valid repository-relative form exists for a rejected absolute --output value, so path must be omitted rather than leak the raw absolute value")
-		})
-
-		It("rejects a path with a .git component", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", "module example.com/gitcomponent\n\ngo 1.25\n")
-
-			stdout, stderr, exitCode := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output", ".git/project.json")
-			Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
-			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("project_config_suggestion_output_invalid"))
-		})
-
-		It("rejects a .git path component regardless of case, without relying on filesystem case-folding", func() {
-			body_projectConfigSuggestionAcceptanceTest_rejectsAGitPathComponentRegardlessOfCaseWithoutR_591()
-		})
-
-		It("rejects a path through a symlinked parent directory", func() {
-			repo := newTempGitRepo()
-			commitFile(repo, "go.mod", "module example.com/symlinkparent\n\ngo 1.25\n")
-
-			elsewhere, err := os.MkdirTemp("", "coach-acceptance-elsewhere-*")
-			Expect(err).NotTo(HaveOccurred())
-			DeferCleanup(os.RemoveAll, elsewhere)
-			Expect(os.Symlink(elsewhere, filepath.Join(repo, "linked"))).To(Succeed())
-
-			stdout, stderr, exitCode := runCoachSuggest(repo, "--baseline", "--suggest-project-config", "--output", "linked/out.json")
-			Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
-			Expect(stdout).To(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring("project_config_suggestion_output_invalid"))
-		})
-	})
-
 	When("the candidate and envelope JSON shapes are inspected directly", func() {
 		It("uses 2-space indentation for the stdout candidate, and compact single-line NDJSON with the fixed key order for the stderr envelope", func() {
-			body_projectConfigSuggestionAcceptanceTest_uses2SpaceIndentationForTheStdoutCandidateAndCom_636()
+			repo := newTempGitRepo()
+			commitFile(repo, "go.mod", "module example.com/shape\n\ngo 1.25\n")
+
+			stdout, stderr, exitCode := runCoachSuggest(repo, "--baseline", "--suggest-project-config")
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+
+			Expect(string(stdout)).To(Equal("{\n  \"schema_version\": \"1\",\n  \"roots\": [\n    \".\"\n  ]\n}\n"))
+
+			text := string(stderr)
+			Expect(strings.Count(text, "\n")).To(Equal(1), "expected exactly one newline, at the very end, for NDJSON: got %q", text)
+			Expect(strings.HasSuffix(text, "\n")).To(BeTrue())
+			Expect(text).NotTo(ContainSubstring("\n  \""), "expected compact single-line JSON, not pretty-printed multi-line JSON")
+			order := []string{`"diagnostic_version"`, `"kind"`, `"revision"`, `"heuristic_version"`, `"roots_considered"`, `"coverage"`, `"diagnostics"`}
+			lastIndex := -1
+			for _, key := range order {
+				idx := strings.Index(text, key)
+				Expect(idx).To(BeNumerically(">", lastIndex), "expected %s to appear after the previous key in %s", key, text)
+				lastIndex = idx
+			}
 		})
 	})
 

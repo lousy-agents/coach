@@ -120,8 +120,8 @@ so that I can **run Path B without rediscovering timeout and model-id pitfalls**
 
 ### Components Affected
 
-- `internal/coachapi/handler_baseline_judge.go` — replace per-finding serial `Call` loop with pack planner + pack execute; partial persist on budget exceed
-- `internal/coachapi/handler_baseline.go` — judgment budget separation; wire config; optional cap before judge
+- `internal/coachapi/baseline/judgment*.go` — replace per-finding serial `Call` loop with pack planner + pack execute; partial persist on budget exceed
+- `internal/coachapi/baseline/scan.go` — judgment budget separation; wire config; optional cap before judge
 - `internal/rubrics/` — batch args assembly, batch output schema (v1 batch envelope or version bump if freeze requires), span window helpers, prompt text for short rationales
 - `internal/modelgateway/` — optional think-disable / extra body fields; ensure empty content still validates failed; timeout docs aligned with judgment wall
 - `internal/agentloop/` — only if budget API needs judgment-scoped wall reset or separate budget counters (prefer minimal change)
@@ -295,8 +295,8 @@ sequenceDiagram
 
 **Affected files**:
 
-- `internal/coachapi/handler_baseline_judge.go`
-- `internal/coachapi/handler_baseline.go`
+- `internal/coachapi/baseline/judgment*.go`
+- `internal/coachapi/baseline/scan.go`
 - Handler acceptance tests with slow/fake gateway
 
 **Requirements**:

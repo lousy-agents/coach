@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/coachapi/baseline"
+
 	"github.com/lousy-agents/coach/internal/coachapi"
 	"github.com/lousy-agents/coach/internal/coachapi/worker"
 	"github.com/lousy-agents/coach/internal/modelgateway"
@@ -30,7 +32,7 @@ func stubJobHandler(_ context.Context, _ coachapi.Job, w worker.JobWriter) (*coa
 }
 
 func buildJobHandler(cfg Config) (worker.JobHandler, error) {
-	baselineCfg := coachapi.RepoBaselineScanConfig{
+	baselineCfg := baseline.ScanConfig{
 		SmokeFixturePath:           cfg.SmokeFixturePath,
 		SmokeRepoOwner:             cfg.SmokeRepoOwner,
 		SmokeRepoName:              cfg.SmokeRepoName,
@@ -57,7 +59,7 @@ func buildJobHandler(cfg Config) (worker.JobHandler, error) {
 			return nil, fmt.Errorf("coach-worker: constructing GitHub credential resolver: %w", err)
 		}
 		// InstallationID is optional thinproof override; zero resolves per repo.
-		baselineCfg.TreeSource = &coachapi.ResolvingGitHubBaselineTreeSource{
+		baselineCfg.TreeSource = &baseline.ResolvingGitHubTreeSource{
 			Credentials:    resolver,
 			BaseURL:        cfg.GitHubBaseURL,
 			InstallationID: cfg.GitHubInstallationID,
@@ -66,7 +68,7 @@ func buildJobHandler(cfg Config) (worker.JobHandler, error) {
 		log.Printf("coach-worker: warning: no COACH_SMOKE_FIXTURE_PATH and no GitHub App credentials; non-smoke baseline jobs will fail")
 	}
 
-	h := coachapi.NewRepoBaselineScanHandler(baselineCfg)
+	h := baseline.NewScanHandler(baselineCfg)
 	return func(ctx context.Context, job coachapi.Job, w worker.JobWriter) (*coachapi.Completion, error) {
 		completion, err := h(ctx, job, w)
 		return completion, classifyBaselineHandlerError(err)

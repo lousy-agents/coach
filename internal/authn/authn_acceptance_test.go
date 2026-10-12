@@ -1,15 +1,12 @@
 package authn_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -19,70 +16,97 @@ import (
 	"github.com/lousy-agents/coach/internal/coachapi"
 )
 
-const (
-	testIssuer = "https://coach.test"
-	testSecret = "test-signing-secret-at-least-32-bytes!!"
-)
-
-func fixedNow(t time.Time) func() time.Time {
-	return func() time.Time { return t }
-}
-
-func newTestService(opts authn.Options) *authn.Service {
-	if opts.SigningKey == nil {
-		opts.SigningKey = []byte(testSecret)
-	}
-	if opts.Issuer == "" {
-		opts.Issuer = testIssuer
-	}
-	if opts.TokenTTL == 0 {
-		opts.TokenTTL = time.Hour
-	}
-	if opts.Now == nil {
-		opts.Now = fixedNow(time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC))
-	}
-	if opts.Denylist == nil {
-		opts.Denylist = authn.NewMemoryDenylist()
-	}
-	svc, err := authn.New(opts)
-	Expect(err).NotTo(HaveOccurred())
-	return svc
-}
-
-func decodeEnvelope(body []byte) coachapi.ErrorEnvelope {
-	var env coachapi.ErrorEnvelope
-	Expect(json.Unmarshal(body, &env)).To(Succeed(), "body=%s", body)
-	return env
-}
-
-func doReq(h http.Handler, method, path, bearer string, body []byte) (int, []byte) {
-	var rdr io.Reader
-	if body != nil {
-		rdr = bytes.NewReader(body)
-	}
-	req := httptest.NewRequest(method, path, rdr)
-	if bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	return rec.Code, rec.Body.Bytes()
-}
-
-func expectUnauthenticated(code int, body []byte) {
-	Expect(code).To(Equal(http.StatusUnauthorized), "body=%s", body)
-	env := decodeEnvelope(body)
-	Expect(env.Error.Code).To(Equal(coachapi.ErrorCodeUnauthenticated))
-	Expect(strings.TrimSpace(env.Error.Message)).NotTo(BeEmpty())
-}
-
 var _ = Describe("Coach JWT auth on protected /v1 routes", func() {
 	When("the bearer is missing, invalid, wrong-issuer, expired, denylisted, or a GitHub OAuth stand-in", func() {
 		It("rejects each case with 401 unauthenticated, while a valid Coach JWT authorizes /v1/me", func() {
-			body_authnAcceptanceTest_rejectsEachCaseWith401UnauthenticatedWhileAValid_84()
+			base := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+			now := base
+			// trackingDenylist records IsRevoked hits so the jti-denylisted case cannot
+			// false-green on expiry alone (Validate checks exp before the denylist).
+			mem := authn.NewMemoryDenylist()
+			dl := &trackingDenylist{inner: mem}
+			svc := newTestService(authn.Options{
+				Now:      func() time.Time { return now },
+				Denylist: dl,
+			})
+			h := svc.Handler()
+
+			good, err := svc.Issue(context.Background(), coachapi.Principal{
+				Provider: "github",
+				Subject:  "12345",
+				Login:    "octocat",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Denylist a second token after issue (clock stays at base so the token is
+			// still unexpired when Validate runs IsRevoked).
+			toRevoke, err := svc.Issue(context.Background(), coachapi.Principal{
+				Provider: "github",
+				Subject:  "99999",
+				Login:    "revoked-user",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(svc.Revoke(context.Background(), toRevoke)).To(Succeed())
+
+			other, err := authn.New(authn.Options{
+				SigningKey: []byte(testSecret),
+				Issuer:     "https://evil.example",
+				TokenTTL:   time.Hour,
+				Now:        func() time.Time { return base },
+				Denylist:   authn.NewMemoryDenylist(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			wrongIss, err := other.Issue(context.Background(), coachapi.Principal{
+				Provider: "github", Subject: "1", Login: "x",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			short, err := authn.New(authn.Options{
+				SigningKey: []byte(testSecret),
+				Issuer:     testIssuer,
+				TokenTTL:   time.Minute,
+				Now:        func() time.Time { return base },
+				Denylist:   authn.NewMemoryDenylist(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			expiredTok, err := short.Issue(context.Background(), coachapi.Principal{
+				Provider: "github", Subject: "2", Login: "y",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			type badCase struct {
+				name        string
+				bearer      string
+				advance     time.Duration
+				wantRevoked bool
+			}
+			cases := []badCase{
+				{name: "missing Authorization", bearer: ""},
+				{name: "invalid signature / garbage", bearer: "not-a-jwt"},
+				{name: "wrong issuer", bearer: wrongIss},
+				{name: "expired", bearer: expiredTok, advance: 2 * time.Hour},
+				{name: "jti denylisted", bearer: toRevoke, wantRevoked: true},
+				{name: "github oauth access token stand-in", bearer: "gho_not_a_coach_jwt_at_all"},
+			}
+
+			for _, tc := range cases {
+				now = base.Add(tc.advance)
+				before := dl.isRevokedCalls()
+				code, body := doReq(h, http.MethodGet, "/v1/me", tc.bearer, nil)
+				expectUnauthenticated(code, body)
+				if tc.wantRevoked {
+					Expect(dl.isRevokedCalls()).To(BeNumerically(">", before),
+						"%s must call IsRevoked (token still unexpired)", tc.name)
+					last, ok := dl.lastRevokedResult()
+					Expect(ok).To(BeTrue(), "%s: IsRevoked must have recorded a result", tc.name)
+					Expect(last).To(BeTrue(), "%s: IsRevoked must report revoked=true", tc.name)
+				}
+				now = base
+			}
+
+			now = base
+			code, body := doReq(h, http.MethodGet, "/v1/me", good, nil)
+			Expect(code).To(Equal(http.StatusOK), "valid token must authorize /v1/me; body=%s", body)
 		})
 	})
 
@@ -215,57 +239,3 @@ var _ = Describe("Coach JWT auth on protected /v1 routes", func() {
 		})
 	})
 })
-
-// errDenylist always returns a store error from IsRevoked (fail-closed path).
-type errDenylist struct {
-	err error
-	mu  sync.Mutex
-}
-
-func (e *errDenylist) IsRevoked(context.Context, string) (bool, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return false, e.err
-}
-
-func (e *errDenylist) Revoke(context.Context, string, time.Time) error {
-	return nil
-}
-
-// trackingDenylist wraps a Denylist and records IsRevoked outcomes so tests can
-// prove the denylist path ran (not merely expiry).
-type trackingDenylist struct {
-	inner authn.Denylist
-	mu    sync.Mutex
-	calls int
-	last  *bool
-}
-
-func (t *trackingDenylist) IsRevoked(ctx context.Context, jti string) (bool, error) {
-	revoked, err := t.inner.IsRevoked(ctx, jti)
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.calls++
-	v := revoked
-	t.last = &v
-	return revoked, err
-}
-
-func (t *trackingDenylist) Revoke(ctx context.Context, jti string, exp time.Time) error {
-	return t.inner.Revoke(ctx, jti, exp)
-}
-
-func (t *trackingDenylist) isRevokedCalls() int {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.calls
-}
-
-func (t *trackingDenylist) lastRevokedResult() (revoked bool, ok bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.last == nil {
-		return false, false
-	}
-	return *t.last, true
-}

@@ -17,6 +17,12 @@ Known limitations:
   delimiter alone.
 - Finding ids (`SL-001`, ...) are run-local ordinals, not stable identifiers.
   They shift whenever the document or the check set changes.
+- Criterion trace checks follow only the EARS Contract's `AC-<story>.<n>` scheme.
+  A source's own identifiers (any leading token containing a digit, optionally
+  bold, ending in a colon: `R7:`, `SYS_REQ_4:`, `**AC-1.2**:`) are stripped for
+  EARS detection but not traced.
+- Vague-term matching is a word match: "secure cookie" is still flagged, while
+  "fail-safe" and "unsafe" are not.
 """
 
 from __future__ import annotations
@@ -69,6 +75,9 @@ SECTION_ALIASES = {
     "Acceptance Criteria": ("acceptance criteria", "acceptance"),
 }
 
+# Must equal the `**Vague terms.**` list in the EARS Contract
+# (skills/to-ears/references/ears-contract.md); tests/test_ears_contract_sync.py
+# fails when the two disagree.
 AMBIGUOUS_TERMS = [
     "appropriate",
     "as needed",
@@ -79,18 +88,26 @@ AMBIGUOUS_TERMS = [
     "handle",
     "improve",
     "intuitive",
+    "normally",
     "optimize",
+    "quickly",
     "robust",
+    "safe",
     "seamless",
+    "secure",
     "simple",
+    "sufficient",
     "support",
+    "unacceptable",
     "user-friendly",
 ]
 
+# Every pattern opener in the EARS Contract, including the `During` alias for `While`.
 EARS_STARTS = (
     "the ",
     "when ",
     "while ",
+    "during ",
     "where ",
     "if ",
 )
@@ -120,6 +137,19 @@ CHECKED_BOX_RE = re.compile(r"\[[xX]\]")
 BARE_MARKER_RE = re.compile(r"\[[ xX]\]|[-*\s]")
 FLOWCHART_RE = re.compile(r"^(?:flowchart|graph)\s+(?:TB|TD|BT|LR|RL)\b", re.IGNORECASE)
 SEQUENCE_RE = re.compile(r"^sequenceDiagram\b", re.IGNORECASE)
+# A leading criterion identifier such as `AC-2.1:` or a source's own `SYS-REQ-4:`.
+# Stripped before EARS detection so an ID never makes a criterion look non-EARS.
+# Requiring a digit keeps prose labels such as `Note:` from being mistaken for an ID.
+_ID_TOKEN = r"[A-Za-z][A-Za-z0-9_.-]*\d[A-Za-z0-9_.-]*"
+CRITERION_ID_PREFIX_RE = re.compile(
+    rf"^(?:\*\*{_ID_TOKEN}\*\*:|\*\*{_ID_TOKEN}:\*\*|{_ID_TOKEN}:)\s+"
+)
+# The EARS Contract's own scheme, the one tasks cite and the trace checks follow.
+AC_ID_RE = re.compile(r"\bAC-\d+\.\d+\b")
+DEFINED_AC_RE = re.compile(r"(?:\*\*)?(AC-\d+\.\d+)(?:\*\*:|:(?:\*\*)?)")
+# An answered Open Question stays in the list marked `[x]`, per the EARS Contract.
+RESOLVED_OQ_RE = re.compile(r"\[[xX]\]\s+(?:\*\*)?OQ-\d+\b")
+NON_EARS_TAG = "[non-ears:"
 
 
 @dataclass(frozen=True)
@@ -354,7 +384,10 @@ def lint_todo_markers(doc: Doc) -> List[Finding]:
 
 
 def lint_ambiguous_terms(doc: Doc) -> List[Finding]:
-    term_pattern = re.compile(r"\b(" + "|".join(re.escape(t) for t in AMBIGUOUS_TERMS) + r")\b", re.IGNORECASE)
+    # `(?<!-)` keeps compounds such as "fail-safe" from matching "safe".
+    term_pattern = re.compile(
+        r"(?<!-)\b(" + "|".join(re.escape(t) for t in AMBIGUOUS_TERMS) + r")\b(?!-)", re.IGNORECASE
+    )
     found: List[Finding] = []
     for idx, line in doc.prose():
         stripped = line.strip()
@@ -375,9 +408,30 @@ def lint_ambiguous_terms(doc: Doc) -> List[Finding]:
     return found
 
 
+def criterion_text(bullet: str) -> str:
+    """Bullet text with the list marker, checkbox, and any leading ID removed."""
+    text = re.sub(r"^\s*[-*]\s+(\[.\]\s+)?", "", bullet).strip()
+    return CRITERION_ID_PREFIX_RE.sub("", text, count=1)
+
+
+# A Ubiquitous criterion often names its component directly ("notify-worker shall …")
+# instead of "The <system> shall …". The subject must be one token, so prose such as
+# "Audit records get written" still fails.
+NAMED_SUBJECT_RE = re.compile(r"^`?[a-z][\w.-]*`?\s+shall\b")
+
+
 def is_ears_like(bullet: str) -> bool:
-    text = re.sub(r"^\s*[-*]\s+(\[.\]\s+)?", "", bullet).strip().lower()
+    text = criterion_text(bullet).lower()
+    if NAMED_SUBJECT_RE.match(text):
+        return True
     return text.startswith(EARS_STARTS) and re.search(r"\bshall\b", text) is not None
+
+
+def is_declared_non_ears(bullet: str) -> bool:
+    """The EARS Contract's explicit exception. It is declared, so it is neither
+    flagged nor counted against the EARS ratio — but the bullet still counts as
+    a criterion for the empty-section and per-story checks."""
+    return NON_EARS_TAG in bullet.lower()
 
 
 def lint_criteria_sections(doc: Doc) -> List[Finding]:
@@ -405,6 +459,8 @@ def lint_criteria_sections(doc: Doc) -> List[Finding]:
             )
             continue
         for idx, line in bullets:
+            if is_declared_non_ears(line):
+                continue
             total += 1
             if is_ears_like(line):
                 ears_like += 1
@@ -420,7 +476,7 @@ def lint_criteria_sections(doc: Doc) -> List[Finding]:
                     )
                 )
 
-    if total == 0:
+    if total == 0 and not any(is_declared_non_ears(line) for _, line in criterion_bullets(doc)):
         found.append(
             finding(
                 Severity.HIGH,
@@ -431,7 +487,7 @@ def lint_criteria_sections(doc: Doc) -> List[Finding]:
                 "Add acceptance criteria for each user story using EARS-style syntax.",
             )
         )
-    elif ears_like / total < 0.5:
+    elif total and ears_like / total < 0.5:
         found.append(
             finding(
                 Severity.MEDIUM,
@@ -442,6 +498,148 @@ def lint_criteria_sections(doc: Doc) -> List[Finding]:
                 "Rewrite weak criteria so each includes a condition or trigger and a shall statement.",
             )
         )
+    return found
+
+
+def criterion_bullets(doc: Doc) -> List[Tuple[int, str]]:
+    return [
+        (idx, line)
+        for heading in acceptance_headings(doc)
+        for idx, line in doc.prose_in(doc.span(heading))
+        if BULLET_RE.match(line)
+    ]
+
+
+OQ_ENTRY_RE = re.compile(
+    r"^\s*[-*]\s+\[ \]\s+(?:\*\*)?(OQ-\d+)(?:\*\*)?\s*\((Blocker|High|Medium|Low);\s*(question|assumption)\)",
+    re.IGNORECASE,
+)
+TBD_OQ_RE = re.compile(r"\[TBD:[^\]]*?\b(OQ-\d+)\b[^\]]*\]")
+SEVERITY_RANK = {"low": 0, "medium": 1, "high": 2, "blocker": 3}
+
+
+def lint_open_question_floors(doc: Doc) -> List[Finding]:
+    """The EARS Contract's minimum severities for open questions.
+
+    An `assumption` is at least Medium. An open question that an inline
+    `[TBD …]` marker points at is reported when it sits below High: the marker
+    usually means the criterion has no decidable expected result, which the
+    contract rates at least High. That second check is a heuristic, so it is Low.
+    """
+    tbd_targets = {m.group(1) for _, line in doc.prose() for m in TBD_OQ_RE.finditer(line)}
+    found: List[Finding] = []
+    for idx, line in doc.prose():
+        match = OQ_ENTRY_RE.match(line)
+        if not match:
+            continue
+        ident, severity, kind = match.group(1), match.group(2).lower(), match.group(3).lower()
+        if kind == "assumption" and SEVERITY_RANK[severity] < SEVERITY_RANK["medium"]:
+            found.append(
+                finding(
+                    Severity.MEDIUM,
+                    "Open Questions",
+                    idx,
+                    f"Assumption below the Medium floor: {ident}",
+                    line.strip(),
+                    "Rate every assumption at least Medium; an unconfirmed inference can send implementation the wrong way.",
+                )
+            )
+        if ident in tbd_targets and SEVERITY_RANK[severity] < SEVERITY_RANK["high"]:
+            found.append(
+                finding(
+                    Severity.LOW,
+                    "Open Questions",
+                    idx,
+                    f"TBD-linked question may be below the High floor: {ident}",
+                    line.strip(),
+                    "A TBD that leaves a criterion with no decidable expected result makes its question at least High.",
+                )
+            )
+    return found
+
+
+def lint_criterion_trace(doc: Doc) -> List[Finding]:
+    """Two-way trace between `AC-<story>.<n>` criteria and the tasks that cite them.
+
+    Runs only when the spec uses the EARS Contract's ID scheme at all, so a spec
+    written without IDs is not buried in trace findings it never opted into.
+    """
+    defined: dict[str, int] = {}
+    unlabeled: List[Tuple[int, str]] = []
+    found: List[Finding] = []
+    for idx, line in criterion_bullets(doc):
+        text = re.sub(r"^\s*[-*]\s+(\[.\]\s+)?", "", line).strip()
+        match = DEFINED_AC_RE.match(text)
+        if not match:
+            # A nested bullet elaborates the criterion above it; it is not a criterion.
+            if not line[:1].isspace():
+                unlabeled.append((idx, line))
+            continue
+        ident = match.group(1)
+        if ident in defined:
+            found.append(
+                finding(
+                    Severity.MEDIUM,
+                    "Traceability",
+                    idx,
+                    f"Duplicate criterion ID: {ident}",
+                    f"{ident} is also defined on line {defined[ident]}",
+                    "Give every criterion a unique ID; tasks and tests cite IDs, so a duplicate makes the trace ambiguous.",
+                )
+            )
+            continue
+        defined[ident] = idx
+
+    if not defined:
+        return found
+
+    found.extend(
+        finding(
+            Severity.LOW,
+            "Traceability",
+            idx,
+            "Criterion has no ID while others do",
+            line.strip(),
+            "Prefix the criterion with the next `AC-<story>.<n>:` ID so tasks can cite it.",
+        )
+        for idx, line in unlabeled
+    )
+
+    task_like = [h for h in doc.headings if TASK_TITLE_RE.match(h.raw_title)]
+    section = doc.find_section("Tasks", level=2, ignore=task_like)
+    if section is None:
+        # The missing `## Tasks` section is already a High finding; an "uncited"
+        # finding per criterion would only repeat it.
+        return found
+    cited: dict[str, int] = {}
+    for idx, line in doc.prose_in(section):
+        for ident in AC_ID_RE.findall(line):
+            cited.setdefault(ident, idx)
+
+    found.extend(
+        finding(
+            Severity.MEDIUM,
+            "Traceability",
+            line,
+            f"Task cites an unknown criterion ID: {ident}",
+            f"{ident} is not defined under any acceptance-criteria heading",
+            "Cite an existing criterion ID, or add the criterion the task is meant to satisfy.",
+        )
+        for ident, line in cited.items()
+        if ident not in defined
+    )
+    found.extend(
+        finding(
+            Severity.MEDIUM,
+            "Traceability",
+            line,
+            f"Criterion not cited by any task: {ident}",
+            f"no task under `## Tasks` cites {ident}",
+            "Cite the criterion in the `**Requirements**` of the task that satisfies it, or move it to Out of Scope.",
+        )
+        for ident, line in defined.items()
+        if ident not in cited
+    )
     return found
 
 
@@ -535,7 +733,7 @@ def lint_checkboxes(doc: Doc) -> List[Finding]:
             "Use unchecked `[ ]` boxes in draft specs; implementers should mark completion.",
         )
         for idx, line in doc.prose()
-        if CHECKED_BOX_RE.search(line)
+        if CHECKED_BOX_RE.search(line) and not RESOLVED_OQ_RE.search(line)
     ]
 
 
@@ -692,6 +890,8 @@ def run_lint(path: Path) -> List[Finding]:
         *lint_story_headings(doc),
         *lint_criteria_sections(doc),
         *lint_story_coverage(doc),
+        *lint_criterion_trace(doc),
+        *lint_open_question_floors(doc),
         *lint_checkboxes(doc),
         *lint_tasks(doc),
         *lint_mermaid(doc),

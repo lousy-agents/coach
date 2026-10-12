@@ -3,16 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 )
-
-// checkSubmitStatus enforces POST /v1/jobs → 202 Accepted (durable submit contract).
-func checkSubmitStatus(statusCode int, body []byte) error {
-	if statusCode != http.StatusAccepted {
-		return fmt.Errorf("submit job status %d (want 202): %s", statusCode, truncate(body))
-	}
-	return nil
-}
 
 // validateReportBody asserts the smoke report contract: report_version 1,
 // matching job id/kind, no error, and both deterministic and agent provenance.

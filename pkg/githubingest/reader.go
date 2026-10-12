@@ -1,19 +1,13 @@
 package githubingest
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
-
 	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v92/github"
 )
-
-// maxContentSize is the GitHub Contents API's file size limit: files larger
-// than this are served with encoding "none" and no usable inline content.
-const maxContentSize = 1 << 20 // 1 MiB
 
 // DefaultGitHubFileReaderHTTPTimeout bounds outbound Contents API HTTP calls
 // issued by GitHubFileReader (ReadFile and parent-directory listings). Matches
@@ -28,17 +22,6 @@ type GitHubAppConfig struct {
 	PrivateKey     []byte            // PEM (PKCS#1) as issued by GitHub; never logged
 	BaseURL        string            // optional; GitHub Enterprise
 	Transport      http.RoundTripper // optional; base transport (tests, future rate limiting)
-}
-
-// GitHubFileRef identifies a single file within a repository at a ref.
-type GitHubFileRef struct{ Owner, Repo, Ref, Path string }
-
-// FileMetadata describes a file read via GitHubFileReader.ReadFile.
-type FileMetadata struct {
-	Path string `json:"path"`
-	Ref  string `json:"ref"`
-	SHA  string `json:"sha"`
-	Size int    `json:"size"`
 }
 
 // GitHubFileReader reads file contents from GitHub repositories,
@@ -95,59 +78,3 @@ func NewGitHubFileReader(cfg GitHubAppConfig) (*GitHubFileReader, error) {
 
 	return &GitHubFileReader{client: client}, nil
 }
-
-// NewGitHubFileReaderFromToken builds a GitHubFileReader authenticated with a
-// pre-minted installation access token (from CredentialResolver.InstallationToken).
-// baseURL is optional (GitHub Enterprise). Prefer this over NewGitHubFileReader
-// when the caller already holds a token via the ADR-002 CredentialResolver seam.
-
-// ResolveCommitSHA resolves ref to a commit object SHA for owner/repo.
-// Empty ref resolves the repository default branch tip (not the literal "HEAD").
-// Branch names, tags, and already-resolved SHAs are accepted via the Commits API.
-
-// ReadFile fetches the raw bytes and metadata of a single file at ref.
-
-// isTokenMintFailure reports whether err originates from a failed
-// ghinstallation installation-token mint, as opposed to a genuine Contents
-// API response. ghinstallation wraps any non-2xx token-mint response (401,
-// 403, 404, ...) in *ghinstallation.HTTPError; when that happens, go-github
-// never issues the underlying Contents API request at all, so the caller's
-// *github.Response is nil and the real status code is only reachable
-// through this wrapped error.
-func isTokenMintFailure(err error) bool {
-	var httpErr *ghinstallation.HTTPError
-	return errors.As(err, &httpErr) && httpErr.Response != nil
-}
-
-// mapContentsAPIError maps a failure from a GetContents-style call to the
-// sentinel it represents:
-//   - resp != nil (a genuine Contents API response): 404 -> ErrNotFound,
-//     401/403 -> ErrAuth.
-//   - resp == nil and the failure is a token-mint failure (see
-//     isTokenMintFailure): always ErrAuth, regardless of the token-mint
-//     endpoint's own status code. Minting a token is itself an
-//     authentication step, so even a 404 there (e.g. an unknown or revoked
-//     InstallationID) means "this GitHub App installation could not be
-//     authenticated," never "this file doesn't exist" -- AC-5.5's
-//     404 -> ErrNotFound scope is the Contents API's own response, not the
-//     token-mint endpoint's.
-//   - anything else: err wrapped with action for context, matching no
-//     sentinel.
-
-// rejectIfPathIsSymlink closes AC-5.7's gap where the Contents API
-// transparently resolves an in-repo symlink target and reports it as a
-// regular file (type "file"): GitHub's documented behavior is that a
-// symlink whose target is a normal file within the same repository returns
-// the target's content, not a symlink object, so fileContent.GetType()
-// alone cannot distinguish the two.
-//
-// Listing ref.Path's parent directory shows the raw (unresolved) git tree
-// entries, including the true type of a symlink entry -- so this reuses
-// the exact same GetContents call and ref handling as the primary fetch
-// (correct percent-encoding for refs like "feature/x", correct empty-ref
-// default-branch behavior), rather than the Git Trees API, whose ref
-// parameter is spliced unescaped into the URL path and breaks for an empty
-// or slash-containing ref. It also only ever fetches one directory's
-// listing rather than a whole-repository recursive tree, so it does not
-// carry the earlier tree-walk approach's cost (a full recursive tree
-// payload per read) or truncation blind spot for large repositories.

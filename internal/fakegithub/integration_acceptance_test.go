@@ -104,6 +104,8 @@ var _ = Describe("fake GitHub service integration", func() {
 		})
 	})
 
+	// RejectedTokens stand in for Coach JWTs (and any non-GitHub credential)
+	// until coach-api exists; must reject on every route, not as App JWT.
 	Describe("fixture-registered non-GitHub credentials (Coach JWT stand-in)", func() {
 		const coachJWTStandIn = "coach-jwt-fixture-stand-in"
 

@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/coachapi/store/memory"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -71,7 +73,7 @@ var _ = Describe("coach-worker baseline handler wiring", func() {
 				Params: []byte(`{"repo_owner":"acme","repo_name":"widgets","ref":"main"}`),
 				Status: coachapi.JobStatusRunning,
 			}
-			store := coachapi.NewMemoryStore()
+			store := memory.NewStore()
 			Expect(store.CreateJob(context.Background(), coachapi.Job{
 				ID: job.ID, Kind: job.Kind, Params: job.Params,
 				Status: coachapi.JobStatusQueued, Attempt: 0,
@@ -103,7 +105,7 @@ var _ = Describe("coach-worker baseline handler wiring", func() {
 		})
 
 		It("keeps ErrAuth and ErrTooLarge permanent", func() {
-			body_handlerAcceptanceTest_keepsErrAuthAndErrTooLargePermanent_105()
+			expectAuthAndTooLargeStayPermanent()
 		})
 
 		It("keeps bad params permanent", func() {
@@ -130,7 +132,7 @@ var _ = Describe("coach-worker baseline handler wiring", func() {
 				Params: []byte(`{"repo_owner":"smoke","repo_name":"fixture"}`),
 				Status: coachapi.JobStatusRunning,
 			}
-			store := coachapi.NewMemoryStore()
+			store := memory.NewStore()
 			Expect(store.CreateJob(context.Background(), coachapi.Job{
 				ID: job.ID, Kind: job.Kind, Params: job.Params,
 				Status: coachapi.JobStatusQueued, Attempt: 0,
@@ -165,9 +167,9 @@ var _ = Describe("coach-worker baseline handler wiring", func() {
 	})
 })
 
-// storeJobWriter is a thin JobWriter over MemoryStore for composition tests.
+// storeJobWriter is a thin JobWriter over memory.Store for composition tests.
 type storeJobWriter struct {
-	store *coachapi.MemoryStore
+	store *memory.Store
 	lease coachapi.ClaimLease
 }
 
@@ -184,3 +186,12 @@ func (w *storeJobWriter) InsertDiagnostics(ctx context.Context, diagnostics []co
 func storeNow() time.Time { return time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC) }
 
 func storeStale() time.Duration { return time.Minute }
+
+// expectAuthAndTooLargeStayPermanent requires wrapped ErrAuth and ErrTooLarge
+// fetch failures to classify as permanent, not Retryable.
+func expectAuthAndTooLargeStayPermanent() {
+	for _, sent := range []error{githubingest.ErrAuth, githubingest.ErrTooLarge} {
+		err := classifyBaselineHandlerError(fmt.Errorf("coachapi: baseline fetch failed: %w", sent))
+		Expect(worker.IsRetryable(err)).To(BeFalse(), "sentinel %v", sent)
+	}
+}

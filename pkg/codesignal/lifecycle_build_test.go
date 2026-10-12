@@ -1,52 +1,55 @@
 package codesignal
 
 import (
-	"context"
 	"testing"
 
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func TestBuild_RemovedFileEmitsResolvedSignalsFromBase(t *testing.T) {
-	b, err := New(Options{IncludeResolved: true})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
+func TestBuild_LifecycleClassificationAcrossBaseAndHead(t *testing.T) {
 	base := &semantics.Result{
-		Path:        "deleted.go",
+		Path:        "changed.go",
 		ParseStatus: semantics.ParseStatus("ok"),
 		Findings: []semantics.Finding{
-			{Kind: "mutates_input", Name: "Deleted", Location: semantics.Location{StartRow: 5}},
+			{Kind: "mutates_input", Name: "Existing", Location: semantics.Location{StartRow: 1}},
+			{Kind: "mutates_input", Name: "GoneNow", Location: semantics.Location{StartRow: 2}},
+		},
+	}
+	head := &semantics.Result{
+		Path:        "changed.go",
+		ParseStatus: semantics.ParseStatus("ok"),
+		Findings: []semantics.Finding{
+			{Kind: "mutates_input", Name: "Existing", Location: semantics.Location{StartRow: 10}},
+			{Kind: "mutates_input", Name: "NewOne", Location: semantics.Location{StartRow: 20}},
 		},
 	}
 
-	report, err := b.Build(context.Background(), Input{
+	report := mustBuild(t, Options{IncludeResolved: true}, Input{
 		Files: []FileChange{
-			{Path: "deleted.go", Status: "removed", Base: base, Head: nil},
+			{Path: "changed.go", Status: "modified", Base: base, Head: head},
 		},
 	})
-	if err != nil {
-		t.Fatalf("Build: %v", err)
+
+	if len(report.Signals) != 3 {
+		t.Fatalf("Report.Signals length: got %d, want 3: %+v", len(report.Signals), report.Signals)
 	}
 
-	if len(report.Signals) != 1 {
-		t.Fatalf("Report.Signals length: got %d, want 1: %+v", len(report.Signals), report.Signals)
-	}
-	if report.Signals[0].Lifecycle != "resolved" {
-		t.Errorf("Signal.Lifecycle for a removed file: got %q, want %q", report.Signals[0].Lifecycle, "resolved")
-	}
-	if report.Signals[0].Subject != "Deleted" {
-		t.Errorf("Signal.Subject: got %q, want %q", report.Signals[0].Subject, "Deleted")
-	}
-	if report.Signals[0].Fingerprint == "" || report.Signals[0].ID == "" {
-		t.Errorf("resolved signal must have non-empty Fingerprint and ID: %+v", report.Signals[0])
+	existing := findByLifecycleAndSubject(t, report.Signals, "Existing", "existing")
+	if existing.Fingerprint == "" || existing.ID == "" {
+		t.Errorf("existing signal must have non-empty Fingerprint and ID: %+v", existing)
 	}
 
-	for _, d := range report.Diagnostics {
-		if d.Kind == "missing_head_result" {
-			t.Errorf("unexpected missing_head_result diagnostic for a removed file: %+v", d)
-		}
+	introduced := findByLifecycleAndSubject(t, report.Signals, "NewOne", "introduced")
+	if introduced.Fingerprint == "" || introduced.ID == "" {
+		t.Errorf("introduced signal must have non-empty Fingerprint and ID: %+v", introduced)
+	}
+
+	resolved := findByLifecycleAndSubject(t, report.Signals, "GoneNow", "resolved")
+	if resolved.Fingerprint == "" || resolved.ID == "" {
+		t.Errorf("resolved signal must have non-empty Fingerprint and ID: %+v", resolved)
+	}
+	if resolved.Location.StartRow != 2 {
+		t.Errorf("resolved signal Location.StartRow: got %d, want 2 (Base's finding location)", resolved.Location.StartRow)
 	}
 }
 

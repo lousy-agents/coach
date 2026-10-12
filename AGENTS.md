@@ -22,9 +22,10 @@ The `coach` CLI (`cmd/coach`, plumbing in `internal/codesignalcli`) exposes one 
 
 ## Agent Skills (`.agents/skills/`)
 
-Most are sourced from `lousy-agents/skills` and pinned by `skills-lock.json`: change those upstream and re-run `npx skills add`, because edits made here are overwritten. `correctness-review`, `cut-release`, `product-quality-evaluation`, and `optimize-prompt-loop` are not in the lockfile and are edited here directly. Check `skills-lock.json` before editing a skill, so a local edit is not silently reverted by the next sync.
+Most are sourced from `lousy-agents/skills` and pinned by `skills-lock.json`: change those upstream and re-run `npx skills add`, because edits made here are overwritten. `correctness-review`, `cut-release`, and `product-quality-evaluation` are not in the lockfile and are edited here directly. Check `skills-lock.json` before editing a skill, so a local edit is not silently reverted by the next sync.
 
 - `feature-to-plan` — turn a feature request, PRD, or backlog issue into a structured EARS-format spec.
+- `to-ears` — draft, convert, or review EARS acceptance criteria, or derive tests from them, without inventing behavior.
 - `go-testable-design` — guidance for writing/refactoring testable Go (table tests, constructor injection, boundaries, concurrency tests).
 - `mutation-hunter` — find TypeScript test-coverage gaps via semantic mutation testing.
 - `rugged-evil-tester` — generate adversarial/negative/chaos tests for TypeScript code.
@@ -99,11 +100,17 @@ node --test "dist-test/**/*.test.js"
 
 Full design lives in `docs/architecture/system-overview.md`. What follows is only what a reader cannot infer from the code.
 
+### Layering and file naming
+
+Go code follows layered ports and adapters ([ADR-007](docs/architecture/ADR-007-layered-ports-and-adapters.md)). Across the module, `project.json` places trees in four rings (entities ← usecases ← adapters ← app) and `coach codesignal --baseline --project-config project.json` reports any outward import; inside `internal/codesignalcli` and `internal/coachapi`, packages repeat the split as model ← use case ← driven adapter, with `cmd/*` as the only place that wires adapters into use cases. Dependencies shall point inward, and a port shall be declared by the package that consumes it, because that is what lets a use case be tested against a fake instead of a real git repo or database.
+
+A file and a package shall be named for the responsibility they hold. When the self-scan density gate fires (12 branch points per file), split the file along a seam and name both halves; a family of files sharing a prefix is a capability that belongs in its own package. Ordinal fragments (`_part2.go`, `_test_body_test.go`, `_sigfix1_test.go`) and helpers named for their origin or a hash (`body_*`, `*39957725`) are rejected by `mise run source-layout-check`, because a name that carries no responsibility forces a reader to open every fragment to find anything.
+
 ### `pkg/semantics`
 
 `pkg/semantics` parses purely in Go via `github.com/odvcencio/gotreesitter` — no CGO, no C toolchain, and no dual-backend selection. Pipeline (`analyzer.go`): `AnalyzeBytes` = validate → parse → syntax-check → extract imports → compute metrics/findings → `Result`.
 
-- **Backend seam** (`internal/engine/engine.go`): a deliberately narrow interface (`Node`, `Tree`, `Parser`, `Query`, `QueryCursor`, `Language`) exposing only the Tree-sitter operations the package actually uses (no `NamedChild`, no `TreeCursor`, no query predicates, no incremental parsing). The package is `internal`, so it is importable only from within `pkg/semantics`. There is exactly one implementation: `internal/engine/gotreesitter.go` (pure-Go, always compiled, no build tag).
+- **Backend seam** (`internal/engine/engine.go`): a deliberately narrow interface (`Node`, `Tree`, `Parser`, `Query`, `QueryCursor`, `Language`) exposing only the Tree-sitter operations the package actually uses (no `NamedChild`, no `TreeCursor`, no query predicates, no incremental parsing). The package is `internal`, so it is importable only from within `pkg/semantics`. There is exactly one implementation: `internal/engine/gotreesitter*.go` (pure-Go, always compiled, no build tag).
 - **Registry selection** (`language.go`): `languageSpec` bundles a backend-bound `engine.Language` handle with language-specific `extractImports`/`computeFeatures` functions. `languageRegistry` (`map[Language]languageSpec`) is defined unconditionally — no build tags, no per-backend variants. Adding a language means extending the registry plus its own `extract*Imports`/`compute*Features` pair (mirroring the Go or TS implementations), not touching `parser.go`/`analyzer.go`.
 - **Concurrency**: an `*Analyzer` holds no backend resources between calls — every `AnalyzeBytes` call creates and closes its own `Parser`/`Tree`/`Query`/`QueryCursor` — so a single `*Analyzer` is safe for concurrent use.
 - **Error contract**: syntax errors return a partial `*Result` (`ParseStatus == "syntax_errors"`) *and* a non-nil error satisfying `errors.Is(err, ErrSyntax)` (use `errors.As` for `*SyntaxError.Issues`). Other sentinels: `ErrEmptyContent`, `ErrUnsupportedLanguage`, `ErrFileTooLarge`, `ErrBinaryContent`, `ErrParseFailure`.
@@ -136,6 +143,7 @@ mise run gofmt
 mise run go-vet
 mise run tidy-check
 mise run acceptance-style-check
+mise run source-layout-check
 mise run test
 mise run test-examples
 mise run js-ci
@@ -164,7 +172,7 @@ Every new feature and every bug fix shall begin with a failing acceptance test, 
 - Use Ginkgo v2 + Gomega (`github.com/onsi/ginkgo/v2`, `github.com/onsi/gomega`).
 - Spec style: `Describe` / `When` / `It` (and `DescribeTable` when useful) that read as EARS/acceptance-criteria statements.
 - Layout: `*_acceptance_test.go` plus `acceptance_suite_test.go` with a `TestXxxAcceptance` entrypoint, so `mise run test-acceptance-fast` (`go test … -run Acceptance`) picks them up.
-- Reference examples: `cmd/coach/baseline_acceptance_test.go`, `pkg/githubingest/acceptance_test.go`.
+- Reference examples: `cmd/coach/baseline_acceptance_test.go`, `pkg/githubingest/read_file_acceptance_test.go`.
 - Plain unit tests (`*_test.go` without the acceptance suite role) may use stdlib `testing` + table tests; that is not a substitute for acceptance coverage of new features or bug fixes.
 - Exception: thin stdlib `Test*Acceptance` wrappers that only call a shared harness (e.g. `internal/acceptanceharness/queueconformance/acceptance_test.go`) are allowed where they are not the behavioral specs themselves.
 - Mechanical guard (when present): `mise run acceptance-style-check`.
@@ -203,7 +211,7 @@ This policy overrides verbose comment conventions in neighboring code. Preserve 
 
 ### Verification
 
-Passing checks prove nothing broke; they do not prove new behavior is correct. For a `pkg/semantics` extraction or metric change, add or extend a case in the relevant `*_test.go` (`features_test.go`, `ts_features_test.go`, `query_test.go`, …) with a concrete before/after `Result`, not just a "does it run" assertion. For `js/semantics` changes, extend `parity.test.ts` so the Go and JS outputs are checked byte-identical rather than independently plausible.
+Passing checks prove nothing broke; they do not prove new behavior is correct. For a `pkg/semantics` extraction or metric change, add or extend a case in the relevant `*_test.go` (`go_features_test.go`, `ts_features_test.go`, `go_imports_test.go`, …) with a concrete before/after `Result`, not just a "does it run" assertion. For `js/semantics` changes, extend `parity.test.ts` so the Go and JS outputs are checked byte-identical rather than independently plausible.
 
 ### Feedback loop
 

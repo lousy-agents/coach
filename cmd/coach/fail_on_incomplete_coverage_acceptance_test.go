@@ -81,7 +81,7 @@ var _ = Describe("coach codesignal --fail-on-incomplete-coverage", func() {
 // only reachability is incomplete) using the real TypeScript sidecar.
 var _ = Describe("coach codesignal --fail-on-incomplete-coverage with real TypeScript backend (AC-EVD-7)", func() {
 	BeforeEach(func() {
-		body_failOnIncompleteCoverageAcceptanceTest_83()
+		skipWithoutRealTypeScriptCompiler()
 	})
 
 	When("the tsRootScopeGapTSConfigJSON fixture produces incomplete model coverage", Label("ts-project-backend"), func() {

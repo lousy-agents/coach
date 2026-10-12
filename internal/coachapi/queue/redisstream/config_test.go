@@ -16,7 +16,9 @@ func TestConfigValidate(t *testing.T) {
 	}
 
 	t.Run("valid config passes", func(t *testing.T) {
-		body_configTest_validConfigPasses_18(t, baseValid)
+		if err := baseValid().Validate(); err != nil {
+			t.Fatalf("Validate() = %v, want nil", err)
+		}
 	})
 
 	tests := []struct {
@@ -31,8 +33,18 @@ func TestConfigValidate(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			body_configTest_35(t, baseValid, tc)
+			expectValidateRejects(t, baseValid(), tc.mutate, tc.name)
 		})
+	}
+}
+
+// expectValidateRejects applies mutate to an otherwise valid cfg and
+// requires Validate to reject the result.
+func expectValidateRejects(t *testing.T, cfg Config, mutate func(*Config), name string) {
+	t.Helper()
+	mutate(&cfg)
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("Validate() = nil, want an error for %s", name)
 	}
 }
 
@@ -55,39 +67,5 @@ func TestPoisonStreamName(t *testing.T) {
 	want := "coach-analysis-poison"
 	if got != want {
 		t.Fatalf("poisonStreamName() = %q, want %q", got, want)
-	}
-}
-
-// TestNewQueueValidatesConfigBeforeDialing proves NewQueue rejects an
-// invalid Config without needing a reachable Redis instance -- it must
-// fail on cfg.Validate(), not on a Ping timeout.
-func TestNewQueueValidatesConfigBeforeDialing(t *testing.T) {
-	_, err := NewQueue(Config{}, nil)
-	if err == nil {
-		t.Fatalf("NewQueue(zero Config) = nil error, want a validation error")
-	}
-}
-
-// TestNewQueueFailsFastAgainstUnreachableRedis proves the outbound
-// network policy (AGENTS.md "Outbound HTTP required policy", applied here
-// to the Redis dial): NewQueue must not hang against an unreachable
-// address, it must return within a small bound derived from
-// Config.DialTimeout.
-func TestNewQueueFailsFastAgainstUnreachableRedis(t *testing.T) {
-	start := time.Now()
-	_, err := NewQueue(Config{
-		Address:       "127.0.0.1:1",
-		Stream:        "coach-analysis",
-		ConsumerGroup: "coach-workers",
-		ClaimAfter:    time.Minute,
-		DialTimeout:   200 * time.Millisecond,
-	}, nil)
-	elapsed := time.Since(start)
-
-	if err == nil {
-		t.Fatalf("NewQueue against an unreachable address = nil error, want a connection error")
-	}
-	if elapsed > 5*time.Second {
-		t.Fatalf("NewQueue against an unreachable address took %v, want it to fail fast (bounded by DialTimeout)", elapsed)
 	}
 }

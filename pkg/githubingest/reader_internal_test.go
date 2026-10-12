@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"strings"
 	"testing"
 	"time"
 )
@@ -61,10 +62,40 @@ func TestNewGitHubFileReader_TargetsConfiguredBaseURL(t *testing.T) {
 	key := internalTestRSAPrivateKeyPEM(t)
 
 	t.Run("defaults to github.com when BaseURL is unset", func(t *testing.T) {
-		body_readerInternalTest_defaultsToGithubComWhenBaseURLIsUnset_64(t, key)
+		reader, err := NewGitHubFileReader(GitHubAppConfig{
+			AppID:          1,
+			InstallationID: 2,
+			PrivateKey:     key,
+		})
+		if err != nil {
+			t.Fatalf("NewGitHubFileReader: unexpected error: %v", err)
+		}
+
+		got := reader.client.BaseURL()
+		if !strings.Contains(got, "api.github.com") {
+			t.Fatalf("client base URL with no BaseURL configured: got %q, want it to target api.github.com", got)
+		}
 	})
 
 	t.Run("targets the configured GitHub Enterprise base URL", func(t *testing.T) {
-		body_readerInternalTest_targetsTheConfiguredGitHubEnterpriseBaseURL_80(t, key)
+		const enterpriseURL = "https://ghe.example.com/"
+
+		reader, err := NewGitHubFileReader(GitHubAppConfig{
+			AppID:          1,
+			InstallationID: 2,
+			PrivateKey:     key,
+			BaseURL:        enterpriseURL,
+		})
+		if err != nil {
+			t.Fatalf("NewGitHubFileReader: unexpected error: %v", err)
+		}
+
+		got := reader.client.BaseURL()
+		if !strings.Contains(got, "ghe.example.com") {
+			t.Fatalf("client base URL with BaseURL=%q: got %q, want it to target ghe.example.com instead of github.com", enterpriseURL, got)
+		}
+		if strings.Contains(got, "api.github.com") {
+			t.Fatalf("client base URL with BaseURL=%q: got %q, want it not to target api.github.com", enterpriseURL, got)
+		}
 	})
 }

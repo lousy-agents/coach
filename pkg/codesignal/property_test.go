@@ -3,7 +3,6 @@ package codesignal
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"testing"
 
 	"github.com/lousy-agents/coach/pkg/semantics"
@@ -42,36 +41,6 @@ func TestProperty_ReorderingInputDoesNotChangeReportJSON(t *testing.T) {
 	}
 }
 
-func TestProperty_RangeOverlapNeverPanics(t *testing.T) {
-	const maxUint = uint(math.MaxUint32)
-
-	tests := []struct {
-		name   string
-		ranges []LineRange
-		loc    semantics.Location
-	}{
-		{"zero range, zero location", []LineRange{{StartRow: 0, EndRow: 0}}, semantics.Location{StartRow: 0, EndRow: 0}},
-		{"huge range, zero location", []LineRange{{StartRow: 0, EndRow: maxUint}}, semantics.Location{StartRow: 0, EndRow: 0}},
-		{"huge location, zero range", []LineRange{{StartRow: 0, EndRow: 0}}, semantics.Location{StartRow: maxUint, EndRow: maxUint}},
-		{"start == end at max", []LineRange{{StartRow: maxUint, EndRow: maxUint}}, semantics.Location{StartRow: maxUint, EndRow: maxUint}},
-		{"invalid range start > end", []LineRange{{StartRow: maxUint, EndRow: 0}}, semantics.Location{StartRow: 0, EndRow: maxUint}},
-		{"huge gap between range and location", []LineRange{{StartRow: 0, EndRow: 1}}, semantics.Location{StartRow: maxUint, EndRow: maxUint}},
-		{"no ranges at all", nil, semantics.Location{StartRow: maxUint, EndRow: maxUint}},
-		{"many ranges", []LineRange{
-			{StartRow: 0, EndRow: 0},
-			{StartRow: maxUint, EndRow: maxUint},
-			{StartRow: 5, EndRow: 3},
-			{StartRow: 1000000, EndRow: 2000000},
-		}, semantics.Location{StartRow: 1500000, EndRow: 1500000}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			body_propertyTest_69(t, tt)
-		})
-	}
-}
-
 func reorderingScenarioInput() Input {
 	return Input{
 		Scope: Scope{Repository: "example/repo", Revision: "rev1", Base: "main"},
@@ -90,7 +59,8 @@ func reorderingScenarioInput() Input {
 					Path:        "a.go",
 					ParseStatus: semantics.ParseStatus("ok"),
 					Findings: []semantics.Finding{
-
+						// Two occurrences sharing the same key ("Dup", "x = 1") --
+						// exercises occurrence-ordinal grouping.
 						{Kind: "mutates_input", Name: "Dup", Location: semantics.Location{StartRow: 5}, Evidence: "x = 1"},
 						{Kind: "mutates_input", Name: "Dup", Location: semantics.Location{StartRow: 8}, Evidence: "x = 1"},
 						{Kind: "mutates_input", Name: "Alpha", Location: semantics.Location{StartRow: 12}, Evidence: "y = 2"},
@@ -123,4 +93,34 @@ func reorderingScenarioInput() Input {
 			},
 		},
 	}
+}
+
+func reverseFileChanges(files []FileChange) []FileChange {
+	out := make([]FileChange, len(files))
+	for i, fc := range files {
+		reordered := fc
+		if fc.Base != nil {
+			baseCopy := *fc.Base
+			baseCopy.Findings = reverseFindings(fc.Base.Findings)
+			reordered.Base = &baseCopy
+		}
+		if fc.Head != nil {
+			headCopy := *fc.Head
+			headCopy.Findings = reverseFindings(fc.Head.Findings)
+			reordered.Head = &headCopy
+		}
+		out[len(files)-1-i] = reordered
+	}
+	return out
+}
+
+func reverseFindings(findings []semantics.Finding) []semantics.Finding {
+	if findings == nil {
+		return nil
+	}
+	out := make([]semantics.Finding, len(findings))
+	for i, f := range findings {
+		out[len(findings)-1-i] = f
+	}
+	return out
 }

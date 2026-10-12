@@ -28,14 +28,22 @@ func pathExcludingExecutables(names ...string) string {
 		if dir == "" {
 			continue
 		}
-		excluded := false
-		(&sigpathExcludingExecutablesS2{dir: dir, excluded: &excluded, names: names}).call()
-
-		if !excluded {
+		if !dirHoldsAnyFile(dir, names) {
 			kept = append(kept, dir)
 		}
 	}
 	return strings.Join(kept, string(os.PathListSeparator))
+}
+
+// dirHoldsAnyFile reports whether dir contains a non-directory entry named
+// any of names.
+func dirHoldsAnyFile(dir string, names []string) bool {
+	for _, name := range names {
+		if info, err := os.Stat(filepath.Join(dir, name)); err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
 }
 
 var _ = Describe("coach codesignal core Go path with Node absent from PATH", func() {

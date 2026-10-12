@@ -19,13 +19,6 @@ import (
 	"github.com/lousy-agents/coach/internal/fakegithub"
 )
 
-const (
-	oauthClientID     = "coach-oauth-client-id"
-	oauthClientSecret = "coach-oauth-client-secret"
-	oauthRedirectURI  = "http://coach.test/oauth/github/callback"
-	oauthScenarioCode = "code-ok"
-)
-
 var _ = Describe("GitHub OAuth identity for Coach JWT minting", func() {
 	When("a user completes the fake-GitHub OAuth round-trip", func() {
 		It("mints a Coach JWT that authorizes /v1/me, requests no scope on authorize, and rejects the GitHub OAuth access token on /v1", func() {
@@ -128,7 +121,38 @@ var _ = Describe("GitHub OAuth identity for Coach JWT minting", func() {
 	When("OAuth callback receives bad, missing, or expired state", func() {
 		DescribeTable("returns 400 invalid_request",
 			func(mutateQuery func(code, goodState string) url.Values, setupClock func(now *time.Time, base time.Time)) {
-				body_oauthAcceptanceTest_returns400InvalidRequest_130(mutateQuery, setupClock)
+				_, gh := newOAuthFake()
+				base := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+				now := base
+				svc := newOAuthService(gh.URL(), func() time.Time { return now }, time.Minute)
+				h := svc.Handler()
+				client := noRedirectClient()
+				coach := httptest.NewServer(h)
+				DeferCleanup(coach.Close)
+
+				goodState := startOAuthAndParseState(client, coach.URL)
+
+				authResp, err := client.Get(gh.URL() + "/login/oauth/authorize?" + url.Values{
+					"client_id":     {oauthClientID},
+					"redirect_uri":  {oauthRedirectURI},
+					"state":         {goodState},
+					"scenario_code": {oauthScenarioCode},
+				}.Encode())
+				Expect(err).NotTo(HaveOccurred())
+				DeferCleanup(func() { _ = authResp.Body.Close() })
+				Expect(authResp.StatusCode).To(Equal(http.StatusFound))
+				u, err := url.Parse(authResp.Header.Get("Location"))
+				Expect(err).NotTo(HaveOccurred())
+				code := u.Query().Get("code")
+				Expect(code).NotTo(BeEmpty())
+
+				now = base
+				if setupClock != nil {
+					setupClock(&now, base)
+				}
+				query := mutateQuery(code, goodState)
+				status, body := doReq(h, http.MethodGet, "/oauth/github/callback?"+query.Encode(), "", nil)
+				expectInvalidRequest(status, body)
 			},
 			Entry("missing state",
 				func(code, _ string) url.Values { return url.Values{"code": {code}} },
@@ -149,19 +173,11 @@ var _ = Describe("GitHub OAuth identity for Coach JWT minting", func() {
 		)
 	})
 
-	When("APIBaseURL differs from BaseURL (real GitHub host split)", func() {
-		It("exchanges the code on BaseURL, fetches /user on APIBaseURL, and mints a Coach JWT for that identity", func() {
-			body_oauthAcceptanceTest_exchangesTheCodeOnBaseURLFetchesUserOnAPIBaseURL_184()
-		})
-	})
-
 	When("GitHub /user returns an incomplete identity", func() {
 		DescribeTable("returns 400 invalid_request and does not mint a Coach token",
 			func(user map[string]any) {
 				const ghAccessToken = "gho_incomplete_user"
-				gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					body_oauthAcceptanceTest_307(w, r, user, ghAccessToken)
-				}))
+				gh := httptest.NewServer(serveIncompleteUserIdentity(user, ghAccessToken))
 				DeferCleanup(gh.Close)
 
 				svc := newOAuthService(gh.URL, nil, 0)
@@ -293,56 +309,10 @@ var _ = Describe("GitHub OAuth identity for Coach JWT minting", func() {
 	})
 })
 
-// errOAuthState fails Save and/or Consume so handlers can prove fail-closed 503.
-type errOAuthState struct {
-	saveErr    error
-	consumeErr error
-}
-
-func newOAuthService(githubBase string, now func() time.Time, stateTTL time.Duration) *authn.Service {
-	if now == nil {
-		now = fixedNow(time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC))
-	}
-	if stateTTL <= 0 {
-		stateTTL = 10 * time.Minute
-	}
-	svc, err := authn.New(authn.Options{
-		SigningKey: []byte(testSecret),
-		Issuer:     testIssuer,
-		TokenTTL:   time.Hour,
-		Now:        now,
-		Denylist:   authn.NewMemoryDenylist(),
-		GitHubOAuth: &authn.GitHubOAuthConfig{
-			ClientID:     oauthClientID,
-			ClientSecret: oauthClientSecret,
-			BaseURL:      githubBase,
-			RedirectURI:  oauthRedirectURI,
+func noRedirectClient() *http.Client {
+	return &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
 		},
-		OAuthState:    authn.NewMemoryOAuthState(),
-		OAuthStateTTL: stateTTL,
-	})
-	Expect(err).NotTo(HaveOccurred())
-	return svc
-}
-
-func startOAuthAndParseState(client *http.Client, coachURL string) string {
-	startResp, err := client.Get(coachURL + "/oauth/github/start")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(func() { _ = startResp.Body.Close() })
-	Expect(startResp.StatusCode).To(Equal(http.StatusFound))
-	authURL, err := url.Parse(startResp.Header.Get("Location"))
-	Expect(err).NotTo(HaveOccurred())
-	state := authURL.Query().Get("state")
-	Expect(state).NotTo(BeEmpty())
-	return state
-}
-
-func expectInvalidRequest(code int, body []byte) {
-	Expect(code).To(Equal(http.StatusBadRequest), "body=%s", body)
-	env := decodeEnvelope(body)
-	Expect(env.Error.Code).To(Equal(coachapi.ErrorCodeInvalidRequest))
-}
-
-func expectNoAccessToken(body []byte) {
-	Expect(string(body)).NotTo(ContainSubstring("access_token"), "must not issue a token; body=%s", body)
+	}
 }

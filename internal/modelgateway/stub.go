@@ -2,9 +2,6 @@ package modelgateway
 
 import (
 	"context"
-
-	"regexp"
-	"strings"
 )
 
 // StubOptions configures optional StubGateway behavior (tests may inject typed errors).
@@ -23,6 +20,13 @@ type StubGateway struct {
 
 // NewStubGateway returns a deterministic StubGateway. With no options it serves
 // canned schema-valid judgments; StubOptions.JudgeErr forces a typed error path.
+func NewStubGateway(opts ...StubOptions) *StubGateway {
+	g := &StubGateway{}
+	if len(opts) > 0 {
+		g.judgeErr = opts[0].JudgeErr
+	}
+	return g
+}
 
 func (g *StubGateway) Judge(ctx context.Context, req JudgmentRequest) (JudgmentResponse, error) {
 	if err := ctx.Err(); err != nil {
@@ -52,45 +56,4 @@ func (g *StubGateway) Judge(ctx context.Context, req JudgmentRequest) (JudgmentR
 		JudgmentJSON:   judgment,
 		LogicalModelID: LogicalModelStub,
 	}, nil
-}
-
-// isBatchItemsOutputSchema reports whether schema is a multi-finding batch
-// envelope (object with an items array property). Used so the stub can return
-// canned batch JSON without routing through the singular string|null validator.
-
-var findingRefLine = regexp.MustCompile(`(?m)(?:^|\s)finding_ref:\s*(\S+)`)
-
-// No refs in messages: emit a single stub item so schema shape is valid.
-
-// Unreachable with fixed structs; keep Judge from panicking.
-
-func extractFindingRefsFromMessages(msgs []Message) []string {
-	var refs []string
-	for _, m := range msgs {
-		refs = appendUniqueFindingRefs(refs, m.Content)
-	}
-	return refs
-}
-
-func appendUniqueFindingRefs(refs []string, content string) []string {
-	for _, match := range findingRefLine.FindAllStringSubmatch(content, -1) {
-		if len(match) < 2 {
-			continue
-		}
-		ref := strings.TrimSpace(match[1])
-		if ref == "" || containsFindingRef(refs, ref) {
-			continue
-		}
-		refs = append(refs, ref)
-	}
-	return refs
-}
-
-func containsFindingRef(refs []string, ref string) bool {
-	for _, existing := range refs {
-		if existing == ref {
-			return true
-		}
-	}
-	return false
 }

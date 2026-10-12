@@ -14,6 +14,11 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/githubingest"
@@ -36,6 +41,14 @@ type thinproofResult struct {
 	FakeGitHubRecords []acceptanceharness.RequestRecord       `json:"fake_github_records"`
 }
 
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "thinproof-runner: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("thinproof-runner: proof succeeded")
+}
+
 func run() error {
 	session, err := openThinproofSession()
 	if err != nil {
@@ -44,11 +57,13 @@ func run() error {
 	return scanThinproof(session)
 }
 
-// waitForHost retries a plain TCP dial against hostport until it succeeds
-// or timeout elapses, so a Compose ordering race (runner starting before
-// fake-github is accepting connections) fails with a clear timeout instead
-// of a flaky first-attempt connection-refused error.
-
-// generateRSAPrivateKeyPEM mirrors
-// internal/acceptanceharness/testcreds.go's GenerateRSAPrivateKeyPEM, which
-// takes a testing.TB and so cannot be called from this non-test binary.
+func writeResult(path string, result thinproofResult) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}

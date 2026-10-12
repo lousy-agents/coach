@@ -12,10 +12,7 @@ import (
 // covers every name in tsToctouActCallNames so deleting any one of them
 // from that set fails a case here.
 func TestComputeTSFeatures_TOCTOUCheckThenAct_PositiveFinding(t *testing.T) {
-	tests := []struct {
-		name        string
-		actCallText string
-	}{
+	tests := []tsTOCTOUActCallCase{
 		{name: "readFileSync", actCallText: `readFileSync(p, "utf8")`},
 		{name: "writeFileSync", actCallText: `writeFileSync(p, "seed")`},
 		{name: "appendFileSync", actCallText: `appendFileSync(p, "more")`},
@@ -25,8 +22,45 @@ func TestComputeTSFeatures_TOCTOUCheckThenAct_PositiveFinding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsToctouTest_27(t, tt)
+			expectTSTOCTOUFindingForActCall(t, tt)
 		})
+	}
+}
+
+type tsTOCTOUActCallCase struct {
+	name        string
+	actCallText string
+}
+
+func expectTSTOCTOUFindingForActCall(t *testing.T, tt tsTOCTOUActCallCase) {
+	source := "function f(p: string) {\n\tif (existsSync(p)) {\n\t\t" + tt.actCallText + ";\n\t}\n}\n"
+	root, closeTree := mustParseTS(t, []byte(source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(source))
+
+	var got []Finding
+	for _, f := range findings {
+		if f.Kind == "toctou_check_then_act" {
+			got = append(got, f)
+		}
+	}
+	if len(got) != 1 {
+		t.Fatalf("computeTSFeatures for %q: got %d toctou_check_then_act findings (%+v), want exactly 1", source, len(got), findings)
+	}
+	f := got[0]
+	if f.Kind != "toctou_check_then_act" {
+		t.Errorf("Finding.Kind = %q, want %q", f.Kind, "toctou_check_then_act")
+	}
+	if f.Confidence != "medium" {
+		t.Errorf("Finding.Confidence = %q, want %q", f.Confidence, "medium")
+	}
+	if f.SuggestedSkill != "find-bugs" {
+		t.Errorf("Finding.SuggestedSkill = %q, want %q", f.SuggestedSkill, "find-bugs")
+	}
+	gotText := source[f.Location.StartByte:f.Location.EndByte]
+	if gotText != tt.actCallText {
+		t.Errorf("Finding.Location text = %q, want %q (Location must point at the act call, not the check call)", gotText, tt.actCallText)
 	}
 }
 
@@ -35,10 +69,7 @@ func TestComputeTSFeatures_TOCTOUCheckThenAct_PositiveFinding(t *testing.T) {
 // identical path text" pattern, so each must yield zero
 // toctou_check_then_act findings.
 func TestComputeTSFeatures_TOCTOUCheckThenAct_ExcludedCases(t *testing.T) {
-	tests := []struct {
-		name   string
-		source string
-	}{
+	tests := []tsTOCTOUSourceCase{
 		{
 			name: "path text differs between check and act",
 			source: `function f(a: string, b: string) {
@@ -107,7 +138,24 @@ func TestComputeTSFeatures_TOCTOUCheckThenAct_ExcludedCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body_tsToctouTest_137(t, tt)
+			expectNoTSTOCTOUFinding(t, tt)
 		})
+	}
+}
+
+type tsTOCTOUSourceCase struct {
+	name   string
+	source string
+}
+
+func expectNoTSTOCTOUFinding(t *testing.T, tt tsTOCTOUSourceCase) {
+	root, closeTree := mustParseTS(t, []byte(tt.source))
+	defer closeTree()
+
+	_, findings := computeTSFeatures(root, []byte(tt.source))
+	for _, f := range findings {
+		if f.Kind == "toctou_check_then_act" {
+			t.Fatalf("computeTSFeatures for %q: got toctou_check_then_act finding %+v, want none", tt.source, f)
+		}
 	}
 }

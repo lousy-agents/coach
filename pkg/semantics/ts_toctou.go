@@ -14,17 +14,6 @@ type tsLocationKey struct {
 	endByte   uint
 }
 
-// tsToctouActCallNames is the CWE-367 "act" file-operation call name set
-// (Story 1): synchronous Node fs calls whose target path can change between
-// a preceding existsSync gate observing it and this call acting on it.
-var tsToctouActCallNames = map[string]bool{
-	"readFileSync":   true,
-	"writeFileSync":  true,
-	"appendFileSync": true,
-	"unlinkSync":     true,
-	"rmSync":         true,
-}
-
 // checkTOCTOUCheckThenAct emits a "toctou_check_then_act" Finding (Story 1,
 // CWE-367) if n (an if_statement or while_statement) gates its guarded body
 // -- the if's "consequence" field or the while's "body" field, never the
@@ -80,48 +69,6 @@ func (c *tsFeatureCollector) checkTOCTOUCheckThenAct(n engine.Node, source []byt
 	c.findings = append(c.findings, newTOCTOUCheckThenActFinding(cond, act, checkArg.Utf8Text(source), source))
 }
 
-// findTSToctouActCall searches n's subtree (including inside any nested
-// function-like constructs -- this detector does no scope resolution, only
-// syntactic call/argument-text matching) for a call_expression named in
-// tsToctouActCallNames whose first argument's source text equals pathText,
-// returning the first one found or nil.
-
-// tsToctouCallArg returns call's first argument node if call is a
-// call_expression named wantName -- a bare identifier callee (`wantName(...)`)
-// or a member_expression callee whose "property" field's text is wantName
-// (`<obj>.wantName(...)`), for any object -- or nil otherwise.
-
-// tsCallFunctionName resolves call's callee name: the bare identifier
-// (`existsSync`) or the "property" field's text for a member_expression
-// callee (`fs.existsSync`), regardless of the object. It reports ok == false
-// for any other callee shape (e.g. a call result: `f()()`) or if call is
-// not a call_expression.
-func tsCallFunctionName(call engine.Node, source []byte) (name string, ok bool) {
-	if call == nil || call.Kind() != "call_expression" {
-		return "", false
-	}
-	fn := call.ChildByFieldName("function")
-	if fn == nil {
-		return "", false
-	}
-	switch fn.Kind() {
-	case "identifier":
-		return fn.Utf8Text(source), true
-	case "member_expression":
-		property := fn.ChildByFieldName("property")
-		if property == nil {
-			return "", false
-		}
-		return property.Utf8Text(source), true
-	default:
-		return "", false
-	}
-}
-
-// tsCallFirstArgument returns call's "arguments" field's first non-
-// punctuation child (the first argument expression), or nil if call has no
-// arguments.
-
 // newTOCTOUCheckThenActFinding builds a "toctou_check_then_act" Finding
 // (Story 1, CWE-367) for an existsSync-style checkCall guarding actCall (a
 // matching fs act call on the identical path text pathText). Location is
@@ -138,4 +85,16 @@ func newTOCTOUCheckThenActFinding(checkCall, actCall engine.Node, pathText strin
 		Recommendation: "Don't gate a filesystem operation behind an existsSync check on the same path -- the file can be created, removed, or replaced between the check and the act (CWE-367/TOCTOU). Call the operation directly and handle its ENOENT (or equivalent) error instead (EAFP-style); fs.promises.access does not close this race either, since it is still a separate check before the act.",
 		SuggestedSkill: "find-bugs",
 	}
+}
+
+// tsToctouCallArg returns call's first argument node if call is a
+// call_expression named wantName -- a bare identifier callee (`wantName(...)`)
+// or a member_expression callee whose "property" field's text is wantName
+// (`<obj>.wantName(...)`), for any object -- or nil otherwise.
+func tsToctouCallArg(call engine.Node, source []byte, wantName string) engine.Node {
+	name, ok := tsCallFunctionName(call, source)
+	if !ok || name != wantName {
+		return nil
+	}
+	return tsCallFirstArgument(call)
 }

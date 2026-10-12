@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/lousy-agents/coach/internal/coachapi/store/memory"
+	"github.com/lousy-agents/coach/internal/coachapi/store/postgres"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
@@ -51,9 +54,9 @@ func buildDependencies(ctx context.Context, cfg Config) (Dependencies, error) {
 			return Dependencies{}, fmt.Errorf("coach-worker: constructing Postgres pool: %w", err)
 		}
 		deps.closers = append(deps.closers, closerFunc(pool.Close))
-		deps.Store = coachapi.NewPostgresStore(pool)
+		deps.Store = postgres.NewStore(pool)
 	} else {
-		deps.Store = coachapi.NewMemoryStore()
+		deps.Store = memory.NewStore()
 	}
 
 	return deps, nil

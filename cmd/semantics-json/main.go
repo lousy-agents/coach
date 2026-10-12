@@ -15,13 +15,21 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
-
+	"flag"
 	"fmt"
 	"io"
-
-	"github.com/lousy-agents/coach/internal/jsbridge"
+	"os"
 )
+
+func main() {
+	once := flag.Bool("once", false, "read exactly one request, respond, and exit")
+	flag.Parse()
+
+	if err := serve(context.Background(), os.Stdin, os.Stdout, *once); err != nil {
+		fmt.Fprintf(os.Stderr, "semantics-json: %v\n", err)
+		os.Exit(1)
+	}
+}
 
 // maxLineBytes bounds one request line. The analyzer's default content cap
 // is 2 MiB, which base64 inflates by 4/3; 8 MiB leaves generous slack for
@@ -53,27 +61,6 @@ func serve(ctx context.Context, in io.Reader, out io.Writer, once bool) error {
 	}
 	if once {
 		return fmt.Errorf("stdin closed before a request arrived")
-	}
-	return nil
-}
-
-// handleLine decodes one request line and runs it through the bridge. A
-// line that isn't valid Request JSON gets id 0 — unattributable, which the
-// JS side treats as fatal for its child process.
-
-func writeResponse(writer *bufio.Writer, resp jsbridge.Response) error {
-	encoded, err := json.Marshal(resp)
-	if err != nil {
-		return fmt.Errorf("marshal response: %w", err)
-	}
-	if _, err := writer.Write(encoded); err != nil {
-		return fmt.Errorf("write response: %w", err)
-	}
-	if err := writer.WriteByte('\n'); err != nil {
-		return fmt.Errorf("write response: %w", err)
-	}
-	if err := writer.Flush(); err != nil {
-		return fmt.Errorf("flush response: %w", err)
 	}
 	return nil
 }

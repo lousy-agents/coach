@@ -3,37 +3,12 @@ package modelgateway
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-
+	"fmt"
 	"io"
 	"net/http"
 )
 
 const maxUpstreamResponseBytes = 8 << 20
-
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type chatCompletionRequest struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
-	Stream   bool          `json:"stream"`
-	// Think is Ollama-style; omitempty keeps portable OpenAI bodies clean.
-	Think *bool `json:"think,omitempty"`
-}
-
-type chatCompletionResponse struct {
-	Model   string `json:"model"`
-	Choices []struct {
-		Message struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-}
 
 func (c *OpenAICompatClient) callChatCompletions(ctx context.Context, logicalModel string, messages []Message) (servedModel, content string, err error) {
 	body, err := marshalChatCompletionRequest(logicalModel, messages, c.disableThinking)
@@ -62,28 +37,6 @@ func (c *OpenAICompatClient) callChatCompletions(ctx context.Context, logicalMod
 	return parseChatCompletionBody(respBody)
 }
 
-func marshalChatCompletionRequest(logicalModel string, messages []Message, disableThinking bool) ([]byte, error) {
-	wireMsgs := make([]chatMessage, 0, len(messages))
-	for _, m := range messages {
-		wireMsgs = append(wireMsgs, chatMessage{Role: m.Role, Content: m.Content})
-	}
-	req := chatCompletionRequest{
-		Model:    logicalModel,
-		Messages: wireMsgs,
-		Stream:   false,
-	}
-	if disableThinking {
-		// Ollama-style: think:false disables reasoning-only channels.
-		f := false
-		req.Think = &f
-	}
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, NewUnavailableError("encode request", err)
-	}
-	return body, nil
-}
-
 func (c *OpenAICompatClient) newChatCompletionsRequest(ctx context.Context, body []byte) (*http.Request, error) {
 	endpoint := c.baseURL + "/v1/chat/completions"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
@@ -99,4 +52,20 @@ func (c *OpenAICompatClient) newChatCompletionsRequest(ctx context.Context, body
 	return httpReq, nil
 }
 
-// 5xx, 408, 429, and other non-2xx are unavailability of inference for callers.
+func (c *OpenAICompatClient) applyAuthHeaders(httpReq *http.Request) {
+	if c.authHeader != "" {
+		httpReq.Header.Set("Authorization", c.authHeader)
+		return
+	}
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+}
+
+func classifyUpstreamStatus(status int) error {
+	if status >= 200 && status < 300 {
+		return nil
+	}
+	// 5xx, 408, 429, and other non-2xx are unavailability of inference for callers.
+	return NewUnavailableError(fmt.Sprintf("upstream HTTP %d", status), nil)
+}
