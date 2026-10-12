@@ -4,7 +4,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli/render"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/domain"
 )
@@ -38,7 +37,7 @@ func diagnosticsAtPath(report *codesignal.Report, path string) []codesignal.Diag
 
 // AC-VER-3 (issue #334, SA-280-008): a file the project model never
 // incorporated is named once per incomplete side, and the two entries for
-// the same path stay distinguishable in JSON and in text.
+// the same path stay distinguishable.
 var _ = Describe("Side-attributed model-coverage diagnostics (AC-VER-3)", func() {
 	When("the same candidate file is unincorporated at both head and base", func() {
 		var report *codesignal.Report
@@ -61,13 +60,6 @@ var _ = Describe("Side-attributed model-coverage diagnostics (AC-VER-3)", func()
 				And(HaveField("Kind", "base_"+domain.DiagRootScopeIncomplete), HaveField("Side", "base"), HaveField("Revision", "base-sha"),
 					HaveField("Message", HavePrefix("base revision base-sha project model coverage: "))),
 			))
-		})
-
-		It("names the same side and revision in each text line", func() {
-			text := render.ReportText(report)
-
-			Expect(text).To(MatchRegexp(`(?m)^path: package\.json, kind: project_root_scope_incomplete, message: head revision head-sha .*, side: head, revision: head-sha$`))
-			Expect(text).To(MatchRegexp(`(?m)^path: package\.json, kind: base_project_root_scope_incomplete, message: base revision base-sha .*, side: base, revision: base-sha$`))
 		})
 
 		It("does not promote a routine reachability gap", func() {

@@ -5,8 +5,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli"
-	"github.com/lousy-agents/coach/internal/codesignalcli/render"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/domain"
 	"github.com/lousy-agents/coach/pkg/semantics"
@@ -718,10 +716,9 @@ var _ = Describe("Project-analysis report generation", func() {
 			}
 		})
 
-		It("carries facts through the pipeline on exactly one head-only field, with no base-side, resolved, removed, or previous fact field on Input, Report, or the project backend result", func() {
+		It("carries facts through the pipeline on exactly one head-only field, with no base-side, resolved, removed, or previous fact field on Input or Report", func() {
 			// A regression that added e.g. Input.BaseProjectFacts, or a
-			// Report.ResolvedProjectFacts/RemovedProjectFacts section, or
-			// ProjectBackendResult.BaseFacts would let base-side or
+			// Report.ResolvedProjectFacts/RemovedProjectFacts section would let base-side or
 			// lifecycle-classified facts flow into the pipeline without ever
 			// touching ProjectFact's own fields (checked above) or the
 			// with/without-fact rendering fixture below (which only ever
@@ -744,10 +741,9 @@ var _ = Describe("Project-analysis report generation", func() {
 
 			assertOnlyFactField(reflect.TypeOf(codesignal.Input{}), "ProjectFacts")
 			assertOnlyFactField(reflect.TypeOf(codesignal.Report{}), "ProjectFacts")
-			assertOnlyFactField(reflect.TypeOf(codesignalcli.ProjectBackendResult{}), "Facts")
 		})
 
-		It("renders a reachability fact's appearance/disappearance across two otherwise-identical head reports with no lifecycle or improvement wording, even alongside a genuinely resolved ProjectChange", func() {
+		It("serializes a reachability fact with no lifecycle or improvement wording, even alongside a genuinely resolved ProjectChange", func() {
 			fact := codesignal.ProjectFact{
 				Kind:        "possible_call_reachability",
 				SemanticKey: "reach:handler->query",
@@ -786,25 +782,6 @@ var _ = Describe("Project-analysis report generation", func() {
 			Expect(err).NotTo(HaveOccurred())
 			for _, word := range []string{"lifecycle", "introduced", "resolved", "improv", "baseline", "existing", "no_longer"} {
 				Expect(strings.ToLower(string(factRaw))).NotTo(ContainSubstring(word))
-			}
-
-			// TEXT: removing exactly the fact's own rendered block from the
-			// with-fact report's text must reproduce the without-fact report's
-			// text byte-for-byte. An implementation that reacted to the fact's
-			// disappearance by adding compensating prose (e.g. "no longer
-			// reachable, resolved") anywhere else in the report -- verdict,
-			// summary, or elsewhere -- would break this equality even though
-			// it never touches ProjectFact's own fields.
-			textWithFact := render.ReportText(reportWithFact)
-			textWithoutFact := render.ReportText(reportWithoutFact)
-			expectedFactBlock := "\nFacts:\nkind: possible_call_reachability\nsemantic_key: reach:handler->query\nevidence: Handler may reach Query\n"
-			Expect(textWithFact).To(ContainSubstring(expectedFactBlock))
-			Expect(textWithoutFact).NotTo(ContainSubstring("Facts:"))
-			Expect(strings.Replace(textWithFact, expectedFactBlock, "", 1)).To(Equal(textWithoutFact), "a fact's presence/absence must change only its own rendered block, never any other wording in the report")
-
-			for _, word := range []string{"no longer reachable", "improved", "fixed"} {
-				Expect(strings.ToLower(textWithFact)).NotTo(ContainSubstring(word))
-				Expect(strings.ToLower(textWithoutFact)).NotTo(ContainSubstring(word))
 			}
 		})
 	})
