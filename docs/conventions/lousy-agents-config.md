@@ -28,7 +28,7 @@ Diagnostic names are `<tool>_config_*`. Coach's names today:
 
 ## Migration prompt
 
-The migration prompt appears only for a scan (`coach codesignal --baseline` or `--base`) on an attended terminal. `--check-project`, `--prepare-compiler`, and `--suggest-project-config` do not prompt. Non-interactive use does not prompt. `--no-interactive`, or a non-empty `CI` environment variable, emits `project_config_migration_skipped` with this command:
+The migration prompt appears only for a scan (`coach codesignal --baseline` or `--base`) on an attended terminal. `--check-project`, `--prepare-compiler`, and `--suggest-project-config` do not prompt. A scan whose stdin is not a terminal emits `project_config_migration_skipped`. `--no-interactive`, or a non-empty `CI` environment variable, emits the same diagnostic, with this command:
 
 ```sh
 mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json

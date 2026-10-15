@@ -28,7 +28,7 @@ coach codesignal --baseline --suggest-project-config --project-language typescri
 coach codesignal --baseline --project-config .lousy-agents/coach.json --project-language typescript --format json
 ```
 
-`--check-project` is readiness, not a scan (exit `0` even with gaps). `--suggest-project-config` is an interactive TTY and writes nothing until you confirm. Project mode needs that committed policy plus a supported compiler and Node 24 or 26. An empty `signals` array is not compliance.
+`--check-project` is readiness, not a scan (exit `0` even with gaps). The TypeScript form of `--suggest-project-config` is an interactive TTY and writes nothing until you confirm; the Go form writes the candidate without prompting. Project mode needs that committed policy plus a supported compiler and Node 24 or 26. An empty `signals` array is not compliance.
 
 Full flags and schema: [CLI contract](./docs/cli-codesignal.md).
 
