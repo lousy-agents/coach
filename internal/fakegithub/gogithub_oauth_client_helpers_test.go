@@ -1,7 +1,7 @@
 package fakegithub_test
 
 import (
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/lousy-agents/coach/internal/fakegithub"
 	. "github.com/onsi/gomega"
 )
