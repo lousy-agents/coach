@@ -121,6 +121,29 @@ var _ = Describe("coach project config discovery", func() {
 		})
 	})
 
+	When("a typescript baseline scan finds a committed invalid canonical policy and a valid project.json", func() {
+		It("prints the same stderr as an explicit --project-config of that canonical file, apart from the path", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, coachConfigPath, invalidPolicyText)
+			commitFile(repo, legacyConfigPath, singleRootPolicyJSON)
+			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+			commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
+			path := pathWithStubNode("v24.9.9")
+
+			implicitStdout, implicitStderr, implicitExit := runCoachCodesignalBaselineEnv(repo, path, "--project-language", "typescript", "--format=json")
+			explicitStdout, explicitStderr, explicitExit := runCoachCodesignalBaselineEnv(repo, path, "--project-config", coachConfigPath, "--project-language", "typescript", "--format=json")
+
+			Expect(implicitExit).To(Equal(2), "an invalid canonical policy is a usage error; stdout=%s stderr=%s", implicitStdout, implicitStderr)
+			Expect(explicitExit).To(Equal(2), "stdout=%s stderr=%s", explicitStdout, explicitStderr)
+			Expect(implicitStdout).To(BeEmpty())
+			Expect(explicitStdout).To(BeEmpty())
+			Expect(string(explicitStderr)).To(ContainSubstring("typescript_compiler_missing: also failing"), "the explicit path is the reference that already reports the masked compiler gap; stderr=%s", explicitStderr)
+
+			Expect(stderrAsideFromPolicyPath(implicitStderr, coachConfigPath)).To(Equal(stderrAsideFromPolicyPath(explicitStderr, coachConfigPath)),
+				"implicit stderr=%s explicit stderr=%s", implicitStderr, explicitStderr)
+		})
+	})
+
 	When("no --project-config is set and no canonical policy exists", func() {
 		It("stays schema 1 and emits no project_config_deprecated diagnostic when project.json is absent", func() {
 			repo := commitScannableGoRepo()
@@ -266,6 +289,10 @@ func expectSchema1WithoutDeprecation(repo string) *codesignal.Report {
 	Expect(report.SchemaVersion).To(Equal("1"))
 	Expect(report.Diagnostics).NotTo(ContainElement(HaveField("Kind", "project_config_deprecated")))
 	return report
+}
+
+func stderrAsideFromPolicyPath(stderr []byte, policyPath string) string {
+	return strings.ReplaceAll(string(stderr), policyPath, "<policy-path>")
 }
 
 func expectCheckProject(repo string, extraArgs ...string) readinessResultDoc {
