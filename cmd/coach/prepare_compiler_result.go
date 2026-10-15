@@ -10,7 +10,7 @@ import (
 
 func reportPrepareCompilerMiseResult(result tssetup.PrepareCompilerMiseResult, stderr *os.File) int {
 	if result.PolicyRequired {
-		fmt.Fprintf(stderr, "%s: a reviewed, committed policy is required before compiler setup; run guided policy authoring first (author_policy).\n", prepareCompilerMiseUsagePrefix)
+		fmt.Fprintf(stderr, "%s: a reviewed, committed policy is required before compiler setup (%s); run guided policy authoring first (author_policy).\n", prepareCompilerMiseUsagePrefix, result.PolicyCode)
 		return 2
 	}
 	if result.RuntimeGapCode != "" {

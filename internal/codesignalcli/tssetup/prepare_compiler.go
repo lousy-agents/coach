@@ -26,6 +26,11 @@ type PrepareCompilerMiseResult struct {
 	// choice.
 	PolicyRequired bool
 
+	// PolicyCode is readiness.Checks.Policy.Code while PolicyRequired is
+	// true. The refusal prints it (policy_invalid, policy_missing) so the
+	// customer sees which policy gap blocked setup.
+	PolicyCode string
+
 	// NoChoicesOffered is true when the prepare_compiler next action was
 	// absent, not executable, or named no mise installation choice at all --
 	// there was nothing to set up. This is not a failure and not a
@@ -116,7 +121,7 @@ func (r PrepareCompilerMiseResult) NeverStarted() bool {
 // runAuthorProjectConfigTypeScript/authorProjectConfigTypeScript's split.
 func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) PrepareCompilerMiseResult {
 	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
-		return PrepareCompilerMiseResult{PolicyRequired: true}
+		return PrepareCompilerMiseResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code}
 	}
 	if code, blocking := readinessHasBlockingRuntimeGap(readiness); blocking {
 		return PrepareCompilerMiseResult{RuntimeGapCode: code}
