@@ -23,7 +23,7 @@ func TestAuthorProjectConfig_ApprovedAndOutputUnset_WritesCandidateToCandidateOu
 		"approve",
 	}, "\n") + "\n")
 
-	result := Author(t.TempDir(), in, transcript, candidateOut, discovered, "", false)
+	result := Author(t.TempDir(), in, transcript, candidateOut, discovered, "", false, false)
 
 	if !result.Approved {
 		t.Fatalf("expected Approved = true, got false; transcript:\n%s", transcript.String())

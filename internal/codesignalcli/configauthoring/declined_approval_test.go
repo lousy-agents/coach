@@ -35,7 +35,7 @@ func withOutputSetNoFileCreated(t *testing.T, discovered projectmodel.TSRootDisc
 		"nope",
 	}, "\n") + "\n")
 
-	result := Author(dir, in, out, out, discovered, outputPath, true)
+	result := Author(dir, in, out, out, discovered, outputPath, true, false)
 
 	if result.Approved {
 		t.Fatalf("expected Approved = false, got true")
@@ -65,7 +65,7 @@ func withOutputUnsetNothingBeyondInteractiveTextWritten(t *testing.T, discovered
 		"nope",
 	}, "\n") + "\n")
 
-	result := Author(t.TempDir(), in, out, out, discovered, "", false)
+	result := Author(t.TempDir(), in, out, out, discovered, "", false, false)
 
 	if result.Approved {
 		t.Fatalf("expected Approved = false, got true")

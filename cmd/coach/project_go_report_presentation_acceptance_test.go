@@ -11,7 +11,7 @@ import (
 
 var _ = Describe("coach codesignal --project-config with the real Go project-language backend", func() {
 	When("comparing JSON and text output for the same baseline layer-violation scenario", func() {
-		It("presents the same structured evidence in text as JSON, and legacy (no config) text stays schema-1", func() {
+		It("presents the same structured evidence in text as JSON, and an omitted scan of the committed root project.json shows Project findings and project_config_deprecated", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "go.mod", goModuleFile)
 			commitFile(repo, "pkg/db/db.go", dbPackageFile)
@@ -60,11 +60,15 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 				Expect(text).To(ContainSubstring(fmt.Sprintf("related: %s:%d", location.Path, location.Location.StartRow+1)))
 			}
 
-			legacyStdout, legacyStderr, legacyExit := runCoachCodesignalBaselineRaw(repo)
-			Expect(legacyExit).To(Equal(0), "stderr: %s", legacyStderr)
-			legacyText := string(legacyStdout)
-			Expect(legacyText).NotTo(ContainSubstring("Project findings:"))
-			Expect(legacyText).NotTo(ContainSubstring("Project coverage:"))
+			omittedStdout, omittedStderr, omittedExit := runCoachCodesignalBaselineRaw(repo)
+			Expect(omittedExit).To(Equal(0), "stderr: %s", omittedStderr)
+			omittedText := string(omittedStdout)
+			Expect(omittedText).To(ContainSubstring("Project findings:"))
+			Expect(omittedText).To(ContainSubstring("rule_id: architecture.layer_violation"))
+			Expect(omittedText).To(ContainSubstring("project_config_deprecated"))
+			Expect(omittedText).To(ContainSubstring("project.json at the repository root is deprecated. Coach will keep reading it until you move it to .lousy-agents/coach.json."))
+			Expect(omittedText).To(ContainSubstring("project_config_migration_skipped"))
+			Expect(omittedText).To(ContainSubstring("mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json"))
 		})
 	})
 

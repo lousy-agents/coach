@@ -15,9 +15,9 @@ import (
 )
 
 func Run(dir, revision, configPath string) (*projectreadiness.Result, error) {
-	policyPath := configPath
-	if policyPath == "" {
-		policyPath = projectconfig.DefaultPath
+	policyPath, extraWarnings, err := resolveCheckPolicy(dir, revision, configPath)
+	if err != nil {
+		return nil, err
 	}
 
 	policy, roots, err := CheckPolicy(dir, revision, policyPath)
@@ -49,6 +49,7 @@ func Run(dir, revision, configPath string) (*projectreadiness.Result, error) {
 
 	miseChoices := tstoolchain.EvaluateMiseSetupChoices(dir, roots)
 	status, gaps, nextActions, warnings := aggregateReadiness(checks, dirty.RelevantChanges, miseChoices)
+	warnings = append(warnings, extraWarnings...)
 
 	return &projectreadiness.Result{
 		SchemaVersion: projectreadiness.SchemaVersion,
@@ -62,6 +63,13 @@ func Run(dir, revision, configPath string) (*projectreadiness.Result, error) {
 		NextActions:   nextActions,
 		MiseChoices:   miseChoices,
 	}, nil
+}
+
+// ResolvePolicyPath is the policy document Run checks. An empty configPath
+// is the path Discover and policyFromSelection select.
+func ResolvePolicyPath(dir, revision, configPath string) (string, error) {
+	path, _, err := resolveCheckPolicy(dir, revision, configPath)
+	return path, err
 }
 
 func CheckPolicy(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
@@ -82,4 +90,33 @@ func CheckPolicy(dir, revision, policyPath string) (projectreadiness.Check, []st
 		return projectreadiness.Check{}, nil, err
 	}
 	return projectreadiness.Check{State: projectreadiness.Pass}, config.Roots, nil
+}
+
+func resolveCheckPolicy(dir, revision, configPath string) (string, []projectreadiness.Warning, error) {
+	if configPath != "" {
+		return configPath, nil, nil
+	}
+	selection, err := projectconfig.Discover(dir, revision)
+	if err != nil {
+		return "", nil, err
+	}
+	return policyFromSelection(selection)
+}
+
+func policyFromSelection(selection projectconfig.Selection) (string, []projectreadiness.Warning, error) {
+	switch {
+	case selection.Fatal != nil && !canonicalContentInvalid(selection.Fatal):
+		return "", nil, selection.Fatal
+	case selection.Deprecated:
+		return selection.Path, []projectreadiness.Warning{{Code: "project_config_deprecated"}}, nil
+	case selection.Path != "":
+		return selection.Path, nil, nil
+	default:
+		return projectconfig.CanonicalPath, nil, nil
+	}
+}
+
+func canonicalContentInvalid(err error) bool {
+	var configErr *projectconfig.ConfigError
+	return errors.As(err, &configErr) && configErr.Kind == projectconfig.KindInvalid
 }

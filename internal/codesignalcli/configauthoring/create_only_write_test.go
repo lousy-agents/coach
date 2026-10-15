@@ -56,7 +56,7 @@ func targetDoesNotYetExistCreatedExactCandidate(t *testing.T, discovered project
 		"approve",
 	}, "\n") + "\n")
 
-	result := Author(dir, in, out, out, discovered, outputPath, true)
+	result := Author(dir, in, out, out, discovered, outputPath, true, false)
 
 	if !result.Approved {
 		t.Fatalf("expected Approved = true, got false; output:\n%s", out.String())
