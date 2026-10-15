@@ -105,7 +105,7 @@ func resolveCheckPolicy(dir, revision, configPath string) (string, []projectread
 
 func policyFromSelection(selection projectconfig.Selection) (string, []projectreadiness.Warning, error) {
 	switch {
-	case selection.Fatal != nil && !canonicalContentInvalid(selection.Fatal):
+	case selection.Fatal != nil && !canonicalRecheckedByReadiness(selection.Fatal):
 		return "", nil, selection.Fatal
 	case selection.Deprecated:
 		return selection.Path, []projectreadiness.Warning{{Code: "project_config_deprecated"}}, nil
@@ -116,7 +116,21 @@ func policyFromSelection(selection projectconfig.Selection) (string, []projectre
 	}
 }
 
-func canonicalContentInvalid(err error) bool {
+// canonicalRecheckedByReadiness reports a canonical Load failure that
+// CheckPolicy must classify again. Load collapses a stdout size bound and a
+// timeout or stderr bound into KindUnreadable. LoadForReadiness, which
+// CheckPolicy calls, reports the size bound as policy_invalid and leaves the
+// timeout and stderr bounds as operational errors. Scan keeps Load's
+// classification and does not call this path.
+func canonicalRecheckedByReadiness(err error) bool {
 	var configErr *projectconfig.ConfigError
-	return errors.As(err, &configErr) && configErr.Kind == projectconfig.KindInvalid
+	if !errors.As(err, &configErr) {
+		return false
+	}
+	switch configErr.Kind {
+	case projectconfig.KindInvalid, projectconfig.KindUnreadable:
+		return true
+	default:
+		return false
+	}
 }
