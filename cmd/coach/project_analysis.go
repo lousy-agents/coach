@@ -36,6 +36,11 @@ func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configP
 		return nil, nil, err
 	}
 	if selection.Fatal != nil {
+		// Path stays empty: Load rejected the canonical file. The TypeScript
+		// wrap is what prints the gaps that rejection would otherwise hide.
+		if language == "typescript" {
+			return nil, nil, tssetup.WrapProjectConfigErrorWithReadiness(selection.Fatal, dir, revision, projectconfig.CanonicalPath)
+		}
 		return nil, nil, selection.Fatal
 	}
 	diags := projectSelectionDiagnostics(selection, revision, suppressUncommittedCanonical)
