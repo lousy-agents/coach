@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -193,6 +194,22 @@ var _ = Describe("coach project config discovery", func() {
 			commitFile(repo, legacyConfigPath, singleRootPolicyJSON)
 
 			doc := expectCheckProject(repo)
+			Expect(doc.Checks.Policy.Code).To(Equal("policy_invalid"))
+			Expect(gapCodes(doc)).To(ContainElement("policy_invalid"))
+		})
+
+		It("reports policy_invalid for a committed canonical file over 1 MiB and does not fall back to a valid project.json", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, coachConfigPath, strings.Repeat("x", (1<<20)+1))
+			commitFile(repo, legacyConfigPath, singleRootPolicyJSON)
+
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, pathWithoutNode(), "--baseline", "--check-project", "--project-language", "typescript", "--format", "json")
+
+			Expect(exitCode).To(Equal(0), "an oversized canonical policy is a readiness gap, not a usage error; stdout=%s stderr=%s", stdout, stderr)
+			Expect(stdout).NotTo(BeEmpty(), "readiness JSON must be written; stderr=%s", stderr)
+			var doc readinessResultDoc
+			Expect(json.Unmarshal(stdout, &doc)).To(Succeed(), "stdout: %s", stdout)
+			Expect(doc.Checks.Policy.State).NotTo(Equal("pass"), "the oversized canonical file must not pass the policy check")
 			Expect(doc.Checks.Policy.Code).To(Equal("policy_invalid"))
 			Expect(gapCodes(doc)).To(ContainElement("policy_invalid"))
 		})
