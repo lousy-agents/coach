@@ -1,80 +1,68 @@
 package main
 
 import (
-	"encoding/json"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-type disabledProjectAnalysisReportPair struct {
+const deprecatedRootProjectConfigMessage = "project.json at the repository root is deprecated. Coach will keep reading it until you move it to .lousy-agents/coach.json."
+
+type rootProjectJSONScanPair struct {
 	repoWithConfigFile      string
-	stdoutWithConfigFile    []byte
-	reportWithConfigFile    *codesignal.Report
+	omittedReport           *codesignal.Report
+	explicitReport          *codesignal.Report
 	reportWithoutConfigFile *codesignal.Report
 }
 
 var _ = Describe("coach codesignal --project-config with the real Go project-language backend", func() {
-	When("--baseline is run against a repository with no --project-config supplied", func() {
-		It("stays schema-1 even though the committed config would otherwise report a violation", func() {
+	When("--baseline is run with no --project-config against a repository with a valid root project.json that forbids a committed import", func() {
+		It("selects that policy at schema 2, includes architecture.layer_violation, and matches an explicit --project-config project.json run plus project_config_deprecated", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "go.mod", goModuleFile)
 			commitFile(repo, "pkg/db/db.go", dbPackageFile)
 			commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
 			commitFile(repo, "project.json", goLayerPolicyConfigJSON)
 
-			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json")
-			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
-			Expect(stderr).To(BeEmpty())
+			omittedStdout, omittedStderr, omittedExit := runCoachCodesignalBaselineRaw(repo, "--format=json")
+			Expect(omittedExit).To(Equal(0), "stderr: %s", omittedStderr)
+			Expect(omittedStderr).To(BeEmpty())
+			explicitStdout, explicitStderr, explicitExit := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
+			Expect(explicitExit).To(Equal(0), "stderr: %s", explicitStderr)
+			Expect(explicitStderr).To(BeEmpty())
 
-			var document map[string]json.RawMessage
-			Expect(json.Unmarshal(stdout, &document)).To(Succeed())
-			var schemaVersion string
-			Expect(json.Unmarshal(document["schema_version"], &schemaVersion)).To(Succeed())
-			Expect(schemaVersion).To(Equal("1"))
-			Expect(document).NotTo(HaveKey("project_changes"))
-			Expect(document).NotTo(HaveKey("project_summary"))
-			Expect(document).NotTo(HaveKey("project_coverage"))
+			expectOmittedScanSelectsRootProjectJSON(decodeCoachReport(omittedStdout), decodeCoachReport(explicitStdout))
 		})
 	})
 
-	When("the CLI is invoked without --project-config against a repository that could otherwise report an architecture.layer_violation and a structural finding", func() {
-		It("stays on the schema-1 path, matches a repository that never had a project-analysis config at all, and leaks no project_* keys, schema_version 2, or project-analysis-only text", func() {
-			pair := buildDisabledProjectAnalysisReportPair()
+	When("the CLI is invoked without --project-config against a repository with a valid root project.json, an architecture.layer_violation, and a structural finding", func() {
+		It("selects that policy, matches the explicit project.json run on schema, signals, and project fields, and shows Project findings and project_config_deprecated", func() {
+			pair := buildRootProjectJSONScanPair()
+			expectOmittedScanSelectsRootProjectJSON(pair.omittedReport, pair.explicitReport)
 
-			By("(a) staying on the schema-1 path and (c) leaking no project_* key in JSON")
-			var document map[string]json.RawMessage
-			Expect(json.Unmarshal(pair.stdoutWithConfigFile, &document)).To(Succeed())
-			var schemaVersion string
-			Expect(json.Unmarshal(document["schema_version"], &schemaVersion)).To(Succeed())
-			Expect(schemaVersion).To(Equal("1"), "disabled project analysis must stay on the schema-1 path")
-			for _, key := range []string{"project_changes", "project_facts", "project_summary", "project_coverage"} {
-				Expect(document).NotTo(HaveKey(key), "disabled project analysis must never leak %q", key)
-			}
-			Expect(string(pair.stdoutWithConfigFile)).NotTo(ContainSubstring(`"schema_version":"2"`))
-
-			By("(b) matching a repository that never had a project-analysis config present at all")
-
-			By("(c) leaking no project-analysis-only marker in text output")
 			textStdout, textStderr, textExit := runCoachCodesignalBaselineRaw(pair.repoWithConfigFile)
 			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
 			text := string(textStdout)
-			for _, marker := range []string{"Project findings:", "Project summary:", "Project coverage:", "Facts:", "coverage_ref:"} {
-				Expect(text).NotTo(ContainSubstring(marker), "disabled project analysis text output must never show %q", marker)
-			}
+			Expect(text).To(ContainSubstring("Project findings:"))
+			Expect(text).To(ContainSubstring("project_config_deprecated"))
+			Expect(text).To(ContainSubstring(deprecatedRootProjectConfigMessage))
+			Expect(text).To(ContainSubstring("project_config_migration_skipped"))
+			Expect(text).To(ContainSubstring("mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json"))
 		})
 	})
 
-	When("--baseline is run without --project-config against a revision that also carries an unreferenced project.json, a layer-violation import, and a low-severity structural finding", func() {
-		It("produces a report identical to an equivalent revision with no project.json at all, since no advisory signal can ever be produced without --project-config", func() {
-			pair := buildDisabledProjectAnalysisReportPair()
+	When("--baseline is run without --project-config against a repository with no project policy, a layer-violation import, and a low-severity structural finding", func() {
+		It("stays schema 1 with no project_config_deprecated diagnostic and keeps the structural signal sequence", func() {
+			pair := buildRootProjectJSONScanPair()
 			reportWithoutConfigFile := pair.reportWithoutConfigFile
 
-			By("also pinning today's exact signals[] sequence, so a future severityRank/comparator change that perturbs non-advisory ordering fails here even though it would perturb both reports above identically")
+			Expect(reportWithoutConfigFile.SchemaVersion).To(Equal("1"))
+			Expect(reportWithoutConfigFile.Diagnostics).NotTo(ContainElement(HaveField("Kind", "project_config_deprecated")))
+
+			By("pinning today's exact signals[] sequence, so a future severityRank/comparator change that perturbs non-advisory ordering fails here")
 			for _, sig := range reportWithoutConfigFile.Signals {
-				Expect(sig.Severity).NotTo(Equal(codesignal.Severity("advisory")), "no advisory signal can ever be produced without --project-config: %+v", sig)
+				Expect(sig.Severity).NotTo(Equal(codesignal.Severity("advisory")), "a repository with no project policy must not report an advisory signal: %+v", sig)
 			}
 
 			type ruleIDPathSeverity struct {
@@ -96,7 +84,9 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 	})
 })
 
-func buildDisabledProjectAnalysisReportPair() disabledProjectAnalysisReportPair {
+func buildRootProjectJSONScanPair() rootProjectJSONScanPair {
+	GinkgoHelper()
+
 	repoWithConfigFile := newTempGitRepo()
 	commitFile(repoWithConfigFile, "go.mod", goModuleFile)
 	commitFile(repoWithConfigFile, "pkg/db/db.go", dbPackageFile)
@@ -110,35 +100,91 @@ func buildDisabledProjectAnalysisReportPair() disabledProjectAnalysisReportPair 
 	commitFile(repoWithoutConfigFile, "pkg/handlers/handlers.go", handlersImportingDB)
 	commitFile(repoWithoutConfigFile, "pkg/model/model.go", modelFileWithTwoConstructors)
 
-	stdoutWithConfigFile, stderrWithConfigFile, exitWithConfigFile := runCoachCodesignalBaselineRaw(repoWithConfigFile, "--format=json")
-	ExpectWithOffset(1, exitWithConfigFile).To(Equal(0), "stderr: %s", stderrWithConfigFile)
-	ExpectWithOffset(1, stderrWithConfigFile).To(BeEmpty())
-	reportWithConfigFile := decodeCoachReport(stdoutWithConfigFile)
+	omittedStdout, omittedStderr, omittedExit := runCoachCodesignalBaselineRaw(repoWithConfigFile, "--format=json")
+	Expect(omittedExit).To(Equal(0), "stderr: %s", omittedStderr)
+	Expect(omittedStderr).To(BeEmpty())
 
-	stdoutWithoutConfigFile, stderrWithoutConfigFile, exitWithoutConfigFile := runCoachCodesignalBaselineRaw(repoWithoutConfigFile, "--format=json")
-	ExpectWithOffset(1, exitWithoutConfigFile).To(Equal(0), "stderr: %s", stderrWithoutConfigFile)
-	ExpectWithOffset(1, stderrWithoutConfigFile).To(BeEmpty())
-	reportWithoutConfigFile := decodeCoachReport(stdoutWithoutConfigFile)
+	explicitStdout, explicitStderr, explicitExit := runCoachCodesignalBaselineRaw(repoWithConfigFile, "--project-config", "project.json", "--format=json")
+	Expect(explicitExit).To(Equal(0), "stderr: %s", explicitStderr)
+	Expect(explicitStderr).To(BeEmpty())
 
-	ExpectWithOffset(1, reportWithConfigFile.Coverage.TrackedFilesDiscovered).To(
-		Equal(reportWithoutConfigFile.Coverage.TrackedFilesDiscovered+1),
-		"an unreferenced project.json must add exactly one to TrackedFilesDiscovered")
-	expectedUnsupported := append(append([]codesignal.CoverageGroup{}, reportWithoutConfigFile.Coverage.Unsupported...),
-		codesignal.CoverageGroup{Reason: "unsupported_language", Language: ".json", Count: 1})
-	ExpectWithOffset(1, reportWithConfigFile.Coverage.Unsupported).To(ConsistOf(expectedUnsupported),
-		"an unreferenced project.json must add exactly one unsupported_language(.json) group and change nothing else in Unsupported")
+	withoutStdout, withoutStderr, withoutExit := runCoachCodesignalBaselineRaw(repoWithoutConfigFile, "--format=json")
+	Expect(withoutExit).To(Equal(0), "stderr: %s", withoutStderr)
+	Expect(withoutStderr).To(BeEmpty())
 
-	reportWithConfigFile.Scope.Revision = reportWithoutConfigFile.Scope.Revision
-	reportWithConfigFile.Coverage.TrackedFilesDiscovered = reportWithoutConfigFile.Coverage.TrackedFilesDiscovered
-	reportWithConfigFile.Coverage.Unsupported = reportWithoutConfigFile.Coverage.Unsupported
-
-	ExpectWithOffset(1, reportWithConfigFile).To(Equal(reportWithoutConfigFile),
-		"an unreferenced project.json in the tree must not change the report when --project-config is not supplied")
-
-	return disabledProjectAnalysisReportPair{
+	return rootProjectJSONScanPair{
 		repoWithConfigFile:      repoWithConfigFile,
-		stdoutWithConfigFile:    stdoutWithConfigFile,
-		reportWithConfigFile:    reportWithConfigFile,
-		reportWithoutConfigFile: reportWithoutConfigFile,
+		omittedReport:           decodeCoachReport(omittedStdout),
+		explicitReport:          decodeCoachReport(explicitStdout),
+		reportWithoutConfigFile: decodeCoachReport(withoutStdout),
 	}
+}
+
+func expectOmittedScanSelectsRootProjectJSON(omitted, explicit *codesignal.Report) {
+	GinkgoHelper()
+
+	Expect(omitted.SchemaVersion).To(Equal("2"), "an omitted --project-config scan must select a valid root project.json")
+	Expect(omitted.SchemaVersion).To(Equal(explicit.SchemaVersion))
+	Expect(signalRuleIDs(omitted.Signals)).To(ContainElement("architecture.layer_violation"))
+	Expect(omitted.Signals).To(Equal(explicit.Signals))
+	Expect(omitted.ProjectChanges).To(Equal(explicit.ProjectChanges))
+	Expect(omitted.ProjectFacts).To(Equal(explicit.ProjectFacts))
+	Expect(omitted.ProjectSummary).To(Equal(explicit.ProjectSummary))
+	Expect(omitted.ProjectCoverage).To(Equal(explicit.ProjectCoverage))
+	Expect(omitted.ProjectProvenance).To(Equal(explicit.ProjectProvenance))
+	Expect(omitted.ProjectScope).To(Equal(explicit.ProjectScope))
+	Expect(omitted.ProjectNextActions).To(Equal(explicit.ProjectNextActions))
+
+	deprecated := codesignal.Diagnostic{
+		Kind:    "project_config_deprecated",
+		Path:    "project.json",
+		Message: deprecatedRootProjectConfigMessage,
+	}
+	skipped := codesignal.Diagnostic{
+		Kind:    "project_config_migration_skipped",
+		Path:    "project.json",
+		Message: "project.json can be moved to .lousy-agents/coach.json. Next: mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json",
+	}
+	Expect(omitted.Diagnostics).To(HaveLen(len(explicit.Diagnostics) + 2))
+	Expect(diagnosticsOfKind(omitted.Diagnostics, "project_config_deprecated")).To(Equal([]codesignal.Diagnostic{deprecated}))
+	Expect(diagnosticsOfKind(omitted.Diagnostics, "project_config_migration_skipped")).To(Equal([]codesignal.Diagnostic{skipped}))
+	withoutMigration := diagnosticsWithoutKind(diagnosticsWithoutKind(omitted.Diagnostics, "project_config_deprecated"), "project_config_migration_skipped")
+	Expect(withoutMigration).To(Equal(emptyDiagnostics(explicit.Diagnostics)))
+	Expect(explicit.Diagnostics).NotTo(ContainElement(HaveField("Kind", "project_config_deprecated")))
+	Expect(explicit.Diagnostics).NotTo(ContainElement(HaveField("Kind", "project_config_migration_skipped")))
+}
+
+func signalRuleIDs(signals []codesignal.Signal) []string {
+	ids := make([]string, len(signals))
+	for i, sig := range signals {
+		ids[i] = sig.RuleID
+	}
+	return ids
+}
+
+func diagnosticsOfKind(diagnostics []codesignal.Diagnostic, kind string) []codesignal.Diagnostic {
+	matched := make([]codesignal.Diagnostic, 0)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Kind == kind {
+			matched = append(matched, diagnostic)
+		}
+	}
+	return matched
+}
+
+func diagnosticsWithoutKind(diagnostics []codesignal.Diagnostic, kind string) []codesignal.Diagnostic {
+	kept := make([]codesignal.Diagnostic, 0)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Kind != kind {
+			kept = append(kept, diagnostic)
+		}
+	}
+	return kept
+}
+
+func emptyDiagnostics(diagnostics []codesignal.Diagnostic) []codesignal.Diagnostic {
+	if diagnostics == nil {
+		return []codesignal.Diagnostic{}
+	}
+	return diagnostics
 }

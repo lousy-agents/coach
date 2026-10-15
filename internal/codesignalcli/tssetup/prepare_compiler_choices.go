@@ -2,7 +2,6 @@ package tssetup
 
 import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -55,17 +54,21 @@ func filterMiseChoiceKinds(choices []string) []string {
 	return mise
 }
 
-// miseSetupChoicesForReadiness reuses projectcheck.CheckPolicy exactly the way
-// projectcheck.Run itself derives roots -- never a second, independent
-// notion of "roots".
+// miseSetupChoicesForReadiness reuses the policy path and roots
+// projectcheck.Run just checked. An empty configPath is Discover's selection.
 func miseSetupChoicesForReadiness(dir, revision, configPath string) []projectreadiness.MiseChoice {
-	policyPath := configPath
-	if policyPath == "" {
-		policyPath = projectconfig.DefaultPath
-	}
-	_, roots, err := projectcheck.CheckPolicy(dir, revision, policyPath)
+	roots, err := checkedPolicyRoots(dir, revision, configPath)
 	if err != nil {
 		return nil
 	}
 	return tstoolchain.EvaluateMiseSetupChoices(dir, roots)
+}
+
+func checkedPolicyRoots(dir, revision, configPath string) ([]string, error) {
+	policyPath, err := projectcheck.ResolvePolicyPath(dir, revision, configPath)
+	if err != nil {
+		return nil, err
+	}
+	_, roots, err := projectcheck.CheckPolicy(dir, revision, policyPath)
+	return roots, err
 }

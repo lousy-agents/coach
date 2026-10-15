@@ -90,5 +90,8 @@ func Parse(data []byte) (Config, error) {
 }
 
 const (
-	DefaultPath = "project.json"
+	// CanonicalPath is the policy document Discover prefers. DefaultPath
+	// remains the legacy root document Discover may still read.
+	CanonicalPath = ".lousy-agents/coach.json"
+	DefaultPath   = "project.json"
 )
