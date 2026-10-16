@@ -21,15 +21,15 @@ var runOptionalScanPreparation = func(dir string, f codesignalFlags, stdout, std
 	return optionalPreparationResult{}
 }
 
-func runCodesignalScan(dir string, f codesignalFlags, stdout, stderr *os.File, budget scanOfferBudget) int {
-	report, err := runOneScan(dir, f, stderr)
+func runCodesignalScan(dir string, f codesignalFlags, stdin, stdout, stderr *os.File, budget scanOfferBudget) int {
+	report, err := runOneScan(dir, f, stdin, stderr)
 	if err != nil {
 		noInteractive := nonInteractiveRequested(f)
 		if scanShouldAuthorProjectConfig(err, f.projectLanguage, f.projectConfig, noInteractive) {
 			return runScanProjectConfigAuthoring(dir, f, err, stdout, stderr)
 		}
 		if wrapped, ok := scanShouldOfferCompilerSetup(err, noInteractive); budget.allows(scanOfferCompilerSetup) && ok {
-			return runScanCompilerSetupOffer(dir, f, stdout, stderr, wrapped, budget)
+			return runScanCompilerSetupOffer(dir, f, stdin, stdout, stderr, wrapped, budget)
 		}
 		return classifyAnalysisError(err, f.projectLanguage, noInteractive, stderr)
 	}
@@ -39,9 +39,9 @@ func runCodesignalScan(dir string, f codesignalFlags, stdout, stderr *os.File, b
 	return renderScanResult(report, f, stdout, stderr)
 }
 
-func runOneScan(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, error) {
+func runOneScan(dir string, f codesignalFlags, stdin, stderr *os.File) (*codesignal.Report, error) {
 	if f.baseline {
-		return runBaselineAnalysis(dir, f, stderr)
+		return runBaselineAnalysis(dir, f, stdin, stderr)
 	}
-	return runDiffAnalysis(dir, f, stderr)
+	return runDiffAnalysis(dir, f, stdin, stderr)
 }

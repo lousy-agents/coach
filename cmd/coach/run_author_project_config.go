@@ -118,6 +118,14 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 		return 2
 	}
 
-	result := configauthoring.Author(root, stdin, stderr, stdout, discovered, f.output, f.outputSet)
+	outputPath := f.output
+	outputSet := f.outputSet
+	ensureDefaultSuggestDir := f.suggestProjectConfig && !f.outputSet
+	if ensureDefaultSuggestDir {
+		outputPath = configauthoring.DefaultSuggestConfigRel
+		outputSet = true
+	}
+
+	result := configauthoring.Author(root, stdin, stderr, stdout, discovered, outputPath, outputSet, ensureDefaultSuggestDir)
 	return reportAuthoringResult(result, stderr)
 }

@@ -374,7 +374,7 @@ var _ = Describe("coach codesignal: optional preparation after a successful scan
 			Expect(err).NotTo(HaveOccurred())
 
 			f := codesignalFlags{baseline: true, format: "json"}
-			exitCode := runCodesignalScan(repo, f, outWrite, errWrite, newScanOfferBudget())
+			exitCode := runCodesignalScan(repo, f, os.Stdin, outWrite, errWrite, newScanOfferBudget())
 			Expect(outWrite.Close()).To(Succeed())
 			Expect(errWrite.Close()).To(Succeed())
 			stdout, readErr := io.ReadAll(outRead)
@@ -407,7 +407,7 @@ var _ = Describe("coach codesignal: optional preparation after a successful scan
 			Expect(err).NotTo(HaveOccurred())
 
 			f := codesignalFlags{baseline: true, format: "json"}
-			exitCode := runCodesignalScan(repo, f, outWrite, errWrite, newScanOfferBudget())
+			exitCode := runCodesignalScan(repo, f, os.Stdin, outWrite, errWrite, newScanOfferBudget())
 			Expect(outWrite.Close()).To(Succeed())
 			Expect(errWrite.Close()).To(Succeed())
 			stdout, readErr := io.ReadAll(outRead)

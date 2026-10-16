@@ -268,7 +268,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 	})
 
 	When("guided authoring is approved with --output omitted", func() {
-		It("exits 0, emits only the validated candidate on stdout, and writes the full transcript to stderr", func() {
+		It("exits 0, writes the validated candidate to .lousy-agents/coach.json, and does not print that document on stdout", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "package.json", "{}\n")
 			commitFile(repo, "tsconfig.json", "{}\n")
@@ -283,17 +283,19 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
 
 			Expect(exitCode).To(Equal(0))
-
-			var candidate suggestionCandidateDoc
-			stdoutBytes := []byte(readStdout())
-			Expect(json.Unmarshal(stdoutBytes, &candidate)).To(Succeed(), "stdout: %s", readStdout())
-			Expect(candidate.SchemaVersion).To(Equal("1"))
-			Expect(candidate.Roots).To(Equal([]string{"."}))
+			Expect(readStdout()).NotTo(ContainSubstring(`"schema_version"`), "the candidate document must not be written to stdout; stdout: %s", readStdout())
 			Expect(readStderr()).To(ContainSubstring("Select the roots to include"))
 			Expect(readStderr()).NotTo(ContainSubstring(`"schema_version"`), "the candidate document must never leak into the transcript stream")
 
+			data, err := os.ReadFile(filepath.Join(repo, ".lousy-agents", "coach.json"))
+			Expect(err).NotTo(HaveOccurred())
+			var candidate suggestionCandidateDoc
+			Expect(json.Unmarshal(data, &candidate)).To(Succeed(), "written file: %s", data)
+			Expect(candidate.SchemaVersion).To(Equal("1"))
+			Expect(candidate.Roots).To(Equal([]string{"."}))
+
 			_, statErr := os.Stat(filepath.Join(repo, "project.json"))
-			Expect(os.IsNotExist(statErr)).To(BeTrue(), "no file is written when --output is omitted; the candidate is emitted, not saved")
+			Expect(os.IsNotExist(statErr)).To(BeTrue(), "the default destination is .lousy-agents/coach.json, not project.json")
 		})
 	})
 
@@ -303,7 +305,7 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			commitFile(repo, "package.json", "{}\n")
 			commitFile(repo, "tsconfig.json", "{}\n")
 
-			runAuthoring := func() (stdout, stderr string, exitCode int) {
+			runAuthoring := func() (stdout, stderr, written string, exitCode int) {
 				stdin := authoringStdin("1\n\n\n\napprove\n")
 				defer stdin.Close()
 				stdoutFile, stderrFile, readStdout, readStderr := authoringOutputFiles()
@@ -312,10 +314,13 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 
 				flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
 				exitCode = authorProjectConfigTypeScript(repo, flags, stdin, stdoutFile, stderrFile)
-				return readStdout(), readStderr(), exitCode
+				data, readErr := os.ReadFile(filepath.Join(repo, ".lousy-agents", "coach.json"))
+				Expect(readErr).NotTo(HaveOccurred(), "stderr: %s", readStderr())
+				Expect(os.Remove(filepath.Join(repo, ".lousy-agents", "coach.json"))).To(Succeed())
+				return readStdout(), readStderr(), string(data), exitCode
 			}
 
-			cleanStdout, cleanStderr, cleanExit := runAuthoring()
+			cleanStdout, cleanStderr, cleanWritten, cleanExit := runAuthoring()
 			Expect(cleanExit).To(Equal(0), "stderr: %s", cleanStderr)
 
 			Expect(os.WriteFile(filepath.Join(repo, "tsconfig.json"), []byte(`{"compilerOptions":{}}`), 0o644)).To(Succeed())
@@ -325,10 +330,11 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config --project
 			Expect(os.MkdirAll(filepath.Join(repo, "ignored"), 0o755)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(repo, "ignored", "tsconfig.json"), []byte("{}\n"), 0o644)).To(Succeed())
 
-			noisyStdout, noisyStderr, noisyExit := runAuthoring()
+			noisyStdout, noisyStderr, noisyWritten, noisyExit := runAuthoring()
 			Expect(noisyExit).To(Equal(0), "stderr: %s", noisyStderr)
 
-			Expect(noisyStdout).To(Equal(cleanStdout), "worktree noise must not affect the emitted candidate document")
+			Expect(noisyWritten).To(Equal(cleanWritten), "worktree noise must not affect the written candidate document")
+			Expect(noisyStdout).To(Equal(cleanStdout), "worktree noise must not affect stdout")
 			Expect(noisyStderr).To(Equal(cleanStderr), "worktree noise must not affect the discovered-roots transcript")
 		})
 	})

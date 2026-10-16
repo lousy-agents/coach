@@ -98,8 +98,11 @@ type Result struct {
 // comment): it carries only the document itself, byte for byte. Nothing is
 // written when validation fails; a create-only write that finds outputPath
 // already occupied leaves the existing content untouched and is reported
-// via OutputExists, never as WriteError.
-func finalizeApprovedCandidate(result Result, dir string, candidateOut io.Writer, outputPath string, outputSet bool) Result {
+// via OutputExists, never as WriteError. ensureDefaultSuggestDir creates
+// the single .lousy-agents directory only after that validation succeeds
+// and immediately before the path check that precedes the write. It stays
+// false for an explicit output path, so a missing parent is still refused.
+func finalizeApprovedCandidate(result Result, dir string, candidateOut io.Writer, outputPath string, outputSet bool, ensureDefaultSuggestDir bool) Result {
 	candidate, err := buildApprovedCandidate(result.Roots, result.Layers, result.ForbiddenImports, result.RequiredLayer)
 	if err != nil {
 		result.ValidationError = err
@@ -112,6 +115,13 @@ func finalizeApprovedCandidate(result Result, dir string, candidateOut io.Writer
 			result.WriteError = err
 		}
 		return result
+	}
+
+	if ensureDefaultSuggestDir {
+		if err := EnsureDefaultSuggestConfigDir(dir); err != nil {
+			result.WriteError = err
+			return result
+		}
 	}
 
 	clean, pathErr := validateOutputPath(dir, outputPath)
@@ -161,11 +171,14 @@ func collectAuthoringAnswers(in io.Reader, transcript io.Writer, discovered proj
 // than a real terminal. out is the human-facing transcript; candidateOut
 // receives only the approved document when outputSet is false -- mixing
 // those streams makes a captured candidate unparseable. Collection never
-// preselects roots or infers layers.
-func Author(dir string, in io.Reader, out io.Writer, candidateOut io.Writer, discovered projectmodel.TSRootDiscoveryResult, outputPath string, outputSet bool) Result {
+// preselects roots or infers layers. ensureDefaultSuggestDir is set only
+// for --suggest-project-config with --output omitted: the .lousy-agents
+// directory is created inside the approved write, never before the user
+// approves, and never for an explicit --output.
+func Author(dir string, in io.Reader, out io.Writer, candidateOut io.Writer, discovered projectmodel.TSRootDiscoveryResult, outputPath string, outputSet bool, ensureDefaultSuggestDir bool) Result {
 	result := collectAuthoringAnswers(in, out, discovered)
 	if !result.Approved {
 		return result
 	}
-	return finalizeApprovedCandidate(result, dir, candidateOut, outputPath, outputSet)
+	return finalizeApprovedCandidate(result, dir, candidateOut, outputPath, outputSet, ensureDefaultSuggestDir)
 }

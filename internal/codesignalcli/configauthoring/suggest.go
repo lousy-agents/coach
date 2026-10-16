@@ -35,10 +35,10 @@ type SuggestionResult struct {
 
 // Suggest resolves HEAD, discovers Go module/workspace roots
 // over an immutable Git snapshot via pkg/projectmodel.DiscoverGoRoots, and
-// produces a minimal schema-1 project-config candidate. It never mutates
-// the repository worktree and never writes to outputPath unless
-// outputSet is true, in which case the write is create-only (it fails if
-// outputPath already exists in any form).
+// produces a minimal schema-1 project-config candidate. On success the
+// candidate is create-only written to outputPath when outputSet is true,
+// and otherwise to .lousy-agents/coach.json at the repository root (and
+// still returned for stdout). An existing target is left untouched.
 //
 // dir may be any directory inside the Git worktree, not necessarily its
 // root (issue #220 must support invocation from a subdirectory): the
@@ -101,6 +101,10 @@ func Suggest(dir, outputPath string, outputSet bool) SuggestionResult {
 		if writeFail, writeOK := writeSuggestCandidate(root, cleanOutput, outputPath, revisionSHA, result, candidate); !writeOK {
 			return writeFail
 		}
+	} else if err := EnsureDefaultSuggestConfigDir(root); err != nil {
+		return suggestFailureAfterDiscovery(revisionSHA, result, SuggestDiagOutputInvalid, DefaultSuggestConfigRel, err.Error())
+	} else if writeFail, writeOK := writeSuggestCandidate(root, DefaultSuggestConfigRel, DefaultSuggestConfigRel, revisionSHA, result, candidate); !writeOK {
+		return writeFail
 	}
 
 	return suggestSuccessResult(revisionSHA, result, candidate, outputSet)

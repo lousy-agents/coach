@@ -36,13 +36,13 @@ that suggest/prepare still require `--baseline`).
 | `--min-severity <level>` | none | Render only signals at or above `high`, `medium`, `advisory`, or `low` (ranked `high` > `medium` > `advisory` > `low`). `advisory` ranks below `medium`, so `--min-severity medium` also withholds `advisory` `architecture.layer_violation` and `architecture.layer_bypass` findings. Only `complexity.cognitive_complexity` and `complexity.max_nesting_depth` can be `high`, so `--min-severity high` shows only those two rules ([Severity](#severity)). No floor by default. Any other value is a usage error: exit `2`. See [Narrowing the rendered report](#narrowing-the-rendered-report). |
 | `--top <N>` | none | Render only the first `N` signals in report order ([Report order](#report-order): lifecycle group first, then severity, confidence, and path with within-rule magnitude), after any `--min-severity` floor. `advisory` findings rank below every `medium` one in the same lifecycle group, so a cap can push out declared `architecture.layer_violation` and `architecture.layer_bypass` findings, just as `--min-severity medium` hides them. No cap by default. `N` must be a positive integer; anything else is a usage error: exit `2`. |
 | `--build-target <pattern>` | empty | Go package pattern for production reachability. Silent no-op under `--scope all`. |
-| `--project-config <path>` | empty | Repository-relative path at the **analyzed revision**. Enables `schema_version: "2"`. |
-| `--project-language` | `go` | `go` or `typescript`. With no `--project-config`, a language flag on a scan is a silent no-op. |
-| `--suggest-project-config` | | Go: print a human-reviewed candidate (never auto-applied, never invents layers). TypeScript: interactive TTY authoring; writes nothing until confirmed. |
-| `--output <path>` | stdout | Create-only path for a suggest candidate. |
+| `--project-config <path>` | `.lousy-agents/coach.json`, else a schema-valid root `project.json` | Explicit path wins and no other file is consulted. Otherwise `.lousy-agents/coach.json` at the git top-level, read at the **analyzed revision**. Otherwise a schema-valid root `project.json`, always with `project_config_deprecated`. An invalid canonical file is an error and does not fall back. A selected policy enables `schema_version: "2"`. See [`.lousy-agents` config](./conventions/lousy-agents-config.md). |
+| `--project-language` | `go` | `go` or `typescript`. The language selects the project backend when a policy is selected (explicit path or the discovery order above). With no policy selected, the flag does not start project analysis. |
+| `--suggest-project-config` | | Without `--output`, writes `.lousy-agents/coach.json`. Go also prints the candidate on stdout. TypeScript writes the file after confirmation and does not print the candidate on stdout. `--output` still wins. Never auto-applied; never invents layers. |
+| `--output <path>` | `.lousy-agents/coach.json` | Create-only path for a suggest candidate. When set, this path wins over `.lousy-agents/coach.json`. |
 | `--check-project` | | Read-only TypeScript readiness. Exits `0` on gaps. Not a scan. |
 | `--prepare-compiler` | | Interactive consented **mise-only** TypeScript compiler setup. Requires a TTY and an attended session; refuses otherwise. Also refuses, naming the gap, for a runtime-boundary gap (`node_missing`/`node_unsupported`) — the same restriction the scan path's own compiler-setup offer applies, so the two cannot disagree. It is narrower than the scan's offer, which also runs the project package manager: a repository whose only executable choice is `project_package` is never handed this command as remediation, because it would exit `0` reporting nothing to set up. |
-| `--no-interactive` | `false` | Treat the invocation as unattended even with a controlling terminal attached. On a scan, the interactive compiler-setup and guided-policy-authoring offers are skipped, falling through to the same message-only remediation a piped invocation gets; the TypeScript form of `--suggest-project-config`, and `--prepare-compiler`, refuse with exit `2` instead of prompting (the Go form of `--suggest-project-config` never prompts, and rejects the flag as a usage error). Also triggered by a non-empty `CI` environment variable, so a pty-allocating runner cannot hang on an unanswered prompt. |
+| `--no-interactive` | `false` | Treat the invocation as unattended even with a controlling terminal attached. On a scan, the interactive compiler-setup and guided-policy-authoring offers are skipped, falling through to the same message-only remediation a piped invocation gets; the TypeScript form of `--suggest-project-config`, and `--prepare-compiler`, refuse with exit `2` instead of prompting (the Go form of `--suggest-project-config` never prompts, and rejects the flag as a usage error). When a legacy root `project.json` would otherwise prompt for a copy, the unattended invocation skips that prompt and emits `project_config_migration_skipped` with `mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json`. Also triggered by a non-empty `CI` environment variable, so a pty-allocating runner cannot hang on an unanswered prompt. |
 | `--fail-on-incomplete-coverage` | `false` | Exit `3` when required project coverage (model or bypass phase, on any analyzed side) is incomplete — including when the project backend is unavailable. The report is always written to stdout first. Valid only on scan modes (`--base` / `--baseline`). |
 
 Requires `git` on `PATH`. Analyzes **committed Git objects**, not the dirty
@@ -194,7 +194,7 @@ change is also a signal, so the withheld ones are already counted in
 
 Always present on a successful scan:
 
-- `schema_version`: `"1"` without a valid `--project-config`; `"2"` with one.
+- `schema_version`: `"1"` when no project policy is selected; `"2"` when discovery or an explicit `--project-config` selects a valid policy.
 - `scope`, `summary`, `signals`, `diagnostics`, `coverage`.
 
 Present only when `--min-severity` or `--top` was supplied: `signals_withheld`
@@ -384,7 +384,7 @@ findings in `signals[]`) and nothing else:
 
 ## Rule IDs
 
-File-local (no `--project-config`):
+File-local (no project policy selected):
 
 | `rule_id` | Source |
 | --- | --- |
@@ -399,7 +399,7 @@ File-local (no `--project-config`):
 | `complexity.cognitive_complexity` | per-function score (threshold in codesignal) |
 | `structure.react_component_orchestration_density` | TS/TSX component facts |
 
-With `--project-config`: `architecture.layer_violation` and, when
+With a selected project policy (`--project-config` or discovery): `architecture.layer_violation` and, when
 `required_layer` is set, `architecture.layer_bypass` (Go and TypeScript).
 
 Unrecognized finding kinds are ignored. An empty `signals` array is not a

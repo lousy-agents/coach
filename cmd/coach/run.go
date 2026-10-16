@@ -60,5 +60,5 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return runCheckProject(dir, parsed, stdout, stderr)
 	}
 
-	return runCodesignalScan(dir, parsed, stdout, stderr, newScanOfferBudget())
+	return runCodesignalScan(dir, parsed, os.Stdin, stdout, stderr, newScanOfferBudget())
 }

@@ -1,0 +1,66 @@
+{
+  "schema_version": "1",
+  "roots": [
+    "."
+  ],
+  "layers": [
+    {
+      "name": "entities",
+      "prefixes": [
+        "pkg/domain",
+        "pkg/semantics"
+      ]
+    },
+    {
+      "name": "usecases",
+      "prefixes": [
+        "pkg/usecases",
+        "pkg/codesignal"
+      ]
+    },
+    {
+      "name": "adapters",
+      "prefixes": [
+        "internal/adapters",
+        "pkg/githubingest",
+        "pkg/projectmodel",
+        "internal/codesignalcli",
+        "internal/jsbridge",
+        "internal/coachapi",
+        "internal/projectbridge"
+      ]
+    },
+    {
+      "name": "app",
+      "prefixes": [
+        "cmd"
+      ]
+    }
+  ],
+  "forbidden_imports": [
+    {
+      "from": "entities",
+      "to": "usecases"
+    },
+    {
+      "from": "entities",
+      "to": "adapters"
+    },
+    {
+      "from": "entities",
+      "to": "app"
+    },
+    {
+      "from": "usecases",
+      "to": "adapters"
+    },
+    {
+      "from": "usecases",
+      "to": "app"
+    },
+    {
+      "from": "adapters",
+      "to": "app"
+    }
+  ]
+}
