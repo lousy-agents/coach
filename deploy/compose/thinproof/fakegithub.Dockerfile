@@ -9,7 +9,7 @@ WORKDIR /src
 COPY . .
 RUN CGO_ENABLED=0 go build -mod=vendor -o /out/fakegithub-server ./cmd/fakegithub-server
 
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM alpine:3.24@sha256:c6b073f8e9e58d881f6ffba6ebf3b9ebd60b9e7d6e8337018c0e68bb5c356873
 COPY --from=build /out/fakegithub-server /usr/local/bin/fakegithub-server
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/fakegithub-server"]
