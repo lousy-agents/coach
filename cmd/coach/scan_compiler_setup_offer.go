@@ -25,13 +25,13 @@ import (
 // here -- RunCompilerSetupOffer is where it is known that a menu will
 // actually open, and diagnosing it here would also promise choices to a
 // customer about to be told there are none.
-func runScanCompilerSetupOffer(dir string, f codesignalFlags, stdout, stderr *os.File, wrapped *tssetup.CompilerUnresolvedErrorWithReadiness, budget scanOfferBudget) int {
+func runScanCompilerSetupOffer(dir string, f codesignalFlags, stdin, stdout, stderr *os.File, wrapped *tssetup.CompilerUnresolvedErrorWithReadiness, budget scanOfferBudget) int {
 	ctx, stop := interruptibleContext()
 	defer stop()
 	result := tssetup.RunCompilerSetupOffer(ctx, dir, wrapped.Revision, wrapped.ConfigPath, wrapped.Code, wrapped.Readiness, os.Stdin, stderr)
 
 	if shouldContinueAfterSetup(result) {
-		return runCodesignalScan(dir, f, stdout, stderr, budget.without(scanOfferCompilerSetup))
+		return runCodesignalScan(dir, f, stdin, stdout, stderr, budget.without(scanOfferCompilerSetup))
 	}
 
 	if result.PolicyRequired {

@@ -442,7 +442,7 @@ var _ = Describe("coach codesignal (real scan): the interactive compiler-setup o
 			Expect(err).NotTo(HaveOccurred())
 
 			f := codesignalFlags{baseline: true, format: "json", projectConfig: "project.json", projectConfigSet: true, projectLanguage: "typescript"}
-			exitCode := runCodesignalScan(repo, f, outWrite, errWrite, scanOfferBudget{})
+			exitCode := runCodesignalScan(repo, f, os.Stdin, outWrite, errWrite, scanOfferBudget{})
 			Expect(outWrite.Close()).To(Succeed())
 			Expect(errWrite.Close()).To(Succeed())
 			stdout, readErr := io.ReadAll(outRead)

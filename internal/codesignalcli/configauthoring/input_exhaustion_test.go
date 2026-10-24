@@ -123,7 +123,7 @@ func TestAuthorProjectConfig_NonEOFReadErrorCancelsInsteadOfSpinning(t *testing.
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		done <- outcome{Author("", in, out, out, discovered, "", false)}
+		done <- outcome{Author("", in, out, out, discovered, "", false, false)}
 	}()
 
 	select {

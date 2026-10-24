@@ -13,7 +13,7 @@ func selectsOnlySingleRootUserNamesNumberNot(t *testing.T, discovered projectmod
 	out := &bytes.Buffer{}
 	in := strings.NewReader("2\n")
 
-	result := Author(t.TempDir(), in, out, out, discovered, "", false)
+	result := Author(t.TempDir(), in, out, out, discovered, "", false, false)
 
 	want := []string{"apps/web"}
 	if !equalStringSlices(result.Roots, want) {
@@ -25,7 +25,7 @@ func selectsDiscoveredRootNumberTogetherLiteralPathOrder(t *testing.T, discovere
 	out := &bytes.Buffer{}
 	in := strings.NewReader("2,services/checkout\n")
 
-	result := Author(t.TempDir(), in, out, out, discovered, "", false)
+	result := Author(t.TempDir(), in, out, out, discovered, "", false, false)
 
 	want := []string{"apps/web", "services/checkout"}
 	if !equalStringSlices(result.Roots, want) {
