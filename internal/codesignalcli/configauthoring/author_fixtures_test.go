@@ -124,7 +124,7 @@ func runAuthoringWithTimeout(t *testing.T, timeout time.Duration, discovered pro
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		done <- outcome{Author("", in, out, out, discovered, "", false)}
+		done <- outcome{Author("", in, out, out, discovered, "", false, false)}
 	}()
 
 	select {
@@ -149,7 +149,7 @@ func (r *recordingReader) Read(p []byte) (int, error) {
 func runAuthoring(discovered projectmodel.TSRootDiscoveryResult, lines ...string) (Result, string) {
 	out := &bytes.Buffer{}
 	in := strings.NewReader(strings.Join(lines, "\n") + "\n")
-	result := Author("", in, out, out, discovered, "", false)
+	result := Author("", in, out, out, discovered, "", false, false)
 	return result, out.String()
 }
 

@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/pkgmanager"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -59,11 +57,7 @@ func withProjectPackageResolution(menu Menu, dir, revision, configPath string) (
 // to something nobody previewed.
 func projectPackageWorkingDirectory(dir, revision, configPath string) (workingDirectory, withheldReason string) {
 	worktreeRoot := tstoolchain.WorktreeRoot(dir)
-	policyPath := configPath
-	if policyPath == "" {
-		policyPath = projectconfig.DefaultPath
-	}
-	_, roots, err := projectcheck.CheckPolicy(dir, revision, policyPath)
+	roots, err := checkedPolicyRoots(dir, revision, configPath)
 	if err != nil {
 		return "", setupChoiceReasonManifestContextUnresolved
 	}

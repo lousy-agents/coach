@@ -179,6 +179,10 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config", func() 
 
 			cleanStdout, cleanStderr, cleanExit := runCoachSuggest(repo, "--baseline", "--suggest-project-config")
 			Expect(cleanExit).To(Equal(0), "stderr: %s", cleanStderr)
+			cleanWritten, err := os.ReadFile(filepath.Join(repo, ".lousy-agents", "coach.json"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cleanWritten).To(Equal(cleanStdout), "the default-path file must match the stdout candidate")
+			Expect(os.Remove(filepath.Join(repo, ".lousy-agents", "coach.json"))).To(Succeed())
 
 			Expect(os.WriteFile(filepath.Join(repo, "main.go"), []byte("package main\n\nfunc main() { println(1) }\n"), 0o644)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(repo, "untracked.go"), []byte("package main\n"), 0o644)).To(Succeed())
@@ -188,7 +192,11 @@ var _ = Describe("coach codesignal --baseline --suggest-project-config", func() 
 
 			noisyStdout, noisyStderr, noisyExit := runCoachSuggest(repo, "--baseline", "--suggest-project-config")
 			Expect(noisyExit).To(Equal(0), "stderr: %s", noisyStderr)
+			noisyWritten, err := os.ReadFile(filepath.Join(repo, ".lousy-agents", "coach.json"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(noisyWritten).To(Equal(noisyStdout), "the default-path file must match the stdout candidate")
 
+			Expect(noisyWritten).To(Equal(cleanWritten), "worktree noise must not affect the HEAD-snapshot-based candidate")
 			Expect(noisyStdout).To(Equal(cleanStdout), "worktree noise must not affect the HEAD-snapshot-based candidate")
 			Expect(noisyStderr).To(Equal(cleanStderr), "worktree noise must not affect the HEAD-snapshot-based provenance envelope")
 		})

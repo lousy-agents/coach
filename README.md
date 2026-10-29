@@ -25,10 +25,10 @@ Project scanning is a different contract from ESLint boundary plugins, dependenc
 coach codesignal --baseline --check-project --project-language typescript
 coach codesignal --baseline --suggest-project-config --project-language typescript
 # commit the JSON at the analyzed revision, then:
-coach codesignal --baseline --project-config project.json --project-language typescript --format json
+coach codesignal --baseline --project-config .lousy-agents/coach.json --project-language typescript --format json
 ```
 
-`--check-project` is readiness, not a scan (exit `0` even with gaps). `--suggest-project-config` is an interactive TTY and writes nothing until you confirm. Project mode needs that committed policy plus a supported compiler and Node 24 or 26. An empty `signals` array is not compliance.
+`--check-project` is readiness, not a scan (exit `0` even with gaps). The TypeScript form of `--suggest-project-config` is an interactive TTY and writes nothing until you confirm; the Go form writes the candidate without prompting. Project mode needs that committed policy plus a supported compiler and Node 24 or 26. An empty `signals` array is not compliance.
 
 Full flags and schema: [CLI contract](./docs/cli-codesignal.md).
 
@@ -197,9 +197,17 @@ guess your architecture — you declare layers and forbidden import edges.
 coach codesignal --baseline --suggest-project-config
 
 # after the file is committed at the analyzed revision
-coach codesignal --base main --project-config project.json
-coach codesignal --baseline --project-config project.json --project-language typescript
+coach codesignal --base main --project-config .lousy-agents/coach.json
+coach codesignal --baseline --project-config .lousy-agents/coach.json --project-language typescript
 ```
+
+Move a root `project.json` to that path:
+
+```sh
+mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json
+```
+
+An explicit `--project-config` still reads only that path. A schema-valid root `project.json` is still read with a deprecation diagnostic until the follow-up removal ([issue #511](https://github.com/lousy-agents/coach/issues/511)). The lookup is [`.lousy-agents` config](./docs/conventions/lousy-agents-config.md).
 
 `--project-config` is read from the **analyzed revision**, not your dirty
 worktree. An uncommitted candidate is invisible to the scan. A valid config

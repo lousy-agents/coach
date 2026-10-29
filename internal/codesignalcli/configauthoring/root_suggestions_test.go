@@ -44,7 +44,7 @@ func cancelsUserNeverAnswersPrompt(t *testing.T, discovered projectmodel.TSRootD
 	out := &bytes.Buffer{}
 	in := strings.NewReader("")
 
-	result := Author(t.TempDir(), in, out, out, discovered, "", false)
+	result := Author(t.TempDir(), in, out, out, discovered, "", false, false)
 
 	if !result.Cancelled {
 		t.Fatalf("expected the session to cancel when the user never answers the root-selection prompt, got Cancelled = false, result = %+v", result)
@@ -58,7 +58,7 @@ func selectsLiteralPathUserTypesInsteadDiscoveredRoot(t *testing.T, discovered p
 	out := &bytes.Buffer{}
 	in := strings.NewReader("services/checkout\n")
 
-	result := Author(t.TempDir(), in, out, out, discovered, "", false)
+	result := Author(t.TempDir(), in, out, out, discovered, "", false, false)
 
 	want := []string{"services/checkout"}
 	if !equalStringSlices(result.Roots, want) {
@@ -71,7 +71,7 @@ func printsDiscoveredRootsSuggestionBeforeReadingAnyAnswer(t *testing.T, discove
 	out := &recordingWriter{w: &bytes.Buffer{}, events: &events}
 	in := &recordingReader{r: strings.NewReader("1\n"), events: &events}
 
-	Author(t.TempDir(), in, out, out, discovered, "", false)
+	Author(t.TempDir(), in, out, out, discovered, "", false, false)
 
 	if len(events) == 0 {
 		t.Fatalf("expected at least one write/read event, got none")
@@ -103,7 +103,7 @@ func selectsRootsUserNamesNumber(t *testing.T, discovered projectmodel.TSRootDis
 	out := &bytes.Buffer{}
 	in := strings.NewReader("1,2\n")
 
-	result := Author(t.TempDir(), in, out, out, discovered, "", false)
+	result := Author(t.TempDir(), in, out, out, discovered, "", false, false)
 
 	want := []string{"apps/api", "apps/web"}
 	if !equalStringSlices(result.Roots, want) {

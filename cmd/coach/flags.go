@@ -67,7 +67,7 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		failOnIncompleteCoverage: flags.Bool("fail-on-incomplete-coverage", false, "exit 3 when required project coverage (model or bypass, on any analyzed side) is incomplete; the report is still written to stdout"),
 	}
 	flags.Var(h.suggestProjectConfig, "suggest-project-config", "generate a project-config candidate JSON from Go module/workspace discovery at HEAD (requires --baseline; human-reviewed candidate only, never auto-applied); combined with --project-language typescript, runs an interactive guided-authoring session over discovered TypeScript roots instead of emitting a Go candidate directly")
-	flags.Var(h.output, "output", "write the --suggest-project-config candidate to this repository-relative path instead of stdout (create-only)")
+	flags.Var(h.output, "output", "write the --suggest-project-config candidate only to this repository-relative path instead of .lousy-agents/coach.json (create-only; Go also omits the stdout candidate)")
 	flags.Var(h.checkProject, "check-project", "report a read-only TypeScript project-readiness result for the selected revision (requires --baseline and --project-language typescript)")
 	flags.Var(h.prepareCompiler, "prepare-compiler", "run the interactive, consented mise TypeScript compiler-setup session for the selected revision, prompting before any installation (requires --baseline and --project-language typescript)")
 	return h

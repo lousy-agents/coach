@@ -120,7 +120,7 @@ func checkApprovalGateTerminatesPromptlyExhaustedErroring(t *testing.T, in io.Re
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		done <- outcome{Author("", in, io.Discard, io.Discard, discovered, "", false)}
+		done <- outcome{Author("", in, io.Discard, io.Discard, discovered, "", false, false)}
 	}()
 
 	select {
