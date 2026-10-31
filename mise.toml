@@ -5,7 +5,7 @@ experimental = true
 
 [tools]
 go = "1.27.3"
-node = "24"
+node = "26"
 # pnpm and bun are test toolchain, not build toolchain: cmd/coach's frozen
 # adapter rows are only proven to suppress a dependency's lifecycle scripts by
 # running the real binary against a sentinel fixture
