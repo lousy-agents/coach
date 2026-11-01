@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -61,12 +60,29 @@ func deprecatedProjectConfigCanMigrate(dir, revision string, f codesignalFlags) 
 }
 
 func answeredYes(stdin *os.File) bool {
-	line, err := bufio.NewReader(stdin).ReadString('\n')
-	if err != nil && line == "" {
-		return false
-	}
-	answer := strings.ToLower(strings.TrimSpace(line))
+	answer := strings.ToLower(strings.TrimSpace(readLineWithoutReadAhead(stdin)))
 	return answer == "y" || answer == "yes"
+}
+
+// readLineWithoutReadAhead takes one byte at a time because a buffered
+// reader would swallow answers typed ahead for the next prompt, which reads
+// stdin again.
+func readLineWithoutReadAhead(stdin *os.File) string {
+	var line []byte
+	next := make([]byte, 1)
+	for {
+		n, err := stdin.Read(next)
+		if n == 1 {
+			if next[0] == '\n' {
+				break
+			}
+			line = append(line, next[0])
+		}
+		if err != nil {
+			break
+		}
+	}
+	return string(line)
 }
 
 func projectConfigMigrationSkipped() codesignal.Diagnostic {
