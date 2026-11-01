@@ -3,12 +3,19 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -35,6 +42,45 @@ func commitRealCompilerTypeScriptRepo(policyPath, policy string) string {
 	commitFile(repo, policyPath, policy)
 	installRealTypescriptCompiler(repo, true)
 	return repo
+}
+
+const nonCanonicalTerminalTimeout = 15 * time.Second
+
+// runCoachOnNonCanonicalTerminal runs coach on a pseudo-terminal that hands
+// bytes over as they arrive, instead of one line per read. Everything typed is
+// already waiting when coach starts, so a prompt that reads ahead consumes the
+// answers meant for the next prompt, and coach hangs until the timeout.
+func runCoachOnNonCanonicalTerminal(dir string, env []string, typed string, args ...string) (stdout, stderr []byte, timedOut bool, err error) {
+	GinkgoHelper()
+	master, slave := openPTYPair()
+	defer master.Close()
+
+	settings, getErr := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+	Expect(getErr).NotTo(HaveOccurred())
+	settings.Lflag &^= unix.ICANON
+	settings.Cc[unix.VMIN] = 1
+	settings.Cc[unix.VTIME] = 0
+	Expect(unix.IoctlSetTermios(int(slave.Fd()), unix.TCSETS, settings)).To(Succeed())
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonCanonicalTerminalTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, commandPath, args...)
+	command.Dir = dir
+	command.Env = env
+	command.Stdin = slave
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+	var outBuf, errBuf bytes.Buffer
+	command.Stdout = &outBuf
+	command.Stderr = &errBuf
+
+	_, writeErr := master.WriteString(typed)
+	Expect(writeErr).NotTo(HaveOccurred())
+	Expect(command.Start()).To(Succeed())
+	Expect(slave.Close()).To(Succeed())
+	go io.Copy(io.Discard, master)
+
+	err = command.Wait()
+	return outBuf.Bytes(), errBuf.Bytes(), ctx.Err() != nil, err
 }
 
 func envWithout(name string) []string {
@@ -170,6 +216,19 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 			onDisk, err := os.ReadFile(filepath.Join(repo, coachConfigPath))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(onDisk)).To(Equal(singleRootPolicyJSON), "the existing file must never be touched")
+		})
+
+		It("accepts the offer and completes the session when the terminal delivers typed-ahead input without line buffering", func() {
+			repo := commitRealCompilerTypeScriptRepo(coachConfigPath, singleRootPolicyJSON)
+
+			stdout, stderr, timedOut, err := runCoachOnNonCanonicalTerminal(repo, envWithout("CI"), layerlessOfferAccepted,
+				"codesignal", "--baseline", "--project-language", "typescript", "--format=json")
+
+			Expect(timedOut).To(BeFalse(), "the offer's answer must not swallow the session's typed-ahead answers; stdout: %s stderr: %s", stdout, stderr)
+			Expect(err).NotTo(HaveOccurred(), "stdout: %s stderr: %s", stdout, stderr)
+			Expect(decodeCoachReport(stdout).SchemaVersion).To(Equal("2"), "stdout must stay one report")
+			Expect(string(stderr)).To(ContainSubstring(`"roots"`), "the approved candidate must be printed; stderr: %s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("no file was created"), "stderr: %s", stderr)
 		})
 	})
 
