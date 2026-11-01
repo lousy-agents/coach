@@ -1,7 +1,6 @@
 package semantics
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -20,10 +19,8 @@ func TestTSXMutatesInput_PropertyAssignment(t *testing.T) {
 	_, findings := computeTSFeatures(root, []byte(source))
 	got := mustFindTSMutatesInput(t, source, findings)
 
-	funcStart := len("const Widget = ")
-	wantName := fmt.Sprintf("anonymous@%d:props", funcStart)
-	if got.Name != wantName {
-		t.Errorf("Finding.Name = %q, want %q", got.Name, wantName)
+	if want := "Widget/<func lit>:props"; got.Name != want {
+		t.Errorf("Finding.Name = %q, want %q", got.Name, want)
 	}
 	gotText := source[got.Location.StartByte:got.Location.EndByte]
 	if gotText != "props.value" {
@@ -41,8 +38,8 @@ func TestTSXMutatesInput_CompoundAssignment(t *testing.T) {
 	defer closeTree()
 
 	_, findings := computeTSFeatures(root, []byte(source))
-	got := mutatesInputFindingNamed(findings, "anonymous@15:props", "props.value")
+	got := mutatesInputFindingNamed(findings, "Widget/<func lit>:props", "props.value")
 	if got == nil {
-		t.Fatalf("computeTSFeatures for TSX compound assignment %q: want mutates_input named %q with evidence %q, got %+v", source, "anonymous@15:props", "props.value", findings)
+		t.Fatalf("computeTSFeatures for TSX compound assignment %q: want mutates_input named %q with evidence %q, got %+v", source, "Widget/<func lit>:props", "props.value", findings)
 	}
 }

@@ -1,8 +1,6 @@
 package semantics
 
 import (
-	"fmt"
-
 	"github.com/lousy-agents/coach/pkg/semantics/internal/engine"
 )
 
@@ -16,9 +14,19 @@ type tsParamScope struct {
 	bindings  map[string]bool
 }
 
+// tsAnonymousFunctionOwnerName names a function with no syntactic name. It
+// carries no source position because the name is part of a signal's
+// identity: a byte offset would change whenever an edit above the function
+// shifts it. tsFunctionOwnerName prefixes it with the nearest function name
+// or the name the function is held under (tsAssignedName: a plain variable,
+// assignment target property, class field, or object property), so anonymous
+// functions under differently named holders get different names, while those
+// under the same name share one.
+const tsAnonymousFunctionOwnerName = "<func lit>"
+
 // newTSParamScope builds decl's tsParamScope: its Finding-name half (own
-// "name" field's text, or "anonymous@<start_byte>" if it has none) and its
-// identifier-bound parameter set (tsIdentifierParams).
+// "name" field's text, or tsAnonymousFunctionOwnerName if it has none) and
+// its identifier-bound parameter set (tsIdentifierParams).
 func newTSParamScope(decl engine.Node, source []byte) tsParamScope {
 	bindings := tsIdentifierParams(decl, source)
 	if accumulator, ok := tsFreshReduceAccumulatorName(decl, source); ok {
@@ -35,15 +43,43 @@ func newTSParamScope(decl engine.Node, source []byte) tsParamScope {
 // function_expression, generator_function[_declaration], and
 // method_definition all expose one when named) or, when decl has no name
 // field at all -- always true for arrow_function, and true for an
-// anonymous function_expression -- "anonymous@<start_byte>". Per the
-// issue spec this deliberately does not borrow a name from an enclosing
-// variable_declarator (`const f = () => {}` still counts as anonymous):
-// only decl's own syntactic name field counts.
+// anonymous function_expression -- "<context>/<func lit>", where <context>
+// is tsNearestFunctionName, or just tsAnonymousFunctionOwnerName when no
+// function or variable name is reachable. A function bound to a variable
+// (`const f = () => {}`) is still anonymous: the variable name is only a
+// prefix of its "<func lit>" name, never the function's own name.
 func tsFunctionOwnerName(decl engine.Node, source []byte) string {
 	if nameNode := decl.ChildByFieldName("name"); nameNode != nil {
 		return nameNode.Utf8Text(source)
 	}
-	return fmt.Sprintf("anonymous@%d", decl.StartByte())
+	if context := tsNearestFunctionName(decl, source); context != "" {
+		return context + "/" + tsAnonymousFunctionOwnerName
+	}
+	return tsAnonymousFunctionOwnerName
+}
+
+// tsNearestFunctionName returns the name of the nearest function-like node,
+// starting at decl itself and walking outward, that has one: its own
+// syntactic name, or else the name it is held under (tsAssignedName).
+// Anonymous functions that are held under no name are skipped, so a callback
+// nested in other callbacks takes the closest name. It returns "" when none
+// is reachable, as for an immediately invoked function or module-level code.
+func tsNearestFunctionName(decl engine.Node, source []byte) string {
+	for node := decl; node != nil; node = node.Parent() {
+		if !tsFunctionLikeKinds[node.Kind()] && node.Kind() != "method_definition" {
+			continue
+		}
+		if nameNode := node.ChildByFieldName("name"); nameNode != nil {
+			if node.Kind() == "method_definition" {
+				return tsQualifiedMethodName(node, nameNode, source)
+			}
+			return nameNode.Utf8Text(source)
+		}
+		if assigned := tsAssignedName(node, source); assigned != "" {
+			return assigned
+		}
+	}
+	return ""
 }
 
 func appendTSLocalBindings(scopes []tsParamScope, names map[string]bool) []tsParamScope {
