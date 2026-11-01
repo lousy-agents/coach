@@ -164,6 +164,32 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 		Entry("a controlling terminal with an explicit --project-config naming the invalid canonical file", func(path string) []string { return stubToolchainEnv(path) }, []string{"--project-config", coachConfigPath}, true),
 	)
 
+	When("the committed canonical policy declares no layers and coverage is incomplete", Label("ts-project-backend"), func() {
+		It("offers authoring after a scan that exits 0 and offers nothing after the same scan with --fail-on-incomplete-coverage exits 3", func() {
+			skipWithoutRealTypeScriptCompiler()
+			repo := newTempGitRepo()
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(realTypescriptVersion()))
+			commitFile(repo, "tsconfig.json", tsRootScopeGapTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
+			commitFile(repo, coachConfigPath, singleRootPolicyJSON)
+			installRealTypescriptCompiler(repo, true)
+			scan := []string{"codesignal", "--baseline", "--project-language", "typescript", "--format=json"}
+
+			By("without the flag the scan exits 0 and the offer appears, which proves this fixture reaches the offer")
+			stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(commandPath, repo, envWithout("CI"), layerlessOfferDeclined, scan...)
+			Expect(exitCode).To(Equal(0), "stdout: %s stderr: %s", stdout, stderr)
+			Expect(decodeCoachReport(stdout).ProjectProvenance.Head.Coverage.Model).To(Equal("incomplete"))
+			Expect(string(stderr)).To(ContainSubstring(layerlessOfferText), "stderr: %s", stderr)
+
+			By("with the flag the scan exits 3, still renders its report, and makes no offer")
+			stdout, stderr, _, exitCode = runCoachBinaryWithControllingTerminal(commandPath, repo, envWithout("CI"), layerlessOfferDeclined, append(scan, "--fail-on-incomplete-coverage")...)
+			Expect(exitCode).To(Equal(3), "stdout: %s stderr: %s", stdout, stderr)
+			Expect(decodeCoachReport(stdout).ProjectProvenance.Head.Coverage.Model).To(Equal("incomplete"))
+			Expect(string(stderr)).NotTo(ContainSubstring(layerlessOfferText), "stderr: %s", stderr)
+		})
+	})
+
 	When("a Go scan has no --project-config, the committed canonical policy is schema-invalid, and a controlling terminal is available", func() {
 		It("opens no TypeScript authoring session and stays exit 2 with empty stdout", func() {
 			repo := newTempGitRepo()
