@@ -66,6 +66,9 @@ func tsNearestFunctionName(decl engine.Node, source []byte) string {
 			continue
 		}
 		if nameNode := node.ChildByFieldName("name"); nameNode != nil {
+			if node.Kind() == "method_definition" {
+				return tsQualifiedMethodName(node, nameNode, source)
+			}
 			return nameNode.Utf8Text(source)
 		}
 		if assigned := tsAssignedName(node, source); assigned != "" {
