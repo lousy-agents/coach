@@ -29,6 +29,17 @@ const (
 	DiagKindWorktreeChangesNotAnalyzed    = "worktree_changes_not_analyzed"
 )
 
+// Diagnostic.Kind values EvaluateTypeScriptLayerViolations emits for import
+// edges whose target layer rules cannot place. An unresolved target could be
+// a broken alias that hides a forbidden edge, so it makes the layer verdict
+// incomplete. The aggregated not-evaluated count covers external packages,
+// non-source files, and aliases the sidecar does not follow; it is
+// informational by decision, and docs/cli-codesignal.md states the gap.
+const (
+	DiagKindProjectImportUnresolved            = "project_import_unresolved"
+	DiagKindProjectExternalImportsNotEvaluated = "project_external_imports_not_evaluated"
+)
+
 // Dirty-tree notices other than "changes were not analyzed".
 // These kind strings must not contain "not_analyzed".
 const (

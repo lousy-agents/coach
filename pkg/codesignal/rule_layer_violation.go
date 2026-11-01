@@ -79,22 +79,26 @@ func EvaluateGoLayerViolations(model domain.Model, policy LayerPolicy, ruleVersi
 
 // EvaluateTypeScriptLayerViolations is the TypeScript/TSX analog of
 // EvaluateGoLayerViolations: it evaluates model's file-addressed TS/TSX
-// import edges (value-level import and reexport, and type-only) against
-// policy, producing architecture.layer_violation ProjectChanges with the same
-// field shape as the Go evaluator plus a MachineEvidence["language"] =
-// "typescript" entry.
+// import edges (value-level import and reexport, type-only, and string-literal
+// dynamic import() and require() calls) against policy, producing
+// architecture.layer_violation ProjectChanges with the same field shape as the
+// Go evaluator plus a MachineEvidence["language"] = "typescript" entry.
 //
-// An edge is eligible only when Kind is "import", "reexport" or "type_only"
+// An edge is eligible only when its Kind is one evaluatedTSEdgeKind accepts
 // and both From and To carry the "file:" prefix (see forbiddenTSPair).
 // "type_only" edges are evaluated because a layer rule forbids a
-// compile-time dependency just as it forbids a runtime one (coach#562). The
-// project sidecar only ever emits a "file:"-addressed To together with
-// Resolution "snapshot" (js/semantics/src/project-sidecar/edges-resolve.ts),
-// so the prefix check alone is sufficient to select snapshot-resolved edges;
-// "commonjs_require"/"dynamic_import" edges or edges resolving to
-// "external:"/"unresolved:" targets are silently skipped, same as Go's
-// evaluator skips non-internal edges. Consequently the returned diagnostics
-// are always nil in the current design.
+// compile-time dependency just as it forbids a runtime one (coach#562).
+// Dynamic import() and require() are evaluated like static imports
+// (coach#561). The project sidecar only ever emits a "file:"-addressed To
+// together with Resolution "snapshot"
+// (js/semantics/src/project-sidecar/edges-resolve.ts), so the prefix check
+// alone is sufficient to select snapshot-resolved edges.
+//
+// An edge from a file inside a declared layer to an "unresolved:" target gets
+// one DiagKindProjectImportUnresolved diagnostic, and the edges to
+// "external:" targets are counted in a single
+// DiagKindProjectExternalImportsNotEvaluated diagnostic. Neither is a
+// violation. Callers stamp Side and Revision.
 //
 // If policy has no Layers or no ForbiddenImports, EvaluateTypeScriptLayerViolations
 // returns (nil, nil) immediately: there is no policy to evaluate.
@@ -103,9 +107,10 @@ func EvaluateTypeScriptLayerViolations(model domain.Model, policy LayerPolicy, r
 		return nil, nil
 	}
 
+	diagnostics := unevaluatedTSEdgeDiagnostics(model.ImportEdges, policy)
 	groups, groupLayers := groupForbiddenTSEdges(model.ImportEdges, policy)
 	if len(groups) == 0 {
-		return nil, nil
+		return nil, diagnostics
 	}
 
 	keys := sortedLayerPairKeys(groups)
@@ -114,7 +119,7 @@ func EvaluateTypeScriptLayerViolations(model domain.Model, policy LayerPolicy, r
 		layers := groupLayers[key]
 		changes = append(changes, layerViolationChange(key, groups[key], layers[0], layers[1], ruleVersion, backendVersion, configDigest, "typescript"))
 	}
-	return changes, nil
+	return changes, diagnostics
 }
 
 // allEdgesTypeOnly marks findings the ExcludeTypeOnlyEdges option would

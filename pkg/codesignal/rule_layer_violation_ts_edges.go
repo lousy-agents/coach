@@ -22,13 +22,23 @@ func groupForbiddenTSEdges(edges []domain.ImportEdge, policy LayerPolicy) (map[l
 	return groups, groupLayers
 }
 
+// evaluatedTSEdgeKind is the one place that decides which sidecar edge kinds
+// layer rules evaluate, so the violation path and the diagnostics for
+// targets it cannot place never disagree about an edge.
+func evaluatedTSEdgeKind(kind string, excludeTypeOnly bool) bool {
+	switch kind {
+	case "import", "reexport", "commonjs_require", "dynamic_import":
+		return true
+	case "type_only":
+		return !excludeTypeOnly
+	}
+	return false
+}
+
 // forbiddenTSPair implements the eligibility rule documented on
 // EvaluateTypeScriptLayerViolations.
 func forbiddenTSPair(edge domain.ImportEdge, layers []ArchitectureLayer, forbidden map[[2]string]struct{}, excludeTypeOnly bool) (layerPairKey, [2]string, bool) {
-	if edge.Kind != "import" && edge.Kind != "reexport" && edge.Kind != "type_only" {
-		return layerPairKey{}, [2]string{}, false
-	}
-	if excludeTypeOnly && edge.Kind == "type_only" {
+	if !evaluatedTSEdgeKind(edge.Kind, excludeTypeOnly) {
 		return layerPairKey{}, [2]string{}, false
 	}
 	importerFile, okFrom := strings.CutPrefix(edge.From, "file:")

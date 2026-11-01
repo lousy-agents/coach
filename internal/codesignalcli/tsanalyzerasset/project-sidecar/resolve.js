@@ -7,14 +7,26 @@ import { VIRTUAL_ROOT } from "./vfs.js";
  * and as a fallback when the checker's own resolution comes back empty.
  * Static import/export declarations are resolved primarily through the
  * real TS checker (see edges.ts).
+ *
+ * A bare specifier is tried against `aliases` first, then against workspace
+ * packages. A specifier that an alias pattern claims but whose targets are
+ * missing is "unresolved" rather than "external": the snapshot has no
+ * node_modules, so the only way to tell a broken alias from a package is that
+ * a package is never claimed by a specific pattern. A catch-all `*` pattern
+ * claims every package, so its misses stay "external".
  */
-export function resolveSpecifier(fromVirtualPath, specifier, snapshot) {
+export function resolveSpecifier(fromVirtualPath, specifier, snapshot, aliases) {
     if (isRelativeSpecifier(specifier)) {
         const resolved = resolveRelative(fromVirtualPath, specifier, snapshot.nonMirrorVirtualPaths);
         return resolved ? { kind: "snapshot", virtualPath: resolved } : { kind: "unresolved" };
     }
+    const viaAlias = aliases ? matchPathAlias(specifier, aliases, snapshot.nonMirrorVirtualPaths) : undefined;
+    if (viaAlias?.virtualPath)
+        return { kind: "snapshot", virtualPath: viaAlias.virtualPath };
     const resolved = resolvePackageSpecifier(specifier, snapshot);
-    return resolved ? { kind: "snapshot", virtualPath: resolved } : { kind: "external" };
+    if (resolved)
+        return { kind: "snapshot", virtualPath: resolved };
+    return viaAlias?.claimedBySpecificPattern ? { kind: "unresolved" } : { kind: "external" };
 }
 function isRelativeSpecifier(spec) {
     return spec === "." || spec === ".." || spec.startsWith("./") || spec.startsWith("../");
@@ -44,6 +56,44 @@ function probeCandidates(base, paths) {
             return candidate;
     }
     return undefined;
+}
+function matchPathAlias(specifier, aliases, paths) {
+    const pattern = bestMatchingPattern(specifier, Object.keys(aliases.paths));
+    if (pattern === undefined)
+        return undefined;
+    const star = pattern.indexOf("*");
+    const capture = star < 0 ? "" : specifier.slice(star, specifier.length - (pattern.length - star - 1));
+    for (const target of aliases.paths[pattern] ?? []) {
+        const substituted = star < 0 ? target : target.replace("*", capture);
+        const hit = probeCandidates(normalizeVirtualPath(`${aliases.baseDirVirtual}/${substituted}`), paths);
+        if (hit)
+            return { virtualPath: hit, claimedBySpecificPattern: true };
+    }
+    return { claimedBySpecificPattern: pattern !== "*" };
+}
+/**
+ * Mirrors the checker's choice: an exact (wildcard-free) pattern wins
+ * outright, otherwise the matching wildcard pattern with the longest prefix.
+ */
+function bestMatchingPattern(specifier, patterns) {
+    let best;
+    let bestPrefixLength = -1;
+    for (const pattern of patterns) {
+        const star = pattern.indexOf("*");
+        if (star < 0) {
+            if (pattern === specifier)
+                return pattern;
+            continue;
+        }
+        const prefix = pattern.slice(0, star);
+        const suffix = pattern.slice(star + 1);
+        const matches = specifier.length >= prefix.length + suffix.length && specifier.startsWith(prefix) && specifier.endsWith(suffix);
+        if (matches && prefix.length > bestPrefixLength) {
+            best = pattern;
+            bestPrefixLength = prefix.length;
+        }
+    }
+    return best;
 }
 function resolvePackageSpecifier(specifier, snapshot) {
     for (const info of snapshot.packagesByName.values()) {

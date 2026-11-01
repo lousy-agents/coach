@@ -9,7 +9,7 @@ import {
   KIND_TYPE_ONLY,
   type ImportEdgeFact,
 } from "./protocol.js";
-import { resolveTarget } from "./edges-resolve.js";
+import { resolveTarget, type SpecifierNode } from "./edges-resolve.js";
 import { isTypeOnlyExportDeclaration, isTypeOnlyImportClause } from "./type-only.js";
 import type { ProjectSnapshot } from "./vfs.js";
 
@@ -67,14 +67,16 @@ function edgeFromCall(
 }
 
 interface ClassifiedCall {
-  specifier: astns.StringLiteral;
+  specifier: SpecifierNode;
   kind: string;
   useChecker: boolean;
 }
 
 function classifyCallExpression(node: astns.CallExpression, ast: typeof astns): ClassifiedCall | undefined {
-  if (node.arguments.length === 0 || !ast.isStringLiteral(node.arguments[0])) return undefined;
   const specifier = node.arguments[0];
+  if (specifier === undefined || !(ast.isStringLiteral(specifier) || ast.isNoSubstitutionTemplateLiteral(specifier))) {
+    return undefined;
+  }
   if (ast.isIdentifier(node.expression) && node.expression.text === "require") {
     return { specifier, kind: KIND_COMMONJS_REQUIRE, useChecker: false };
   }
@@ -86,7 +88,7 @@ function classifyCallExpression(node: astns.CallExpression, ast: typeof astns): 
 
 function buildEdge(
   fromId: string,
-  specifierNode: astns.StringLiteral,
+  specifierNode: SpecifierNode,
   sf: astns.SourceFile,
   fromRepoPath: string,
   kind: string,

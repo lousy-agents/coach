@@ -6,6 +6,7 @@ import (
 
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
+	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
 func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
@@ -132,6 +133,130 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 				"additional diagnostics were recorded",
 			},
 			wantAbsent: []string{"not analyzed", "project analysis did not complete"},
+		},
+		{
+			name: "keeps the unqualified verdict when the only diagnostic is the informational external-package count",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 1},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: ".", Kind: codesignal.DiagKindProjectExternalImportsNotEvaluated, Message: "2 import edges to external packages were not evaluated by layer rules"},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{"No active CodeSignal findings."},
+			wantAbsent:   []string{"incomplete", "additional diagnostics were recorded"},
+		},
+		{
+			name: "keeps the unqualified verdict for the informational count recorded on the base side",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 1},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: ".", Kind: "base_" + codesignal.DiagKindProjectExternalImportsNotEvaluated, Message: "1 import edge to an external package was not evaluated by layer rules", Side: "base"},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{"No active CodeSignal findings."},
+			wantAbsent:   []string{"incomplete"},
+		},
+		{
+			name: "still qualifies the verdict for an unknown diagnostic that sits beside the informational count",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 1},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: ".", Kind: codesignal.DiagKindProjectExternalImportsNotEvaluated, Message: "1 import edge to an external package was not evaluated by layer rules"},
+					{Path: "a.ts", Kind: "some_future_diagnostic_kind", Message: "m"},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{
+				"No active CodeSignal findings, but the analysis is incomplete",
+				"additional diagnostics were recorded",
+			},
+		},
+		{
+			name: "qualifies the verdict and says why when an import did not resolve",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 1},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "pkg/handlers/h.ts", Kind: codesignal.DiagKindProjectImportUnresolved, Message: "m"},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{
+				"No active CodeSignal findings, but the analysis is incomplete",
+				"1 import did not resolve, so layer rules cannot tell whether it crosses a layer",
+			},
+			wantAbsent: []string{"additional diagnostics were recorded"},
+		},
+		{
+			name: "does not call a no-match scan complete when an import did not resolve",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 2},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "pkg/handlers/h.ts", Kind: codesignal.DiagKindProjectImportUnresolved, Message: "m"},
+				},
+				ProjectNextActions: []codesignal.ProjectNextAction{{Kind: "inspect_diagnostics"}},
+				ProjectCoverage:    &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{
+				"found no configured covered match, but the analysis is incomplete",
+				"1 import did not resolve, so layer rules cannot tell whether it crosses a layer",
+			},
+			wantAbsent: []string{"Complete scan"},
+		},
+		{
+			name: "keeps calling a no-match scan complete when the only diagnostic is the informational count",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 2},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: ".", Kind: codesignal.DiagKindProjectExternalImportsNotEvaluated, Message: "m"},
+				},
+				ProjectNextActions: []codesignal.ProjectNextAction{{Kind: "inspect_diagnostics"}},
+				ProjectCoverage:    &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{"Complete scan found no configured covered match."},
+			wantAbsent:   []string{"incomplete"},
+		},
+		{
+			name: "counts several unresolved imports across both sides of a diff",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 1},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "a.ts", Kind: codesignal.DiagKindProjectImportUnresolved, Message: "m"},
+					{Path: "b.ts", Kind: codesignal.DiagKindProjectImportUnresolved, Message: "m"},
+					{Path: "c.ts", Kind: "base_" + codesignal.DiagKindProjectImportUnresolved, Message: "m", Side: "base"},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{
+				"No active CodeSignal findings, but the analysis is incomplete",
+				"3 imports did not resolve, so layer rules cannot tell whether they cross a layer",
+			},
+		},
+		{
+			name: "counts one unresolved import once when the same edge is unresolved on both sides of a diff",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 1},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "a.ts", Kind: codesignal.DiagKindProjectImportUnresolved, Message: "import of \"../x\" from a.ts did not resolve", Location: &semantics.Location{StartRow: 2}, Side: "head"},
+					{Path: "a.ts", Kind: "base_" + codesignal.DiagKindProjectImportUnresolved, Message: "import of \"../x\" from a.ts did not resolve", Location: &semantics.Location{StartRow: 2}, Side: "base"},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{"1 import did not resolve, so layer rules cannot tell whether it crosses a layer"},
+			wantAbsent:   []string{"2 imports did not resolve"},
+		},
+		{
+			name: "counts two unresolved imports when the same specifier is unresolved on different lines of one file",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 1},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "a.ts", Kind: codesignal.DiagKindProjectImportUnresolved, Message: "import of \"../x\" from a.ts did not resolve", Location: &semantics.Location{StartRow: 2}},
+					{Path: "a.ts", Kind: codesignal.DiagKindProjectImportUnresolved, Message: "import of \"../x\" from a.ts did not resolve", Location: &semantics.Location{StartRow: 7}},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{"2 imports did not resolve, so layer rules cannot tell whether they cross a layer"},
 		},
 		{
 			name: "states both causes when diagnostics and incomplete project coverage co-occur",
