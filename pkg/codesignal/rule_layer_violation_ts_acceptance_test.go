@@ -391,6 +391,52 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 		})
 	})
 
+	When("a layer prefix names a single TypeScript file rather than a directory", func() {
+		fileLevelPolicy := func() codesignal.LayerPolicy {
+			return codesignal.LayerPolicy{
+				Layers: []codesignal.ArchitectureLayer{
+					{Name: "entry", Prefixes: []string{"packages/core/src/index.ts"}},
+					{Name: "db", Prefixes: []string{"packages/db"}},
+				},
+				ForbiddenImports: []codesignal.ForbiddenLayerImport{
+					{From: "entry", To: "db"},
+				},
+			}
+		}
+
+		It("treats exactly that file as a member of the layer", func() {
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:packages/core/src/index.ts", To: "file:packages/db/d.ts", Kind: "import", Resolution: "snapshot", Site: "packages/core/src/index.ts:3"},
+				},
+			}
+
+			changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, fileLevelPolicy(), "1", "backend-1", "digest-1")
+
+			Expect(diagnostics).To(BeEmpty())
+			Expect(changes).To(HaveLen(1))
+			Expect(changes[0].MachineEvidence).To(HaveKeyWithValue("importer", "packages/core/src/index.ts"))
+			Expect(changes[0].MachineEvidence).To(HaveKeyWithValue("layer_from", "entry"))
+		})
+
+		DescribeTable("does not extend the layer to another file that merely begins with the same path",
+			func(importer string) {
+				model := domain.Model{
+					ImportEdges: []domain.ImportEdge{
+						{From: "file:" + importer, To: "file:packages/db/d.ts", Kind: "import", Resolution: "snapshot", Site: importer + ":3"},
+					},
+				}
+
+				changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, fileLevelPolicy(), "1", "backend-1", "digest-1")
+
+				Expect(diagnostics).To(BeEmpty())
+				Expect(changes).To(BeEmpty())
+			},
+			Entry("a tsx file with the same stem", "packages/core/src/index.tsx"),
+			Entry("a source map beside it", "packages/core/src/index.ts.map"),
+		)
+	})
+
 	When("the policy has no layers or no forbidden imports configured", func() {
 		It("returns nil, nil immediately regardless of how many edges the model has", func() {
 			model := domain.Model{
