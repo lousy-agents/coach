@@ -118,6 +118,24 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 		Entry("a controlling terminal with an explicit --project-config naming the invalid canonical file", func(path string) []string { return stubToolchainEnv(path) }, []string{"--project-config", coachConfigPath}, true),
 	)
 
+	When("a Go scan has no --project-config, the committed canonical policy is schema-invalid, and a controlling terminal is available", func() {
+		It("opens no TypeScript authoring session and stays exit 2 with empty stdout", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "go.mod", goModuleFile)
+			commitFile(repo, "a.go", minimalGoSource)
+			commitFile(repo, coachConfigPath, invalidPolicyText)
+
+			stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(commandPath, repo, envWithout("CI"), discoveredAuthoringSessionAnswers,
+				"codesignal", "--baseline", "--format=json")
+
+			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
+			Expect(stdout).To(BeEmpty(), "stdout: %s", stdout)
+			Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "stderr: %s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("Discovered TypeScript roots"), "stderr: %s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("No TypeScript roots"), "stderr: %s", stderr)
+		})
+	})
+
 	When("no --project-config is set, the committed canonical policy is valid but declares no layers, and a controlling terminal is available", Label("ts-project-backend"), func() {
 		BeforeEach(func() {
 			skipWithoutRealTypeScriptCompiler()
@@ -156,10 +174,11 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 	})
 
 	DescribeTable("a scan with a layerless canonical policy, or a policy the owner did not name, makes no authoring offer",
-		func(policyPath, policy string, env func() []string, withTerminal bool) {
+		Label("ts-project-backend"),
+		func(policyPath, policy string, env func() []string, withTerminal bool, args []string) {
 			skipWithoutRealTypeScriptCompiler()
 			repo := commitRealCompilerTypeScriptRepo(policyPath, policy)
-			base := []string{"codesignal", "--baseline", "--project-language", "typescript", "--format=json"}
+			base := append([]string{"codesignal", "--baseline", "--project-language", "typescript", "--format=json"}, args...)
 
 			var stdout, stderr []byte
 			var exitCode int
@@ -174,9 +193,11 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 			Expect(report.SchemaVersion).To(Equal("2"))
 			Expect(string(stderr)).NotTo(ContainSubstring(layerlessOfferText), "stderr: %s", stderr)
 		},
-		Entry("a layerless canonical policy under a non-empty CI variable", coachConfigPath, singleRootPolicyJSON, func() []string { return append(envWithout("CI"), "CI=1") }, true),
-		Entry("a layerless canonical policy and no controlling terminal", coachConfigPath, singleRootPolicyJSON, func() []string { return envWithout("CI") }, false),
-		Entry("a canonical policy that declares layers", coachConfigPath, goLayerPolicyConfigJSON, func() []string { return envWithout("CI") }, true),
-		Entry("a layerless root project.json that is only the deprecated fallback", legacyConfigPath, singleRootPolicyJSON, func() []string { return envWithout("CI") }, true),
+		Entry("a layerless canonical policy under a non-empty CI variable", coachConfigPath, singleRootPolicyJSON, func() []string { return append(envWithout("CI"), "CI=1") }, true, nil),
+		Entry("a layerless canonical policy and no controlling terminal", coachConfigPath, singleRootPolicyJSON, func() []string { return envWithout("CI") }, false, nil),
+		Entry("a layerless canonical policy with --no-interactive", coachConfigPath, singleRootPolicyJSON, func() []string { return envWithout("CI") }, true, []string{"--no-interactive"}),
+		Entry("a layerless canonical policy named by an explicit --project-config", coachConfigPath, singleRootPolicyJSON, func() []string { return envWithout("CI") }, true, []string{"--project-config", coachConfigPath}),
+		Entry("a canonical policy that declares layers", coachConfigPath, goLayerPolicyConfigJSON, func() []string { return envWithout("CI") }, true, nil),
+		Entry("a layerless root project.json that is only the deprecated fallback", legacyConfigPath, singleRootPolicyJSON, func() []string { return envWithout("CI") }, true, nil),
 	)
 })

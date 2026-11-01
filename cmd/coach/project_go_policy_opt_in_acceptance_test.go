@@ -11,6 +11,7 @@ const deprecatedRootProjectConfigMessage = "project.json at the repository root 
 
 type rootProjectJSONScanPair struct {
 	repoWithConfigFile      string
+	repoWithoutConfigFile   string
 	omittedReport           *codesignal.Report
 	explicitReport          *codesignal.Report
 	reportWithoutConfigFile *codesignal.Report
@@ -59,6 +60,13 @@ var _ = Describe("coach codesignal --project-config with the real Go project-lan
 
 			Expect(reportWithoutConfigFile.SchemaVersion).To(Equal("1"))
 			Expect(reportWithoutConfigFile.Diagnostics).NotTo(ContainElement(HaveField("Kind", "project_config_deprecated")))
+
+			By("leaking no project-analysis text sections in the default text report")
+			textStdout, textStderr, textExit := runCoachCodesignalBaselineRaw(pair.repoWithoutConfigFile)
+			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
+			for _, marker := range []string{"Project findings:", "Project summary:", "Project coverage:", "Facts:", "coverage_ref:"} {
+				Expect(string(textStdout)).NotTo(ContainSubstring(marker), "a repository with no project policy must not print %q", marker)
+			}
 
 			By("pinning today's exact signals[] sequence, so a future severityRank/comparator change that perturbs non-advisory ordering fails here")
 			for _, sig := range reportWithoutConfigFile.Signals {
@@ -114,6 +122,7 @@ func buildRootProjectJSONScanPair() rootProjectJSONScanPair {
 
 	return rootProjectJSONScanPair{
 		repoWithConfigFile:      repoWithConfigFile,
+		repoWithoutConfigFile:   repoWithoutConfigFile,
 		omittedReport:           decodeCoachReport(omittedStdout),
 		explicitReport:          decodeCoachReport(explicitStdout),
 		reportWithoutConfigFile: decodeCoachReport(withoutStdout),
