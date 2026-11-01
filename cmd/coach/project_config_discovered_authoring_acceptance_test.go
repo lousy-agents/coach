@@ -23,6 +23,7 @@ const (
 	layerlessOfferText                = "declares no layers"
 	layerlessOfferAccepted            = "y\n" + discoveredAuthoringSessionAnswers
 	layerlessOfferDeclined            = "n\n"
+	candidateRootsPattern             = `(?s)"roots":\s*\[\s*"\."\s*\]`
 )
 
 func commitStubToolchainTypeScriptRepo(policyPath, policy string) string {
@@ -44,7 +45,12 @@ func commitRealCompilerTypeScriptRepo(policyPath, policy string) string {
 	return repo
 }
 
-const nonCanonicalTerminalTimeout = 15 * time.Second
+// A real tsc scan runs before the offer, so the bound must outlast a slow CI
+// machine; it only has to be finite so a regression that hangs still fails.
+const (
+	nonCanonicalTerminalTimeout   = 60 * time.Second
+	nonCanonicalTerminalWaitDelay = 10 * time.Second
+)
 
 // runCoachOnNonCanonicalTerminal runs coach on a pseudo-terminal that hands
 // bytes over as they arrive, instead of one line per read. Everything typed is
@@ -65,6 +71,7 @@ func runCoachOnNonCanonicalTerminal(dir string, env []string, typed string, args
 	ctx, cancel := context.WithTimeout(context.Background(), nonCanonicalTerminalTimeout)
 	defer cancel()
 	command := exec.CommandContext(ctx, commandPath, args...)
+	command.WaitDelay = nonCanonicalTerminalWaitDelay
 	command.Dir = dir
 	command.Env = env
 	command.Stdin = slave
@@ -108,7 +115,7 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 			var candidate map[string]any
 			Expect(json.Unmarshal(stdout, &candidate)).To(Succeed(), "stdout must carry the candidate document; stdout: %s stderr: %s", stdout, stderr)
 			Expect(candidate).To(HaveKeyWithValue("schema_version", "1"))
-			Expect(candidate).To(HaveKey("roots"))
+			Expect(candidate).To(HaveKeyWithValue("roots", []any{"."}), "answer 1 selects the repository root")
 			Expect(candidate).NotTo(HaveKey("signals"), "no scan report may be produced on this path")
 
 			Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "the invalid file must still be reported before the session opens; stderr: %s", stderr)
@@ -235,7 +242,7 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 			report := decodeCoachReport(stdout)
 			Expect(report.SchemaVersion).To(Equal("2"), "stdout must stay one parseable report; stdout: %s", stdout)
 			Expect(string(stderr)).To(ContainSubstring(layerlessOfferText), "stderr: %s", stderr)
-			Expect(string(stderr)).To(ContainSubstring(`"roots"`), "the approved candidate must be printed on stderr; stderr: %s", stderr)
+			Expect(string(stderr)).To(MatchRegexp(candidateRootsPattern), "the approved candidate must be printed on stderr with the root that answer 1 selected; stderr: %s", stderr)
 			Expect(string(stderr)).To(ContainSubstring(coachConfigPath), "stderr: %s", stderr)
 			Expect(string(stderr)).To(ContainSubstring("no file was created"), "stderr: %s", stderr)
 
@@ -253,7 +260,7 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 			Expect(timedOut).To(BeFalse(), "the offer's answer must not swallow the session's typed-ahead answers; stdout: %s stderr: %s", stdout, stderr)
 			Expect(err).NotTo(HaveOccurred(), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(decodeCoachReport(stdout).SchemaVersion).To(Equal("2"), "stdout must stay one report")
-			Expect(string(stderr)).To(ContainSubstring(`"roots"`), "the approved candidate must be printed; stderr: %s", stderr)
+			Expect(string(stderr)).To(MatchRegexp(candidateRootsPattern), "the approved candidate must be printed with the root that answer 1 selected; stderr: %s", stderr)
 			Expect(string(stderr)).To(ContainSubstring("no file was created"), "stderr: %s", stderr)
 		})
 	})
