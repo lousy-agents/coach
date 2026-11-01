@@ -12,7 +12,7 @@ func groupForbiddenTSEdges(edges []domain.ImportEdge, policy LayerPolicy) (map[l
 	groups := make(map[layerPairKey][]domain.ImportEdge)
 	groupLayers := make(map[layerPairKey][2]string)
 	for _, edge := range edges {
-		key, layers, ok := forbiddenTSPair(edge, policy.Layers, forbidden)
+		key, layers, ok := forbiddenTSPair(edge, policy.Layers, forbidden, policy.ExcludeTypeOnlyEdges)
 		if !ok {
 			continue
 		}
@@ -24,8 +24,11 @@ func groupForbiddenTSEdges(edges []domain.ImportEdge, policy LayerPolicy) (map[l
 
 // forbiddenTSPair implements the eligibility rule documented on
 // EvaluateTypeScriptLayerViolations.
-func forbiddenTSPair(edge domain.ImportEdge, layers []ArchitectureLayer, forbidden map[[2]string]struct{}) (layerPairKey, [2]string, bool) {
-	if edge.Kind != "import" && edge.Kind != "reexport" {
+func forbiddenTSPair(edge domain.ImportEdge, layers []ArchitectureLayer, forbidden map[[2]string]struct{}, excludeTypeOnly bool) (layerPairKey, [2]string, bool) {
+	if edge.Kind != "import" && edge.Kind != "reexport" && edge.Kind != "type_only" {
+		return layerPairKey{}, [2]string{}, false
+	}
+	if excludeTypeOnly && edge.Kind == "type_only" {
 		return layerPairKey{}, [2]string{}, false
 	}
 	importerFile, okFrom := strings.CutPrefix(edge.From, "file:")
