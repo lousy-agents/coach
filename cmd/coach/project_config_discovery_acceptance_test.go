@@ -66,6 +66,31 @@ var _ = Describe("coach project config discovery", func() {
 		})
 	})
 
+	When("no --project-config is set and both a canonical policy and a root project.json are committed and valid", func() {
+		const policyWithoutForbiddenPairs = `{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}]}` + "\n"
+
+		DescribeTable("uses the canonical policy and ignores the root file, even when the two disagree",
+			func(canonical, legacy string, wantViolations int) {
+				repo := newTempGitRepo()
+				commitFile(repo, "go.mod", goModuleFile)
+				commitFile(repo, "pkg/db/db.go", dbPackageFile)
+				commitFile(repo, "pkg/handlers/handlers.go", handlersImportingDB)
+				commitFile(repo, coachConfigPath, canonical)
+				commitFile(repo, legacyConfigPath, legacy)
+
+				stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--format=json")
+				Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
+
+				report := decodeCoachReport(stdout)
+				Expect(report.SchemaVersion).To(Equal("2"))
+				Expect(report.Diagnostics).NotTo(ContainElement(HaveField("Kind", "project_config_deprecated")))
+				Expect(report.ProjectChanges).To(HaveLen(wantViolations), "got %+v", report.ProjectChanges)
+			},
+			Entry("the canonical policy forbids the import and the root file does not", goLayerPolicyConfigJSON, policyWithoutForbiddenPairs, 1),
+			Entry("the root file forbids the import and the canonical policy does not", policyWithoutForbiddenPairs, goLayerPolicyConfigJSON, 0),
+		)
+	})
+
 	When("no --project-config is set and only a valid root project.json is committed", func() {
 		It("reports schema 2 with the exact project_config_deprecated diagnostic, including in text output", func() {
 			repo := commitScannableGoRepo()
