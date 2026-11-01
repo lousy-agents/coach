@@ -25,7 +25,7 @@ const tsSidecarWallTime = goProjectBuildWallTime
 // BackendVersion identify each language backend's own evaluation/build
 // wiring independently.
 const (
-	tsLayerRuleVersion    = "1"
+	tsLayerRuleVersion    = "2"
 	tsLayerBackendVersion = "ts-layer-policy@1"
 )
 

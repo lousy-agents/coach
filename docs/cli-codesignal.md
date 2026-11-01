@@ -259,6 +259,11 @@ subject, evidence, and occurrence ordinal (and, for `id`, start position), not
 from `severity` or `rule_version`, so a signal keeps its identity and lifecycle
 when its severity changes.
 
+Entries in `project_changes[]` differ: their fingerprint and `id` include
+`rule_version`, `backend_version`, and `config_digest`. Changing any of them,
+including any byte of the policy file, gives every project change a new
+identity.
+
 Layer rules (`architecture.layer_violation`, `architecture.layer_bypass`) emit
 `advisory`; the density rules `structure.constructor_density` and
 `structure.pointer_return_density` emit `low`.
@@ -401,6 +406,32 @@ File-local (no `--project-config`):
 
 With `--project-config`: `architecture.layer_violation` and, when
 `required_layer` is set, `architecture.layer_bypass` (Go and TypeScript).
+
+For TypeScript, `architecture.layer_violation` evaluates type-only imports
+(`import type`, `export type ... from`, and imports or re-exports whose every
+named specifier is inline `type`) the same way it evaluates value imports. A
+type-only import is a compile-time dependency, and a layer rule forbids it just
+as it forbids a runtime one. `commonjs_require` and `dynamic_import` edges are
+not evaluated and are not reported as skipped.
+
+Set `"exclude_type_only_edges": true` in the policy file to leave type-only
+edges out. It is optional and defaults to `false`, and it has no effect on Go
+projects, which have no type-only import. A pair of files that also has a value
+import is still reported, and only its value-level edges count.
+
+When every edge in a reported pair is type-only, the finding's
+`machine_evidence` carries `removed_if_set: exclude_type_only_edges`, meaning
+the finding is removed if `exclude_type_only_edges` is set. The key marks
+findings the option would remove; it is not documented to mean anything when
+absent.
+
+The value must be `true` or `false`. `null` is read as `false`, as it is for
+the other optional policy keys, and any other value is a configuration error
+(exit `2`). Coach versions before this option reject a policy that contains the
+key (exit `2`).
+
+The TypeScript `architecture.layer_violation` `rule_version` is `"2"`. The Go
+rule stays at `"1"`.
 
 Unrecognized finding kinds are ignored. An empty `signals` array is not a
 clean bill of health.

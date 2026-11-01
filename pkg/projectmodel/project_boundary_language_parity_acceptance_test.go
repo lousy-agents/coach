@@ -275,7 +275,7 @@ var _ = Describe("coach's project-analysis public boundary (codesignal.Builder.B
 	})
 
 	When("an import edge is type-only in TypeScript (Go has no equivalent syntax: the nearest parity-contract analog is a same-module import that never resolves to a real runtime package)", func() {
-		It("never surfaces as architecture.layer_violation, while an otherwise-identical runtime/resolved edge still does (false-green control, in both languages)", func() {
+		It("surfaces as architecture.layer_violation exactly like an otherwise-identical runtime edge (coach#562), while the Go analog that never resolves still does not (false-green control for Go)", func() {
 			ctx := context.Background()
 
 			tsForbiddenEdge := func(kind string) domain.Model {
@@ -290,18 +290,18 @@ var _ = Describe("coach's project-analysis public boundary (codesignal.Builder.B
 			typeOnlyModel := tsForbiddenEdge("type_only")
 			typeOnlyChanges, typeOnlyDiags := codesignal.EvaluateTypeScriptLayerViolations(typeOnlyModel, twoLayerPolicy(), "1", "backend-1", "digest-1")
 			Expect(typeOnlyDiags).To(BeEmpty())
-			Expect(typeOnlyChanges).To(BeEmpty(), "a naive evaluator with no Kind filter would have surfaced this type-only edge")
+			Expect(typeOnlyChanges).To(HaveLen(1), "a type-only edge is a compile-time dependency and must surface by default")
 
 			runtimeModel := tsForbiddenEdge("import")
 			runtimeChanges, runtimeDiags := codesignal.EvaluateTypeScriptLayerViolations(runtimeModel, twoLayerPolicy(), "1", "backend-1", "digest-1")
 			Expect(runtimeDiags).To(BeEmpty())
-			Expect(runtimeChanges).To(HaveLen(1), "the otherwise-identical runtime import edge must still surface, proving the suppression above is real")
+			Expect(runtimeChanges).To(HaveLen(1))
 
 			typeOnlyReport := buildProjectReport(ctx, codesignal.Input{Scope: codesignal.Scope{Revision: "rev-type-only"}, ProjectChanges: typeOnlyChanges, ProjectCoverage: &typeOnlyModel.Coverage})
 			runtimeReport := buildProjectReport(ctx, codesignal.Input{Scope: codesignal.Scope{Revision: "rev-runtime"}, ProjectChanges: runtimeChanges, ProjectCoverage: &runtimeModel.Coverage})
 
-			Expect(typeOnlyReport.ProjectChanges).To(BeEmpty())
-			Expect(typeOnlyReport.ProjectSummary.ActiveChanges).To(Equal(0))
+			Expect(typeOnlyReport.ProjectChanges).To(HaveLen(1))
+			Expect(typeOnlyReport.ProjectSummary.ActiveChanges).To(Equal(1))
 			Expect(runtimeReport.ProjectChanges).To(HaveLen(1))
 			Expect(runtimeReport.ProjectSummary.ActiveChanges).To(Equal(1))
 
