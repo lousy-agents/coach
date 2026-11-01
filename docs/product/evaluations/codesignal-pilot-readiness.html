@@ -405,29 +405,6 @@
 
   <section>
     <div class="sec-head">
-      <p class="eyebrow">15 Oct 2026 · one command</p>
-      <h2>Root <code>project.json</code> is still read</h2>
-    </div>
-    <p class="prose">This row is one command, not a new pass. It does not change the verdict, the masthead pass count, or <code>#282 · 10 / 24</code>. Not a corpus replay. <a href="https://github.com/lousy-agents/coach/issues/510">#510</a> · <a href="https://github.com/lousy-agents/coach/issues/511">#511</a>.</p>
-    <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr><th>Claim</th><th>Command</th><th>Observed 15 Oct 2026</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>A committed schema-valid root <code>project.json</code>, with no <code>.lousy-agents/coach.json</code>, is still read. Non-interactive use emits <code>project_config_deprecated</code>. <code>project_config_migration_skipped</code> is the documented skip diagnostic.</td>
-            <td class="m">go build -o /tmp/coach ./cmd/coach<br>then, in a temp git repo with committed <code>{"schema_version":"1","roots":["."]}</code> <code>project.json</code> and one <code>a.go</code>: <code>/tmp/coach codesignal --baseline --format=json</code><br>stdin not a TTY, <code>CI</code> unset</td>
-            <td>Exit <code>0</code>. <code>schema_version</code> <code>2</code>. Diagnostics kinds <code>project_config_deprecated</code> and <code>project_config_migration_skipped</code>. The deprecation message is <code>project.json at the repository root is deprecated. Coach will keep reading it until you move it to .lousy-agents/coach.json.</code> Stderr empty. Re-run after the migration prompt landed in the same tree.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="prose">Separate check, still not a pass and not a corpus replay. A temp clone of this repository (<code>7207cdc</code>, only in <code>/tmp</code>; this repository was not committed) had both <code>project.json</code> and a byte-identical <code>.lousy-agents/coach.json</code> on HEAD. <code>/tmp/coach codesignal --baseline --format=json</code> with no <code>--project-config</code>, stdin not a TTY, <code>CI</code> unset: exit <code>0</code>, <code>schema_version</code> <code>2</code>, <code>files_analyzed</code> 794, zero diagnostics. <code>project_config_deprecated</code> was absent. Once this repository commits <code>.lousy-agents/coach.json</code>, a scan with no <code>--project-config</code> reads that file and does not emit the deprecation diagnostic.</p>
-  </section>
-
-  <section>
-    <div class="sec-head">
       <p class="eyebrow">Already closed</p>
       <h2>What 16–22 Aug actually unlocked</h2>
     </div>
