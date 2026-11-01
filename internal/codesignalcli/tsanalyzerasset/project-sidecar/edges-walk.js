@@ -33,9 +33,10 @@ function edgeFromCall(node, fromId, sf, fromRepoPath, project, snapshot, ast) {
     return buildEdge(fromId, call.specifier, sf, fromRepoPath, call.kind, project, snapshot, call.useChecker);
 }
 function classifyCallExpression(node, ast) {
-    if (node.arguments.length === 0 || !ast.isStringLiteral(node.arguments[0]))
-        return undefined;
     const specifier = node.arguments[0];
+    if (specifier === undefined || !(ast.isStringLiteral(specifier) || ast.isNoSubstitutionTemplateLiteral(specifier))) {
+        return undefined;
+    }
     if (ast.isIdentifier(node.expression) && node.expression.text === "require") {
         return { specifier, kind: KIND_COMMONJS_REQUIRE, useChecker: false };
     }

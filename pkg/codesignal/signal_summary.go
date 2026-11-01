@@ -51,12 +51,22 @@ func countUnanalyzedFiles(files []FileChange, diagnostics []Diagnostic) int {
 		}
 	}
 	count := 0
-	for path := range distinctDiagnosticPaths(diagnostics) {
+	for path := range distinctDiagnosticPaths(withoutProjectEdgeDiagnostics(diagnostics)) {
 		if !inFiles[path] {
 			count++
 		}
 	}
 	return count
+}
+
+func withoutProjectEdgeDiagnostics(diagnostics []Diagnostic) []Diagnostic {
+	kept := make([]Diagnostic, 0, len(diagnostics))
+	for _, d := range diagnostics {
+		if !isProjectEdgeDiagnosticKind(d.Kind) {
+			kept = append(kept, d)
+		}
+	}
+	return kept
 }
 
 func distinctDiagnosticPaths(diagnostics []Diagnostic) map[string]struct{} {

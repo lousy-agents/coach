@@ -411,8 +411,45 @@ For TypeScript, `architecture.layer_violation` evaluates type-only imports
 (`import type`, `export type ... from`, and imports or re-exports whose every
 named specifier is inline `type`) the same way it evaluates value imports. A
 type-only import is a compile-time dependency, and a layer rule forbids it just
-as it forbids a runtime one. `commonjs_require` and `dynamic_import` edges are
-not evaluated and are not reported as skipped.
+as it forbids a runtime one. A dynamic `import("...")` and a `require("...")`
+whose specifier is a string literal, or a template literal without
+substitutions, are evaluated the same way. A specifier that matches a
+`compilerOptions.paths` pattern in the project's `tsconfig.json` (including one
+inherited through `extends`) is followed to the aliased file for `require()` and
+`import()` as well as for static imports.
+
+Edges that layer rules cannot place on a layer are reported, not skipped, when
+the importing file sits inside a declared layer:
+
+- An import that did not resolve within the snapshot gets one
+  `project_import_unresolved` diagnostic per edge, naming the file, the
+  specifier, and the line; the revision and side are on the diagnostic. A broken
+  alias could hide a forbidden edge, so it makes the no-findings verdict
+  incomplete. A diagnostic recorded on the base side of a diff has the kind
+  `base_project_import_unresolved`.
+- Imports of external packages, and imports whose specifier ends in a
+  non-source extension such as `.json`, `.css`, or `.png`, are counted in one
+  `project_external_imports_not_evaluated` diagnostic per revision, for example
+  "3 import edges to external packages were not evaluated by layer rules". A
+  package or a stylesheet cannot match a path-prefix layer, so the count only
+  informs and does not qualify the verdict. The analyzer is not given non-source
+  files, so it cannot tell a present `./data.json` from a missing one; both are
+  counted here.
+
+An alias that `compilerOptions.paths` does not declare, such as a bundler alias
+or a `package.json` `imports` entry like `#utils/x`, is not followed. Its
+specifier looks like a package, so it is counted as external rather than
+reported as unresolved, and an edge through it that crosses a forbidden
+boundary is not found. A package whose name a `paths` pattern other than a bare
+`*` also matches, such as a published `@org/lib` under `"@org/*"`, is reported
+as unresolved when no aliased file exists, because the analyzer has no
+`node_modules` to fall back to. An import of a plain JavaScript file (`.js`,
+`.cjs`, or `.mjs`) with no `.ts` or `.tsx` counterpart is reported as
+unresolved, because the analyzer receives only `.ts` and `.tsx` sources.
+
+Neither diagnostic changes `--fail-on-incomplete-coverage`. A dynamic load whose
+specifier is not a string literal, such as `import(path)` or `require(name)`, is
+not detected at all ([#568](https://github.com/lousy-agents/coach/issues/568)).
 
 Set `"exclude_type_only_edges": true` in the policy file to leave type-only
 edges out. It is optional and defaults to `false`, and it has no effect on Go
