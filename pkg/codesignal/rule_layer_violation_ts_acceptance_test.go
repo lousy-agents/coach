@@ -184,87 +184,202 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 		})
 	})
 
-	When("the edge is a commonjs_require", func() {
-		It("emits zero ProjectChanges (negative control: commonjs_require is not eligible)", func() {
+	When("the edge is a commonjs_require or a dynamic_import that resolves within the snapshot", func() {
+		DescribeTable("emits exactly one architecture.layer_violation, evaluated like a static import (coach#561)",
+			func(kind string) {
+				model := domain.Model{
+					ImportEdges: []domain.ImportEdge{
+						{From: "file:pkg/handlers/h.ts", To: "file:pkg/db/d.ts", Kind: kind, Resolution: "snapshot", Site: "pkg/handlers/h.ts:10"},
+					},
+				}
+
+				changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+				Expect(diagnostics).To(BeEmpty())
+				Expect(changes).To(HaveLen(1))
+				Expect(changes[0].RuleID).To(Equal("architecture.layer_violation"))
+				Expect(changes[0].MachineEvidence).To(HaveKeyWithValue("importer", "pkg/handlers/h.ts"))
+				Expect(changes[0].MachineEvidence).To(HaveKeyWithValue("importee", "pkg/db/d.ts"))
+				Expect(changes[0].PrimaryAnchor.Location.StartRow).To(Equal(uint(9)))
+			},
+			Entry("a commonjs_require", "commonjs_require"),
+			Entry("a dynamic_import", "dynamic_import"),
+		)
+	})
+
+	When("an edge resolves to an unresolved target", func() {
+		It("emits no ProjectChange and one project_import_unresolved diagnostic naming the file, the specifier, and the site", func() {
 			model := domain.Model{
 				ImportEdges: []domain.ImportEdge{
-					{
-						From:       "file:pkg/handlers/h.ts",
-						To:         "file:pkg/db/d.ts",
-						Kind:       "commonjs_require",
-						Resolution: "snapshot",
-						Site:       "pkg/handlers/h.ts:10",
-					},
+					{From: "file:pkg/handlers/h.ts", To: "unresolved:pkg/db/d", Kind: "dynamic_import", Resolution: "unresolved", Site: "pkg/handlers/h.ts:10"},
 				},
 			}
 
 			changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+			Expect(changes).To(BeEmpty())
+			Expect(diagnostics).To(HaveLen(1))
+			Expect(diagnostics[0].Kind).To(Equal(codesignal.DiagKindProjectImportUnresolved))
+			Expect(diagnostics[0].Path).To(Equal("pkg/handlers/h.ts"))
+			Expect(diagnostics[0].Message).To(ContainSubstring(`"pkg/db/d"`))
+			Expect(diagnostics[0].Message).To(ContainSubstring("did not resolve"))
+			Expect(diagnostics[0].Location).NotTo(BeNil())
+			Expect(diagnostics[0].Location.StartRow).To(Equal(uint(9)))
+		})
+
+		DescribeTable("treats every evaluated edge kind alike",
+			func(kind string) {
+				model := domain.Model{
+					ImportEdges: []domain.ImportEdge{
+						{From: "file:pkg/handlers/h.ts", To: "unresolved:../missing/m", Kind: kind, Resolution: "unresolved", Site: "pkg/handlers/h.ts:3"},
+					},
+				}
+
+				_, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+				Expect(diagnostics).To(HaveLen(1))
+				Expect(diagnostics[0].Kind).To(Equal(codesignal.DiagKindProjectImportUnresolved))
+			},
+			Entry("an import", "import"),
+			Entry("a reexport", "reexport"),
+			Entry("a type-only import", "type_only"),
+			Entry("a commonjs_require", "commonjs_require"),
+			Entry("a dynamic_import", "dynamic_import"),
+		)
+
+		It("orders several diagnostics by file, then line, whatever order the edges arrive in", func() {
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/handlers/z.ts", To: "unresolved:a", Kind: "import", Resolution: "unresolved", Site: "pkg/handlers/z.ts:2"},
+					{From: "file:pkg/handlers/a.ts", To: "unresolved:b", Kind: "import", Resolution: "unresolved", Site: "pkg/handlers/a.ts:9"},
+					{From: "file:pkg/handlers/a.ts", To: "unresolved:c", Kind: "import", Resolution: "unresolved", Site: "pkg/handlers/a.ts:3"},
+				},
+			}
+
+			_, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+			var order []string
+			for _, diagnostic := range diagnostics {
+				order = append(order, diagnostic.Path)
+			}
+			Expect(order).To(Equal([]string{"pkg/handlers/a.ts", "pkg/handlers/a.ts", "pkg/handlers/z.ts"}))
+			Expect(diagnostics[0].Location.StartRow).To(Equal(uint(2)))
+			Expect(diagnostics[1].Location.StartRow).To(Equal(uint(8)))
+		})
+
+		It("emits nothing for an importer that sits outside every declared layer, because no rule applies to it", func() {
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/other/o.ts", To: "unresolved:gone", Kind: "import", Resolution: "unresolved", Site: "pkg/other/o.ts:1"},
+					{From: "file:pkg/other/o.ts", To: "external:lodash", Kind: "import", Resolution: "external", Site: "pkg/other/o.ts:2"},
+				},
+			}
+
+			changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+			Expect(changes).To(BeEmpty())
+			Expect(diagnostics).To(BeEmpty())
+		})
+
+		It("emits nothing for a type-only edge when the policy excludes type-only edges", func() {
+			policy := twoLayerPolicy()
+			policy.ExcludeTypeOnlyEdges = true
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/handlers/h.ts", To: "unresolved:gone", Kind: "type_only", Resolution: "unresolved", Site: "pkg/handlers/h.ts:1"},
+					{From: "file:pkg/handlers/h.ts", To: "external:zod", Kind: "type_only", Resolution: "external", Site: "pkg/handlers/h.ts:2"},
+				},
+			}
+
+			_, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, policy, "1", "backend-1", "digest-1")
 
 			Expect(diagnostics).To(BeEmpty())
+		})
+	})
+
+	When("an edge targets a relative file that is not TypeScript source", func() {
+		DescribeTable("counts it as not evaluated and never diagnoses it as unresolved, because it cannot hide a forbidden code edge",
+			func(specifier string) {
+				model := domain.Model{
+					ImportEdges: []domain.ImportEdge{
+						{From: "file:pkg/handlers/h.ts", To: "unresolved:" + specifier, Kind: "import", Resolution: "unresolved", Site: "pkg/handlers/h.ts:3"},
+					},
+				}
+
+				_, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+				Expect(diagnostics).To(HaveLen(1))
+				Expect(diagnostics[0].Kind).To(Equal(codesignal.DiagKindProjectExternalImportsNotEvaluated))
+				Expect(diagnostics[0].Message).To(Equal("1 import edge to a non-source file was not evaluated by layer rules"))
+			},
+			Entry("a stylesheet", "./style.css"),
+			Entry("a preprocessed stylesheet", "../theme/main.SCSS"),
+			Entry("a JSON file", "./data.json"),
+			Entry("an image", "./logo.png"),
+			Entry("a font", "../fonts/inter.woff2"),
+			Entry("an asset with a bundler query", "./icon.svg?react"),
+		)
+
+		It("still diagnoses a relative specifier that could be a broken path to code", func() {
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/handlers/h.ts", To: "unresolved:./gone.js", Kind: "import", Resolution: "unresolved", Site: "pkg/handlers/h.ts:3"},
+					{From: "file:pkg/handlers/h.ts", To: "unresolved:../missing/m", Kind: "import", Resolution: "unresolved", Site: "pkg/handlers/h.ts:4"},
+				},
+			}
+
+			_, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+			Expect(diagnostics).To(HaveLen(2))
+			for _, diagnostic := range diagnostics {
+				Expect(diagnostic.Kind).To(Equal(codesignal.DiagKindProjectImportUnresolved))
+			}
+		})
+
+		It("counts external packages and non-source files together in one diagnostic", func() {
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/handlers/h.ts", To: "external:zod", Kind: "import", Resolution: "external", Site: "pkg/handlers/h.ts:1"},
+					{From: "file:pkg/handlers/h.ts", To: "unresolved:./style.css", Kind: "import", Resolution: "unresolved", Site: "pkg/handlers/h.ts:2"},
+				},
+			}
+
+			_, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+			Expect(diagnostics).To(HaveLen(1))
+			Expect(diagnostics[0].Message).To(Equal("2 import edges to external packages or non-source files were not evaluated by layer rules"))
+		})
+	})
+
+	When("edges resolve to external packages", func() {
+		It("emits no ProjectChange and one aggregated informational diagnostic for a single edge", func() {
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/handlers/h.ts", To: "external:some-lib", Kind: "import", Resolution: "external", Site: "pkg/handlers/h.ts:10"},
+				},
+			}
+
+			changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
 			Expect(changes).To(BeEmpty())
+			Expect(diagnostics).To(HaveLen(1))
+			Expect(diagnostics[0].Kind).To(Equal(codesignal.DiagKindProjectExternalImportsNotEvaluated))
+			Expect(diagnostics[0].Message).To(Equal("1 import edge to an external package was not evaluated by layer rules"))
 		})
-	})
 
-	When("a dynamic_import edge crosses a forbidden layer boundary but resolves outside the snapshot", func() {
-		It("emits zero ProjectChanges and zero diagnostics (silent coverage gap, matching Go's convention)", func() {
+		It("counts every external edge in one diagnostic, not one per edge, across kinds and files", func() {
 			model := domain.Model{
 				ImportEdges: []domain.ImportEdge{
-					{
-						From:       "file:pkg/handlers/h.ts",
-						To:         "unresolved:pkg/db/d",
-						Kind:       "dynamic_import",
-						Resolution: "unresolved",
-						Site:       "pkg/handlers/h.ts:10",
-					},
+					{From: "file:pkg/handlers/h.ts", To: "external:zod", Kind: "import", Resolution: "external", Site: "pkg/handlers/h.ts:1"},
+					{From: "file:pkg/handlers/h.ts", To: "external:react", Kind: "dynamic_import", Resolution: "external", Site: "pkg/handlers/h.ts:2"},
+					{From: "file:pkg/db/d.ts", To: "external:pg", Kind: "commonjs_require", Resolution: "external", Site: "pkg/db/d.ts:1"},
 				},
 			}
 
-			changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+			_, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
 
-			Expect(diagnostics).To(BeNil())
-			Expect(changes).To(BeNil())
-		})
-	})
-
-	When("a dynamic_import edge crosses a forbidden layer boundary and resolves within the snapshot", func() {
-		It("emits zero ProjectChanges (negative control: dynamic_import is not eligible even when file-addressed)", func() {
-			model := domain.Model{
-				ImportEdges: []domain.ImportEdge{
-					{
-						From:       "file:pkg/handlers/h.ts",
-						To:         "file:pkg/db/d.ts",
-						Kind:       "dynamic_import",
-						Resolution: "snapshot",
-						Site:       "pkg/handlers/h.ts:10",
-					},
-				},
-			}
-
-			changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
-
-			Expect(diagnostics).To(BeEmpty())
-			Expect(changes).To(BeEmpty())
-		})
-	})
-
-	When("an import edge resolves to an external package", func() {
-		It("emits zero ProjectChanges and zero diagnostics (silent coverage gap: external: targets carry no file: prefix and are skipped)", func() {
-			model := domain.Model{
-				ImportEdges: []domain.ImportEdge{
-					{
-						From:       "file:pkg/handlers/h.ts",
-						To:         "external:some-lib",
-						Kind:       "import",
-						Resolution: "external",
-						Site:       "pkg/handlers/h.ts:10",
-					},
-				},
-			}
-
-			changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
-
-			Expect(diagnostics).To(BeNil())
-			Expect(changes).To(BeNil())
+			Expect(diagnostics).To(HaveLen(1))
+			Expect(diagnostics[0].Message).To(Equal("3 import edges to external packages were not evaluated by layer rules"))
 		})
 	})
 
@@ -332,7 +447,7 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 	})
 
 	When(`the policy has a universal repository-root layer ("prefixes: [\".\"]") and the importee lacks the file: prefix`, func() {
-		It("emits zero ProjectChanges and zero diagnostics (the file: prefix check, not layer matching, is what excludes non-file-addressed importees)", func() {
+		It("emits zero ProjectChanges and only the informational external count (the file: prefix check, not layer matching, is what excludes non-file-addressed importees)", func() {
 			policy := codesignal.LayerPolicy{
 				Layers: []codesignal.ArchitectureLayer{
 					{Name: "app", Prefixes: []string{"."}},
@@ -355,8 +470,9 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 
 			changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, policy, "1", "backend-1", "digest-1")
 
-			Expect(diagnostics).To(BeEmpty())
 			Expect(changes).To(BeEmpty())
+			Expect(diagnostics).To(HaveLen(1))
+			Expect(diagnostics[0].Kind).To(Equal(codesignal.DiagKindProjectExternalImportsNotEvaluated))
 		})
 	})
 

@@ -49,16 +49,17 @@ func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 		scope = &resolved
 	}
 
-	changes, _ := codesignal.EvaluateTypeScriptLayerViolations(model, policy, tsLayerRuleVersion, tsLayerBackendVersion, configDigest)
+	changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, policy, tsLayerRuleVersion, tsLayerBackendVersion, configDigest)
 	modelCoverage := model.Coverage
 	coverage := modelCoverage
-	var diagnostics []codesignal.Diagnostic
 	bypassPhaseCoverage := projectmodel.Coverage{Phase: tsBypassPhaseNotRequested, Complete: true}
 
 	if hasBypassLayer {
 		var bypassChanges []codesignal.ProjectChange
-		bypassChanges, diagnostics, coverage, bypassPhaseCoverage = b.evaluateLayerBypass(ctx, model, bypassLayer, configDigest)
+		var bypassDiagnostics []codesignal.Diagnostic
+		bypassChanges, bypassDiagnostics, coverage, bypassPhaseCoverage = b.evaluateLayerBypass(ctx, model, bypassLayer, configDigest)
 		changes = append(changes, bypassChanges...)
+		diagnostics = append(diagnostics, bypassDiagnostics...)
 	}
 
 	reachability := projectmodel.BuildTypeScriptReachabilityFromModel(model)

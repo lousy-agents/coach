@@ -543,6 +543,222 @@ describe("imports", () => {
     assert.equal(kinds.size, 3, `expected 3 distinct kinds, got ${JSON.stringify([...kinds])}`);
   });
 
+  test("a substitution-free template literal specifier is read like a string literal for import() and require()", async () => {
+    const { response, exitCode } = await runSidecar({
+      files: [
+        file("tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } })),
+        file(
+          "src/a.ts",
+          [
+            "async function f(): Promise<void> {",
+            "  const dyn = await import(`./dynamic-target`);",
+            "  const cjs = require(`./cjs-target`);",
+            "  console.log(dyn, cjs);",
+            "}",
+            "",
+          ].join("\n"),
+        ),
+        file("src/cjs-target.ts", `export const cjsValue = 1;\n`),
+        file("src/dynamic-target.ts", `export const dynValue = 1;\n`),
+      ],
+    });
+    assert.equal(exitCode, 0, JSON.stringify(response));
+    assert.equal(response.error, undefined);
+
+    const dynEdges = edgesTo(response, "file:src/dynamic-target.ts");
+    assert.equal(dynEdges.length, 1, JSON.stringify(response));
+    assert.equal(dynEdges[0]?.kind, "dynamic_import");
+    assert.equal(dynEdges[0]?.site, "src/a.ts:2");
+
+    const cjsEdges = edgesTo(response, "file:src/cjs-target.ts");
+    assert.equal(cjsEdges.length, 1, JSON.stringify(response));
+    assert.equal(cjsEdges[0]?.kind, "commonjs_require");
+  });
+
+  test("a template literal with a substitution is not a static specifier and yields no edge", async () => {
+    const { response, exitCode } = await runSidecar({
+      files: [
+        file("tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } })),
+        file(
+          "src/a.ts",
+          ["const name = 'cjs-target';", "export const loaded = require(`./${name}`);", ""].join("\n"),
+        ),
+        file("src/cjs-target.ts", `export const cjsValue = 1;\n`),
+      ],
+    });
+    assert.equal(exitCode, 0, JSON.stringify(response));
+    assert.equal(edgesTo(response, "file:src/cjs-target.ts").length, 0, JSON.stringify(response));
+    assert.equal(
+      (response.import_edges ?? []).filter((e) => e.kind === "commonjs_require").length,
+      0,
+      JSON.stringify(response),
+    );
+  });
+
+  describe("tsconfig paths aliases on require()", () => {
+    const aliasConfig = (paths: Record<string, string[]>): WireFile =>
+      file(
+        "tsconfig.json",
+        JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10", paths } }),
+      );
+
+    test("a wildcard alias resolves to the aliased file, so the edge is a snapshot edge rather than external", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          aliasConfig({ "@app/*": ["./src/app/*"] }),
+          file("src/a.ts", `export const db = require("@app/db");\n`),
+          file("src/app/db.ts", `export const conn = 1;\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      assert.equal(response.error, undefined);
+
+      const edges = edgesTo(response, "file:src/app/db.ts");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.from, "file:src/a.ts");
+      assert.equal(edges[0]?.kind, "commonjs_require");
+      assert.equal(edges[0]?.resolution, "snapshot");
+    });
+
+    test("an exact alias without a wildcard resolves to its single target", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          aliasConfig({ "@config": ["./src/config.ts"] }),
+          file("src/a.ts", `export const c = require("@config");\n`),
+          file("src/config.ts", `export const value = 1;\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = edgesTo(response, "file:src/config.ts");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.resolution, "snapshot");
+    });
+
+    test("the longest matching pattern wins over a shorter wildcard", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          aliasConfig({ "@app/*": ["./src/app/*"], "@app/db/*": ["./src/storage/*"] }),
+          file("src/a.ts", `export const q = require("@app/db/query");\n`),
+          file("src/app/db/query.ts", `export const wrong = 1;\n`),
+          file("src/storage/query.ts", `export const right = 1;\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      assert.equal(edgesTo(response, "file:src/storage/query.ts").length, 1, JSON.stringify(response));
+      assert.equal(edgesTo(response, "file:src/app/db/query.ts").length, 0, JSON.stringify(response));
+    });
+
+    test("a later target is tried when the first one does not exist", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          aliasConfig({ "@app/*": ["./src/generated/*", "./src/app/*"] }),
+          file("src/a.ts", `export const db = require("@app/db");\n`),
+          file("src/app/db.ts", `export const conn = 1;\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      assert.equal(edgesTo(response, "file:src/app/db.ts").length, 1, JSON.stringify(response));
+    });
+
+    test("an alias whose target is missing is unresolved, not an external package", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          aliasConfig({ "@app/*": ["./src/app/*"] }),
+          file("src/a.ts", `export const gone = require("@app/missing");\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = (response.import_edges ?? []).filter((e) => e.kind === "commonjs_require");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.to, "unresolved:@app/missing");
+      assert.equal(edges[0]?.resolution, "unresolved");
+    });
+
+    test("a bare specifier that matches no alias stays external", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          aliasConfig({ "@app/*": ["./src/app/*"] }),
+          file("src/a.ts", `export const l = require("lodash");\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = (response.import_edges ?? []).filter((e) => e.kind === "commonjs_require");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.to, "external:lodash");
+      assert.equal(edges[0]?.resolution, "external");
+    });
+
+    test("an alias inherited through extends is relative to the config that declares it", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          file(
+            "tsconfig.base.json",
+            JSON.stringify({
+              compilerOptions: { module: "commonjs", moduleResolution: "node10", paths: { "@app/*": ["./src/app/*"] } },
+            }),
+          ),
+          file("packages/web/tsconfig.json", JSON.stringify({ extends: "../../tsconfig.base.json", include: ["src"] })),
+          file("packages/web/src/a.ts", `export const db = require("@app/db");\n`),
+          file("src/app/db.ts", `export const conn = 1;\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = edgesTo(response, "file:src/app/db.ts");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.from, "file:packages/web/src/a.ts");
+      assert.equal(edges[0]?.resolution, "snapshot");
+    });
+
+    test("a catch-all pattern that misses falls back to an external package instead of an unresolved import", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          aliasConfig({ "*": ["./types/*"] }),
+          file("src/a.ts", `export const l = require("lodash");\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = (response.import_edges ?? []).filter((e) => e.kind === "commonjs_require");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.to, "external:lodash");
+      assert.equal(edges[0]?.resolution, "external");
+    });
+
+    test("an alias that misses but names a workspace package falls back to that package", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          aliasConfig({ "@org/*": ["./nowhere/*"] }),
+          file("src/a.ts", `export const u = require("@org/util");\n`),
+          file("packages/util/package.json", JSON.stringify({ name: "@org/util", main: "./index.ts" })),
+          file("packages/util/index.ts", `export const v = 1;\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = edgesTo(response, "file:packages/util/index.ts");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.resolution, "snapshot");
+    });
+
+    test("alias targets are relative to the tsconfig that declares them, not the repository root", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          file(
+            "packages/web/tsconfig.json",
+            JSON.stringify({
+              compilerOptions: { module: "commonjs", moduleResolution: "node10", paths: { "~/*": ["./src/*"] } },
+              include: ["src"],
+            }),
+          ),
+          file("packages/web/src/a.ts", `export const u = require("~/util");\n`),
+          file("packages/web/src/util.ts", `export const v = 1;\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = edgesTo(response, "file:packages/web/src/util.ts");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.resolution, "snapshot");
+    });
+  });
+
   test("inline type-only named imports: `import { type T }` classifies as type_only, not a value import", async () => {
     const { response, exitCode } = await runSidecar({
       files: [
