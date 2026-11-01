@@ -35,7 +35,7 @@ func offerDeprecatedProjectConfigMigration(dir, revision string, f codesignalFla
 		return false, []codesignal.Diagnostic{projectConfigMigrationSkipped()}, leaveWorktreeStatusLive
 	}
 	fmt.Fprint(stderr, projectConfigMigrationPrompt)
-	if !projectConfigMigrationAccepted(stdin) {
+	if !answeredYes(stdin) {
 		return false, nil, leaveWorktreeStatusLive
 	}
 	return acceptProjectConfigMigrationCopy(dir, stderr)
@@ -60,7 +60,7 @@ func deprecatedProjectConfigCanMigrate(dir, revision string, f codesignalFlags) 
 	return err == nil && selection.Fatal == nil && selection.Deprecated && !selection.UncommittedCanonical
 }
 
-func projectConfigMigrationAccepted(stdin *os.File) bool {
+func answeredYes(stdin *os.File) bool {
 	line, err := bufio.NewReader(stdin).ReadString('\n')
 	if err != nil && line == "" {
 		return false

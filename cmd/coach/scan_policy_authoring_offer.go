@@ -82,6 +82,10 @@ func runScanProjectConfigAuthoring(dir string, f codesignalFlags, scanErr error,
 	if exitCode != 0 {
 		return exitCode
 	}
+	if !f.projectConfigSet {
+		fmt.Fprintf(stderr, "coach codesignal: the approved TypeScript project-config candidate was written to stdout and no file was created; review it, save it as %q replacing the current file, commit it, then rerun this scan once it is committed.\n", projectconfig.CanonicalPath)
+		return 2
+	}
 	fmt.Fprintf(stderr, "coach codesignal: the approved TypeScript project-config candidate was written to stdout and no file was created; save it to %q, review it, commit it, then rerun this scan once it is committed.\n", f.projectConfig)
 	return 2
 }
