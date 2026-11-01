@@ -20,9 +20,13 @@ type tsParamScope struct {
 // "name" field's text, or "anonymous@<start_byte>" if it has none) and its
 // identifier-bound parameter set (tsIdentifierParams).
 func newTSParamScope(decl engine.Node, source []byte) tsParamScope {
+	bindings := tsIdentifierParams(decl, source)
+	if accumulator, ok := tsFreshReduceAccumulatorName(decl, source); ok {
+		bindings[accumulator] = false
+	}
 	return tsParamScope{
 		ownerName: tsFunctionOwnerName(decl, source),
-		bindings:  tsIdentifierParams(decl, source),
+		bindings:  bindings,
 	}
 }
 
