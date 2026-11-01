@@ -44,6 +44,37 @@ var _ = Describe("project-config boundary budgets", func() {
 		Expect(err.Error()).To(ContainSubstring("layer prefixes must be unique and non-overlapping"))
 	})
 
+	DescribeTable("rejects an ancestor and descendant prefix even when a sibling prefix sorts between them",
+		func(ancestor, sibling, descendant string) {
+			doc := []byte(fmt.Sprintf(
+				`{"schema_version":"1","roots":["."],"layers":[{"name":"L","prefixes":[%q,%q,%q]}]}`,
+				ancestor, sibling, descendant,
+			))
+			err := validateJSON(doc)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("layer prefixes must be unique and non-overlapping"))
+		},
+		Entry("hyphenated sibling", "packages/core", "packages/core-utils", "packages/core/src/index.ts"),
+		Entry("dotted sibling", "packages/core", "packages/core.legacy", "packages/core/src"),
+		Entry("plus-sign sibling", "services", "services+v2", "services/payments"),
+	)
+
+	DescribeTable("rejects other overlapping layer prefix shapes with the stable diagnostic",
+		func(prefixesJSON string) {
+			doc := []byte(`{"schema_version":"1","roots":["."],"layers":[{"name":"L","prefixes":` + prefixesJSON + `}]}`)
+			err := validateJSON(doc)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("layer prefixes must be unique and non-overlapping"))
+		},
+		Entry("exact duplicate", `["services","services"]`),
+		Entry("dot ancestor alongside another prefix", `["services","."]`),
+	)
+
+	It("accepts sibling prefixes that merely share a name stem", func() {
+		doc := []byte(`{"schema_version":"1","roots":["."],"layers":[{"name":"L","prefixes":["packages/core","packages/core-utils","packages/core.legacy"]}]}`)
+		Expect(validateJSON(doc)).To(Succeed())
+	})
+
 	It("rejects layer prefix counts above the explicit budget", func() {
 		err := validateJSON(layerPrefixConfigJSON(MaxLayerPrefixes + 1))
 		Expect(err).To(HaveOccurred())
