@@ -114,7 +114,7 @@ func TestTSMutatesInput_AnonymousFunctionNameUsesNearestNamedFunction(t *testing
 	}
 }
 `,
-			wantName:     "run/<func lit>:row",
+			wantName:     "Rows.run/<func lit>:row",
 			wantEvidence: "row.seen",
 		},
 		{
@@ -207,14 +207,14 @@ mark = function (row) {
 			wantEvidence: "row.seen",
 		},
 		{
-			name: "arrow held by a quoted object property key has no reachable name",
+			name: "arrow held by a quoted object property key is named by the key's content",
 			source: `const handlers = {
 	"mark": (row) => {
 		row.seen = true;
 	},
 };
 `,
-			wantName:     "<func lit>:row",
+			wantName:     "mark/<func lit>:row",
 			wantEvidence: "row.seen",
 		},
 		{
@@ -300,12 +300,229 @@ mark = function (row) {
 			wantEvidence: "event.handled",
 		},
 		{
-			name: "arrow assigned to a computed member has no reachable name",
+			name: "arrow assigned to a computed member keeps the brackets of a variable key",
 			source: `target[key] = (row) => {
 	row.seen = true;
 };
 `,
+			wantName:     "[key]/<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "arrow assigned to a member with a string literal index is named by its content",
+			source: `target["mark"] = (row) => {
+	row.seen = true;
+};
+`,
+			wantName:     "mark/<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "arrow assigned to a member whose index is an expression has no reachable name",
+			source: `target[Keys.mark] = (row) => {
+	row.seen = true;
+};
+`,
 			wantName:     "<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "arrow under a numeric object key is named by the number",
+			source: `const handlers = {
+	1: (row) => {
+		row.seen = true;
+	},
+};
+`,
+			wantName:     "1/<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "arrow under a computed variable key keeps the brackets",
+			source: `const handlers = {
+	[KEY]: (row) => {
+		row.seen = true;
+	},
+};
+`,
+			wantName:     "[KEY]/<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "arrow under a computed literal key is named like the plain key",
+			source: `const handlers = {
+	["mark"]: (row) => {
+		row.seen = true;
+	},
+};
+`,
+			wantName:     "mark/<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "arrow under a computed member expression key has no reachable name",
+			source: `const handlers = {
+	[Keys.mark]: (row) => {
+		row.seen = true;
+	},
+};
+`,
+			wantName:     "<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "arrow held by a quoted class field is named by its content",
+			source: `class Button {
+	"onClick" = (event) => {
+		event.handled = true;
+	};
+}
+`,
+			wantName:     "onClick/<func lit>:event",
+			wantEvidence: "event.handled",
+		},
+		{
+			name: "a quoted key that is a plain number loses its quotes",
+			source: `const handlers = {
+	"1": (row) => {
+		row.seen = true;
+	},
+};
+`,
+			wantName:     "1/<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "a quoted key that spells a class-qualified name keeps its quotes",
+			source: `const handlers = {
+	"First.run": (row) => {
+		row.seen = true;
+	},
+};
+`,
+			wantName:     `"First.run"/<func lit>:row`,
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "a quoted key that spells an accessor name keeps its quotes",
+			source: `const holder = {
+	"get value": (row) => {
+		row.seen = true;
+	},
+};
+`,
+			wantName:     `"get value"/<func lit>:row`,
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "a quoted key that spells a computed key keeps its quotes",
+			source: `const handlers = {
+	"[KEY]": (row) => {
+		row.seen = true;
+	},
+};
+`,
+			wantName:     `"[KEY]"/<func lit>:row`,
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "single and double quotes name the same quoted key",
+			source: `const handlers = {
+	'a-b': (row) => {
+		row.seen = true;
+	},
+};
+`,
+			wantName:     `"a-b"/<func lit>:row`,
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "an empty quoted key keeps its quotes",
+			source: `const handlers = {
+	"": (row) => {
+		row.seen = true;
+	},
+};
+`,
+			wantName:     `""/<func lit>:row`,
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "callback in a getter is qualified by class and accessor kind",
+			source: `class Box {
+	get value() {
+		this.rows.forEach((row) => {
+			row.seen = true;
+		});
+	}
+}
+`,
+			wantName:     "Box.get value/<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "callback in a setter is qualified by class and accessor kind",
+			source: `class Box {
+	set value(next) {
+		this.rows.forEach((row) => {
+			row.seen = true;
+		});
+	}
+}
+`,
+			wantName:     "Box.set value/<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "a method that is itself called get is not an accessor",
+			source: `class Box {
+	get(rows) {
+		rows.forEach((row) => {
+			row.seen = true;
+		});
+	}
+}
+`,
+			wantName:     "Box.get/<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "callback in a method of an anonymous class bound to a variable",
+			source: `const Panel = class {
+	run(rows) {
+		rows.forEach((row) => {
+			row.seen = true;
+		});
+	}
+};
+`,
+			wantName:     "Panel.run/<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "callback in a method of an anonymous class held under no name",
+			source: `register(class {
+	run(rows) {
+		rows.forEach((row) => {
+			row.seen = true;
+		});
+	}
+});
+`,
+			wantName:     "run/<func lit>:row",
+			wantEvidence: "row.seen",
+		},
+		{
+			name: "callback in an object literal method is not qualified by a class",
+			source: `const handlers = {
+	load(rows) {
+		rows.forEach((row) => {
+			row.seen = true;
+		});
+	},
+};
+`,
+			wantName:     "load/<func lit>:row",
 			wantEvidence: "row.seen",
 		},
 		{
