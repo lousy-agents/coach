@@ -40,6 +40,8 @@ type Config struct {
 	ForbiddenImports []ForbiddenImport `json:"forbidden_imports,omitempty"`
 	SourceSinkPack   string            `json:"source_sink_pack,omitempty"`
 	RequiredLayer    string            `json:"required_layer,omitempty"`
+
+	ExcludeTypeOnlyEdges bool `json:"exclude_type_only_edges,omitempty"`
 }
 
 type Layer struct {

@@ -78,8 +78,8 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 		})
 	})
 
-	When("the edge is type-only", func() {
-		It("emits zero ProjectChanges and zero diagnostics (negative control: type-only import must not be a runtime violation)", func() {
+	When("the edge is type-only and the policy does not opt in to runtime-only evaluation", func() {
+		It("emits exactly one architecture.layer_violation, because a type-only import is still a compile-time dependency", func() {
 			model := domain.Model{
 				ImportEdges: []domain.ImportEdge{
 					{
@@ -95,7 +95,92 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 			changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
 
 			Expect(diagnostics).To(BeEmpty())
+			Expect(changes).To(HaveLen(1))
+			Expect(changes[0].RuleID).To(Equal("architecture.layer_violation"))
+			Expect(changes[0].MachineEvidence).To(HaveKeyWithValue("importer", "pkg/handlers/h.ts"))
+			Expect(changes[0].MachineEvidence).To(HaveKeyWithValue("importee", "pkg/db/d.ts"))
+		})
+	})
+
+	When("the policy sets ExcludeTypeOnlyEdges", func() {
+		excludingPolicy := func() codesignal.LayerPolicy {
+			policy := twoLayerPolicy()
+			policy.ExcludeTypeOnlyEdges = true
+			return policy
+		}
+
+		It("emits zero ProjectChanges and zero diagnostics for a type-only edge", func() {
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/handlers/h.ts", To: "file:pkg/db/d.ts", Kind: "type_only", Resolution: "snapshot", Site: "pkg/handlers/h.ts:10"},
+				},
+			}
+
+			changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, excludingPolicy(), "1", "backend-1", "digest-1")
+
+			Expect(diagnostics).To(BeEmpty())
 			Expect(changes).To(BeEmpty())
+		})
+
+		It("still emits a ProjectChange for a value-level edge across the same forbidden pair", func() {
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/handlers/h.ts", To: "file:pkg/db/d.ts", Kind: "import", Resolution: "snapshot", Site: "pkg/handlers/h.ts:10"},
+				},
+			}
+
+			changes, _ := codesignal.EvaluateTypeScriptLayerViolations(model, excludingPolicy(), "1", "backend-1", "digest-1")
+
+			Expect(changes).To(HaveLen(1))
+		})
+
+		It("drops only the type-only edge of a pair that also has a value-level edge, so the finding anchors on the value-level site", func() {
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/handlers/h.ts", To: "file:pkg/db/d.ts", Kind: "type_only", Resolution: "snapshot", Site: "pkg/handlers/h.ts:1"},
+					{From: "file:pkg/handlers/h.ts", To: "file:pkg/db/d.ts", Kind: "import", Resolution: "snapshot", Site: "pkg/handlers/h.ts:10"},
+				},
+			}
+
+			excluded, _ := codesignal.EvaluateTypeScriptLayerViolations(model, excludingPolicy(), "1", "backend-1", "digest-1")
+			Expect(excluded).To(HaveLen(1))
+			Expect(excluded[0].PrimaryAnchor.Location.StartRow).To(Equal(uint(9)))
+			Expect(excluded[0].RelatedLocations).To(BeEmpty())
+
+			included, _ := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+			Expect(included).To(HaveLen(1))
+			Expect(included[0].PrimaryAnchor.Location.StartRow).To(Equal(uint(0)), "control: without the option the type-only site is part of the finding")
+		})
+	})
+
+	When("every edge in a violating pair is type-only", func() {
+		It("records that the finding is removed if exclude_type_only_edges is set", func() {
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/handlers/h.ts", To: "file:pkg/db/d.ts", Kind: "type_only", Resolution: "snapshot", Site: "pkg/handlers/h.ts:10"},
+				},
+			}
+
+			changes, _ := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+			Expect(changes).To(HaveLen(1))
+			Expect(changes[0].MachineEvidence).To(HaveKeyWithValue("removed_if_set", "exclude_type_only_edges"))
+		})
+	})
+
+	When("a violating pair has a value-level edge alongside a type-only edge", func() {
+		It("does not claim the finding is removed by the option", func() {
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/handlers/h.ts", To: "file:pkg/db/d.ts", Kind: "type_only", Resolution: "snapshot", Site: "pkg/handlers/h.ts:1"},
+					{From: "file:pkg/handlers/h.ts", To: "file:pkg/db/d.ts", Kind: "import", Resolution: "snapshot", Site: "pkg/handlers/h.ts:10"},
+				},
+			}
+
+			changes, _ := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+			Expect(changes).To(HaveLen(1))
+			Expect(changes[0].MachineEvidence).NotTo(HaveKey("removed_if_set"))
 		})
 	})
 

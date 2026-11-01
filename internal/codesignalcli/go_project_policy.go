@@ -22,7 +22,7 @@ func layerPolicyFromConfig(config projectconfig.Config) codesignal.LayerPolicy {
 	for i, f := range config.ForbiddenImports {
 		forbidden[i] = codesignal.ForbiddenLayerImport{From: f.From, To: f.To}
 	}
-	return codesignal.LayerPolicy{Layers: layers, ForbiddenImports: forbidden}
+	return codesignal.LayerPolicy{Layers: layers, ForbiddenImports: forbidden, ExcludeTypeOnlyEdges: config.ExcludeTypeOnlyEdges}
 }
 
 // goBypassLayerFromConfig resolves config.RequiredLayer -- already validated
