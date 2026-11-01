@@ -18,7 +18,7 @@ The same order applies to every tool. The selected file is read at the selected 
 
 An invalid canonical file is an error. Coach does not fall back to `project.json` in that case.
 
-On an interactive terminal, a TypeScript scan that finds an invalid canonical file offers guided policy authoring instead of only reporting the error. The candidate goes to standard output, no file is written, and the scan exits `2` with no report. The same offer follows the report when the canonical file is valid but declares no layers; then the candidate goes to standard error and the scan keeps its own exit status. Off a terminal, with `--no-interactive`, or when `CI` is set, there is no offer, and an invalid canonical file exits `2` with empty standard output.
+On an interactive terminal, a TypeScript scan that finds an invalid canonical file offers guided policy authoring instead of only reporting the error. The candidate goes to standard output, no file is written, and the scan exits `2` with no report. The same offer follows the report when the canonical file is valid but declares no layers and the scan exits `0`; then the candidate goes to standard error and the scan keeps its own exit status. Off a terminal, with `--no-interactive`, or when `CI` is set, there is no offer, and an invalid canonical file exits `2` with empty standard output.
 
 Diagnostic names are `<tool>_config_*`. Coach's names today:
 

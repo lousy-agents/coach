@@ -223,7 +223,7 @@ WHEN a TypeScript scan omits `--project-config` and section 8.4 selects a commit
 
 WHEN a TypeScript scan on a controlling terminal omits `--project-config`, prompts are not disabled, and a committed `.lousy-agents/coach.json` fails schema validation, THE Coach CLI shall offer guided policy authoring instead of the scan. THE Coach CLI shall write the candidate to standard output, write no repository file, exit with status `2`, emit no report, and name `.lousy-agents/coach.json` as the file the candidate replaces.
 
-WHEN a TypeScript scan on a controlling terminal omits `--project-config`, prompts are not disabled, and the selected `.lousy-agents/coach.json` is valid but declares no layers, THE Coach CLI shall finish the scan and render the report, then offer guided policy authoring. THE Coach CLI shall print the offer and any candidate on standard error, write no repository file, and keep the exit status of the scan.
+WHEN a TypeScript scan on a controlling terminal omits `--project-config`, prompts are not disabled, and the selected `.lousy-agents/coach.json` is valid but declares no layers, THE Coach CLI shall finish the scan and render the report, then offer guided policy authoring when the scan exits `0`. THE Coach CLI shall print the offer and any candidate on standard error, write no repository file, and keep the exit status of the scan.
 
 IF prompts are disabled or no controlling terminal is available, THEN THE Coach CLI shall open no guided policy authoring for a discovered policy. An invalid `.lousy-agents/coach.json` still exits as section 8.4 says.
 
