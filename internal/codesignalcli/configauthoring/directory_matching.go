@@ -1,9 +1,8 @@
 package configauthoring
 
 import (
-	"strings"
-
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/pkg/domain"
 )
 
 func matchingDiscoveredDirectories(layer projectconfig.Layer, dirs []string) []string {
@@ -18,17 +17,9 @@ func matchingDiscoveredDirectories(layer projectconfig.Layer, dirs []string) []s
 
 func layerMatchesDirectory(layer projectconfig.Layer, dir string) bool {
 	for _, prefix := range layer.Prefixes {
-		if directoryHasPrefix(dir, prefix) {
+		if domain.LayerPrefixContains(prefix, dir) {
 			return true
 		}
 	}
 	return false
-}
-
-// directoryHasPrefix reports whether prefix matches dir the same way a real
-// layer-violation evaluation would (pkg/codesignal/rule_layer_violation_match.go's
-// layerContainsDir): dir equals prefix, dir is nested under prefix, or prefix
-// is ".", the universal repository-root ancestor.
-func directoryHasPrefix(dir, prefix string) bool {
-	return prefix == "." || dir == prefix || strings.HasPrefix(dir, prefix+"/")
 }

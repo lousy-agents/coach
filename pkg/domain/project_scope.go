@@ -23,6 +23,11 @@ type ProjectScope struct {
 	Roots           []ProjectScopeRoot `json:"roots"`
 	MatchedLayers   []string           `json:"matched_layers"`
 	UnmatchedLayers []string           `json:"unmatched_layers"`
+
+	// LayerMembership is nil when it could not be computed: the policy
+	// declares no layers, or the analyzer reported file counts without the
+	// matching path lists. Nil means "not computed", never zero.
+	LayerMembership *LayerMembership `json:"layer_membership,omitempty"`
 }
 
 // RootScope is the candidate and analyzed file set for one policy root.

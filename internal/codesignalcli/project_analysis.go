@@ -71,6 +71,13 @@ type ProjectBackendResult struct {
 	// omission -- see tsProjectBackend.evaluateRevision.
 	HeadProjectScope *projectmodel.ProjectScope
 	BaseProjectScope *projectmodel.ProjectScope
+	// HeadLayerMembership/BaseLayerMembership carry each revision's count of
+	// project files under the configured roots outside every declared layer.
+	// Nil means it was not computed (no layers declared, an incomplete project
+	// model, or an analyzer that reported counts without path lists), which a
+	// report must not present as zero.
+	HeadLayerMembership *projectmodel.LayerMembership
+	BaseLayerMembership *projectmodel.LayerMembership
 	// HeadModelCoverage/BaseModelCoverage, HeadBypassCoverage/
 	// BaseBypassCoverage, and HeadReachabilityCoverage/BaseReachabilityCoverage
 	// carry each analyzed revision's three phase-specific Coverage
@@ -168,6 +175,8 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 
 		HeadProjectScope:         result.HeadProjectScope,
 		BaseProjectScope:         result.BaseProjectScope,
+		HeadLayerMembership:      result.HeadLayerMembership,
+		BaseLayerMembership:      result.BaseLayerMembership,
 		HeadModelCoverage:        result.HeadModelCoverage,
 		BaseModelCoverage:        result.BaseModelCoverage,
 		HeadBypassCoverage:       result.HeadBypassCoverage,

@@ -38,6 +38,7 @@ func assembleReport(
 		prov := buildProjectProvenance(input, options)
 		report.ProjectProvenance = prov
 		report.ProjectScope = buildProjectScope(input)
+		report.LayerMembership = buildLayerMembership(input)
 		cnm := isCompleteNoMatch(options, prov, input, projectSummary, projectChanges)
 		report.ProjectNextActions = buildNextActions(options, cnm, diagnostics)
 	}

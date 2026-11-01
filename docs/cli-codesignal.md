@@ -206,6 +206,26 @@ additionally include `project_provenance` and `project_scope`, and
 `project_next_actions` when a complete scan finds no configured covered
 match. Go schema-2 reports omit those keys.
 
+Go and TypeScript schema-2 reports include `layer_membership` when the policy
+declares at least one layer and the count could be computed: `head`, and `base`
+when a base revision was analyzed, each with `revision`, `analyzed_files`, and
+`files_outside_layers`. It counts distinct project files under the configured
+`roots` (the files the project model analyzed) that no layer prefix contains,
+matched the way the layer rules match (a Go package directory, a TypeScript file
+path). `analyzed_files` here is that same population, not the summary's
+`files_analyzed`. Code outside `roots` is not in this count, but the file-local
+`files_analyzed` may still include it. For TypeScript, a tsconfig `include`
+that reaches outside its root (for example `../shared/**`) adds those files to
+the project model, so they count in `analyzed_files`. A missing
+`layer_membership` means "not computed": the policy declares no layers, the
+project model is incomplete (Go: any incomplete model, such as one cut short by
+the input file or byte budget; TypeScript: the input budget truncated the files
+sent to the analyzer), or a TypeScript root reports an analyzed-file count that
+its path list does not match. In each case a count would leave files out, so it
+is not reported. A present `files_outside_layers` of `0` is a real zero. It is
+information, not a finding, and it changes no lifecycle, fingerprint, or exit
+code.
+
 `summary` counts: `files_analyzed`, `files_with_diagnostics`, `active_signals`,
 `introduced_signals`, `existing_signals`, `resolved_signals`, `baseline_signals`,
 `unknown_signals`.
@@ -472,6 +492,22 @@ rule stays at `"1"`.
 
 Unrecognized finding kinds are ignored. An empty `signals` array is not a
 clean bill of health.
+
+`architecture.layer_violation` checks an import against `forbidden_imports` only
+when both the importing and the imported code (Go: the package directory) sit
+inside a declared layer. Code outside every declared layer is still analyzed by
+the file-local rules, but is not evaluated by that rule, so an empty set of
+layer-violation findings says nothing about imports to or from it. The report
+states how many project files under the configured roots sit outside every
+declared layer, as information rather than a finding; the text line describes
+the head revision. When that count is above zero, the text verdict carries the
+same scope: the all-clear reads `...; forbidden_imports was evaluated only
+between files inside declared layers`, the complete-scan verdict reads the same
+after `no configured covered match`, and an incomplete verdict keeps its causes
+and adds `Separately, forbidden_imports was evaluated only between files inside
+declared layers.` `architecture.layer_bypass` is defined against
+`required_layer` alone, and file-local rules run on every analyzed file
+regardless of layers.
 
 ## Signed archive without mise
 

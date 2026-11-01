@@ -2,7 +2,6 @@ package codesignal
 
 import (
 	"sort"
-	"strings"
 
 	"github.com/lousy-agents/coach/pkg/domain"
 )
@@ -39,7 +38,7 @@ func matchLayer(layers []ArchitectureLayer, dir string) (ArchitectureLayer, bool
 
 func layerContainsDir(layer ArchitectureLayer, dir string) bool {
 	for _, prefix := range layer.Prefixes {
-		if prefix == "." || dir == prefix || strings.HasPrefix(dir, prefix+"/") {
+		if domain.LayerPrefixContains(prefix, dir) {
 			return true
 		}
 	}

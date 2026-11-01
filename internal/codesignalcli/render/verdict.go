@@ -18,21 +18,21 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 			if n := report.Summary.FilesUnanalyzed; n > 0 {
 				causes = append([]string{pathCountClause(n)}, causes...)
 			}
-			fmt.Fprintf(b, "Scan found no configured covered match, but the analysis is incomplete: %s.\n", strings.Join(causes, "; "))
+			fmt.Fprintf(b, "Scan found no configured covered match, but the analysis is incomplete: %s.%s\n", strings.Join(causes, "; "), layerReachSentence(report))
 			return
 		}
 		if report.Summary.FilesUnanalyzed == 0 {
-			b.WriteString("Complete scan found no configured covered match.\n")
+			fmt.Fprintf(b, "Complete scan found no configured covered match%s.\n", layerReachSuffix(report))
 			return
 		}
-		fmt.Fprintf(b, "Complete scan found no configured covered match, but %s.\n", pathCountClause(report.Summary.FilesUnanalyzed))
+		fmt.Fprintf(b, "Complete scan found no configured covered match, but %s.%s\n", pathCountClause(report.Summary.FilesUnanalyzed), layerReachSentence(report))
 		return
 	}
 
 	incompleteProject := (report.ProjectCoverage != nil && !report.ProjectCoverage.Complete) ||
 		hasProjectLifecycleDiagnostic(report.Diagnostics)
 	if keepUnqualifiedAllClear(report, incompleteProject) {
-		fmt.Fprintf(b, "%s.\n", noActiveFindingsLead(report))
+		fmt.Fprintf(b, "%s%s.\n", noActiveFindingsLead(report), layerReachSuffix(report))
 		return
 	}
 
@@ -49,7 +49,7 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 	if len(causes) == 0 {
 		causes = append(causes, "additional diagnostics were recorded")
 	}
-	fmt.Fprintf(b, "%s, but the analysis is incomplete: %s.\n", noActiveFindingsLead(report), strings.Join(causes, "; "))
+	fmt.Fprintf(b, "%s, but the analysis is incomplete: %s.%s\n", noActiveFindingsLead(report), strings.Join(causes, "; "), layerReachSentence(report))
 }
 
 // noActiveFindingsLead scopes the all-clear to the severity floor: when a

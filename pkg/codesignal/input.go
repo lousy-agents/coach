@@ -80,6 +80,12 @@ type Input struct {
 	HeadProjectScope *domain.ProjectScope `json:"head_project_scope,omitempty"`
 	BaseProjectScope *domain.ProjectScope `json:"base_project_scope,omitempty"`
 
+	// HeadLayerMembership and BaseLayerMembership carry each revision's count
+	// of analyzed files outside every declared layer. Nil means it was not
+	// computed for that revision, which is not the same as zero.
+	HeadLayerMembership *domain.LayerMembership `json:"head_layer_membership,omitempty"`
+	BaseLayerMembership *domain.LayerMembership `json:"base_layer_membership,omitempty"`
+
 	// Phase-specific coverage observations for each analyzed revision. A nil
 	// pointer means the phase was not observed (treat as not_run in D7 mapping).
 	HeadModelCoverage        *domain.Coverage `json:"head_model_coverage,omitempty"`
