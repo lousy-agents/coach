@@ -35,6 +35,11 @@ type ForbiddenLayerImport struct {
 type LayerPolicy struct {
 	Layers           []ArchitectureLayer
 	ForbiddenImports []ForbiddenLayerImport
+
+	// ExcludeTypeOnlyEdges is named for what it removes, so the zero value
+	// keeps the default of evaluating TypeScript type-only edges. The Go
+	// evaluator ignores it because Go has no type-only import edge.
+	ExcludeTypeOnlyEdges bool
 }
 
 // EvaluateGoLayerViolations evaluates model's internal Go import edges
@@ -73,17 +78,19 @@ func EvaluateGoLayerViolations(model domain.Model, policy LayerPolicy, ruleVersi
 }
 
 // EvaluateTypeScriptLayerViolations is the TypeScript/TSX analog of
-// EvaluateGoLayerViolations: it evaluates model's value-level (import,
-// reexport), file-addressed TS/TSX import edges against policy, producing
-// architecture.layer_violation ProjectChanges with the same field shape as
-// the Go evaluator plus a MachineEvidence["language"] = "typescript" entry.
+// EvaluateGoLayerViolations: it evaluates model's file-addressed TS/TSX
+// import edges (value-level import and reexport, and type-only) against
+// policy, producing architecture.layer_violation ProjectChanges with the same
+// field shape as the Go evaluator plus a MachineEvidence["language"] =
+// "typescript" entry.
 //
-// An edge is eligible only when Kind is "import" or "reexport" and both From
-// and To carry the "file:" prefix (see forbiddenTSPair). The project sidecar
-// only ever emits a "file:"-addressed To together with Resolution
-// "snapshot" (js/semantics/src/project-sidecar/edges-resolve.ts), so the
-// prefix check alone is sufficient to select snapshot-resolved edges;
-// "type_only" edges are never runtime dependencies, and
+// An edge is eligible only when Kind is "import", "reexport" or "type_only"
+// and both From and To carry the "file:" prefix (see forbiddenTSPair).
+// "type_only" edges are evaluated because a layer rule forbids a
+// compile-time dependency just as it forbids a runtime one (coach#562). The
+// project sidecar only ever emits a "file:"-addressed To together with
+// Resolution "snapshot" (js/semantics/src/project-sidecar/edges-resolve.ts),
+// so the prefix check alone is sufficient to select snapshot-resolved edges;
 // "commonjs_require"/"dynamic_import" edges or edges resolving to
 // "external:"/"unresolved:" targets are silently skipped, same as Go's
 // evaluator skips non-internal edges. Consequently the returned diagnostics
@@ -108,6 +115,18 @@ func EvaluateTypeScriptLayerViolations(model domain.Model, policy LayerPolicy, r
 		changes = append(changes, layerViolationChange(key, groups[key], layers[0], layers[1], ruleVersion, backendVersion, configDigest, "typescript"))
 	}
 	return changes, nil
+}
+
+// allEdgesTypeOnly marks findings the ExcludeTypeOnlyEdges option would
+// remove entirely. A pair that also has a value-level edge survives the
+// option, so it must not carry the marker.
+func allEdgesTypeOnly(edges []domain.ImportEdge) bool {
+	for _, edge := range edges {
+		if edge.Kind != "type_only" {
+			return false
+		}
+	}
+	return len(edges) > 0
 }
 
 // layerViolationChange builds the shared architecture.layer_violation
@@ -138,6 +157,9 @@ func layerViolationChange(key layerPairKey, edges []domain.ImportEdge, layerFrom
 	}
 	if language != "" {
 		machineEvidence["language"] = language
+	}
+	if allEdgesTypeOnly(edges) {
+		machineEvidence["removed_if_set"] = "exclude_type_only_edges"
 	}
 
 	return ProjectChange{
