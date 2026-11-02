@@ -14,7 +14,10 @@ import (
 // checkOutputParents walks every existing parent component of cleanOutput
 // (relative to repositoryRootDir) via os.Lstat -- not os.Stat -- so a
 // symlinked parent directory is rejected rather than silently followed. A
-// missing parent is also rejected: a create-only write must never mkdir -p.
+// missing parent is also rejected: a create-only --output write must never
+// mkdir. The implicit default .lousy-agents/coach.json destination is the
+// one exception, and only EnsureDefaultSuggestConfigDir creates that single
+// directory; this function still never creates a parent.
 func checkOutputParents(repositoryRootDir, cleanOutput string) error {
 	segments := strings.Split(filepath.ToSlash(cleanOutput), "/")
 	current := repositoryRootDir

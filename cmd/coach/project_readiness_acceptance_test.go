@@ -106,9 +106,16 @@ var _ = Describe("coach codesignal --baseline --check-project --project-language
 			var explicitDoc, omittedDoc readinessResultDoc
 			Expect(json.Unmarshal(explicitStdout, &explicitDoc)).To(Succeed(), "stdout: %s", explicitStdout)
 			Expect(json.Unmarshal(omittedStdout, &omittedDoc)).To(Succeed(), "stdout: %s", omittedStdout)
-			Expect(omittedDoc).To(Equal(explicitDoc))
+			Expect(explicitDoc.Checks.Policy.State).To(Equal("pass"))
 			Expect(omittedDoc.Checks.Policy.State).To(Equal("pass"))
+			Expect(explicitDoc.Status).To(Equal("ready"))
 			Expect(omittedDoc.Status).To(Equal("ready"))
+			Expect(warningCodes(omittedDoc)).To(ContainElement("project_config_deprecated"))
+			Expect(warningCodes(explicitDoc)).NotTo(ContainElement("project_config_deprecated"))
+			Expect(warningCodes(omittedDoc)).To(Equal(append(append([]string{}, warningCodes(explicitDoc)...), "project_config_deprecated")))
+			Expect(omittedDoc.Checks).To(Equal(explicitDoc.Checks))
+			Expect(omittedDoc.Gaps).To(Equal(explicitDoc.Gaps))
+			Expect(omittedDoc.NextActions).To(Equal(explicitDoc.NextActions))
 		})
 	})
 

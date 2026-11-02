@@ -76,7 +76,7 @@ In scope:
 - local `coach codesignal` on a Git checkout
 - Go, TypeScript, and TSX source that is already committed
 - file-local structural signals
-- opt-in project policy that the user writes and commits
+- project policy that the user writes and commits; file-local analysis when none is selected
 - consented setup for a missing TypeScript compiler when a terminal is present
 - an honest report when analysis is incomplete
 
@@ -113,6 +113,7 @@ These limits do not expire with this era unless a later document replaces them.
 - Consent for mutation: compiler or package setup that changes the machine needs a terminal and an explicit confirm step.
 - Default file-local analysis does not need a network connection. Project-policy setup may use the network after the user confirms.
 - Absence of an architecture signal is not compliance.
+- Stability. Coach is not yet stable. Its JSON schema, fingerprints, rule versions, and policy schema may change between releases. The owner decides case by case whether a change is announced in release notes.
 
 ## 8. Requirements
 
@@ -184,7 +185,15 @@ WHERE the user passes a committed project policy, THE Coach CLI shall evaluate o
 
 THE Coach CLI shall not invent layers or forbidden imports.
 
-WHEN the user sets project language and omits a project policy, THE Coach CLI shall keep file-local analysis.
+WHEN the user omits `--project-config` and a committed `.lousy-agents/coach.json` is schema-valid at the analyzed revision, THE Coach CLI shall use that policy and emit a project-policy report.
+
+WHEN the user omits `--project-config`, no schema-valid `.lousy-agents/coach.json` is committed at the analyzed revision, and a schema-valid committed root `project.json` exists, THE Coach CLI shall use `project.json` and emit `project_config_deprecated`.
+
+WHEN the user omits `--project-config`, and neither a schema-valid `.lousy-agents/coach.json` nor a schema-valid root `project.json` is committed at the analyzed revision, THE Coach CLI shall keep file-local analysis.
+
+IF a committed `.lousy-agents/coach.json` fails schema validation and `--project-config` is omitted, THEN THE Coach CLI shall not read `project.json`. Except where section 8.5 offers guided policy authoring, THE Coach CLI shall exit with status `2`, write no report to standard output, and name `project_config_invalid` and the path on standard error.
+
+WHEN a scan selects the root `project.json` fallback on a controlling terminal, `.lousy-agents/coach.json` does not exist, and prompts are not disabled, THE Coach CLI shall ask once on standard error, default No, whether to copy that file. It shall write nothing unless the user answers Yes. It shall never overwrite an existing canonical file or delete `project.json`.
 
 WHEN a committed policy is valid, THE Coach CLI shall emit a project-policy report that is distinct from the file-local report.
 
@@ -208,7 +217,17 @@ WHEN the candidate is written, THE Coach CLI shall exit with status `2`, emit no
 
 WHEN the user runs standalone TypeScript policy authoring on a controlling terminal, THE Coach CLI shall write no repository file until the user confirms.
 
-WHEN a TypeScript scan omits `--project-config`, THE Coach CLI shall stay file-local and open no policy authoring.
+WHEN a TypeScript scan omits `--project-config` and section 8.4 selects no committed policy, THE Coach CLI shall stay file-local and open no policy authoring.
+
+WHEN a TypeScript scan omits `--project-config` and section 8.4 selects a committed policy, THE Coach CLI shall apply the same readiness, setup, and policy rules as for that path passed explicitly.
+
+WHEN a TypeScript scan on a controlling terminal omits `--project-config`, prompts are not disabled, and a committed `.lousy-agents/coach.json` fails schema validation, THE Coach CLI shall offer guided policy authoring instead of the scan. THE Coach CLI shall write the candidate to standard output, write no repository file, exit with status `2`, emit no report, and name `.lousy-agents/coach.json` as the file the candidate replaces.
+
+WHEN a TypeScript scan on a controlling terminal omits `--project-config`, prompts are not disabled, and the selected `.lousy-agents/coach.json` is valid but declares no layers, THE Coach CLI shall finish the scan and render the report, then offer guided policy authoring when the scan exits `0`. THE Coach CLI shall print the offer and any candidate on standard error, write no repository file, and keep the exit status of the scan.
+
+IF prompts are disabled or no controlling terminal is available, THEN THE Coach CLI shall open no guided policy authoring for a discovered policy. An invalid `.lousy-agents/coach.json` still exits as section 8.4 says.
+
+WHEN `--suggest-project-config` runs without `--output`, THE Coach CLI shall write the candidate create-only to `.lousy-agents/coach.json`. The Go form also prints the candidate on standard output. The TypeScript form writes only after the user confirms. An existing destination is refused and not overwritten.
 
 WHEN a TypeScript project scan runs on a controlling terminal, the policy is committed, a supported compiler is missing, and at least one setup choice is executable, THE Coach CLI shall offer a bounded setup menu and require a second confirm step before any install.
 
@@ -244,10 +263,10 @@ Status uses the evidence rule in the cutoff section.
 | --- | --- |
 | File-local structural analysis for Go, TypeScript, and TSX | Implemented in the published CLI through `v0.8.0`. Locked by the `cmd/coach/codesignal_*_acceptance_test.go` specs. Rule list lives in `docs/cli-codesignal.md`. |
 | Diff scan and baseline scan with lifecycle fields | Implemented. Git added files count as `introduced` as of `v0.7.0` ([#262](https://github.com/lousy-agents/coach/issues/262)). Rename or copy without old-path continuity stays `unknown`. Locked by `cmd/coach/codesignal_signal_lifecycle_acceptance_test.go`, `cmd/coach/codesignal_rename_copy_acceptance_test.go`, and `cmd/coach/baseline_acceptance_test.go`. |
-| Opt-in project policy and `architecture.layer_violation` | Implemented from `v0.4.0`. Coach does not guess architecture. A language flag without a policy stays file-local. Locked by `cmd/coach/project_go_backend_acceptance_test.go` and `cmd/coach/project_go_policy_opt_in_acceptance_test.go`. |
+| Project policy discovery and `architecture.layer_violation` | Implemented from `v0.4.0`. Discovery of `.lousy-agents/coach.json` and the root `project.json` fallback is **planned until #512 merges**, then implemented. Coach does not guess architecture. Without a selected policy, scans stay file-local. Locked by `cmd/coach/project_go_backend_acceptance_test.go` and, once #512 merges, `cmd/coach/project_config_discovery_acceptance_test.go`. The discovery specs replace the removed `cmd/coach/project_go_policy_opt_in_acceptance_test.go` pins. |
 | `architecture.layer_bypass` on a handler-shaped source to a pinned sink | Implemented for Go (`go-layer-bypass-registry@1`) and TypeScript (`ts-layer-bypass-registry@1`). Locked by `cmd/coach/project_go_layer_bypass_acceptance_test.go` and `cmd/coach/project_ts_backend_acceptance_test.go`. Absence of a finding is not compliance. |
 | TypeScript readiness check | Implemented from `v0.4.0`. `--check-project` reports status, checks, and gaps, mutates nothing, and exits `0`. Locked by `cmd/coach/project_readiness_acceptance_test.go`. |
-| Guided policy authoring | Implemented from `v0.5.0`. Scan authoring needs `--project-config` and a terminal. The scan prints a candidate on standard output. Locked by `cmd/coach/project_ts_scan_policy_authoring_acceptance_test.go`. |
+| Guided policy authoring | Implemented from `v0.5.0` for a scan whose explicit `--project-config` names no policy. Authoring on a discovered `.lousy-agents/coach.json` that is schema-invalid, or valid with no layers, is **planned until #512 merges**, then implemented. An invalid file gets the offer instead of the scan, and a layerless one gets it after the scan. Every scan authoring path needs a terminal and writes no repository file. Locked by `cmd/coach/project_ts_scan_policy_authoring_acceptance_test.go` and, once #512 merges, `cmd/coach/project_config_discovered_authoring_acceptance_test.go`. |
 | Consented TypeScript compiler setup | Implemented as `--prepare-compiler` in `v0.6.0` and as a scan-time offer in `v0.7.0`. The standalone flag is mise-only. Locked by `cmd/coach/project_ts_setup_execute_acceptance_test.go` and `cmd/coach/project_ts_setup_preview_acceptance_test.go`. |
 | Unattended path that refuses prompts | Implemented as `--no-interactive` and a non-empty `CI` variable in `v0.7.0`. Locked by `cmd/coach/project_ts_scan_policy_authoring_acceptance_test.go`. |
 | JSON signals carry rule identity and rule version | JSON `rule_id` and `rule_version` are implemented; `pkg/codesignal/report_shape_acceptance_test.go` locks the JSON key shape. Default text output prints `rule_id` and `severity` on every file-local and project finding, which ships in the release that carries this PR; `cmd/coach/text_finding_identity_acceptance_test.go` locks that text claim. `subject` is not printed and `source_scope` is printed but not collapsed ([#279](https://github.com/lousy-agents/coach/issues/279)). |
@@ -279,6 +298,7 @@ Parked on purpose:
 - Behavioral test-gap detection as a primary claim.
 - Model judgment, rubric scoring, and provenance split on a hosted path.
 - Harness hooks and a web user interface.
+- Cycle detection between modules. Coach has no cycle rule. A cycle between two layers can be expressed as forbidden pairs in both directions, but a cycle inside one layer cannot. Revisit when the owner scopes a cycle rule.
 
 If a later path adds model judgments, each finding must stay tagged as deterministic or agent. Agent output must not hide a deterministic finding. A schema failure on the agent path must still return the deterministic report. That contract is not a requirement of the default CLI path.
 

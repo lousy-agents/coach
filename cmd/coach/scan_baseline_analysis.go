@@ -10,7 +10,7 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codesignal.Report, error) {
+func runBaselineAnalysis(dir string, f codesignalFlags, stdin, stderr *os.File) (*codesignal.Report, error) {
 	revisionSHA, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
 		return nil, err
@@ -25,7 +25,8 @@ func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codes
 	}
 	coverage.Excluded = excluded
 
-	project, diag, opErr := prepareProjectAnalysis(dir, revisionSHA, f.projectConfigSet, f.projectConfig, f.projectLanguage)
+	project, diags, restoreStatus, opErr := prepareScanProjectAnalysis(dir, revisionSHA, f, stdin, stderr)
+	defer restoreStatus()
 	if opErr != nil {
 		return nil, opErr
 	}
@@ -34,5 +35,5 @@ func runBaselineAnalysis(dir string, f codesignalFlags, stderr *os.File) (*codes
 	if err != nil {
 		return nil, wrapScanAnalysisError(err, dir, revisionSHA, f.projectConfig, stderr)
 	}
-	return withProjectDiagnostic(report, diag), nil
+	return withProjectDiagnostic(report, nil, diags...), nil
 }

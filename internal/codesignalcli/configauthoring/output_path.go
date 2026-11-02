@@ -2,9 +2,39 @@ package configauthoring
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
+
+// DefaultSuggestConfigRel is the repository-root-relative destination when
+// --suggest-project-config is invoked without --output.
+const DefaultSuggestConfigRel = ".lousy-agents/coach.json"
+
+const defaultSuggestConfigDir = ".lousy-agents"
+
+// EnsureDefaultSuggestConfigDir creates the single .lousy-agents directory
+// at the repository root when it is missing. It is the one mkdir a
+// create-only suggestion write may perform, and only for that implicit
+// default destination: checkOutputParents still rejects a missing parent of
+// an explicit --output and never creates one. A symlink at .lousy-agents is
+// rejected and not followed.
+func EnsureDefaultSuggestConfigDir(repositoryRootDir string) error {
+	dir := filepath.Join(repositoryRootDir, defaultSuggestConfigDir)
+	info, err := os.Lstat(dir)
+	switch {
+	case err != nil && os.IsNotExist(err):
+		return unwrapPathError(DefaultSuggestConfigRel, os.Mkdir(dir, 0o755))
+	case err != nil:
+		return unwrapPathError(defaultSuggestConfigDir, err)
+	case info.Mode()&os.ModeSymlink != 0:
+		return fmt.Errorf("parent path component %q is a symlink", defaultSuggestConfigDir)
+	case !info.IsDir():
+		return fmt.Errorf("parent path component %q is not a directory", defaultSuggestConfigDir)
+	default:
+		return nil
+	}
+}
 
 func ValidateAuthoringOutputPath(repositoryRootDir, outputPath string) (clean string, err error) {
 	return validateOutputPath(repositoryRootDir, outputPath)

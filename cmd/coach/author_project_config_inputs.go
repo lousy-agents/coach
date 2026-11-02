@@ -10,17 +10,52 @@ import (
 )
 
 // rejectUnusableAuthoringOutput fails fast on --output shape or an existing
-// target before the session. writeSuggestOutput's O_EXCL remains the sole
-// existence authority against a concurrently created target.
+// target before the session. When --suggest-project-config omits --output,
+// the implicit .lousy-agents/coach.json destination is checked the same way
+// once a non-mutating Lstat shows .lousy-agents is a real directory. A
+// missing directory is left for the approved write to create; a symlink or
+// non-directory parent is refused here and is neither created nor followed.
+// writeSuggestOutput's O_EXCL remains the sole existence authority against a
+// concurrently created target.
 func rejectUnusableAuthoringOutput(root string, f codesignalFlags) error {
 	if !f.outputSet {
-		return nil
+		if !f.suggestProjectConfig {
+			return nil
+		}
+		return rejectImplicitDefaultAuthoringTarget(root)
 	}
 	clean, err := configauthoring.ValidateAuthoringOutputPath(root, f.output)
 	if err != nil {
 		return err
 	}
 	if _, err := os.Lstat(filepath.Join(root, clean)); err == nil {
+		return fmt.Errorf("--output target already exists")
+	}
+	return nil
+}
+
+// rejectImplicitDefaultAuthoringTarget inspects the implicit
+// .lousy-agents/coach.json destination without creating it. The file is
+// Lstat'd only after the parent Lstat shows a real directory, so a symlink
+// at .lousy-agents is not followed.
+func rejectImplicitDefaultAuthoringTarget(root string) error {
+	parentName := filepath.Dir(configauthoring.DefaultSuggestConfigRel)
+	dir := filepath.Join(root, parentName)
+	info, err := os.Lstat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("parent path component %q is a symlink", parentName)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("parent path component %q is not a directory", parentName)
+	}
+	target := filepath.Join(dir, filepath.Base(configauthoring.DefaultSuggestConfigRel))
+	if _, err := os.Lstat(target); err == nil {
 		return fmt.Errorf("--output target already exists")
 	}
 	return nil
