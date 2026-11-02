@@ -26,9 +26,13 @@ func isRequiredCoverageComplete(headModel, headBypass, baseModel, baseBypass str
 // RequiredCoverageIncomplete reports whether required project coverage is
 // incomplete for any analyzed side of the report. Model or bypass
 // incompleteness on any side counts; reachability incompleteness alone does
-// not. When ProjectProvenance is absent, a project_backend_unavailable
-// diagnostic is treated as incomplete so schema-1 reports (which carry no
-// provenance) still satisfy the predicate.
+// not.
+//
+// A report with provenance (TypeScript) is judged by its model and bypass
+// phases. A report without it, which is every schema-1 report and every Go
+// report, is incomplete when a project_backend_unavailable diagnostic is
+// present or its own completeness signals say so; see
+// provenanceFreeCoverageIncomplete.
 func RequiredCoverageIncomplete(report *Report) bool {
 	if report == nil {
 		return false
@@ -36,7 +40,33 @@ func RequiredCoverageIncomplete(report *Report) bool {
 	if report.ProjectProvenance != nil {
 		return !requiredProvenanceComplete(report.ProjectProvenance)
 	}
-	return hasProjectBackendUnavailable(report.Diagnostics)
+	return hasProjectBackendUnavailable(report.Diagnostics) || provenanceFreeCoverageIncomplete(report)
+}
+
+// provenanceFreeCoverageIncomplete reads completeness from what a report
+// without provenance does carry. Its project_coverage already folds the model
+// and any required-layer bypass search into one complete flag. The base side
+// of a diff is not in project_coverage, so an incomplete base side arrives as
+// a project_lifecycle_indeterminate diagnostic; project_coverage_incomplete is
+// raised for the head side only. Both are signals the text verdict uses to
+// qualify an all-clear.
+func provenanceFreeCoverageIncomplete(report *Report) bool {
+	if report.ProjectCoverage != nil && !report.ProjectCoverage.Complete {
+		return true
+	}
+	return HasProjectCoverageDiagnostic(report.Diagnostics)
+}
+
+// HasProjectCoverageDiagnostic reports whether diags carry a signal that
+// project coverage was incomplete on either analyzed side. The exit-3
+// predicate and the text verdict both use it, so they cannot disagree.
+func HasProjectCoverageDiagnostic(diags []Diagnostic) bool {
+	for _, d := range diags {
+		if d.Kind == DiagKindProjectCoverageIncomplete || d.Kind == DiagKindProjectLifecycleIndeterminate {
+			return true
+		}
+	}
+	return false
 }
 
 func requiredProvenanceComplete(prov *ProjectProvenance) bool {

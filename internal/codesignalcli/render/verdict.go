@@ -30,7 +30,7 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 	}
 
 	incompleteProject := (report.ProjectCoverage != nil && !report.ProjectCoverage.Complete) ||
-		hasProjectLifecycleDiagnostic(report.Diagnostics)
+		codesignal.HasProjectCoverageDiagnostic(report.Diagnostics)
 	if keepUnqualifiedAllClear(report, incompleteProject) {
 		fmt.Fprintf(b, "%s%s.\n", noActiveFindingsLead(report), layerReachSuffix(report))
 		return

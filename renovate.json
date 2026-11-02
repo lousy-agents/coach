@@ -51,6 +51,13 @@
             "description": "Bump mise.toml min_version and every CI jdx/mise-action version together",
             "matchPackageNames": ["jdx/mise"],
             "groupName": "jdx/mise"
+        },
+        {
+            "description": "Hold Node.js major updates for owner approval: a new Node major changes coach's supported runtimes and ships only once it is LTS",
+            "matchPackageNames": ["nodejs/node", "node", "@types/node"],
+            "matchUpdateTypes": ["major"],
+            "dependencyDashboardApproval": true,
+            "automerge": false
         }
     ],
     "customManagers": [
