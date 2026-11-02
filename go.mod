@@ -13,7 +13,7 @@ require (
 	github.com/google/go-github/v93 v93.0.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/odvcencio/gotreesitter v0.56.0
-	github.com/onsi/ginkgo/v2 v2.33.1
+	github.com/onsi/ginkgo/v2 v2.34.0
 	github.com/onsi/gomega v1.44.0
 	github.com/redis/go-redis/v9 v9.23.0
 	golang.org/x/mod v0.42.0
