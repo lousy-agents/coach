@@ -18,8 +18,9 @@ var _ = Describe("coach codesignal advisory exit status", func() {
 			initialSHA := commitFile(repo, "a.go", base)
 			commitFile(repo, "a.go", head)
 
-			_, textStderr, textExit := runCoachCodesignalRaw(repo, initialSHA)
+			textOutput, textStderr, textExit := runCoachCodesignalRaw(repo, initialSHA)
 			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
+			Expect(string(textOutput)).NotTo(ContainSubstring("No active CodeSignal findings"), "an exit 0 only proves the advisory contract when the text run found signals")
 
 			jsonOutput, jsonStderr, jsonExit := runCoachCodesignalRaw(repo, initialSHA, "--format=json")
 			Expect(jsonExit).To(Equal(0), "stderr: %s", jsonStderr)
@@ -27,6 +28,7 @@ var _ = Describe("coach codesignal advisory exit status", func() {
 			var report codesignal.Report
 			Expect(json.Unmarshal(jsonOutput, &report)).To(Succeed())
 			Expect(report.Signals).NotTo(BeEmpty(), "an exit 0 only proves the advisory contract when the run found signals")
+			Expect(string(textOutput)).To(ContainSubstring(report.Signals[0].RuleID), "the text run must report the signal the JSON run found")
 		})
 	})
 
@@ -35,8 +37,9 @@ var _ = Describe("coach codesignal advisory exit status", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "a.go", "package a\n\nfunc Update(input *int) {\n\t*input = 1\n}\n")
 
-			_, textStderr, textExit := runCoachCodesignalBaselineRaw(repo)
+			textOutput, textStderr, textExit := runCoachCodesignalBaselineRaw(repo)
 			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
+			Expect(string(textOutput)).NotTo(ContainSubstring("No active CodeSignal findings"), "an exit 0 only proves the advisory contract when the text run found signals")
 
 			jsonOutput, jsonStderr, jsonExit := runCoachCodesignalBaselineRaw(repo, "--format=json")
 			Expect(jsonExit).To(Equal(0), "stderr: %s", jsonStderr)
@@ -44,6 +47,7 @@ var _ = Describe("coach codesignal advisory exit status", func() {
 			var report codesignal.Report
 			Expect(json.Unmarshal(jsonOutput, &report)).To(Succeed())
 			Expect(report.Signals).NotTo(BeEmpty(), "an exit 0 only proves the advisory contract when the run found signals")
+			Expect(string(textOutput)).To(ContainSubstring(report.Signals[0].RuleID), "the text run must report the signal the JSON run found")
 		})
 	})
 })
