@@ -46,8 +46,9 @@ func RequiredCoverageIncomplete(report *Report) bool {
 // provenanceFreeCoverageIncomplete reads completeness from what a report
 // without provenance does carry. Its project_coverage already folds the model
 // and any required-layer bypass search into one complete flag. The base side
-// of a diff is not in project_coverage, so an incomplete base arrives as a
-// coverage or lifecycle diagnostic, the same signals the text verdict uses to
+// of a diff is not in project_coverage, so an incomplete base side arrives as
+// a project_lifecycle_indeterminate diagnostic; project_coverage_incomplete is
+// raised for the head side only. Both are signals the text verdict uses to
 // qualify an all-clear.
 func provenanceFreeCoverageIncomplete(report *Report) bool {
 	if report.ProjectCoverage != nil && !report.ProjectCoverage.Complete {

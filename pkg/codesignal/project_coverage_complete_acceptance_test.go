@@ -27,13 +27,13 @@ var _ = Describe("RequiredCoverageIncomplete for a report without provenance", f
 			&codesignal.Report{SchemaVersion: "2", ProjectCoverage: &domain.Coverage{Complete: false}}, true),
 		Entry("no recorded project_coverage is not treated as incomplete",
 			&codesignal.Report{SchemaVersion: "2"}, false),
-		Entry("an incomplete base side of a diff arrives as a coverage diagnostic",
+		Entry("a project_coverage_incomplete diagnostic marks coverage incomplete even when project_coverage reads complete",
 			&codesignal.Report{
 				SchemaVersion:   "2",
 				ProjectCoverage: &domain.Coverage{Complete: true},
 				Diagnostics:     []codesignal.Diagnostic{{Kind: codesignal.DiagKindProjectCoverageIncomplete}},
 			}, true),
-		Entry("an indeterminate lifecycle is incomplete",
+		Entry("an incomplete base side of a diff arrives as an indeterminate lifecycle",
 			&codesignal.Report{
 				SchemaVersion:   "2",
 				ProjectCoverage: &domain.Coverage{Complete: true},
