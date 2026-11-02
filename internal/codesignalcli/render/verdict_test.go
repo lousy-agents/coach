@@ -285,6 +285,90 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 			wantContains: []string{"2 imports did not resolve, so layer rules cannot tell whether they cross a layer"},
 		},
 		{
+			name: "qualifies the verdict and says why when a dynamic load has a non-literal specifier",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 1},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "pkg/handlers/h.ts", Kind: codesignal.DiagKindProjectImportNonLiteral, Message: "m", Location: &semantics.Location{StartRow: 1}},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{
+				"No active CodeSignal findings, but the analysis is incomplete",
+				"1 dynamic load with a non-literal specifier was not evaluated, so layer rules cannot tell whether it crosses a layer",
+			},
+			wantAbsent: []string{"additional diagnostics were recorded"},
+		},
+		{
+			name: "does not call a no-match scan complete when a dynamic load has a non-literal specifier",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 2},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "pkg/handlers/h.ts", Kind: codesignal.DiagKindProjectImportNonLiteral, Message: "m"},
+				},
+				ProjectNextActions: []codesignal.ProjectNextAction{{Kind: "inspect_diagnostics"}},
+				ProjectCoverage:    &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{
+				"found no configured covered match, but the analysis is incomplete",
+				"1 dynamic load with a non-literal specifier was not evaluated",
+			},
+			wantAbsent: []string{"Complete scan"},
+		},
+		{
+			name: "counts one load once when it is reported on both sides of a diff and several loads separately",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 1},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "a.ts", Kind: codesignal.DiagKindProjectImportNonLiteral, Message: "import() in a.ts takes (x)", Location: &semantics.Location{StartRow: 2}},
+					{Path: "a.ts", Kind: "base_" + codesignal.DiagKindProjectImportNonLiteral, Message: "import() in a.ts takes (x)", Location: &semantics.Location{StartRow: 2}, Side: "base"},
+					{Path: "a.ts", Kind: codesignal.DiagKindProjectImportNonLiteral, Message: "require() in a.ts takes (y)", Location: &semantics.Location{StartRow: 2}},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{"2 dynamic loads with a non-literal specifier were not evaluated, so layer rules cannot tell whether they cross a layer"},
+			wantAbsent:   []string{"3 dynamic loads"},
+		},
+		{
+			name: "counts two identical non-literal loads on one line as two, because only the two sides of a diff are deduplicated",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 1},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "a.ts", Kind: codesignal.DiagKindProjectImportNonLiteral, Message: "require() in a.ts takes (name)", Location: &semantics.Location{StartRow: 0}},
+					{Path: "a.ts", Kind: codesignal.DiagKindProjectImportNonLiteral, Message: "require() in a.ts takes (name)", Location: &semantics.Location{StartRow: 0}},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{"2 dynamic loads with a non-literal specifier were not evaluated"},
+			wantAbsent:   []string{"1 dynamic load with"},
+		},
+		{
+			name: "counts two identical unresolved imports on one line as two",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 1},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "a.ts", Kind: codesignal.DiagKindProjectImportUnresolved, Message: "import of \"../x\" from a.ts did not resolve", Location: &semantics.Location{StartRow: 4}},
+					{Path: "a.ts", Kind: codesignal.DiagKindProjectImportUnresolved, Message: "import of \"../x\" from a.ts did not resolve", Location: &semantics.Location{StartRow: 4}},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{"2 imports did not resolve"},
+		},
+		{
+			name: "states both causes when an import did not resolve and a load is non-literal",
+			report: &codesignal.Report{
+				Summary: codesignal.Summary{FilesAnalyzed: 1},
+				Diagnostics: []codesignal.Diagnostic{
+					{Path: "a.ts", Kind: codesignal.DiagKindProjectImportUnresolved, Message: "m"},
+					{Path: "b.ts", Kind: codesignal.DiagKindProjectImportNonLiteral, Message: "m"},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "final", Complete: true},
+			},
+			wantContains: []string{
+				"1 import did not resolve, so layer rules cannot tell whether it crosses a layer; 1 dynamic load with a non-literal specifier was not evaluated",
+			},
+		},
+		{
 			name: "states both causes when diagnostics and incomplete project coverage co-occur",
 			report: &codesignal.Report{
 				Summary: codesignal.Summary{FilesUnanalyzed: 2},

@@ -297,6 +297,61 @@ var _ = Describe("EvaluateTypeScriptLayerViolations", func() {
 		})
 	})
 
+	When("an edge is a dynamic load whose specifier is not a literal (coach#568)", func() {
+		DescribeTable("emits no ProjectChange and one project_import_non_literal diagnostic naming the file, the callee, the expression, and the line",
+			func(kind, wantCallee string) {
+				model := domain.Model{
+					ImportEdges: []domain.ImportEdge{
+						{From: "file:pkg/handlers/h.ts", To: "nonliteral:modulePath", Kind: kind, Resolution: "non_literal", Site: "pkg/handlers/h.ts:7"},
+					},
+				}
+
+				changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+				Expect(changes).To(BeEmpty())
+				Expect(diagnostics).To(HaveLen(1))
+				Expect(diagnostics[0].Kind).To(Equal(codesignal.DiagKindProjectImportNonLiteral))
+				Expect(diagnostics[0].Path).To(Equal("pkg/handlers/h.ts"))
+				Expect(diagnostics[0].Message).To(ContainSubstring(wantCallee))
+				Expect(diagnostics[0].Message).To(ContainSubstring(`("modulePath")`))
+				Expect(diagnostics[0].Message).To(ContainSubstring("did not evaluate it"))
+				Expect(diagnostics[0].Location).NotTo(BeNil())
+				Expect(diagnostics[0].Location.StartRow).To(Equal(uint(6)))
+			},
+			Entry("a dynamic_import", "dynamic_import", "import()"),
+			Entry("a commonjs_require", "commonjs_require", "require()"),
+		)
+
+		It("never puts a raw control or bidirectional-override character from the source into the message, because a terminal would act on it", func() {
+			hostile := "name + /* \x1b[1A\x1b[2K No active CodeSignal findings. \u202e */ other"
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/handlers/h.ts", To: "nonliteral:" + hostile, Kind: "commonjs_require", Resolution: "non_literal", Site: "pkg/handlers/h.ts:2"},
+				},
+			}
+
+			_, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+			Expect(diagnostics).To(HaveLen(1))
+			Expect(diagnostics[0].Message).NotTo(ContainSubstring("\x1b"))
+			Expect(diagnostics[0].Message).NotTo(ContainSubstring("\u202e"))
+			Expect(diagnostics[0].Message).To(ContainSubstring(`\x1b[1A`), "the expression must still be readable, escaped")
+		})
+
+		It("emits nothing for an importer that sits outside every declared layer, because no rule applies to it", func() {
+			model := domain.Model{
+				ImportEdges: []domain.ImportEdge{
+					{From: "file:pkg/other/o.ts", To: "nonliteral:name", Kind: "commonjs_require", Resolution: "non_literal", Site: "pkg/other/o.ts:2"},
+				},
+			}
+
+			changes, diagnostics := codesignal.EvaluateTypeScriptLayerViolations(model, twoLayerPolicy(), "1", "backend-1", "digest-1")
+
+			Expect(changes).To(BeEmpty())
+			Expect(diagnostics).To(BeEmpty())
+		})
+	})
+
 	When("an edge targets a relative file that is not TypeScript source", func() {
 		DescribeTable("counts it as not evaluated and never diagnoses it as unresolved, because it cannot hide a forbidden code edge",
 			func(specifier string) {

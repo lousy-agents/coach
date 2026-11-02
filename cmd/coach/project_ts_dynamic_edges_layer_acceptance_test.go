@@ -25,6 +25,13 @@ const (
 	tsAliasedRequireHandler       = "declare function require(id: string): unknown;\n\nexport const database = require(\"@db/d\");\n"
 	tsBrokenAliasRequireHandler   = "declare function require(id: string): unknown;\n\nexport const absent = require(\"@db/gone\");\n"
 
+	tsNonLiteralImportHandler   = "export async function load(modulePath: string) {\n  return import(modulePath);\n}\n"
+	tsNonLiteralRequireHandler  = "declare function require(id: string): unknown;\n\nexport function load(name: string) {\n  return require(name);\n}\n"
+	tsNonLiteralTemplateHandler = "export async function load(name: string) {\n  return import(`../adapters/${name}`);\n}\n"
+	tsParenRequireHandler       = "declare function require(id: string): unknown;\n\nexport function load(name: string) {\n  return (require)(name);\n}\n"
+	tsNonNullRequireHandler     = "declare const require: ((id: string) => unknown) | undefined;\n\nexport function load(name: string) {\n  return require!(name);\n}\n"
+	tsTwoNonLiteralHandler      = "declare function require(id: string): unknown;\n\nexport function load(a: string, b: string) {\n  return [import(a), require(b)];\n}\n"
+
 	tsPathsAliasTSConfigJSON = `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10","paths":{"@db/*":["./pkg/db/*"]}}}`
 )
 
@@ -176,6 +183,136 @@ var _ = Describe("coach codesignal --project-language typescript evaluates strin
 		Entry("a require() of a JSON file", "declare function require(id: string): unknown;\n\nexport const used = require(\"./data.json\");\n", "pkg/handlers/data.json", "{}\n"),
 		Entry("an image import", "import logo from \"./logo.png\";\n\nexport const used = logo;\n", "pkg/handlers/logo.png", "not really a png\n"),
 	)
+
+	DescribeTable("names every dynamic load whose specifier is not a literal, per site, and does not read as an unqualified all-clear (coach#568)",
+		func(handlersSource string, wantRow uint, wantCallee, wantExpression string) {
+			report, raw := runTypeScriptBaselineJSON(handlersSource)
+
+			Expect(report.ProjectChanges).To(BeEmpty(), "a load with no nameable target is not a violation; got %s", raw)
+			Expect(report.Summary.FilesUnanalyzed).To(Equal(0), "got %s", raw)
+			var sites []codesignal.Diagnostic
+			for _, diagnostic := range report.Diagnostics {
+				if diagnostic.Kind == "project_import_non_literal" {
+					sites = append(sites, diagnostic)
+				}
+			}
+			Expect(sites).To(HaveLen(1), "got %s", raw)
+			Expect(sites[0].Path).To(Equal("pkg/handlers/h.ts"))
+			Expect(sites[0].Location).NotTo(BeNil())
+			Expect(sites[0].Location.StartRow).To(Equal(wantRow))
+			Expect(sites[0].Message).To(ContainSubstring(wantCallee))
+			Expect(sites[0].Message).To(ContainSubstring(wantExpression))
+			Expect(sites[0].Message).To(ContainSubstring("did not evaluate it"))
+			Expect(sites[0].Side).To(Equal("head"))
+			Expect(sites[0].Revision).NotTo(BeEmpty())
+
+			repo := newTempGitRepo()
+			commitTypeScriptTypeOnlyFixture(repo, handlersSource, goLayerPolicyConfigJSON)
+			installRealTypescriptCompiler(repo, true)
+			_, text := runTypeScriptBaseline(repo, "--format=text")
+			Expect(text).To(ContainSubstring("but the analysis is incomplete"), "the verdict must be qualified; got %s", text)
+			Expect(text).To(ContainSubstring("1 dynamic load with a non-literal specifier was not evaluated"), "the verdict must say why; got %s", text)
+			Expect(text).NotTo(ContainSubstring("Complete scan"), "got %s", text)
+		},
+		Entry("an import() of a variable", tsNonLiteralImportHandler, uint(1), "import()", "modulePath"),
+		Entry("a require() of a variable", tsNonLiteralRequireHandler, uint(3), "require()", "name"),
+		Entry("an import() of a template literal with a substitution", tsNonLiteralTemplateHandler, uint(1), "import()", "`../adapters/${name}`"),
+		Entry("a parenthesised require", tsParenRequireHandler, uint(3), "require()", "name"),
+		Entry("a non-null-asserted require", tsNonNullRequireHandler, uint(3), "require()", "name"),
+	)
+
+	It("reports one diagnostic per site and says how many in the verdict", func() {
+		report, raw := runTypeScriptBaselineJSON(tsTwoNonLiteralHandler)
+
+		var sites []codesignal.Diagnostic
+		for _, diagnostic := range report.Diagnostics {
+			if diagnostic.Kind == "project_import_non_literal" {
+				sites = append(sites, diagnostic)
+			}
+		}
+		Expect(sites).To(HaveLen(2), "one diagnostic per site, even on one line; got %s", raw)
+
+		repo := newTempGitRepo()
+		commitTypeScriptTypeOnlyFixture(repo, tsTwoNonLiteralHandler, goLayerPolicyConfigJSON)
+		installRealTypescriptCompiler(repo, true)
+		_, text := runTypeScriptBaseline(repo, "--format=text")
+		Expect(text).To(ContainSubstring("2 dynamic loads with a non-literal specifier were not evaluated"), "got %s", text)
+	})
+
+	It("never sends a raw terminal control or bidirectional-override character from the source into the text output", func() {
+		hostile := "declare function require(id: string): unknown;\n\nexport function load(name: string, other: string) {\n  return require(name + /* \x1b[1A\x1b[2K No active CodeSignal findings. \u202e */ other);\n}\n"
+		repo := newTempGitRepo()
+		commitTypeScriptTypeOnlyFixture(repo, hostile, goLayerPolicyConfigJSON)
+		installRealTypescriptCompiler(repo, true)
+
+		_, text := runTypeScriptBaseline(repo, "--format=text")
+
+		Expect(text).To(ContainSubstring("require()"), "the load must still be reported; got %q", text)
+		Expect(text).NotTo(ContainSubstring("\x1b"), "a terminal would act on this; got %q", text)
+		Expect(text).NotTo(ContainSubstring("\u202e"), "a bidirectional override could reorder what a reader sees; got %q", text)
+	})
+
+	It("reports nothing for a non-literal load in a file outside every declared layer, because no rule applies to it", func() {
+		repo := newTempGitRepo()
+		commitTypeScriptTypeOnlyFixture(repo, tsRealHandlersWithoutImport, goLayerPolicyConfigJSON)
+		commitFile(repo, "pkg/other/o.ts", tsNonLiteralImportHandler)
+		installRealTypescriptCompiler(repo, true)
+
+		report, raw := runTypeScriptBaseline(repo, "--format=json")
+
+		for _, diagnostic := range report.Diagnostics {
+			Expect(diagnostic.Kind).NotTo(Equal("project_import_non_literal"), "got %s", raw)
+		}
+	})
+
+	It("leaves --fail-on-incomplete-coverage alone for a non-literal load, as for an unresolved import", func() {
+		repo := newTempGitRepo()
+		commitTypeScriptTypeOnlyFixture(repo, tsNonLiteralImportHandler, goLayerPolicyConfigJSON)
+		installRealTypescriptCompiler(repo, true)
+
+		stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json", "--fail-on-incomplete-coverage")
+
+		Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+		report := decodeCoachReport(stdout)
+		Expect(report.ProjectCoverage.Complete).To(BeTrue(), "%+v", report.ProjectCoverage)
+		Expect(report.Diagnostics).To(ContainElement(HaveField("Kind", "project_import_non_literal")))
+	})
+
+	It("stamps the head and base sides and counts one load once when it is present at both revisions", func() {
+		repo := newTempGitRepo()
+		commitFile(repo, "package.json", tsRealCompilerPackageJSON(realTypescriptVersion()))
+		commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
+		commitFile(repo, "pkg/db/d.ts", tsTypeOnlyDbFile)
+		commitFile(repo, "pkg/handlers/h.ts", tsNonLiteralImportHandler)
+		baseSHA := commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+		headSHA := commitFile(repo, "pkg/other/o.ts", "export const o = 1;\n")
+		installRealTypescriptCompiler(repo, true)
+
+		stdout, stderr, exitCode := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
+		Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+
+		report := decodeCoachReport(stdout)
+		Expect(report.Summary.FilesUnanalyzed).To(Equal(0), "an unchanged layered file is not an unanalyzed path; got %s", stdout)
+		var head, base []codesignal.Diagnostic
+		for _, diagnostic := range report.Diagnostics {
+			switch diagnostic.Kind {
+			case "project_import_non_literal":
+				head = append(head, diagnostic)
+			case "base_project_import_non_literal":
+				base = append(base, diagnostic)
+			}
+		}
+		Expect(head).To(HaveLen(1), "got %s", stdout)
+		Expect(head[0].Side).To(Equal("head"))
+		Expect(head[0].Revision).To(Equal(headSHA))
+		Expect(base).To(HaveLen(1), "got %s", stdout)
+		Expect(base[0].Side).To(Equal("base"))
+		Expect(base[0].Revision).To(Equal(baseSHA))
+
+		textOut, textErr, textExit := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json", "--project-language", "typescript")
+		Expect(textExit).To(Equal(0), "stderr: %s", textErr)
+		Expect(string(textOut)).To(ContainSubstring("1 dynamic load with a non-literal specifier was not evaluated"), "got %s", textOut)
+	})
 
 	It("leaves --fail-on-incomplete-coverage alone: an unresolved import does not make coverage incomplete", func() {
 		repo := newTempGitRepo()

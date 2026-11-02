@@ -13,8 +13,8 @@ import (
 // complete, which the Complete field alone cannot see.
 func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report) {
 	if len(report.ProjectNextActions) > 0 {
-		if unresolved := countUnresolvedImportDiagnostics(report.Diagnostics); unresolved > 0 {
-			causes := []string{unresolvedImportsClause(unresolved)}
+		if unplaced := unplacedImportClauses(report.Diagnostics); len(unplaced) > 0 {
+			causes := unplaced
 			if n := report.Summary.FilesUnanalyzed; n > 0 {
 				causes = append([]string{pathCountClause(n)}, causes...)
 			}
@@ -43,9 +43,7 @@ func renderNoActiveFindingsVerdict(b *strings.Builder, report *codesignal.Report
 	if incompleteProject {
 		causes = append(causes, "project analysis did not complete")
 	}
-	if n := countUnresolvedImportDiagnostics(report.Diagnostics); n > 0 {
-		causes = append(causes, unresolvedImportsClause(n))
-	}
+	causes = append(causes, unplacedImportClauses(report.Diagnostics)...)
 	if len(causes) == 0 {
 		causes = append(causes, "additional diagnostics were recorded")
 	}

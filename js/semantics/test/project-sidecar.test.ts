@@ -575,7 +575,7 @@ describe("imports", () => {
     assert.equal(cjsEdges[0]?.kind, "commonjs_require");
   });
 
-  test("a template literal with a substitution is not a static specifier and yields no edge", async () => {
+  test("a template literal with a substitution names no target, so it is reported as a non-literal load", async () => {
     const { response, exitCode } = await runSidecar({
       files: [
         file("tsconfig.json", JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } })),
@@ -588,11 +588,210 @@ describe("imports", () => {
     });
     assert.equal(exitCode, 0, JSON.stringify(response));
     assert.equal(edgesTo(response, "file:src/cjs-target.ts").length, 0, JSON.stringify(response));
-    assert.equal(
-      (response.import_edges ?? []).filter((e) => e.kind === "commonjs_require").length,
-      0,
-      JSON.stringify(response),
+    const requires = (response.import_edges ?? []).filter((e) => e.kind === "commonjs_require");
+    assert.equal(requires.length, 1, JSON.stringify(response));
+    assert.equal(requires[0]?.resolution, "non_literal");
+    assert.equal(requires[0]?.to, "nonliteral:`./${name}`");
+  });
+
+  describe("dynamic loads whose specifier is not a literal", () => {
+    const sourceConfig = file(
+      "tsconfig.json",
+      JSON.stringify({ compilerOptions: { module: "commonjs", moduleResolution: "node10" } }),
     );
+
+    test("each one produces an edge that names its site and expression but no target", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          sourceConfig,
+          file(
+            "src/a.ts",
+            [
+              "declare function require(id: string): unknown;",
+              "export async function load(modulePath: string, name: string) {",
+              "  const a = await import(modulePath);",
+              "  const b = require(name);",
+              "  const c = await import(`./adapters/${name}`);",
+              "  return [a, b, c];",
+              "}",
+              "",
+            ].join("\n"),
+          ),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      assert.equal(response.error, undefined);
+
+      const edges = (response.import_edges ?? []).filter((e) => e.resolution === "non_literal");
+      assert.deepEqual(
+        edges.map((e) => ({ from: e.from, to: e.to, kind: e.kind, site: e.site })).sort((x, y) => (x.site ?? "").localeCompare(y.site ?? "")),
+        [
+          { from: "file:src/a.ts", to: "nonliteral:modulePath", kind: "dynamic_import", site: "src/a.ts:3" },
+          { from: "file:src/a.ts", to: "nonliteral:name", kind: "commonjs_require", site: "src/a.ts:4" },
+          { from: "file:src/a.ts", to: "nonliteral:`./adapters/${name}`", kind: "dynamic_import", site: "src/a.ts:5" },
+        ],
+        JSON.stringify(response),
+      );
+    });
+
+    test("a long or multi-line expression is collapsed to one bounded line", async () => {
+      const longName = `${"x".repeat(200)}`;
+      const { response, exitCode } = await runSidecar({
+        files: [
+          sourceConfig,
+          file(
+            "src/a.ts",
+            [`export async function load(${longName}: string) {`, "  return import(", `    ${longName}`, "  );", "}", ""].join("\n"),
+          ),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = (response.import_edges ?? []).filter((e) => e.resolution === "non_literal");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.to, `nonliteral:${"x".repeat(120)}…`, "a cut expression must end with a marker");
+      assert.equal(edges[0]?.site, "src/a.ts:2");
+    });
+
+    test("the cut falls on a code point, never inside a surrogate pair", async () => {
+      const expression = `"${"a".repeat(110)}${"😀".repeat(20)}" + name`;
+      const { response, exitCode } = await runSidecar({
+        files: [
+          sourceConfig,
+          file("src/a.ts", [`export async function load(name: string) {`, `  return import(${expression});`, `}`, ""].join("\n")),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = (response.import_edges ?? []).filter((e) => e.resolution === "non_literal");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      const to = edges[0]?.to ?? "";
+      assert.ok(!/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(to), `lone surrogate in ${JSON.stringify(to)}`);
+      assert.equal(to, `nonliteral:"${"a".repeat(110)}${"😀".repeat(9)}…`);
+    });
+
+    test("a parenthesised or non-null-asserted require is still a require call", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          sourceConfig,
+          file(
+            "src/a.ts",
+            [
+              "declare const require: ((id: string) => unknown) | undefined;",
+              "export function load(name: string) {",
+              "  const a = (require)(name);",
+              "  const b = require!(name);",
+              "  const c = (require!)(name);",
+              "  return [a, b, c];",
+              "}",
+              "",
+            ].join("\n"),
+          ),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = (response.import_edges ?? []).filter((e) => e.resolution === "non_literal");
+      assert.deepEqual(
+        edges.map((e) => ({ to: e.to, kind: e.kind, site: e.site })).sort((x, y) => (x.site ?? "").localeCompare(y.site ?? "")),
+        [
+          { to: "nonliteral:name", kind: "commonjs_require", site: "src/a.ts:3" },
+          { to: "nonliteral:name", kind: "commonjs_require", site: "src/a.ts:4" },
+          { to: "nonliteral:name", kind: "commonjs_require", site: "src/a.ts:5" },
+        ],
+        JSON.stringify(response),
+      );
+    });
+
+    test("a parenthesised require with a literal specifier resolves like a bare one", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          sourceConfig,
+          file("src/a.ts", [`declare function require(id: string): unknown;`, `export const b = (require)("./b");`, ""].join("\n")),
+          file("src/b.ts", `export const b = 1;\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = edgesTo(response, "file:src/b.ts");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.kind, "commonjs_require");
+      assert.equal(edges[0]?.resolution, "snapshot");
+    });
+
+    test("a parenthesised or non-null-asserted call of something else is not a load", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          sourceConfig,
+          file(
+            "src/a.ts",
+            [
+              "declare const other: ((id: string) => unknown) | undefined;",
+              "export function f(name: string) {",
+              "  return [(other)(name), other!(name), (0, other!)(name)];",
+              "}",
+              "",
+            ].join("\n"),
+          ),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      assert.deepEqual((response.import_edges ?? []).filter((e) => e.resolution === "non_literal"), [], JSON.stringify(response));
+    });
+
+    test("an expression that spans lines is collapsed to one line", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          sourceConfig,
+          file(
+            "src/a.ts",
+            ["export async function load(base: string, name: string) {", "  return import(", "    base +", "      name", "  );", "}", ""].join("\n"),
+          ),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = (response.import_edges ?? []).filter((e) => e.resolution === "non_literal");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.to, "nonliteral:base + name");
+      assert.equal(edges[0]?.site, "src/a.ts:2");
+    });
+
+    test("calls that are not a dynamic load produce no edge", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          sourceConfig,
+          file(
+            "src/a.ts",
+            [
+              "declare function require(id: string): unknown & { resolve(id: string): string };",
+              "declare const loader: { require(id: string): unknown };",
+              "declare function other(id: string): unknown;",
+              "export function f(name: string) {",
+              "  return [require.resolve(name), loader.require(name), other(name), require()];",
+              "}",
+              "",
+            ].join("\n"),
+          ),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      assert.deepEqual(
+        (response.import_edges ?? []).filter((e) => e.resolution === "non_literal"),
+        [],
+        JSON.stringify(response),
+      );
+    });
+
+    test("a literal specifier still resolves as before", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          sourceConfig,
+          file("src/a.ts", `export const load = () => import("./b");\n`),
+          file("src/b.ts", `export const b = 1;\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = edgesTo(response, "file:src/b.ts");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.resolution, "snapshot");
+      assert.equal((response.import_edges ?? []).filter((e) => e.resolution === "non_literal").length, 0);
+    });
   });
 
   describe("tsconfig paths aliases on require()", () => {
