@@ -35,6 +35,7 @@ var frozenReportJSONFieldNames = map[string]struct{}{
 	"signals_withheld": {}, "min_severity": {}, "below_min_severity": {}, "top": {}, "beyond_top": {},
 
 	"project_provenance": {}, "project_scope": {}, "project_next_actions": {},
+	"layer_membership": {}, "files_outside_layers": {},
 	"selected_roots": {}, "analyzer": {}, "runtime": {}, "package_manager": {}, "head": {},
 	"version": {}, "digest": {}, "protocol_version": {},
 	"origin": {}, "compiler_version": {}, "compiler_origin": {}, "declared_version": {},

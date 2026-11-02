@@ -138,6 +138,7 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 		Facts:                    headFacts,
 		HeadCoverage:             &headCoverage,
 		HeadProjectScope:         headScope,
+		HeadLayerMembership:      layerMembershipOfScope(headScope),
 		HeadModelCoverage:        &headPhases.model,
 		HeadBypassCoverage:       &headPhases.bypass,
 		HeadReachabilityCoverage: &headPhases.reachability,
@@ -172,6 +173,7 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	result.BaseDiagnostics = baseDiagnostics
 	result.BaseCoverage = &baseCoverage
 	result.BaseProjectScope = baseScope
+	result.BaseLayerMembership = layerMembershipOfScope(baseScope)
 	result.BaseModelCoverage = &basePhases.model
 	result.BaseBypassCoverage = &basePhases.bypass
 	result.BaseReachabilityCoverage = &basePhases.reachability

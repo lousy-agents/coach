@@ -328,6 +328,29 @@ func modeRootScopeMissing(req projectbridge.Request) {
 	})
 }
 
+// modeRootScopeFromFiles reports one "." root scope that analyzed exactly the
+// files it was sent, as the real sidecar does: it cannot see files the client
+// left out, so after a client-side budget truncation the counts and the path
+// list still agree with each other.
+func modeRootScopeFromFiles(req projectbridge.Request) {
+	paths := make([]string, 0, len(req.Files))
+	for _, f := range req.Files {
+		paths = append(paths, f.Path)
+	}
+	writeResponse(projectbridge.Response{
+		Version: req.Version,
+		ID:      req.ID,
+		RootScopes: []projectbridge.RootScopeFact{
+			{Root: ".", CandidateFiles: len(paths), AnalyzedFiles: len(paths), AnalyzedPaths: paths},
+		},
+		Coverage: projectbridge.Coverage{
+			Phase:    "ts_sidecar_fake",
+			Complete: true,
+			Counts:   map[string]int{"files_seen": len(req.Files)},
+		},
+	})
+}
+
 func modeBadTsconfig(req projectbridge.Request) {
 	writeResponse(projectbridge.Response{
 		Version: req.Version,

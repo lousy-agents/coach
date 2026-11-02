@@ -38,7 +38,7 @@ Full flags and schema: [CLI contract](./docs/cli-codesignal.md).
 - **Input:** committed Git objects at the selected revision, not the dirty worktree. Uncommitted edits are invisible.
 - **Git:** `git` must be on `PATH`. No Docker, no API key, no network for the default CLI path.
 - **Advisory:** a completed analysis exits `0` even when it found signals. Coach does not gate merges.
-- **Absence is not a clean bill of health.** An empty signal set means no matched rule for the inputs that were analyzed.
+- **Absence is not a clean bill of health.** An empty signal set means no matched rule for the inputs that were analyzed. The `forbidden_imports` check reaches only imports between code inside declared layers; with `--project-config`, the report says how many project files under the configured roots sit outside every declared layer. It leaves that count out when no layers are declared, when the inputs are incomplete (for example, a project model cut short by its input budget), when a configured root holds no analyzed file, or when a TypeScript root's analyzed-file count does not match its path list.
 
 Full flags, JSON schema, exit codes, rule IDs, and library quickstarts:
 [CLI contract](./docs/cli-codesignal.md).

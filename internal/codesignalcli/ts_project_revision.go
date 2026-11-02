@@ -155,3 +155,10 @@ func bypassSearchWasTruncatedOrAmbiguous(diagnostics []projectmodel.Diagnostic) 
 	return containsProjectDiagnosticCode(diagnostics, projectmodel.DiagLayerBypassBudgetExceeded) ||
 		containsProjectDiagnosticCode(diagnostics, projectmodel.DiagLayerBypassAmbiguousLayer)
 }
+
+func layerMembershipOfScope(scope *projectmodel.ProjectScope) *projectmodel.LayerMembership {
+	if scope == nil {
+		return nil
+	}
+	return scope.LayerMembership
+}

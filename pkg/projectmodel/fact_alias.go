@@ -39,6 +39,7 @@ type (
 	LayerBypassResult      = domain.LayerBypassResult
 	ProjectScopeRoot       = domain.ProjectScopeRoot
 	ProjectScope           = domain.ProjectScope
+	LayerMembership        = domain.LayerMembership
 	Model                  = domain.Model
 	Snapshot               = domain.Snapshot
 	Workspace              = domain.Workspace

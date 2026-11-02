@@ -105,6 +105,7 @@ var modeHandlers = map[string]modeHandler{
 	"layer_bypass_gap":       modeLayerBypassGap,
 	"unanalyzable_candidate": modeUnanalyzableCandidate,
 	"root_scope_missing":     modeRootScopeMissing,
+	"root_scope_from_files":  modeRootScopeFromFiles,
 }
 
 // reachabilityFixtureFact is the one resolved call-graph edge/reachability

@@ -139,7 +139,7 @@ func (b *goProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	policy := layerPolicyFromConfig(config)
 	bypassLayer, hasBypassLayer := goBypassLayerFromConfig(config)
 
-	headChanges, headDiagnostics, headCoverage, err := b.evaluateRevision(ctx, req.Dir, req.HeadRevision, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
+	headChanges, headDiagnostics, headCoverage, headMembership, err := b.evaluateRevision(ctx, req.Dir, req.HeadRevision, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {
 		return nil, err
 	}
@@ -148,18 +148,21 @@ func (b *goProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 		HeadChanges:     headChanges,
 		HeadDiagnostics: headDiagnostics,
 		HeadCoverage:    &headCoverage,
+
+		HeadLayerMembership: headMembership,
 	}
 	if req.Baseline {
 		return result, nil
 	}
 
-	baseChanges, baseDiagnostics, baseCoverage, err := b.evaluateRevision(ctx, req.Dir, req.BaseRevision, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
+	baseChanges, baseDiagnostics, baseCoverage, baseMembership, err := b.evaluateRevision(ctx, req.Dir, req.BaseRevision, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {
 		return nil, err
 	}
 	result.BaseChanges = baseChanges
 	result.BaseDiagnostics = baseDiagnostics
 	result.BaseCoverage = &baseCoverage
+	result.BaseLayerMembership = baseMembership
 	result.BaseAnalyzed = true
 	return result, nil
 }
@@ -183,10 +186,10 @@ func (b *goProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 // -- exactly like any other incomplete project-model phase, rather than
 // silently reporting a "resolved"/"introduced"/"existing" claim on a witness
 // that only disappeared because the search was truncated.
-func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, roots []string, policy codesignal.LayerPolicy, bypassLayer projectmodel.BypassLayer, hasBypassLayer bool, configDigest string) ([]codesignal.ProjectChange, []codesignal.Diagnostic, projectmodel.Coverage, error) {
+func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, roots []string, policy codesignal.LayerPolicy, bypassLayer projectmodel.BypassLayer, hasBypassLayer bool, configDigest string) ([]codesignal.ProjectChange, []codesignal.Diagnostic, projectmodel.Coverage, *projectmodel.LayerMembership, error) {
 	snapshot, err := revisionfs.New(dir, revision)
 	if err != nil {
-		return nil, nil, projectmodel.Coverage{}, fmt.Errorf("coach: building Go snapshot at revision %q: %w", revision, err)
+		return nil, nil, projectmodel.Coverage{}, nil, fmt.Errorf("coach: building Go snapshot at revision %q: %w", revision, err)
 	}
 
 	model, err := projectmodel.BuildGoModel(snapshot, projectmodel.SnapshotMeta{
@@ -197,7 +200,7 @@ func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 		Budgets: goProjectBudgets,
 	})
 	if err != nil {
-		return nil, nil, projectmodel.Coverage{}, fmt.Errorf("coach: building Go project model at revision %q: %w", revision, err)
+		return nil, nil, projectmodel.Coverage{}, nil, fmt.Errorf("coach: building Go project model at revision %q: %w", revision, err)
 	}
 
 	changes, _ := codesignal.EvaluateGoLayerViolations(model, policy, goLayerRuleVersion, goLayerBackendVersion, configDigest)
@@ -212,7 +215,7 @@ func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 			MaxSearchNodes: goLayerBypassMaxSearchNodes,
 		})
 		if err != nil {
-			return nil, nil, projectmodel.Coverage{}, fmt.Errorf("coach: building Go layer-bypass model at revision %q: %w", revision, err)
+			return nil, nil, projectmodel.Coverage{}, nil, fmt.Errorf("coach: building Go layer-bypass model at revision %q: %w", revision, err)
 		}
 		bypassChanges, bypassDiagnostics := codesignal.EvaluateGoLayerBypass(bypassResult, goBypassRuleVersion, goBypassBackendVersion, configDigest)
 		changes = append(changes, bypassChanges...)
@@ -220,5 +223,5 @@ func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 		coverage = combineProjectCoverage(coverage, bypassResult.Coverage)
 	}
 
-	return changes, diagnostics, coverage, nil
+	return changes, diagnostics, coverage, projectmodel.GoLayerMembership(model, roots, projectScopePolicyFromConfig(nil, policy).Layers), nil
 }
