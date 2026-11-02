@@ -3,7 +3,8 @@ package projectmodel
 import (
 	"fmt"
 	"path"
-	"strings"
+
+	"github.com/lousy-agents/coach/pkg/domain"
 )
 
 type ProjectScopePolicyLayer struct {
@@ -58,6 +59,7 @@ func ProjectScopeFromModel(model Model, policy ProjectScopePolicy) (ProjectScope
 		Roots:           roots,
 		MatchedLayers:   matched,
 		UnmatchedLayers: unmatched,
+		LayerMembership: tsLayerMembership(model.Coverage, policyScopes, analyzedPaths, policy.Layers),
 	}, nil
 }
 
@@ -84,9 +86,9 @@ func (a *analyzedPathAccumulator) add(analyzed []string) {
 	}
 }
 
-// layerMatchesAnyPath must stay in sync with pkg/codesignal's matchLayer
-// (see ProjectScopePolicy) -- an import cycle prevents sharing one
-// implementation.
+// layerMatchesAnyPath decides membership with domain.LayerPrefixContains, the
+// predicate pkg/codesignal's matchLayer also uses, so matched_layers and the
+// layer rules cannot disagree about which paths a layer contains.
 func layerMatchesAnyPath(layer ProjectScopePolicyLayer, paths []string) bool {
 	matched := false
 	for _, prefix := range layer.Prefixes {
@@ -97,7 +99,7 @@ func layerMatchesAnyPath(layer ProjectScopePolicyLayer, paths []string) bool {
 
 func prefixMatchesAnyPath(prefix string, paths []string) bool {
 	for _, path := range paths {
-		if prefix == "." || path == prefix || strings.HasPrefix(path, prefix+"/") {
+		if domain.LayerPrefixContains(prefix, path) {
 			return true
 		}
 	}

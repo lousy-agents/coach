@@ -25,6 +25,8 @@ type Report struct {
 	ProjectProvenance  *ProjectProvenance  `json:"project_provenance,omitempty"`
 	ProjectScope       *ProjectScopeReport `json:"project_scope,omitempty"`
 	ProjectNextActions []ProjectNextAction `json:"project_next_actions,omitempty"`
+
+	LayerMembership *LayerMembershipReport `json:"layer_membership,omitempty"`
 }
 
 type reportWireV1 struct {
@@ -48,6 +50,8 @@ type reportWireV2 struct {
 	ProjectProvenance  *ProjectProvenance  `json:"project_provenance,omitempty"`
 	ProjectScope       *ProjectScopeReport `json:"project_scope,omitempty"`
 	ProjectNextActions []ProjectNextAction `json:"project_next_actions,omitempty"`
+
+	LayerMembership *LayerMembershipReport `json:"layer_membership,omitempty"`
 }
 
 func (r Report) MarshalJSON() ([]byte, error) {
@@ -82,6 +86,7 @@ func (r Report) MarshalJSON() ([]byte, error) {
 		ProjectProvenance:  normalizeProvenance(r.ProjectProvenance),
 		ProjectScope:       normalizeScope(r.ProjectScope),
 		ProjectNextActions: r.ProjectNextActions,
+		LayerMembership:    r.LayerMembership,
 	})
 }
 

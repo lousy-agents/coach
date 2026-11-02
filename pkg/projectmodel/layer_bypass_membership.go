@@ -1,11 +1,10 @@
 package projectmodel
 
-// layerBypassContainsDir mirrors codesignal's layerContainsDir: "." matches
-// every directory, otherwise a prefix matches dir itself or any "/"-
-// separated descendant of it.
+import "github.com/lousy-agents/coach/pkg/domain"
+
 func layerBypassContainsDir(layer BypassLayer, dir string) bool {
 	for _, prefix := range layer.Prefixes {
-		if prefix == "." || dir == prefix || (len(dir) > len(prefix) && dir[:len(prefix)+1] == prefix+"/") {
+		if domain.LayerPrefixContains(prefix, dir) {
 			return true
 		}
 	}

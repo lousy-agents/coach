@@ -32,6 +32,7 @@ func ReportTextWithOptions(report *codesignal.Report, opts TextOptions) string {
 	renderReportSummary(&b, report)
 	renderWithheldSignals(&b, report.SignalsWithheld, opts.SeeAllCommand)
 	renderProjectScopeSection(&b, report.ProjectScope)
+	renderLayerMembershipLine(&b, report.LayerMembership)
 	renderActiveFindings(&b, report)
 	renderProjectFacts(&b, report.ProjectFacts)
 	renderDiagnosticsSection(&b, report.Diagnostics)

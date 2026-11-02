@@ -103,17 +103,17 @@ var _ = Describe("Report shape: always-present top-level keys, Coverage members,
 
 		// project_* keys that schema-1 never emits:
 		// - project_changes/facts/summary/coverage: schema-2 always-present keys
-		// - project_provenance/scope/project_next_actions: schema-2 optional (omitempty); nil in an empty report
+		// - project_provenance/scope/project_next_actions and layer_membership: schema-2 optional (omitempty); nil in an empty report
 		schema1ExcludedKeys := []string{
 			"project_changes", "project_facts", "project_summary", "project_coverage",
-			"project_provenance", "project_scope", "project_next_actions",
+			"project_provenance", "project_scope", "project_next_actions", "layer_membership",
 		}
 
 		schema1OptionalKeys := []string{"signals_withheld"}
 
 		// optional keys that schema-2 omits when nil/empty (omitempty)
 		schema2OptionalKeys := []string{
-			"project_provenance", "project_scope", "project_next_actions", "signals_withheld",
+			"project_provenance", "project_scope", "project_next_actions", "layer_membership", "signals_withheld",
 		}
 
 		It("keeps schema_version \"2\"'s marshalled key set in sync with Report's own json tags minus the omitempty-optional project keys and signals_withheld", func() {
