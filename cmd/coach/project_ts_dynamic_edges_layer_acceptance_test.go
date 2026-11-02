@@ -28,6 +28,8 @@ const (
 	tsNonLiteralImportHandler   = "export async function load(modulePath: string) {\n  return import(modulePath);\n}\n"
 	tsNonLiteralRequireHandler  = "declare function require(id: string): unknown;\n\nexport function load(name: string) {\n  return require(name);\n}\n"
 	tsNonLiteralTemplateHandler = "export async function load(name: string) {\n  return import(`../adapters/${name}`);\n}\n"
+	tsParenRequireHandler       = "declare function require(id: string): unknown;\n\nexport function load(name: string) {\n  return (require)(name);\n}\n"
+	tsNonNullRequireHandler     = "declare const require: ((id: string) => unknown) | undefined;\n\nexport function load(name: string) {\n  return require!(name);\n}\n"
 	tsTwoNonLiteralHandler      = "declare function require(id: string): unknown;\n\nexport function load(a: string, b: string) {\n  return [import(a), require(b)];\n}\n"
 
 	tsPathsAliasTSConfigJSON = `{"compilerOptions":{"module":"commonjs","moduleResolution":"node10","paths":{"@db/*":["./pkg/db/*"]}}}`
@@ -215,6 +217,8 @@ var _ = Describe("coach codesignal --project-language typescript evaluates strin
 		Entry("an import() of a variable", tsNonLiteralImportHandler, uint(1), "import()", "modulePath"),
 		Entry("a require() of a variable", tsNonLiteralRequireHandler, uint(3), "require()", "name"),
 		Entry("an import() of a template literal with a substitution", tsNonLiteralTemplateHandler, uint(1), "import()", "`../adapters/${name}`"),
+		Entry("a parenthesised require", tsParenRequireHandler, uint(3), "require()", "name"),
+		Entry("a non-null-asserted require", tsNonNullRequireHandler, uint(3), "require()", "name"),
 	)
 
 	It("reports one diagnostic per site and says how many in the verdict", func() {

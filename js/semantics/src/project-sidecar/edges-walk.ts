@@ -91,13 +91,23 @@ function classifyCallExpression(node: astns.CallExpression, ast: typeof astns): 
 }
 
 function dynamicLoadOf(node: astns.CallExpression, ast: typeof astns): { kind: string; useChecker: boolean } | undefined {
-  if (ast.isIdentifier(node.expression) && node.expression.text === "require") {
+  const callee = withoutParenthesesAndNonNull(node.expression, ast);
+  if (ast.isIdentifier(callee) && callee.text === "require") {
     return { kind: KIND_COMMONJS_REQUIRE, useChecker: false };
   }
   if (node.expression.kind === ast.SyntaxKind.ImportKeyword) {
     return { kind: KIND_DYNAMIC_IMPORT, useChecker: true };
   }
   return undefined;
+}
+
+/** `(require)(x)` and `require!(x)` call `require` as surely as `require(x)` does. */
+function withoutParenthesesAndNonNull(expression: astns.Expression, ast: typeof astns): astns.Expression {
+  let current = expression;
+  while (ast.isParenthesizedExpression(current) || ast.isNonNullExpression(current)) {
+    current = current.expression;
+  }
+  return current;
 }
 
 const MAX_EXPRESSION_CODE_POINTS = 120;

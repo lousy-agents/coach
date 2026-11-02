@@ -47,13 +47,22 @@ function classifyCallExpression(node, ast) {
     return { expression: argument, kind: load.kind };
 }
 function dynamicLoadOf(node, ast) {
-    if (ast.isIdentifier(node.expression) && node.expression.text === "require") {
+    const callee = withoutParenthesesAndNonNull(node.expression, ast);
+    if (ast.isIdentifier(callee) && callee.text === "require") {
         return { kind: KIND_COMMONJS_REQUIRE, useChecker: false };
     }
     if (node.expression.kind === ast.SyntaxKind.ImportKeyword) {
         return { kind: KIND_DYNAMIC_IMPORT, useChecker: true };
     }
     return undefined;
+}
+/** `(require)(x)` and `require!(x)` call `require` as surely as `require(x)` does. */
+function withoutParenthesesAndNonNull(expression, ast) {
+    let current = expression;
+    while (ast.isParenthesizedExpression(current) || ast.isNonNullExpression(current)) {
+        current = current.expression;
+    }
+    return current;
 }
 const MAX_EXPRESSION_CODE_POINTS = 120;
 /** Cuts on a code point so a surrogate pair is never split, and marks the cut. */

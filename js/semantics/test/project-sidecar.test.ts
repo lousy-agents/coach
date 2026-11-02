@@ -668,6 +668,73 @@ describe("imports", () => {
       assert.equal(to, `nonliteral:"${"a".repeat(110)}${"😀".repeat(9)}…`);
     });
 
+    test("a parenthesised or non-null-asserted require is still a require call", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          sourceConfig,
+          file(
+            "src/a.ts",
+            [
+              "declare const require: ((id: string) => unknown) | undefined;",
+              "export function load(name: string) {",
+              "  const a = (require)(name);",
+              "  const b = require!(name);",
+              "  const c = (require!)(name);",
+              "  return [a, b, c];",
+              "}",
+              "",
+            ].join("\n"),
+          ),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = (response.import_edges ?? []).filter((e) => e.resolution === "non_literal");
+      assert.deepEqual(
+        edges.map((e) => ({ to: e.to, kind: e.kind, site: e.site })).sort((x, y) => (x.site ?? "").localeCompare(y.site ?? "")),
+        [
+          { to: "nonliteral:name", kind: "commonjs_require", site: "src/a.ts:3" },
+          { to: "nonliteral:name", kind: "commonjs_require", site: "src/a.ts:4" },
+          { to: "nonliteral:name", kind: "commonjs_require", site: "src/a.ts:5" },
+        ],
+        JSON.stringify(response),
+      );
+    });
+
+    test("a parenthesised require with a literal specifier resolves like a bare one", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          sourceConfig,
+          file("src/a.ts", [`declare function require(id: string): unknown;`, `export const b = (require)("./b");`, ""].join("\n")),
+          file("src/b.ts", `export const b = 1;\n`),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      const edges = edgesTo(response, "file:src/b.ts");
+      assert.equal(edges.length, 1, JSON.stringify(response));
+      assert.equal(edges[0]?.kind, "commonjs_require");
+      assert.equal(edges[0]?.resolution, "snapshot");
+    });
+
+    test("a parenthesised or non-null-asserted call of something else is not a load", async () => {
+      const { response, exitCode } = await runSidecar({
+        files: [
+          sourceConfig,
+          file(
+            "src/a.ts",
+            [
+              "declare const other: ((id: string) => unknown) | undefined;",
+              "export function f(name: string) {",
+              "  return [(other)(name), other!(name), (0, other!)(name)];",
+              "}",
+              "",
+            ].join("\n"),
+          ),
+        ],
+      });
+      assert.equal(exitCode, 0, JSON.stringify(response));
+      assert.deepEqual((response.import_edges ?? []).filter((e) => e.resolution === "non_literal"), [], JSON.stringify(response));
+    });
+
     test("an expression that spans lines is collapsed to one line", async () => {
       const { response, exitCode } = await runSidecar({
         files: [

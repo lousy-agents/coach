@@ -456,7 +456,9 @@ and escaped, and cut to 120 characters with a trailing `…` when longer. The
 no-findings verdict says it is incomplete: "1 dynamic load with a non-literal
 specifier was not evaluated, so layer rules cannot tell whether it crosses a
 layer". Only a call to a bare
-`import(...)` or `require(...)` is recognized. `require.resolve(name)`, a method
+`import(...)` or `require(...)` is recognized, including `(require)(name)` and
+`require!(name)`, each of which gets its own diagnostic. An alias such as
+`const r = require; r(name)`, `require.resolve(name)`, a method
 named `require` on another object, and loaders such as `createRequire(...)(name)`
 or a bundler's glob import are not detected. A diagnostic recorded on the base
 side of a diff has the kind `base_project_import_non_literal`.
