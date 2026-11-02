@@ -16,6 +16,8 @@ const (
 	tsExportTypeFromHandler   = "export type { Row } from \"../db/d\";\n"
 	tsAllInlineTypeHandler    = "import { type Row } from \"../db/d\";\n\nexport type Handled = Row;\n"
 	tsMixedTypeAndValueImport = "import { type Row, query } from \"../db/d\";\n\nexport type Handled = Row;\nexport const q = query;\n"
+
+	tsSeparateTypeAndValueImports = "import type { Row } from \"../db/d\";\nimport { query } from \"../db/d\";\n\nexport type Handled = Row;\nexport const q = query;\n"
 )
 
 func policyWithExcludeTypeOnlyEdges(jsonValue string) string {
@@ -64,6 +66,7 @@ var _ = Describe("coach codesignal --project-language typescript evaluates type-
 			Entry("an export type ... from declaration", tsExportTypeFromHandler, true),
 			Entry("an import whose every named specifier is inline type", tsAllInlineTypeHandler, true),
 			Entry("an import that mixes an inline type specifier with a value", tsMixedTypeAndValueImport, false),
+			Entry("a type-only import and a value import of the same file in separate declarations", tsSeparateTypeAndValueImports, false),
 		)
 	})
 
@@ -90,6 +93,7 @@ var _ = Describe("coach codesignal --project-language typescript evaluates type-
 			Entry("an export type ... from declaration", tsExportTypeFromHandler, 0),
 			Entry("an import whose every named specifier is inline type", tsAllInlineTypeHandler, 0),
 			Entry("an import that mixes an inline type specifier with a value", tsMixedTypeAndValueImport, 1),
+			Entry("a type-only import and a value import of the same file in separate declarations", tsSeparateTypeAndValueImports, 1),
 		)
 	})
 
