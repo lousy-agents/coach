@@ -59,6 +59,14 @@ export const KIND_DYNAMIC_IMPORT = "dynamic_import";
 export const RESOLUTION_SNAPSHOT = "snapshot";
 export const RESOLUTION_EXTERNAL = "external";
 export const RESOLUTION_UNRESOLVED = "unresolved";
+/**
+ *  - "non_literal": an `import(expr)` or `require(expr)` call whose argument
+ *    is not a string literal, so no target can be named; `to` is
+ *    `nonliteral:<the expression's source text, collapsed to one line and
+ *    bounded>` and `site` is the call's line. An older consumer that does not
+ *    know the value sees a `to` that matches no other form and ignores it.
+ */
+export const RESOLUTION_NON_LITERAL = "non_literal";
 
 export interface ImportEdgeFact {
   from: string;

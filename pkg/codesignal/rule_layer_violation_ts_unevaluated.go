@@ -27,7 +27,9 @@ func unevaluatedTSEdgeDiagnostics(edges []domain.ImportEdge, policy LayerPolicy)
 		if _, inLayer := matchLayer(policy.Layers, importer); !inLayer {
 			continue
 		}
-		if specifier, unresolved := strings.CutPrefix(edge.To, "unresolved:"); unresolved {
+		if expression, nonLiteral := strings.CutPrefix(edge.To, "nonliteral:"); nonLiteral {
+			diagnostics = append(diagnostics, nonLiteralLoadDiagnostic(importer, edge.Kind, expression, edge.Site))
+		} else if specifier, unresolved := strings.CutPrefix(edge.To, "unresolved:"); unresolved {
 			if isNonSourceSpecifier(specifier) {
 				nonSourceEdges++
 			} else {
@@ -86,6 +88,20 @@ func unresolvedImportDiagnostic(importer, specifier, site string) Diagnostic {
 	}
 }
 
+func nonLiteralLoadDiagnostic(importer, kind, expression, site string) Diagnostic {
+	callee := "import()"
+	if kind == "commonjs_require" {
+		callee = "require()"
+	}
+	location := parseSiteLocation(site).Location
+	return Diagnostic{
+		Path:     importer,
+		Kind:     DiagKindProjectImportNonLiteral,
+		Message:  fmt.Sprintf("%s in %s takes a non-literal specifier (%q), so layer rules did not evaluate it and cannot tell whether it crosses a layer; the layer verdict is incomplete", callee, importer, expression),
+		Location: &location,
+	}
+}
+
 func notEvaluatedImportsDiagnostic(external, nonSource int) Diagnostic {
 	var message string
 	switch {
@@ -103,12 +119,12 @@ func notEvaluatedImportsDiagnostic(external, nonSource int) Diagnostic {
 	return Diagnostic{Kind: DiagKindProjectExternalImportsNotEvaluated, Message: message}
 }
 
-// isProjectEdgeDiagnosticKind recognizes the two kinds above on either side of
+// isProjectEdgeDiagnosticKind recognizes the kinds above on either side of
 // a diff. Their Path names a file that is analyzed, so they must never count
 // that file as unanalyzed.
 func isProjectEdgeDiagnosticKind(kind string) bool {
 	switch strings.TrimPrefix(kind, "base_") {
-	case DiagKindProjectImportUnresolved, DiagKindProjectExternalImportsNotEvaluated:
+	case DiagKindProjectImportUnresolved, DiagKindProjectImportNonLiteral, DiagKindProjectExternalImportsNotEvaluated:
 		return true
 	}
 	return false

@@ -7,6 +7,7 @@ import {
   KIND_IMPORT,
   KIND_REEXPORT,
   KIND_TYPE_ONLY,
+  RESOLUTION_NON_LITERAL,
   type ImportEdgeFact,
 } from "./protocol.js";
 import { resolveTarget, type SpecifierNode } from "./edges-resolve.js";
@@ -63,27 +64,78 @@ function edgeFromCall(
   if (!ast.isCallExpression(node)) return undefined;
   const call = classifyCallExpression(node, ast);
   if (!call) return undefined;
+  if ("expression" in call) return buildNonLiteralEdge(fromId, node, call.expression, sf, fromRepoPath, call.kind);
   return buildEdge(fromId, call.specifier, sf, fromRepoPath, call.kind, project, snapshot, call.useChecker);
 }
 
-interface ClassifiedCall {
+interface StaticCall {
   specifier: SpecifierNode;
   kind: string;
   useChecker: boolean;
 }
 
-function classifyCallExpression(node: astns.CallExpression, ast: typeof astns): ClassifiedCall | undefined {
-  const specifier = node.arguments[0];
-  if (specifier === undefined || !(ast.isStringLiteral(specifier) || ast.isNoSubstitutionTemplateLiteral(specifier))) {
-    return undefined;
+interface NonLiteralCall {
+  expression: astns.Node;
+  kind: string;
+}
+
+function classifyCallExpression(node: astns.CallExpression, ast: typeof astns): StaticCall | NonLiteralCall | undefined {
+  const argument = node.arguments[0];
+  if (argument === undefined) return undefined;
+  const load = dynamicLoadOf(node, ast);
+  if (!load) return undefined;
+  if (ast.isStringLiteral(argument) || ast.isNoSubstitutionTemplateLiteral(argument)) {
+    return { specifier: argument, ...load };
   }
-  if (ast.isIdentifier(node.expression) && node.expression.text === "require") {
-    return { specifier, kind: KIND_COMMONJS_REQUIRE, useChecker: false };
+  return { expression: argument, kind: load.kind };
+}
+
+function dynamicLoadOf(node: astns.CallExpression, ast: typeof astns): { kind: string; useChecker: boolean } | undefined {
+  const callee = withoutParenthesesAndNonNull(node.expression, ast);
+  if (ast.isIdentifier(callee) && callee.text === "require") {
+    return { kind: KIND_COMMONJS_REQUIRE, useChecker: false };
   }
   if (node.expression.kind === ast.SyntaxKind.ImportKeyword) {
-    return { specifier, kind: KIND_DYNAMIC_IMPORT, useChecker: true };
+    return { kind: KIND_DYNAMIC_IMPORT, useChecker: true };
   }
   return undefined;
+}
+
+/** `(require)(x)` and `require!(x)` call `require` as surely as `require(x)` does. */
+function withoutParenthesesAndNonNull(expression: astns.Expression, ast: typeof astns): astns.Expression {
+  let current = expression;
+  while (ast.isParenthesizedExpression(current) || ast.isNonNullExpression(current)) {
+    current = current.expression;
+  }
+  return current;
+}
+
+const MAX_EXPRESSION_CODE_POINTS = 120;
+
+/** Cuts on a code point so a surrogate pair is never split, and marks the cut. */
+function boundedExpressionText(text: string): string {
+  const codePoints = Array.from(text);
+  if (codePoints.length <= MAX_EXPRESSION_CODE_POINTS) return text;
+  return `${codePoints.slice(0, MAX_EXPRESSION_CODE_POINTS).join("")}…`;
+}
+
+function buildNonLiteralEdge(
+  fromId: string,
+  call: astns.CallExpression,
+  expression: astns.Node,
+  sf: astns.SourceFile,
+  fromRepoPath: string,
+  kind: string,
+): ImportEdgeFact {
+  const { line } = sf.getLineAndCharacterOfPosition(call.getStart(sf));
+  const text = sf.text.slice(expression.getStart(sf), expression.end).replace(/\s+/g, " ").trim();
+  return {
+    from: fromId,
+    to: `nonliteral:${boundedExpressionText(text)}`,
+    kind,
+    site: `${fromRepoPath}:${line + 1}`,
+    resolution: RESOLUTION_NON_LITERAL,
+  };
 }
 
 function buildEdge(

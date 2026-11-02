@@ -35,8 +35,13 @@ const (
 // incomplete. The aggregated not-evaluated count covers external packages,
 // non-source files, and aliases the sidecar does not follow; it is
 // informational by decision, and docs/cli-codesignal.md states the gap.
+//
+// A dynamic import() or require() whose specifier is not a literal names no
+// target at all, so it cannot be placed either and makes the verdict incomplete
+// the same way.
 const (
 	DiagKindProjectImportUnresolved            = "project_import_unresolved"
+	DiagKindProjectImportNonLiteral            = "project_import_non_literal"
 	DiagKindProjectExternalImportsNotEvaluated = "project_external_imports_not_evaluated"
 )
 
