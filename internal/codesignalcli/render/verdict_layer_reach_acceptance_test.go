@@ -8,11 +8,12 @@ import (
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-const layerReachClause = "forbidden_imports was evaluated only between files inside declared layers"
+const layerReachClause = "forbidden_imports was evaluated only between files counted inside declared layers"
 
 func layerMembershipWith(outside int) *codesignal.LayerMembershipReport {
 	return &codesignal.LayerMembershipReport{
-		Head: codesignal.LayerMembershipRevisionReport{Revision: "head", AnalyzedFiles: 20, FilesOutsideLayers: outside},
+		Head:                     codesignal.LayerMembershipRevisionReport{Revision: "head", AnalyzedFiles: 20, FilesOutsideLayers: outside},
+		ForbiddenImportsDeclared: true,
 	}
 }
 
@@ -59,6 +60,54 @@ var _ = Describe("RenderText verdict when files sit outside every declared layer
 			},
 			"No active CodeSignal findings, but the analysis is incomplete: project analysis did not complete. Separately, "+layerReachClause+".\n"),
 	)
+
+	When("the policy declares no forbidden_imports", func() {
+		It("states the count but no forbidden_imports reach, which would describe a rule the policy never set", func() {
+			membership := layerMembershipWith(3)
+			membership.ForbiddenImportsDeclared = false
+
+			text := ReportText(&codesignal.Report{LayerMembership: membership})
+
+			Expect(text).To(ContainSubstring("3 of 20 project files under the configured roots sit outside every declared layer.\n"))
+			Expect(text).To(ContainSubstring("No active CodeSignal findings.\n"))
+			Expect(text).NotTo(ContainSubstring("forbidden_imports"))
+		})
+	})
+
+	When("the base revision has files outside every layer and the head has none", func() {
+		It("names each revision's count and keeps the reach in the verdict", func() {
+			membership := layerMembershipWith(0)
+			membership.Head.Revision = "h1"
+			membership.Base = &codesignal.LayerMembershipRevisionReport{Revision: "b1", AnalyzedFiles: 21, FilesOutsideLayers: 1}
+
+			text := ReportText(&codesignal.Report{LayerMembership: membership})
+
+			Expect(text).To(ContainSubstring("Head revision h1: 0 of 20 project files under the configured roots sit outside every declared layer.\n" +
+				"Base revision b1: 1 of 21 project files under the configured roots sit outside every declared layer; imports to or from them are not evaluated against forbidden_imports.\n"))
+			Expect(text).To(ContainSubstring("No active CodeSignal findings; " + layerReachClause + ".\n"))
+		})
+
+		It("keeps the single head line when the base has nothing outside either", func() {
+			membership := layerMembershipWith(2)
+			membership.Base = &codesignal.LayerMembershipRevisionReport{Revision: "b1", AnalyzedFiles: 19, FilesOutsideLayers: 0}
+
+			text := ReportText(&codesignal.Report{LayerMembership: membership})
+
+			Expect(text).To(ContainSubstring("\n2 of 20 project files under the configured roots sit outside every declared layer; imports"))
+			Expect(text).NotTo(ContainSubstring("revision b1"))
+		})
+	})
+
+	When("the project is Go", func() {
+		It("says a Go file is placed by its package directory", func() {
+			membership := layerMembershipWith(1)
+			membership.KeyedByPackageDirectory = true
+
+			text := ReportText(&codesignal.Report{LayerMembership: membership})
+
+			Expect(text).To(ContainSubstring("1 of 20 project files under the configured roots sit outside every declared layer (a Go file is in a layer when its package directory is); imports to or from them are not evaluated against forbidden_imports.\n"))
+		})
+	})
 
 	DescribeTable("leaves the verdict unchanged when nothing is outside every layer or the count was not computed",
 		func(report *codesignal.Report, want string) {

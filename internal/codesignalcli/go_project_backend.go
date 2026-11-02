@@ -223,5 +223,5 @@ func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 		coverage = combineProjectCoverage(coverage, bypassResult.Coverage)
 	}
 
-	return changes, diagnostics, coverage, projectmodel.GoLayerMembership(model, projectScopePolicyFromConfig(nil, policy).Layers), nil
+	return changes, diagnostics, coverage, projectmodel.GoLayerMembership(model, roots, projectScopePolicyFromConfig(nil, policy).Layers), nil
 }

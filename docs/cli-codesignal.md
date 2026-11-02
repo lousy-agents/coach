@@ -220,9 +220,11 @@ the project model, so they count in `analyzed_files`. A missing
 `layer_membership` means "not computed": the policy declares no layers, the
 project model is incomplete (Go: any incomplete model, such as one cut short by
 the input file or byte budget; TypeScript: the input budget truncated the files
-sent to the analyzer), or a TypeScript root reports an analyzed-file count that
-its path list does not match. In each case a count would leave files out, so it
-is not reported. A present `files_outside_layers` of `0` is a real zero. It is
+sent to the analyzer), a configured root holds no analyzed file (Go: no module
+sits at or under the root, for example `roots: ["pkg"]` with `go.mod` at the
+repository root; TypeScript: the root has no tsconfig), or a TypeScript root
+reports an analyzed-file count that its path list does not match. In each case
+a count would leave files out, so it is not reported. A present `files_outside_layers` of `0` is a real zero. It is
 information, not a finding, and it changes no lifecycle, fingerprint, or exit
 code.
 
@@ -499,13 +501,20 @@ inside a declared layer. Code outside every declared layer is still analyzed by
 the file-local rules, but is not evaluated by that rule, so an empty set of
 layer-violation findings says nothing about imports to or from it. The report
 states how many project files under the configured roots sit outside every
-declared layer, as information rather than a finding; the text line describes
-the head revision. When that count is above zero, the text verdict carries the
-same scope: the all-clear reads `...; forbidden_imports was evaluated only
-between files inside declared layers`, the complete-scan verdict reads the same
-after `no configured covered match`, and an incomplete verdict keeps its causes
-and adds `Separately, forbidden_imports was evaluated only between files inside
-declared layers.` `architecture.layer_bypass` is defined against
+declared layer, as information rather than a finding. The text line describes
+the head revision; when the base revision of a diff also has files outside
+every layer, the text prints one line per revision, each starting `Head
+revision <sha>:` or `Base revision <sha>:`. For Go the line adds `(a Go file is
+in a layer when its package directory is)`, because a layer prefix that names a
+file (`pkg/db/db.go`) contains no package directory, so that file counts as
+outside. When the policy declares `forbidden_imports` and either revision's
+count is above zero, the text verdict carries the same scope: the all-clear
+reads `...; forbidden_imports was evaluated only between files counted inside
+declared layers`, the complete-scan verdict reads the same after `no configured
+covered match`, and an incomplete verdict keeps its causes and adds
+`Separately, forbidden_imports was evaluated only between files counted inside
+declared layers.` A policy with no `forbidden_imports` gets the count alone,
+with no `forbidden_imports` wording. `architecture.layer_bypass` is defined against
 `required_layer` alone, and file-local rules run on every analyzed file
 regardless of layers.
 

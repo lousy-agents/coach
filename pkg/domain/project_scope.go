@@ -25,8 +25,9 @@ type ProjectScope struct {
 	UnmatchedLayers []string           `json:"unmatched_layers"`
 
 	// LayerMembership is nil when it could not be computed: the policy
-	// declares no layers, or the analyzer reported file counts without the
-	// matching path lists. Nil means "not computed", never zero.
+	// declares no layers, a policy root analyzed no file, or the analyzer
+	// reported file counts without the matching path lists. Nil means "not
+	// computed", never zero.
 	LayerMembership *LayerMembership `json:"layer_membership,omitempty"`
 }
 

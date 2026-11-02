@@ -85,6 +85,10 @@ type Input struct {
 	// computed for that revision, which is not the same as zero.
 	HeadLayerMembership *domain.LayerMembership `json:"head_layer_membership,omitempty"`
 	BaseLayerMembership *domain.LayerMembership `json:"base_layer_membership,omitempty"`
+	// LayerForbiddenImportsDeclared is whether the project policy declares
+	// any forbidden_imports, the only layer rule that cannot see files
+	// outside every layer.
+	LayerForbiddenImportsDeclared bool `json:"layer_forbidden_imports_declared,omitempty"`
 
 	// Phase-specific coverage observations for each analyzed revision. A nil
 	// pointer means the phase was not observed (treat as not_run in D7 mapping).

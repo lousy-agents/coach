@@ -8,13 +8,20 @@ import "github.com/lousy-agents/coach/pkg/domain"
 // not a finding: it adds no ProjectChange, diagnostic, or lifecycle effect.
 //
 // The block is present only when the count was computed. An absent block means
-// "not computed" (no layers declared, an incomplete project model, or an
-// analyzer that did not report enough to count); a present block with
+// "not computed" (no layers declared, an incomplete project model, a
+// configured root that holds no analyzed file, or an analyzer that did not
+// report enough to count); a present block with
 // files_outside_layers 0 is a real zero. Both Go and TypeScript schema-2
 // reports use it.
 type LayerMembershipReport struct {
 	Head LayerMembershipRevisionReport  `json:"head"`
 	Base *LayerMembershipRevisionReport `json:"base,omitempty"`
+
+	// ForbiddenImportsDeclared and KeyedByPackageDirectory shape the text
+	// wording only and stay off the wire: a JSON reader has the policy and
+	// the language already.
+	ForbiddenImportsDeclared bool `json:"-"`
+	KeyedByPackageDirectory  bool `json:"-"`
 }
 
 // LayerMembershipRevisionReport is one revision's count, with the revision it
@@ -33,7 +40,9 @@ func buildLayerMembership(input Input) *LayerMembershipReport {
 		return nil
 	}
 	report := &LayerMembershipReport{
-		Head: layerMembershipRevision(input.Scope.Revision, *input.HeadLayerMembership),
+		Head:                     layerMembershipRevision(input.Scope.Revision, *input.HeadLayerMembership),
+		ForbiddenImportsDeclared: input.LayerForbiddenImportsDeclared,
+		KeyedByPackageDirectory:  input.Language == "go",
 	}
 	if input.ProjectBaseAnalyzed && input.BaseLayerMembership != nil {
 		base := layerMembershipRevision(input.Scope.Base, *input.BaseLayerMembership)

@@ -106,6 +106,17 @@ var _ = Describe("layer membership: how many project files under the configured 
 			})
 		})
 
+		It("does not compute a count when a configured root has no analyzed file", func() {
+			model := projectmodel.Model{RootScopes: []projectmodel.RootScope{
+				{Root: "a", CandidateFiles: 1, AnalyzedFiles: 1, AnalyzedPaths: []string{"a/src/a.ts"}},
+				{Root: "b", CandidateFiles: 0, AnalyzedFiles: 0},
+			}}
+
+			scope := scopeOf(model, []string{"a", "b"}, []projectmodel.ProjectScopePolicyLayer{{Name: "a", Prefixes: []string{"a"}}})
+
+			Expect(scope.LayerMembership).To(BeNil(), "root b has no tsconfig, so its files were never seen and a count over root a alone would understate what sits outside")
+		})
+
 		It("does not compute a count when the policy declares no layers", func() {
 			model := projectmodel.Model{RootScopes: []projectmodel.RootScope{
 				{Root: ".", CandidateFiles: 1, AnalyzedFiles: 1, AnalyzedPaths: []string{"a.ts"}},
@@ -128,7 +139,7 @@ var _ = Describe("layer membership: how many project files under the configured 
 
 		DescribeTable("matches the importing package directory the way the layer rule does",
 			func(paths []string, layers []projectmodel.ProjectScopePolicyLayer, want domain.LayerMembership) {
-				got := projectmodel.GoLayerMembership(goModel(paths...), layers)
+				got := projectmodel.GoLayerMembership(goModel(paths...), []string{"."}, layers)
 
 				Expect(got).To(Equal(&want))
 			},
@@ -159,14 +170,21 @@ var _ = Describe("layer membership: how many project files under the configured 
 		)
 
 		It("does not compute a count when the policy declares no layers", func() {
-			Expect(projectmodel.GoLayerMembership(goModel("a.go"), nil)).To(BeNil())
+			Expect(projectmodel.GoLayerMembership(goModel("a.go"), []string{"."}, nil)).To(BeNil())
+		})
+
+		It("does not compute a count when a configured root holds no analyzed file", func() {
+			Expect(projectmodel.GoLayerMembership(goModel("svc/pkg/db/db.go"), []string{"svc", "tools"}, layers)).To(BeNil(),
+				"tools holds no module the model analyzed, so a count over svc alone would be a false zero for it")
+			Expect(projectmodel.GoLayerMembership(goModel(), []string{"pkg"}, layers)).To(BeNil(),
+				"an empty model is not a real zero")
 		})
 
 		It("does not compute a count when the model is incomplete", func() {
 			model := goModel("pkg/db/db.go")
 			model.Coverage.Complete = false
 
-			Expect(projectmodel.GoLayerMembership(model, layers)).To(BeNil(), "a truncated model holds only the analyzed head of the files")
+			Expect(projectmodel.GoLayerMembership(model, []string{"."}, layers)).To(BeNil(), "a truncated model holds only the analyzed head of the files")
 		})
 	})
 })

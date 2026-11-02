@@ -74,7 +74,8 @@ type ProjectBackendResult struct {
 	// HeadLayerMembership/BaseLayerMembership carry each revision's count of
 	// project files under the configured roots outside every declared layer.
 	// Nil means it was not computed (no layers declared, an incomplete project
-	// model, or an analyzer that reported counts without path lists), which a
+	// model, a configured root that holds no analyzed file, or an analyzer
+	// that reported counts without path lists), which a
 	// report must not present as zero.
 	HeadLayerMembership *projectmodel.LayerMembership
 	BaseLayerMembership *projectmodel.LayerMembership
@@ -188,6 +189,8 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		SelectedRoots:            roots,
 		AnalyzerProtocolVersion:  analyzerProtocolVersion,
 		UndeterminedContinuity:   input.UndeterminedContinuity,
+
+		LayerForbiddenImportsDeclared: forbiddenImportsDeclared(project.Config),
 	}
 	return merged, enabled, nil
 }
@@ -201,6 +204,14 @@ func selectedRootsFromConfig(config json.RawMessage) []string {
 		return nil
 	}
 	return cfg.Roots
+}
+
+func forbiddenImportsDeclared(config json.RawMessage) bool {
+	if len(config) == 0 {
+		return false
+	}
+	cfg, err := projectconfig.Parse(config)
+	return err == nil && len(cfg.ForbiddenImports) > 0
 }
 
 // headProjectDiagnostics stamps Side "head" and Revision headRevision onto

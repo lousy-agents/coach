@@ -167,7 +167,7 @@ var _ = Describe("coach codesignal reports how many Go project files under the c
 				"tools/main.go is outside the configured roots, so the project model never saw it")
 
 			text, _, _ := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json")
-			Expect(string(text)).To(ContainSubstring("0 of 2 project files under the configured roots sit outside every declared layer."))
+			Expect(string(text)).To(ContainSubstring("0 of 2 project files under the configured roots sit outside every declared layer (a Go file is in a layer when its package directory is)."))
 		})
 	})
 
@@ -186,7 +186,7 @@ var _ = Describe("coach codesignal reports how many Go project files under the c
 
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 			Expect(string(stdout)).To(ContainSubstring(
-				"No active CodeSignal findings at or above --min-severity high; forbidden_imports was evaluated only between files inside declared layers."))
+				"No active CodeSignal findings at or above --min-severity high; forbidden_imports was evaluated only between files counted inside declared layers."))
 		})
 	})
 
@@ -205,7 +205,7 @@ var _ = Describe("coach codesignal reports how many Go project files under the c
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 			text := string(stdout)
 			Expect(text).To(ContainSubstring("No active CodeSignal findings, but the analysis is incomplete: "))
-			Expect(text).To(ContainSubstring(". Separately, forbidden_imports was evaluated only between files inside declared layers.\n"))
+			Expect(text).To(ContainSubstring(". Separately, forbidden_imports was evaluated only between files counted inside declared layers.\n"))
 			Expect(strings.Index(text, "the analysis is incomplete")).To(BeNumerically("<", strings.Index(text, "Separately,")))
 		})
 	})
@@ -225,8 +225,8 @@ var _ = Describe("coach codesignal reports how many Go project files under the c
 
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 			text := string(stdout)
-			line := "1 of 3 project files under the configured roots sit outside every declared layer; imports to or from them are not evaluated against forbidden_imports."
-			verdict := "No active CodeSignal findings; forbidden_imports was evaluated only between files inside declared layers."
+			line := "1 of 3 project files under the configured roots sit outside every declared layer (a Go file is in a layer when its package directory is); imports to or from them are not evaluated against forbidden_imports."
+			verdict := "No active CodeSignal findings; forbidden_imports was evaluated only between files counted inside declared layers."
 			Expect(text).To(ContainSubstring(line))
 			Expect(text).To(ContainSubstring(verdict), "the verdict must carry the reach of forbidden_imports, not only the line above it")
 			Expect(strings.Index(text, line)).To(BeNumerically("<", strings.Index(text, verdict)),
@@ -246,10 +246,102 @@ var _ = Describe("coach codesignal reports how many Go project files under the c
 
 			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 			text := string(stdout)
-			Expect(text).To(ContainSubstring("0 of 2 project files under the configured roots sit outside every declared layer."))
+			Expect(text).To(ContainSubstring("0 of 2 project files under the configured roots sit outside every declared layer (a Go file is in a layer when its package directory is)."))
 			Expect(text).NotTo(ContainSubstring("are not evaluated against forbidden_imports"))
 			Expect(text).To(ContainSubstring("No active CodeSignal findings.\n"), "with nothing outside a layer the verdict is unchanged")
 			Expect(text).NotTo(ContainSubstring("forbidden_imports was evaluated only"))
+		})
+	})
+
+	DescribeTable("a configured root that holds no analyzed Go file",
+		func(files map[string]string, config string) {
+			repo := newTempGitRepo()
+			for name, contents := range files {
+				commitFile(repo, name, contents)
+			}
+			commitFile(repo, "project.json", config)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--format=json")
+			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
+			_, present := decodeLayerMembership(stdout, "head")
+			Expect(present).To(BeFalse(), "a root the project model never saw cannot be counted, so the block must be absent rather than a zero: %s", stdout)
+
+			text, _, _ := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json")
+			Expect(string(text)).NotTo(ContainSubstring("sit outside every declared layer"))
+		},
+		Entry("the only root holds Go files but no module, because go.mod is at the repository root",
+			map[string]string{
+				"go.mod":                   goModuleFile,
+				"pkg/db/db.go":             dbPackageFile,
+				"pkg/handlers/handlers.go": handlersWithoutImport,
+				"pkg/handlers/sub/sub.go":  "package sub\n",
+			},
+			`{"schema_version":"1","roots":["pkg"],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}]}`),
+		Entry("one of two roots holds no module",
+			map[string]string{
+				"svc/go.mod":       goModuleFile,
+				"svc/pkg/db/db.go": dbPackageFile,
+				"tools/main.go":    "package main\n\nfunc main() {}\n",
+			},
+			`{"schema_version":"1","roots":["svc","tools"],"layers":[{"name":"handlers","prefixes":["svc/pkg/handlers"]},{"name":"db","prefixes":["svc/pkg/db"]}],"forbidden_imports":[{"from":"handlers","to":"db"}]}`),
+	)
+
+	When("only the base revision has a package outside every layer", func() {
+		It("names each revision's count in the text and keeps the reach of forbidden_imports in the verdict", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "go.mod", goModuleFile)
+			commitFile(repo, "pkg/db/db.go", dbPackageFile)
+			commitFile(repo, "pkg/other/other.go", otherImportingDB)
+			baseSHA := commitFile(repo, "project.json", goLayerPolicyConfigJSON)
+			headSHA := removeFile(repo, "pkg/other/other.go")
+
+			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json")
+
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			text := string(stdout)
+			Expect(text).To(ContainSubstring("Head revision " + headSHA + ": 0 of 1 project files under the configured roots sit outside every declared layer (a Go file is in a layer when its package directory is).\n"))
+			Expect(text).To(ContainSubstring("Base revision " + baseSHA + ": 1 of 2 project files under the configured roots sit outside every declared layer (a Go file is in a layer when its package directory is); imports to or from them are not evaluated against forbidden_imports.\n"))
+			Expect(text).To(ContainSubstring("forbidden_imports was evaluated only between files counted inside declared layers."),
+				"the base side was evaluated with the same blind spot, so the verdict must say so")
+		})
+	})
+
+	When("a layer prefix names a Go file", func() {
+		It("says a Go file is placed by its package directory, so counting that file outside is not a contradiction", func() {
+			repo := newTempGitRepo()
+			commitGoFiles(repo, map[string]string{
+				"go.mod":                   goModuleFile,
+				"pkg/db/db.go":             dbPackageFile,
+				"pkg/handlers/handlers.go": handlersImportingDB,
+				"project.json":             dbPrefixNamesAFileConfigJSON,
+			})
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json")
+
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			text := string(stdout)
+			Expect(text).To(ContainSubstring("1 of 2 project files under the configured roots sit outside every declared layer (a Go file is in a layer when its package directory is); imports to or from them are not evaluated against forbidden_imports."))
+			Expect(text).To(ContainSubstring("No active CodeSignal findings; forbidden_imports was evaluated only between files counted inside declared layers."))
+		})
+	})
+
+	When("the policy declares layers but no forbidden_imports", func() {
+		It("states the count without a forbidden_imports consequence the policy never asked for", func() {
+			repo := newTempGitRepo()
+			commitGoFiles(repo, map[string]string{
+				"go.mod":             goModuleFile,
+				"pkg/db/db.go":       dbPackageFile,
+				"pkg/other/other.go": otherImportingDB,
+				"project.json":       `{"schema_version":"1","roots":["."],"layers":[{"name":"db","prefixes":["pkg/db"]}]}`,
+			})
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json")
+
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			text := string(stdout)
+			Expect(text).To(ContainSubstring("1 of 2 project files under the configured roots sit outside every declared layer (a Go file is in a layer when its package directory is).\n"))
+			Expect(text).To(ContainSubstring("No active CodeSignal findings.\n"))
+			Expect(text).NotTo(ContainSubstring("forbidden_imports"))
 		})
 	})
 })

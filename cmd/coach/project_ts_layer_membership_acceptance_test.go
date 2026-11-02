@@ -62,7 +62,7 @@ var _ = Describe("coach codesignal reports how many TypeScript project files und
 						"pkg/handlers/h.ts": tsRealHandlersWithoutImport,
 						"pkg/util/misc.ts":  tsUtilMiscFile,
 					},
-					wantVerdict: "Complete scan found no configured covered match; forbidden_imports was evaluated only between files inside declared layers.",
+					wantVerdict: "Complete scan found no configured covered match; forbidden_imports was evaluated only between files counted inside declared layers.",
 				},
 				{
 					name: "nothing outside",
@@ -94,6 +94,27 @@ var _ = Describe("coach codesignal reports how many TypeScript project files und
 					Expect(string(stdout)).NotTo(ContainSubstring(tc.wantAbsent), "%s", tc.name)
 				}
 			}
+		})
+	})
+
+	When("a configured root has no tsconfig, so none of its files are candidates", Label("ts-project-backend"), func() {
+		It("omits the block instead of counting the other root alone", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitFile(repo, ".gitignore", "node_modules/\n")
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "a/tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "a/src/a.ts", tsRealDbFile)
+			commitFile(repo, "b/src/b.ts", tsUtilMiscFile)
+			commitFile(repo, "project.json", `{"schema_version":"1","roots":["a","b"],"layers":[{"name":"a","prefixes":["a"]}]}`)
+			installRealTypescriptCompiler(repo, true)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo,
+				"--project-config", "project.json", "--project-language", "typescript", "--format=json")
+
+			Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
+			_, present := decodeLayerMembership(stdout, "head")
+			Expect(present).To(BeFalse(), "b/src/b.ts sits outside every layer but was never a candidate, so a count over a/ alone would be an undercount: %s", stdout)
 		})
 	})
 })
