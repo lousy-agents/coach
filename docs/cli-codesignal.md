@@ -447,9 +447,23 @@ as unresolved when no aliased file exists, because the analyzer has no
 `.cjs`, or `.mjs`) with no `.ts` or `.tsx` counterpart is reported as
 unresolved, because the analyzer receives only `.ts` and `.tsx` sources.
 
-Neither diagnostic changes `--fail-on-incomplete-coverage`. A dynamic load whose
-specifier is not a string literal, such as `import(path)` or `require(name)`, is
-not detected at all ([#568](https://github.com/lousy-agents/coach/issues/568)).
+A dynamic load whose specifier is not a literal, such as `import(path)`,
+`` import(`./adapters/${name}`) ``, or `require(name)`, names no target, so layer
+rules cannot place it. When the importing file sits inside a declared layer it
+gets one `project_import_non_literal` diagnostic per site, naming the file, the
+call, the expression, and the line. The expression is shown on one line, quoted
+and escaped, and cut to 120 characters with a trailing `…` when longer. The
+no-findings verdict says it is incomplete: "1 dynamic load with a non-literal
+specifier was not evaluated, so layer rules cannot tell whether it crosses a
+layer". Only a call to a bare
+`import(...)` or `require(...)` is recognized. `require.resolve(name)`, a method
+named `require` on another object, and loaders such as `createRequire(...)(name)`
+or a bundler's glob import are not detected. A diagnostic recorded on the base
+side of a diff has the kind `base_project_import_non_literal`.
+
+None of these diagnostics changes `--fail-on-incomplete-coverage`: an
+unresolved import and a non-literal load qualify the verdict text, but the flag
+keeps its exit status.
 
 Set `"exclude_type_only_edges": true` in the policy file to leave type-only
 edges out. It is optional and defaults to `false`, and it has no effect on Go
