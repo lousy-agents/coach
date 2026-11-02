@@ -90,6 +90,32 @@ func TestRenderTextNoActiveFindingsVerdict(t *testing.T) {
 			wantAbsent: []string{"not analyzed"},
 		},
 		{
+			name: "states project analysis did not complete when only an indeterminate lifecycle diagnostic shows it",
+			report: &codesignal.Report{
+				Diagnostics: []codesignal.Diagnostic{
+					{Kind: codesignal.DiagKindProjectLifecycleIndeterminate, Message: "base coverage incomplete"},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "complete", Complete: true},
+			},
+			wantContains: []string{
+				"No active CodeSignal findings, but the analysis is incomplete",
+				"project analysis did not complete",
+			},
+		},
+		{
+			name: "states project analysis did not complete when only a coverage-incomplete diagnostic shows it",
+			report: &codesignal.Report{
+				Diagnostics: []codesignal.Diagnostic{
+					{Kind: codesignal.DiagKindProjectCoverageIncomplete, Message: "project analysis coverage is incomplete; project observations may be partial"},
+				},
+				ProjectCoverage: &projectmodel.Coverage{Phase: "complete", Complete: true},
+			},
+			wantContains: []string{
+				"No active CodeSignal findings, but the analysis is incomplete",
+				"project analysis did not complete",
+			},
+		},
+		{
 			name: "does not call an analyzed diagnostic path unanalyzed when FilesUnanalyzed is zero",
 			report: &codesignal.Report{
 				Diagnostics: []codesignal.Diagnostic{

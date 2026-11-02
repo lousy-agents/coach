@@ -27,12 +27,3 @@ func renderDiagnosticsSection(b *strings.Builder, diagnostics []codesignal.Diagn
 		renderDiagnostic(b, diagnostic)
 	}
 }
-
-func hasProjectLifecycleDiagnostic(diagnostics []codesignal.Diagnostic) bool {
-	for _, d := range diagnostics {
-		if d.Kind == codesignal.DiagKindProjectCoverageIncomplete || d.Kind == codesignal.DiagKindProjectLifecycleIndeterminate {
-			return true
-		}
-	}
-	return false
-}
