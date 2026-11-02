@@ -218,13 +218,17 @@ path). `analyzed_files` here is that same population, not the summary's
 that reaches outside its root (for example `../shared/**`) adds those files to
 the project model, so they count in `analyzed_files`. A missing
 `layer_membership` means "not computed": the policy declares no layers, the
-project model is incomplete (Go: any incomplete model, such as one cut short by
-the input file or byte budget; TypeScript: the input budget truncated the files
-sent to the analyzer), a configured root holds no analyzed file (Go: no module
-sits at or under the root, for example `roots: ["pkg"]` with `go.mod` at the
-repository root; TypeScript: the root has no tsconfig), or a TypeScript root
-reports an analyzed-file count that its path list does not match. In each case
-a count would leave files out, so it is not reported. A present `files_outside_layers` of `0` is a real zero. It is
+project model is incomplete (any incomplete model, such as one cut short by
+the input file or byte budget, or, for TypeScript, a root whose candidate files
+were not all incorporated), a configured root has no analyzed file at or under
+it (Go: no module sits at or under the root, for example `roots: ["pkg"]` with
+`go.mod` at the repository root; TypeScript: the root has no tsconfig and no
+other root analyzes files under it, while a nested root such as `pkg` under a
+root `.` that has the tsconfig is counted), or a TypeScript root reports an
+analyzed-file count that its path list does not match. In each case a count
+would leave files out, so it is not reported. In a diff, a head side that was
+not computed omits the whole block, including a base count that was computed.
+A present `files_outside_layers` of `0` is a real zero. It is
 information, not a finding, and it changes no lifecycle, fingerprint, or exit
 code.
 

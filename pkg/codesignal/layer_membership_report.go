@@ -33,8 +33,12 @@ type LayerMembershipRevisionReport struct {
 }
 
 // buildLayerMembership constructs the LayerMembershipReport from Input. It
-// returns nil when the head count was not computed. The base side mirrors
-// project_scope: it appears only when the base revision was analyzed.
+// returns nil when the head count was not computed, and then reports no base
+// count either: the block describes the reach of the layer rules now, so a
+// base line without a head line would read as the current state. A head that
+// is incomplete already says so through project_coverage and the verdict. The
+// base side mirrors project_scope: it appears only when the base revision was
+// analyzed.
 func buildLayerMembership(input Input) *LayerMembershipReport {
 	if input.HeadLayerMembership == nil {
 		return nil
