@@ -74,9 +74,9 @@ If a kill test fails, stay in pilot. Do not name a new audience.
 In scope:
 
 - local `coach codesignal` on a Git checkout
-- Go, TypeScript, and TSX source that is already committed
+- Go, TypeScript, and TSX source: committed, or uncommitted when the user passes `--worktree`; and the project policy file as it is on disk
 - file-local structural signals
-- project policy that the user writes and commits; file-local analysis when none is selected
+- project policy that the user writes, committed or not; file-local analysis when none is selected
 - consented setup for a missing TypeScript compiler when a terminal is present
 - an honest report when analysis is incomplete
 
@@ -114,6 +114,8 @@ These limits do not expire with this era unless a later document replaces them.
 - Default file-local analysis does not need a network connection. Project-policy setup may use the network after the user confirms.
 - Absence of an architecture signal is not compliance.
 - Stability. Coach is not yet stable. Its JSON schema, fingerprints, rule versions, and policy schema may change between releases. The owner decides case by case whether a change is announced in release notes.
+- Source: a committed scan reads committed source. The project policy is read from disk, as ESLint and Biome read their configuration. The comparison with `HEAD` is Coach's own addition, not parity with those tools.
+- Policy disclosure: every scan reports the policy path and digest it used, and whether the policy selected from disk matches the one selected at `HEAD` (section 8.4). The report does not compare with an older analyzed revision. JSON `scope.policy` is always present. A text line appears when a policy is selected or the two differ. A difference appears as a WARNING, and it qualifies any clean result.
 
 ## 8. Requirements
 
@@ -121,15 +123,15 @@ These requirements describe the local pilot product. They do not specify storage
 
 ### 8.1 Analysis contract
 
-WHEN the Coach CLI analyzes source for a CodeSignal report, THE Coach CLI shall read committed Git objects at the named revision.
+WHEN the Coach CLI analyzes source for a CodeSignal report without `--worktree`, THE Coach CLI shall read committed Git objects at the named revision.
 
-WHEN the user requests a baseline scan, THE Coach CLI shall analyze committed Go, TypeScript, and TSX files that pass the active scope filter at `HEAD`.
+WHEN the user requests a baseline scan without `--worktree`, THE Coach CLI shall analyze committed Go, TypeScript, and TSX files that pass the active scope filter at `HEAD`.
 
 WHEN the user omits `--scope`, THE Coach CLI shall use production scope.
 
-WHEN the user requests a diff scan against a Git ref, THE Coach CLI shall analyze the change between the merge base of that ref and `HEAD`.
+WHEN the user requests a diff scan against a Git ref without `--worktree`, THE Coach CLI shall analyze the change between the merge base of that ref and `HEAD`.
 
-IF the working tree contains uncommitted source edits, THEN THE Coach CLI shall ignore those edits in the CodeSignal report.
+IF the working tree contains uncommitted source edits and `--worktree` is not passed, THEN THE Coach CLI shall ignore those edits in the CodeSignal report and shall say so in the report.
 
 WHEN a diff scan skips a path that is not Go, TypeScript, or TSX, THE Coach CLI shall record a per-path `unsupported_language` diagnostic.
 
@@ -139,7 +141,21 @@ WHERE the user requests TypeScript project readiness, THE Coach CLI shall read t
 
 WHEN a TypeScript project scan produces a report, THE Coach CLI shall include `project_provenance` and `project_scope`.
 
-WHEN a TypeScript project scan sees relevant dirty worktree changes, THE Coach CLI shall emit `worktree_report_reflects_committed_head`. File-local scans emit `worktree_changes_not_analyzed` for dirty supported-language files.
+WHEN a TypeScript project scan without `--worktree` sees relevant dirty worktree changes, THE Coach CLI shall emit `worktree_report_reflects_committed_head`. File-local scans without `--worktree` emit `worktree_changes_not_analyzed` for dirty supported-language files.
+
+WHEN `--worktree` is passed, THE Coach CLI shall analyze the committed revision under analysis with each uncommitted supported-language source file, and each uncommitted project configuration file the analysis reads, replaced by its bytes on disk. Project configuration files are `tsconfig*.json` and `package.json` for TypeScript, and `go.mod` and `go.work` for Go. Staged content that differs from disk shall be replaced by the disk bytes.
+
+WHEN `--worktree` is passed, THE Coach CLI shall include untracked supported-language files that Git does not ignore, shall treat a deleted tracked file as absent rather than empty, and shall apply the same ignore rules as committed mode.
+
+WHEN `--worktree` is passed, THE Coach CLI shall read the same overlay for file-local and project analysis, and shall treat an untracked file as wholly changed in diff line ranges.
+
+WHEN `--worktree` is passed, THE Coach CLI shall report the modified, added, deleted, and untracked counts, and the revision the overlay sits on.
+
+WHEN `--worktree` is passed, `--scope`, `unsupported_language`, and `coverage.unsupported` apply as they do without it.
+
+WHEN `--worktree` is passed, THE Coach CLI shall not emit `worktree_report_reflects_committed_head` or `worktree_changes_not_analyzed` for a file the overlay read. It shall emit them for any dirty supported-language file the overlay did not read.
+
+IF a worktree file cannot be read, changes while it is being read, or is a symbolic link, THEN THE Coach CLI shall record a diagnostic that names the path, and shall not print an unqualified all-clear. A symbolic link produces `worktree_symlink_skipped`.
 
 THE Coach CLI shall complete a successful analysis with process status `0` even when the report contains signals, except where `--fail-on-incomplete-coverage` applies.
 
@@ -167,6 +183,16 @@ WHILE a baseline scan runs, THE Coach CLI shall classify signals as `baseline`. 
 
 THE Coach CLI shall count every JSON signal in exactly one summary field among `introduced_signals`, `existing_signals`, `resolved_signals`, `baseline_signals`, and `unknown_signals`.
 
+WHEN `--worktree` is passed without `--base` or `--baseline`, THE Coach CLI shall compare the worktree overlay with `HEAD`. A signal absent at `HEAD` is `introduced`, and a signal present at `HEAD` but absent from the overlay is `resolved`.
+
+WHEN `--worktree` is passed with `--base <ref>`, THE Coach CLI shall compare the worktree overlay with the merge-base of `<ref>` and `HEAD`, using the rules for committed diff scans.
+
+WHEN `--worktree` is passed with `--baseline`, THE Coach CLI shall classify signals as `baseline`.
+
+IN EVERY MODE, the base side and the head side of a comparison use the same project policy, as section 8.4 selects it.
+
+A finding that changes only because the policy changed shall be classified as `existing`. When the policy on disk differs from `HEAD`, the disclosure in section 7 applies. A policy change committed in the change under review is not disclosed by Coach. CI enforces the policy committed in that change, and that change's policy edit is reviewed like an ESLint configuration change.
+
 ### 8.3 Honesty under failure
 
 IF analysis of a requested path is incomplete, THEN THE Coach CLI shall not print an unqualified all-clear.
@@ -179,37 +205,45 @@ WHERE the environment has a non-empty `CI` variable, or the user passes `--no-in
 
 WHERE the user passes `--fail-on-incomplete-coverage` and required project coverage is incomplete on any analyzed side, THE Coach CLI shall write the report to stdout and exit `3`.
 
+WHEN the selected project policy differs from the policy selected at `HEAD`, THE Coach CLI shall state the difference in the report and shall qualify any clean result.
+
+WHEN `--worktree` is passed and any worktree overlay read is incomplete, THE Coach CLI shall qualify the verdict and shall not print an unqualified all-clear.
+
 ### 8.4 Project policy
 
-WHERE the user passes a committed project policy, THE Coach CLI shall evaluate only the layers and forbidden imports that the policy names.
+WHERE the user passes a project policy, THE Coach CLI shall evaluate only the layers and forbidden imports that the policy names.
 
 THE Coach CLI shall not invent layers or forbidden imports.
 
-WHEN the user omits `--project-config` and a committed `.lousy-agents/coach.json` is schema-valid at the analyzed revision, THE Coach CLI shall use that policy and emit a project-policy report.
+WHEN the user omits `--project-config` and a `.lousy-agents/coach.json` on disk is schema-valid, THE Coach CLI shall use that policy and emit a project-policy report.
 
-WHEN the user omits `--project-config`, no schema-valid `.lousy-agents/coach.json` is committed at the analyzed revision, and a schema-valid committed root `project.json` exists, THE Coach CLI shall use `project.json` and emit `project_config_deprecated`.
+WHEN the user omits `--project-config`, no `.lousy-agents/coach.json` exists on disk, and a schema-valid root `project.json` exists on disk, THE Coach CLI shall use `project.json` and emit `project_config_deprecated`.
 
-WHEN the user omits `--project-config`, and neither a schema-valid `.lousy-agents/coach.json` nor a schema-valid root `project.json` is committed at the analyzed revision, THE Coach CLI shall keep file-local analysis.
+WHEN the user omits `--project-config`, and neither a `.lousy-agents/coach.json` nor a schema-valid root `project.json` exists on disk, THE Coach CLI shall keep file-local analysis.
 
-IF a committed `.lousy-agents/coach.json` fails schema validation and `--project-config` is omitted, THEN THE Coach CLI shall not read `project.json`. Except where section 8.5 offers guided policy authoring, THE Coach CLI shall exit with status `2`, write no report to standard output, and name `project_config_invalid` and the path on standard error.
+IF a `.lousy-agents/coach.json` on disk fails schema validation and `--project-config` is omitted, THEN THE Coach CLI shall not read `project.json`. Except where section 8.5 offers guided policy authoring, THE Coach CLI shall exit with status `2`, write no report to standard output, and name `project_config_invalid` and the path on standard error.
 
 WHEN a scan selects the root `project.json` fallback on a controlling terminal, `.lousy-agents/coach.json` does not exist, and prompts are not disabled, THE Coach CLI shall ask once on standard error, default No, whether to copy that file. It shall write nothing unless the user answers Yes. It shall never overwrite an existing canonical file or delete `project.json`.
 
-WHEN a committed policy is valid, THE Coach CLI shall emit a project-policy report that is distinct from the file-local report.
+WHEN a policy is valid, THE Coach CLI shall emit a project-policy report that is distinct from the file-local report.
 
-WHEN a committed policy is valid and an import edge violates a named forbidden pair, THE Coach CLI shall emit `architecture.layer_violation`.
+WHEN a policy is valid and an import edge violates a named forbidden pair, THE Coach CLI shall emit `architecture.layer_violation`.
 
 WHERE the policy names a required layer and a matching path from a handler-shaped source to a pinned sink exists, THE Coach CLI shall emit `architecture.layer_bypass`.
 
-IF the policy file is not committed at the analyzed revision, THEN THE Coach CLI shall not treat the worktree copy as the scan policy.
+The project policy is the file on disk, committed or not. The report discloses whether it matches the policy selected at `HEAD` (section 7).
 
 WHEN a TypeScript project scan completes with no configured covered match, THE Coach CLI shall state that and list `project_next_actions`.
 
+WHEN the user passes `--project-config <path>` and that path does not exist on disk, THE Coach CLI shall exit with status `2`, write no report to standard output, and name the path and `project_config_missing` on standard error. It shall not fall back to file-local analysis or to another policy. On a controlling terminal, for a TypeScript scan, section 8.5 offers guided policy authoring instead of the scan, and that scan also exits with status `2`.
+
+IN EVERY SCAN, THE Coach CLI shall report the policy path and digest it used, and whether the policy selected from disk matches the policy selected at `HEAD`, as section 7 requires. Two policies match when they have the same path and the same digest.
+
 ### 8.5 TypeScript project setup
 
-WHEN a TypeScript scan on a controlling terminal passes `--project-config` and that policy file exists neither at the analyzed revision nor in the worktree, THE Coach CLI shall offer guided policy authoring.
+WHEN a TypeScript scan on a controlling terminal passes `--project-config` and that policy file does not exist on disk, THE Coach CLI shall offer guided policy authoring, and the scan shall exit with status `2` as section 8.4 requires.
 
-IF the policy file exists uncommitted in the worktree, THEN THE Coach CLI shall exit with status `2`, emit no report, and name `git add` as the fix.
+WHEN the policy file exists on disk but is not committed, THE Coach CLI shall use it and disclose that it differs from `HEAD` (section 7).
 
 WHEN that scan authoring path runs, THE Coach CLI shall write the candidate to standard output, reject `--output`, and write no repository file.
 
@@ -217,11 +251,11 @@ WHEN the candidate is written, THE Coach CLI shall exit with status `2`, emit no
 
 WHEN the user runs standalone TypeScript policy authoring on a controlling terminal, THE Coach CLI shall write no repository file until the user confirms.
 
-WHEN a TypeScript scan omits `--project-config` and section 8.4 selects no committed policy, THE Coach CLI shall stay file-local and open no policy authoring.
+WHEN a TypeScript scan omits `--project-config` and section 8.4 selects no policy, THE Coach CLI shall stay file-local and open no policy authoring.
 
-WHEN a TypeScript scan omits `--project-config` and section 8.4 selects a committed policy, THE Coach CLI shall apply the same readiness, setup, and policy rules as for that path passed explicitly.
+WHEN a TypeScript scan omits `--project-config` and section 8.4 selects a policy, THE Coach CLI shall apply the same readiness, setup, and policy rules as for that path passed explicitly.
 
-WHEN a TypeScript scan on a controlling terminal omits `--project-config`, prompts are not disabled, and a committed `.lousy-agents/coach.json` fails schema validation, THE Coach CLI shall offer guided policy authoring instead of the scan. THE Coach CLI shall write the candidate to standard output, write no repository file, exit with status `2`, emit no report, and name `.lousy-agents/coach.json` as the file the candidate replaces.
+WHEN a TypeScript scan on a controlling terminal omits `--project-config`, prompts are not disabled, and a `.lousy-agents/coach.json` on disk fails schema validation, THE Coach CLI shall offer guided policy authoring instead of the scan. THE Coach CLI shall write the candidate to standard output, write no repository file, exit with status `2`, emit no report, and name `.lousy-agents/coach.json` as the file the candidate replaces.
 
 WHEN a TypeScript scan on a controlling terminal omits `--project-config`, prompts are not disabled, and the selected `.lousy-agents/coach.json` is valid but declares no layers, THE Coach CLI shall finish the scan and render the report, then offer guided policy authoring when the scan exits `0`. THE Coach CLI shall print the offer and any candidate on standard error, write no repository file, and keep the exit status of the scan.
 
@@ -229,7 +263,7 @@ IF prompts are disabled or no controlling terminal is available, THEN THE Coach 
 
 WHEN `--suggest-project-config` runs without `--output`, THE Coach CLI shall write the candidate create-only to `.lousy-agents/coach.json`. The Go form also prints the candidate on standard output. The TypeScript form writes only after the user confirms. An existing destination is refused and not overwritten.
 
-WHEN a TypeScript project scan runs on a controlling terminal, the policy is committed, a supported compiler is missing, and at least one setup choice is executable, THE Coach CLI shall offer a bounded setup menu and require a second confirm step before any install.
+WHEN a TypeScript project scan runs on a controlling terminal, a policy is selected, a supported compiler is missing, and at least one setup choice is executable, THE Coach CLI shall offer a bounded setup menu and require a second confirm step before any install.
 
 IF no setup choice is executable, THEN THE Coach CLI shall open no prompt, exit with status `2`, and name why each choice was withheld.
 
@@ -271,6 +305,9 @@ Status uses the evidence rule in the cutoff section.
 | Unattended path that refuses prompts | Implemented as `--no-interactive` and a non-empty `CI` variable in `v0.7.0`. Locked by `cmd/coach/project_ts_scan_policy_authoring_acceptance_test.go`. |
 | JSON signals carry rule identity and rule version | JSON `rule_id` and `rule_version` are implemented; `pkg/codesignal/report_shape_acceptance_test.go` locks the JSON key shape. Default text output prints `rule_id` and `severity` on every file-local and project finding, which ships in the release that carries this PR; `cmd/coach/text_finding_identity_acceptance_test.go` locks that text claim. `subject` is not printed and `source_scope` is printed but not collapsed ([#279](https://github.com/lousy-agents/coach/issues/279)). |
 | TypeScript project `project_provenance`, `project_scope`, `worktree_report_reflects_committed_head`, complete no-match `project_next_actions`, and `--fail-on-incomplete-coverage` exit `3`; file-local `worktree_changes_not_analyzed` and `worktree_not_clean` | `project_provenance`, `project_scope`, `project_next_actions`, and `--fail-on-incomplete-coverage` implemented in `v0.8.0`. `worktree_report_reflects_committed_head`, `worktree_changes_not_analyzed`, and `worktree_not_clean` ship in the release that carries this PR. Locked by `cmd/coach/project_scope_cli_acceptance_test.go`, `cmd/coach/project_provenance_worktree_acceptance_test.go`, `cmd/coach/working_tree_disclosure_acceptance_test.go`, and `cmd/coach/fail_on_incomplete_coverage_acceptance_test.go`. |
+| Policy read from disk, with disclosure | Planned. Becomes implemented only when acceptance tests on main lock it. Replaces the committed-policy read and the `project_config_uncommitted` diagnostic. |
+| Worktree scanning (`--worktree`) | Planned. Becomes implemented only when acceptance tests on main lock it. |
+| Explicit `--project-config` that does not exist on disk | Planned. Exit `2` with `project_config_missing`, with no file-local fallback. |
 | Severity escalation, magnitude ranking, and a narrowed view of a long report | Cognitive complexity and nesting depth emit `high` at twice their threshold and `medium` from the threshold up; branch density stays `medium` because its metric is a whole-file total. Signals sort by lifecycle group, severity, confidence, and path; within each such tier the findings of one metric rule are reordered by metric divided by threshold, highest first. Signals without a metric keep their path position and different rules are never compared by magnitude (within-rule ranking is the decision [#272](https://github.com/lousy-agents/coach/issues/272) left open: it keeps the path order for signals without a magnitude and avoids comparing unlike metrics). `--min-severity` and `--top` narrow the rendered signals in that order, state how many were withheld, leave `summary` and `coverage` describing the full analysis, and never change the exit status. Escalation is part of the deterministic core, so coach-api baseline jobs also carry the escalated severity. Ships in the release that carries this PR ([#272](https://github.com/lousy-agents/coach/issues/272)). Locked by `pkg/codesignal/severity_escalation_acceptance_test.go`, `pkg/codesignal/magnitude_ranking_acceptance_test.go`, `pkg/codesignal/signal_view_acceptance_test.go`, `cmd/coach/min_severity_acceptance_test.go`, `cmd/coach/top_cap_acceptance_test.go`, and `cmd/coach/narrowing_acceptance_test.go`. |
 | Local API, worker, and OAuth lab | Implemented and CI-verified. Not the default product. Path A stub smoke is locked by `cmd/platform-smoke/smoke_acceptance_test.go`. README names this path as a separate lab. Paths B and C are operator labs. |
 | Cloud deploy and SGLang | Bet. Not the current product. |
@@ -291,6 +328,8 @@ Known remaining risks from the evaluation and the epic:
 - Density rules emit one signal per site ([#261](https://github.com/lousy-agents/coach/issues/261)).
 - Out-parameter precision on hidden-input mutation is still missing ([#268](https://github.com/lousy-agents/coach/issues/268)).
 - A first-party severity spread is observed on issue [#272](https://github.com/lousy-agents/coach/issues/272)'s own corpus, this repository at `19b6628`: 237 findings across 264 analyzed files, `high` 10, `medium` 168, `low` 59, all 10 `high` being `complexity.cognitive_complexity` in first-party code (the largest is `cognitive_complexity=116`), as re-run in Pass 28 with a binary built at `e431621`. The same binary reports only 4 `medium` findings on today's tree, so the spread is not observed there and that tree is not representative; `learn-go-with-tests` at `4675d96` carries its 10 `high` findings in vendored code. Whether the order is worth reading first is unjudged, because no pilot engineer's reading or acting has been observed. That belongs to the pilot-corpus precision census ([#260](https://github.com/lousy-agents/coach/issues/260), whose acceptance criterion records whether an engineer acted on, deferred, or abandoned findings), and [#277](https://github.com/lousy-agents/coach/issues/277) keeps vendored noise. [#272](https://github.com/lousy-agents/coach/issues/272) closed as the mechanism.
+- A committed scan's result depends on the project policy file on disk, as with ESLint and Biome configuration. The report says whether that file matches the one selected at `HEAD`. A local edit can change a local run's result. CI enforces the policy committed in the change under test. A change that edits the policy is reviewed like an ESLint configuration change.
+- A worktree scan is a local, pre-commit check. It is not a pull-request check.
 
 Parked on purpose:
 
