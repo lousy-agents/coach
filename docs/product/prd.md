@@ -149,7 +149,7 @@ WHEN `--worktree` is passed, THE Coach CLI shall include untracked supported-lan
 
 WHEN `--worktree` is passed, THE Coach CLI shall read the same overlay for file-local and project analysis, and shall treat an untracked file as wholly changed in diff line ranges.
 
-WHEN `--worktree` is passed, THE Coach CLI shall report the modified, added, deleted, and untracked counts, and the revision the overlay sits on.
+WHEN `--worktree` is passed, THE Coach CLI shall report, in `scope.worktree`, the `revision` the overlay sits on, the `modified`, `added`, `deleted`, and `untracked` counts of distinct paths listed by Git status, and the `config_files` read from disk, and shall state the same counts in one text line under the scope header. Each path counts in one category, checked in this order: untracked, deleted, added, modified. A rename counts as one deleted path and one added path. Paths hidden from Git status are not counted; they are reported under `worktree_state_unsupported`. `scope.worktree` is present only when `--worktree` is passed.
 
 WHEN `--worktree` is passed, `--scope`, `unsupported_language`, and `coverage.unsupported` apply as they do without it.
 
