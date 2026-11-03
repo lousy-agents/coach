@@ -153,7 +153,7 @@ WHEN `--worktree` is passed, THE Coach CLI shall report the modified, added, del
 
 WHEN `--worktree` is passed, `--scope`, `unsupported_language`, and `coverage.unsupported` apply as they do without it.
 
-WHEN `--worktree` is passed, THE Coach CLI shall not emit `worktree_report_reflects_committed_head` or `worktree_changes_not_analyzed` for a file the overlay read. It shall emit them for any dirty supported-language file the overlay did not read.
+WHEN `--worktree` is passed, THE Coach CLI shall not emit `worktree_report_reflects_committed_head` or `worktree_changes_not_analyzed` for a file the overlay read. It shall emit `worktree_changes_not_analyzed`, naming the path, for any dirty supported-language file the overlay did not read, except a symbolic link, which produces `worktree_symlink_skipped`. It shall not emit `worktree_report_reflects_committed_head` under `--worktree`.
 
 IF a worktree file cannot be read, changes while it is being read, or is a symbolic link, THEN THE Coach CLI shall record a diagnostic that names the path, and shall not print an unqualified all-clear. A symbolic link produces `worktree_symlink_skipped`.
 
