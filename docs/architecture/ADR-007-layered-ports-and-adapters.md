@@ -64,10 +64,10 @@ The direction is enforced at two grains.
 | --- | --- | --- |
 | Model | `projectreadiness` (readiness result), `projectconfig` (policy schema) | root (job, report, API contract, `JobStore` / `WorkerJobStore` ports) |
 | Use case | root (scans, `ProjectBackend` port), `projectcheck`, `tssetup`, `configauthoring`, `sourcescope` | `baseline`, `worker` |
-| Driven adapter | `gitrepo`, `revisionfs`, `tstoolchain`, `pkgmanager`, `subprocess`, `terminal`, `prompt` | `store/memory`, `store/postgres`, `queue/redisstream`, `queue/sqs` |
+| Driven adapter | `gitrepo`, `revisionfs`, `worktreeoverlay`, `tstoolchain`, `pkgmanager`, `subprocess`, `terminal`, `prompt` | `store/memory`, `store/postgres`, `queue/redisstream`, `queue/sqs` |
 | Entry | `render` (wired from `cmd/coach`) | `httpapi` (wired from `cmd/coach-api`) |
 
-`internal/codesignalcli/layering_test.go` pins the CLI shell's graph, so a new import edge between its packages fails a test rather than eroding silently. The domain libraries keep their I/O in private adapter packages: `pkg/semantics/internal/engine` (Tree-sitter) and `pkg/projectmodel/internal/tssidecar` and `ssaload`.
+`internal/codesignalcli/layering_test.go` pins the CLI shell's graph, so a new import edge between its packages fails a test rather than eroding silently. `worktreeoverlay` serves `--worktree` project analysis: it lays the working-tree bytes of chosen paths over a committed snapshot, declares the `DiskSource` port it reads through, and imports no sibling package. The domain libraries keep their I/O in private adapter packages: `pkg/semantics/internal/engine` (Tree-sitter) and `pkg/projectmodel/internal/tssidecar` and `ssaload`.
 
 Where the migration stopped short of the rule, and why:
 
