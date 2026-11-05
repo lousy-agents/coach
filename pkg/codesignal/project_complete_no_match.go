@@ -1,5 +1,7 @@
 package codesignal
 
+import "slices"
+
 // isCompleteNoMatch reports whether the complete_no_match predicate holds:
 // required coverage is complete, no active layer findings, no project change
 // with an unknown lifecycle, and (in diff mode)
@@ -10,7 +12,7 @@ package codesignal
 // predicate. projectChanges is the active (post-filter) set used to check for
 // active layer-rule findings.
 func isCompleteNoMatch(opts Options, prov *ProjectProvenance, input Input, projectSummary *ProjectSummary, projectChanges []ProjectChange) bool {
-	if prov == nil {
+	if prov == nil || hasWorktreeScanIncomplete(input.Scope, input.Diagnostics) {
 		return false
 	}
 	var baseModel, baseBypass string
@@ -28,31 +30,22 @@ func isCompleteNoMatch(opts Options, prov *ProjectProvenance, input Input, proje
 	if hasActiveLayerFinding(projectChanges) || hasUnknownProjectChange(projectChanges) {
 		return false
 	}
-	if !opts.Baseline && hasPreFilterProjectChanges(projectSummary) {
-		return false
-	}
-	return true
+	return opts.Baseline || !hasPreFilterProjectChanges(projectSummary)
 }
 
 func hasActiveLayerFinding(projectChanges []ProjectChange) bool {
-	for _, ch := range projectChanges {
-		if ch.RuleID == ruleLayerViolationID || ch.RuleID == ruleLayerBypassID {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(projectChanges, func(ch ProjectChange) bool {
+		return ch.RuleID == ruleLayerViolationID || ch.RuleID == ruleLayerBypassID
+	})
 }
 
 // hasUnknownProjectChange matters even with complete coverage: an
 // undetermined rename/copy leaves a change "unknown" whatever the coverage,
 // and a finding whose lifecycle is unknown is not an absence of findings.
 func hasUnknownProjectChange(projectChanges []ProjectChange) bool {
-	for _, ch := range projectChanges {
-		if ch.Lifecycle == "unknown" {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(projectChanges, func(ch ProjectChange) bool {
+		return ch.Lifecycle == "unknown"
+	})
 }
 
 func hasPreFilterProjectChanges(summary *ProjectSummary) bool {

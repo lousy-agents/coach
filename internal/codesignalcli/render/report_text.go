@@ -32,7 +32,7 @@ func ReportTextWithOptions(report *codesignal.Report, opts TextOptions) string {
 	renderReportSummary(&b, report)
 	renderWithheldSignals(&b, report.SignalsWithheld, opts.SeeAllCommand)
 	renderProjectScopeSection(&b, report.ProjectScope)
-	renderLayerMembershipLine(&b, report.LayerMembership)
+	renderLayerMembershipLine(&b, report.LayerMembership, report.Scope.Worktree != nil)
 	renderActiveFindings(&b, report)
 	renderProjectFacts(&b, report.ProjectFacts)
 	renderDiagnosticsSection(&b, report.Diagnostics)
@@ -63,58 +63,9 @@ func renderActiveFindings(b *strings.Builder, report *codesignal.Report) {
 	}
 }
 
-func renderReportSummary(b *strings.Builder, report *codesignal.Report) {
-	if report.Scope.Baseline {
-		renderBaselineSummary(b, report)
-		return
-	}
-	renderDiffSummary(b, report)
-}
-
-func renderDiffSummary(b *strings.Builder, report *codesignal.Report) {
-	switch report.Scope.AppliedScope {
-	case "all":
-		fmt.Fprintf(b, "scope: all (no scope filtering applied), ")
-	case "":
-	default:
-		var filtered int
-		if report.Coverage != nil {
-			filtered = sumCoverageGroups(report.Coverage.Excluded)
-		}
-		fmt.Fprintf(b, "scope: %s, filtered: %d, ", report.Scope.AppliedScope, filtered)
-	}
-
-	fmt.Fprintf(b, "files analyzed: %d, active signals: %d, diagnostics: %d\n",
-		report.Summary.FilesAnalyzed, report.Summary.ActiveSignals, len(report.Diagnostics))
-}
-
-func renderBaselineSummary(b *strings.Builder, report *codesignal.Report) {
-	fmt.Fprintf(b, "Repository Baseline for revision %s (not a diff comparison)\n", report.Scope.Revision)
-
-	var tracked, analyzed, unanalyzable, unsupported, excluded int
-	if report.Coverage != nil {
-		tracked = report.Coverage.TrackedFilesDiscovered
-		analyzed = report.Coverage.FilesAnalyzed
-		unanalyzable = report.Coverage.FilesUnanalyzable
-		unsupported = sumCoverageGroups(report.Coverage.Unsupported)
-		excluded = sumCoverageGroups(report.Coverage.Excluded)
-	}
-
-	fmt.Fprintf(b, "tracked files discovered: %d, analyzed: %d, unsupported: %d, excluded: %d, unanalyzable: %d, active signals: %d, diagnostics: %d\n",
-		tracked, analyzed, unsupported, excluded, unanalyzable, report.Summary.ActiveSignals, len(report.Diagnostics))
-}
-
 func pathCountClause(n int) string {
 	if n == 1 {
 		return "1 path was not analyzed"
 	}
 	return fmt.Sprintf("%d paths were not analyzed", n)
-}
-
-func sumCoverageGroups(groups []codesignal.CoverageGroup) int {
-	total := 0
-	for _, g := range groups {
-		total += g.Count
-	}
-	return total
 }
