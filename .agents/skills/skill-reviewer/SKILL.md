@@ -87,7 +87,14 @@ Flag any of these issues. See [anti-patterns list](./references/review-checklist
 - Unreferenced dependencies (relies on tools/MCP servers not mentioned)
 - No "When to Use" section
 
-### 8. Produce Review Report
+### 8. Run Advisory Checks
+
+Run every check from the [advisory checklist](./references/review-checklist.md#advisory). Each is ℹ️ Advisory: V2 adds a finding to the report's advisory section, V1 labels every proposed fix where it appears, and neither changes the verdict, a score, or the severity of a ❌ / ⚠️ finding. Advisory adds; it never relocates: a concern you would report as an Issue without these checks stays in Issues at that severity. Key checks:
+
+- **Fix status (V1):** mark each fix you propose as tested (with the evidence) or untested; never present an untested fix as the remedy
+- **Eval gap (V2):** Look for evals inside the skill directory (e.g. an evals/ directory) and in any repository-level eval directory for the skill (e.g. evals/<skill-name>/). Report a gap only when you find neither, and say where you looked. If the skill is an installed copy (for example under `.claude/skills/`, `.agents/skills/` or `.github/skills/` in a project that did not author it, or outside any repository), say the check was limited to what is installed and that upstream evals were not checked.
+
+### 9. Produce Review Report
 
 Output a structured review with:
 
@@ -106,7 +113,10 @@ Output a structured review with:
 - Anti-Patterns: ✅ none detected | ⚠️ minor | ❌ major
 
 ### Issues
-1. <issue + fix recommendation>
+1. <issue + fix recommendation> — Fix: tested (<evidence>) | untested
+
+### Advisory: eval coverage and fix status (ℹ️ — does not affect the verdict)
+1. <V2 finding> — Fix: tested (<evidence>) | untested
 
 ### Strengths
 1. <what's done well>
