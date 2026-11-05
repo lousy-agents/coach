@@ -40,28 +40,28 @@ func readGitPipeUntilOverrun(r io.Reader, limit int64, endGit context.CancelFunc
 	return result
 }
 
-func finishGitBoundedRead(stdout, stderr gitPipeResult, waitErr error, ctx context.Context, maxStdout, maxStderr int64, timeout time.Duration) ([]byte, error) {
+func finishGitBoundedRead(stdout, stderr gitPipeResult, waitErr error, ctx context.Context, maxStdout, maxStderr int64, timeout time.Duration) (stdoutData, stderrData []byte, err error) {
 	// The bounds come before a read error: a read that was closed under, or cut short, because a bound ended
 	// the read has failed because of that bound.
 	if int64(len(stdout.data)) > maxStdout {
-		return nil, &BoundError{Kind: BoundStdout, message: fmt.Sprintf("git stdout exceeded %d-byte budget", maxStdout)}
+		return nil, nil, &BoundError{Kind: BoundStdout, message: fmt.Sprintf("git stdout exceeded %d-byte budget", maxStdout)}
 	}
 	if int64(len(stderr.data)) > maxStderr {
-		return nil, &BoundError{Kind: BoundStderr, message: fmt.Sprintf("git stderr exceeded %d-byte budget", maxStderr)}
+		return nil, nil, &BoundError{Kind: BoundStderr, message: fmt.Sprintf("git stderr exceeded %d-byte budget", maxStderr)}
 	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return nil, &BoundError{Kind: BoundTimeout, message: fmt.Sprintf("git execution timed out after %s", timeout)}
+		return nil, nil, &BoundError{Kind: BoundTimeout, message: fmt.Sprintf("git execution timed out after %s", timeout)}
 	}
 	if stdout.err != nil {
-		return nil, stdout.err
+		return nil, nil, stdout.err
 	}
 	if stderr.err != nil {
-		return nil, stderr.err
+		return nil, nil, stderr.err
 	}
 	if waitErr != nil {
-		return nil, gitWaitError(waitErr, stderr.data)
+		return nil, nil, gitWaitError(waitErr, stderr.data)
 	}
-	return stdout.data, nil
+	return stdout.data, stderr.data, nil
 }
 
 func gitWaitError(waitErr error, stderr []byte) error {

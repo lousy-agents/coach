@@ -9,6 +9,8 @@ import (
 type WorktreeEntry struct {
 	Code string
 	Path string
+	// OldPath is the source of a rename or copy record, and empty for any other.
+	OldPath string
 }
 
 // Dirty-worktree status boundary budgets, mirroring projectconfig's
@@ -26,14 +28,16 @@ func worktreeStatusGit() Runner {
 	return BoundedRunner(maxWorktreeStatusBytes, maxWorktreeStatusStderr, WorktreeStatusTimeout)
 }
 
-// WorktreeStatus lists every changed or untracked worktree path via
-// `git status --porcelain=v1 --untracked-files=all -z`.
-func WorktreeStatus(dir string) ([]WorktreeEntry, error) {
+// CommittedWorktreeStatus lists every changed or untracked worktree path via
+// `git status --porcelain=v1 --untracked-files=all -z`, for a committed scan. ReadWorktreeStatus is the read that a
+// --worktree scan makes, which also keeps the hooks directory and the system-wide configuration out of it and looks
+// into every submodule.
+func CommittedWorktreeStatus(dir string) ([]WorktreeEntry, error) {
 	return worktreeStatusBy(worktreeStatusGit(), dir)
 }
 
-// worktreeStatusBy is WorktreeStatus with the git that answers given by the caller, so that a test can record the
-// questions it is asked, or hand in one that times out, without replacing anything.
+// worktreeStatusBy is CommittedWorktreeStatus with the git that answers given by the caller, so that a test can record
+// the questions it is asked, or hand in one that times out, without replacing anything.
 func worktreeStatusBy(run Runner, dir string) ([]WorktreeEntry, error) {
 	supported, version := noLazyFetchSupported(run, dir)
 	return worktreeStatusOf(run, dir, supported, version)
@@ -46,6 +50,60 @@ func worktreeStatusOf(run Runner, dir string, canBeToldNotToFetch bool, version 
 		return nil, err
 	}
 	return ParseWorktreeStatus(output), nil
+}
+
+// runWorktreeStatusGit runs a read of a --worktree scan and returns its stdout, held to the budget of the status
+// listing.
+func runWorktreeStatusGit(dir string, args ...string) ([]byte, error) {
+	return RunBytesBoundedWith(worktreeGitCommand, dir, maxWorktreeStatusBytes, maxWorktreeStatusStderr, WorktreeStatusTimeout, args...)
+}
+
+// WorktreeStatusRead is one read of `git status`: its entries, and what git
+// warned about on stderr while it succeeded. A directory git could not open is
+// left out of the entries without failing the command, so without the warning a
+// tree with part unread looks the same as a tree with nothing to report.
+type WorktreeStatusRead struct {
+	Entries  []WorktreeEntry
+	Warnings StatusWarnings
+	// SubmodulesSkippedBy is the version of a git that cannot be told not to fetch, which is given the status that
+	// does not look into submodules (see worktreeScanStatusArguments), so a change inside one is not in Entries. It is
+	// empty when the status looked into them.
+	SubmodulesSkippedBy string
+}
+
+// ReadWorktreeStatus lists every changed or untracked worktree path via
+// `git status --porcelain=v1 --untracked-files=all -z`, with git's warnings.
+func ReadWorktreeStatus(dir string) (WorktreeStatusRead, error) {
+	supported, version := noLazyFetchSupported(worktreeStatusGit(), dir)
+	return readWorktreeStatusBy(worktreeGitCommand, dir, supported, version)
+}
+
+// readWorktreeStatusBy is ReadWorktreeStatus with the git that answers, and the version it is, given by the caller,
+// so that a test can run the status as a git that cannot be told not to fetch runs it.
+func readWorktreeStatusBy(build childBuilder, dir string, canBeToldNotToFetch bool, version string) (WorktreeStatusRead, error) {
+	stdout, stderr, err := RunBytesBoundedWithStderr(build, dir, maxWorktreeStatusBytes, maxWorktreeStatusStderr, WorktreeStatusTimeout,
+		worktreeScanStatusArguments(canBeToldNotToFetch, version)...)
+	if err != nil {
+		return WorktreeStatusRead{}, err
+	}
+	read := WorktreeStatusRead{Entries: ParseWorktreeStatus(stdout), Warnings: ParseStatusWarnings(stderr)}
+	if !canBeToldNotToFetch {
+		read.SubmodulesSkippedBy = version
+	}
+	return read, nil
+}
+
+// worktreeScanStatusArguments are the arguments of the status a --worktree scan reads. A git that can be told not to
+// fetch inspects every submodule, whatever the repository's .gitmodules says: its ignore setting would otherwise let
+// a hostile repository hide a dirty submodule from the scan, and renames are detected, because the scan follows a
+// renamed file to its source. A git that cannot be told not to fetch is given the arguments every other status gets
+// (see worktreeStatusArguments), because a nested status in a submodule that is a partial clone, and a comparison
+// of a staged deletion with a staged addition, run the remote's transport there.
+func worktreeScanStatusArguments(canBeToldNotToFetch bool, version string) []string {
+	if !canBeToldNotToFetch {
+		return worktreeStatusArguments(false, version)
+	}
+	return []string{"status", "--porcelain=v1", "--untracked-files=all", "-z", "--ignore-submodules=none"}
 }
 
 // worktreeStatusArguments are the arguments of the status.
@@ -87,8 +145,7 @@ func statusKnowsNoRenames(version string) bool {
 
 // ParseWorktreeStatus parses `git status --porcelain=v1 -z` output.
 // Rename/copy records emit two NUL-delimited fields (new path, then old
-// path); the old path is consumed and discarded since only path identity,
-// never diff content, is used by any caller.
+// path); the old path is kept in OldPath.
 func ParseWorktreeStatus(output []byte) []WorktreeEntry {
 	fields := SplitNULPaths(output)
 	entries := make([]WorktreeEntry, 0, len(fields))
@@ -99,10 +156,19 @@ func ParseWorktreeStatus(output []byte) []WorktreeEntry {
 			continue
 		}
 		code := raw[:2]
-		entries = append(entries, WorktreeEntry{Code: code, Path: raw[3:]})
+		entry := WorktreeEntry{Code: code, Path: raw[3:]}
 		if strings.ContainsAny(code, "RC") && i < len(fields) {
+			entry.OldPath = fields[i]
 			i++
 		}
+		entries = append(entries, entry)
 	}
 	return entries
+}
+
+// WorktreeStatus lists every changed or untracked worktree path via
+// `git status --porcelain=v1 --untracked-files=all -z`.
+func WorktreeStatus(dir string) ([]WorktreeEntry, error) {
+	read, err := ReadWorktreeStatus(dir)
+	return read.Entries, err
 }

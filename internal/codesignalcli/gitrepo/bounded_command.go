@@ -41,24 +41,31 @@ func ReadCommandContext(ctx context.Context, dir string, args ...string) *exec.C
 // concurrent pipe draining. buildCmd is the child-construction seam, letting
 // a caller (or a test) supply the child without duplicating this I/O logic.
 func RunBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args ...string) *exec.Cmd, dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
+	stdout, _, err := RunBytesBoundedWithStderr(buildCmd, dir, maxStdout, maxStderr, timeout, args...)
+	return stdout, err
+}
+
+// RunBytesBoundedWithStderr is RunBytesBoundedWith that also returns what git
+// wrote to stderr when it succeeded, for a caller that reads the warnings.
+func RunBytesBoundedWithStderr(buildCmd func(ctx context.Context, dir string, args ...string) *exec.Cmd, dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) (stdout, stderr []byte, err error) {
 	if err := validateGitReadBounds(timeout, maxStdout, maxStderr); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := buildCmd(ctx, dir, args...)
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	stderr, err := cmd.StderrPipe()
+	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Drain stdout and stderr concurrently. Sequential reads deadlock when
@@ -68,14 +75,14 @@ func RunBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args ...
 	stderrCh := make(chan gitPipeResult, 1)
 	readersDone := make(chan struct{})
 	go func() {
-		stdoutCh <- readGitPipeUntilOverrun(stdout, maxStdout, cancel)
+		stdoutCh <- readGitPipeUntilOverrun(stdoutPipe, maxStdout, cancel)
 	}()
 	go func() {
-		stderrCh <- readGitPipeUntilOverrun(stderr, maxStderr, cancel)
+		stderrCh <- readGitPipeUntilOverrun(stderrPipe, maxStderr, cancel)
 	}()
 	// Killing git when the context ends does not end a child of git, and a child keeps the pipes open. The
 	// pipes are read here and not copied by exec, so cmd.WaitDelay has nothing to bound: this closes them.
-	go closePipesOfAGitThatOutlivesItsContext(ctx, readersDone, childPipeGrace, stdout, stderr)
+	go closePipesOfAGitThatOutlivesItsContext(ctx, readersDone, childPipeGrace, stdoutPipe, stderrPipe)
 	stdoutResult, stderrResult := <-stdoutCh, <-stderrCh
 	close(readersDone)
 	return finishGitBoundedRead(stdoutResult, stderrResult, cmd.Wait(), ctx, maxStdout, maxStderr, timeout)
