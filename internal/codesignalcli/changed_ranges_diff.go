@@ -12,8 +12,11 @@ import (
 func computeChangedRanges(run gitrepo.Runner, dir, mergeBaseSHA, path string) ([]codesignal.LineRange, *codesignal.Diagnostic, error) {
 	// A patch is where git runs the programs a repository or the environment names for one: an external
 	// diff program (--no-ext-diff) and a textconv driver that .gitattributes selects (--no-textconv). The
-	// hunk headers this reads do not need either, and a read-only scan must not execute them.
-	output, err := run(dir, "diff", "--unified=0", "--no-ext-diff", "--no-textconv", mergeBaseSHA, "HEAD", "--", path)
+	// hunk headers this reads do not need either, and a read-only scan must not execute them. --no-color
+	// is on the command because a configured color.diff=always would put escape codes in front of the hunk
+	// headers and the parse would find no ranges; it is not a leading -c option, which would hide the
+	// subcommand from the budget that holds the read.
+	output, err := run(dir, "diff", "--no-color", "--unified=0", "--no-ext-diff", "--no-textconv", mergeBaseSHA, "HEAD", "--", path)
 	if stalled := gitrepo.TimedOut(err); stalled != nil {
 		return nil, nil, stalled
 	}
