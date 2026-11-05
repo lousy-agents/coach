@@ -71,10 +71,8 @@ func splitTextFindingsAndFacts(text string) (findingsSection, factsSection strin
 // T1's), so ProjectBackendResult -- the public contract at this boundary --
 // is the most meaningful place to observe HeadProjectScope/BaseProjectScope.
 // Calling Analyze in-process still spawns the real analyzer subprocess
-// (BuildTypeScriptModelViaSidecar), and the analyzer child is still a
-// descendant of this test binary, so startAnalyzerEnvironSampler's
-// descendant-restricted PID scan observes it exactly as it would through the
-// compiled binary.
+// (BuildTypeScriptModelViaSidecar) through the node on this process's PATH,
+// exactly as the compiled binary does.
 func analyzeTSProjectBackend(dir, headRevision, baseRevision string, baseline bool, configJSON string) (*codesignalcli.ProjectBackendResult, error) {
 	config := json.RawMessage(configJSON)
 	backend := codesignalcli.NewTSProjectBackend()
