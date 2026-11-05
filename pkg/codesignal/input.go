@@ -107,6 +107,27 @@ type Scope struct {
 	Base         string `json:"base,omitempty"`
 	AppliedScope string `json:"applied_scope,omitempty"`
 	Baseline     bool   `json:"baseline,omitempty"`
+	// Worktree is present only for a --worktree scan.
+	Worktree *WorktreeScope `json:"worktree,omitempty"`
+}
+
+// WorktreeScope says what a --worktree scan read from disk and what the working
+// tree changes.
+type WorktreeScope struct {
+	// Revision is the commit the overlay sits on; it equals Scope.Revision.
+	Revision string `json:"revision"`
+	// Modified, Added, Deleted and Untracked count distinct paths from git
+	// status, in every language, ignored paths excluded. A path has one category,
+	// checked in that order of precedence: untracked, deleted, added, modified.
+	// A rename counts as one deleted path and one added path.
+	Modified  int `json:"modified"`
+	Added     int `json:"added"`
+	Deleted   int `json:"deleted"`
+	Untracked int `json:"untracked"`
+	// ConfigFiles lists the project configuration files (tsconfig*.json,
+	// package.json, go.mod, go.work) the scan read from the working tree
+	// instead of the committed revision, as sorted repository-relative paths.
+	ConfigFiles []string `json:"config_files"`
 }
 
 type ChangeStatus string

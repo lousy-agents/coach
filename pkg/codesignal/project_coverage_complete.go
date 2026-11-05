@@ -1,5 +1,7 @@
 package codesignal
 
+import "slices"
+
 // requiredSideComplete reports whether one analyzed side's required coverage
 // is complete: model must be "complete", and bypass must be "complete" or
 // "not_requested". Reachability is not part of required coverage.
@@ -14,13 +16,8 @@ func requiredSideComplete(model, bypass string) bool {
 // A side's coverage is required-complete when its model phase is "complete"
 // and its bypass phase is "complete" or "not_requested".
 func isRequiredCoverageComplete(headModel, headBypass, baseModel, baseBypass string, projectBaseAnalyzed bool) bool {
-	if !requiredSideComplete(headModel, headBypass) {
-		return false
-	}
-	if !projectBaseAnalyzed {
-		return true
-	}
-	return requiredSideComplete(baseModel, baseBypass)
+	return requiredSideComplete(headModel, headBypass) &&
+		(!projectBaseAnalyzed || requiredSideComplete(baseModel, baseBypass))
 }
 
 // RequiredCoverageIncomplete reports whether required project coverage is
@@ -36,6 +33,9 @@ func isRequiredCoverageComplete(headModel, headBypass, baseModel, baseBypass str
 func RequiredCoverageIncomplete(report *Report) bool {
 	if report == nil {
 		return false
+	}
+	if hasWorktreeScanIncomplete(report.Scope, report.Diagnostics) {
+		return true
 	}
 	if report.ProjectProvenance != nil {
 		return !requiredProvenanceComplete(report.ProjectProvenance)
@@ -61,12 +61,9 @@ func provenanceFreeCoverageIncomplete(report *Report) bool {
 // project coverage was incomplete on either analyzed side. The exit-3
 // predicate and the text verdict both use it, so they cannot disagree.
 func HasProjectCoverageDiagnostic(diags []Diagnostic) bool {
-	for _, d := range diags {
-		if d.Kind == DiagKindProjectCoverageIncomplete || d.Kind == DiagKindProjectLifecycleIndeterminate {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(diags, func(d Diagnostic) bool {
+		return d.Kind == DiagKindProjectCoverageIncomplete || d.Kind == DiagKindProjectLifecycleIndeterminate
+	})
 }
 
 func requiredProvenanceComplete(prov *ProjectProvenance) bool {
@@ -83,8 +80,33 @@ func requiredProvenanceComplete(prov *ProjectProvenance) bool {
 }
 
 func hasProjectBackendUnavailable(diags []Diagnostic) bool {
+	return slices.ContainsFunc(diags, func(d Diagnostic) bool {
+		return d.Kind == "project_backend_unavailable"
+	})
+}
+
+// hasWorktreeScanIncomplete reports whether a --worktree scan recorded that
+// part of the working tree could not be read, which makes the scan incomplete
+// in every language. Four kinds say so: a skipped symbolic link, a changed
+// path that nothing analyzed or accounted for, Git state the scan cannot see
+// through (sparse checkout, skip-worktree, assume-unchanged, a dirty
+// submodule or an untracked nested repository), and a failed status read.
+//
+// Other diagnostics that qualify a --worktree verdict, such as
+// unsupported_language and continuity_not_determined, describe what the scan
+// understood rather than what it could not read. They keep their place in the
+// verdict text and leave the exit status alone, as they do in a committed scan;
+// counting them would fail every run over an edited README or a renamed file.
+// Outside --worktree the same kinds describe a committed scan of a dirty tree
+// and leave the exit status alone as well.
+func hasWorktreeScanIncomplete(scope Scope, diags []Diagnostic) bool {
+	if scope.Worktree == nil {
+		return false
+	}
 	for _, d := range diags {
-		if d.Kind == "project_backend_unavailable" {
+		switch d.Kind {
+		case DiagKindWorktreeScanIncomplete, DiagKindWorktreeSymlinkSkipped,
+			DiagKindWorktreeChangesNotAnalyzed, DiagKindWorktreeStatusCheckFailed:
 			return true
 		}
 	}
