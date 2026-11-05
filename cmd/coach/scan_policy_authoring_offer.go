@@ -79,10 +79,10 @@ func authorableMissingPolicy(err error) bool {
 // only on classifyAnalysisError's no-controlling-terminal path: without it, a
 // simultaneously failing compiler check would stay masked until the customer
 // approved, committed, and reran, discovering the compiler gap only then.
-func runScanProjectConfigAuthoring(dir string, f codesignalFlags, scanErr error, stdout, stderr *os.File) int {
+func runScanProjectConfigAuthoring(dir string, f codesignalFlags, scanErr error, stdout, stderr *os.File, ports scanPorts) int {
 	printProjectConfigGapBeforeAuthoring(scanErr, stderr)
 
-	exitCode := authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr)
+	exitCode := authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr, ports)
 	if exitCode != 0 {
 		return exitCode
 	}

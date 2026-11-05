@@ -23,7 +23,7 @@ func runCodesignalScan(dir string, f codesignalFlags, stdin, stdout, stderr *os.
 		noInteractive := nonInteractiveRequested(f)
 		if scanShouldAuthorProjectConfig(err, f.projectLanguage, f.projectConfig, noInteractive) ||
 			scanShouldAuthorDiscoveredProjectConfig(err, f, noInteractive) {
-			return runScanProjectConfigAuthoring(dir, f, err, stdout, stderr)
+			return runScanProjectConfigAuthoring(dir, f, err, stdout, stderr, ports)
 		}
 		if wrapped, ok := scanShouldOfferCompilerSetup(err, noInteractive); budget.allows(scanOfferCompilerSetup) && ok {
 			return runScanCompilerSetupOffer(dir, f, stdin, stdout, stderr, wrapped, budget, ports)
@@ -35,7 +35,7 @@ func runCodesignalScan(dir string, f codesignalFlags, stdin, stdout, stderr *os.
 	}
 	exitCode := renderScanResult(report, f, stdout, stderr)
 	if exitCode == 0 {
-		offerAuthoringForLayerlessDiscoveredPolicy(dir, f, report, stderr)
+		offerAuthoringForLayerlessDiscoveredPolicy(dir, f, report, stderr, ports)
 	}
 	return exitCode
 }

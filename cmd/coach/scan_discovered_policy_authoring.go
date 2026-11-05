@@ -43,7 +43,7 @@ func layerlessDiscoveredPolicy(report *codesignal.Report, f codesignalFlags) boo
 // offerAuthoringForLayerlessDiscoveredPolicy runs after the report has been
 // rendered, so stdout stays one parseable report. The candidate is printed
 // on stderr for the same reason, and the scan's exit code is left alone.
-func offerAuthoringForLayerlessDiscoveredPolicy(dir string, f codesignalFlags, report *codesignal.Report, stderr *os.File) {
+func offerAuthoringForLayerlessDiscoveredPolicy(dir string, f codesignalFlags, report *codesignal.Report, stderr *os.File, ports scanPorts) {
 	if !layerlessDiscoveredPolicy(report, f) || nonInteractiveRequested(f) || !terminal.HasControllingTerminal(os.Stdin) {
 		return
 	}
@@ -51,7 +51,7 @@ func offerAuthoringForLayerlessDiscoveredPolicy(dir string, f codesignalFlags, r
 	if !answeredYes(os.Stdin) {
 		return
 	}
-	if authorProjectConfigTypeScript(dir, f, os.Stdin, stderr, stderr) != 0 {
+	if authorProjectConfigTypeScript(dir, f, os.Stdin, stderr, stderr, ports) != 0 {
 		return
 	}
 	fmt.Fprintf(stderr, "coach codesignal: the approved TypeScript project-config candidate was printed above and no file was created; review it, save it as %q replacing the current file, commit it, then rerun this scan once it is committed.\n", projectconfig.CanonicalPath)

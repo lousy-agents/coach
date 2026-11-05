@@ -10,13 +10,6 @@ import (
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-// discoverTSRoots is a seam over projectmodel.DiscoverTSRoots: it lets tests
-// drive authorProjectConfigTypeScript's
-// DiagTSRootUnavailable-vs-DiagTSRootIncomplete branch directly, since a real
-// Git snapshot (revisionfs.New) can never itself produce
-// DiagTSRootUnavailable -- its root directory always opens successfully.
-var discoverTSRoots = projectmodel.DiscoverTSRoots
-
 const authorTSUsagePrefix = "coach codesignal --baseline --suggest-project-config --project-language typescript"
 
 // tsAuthoringRootBudgets bounds the DiscoverTSRoots walk the guided
@@ -47,12 +40,12 @@ var tsAuthoringRootBudgets = projectmodel.GoBudgets{
 // human-facing text rather than the machine-readable NDJSON envelope
 // `--suggest-project-config` writes, and an absolute invocation-directory
 // path is acceptable in that text where it would not be in the envelope.
-func runAuthorProjectConfigTypeScript(dir string, f codesignalFlags, stdout, stderr *os.File) int {
+func runAuthorProjectConfigTypeScript(dir string, f codesignalFlags, stdout, stderr *os.File, ports scanPorts) int {
 	if reason := interactiveRefusalReason(f, os.Stdin); reason != "" {
 		fmt.Fprintf(stderr, "%s: %s; refusing to enter guided policy authoring or write a policy config. Draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>.\n", authorTSUsagePrefix, reason)
 		return 2
 	}
-	return authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr)
+	return authorProjectConfigTypeScript(dir, f, os.Stdin, stdout, stderr, ports)
 }
 
 // authorProjectConfigTypeScript performs runAuthorProjectConfigTypeScript's
@@ -66,7 +59,7 @@ func runAuthorProjectConfigTypeScript(dir string, f codesignalFlags, stdout, std
 // terminal.HasControllingTerminal's own contract deliberately forbids
 // faking its true result, so the gate stays in runAuthorProjectConfigTypeScript
 // and is not itself exercised this way -- only the logic downstream of it.
-func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout, stderr *os.File) int {
+func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout, stderr *os.File, ports scanPorts) int {
 	revision, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: could not resolve the baseline revision: %s\n", authorTSUsagePrefix, err)
@@ -90,7 +83,7 @@ func authorProjectConfigTypeScript(dir string, f codesignalFlags, stdin, stdout,
 		return 3
 	}
 
-	discovered, err := discoverTSRoots(snapshot, tsAuthoringRootBudgets)
+	discovered, err := ports.discoverTSRoots(snapshot, tsAuthoringRootBudgets)
 	if err != nil {
 		// DiscoverTSRoots' documented contract is "never returns a non-nil
 		// error"; this guards against that contract changing silently, the

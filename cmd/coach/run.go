@@ -51,7 +51,7 @@ func runCodesignal(args []string, stdout, stderr *os.File, ports scanPorts) int 
 
 	if parsed.suggestProjectConfig {
 		if parsed.projectLanguage == "typescript" {
-			return runAuthorProjectConfigTypeScript(dir, parsed, stdout, stderr)
+			return runAuthorProjectConfigTypeScript(dir, parsed, stdout, stderr, ports)
 		}
 		return runSuggestProjectConfig(dir, parsed, stdout, stderr)
 	}

@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"io/fs"
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
 // scanPorts are the collaborators a scan uses to find and read a policy, to pick
@@ -22,6 +24,10 @@ type scanPorts struct {
 	// optionalPreparation runs after a successful scan and before its report is
 	// rendered, so a step the customer may decline or cancel can attach to it.
 	optionalPreparation func(dir string, f codesignalFlags, stdout, stderr *os.File) optionalPreparationResult
+	// discoverTSRoots lists the TypeScript roots of a snapshot for guided policy
+	// authoring. A spec supplies its own to produce a discovery result a real Git
+	// snapshot never can, such as an unavailable root.
+	discoverTSRoots func(snapshot fs.FS, budgets projectmodel.GoBudgets) (projectmodel.TSRootDiscoveryResult, error)
 }
 
 func defaultScanPorts() scanPorts {
@@ -32,6 +38,7 @@ func defaultScanPorts() scanPorts {
 		resolveBackend:      codesignalcli.ResolveProjectBackend,
 		lookupBackend:       lookupRegisteredBackend,
 		optionalPreparation: noOptionalPreparation,
+		discoverTSRoots:     projectmodel.DiscoverTSRoots,
 	}
 }
 
