@@ -104,6 +104,28 @@ var _ = Describe("coach codesignal --fail-on-incomplete-coverage with real TypeS
 		})
 	})
 
+	When("the required layer is named by a file, not a directory, and nothing else is incomplete", Label("ts-project-backend"), func() {
+		It("exits 0 with --fail-on-incomplete-coverage and reports the bypass search as complete, not ambiguous", func() {
+			repo := newTempGitRepo()
+			version := realTypescriptVersion()
+			commitFile(repo, "package.json", tsRealCompilerPackageJSON(version))
+			commitFile(repo, "tsconfig.json", tsProjectTSConfigJSON)
+			commitFile(repo, "pkg/db/d.ts", tsRealDbFile)
+			commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
+			commitFile(repo, "pkg/service/svc.ts", tsServiceNoopFile)
+			commitFile(repo, "project.json", tsLayerBypassFileLayerConfigJSON)
+			installRealTypescriptCompiler(repo, true)
+
+			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json", "--fail-on-incomplete-coverage")
+
+			Expect(exitCode).To(Equal(0), "a required layer that names a file is a valid policy; stderr: %s", stderr)
+			report := decodeCoachReport(stdout)
+			Expect(report.ProjectProvenance).NotTo(BeNil())
+			Expect(report.ProjectProvenance.Head.Coverage.Model).To(Equal("complete"))
+			Expect(report.ProjectProvenance.Head.Coverage.Bypass).To(Equal("complete"))
+		})
+	})
+
 	When("a routine reachability gap produces no model or bypass incompleteness", Label("ts-project-backend"), func() {
 		It("exits 0 with --fail-on-incomplete-coverage because reachability incompleteness alone does not count (AC-EVD-7)", func() {
 			repo := newTempGitRepo()

@@ -60,7 +60,7 @@ func BuildTypeScriptLayerBypassFromModel(budgetCtx context.Context, model Model,
 
 	diagnostics := tsLayerBypassDiagnostics(model.Coverage.Diagnostics, ambiguousLayer, search.unclassifiedNodeSeen, search.truncatedSearch)
 
-	complete := model.Coverage.Complete && !tsReachabilityHasGap(model.Coverage.Diagnostics) && !search.truncatedSearch
+	complete := model.Coverage.Complete && !tsReachabilityHasGap(model.Coverage.Diagnostics) && !ambiguousLayer && !search.truncatedSearch
 
 	sort.Slice(search.witnesses, func(i, j int) bool {
 		if search.witnesses[i].Source != search.witnesses[j].Source {

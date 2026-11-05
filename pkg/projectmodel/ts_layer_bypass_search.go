@@ -19,7 +19,6 @@ func tsLayerBypassRunSearch(ctx context.Context, sources, sinks []string, adjace
 
 	if ambiguousLayer {
 		result.truncatedPairs = len(sources) * len(sinks)
-		result.truncatedSearch = true
 	} else {
 		result.searchSources(ctx, sources, sinks, adjacency, nodePositions, requiredLayer)
 	}

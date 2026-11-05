@@ -57,6 +57,10 @@ const tsHandlersLocalGapFile = "import { loadStuff } from \"./helper\";\n\ninter
 // (go_project_fixtures_test.go).
 const tsLayerBypassRequiredConfigJSON = `{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]},{"name":"service","prefixes":["pkg/service"]}],"forbidden_imports":[{"from":"handlers","to":"db"}],"required_layer":"service"}`
 
+// tsLayerBypassFileLayerConfigJSON is tsLayerBypassRequiredConfigJSON with the
+// required service layer named by the one file it holds, not by its directory.
+const tsLayerBypassFileLayerConfigJSON = `{"schema_version":"1","roots":["."],"layers":[{"name":"handlers","prefixes":["pkg/handlers"]},{"name":"db","prefixes":["pkg/db"]},{"name":"service","prefixes":["pkg/service/svc.ts"]}],"forbidden_imports":[{"from":"handlers","to":"db"}],"required_layer":"service"}`
+
 // tsRootScopeGapTSConfigJSON reproduces SA-280-025's real candidate/analyzed
 // root-scope mismatch (mirroring
 // ts_sidecar_integration_acceptance_test.go's own "a tsconfig lists a JSON
