@@ -42,20 +42,24 @@ func DiscoverTrackedFiles(dir, revisionSHA string) ([]SelectedFile, codesignal.C
 		return nil, codesignal.Coverage{}, &OperationalError{Message: fmt.Sprintf("coach codesignal: git ls-tree failed: %s", err), Cause: err}
 	}
 
-	extensions := make([]string, 0, len(unsupportedCounts))
-	for ext := range unsupportedCounts {
+	coverage.Unsupported = unsupportedGroups(unsupportedCounts)
+
+	return files, coverage, nil
+}
+
+// unsupportedGroups turns per-extension counts into coverage groups, ordered by
+// extension.
+func unsupportedGroups(counts map[string]int) []codesignal.CoverageGroup {
+	extensions := make([]string, 0, len(counts))
+	for ext := range counts {
 		extensions = append(extensions, ext)
 	}
 	sort.Strings(extensions)
+	var groups []codesignal.CoverageGroup
 	for _, ext := range extensions {
-		coverage.Unsupported = append(coverage.Unsupported, codesignal.CoverageGroup{
-			Reason:   "unsupported_language",
-			Language: ext,
-			Count:    unsupportedCounts[ext],
-		})
+		groups = append(groups, codesignal.CoverageGroup{Reason: "unsupported_language", Language: ext, Count: counts[ext]})
 	}
-
-	return files, coverage, nil
+	return groups
 }
 
 // SplitNULPaths splits the NUL-delimited output of a git command like
@@ -84,4 +88,23 @@ func coverageLanguageLabel(ext string) string {
 		return "(no extension)"
 	}
 	return ext
+}
+
+// WithoutUnsupportedFile takes one unsupported-language file out of coverage:
+// it is no longer discovered and no longer counted under its extension, and an
+// emptied group disappears. The slices are rebuilt, never edited in place.
+func WithoutUnsupportedFile(coverage codesignal.Coverage, path string) codesignal.Coverage {
+	label := coverageLanguageLabel(filepath.Ext(path))
+	remaining := make([]codesignal.CoverageGroup, 0, len(coverage.Unsupported))
+	for _, group := range coverage.Unsupported {
+		if group.Reason == "unsupported_language" && group.Language == label {
+			group.Count--
+		}
+		if group.Count > 0 {
+			remaining = append(remaining, group)
+		}
+	}
+	coverage.Unsupported = remaining
+	coverage.TrackedFilesDiscovered--
+	return coverage
 }

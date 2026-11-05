@@ -15,7 +15,7 @@ import (
 // IsRelevantDirtyPath for what counts as relevant. readFromDisk is a path the
 // checks did read from the working tree, so a change to it is never one of them.
 func detectRelevantDirtyWorktree(dir string, roots []string, policyPath, readFromDisk string) (projectreadiness.DirtyWorktree, error) {
-	entries, err := gitrepo.WorktreeStatus(dir)
+	entries, err := gitrepo.CommittedWorktreeStatus(dir)
 	if err != nil {
 		return projectreadiness.DirtyWorktree{}, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: git status failed: %s", err)}
 	}

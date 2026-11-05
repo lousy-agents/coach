@@ -36,7 +36,8 @@ type fsmonitorSource struct {
 
 func gitReads() []gitRead {
 	return []gitRead{
-		{"the working-tree status read", func(dir string) error { _, err := WorktreeStatus(dir); return err }},
+		{"the committed scan's status read", func(dir string) error { _, err := CommittedWorktreeStatus(dir); return err }},
+		{"the working-tree status read", func(dir string) error { _, err := ReadWorktreeStatus(dir); return err }},
 		{"the bounded runner other reads use", func(dir string) error {
 			_, err := BoundedRunner(1<<20, 1<<16, 30*time.Second)(dir, "status", "--porcelain=v1", "-z")
 			return err
