@@ -68,12 +68,18 @@ func readError(dir, revision, repoPath string, gitErr error) error {
 }
 
 // configExistsInWorktree reports whether repoPath is readable in the
-// worktree at dir. Any stat failure (not just "does not exist") is treated
-// as absent: this function's only caller already falls back to a generic
-// not-found-at-revision message in that case, so distinguishing
-// permission-denied or other I/O errors from a missing file has no observer.
+// worktree at dir. repoPath is relative to the repository root, so it is joined
+// to the root and not to dir, which is wherever the scan started. Any stat
+// failure (not just "does not exist") is treated as absent: this function's only
+// caller already falls back to a generic not-found-at-revision message in that
+// case, so distinguishing permission-denied or other I/O errors from a missing
+// file has no observer.
 func configExistsInWorktree(dir, repoPath string) bool {
-	_, statErr := os.Stat(filepath.Join(dir, repoPath))
+	root, err := gitrepo.RepositoryRoot(dir)
+	if err != nil {
+		return false
+	}
+	_, statErr := os.Stat(filepath.Join(root, repoPath))
 	return statErr == nil
 }
 
