@@ -10,9 +10,9 @@ Each tool keeps one JSON file under `.lousy-agents/` at the git top-level.
 
 ## Lookup
 
-The same order applies to every tool. The selected file is read at the selected revision.
+The same order applies to every tool. The selected file is read at the selected revision. For an explicit flag, Coach first checks the path on disk, and reads the content at the revision ([ADR-008](../architecture/ADR-008-explicit-policy-disk-and-revision.md)).
 
-1. An explicit flag names one path. No other file is consulted.
+1. An explicit flag names one path. No other file is consulted. A path that does not exist on disk exits `2` with `project_config_missing`, and neither falls back to the committed copy. A committed policy that is gone gets the one `git restore` command that brings it back; when a file stands where a parent directory should be, the message states that cause and offers no restore command and no authoring. A symbolic link, a directory or other file that is not a regular file, a path through a symbolic link, a file that cannot be read, or a parent that cannot be searched, exits `2` with `project_config_invalid`.
 2. Otherwise `.lousy-agents/<tool>.json` at the git top-level.
 3. Otherwise a deprecated root fallback, and only when that file passes the tool's schema. The report always includes a `<tool>_config_deprecated` diagnostic. Coach's root fallback is `project.json`.
 
@@ -27,6 +27,7 @@ Diagnostic names are `<tool>_config_*`. Coach's names today:
 - `project_config_migration_skipped`
 - `project_config_migration_failed`
 - `project_config_invalid`
+- `project_config_missing`
 
 ## Migration prompt
 

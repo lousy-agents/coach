@@ -62,7 +62,7 @@ The direction is enforced at two grains.
 
 | Layer | `internal/codesignalcli/…` | `internal/coachapi/…` |
 | --- | --- | --- |
-| Model | `projectreadiness` (readiness result), `projectconfig` (policy schema) | root (job, report, API contract, `JobStore` / `WorkerJobStore` ports) |
+| Model | `projectreadiness` (readiness result), `projectconfig` (policy schema), `shellword` (quoting and printability), `invocation` (the commands remediation lines name) | root (job, report, API contract, `JobStore` / `WorkerJobStore` ports) |
 | Use case | root (scans, `ProjectBackend` port), `projectcheck`, `tssetup`, `configauthoring`, `sourcescope` | `baseline`, `worker` |
 | Driven adapter | `gitrepo`, `revisionfs`, `tstoolchain`, `pkgmanager`, `subprocess`, `terminal`, `prompt` | `store/memory`, `store/postgres`, `queue/redisstream`, `queue/sqs` |
 | Entry | `render` (wired from `cmd/coach`) | `httpapi` (wired from `cmd/coach-api`) |
@@ -72,6 +72,7 @@ The direction is enforced at two grains.
 Where the migration stopped short of the rule, and why:
 
 - The CLI use cases (`projectcheck`, `tssetup`, `configauthoring`, root `codesignalcli`) import `gitrepo` directly, and `projectcheck`/`tssetup` call `tstoolchain` and `pkgmanager` probes. Each git read goes through a function-typed seam owned by its consumer, but the toolchain probes are still package variables that tests override; replacing them with constructor-injected ports means reshaping the use-case signatures and is the next step.
+- `projectconfig` is placed in the model layer but also probes the working tree (`os.OpenRoot`, `Lstat`), asks git whether a path exists at a revision and what the index holds for it, and renders the restore command ([ADR-008](ADR-008-explicit-policy-disk-and-revision.md)). Moving that I/O to a driven-adapter package is tracked in [coach#613](https://github.com/lousy-agents/coach/issues/613).
 - `internal/coachapi/baseline` constructs its local smoke-fixture tree source itself, because `ScanConfig.SmokeFixturePath` selects it; injecting the source would change worker configuration.
 - `internal/rubrics` uses `internal/modelgateway`'s `Gateway` interface rather than declaring its own port.
 - `pkg/projectmodel`'s exported entry points wire their default adapters (`tssidecar`, `ssaload`) because their signatures have no injection point and are public API.

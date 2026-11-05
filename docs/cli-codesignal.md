@@ -40,7 +40,7 @@ that suggest/prepare still require `--baseline`).
 | `--project-language` | `go` | `go` or `typescript`. The language selects the project backend when a policy is selected (explicit path or the discovery order above). With no policy selected, the flag does not start project analysis. |
 | `--suggest-project-config` | | Without `--output`, writes `.lousy-agents/coach.json`. Go also prints the candidate on stdout. TypeScript writes the file after confirmation and does not print the candidate on stdout. `--output` still wins. Never auto-applied; never invents layers. |
 | `--output <path>` | `.lousy-agents/coach.json` | Create-only path for a suggest candidate. When set, this path wins over `.lousy-agents/coach.json`. |
-| `--check-project` | | Read-only TypeScript readiness. Exits `0` on gaps. Not a scan. |
+| `--check-project` | | Read-only TypeScript readiness. Exits `0` on gaps. Not a scan. A policy gap names one next action: `author_policy` for a policy that was never committed, or `restore_policy` for an explicit `--project-config` that is committed at the analyzed revision and gone from disk. Neither is executable (`executable: false`), and a gap that a new file or a restore cannot fix names neither, including an explicit path that is a regular file on disk but not committed. |
 | `--prepare-compiler` | | Interactive consented **mise-only** TypeScript compiler setup. Requires a TTY and an attended session; refuses otherwise. Also refuses, naming the gap, for a runtime-boundary gap (`node_missing`/`node_unsupported`) — the same restriction the scan path's own compiler-setup offer applies, so the two cannot disagree. It is narrower than the scan's offer, which also runs the project package manager: a repository whose only executable choice is `project_package` is never handed this command as remediation, because it would exit `0` reporting nothing to set up. |
 | `--no-interactive` | `false` | Treat the invocation as unattended even with a controlling terminal attached. On a scan, the interactive compiler-setup and guided-policy-authoring offers are skipped, falling through to the same message-only remediation a piped invocation gets; the TypeScript form of `--suggest-project-config`, and `--prepare-compiler`, refuse with exit `2` instead of prompting (the Go form of `--suggest-project-config` never prompts, and rejects the flag as a usage error). When a legacy root `project.json` would otherwise prompt for a copy, the unattended invocation skips that prompt and emits `project_config_migration_skipped` with `mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json`. Also triggered by a non-empty `CI` environment variable, so a pty-allocating runner cannot hang on an unanswered prompt. |
 | `--fail-on-incomplete-coverage` | `false` | Exit `3` when required project coverage (model or bypass phase, on any analyzed side) is incomplete — including when the project backend is unavailable. A Go report records no provenance, so for Go this reads `project_coverage.complete`, which folds the model and any `required_layer` bypass search, and, for the base side of a diff, the coverage diagnostics. Go cases that count as incomplete include a repository with more than 5,000 tracked files of any type (Go discovery counts every file), a `required_layer` prefix that matches no function, and no `go` on `PATH` when `required_layer` is set. The report is always written to stdout first. Valid only on scan modes (`--base` / `--baseline`). |
@@ -58,15 +58,25 @@ argument is a usage error: exit 2, usage on stderr, and nothing on stdout.
 | --- | --- |
 | `0` | Completed analysis, readiness report, successful suggest/prepare, or `--help` / `--version`. Signals, and narrowing the report with `--min-severity` or `--top`, do not change this. |
 | `1` | Operational: not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O. |
-| `2` | Usage (including an invalid `--min-severity` or `--top` value), invalid `--project-config` (empty stdout, stderr names the path/revision), unsupported `--project-language`, or a TypeScript **scan** that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
+| `2` | Usage (including an invalid `--min-severity` or `--top` value), invalid `--project-config` (empty stdout, stderr names the path/revision), a `--project-config` that does not exist on disk (empty stdout, stderr names the path and `project_config_missing`, no fallback to another policy; a committed policy gets the one `git restore` command that brings it back, a path under a regular file gets the cause and the file in the way with no restore command, and neither is offered authoring) or that is unusable on disk: a symbolic link, a directory or other file that is not a regular file, a path under a symbolic link, a file that cannot be read, or a parent that cannot be searched (`project_config_invalid`, naming the reason), unsupported `--project-language`, or a TypeScript **scan** that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
 | `3` | Required project coverage (model or bypass, on any analyzed side) is incomplete **and** `--fail-on-incomplete-coverage` was supplied — the report is still written to stdout. Also: `--prepare-compiler` operational failure resolving the baseline revision or computing readiness (a deliberate exception to the scan contract's `1`, kept because the flag follows suggestion mode's table). |
 
 `--check-project` exits `0` so you inspect the payload; do not treat that
 status as a gate.
 
+With an explicit `--project-config`, `--check-project` reads the path from the
+working tree. When the working tree decides the policy gap (the file is gone,
+something unusable is there, or a parent is a file or a link), that path is left
+out of `dirty_worktree.paths`, because the check did read it, and
+`relevant_changes` is `false` unless another path counts. A staged edit to a
+committed policy, or a staged entry for a policy that was never committed, is
+the exception: nothing read it, so the path stays in `dirty_worktree`, and Coach
+offers no restore over an edit.
+
 On a controlling terminal, a TypeScript scan whose `--project-config` names a
-policy that was never committed opens a guided-authoring session instead of
-only printing a remediation line. With
+policy that does not exist on disk and was never committed opens a
+guided-authoring session instead of only printing a remediation line. A policy
+that is committed gets its restore command instead. With
 `--format json` this session's exit-2 output is a JSON object carrying
 `"schema_version": "1"` and `roots`, not a CodeSignal report — the absent
 `scope`/`signals`/`coverage` keys distinguish it. A scan cannot pass

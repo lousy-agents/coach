@@ -209,8 +209,41 @@ mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json
 
 An explicit `--project-config` still reads only that path. A schema-valid root `project.json` is still read with a deprecation diagnostic until the follow-up removal ([issue #511](https://github.com/lousy-agents/coach/issues/511)). The lookup is [`.lousy-agents` config](./docs/conventions/lousy-agents-config.md).
 
-`--project-config` is read from the **analyzed revision**, not your dirty
-worktree. An uncommitted candidate is invisible to the scan. A valid config
+`--project-config` content is read from the **analyzed revision**, not your
+dirty worktree. The path itself is checked on disk first, and what is there
+decides what Coach says. Every case below exits `2`, and stdout stays empty
+except for the policy-candidate document on the guided-authoring path.
+
+- Nothing is there and the policy was never committed: `project_config_missing`.
+  A Go scan then prints `--suggest-project-config`; a TypeScript scan on a
+  controlling terminal opens guided authoring.
+- Nothing is there but the policy is committed at the analyzed revision:
+  `project_config_missing`, with the one command that brings it back,
+  `git restore --source=<revision> --staged --worktree -- ':(top,literal)<path>'`,
+  and no authoring. `--check-project` names it as the `restore_policy` next
+  action, with `executable: false`. Coach offers that command only when it
+  overwrites nothing. If the index holds a staged edit to the policy, if the
+  policy is committed as a symbolic link, if a sparse checkout leaves it out of
+  the working tree, or if git cannot say whether it is committed, Coach says why
+  and offers neither a restore nor a new policy.
+- A path under a regular file: `project_config_missing`. The message names the
+  file in the way and says to move or remove it, then to restore the policy from
+  git when it is committed, unless the index holds a staged edit to it, which the
+  message names instead because a restore would discard it, or it is committed as
+  a symbolic link, which the message says instead because a restore would
+  recreate a link the scan refuses. It prints no
+  `git restore` command and offers no authoring, because a restore would delete
+  that file.
+- A symbolic link, a directory or other file that is not a regular file, a path
+  that runs through a symbolic link, a file that cannot be read, or a parent
+  that cannot be searched: `project_config_invalid`, naming the reason, with no
+  restore and no authoring.
+
+A file that
+exists on disk but is not committed is rejected (`project_config_invalid`, with
+the instruction to commit it) until the disk-read slice of
+[#168](https://github.com/lousy-agents/coach/issues/168). Coach offers no new
+policy there, because a file already sits at the path. A valid config
 switches the report to `schema_version: "2"` and can emit
 `architecture.layer_violation`. `required_layer` can also emit
 `architecture.layer_bypass` (Go and TypeScript) on a narrow handler→SQL
@@ -240,7 +273,8 @@ status as a gate. It is not a scan. A **scan** that cannot resolve a supported
 compiler or host Node exits `2` with empty stdout except the policy-candidate
 document on the guided-authoring path, and one or more stderr lines. On a
 controlling terminal, a TypeScript scan whose `--project-config` names a
-policy that was never committed instead opens a guided-authoring session;
+policy that does not exist on disk and was never committed instead opens a
+guided-authoring session (a committed policy gets its restore command instead);
 with `--format json` this session's exit-2 output is
 a JSON object carrying `"schema_version": "1"` and `roots`, not a CodeSignal
 report — the absent `scope`/`signals`/`coverage` keys distinguish it.
