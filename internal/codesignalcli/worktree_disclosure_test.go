@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -164,9 +163,7 @@ func checkWorktreeDisclosureDiagnostics(t *testing.T, tt struct {
 	err    error
 	want   []codesignal.Diagnostic
 }) {
-	withWorktreeStatusOutput(t, tt.output, tt.err)
-
-	got := WorkingTreeDisclosureDiagnostics("repo")
+	got := WorkingTreeDisclosureDiagnostics(statusFromPorcelain(tt.output, tt.err))
 	if len(got) != len(tt.want) {
 		t.Fatalf("diagnostics: got %d (%+v), want %d (%+v)", len(got), got, len(tt.want), tt.want)
 	}
@@ -187,18 +184,6 @@ func porcelainZ(records ...string) []byte {
 		b.WriteByte(0)
 	}
 	return []byte(b.String())
-}
-
-func withWorktreeStatusOutput(t *testing.T, output []byte, err error) {
-	t.Helper()
-	original := listWorktreeStatus
-	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
-		if err != nil {
-			return nil, err
-		}
-		return gitrepo.ParseWorktreeStatus(output), nil
-	}
-	t.Cleanup(func() { listWorktreeStatus = original })
 }
 
 func twoDigits(n int) string {

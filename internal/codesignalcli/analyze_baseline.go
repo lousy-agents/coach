@@ -22,27 +22,27 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []gitre
 	}
 	defer reader.Close()
 
-	var fileChanges []codesignal.FileChange
-	diagnostics := append([]codesignal.Diagnostic(nil), extraDiagnostics...)
-
+	scanned := baselineFiles{
+		analyzer:      analyzer,
+		view:          project.worktreeView(),
+		dir:           dir,
+		revision:      revisionSHA,
+		readCommitted: reader.Next,
+		diagnostics:   append([]codesignal.Diagnostic(nil), extraDiagnostics...),
+		coverage:      coverage,
+	}
 	for _, sf := range files {
-		fileChange, fileDiagnostics, err := analyzeBaselineFile(ctx, analyzer, reader, sf)
-		if err != nil {
+		if err := scanned.add(ctx, sf); err != nil {
 			return nil, err
 		}
-		diagnostics = append(diagnostics, fileDiagnostics...)
-		if fileChange != nil {
-			fileChanges = append(fileChanges, *fileChange)
-		}
-		coverage = countedBaselineFile(coverage, fileChange)
 	}
 
 	opts := codesignal.Options{Baseline: true}
 	input := codesignal.Input{
 		Scope:       codesignal.Scope{Revision: revisionSHA, AppliedScope: appliedScope},
-		Files:       fileChanges,
-		Diagnostics: diagnostics,
-		Coverage:    &coverage,
+		Files:       scanned.changes,
+		Diagnostics: scanned.diagnostics,
+		Coverage:    &scanned.coverage,
 	}
 	input, opts, err = applyProjectBackend(ctx, input, opts, project, dir, revisionSHA, "", true)
 	if err != nil {

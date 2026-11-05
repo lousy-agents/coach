@@ -5,10 +5,19 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
+
+// tsRevisionEvaluation is what evaluateRevision observes at one revision.
+type tsRevisionEvaluation struct {
+	changes     []codesignal.ProjectChange
+	facts       []codesignal.ProjectFact
+	diagnostics []codesignal.Diagnostic
+	coverage    projectmodel.Coverage
+	scope       *projectmodel.ProjectScope
+	phases      tsPhaseCoverage
+}
 
 // evaluateRevision builds a TypeScript project model at revision ONCE and
 // derives every observation from that single Model: layer violations
@@ -18,10 +27,10 @@ import (
 // Coverage, so a routine reachability gap alone stays visible only through
 // model.Coverage.Diagnostics and the returned facts, never degrading an
 // otherwise complete layer finding.
-func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, runtime *tsRuntime, roots []string, policy codesignal.LayerPolicy, bypassLayer projectmodel.BypassLayer, hasBypassLayer bool, configDigest string) ([]codesignal.ProjectChange, []codesignal.ProjectFact, []codesignal.Diagnostic, projectmodel.Coverage, *projectmodel.ProjectScope, tsPhaseCoverage, error) {
-	snapshot, err := revisionfs.New(dir, revision)
+func (b *tsProjectBackend) evaluateRevision(ctx context.Context, open SnapshotOpener, dir, revision string, runtime *tsRuntime, roots []string, policy codesignal.LayerPolicy, bypassLayer projectmodel.BypassLayer, hasBypassLayer bool, configDigest string) (tsRevisionEvaluation, error) {
+	snapshot, err := open(dir, revision)
 	if err != nil {
-		return nil, nil, nil, projectmodel.Coverage{}, nil, tsPhaseCoverage{}, fmt.Errorf("coach: building TypeScript snapshot at revision %q: %w", revision, err)
+		return tsRevisionEvaluation{}, fmt.Errorf("coach: building TypeScript snapshot at revision %q: %w", revision, err)
 	}
 
 	model, err := projectmodel.BuildTypeScriptModelViaSidecar(ctx, snapshot, projectmodel.SnapshotMeta{
@@ -37,12 +46,12 @@ func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 		Budgets:    tsProjectBudgets,
 	})
 	if err != nil {
-		return nil, nil, nil, projectmodel.Coverage{}, nil, tsPhaseCoverage{}, fmt.Errorf("coach: building TypeScript project model at revision %q: %w", revision, err)
+		return tsRevisionEvaluation{}, fmt.Errorf("coach: building TypeScript project model at revision %q: %w", revision, err)
 	}
 
 	resolved, hasScope, err := revisionProjectScope(model, roots, policy, revision)
 	if err != nil {
-		return nil, nil, nil, projectmodel.Coverage{}, nil, tsPhaseCoverage{}, err
+		return tsRevisionEvaluation{}, err
 	}
 	var scope *projectmodel.ProjectScope
 	if hasScope {
@@ -71,7 +80,14 @@ func (b *tsProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 		reachability: reachability.Coverage,
 	}
 
-	return changes, facts, diagnostics, coverage, scope, phases, nil
+	return tsRevisionEvaluation{
+		changes:     changes,
+		facts:       facts,
+		diagnostics: diagnostics,
+		coverage:    coverage,
+		scope:       scope,
+		phases:      phases,
+	}, nil
 }
 
 // evaluateLayerBypass folds bypassResult.Coverage into model.Coverage via

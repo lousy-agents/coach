@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
@@ -17,39 +16,47 @@ const (
 	projectConfigMigrationSkippedMessage = "project.json can be moved to .lousy-agents/coach.json. Next: top=\"$(git rev-parse --show-toplevel)\" && mkdir -p \"$top\"/.lousy-agents && git -C \"$top\" mv -- project.json .lousy-agents/coach.json"
 )
 
-func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, stdin, stderr *os.File, ports scanPorts) (*codesignalcli.ProjectAnalysis, []codesignal.Diagnostic, func(), error) {
-	suppressUncommitted, migrationDiags, restore := offerDeprecatedProjectConfigMigration(dir, revision, f, stdin, stderr, ports)
+func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, status *scanStatus, view *codesignalcli.WorktreeView, stdin, stderr *os.File, ports scanPorts) (*codesignalcli.ProjectAnalysis, []codesignal.Diagnostic, error) {
+	suppressUncommitted, migrationDiags := offerDeprecatedProjectConfigMigration(dir, revision, f, status, stdin, stderr, ports)
 	prepared, err := prepareProjectAnalysis(dir, revision, f.namedPolicy, f.projectLanguage, suppressUncommitted, ports)
 	if err != nil {
-		return nil, nil, restore, err
+		return nil, nil, err
 	}
-	return prepared.analysis, append(prepared.diagnostics, migrationDiags...), restore, nil
+	project := prepared.analysis
+	if view != nil && project == nil {
+		project = &codesignalcli.ProjectAnalysis{}
+	}
+	if project != nil {
+		project.Worktree = view
+		project.Status = status.get()
+	}
+	return project, append(prepared.diagnostics, migrationDiags...), nil
 }
 
-func offerDeprecatedProjectConfigMigration(dir, revision string, f codesignalFlags, stdin, stderr *os.File, ports scanPorts) (bool, []codesignal.Diagnostic, func()) {
+func offerDeprecatedProjectConfigMigration(dir, revision string, f codesignalFlags, status *scanStatus, stdin, stderr *os.File, ports scanPorts) (bool, []codesignal.Diagnostic) {
 	if !deprecatedProjectConfigCanMigrate(dir, revision, f, ports) {
-		return false, nil, leaveWorktreeStatusLive
+		return false, nil
 	}
 	if !terminal.HasControllingTerminal(stdin) || nonInteractiveRequested(f) {
-		return false, []codesignal.Diagnostic{projectConfigMigrationSkipped()}, leaveWorktreeStatusLive
+		return false, []codesignal.Diagnostic{projectConfigMigrationSkipped()}
 	}
 	fmt.Fprint(stderr, projectConfigMigrationPrompt)
 	if !answeredYes(stdin) {
-		return false, nil, leaveWorktreeStatusLive
+		return false, nil
 	}
-	return acceptProjectConfigMigrationCopy(dir, stderr)
+	return acceptProjectConfigMigrationCopy(dir, stderr, status)
 }
 
-func acceptProjectConfigMigrationCopy(dir string, stderr *os.File) (bool, []codesignal.Diagnostic, func()) {
-	entries, statusErr := codesignalcli.CaptureWorktreeStatus(dir)
+// acceptProjectConfigMigrationCopy copies project.json, which leaves a new file that is untracked until it is
+// committed. The status is read before the copy, so that file is never counted as the customer's own dirt.
+func acceptProjectConfigMigrationCopy(dir string, stderr *os.File, status *scanStatus) (bool, []codesignal.Diagnostic) {
+	status.get()
 	if err := copyWorktreeProjectConfig(dir); err != nil {
-		return false, []codesignal.Diagnostic{projectConfigMigrationFailed(err)}, leaveWorktreeStatusLive
+		return false, []codesignal.Diagnostic{projectConfigMigrationFailed(err)}
 	}
 	fmt.Fprint(stderr, projectConfigMigrationCopied)
-	return true, nil, codesignalcli.UseWorktreeStatusSnapshot(entries, statusErr)
+	return true, nil
 }
-
-func leaveWorktreeStatusLive() {}
 
 func deprecatedProjectConfigCanMigrate(dir, revision string, f codesignalFlags, ports scanPorts) bool {
 	if f.namedPolicy.Explicit {
@@ -57,32 +64,6 @@ func deprecatedProjectConfigCanMigrate(dir, revision string, f codesignalFlags, 
 	}
 	selection, err := ports.discover(dir, revision)
 	return err == nil && selection.Fatal == nil && selection.Deprecated && !selection.CanonicalPathTaken()
-}
-
-func answeredYes(stdin *os.File) bool {
-	answer := strings.ToLower(strings.TrimSpace(readLineWithoutReadAhead(stdin)))
-	return answer == "y" || answer == "yes"
-}
-
-// readLineWithoutReadAhead takes one byte at a time because a buffered
-// reader would swallow answers typed ahead for the next prompt, which reads
-// stdin again.
-func readLineWithoutReadAhead(stdin *os.File) string {
-	var line []byte
-	next := make([]byte, 1)
-	for {
-		n, err := stdin.Read(next)
-		if n == 1 && next[0] == '\n' {
-			break
-		}
-		if n == 1 {
-			line = append(line, next[0])
-		}
-		if err != nil {
-			break
-		}
-	}
-	return string(line)
 }
 
 func projectConfigMigrationSkipped() codesignal.Diagnostic {

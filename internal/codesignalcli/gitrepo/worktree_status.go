@@ -165,10 +165,3 @@ func ParseWorktreeStatus(output []byte) []WorktreeEntry {
 	}
 	return entries
 }
-
-// WorktreeStatus lists every changed or untracked worktree path via
-// `git status --porcelain=v1 --untracked-files=all -z`.
-func WorktreeStatus(dir string) ([]WorktreeEntry, error) {
-	read, err := ReadWorktreeStatus(dir)
-	return read.Entries, err
-}

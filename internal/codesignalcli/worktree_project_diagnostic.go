@@ -7,12 +7,8 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-// listWorktreeStatus is the worktree-status read behind the scan's
-// worktree diagnostics. Tests may replace it with canned porcelain entries.
-var listWorktreeStatus = gitrepo.WorktreeStatus
-
-func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, dir string, roots []string, policy policyref.Ref) []codesignal.Diagnostic {
-	entries, err := listWorktreeStatus(dir)
+func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, status WorktreeStatus, roots []string, policy policyref.Ref) []codesignal.Diagnostic {
+	entries, err := status.Entries, status.Err
 	if err != nil {
 		if hasDiagnosticKind(diagnostics, codesignal.DiagKindWorktreeStatusCheckFailed) ||
 			hasDiagnosticKind(diagnostics, codesignal.DiagKindWorktreeNotClean) {

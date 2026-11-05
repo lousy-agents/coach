@@ -47,10 +47,10 @@ var _ = Describe("tsProjectBackend.evaluateRevision", func() {
 			policy := codesignal.LayerPolicy{}
 			b := &tsProjectBackend{}
 
-			_, _, _, _, scope, _, err := b.evaluateRevision(context.Background(), dir, revision, runtime, roots, policy, projectmodel.BypassLayer{}, false, "pcfg_test")
+			evaluation, err := b.evaluateRevision(context.Background(), committedSnapshot, dir, revision, runtime, roots, policy, projectmodel.BypassLayer{}, false, "pcfg_test")
 
 			Expect(err).To(HaveOccurred(), "expected a policy root with no matching root_scopes entry to surface as a real Go error, not a soft-skipped nil project scope")
-			Expect(scope).To(BeNil())
+			Expect(evaluation.scope).To(BeNil())
 			Expect(err.Error()).To(ContainSubstring("deriving TypeScript project scope"))
 			Expect(err.Error()).To(ContainSubstring("pkg/handlers"), "expected the error to name the unmatched policy root")
 
