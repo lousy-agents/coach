@@ -35,7 +35,7 @@ func validateCodesignalFlags(f codesignalFlags, positional []string) string {
 	if f.baseline && f.base != "" {
 		return "coach: --baseline and --base are mutually exclusive: choose a Repository Baseline scan (--baseline) or a diff comparison (--base), not both"
 	}
-	if !f.baseline && f.base == "" {
+	if !f.baseline && f.base == "" && !f.worktree {
 		return "coach: missing required --base flag"
 	}
 	for _, check := range flagValueChecks(f) {

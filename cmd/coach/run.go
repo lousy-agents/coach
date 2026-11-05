@@ -71,5 +71,9 @@ func runCodesignal(args []string, stdout, stderr *os.File, ports scanPorts) int 
 		return runCheckProject(dir, parsed, stdout, stderr)
 	}
 
+	if rejectWorktreeOutsideRepositoryRoot(dir, args, parsed, stderr) {
+		return 2
+	}
+
 	return runCodesignalScan(dir, parsed, os.Stdin, stdout, stderr, newScanOfferBudget(), ports)
 }

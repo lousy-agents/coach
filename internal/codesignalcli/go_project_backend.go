@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
-	"github.com/lousy-agents/coach/internal/codesignalcli/revisionfs"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
@@ -139,32 +138,40 @@ func (b *goProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	policy := layerPolicyFromConfig(config)
 	bypassLayer, hasBypassLayer := goBypassLayerFromConfig(config)
 
-	headChanges, headDiagnostics, headCoverage, headMembership, err := b.evaluateRevision(ctx, req.Dir, req.HeadRevision, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
+	head, err := b.evaluateRevision(ctx, snapshotOpenerOrCommitted(req.HeadSnapshot), req.Dir, req.HeadRevision, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &ProjectBackendResult{
-		HeadChanges:     headChanges,
-		HeadDiagnostics: headDiagnostics,
-		HeadCoverage:    &headCoverage,
+		HeadChanges:     head.changes,
+		HeadDiagnostics: head.diagnostics,
+		HeadCoverage:    &head.coverage,
 
-		HeadLayerMembership: headMembership,
+		HeadLayerMembership: head.membership,
 	}
 	if req.Baseline {
 		return result, nil
 	}
 
-	baseChanges, baseDiagnostics, baseCoverage, baseMembership, err := b.evaluateRevision(ctx, req.Dir, req.BaseRevision, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
+	base, err := b.evaluateRevision(ctx, committedSnapshot, req.Dir, req.BaseRevision, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {
 		return nil, err
 	}
-	result.BaseChanges = baseChanges
-	result.BaseDiagnostics = baseDiagnostics
-	result.BaseCoverage = &baseCoverage
-	result.BaseLayerMembership = baseMembership
+	result.BaseChanges = base.changes
+	result.BaseDiagnostics = base.diagnostics
+	result.BaseCoverage = &base.coverage
+	result.BaseLayerMembership = base.membership
 	result.BaseAnalyzed = true
 	return result, nil
+}
+
+// goRevisionEvaluation is what evaluateRevision observes at one revision.
+type goRevisionEvaluation struct {
+	changes     []codesignal.ProjectChange
+	diagnostics []codesignal.Diagnostic
+	coverage    projectmodel.Coverage
+	membership  *projectmodel.LayerMembership
 }
 
 // evaluateRevision builds a Go project model at revision and evaluates it
@@ -186,10 +193,10 @@ func (b *goProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 // -- exactly like any other incomplete project-model phase, rather than
 // silently reporting a "resolved"/"introduced"/"existing" claim on a witness
 // that only disappeared because the search was truncated.
-func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision string, roots []string, policy codesignal.LayerPolicy, bypassLayer projectmodel.BypassLayer, hasBypassLayer bool, configDigest string) ([]codesignal.ProjectChange, []codesignal.Diagnostic, projectmodel.Coverage, *projectmodel.LayerMembership, error) {
-	snapshot, err := revisionfs.New(dir, revision)
+func (b *goProjectBackend) evaluateRevision(ctx context.Context, open SnapshotOpener, dir, revision string, roots []string, policy codesignal.LayerPolicy, bypassLayer projectmodel.BypassLayer, hasBypassLayer bool, configDigest string) (goRevisionEvaluation, error) {
+	snapshot, err := open(dir, revision)
 	if err != nil {
-		return nil, nil, projectmodel.Coverage{}, nil, fmt.Errorf("coach: building Go snapshot at revision %q: %w", revision, err)
+		return goRevisionEvaluation{}, fmt.Errorf("coach: building Go snapshot at revision %q: %w", revision, err)
 	}
 
 	model, err := projectmodel.BuildGoModel(snapshot, projectmodel.SnapshotMeta{
@@ -200,7 +207,7 @@ func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 		Budgets: goProjectBudgets,
 	})
 	if err != nil {
-		return nil, nil, projectmodel.Coverage{}, nil, fmt.Errorf("coach: building Go project model at revision %q: %w", revision, err)
+		return goRevisionEvaluation{}, fmt.Errorf("coach: building Go project model at revision %q: %w", revision, err)
 	}
 
 	changes, _ := codesignal.EvaluateGoLayerViolations(model, policy, goLayerRuleVersion, goLayerBackendVersion, configDigest)
@@ -215,7 +222,7 @@ func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 			MaxSearchNodes: goLayerBypassMaxSearchNodes,
 		})
 		if err != nil {
-			return nil, nil, projectmodel.Coverage{}, nil, fmt.Errorf("coach: building Go layer-bypass model at revision %q: %w", revision, err)
+			return goRevisionEvaluation{}, fmt.Errorf("coach: building Go layer-bypass model at revision %q: %w", revision, err)
 		}
 		bypassChanges, bypassDiagnostics := codesignal.EvaluateGoLayerBypass(bypassResult, goBypassRuleVersion, goBypassBackendVersion, configDigest)
 		changes = append(changes, bypassChanges...)
@@ -223,5 +230,10 @@ func (b *goProjectBackend) evaluateRevision(ctx context.Context, dir, revision s
 		coverage = combineProjectCoverage(coverage, bypassResult.Coverage)
 	}
 
-	return changes, diagnostics, coverage, projectmodel.GoLayerMembership(model, roots, projectScopePolicyFromConfig(nil, policy).Layers), nil
+	return goRevisionEvaluation{
+		changes:     changes,
+		diagnostics: diagnostics,
+		coverage:    coverage,
+		membership:  projectmodel.GoLayerMembership(model, roots, projectScopePolicyFromConfig(nil, policy).Layers),
+	}, nil
 }

@@ -12,9 +12,7 @@ func TestWorktreeDisclosureDiagnosticsBoundsTheSample(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		records = append(records, "?? bulk"+twoDigits(i)+".go")
 	}
-	withWorktreeStatusOutput(t, porcelainZ(records...), nil)
-
-	got := WorkingTreeDisclosureDiagnostics("repo")
+	got := WorkingTreeDisclosureDiagnostics(statusFromPorcelain(porcelainZ(records...), nil))
 	if len(got) != 1 {
 		t.Fatalf("diagnostics: got %d (%+v), want 1 grouped diagnostic", len(got), got)
 	}

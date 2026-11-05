@@ -31,6 +31,12 @@ type ProjectAnalysis struct {
 	Config       json.RawMessage
 	ConfigDigest string
 	Backend      ProjectBackend
+	// Worktree, when set, lays the working tree over the head revision
+	// (--worktree).
+	Worktree *WorktreeView
+	// Status is the working-tree status the scan read once, for the diagnostic
+	// a committed project scan adds when relevant files are dirty.
+	Status WorktreeStatus
 }
 
 // ProjectBackend builds project observations for one analysis request.
@@ -50,6 +56,9 @@ type ProjectBackendRequest struct {
 	Config       json.RawMessage
 	ConfigDigest string
 	Language     string
+	// HeadSnapshot opens the head revision's file view; nil reads the
+	// committed revision. The base revision is always committed.
+	HeadSnapshot SnapshotOpener
 }
 
 // ProjectBackendResult is the builder-facing project observation bundle.
@@ -121,9 +130,9 @@ type ProjectBackendResult struct {
 // Callers pass values; results are new values (no in-place mutation).
 func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codesignal.Options, project *ProjectAnalysis, dir, headRevision, baseRevision string, baseline bool) (codesignal.Input, codesignal.Options, error) {
 	if project == nil || project.Backend == nil {
-		return input, opts, nil
+		return withWorktree(input, project, dir, headRevision), opts, nil
 	}
-	result, err := project.Backend.Analyze(ctx, ProjectBackendRequest{
+	request := ProjectBackendRequest{
 		Dir:          dir,
 		HeadRevision: headRevision,
 		BaseRevision: baseRevision,
@@ -132,7 +141,11 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		Config:       project.Config,
 		ConfigDigest: project.ConfigDigest,
 		Language:     project.Language,
-	})
+	}
+	if project.Worktree != nil {
+		request.HeadSnapshot = project.Worktree.OpenHead
+	}
+	result, err := project.Backend.Analyze(ctx, request)
 	if err != nil {
 		return input, opts, err
 	}
@@ -142,7 +155,7 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		ProjectEnabled:  true,
 	}
 	if result == nil {
-		return input, enabled, nil
+		return withWorktree(input, project, dir, headRevision), enabled, nil
 	}
 	diagnostics := input.Diagnostics
 	if len(result.HeadDiagnostics) > 0 || len(result.BaseDiagnostics) > 0 {
@@ -154,7 +167,9 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		analyzerProtocolVersion = projectbridge.ProtocolVersion
 	}
 	roots := selectedRootsFromConfig(project.Config)
-	diagnostics = appendProjectWorktreeDiagnostic(diagnostics, dir, roots, project.Policy)
+	if project.Worktree == nil {
+		diagnostics = appendProjectWorktreeDiagnostic(diagnostics, project.Status, roots, project.Policy)
+	}
 
 	merged := codesignal.Input{
 		Scope:               input.Scope,
@@ -164,7 +179,7 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		ProjectChanges:      result.HeadChanges,
 		BaseProjectChanges:  result.BaseChanges,
 		ProjectFacts:        result.Facts,
-		ProjectCoverage:     result.HeadCoverage,
+		ProjectCoverage:     project.Worktree.coverageAfterDrops(result.HeadCoverage, roots),
 		BaseProjectCoverage: result.BaseCoverage,
 		ProjectBaseAnalyzed: result.BaseAnalyzed,
 		RuntimeKind:         result.RuntimeKind,
@@ -197,7 +212,7 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 
 		LayerForbiddenImportsDeclared: forbiddenImportsDeclared(project.Config),
 	}
-	return merged, enabled, nil
+	return withWorktree(merged, project, dir, headRevision), enabled, nil
 }
 
 // parsedPolicy is the policy document when there is one that parses. An empty

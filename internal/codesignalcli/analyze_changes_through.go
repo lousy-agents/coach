@@ -21,6 +21,7 @@ func analyzeChangesThrough(run gitrepo.Runner, ctx context.Context, dir, headSHA
 	var fileChanges []codesignal.FileChange
 	diagnostics := append([]codesignal.Diagnostic(nil), extraDiagnostics...)
 
+	view := project.worktreeView()
 	for _, sf := range files {
 		var fc *codesignal.FileChange
 		var fileDiagnostics []codesignal.Diagnostic
@@ -28,7 +29,7 @@ func analyzeChangesThrough(run gitrepo.Runner, ctx context.Context, dir, headSHA
 		if sf.Status == "removed" {
 			fc, fileDiagnostics, stalled = analyzeRemovedFile(run, ctx, analyzer, dir, mergeBaseSHA, sf)
 		} else {
-			fc, fileDiagnostics, stalled = analyzeAddedOrModifiedFile(run, ctx, analyzer, dir, headSHA, mergeBaseSHA, sf)
+			fc, fileDiagnostics, stalled = analyzeAddedOrModifiedFile(run, ctx, analyzer, dir, headSHA, mergeBaseSHA, sf, view)
 		}
 		if stalled != nil {
 			return nil, stalled

@@ -27,6 +27,7 @@ type codesignalFlags struct {
 	prepareCompiler          bool
 	noInteractive            bool
 	failOnIncompleteCoverage bool
+	worktree                 bool
 
 	args []string
 }
@@ -47,6 +48,7 @@ type codesignalFlagHolders struct {
 	prepareCompiler          *countingBoolFlag
 	noInteractive            *bool
 	failOnIncompleteCoverage *bool
+	worktree                 *bool
 }
 
 func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
@@ -66,6 +68,7 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		prepareCompiler:          &countingBoolFlag{},
 		noInteractive:            flags.Bool("no-interactive", false, "treat this invocation as non-interactive even if a controlling terminal is attached: a scan's interactive compiler-setup and guided-policy-authoring offers are skipped in favor of the plain message-only remediation a piped invocation gets, and --suggest-project-config/--prepare-compiler refuse instead of prompting (also honored via a non-empty CI environment variable)"),
 		failOnIncompleteCoverage: flags.Bool("fail-on-incomplete-coverage", false, "exit 3 when required project coverage (model or bypass, on any analyzed side) is incomplete; the report is still written to stdout"),
+		worktree:                 flags.Bool("worktree", false, "experimental: analyze uncommitted supported files from the working tree on top of the analyzed revision"),
 	}
 	flags.Var(h.suggestProjectConfig, "suggest-project-config", "generate a project-config candidate JSON from Go module/workspace discovery at HEAD (requires --baseline; human-reviewed candidate only, never auto-applied); combined with --project-language typescript, runs an interactive guided-authoring session over discovered TypeScript roots instead of emitting a Go candidate directly")
 	flags.Var(h.output, "output", "write the --suggest-project-config candidate only to this repository-relative path instead of .lousy-agents/coach.json (create-only; Go also omits the stdout candidate)")
@@ -94,6 +97,7 @@ func codesignalFlagsFromHolders(h codesignalFlagHolders, setFlags map[string]boo
 		prepareCompiler:          h.prepareCompiler.value,
 		noInteractive:            *h.noInteractive,
 		failOnIncompleteCoverage: *h.failOnIncompleteCoverage,
+		worktree:                 *h.worktree,
 	}
 }
 
