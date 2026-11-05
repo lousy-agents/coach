@@ -51,6 +51,8 @@ const (
 	DiagKindWorktreeNotClean                    = "worktree_not_clean"
 	DiagKindWorktreeStatusCheckFailed           = "worktree_status_check_failed"
 	DiagKindWorktreeReportReflectsCommittedHEAD = "worktree_report_reflects_committed_head"
+	DiagKindWorktreeSymlinkSkipped              = "worktree_symlink_skipped"
+	DiagKindWorktreeScanIncomplete              = "worktree_scan_incomplete"
 )
 
 // SortDiagnostics orders diagnostics by path, kind, location, then message.
