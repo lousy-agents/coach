@@ -16,6 +16,9 @@ type SelectedFile struct {
 	Status      codesignal.ChangeStatus
 	Language    semantics.Language
 	SourceScope string
+	// Source is the path a committed rename moved this file from. A copy leaves
+	// its source in place, so it has none.
+	Source string
 }
 
 // SelectChangedFiles diffs mergeBaseSHA against HEAD in dir and returns the
@@ -57,6 +60,7 @@ func SelectChangedFiles(dir, mergeBaseSHA, headSHA string) (selected []SelectedF
 				diagnostics = append(diagnostics, diag)
 				continue
 			}
+			sf.Source = renameSource(record)
 			selected = append(selected, sf)
 			diagnostics = append(diagnostics, codesignal.Diagnostic{
 				Kind:     "continuity_not_determined",
@@ -82,6 +86,15 @@ func SelectChangedFiles(dir, mergeBaseSHA, headSHA string) (selected []SelectedF
 	}
 
 	return selected, diagnostics, continuity, nil
+}
+
+// renameSource is the path a rename record moved the file from. A copy leaves
+// its source in place, so it has none.
+func renameSource(record nameStatusRecord) string {
+	if strings.HasPrefix(record.status, "R") {
+		return record.paths[0]
+	}
+	return ""
 }
 
 func statusToChangeStatus(status string) codesignal.ChangeStatus {

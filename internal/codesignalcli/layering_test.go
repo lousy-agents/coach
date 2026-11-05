@@ -14,7 +14,7 @@ const modulePrefix = "github.com/lousy-agents/coach/internal/codesignalcli"
 // use case in the root. A package may import only the siblings listed for
 // it, so a new edge has to be added here deliberately.
 var allowedSiblingImports = map[string][]string{
-	"":                    {"gitrepo", "pkgmanager", "projectcheck", "projectconfig", "projectreadiness", "revisionfs", "tstoolchain"},
+	"":                    {"gitrepo", "pkgmanager", "projectcheck", "projectconfig", "projectreadiness", "revisionfs", "tstoolchain", "worktreeoverlay"},
 	"configauthoring":     {"gitrepo", "projectconfig", "prompt", "revisionfs"},
 	"gitrepo":             {},
 	"internal/gitfixture": {},
@@ -30,6 +30,7 @@ var allowedSiblingImports = map[string][]string{
 	"terminal":            {},
 	"tssetup":             {"gitrepo", "pkgmanager", "projectcheck", "projectconfig", "projectreadiness", "prompt", "tstoolchain"},
 	"tstoolchain":         {"gitrepo", "projectreadiness", "subprocess"},
+	"worktreeoverlay":     {},
 }
 
 func TestSubPackageImportsFollowTheLayering(t *testing.T) {
