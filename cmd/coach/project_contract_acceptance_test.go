@@ -69,7 +69,7 @@ var _ = Describe("coach project-analysis failure reports", func() {
 		Expect(remediationExit).To(Equal(0), "the printed remediation command must actually succeed for this Go repository; stdout: %s stderr: %s", remediationStdout, remediationStderr)
 	})
 
-	// loadProjectConfig runs before resolveProjectBackend and never receives
+	// The policy loads before the backend is resolved and never receives
 	// --project-language (prepareProjectAnalysis, project_analysis.go), so the underlying class-2 config
 	// message and the appended --suggest-project-config remediation stay
 	// language-independent by construction. The one exception is AC-SET-13's
@@ -115,28 +115,22 @@ var _ = Describe("coach project-analysis failure reports", func() {
 	// "go" and "typescript" both have registered backends now, so no real
 	// --project-language flag value can reach
 	// project_backend_unavailable through the CLI any more. This test
-	// instead overrides the loadProjectConfig/resolveProjectBackend seams
-	// in-process (see "coach codesignal project-mode exit-code
-	// classification" in project_acceptance_test.go for the same pattern)
-	// to keep exercising the full report shape a genuinely unavailable
-	// backend still produces.
+	// instead passes its own scanPorts in-process (see "coach codesignal
+	// project-mode exit-code classification" in project_acceptance_test.go for
+	// the same pattern) to keep exercising the full report shape a genuinely
+	// unavailable backend still produces.
 	It("writes a local report and structured diagnostic when the selected backend is unavailable", func() {
-		originalLoadProjectConfig := loadProjectConfig
-		originalResolveProjectBackend := resolveProjectBackend
-		DeferCleanup(func() {
-			loadProjectConfig = originalLoadProjectConfig
-			resolveProjectBackend = originalResolveProjectBackend
-		})
-		loadProjectConfig = func(string, string, string) (json.RawMessage, error) {
+		ports := defaultScanPorts()
+		ports.loadExplicit = func(string, string, string) (json.RawMessage, error) {
 			return json.RawMessage(`{"schema_version":"1","roots":["."]}`), nil
 		}
-		resolveProjectBackend = func(string) error {
+		ports.resolveBackend = func(string) error {
 			return &codesignalcli.ProjectBackendUnavailableError{
 				Message: `coach codesignal: no project-analysis backend is available for language "rust" yet (project_backend_unavailable)`,
 			}
 		}
 
-		stdout, stderr, exitCode := runInProcess("codesignal", "--baseline", "--project-config", "project.json", "--format=json")
+		stdout, stderr, exitCode := runInProcessWith(ports, "codesignal", "--baseline", "--project-config", "project.json", "--format=json")
 
 		Expect(exitCode).To(Equal(0))
 		Expect(stderr).To(BeEmpty())

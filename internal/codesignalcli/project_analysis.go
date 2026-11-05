@@ -21,11 +21,16 @@ import (
 // be non-nil; config/backend failures stay on the CLI composition root so
 // file-local reports remain available with stable diagnostics.
 type ProjectAnalysis struct {
-	ConfigPath   string
-	Language     string
-	Config       json.RawMessage
-	ConfigDigest string
-	Backend      ProjectBackend
+	// ConfigPath is the policy the analysis used, however it was selected.
+	// ConfigExplicit says whether the user named it with --project-config, which
+	// is what decides how later checks judge it: a named policy must be on disk,
+	// a discovered one is read from the analyzed revision as before.
+	ConfigPath     string
+	ConfigExplicit bool
+	Language       string
+	Config         json.RawMessage
+	ConfigDigest   string
+	Backend        ProjectBackend
 }
 
 // ProjectBackend builds project observations for one analysis request.
@@ -37,14 +42,26 @@ type ProjectBackend interface {
 // ProjectBackendRequest carries the immutable revision and config identity a
 // backend needs. Absolute checkout roots must not leak into lifecycle identity.
 type ProjectBackendRequest struct {
-	Dir          string
-	HeadRevision string
-	BaseRevision string
-	Baseline     bool
-	ConfigPath   string
-	Config       json.RawMessage
-	ConfigDigest string
-	Language     string
+	Dir            string
+	HeadRevision   string
+	BaseRevision   string
+	Baseline       bool
+	ConfigPath     string
+	ConfigExplicit bool
+	Config         json.RawMessage
+	ConfigDigest   string
+	Language       string
+}
+
+// ExplicitConfigPath is the --project-config value the user passed, empty when
+// the policy was discovered. Anything printed or re-checked from a failure
+// uses this, never ConfigPath: naming a discovered policy with --project-config
+// would make the next command judge it as a named one.
+func (r ProjectBackendRequest) ExplicitConfigPath() string {
+	if r.ConfigExplicit {
+		return r.ConfigPath
+	}
+	return ""
 }
 
 // ProjectBackendResult is the builder-facing project observation bundle.
@@ -119,14 +136,15 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		return input, opts, nil
 	}
 	result, err := project.Backend.Analyze(ctx, ProjectBackendRequest{
-		Dir:          dir,
-		HeadRevision: headRevision,
-		BaseRevision: baseRevision,
-		Baseline:     baseline,
-		ConfigPath:   project.ConfigPath,
-		Config:       project.Config,
-		ConfigDigest: project.ConfigDigest,
-		Language:     project.Language,
+		Dir:            dir,
+		HeadRevision:   headRevision,
+		BaseRevision:   baseRevision,
+		Baseline:       baseline,
+		ConfigPath:     project.ConfigPath,
+		ConfigExplicit: project.ConfigExplicit,
+		Config:         project.Config,
+		ConfigDigest:   project.ConfigDigest,
+		Language:       project.Language,
 	})
 	if err != nil {
 		return input, opts, err
@@ -195,23 +213,28 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 	return merged, enabled, nil
 }
 
-func selectedRootsFromConfig(config json.RawMessage) []string {
+// parsedPolicy is the policy document when there is one that parses. An empty
+// or invalid document yields ok=false, which both callers read as "declares
+// nothing".
+func parsedPolicy(config json.RawMessage) (cfg projectconfig.Config, ok bool) {
 	if len(config) == 0 {
-		return nil
+		return cfg, false
 	}
 	cfg, err := projectconfig.Parse(config)
-	if err != nil {
+	return cfg, err == nil
+}
+
+func selectedRootsFromConfig(config json.RawMessage) []string {
+	cfg, ok := parsedPolicy(config)
+	if !ok {
 		return nil
 	}
 	return cfg.Roots
 }
 
 func forbiddenImportsDeclared(config json.RawMessage) bool {
-	if len(config) == 0 {
-		return false
-	}
-	cfg, err := projectconfig.Parse(config)
-	return err == nil && len(cfg.ForbiddenImports) > 0
+	cfg, ok := parsedPolicy(config)
+	return ok && len(cfg.ForbiddenImports) > 0
 }
 
 // headProjectDiagnostics stamps Side "head" and Revision headRevision onto
@@ -220,16 +243,7 @@ func forbiddenImportsDeclared(config json.RawMessage) bool {
 // unprefixed for a head-side diagnostic, matching the pre-existing
 // convention that only base-side diagnostics get a marked Kind.
 func headProjectDiagnostics(diagnostics []codesignal.Diagnostic, headRevision string) []codesignal.Diagnostic {
-	if len(diagnostics) == 0 {
-		return nil
-	}
-	stamped := make([]codesignal.Diagnostic, len(diagnostics))
-	for i, d := range diagnostics {
-		d.Side = "head"
-		d.Revision = headRevision
-		stamped[i] = d
-	}
-	return stamped
+	return stampProjectDiagnostics(diagnostics, "head", headRevision, "")
 }
 
 // baseProjectDiagnostics prefixes each diagnostic's Kind with "base_",
@@ -241,15 +255,21 @@ func headProjectDiagnostics(diagnostics []codesignal.Diagnostic, headRevision st
 // one describes. Side "base" and Revision baseRevision are additive,
 // machine-readable versions of that same distinction (AC-VER-3).
 func baseProjectDiagnostics(diagnostics []codesignal.Diagnostic, baseRevision string) []codesignal.Diagnostic {
+	return stampProjectDiagnostics(diagnostics, "base", baseRevision, "base_")
+}
+
+// stampProjectDiagnostics copies diagnostics with Side and Revision set and
+// Kind prefixed by kindPrefix, or returns nil when there are none.
+func stampProjectDiagnostics(diagnostics []codesignal.Diagnostic, side, revision, kindPrefix string) []codesignal.Diagnostic {
 	if len(diagnostics) == 0 {
 		return nil
 	}
-	prefixed := make([]codesignal.Diagnostic, len(diagnostics))
+	stamped := make([]codesignal.Diagnostic, len(diagnostics))
 	for i, d := range diagnostics {
-		d.Kind = "base_" + d.Kind
-		d.Side = "base"
-		d.Revision = baseRevision
-		prefixed[i] = d
+		d.Kind = kindPrefix + d.Kind
+		d.Side = side
+		d.Revision = revision
+		stamped[i] = d
 	}
-	return prefixed
+	return stamped
 }

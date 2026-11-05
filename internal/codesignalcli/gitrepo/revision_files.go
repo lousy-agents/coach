@@ -5,8 +5,22 @@ import (
 	"strings"
 )
 
-// FileExistsAtRevision reports whether repoPath exists as a blob at
-// revision, without reading its content, through the caller's bounded git
+// TreeEntry is the mode and object name git records for a path, in a tree or
+// in the index.
+type TreeEntry struct {
+	Mode string
+	SHA  string
+}
+
+// FileExistsAtRevision reports whether repoPath exists as a blob at revision.
+// See BlobEntryAtRevision for how the answer is reached and what fails closed.
+func FileExistsAtRevision(run func(dir string, args ...string) ([]byte, error), dir, revision, repoPath string) (bool, error) {
+	_, found, err := BlobEntryAtRevision(run, dir, revision, repoPath)
+	return found, err
+}
+
+// BlobEntryAtRevision finds repoPath as a blob at revision and returns its
+// mode and object name, without reading its content, through the caller's bounded git
 // runner rather than a bespoke exec call.
 //
 // The check runs in three steps because no single git-plumbing call
@@ -17,15 +31,19 @@ import (
 //     revision, unreadable repository, corrupt commit/tree objects) is
 //     unambiguously operational.
 //  2. Resolve repoPath within revision's tree via `git ls-tree --full-tree
-//     <revision> -- <repoPath>`, which walks tree objects but never opens
-//     blob content. `--full-tree` is required: without it, ls-tree's
-//     pathspec is interpreted relative to dir (the process's cwd), not the
-//     repository root, so a caller running from any subdirectory would get
-//     a false "absent" result for a path that exists at revision -- the
+//     <revision> -- :(top,literal)<repoPath>`, which walks tree objects but
+//     never opens blob content. `--full-tree` is required: without it,
+//     ls-tree's pathspec is interpreted relative to dir (the process's cwd),
+//     not the repository root, so a caller running from any subdirectory would
+//     get a false "absent" result for a path that exists at revision -- the
 //     same root-relative semantics loadProjectConfigForReadiness's
 //     `git show <rev>:<path>` already has. Dropping `--full-tree` in a
 //     future edit would silently reintroduce that false-negative readiness
-//     verdict. The entry type must be blob: a tree (or gitlink) at the
+//     verdict. `:(top,literal)` makes the match the path as spelled: a
+//     repoPath such as ":/main.go" is otherwise read as pathspec magic for
+//     main.go, and the restore command built from the same spelling would
+//     then fail for a file this check said was there. The entry type must be
+//     blob: a tree (or gitlink) at the
 //     same path is not the file the snapshot checks look for, and treating
 //     it as present would let a directory named package.json pass
 //     project_shape. This call distinguishes the remaining states by its
@@ -41,38 +59,38 @@ import (
 //     itself, so a corrupt/missing blob object still resolves a SHA there;
 //     any failure here means the object store itself is unreadable, which
 //     must also fail closed rather than report the path absent.
-func FileExistsAtRevision(run func(dir string, args ...string) ([]byte, error), dir, revision, repoPath string) (bool, error) {
+func BlobEntryAtRevision(run func(dir string, args ...string) ([]byte, error), dir, revision, repoPath string) (TreeEntry, bool, error) {
 	if _, err := run(dir, "cat-file", "-e", revision+"^{commit}"); err != nil {
-		return false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: revision %q could not be verified: %s", revision, err)}
+		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: revision %q could not be verified: %s", revision, err)}
 	}
 
-	output, err := run(dir, "ls-tree", "--full-tree", revision, "--", repoPath)
+	output, err := run(dir, "ls-tree", "--full-tree", revision, "--", ":(top,literal)"+repoPath)
 	if err != nil {
-		return false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be resolved at revision %q: %s", repoPath, revision, err)}
+		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be resolved at revision %q: %s", repoPath, revision, err)}
 	}
-	blobSHA, ok := lsTreeBlobSHA(output)
+	entry, ok := lsTreeBlob(output)
 	if !ok {
-		return false, nil
+		return TreeEntry{}, false, nil
 	}
 
-	if _, err := run(dir, "cat-file", "-e", blobSHA); err != nil {
-		return false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be read at revision %q: %s", repoPath, revision, err)}
+	if _, err := run(dir, "cat-file", "-e", entry.SHA); err != nil {
+		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be read at revision %q: %s", repoPath, revision, err)}
 	}
-	return true, nil
+	return entry, true, nil
 }
 
-func lsTreeBlobSHA(output []byte) (string, bool) {
+func lsTreeBlob(output []byte) (TreeEntry, bool) {
 	trimmed := strings.TrimSpace(string(output))
 	if trimmed == "" || strings.Contains(trimmed, "\n") {
-		return "", false
+		return TreeEntry{}, false
 	}
 	meta, _, found := strings.Cut(trimmed, "\t")
 	if !found {
-		return "", false
+		return TreeEntry{}, false
 	}
 	fields := strings.Fields(meta)
 	if len(fields) != 3 || fields[1] != "blob" {
-		return "", false
+		return TreeEntry{}, false
 	}
-	return fields[2], true
+	return TreeEntry{Mode: fields[0], SHA: fields[2]}, true
 }

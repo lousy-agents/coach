@@ -11,32 +11,19 @@ import (
 )
 
 var _ = Describe("coach codesignal --fail-on-incomplete-coverage", func() {
-	var (
-		originalLoadProjectConfig     func(string, string, string) (json.RawMessage, error)
-		originalResolveProjectBackend func(string) error
-	)
-
-	BeforeEach(func() {
-		originalLoadProjectConfig = loadProjectConfig
-		originalResolveProjectBackend = resolveProjectBackend
-	})
-
-	AfterEach(func() {
-		loadProjectConfig = originalLoadProjectConfig
-		resolveProjectBackend = originalResolveProjectBackend
-	})
-
-	// Seal the seams to simulate a backend that is unavailable (the "rust"
-	// backend never ships) so these specs run without real project analysis.
-	backendUnavailable := func() {
-		loadProjectConfig = func(string, string, string) (json.RawMessage, error) {
+	// A backend that is unavailable (the "rust" backend never ships), so these
+	// specs run without real project analysis.
+	backendUnavailable := func() scanPorts {
+		ports := defaultScanPorts()
+		ports.loadExplicit = func(string, string, string) (json.RawMessage, error) {
 			return json.RawMessage(`{"schema_version":"1","roots":["."]}`), nil
 		}
-		resolveProjectBackend = func(string) error {
+		ports.resolveBackend = func(string) error {
 			return &codesignalcli.ProjectBackendUnavailableError{
 				Message: `coach codesignal: no project-analysis backend is available for language "rust" yet (project_backend_unavailable)`,
 			}
 		}
+		return ports
 	}
 
 	expectReportWithBackendUnavailableDiagnostic := func(stdout []byte) {
@@ -55,9 +42,7 @@ var _ = Describe("coach codesignal --fail-on-incomplete-coverage", func() {
 
 	When("the project backend is unavailable and --fail-on-incomplete-coverage is supplied", func() {
 		It("exits 3, writes the report to stdout, and emits project_backend_unavailable in diagnostics", func() {
-			backendUnavailable()
-
-			stdout, stderr, exitCode := runInProcess("codesignal", "--baseline", "--project-config", "project.json", "--format=json", "--fail-on-incomplete-coverage")
+			stdout, stderr, exitCode := runInProcessWith(backendUnavailable(), "codesignal", "--baseline", "--project-config", "project.json", "--format=json", "--fail-on-incomplete-coverage")
 
 			Expect(exitCode).To(Equal(3))
 			Expect(stderr).To(BeEmpty())

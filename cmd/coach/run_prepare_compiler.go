@@ -46,5 +46,5 @@ func prepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, p
 	ctx, stop := interruptibleContext()
 	defer stop()
 	result := tssetup.RunPrepareCompilerMiseSetup(ctx, dir, revision, projectConfigPath, readiness, stdin, stderr)
-	return reportPrepareCompilerMiseResult(result, stderr)
+	return reportPrepareCompilerMiseResult(result, revision, projectConfigPath, stderr)
 }

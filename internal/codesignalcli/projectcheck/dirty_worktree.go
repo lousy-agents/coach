@@ -13,7 +13,10 @@ import (
 // detectRelevantDirtyWorktree lists uncommitted/untracked paths -- via `git
 // status`, path names only, never their content -- relevant to the
 // readiness result: see IsRelevantDirtyPath for what counts as relevant.
-func detectRelevantDirtyWorktree(dir string, roots []string, policyPath string) (projectreadiness.DirtyWorktree, error) {
+// detectRelevantDirtyWorktree lists the uncommitted paths the report says it did
+// not read. readFromDisk is a path the checks did read from the working tree,
+// so a change to it is never one of them.
+func detectRelevantDirtyWorktree(dir string, roots []string, policyPath, readFromDisk string) (projectreadiness.DirtyWorktree, error) {
 	entries, err := gitrepo.WorktreeStatus(dir)
 	if err != nil {
 		return projectreadiness.DirtyWorktree{}, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: git status failed: %s", err)}
@@ -21,6 +24,9 @@ func detectRelevantDirtyWorktree(dir string, roots []string, policyPath string) 
 
 	relevant := make([]string, 0, len(entries))
 	for _, entry := range entries {
+		if readFromDisk != "" && entry.Path == readFromDisk {
+			continue
+		}
 		if IsRelevantDirtyPath(entry.Path, roots, policyPath) {
 			relevant = append(relevant, entry.Path)
 		}

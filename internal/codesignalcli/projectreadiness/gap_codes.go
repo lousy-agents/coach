@@ -46,6 +46,8 @@ const (
 	NextActionRepairRuntimeProbe      = "repair_runtime_probe"
 	NextActionPrepareCompiler         = "prepare_compiler"
 	NextActionResolvePackageManager   = "resolve_package_manager"
+	NextActionRestorePolicy           = "restore_policy"
+	NextActionAuthorPolicy            = "author_policy"
 )
 
 func NextActionForGapCode(code string) (string, bool) {
@@ -92,8 +94,8 @@ var gapCodeTable = map[string]gapCodeInfo{
 	GapPackageManagerConfigUnverifiable:  {status: StatusNeedsPrerequisite, nextActionKind: NextActionResolvePackageManager, isPackageManagerGap: true},
 	GapPackageManagerVersionUnverifiable: {status: StatusNeedsPrerequisite, nextActionKind: NextActionResolvePackageManager, isPackageManagerGap: true},
 	GapPackageManagerVersionUnsupported:  {status: StatusNeedsPrerequisite, nextActionKind: NextActionResolvePackageManager, isPackageManagerGap: true},
-	GapPolicyMissing:                     {status: StatusNeedsPolicy, nextActionKind: "author_policy"},
-	GapPolicyInvalid:                     {status: StatusNeedsPolicy, nextActionKind: "author_policy"},
+	GapPolicyMissing:                     {status: StatusNeedsPolicy, nextActionKind: NextActionAuthorPolicy},
+	GapPolicyInvalid:                     {status: StatusNeedsPolicy, nextActionKind: NextActionAuthorPolicy},
 }
 
 // KnownGapCodes lists every gap code readiness can report, in no particular

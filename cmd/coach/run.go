@@ -13,6 +13,10 @@ commands:
 run "coach codesignal --help" for command-specific help.`
 
 func run(args []string, stdout, stderr *os.File) int {
+	return runWith(defaultScanPorts(), args, stdout, stderr)
+}
+
+func runWith(ports scanPorts, args []string, stdout, stderr *os.File) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, topLevelUsage)
 		return 2
@@ -26,14 +30,14 @@ func run(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintln(stdout, version)
 		return 0
 	case "codesignal":
-		return runCodesignal(args[1:], stdout, stderr)
+		return runCodesignal(args[1:], stdout, stderr, ports)
 	default:
 		fmt.Fprintf(stderr, "%s\ncoach: unknown command %q\n", topLevelUsage, args[0])
 		return 2
 	}
 }
 
-func runCodesignal(args []string, stdout, stderr *os.File) int {
+func runCodesignal(args []string, stdout, stderr *os.File, ports scanPorts) int {
 	parsed, exitCode, ok := parseCodesignalFlags(args, stdout, stderr)
 	if !ok {
 		return exitCode
@@ -60,5 +64,5 @@ func runCodesignal(args []string, stdout, stderr *os.File) int {
 		return runCheckProject(dir, parsed, stdout, stderr)
 	}
 
-	return runCodesignalScan(dir, parsed, os.Stdin, stdout, stderr, newScanOfferBudget())
+	return runCodesignalScan(dir, parsed, os.Stdin, stdout, stderr, newScanOfferBudget(), ports)
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-func runDiffAnalysis(dir string, f codesignalFlags, stdin, stderr *os.File) (*codesignal.Report, error) {
+func runDiffAnalysis(dir string, f codesignalFlags, stdin, stderr *os.File, ports scanPorts) (*codesignal.Report, error) {
 	headSHA, mergeBaseSHA, err := gitrepo.ResolveRevisions(dir, f.base)
 	if err != nil {
 		return nil, err
@@ -26,7 +26,7 @@ func runDiffAnalysis(dir string, f codesignalFlags, stdin, stderr *os.File) (*co
 	}
 	diagnostics = append(diagnostics, codesignalcli.WorkingTreeDisclosureDiagnostics(dir)...)
 
-	project, diags, restoreStatus, opErr := prepareScanProjectAnalysis(dir, headSHA, f, stdin, stderr)
+	project, diags, restoreStatus, opErr := prepareScanProjectAnalysis(dir, headSHA, f, stdin, stderr, ports)
 	defer restoreStatus()
 	if opErr != nil {
 		return nil, opErr

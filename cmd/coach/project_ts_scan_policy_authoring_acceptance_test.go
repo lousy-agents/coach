@@ -54,7 +54,7 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring on a con
 				Expect(string(stderr)).To(ContainSubstring("no file was created"), "a scan never sets --output, so the approved candidate goes to stdout and nothing is written to disk; telling the customer a candidate \"was created\" names an artifact they cannot find, review, or commit. stderr: %s", stderr)
 				Expect(string(stderr)).To(ContainSubstring(`"project.json"`), "the instruction must name the path the scan itself required, so the customer knows where to save what they just approved; stderr: %s", stderr)
 
-				Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "the masking policy failure must still be reported before guided authoring opens; stderr: %s", stderr)
+				Expect(string(stderr)).To(ContainSubstring("project_config_missing"), "the masking policy failure must still be reported before guided authoring opens; stderr: %s", stderr)
 				Expect(string(stderr)).To(ContainSubstring("typescript_compiler_missing: also failing,"), "AC-SET-13 requires the simultaneously failing compiler gap to be reported too, not just the masking policy failure; stderr: %s", stderr)
 				gapIndex := strings.Index(string(stderr), "typescript_compiler_missing: also failing,")
 				authoringIndex := strings.Index(string(stderr), "Discovered TypeScript roots")
@@ -96,7 +96,7 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring on a con
 // This is not ordering coverage, and must not be read as such: a
 // never-committed policy always surfaces as a *ProjectConfigError before the
 // TypeScript backend ever runs its own compiler check (prepareProjectAnalysis's
-// loadProjectConfig short circuit, projectconfig/load.go), so a real scan's error here
+// policy-load short circuit, projectconfig/load.go), so a real scan's error here
 // is never simultaneously a *ProjectConfigError and a
 // *CompilerUnresolvedErrorWithReadiness. AC-10's guarantee is therefore
 // structural, not enforced by which `if` runs first in runCodesignalScan
@@ -231,7 +231,7 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard le
 	})
 
 	When("a --baseline scan's --project-config gap is evaluated with a non-TypeScript --project-language, and a controlling terminal is available", func() {
-		It("keeps the existing project_config_invalid message unchanged, still appends AC-SET-9's remediation since go has no interactive setup offer to own the controlling-terminal case, and never enters the TypeScript-specific guided authoring session", func() {
+		It("reports the missing policy as project_config_missing, still appends AC-SET-9's remediation since go has no interactive setup offer to own the controlling-terminal case, and never enters the TypeScript-specific guided authoring session", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
 
@@ -243,7 +243,7 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard le
 
 			lines := stderrLines(stderr)
 			Expect(lines).To(HaveLen(2), "a controlling terminal must not withhold AC-SET-9's appended remediation for go: no interactive setup offer exists to own that case; stderr: %s", stderr)
-			Expect(lines[0]).To(ContainSubstring("project_config_invalid"), "the existing class-2 message must still be reported")
+			Expect(lines[0]).To(ContainSubstring("project_config_missing"), "the class-2 missing-policy message must still be reported")
 			Expect(lines[1]).To(Equal("coach codesignal --baseline --suggest-project-config"), "go's appended remediation must be the same command a no-controlling-terminal invocation prints")
 			Expect(string(stderr)).NotTo(ContainSubstring("Discovered TypeScript roots"), "the guided authoring session below is TypeScript-specific and must never run for --project-language go")
 		})
@@ -442,7 +442,7 @@ var _ = Describe("coach codesignal (real scan): the interactive compiler-setup o
 			Expect(err).NotTo(HaveOccurred())
 
 			f := codesignalFlags{baseline: true, format: "json", projectConfig: "project.json", projectConfigSet: true, projectLanguage: "typescript"}
-			exitCode := runCodesignalScan(repo, f, os.Stdin, outWrite, errWrite, scanOfferBudget{})
+			exitCode := runCodesignalScan(repo, f, os.Stdin, outWrite, errWrite, scanOfferBudget{}, defaultScanPorts())
 			Expect(outWrite.Close()).To(Succeed())
 			Expect(errWrite.Close()).To(Succeed())
 			stdout, readErr := io.ReadAll(outRead)

@@ -10,9 +10,8 @@ import (
 	"github.com/lousy-agents/coach/pkg/projectmodel"
 )
 
-// discoverTSRoots is a seam over projectmodel.DiscoverTSRoots, following the
-// same override-for-testing pattern as loadProjectConfig/resolveProjectBackend
-// in project_analysis.go: it lets tests drive authorProjectConfigTypeScript's
+// discoverTSRoots is a seam over projectmodel.DiscoverTSRoots: it lets tests
+// drive authorProjectConfigTypeScript's
 // DiagTSRootUnavailable-vs-DiagTSRootIncomplete branch directly, since a real
 // Git snapshot (revisionfs.New) can never itself produce
 // DiagTSRootUnavailable -- its root directory always opens successfully.

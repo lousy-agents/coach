@@ -10,11 +10,15 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// runInProcess invokes run() directly (in-process, no subprocess) so tests
-// can override loadProjectConfig/resolveProjectBackend and observe
-// runCodesignal's exit-code classification for error types codesignalcli's
-// real implementations never produce.
+// runInProcess invokes run() directly (in-process, no subprocess).
 func runInProcess(args ...string) (stdout, stderr []byte, exitCode int) {
+	return runInProcessWith(defaultScanPorts(), args...)
+}
+
+// runInProcessWith is runInProcess with its own scanPorts, so a spec can
+// observe runCodesignal's exit-code classification for error types
+// codesignalcli's real implementations never produce.
+func runInProcessWith(ports scanPorts, args ...string) (stdout, stderr []byte, exitCode int) {
 	outFile, err := os.CreateTemp("", "coach-inprocess-stdout-*")
 	Expect(err).NotTo(HaveOccurred())
 	defer os.Remove(outFile.Name())
@@ -22,7 +26,7 @@ func runInProcess(args ...string) (stdout, stderr []byte, exitCode int) {
 	Expect(err).NotTo(HaveOccurred())
 	defer os.Remove(errFile.Name())
 
-	exitCode = run(args, outFile, errFile)
+	exitCode = runWith(ports, args, outFile, errFile)
 
 	Expect(outFile.Close()).To(Succeed())
 	Expect(errFile.Close()).To(Succeed())
@@ -83,7 +87,7 @@ var _ = Describe("coach codesignal --project-config", func() {
 	})
 
 	When("--project-config points at a nonexistent file", func() {
-		DescribeTable("exits 2, writes nothing to stdout, and writes an actionable message to stderr naming the path and revision, regardless of --format",
+		DescribeTable("exits 2, writes nothing to stdout, and writes an actionable message to stderr naming the path and project_config_missing, regardless of --format",
 			func(formatArg string) {
 				repo := newTempGitRepo()
 				initialSHA := commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
@@ -94,7 +98,7 @@ var _ = Describe("coach codesignal --project-config", func() {
 				Expect(stdout).To(BeEmpty(), "a --project-config load/validation failure must write NOTHING to stdout, in any --format")
 				Expect(string(stderr)).NotTo(BeEmpty())
 				Expect(string(stderr)).To(ContainSubstring("missing-project.json"))
-				Expect(string(stderr)).To(ContainSubstring(initialSHA))
+				Expect(string(stderr)).To(ContainSubstring("project_config_missing"))
 				Expect(string(stderr)).NotTo(ContainSubstring("exit status"), "stderr must not leak a child process's raw exit status (AC-5)")
 				Expect(string(stderr)).NotTo(ContainSubstring("fatal:"), "stderr must not leak git's raw stderr text (AC-5)")
 			},
@@ -203,28 +207,14 @@ var _ = Describe("coach codesignal --project-config", func() {
 })
 
 var _ = Describe("coach codesignal project-mode exit-code classification", func() {
-	var (
-		originalLoadProjectConfig     func(string, string, string) (json.RawMessage, error)
-		originalResolveProjectBackend func(string) error
-	)
-
-	BeforeEach(func() {
-		originalLoadProjectConfig = loadProjectConfig
-		originalResolveProjectBackend = resolveProjectBackend
-	})
-
-	AfterEach(func() {
-		loadProjectConfig = originalLoadProjectConfig
-		resolveProjectBackend = originalResolveProjectBackend
-	})
-
-	When("loadProjectConfig fails with an error that is not a *codesignalcli.ProjectConfigError", func() {
+	When("the policy loader fails with an error that is not a *codesignalcli.ProjectConfigError", func() {
 		It("does not classify it as a project-config usage error (exit 2); it falls back to the operational-error path", func() {
-			loadProjectConfig = func(string, string, string) (json.RawMessage, error) {
+			ports := defaultScanPorts()
+			ports.loadExplicit = func(string, string, string) (json.RawMessage, error) {
 				return nil, errors.New("boom: not a ProjectConfigError")
 			}
 
-			stdout, stderr, exitCode := runInProcess("codesignal", "--baseline", "--project-config", "irrelevant")
+			stdout, stderr, exitCode := runInProcessWith(ports, "codesignal", "--baseline", "--project-config", "irrelevant")
 
 			Expect(exitCode).NotTo(Equal(2), "an error of an unexpected type must not be classified as project_config_invalid purely because it came from the --project-config call site")
 			Expect(stdout).To(BeEmpty())
@@ -232,20 +222,20 @@ var _ = Describe("coach codesignal project-mode exit-code classification", func(
 		})
 	})
 
-	When("resolveProjectBackend fails with an error that is not a *codesignalcli.ProjectBackendUnavailableError", func() {
+	When("the backend resolver fails with an error that is not a *codesignalcli.ProjectBackendUnavailableError", func() {
 		// This asserts only the negative classification (operational exit 1,
 		// empty stdout). The project_backend_unavailable diagnostic-on-report
 		// path is covered in project_contract_acceptance_test.go.
 		It("falls back to the operational-error path rather than a project-backend-unavailable diagnostic", func() {
-			loadProjectConfig = func(string, string, string) (json.RawMessage, error) {
+			ports := defaultScanPorts()
+			ports.loadExplicit = func(string, string, string) (json.RawMessage, error) {
 				return json.RawMessage(`{"schema_version":"1","roots":["."]}`), nil
 			}
-
-			resolveProjectBackend = func(string) error {
+			ports.resolveBackend = func(string) error {
 				return errors.New("boom: not a ProjectBackendUnavailableError")
 			}
 
-			stdout, stderr, exitCode := runInProcess("codesignal", "--baseline", "--project-config", "project.json")
+			stdout, stderr, exitCode := runInProcessWith(ports, "codesignal", "--baseline", "--project-config", "project.json")
 
 			Expect(exitCode).To(Equal(1), "an error of an unexpected type must fall back to the operational-error path (exit 1), not be classified as project_backend_unavailable")
 			Expect(stdout).To(BeEmpty())

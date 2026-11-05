@@ -227,22 +227,14 @@ var _ = Describe("coach codesignal narrowing: accounting for every active signal
 })
 
 var _ = Describe("coach codesignal narrowing with --fail-on-incomplete-coverage", func() {
-	var (
-		originalLoadProjectConfig     func(string, string, string) (json.RawMessage, error)
-		originalResolveProjectBackend func(string) error
-	)
+	var ports scanPorts
 
 	BeforeEach(func() {
-		originalLoadProjectConfig = loadProjectConfig
-		originalResolveProjectBackend = resolveProjectBackend
-		DeferCleanup(func() {
-			loadProjectConfig = originalLoadProjectConfig
-			resolveProjectBackend = originalResolveProjectBackend
-		})
-		loadProjectConfig = func(string, string, string) (json.RawMessage, error) {
+		ports = defaultScanPorts()
+		ports.loadExplicit = func(string, string, string) (json.RawMessage, error) {
 			return json.RawMessage(`{"schema_version":"1","roots":["."]}`), nil
 		}
-		resolveProjectBackend = func(string) error {
+		ports.resolveBackend = func(string) error {
 			return &codesignalcli.ProjectBackendUnavailableError{
 				Message: `coach codesignal: no project-analysis backend is available for language "rust" yet (project_backend_unavailable)`,
 			}
@@ -255,7 +247,7 @@ var _ = Describe("coach codesignal narrowing with --fail-on-incomplete-coverage"
 		Expect(os.Chdir(repo)).To(Succeed())
 		defer func() { Expect(os.Chdir(original)).To(Succeed()) }()
 
-		stdout, stderr, exitCode := runInProcess(append([]string{"codesignal", "--baseline", "--project-config", "project.json", "--format=json", "--fail-on-incomplete-coverage"}, args...)...)
+		stdout, stderr, exitCode := runInProcessWith(ports, append([]string{"codesignal", "--baseline", "--project-config", "project.json", "--format=json", "--fail-on-incomplete-coverage"}, args...)...)
 		Expect(stderr).To(BeEmpty())
 		return stdout, exitCode
 	}

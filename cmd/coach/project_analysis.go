@@ -2,8 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
@@ -11,71 +9,88 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-var (
-	loadProjectConfig     = projectconfig.Load
-	discoverProjectConfig = projectconfig.Discover
-	resolveProjectBackend = codesignalcli.ResolveProjectBackend
-	lookupProjectBackend  = func(language string) codesignalcli.ProjectBackend {
-		switch language {
-		case "go":
-			return codesignalcli.NewGoProjectBackend()
-		case "typescript":
-			return codesignalcli.NewTSProjectBackend()
-		default:
-			return nil
-		}
-	}
-)
+// policySource is the policy a scan reads: the path, and whether the user named
+// it with --project-config or the scan discovered it. The two are read
+// differently, so they travel together.
+type policySource struct {
+	path     string
+	explicit bool
+}
 
-func prepareProjectAnalysis(dir, revision string, projectConfigSet bool, configPath, language string, suppressUncommittedCanonical bool) (*codesignalcli.ProjectAnalysis, []codesignal.Diagnostic, error) {
-	if projectConfigSet {
-		return loadPreparedProject(dir, revision, configPath, language, nil)
+// preparedProject is what loading a policy yields: the analysis to run, or the
+// diagnostics that explain why project analysis is off. Returning it by value
+// leaves "no analysis" as an empty field instead of a nil pointer result.
+type preparedProject struct {
+	analysis    *codesignalcli.ProjectAnalysis
+	diagnostics []codesignal.Diagnostic
+}
+
+// namedPolicy is the policy the user named with --project-config, or the zero
+// policySource when the scan is to discover one.
+func (f codesignalFlags) namedPolicy() policySource {
+	if !f.projectConfigSet {
+		return policySource{}
 	}
-	selection, err := discoverProjectConfig(dir, revision)
+	return policySource{path: f.projectConfig, explicit: true}
+}
+
+func prepareProjectAnalysis(dir, revision string, named policySource, language string, suppressUncommittedCanonical bool, ports scanPorts) (preparedProject, error) {
+	if named.explicit {
+		return loadPreparedProject(dir, revision, named, language, nil, ports)
+	}
+	selection, err := ports.discover(dir, revision)
 	if err != nil {
-		return nil, nil, err
+		return preparedProject{}, err
 	}
 	if selection.Fatal != nil {
 		// Path stays empty: Load rejected the canonical file. The TypeScript
 		// wrap is what prints the gaps that rejection would otherwise hide.
 		if language == "typescript" {
-			return nil, nil, tssetup.WrapProjectConfigErrorWithReadiness(selection.Fatal, dir, revision, projectconfig.CanonicalPath)
+			return preparedProject{}, tssetup.WrapProjectConfigErrorWithReadiness(selection.Fatal, dir, revision, "")
 		}
-		return nil, nil, selection.Fatal
+		return preparedProject{}, selection.Fatal
 	}
 	diags := projectSelectionDiagnostics(selection, revision, suppressUncommittedCanonical)
 	if selection.Path == "" {
-		return nil, diags, nil
+		return preparedProject{diagnostics: diags}, nil
 	}
-	return loadPreparedProject(dir, revision, selection.Path, language, diags)
+	return loadPreparedProject(dir, revision, policySource{path: selection.Path}, language, diags, ports)
 }
 
-func loadPreparedProject(dir, revision, configPath, language string, diags []codesignal.Diagnostic) (*codesignalcli.ProjectAnalysis, []codesignal.Diagnostic, error) {
-	config, err := loadProjectConfig(dir, revision, configPath)
+func loadPreparedProject(dir, revision string, source policySource, language string, diags []codesignal.Diagnostic, ports scanPorts) (preparedProject, error) {
+	config, err := ports.loader(source.explicit)(dir, revision, source.path)
 	if err != nil {
-		if language == "typescript" {
-			err = tssetup.WrapProjectConfigErrorWithReadiness(err, dir, revision, configPath)
+		namedPath := ""
+		if source.explicit {
+			namedPath = source.path
 		}
-		return nil, nil, err
+		return preparedProject{}, withReadinessForLanguage(err, dir, revision, namedPath, language)
 	}
-	if err := resolveProjectBackend(language); err != nil {
-		var backendErr *codesignalcli.ProjectBackendUnavailableError
-		if !errors.As(err, &backendErr) {
-			return nil, nil, err
-		}
-		return nil, appendDiagnostic(diags, backendUnavailableDiagnostic(configPath, backendErr.Message)), nil
+	backend, unavailable, err := selectProjectBackend(ports, language)
+	if err != nil {
+		return preparedProject{}, err
 	}
-	backend := lookupProjectBackend(language)
 	if backend == nil {
-		return nil, appendDiagnostic(diags, backendUnavailableDiagnostic(configPath, fmt.Sprintf("coach codesignal: no project-analysis backend is available for language %q yet (project_backend_unavailable)", language))), nil
+		return preparedProject{diagnostics: appendDiagnostic(diags, backendUnavailableDiagnostic(source.path, unavailable))}, nil
 	}
-	return &codesignalcli.ProjectAnalysis{
-		ConfigPath:   configPath,
-		Language:     language,
-		Config:       append(json.RawMessage(nil), config...),
-		ConfigDigest: projectconfig.Digest(config),
-		Backend:      backend,
-	}, diags, nil
+	return preparedProject{
+		analysis: &codesignalcli.ProjectAnalysis{
+			ConfigPath:     source.path,
+			ConfigExplicit: source.explicit,
+			Language:       language,
+			Config:         append(json.RawMessage(nil), config...),
+			ConfigDigest:   projectconfig.Digest(config),
+			Backend:        backend,
+		},
+		diagnostics: diags,
+	}, nil
+}
+
+func withReadinessForLanguage(err error, dir, revision, configPath, language string) error {
+	if language != "typescript" {
+		return err
+	}
+	return tssetup.WrapProjectConfigErrorWithReadiness(err, dir, revision, configPath)
 }
 
 func backendUnavailableDiagnostic(configPath, message string) codesignal.Diagnostic {

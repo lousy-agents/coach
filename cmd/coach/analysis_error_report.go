@@ -7,6 +7,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
@@ -15,8 +16,8 @@ import (
 // classifyAnalysisError never sees a project_backend_unavailable error --
 // prepareProjectAnalysis handles that case separately by returning
 // a diagnostic instead of an error. The base ProjectConfigError message
-// stays unconditional on --project-language: loadProjectConfig runs before
-// resolveProjectBackend and never receives --project-language (see
+// stays unconditional on --project-language: the policy loads before the
+// backend is resolved and never receives --project-language (see
 // prepareProjectAnalysis), so a class-2 config failure's own message is
 // language-independent by construction
 // (project_contract_acceptance_test.go guards this invariant) and must stay
@@ -85,18 +86,27 @@ func analysisErrorReportFor(err error, language string, hasControllingTerminal b
 	if errors.As(err, &configErrWithReadiness) {
 		return classTwoReport(configErrWithReadiness.Message,
 			tssetup.AlsoFailingGapLines(configErrWithReadiness.Readiness, configErrWithReadiness.ConfigPath),
-			tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.SuggestProjectConfigRemediation(language)))
+			authoringRemediation(configErrWithReadiness.ConfigError, hasControllingTerminal, language))
 	}
 	var configErr *projectconfig.ConfigError
 	if errors.As(err, &configErr) {
-		return classTwoReport(configErr.Message, nil,
-			tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.SuggestProjectConfigRemediation(language)))
+		return classTwoReport(configErr.Message, nil, authoringRemediation(configErr, hasControllingTerminal, language))
 	}
 	var opErr *gitrepo.OperationalError
 	if errors.As(err, &opErr) {
 		return analysisErrorReport{lines: []string{opErr.Message}, exitCode: 1}
 	}
 	return analysisErrorReport{lines: []string{err.Error()}, exitCode: 1}
+}
+
+// authoringRemediation is the appended --suggest-project-config line, withheld
+// when authoring a policy cannot fix the error: the policy is committed and
+// only needs restoring, or its path cannot be created.
+func authoringRemediation(configErr *projectconfig.ConfigError, hasControllingTerminal bool, language string) string {
+	if configErr.Remedy != projectreadiness.RemedyAuthor {
+		return ""
+	}
+	return tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.SuggestProjectConfigRemediation(language))
 }
 
 // classTwoReport assembles the shape every class-2 diagnostic shares (owner

@@ -69,6 +69,6 @@ func checkedPolicyRoots(dir, revision, configPath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, roots, err := projectcheck.CheckPolicy(dir, revision, policyPath)
+	_, roots, err := projectcheck.PolicyChecker(configPath)(dir, revision, policyPath)
 	return roots, err
 }

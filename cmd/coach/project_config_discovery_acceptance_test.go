@@ -147,7 +147,7 @@ var _ = Describe("coach project config discovery", func() {
 	})
 
 	When("a typescript baseline scan finds a committed invalid canonical policy and a valid project.json", func() {
-		It("prints the same stderr as an explicit --project-config of that canonical file, apart from the path", func() {
+		It("prints the same stderr as an explicit --project-config of that canonical file, apart from the path and from naming the policy with --project-config", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, coachConfigPath, invalidPolicyText)
 			commitFile(repo, legacyConfigPath, singleRootPolicyJSON)
@@ -164,8 +164,10 @@ var _ = Describe("coach project config discovery", func() {
 			Expect(explicitStdout).To(BeEmpty())
 			Expect(string(explicitStderr)).To(ContainSubstring("typescript_compiler_missing: also failing"), "the explicit path is the reference that already reports the masked compiler gap; stderr=%s", explicitStderr)
 
-			Expect(stderrAsideFromPolicyPath(implicitStderr, coachConfigPath)).To(Equal(stderrAsideFromPolicyPath(explicitStderr, coachConfigPath)),
+			explicitWithoutFlag := strings.ReplaceAll(string(explicitStderr), " --project-config "+coachConfigPath, "")
+			Expect(stderrAsideFromPolicyPath(implicitStderr, coachConfigPath)).To(Equal(stderrAsideFromPolicyPath([]byte(explicitWithoutFlag), coachConfigPath)),
 				"implicit stderr=%s explicit stderr=%s", implicitStderr, explicitStderr)
+			Expect(string(implicitStderr)).NotTo(ContainSubstring(" --project-config "+coachConfigPath), "a discovered policy is not named with --project-config:\n%s", implicitStderr)
 		})
 	})
 

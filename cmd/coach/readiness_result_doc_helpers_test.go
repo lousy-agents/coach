@@ -16,6 +16,16 @@ func nextActionKinds(doc readinessResultDoc) []string {
 	return kinds
 }
 
+func nextActionsNamed(doc readinessResultDoc, kind string) []readinessNextActionDoc {
+	var named []readinessNextActionDoc
+	for _, action := range doc.NextActions {
+		if action.Kind == kind {
+			named = append(named, action)
+		}
+	}
+	return named
+}
+
 type readinessRootFindingDoc struct {
 	Root    string `json:"root"`
 	Version string `json:"version"`

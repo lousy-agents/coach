@@ -55,7 +55,7 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		format:                   flags.String("format", "text", "output format: text or json"),
 		scope:                    flags.String("scope", "production", "source scope: production or all"),
 		buildTarget:              flags.String("build-target", "", "Go package pattern used to determine production reachability"),
-		projectConfig:            flags.String("project-config", "", "repository-relative path to a project-analysis config at the selected revision; enables opt-in cross-module project facts"),
+		projectConfig:            flags.String("project-config", "", "repository-relative path to a project-analysis config; the file must exist on disk and its content is read at the selected revision; enables opt-in cross-module project facts"),
 		projectLanguage:          flags.String("project-language", "go", "project-analysis language: go or typescript"),
 		minSeverity:              flags.String("min-severity", "", "render only signals at or above this severity ("+severityFloorsHelp()+") and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),
 		top:                      flags.String("top", "", "render only the first N signals in report order (a positive integer, applied after --min-severity; the order puts lifecycle group first, then severity) and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),

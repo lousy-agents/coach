@@ -278,7 +278,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 				Code:    projectreadiness.GapPackageManagerConfigUnverifiable,
 			}
 
-			exitCode := reportPrepareCompilerMiseResult(result, stderrFile)
+			exitCode := reportPrepareCompilerMiseResult(result, "", "", stderrFile)
 
 			transcript := readStderr()
 			Expect(exitCode).To(Equal(2), "stderr: %s", transcript)

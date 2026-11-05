@@ -11,7 +11,7 @@ import (
 
 // ProjectConfigErrorWithReadiness enriches a projectconfig.ConfigError with the
 // full TypeScript project-readiness snapshot computed for the same
-// dir/revision/configPath. prepareProjectAnalysis's loadProjectConfig short
+// dir/revision/configPath. prepareProjectAnalysis's policy-load short
 // circuit means only the policy failure would otherwise ever reach
 // classifyAnalysisError, masking a simultaneous compiler gap (AC-SET-13).
 // Unwrap returns the original *projectconfig.ConfigError so
@@ -68,8 +68,9 @@ func WrapCompilerUnresolvedErrorWithReadiness(err error, dir, revision, configPa
 	return &CompilerUnresolvedErrorWithReadiness{CompilerUnresolvedError: unresolved, Readiness: readiness, Revision: revision}
 }
 
-// WrapProjectConfigErrorWithReadiness recomputes readiness for
-// dir/revision/configPath and wraps err with it, for AC-SET-13's
+// WrapProjectConfigErrorWithReadiness computes readiness for
+// dir/revision/configPath, taking the working tree's verdict from err instead of
+// reading the working tree again, and wraps err with it, for AC-SET-13's
 // report-all-gaps requirement. It returns err unchanged when err is not a
 // *projectconfig.ConfigError, or when readiness itself cannot be computed: a masked
 // compiler gap is a strictly smaller problem than losing the original
@@ -79,7 +80,7 @@ func WrapProjectConfigErrorWithReadiness(err error, dir, revision, configPath st
 	if !errors.As(err, &configErr) {
 		return err
 	}
-	readiness, readinessErr := projectcheck.Run(dir, revision, configPath)
+	readiness, readinessErr := projectcheck.RunAfterPolicyError(dir, revision, configPath, configErr)
 	if readinessErr != nil {
 		return err
 	}

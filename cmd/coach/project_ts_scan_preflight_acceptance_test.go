@@ -128,10 +128,10 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 	})
 
 	When("a --baseline scan's explicit --project-config names a policy that was never committed", func() {
-		It("keeps the existing project_config_invalid message unchanged, additionally reports the compiler gap this repository also fails (AC-SET-13), appends the --suggest-project-config remediation, leaves stdout empty, and exits 2", func() {
+		It("reports the missing policy as project_config_missing, additionally reports the compiler gap this repository also fails (AC-SET-13), appends the --suggest-project-config remediation, leaves stdout empty, and exits 2", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, "README.md", "seed\n")
-			// project.json is deliberately never committed: loadProjectConfig
+			// project.json is deliberately never committed: the policy load
 			// fails with ProjectConfigError before any language-specific
 			// backend or compiler resolution runs. This repository also has
 			// no package.json anywhere, but checks.compiler runs
@@ -153,21 +153,21 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 			Expect(stdout).To(BeEmpty())
 
 			lines := stderrLines(stderr)
-			Expect(lines[0]).To(ContainSubstring("project.json"), "the existing project_config_invalid message must still name the path")
-			Expect(alsoFailingGapCodes(lines)).To(Equal([]string{"typescript_compiler_missing", "package_manager_version_unverifiable"}), "AC-SET-13 requires reporting every gap loadProjectConfig's short circuit would otherwise mask -- not only the compiler check -- in readiness's own frozen order; stderr: %s", stderr)
+			Expect(lines[0]).To(And(ContainSubstring("project.json"), ContainSubstring("project_config_missing")), "the missing-policy message must name the path and project_config_missing")
+			Expect(alsoFailingGapCodes(lines)).To(Equal([]string{"typescript_compiler_missing", "package_manager_version_unverifiable"}), "AC-SET-13 requires reporting every gap the policy load's short circuit would otherwise mask -- not only the compiler check -- in readiness's own frozen order; stderr: %s", stderr)
 			Expect(lines[len(lines)-1]).To(Equal("on a terminal: coach codesignal --baseline --suggest-project-config --project-language typescript -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"), "AC-SET-9's appended command must never combine --suggest-project-config with --project-config (validateSuggestProjectConfigFlags rejects that combination)")
 		})
 	})
 
 	When("a --baseline scan's explicit --project-config names a policy that was never committed, while the repository is genuinely TypeScript-shaped and has no installed TypeScript compiler either (AC-SET-13)", func() {
-		DescribeTable("reports the existing policy message unchanged, additionally reports the masked compiler gap, and still offers only guided policy authoring -- never --prepare-compiler -- as the interactive next step, regardless of --format (AC-9)",
+		DescribeTable("reports the missing policy message, additionally reports the masked compiler gap, and still offers only guided policy authoring -- never --prepare-compiler -- as the interactive next step, regardless of --format (AC-9)",
 			func(formatArg string) {
 				repo := newTempGitRepo()
 				commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 				commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
 				// project.json is deliberately never committed, and no TypeScript
 				// compiler is installed: the policy check and the compiler check
-				// both fail at the same revision, but loadProjectConfig's short
+				// both fail at the same revision, but the policy load's short
 				// circuit (prepareProjectAnalysis) means only the policy failure
 				// would ever reach classifyAnalysisError without AC-SET-13's
 				// readiness-aware wrapping.
@@ -181,8 +181,8 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 
 				lines := stderrLines(stderr)
 				Expect(lines).To(HaveLen(4), "stderr: %s", stderr)
-				Expect(lines[0]).To(ContainSubstring("project.json"), "the existing project_config_invalid message must still name the path")
-				Expect(alsoFailingGapCodes(lines)).To(Equal([]string{"typescript_compiler_missing", "package_manager_version_unverifiable"}), "AC-SET-13 requires reporting every gap loadProjectConfig's short circuit would otherwise mask; stderr: %s", stderr)
+				Expect(lines[0]).To(And(ContainSubstring("project.json"), ContainSubstring("project_config_missing")), "the missing-policy message must name the path and project_config_missing")
+				Expect(alsoFailingGapCodes(lines)).To(Equal([]string{"typescript_compiler_missing", "package_manager_version_unverifiable"}), "AC-SET-13 requires reporting every gap the policy load's short circuit would otherwise mask; stderr: %s", stderr)
 				Expect(lines[len(lines)-1]).To(Equal("on a terminal: coach codesignal --baseline --suggest-project-config --project-language typescript -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"), "the only offered interactive action must still be guided policy authoring, never --prepare-compiler, until a policy is reviewed and committed")
 			},
 			Entry("--format=json", "--format=json"),
@@ -213,7 +213,7 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 			Expect(stdout).To(BeEmpty())
 
 			lines := stderrLines(stderr)
-			Expect(lines[0]).To(ContainSubstring("project.json"), "the existing project_config_invalid message must still name the path")
+			Expect(lines[0]).To(And(ContainSubstring("project.json"), ContainSubstring("project_config_missing")), "the missing-policy message must name the path and project_config_missing")
 			Expect(lines).To(HaveLen(4), "stderr: %s", stderr)
 			Expect(alsoFailingGapCodes(lines)).To(Equal([]string{"typescript_compiler_missing", "package_manager_version_unverifiable"}), "a nested, unvalidated package.json must not suppress a compiler gap readiness itself reports, and unsupported_repository_shape must never appear once checkProjectShape reports not_checked; stderr: %s", stderr)
 			Expect(lines[len(lines)-1]).To(Equal("on a terminal: coach codesignal --baseline --suggest-project-config --project-language typescript -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"))
@@ -357,13 +357,12 @@ func stderrLines(stderr []byte) []string {
 var _ = Describe("coach codesignal: optional preparation after a successful scan (SA-280-046)", func() {
 	When("an injected optional offer declines", func() {
 		It("still renders the CodeSignal report", func() {
-			original := runOptionalScanPreparation
 			called := false
-			runOptionalScanPreparation = func(dir string, f codesignalFlags, stdout, stderr *os.File) optionalPreparationResult {
+			ports := defaultScanPorts()
+			ports.optionalPreparation = func(dir string, f codesignalFlags, stdout, stderr *os.File) optionalPreparationResult {
 				called = true
 				return optionalPreparationResult{Declined: true}
 			}
-			DeferCleanup(func() { runOptionalScanPreparation = original })
 
 			repo := newTempGitRepo()
 			commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
@@ -374,7 +373,7 @@ var _ = Describe("coach codesignal: optional preparation after a successful scan
 			Expect(err).NotTo(HaveOccurred())
 
 			f := codesignalFlags{baseline: true, format: "json"}
-			exitCode := runCodesignalScan(repo, f, os.Stdin, outWrite, errWrite, newScanOfferBudget())
+			exitCode := runCodesignalScan(repo, f, os.Stdin, outWrite, errWrite, newScanOfferBudget(), ports)
 			Expect(outWrite.Close()).To(Succeed())
 			Expect(errWrite.Close()).To(Succeed())
 			stdout, readErr := io.ReadAll(outRead)
@@ -392,11 +391,10 @@ var _ = Describe("coach codesignal: optional preparation after a successful scan
 
 	When("an injected optional offer cancels", func() {
 		It("exits 2 with no report", func() {
-			original := runOptionalScanPreparation
-			runOptionalScanPreparation = func(dir string, f codesignalFlags, stdout, stderr *os.File) optionalPreparationResult {
+			ports := defaultScanPorts()
+			ports.optionalPreparation = func(dir string, f codesignalFlags, stdout, stderr *os.File) optionalPreparationResult {
 				return optionalPreparationResult{Cancelled: true}
 			}
-			DeferCleanup(func() { runOptionalScanPreparation = original })
 
 			repo := newTempGitRepo()
 			commitFile(repo, "a.go", "package a\n\nfunc A() {}\n")
@@ -407,7 +405,7 @@ var _ = Describe("coach codesignal: optional preparation after a successful scan
 			Expect(err).NotTo(HaveOccurred())
 
 			f := codesignalFlags{baseline: true, format: "json"}
-			exitCode := runCodesignalScan(repo, f, os.Stdin, outWrite, errWrite, newScanOfferBudget())
+			exitCode := runCodesignalScan(repo, f, os.Stdin, outWrite, errWrite, newScanOfferBudget(), ports)
 			Expect(outWrite.Close()).To(Succeed())
 			Expect(errWrite.Close()).To(Succeed())
 			stdout, readErr := io.ReadAll(outRead)

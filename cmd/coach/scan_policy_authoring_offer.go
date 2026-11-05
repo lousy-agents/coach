@@ -6,15 +6,16 @@ import (
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 )
 
 // scanShouldAuthorProjectConfig reports whether a real scan's (not
 // --check-project/--suggest-project-config/--prepare-compiler) analysis
-// error is AC-POL-8's guided-authoring case: a TypeScript policy that was
-// never committed at all (*projectconfig.ConfigError with Kind ==
-// ProjectConfigNotFound, whether or not it has been wrapped in a
+// error is AC-POL-8's guided-authoring case: an explicit TypeScript policy
+// that does not exist on disk (*projectconfig.ConfigError with Kind ==
+// KindMissing, whether or not it has been wrapped in a
 // *ProjectConfigErrorWithReadiness for AC-SET-13) with a controlling
 // terminal available on stdin. An unusable configPath is rejected before
 // even inspecting err, since ValidateProjectConfigPath's own failure is a
@@ -35,17 +36,20 @@ func scanShouldAuthorProjectConfig(err error, language, configPath string, noInt
 	if projectconfig.ValidatePath(configPath) != nil {
 		return false
 	}
-	var configErr *projectconfig.ConfigError
-	if !errors.As(err, &configErr) {
-		return false
-	}
-	if configErr.Kind != projectconfig.KindNotFound {
+	if !authorableMissingPolicy(err) {
 		return false
 	}
 	if noInteractive {
 		return false
 	}
 	return terminal.HasControllingTerminal(os.Stdin)
+}
+
+// authorableMissingPolicy reports whether err is a missing policy that guided
+// authoring could fix.
+func authorableMissingPolicy(err error) bool {
+	var configErr *projectconfig.ConfigError
+	return errors.As(err, &configErr) && configErr.Kind == projectconfig.KindMissing && configErr.Remedy == projectreadiness.RemedyAuthor
 }
 
 // runScanProjectConfigAuthoring implements AC-POL-8. It reuses the exact
@@ -86,7 +90,7 @@ func runScanProjectConfigAuthoring(dir string, f codesignalFlags, scanErr error,
 		fmt.Fprintf(stderr, "coach codesignal: the approved TypeScript project-config candidate was written to stdout and no file was created; review it, save it as %q replacing the current file, commit it, then rerun this scan once it is committed.\n", projectconfig.CanonicalPath)
 		return 2
 	}
-	fmt.Fprintf(stderr, "coach codesignal: the approved TypeScript project-config candidate was written to stdout and no file was created; save it to %q, review it, commit it, then rerun this scan once it is committed.\n", f.projectConfig)
+	fmt.Fprintf(stderr, "coach codesignal: the approved TypeScript project-config candidate was written to stdout and no file was created; save it to %q at the repository root, review it, commit it, then rerun this scan once it is committed.\n", f.projectConfig)
 	return 2
 }
 

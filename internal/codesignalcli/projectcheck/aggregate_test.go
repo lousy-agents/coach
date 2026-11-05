@@ -2,6 +2,7 @@ package projectcheck
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
@@ -133,5 +134,38 @@ func TestAggregateReadinessOrdersNextActionsPolicyBeforeCompiler(t *testing.T) {
 		if !reflect.DeepEqual(nextActions[i], action) {
 			t.Fatalf("nextActions[%d] = %#v, want %#v (full: %#v)", i, nextActions[i], action, nextActions)
 		}
+	}
+}
+
+func TestAggregateReadinessRestoresACommittedPolicyInsteadOfAuthoringOne(t *testing.T) {
+	cases := []struct {
+		name   string
+		remedy projectreadiness.PolicyRemedy
+		want   []string
+	}{
+		{"a policy that was never committed", projectreadiness.RemedyAuthor, []string{"author_policy"}},
+		{"a policy committed at the analyzed revision", projectreadiness.RemedyRestore, []string{projectreadiness.NextActionRestorePolicy}},
+		{"a policy whose path a new file cannot fix, or a restore would overwrite something", projectreadiness.RemedyNone, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			assertPolicyNextActions(t, c.remedy, c.want)
+		})
+	}
+}
+
+func assertPolicyNextActions(t *testing.T, remedy projectreadiness.PolicyRemedy, wantKinds []string) {
+	t.Helper()
+	checks := projectreadiness.Checks{
+		Policy: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing, Remedy: remedy},
+	}
+
+	_, gaps, nextActions, _ := aggregateReadiness(checks, false, nil)
+
+	if len(gaps) != 1 || gaps[0].Code != projectreadiness.GapPolicyMissing {
+		t.Fatalf("gaps = %#v, want the policy_missing gap kept", gaps)
+	}
+	if !slices.EqualFunc(nextActions, wantKinds, func(action projectreadiness.NextAction, kind string) bool { return action.Kind == kind }) {
+		t.Fatalf("nextActions = %#v, want kinds %v", nextActions, wantKinds)
 	}
 }
