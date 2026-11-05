@@ -157,6 +157,24 @@ A dimension score captures three layers of evaluation, applied in order:
 
 ---
 
+## Advisory
+
+These checks report eval coverage and fix status. They never change PASS / NEEDS WORK / FAIL or any ✅ / ⚠️ / ❌ score. V2 adds a finding to the report's "Advisory: eval coverage and fix status" section; V1 labels every proposed fix where it appears, in Issues and in that section. They never move, soften, or replace a numbered ❌ or ⚠️ finding from the sections above.
+
+Advisory adds; it never relocates. If you would report a concern as an Issue without these checks, whether a numbered check or your own judgment flagged it, keep it in Issues at that severity.
+
+| # | Check | Severity | Detail |
+|---|-------|----------|--------|
+| V1 | Fix status | ℹ️ Advisory | Each fix the reviewer proposes is labeled tested (with the evidence) or untested |
+| V2 | Eval gap | ℹ️ Advisory | The skill has evals, or the report says where it looked and found none |
+
+### What you're actually looking for
+
+- **V1 Fix status:** Mark each fix the reviewer proposes, in Issues and in Advisory, as tested (with the evidence, e.g. "confirmed `./references/x.md` exists with Glob") or untested. Never present an untested fix as the remedy; present it as a proposal to try. This is a labeling rule: it does not require running anything.
+- **V2 Eval gap:** Look for evals inside the skill directory (e.g. an evals/ directory) and in any repository-level eval directory for the skill (e.g. evals/<skill-name>/). Report a gap only when you find neither, and say where you looked. If the skill is an installed copy (for example under `.claude/skills/`, `.agents/skills/` or `.github/skills/` in a project that did not author it, or outside any repository), say the check was limited to what is installed and that upstream evals were not checked.
+
+---
+
 ## Skill Smells — Bad Examples
 
 Concrete examples of what bad skills look like. Use these to calibrate scoring and quickly identify problems.
