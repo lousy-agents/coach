@@ -18,18 +18,20 @@ var allowedSiblingImports = map[string][]string{
 	"configauthoring":     {"gitrepo", "projectconfig", "prompt", "revisionfs"},
 	"gitrepo":             {},
 	"internal/gitfixture": {},
+	"invocation":          {"shellword"},
 	"pkgmanager":          {"gitrepo", "projectreadiness", "subprocess", "tstoolchain"},
 	"projectcheck":        {"gitrepo", "pkgmanager", "projectconfig", "projectreadiness", "tstoolchain"},
-	"projectconfig":       {"gitrepo"},
+	"projectconfig":       {"gitrepo", "projectreadiness", "shellword"},
 	"projectreadiness":    {},
 	"prompt":              {},
 	"render":              {"projectreadiness"},
 	"revisionfs":          {"gitrepo"},
+	"shellword":           {},
 	"sourcescope":         {"gitrepo"},
 	"subprocess":          {},
 	"terminal":            {},
-	"tssetup":             {"gitrepo", "pkgmanager", "projectcheck", "projectconfig", "projectreadiness", "prompt", "tstoolchain"},
-	"tstoolchain":         {"gitrepo", "projectreadiness", "subprocess"},
+	"tssetup":             {"gitrepo", "invocation", "pkgmanager", "projectcheck", "projectconfig", "projectreadiness", "prompt", "tstoolchain"},
+	"tstoolchain":         {"gitrepo", "invocation", "projectreadiness", "subprocess"},
 }
 
 func TestSubPackageImportsFollowTheLayering(t *testing.T) {

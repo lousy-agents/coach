@@ -1,11 +1,12 @@
 package tssetup
 
 import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/invocation"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func alsoFailingGapLine(code, configPath string) string {
-	return code + ": also failing, run " + typescriptInvocation("--check-project", configPath)
+	return code + ": also failing, " + invocation.Command{Mode: invocation.CheckProject, ConfigPath: configPath}.Phrase("run")
 }
 
 // AlsoFailingGapLines is AC-SET-13's "report all gaps" clause: one line for
@@ -63,7 +64,7 @@ func AlsoFailingGapLines(readiness *projectreadiness.Result, configPath string) 
 // than discovered by spending an invocation on it.
 func SuggestProjectConfigRemediation(language string) string {
 	if language == "typescript" {
-		return onATerminal(typescriptInvocation("--suggest-project-config", "")) +
+		return onATerminal(invocation.Command{Mode: invocation.SuggestProjectConfig}.Phrase("")) +
 			" -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"
 	}
 	return "coach codesignal --baseline --suggest-project-config"

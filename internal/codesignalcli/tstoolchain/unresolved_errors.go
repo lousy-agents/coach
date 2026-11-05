@@ -1,6 +1,7 @@
 package tstoolchain
 
 import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/invocation"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -10,7 +11,9 @@ import (
 // stay operational errors. RootFindings entries are repository-relative
 // policy roots, never filesystem paths.
 type CompilerUnresolvedError struct {
-	Code         string
+	Code string
+	// ConfigPath is the --project-config the user passed, empty when the policy
+	// was discovered.
 	ConfigPath   string
 	RootFindings []projectreadiness.RootFinding
 }
@@ -27,7 +30,9 @@ func (e *CompilerUnresolvedError) RemediationLine() string {
 // It is not a CompilerUnresolvedError: the compiler-setup offer must not
 // errors.As it, because Coach has no runtime installer.
 type RuntimeUnresolvedError struct {
-	Code       string
+	Code string
+	// ConfigPath is the --project-config the user passed, empty when the policy
+	// was discovered.
 	ConfigPath string
 }
 
@@ -40,11 +45,7 @@ func (e *RuntimeUnresolvedError) RemediationLine() string {
 }
 
 func gapRemediationLine(code, configPath string, findings []projectreadiness.RootFinding) string {
-	invocation := "coach codesignal --baseline --check-project --project-language typescript"
-	if configPath != "" {
-		invocation += " --project-config " + configPath
-	}
-	return code + formatRemediationRootFindings(findings) + ": run " + invocation
+	return code + formatRemediationRootFindings(findings) + ": " + invocation.Command{Mode: invocation.CheckProject, ConfigPath: configPath}.Phrase("run")
 }
 
 func formatRemediationRootFindings(findings []projectreadiness.RootFinding) string {

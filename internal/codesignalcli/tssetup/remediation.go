@@ -1,6 +1,7 @@
 package tssetup
 
 import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/invocation"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -42,7 +43,7 @@ func PrepareCompilerRemediationWithReadiness(gapCode, configPath string, readine
 	if !menuOffersExecutableMiseChoice(AvailableChoices(*readiness)) {
 		return ""
 	}
-	return onATerminal(typescriptInvocation("--prepare-compiler", configPath))
+	return onATerminal(invocation.Command{Mode: invocation.PrepareCompiler, ConfigPath: configPath}.Phrase(""))
 }
 
 // PrepareCompilerRemediation names the interactive, consented mise
@@ -56,7 +57,7 @@ func PrepareCompilerRemediation(gapCode, configPath string) string {
 	if !gapCodeIsExecutablePrepareCompiler(gapCode) {
 		return ""
 	}
-	return onATerminal(typescriptInvocation("--prepare-compiler", configPath))
+	return onATerminal(invocation.Command{Mode: invocation.PrepareCompiler, ConfigPath: configPath}.Phrase(""))
 }
 
 // ScanSetupOfferRemediation names the interactive scan invocation itself
@@ -80,25 +81,5 @@ func ScanSetupOfferRemediation(gapCode, configPath string, readiness *projectrea
 	if !menuOffersExecutableChoice(menu) || menuOffersExecutableMiseChoice(menu) {
 		return ""
 	}
-	return onATerminal(typescriptScanInvocation(configPath) + " -- offers project-package setup")
-}
-
-// typescriptScanInvocation names the bare `coach codesignal --baseline`
-// scan itself, distinct from typescriptInvocation's own --check-project/
-// --prepare-compiler forms: R2's remediation points at rerunning the
-// original scan on a terminal, not at a standalone subcommand.
-func typescriptScanInvocation(configPath string) string {
-	invocation := "coach codesignal --baseline"
-	if configPath != "" {
-		invocation += " --project-config " + configPath
-	}
-	return invocation + " --project-language typescript"
-}
-
-func typescriptInvocation(flag, projectConfigPath string) string {
-	invocation := "coach codesignal --baseline " + flag + " --project-language typescript"
-	if projectConfigPath != "" {
-		invocation += " --project-config " + projectConfigPath
-	}
-	return invocation
+	return onATerminal(invocation.Command{Mode: invocation.Scan, ConfigPath: configPath}.Phrase("") + " -- offers project-package setup")
 }
