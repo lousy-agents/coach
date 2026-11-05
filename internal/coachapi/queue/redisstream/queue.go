@@ -22,7 +22,7 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
 )
 
@@ -34,7 +34,7 @@ const taskIDMetadataKey = "task_id"
 // maxWatermillIdleTime is set on wmredisstream.SubscriberConfig.MaxIdleTime
 // to make watermill-redisstream's own real-wall-clock, Redis-server-time
 // XCLAIM-based reclaim effectively never fire. This Queue enforces
-// ClaimAfter itself against the injected acceptanceharness.Clock (see
+// ClaimAfter itself against the injected clock.Clock (see
 // reclaimExpired), which is what lets crash-recovery tests force a reclaim
 // deterministically via FakeClock.Advance instead of waiting on real time
 // or Redis server time -- ADR-006 rule 9 ("Clock and durations are
@@ -99,7 +99,7 @@ type Queue struct {
 	stream       string
 	poisonStream string
 	claimAfter   time.Duration
-	clock        acceptanceharness.Clock
+	clock        clock.Clock
 
 	mu      sync.Mutex
 	pending map[string]*pendingClaim
@@ -108,16 +108,16 @@ type Queue struct {
 var _ queue.TaskQueue = (*Queue)(nil)
 
 // NewQueue connects to Redis and returns a Queue consuming cfg.Stream
-// under cfg.ConsumerGroup. clock defaults to acceptanceharness.RealClock
+// under cfg.ConsumerGroup. source defaults to clock.RealClock
 // when nil; tests inject acceptanceharness.FakeClock to force reclaims
 // deterministically (see maxWatermillIdleTime's doc comment).
-func NewQueue(cfg Config, clock acceptanceharness.Clock) (*Queue, error) {
+func NewQueue(cfg Config, source clock.Clock) (*Queue, error) {
 	cfg.setDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	if clock == nil {
-		clock = acceptanceharness.RealClock{}
+	if source == nil {
+		source = clock.RealClock{}
 	}
 
 	client := redis.NewClient(&redis.Options{
@@ -172,7 +172,7 @@ func NewQueue(cfg Config, clock acceptanceharness.Clock) (*Queue, error) {
 		stream:       cfg.Stream,
 		poisonStream: poisonStreamName(cfg.Stream),
 		claimAfter:   cfg.ClaimAfter,
-		clock:        clock,
+		clock:        source,
 		pending:      make(map[string]*pendingClaim),
 	}, nil
 }

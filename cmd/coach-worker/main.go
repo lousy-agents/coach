@@ -11,7 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 	"github.com/lousy-agents/coach/internal/coachapi/worker"
 )
 
@@ -41,7 +41,7 @@ func run(ctx context.Context, cfg Config) error {
 		return err
 	}
 
-	w, err := worker.New(deps.Store, deps.Queue, acceptanceharness.RealClock{}, handler, worker.Config{
+	w, err := worker.New(deps.Store, deps.Queue, clock.RealClock{}, handler, worker.Config{
 		WorkerID:           cfg.WorkerID,
 		HeartbeatInterval:  cfg.HeartbeatInterval,
 		StaleAfter:         cfg.StaleAfter,

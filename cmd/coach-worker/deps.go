@@ -10,8 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
 	"github.com/lousy-agents/coach/internal/coachapi"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
 	"github.com/lousy-agents/coach/internal/coachapi/queue/redisstream"
 )
@@ -40,7 +40,7 @@ func buildDependencies(ctx context.Context, cfg Config) (Dependencies, error) {
 		ConsumerGroup: cfg.RedisConsumerGroup,
 		Consumer:      cfg.RedisConsumer,
 		ClaimAfter:    cfg.RedisClaimAfter,
-	}, acceptanceharness.RealClock{})
+	}, clock.RealClock{})
 	if err != nil {
 		return Dependencies{}, fmt.Errorf("coach-worker: constructing Redis Streams queue: %w", err)
 	}
