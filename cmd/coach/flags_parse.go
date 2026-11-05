@@ -17,6 +17,7 @@ func parseCodesignalFlags(args []string, stdout, stderr *os.File) (codesignalFla
 		flags.SetOutput(stderr)
 	}
 	holders := registerCodesignalFlags(flags)
+	flags.Usage = func() { printUsageWithoutHiddenFlags(flags) }
 
 	if handled, code := handleCodesignalHelp(args, flags, suggestRequested, stdout, stderr); handled {
 		return codesignalFlags{}, code, false
@@ -74,5 +75,5 @@ func finishCodesignalFlagParse(flags *flag.FlagSet, h codesignalFlagHolders, std
 		fmt.Fprintln(stderr, errMsg)
 		return codesignalFlags{}, 2, false
 	}
-	return parsed, 0, true
+	return withWorktreeDefaultBase(parsed), 0, true
 }

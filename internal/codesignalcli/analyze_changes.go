@@ -19,13 +19,14 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 	var fileChanges []codesignal.FileChange
 	diagnostics := append([]codesignal.Diagnostic(nil), extraDiagnostics...)
 
+	view := project.worktreeView()
 	for _, sf := range files {
 		var fc *codesignal.FileChange
 		var fileDiagnostics []codesignal.Diagnostic
 		if sf.Status == "removed" {
 			fc, fileDiagnostics = analyzeRemovedFile(ctx, analyzer, dir, mergeBaseSHA, sf)
 		} else {
-			fc, fileDiagnostics = analyzeAddedOrModifiedFile(ctx, analyzer, dir, headSHA, mergeBaseSHA, sf)
+			fc, fileDiagnostics = analyzeAddedOrModifiedFile(ctx, analyzer, dir, headSHA, mergeBaseSHA, sf, view)
 		}
 		diagnostics = append(diagnostics, fileDiagnostics...)
 		if fc != nil {

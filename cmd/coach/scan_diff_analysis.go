@@ -6,7 +6,6 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
-	"github.com/lousy-agents/coach/internal/codesignalcli/sourcescope"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -20,18 +19,19 @@ func runDiffAnalysis(dir string, f codesignalFlags, stdin, stderr *os.File) (*co
 	if err != nil {
 		return nil, err
 	}
-	selected, excluded, err := sourcescope.Apply(dir, headSHA, f.buildTarget, f.scope, selected)
+	status := codesignalcli.ReadWorktreeStatus(dir, f.worktree)
+	view := worktreeViewFor(status, f)
+	scoped, err := scopeDiffSelection(dir, headSHA, f, view, scopedDiff{files: selected, diagnostics: diagnostics, continuity: continuity})
 	if err != nil {
 		return nil, err
 	}
-	diagnostics = append(diagnostics, codesignalcli.WorkingTreeDisclosureDiagnostics(dir)...)
+	diagnostics = append(scoped.diagnostics, committedWorkingTreeDisclosure(status, f)...)
 
-	project, diags, restoreStatus, opErr := prepareScanProjectAnalysis(dir, headSHA, f, stdin, stderr)
-	defer restoreStatus()
+	project, diags, opErr := prepareScanProjectAnalysis(dir, headSHA, f, status, view, stdin, stderr)
 	if opErr != nil {
 		return nil, opErr
 	}
-	report, err := codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, continuity, f.scope, excluded, project)
+	report, err := codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, scoped.files, diagnostics, scoped.continuity, f.scope, scoped.excluded, project)
 	if err != nil {
 		return nil, wrapScanAnalysisError(err, dir, headSHA, f.projectConfig, stderr)
 	}

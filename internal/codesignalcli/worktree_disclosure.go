@@ -18,12 +18,11 @@ const worktreeDisclosureSampleLimit = 5
 // WorkingTreeDisclosureDiagnostics reports uncommitted paths the committed
 // snapshot scan does not read. A status-check failure is one diagnostic and
 // does not fail the scan. A clean tree returns nil.
-func WorkingTreeDisclosureDiagnostics(dir string) []codesignal.Diagnostic {
-	entries, err := listWorktreeStatus(dir)
-	if err != nil {
-		return []codesignal.Diagnostic{worktreeStatusFailureDiagnostic(err)}
+func WorkingTreeDisclosureDiagnostics(status WorktreeStatus) []codesignal.Diagnostic {
+	if status.Err != nil {
+		return []codesignal.Diagnostic{worktreeStatusFailureDiagnostic(status.Err)}
 	}
-	return disclosureDiagnostics(entries)
+	return disclosureDiagnostics(status.Entries)
 }
 
 func worktreeStatusFailureDiagnostic(err error) codesignal.Diagnostic {
