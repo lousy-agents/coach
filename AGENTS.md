@@ -179,6 +179,8 @@ Every new feature and every bug fix shall begin with a failing acceptance test, 
 
 **False-green rule**: a test counts only if it exercises the intended branch or failure mode. Shared clocks and fakes that make a different path produce the same status or outcome are invalid — for example, advancing time so a "denylisted" case actually fails on expiry.
 
+**Guard-clause rule**: each clause of a guard shall have one test row in which that clause alone flips the outcome; inputs that are already decided by another clause do not test it.
+
 For delegated work, the `task-implementer`/`task-reviewer` pair (`.claude/agents/`) operationalizes this policy step by step: the implementer writes and fails a Ginkgo acceptance test before implementing, and the reviewer gates on red-then-green evidence plus the form and false-green rules above. Subagent prompts shall not relax AGENTS.md — do not tell implementers that stdlib table tests substitute for Ginkgo acceptance tests. Copy conventions from here rather than inventing weaker ones.
 
 ### Outbound HTTP
