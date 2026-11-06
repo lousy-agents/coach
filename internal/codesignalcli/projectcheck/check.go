@@ -56,7 +56,11 @@ func evaluate(dir, revision string, policy policyref.Ref, check func(dir, revisi
 	if policyCheck.DecidedOnDisk {
 		readFromDisk = policyPath
 	}
-	dirty, err := detectRelevantDirtyWorktree(dir, roots, policyPath, readFromDisk)
+	dirtyRoots, err := dirtyRelevanceRoots(dir, revision, policy, policyPath, policyCheck, roots)
+	if err != nil {
+		return projectreadiness.Result{}, err
+	}
+	dirty, err := detectRelevantDirtyWorktree(dir, dirtyRoots, policyPath, readFromDisk)
 	if err != nil {
 		return projectreadiness.Result{}, err
 	}
