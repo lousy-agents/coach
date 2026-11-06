@@ -90,6 +90,15 @@ const (
 
 func (e *ConfigError) Error() string { return e.Message }
 
+// OffersAuthoring is whether a new policy is the way out of this error. It is the one decision every
+// gate that starts or suggests guided authoring asks, and the remedy makes it: the kind says what went
+// wrong, and a refusal that shares a kind with an invalid document (a policy committed as a link, a path
+// the disk cannot use) offers no new policy.
+func (e *ConfigError) OffersAuthoring() bool {
+	action, named := projectreadiness.NextActionForRemedy(e.Remedy)
+	return named && action == projectreadiness.NextActionAuthorPolicy
+}
+
 // readError classifies a runProjectConfigGit failure into a
 // user-facing message that never surfaces raw git stderr. A
 // *gitrepo.BoundError is our own timeout/output-budget text and is

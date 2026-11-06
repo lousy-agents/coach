@@ -7,7 +7,6 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 )
@@ -54,8 +53,7 @@ func authorableMissingPolicy(err error) bool {
 	if !errors.As(err, &configErr) || configErr.Kind != projectconfig.KindMissing {
 		return false
 	}
-	action, named := projectreadiness.NextActionForRemedy(configErr.Remedy)
-	return named && action == projectreadiness.NextActionAuthorPolicy
+	return configErr.OffersAuthoring()
 }
 
 // runScanProjectConfigAuthoring implements AC-POL-8. It reuses the exact

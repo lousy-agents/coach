@@ -8,7 +8,6 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
@@ -105,7 +104,7 @@ func analysisErrorReportFor(err error, language string, policy policyref.Ref, ha
 // only needs restoring, or its path cannot be created. It writes the policy the
 // user named when nothing is at that path, so it names that path.
 func authoringRemediation(configErr *projectconfig.ConfigError, policy policyref.Ref, hasControllingTerminal bool, language string) string {
-	if action, named := projectreadiness.NextActionForRemedy(configErr.Remedy); !named || action != projectreadiness.NextActionAuthorPolicy {
+	if !configErr.OffersAuthoring() {
 		return ""
 	}
 	return tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.SuggestProjectConfigRemediation(language, authoringTargetPolicy(configErr, policy)))
