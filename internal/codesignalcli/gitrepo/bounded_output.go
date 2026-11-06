@@ -28,6 +28,17 @@ func readGitPipe(r io.Reader, limit int64) gitPipeResult {
 	return gitPipeResult{data: data, err: err}
 }
 
+// readGitPipeUntilOverrun reads at most limit+1 bytes and ends the git process the moment the
+// stream proves to be over its budget. Past the budget nothing reads the pipe, so git blocks
+// writing to it and would otherwise live until the wall-time bound killed it.
+func readGitPipeUntilOverrun(r io.Reader, limit int64, endGit context.CancelFunc) gitPipeResult {
+	result := readGitPipe(r, limit+1)
+	if int64(len(result.data)) > limit {
+		endGit()
+	}
+	return result
+}
+
 func finishGitBoundedRead(stdout, stderr gitPipeResult, waitErr error, ctx context.Context, maxStdout, maxStderr int64, timeout time.Duration) ([]byte, error) {
 	if stdout.err != nil {
 		return nil, stdout.err
