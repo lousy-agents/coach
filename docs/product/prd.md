@@ -7,7 +7,7 @@ The v2 document described an async analysis platform with a hosted service. That
 ## Evidence cutoff
 
 - Latest published release: `v0.8.0` (26 September 2026).
-- Leave-pilot evaluation: [`evaluations/codesignal-pilot-readiness.html`](evaluations/codesignal-pilot-readiness.html). Pass 32: re-run on `229fffdb` (4 November 2026), each claim against that head and against the base the branch was built on, `ee0b82e8`. Only docs follow `229fffdb`. Masthead date 4 November 2026. That pass is a focused re-run, not a full corpus replay.
+- Leave-pilot evaluation: [`evaluations/codesignal-pilot-readiness.html`](evaluations/codesignal-pilot-readiness.html). Pass 32: re-run on `229fffdb` (4 November 2026), each claim against that head and against the base the branch was built on, `ee0b82e8`. Later commits on the branch change explicit-policy behaviour, so pass 32 does not cover that behaviour; the requirements in sections 8.4 and 8.5 and the recorded runs cited in those commits do. Masthead date 4 November 2026. That pass is a focused re-run, not a full corpus replay.
 - This document is audited against `main` at `4e1c379`. Do not treat the evaluation revision as the current default-branch revision.
 - Pilot-exit epic: [#282](https://github.com/lousy-agents/coach/issues/282). Standing decision: stay in pilot. Read the live epic for the closed-child count.
 - Command contract: [`docs/cli-codesignal.md`](../cli-codesignal.md).
