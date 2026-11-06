@@ -65,7 +65,7 @@ func Load(dir, revision, repoPath string) (json.RawMessage, error) {
 
 	data, err := runProjectConfigGit(dir, "show", revision+":"+repoPath)
 	if err != nil {
-		return nil, readError(dir, revision, repoPath, err)
+		return nil, readError(runProjectConfigGit, dir, revision, repoPath, err)
 	}
 	if err := validateJSON(data); err != nil {
 		return nil, invalidError(repoPath, revision, err.Error())

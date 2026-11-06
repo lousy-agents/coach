@@ -81,7 +81,9 @@ policy fixes it, which `next_actions` names (`restore_policy` or `author_policy`
 A policy gap with no way out always has a `cause`; `undetermined` is the word for a
 state Coach has no other word for, so a consumer never has to read a missing `cause`
 as "unknown". The values are stable: `not_committed` (a file on disk that the analyzed revision
-does not hold, or one inside a submodule), `parent_not_directory`, `staged_edit`,
+does not hold; commit it), `in_submodule` (the policy lies inside a submodule checkout, present or
+missing: the superproject records the submodule as one commit, so the file cannot be committed
+here, and the way out is a policy this repository commits), `parent_not_directory`, `staged_edit`,
 `staged_copy` (a staged copy of a policy that was never committed),
 `staged_not_a_file`, `merge_conflict`, `skip_worktree`, `sparse_checkout`,
 `committed_as_link`, `directory` (the index holds files under the name),

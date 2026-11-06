@@ -1,6 +1,10 @@
 package projectconfig
 
-import "github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+import (
+	"fmt"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+)
 
 // restoreOffer is what is added to a missing policy that is committed at the
 // analyzed revision: the way out, if any, and the sentence that says so. Each
@@ -178,6 +182,17 @@ var directoryInIndexOffer = restoreOffer{
 	text:   ". The index holds files under this path, so it is a directory and not a file; there is nothing to restore and no policy can be written at it, so name a file",
 }
 
+// insideSubmoduleOffer is for a policy path inside a submodule checkout. The superproject records a
+// submodule as one commit, so a file there can be neither restored nor committed here, and a new policy
+// written there would be refused as uncommittable: the way out is a policy this repository commits.
+func insideSubmoduleOffer(submodule string) restoreOffer {
+	return restoreOffer{
+		remedy: projectreadiness.RemedyNone,
+		cause:  projectreadiness.CauseInSubmodule,
+		text:   fmt.Sprintf(". It lies inside the submodule %q, which this repository records as a single commit, so a policy there can be neither restored nor committed here and Coach offers neither a restore nor a new policy; name a policy that is committed in this repository's own files", submodule),
+	}
+}
+
 // indexLockedOffer is for a restore that would otherwise be offered while a lock
 // file stops git from writing the index: the command would fail, so none is
 // printed.
@@ -234,6 +249,9 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 		return restoreOffer{}, false
 	}
 	blocked := found.Missing == MissingBlockedParent
+	if judgment.submodule != "" {
+		return insideSubmoduleOffer(judgment.submodule), true
+	}
 	if judgment.indexLocked && !blocked {
 		return indexLockedOffer, true
 	}

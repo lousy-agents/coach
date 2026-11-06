@@ -74,7 +74,7 @@ func TestAReadThatTripsTheTimeOrStderrBoundOffersNoNewPolicy(t *testing.T) {
 func assertBoundReadOffersNoNewPolicy(t *testing.T, kind gitrepo.BoundErrorKind) {
 	t.Helper()
 
-	err := readError("", "HEAD", "pol.json", &gitrepo.BoundError{Kind: kind})
+	err := readError(runProjectConfigGit, "", "HEAD", "pol.json", &gitrepo.BoundError{Kind: kind})
 
 	var configErr *ConfigError
 	if !errors.As(err, &configErr) || configErr.Kind != KindUnreadable {

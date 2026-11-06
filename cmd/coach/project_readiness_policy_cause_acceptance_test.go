@@ -125,6 +125,12 @@ var causeRows = []causeRow{
 		gitIn(repo, "update-index", "--skip-worktree", "cfg/p.json")
 		removeTree(repo, "cfg")
 	}},
+	{"a policy file inside a submodule checkout", "vendor/sub/coach.json", "policy_missing", "in_submodule", func(repo string) {
+		addSubmodule(repo)
+	}},
+	{"a policy missing from inside a submodule checkout", "vendor/sub/cfg/p.json", "policy_missing", "in_submodule", func(repo string) {
+		addSubmodule(repo)
+	}},
 	{"a committed policy deleted while another git process holds the index", "cfg/p.json", "policy_missing", "index_locked", func(repo string) {
 		commitThenRemove(repo, "cfg/p.json")
 		Expect(os.WriteFile(filepath.Join(repo, ".git", "index.lock"), nil, 0o644)).To(Succeed())
@@ -179,6 +185,19 @@ var _ = Describe("coach codesignal --check-project: the cause of a policy gap th
 
 		Expect(causeOfGap(doc, "policy_missing")).To(BeEmpty(), "a gap with a remedy needs no cause: %+v", doc.Gaps)
 		Expect(nextActionKinds(doc)).To(ContainElement("restore_policy"))
+	})
+
+	// Authoring into a submodule produces a file that is then refused as uncommittable here.
+	It("offers no new policy for one that is missing from inside a submodule", func() {
+		repo := commitScannableGoRepo()
+		addSubmodule(repo)
+
+		doc := expectCheckProject(repo, "--project-config", "vendor/sub/cfg/p.json")
+		stderr := scanExplicitPolicy(repo, "vendor/sub/cfg/p.json")
+
+		Expect(nextActionKinds(doc)).NotTo(ContainElement("author_policy"), "next actions: %+v", doc.NextActions)
+		Expect(string(stderr)).NotTo(ContainSubstring("--suggest-project-config"), "stderr:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring(`inside the submodule "vendor/sub"`), "stderr:\n%s", stderr)
 	})
 
 	It("has a row for every cause the package declares, or says why the CLI cannot report it", func() {

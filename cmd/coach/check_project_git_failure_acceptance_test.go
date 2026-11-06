@@ -41,7 +41,7 @@ var _ = Describe("coach codesignal: a corrupt index while judging an explicit po
 		stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--project-config", "cfg/p.json", "--format=json")
 
 		Expect(exitCode).To(Equal(2), "stdout=%s stderr=%s", stdout, stderr)
-		Expect(string(stderr)).To(ContainSubstring("what the index holds"), "stderr: %s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("could not check whether it lies inside a submodule"), "the first question a corrupt index leaves unanswered; stderr: %s", stderr)
 		Expect(string(stderr)).To(ContainSubstring("git said"), "stderr: %s", stderr)
 		Expect(strings.Count(string(stderr), "coach codesignal")).To(Equal(1), "stderr: %s", stderr)
 	})

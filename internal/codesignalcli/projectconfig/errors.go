@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
@@ -99,53 +97,27 @@ func (e *ConfigError) Error() string { return e.Message }
 // read as failed; that case is further split by whether repoPath exists in
 // the worktree, so a user who forgot to commit a generated config is told to
 // commit it rather than shown a generic not-found message.
-func readError(dir, revision, repoPath string, gitErr error) error {
+func readError(run gitrepo.Runner, dir, revision, repoPath string, gitErr error) error {
 	var boundErr *gitrepo.BoundError
 	if errors.As(gitErr, &boundErr) {
 		return &ConfigError{Kind: KindUnreadable, Remedy: boundRemedy(boundErr), PolicyCause: boundCause(boundErr), Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
 	}
-	if configExistsInWorktree(dir, repoPath) {
-		message, cause := UncommittedPolicy(dir, revision, repoPath)
+	exists, err := configExistsInWorktree(run, dir, repoPath)
+	if err != nil {
+		return unansweredRead(repoPath, revision, newGitFailure("whether it exists in the worktree", err))
+	}
+	if exists {
+		message, cause := UncommittedPolicy(run, dir, revision, repoPath)
 		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, PolicyCause: cause, Message: message}
 	}
 	return &ConfigError{Kind: KindNotFound, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found at revision %q (project_config_invalid)", repoPath, revision)}
 }
 
-// UncommittedPolicy is what the scan says about a --project-config policy that exists in the
-// working tree but is not committed at the analyzed revision, with the stable word for it. It is the
-// one place that decides both, so the scan's message and the readiness result's cause cannot differ.
-func UncommittedPolicy(dir, revision, repoPath string) (string, projectreadiness.PolicyCause) {
-	if submodule, inside := enclosingSubmodule(dir, repoPath); inside {
-		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here (project_config_invalid): name a policy that is committed in this repository's own files", repoPath, submodule), projectreadiness.CauseNotCommitted
-	}
-	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision), projectreadiness.CauseNotCommitted
-}
-
-// enclosingSubmodule is the submodule whose checkout holds repoPath. The superproject records a
-// submodule as one commit, so a file inside it can never be committed there, and telling the user to
-// commit it sends them in a circle.
-func enclosingSubmodule(dir, repoPath string) (string, bool) {
-	parts := strings.Split(repoPath, "/")
-	for i := 1; i < len(parts); i++ {
-		if ancestor := strings.Join(parts[:i], "/"); recordedAsSubmodule(dir, ancestor) {
-			return ancestor, true
-		}
-	}
-	return "", false
-}
-
-// recordedAsSubmodule is whether the index holds a submodule (a 160000 entry) at exactly path,
-// a path relative to the repository root. --full-name names each entry from the root as well,
-// because git prints it relative to the directory it runs in otherwise.
-func recordedAsSubmodule(dir, path string) bool {
-	output, err := runProjectConfigGit(dir, "ls-files", "--stage", "-z", "--full-name", "--", ":(top,literal)"+path)
-	if err != nil {
-		return false
-	}
-	return slices.ContainsFunc(gitrepo.SplitNULPaths(output), func(record string) bool {
-		mode, name, found := strings.Cut(record, "\t")
-		return found && name == path && strings.HasPrefix(mode, "160000 ")
-	})
+// unansweredRead is a policy that cannot be told from absent because git could not answer a question
+// about it. It names the question and offers nothing: "was not found" would offer a new policy over a
+// file that may be there.
+func unansweredRead(repoPath, revision string, failure *gitFailure) error {
+	return &ConfigError{Kind: KindUnreadable, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseGitUnreadable, Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): Coach could not check %s, so it gives no advice", repoPath, revision, failure.describe())}
 }
 
 // boundRemedy is the way out of a read that tripped a bound. A policy over the
@@ -168,16 +140,20 @@ func boundCause(boundErr *gitrepo.BoundError) projectreadiness.PolicyCause {
 	return projectreadiness.CauseGitUnreadable
 }
 
-// configExistsInWorktree reports whether repoPath is readable in the
-// worktree at dir. Any stat failure (not just "does not exist") is treated
-// as absent: this function's only caller already falls back to a generic
-// not-found-at-revision message in that case, so distinguishing
-// permission-denied or other I/O errors from a missing file has no observer.
-func configExistsInWorktree(dir, repoPath string) bool {
-	root, err := gitrepo.RepositoryRootWith(runProjectConfigGit, dir)
+// configExistsInWorktree reports whether repoPath is readable in the worktree at dir, which it
+// finds through run. Any stat failure (not just "does not exist") is treated as absent, since
+// distinguishing permission-denied from a missing file has no observer here. Where git cannot say
+// where the worktree is, it is an error: the caller must not read that as absent.
+func configExistsInWorktree(run gitrepo.Runner, dir, repoPath string) (bool, error) {
+	root, err := gitrepo.RepositoryRootWith(run, dir)
 	if err != nil {
-		return false
+		return false, err
 	}
+	return worktreeHolds(root, repoPath), nil
+}
+
+// worktreeHolds is whether repoPath is readable under the worktree rooted at root.
+func worktreeHolds(root, repoPath string) bool {
 	_, statErr := os.Stat(filepath.Join(root, repoPath))
 	return statErr == nil
 }

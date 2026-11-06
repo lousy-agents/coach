@@ -46,7 +46,15 @@ func installGitStatusFailureWrapper() (binDir string, env []string) {
 // "git -C <dir> <subcommand> ...", so options that precede the subcommand
 // (and "--name-status", which is a diff option) must not be treated as it.
 func installGitSubcommandFailureWrapper(subcommand string) (binDir string, env []string) {
+	return installGitFailureWrapperWhenFlagged(subcommand, "")
+}
+
+// installGitFailureWrapperWhenFlagged is installGitSubcommandFailureWrapper for a subcommand that
+// fails only when it is run with the flag, and runs for real otherwise. An empty flag fails every
+// run of the subcommand. It tells two questions asked of one subcommand apart.
+func installGitFailureWrapperWhenFlagged(subcommand, flag string) (binDir string, env []string) {
 	Expect(subcommand).To(MatchRegexp(`^[a-z][a-z-]*$`), "the subcommand is written into a shell script")
+	Expect(flag).To(MatchRegexp(`^(-[a-z]+)?$`), "the flag is written into a shell script")
 	realGit, err := exec.LookPath("git")
 	Expect(err).NotTo(HaveOccurred())
 
@@ -56,6 +64,13 @@ func installGitSubcommandFailureWrapper(subcommand string) (binDir string, env [
 
 	script := fmt.Sprintf(`#!/bin/sh
 real=%[1]q
+flag=%[3]q
+has_flag() {
+  for candidate in "$@"; do
+    [ "$candidate" = "$flag" ] && return 0
+  done
+  return 1
+}
 prev=
 for arg in "$@"; do
   if [ -n "$prev" ]; then
@@ -71,8 +86,11 @@ for arg in "$@"; do
       continue
       ;;
     %[2]s)
-      echo "git %[2]s failed" >&2
-      exit 1
+      if [ -z "$flag" ] || has_flag "$@"; then
+        echo "git %[2]s failed" >&2
+        exit 1
+      fi
+      exec "$real" "$@"
       ;;
     *)
       exec "$real" "$@"
@@ -80,7 +98,7 @@ for arg in "$@"; do
   esac
 done
 exec "$real" "$@"
-`, realGit, subcommand)
+`, realGit, subcommand, flag)
 	Expect(os.WriteFile(filepath.Join(binDir, "git"), []byte(script), 0o755)).To(Succeed())
 	env = []string{"PATH=" + binDir, "HOME=" + os.Getenv("HOME")}
 	return binDir, env

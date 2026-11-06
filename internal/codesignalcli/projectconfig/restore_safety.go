@@ -51,6 +51,9 @@ type policyJudgment struct {
 	// failure is set when a git call that decides the verdict failed, so the
 	// message can say which question went unanswered and what git said.
 	failure *gitFailure
+	// submodule is the submodule the policy path lies inside, if any. Nothing there can be
+	// restored or committed in this repository, so it is decided before anything else.
+	submodule string
 	// indexLocked is set when a restore command would otherwise be offered while a lock file stops git
 	// from writing the index: running it would fail, so none is offered.
 	indexLocked bool
@@ -88,6 +91,9 @@ func newGitFailure(question string, err error) *gitFailure {
 // too, so an operational failure is never taken for a clean miss. run is the git
 // runner, a parameter so a caller's seam decides what git says.
 func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudgment {
+	if judged, decided := judgeInsideASubmodule(run, dir, repoPath); decided {
+		return judged
+	}
 	committed, found, err := gitrepo.BlobEntryAtRevision(run, dir, revision, repoPath)
 	if err != nil {
 		return policyJudgment{verdict: restoreUndecidable, indexEntryUnread: true, failure: newGitFailure("whether it is committed at the analyzed revision", err)}

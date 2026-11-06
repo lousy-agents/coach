@@ -27,6 +27,12 @@ func commitThenDelete(repo, name string) {
 // checkout holds a coach.json.
 func commitRepoWithSubmodule() string {
 	repo := commitScannableGoRepo()
+	addSubmodule(repo)
+	return repo
+}
+
+// addSubmodule records a submodule at vendor/sub in repo, whose own checkout holds a coach.json.
+func addSubmodule(repo string) {
 	inner := GinkgoT().TempDir()
 	gitIn(inner, "init", "-q")
 	Expect(os.WriteFile(filepath.Join(inner, "coach.json"), []byte(singleRootPolicyJSON), 0o644)).To(Succeed())
@@ -38,5 +44,4 @@ func commitRepoWithSubmodule() string {
 	superCommit := exec.Command("git", "commit", "-q", "-m", "sub")
 	superCommit.Dir, superCommit.Env = repo, commitEnv
 	ExpectWithOffset(1, superCommit.Run()).To(Succeed())
-	return repo
 }
