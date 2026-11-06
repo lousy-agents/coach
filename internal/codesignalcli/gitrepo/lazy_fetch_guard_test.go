@@ -63,7 +63,7 @@ func TestNoLazyFetchSupportedReadsTheVersionGitPrints(t *testing.T) {
 
 func assertVersionRead(t *testing.T, output string, err error, want bool, wantVersion string) {
 	t.Helper()
-	got, version := NoLazyFetchSupported(gitSaying(output, "", err), "repo")
+	got, version := noLazyFetchSupported(gitSaying(output, "", err), "repo")
 
 	if got != want || version != wantVersion {
 		t.Errorf("NoLazyFetchSupported = %v, %q; want %v, %q", got, version, want, wantVersion)

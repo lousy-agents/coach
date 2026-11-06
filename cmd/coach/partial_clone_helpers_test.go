@@ -4,9 +4,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
-
-	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -53,9 +53,14 @@ func packFilesIn(clone string) int {
 
 // skipUnlessGitCanRefuseLazyFetch skips a spec that rests on GIT_NO_LAZY_FETCH, which git has from 2.44.
 func skipUnlessGitCanRefuseLazyFetch() {
-	supported, version := gitrepo.NoLazyFetchSupported(gitrepo.RunBytes, ".")
-	if !supported {
-		Skip("this git (" + version + ") predates GIT_NO_LAZY_FETCH, so it cannot be told not to fetch")
+	printed, err := exec.Command("git", "version").Output()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	match := regexp.MustCompile(`^git version (\d+)\.(\d+)`).FindStringSubmatch(string(printed))
+	ExpectWithOffset(1, match).NotTo(BeNil(), "git printed %q", printed)
+	major, _ := strconv.Atoi(match[1])
+	minor, _ := strconv.Atoi(match[2])
+	if major < 2 || major == 2 && minor < 44 {
+		Skip("this git (" + strings.TrimSpace(string(printed)) + ") predates GIT_NO_LAZY_FETCH, so it cannot be told not to fetch")
 	}
 }
 

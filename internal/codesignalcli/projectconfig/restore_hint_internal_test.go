@@ -61,7 +61,7 @@ func TestRestoreAdvice(t *testing.T) {
 
 func assertRestoreAdvice(t *testing.T, path, want string) {
 	t.Helper()
-	if got := RestoreAdvice("abc123", path); got != want {
-		t.Errorf("RestoreAdvice = %q; want %q", got, want)
+	if got := restoreAdvice("abc123", path); got != want {
+		t.Errorf("restoreAdvice = %q; want %q", got, want)
 	}
 }
