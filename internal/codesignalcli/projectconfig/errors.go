@@ -180,6 +180,41 @@ var stagedEditOffer = restoreOffer{
 	text:   ". It is committed at the analyzed revision, and the index holds a staged edit to it that a restore would discard, so none is offered; review the staged edit with git diff --cached, keep what you want, then run again",
 }
 
+// mergeConflictOffer is for a committed policy whose index entry is unmerged.
+// There is no staged edit to review, and a restore would discard the conflict.
+var mergeConflictOffer = restoreOffer{
+	remedy: projectreadiness.RemedyNone,
+	text:   ". It is committed at the analyzed revision, and the index holds an unresolved merge conflict for it that a restore would discard, so none is offered; resolve the conflict with git status, then run again",
+}
+
+// skipWorktreeOffer is for a committed policy whose index entry carries a
+// skip-worktree mark but no sparse checkout is on: restoring the file fails
+// until the mark is cleared.
+func skipWorktreeOffer(repoPath string) restoreOffer {
+	return restoreOffer{
+		remedy: projectreadiness.RemedyNone,
+		text:   ". It is committed at the analyzed revision, but its index entry is marked skip-worktree, so a restore cannot bring it back; " + clearSkipWorktreeAdvice(repoPath) + ", then run again",
+	}
+}
+
+// stagedOnlyOffer is for a policy that is not committed but whose index entry
+// still holds a copy. A new policy would replace work the user has staged, and
+// restoring the file from the index overwrites nothing. The
+// command is the tail of the text, because a caller that pastes it takes
+// everything after "restore it with ".
+func stagedOnlyOffer(repoPath string, blocked bool) restoreOffer {
+	if blocked {
+		return restoreOffer{
+			remedy: projectreadiness.RemedyNone,
+			text:   ". It is not committed, but the index holds a staged copy of it, so Coach offers no new policy; move the file that blocks the path, then restore the staged copy from the index",
+		}
+	}
+	return restoreOffer{
+		remedy: projectreadiness.RemedyNone,
+		text:   ". It is not committed, but the index holds a staged copy of it, so Coach offers no new policy; to keep the staged copy, " + RestoreFromIndexAdvice(repoPath),
+	}
+}
+
 // committedLinkOffer is for a policy committed as a symbolic link. Restoring it
 // would recreate a link the scan refuses, and a new file would not be the
 // committed policy.

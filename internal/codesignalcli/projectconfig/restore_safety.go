@@ -2,6 +2,7 @@ package projectconfig
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
@@ -17,6 +18,9 @@ const (
 	restoreRecreatesLink
 	restoreSkippedBySparseCheckout
 	restoreUndecidable
+	restoreMergeConflict
+	restoreStagedNotCommitted
+	restoreSkipWorktreeMarked
 )
 
 const regularFileModeMask = "100"
@@ -56,14 +60,17 @@ func newGitFailure(question string, err error) *gitFailure {
 	return &gitFailure{question: question, err: err}
 }
 
-// judgeRestore decides whether the restore command may be offered for repoPath
-// and whether the index holds an entry nothing has read. The verdict declines
-// when the revision holds something other than a regular file, which the scan
-// would refuse again after the restore, when the index holds an edit that
-// --staged would throw away, and when a sparse checkout skips the path, which
-// git restore rejects. When git cannot answer it declines too, so an operational
-// failure is never taken for a clean miss. run is the git runner, a parameter so
-// a caller's seam decides what git says.
+// judgeRestore decides what a restore of repoPath would do and whether the index
+// holds an entry nothing has read. It declines, naming why in the verdict, when
+// the revision holds something other than a regular file, which the scan would
+// refuse again after the restore; when the index holds an edit or an unmerged
+// entry that the command would discard; and when a sparse checkout or a
+// skip-worktree mark keeps git restore from writing the file. A staged deletion
+// is not an edit a restore loses: it restores the committed blob. When nothing
+// commits the path but the index holds a copy, the verdict says so, so a new
+// policy is not offered over staged work. When git cannot answer it declines
+// too, so an operational failure is never taken for a clean miss. run is the git
+// runner, a parameter so a caller's seam decides what git says.
 func judgeRestore(run func(dir string, args ...string) ([]byte, error), dir, revision, repoPath string) policyJudgment {
 	committed, found, err := gitrepo.BlobEntryAtRevision(run, dir, revision, repoPath)
 	if err != nil {
@@ -74,7 +81,7 @@ func judgeRestore(run func(dir string, args ...string) ([]byte, error), dir, rev
 		return policyJudgment{verdict: verdictWithoutIndex(committed, found), indexEntryUnread: true, failure: newGitFailure("what the index holds for it", err)}
 	}
 	unread := indexHoldsUnreadEntry(committed, found, staged)
-	return policyJudgment{verdict: verdictFor(committed, found, staged, unread), indexEntryUnread: unread}
+	return policyJudgment{verdict: verdictFor(committed, found, staged, unread, sparseCheckoutEnabled(run, dir, staged)), indexEntryUnread: unread}
 }
 
 // verdictWithoutIndex is what the commit alone allows when the index cannot be
@@ -89,18 +96,45 @@ func verdictWithoutIndex(committed gitrepo.TreeEntry, found bool) restoreVerdict
 	return restoreUndecidable
 }
 
-func verdictFor(committed gitrepo.TreeEntry, found bool, staged []gitrepo.IndexEntry, unread bool) restoreVerdict {
+func verdictFor(committed gitrepo.TreeEntry, found bool, staged []gitrepo.IndexEntry, unread, sparse bool) restoreVerdict {
 	switch {
+	case !found && len(staged) > 0:
+		return restoreStagedNotCommitted
 	case !found:
 		return restoreNotCommitted
 	case !isRegularFileMode(committed.Mode):
 		return restoreRecreatesLink
+	case holdsUnmergedEntry(staged):
+		return restoreMergeConflict
 	case unread:
 		return restoreDiscardsStagedEdit
-	case skippedBySparseCheckout(staged):
+	case skippedBySparseCheckout(staged) && sparse:
 		return restoreSkippedBySparseCheckout
+	case skippedBySparseCheckout(staged):
+		return restoreSkipWorktreeMarked
 	}
 	return restoreOverwritesNothing
+}
+
+// holdsUnmergedEntry is true when the index holds a conflict stage for the path.
+func holdsUnmergedEntry(staged []gitrepo.IndexEntry) bool {
+	for _, entry := range staged {
+		if entry.Stage != "0" {
+			return true
+		}
+	}
+	return false
+}
+
+// sparseCheckoutEnabled reports whether core.sparseCheckout is on. It asks git
+// only when a skip-worktree entry makes the answer matter, and an unset key,
+// which git reports with a failure exit, is taken as off.
+func sparseCheckoutEnabled(run func(dir string, args ...string) ([]byte, error), dir string, staged []gitrepo.IndexEntry) bool {
+	if !skippedBySparseCheckout(staged) {
+		return false
+	}
+	out, err := run(dir, "config", "--type=bool", "--get", "core.sparseCheckout")
+	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
 
 // indexHoldsUnreadEntry is true unless the index holds nothing, or exactly the
