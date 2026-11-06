@@ -114,7 +114,11 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 	listed := indexed.Entries
 	staged := withoutUnmarkedEmptyEntries(listed)
 	unread := indexHoldsUnreadEntry(committed, found, withoutEmptyEntries(listed))
-	facts := indexFacts{entries: staged, unread: unread, sparse: sparseCheckoutEnabled(run, dir, staged), setAsideEmpty: len(staged) < len(listed)}
+	sparse, err := sparseCheckoutEnabled(run, dir, staged)
+	if err != nil {
+		return policyJudgment{verdict: restoreUndecidable, indexEntryUnread: unread, failure: newGitFailure("whether a sparse checkout is on", err)}
+	}
+	facts := indexFacts{entries: staged, unread: unread, sparse: sparse, setAsideEmpty: len(staged) < len(listed)}
 	verdict := verdictFor(committed, found, facts)
 	if !offersRestoreCommand(verdict) {
 		return policyJudgment{verdict: verdict, indexEntryUnread: unread, sparseNewPolicy: verdict == restoreNotCommitted && newPolicyMayNeedSparse(run, dir, repoPath)}
@@ -152,13 +156,19 @@ func indexIsLocked(run gitrepo.Runner, dir string) (bool, error) {
 	return statErr == nil, nil
 }
 
-// sparseCheckoutEnabled reports whether core.sparseCheckout is on. It asks git
-// only when a skip-worktree entry makes the answer matter, and an unset key,
-// which git reports with a failure exit, is taken as off.
-func sparseCheckoutEnabled(run gitrepo.Runner, dir string, staged []gitrepo.IndexEntry) bool {
+// sparseCheckoutEnabled reports whether core.sparseCheckout is on. It asks git only when a skip-worktree
+// entry makes the answer matter. An unset key, which git reports with exit 1, is off; any other failure is
+// an error, because the advice for a skip-worktree entry is a different one in a sparse checkout.
+func sparseCheckoutEnabled(run gitrepo.Runner, dir string, staged []gitrepo.IndexEntry) (bool, error) {
 	if !skippedBySparseCheckout(staged) {
-		return false
+		return false, nil
 	}
 	out, err := run(dir, "config", "--type=bool", "--get", "core.sparseCheckout")
-	return err == nil && strings.TrimSpace(string(out)) == "true"
+	if err != nil {
+		if gitrepo.ConfigHasNoValue(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) == "true", nil
 }
