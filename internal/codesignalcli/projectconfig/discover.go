@@ -11,7 +11,7 @@ import (
 // started in a subdirectory still sees CanonicalPath. Git failures
 // are returned; they are not treated as a file-local scan.
 func Discover(dir, revision string) (Selection, error) {
-	root, err := gitrepo.RepositoryRoot(dir)
+	root, err := gitrepo.RepositoryRootWith(runProjectConfigGit, dir)
 	if err != nil {
 		return Selection{}, err
 	}

@@ -10,18 +10,18 @@ import (
 )
 
 // requireOnDisk resolves the repository-relative path against the repository
-// root rather than the directory the scan started in. A malformed path is left
+// root, found through run like every other git read of the policy, rather than the directory the scan started in. A malformed path is left
 // for Load to report, which keeps that message unchanged. It checks what is at
 // the path: only a regular file reached without crossing a symbolic link that
 // the process can open passes, and a state that cannot be told apart from "the
 // file is there" is refused. It opens the file to prove it is readable but does
 // not read its bytes, so a file whose content is not a valid policy is still
 // judged from the analyzed revision.
-func requireOnDisk(dir, repoPath string) error {
+func requireOnDisk(run gitrepo.Runner, dir, repoPath string) error {
 	if ValidatePath(repoPath) != nil {
 		return nil
 	}
-	root, err := gitrepo.RepositoryRoot(dir)
+	root, err := gitrepo.RepositoryRootWith(run, dir)
 	if err != nil {
 		return err
 	}
