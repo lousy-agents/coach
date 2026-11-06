@@ -7,11 +7,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
 const raceCanary = "TOP-SECRET-CANARY-7f3a91"
+
+// On Linux git can lstat the entry as a file, see it swapped for a FIFO, and block opening it. The scan
+// then ends at the wall-time bound of its git status read, so the ceiling is that bound plus a margin.
+const racedScanCeiling = gitrepo.WorktreeStatusTimeout + 15*time.Second
 
 // placeEntry puts one kind of entry at scratch: a policy file, a FIFO, a symbolic link out of the
 // repository, or a symbolic link to a regular file.
@@ -57,9 +62,7 @@ func expectRacedScanInvariants(repo string) {
 	begin := time.Now()
 	stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
 
-	// On Linux git can lstat the entry as a file, see it swapped for a FIFO, and block opening it. The
-	// scan then ends at the 30 s wall-time bound of its git reads, so the ceiling sits above that bound.
-	ExpectWithOffset(1, time.Since(begin)).To(BeNumerically("<", 45*time.Second), "a scan hung on the raced entry")
+	ExpectWithOffset(1, time.Since(begin)).To(BeNumerically("<", racedScanCeiling), "a scan hung on the raced entry")
 	ExpectWithOffset(1, exitCode).To(BeElementOf(0, 2), "stderr: %s", stderr)
 	ExpectWithOffset(1, string(stderr)).NotTo(ContainSubstring("panic:"))
 	ExpectWithOffset(1, string(stdout)+string(stderr)).NotTo(ContainSubstring(raceCanary))
