@@ -16,7 +16,20 @@ func PolicyChecker(policy policyref.Ref) func(dir, revision, policyPath string) 
 	if policy.JudgedOnDisk() {
 		return checkExplicitPolicy
 	}
-	return checkPolicy
+	return checkDiscoveredPolicy
+}
+
+// checkDiscoveredPolicy is checkPolicy for a policy Coach found, which also names a policy the revision
+// holds in another case. That is not a gap to author over: the policy is there, at a name Coach does not
+// read.
+func checkDiscoveredPolicy(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
+	check, roots, err := checkPolicy(dir, revision, policyPath)
+	if err == nil && check.Code == projectreadiness.GapPolicyMissing {
+		if renamed := projectconfig.WrongCaseAtRevision(runReadinessGit, dir, revision, policyPath); renamed != nil {
+			return policyGapFrom(renamed)
+		}
+	}
+	return check, roots, err
 }
 
 // checkPolicy judges the policy at the analyzed revision. An entry that is not a blob is no policy and

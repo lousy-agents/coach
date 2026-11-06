@@ -28,7 +28,9 @@ func Discover(dir, revision string) (Selection, error) {
 // selectWhereNoBlobIsCommitted is discovery for a canonical path that holds no blob at revision. A
 // directory or a submodule committed there is still what the revision holds at the policy's path, so
 // the scan refuses it as readiness does and does not fall back to a legacy policy or call the path
-// uncommitted. Only a path with nothing at it falls back.
+// uncommitted. A policy the revision holds at the same path in another case is refused too, with the
+// commands that move it, since falling back would run the scan without a policy that is committed.
+// Only a path with nothing like it falls back.
 func selectWhereNoBlobIsCommitted(dir, root, revision string) (Selection, error) {
 	refusal, err := NonFileAtRevision(runProjectConfigGit, dir, revision, CanonicalPath)
 	if err != nil {
@@ -36,6 +38,9 @@ func selectWhereNoBlobIsCommitted(dir, root, revision string) (Selection, error)
 	}
 	if refusal != nil {
 		return Selection{Fatal: asDefaultPolicyError(refusal, CanonicalPath)}, nil
+	}
+	if renamed := WrongCaseAtRevision(runProjectConfigGit, dir, revision, CanonicalPath); renamed != nil {
+		return Selection{Fatal: renamed}, nil
 	}
 	return selectLegacy(dir, root, revision)
 }
