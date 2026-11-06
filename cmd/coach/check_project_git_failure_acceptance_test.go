@@ -25,6 +25,7 @@ var _ = Describe("coach codesignal --check-project: a git failure while judging 
 			Expect(exitCode).To(Equal(1), "git could not answer, which is an operational failure; stdout=%s stderr=%s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "no readiness result may be written when the check could not be completed; stdout=%s", stdout)
 			Expect(string(stderr)).To(ContainSubstring("cfg/p.json"), "stderr: %s", stderr)
+			Expect(strings.Count(string(stderr), "coach codesignal")).To(Equal(1), "git's error must be quoted without Coach's own wrapper around it; stderr: %s", stderr)
 		})
 	})
 })

@@ -15,10 +15,17 @@ type OperationalError struct {
 	// substring match, which is fragile against escaped/re-encoded forms
 	// of the path.
 	reason string
+	// Cause is the error from git that Message wraps, when there is one, so a
+	// caller can quote git's own words without Coach's wording around them.
+	Cause error
 }
 
 func (e *OperationalError) Error() string {
 	return e.Message
+}
+
+func (e *OperationalError) Unwrap() error {
+	return e.Cause
 }
 
 // Reason reports e's failure description without any interpolated
