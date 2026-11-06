@@ -13,3 +13,15 @@ func (f *gitFailure) describe() string {
 	}
 	return f.question + " (git said " + strconv.Quote(string(text)) + ")"
 }
+
+// Error is the failure worded for the user, so a gitFailure can stand as the
+// GitFailure of a ConfigError.
+func (f *gitFailure) Error() string {
+	return "could not check " + f.describe()
+}
+
+// Unwrap is git's own error, so a caller that classifies the failure reaches it
+// and not only the text above.
+func (f *gitFailure) Unwrap() error {
+	return f.err
+}

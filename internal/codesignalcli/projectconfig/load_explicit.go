@@ -3,7 +3,6 @@ package projectconfig
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
@@ -44,7 +43,7 @@ func ExplicitOnDiskStatus(run gitrepo.Runner, dir, revision, repoPath string) (*
 	judged.FromWorkingTree = true
 	judged.UnreadStagedEdit = judgment.indexEntryUnread
 	if judgment.failure != nil {
-		judged.GitFailure = fmt.Errorf("could not check %s", judgment.failure.describe())
+		judged.GitFailure = judgment.failure
 	}
 	offer, offered := restoreOfferFor(judgment, revision, found, repoPath)
 	if !offered {
