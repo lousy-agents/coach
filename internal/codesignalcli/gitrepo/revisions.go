@@ -16,11 +16,17 @@ func ResolveRevisions(dir, base string) (headSHA, mergeBaseSHA string, err error
 	}
 
 	if _, runErr := Run(dir, "rev-parse", "--verify", base+"^{commit}"); runErr != nil {
+		if bound := BoundFailure(runErr); bound != nil {
+			return "", "", bound
+		}
 		return "", "", &OperationalError{Message: fmt.Sprintf("coach codesignal: --base %q cannot be resolved to a commit", base)}
 	}
 
 	mergeBaseOutput, runErr := Run(dir, "merge-base", base, "HEAD")
 	if runErr != nil {
+		if bound := BoundFailure(runErr); bound != nil {
+			return "", "", bound
+		}
 		return "", "", &OperationalError{Message: fmt.Sprintf("coach codesignal: no merge base between %q and HEAD", base)}
 	}
 	mergeBaseSHA = strings.TrimSpace(mergeBaseOutput)
@@ -46,6 +52,9 @@ func resolveHEAD(dir string) (string, error) {
 	}
 
 	worktreeOutput, runErr := Run(dir, "rev-parse", "--is-inside-work-tree")
+	if bound := BoundFailure(runErr); bound != nil {
+		return "", bound
+	}
 	if runErr != nil || strings.TrimSpace(worktreeOutput) != "true" {
 		return "", &OperationalError{
 			Message: fmt.Sprintf("coach codesignal: %s is not inside a Git worktree", dir),
@@ -55,6 +64,9 @@ func resolveHEAD(dir string) (string, error) {
 
 	headOutput, runErr := Run(dir, "rev-parse", "HEAD")
 	if runErr != nil {
+		if bound := BoundFailure(runErr); bound != nil {
+			return "", bound
+		}
 		return "", &OperationalError{Message: "coach codesignal: HEAD is not readable (does the repository have any commits?)"}
 	}
 	return strings.TrimSpace(headOutput), nil

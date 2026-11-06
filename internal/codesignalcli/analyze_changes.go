@@ -22,10 +22,14 @@ func AnalyzeChanges(ctx context.Context, dir, headSHA, mergeBaseSHA string, file
 	for _, sf := range files {
 		var fc *codesignal.FileChange
 		var fileDiagnostics []codesignal.Diagnostic
+		var stalled error
 		if sf.Status == "removed" {
-			fc, fileDiagnostics = analyzeRemovedFile(ctx, analyzer, dir, mergeBaseSHA, sf)
+			fc, fileDiagnostics, stalled = analyzeRemovedFile(ctx, analyzer, dir, mergeBaseSHA, sf)
 		} else {
-			fc, fileDiagnostics = analyzeAddedOrModifiedFile(ctx, analyzer, dir, headSHA, mergeBaseSHA, sf)
+			fc, fileDiagnostics, stalled = analyzeAddedOrModifiedFile(ctx, analyzer, dir, headSHA, mergeBaseSHA, sf)
+		}
+		if stalled != nil {
+			return nil, stalled
 		}
 		diagnostics = append(diagnostics, fileDiagnostics...)
 		if fc != nil {
