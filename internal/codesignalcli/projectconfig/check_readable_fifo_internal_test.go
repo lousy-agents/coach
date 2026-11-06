@@ -25,7 +25,7 @@ func TestCheckReadableRefusesAFifoInsteadOfBlockingOnIt(t *testing.T) {
 	defer func() { _ = root.Close() }()
 
 	result := make(chan error, 1)
-	go func() { result <- checkReadable(root, "pol.json") }()
+	go func() { result <- checkReadable(osDiskRoot{root}, "pol.json") }()
 
 	select {
 	case err := <-result:

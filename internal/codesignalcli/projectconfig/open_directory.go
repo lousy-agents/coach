@@ -12,7 +12,7 @@ import (
 // of date: a FIFO swapped in since would make a plain open wait for a writer
 // that never comes, with nothing to end the wait. Like checkReadable, it lets
 // the handle, not the earlier stat, decide what the entry is.
-func openDirectory(root *os.Root, directory string) (*os.File, error) {
+func openDirectory(root diskRoot, directory string) (diskFile, error) {
 	listing, err := root.OpenFile(filepath.FromSlash(directory), os.O_RDONLY|openWithoutWaiting, 0)
 	if err != nil {
 		return nil, err

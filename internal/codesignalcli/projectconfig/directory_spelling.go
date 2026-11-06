@@ -2,7 +2,6 @@ package projectconfig
 
 import (
 	"io"
-	"os"
 	"strings"
 )
 
@@ -10,7 +9,7 @@ const entryListingBatch = 256
 
 // spellingIn is the entry of directory spelled exactly as name, or else the
 // first entry that differs from it only by case, or else name itself.
-func spellingIn(root *os.Root, directory, name string) (string, error) {
+func spellingIn(root diskRoot, directory, name string) (string, error) {
 	listing, err := openDirectory(root, directory)
 	if err != nil {
 		return "", err
