@@ -59,7 +59,7 @@ type Check struct {
 	// one the result ignored.
 	DecidedOnDisk bool `json:"-"`
 	// Remedy is the way out of a policy gap this check found. It is the zero
-	// value, RemedyAuthor, for every check that is not a policy gap.
+	// value, RemedyNone, for every check that is not a policy gap.
 	Remedy PolicyRemedy `json:"-"`
 	// Cause is, for a policy gap no remedy fixes, the reason in the words the
 	// scan prints for the same policy, so a caller that cannot print the scan's own
