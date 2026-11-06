@@ -2,7 +2,10 @@ package gitrepo
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,27 +14,113 @@ import (
 
 func TestIsPartialCloneReadsEitherMarkerGitWrites(t *testing.T) {
 	cases := []struct {
-		name          string
-		configuration string
-		want          bool
+		name       string
+		repository fakeRepository
+		want       bool
 	}{
-		{"a promisor remote", promisorOrigin, true},
-		{"a promisor remote spelled yes", "remote.origin.promisor yes\n", true},
-		{"a promisor remote set to false", "remote.origin.promisor false\n", false},
-		{"the extension older git wrote", "extensions.partialclone origin\n", true},
-		{"no marker at all", "", false},
+		{"a promisor remote", fakeRepository{promisors: promisorOrigin}, true},
+		{"a promisor remote beside one that is not", fakeRepository{promisors: "remote.up.promisor false\nremote.origin.promisor true\n"}, true},
+		{"a promisor remote set to false", fakeRepository{promisors: "remote.origin.promisor false\n"}, false},
+		{"the extension older git wrote", fakeRepository{extension: "origin\n"}, true},
+		{"no marker at all", fakeRepository{}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			assertPartialCloneRead(t, c.configuration, c.want)
+			assertPartialCloneRead(t, c.repository, c.want)
 		})
 	}
 }
 
-func assertPartialCloneRead(t *testing.T, configuration string, want bool) {
+func assertPartialCloneRead(t *testing.T, repository fakeRepository, want bool) {
 	t.Helper()
-	if got, err := IsPartialClone(gitSaying("", configuration, nil), "repo"); err != nil || got != want {
+	if got, err := IsPartialClone(repository.run, "repo"); err != nil || got != want {
 		t.Errorf("IsPartialClone = %v, %v; want %v and no error", got, err, want)
+	}
+}
+
+// IsPartialClone reads a promisor setting the way git does, so it asks git to read it as a boolean. A
+// key with no value at all is true to git, and so is any non-zero number; read as text, neither is.
+func TestIsPartialCloneAsksGitToReadThePromisorSettingAsABoolean(t *testing.T) {
+	var asked []string
+	run := func(_ string, args ...string) ([]byte, error) {
+		asked = append(asked, strings.Join(args, " "))
+		return nil, exitStatusOne
+	}
+
+	_, _ = IsPartialClone(run, "repo")
+
+	if !slices.ContainsFunc(asked, func(command string) bool {
+		return strings.Contains(command, "--type=bool") && strings.Contains(command, "promisor")
+	}) {
+		t.Errorf("asked %q; want the promisor setting read with --type=bool", asked)
+	}
+}
+
+func TestIsPartialCloneReadsThePromisorSettingsGitTakesForTrue(t *testing.T) {
+	cases := []struct {
+		name    string
+		setting string
+		want    bool
+	}{
+		{"no value at all", "\tpromisor\n", true},
+		{"true", "\tpromisor = true\n", true},
+		{"on", "\tpromisor = on\n", true},
+		{"a number other than zero", "\tpromisor = 2\n", true},
+		{"false", "\tpromisor = false\n", false},
+		{"zero", "\tpromisor = 0\n", false},
+		{"an empty value", "\tpromisor =\n", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			assertPromisorSettingRead(t, c.setting, c.want)
+		})
+	}
+}
+
+func assertPromisorSettingRead(t *testing.T, setting string, want bool) {
+	t.Helper()
+	repository := gitfixture.Init(t)
+	appendToGitConfig(t, repository, "[remote \"origin\"]\n"+setting)
+
+	partial, err := IsPartialClone(RunBytes, repository)
+	remote, named := PromisorRemote(RunBytes, repository)
+
+	if err != nil || partial != want || named != want || (want && remote != "origin") {
+		t.Errorf("IsPartialClone = %v, %v and PromisorRemote = %q, %v; want %v naming origin", partial, err, remote, named, want)
+	}
+}
+
+func TestIsPartialCloneRefusesAPromisorSettingGitCannotReadAsABoolean(t *testing.T) {
+	repository := gitfixture.Init(t)
+	appendToGitConfig(t, repository, "[remote \"origin\"]\n\tpromisor = maybe\n")
+
+	partial, err := IsPartialClone(RunBytes, repository)
+
+	if err == nil || partial {
+		t.Errorf("IsPartialClone = %v, %v; want an error and no answer for a setting git itself cannot read", partial, err)
+	}
+}
+
+func TestIsPartialCloneReadsARemoteNamedWithASpace(t *testing.T) {
+	repository := gitfixture.Init(t)
+	appendToGitConfig(t, repository, "[remote \"my remote\"]\n\tpromisor = true\n")
+
+	remote, named := PromisorRemote(RunBytes, repository)
+
+	if !named || remote != "my remote" {
+		t.Errorf("PromisorRemote = %q, %v; want the remote's whole name", remote, named)
+	}
+}
+
+func appendToGitConfig(t *testing.T, repository, text string) {
+	t.Helper()
+	config, err := os.OpenFile(filepath.Join(repository, ".git", "config"), os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatalf("open the configuration: %v", err)
+	}
+	defer func() { _ = config.Close() }()
+	if _, err := config.WriteString(text); err != nil {
+		t.Fatalf("write the configuration: %v", err)
 	}
 }
 
@@ -75,7 +164,7 @@ func TestRefuseUnsafeLazyFetchRefusesARepositoryItCannotTellIsAPartialClone(t *t
 		return nil, errors.New("exit status 128: fatal: bad config line 1 in file .git/config")
 	}
 
-	err := RefuseUnsafeLazyFetch(run, "repo")
+	err := RefuseUnsafeLazyFetch(run, "repo", "")
 
 	var refusal *OperationalError
 	if !errors.As(err, &refusal) || !strings.Contains(refusal.Message, "could not tell whether this repository is a partial clone") || refusal.Cause == nil {
@@ -89,7 +178,7 @@ func TestRefuseUnsafeLazyFetchSaysWhenGitIsNotInstalled(t *testing.T) {
 	missing := &exec.Error{Name: "git", Err: exec.ErrNotFound}
 	run := func(string, ...string) ([]byte, error) { return nil, missing }
 
-	err := RefuseUnsafeLazyFetch(run, "repo")
+	err := RefuseUnsafeLazyFetch(run, "repo", "")
 
 	var refusal *OperationalError
 	if !errors.As(err, &refusal) || !strings.Contains(refusal.Message, "git executable not found") {

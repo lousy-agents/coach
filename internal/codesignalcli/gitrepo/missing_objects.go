@@ -1,0 +1,92 @@
+package gitrepo
+
+import (
+	"errors"
+	"fmt"
+	"regexp"
+	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/shellword"
+)
+
+// A revision the scan reads: the name git is asked for, and what a message calls it.
+type readRevision struct {
+	name  string
+	label string
+}
+
+var (
+	missingObjectLine = regexp.MustCompile(`^\?[0-9a-f]{40,64}$`)
+	objectID          = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
+)
+
+// revisionsRead are the commits whose trees the scan reads: HEAD, and for a diff the merge base of base
+// and HEAD, which is the other side of the changed files.
+func revisionsRead(run Runner, dir, base string) ([]readRevision, error) {
+	head := readRevision{name: "HEAD", label: "HEAD"}
+	if base == "" {
+		return []readRevision{head}, nil
+	}
+	output, err := run(dir, "merge-base", "--", base, "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	mergeBase := strings.TrimSpace(string(output))
+	if !objectID.MatchString(mergeBase) {
+		return nil, fmt.Errorf("git printed %q where the merge base's object id was expected", mergeBase)
+	}
+	return []readRevision{head, {name: mergeBase, label: "the merge base of " + displayed(base) + " and HEAD"}}, nil
+}
+
+func displayed(base string) string {
+	if shellword.Printable(base) {
+		return base
+	}
+	return "--base"
+}
+
+// missingObjects counts the objects of one revision's tree that are not in the repository. many is set
+// when there are more than the output budget holds, which is an answer: the revision lacks objects.
+type missingObjects struct {
+	count int
+	many  bool
+}
+
+func (m missingObjects) any() bool { return m.many || m.count > 0 }
+
+// phrase is how a message says what is missing, in the grammar of its count.
+func (m missingObjects) phrase() string {
+	switch {
+	case m.many:
+		return "many objects that are"
+	case m.count == 1:
+		return "1 object that is"
+	}
+	return fmt.Sprintf("%d objects that are", m.count)
+}
+
+// missingObjectsOf asks git which objects of revision's own tree are not local. It reads no object it does
+// not have: `--missing=print` lists a missing object where a walk would fetch it, and `--no-walk` keeps the
+// listing to that one tree instead of the history behind it. `--quiet` leaves only the missing ones, so
+// anything else on the output is a git that did not do as asked, and is an error.
+func missingObjectsOf(run Runner, dir, revision string) (missingObjects, error) {
+	output, err := run(dir, "rev-list", "--objects", "--missing=print", "--no-walk", "--quiet", revision)
+	var bound *BoundError
+	if errors.As(err, &bound) && bound.Kind == BoundStdout {
+		return missingObjects{many: true}, nil
+	}
+	if err != nil {
+		return missingObjects{}, err
+	}
+	text := strings.TrimSuffix(string(output), "\n")
+	if text == "" {
+		return missingObjects{}, nil
+	}
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		if !missingObjectLine.MatchString(line) {
+			return missingObjects{}, fmt.Errorf("git printed %q where a missing object's id was expected", line)
+		}
+	}
+	return missingObjects{count: len(lines)}, nil
+}

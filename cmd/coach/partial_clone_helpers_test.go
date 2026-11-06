@@ -32,11 +32,22 @@ func commitPartialClone(remoteURL func(bare string) string) string {
 
 // partialCloneOf is a filtered, no-checkout clone of source, with its remote set to remoteURL(bare).
 func partialCloneOf(source string, remoteURL func(bare string) string) string {
+	return filteredCloneOf(source, remoteURL, "--no-checkout")
+}
+
+// completePartialCloneOf is a filtered clone of source whose checkout fetched every blob of HEAD, so HEAD
+// lacks nothing and the blobs of earlier commits that differ from it are not local.
+func completePartialCloneOf(source string, remoteURL func(bare string) string) string {
+	return filteredCloneOf(source, remoteURL)
+}
+
+func filteredCloneOf(source string, remoteURL func(bare string) string, cloneFlags ...string) string {
 	bare := filepath.Join(GinkgoT().TempDir(), "bare.git")
 	gitOutputIn(source, "clone", "--bare", "--quiet", source, bare)
 	gitOutputIn(bare, "config", "uploadpack.allowFilter", "true")
 	clone := filepath.Join(GinkgoT().TempDir(), "part")
-	gitOutputIn(GinkgoT().TempDir(), "clone", "--quiet", "--no-checkout", "--filter=blob:none", "file://"+bare, clone)
+	arguments := append(append([]string{"clone", "--quiet"}, cloneFlags...), "--filter=blob:none", "file://"+bare, clone)
+	gitOutputIn(GinkgoT().TempDir(), arguments...)
 	gitOutputIn(clone, "remote", "set-url", "origin", remoteURL(bare))
 	return clone
 }

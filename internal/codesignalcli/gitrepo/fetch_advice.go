@@ -2,29 +2,9 @@ package gitrepo
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/shellword"
 )
-
-// PromisorRemote is the remote a partial clone fetches missing objects from, and false when the
-// repository is not a partial clone. It reads the same two markers as IsPartialClone.
-func PromisorRemote(run Runner, dir string) (string, bool) {
-	output, err := run(dir, "config", "--get-regexp", promisorConfiguration)
-	if err != nil {
-		return "", false
-	}
-	for _, line := range strings.Split(string(output), "\n") {
-		key, value, _ := strings.Cut(strings.TrimSpace(line), " ")
-		if strings.HasPrefix(key, "extensions.") && value != "" {
-			return value, true
-		}
-		if strings.HasSuffix(key, ".promisor") && isTrue(value) {
-			return strings.TrimSuffix(strings.TrimPrefix(key, "remote."), ".promisor"), true
-		}
-	}
-	return "", false
-}
 
 // FetchAdvice is how to bring in the objects a read of revision found missing from a partial clone, to be
 // run in the user's own shell where git may fetch, or "" when the repository is not a partial clone or a
