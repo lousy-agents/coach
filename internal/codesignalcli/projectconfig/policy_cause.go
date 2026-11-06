@@ -18,6 +18,8 @@ var causeOfVerdict = map[restoreVerdict]projectreadiness.PolicyCause{
 	restoreStagedSkipWorktreeNotCommitted: projectreadiness.CauseSkipWorktree,
 	restoreStagedSparseNotCommitted:       projectreadiness.CauseSparseCheckout,
 	restoreDirectoryInIndex:               projectreadiness.CauseDirectory,
+	restoreEmptySkipWorktreeNotCommitted:  projectreadiness.CauseSkipWorktree,
+	restoreEmptySparseNotCommitted:        projectreadiness.CauseSparseCheckout,
 }
 
 // offerCause is why an offer that names no remedy names none. A locked index comes

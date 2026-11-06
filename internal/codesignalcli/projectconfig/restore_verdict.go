@@ -68,11 +68,21 @@ func verdictForUncommitted(staged []gitrepo.IndexEntry, sparse bool) restoreVerd
 	case stagedAsNonRegularFile(staged):
 		return restoreStagedNonFileNotCommitted
 	case skippedBySparseCheckout(staged) && sparse:
-		return restoreStagedSparseNotCommitted
+		return markedVerdict(staged, restoreStagedSparseNotCommitted, restoreEmptySparseNotCommitted)
 	case skippedBySparseCheckout(staged):
-		return restoreStagedSkipWorktreeNotCommitted
+		return markedVerdict(staged, restoreStagedSkipWorktreeNotCommitted, restoreEmptySkipWorktreeNotCommitted)
 	}
 	return restoreStagedNotCommitted
+}
+
+// markedVerdict is withContent when the marked entries include one that holds
+// content, and onlyEmpty when every one of them is empty: an entry that holds nothing
+// is not a staged copy, and the message should not call it one.
+func markedVerdict(staged []gitrepo.IndexEntry, withContent, onlyEmpty restoreVerdict) restoreVerdict {
+	if slices.ContainsFunc(staged, func(entry gitrepo.IndexEntry) bool { return !holdsNoContent(entry) }) {
+		return withContent
+	}
+	return onlyEmpty
 }
 
 // holdsNoContent is true for an entry that holds no content: a regular file at

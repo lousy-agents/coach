@@ -77,6 +77,8 @@ func verdictCases() []verdictCase {
 	nonFile1, nonFile2 := bothWays("not a regular file")
 	stagedMark1, stagedMark2 := bothWays("marked skip-worktree")
 	dir1, dir2 := bothWays("directory", "name a file")
+	emptyMark1, emptyMark2 := bothWays("empty entry", "marked skip-worktree", "git update-index --no-skip-worktree")
+	emptySparse1, emptySparse2 := bothWays("empty entry", "sparse checkout")
 	unknown1, unknown2 := bothWays("could not tell what a restore would do")
 	moveFirst := cannotRestore("after moving the file, restore the policy from git")
 	return []verdictCase{
@@ -97,6 +99,8 @@ func verdictCases() []verdictCase {
 		{"a staged link of a policy nothing commits", restoreStagedNonFileNotCommitted, nonFile1, nonFile2, false},
 		{"a staged copy marked skip-worktree", restoreStagedSkipWorktreeNotCommitted, stagedMark1, stagedMark2, false},
 		{"a staged copy a sparse checkout leaves out", restoreStagedSparseNotCommitted, sparse1, sparse2, false},
+		{"an empty entry marked skip-worktree for a policy nothing commits", restoreEmptySkipWorktreeNotCommitted, emptyMark1, emptyMark2, false},
+		{"an empty entry a sparse checkout leaves out", restoreEmptySparseNotCommitted, emptySparse1, emptySparse2, false},
 		{"a directory in the index", restoreDirectoryInIndex, dir1, dir2, false},
 		{"a verdict the offers do not know", unknownVerdict, unknown1, unknown2, false},
 	}

@@ -112,6 +112,24 @@ var stagedSparseOffer = restoreOffer{
 	text:   ". It is not committed, but the index holds a staged copy of it that this sparse checkout leaves out of the working tree, so a restore cannot bring it back and Coach offers no new policy; add its directory to the sparse checkout, then run again",
 }
 
+// emptySkipWorktreeOffer is for a policy that is not committed and whose only index
+// entry holds no content (git add --intent-to-add, or an emptied file staged) and is
+// marked skip-worktree. There is no copy to keep, so it says what the entry is. While
+// the mark is on, git add refuses a new file at the path, so a new policy is not offered.
+func emptySkipWorktreeOffer(repoPath string) restoreOffer {
+	return restoreOffer{
+		remedy: projectreadiness.RemedyNone,
+		text:   ". It is not committed, and the index holds only an empty entry for it with no content staged, marked skip-worktree, which makes git refuse a new file at the path, so Coach offers no new policy; " + clearSkipWorktreeAdvice(repoPath) + ", then run again",
+	}
+}
+
+// emptySparseOffer is emptySkipWorktreeOffer for an entry that the sparse checkout
+// leaves out of the working tree.
+var emptySparseOffer = restoreOffer{
+	remedy: projectreadiness.RemedyNone,
+	text:   ". It is not committed, and the index holds only an empty entry for it with no content staged that this sparse checkout leaves out of the working tree, which makes git refuse a new file at the path, so Coach offers no new policy; add its directory to the sparse checkout, then run again",
+}
+
 // uncommittedOfferFor is the offer for a policy that is not committed at the
 // analyzed revision and that the index holds in a state worth saying, and false
 // for every other verdict.
@@ -125,6 +143,10 @@ func uncommittedOfferFor(verdict restoreVerdict, repoPath string, blocked bool) 
 		return stagedSkipWorktreeOffer(repoPath), true
 	case restoreStagedSparseNotCommitted:
 		return stagedSparseOffer, true
+	case restoreEmptySkipWorktreeNotCommitted:
+		return emptySkipWorktreeOffer(repoPath), true
+	case restoreEmptySparseNotCommitted:
+		return emptySparseOffer, true
 	case restoreStagedNotCommitted:
 		return stagedOnlyOffer(repoPath, blocked), true
 	}
