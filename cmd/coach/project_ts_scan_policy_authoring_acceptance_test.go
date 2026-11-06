@@ -271,7 +271,7 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard tr
 			var zeroKindErr projectconfig.ConfigError
 			zeroKindErr.Message = `coach codesignal: --project-config "project.json" is invalid at revision "HEAD" (project_config_invalid): unclassified`
 
-			Expect(scanShouldAuthorProjectConfig(&zeroKindErr, "typescript", "project.json", false)).To(BeFalse(), "an error whose cause was never classified must not select guided authoring")
+			Expect(scanShouldAuthorProjectConfig(&zeroKindErr, "typescript", policyref.Named("project.json"), false)).To(BeFalse(), "an error whose cause was never classified must not select guided authoring")
 		})
 	})
 })
