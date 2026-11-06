@@ -64,12 +64,32 @@ var _ = Describe("coach codesignal: a git that cannot be told not to fetch is re
 		Entry("--check-project", "codesignal", "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "cfg/p.json", "--format", "json"),
 	)
 
-	It("still scans an ordinary clone with the same old git, which has nothing to fetch", func() {
-		repo := commitScannableGoRepo()
+	DescribeTable("still scans a repository that is not a partial clone, whatever its remotes say about promising",
+		func(arrange func(repo string)) {
+			repo := commitOrdinaryClone()
+			arrange(repo)
 
-		stdout, stderr, exitCode := runCoachBinary(commandPath, repo, environmentWithGitReporting("2.43.0"), "codesignal", "--baseline", "--format=json", "--no-interactive")
+			stdout, stderr, exitCode := runCoachBinary(commandPath, repo, environmentWithGitReporting("2.43.0"), "codesignal", "--baseline", "--format=json", "--no-interactive")
 
-		Expect(exitCode).To(Equal(0), "stdout: %s\nstderr: %s", stdout, stderr)
-		Expect(string(stderr)).NotTo(ContainSubstring("partial clone"), "stderr:\n%s", stderr)
-	})
+			Expect(exitCode).To(Equal(0), "stdout: %s\nstderr: %s", stdout, stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("partial clone"), "stderr:\n%s", stderr)
+		},
+		Entry("a clone with an ordinary remote and no promisor setting", func(string) {}),
+		Entry("a remote whose promisor setting is false", func(repo string) {
+			gitIn(repo, "config", "remote.origin.promisor", "false")
+		}),
+		Entry("a promisor remote beside one that is not, the promisor one set to false", func(repo string) {
+			gitIn(repo, "remote", "add", "upstream", "https://example.invalid/upstream.git")
+			gitIn(repo, "config", "remote.upstream.promisor", "false")
+		}),
+		Entry("a filter recorded for a remote that is not a promisor", func(repo string) {
+			gitIn(repo, "config", "remote.origin.partialclonefilter", "blob:none")
+		}),
+		Entry("an empty extensions.partialclone", func(repo string) {
+			gitIn(repo, "config", "extensions.partialclone", "")
+		}),
+		Entry("a repository with no remote at all", func(repo string) {
+			gitIn(repo, "remote", "remove", "origin")
+		}),
+	)
 })
