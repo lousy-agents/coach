@@ -36,6 +36,10 @@ type PrepareCompilerMiseResult struct {
 	// PolicyRequired is true: restore it, author a new one, or neither.
 	PolicyRemedy projectreadiness.PolicyRemedy
 
+	// PolicyCause is why no remedy fixes the failing policy, in the words the
+	// scan prints for it, while PolicyRequired is true and the remedy names none.
+	PolicyCause string
+
 	// NoChoicesOffered is true when the prepare_compiler next action was
 	// absent, not executable, or named no mise installation choice at all --
 	// there was nothing to set up. This is not a failure and not a
@@ -126,7 +130,7 @@ func (r PrepareCompilerMiseResult) NeverStarted() bool {
 // runAuthorProjectConfigTypeScript/authorProjectConfigTypeScript's split.
 func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision string, policy policyref.Ref, readiness *projectreadiness.Result, in io.Reader, out io.Writer) PrepareCompilerMiseResult {
 	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
-		return PrepareCompilerMiseResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy}
+		return PrepareCompilerMiseResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy, PolicyCause: readiness.Checks.Policy.Cause}
 	}
 	if code, blocking := readinessHasBlockingRuntimeGap(readiness); blocking {
 		return PrepareCompilerMiseResult{RuntimeGapCode: code}

@@ -10,7 +10,9 @@ import (
 
 func reportPrepareCompilerMiseResult(result tssetup.PrepareCompilerMiseResult, revision, policyPath string, stderr *os.File) int {
 	if result.PolicyRequired {
-		fmt.Fprintln(stderr, policyRequiredLine(prepareCompilerMiseUsagePrefix, result.PolicyCode, result.PolicyRemedy, revision, policyPath))
+		for _, line := range policyRequiredLines(prepareCompilerMiseUsagePrefix, result.PolicyCode, result.PolicyRemedy, result.PolicyCause, revision, policyPath) {
+			fmt.Fprintln(stderr, line)
+		}
 		return 2
 	}
 	if result.RuntimeGapCode != "" {

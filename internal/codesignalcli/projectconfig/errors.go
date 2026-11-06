@@ -100,9 +100,15 @@ func readError(dir, revision, repoPath string, gitErr error) error {
 		return &ConfigError{Kind: KindUnreadable, Remedy: boundRemedy(boundErr), Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
 	}
 	if configExistsInWorktree(dir, repoPath) {
-		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, Message: fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision)}
+		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, Message: UncommittedPolicyMessage(revision, repoPath)}
 	}
 	return &ConfigError{Kind: KindNotFound, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found at revision %q (project_config_invalid)", repoPath, revision)}
+}
+
+// UncommittedPolicyMessage is what the scan says about a --project-config policy
+// that exists in the working tree but is not committed at the analyzed revision.
+func UncommittedPolicyMessage(revision, repoPath string) string {
+	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision)
 }
 
 // boundRemedy is the way out of a read that tripped a bound. A policy over the
