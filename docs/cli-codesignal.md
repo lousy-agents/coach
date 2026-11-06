@@ -138,6 +138,10 @@ appends `on a terminal: coach codesignal --baseline --project-config <path>
 same scan invocation rather than a standalone subcommand: rerunning it on a
 terminal is what opens the combined setup offer above.
 
+## What repository configuration can run
+
+A scan reads the repository through git with `core.fsmonitor` disabled and without taking the index lock, and it runs no hook, external diff, textconv, pager or askpass program. The one channel left is a clean filter: when `git status` meets a modified tracked file that a repository's `.gitattributes` gives a `filter.<name>.clean` program, git runs that program as defined in the repository's own configuration, and coach does not override it, because disabling filters would make every git-lfs file read as modified. The repository's own configuration is the trust boundary, as it is for git itself.
+
 ## Diff-mode caveats
 
 - Dirty / uncommitted files are ignored as analysis input. A TypeScript project scan emits `worktree_report_reflects_committed_head` when relevant worktree changes exist; the report still applies to committed HEAD. Supported-language file-local dirt uses `worktree_changes_not_analyzed`. Unsupported dirt uses `worktree_not_clean`. A status-check failure uses `worktree_status_check_failed`.
