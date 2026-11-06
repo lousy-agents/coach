@@ -5,6 +5,7 @@ Each tool keeps one JSON file under `.lousy-agents/` at the git top-level.
 | Tool | File | When |
 | --- | --- | --- |
 | coach | `.lousy-agents/coach.json` | now |
+| coach (TypeScript, `js/semantics`) | `.lousy-agents/coach.typescript-js-semantics.json` | now, with an explicit `--project-config` only |
 | doctor | `.lousy-agents/doctor.json` | later |
 | lint | `.lousy-agents/lint.json` | later |
 
