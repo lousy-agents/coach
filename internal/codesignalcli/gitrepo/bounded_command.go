@@ -33,7 +33,7 @@ type BoundError struct {
 // read of this package starts with. A caller that varies only the child's
 // environment builds on it, so its reads inherit the same hardening.
 func ReadCommandContext(ctx context.Context, dir string, args ...string) *exec.Cmd {
-	return exec.CommandContext(ctx, "git", gitArgs(dir, args...)...)
+	return gitCommand(ctx, dir, args...)
 }
 
 // commandContext builds the git child used by bounded reads. Tests may

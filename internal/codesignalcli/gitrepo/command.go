@@ -5,8 +5,8 @@ package gitrepo
 
 import (
 	"bytes"
+	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 )
 
@@ -16,7 +16,7 @@ func Run(dir string, args ...string) (string, error) {
 }
 
 func RunBytes(dir string, args ...string) ([]byte, error) {
-	cmd := exec.Command("git", gitArgs(dir, args...)...)
+	cmd := gitCommand(context.Background(), dir, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
