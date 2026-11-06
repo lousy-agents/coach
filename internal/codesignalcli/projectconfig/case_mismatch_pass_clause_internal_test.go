@@ -15,7 +15,7 @@ func TestACaseMismatchPassesNoPathThatCannotBeShownOrRunWithoutQuoting(t *testin
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			mismatch := &caseMismatchError{repoPath: "cfg/X.json", directory: "cfg", typed: "X.json", onDisk: "x.json", corrected: c.corrected}
+			mismatch := caseMismatchError{repoPath: "cfg/X.json", directory: "cfg", typed: "X.json", onDisk: "x.json", corrected: c.corrected}
 
 			assertCaseMismatchAdvice(t, mismatch.config(fakeRevision{"": {"cfg"}, "cfg": {"x.json"}}.entries), splitNonEmpty(c.want), splitNonEmpty(c.avoid))
 		})

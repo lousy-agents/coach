@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-func fileMismatch() *caseMismatchError {
+func fileMismatch() caseMismatchError {
 	return newCaseMismatch("cfg/POLICY.json", []string{"cfg", "POLICY.json"}, 1, "policy.json")
 }
 
-func directoryMismatch() *caseMismatchError {
+func directoryMismatch() caseMismatchError {
 	return newCaseMismatch("CFG/p.json", []string{"CFG", "p.json"}, 0, "cfg")
 }
 
@@ -28,7 +28,7 @@ func failingRevision(string) ([]string, error) {
 func TestACaseMismatchAdvisesFromWhatTheRevisionHolds(t *testing.T) {
 	cases := []struct {
 		name     string
-		mismatch *caseMismatchError
+		mismatch caseMismatchError
 		entries  revisionEntries
 		want     []string
 		avoid    []string
