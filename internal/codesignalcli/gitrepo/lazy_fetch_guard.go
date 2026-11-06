@@ -1,7 +1,9 @@
 package gitrepo
 
 import (
+	"errors"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"slices"
 	"strconv"
@@ -39,19 +41,30 @@ func NoLazyFetchSupported(run Runner, dir string) (supported bool, version strin
 const promisorConfiguration = `^(extensions\.partialclone|remote\..*\.promisor)$`
 
 // IsPartialClone reports whether the repository at dir was cloned with a filter, which is what makes git
-// fetch a missing object on demand.
-func IsPartialClone(run Runner, dir string) bool {
+// fetch a missing object on demand. git config exits 1 when nothing matches, which is a plain no; any other
+// failure (a damaged configuration, a time or output bound) is an error, because a repository that cannot
+// be told apart from an ordinary one must not be read as one.
+func IsPartialClone(run Runner, dir string) (bool, error) {
 	output, err := run(dir, "config", "--get-regexp", promisorConfiguration)
 	if err != nil {
-		return false
+		return false, ignoringNoMatch(err)
 	}
 	for _, line := range strings.Split(string(output), "\n") {
 		key, value, _ := strings.Cut(strings.TrimSpace(line), " ")
 		if strings.HasPrefix(key, "extensions.") && value != "" || strings.HasSuffix(key, ".promisor") && isTrue(value) {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
+}
+
+// ignoringNoMatch is nil for git's exit 1 and err for every other failure.
+func ignoringNoMatch(err error) error {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return nil
+	}
+	return err
 }
 
 func isTrue(value string) bool {
@@ -59,9 +72,17 @@ func isTrue(value string) bool {
 }
 
 // RefuseUnsafeLazyFetch is nil unless dir is a partial clone and the installed git cannot be told not to
-// fetch into it. An ordinary clone has nothing to fetch, so it is never refused.
+// fetch into it. An ordinary clone has nothing to fetch, so it is never refused; a repository that cannot
+// be told apart from an ordinary one is, because reading it could run its remote's transport.
 func RefuseUnsafeLazyFetch(run Runner, dir string) error {
-	if !IsPartialClone(run, dir) {
+	partial, err := IsPartialClone(run, dir)
+	if errors.Is(err, exec.ErrNotFound) {
+		return gitNotFoundError()
+	}
+	if err != nil {
+		return &OperationalError{Message: fmt.Sprintf("could not tell whether this repository is a partial clone (%s), so it is not read: a partial clone's read could run its remote's transport and write objects", err), Cause: err}
+	}
+	if !partial {
 		return nil
 	}
 	supported, version := NoLazyFetchSupported(run, dir)
