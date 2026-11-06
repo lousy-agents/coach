@@ -27,34 +27,16 @@ func repositoryWithASubmodule(t *testing.T) string {
 	return repo
 }
 
-// failingEach is a runner that answers with real git except for the subcommands it is told to fail.
-func failingEach(failures map[string]error) gitrepo.Runner {
-	return func(dir string, args ...string) ([]byte, error) {
-		if failure, fails := failures[args[0]+" "+firstFlag(args)]; fails {
-			return nil, failure
-		}
-		return gitrepo.RunBytes(dir, args...)
-	}
-}
-
-func firstFlag(args []string) string {
-	if len(args) > 1 {
-		return args[1]
-	}
-	return ""
-}
-
 // The probe is one more git read of the policy, so it goes through the runner the caller holds to its
 // limits, like every other: a test that fakes that runner controls it.
 func TestTheSubmoduleProbeAsksTheRunnerItWasGiven(t *testing.T) {
-	repo := repositoryWithASubmodule(t)
 	var asked []string
-	run := func(dir string, args ...string) ([]byte, error) {
+	run := func(_ string, args ...string) ([]byte, error) {
 		asked = append(asked, args[0])
-		return gitrepo.RunBytes(dir, args...)
+		return []byte("160000 " + committedBlob + " 0\tvendor/sub\x00"), nil
 	}
 
-	message, cause, unanswered := UncommittedPolicy(run, repo, "HEAD", "vendor/sub/coach.json")
+	message, cause, unanswered := UncommittedPolicy(run, "repo", "HEAD", "vendor/sub/coach.json")
 
 	if cause != projectreadiness.PolicyCause("in_submodule") || !strings.Contains(message, `inside the submodule "vendor/sub"`) || unanswered != nil {
 		t.Errorf("UncommittedPolicy = %q, %q, %v; want the submodule and its cause, and no unanswered question", message, cause, unanswered)
@@ -67,10 +49,7 @@ func TestTheSubmoduleProbeAsksTheRunnerItWasGiven(t *testing.T) {
 // When git cannot say whether the path lies inside a submodule, the message gives no advice: "commit
 // the file" is the circular advice for a file in a submodule, and a guess is no reason to give it.
 func TestAnUnansweredSubmoduleQuestionGivesNoAdvice(t *testing.T) {
-	repo := repositoryWithASubmodule(t)
-	run := failingEach(map[string]error{"ls-files --stage": errors.New("boom")})
-
-	message, cause, unanswered := UncommittedPolicy(run, repo, "HEAD", "vendor/sub/coach.json")
+	message, cause, unanswered := UncommittedPolicy(failsEveryQuestion(errors.New("boom")), "repo", "HEAD", "vendor/sub/coach.json")
 
 	if strings.Contains(message, "commit the file") || cause != projectreadiness.PolicyCause("git_unreadable") || unanswered == nil {
 		t.Errorf("UncommittedPolicy = %q, %q, %v; want no advice, the cause git_unreadable, and the unanswered question", message, cause, unanswered)
@@ -95,11 +74,7 @@ func TestAMissingPolicyInsideASubmoduleIsOfferedNeitherARestoreNorANewPolicy(t *
 // A file whose existence cannot be checked is not called absent: "was not found" would offer a new
 // policy over a file that may be there.
 func TestAPolicyThatCannotBeLocatedIsNotCalledAbsent(t *testing.T) {
-	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "a.txt", "x")
-	run := failingEach(map[string]error{"rev-parse --show-toplevel": errors.New("boom")})
-
-	err := readError(run, repo, "HEAD", "cfg.json", errors.New("not at the revision"))
+	err := readError(failsEveryQuestion(errors.New("boom")), "repo", "HEAD", "cfg.json", errors.New("not at the revision"))
 
 	found, ok := err.(*ConfigError)
 	if !ok || found.Remedy != projectreadiness.RemedyNone || found.PolicyCause != projectreadiness.PolicyCause("git_unreadable") || strings.Contains(found.Message, "was not found") {
@@ -120,4 +95,10 @@ func TestAnAncestorTooLargeToListIsADirectoryNotASubmodule(t *testing.T) {
 	if err != nil || submodule != "" {
 		t.Errorf("enclosingSubmodule = %q, %v; want none and no error", submodule, err)
 	}
+}
+
+// failsEveryQuestion is a runner that answers no git question: each one fails with failure. For a unit
+// whose only git question is the one under test, nothing else has to be said.
+func failsEveryQuestion(failure error) gitrepo.Runner {
+	return func(string, ...string) ([]byte, error) { return nil, failure }
 }

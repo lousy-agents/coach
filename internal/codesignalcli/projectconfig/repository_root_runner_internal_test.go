@@ -36,17 +36,10 @@ func TestTheRepositoryRootIsFoundThroughTheRunnerTheCallerInjected(t *testing.T)
 }
 
 func TestARunnerThatCannotFindTheRepositoryRootFailsTheCheckInsteadOfJudgingAPolicy(t *testing.T) {
-	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "a.txt", "x")
+	repo := committedRepository(t)
 	boom := errors.New("root lookup exceeded its limit")
-	run := func(dir string, args ...string) ([]byte, error) {
-		if slices.Equal(args, rootLookup) {
-			return nil, boom
-		}
-		return gitrepo.RunBytes(dir, args...)
-	}
 
-	status, err := ExplicitOnDiskStatus(run, repo, "HEAD", "cfg/p.json")
+	status, err := ExplicitOnDiskStatus(indexFake{rootErr: boom}.run, repo, "HEAD", "cfg/p.json")
 
 	if status != nil || !errors.Is(err, boom) {
 		t.Errorf("ExplicitOnDiskStatus = %+v, %v; want no verdict and the runner's own failure", status, err)
