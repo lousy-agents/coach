@@ -24,6 +24,7 @@
 ### Observations (LOW)
 
 - **F05b (known LOW from lens A), hands' T2:** a committed directory at the policy path matches the pathspec, so a "staged copy" restore is offered.
+- **Raced FIFO on Linux:** when the policy path is swapped for a FIFO just after `git status` has lstat-ed it as a file, git blocks opening it (kernel state `wait_for_partner`) until the 30 s wall-time bound of the read ends the child. In the Linux container 5 of 29 runs of the 40-scan spec met one such scan, none more than one, each taking 30 to 31 s. The scan still ends, and with the spec's ceiling at 45 s the other invariants held in the stalled runs: exit 0 or 2, no panic, no canary, no report beside a refusal. The stall needs write access to the worktree and ends at the bound.
 - **P16:** a 5000-character path is echoed whole in the error line.
 - **P20 / N12 / R19:** a backslash is rejected as a separator (`path must use repository-relative slash separators`) even where the file system allows it in a name. This is a design choice, stated in the message. No test mentioned it before.
 
@@ -76,7 +77,7 @@ The three fixes were also proved red first with unit tests, which fail on `4d1bb
 ## Method and limits
 
 - **Harness:** `evil-595/probe_lib.py`, `probes1.py` to `probes4.py` (166 probes) and `toctou.py` (500 scans with the policy path raced between a regular file, a FIFO, symlinks in and out of the repository, and nothing). Results are in `results*.json`; pin searches in `pins_A.json` and `pins_B.json` (two read-only research agents; the pin locations were not re-verified line by line, while every ADDED row is mine and was run).
-- **TOCTOU:** the probe opens with `os.Root`, takes an `Lstat`, opens non-blocking and re-checks with `fstat`, and never reads the bytes (ADR-008). 500 raced scans: 0 hangs, 0 panics, 0 canary leaks, 0 stdout on exit 2. The added spec runs 40 raced scans and asserts those invariants.
+- **TOCTOU:** the probe opens with `os.Root`, takes an `Lstat`, opens non-blocking and re-checks with `fstat`, and never reads the bytes (ADR-008). 500 raced scans on macOS: 0 hangs, 0 panics, 0 canary leaks, 0 stdout on exit 2. The added spec runs 40 raced scans and asserts those invariants. On Linux the race does stall a scan: see the observation below.
 - **Not creatable here:** invalid UTF-8 file names (APFS refuses them; pinned in `narrowing_acceptance_test.go`), and a real character device (needs root; a symlink to `/dev/zero` exercises the neighbouring branch).
 - **Unverified on Linux:** the Unicode-normalization and case-collision rows depend on the file system; the added Unicode spec skips where composed and decomposed spellings are distinct, and I could not run it there.
 - **Not exercised:** the interactive guided-authoring session itself (needs a controlling terminal); this checklist covers the paths it is offered or withheld for.
