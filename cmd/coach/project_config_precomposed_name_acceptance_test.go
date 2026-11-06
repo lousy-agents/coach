@@ -41,4 +41,15 @@ var _ = Describe("coach codesignal: a policy named in another Unicode form than 
 		Expect(string(stderr)).NotTo(ContainSubstring("git said"), "stderr:\n%s", stderr)
 		Expect(printedRestoreCommand(stderr)).To(HavePrefix("git restore --source="), "stderr:\n%s", stderr)
 	})
+
+	It("leaves the policy's own path out of the dirty worktree in either spelling", func() {
+		repo := commitScannableGoRepo()
+		commitDecomposedPolicy(repo)
+
+		typedDecomposedDoc := expectCheckProject(repo, "--project-config", decomposedPolicy)
+		typedPrecomposedDoc := expectCheckProject(repo, "--project-config", precomposedPolicy)
+
+		Expect(typedDecomposedDoc.DirtyWorktree).To(Equal(typedPrecomposedDoc.DirtyWorktree), "the same state, typed in the other form")
+		Expect(typedDecomposedDoc.DirtyWorktree.Paths).NotTo(ContainElement(precomposedPolicy))
+	})
 })

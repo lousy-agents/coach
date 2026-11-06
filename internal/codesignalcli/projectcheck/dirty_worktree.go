@@ -20,9 +20,18 @@ func detectRelevantDirtyWorktree(dir string, roots []string, policyPath, readFro
 		return projectreadiness.DirtyWorktree{}, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: git status failed: %s", err)}
 	}
 
+	relevant := relevantDirtyPaths(entries, roots, policyPath, readFromDisk)
+
+	return projectreadiness.DirtyWorktree{RelevantChanges: len(relevant) > 0, Paths: relevant}, nil
+}
+
+// relevantDirtyPaths are the paths of entries the report did not read and that count as relevant, sorted.
+// A path is the policy's own when it names the same path as readFromDisk or policyPath, whichever Unicode
+// form git lists it in and the user typed it in.
+func relevantDirtyPaths(entries []gitrepo.WorktreeEntry, roots []string, policyPath, readFromDisk string) []string {
 	relevant := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if readFromDisk != "" && entry.Path == readFromDisk {
+		if readFromDisk != "" && gitrepo.SamePath(entry.Path, readFromDisk) {
 			continue
 		}
 		if IsRelevantDirtyPath(entry.Path, roots, policyPath) {
@@ -30,8 +39,7 @@ func detectRelevantDirtyWorktree(dir string, roots []string, policyPath, readFro
 		}
 	}
 	sort.Strings(relevant)
-
-	return projectreadiness.DirtyWorktree{RelevantChanges: len(relevant) > 0, Paths: relevant}, nil
+	return relevant
 }
 
 var alwaysRelevantMetadataBasenames = map[string]bool{
@@ -47,7 +55,7 @@ var alwaysRelevantMetadataBasenames = map[string]bool{
 }
 
 func IsRelevantDirtyPath(candidate string, roots []string, policyPath string) bool {
-	if candidate == policyPath {
+	if gitrepo.SamePath(candidate, policyPath) {
 		return true
 	}
 	base := path.Base(candidate)
