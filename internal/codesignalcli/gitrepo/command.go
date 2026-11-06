@@ -16,7 +16,7 @@ func Run(dir string, args ...string) (string, error) {
 }
 
 func RunBytes(dir string, args ...string) ([]byte, error) {
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd := exec.Command("git", gitArgs(dir, args...)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
