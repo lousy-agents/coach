@@ -127,6 +127,8 @@ holds, and what to do follows from that:
   because no spelling is the right one to move to. It gives none either when git cannot
   answer.
 
+A policy that Coach discovers, with no `--project-config`, is read only at `.lousy-agents/coach.json`. When nothing is committed there and the analyzed revision holds the same path in another case (`.Lousy-Agents/Coach.json`, say), the scan is refused with `project_config_invalid`, and `--check-project` reports a policy gap with the cause `name_case_differs` and no `author_policy`, because a new policy cannot be written over the one that is committed. Before, the scan ran without the policy and said nothing, which dropped its layer checks. The message names the spelling that is committed and the commands that move it, `mkdir -p '.lousy-agents' && git mv '.Lousy-Agents/Coach.json' '.lousy-agents/coach.json'`, to be committed (the `mkdir` is for a file system that tells cases apart, where the directory does not exist under the new spelling). It holds on any file system, since the committed names are what differ. With several spellings committed the message lists them and asks for one at the path Coach reads.
+
 The check covers every component of the path, and the advice is about the first component
 that differs. It also applies when the file is missing: a missing policy under a parent
 spelled in another case is refused for that parent and is not offered a restore, because

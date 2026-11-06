@@ -264,6 +264,11 @@ except for the policy-candidate document on the guided-authoring path.
   gives no advice when the revision holds neither or both. A file renamed in case
   only is told to record the rename with `git mv`, because `git add` records
   nothing for it. No new policy is offered. See the [CLI contract](./docs/cli-codesignal.md#commands).
+- A policy Coach discovers (no `--project-config`) that is committed in another case
+  than `.lousy-agents/coach.json`: the scan is refused, `--check-project` names
+  `name_case_differs` and offers no new policy, and the message prints the
+  `git mv` that moves it. It used to be ignored. See the
+  [CLI contract](./docs/cli-codesignal.md#commands).
 - A policy inside a submodule checkout, or at a path the analyzed revision
   commits as a submodule: `project_config_missing`, naming the submodule. The
   superproject records a submodule as one commit, so the file can be neither
