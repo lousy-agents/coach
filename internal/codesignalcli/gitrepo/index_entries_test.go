@@ -2,6 +2,7 @@ package gitrepo
 
 import (
 	"errors"
+	"io/fs"
 	"reflect"
 	"strings"
 	"testing"
@@ -94,5 +95,39 @@ func assertIndexEntriesRejects(t *testing.T, output string) {
 	var operational *OperationalError
 	if !errors.As(err, &operational) || entries != nil {
 		t.Errorf("IndexEntries = %v, %v; want no entries and an *OperationalError, so a listing that cannot be read is never taken for a clean index", entries, err)
+	}
+}
+
+func TestIndexEntriesKeepsGitsOwnErrorAsTheCause(t *testing.T) {
+	run := func(string, ...string) ([]byte, error) { return nil, errors.New("boom") }
+
+	_, err := IndexEntries(run, "repo", "pol.json")
+
+	var operational *OperationalError
+	if !errors.As(err, &operational) || operational.Cause == nil || operational.Cause.Error() != "boom" {
+		t.Errorf("IndexEntries error = %#v; want Cause to be git's own error, so a caller can quote it without Coach's wrapper", err)
+	}
+}
+
+func TestIndexEntriesNamesTheParseFailureAsTheCauseWithoutCoachsWrapper(t *testing.T) {
+	run := func(string, ...string) ([]byte, error) { return []byte("not an index line\n"), nil }
+
+	_, err := IndexEntries(run, "repo", "pol.json")
+
+	var operational *OperationalError
+	if !errors.As(err, &operational) || operational.Cause == nil {
+		t.Fatalf("IndexEntries error = %#v; want a Cause that says why the listing was refused", err)
+	}
+	if !strings.Contains(operational.Cause.Error(), "cannot parse") || strings.Contains(operational.Cause.Error(), "coach codesignal") {
+		t.Errorf("Cause = %q; want the parse reason alone", operational.Cause)
+	}
+}
+
+func TestAnOperationalErrorDoesNotLetErrorsAsReachItsCause(t *testing.T) {
+	err := error(&OperationalError{Message: "m", Cause: &fs.PathError{Op: "chdir", Path: "/secret/repo", Err: errors.New("denied")}})
+
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		t.Errorf("errors.As found %v inside an OperationalError; a caller that tests *fs.PathError first would take it for a different failure", pathErr)
 	}
 }

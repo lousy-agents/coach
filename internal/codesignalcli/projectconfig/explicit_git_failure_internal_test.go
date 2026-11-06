@@ -87,3 +87,26 @@ func TestAGitFailureIsQuotedWithoutCoachsOwnWrapperAroundIt(t *testing.T) {
 		t.Errorf("GitFailure %q carries Coach's own wrapper around git's error", status.GitFailure)
 	}
 }
+
+func TestAnIndexFailureIsQuotedWithoutCoachsOwnWrapperAroundIt(t *testing.T) {
+	cases := []struct {
+		name string
+		fake indexFake
+		want string
+	}{
+		{"git cannot list the index", indexFake{lsFilesErr: errors.New("exit status 128: fatal: index file smaller than expected")}, "index file smaller than expected"},
+		{"git prints a line Coach cannot parse", indexFake{lsFiles: "not an index line\n"}, "cannot parse"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			status := statusWhenGitFails(t, c.fake)
+
+			if got := strings.Count(status.Message, "coach codesignal"); got != 1 {
+				t.Errorf("message %q names coach codesignal %d times; the quote must not carry Coach's own wrapper", status.Message, got)
+			}
+			if !strings.Contains(status.Message, c.want) {
+				t.Errorf("message %q; want it to carry %q", status.Message, c.want)
+			}
+		})
+	}
+}

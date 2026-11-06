@@ -29,3 +29,20 @@ var _ = Describe("coach codesignal --check-project: a git failure while judging 
 		})
 	})
 })
+
+var _ = Describe("coach codesignal: a corrupt index while judging an explicit policy that is gone from disk", func() {
+	It("quotes git's error once, without Coach's own wrapper around it", func() {
+		repo := newTempGitRepo()
+		commitFile(repo, "go.mod", "module example.com/corruptindex\n\ngo 1.25\n")
+		commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
+		Expect(os.RemoveAll(filepath.Join(repo, "cfg"))).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(repo, ".git", "index"), []byte("DIRC"), 0o644)).To(Succeed())
+
+		stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--project-config", "cfg/p.json", "--format=json")
+
+		Expect(exitCode).To(Equal(2), "stdout=%s stderr=%s", stdout, stderr)
+		Expect(string(stderr)).To(ContainSubstring("what the index holds"), "stderr: %s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("git said"), "stderr: %s", stderr)
+		Expect(strings.Count(string(stderr), "coach codesignal")).To(Equal(1), "stderr: %s", stderr)
+	})
+})

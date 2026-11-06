@@ -1,6 +1,7 @@
 package gitrepo
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -14,6 +15,8 @@ type IndexEntry struct {
 	SkipWorktree bool
 }
 
+var errUnparseableIndexLine = errors.New("git printed a line this version cannot parse")
+
 // skipWorktreeTag is the status tag ls-files -t prints for a skip-worktree entry.
 const skipWorktreeTag = "S"
 
@@ -25,7 +28,7 @@ const skipWorktreeTag = "S"
 func IndexEntries(run func(dir string, args ...string) ([]byte, error), dir, repoPath string) ([]IndexEntry, error) {
 	output, err := run(dir, "ls-files", "--stage", "-t", "--", ":(top,literal)"+repoPath)
 	if err != nil {
-		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: the index entry for %q could not be read: %s", repoPath, err)}
+		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: the index entry for %q could not be read: %s", repoPath, err), Cause: err}
 	}
 	listing := strings.TrimSpace(string(output))
 	if listing == "" {
@@ -36,7 +39,7 @@ func IndexEntries(run func(dir string, args ...string) ([]byte, error), dir, rep
 		meta, _, found := strings.Cut(line, "\t")
 		fields := strings.Fields(meta)
 		if !found || len(fields) != 4 {
-			return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: the index entry for %q could not be read: git printed a line this version cannot parse", repoPath)}
+			return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: the index entry for %q could not be read: %s", repoPath, errUnparseableIndexLine), Cause: errUnparseableIndexLine}
 		}
 		entries = append(entries, IndexEntry{TreeEntry: TreeEntry{Mode: fields[1], SHA: fields[2]}, Stage: fields[3], SkipWorktree: fields[0] == skipWorktreeTag})
 	}

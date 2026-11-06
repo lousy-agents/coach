@@ -17,15 +17,14 @@ type OperationalError struct {
 	reason string
 	// Cause is the error from git that Message wraps, when there is one, so a
 	// caller can quote git's own words without Coach's wording around them.
+	// It is not reachable through errors.As or errors.Is: a caller that tests
+	// for an inner type such as *fs.PathError must keep seeing the
+	// OperationalError itself.
 	Cause error
 }
 
 func (e *OperationalError) Error() string {
 	return e.Message
-}
-
-func (e *OperationalError) Unwrap() error {
-	return e.Cause
 }
 
 // Reason reports e's failure description without any interpolated
