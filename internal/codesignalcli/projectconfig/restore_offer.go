@@ -200,10 +200,30 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 		return committedLinkOffer, true
 	case verdict == restoreSkippedBySparseCheckout:
 		return sparseCheckoutOffer, true
-	case blocked:
-		return committedBlockedParentOffer, true
-	case verdict == restoreOverwritesEmptyEntry:
-		return restorableOverEmptyEntryOffer(revision, repoPath), true
+	case verdict == restoreOverwritesNothing, verdict == restoreOverwritesEmptyEntry:
+		return restoreThatLosesNothing(verdict, revision, repoPath, blocked), true
 	}
-	return restorableOffer(revision, repoPath), true
+	return unknownVerdictOffer, true
+}
+
+// restoreThatLosesNothing is the offer for a committed policy whose restore
+// overwrites nothing. A file in the way of the path comes first: the restore would
+// write into the place that file holds.
+func restoreThatLosesNothing(verdict restoreVerdict, revision, repoPath string, blocked bool) restoreOffer {
+	switch {
+	case blocked:
+		return committedBlockedParentOffer
+	case verdict == restoreOverwritesEmptyEntry:
+		return restorableOverEmptyEntryOffer(revision, repoPath)
+	}
+	return restorableOffer(revision, repoPath)
+}
+
+// unknownVerdictOffer is for a verdict no arm of restoreOfferFor names. It prints
+// no command, because a restore that nothing has judged safe is not offered, and
+// offers no new policy either, so adding a verdict without an arm withholds advice
+// instead of guessing at it.
+var unknownVerdictOffer = restoreOffer{
+	remedy: projectreadiness.RemedyNone,
+	text:   ". Coach could not tell what a restore would do here, so it offers neither a restore nor a new policy; resolve the state of the path and run again",
 }

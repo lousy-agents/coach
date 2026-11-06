@@ -18,24 +18,38 @@ func verdictWithoutIndex(committed gitrepo.TreeEntry, found bool) restoreVerdict
 	return restoreUndecidable
 }
 
+// indexFacts is what the index says about the path, read once: the entries that
+// matter (the empty ones nothing else makes matter are not among them), whether any
+// holds content nothing has read, whether a sparse checkout is on, and whether an
+// entry that holds no content was set aside.
+type indexFacts struct {
+	entries       []gitrepo.IndexEntry
+	unread        bool
+	sparse        bool
+	setAsideEmpty bool
+}
+
 // verdictFor is what a restore of repoPath would do, from what the commit and the
 // index hold for it. A path nothing commits is judged by what the index holds
-// instead.
-func verdictFor(committed gitrepo.TreeEntry, found bool, staged []gitrepo.IndexEntry, unread, sparse bool) restoreVerdict {
+// instead. A restore that loses nothing is told apart when it replaces an empty
+// entry, because the message says so.
+func verdictFor(committed gitrepo.TreeEntry, found bool, facts indexFacts) restoreVerdict {
 	if !found {
-		return verdictForUncommitted(staged, sparse)
+		return verdictForUncommitted(facts.entries, facts.sparse)
 	}
 	switch {
 	case !isRegularFileMode(committed.Mode):
 		return restoreRecreatesLink
-	case holdsUnmergedEntry(staged):
+	case holdsUnmergedEntry(facts.entries):
 		return restoreMergeConflict
-	case unread:
+	case facts.unread:
 		return restoreDiscardsStagedEdit
-	case skippedBySparseCheckout(staged) && sparse:
+	case skippedBySparseCheckout(facts.entries) && facts.sparse:
 		return restoreSkippedBySparseCheckout
-	case skippedBySparseCheckout(staged):
+	case skippedBySparseCheckout(facts.entries):
 		return restoreSkipWorktreeMarked
+	case facts.setAsideEmpty:
+		return restoreOverwritesEmptyEntry
 	}
 	return restoreOverwritesNothing
 }
