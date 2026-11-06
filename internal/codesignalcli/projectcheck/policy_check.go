@@ -76,6 +76,15 @@ func policyMissing(dir, revision, policyPath string) (projectreadiness.Check, []
 	return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing, Remedy: projectreadiness.RemedyAuthor}, nil, nil
 }
 
+// causeOrUndetermined is the word for a gap that has no way out: an error that gave none (a usage refusal that
+// reached a check) is the state Coach has no other word for, so a consumer never reads a missing cause.
+func causeOrUndetermined(cause projectreadiness.PolicyCause) projectreadiness.PolicyCause {
+	if cause == "" {
+		return projectreadiness.CauseUndetermined
+	}
+	return cause
+}
+
 // policyGapFrom is the policy_invalid gap for a rejection of the committed policy, carrying the way
 // out the rejection offers, or the reason it offers none. Any other error is operational.
 func policyGapFrom(err error) (projectreadiness.Check, []string, error) {
@@ -84,5 +93,5 @@ func policyGapFrom(err error) (projectreadiness.Check, []string, error) {
 		return projectreadiness.Check{}, nil, err
 	}
 	check := projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyInvalid, Remedy: configErr.Remedy}
-	return check.WithCause(configErr.Message, configErr.PolicyCause), nil, nil
+	return check.WithCause(configErr.Message, causeOrUndetermined(configErr.PolicyCause)), nil, nil
 }

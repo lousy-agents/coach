@@ -25,8 +25,8 @@ func requireNoAuthoringForPath(t *testing.T, repo, path string) {
 	if !ok {
 		t.Fatalf("Load(%q) = %v (%T); want a *ConfigError", path, err, err)
 	}
-	if refusal.OffersAuthoring() || refusal.Remedy != projectreadiness.RemedyNone || refusal.PolicyCause != projectreadiness.CauseInvalidPath {
-		t.Errorf("remedy %d, cause %q in %q; want no remedy and the cause %q", refusal.Remedy, refusal.PolicyCause, refusal.Message, projectreadiness.CauseInvalidPath)
+	if refusal.OffersAuthoring() || refusal.Remedy != projectreadiness.RemedyNone || refusal.PolicyCause != "" {
+		t.Errorf("remedy %d, cause %q in %q; want no remedy and no word of the cause vocabulary", refusal.Remedy, refusal.PolicyCause, refusal.Message)
 	}
 }
 

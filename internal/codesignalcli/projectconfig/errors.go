@@ -188,9 +188,10 @@ func newUnusableOnDisk(repoPath string, cause projectreadiness.PolicyCause, reas
 
 // invalidPathError is a --project-config value that cannot name a policy in this repository. A new policy
 // is written at its own location and leaves the path wrong, so authoring is not offered; the reason says what
-// is wrong with the path.
+// is wrong with the path. It is a usage refusal, made before any readiness check runs, so no report carries it
+// and it has no word in the cause vocabulary; a gap built from it anyway says undetermined.
 func invalidPathError(repoPath, revision, reason string) error {
-	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseInvalidPath, Message: fmt.Sprintf("coach codesignal: --project-config %q is invalid at revision %q (project_config_invalid): %s", repoPath, revision, reason)}
+	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, Message: fmt.Sprintf("coach codesignal: --project-config %q is invalid at revision %q (project_config_invalid): %s", repoPath, revision, reason)}
 }
 
 func invalidError(repoPath, revision, reason string) error {

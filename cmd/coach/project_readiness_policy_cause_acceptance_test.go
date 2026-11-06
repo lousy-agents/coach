@@ -30,7 +30,6 @@ type causeRow struct {
 var unreachableCauses = map[string]string{
 	"git_unreadable": "a git question that cannot be answered is an operational error (exit 1, no readiness result), so no gap carries it; only a read that trips the time or stderr bound produces it, and that needs git to stall for 30 s. The mapping is covered by unit tests.",
 	"undetermined":   "the word for a verdict no offer knows; no state produces such a verdict, and the unit tests pin the default arm.",
-	"invalid_path":   "a --project-config value that cannot name a policy is rejected as a usage error before any readiness check runs, so no gap carries the word; a scan's error does, and its spec is project_config_invalid_path_acceptance_test.go.",
 }
 
 func removeTree(repo, name string) {
