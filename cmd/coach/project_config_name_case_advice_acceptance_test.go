@@ -41,20 +41,21 @@ var _ = Describe("coach codesignal: the advice for a policy path spelled in anot
 			commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
 		})
 
-		It("tells the user to rename the file back or to commit the rename, for a file", func() {
+		It("tells the user to rename the file back or to record the rename with git mv, for a file", func() {
 			Expect(os.Rename(filepath.Join(repo, "cfg", "p.json"), filepath.Join(repo, "cfg", "P.JSON"))).To(Succeed())
 
 			stderr := scanExplicitPolicy(repo, "cfg/p.json")
 
-			Expect(string(stderr)).To(ContainSubstring(`it holds "cfg/p.json"; rename "cfg/P.JSON" back to "cfg/p.json", or commit the rename and pass --project-config cfg/P.JSON`), "stderr:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring(`it holds "cfg/p.json"; rename "cfg/P.JSON" back to "cfg/p.json", or record the rename with git mv 'cfg/p.json' 'cfg/P.JSON', commit it, and pass --project-config cfg/P.JSON`), "stderr:\n%s", stderr)
 		})
 
-		It("tells the user to rename the directory back or to commit the rename, for a directory", func() {
+		It("tells the user to rename the directory back, which is the only way out for a directory, for a directory", func() {
 			Expect(os.Rename(filepath.Join(repo, "cfg"), filepath.Join(repo, "CFG"))).To(Succeed())
 
 			stderr := scanExplicitPolicy(repo, "cfg/p.json")
 
-			Expect(string(stderr)).To(ContainSubstring(`it holds "cfg"; rename "CFG" back to "cfg", or commit the rename and pass --project-config CFG/p.json`), "stderr:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring(`it holds "cfg"; rename "CFG" back to "cfg" (project_config_invalid)`), "stderr:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("git mv"), "git mv refuses to rename a directory in case only:\n%s", stderr)
 		})
 	})
 
