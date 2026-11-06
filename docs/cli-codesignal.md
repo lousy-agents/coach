@@ -92,8 +92,8 @@ An explicit `--project-config` whose name differs only by case from what is on d
 is refused with exit `2` and `project_config_invalid`. A file system that folds case
 resolves `CFG/p.json` for `cfg/p.json`, but the analyzed revision holds only the exact
 spelling, so the scan would read a committed policy the working tree does not hold under
-that name. The message names the spelling on disk; rename the file or directory to the
-spelling the revision holds. The check covers every component of the path, and also
+that name. The message names the spelling on disk and the rename that fixes it, from the
+path on disk to the spelling the revision holds. The check covers every component of the path, and also
 applies when the file is missing: a missing policy under a parent spelled in another case
 is refused for that parent and is not offered a restore, because the restore would write
 into the other spelling.

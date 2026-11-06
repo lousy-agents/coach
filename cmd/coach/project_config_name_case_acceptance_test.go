@@ -43,4 +43,20 @@ var _ = Describe("coach codesignal: a policy path spelled in a different case th
 		Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "stderr:\n%s", stderr)
 		Expect(string(stderr)).To(ContainSubstring(`"CFG"`), "the message must name the spelling the disk holds:\n%s", stderr)
 	})
+
+	It("names the rename that gives a file the spelling the revision holds", func() {
+		Expect(os.Rename(filepath.Join(repo, "cfg", "p.json"), filepath.Join(repo, "cfg", "P.JSON"))).To(Succeed())
+
+		stderr := scanExplicitPolicy(repo, policy)
+
+		Expect(string(stderr)).To(ContainSubstring(`rename "cfg/P.JSON" to "cfg/p.json"`), "the message must say what to rename:\n%s", stderr)
+	})
+
+	It("names the rename that gives a directory the spelling the revision holds", func() {
+		Expect(os.Rename(filepath.Join(repo, "cfg"), filepath.Join(repo, "CFG"))).To(Succeed())
+
+		stderr := scanExplicitPolicy(repo, policy)
+
+		Expect(string(stderr)).To(ContainSubstring(`rename "CFG" to "cfg"`), "the message must say what to rename:\n%s", stderr)
+	})
 })

@@ -1,37 +1,21 @@
 package projectconfig
 
-import (
-	"errors"
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestCheckExactNamesRefusesASpellingThatDiffersOnlyByCase(t *testing.T) {
 	cases := []struct {
-		name  string
-		files []string
-		want  string
+		name       string
+		files      []string
+		want       string
+		wantRename string
 	}{
-		{"the file", []string{"cfg/P.JSON"}, `"P.JSON"`},
-		{"a parent directory", []string{"CFG/p.json"}, `"CFG"`},
+		{"the file", []string{"cfg/P.JSON"}, `"P.JSON"`, `rename "cfg/P.JSON" to "cfg/p.json"`},
+		{"a parent directory", []string{"CFG/p.json"}, `"CFG"`, `rename "CFG" to "cfg"`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			assertCaseDifferenceRefused(t, c.files, c.want)
+			assertCaseDifferenceRefused(t, c.files, c.want, c.wantRename)
 		})
-	}
-}
-
-func assertCaseDifferenceRefused(t *testing.T, files []string, want string) {
-	t.Helper()
-	err := checkExactNames(openRootWith(t, files...), "cfg/p.json")
-
-	var found *ConfigError
-	if !errors.As(err, &found) || found.Kind != KindInvalid {
-		t.Fatalf("checkExactNames = %v, want an invalid-policy ConfigError", err)
-	}
-	if !strings.Contains(found.Message, want) || !strings.Contains(found.Message, "project_config_invalid") {
-		t.Errorf("message = %q, want it to name %s and carry project_config_invalid", found.Message, want)
 	}
 }
 

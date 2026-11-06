@@ -3,6 +3,7 @@ package projectconfig
 import (
 	"fmt"
 	"os"
+	"path"
 	"strings"
 )
 
@@ -37,7 +38,7 @@ func checkExactNamesThrough(root *os.Root, repoPath string, count int) error {
 			return unusableOnDiskError(repoPath, "cannot be checked on disk: "+causeText(err))
 		}
 		if spelled != part {
-			return unusableOnDiskError(repoPath, fmt.Sprintf("is stored as %q on disk, not %q; this filesystem ignores case, so the name resolves, but the analyzed revision holds only the exact spelling", spelled, part))
+			return unusableOnDiskError(repoPath, fmt.Sprintf("is stored as %q on disk, not %q; this filesystem ignores case, so the name resolves, but the analyzed revision holds only the exact spelling; rename %q to %q", spelled, part, path.Join(directory, spelled), path.Join(directory, part)))
 		}
 	}
 	return nil

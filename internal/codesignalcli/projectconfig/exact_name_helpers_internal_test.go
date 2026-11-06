@@ -1,8 +1,10 @@
 package projectconfig
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -24,4 +26,20 @@ func openRootWith(t *testing.T, files ...string) *os.Root {
 	}
 	t.Cleanup(func() { _ = root.Close() })
 	return root
+}
+
+func assertCaseDifferenceRefused(t *testing.T, files []string, want, wantRename string) {
+	t.Helper()
+	err := checkExactNames(openRootWith(t, files...), "cfg/p.json")
+
+	var found *ConfigError
+	if !errors.As(err, &found) || found.Kind != KindInvalid {
+		t.Fatalf("checkExactNames = %v, want an invalid-policy ConfigError", err)
+	}
+	if !strings.Contains(found.Message, want) || !strings.Contains(found.Message, "project_config_invalid") {
+		t.Errorf("message = %q, want it to name %s and carry project_config_invalid", found.Message, want)
+	}
+	if !strings.Contains(found.Message, wantRename) {
+		t.Errorf("message = %q, want it to name the fix: %s", found.Message, wantRename)
+	}
 }
