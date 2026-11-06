@@ -10,6 +10,9 @@ import (
 
 func TestIndexEntries(t *testing.T) {
 	const blob = "0123456789012345678901234567890123456789"
+	debug := func(flags string) string {
+		return "  ctime: 0:0\n  mtime: 0:0\n  dev: 0\tino: 0\n  uid: 0\tgid: 0\n  size: 0\tflags: " + flags + "\n"
+	}
 	cases := []struct {
 		name   string
 		output string
@@ -18,6 +21,12 @@ func TestIndexEntries(t *testing.T) {
 		{"a path the index does not know", "", nil},
 		{"one entry", "H 100644 " + blob + " 0\tpol.json\n", []IndexEntry{{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0"}}},
 		{"a path the sparse checkout skips", "S 100644 " + blob + " 0\tpol.json\n", []IndexEntry{{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0", SkipWorktree: true}}},
+		{"an intent-to-add entry holds no content", "H 100644 " + blob + " 0\tpol.json\n" + debug("20004000"), []IndexEntry{{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0", IntentToAdd: true}}},
+		{"a staged file whose content is empty is not intent-to-add", "H 100644 " + blob + " 0\tpol.json\n" + debug("0"), []IndexEntry{{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0"}}},
+		{"flags belong to the entry above them", "S 100644 " + blob + " 0\tpol.json\n" + debug("40004000") + "H 100644 " + blob + " 0\tother.json\n" + debug("20004000"), []IndexEntry{
+			{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0", SkipWorktree: true},
+			{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0", IntentToAdd: true},
+		}},
 		{"a merge conflict", "M 100644 " + blob + " 1\tpol.json\nM 100644 " + blob + " 2\tpol.json\n", []IndexEntry{
 			{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "1"},
 			{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "2"},
@@ -52,7 +61,7 @@ func TestIndexEntriesMatchesThePathRelativeToTheRepositoryRootLiterally(t *testi
 		t.Fatalf("IndexEntries: %v", err)
 	}
 
-	want := []string{"ls-files", "--stage", "-t", "--", ":(top,literal)a[1]*.json"}
+	want := []string{"ls-files", "--stage", "-t", "--debug", "--", ":(top,literal)a[1]*.json"}
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Errorf("git args = %v; want %v", gotArgs, want)
 	}
@@ -129,5 +138,27 @@ func TestAnOperationalErrorDoesNotLetErrorsAsReachItsCause(t *testing.T) {
 	var pathErr *fs.PathError
 	if errors.As(err, &pathErr) {
 		t.Errorf("errors.As found %v inside an OperationalError; a caller that tests *fs.PathError first would take it for a different failure", pathErr)
+	}
+}
+
+func TestIndexEntriesRefusesAListingItCannotRead(t *testing.T) {
+	const blob = "0123456789012345678901234567890123456789"
+	cases := []struct {
+		name   string
+		output string
+	}{
+		{"flags that are not hexadecimal", "H 100644 " + blob + " 0\tpol.json\n  ctime: 0:0\n  size: 0\tflags: not-hex\n"},
+		{"debug lines with no entry above them", "  size: 0\tflags: 20004000\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			run := func(string, ...string) ([]byte, error) { return []byte(c.output), nil }
+
+			entries, err := IndexEntries(run, "repo", "pol.json")
+
+			if err == nil {
+				t.Fatalf("IndexEntries = %v, nil; want an error: skipping what it cannot read would call an intent-to-add entry a staged copy", entries)
+			}
+		})
 	}
 }

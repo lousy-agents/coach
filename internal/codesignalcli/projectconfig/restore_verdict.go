@@ -23,7 +23,7 @@ func verdictWithoutIndex(committed gitrepo.TreeEntry, found bool) restoreVerdict
 // instead.
 func verdictFor(committed gitrepo.TreeEntry, found bool, staged []gitrepo.IndexEntry, unread, sparse bool) restoreVerdict {
 	if !found {
-		return verdictForUncommitted(staged)
+		return verdictForUncommitted(staged, sparse)
 	}
 	switch {
 	case !isRegularFileMode(committed.Mode):
@@ -42,8 +42,10 @@ func verdictFor(committed gitrepo.TreeEntry, found bool, staged []gitrepo.IndexE
 
 // verdictForUncommitted is the verdict for a policy that is not committed at the
 // analyzed revision, which depends only on what the index holds for it. An
-// unmerged entry comes before the rest because git restore refuses it.
-func verdictForUncommitted(staged []gitrepo.IndexEntry) restoreVerdict {
+// unmerged entry comes before the rest because git restore refuses it, and a
+// skip-worktree mark comes before a plain staged copy because git restore does
+// not match a path the mark hides.
+func verdictForUncommitted(staged []gitrepo.IndexEntry, sparse bool) restoreVerdict {
 	switch {
 	case len(staged) == 0:
 		return restoreNotCommitted
@@ -51,8 +53,19 @@ func verdictForUncommitted(staged []gitrepo.IndexEntry) restoreVerdict {
 		return restoreUnmergedNotCommitted
 	case stagedAsNonRegularFile(staged):
 		return restoreStagedNonFileNotCommitted
+	case skippedBySparseCheckout(staged) && sparse:
+		return restoreStagedSparseNotCommitted
+	case skippedBySparseCheckout(staged):
+		return restoreStagedSkipWorktreeNotCommitted
 	}
 	return restoreStagedNotCommitted
+}
+
+// withoutIntentToAdd drops the entries that hold no content. An intent-to-add
+// entry records that a path will be added, not what it held, so it is neither a
+// staged copy to restore nor work a new policy would replace.
+func withoutIntentToAdd(entries []gitrepo.IndexEntry) []gitrepo.IndexEntry {
+	return slices.DeleteFunc(slices.Clone(entries), func(entry gitrepo.IndexEntry) bool { return entry.IntentToAdd })
 }
 
 // holdsUnmergedEntry is true when the index holds a conflict stage for the path.

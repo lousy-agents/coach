@@ -87,6 +87,42 @@ var stagedNonFileOffer = restoreOffer{
 	text:   ". It is not committed, but the index holds it as a symbolic link or another entry that is not a regular file, which a policy cannot be, so there is nothing to restore; name another policy or stage a regular file at this path",
 }
 
+// stagedSkipWorktreeOffer is for a policy that is not committed and whose staged
+// copy is marked skip-worktree. git restore does not match a path the mark
+// hides, so the command would fail; the mark has to be cleared first.
+func stagedSkipWorktreeOffer(repoPath string) restoreOffer {
+	return restoreOffer{
+		remedy: projectreadiness.RemedyNone,
+		text:   ". It is not committed, but the index holds a staged copy of it marked skip-worktree, so a restore cannot bring it back and Coach offers no new policy; " + clearSkipWorktreeAdvice(repoPath) + ", then run again",
+	}
+}
+
+// stagedSparseOffer is for a policy that is not committed and whose staged copy
+// the sparse checkout leaves out of the working tree.
+var stagedSparseOffer = restoreOffer{
+	remedy: projectreadiness.RemedyNone,
+	text:   ". It is not committed, but the index holds a staged copy of it that this sparse checkout leaves out of the working tree, so a restore cannot bring it back and Coach offers no new policy; add its directory to the sparse checkout, then run again",
+}
+
+// uncommittedOfferFor is the offer for a policy that is not committed at the
+// analyzed revision and that the index holds in a state worth saying, and false
+// for every other verdict.
+func uncommittedOfferFor(verdict restoreVerdict, repoPath string, blocked bool) (restoreOffer, bool) {
+	switch verdict {
+	case restoreUnmergedNotCommitted:
+		return unmergedNotCommittedOffer, true
+	case restoreStagedNonFileNotCommitted:
+		return stagedNonFileOffer, true
+	case restoreStagedSkipWorktreeNotCommitted:
+		return stagedSkipWorktreeOffer(repoPath), true
+	case restoreStagedSparseNotCommitted:
+		return stagedSparseOffer, true
+	case restoreStagedNotCommitted:
+		return stagedOnlyOffer(repoPath, blocked), true
+	}
+	return restoreOffer{}, false
+}
+
 // committedLinkOffer is for a policy committed as a symbolic link. Restoring it
 // would recreate a link the scan refuses, and a new file would not be the
 // committed policy.
@@ -130,17 +166,14 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 		return restoreOffer{}, false
 	}
 	blocked := found.Cause == CauseBlockedParent
+	if offer, uncommitted := uncommittedOfferFor(verdict, repoPath, blocked); uncommitted {
+		return offer, true
+	}
 	switch {
 	case verdict == restoreNotCommitted, verdict == restoreUndecidable && blocked:
 		return restoreOffer{}, false
 	case verdict == restoreUndecidable:
 		return undecidableOffer(judgment.failure), true
-	case verdict == restoreUnmergedNotCommitted:
-		return unmergedNotCommittedOffer, true
-	case verdict == restoreStagedNonFileNotCommitted:
-		return stagedNonFileOffer, true
-	case verdict == restoreStagedNotCommitted:
-		return stagedOnlyOffer(repoPath, blocked), true
 	case verdict == restoreMergeConflict:
 		return mergeConflictOffer, true
 	case verdict == restoreDiscardsStagedEdit:

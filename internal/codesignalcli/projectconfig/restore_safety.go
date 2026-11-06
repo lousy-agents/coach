@@ -23,6 +23,8 @@ const (
 	restoreSkipWorktreeMarked
 	restoreUnmergedNotCommitted
 	restoreStagedNonFileNotCommitted
+	restoreStagedSkipWorktreeNotCommitted
+	restoreStagedSparseNotCommitted
 )
 
 const regularFileModeMask = "100"
@@ -79,10 +81,11 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 	if err != nil {
 		return policyJudgment{verdict: restoreUndecidable, indexEntryUnread: true, failure: newGitFailure("whether it is committed at the analyzed revision", err)}
 	}
-	staged, err := gitrepo.IndexEntries(run, dir, repoPath)
+	listed, err := gitrepo.IndexEntries(run, dir, repoPath)
 	if err != nil {
 		return policyJudgment{verdict: verdictWithoutIndex(committed, found), indexEntryUnread: true, failure: newGitFailure("what the index holds for it", err)}
 	}
+	staged := withoutIntentToAdd(listed)
 	unread := indexHoldsUnreadEntry(committed, found, staged)
 	return policyJudgment{verdict: verdictFor(committed, found, staged, unread, sparseCheckoutEnabled(run, dir, staged)), indexEntryUnread: unread}
 }
