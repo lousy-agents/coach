@@ -1,3 +1,5 @@
+//go:build unix
+
 package main
 
 import (
@@ -8,19 +10,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
-
-const explicitPolicyPath = "policies/p.json"
-
-// commitExplicitPolicyRepo commits a valid explicit policy plus valid
-// discovered policies, so a read from HEAD or a fallback to a discovered policy
-// would produce a report that these specs could see.
-func commitExplicitPolicyRepo() string {
-	repo := commitScannableGoRepo()
-	commitFile(repo, explicitPolicyPath, singleRootPolicyJSON)
-	commitFile(repo, coachConfigPath, singleRootPolicyJSON)
-	commitFile(repo, legacyConfigPath, singleRootPolicyJSON)
-	return repo
-}
 
 func expectExplicitPolicyRefused(repo, path, token string) (stderr string) {
 	stdout, stderrBytes, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json", "--project-config", path)
