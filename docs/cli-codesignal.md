@@ -82,15 +82,19 @@ A policy gap with no way out always has a `cause`; `undetermined` is the word fo
 state Coach has no other word for, so a consumer never has to read a missing `cause`
 as "unknown". The values are stable: `not_committed` (a file on disk that the analyzed revision
 does not hold; commit it), `in_submodule` (the policy lies inside a submodule checkout, present or
-missing: the superproject records the submodule as one commit, so the file cannot be committed
-here, and the way out is a policy this repository commits), `parent_not_directory`, `staged_edit`,
+missing, or the analyzed revision commits the path itself as a submodule: the superproject
+records the submodule as one commit, so the file cannot be committed here, and the way out is a
+policy this repository commits), `parent_not_directory`, `staged_edit`,
 `staged_copy` (a staged copy of a policy that was never committed),
 `staged_not_a_file`, `merge_conflict`, `skip_worktree`, `sparse_checkout`,
-`committed_as_link`, `directory` (the index holds files under the name),
+`committed_as_link` (the analyzed revision commits the policy as a symbolic link,
+whether or not a file is on disk), `directory` (the index or the analyzed revision holds files
+under the name),
 `index_locked`, `git_unreadable` (only a read that trips the time or stderr bound reaches a
 document; any other unanswered git question is exit `1`) and `undetermined`. A path on disk
 that cannot be a policy has one word for each fix: `not_a_regular_file` (a directory, a pipe
-or another entry; name a regular file), `symbolic_link` (the policy is a link or is reached
+or another entry on disk, or an entry of another kind that the analyzed revision commits; name
+a regular file), `symbolic_link` (the policy is a link or is reached
 through one; name the file it points to), `unreadable_on_disk` (the process cannot stat or
 read it; fix the permissions) and `name_case_differs` (rename it to the revision's spelling).
 
