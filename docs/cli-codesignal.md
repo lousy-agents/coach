@@ -75,8 +75,12 @@ was never committed, is the exception: nothing read it, so the path stays in
 
 A policy gap that names neither `author_policy` nor `restore_policy` says why in a
 `cause` on the gap, and the text prints the same word after the code
-(`policy_missing cause=not_committed`). The field is absent from every other gap.
-The values are stable: `not_committed` (a file on disk that the analyzed revision
+(`policy_missing cause=not_committed`). The field is absent from every other gap,
+and absence has one meaning: the gap is not a policy gap, or a restore or a new
+policy fixes it, which `next_actions` names (`restore_policy` or `author_policy`).
+A policy gap with no way out always has a `cause`; `undetermined` is the word for a
+state Coach has no other word for, so a consumer never has to read a missing `cause`
+as "unknown". The values are stable: `not_committed` (a file on disk that the analyzed revision
 does not hold, or one inside a submodule), `parent_not_directory`, `staged_edit`,
 `staged_copy` (a staged copy of a policy that was never committed),
 `staged_not_a_file`, `merge_conflict`, `skip_worktree`, `sparse_checkout`,
