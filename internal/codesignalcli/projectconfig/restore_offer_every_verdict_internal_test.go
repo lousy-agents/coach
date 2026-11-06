@@ -84,7 +84,7 @@ func verdictCases() []verdictCase {
 	mark1, mark2 := bothWays(projectreadiness.CauseSkipWorktree, "git update-index --no-skip-worktree")
 	nonFile1, nonFile2 := bothWays(projectreadiness.CauseStagedNotAFile, "not a regular file")
 	stagedMark1, stagedMark2 := bothWays(projectreadiness.CauseSkipWorktree, "marked skip-worktree")
-	stagedSparse1, stagedSparse2 := bothWays(projectreadiness.CauseSparseCheckout, "sparse checkout")
+	stagedSparse1, stagedSparse2 := bothWays(projectreadiness.CauseSparseCheckout, "staged copy of it that this sparse checkout leaves out")
 	emptyMark1, emptyMark2 := bothWays(projectreadiness.CauseSkipWorktree, "empty entry", "marked skip-worktree", "git update-index --no-skip-worktree")
 	emptySparse1, emptySparse2 := bothWays(projectreadiness.CauseSparseCheckout, "empty entry", "sparse checkout")
 	dir1, dir2 := bothWays(projectreadiness.CauseDirectory, "directory", "name a file")

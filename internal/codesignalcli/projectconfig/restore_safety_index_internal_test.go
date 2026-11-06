@@ -88,6 +88,7 @@ func TestJudgeRestoreFromWhatTheIndexHolds(t *testing.T) {
 		{"an empty entry nothing commits, marked skip-worktree", indexFake{uncommitted: true, lsFiles: skippedIndexLine("100644", emptyBlobSHA1, "0")}, restoreEmptySkipWorktreeNotCommitted, false},
 		{"an empty entry nothing commits that a sparse checkout leaves out", indexFake{uncommitted: true, sparse: true, lsFiles: skippedIndexLine("100644", emptyBlobSHA1, "0")}, restoreEmptySparseNotCommitted, false},
 		{"a staged copy with content nothing commits, marked skip-worktree", indexFake{uncommitted: true, lsFiles: skippedIndexLine("100644", otherBlob, "0")}, restoreStagedSkipWorktreeNotCommitted, true},
+		{"a path nothing commits that a merge left as a file on one side and a link on the other", indexFake{uncommitted: true, lsFiles: indexLine("100644", committedBlob, "2") + indexLine("120000", otherBlob, "3")}, restoreUnmergedNotCommitted, true},
 		{"a path nothing commits when git cannot list the index", indexFake{uncommitted: true, lsFilesErr: errors.New("boom")}, restoreUndecidable, true},
 		{"a policy committed as a link, with the committed entry in the index", indexFake{committedMode: "120000", lsFiles: indexLine("120000", committedBlob, "0")}, restoreRecreatesLink, false},
 		{"a policy committed as a link, with a regular file staged over it", indexFake{committedMode: "120000", lsFiles: indexLine("100644", otherBlob, "0")}, restoreRecreatesLink, true},

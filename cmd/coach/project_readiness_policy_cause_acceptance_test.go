@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -150,6 +151,17 @@ func requireTheCauseOfTheGap(policy, wantGap, wantCause string, arrange func(rep
 }
 
 // causeTableArgs is the body of the table followed by one entry per row.
+// rawGaps are the gaps of --check-project's JSON as maps, which tell an absent key from an empty one.
+func rawGaps(repo, policy string) []map[string]any {
+	stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, pathWithoutNode(), "--baseline", "--check-project", "--project-language", "typescript", "--project-config", policy, "--format", "json")
+	ExpectWithOffset(1, exitCode).To(Equal(0), "stderr: %s", stderr)
+	var raw struct {
+		Gaps []map[string]any `json:"gaps"`
+	}
+	ExpectWithOffset(1, json.Unmarshal(stdout, &raw)).To(Succeed(), "stdout: %s", stdout)
+	return raw.Gaps
+}
+
 func causeTableArgs() []any {
 	entries := []any{requireTheCauseOfTheGap}
 	for _, row := range causeRows {
@@ -185,6 +197,9 @@ var _ = Describe("coach codesignal --check-project: the cause of a policy gap th
 
 		Expect(causeOfGap(doc, "policy_missing")).To(BeEmpty(), "a gap with a remedy needs no cause: %+v", doc.Gaps)
 		Expect(nextActionKinds(doc)).To(ContainElement("restore_policy"))
+		for _, gap := range rawGaps(repo, "cfg/p.json") {
+			Expect(gap).NotTo(HaveKey("cause"), "the field is absent, not empty, from every gap that has none: %v", gap)
+		}
 	})
 
 	// Authoring into a submodule produces a file that is then refused as uncommittable here.
