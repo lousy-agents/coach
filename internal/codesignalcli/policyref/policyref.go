@@ -10,7 +10,9 @@ package policyref
 // discovered is read from the analyzed revision. The zero value is no policy
 // named and none discovered yet.
 type Ref struct {
-	// Path is repository-relative. It is empty only for the zero value.
+	// Path is repository-relative. It is empty for the zero value, and for a policy
+	// named with an empty --project-config value, which flag validation rejects
+	// before any run reads it: Explicit, not an empty Path, says the user named one.
 	Path string
 	// Explicit is true when the user named the policy with --project-config.
 	Explicit bool
