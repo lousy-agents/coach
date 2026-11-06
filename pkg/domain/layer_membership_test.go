@@ -20,9 +20,14 @@ func TestAnyLayerPrefixContainsUsesTheSingleDefinitionOfLayerMembership(t *testi
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := AnyLayerPrefixContains(tt.prefixes, tt.key); got != tt.want {
-				t.Fatalf("AnyLayerPrefixContains(%q, %q) = %v, want %v", tt.prefixes, tt.key, got, tt.want)
-			}
+			assertAnyLayerPrefixContains(t, tt.prefixes, tt.key, tt.want)
 		})
+	}
+}
+
+func assertAnyLayerPrefixContains(t *testing.T, prefixes []string, key string, want bool) {
+	t.Helper()
+	if got := AnyLayerPrefixContains(prefixes, key); got != want {
+		t.Fatalf("AnyLayerPrefixContains(%q, %q) = %v, want %v", prefixes, key, got, want)
 	}
 }

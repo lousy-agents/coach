@@ -13,22 +13,31 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+type layerRule struct {
+	Name     string   `json:"name"`
+	Prefixes []string `json:"prefixes"`
+}
+
 type layerPolicy struct {
-	Layers []struct {
-		Name     string   `json:"name"`
-		Prefixes []string `json:"prefixes"`
-	} `json:"layers"`
+	Layers []layerRule `json:"layers"`
+}
+
+// contains reports whether any prefix of the layer contains dir.
+func (l layerRule) contains(dir string) bool {
+	for _, prefix := range l.Prefixes {
+		if domain.LayerPrefixContains(prefix, dir) {
+			return true
+		}
+	}
+	return false
 }
 
 // layerNamesFor lists the distinct layers whose prefixes contain dir.
 func (p layerPolicy) layerNamesFor(dir string) []string {
 	var names []string
 	for _, layer := range p.Layers {
-		for _, prefix := range layer.Prefixes {
-			if domain.LayerPrefixContains(prefix, dir) {
-				names = append(names, layer.Name)
-				break
-			}
+		if layer.contains(dir) {
+			names = append(names, layer.Name)
 		}
 	}
 	return names
