@@ -26,13 +26,13 @@ before any coach or SOLID work. Skeleton:
 - cap-window: pass 1 of 5
 
 ## Coach
-- coach binary: (path rank / resolved digest / verified checksum or built commit)
+- coach binary: (version / path rank / resolved digest / verified checksum or built commit)
 - policy revision: (merge base / user-named at HEAD / none)
 - policy blob: (`pcfg_…` at that revision, matched at HEAD / mismatched → scan skipped / none)
 - pre-coach check: `<test-cmd>` exit 0; failed-tests: none; lint-violations: none (inventory, with counts); diagnostics: none
 - tier 1: (commands / Stage-A count / Stage-B items / holding tests / SHAs)
-- tier 2: absent
-- tier 3: skipped
+- tier 2: absent (or: path + canonical | legacy | user-named / proposed)
+- tier 3: skipped (or: per-language scans / Stage-A/B / incompleteness / SHAs)
 
 ## SOLID baseline
 - solid-base:          (the commit SOLID starts from; step 5 diffs against it)
@@ -432,6 +432,13 @@ Go/TS/TSX paths in scope re-admit to `todo` — their `clean` marks
 certified the SOLID pass only, never a coach examination that never
 ran. Re-admit them once, on the invocation that grants the token.
 
+A Tier 1 skipped for any exit 2 (an invalid discovered policy,
+`node_unsupported`, a missing compiler) leaves the same gap for the
+file-local scan: record `withheld: coach-tier-1`. Re-admit happens at
+Reconcile, before Tier 1: when the header carries the marker, clear
+it and re-admit the in-scope Go/TS/TSX paths to `todo` once. A Tier 1
+that exits 2 again records the marker again.
+
 ### Branch-mode work set (this pass)
 
 Whole-branch scope is often dozens of source files. One invocation
@@ -763,16 +770,21 @@ Field semantics for the Output block in SKILL.md.
   file.
   - PR mode: `DONE — thorough` iff every scope file is `clean`,
     `ruling (category)`, or `ruling (decision)` **and** no in-scope
-    Stage-B remains; else `PASS n/5`. A `ruling (permission)`
+    Stage-B remains **and** no `withheld:` marker is open; else
+    `PASS n/5`. A `ruling (permission)`
     (solid-only Stage-B withhold) or leftover Stage-B kept as
     `todo` does **not** count as finished. A
     `ruling (decision)` whose content changed, or whose ruling was
     resolved, is `todo` by then and cannot be counted as finished.
   - Branch mode: `DONE — thorough` iff no `todo` and no
-    `ruling (permission)` remain across re-invokes. A pass that
+    `ruling (permission)` remain across re-invokes and no `withheld:`
+    marker is open. A pass that
     finished only its work set and left other `todo` /
     permission-ruling files is `PASS n/5` with the remaining count
     under `questions`. Never mark unvisited files `clean` to reach DONE.
+  - Either mode: never `DONE — thorough` while a `withheld:` marker is
+    open in the header; report `PASS n/5` and name the marker under
+    `questions`.
   - Lead with `stage-b  fixed <n>  remaining <n>  shas <…>`. Comment
     deletes alone never certify thorough while in-scope Stage-B
     remains or was left open / opted out.

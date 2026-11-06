@@ -31,7 +31,7 @@ x-pg-dsn: &pg-dsn "postgres://coach:coach@postgres:5432/coach?sslmode=disable"
 services:
   postgres:
     profiles: ["core", "llm"]
-    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+    image: postgres:18-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
     environment:
       POSTGRES_USER: coach
       POSTGRES_PASSWORD: coach
@@ -52,7 +52,7 @@ services:
 
   redis:
     profiles: ["core", "llm"]
-    image: redis:8-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
+    image: redis:8-alpine@sha256:71885d8cc6e42f2bc0aa2eb853bfc4be200b5108a46ac50e117ae1df0531fb80
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s

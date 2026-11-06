@@ -47,6 +47,7 @@ These are two different products and they do not share a default form.
 
 - **Unit tests** cover a function, method, type, or package-internal seam. Standard-library `testing` is the default here, unless the repository already uses a focused dependency.
 - **Acceptance tests** (also called public-boundary, feature, or spec suites) prove a feature or bug fix works through the program's public boundary. Their form is dictated by the repository, not by this skill: it may be stdlib `testing`, a BDD spec runner, a testify-style suite, a `godog` feature suite, or an in-tree custom harness.
+- Classify a test by what it proves, not by its name or by whether its target is exported. A unit test proves one function, method, type, or handler in isolation, with its collaborators faked — a table test of an exported function and an `httptest` test of one handler are both unit tests. An acceptance test proves a feature or fix the way that criterion's user reaches it: through the command or endpoint with production wiring (a `Run(args…)` entry point, the assembled server), or, when the user is a library's consumer, through that consumer's scenario on the exported API. Production wiring is the module's real wiring, with external systems such as databases, networks, and processes replaced at their ports. A consumer's scenario drives one criterion through exported calls only, faking only what the consumer itself supplies, such as a rate source passed to a constructor. Find the boundary per criterion, since one repository can ship both a command and an importable package. A test of a type the criterion's user never calls directly, such as one in an `internal/` package, is a unit test, unless that type is the command's or server's entry point.
 - Determine the acceptance form during **Orient**, before choosing a test shape. If no acceptance convention and no project policy exist, stdlib `testing` is the acceptance form too — write it the way the rest of the repository writes tests.
 - NEVER invent a stdlib acceptance test when the repository mandates a different acceptance form. Conversely, NEVER import a spec runner into a repository that does not already use one: adding a runner is a dependency decision owned by the module's maintainers, not a test decision.
 - See [`references/go-test-patterns.md`](./references/go-test-patterns.md) for the detection commands and a worked example of the same criterion in two acceptance forms.
@@ -67,14 +68,19 @@ A package's import list decides how testable it is before any test exists: a pac
 
 - Keep the packages that hold calculations and decisions free of framework, network, database, and filesystem imports. Put those adapters in packages at the edge and wire them together in the composition root.
 - Declare interfaces at the use site: the consuming package defines the small interface it needs, and the producing package returns concrete types.
-- Verify purity instead of asserting it. The first command reports IO reached through your module's own packages; the second lists third-party dependencies for review. Keep them separate — a single `go list -deps` grep inherits stdlib-internal imports and reports `os` for any package that merely calls `fmt.Errorf`. Both filter on `go list`'s own module metadata rather than string-matching the module path, so neither misreports under `go.work`. Each command is a single `go list` (no `xargs`): a bad path or undownloaded deps makes `go list` exit non-zero with an error on stderr and empty stdout — that means the check did not run, not that it passed:
+- Verify purity instead of asserting it. The first command reports IO reached through your module's own packages; the second lists third-party dependencies for review. Keep them separate — a single `go list -deps` grep inherits stdlib-internal imports and reports `os` for any package that merely calls `fmt.Errorf`. Both filter on `go list`'s own module metadata rather than string-matching the module path, so neither misreports under `go.work`. Each command is a single `go list` (no `xargs`) whose output is captured before it is filtered: a bad path or undownloaded deps makes `go list` exit non-zero with empty stdout, and piping that straight into `grep` exits 1 exactly as a pure package does (`set -o pipefail` does not separate them either). Each check exits 0 when the package is clean, 1 when it found something to report, and 2 when the check did not run — never read 2 as a pass. For the third-party check, 1 means the list needs review, not that the package violates anything. The IO check excludes `net/url` and `net/netip`, which parse values and do no IO:
 
   ```bash
   # stdlib IO reached through your own packages
-  go list -deps -f '{{if and .Module .Module.Main}}{{range .Imports}}{{.}}{{"\n"}}{{end}}{{end}}' ./internal/pricing |
-    sort -u | grep -E '^(os|net|log|database/sql)(/|$)'
+  ( imports=$(go list -deps -f '{{if and .Module .Module.Main}}{{range .Imports}}{{.}}{{"\n"}}{{end}}{{end}}' ./internal/pricing) ||
+      { echo "IO check did not run" >&2; exit 2; }
+    printf '%s\n' "$imports" | sort -u | grep -E '^(os|net|log|database/sql)(/|$)' | grep -vxE 'net/(url|netip)' && exit 1
+    echo "no IO imports" )
   # third-party dependencies
-  go list -deps -f '{{if and .Module (not .Module.Main)}}{{.ImportPath}}{{end}}' ./internal/pricing
+  ( deps=$(go list -deps -f '{{if and .Module (not .Module.Main)}}{{.ImportPath}}{{end}}' ./internal/pricing) ||
+      { echo "third-party check did not run" >&2; exit 2; }
+    [ -z "$deps" ] && { echo "no third-party dependencies"; exit 0; }
+    printf '%s\n' "$deps"; exit 1 )
   ```
 
 - Read the third-party list, do not just count it. Both checks are transitive, so a dependency reached only through an internal sub-package that exists to own it is the intended shape, not a violation — what you are looking for is framework and IO creep into the packages that hold decisions.
@@ -97,7 +103,7 @@ Before finalizing any Go test, check it against these requirements:
 
 1. **Orient**
    - Inspect `go.mod`, package layout, existing tests, and naming conventions.
-   - **Detect the repository's acceptance-test convention before choosing any test shape.** Check every signal: existing acceptance suite files (`*_acceptance_test.go` or equivalently named suites, and `*_test.go` under `acceptance/`, `e2e/`, `features/`, or `specs/`); suite/spec-runner modules in `go.mod` (match the runner package — e.g. `testify/suite` — not bare unit-assertion helpers like `testify/assert`); a suite entrypoint (a `RunSpecs`-style bootstrap, a `suite.Run` call, a `godog.TestSuite`, or a `TestMain` that bootstraps a suite — not one that merely does setup, teardown, or flag parsing); acceptance targets in `Makefile`, `mise.toml`, `Taskfile.yml`, or CI workflows; and stated policy in project agent docs (`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`). A runner module counts only with a matching suite file or entrypoint.
+   - **Detect the repository's acceptance-test convention before choosing any test shape.** Check every signal: existing acceptance suite files (`*_acceptance_test.go` or equivalently named suites, and `*_test.go` under `acceptance/` or `e2e/` — not `features/`, `spec/`, or `specs/`, which are common package names); suite/spec-runner packages imported by the repository's `*_test.go` files (e.g. `testify/suite`, `ginkgo` — not unit-assertion helpers like `testify/assert` or `gomega`; read imports, not `go.mod`, which lists modules rather than packages and whose `// indirect` lines are not this repository's choice); a suite entrypoint (a `RunSpecs`-style bootstrap, a `suite.Run` call, or a `godog.TestSuite` or `godog.RunWithOptions` call, or, when the tests import godog, the `.feature` files a godog suite runs — a `TestMain` counts only through the runner call inside it, never for setup, teardown, or flag parsing); acceptance targets in `Makefile`, `mise.toml`, `Taskfile.yml`, or CI workflows; and stated policy in project agent docs (`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`). Ignore `vendor/` and `testdata/` for every signal. A runner import counts only with a matching suite file or entrypoint.
    - Record the answer explicitly: which acceptance form the repository mandates, or that it has none. **No signals means stdlib `testing`** — do not add a runner. Unit-test assertion helpers alone are not an acceptance convention. See [`references/go-test-patterns.md`](./references/go-test-patterns.md) for the detection commands and how to read conflicting signals.
    - Identify the smallest package or file that owns the behavior.
    - If `go` is available, run the narrowest baseline test first:
@@ -107,7 +113,7 @@ Before finalizing any Go test, check it against these requirements:
      ```
 
 2. **Choose the Test Shape**
-   - **New feature or bug fix that changes externally visible behavior: start outside-in.** The first failing test exercises the public boundary — CLI invocation, HTTP endpoint, exported package API — rather than an internal helper.
+   - **New feature or bug fix that changes externally visible behavior: start outside-in.** The first failing test exercises the boundary where that criterion's user reaches it — a CLI invocation or HTTP endpoint, or the exported package API when the user is a library's consumer — rather than an internal helper.
    - If this is acceptance coverage for a feature or bug fix, use the repository's acceptance form identified in Orient; the shapes below are for unit and other non-acceptance tests.
    - Inside-out is legitimate for a pure internal helper, an algorithmic core, or a well-understood domain whose public API is already settled: start at the unit and skip the boundary test.
    - Pure functions: use direct assertions, then table tests once cases multiply.
@@ -126,6 +132,7 @@ Before finalizing any Go test, check it against these requirements:
    - Put expected values in the test, not hidden inside helpers.
    - Write assertion messages that include the protected behavior, relevant inputs, and `got`/`want`.
    - Introduce helpers only after the test starts repeating setup or assertion detail.
+   - Run the new test and watch it fail before changing production code. A test that passes before the change does not yet exercise the new behavior.
 
 4. **Implement Simply**
    - Hard-code when that is the honest smallest step.
@@ -160,12 +167,12 @@ Use idiomatic Go test structure:
 
 ```go
 func TestPrice(t *testing.T) {
-    t.Run("applies the member discount before tax", func(t *testing.T) {
+    t.Run("takes 4% off the subtotal for members", func(t *testing.T) {
         got := Price(Order{Subtotal: 100, Member: true})
         want := Money(96)
 
         if got != want {
-            t.Errorf("member discount should be applied before tax for subtotal 100: got %v, want %v", got, want)
+            t.Errorf("4%% member discount on subtotal 100: got %v, want %v", got, want)
         }
     })
 }
@@ -174,11 +181,11 @@ func TestPrice(t *testing.T) {
 Use helpers when they make intent clearer:
 
 ```go
-func assertEqual[T comparable](t testing.TB, got, want T) {
+func assertEqual[T comparable](t testing.TB, what string, got, want T) {
     t.Helper()
 
     if got != want {
-        t.Errorf("got %v, want %v", got, want)
+        t.Errorf("%s: got %v, want %v", what, got, want)
     }
 }
 ```
@@ -227,6 +234,6 @@ Read [`references/go-test-patterns.md`](./references/go-test-patterns.md) when t
 When reporting work:
 
 - State which package/files changed.
-- State which tests were added or changed.
+- State which tests were added or changed, which of them are acceptance coverage and which are unit tests, and either the acceptance form used with the signal that decided it (or that the repository has none) or, if no acceptance test was written, why.
 - State the verification command and result.
 - If tests could not run, state why without implying they passed.

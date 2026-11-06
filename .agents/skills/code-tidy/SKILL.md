@@ -15,7 +15,7 @@ description: >-
   instruction-file prose (instruction-style).
 argument-hint: "[PR|base|glob|whole-repo|trust-checkpoint|solid-only|allow-unverified-coach|push]"
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash
-compatibility: "A coach already on PATH is used as-is, so a preprovisioned offline image needs no mise and fetches nothing. Otherwise mise (curl https://mise.run | sh, or npm install -g @jdxcode/mise where npm exists and instructions permit) fetches the coach version mise.toml / mise.lock pins, else github:lousy-agents/coach@v0.6.0, falling back to that version's go backend or a source build of its tag where the GitHub API is refused. Works in Claude Code Remote without gh. No coach and no mise is a blocker."
+compatibility: "Needs coach (targets v0.11.0): a coach on PATH is used as-is with no fetch; otherwise mise fetches the version mise.toml / mise.lock pins, else v0.11.0, only with allow-unverified-coach. Acquisition ladder, Go-backend and source-build fallbacks, and provenance rules: references/coach-phase.md. Works in Claude Code Remote without gh. No coach and no mise is a blocker."
 ---
 
 # Code Tidy
@@ -133,11 +133,14 @@ leaves a dirty tree.
   `allow-unverified-coach`. Ranks 0–1 (PATH coach, cosign-verified
   archive) always qualify.
 - Do not run `--prepare-compiler` or TypeScript
-  `--suggest-project-config` (TTY). When no committed project config
-  exists, propose a candidate (coach-phase Tier 2) and never write or
-  commit it; add layers and forbidden imports only from policy the
-  repo states, never from directory names; do not invent prefixes or
-  overwrite an existing file.
+  `--suggest-project-config` (TTY). Run the Go
+  `--suggest-project-config` only in a detached scratch worktree:
+  since v0.11 it writes `.lousy-agents/coach.json` into the worktree
+  it runs in. When no committed project config exists, propose a
+  candidate (coach-phase Tier 2) and never write or commit it; add
+  layers and forbidden imports only from policy the repo states, never
+  from directory names; do not invent prefixes or overwrite an
+  existing file.
 
 ## Prerequisites
 
@@ -258,17 +261,21 @@ adds in steps 1–3). Load
    `coach: skipped (<reason>)`).
 
 2. **Coach Tier 2 — detect or propose project config.** Follow
-   coach-phase Tier 2: bind a trusted committed config at the merge
-   base (PR) or `HEAD` (branch); TS readiness probe only when bind
-   passed; if none, propose one per coach-phase (never commit), list
-   under `questions`, Edit `coach: project-config proposed, not
-   committed; tier 3 skipped`, go to step 4.
+   coach-phase Tier 2: bind a trusted committed config, found per the
+   coach-phase Tier 2 detection order, at the merge base (PR) or
+   `HEAD` (branch); TS readiness probe only when bind passed; if none,
+   propose one per coach-phase (never commit), list under
+   `questions`, Edit `coach: project-config proposed, not committed;
+   tier 3 skipped`, go to step 4.
 
 3. **Coach Tier 3 — project scan loop.** Only with a trusted config
    carrying an enforceable rule (see coach-phase). Same Stage A/B bar
    (including solid-only opt-out), regression guard, and commit rule as
    Tier 1; Edit production files, not the config. Roots-only or invalid
-   config → skip-with-reason, go to step 4. Edit the Tier 3 coach
+   config → skip-with-reason, go to step 4. Unresolved or non-literal
+   imports, incomplete project coverage, or files outside every layer
+   make the tier incomplete, not clean (coach-phase, Incomplete is not
+   clean); list them under `questions`. Edit the Tier 3 coach
    section when done.
 
 4. **SOLID tidy** on the post-coach tree. Details:
@@ -333,7 +340,8 @@ adds in steps 1–3). Load
    behavior, return to 4b. Do not convert `ruling (permission)` or
    leftover Stage-B paths to `clean` here. PR mode `DONE — thorough`
    only if every scope file is `clean`, `ruling (category)`, or
-   `ruling (decision)` and no in-scope Stage-B remains; any
+   `ruling (decision)`, no in-scope Stage-B remains, and no
+   `withheld:` marker is open; any
    `ruling (permission)`, leftover Stage-B, or other unfinished file
    keeps status `PASS n/5`. Branch mode: this pass's work set uses
    that same thorough bar; other `todo` files may remain and also
@@ -414,11 +422,13 @@ findings section and ships with the PR.
 
 `DONE — thorough` in PR mode = every scope file is `clean`,
 `ruling (category)`, or `ruling (decision)` **and** no in-scope
-Stage-B remains. A `ruling (permission)` (solid-only /
+Stage-B remains **and** no `withheld:` marker is open. A
+`ruling (permission)` (solid-only /
 no-behavior-change Stage-B withhold) or leftover Stage-B kept as
 `todo` does **not** count as finished — while any remain,
 report `PASS n/5`. In branch mode =
-no `todo` and no `ruling (permission)` remain across re-invokes; a pass
+no `todo`, no `ruling (permission)`, and no open `withheld:` marker
+remain across re-invokes; a pass
 that finished only its work set reports `PASS n/5` with the remaining
 `todo` / permission-ruling count under `questions`. Pass 5 that is not thorough reports
 `DONE — max iterations`. Lead the report with the `stage-b` line

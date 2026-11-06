@@ -185,7 +185,7 @@ Investigate WHY before changing.
 
 On an open PR, continue.
 
-Determine the project's development workflow before implementing. Search for TDD or test-first requirements in `copilot-instructions.md`, `AGENTS.md`, or `CONTRIBUTING.md`. If any of these files mandate TDD, write a failing test before each fix. Otherwise, write tests after the fix.
+Shell permission is granted per command, so a probe command that was denied says nothing about the test command. Do not skip the fix or its tests on that basis: run the tests, and call a fix untested only when the test command itself is denied.
 
 **Priority order:**
 1. Security (active vulnerabilities, injection, traversal)
@@ -196,7 +196,7 @@ Determine the project's development workflow before implementing. Search for TDD
 **Per fix:**
 1. Write a failing test demonstrating the edge case the reviewer identified
 2. Verify it fails for the right reason (confirms the bug exists)
-3. Implement the minimal fix
+3. Implement the minimal fix, with no code comment explaining it — the test pins the case and the thread reply carries the why
 4. Verify all tests pass (new and existing)
 5. After all fixes: run the project's full validation suite
 

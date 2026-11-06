@@ -46,11 +46,11 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			headSHA := commitFile(repo, "project.json", tsLayerBypassRequiredConfigJSON)
 			installRealTypescriptCompiler(repo, true)
 
-			sampler := startAnalyzerEnvironSampler()
+			recorder := recordAnalyzerSpawns()
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			environs := sampler.halt()
+			spawns := recorder.mustTakeSpawns(Default)
 			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(sampler.invocations()).To(Equal(1), "expected exactly one analyzer invocation for a baseline analysis, observed pids: %+v", environs)
+			Expect(spawns).To(HaveLen(1), "expected exactly one analyzer invocation for a baseline analysis, recorded spawns: %+v", spawns)
 
 			report := decodeCoachReport(stdout)
 			ruleIDs := projectChangeRuleIDs(report.ProjectChanges)
@@ -60,11 +60,10 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			Expect(report.ProjectFacts[0].Kind).To(Equal("possible_call_reachability"))
 			assertReachabilityNeverSignalOrChange(report)
 
-			textSampler := startAnalyzerEnvironSampler()
 			textStdout, textStderr, textExitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
-			textEnvirons := textSampler.halt()
+			textSpawns := recorder.mustTakeSpawns(Default)
 			Expect(textExitCode).To(Equal(0), "stderr: %s stdout: %s", textStderr, textStdout)
-			Expect(textSampler.invocations()).To(Equal(1), "expected exactly one analyzer invocation for the text-format rendering of the same baseline analysis, observed pids: %+v", textEnvirons)
+			Expect(textSpawns).To(HaveLen(1), "expected exactly one analyzer invocation for the text-format rendering of the same baseline analysis, recorded spawns: %+v", textSpawns)
 
 			findingsSection, factsSection := splitTextFindingsAndFacts(string(textStdout))
 			Expect(findingsSection).To(ContainSubstring("rule_id: architecture.layer_violation"), "got %q", findingsSection)
@@ -73,11 +72,10 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			Expect(factsSection).To(ContainSubstring("kind: possible_call_reachability"), "got %q", factsSection)
 			Expect(factsSection).NotTo(ContainSubstring("rule_id:"), "the Facts section must never carry a rule_id, which would make a fact indistinguishable from a Signal/ProjectChange, got %q", factsSection)
 
-			scopeSampler := startAnalyzerEnvironSampler()
 			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, tsLayerBypassRequiredConfigJSON)
-			scopeEnvirons := scopeSampler.halt()
+			scopeSpawns := recorder.mustTakeSpawns(Default)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(scopeSampler.invocations()).To(Equal(1), "expected exactly one analyzer invocation for the direct-result inspection of the same baseline analysis, observed pids: %+v", scopeEnvirons)
+			Expect(scopeSpawns).To(HaveLen(1), "expected exactly one analyzer invocation for the direct-result inspection of the same baseline analysis, recorded spawns: %+v", scopeSpawns)
 
 			resultRuleIDs := projectChangeRuleIDs(result.HeadChanges)
 			Expect(resultRuleIDs).To(HaveKey("architecture.layer_violation"), "the same single-invocation result must carry the layer-violation change, got %+v", result.HeadChanges)
@@ -107,11 +105,11 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			headSHA := commitFile(repo, "pkg/handlers/h.ts", tsRealHandlersImportingDB)
 			installRealTypescriptCompiler(repo, true)
 
-			sampler := startAnalyzerEnvironSampler()
+			recorder := recordAnalyzerSpawns()
 			stdout, stderr, exitCode := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			environs := sampler.halt()
+			spawns := recorder.mustTakeSpawns(Default)
 			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(sampler.invocations()).To(Equal(2), "expected exactly one analyzer invocation per revision (head + base), observed pids: %+v", environs)
+			Expect(spawns).To(HaveLen(2), "expected exactly one analyzer invocation per revision (head + base), recorded spawns: %+v", spawns)
 
 			report := decodeCoachReport(stdout)
 			ruleIDs := projectChangeRuleIDs(report.ProjectChanges)
@@ -120,11 +118,10 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			Expect(report.ProjectFacts).NotTo(BeEmpty())
 			assertReachabilityNeverSignalOrChange(report)
 
-			textSampler := startAnalyzerEnvironSampler()
 			textStdout, textStderr, textExitCode := runCoachCodesignalRaw(repo, baseSHA, "--project-config", "project.json", "--project-language", "typescript", "--format=text")
-			textEnvirons := textSampler.halt()
+			textSpawns := recorder.mustTakeSpawns(Default)
 			Expect(textExitCode).To(Equal(0), "stderr: %s stdout: %s", textStderr, textStdout)
-			Expect(textSampler.invocations()).To(Equal(2), "expected exactly one analyzer invocation per revision for the text-format rendering of the same diff, observed pids: %+v", textEnvirons)
+			Expect(textSpawns).To(HaveLen(2), "expected exactly one analyzer invocation per revision for the text-format rendering of the same diff, recorded spawns: %+v", textSpawns)
 
 			findingsSection, factsSection := splitTextFindingsAndFacts(string(textStdout))
 			Expect(findingsSection).To(ContainSubstring("rule_id: architecture.layer_violation"), "got %q", findingsSection)
@@ -133,11 +130,10 @@ var _ = Describe("coach codesignal --project-language typescript derives layer v
 			Expect(factsSection).To(ContainSubstring("kind: possible_call_reachability"), "got %q", factsSection)
 			Expect(factsSection).NotTo(ContainSubstring("rule_id:"), "the Facts section must never carry a rule_id, which would make a fact indistinguishable from a Signal/ProjectChange, got %q", factsSection)
 
-			scopeSampler := startAnalyzerEnvironSampler()
 			result, err := analyzeTSProjectBackend(repo, headSHA, baseSHA, false, tsLayerBypassRequiredConfigJSON)
-			scopeEnvirons := scopeSampler.halt()
+			scopeSpawns := recorder.mustTakeSpawns(Default)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(scopeSampler.invocations()).To(Equal(2), "expected exactly one analyzer invocation per revision for the direct-result inspection of the same diff, observed pids: %+v", scopeEnvirons)
+			Expect(scopeSpawns).To(HaveLen(2), "expected exactly one analyzer invocation per revision for the direct-result inspection of the same diff, recorded spawns: %+v", scopeSpawns)
 
 			resultRuleIDs := projectChangeRuleIDs(result.HeadChanges)
 			Expect(resultRuleIDs).To(HaveKey("architecture.layer_violation"), "the same single Analyze() result must carry the head-side layer-violation change, got %+v", result.HeadChanges)
