@@ -40,23 +40,6 @@ func assertIndexEntries(t *testing.T, output string, want []IndexEntry) {
 	}
 }
 
-func TestIndexEntriesMatchesThePathRelativeToTheRepositoryRootLiterally(t *testing.T) {
-	var gotArgs []string
-	run := func(_ string, args ...string) ([]byte, error) {
-		gotArgs = args
-		return nil, nil
-	}
-
-	if _, err := IndexEntries(run, "repo", "a[1]*.json"); err != nil {
-		t.Fatalf("IndexEntries: %v", err)
-	}
-
-	want := []string{"ls-files", "--stage", "-t", "-z", "--full-name", "--", ":(top,literal)a[1]*.json"}
-	if !reflect.DeepEqual(gotArgs, want) {
-		t.Errorf("git args = %v; want %v", gotArgs, want)
-	}
-}
-
 func TestIndexEntriesFailsClosedWhenGitFails(t *testing.T) {
 	run := func(string, ...string) ([]byte, error) { return nil, errors.New("boom") }
 

@@ -43,7 +43,10 @@ func ExplicitOnDiskStatus(run gitrepo.Runner, dir, revision, repoPath string) (*
 	judged := *found
 	judged.FromWorkingTree = true
 	judged.UnreadStagedEdit = judgment.indexEntryUnread
-	if judgment.failure != nil {
+	if judgment.failure != nil && found.Kind == KindMissing {
+		// A failed question changes the outcome only where an offer depends on it. For a path the
+		// working tree found unusable no offer is made, so the failure is not an operational error:
+		// UnreadStagedEdit already says the index could not be ruled out.
 		judged.GitFailure = judgment.failure
 	}
 	offer, offered := restoreOfferFor(judgment, revision, found, repoPath)

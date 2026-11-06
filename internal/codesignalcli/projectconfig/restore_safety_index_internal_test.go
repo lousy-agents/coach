@@ -2,6 +2,7 @@ package projectconfig
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,6 +20,8 @@ const (
 type indexFake struct {
 	lsFiles    string
 	lsFilesErr error
+	// holdsBelow answers the question whether the index holds anything below the path.
+	holdsBelow bool
 	// uncommitted makes the tree lookup find nothing at the path.
 	uncommitted bool
 	// sparse answers `git config core.sparseCheckout`: true when set, unset when not.
@@ -47,6 +50,9 @@ func (f indexFake) run(dir string, args ...string) ([]byte, error) {
 		}
 		return []byte(mode + " blob " + committedBlob + "\tpol.json\n"), nil
 	case "ls-files":
+		if !slices.Contains(args, "--stage") {
+			return f.entriesBelow(args), f.lsFilesErr
+		}
 		return []byte(strings.ReplaceAll(f.lsFiles, askedPath, pathAskedAbout(args))), f.lsFilesErr
 	case "config":
 		if f.sparse {
@@ -61,23 +67,12 @@ func (f indexFake) run(dir string, args ...string) ([]byte, error) {
 // the fake puts the real one in, as git lists an entry under the path it was asked for.
 const askedPath = "<the path asked about>"
 
-// pathAskedAbout is the path in the :(top,literal) pathspec that ends the arguments.
-func pathAskedAbout(args []string) string {
-	return strings.TrimPrefix(args[len(args)-1], ":(top,literal)")
-}
-
 func indexLine(mode, blob, stage string) string {
 	return "H " + mode + " " + blob + " " + stage + "\t" + askedPath + "\x00"
 }
 
 func skippedIndexLine(mode, blob, stage string) string {
 	return "S " + mode + " " + blob + " " + stage + "\t" + askedPath + "\x00"
-}
-
-// indexLineBelow is an entry for a file under the path asked about, which makes that
-// path a directory in the index.
-func indexLineBelow(mode, blob, stage string) string {
-	return "H " + mode + " " + blob + " " + stage + "\t" + askedPath + "/inner.json\x00"
 }
 
 func TestJudgeRestoreFromWhatTheIndexHolds(t *testing.T) {
@@ -93,9 +88,9 @@ func TestJudgeRestoreFromWhatTheIndexHolds(t *testing.T) {
 		{"index output git would not print", indexFake{lsFiles: "not an index line\n"}, restoreUndecidable, true},
 		{"a path nothing commits and the index does not hold", indexFake{uncommitted: true}, restoreNotCommitted, false},
 		{"a path nothing commits that the index holds an entry for", indexFake{uncommitted: true, lsFiles: indexLine("100644", otherBlob, "0")}, restoreStagedNotCommitted, true},
-		{"files below a path nothing commits", indexFake{uncommitted: true, lsFiles: indexLineBelow("100644", otherBlob, "0")}, restoreDirectoryInIndex, false},
-		{"files below a path with an entry equal to the commit", indexFake{lsFiles: indexLine("100644", committedBlob, "0") + indexLineBelow("100644", otherBlob, "0")}, restoreDirectoryInIndex, false},
-		{"files below a path whose commit holds a link", indexFake{committedMode: "120000", lsFiles: indexLineBelow("100644", otherBlob, "0")}, restoreDirectoryInIndex, false},
+		{"files below a path nothing commits", indexFake{uncommitted: true, holdsBelow: true}, restoreDirectoryInIndex, false},
+		{"files below a path whose commit holds a regular file", indexFake{holdsBelow: true}, restoreDirectoryInIndex, false},
+		{"files below a path whose commit holds a link", indexFake{committedMode: "120000", holdsBelow: true}, restoreDirectoryInIndex, false},
 		{"an empty entry nothing commits, marked skip-worktree", indexFake{uncommitted: true, lsFiles: skippedIndexLine("100644", emptyBlobSHA1, "0")}, restoreEmptySkipWorktreeNotCommitted, false},
 		{"an empty entry nothing commits that a sparse checkout leaves out", indexFake{uncommitted: true, sparse: true, lsFiles: skippedIndexLine("100644", emptyBlobSHA1, "0")}, restoreEmptySparseNotCommitted, false},
 		{"a staged copy with content nothing commits, marked skip-worktree", indexFake{uncommitted: true, lsFiles: skippedIndexLine("100644", otherBlob, "0")}, restoreStagedSkipWorktreeNotCommitted, true},

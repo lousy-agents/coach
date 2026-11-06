@@ -2,26 +2,21 @@ package gitrepo
 
 import "strings"
 
-// parseIndexListing reads ls-files --stage -t -z output, one NUL-terminated record
-// per entry (an empty one is refused, not skipped), and sorts the entries into those at repoPath and the fact that some
-// are below it.
-func parseIndexListing(listing []byte, repoPath string) (IndexAt, error) {
-	var listed IndexAt
+// parseIndexListing reads ls-files --stage -t -z output, one NUL-terminated record per
+// entry (an empty one is refused, not skipped). Every entry must be for repoPath itself.
+func parseIndexListing(listing []byte, repoPath string) ([]IndexEntry, error) {
+	var entries []IndexEntry
 	for _, record := range SplitNULPaths(listing) {
 		entry, path, err := parseIndexRecord(record)
 		if err != nil {
-			return IndexAt{}, err
+			return nil, err
 		}
-		switch {
-		case path == repoPath:
-			listed.Entries = append(listed.Entries, entry)
-		case strings.HasPrefix(path, repoPath+"/"):
-			listed.HoldsBelow = true
-		default:
-			return IndexAt{}, errIndexEntryForAnotherPath
+		if path != repoPath {
+			return nil, errIndexEntryForAnotherPath
 		}
+		entries = append(entries, entry)
 	}
-	return listed, nil
+	return entries, nil
 }
 
 // parseIndexRecord reads "<tag> <mode> <object id> <stage>\t<path>". Every field is
