@@ -32,3 +32,25 @@ func assertNextActionForGap(t *testing.T, code string, remedy PolicyRemedy, want
 		t.Errorf("NextActionForGap(%q, %d) = %q, %v; want %q, %v", code, remedy, got, ok, want, wantOK)
 	}
 }
+
+func TestNextActionForRemedyIsTheOnlyMappingFromARemedyToAnActionKind(t *testing.T) {
+	cases := []struct {
+		name   string
+		remedy PolicyRemedy
+		want   string
+		wantOK bool
+	}{
+		{"authoring names the author-policy action", RemedyAuthor, NextActionAuthorPolicy, true},
+		{"restoring names the restore-policy action", RemedyRestore, NextActionRestorePolicy, true},
+		{"a gap neither can fix names no action", RemedyNone, "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := NextActionForRemedy(c.remedy)
+
+			if got != c.want || ok != c.wantOK {
+				t.Errorf("NextActionForRemedy(%d) = %q, %v; want %q, %v", c.remedy, got, ok, c.want, c.wantOK)
+			}
+		})
+	}
+}
