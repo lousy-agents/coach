@@ -12,7 +12,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-const packageManifestBlob = "100644 blob 0123456789012345678901234567890123456789\tpackage.json\n"
+const packageManifestBlob = "100644 blob 0123456789012345678901234567890123456789\tpackage.json\x00"
 
 // questionsWhereOnly names the one git question that fails; every other question has an explicit answer
 // that lets a check go on: the revision resolves and package.json is committed.
