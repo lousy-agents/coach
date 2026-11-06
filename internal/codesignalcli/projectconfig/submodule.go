@@ -30,16 +30,17 @@ func UncommittedPolicy(run gitrepo.Runner, dir, revision, repoPath string) (stri
 	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision), projectreadiness.CauseNotCommitted, nil
 }
 
-// enclosingSubmodule is the submodule whose checkout holds repoPath, or "" when none does. The
-// superproject records a submodule as one commit, so a file inside it can never be committed there, and
-// telling the user to commit it sends them in a circle. An error means git could not say.
+// enclosingSubmodule is the submodule that is repoPath or whose checkout holds it, or "" when none does.
+// The superproject records a submodule as one commit, so a file inside it can never be committed there,
+// and telling the user to commit it sends them in a circle; and a path that is the submodule itself is
+// not a file at all. An error means git could not say.
 func enclosingSubmodule(run gitrepo.Runner, dir, repoPath string) (string, error) {
 	parts := strings.Split(repoPath, "/")
-	for i := 1; i < len(parts); i++ {
-		ancestor := strings.Join(parts[:i], "/")
-		recorded, err := recordedAsSubmodule(run, dir, ancestor)
+	for i := 1; i <= len(parts); i++ {
+		candidate := strings.Join(parts[:i], "/")
+		recorded, err := recordedAsSubmodule(run, dir, candidate)
 		if err != nil || recorded {
-			return ancestor, err
+			return candidate, err
 		}
 	}
 	return "", nil

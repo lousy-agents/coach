@@ -141,6 +141,14 @@ var causeRows = []causeRow{
 	{"a policy missing from inside a submodule checkout", "vendor/sub/cfg/p.json", "policy_missing", "in_submodule", func(repo string) {
 		addSubmodule(repo)
 	}},
+	{"a path that is a submodule, with its checkout there", "vendor/sub", "policy_invalid", "in_submodule", func(repo string) {
+		addSubmodule(repo)
+	}},
+	{"a path that is a submodule, with its checkout removed", "vendor/sub", "policy_missing", "in_submodule", func(repo string) {
+		addSubmodule(repo)
+		gitIn(repo, "submodule", "deinit", "-f", "vendor/sub")
+		removeTree(repo, "vendor/sub")
+	}},
 	{"a committed policy deleted while another git process holds the index", "cfg/p.json", "policy_missing", "index_locked", func(repo string) {
 		commitThenRemove(repo, "cfg/p.json")
 		Expect(os.WriteFile(filepath.Join(repo, ".git", "index.lock"), nil, 0o644)).To(Succeed())
