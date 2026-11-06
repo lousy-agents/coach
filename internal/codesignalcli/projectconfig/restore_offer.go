@@ -131,14 +131,17 @@ func uncommittedOfferFor(verdict restoreVerdict, repoPath string, blocked bool) 
 	return restoreOffer{}, false
 }
 
-// committedLinkOffer is for a policy committed as a symbolic link. Restoring it
-// would recreate a link the scan refuses, and a new file would not be the
-// committed policy.
+// indexLockedOffer is for a restore that would otherwise be offered while a lock
+// file stops git from writing the index: the command would fail, so none is
+// printed.
 var indexLockedOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
 	text:   ". The index is locked, so a restore would fail and Coach offers neither a restore nor a new policy; wait for the other git process to finish, or remove the lock file if none is running, then run again",
 }
 
+// committedLinkOffer is for a policy committed as a symbolic link. Restoring it
+// would recreate a link the scan refuses, and a new file would not be the
+// committed policy.
 var committedLinkOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
 	text:   ". It is committed at the analyzed revision as a symbolic link, which a policy cannot be, so there is nothing to restore; name another policy or commit a regular file at this path",
