@@ -59,6 +59,18 @@ var _ = Describe("coach codesignal: a locked index, and a policy inside a submod
 		Expect(stderr).NotTo(ContainSubstring("commit the file"), "this repository cannot commit a file that lives in a submodule")
 	})
 
+	It("says the same when the scan runs from a subdirectory of the repository", func() {
+		repo := commitRepoWithSubmodule()
+		subdirectory := filepath.Join(repo, "pkg")
+		Expect(os.MkdirAll(subdirectory, 0o755)).To(Succeed())
+
+		stdout, stderr, exitCode := runCoachBinary(commandPath, subdirectory, nil, "codesignal", "--baseline", "--format=json", "--project-config", "vendor/sub/coach.json")
+
+		Expect(exitCode).To(Equal(2), "stdout=%s stderr=%s", stdout, stderr)
+		Expect(string(stderr)).To(ContainSubstring(`inside the submodule "vendor/sub"`), "the path is relative to the repository root wherever the scan starts:\n%s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("commit the file"), "this repository cannot commit a file that lives in a submodule:\n%s", stderr)
+	})
+
 	It("says the same in a TypeScript scan", func() {
 		repo := commitRepoWithSubmodule()
 

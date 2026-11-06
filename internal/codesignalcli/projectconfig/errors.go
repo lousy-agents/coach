@@ -129,9 +129,11 @@ func enclosingSubmodule(dir, repoPath string) (string, bool) {
 	return "", false
 }
 
-// recordedAsSubmodule is whether the index holds a submodule (a 160000 entry) at exactly path.
+// recordedAsSubmodule is whether the index holds a submodule (a 160000 entry) at exactly path,
+// a path relative to the repository root. --full-name names each entry from the root as well,
+// because git prints it relative to the directory it runs in otherwise.
 func recordedAsSubmodule(dir, path string) bool {
-	output, err := runProjectConfigGit(dir, "ls-files", "--stage", "-z", "--", ":(top,literal)"+path)
+	output, err := runProjectConfigGit(dir, "ls-files", "--stage", "-z", "--full-name", "--", ":(top,literal)"+path)
 	if err != nil {
 		return false
 	}
