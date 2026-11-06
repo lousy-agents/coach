@@ -2,12 +2,9 @@ package projectconfig
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strings"
 )
-
-const entryListingBatch = 256
 
 // checkExactNames requires every component of the policy path to be spelled on
 // disk as the path spells it. A filesystem that folds case resolves a different
@@ -32,32 +29,4 @@ func checkExactNames(root *os.Root, repoPath string) error {
 		}
 	}
 	return nil
-}
-
-// spellingIn is the entry of directory spelled exactly as name, or else the
-// first entry that differs from it only by case, or else name itself.
-func spellingIn(root *os.Root, directory, name string) (string, error) {
-	listing, err := root.Open(directory)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = listing.Close() }()
-	caseVariant := name
-	for {
-		names, err := listing.Readdirnames(entryListingBatch)
-		for _, entry := range names {
-			if entry == name {
-				return name, nil
-			}
-			if caseVariant == name && strings.EqualFold(entry, name) {
-				caseVariant = entry
-			}
-		}
-		if err == io.EOF {
-			return caseVariant, nil
-		}
-		if err != nil {
-			return "", err
-		}
-	}
 }
