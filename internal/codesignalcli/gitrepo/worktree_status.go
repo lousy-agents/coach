@@ -18,12 +18,12 @@ type WorktreeEntry struct {
 const (
 	maxWorktreeStatusBytes  = 16 << 20
 	maxWorktreeStatusStderr = 64 << 10
-	worktreeStatusTimeout   = 30 * time.Second
+	WorktreeStatusTimeout   = 30 * time.Second
 )
 
 // runWorktreeStatusGit is the git seam used by WorktreeStatus. Tests may
 // replace it to exercise timeout and bound failures without hanging.
-var runWorktreeStatusGit = BoundedRunner(maxWorktreeStatusBytes, maxWorktreeStatusStderr, worktreeStatusTimeout)
+var runWorktreeStatusGit = BoundedRunner(maxWorktreeStatusBytes, maxWorktreeStatusStderr, WorktreeStatusTimeout)
 
 // WorktreeStatus lists every changed or untracked worktree path via
 // `git status --porcelain=v1 --untracked-files=all -z`.
