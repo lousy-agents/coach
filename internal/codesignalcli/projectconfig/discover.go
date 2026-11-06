@@ -35,14 +35,14 @@ func selectWhereNoBlobIsCommitted(dir, root, revision string) (Selection, error)
 		return Selection{}, err
 	}
 	if refusal != nil {
-		return Selection{Fatal: refusal}, nil
+		return Selection{Fatal: asDefaultPolicyError(refusal, CanonicalPath)}, nil
 	}
 	return selectLegacy(dir, root, revision)
 }
 
 func loadCanonical(dir, revision string) (Selection, error) {
 	if _, err := Load(dir, revision, CanonicalPath); err != nil {
-		return Selection{Fatal: err}, nil
+		return Selection{Fatal: asDefaultPolicyError(err, CanonicalPath)}, nil
 	}
 	return Selection{Path: CanonicalPath}, nil
 }
@@ -50,7 +50,7 @@ func loadCanonical(dir, revision string) (Selection, error) {
 func selectLegacy(dir, root, revision string) (Selection, error) {
 	selection := Selection{UncommittedCanonical: worktreeHolds(root, CanonicalPath)}
 	if _, err := Load(dir, revision, DefaultPath); err != nil {
-		return legacyLoadFailure(selection, err)
+		return legacyLoadFailure(selection, asDefaultPolicyError(err, DefaultPath))
 	}
 	selection.Path = DefaultPath
 	selection.Deprecated = true

@@ -143,6 +143,8 @@ var _ = Describe("coach project config discovery", func() {
 			Expect(stdout).To(BeEmpty())
 			Expect(string(stderr)).To(ContainSubstring("project_config_invalid"))
 			Expect(string(stderr)).To(ContainSubstring(coachConfigPath))
+			Expect(string(stderr)).To(ContainSubstring(`the default policy "`+coachConfigPath+`"`), "the scan found it, so the user passed nothing:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring(`--project-config "`), "a flag the user never passed is not used to name the policy:\n%s", stderr)
 		})
 	})
 
@@ -165,9 +167,10 @@ var _ = Describe("coach project config discovery", func() {
 			Expect(string(explicitStderr)).To(ContainSubstring("typescript_compiler_missing: also failing"), "the explicit path is the reference that already reports the masked compiler gap; stderr=%s", explicitStderr)
 
 			explicitWithoutFlag := strings.ReplaceAll(string(explicitStderr), " --project-config "+coachConfigPath, "")
-			Expect(stderrAsideFromPolicyPath(implicitStderr, coachConfigPath)).To(Equal(stderrAsideFromPolicyPath([]byte(explicitWithoutFlag), coachConfigPath)),
+			explicitAsDefault := strings.ReplaceAll(explicitWithoutFlag, `--project-config "`+coachConfigPath+`"`, `the default policy "`+coachConfigPath+`"`)
+			Expect(stderrAsideFromPolicyPath(implicitStderr, coachConfigPath)).To(Equal(stderrAsideFromPolicyPath([]byte(explicitAsDefault), coachConfigPath)),
 				"implicit stderr=%s explicit stderr=%s", implicitStderr, explicitStderr)
-			Expect(string(implicitStderr)).NotTo(ContainSubstring(" --project-config "+coachConfigPath), "a discovered policy is not named with --project-config:\n%s", implicitStderr)
+			Expect(string(implicitStderr)).NotTo(ContainSubstring(`--project-config "`+coachConfigPath+`"`), "a discovered policy is not named with --project-config:\n%s", implicitStderr)
 		})
 	})
 
