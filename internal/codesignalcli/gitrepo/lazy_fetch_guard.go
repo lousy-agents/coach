@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -36,31 +35,6 @@ func noLazyFetchSupported(run Runner, dir string) (supported bool, version strin
 	return major > noLazyFetchMajor || (major == noLazyFetchMajor && minor >= noLazyFetchMinor), match[1]
 }
 
-// promisorConfiguration matches the two ways git marks a partial clone: remote.<name>.promisor, which
-// current git writes, and extensions.partialclone, which older git wrote to name the promisor remote.
-const promisorConfiguration = `^(extensions\.partialclone|remote\..*\.promisor)$`
-
-// IsPartialClone reports whether the repository at dir was cloned with a filter, which is what makes git
-// fetch a missing object on demand. git config exits 1 when nothing matches, which is a plain no; any other
-// failure (a damaged configuration, a time or output bound) is an error, because a repository that cannot
-// be told apart from an ordinary one must not be read as one.
-func IsPartialClone(run Runner, dir string) (bool, error) {
-	output, err := run(dir, "config", "--get-regexp", promisorConfiguration)
-	if err != nil {
-		if ConfigHasNoValue(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	for _, line := range strings.Split(string(output), "\n") {
-		key, value, _ := strings.Cut(strings.TrimSpace(line), " ")
-		if strings.HasPrefix(key, "extensions.") && value != "" || strings.HasSuffix(key, ".promisor") && isTrue(value) {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 // ConfigHasNoValue is whether err is git config's exit 1, which is how it says that nothing matched: an
 // unset key, or no key that matches. Every other failure (a damaged configuration, a time or output bound)
 // leaves the question unanswered.
@@ -69,14 +43,15 @@ func ConfigHasNoValue(err error) bool {
 	return errors.As(err, &exit) && exit.ExitCode() == 1
 }
 
-func isTrue(value string) bool {
-	return slices.Contains([]string{"true", "yes", "on", "1"}, strings.ToLower(value))
-}
-
-// RefuseUnsafeLazyFetch is nil unless dir is a partial clone and the installed git cannot be told not to
-// fetch into it. An ordinary clone has nothing to fetch, so it is never refused; a repository that cannot
-// be told apart from an ordinary one is, because reading it could run its remote's transport.
-func RefuseUnsafeLazyFetch(run Runner, dir string) error {
+// RefuseUnsafeLazyFetch is nil unless a read would fetch. A git that can be told not to fetch never does,
+// and an ordinary clone has nothing to fetch; a repository that cannot be told apart from an ordinary one
+// is refused, because reading it could run its remote's transport.
+//
+// On an older git, which ignores the instruction, a partial clone is read when every object of the
+// revisions the scan reads is already here: base is empty for a baseline, which reads HEAD, and otherwise
+// the scan reads HEAD and the merge base of base and HEAD. A revision that lacks objects is refused, and so
+// is a question the probe cannot answer, because a read that might fetch is not made on a guess.
+func RefuseUnsafeLazyFetch(run Runner, dir, base string) error {
 	partial, err := IsPartialClone(run, dir)
 	if errors.Is(err, exec.ErrNotFound) {
 		return gitNotFoundError()
@@ -91,5 +66,40 @@ func RefuseUnsafeLazyFetch(run Runner, dir string) error {
 	if supported {
 		return nil
 	}
-	return &OperationalError{Message: fmt.Sprintf("this repository is a partial clone, and git %s cannot be told not to fetch missing objects, so a read could run its remote's transport and write objects; use git %d.%d or later", version, noLazyFetchMajor, noLazyFetchMinor)}
+	return refuseWhenReadRevisionsLackObjects(run, dir, base, version)
+}
+
+func refuseWhenReadRevisionsLackObjects(run Runner, dir, base, version string) error {
+	revisions, err := revisionsRead(run, dir, base)
+	if err != nil {
+		return cannotTellWhatIsMissing(version, err)
+	}
+	for _, revision := range revisions {
+		missing, err := missingObjectsOf(run, dir, revision.name)
+		if err != nil {
+			return cannotTellWhatIsMissing(version, err)
+		}
+		if missing.any() {
+			return lacksObjects(run, dir, version, revision, missing)
+		}
+	}
+	return nil
+}
+
+func lacksObjects(run Runner, dir, version string, revision readRevision, missing missingObjects) error {
+	return &OperationalError{Message: fmt.Sprintf("this repository is a partial clone, git %s cannot be told not to fetch missing objects, and %s has %s not in it, so reading it could run its remote's transport and write objects; %s", version, revision.label, missing.phrase(), wayOut(FetchAdvice(run, dir, revision.name, "")))}
+}
+
+func cannotTellWhatIsMissing(version string, cause error) error {
+	return &OperationalError{Message: fmt.Sprintf("could not tell whether this partial clone has the objects Coach reads (%s), and git %s cannot be told not to fetch missing objects, so a read could run its remote's transport and write objects; %s", cause, version, wayOut("")), Cause: cause}
+}
+
+// wayOut is the newer git that fixes the problem, and the fetch that brings the objects in when there is
+// one that is safe to paste.
+func wayOut(fetch string) string {
+	upgrade := fmt.Sprintf("use git %d.%d or later", noLazyFetchMajor, noLazyFetchMinor)
+	if fetch == "" {
+		return upgrade
+	}
+	return upgrade + ", or " + fetch
 }
