@@ -20,6 +20,11 @@ func readObjects(dir string, oids []string, budget snapshotBudget, visit func(oi
 	cmd := gitCommand(ctx, dir, "cat-file", "--batch")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+	// Killing git when the context ends does not end a child of git, and a child keeps the pipes open. exec
+	// copies stderr into the buffer, which makes the delay shut the pipes one second after the context ends:
+	// the read below returns, and Wait does not wait for the child. (With both streams read by hand, as
+	// RunBytesBounded does, the delay shuts nothing, and closePipesOfAGitThatOutlivesItsContext does.)
+	cmd.WaitDelay = childPipeGrace
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

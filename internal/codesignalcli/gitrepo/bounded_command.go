@@ -71,13 +71,19 @@ func RunBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args ...
 	// blocked reading the other.
 	stdoutCh := make(chan gitPipeResult, 1)
 	stderrCh := make(chan gitPipeResult, 1)
+	readersDone := make(chan struct{})
 	go func() {
 		stdoutCh <- readGitPipeUntilOverrun(stdout, maxStdout, cancel)
 	}()
 	go func() {
 		stderrCh <- readGitPipeUntilOverrun(stderr, maxStderr, cancel)
 	}()
-	return finishGitBoundedRead(<-stdoutCh, <-stderrCh, cmd.Wait(), ctx, maxStdout, maxStderr, timeout)
+	// Killing git when the context ends does not end a child of git, and a child keeps the pipes open. The
+	// pipes are read here and not copied by exec, so cmd.WaitDelay has nothing to bound: this closes them.
+	go closePipesOfAGitThatOutlivesItsContext(ctx, readersDone, childPipeGrace, stdout, stderr)
+	stdoutResult, stderrResult := <-stdoutCh, <-stderrCh
+	close(readersDone)
+	return finishGitBoundedRead(stdoutResult, stderrResult, cmd.Wait(), ctx, maxStdout, maxStderr, timeout)
 }
 
 // RunBytesBounded runs git with a wall-time limit and hard caps on
