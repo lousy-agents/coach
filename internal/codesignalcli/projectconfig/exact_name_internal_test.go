@@ -19,7 +19,7 @@ func TestCheckExactNamesRefusesASpellingThatDiffersOnlyByCase(t *testing.T) {
 }
 
 func TestCheckExactNamesAcceptsTheExactSpelling(t *testing.T) {
-	if err := checkExactNames(openRootWith(t, "cfg/p.json"), "cfg/p.json"); err != nil {
+	if err := checkExactNames(osDiskRoot{openRootWith(t, "cfg/p.json")}, "cfg/p.json"); err != nil {
 		t.Errorf("checkExactNames = %v, want nil", err)
 	}
 }
@@ -39,13 +39,13 @@ func TestCheckExactNamesPrefersTheExactSpellingOverACaseVariant(t *testing.T) {
 		t.Skip("this filesystem folds case, so both spellings cannot exist")
 	}
 
-	if err := checkExactNames(root, "cfg/p.json"); err != nil {
+	if err := checkExactNames(osDiskRoot{root}, "cfg/p.json"); err != nil {
 		t.Errorf("checkExactNames = %v, want nil when the exact spelling is among the entries", err)
 	}
 }
 
 func TestCheckExactNamesLeavesAnUnlistedNameToTheOtherChecks(t *testing.T) {
-	if err := checkExactNames(openRootWith(t, "cfg/other.json"), "cfg/p.json"); err != nil {
+	if err := checkExactNames(osDiskRoot{openRootWith(t, "cfg/other.json")}, "cfg/p.json"); err != nil {
 		t.Errorf("checkExactNames = %v, want nil: a name nothing lists is not a case difference", err)
 	}
 }

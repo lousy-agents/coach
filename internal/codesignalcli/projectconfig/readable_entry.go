@@ -10,7 +10,7 @@ import (
 // copy. The open does not wait for a writer, and the opened handle, not the
 // earlier stat, decides that the entry is a regular file: a path swapped for a
 // FIFO between the two would otherwise block the scan on the open.
-func checkReadable(root *os.Root, repoPath string) error {
+func checkReadable(root diskRoot, repoPath string) error {
 	file, err := root.OpenFile(filepath.FromSlash(repoPath), os.O_RDONLY|openWithoutWaiting, 0)
 	if err != nil {
 		return classifyOpenError(repoPath, err)

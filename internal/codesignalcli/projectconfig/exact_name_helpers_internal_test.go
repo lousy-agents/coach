@@ -30,7 +30,7 @@ func openRootWith(t *testing.T, files ...string) *os.Root {
 
 func assertCaseDifferenceRefused(t *testing.T, files []string, want string) {
 	t.Helper()
-	checked := checkExactNames(openRootWith(t, files...), "cfg/p.json")
+	checked := checkExactNames(osDiskRoot{openRootWith(t, files...)}, "cfg/p.json")
 	var mismatch caseMismatchError
 	if !errors.As(checked, &mismatch) {
 		t.Fatalf("checkExactNames = %v, want a case mismatch for the revision to be asked about", checked)

@@ -28,7 +28,7 @@ func TestSpellingInDoesNotWaitForAWriterWhenTheDirectoryHasBecomeAFifo(t *testin
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := spellingIn(root, "cfg", "p.json")
+		_, err := spellingIn(osDiskRoot{root}, "cfg", "p.json")
 		done <- err
 	}()
 

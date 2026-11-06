@@ -37,6 +37,13 @@ func checkRegularFileUnder(rootDir, repoPath string) error {
 		return unusableOnDiskError(repoPath, "cannot be checked on disk: "+causeText(err))
 	}
 	defer func() { _ = root.Close() }()
+	return checkRegularFileThrough(osDiskRoot{root}, repoPath)
+}
+
+// checkRegularFileThrough is the check on an open root: the parents, then the entry, then the
+// spelling of every component. A missing entry is refused for the spelling of its parents first,
+// because a restore would write where the file system resolves them.
+func checkRegularFileThrough(root diskRoot, repoPath string) error {
 	if err := checkAncestors(root, repoPath); err != nil {
 		return err
 	}
@@ -47,7 +54,7 @@ func checkRegularFileUnder(rootDir, repoPath string) error {
 }
 
 // checkAncestors requires every parent of the policy to be a real directory.
-func checkAncestors(root *os.Root, repoPath string) error {
+func checkAncestors(root diskRoot, repoPath string) error {
 	parts := strings.Split(repoPath, "/")
 	for i := 1; i < len(parts); i++ {
 		ancestor := strings.Join(parts[:i], "/")
@@ -67,7 +74,7 @@ func checkAncestors(root *os.Root, repoPath string) error {
 
 // checkEntry requires the policy itself to be a regular file and not a link,
 // and a file this process is allowed to open.
-func checkEntry(root *os.Root, repoPath string) error {
+func checkEntry(root diskRoot, repoPath string) error {
 	info, err := root.Lstat(filepath.FromSlash(repoPath))
 	if err != nil {
 		return classifyStatError(repoPath, err)
