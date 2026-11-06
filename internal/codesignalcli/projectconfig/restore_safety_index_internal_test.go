@@ -28,6 +28,8 @@ type indexFake struct {
 	committedMode string
 	// gitPathErr makes `rev-parse --git-path` fail, as it does when git cannot say where the index lock is.
 	gitPathErr error
+	// configErr makes `git config` fail with something other than git's exit 1 for an unset key.
+	configErr error
 }
 
 func (f indexFake) run(dir string, args ...string) ([]byte, error) {
@@ -49,10 +51,13 @@ func (f indexFake) run(dir string, args ...string) ([]byte, error) {
 	case "ls-files":
 		return f.lsFilesAnswer(args)
 	case "config":
+		if f.configErr != nil {
+			return nil, f.configErr
+		}
 		if f.sparse {
 			return []byte("true\n"), nil
 		}
-		return nil, errors.New("exit status 1")
+		return nil, gitSaysUnset
 	}
 	return nil, nil
 }

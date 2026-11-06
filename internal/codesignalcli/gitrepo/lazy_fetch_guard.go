@@ -47,7 +47,10 @@ const promisorConfiguration = `^(extensions\.partialclone|remote\..*\.promisor)$
 func IsPartialClone(run Runner, dir string) (bool, error) {
 	output, err := run(dir, "config", "--get-regexp", promisorConfiguration)
 	if err != nil {
-		return false, ignoringNoMatch(err)
+		if ConfigHasNoValue(err) {
+			return false, nil
+		}
+		return false, err
 	}
 	for _, line := range strings.Split(string(output), "\n") {
 		key, value, _ := strings.Cut(strings.TrimSpace(line), " ")
@@ -58,13 +61,12 @@ func IsPartialClone(run Runner, dir string) (bool, error) {
 	return false, nil
 }
 
-// ignoringNoMatch is nil for git's exit 1 and err for every other failure.
-func ignoringNoMatch(err error) error {
+// ConfigHasNoValue is whether err is git config's exit 1, which is how it says that nothing matched: an
+// unset key, or no key that matches. Every other failure (a damaged configuration, a time or output bound)
+// leaves the question unanswered.
+func ConfigHasNoValue(err error) bool {
 	var exit *exec.ExitError
-	if errors.As(err, &exit) && exit.ExitCode() == 1 {
-		return nil
-	}
-	return err
+	return errors.As(err, &exit) && exit.ExitCode() == 1
 }
 
 func isTrue(value string) bool {
