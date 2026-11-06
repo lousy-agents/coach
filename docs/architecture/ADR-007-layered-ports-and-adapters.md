@@ -49,22 +49,23 @@ flowchart LR
 
 The direction is enforced at two grains.
 
-**Rings across the module.** `project.json` is the repository's own project-analysis policy. It places top-level trees in four rings and forbids every outward import between them, and `coach codesignal --baseline --project-config project.json` reports any crossing as `architecture.layer_violation`. It reports none.
+**Rings across the module.** `.lousy-agents/coach.json` is the repository's own project-analysis policy. It places top-level trees in five rings: four production rings (entities, usecases, adapters, app) and a tooling ring for test-support trees, which no production ring may import. It forbids every outward import between the production rings and every import into tooling, and `coach codesignal --baseline --project-config .lousy-agents/coach.json` reports any crossing as `architecture.layer_violation`. Outside test files it reports none. The 17 test-file edges into tooling at the round-6 head are exempt under G-COACH Amendment 2 and tracked in coach#602 and coach#627.
 
-| Ring (`project.json`) | Trees |
+| Ring (`.lousy-agents/coach.json`) | Trees |
 | --- | --- |
 | entities | `pkg/domain`, `pkg/semantics` |
-| usecases | `pkg/codesignal` |
-| adapters | `pkg/githubingest`, `pkg/projectmodel`, `internal/codesignalcli`, `internal/coachapi`, `internal/jsbridge`, `internal/projectbridge` |
-| app | `cmd/*` |
+| usecases | `pkg/usecases`, `pkg/codesignal`, `internal/agentloop` |
+| adapters | `internal/adapters`, `pkg/githubingest`, `pkg/projectmodel`, `internal/codesignalcli`, `internal/coachapi`, `internal/jsbridge`, `internal/projectbridge`, `internal/authn`, `internal/authz`, `internal/modelgateway`, `internal/rubrics`, `js/semantics` |
+| app | `cmd/coach`, `cmd/coach-api`, `cmd/coach-worker`, `cmd/semantics-json`, `cmd/codesignal-report` |
+| tooling | `internal/acceptanceharness`, `internal/acceptancestyle`, `internal/agentworkflows`, `internal/claudehooks`, `internal/fakegithub`, `internal/sourcelayout`, `internal/tstestutil`, `internal/validationtasks`, `deploy/compose/platform/fixtures`, `.opencode/plugin`, and the repository's test and guard commands under `cmd/` (`acceptance-guard-preflight`, `acceptance-style-guard`, `fakegithub-server`, `model-stub`, `platform-smoke`, `semantics-wasm-smoke`, `source-layout-guard`, `thinproof-preflight`, `thinproof-runner`) |
 
 **Layers inside the application shells.** `internal/codesignalcli` (the CLI) and `internal/coachapi` (the platform API and worker) each sit in the adapters ring as a whole, because each wraps the inner rings for one delivery mechanism. Inside each shell, the same four-layer shape repeats at package grain:
 
 | Layer | `internal/codesignalcli/…` | `internal/coachapi/…` |
 | --- | --- | --- |
-| Model | `projectreadiness` (readiness result), `projectconfig` (policy schema), `shellword` (quoting and printability), `invocation` (the commands remediation lines name) | root (job, report, API contract, `JobStore` / `WorkerJobStore` ports) |
+| Model | `projectreadiness` (readiness result), `projectconfig` (policy schema), `policyref` (the policy a run reads and who chose it; imports only the standard library), `shellword` (quoting and printability), `invocation` (the commands remediation lines name) | root (job, report, API contract, `JobStore` / `WorkerJobStore` ports) |
 | Use case | root (scans, `ProjectBackend` port), `projectcheck`, `tssetup`, `configauthoring`, `sourcescope` | `baseline`, `worker` |
-| Driven adapter | `gitrepo`, `revisionfs`, `tstoolchain`, `pkgmanager`, `subprocess`, `terminal`, `prompt` | `store/memory`, `store/postgres`, `queue/redisstream`, `queue/sqs` |
+| Driven adapter | `gitrepo`, `revisionfs`, `tstoolchain`, `pkgmanager`, `subprocess`, `terminal`, `prompt` | `store/memory`, `store/postgres`, `queue/redisstream`, `queue/sqs`, `clock` (the production `Clock` and `RealClock`) |
 | Entry | `render` (wired from `cmd/coach`) | `httpapi` (wired from `cmd/coach-api`) |
 
 `internal/codesignalcli/layering_test.go` pins the CLI shell's graph, so a new import edge between its packages fails a test rather than eroding silently. The domain libraries keep their I/O in private adapter packages: `pkg/semantics/internal/engine` (Tree-sitter) and `pkg/projectmodel/internal/tssidecar` and `ssaload`.
