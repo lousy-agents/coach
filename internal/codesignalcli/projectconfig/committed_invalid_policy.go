@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // committedCopyProblem says why the policy committed at revision is not a valid policy, or "" when it is. A
@@ -39,4 +40,15 @@ func judgeCommittedCopy(run gitrepo.Runner, dir, revision, repoPath string) (pol
 		return policyJudgment{}, false
 	}
 	return policyJudgment{verdict: restoreCommittedInvalid, committedInvalid: problem}, true
+}
+
+// committedInvalidOffer is for a committed policy whose committed copy is not a valid policy and that is
+// gone from disk. A restore would bring back a file the scan refuses, so none is printed, and a new policy
+// is the way out, unless a file in the way of the path has to be moved first.
+func committedInvalidOffer(reason string, blocked bool) restoreOffer {
+	text := fmt.Sprintf(". It is committed at the analyzed revision, but the committed copy is not a valid policy (%s), so restoring it would bring back a file the scan refuses; ", reason)
+	if blocked {
+		return restoreOffer{remedy: projectreadiness.RemedyNone, cause: projectreadiness.CauseParentNotDirectory, text: text + "move the file that blocks the path, then write a new policy"}
+	}
+	return restoreOffer{remedy: projectreadiness.RemedyAuthor, text: text + "write a new policy"}
 }
