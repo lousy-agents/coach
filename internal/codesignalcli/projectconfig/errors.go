@@ -105,18 +105,20 @@ func readError(dir, revision, repoPath string, gitErr error) error {
 		return &ConfigError{Kind: KindUnreadable, Remedy: boundRemedy(boundErr), PolicyCause: boundCause(boundErr), Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
 	}
 	if configExistsInWorktree(dir, repoPath) {
-		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseNotCommitted, Message: UncommittedPolicyMessage(dir, revision, repoPath)}
+		message, cause := UncommittedPolicy(dir, revision, repoPath)
+		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, PolicyCause: cause, Message: message}
 	}
 	return &ConfigError{Kind: KindNotFound, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found at revision %q (project_config_invalid)", repoPath, revision)}
 }
 
-// UncommittedPolicyMessage is what the scan says about a --project-config policy
-// that exists in the working tree but is not committed at the analyzed revision.
-func UncommittedPolicyMessage(dir, revision, repoPath string) string {
+// UncommittedPolicy is what the scan says about a --project-config policy that exists in the
+// working tree but is not committed at the analyzed revision, with the stable word for it. It is the
+// one place that decides both, so the scan's message and the readiness result's cause cannot differ.
+func UncommittedPolicy(dir, revision, repoPath string) (string, projectreadiness.PolicyCause) {
 	if submodule, inside := enclosingSubmodule(dir, repoPath); inside {
-		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here (project_config_invalid): name a policy that is committed in this repository's own files", repoPath, submodule)
+		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here (project_config_invalid): name a policy that is committed in this repository's own files", repoPath, submodule), projectreadiness.CauseNotCommitted
 	}
-	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision)
+	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision), projectreadiness.CauseNotCommitted
 }
 
 // enclosingSubmodule is the submodule whose checkout holds repoPath. The superproject records a

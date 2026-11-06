@@ -85,3 +85,14 @@ type Checks struct {
 	Compiler       Check `json:"compiler"`
 	PackageManager Check `json:"package_manager"`
 }
+
+// WithCause is c with the reason a policy gap has no way out, as the sentence the scan prints and as
+// the stable word. A check that names a remedy keeps neither, because the remedy is the answer: it is
+// the one gate for both, so a gap never carries a cause beside an action.
+func (c Check) WithCause(text string, word PolicyCause) Check {
+	if _, named := NextActionForRemedy(c.Remedy); named {
+		return c
+	}
+	c.CauseText, c.PolicyCause = text, word
+	return c
+}
