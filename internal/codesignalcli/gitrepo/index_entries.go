@@ -22,9 +22,9 @@ const skipWorktreeTag = "S"
 
 // IndexEntries lists what the index holds for repoPath, relative to the
 // repository root and matched literally. It returns none for a path the index
-// does not know, and more than one for a path in a merge conflict. A listing it
-// cannot parse is an error: skipping a line would read as an index that holds
-// nothing.
+// does not know, and more than one for a path in a merge conflict. A line it
+// cannot parse is an error: skipping it would read as an index that holds
+// nothing, and guessing a field would read an entry as something it is not.
 func IndexEntries(run Runner, dir, repoPath string) ([]IndexEntry, error) {
 	output, err := run(dir, "ls-files", "--stage", "-t", "--", ":(top,literal)"+repoPath)
 	if err != nil {
@@ -34,14 +34,9 @@ func IndexEntries(run Runner, dir, repoPath string) ([]IndexEntry, error) {
 	if listing == "" {
 		return nil, nil
 	}
-	var entries []IndexEntry
-	for _, line := range strings.Split(listing, "\n") {
-		meta, _, found := strings.Cut(line, "\t")
-		fields := strings.Fields(meta)
-		if !found || len(fields) != 4 {
-			return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: the index entry for %q could not be read: %s", repoPath, errUnparseableIndexLine), Cause: errUnparseableIndexLine}
-		}
-		entries = append(entries, IndexEntry{TreeEntry: TreeEntry{Mode: fields[1], SHA: fields[2]}, Stage: fields[3], SkipWorktree: fields[0] == skipWorktreeTag})
+	entries, err := parseIndexListing(listing)
+	if err != nil {
+		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: the index entry for %q could not be read: %s", repoPath, err), Cause: err}
 	}
 	return entries, nil
 }

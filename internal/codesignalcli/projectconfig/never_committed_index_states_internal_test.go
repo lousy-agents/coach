@@ -54,3 +54,25 @@ func TestAPolicyNothingCommitsThatIsStagedAsASubmoduleEntryPrintsNoRestore(t *te
 		t.Errorf("message %q; want it to say the staged entry is not a regular file", status.Message)
 	}
 }
+
+func TestAPolicyNothingCommitsThatIsStagedAndSkipWorktreeMarkedPrintsNoRestore(t *testing.T) {
+	status := explicitStatusFor(t, indexFake{uncommitted: true, lsFiles: skippedIndexLine("100644", committedBlob, "0")})
+
+	if !strings.Contains(status.Message, "skip-worktree") || !strings.Contains(status.Message, "git update-index --no-skip-worktree") {
+		t.Errorf("message %q; want it to name the skip-worktree mark and the command that clears it", status.Message)
+	}
+	if strings.Contains(status.Message, "git restore") {
+		t.Errorf("message %q; git restore does not match a skip-worktree path, so no restore command may be printed", status.Message)
+	}
+}
+
+func TestAPolicyNothingCommitsThatASparseCheckoutLeavesOutPrintsNoRestore(t *testing.T) {
+	status := explicitStatusFor(t, indexFake{uncommitted: true, sparse: true, lsFiles: skippedIndexLine("100644", committedBlob, "0")})
+
+	if !strings.Contains(status.Message, "sparse checkout") {
+		t.Errorf("message %q; want it to name the sparse checkout", status.Message)
+	}
+	if strings.Contains(status.Message, "git restore") {
+		t.Errorf("message %q; git restore does not match a path the sparse checkout skips, so no restore command may be printed", status.Message)
+	}
+}

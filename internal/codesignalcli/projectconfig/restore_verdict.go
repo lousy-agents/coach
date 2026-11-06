@@ -23,7 +23,7 @@ func verdictWithoutIndex(committed gitrepo.TreeEntry, found bool) restoreVerdict
 // instead.
 func verdictFor(committed gitrepo.TreeEntry, found bool, staged []gitrepo.IndexEntry, unread, sparse bool) restoreVerdict {
 	if !found {
-		return verdictForUncommitted(staged)
+		return verdictForUncommitted(staged, sparse)
 	}
 	switch {
 	case !isRegularFileMode(committed.Mode):
@@ -42,8 +42,10 @@ func verdictFor(committed gitrepo.TreeEntry, found bool, staged []gitrepo.IndexE
 
 // verdictForUncommitted is the verdict for a policy that is not committed at the
 // analyzed revision, which depends only on what the index holds for it. An
-// unmerged entry comes before the rest because git restore refuses it.
-func verdictForUncommitted(staged []gitrepo.IndexEntry) restoreVerdict {
+// unmerged entry comes before the rest because git restore refuses it, and a
+// skip-worktree mark comes before a plain staged copy because git restore does
+// not match a path the mark hides.
+func verdictForUncommitted(staged []gitrepo.IndexEntry, sparse bool) restoreVerdict {
 	switch {
 	case len(staged) == 0:
 		return restoreNotCommitted
@@ -51,8 +53,38 @@ func verdictForUncommitted(staged []gitrepo.IndexEntry) restoreVerdict {
 		return restoreUnmergedNotCommitted
 	case stagedAsNonRegularFile(staged):
 		return restoreStagedNonFileNotCommitted
+	case skippedBySparseCheckout(staged) && sparse:
+		return restoreStagedSparseNotCommitted
+	case skippedBySparseCheckout(staged):
+		return restoreStagedSkipWorktreeNotCommitted
 	}
 	return restoreStagedNotCommitted
+}
+
+// holdsNoContent is true for an entry that holds no content: a regular file at
+// stage 0 whose blob is the empty blob. That is what git add --intent-to-add
+// stages, and a staged empty file is no policy either. Restoring such an entry
+// writes an empty file, and it is not work that a restore of the committed copy,
+// or a new policy, would lose. The listing carries nothing else to go on, which is
+// the point: ls-files --stage is stable, and its flags and debug output are not.
+func holdsNoContent(entry gitrepo.IndexEntry) bool {
+	return entry.Stage == "0" && isRegularFileMode(entry.Mode) && gitrepo.IsEmptyBlob(entry.SHA)
+}
+
+// withoutEmptyEntries drops every entry that holds no content. What is left is what
+// there is to read, or to lose: an empty entry is never an edit.
+func withoutEmptyEntries(entries []gitrepo.IndexEntry) []gitrepo.IndexEntry {
+	return slices.DeleteFunc(slices.Clone(entries), holdsNoContent)
+}
+
+// withoutUnmarkedEmptyEntries drops the empty entries that nothing else makes
+// matter. One marked skip-worktree stays: the mark alone stops a restore, so the
+// skip-worktree and sparse-checkout verdicts still have to see it, even though it
+// is not an edit.
+func withoutUnmarkedEmptyEntries(entries []gitrepo.IndexEntry) []gitrepo.IndexEntry {
+	return slices.DeleteFunc(slices.Clone(entries), func(entry gitrepo.IndexEntry) bool {
+		return holdsNoContent(entry) && !entry.SkipWorktree
+	})
 }
 
 // holdsUnmergedEntry is true when the index holds a conflict stage for the path.

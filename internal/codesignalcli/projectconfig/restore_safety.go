@@ -23,6 +23,9 @@ const (
 	restoreSkipWorktreeMarked
 	restoreUnmergedNotCommitted
 	restoreStagedNonFileNotCommitted
+	restoreStagedSkipWorktreeNotCommitted
+	restoreStagedSparseNotCommitted
+	restoreOverwritesEmptyEntry
 )
 
 const regularFileModeMask = "100"
@@ -79,12 +82,17 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 	if err != nil {
 		return policyJudgment{verdict: restoreUndecidable, indexEntryUnread: true, failure: newGitFailure("whether it is committed at the analyzed revision", err)}
 	}
-	staged, err := gitrepo.IndexEntries(run, dir, repoPath)
+	listed, err := gitrepo.IndexEntries(run, dir, repoPath)
 	if err != nil {
 		return policyJudgment{verdict: verdictWithoutIndex(committed, found), indexEntryUnread: true, failure: newGitFailure("what the index holds for it", err)}
 	}
-	unread := indexHoldsUnreadEntry(committed, found, staged)
-	return policyJudgment{verdict: verdictFor(committed, found, staged, unread, sparseCheckoutEnabled(run, dir, staged)), indexEntryUnread: unread}
+	staged := withoutUnmarkedEmptyEntries(listed)
+	unread := indexHoldsUnreadEntry(committed, found, withoutEmptyEntries(listed))
+	verdict := verdictFor(committed, found, staged, unread, sparseCheckoutEnabled(run, dir, staged))
+	if verdict == restoreOverwritesNothing && len(staged) < len(listed) {
+		verdict = restoreOverwritesEmptyEntry
+	}
+	return policyJudgment{verdict: verdict, indexEntryUnread: unread}
 }
 
 // sparseCheckoutEnabled reports whether core.sparseCheckout is on. It asks git

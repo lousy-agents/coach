@@ -131,3 +131,68 @@ func TestAnOperationalErrorDoesNotLetErrorsAsReachItsCause(t *testing.T) {
 		t.Errorf("errors.As found %v inside an OperationalError; a caller that tests *fs.PathError first would take it for a different failure", pathErr)
 	}
 }
+
+func TestIndexEntriesRefusesAListingLineItCannotRead(t *testing.T) {
+	const blob = "0123456789012345678901234567890123456789"
+	cases := []struct {
+		name   string
+		output string
+	}{
+		{"a missing field", "H 100644 " + blob + "\tpol.json\n"},
+		{"an extra field", "H 100644 " + blob + " 0 x\tpol.json\n"},
+		{"no tab before the path", "H 100644 " + blob + " 0 pol.json\n"},
+		{"an object id that is not hexadecimal", "H 100644 zzzz" + blob[4:] + " 0\tpol.json\n"},
+		{"an object id of a length no object format has", "H 100644 " + blob + "0 0\tpol.json\n"},
+		{"a mode that is not six octal digits", "H 10064 " + blob + " 0\tpol.json\n"},
+		{"a mode with a digit that is not octal", "H 100948 " + blob + " 0\tpol.json\n"},
+		{"a stage that is not 0 to 3", "H 100644 " + blob + " 7\tpol.json\n"},
+		{"a tag of more than one character", "HH 100644 " + blob + " 0\tpol.json\n"},
+		{"a tag git does not print for an index entry", "X 100644 " + blob + " 0\tpol.json\n"},
+		{"a tag in the wrong case", "s 100644 " + blob + " 0\tpol.json\n"},
+		{"the tag of an untracked path", "? 100644 " + blob + " 0\tpol.json\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			run := func(string, ...string) ([]byte, error) { return []byte(c.output), nil }
+
+			entries, err := IndexEntries(run, "repo", "pol.json")
+
+			if err == nil {
+				t.Fatalf("IndexEntries = %v, nil; want an error: a line it cannot read must not be taken for an entry", entries)
+			}
+		})
+	}
+}
+
+func TestIndexEntriesReadsAnObjectIdOfEitherObjectFormat(t *testing.T) {
+	const sha256 = "473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813"
+	run := func(string, ...string) ([]byte, error) { return []byte("H 100644 " + sha256 + " 0\tpol.json\n"), nil }
+
+	entries, err := IndexEntries(run, "repo", "pol.json")
+
+	if err != nil || len(entries) != 1 || entries[0].SHA != sha256 {
+		t.Errorf("IndexEntries = %v, %v; want the one entry with the 64-digit id", entries, err)
+	}
+}
+
+func TestIsEmptyBlobKnowsTheEmptyBlobOfEveryObjectFormat(t *testing.T) {
+	cases := []struct {
+		name string
+		id   string
+		want bool
+	}{
+		{"the SHA-1 empty blob", "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", true},
+		{"the SHA-256 empty blob", "473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813", true},
+		{"another SHA-1 blob", "0123456789012345678901234567890123456789", false},
+		{"another SHA-256 blob", "0123456789012345678901234567890123456789012345678901234567890123", false},
+		{"the SHA-1 empty blob's digits at the SHA-256 length", "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", false},
+		{"nothing", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsEmptyBlob(c.id); got != c.want {
+				t.Errorf("IsEmptyBlob(%q) = %v, want %v", c.id, got, c.want)
+			}
+		})
+	}
+}
