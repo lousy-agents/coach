@@ -54,7 +54,7 @@ func (d foldingDisk) Lstat(name string) (fs.FileInfo, error) {
 	if !found {
 		return nil, &fs.PathError{Op: "lstat", Path: name, Err: fs.ErrNotExist}
 	}
-	return fs.Stat(d.files, stored)
+	return fs.Lstat(d.files, stored)
 }
 
 func (d foldingDisk) OpenFile(name string, _ int, _ fs.FileMode) (diskFile, error) {
