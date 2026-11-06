@@ -27,7 +27,7 @@ func TestWhenGitCannotFindTheRepositoryTheExplicitPolicyCheckFailsInsteadOfPassi
 			}
 			return err
 		}},
-		{"requireOnDisk", func(dir string) error { return requireOnDisk(runProjectConfigGit, dir, "p.json") }},
+		{"requireOnDisk", func(dir string) error { return requireOnDisk(runProjectConfigGit, dir, "HEAD", "p.json") }},
 		{"LoadExplicit", func(dir string) error {
 			config, err := LoadExplicit(dir, "HEAD", "p.json")
 			if config != nil {

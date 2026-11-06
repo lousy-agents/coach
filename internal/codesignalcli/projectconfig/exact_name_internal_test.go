@@ -1,10 +1,6 @@
 package projectconfig
 
-import (
-	"errors"
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestCheckExactNamesRefusesASpellingThatDiffersOnlyByCase(t *testing.T) {
 	cases := []struct {
@@ -19,19 +15,6 @@ func TestCheckExactNamesRefusesASpellingThatDiffersOnlyByCase(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			assertCaseDifferenceRefused(t, c.files, c.want)
 		})
-	}
-}
-
-func assertCaseDifferenceRefused(t *testing.T, files []string, want string) {
-	t.Helper()
-	err := checkExactNames(openRootWith(t, files...), "cfg/p.json")
-
-	var found *ConfigError
-	if !errors.As(err, &found) || found.Kind != KindInvalid {
-		t.Fatalf("checkExactNames = %v, want an invalid-policy ConfigError", err)
-	}
-	if !strings.Contains(found.Message, want) || !strings.Contains(found.Message, "project_config_invalid") {
-		t.Errorf("message = %q, want it to name %s and carry project_config_invalid", found.Message, want)
 	}
 }
 

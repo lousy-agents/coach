@@ -38,7 +38,7 @@ func TestAMissingPolicyUnderAParentSpelledInAnotherCaseIsRefusedWhereTheFileSyst
 		t.Skip("this file system tells cfg and CFG apart, so a missing cfg/p.json is just missing")
 	}
 
-	found := configErrorOf(t, checkRegularFileUnder(dir, "cfg/p.json"))
+	found := configErrorOf(t, adviseOnRevision(checkRegularFileUnder(dir, "cfg/p.json"), "cfg/p.json", nil))
 
 	if found.Kind != KindInvalid || !strings.Contains(found.Message, `"CFG"`) {
 		t.Errorf("error = kind %v, remedy %d, %q; want an invalid policy that names the parent's spelling, with no restore offered", found.Kind, found.Remedy, found.Message)

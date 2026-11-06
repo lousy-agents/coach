@@ -90,13 +90,35 @@ a policy) and `undetermined`.
 
 An explicit `--project-config` whose name differs only by case from what is on disk
 is refused with exit `2` and `project_config_invalid`. A file system that folds case
-resolves `CFG/p.json` for `cfg/p.json`, but the analyzed revision holds only the exact
-spelling, so the scan would read a committed policy the working tree does not hold under
-that name. The message names the spelling on disk; rename the file or directory to the
-spelling the revision holds. The check covers every component of the path, and also
-applies when the file is missing: a missing policy under a parent spelled in another case
-is refused for that parent and is not offered a restore, because the restore would write
-into the other spelling.
+resolves `CFG/p.json` for `cfg/p.json`, but the analyzed revision tells the two
+spellings apart, so the scan would read a committed policy the working tree does not hold
+under that name. The message names both spellings and says which of them the revision
+holds, and what to do follows from that:
+
+- The revision holds the spelling on disk and the user typed another: pass the spelling
+  on disk, as in `pass --project-config cfg/p.json`. Nothing is renamed, because the
+  revision already holds that spelling.
+- The revision holds the spelling the user typed and the disk was renamed without a
+  commit: rename the entry on disk back to the spelling the revision holds, or commit the
+  rename and pass the spelling on disk.
+- The revision holds neither spelling, or both: the message says so and gives no advice,
+  because no spelling is the right one to move to. It gives none either when git cannot
+  answer.
+
+The check covers every component of the path, and the advice is about the first component
+that differs. It also applies when the file is missing: a missing policy under a parent
+spelled in another case is refused for that parent and is not offered a restore, because
+the restore would write into the other spelling.
+
+A policy that is missing from disk has no spelling on disk to compare, so the revision's
+spelling is used instead. When the revision holds the path in another case than the one
+typed, for example `cfg/P.json` typed while `cfg/p.json` is committed and deleted from
+disk, the scan is refused with `project_config_invalid`, the message gives the revision's
+spelling to pass, and no new policy is offered, because writing one there would replace
+the committed policy under its own name. Passing the revision's spelling gets the usual
+restore offer. This holds for any component of the path and on any file system, since it
+asks the revision and not the disk. When the revision holds several spellings the message
+lists them, and when it holds none the policy is plainly missing.
 
 Only the policy's own path leaves `dirty_worktree`. Every other uncommitted path
 the report did not read still counts when it lies under the roots of the policy.
