@@ -8,7 +8,10 @@ import (
 )
 
 func computeChangedRanges(dir, mergeBaseSHA, path string) ([]codesignal.LineRange, *codesignal.Diagnostic) {
-	output, err := gitrepo.RunBytes(dir, "diff", "--unified=0", "--no-ext-diff", mergeBaseSHA, "HEAD", "--", path)
+	// A patch is where git runs the programs a repository or the environment names for one: an external
+	// diff program (--no-ext-diff) and a textconv driver that .gitattributes selects (--no-textconv). The
+	// hunk headers this reads do not need either, and a read-only scan must not execute them.
+	output, err := gitrepo.RunBytes(dir, "diff", "--unified=0", "--no-ext-diff", "--no-textconv", mergeBaseSHA, "HEAD", "--", path)
 	if err != nil {
 		return nil, &codesignal.Diagnostic{
 			Path:    path,
