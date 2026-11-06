@@ -21,6 +21,7 @@ const (
 	restoreMergeConflict
 	restoreStagedNotCommitted
 	restoreSkipWorktreeMarked
+	restoreUnmergedNotCommitted
 )
 
 const regularFileModeMask = "100"
@@ -68,7 +69,8 @@ func newGitFailure(question string, err error) *gitFailure {
 // skip-worktree mark keeps git restore from writing the file. A staged deletion
 // is not an edit a restore loses: it restores the committed blob. When nothing
 // commits the path but the index holds a copy, the verdict says so, so a new
-// policy is not offered over staged work. When git cannot answer it declines
+// policy is not offered over staged work; an unmerged copy is told apart, because
+// git restore refuses it. When git cannot answer it declines
 // too, so an operational failure is never taken for a clean miss. run is the git
 // runner, a parameter so a caller's seam decides what git says.
 func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudgment {
@@ -98,6 +100,8 @@ func verdictWithoutIndex(committed gitrepo.TreeEntry, found bool) restoreVerdict
 
 func verdictFor(committed gitrepo.TreeEntry, found bool, staged []gitrepo.IndexEntry, unread, sparse bool) restoreVerdict {
 	switch {
+	case !found && holdsUnmergedEntry(staged):
+		return restoreUnmergedNotCommitted
 	case !found && len(staged) > 0:
 		return restoreStagedNotCommitted
 	case !found:

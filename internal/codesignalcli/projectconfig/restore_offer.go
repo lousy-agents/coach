@@ -70,6 +70,14 @@ func stagedOnlyOffer(repoPath string, blocked bool) restoreOffer {
 	}
 }
 
+// unmergedNotCommittedOffer is for a policy that is not committed and whose index
+// entry is unmerged. git restore refuses an unmerged path, so no command is
+// printed, and a new policy would replace the conflicting work.
+var unmergedNotCommittedOffer = restoreOffer{
+	remedy: projectreadiness.RemedyNone,
+	text:   ". It is not committed, but the index holds an unresolved merge conflict for it, so Coach offers no new policy and a restore cannot bring it back; resolve the conflict with git status, then run again",
+}
+
 // committedLinkOffer is for a policy committed as a symbolic link. Restoring it
 // would recreate a link the scan refuses, and a new file would not be the
 // committed policy.
@@ -118,6 +126,8 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 		return restoreOffer{}, false
 	case verdict == restoreUndecidable:
 		return undecidableOffer(judgment.failure), true
+	case verdict == restoreUnmergedNotCommitted:
+		return unmergedNotCommittedOffer, true
 	case verdict == restoreStagedNotCommitted:
 		return stagedOnlyOffer(repoPath, blocked), true
 	case verdict == restoreMergeConflict:
