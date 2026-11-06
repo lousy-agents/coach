@@ -16,15 +16,18 @@ import (
 // A file inside a submodule cannot be committed here at all, which is a different way out from
 // committing it, so it has a word of its own; and when git cannot say whether the path lies inside
 // one, the message gives no advice, because "commit the file" is the circular advice for that case.
-func UncommittedPolicy(run gitrepo.Runner, dir, revision, repoPath string) (string, projectreadiness.PolicyCause) {
+// The error is that unanswered question, for a caller that reports a failure of git apart from a
+// verdict about the policy: the scan words it in its message, and readiness returns it.
+func UncommittedPolicy(run gitrepo.Runner, dir, revision, repoPath string) (string, projectreadiness.PolicyCause, error) {
 	submodule, err := enclosingSubmodule(run, dir, repoPath)
 	switch {
 	case err != nil:
-		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): Coach could not check %s, so it gives no advice", repoPath, revision, newGitFailure("whether it lies inside a submodule", err).describe()), projectreadiness.CauseGitUnreadable
+		failure := newGitFailure("whether it lies inside a submodule", err)
+		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): Coach could not check %s, so it gives no advice", repoPath, revision, failure.describe()), projectreadiness.CauseGitUnreadable, failure
 	case submodule != "":
-		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here (project_config_invalid): name a policy that is committed in this repository's own files", repoPath, submodule), projectreadiness.CauseInSubmodule
+		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here (project_config_invalid): name a policy that is committed in this repository's own files", repoPath, submodule), projectreadiness.CauseInSubmodule, nil
 	}
-	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision), projectreadiness.CauseNotCommitted
+	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision), projectreadiness.CauseNotCommitted, nil
 }
 
 // enclosingSubmodule is the submodule whose checkout holds repoPath, or "" when none does. The

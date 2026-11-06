@@ -19,7 +19,7 @@ func checkExplicitPolicy(dir, revision, policyPath string) (projectreadiness.Che
 		return projectreadiness.Check{}, nil, err
 	}
 	if status != nil && status.GitFailure != nil {
-		return projectreadiness.Check{}, nil, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: --project-config %q: %s", policyPath, status.GitFailure), Cause: errors.Unwrap(status.GitFailure)}
+		return projectreadiness.Check{}, nil, unansweredQuestion(policyPath, status.GitFailure)
 	}
 	return explicitPolicyCheck(status, dir, revision, policyPath)
 }
@@ -67,8 +67,18 @@ func checkPolicyOnDisk(dir, revision, policyPath string) (projectreadiness.Check
 	check, roots, err := checkPolicy(dir, revision, policyPath)
 	if err == nil && check.Code == projectreadiness.GapPolicyMissing {
 		check.Remedy = projectreadiness.RemedyNone
-		message, cause := projectconfig.UncommittedPolicy(runReadinessGit, dir, revision, policyPath)
+		message, cause, unanswered := projectconfig.UncommittedPolicy(runReadinessGit, dir, revision, policyPath)
+		if unanswered != nil {
+			return projectreadiness.Check{}, nil, unansweredQuestion(policyPath, unanswered)
+		}
 		check = check.WithCause(message, cause)
 	}
 	return check, roots, err
+}
+
+// unansweredQuestion is a question about the policy that git could not answer, as readiness reports it:
+// an operational error that keeps git's own error as its cause, whichever state the policy was in, so a
+// failure of git never reads as a verdict about the policy.
+func unansweredQuestion(policyPath string, failure error) error {
+	return &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: --project-config %q: %s", policyPath, failure), Cause: errors.Unwrap(failure)}
 }
