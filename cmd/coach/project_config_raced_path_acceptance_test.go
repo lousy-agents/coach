@@ -96,7 +96,10 @@ func runRacedScan(limit time.Duration, repo string) (stdout, stderr []byte, exit
 
 // expectRacedScanInvariants runs one scan against the raced path and requires what must hold whichever
 // entry it met: it ends, it does not panic, it prints no report beside a refusal, and it prints nothing
-// from the file outside the repository.
+// from the file outside the repository. This is a smoke test for hangs and crashes under a race. That a
+// symbolic link out of the repository is refused and never read is pinned by the deterministic specs in
+// project_config_hostile_input_acceptance_test.go, because a scan that did read the file would exit 0
+// and print nothing from it, so no assertion here could tell.
 func expectRacedScanInvariants(repo string) {
 	begin := time.Now()
 	stdout, stderr, exitCode := runRacedScan(racedScanCeiling+15*time.Second, repo)
@@ -111,7 +114,7 @@ func expectRacedScanInvariants(repo string) {
 }
 
 var _ = Describe("coach codesignal: an explicit --project-config path raced on disk while the scan runs", func() {
-	It("never hangs, panics, prints a report beside a refusal, or reads a file outside the repository", func() {
+	It("never hangs, panics, prints a report beside a refusal, or prints anything from a file outside the repository", func() {
 		repo := commitExplicitPolicyRepo()
 		side := GinkgoT().TempDir()
 		outside := filepath.Join(side, "outside.json")

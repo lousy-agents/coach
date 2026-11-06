@@ -86,6 +86,9 @@ var causeRows = []causeRow{
 		Expect(os.MkdirAll(filepath.Join(repo, "dir.json"), 0o755)).To(Succeed())
 	}},
 	{"a policy file the process cannot read", "locked.json", "policy_invalid", "unreadable_on_disk", func(repo string) {
+		if os.Geteuid() == 0 {
+			Skip("root can read a mode 000 file, so this state cannot be built")
+		}
 		writeWorktreeFile(repo, "locked.json", singleRootPolicyJSON)
 		Expect(os.Chmod(filepath.Join(repo, "locked.json"), 0o000)).To(Succeed())
 		DeferCleanup(func() { _ = os.Chmod(filepath.Join(repo, "locked.json"), 0o644) })

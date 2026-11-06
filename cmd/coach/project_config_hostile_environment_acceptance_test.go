@@ -38,34 +38,47 @@ var _ = Describe("coach codesignal: a hostile git configuration or environment e
 	// Each program has its own marker, so a failure names the one that ran. The textconv driver and the
 	// external diff program are not here: git runs them on a patch, and a scan prints one only for a file
 	// that changed between the base and HEAD (hostile_diff_driver_acceptance_test.go).
-	DescribeTable("runs no program the repository or the environment names, whichever channel names it",
-		func(arrange func(repo, program string, installHook func(name string)) []string, programChannel string) {
-			marker := filepath.Join(GinkgoT().TempDir(), "ran")
-			program := script(marker)
-			repo := commitExplicitPolicyRepo()
-			// installed after the setup commit, which would otherwise run them itself
-			installHook := func(name string) {
-				hook := filepath.Join(repo, ".git", "hooks", name)
-				Expect(os.WriteFile(hook, []byte("#!/bin/sh\ntouch '"+marker+"'\n"), 0o755)).To(Succeed())
-			}
-			// a changed file in the worktree, so a read that is allowed to refresh the index has a reason to
-			Expect(os.WriteFile(filepath.Join(repo, "a.go"), []byte(minimalGoSource+"// changed\n"), 0o644)).To(Succeed())
-			env := append(os.Environ(), arrange(repo, program, installHook)...)
+	expectNoProgramRan := func(arrange func(repo, program string, installHook func(name string)) []string, programChannel string) {
+		marker := filepath.Join(GinkgoT().TempDir(), "ran")
+		program := script(marker)
+		repo := commitExplicitPolicyRepo()
+		// installed after the setup commit, which would otherwise run them itself
+		installHook := func(name string) {
+			hook := filepath.Join(repo, ".git", "hooks", name)
+			Expect(os.WriteFile(hook, []byte("#!/bin/sh\ntouch '"+marker+"'\n"), 0o755)).To(Succeed())
+		}
+		// a changed file in the worktree, so a read that is allowed to refresh the index has a reason to
+		Expect(os.WriteFile(filepath.Join(repo, "a.go"), []byte(minimalGoSource+"// changed\n"), 0o644)).To(Succeed())
+		env := append(os.Environ(), arrange(repo, program, installHook)...)
 
-			for _, args := range [][]string{
-				{"codesignal", "--base", "HEAD", "--project-config", explicitPolicyPath, "--format=json"},
-				{"codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json"},
-			} {
-				_, stderr, exitCode := runCoachBinary(commandPath, repo, env, args...)
-				Expect(exitCode).To(BeNumerically("<=", 1), "stderr: %s", stderr)
-			}
+		for _, args := range [][]string{
+			{"codesignal", "--base", "HEAD", "--project-config", explicitPolicyPath, "--format=json"},
+			{"codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json"},
+		} {
+			_, stderr, exitCode := runCoachBinary(commandPath, repo, env, args...)
+			Expect(exitCode).To(BeNumerically("<=", 1), "stderr: %s", stderr)
+		}
 
-			Expect(marker).NotTo(BeAnExistingFile(), "git ran a program named by "+programChannel)
-		},
+		Expect(marker).NotTo(BeAnExistingFile(), "git ran a program named by "+programChannel)
+	}
+
+	// The one hook a read-only scan can trigger: git runs it when a read rewrites the index. Dropping
+	// --no-optional-locks from the git arguments makes this entry fail.
+	DescribeTable("runs no hook that a read-only scan can trigger",
+		expectNoProgramRan,
 		Entry("the post-index-change hook, which git runs when a read rewrites the index", func(_, _ string, installHook func(string)) []string {
 			installHook("post-index-change")
 			return nil
 		}, "the post-index-change hook"),
+	)
+
+	// No read Coach runs updates a ref, checks out, merges, starts a pager, asks for a credential, opens an
+	// ssh connection or opens an editor, and the harness has no terminal and no remote, so none of these
+	// entries can fail today. They are tripwires for a read that would, each naming its program, and they
+	// pin nothing else. (The ssh channel is pinned where it can fail: the partial-clone specs, whose
+	// lazy fetch would run it.)
+	DescribeTable("names the hooks and environment programs that no read Coach runs can reach: these entries cannot fail today and pin nothing but the names",
+		expectNoProgramRan,
 		Entry("the post-checkout hook", func(_, _ string, installHook func(string)) []string {
 			installHook("post-checkout")
 			return nil
@@ -78,9 +91,6 @@ var _ = Describe("coach codesignal: a hostile git configuration or environment e
 			installHook("post-merge")
 			return nil
 		}, "the post-merge hook"),
-		// No read Coach runs starts a pager, asks for a credential, opens an ssh connection or opens an
-		// editor, so these entries pass for the right reason today. They stand guard for a read that
-		// would, and each names its variable when it fails.
 		Entry("GIT_PAGER", func(_, program string, _ func(string)) []string { return []string{"GIT_PAGER=" + program} }, "GIT_PAGER"),
 		Entry("PAGER", func(_, program string, _ func(string)) []string { return []string{"PAGER=" + program} }, "PAGER"),
 		Entry("GIT_ASKPASS", func(_, program string, _ func(string)) []string { return []string{"GIT_ASKPASS=" + program} }, "GIT_ASKPASS"),
