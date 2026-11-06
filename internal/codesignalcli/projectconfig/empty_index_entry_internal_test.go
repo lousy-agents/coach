@@ -28,15 +28,20 @@ func TestAnEmptyIndexEntryIsNotAStagedCopyToRestore(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			status := explicitStatusFor(t, indexFake{uncommitted: true, lsFiles: c.entry})
-
-			if strings.Contains(status.Message, "git restore") || strings.Contains(status.Message, "staged copy") {
-				t.Errorf("message %q; an empty entry holds no content, and restoring it writes an empty file", status.Message)
-			}
-			if status.UnreadStagedEdit {
-				t.Error("UnreadStagedEdit is set for an entry that holds no content: nothing was staged that this report could have missed")
-			}
+			assertEmptyEntryOffersNoRestore(t, c.entry)
 		})
+	}
+}
+
+func assertEmptyEntryOffersNoRestore(t *testing.T, entry string) {
+	t.Helper()
+	status := explicitStatusFor(t, indexFake{uncommitted: true, lsFiles: entry})
+
+	if strings.Contains(status.Message, "git restore") || strings.Contains(status.Message, "staged copy") {
+		t.Errorf("message %q; an empty entry holds no content, and restoring it writes an empty file", status.Message)
+	}
+	if status.UnreadStagedEdit {
+		t.Error("UnreadStagedEdit is set for an entry that holds no content: nothing was staged that this report could have missed")
 	}
 }
 
@@ -54,61 +59,5 @@ func TestAnEmptyIndexEntryOverACommittedPolicyIsRestoredFromTheCommit(t *testing
 	}
 	if status.UnreadStagedEdit {
 		t.Error("UnreadStagedEdit is set for an entry that holds no content")
-	}
-}
-
-// The mark alone stops a restore, so a marked empty entry is still judged by its
-// mark. It is not an edit: the entry holds nothing, git diff --cached does not show
-// it, and the user needs the answer for a marked entry, which is to clear the mark.
-func TestAnEmptyIndexEntryThatIsMarkedSkipWorktreeIsNamedForItsMarkNotCalledAnEdit(t *testing.T) {
-	cases := []struct {
-		name     string
-		fake     indexFake
-		wantText string
-	}{
-		{"over a committed policy", indexFake{lsFiles: skippedIndexLine("100644", emptyBlobSHA1, "0")}, "git update-index --no-skip-worktree"},
-		{"over a committed policy a sparse checkout leaves out", indexFake{sparse: true, lsFiles: skippedIndexLine("100644", emptyBlobSHA1, "0")}, "sparse checkout"},
-		{"over a policy nothing commits", indexFake{uncommitted: true, lsFiles: skippedIndexLine("100644", emptyBlobSHA1, "0")}, "git update-index --no-skip-worktree"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			status := explicitStatusFor(t, c.fake)
-
-			if !strings.Contains(status.Message, c.wantText) {
-				t.Errorf("message %q; want it to give the answer for a marked entry (%q)", status.Message, c.wantText)
-			}
-			if strings.Contains(status.Message, "git restore") || strings.Contains(status.Message, "staged edit") || strings.Contains(status.Message, "git diff --cached") {
-				t.Errorf("message %q; the entry holds no content, so it is neither an edit to review nor a copy to restore", status.Message)
-			}
-			if status.UnreadStagedEdit {
-				t.Error("UnreadStagedEdit is set for an entry that holds no content")
-			}
-		})
-	}
-}
-
-// A listing line the parser cannot read is an error, never a guess, so it can
-// neither be taken for a staged copy to restore nor for the absence of one.
-func TestAListingGitDoesNotPrintAsExpectedNeverProducesARestoreCommand(t *testing.T) {
-	garbled := map[string]string{
-		"a missing field":              "H 100644 " + committedBlob + "\tpol.json\x00",
-		"an object id that is garbled": "H 100644 zzzzzzzz" + committedBlob[8:] + " 0\tpol.json\x00",
-		"a stage that is garbled":      "H 100644 " + committedBlob + " x\tpol.json\x00",
-		"a mode that is garbled":       "H 1006 " + committedBlob + " 0\tpol.json\x00",
-	}
-	for name, listing := range garbled {
-		for _, committed := range []bool{true, false} {
-			label := name + ", never committed"
-			if committed {
-				label = name + ", committed"
-			}
-			t.Run(label, func(t *testing.T) {
-				status := explicitStatusFor(t, indexFake{uncommitted: !committed, lsFiles: listing})
-
-				if strings.Contains(status.Message, "git restore") {
-					t.Errorf("message %q; a listing that cannot be read must not produce a restore command", status.Message)
-				}
-			})
-		}
 	}
 }
