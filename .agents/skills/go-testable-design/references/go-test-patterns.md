@@ -40,42 +40,78 @@ writing the test; do not infer it from this document.
 
 Run these checks and combine the results. Check 1 alone is enough to stop when
 it finds an existing acceptance suite. Check 2 is never enough on its own:
-many modules pull in assertion helpers (especially `testify/assert` or
-`testify/require`) for unit tests without adopting that library as an
-acceptance harness.
+a test file can import a runner package without the repository having adopted
+it as its acceptance harness.
 
 ```bash
 # 1. Existing acceptance suites, by filename or directory
-find . -name '*_test.go' | grep -Ei '(_acceptance_test\.go|/(acceptance|e2e|features|specs?)/)'
+find . \( -name vendor -o -name testdata \) -prune -o -name '*_test.go' -print |
+  grep -Ei '(_acceptance_test\.go|/(acceptance|e2e)/)'
 
-# 2. Suite-harness or spec-runner modules already in the dependency graph.
-#    Match suite/spec packages, not bare assertion helpers: `testify` alone is
-#    not a signal — only `testify/suite` (or another runner below) counts.
-find . -name go.mod -exec grep -Ein \
-  '(ginkgo|gomega|testify/suite|godog|goconvey|check\.v1)' {} +
+# 2. Suite-harness or spec-runner packages this repository's tests import.
+#    Match runner packages, not assertion helpers: `testify/assert`,
+#    `testify/require`, and `gomega` (which runs under stdlib `testing` via
+#    `NewWithT`) are not signals.
+find . \( -name vendor -o -name testdata \) -prune -o -name '*_test.go' -exec grep -HEn \
+  '^[[:space:]]*(import[[:space:]]+)?([._[:alnum:]]+[[:space:]]+)?"[^"]*(onsi/ginkgo|testify/suite|godog|goconvey|check\.v1)[^"]*"[[:space:]]*(//.*|/\*.*)?$' {} +
 
-# 3. A suite entrypoint — the bootstrap that hands control to a runner.
-#    `func TestMain` on its own does NOT count: it is routine stdlib plumbing
-#    for flag parsing, fixture setup, or container teardown. Treat it as an
-#    entrypoint signal only when check 1 or check 2 also matched.
-find . -name '*_test.go' -exec grep -En '(RunSpecs|suite\.Run|godog\.TestSuite|func TestMain)' {} +
+# 3. A suite entrypoint — the call that hands control to a runner — or, when
+#    the tests import godog, the Gherkin `.feature` files a godog suite runs.
+find . \( -name vendor -o -name testdata \) -prune -o -name '*_test.go' -exec grep -HEn \
+  '(RunSpecs|suite\.Run|godog\.TestSuite|godog\.RunWithOptions)' {} +
+find . \( -name vendor -o -name testdata \) -prune -o -name '*_test.go' -exec grep -lHE \
+  '^[[:space:]]*(import[[:space:]]+)?([._[:alnum:]]+[[:space:]]+)?"[^"]*godog[^"]*"[[:space:]]*(//.*|/\*.*)?$' {} + | grep -q . &&
+  find . \( -name vendor -o -name testdata \) -prune -o -name '*.feature' -print
 
 # 4. Declared acceptance targets
-find . \( -name Makefile -o -name '*.toml' -o -name 'Taskfile.y*ml' \
-  -o -path '*/.github/workflows/*' \) -exec grep -Ein 'acceptance|e2e' {} +
+find . \( -name vendor -o -name testdata \) -prune -o \( -name Makefile -o -name '*.toml' \
+  -o -name 'Taskfile.y*ml' -o -path '*/.github/workflows/*' \) -exec grep -HEin 'acceptance|e2e' {} +
 
 # 5. Stated project policy
-find . \( -name AGENTS.md -o -name CLAUDE.md -o -name CONTRIBUTING.md \) \
-  -exec grep -Ein 'acceptance|e2e|spec runner|test (harness|framework|suite)' {} +
+find . \( -name vendor -o -name testdata \) -prune -o \( -name AGENTS.md -o -name CLAUDE.md \
+  -o -name CONTRIBUTING.md \) -exec grep -HEin 'acceptance|e2e|spec runner|test (harness|framework|suite)' {} +
 ```
 
 Every check searches the tree instead of naming files that may not exist, so a
 repository without a `go.mod` at the root, a task runner, or agent docs simply
 returns nothing. Empty output is a clean "no signal", not a tooling failure.
+Each check prunes `vendor/` and `testdata/`: a vendored dependency's own suite,
+Makefile, or docs, and fixture files kept as test data, are not this
+repository's conventions.
+
+Check 2 reads imports, not `go.mod`, for two reasons. `go.mod` lists modules,
+not packages, so `testify/suite` never appears in it — only
+`github.com/stretchr/testify`, which unit-test-only repositories require too.
+And a runner line marked `// indirect` arrived through some other dependency:
+in a tidy Go 1.17+ `go.mod`, any module that a package or test in the main
+module imports is listed as a direct requirement, so an indirect runner is
+never this repository's choice. (That assumes `go mod tidy` has been run; an
+untidy `go.mod` can list a module nobody imports, which is why imports, not
+the require block, are the signal.)
+
+Check 3 does not match `func TestMain`. A `TestMain` is routine stdlib
+plumbing for flag parsing, fixture setup, or container teardown; one that does
+bootstrap a suite calls the runner (`godog.TestSuite{...}.Run()`, the older
+`godog.RunWithOptions(...)`, `RunSpecs`), and that call is what check 3
+matches. Check 2 likewise matches only import lines — a bare `import "…"`,
+an import-block entry, or an aliased or dot import, each ending at the closing
+quote or a comment — so a string literal that happens to mention a runner
+does not count, whether inline or as an element of a multi-line table (`"…",`).
+A raw string whose own lines are Go import lines, or a `return` of a runner
+path on its own line, still matches.
+
+Check 1 does not match `features/`, `spec/`, or `specs/` directories by name. Go
+packages are routinely named `features` (feature flags) or `spec` (API or
+config specs), so a directory name alone reads an ordinary package as an
+acceptance suite. A godog suite is recognized instead by its `.feature` files
+in check 3, which that check lists only when a test file imports godog — so
+another language's Cucumber files, or `.feature` files next to a different
+runner, are not a Go convention — and a Ginkgo suite under `specs/` is
+recognized by its import and `RunSpecs` call.
 
 Reading the result:
 
-- **A convention exists** (an acceptance suite file; a runner module from
+- **A convention exists** (an acceptance suite file; a runner import from
   check 2 *plus* a matching entrypoint from check 1 or 3; or a written
   policy): write the acceptance test in that form, matching the existing
   suite's file layout, naming, and bootstrap. Do not introduce a second
@@ -84,16 +120,21 @@ Reading the result:
   written the way the rest of the repository writes tests. Do NOT add a spec
   runner, BDD framework, or assertion library to a repository that does not
   already depend on one — that is a dependency decision owned by the module's
-  maintainers, not something to settle inside a test. A `go.mod` that only
-  lists unit-test assertion helpers is still "no convention".
-- **Signals conflict** (e.g. a runner sits in `go.mod` but the package under
+  maintainers, not something to settle inside a test. Tests that only import
+  unit-test assertion helpers are still "no convention".
+- **Signals conflict** (e.g. a runner is imported elsewhere but the package under
   test uses stdlib tables): follow the nearest existing acceptance suite, and
   state in your report which signal you followed and which you set aside.
 
 ### The Same Criterion in Two Acceptance Forms
 
 The criterion does not change; only the vehicle does. Both versions below make
-the rule legible from structure alone.
+the rule legible from structure alone. Both treat `Withdraw` as a library's
+exported API and the test as its consumer's scenario, so calling it is the
+boundary for this criterion. In a program whose users
+reach `Withdraw` through a command or endpoint, the acceptance test drives that
+command or endpoint (the assembled server), and tests like these are its unit
+tests.
 
 Standard library `testing` — the form to use when the repository has no
 runner:
@@ -147,7 +188,10 @@ For a new feature or a bug fix, the first failing test belongs at the public
 boundary — the CLI invocation, the HTTP request, or the exported call a user
 actually makes. Write it in whichever acceptance form the detection above
 identified; the walkthrough uses standard-library `testing` because that is
-the form for a repository with no runner.
+the form for a repository with no runner. It treats `Quoter` as a library's
+exported API whose consumer supplies the rate source; in a command or service,
+the boundary test drives the command or endpoint instead, and a test like this
+one is a unit test of `Quoter`.
 
 1. **Write the boundary test first, calling the API you wish existed.** The
    test is that API's first consumer, so let it invent the seam instead of
@@ -282,8 +326,9 @@ line-by-line to reconstruct the rule:
 // AC-1.8: FetchFile must re-check ctx.Err() after decoding and before
 // returning, so a context canceled mid-decode is still honored.
 func TestFetchFile_ChecksCancellationAfterDecode(t *testing.T) {
-    ctx := &cancelAfterNCallsContext{Context: context.Background(), n: 1}
-    client := newTestClient(t, canned200Response)
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    client := newTestClient(t, cancelOnBodyRead(cancel, canned200Response))
 
     _, _, err := client.FetchFile(ctx, someRef)
 
@@ -300,18 +345,19 @@ explanation:
 ```go
 // AC-1.8
 func TestFetchFile_ChecksCancellationAfterDecode(t *testing.T) {
-    ctx := givenContextCanceledAfter(1, "the decode step")
-    client := givenClientReturning(t, canned200Response)
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    client := givenClientReturning(t, givenResponseCanceledWhileDecoding(cancel, canned200Response))
 
     _, _, err := whenFetchFile(ctx, client, someRef)
 
     thenErrorIs(t, err, context.Canceled, "FetchFile must honor cancellation observed after decoding")
 }
 
-// givenContextCanceledAfter returns a context that reports nil from Err()
-// for the first n calls, then context.Canceled, isolating exactly the check
-// under test (labeled by where) from any earlier cancellation checks.
-func givenContextCanceledAfter(n int, where string) context.Context { /* ... */ }
+// givenResponseCanceledWhileDecoding wraps respond so that the first Read of
+// the response body cancels the context: cancellation arrives during
+// decoding, however many times FetchFile checked the context before that.
+func givenResponseCanceledWhileDecoding(cancel context.CancelFunc, respond responseFunc) responseFunc { /* ... */ }
 
 func givenClientReturning(t *testing.T, respond responseFunc) *FileClient {
     t.Helper()
@@ -460,8 +506,9 @@ dependencies.
   touching real stdout/files.
 - Inject interfaces or function fields (e.g. a `Sleeper`) instead of
   calling concrete implementations directly, so tests can substitute fakes.
-- Use spies to assert ordering and interaction between collaborators, not
-  just final state.
+- Use spies when the interaction itself is the contract — a call to a
+  boundary, or an order the protocol requires (a countdown that must sleep
+  between writes) — not just final state.
 - Prefer constructors such as `NewService(store Store, clock Clock)` or
   `NewHandler(service Service)` for code with external dependencies.
 - Keep concrete dependencies in composition roots; accept interfaces or
@@ -495,15 +542,31 @@ Check this rather than trusting it, with two commands. The first walks the
 module's own packages the target reaches and prints the packages *they*
 import directly, then greps for IO. The second drops the module's own packages
 and reports the third-party ones that remain. Each is a single `go list` — no
-`xargs` second hop.
+`xargs` second hop — whose output is captured before it is filtered, so each
+check can exit 0 (clean), 1 (found something to report), or 2 (did not run).
+For the third-party check, 1 means the list needs review, not that the package
+violates anything.
 
 ```bash
 # stdlib IO reached through your own packages
-go list -deps -f '{{if and .Module .Module.Main}}{{range .Imports}}{{.}}{{"\n"}}{{end}}{{end}}' ./pricing |
-  sort -u | grep -E '^(os|net|log|database/sql)(/|$)'
+( imports=$(go list -deps -f '{{if and .Module .Module.Main}}{{range .Imports}}{{.}}{{"\n"}}{{end}}{{end}}' ./pricing) ||
+    { echo "IO check did not run" >&2; exit 2; }
+  printf '%s\n' "$imports" | sort -u | grep -E '^(os|net|log|database/sql)(/|$)' | grep -vxE 'net/(url|netip)' && exit 1
+  echo "no IO imports" )
 # third-party dependencies
-go list -deps -f '{{if and .Module (not .Module.Main)}}{{.ImportPath}}{{end}}' ./pricing
+( deps=$(go list -deps -f '{{if and .Module (not .Module.Main)}}{{.ImportPath}}{{end}}' ./pricing) ||
+    { echo "third-party check did not run" >&2; exit 2; }
+  [ -z "$deps" ] && { echo "no third-party dependencies"; exit 0; }
+  printf '%s\n' "$deps"; exit 1 )
 ```
+
+Capture-then-check is load-bearing. Piped straight into `grep`, a `go list`
+that failed on a typo'd path produces empty input, and `grep` exits 1 — the
+same status a pure package gets — so the failure reads as a pass. `set -o
+pipefail` does not help: it reports `grep`'s 1 in both cases. Checking
+`go list`'s own status before filtering is what turns "did not run" into its
+own exit code. The trailing `grep -vxE` keeps `net/url` and `net/netip`, which
+parse values and do no IO, from counting as network access.
 
 Keep the two separate. A single `go list -deps` piped into one IO grep also
 matches the stdlib's own internals: `fmt` and `encoding/json` both depend on
@@ -521,16 +584,17 @@ invocation — it never shells out to a second `go list` via `xargs`. A two-step
 used to print a confident, entirely fabricated impurity report (bare `xargs`
 falls back to the package in the current directory).
 
-A package that is still pure prints nothing from either command (grep exits 1
-on no match):
+A package that is still pure passes both checks with exit 0:
 
 ```
 $ <io-check>
+no IO imports
 $ echo $?
-1
+0
 $ <third-party-check>
+no third-party dependencies
 $ echo $?
-1
+0
 ```
 
 The same package after someone reaches for `os` and `net/http` inside it:
@@ -539,6 +603,8 @@ The same package after someone reaches for `os` and `net/http` inside it:
 $ <io-check>
 net/http
 os
+$ echo $?
+1
 ```
 
 A package that has picked up a third-party dependency:
@@ -546,7 +612,23 @@ A package that has picked up a third-party dependency:
 ```
 $ <third-party-check>
 github.com/acme/rates/rates
+$ echo $?
+1
 ```
+
+A typo'd path (`./pricng`):
+
+```
+$ <io-check>
+stat /path/to/module/pricng: directory not found
+IO check did not run
+$ echo $?
+2
+```
+
+When the module's dependencies are not downloaded, the `go list` error differs
+(`missing go.sum entry …` or `module lookup disabled …`), but the check still
+prints "did not run" and exits 2.
 
 That second list is a review list, not a verdict. It is transitive like the
 IO check, so a package whose own imports are entirely stdlib can still list a
@@ -571,7 +653,7 @@ Notes on running them:
   own).
 - `go list` needs the module graph to resolve. If dependencies are not
   downloaded it errors instead of printing packages — that is a check that
-  did not run, not a package that passed.
+  did not run (exit 2), not a package that passed.
 - The symptom that precedes a failing check: a unit test that needs three
   fakes to reach one calculation. Moving that calculation into a package
   with no IO imports usually deletes the fakes outright.
@@ -582,10 +664,13 @@ Concurrent code needs its own deliberate test strategy — non-deterministic
 scheduling means a naive test can pass most of the time and still hide a
 data race.
 
-1. **Benchmark first.** Before introducing goroutines, write a benchmark
+1. **Benchmark first when concurrency is an optimization.** Before
+   introducing goroutines to speed up sequential work, write a benchmark
    (`func BenchmarkX(b *testing.B)`, run with `go test -bench=.`) against
    the sequential implementation to justify the change and to measure the
-   improvement afterward.
+   improvement afterward. Concurrency that is the behavior itself — a
+   server, a background worker, a cancelable pipeline — needs no benchmark
+   to justify it.
 2. **Expect the naive concurrent version to fail or race.** Turning a loop
    body into `go func() { ... }()` without coordination typically returns
    before goroutines finish (an empty/partial result), or — if multiple

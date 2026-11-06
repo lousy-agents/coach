@@ -15,6 +15,18 @@ always, plus the verified checksum or the built commit where the path
 supplies one. Two passes that resolve different identities for the
 same version is a stop, reported under `questions`.
 
+**Target version.** This skill targets coach **v0.11.0 or newer**:
+code-tidy and coach ship as one solution. Record `<binary> --version`
+(a source build and the rank-3 Go backend print `dev`; record the
+module version or built commit with the binary digest instead). When
+the resolved coach is older than v0.11.0 — a PATH coach or a
+repository pin — use it (the pin is the repository's decision), add
+one `questions` line recommending v0.11.0 or newer, and bind every
+flag below to what that binary's `--help` lists. An older coach
+reports none of the incompleteness diagnostics, so record a Tier 3
+with no finding as `tier 3: no findings; completeness not reported by
+coach <ver>`, never clean.
+
 0. **Already provisioned.** `command -v coach` finds one the operator
    installed. Use it; fetch nothing, and do not require mise on this
    path — an offline image with an approved coach is the point. Record
@@ -44,8 +56,9 @@ somewhere else, is then silently bypassed.
    arm64/x86_64, linux x86_64, and windows x86_64 only.
 
 `<ver>` for ranks 2 to 4 is the coach version `mise.toml` /
-`mise.lock` already pins. Default `v0.6.0` only when the repository
-does not pin coach. Do not auto-upgrade a 0.5.0 pin to 0.6.0.
+`mise.lock` already pins. Default `v0.11.0` when the repository does
+not pin coach. Never rewrite a repository's pin; recommend the upgrade
+under `questions` instead.
 
 2. Unverified, portable — the GitHub release through mise:
 
@@ -68,7 +81,9 @@ does not pin coach. Do not auto-upgrade a 0.5.0 pin to 0.6.0.
    window times out behind the remote proxy; 60 s installs in about
    30 s. The module proxy serves an immutable, checksum-database
    backed module for that version; `GOFLAGS=-mod=mod GONOSUMDB=` and
-   friends must not be used to disable that verification.
+   friends must not be used to disable that verification. This backend
+   also prints `dev` for `coach --version`: record the module version
+   (`<ver>`) and the binary's digest.
 
 4. Source build from a scratch clone — anonymous git reads are served
    even where the API is not:
@@ -135,6 +150,18 @@ prelude from project instructions (`nvm use`, `mise install`) is in
 effect before any coach command that needs Node, not only the
 test/lint start-proof.
 
+Pass `--no-interactive` on every scan when `--help` lists it (v0.7+).
+An agent shell can still attach a controlling terminal, and a v0.11
+scan otherwise offers to copy a root `project.json` into
+`.lousy-agents/coach.json` (a worktree write) or starts guided policy
+authoring. The scan command blocks below show the flag; on an older
+coach drop it, or the scan exits 2 as a usage error. Never pass it to
+`--check-project` or the Go `--suggest-project-config`: both reject it
+with exit 2. Do not pass `--min-severity` or `--top`: they withhold
+signals, and Stage A/B needs every one. Do not pass
+`--fail-on-incomplete-coverage`; read incompleteness from the report
+(Incomplete is not clean, below).
+
 ## Skip, do not fail
 
 Read `.cleanup-loop.md` (Prepare already created it), then Edit in
@@ -146,6 +173,9 @@ when:
 - exit 2 for unsupported language or a TypeScript scan that cannot
   resolve a compiler / host Node
 
+A Tier 1 exit 2 for an invalid discovered policy skips Tier 1 only;
+Tier 2 still runs (see Tier 1).
+
 Missing `mise` blocks only when no usable coach is already on PATH
 and the mise ladder is the remaining acquisition route. A PATH coach
 (rank 0) needs no mise. No coach and no mise after the one permitted
@@ -153,8 +183,11 @@ install attempt is a Prepare blocker for the whole skill.
 
 Do **not** run `--prepare-compiler` (TTY, mutates the toolchain).
 Do **not** run `--suggest-project-config --project-language
-typescript` (interactive TTY). Go `--suggest-project-config
---output` is non-interactive and is the onboarding path below.
+typescript` (interactive TTY). Go `--suggest-project-config` never
+prompts, but since v0.11 it writes `.lousy-agents/coach.json` into the
+worktree it runs in, and `--output` accepts only a repository-relative
+path. Run it only as Tier 2's proposal step says: in a detached scratch
+worktree.
 
 Coach window follows Prepare `mode` (do not invent flags):
 
@@ -172,13 +205,24 @@ Successful scan: one JSON object on stdout.
 Always present: `schema_version`, `scope`, `summary`, `signals`,
 `diagnostics`, `coverage`.
 
-`schema_version` is `"1"` without a valid `--project-config`, `"2"`
-with one. Version 2 also has `project_changes`, `project_facts`,
-`project_summary`, `project_coverage`. Architecture findings live in
-`project_changes` (each with `rule_id`, `lifecycle`, `changed`,
-`primary_anchor`, `evidence`, `recommendation`); with `--baseline`
-they are not mirrored into `signals`, so Tier 3 reads
-`project_changes` in both modes.
+`schema_version` is `"2"` whenever a valid policy is selected: by
+`--project-config`, or (v0.11+) by discovery. A scan without
+the flag reads `.lousy-agents/coach.json` at the analyzed revision
+(`HEAD` in both modes), else a schema-valid root `project.json` with a
+`project_config_deprecated` diagnostic. Otherwise `"1"`.
+
+Version 2 also has `project_changes`, `project_facts`,
+`project_summary`, `project_coverage` (`complete`), and
+`layer_membership` when the policy declares layers and the count could
+be computed (`head`, plus `base` in a diff, each `revision`,
+`analyzed_files`, `files_outside_layers`; absent means not computed,
+never zero). TypeScript reports add `project_provenance`
+(`config_digest`, analyzer version and digest) and `project_scope`.
+Architecture findings live in `project_changes` (each with `rule_id`,
+`lifecycle`, `changed`, `primary_anchor`, `evidence`,
+`machine_evidence`, `recommendation`, `config_digest`) and are also
+mirrored into `signals` as `architecture.*` rule IDs, in both modes. So
+Tier 3 reads `project_changes`, and Tier 1 drops `architecture.*`.
 
 Each signal: `path`, `rule_id`, `severity`, `confidence`,
 `why_it_matters`, `recommendation`, `location.start_row` (0-based).
@@ -190,16 +234,66 @@ Exit codes (coach contract):
 - `1` — operational (not a git repo, unresolvable `--base`, I/O).
   Blocker for the coach phase only; skip coach, continue to SOLID.
 - `2` — usage, `project_config_invalid`, unsupported language, or TS
-  compiler/host unresolved. Empty stdout. Skip-with-reason, continue
-  to SOLID. Do not "fix" a config by inventing layers.
+  compiler/host unresolved (`node_unsupported`). Empty stdout.
+  Skip-with-reason, continue to SOLID (except Tier 1 with an invalid
+  discovered policy: go to Tier 2). Do not "fix" a config by
+  inventing layers. Since v0.11 `project_config_invalid` also covers
+  an invalid discovered `.lousy-agents/coach.json` (coach never falls
+  back to `project.json`), and layer prefixes are also rejected when
+  a sibling sorts between an ancestor prefix and its descendant.
+- `3` — only under `--fail-on-incomplete-coverage`, which this skill
+  does not pass. If it appears anyway, the report is on stdout: read it
+  as exit 0 plus incomplete coverage.
 
 Coach analyzes **committed Git objects**, not the dirty worktree.
 Commit a Stage-B fix before the next scan or coach will not see it.
+The same holds for policy: a worktree `.lousy-agents/coach.json` that
+is not committed is ignored (`project_config_uncommitted`).
 Stage-B production edits are **on by default**. Opt out with
 `solid-only` / `no-behavior-change` / prune-comments-only: classify
 Stage-B, list under `questions`, leave the tree unchanged. Legacy
 `allow-behavior-fix` / `allow-behavior-change` is a redundant alias
 for the default coach-loop.
+
+## Incomplete is not clean
+
+Applies to Tier 3 project scans only; Tier 1 drops these items with
+the untrusted policy that produced them. A Tier 3 scan that carries
+any item in the first list is **incomplete**: record the counts on the
+tier's state-file line and one `questions` line, and never report that
+tier as clean. An incomplete Tier 3 does not change `PASS` / `DONE` by
+itself, and none of these items authorizes a policy edit. Each
+diagnostic kind's `base_`-prefixed form (the base side of a diff)
+counts the same.
+
+Makes the tier incomplete:
+
+- `project_import_unresolved`: an in-layer TypeScript import that did
+  not resolve; a broken alias can hide a forbidden edge behind it.
+  Stage B only when the import is itself broken — the file's tests or
+  the compile fail on it; otherwise list it.
+- `project_import_non_literal`: an in-layer `import(expr)` /
+  `require(expr)` no layer rule can place. Rewriting it to a literal
+  changes what loads → Ruling required.
+- `project_coverage.complete` false, `project_coverage_incomplete`, or
+  `project_lifecycle_indeterminate`. For a TypeScript report, coach
+  judges each side from `project_provenance.head` / `.base`
+  `.coverage`: `model` must be `complete`, and `bypass` `complete` or
+  `not_requested`.
+- A scan whose backend saw no code: `project_coverage.counts.files_seen`
+  is 0, or `roots_seen` is 0 where present (TypeScript reports carry
+  no `roots_seen`), or the policy declares `layers` and
+  `layer_membership` is absent. A TypeScript policy scanned without
+  `--project-language typescript` lands here: the Go backend reports a
+  complete model of nothing.
+- `layer_membership.head.files_outside_layers` > 0: record `N of M
+  project files outside every declared layer`, with `base` alongside;
+  `forbidden_imports` covered only the rest. Extending layers is a
+  policy change → one `questions` line, never an edit.
+
+Advisory, not incompleteness:
+
+- `project_external_imports_not_evaluated`: record the count only.
 
 ## Stage classification
 
@@ -286,17 +380,32 @@ state file.
 No `--project-config`. This tier must run even when a project config
 exists, so architecture policy never hides a simple finding.
 
+Since v0.11 the scan discovers policy on its own (JSON consume path)
+at `HEAD` — in PR mode, possibly the PR's own unreviewed policy. So
+Tier 1 consumes only `signals` whose `rule_id` does not start with
+`architecture.`, `diagnostics` whose `kind` does not start with
+`project_` or `base_project_`, and `coverage`; it ignores every
+`project_*` field and `layer_membership`. Architecture is Tier 3's,
+behind the trust bind. When the scan exits 2 with
+`project_config_invalid` naming a discovered policy, no flag turns
+discovery off: record `coach: tier 1 skipped (discovered policy
+invalid at HEAD)`, add one pending ruling naming the file, and go to
+Tier 2, which reads the trusted revision on its own. Any Tier 1 exit 2
+— an invalid discovered policy, or any other — also records
+`withheld: coach-tier-1` in the header, so a later pass re-admits the
+file-local scan (loop-protocol, Reconcile).
+
 PR mode:
 
 ```bash
-<binary> codesignal --format json \
+<binary> codesignal --format json --no-interactive \
   --base <resolved-base> --scope production
 ```
 
 Branch mode:
 
 ```bash
-<binary> codesignal --format json \
+<binary> codesignal --format json --no-interactive \
   --baseline --scope production
 ```
 
@@ -309,11 +418,11 @@ sees the test files. If `--scope all` is also 0, record
 that are in the git scope even when coach `--scope production`
 excluded them (`coverage.excluded` reason `test_only`).
 
-Add `--project-language typescript` in Tier 1 when the in-scope set
-contains TS/TSX **and** `--help` lists that flag (normal coach
-scan-set item; do not invent flags). Without `--project-config` some
-coach builds treat language as a no-op — still bind to `--help`.
-File-local rules still fire on Go/TS/TSX paths from the diff.
+Do **not** add `--project-language` in Tier 1. File-local rules fire
+on Go/TS/TSX paths without it. Since v0.11 the flag makes a discovered
+TypeScript policy start the TypeScript project backend, so a host
+without a supported Node exits 2 (`node_unsupported`) and the tier
+loses every file-local signal. Project-language analysis is Tier 3's.
 
 Cycle ≤5 (skip the edit/commit steps under solid-only opt-out —
 classify and list only):
@@ -340,7 +449,8 @@ step 6, not a coach-cycle action.
 Architecture policy decides what Tier 3 reports and which Stage-B
 edits follow, so it may never come from the change under review. In
 `mode: pr` the trusted revision is the **merge base**, not `HEAD`:
-a PR can add or edit `project.json`, `README.md`, or `AGENTS.md` and
+a PR can add or edit `.lousy-agents/coach.json`, `project.json`,
+`README.md`, or `AGENTS.md` and
 would otherwise have its own claimed rules accepted as policy before
 anyone reviewed them. So:
 
@@ -357,20 +467,22 @@ anyone reviewed them. So:
 
 Reading policy at `<merge-base>` is necessary and not sufficient.
 `--base` selects the diff comparison, not the policy revision: coach
-v0.6.0 loads `--project-config` at `HEAD` in diff mode
-(`runDiffAnalysis` hands `headSHA` to `prepareProjectAnalysis`, which
-runs `git show <rev>:<path>`), and `--baseline` / `--check-project`
-resolve `HEAD` too (`ResolveBaselineRevision` is `resolveHEAD`).
+(v0.6.0 through v0.11.0) loads the policy at `HEAD` in diff mode
+(coach reads the policy blob at `HEAD`, and v0.11 discovery reads
+that same revision), and `--baseline` / `--check-project` resolve
+`HEAD` too.
 Detecting an approved config at the merge base and then passing its
 **path** to coach hands the scan whatever that path holds at `HEAD`.
 
 So compare the bytes before the readiness probe and before Tier 3:
 
 ```bash
+set -o pipefail
 cfg=<detected-path>
 git cat-file -e "HEAD:$cfg"   # presence first; absent is its own reason
 trusted="pcfg_$(git show "<rev>:$cfg" | sha256sum | cut -d' ' -f1)"
 athead="pcfg_$(git show "HEAD:$cfg" | sha256sum | cut -d' ' -f1)"
+test ${#trusted} -eq 69 && test ${#athead} -eq 69   # no sha256sum → stop, never a match
 ```
 
 The presence test is not redundant. A missing blob makes `git show`
@@ -394,26 +506,60 @@ but the recorded reason would read "differs" for a file the PR deleted.
 coach reports.
 
 This gate does not read the scope list, and that is what makes it
-load-bearing: a `--glob pkg/**` leaves a changed `project.json` out of
+load-bearing: a `--glob pkg/**` leaves a changed policy file out of
 scope, so the ruling bullet above never fires while the swapped policy
 still governs the scan.
 
-Detection, in order, against that trusted revision `<rev>`:
+Detection, in order, against that trusted revision `<rev>`.
+`.lousy-agents/coach.json` is coach's policy path for every release
+from v0.11 on, so the skill favors it: only an explicit user choice
+outranks it, and whenever a file the user did not name ends up as the
+policy, add one `questions` line recommending the move to
+`.lousy-agents/coach.json`.
 
 1. A path the user named in the invocation, if
-   `git cat-file -e "<rev>:<path>"` succeeds (or at `HEAD` when the
-   user named it explicitly).
-2. `git cat-file -e "<rev>:project.json"`.
-3. A repository-relative path recorded as the coach
+   `git cat-file -e "HEAD:<path>"` succeeds: a user-named path is
+   trusted at `HEAD` (Whose policy is it).
+2. `git cat-file -e "<rev>:.lousy-agents/coach.json"` — coach's
+   canonical path. When it exists it is the policy, even if
+   a root `project.json` disagrees (coach's own precedence); when it is
+   invalid, coach does not fall back, so neither does this skill:
+   record the reason and skip Tier 3.
+3. A root `project.json` at `<rev>` — legacy, and only when it is a
+   coach policy. Coach reads a root `project.json` only when it is
+   schema-valid, so check the trusted blob, never a probe of the
+   worktree file (in PR mode that is the PR's version):
+
+   ```bash
+   command -v jq >/dev/null || echo "policy detection: no JSON tool"
+   git show "<rev>:project.json" |
+     jq -e 'type=="object" and has("schema_version") and has("roots")'
+   ```
+
+   Check for `jq` first: a missing `jq` exits 127, which is not a
+   verdict on the file. Without it, record `policy detection: no JSON
+   tool`, do not treat the root `project.json` as the policy, propose
+   no replacement, and skip Tier 3 this pass. Never fall back to "the
+   file exists, so it is the policy". A foreign file,
+   such as an Nx `project.json`, fails it: record `project.json
+   present, not a coach policy` and continue as if it did not exist.
+   A file that passes is the policy, and coach reads it with
+   `project_config_deprecated`. This step owns the migration
+   `questions` line: `mkdir -p .lousy-agents && git mv project.json
+   .lousy-agents/coach.json`. Never perform it; the policy is theirs.
+4. A repository-relative path recorded as the coach
    `--project-config` file in project instructions / CI / README **at
-   `<rev>`**, if that blob exists there.
+   `<rev>`**, if that blob exists there. It is consulted only when
+   neither `.lousy-agents/coach.json` nor a coach-policy `project.json`
+   exists.
 
 If a trusted committed config exists and its blob bind passed,
 record the path, the revision it came from, and the digest; run the
 TS readiness probe when TS is in scope; go to Tier 3.
 
-If none exists, skip the readiness probe and propose one — never
-commit one. Do not overwrite an existing worktree `project.json`.
+If none exists, skip the readiness probe and propose one at
+`.lousy-agents/coach.json`; never write or commit it. Do not overwrite an existing worktree
+`.lousy-agents/coach.json` or `project.json`.
 
 ### Readiness probe (TypeScript in scope)
 
@@ -429,13 +575,10 @@ skip the probe entirely (do not default to HEAD).
   --project-config <detected-path>
 ```
 
-Pass `--project-config <detected-path>` whenever those two hold.
-Without the flag coach reads the root `project.json` (its
-`defaultProjectConfigPath`), so a detected `config/project.json`
-would be reported `policy_missing` against a file that is not the
-policy, contradicting the Tier 3 command that does pass the path.
-`--check-project` without `--project-config` loads HEAD
-`project.json`, which may be this PR's untrusted policy.
+Pass `--project-config <detected-path>` whenever those two hold. An
+explicit path wins and coach consults no other file. Without it coach
+discovers `.lousy-agents/coach.json` at `HEAD` — possibly this PR's
+untrusted policy, and not the path Tier 3 passes.
 
 `--check-project` requires `--baseline` and cannot combine with
 `--base`. Exit 0 ≠ clean. Payload is `status` / `checks` / `gaps` /
@@ -456,18 +599,39 @@ input to every later scan.
 So the candidate is built, shown, and left uncommitted: write it
 under the scratch directory, put its full content and the exact
 `--project-config` invocation under `questions`, and add one pending
-ruling (`project config proposed — commit it yourself to enable the
-project scan`). Tier 3 then does not run this pass, because coach
+ruling (`project config proposed — land it on the base branch, or
+name its path in the invocation, to enable the project scan`). Tier 3
+then does not run this pass, because coach
 reads committed Git objects and there is nothing committed to read.
 That is the correct outcome, not a failure: record `coach:
 project-config proposed, not committed; tier 3 skipped` and go to
-SOLID. Commit a `project.json` only when the user asks for it in the
-invocation, and then only that file, with the pass trailer.
+SOLID. Never write or commit a policy file into the repository.
 
-1. **Roots.** If tracked `go.mod` files exist, Bash
-   `--baseline --suggest-project-config` and keep its stdout as the
-   candidate (no `--output` into the repository). If that cannot run
-   or the repo is TS-only, compose `"schema_version": "1"` with
+1. **Roots.** If tracked `go.mod` files exist, run the Go suggest in a
+   detached scratch worktree. It writes `.lousy-agents/coach.json`
+   into the worktree it runs in, `--output` accepts only a
+   repository-relative path, and the customer's tree must stay clean.
+   Run the whole block in one Bash call; its variables do not survive
+   between calls:
+
+   ```bash
+   scratch="$(mktemp -d)"; wt="$scratch/wt"
+   trap 'git worktree remove --force "$wt"' EXIT
+   git -c core.hooksPath=/dev/null worktree add --quiet --detach "$wt" "<rev>"
+   (cd "$wt" && <binary> codesignal --baseline --suggest-project-config) \
+     > "$scratch/candidate.json" && cat "$scratch/candidate.json"
+   ```
+
+   `<rev>` is the trusted revision (merge base in PR mode), so a policy
+   file the PR adds never becomes the candidate. `core.hooksPath`
+   keeps the repository's `post-checkout` hook from running. A
+   detached worktree creates no branch, and the `trap` removes it on
+   every exit path. The candidate is stdout, on v0.11 and older alike
+   (diagnostics go to stderr), printed only when the command exited 0.
+   `$scratch` is a scratch directory like the acquisition paths' and
+   may hold the candidate until its content is under `questions`; then
+   `rm -rf "$scratch"`. Otherwise, or when the repo is TS-only,
+   compose `"schema_version": "1"` with
    `"roots": ["."]` when a root `package.json` / `tsconfig.json` /
    `go.mod` exists, else every directory that contains one of those
    files (from `git ls-files`).
@@ -487,7 +651,10 @@ invocation, and then only that file, with the pass trailer.
    hold tracked `.go` / `.ts` / `.tsx` (`git ls-files '<prefix>/*'`
    non-empty; skip a layer with no source) and each stated
    prohibition to a `forbidden_imports` pair whose both ends are
-   mapped layers. Do not add `required_layer`. Evidence read from a
+   mapped layers. Do not add `required_layer`. Keep prefixes
+   disjoint: coach rejects a policy in which one layer's
+   prefix contains another's (exit 2). Do not add
+   `exclude_type_only_edges`; it is the customer's choice. Evidence read from a
    file this PR's diff touches does not count (see Whose policy is it);
    it is a pending ruling instead.
 3. **No evidence → roots only.** The candidate carries
@@ -499,7 +666,8 @@ invocation, and then only that file, with the pass trailer.
    names and different documented rules must end with different
    candidates; a repo that states no rule gets no prohibition.
 4. Show the candidate (2-space indent, trailing newline) under
-   `questions`. Record `coach: project-config proposed, not committed;
+   `questions` as the content of `.lousy-agents/coach.json`. Record
+   `coach: project-config proposed, not committed;
    tier 3 skipped`. If the candidate could not be built, record
    `coach: project-config absent; tier 3 skipped (<reason>)`.
    Either way, go to SOLID.
@@ -522,32 +690,49 @@ stated policy)` and go to SOLID.
 PR mode:
 
 ```bash
-<binary> codesignal --format json \
-  --base <resolved-base> --scope production --project-config <detected-path>
+<binary> codesignal --format json --no-interactive \
+  --base <resolved-base> --scope production --project-config <detected-path> \
+  [--project-language typescript]
 ```
 
 Branch mode: same flags with `--baseline` instead of `--base`. Do
 not combine `--base` and `--baseline`.
 
-Add `--project-language typescript` when the config or the in-scope
-set is TypeScript **and** `--help` lists that flag.
+Run one project scan per language present under the policy `roots`,
+whatever languages the PR touches: Go, without `--project-language`,
+when a tracked `go.mod` sits under a root; TypeScript, with
+`--project-language typescript` (when `--help` lists it), when a
+tracked `tsconfig.json` does. A coach config names no language, and
+each backend sees only its own language, so one scan of a mixed Go+TS
+repository misses the other half and still reads complete. Every scan
+gets the digest confirmation, classification, and incompleteness rules
+below, and each cycle reruns all of them. Tier 3 is clean only when
+every scan is clean and complete. A scan that exits 2 while another
+ran (`node_unsupported` for the TypeScript one, say) leaves Tier 3
+incomplete, not skipped. Neither file under a root → record `tier 3:
+no project language under the policy roots` as incomplete.
 
 Invalid config (not at the analyzed revision, not JSON, schema
-failure): coach exits 2 with `project_config_invalid` and writes no
-report. Record the reason and continue to SOLID. A PR that deletes
-the policy file lands here, because the read is at `HEAD`.
+failure, overlapping layer prefixes): coach exits 2 with
+`project_config_invalid` and writes no report. Record the reason and
+continue to SOLID. A PR that deletes the policy file lands here,
+because the read is at `HEAD`.
 
 Every entry in `project_changes` carries `config_digest`. Each one
 must equal the `trusted` digest recorded in Tier 2; any other value
 means the scan ran under a policy this pass did not trust — stop and
-report it under `questions`. Treat this as confirmation, not as the
-gate: a swapped policy that produces no finding emits no digest
-anywhere (`project_summary` carries counts only), so the blob bind
-before the scan is what covers that case.
+report it under `questions`. A TypeScript report also carries
+`project_provenance.config_digest` even with no finding; it must
+equal `trusted` too. Treat both as confirmation, not as the gate: a Go
+scan that produces no finding emits no digest anywhere
+(`project_summary` carries counts only), so the blob bind before the
+scan is what covers that case.
 
 Cycle ≤5, same Stage A/B bar, same regression guard, and same commit
-rule as Tier 1 (commit only if guarded Stage-B edits landed). Architecture signals (`architecture.layer_violation`, `architecture.layer_bypass`,
-`schema_version` `"2"`) enter the same classification:
+rule as Tier 1 (commit only if guarded Stage-B edits landed).
+Architecture signals (`architecture.layer_violation`,
+`architecture.layer_bypass`, `schema_version` `"2"`) enter the same
+classification:
 
 - Stage B if the finding could cause incorrect behavior, a test
   failure, or a misleading result, the file is in scope, and the
@@ -555,14 +740,25 @@ rule as Tier 1 (commit only if guarded Stage-B edits landed). Architecture signa
 - Ruling required if the remedy would change a public contract, a
   schema, or layer policy itself.
 - Stage A otherwise.
+- A TypeScript finding whose `machine_evidence` carries
+  `removed_if_set: exclude_type_only_edges` exists only because of
+  type-only imports (evaluated by default). It is still a
+  finding: remedy it in production (move the type inward, or invert
+  the dependency) under the bar above. Setting
+  `exclude_type_only_edges` is a policy edit → Ruling required.
 
-Prefer improving production code over editing or silencing
-`project.json`. After onboard, do not rewrite layers to silence
+Apply the Incomplete is not clean rules after every project scan: no
+Stage-B finding plus any incompleteness item is recorded `tier 3: no
+findings; incomplete (<counts>)`, never clean.
+
+Prefer improving production code over editing or silencing the
+policy file. After onboard, do not rewrite layers to silence
 a finding.
 
 Stop Tier 3 when Stage-B is empty after a fresh project scan, or 5
-cycles have run, or the project scan cannot execute. Leftover Stage-B
-after the cap stays `todo` as in Tier 1. After the tier,
+cycles have run, or the project scan cannot execute. Stopping ends
+Tier 3 only: go to SOLID, and list anything left under `questions`.
+Leftover Stage-B after the cap stays `todo` as in Tier 1. After the tier,
 Read `.cleanup-loop.md` and Edit the Tier 3 coach section.
 
 ## After all coach tiers
@@ -579,7 +775,9 @@ created the file; never Write over it here.
 - Pre-coach check: failed tests, lint inventory (from Prepare).
 - Tier 1: commands, Stage-A count, each Stage-B item, holding tests,
   guard results, SHAs.
-- Tier 2: detected path, `proposed <path>`, or `absent`;
+- Tier 2: detected path (`canonical` or `legacy`), `proposed <path>`,
+  or `absent`;
   `--check-project` payload / skip reason.
 - Tier 3: ran / skipped / invalid, commands, Stage-A/B, holding
-  tests, guard results, SHAs.
+  tests, guard results, SHAs, `layer_membership` counts, and the
+  incompleteness counts.

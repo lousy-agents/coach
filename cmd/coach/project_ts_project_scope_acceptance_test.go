@@ -31,11 +31,11 @@ var _ = Describe("coach codesignal --project-language typescript carries project
 			headSHA := commitFile(repo, "project.json", tsNestedRootsScopeConfigJSON)
 			installRealTypescriptCompiler(repo, true)
 
-			sampler := startAnalyzerEnvironSampler()
+			recorder := recordAnalyzerSpawns()
 			result, err := analyzeTSProjectBackend(repo, headSHA, "", true, tsNestedRootsScopeConfigJSON)
-			environs := sampler.halt()
+			spawns := recorder.mustTakeSpawns(Default)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(sampler.invocations()).To(Equal(1), "expected exactly one analyzer invocation for a baseline analysis (AC-RUN-5), observed pids: %+v", environs)
+			Expect(spawns).To(HaveLen(1), "expected exactly one analyzer invocation for a baseline analysis (AC-RUN-5), recorded spawns: %+v", spawns)
 
 			Expect(result.HeadProjectScope).NotTo(BeNil())
 			scope := *result.HeadProjectScope
@@ -76,11 +76,11 @@ var _ = Describe("coach codesignal --project-language typescript carries project
 			headSHA := commitFile(repo, "pkg/handlers/extra.ts", tsHandlersExtraFile+"export const more = 2;\n")
 			installRealTypescriptCompiler(repo, true)
 
-			sampler := startAnalyzerEnvironSampler()
+			recorder := recordAnalyzerSpawns()
 			result, err := analyzeTSProjectBackend(repo, headSHA, baseSHA, false, tsNestedRootsScopeConfigJSON)
-			environs := sampler.halt()
+			spawns := recorder.mustTakeSpawns(Default)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(sampler.invocations()).To(Equal(2), "expected exactly one analyzer invocation per revision (head + base), no second analyzer pass just to derive project_scope, observed pids: %+v", environs)
+			Expect(spawns).To(HaveLen(2), "expected exactly one analyzer invocation per revision (head + base), no second analyzer pass just to derive project_scope, recorded spawns: %+v", spawns)
 
 			Expect(result.HeadProjectScope).NotTo(BeNil(), "head-side project_scope must be carried")
 			Expect(result.BaseProjectScope).NotTo(BeNil(), "base-side project_scope must be carried under --base")

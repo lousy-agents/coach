@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -76,20 +75,20 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			GinkgoT().Setenv("HTTPS_PROXY", proxyURL)
 			GinkgoT().Setenv("npm_config_registry", proxyURL+"/registry/")
 
-			sampler := startAnalyzerEnvironSampler()
+			recorder := recordAnalyzerSpawns()
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			environs := sampler.halt()
+			spawns := recorder.mustTakeSpawns(Default)
 
 			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
 
 			_, statErr := os.Stat(marker)
 			Expect(os.IsNotExist(statErr)).To(BeTrue(), "NODE_OPTIONS --require spy must not run in the analyzer child; marker %s exists", marker)
 
-			Expect(environs).NotTo(BeEmpty(), "must observe the analyzer child (--compiler-module argv); a vacuous PID sample cannot prove HTTP(S)_PROXY was not forwarded")
-			for pid, env := range environs {
-				Expect(env).To(ContainSubstring("PATH="), "analyzer child pid %d environ was argv-only; PATH= is the AC-RUN-2 false-green guard", pid)
-				Expect(env).NotTo(ContainSubstring("HTTP_PROXY="), "analyzer child pid %d inherited HTTP_PROXY", pid)
-				Expect(env).NotTo(ContainSubstring("HTTPS_PROXY="), "analyzer child pid %d inherited HTTPS_PROXY", pid)
+			Expect(spawns).To(HaveLen(1), "a baseline scan launches the analyzer once, and an empty record cannot prove HTTP(S)_PROXY was not forwarded; recorded spawns: %+v", spawns)
+			for _, spawn := range spawns {
+				Expect(pathValueFromEnviron(spawn.Environ)).NotTo(BeEmpty(), "analyzer child pid %d environ lacked PATH; a record without it is the AC-RUN-2 false-green", spawn.PID)
+				Expect(spawn.Environ).NotTo(ContainSubstring("HTTP_PROXY="), "analyzer child pid %d inherited HTTP_PROXY", spawn.PID)
+				Expect(spawn.Environ).NotTo(ContainSubstring("HTTPS_PROXY="), "analyzer child pid %d inherited HTTPS_PROXY", spawn.PID)
 			}
 			Expect(listener.snapshot()).To(BeEmpty(), "analyzer child must not dial the parent HTTP(S)_PROXY listener; hits: %v", listener.snapshot())
 
@@ -168,34 +167,33 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			commitRealTSLayerFixture(repo, version)
 			installRealTypescriptCompiler(repo, true)
 
-			realNode, err := exec.LookPath("node")
-			Expect(err).NotTo(HaveOccurred())
-			probe := exec.Command(realNode, "-p", "process.execPath")
-			probed, err := probe.Output()
-			Expect(err).NotTo(HaveOccurred())
-			execPath := strings.TrimSpace(string(probed))
+			// The PATH shim forwards to the recorder, which answers the
+			// process.execPath probe with its own path. The launcher must spawn
+			// that probed path, so the recorder sees the analyzer and the shim
+			// sees only the probes.
+			recorder := newSpecAnalyzerSpawnRecorder()
+			execPath := recorder.nodePath
 
 			shimDir, err := os.MkdirTemp("", "coach-recording-node-*")
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(os.RemoveAll, shimDir)
 			logPath := filepath.Join(shimDir, "shim.log")
-			script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\nexec %q \"$@\"\n", logPath, realNode)
+			script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\nexec %q \"$@\"\n", logPath, execPath)
 			Expect(os.WriteFile(filepath.Join(shimDir, "node"), []byte(script), 0o755)).To(Succeed())
 
 			path := shimDir + string(os.PathListSeparator) + pathExcludingExecutables("node")
-			sampler := startAnalyzerEnvironSampler()
 			stdout, stderr, exitCode := runCoachCodesignalBaselineEnv(repo, path, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			environs := sampler.halt()
+			spawns := recorder.mustTakeSpawns(Default)
 			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
 
 			logBytes, readErr := os.ReadFile(logPath)
 			Expect(readErr).NotTo(HaveOccurred())
 			Expect(string(logBytes)).NotTo(ContainSubstring("--compiler-module"), "analyzer child must be the probed execPath, not the PATH shim; log=%s", logBytes)
 
-			Expect(environs).NotTo(BeEmpty(), "must observe the analyzer child")
-			for _, env := range environs {
-				childPath := pathValueFromEnviron(env)
-				Expect(childPath).To(Equal(filepath.Dir(execPath)), "child PATH must equal the runtime directory exactly, got %q env=%q", childPath, env)
+			Expect(spawns).To(HaveLen(1), "a baseline scan launches the analyzer once, recorded spawns: %+v", spawns)
+			for _, spawn := range spawns {
+				childPath := pathValueFromEnviron(spawn.Environ)
+				Expect(childPath).To(Equal(filepath.Dir(execPath)), "child PATH must equal the runtime directory exactly, got %q env=%q", childPath, spawn.Environ)
 				Expect(childPath).NotTo(ContainSubstring(shimDir), "recording shim directory must be absent from child PATH")
 			}
 		})
@@ -212,12 +210,8 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			commitRealTSLayerFixture(repo, version)
 			installRealTypescriptCompiler(repo, true)
 
-			realNode, err := exec.LookPath("node")
-			Expect(err).NotTo(HaveOccurred())
-			probe := exec.Command(realNode, "-p", "process.execPath")
-			probed, err := probe.Output()
-			Expect(err).NotTo(HaveOccurred())
-			runtimeDir := filepath.Dir(strings.TrimSpace(string(probed)))
+			recorder := recordAnalyzerSpawns()
+			runtimeDir := filepath.Dir(recorder.nodePath)
 
 			sibling, err := os.MkdirTemp("", "coach-path-sibling-*")
 			Expect(err).NotTo(HaveOccurred())
@@ -227,14 +221,13 @@ var _ = Describe("coach codesignal --project-language typescript against the pri
 			path := os.Getenv("PATH")
 			GinkgoT().Setenv("PATH", path+string(os.PathListSeparator)+sibling)
 
-			sampler := startAnalyzerEnvironSampler()
 			stdout, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--project-config", "project.json", "--project-language", "typescript", "--format=json")
-			environs := sampler.halt()
+			spawns := recorder.mustTakeSpawns(Default)
 			Expect(exitCode).To(Equal(0), "stderr: %s stdout: %s", stderr, stdout)
-			Expect(environs).NotTo(BeEmpty(), "must observe the analyzer child")
-			for _, env := range environs {
-				childPath := pathValueFromEnviron(env)
-				Expect(childPath).To(Equal(runtimeDir), "child PATH must equal the runtime directory exactly, got %q env=%q", childPath, env)
+			Expect(spawns).To(HaveLen(1), "a baseline scan launches the analyzer once, recorded spawns: %+v", spawns)
+			for _, spawn := range spawns {
+				childPath := pathValueFromEnviron(spawn.Environ)
+				Expect(childPath).To(Equal(runtimeDir), "child PATH must equal the runtime directory exactly, got %q env=%q", childPath, spawn.Environ)
 				Expect(strings.Split(childPath, string(os.PathListSeparator))).To(Equal([]string{runtimeDir}))
 				Expect(childPath).NotTo(ContainSubstring(sibling), "planted sibling must be absent from child PATH")
 			}
