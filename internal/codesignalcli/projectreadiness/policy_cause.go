@@ -53,11 +53,6 @@ const (
 	// CauseNameCaseDiffers is a name that a case-folding file system resolves but the analyzed
 	// revision spells differently. Rename it to the revision's spelling.
 	CauseNameCaseDiffers PolicyCause = "name_case_differs"
-	// CauseInvalidPath is a --project-config value that cannot name a policy in this repository: it
-	// climbs out of it, is absolute, is not normalized or spells a separator the wrong way. A new policy
-	// does not fix it, and the path is checked before any readiness check runs, so no gap carries it; only
-	// a scan's error does.
-	CauseInvalidPath PolicyCause = "invalid_path"
 	// CauseUndetermined is a state Coach has no word for.
 	CauseUndetermined PolicyCause = "undetermined"
 )

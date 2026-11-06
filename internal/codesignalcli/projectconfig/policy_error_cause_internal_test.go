@@ -22,7 +22,6 @@ func TestEveryPolicyErrorNamesARemedyOrACauseNeverBothAndNeverNeither(t *testing
 	absent := gitfixture.Init(t)
 	gitfixture.CommitFile(t, absent, "a.txt", "x")
 	cases := map[string]error{
-		"a path that cannot name a policy":           invalidPathError("../p.json", "HEAD", "path must be normalized"),
 		"nothing at the path":                        missingError("cfg/p.json"),
 		"a file where a parent should be":            blockedParentError("cfg/p.json", "cfg"),
 		"a path the working tree cannot use":         unusableOnDiskError("cfg/p.json", projectreadiness.PolicyCause("not_a_regular_file"), "is not a regular file"),
@@ -35,6 +34,17 @@ func TestEveryPolicyErrorNamesARemedyOrACauseNeverBothAndNeverNeither(t *testing
 	}
 	for name, err := range cases {
 		t.Run(name, func(t *testing.T) { requireTheErrorNamesOneOfThem(t, err) })
+	}
+}
+
+// A path that cannot name a policy is refused as a usage error before any report exists, so it is the one
+// error that names neither: it has no word in the cause vocabulary, and a gap made from it says undetermined
+// (see projectcheck).
+func TestAPathThatCannotNameAPolicyNamesNeitherARemedyNorACause(t *testing.T) {
+	found, ok := invalidPathError("../p.json", "HEAD", "path must be normalized").(*ConfigError)
+
+	if !ok || found.Remedy != projectreadiness.RemedyNone || found.PolicyCause != "" {
+		t.Errorf("error = %+v; want a *ConfigError with no remedy and no cause", found)
 	}
 }
 
