@@ -9,7 +9,7 @@ import (
 )
 
 // readObjectResponse reads "<oid> <type> <size>", the content and a newline, or "<oid> missing".
-func readObjectResponse(reader *bufio.Reader, oid string) (content []byte, found bool, err error) {
+func readObjectResponse(reader *bufio.Reader, oid string, limit int64) (content []byte, found bool, err error) {
 	header, err := reader.ReadString('\n')
 	if err != nil {
 		return nil, false, fmt.Errorf("reading the cat-file response for %s: %w", oid, err)
@@ -24,6 +24,9 @@ func readObjectResponse(reader *bufio.Reader, oid string) (content []byte, found
 	size, err := strconv.Atoi(fields[2])
 	if err != nil || size < 0 {
 		return nil, false, fmt.Errorf("malformed cat-file size for %s: %q", oid, header)
+	}
+	if int64(size) > limit {
+		return nil, false, fmt.Errorf("object %s is %d bytes, past the %d-byte limit on one object of a snapshot", oid, size, limit)
 	}
 	content = make([]byte, size)
 	if _, err := io.ReadFull(reader, content); err != nil {
