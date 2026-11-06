@@ -1,6 +1,9 @@
 package projectcheck
 
 import (
+	"fmt"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
@@ -12,6 +15,9 @@ func CheckExplicitPolicy(dir, revision, policyPath string) (projectreadiness.Che
 	status, err := projectconfig.ExplicitOnDiskStatus(runReadinessGit, dir, revision, policyPath)
 	if err != nil {
 		return projectreadiness.Check{}, nil, err
+	}
+	if status != nil && status.GitFailure != nil {
+		return projectreadiness.Check{}, nil, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: --project-config %q: %s", policyPath, status.GitFailure)}
 	}
 	return explicitPolicyCheck(status, dir, revision, policyPath)
 }

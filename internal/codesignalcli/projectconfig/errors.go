@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
@@ -67,6 +68,9 @@ type ConfigError struct {
 	// it, because the zero value means authoring and a constructor that left it
 	// unset would offer a new policy where one cannot help.
 	Remedy projectreadiness.PolicyRemedy
+	// GitFailure is set when git could not answer a question about the policy,
+	// so a caller that reports operational failures separately can return it.
+	GitFailure error
 }
 
 // MissingCause is why a policy named with --project-config is missing from disk.
@@ -146,12 +150,26 @@ func restorableOffer(revision, repoPath string) restoreOffer {
 	return restoreOffer{remedy: projectreadiness.RemedyRestore, text: ". It is committed at the analyzed revision: " + RestoreAdvice(revision, repoPath)}
 }
 
-// undecidableOffer is for a policy that git could not say is committed. Offering
+// undecidableOffer is for a policy whose git questions went unanswered. Offering
 // a restore could overwrite, and offering authoring could replace a reviewed
-// policy, so neither is offered.
-var undecidableOffer = restoreOffer{
-	remedy: projectreadiness.RemedyNone,
-	text:   ". Coach could not check whether it is committed at the analyzed revision, so it offers neither a restore nor a new policy; resolve the git error and run again",
+// policy, so neither is offered. It says which question failed and what git said.
+func undecidableOffer(failure *gitFailure) restoreOffer {
+	return restoreOffer{
+		remedy: projectreadiness.RemedyNone,
+		text:   ". Coach could not check " + failure.describe() + ", so it offers neither a restore nor a new policy; resolve the git error and run again",
+	}
+}
+
+const maxGitErrorRunes = 200
+
+// describe words the failed question with git's error, quoted so that no
+// control character in git's output reaches the terminal and cut to a bound.
+func (f *gitFailure) describe() string {
+	text := []rune(f.err.Error())
+	if len(text) > maxGitErrorRunes {
+		text = append(text[:maxGitErrorRunes], '…')
+	}
+	return f.question + " (git said " + strconv.Quote(string(text)) + ")"
 }
 
 // stagedEditOffer is for a committed policy whose index entry holds an edit. The

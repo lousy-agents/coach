@@ -17,6 +17,8 @@ type indexFake struct {
 	lsFilesErr error
 	// uncommitted makes the tree lookup find nothing at the path.
 	uncommitted bool
+	// lsTreeErr makes the tree lookup fail, as it does when git cannot read the commit.
+	lsTreeErr error
 	// committedMode is the mode the tree lookup reports; it is a regular file when empty.
 	committedMode string
 }
@@ -24,6 +26,9 @@ type indexFake struct {
 func (f indexFake) run(_ string, args ...string) ([]byte, error) {
 	switch args[0] {
 	case "ls-tree":
+		if f.lsTreeErr != nil {
+			return nil, f.lsTreeErr
+		}
 		if f.uncommitted {
 			return nil, nil
 		}
@@ -88,7 +93,7 @@ func assertJudgeFromIndex(t *testing.T, fake indexFake, want restoreVerdict, wan
 func TestNoOfferIsMadeForABlockedParentWhenGitCannotSayWhetherThePolicyIsCommitted(t *testing.T) {
 	blocked := blockedParentError("cfg/p.json", "cfg").(*ConfigError)
 
-	offer, offered := restoreOfferFor(restoreUndecidable, "HEAD", blocked, "cfg/p.json")
+	offer, offered := restoreOfferFor(policyJudgment{verdict: restoreUndecidable}, "HEAD", blocked, "cfg/p.json")
 
 	if offered {
 		t.Errorf("restoreOfferFor offered %q; want none, because the blocked-parent message gives no restore advice when git cannot say the policy is committed", offer.text)
@@ -98,7 +103,7 @@ func TestNoOfferIsMadeForABlockedParentWhenGitCannotSayWhetherThePolicyIsCommitt
 func TestABlockedParentWithAStagedEditNamesTheEditInsteadOfAdvisingARestore(t *testing.T) {
 	blocked := blockedParentError("cfg/p.json", "cfg").(*ConfigError)
 
-	offer, offered := restoreOfferFor(restoreDiscardsStagedEdit, "HEAD", blocked, "cfg/p.json")
+	offer, offered := restoreOfferFor(policyJudgment{verdict: restoreDiscardsStagedEdit}, "HEAD", blocked, "cfg/p.json")
 
 	if !offered || offer != stagedEditOffer {
 		t.Errorf("restoreOfferFor = %q, %v; want the staged-edit offer, because restoring from git after the file is moved would discard the edit", offer.text, offered)
@@ -108,7 +113,7 @@ func TestABlockedParentWithAStagedEditNamesTheEditInsteadOfAdvisingARestore(t *t
 func TestACommittedLinkIsNamedEvenWhenAFileBlocksTheParent(t *testing.T) {
 	blocked := blockedParentError("cfg/p.json", "cfg").(*ConfigError)
 
-	offer, offered := restoreOfferFor(restoreRecreatesLink, "HEAD", blocked, "cfg/p.json")
+	offer, offered := restoreOfferFor(policyJudgment{verdict: restoreRecreatesLink}, "HEAD", blocked, "cfg/p.json")
 
 	if !offered || offer != committedLinkOffer {
 		t.Errorf("restoreOfferFor = %q, %v; want the committed-link offer, because restoring the policy from git would recreate a link the scan refuses", offer.text, offered)

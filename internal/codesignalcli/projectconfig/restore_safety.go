@@ -28,6 +28,17 @@ type policyJudgment struct {
 	// committed policy (any entry at all when nothing is committed), or git could
 	// not say, so a report built without that entry does not reflect it.
 	indexEntryUnread bool
+	// failure is set when a git call that decides the verdict failed, so the
+	// message can say which question went unanswered and what git said.
+	failure *gitFailure
+}
+
+// gitFailure is one git call that failed while a policy path was judged.
+type gitFailure struct {
+	// question is what the call was meant to settle, worded to follow "could not
+	// check".
+	question string
+	err      error
 }
 
 // judgeRestore decides whether the restore command may be offered for repoPath
@@ -41,11 +52,11 @@ type policyJudgment struct {
 func judgeRestore(run func(dir string, args ...string) ([]byte, error), dir, revision, repoPath string) policyJudgment {
 	committed, found, err := gitrepo.BlobEntryAtRevision(run, dir, revision, repoPath)
 	if err != nil {
-		return policyJudgment{verdict: restoreUndecidable, indexEntryUnread: true}
+		return policyJudgment{verdict: restoreUndecidable, indexEntryUnread: true, failure: &gitFailure{question: "whether it is committed at the analyzed revision", err: err}}
 	}
 	staged, err := gitrepo.IndexEntries(run, dir, repoPath)
 	if err != nil {
-		return policyJudgment{verdict: verdictWithoutIndex(committed, found), indexEntryUnread: true}
+		return policyJudgment{verdict: verdictWithoutIndex(committed, found), indexEntryUnread: true, failure: &gitFailure{question: "what the index holds for it", err: err}}
 	}
 	unread := indexHoldsUnreadEntry(committed, found, staged)
 	return policyJudgment{verdict: verdictFor(committed, found, staged, unread), indexEntryUnread: unread}
