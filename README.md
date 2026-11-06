@@ -231,7 +231,9 @@ except for the policy-candidate document on the guided-authoring path.
   is marked skip-worktree, or if git cannot say whether it is committed or what
   the index holds, Coach says why and offers neither a restore nor a new policy.
   An index entry that holds no content does not count as an edit: the restore
-  replaces it, and the message says that it brings back the committed copy.
+  replaces it, and the message says that it brings back the committed copy,
+  unless the entry is marked skip-worktree, which stops a restore and is named
+  instead.
 - Nothing is there and the policy was never committed, but the index holds an
   entry for it: `project_config_missing`, and no authoring, because a new policy
   would replace staged work. A staged regular file gets the one command that
