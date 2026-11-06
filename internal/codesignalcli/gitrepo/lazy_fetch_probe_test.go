@@ -7,7 +7,10 @@ import (
 	"testing"
 )
 
-const mergeBaseSHA = "feedfacefeedfacefeedfacefeedfacefeedface"
+const (
+	mergeBaseSHA  = "feedfacefeedfacefeedfacefeedfacefeedface"
+	sha256Missing = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+)
 
 func TestRefuseUnsafeLazyFetchLeavesAReadAloneWhenNothingCanBeFetched(t *testing.T) {
 	cases := []struct {
@@ -111,6 +114,9 @@ func TestRefuseUnsafeLazyFetchRefusesAnOldGitWhenARevisionItReadsLacksObjects(t 
 		{"an object only the merge base lacks", fakeRepository{mergeBase: mergeBaseSHA, probes: map[string]probeAnswer{mergeBaseSHA: {output: missingIDs(firstMissing)}}}, "origin/main", []string{
 			"the merge base of origin/main and HEAD has 1 object that is not in it", "--no-walk " + mergeBaseSHA,
 		}},
+		{"an object id of the longer hash", fakeRepository{probes: map[string]probeAnswer{"HEAD": {output: missingIDs(sha256Missing)}}}, "", []string{
+			"HEAD has 1 object that is not in it",
+		}},
 		{"more objects than the output budget holds", fakeRepository{probes: map[string]probeAnswer{"HEAD": {err: &BoundError{Kind: BoundStdout, message: "git stdout exceeded the budget"}}}}, "", []string{
 			"HEAD has many objects that are not in it",
 		}},
@@ -153,6 +159,9 @@ func TestRefuseUnsafeLazyFetchRefusesWhenItCannotTellWhatIsMissing(t *testing.T)
 		{"the probe prints what is not an object id", fakeRepository{probes: map[string]probeAnswer{"HEAD": {output: "0123456789012345678901234567890123456789 a.go\n"}}}, "", "a.go"},
 		{"the merge base cannot be found", fakeRepository{mergeBaseErr: errors.New("exit status 1")}, "origin/main", "exit status 1"},
 		{"the merge base is not an object id", fakeRepository{mergeBase: "--upload-pack=x"}, "origin/main", "--upload-pack=x"},
+		{"the merge base is an object id and then more", fakeRepository{mergeBase: mergeBaseSHA + " extra"}, "origin/main", "extra"},
+		{"the merge base is an object id that is too short", fakeRepository{mergeBase: mergeBaseSHA[1:]}, "origin/main", mergeBaseSHA[1:]},
+		{"the probe prints an object id that something precedes", fakeRepository{probes: map[string]probeAnswer{"HEAD": {output: "x" + missingIDs(firstMissing)}}}, "", "x?"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -195,5 +204,16 @@ func TestTheRefusalOffersNoFetchCommandForARemoteNameThatCannotBePastedSafely(t 
 
 	if err == nil || strings.Contains(err.Error(), "git fetch") || !strings.Contains(err.Error(), "git 2.44 or later") {
 		t.Errorf("RefuseUnsafeLazyFetch = %v; want the way out that is safe to paste, and no command built from a remote name that is not", err)
+	}
+}
+
+// A base that cannot be shown on a terminal as it is must not reach one through the refusal.
+func TestTheRefusalDoesNotPrintABaseThatHoldsAControlCharacter(t *testing.T) {
+	repository := fakeRepository{version: oldGit, promisors: promisorOrigin, mergeBase: mergeBaseSHA, probes: map[string]probeAnswer{mergeBaseSHA: {output: missingIDs(firstMissing)}}}
+
+	err := RefuseUnsafeLazyFetch(repository.run, "repo", "ba\x1b[31md")
+
+	if err == nil || strings.Contains(err.Error(), "\x1b") || !strings.Contains(err.Error(), "the merge base of --base and HEAD") {
+		t.Errorf("RefuseUnsafeLazyFetch = %q; want the merge base named without the base's own text", err)
 	}
 }

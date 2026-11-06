@@ -64,9 +64,14 @@ func TestIsPartialCloneReadsThePromisorSettingsGitTakesForTrue(t *testing.T) {
 	}{
 		{"no value at all", "\tpromisor\n", true},
 		{"true", "\tpromisor = true\n", true},
+		{"upper case", "\tpromisor = TRUE\n", true},
+		{"yes", "\tpromisor = yes\n", true},
 		{"on", "\tpromisor = on\n", true},
+		{"one", "\tpromisor = 1\n", true},
 		{"a number other than zero", "\tpromisor = 2\n", true},
 		{"false", "\tpromisor = false\n", false},
+		{"no", "\tpromisor = no\n", false},
+		{"off", "\tpromisor = off\n", false},
 		{"zero", "\tpromisor = 0\n", false},
 		{"an empty value", "\tpromisor =\n", false},
 	}
@@ -87,6 +92,49 @@ func assertPromisorSettingRead(t *testing.T, setting string, want bool) {
 
 	if err != nil || partial != want || named != want || (want && remote != "origin") {
 		t.Errorf("IsPartialClone = %v, %v and PromisorRemote = %q, %v; want %v naming origin", partial, err, remote, named, want)
+	}
+}
+
+// extensions.partialclone is what older git wrote to name the promisor remote; it holds the remote's name
+// and not a boolean, and an empty one names nothing.
+func TestIsPartialCloneReadsTheExtensionOlderGitWroteFromARealConfiguration(t *testing.T) {
+	cases := []struct {
+		name   string
+		remote string
+		want   bool
+	}{
+		{"a named remote", "upstream", true},
+		{"an empty name", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			assertExtensionRead(t, c.remote, c.want)
+		})
+	}
+}
+
+func assertExtensionRead(t *testing.T, remote string, want bool) {
+	t.Helper()
+	repository := gitfixture.Init(t)
+	gitOutput(t, repository, "config", "extensions.partialclone", remote)
+
+	partial, err := IsPartialClone(RunBytes, repository)
+	named, found := PromisorRemote(RunBytes, repository)
+
+	if err != nil || partial != want || found != want || (want && named != remote) {
+		t.Errorf("IsPartialClone = %v, %v and PromisorRemote = %q, %v; want %v naming %q", partial, err, named, found, want, remote)
+	}
+}
+
+func TestAPromisorRemoteSettingIsReadBesideTheExtensionAndNeitherHidesTheOther(t *testing.T) {
+	repository := gitfixture.Init(t)
+	gitOutput(t, repository, "config", "remote.up.promisor", "false")
+	gitOutput(t, repository, "config", "extensions.partialclone", "origin")
+
+	named, found := PromisorRemote(RunBytes, repository)
+
+	if !found || named != "origin" {
+		t.Errorf("PromisorRemote = %q, %v; want origin from the extension when the only remote setting is false", named, found)
 	}
 }
 
