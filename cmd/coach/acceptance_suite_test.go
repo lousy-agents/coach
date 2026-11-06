@@ -85,7 +85,7 @@ func commitFile(repo, name, contents string) string {
 	err := os.WriteFile(filepath.Join(repo, name), []byte(contents), 0o644)
 	Expect(err).NotTo(HaveOccurred())
 
-	addCmd := exec.Command("git", "add", name)
+	addCmd := exec.Command("git", "--literal-pathspecs", "add", "--", name)
 	addCmd.Dir = repo
 	output, err := addCmd.CombinedOutput()
 	Expect(err).NotTo(HaveOccurred(), "git add: %s", output)
