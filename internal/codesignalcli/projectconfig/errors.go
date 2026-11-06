@@ -109,7 +109,8 @@ func (e *ConfigError) OffersAuthoring() bool {
 func readError(run gitrepo.Runner, dir, revision, repoPath string, gitErr error) error {
 	var boundErr *gitrepo.BoundError
 	if errors.As(gitErr, &boundErr) {
-		return &ConfigError{Kind: KindUnreadable, Remedy: boundRemedy(boundErr), PolicyCause: boundCause(boundErr), Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
+		remedy, cause := boundOutcome(boundErr)
+		return &ConfigError{Kind: KindUnreadable, Remedy: remedy, PolicyCause: cause, Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
 	}
 	exists, err := configExistsInWorktree(run, dir, repoPath)
 	if err != nil {
@@ -129,24 +130,16 @@ func unansweredRead(repoPath, revision string, failure *gitFailure) error {
 	return &ConfigError{Kind: KindUnreadable, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseGitUnreadable, Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): Coach could not check %s, so it gives no advice", repoPath, revision, failure.describe())}
 }
 
-// boundRemedy is the way out of a read that tripped a bound. A policy over the
-// size budget is a content gap a smaller policy fixes, so authoring stays
-// offered, as --check-project already reports it. A time or stderr bound says
-// the read failed for a reason a new policy does not change.
-func boundRemedy(boundErr *gitrepo.BoundError) projectreadiness.PolicyRemedy {
+// boundOutcome is the way out of a read that tripped a bound, or the reason it has none, decided once
+// so the two cannot disagree. A policy over the size budget is a content gap a smaller policy fixes, so
+// authoring stays offered, as --check-project already reports it, and there is no cause. A time or
+// stderr bound says the read failed for a reason a new policy does not change: no remedy, and the
+// cause says the read failed.
+func boundOutcome(boundErr *gitrepo.BoundError) (projectreadiness.PolicyRemedy, projectreadiness.PolicyCause) {
 	if boundErr.Kind == gitrepo.BoundStdout {
-		return projectreadiness.RemedyAuthor
+		return projectreadiness.RemedyAuthor, ""
 	}
-	return projectreadiness.RemedyNone
-}
-
-// boundCause is why a read that tripped a bound has no way out, when it has none: a
-// bound that tripped for time or stderr is a read that failed, not a policy to replace.
-func boundCause(boundErr *gitrepo.BoundError) projectreadiness.PolicyCause {
-	if boundErr.Kind == gitrepo.BoundStdout {
-		return ""
-	}
-	return projectreadiness.CauseGitUnreadable
+	return projectreadiness.RemedyNone, projectreadiness.CauseGitUnreadable
 }
 
 // configExistsInWorktree reports whether repoPath is readable in the worktree at dir, which it
