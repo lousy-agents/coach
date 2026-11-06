@@ -2,6 +2,7 @@ package gitrepo
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -40,7 +41,7 @@ type RevisionFileReader struct {
 // returned as a plain error; callers in this package wrap it into an
 // *OperationalError the same way other git-executable-missing failures are.
 func NewRevisionFileReader(dir, revisionSHA string) (*RevisionFileReader, error) {
-	cmd := exec.Command("git", gitArgs(dir, "cat-file", "--batch", "-Z")...)
+	cmd := gitCommand(context.Background(), dir, "cat-file", "--batch", "-Z")
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
