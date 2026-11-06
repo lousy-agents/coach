@@ -28,6 +28,24 @@ func commitThenDelete(repo, name string) {
 	ExpectWithOffset(1, os.Remove(filepath.Join(repo, name))).To(Succeed())
 }
 
+// commitRepoWithSubmodule is a scannable repository that records a submodule at vendor/sub, whose own
+// checkout holds a coach.json.
+func commitRepoWithSubmodule() string {
+	repo := commitScannableGoRepo()
+	inner := GinkgoT().TempDir()
+	gitIn(inner, "init", "-q")
+	Expect(os.WriteFile(filepath.Join(inner, "coach.json"), []byte(singleRootPolicyJSON), 0o644)).To(Succeed())
+	gitIn(inner, "add", "-A")
+	innerCommit := exec.Command("git", "commit", "-q", "-m", "inner")
+	innerCommit.Dir, innerCommit.Env = inner, commitEnv
+	ExpectWithOffset(1, innerCommit.Run()).To(Succeed())
+	gitIn(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "vendor/sub")
+	superCommit := exec.Command("git", "commit", "-q", "-m", "sub")
+	superCommit.Dir, superCommit.Env = repo, commitEnv
+	ExpectWithOffset(1, superCommit.Run()).To(Succeed())
+	return repo
+}
+
 var _ = Describe("coach codesignal: the restore command printed for a missing committed policy is safe to paste, whatever the name", func() {
 	pasteable := []string{`q"uote.json`, "`touch PWN`.json", "a;touch PWN;b.json", "-x.json", "*.json", ":(top)x.json", "!bang#hash.json", "HEAD~1.json", "it's.json", "my policy.json", "$(touch PWN).json"}
 
@@ -224,21 +242,9 @@ var _ = Describe("coach codesignal: git states around an explicit --project-conf
 	})
 
 	It("refuses a policy path that is a submodule, and one that runs into a submodule's checkout", func() {
-		repo := commitScannableGoRepo()
-		inner := GinkgoT().TempDir()
-		gitIn(inner, "init", "-q")
-		Expect(os.WriteFile(filepath.Join(inner, "coach.json"), []byte(singleRootPolicyJSON), 0o644)).To(Succeed())
-		gitIn(inner, "add", "-A")
-		innerCommit := exec.Command("git", "commit", "-q", "-m", "inner")
-		innerCommit.Dir, innerCommit.Env = inner, commitEnv
-		Expect(innerCommit.Run()).To(Succeed())
-		gitIn(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "vendor/sub")
-		superCommit := exec.Command("git", "commit", "-q", "-m", "sub")
-		superCommit.Dir, superCommit.Env = repo, commitEnv
-		Expect(superCommit.Run()).To(Succeed())
+		repo := commitRepoWithSubmodule()
 
 		expectRefusedWith(repo, "vendor/sub", "project_config_invalid", "is not a regular file")
-		expectRefusedWith(repo, "vendor/sub/coach.json", "project_config_invalid", "is not committed at revision")
 		expectRefusedWith(repo, "vendor/sub/absent.json", "project_config_missing", "was not found on disk")
 	})
 
@@ -514,5 +520,22 @@ var _ = Describe("coach codesignal: a locked index, and a policy inside a submod
 
 		Expect(exitCode).To(Equal(0), "stderr: %s", stderr)
 		Expect(string(stdout)).NotTo(ContainSubstring(`"kind":"restore_policy"`))
+	})
+
+	It("tells a policy that exists inside a submodule checkout that it is inside the submodule, not to commit it", func() {
+		repo := commitRepoWithSubmodule()
+
+		stderr := expectRefusedWith(repo, "vendor/sub/coach.json", "project_config_invalid", `inside the submodule "vendor/sub"`)
+
+		Expect(stderr).NotTo(ContainSubstring("commit the file"), "this repository cannot commit a file that lives in a submodule")
+	})
+
+	It("says the same in a TypeScript scan", func() {
+		repo := commitRepoWithSubmodule()
+
+		stderr := refusedScan(repo, "vendor/sub/coach.json", "--project-language", "typescript")
+
+		Expect(stderr).To(ContainSubstring(`inside the submodule "vendor/sub"`))
+		Expect(stderr).NotTo(ContainSubstring("commit the file"))
 	})
 })

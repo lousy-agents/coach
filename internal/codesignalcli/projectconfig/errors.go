@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
@@ -100,15 +102,43 @@ func readError(dir, revision, repoPath string, gitErr error) error {
 		return &ConfigError{Kind: KindUnreadable, Remedy: boundRemedy(boundErr), Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
 	}
 	if configExistsInWorktree(dir, repoPath) {
-		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, Message: UncommittedPolicyMessage(revision, repoPath)}
+		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, Message: UncommittedPolicyMessage(dir, revision, repoPath)}
 	}
 	return &ConfigError{Kind: KindNotFound, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found at revision %q (project_config_invalid)", repoPath, revision)}
 }
 
 // UncommittedPolicyMessage is what the scan says about a --project-config policy
 // that exists in the working tree but is not committed at the analyzed revision.
-func UncommittedPolicyMessage(revision, repoPath string) string {
+func UncommittedPolicyMessage(dir, revision, repoPath string) string {
+	if submodule, inside := enclosingSubmodule(dir, repoPath); inside {
+		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here (project_config_invalid): name a policy that is committed in this repository's own files", repoPath, submodule)
+	}
 	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision)
+}
+
+// enclosingSubmodule is the submodule whose checkout holds repoPath. The superproject records a
+// submodule as one commit, so a file inside it can never be committed there, and telling the user to
+// commit it sends them in a circle.
+func enclosingSubmodule(dir, repoPath string) (string, bool) {
+	parts := strings.Split(repoPath, "/")
+	for i := 1; i < len(parts); i++ {
+		if ancestor := strings.Join(parts[:i], "/"); recordedAsSubmodule(dir, ancestor) {
+			return ancestor, true
+		}
+	}
+	return "", false
+}
+
+// recordedAsSubmodule is whether the index holds a submodule (a 160000 entry) at exactly path.
+func recordedAsSubmodule(dir, path string) bool {
+	output, err := runProjectConfigGit(dir, "ls-files", "--stage", "-z", "--", ":(top,literal)"+path)
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(gitrepo.SplitNULPaths(output), func(record string) bool {
+		mode, name, found := strings.Cut(record, "\t")
+		return found && name == path && strings.HasPrefix(mode, "160000 ")
+	})
 }
 
 // boundRemedy is the way out of a read that tripped a bound. A policy over the

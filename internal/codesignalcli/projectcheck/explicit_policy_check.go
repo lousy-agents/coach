@@ -66,7 +66,7 @@ func checkPolicyOnDisk(dir, revision, policyPath string) (projectreadiness.Check
 	check, roots, err := checkPolicy(dir, revision, policyPath)
 	if err == nil && check.Code == projectreadiness.GapPolicyMissing {
 		check.Remedy = projectreadiness.RemedyNone
-		check.Cause = projectconfig.UncommittedPolicyMessage(revision, policyPath)
+		check.Cause = projectconfig.UncommittedPolicyMessage(dir, revision, policyPath)
 	}
 	return check, roots, err
 }
