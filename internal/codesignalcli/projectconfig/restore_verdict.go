@@ -7,12 +7,12 @@ import (
 )
 
 // verdictWithoutIndex is what the commit alone allows when the index cannot be
-// listed: a restore of a regular file cannot be shown to overwrite nothing.
+// listed. A commit that holds a link says what a restore would recreate whatever
+// the index holds. Otherwise nothing can be shown: a restore of a regular file
+// may overwrite staged work, and a path the commit does not hold may have a
+// staged copy, so neither a restore nor a new policy is offered over it.
 func verdictWithoutIndex(committed gitrepo.TreeEntry, found bool) restoreVerdict {
-	switch {
-	case !found:
-		return restoreNotCommitted
-	case !isRegularFileMode(committed.Mode):
+	if found && !isRegularFileMode(committed.Mode) {
 		return restoreRecreatesLink
 	}
 	return restoreUndecidable

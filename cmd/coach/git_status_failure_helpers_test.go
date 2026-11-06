@@ -36,19 +36,26 @@ func expectStatusWrapperBehavior(wrapper, repo string) {
 }
 
 // installGitStatusFailureWrapper returns a PATH directory whose git fails
-// only when the subcommand is status. Coach invokes git as
-// "git -C <dir> <subcommand> ...", so options that precede the subcommand
-// (and "--name-status", which is a diff option) must not be treated as status.
+// only when the subcommand is status.
 func installGitStatusFailureWrapper() (binDir string, env []string) {
+	return installGitSubcommandFailureWrapper("status")
+}
+
+// installGitSubcommandFailureWrapper returns a PATH directory whose git fails
+// only when the subcommand is the one named. Coach invokes git as
+// "git -C <dir> <subcommand> ...", so options that precede the subcommand
+// (and "--name-status", which is a diff option) must not be treated as it.
+func installGitSubcommandFailureWrapper(subcommand string) (binDir string, env []string) {
+	Expect(subcommand).To(MatchRegexp(`^[a-z][a-z-]*$`), "the subcommand is written into a shell script")
 	realGit, err := exec.LookPath("git")
 	Expect(err).NotTo(HaveOccurred())
 
-	binDir, err = os.MkdirTemp("", "coach-git-status-wrapper-*")
+	binDir, err = os.MkdirTemp("", "coach-git-wrapper-*")
 	Expect(err).NotTo(HaveOccurred())
 	DeferCleanup(os.RemoveAll, binDir)
 
 	script := fmt.Sprintf(`#!/bin/sh
-real=%q
+real=%[1]q
 prev=
 for arg in "$@"; do
   if [ -n "$prev" ]; then
@@ -63,8 +70,8 @@ for arg in "$@"; do
     -*)
       continue
       ;;
-    status)
-      echo "git status failed" >&2
+    %[2]s)
+      echo "git %[2]s failed" >&2
       exit 1
       ;;
     *)
@@ -73,7 +80,7 @@ for arg in "$@"; do
   esac
 done
 exec "$real" "$@"
-`, realGit)
+`, realGit, subcommand)
 	Expect(os.WriteFile(filepath.Join(binDir, "git"), []byte(script), 0o755)).To(Succeed())
 	env = []string{"PATH=" + binDir, "HOME=" + os.Getenv("HOME")}
 	return binDir, env
