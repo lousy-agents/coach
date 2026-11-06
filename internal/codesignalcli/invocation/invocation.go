@@ -33,7 +33,9 @@ type Command struct {
 	Target string
 }
 
-// Phrase is the command as the end of a line, led by verb unless verb is empty.
+// Phrase is the command as the end of a line, led by verb unless verb is empty. Authoring has no verb
+// of its own: whatever verb it is given, it is led by the note that its target's directory must exist
+// first, when there is one, and by nothing otherwise.
 //
 // A policy the user named whose name cannot be shown on a terminal gets no
 // command at all. The same command without the flag is a valid command that
@@ -43,7 +45,7 @@ func (c Command) Phrase(verb string) string {
 	if !c.printable() {
 		return c.withheld()
 	}
-	if verb == "" && c.Mode == SuggestProjectConfig {
+	if c.Mode == SuggestProjectConfig {
 		verb = directoryNote(c.Target)
 	}
 	if verb == "" {
