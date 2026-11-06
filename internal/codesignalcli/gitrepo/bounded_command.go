@@ -67,10 +67,10 @@ func RunBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args ...
 	stdoutCh := make(chan gitPipeResult, 1)
 	stderrCh := make(chan gitPipeResult, 1)
 	go func() {
-		stdoutCh <- readGitPipe(stdout, maxStdout+1)
+		stdoutCh <- readGitPipeUntilOverrun(stdout, maxStdout, cancel)
 	}()
 	go func() {
-		stderrCh <- readGitPipe(stderr, maxStderr+1)
+		stderrCh <- readGitPipeUntilOverrun(stderr, maxStderr, cancel)
 	}()
 	return finishGitBoundedRead(<-stdoutCh, <-stderrCh, cmd.Wait(), ctx, maxStdout, maxStderr, timeout)
 }
