@@ -6,7 +6,7 @@ The v2 document described an async analysis platform with a hosted service. That
 
 ## Evidence cutoff
 
-- Latest published release: `v0.8.0` (26 September 2026).
+- Latest published release: `v0.11.0` (2 November 2026).
 - Leave-pilot evaluation: [`evaluations/codesignal-pilot-readiness.html`](evaluations/codesignal-pilot-readiness.html). Pass 32: re-run on `229fffdb` (4 November 2026), each claim against that head and against the base the branch was built on, `ee0b82e8`. Behaviour changed after `229fffdb`, including explicit-policy handling and the TypeScript layer-bypass search (`d6ed227`), so pass 32 does not cover it; for explicit-policy handling the requirements in sections 8.4 and 8.5 and the recorded runs cited in those commits do. Masthead date 4 November 2026. That pass is a focused re-run, not a full corpus replay.
 - This document is audited against `main` at `4e1c379`. Do not treat the evaluation revision as the current default-branch revision.
 - Pilot-exit epic: [#282](https://github.com/lousy-agents/coach/issues/282). Standing decision: stay in pilot. Read the live epic for the closed-child count.
@@ -76,7 +76,7 @@ In scope:
 - local `coach codesignal` on a Git checkout
 - Go, TypeScript, and TSX source: committed, or uncommitted when the user passes `--worktree`; and the project policy file as it is on disk
 - file-local structural signals
-- project policy that the user writes, committed or not; file-local analysis when none is selected
+- project policy that the user writes and commits; a policy file that is only in the working tree is reported or refused, not read; file-local analysis when none is selected
 - consented setup for a missing TypeScript compiler when a terminal is present
 - an honest report when analysis is incomplete
 
@@ -231,7 +231,7 @@ WHEN a policy is valid and an import edge violates a named forbidden pair, THE C
 
 WHERE the policy names a required layer and a matching path from a handler-shaped source to a pinned sink exists, THE Coach CLI shall emit `architecture.layer_bypass`.
 
-The project policy is the file on disk, committed or not. The report discloses whether it matches the policy selected at `HEAD` (section 7).
+The project policy is read from the analyzed revision, never from the working tree. A policy file that is on disk and not committed there is not read: a discovered one is reported as `project_config_uncommitted`, and one named with `--project-config` is refused with exit `2` (section 8.4). The report discloses whether the policy on disk matches the policy selected at `HEAD` (section 7).
 
 WHEN a TypeScript project scan completes with no configured covered match, THE Coach CLI shall state that and list `project_next_actions`.
 
@@ -275,7 +275,7 @@ WHERE a requirement in section 8.4 or this section names a remedy or a withheld 
 
 WHEN a TypeScript scan on a controlling terminal passes `--project-config` and that policy file does not exist on disk, THE Coach CLI shall offer guided policy authoring, except where section 8.4 or this section says otherwise, and the scan shall exit with status `2` as section 8.4 requires.
 
-WHEN the policy file exists on disk but is not committed, THE Coach CLI shall use it and disclose that it differs from `HEAD` (section 7).
+WHEN the policy file exists on disk but is not committed at the analyzed revision, THE Coach CLI shall not read it. For the discovered `.lousy-agents/coach.json` it shall report `project_config_uncommitted` and continue without that policy; for a `--project-config` path it shall exit with status `2` and say that the file is not committed (section 8.4).
 
 WHEN that scan authoring path runs, THE Coach CLI shall write the candidate to standard output, reject `--output`, and write no repository file.
 
