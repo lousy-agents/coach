@@ -77,17 +77,22 @@ func TestPolicyRequiredLinesLeadWithTheCauseOnlyWhenNoRemedyFixesThePolicy(t *te
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			lines := policyRequiredLines("coach codesignal", "policy_missing", c.remedy, c.cause, "abc123", "pol.json")
-
-			if len(lines) != c.wantLines {
-				t.Fatalf("lines = %q, want %d", lines, c.wantLines)
-			}
-			if c.wantFirst != "" && lines[0] != c.wantFirst {
-				t.Errorf("first line = %q, want the cause %q", lines[0], c.wantFirst)
-			}
-			if !strings.Contains(lines[len(lines)-1], "a reviewed, committed policy is required before compiler setup") {
-				t.Errorf("last line = %q, want the refusal", lines[len(lines)-1])
-			}
+			assertRequiredLinesLead(t, c.remedy, c.cause, c.wantLines, c.wantFirst)
 		})
+	}
+}
+
+func assertRequiredLinesLead(t *testing.T, remedy projectreadiness.PolicyRemedy, cause string, wantLines int, wantFirst string) {
+	t.Helper()
+	lines := policyRequiredLines("coach codesignal", "policy_missing", remedy, cause, "abc123", "pol.json")
+
+	if len(lines) != wantLines {
+		t.Fatalf("lines = %q, want %d", lines, wantLines)
+	}
+	if wantFirst != "" && lines[0] != wantFirst {
+		t.Errorf("first line = %q, want the cause %q", lines[0], wantFirst)
+	}
+	if !strings.Contains(lines[len(lines)-1], "a reviewed, committed policy is required before compiler setup") {
+		t.Errorf("last line = %q, want the refusal", lines[len(lines)-1])
 	}
 }

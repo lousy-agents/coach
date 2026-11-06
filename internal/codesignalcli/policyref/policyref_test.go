@@ -17,15 +17,20 @@ func TestRefSaysWhoChoseThePolicyAndHowItIsJudged(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotPath, gotNamed := tt.ref.NamedPath()
-
-			if gotPath != tt.wantNamedPath || gotNamed != tt.wantNamed {
-				t.Errorf("NamedPath() = (%q, %v), want (%q, %v)", gotPath, gotNamed, tt.wantNamedPath, tt.wantNamed)
-			}
-			if got := tt.ref.JudgedOnDisk(); got != tt.wantOnDisk {
-				t.Errorf("JudgedOnDisk() = %v, want %v", got, tt.wantOnDisk)
-			}
+			assertRefJudgement(t, tt.ref, tt.wantNamedPath, tt.wantNamed, tt.wantOnDisk)
 		})
+	}
+}
+
+func assertRefJudgement(t *testing.T, ref Ref, wantNamedPath string, wantNamed, wantOnDisk bool) {
+	t.Helper()
+	gotPath, gotNamed := ref.NamedPath()
+
+	if gotPath != wantNamedPath || gotNamed != wantNamed {
+		t.Errorf("NamedPath() = (%q, %v), want (%q, %v)", gotPath, gotNamed, wantNamedPath, wantNamed)
+	}
+	if got := ref.JudgedOnDisk(); got != wantOnDisk {
+		t.Errorf("JudgedOnDisk() = %v, want %v", got, wantOnDisk)
 	}
 }
 

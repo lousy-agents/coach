@@ -38,15 +38,18 @@ func TestWhenGitCannotFindTheRepositoryTheExplicitPolicyCheckFailsInsteadOfPassi
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			err := c.call(notARepository(t))
-
-			if err == nil {
-				t.Fatal("got no error; the policy would be read from the committed copy without ever checking the working tree")
-			}
-			var verdict *ConfigError
-			if errors.As(err, &verdict) {
-				t.Errorf("error %q is a *ConfigError, a verdict about the policy; it must be an operational failure", err)
-			}
+			assertOperationalFailure(t, c.call(notARepository(t)))
 		})
+	}
+}
+
+func assertOperationalFailure(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("got no error; the policy would be read from the committed copy without ever checking the working tree")
+	}
+	var verdict *ConfigError
+	if errors.As(err, &verdict) {
+		t.Errorf("error %q is a *ConfigError, a verdict about the policy; it must be an operational failure", err)
 	}
 }

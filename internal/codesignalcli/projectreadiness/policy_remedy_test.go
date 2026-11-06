@@ -46,12 +46,17 @@ func TestNextActionForRemedyIsTheOnlyMappingFromARemedyToAnActionKind(t *testing
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, ok := NextActionForRemedy(c.remedy)
-
-			if got != c.want || ok != c.wantOK {
-				t.Errorf("NextActionForRemedy(%d) = %q, %v; want %q, %v", c.remedy, got, ok, c.want, c.wantOK)
-			}
+			assertNextActionForRemedy(t, c.remedy, c.want, c.wantOK)
 		})
+	}
+}
+
+func assertNextActionForRemedy(t *testing.T, remedy PolicyRemedy, want string, wantOK bool) {
+	t.Helper()
+	got, ok := NextActionForRemedy(remedy)
+
+	if got != want || ok != wantOK {
+		t.Errorf("NextActionForRemedy(%d) = %q, %v; want %q, %v", remedy, got, ok, want, wantOK)
 	}
 }
 
