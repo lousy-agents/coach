@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 const (
@@ -12,7 +14,8 @@ const (
 )
 
 // indexFake answers the git calls judgeRestore makes: the revision check, the
-// tree lookup for the committed entry, and the index listing.
+// tree lookup for the committed entry, and the index listing. The repository
+// root is the real one.
 type indexFake struct {
 	lsFiles    string
 	lsFilesErr error
@@ -26,8 +29,11 @@ type indexFake struct {
 	committedMode string
 }
 
-func (f indexFake) run(_ string, args ...string) ([]byte, error) {
+func (f indexFake) run(dir string, args ...string) ([]byte, error) {
 	switch args[0] {
+	case "rev-parse":
+		// The repository root is a fact about the real repository on disk, not about the index.
+		return gitrepo.RunBytes(dir, args...)
 	case "ls-tree":
 		if f.lsTreeErr != nil {
 			return nil, f.lsTreeErr

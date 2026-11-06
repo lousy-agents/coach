@@ -158,7 +158,7 @@ func boundRemedy(boundErr *gitrepo.BoundError) projectreadiness.PolicyRemedy {
 // not-found-at-revision message in that case, so distinguishing
 // permission-denied or other I/O errors from a missing file has no observer.
 func configExistsInWorktree(dir, repoPath string) bool {
-	root, err := gitrepo.RepositoryRoot(dir)
+	root, err := gitrepo.RepositoryRootWith(runProjectConfigGit, dir)
 	if err != nil {
 		return false
 	}

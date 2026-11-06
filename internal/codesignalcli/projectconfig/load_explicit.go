@@ -31,7 +31,7 @@ func LoadExplicit(dir, revision, repoPath string) (json.RawMessage, error) {
 // failure, never a verdict about the policy. run is the git runner that decides
 // whether the policy is committed and what the index holds for it.
 func ExplicitOnDiskStatus(run gitrepo.Runner, dir, revision, repoPath string) (*ConfigError, error) {
-	err := requireOnDisk(dir, repoPath)
+	err := requireOnDisk(run, dir, repoPath)
 	if err == nil {
 		return nil, nil
 	}
