@@ -7,8 +7,12 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
+// computeChangedRanges diffs path from the merge base to HEAD. Color is off on
+// the command line because a configured color.diff=always would put escape codes
+// in front of the hunk headers and the parse would find no ranges.
 func computeChangedRanges(dir, mergeBaseSHA, path string) ([]codesignal.LineRange, *codesignal.Diagnostic) {
-	output, err := gitrepo.RunBytes(dir, "diff", "--unified=0", "--no-ext-diff", mergeBaseSHA, "HEAD", "--", path)
+	args := []string{"-c", "color.ui=false", "diff", "--no-color", "--unified=0", "--no-ext-diff", "--no-textconv", mergeBaseSHA, "HEAD"}
+	output, err := gitrepo.RunBytes(dir, append(args, "--", path)...)
 	if err != nil {
 		return nil, &codesignal.Diagnostic{
 			Path:    path,

@@ -110,7 +110,7 @@ func (d *goProjectDiscovery) visitDiscoveryFile(snapshot fs.FS, p string, budget
 	}
 
 	base := path.Base(p)
-	if base != "go.mod" && base != "go.work" {
+	if !isGoManifest(base) {
 		return nil
 	}
 

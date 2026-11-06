@@ -6,7 +6,6 @@ import (
 	"errors"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
-	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	. "github.com/onsi/ginkgo/v2"
@@ -66,14 +65,7 @@ var _ = Describe("applyProjectBackend dirty-worktree diagnostic: error handling"
 var _ = Describe("applyProjectBackend diagnostics mutation contract", func() {
 	When("the backend returns no diagnostics and the worktree is dirty", func() {
 		It("does not mutate the caller's Input.Diagnostics backing array when appending the worktree diagnostic", func() {
-			original := listWorktreeStatus
-			listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
-				return gitrepo.ParseWorktreeStatus([]byte("M  bun.lock\x00")), nil
-			}
-			DeferCleanup(func() { listWorktreeStatus = original })
-
-			dir := gitfixture.Init(GinkgoT())
-			gitfixture.CommitFile(GinkgoT(), dir, "a.ts", "export const x = 1;\n")
+			status := WorktreeStatus{Entries: gitrepo.ParseWorktreeStatus([]byte("M  bun.lock\x00"))}
 
 			existing := codesignal.Diagnostic{Kind: "pre_existing", Message: "must survive"}
 			// Spare capacity lets append write into the backing array if it aliases.
@@ -88,10 +80,11 @@ var _ = Describe("applyProjectBackend diagnostics mutation contract", func() {
 				Config:       cfg,
 				ConfigDigest: projectconfig.Digest(cfg),
 				Backend:      backend,
+				Status:       status,
 			}
 
 			input := codesignal.Input{Diagnostics: callerSlice}
-			returned, _, err := applyProjectBackend(context.Background(), input, codesignal.Options{}, project, dir, "HEAD", "", true)
+			returned, _, err := applyProjectBackend(context.Background(), input, codesignal.Options{}, project, ".", "HEAD", "", true)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Expose the backing array beyond callerSlice's len to see whether
@@ -105,14 +98,7 @@ var _ = Describe("applyProjectBackend diagnostics mutation contract", func() {
 })
 
 func appendsWorktreeReportReflectsCommittedHeadDiagnostic() {
-	original := listWorktreeStatus
-	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
-		return gitrepo.ParseWorktreeStatus([]byte("M  bun.lock\x00")), nil
-	}
-	DeferCleanup(func() { listWorktreeStatus = original })
-
-	dir := gitfixture.Init(GinkgoT())
-	gitfixture.CommitFile(GinkgoT(), dir, "a.go", "package a\n")
+	status := WorktreeStatus{Entries: gitrepo.ParseWorktreeStatus([]byte("M  bun.lock\x00"))}
 
 	backend := identityHandoffBackend{result: &ProjectBackendResult{
 		RuntimeKind:   runtimeKindNode,
@@ -125,9 +111,10 @@ func appendsWorktreeReportReflectsCommittedHeadDiagnostic() {
 		Config:       cfg,
 		ConfigDigest: projectconfig.Digest(cfg),
 		Backend:      backend,
+		Status:       status,
 	}
 
-	input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, project, dir, "HEAD", "", true)
+	input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, project, ".", "HEAD", "", true)
 	Expect(err).NotTo(HaveOccurred())
 
 	kinds := make([]string, len(input.Diagnostics))
@@ -141,14 +128,7 @@ func appendsWorktreeReportReflectsCommittedHeadDiagnostic() {
 }
 
 func worktreeReportReflectsCommittedHeadMessageReferences() {
-	original := listWorktreeStatus
-	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
-		return gitrepo.ParseWorktreeStatus([]byte("?? bun.lock\x00")), nil
-	}
-	DeferCleanup(func() { listWorktreeStatus = original })
-
-	dir := gitfixture.Init(GinkgoT())
-	gitfixture.CommitFile(GinkgoT(), dir, "a.ts", "export const x = 1;\n")
+	status := WorktreeStatus{Entries: gitrepo.ParseWorktreeStatus([]byte("?? bun.lock\x00"))}
 
 	backend := identityHandoffBackend{result: &ProjectBackendResult{}}
 	cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
@@ -158,9 +138,10 @@ func worktreeReportReflectsCommittedHeadMessageReferences() {
 		Config:       cfg,
 		ConfigDigest: projectconfig.Digest(cfg),
 		Backend:      backend,
+		Status:       status,
 	}
 
-	input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, project, dir, "HEAD", "", true)
+	input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, project, ".", "HEAD", "", true)
 	Expect(err).NotTo(HaveOccurred())
 
 	var msg string
@@ -174,14 +155,7 @@ func worktreeReportReflectsCommittedHeadMessageReferences() {
 }
 
 func doesNotEmitWorktreeProvenanceDiagnosticWorktree() {
-	original := listWorktreeStatus
-	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
-		return gitrepo.ParseWorktreeStatus([]byte{}), nil
-	}
-	DeferCleanup(func() { listWorktreeStatus = original })
-
-	dir := gitfixture.Init(GinkgoT())
-	gitfixture.CommitFile(GinkgoT(), dir, "a.ts", "export const x = 1;\n")
+	status := WorktreeStatus{Entries: gitrepo.ParseWorktreeStatus([]byte{})}
 
 	backend := identityHandoffBackend{result: &ProjectBackendResult{}}
 	cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
@@ -191,9 +165,10 @@ func doesNotEmitWorktreeProvenanceDiagnosticWorktree() {
 		Config:       cfg,
 		ConfigDigest: projectconfig.Digest(cfg),
 		Backend:      backend,
+		Status:       status,
 	}
 
-	input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, project, dir, "HEAD", "", true)
+	input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, project, ".", "HEAD", "", true)
 	Expect(err).NotTo(HaveOccurred())
 
 	for _, d := range input.Diagnostics {
@@ -205,14 +180,7 @@ func doesNotEmitWorktreeProvenanceDiagnosticWorktree() {
 }
 
 func emitsWorktreeStatusCheckFailedRatherThan() {
-	original := listWorktreeStatus
-	listWorktreeStatus = func(string) ([]gitrepo.WorktreeEntry, error) {
-		return nil, errors.New("simulated git status failure")
-	}
-	DeferCleanup(func() { listWorktreeStatus = original })
-
-	dir := gitfixture.Init(GinkgoT())
-	gitfixture.CommitFile(GinkgoT(), dir, "a.ts", "export const x = 1;\n")
+	status := WorktreeStatus{Err: errors.New("simulated git status failure")}
 
 	backend := identityHandoffBackend{result: &ProjectBackendResult{}}
 	cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
@@ -222,9 +190,10 @@ func emitsWorktreeStatusCheckFailedRatherThan() {
 		Config:       cfg,
 		ConfigDigest: projectconfig.Digest(cfg),
 		Backend:      backend,
+		Status:       status,
 	}
 
-	input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, project, dir, "HEAD", "", true)
+	input, _, err := applyProjectBackend(context.Background(), codesignal.Input{}, codesignal.Options{}, project, ".", "HEAD", "", true)
 	Expect(err).NotTo(HaveOccurred())
 
 	kinds := make([]string, len(input.Diagnostics))

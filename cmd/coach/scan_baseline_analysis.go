@@ -6,7 +6,6 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
-	"github.com/lousy-agents/coach/internal/codesignalcli/sourcescope"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -19,19 +18,19 @@ func runBaselineAnalysis(dir string, f codesignalFlags, stdin, stderr *os.File) 
 	if err != nil {
 		return nil, err
 	}
-	kept, excluded, err := sourcescope.ApplyBaseline(dir, revisionSHA, f.buildTarget, f.scope, discovered)
+	status := codesignalcli.ReadWorktreeStatus(dir, f.worktree)
+	view := worktreeViewFor(status, f)
+	scoped, err := scopeBaselineSelection(dir, revisionSHA, f, view, discovered, coverage)
 	if err != nil {
 		return nil, err
 	}
-	coverage.Excluded = excluded
 
-	project, diags, restoreStatus, opErr := prepareScanProjectAnalysis(dir, revisionSHA, f, stdin, stderr)
-	defer restoreStatus()
+	project, diags, opErr := prepareScanProjectAnalysis(dir, revisionSHA, f, status, view, stdin, stderr)
 	if opErr != nil {
 		return nil, opErr
 	}
-	disclosure := codesignalcli.WorkingTreeDisclosureDiagnostics(dir)
-	report, err := codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, disclosure, f.scope, coverage, project)
+	disclosure := committedWorkingTreeDisclosure(status, f)
+	report, err := codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, scoped.files, disclosure, f.scope, scoped.coverage, project)
 	if err != nil {
 		return nil, wrapScanAnalysisError(err, dir, revisionSHA, f.projectConfig, stderr)
 	}

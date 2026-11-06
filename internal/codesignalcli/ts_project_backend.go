@@ -127,21 +127,21 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 
 	pmKind, pmVersion, pmOrigin := pkgmanager.AtRevision(ctx, req.Dir, req.HeadRevision, config.Roots)
 
-	headChanges, headFacts, headDiagnostics, headCoverage, headScope, headPhases, err := b.evaluateRevision(ctx, req.Dir, req.HeadRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
+	head, err := b.evaluateRevision(ctx, snapshotOpenerOrCommitted(req.HeadSnapshot), req.Dir, req.HeadRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &ProjectBackendResult{
-		HeadChanges:              headChanges,
-		HeadDiagnostics:          headDiagnostics,
-		Facts:                    headFacts,
-		HeadCoverage:             &headCoverage,
-		HeadProjectScope:         headScope,
-		HeadLayerMembership:      layerMembershipOfScope(headScope),
-		HeadModelCoverage:        &headPhases.model,
-		HeadBypassCoverage:       &headPhases.bypass,
-		HeadReachabilityCoverage: &headPhases.reachability,
+		HeadChanges:              head.changes,
+		HeadDiagnostics:          head.diagnostics,
+		Facts:                    head.facts,
+		HeadCoverage:             &head.coverage,
+		HeadProjectScope:         head.scope,
+		HeadLayerMembership:      layerMembershipOfScope(head.scope),
+		HeadModelCoverage:        &head.phases.model,
+		HeadBypassCoverage:       &head.phases.bypass,
+		HeadReachabilityCoverage: &head.phases.reachability,
 		RuntimeKind:              runtime.Kind,
 		RuntimeVersion:           runtime.Version,
 		RuntimeOrigin:            runtime.Origin,
@@ -165,18 +165,18 @@ func (b *tsProjectBackend) Analyze(ctx context.Context, req ProjectBackendReques
 	// evaluator runs identically regardless of which revision is being
 	// evaluated. ProjectScope, unlike Facts, does have a base-side
 	// counterpart: BaseProjectScope is kept.
-	baseChanges, _, baseDiagnostics, baseCoverage, baseScope, basePhases, err := b.evaluateRevision(ctx, req.Dir, req.BaseRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
+	base, err := b.evaluateRevision(ctx, committedSnapshot, req.Dir, req.BaseRevision, runtime, config.Roots, policy, bypassLayer, hasBypassLayer, req.ConfigDigest)
 	if err != nil {
 		return nil, err
 	}
-	result.BaseChanges = baseChanges
-	result.BaseDiagnostics = baseDiagnostics
-	result.BaseCoverage = &baseCoverage
-	result.BaseProjectScope = baseScope
-	result.BaseLayerMembership = layerMembershipOfScope(baseScope)
-	result.BaseModelCoverage = &basePhases.model
-	result.BaseBypassCoverage = &basePhases.bypass
-	result.BaseReachabilityCoverage = &basePhases.reachability
+	result.BaseChanges = base.changes
+	result.BaseDiagnostics = base.diagnostics
+	result.BaseCoverage = &base.coverage
+	result.BaseProjectScope = base.scope
+	result.BaseLayerMembership = layerMembershipOfScope(base.scope)
+	result.BaseModelCoverage = &base.phases.model
+	result.BaseBypassCoverage = &base.phases.bypass
+	result.BaseReachabilityCoverage = &base.phases.reachability
 	result.BaseAnalyzed = true
 	return result, nil
 }

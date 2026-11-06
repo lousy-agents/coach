@@ -14,7 +14,7 @@ import (
 // status`, path names only, never their content -- relevant to the
 // readiness result: see IsRelevantDirtyPath for what counts as relevant.
 func detectRelevantDirtyWorktree(dir string, roots []string, policyPath string) (projectreadiness.DirtyWorktree, error) {
-	entries, err := gitrepo.WorktreeStatus(dir)
+	entries, err := gitrepo.CommittedWorktreeStatus(dir)
 	if err != nil {
 		return projectreadiness.DirtyWorktree{}, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: git status failed: %s", err)}
 	}

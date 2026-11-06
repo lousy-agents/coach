@@ -16,8 +16,9 @@ import (
 // including zero, so a reader can tell a real zero from "not computed" (block
 // absent). One line describes the head revision; when the base revision also
 // has files outside every layer, each revision gets its own named line,
-// because the verdict's reach clause then describes the base as well.
-func renderLayerMembershipLine(b *strings.Builder, membership *codesignal.LayerMembershipReport) {
+// because the verdict's reach clause then describes the base as well. Under
+// --worktree the head side was read from disk, so its line says so.
+func renderLayerMembershipLine(b *strings.Builder, membership *codesignal.LayerMembershipReport, headIsWorkingTree bool) {
 	if membership == nil {
 		return
 	}
@@ -26,7 +27,11 @@ func renderLayerMembershipLine(b *strings.Builder, membership *codesignal.LayerM
 		writeLayerMembershipCount(b, membership, membership.Head)
 		return
 	}
-	fmt.Fprintf(b, "Head revision %s: ", membership.Head.Revision)
+	if headIsWorkingTree {
+		fmt.Fprintf(b, "Working tree on %s: ", membership.Head.Revision)
+	} else {
+		fmt.Fprintf(b, "Head revision %s: ", membership.Head.Revision)
+	}
 	writeLayerMembershipCount(b, membership, membership.Head)
 	fmt.Fprintf(b, "Base revision %s: ", base.Revision)
 	writeLayerMembershipCount(b, membership, *base)

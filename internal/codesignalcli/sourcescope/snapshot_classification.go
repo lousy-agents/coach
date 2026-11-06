@@ -26,9 +26,10 @@ func classifySourceFiles(dir, headSHA, buildTarget, scope string, files []gitrep
 		return nil, err
 	}
 
-	// Analysis reads only committed objects from headSHA. Build source scope
-	// from the same snapshot so local edits cannot affect which findings
-	// appear.
+	// Source scope is classified from the committed snapshot at headSHA, also
+	// under --worktree, where the analysis itself reads working-tree bytes: a
+	// file's production or test scope follows the committed layout, so an
+	// uncommitted edit cannot move a finding between scopes.
 	snapshotDir, err := gitrepo.ExtractRevision(repositoryRoot, headSHA)
 	if err != nil {
 		return nil, err

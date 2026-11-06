@@ -22,38 +22,25 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []gitre
 	}
 	defer func() { _ = reader.Close() }()
 
-	var fileChanges []codesignal.FileChange
-	diagnostics := append([]codesignal.Diagnostic(nil), extraDiagnostics...)
-
+	scanned := baselineFiles{
+		analyzer:      analyzer,
+		view:          project.worktreeView(),
+		dir:           dir,
+		revision:      revisionSHA,
+		readCommitted: reader.Next,
+		diagnostics:   append([]codesignal.Diagnostic(nil), extraDiagnostics...),
+		coverage:      coverage,
+	}
 	for _, sf := range files {
-		headBytes, err := reader.Next(sf.Path)
-		if err != nil {
-			diagnostics = append(diagnostics, readFailedDiagnostic(sf.Path, "head", err))
-			coverage.FilesUnanalyzable++
-			continue
-		}
-
-		headResult, headErr := analyzer.AnalyzeBytes(ctx, semantics.FileInput{Path: sf.Path, Language: sf.Language, Content: headBytes})
-		if headErr != nil && !errors.Is(headErr, semantics.ErrSyntax) {
-			diagnostics = append(diagnostics, mapSemanticsError(sf.Path, headErr))
-			coverage.FilesUnanalyzable++
-			continue
-		}
-
-		fileChanges = append(fileChanges, codesignal.FileChange{Path: sf.Path, SourceScope: sf.SourceScope, Head: headResult})
-		if headResult.ParseStatus == "ok" {
-			coverage.FilesAnalyzed++
-		} else {
-			coverage.FilesUnanalyzable++
-		}
+		scanned.add(ctx, sf)
 	}
 
 	opts := codesignal.Options{Baseline: true}
 	input := codesignal.Input{
 		Scope:       codesignal.Scope{Revision: revisionSHA, AppliedScope: appliedScope},
-		Files:       fileChanges,
-		Diagnostics: diagnostics,
-		Coverage:    &coverage,
+		Files:       scanned.changes,
+		Diagnostics: scanned.diagnostics,
+		Coverage:    &scanned.coverage,
 	}
 	input, opts, err = applyProjectBackend(ctx, input, opts, project, dir, revisionSHA, "", true)
 	if err != nil {
@@ -64,6 +51,51 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []gitre
 		return nil, err
 	}
 	return builder.Build(ctx, input)
+}
+
+// baselineFiles accumulates what the baseline's files contribute to the report:
+// their analyzed heads, the diagnostics for those that could not be analyzed,
+// and the coverage accounting for both.
+type baselineFiles struct {
+	analyzer      *semantics.Analyzer
+	view          *WorktreeView
+	dir           string
+	revision      string
+	readCommitted func(name string) ([]byte, error)
+
+	changes     []codesignal.FileChange
+	diagnostics []codesignal.Diagnostic
+	coverage    codesignal.Coverage
+}
+
+func (f *baselineFiles) add(ctx context.Context, sf gitrepo.SelectedFile) {
+	headBytes, err := headFileBytes(f.view, f.dir, f.revision, sf.Path, f.readCommitted)
+	if errors.Is(err, errAbsentFromWorktree) {
+		f.coverage = f.view.coverageForAbsentSource(f.coverage, sf.Path)
+		return
+	}
+	if err != nil {
+		f.skip(readFailedDiagnostic(sf.Path, "head", err))
+		return
+	}
+
+	headResult, headErr := f.analyzer.AnalyzeBytes(ctx, semantics.FileInput{Path: sf.Path, Language: sf.Language, Content: headBytes})
+	if headErr != nil && !errors.Is(headErr, semantics.ErrSyntax) {
+		f.skip(mapSemanticsError(sf.Path, headErr))
+		return
+	}
+
+	f.changes = append(f.changes, codesignal.FileChange{Path: sf.Path, SourceScope: sf.SourceScope, Head: headResult})
+	if headResult.ParseStatus == "ok" {
+		f.coverage.FilesAnalyzed++
+	} else {
+		f.coverage.FilesUnanalyzable++
+	}
+}
+
+func (f *baselineFiles) skip(reason codesignal.Diagnostic) {
+	f.diagnostics = append(f.diagnostics, reason)
+	f.coverage.FilesUnanalyzable++
 }
 
 func readFailedDiagnostic(path, side string, err error) codesignal.Diagnostic {
