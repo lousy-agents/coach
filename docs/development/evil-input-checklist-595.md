@@ -1,7 +1,6 @@
 # Evil-input checklist: `--project-config` in coach#595
 
-- **Head under test:** `4d1bbdf8` (`origin/feat/project-config-missing-168`, base `ee0b82e8`). The probe binary was built from it; every probe ran in a throwaway repository with its own `HOME`, no inherited `GIT_*` variables and `--no-interactive`. This branch is rebased on `4e0056c4` (hands' T1: two test-only commits after `4d1bbdf8`, so the probed behavior is unchanged).
-- **This branch:** `evil/595-checklist`, head `62970f62`, on top of `4e0056c4`. Not pushed.
+- **Head under test:** `4d1bbdf8` (`origin/feat/project-config-missing-168`, base `ee0b82e8`). The probe binary was built from it; every probe ran in a throwaway repository with its own `HOME`, no inherited `GIT_*` variables and `--no-interactive`. The commits listed below sit on `4e0056c4` (hands' T1: two test-only commits after `4d1bbdf8`, so the probed behavior is unchanged).
 - **Contract used:** PRD sections 8.4 and 8.5, ADR-008 (existence and kind come from the working tree, the bytes from the analyzed revision), the README exit-code table.
 - **Rows:** 167. PINNED 43, ADDED 114 (some of these were also partly pinned), FINDING 9, OBSERVATION 1.
 
@@ -11,7 +10,7 @@
 
 | # | What a probe showed | Cause | Wrong in | Fix |
 |---|---|---|---|---|
-| 1 | A `core.fsmonitor` program named by the repository config (or by `GIT_CONFIG_COUNT`) ran on every `git status` of a scan: twice per scan. | No git process disabled fsmonitor. | v0.4.0 to v0.11.0: the first `git status` read (`project_readiness.go:680`) is in v0.4.0, and no tag mentions fsmonitor | fsmonitor commit: every git process starts with `-c core.fsmonitor=false` (unit test over all three command builders, both sources) |
+| 1 | A `core.fsmonitor` program named by the repository config (or by `GIT_CONFIG_COUNT`) ran on every `git status` of a scan: twice per scan. | No git process disabled fsmonitor. | v0.4.0 to v0.11.0: the first `git status` read (`project_readiness.go:680`) is in v0.4.0, and no tag mentions fsmonitor | fsmonitor commit: every git process starts with `-c core.fsmonitor=false` (unit test over all three command builders, both sources); the snapshot reads in `revisionfs` build on the same builder |
 | 2 | Refusing a committed policy only slightly over the 1 MiB budget took exactly 30.1 s, whatever the size (1.1, 4, 16 and 64 MiB all took 30.1 s). | The reader stopped at the cap and git blocked on the full pipe until the wall-time bound killed it. The existing over-budget test overshoots by a few bytes, which fits in the pipe buffer, so it cannot see this. | v0.4.0 to v0.11.0: `runGitBytesBounded` reading the explicit policy (`project.go:156`) is in v0.4.0 | stall commit: the readers end git the moment a stream overruns; 0.1 to 0.4 s now |
 | 3 | On a freshly committed tree, and again after a file was touched or edited, a scan rewrote `.git/index` and ran the repository's `post-index-change` hook (a long-settled index may not need a refresh). | `git status` took optional locks and refreshed the index. `--check-project` promises it changes nothing. | v0.4.0 to v0.11.0, same `git status` read as 1 | optional-locks commit: `--no-optional-locks` on every git process |
 | 4 | A test failed on the PR head: `TestAuthorableMissingPolicy` (also on the unmodified `4d1bbdf8`). | The test built a missing-policy error with no remedy and expected an authoring offer, but the code (correctly, PRD 8.4) offers authoring only with the author remedy. | unreleased | fixed by hands' T1 (`4e0056c4`); this branch carries no fix for it |
@@ -28,7 +27,7 @@
 - **P16:** a 5000-character path is echoed whole in the error line.
 - **P20 / N12 / R19:** a backslash is rejected as a separator (`path must use repository-relative slash separators`) even where the file system allows it in a name. This is a design choice, stated in the message. No test mentioned it before.
 
-## Commits on this branch
+## Commits before this one
 
 - `486308ba` fix(codesignal): stop a scan from running a core.fsmonitor program named by the repository
 - `392b665e` fix(codesignal): refuse a git read that overruns its output budget at once
@@ -39,11 +38,14 @@
 - `aa707f9f` fix(codesignal): say that a policy inside a submodule cannot be committed here
 - `04a64796` refactor(codesignal): keep the enclosing-submodule lookup flat
 - `2a40d24f` test(codesignal): split the hostile-state specs by responsibility and flatten the heaviest
-- `62970f62` docs(codesignal): add the evil-input checklist and name clean filters as the remaining channel
+- `e8784ce1` docs(codesignal): add the evil-input checklist and name clean filters as the remaining channel
+- `009f6eaa` fix(codesignal): start the snapshot reads' git child with the shared read arguments
+- `117f0bd0` refactor(codesignal): look up a name's spelling in its own file, one batch at a time
+- `77ae984b` test(codesignal): flatten the heaviest specs and split the git-failure and compiler-choice specs
 
 ## Proof that each added spec bites
 
-Each deliberate break edits one production line, runs only the new specs, and is reverted. "Red" is the number of specs that failed.
+The table lists 21 deliberate breaks. Each edits one production line, runs only the new specs, and is reverted. "Red" is the number of specs that failed.
 
 | Break | Red |
 |---|---|
