@@ -23,7 +23,10 @@ const (
 	layerlessOfferText                = "declares no layers"
 	layerlessOfferAccepted            = "y\n" + discoveredAuthoringSessionAnswers
 	layerlessOfferDeclined            = "n\n"
-	candidateRootsPattern             = `(?s)"roots":\s*\[\s*"\."\s*\]`
+	// cancelledAfterTheAnswer accepts the offer, gives an empty answer to the first question, which the session
+	// refuses, and cancels when it asks whether to retry, so the session ends without a candidate.
+	cancelledAfterTheAnswer = "y\n\ncancel\n"
+	candidateRootsPattern   = `(?s)"roots":\s*\[\s*"\."\s*\]`
 )
 
 func commitStubToolchainTypeScriptRepo(policyPath, policy string) string {
@@ -249,6 +252,18 @@ var _ = Describe("coach codesignal guided policy authoring on a discovered .lous
 			onDisk, err := os.ReadFile(filepath.Join(repo, coachConfigPath))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(onDisk)).To(Equal(singleRootPolicyJSON), "the existing file must never be touched")
+		})
+
+		It("claims no candidate when the offer is accepted and the session ends before it produces one", func() {
+			repo := commitRealCompilerTypeScriptRepo(coachConfigPath, singleRootPolicyJSON)
+
+			stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(commandPath, repo, envWithout("CI"), cancelledAfterTheAnswer,
+				"codesignal", "--baseline", "--project-language", "typescript", "--format=json")
+
+			Expect(exitCode).To(Equal(0), "the exit code follows the scan; stdout: %s stderr: %s", stdout, stderr)
+			Expect(decodeCoachReport(stdout).SchemaVersion).To(Equal("2"), "stdout must stay one parseable report; stdout: %s", stdout)
+			Expect(string(stderr)).To(ContainSubstring(layerlessOfferText), "stderr: %s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("no file was created"), "no candidate was approved, so none is claimed; stderr: %s", stderr)
 		})
 
 		It("accepts the offer and completes the session when the terminal delivers typed-ahead input without line buffering", func() {
