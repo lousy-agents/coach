@@ -20,7 +20,7 @@ func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int
 		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
 	}
 
-	result, err := projectcheck.Run(dir, revision, f.projectConfig)
+	result, err := projectcheck.Run(dir, revision, f.namedPolicy)
 	if err != nil {
 		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
 	}

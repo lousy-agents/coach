@@ -33,7 +33,7 @@ func runBaselineAnalysis(dir string, f codesignalFlags, stdin, stderr *os.File, 
 	disclosure := codesignalcli.WorkingTreeDisclosureDiagnostics(dir)
 	report, err := codesignalcli.AnalyzeBaseline(context.Background(), dir, revisionSHA, kept, disclosure, f.scope, coverage, project)
 	if err != nil {
-		return nil, wrapScanAnalysisError(err, dir, revisionSHA, f.projectConfig, stderr)
+		return nil, wrapScanAnalysisError(err, dir, revisionSHA, f.namedPolicy, stderr)
 	}
 	return withProjectDiagnostic(report, nil, diags...), nil
 }

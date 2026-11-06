@@ -7,6 +7,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 	. "github.com/onsi/ginkgo/v2"
@@ -83,7 +84,7 @@ var _ = Describe("applyProjectBackend diagnostics mutation contract", func() {
 			backend := identityHandoffBackend{result: &ProjectBackendResult{}}
 			cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
 			project := &ProjectAnalysis{
-				ConfigPath:   "project.json",
+				Policy:       policyref.Discovered("project.json"),
 				Language:     "typescript",
 				Config:       cfg,
 				ConfigDigest: projectconfig.Digest(cfg),
@@ -120,7 +121,7 @@ func appendsWorktreeReportReflectsCommittedHeadDiagnostic() {
 	}}
 	cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
 	project := &ProjectAnalysis{
-		ConfigPath:   "project.json",
+		Policy:       policyref.Discovered("project.json"),
 		Language:     "typescript",
 		Config:       cfg,
 		ConfigDigest: projectconfig.Digest(cfg),
@@ -153,7 +154,7 @@ func worktreeReportReflectsCommittedHeadMessageReferences() {
 	backend := identityHandoffBackend{result: &ProjectBackendResult{}}
 	cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
 	project := &ProjectAnalysis{
-		ConfigPath:   "project.json",
+		Policy:       policyref.Discovered("project.json"),
 		Language:     "typescript",
 		Config:       cfg,
 		ConfigDigest: projectconfig.Digest(cfg),
@@ -186,7 +187,7 @@ func doesNotEmitWorktreeProvenanceDiagnosticWorktree() {
 	backend := identityHandoffBackend{result: &ProjectBackendResult{}}
 	cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
 	project := &ProjectAnalysis{
-		ConfigPath:   "project.json",
+		Policy:       policyref.Discovered("project.json"),
 		Language:     "typescript",
 		Config:       cfg,
 		ConfigDigest: projectconfig.Digest(cfg),
@@ -217,7 +218,7 @@ func emitsWorktreeStatusCheckFailedRatherThan() {
 	backend := identityHandoffBackend{result: &ProjectBackendResult{}}
 	cfg := json.RawMessage(`{"schema_version":"1","roots":["."]}`)
 	project := &ProjectAnalysis{
-		ConfigPath:   "project.json",
+		Policy:       policyref.Discovered("project.json"),
 		Language:     "typescript",
 		Config:       cfg,
 		ConfigDigest: projectconfig.Digest(cfg),

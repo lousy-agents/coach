@@ -6,16 +6,17 @@ package projectcheck
 
 import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/pkgmanager"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
-// Run evaluates the project at revision. configPath is the --project-config the
-// user passed and is empty when the policy is to be discovered. The difference
-// is not cosmetic: a named policy is checked on disk, and a discovered one at
-// the analyzed revision, so a caller holding a resolved path must pass "".
-func Run(dir, revision, configPath string) (*projectreadiness.Result, error) {
-	result, err := evaluate(dir, revision, configPath, PolicyChecker(configPath))
+// Run evaluates the project at revision. A policy the user named is checked on
+// disk at its path; a discovered one is selected again by Discover and checked
+// at the analyzed revision, so a caller holding a discovered policy may pass it
+// as it is.
+func Run(dir, revision string, policy policyref.Ref) (*projectreadiness.Result, error) {
+	result, err := evaluate(dir, revision, policy, PolicyChecker(policy))
 	if err != nil {
 		return nil, err
 	}
@@ -23,28 +24,28 @@ func Run(dir, revision, configPath string) (*projectreadiness.Result, error) {
 }
 
 // evaluate is Run with the policy check chosen by the caller.
-func evaluate(dir, revision, configPath string, checkPolicy func(dir, revision, policyPath string) (projectreadiness.Check, []string, error)) (projectreadiness.Result, error) {
-	policyPath, extraWarnings, err := resolveCheckPolicy(dir, revision, configPath)
+func evaluate(dir, revision string, policy policyref.Ref, checkPolicy func(dir, revision, policyPath string) (projectreadiness.Check, []string, error)) (projectreadiness.Result, error) {
+	policyPath, extraWarnings, err := resolveCheckPolicy(dir, revision, policy)
 	if err != nil {
 		return projectreadiness.Result{}, err
 	}
 
-	policy, roots, err := checkPolicy(dir, revision, policyPath)
+	policyCheck, roots, err := checkPolicy(dir, revision, policyPath)
 	if err != nil {
 		return projectreadiness.Result{}, err
 	}
-	projectShape, err := checkProjectShape(dir, revision, roots, policy.State == projectreadiness.Pass)
+	projectShape, err := checkProjectShape(dir, revision, roots, policyCheck.State == projectreadiness.Pass)
 	if err != nil {
 		return projectreadiness.Result{}, err
 	}
 	runtime := tstoolchain.CheckNode()
 	node := tstoolchain.NodeCompatibilityMirror(runtime)
 	compiler := tstoolchain.ResolveCompiler(dir, roots)
-	packageManager := pkgmanager.Check(dir, roots, policy.State == projectreadiness.Pass)
+	packageManager := pkgmanager.Check(dir, roots, policyCheck.State == projectreadiness.Pass)
 
 	checks := projectreadiness.Checks{
 		ProjectShape:   projectShape,
-		Policy:         policy,
+		Policy:         policyCheck,
 		Node:           node,
 		Runtime:        runtime,
 		Compiler:       compiler,
@@ -52,7 +53,7 @@ func evaluate(dir, revision, configPath string, checkPolicy func(dir, revision, 
 	}
 
 	readFromDisk := ""
-	if policy.DecidedOnDisk {
+	if policyCheck.DecidedOnDisk {
 		readFromDisk = policyPath
 	}
 	dirty, err := detectRelevantDirtyWorktree(dir, roots, policyPath, readFromDisk)

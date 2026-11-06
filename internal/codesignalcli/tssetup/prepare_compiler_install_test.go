@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
@@ -34,7 +35,7 @@ func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 	revision := gitfixture.CommitFile(t, repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 	writeProjectMiseTypescriptPin(t, repo, "7.0.2")
 
-	before, err := projectcheck.Run(repo, revision, "")
+	before, err := projectcheck.Run(repo, revision, policyref.Ref{})
 	if err != nil {
 		t.Fatalf("CheckProjectReadiness (before): %v", err)
 	}
@@ -47,7 +48,7 @@ func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 	})
 	var transcript bytes.Buffer
 
-	result := RunPrepareCompilerMiseSetup(context.Background(), repo, revision, "", readiness, strings.NewReader("mise_project\ninstall\n"), &transcript)
+	result := RunPrepareCompilerMiseSetup(context.Background(), repo, revision, policyref.Ref{}, readiness, strings.NewReader("mise_project\ninstall\n"), &transcript)
 
 	if !result.Trusted {
 		t.Fatalf("Trusted = false, want true: %+v transcript=%s", result, transcript.String())

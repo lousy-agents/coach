@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 )
 
 // TestProjectPackageWorkingDirectoryUsesDiscoveredRootsWhenConfigPathEmpty
@@ -25,7 +26,7 @@ func TestProjectPackageWorkingDirectoryUsesDiscoveredRootsWhenConfigPathEmpty(t 
 	}
 	revision := gitfixture.CommitFile(t, repo, ".lousy-agents/coach.json", `{"schema_version":"1","roots":["packages/a","packages/b"]}`+"\n")
 
-	dir, reason := projectPackageWorkingDirectory(repo, revision, "")
+	dir, reason := projectPackageWorkingDirectory(repo, revision, policyref.Ref{})
 	if reason != setupChoiceReasonManifestContextAmbiguous || dir != "" {
 		t.Fatalf("projectPackageWorkingDirectory with an empty project-config path = (%q, %q), want (\"\", %q)", dir, reason, setupChoiceReasonManifestContextAmbiguous)
 	}
@@ -41,7 +42,7 @@ func TestCheckedPolicyRootsDoNotComeFromTheCommittedCopyOfAnExplicitPolicyDelete
 		t.Fatalf("remove pol.json: %v", err)
 	}
 
-	roots, err := checkedPolicyRoots(repo, revision, "pol.json")
+	roots, err := checkedPolicyRoots(repo, revision, policyref.Named("pol.json"))
 
 	if err != nil || len(roots) != 0 {
 		t.Fatalf("checkedPolicyRoots = %v, %v; want no roots and no error for a policy the check failed", roots, err)
@@ -52,7 +53,7 @@ func TestCheckedPolicyRootsStillComeFromTheCommittedCopyOfADiscoveredPolicy(t *t
 	repo := gitfixture.Init(t)
 	revision := gitfixture.CommitFile(t, repo, ".lousy-agents/coach.json", `{"schema_version":"1","roots":["packages/a","packages/b"]}`+"\n")
 
-	roots, err := checkedPolicyRoots(repo, revision, "")
+	roots, err := checkedPolicyRoots(repo, revision, policyref.Ref{})
 
 	if err != nil || len(roots) != 2 {
 		t.Fatalf("checkedPolicyRoots = %v, %v; want the two committed roots", roots, err)
@@ -66,7 +67,7 @@ func TestCheckedPolicyRootsStillComeFromTheCommittedCopyOfADiscoveredPolicyDelet
 		t.Fatalf("remove coach.json: %v", err)
 	}
 
-	roots, err := checkedPolicyRoots(repo, revision, "")
+	roots, err := checkedPolicyRoots(repo, revision, policyref.Ref{})
 
 	if err != nil || len(roots) != 2 {
 		t.Fatalf("checkedPolicyRoots = %v, %v; want the two committed roots, as before the explicit check existed", roots, err)

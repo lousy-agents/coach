@@ -3,12 +3,13 @@ package tssetup
 import (
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 func TestPrepareCompilerRemediationNamesNoCommandForAPolicyWhoseNameCannotBePrinted(t *testing.T) {
-	got := PrepareCompilerRemediation(projectreadiness.GapTypescriptCompilerMissing, "bad\x1bname.json")
+	got := PrepareCompilerRemediation(projectreadiness.GapTypescriptCompilerMissing, policyref.Named("bad\x1bname.json"))
 
 	assertRemediation(t, got, "on a terminal: run --prepare-compiler with the same --project-config (its name is not printed here)")
 }
@@ -28,7 +29,7 @@ func TestScanSetupOfferRemediationWritesAPolicyPathAsAShellWouldReadIt(t *testin
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			assertRemediation(t, ScanSetupOfferRemediation(projectreadiness.GapTypescriptCompilerMissing, c.path, projectPackageOnlyReadiness()), c.want)
+			assertRemediation(t, ScanSetupOfferRemediation(projectreadiness.GapTypescriptCompilerMissing, policyref.Named(c.path), projectPackageOnlyReadiness()), c.want)
 		})
 	}
 }

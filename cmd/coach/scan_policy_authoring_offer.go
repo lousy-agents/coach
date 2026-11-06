@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
@@ -17,7 +18,7 @@ import (
 // that does not exist on disk (*projectconfig.ConfigError with Kind ==
 // KindMissing, whether or not it has been wrapped in a
 // *ProjectConfigErrorWithReadiness for AC-SET-13) with a controlling
-// terminal available on stdin. An unusable configPath is rejected before
+// terminal available on stdin. An unusable policy path is rejected before
 // even inspecting err, since ValidateProjectConfigPath's own failure is a
 // usage error, not an absent policy. Every other *ProjectConfigError kind
 // (a usage error that reached classifyAnalysisError some other way, a file
@@ -29,11 +30,12 @@ import (
 // --no-interactive or a non-empty CI environment variable, see
 // nonInteractiveRequested in interactivity.go) all fall through to
 // classifyAnalysisError's existing message-only path unchanged.
-func scanShouldAuthorProjectConfig(err error, language, configPath string, noInteractive bool) bool {
+func scanShouldAuthorProjectConfig(err error, language string, policy policyref.Ref, noInteractive bool) bool {
 	if language != "typescript" {
 		return false
 	}
-	if projectconfig.ValidatePath(configPath) != nil {
+	named, isNamed := policy.NamedPath()
+	if !isNamed || projectconfig.ValidatePath(named) != nil {
 		return false
 	}
 	if !authorableMissingPolicy(err) {
@@ -86,11 +88,11 @@ func runScanProjectConfigAuthoring(dir string, f codesignalFlags, scanErr error,
 	if exitCode != 0 {
 		return exitCode
 	}
-	if !f.projectConfigSet {
+	if !f.namedPolicy.Explicit {
 		fmt.Fprintf(stderr, "coach codesignal: the approved TypeScript project-config candidate was written to stdout and no file was created; review it, save it as %q replacing the current file, commit it, then rerun this scan once it is committed.\n", projectconfig.CanonicalPath)
 		return 2
 	}
-	fmt.Fprintf(stderr, "coach codesignal: the approved TypeScript project-config candidate was written to stdout and no file was created; save it to %q at the repository root, review it, commit it, then rerun this scan once it is committed.\n", f.projectConfig)
+	fmt.Fprintf(stderr, "coach codesignal: the approved TypeScript project-config candidate was written to stdout and no file was created; save it to %q at the repository root, review it, commit it, then rerun this scan once it is committed.\n", f.namedPolicy.Path)
 	return 2
 }
 
@@ -108,7 +110,7 @@ func printProjectConfigGapBeforeAuthoring(scanErr error, stderr *os.File) {
 
 	var withReadiness *tssetup.ProjectConfigErrorWithReadiness
 	if errors.As(scanErr, &withReadiness) {
-		for _, line := range tssetup.AlsoFailingGapLines(withReadiness.Readiness, withReadiness.ConfigPath) {
+		for _, line := range tssetup.AlsoFailingGapLines(withReadiness.Readiness, withReadiness.Policy) {
 			fmt.Fprintln(stderr, line)
 		}
 	}

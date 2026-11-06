@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/projectbridge"
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -21,16 +22,15 @@ import (
 // be non-nil; config/backend failures stay on the CLI composition root so
 // file-local reports remain available with stable diagnostics.
 type ProjectAnalysis struct {
-	// ConfigPath is the policy the analysis used, however it was selected.
-	// ConfigExplicit says whether the user named it with --project-config, which
-	// is what decides how later checks judge it: a named policy must be on disk,
-	// a discovered one is read from the analyzed revision as before.
-	ConfigPath     string
-	ConfigExplicit bool
-	Language       string
-	Config         json.RawMessage
-	ConfigDigest   string
-	Backend        ProjectBackend
+	// Policy is the policy the analysis used, however it was selected, and whether
+	// the user named it with --project-config, which is what decides how later
+	// checks judge it: a named policy must be on disk, a discovered one is read
+	// from the analyzed revision as before.
+	Policy       policyref.Ref
+	Language     string
+	Config       json.RawMessage
+	ConfigDigest string
+	Backend      ProjectBackend
 }
 
 // ProjectBackend builds project observations for one analysis request.
@@ -42,26 +42,14 @@ type ProjectBackend interface {
 // ProjectBackendRequest carries the immutable revision and config identity a
 // backend needs. Absolute checkout roots must not leak into lifecycle identity.
 type ProjectBackendRequest struct {
-	Dir            string
-	HeadRevision   string
-	BaseRevision   string
-	Baseline       bool
-	ConfigPath     string
-	ConfigExplicit bool
-	Config         json.RawMessage
-	ConfigDigest   string
-	Language       string
-}
-
-// ExplicitConfigPath is the --project-config value the user passed, empty when
-// the policy was discovered. Anything printed or re-checked from a failure
-// uses this, never ConfigPath: naming a discovered policy with --project-config
-// would make the next command judge it as a named one.
-func (r ProjectBackendRequest) ExplicitConfigPath() string {
-	if r.ConfigExplicit {
-		return r.ConfigPath
-	}
-	return ""
+	Dir          string
+	HeadRevision string
+	BaseRevision string
+	Baseline     bool
+	Policy       policyref.Ref
+	Config       json.RawMessage
+	ConfigDigest string
+	Language     string
 }
 
 // ProjectBackendResult is the builder-facing project observation bundle.
@@ -136,15 +124,14 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		return input, opts, nil
 	}
 	result, err := project.Backend.Analyze(ctx, ProjectBackendRequest{
-		Dir:            dir,
-		HeadRevision:   headRevision,
-		BaseRevision:   baseRevision,
-		Baseline:       baseline,
-		ConfigPath:     project.ConfigPath,
-		ConfigExplicit: project.ConfigExplicit,
-		Config:         project.Config,
-		ConfigDigest:   project.ConfigDigest,
-		Language:       project.Language,
+		Dir:          dir,
+		HeadRevision: headRevision,
+		BaseRevision: baseRevision,
+		Baseline:     baseline,
+		Policy:       project.Policy,
+		Config:       project.Config,
+		ConfigDigest: project.ConfigDigest,
+		Language:     project.Language,
 	})
 	if err != nil {
 		return input, opts, err
@@ -167,7 +154,7 @@ func applyProjectBackend(ctx context.Context, input codesignal.Input, opts codes
 		analyzerProtocolVersion = projectbridge.ProtocolVersion
 	}
 	roots := selectedRootsFromConfig(project.Config)
-	diagnostics = appendProjectWorktreeDiagnostic(diagnostics, dir, roots, project.ConfigPath)
+	diagnostics = appendProjectWorktreeDiagnostic(diagnostics, dir, roots, project.Policy)
 
 	merged := codesignal.Input{
 		Scope:               input.Scope,

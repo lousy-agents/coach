@@ -17,10 +17,8 @@ func validateCheckProjectFlags(f codesignalFlags, setFlags map[string]bool, posi
 	if f.format != "text" && f.format != "json" {
 		return fmt.Sprintf("coach: invalid --format value %q: must be \"text\" or \"json\"", f.format)
 	}
-	if f.projectConfigSet {
-		if message := invalidProjectConfigMessage(f.projectConfig); message != "" {
-			return message
-		}
+	if message := invalidNamedPolicyMessage(f.namedPolicy); message != "" {
+		return message
 	}
 	allowedWithCheckProject := map[string]bool{"check-project": true, "baseline": true, "project-language": true, "project-config": true, "format": true}
 	if name, disallowed := firstDisallowedFlag(setFlags, allowedWithCheckProject); disallowed {

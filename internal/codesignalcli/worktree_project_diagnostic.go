@@ -2,6 +2,7 @@ package codesignalcli
 
 import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
@@ -10,7 +11,7 @@ import (
 // worktree diagnostics. Tests may replace it with canned porcelain entries.
 var listWorktreeStatus = gitrepo.WorktreeStatus
 
-func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, dir string, roots []string, configPath string) []codesignal.Diagnostic {
+func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, dir string, roots []string, policy policyref.Ref) []codesignal.Diagnostic {
 	entries, err := listWorktreeStatus(dir)
 	if err != nil {
 		if hasDiagnosticKind(diagnostics, codesignal.DiagKindWorktreeStatusCheckFailed) ||
@@ -19,7 +20,7 @@ func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, dir st
 		}
 		return appendDiagnosticCopy(diagnostics, worktreeStatusFailureDiagnostic(err))
 	}
-	if !hasRelevantDirtyWorktree(entries, roots, configPath) {
+	if !hasRelevantDirtyWorktree(entries, roots, policy.Path) {
 		return diagnostics
 	}
 	if hasDiagnosticKind(diagnostics, codesignal.DiagKindWorktreeReportReflectsCommittedHEAD) {
@@ -31,9 +32,9 @@ func appendProjectWorktreeDiagnostic(diagnostics []codesignal.Diagnostic, dir st
 	})
 }
 
-func hasRelevantDirtyWorktree(entries []gitrepo.WorktreeEntry, roots []string, configPath string) bool {
+func hasRelevantDirtyWorktree(entries []gitrepo.WorktreeEntry, roots []string, policyPath string) bool {
 	for _, entry := range entries {
-		if projectcheck.IsRelevantDirtyPath(entry.Path, roots, configPath) {
+		if projectcheck.IsRelevantDirtyPath(entry.Path, roots, policyPath) {
 			return true
 		}
 	}

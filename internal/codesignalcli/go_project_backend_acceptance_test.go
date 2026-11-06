@@ -7,6 +7,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/render"
 	"github.com/lousy-agents/coach/pkg/codesignal"
@@ -43,7 +44,7 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 		files := []gitrepo.SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
 
 		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
+			Policy:       policyref.Discovered("project.json"),
 			Language:     "go",
 			Config:       goLayerBypassSearchConfigJSON,
 			ConfigDigest: projectconfig.Digest(goLayerBypassSearchConfigJSON),
@@ -78,7 +79,7 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 		files := []gitrepo.SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
 
 		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
+			Policy:       policyref.Discovered("project.json"),
 			Language:     "go",
 			Config:       goLayerBypassSearchConfigJSON,
 			ConfigDigest: projectconfig.Digest(goLayerBypassSearchConfigJSON),
@@ -106,7 +107,7 @@ var _ = Describe("Go layer-bypass search coverage folding into project lifecycle
 		files := []gitrepo.SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
 
 		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
+			Policy:       policyref.Discovered("project.json"),
 			Language:     "go",
 			Config:       goLayerBypassSearchConfigJSON,
 			ConfigDigest: projectconfig.Digest(goLayerBypassSearchConfigJSON),
@@ -139,7 +140,7 @@ func neverChangesWhichFindingsRealGoBackend() {
 
 	buildReport := func(cfg json.RawMessage) *codesignal.Report {
 		project := &ProjectAnalysis{
-			ConfigPath:   "project.json",
+			Policy:       policyref.Discovered("project.json"),
 			Language:     "go",
 			Config:       cfg,
 			ConfigDigest: projectconfig.Digest(cfg),
@@ -207,7 +208,7 @@ func degradesOnlyBaseSideCoverageIncompleteDiagnostic() {
 	files := []gitrepo.SelectedFile{{Path: "pkg/handlers/handlers.go", Language: "go", Status: "added"}}
 
 	project := &ProjectAnalysis{
-		ConfigPath:   "project.json",
+		Policy:       policyref.Discovered("project.json"),
 		Language:     "go",
 		Config:       goLayerBypassSearchConfigJSON,
 		ConfigDigest: projectconfig.Digest(goLayerBypassSearchConfigJSON),

@@ -17,7 +17,7 @@ const layerlessPolicyAuthoringPrompt = "%s is valid but declares no layers, so l
 // failed schema validation. The policy was not named with --project-config,
 // so the explicit-path trigger in scanShouldAuthorProjectConfig never sees it.
 func scanShouldAuthorDiscoveredProjectConfig(err error, f codesignalFlags, noInteractive bool) bool {
-	if f.projectLanguage != "typescript" || f.projectConfigSet || noInteractive {
+	if f.projectLanguage != "typescript" || f.namedPolicy.Explicit || noInteractive {
 		return false
 	}
 	var configErr *projectconfig.ConfigError
@@ -28,7 +28,7 @@ func scanShouldAuthorDiscoveredProjectConfig(err error, f codesignalFlags, noInt
 }
 
 func layerlessDiscoveredPolicy(report *codesignal.Report, f codesignalFlags) bool {
-	if f.projectLanguage != "typescript" || f.projectConfigSet || report.ProjectScope == nil {
+	if f.projectLanguage != "typescript" || f.namedPolicy.Explicit || report.ProjectScope == nil {
 		return false
 	}
 	for _, diagnostic := range report.Diagnostics {

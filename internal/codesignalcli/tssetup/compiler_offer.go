@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -127,7 +128,7 @@ type CompilerSetupOfferResult struct {
 // readiness.Checks.Policy must already be projectreadiness.Pass, mirroring
 // RunPrepareCompilerMiseSetup's own precondition: a reviewed, committed
 // policy is required before compiler setup is ever offered (AC-SET-13).
-func RunCompilerSetupOffer(ctx context.Context, dir, revision, configPath, gapCode string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) CompilerSetupOfferResult {
+func RunCompilerSetupOffer(ctx context.Context, dir, revision string, policy policyref.Ref, gapCode string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) CompilerSetupOfferResult {
 	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
 		return CompilerSetupOfferResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy}
 	}
@@ -140,7 +141,7 @@ func RunCompilerSetupOffer(ctx context.Context, dir, revision, configPath, gapCo
 	if readiness == nil {
 		return CompilerSetupOfferResult{NoChoicesOffered: true}
 	}
-	menu, projectPackageDirectory, resolutionWithheld := withProjectPackageResolution(AvailableChoices(*readiness), dir, revision, configPath)
+	menu, projectPackageDirectory, resolutionWithheld := withProjectPackageResolution(AvailableChoices(*readiness), dir, revision, policy)
 	if !menuOffersExecutableChoice(menu) {
 		return CompilerSetupOfferResult{NoChoicesOffered: true, Withheld: menu.Withheld}
 	}
@@ -170,9 +171,9 @@ func RunCompilerSetupOffer(ctx context.Context, dir, revision, configPath, gapCo
 	}
 
 	if choice == ChoiceProjectPackage {
-		return runProjectPackageSetupOffer(ctx, dir, revision, configPath, projectPackageDirectory, readiness.Checks.PackageManager, out, reader)
+		return runProjectPackageSetupOffer(ctx, dir, revision, policy, projectPackageDirectory, readiness.Checks.PackageManager, out, reader)
 	}
-	return runMiseSetupOffer(ctx, dir, revision, configPath, choice, out, reader)
+	return runMiseSetupOffer(ctx, dir, revision, policy, choice, out, reader)
 }
 
 // menuOffersExecutableChoice reports whether menu carries at least one

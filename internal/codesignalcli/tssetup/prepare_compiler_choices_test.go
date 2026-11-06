@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -41,7 +42,7 @@ func TestMiseChoicesForPrepareCompilerFallsBackToVerifiedChoicesWhenActionChoice
 	}
 
 	action := projectreadiness.NextAction{Kind: projectreadiness.NextActionPrepareCompiler, Executable: true}
-	got := miseChoicesForPrepareCompiler(repo, revision, "", action)
+	got := miseChoicesForPrepareCompiler(repo, revision, policyref.Ref{}, action)
 
 	want := []string{tstoolchain.OriginMiseProject, tstoolchain.OriginMiseGlobal}
 	if len(got) != len(want) {
@@ -90,7 +91,7 @@ func TestMiseChoicesForPrepareCompilerUsesDiscoveredRootsWhenConfigPathEmpty(t *
 	}
 
 	action := projectreadiness.NextAction{Kind: projectreadiness.NextActionPrepareCompiler, Executable: true}
-	got := miseChoicesForPrepareCompiler(repo, revision, "", action)
+	got := miseChoicesForPrepareCompiler(repo, revision, policyref.Ref{}, action)
 	if !sameChoiceKinds(got, want) {
 		t.Fatalf("miseChoicesForPrepareCompiler with an empty project-config path = %#v, want %#v (EvaluateMiseSetupChoices on discovered roots %v); [.] would offer %#v", got, want, discoveredRoots, dotRoots)
 	}
@@ -154,7 +155,7 @@ func TestRunPrepareCompilerMiseSetupReportsNoChoicesOffered(t *testing.T) {
 }
 
 func checkRunPrepareCompilerMiseSetupReports(t *testing.T, readiness *projectreadiness.Result) {
-	result := RunPrepareCompilerMiseSetup(context.Background(), t.TempDir(), "HEAD", "", readiness, strings.NewReader(""), &bytes.Buffer{})
+	result := RunPrepareCompilerMiseSetup(context.Background(), t.TempDir(), "HEAD", policyref.Ref{}, readiness, strings.NewReader(""), &bytes.Buffer{})
 	if !result.NoChoicesOffered {
 		t.Fatalf("NoChoicesOffered = false, want true: %+v", result)
 	}
@@ -170,7 +171,7 @@ func TestRunPrepareCompilerMiseSetupCancelsOnUnrecognizedSelection(t *testing.T)
 	})
 	var transcript bytes.Buffer
 
-	result := RunPrepareCompilerMiseSetup(context.Background(), t.TempDir(), "HEAD", "", readiness, strings.NewReader("not-a-choice\n"), &transcript)
+	result := RunPrepareCompilerMiseSetup(context.Background(), t.TempDir(), "HEAD", policyref.Ref{}, readiness, strings.NewReader("not-a-choice\n"), &transcript)
 
 	if !result.Cancelled {
 		t.Fatalf("Cancelled = false, want true: %+v", result)

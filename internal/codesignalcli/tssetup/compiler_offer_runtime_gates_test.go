@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -46,7 +47,7 @@ func TestRunCompilerSetupOfferNeverOpensForARuntimeBoundaryGap(t *testing.T) {
 
 func checkRunCompilerSetupOfferNeverOpens(t *testing.T, readiness *projectreadiness.Result, gapCode string, offered bool) {
 	var out strings.Builder
-	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", gapCode, readiness, strings.NewReader("cancel\n"), &out)
+	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", policyref.Ref{}, gapCode, readiness, strings.NewReader("cancel\n"), &out)
 	if offered {
 		if result.NoChoicesOffered {
 			t.Fatalf("NoChoicesOffered = true for executable gap %q, want the menu to have opened: %+v", gapCode, result)
@@ -74,7 +75,7 @@ func TestRunCompilerSetupOfferNeverOpensWhenReadinessRuntimeBlocks(t *testing.T)
 		},
 	}
 	var out strings.Builder
-	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader("cancel\n"), &out)
+	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", policyref.Ref{}, projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader("cancel\n"), &out)
 	if result.RuntimeGapCode != projectreadiness.GapNodeMissing {
 		t.Fatalf("RuntimeGapCode = %q, want %q: a compiler gapCode must not open the install menu while readiness.Checks.Runtime independently fails; result=%+v", result.RuntimeGapCode, projectreadiness.GapNodeMissing, result)
 	}

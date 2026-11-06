@@ -9,14 +9,15 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli"
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
 var _ = Describe("loading the project for a TypeScript scan whose policy cannot be loaded", func() {
-	DescribeTable("gives the readiness check the policy path only when the user named it",
-		func(explicit bool, want string) {
+	DescribeTable("hands the readiness check the policy with who chose it",
+		func(source policyref.Ref, wantNamedPath string, wantNamed bool) {
 			repo := commitScannableGoRepo()
 			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
@@ -27,14 +28,16 @@ var _ = Describe("loading the project for a TypeScript scan whose policy cannot 
 			ports.loadExplicit = failingLoad
 			ports.loadDiscovered = failingLoad
 
-			_, loadErr := loadPreparedProject(repo, revision, policySource{path: ".lousy-agents/coach.json", explicit: explicit}, "typescript", nil, ports)
+			_, loadErr := loadPreparedProject(repo, revision, source, "typescript", nil, ports)
 
 			var withReadiness *tssetup.ProjectConfigErrorWithReadiness
 			Expect(errors.As(loadErr, &withReadiness)).To(BeTrue(), "the failure carries the readiness snapshot: %v", loadErr)
-			Expect(withReadiness.ConfigPath).To(Equal(want))
+			namedPath, named := withReadiness.Policy.NamedPath()
+			Expect(named).To(Equal(wantNamed))
+			Expect(namedPath).To(Equal(wantNamedPath))
 		},
-		Entry("a policy named with --project-config", true, ".lousy-agents/coach.json"),
-		Entry("a policy the scan discovered", false, ""),
+		Entry("a policy named with --project-config", policyref.Named(".lousy-agents/coach.json"), ".lousy-agents/coach.json", true),
+		Entry("a policy the scan discovered", policyref.Discovered(".lousy-agents/coach.json"), "", false),
 	)
 })
 
@@ -47,7 +50,7 @@ var _ = Describe("loading the project when no backend can run the policy", func(
 		}
 		earlier := codesignal.Diagnostic{Kind: "project_config_deprecated", Path: "project.json"}
 
-		prepared, err := loadPreparedProject("", "rev", policySource{path: "project.json"}, "go", []codesignal.Diagnostic{earlier}, ports)
+		prepared, err := loadPreparedProject("", "rev", policyref.Discovered("project.json"), "go", []codesignal.Diagnostic{earlier}, ports)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prepared.analysis).To(BeNil())

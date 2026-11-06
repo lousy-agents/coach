@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -26,7 +27,7 @@ func TestRunPrepareCompilerMiseSetupCancelsOnDeclinedConfirmation(t *testing.T) 
 	})
 	var transcript bytes.Buffer
 
-	result := RunPrepareCompilerMiseSetup(context.Background(), t.TempDir(), "HEAD", "", readiness, strings.NewReader("mise_global\nno\n"), &transcript)
+	result := RunPrepareCompilerMiseSetup(context.Background(), t.TempDir(), "HEAD", policyref.Ref{}, readiness, strings.NewReader("mise_global\nno\n"), &transcript)
 
 	if !result.Cancelled {
 		t.Fatalf("Cancelled = false, want true: %+v", result)
@@ -73,7 +74,7 @@ func TestRunPrepareCompilerMiseSetupReportsRequestedVersionOnInstallFailure(t *t
 	})
 	var transcript bytes.Buffer
 
-	result := RunPrepareCompilerMiseSetup(context.Background(), repo, revision, "", readiness, strings.NewReader("mise_project\ninstall\n"), &transcript)
+	result := RunPrepareCompilerMiseSetup(context.Background(), repo, revision, policyref.Ref{}, readiness, strings.NewReader("mise_project\ninstall\n"), &transcript)
 
 	if !result.Trusted {
 		t.Fatalf("Trusted = false, want true: %+v transcript=%s", result, transcript.String())

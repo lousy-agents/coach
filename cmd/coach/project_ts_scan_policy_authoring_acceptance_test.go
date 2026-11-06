@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -441,7 +442,7 @@ var _ = Describe("coach codesignal (real scan): the interactive compiler-setup o
 			errRead, errWrite, err := os.Pipe()
 			Expect(err).NotTo(HaveOccurred())
 
-			f := codesignalFlags{baseline: true, format: "json", projectConfig: "project.json", projectConfigSet: true, projectLanguage: "typescript"}
+			f := codesignalFlags{baseline: true, format: "json", namedPolicy: policyref.Named("project.json"), projectLanguage: "typescript"}
 			exitCode := runCodesignalScan(repo, f, os.Stdin, outWrite, errWrite, scanOfferBudget{}, defaultScanPorts())
 			Expect(outWrite.Close()).To(Succeed())
 			Expect(errWrite.Close()).To(Succeed())

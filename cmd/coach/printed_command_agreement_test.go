@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/invocation"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 )
 
 var pathsPrintedAlike = []struct {
@@ -32,7 +33,7 @@ func TestRemediationAndSeeAllHintAgreeOnWhatCanBePrinted(t *testing.T) {
 
 func assertSurfacesAgreeOnPrintability(t *testing.T, path string) {
 	t.Helper()
-	remediation := invocation.Command{Mode: invocation.CheckProject, ConfigPath: path}.Phrase("run")
+	remediation := invocation.Command{Mode: invocation.CheckProject, Policy: policyref.Named(path)}.Phrase("run")
 	seeAll := seeAllCommand([]string{"--project-config", path, "--top", "1"})
 
 	remediationShows := !strings.Contains(remediation, "not printed here")
@@ -53,7 +54,7 @@ func TestRemediationAndSeeAllHintQuoteAPathTheSameWay(t *testing.T) {
 
 func assertSurfacesQuoteAlike(t *testing.T, path string) {
 	t.Helper()
-	remediation := invocation.Command{Mode: invocation.CheckProject, ConfigPath: path}.Phrase("")
+	remediation := invocation.Command{Mode: invocation.CheckProject, Policy: policyref.Named(path)}.Phrase("")
 	_, inRemediation, _ := strings.Cut(remediation, " --project-config ")
 	seeAll := seeAllCommand([]string{"--project-config", path, "--top", "1"})
 	_, inSeeAll, _ := strings.Cut(seeAll, " --project-config ")

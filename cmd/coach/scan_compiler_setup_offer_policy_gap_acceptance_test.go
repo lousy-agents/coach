@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
@@ -18,7 +19,7 @@ var _ = Describe("the scan's compiler-setup offer when the policy blocks it", fu
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 			wrapped := &tssetup.CompilerUnresolvedErrorWithReadiness{
-				CompilerUnresolvedError: &tstoolchain.CompilerUnresolvedError{Code: projectreadiness.GapTypescriptCompilerMissing, ConfigPath: "pol.json"},
+				CompilerUnresolvedError: &tstoolchain.CompilerUnresolvedError{Code: projectreadiness.GapTypescriptCompilerMissing, Policy: policyref.Named("pol.json")},
 				Readiness: &projectreadiness.Result{
 					Checks: projectreadiness.Checks{Policy: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing, Remedy: remedy}},
 				},

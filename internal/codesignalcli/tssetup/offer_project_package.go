@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/pkgmanager"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -18,11 +19,11 @@ import (
 // readiness snapshot and has no dir/revision to resolve a working directory
 // with, so this is where an offer that cannot be previewed honestly is
 // converted into a withheld entry with its reason.
-func withProjectPackageResolution(menu Menu, dir, revision, configPath string) (resolved Menu, workingDirectory, withheldReason string) {
+func withProjectPackageResolution(menu Menu, dir, revision string, policy policyref.Ref) (resolved Menu, workingDirectory, withheldReason string) {
 	if !menuOffersChoice(menu, ChoiceProjectPackage) {
 		return menu, "", ""
 	}
-	workingDirectory, withheldReason = projectPackageWorkingDirectory(dir, revision, configPath)
+	workingDirectory, withheldReason = projectPackageWorkingDirectory(dir, revision, policy)
 	if withheldReason == "" {
 		return menu, workingDirectory, ""
 	}
@@ -55,9 +56,9 @@ func withProjectPackageResolution(menu Menu, dir, revision, configPath string) (
 // than falling back to the worktree root: the menu's eligibility was never
 // computed against that directory, so running an install there would consent
 // to something nobody previewed.
-func projectPackageWorkingDirectory(dir, revision, configPath string) (workingDirectory, withheldReason string) {
+func projectPackageWorkingDirectory(dir, revision string, policy policyref.Ref) (workingDirectory, withheldReason string) {
 	worktreeRoot := tstoolchain.WorktreeRoot(dir)
-	roots, err := checkedPolicyRoots(dir, revision, configPath)
+	roots, err := checkedPolicyRoots(dir, revision, policy)
 	if err != nil {
 		return "", setupChoiceReasonManifestContextUnresolved
 	}
@@ -77,7 +78,7 @@ func projectPackageWorkingDirectory(dir, revision, configPath string) (workingDi
 // runProjectPackageSetupOffer executes ChoiceProjectPackage through its
 // own library path (BuildPreview/RunConfirmedAndRecheckReadiness),
 // distinct from runMiseSetupOffer's mise install path.
-func runProjectPackageSetupOffer(ctx context.Context, dir, revision, configPath, workingDirectory string, packageManager projectreadiness.Check, out io.Writer, reader *bufio.Reader) CompilerSetupOfferResult {
+func runProjectPackageSetupOffer(ctx context.Context, dir, revision string, policy policyref.Ref, workingDirectory string, packageManager projectreadiness.Check, out io.Writer, reader *bufio.Reader) CompilerSetupOfferResult {
 	preview, err := BuildPreview(Choice{Kind: ChoiceProjectPackage}, packageManager, workingDirectory)
 	if err != nil {
 		return CompilerSetupOfferResult{Choice: ChoiceProjectPackage, FailureDetail: err.Error()}
@@ -85,7 +86,7 @@ func runProjectPackageSetupOffer(ctx context.Context, dir, revision, configPath,
 	printSetupPreview(out, preview)
 	confirmed := promptForSetupConfirmation(out, reader)
 
-	outcome, execErr := RunConfirmedAndRecheckReadiness(ctx, preview, confirmed, dir, revision, configPath)
+	outcome, execErr := RunConfirmedAndRecheckReadiness(ctx, preview, confirmed, dir, revision, policy)
 	result := CompilerSetupOfferResult{
 		Choice:               ChoiceProjectPackage,
 		ChangedPaths:         repositoryRelativeChangedPaths(dir, outcome.ChangedPaths, outcome.ResidueUnknown),
