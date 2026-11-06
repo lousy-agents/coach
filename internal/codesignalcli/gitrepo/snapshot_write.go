@@ -17,7 +17,7 @@ func writeSnapshot(repositoryRoot, dir string, entries []snapshotEntry) error {
 		return err
 	}
 	order, byObject := groupByObject(blobs)
-	missing, err := readObjects(repositoryRoot, order, func(oid string, content []byte) error {
+	missing, err := readObjects(repositoryRoot, order, defaultSnapshotBudget, func(oid string, content []byte) error {
 		return writeEveryPathOf(root, byObject[oid], content)
 	})
 	if err != nil {
