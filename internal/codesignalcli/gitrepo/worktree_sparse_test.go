@@ -41,6 +41,8 @@ func TestHasAssumeUnchangedEntry(t *testing.T) {
 		{"a lowercase tag is assume-unchanged", "H a.go\x00h b.go\x00", true},
 		{"skip-worktree alone is not assume-unchanged", "S a.go\x00H b.go\x00", false},
 		{"a path that merely starts with a lowercase letter is not a tag", "H abc.go\x00", false},
+		{"an assume-unchanged file with a one-character name", "h a\x00", true},
+		{"a tag and a space with no path is not an entry", "h \x00", false},
 		{"empty output", "", false},
 	}
 	for _, tt := range tests {

@@ -19,6 +19,11 @@ type worktreeViewDeps struct {
 	sparse     gitrepo.SparseState
 	ignoreCase bool
 	gitlinks   []string
+
+	// The errors a read returns when a test needs git to fail it. The zero value
+	// is a read that succeeds.
+	sparseErr   error
+	gitlinksErr error
 }
 
 func newWorktreeViewForTest(t *testing.T, deps worktreeViewDeps) WorktreeView {
@@ -30,9 +35,9 @@ func newWorktreeViewForTest(t *testing.T, deps worktreeViewDeps) WorktreeView {
 		status:      deps.status,
 		committed:   func(string, string) (fs.FS, error) { return deps.committed, nil },
 		diskAt:      func(string) worktreeoverlay.DiskSource { return deps.disk },
-		sparseState: func(string) (gitrepo.SparseState, error) { return deps.sparse, nil },
+		sparseState: func(string) (gitrepo.SparseState, error) { return deps.sparse, deps.sparseErr },
 		ignoreCase:  func(string) (bool, error) { return deps.ignoreCase, nil },
-		gitlinks:    func(string) ([]string, error) { return deps.gitlinks, nil },
+		gitlinks:    func(string) ([]string, error) { return deps.gitlinks, deps.gitlinksErr },
 	}
 }
 
