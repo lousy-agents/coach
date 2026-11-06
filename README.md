@@ -68,7 +68,7 @@ Default `--scope` is `production`. `--build-target <pattern>` further limits Go 
 | Code | Meaning |
 | --- | --- |
 | `0` | Analysis completed (signals or none). Not a quality gate. |
-| `1` | Operational failure (not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O). |
+| `1` | Operational failure (not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O; also `--check-project` when git cannot answer a question about an explicit `--project-config`: empty stdout, stderr names the question). |
 | `2` | Usage or invalid `--project-config`, or a TypeScript scan that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
 | `3` | Required project coverage incomplete and `--fail-on-incomplete-coverage` was supplied (report still written to stdout); or `--prepare-compiler` operational failure resolving the revision or computing readiness. |
 
