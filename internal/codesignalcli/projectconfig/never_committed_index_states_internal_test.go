@@ -76,17 +76,3 @@ func TestAPolicyNothingCommitsThatASparseCheckoutLeavesOutPrintsNoRestore(t *tes
 		t.Errorf("message %q; git restore does not match a path the sparse checkout skips, so no restore command may be printed", status.Message)
 	}
 }
-
-func TestAnIntentToAddEntryIsNotAStagedCopyToRestore(t *testing.T) {
-	const emptyBlob = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
-	lines := indexLine("100644", emptyBlob, "0") + "  ctime: 0:0\n  size: 0\tflags: 20004000\n"
-
-	status := explicitStatusFor(t, indexFake{uncommitted: true, lsFiles: lines})
-
-	if strings.Contains(status.Message, "git restore") || strings.Contains(status.Message, "staged copy") {
-		t.Errorf("message %q; an intent-to-add entry holds no content, and restoring it writes an empty file", status.Message)
-	}
-	if status.UnreadStagedEdit {
-		t.Error("UnreadStagedEdit is set for an entry that holds no content: nothing was staged that this report could have missed")
-	}
-}

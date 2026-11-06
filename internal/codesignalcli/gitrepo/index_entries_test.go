@@ -10,9 +10,6 @@ import (
 
 func TestIndexEntries(t *testing.T) {
 	const blob = "0123456789012345678901234567890123456789"
-	debug := func(flags string) string {
-		return "  ctime: 0:0\n  mtime: 0:0\n  dev: 0\tino: 0\n  uid: 0\tgid: 0\n  size: 0\tflags: " + flags + "\n"
-	}
 	cases := []struct {
 		name   string
 		output string
@@ -21,12 +18,6 @@ func TestIndexEntries(t *testing.T) {
 		{"a path the index does not know", "", nil},
 		{"one entry", "H 100644 " + blob + " 0\tpol.json\n", []IndexEntry{{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0"}}},
 		{"a path the sparse checkout skips", "S 100644 " + blob + " 0\tpol.json\n", []IndexEntry{{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0", SkipWorktree: true}}},
-		{"an intent-to-add entry holds no content", "H 100644 " + blob + " 0\tpol.json\n" + debug("20004000"), []IndexEntry{{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0", IntentToAdd: true}}},
-		{"a staged file whose content is empty is not intent-to-add", "H 100644 " + blob + " 0\tpol.json\n" + debug("0"), []IndexEntry{{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0"}}},
-		{"flags belong to the entry above them", "S 100644 " + blob + " 0\tpol.json\n" + debug("40004000") + "H 100644 " + blob + " 0\tother.json\n" + debug("20004000"), []IndexEntry{
-			{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0", SkipWorktree: true},
-			{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0", IntentToAdd: true},
-		}},
 		{"a merge conflict", "M 100644 " + blob + " 1\tpol.json\nM 100644 " + blob + " 2\tpol.json\n", []IndexEntry{
 			{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "1"},
 			{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "2"},
@@ -61,7 +52,7 @@ func TestIndexEntriesMatchesThePathRelativeToTheRepositoryRootLiterally(t *testi
 		t.Fatalf("IndexEntries: %v", err)
 	}
 
-	want := []string{"ls-files", "--stage", "-t", "--debug", "--", ":(top,literal)a[1]*.json"}
+	want := []string{"ls-files", "--stage", "-t", "--", ":(top,literal)a[1]*.json"}
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Errorf("git args = %v; want %v", gotArgs, want)
 	}
@@ -141,14 +132,21 @@ func TestAnOperationalErrorDoesNotLetErrorsAsReachItsCause(t *testing.T) {
 	}
 }
 
-func TestIndexEntriesRefusesAListingItCannotRead(t *testing.T) {
+func TestIndexEntriesRefusesAListingLineItCannotRead(t *testing.T) {
 	const blob = "0123456789012345678901234567890123456789"
 	cases := []struct {
 		name   string
 		output string
 	}{
-		{"flags that are not hexadecimal", "H 100644 " + blob + " 0\tpol.json\n  ctime: 0:0\n  size: 0\tflags: not-hex\n"},
-		{"debug lines with no entry above them", "  size: 0\tflags: 20004000\n"},
+		{"a missing field", "H 100644 " + blob + "\tpol.json\n"},
+		{"an extra field", "H 100644 " + blob + " 0 x\tpol.json\n"},
+		{"no tab before the path", "H 100644 " + blob + " 0 pol.json\n"},
+		{"an object id that is not hexadecimal", "H 100644 zzzz" + blob[4:] + " 0\tpol.json\n"},
+		{"an object id of a length no object format has", "H 100644 " + blob + "0 0\tpol.json\n"},
+		{"a mode that is not six octal digits", "H 10064 " + blob + " 0\tpol.json\n"},
+		{"a mode with a digit that is not octal", "H 100948 " + blob + " 0\tpol.json\n"},
+		{"a stage that is not 0 to 3", "H 100644 " + blob + " 7\tpol.json\n"},
+		{"a tag of more than one character", "HH 100644 " + blob + " 0\tpol.json\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -157,7 +155,40 @@ func TestIndexEntriesRefusesAListingItCannotRead(t *testing.T) {
 			entries, err := IndexEntries(run, "repo", "pol.json")
 
 			if err == nil {
-				t.Fatalf("IndexEntries = %v, nil; want an error: skipping what it cannot read would call an intent-to-add entry a staged copy", entries)
+				t.Fatalf("IndexEntries = %v, nil; want an error: a line it cannot read must not be taken for an entry", entries)
+			}
+		})
+	}
+}
+
+func TestIndexEntriesReadsAnObjectIdOfEitherObjectFormat(t *testing.T) {
+	const sha256 = "473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813"
+	run := func(string, ...string) ([]byte, error) { return []byte("H 100644 " + sha256 + " 0\tpol.json\n"), nil }
+
+	entries, err := IndexEntries(run, "repo", "pol.json")
+
+	if err != nil || len(entries) != 1 || entries[0].SHA != sha256 {
+		t.Errorf("IndexEntries = %v, %v; want the one entry with the 64-digit id", entries, err)
+	}
+}
+
+func TestIsEmptyBlobKnowsTheEmptyBlobOfEveryObjectFormat(t *testing.T) {
+	cases := []struct {
+		name string
+		id   string
+		want bool
+	}{
+		{"the SHA-1 empty blob", "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", true},
+		{"the SHA-256 empty blob", "473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813", true},
+		{"another SHA-1 blob", "0123456789012345678901234567890123456789", false},
+		{"another SHA-256 blob", "0123456789012345678901234567890123456789012345678901234567890123", false},
+		{"the SHA-1 empty blob's digits at the SHA-256 length", "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", false},
+		{"nothing", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsEmptyBlob(c.id); got != c.want {
+				t.Errorf("IsEmptyBlob(%q) = %v, want %v", c.id, got, c.want)
 			}
 		})
 	}

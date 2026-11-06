@@ -171,4 +171,31 @@ var _ = Describe("coach codesignal: the restore command printed for a missing ex
 		}, false, ""),
 		Entry("never committed and not in the index", func(repo string) {}, false, ""),
 	)
+
+	// git add --intent-to-add stages the empty blob and nothing else. Over a
+	// committed policy it leaves no staged work to lose, so the committed copy is
+	// restored, and the message says that instead of calling the empty entry an edit.
+	It("restores the committed copy and says so when a committed policy was removed from the index, re-added with intent-to-add, and deleted", func() {
+		repo := commitScannableGoRepo()
+		commitFile(repo, policy, singleRootPolicyJSON)
+		gitIn(repo, "rm", "-q", "--cached", policy)
+		gitIn(repo, "add", "-N", policy)
+		removeFromDisk(repo)
+
+		stderr := scanExplicitPolicy(repo, policy)
+		command := printedRestoreCommand(stderr)
+		doc := expectCheckProject(repo, "--project-config", policy)
+
+		Expect(string(stderr)).To(ContainSubstring("restoring brings back the committed copy"), "stderr:\n%s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("staged edit"), "an empty entry holds no edit:\n%s", stderr)
+		Expect(command).To(HavePrefix("git restore --source="), "the restore comes from the analyzed revision:\n%s", stderr)
+		action, named := nextActionOfKind(doc, "restore_policy")
+		Expect(named).To(BeTrue(), "--check-project names the restore: %+v", doc.NextActions)
+		Expect(action.Executable).To(BeFalse())
+		output, exitCode := runInShell(repo, command)
+		Expect(exitCode).To(Equal(0), "the printed command must work when pasted:\ncommand: %s\noutput: %s", command, output)
+		onDisk, err := os.ReadFile(filepath.Join(repo, policy))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(onDisk)).To(Equal(singleRootPolicyJSON))
+	})
 })

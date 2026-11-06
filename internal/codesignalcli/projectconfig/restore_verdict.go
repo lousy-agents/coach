@@ -61,11 +61,19 @@ func verdictForUncommitted(staged []gitrepo.IndexEntry, sparse bool) restoreVerd
 	return restoreStagedNotCommitted
 }
 
-// withoutIntentToAdd drops the entries that hold no content. An intent-to-add
-// entry records that a path will be added, not what it held, so it is neither a
-// staged copy to restore nor work a new policy would replace.
-func withoutIntentToAdd(entries []gitrepo.IndexEntry) []gitrepo.IndexEntry {
-	return slices.DeleteFunc(slices.Clone(entries), func(entry gitrepo.IndexEntry) bool { return entry.IntentToAdd })
+// withoutEmptyEntries drops the entries that hold no content: a regular file at
+// stage 0 whose blob is the empty blob. That is what git add --intent-to-add
+// stages, and a staged empty file is no policy either. Restoring such an entry
+// writes an empty file, and it is not work that a restore of the committed copy,
+// or a new policy, would lose. An entry marked skip-worktree stays, because the
+// mark alone stops a restore. The listing carries nothing else to go on, which is
+// the point: ls-files --stage is stable, and its flags and debug output are not.
+func withoutEmptyEntries(entries []gitrepo.IndexEntry) []gitrepo.IndexEntry {
+	return slices.DeleteFunc(slices.Clone(entries), holdsNoContent)
+}
+
+func holdsNoContent(entry gitrepo.IndexEntry) bool {
+	return entry.Stage == "0" && isRegularFileMode(entry.Mode) && gitrepo.IsEmptyBlob(entry.SHA) && !entry.SkipWorktree
 }
 
 // holdsUnmergedEntry is true when the index holds a conflict stage for the path.

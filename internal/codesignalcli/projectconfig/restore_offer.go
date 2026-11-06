@@ -17,6 +17,14 @@ func restorableOffer(revision, repoPath string) restoreOffer {
 	return restoreOffer{remedy: projectreadiness.RemedyRestore, text: ". It is committed at the analyzed revision: " + RestoreAdvice(revision, repoPath)}
 }
 
+// restorableOverEmptyEntryOffer is for a committed policy whose index entry holds
+// no content (git add --intent-to-add, or an emptied file staged). The restore
+// replaces that entry with the committed one and loses nothing, and the message
+// says so rather than calling an empty entry an edit.
+func restorableOverEmptyEntryOffer(revision, repoPath string) restoreOffer {
+	return restoreOffer{remedy: projectreadiness.RemedyRestore, text: ". It is committed at the analyzed revision, and the index holds only an empty entry for it with no content staged, so restoring brings back the committed copy: " + RestoreAdvice(revision, repoPath)}
+}
+
 // undecidableOffer is for a policy whose git questions went unanswered. Offering
 // a restore could overwrite, and offering authoring could replace a reviewed
 // policy, so neither is offered. It says which question failed and what git said.
@@ -186,6 +194,8 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 		return sparseCheckoutOffer, true
 	case blocked:
 		return committedBlockedParentOffer, true
+	case verdict == restoreOverwritesEmptyEntry:
+		return restorableOverEmptyEntryOffer(revision, repoPath), true
 	}
 	return restorableOffer(revision, repoPath), true
 }
