@@ -13,7 +13,8 @@ func blobCheckFailure(run gitrepo.Runner, dir, revision, repoPath string, err er
 	failure := newGitFailure("whether it is committed at the analyzed revision", err)
 	var absent *gitrepo.ObjectNotLocalError
 	if errors.As(failure.err, &absent) {
-		failure.words = objectNotLocalWords(gitrepo.IsPartialClone(run, dir), revision, repoPath)
+		partial, _ := gitrepo.IsPartialClone(run, dir) // only chooses the wording; a read that cannot be told apart says the shorter thing
+		failure.words = objectNotLocalWords(partial, revision, repoPath)
 	}
 	return failure
 }

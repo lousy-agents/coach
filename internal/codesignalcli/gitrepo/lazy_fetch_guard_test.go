@@ -2,9 +2,24 @@ package gitrepo
 
 import (
 	"errors"
+	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+// exitStatusOne is the error git leaves when `git config --get-regexp` matches nothing: a real exit 1 with
+// nothing on stderr. exitStatus128 is the exit of a fatal error, with nothing on stderr either.
+var exitStatusOne, exitStatus128 = exitingWith(1), exitingWith(128)
+
+func exitingWith(code int) error {
+	err := exec.Command("sh", "-c", "exit "+strconv.Itoa(code)).Run()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		panic("sh did not fail with an exit status")
+	}
+	return err
+}
 
 // gitSaying is a runner that answers `git version` and the promisor configuration with the given
 // output, or with git's exit 1 when it is empty.
@@ -14,7 +29,7 @@ func gitSaying(version, configuration string, versionErr error) Runner {
 			return []byte(version), versionErr
 		}
 		if configuration == "" {
-			return nil, errors.New("exit status 1")
+			return nil, exitStatusOne
 		}
 		return []byte(configuration), nil
 	}

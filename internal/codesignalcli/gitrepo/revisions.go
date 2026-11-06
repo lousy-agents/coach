@@ -42,7 +42,7 @@ func ResolveBaselineRevision(dir string) (revisionSHA string, err error) {
 // have in common.
 func resolveHEAD(dir string) (string, error) {
 	if _, lookErr := exec.LookPath("git"); lookErr != nil {
-		return "", &OperationalError{Message: "coach codesignal: git executable not found in PATH"}
+		return "", gitNotFoundError()
 	}
 
 	worktreeOutput, runErr := Run(dir, "rev-parse", "--is-inside-work-tree")
@@ -58,4 +58,9 @@ func resolveHEAD(dir string) (string, error) {
 		return "", &OperationalError{Message: "coach codesignal: HEAD is not readable (does the repository have any commits?)"}
 	}
 	return strings.TrimSpace(headOutput), nil
+}
+
+// gitNotFoundError is the operational error for a git that is not installed, worded once for every read.
+func gitNotFoundError() *OperationalError {
+	return &OperationalError{Message: "coach codesignal: git executable not found in PATH"}
 }
