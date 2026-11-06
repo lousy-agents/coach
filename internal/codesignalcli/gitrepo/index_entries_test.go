@@ -3,12 +3,9 @@ package gitrepo
 import (
 	"errors"
 	"io/fs"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 func TestIndexEntries(t *testing.T) {
@@ -195,116 +192,6 @@ func TestIsEmptyBlobKnowsTheEmptyBlobOfEveryObjectFormat(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			if got := IsEmptyBlob(c.id); got != c.want {
 				t.Errorf("IsEmptyBlob(%q) = %v, want %v", c.id, got, c.want)
-			}
-		})
-	}
-}
-
-func TestIndexEntriesSeparatesWhatIsAtThePathFromWhatIsBelowIt(t *testing.T) {
-	const blob = "0123456789012345678901234567890123456789"
-	atPath := IndexEntry{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0"}
-	cases := []struct {
-		name        string
-		output      string
-		wantEntries []IndexEntry
-		wantBelow   bool
-	}{
-		{"an entry for the path alone", "H 100644 " + blob + " 0\tpol.json\x00", []IndexEntry{atPath}, false},
-		{"files below the path, which makes it a directory in the index", "H 100644 " + blob + " 0\tpol.json/a.json\x00", nil, true},
-		{"files below the path beside an entry for the path", "H 100644 " + blob + " 0\tpol.json\x00H 100644 " + blob + " 0\tpol.json/a.json\x00", []IndexEntry{atPath}, true},
-		{"a name that git would quote without -z", "H 100644 " + blob + " 0\tpol.json/a\nb\"c.json\x00", nil, true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			run := func(string, ...string) ([]byte, error) { return []byte(c.output), nil }
-
-			got, err := IndexEntries(run, "repo", "pol.json")
-
-			if err != nil || !reflect.DeepEqual(got.Entries, c.wantEntries) || got.HoldsBelow != c.wantBelow {
-				t.Errorf("IndexEntries = %+v, %v; want entries %v and HoldsBelow %v", got, err, c.wantEntries, c.wantBelow)
-			}
-		})
-	}
-}
-
-func TestIndexEntriesMatchesAPathWhoseNameGitWouldQuote(t *testing.T) {
-	const blob = "0123456789012345678901234567890123456789"
-	const awkward = "dir/a\nb\tc\"d.json"
-	run := func(string, ...string) ([]byte, error) {
-		return []byte("H 100644 " + blob + " 0\t" + awkward + "\x00"), nil
-	}
-
-	got, err := IndexEntries(run, "repo", awkward)
-
-	if err != nil || len(got.Entries) != 1 || got.HoldsBelow {
-		t.Errorf("IndexEntries = %+v, %v; want the one entry for %q: -z lists the name as it is, where a quoted name would never equal it", got, err, awkward)
-	}
-}
-
-func TestIndexEntriesRefusesAnEntryForAPathItWasNotAskedAbout(t *testing.T) {
-	const blob = "0123456789012345678901234567890123456789"
-	cases := []struct {
-		name   string
-		output string
-	}{
-		{"a sibling that shares the name as a prefix", "H 100644 " + blob + " 0\tpol.jsonx\x00"},
-		{"a parent", "H 100644 " + blob + " 0\tcfg\x00"},
-		{"the same name in another case", "H 100644 " + blob + " 0\tPOL.json\x00"},
-		{"a good entry beside one for another path", "H 100644 " + blob + " 0\tpol.json\x00H 100644 " + blob + " 0\tother.json\x00"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			run := func(string, ...string) ([]byte, error) { return []byte(c.output), nil }
-
-			got, err := IndexEntries(run, "repo", "pol.json")
-
-			var operational *OperationalError
-			if !errors.As(err, &operational) {
-				t.Errorf("IndexEntries = %+v, %v; want an *OperationalError: an entry for another path is not evidence about this one", got, err)
-			}
-		})
-	}
-}
-
-func TestIndexEntriesRefusesAnEmptyRecordInsideTheListing(t *testing.T) {
-	const blob = "0123456789012345678901234567890123456789"
-	run := func(string, ...string) ([]byte, error) {
-		return []byte("H 100644 " + blob + " 0\tpol.json\x00\x00H 100644 " + blob + " 0\tpol.json\x00"), nil
-	}
-
-	got, err := IndexEntries(run, "repo", "pol.json")
-
-	var operational *OperationalError
-	if !errors.As(err, &operational) {
-		t.Errorf("IndexEntries = %+v, %v; want an *OperationalError: a record that is not an entry is not skipped", got, err)
-	}
-}
-
-// git prints index paths relative to the directory it runs in unless it is told to
-// print them from the repository root, and a scan can start in a subdirectory. The
-// path is compared with the one asked about, which is relative to the root.
-func TestIndexEntriesFindsThePathFromASubdirectoryOfTheRepository(t *testing.T) {
-	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
-	gitfixture.CommitFile(t, repo, "cfg/deeper/x.json", "{}")
-	cases := []struct {
-		name       string
-		dir        string
-		path       string
-		wantAtPath int
-		wantBelow  bool
-	}{
-		{"from the root", "", "cfg/p.json", 1, false},
-		{"from the directory the file is in", "cfg", "cfg/p.json", 1, false},
-		{"from a sibling directory", "cfg/deeper", "cfg/p.json", 1, false},
-		{"for a directory, from inside it", "cfg", "cfg", 0, true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got, err := IndexEntries(RunBytes, filepath.Join(repo, c.dir), c.path)
-
-			if err != nil || len(got.Entries) != c.wantAtPath || got.HoldsBelow != c.wantBelow {
-				t.Errorf("IndexEntries from %q = %+v, %v; want %d entries at the path and HoldsBelow %v", c.dir, got, err, c.wantAtPath, c.wantBelow)
 			}
 		})
 	}

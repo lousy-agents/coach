@@ -53,38 +53,50 @@ func TestARunnerThatCannotFindTheRepositoryRootFailsTheCheckInsteadOfJudgingAPol
 	}
 }
 
+// recordRootLookups replaces the seam Load reads with and counts how often the
+// repository root is asked of it.
+func recordRootLookups(t *testing.T) *int {
+	t.Helper()
+	lookups := new(int)
+	original := runProjectConfigGit
+	t.Cleanup(func() { runProjectConfigGit = original })
+	runProjectConfigGit = func(dir string, args ...string) ([]byte, error) {
+		if slices.Equal(args, rootLookup) {
+			*lookups++
+		}
+		return original(dir, args...)
+	}
+	return lookups
+}
+
+func committedRepository(t *testing.T) string {
+	t.Helper()
+	repo := gitfixture.Init(t)
+	gitfixture.CommitFile(t, repo, "a.txt", "x")
+	return repo
+}
+
 // Discover and the not-found message look the root up too. They go through the
 // seam Load reads with, which a test replaces to see what it is asked.
-func TestDiscoverAndTheNotFoundMessageFindTheRepositoryRootThroughTheLoadSeam(t *testing.T) {
-	cases := []struct {
-		name string
-		call func(repo string)
-	}{
-		{"Discover, with the canonical policy committed so nothing else asks", func(repo string) {
-			gitfixture.CommitFile(t, repo, CanonicalPath, `{"schema_version":"1","roots":["."]}`)
-			_, _ = Discover(repo, "HEAD")
-		}},
-		{"the message for a policy found nowhere", func(repo string) { _, _ = Load(repo, "HEAD", "absent.json") }},
+func TestDiscoverFindsTheRepositoryRootThroughTheLoadSeam(t *testing.T) {
+	repo := committedRepository(t)
+	gitfixture.CommitFile(t, repo, CanonicalPath, `{"schema_version":"1","roots":["."]}`)
+	lookups := recordRootLookups(t)
+
+	_, _ = Discover(repo, "HEAD")
+
+	if *lookups == 0 {
+		t.Error("the repository root was never asked of the seam: the lookup ran outside the limits the seam sets")
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			repo := gitfixture.Init(t)
-			gitfixture.CommitFile(t, repo, "a.txt", "x")
-			lookups := 0
-			original := runProjectConfigGit
-			t.Cleanup(func() { runProjectConfigGit = original })
-			runProjectConfigGit = func(dir string, args ...string) ([]byte, error) {
-				if slices.Equal(args, rootLookup) {
-					lookups++
-				}
-				return original(dir, args...)
-			}
+}
 
-			c.call(repo)
+func TestTheNotFoundMessageFindsTheRepositoryRootThroughTheLoadSeam(t *testing.T) {
+	repo := committedRepository(t)
+	lookups := recordRootLookups(t)
 
-			if lookups == 0 {
-				t.Error("the repository root was never asked of the seam: the lookup ran outside the limits the seam sets")
-			}
-		})
+	_, _ = Load(repo, "HEAD", "absent.json")
+
+	if *lookups == 0 {
+		t.Error("the repository root was never asked of the seam: the lookup ran outside the limits the seam sets")
 	}
 }

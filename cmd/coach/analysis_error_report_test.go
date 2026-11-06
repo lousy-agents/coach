@@ -25,29 +25,27 @@ func TestAnalysisErrorReportForRuntimeUnresolvedError(t *testing.T) {
 }
 
 func TestAuthoringRemediationNamesTheOutputOnlyWhereTheNamedPathIsAbsent(t *testing.T) {
-	const named = "cfg/new.json"
-	const withOutput = "--output " + named
-	cases := []struct {
-		name       string
+	cases := map[string]struct {
 		kind       projectconfig.ErrorKind
 		wantOutput bool
 	}{
-		{"a policy missing on disk", projectconfig.KindMissing, true},
-		{"a policy found at neither the revision nor the worktree", projectconfig.KindNotFound, true},
-		{"a policy that exists and is invalid, which --output would refuse to overwrite", projectconfig.KindInvalid, false},
+		"a policy missing on disk":                                                      {projectconfig.KindMissing, true},
+		"a policy found at neither the revision nor the worktree":                       {projectconfig.KindNotFound, true},
+		"a policy that exists and is invalid, which --output would refuse to overwrite": {projectconfig.KindInvalid, false},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			configErr := &projectconfig.ConfigError{Kind: c.kind, Remedy: projectreadiness.RemedyAuthor}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) { assertAuthoringNamesOutput(t, c.kind, c.wantOutput) })
+	}
+}
 
-			got := authoringRemediation(configErr, policyref.Named(named), false, "go")
+func assertAuthoringNamesOutput(t *testing.T, kind projectconfig.ErrorKind, wantOutput bool) {
+	t.Helper()
+	const named = "cfg/new.json"
+	configErr := &projectconfig.ConfigError{Kind: kind, Remedy: projectreadiness.RemedyAuthor}
 
-			if has := strings.Contains(got, withOutput); has != c.wantOutput {
-				t.Errorf("authoringRemediation(kind %v) = %q; contains %q = %v, want %v", c.kind, got, withOutput, has, c.wantOutput)
-			}
-			if got == "" {
-				t.Errorf("authoringRemediation(kind %v) offered no command; the remedy is to author", c.kind)
-			}
-		})
+	got := authoringRemediation(configErr, policyref.Named(named), false, "go")
+
+	if has := strings.Contains(got, "--output "+named); has != wantOutput || got == "" {
+		t.Errorf("authoringRemediation(kind %v) = %q; contains --output %s = %v, want %v, and the remedy is to author so a command is offered", kind, got, named, has, wantOutput)
 	}
 }
