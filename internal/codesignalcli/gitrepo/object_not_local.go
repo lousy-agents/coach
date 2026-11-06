@@ -24,3 +24,15 @@ func classifyObjectCheck(object string, err error) error {
 	}
 	return err
 }
+
+// ObjectsNotLocalError is the objects of a tree that the repository's object store lacks, found while
+// reading the whole tree. It names how many and the first path, which is enough to tell the user what is
+// missing without listing a clone's worth of paths.
+type ObjectsNotLocalError struct {
+	Count     int
+	FirstPath string
+}
+
+func (e *ObjectsNotLocalError) Error() string {
+	return fmt.Sprintf("%d objects are not in the local object store, and Coach does not fetch objects (the first is %q)", e.Count, e.FirstPath)
+}
