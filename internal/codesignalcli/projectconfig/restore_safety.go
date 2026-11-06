@@ -29,6 +29,8 @@ const (
 	restoreStagedSparseNotCommitted
 	restoreOverwritesEmptyEntry
 	restoreDirectoryInIndex
+	restoreEmptySkipWorktreeNotCommitted
+	restoreEmptySparseNotCommitted
 	// restoreVerdictCount is the number of verdicts above, for a test that walks all of them.
 	restoreVerdictCount
 )

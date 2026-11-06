@@ -219,7 +219,9 @@ except for the policy-candidate document on the guided-authoring path.
   `--suggest-project-config`; a TypeScript scan on a controlling terminal opens
   guided authoring, and `--check-project` names `author_policy`. An index entry
   that holds no content, made with `git add --intent-to-add` or by staging an
-  empty file, counts as nothing.
+  empty file, counts as nothing, unless it is marked skip-worktree: git add
+  refuses a new file at a path the mark hides, so Coach calls it an empty entry,
+  names the mark (or the sparse checkout), and offers no new policy.
 - Nothing is there but the policy is committed at the analyzed revision:
   `project_config_missing`, with the one command that brings it back,
   `git restore --source=<revision> --staged --worktree -- ':(top,literal)<path>'`,
