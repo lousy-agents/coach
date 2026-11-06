@@ -50,12 +50,12 @@ const (
 	NextActionAuthorPolicy            = "author_policy"
 )
 
+// NextActionForGapCode is the action a gap code names by itself, and false for a code
+// that names none. A policy gap names none: its action depends on its remedy, and
+// NextActionForGap is where that is decided.
 func NextActionForGapCode(code string) (string, bool) {
-	info, ok := gapCodeTable[code]
-	if !ok {
-		return "", false
-	}
-	return info.nextActionKind, true
+	info := gapCodeTable[code]
+	return info.nextActionKind, info.nextActionKind != ""
 }
 
 func NextActionExecutable(kind string) bool {
@@ -94,8 +94,8 @@ var gapCodeTable = map[string]gapCodeInfo{
 	GapPackageManagerConfigUnverifiable:  {status: StatusNeedsPrerequisite, nextActionKind: NextActionResolvePackageManager, isPackageManagerGap: true},
 	GapPackageManagerVersionUnverifiable: {status: StatusNeedsPrerequisite, nextActionKind: NextActionResolvePackageManager, isPackageManagerGap: true},
 	GapPackageManagerVersionUnsupported:  {status: StatusNeedsPrerequisite, nextActionKind: NextActionResolvePackageManager, isPackageManagerGap: true},
-	GapPolicyMissing:                     {status: StatusNeedsPolicy, nextActionKind: NextActionAuthorPolicy},
-	GapPolicyInvalid:                     {status: StatusNeedsPolicy, nextActionKind: NextActionAuthorPolicy},
+	GapPolicyMissing:                     {status: StatusNeedsPolicy},
+	GapPolicyInvalid:                     {status: StatusNeedsPolicy},
 }
 
 // KnownGapCodes lists every gap code readiness can report, in no particular
