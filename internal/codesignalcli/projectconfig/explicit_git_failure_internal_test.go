@@ -64,3 +64,28 @@ func TestAGitFailureIsSanitizedAndBounded(t *testing.T) {
 		t.Errorf("message is %d bytes; git's error must be truncated", len(status.Message))
 	}
 }
+
+// GitFailure words the failure for the user, and keeps git's own error behind it, so
+// a caller that has to classify the failure can reach the error and not only the text.
+func TestAGitFailureKeepsGitsOwnErrorReachable(t *testing.T) {
+	boom := errors.New("boom: git said no")
+	cases := []struct {
+		name string
+		fake indexFake
+	}{
+		{"a tree lookup that fails", indexFake{lsTreeErr: boom}},
+		{"an index listing that fails", indexFake{lsFilesErr: boom}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			status := statusWhenGitFails(t, c.fake)
+
+			if !errors.Is(status.GitFailure, boom) {
+				t.Errorf("GitFailure %v does not lead to git's own error %v", status.GitFailure, boom)
+			}
+			if got := status.GitFailure.Error(); !strings.HasPrefix(got, "could not check ") {
+				t.Errorf("GitFailure text %q; want it to word the question that went unanswered", got)
+			}
+		})
+	}
+}
