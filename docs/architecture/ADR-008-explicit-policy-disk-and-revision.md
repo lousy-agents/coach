@@ -22,7 +22,7 @@ For an **explicit** `--project-config` only, two questions are answered from two
 
 A policy found by discovery is unchanged. `.lousy-agents/coach.json` and the root `project.json` are judged at the revision, and a discovered policy deleted on disk is scanned from its committed copy.
 
-When the working tree decides, `--check-project` marks the policy check as decided on disk and leaves that path out of `dirty_worktree`, because the report did read the working tree for it. The exception is a staged edit to a committed policy, or a staged entry for a policy that was never committed, that the working tree could not supply, whether the file is gone, a file stands in a parent's place, or an unusable entry took its place: nothing read that edit, so the path stays in `dirty_worktree` and no restore is offered over it.
+When the working tree decides, `--check-project` marks the policy check as decided on disk and leaves that path out of `dirty_worktree`, because the report did read the working tree for it. The exception is a staged edit to a committed policy, or a staged entry for a policy that was never committed, that the working tree could not supply, whether the file is gone, a file stands in a parent's place, or an unusable entry took its place: nothing read that edit, so the path stays in `dirty_worktree` and no restore is offered over it. An unmerged entry for a committed policy is the same case. Only the policy's own path leaves the list: every other uncommitted path under the policy's roots still counts, and the roots of a policy the working tree refused are those of its committed copy at the analyzed revision. With no valid policy committed there are no roots, and only package and compiler metadata counts.
 
 ## Options considered
 

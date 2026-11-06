@@ -214,26 +214,41 @@ dirty worktree. The path itself is checked on disk first, and what is there
 decides what Coach says. Every case below exits `2`, and stdout stays empty
 except for the policy-candidate document on the guided-authoring path.
 
-- Nothing is there and the policy was never committed: `project_config_missing`.
-  A Go scan then prints `--suggest-project-config`; a TypeScript scan on a
-  controlling terminal opens guided authoring.
+- Nothing is there, the policy was never committed, and the index holds nothing
+  for it: `project_config_missing`. A Go scan then prints
+  `--suggest-project-config`; a TypeScript scan on a controlling terminal opens
+  guided authoring, and `--check-project` names `author_policy`. An index entry
+  that holds no content, made with `git add --intent-to-add` or by staging an
+  empty file, counts as nothing.
 - Nothing is there but the policy is committed at the analyzed revision:
   `project_config_missing`, with the one command that brings it back,
   `git restore --source=<revision> --staged --worktree -- ':(top,literal)<path>'`,
   and no authoring. `--check-project` names it as the `restore_policy` next
   action, with `executable: false`. Coach offers that command only when it
-  overwrites nothing. If the index holds a staged edit to the policy, if the
-  policy is committed as a symbolic link, if a sparse checkout leaves it out of
-  the working tree, or if git cannot say whether it is committed, Coach says why
-  and offers neither a restore nor a new policy.
+  overwrites nothing and git can run it. If the index holds a staged edit to the
+  policy or an unmerged entry for it, if the policy is committed as a symbolic
+  link, if a sparse checkout leaves it out of the working tree or its index entry
+  is marked skip-worktree, or if git cannot say whether it is committed or what
+  the index holds, Coach says why and offers neither a restore nor a new policy.
+  An index entry that holds no content does not count as an edit: the restore
+  replaces it, and the message says that it brings back the committed copy.
+- Nothing is there and the policy was never committed, but the index holds an
+  entry for it: `project_config_missing`, and no authoring, because a new policy
+  would replace staged work. A staged regular file gets the one command that
+  brings it back from the index, `git restore -- ':(top,literal)<path>'`. Coach
+  prints no command, and says why, when the entry is unmerged, is a symbolic link
+  or another entry that is not a regular file, or is marked skip-worktree or left
+  out by a sparse checkout, because the command would fail or would recreate what
+  the scan refuses. `--check-project` names neither next action.
 - A path under a regular file: `project_config_missing`. The message names the
   file in the way and says to move or remove it, then to restore the policy from
   git when it is committed, unless the index holds a staged edit to it, which the
   message names instead because a restore would discard it, or it is committed as
   a symbolic link, which the message says instead because a restore would
-  recreate a link the scan refuses. It prints no
-  `git restore` command and offers no authoring, because a restore would delete
-  that file.
+  recreate a link the scan refuses. When the policy is only staged, never
+  committed, it says to move the file and then restore the staged copy from the
+  index. It prints no `git restore` command and offers no authoring, because a
+  restore would delete that file.
 - A symbolic link, a directory or other file that is not a regular file, a path
   that runs through a symbolic link, a file that cannot be read, or a parent
   that cannot be searched: `project_config_invalid`, naming the reason, with no
@@ -274,7 +289,7 @@ compiler or host Node exits `2` with empty stdout except the policy-candidate
 document on the guided-authoring path, and one or more stderr lines. On a
 controlling terminal, a TypeScript scan whose `--project-config` names a
 policy that does not exist on disk and was never committed instead opens a
-guided-authoring session (a committed policy gets its restore command instead);
+guided-authoring session (a policy that is committed, or that the index holds, gets what the cases above describe instead);
 with `--format json` this session's exit-2 output is
 a JSON object carrying `"schema_version": "1"` and `roots`, not a CodeSignal
 report — the absent `scope`/`signals`/`coverage` keys distinguish it.
