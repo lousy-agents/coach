@@ -17,9 +17,10 @@ func effectiveValue(env []string, key string) string {
 	return value
 }
 
-func TestGitCommandKeepsGitFromFetchingOrAskingWhateverTheCallerSet(t *testing.T) {
+func TestGitCommandKeepsGitFromFetchingAskingOrSmudgingWhateverTheCallerSet(t *testing.T) {
 	t.Setenv("GIT_NO_LAZY_FETCH", "0")
 	t.Setenv("GIT_TERMINAL_PROMPT", "1")
+	t.Setenv("GIT_LFS_SKIP_SMUDGE", "0")
 
 	env := gitCommand(context.Background(), "repo", "status").Env
 
@@ -28,5 +29,8 @@ func TestGitCommandKeepsGitFromFetchingOrAskingWhateverTheCallerSet(t *testing.T
 	}
 	if got := effectiveValue(env, "GIT_TERMINAL_PROMPT"); got != "0" {
 		t.Errorf("GIT_TERMINAL_PROMPT = %q; want 0, so git never asks on the terminal", got)
+	}
+	if got := effectiveValue(env, "GIT_LFS_SKIP_SMUDGE"); got != "1" {
+		t.Errorf("GIT_LFS_SKIP_SMUDGE = %q; want 1, so git-lfs leaves a pointer file as it is", got)
 	}
 }

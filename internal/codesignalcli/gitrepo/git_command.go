@@ -18,9 +18,12 @@ import (
 // GIT_TERMINAL_PROMPT=0 keeps git from asking on the terminal for a credential to a URL that the
 // repository's own configuration chose.
 //
+// GIT_LFS_SKIP_SMUDGE=1 tells git-lfs's filter to leave a pointer file as it is and fetch nothing. No read
+// here runs a smudge filter, so it is a second line of defence for one that slips in.
+//
 // Every spawn goes through here, so a runner added later cannot start git without them.
 func gitCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", gitArgs(dir, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1", "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1", "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1")
 	return cmd
 }
