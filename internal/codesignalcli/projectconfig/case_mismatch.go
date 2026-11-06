@@ -26,10 +26,10 @@ type caseMismatchError struct {
 // onDisk on disk. The components above it already match, so they name the
 // directory that holds it, and corrected is the path with the disk's spelling
 // of that component and the path's own spelling of those below it.
-func newCaseMismatch(repoPath string, parts []string, index int, onDisk string) *caseMismatchError {
+func newCaseMismatch(repoPath string, parts []string, index int, onDisk string) caseMismatchError {
 	corrected := slices.Clone(parts)
 	corrected[index] = onDisk
-	return &caseMismatchError{
+	return caseMismatchError{
 		repoPath:  repoPath,
 		directory: strings.Join(parts[:index], "/"),
 		typed:     parts[index],
@@ -38,7 +38,7 @@ func newCaseMismatch(repoPath string, parts []string, index int, onDisk string) 
 	}
 }
 
-func (m *caseMismatchError) Error() string {
+func (m caseMismatchError) Error() string {
 	return m.config(nil).Message
 }
 
@@ -47,7 +47,7 @@ func (m *caseMismatchError) Error() string {
 // missing from disk turned into a refusal when the revision holds its path in
 // another case.
 func adviseOnRevision(err error, repoPath string, entries revisionEntries) error {
-	var mismatch *caseMismatchError
+	var mismatch caseMismatchError
 	if errors.As(err, &mismatch) {
 		return mismatch.config(entries)
 	}
@@ -63,7 +63,7 @@ func adviseOnRevision(err error, repoPath string, entries revisionEntries) error
 // config is the refusal for the mismatch. With no way to ask the revision, or
 // when asking fails, it states the two spellings and gives no advice, because
 // advice built from the user's own argument can point the wrong way.
-func (m *caseMismatchError) config(entries revisionEntries) *ConfigError {
+func (m caseMismatchError) config(entries revisionEntries) *ConfigError {
 	reason := fmt.Sprintf("is stored as %q on disk, not %q; this filesystem ignores case, so the name resolves, but the analyzed revision tells the two spellings apart", m.onDisk, m.typed)
 	return newUnusableOnDisk(m.repoPath, reason+m.revisionClause(entries))
 }
@@ -72,7 +72,7 @@ func (m *caseMismatchError) config(entries revisionEntries) *ConfigError {
 // that follows: pass the disk's spelling when the revision holds that one,
 // undo the rename when it holds the user's, and nothing when it holds both or
 // neither, where no spelling is the right one to move to.
-func (m *caseMismatchError) revisionClause(entries revisionEntries) string {
+func (m caseMismatchError) revisionClause(entries revisionEntries) string {
 	if entries == nil {
 		return ""
 	}
