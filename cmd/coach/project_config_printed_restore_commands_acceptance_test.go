@@ -202,6 +202,25 @@ var _ = Describe("coach codesignal: the restore command printed for a missing ex
 		}),
 	)
 
+	// git restore writes where the file system resolves the parents. Where it folds
+	// case, a policy committed under cfg/ and missing from a directory on disk named
+	// CFG/ would be restored into CFG/, and the scan then refuses that spelling, so the
+	// restore is not printed and the parent's spelling is what the message names.
+	It("prints no restore, and names the parent's spelling, when a parent directory is in another case on a file system that folds case", func() {
+		repo := commitScannableGoRepo()
+		commitFile(repo, policy, singleRootPolicyJSON)
+		removeFromDisk(repo)
+		Expect(os.MkdirAll(filepath.Join(repo, "CFG"), 0o755)).To(Succeed())
+		if _, err := os.Lstat(filepath.Join(repo, "cfg")); err != nil {
+			Skip("this file system tells cfg and CFG apart, so cfg/p.json is just missing here")
+		}
+
+		stderr := scanExplicitPolicy(repo, policy)
+
+		Expect(printedRestoreCommand(stderr)).To(BeEmpty(), "the restore would write into CFG/, which the scan refuses:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring(`"CFG"`), "the message names the spelling to fix:\n%s", stderr)
+	})
+
 	// The skip-worktree mark alone stops a restore. An empty entry carrying it is
 	// not an edit to review, since git diff --cached does not show it, so the user is
 	// told what the mark needs, not sent to a diff that shows nothing.
