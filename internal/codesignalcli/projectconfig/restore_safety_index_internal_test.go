@@ -2,8 +2,6 @@ package projectconfig
 
 import (
 	"errors"
-	"slices"
-	"strings"
 	"testing"
 )
 
@@ -49,10 +47,7 @@ func (f indexFake) run(dir string, args ...string) ([]byte, error) {
 		}
 		return []byte(mode + " blob " + committedBlob + "\tpol.json\n"), nil
 	case "ls-files":
-		if !slices.Contains(args, "--stage") {
-			return f.entriesBelow(args), f.lsFilesErr
-		}
-		return []byte(strings.ReplaceAll(f.lsFiles, askedPath, pathAskedAbout(args))), f.lsFilesErr
+		return f.lsFilesAnswer(args)
 	case "config":
 		if f.sparse {
 			return []byte("true\n"), nil

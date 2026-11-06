@@ -32,3 +32,16 @@ func (f indexFake) revParse(dir string, args []string) ([]byte, error) {
 	}
 	return gitrepo.RunBytes(dir, args...)
 }
+
+// lsFilesAnswer tells the three listings apart: the entries at the path (--stage with -t), whether
+// anything is below it (no --stage), and whether the path is a submodule (--stage without -t), which
+// no fake index records, so it finds none.
+func (f indexFake) lsFilesAnswer(args []string) ([]byte, error) {
+	switch {
+	case !slices.Contains(args, "--stage"):
+		return f.entriesBelow(args), f.lsFilesErr
+	case !slices.Contains(args, "-t"):
+		return nil, nil
+	}
+	return []byte(strings.ReplaceAll(f.lsFiles, askedPath, pathAskedAbout(args))), f.lsFilesErr
+}

@@ -7,9 +7,13 @@ package projectreadiness
 type PolicyCause string
 
 const (
-	// CauseNotCommitted is a policy file on disk that the analyzed revision does not
-	// hold, or one inside a submodule, which the superproject cannot commit.
+	// CauseNotCommitted is a policy file on disk that the analyzed revision does not hold.
+	// Commit it.
 	CauseNotCommitted PolicyCause = "not_committed"
+	// CauseInSubmodule is a policy inside a submodule checkout, present or missing: the
+	// superproject records the submodule as one commit, so the file cannot be committed here and a
+	// new policy cannot be written there. Name a policy this repository commits.
+	CauseInSubmodule PolicyCause = "in_submodule"
 	// CauseParentNotDirectory is a file where a parent directory of the policy should be.
 	CauseParentNotDirectory PolicyCause = "parent_not_directory"
 	// CauseStagedEdit is a committed policy whose index entry holds an edit.

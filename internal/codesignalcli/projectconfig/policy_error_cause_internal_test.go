@@ -26,11 +26,11 @@ func TestEveryPolicyErrorNamesARemedyOrACauseNeverBothAndNeverNeither(t *testing
 		"a file where a parent should be":            blockedParentError("cfg/p.json", "cfg"),
 		"a path the working tree cannot use":         unusableOnDiskError("cfg/p.json", projectreadiness.CauseNotARegularFile, "is not a regular file"),
 		"content the revision holds that is invalid": invalidError("cfg/p.json", "HEAD", "document is not valid JSON"),
-		"a file on disk the revision does not hold":  readError(uncommitted, "HEAD", "cfg.json", errBoom),
-		"a file nowhere":                             readError(absent, "HEAD", "cfg.json", errBoom),
-		"a read over the output budget":              readError(absent, "HEAD", "cfg.json", &gitrepo.BoundError{Kind: gitrepo.BoundStdout}),
-		"a read past the time bound":                 readError(absent, "HEAD", "cfg.json", &gitrepo.BoundError{Kind: gitrepo.BoundTimeout}),
-		"a read past the stderr bound":               readError(absent, "HEAD", "cfg.json", &gitrepo.BoundError{Kind: gitrepo.BoundStderr}),
+		"a file on disk the revision does not hold":  readError(runProjectConfigGit, uncommitted, "HEAD", "cfg.json", errBoom),
+		"a file nowhere":                             readError(runProjectConfigGit, absent, "HEAD", "cfg.json", errBoom),
+		"a read over the output budget":              readError(runProjectConfigGit, absent, "HEAD", "cfg.json", &gitrepo.BoundError{Kind: gitrepo.BoundStdout}),
+		"a read past the time bound":                 readError(runProjectConfigGit, absent, "HEAD", "cfg.json", &gitrepo.BoundError{Kind: gitrepo.BoundTimeout}),
+		"a read past the stderr bound":               readError(runProjectConfigGit, absent, "HEAD", "cfg.json", &gitrepo.BoundError{Kind: gitrepo.BoundStderr}),
 	}
 	for name, err := range cases {
 		t.Run(name, func(t *testing.T) { requireTheErrorNamesOneOfThem(t, err) })

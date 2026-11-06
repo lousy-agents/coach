@@ -35,7 +35,7 @@ func requireTheSubmoduleIsFoundFrom(t *testing.T, repo, directory string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if !recordedAsSubmodule(dir, "vendor/sub") {
+	if found, err := recordedAsSubmodule(runProjectConfigGit, dir, "vendor/sub"); err != nil || !found {
 		t.Errorf("recordedAsSubmodule(%q, vendor/sub) = false; the index holds a submodule there whatever directory git runs in", dir)
 	}
 }
