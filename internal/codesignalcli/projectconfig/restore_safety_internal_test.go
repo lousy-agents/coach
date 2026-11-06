@@ -18,19 +18,19 @@ func TestJudgeRestore(t *testing.T) {
 		want  restoreVerdict
 	}{
 		{"a policy that was never committed", func(t *testing.T, repo string) {}, restoreNotCommitted},
-		{"a committed policy with a clean index", func(t *testing.T, repo string) { commitPolicy(t, repo, policy, "{}", 0o644) }, restoreOverwritesNothing},
-		{"a committed executable policy", func(t *testing.T, repo string) { commitPolicy(t, repo, policy, "{}", 0o755) }, restoreOverwritesNothing},
+		{"a committed policy with a clean index", func(t *testing.T, repo string) { commitPolicy(t, repo, policy, validPolicy, 0o644) }, restoreOverwritesNothing},
+		{"a committed executable policy", func(t *testing.T, repo string) { commitPolicy(t, repo, policy, validPolicy, 0o755) }, restoreOverwritesNothing},
 		{"a committed policy whose deletion was staged", func(t *testing.T, repo string) {
-			commitPolicy(t, repo, policy, "{}", 0o644)
+			commitPolicy(t, repo, policy, validPolicy, 0o644)
 			runGit(t, repo, "rm", "-q", policy)
 		}, restoreOverwritesNothing},
 		{"a committed policy with a staged edit", func(t *testing.T, repo string) {
-			commitPolicy(t, repo, policy, "{}", 0o644)
+			commitPolicy(t, repo, policy, validPolicy, 0o644)
 			writeFile(t, repo, policy, `{"edited":true}`)
 			runGit(t, repo, "add", policy)
 		}, restoreDiscardsStagedEdit},
 		{"a committed policy with an unstaged edit", func(t *testing.T, repo string) {
-			commitPolicy(t, repo, policy, "{}", 0o644)
+			commitPolicy(t, repo, policy, validPolicy, 0o644)
 			writeFile(t, repo, policy, `{"edited":true}`)
 		}, restoreOverwritesNothing},
 		{"a policy committed as a symbolic link", func(t *testing.T, repo string) {

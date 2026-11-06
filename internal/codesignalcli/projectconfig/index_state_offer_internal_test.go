@@ -11,7 +11,7 @@ import (
 func statusFor(t *testing.T, fake indexFake) *ConfigError {
 	t.Helper()
 	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
+	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 	moveAside(t, repo, "cfg/p.json")
 	status, err := ExplicitOnDiskStatus(fake.run, repo, "HEAD", "cfg/p.json")
 	if err != nil || status == nil {

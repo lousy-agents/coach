@@ -16,7 +16,7 @@ const sparsePolicy = "pol.json"
 // the spelling has to go there to be the one git reads.
 func hideBySparseCheckout(t *testing.T, repo, spelling string) {
 	t.Helper()
-	commitPolicy(t, repo, sparsePolicy, "{}", 0o644)
+	commitPolicy(t, repo, sparsePolicy, validPolicy, 0o644)
 	runGit(t, repo, "sparse-checkout", "set", "--no-cone", "/a.go")
 	runGit(t, repo, "config", "--worktree", "core.sparseCheckout", spelling)
 }
@@ -25,7 +25,7 @@ func hideBySparseCheckout(t *testing.T, repo, spelling string) {
 // core.sparseCheckout in the given spelling.
 func markByHandWhileCoreSparseCheckoutIs(t *testing.T, repo, spelling string) {
 	t.Helper()
-	commitPolicy(t, repo, sparsePolicy, "{}", 0o644)
+	commitPolicy(t, repo, sparsePolicy, validPolicy, 0o644)
 	runGit(t, repo, "update-index", "--skip-worktree", sparsePolicy)
 	runGit(t, repo, "config", "core.sparseCheckout", spelling)
 }
@@ -54,7 +54,7 @@ func TestASkipWorktreeMarkSetByHandIsNotASparseCheckoutWhicheverWayGitSpellsFals
 
 func TestASkipWorktreeMarkSetByHandAfterASparseCheckoutWasDisabledIsNotASparseCheckout(t *testing.T) {
 	assertJudgeRestore(t, sparsePolicy, func(t *testing.T, repo string) {
-		commitPolicy(t, repo, sparsePolicy, "{}", 0o644)
+		commitPolicy(t, repo, sparsePolicy, validPolicy, 0o644)
 		runGit(t, repo, "sparse-checkout", "set", "--no-cone", "/a.go")
 		runGit(t, repo, "sparse-checkout", "disable")
 		runGit(t, repo, "update-index", "--skip-worktree", sparsePolicy)
@@ -63,7 +63,7 @@ func TestASkipWorktreeMarkSetByHandAfterASparseCheckoutWasDisabledIsNotASparseCh
 
 func TestASkipWorktreeMarkIsNotASparseCheckoutWhenCoreSparseCheckoutIsUnset(t *testing.T) {
 	assertJudgeRestore(t, sparsePolicy, func(t *testing.T, repo string) {
-		commitPolicy(t, repo, sparsePolicy, "{}", 0o644)
+		commitPolicy(t, repo, sparsePolicy, validPolicy, 0o644)
 		runGit(t, repo, "update-index", "--skip-worktree", sparsePolicy)
 	}, restoreSkipWorktreeMarked)
 }

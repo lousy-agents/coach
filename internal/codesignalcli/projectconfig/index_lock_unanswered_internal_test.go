@@ -15,7 +15,7 @@ import (
 // not be checked fails when it is run, which is the failure the lock check exists to prevent.
 func TestARestoreIsNotPrintedWhenGitCannotSayWhetherTheIndexIsLocked(t *testing.T) {
 	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
+	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 	moveAside(t, repo, "cfg/p.json")
 
 	status, err := ExplicitOnDiskStatus(indexFake{gitPathErr: errors.New("boom")}.run, repo, "HEAD", "cfg/p.json")

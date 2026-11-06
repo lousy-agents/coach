@@ -32,7 +32,7 @@ func lockTheIndex(t *testing.T, repo string) {
 // the lock to the verdict: a lock read for every verdict would tell a user with a staged edit to wait.
 func TestALockedIndexDoesNotReplaceTheExplanationOfAStagedEdit(t *testing.T) {
 	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
+	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 	writeFile(t, repo, "cfg/p.json", `{"staged":true}`)
 	stage(t, repo, "cfg/p.json")
 	moveAside(t, repo, "cfg/p.json")
@@ -52,7 +52,7 @@ func TestALockedIndexDoesNotReplaceTheExplanationOfAStagedEdit(t *testing.T) {
 // is told before the lock even when the index is locked too.
 func TestAFileInTheWayIsToldBeforeALockedIndex(t *testing.T) {
 	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
+	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 	if err := os.RemoveAll(filepath.Join(repo, "cfg")); err != nil {
 		t.Fatal(err)
 	}

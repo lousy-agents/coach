@@ -30,6 +30,10 @@ type indexFake struct {
 	gitPathErr error
 	// configErr makes `git config` fail with something other than git's exit 1 for an unset key.
 	configErr error
+	// committedContent is what the committed policy holds; it is a valid policy when empty.
+	committedContent string
+	// showErr makes reading the committed content fail.
+	showErr error
 }
 
 func (f indexFake) run(dir string, args ...string) ([]byte, error) {
@@ -48,6 +52,8 @@ func (f indexFake) run(dir string, args ...string) ([]byte, error) {
 			mode = "100644"
 		}
 		return []byte(mode + " blob " + committedBlob + "\tpol.json\n"), nil
+	case "show":
+		return f.committedPolicy()
 	case "ls-files":
 		return f.lsFilesAnswer(args)
 	case "config":
@@ -149,4 +155,15 @@ func TestACommittedLinkIsNamedEvenWhenAFileBlocksTheParent(t *testing.T) {
 	if !offered || offer != committedLinkOffer {
 		t.Errorf("restoreOfferFor = %q, %v; want the committed-link offer, because restoring the policy from git would recreate a link the scan refuses", offer.text, offered)
 	}
+}
+
+// committedPolicy is what `git show` prints for the committed policy.
+func (f indexFake) committedPolicy() ([]byte, error) {
+	if f.showErr != nil {
+		return nil, f.showErr
+	}
+	if f.committedContent != "" {
+		return []byte(f.committedContent), nil
+	}
+	return []byte(`{"schema_version":"1","roots":["."]}`), nil
 }

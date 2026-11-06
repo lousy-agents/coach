@@ -58,7 +58,7 @@ func TestExplicitOnDiskStatusSaysTheWorkingTreeProducedEveryError(t *testing.T) 
 func assertWorkingTreeProducedTheError(t *testing.T, arrange func(t *testing.T, repo string)) {
 	t.Helper()
 	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, workingTreePolicy, "{}")
+	gitfixture.CommitFile(t, repo, workingTreePolicy, validPolicy)
 	arrange(t, repo)
 
 	status, err := ExplicitOnDiskStatus(gitrepo.RunBytes, repo, "HEAD", workingTreePolicy)
@@ -73,7 +73,7 @@ func assertWorkingTreeProducedTheError(t *testing.T, arrange func(t *testing.T, 
 
 func TestExplicitOnDiskStatusIsNilForAPolicyThatIsARegularFile(t *testing.T) {
 	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, workingTreePolicy, "{}")
+	gitfixture.CommitFile(t, repo, workingTreePolicy, validPolicy)
 
 	status, err := ExplicitOnDiskStatus(gitrepo.RunBytes, repo, "HEAD", workingTreePolicy)
 

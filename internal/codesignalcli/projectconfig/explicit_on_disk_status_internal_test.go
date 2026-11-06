@@ -32,7 +32,7 @@ func TestExplicitOnDiskStatusKeepsTheIndexUnreadWhenGitCannotListIt(t *testing.T
 func assertIndexUnreadWhenListingFails(t *testing.T, hide func(t *testing.T, repo string), cause MissingCause) {
 	t.Helper()
 	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
+	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 	hide(t, repo)
 
 	// The on-disk check reads the real working tree; only the git answers come from the fake, whose index listing fails.

@@ -14,7 +14,7 @@ import (
 // verdict as the scan gives it and says only that the index could not be ruled out.
 func TestAGitFailureAboutAPathTheWorkingTreeRefusedIsNotAnOperationalFailure(t *testing.T) {
 	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
+	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 	moveAside(t, repo, "cfg/p.json")
 	if err := os.MkdirAll(filepath.Join(repo, "cfg", "p.json"), 0o755); err != nil {
 		t.Fatal(err)
