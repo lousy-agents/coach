@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"syscall"
@@ -55,12 +59,45 @@ func racePolicyPath(target, outside, regular string, stop <-chan struct{}) {
 	}
 }
 
+// racePolicyParent swaps the directory above the policy between itself and a FIFO, and now and then
+// removes it, until stop is closed. It always puts the directory back before it returns.
+func racePolicyParent(parent string, stop <-chan struct{}) {
+	away, fifo := parent+".away", parent+".fifo"
+	_ = syscall.Mkfifo(fifo, 0o644)
+	for !raceStopped(stop) {
+		_ = os.Rename(parent, away)
+		_ = os.Rename(fifo, parent)
+		_ = os.Rename(parent, fifo)
+		_ = os.Rename(away, parent)
+	}
+}
+
+// runRacedScan is runCoachBinary with a limit, so that a scan stuck on the raced entry is killed and
+// fails the spec instead of holding up the whole suite.
+func runRacedScan(limit time.Duration, repo string) (stdout, stderr []byte, exitCode int) {
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	command := exec.CommandContext(ctx, commandPath, "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
+	command.Dir = repo
+	var outBuf, errBuf bytes.Buffer
+	command.Stdout, command.Stderr = &outBuf, &errBuf
+	err := command.Run()
+	var exitErr *exec.ExitError
+	if err != nil && !errors.As(err, &exitErr) {
+		ExpectWithOffset(2, err).NotTo(HaveOccurred())
+	}
+	if exitErr != nil {
+		return outBuf.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
+	}
+	return outBuf.Bytes(), errBuf.Bytes(), 0
+}
+
 // expectRacedScanInvariants runs one scan against the raced path and requires what must hold whichever
 // entry it met: it ends, it does not panic, it prints no report beside a refusal, and it prints nothing
 // from the file outside the repository.
 func expectRacedScanInvariants(repo string) {
 	begin := time.Now()
-	stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
+	stdout, stderr, exitCode := runRacedScan(racedScanCeiling+15*time.Second, repo)
 
 	ExpectWithOffset(1, time.Since(begin)).To(BeNumerically("<", racedScanCeiling), "a scan hung on the raced entry")
 	ExpectWithOffset(1, exitCode).To(BeElementOf(0, 2), "stderr: %s", stderr)
@@ -85,6 +122,22 @@ var _ = Describe("coach codesignal: an explicit --project-config path raced on d
 		go func() {
 			defer swapper.Done()
 			racePolicyPath(filepath.Join(repo, explicitPolicyPath), outside, regular, stop)
+		}()
+		DeferCleanup(func() { close(stop); swapper.Wait() })
+
+		for i := 0; i < 40; i++ {
+			expectRacedScanInvariants(repo)
+		}
+	})
+
+	It("never waits on a parent directory that is swapped for a FIFO", func() {
+		repo := commitExplicitPolicyRepo()
+		stop := make(chan struct{})
+		var swapper sync.WaitGroup
+		swapper.Add(1)
+		go func() {
+			defer swapper.Done()
+			racePolicyParent(filepath.Join(repo, filepath.Dir(explicitPolicyPath)), stop)
 		}()
 		DeferCleanup(func() { close(stop); swapper.Wait() })
 
