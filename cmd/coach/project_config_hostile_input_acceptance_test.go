@@ -46,7 +46,6 @@ var _ = Describe("coach codesignal: --project-config path shapes are refused bef
 		Entry("a value that looks like a flag", "--base"),
 		Entry("a path 2500 components long", strings.Repeat("a/", 2500)+"x.json"),
 		Entry("a path 200 directories deep", strings.Repeat("d/", 200)+"x.json"),
-		Entry("a path inside .git that does not exist", ".git/nope.json"),
 		Entry("a tilde and an unexpanded variable", "~/$HOME/x.json"),
 	)
 
@@ -56,14 +55,22 @@ var _ = Describe("coach codesignal: --project-config path shapes are refused bef
 		expectRefusedWith(repo, strings.Repeat("n", 300)+".json", "project_config_invalid", "cannot be checked on disk: file name too long")
 	})
 
-	DescribeTable("a path inside .git, which exists on disk but is never committed",
+	DescribeTable("a path inside .git, under which git tracks nothing, whether or not it exists on disk",
+		func(path string) {
+			repo := commitExplicitPolicyRepo()
+			expectRefusedWith(repo, path, "project_config_invalid", "must not be inside the .git directory")
+		},
+		Entry("a file in .git", ".git/config"),
+		Entry("another file in .git", ".git/HEAD"),
+		Entry("the .git directory", ".git"),
+		Entry("a path inside .git that does not exist", ".git/nope.json"),
+	)
+
+	DescribeTable("a directory that is committed and on disk",
 		func(path, reason string) {
 			repo := commitExplicitPolicyRepo()
 			expectRefusedWith(repo, path, "project_config_invalid", reason)
 		},
-		Entry("a file in .git", ".git/config", "is not committed at revision"),
-		Entry("another file in .git", ".git/HEAD", "is not committed at revision"),
-		Entry("the .git directory", ".git", "is not a regular file"),
 		Entry("a committed directory", ".lousy-agents", "is not a regular file"),
 	)
 })

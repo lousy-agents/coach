@@ -76,9 +76,10 @@ func Load(dir, revision, repoPath string) (json.RawMessage, error) {
 // ValidatePath validates a --project-config value's shape using
 // the same rules Load enforces, without touching Git or the
 // filesystem. --check-project's argument validation calls this before any
-// readiness check runs, so an invalid path (absolute, containing "..", or
-// using a backslash separator) is rejected at argument time rather than
-// surfacing as a false policy_missing/policy_invalid readiness gap.
+// readiness check runs, so an invalid path (absolute, containing "..",
+// using a backslash separator, or lying inside the .git directory) is
+// rejected at argument time rather than surfacing as a false
+// policy_missing/policy_invalid readiness gap.
 func ValidatePath(repoPath string) error {
 	if repoPath == "" || path.IsAbs(repoPath) {
 		return fmt.Errorf("path must be a non-empty repository-relative path")
@@ -89,6 +90,9 @@ func ValidatePath(repoPath string) error {
 	}
 	if strings.Contains(repoPath, "\\") {
 		return fmt.Errorf("path must use repository-relative slash separators")
+	}
+	if insideGitDirectory(repoPath) {
+		return fmt.Errorf("path must not be inside the .git directory: git tracks nothing there, so a policy there can be neither committed nor restored")
 	}
 	return nil
 }
