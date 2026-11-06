@@ -43,7 +43,7 @@ func TestALockedIndexDoesNotReplaceTheExplanationOfAStagedEdit(t *testing.T) {
 	if err != nil || status == nil {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want a missing-policy error", status, err)
 	}
-	if status.PolicyCause != projectreadiness.CauseStagedEdit || !strings.Contains(status.Message, "staged edit") {
+	if status.PolicyCause != projectreadiness.PolicyCause("staged_edit") || !strings.Contains(status.Message, "staged edit") {
 		t.Errorf("cause %q, message %q; want the staged edit explained, not the lock", status.PolicyCause, status.Message)
 	}
 }
@@ -61,7 +61,7 @@ func TestAFileInTheWayIsToldBeforeALockedIndex(t *testing.T) {
 
 	status, err := ExplicitOnDiskStatus(gitrepo.RunBytes, repo, "HEAD", "cfg/p.json")
 
-	if err != nil || status == nil || status.PolicyCause != projectreadiness.CauseParentNotDirectory {
+	if err != nil || status == nil || status.PolicyCause != projectreadiness.PolicyCause("parent_not_directory") {
 		t.Errorf("ExplicitOnDiskStatus = %+v, %v; want the file in the way, cause parent_not_directory", status, err)
 	}
 }

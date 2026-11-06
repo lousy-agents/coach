@@ -77,20 +77,20 @@ func verdictCases() []verdictCase {
 	restores := func(words ...string) offerWant {
 		return offerWant{true, projectreadiness.RemedyRestore, "", words, true}
 	}
-	staged1, staged2 := bothWays(projectreadiness.CauseStagedEdit, "staged edit")
-	link1, link2 := bothWays(projectreadiness.CauseCommittedAsLink, "symbolic link")
-	sparse1, sparse2 := bothWays(projectreadiness.CauseSparseCheckout, "sparse checkout")
-	merge1, merge2 := bothWays(projectreadiness.CauseMergeConflict, "unresolved merge conflict")
-	mark1, mark2 := bothWays(projectreadiness.CauseSkipWorktree, "git update-index --no-skip-worktree")
-	nonFile1, nonFile2 := bothWays(projectreadiness.CauseStagedNotAFile, "not a regular file")
-	stagedMark1, stagedMark2 := bothWays(projectreadiness.CauseSkipWorktree, "marked skip-worktree")
-	stagedSparse1, stagedSparse2 := bothWays(projectreadiness.CauseSparseCheckout, "staged copy of it that this sparse checkout leaves out")
-	emptyMark1, emptyMark2 := bothWays(projectreadiness.CauseSkipWorktree, "empty entry", "marked skip-worktree", "git update-index --no-skip-worktree")
-	emptySparse1, emptySparse2 := bothWays(projectreadiness.CauseSparseCheckout, "empty entry", "sparse checkout")
-	dir1, dir2 := bothWays(projectreadiness.CauseDirectory, "directory", "name a file")
-	unmergedNew1, unmergedNew2 := bothWays(projectreadiness.CauseMergeConflict, "unresolved merge conflict")
-	unknown1, unknown2 := bothWays(projectreadiness.CauseUndetermined, "could not tell what a restore would do")
-	moveFirst := cannotRestore(projectreadiness.CauseParentNotDirectory, "after moving the file, restore the policy from git")
+	staged1, staged2 := bothWays(projectreadiness.PolicyCause("staged_edit"), "staged edit")
+	link1, link2 := bothWays(projectreadiness.PolicyCause("committed_as_link"), "symbolic link")
+	sparse1, sparse2 := bothWays(projectreadiness.PolicyCause("sparse_checkout"), "sparse checkout")
+	merge1, merge2 := bothWays(projectreadiness.PolicyCause("merge_conflict"), "unresolved merge conflict")
+	mark1, mark2 := bothWays(projectreadiness.PolicyCause("skip_worktree"), "git update-index --no-skip-worktree")
+	nonFile1, nonFile2 := bothWays(projectreadiness.PolicyCause("staged_not_a_file"), "not a regular file")
+	stagedMark1, stagedMark2 := bothWays(projectreadiness.PolicyCause("skip_worktree"), "marked skip-worktree")
+	stagedSparse1, stagedSparse2 := bothWays(projectreadiness.PolicyCause("sparse_checkout"), "staged copy of it that this sparse checkout leaves out")
+	emptyMark1, emptyMark2 := bothWays(projectreadiness.PolicyCause("skip_worktree"), "empty entry", "marked skip-worktree", "git update-index --no-skip-worktree")
+	emptySparse1, emptySparse2 := bothWays(projectreadiness.PolicyCause("sparse_checkout"), "empty entry", "sparse checkout")
+	dir1, dir2 := bothWays(projectreadiness.PolicyCause("directory"), "directory", "name a file")
+	unmergedNew1, unmergedNew2 := bothWays(projectreadiness.PolicyCause("merge_conflict"), "unresolved merge conflict")
+	unknown1, unknown2 := bothWays(projectreadiness.PolicyCause("undetermined"), "could not tell what a restore would do")
+	moveFirst := cannotRestore(projectreadiness.PolicyCause("parent_not_directory"), "after moving the file, restore the policy from git")
 	return []verdictCase{
 		{"nothing committed and nothing staged", restoreNotCommitted, offerWant{}, offerWant{}, false},
 		{"a restore that overwrites nothing", restoreOverwritesNothing, restores("restore it with " + restoreSource), moveFirst, false},
@@ -98,12 +98,12 @@ func verdictCases() []verdictCase {
 		{"a staged edit a restore would discard", restoreDiscardsStagedEdit, staged1, staged2, false},
 		{"a committed link", restoreRecreatesLink, link1, link2, false},
 		{"a sparse checkout that leaves the policy out", restoreSkippedBySparseCheckout, sparse1, sparse2, false},
-		{"a question git could not answer", restoreUndecidable, cannotRestore(projectreadiness.CauseGitUnreadable, "could not check"), offerWant{}, true},
+		{"a question git could not answer", restoreUndecidable, cannotRestore(projectreadiness.PolicyCause("git_unreadable"), "could not check"), offerWant{}, true},
 		{"a committed unmerged entry", restoreMergeConflict, merge1, merge2, false},
 		{"a committed policy marked skip-worktree", restoreSkipWorktreeMarked, mark1, mark2, false},
 		{"a staged copy of a policy nothing commits", restoreStagedNotCommitted,
-			offerWant{true, projectreadiness.RemedyNone, projectreadiness.CauseStagedCopy, []string{"staged copy", "restore it with git restore -- "}, true},
-			cannotRestore(projectreadiness.CauseStagedCopy, "move the file that blocks the path"), false},
+			offerWant{true, projectreadiness.RemedyNone, projectreadiness.PolicyCause("staged_copy"), []string{"staged copy", "restore it with git restore -- "}, true},
+			cannotRestore(projectreadiness.PolicyCause("staged_copy"), "move the file that blocks the path"), false},
 		{"an unmerged entry for a policy nothing commits", restoreUnmergedNotCommitted, unmergedNew1, unmergedNew2, false},
 		{"a staged link of a policy nothing commits", restoreStagedNonFileNotCommitted, nonFile1, nonFile2, false},
 		{"a staged copy marked skip-worktree", restoreStagedSkipWorktreeNotCommitted, stagedMark1, stagedMark2, false},

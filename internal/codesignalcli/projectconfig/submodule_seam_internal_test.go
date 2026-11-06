@@ -56,7 +56,7 @@ func TestTheSubmoduleProbeAsksTheRunnerItWasGiven(t *testing.T) {
 
 	message, cause := UncommittedPolicy(run, repo, "HEAD", "vendor/sub/coach.json")
 
-	if cause != projectreadiness.CauseInSubmodule || !strings.Contains(message, `inside the submodule "vendor/sub"`) {
+	if cause != projectreadiness.PolicyCause("in_submodule") || !strings.Contains(message, `inside the submodule "vendor/sub"`) {
 		t.Errorf("UncommittedPolicy = %q, %q; want the submodule and its cause", message, cause)
 	}
 	if !slices.Contains(asked, "ls-files") {
@@ -72,7 +72,7 @@ func TestAnUnansweredSubmoduleQuestionGivesNoAdvice(t *testing.T) {
 
 	message, cause := UncommittedPolicy(run, repo, "HEAD", "vendor/sub/coach.json")
 
-	if strings.Contains(message, "commit the file") || cause != projectreadiness.CauseGitUnreadable {
+	if strings.Contains(message, "commit the file") || cause != projectreadiness.PolicyCause("git_unreadable") {
 		t.Errorf("UncommittedPolicy = %q, %q; want no advice and the cause git_unreadable", message, cause)
 	}
 }
@@ -87,7 +87,7 @@ func TestAMissingPolicyInsideASubmoduleIsOfferedNeitherARestoreNorANewPolicy(t *
 	if err != nil || status == nil {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want a missing-policy error", status, err)
 	}
-	if status.Remedy != projectreadiness.RemedyNone || status.PolicyCause != projectreadiness.CauseInSubmodule || !strings.Contains(status.Message, `inside the submodule "vendor/sub"`) {
+	if status.Remedy != projectreadiness.RemedyNone || status.PolicyCause != projectreadiness.PolicyCause("in_submodule") || !strings.Contains(status.Message, `inside the submodule "vendor/sub"`) {
 		t.Errorf("remedy %d, cause %q, message %q; want no remedy, in_submodule, and the submodule named", status.Remedy, status.PolicyCause, status.Message)
 	}
 }
@@ -102,7 +102,7 @@ func TestAPolicyThatCannotBeLocatedIsNotCalledAbsent(t *testing.T) {
 	err := readError(run, repo, "HEAD", "cfg.json", errors.New("not at the revision"))
 
 	found, ok := err.(*ConfigError)
-	if !ok || found.Remedy != projectreadiness.RemedyNone || found.PolicyCause != projectreadiness.CauseGitUnreadable || strings.Contains(found.Message, "was not found") {
+	if !ok || found.Remedy != projectreadiness.RemedyNone || found.PolicyCause != projectreadiness.PolicyCause("git_unreadable") || strings.Contains(found.Message, "was not found") {
 		t.Errorf("readError = %+v; want no remedy, the cause git_unreadable, and not \"was not found\"", err)
 	}
 }
