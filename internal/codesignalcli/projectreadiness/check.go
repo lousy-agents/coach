@@ -65,6 +65,9 @@ type Check struct {
 	// scan prints for the same policy, so a caller that cannot print the scan's own
 	// error can still say why. It is empty for every other check.
 	Cause string `json:"-"`
+	// PolicyCause is the same reason as a stable word, for the gap that this check
+	// becomes. It is empty whenever a remedy names what to do.
+	PolicyCause PolicyCause `json:"-"`
 
 	DeclaredVersion   string          `json:"-"`
 	DeclarationOrigin string          `json:"-"`

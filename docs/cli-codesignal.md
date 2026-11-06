@@ -73,6 +73,17 @@ committed policy, an unmerged entry for it, or a staged entry for a policy that
 was never committed, is the exception: nothing read it, so the path stays in
 `dirty_worktree`, and Coach offers no restore over an edit.
 
+A policy gap that names neither `author_policy` nor `restore_policy` says why in a
+`cause` on the gap, and the text prints the same word after the code
+(`policy_missing cause=not_committed`). The field is absent from every other gap.
+The values are stable: `not_committed` (a file on disk that the analyzed revision
+does not hold, or one inside a submodule), `parent_not_directory`, `staged_edit`,
+`staged_copy` (a staged copy of a policy that was never committed),
+`staged_not_a_file`, `merge_conflict`, `skip_worktree`, `sparse_checkout`,
+`committed_as_link`, `directory` (the index holds files under the name),
+`index_locked`, `git_unreadable`, `unusable_on_disk` (a path on disk that cannot be
+a policy) and `undetermined`.
+
 Only the policy's own path leaves `dirty_worktree`. Every other uncommitted path
 the report did not read still counts when it lies under the roots of the policy.
 A policy the working tree refused has no roots of its own, so they come from its

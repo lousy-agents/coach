@@ -65,6 +65,7 @@ type readinessResultDoc struct {
 	Gaps []struct {
 		Code               string `json:"code"`
 		PackageManagerKind string `json:"package_manager_kind"`
+		Cause              string `json:"cause"`
 	} `json:"gaps"`
 	Warnings []struct {
 		Code              string `json:"code"`

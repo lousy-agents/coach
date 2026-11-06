@@ -15,13 +15,22 @@ import (
 func gapCodes(gaps []projectreadiness.Gap) []string {
 	codes := make([]string, len(gaps))
 	for i, gap := range gaps {
-		if gap.PackageManagerKind != "" {
-			codes[i] = gap.Code + " package_manager_kind=" + gap.PackageManagerKind
-			continue
-		}
-		codes[i] = gap.Code
+		codes[i] = gapLine(gap)
 	}
 	return codes
+}
+
+// gapLine is a gap's code followed by the fields it carries, in the order the JSON
+// declares them.
+func gapLine(gap projectreadiness.Gap) string {
+	line := gap.Code
+	if gap.PackageManagerKind != "" {
+		line += " package_manager_kind=" + gap.PackageManagerKind
+	}
+	if gap.Cause != "" {
+		line += " cause=" + string(gap.Cause)
+	}
+	return line
 }
 
 func nextActionKinds(actions []projectreadiness.NextAction) []string {

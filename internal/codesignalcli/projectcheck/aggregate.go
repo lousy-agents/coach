@@ -37,7 +37,7 @@ func readinessFromGapChecks(failing []projectreadiness.Check) ([]projectreadines
 	seenActions := map[string]bool{}
 	status := projectreadiness.StatusReady
 	for _, check := range failing {
-		gaps = append(gaps, projectreadiness.Gap{Code: check.Code})
+		gaps = append(gaps, projectreadiness.Gap{Code: check.Code, Cause: check.PolicyCause})
 		status = raiseStatus(status, projectreadiness.StatusForGapCode(check.Code))
 		if kind, ok := projectreadiness.NextActionForGap(check.Code, check.Remedy); ok && !seenActions[kind] {
 			seenActions[kind] = true
