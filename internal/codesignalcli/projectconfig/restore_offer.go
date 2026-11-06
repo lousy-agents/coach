@@ -9,7 +9,11 @@ import "github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 // policy is committed already.
 type restoreOffer struct {
 	remedy projectreadiness.PolicyRemedy
-	text   string
+	// cause is, for an offer that names no remedy, why none is named, as the stable word the
+	// readiness result carries. It is set beside the text and the remedy so that all three come
+	// from one decision. An offer that names a remedy has none.
+	cause projectreadiness.PolicyCause
+	text  string
 }
 
 // restorableOffer brings the committed policy back with the restore command.
@@ -31,6 +35,7 @@ func restorableOverEmptyEntryOffer(revision, repoPath string) restoreOffer {
 func undecidableOffer(failure *gitFailure) restoreOffer {
 	return restoreOffer{
 		remedy: projectreadiness.RemedyNone,
+		cause:  projectreadiness.CauseGitUnreadable,
 		text:   ". Coach could not check " + failure.describe() + ", so it offers neither a restore nor a new policy; resolve the git error and run again",
 	}
 }
@@ -40,6 +45,7 @@ func undecidableOffer(failure *gitFailure) restoreOffer {
 // and so would restoring from git after a blocking file is moved.
 var stagedEditOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
+	cause:  projectreadiness.CauseStagedEdit,
 	text:   ". It is committed at the analyzed revision, and the index holds a staged edit to it that a restore would discard, so none is offered; review the staged edit with git diff --cached, keep what you want, then run again",
 }
 
@@ -47,6 +53,7 @@ var stagedEditOffer = restoreOffer{
 // There is no staged edit to review, and a restore would discard the conflict.
 var mergeConflictOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
+	cause:  projectreadiness.CauseMergeConflict,
 	text:   ". It is committed at the analyzed revision, and the index holds an unresolved merge conflict for it that a restore would discard, so none is offered; resolve the conflict with git status, then run again",
 }
 
@@ -56,6 +63,7 @@ var mergeConflictOffer = restoreOffer{
 func skipWorktreeOffer(repoPath string) restoreOffer {
 	return restoreOffer{
 		remedy: projectreadiness.RemedyNone,
+		cause:  projectreadiness.CauseSkipWorktree,
 		text:   ". It is committed at the analyzed revision, but its index entry is marked skip-worktree, so a restore cannot bring it back; " + clearSkipWorktreeAdvice(repoPath) + ", then run again",
 	}
 }
@@ -69,11 +77,13 @@ func stagedOnlyOffer(repoPath string, blocked bool) restoreOffer {
 	if blocked {
 		return restoreOffer{
 			remedy: projectreadiness.RemedyNone,
+			cause:  projectreadiness.CauseStagedCopy,
 			text:   ". It is not committed, but the index holds a staged copy of it, so Coach offers no new policy; move the file that blocks the path, then restore the staged copy from the index",
 		}
 	}
 	return restoreOffer{
 		remedy: projectreadiness.RemedyNone,
+		cause:  projectreadiness.CauseStagedCopy,
 		text:   ". It is not committed, but the index holds a staged copy of it, so Coach offers no new policy; to keep the staged copy, " + RestoreFromIndexAdvice(repoPath),
 	}
 }
@@ -83,6 +93,7 @@ func stagedOnlyOffer(repoPath string, blocked bool) restoreOffer {
 // printed, and a new policy would replace the conflicting work.
 var unmergedNotCommittedOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
+	cause:  projectreadiness.CauseMergeConflict,
 	text:   ". It is not committed, but the index holds an unresolved merge conflict for it, so Coach offers no new policy and a restore cannot bring it back; resolve the conflict with git status, then run again",
 }
 
@@ -92,6 +103,7 @@ var unmergedNotCommittedOffer = restoreOffer{
 // would replace the staged entry.
 var stagedNonFileOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
+	cause:  projectreadiness.CauseStagedNotAFile,
 	text:   ". It is not committed, but the index holds it as a symbolic link or another entry that is not a regular file, which a policy cannot be, so there is nothing to restore; name another policy or stage a regular file at this path",
 }
 
@@ -101,6 +113,7 @@ var stagedNonFileOffer = restoreOffer{
 func stagedSkipWorktreeOffer(repoPath string) restoreOffer {
 	return restoreOffer{
 		remedy: projectreadiness.RemedyNone,
+		cause:  projectreadiness.CauseSkipWorktree,
 		text:   ". It is not committed, but the index holds a staged copy of it marked skip-worktree, so a restore cannot bring it back and Coach offers no new policy; " + clearSkipWorktreeAdvice(repoPath) + ", then run again",
 	}
 }
@@ -109,6 +122,7 @@ func stagedSkipWorktreeOffer(repoPath string) restoreOffer {
 // the sparse checkout leaves out of the working tree.
 var stagedSparseOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
+	cause:  projectreadiness.CauseSparseCheckout,
 	text:   ". It is not committed, but the index holds a staged copy of it that this sparse checkout leaves out of the working tree, so a restore cannot bring it back and Coach offers no new policy; add its directory to the sparse checkout, then run again",
 }
 
@@ -119,6 +133,7 @@ var stagedSparseOffer = restoreOffer{
 func emptySkipWorktreeOffer(repoPath string) restoreOffer {
 	return restoreOffer{
 		remedy: projectreadiness.RemedyNone,
+		cause:  projectreadiness.CauseSkipWorktree,
 		text:   ". It is not committed, and the index holds only an empty entry for it with no content staged, marked skip-worktree, which makes git refuse a new file at the path, so Coach offers no new policy; " + clearSkipWorktreeAdvice(repoPath) + ", then run again",
 	}
 }
@@ -127,6 +142,7 @@ func emptySkipWorktreeOffer(repoPath string) restoreOffer {
 // leaves out of the working tree.
 var emptySparseOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
+	cause:  projectreadiness.CauseSparseCheckout,
 	text:   ". It is not committed, and the index holds only an empty entry for it with no content staged that this sparse checkout leaves out of the working tree, which makes git refuse a new file at the path, so Coach offers no new policy; add its directory to the sparse checkout, then run again",
 }
 
@@ -158,6 +174,7 @@ func uncommittedOfferFor(verdict restoreVerdict, repoPath string, blocked bool) 
 // commit holds at the path.
 var directoryInIndexOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
+	cause:  projectreadiness.CauseDirectory,
 	text:   ". The index holds files under this path, so it is a directory and not a file; there is nothing to restore and no policy can be written at it, so name a file",
 }
 
@@ -166,6 +183,7 @@ var directoryInIndexOffer = restoreOffer{
 // printed.
 var indexLockedOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
+	cause:  projectreadiness.CauseIndexLocked,
 	text:   ". The index is locked, so a restore would fail and Coach offers neither a restore nor a new policy; wait for the other git process to finish, or remove the lock file if none is running, then run again",
 }
 
@@ -174,6 +192,7 @@ var indexLockedOffer = restoreOffer{
 // committed policy.
 var committedLinkOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
+	cause:  projectreadiness.CauseCommittedAsLink,
 	text:   ". It is committed at the analyzed revision as a symbolic link, which a policy cannot be, so there is nothing to restore; name another policy or commit a regular file at this path",
 }
 
@@ -182,6 +201,7 @@ var committedLinkOffer = restoreOffer{
 // command would fail, and the way back is to widen the checkout.
 var sparseCheckoutOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
+	cause:  projectreadiness.CauseSparseCheckout,
 	text:   ". It is committed at the analyzed revision, but this sparse checkout leaves it out of the working tree, so a restore cannot bring it back; add its directory to the sparse checkout, then run again",
 }
 
@@ -189,6 +209,7 @@ var sparseCheckoutOffer = restoreOffer{
 // before the file is moved would delete the file.
 var committedBlockedParentOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
+	cause:  projectreadiness.CauseParentNotDirectory,
 	text:   ". The policy is committed at the analyzed revision, so after moving the file, restore the policy from git.",
 }
 
@@ -196,6 +217,7 @@ var committedBlockedParentOffer = restoreOffer{
 func annotated(found *ConfigError, offer restoreOffer) *ConfigError {
 	result := *found
 	result.Remedy = offer.remedy
+	result.PolicyCause = offer.cause
 	result.Message += offer.text
 	return &result
 }
@@ -260,5 +282,6 @@ func restoreThatLosesNothing(verdict restoreVerdict, revision, repoPath string, 
 // instead of guessing at it.
 var unknownVerdictOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
+	cause:  projectreadiness.CauseUndetermined,
 	text:   ". Coach could not tell what a restore would do here, so it offers neither a restore nor a new policy; resolve the state of the path and run again",
 }

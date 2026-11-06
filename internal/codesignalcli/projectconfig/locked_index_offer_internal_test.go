@@ -47,7 +47,7 @@ func assertALockedIndexWithholdsTheRestore(t *testing.T, judgment policyJudgment
 	locked := offerForVerdict(judgment)
 
 	saysWhy := strings.Contains(locked.text, "locked") && !strings.Contains(locked.text, "git restore")
-	if !saysWhy || locked.remedy != projectreadiness.RemedyNone {
-		t.Errorf("a locked index must withhold the restore, offer no remedy and say why; got remedy %d, %q", locked.remedy, locked.text)
+	if !saysWhy || locked.remedy != projectreadiness.RemedyNone || locked.cause != projectreadiness.CauseIndexLocked {
+		t.Errorf("a locked index must withhold the restore, offer no remedy and say why; got remedy %d, cause %q, %q", locked.remedy, locked.cause, locked.text)
 	}
 }
