@@ -131,6 +131,14 @@ func uncommittedOfferFor(verdict restoreVerdict, repoPath string, blocked bool) 
 	return restoreOffer{}, false
 }
 
+// directoryInIndexOffer is for a path the index holds files under. It is a directory
+// there, so no file can be restored to it and no policy written at it, whatever the
+// commit holds at the path.
+var directoryInIndexOffer = restoreOffer{
+	remedy: projectreadiness.RemedyNone,
+	text:   ". The index holds files under this path, so it is a directory and not a file; there is nothing to restore and no policy can be written at it, so name a file",
+}
+
 // indexLockedOffer is for a restore that would otherwise be offered while a lock
 // file stops git from writing the index: the command would fail, so none is
 // printed.
@@ -203,6 +211,8 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 		return committedLinkOffer, true
 	case verdict == restoreSkippedBySparseCheckout:
 		return sparseCheckoutOffer, true
+	case verdict == restoreDirectoryInIndex:
+		return directoryInIndexOffer, true
 	case verdict == restoreOverwritesNothing, verdict == restoreOverwritesEmptyEntry:
 		return restoreThatLosesNothing(verdict, revision, repoPath, blocked), true
 	}

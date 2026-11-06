@@ -3,9 +3,12 @@ package gitrepo
 import (
 	"errors"
 	"io/fs"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
 func TestIndexEntries(t *testing.T) {
@@ -16,9 +19,9 @@ func TestIndexEntries(t *testing.T) {
 		want   []IndexEntry
 	}{
 		{"a path the index does not know", "", nil},
-		{"one entry", "H 100644 " + blob + " 0\tpol.json\n", []IndexEntry{{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0"}}},
-		{"a path the sparse checkout skips", "S 100644 " + blob + " 0\tpol.json\n", []IndexEntry{{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0", SkipWorktree: true}}},
-		{"a merge conflict", "M 100644 " + blob + " 1\tpol.json\nM 100644 " + blob + " 2\tpol.json\n", []IndexEntry{
+		{"one entry", "H 100644 " + blob + " 0\tpol.json\x00", []IndexEntry{{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0"}}},
+		{"a path the sparse checkout skips", "S 100644 " + blob + " 0\tpol.json\x00", []IndexEntry{{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0", SkipWorktree: true}}},
+		{"a merge conflict", "M 100644 " + blob + " 1\tpol.json\x00M 100644 " + blob + " 2\tpol.json\x00", []IndexEntry{
 			{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "1"},
 			{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "2"},
 		}},
@@ -36,8 +39,8 @@ func assertIndexEntries(t *testing.T, output string, want []IndexEntry) {
 
 	got, err := IndexEntries(run, "repo", "pol.json")
 
-	if err != nil || !reflect.DeepEqual(got, want) {
-		t.Errorf("IndexEntries = %v, %v; want %v", got, err, want)
+	if err != nil || !reflect.DeepEqual(got.Entries, want) || got.HoldsBelow {
+		t.Errorf("IndexEntries = %+v, %v; want entries %v and nothing below the path", got, err, want)
 	}
 }
 
@@ -52,7 +55,7 @@ func TestIndexEntriesMatchesThePathRelativeToTheRepositoryRootLiterally(t *testi
 		t.Fatalf("IndexEntries: %v", err)
 	}
 
-	want := []string{"ls-files", "--stage", "-t", "--", ":(top,literal)a[1]*.json"}
+	want := []string{"ls-files", "--stage", "-t", "-z", "--full-name", "--", ":(top,literal)a[1]*.json"}
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Errorf("git args = %v; want %v", gotArgs, want)
 	}
@@ -74,10 +77,10 @@ func TestIndexEntriesFailsClosedOnALineItCannotParse(t *testing.T) {
 		name   string
 		output string
 	}{
-		{"a line without the tab before the path", "H 100644 0123456789012345678901234567890123456789 0 pol.json\n"},
-		{"a line with too few fields", "H 100644 0\tpol.json\n"},
-		{"a line without the status tag", "100644 0123456789012345678901234567890123456789 0\tpol.json\n"},
-		{"a good line followed by a bad one", "H 100644 0123456789012345678901234567890123456789 0\tpol.json\nnot an index line\n"},
+		{"a line without the tab before the path", "H 100644 0123456789012345678901234567890123456789 0 pol.json\x00"},
+		{"a line with too few fields", "H 100644 0\tpol.json\x00"},
+		{"a line without the status tag", "100644 0123456789012345678901234567890123456789 0\tpol.json\x00"},
+		{"a good line followed by a bad one", "H 100644 0123456789012345678901234567890123456789 0\tpol.json\x00not an index line\x00"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -93,8 +96,8 @@ func assertIndexEntriesRejects(t *testing.T, output string) {
 	entries, err := IndexEntries(run, "repo", "pol.json")
 
 	var operational *OperationalError
-	if !errors.As(err, &operational) || entries != nil {
-		t.Errorf("IndexEntries = %v, %v; want no entries and an *OperationalError, so a listing that cannot be read is never taken for a clean index", entries, err)
+	if !errors.As(err, &operational) || entries.Entries != nil || entries.HoldsBelow {
+		t.Errorf("IndexEntries = %+v, %v; want nothing and an *OperationalError, so a listing that cannot be read is never taken for a clean index", entries, err)
 	}
 }
 
@@ -110,7 +113,7 @@ func TestIndexEntriesKeepsGitsOwnErrorAsTheCause(t *testing.T) {
 }
 
 func TestIndexEntriesNamesTheParseFailureAsTheCauseWithoutCoachsWrapper(t *testing.T) {
-	run := func(string, ...string) ([]byte, error) { return []byte("not an index line\n"), nil }
+	run := func(string, ...string) ([]byte, error) { return []byte("not an index line\x00"), nil }
 
 	_, err := IndexEntries(run, "repo", "pol.json")
 
@@ -138,18 +141,18 @@ func TestIndexEntriesRefusesAListingLineItCannotRead(t *testing.T) {
 		name   string
 		output string
 	}{
-		{"a missing field", "H 100644 " + blob + "\tpol.json\n"},
-		{"an extra field", "H 100644 " + blob + " 0 x\tpol.json\n"},
-		{"no tab before the path", "H 100644 " + blob + " 0 pol.json\n"},
-		{"an object id that is not hexadecimal", "H 100644 zzzz" + blob[4:] + " 0\tpol.json\n"},
-		{"an object id of a length no object format has", "H 100644 " + blob + "0 0\tpol.json\n"},
-		{"a mode that is not six octal digits", "H 10064 " + blob + " 0\tpol.json\n"},
-		{"a mode with a digit that is not octal", "H 100948 " + blob + " 0\tpol.json\n"},
-		{"a stage that is not 0 to 3", "H 100644 " + blob + " 7\tpol.json\n"},
-		{"a tag of more than one character", "HH 100644 " + blob + " 0\tpol.json\n"},
-		{"a tag git does not print for an index entry", "X 100644 " + blob + " 0\tpol.json\n"},
-		{"a tag in the wrong case", "s 100644 " + blob + " 0\tpol.json\n"},
-		{"the tag of an untracked path", "? 100644 " + blob + " 0\tpol.json\n"},
+		{"a missing field", "H 100644 " + blob + "\tpol.json\x00"},
+		{"an extra field", "H 100644 " + blob + " 0 x\tpol.json\x00"},
+		{"no tab before the path", "H 100644 " + blob + " 0 pol.json\x00"},
+		{"an object id that is not hexadecimal", "H 100644 zzzz" + blob[4:] + " 0\tpol.json\x00"},
+		{"an object id of a length no object format has", "H 100644 " + blob + "0 0\tpol.json\x00"},
+		{"a mode that is not six octal digits", "H 10064 " + blob + " 0\tpol.json\x00"},
+		{"a mode with a digit that is not octal", "H 100948 " + blob + " 0\tpol.json\x00"},
+		{"a stage that is not 0 to 3", "H 100644 " + blob + " 7\tpol.json\x00"},
+		{"a tag of more than one character", "HH 100644 " + blob + " 0\tpol.json\x00"},
+		{"a tag git does not print for an index entry", "X 100644 " + blob + " 0\tpol.json\x00"},
+		{"a tag in the wrong case", "s 100644 " + blob + " 0\tpol.json\x00"},
+		{"the tag of an untracked path", "? 100644 " + blob + " 0\tpol.json\x00"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -158,7 +161,7 @@ func TestIndexEntriesRefusesAListingLineItCannotRead(t *testing.T) {
 			entries, err := IndexEntries(run, "repo", "pol.json")
 
 			if err == nil {
-				t.Fatalf("IndexEntries = %v, nil; want an error: a line it cannot read must not be taken for an entry", entries)
+				t.Fatalf("IndexEntries = %+v, nil; want an error: a line it cannot read must not be taken for an entry", entries)
 			}
 		})
 	}
@@ -166,12 +169,12 @@ func TestIndexEntriesRefusesAListingLineItCannotRead(t *testing.T) {
 
 func TestIndexEntriesReadsAnObjectIdOfEitherObjectFormat(t *testing.T) {
 	const sha256 = "473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813"
-	run := func(string, ...string) ([]byte, error) { return []byte("H 100644 " + sha256 + " 0\tpol.json\n"), nil }
+	run := func(string, ...string) ([]byte, error) { return []byte("H 100644 " + sha256 + " 0\tpol.json\x00"), nil }
 
 	entries, err := IndexEntries(run, "repo", "pol.json")
 
-	if err != nil || len(entries) != 1 || entries[0].SHA != sha256 {
-		t.Errorf("IndexEntries = %v, %v; want the one entry with the 64-digit id", entries, err)
+	if err != nil || len(entries.Entries) != 1 || entries.Entries[0].SHA != sha256 {
+		t.Errorf("IndexEntries = %+v, %v; want the one entry with the 64-digit id", entries, err)
 	}
 }
 
@@ -192,6 +195,116 @@ func TestIsEmptyBlobKnowsTheEmptyBlobOfEveryObjectFormat(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			if got := IsEmptyBlob(c.id); got != c.want {
 				t.Errorf("IsEmptyBlob(%q) = %v, want %v", c.id, got, c.want)
+			}
+		})
+	}
+}
+
+func TestIndexEntriesSeparatesWhatIsAtThePathFromWhatIsBelowIt(t *testing.T) {
+	const blob = "0123456789012345678901234567890123456789"
+	atPath := IndexEntry{TreeEntry: TreeEntry{Mode: "100644", SHA: blob}, Stage: "0"}
+	cases := []struct {
+		name        string
+		output      string
+		wantEntries []IndexEntry
+		wantBelow   bool
+	}{
+		{"an entry for the path alone", "H 100644 " + blob + " 0\tpol.json\x00", []IndexEntry{atPath}, false},
+		{"files below the path, which makes it a directory in the index", "H 100644 " + blob + " 0\tpol.json/a.json\x00", nil, true},
+		{"files below the path beside an entry for the path", "H 100644 " + blob + " 0\tpol.json\x00H 100644 " + blob + " 0\tpol.json/a.json\x00", []IndexEntry{atPath}, true},
+		{"a name that git would quote without -z", "H 100644 " + blob + " 0\tpol.json/a\nb\"c.json\x00", nil, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			run := func(string, ...string) ([]byte, error) { return []byte(c.output), nil }
+
+			got, err := IndexEntries(run, "repo", "pol.json")
+
+			if err != nil || !reflect.DeepEqual(got.Entries, c.wantEntries) || got.HoldsBelow != c.wantBelow {
+				t.Errorf("IndexEntries = %+v, %v; want entries %v and HoldsBelow %v", got, err, c.wantEntries, c.wantBelow)
+			}
+		})
+	}
+}
+
+func TestIndexEntriesMatchesAPathWhoseNameGitWouldQuote(t *testing.T) {
+	const blob = "0123456789012345678901234567890123456789"
+	const awkward = "dir/a\nb\tc\"d.json"
+	run := func(string, ...string) ([]byte, error) {
+		return []byte("H 100644 " + blob + " 0\t" + awkward + "\x00"), nil
+	}
+
+	got, err := IndexEntries(run, "repo", awkward)
+
+	if err != nil || len(got.Entries) != 1 || got.HoldsBelow {
+		t.Errorf("IndexEntries = %+v, %v; want the one entry for %q: -z lists the name as it is, where a quoted name would never equal it", got, err, awkward)
+	}
+}
+
+func TestIndexEntriesRefusesAnEntryForAPathItWasNotAskedAbout(t *testing.T) {
+	const blob = "0123456789012345678901234567890123456789"
+	cases := []struct {
+		name   string
+		output string
+	}{
+		{"a sibling that shares the name as a prefix", "H 100644 " + blob + " 0\tpol.jsonx\x00"},
+		{"a parent", "H 100644 " + blob + " 0\tcfg\x00"},
+		{"the same name in another case", "H 100644 " + blob + " 0\tPOL.json\x00"},
+		{"a good entry beside one for another path", "H 100644 " + blob + " 0\tpol.json\x00H 100644 " + blob + " 0\tother.json\x00"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			run := func(string, ...string) ([]byte, error) { return []byte(c.output), nil }
+
+			got, err := IndexEntries(run, "repo", "pol.json")
+
+			var operational *OperationalError
+			if !errors.As(err, &operational) {
+				t.Errorf("IndexEntries = %+v, %v; want an *OperationalError: an entry for another path is not evidence about this one", got, err)
+			}
+		})
+	}
+}
+
+func TestIndexEntriesRefusesAnEmptyRecordInsideTheListing(t *testing.T) {
+	const blob = "0123456789012345678901234567890123456789"
+	run := func(string, ...string) ([]byte, error) {
+		return []byte("H 100644 " + blob + " 0\tpol.json\x00\x00H 100644 " + blob + " 0\tpol.json\x00"), nil
+	}
+
+	got, err := IndexEntries(run, "repo", "pol.json")
+
+	var operational *OperationalError
+	if !errors.As(err, &operational) {
+		t.Errorf("IndexEntries = %+v, %v; want an *OperationalError: a record that is not an entry is not skipped", got, err)
+	}
+}
+
+// git prints index paths relative to the directory it runs in unless it is told to
+// print them from the repository root, and a scan can start in a subdirectory. The
+// path is compared with the one asked about, which is relative to the root.
+func TestIndexEntriesFindsThePathFromASubdirectoryOfTheRepository(t *testing.T) {
+	repo := gitfixture.Init(t)
+	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
+	gitfixture.CommitFile(t, repo, "cfg/deeper/x.json", "{}")
+	cases := []struct {
+		name       string
+		dir        string
+		path       string
+		wantAtPath int
+		wantBelow  bool
+	}{
+		{"from the root", "", "cfg/p.json", 1, false},
+		{"from the directory the file is in", "cfg", "cfg/p.json", 1, false},
+		{"from a sibling directory", "cfg/deeper", "cfg/p.json", 1, false},
+		{"for a directory, from inside it", "cfg", "cfg", 0, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := IndexEntries(RunBytes, filepath.Join(repo, c.dir), c.path)
+
+			if err != nil || len(got.Entries) != c.wantAtPath || got.HoldsBelow != c.wantBelow {
+				t.Errorf("IndexEntries from %q = %+v, %v; want %d entries at the path and HoldsBelow %v", c.dir, got, err, c.wantAtPath, c.wantBelow)
 			}
 		})
 	}

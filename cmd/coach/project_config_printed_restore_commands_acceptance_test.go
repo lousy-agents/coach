@@ -172,6 +172,36 @@ var _ = Describe("coach codesignal: the restore command printed for a missing ex
 		Entry("never committed and not in the index", func(repo string) {}, false, ""),
 	)
 
+	// A directory name matches the files under it, so a path that is a directory in
+	// the index is not a staged copy of a file, and not a policy that "is not
+	// committed". Restoring it would recreate the directory the scan then refuses,
+	// and a new policy cannot be written over a directory.
+	DescribeTable("says the path is a directory and offers neither a restore nor a new policy",
+		func(arrange func(repo string)) {
+			repo := commitScannableGoRepo()
+			arrange(repo)
+
+			stderr := scanExplicitPolicy(repo, "cfg")
+			doc := expectCheckProject(repo, "--project-config", "cfg")
+
+			Expect(printedRestoreCommand(stderr)).To(BeEmpty(), "a restore would recreate a directory:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("--suggest-project-config"), "a policy cannot be written over a directory:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("a directory and not a file"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("not committed"), "the index holds files under this path:\n%s", stderr)
+			_, restores := nextActionOfKind(doc, "restore_policy")
+			_, authors := nextActionOfKind(doc, "author_policy")
+			Expect(restores || authors).To(BeFalse(), "--check-project names neither: %+v", doc.NextActions)
+		},
+		Entry("files committed under it, then the directory deleted", func(repo string) {
+			commitFile(repo, policy, singleRootPolicyJSON)
+			removeFromDisk(repo)
+		}),
+		Entry("files staged under it and never committed, then the directory deleted", func(repo string) {
+			stageOnly(repo)
+			removeFromDisk(repo)
+		}),
+	)
+
 	// The skip-worktree mark alone stops a restore. An empty entry carrying it is
 	// not an edit to review, since git diff --cached does not show it, so the user is
 	// told what the mark needs, not sent to a diff that shows nothing.

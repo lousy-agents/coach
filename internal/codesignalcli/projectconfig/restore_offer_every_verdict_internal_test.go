@@ -58,6 +58,8 @@ func TestEveryVerdictHasAnOfferThatSaysWhatItDoes(t *testing.T) {
 			offerWant{true, projectreadiness.RemedyNone, []string{"marked skip-worktree"}, false}, offerWant{true, projectreadiness.RemedyNone, []string{"marked skip-worktree"}, false}, false},
 		{"a staged copy a sparse checkout leaves out", restoreStagedSparseNotCommitted,
 			offerWant{true, projectreadiness.RemedyNone, []string{"sparse checkout"}, false}, offerWant{true, projectreadiness.RemedyNone, []string{"sparse checkout"}, false}, false},
+		{"a directory in the index", restoreDirectoryInIndex,
+			offerWant{true, projectreadiness.RemedyNone, []string{"directory", "name a file"}, false}, offerWant{true, projectreadiness.RemedyNone, []string{"directory", "name a file"}, false}, false},
 		{"a verdict the offers do not know", restoreVerdict(99),
 			offerWant{true, projectreadiness.RemedyNone, []string{"could not tell what a restore would do"}, false}, offerWant{true, projectreadiness.RemedyNone, []string{"could not tell what a restore would do"}, false}, false},
 	}
