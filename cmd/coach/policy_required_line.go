@@ -12,11 +12,12 @@ import (
 // committed policy is restored rather than authored again.
 func policyRequiredLine(prefix, code string, remedy projectreadiness.PolicyRemedy, revision, policyPath string) string {
 	line := fmt.Sprintf("%s: a reviewed, committed policy is required before compiler setup (%s)", prefix, code)
-	switch remedy {
-	case projectreadiness.RemedyRestore:
-		return line + "; it is committed at the analyzed revision (" + projectreadiness.NextActionRestorePolicy + "), so " + projectconfig.RestoreAdvice(revision, policyPath)
-	case projectreadiness.RemedyAuthor:
-		return line + "; run guided policy authoring first (" + projectreadiness.NextActionAuthorPolicy + ")."
+	action, named := projectreadiness.NextActionForRemedy(remedy)
+	switch {
+	case !named:
+		return line + "; a new policy cannot fix it, so resolve the policy path first."
+	case action == projectreadiness.NextActionRestorePolicy:
+		return line + "; it is committed at the analyzed revision (" + action + "), so " + projectconfig.RestoreAdvice(revision, policyPath)
 	}
-	return line + "; a new policy cannot fix it, so resolve the policy path first."
+	return line + "; run guided policy authoring first (" + action + ")."
 }

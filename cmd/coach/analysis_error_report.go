@@ -103,7 +103,7 @@ func analysisErrorReportFor(err error, language string, hasControllingTerminal b
 // when authoring a policy cannot fix the error: the policy is committed and
 // only needs restoring, or its path cannot be created.
 func authoringRemediation(configErr *projectconfig.ConfigError, hasControllingTerminal bool, language string) string {
-	if configErr.Remedy != projectreadiness.RemedyAuthor {
+	if action, named := projectreadiness.NextActionForRemedy(configErr.Remedy); !named || action != projectreadiness.NextActionAuthorPolicy {
 		return ""
 	}
 	return tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.SuggestProjectConfigRemediation(language))
