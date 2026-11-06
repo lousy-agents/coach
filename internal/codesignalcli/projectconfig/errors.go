@@ -69,6 +69,9 @@ type ConfigError struct {
 	// it. The zero value offers nothing, so a constructor that left it unset
 	// would withhold advice, never suggest a new policy where one cannot help.
 	Remedy projectreadiness.PolicyRemedy
+	// PolicyCause is why no remedy fixes the gap, as a stable word, for an error that
+	// offers none. It is empty when a restore or a new policy is offered.
+	PolicyCause projectreadiness.PolicyCause
 	// GitFailure is set when git could not answer a question about the policy,
 	// so a caller that reports operational failures separately can return it.
 	GitFailure error
@@ -99,10 +102,10 @@ func (e *ConfigError) Error() string { return e.Message }
 func readError(dir, revision, repoPath string, gitErr error) error {
 	var boundErr *gitrepo.BoundError
 	if errors.As(gitErr, &boundErr) {
-		return &ConfigError{Kind: KindUnreadable, Remedy: boundRemedy(boundErr), Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
+		return &ConfigError{Kind: KindUnreadable, Remedy: boundRemedy(boundErr), PolicyCause: boundCause(boundErr), Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
 	}
 	if configExistsInWorktree(dir, repoPath) {
-		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, Message: UncommittedPolicyMessage(dir, revision, repoPath)}
+		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseNotCommitted, Message: UncommittedPolicyMessage(dir, revision, repoPath)}
 	}
 	return &ConfigError{Kind: KindNotFound, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found at revision %q (project_config_invalid)", repoPath, revision)}
 }
@@ -154,6 +157,15 @@ func boundRemedy(boundErr *gitrepo.BoundError) projectreadiness.PolicyRemedy {
 	return projectreadiness.RemedyNone
 }
 
+// boundCause is why a read that tripped a bound has no way out, when it has none: a
+// bound that tripped for time or stderr is a read that failed, not a policy to replace.
+func boundCause(boundErr *gitrepo.BoundError) projectreadiness.PolicyCause {
+	if boundErr.Kind == gitrepo.BoundStdout {
+		return ""
+	}
+	return projectreadiness.CauseGitUnreadable
+}
+
 // configExistsInWorktree reports whether repoPath is readable in the
 // worktree at dir. Any stat failure (not just "does not exist") is treated
 // as absent: this function's only caller already falls back to a generic
@@ -178,13 +190,13 @@ func missingError(repoPath string) error {
 // delete the file in the way. It is still missing, never a reason to read
 // another policy.
 func blockedParentError(repoPath, component string) error {
-	return &ConfigError{Kind: KindMissing, Cause: CauseBlockedParent, Remedy: projectreadiness.RemedyNone, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing): a parent path component is not a directory, %q; move or remove it; the path is repository-relative", repoPath, component)}
+	return &ConfigError{Kind: KindMissing, Cause: CauseBlockedParent, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseParentNotDirectory, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing): a parent path component is not a directory, %q; move or remove it; the path is repository-relative", repoPath, component)}
 }
 
 // unusableOnDiskError is a policy path the working tree decided is unusable. A
 // new policy cannot replace what is there, so authoring is not offered.
 func unusableOnDiskError(repoPath, reason string) error {
-	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, Message: fmt.Sprintf("coach codesignal: --project-config %q %s (project_config_invalid)", repoPath, reason)}
+	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseUnusableOnDisk, Message: fmt.Sprintf("coach codesignal: --project-config %q %s (project_config_invalid)", repoPath, reason)}
 }
 
 func invalidError(repoPath, revision, reason string) error {
