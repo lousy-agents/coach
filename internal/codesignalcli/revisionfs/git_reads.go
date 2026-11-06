@@ -25,7 +25,7 @@ const (
 // reads. Unlike gitrepo's default bounded-read command, it never inherits the
 // parent process's ambient environment (see sanitizedSnapshotGitEnv).
 var snapshotGitCommandContext = func(ctx context.Context, dir string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd := gitrepo.ReadCommandContext(ctx, dir, args...)
 	cmd.Env = sanitizedSnapshotGitEnv()
 	return cmd
 }
