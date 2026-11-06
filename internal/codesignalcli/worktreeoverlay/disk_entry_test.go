@@ -9,11 +9,14 @@ import (
 
 // diskEntry describes one path on the fake disk and the faults it injects.
 type diskEntry struct {
-	mode            fs.FileMode
-	data            []byte
-	lstatErr        error
-	readErr         error
-	growsAfterRead  bool
+	mode           fs.FileMode
+	data           []byte
+	lstatErr       error
+	readErr        error
+	growsAfterRead bool
+	// growsBeforeRead reports one byte less than the file holds on the first
+	// stat, as a file appended to between the stat and the read does.
+	growsBeforeRead bool
 	reportedSizeBig bool
 	// touchedAfterRead keeps size and mode but moves the modification time
 	// between the two stats around the read, as a same-length rewrite does.
@@ -32,6 +35,9 @@ func (e diskEntry) sizeAtStat(stat int) int64 {
 	size := int64(len(e.data))
 	if e.growsAfterRead && stat > 1 {
 		size++
+	}
+	if e.growsBeforeRead && stat == 1 {
+		size--
 	}
 	if e.reportedSizeBig {
 		size = worktreeoverlay.MaxFileBytes + 1
