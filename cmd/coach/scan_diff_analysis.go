@@ -33,7 +33,7 @@ func runDiffAnalysis(dir string, f codesignalFlags, stdin, stderr *os.File, port
 	}
 	report, err := codesignalcli.AnalyzeChanges(context.Background(), dir, headSHA, mergeBaseSHA, selected, diagnostics, continuity, f.scope, excluded, project)
 	if err != nil {
-		return nil, wrapScanAnalysisError(err, dir, headSHA, f.projectConfig, stderr)
+		return nil, wrapScanAnalysisError(err, dir, headSHA, f.namedPolicy, stderr)
 	}
 	return withProjectDiagnostic(report, nil, diags...), nil
 }

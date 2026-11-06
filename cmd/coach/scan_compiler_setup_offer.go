@@ -28,7 +28,7 @@ import (
 func runScanCompilerSetupOffer(dir string, f codesignalFlags, stdin, stdout, stderr *os.File, wrapped *tssetup.CompilerUnresolvedErrorWithReadiness, budget scanOfferBudget, ports scanPorts) int {
 	ctx, stop := interruptibleContext()
 	defer stop()
-	result := tssetup.RunCompilerSetupOffer(ctx, dir, wrapped.Revision, wrapped.ConfigPath, wrapped.Code, wrapped.Readiness, os.Stdin, stderr)
+	result := tssetup.RunCompilerSetupOffer(ctx, dir, wrapped.Revision, wrapped.Policy, wrapped.Code, wrapped.Readiness, os.Stdin, stderr)
 
 	if shouldContinueAfterSetup(result) {
 		return runCodesignalScan(dir, f, stdin, stdout, stderr, budget.without(scanOfferCompilerSetup), ports)
@@ -36,7 +36,7 @@ func runScanCompilerSetupOffer(dir string, f codesignalFlags, stdin, stdout, std
 
 	if result.PolicyRequired {
 		fmt.Fprintln(stderr, wrapped.RemediationLine())
-		fmt.Fprintln(stderr, policyRequiredLine("coach codesignal", result.PolicyCode, result.PolicyRemedy, wrapped.Revision, wrapped.ConfigPath))
+		fmt.Fprintln(stderr, policyRequiredLine("coach codesignal", result.PolicyCode, result.PolicyRemedy, wrapped.Revision, wrapped.Policy.Path))
 		return 2
 	}
 

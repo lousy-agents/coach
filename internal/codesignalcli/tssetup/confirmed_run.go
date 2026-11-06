@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
@@ -110,7 +111,7 @@ func RunConfirmed(ctx context.Context, preview Preview, confirmed bool) (Outcome
 
 // RunConfirmedAndRecheckReadiness runs RunConfirmed and, only when
 // it succeeds, reruns the complete readiness check via projectcheck.Run
-// (AC-SET-6) using the same dir/revision/configPath that produced the stale
+// (AC-SET-6) using the same dir/revision/policy that produced the stale
 // readiness result which offered this setup in the first place, attaching
 // the fresh result to the returned Outcome's PostInstallReadiness. A
 // cancelled or failed outcome (and a RunConfirmed error) is returned
@@ -122,12 +123,12 @@ func RunConfirmed(ctx context.Context, preview Preview, confirmed bool) (Outcome
 // readiness result. This function does not interpret PostInstallReadiness; a
 // caller decides whether the fresh result clears the gap that offered this
 // setup.
-func RunConfirmedAndRecheckReadiness(ctx context.Context, preview Preview, confirmed bool, dir, revision, configPath string) (Outcome, error) {
+func RunConfirmedAndRecheckReadiness(ctx context.Context, preview Preview, confirmed bool, dir, revision string, policy policyref.Ref) (Outcome, error) {
 	outcome, err := RunConfirmed(ctx, preview, confirmed)
 	if err != nil || outcome.Kind != OutcomeSucceeded {
 		return outcome, err
 	}
-	readiness, readinessErr := projectcheck.Run(dir, revision, configPath)
+	readiness, readinessErr := projectcheck.Run(dir, revision, policy)
 	if readinessErr != nil {
 		return outcome, readinessErr
 	}

@@ -21,7 +21,7 @@ func runCodesignalScan(dir string, f codesignalFlags, stdin, stdout, stderr *os.
 	report, err := runOneScan(dir, f, stdin, stderr, ports)
 	if err != nil {
 		noInteractive := nonInteractiveRequested(f)
-		if scanShouldAuthorProjectConfig(err, f.projectLanguage, f.projectConfig, noInteractive) ||
+		if scanShouldAuthorProjectConfig(err, f.projectLanguage, f.namedPolicy, noInteractive) ||
 			scanShouldAuthorDiscoveredProjectConfig(err, f, noInteractive) {
 			return runScanProjectConfigAuthoring(dir, f, err, stdout, stderr, ports)
 		}

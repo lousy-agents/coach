@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
@@ -18,7 +19,7 @@ func TestRunAfterPolicyErrorReportsTheVerdictItWasGivenInsteadOfReadingTheWorkin
 	gitfixture.CommitFile(t, repo, "pol.json", validPolicy)
 	given := &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Cause: projectconfig.CauseAbsent, Remedy: projectreadiness.RemedyNone, FromWorkingTree: true, UnreadStagedEdit: true}
 
-	result, err := RunAfterPolicyError(repo, "HEAD", "pol.json", given)
+	result, err := RunAfterPolicyError(repo, "HEAD", policyref.Named("pol.json"), given)
 
 	if err != nil {
 		t.Fatalf("RunAfterPolicyError: %v", err)
@@ -37,7 +38,7 @@ func TestRunAfterPolicyErrorJudgesTheAnalyzedRevisionForAnErrorTheWorkingTreeDid
 	}
 	given := &projectconfig.ConfigError{Kind: projectconfig.KindUncommitted, Remedy: projectreadiness.RemedyNone}
 
-	result, err := RunAfterPolicyError(repo, "HEAD", "pol.json", given)
+	result, err := RunAfterPolicyError(repo, "HEAD", policyref.Named("pol.json"), given)
 
 	if err != nil {
 		t.Fatalf("RunAfterPolicyError: %v", err)

@@ -14,13 +14,14 @@ const modulePrefix = "github.com/lousy-agents/coach/internal/codesignalcli"
 // use case in the root. A package may import only the siblings listed for
 // it, so a new edge has to be added here deliberately.
 var allowedSiblingImports = map[string][]string{
-	"":                    {"gitrepo", "pkgmanager", "projectcheck", "projectconfig", "projectreadiness", "revisionfs", "tstoolchain"},
+	"":                    {"gitrepo", "pkgmanager", "policyref", "projectcheck", "projectconfig", "projectreadiness", "revisionfs", "tstoolchain"},
 	"configauthoring":     {"gitrepo", "projectconfig", "prompt", "revisionfs"},
 	"gitrepo":             {},
 	"internal/gitfixture": {},
-	"invocation":          {"shellword"},
+	"invocation":          {"policyref", "shellword"},
 	"pkgmanager":          {"gitrepo", "projectreadiness", "subprocess", "tstoolchain"},
-	"projectcheck":        {"gitrepo", "pkgmanager", "projectconfig", "projectreadiness", "tstoolchain"},
+	"policyref":           {},
+	"projectcheck":        {"gitrepo", "pkgmanager", "policyref", "projectconfig", "projectreadiness", "tstoolchain"},
 	"projectconfig":       {"gitrepo", "projectreadiness", "shellword"},
 	"projectreadiness":    {},
 	"prompt":              {},
@@ -30,8 +31,8 @@ var allowedSiblingImports = map[string][]string{
 	"sourcescope":         {"gitrepo"},
 	"subprocess":          {},
 	"terminal":            {},
-	"tssetup":             {"gitrepo", "invocation", "pkgmanager", "projectcheck", "projectconfig", "projectreadiness", "prompt", "tstoolchain"},
-	"tstoolchain":         {"gitrepo", "invocation", "projectreadiness", "subprocess"},
+	"tssetup":             {"gitrepo", "invocation", "pkgmanager", "policyref", "projectcheck", "projectconfig", "projectreadiness", "prompt", "tstoolchain"},
+	"tstoolchain":         {"gitrepo", "invocation", "policyref", "projectreadiness", "subprocess"},
 }
 
 func TestSubPackageImportsFollowTheLayering(t *testing.T) {
@@ -75,4 +76,21 @@ func siblingImports(imports []string) []string {
 		}
 	}
 	return siblings
+}
+
+// TestPolicyrefImportsOnlyTheStandardLibrary pins policyref as a leaf. An empty
+// row in allowedSiblingImports keeps it from importing a sibling, but a value
+// type that the phrase builder and the toolchain errors depend on must not pull
+// in anything else of this module or of a third party either, or those packages
+// inherit the coupling the leaf exists to avoid.
+func TestPolicyrefImportsOnlyTheStandardLibrary(t *testing.T) {
+	output, err := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`, "./policyref").Output()
+	if err != nil {
+		t.Fatalf("go list ./policyref: %v", err)
+	}
+	for _, imported := range strings.Fields(string(output)) {
+		if firstElement, _, _ := strings.Cut(imported, "/"); strings.Contains(firstElement, ".") {
+			t.Errorf("policyref imports %s: only the standard library is allowed", imported)
+		}
+	}
 }

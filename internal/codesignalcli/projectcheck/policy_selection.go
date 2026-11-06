@@ -3,20 +3,21 @@ package projectcheck
 import (
 	"errors"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// ResolvePolicyPath is the policy document Run checks. An empty configPath
-// is the path Discover and policyFromSelection select.
-func ResolvePolicyPath(dir, revision, configPath string) (string, error) {
-	path, _, err := resolveCheckPolicy(dir, revision, configPath)
+// ResolvePolicyPath is the policy document Run checks: the path of a policy the
+// user named, and otherwise the path Discover and policyFromSelection select.
+func ResolvePolicyPath(dir, revision string, policy policyref.Ref) (string, error) {
+	path, _, err := resolveCheckPolicy(dir, revision, policy)
 	return path, err
 }
 
-func resolveCheckPolicy(dir, revision, configPath string) (string, []projectreadiness.Warning, error) {
-	if configPath != "" {
-		return configPath, nil, nil
+func resolveCheckPolicy(dir, revision string, policy policyref.Ref) (string, []projectreadiness.Warning, error) {
+	if policy.JudgedOnDisk() {
+		return policy.Path, nil, nil
 	}
 	selection, err := projectconfig.Discover(dir, revision)
 	if err != nil {

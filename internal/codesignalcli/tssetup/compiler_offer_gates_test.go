@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -32,7 +33,7 @@ func TestRunCompilerSetupOfferReportsNoChoicesOffered(t *testing.T) {
 
 func checkRunCompilerSetupOfferReportsNo(t *testing.T, readiness *projectreadiness.Result) {
 	var out strings.Builder
-	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
+	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", policyref.Ref{}, projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
 	if !result.NoChoicesOffered {
 		t.Fatalf("NoChoicesOffered = false, want true: %+v", result)
 	}
@@ -59,7 +60,7 @@ func TestRunCompilerSetupOfferRequiresPolicyFirst(t *testing.T) {
 		},
 	}
 	var out strings.Builder
-	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
+	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", policyref.Ref{}, projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
 
 	if !result.PolicyRequired {
 		t.Fatalf("PolicyRequired = false, want true: %+v", result)

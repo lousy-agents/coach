@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 )
@@ -22,7 +23,7 @@ func runPrepareCompilerMiseTypeScript(dir string, f codesignalFlags, stdin, stdo
 		fmt.Fprintf(stderr, "%s: %s; refusing to enter interactive compiler setup or mutate mise state.\n", prepareCompilerMiseUsagePrefix, reason)
 		return 2
 	}
-	return prepareCompilerMiseTypeScript(dir, stdin, stdout, stderr, f.projectConfig)
+	return prepareCompilerMiseTypeScript(dir, stdin, stdout, stderr, f.namedPolicy)
 }
 
 // prepareCompilerMiseTypeScript writes its entire interactive transcript
@@ -30,14 +31,14 @@ func runPrepareCompilerMiseTypeScript(dir string, f codesignalFlags, stdin, stdo
 // flow never produces a report of its own. stdout is accepted as a
 // parameter only for signature symmetry with the rest of this package's CLI
 // dispatch functions and is otherwise unused.
-func prepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, projectConfigPath string) int {
+func prepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, policy policyref.Ref) int {
 	revision, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: could not resolve the baseline revision: %s\n", prepareCompilerMiseUsagePrefix, err)
 		return 3
 	}
 
-	readiness, err := projectcheck.Run(dir, revision, projectConfigPath)
+	readiness, err := projectcheck.Run(dir, revision, policy)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: could not compute project readiness: %s\n", prepareCompilerMiseUsagePrefix, err)
 		return 3
@@ -45,6 +46,6 @@ func prepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, p
 
 	ctx, stop := interruptibleContext()
 	defer stop()
-	result := tssetup.RunPrepareCompilerMiseSetup(ctx, dir, revision, projectConfigPath, readiness, stdin, stderr)
-	return reportPrepareCompilerMiseResult(result, revision, projectConfigPath, stderr)
+	result := tssetup.RunPrepareCompilerMiseSetup(ctx, dir, revision, policy, readiness, stdin, stderr)
+	return reportPrepareCompilerMiseResult(result, revision, policy.Path, stderr)
 }

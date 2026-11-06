@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
@@ -22,14 +23,14 @@ func CheckExplicitPolicy(dir, revision, policyPath string) (projectreadiness.Che
 	return explicitPolicyCheck(status, dir, revision, policyPath)
 }
 
-// RunAfterPolicyError is Run for a caller that already holds the error loading
-// the policy at configPath failed with. When the working tree produced that
-// error, readiness reports its verdict instead of reading the working tree a
-// second time, so the error and the report cannot disagree about one path. For a
-// discovered policy, and for an error the analyzed revision produced, it is Run.
-func RunAfterPolicyError(dir, revision, configPath string, failure *projectconfig.ConfigError) (*projectreadiness.Result, error) {
-	if configPath == "" {
-		return Run(dir, revision, configPath)
+// RunAfterPolicyError is Run for a caller that already holds failure, the error
+// loading policy produced. When the working tree produced that error, readiness
+// reports its verdict instead of reading the working tree a second time, so the
+// error and the report cannot disagree about one path. For a discovered policy,
+// and for an error the analyzed revision produced, it is Run.
+func RunAfterPolicyError(dir, revision string, policy policyref.Ref, failure *projectconfig.ConfigError) (*projectreadiness.Result, error) {
+	if !policy.JudgedOnDisk() {
+		return Run(dir, revision, policy)
 	}
 	check := func(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
 		if failure != nil && failure.FromWorkingTree {
@@ -37,7 +38,7 @@ func RunAfterPolicyError(dir, revision, configPath string, failure *projectconfi
 		}
 		return explicitPolicyCheck(nil, dir, revision, policyPath)
 	}
-	result, err := evaluate(dir, revision, configPath, check)
+	result, err := evaluate(dir, revision, policy, check)
 	if err != nil {
 		return nil, err
 	}

@@ -3,7 +3,10 @@
 // policy the same way.
 package invocation
 
-import "github.com/lousy-agents/coach/internal/codesignalcli/shellword"
+import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
+	"github.com/lousy-agents/coach/internal/codesignalcli/shellword"
+)
 
 // Mode is the flag that selects what the TypeScript command does. The scan
 // itself has none.
@@ -19,9 +22,10 @@ const (
 // Command is one TypeScript `coach codesignal --baseline` invocation.
 type Command struct {
 	Mode Mode
-	// ConfigPath is the --project-config the user passed, empty when the policy
-	// was discovered.
-	ConfigPath string
+	// Policy is the policy the command is about. The command names it with
+	// --project-config only when the user named it: naming a discovered policy
+	// would make the next command judge it as a named one.
+	Policy policyref.Ref
 }
 
 // Phrase is the command as the end of a line, led by verb unless verb is empty.
@@ -31,7 +35,7 @@ type Command struct {
 // checks the discovered policy instead, so a user who pastes it learns about
 // the wrong file; the phrase says to name the same policy instead.
 func (c Command) Phrase(verb string) string {
-	if c.ConfigPath != "" && !shellword.Printable(c.ConfigPath) {
+	if named, ok := c.Policy.NamedPath(); ok && !shellword.Printable(named) {
 		return c.withheld()
 	}
 	if verb == "" {
@@ -42,8 +46,8 @@ func (c Command) Phrase(verb string) string {
 
 func (c Command) text() string {
 	policy := ""
-	if c.ConfigPath != "" {
-		policy = " --project-config " + shellword.Word(c.ConfigPath)
+	if named, ok := c.Policy.NamedPath(); ok {
+		policy = " --project-config " + shellword.Word(named)
 	}
 	if c.Mode == Scan {
 		return "coach codesignal --baseline" + policy + " --project-language typescript"

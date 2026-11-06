@@ -2,11 +2,12 @@ package tssetup
 
 import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/invocation"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-func alsoFailingGapLine(code, configPath string) string {
-	return code + ": also failing, " + invocation.Command{Mode: invocation.CheckProject, ConfigPath: configPath}.Phrase("run")
+func alsoFailingGapLine(code string, policy policyref.Ref) string {
+	return code + ": also failing, " + invocation.Command{Mode: invocation.CheckProject, Policy: policy}.Phrase("run")
 }
 
 // AlsoFailingGapLines is AC-SET-13's "report all gaps" clause: one line for
@@ -28,7 +29,7 @@ func alsoFailingGapLine(code, configPath string) string {
 //
 // readiness.Gaps is already emitted in the epic's frozen next-action order,
 // so iterating it preserves that ordering rather than inventing one here.
-func AlsoFailingGapLines(readiness *projectreadiness.Result, configPath string) []string {
+func AlsoFailingGapLines(readiness *projectreadiness.Result, policy policyref.Ref) []string {
 	if readiness == nil {
 		return nil
 	}
@@ -39,7 +40,7 @@ func AlsoFailingGapLines(readiness *projectreadiness.Result, configPath string) 
 			continue
 		}
 		seen[gap.Code] = true
-		lines = append(lines, alsoFailingGapLine(gap.Code, configPath))
+		lines = append(lines, alsoFailingGapLine(gap.Code, policy))
 	}
 	return lines
 }

@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 )
 
 var _ = Describe("coach codesignal --prepare-compiler refusing behind a committed policy that is gone from disk", func() {
@@ -30,7 +31,7 @@ var _ = Describe("coach codesignal --prepare-compiler refusing behind a committe
 		stderrFile, err := os.CreateTemp(GinkgoT().TempDir(), "stderr")
 		Expect(err).NotTo(HaveOccurred())
 
-		exitCode := prepareCompilerMiseTypeScript(repo, stdinFile, stdoutFile, stderrFile, policy)
+		exitCode := prepareCompilerMiseTypeScript(repo, stdinFile, stdoutFile, stderrFile, policyref.Named(policy))
 
 		Expect(exitCode).To(Equal(2))
 		stderr, err = os.ReadFile(stderrFile.Name())

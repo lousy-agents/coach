@@ -19,7 +19,7 @@ const (
 
 func prepareScanProjectAnalysis(dir, revision string, f codesignalFlags, stdin, stderr *os.File, ports scanPorts) (*codesignalcli.ProjectAnalysis, []codesignal.Diagnostic, func(), error) {
 	suppressUncommitted, migrationDiags, restore := offerDeprecatedProjectConfigMigration(dir, revision, f, stdin, stderr, ports)
-	prepared, err := prepareProjectAnalysis(dir, revision, f.namedPolicy(), f.projectLanguage, suppressUncommitted, ports)
+	prepared, err := prepareProjectAnalysis(dir, revision, f.namedPolicy, f.projectLanguage, suppressUncommitted, ports)
 	if err != nil {
 		return nil, nil, restore, err
 	}
@@ -52,7 +52,7 @@ func acceptProjectConfigMigrationCopy(dir string, stderr *os.File) (bool, []code
 func leaveWorktreeStatusLive() {}
 
 func deprecatedProjectConfigCanMigrate(dir, revision string, f codesignalFlags, ports scanPorts) bool {
-	if f.projectConfigSet {
+	if f.namedPolicy.Explicit {
 		return false
 	}
 	selection, err := ports.discover(dir, revision)

@@ -66,9 +66,9 @@ type analysisErrorReport struct {
 func analysisErrorReportFor(err error, language string, hasControllingTerminal bool) analysisErrorReport {
 	var unresolvedWithReadiness *tssetup.CompilerUnresolvedErrorWithReadiness
 	if errors.As(err, &unresolvedWithReadiness) {
-		remediation := tssetup.PrepareCompilerRemediationWithReadiness(unresolvedWithReadiness.Code, unresolvedWithReadiness.ConfigPath, unresolvedWithReadiness.Readiness)
+		remediation := tssetup.PrepareCompilerRemediationWithReadiness(unresolvedWithReadiness.Code, unresolvedWithReadiness.Policy, unresolvedWithReadiness.Readiness)
 		if remediation == "" {
-			remediation = tssetup.ScanSetupOfferRemediation(unresolvedWithReadiness.Code, unresolvedWithReadiness.ConfigPath, unresolvedWithReadiness.Readiness)
+			remediation = tssetup.ScanSetupOfferRemediation(unresolvedWithReadiness.Code, unresolvedWithReadiness.Policy, unresolvedWithReadiness.Readiness)
 		}
 		return classTwoReport(unresolvedWithReadiness.RemediationLine(), nil,
 			tssetup.AppendedRemediationLine(hasControllingTerminal, language, remediation))
@@ -76,7 +76,7 @@ func analysisErrorReportFor(err error, language string, hasControllingTerminal b
 	var unresolved *tstoolchain.CompilerUnresolvedError
 	if errors.As(err, &unresolved) {
 		return classTwoReport(unresolved.RemediationLine(), nil,
-			tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.PrepareCompilerRemediation(unresolved.Code, unresolved.ConfigPath)))
+			tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.PrepareCompilerRemediation(unresolved.Code, unresolved.Policy)))
 	}
 	var runtimeErr *tstoolchain.RuntimeUnresolvedError
 	if errors.As(err, &runtimeErr) {
@@ -85,7 +85,7 @@ func analysisErrorReportFor(err error, language string, hasControllingTerminal b
 	var configErrWithReadiness *tssetup.ProjectConfigErrorWithReadiness
 	if errors.As(err, &configErrWithReadiness) {
 		return classTwoReport(configErrWithReadiness.Message,
-			tssetup.AlsoFailingGapLines(configErrWithReadiness.Readiness, configErrWithReadiness.ConfigPath),
+			tssetup.AlsoFailingGapLines(configErrWithReadiness.Readiness, configErrWithReadiness.Policy),
 			authoringRemediation(configErrWithReadiness.ConfigError, hasControllingTerminal, language))
 	}
 	var configErr *projectconfig.ConfigError

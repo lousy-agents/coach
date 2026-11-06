@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -24,7 +25,7 @@ func TestRunCompilerSetupOfferCancelsOnUnreadableSelection(t *testing.T) {
 		},
 	}
 	var out strings.Builder
-	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
+	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", policyref.Ref{}, projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader(""), &out)
 	if !result.Cancelled {
 		t.Fatalf("Cancelled = false, want true: %+v", result)
 	}
@@ -50,7 +51,7 @@ func TestRunCompilerSetupOfferCancelsOnExplicitCancelChoice(t *testing.T) {
 		},
 	}
 	var out strings.Builder
-	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", "", projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader("cancel\n"), &out)
+	result := RunCompilerSetupOffer(context.Background(), ".", "HEAD", policyref.Ref{}, projectreadiness.GapTypescriptCompilerMissing, readiness, strings.NewReader("cancel\n"), &out)
 	if !result.Cancelled {
 		t.Fatalf("Cancelled = false, want true: %+v", result)
 	}

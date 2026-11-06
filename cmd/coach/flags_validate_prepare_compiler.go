@@ -16,10 +16,8 @@ func validatePrepareCompilerFlags(f codesignalFlags, setFlags map[string]bool, p
 	if f.projectLanguage != "typescript" {
 		return fmt.Sprintf("coach: --prepare-compiler requires --project-language typescript (got %q)", f.projectLanguage)
 	}
-	if f.projectConfigSet {
-		if message := invalidProjectConfigMessage(f.projectConfig); message != "" {
-			return message
-		}
+	if message := invalidNamedPolicyMessage(f.namedPolicy); message != "" {
+		return message
 	}
 	allowedWithPrepareCompiler := map[string]bool{"prepare-compiler": true, "baseline": true, "project-language": true, "project-config": true, "no-interactive": true}
 	if name, disallowed := firstDisallowedFlag(setFlags, allowedWithPrepareCompiler); disallowed {

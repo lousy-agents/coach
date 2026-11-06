@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -31,7 +32,7 @@ func menuOffersExecutableMiseChoice(menu Menu) bool {
 // RunPrepareCompilerMiseSetup's standalone --prepare-compiler session uses,
 // so a customer sees identical wording regardless of which flow offered the
 // same mise scope.
-func runMiseSetupOffer(ctx context.Context, dir, revision, configPath string, kind ChoiceKind, out io.Writer, reader *bufio.Reader) CompilerSetupOfferResult {
+func runMiseSetupOffer(ctx context.Context, dir, revision string, policy policyref.Ref, kind ChoiceKind, out io.Writer, reader *bufio.Reader) CompilerSetupOfferResult {
 	origin := miseOriginForSetupChoiceKind(kind)
 	worktreeRoot := tstoolchain.WorktreeRoot(dir)
 	version, ok := tstoolchain.MiseScopeDeclaresInstallableCompiler(origin, worktreeRoot)
@@ -50,7 +51,7 @@ func runMiseSetupOffer(ctx context.Context, dir, revision, configPath string, ki
 		return result
 	}
 
-	if postInstall, err := projectcheck.Run(dir, revision, configPath); err == nil {
+	if postInstall, err := projectcheck.Run(dir, revision, policy); err == nil {
 		result.PostInstallReadiness = postInstall
 	}
 	result.Succeeded = true

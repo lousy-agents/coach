@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -270,7 +271,7 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard tr
 			var zeroKindErr projectconfig.ConfigError
 			zeroKindErr.Message = `coach codesignal: --project-config "project.json" is invalid at revision "HEAD" (project_config_invalid): unclassified`
 
-			Expect(scanShouldAuthorProjectConfig(&zeroKindErr, "typescript", "project.json", false)).To(BeFalse(), "an error whose cause was never classified must not select guided authoring")
+			Expect(scanShouldAuthorProjectConfig(&zeroKindErr, "typescript", policyref.Named("project.json"), false)).To(BeFalse(), "an error whose cause was never classified must not select guided authoring")
 		})
 	})
 })
@@ -441,7 +442,7 @@ var _ = Describe("coach codesignal (real scan): the interactive compiler-setup o
 			errRead, errWrite, err := os.Pipe()
 			Expect(err).NotTo(HaveOccurred())
 
-			f := codesignalFlags{baseline: true, format: "json", projectConfig: "project.json", projectConfigSet: true, projectLanguage: "typescript"}
+			f := codesignalFlags{baseline: true, format: "json", namedPolicy: policyref.Named("project.json"), projectLanguage: "typescript"}
 			exitCode := runCodesignalScan(repo, f, os.Stdin, outWrite, errWrite, scanOfferBudget{}, defaultScanPorts())
 			Expect(outWrite.Close()).To(Succeed())
 			Expect(errWrite.Close()).To(Succeed())

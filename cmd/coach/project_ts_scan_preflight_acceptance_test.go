@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
@@ -248,7 +249,7 @@ var _ = Describe("codesignalcli.AvailableSetupChoices composes project_package a
 		head := commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
 		writeWorktreeFile(repo, "mise.toml", fmt.Sprintf("[tools]\n\"npm:typescript\" = %q\n", tstoolchain.SupportedTypescriptVersions[0]))
 
-		readiness, err := projectcheck.Run(repo, head, "")
+		readiness, err := projectcheck.Run(repo, head, policyref.Ref{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "the fixture must genuinely need setup, or the menu assertion below proves nothing")
 		Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Pass), "detail=%s", readiness.Checks.PackageManager.Detail)
@@ -280,7 +281,7 @@ var _ = Describe("codesignalcli.CheckProjectReadiness never gates or warns on a 
 		repo := newTempGitRepo()
 		head := commitFile(repo, "project.json", `{"schema_version":"1","roots":["."]}`+"\n")
 
-		readiness, err := projectcheck.Run(repo, head, "")
+		readiness, err := projectcheck.Run(repo, head, policyref.Ref{})
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(readiness.Checks.Node.State).To(Equal(projectreadiness.Pass), "detail=%s", readiness.Checks.Node.Detail)
@@ -335,7 +336,7 @@ var _ = Describe("coach's interim standalone prepare_compiler dispatch refuses f
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, policyref.Ref{})
 
 			transcript := readStderr()
 			Expect(exitCode).To(Equal(2), "stderr: %s", transcript)

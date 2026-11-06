@@ -3,12 +3,13 @@ package main
 import (
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 func TestAnalysisErrorReportForRuntimeUnresolvedError(t *testing.T) {
-	err := &tstoolchain.RuntimeUnresolvedError{Code: projectreadiness.GapNodeMissing, ConfigPath: "project.json"}
+	err := &tstoolchain.RuntimeUnresolvedError{Code: projectreadiness.GapNodeMissing, Policy: policyref.Named("project.json")}
 	got := analysisErrorReportFor(err, "typescript", false)
 	if got.exitCode != 2 {
 		t.Fatalf("analysisErrorReportFor(RuntimeUnresolvedError).exitCode = %d, want 2", got.exitCode)

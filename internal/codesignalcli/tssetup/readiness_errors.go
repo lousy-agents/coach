@@ -3,6 +3,7 @@ package tssetup
 import (
 	"errors"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
@@ -11,7 +12,7 @@ import (
 
 // ProjectConfigErrorWithReadiness enriches a projectconfig.ConfigError with the
 // full TypeScript project-readiness snapshot computed for the same
-// dir/revision/configPath. prepareProjectAnalysis's policy-load short
+// dir/revision/policy. prepareProjectAnalysis's policy-load short
 // circuit means only the policy failure would otherwise ever reach
 // classifyAnalysisError, masking a simultaneous compiler gap (AC-SET-13).
 // Unwrap returns the original *projectconfig.ConfigError so
@@ -19,15 +20,16 @@ import (
 // it did before wrapping existed.
 type ProjectConfigErrorWithReadiness struct {
 	*projectconfig.ConfigError
-	Readiness  *projectreadiness.Result
-	ConfigPath string
+	Readiness *projectreadiness.Result
+	// Policy is the policy the readiness snapshot was computed for.
+	Policy policyref.Ref
 }
 
 func (e *ProjectConfigErrorWithReadiness) Unwrap() error { return e.ConfigError }
 
 // CompilerUnresolvedErrorWithReadiness enriches a tstoolchain.CompilerUnresolvedError
 // with the full TypeScript project-readiness snapshot computed for the same
-// dir/revision/configPath, so a real scan's controlling-terminal branch can
+// dir/revision/policy, so a real scan's controlling-terminal branch can
 // drive the interactive compiler-setup offer from the same facts the gap
 // itself was raised from, without a second, possibly racing readiness
 // computation. Unwrap returns the original
@@ -35,8 +37,8 @@ func (e *ProjectConfigErrorWithReadiness) Unwrap() error { return e.ConfigError 
 // through this wrapper exactly as it did before wrapping existed -- in
 // particular, classifyAnalysisError's own no-controlling-terminal fallback
 // needs no change at all.
-// ConfigPath is deliberately absent: *tstoolchain.CompilerUnresolvedError already
-// carries the policy path RemediationLine() renders, and a second copy here
+// Policy is deliberately absent: *tstoolchain.CompilerUnresolvedError already
+// carries the policy RemediationLine() renders, and a second copy here
 // could drift from it, pointing the printed remediation and the setup
 // session it precedes at two different policies.
 type CompilerUnresolvedErrorWithReadiness struct {
@@ -48,7 +50,7 @@ type CompilerUnresolvedErrorWithReadiness struct {
 func (e *CompilerUnresolvedErrorWithReadiness) Unwrap() error { return e.CompilerUnresolvedError }
 
 // WrapCompilerUnresolvedErrorWithReadiness recomputes readiness for
-// dir/revision/configPath and wraps err with it. It returns err unchanged
+// dir/revision/policy and wraps err with it. It returns err unchanged
 // when err is not a *tstoolchain.CompilerUnresolvedError, or when readiness itself
 // cannot be computed: an unofferable setup session is a strictly smaller
 // problem than losing the original diagnostic entirely. tstoolchain.CompilerUnresolvedError
@@ -56,12 +58,12 @@ func (e *CompilerUnresolvedErrorWithReadiness) Unwrap() error { return e.Compile
 // recomputing readiness here -- rather than threading a precomputed snapshot
 // down through that backend -- is what lets this wrapping live entirely in
 // this file.
-func WrapCompilerUnresolvedErrorWithReadiness(err error, dir, revision, configPath string) error {
+func WrapCompilerUnresolvedErrorWithReadiness(err error, dir, revision string, policy policyref.Ref) error {
 	var unresolved *tstoolchain.CompilerUnresolvedError
 	if !errors.As(err, &unresolved) {
 		return err
 	}
-	readiness, readinessErr := projectcheck.Run(dir, revision, configPath)
+	readiness, readinessErr := projectcheck.Run(dir, revision, policy)
 	if readinessErr != nil {
 		return err
 	}
@@ -69,20 +71,20 @@ func WrapCompilerUnresolvedErrorWithReadiness(err error, dir, revision, configPa
 }
 
 // WrapProjectConfigErrorWithReadiness computes readiness for
-// dir/revision/configPath, taking the working tree's verdict from err instead of
+// dir/revision/policy, taking the working tree's verdict from err instead of
 // reading the working tree again, and wraps err with it, for AC-SET-13's
 // report-all-gaps requirement. It returns err unchanged when err is not a
 // *projectconfig.ConfigError, or when readiness itself cannot be computed: a masked
 // compiler gap is a strictly smaller problem than losing the original
 // diagnostic entirely.
-func WrapProjectConfigErrorWithReadiness(err error, dir, revision, configPath string) error {
+func WrapProjectConfigErrorWithReadiness(err error, dir, revision string, policy policyref.Ref) error {
 	var configErr *projectconfig.ConfigError
 	if !errors.As(err, &configErr) {
 		return err
 	}
-	readiness, readinessErr := projectcheck.RunAfterPolicyError(dir, revision, configPath, configErr)
+	readiness, readinessErr := projectcheck.RunAfterPolicyError(dir, revision, policy, configErr)
 	if readinessErr != nil {
 		return err
 	}
-	return &ProjectConfigErrorWithReadiness{ConfigError: configErr, Readiness: readiness, ConfigPath: configPath}
+	return &ProjectConfigErrorWithReadiness{ConfigError: configErr, Readiness: readiness, Policy: policy}
 }
