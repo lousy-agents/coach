@@ -1,6 +1,6 @@
 // Package invocation writes the `coach codesignal` commands that a remediation
-// line asks a user to run, so the check, the compiler setup and the scan name a
-// policy the same way.
+// line asks a user to run, so the check, the compiler setup, the scan and the
+// authoring of a policy name a policy the same way.
 package invocation
 
 import (
@@ -26,6 +26,11 @@ type Command struct {
 	// --project-config only when the user named it: naming a discovered policy
 	// would make the next command judge it as a named one.
 	Policy policyref.Ref
+	// Target is where SuggestProjectConfig writes the candidate, named with
+	// --output. It is empty for authoring's default location. Authoring rejects
+	// --project-config, so a command in this mode names its policy only through
+	// Target.
+	Target string
 }
 
 // Phrase is the command as the end of a line, led by verb unless verb is empty.
@@ -35,8 +40,11 @@ type Command struct {
 // checks the discovered policy instead, so a user who pastes it learns about
 // the wrong file; the phrase says to name the same policy instead.
 func (c Command) Phrase(verb string) string {
-	if named, ok := c.Policy.NamedPath(); ok && !shellword.Printable(named) {
+	if !c.printable() {
 		return c.withheld()
+	}
+	if verb == "" && c.Mode == SuggestProjectConfig {
+		verb = directoryNote(c.Target)
 	}
 	if verb == "" {
 		return c.text()
@@ -44,7 +52,19 @@ func (c Command) Phrase(verb string) string {
 	return verb + " " + c.text()
 }
 
+// printable is false when the path the command would name cannot be shown.
+func (c Command) printable() bool {
+	if c.Mode == SuggestProjectConfig {
+		return shellword.Printable(c.Target)
+	}
+	named, ok := c.Policy.NamedPath()
+	return !ok || shellword.Printable(named)
+}
+
 func (c Command) text() string {
+	if c.Mode == SuggestProjectConfig {
+		return "coach codesignal --baseline " + string(c.Mode) + " --project-language typescript" + outputFlag(c.Target)
+	}
 	policy := ""
 	if named, ok := c.Policy.NamedPath(); ok {
 		policy = " --project-config " + shellword.Word(named)
@@ -62,6 +82,8 @@ func (c Command) withheld() string {
 		return "check it with --check-project and " + samePolicy
 	case PrepareCompiler:
 		return "run --prepare-compiler with " + samePolicy
+	case SuggestProjectConfig:
+		return samePath
 	}
 	return "rerun this scan with " + samePolicy
 }

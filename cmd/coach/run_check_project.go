@@ -17,12 +17,12 @@ import (
 func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int {
 	revision, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
-		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
+		return classifyAnalysisError(err, f.projectLanguage, f.namedPolicy, nonInteractiveRequested(f), stderr)
 	}
 
 	result, err := projectcheck.Run(dir, revision, f.namedPolicy)
 	if err != nil {
-		return classifyAnalysisError(err, f.projectLanguage, nonInteractiveRequested(f), stderr)
+		return classifyAnalysisError(err, f.projectLanguage, f.namedPolicy, nonInteractiveRequested(f), stderr)
 	}
 
 	if f.format == "json" {
