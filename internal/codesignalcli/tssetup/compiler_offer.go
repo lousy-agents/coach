@@ -35,6 +35,8 @@ type CompilerSetupOfferResult struct {
 	// next action readiness named for it, as on PrepareCompilerMiseResult.
 	PolicyCode   string
 	PolicyRemedy projectreadiness.PolicyRemedy
+	// PolicyCause is why no remedy fixes the policy, as on PrepareCompilerMiseResult.
+	PolicyCause string
 
 	// NoChoicesOffered is true either when gapCode's own next action is not
 	// the executable prepare-compiler kind (a runtime-boundary gap such as
@@ -130,7 +132,7 @@ type CompilerSetupOfferResult struct {
 // policy is required before compiler setup is ever offered (AC-SET-13).
 func RunCompilerSetupOffer(ctx context.Context, dir, revision string, policy policyref.Ref, gapCode string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) CompilerSetupOfferResult {
 	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
-		return CompilerSetupOfferResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy}
+		return CompilerSetupOfferResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy, PolicyCause: readiness.Checks.Policy.Cause}
 	}
 	if code, blocking := readinessHasBlockingRuntimeGap(readiness); blocking {
 		return CompilerSetupOfferResult{RuntimeGapCode: code}

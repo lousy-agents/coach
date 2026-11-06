@@ -60,3 +60,34 @@ func assertLineMentions(t *testing.T, line string, want, notWant []string) {
 		}
 	}
 }
+
+func TestPolicyRequiredLinesLeadWithTheCauseOnlyWhenNoRemedyFixesThePolicy(t *testing.T) {
+	const cause = "coach codesignal: --project-config \"pol.json\" exists in the worktree but is not committed"
+	cases := []struct {
+		name      string
+		remedy    projectreadiness.PolicyRemedy
+		cause     string
+		wantLines int
+		wantFirst string
+	}{
+		{"no remedy and a cause leads with the cause", projectreadiness.RemedyNone, cause, 2, cause},
+		{"no remedy and no cause is the refusal alone", projectreadiness.RemedyNone, "", 1, ""},
+		{"a restorable policy needs no cause", projectreadiness.RemedyRestore, cause, 1, ""},
+		{"an authorable policy needs no cause", projectreadiness.RemedyAuthor, cause, 1, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			lines := policyRequiredLines("coach codesignal", "policy_missing", c.remedy, c.cause, "abc123", "pol.json")
+
+			if len(lines) != c.wantLines {
+				t.Fatalf("lines = %q, want %d", lines, c.wantLines)
+			}
+			if c.wantFirst != "" && lines[0] != c.wantFirst {
+				t.Errorf("first line = %q, want the cause %q", lines[0], c.wantFirst)
+			}
+			if !strings.Contains(lines[len(lines)-1], "a reviewed, committed policy is required before compiler setup") {
+				t.Errorf("last line = %q, want the refusal", lines[len(lines)-1])
+			}
+		})
+	}
+}

@@ -56,7 +56,7 @@ func explicitPolicyCheck(status *projectconfig.ConfigError, dir, revision, polic
 	if status.Kind == projectconfig.KindMissing {
 		code = projectreadiness.GapPolicyMissing
 	}
-	return projectreadiness.Check{State: projectreadiness.Fail, Code: code, DecidedOnDisk: !status.UnreadStagedEdit, Remedy: status.Remedy}, nil, nil
+	return projectreadiness.Check{State: projectreadiness.Fail, Code: code, DecidedOnDisk: !status.UnreadStagedEdit, Remedy: status.Remedy, Cause: causeFor(status.Remedy, status.Message)}, nil, nil
 }
 
 // checkPolicyOnDisk is checkPolicy for a path that is a regular file on disk. A
@@ -66,6 +66,7 @@ func checkPolicyOnDisk(dir, revision, policyPath string) (projectreadiness.Check
 	check, roots, err := checkPolicy(dir, revision, policyPath)
 	if err == nil && check.Code == projectreadiness.GapPolicyMissing {
 		check.Remedy = projectreadiness.RemedyNone
+		check.Cause = projectconfig.UncommittedPolicyMessage(revision, policyPath)
 	}
 	return check, roots, err
 }
