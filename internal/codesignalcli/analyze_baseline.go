@@ -66,6 +66,16 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []gitre
 	return builder.Build(ctx, input)
 }
 
+// readFailure turns a failed read of one side of a file into its diagnostic, or, when git did not answer in
+// time, into the error that ends the scan: a git that does not answer will not answer for the next file
+// either, and a scan that waited out its budget once per file would take that many budgets to give up.
+func readFailure(path, side string, err error) ([]codesignal.Diagnostic, error) {
+	if stalled := gitrepo.TimedOut(err); stalled != nil {
+		return nil, stalled
+	}
+	return []codesignal.Diagnostic{readFailedDiagnostic(path, side, err)}, nil
+}
+
 func readFailedDiagnostic(path, side string, err error) codesignal.Diagnostic {
 	return codesignal.Diagnostic{
 		Path:    path,
