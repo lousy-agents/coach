@@ -55,7 +55,6 @@ func TestAPolicyMissingFromDiskStaysMissingWhenTheRevisionHoldsNoOtherSpellingOf
 		{"the revision holds the typed spelling beside another case of it", "cfg/p.json", fakeRevision{"": {"cfg"}, "cfg": {"p.json", "P.json"}}.entries},
 		{"the revision holds no such directory", "docs/p.json", fakeRevision{"": {"cfg"}, "cfg": {"p.json"}}.entries},
 		{"the revision is empty", "cfg/p.json", fakeRevision{}.entries},
-		{"the revision cannot be asked", "cfg/P.json", failingRevision},
 		{"the name is respelled but the file below it is not held", "CFG/other.json", fakeRevision{"": {"cfg"}, "cfg": {"p.json"}}.entries},
 	}
 	for _, c := range cases {

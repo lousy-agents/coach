@@ -24,15 +24,24 @@ func UncommittedPolicy(run gitrepo.Runner, dir, revision, repoPath string) (stri
 	submodule, err := enclosingSubmodule(run, dir, repoPath)
 	switch {
 	case err != nil:
-		failure := newGitFailure("whether it lies inside a submodule", err)
-		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): Coach could not check %s, so it gives no advice", repoPath, revision, failure.describe()), projectreadiness.CauseGitUnreadable, failure
+		return unansweredUncommitted(repoPath, revision, newGitFailure("whether it lies inside a submodule", err))
 	case submodule != "":
 		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here (project_config_invalid): name a policy that is committed in this repository's own files", repoPath, submodule), projectreadiness.CauseInSubmodule, nil
 	}
-	if renamed := caseOnlyRenameRefusal(run, dir, revision, repoPath); renamed != nil {
+	renamed, failure := caseOnlyRenameRefusal(run, dir, revision, repoPath)
+	if failure != nil {
+		return unansweredUncommitted(repoPath, revision, failure)
+	}
+	if renamed != nil {
 		return renamed.Message, projectreadiness.CauseNameCaseDiffers, nil
 	}
 	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision), projectreadiness.CauseNotCommitted, nil
+}
+
+// unansweredUncommitted is what UncommittedPolicy says when git could not answer a question the advice
+// depends on: the question, and no advice, because every way out of "not committed" is wrong for some answer.
+func unansweredUncommitted(repoPath, revision string, failure *gitFailure) (string, projectreadiness.PolicyCause, error) {
+	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): Coach could not check %s, so it gives no advice", repoPath, revision, failure.describe()), projectreadiness.CauseGitUnreadable, failure
 }
 
 // enclosingSubmodule is the submodule that is repoPath or whose checkout holds it, or "" when none does.

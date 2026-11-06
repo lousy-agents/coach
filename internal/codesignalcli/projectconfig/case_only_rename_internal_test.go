@@ -1,7 +1,6 @@
 package projectconfig
 
 import (
-	"errors"
 	"strings"
 	"testing"
 )
@@ -35,10 +34,10 @@ func TestAnUncommittedPolicyTheRevisionHoldsInAnotherCaseIsToldHowToRecordTheRen
 
 func assertRenameAdvice(t *testing.T, revision revisionEntries, repoPath string, want, avoid []string) {
 	t.Helper()
-	got := caseOnlyRename(revision, repoPath)
+	got, failure := caseOnlyRename(revision, repoPath)
 
-	if got == nil {
-		t.Fatalf("caseOnlyRename(%q) = nil; want a refusal", repoPath)
+	if got == nil || failure != nil {
+		t.Fatalf("caseOnlyRename(%q) = %v, %v; want a refusal", repoPath, got, failure)
 	}
 	assertCaseMismatchAdvice(t, got, want, avoid)
 }
@@ -52,7 +51,6 @@ func TestAnUncommittedPolicyIsLeftAloneWhenTheRevisionHoldsNoOtherCaseOfIt(t *te
 		{"the revision holds the path as typed", "policies/p.json", fakeRevision{"": {"policies"}, "policies": {"p.json"}}.entries},
 		{"the revision holds no such name", "policies/q.json", fakeRevision{"": {"policies"}, "policies": {"p.json"}}.entries},
 		{"the revision holds two other cases of it", "policies/P.json", fakeRevision{"": {"policies"}, "policies": {"p.json", "P.JSON"}}.entries},
-		{"the revision cannot be asked", "policies/P.json", failingRevision},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -63,8 +61,8 @@ func TestAnUncommittedPolicyIsLeftAloneWhenTheRevisionHoldsNoOtherCaseOfIt(t *te
 
 func assertPlainlyUncommitted(t *testing.T, revision revisionEntries, repoPath string) {
 	t.Helper()
-	if got := caseOnlyRename(revision, repoPath); got != nil {
-		t.Errorf("caseOnlyRename(%q) = %q; want nil, so the policy is plainly uncommitted", repoPath, got.Message)
+	if got, failure := caseOnlyRename(revision, repoPath); got != nil || failure != nil {
+		t.Errorf("caseOnlyRename(%q) = %v, %v; want nothing, so the policy is plainly uncommitted", repoPath, got, failure)
 	}
 }
 
@@ -78,7 +76,7 @@ func TestTheCaseOnlyRenameIsOnlyAnIssueWhereGitIgnoresCase(t *testing.T) {
 	}{
 		{"core.ignorecase is true", "true\n", nil, true},
 		{"core.ignorecase is false", "false\n", nil, false},
-		{"git cannot say", "", errors.New("exit status 1"), false},
+		{"core.ignorecase is unset", "", gitSaysUnset, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -91,10 +89,10 @@ func assertRefusedOnlyWhereGitIgnoresCase(t *testing.T, ignoreCase string, err e
 	t.Helper()
 	run := func(string, ...string) ([]byte, error) { return []byte(ignoreCase), err }
 
-	got := caseOnlyRenameRefusalWith(run, "repo", revision, "policies/P.json")
+	got, failure := caseOnlyRenameRefusalWith(run, "repo", revision, "policies/P.json")
 
-	if (got != nil) != want {
-		t.Errorf("refusal = %v; want a refusal = %v", got, want)
+	if failure != nil || (got != nil) != want {
+		t.Errorf("refusal = %v, failure %v; want a refusal = %v and no failure", got, failure, want)
 	}
 }
 
@@ -126,7 +124,7 @@ func assertGitMoveCommand(t *testing.T, from, to, want string) {
 }
 
 func TestTheRefusalCarriesTheCauseThatNamesACaseDifference(t *testing.T) {
-	got := caseOnlyRename(fakeRevision{"": {"policies"}, "policies": {"p.json"}}.entries, "policies/P.json")
+	got, _ := caseOnlyRename(fakeRevision{"": {"policies"}, "policies": {"p.json"}}.entries, "policies/P.json")
 
 	if got == nil || !strings.Contains(string(got.PolicyCause), "name_case_differs") {
 		t.Errorf("refusal = %+v; want the name_case_differs cause", got)
