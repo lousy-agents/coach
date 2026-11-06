@@ -36,7 +36,7 @@ Full flags and schema: [CLI contract](./docs/cli-codesignal.md).
 
 - **Languages:** Go, TypeScript, TSX. Other files get an `unsupported_language` diagnostic and are skipped.
 - **Input:** committed Git objects at the selected revision, not the dirty worktree. Uncommitted edits are invisible.
-- **Git:** `git` must be on `PATH`. No Docker, no API key, no network for the default CLI path.
+- **Git:** `git` must be on `PATH`. No Docker, no API key, no network for the default CLI path. In a partial clone Coach never fetches a missing object, and it refuses to run with a git older than 2.44; see [what repository configuration can run](./docs/cli-codesignal.md#what-repository-configuration-can-run).
 - **Advisory:** a completed analysis exits `0` even when it found signals. Coach does not gate merges.
 - **Absence is not a clean bill of health.** An empty signal set means no matched rule for the inputs that were analyzed. The `forbidden_imports` check reaches only imports between code inside declared layers; with `--project-config`, the report says how many project files under the configured roots sit outside every declared layer. It leaves that count out when no layers are declared, when the inputs are incomplete (for example, a project model cut short by its input budget), when a configured root holds no analyzed file, or when a TypeScript root's analyzed-file count does not match its path list.
 
@@ -68,7 +68,7 @@ Default `--scope` is `production`. `--build-target <pattern>` further limits Go 
 | Code | Meaning |
 | --- | --- |
 | `0` | Analysis completed (signals or none). Not a quality gate. |
-| `1` | Operational failure (not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O; also `--check-project` when git cannot answer a question about an explicit `--project-config`: empty stdout, stderr names the question). |
+| `1` | Operational failure (not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O; also `--check-project` when git cannot answer a question about an explicit `--project-config`: empty stdout, stderr names the question); and, in a partial clone, a git older than 2.44 (refused before anything runs) or an object the clone lacks (Coach never fetches). |
 | `2` | Usage or invalid `--project-config`, or a TypeScript scan that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
 | `3` | Required project coverage incomplete and `--fail-on-incomplete-coverage` was supplied (report still written to stdout); or `--prepare-compiler` operational failure resolving the revision or computing readiness. |
 
@@ -257,6 +257,17 @@ except for the policy-candidate document on the guided-authoring path.
   that runs through a symbolic link, a file that cannot be read, or a parent
   that cannot be searched: `project_config_invalid`, naming the reason, with no
   restore and no authoring.
+- A name that differs only by case from what is on disk (on a file system that
+  ignores case) or from what the analyzed revision holds (when the file is gone
+  from disk): `project_config_invalid`. The message names both spellings and
+  says whether to pass the revision's spelling or to rename the entry back, and
+  gives no advice when the revision holds neither or both. No new policy is
+  offered. See the [CLI contract](./docs/cli-codesignal.md#commands).
+- A policy inside a submodule checkout, or at a path the analyzed revision
+  commits as a submodule: `project_config_missing`, naming the submodule. The
+  superproject records a submodule as one commit, so the file can be neither
+  restored nor committed here; name a policy this repository commits. See the
+  [CLI contract](./docs/cli-codesignal.md#commands).
 
 A file that
 exists on disk but is not committed is rejected (`project_config_invalid`, with
