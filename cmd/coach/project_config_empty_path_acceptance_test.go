@@ -18,13 +18,14 @@ var _ = Describe("coach codesignal --project-config with an empty path", func() 
 			repo := newTempGitRepo()
 			commitFile(repo, "go.mod", goModuleFile)
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+			commitFile(repo, coachConfigPath, singleRootPolicyJSON)
 
 			stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, append([]string{"codesignal"}, args...)...)
 
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "a usage error writes no report")
 			Expect(string(stderr)).To(Equal(codesignalUsage+"\n"+emptyPathMessage+"\n"),
-				"the usage block and the one message, with no revision-judgment wording, no readiness lines for a discovered policy, and no authoring remedy")
+				"the usage block and the one message, with no revision-judgment wording, no readiness lines for a discovered policy, and no authoring remedy; stderr was:\n%s", stderr)
 		},
 		Entry("a baseline scan", "--baseline", "--project-config", ""),
 		Entry("a diff scan", "--base", "HEAD", "--project-config", ""),
