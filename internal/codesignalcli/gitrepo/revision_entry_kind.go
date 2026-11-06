@@ -47,7 +47,7 @@ func EntryKindAtRevision(run Runner, dir, revision, repoPath string) (EntryKind,
 func entryKindOf(record, repoPath string) (EntryKind, error) {
 	meta, path, found := strings.Cut(record, "\t")
 	fields := strings.Fields(meta)
-	if !found || len(fields) != 3 || path != repoPath {
+	if !found || len(fields) != 3 || !SamePath(path, repoPath) {
 		return EntryAbsent, errUnparseableIndexLine
 	}
 	switch {
