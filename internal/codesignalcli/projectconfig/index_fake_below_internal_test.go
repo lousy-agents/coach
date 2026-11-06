@@ -45,3 +45,26 @@ func (f indexFake) lsFilesAnswer(args []string) ([]byte, error) {
 	}
 	return []byte(strings.ReplaceAll(f.lsFiles, askedPath, pathAskedAbout(args))), f.lsFilesErr
 }
+
+// committedPolicy is what `git show` prints for the committed policy.
+func (f indexFake) committedPolicy() ([]byte, error) {
+	if f.showErr != nil {
+		return nil, f.showErr
+	}
+	if f.committedContent != "" {
+		return []byte(f.committedContent), nil
+	}
+	return []byte(`{"schema_version":"1","roots":["."]}`), nil
+}
+
+// configAnswer is what `git config --get core.sparseCheckout` prints: a failure when the fake is told to, the
+// value when sparse checkout is on, and git's exit 1 for an unset key otherwise.
+func (f indexFake) configAnswer() ([]byte, error) {
+	if f.configErr != nil {
+		return nil, f.configErr
+	}
+	if f.sparse {
+		return []byte("true\n"), nil
+	}
+	return nil, gitSaysUnset
+}

@@ -57,13 +57,7 @@ func (f indexFake) run(dir string, args ...string) ([]byte, error) {
 	case "ls-files":
 		return f.lsFilesAnswer(args)
 	case "config":
-		if f.configErr != nil {
-			return nil, f.configErr
-		}
-		if f.sparse {
-			return []byte("true\n"), nil
-		}
-		return nil, gitSaysUnset
+		return f.configAnswer()
 	}
 	return nil, nil
 }
@@ -155,15 +149,4 @@ func TestACommittedLinkIsNamedEvenWhenAFileBlocksTheParent(t *testing.T) {
 	if !offered || offer != committedLinkOffer {
 		t.Errorf("restoreOfferFor = %q, %v; want the committed-link offer, because restoring the policy from git would recreate a link the scan refuses", offer.text, offered)
 	}
-}
-
-// committedPolicy is what `git show` prints for the committed policy.
-func (f indexFake) committedPolicy() ([]byte, error) {
-	if f.showErr != nil {
-		return nil, f.showErr
-	}
-	if f.committedContent != "" {
-		return []byte(f.committedContent), nil
-	}
-	return []byte(`{"schema_version":"1","roots":["."]}`), nil
 }
