@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
-	"github.com/lousy-agents/coach/internal/codesignalcli/shellword"
 )
 
 // blobCheckFailure is the failure of the call that checks whether the policy's blob can be read. An object
@@ -13,30 +12,25 @@ func blobCheckFailure(run gitrepo.Runner, dir, revision, repoPath string, err er
 	failure := newGitFailure("whether it is committed at the analyzed revision", err)
 	var absent *gitrepo.ObjectNotLocalError
 	if errors.As(failure.err, &absent) {
-		partial, _ := gitrepo.IsPartialClone(run, dir) // only chooses the wording; a read that cannot be told apart says the shorter thing
-		failure.words = objectNotLocalWords(partial, revision, repoPath)
+		failure.words = objectNotLocalWords(run, dir, revision, repoPath)
 	}
 	return failure
 }
 
 // objectNotLocalWords says the content is not here and that Coach does not fetch it. In a partial clone it
-// names the command that does, when the path can be shown to a terminal and pasted as written.
-func objectNotLocalWords(partialClone bool, revision, repoPath string) string {
-	if !partialClone {
+// adds the way to fetch it. The single-object command is offered only for a path that names one file inside
+// the repository, since the batch fetches every file of the revision and needs no path.
+func objectNotLocalWords(run gitrepo.Runner, dir, revision, repoPath string) string {
+	if _, partialClone := gitrepo.PromisorRemote(run, dir); !partialClone {
 		return "its content is not in the local object store, and Coach does not fetch objects"
 	}
+	path := repoPath
+	if ValidatePath(repoPath) != nil {
+		path = ""
+	}
 	words := "its content is not in this partial clone, and Coach does not fetch objects"
-	if command, ok := fetchCommand(revision, repoPath); ok {
-		words += "; fetch it with " + command + " and run again"
+	if advice := gitrepo.FetchAdvice(run, dir, revision, path); advice != "" {
+		words += "; " + advice
 	}
 	return words
-}
-
-// fetchCommand reads the blob the way the check did, in the user's own shell where git may fetch it. It
-// reports false for a path that is not one file inside the repository or cannot be shown safely.
-func fetchCommand(revision, repoPath string) (string, bool) {
-	if ValidatePath(repoPath) != nil || !shellword.Printable(repoPath) || !shellword.Printable(revision) {
-		return "", false
-	}
-	return "git cat-file -e " + shellword.Quote(revision+":"+repoPath), true
 }

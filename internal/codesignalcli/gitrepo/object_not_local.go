@@ -31,8 +31,14 @@ func classifyObjectCheck(object string, err error) error {
 type ObjectsNotLocalError struct {
 	Count     int
 	FirstPath string
+	// Advice is how to fetch them in a partial clone, or empty.
+	Advice string
 }
 
 func (e *ObjectsNotLocalError) Error() string {
-	return fmt.Sprintf("%d objects are not in the local object store, and Coach does not fetch objects (the first is %q)", e.Count, e.FirstPath)
+	message := fmt.Sprintf("%d objects are not in the local object store, and Coach does not fetch objects (the first is %q)", e.Count, e.FirstPath)
+	if e.Advice != "" {
+		message += "; " + e.Advice
+	}
+	return message
 }
