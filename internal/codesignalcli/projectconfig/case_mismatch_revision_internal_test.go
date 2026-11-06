@@ -27,7 +27,7 @@ func TestTheSpellingCheckAdvisesFromTheRevisionForADirectorySpelledInAnotherCase
 			if err := os.Rename(filepath.Join(repo, "cfg"), filepath.Join(repo, "CFG")); err != nil {
 				t.Fatal(err)
 			}
-		}, "cfg/p.json", []string{`it holds "cfg"; rename "CFG" back to "cfg", or commit the rename and pass --project-config CFG/p.json`}, nil},
+		}, "cfg/p.json", []string{`it holds "cfg"; rename "CFG" back to "cfg" (project_config_invalid)`}, []string{"git mv"}},
 		{"the revision holds neither spelling", func(t *testing.T, repo string) {
 			gitfixture.CommitFile(t, repo, "go.mod", "module m\n")
 			if err := os.MkdirAll(filepath.Join(repo, "CFG"), 0o755); err != nil {

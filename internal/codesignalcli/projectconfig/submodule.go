@@ -15,7 +15,9 @@ import (
 // one place that decides both, so the scan's message and the readiness result's cause cannot differ.
 // A file inside a submodule cannot be committed here at all, which is a different way out from
 // committing it, so it has a word of its own; and when git cannot say whether the path lies inside
-// one, the message gives no advice, because "commit the file" is the circular advice for that case.
+// one, the message gives no advice, because "commit the file" is the circular advice for that case. A
+// file the revision already holds in another case, on a repository that ignores case, is the same
+// circle: git add records nothing for a rename that changes only case, so it has a word of its own.
 // The error is that unanswered question, for a caller that reports a failure of git apart from a
 // verdict about the policy: the scan words it in its message, and readiness returns it.
 func UncommittedPolicy(run gitrepo.Runner, dir, revision, repoPath string) (string, projectreadiness.PolicyCause, error) {
@@ -26,6 +28,9 @@ func UncommittedPolicy(run gitrepo.Runner, dir, revision, repoPath string) (stri
 		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): Coach could not check %s, so it gives no advice", repoPath, revision, failure.describe()), projectreadiness.CauseGitUnreadable, failure
 	case submodule != "":
 		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here (project_config_invalid): name a policy that is committed in this repository's own files", repoPath, submodule), projectreadiness.CauseInSubmodule, nil
+	}
+	if renamed := caseOnlyRenameRefusal(run, dir, revision, repoPath); renamed != nil {
+		return renamed.Message, projectreadiness.CauseNameCaseDiffers, nil
 	}
 	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision), projectreadiness.CauseNotCommitted, nil
 }

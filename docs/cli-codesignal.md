@@ -112,8 +112,17 @@ holds, and what to do follows from that:
   on disk, as in `pass --project-config cfg/p.json`. Nothing is renamed, because the
   revision already holds that spelling.
 - The revision holds the spelling the user typed and the disk was renamed without a
-  commit: rename the entry on disk back to the spelling the revision holds, or commit the
-  rename and pass the spelling on disk.
+  commit: rename the entry on disk back to the spelling the revision holds. For a file,
+  the other way out is to record the rename with `git mv '<revision spelling>' '<spelling
+  on disk>'`, commit it, and pass the spelling on disk. `git add` cannot do that: on a
+  repository that ignores case it records nothing for a rename that changes only the case
+  of a name, and the commit says there is nothing to commit. `git mv` refuses to rename a
+  directory in case only, so a directory is renamed back and no `git mv` is offered.
+- A file on disk that is not committed under that name, where the user typed its spelling
+  on disk and the revision holds the same path in another case, on a repository that
+  ignores case (the file was renamed in case only and the rename was never recorded): the
+  same refusal and the same two ways out, with the cause `name_case_differs`, not
+  `not_committed`. "Commit the file" would end in nothing to commit.
 - The revision holds neither spelling, or both: the message says so and gives no advice,
   because no spelling is the right one to move to. It gives none either when git cannot
   answer.

@@ -21,6 +21,8 @@ type caseMismatchError struct {
 	typed     string
 	onDisk    string
 	corrected string
+	// isFile is whether the differing component is the last: a file, which git mv can rename in case only.
+	isFile bool
 }
 
 // newCaseMismatch records that the component at index of parts is spelled
@@ -36,6 +38,7 @@ func newCaseMismatch(repoPath string, parts []string, index int, onDisk string) 
 		typed:     parts[index],
 		onDisk:    onDisk,
 		corrected: strings.Join(corrected, "/"),
+		isFile:    index == len(parts)-1,
 	}
 }
 
@@ -89,7 +92,7 @@ func (m caseMismatchError) revisionClause(entries revisionEntries) string {
 	case heldOnDisk:
 		return fmt.Sprintf(": it holds %q%s", onDisk, passClause("; pass", m.corrected))
 	case heldTyped:
-		return fmt.Sprintf(": it holds %q; rename %q back to %q, or commit the rename%s", typed, onDisk, typed, passClause(" and pass", m.corrected))
+		return fmt.Sprintf(": it holds %q; rename %q back to %q%s", typed, onDisk, typed, m.recordRenameClause(typed, onDisk))
 	default:
 		return fmt.Sprintf(": it holds neither %q nor %q", typed, onDisk)
 	}
@@ -102,4 +105,15 @@ func passClause(lead, corrected string) string {
 		return ""
 	}
 	return lead + " --project-config " + shellword.Word(corrected)
+}
+
+// recordRenameClause is the other way out when the revision holds the spelling the user typed: record the
+// rename on disk with git mv, commit it, and pass the spelling on disk. Only a file can be renamed that
+// way, and only when the command can be shown.
+func (m caseMismatchError) recordRenameClause(held, onDisk string) string {
+	command, ok := gitMoveCommand(held, onDisk)
+	if !m.isFile || !ok {
+		return ""
+	}
+	return ", or record the rename with " + command + ", commit it," + passClause(" and pass", m.corrected)
 }
