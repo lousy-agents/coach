@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 // LoadExplicit is Load for a --project-config the user named. It rejects a
@@ -28,8 +30,8 @@ func LoadExplicit(dir, revision, repoPath string) (json.RawMessage, error) {
 // that nothing has read. The error return is an operational
 // failure, never a verdict about the policy. run is the git runner that decides
 // whether the policy is committed and what the index holds for it.
-func ExplicitOnDiskStatus(run func(dir string, args ...string) ([]byte, error), dir, revision, repoPath string) (*ConfigError, error) {
-	err := RequireOnDisk(dir, repoPath)
+func ExplicitOnDiskStatus(run gitrepo.Runner, dir, revision, repoPath string) (*ConfigError, error) {
+	err := requireOnDisk(dir, repoPath)
 	if err == nil {
 		return nil, nil
 	}
@@ -49,39 +51,4 @@ func ExplicitOnDiskStatus(run func(dir string, args ...string) ([]byte, error), 
 		return &judged, nil
 	}
 	return annotated(&judged, offer), nil
-}
-
-// restoreOfferFor names the way back for a policy that is committed at the
-// analyzed revision and gone from disk, or reports that there is nothing to add.
-// It offers no restore when that would overwrite something or recreate what the
-// scan refuses: a file in the way of the path stays in the way, a staged edit
-// stays staged even when a file is in the way, and a committed link stays
-// unrestored even when a file is in the way; the message says so instead.
-func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigError, repoPath string) (restoreOffer, bool) {
-	verdict := judgment.verdict
-	if found.Kind != KindMissing {
-		return restoreOffer{}, false
-	}
-	blocked := found.Cause == CauseBlockedParent
-	switch {
-	case verdict == restoreNotCommitted, verdict == restoreUndecidable && blocked:
-		return restoreOffer{}, false
-	case verdict == restoreUndecidable:
-		return undecidableOffer(judgment.failure), true
-	case verdict == restoreStagedNotCommitted:
-		return stagedOnlyOffer(repoPath, blocked), true
-	case verdict == restoreMergeConflict:
-		return mergeConflictOffer, true
-	case verdict == restoreDiscardsStagedEdit:
-		return stagedEditOffer, true
-	case verdict == restoreSkipWorktreeMarked:
-		return skipWorktreeOffer(repoPath), true
-	case verdict == restoreRecreatesLink:
-		return committedLinkOffer, true
-	case verdict == restoreSkippedBySparseCheckout:
-		return sparseCheckoutOffer, true
-	case blocked:
-		return committedBlockedParentOffer, true
-	}
-	return restorableOffer(revision, repoPath), true
 }

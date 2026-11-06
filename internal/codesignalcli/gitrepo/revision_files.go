@@ -14,7 +14,7 @@ type TreeEntry struct {
 
 // FileExistsAtRevision reports whether repoPath exists as a blob at revision.
 // See BlobEntryAtRevision for how the answer is reached and what fails closed.
-func FileExistsAtRevision(run func(dir string, args ...string) ([]byte, error), dir, revision, repoPath string) (bool, error) {
+func FileExistsAtRevision(run Runner, dir, revision, repoPath string) (bool, error) {
 	_, found, err := BlobEntryAtRevision(run, dir, revision, repoPath)
 	return found, err
 }
@@ -59,7 +59,7 @@ func FileExistsAtRevision(run func(dir string, args ...string) ([]byte, error), 
 //     itself, so a corrupt/missing blob object still resolves a SHA there;
 //     any failure here means the object store itself is unreadable, which
 //     must also fail closed rather than report the path absent.
-func BlobEntryAtRevision(run func(dir string, args ...string) ([]byte, error), dir, revision, repoPath string) (TreeEntry, bool, error) {
+func BlobEntryAtRevision(run Runner, dir, revision, repoPath string) (TreeEntry, bool, error) {
 	if _, err := run(dir, "cat-file", "-e", revision+"^{commit}"); err != nil {
 		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: revision %q could not be verified: %s", revision, err), Cause: err}
 	}

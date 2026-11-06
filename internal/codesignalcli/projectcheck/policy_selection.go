@@ -40,9 +40,9 @@ func policyFromSelection(selection projectconfig.Selection) (string, []projectre
 }
 
 // canonicalRecheckedByReadiness reports a canonical Load failure that
-// CheckPolicy must classify again. Load collapses a stdout size bound and a
+// checkPolicy must classify again. Load collapses a stdout size bound and a
 // timeout or stderr bound into KindUnreadable. LoadForReadiness, which
-// CheckPolicy calls, reports the size bound as policy_invalid and leaves the
+// checkPolicy calls, reports the size bound as policy_invalid and leaves the
 // timeout and stderr bounds as operational errors. Scan keeps Load's
 // classification and does not call this path.
 func canonicalRecheckedByReadiness(err error) bool {

@@ -3,6 +3,8 @@ package projectmodel
 import (
 	"path"
 	"strings"
+
+	"github.com/lousy-agents/coach/pkg/domain"
 )
 
 func tsLayerBypassNodePositions(facts []CallFact) map[string]layerBypassNodePosition {
@@ -57,7 +59,7 @@ func tsLayerBypassNodePosition(nodeID string) (layerBypassNodePosition, bool) {
 func tsLayerBypassRequiredLayerNodes(snapshotFiles []File, callGraphNodePositions map[string]layerBypassNodePosition, requiredLayer BypassLayer) (map[string]bool, bool) {
 	requiredLayerNodes := map[string]bool{}
 	for node, pos := range callGraphNodePositions {
-		if layerBypassContainsPath(requiredLayer, pos.File) {
+		if domain.AnyLayerPrefixContains(requiredLayer.Prefixes, pos.File) {
 			requiredLayerNodes[node] = true
 		}
 	}
@@ -67,7 +69,7 @@ func tsLayerBypassRequiredLayerNodes(snapshotFiles []File, callGraphNodePosition
 
 func tsLayerBypassLayerMatchesFiles(files []File, layer BypassLayer) bool {
 	for _, f := range files {
-		if layerBypassContainsPath(layer, f.Path) {
+		if domain.AnyLayerPrefixContains(layer.Prefixes, f.Path) {
 			return true
 		}
 	}

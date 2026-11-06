@@ -9,10 +9,10 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// CheckExplicitPolicy is CheckPolicy for a path the user named with
+// checkExplicitPolicy is checkPolicy for a path the user named with
 // --project-config. A scan refuses such a path unless it is a regular file on
 // disk, so readiness must not pass the committed copy of one that is not.
-func CheckExplicitPolicy(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
+func checkExplicitPolicy(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
 	status, err := projectconfig.ExplicitOnDiskStatus(runReadinessGit, dir, revision, policyPath)
 	if err != nil {
 		return projectreadiness.Check{}, nil, err
@@ -59,11 +59,11 @@ func explicitPolicyCheck(status *projectconfig.ConfigError, dir, revision, polic
 	return projectreadiness.Check{State: projectreadiness.Fail, Code: code, DecidedOnDisk: !status.UnreadStagedEdit, Remedy: status.Remedy}, nil, nil
 }
 
-// checkPolicyOnDisk is CheckPolicy for a path that is a regular file on disk. A
+// checkPolicyOnDisk is checkPolicy for a path that is a regular file on disk. A
 // policy missing at the revision is there on disk, so a new policy cannot be
 // written at the path and committing the file is the way out.
 func checkPolicyOnDisk(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
-	check, roots, err := CheckPolicy(dir, revision, policyPath)
+	check, roots, err := checkPolicy(dir, revision, policyPath)
 	if err == nil && check.Code == projectreadiness.GapPolicyMissing {
 		check.Remedy = projectreadiness.RemedyNone
 	}

@@ -11,9 +11,7 @@ import (
 
 // runReadinessGit is the bounded git read behind --check-project's
 // committed-file presence checks, held to the policy document's read budget.
-var runReadinessGit = func(dir string, args ...string) ([]byte, error) {
-	return gitrepo.RunBytesBounded(dir, projectconfig.MaxBytes, projectconfig.MaxGitStderr, projectconfig.GitTimeout, args...)
-}
+var runReadinessGit = gitrepo.BoundedRunner(projectconfig.MaxBytes, projectconfig.MaxGitStderr, projectconfig.GitTimeout)
 
 // checkProjectShape reports whether revision looks like a Node/TypeScript
 // project at all: a committed package.json at the repository root, or, once

@@ -26,9 +26,7 @@ const (
 // runPackageManagerRevisionGit is the bounded git read behind
 // AtRevision. Tests may replace it to inject git
 // failures into revision-scoped detection.
-var runPackageManagerRevisionGit = func(dir string, args ...string) ([]byte, error) {
-	return gitrepo.RunBytesBounded(dir, maxPackageManagerRevisionBytes, maxPackageManagerRevisionStderr, packageManagerRevisionTimeout, args...)
-}
+var runPackageManagerRevisionGit = gitrepo.BoundedRunner(maxPackageManagerRevisionBytes, maxPackageManagerRevisionStderr, packageManagerRevisionTimeout)
 
 // snapshotProbePackageManagerVersion is the probe seam for
 // AtRevision. Tests may replace it to verify that the

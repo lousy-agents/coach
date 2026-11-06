@@ -70,9 +70,7 @@ func parseSetupResidueStatusPaths(output []byte) []string {
 // runSetupResidueGit is the bounded git read behind setupResidueChangedPaths.
 // Tests may replace it to observe exactly which git commands a setup run
 // issues.
-var runSetupResidueGit = func(dir string, args ...string) ([]byte, error) {
-	return gitrepo.RunBytesBounded(dir, maxSetupResidueGitBytes, maxSetupResidueGitStderr, setupResidueGitTimeout, args...)
-}
+var runSetupResidueGit = gitrepo.BoundedRunner(maxSetupResidueGitBytes, maxSetupResidueGitStderr, setupResidueGitTimeout)
 
 // setupResidueChangedPaths returns the untracked, modified, and gitignored
 // paths (`--ignored`, since a package-manager install typically leaves a

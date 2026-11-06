@@ -71,7 +71,7 @@ func newGitFailure(question string, err error) *gitFailure {
 // policy is not offered over staged work. When git cannot answer it declines
 // too, so an operational failure is never taken for a clean miss. run is the git
 // runner, a parameter so a caller's seam decides what git says.
-func judgeRestore(run func(dir string, args ...string) ([]byte, error), dir, revision, repoPath string) policyJudgment {
+func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudgment {
 	committed, found, err := gitrepo.BlobEntryAtRevision(run, dir, revision, repoPath)
 	if err != nil {
 		return policyJudgment{verdict: restoreUndecidable, indexEntryUnread: true, failure: newGitFailure("whether it is committed at the analyzed revision", err)}
@@ -129,7 +129,7 @@ func holdsUnmergedEntry(staged []gitrepo.IndexEntry) bool {
 // sparseCheckoutEnabled reports whether core.sparseCheckout is on. It asks git
 // only when a skip-worktree entry makes the answer matter, and an unset key,
 // which git reports with a failure exit, is taken as off.
-func sparseCheckoutEnabled(run func(dir string, args ...string) ([]byte, error), dir string, staged []gitrepo.IndexEntry) bool {
+func sparseCheckoutEnabled(run gitrepo.Runner, dir string, staged []gitrepo.IndexEntry) bool {
 	if !skippedBySparseCheckout(staged) {
 		return false
 	}
