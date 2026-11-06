@@ -245,7 +245,8 @@ var _ = Describe("coach codesignal (real scan): guided policy authoring guard le
 			lines := stderrLines(stderr)
 			Expect(lines).To(HaveLen(2), "a controlling terminal must not withhold AC-SET-9's appended remediation for go: no interactive setup offer exists to own that case; stderr: %s", stderr)
 			Expect(lines[0]).To(ContainSubstring("project_config_missing"), "the class-2 missing-policy message must still be reported")
-			Expect(lines[1]).To(Equal("coach codesignal --baseline --suggest-project-config"), "go's appended remediation must be the same command a no-controlling-terminal invocation prints")
+			Expect(lines[1]).To(Equal(remediationWithoutAControllingTerminal(repo)), "go's appended remediation must be the same command a no-controlling-terminal invocation prints")
+			Expect(lines[1]).To(Equal("coach codesignal --baseline --suggest-project-config --output project.json"), "the command writes the policy where the user pointed --project-config, not where authoring writes by default")
 			Expect(string(stderr)).NotTo(ContainSubstring("Discovered TypeScript roots"), "the guided authoring session below is TypeScript-specific and must never run for --project-language go")
 		})
 	})
@@ -688,3 +689,15 @@ var _ = Describe("coach codesignal (real scan): a withheld project_package choic
 		})
 	})
 })
+
+// remediationWithoutAControllingTerminal is the remediation line the same go scan prints
+// when nothing is attached to a terminal: the command a controlling terminal must not
+// change for go, which has no interactive setup offer to own that case.
+func remediationWithoutAControllingTerminal(repo string) string {
+	stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil,
+		"codesignal", "--baseline", "--project-config", "project.json", "--project-language", "go", "--format=json")
+	ExpectWithOffset(1, exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
+	lines := stderrLines(stderr)
+	ExpectWithOffset(1, lines).To(HaveLen(2), "stderr: %s", stderr)
+	return lines[1]
+}
