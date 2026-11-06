@@ -15,8 +15,9 @@ func TestAuthorableMissingPolicy(t *testing.T) {
 		err  error
 		want bool
 	}{
-		{"a policy that does not exist", &projectconfig.ConfigError{Kind: projectconfig.KindMissing}, true},
-		{"the same, wrapped", fmt.Errorf("wrapped: %w", &projectconfig.ConfigError{Kind: projectconfig.KindMissing}), true},
+		{"a policy that does not exist", &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Remedy: projectreadiness.RemedyAuthor}, true},
+		{"the same, wrapped", fmt.Errorf("wrapped: %w", &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Remedy: projectreadiness.RemedyAuthor}), true},
+		{"a missing policy whose remedy nobody set", &projectconfig.ConfigError{Kind: projectconfig.KindMissing}, false},
 		{"a policy committed at the revision", &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Remedy: projectreadiness.RemedyRestore}, false},
 		{"a path that cannot be created", &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Remedy: projectreadiness.RemedyNone}, false},
 		{"an invalid policy", &projectconfig.ConfigError{Kind: projectconfig.KindInvalid}, false},
