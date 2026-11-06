@@ -8,6 +8,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -98,5 +99,21 @@ func TestADiscoveredPolicyCannotBeSelectedOutsideARepository(t *testing.T) {
 
 	if err == nil {
 		t.Errorf("resolveCheckPolicy = %q, %v, nil; want the failed question returned", path, warnings)
+	}
+}
+
+// RunAfterPolicyError reports the verdict the caller holds for a named policy and reads the rest of the
+// project itself. A question about the rest that git cannot answer fails the report: a clean report with
+// nothing in it is not an answer. The policy check asks git nothing here, so the one question that fails is
+// the first one after it.
+func TestANamedPolicyReportFailsWhenAQuestionAfterThePolicyCheckCannotBeAnswered(t *testing.T) {
+	withReadinessGit(t, questionsWhereOnly(theRevisionCheck))
+	held := &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseParentNotDirectory, FromWorkingTree: true}
+
+	result, err := RunAfterPolicyError(gitfixture.Init(t), "HEAD", policyref.Named("cfg/p.json"), held)
+
+	var operational *gitrepo.OperationalError
+	if !errors.As(err, &operational) || result != nil {
+		t.Errorf("RunAfterPolicyError = %+v, %v; want no report and the operational error", result, err)
 	}
 }
