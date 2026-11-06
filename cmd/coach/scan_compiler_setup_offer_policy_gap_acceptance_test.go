@@ -41,6 +41,8 @@ var _ = Describe("the scan's compiler-setup offer when the policy blocks it", fu
 		},
 		Entry("a committed policy is restored", projectreadiness.RemedyRestore,
 			[]string{"restore_policy", "git restore --source=abc123", "':(top,literal)pol.json'"}, []string{"author_policy", "guided policy authoring"}),
+		Entry("a committed policy under an empty index entry is restored, and the entry is explained", projectreadiness.RemedyRestoreOverEmptyEntry,
+			[]string{"restore_policy", "empty entry", "git restore --source=abc123"}, []string{"author_policy", "guided policy authoring"}),
 		Entry("a policy that was never committed is authored", projectreadiness.RemedyAuthor,
 			[]string{"author_policy", "guided policy authoring"}, []string{"restore_policy", "git restore"}),
 		Entry("a policy a new file cannot fix names neither", projectreadiness.RemedyNone,

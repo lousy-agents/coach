@@ -15,6 +15,11 @@ const (
 	// RemedyRestore brings back a policy that is committed at the analyzed
 	// revision and gone from disk.
 	RemedyRestore
+	// RemedyRestoreOverEmptyEntry is RemedyRestore for a committed policy whose index
+	// holds only an empty entry for it (git add --intent-to-add, or an emptied file
+	// staged). It names the same action; it is its own value so the sentence that
+	// explains the restore can say why it loses nothing.
+	RemedyRestoreOverEmptyEntry
 )
 
 // NextActionForRemedy is the next action kind a remedy names, and false for a
@@ -23,7 +28,7 @@ func NextActionForRemedy(remedy PolicyRemedy) (string, bool) {
 	switch remedy {
 	case RemedyAuthor:
 		return NextActionAuthorPolicy, true
-	case RemedyRestore:
+	case RemedyRestore, RemedyRestoreOverEmptyEntry:
 		return NextActionRestorePolicy, true
 	}
 	return "", false

@@ -54,8 +54,8 @@ func TestAnEmptyIndexEntryOverACommittedPolicyIsRestoredFromTheCommit(t *testing
 	if !strings.Contains(status.Message, "git restore --source=") {
 		t.Errorf("message %q; want the restore from the analyzed revision, which replaces the empty entry", status.Message)
 	}
-	if status.Remedy != projectreadiness.RemedyRestore {
-		t.Errorf("remedy = %d, want the restore remedy: nothing is staged that a restore would lose", status.Remedy)
+	if status.Remedy != projectreadiness.RemedyRestoreOverEmptyEntry {
+		t.Errorf("remedy = %d, want the restore-over-an-empty-entry remedy: nothing is staged that a restore would lose", status.Remedy)
 	}
 	if status.UnreadStagedEdit {
 		t.Error("UnreadStagedEdit is set for an entry that holds no content")

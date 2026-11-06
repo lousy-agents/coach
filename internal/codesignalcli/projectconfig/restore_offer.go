@@ -22,7 +22,7 @@ type restoreOffer struct {
 
 // restorableOffer brings the committed policy back with the restore command.
 func restorableOffer(revision, repoPath string) restoreOffer {
-	return restoreOffer{remedy: projectreadiness.RemedyRestore, text: ". It is committed at the analyzed revision: " + RestoreAdvice(revision, repoPath)}
+	return restoreOffer{remedy: projectreadiness.RemedyRestore, text: RestoreSentence(projectreadiness.RemedyRestore, revision, repoPath, AsAnOffer)}
 }
 
 // restorableOverEmptyEntryOffer is for a committed policy whose index entry holds
@@ -30,7 +30,7 @@ func restorableOffer(revision, repoPath string) restoreOffer {
 // replaces that entry with the committed one and loses nothing, and the message
 // says so rather than calling an empty entry an edit.
 func restorableOverEmptyEntryOffer(revision, repoPath string) restoreOffer {
-	return restoreOffer{remedy: projectreadiness.RemedyRestore, text: ". It is committed at the analyzed revision, and the index holds only an empty entry for it with no content staged, so restoring brings back the committed copy: " + RestoreAdvice(revision, repoPath)}
+	return restoreOffer{remedy: projectreadiness.RemedyRestoreOverEmptyEntry, text: RestoreSentence(projectreadiness.RemedyRestoreOverEmptyEntry, revision, repoPath, AsAnOffer)}
 }
 
 // undecidableOffer is for a policy whose git questions went unanswered. Offering

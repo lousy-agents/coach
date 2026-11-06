@@ -77,6 +77,9 @@ func verdictCases() []verdictCase {
 	restores := func(words ...string) offerWant {
 		return offerWant{true, projectreadiness.RemedyRestore, "", words, true}
 	}
+	restoresOverEmptyEntry := func(words ...string) offerWant {
+		return offerWant{true, projectreadiness.RemedyRestoreOverEmptyEntry, "", words, true}
+	}
 	staged1, staged2 := bothWays(projectreadiness.PolicyCause("staged_edit"), "staged edit")
 	link1, link2 := bothWays(projectreadiness.PolicyCause("committed_as_link"), "symbolic link")
 	sparse1, sparse2 := bothWays(projectreadiness.PolicyCause("sparse_checkout"), "sparse checkout")
@@ -94,7 +97,7 @@ func verdictCases() []verdictCase {
 	return []verdictCase{
 		{"nothing committed and nothing staged", restoreNotCommitted, offerWant{}, offerWant{}, false},
 		{"a restore that overwrites nothing", restoreOverwritesNothing, restores("restore it with " + restoreSource), moveFirst, false},
-		{"a restore over an empty index entry", restoreOverwritesEmptyEntry, restores("restoring brings back the committed copy", restoreSource), moveFirst, false},
+		{"a restore over an empty index entry", restoreOverwritesEmptyEntry, restoresOverEmptyEntry("restoring brings back the committed copy", restoreSource), moveFirst, false},
 		{"a staged edit a restore would discard", restoreDiscardsStagedEdit, staged1, staged2, false},
 		{"a committed link", restoreRecreatesLink, link1, link2, false},
 		{"a sparse checkout that leaves the policy out", restoreSkippedBySparseCheckout, sparse1, sparse2, false},
