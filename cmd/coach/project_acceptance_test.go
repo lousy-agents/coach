@@ -82,7 +82,8 @@ var _ = Describe("coach codesignal --project-config", func() {
 			Expect(exitCode).To(Equal(2), "explicit empty --project-config must be project_config_invalid; stdout=%s stderr=%s", stdout, stderr)
 			Expect(stdout).To(BeEmpty(), "a --project-config load/validation failure must write NOTHING to stdout")
 			Expect(string(stderr)).NotTo(BeEmpty())
-			Expect(string(stderr)).To(ContainSubstring(initialSHA), "stderr must identify the analyzed revision")
+			Expect(string(stderr)).To(ContainSubstring(`--project-config "" is invalid`), "stderr must name the empty value")
+			Expect(string(stderr)).NotTo(ContainSubstring(initialSHA), "an empty path is refused before any revision is read, so stderr must not judge it at one")
 		})
 	})
 

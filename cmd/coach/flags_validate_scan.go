@@ -43,6 +43,9 @@ func validateCodesignalFlags(f codesignalFlags, positional []string) string {
 			return check.message()
 		}
 	}
+	if f.projectConfigSet && f.projectConfig == "" {
+		return invalidProjectConfigMessage(f.projectConfig)
+	}
 	if len(positional) > 0 {
 		return fmt.Sprintf("coach: unexpected positional argument %q", positional[0])
 	}
