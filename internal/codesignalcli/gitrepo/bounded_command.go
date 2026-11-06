@@ -29,11 +29,16 @@ type BoundError struct {
 	Kind    BoundErrorKind
 }
 
-// commandContext builds the git child used by bounded reads. Tests may
-// replace it to simulate hung or oversized children.
-var commandContext = func(ctx context.Context, dir string, args ...string) *exec.Cmd {
+// ReadCommandContext builds a git child that starts with the arguments every
+// read of this package starts with. A caller that varies only the child's
+// environment builds on it, so its reads inherit the same hardening.
+func ReadCommandContext(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	return exec.CommandContext(ctx, "git", gitArgs(dir, args...)...)
 }
+
+// commandContext builds the git child used by bounded reads. Tests may
+// replace it to simulate hung or oversized children.
+var commandContext = ReadCommandContext
 
 // RunBytesBoundedWith is the shared bounded-git-read implementation
 // behind RunBytesBounded: a wall-time limit, hard stdout/stderr caps, and
