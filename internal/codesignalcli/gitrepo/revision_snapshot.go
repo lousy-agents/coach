@@ -1,6 +1,7 @@
 package gitrepo
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
@@ -28,7 +29,16 @@ func ExtractRevision(repositoryRoot, revision string) (string, error) {
 	}
 	if err := writeSnapshot(repositoryRoot, dir, entries); err != nil {
 		os.RemoveAll(dir)
-		return "", fmt.Errorf("reading source snapshot %q: %w", revision, err)
+		return "", fmt.Errorf("reading source snapshot %q: %w", revision, adviseOnMissingObjects(repositoryRoot, revision, err))
 	}
 	return dir, nil
+}
+
+// adviseOnMissingObjects adds the way to fetch to a snapshot that stopped at objects a partial clone lacks.
+func adviseOnMissingObjects(repositoryRoot, revision string, err error) error {
+	var absent *ObjectsNotLocalError
+	if errors.As(err, &absent) {
+		absent.Advice = FetchAdvice(RunBytes, repositoryRoot, revision, "")
+	}
+	return err
 }

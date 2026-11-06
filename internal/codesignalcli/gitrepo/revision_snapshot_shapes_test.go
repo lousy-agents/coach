@@ -89,6 +89,9 @@ func TestExtractRevisionReportsTheObjectsAPartialCloneLacksAndFetchesNone(t *tes
 	if absent.Count != 1 || absent.FirstPath != "cfg/p.json" {
 		t.Errorf("error = %+v; want the one missing object, at cfg/p.json", absent)
 	}
+	if !strings.Contains(err.Error(), "git rev-list --objects --missing=print --no-walk") {
+		t.Errorf("error %q; want it to name the batch that fetches the revision's files", err)
+	}
 	if _, statErr := os.Stat(marker); statErr == nil {
 		t.Errorf("git ran the ssh program to fetch an object")
 	}

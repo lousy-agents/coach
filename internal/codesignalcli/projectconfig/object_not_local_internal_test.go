@@ -27,7 +27,7 @@ func TestAnObjectThatIsNotLocalIsToldInCoachsWordsAndNotGitsBareExitStatus(t *te
 		avoid        []string
 	}{
 		{"a partial clone and a path that can be shown", true, "cfg/p.json",
-			[]string{"could not check whether it is committed at the analyzed revision: its content is not in this partial clone, and Coach does not fetch objects; fetch it with git cat-file -e 'abc123:cfg/p.json' and run again"}, []string{"git said"}},
+			[]string{"could not check whether it is committed at the analyzed revision: its content is not in this partial clone, and Coach does not fetch objects; fetch it with git cat-file -e 'abc123:cfg/p.json', or the revision's files with git rev-list --objects --missing=print --no-walk abc123 | sed -n 's/^?//p' | git fetch origin --no-tags --no-write-fetch-head --filter=blob:none --stdin, and run again"}, []string{"git said"}},
 		{"a partial clone and a name with a control character", true, "cfg/esc\x1b[31m.json",
 			[]string{"its content is not in this partial clone"}, []string{"git cat-file", "git said"}},
 		{"a partial clone and a path outside the repository", true, "../p.json",

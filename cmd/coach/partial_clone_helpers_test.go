@@ -27,6 +27,11 @@ func gitOutputIn(dir string, args ...string) string {
 func commitPartialClone(remoteURL func(bare string) string) string {
 	source := commitScannableGoRepo()
 	commitFile(source, "cfg/p.json", singleRootPolicyJSON)
+	return partialCloneOf(source, remoteURL)
+}
+
+// partialCloneOf is a filtered, no-checkout clone of source, with its remote set to remoteURL(bare).
+func partialCloneOf(source string, remoteURL func(bare string) string) string {
 	bare := filepath.Join(GinkgoT().TempDir(), "bare.git")
 	gitOutputIn(source, "clone", "--bare", "--quiet", source, bare)
 	gitOutputIn(bare, "config", "uploadpack.allowFilter", "true")

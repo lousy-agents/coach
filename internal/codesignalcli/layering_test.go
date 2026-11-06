@@ -16,7 +16,7 @@ const modulePrefix = "github.com/lousy-agents/coach/internal/codesignalcli"
 var allowedSiblingImports = map[string][]string{
 	"":                    {"gitrepo", "pkgmanager", "policyref", "projectcheck", "projectconfig", "projectreadiness", "revisionfs", "tstoolchain"},
 	"configauthoring":     {"gitrepo", "projectconfig", "prompt", "revisionfs"},
-	"gitrepo":             {},
+	"gitrepo":             {"shellword"},
 	"internal/gitfixture": {},
 	"invocation":          {"policyref", "shellword"},
 	"pkgmanager":          {"gitrepo", "projectreadiness", "subprocess", "tstoolchain"},

@@ -3,6 +3,7 @@ package gitrepo
 import (
 	"errors"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 )
@@ -51,6 +52,9 @@ func TestAPolicyBlobThatAPartialCloneLacksIsReportedAsNotLocal(t *testing.T) {
 	var operational *OperationalError
 	var absent *ObjectNotLocalError
 	if !errors.As(err, &operational) || !errors.As(operational.Cause, &absent) {
-		t.Errorf("BlobEntryAtRevision error = %#v; want an OperationalError caused by an ObjectNotLocalError", err)
+		t.Fatalf("BlobEntryAtRevision error = %#v; want an OperationalError caused by an ObjectNotLocalError", err)
+	}
+	if strings.Contains(operational.Message, "exit status") || !strings.Contains(operational.Message, "its content is not in the local object store") {
+		t.Errorf("message %q; want Coach's words, not git's bare exit status", operational.Message)
 	}
 }
