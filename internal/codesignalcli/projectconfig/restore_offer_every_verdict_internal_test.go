@@ -18,6 +18,7 @@ const unknownVerdict = restoreVerdict(99)
 type offerWant struct {
 	offered  bool
 	remedy   projectreadiness.PolicyRemedy
+	cause    projectreadiness.PolicyCause
 	contains []string
 	command  bool // a git restore command is printed
 }
@@ -36,17 +37,18 @@ type verdictCase struct {
 type offerSummary struct {
 	offered        bool
 	remedy         projectreadiness.PolicyRemedy
+	cause          projectreadiness.PolicyCause
 	saysEverything bool
 	printsRestore  bool
 }
 
 func summarizeOffer(offer restoreOffer, offered bool, contains []string) offerSummary {
 	saysAll := !slices.ContainsFunc(contains, func(part string) bool { return !strings.Contains(offer.text, part) })
-	return offerSummary{offered, offer.remedy, saysAll, strings.Contains(offer.text, "git restore")}
+	return offerSummary{offered, offer.remedy, offer.cause, saysAll, strings.Contains(offer.text, "git restore")}
 }
 
 func (w offerWant) summary() offerSummary {
-	return offerSummary{w.offered, w.remedy, true, w.command}
+	return offerSummary{w.offered, w.remedy, w.cause, true, w.command}
 }
 
 // blockedIndex picks the column of the pairs below.
@@ -66,39 +68,46 @@ func (c verdictCase) judgment() policyJudgment {
 }
 
 func verdictCases() []verdictCase {
-	none := projectreadiness.RemedyNone
-	cannotRestore := func(words ...string) offerWant { return offerWant{true, none, words, false} }
-	bothWays := func(words ...string) (offerWant, offerWant) { return cannotRestore(words...), cannotRestore(words...) }
-	staged1, staged2 := bothWays("staged edit")
-	link1, link2 := bothWays("symbolic link")
-	sparse1, sparse2 := bothWays("sparse checkout")
-	merge1, merge2 := bothWays("unresolved merge conflict")
-	mark1, mark2 := bothWays("git update-index --no-skip-worktree")
-	nonFile1, nonFile2 := bothWays("not a regular file")
-	stagedMark1, stagedMark2 := bothWays("marked skip-worktree")
-	dir1, dir2 := bothWays("directory", "name a file")
-	emptyMark1, emptyMark2 := bothWays("empty entry", "marked skip-worktree", "git update-index --no-skip-worktree")
-	emptySparse1, emptySparse2 := bothWays("empty entry", "sparse checkout")
-	unknown1, unknown2 := bothWays("could not tell what a restore would do")
-	moveFirst := cannotRestore("after moving the file, restore the policy from git")
+	cannotRestore := func(cause projectreadiness.PolicyCause, words ...string) offerWant {
+		return offerWant{true, projectreadiness.RemedyNone, cause, words, false}
+	}
+	bothWays := func(cause projectreadiness.PolicyCause, words ...string) (offerWant, offerWant) {
+		return cannotRestore(cause, words...), cannotRestore(cause, words...)
+	}
+	restores := func(words ...string) offerWant {
+		return offerWant{true, projectreadiness.RemedyRestore, "", words, true}
+	}
+	staged1, staged2 := bothWays(projectreadiness.CauseStagedEdit, "staged edit")
+	link1, link2 := bothWays(projectreadiness.CauseCommittedAsLink, "symbolic link")
+	sparse1, sparse2 := bothWays(projectreadiness.CauseSparseCheckout, "sparse checkout")
+	merge1, merge2 := bothWays(projectreadiness.CauseMergeConflict, "unresolved merge conflict")
+	mark1, mark2 := bothWays(projectreadiness.CauseSkipWorktree, "git update-index --no-skip-worktree")
+	nonFile1, nonFile2 := bothWays(projectreadiness.CauseStagedNotAFile, "not a regular file")
+	stagedMark1, stagedMark2 := bothWays(projectreadiness.CauseSkipWorktree, "marked skip-worktree")
+	stagedSparse1, stagedSparse2 := bothWays(projectreadiness.CauseSparseCheckout, "sparse checkout")
+	emptyMark1, emptyMark2 := bothWays(projectreadiness.CauseSkipWorktree, "empty entry", "marked skip-worktree", "git update-index --no-skip-worktree")
+	emptySparse1, emptySparse2 := bothWays(projectreadiness.CauseSparseCheckout, "empty entry", "sparse checkout")
+	dir1, dir2 := bothWays(projectreadiness.CauseDirectory, "directory", "name a file")
+	unmergedNew1, unmergedNew2 := bothWays(projectreadiness.CauseMergeConflict, "unresolved merge conflict")
+	unknown1, unknown2 := bothWays(projectreadiness.CauseUndetermined, "could not tell what a restore would do")
+	moveFirst := cannotRestore(projectreadiness.CauseParentNotDirectory, "after moving the file, restore the policy from git")
 	return []verdictCase{
 		{"nothing committed and nothing staged", restoreNotCommitted, offerWant{}, offerWant{}, false},
-		{"a restore that overwrites nothing", restoreOverwritesNothing,
-			offerWant{true, projectreadiness.RemedyRestore, []string{"restore it with " + restoreSource}, true}, moveFirst, false},
-		{"a restore over an empty index entry", restoreOverwritesEmptyEntry,
-			offerWant{true, projectreadiness.RemedyRestore, []string{"restoring brings back the committed copy", restoreSource}, true}, moveFirst, false},
+		{"a restore that overwrites nothing", restoreOverwritesNothing, restores("restore it with " + restoreSource), moveFirst, false},
+		{"a restore over an empty index entry", restoreOverwritesEmptyEntry, restores("restoring brings back the committed copy", restoreSource), moveFirst, false},
 		{"a staged edit a restore would discard", restoreDiscardsStagedEdit, staged1, staged2, false},
 		{"a committed link", restoreRecreatesLink, link1, link2, false},
 		{"a sparse checkout that leaves the policy out", restoreSkippedBySparseCheckout, sparse1, sparse2, false},
-		{"a question git could not answer", restoreUndecidable, cannotRestore("could not check"), offerWant{}, true},
+		{"a question git could not answer", restoreUndecidable, cannotRestore(projectreadiness.CauseGitUnreadable, "could not check"), offerWant{}, true},
 		{"a committed unmerged entry", restoreMergeConflict, merge1, merge2, false},
 		{"a committed policy marked skip-worktree", restoreSkipWorktreeMarked, mark1, mark2, false},
 		{"a staged copy of a policy nothing commits", restoreStagedNotCommitted,
-			offerWant{true, none, []string{"staged copy", "restore it with git restore -- "}, true}, cannotRestore("move the file that blocks the path"), false},
-		{"an unmerged entry for a policy nothing commits", restoreUnmergedNotCommitted, merge1, merge2, false},
+			offerWant{true, projectreadiness.RemedyNone, projectreadiness.CauseStagedCopy, []string{"staged copy", "restore it with git restore -- "}, true},
+			cannotRestore(projectreadiness.CauseStagedCopy, "move the file that blocks the path"), false},
+		{"an unmerged entry for a policy nothing commits", restoreUnmergedNotCommitted, unmergedNew1, unmergedNew2, false},
 		{"a staged link of a policy nothing commits", restoreStagedNonFileNotCommitted, nonFile1, nonFile2, false},
 		{"a staged copy marked skip-worktree", restoreStagedSkipWorktreeNotCommitted, stagedMark1, stagedMark2, false},
-		{"a staged copy a sparse checkout leaves out", restoreStagedSparseNotCommitted, sparse1, sparse2, false},
+		{"a staged copy a sparse checkout leaves out", restoreStagedSparseNotCommitted, stagedSparse1, stagedSparse2, false},
 		{"an empty entry marked skip-worktree for a policy nothing commits", restoreEmptySkipWorktreeNotCommitted, emptyMark1, emptyMark2, false},
 		{"an empty entry a sparse checkout leaves out", restoreEmptySparseNotCommitted, emptySparse1, emptySparse2, false},
 		{"a directory in the index", restoreDirectoryInIndex, dir1, dir2, false},
@@ -148,7 +157,7 @@ func assertOfferFor(t *testing.T, c verdictCase, blocked bool) {
 	offer, offered := restoreOfferFor(c.judgment(), "HEAD", &ConfigError{Kind: KindMissing, Cause: cause}, "cfg/p.json")
 
 	if got := summarizeOffer(offer, offered, want.contains); got != want.summary() {
-		t.Errorf("offer %q (offered %v, remedy %d) does not match %+v: it must say %q and print a git restore command = %v",
-			offer.text, offered, offer.remedy, want, want.contains, want.command)
+		t.Errorf("offer %q (offered %v, remedy %d, cause %q) does not match %+v: it must say %q and print a git restore command = %v",
+			offer.text, offered, offer.remedy, offer.cause, want, want.contains, want.command)
 	}
 }

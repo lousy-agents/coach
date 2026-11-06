@@ -3,7 +3,6 @@ package projectconfig
 import (
 	"encoding/json"
 	"errors"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
@@ -53,9 +52,5 @@ func ExplicitOnDiskStatus(run gitrepo.Runner, dir, revision, repoPath string) (*
 	if !offered {
 		return &judged, nil
 	}
-	result := annotated(&judged, offer)
-	if offer.remedy == projectreadiness.RemedyNone {
-		result.PolicyCause = offerCause(judgment, found.Cause == CauseBlockedParent)
-	}
-	return result, nil
+	return annotated(&judged, offer), nil
 }
