@@ -14,8 +14,20 @@ import (
 // entry matches is left to the other checks, because a Unicode normalization
 // difference is not one.
 func checkExactNames(root *os.Root, repoPath string) error {
+	return checkExactNamesThrough(root, repoPath, strings.Count(repoPath, "/")+1)
+}
+
+// checkExactParents is checkExactNames for the directories above the file alone.
+// A file that is not there has no spelling to compare, and where the file system
+// tells cases apart a name in another case is another file.
+func checkExactParents(root *os.Root, repoPath string) error {
+	return checkExactNamesThrough(root, repoPath, strings.Count(repoPath, "/"))
+}
+
+// checkExactNamesThrough checks the first count components of the path.
+func checkExactNamesThrough(root *os.Root, repoPath string, count int) error {
 	parts := strings.Split(repoPath, "/")
-	for i, part := range parts {
+	for i, part := range parts[:count] {
 		directory := "."
 		if i > 0 {
 			directory = strings.Join(parts[:i], "/")

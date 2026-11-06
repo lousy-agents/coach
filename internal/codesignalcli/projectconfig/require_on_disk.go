@@ -40,7 +40,7 @@ func checkRegularFileUnder(rootDir, repoPath string) error {
 		return err
 	}
 	if err := checkEntry(root, repoPath); err != nil {
-		return err
+		return spellingBeforeMissing(root, repoPath, err)
 	}
 	return checkExactNames(root, repoPath)
 }
