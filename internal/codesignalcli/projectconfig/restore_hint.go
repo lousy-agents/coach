@@ -26,3 +26,22 @@ func RestoreAdvice(revision, repoPath string) string {
 	}
 	return "restore it from git at the analyzed revision (the name has a character that is not printed here)"
 }
+
+// RestoreFromIndexAdvice is how to bring back a file the index still holds: git
+// restore without a source restores the working tree from the index and leaves
+// the index alone.
+func RestoreFromIndexAdvice(repoPath string) string {
+	if ValidatePath(repoPath) == nil && shellword.Printable(repoPath) {
+		return "restore it with git restore -- " + shellword.Quote(":(top,literal)"+repoPath)
+	}
+	return "restore it from the index (the name has a character that is not printed here)"
+}
+
+// clearSkipWorktreeAdvice is the command that clears a skip-worktree bit. It
+// takes a path relative to the repository root, not a pathspec.
+func clearSkipWorktreeAdvice(repoPath string) string {
+	if ValidatePath(repoPath) == nil && shellword.Printable(repoPath) {
+		return "clear the mark with git update-index --no-skip-worktree -- " + shellword.Quote(repoPath) + " from the repository root"
+	}
+	return "clear the mark with git update-index --no-skip-worktree (the name has a character that is not printed here)"
+}

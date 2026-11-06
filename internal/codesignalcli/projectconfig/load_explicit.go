@@ -68,8 +68,14 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 		return restoreOffer{}, false
 	case verdict == restoreUndecidable:
 		return undecidableOffer(judgment.failure), true
+	case verdict == restoreStagedNotCommitted:
+		return stagedOnlyOffer(repoPath, blocked), true
+	case verdict == restoreMergeConflict:
+		return mergeConflictOffer, true
 	case verdict == restoreDiscardsStagedEdit:
 		return stagedEditOffer, true
+	case verdict == restoreSkipWorktreeMarked:
+		return skipWorktreeOffer(repoPath), true
 	case verdict == restoreRecreatesLink:
 		return committedLinkOffer, true
 	case verdict == restoreSkippedBySparseCheckout:
