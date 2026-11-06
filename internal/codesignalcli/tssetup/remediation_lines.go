@@ -3,6 +3,7 @@ package tssetup
 import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/invocation"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -54,7 +55,11 @@ func AlsoFailingGapLines(readiness *projectreadiness.Result, policy policyref.Re
 // name a command that language cannot run (AC-2: an offered remediation must
 // actually be supported for the language it is offered to). It never appends
 // a --project-config suffix: validateSuggestProjectConfigFlags rejects
-// --suggest-project-config combined with --project-config.
+// --suggest-project-config combined with --project-config. A policy the user
+// named somewhere authoring does not write by default is named with --output
+// instead, because the command is offered to make that path exist: without it
+// the command would succeed, write the default location, and leave the named
+// path as missing as before.
 //
 // The TypeScript form qualifies the command rather than naming it bare,
 // because this line is printed precisely when no controlling terminal is
@@ -63,12 +68,24 @@ func AlsoFailingGapLines(readiness *projectreadiness.Result, policy policyref.Re
 // instruction -- draft the document, have it reviewed and committed -- is
 // the path actually open here, so it is stated alongside the command rather
 // than discovered by spending an invocation on it.
-func SuggestProjectConfigRemediation(language string) string {
+func SuggestProjectConfigRemediation(language string, policy policyref.Ref) string {
+	target := authoringTarget(policy)
 	if language == "typescript" {
-		return onATerminal(invocation.Command{Mode: invocation.SuggestProjectConfig}.Phrase("")) +
+		return onATerminal(invocation.Command{Mode: invocation.SuggestProjectConfig, Target: target}.Phrase("")) +
 			" -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"
 	}
-	return "coach codesignal --baseline --suggest-project-config"
+	return invocation.BatchAuthoring(target)
+}
+
+// authoringTarget is where authoring has to write for the policy the user named
+// to exist: empty when nothing was named, or when the name is where authoring
+// writes by default.
+func authoringTarget(policy policyref.Ref) string {
+	named, ok := policy.NamedPath()
+	if !ok || named == projectconfig.CanonicalPath {
+		return ""
+	}
+	return named
 }
 
 // AppendedRemediationLine withholds line whenever hasControllingTerminal is

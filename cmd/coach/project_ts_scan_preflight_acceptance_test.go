@@ -156,7 +156,7 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 			lines := stderrLines(stderr)
 			Expect(lines[0]).To(And(ContainSubstring("project.json"), ContainSubstring("project_config_missing")), "the missing-policy message must name the path and project_config_missing")
 			Expect(alsoFailingGapCodes(lines)).To(Equal([]string{"typescript_compiler_missing", "package_manager_version_unverifiable"}), "AC-SET-13 requires reporting every gap the policy load's short circuit would otherwise mask -- not only the compiler check -- in readiness's own frozen order; stderr: %s", stderr)
-			Expect(lines[len(lines)-1]).To(Equal("on a terminal: coach codesignal --baseline --suggest-project-config --project-language typescript -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"), "AC-SET-9's appended command must never combine --suggest-project-config with --project-config (validateSuggestProjectConfigFlags rejects that combination)")
+			Expect(lines[len(lines)-1]).To(Equal("on a terminal: coach codesignal --baseline --suggest-project-config --project-language typescript --output project.json -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"), "AC-SET-9's appended command must never combine --suggest-project-config with --project-config (validateSuggestProjectConfigFlags rejects that combination)")
 		})
 	})
 
@@ -184,7 +184,7 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 				Expect(lines).To(HaveLen(4), "stderr: %s", stderr)
 				Expect(lines[0]).To(And(ContainSubstring("project.json"), ContainSubstring("project_config_missing")), "the missing-policy message must name the path and project_config_missing")
 				Expect(alsoFailingGapCodes(lines)).To(Equal([]string{"typescript_compiler_missing", "package_manager_version_unverifiable"}), "AC-SET-13 requires reporting every gap the policy load's short circuit would otherwise mask; stderr: %s", stderr)
-				Expect(lines[len(lines)-1]).To(Equal("on a terminal: coach codesignal --baseline --suggest-project-config --project-language typescript -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"), "the only offered interactive action must still be guided policy authoring, never --prepare-compiler, until a policy is reviewed and committed")
+				Expect(lines[len(lines)-1]).To(Equal("on a terminal: coach codesignal --baseline --suggest-project-config --project-language typescript --output project.json -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"), "the only offered interactive action must still be guided policy authoring, never --prepare-compiler, until a policy is reviewed and committed")
 			},
 			Entry("--format=json", "--format=json"),
 			Entry("--format=text", "--format=text"),
@@ -217,7 +217,7 @@ var _ = Describe("coach codesignal (real scan): appended interactive-setup remed
 			Expect(lines[0]).To(And(ContainSubstring("project.json"), ContainSubstring("project_config_missing")), "the missing-policy message must name the path and project_config_missing")
 			Expect(lines).To(HaveLen(4), "stderr: %s", stderr)
 			Expect(alsoFailingGapCodes(lines)).To(Equal([]string{"typescript_compiler_missing", "package_manager_version_unverifiable"}), "a nested, unvalidated package.json must not suppress a compiler gap readiness itself reports, and unsupported_repository_shape must never appear once checkProjectShape reports not_checked; stderr: %s", stderr)
-			Expect(lines[len(lines)-1]).To(Equal("on a terminal: coach codesignal --baseline --suggest-project-config --project-language typescript -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"))
+			Expect(lines[len(lines)-1]).To(Equal("on a terminal: coach codesignal --baseline --suggest-project-config --project-language typescript --output project.json -- guided authoring requires a controlling terminal; without one, draft the schema-1 project-config document yourself, have a human review and commit it, then rerun with --project-config <path>"))
 		})
 	})
 })

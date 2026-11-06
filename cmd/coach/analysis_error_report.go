@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
@@ -43,8 +44,8 @@ import (
 // --prepare-compiler can never run -- ScanSetupOfferRemediation (R2) names
 // rerunning this same scan on a terminal instead, so that repository is
 // still told a next step rather than only the bare --check-project line.
-func classifyAnalysisError(err error, language string, noInteractive bool, stderr *os.File) int {
-	report := analysisErrorReportFor(err, language, terminal.HasControllingTerminal(os.Stdin) && !noInteractive)
+func classifyAnalysisError(err error, language string, policy policyref.Ref, noInteractive bool, stderr *os.File) int {
+	report := analysisErrorReportFor(err, language, policy, terminal.HasControllingTerminal(os.Stdin) && !noInteractive)
 	for _, line := range report.lines {
 		fmt.Fprintln(stderr, line)
 	}
@@ -63,7 +64,7 @@ type analysisErrorReport struct {
 // analysisErrorReportFor matches err against the error classes in the order
 // their wrappers require: each *WithReadiness wrapper comes before the type
 // its Unwrap would otherwise satisfy first.
-func analysisErrorReportFor(err error, language string, hasControllingTerminal bool) analysisErrorReport {
+func analysisErrorReportFor(err error, language string, policy policyref.Ref, hasControllingTerminal bool) analysisErrorReport {
 	var unresolvedWithReadiness *tssetup.CompilerUnresolvedErrorWithReadiness
 	if errors.As(err, &unresolvedWithReadiness) {
 		remediation := tssetup.PrepareCompilerRemediationWithReadiness(unresolvedWithReadiness.Code, unresolvedWithReadiness.Policy, unresolvedWithReadiness.Readiness)
@@ -86,11 +87,11 @@ func analysisErrorReportFor(err error, language string, hasControllingTerminal b
 	if errors.As(err, &configErrWithReadiness) {
 		return classTwoReport(configErrWithReadiness.Message,
 			tssetup.AlsoFailingGapLines(configErrWithReadiness.Readiness, configErrWithReadiness.Policy),
-			authoringRemediation(configErrWithReadiness.ConfigError, hasControllingTerminal, language))
+			authoringRemediation(configErrWithReadiness.ConfigError, policy, hasControllingTerminal, language))
 	}
 	var configErr *projectconfig.ConfigError
 	if errors.As(err, &configErr) {
-		return classTwoReport(configErr.Message, nil, authoringRemediation(configErr, hasControllingTerminal, language))
+		return classTwoReport(configErr.Message, nil, authoringRemediation(configErr, policy, hasControllingTerminal, language))
 	}
 	var opErr *gitrepo.OperationalError
 	if errors.As(err, &opErr) {
@@ -101,12 +102,24 @@ func analysisErrorReportFor(err error, language string, hasControllingTerminal b
 
 // authoringRemediation is the appended --suggest-project-config line, withheld
 // when authoring a policy cannot fix the error: the policy is committed and
-// only needs restoring, or its path cannot be created.
-func authoringRemediation(configErr *projectconfig.ConfigError, hasControllingTerminal bool, language string) string {
+// only needs restoring, or its path cannot be created. It writes the policy the
+// user named when nothing is at that path, so it names that path.
+func authoringRemediation(configErr *projectconfig.ConfigError, policy policyref.Ref, hasControllingTerminal bool, language string) string {
 	if action, named := projectreadiness.NextActionForRemedy(configErr.Remedy); !named || action != projectreadiness.NextActionAuthorPolicy {
 		return ""
 	}
-	return tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.SuggestProjectConfigRemediation(language))
+	return tssetup.AppendedRemediationLine(hasControllingTerminal, language, tssetup.SuggestProjectConfigRemediation(language, authoringTargetPolicy(configErr, policy)))
+}
+
+// authoringTargetPolicy is the policy authoring should write: the one the user
+// named when nothing is at its path, and none otherwise. Authoring is
+// create-only, so a policy that exists and is invalid cannot be its --output
+// target; the command is offered with authoring's default location, as before.
+func authoringTargetPolicy(configErr *projectconfig.ConfigError, policy policyref.Ref) policyref.Ref {
+	if configErr.Kind == projectconfig.KindMissing || configErr.Kind == projectconfig.KindNotFound {
+		return policy
+	}
+	return policyref.Ref{}
 }
 
 // classTwoReport assembles the shape every class-2 diagnostic shares (owner
