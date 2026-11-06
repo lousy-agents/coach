@@ -14,27 +14,34 @@ import (
 // name, when the analyzed revision holds the same path in another case and git ignores case. It is nil
 // otherwise, which leaves the policy plainly uncommitted. The user changed only the case of a name, and on
 // such a repository `git add` records nothing for that, so "commit the file" would end in "nothing to
-// commit".
-func caseOnlyRenameRefusal(run gitrepo.Runner, dir, revision, repoPath string) *ConfigError {
+// commit". The failure is a question git could not answer, which is not "plainly uncommitted" either.
+func caseOnlyRenameRefusal(run gitrepo.Runner, dir, revision, repoPath string) (*ConfigError, *gitFailure) {
 	return caseOnlyRenameRefusalWith(run, dir, entriesThrough(run, dir, revision), repoPath)
 }
 
-func caseOnlyRenameRefusalWith(run gitrepo.Runner, dir string, entries revisionEntries, repoPath string) *ConfigError {
-	if !gitrepo.IgnoresCase(run, dir) {
-		return nil
+func caseOnlyRenameRefusalWith(run gitrepo.Runner, dir string, entries revisionEntries, repoPath string) (*ConfigError, *gitFailure) {
+	ignores, err := gitrepo.IgnoresCase(run, dir)
+	if err != nil {
+		return nil, newGitFailure("whether git ignores case", err)
+	}
+	if !ignores {
+		return nil, nil
 	}
 	return caseOnlyRename(entries, repoPath)
 }
 
-func caseOnlyRename(entries revisionEntries, repoPath string) *ConfigError {
+func caseOnlyRename(entries revisionEntries, repoPath string) (*ConfigError, *gitFailure) {
 	parts := strings.Split(repoPath, "/")
-	spelled, ambiguous, changed := spellingInRevision(entries, parts)
+	spelled, ambiguous, changed, err := spellingInRevision(entries, parts)
+	if err != nil {
+		return nil, newGitFailure(listingQuestion, err)
+	}
 	if ambiguous != nil || !changed {
-		return nil
+		return nil, nil
 	}
 	held := strings.Join(spelled, "/")
 	reason := fmt.Sprintf("exists on disk, but the analyzed revision holds the path as %q, and this file system ignores case, so git add records nothing for the difference%s", held, renameAdvice(parts, spelled))
-	return newUnusableOnDisk(repoPath, projectreadiness.CauseNameCaseDiffers, reason)
+	return newUnusableOnDisk(repoPath, projectreadiness.CauseNameCaseDiffers, reason), nil
 }
 
 // renameAdvice follows from the first component that differs. A file can be renamed in the index with

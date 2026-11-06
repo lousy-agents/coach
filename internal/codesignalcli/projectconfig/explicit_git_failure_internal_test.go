@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func statusWhenGitFails(t *testing.T, fake indexFake) *ConfigError {
@@ -47,6 +48,20 @@ func TestATreeLookupFailureNamesTheCommitQuestionAndGitsError(t *testing.T) {
 		t.Errorf("message %q; want it to carry git's error", status.Message)
 	}
 	requireTheIndexLeftUnread(t, status, "git could not say whether the policy is committed, so the index cannot be judged and a staged edit may be there unread")
+}
+
+// The revision's own listing says whether a policy missing from disk is committed in another case. When git
+// cannot give it, the status says that question went unanswered and carries the failure, so readiness
+// reports an operational error and offers neither a new policy nor a commit.
+func TestAFailedListingOfTheRevisionNamesItsQuestionAndGitsError(t *testing.T) {
+	status := statusWhenGitFails(t, indexFake{listingErr: errors.New("boom: listing unreadable")})
+
+	if !strings.Contains(status.Message, "whether the analyzed revision holds it in another case") || !strings.Contains(status.Message, "boom: listing unreadable") {
+		t.Errorf("message %q; want it to name the question that failed and carry git's error", status.Message)
+	}
+	if status.GitFailure == nil || status.PolicyCause != projectreadiness.CauseGitUnreadable || status.Remedy != projectreadiness.RemedyNone {
+		t.Errorf("status = failure %v, cause %q, remedy %v; want the failure kept, %q, and nothing offered", status.GitFailure, status.PolicyCause, status.Remedy, projectreadiness.CauseGitUnreadable)
+	}
 }
 
 func TestAGitFailureIsSanitizedAndBounded(t *testing.T) {

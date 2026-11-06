@@ -57,7 +57,6 @@ func TestADiscoveredPolicyIsLeftAloneWhenTheRevisionHoldsNothingLikeIt(t *testin
 		{"nothing at all", fakeRevision{}.entries},
 		{"another policy file", fakeRevision{"": {"project.json"}}.entries},
 		{"the directory without the file", fakeRevision{"": {".lousy-agents"}, ".lousy-agents": {"other.json"}}.entries},
-		{"the revision cannot be asked", failingRevision},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

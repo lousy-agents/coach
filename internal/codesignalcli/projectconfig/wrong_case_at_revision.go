@@ -14,7 +14,8 @@ import (
 // reads and the revision holds that path in another case, as .Lousy-Agents/Coach.json for
 // .lousy-agents/coach.json. The policy is committed, so offering to author one is wrong, and falling back
 // to no policy at all would drop its layer checks without a word. It is nil when the revision holds
-// nothing like the path, or cannot be asked, which leaves the policy plainly missing.
+// nothing like the path. A revision that cannot be listed is a refusal too: the policy is not plainly missing
+// while git has not said whether it is committed in another case.
 //
 // It is for a policy Coach found. A path the user named is told in its own words, since the user typed it.
 func WrongCaseAtRevision(run gitrepo.Runner, dir, revision, repoPath string) *ConfigError {
@@ -22,7 +23,10 @@ func WrongCaseAtRevision(run gitrepo.Runner, dir, revision, repoPath string) *Co
 }
 
 func wrongCaseOf(entries revisionEntries, repoPath string) *ConfigError {
-	spelled, ambiguous, changed := spellingInRevision(entries, strings.Split(repoPath, "/"))
+	spelled, ambiguous, changed, err := spellingInRevision(entries, strings.Split(repoPath, "/"))
+	if err != nil {
+		return unansweredListing(fmt.Sprintf("nothing is committed at %q, the path Coach reads for the policy", repoPath), err)
+	}
 	if ambiguous != nil {
 		return wrongCaseRefusal(fmt.Sprintf("the analyzed revision holds the policy under several spellings, %s, and Coach reads %q: keep one of them at that path and remove the others", quotedList(ambiguous), repoPath))
 	}

@@ -2,6 +2,7 @@ package projectcheck
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
@@ -26,10 +27,20 @@ func checkDiscoveredPolicy(dir, revision, policyPath string) (projectreadiness.C
 	check, roots, err := checkPolicy(dir, revision, policyPath)
 	if err == nil && check.Code == projectreadiness.GapPolicyMissing {
 		if renamed := projectconfig.WrongCaseAtRevision(runReadinessGit, dir, revision, policyPath); renamed != nil {
-			return policyGapFrom(renamed)
+			return gapForWrongCase(renamed, policyPath)
 		}
 	}
 	return check, roots, err
+}
+
+// gapForWrongCase is the result for a discovered policy that is missing where Coach reads it: the gap that
+// names the other case it is committed in. When git could not say whether it is, the result is the
+// operational error that names the question, which is how every question git could not answer is reported.
+func gapForWrongCase(renamed *projectconfig.ConfigError, policyPath string) (projectreadiness.Check, []string, error) {
+	if renamed.GitFailure != nil {
+		return projectreadiness.Check{}, nil, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: the policy at %q: %s", policyPath, renamed.GitFailure), Cause: errors.Unwrap(renamed.GitFailure)}
+	}
+	return policyGapFrom(renamed)
 }
 
 // checkPolicy judges the policy at the analyzed revision. An entry that is not a blob is no policy and

@@ -2,6 +2,7 @@ package projectconfig
 
 import (
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -22,8 +23,11 @@ type indexFake struct {
 	uncommitted bool
 	// sparse answers `git config core.sparseCheckout`: true when set, unset when not.
 	sparse bool
-	// lsTreeErr makes the tree lookup fail, as it does when git cannot read the commit.
+	// lsTreeErr makes the lookup of the policy's own entry fail, as it does when git cannot read the commit.
 	lsTreeErr error
+	// listingErr makes the listing of a directory of the revision fail, which is what the case-spelling
+	// checks ask. The fake otherwise lists nothing, so no spelling in another case is found.
+	listingErr error
 	// committedMode is the mode the tree lookup reports; it is a regular file when empty.
 	committedMode string
 	// gitPathErr makes `rev-parse --git-path` fail, as it does when git cannot say where the index lock is.
@@ -43,6 +47,9 @@ func (f indexFake) run(dir string, args ...string) ([]byte, error) {
 	case "rev-parse":
 		return f.revParse(dir, args)
 	case "ls-tree":
+		if slices.Contains(args, "--name-only") {
+			return nil, f.listingErr
+		}
 		if f.lsTreeErr != nil {
 			return nil, f.lsTreeErr
 		}
