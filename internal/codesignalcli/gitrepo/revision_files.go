@@ -1,9 +1,6 @@
 package gitrepo
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 // TreeEntry is the mode and object name git records for a path, in a tree or
 // in the index.
@@ -30,7 +27,7 @@ func FileExistsAtRevision(run Runner, dir, revision, repoPath string) (bool, err
 //  1. Confirm revision itself resolves to a commit. Any failure here (bad
 //     revision, unreadable repository, corrupt commit/tree objects) is
 //     unambiguously operational.
-//  2. Resolve repoPath within revision's tree via `git ls-tree --full-tree
+//  2. Resolve repoPath within revision's tree via `git ls-tree -z --full-tree
 //     <revision> -- :(top,literal)<repoPath>`, which walks tree objects but
 //     never opens blob content. `--full-tree` is required: without it,
 //     ls-tree's pathspec is interpreted relative to dir (the process's cwd),
@@ -64,34 +61,22 @@ func BlobEntryAtRevision(run Runner, dir, revision, repoPath string) (TreeEntry,
 		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: revision %q could not be verified: %s", revision, err), Cause: err}
 	}
 
-	output, err := run(dir, "ls-tree", "--full-tree", revision, "--", ":(top,literal)"+repoPath)
+	output, err := run(dir, "ls-tree", "-z", "--full-tree", revision, "--", ":(top,literal)"+repoPath)
 	if err != nil {
 		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be resolved at revision %q: %s", repoPath, revision, err), Cause: err}
 	}
-	entry, ok := lsTreeBlob(output)
-	if !ok {
+	record, found, err := readLsTreeRecord(output, repoPath)
+	if err != nil {
+		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be resolved at revision %q: git printed a record this version cannot read", repoPath, revision), Cause: err}
+	}
+	if !found || record.objectType != "blob" {
 		return TreeEntry{}, false, nil
 	}
+	entry := TreeEntry{Mode: record.mode, SHA: record.object}
 
 	if _, err := run(dir, "cat-file", "-e", entry.SHA); err != nil {
 		cause := classifyObjectCheck(entry.SHA, err)
 		return TreeEntry{}, false, &OperationalError{Message: unreadableBlobMessage(run, dir, revision, repoPath, cause), Cause: cause}
 	}
 	return entry, true, nil
-}
-
-func lsTreeBlob(output []byte) (TreeEntry, bool) {
-	trimmed := strings.TrimSpace(string(output))
-	if trimmed == "" || strings.Contains(trimmed, "\n") {
-		return TreeEntry{}, false
-	}
-	meta, _, found := strings.Cut(trimmed, "\t")
-	if !found {
-		return TreeEntry{}, false
-	}
-	fields := strings.Fields(meta)
-	if len(fields) != 3 || fields[1] != "blob" {
-		return TreeEntry{}, false
-	}
-	return TreeEntry{Mode: fields[0], SHA: fields[2]}, true
 }

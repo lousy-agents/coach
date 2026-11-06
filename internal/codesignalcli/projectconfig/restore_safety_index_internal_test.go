@@ -3,6 +3,7 @@ package projectconfig
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -60,7 +61,9 @@ func (f indexFake) run(dir string, args ...string) ([]byte, error) {
 		if mode == "" {
 			mode = "100644"
 		}
-		return []byte(mode + " blob " + committedBlob + "\tpol.json\n"), nil
+		// git lists an entry under the path it was asked for.
+		asked := strings.TrimPrefix(args[len(args)-1], ":(top,literal)")
+		return []byte(mode + " blob " + committedBlob + "\t" + asked + "\x00"), nil
 	case "show":
 		return f.committedPolicy()
 	case "ls-files":

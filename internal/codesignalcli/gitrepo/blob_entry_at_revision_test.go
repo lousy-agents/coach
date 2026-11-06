@@ -18,7 +18,7 @@ func TestBlobEntryAtRevisionMatchesThePathRelativeToTheRepositoryRootLiterally(t
 		t.Fatalf("BlobEntryAtRevision: %v", err)
 	}
 
-	want := []string{"ls-tree", "--full-tree", "HEAD", "--", ":(top,literal):/main.go"}
+	want := []string{"ls-tree", "-z", "--full-tree", "HEAD", "--", ":(top,literal):/main.go"}
 	if !reflect.DeepEqual(lsTreeArgs, want) {
 		t.Errorf("ls-tree args = %v; want %v, so a path that reads as pathspec magic names a file of that spelling and nothing else", lsTreeArgs, want)
 	}
@@ -28,7 +28,7 @@ func TestBlobEntryAtRevisionReportsTheModeAndObjectName(t *testing.T) {
 	const blob = "0123456789012345678901234567890123456789"
 	run := func(_ string, args ...string) ([]byte, error) {
 		if args[0] == "ls-tree" {
-			return []byte("120000 blob " + blob + "\tlink.json\n"), nil
+			return []byte("120000 blob " + blob + "\tlink.json\x00"), nil
 		}
 		return nil, nil
 	}
