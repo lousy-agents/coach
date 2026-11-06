@@ -5,8 +5,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 const (
@@ -30,13 +28,14 @@ type indexFake struct {
 	lsTreeErr error
 	// committedMode is the mode the tree lookup reports; it is a regular file when empty.
 	committedMode string
+	// gitPathErr makes `rev-parse --git-path` fail, as it does when git cannot say where the index lock is.
+	gitPathErr error
 }
 
 func (f indexFake) run(dir string, args ...string) ([]byte, error) {
 	switch args[0] {
 	case "rev-parse":
-		// The repository root is a fact about the real repository on disk, not about the index.
-		return gitrepo.RunBytes(dir, args...)
+		return f.revParse(dir, args)
 	case "ls-tree":
 		if f.lsTreeErr != nil {
 			return nil, f.lsTreeErr

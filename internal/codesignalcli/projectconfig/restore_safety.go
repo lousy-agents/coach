@@ -104,7 +104,14 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 	unread := indexHoldsUnreadEntry(committed, found, withoutEmptyEntries(listed))
 	facts := indexFacts{entries: staged, unread: unread, sparse: sparseCheckoutEnabled(run, dir, staged), setAsideEmpty: len(staged) < len(listed)}
 	verdict := verdictFor(committed, found, facts)
-	return policyJudgment{verdict: verdict, indexEntryUnread: unread, indexLocked: offersRestoreCommand(verdict) && indexIsLocked(run, dir)}
+	if !offersRestoreCommand(verdict) {
+		return policyJudgment{verdict: verdict, indexEntryUnread: unread}
+	}
+	locked, err := indexIsLocked(run, dir)
+	if err != nil {
+		return policyJudgment{verdict: restoreUndecidable, indexEntryUnread: unread, failure: newGitFailure("whether the index is locked", err)}
+	}
+	return policyJudgment{verdict: verdict, indexEntryUnread: unread, indexLocked: locked}
 }
 
 // offersRestoreCommand is whether a verdict ends in a printed restore command, which is what a
@@ -115,21 +122,22 @@ func offersRestoreCommand(verdict restoreVerdict) bool {
 
 // indexIsLocked is whether the index lock file exists, which git leaves while another git process
 // writes the index and after one died. Both forms of restore Coach prints write the index. Where git
-// cannot say, the answer is no: the two reads before this one succeeded.
-func indexIsLocked(run gitrepo.Runner, dir string) bool {
+// cannot say where the lock would be, it is an error, and the restore is declined like every other
+// question git leaves unanswered.
+func indexIsLocked(run gitrepo.Runner, dir string) (bool, error) {
 	output, err := run(dir, "rev-parse", "--git-path", "index.lock")
 	if err != nil {
-		return false
+		return false, err
 	}
 	lock := strings.TrimSpace(string(output))
 	if lock == "" {
-		return false
+		return false, errors.New("git printed no path for the index lock")
 	}
 	if !filepath.IsAbs(lock) {
 		lock = filepath.Join(dir, lock)
 	}
 	_, statErr := os.Lstat(lock)
-	return statErr == nil
+	return statErr == nil, nil
 }
 
 // sparseCheckoutEnabled reports whether core.sparseCheckout is on. It asks git

@@ -3,6 +3,8 @@ package projectconfig
 import (
 	"slices"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 // pathAskedAbout is the path the listing is asked about: the first pathspec after "--", as
@@ -18,4 +20,15 @@ func (f indexFake) entriesBelow(args []string) []byte {
 		return nil
 	}
 	return []byte(pathAskedAbout(args) + "/inner.json\x00")
+}
+
+// revParse answers where the index lock would be, and leaves everything else about the repository,
+// such as its root, to the real one on disk, since those are facts about the repository and not about
+// the index.
+func (f indexFake) revParse(dir string, args []string) ([]byte, error) {
+	if slices.Contains(args, "--git-path") {
+		// No test of the fake leaves a lock there.
+		return []byte(".git/index.lock\n"), f.gitPathErr
+	}
+	return gitrepo.RunBytes(dir, args...)
 }
