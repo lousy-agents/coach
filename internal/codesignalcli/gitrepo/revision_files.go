@@ -74,7 +74,7 @@ func BlobEntryAtRevision(run Runner, dir, revision, repoPath string) (TreeEntry,
 	}
 
 	if _, err := run(dir, "cat-file", "-e", entry.SHA); err != nil {
-		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be read at revision %q: %s", repoPath, revision, err), Cause: err}
+		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be read at revision %q: %s", repoPath, revision, err), Cause: classifyObjectCheck(entry.SHA, err)}
 	}
 	return entry, true, nil
 }
