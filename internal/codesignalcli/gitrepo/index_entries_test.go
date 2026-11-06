@@ -147,6 +147,9 @@ func TestIndexEntriesRefusesAListingLineItCannotRead(t *testing.T) {
 		{"a mode with a digit that is not octal", "H 100948 " + blob + " 0\tpol.json\n"},
 		{"a stage that is not 0 to 3", "H 100644 " + blob + " 7\tpol.json\n"},
 		{"a tag of more than one character", "HH 100644 " + blob + " 0\tpol.json\n"},
+		{"a tag git does not print for an index entry", "X 100644 " + blob + " 0\tpol.json\n"},
+		{"a tag in the wrong case", "s 100644 " + blob + " 0\tpol.json\n"},
+		{"the tag of an untracked path", "? 100644 " + blob + " 0\tpol.json\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

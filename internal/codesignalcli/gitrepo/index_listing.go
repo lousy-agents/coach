@@ -21,10 +21,19 @@ func parseIndexListing(listing string) ([]IndexEntry, error) {
 func parseIndexLine(line string) (IndexEntry, error) {
 	meta, _, found := strings.Cut(line, "\t")
 	fields := strings.Fields(meta)
-	if !found || len(fields) != 4 || len(fields[0]) != 1 || !isOctalMode(fields[1]) || !isObjectID(fields[2]) || !isStage(fields[3]) {
+	if !found || len(fields) != 4 || !isIndexTag(fields[0]) || !isOctalMode(fields[1]) || !isObjectID(fields[2]) || !isStage(fields[3]) {
 		return IndexEntry{}, errUnparseableIndexLine
 	}
 	return IndexEntry{TreeEntry: TreeEntry{Mode: fields[1], SHA: fields[2]}, Stage: fields[3], SkipWorktree: fields[0] == skipWorktreeTag}, nil
+}
+
+// isIndexTag is true for the tags ls-files -t prints for an entry of the index:
+// H for a cached file, S for a skip-worktree one and M for an unmerged one. The
+// other tags git documents (R, C, K, ? and U) describe the listings that -d, -m,
+// -o, -k and -u ask for, which coach does not request, so one in this listing is
+// not something to read as a plain entry.
+func isIndexTag(tag string) bool {
+	return tag == "H" || tag == skipWorktreeTag || tag == "M"
 }
 
 // isOctalMode is true for the six octal digits of a git file mode.
