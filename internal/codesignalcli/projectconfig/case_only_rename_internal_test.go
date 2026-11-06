@@ -1,6 +1,7 @@
 package projectconfig
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -34,12 +35,12 @@ func TestAnUncommittedPolicyTheRevisionHoldsInAnotherCaseIsToldHowToRecordTheRen
 
 func assertRenameAdvice(t *testing.T, revision revisionEntries, repoPath string, want, avoid []string) {
 	t.Helper()
-	got, failure := caseOnlyRename(revision, repoPath)
+	verdict := caseOnlyRename(revision, repoPath)
 
-	if got == nil || failure != nil {
-		t.Fatalf("caseOnlyRename(%q) = %v, %v; want a refusal", repoPath, got, failure)
+	if verdict == nil {
+		t.Fatalf("caseOnlyRename(%q) = nil; want a refusal", repoPath)
 	}
-	assertCaseMismatchAdvice(t, got, want, avoid)
+	assertCaseMismatchAdvice(t, configErrorOf(t, verdict), want, avoid)
 }
 
 func TestAnUncommittedPolicyIsLeftAloneWhenTheRevisionHoldsNoOtherCaseOfIt(t *testing.T) {
@@ -61,8 +62,8 @@ func TestAnUncommittedPolicyIsLeftAloneWhenTheRevisionHoldsNoOtherCaseOfIt(t *te
 
 func assertPlainlyUncommitted(t *testing.T, revision revisionEntries, repoPath string) {
 	t.Helper()
-	if got, failure := caseOnlyRename(revision, repoPath); got != nil || failure != nil {
-		t.Errorf("caseOnlyRename(%q) = %v, %v; want nothing, so the policy is plainly uncommitted", repoPath, got, failure)
+	if got := caseOnlyRename(revision, repoPath); got != nil {
+		t.Errorf("caseOnlyRename(%q) = %v; want nothing, so the policy is plainly uncommitted", repoPath, got)
 	}
 }
 
@@ -89,10 +90,11 @@ func assertRefusedOnlyWhereGitIgnoresCase(t *testing.T, ignoreCase string, err e
 	t.Helper()
 	run := func(string, ...string) ([]byte, error) { return []byte(ignoreCase), err }
 
-	got, failure := caseOnlyRenameRefusalWith(run, "repo", revision, "policies/P.json")
+	got := caseOnlyRenameRefusalWith(run, "repo", revision, "policies/P.json")
 
-	if failure != nil || (got != nil) != want {
-		t.Errorf("refusal = %v, failure %v; want a refusal = %v and no failure", got, failure, want)
+	var refusal *ConfigError
+	if got != nil && !errors.As(got, &refusal) || (refusal != nil) != want {
+		t.Errorf("refusal = %v; want a refusal = %v and no unanswered question", got, want)
 	}
 }
 
@@ -124,9 +126,10 @@ func assertGitMoveCommand(t *testing.T, from, to, want string) {
 }
 
 func TestTheRefusalCarriesTheCauseThatNamesACaseDifference(t *testing.T) {
-	got, _ := caseOnlyRename(fakeRevision{"": {"policies"}, "policies": {"p.json"}}.entries, "policies/P.json")
+	verdict := caseOnlyRename(fakeRevision{"": {"policies"}, "policies": {"p.json"}}.entries, "policies/P.json")
 
-	if got == nil || !strings.Contains(string(got.PolicyCause), "name_case_differs") {
-		t.Errorf("refusal = %+v; want the name_case_differs cause", got)
+	var got *ConfigError
+	if !errors.As(verdict, &got) || !strings.Contains(string(got.PolicyCause), "name_case_differs") {
+		t.Errorf("refusal = %+v; want the name_case_differs cause", verdict)
 	}
 }

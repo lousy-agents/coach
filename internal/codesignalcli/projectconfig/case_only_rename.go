@@ -15,33 +15,36 @@ import (
 // otherwise, which leaves the policy plainly uncommitted. The user changed only the case of a name, and on
 // such a repository `git add` records nothing for that, so "commit the file" would end in "nothing to
 // commit". The failure is a question git could not answer, which is not "plainly uncommitted" either.
-func caseOnlyRenameRefusal(run gitrepo.Runner, dir, revision, repoPath string) (*ConfigError, *gitFailure) {
+//
+// What it returns is nil, a *ConfigError for the refusal, or a *gitFailure for the question that went
+// unanswered; a caller tells them apart with errors.As.
+func caseOnlyRenameRefusal(run gitrepo.Runner, dir, revision, repoPath string) error {
 	return caseOnlyRenameRefusalWith(run, dir, entriesThrough(run, dir, revision), repoPath)
 }
 
-func caseOnlyRenameRefusalWith(run gitrepo.Runner, dir string, entries revisionEntries, repoPath string) (*ConfigError, *gitFailure) {
+func caseOnlyRenameRefusalWith(run gitrepo.Runner, dir string, entries revisionEntries, repoPath string) error {
 	ignores, err := gitrepo.IgnoresCase(run, dir)
 	if err != nil {
-		return nil, newGitFailure("whether git ignores case", err)
+		return newGitFailure("whether git ignores case", err)
 	}
 	if !ignores {
-		return nil, nil
+		return nil
 	}
 	return caseOnlyRename(entries, repoPath)
 }
 
-func caseOnlyRename(entries revisionEntries, repoPath string) (*ConfigError, *gitFailure) {
+func caseOnlyRename(entries revisionEntries, repoPath string) error {
 	parts := strings.Split(repoPath, "/")
 	spelled, ambiguous, changed, err := spellingInRevision(entries, parts)
 	if err != nil {
-		return nil, newGitFailure(listingQuestion, err)
+		return newGitFailure(listingQuestion, err)
 	}
 	if ambiguous != nil || !changed {
-		return nil, nil
+		return nil
 	}
 	held := strings.Join(spelled, "/")
 	reason := fmt.Sprintf("exists on disk, but the analyzed revision holds the path as %q, and this file system ignores case, so git add records nothing for the difference%s", held, renameAdvice(parts, spelled))
-	return newUnusableOnDisk(repoPath, projectreadiness.CauseNameCaseDiffers, reason), nil
+	return newUnusableOnDisk(repoPath, projectreadiness.CauseNameCaseDiffers, reason)
 }
 
 // renameAdvice follows from the first component that differs. A file can be renamed in the index with
