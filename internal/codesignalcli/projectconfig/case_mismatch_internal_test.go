@@ -2,7 +2,6 @@ package projectconfig
 
 import (
 	"errors"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -15,40 +14,47 @@ func directoryMismatch() *caseMismatchError {
 	return newCaseMismatch("CFG/p.json", []string{"CFG", "p.json"}, 0, "cfg")
 }
 
-func holdingOnly(held ...string) revisionHolds {
-	return func(entry string) (bool, error) { return slices.Contains(held, entry), nil }
+// fakeRevision is a revision's tree as the names directly under each directory, "" being the root.
+type fakeRevision map[string][]string
+
+func (f fakeRevision) entries(directory string) ([]string, error) {
+	return f[directory], nil
+}
+
+func failingRevision(string) ([]string, error) {
+	return nil, errors.New("boom")
 }
 
 func TestACaseMismatchAdvisesFromWhatTheRevisionHolds(t *testing.T) {
 	cases := []struct {
 		name     string
 		mismatch *caseMismatchError
-		holds    revisionHolds
+		entries  revisionEntries
 		want     []string
 		avoid    []string
 	}{
-		{"a file the revision holds as the disk spells it", fileMismatch(), holdingOnly("cfg/policy.json"),
+		{"a file the revision holds as the disk spells it", fileMismatch(), fakeRevision{"": {"cfg"}, "cfg": {"policy.json"}}.entries,
 			[]string{`it holds "cfg/policy.json"; pass --project-config cfg/policy.json`}, []string{"rename"}},
-		{"a directory the revision holds as the disk spells it", directoryMismatch(), holdingOnly("cfg"),
+		{"a directory the revision holds as the disk spells it", directoryMismatch(), fakeRevision{"": {"cfg"}, "cfg": {"p.json"}}.entries,
 			[]string{`it holds "cfg"; pass --project-config cfg/p.json`}, []string{"rename"}},
-		{"a file the revision holds as the user typed it", fileMismatch(), holdingOnly("cfg/POLICY.json"),
+		{"a file the revision holds as the user typed it", fileMismatch(), fakeRevision{"": {"cfg"}, "cfg": {"POLICY.json"}}.entries,
 			[]string{`it holds "cfg/POLICY.json"; rename "cfg/policy.json" back to "cfg/POLICY.json", or commit the rename and pass --project-config cfg/policy.json`}, nil},
-		{"a directory the revision holds as the user typed it", directoryMismatch(), holdingOnly("CFG"),
+		{"a directory the revision holds as the user typed it", directoryMismatch(), fakeRevision{"": {"CFG"}, "CFG": {"p.json"}}.entries,
 			[]string{`it holds "CFG"; rename "cfg" back to "CFG", or commit the rename and pass --project-config cfg/p.json`}, nil},
-		{"a file the revision holds in neither spelling", fileMismatch(), holdingOnly(),
+		{"a file the revision holds in neither spelling", fileMismatch(), fakeRevision{"": {"cfg"}, "cfg": {"other.json"}}.entries,
 			[]string{`it holds neither "cfg/POLICY.json" nor "cfg/policy.json"`}, []string{"rename", "pass --project-config"}},
-		{"a directory the revision holds in neither spelling", directoryMismatch(), holdingOnly("somewhere/else"),
+		{"a directory the revision holds in neither spelling", directoryMismatch(), fakeRevision{"": {"somewhere"}}.entries,
 			[]string{`it holds neither "CFG" nor "cfg"`}, []string{"rename", "pass --project-config"}},
-		{"a file the revision holds in both spellings", fileMismatch(), holdingOnly("cfg/POLICY.json", "cfg/policy.json"),
+		{"a file the revision holds in both spellings", fileMismatch(), fakeRevision{"": {"cfg"}, "cfg": {"POLICY.json", "policy.json"}}.entries,
 			[]string{`it holds both "cfg/POLICY.json" and "cfg/policy.json"`}, []string{"rename", "pass --project-config"}},
-		{"a revision that cannot be asked", fileMismatch(), func(string) (bool, error) { return false, errors.New("boom") },
+		{"a revision that cannot be asked", fileMismatch(), failingRevision,
 			[]string{`is stored as "policy.json" on disk, not "POLICY.json"`}, []string{"it holds", "rename", "pass --project-config"}},
 		{"no way to ask the revision", fileMismatch(), nil,
 			[]string{`is stored as "policy.json" on disk, not "POLICY.json"`}, []string{"it holds", "rename", "pass --project-config"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			assertCaseMismatchAdvice(t, c.mismatch.config(c.holds), c.want, c.avoid)
+			assertCaseMismatchAdvice(t, c.mismatch.config(c.entries), c.want, c.avoid)
 		})
 	}
 }

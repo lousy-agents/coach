@@ -26,7 +26,7 @@ func requireOnDisk(run gitrepo.Runner, dir, revision, repoPath string) error {
 	if err != nil {
 		return err
 	}
-	return adviseOnRevision(checkRegularFileUnder(root, repoPath), holdsThrough(run, dir, revision))
+	return adviseOnRevision(checkRegularFileUnder(root, repoPath), repoPath, entriesThrough(run, dir, revision))
 }
 
 // checkRegularFileUnder walks the path through one Root handle, so a name that

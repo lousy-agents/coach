@@ -110,6 +110,16 @@ that differs. It also applies when the file is missing: a missing policy under a
 spelled in another case is refused for that parent and is not offered a restore, because
 the restore would write into the other spelling.
 
+A policy that is missing from disk has no spelling on disk to compare, so the revision's
+spelling is used instead. When the revision holds the path in another case than the one
+typed, for example `cfg/P.json` typed while `cfg/p.json` is committed and deleted from
+disk, the scan is refused with `project_config_invalid`, the message gives the revision's
+spelling to pass, and no new policy is offered, because writing one there would replace
+the committed policy under its own name. Passing the revision's spelling gets the usual
+restore offer. This holds for any component of the path and on any file system, since it
+asks the revision and not the disk. When the revision holds several spellings the message
+lists them, and when it holds none the policy is plainly missing.
+
 Only the policy's own path leaves `dirty_worktree`. Every other uncommitted path
 the report did not read still counts when it lies under the roots of the policy.
 A policy the working tree refused has no roots of its own, so they come from its

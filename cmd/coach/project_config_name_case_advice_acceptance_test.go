@@ -82,3 +82,55 @@ var _ = Describe("coach codesignal: the advice for a policy path spelled in anot
 		})
 	})
 })
+
+var _ = Describe("coach codesignal: a policy missing from disk is looked up in the spelling the revision holds", func() {
+	var repo string
+
+	BeforeEach(func() {
+		repo = commitScannableGoRepo()
+		commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
+	})
+
+	It("refuses a file name typed in another case and offers no new policy, for a file", func() {
+		Expect(os.Remove(filepath.Join(repo, "cfg", "p.json"))).To(Succeed())
+
+		stderr := scanExplicitPolicy(repo, "cfg/P.json")
+
+		Expect(string(stderr)).To(ContainSubstring(`holds it as "cfg/p.json"; pass --project-config cfg/p.json`), "stderr:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "stderr:\n%s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("suggest-project-config"), "authoring there replaces the committed policy:\n%s", stderr)
+	})
+
+	It("refuses a directory name typed in another case and offers no new policy, for a directory", func() {
+		Expect(os.RemoveAll(filepath.Join(repo, "cfg"))).To(Succeed())
+
+		stderr := scanExplicitPolicy(repo, "CFG/p.json")
+
+		Expect(string(stderr)).To(ContainSubstring(`holds it as "cfg/p.json"; pass --project-config cfg/p.json`), "stderr:\n%s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("suggest-project-config"), "stderr:\n%s", stderr)
+	})
+
+	It("names neither a restore nor a new policy in --check-project for a file name typed in another case", func() {
+		Expect(os.Remove(filepath.Join(repo, "cfg", "p.json"))).To(Succeed())
+
+		doc := expectCheckProject(repo, "--project-config", "cfg/P.json")
+
+		_, restores := nextActionOfKind(doc, "restore_policy")
+		_, authors := nextActionOfKind(doc, "author_policy")
+		Expect(restores || authors).To(BeFalse(), "a restore would write the wrong name and a new policy would replace the committed one: %+v", doc.NextActions)
+	})
+
+	It("offers the restore once the committed spelling is passed", func() {
+		Expect(os.Remove(filepath.Join(repo, "cfg", "p.json"))).To(Succeed())
+
+		stderr := scanExplicitPolicy(repo, "cfg/p.json")
+
+		Expect(string(stderr)).To(ContainSubstring("git restore"), "stderr:\n%s", stderr)
+	})
+
+	It("still offers a new policy for a name the revision holds in no spelling", func() {
+		stderr := scanExplicitPolicy(repo, "cfg/other.json")
+
+		Expect(string(stderr)).To(ContainSubstring("suggest-project-config"), "stderr:\n%s", stderr)
+	})
+})

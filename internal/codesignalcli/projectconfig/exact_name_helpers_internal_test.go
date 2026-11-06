@@ -35,7 +35,7 @@ func assertCaseDifferenceRefused(t *testing.T, files []string, want string) {
 	if !errors.As(checked, &mismatch) {
 		t.Fatalf("checkExactNames = %v, want a case mismatch for the revision to be asked about", checked)
 	}
-	err := adviseOnRevision(checked, nil)
+	err := adviseOnRevision(checked, "cfg/p.json", nil)
 
 	var found *ConfigError
 	if !errors.As(err, &found) || found.Kind != KindInvalid {

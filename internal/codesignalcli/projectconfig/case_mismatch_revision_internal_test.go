@@ -56,7 +56,7 @@ func assertSpellingAdviceFromRevision(t *testing.T, repo, typed string, want, av
 	}
 	defer func() { _ = root.Close() }()
 
-	advised := adviseOnRevision(checkExactNames(root, typed), holdsThrough(runProjectConfigGit, repo, "HEAD"))
+	advised := adviseOnRevision(checkExactNames(root, typed), typed, entriesThrough(runProjectConfigGit, repo, "HEAD"))
 
 	var found *ConfigError
 	if !errors.As(advised, &found) {

@@ -79,19 +79,6 @@ func BlobEntryAtRevision(run Runner, dir, revision, repoPath string) (TreeEntry,
 	return entry, true, nil
 }
 
-// PathExistsAtRevision reports whether revision's tree has an entry of any type
-// at repoPath. It reads no object and does not check that revision resolves:
-// a caller that asks about two spellings and treats a failure as "cannot tell"
-// has no use for either. ls-tree matches a name exactly whatever
-// core.ignorecase says, which is what a question about one spelling needs.
-func PathExistsAtRevision(run Runner, dir, revision, repoPath string) (bool, error) {
-	output, err := run(dir, "ls-tree", "--full-tree", "--name-only", revision, "--", ":(top,literal)"+repoPath)
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(string(output)) != "", nil
-}
-
 func lsTreeBlob(output []byte) (TreeEntry, bool) {
 	trimmed := strings.TrimSpace(string(output))
 	if trimmed == "" || strings.Contains(trimmed, "\n") {
