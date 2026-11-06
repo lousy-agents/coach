@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
@@ -121,19 +122,23 @@ func UncommittedPolicyMessage(dir, revision, repoPath string) string {
 func enclosingSubmodule(dir, repoPath string) (string, bool) {
 	parts := strings.Split(repoPath, "/")
 	for i := 1; i < len(parts); i++ {
-		ancestor := strings.Join(parts[:i], "/")
-		output, err := runProjectConfigGit(dir, "ls-files", "--stage", "-z", "--", ":(top,literal)"+ancestor)
-		if err != nil {
-			continue
-		}
-		for _, record := range gitrepo.SplitNULPaths(output) {
-			mode, name, found := strings.Cut(record, "\t")
-			if found && name == ancestor && strings.HasPrefix(mode, "160000 ") {
-				return ancestor, true
-			}
+		if ancestor := strings.Join(parts[:i], "/"); recordedAsSubmodule(dir, ancestor) {
+			return ancestor, true
 		}
 	}
 	return "", false
+}
+
+// recordedAsSubmodule is whether the index holds a submodule (a 160000 entry) at exactly path.
+func recordedAsSubmodule(dir, path string) bool {
+	output, err := runProjectConfigGit(dir, "ls-files", "--stage", "-z", "--", ":(top,literal)"+path)
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(gitrepo.SplitNULPaths(output), func(record string) bool {
+		mode, name, found := strings.Cut(record, "\t")
+		return found && name == path && strings.HasPrefix(mode, "160000 ")
+	})
 }
 
 // boundRemedy is the way out of a read that tripped a bound. A policy over the
