@@ -29,6 +29,14 @@ func partialClone(t *testing.T, remoteURL func(bare string) string) (clone, blob
 	return clone, blob
 }
 
+// skipIfGitCannotRefuseLazyFetch skips a test that rests on GIT_NO_LAZY_FETCH, which git has from 2.44.
+func skipIfGitCannotRefuseLazyFetch(t *testing.T) {
+	t.Helper()
+	if supported, version := NoLazyFetchSupported(RunBytes, "."); !supported {
+		t.Skipf("this git (%s) predates GIT_NO_LAZY_FETCH, so it cannot be told not to fetch", version)
+	}
+}
+
 func gitOutput(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
@@ -84,6 +92,7 @@ func missingBlobReads(clone, blob string) []gitRead {
 }
 
 func TestGitReadsRunNoSSHProgramToFetchAMissingObject(t *testing.T) {
+	skipIfGitCannotRefuseLazyFetch(t)
 	marker := sshMarker(t)
 	clone, blob := partialClone(t, func(string) string { return "ssh://example.invalid/repo.git" })
 	for _, read := range missingBlobReads(clone, blob) {
@@ -103,6 +112,7 @@ func assertNoSSHProgramRan(t *testing.T, read gitRead, clone, marker string) {
 }
 
 func TestGitReadsWriteNoObjectsToFetchAMissingObjectFromARemoteThatWouldAnswer(t *testing.T) {
+	skipIfGitCannotRefuseLazyFetch(t)
 	clone, blob := partialClone(t, func(bare string) string { return "file://" + bare })
 	before := packFiles(t, clone)
 	for _, read := range missingBlobReads(clone, blob) {

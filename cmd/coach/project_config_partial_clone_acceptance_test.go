@@ -13,6 +13,7 @@ var _ = Describe("coach codesignal: a partial clone that lacks the policy's blob
 
 	DescribeTable("runs no program and writes no object, and declines cleanly",
 		func(remoteURL func(bare string) string, scan bool) {
+			skipUnlessGitCanRefuseLazyFetch()
 			sshCommand, sshMarker := sshProgramThatLeavesAMarker()
 			marker = sshMarker
 			env = append(os.Environ(), "GIT_SSH_COMMAND="+sshCommand)
@@ -39,4 +40,36 @@ var _ = Describe("coach codesignal: a partial clone that lacks the policy's blob
 		Entry("a scan, remote that would run a program", func(string) string { return "ssh://example.invalid/repo.git" }, true),
 		Entry("a scan, remote that would answer", func(bare string) string { return "file://" + bare }, true),
 	)
+
+})
+
+var _ = Describe("coach codesignal: a git that cannot be told not to fetch is refused in a partial clone", func() {
+	DescribeTable("names the version and the version that is needed, and fetches nothing",
+		func(args ...string) {
+			sshCommand, marker := sshProgramThatLeavesAMarker()
+			clone := commitPartialClone(func(string) string { return "ssh://example.invalid/repo.git" })
+			before := packFilesIn(clone)
+			env := append(environmentWithGitReporting("2.43.0"), "GIT_SSH_COMMAND="+sshCommand)
+
+			stdout, stderr, exitCode := runCoachBinary(commandPath, clone, env, args...)
+
+			Expect(exitCode).To(Equal(1), "stdout: %s\nstderr: %s", stdout, stderr)
+			Expect(string(stderr)).To(ContainSubstring("partial clone"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("git 2.43.0"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("git 2.44 or later"), "stderr:\n%s", stderr)
+			Expect(marker).NotTo(BeAnExistingFile(), "git ran the ssh program")
+			Expect(packFilesIn(clone)).To(Equal(before), "the run wrote objects into the repository")
+		},
+		Entry("a scan", "codesignal", "--baseline", "--project-config", "cfg/p.json", "--format=json", "--no-interactive"),
+		Entry("--check-project", "codesignal", "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "cfg/p.json", "--format", "json"),
+	)
+
+	It("still scans an ordinary clone with the same old git, which has nothing to fetch", func() {
+		repo := commitScannableGoRepo()
+
+		stdout, stderr, exitCode := runCoachBinary(commandPath, repo, environmentWithGitReporting("2.43.0"), "codesignal", "--baseline", "--format=json", "--no-interactive")
+
+		Expect(exitCode).To(Equal(0), "stdout: %s\nstderr: %s", stdout, stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("partial clone"), "stderr:\n%s", stderr)
+	})
 })
