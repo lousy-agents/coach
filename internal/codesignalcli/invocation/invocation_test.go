@@ -77,23 +77,22 @@ func TestCommandPhraseNamesNoCommandForAnAuthoringTargetWhoseNameCannotBePrinted
 }
 
 func TestBatchAuthoring(t *testing.T) {
-	cases := []struct {
-		name   string
-		target string
-		want   string
-	}{
-		{"the default location", "", "coach codesignal --baseline --suggest-project-config"},
-		{"a file at the repository root", "new.json", "coach codesignal --baseline --suggest-project-config --output new.json"},
-		{"a file in a directory", "cfg/new.json", "once cfg exists at the repository root, run coach codesignal --baseline --suggest-project-config --output cfg/new.json"},
-		{"a file in a nested directory", "a/b/new.json", "once a/b exists at the repository root, run coach codesignal --baseline --suggest-project-config --output a/b/new.json"},
-		{"a path a shell would split", "my cfg/a b.json", "once 'my cfg' exists at the repository root, run coach codesignal --baseline --suggest-project-config --output 'my cfg/a b.json'"},
-		{"a path whose name cannot be printed", "bad\x1bname.json", "run --suggest-project-config with --output naming the same path (its name is not printed here)"},
+	cases := map[string]struct{ target, want string }{
+		"the default location":                {"", "coach codesignal --baseline --suggest-project-config"},
+		"a file at the repository root":       {"new.json", "coach codesignal --baseline --suggest-project-config --output new.json"},
+		"a file in a directory":               {"cfg/new.json", "once cfg exists at the repository root, run coach codesignal --baseline --suggest-project-config --output cfg/new.json"},
+		"a file in a nested directory":        {"a/b/new.json", "once a/b exists at the repository root, run coach codesignal --baseline --suggest-project-config --output a/b/new.json"},
+		"a path a shell would split":          {"my cfg/a b.json", "once 'my cfg' exists at the repository root, run coach codesignal --baseline --suggest-project-config --output 'my cfg/a b.json'"},
+		"a path whose name cannot be printed": {"bad\x1bname.json", "run --suggest-project-config with --output naming the same path (its name is not printed here)"},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := BatchAuthoring(c.target); got != c.want {
-				t.Errorf("BatchAuthoring(%q) = %q; want %q", c.target, got, c.want)
-			}
-		})
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) { assertBatchAuthoring(t, c.target, c.want) })
+	}
+}
+
+func assertBatchAuthoring(t *testing.T, target, want string) {
+	t.Helper()
+	if got := BatchAuthoring(target); got != want {
+		t.Errorf("BatchAuthoring(%q) = %q; want %q", target, got, want)
 	}
 }

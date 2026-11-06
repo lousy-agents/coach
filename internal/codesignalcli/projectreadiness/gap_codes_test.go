@@ -67,22 +67,24 @@ func checkGapCodeMappings(t *testing.T, tc struct {
 // and a caller that asks it gets none instead of a stale author_policy.
 func TestAPolicyGapNamesItsActionOnlyThroughItsRemedy(t *testing.T) {
 	for _, code := range []string{GapPolicyMissing, GapPolicyInvalid} {
-		t.Run(code, func(t *testing.T) {
-			if got := StatusForGapCode(code); got != StatusNeedsPolicy {
-				t.Errorf("StatusForGapCode(%q) = %q, want %q", code, got, StatusNeedsPolicy)
-			}
-			if kind, ok := NextActionForGapCode(code); ok {
-				t.Errorf("NextActionForGapCode(%q) = %q, true; want no action from the code alone", code, kind)
-			}
-			wants := map[PolicyRemedy]string{RemedyAuthor: "author_policy", RemedyRestore: "restore_policy"}
-			for remedy, want := range wants {
-				if kind, ok := NextActionForGap(code, remedy); !ok || kind != want {
-					t.Errorf("NextActionForGap(%q, remedy %d) = %q, %v; want %q", code, remedy, kind, ok, want)
-				}
-			}
-			if kind, ok := NextActionForGap(code, RemedyNone); ok {
-				t.Errorf("NextActionForGap(%q, RemedyNone) = %q, true; want none", code, kind)
-			}
-		})
+		t.Run(code, func(t *testing.T) { requireOnlyTheRemedyNamesTheAction(t, code) })
+	}
+}
+
+func requireOnlyTheRemedyNamesTheAction(t *testing.T, code string) {
+	t.Helper()
+	kind, named := NextActionForGapCode(code)
+	if StatusForGapCode(code) != StatusNeedsPolicy || named {
+		t.Errorf("code %q: status %q, NextActionForGapCode = %q, %v; want %q and no action from the code alone", code, StatusForGapCode(code), kind, named, StatusNeedsPolicy)
+	}
+	for remedy, want := range map[PolicyRemedy]string{RemedyAuthor: "author_policy", RemedyRestore: "restore_policy", RemedyNone: ""} {
+		requireTheRemedyDecidesTheAction(t, code, remedy, want)
+	}
+}
+
+func requireTheRemedyDecidesTheAction(t *testing.T, code string, remedy PolicyRemedy, want string) {
+	t.Helper()
+	if kind, named := NextActionForGap(code, remedy); kind != want || named != (want != "") {
+		t.Errorf("NextActionForGap(%q, remedy %d) = %q, %v; want %q", code, remedy, kind, named, want)
 	}
 }

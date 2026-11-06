@@ -13,20 +13,20 @@ import (
 // notice.
 func TestTheRepositorysOwnPoliciesAreReadableByTheSchema(t *testing.T) {
 	for _, name := range []string{"coach.json", "coach.typescript-js-semantics.json"} {
-		t.Run(name, func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join("..", "..", "..", ".lousy-agents", name))
-			if err != nil {
-				t.Fatalf("reading the repository's policy: %v", err)
-			}
+		t.Run(name, func(t *testing.T) { requireThePolicyParses(t, name) })
+	}
+}
 
-			config, err := Parse(data)
+func requireThePolicyParses(t *testing.T, name string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", ".lousy-agents", name))
+	if err != nil {
+		t.Fatalf("reading the repository's policy: %v", err)
+	}
 
-			if err != nil {
-				t.Fatalf("Parse(%s) = %v; the policy no longer satisfies the schema it configures", name, err)
-			}
-			if len(config.Roots) == 0 {
-				t.Errorf("%s parses but names no roots", name)
-			}
-		})
+	config, err := Parse(data)
+
+	if err != nil || len(config.Roots) == 0 {
+		t.Errorf("Parse(%s) = %d roots, %v; the policy must satisfy the schema it configures and name roots", name, len(config.Roots), err)
 	}
 }
