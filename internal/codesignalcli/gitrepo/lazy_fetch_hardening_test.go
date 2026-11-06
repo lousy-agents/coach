@@ -32,7 +32,7 @@ func partialClone(t *testing.T, remoteURL func(bare string) string) (clone, blob
 // skipIfGitCannotRefuseLazyFetch skips a test that rests on GIT_NO_LAZY_FETCH, which git has from 2.44.
 func skipIfGitCannotRefuseLazyFetch(t *testing.T) {
 	t.Helper()
-	if supported, version := NoLazyFetchSupported(RunBytes, "."); !supported {
+	if supported, version := noLazyFetchSupported(RunBytes, "."); !supported {
 		t.Skipf("this git (%s) predates GIT_NO_LAZY_FETCH, so it cannot be told not to fetch", version)
 	}
 }

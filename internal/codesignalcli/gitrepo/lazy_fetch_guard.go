@@ -19,9 +19,9 @@ const (
 
 var gitVersionPattern = regexp.MustCompile(`^git version ((\d+)\.(\d+)\S*)`)
 
-// NoLazyFetchSupported reports whether the installed git reads GIT_NO_LAZY_FETCH, and the version it
+// noLazyFetchSupported reports whether the installed git reads GIT_NO_LAZY_FETCH, and the version it
 // printed. A git that cannot be asked, or whose version cannot be read, is not taken to support it.
-func NoLazyFetchSupported(run Runner, dir string) (supported bool, version string) {
+func noLazyFetchSupported(run Runner, dir string) (supported bool, version string) {
 	output, err := run(dir, "version")
 	if err != nil {
 		return false, "unknown"
@@ -85,7 +85,7 @@ func RefuseUnsafeLazyFetch(run Runner, dir string) error {
 	if !partial {
 		return nil
 	}
-	supported, version := NoLazyFetchSupported(run, dir)
+	supported, version := noLazyFetchSupported(run, dir)
 	if supported {
 		return nil
 	}

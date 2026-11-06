@@ -20,10 +20,10 @@ func restoreCommand(revision, repoPath string) (string, bool) {
 	return "git restore --source=" + shellword.Word(revision) + " --staged --worktree -- " + shellword.Quote(":(top,literal)"+repoPath), true
 }
 
-// RestoreAdvice is the sentence that tells a user how to bring a committed
+// restoreAdvice is the sentence that tells a user how to bring a committed
 // policy back, ending on the command so the line pastes as written. A name that
 // cannot be printed gets the reason in place of the command.
-func RestoreAdvice(revision, repoPath string) string {
+func restoreAdvice(revision, repoPath string) string {
 	if command, ok := restoreCommand(revision, repoPath); ok {
 		return "restore it with " + command
 	}
@@ -76,7 +76,7 @@ func RestoreSentence(remedy projectreadiness.PolicyRemedy, revision, repoPath st
 	if framing.action != "" {
 		sentence += " (" + framing.action + ")"
 	}
-	return sentence + restoreConnective(remedy, framing) + RestoreAdvice(revision, repoPath)
+	return sentence + restoreConnective(remedy, framing) + restoreAdvice(revision, repoPath)
 }
 
 // restoreConnective joins what is said about the committed copy to the command.
