@@ -69,3 +69,11 @@ func environmentWithGitReporting(version string) []string {
 	ExpectWithOffset(1, os.WriteFile(filepath.Join(directory, "git"), []byte(script), 0o755)).To(Succeed())
 	return append(os.Environ(), "PATH="+directory+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
+
+// commitOrdinaryClone is a full clone of a scannable repository, with the origin remote a clone has.
+func commitOrdinaryClone() string {
+	source := commitScannableGoRepo()
+	clone := filepath.Join(GinkgoT().TempDir(), "clone")
+	gitOutputIn(GinkgoT().TempDir(), "clone", "--quiet", source, clone)
+	return clone
+}
