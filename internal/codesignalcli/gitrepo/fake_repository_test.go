@@ -83,3 +83,8 @@ const (
 	firstMissing  = "0123456789012345678901234567890123456789"
 	secondMissing = "abcdefabcdefabcdefabcdefabcdefabcdefabcd"
 )
+
+const (
+	mergeBaseSHA  = "feedfacefeedfacefeedfacefeedfacefeedface"
+	sha256Missing = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+)

@@ -17,12 +17,14 @@ import (
 // nothing like the path. A revision that cannot be listed is a refusal too: the policy is not plainly missing
 // while git has not said whether it is committed in another case.
 //
+// The refusal is a *ConfigError. It is returned as an error so that nil is the answer "nothing like it".
+//
 // It is for a policy Coach found. A path the user named is told in its own words, since the user typed it.
-func WrongCaseAtRevision(run gitrepo.Runner, dir, revision, repoPath string) *ConfigError {
+func WrongCaseAtRevision(run gitrepo.Runner, dir, revision, repoPath string) error {
 	return wrongCaseOf(entriesThrough(run, dir, revision), repoPath)
 }
 
-func wrongCaseOf(entries revisionEntries, repoPath string) *ConfigError {
+func wrongCaseOf(entries revisionEntries, repoPath string) error {
 	spelled, ambiguous, changed, err := spellingInRevision(entries, strings.Split(repoPath, "/"))
 	if err != nil {
 		return unansweredListing(fmt.Sprintf("nothing is committed at %q, the path Coach reads for the policy", repoPath), err)

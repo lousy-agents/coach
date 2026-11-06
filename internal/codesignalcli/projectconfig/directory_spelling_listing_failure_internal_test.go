@@ -66,40 +66,46 @@ func failingOnce() diskWhoseListingFails {
 	return diskWhoseListingFails{foldingDiskHolding("cfg/p.json"), func(file diskFile) diskFile { return &endingAfterAFailure{diskFile: file} }}
 }
 
+func failingDisks(t *testing.T) map[string]diskWhoseListingFails {
+	return map[string]diskWhoseListingFails{"a listing that fails and then ends": failingOnce(), "a listing that always fails": persistentlyFailing(t)}
+}
+
 // A directory that cannot be listed leaves its entries' spelling unknown: that is an error, never "no entry"
 // and never a spelling.
 func TestAFailedListingOfADirectoryIsReportedNotTakenForAnEntryThatIsNotThere(t *testing.T) {
-	disks := map[string]diskWhoseListingFails{"a listing that fails and then ends": failingOnce(), "a listing that always fails": persistentlyFailing(t)}
-	for name, disk := range disks {
+	for name, disk := range failingDisks(t) {
 		t.Run(name, func(t *testing.T) {
-			got, err := spellingIn(disk, "cfg", "p.json")
-
-			if !errors.Is(err, errListing) {
-				t.Errorf("spellingIn = %q, %v; want the listing's own failure", got, err)
-			}
+			assertListingFailureReported(t, disk)
 		})
 	}
 }
 
-func TestAPathWhoseDirectoryCannotBeListedIsRefusedAsUnreadableNotAsSpelledInAnotherCase(t *testing.T) {
-	disks := map[string]diskWhoseListingFails{"a listing that fails and then ends": failingOnce(), "a listing that always fails": persistentlyFailing(t)}
-	for name, disk := range disks {
-		t.Run(name, func(t *testing.T) {
-			err := checkExactNames(disk, "cfg/p.json")
+func assertListingFailureReported(t *testing.T, disk diskWhoseListingFails) {
+	t.Helper()
 
-			found := configErrorOf(t, err)
-			if found.PolicyCause != projectreadiness.CauseUnreadableOnDisk {
-				t.Errorf("checkExactNames = cause %q, %q; want %q", found.PolicyCause, found.Message, projectreadiness.CauseUnreadableOnDisk)
-			}
+	got, err := spellingIn(disk, "cfg", "p.json")
+
+	if !errors.Is(err, errListing) {
+		t.Errorf("spellingIn = %q, %v; want the listing's own failure", got, err)
+	}
+}
+
+func TestAPathWhoseDirectoryCannotBeListedIsRefusedAsUnreadableNotAsSpelledInAnotherCase(t *testing.T) {
+	for name, disk := range failingDisks(t) {
+		t.Run(name, func(t *testing.T) {
+			requireUnreadableOnDisk(t, checkExactNames(disk, "cfg/p.json"))
 		})
 	}
 }
 
 func TestTheParentsOfAPathWhoseDirectoryCannotBeListedAreRefusedTheSameWay(t *testing.T) {
-	err := checkExactParents(persistentlyFailing(t), "cfg/p.json")
+	requireUnreadableOnDisk(t, checkExactParents(persistentlyFailing(t), "cfg/p.json"))
+}
 
+func requireUnreadableOnDisk(t *testing.T, err error) {
+	t.Helper()
 	found := configErrorOf(t, err)
 	if found.PolicyCause != projectreadiness.CauseUnreadableOnDisk {
-		t.Errorf("checkExactParents = cause %q, %q; want %q", found.PolicyCause, found.Message, projectreadiness.CauseUnreadableOnDisk)
+		t.Errorf("cause %q, %q; want %q", found.PolicyCause, found.Message, projectreadiness.CauseUnreadableOnDisk)
 	}
 }

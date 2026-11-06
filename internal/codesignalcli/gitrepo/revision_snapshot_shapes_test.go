@@ -40,6 +40,8 @@ func TestExtractRevisionKeepsModesLinksSubmodulesAndSharedBlobs(t *testing.T) {
 func TestExtractRevisionRefusesATreeThatNamesAPathOutsideTheSnapshot(t *testing.T) {
 	repo := gitfixture.Init(t)
 	escaped := "coach-escape-" + filepath.Base(t.TempDir())
+	outside := filepath.Join(os.TempDir(), escaped)
+	t.Cleanup(func() { removeBestEffort(outside) })
 	blob := strings.TrimSpace(gitWithIdentity(t, repo, "hash-object", "-w", "/dev/null"))
 	inner := writeRawTree(t, repo, "100644 "+escaped+"\x00", blob)
 	outer := writeRawTree(t, repo, "40000 ..\x00", inner)
@@ -51,10 +53,14 @@ func TestExtractRevisionRefusesATreeThatNamesAPathOutsideTheSnapshot(t *testing.
 		os.RemoveAll(dir)
 		t.Fatalf("ExtractRevision of a tree naming ../%s succeeded", escaped)
 	}
-	if _, statErr := os.Stat(filepath.Join(os.TempDir(), escaped)); statErr == nil {
-		os.Remove(filepath.Join(os.TempDir(), escaped))
+	if _, statErr := os.Lstat(outside); statErr == nil {
 		t.Errorf("a file was written outside the snapshot directory")
 	}
+}
+
+// removeBestEffort clears what a failed test left behind; a file that is not there is not a problem.
+func removeBestEffort(path string) {
+	_ = os.Remove(path)
 }
 
 // writeRawTree writes a tree object holding one entry, given as "<mode> <name>\x00", for the object id.

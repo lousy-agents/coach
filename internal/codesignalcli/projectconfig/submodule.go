@@ -28,11 +28,12 @@ func UncommittedPolicy(run gitrepo.Runner, dir, revision, repoPath string) (stri
 	case submodule != "":
 		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here (project_config_invalid): name a policy that is committed in this repository's own files", repoPath, submodule), projectreadiness.CauseInSubmodule, nil
 	}
-	renamed, failure := caseOnlyRenameRefusal(run, dir, revision, repoPath)
-	if failure != nil {
-		return unansweredUncommitted(repoPath, revision, failure)
-	}
-	if renamed != nil {
+	var unanswered *gitFailure
+	var renamed *ConfigError
+	switch verdict := caseOnlyRenameRefusal(run, dir, revision, repoPath); {
+	case errors.As(verdict, &unanswered):
+		return unansweredUncommitted(repoPath, revision, unanswered)
+	case errors.As(verdict, &renamed):
 		return renamed.Message, projectreadiness.CauseNameCaseDiffers, nil
 	}
 	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision), projectreadiness.CauseNotCommitted, nil
