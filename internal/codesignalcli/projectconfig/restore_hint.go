@@ -1,6 +1,9 @@
 package projectconfig
 
-import "github.com/lousy-agents/coach/internal/codesignalcli/shellword"
+import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/shellword"
+)
 
 // restoreCommand is the command a user can paste into a POSIX shell, from any
 // directory, to bring a committed policy back into the index and the working
@@ -44,4 +47,45 @@ func clearSkipWorktreeAdvice(repoPath string) string {
 		return "clear the mark with git update-index --no-skip-worktree -- " + shellword.Quote(repoPath) + " from the repository root"
 	}
 	return "clear the mark with git update-index --no-skip-worktree (the name has a character that is not printed here)"
+}
+
+// RestoreFraming is how the sentence that says a committed policy can be brought back is joined to
+// what comes before it: as an offer that continues a message, or as a clause of the refusal of
+// compiler setup, which also names the next action it is.
+type RestoreFraming struct {
+	opening string
+	action  string
+}
+
+// AsAnOffer continues the message of a missing policy with a sentence.
+var AsAnOffer = RestoreFraming{opening: ". It"}
+
+// AsARefusal continues the refusal of compiler setup with a clause that names action.
+func AsARefusal(action string) RestoreFraming {
+	return RestoreFraming{opening: "; it", action: action}
+}
+
+const emptyEntryReason = ", and the index holds only an empty entry for it with no content staged, so restoring brings back the committed copy: "
+
+// RestoreSentence says that the policy is committed at the analyzed revision and how to bring it
+// back, ending on the command so the line pastes as written. It is the one place the sentence is
+// built, for the offer and for the refusal, and the only one that knows a restore over an empty
+// index entry says why it loses nothing.
+func RestoreSentence(remedy projectreadiness.PolicyRemedy, revision, repoPath string, framing RestoreFraming) string {
+	sentence := framing.opening + " is committed at the analyzed revision"
+	if framing.action != "" {
+		sentence += " (" + framing.action + ")"
+	}
+	return sentence + restoreConnective(remedy, framing) + RestoreAdvice(revision, repoPath)
+}
+
+// restoreConnective joins what is said about the committed copy to the command.
+func restoreConnective(remedy projectreadiness.PolicyRemedy, framing RestoreFraming) string {
+	switch {
+	case remedy == projectreadiness.RemedyRestoreOverEmptyEntry:
+		return emptyEntryReason
+	case framing.action != "":
+		return ", so "
+	}
+	return ": "
 }

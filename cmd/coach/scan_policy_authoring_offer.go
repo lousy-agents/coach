@@ -51,7 +51,11 @@ func scanShouldAuthorProjectConfig(err error, language string, policy policyref.
 // authoring could fix.
 func authorableMissingPolicy(err error) bool {
 	var configErr *projectconfig.ConfigError
-	return errors.As(err, &configErr) && configErr.Kind == projectconfig.KindMissing && configErr.Remedy == projectreadiness.RemedyAuthor
+	if !errors.As(err, &configErr) || configErr.Kind != projectconfig.KindMissing {
+		return false
+	}
+	action, named := projectreadiness.NextActionForRemedy(configErr.Remedy)
+	return named && action == projectreadiness.NextActionAuthorPolicy
 }
 
 // runScanProjectConfigAuthoring implements AC-POL-8. It reuses the exact
