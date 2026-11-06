@@ -54,6 +54,9 @@ type policyJudgment struct {
 	// submodule is the submodule the policy path lies inside, if any. Nothing there can be
 	// restored or committed in this repository, so it is decided before anything else.
 	submodule string
+	// sparseNewPolicy is set when nothing commits the path, it is in a repository with a sparse
+	// checkout, and its directory is not on disk: a new policy there may need git add --sparse.
+	sparseNewPolicy bool
 	// indexLocked is set when a restore command would otherwise be offered while a lock file stops git
 	// from writing the index: running it would fail, so none is offered.
 	indexLocked bool
@@ -111,7 +114,7 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 	facts := indexFacts{entries: staged, unread: unread, sparse: sparseCheckoutEnabled(run, dir, staged), setAsideEmpty: len(staged) < len(listed)}
 	verdict := verdictFor(committed, found, facts)
 	if !offersRestoreCommand(verdict) {
-		return policyJudgment{verdict: verdict, indexEntryUnread: unread}
+		return policyJudgment{verdict: verdict, indexEntryUnread: unread, sparseNewPolicy: verdict == restoreNotCommitted && newPolicyMayNeedSparse(run, dir, repoPath)}
 	}
 	locked, err := indexIsLocked(run, dir)
 	if err != nil {

@@ -255,6 +255,9 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 	if judgment.indexLocked && !blocked {
 		return indexLockedOffer, true
 	}
+	if verdict == restoreNotCommitted && judgment.sparseNewPolicy && !blocked {
+		return sparseNewPolicyOffer, true
+	}
 	if offer, uncommitted := uncommittedOfferFor(verdict, repoPath, blocked); uncommitted {
 		return offer, true
 	}
