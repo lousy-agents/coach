@@ -10,12 +10,10 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// detectRelevantDirtyWorktree lists uncommitted/untracked paths -- via `git
-// status`, path names only, never their content -- relevant to the
-// readiness result: see IsRelevantDirtyPath for what counts as relevant.
 // detectRelevantDirtyWorktree lists the uncommitted paths the report says it did
-// not read. readFromDisk is a path the checks did read from the working tree,
-// so a change to it is never one of them.
+// not read, via `git status`: path names only, never their content. See
+// IsRelevantDirtyPath for what counts as relevant. readFromDisk is a path the
+// checks did read from the working tree, so a change to it is never one of them.
 func detectRelevantDirtyWorktree(dir string, roots []string, policyPath, readFromDisk string) (projectreadiness.DirtyWorktree, error) {
 	entries, err := gitrepo.WorktreeStatus(dir)
 	if err != nil {
