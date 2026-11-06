@@ -54,3 +54,23 @@ func TestNextActionForRemedyIsTheOnlyMappingFromARemedyToAnActionKind(t *testing
 		})
 	}
 }
+
+// A remedy nobody set must offer nothing. The zero value used to be RemedyAuthor,
+// so a check or error that forgot to say which way out it offers would have
+// suggested writing a new policy, possibly over work that should be restored or
+// kept.
+func TestAPolicyRemedyNobodySetNamesNoAction(t *testing.T) {
+	var unset PolicyRemedy
+
+	if got, ok := NextActionForRemedy(unset); ok {
+		t.Errorf("NextActionForRemedy(zero value) = %q, true; want no action", got)
+	}
+	for _, code := range []string{GapPolicyMissing, GapPolicyInvalid} {
+		if got, ok := NextActionForGap(code, unset); ok {
+			t.Errorf("NextActionForGap(%q, zero value) = %q, true; want no action", code, got)
+		}
+	}
+	if unset != RemedyNone {
+		t.Errorf("the zero PolicyRemedy = %d, want RemedyNone", unset)
+	}
+}

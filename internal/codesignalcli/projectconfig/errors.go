@@ -64,8 +64,8 @@ type ConfigError struct {
 	// on this error does not reflect that edit.
 	UnreadStagedEdit bool
 	// Remedy is the way out the tool offers. Every constructor in this file sets
-	// it, because the zero value means authoring and a constructor that left it
-	// unset would offer a new policy where one cannot help.
+	// it. The zero value offers nothing, so a constructor that left it unset
+	// would withhold advice, never suggest a new policy where one cannot help.
 	Remedy projectreadiness.PolicyRemedy
 	// GitFailure is set when git could not answer a question about the policy,
 	// so a caller that reports operational failures separately can return it.

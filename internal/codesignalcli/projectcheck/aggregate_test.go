@@ -119,7 +119,7 @@ func checkAggregateReadinessPrecedence(t *testing.T, tc struct {
 // typescript_compiler_missing fixture.
 func TestAggregateReadinessOrdersNextActionsPolicyBeforeCompiler(t *testing.T) {
 	checks := projectreadiness.Checks{
-		Policy:   projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing},
+		Policy:   projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing, Remedy: projectreadiness.RemedyAuthor},
 		Compiler: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing},
 	}
 	_, _, nextActions, _ := aggregateReadiness(checks, false, nil)
