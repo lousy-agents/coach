@@ -102,6 +102,12 @@ var causeRows = []causeRow{
 		gitInWithIdentity(repo, "commit", "-q", "-m", "a policy as a link")
 		removeTree(repo, "cfg")
 	}},
+	{"a policy committed as a symbolic link, with a regular file on disk", "cfg/p.json", "policy_invalid", "committed_as_link", func(repo string) {
+		commitLinkThenWriteFile(repo, "cfg/p.json")
+	}},
+	{"files committed under the name, with a regular file on disk", "cfg", "policy_invalid", "directory", func(repo string) {
+		commitDirectoryThenWriteFile(repo, "cfg")
+	}},
 	{"a policy staged and never committed, then deleted", "cfg/p.json", "policy_missing", "staged_copy", func(repo string) {
 		writeWorktreeFile(repo, "cfg/p.json", singleRootPolicyJSON)
 		gitIn(repo, "add", "cfg/p.json")

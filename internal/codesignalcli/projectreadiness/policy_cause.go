@@ -10,9 +10,10 @@ const (
 	// CauseNotCommitted is a policy file on disk that the analyzed revision does not hold.
 	// Commit it.
 	CauseNotCommitted PolicyCause = "not_committed"
-	// CauseInSubmodule is a policy inside a submodule checkout, present or missing: the
-	// superproject records the submodule as one commit, so the file cannot be committed here and a
-	// new policy cannot be written there. Name a policy this repository commits.
+	// CauseInSubmodule is a policy inside a submodule checkout, present or missing, or a path the
+	// analyzed revision commits as a submodule: the superproject records the submodule as one
+	// commit, so the file cannot be committed here and a new policy cannot be written there. Name a
+	// policy this repository commits.
 	CauseInSubmodule PolicyCause = "in_submodule"
 	// CauseParentNotDirectory is a file where a parent directory of the policy should be.
 	CauseParentNotDirectory PolicyCause = "parent_not_directory"
@@ -29,16 +30,19 @@ const (
 	CauseSkipWorktree PolicyCause = "skip_worktree"
 	// CauseSparseCheckout is a sparse checkout that leaves the policy out.
 	CauseSparseCheckout PolicyCause = "sparse_checkout"
-	// CauseCommittedAsLink is a policy committed as a symbolic link.
+	// CauseCommittedAsLink is a policy the analyzed revision commits as a symbolic link, whether
+	// or not a file is on disk.
 	CauseCommittedAsLink PolicyCause = "committed_as_link"
-	// CauseDirectory is a path the index holds files under, so it is a directory.
+	// CauseDirectory is a path the index or the analyzed revision holds files under, so it is a
+	// directory.
 	CauseDirectory PolicyCause = "directory"
 	// CauseIndexLocked is an index that another git process holds locked.
 	CauseIndexLocked PolicyCause = "index_locked"
 	// CauseGitUnreadable is a question about the policy that git could not answer.
 	CauseGitUnreadable PolicyCause = "git_unreadable"
 	// CauseNotARegularFile is a path on disk that is a directory, a pipe or another entry that
-	// is not a regular file. Name a regular file.
+	// is not a regular file, or an entry of another kind that the analyzed revision commits. Name
+	// a regular file.
 	CauseNotARegularFile PolicyCause = "not_a_regular_file"
 	// CauseSymbolicLink is a policy that is a symbolic link, or is reached through one. Name the
 	// file the link points to, from the repository root.

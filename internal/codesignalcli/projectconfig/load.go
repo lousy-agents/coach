@@ -33,8 +33,8 @@ var runProjectConfigGit = gitrepo.BoundedRunner(MaxBytes, MaxGitStderr, GitTimeo
 // or stderr-budget failure still reports *gitrepo.OperationalError: those indicate a
 // resource/environment condition, not a defect in the file's content.
 func LoadForReadiness(dir, revision, repoPath string) (Config, error) {
-	if err := ValidatePath(repoPath); err != nil {
-		return Config{}, invalidError(repoPath, revision, err.Error())
+	if err := refuseReadinessRead(dir, revision, repoPath); err != nil {
+		return Config{}, err
 	}
 
 	data, err := runProjectConfigGit(dir, "show", revision+":"+repoPath)
@@ -59,8 +59,8 @@ func LoadForReadiness(dir, revision, repoPath string) (Config, error) {
 // configuration. Git stdout/stderr, wall time, document size, and JSON
 // nesting are bounded at this boundary.
 func Load(dir, revision, repoPath string) (json.RawMessage, error) {
-	if err := ValidatePath(repoPath); err != nil {
-		return nil, invalidError(repoPath, revision, err.Error())
+	if err := refuseScanRead(dir, revision, repoPath); err != nil {
+		return nil, err
 	}
 
 	data, err := runProjectConfigGit(dir, "show", revision+":"+repoPath)
