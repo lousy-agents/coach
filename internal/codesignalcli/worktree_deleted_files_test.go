@@ -5,45 +5,42 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/pkg/codesignal"
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func TestARenameWhoseNewPathWasDeletedFromDiskDeletesItsSource(t *testing.T) {
-	entries := []gitrepo.WorktreeEntry{
-		{Code: "RD", Path: "new.go", OldPath: "old.go"},
-		{Code: "CD", Path: "copy.go", OldPath: "src.go"},
+func TestUntouchedDeletionsAreRemovedFilesListedByPathAndSkipTheSelectedOnes(t *testing.T) {
+	deleted := map[string]semantics.Language{
+		"web/old.ts": semantics.LanguageTypeScript,
+		"z.go":       semantics.LanguageGo,
+		"a.go":       semantics.LanguageGo,
+		"kept.go":    semantics.LanguageGo,
 	}
 
-	wantTracked := map[string]semantics.Language{"old.go": semantics.LanguageGo}
-	if got := deletedTrackedPaths(entries); !reflect.DeepEqual(got, wantTracked) {
-		t.Errorf("deletedTrackedPaths = %v, want %v: the source of the rename is gone, the source of a copy stays", got, wantTracked)
+	got := untouchedDeletions(deleted, map[string]bool{"kept.go": true})
+
+	want := []gitrepo.SelectedFile{
+		{Path: "a.go", Status: codesignal.ChangeStatus("removed"), Language: semantics.LanguageGo},
+		{Path: "web/old.ts", Status: codesignal.ChangeStatus("removed"), Language: semantics.LanguageTypeScript},
+		{Path: "z.go", Status: codesignal.ChangeStatus("removed"), Language: semantics.LanguageGo},
 	}
-	wantAny := map[string]bool{"old.go": true}
-	if got := deletedPaths(entries); !reflect.DeepEqual(got, wantAny) {
-		t.Errorf("deletedPaths = %v, want %v", got, wantAny)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("untouchedDeletions = %+v, want %+v in path order, without the path the committed diff selected", got, want)
 	}
 }
 
-func TestAnIntentToAddRenameTakesItsSourceOutOfTheBaselineOnly(t *testing.T) {
-	entries := []gitrepo.WorktreeEntry{{Code: " R", Path: "new.go", OldPath: "old.go"}}
-
-	if got := deletedPaths(entries); !reflect.DeepEqual(got, map[string]bool{"old.go": true}) {
-		t.Errorf("deletedPaths = %v, want old.go: the baseline counts the destination as new, so the source must leave", got)
-	}
-	if got := deletedTrackedPaths(entries); len(got) != 0 {
-		t.Errorf("deletedTrackedPaths = %v, want none: a diff scan leaves a moved file's old path to the continuity diagnostic, as for a staged rename", got)
-	}
-}
-
-func TestAStagedRenameTakesItsSourceOutOfTheBaseline(t *testing.T) {
+func TestDeletedTrackedPathsLeavesOutSourceFilesUnderNodeModules(t *testing.T) {
 	entries := []gitrepo.WorktreeEntry{
-		{Code: "R ", Path: "new.sh", OldPath: "old.sh"},
-		{Code: "RM", Path: "edited.go", OldPath: "before.go"},
-		{Code: "C ", Path: "copy.go", OldPath: "src.go"},
+		{Code: " D", Path: "node_modules/pkg/index.ts"},
+		{Code: "D ", Path: "web/node_modules/pkg/lib.go"},
+		{Code: " D", Path: "src/old.go"},
+		{Code: " D", Path: "docs/notes.txt"},
 	}
 
-	want := map[string]bool{"old.sh": true, "before.go": true}
-	if got := deletedPaths(entries); !reflect.DeepEqual(got, want) {
-		t.Errorf("deletedPaths = %v, want %v: a rename's source is gone, a copy's stays", got, want)
+	got := deletedTrackedPaths(entries)
+
+	want := map[string]semantics.Language{"src/old.go": semantics.LanguageGo}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("deletedTrackedPaths = %v, want %v: a dependency under node_modules and an unsupported file are not the project's deleted source", got, want)
 	}
 }
