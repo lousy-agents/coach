@@ -18,6 +18,9 @@ func (f *gitFailure) describe() string {
 	if errors.As(f.err, &finding) {
 		return f.question + " (" + finding.Finding + ")"
 	}
+	if f.words != "" {
+		return f.question + ": " + f.words
+	}
 	text := []rune(f.err.Error())
 	if len(text) > maxGitErrorRunes {
 		text = append(text[:maxGitErrorRunes], '…')

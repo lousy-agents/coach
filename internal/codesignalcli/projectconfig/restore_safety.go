@@ -68,6 +68,9 @@ type gitFailure struct {
 	// check".
 	question string
 	err      error
+	// words replace what git said when Coach knows what the failure means and git's
+	// own words, here a bare exit status, would not tell the user.
+	words string
 }
 
 // newGitFailure keeps git's own error. An OperationalError wraps it in Coach's
@@ -99,7 +102,7 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 	}
 	committed, found, err := gitrepo.BlobEntryAtRevision(run, dir, revision, repoPath)
 	if err != nil {
-		return policyJudgment{verdict: restoreUndecidable, indexEntryUnread: true, failure: newGitFailure("whether it is committed at the analyzed revision", err)}
+		return policyJudgment{verdict: restoreUndecidable, indexEntryUnread: true, failure: blobCheckFailure(run, dir, revision, repoPath, err)}
 	}
 	indexed, err := gitrepo.IndexEntries(run, dir, repoPath)
 	if err != nil {
