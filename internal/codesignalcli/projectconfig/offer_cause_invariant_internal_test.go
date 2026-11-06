@@ -30,9 +30,9 @@ func requireARemedyXorACause(t *testing.T, verdict restoreVerdict, blocked, lock
 	t.Helper()
 	judgment := verdictCase{verdict: verdict, failureForTheOffer: true}.judgment()
 	judgment.indexLocked = locked
-	cause := [2]MissingCause{CauseAbsent, CauseBlockedParent}[blockedIndex(blocked)]
+	cause := [2]MissingCause{MissingAbsent, MissingBlockedParent}[blockedIndex(blocked)]
 
-	offer, offered := restoreOfferFor(judgment, "HEAD", &ConfigError{Kind: KindMissing, Cause: cause}, "cfg/p.json")
+	offer, offered := restoreOfferFor(judgment, "HEAD", &ConfigError{Kind: KindMissing, Missing: cause}, "cfg/p.json")
 
 	namesARemedy := offer.remedy != projectreadiness.RemedyNone
 	if offered && namesARemedy == (offer.cause != "") {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // requireOnDisk resolves the repository-relative path against the repository
@@ -34,7 +35,7 @@ func requireOnDisk(run gitrepo.Runner, dir, revision, repoPath string) error {
 func checkRegularFileUnder(rootDir, repoPath string) error {
 	root, err := os.OpenRoot(rootDir)
 	if err != nil {
-		return unusableOnDiskError(repoPath, "cannot be checked on disk: "+causeText(err))
+		return unusableOnDiskError(repoPath, projectreadiness.CauseUnreadableOnDisk, "cannot be checked on disk: "+causeText(err))
 	}
 	defer func() { _ = root.Close() }()
 	return checkRegularFileThrough(osDiskRoot{root}, repoPath)
@@ -63,7 +64,7 @@ func checkAncestors(root diskRoot, repoPath string) error {
 			return classifyStatError(repoPath, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return unusableOnDiskError(repoPath, fmt.Sprintf("is reached through a symbolic link, %q", ancestor))
+			return unusableOnDiskError(repoPath, projectreadiness.CauseSymbolicLink, fmt.Sprintf("is reached through a symbolic link, %q", ancestor))
 		}
 		if !info.IsDir() {
 			return blockedParentError(repoPath, ancestor)
@@ -81,9 +82,9 @@ func checkEntry(root diskRoot, repoPath string) error {
 	}
 	switch {
 	case info.Mode()&os.ModeSymlink != 0:
-		return unusableOnDiskError(repoPath, "is a symbolic link, not a regular file")
+		return unusableOnDiskError(repoPath, projectreadiness.CauseSymbolicLink, "is a symbolic link, not a regular file")
 	case !info.Mode().IsRegular():
-		return unusableOnDiskError(repoPath, "is not a regular file")
+		return unusableOnDiskError(repoPath, projectreadiness.CauseNotARegularFile, "is not a regular file")
 	}
 	return checkReadable(root, repoPath)
 }

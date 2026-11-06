@@ -52,10 +52,10 @@ type ConfigError struct {
 	Message string
 	Kind    ErrorKind
 
-	// Cause says why a policy that is missing from disk is missing, for the
-	// callers that have to tell the cases apart. It is CauseUnset for every
-	// other kind.
-	Cause MissingCause
+	// Missing says why a policy that is missing from disk is missing, for the
+	// callers that have to tell the cases apart. It is MissingUnset for every
+	// other kind. It is not PolicyCause, the stable word the readiness result carries.
+	Missing MissingCause
 	// FromWorkingTree is set when the working tree, not the analyzed revision,
 	// produced this error. A caller that holds it does not need to look at the
 	// working tree for the same policy again.
@@ -81,13 +81,13 @@ type ConfigError struct {
 type MissingCause int
 
 const (
-	// CauseUnset is the zero value, for an error that is not a missing policy.
-	CauseUnset MissingCause = iota
-	// CauseAbsent means nothing is at the path.
-	CauseAbsent
-	// CauseBlockedParent means a parent path component is a file, so the path
+	// MissingUnset is the zero value, for an error that is not a missing policy.
+	MissingUnset MissingCause = iota
+	// MissingAbsent means nothing is at the path.
+	MissingAbsent
+	// MissingBlockedParent means a parent path component is a file, so the path
 	// cannot be created or restored while that file stays.
-	CauseBlockedParent
+	MissingBlockedParent
 )
 
 func (e *ConfigError) Error() string { return e.Message }
@@ -105,18 +105,20 @@ func readError(dir, revision, repoPath string, gitErr error) error {
 		return &ConfigError{Kind: KindUnreadable, Remedy: boundRemedy(boundErr), PolicyCause: boundCause(boundErr), Message: fmt.Sprintf("coach codesignal: --project-config %q is not readable at revision %q (project_config_invalid): %s", repoPath, revision, boundErr.Error())}
 	}
 	if configExistsInWorktree(dir, repoPath) {
-		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseNotCommitted, Message: UncommittedPolicyMessage(dir, revision, repoPath)}
+		message, cause := UncommittedPolicy(dir, revision, repoPath)
+		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, PolicyCause: cause, Message: message}
 	}
 	return &ConfigError{Kind: KindNotFound, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found at revision %q (project_config_invalid)", repoPath, revision)}
 }
 
-// UncommittedPolicyMessage is what the scan says about a --project-config policy
-// that exists in the working tree but is not committed at the analyzed revision.
-func UncommittedPolicyMessage(dir, revision, repoPath string) string {
+// UncommittedPolicy is what the scan says about a --project-config policy that exists in the
+// working tree but is not committed at the analyzed revision, with the stable word for it. It is the
+// one place that decides both, so the scan's message and the readiness result's cause cannot differ.
+func UncommittedPolicy(dir, revision, repoPath string) (string, projectreadiness.PolicyCause) {
 	if submodule, inside := enclosingSubmodule(dir, repoPath); inside {
-		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here (project_config_invalid): name a policy that is committed in this repository's own files", repoPath, submodule)
+		return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here (project_config_invalid): name a policy that is committed in this repository's own files", repoPath, submodule), projectreadiness.CauseNotCommitted
 	}
-	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision)
+	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): commit the file so it is readable at the analyzed revision", repoPath, revision), projectreadiness.CauseNotCommitted
 }
 
 // enclosingSubmodule is the submodule whose checkout holds repoPath. The superproject records a
@@ -181,7 +183,7 @@ func configExistsInWorktree(dir, repoPath string) bool {
 }
 
 func missingError(repoPath string) error {
-	return &ConfigError{Kind: KindMissing, Cause: CauseAbsent, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing); the path is repository-relative", repoPath)}
+	return &ConfigError{Kind: KindMissing, Missing: MissingAbsent, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing); the path is repository-relative", repoPath)}
 }
 
 // blockedParentError is a missing policy whose path cannot be created because a
@@ -190,17 +192,20 @@ func missingError(repoPath string) error {
 // delete the file in the way. It is still missing, never a reason to read
 // another policy.
 func blockedParentError(repoPath, component string) error {
-	return &ConfigError{Kind: KindMissing, Cause: CauseBlockedParent, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseParentNotDirectory, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing): a parent path component is not a directory, %q; move or remove it; the path is repository-relative", repoPath, component)}
+	return &ConfigError{Kind: KindMissing, Missing: MissingBlockedParent, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseParentNotDirectory, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing): a parent path component is not a directory, %q; move or remove it; the path is repository-relative", repoPath, component)}
 }
 
 // unusableOnDiskError is a policy path the working tree decided is unusable. A
 // new policy cannot replace what is there, so authoring is not offered.
-func unusableOnDiskError(repoPath, reason string) error {
-	return newUnusableOnDisk(repoPath, reason)
+func unusableOnDiskError(repoPath string, cause projectreadiness.PolicyCause, reason string) error {
+	return newUnusableOnDisk(repoPath, cause, reason)
 }
 
-func newUnusableOnDisk(repoPath, reason string) *ConfigError {
-	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseUnusableOnDisk, Message: fmt.Sprintf("coach codesignal: --project-config %q %s (project_config_invalid)", repoPath, reason)}
+// newUnusableOnDisk is unusableOnDiskError as the concrete type. The cause says which fix the
+// path needs, so a reader can tell a directory from a link, an unreadable file and a name in
+// another case without parsing the message.
+func newUnusableOnDisk(repoPath string, cause projectreadiness.PolicyCause, reason string) *ConfigError {
+	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: cause, Message: fmt.Sprintf("coach codesignal: --project-config %q %s (project_config_invalid)", repoPath, reason)}
 }
 
 func invalidError(repoPath, revision, reason string) error {

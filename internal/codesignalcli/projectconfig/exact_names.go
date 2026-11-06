@@ -2,6 +2,8 @@ package projectconfig
 
 import (
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // checkExactNames requires every component of the policy path to be spelled on
@@ -32,7 +34,7 @@ func checkExactNamesThrough(root diskRoot, repoPath string, count int) error {
 		}
 		spelled, err := spellingIn(root, directory, part)
 		if err != nil {
-			return unusableOnDiskError(repoPath, "cannot be checked on disk: "+causeText(err))
+			return unusableOnDiskError(repoPath, projectreadiness.CauseUnreadableOnDisk, "cannot be checked on disk: "+causeText(err))
 		}
 		if spelled != part {
 			return newCaseMismatch(repoPath, parts, i, spelled)

@@ -1,6 +1,10 @@
 package projectconfig
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+)
 
 func TestAPolicyMissingFromDiskIsRefusedWhenTheRevisionHoldsItsPathInAnotherCase(t *testing.T) {
 	cases := []struct {
@@ -78,7 +82,7 @@ func TestOnlyAPolicyMissingForNoOtherReasonIsLookedUpInTheRevision(t *testing.T)
 	}{
 		{"a policy absent from disk", missingError("cfg/P.json"), revision, true},
 		{"a policy whose parent is a file", blockedParentError("cfg/P.json", "cfg"), revision, false},
-		{"a path that cannot be used", unusableOnDiskError("cfg/P.json", "is not a regular file"), revision, false},
+		{"a path that cannot be used", unusableOnDiskError("cfg/P.json", projectreadiness.CauseNotARegularFile, "is not a regular file"), revision, false},
 		{"no way to ask the revision", missingError("cfg/P.json"), nil, false},
 	}
 	for _, c := range cases {

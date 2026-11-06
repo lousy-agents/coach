@@ -85,8 +85,12 @@ does not hold, or one inside a submodule), `parent_not_directory`, `staged_edit`
 `staged_copy` (a staged copy of a policy that was never committed),
 `staged_not_a_file`, `merge_conflict`, `skip_worktree`, `sparse_checkout`,
 `committed_as_link`, `directory` (the index holds files under the name),
-`index_locked`, `git_unreadable`, `unusable_on_disk` (a path on disk that cannot be
-a policy) and `undetermined`.
+`index_locked`, `git_unreadable` (only a read that trips the time or stderr bound reaches a
+document; any other unanswered git question is exit `1`) and `undetermined`. A path on disk
+that cannot be a policy has one word for each fix: `not_a_regular_file` (a directory, a pipe
+or another entry; name a regular file), `symbolic_link` (the policy is a link or is reached
+through one; name the file it points to), `unreadable_on_disk` (the process cannot stat or
+read it; fix the permissions) and `name_case_differs` (rename it to the revision's spelling).
 
 An explicit `--project-config` whose name differs only by case from what is on disk
 is refused with exit `2` and `project_config_invalid`. A file system that folds case
