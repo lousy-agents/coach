@@ -45,4 +45,18 @@ var _ = Describe("coach codesignal: the message for a policy that nothing commit
 			Expect(string(stderr)).NotTo(ContainSubstring("staged copy"), "stderr:\n%s", stderr)
 		})
 	})
+
+	When("it was staged as a symbolic link, never committed, and the link was removed", func() {
+		It("prints no restore command, because that would recreate a link the scan refuses", func() {
+			Expect(os.MkdirAll(filepath.Join(repo, "cfg"), 0o755)).To(Succeed())
+			Expect(os.Symlink("../real.json", filepath.Join(repo, policy))).To(Succeed())
+			gitIn(repo, "add", policy)
+			Expect(os.Remove(filepath.Join(repo, policy))).To(Succeed())
+
+			stderr := scanExplicitPolicy(repo, policy)
+
+			Expect(string(stderr)).To(ContainSubstring("symbolic link"), "stderr:\n%s", stderr)
+			Expect(restoreCommandFrom(stderr)).To(BeEmpty(), "a policy cannot be a symbolic link, so no restore may be offered:\n%s", stderr)
+		})
+	})
 })

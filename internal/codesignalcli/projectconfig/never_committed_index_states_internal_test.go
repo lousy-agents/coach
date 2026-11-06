@@ -32,3 +32,25 @@ func TestAnUnmergedPolicyNothingCommitsNamesTheConflictAndPrintsNoRestore(t *tes
 		t.Errorf("message %q; git restore refuses an unmerged path, and the policy is not committed", status.Message)
 	}
 }
+
+func TestAPolicyNothingCommitsThatIsStagedAsALinkPrintsNoRestore(t *testing.T) {
+	status := explicitStatusFor(t, indexFake{uncommitted: true, lsFiles: indexLine("120000", committedBlob, "0")})
+
+	if !strings.Contains(status.Message, "symbolic link") {
+		t.Errorf("message %q; want it to say the staged entry is a symbolic link", status.Message)
+	}
+	if strings.Contains(status.Message, "restore it with") {
+		t.Errorf("message %q; restoring would recreate a link the scan refuses", status.Message)
+	}
+}
+
+func TestAPolicyNothingCommitsThatIsStagedAsASubmoduleEntryPrintsNoRestore(t *testing.T) {
+	status := explicitStatusFor(t, indexFake{uncommitted: true, lsFiles: indexLine("160000", committedBlob, "0")})
+
+	if strings.Contains(status.Message, "restore it with") {
+		t.Errorf("message %q; a restore would not produce a regular file, which the scan requires", status.Message)
+	}
+	if !strings.Contains(status.Message, "not a regular file") {
+		t.Errorf("message %q; want it to say the staged entry is not a regular file", status.Message)
+	}
+}

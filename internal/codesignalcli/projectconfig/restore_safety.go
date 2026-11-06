@@ -2,6 +2,7 @@ package projectconfig
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
@@ -22,6 +23,7 @@ const (
 	restoreStagedNotCommitted
 	restoreSkipWorktreeMarked
 	restoreUnmergedNotCommitted
+	restoreStagedNonFileNotCommitted
 )
 
 const regularFileModeMask = "100"
@@ -102,6 +104,8 @@ func verdictFor(committed gitrepo.TreeEntry, found bool, staged []gitrepo.IndexE
 	switch {
 	case !found && holdsUnmergedEntry(staged):
 		return restoreUnmergedNotCommitted
+	case !found && stagedAsNonRegularFile(staged):
+		return restoreStagedNonFileNotCommitted
 	case !found && len(staged) > 0:
 		return restoreStagedNotCommitted
 	case !found:
@@ -118,6 +122,13 @@ func verdictFor(committed gitrepo.TreeEntry, found bool, staged []gitrepo.IndexE
 		return restoreSkipWorktreeMarked
 	}
 	return restoreOverwritesNothing
+}
+
+// stagedAsNonRegularFile is true when the index holds the path as a symbolic link
+// or a submodule entry, which a restore from the index would recreate as
+// something the scan refuses.
+func stagedAsNonRegularFile(staged []gitrepo.IndexEntry) bool {
+	return slices.ContainsFunc(staged, func(entry gitrepo.IndexEntry) bool { return !isRegularFileMode(entry.Mode) })
 }
 
 // holdsUnmergedEntry is true when the index holds a conflict stage for the path.

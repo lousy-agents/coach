@@ -78,6 +78,15 @@ var unmergedNotCommittedOffer = restoreOffer{
 	text:   ". It is not committed, but the index holds an unresolved merge conflict for it, so Coach offers no new policy and a restore cannot bring it back; resolve the conflict with git status, then run again",
 }
 
+// stagedNonFileOffer is for a policy that is not committed and whose index entry
+// is a symbolic link or a submodule entry. Restoring it from the index would
+// recreate what the scan refuses, so no command is printed, and a new policy
+// would replace the staged entry.
+var stagedNonFileOffer = restoreOffer{
+	remedy: projectreadiness.RemedyNone,
+	text:   ". It is not committed, but the index holds it as a symbolic link or another entry that is not a regular file, which a policy cannot be, so there is nothing to restore; name another policy or stage a regular file at this path",
+}
+
 // committedLinkOffer is for a policy committed as a symbolic link. Restoring it
 // would recreate a link the scan refuses, and a new file would not be the
 // committed policy.
@@ -128,6 +137,8 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 		return undecidableOffer(judgment.failure), true
 	case verdict == restoreUnmergedNotCommitted:
 		return unmergedNotCommittedOffer, true
+	case verdict == restoreStagedNonFileNotCommitted:
+		return stagedNonFileOffer, true
 	case verdict == restoreStagedNotCommitted:
 		return stagedOnlyOffer(repoPath, blocked), true
 	case verdict == restoreMergeConflict:
