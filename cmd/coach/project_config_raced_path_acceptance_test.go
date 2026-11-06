@@ -57,7 +57,9 @@ func expectRacedScanInvariants(repo string) {
 	begin := time.Now()
 	stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--project-config", explicitPolicyPath, "--format=json")
 
-	ExpectWithOffset(1, time.Since(begin)).To(BeNumerically("<", 20*time.Second), "a scan hung on the raced entry")
+	// On Linux git can lstat the entry as a file, see it swapped for a FIFO, and block opening it. The
+	// scan then ends at the 30 s wall-time bound of its git reads, so the ceiling sits above that bound.
+	ExpectWithOffset(1, time.Since(begin)).To(BeNumerically("<", 45*time.Second), "a scan hung on the raced entry")
 	ExpectWithOffset(1, exitCode).To(BeElementOf(0, 2), "stderr: %s", stderr)
 	ExpectWithOffset(1, string(stderr)).NotTo(ContainSubstring("panic:"))
 	ExpectWithOffset(1, string(stdout)+string(stderr)).NotTo(ContainSubstring(raceCanary))
