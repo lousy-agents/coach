@@ -61,6 +61,11 @@ func TestOverlayNamesWhyAPathCouldNotBeRead(t *testing.T) {
 			entry:       diskEntry{mode: 0o644, data: []byte("module racing\n"), growsAfterRead: true},
 			wantChanged: []string{"go.mod"},
 		},
+		{
+			name:        "a file that grew between the stat and the read is changed, not served at its new length",
+			entry:       diskEntry{mode: 0o644, data: []byte("module racing\n"), growsBeforeRead: true},
+			wantChanged: []string{"go.mod"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
