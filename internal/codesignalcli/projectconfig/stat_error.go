@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io/fs"
 	"syscall"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // causeText is the operating system's reason for a failed stat and nothing
@@ -23,7 +25,7 @@ func classifyStatError(repoPath string, err error) error {
 	if errors.Is(err, fs.ErrNotExist) {
 		return missingError(repoPath)
 	}
-	return unusableOnDiskError(repoPath, "cannot be checked on disk: "+causeText(err))
+	return unusableOnDiskError(repoPath, projectreadiness.CauseUnreadableOnDisk, "cannot be checked on disk: "+causeText(err))
 }
 
 // classifyOpenError is classifyStatError for an open that failed on an entry
@@ -32,5 +34,5 @@ func classifyOpenError(repoPath string, err error) error {
 	if errors.Is(err, fs.ErrNotExist) {
 		return missingError(repoPath)
 	}
-	return unusableOnDiskError(repoPath, "cannot be read on disk: "+causeText(err))
+	return unusableOnDiskError(repoPath, projectreadiness.CauseUnreadableOnDisk, "cannot be read on disk: "+causeText(err))
 }

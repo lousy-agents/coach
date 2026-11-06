@@ -33,9 +33,18 @@ const (
 	CauseIndexLocked PolicyCause = "index_locked"
 	// CauseGitUnreadable is a question about the policy that git could not answer.
 	CauseGitUnreadable PolicyCause = "git_unreadable"
-	// CauseUnusableOnDisk is a path on disk that cannot be a policy: not a regular
-	// file, a link, a name that differs by case, or unreadable.
-	CauseUnusableOnDisk PolicyCause = "unusable_on_disk"
+	// CauseNotARegularFile is a path on disk that is a directory, a pipe or another entry that
+	// is not a regular file. Name a regular file.
+	CauseNotARegularFile PolicyCause = "not_a_regular_file"
+	// CauseSymbolicLink is a policy that is a symbolic link, or is reached through one. Name the
+	// file the link points to, from the repository root.
+	CauseSymbolicLink PolicyCause = "symbolic_link"
+	// CauseUnreadableOnDisk is a path the process cannot stat or read. Fix the permissions or the
+	// file system error.
+	CauseUnreadableOnDisk PolicyCause = "unreadable_on_disk"
+	// CauseNameCaseDiffers is a name that a case-folding file system resolves but the analyzed
+	// revision spells differently. Rename it to the revision's spelling.
+	CauseNameCaseDiffers PolicyCause = "name_case_differs"
 	// CauseUndetermined is a state Coach has no word for.
 	CauseUndetermined PolicyCause = "undetermined"
 )

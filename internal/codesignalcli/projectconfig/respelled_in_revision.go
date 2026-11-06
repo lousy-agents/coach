@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // respelledInRevision is the refusal for a policy that is not on disk when the
@@ -14,13 +16,13 @@ import (
 func respelledInRevision(entries revisionEntries, repoPath string) *ConfigError {
 	spelled, ambiguous, changed := spellingInRevision(entries, strings.Split(repoPath, "/"))
 	if ambiguous != nil {
-		return newUnusableOnDisk(repoPath, fmt.Sprintf("is not on disk, and the analyzed revision holds more than one spelling of it: %s; pass the one you mean", quotedList(ambiguous)))
+		return newUnusableOnDisk(repoPath, projectreadiness.CauseNameCaseDiffers, fmt.Sprintf("is not on disk, and the analyzed revision holds more than one spelling of it: %s; pass the one you mean", quotedList(ambiguous)))
 	}
 	if !changed {
 		return nil
 	}
 	corrected := strings.Join(spelled, "/")
-	return newUnusableOnDisk(repoPath, fmt.Sprintf("is not on disk, and the analyzed revision holds it as %q%s", corrected, passClause("; pass", corrected)))
+	return newUnusableOnDisk(repoPath, projectreadiness.CauseNameCaseDiffers, fmt.Sprintf("is not on disk, and the analyzed revision holds it as %q%s", corrected, passClause("; pass", corrected)))
 }
 
 // spellingInRevision resolves each component against the revision's listing of

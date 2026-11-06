@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/shellword"
 )
 
@@ -52,7 +53,7 @@ func adviseOnRevision(err error, repoPath string, entries revisionEntries) error
 		return mismatch.config(entries)
 	}
 	var found *ConfigError
-	if entries != nil && errors.As(err, &found) && found.Kind == KindMissing && found.Cause == CauseAbsent {
+	if entries != nil && errors.As(err, &found) && found.Kind == KindMissing && found.Missing == MissingAbsent {
 		if respelled := respelledInRevision(entries, repoPath); respelled != nil {
 			return respelled
 		}
@@ -65,7 +66,7 @@ func adviseOnRevision(err error, repoPath string, entries revisionEntries) error
 // advice built from the user's own argument can point the wrong way.
 func (m caseMismatchError) config(entries revisionEntries) *ConfigError {
 	reason := fmt.Sprintf("is stored as %q on disk, not %q; this filesystem ignores case, so the name resolves, but the analyzed revision tells the two spellings apart", m.onDisk, m.typed)
-	return newUnusableOnDisk(m.repoPath, reason+m.revisionClause(entries))
+	return newUnusableOnDisk(m.repoPath, projectreadiness.CauseNameCaseDiffers, reason+m.revisionClause(entries))
 }
 
 // revisionClause says which spelling the revision holds, and the one way out

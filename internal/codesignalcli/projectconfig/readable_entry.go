@@ -3,6 +3,8 @@ package projectconfig
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 // checkReadable opens the entry and closes it again, so a file that exists but
@@ -21,7 +23,7 @@ func checkReadable(root diskRoot, repoPath string) error {
 		return classifyOpenError(repoPath, err)
 	}
 	if !info.Mode().IsRegular() {
-		return unusableOnDiskError(repoPath, "is not a regular file")
+		return unusableOnDiskError(repoPath, projectreadiness.CauseNotARegularFile, "is not a regular file")
 	}
 	return nil
 }

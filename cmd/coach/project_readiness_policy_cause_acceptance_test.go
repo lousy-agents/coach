@@ -77,9 +77,23 @@ var causeRows = []causeRow{
 	{"files committed under the name, which makes it a directory", "cfg", "policy_missing", "directory", func(repo string) {
 		commitThenRemove(repo, "cfg/p.json")
 	}},
-	{"a policy that is a symbolic link on disk", "link.json", "policy_invalid", "unusable_on_disk", func(repo string) {
+	{"a policy that is a symbolic link on disk", "link.json", "policy_invalid", "symbolic_link", func(repo string) {
 		writeWorktreeFile(repo, "real.json", singleRootPolicyJSON)
 		Expect(os.Symlink("real.json", filepath.Join(repo, "link.json"))).To(Succeed())
+	}},
+	{"a directory on disk where the policy file should be", "dir.json", "policy_invalid", "not_a_regular_file", func(repo string) {
+		Expect(os.MkdirAll(filepath.Join(repo, "dir.json"), 0o755)).To(Succeed())
+	}},
+	{"a policy file the process cannot read", "locked.json", "policy_invalid", "unreadable_on_disk", func(repo string) {
+		writeWorktreeFile(repo, "locked.json", singleRootPolicyJSON)
+		Expect(os.Chmod(filepath.Join(repo, "locked.json"), 0o000)).To(Succeed())
+		DeferCleanup(func() { _ = os.Chmod(filepath.Join(repo, "locked.json"), 0o644) })
+	}},
+	{"a name spelled in another case than the revision holds, on a file system that folds case", "CFG/p.json", "policy_invalid", "name_case_differs", func(repo string) {
+		commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
+		if _, err := os.Lstat(filepath.Join(repo, "CFG")); err != nil {
+			Skip("this file system tells cfg and CFG apart, so the name does not resolve")
+		}
 	}},
 	{"a policy committed as a symbolic link, then removed", "cfg/p.json", "policy_missing", "committed_as_link", func(repo string) {
 		symlinkAt(repo, "cfg/p.json")

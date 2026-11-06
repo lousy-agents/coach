@@ -41,7 +41,7 @@ var _ = Describe("coach codesignal: a tracked directory too large for the policy
 		It("gives --check-project the same verdict, not an operational error", func() {
 			doc := checkProject()
 
-			Expect(causeOfGap(doc, "policy_invalid")).To(Equal("unusable_on_disk"), "gaps: %+v", doc.Gaps)
+			Expect(causeOfGap(doc, "policy_invalid")).To(Equal("not_a_regular_file"), "gaps: %+v", doc.Gaps)
 		})
 	})
 
