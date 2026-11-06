@@ -28,6 +28,8 @@ const (
 	restoreStagedSkipWorktreeNotCommitted
 	restoreStagedSparseNotCommitted
 	restoreOverwritesEmptyEntry
+	// restoreVerdictCount is the number of verdicts above, for a test that walks all of them.
+	restoreVerdictCount
 )
 
 const regularFileModeMask = "100"
@@ -93,10 +95,8 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 	}
 	staged := withoutUnmarkedEmptyEntries(listed)
 	unread := indexHoldsUnreadEntry(committed, found, withoutEmptyEntries(listed))
-	verdict := verdictFor(committed, found, staged, unread, sparseCheckoutEnabled(run, dir, staged))
-	if verdict == restoreOverwritesNothing && len(staged) < len(listed) {
-		verdict = restoreOverwritesEmptyEntry
-	}
+	facts := indexFacts{entries: staged, unread: unread, sparse: sparseCheckoutEnabled(run, dir, staged), setAsideEmpty: len(staged) < len(listed)}
+	verdict := verdictFor(committed, found, facts)
 	return policyJudgment{verdict: verdict, indexEntryUnread: unread, indexLocked: offersRestoreCommand(verdict) && indexIsLocked(run, dir)}
 }
 
