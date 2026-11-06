@@ -39,7 +39,10 @@ func checkRegularFileUnder(rootDir, repoPath string) error {
 	if err := checkAncestors(root, repoPath); err != nil {
 		return err
 	}
-	return checkEntry(root, repoPath)
+	if err := checkEntry(root, repoPath); err != nil {
+		return err
+	}
+	return checkExactNames(root, repoPath)
 }
 
 // checkAncestors requires every parent of the policy to be a real directory.
