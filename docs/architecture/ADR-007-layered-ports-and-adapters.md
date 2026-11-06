@@ -49,7 +49,7 @@ flowchart LR
 
 The direction is enforced at two grains.
 
-**Rings across the module.** `.lousy-agents/coach.json` is the repository's own project-analysis policy. It places top-level trees in five rings: four production rings (entities, usecases, adapters, app) and a tooling ring for test-support trees, which no production ring may import. It forbids every outward import between the production rings and every import into tooling, and `coach codesignal --baseline --project-config .lousy-agents/coach.json` reports any crossing as `architecture.layer_violation`. Outside test files it reports none. The 17 test-file edges into tooling at the round-6 head are exempt under G-COACH Amendment 2 and tracked in coach#602 and coach#627.
+**Rings across the module.** `.lousy-agents/coach.json` is the repository's own project-analysis policy. It places top-level trees in five rings: four production rings (entities, usecases, adapters, app) and a tooling ring for test-support trees, which no production ring may import. It forbids every outward import between the production rings and every import into tooling, and `coach codesignal --baseline --project-config .lousy-agents/coach.json` reports any crossing as `architecture.layer_violation`. Outside test files it reports none. Test files may import the tooling ring, and each such edge is reported as `architecture.layer_violation` with the importee in tooling; they are known and tracked in coach#602 and coach#627, and an edge into tooling from a file that is not a test file is a failure.
 
 | Ring (`.lousy-agents/coach.json`) | Trees |
 | --- | --- |
