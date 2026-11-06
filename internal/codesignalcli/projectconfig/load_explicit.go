@@ -3,6 +3,7 @@ package projectconfig
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 // LoadExplicit is Load for a --project-config the user named. It rejects a
@@ -40,7 +41,10 @@ func ExplicitOnDiskStatus(run func(dir string, args ...string) ([]byte, error), 
 	judged := *found
 	judged.FromWorkingTree = true
 	judged.UnreadStagedEdit = judgment.indexEntryUnread
-	offer, offered := restoreOfferFor(judgment.verdict, revision, found, repoPath)
+	if judgment.failure != nil {
+		judged.GitFailure = fmt.Errorf("could not check %s", judgment.failure.describe())
+	}
+	offer, offered := restoreOfferFor(judgment, revision, found, repoPath)
 	if !offered {
 		return &judged, nil
 	}
@@ -53,7 +57,8 @@ func ExplicitOnDiskStatus(run func(dir string, args ...string) ([]byte, error), 
 // scan refuses: a file in the way of the path stays in the way, a staged edit
 // stays staged even when a file is in the way, and a committed link stays
 // unrestored even when a file is in the way; the message says so instead.
-func restoreOfferFor(verdict restoreVerdict, revision string, found *ConfigError, repoPath string) (restoreOffer, bool) {
+func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigError, repoPath string) (restoreOffer, bool) {
+	verdict := judgment.verdict
 	if found.Kind != KindMissing {
 		return restoreOffer{}, false
 	}
@@ -62,7 +67,7 @@ func restoreOfferFor(verdict restoreVerdict, revision string, found *ConfigError
 	case verdict == restoreNotCommitted, verdict == restoreUndecidable && blocked:
 		return restoreOffer{}, false
 	case verdict == restoreUndecidable:
-		return undecidableOffer, true
+		return undecidableOffer(judgment.failure), true
 	case verdict == restoreDiscardsStagedEdit:
 		return stagedEditOffer, true
 	case verdict == restoreRecreatesLink:

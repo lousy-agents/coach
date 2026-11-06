@@ -61,12 +61,12 @@ func FileExistsAtRevision(run func(dir string, args ...string) ([]byte, error), 
 //     must also fail closed rather than report the path absent.
 func BlobEntryAtRevision(run func(dir string, args ...string) ([]byte, error), dir, revision, repoPath string) (TreeEntry, bool, error) {
 	if _, err := run(dir, "cat-file", "-e", revision+"^{commit}"); err != nil {
-		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: revision %q could not be verified: %s", revision, err)}
+		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: revision %q could not be verified: %s", revision, err), Cause: err}
 	}
 
 	output, err := run(dir, "ls-tree", "--full-tree", revision, "--", ":(top,literal)"+repoPath)
 	if err != nil {
-		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be resolved at revision %q: %s", repoPath, revision, err)}
+		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be resolved at revision %q: %s", repoPath, revision, err), Cause: err}
 	}
 	entry, ok := lsTreeBlob(output)
 	if !ok {
@@ -74,7 +74,7 @@ func BlobEntryAtRevision(run func(dir string, args ...string) ([]byte, error), d
 	}
 
 	if _, err := run(dir, "cat-file", "-e", entry.SHA); err != nil {
-		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be read at revision %q: %s", repoPath, revision, err)}
+		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be read at revision %q: %s", repoPath, revision, err), Cause: err}
 	}
 	return entry, true, nil
 }
