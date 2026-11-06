@@ -24,13 +24,13 @@ func Run(dir, revision string, policy policyref.Ref) (*projectreadiness.Result, 
 }
 
 // evaluate is Run with the policy check chosen by the caller.
-func evaluate(dir, revision string, policy policyref.Ref, checkPolicy func(dir, revision, policyPath string) (projectreadiness.Check, []string, error)) (projectreadiness.Result, error) {
+func evaluate(dir, revision string, policy policyref.Ref, check func(dir, revision, policyPath string) (projectreadiness.Check, []string, error)) (projectreadiness.Result, error) {
 	policyPath, extraWarnings, err := resolveCheckPolicy(dir, revision, policy)
 	if err != nil {
 		return projectreadiness.Result{}, err
 	}
 
-	policyCheck, roots, err := checkPolicy(dir, revision, policyPath)
+	policyCheck, roots, err := check(dir, revision, policyPath)
 	if err != nil {
 		return projectreadiness.Result{}, err
 	}

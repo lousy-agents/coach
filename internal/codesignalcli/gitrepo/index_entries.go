@@ -25,7 +25,7 @@ const skipWorktreeTag = "S"
 // does not know, and more than one for a path in a merge conflict. A listing it
 // cannot parse is an error: skipping a line would read as an index that holds
 // nothing.
-func IndexEntries(run func(dir string, args ...string) ([]byte, error), dir, repoPath string) ([]IndexEntry, error) {
+func IndexEntries(run Runner, dir, repoPath string) ([]IndexEntry, error) {
 	output, err := run(dir, "ls-files", "--stage", "-t", "--", ":(top,literal)"+repoPath)
 	if err != nil {
 		return nil, &OperationalError{Message: fmt.Sprintf("coach codesignal: the index entry for %q could not be read: %s", repoPath, err), Cause: err}

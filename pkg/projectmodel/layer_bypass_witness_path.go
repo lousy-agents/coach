@@ -2,9 +2,9 @@ package projectmodel
 
 // layerBypassNodePosition is one local function's resolved declaration
 // position. Go classifies a node against the required layer by Dir, because a
-// Go layer is a set of package directories (see layerBypassContainsDir);
+// Go layer is a set of package directories (see domain.AnyLayerPrefixContains);
 // TypeScript classifies it by File, because a TypeScript layer prefix may name
-// a single file (see layerBypassContainsPath). File/Line are also the
+// a single file (see domain.AnyLayerPrefixContains). File/Line are also the
 // repository-relative position LayerBypassStep.Path/Line carry into
 // LayerBypassWitness.Path.
 type layerBypassNodePosition struct {

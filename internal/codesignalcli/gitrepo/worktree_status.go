@@ -23,9 +23,7 @@ const (
 
 // runWorktreeStatusGit is the git seam used by WorktreeStatus. Tests may
 // replace it to exercise timeout and bound failures without hanging.
-var runWorktreeStatusGit = func(dir string, args ...string) ([]byte, error) {
-	return RunBytesBounded(dir, maxWorktreeStatusBytes, maxWorktreeStatusStderr, worktreeStatusTimeout, args...)
-}
+var runWorktreeStatusGit = BoundedRunner(maxWorktreeStatusBytes, maxWorktreeStatusStderr, worktreeStatusTimeout)
 
 // WorktreeStatus lists every changed or untracked worktree path via
 // `git status --porcelain=v1 --untracked-files=all -z`.

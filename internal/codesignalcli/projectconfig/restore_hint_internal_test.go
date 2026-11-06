@@ -36,9 +36,9 @@ func TestRestoreCommand(t *testing.T) {
 
 func assertRestoreCommand(t *testing.T, revision, path, want string, wantOffered bool) {
 	t.Helper()
-	got, offered := RestoreCommand(revision, path)
+	got, offered := restoreCommand(revision, path)
 	if offered != wantOffered || got != want {
-		t.Errorf("RestoreCommand(%q, %q) = %q, %v; want %q, %v", revision, path, got, offered, want, wantOffered)
+		t.Errorf("restoreCommand(%q, %q) = %q, %v; want %q, %v", revision, path, got, offered, want, wantOffered)
 	}
 }
 

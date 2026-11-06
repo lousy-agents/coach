@@ -14,12 +14,12 @@ import (
 // reuses the roots Run checked must select the same way.
 func PolicyChecker(policy policyref.Ref) func(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
 	if policy.JudgedOnDisk() {
-		return CheckExplicitPolicy
+		return checkExplicitPolicy
 	}
-	return CheckPolicy
+	return checkPolicy
 }
 
-func CheckPolicy(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
+func checkPolicy(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
 	exists, err := gitrepo.FileExistsAtRevision(runReadinessGit, dir, revision, policyPath)
 	if err != nil {
 		return projectreadiness.Check{}, nil, err
