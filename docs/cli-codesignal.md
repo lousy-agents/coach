@@ -91,7 +91,10 @@ policy this repository commits), `parent_not_directory`, `staged_edit`,
 whether or not a file is on disk), `directory` (the index or the analyzed revision holds files
 under the name),
 `index_locked`, `git_unreadable` (only a read that trips the time or stderr bound reaches a
-document; any other unanswered git question is exit `1`) and `undetermined`. A path on disk
+document; any other unanswered git question is exit `1`), `invalid_path` (a `--project-config`
+value that cannot name a policy in this repository, such as `../x.json` spelled from a
+subdirectory; `--project-config` takes a path from the repository root, and no policy written
+elsewhere fixes it, so only a scan's error carries the word) and `undetermined`. A path on disk
 that cannot be a policy has one word for each fix: `not_a_regular_file` (a directory, a pipe
 or another entry on disk, or an entry of another kind that the analyzed revision commits; name
 a regular file), `symbolic_link` (the policy is a link or is reached

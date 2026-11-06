@@ -49,7 +49,7 @@ func NonFileAtRevision(run gitrepo.Runner, dir, revision, repoPath string) (*Con
 // cannot answer is not guessed at; unanswered words it for the caller.
 func refuseBeforeReading(dir, revision, repoPath string, unanswered func(error) error) error {
 	if err := ValidatePath(repoPath); err != nil {
-		return invalidError(repoPath, revision, err.Error())
+		return invalidPathError(repoPath, revision, err.Error())
 	}
 	refusal, err := NonFileAtRevision(runProjectConfigGit, dir, revision, repoPath)
 	if err != nil {
