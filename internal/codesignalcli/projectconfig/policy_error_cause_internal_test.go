@@ -24,7 +24,7 @@ func TestEveryPolicyErrorNamesARemedyOrACauseNeverBothAndNeverNeither(t *testing
 	cases := map[string]error{
 		"nothing at the path":                        missingError("cfg/p.json"),
 		"a file where a parent should be":            blockedParentError("cfg/p.json", "cfg"),
-		"a path the working tree cannot use":         unusableOnDiskError("cfg/p.json", projectreadiness.CauseNotARegularFile, "is not a regular file"),
+		"a path the working tree cannot use":         unusableOnDiskError("cfg/p.json", projectreadiness.PolicyCause("not_a_regular_file"), "is not a regular file"),
 		"content the revision holds that is invalid": invalidError("cfg/p.json", "HEAD", "document is not valid JSON"),
 		"a file on disk the revision does not hold":  readError(runProjectConfigGit, uncommitted, "HEAD", "cfg.json", errBoom),
 		"a file nowhere":                             readError(runProjectConfigGit, absent, "HEAD", "cfg.json", errBoom),

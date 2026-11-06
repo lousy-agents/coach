@@ -150,6 +150,13 @@ func requireTheCauseOfTheGap(policy, wantGap, wantCause string, arrange func(rep
 	ExpectWithOffset(1, string(stdout)).To(ContainSubstring("  "+wantGap+" cause="+wantCause+"\n"), "the text prints the same field:\n%s", stdout)
 }
 
+// documentedCauseWords is the CLI doc, which lists the stable words a consumer may match on.
+func documentedCauseWords() string {
+	text, err := os.ReadFile(filepath.Join("..", "..", "docs", "cli-codesignal.md"))
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	return string(text)
+}
+
 // causeTableArgs is the body of the table followed by one entry per row.
 // rawGaps are the gaps of --check-project's JSON as maps, which tell an absent key from an empty one.
 func rawGaps(repo, policy string) []map[string]any {
@@ -229,6 +236,10 @@ var _ = Describe("coach codesignal --check-project: the cause of a policy gap th
 		}
 		for _, word := range covered {
 			Expect(declared).To(ContainElement(word), "a row pins %q, which is not declared", word)
+		}
+		documented := documentedCauseWords()
+		for _, word := range declared {
+			Expect(documented).To(ContainSubstring("`"+word+"`"), "the cause %q is declared and is not in docs/cli-codesignal.md", word)
 		}
 	})
 })
