@@ -2,6 +2,7 @@ package projectconfig
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -40,7 +41,7 @@ func (f indexFake) run(_ string, args ...string) ([]byte, error) {
 		}
 		return []byte(mode + " blob " + committedBlob + "\tpol.json\n"), nil
 	case "ls-files":
-		return []byte(f.lsFiles), f.lsFilesErr
+		return []byte(strings.ReplaceAll(f.lsFiles, askedPath, pathAskedAbout(args))), f.lsFilesErr
 	case "config":
 		if f.sparse {
 			return []byte("true\n"), nil
@@ -50,12 +51,27 @@ func (f indexFake) run(_ string, args ...string) ([]byte, error) {
 	return nil, nil
 }
 
+// askedPath stands for the path a listing is asked about in the canned listings below;
+// the fake puts the real one in, as git lists an entry under the path it was asked for.
+const askedPath = "<the path asked about>"
+
+// pathAskedAbout is the path in the :(top,literal) pathspec that ends the arguments.
+func pathAskedAbout(args []string) string {
+	return strings.TrimPrefix(args[len(args)-1], ":(top,literal)")
+}
+
 func indexLine(mode, blob, stage string) string {
-	return "H " + mode + " " + blob + " " + stage + "\tpol.json\n"
+	return "H " + mode + " " + blob + " " + stage + "\t" + askedPath + "\x00"
 }
 
 func skippedIndexLine(mode, blob, stage string) string {
-	return "S " + mode + " " + blob + " " + stage + "\tpol.json\n"
+	return "S " + mode + " " + blob + " " + stage + "\t" + askedPath + "\x00"
+}
+
+// indexLineBelow is an entry for a file under the path asked about, which makes that
+// path a directory in the index.
+func indexLineBelow(mode, blob, stage string) string {
+	return "H " + mode + " " + blob + " " + stage + "\t" + askedPath + "/inner.json\x00"
 }
 
 func TestJudgeRestoreFromWhatTheIndexHolds(t *testing.T) {
@@ -71,6 +87,9 @@ func TestJudgeRestoreFromWhatTheIndexHolds(t *testing.T) {
 		{"index output git would not print", indexFake{lsFiles: "not an index line\n"}, restoreUndecidable, true},
 		{"a path nothing commits and the index does not hold", indexFake{uncommitted: true}, restoreNotCommitted, false},
 		{"a path nothing commits that the index holds an entry for", indexFake{uncommitted: true, lsFiles: indexLine("100644", otherBlob, "0")}, restoreStagedNotCommitted, true},
+		{"files below a path nothing commits", indexFake{uncommitted: true, lsFiles: indexLineBelow("100644", otherBlob, "0")}, restoreDirectoryInIndex, false},
+		{"files below a path with an entry equal to the commit", indexFake{lsFiles: indexLine("100644", committedBlob, "0") + indexLineBelow("100644", otherBlob, "0")}, restoreDirectoryInIndex, false},
+		{"files below a path whose commit holds a link", indexFake{committedMode: "120000", lsFiles: indexLineBelow("100644", otherBlob, "0")}, restoreDirectoryInIndex, false},
 		{"a path nothing commits when git cannot list the index", indexFake{uncommitted: true, lsFilesErr: errors.New("boom")}, restoreUndecidable, true},
 		{"a policy committed as a link, with the committed entry in the index", indexFake{committedMode: "120000", lsFiles: indexLine("120000", committedBlob, "0")}, restoreRecreatesLink, false},
 		{"a policy committed as a link, with a regular file staged over it", indexFake{committedMode: "120000", lsFiles: indexLine("100644", otherBlob, "0")}, restoreRecreatesLink, true},

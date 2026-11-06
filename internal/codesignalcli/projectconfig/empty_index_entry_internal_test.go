@@ -91,10 +91,10 @@ func TestAnEmptyIndexEntryThatIsMarkedSkipWorktreeIsNamedForItsMarkNotCalledAnEd
 // neither be taken for a staged copy to restore nor for the absence of one.
 func TestAListingGitDoesNotPrintAsExpectedNeverProducesARestoreCommand(t *testing.T) {
 	garbled := map[string]string{
-		"a missing field":              "H 100644 " + committedBlob + "\tpol.json\n",
-		"an object id that is garbled": "H 100644 zzzzzzzz" + committedBlob[8:] + " 0\tpol.json\n",
-		"a stage that is garbled":      "H 100644 " + committedBlob + " x\tpol.json\n",
-		"a mode that is garbled":       "H 1006 " + committedBlob + " 0\tpol.json\n",
+		"a missing field":              "H 100644 " + committedBlob + "\tpol.json\x00",
+		"an object id that is garbled": "H 100644 zzzzzzzz" + committedBlob[8:] + " 0\tpol.json\x00",
+		"a stage that is garbled":      "H 100644 " + committedBlob + " x\tpol.json\x00",
+		"a mode that is garbled":       "H 1006 " + committedBlob + " 0\tpol.json\x00",
 	}
 	for name, listing := range garbled {
 		for _, committed := range []bool{true, false} {

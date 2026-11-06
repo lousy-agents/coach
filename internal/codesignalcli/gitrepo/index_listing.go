@@ -2,29 +2,38 @@ package gitrepo
 
 import "strings"
 
-// parseIndexListing reads ls-files --stage -t output, one entry per line.
-func parseIndexListing(listing string) ([]IndexEntry, error) {
-	var entries []IndexEntry
-	for _, line := range strings.Split(listing, "\n") {
-		entry, err := parseIndexLine(line)
+// parseIndexListing reads ls-files --stage -t -z output, one NUL-terminated record
+// per entry (an empty one is refused, not skipped), and sorts the entries into those at repoPath and the fact that some
+// are below it.
+func parseIndexListing(listing []byte, repoPath string) (IndexAt, error) {
+	var listed IndexAt
+	for _, record := range SplitNULPaths(listing) {
+		entry, path, err := parseIndexRecord(record)
 		if err != nil {
-			return nil, err
+			return IndexAt{}, err
 		}
-		entries = append(entries, entry)
+		switch {
+		case path == repoPath:
+			listed.Entries = append(listed.Entries, entry)
+		case strings.HasPrefix(path, repoPath+"/"):
+			listed.HoldsBelow = true
+		default:
+			return IndexAt{}, errIndexEntryForAnotherPath
+		}
 	}
-	return entries, nil
+	return listed, nil
 }
 
-// parseIndexLine reads "<tag> <mode> <object id> <stage>\t<path>". Every field is
+// parseIndexRecord reads "<tag> <mode> <object id> <stage>\t<path>". Every field is
 // checked, because an entry is judged by what it holds and a field read wrongly
 // would judge it as something it is not.
-func parseIndexLine(line string) (IndexEntry, error) {
-	meta, _, found := strings.Cut(line, "\t")
+func parseIndexRecord(record string) (IndexEntry, string, error) {
+	meta, path, found := strings.Cut(record, "\t")
 	fields := strings.Fields(meta)
 	if !found || len(fields) != 4 || !isIndexTag(fields[0]) || !isOctalMode(fields[1]) || !isObjectID(fields[2]) || !isStage(fields[3]) {
-		return IndexEntry{}, errUnparseableIndexLine
+		return IndexEntry{}, "", errUnparseableIndexLine
 	}
-	return IndexEntry{TreeEntry: TreeEntry{Mode: fields[1], SHA: fields[2]}, Stage: fields[3], SkipWorktree: fields[0] == skipWorktreeTag}, nil
+	return IndexEntry{TreeEntry: TreeEntry{Mode: fields[1], SHA: fields[2]}, Stage: fields[3], SkipWorktree: fields[0] == skipWorktreeTag}, path, nil
 }
 
 // isIndexTag is true for the tags ls-files -t prints for an entry of the index:

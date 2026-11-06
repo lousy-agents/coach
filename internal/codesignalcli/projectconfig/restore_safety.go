@@ -28,6 +28,7 @@ const (
 	restoreStagedSkipWorktreeNotCommitted
 	restoreStagedSparseNotCommitted
 	restoreOverwritesEmptyEntry
+	restoreDirectoryInIndex
 	// restoreVerdictCount is the number of verdicts above, for a test that walks all of them.
 	restoreVerdictCount
 )
@@ -89,10 +90,14 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 	if err != nil {
 		return policyJudgment{verdict: restoreUndecidable, indexEntryUnread: true, failure: newGitFailure("whether it is committed at the analyzed revision", err)}
 	}
-	listed, err := gitrepo.IndexEntries(run, dir, repoPath)
+	indexed, err := gitrepo.IndexEntries(run, dir, repoPath)
 	if err != nil {
 		return policyJudgment{verdict: verdictWithoutIndex(committed, found), indexEntryUnread: true, failure: newGitFailure("what the index holds for it", err)}
 	}
+	if indexed.HoldsBelow {
+		return policyJudgment{verdict: restoreDirectoryInIndex}
+	}
+	listed := indexed.Entries
 	staged := withoutUnmarkedEmptyEntries(listed)
 	unread := indexHoldsUnreadEntry(committed, found, withoutEmptyEntries(listed))
 	facts := indexFacts{entries: staged, unread: unread, sparse: sparseCheckoutEnabled(run, dir, staged), setAsideEmpty: len(staged) < len(listed)}
