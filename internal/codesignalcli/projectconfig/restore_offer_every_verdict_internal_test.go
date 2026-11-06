@@ -152,9 +152,9 @@ func assertOfferFor(t *testing.T, c verdictCase, blocked bool) {
 	t.Helper()
 	column := blockedIndex(blocked)
 	want := [2]offerWant{c.open, c.blocked}[column]
-	cause := [2]MissingCause{CauseAbsent, CauseBlockedParent}[column]
+	cause := [2]MissingCause{MissingAbsent, MissingBlockedParent}[column]
 
-	offer, offered := restoreOfferFor(c.judgment(), "HEAD", &ConfigError{Kind: KindMissing, Cause: cause}, "cfg/p.json")
+	offer, offered := restoreOfferFor(c.judgment(), "HEAD", &ConfigError{Kind: KindMissing, Missing: cause}, "cfg/p.json")
 
 	if got := summarizeOffer(offer, offered, want.contains); got != want.summary() {
 		t.Errorf("offer %q (offered %v, remedy %d, cause %q) does not match %+v: it must say %q and print a git restore command = %v",

@@ -61,10 +61,11 @@ type Check struct {
 	// Remedy is the way out of a policy gap this check found. It is the zero
 	// value, RemedyNone, for every check that is not a policy gap.
 	Remedy PolicyRemedy `json:"-"`
-	// Cause is, for a policy gap no remedy fixes, the reason in the words the
+	// CauseText is, for a policy gap no remedy fixes, the reason in the words the
 	// scan prints for the same policy, so a caller that cannot print the scan's own
-	// error can still say why. It is empty for every other check.
-	Cause string `json:"-"`
+	// error can still say why. It is empty for every other check. PolicyCause is the
+	// same reason as a stable word.
+	CauseText string `json:"-"`
 	// PolicyCause is the same reason as a stable word, for the gap that this check
 	// becomes. It is empty whenever a remedy names what to do.
 	PolicyCause PolicyCause `json:"-"`

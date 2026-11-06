@@ -16,11 +16,11 @@ func TestExplicitOnDiskStatusKeepsTheIndexUnreadWhenGitCannotListIt(t *testing.T
 		hide  func(t *testing.T, repo string)
 		cause MissingCause
 	}{
-		{"the file is gone", func(t *testing.T, repo string) { moveAside(t, repo, "cfg/p.json") }, CauseAbsent},
+		{"the file is gone", func(t *testing.T, repo string) { moveAside(t, repo, "cfg/p.json") }, MissingAbsent},
 		{"a file stands where the parent directory was", func(t *testing.T, repo string) {
 			moveAside(t, repo, "cfg")
 			writeFile(t, repo, "cfg", "notes")
-		}, CauseBlockedParent},
+		}, MissingBlockedParent},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -38,13 +38,13 @@ func assertIndexUnreadWhenListingFails(t *testing.T, hide func(t *testing.T, rep
 	// The on-disk check reads the real working tree; only the git answers come from the fake, whose index listing fails.
 	status, err := ExplicitOnDiskStatus(indexFake{lsFilesErr: errors.New("injected failure")}.run, repo, "HEAD", "cfg/p.json")
 
-	if err != nil || status == nil || status.Cause != cause {
+	if err != nil || status == nil || status.Missing != cause {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want a missing policy with cause %d", status, err, cause)
 	}
 	if !status.UnreadStagedEdit {
 		t.Errorf("UnreadStagedEdit is false; want true, because a report that cannot rule out a staged edit must not claim the working tree is all it read")
 	}
-	if cause == CauseBlockedParent && strings.Contains(status.Message, "could not check") {
+	if cause == MissingBlockedParent && strings.Contains(status.Message, "could not check") {
 		t.Errorf("message %q; want the blocked-parent message with no undecidable text", status.Message)
 	}
 }

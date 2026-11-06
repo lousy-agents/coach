@@ -21,7 +21,7 @@ func TestALockedIndexWithholdsExactlyTheOffersThatPrintARestore(t *testing.T) {
 }
 
 func offerForVerdict(judgment policyJudgment) restoreOffer {
-	offer, _ := restoreOfferFor(judgment, "HEAD", &ConfigError{Kind: KindMissing, Cause: CauseAbsent}, "cfg/p.json")
+	offer, _ := restoreOfferFor(judgment, "HEAD", &ConfigError{Kind: KindMissing, Missing: MissingAbsent}, "cfg/p.json")
 	return offer
 }
 

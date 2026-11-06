@@ -233,7 +233,7 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 	if found.Kind != KindMissing {
 		return restoreOffer{}, false
 	}
-	blocked := found.Cause == CauseBlockedParent
+	blocked := found.Missing == MissingBlockedParent
 	if judgment.indexLocked && !blocked {
 		return indexLockedOffer, true
 	}

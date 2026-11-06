@@ -36,7 +36,7 @@ func runScanCompilerSetupOffer(dir string, f codesignalFlags, stdin, stdout, std
 
 	if result.PolicyRequired {
 		fmt.Fprintln(stderr, wrapped.RemediationLine())
-		for _, line := range policyRequiredLines("coach codesignal", result.PolicyCode, result.PolicyRemedy, result.PolicyCause, wrapped.Revision, wrapped.Policy.Path) {
+		for _, line := range policyRequiredLines("coach codesignal", result.PolicyCode, result.PolicyRemedy, result.CauseText, wrapped.Revision, wrapped.Policy.Path) {
 			fmt.Fprintln(stderr, line)
 		}
 		return 2

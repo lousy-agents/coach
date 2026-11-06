@@ -17,7 +17,7 @@ func TestRunAfterPolicyErrorReportsTheVerdictItWasGivenInsteadOfReadingTheWorkin
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "a.go", "package a\n")
 	gitfixture.CommitFile(t, repo, "pol.json", validPolicy)
-	given := &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Cause: projectconfig.CauseAbsent, Remedy: projectreadiness.RemedyNone, FromWorkingTree: true, UnreadStagedEdit: true}
+	given := &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Missing: projectconfig.MissingAbsent, Remedy: projectreadiness.RemedyNone, FromWorkingTree: true, UnreadStagedEdit: true}
 
 	result, err := RunAfterPolicyError(repo, "HEAD", policyref.Named("pol.json"), given)
 

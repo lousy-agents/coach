@@ -52,10 +52,10 @@ type ConfigError struct {
 	Message string
 	Kind    ErrorKind
 
-	// Cause says why a policy that is missing from disk is missing, for the
-	// callers that have to tell the cases apart. It is CauseUnset for every
-	// other kind.
-	Cause MissingCause
+	// Missing says why a policy that is missing from disk is missing, for the
+	// callers that have to tell the cases apart. It is MissingUnset for every
+	// other kind. It is not PolicyCause, the stable word the readiness result carries.
+	Missing MissingCause
 	// FromWorkingTree is set when the working tree, not the analyzed revision,
 	// produced this error. A caller that holds it does not need to look at the
 	// working tree for the same policy again.
@@ -81,13 +81,13 @@ type ConfigError struct {
 type MissingCause int
 
 const (
-	// CauseUnset is the zero value, for an error that is not a missing policy.
-	CauseUnset MissingCause = iota
-	// CauseAbsent means nothing is at the path.
-	CauseAbsent
-	// CauseBlockedParent means a parent path component is a file, so the path
+	// MissingUnset is the zero value, for an error that is not a missing policy.
+	MissingUnset MissingCause = iota
+	// MissingAbsent means nothing is at the path.
+	MissingAbsent
+	// MissingBlockedParent means a parent path component is a file, so the path
 	// cannot be created or restored while that file stays.
-	CauseBlockedParent
+	MissingBlockedParent
 )
 
 func (e *ConfigError) Error() string { return e.Message }
@@ -181,7 +181,7 @@ func configExistsInWorktree(dir, repoPath string) bool {
 }
 
 func missingError(repoPath string) error {
-	return &ConfigError{Kind: KindMissing, Cause: CauseAbsent, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing); the path is repository-relative", repoPath)}
+	return &ConfigError{Kind: KindMissing, Missing: MissingAbsent, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing); the path is repository-relative", repoPath)}
 }
 
 // blockedParentError is a missing policy whose path cannot be created because a
@@ -190,7 +190,7 @@ func missingError(repoPath string) error {
 // delete the file in the way. It is still missing, never a reason to read
 // another policy.
 func blockedParentError(repoPath, component string) error {
-	return &ConfigError{Kind: KindMissing, Cause: CauseBlockedParent, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseParentNotDirectory, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing): a parent path component is not a directory, %q; move or remove it; the path is repository-relative", repoPath, component)}
+	return &ConfigError{Kind: KindMissing, Missing: MissingBlockedParent, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseParentNotDirectory, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found on disk at the repository root (project_config_missing): a parent path component is not a directory, %q; move or remove it; the path is repository-relative", repoPath, component)}
 }
 
 // unusableOnDiskError is a policy path the working tree decided is unusable. A
