@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 )
 
 // IndexEntry is one entry the index holds for a path. Stage is 0 for a path
@@ -16,9 +15,9 @@ type IndexEntry struct {
 	SkipWorktree bool
 }
 
-var errUnparseableIndexLine = errors.New("git printed a line this version cannot parse")
+var errUnparseableIndexLine = &UnexpectedOutputError{Finding: "git printed a line this version cannot parse"}
 
-var errIndexEntryForAnotherPath = errors.New("git listed an entry for a path other than the one asked about")
+var errIndexEntryForAnotherPath = &UnexpectedOutputError{Finding: "git listed an entry for a path other than the one asked about"}
 
 // skipWorktreeTag is the status tag ls-files -t prints for a skip-worktree entry.
 const skipWorktreeTag = "S"
@@ -82,7 +81,7 @@ func holdsEntriesBelow(run Runner, dir, repoPath string) (bool, error) {
 		return false, indexReadError(repoPath, err)
 	}
 	paths := SplitNULPaths(output)
-	if slices.ContainsFunc(paths, func(path string) bool { return !strings.HasPrefix(path, repoPath+"/") }) {
+	if slices.ContainsFunc(paths, func(path string) bool { return !IsBelow(path, repoPath) }) {
 		return false, indexReadError(repoPath, errIndexEntryForAnotherPath)
 	}
 	return len(paths) > 0, nil

@@ -11,7 +11,7 @@ func parseIndexListing(listing []byte, repoPath string) ([]IndexEntry, error) {
 		if err != nil {
 			return nil, err
 		}
-		if path != repoPath {
+		if !SamePath(path, repoPath) {
 			return nil, errIndexEntryForAnotherPath
 		}
 		entries = append(entries, entry)

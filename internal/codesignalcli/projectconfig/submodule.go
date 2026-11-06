@@ -59,7 +59,7 @@ func recordedAsSubmodule(run gitrepo.Runner, dir, path string) (bool, error) {
 	}
 	return slices.ContainsFunc(gitrepo.SplitNULPaths(output), func(record string) bool {
 		mode, name, found := strings.Cut(record, "\t")
-		return found && name == path && strings.HasPrefix(mode, "160000 ")
+		return found && gitrepo.SamePath(name, path) && strings.HasPrefix(mode, "160000 ")
 	}), nil
 }
 
