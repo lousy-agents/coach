@@ -7,18 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
-
-// listingFails is real git with the index listing broken, so the working tree and
-// the commit answer truthfully and only the index question fails.
-func listingFails(dir string, args ...string) ([]byte, error) {
-	if args[0] == "ls-files" {
-		return nil, errors.New("injected failure")
-	}
-	return gitrepo.RunBytes(dir, args...)
-}
 
 func TestExplicitOnDiskStatusKeepsTheIndexUnreadWhenGitCannotListIt(t *testing.T) {
 	cases := []struct {
@@ -45,7 +35,8 @@ func assertIndexUnreadWhenListingFails(t *testing.T, hide func(t *testing.T, rep
 	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
 	hide(t, repo)
 
-	status, err := ExplicitOnDiskStatus(listingFails, repo, "HEAD", "cfg/p.json")
+	// The on-disk check reads the real working tree; only the git answers come from the fake, whose index listing fails.
+	status, err := ExplicitOnDiskStatus(indexFake{lsFilesErr: errors.New("injected failure")}.run, repo, "HEAD", "cfg/p.json")
 
 	if err != nil || status == nil || status.Cause != cause {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want a missing policy with cause %d", status, err, cause)

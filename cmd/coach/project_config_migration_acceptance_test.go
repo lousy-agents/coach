@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -27,7 +28,7 @@ var _ = Describe("coach project config migration", func() {
 			stdout, stderr, exitCode := runMigrationBaselineOnTerminal(repo, projectConfigMigrationEnv(), "\n")
 
 			Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
-			Expect(string(stderr)).To(ContainSubstring(projectConfigCopyPrompt))
+			Expect(strings.Count(string(stderr), projectConfigCopyPrompt)).To(Equal(1), "the prompt must be printed exactly once; stderr: %s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("Copied project.json"))
 			expectRepoFileAbsent(repo, coachConfigPath)
 			expectRepoFileAbsent(repo, ".lousy-agents")
@@ -53,6 +54,7 @@ var _ = Describe("coach project config migration", func() {
 
 			Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
 			Expect(exitCode).To(Equal(noExit), "a yes answer must not change the scan exit code")
+			Expect(strings.Count(string(stderr), projectConfigCopyPrompt)).To(Equal(1), "the prompt must be printed exactly once; stderr: %s", stderr)
 			Expect(string(stderr)).To(ContainSubstring(projectConfigCopiedLine))
 			Expect(readRepoFile(repo, coachConfigPath)).To(Equal(before), "the copy must be the worktree project.json bytes")
 			Expect(readRepoFile(repo, legacyConfigPath)).To(Equal(before), "project.json must stay in place and unchanged")

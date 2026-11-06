@@ -33,8 +33,8 @@ var _ = Describe("coach codesignal --check-project is a read-only readiness chec
 	})
 })
 
-// snapshotWorkingTree lists every file under repo outside .git with its mode
-// and content hash, so a spec can prove nothing was created, removed or
+// snapshotWorkingTree lists every file under repo outside .git with its
+// content hash, so a spec can prove nothing was created, removed or
 // modified, including files git status would hide because they are ignored.
 func snapshotWorkingTree(repo string) []string {
 	var entries []string
