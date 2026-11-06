@@ -172,6 +172,26 @@ var _ = Describe("coach codesignal: the restore command printed for a missing ex
 		Entry("never committed and not in the index", func(repo string) {}, false, ""),
 	)
 
+	// The skip-worktree mark alone stops a restore. An empty entry carrying it is
+	// not an edit to review, since git diff --cached does not show it, so the user is
+	// told what the mark needs, not sent to a diff that shows nothing.
+	It("names the skip-worktree mark and not a staged edit when the empty intent-to-add entry of a committed policy is marked skip-worktree", func() {
+		repo := commitScannableGoRepo()
+		commitFile(repo, policy, singleRootPolicyJSON)
+		gitIn(repo, "rm", "-q", "--cached", policy)
+		gitIn(repo, "add", "-N", policy)
+		gitIn(repo, "update-index", "--skip-worktree", policy)
+		removeFromDisk(repo)
+
+		stderr := scanExplicitPolicy(repo, policy)
+
+		Expect(printedRestoreCommand(stderr)).To(BeEmpty(), "the mark stops a restore:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("skip-worktree"), "stderr:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("git update-index --no-skip-worktree"), "stderr:\n%s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("staged edit"), "an empty entry holds no edit:\n%s", stderr)
+		Expect(string(stderr)).NotTo(ContainSubstring("git diff --cached"), "git diff --cached does not show an intent-to-add entry:\n%s", stderr)
+	})
+
 	// git add --intent-to-add stages the empty blob and nothing else. Over a
 	// committed policy it leaves no staged work to lose, so the committed copy is
 	// restored, and the message says that instead of calling the empty entry an edit.

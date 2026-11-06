@@ -86,8 +86,8 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 	if err != nil {
 		return policyJudgment{verdict: verdictWithoutIndex(committed, found), indexEntryUnread: true, failure: newGitFailure("what the index holds for it", err)}
 	}
-	staged := withoutEmptyEntries(listed)
-	unread := indexHoldsUnreadEntry(committed, found, staged)
+	staged := withoutUnmarkedEmptyEntries(listed)
+	unread := indexHoldsUnreadEntry(committed, found, withoutEmptyEntries(listed))
 	verdict := verdictFor(committed, found, staged, unread, sparseCheckoutEnabled(run, dir, staged))
 	if verdict == restoreOverwritesNothing && len(staged) < len(listed) {
 		verdict = restoreOverwritesEmptyEntry

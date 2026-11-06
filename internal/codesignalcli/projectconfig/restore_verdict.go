@@ -61,19 +61,30 @@ func verdictForUncommitted(staged []gitrepo.IndexEntry, sparse bool) restoreVerd
 	return restoreStagedNotCommitted
 }
 
-// withoutEmptyEntries drops the entries that hold no content: a regular file at
+// holdsNoContent is true for an entry that holds no content: a regular file at
 // stage 0 whose blob is the empty blob. That is what git add --intent-to-add
 // stages, and a staged empty file is no policy either. Restoring such an entry
 // writes an empty file, and it is not work that a restore of the committed copy,
-// or a new policy, would lose. An entry marked skip-worktree stays, because the
-// mark alone stops a restore. The listing carries nothing else to go on, which is
+// or a new policy, would lose. The listing carries nothing else to go on, which is
 // the point: ls-files --stage is stable, and its flags and debug output are not.
+func holdsNoContent(entry gitrepo.IndexEntry) bool {
+	return entry.Stage == "0" && isRegularFileMode(entry.Mode) && gitrepo.IsEmptyBlob(entry.SHA)
+}
+
+// withoutEmptyEntries drops every entry that holds no content. What is left is what
+// there is to read, or to lose: an empty entry is never an edit.
 func withoutEmptyEntries(entries []gitrepo.IndexEntry) []gitrepo.IndexEntry {
 	return slices.DeleteFunc(slices.Clone(entries), holdsNoContent)
 }
 
-func holdsNoContent(entry gitrepo.IndexEntry) bool {
-	return entry.Stage == "0" && isRegularFileMode(entry.Mode) && gitrepo.IsEmptyBlob(entry.SHA) && !entry.SkipWorktree
+// withoutUnmarkedEmptyEntries drops the empty entries that nothing else makes
+// matter. One marked skip-worktree stays: the mark alone stops a restore, so the
+// skip-worktree and sparse-checkout verdicts still have to see it, even though it
+// is not an edit.
+func withoutUnmarkedEmptyEntries(entries []gitrepo.IndexEntry) []gitrepo.IndexEntry {
+	return slices.DeleteFunc(slices.Clone(entries), func(entry gitrepo.IndexEntry) bool {
+		return holdsNoContent(entry) && !entry.SkipWorktree
+	})
 }
 
 // holdsUnmergedEntry is true when the index holds a conflict stage for the path.
