@@ -25,7 +25,7 @@ var allowedSiblingImports = map[string][]string{
 	"projectconfig":       {"gitrepo", "projectreadiness", "shellword"},
 	"projectreadiness":    {},
 	"prompt":              {},
-	"render":              {"projectreadiness"},
+	"render":              {"projectreadiness", "shellword"},
 	"revisionfs":          {"gitrepo"},
 	"shellword":           {},
 	"sourcescope":         {"gitrepo"},

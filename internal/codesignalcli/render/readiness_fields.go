@@ -1,8 +1,6 @@
 package render
 
 import (
-	"strings"
-
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -23,12 +21,12 @@ func gapCodes(gaps []projectreadiness.Gap) []string {
 // gapLine is a gap's code followed by the fields it carries, in the order the JSON
 // declares them.
 func gapLine(gap projectreadiness.Gap) string {
-	line := gap.Code
+	line := terminalText(gap.Code)
 	if gap.PackageManagerKind != "" {
-		line += " package_manager_kind=" + gap.PackageManagerKind
+		line += " package_manager_kind=" + terminalText(gap.PackageManagerKind)
 	}
 	if gap.Cause != "" {
-		line += " cause=" + string(gap.Cause)
+		line += " cause=" + terminalText(string(gap.Cause))
 	}
 	return line
 }
@@ -41,6 +39,9 @@ func nextActionKinds(actions []projectreadiness.NextAction) []string {
 	return kinds
 }
 
+// readinessCheckField is one "label=value" of a check line. Its value is already safe to print: every
+// value comes from a repository or from what is installed in it, so readinessCheckFields passes each one
+// through terminalText.
 type readinessCheckField struct {
 	label string
 	value string
@@ -52,16 +53,16 @@ func readinessCheckFields(check projectreadiness.Check) []readinessCheckField {
 		declaredVersion = ""
 	}
 	return []readinessCheckField{
-		{label: "kind", value: check.Kind},
-		{label: "version", value: check.Version},
-		{label: "origin", value: check.Origin},
-		{label: "expected_version", value: check.ExpectedVersion},
-		{label: "found_version", value: check.FoundVersion},
-		{label: "pinned_version", value: check.PinnedVersion},
-		{label: "declared_version", value: declaredVersion},
-		{label: "supported_versions", value: strings.Join(check.SupportedVersions, ",")},
-		{label: "root_findings", value: projectreadiness.FormatRootFindings(check.RootFindings)},
-		{label: "detail", value: check.Detail},
-		{label: "origins", value: projectreadiness.FormatOriginFindings(check.OriginFindings)},
+		{label: "kind", value: terminalText(check.Kind)},
+		{label: "version", value: terminalText(check.Version)},
+		{label: "origin", value: terminalText(check.Origin)},
+		{label: "expected_version", value: terminalText(check.ExpectedVersion)},
+		{label: "found_version", value: terminalText(check.FoundVersion)},
+		{label: "pinned_version", value: terminalText(check.PinnedVersion)},
+		{label: "declared_version", value: terminalText(declaredVersion)},
+		{label: "supported_versions", value: terminalList(check.SupportedVersions, ",")},
+		{label: "root_findings", value: terminalText(projectreadiness.FormatRootFindings(check.RootFindings))},
+		{label: "detail", value: terminalText(check.Detail)},
+		{label: "origins", value: terminalText(projectreadiness.FormatOriginFindings(check.OriginFindings))},
 	}
 }

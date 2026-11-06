@@ -9,9 +9,9 @@ import (
 
 func renderReadinessWarningLine(b *strings.Builder, warning projectreadiness.Warning) {
 	if warning.Code == projectreadiness.WarnCompilerDeclarationMismatch {
-		fmt.Fprintf(b, "  %s (declared_version=%s found_version=%s declaration_origin=%s", warning.Code, warning.DeclaredVersion, warning.FoundVersion, warning.DeclarationOrigin)
+		fmt.Fprintf(b, "  %s (declared_version=%s found_version=%s declaration_origin=%s", terminalText(warning.Code), terminalText(warning.DeclaredVersion), terminalText(warning.FoundVersion), terminalText(warning.DeclarationOrigin))
 		if warning.Root != "" {
-			fmt.Fprintf(b, " root=%s", warning.Root)
+			fmt.Fprintf(b, " root=%s", terminalText(warning.Root))
 		}
 		b.WriteString(")\n")
 		return
@@ -34,7 +34,7 @@ func renderReadinessCodeList(b *strings.Builder, heading string, values []string
 	}
 	fmt.Fprintf(b, "\n%s:\n", heading)
 	for _, value := range values {
-		fmt.Fprintf(b, "  %s\n", value)
+		fmt.Fprintf(b, "  %s\n", terminalText(value))
 	}
 }
 
@@ -45,7 +45,7 @@ func renderReadinessDirtyWorktree(b *strings.Builder, dirty projectreadiness.Dir
 	b.WriteString("\nWarning: uncommitted or untracked changes exist under paths relevant to this result. ")
 	b.WriteString("These paths are not part of the analyzed revision and had no effect on the checks above:\n")
 	for _, changedPath := range dirty.Paths {
-		fmt.Fprintf(b, "  %s\n", changedPath)
+		fmt.Fprintf(b, "  %s\n", terminalText(changedPath))
 	}
 }
 

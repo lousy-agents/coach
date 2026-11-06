@@ -24,8 +24,8 @@ func ReadinessJSON(result *projectreadiness.Result) ([]byte, error) {
 func ReadinessText(result *projectreadiness.Result) string {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "Project readiness for revision %s (language: %s)\n", result.Revision, result.Language)
-	fmt.Fprintf(&b, "status: %s\n", result.Status)
+	fmt.Fprintf(&b, "Project readiness for revision %s (language: %s)\n", terminalText(result.Revision), terminalText(result.Language))
+	fmt.Fprintf(&b, "status: %s\n", terminalText(string(result.Status)))
 
 	b.WriteString("\nChecks:\n")
 	renderReadinessCheckLine(&b, "project_shape", result.Checks.ProjectShape)
@@ -44,32 +44,32 @@ func ReadinessText(result *projectreadiness.Result) string {
 }
 
 func renderReadinessNextActionLine(b *strings.Builder, action projectreadiness.NextAction) {
-	fmt.Fprintf(b, "  %s (executable=%t)", action.Kind, action.Executable)
+	fmt.Fprintf(b, "  %s (executable=%t)", terminalText(action.Kind), action.Executable)
 	if action.RuntimeKind != "" {
-		fmt.Fprintf(b, " runtime_kind=%s", action.RuntimeKind)
+		fmt.Fprintf(b, " runtime_kind=%s", terminalText(action.RuntimeKind))
 	}
 	if action.PackageManagerKind != "" {
-		fmt.Fprintf(b, " package_manager_kind=%s", action.PackageManagerKind)
+		fmt.Fprintf(b, " package_manager_kind=%s", terminalText(action.PackageManagerKind))
 	}
 	if len(action.Choices) > 0 {
-		fmt.Fprintf(b, " choices=%s", strings.Join(action.Choices, ","))
+		fmt.Fprintf(b, " choices=%s", terminalList(action.Choices, ","))
 	}
 	if len(action.Supported) > 0 {
-		fmt.Fprintf(b, " supported=%s", strings.Join(action.Supported, ","))
+		fmt.Fprintf(b, " supported=%s", terminalList(action.Supported, ","))
 	}
 	if action.FoundVersion != "" {
-		fmt.Fprintf(b, " found_version=%s", action.FoundVersion)
+		fmt.Fprintf(b, " found_version=%s", terminalText(action.FoundVersion))
 	}
 	if action.Detail != "" {
-		fmt.Fprintf(b, " detail=%s", action.Detail)
+		fmt.Fprintf(b, " detail=%s", terminalText(action.Detail))
 	}
 	b.WriteString("\n")
 }
 
 func renderReadinessCheckLine(b *strings.Builder, name string, check projectreadiness.Check) {
-	fmt.Fprintf(b, "  %s: %s", name, check.State)
+	fmt.Fprintf(b, "  %s: %s", name, terminalText(string(check.State)))
 	if check.Code != "" {
-		fmt.Fprintf(b, " (%s)", check.Code)
+		fmt.Fprintf(b, " (%s)", terminalText(check.Code))
 	}
 	for _, field := range readinessCheckFields(check) {
 		if field.value == "" {
