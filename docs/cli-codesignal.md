@@ -88,6 +88,16 @@ does not hold, or one inside a submodule), `parent_not_directory`, `staged_edit`
 `index_locked`, `git_unreadable`, `unusable_on_disk` (a path on disk that cannot be
 a policy) and `undetermined`.
 
+An explicit `--project-config` whose name differs only by case from what is on disk
+is refused with exit `2` and `project_config_invalid`. A file system that folds case
+resolves `CFG/p.json` for `cfg/p.json`, but the analyzed revision holds only the exact
+spelling, so the scan would read a committed policy the working tree does not hold under
+that name. The message names the spelling on disk; rename the file or directory to the
+spelling the revision holds. The check covers every component of the path, and also
+applies when the file is missing: a missing policy under a parent spelled in another case
+is refused for that parent and is not offered a restore, because the restore would write
+into the other spelling.
+
 Only the policy's own path leaves `dirty_worktree`. Every other uncommitted path
 the report did not read still counts when it lies under the roots of the policy.
 A policy the working tree refused has no roots of its own, so they come from its
