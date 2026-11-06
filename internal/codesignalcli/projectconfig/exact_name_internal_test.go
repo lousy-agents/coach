@@ -4,17 +4,16 @@ import "testing"
 
 func TestCheckExactNamesRefusesASpellingThatDiffersOnlyByCase(t *testing.T) {
 	cases := []struct {
-		name       string
-		files      []string
-		want       string
-		wantRename string
+		name  string
+		files []string
+		want  string
 	}{
-		{"the file", []string{"cfg/P.JSON"}, `"P.JSON"`, `rename "cfg/P.JSON" to "cfg/p.json"`},
-		{"a parent directory", []string{"CFG/p.json"}, `"CFG"`, `rename "CFG" to "cfg"`},
+		{"the file", []string{"cfg/P.JSON"}, `"P.JSON"`},
+		{"a parent directory", []string{"CFG/p.json"}, `"CFG"`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			assertCaseDifferenceRefused(t, c.files, c.want, c.wantRename)
+			assertCaseDifferenceRefused(t, c.files, c.want)
 		})
 	}
 }

@@ -196,6 +196,10 @@ func blockedParentError(repoPath, component string) error {
 // unusableOnDiskError is a policy path the working tree decided is unusable. A
 // new policy cannot replace what is there, so authoring is not offered.
 func unusableOnDiskError(repoPath, reason string) error {
+	return newUnusableOnDisk(repoPath, reason)
+}
+
+func newUnusableOnDisk(repoPath, reason string) *ConfigError {
 	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseUnusableOnDisk, Message: fmt.Sprintf("coach codesignal: --project-config %q %s (project_config_invalid)", repoPath, reason)}
 }
 
