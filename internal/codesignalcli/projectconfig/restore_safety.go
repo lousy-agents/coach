@@ -2,6 +2,8 @@ package projectconfig
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
@@ -44,6 +46,9 @@ type policyJudgment struct {
 	// failure is set when a git call that decides the verdict failed, so the
 	// message can say which question went unanswered and what git said.
 	failure *gitFailure
+	// indexLocked is set when a restore command would otherwise be offered while a lock file stops git
+	// from writing the index: running it would fail, so none is offered.
+	indexLocked bool
 }
 
 // gitFailure is one git call that failed while a policy path was judged.
@@ -92,7 +97,32 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 	if verdict == restoreOverwritesNothing && len(staged) < len(listed) {
 		verdict = restoreOverwritesEmptyEntry
 	}
-	return policyJudgment{verdict: verdict, indexEntryUnread: unread}
+	return policyJudgment{verdict: verdict, indexEntryUnread: unread, indexLocked: offersRestoreCommand(verdict) && indexIsLocked(run, dir)}
+}
+
+// offersRestoreCommand is whether a verdict ends in a printed restore command, which is what a
+// locked index makes fail.
+func offersRestoreCommand(verdict restoreVerdict) bool {
+	return verdict == restoreOverwritesNothing || verdict == restoreOverwritesEmptyEntry || verdict == restoreStagedNotCommitted
+}
+
+// indexIsLocked is whether the index lock file exists, which git leaves while another git process
+// writes the index and after one died. Both forms of restore Coach prints write the index. Where git
+// cannot say, the answer is no: the two reads before this one succeeded.
+func indexIsLocked(run gitrepo.Runner, dir string) bool {
+	output, err := run(dir, "rev-parse", "--git-path", "index.lock")
+	if err != nil {
+		return false
+	}
+	lock := strings.TrimSpace(string(output))
+	if lock == "" {
+		return false
+	}
+	if !filepath.IsAbs(lock) {
+		lock = filepath.Join(dir, lock)
+	}
+	_, statErr := os.Lstat(lock)
+	return statErr == nil
 }
 
 // sparseCheckoutEnabled reports whether core.sparseCheckout is on. It asks git

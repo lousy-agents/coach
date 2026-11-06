@@ -134,6 +134,11 @@ func uncommittedOfferFor(verdict restoreVerdict, repoPath string, blocked bool) 
 // committedLinkOffer is for a policy committed as a symbolic link. Restoring it
 // would recreate a link the scan refuses, and a new file would not be the
 // committed policy.
+var indexLockedOffer = restoreOffer{
+	remedy: projectreadiness.RemedyNone,
+	text:   ". The index is locked, so a restore would fail and Coach offers neither a restore nor a new policy; wait for the other git process to finish, or remove the lock file if none is running, then run again",
+}
+
 var committedLinkOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
 	text:   ". It is committed at the analyzed revision as a symbolic link, which a policy cannot be, so there is nothing to restore; name another policy or commit a regular file at this path",
@@ -174,6 +179,9 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 		return restoreOffer{}, false
 	}
 	blocked := found.Cause == CauseBlockedParent
+	if judgment.indexLocked && !blocked {
+		return indexLockedOffer, true
+	}
 	if offer, uncommitted := uncommittedOfferFor(verdict, repoPath, blocked); uncommitted {
 		return offer, true
 	}
