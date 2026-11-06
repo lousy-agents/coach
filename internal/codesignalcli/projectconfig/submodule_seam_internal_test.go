@@ -54,10 +54,10 @@ func TestTheSubmoduleProbeAsksTheRunnerItWasGiven(t *testing.T) {
 		return gitrepo.RunBytes(dir, args...)
 	}
 
-	message, cause := UncommittedPolicy(run, repo, "HEAD", "vendor/sub/coach.json")
+	message, cause, unanswered := UncommittedPolicy(run, repo, "HEAD", "vendor/sub/coach.json")
 
-	if cause != projectreadiness.PolicyCause("in_submodule") || !strings.Contains(message, `inside the submodule "vendor/sub"`) {
-		t.Errorf("UncommittedPolicy = %q, %q; want the submodule and its cause", message, cause)
+	if cause != projectreadiness.PolicyCause("in_submodule") || !strings.Contains(message, `inside the submodule "vendor/sub"`) || unanswered != nil {
+		t.Errorf("UncommittedPolicy = %q, %q, %v; want the submodule and its cause, and no unanswered question", message, cause, unanswered)
 	}
 	if !slices.Contains(asked, "ls-files") {
 		t.Errorf("the runner was asked %v; the probe never reached it", asked)
@@ -70,10 +70,10 @@ func TestAnUnansweredSubmoduleQuestionGivesNoAdvice(t *testing.T) {
 	repo := repositoryWithASubmodule(t)
 	run := failingEach(map[string]error{"ls-files --stage": errors.New("boom")})
 
-	message, cause := UncommittedPolicy(run, repo, "HEAD", "vendor/sub/coach.json")
+	message, cause, unanswered := UncommittedPolicy(run, repo, "HEAD", "vendor/sub/coach.json")
 
-	if strings.Contains(message, "commit the file") || cause != projectreadiness.PolicyCause("git_unreadable") {
-		t.Errorf("UncommittedPolicy = %q, %q; want no advice and the cause git_unreadable", message, cause)
+	if strings.Contains(message, "commit the file") || cause != projectreadiness.PolicyCause("git_unreadable") || unanswered == nil {
+		t.Errorf("UncommittedPolicy = %q, %q, %v; want no advice, the cause git_unreadable, and the unanswered question", message, cause, unanswered)
 	}
 }
 

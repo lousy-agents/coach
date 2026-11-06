@@ -116,7 +116,7 @@ func readError(run gitrepo.Runner, dir, revision, repoPath string, gitErr error)
 		return unansweredRead(repoPath, revision, newGitFailure("whether it exists in the worktree", err))
 	}
 	if exists {
-		message, cause := UncommittedPolicy(run, dir, revision, repoPath)
+		message, cause, _ := UncommittedPolicy(run, dir, revision, repoPath)
 		return &ConfigError{Kind: KindUncommitted, Remedy: projectreadiness.RemedyNone, PolicyCause: cause, Message: message}
 	}
 	return &ConfigError{Kind: KindNotFound, Remedy: projectreadiness.RemedyAuthor, Message: fmt.Sprintf("coach codesignal: --project-config %q was not found at revision %q (project_config_invalid)", repoPath, revision)}
