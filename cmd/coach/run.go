@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 const topLevelUsage = `usage: coach <command> [flags]
@@ -46,6 +48,11 @@ func runCodesignal(args []string, stdout, stderr *os.File, ports scanPorts) int 
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(stderr, "coach codesignal: cannot determine working directory: %s\n", err)
+		return 1
+	}
+
+	if err := gitrepo.RefuseUnsafeLazyFetch(gitrepo.RunBytes, dir); err != nil {
+		fmt.Fprintf(stderr, "coach codesignal: %s\n", err)
 		return 1
 	}
 

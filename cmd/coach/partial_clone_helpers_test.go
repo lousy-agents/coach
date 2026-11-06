@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -47,4 +49,23 @@ func packFilesIn(clone string) int {
 	entries, err := os.ReadDir(filepath.Join(clone, ".git", "objects", "pack"))
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	return len(entries)
+}
+
+// skipUnlessGitCanRefuseLazyFetch skips a spec that rests on GIT_NO_LAZY_FETCH, which git has from 2.44.
+func skipUnlessGitCanRefuseLazyFetch() {
+	supported, version := gitrepo.NoLazyFetchSupported(gitrepo.RunBytes, ".")
+	if !supported {
+		Skip("this git (" + version + ") predates GIT_NO_LAZY_FETCH, so it cannot be told not to fetch")
+	}
+}
+
+// environmentWithGitReporting puts a git on PATH that forwards to the real one but says it is the given
+// version, so Coach's refusal of an older git can be exercised on any machine.
+func environmentWithGitReporting(version string) []string {
+	real, err := exec.LookPath("git")
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	directory := GinkgoT().TempDir()
+	script := "#!/bin/sh\nfor argument in \"$@\"; do\n  if [ \"$argument\" = version ]; then echo 'git version " + version + "'; exit 0; fi\ndone\nexec '" + real + "' \"$@\"\n"
+	ExpectWithOffset(1, os.WriteFile(filepath.Join(directory, "git"), []byte(script), 0o755)).To(Succeed())
+	return append(os.Environ(), "PATH="+directory+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
