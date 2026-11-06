@@ -50,12 +50,33 @@ func IndexEntries(run Runner, dir, repoPath string) (IndexAt, error) {
 	if err != nil || len(entries) > 0 {
 		return IndexAt{Entries: entries}, err
 	}
-	below, err := holdsEntriesBelow(run, dir, repoPath)
-	return IndexAt{HoldsBelow: below}, err
+	below, itself, err := listBelow(run, dir, repoPath)
+	if err != nil {
+		return IndexAt{}, err
+	}
+	if itself {
+		entries, err := entriesNamed(run, dir, repoPath)
+		return IndexAt{Entries: entries}, err
+	}
+	return IndexAt{HoldsBelow: below}, nil
 }
 
+// entriesAtPath lists the entries of the path itself, with the entries below it left out: git matches a
+// directory name to the files under it, and a large directory must not decide what the path holds.
 func entriesAtPath(run Runner, dir, repoPath string) ([]IndexEntry, error) {
-	output, err := run(dir, "ls-files", "--stage", "-t", "-z", "--full-name", "--", ":(top,literal)"+repoPath, ":(top,exclude,literal)"+repoPath+"/")
+	return entriesMatching(run, dir, repoPath, ":(top,literal)"+repoPath, ":(top,exclude,literal)"+repoPath+"/")
+}
+
+// entriesNamed lists the entries of the path itself with no pathspec to leave anything out. It is for a
+// submodule, whose one entry git also matches through a trailing slash, so the exclusion that leaves out
+// what is below a directory would leave out the submodule as well.
+func entriesNamed(run Runner, dir, repoPath string) ([]IndexEntry, error) {
+	return entriesMatching(run, dir, repoPath, ":(top,literal)"+repoPath)
+}
+
+func entriesMatching(run Runner, dir, repoPath string, pathspecs ...string) ([]IndexEntry, error) {
+	args := append([]string{"ls-files", "--stage", "-t", "-z", "--full-name", "--"}, pathspecs...)
+	output, err := run(dir, args...)
 	if err != nil {
 		return nil, indexReadError(repoPath, err)
 	}
@@ -66,25 +87,26 @@ func entriesAtPath(run Runner, dir, repoPath string) ([]IndexEntry, error) {
 	return entries, nil
 }
 
-// holdsEntriesBelow is whether the index holds anything below repoPath. It takes
-// one entry to say yes, so a listing that overruns the output budget answers it
-// too: a budget sized for a policy document must not decide whether a large
-// directory is a directory. Any other failure, or an entry for another path, is an
-// error.
-func holdsEntriesBelow(run Runner, dir, repoPath string) (bool, error) {
+// listBelow says whether the index holds anything below repoPath, and whether the listing returned the path
+// itself, which git does for a submodule because it reads a trailing slash on a submodule's path as the
+// submodule. It takes one entry to say yes, so a listing that overruns the output budget answers it too: a
+// budget sized for a policy document must not decide whether a large directory is a directory. Any other
+// failure, or an entry for a path that is neither repoPath nor below it, is an error.
+func listBelow(run Runner, dir, repoPath string) (below, itself bool, err error) {
 	output, err := run(dir, "ls-files", "-z", "--full-name", "--", ":(top,literal)"+repoPath+"/")
 	var bound *BoundError
 	if errors.As(err, &bound) && bound.Kind == BoundStdout {
-		return true, nil
+		return true, false, nil
 	}
 	if err != nil {
-		return false, indexReadError(repoPath, err)
+		return false, false, indexReadError(repoPath, err)
 	}
 	paths := SplitNULPaths(output)
-	if slices.ContainsFunc(paths, func(path string) bool { return !IsBelow(path, repoPath) }) {
-		return false, indexReadError(repoPath, errIndexEntryForAnotherPath)
+	if slices.ContainsFunc(paths, func(path string) bool { return !IsBelow(path, repoPath) && !SamePath(path, repoPath) }) {
+		return false, false, indexReadError(repoPath, errIndexEntryForAnotherPath)
 	}
-	return len(paths) > 0, nil
+	itself = slices.ContainsFunc(paths, func(path string) bool { return SamePath(path, repoPath) })
+	return len(paths) > 0, itself, nil
 }
 
 func indexReadError(repoPath string, cause error) error {
