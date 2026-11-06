@@ -28,6 +28,8 @@ type indexFake struct {
 	committedMode string
 	// gitPathErr makes `rev-parse --git-path` fail, as it does when git cannot say where the index lock is.
 	gitPathErr error
+	// rootErr makes the repository root lookup fail, as it does when git cannot say where the repository is.
+	rootErr error
 	// configErr makes `git config` fail with something other than git's exit 1 for an unset key.
 	configErr error
 	// committedContent is what the committed policy holds; it is a valid policy when empty.

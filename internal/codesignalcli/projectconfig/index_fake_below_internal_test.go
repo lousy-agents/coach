@@ -3,8 +3,6 @@ package projectconfig
 import (
 	"slices"
 	"strings"
-
-	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 // pathAskedAbout is the path the listing is asked about: the first pathspec after "--", as
@@ -22,15 +20,26 @@ func (f indexFake) entriesBelow(args []string) []byte {
 	return []byte(pathAskedAbout(args) + "/inner.json\x00")
 }
 
-// revParse answers where the index lock would be, and leaves everything else about the repository,
-// such as its root, to the real one on disk, since those are facts about the repository and not about
-// the index.
+// revParse answers the two repository questions a policy check asks, each one explicitly: where the index lock
+// would be, and where the repository root is (the directory it was asked in, which is the root for every test
+// that uses the fake). Anything else it is asked has no answer.
 func (f indexFake) revParse(dir string, args []string) ([]byte, error) {
-	if slices.Contains(args, "--git-path") {
+	switch {
+	case slices.Contains(args, "--git-path"):
 		// No test of the fake leaves a lock there.
 		return []byte(".git/index.lock\n"), f.gitPathErr
+	case slices.Equal(args, rootLookup):
+		return f.rootAnswer(dir)
 	}
-	return gitrepo.RunBytes(dir, args...)
+	return nil, nil
+}
+
+// rootAnswer is the root lookup: a failure when the fake is told to, and the directory asked in otherwise.
+func (f indexFake) rootAnswer(dir string) ([]byte, error) {
+	if f.rootErr != nil {
+		return nil, f.rootErr
+	}
+	return []byte(dir + "\n"), nil
 }
 
 // lsFilesAnswer tells the three listings apart: the entries at the path (--stage with -t), whether

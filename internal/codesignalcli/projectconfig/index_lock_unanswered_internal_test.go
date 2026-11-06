@@ -45,7 +45,7 @@ func TestTheLockQuestionHasOneExplicitOutcomePerAnswer(t *testing.T) {
 		}, true, false},
 		"there is no lock file": {func(t *testing.T, repo string) gitrepo.Runner { return gitrepo.RunBytes }, false, false},
 		"git fails to say where the lock would be": {func(t *testing.T, repo string) gitrepo.Runner {
-			return failingEach(map[string]error{"rev-parse --git-path": errors.New("boom")})
+			return failsEveryQuestion(errors.New("boom"))
 		}, false, true},
 		"git prints no path for the lock": {func(t *testing.T, repo string) gitrepo.Runner {
 			return func(string, ...string) ([]byte, error) { return []byte("\n"), nil }
