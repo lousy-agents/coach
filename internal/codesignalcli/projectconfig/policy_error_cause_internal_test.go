@@ -22,6 +22,7 @@ func TestEveryPolicyErrorNamesARemedyOrACauseNeverBothAndNeverNeither(t *testing
 	absent := gitfixture.Init(t)
 	gitfixture.CommitFile(t, absent, "a.txt", "x")
 	cases := map[string]error{
+		"a path that cannot name a policy":           invalidPathError("../p.json", "HEAD", "path must be normalized"),
 		"nothing at the path":                        missingError("cfg/p.json"),
 		"a file where a parent should be":            blockedParentError("cfg/p.json", "cfg"),
 		"a path the working tree cannot use":         unusableOnDiskError("cfg/p.json", projectreadiness.PolicyCause("not_a_regular_file"), "is not a regular file"),

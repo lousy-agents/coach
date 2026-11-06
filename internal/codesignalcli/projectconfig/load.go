@@ -85,7 +85,7 @@ func ValidatePath(repoPath string) error {
 	}
 	clean := path.Clean(repoPath)
 	if clean != repoPath || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
-		return fmt.Errorf("path must be normalized and remain inside the repository")
+		return fmt.Errorf("path must be normalized and remain inside the repository; --project-config takes a path from the repository root, whatever directory the scan starts in")
 	}
 	if strings.Contains(repoPath, "\\") {
 		return fmt.Errorf("path must use repository-relative slash separators")
