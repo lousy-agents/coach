@@ -61,6 +61,9 @@ func blockedIndex(blocked bool) int {
 
 func (c verdictCase) judgment() policyJudgment {
 	judgment := policyJudgment{verdict: c.verdict}
+	if c.verdict == restoreCommittedInvalid {
+		judgment.committedInvalid = "document is not valid JSON"
+	}
 	if c.failureForTheOffer {
 		judgment.failure = newGitFailure("what the index holds for it", errors.New("boom"))
 	}
@@ -114,6 +117,9 @@ func verdictCases() []verdictCase {
 		{"an empty entry marked skip-worktree for a policy nothing commits", restoreEmptySkipWorktreeNotCommitted, emptyMark1, emptyMark2, false},
 		{"an empty entry a sparse checkout leaves out", restoreEmptySparseNotCommitted, emptySparse1, emptySparse2, false},
 		{"a directory in the index", restoreDirectoryInIndex, dir1, dir2, false},
+		{"a committed copy that is not a valid policy", restoreCommittedInvalid,
+			offerWant{true, projectreadiness.RemedyAuthor, "", []string{"committed copy is not a valid policy", "document is not valid JSON", "write a new policy"}, false},
+			cannotRestore(projectreadiness.PolicyCause("parent_not_directory"), "committed copy is not a valid policy", "move the file that blocks the path"), false},
 		{"a verdict the offers do not know", unknownVerdict, unknown1, unknown2, false},
 	}
 }

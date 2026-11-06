@@ -20,10 +20,10 @@ func TestTheSpellingCheckAdvisesFromTheRevisionForADirectorySpelledInAnotherCase
 		avoid []string
 	}{
 		{"the revision holds the disk's spelling", func(t *testing.T, repo string) {
-			gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
+			gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 		}, "CFG/p.json", []string{`it holds "cfg"; pass --project-config cfg/p.json`}, []string{"rename"}},
 		{"the revision holds the typed spelling and the disk was renamed", func(t *testing.T, repo string) {
-			gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
+			gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 			if err := os.Rename(filepath.Join(repo, "cfg"), filepath.Join(repo, "CFG")); err != nil {
 				t.Fatal(err)
 			}

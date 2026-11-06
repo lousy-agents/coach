@@ -13,7 +13,7 @@ import (
 func sparseRepository(t *testing.T, sparse bool) string {
 	t.Helper()
 	repo := committedRepository(t)
-	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
+	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 	gitfixture.CommitFile(t, repo, "docs/d.json", "{}")
 	if sparse {
 		gitfixture.Git(t, repo, "sparse-checkout", "set", "--no-cone", "/*", "!/cfg/")

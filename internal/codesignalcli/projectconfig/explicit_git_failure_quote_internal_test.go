@@ -13,7 +13,7 @@ import (
 
 func TestAGitFailureIsQuotedWithoutCoachsOwnWrapperAroundIt(t *testing.T) {
 	repo := gitfixture.Init(t)
-	gitfixture.CommitFile(t, repo, "cfg/p.json", "{}")
+	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 	blob, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD:cfg/p.json").Output()
 	if err != nil {
 		t.Fatal(err)

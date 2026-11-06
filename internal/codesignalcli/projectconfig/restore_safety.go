@@ -31,6 +31,7 @@ const (
 	restoreDirectoryInIndex
 	restoreEmptySkipWorktreeNotCommitted
 	restoreEmptySparseNotCommitted
+	restoreCommittedInvalid
 	// restoreVerdictCount is the number of verdicts above, for a test that walks all of them.
 	restoreVerdictCount
 )
@@ -54,6 +55,8 @@ type policyJudgment struct {
 	// submodule is the submodule the policy path lies inside, if any. Nothing there can be
 	// restored or committed in this repository, so it is decided before anything else.
 	submodule string
+	// committedInvalid is, for restoreCommittedInvalid, why the committed copy is not a valid policy.
+	committedInvalid string
 	// sparseNewPolicy is set when nothing commits the path, it is in a repository with a sparse
 	// checkout, and its directory is not on disk: a new policy there may need git add --sparse.
 	sparseNewPolicy bool
@@ -120,6 +123,11 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 	}
 	facts := indexFacts{entries: staged, unread: unread, sparse: sparse, setAsideEmpty: len(staged) < len(listed)}
 	verdict := verdictFor(committed, found, facts)
+	if restoresFromTheCommit(verdict) {
+		if judged, decided := judgeCommittedCopy(run, dir, revision, repoPath); decided {
+			return judged
+		}
+	}
 	if !offersRestoreCommand(verdict) {
 		return policyJudgment{verdict: verdict, indexEntryUnread: unread, sparseNewPolicy: verdict == restoreNotCommitted && newPolicyMayNeedSparse(run, dir, repoPath)}
 	}
@@ -128,6 +136,12 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 		return policyJudgment{verdict: restoreUndecidable, indexEntryUnread: unread, failure: newGitFailure("whether the index is locked", err)}
 	}
 	return policyJudgment{verdict: verdict, indexEntryUnread: unread, indexLocked: locked}
+}
+
+// restoresFromTheCommit is whether a verdict ends in bringing back the committed copy, which is only worth
+// doing when that copy is a valid policy.
+func restoresFromTheCommit(verdict restoreVerdict) bool {
+	return verdict == restoreOverwritesNothing || verdict == restoreOverwritesEmptyEntry
 }
 
 // offersRestoreCommand is whether a verdict ends in a printed restore command, which is what a
