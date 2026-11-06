@@ -2,6 +2,7 @@ package projectconfig
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -104,5 +105,36 @@ func TestEveryVerdictHasAnOfferThatSaysWhatItDoes(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A locked index makes every printed git restore fail, so the lock is checked for
+// the verdicts whose offer prints one and for no others. offersRestoreCommand is
+// that list; this walks every verdict to hold it to what the offers print, so a
+// verdict that gains a restore command without joining the list, or stays in the
+// list after losing its command, fails here instead of printing a command that
+// fails or checking a lock that cannot matter.
+func TestALockedIndexWithholdsExactlyTheOffersThatPrintARestore(t *testing.T) {
+	missing := &ConfigError{Kind: KindMissing, Cause: CauseAbsent}
+	for verdict := restoreVerdict(0); verdict < restoreVerdictCount; verdict++ {
+		t.Run(fmt.Sprintf("verdict %d", verdict), func(t *testing.T) {
+			judgment := policyJudgment{verdict: verdict, failure: newGitFailure("what the index holds for it", errors.New("boom"))}
+
+			open, offered := restoreOfferFor(judgment, "HEAD", missing, "cfg/p.json")
+
+			printsRestore := offered && strings.Contains(open.text, "git restore")
+			if printsRestore != offersRestoreCommand(verdict) {
+				t.Fatalf("the offer prints a git restore command = %v, but offersRestoreCommand = %v: the lock check and the offers disagree\noffer: %q",
+					printsRestore, offersRestoreCommand(verdict), open.text)
+			}
+			if !printsRestore {
+				return
+			}
+			judgment.indexLocked = true
+			locked, _ := restoreOfferFor(judgment, "HEAD", missing, "cfg/p.json")
+			if strings.Contains(locked.text, "git restore") || locked.remedy != projectreadiness.RemedyNone || !strings.Contains(locked.text, "locked") {
+				t.Errorf("a locked index must withhold the restore and say why; got remedy %d, %q", locked.remedy, locked.text)
+			}
+		})
 	}
 }
