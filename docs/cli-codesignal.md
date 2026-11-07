@@ -66,7 +66,8 @@ status as a gate.
 
 With an explicit `--project-config`, `--check-project` reads the path from the
 working tree. When the working tree decides the policy gap (the file is gone,
-something unusable is there, or a parent is a file or a link), that path is left
+something unusable is there, a parent is a file or a link, or the file is there and
+not committed), that path is left
 out of `dirty_worktree.paths`, because the check did read it, and
 `relevant_changes` is `false` unless another path counts. A staged edit to a
 committed policy, an unmerged entry for it, or a staged entry for a policy that
