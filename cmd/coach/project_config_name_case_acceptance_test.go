@@ -26,21 +26,18 @@ var _ = Describe("coach codesignal: a policy path spelled in a different case th
 		commitFile(repo, policy, singleRootPolicyJSON)
 	})
 
-	It("refuses a file that only a case-folding filesystem resolves to the named path", func() {
+	// The revision holds cfg/p.json exactly as typed, so that is the policy that is read, whatever spelling the
+	// case-folding disk shows for it. Before, this was refused, and a policy moved by Coach's own advice left
+	// a directory spelled the old way that the next explicit run then refused.
+	It("reads the policy from the revision when only a case-folding filesystem resolves the disk's file to the named path", func() {
 		Expect(os.Rename(filepath.Join(repo, "cfg", "p.json"), filepath.Join(repo, "cfg", "P.JSON"))).To(Succeed())
 
-		stderr := scanExplicitPolicy(repo, policy)
-
-		Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "stderr:\n%s", stderr)
-		Expect(string(stderr)).To(ContainSubstring(`"P.JSON"`), "the message must name the spelling the disk holds:\n%s", stderr)
+		Expect(scanExplicitPolicyAccepted(repo, policy)).To(ContainSubstring(`"schema_version":"2"`))
 	})
 
-	It("refuses a directory that only a case-folding filesystem resolves to the named parent", func() {
+	It("reads the policy from the revision when only a case-folding filesystem resolves the disk's directory to the named parent", func() {
 		Expect(os.Rename(filepath.Join(repo, "cfg"), filepath.Join(repo, "CFG"))).To(Succeed())
 
-		stderr := scanExplicitPolicy(repo, policy)
-
-		Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "stderr:\n%s", stderr)
-		Expect(string(stderr)).To(ContainSubstring(`"CFG"`), "the message must name the spelling the disk holds:\n%s", stderr)
+		Expect(scanExplicitPolicyAccepted(repo, policy)).To(ContainSubstring(`"schema_version":"2"`))
 	})
 })

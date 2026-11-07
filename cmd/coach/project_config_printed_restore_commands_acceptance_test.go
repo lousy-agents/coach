@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -202,11 +203,10 @@ var _ = Describe("coach codesignal: the restore command printed for a missing ex
 		}),
 	)
 
-	// git restore writes where the file system resolves the parents. Where it folds
-	// case, a policy committed under cfg/ and missing from a directory on disk named
-	// CFG/ would be restored into CFG/, and the scan then refuses that spelling, so the
-	// restore is not printed and the parent's spelling is what the message names.
-	It("prints no restore, and names the parent's spelling, when a parent directory is in another case on a file system that folds case", func() {
+	// git restore writes where the file system resolves the parents. Where it folds case, a policy committed
+	// under cfg/ and missing from a directory on disk named CFG/ is restored into CFG/. The revision holds the
+	// path as typed, so that is the policy that is read, and the printed restore is what the missing file needs.
+	It("prints the restore, and the scan passes once it is run, when a parent directory is in another case on a file system that folds case", func() {
 		repo := commitScannableGoRepo()
 		commitFile(repo, policy, singleRootPolicyJSON)
 		removeFromDisk(repo)
@@ -216,9 +216,14 @@ var _ = Describe("coach codesignal: the restore command printed for a missing ex
 		}
 
 		stderr := scanExplicitPolicy(repo, policy)
+		command := printedRestoreCommand(stderr)
+		Expect(command).NotTo(BeEmpty(), "the file is missing, and the restore writes it where the disk resolves the parent:\n%s", stderr)
+		run := exec.Command("sh", "-c", command)
+		run.Dir = repo
+		output, err := run.CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), "the printed restore must work: %s", output)
 
-		Expect(printedRestoreCommand(stderr)).To(BeEmpty(), "the restore would write into CFG/, which the scan refuses:\n%s", stderr)
-		Expect(string(stderr)).To(ContainSubstring(`"CFG"`), "the message names the spelling to fix:\n%s", stderr)
+		Expect(scanExplicitPolicyAccepted(repo, policy)).To(ContainSubstring(`"schema_version":"2"`))
 	})
 
 	// The skip-worktree mark alone stops a restore. An empty entry carrying it is

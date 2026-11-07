@@ -36,26 +36,32 @@ var _ = Describe("coach codesignal: the advice for a policy path spelled in anot
 		})
 	})
 
-	When("the revision holds the spelling the user typed and the disk was renamed without a commit", func() {
+	// The revision decides what the path names, so a path it holds exactly as typed is read whatever spelling the
+	// disk shows: git status is clean when only the case differs, and v0.11.0 read it.
+	When("the revision holds the spelling the user typed and the disk shows another", func() {
 		BeforeEach(func() {
 			commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
 		})
 
-		It("tells the user to rename the file back or to record the rename with git mv, for a file", func() {
+		It("reads the policy from the revision when only the file's case differs on disk", func() {
 			Expect(os.Rename(filepath.Join(repo, "cfg", "p.json"), filepath.Join(repo, "cfg", "P.JSON"))).To(Succeed())
 
-			stderr := scanExplicitPolicy(repo, "cfg/p.json")
-
-			Expect(string(stderr)).To(ContainSubstring(`it holds "cfg/p.json"; rename "cfg/P.JSON" back to "cfg/p.json", or record the rename with git -C "$(git rev-parse --show-toplevel)" mv -- 'cfg/p.json' 'cfg/P.JSON', commit it, and pass --project-config cfg/P.JSON`), "stderr:\n%s", stderr)
+			Expect(scanExplicitPolicyAccepted(repo, "cfg/p.json")).To(ContainSubstring(`"schema_version":"2"`))
 		})
 
-		It("tells the user to rename the directory back, which is the only way out for a directory, for a directory", func() {
+		It("reads the policy from the revision when only the directory's case differs on disk", func() {
 			Expect(os.Rename(filepath.Join(repo, "cfg"), filepath.Join(repo, "CFG"))).To(Succeed())
 
-			stderr := scanExplicitPolicy(repo, "cfg/p.json")
+			Expect(scanExplicitPolicyAccepted(repo, "cfg/p.json")).To(ContainSubstring(`"schema_version":"2"`))
+		})
 
-			Expect(string(stderr)).To(ContainSubstring(`it holds "cfg"; rename "CFG" back to "cfg" (project_config_invalid)`), "stderr:\n%s", stderr)
-			Expect(string(stderr)).NotTo(ContainSubstring("git mv"), "git mv refuses to rename a directory in case only:\n%s", stderr)
+		It("reads the policy in --check-project as well", func() {
+			Expect(os.Rename(filepath.Join(repo, "cfg"), filepath.Join(repo, "CFG"))).To(Succeed())
+
+			doc := expectCheckProject(repo, "--project-config", "cfg/p.json")
+
+			Expect(causeOfGap(doc, "policy_invalid")).To(Equal("no such gap"), "gaps: %+v", doc.Gaps)
+			Expect(causeOfGap(doc, "policy_missing")).To(Equal("no such gap"), "gaps: %+v", doc.Gaps)
 		})
 	})
 

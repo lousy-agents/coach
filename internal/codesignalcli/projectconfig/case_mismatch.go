@@ -23,6 +23,10 @@ type caseMismatchError struct {
 	corrected string
 	// isFile is whether the differing component is the last: a file, which git mv can rename in case only.
 	isFile bool
+	// displaced is the error that was found first and that the mismatch was reported instead of: a policy
+	// missing from a directory the disk spells in another case. It is nil when the policy is there. It is what
+	// is reported when the revision holds the typed path, which settles the spelling.
+	displaced error
 }
 
 // newCaseMismatch records that the component at index of parts is spelled
@@ -46,13 +50,21 @@ func (m caseMismatchError) Error() string {
 	return m.config(nil).Message
 }
 
-// adviseOnRevision is err, with a case mismatch turned into the refusal that
-// says what the analyzed revision holds and what to do about it, and a policy
-// missing from disk turned into a refusal when the revision holds its path in
-// another case.
+// adviseOnRevision is err, with a case mismatch settled by the analyzed revision, and a policy missing from disk
+// turned into a refusal when the revision holds its path in another case.
+//
+// The revision decides what the path names: one that holds exactly the path as typed is the policy that is read,
+// whatever spelling a file system that folds case shows for the file, so the mismatch is dropped and what it
+// displaced, the missing file or nothing, is reported. Otherwise the mismatch is refused with what the revision
+// holds and the way out that follows. A revision that cannot be asked settles nothing, so it is refused.
 func adviseOnRevision(err error, repoPath string, entries revisionEntries) error {
 	var mismatch caseMismatchError
 	if errors.As(err, &mismatch) {
+		if entries != nil {
+			if held, askErr := entries.holdsPath(repoPath); askErr == nil && held {
+				return mismatch.displaced
+			}
+		}
 		return mismatch.config(entries)
 	}
 	var found *ConfigError

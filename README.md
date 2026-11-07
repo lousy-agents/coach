@@ -259,11 +259,13 @@ except for the policy-candidate document on the guided-authoring path.
   restore and no authoring.
 - A name that differs only by case from what is on disk (on a file system that
   ignores case) or from what the analyzed revision holds (when the file is gone
-  from disk): `project_config_invalid`. The message names both spellings and
-  says whether to pass the revision's spelling or to rename the entry back, and
-  gives no advice when the revision holds neither or both. A file renamed in case
-  only is told to record the rename with `git mv`, because `git add` records
-  nothing for it. No new policy is offered. See the [CLI contract](./docs/cli-codesignal.md#commands).
+  from disk), where the revision does not hold the spelling that was typed:
+  `project_config_invalid`. The message names both spellings and says whether to
+  pass the revision's spelling, and gives no advice when the revision holds
+  neither. A revision that holds exactly the typed path is read whatever
+  spelling the disk shows. A file renamed in case only and never committed under
+  its new name is told to record the rename with `git mv`, because `git add`
+  records nothing for it. No new policy is offered. See the [CLI contract](./docs/cli-codesignal.md#commands).
 - A policy Coach discovers (no `--project-config`) that is committed in another case
   than `.lousy-agents/coach.json`: the scan is refused, `--check-project` names
   `name_case_differs` and offers no new policy, and the message prints the

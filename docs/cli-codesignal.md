@@ -99,31 +99,31 @@ a regular file), `symbolic_link` (the policy is a link or is reached
 through one; name the file it points to), `unreadable_on_disk` (the process cannot stat or
 read it; fix the permissions) and `name_case_differs` (rename it to the revision's spelling).
 
-An explicit `--project-config` whose name differs only by case from what is on disk
-is refused with exit `2` and `project_config_invalid`; `--check-project` reports the same
-refusal as `policy_invalid` with the cause `name_case_differs`, whichever spelling was typed. A file system that folds case
-resolves `CFG/p.json` for `cfg/p.json`, but the analyzed revision tells the two
-spellings apart, so the scan would read a committed policy the working tree does not hold
-under that name. The message names both spellings and says which of them the revision
+The analyzed revision decides what an explicit `--project-config` names. When it holds exactly the path as typed,
+that is the policy that is read, whatever spelling a file system that folds case shows for the file on disk: with
+`cfg/p.json` typed and committed, a disk that shows `CFG/p.json` or `cfg/P.json` (a rename in case only, which `git
+status` does not show there) is no reason to refuse, and v0.11.0 read it. The same holds for the policy a printed
+move left under a differently spelled directory, so a discovered scan and an explicit one of the same committed file
+agree. A name that differs only by case from what is on disk is refused only when the revision does not hold the
+spelling that was typed. The refusal has exit `2` and `project_config_invalid`; `--check-project` reports it as
+`policy_invalid` with the cause `name_case_differs`. A file system that folds case resolves `CFG/p.json` for
+`cfg/p.json`, but the analyzed revision tells the two spellings apart, so the scan would read a committed policy the
+working tree does not hold under that name. The message names both spellings and says which of them the revision
 holds, and what to do follows from that:
 
 - The revision holds the spelling on disk and the user typed another: pass the spelling
   on disk, as in `pass --project-config cfg/p.json`. Nothing is renamed, because the
   revision already holds that spelling.
-- The revision holds the spelling the user typed and the disk was renamed without a
-  commit: rename the entry on disk back to the spelling the revision holds. For a file,
-  the other way out is to record the rename with `git -C "$(git rev-parse --show-toplevel)" mv -- '<revision
-  spelling>' '<spelling on disk>'`, commit it, and pass the spelling on disk. The printed move commands run
-  at the repository root, which they find themselves, so they work when pasted from a subdirectory. `git add` cannot do that: on a
-  repository that ignores case it records nothing for a rename that changes only the case
-  of a name, and the commit says there is nothing to commit. `git mv` refuses to rename a
-  directory in case only, so a directory is renamed back and no `git mv` is offered.
 - A file on disk that is not committed under that name, where the user typed its spelling
   on disk and the revision holds the same path in another case, on a repository that
   ignores case (the file was renamed in case only and the rename was never recorded): the
-  same refusal and the same two ways out, with the cause `name_case_differs`, not
-  `not_committed`. "Commit the file" would end in nothing to commit.
-- The revision holds neither spelling, or both: the message says so and gives no advice,
+  file can be renamed back, or the rename recorded with `git -C "$(git rev-parse --show-toplevel)" mv -- '<revision
+  spelling>' '<spelling on disk>'`, committed, and the spelling on disk passed, with the cause `name_case_differs`, not
+  `not_committed`. The printed move commands run at the repository root, which they find themselves, so they work when
+  pasted from a subdirectory. `git add` cannot do that: on a repository that ignores case it records nothing for a
+  rename that changes only the case of a name, and the commit says there is nothing to commit. `git mv` refuses to
+  rename a directory in case only, so a directory is renamed back and no `git mv` is offered.
+- The revision holds neither spelling: the message says so and gives no advice,
   because no spelling is the right one to move to. It gives none either when git cannot
   answer.
 

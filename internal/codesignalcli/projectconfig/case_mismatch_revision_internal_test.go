@@ -22,12 +22,6 @@ func TestTheSpellingCheckAdvisesFromTheRevisionForADirectorySpelledInAnotherCase
 		{"the revision holds the disk's spelling", func(t *testing.T, repo string) {
 			gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 		}, "CFG/p.json", []string{`it holds "cfg"; pass --project-config cfg/p.json`}, []string{"rename"}},
-		{"the revision holds the typed spelling and the disk was renamed", func(t *testing.T, repo string) {
-			gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
-			if err := os.Rename(filepath.Join(repo, "cfg"), filepath.Join(repo, "CFG")); err != nil {
-				t.Fatal(err)
-			}
-		}, "cfg/p.json", []string{`it holds "cfg"; rename "CFG" back to "cfg" (project_config_invalid)`}, []string{"git mv"}},
 		{"the revision holds neither spelling", func(t *testing.T, repo string) {
 			gitfixture.CommitFile(t, repo, "go.mod", "module m\n")
 			if err := os.MkdirAll(filepath.Join(repo, "CFG"), 0o755); err != nil {
@@ -45,6 +39,28 @@ func TestTheSpellingCheckAdvisesFromTheRevisionForADirectorySpelledInAnotherCase
 
 			assertSpellingAdviceFromRevision(t, repo, c.typed, c.want, c.avoid)
 		})
+	}
+}
+
+// A directory renamed on disk in case only, while the revision holds the spelling that was typed, is no reason to
+// refuse: the revision decides what the path names (see revision_decides_case_internal_test.go). This is the same
+// state with the real revision lookup and a real rename.
+func TestTheSpellingCheckAcceptsADirectoryRenamedOnDiskWhenTheRevisionHoldsTheTypedSpelling(t *testing.T) {
+	repo := gitfixture.Init(t)
+	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
+	if err := os.Rename(filepath.Join(repo, "cfg"), filepath.Join(repo, "CFG")); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+
+	advised := adviseOnRevision(checkExactNames(osDiskRoot{root}, "cfg/p.json"), "cfg/p.json", entriesThrough(runProjectConfigGit, repo, "HEAD"))
+
+	if advised != nil {
+		t.Errorf("advised = %v; want nil: the revision holds cfg/p.json exactly as typed", advised)
 	}
 }
 
