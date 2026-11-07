@@ -1,10 +1,6 @@
 package projectcheck
 
 import (
-	"errors"
-	"fmt"
-
-	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
@@ -43,9 +39,8 @@ func gapForDiscoveredPolicyOnDisk(dir, revision, policyPath string, missing proj
 // names the other case it is committed in. When git could not say whether it is, the result is the
 // operational error that names the question, which is how every question git could not answer is reported.
 func gapForWrongCase(renamed error, policyPath string) (projectreadiness.Check, []string, error) {
-	var refusal *projectconfig.ConfigError
-	if errors.As(renamed, &refusal) && refusal.GitFailure != nil {
-		return projectreadiness.Check{}, nil, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: the policy at %q: %s", policyPath, refusal.GitFailure), Cause: errors.Unwrap(refusal.GitFailure)}
+	if silence := projectconfig.GitSilence(renamed, "coach codesignal --check-project", policyPath); silence != nil {
+		return projectreadiness.Check{}, nil, silence
 	}
 	return policyGapFrom(renamed)
 }

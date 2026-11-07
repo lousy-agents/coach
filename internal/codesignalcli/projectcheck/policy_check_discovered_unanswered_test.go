@@ -34,7 +34,7 @@ func TestADiscoveredPolicyIsNotCalledMissingWhenGitCannotSayWhetherTheRevisionHo
 	if !errors.As(err, &operational) || !errors.Is(operational.Cause, errListingUnreadable) {
 		t.Fatalf("checkDiscoveredPolicy = %+v, %v, %v; want an operational error that keeps git's own error", check, roots, err)
 	}
-	for _, want := range []string{".lousy-agents/coach.json", "could not check whether the analyzed revision holds it in another case"} {
+	for _, want := range []string{"coach codesignal --check-project: ", ".lousy-agents/coach.json", "could not check whether the analyzed revision holds it in another case"} {
 		if !strings.Contains(operational.Message, want) {
 			t.Errorf("message %q; want it to contain %q", operational.Message, want)
 		}
