@@ -66,7 +66,7 @@ func adviseOnRevision(err error, repoPath string, entries revisionEntries) error
 		return mismatch.config(entries)
 	}
 	var found *ConfigError
-	if entries != nil && errors.As(err, &found) && found.Kind == KindMissing && found.Missing == MissingAbsent {
+	if entries != nil && errors.As(err, &found) && found.AbsentFromDisk() {
 		if respelled := respelledInRevision(entries, repoPath); respelled != nil {
 			return respelled
 		}

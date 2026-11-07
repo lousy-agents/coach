@@ -133,6 +133,8 @@ var _ = Describe("coach project config migration", func() {
 
 	DescribeTable("offers no copy and changes nothing, whatever the answer, when the path holds", requireNoOfferWhereThePathIsOccupied, occupiedCanonicalEntries())
 
+	DescribeTable("offers no copy and leaves what the index holds as it is, whatever the answer, when the index holds the path", requireNoOfferWhereTheIndexHoldsThePath, indexHeldEntries())
+
 	When("an uncommitted .lousy-agents/coach.json already exists beside a valid committed project.json", func() {
 		It("does not prompt and does not change the existing file", func() {
 			repo := commitDeprecatedProjectConfigRepo()
@@ -271,4 +273,19 @@ func describeTreeEntry(full string, walkErr error) string {
 	}
 	target, _ := os.Readlink(full)
 	return fmt.Sprintf("%s %d %s", info.Mode(), info.Size(), target)
+}
+
+func requireNoOfferWhereTheIndexHoldsThePath(s indexHeld) {
+	repo := commitDeprecatedProjectConfigRepo()
+	s.arrange(repo)
+	before := gitIn(repo, "ls-files", "--stage", "--", coachConfigPath)
+	tree := treeOf(repo)
+
+	stdout, stderr, exitCode := runMigrationBaselineOnTerminal(repo, projectConfigMigrationEnv(), "y\n")
+
+	Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
+	Expect(string(stderr)).NotTo(ContainSubstring("Copy project.json"), "a copy would be added over what the index holds")
+	expectNoDiagnosticKind(decodeCoachReport(stdout), "project_config_migration_failed")
+	Expect(gitIn(repo, "ls-files", "--stage", "--", coachConfigPath)).To(Equal(before), "the index is untouched")
+	Expect(treeOf(repo)).To(Equal(tree), "answering yes changed the worktree")
 }

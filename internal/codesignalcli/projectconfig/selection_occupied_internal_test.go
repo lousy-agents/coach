@@ -9,7 +9,7 @@ import (
 var selectionFieldsThatAreNotTheDisk = map[string]bool{"Path": true, "Deprecated": true, "Fatal": true}
 
 // Every field that describes the disk makes the default policy's path occupied. A new field that describes the disk
-// fails here until CanonicalOccupiedOnDisk counts it, so that the migration that asks that question cannot
+// fails here until CanonicalPathTaken counts it, so that the migration that asks that question cannot
 // offer a move to a path the diagnostics say is taken.
 func TestEveryStateTheDiskCanGiveTheDefaultPathOccupiesIt(t *testing.T) {
 	selectionType := reflect.TypeOf(Selection{})
@@ -29,8 +29,8 @@ func TestEveryStateTheDiskCanGiveTheDefaultPathOccupiesIt(t *testing.T) {
 			t.Fatalf("Selection.%s is a %s: say whether it describes the disk, and if it does, how it occupies the path", field.Name, field.Type)
 		}
 
-		if !selection.CanonicalOccupiedOnDisk() {
-			t.Errorf("Selection.%s set: CanonicalOccupiedOnDisk = false; want true", field.Name)
+		if !selection.CanonicalPathTaken() {
+			t.Errorf("Selection.%s set: CanonicalPathTaken = false; want true", field.Name)
 		}
 	}
 }
@@ -38,7 +38,7 @@ func TestEveryStateTheDiskCanGiveTheDefaultPathOccupiesIt(t *testing.T) {
 func TestAPolicyThatIsSelectedHoldsNothingOnDisk(t *testing.T) {
 	selection := Selection{Path: DefaultPath, Deprecated: true}
 
-	if selection.CanonicalOccupiedOnDisk() {
-		t.Errorf("CanonicalOccupiedOnDisk = true for %+v; want false, since nothing is on disk", selection)
+	if selection.CanonicalPathTaken() {
+		t.Errorf("CanonicalPathTaken = true for %+v; want false, since nothing is on disk", selection)
 	}
 }
