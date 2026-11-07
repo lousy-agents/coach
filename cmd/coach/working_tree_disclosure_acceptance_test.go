@@ -1,8 +1,6 @@
 package main
 
 import (
-	"path/filepath"
-
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -231,8 +229,8 @@ var _ = Describe("coach codesignal working tree disclosure", func() {
 				commitBenignHistory(repo)
 				Expect(strings.TrimSpace(gitPorcelain(repo))).To(BeEmpty())
 
-				binDir, env := installGitStatusFailureWrapper()
-				expectStatusWrapperBehavior(filepath.Join(binDir, "git"), repo)
+				corruptTheIndex(repo)
+				expectOnlyTheIndexReadsFail(repo)
 
 				args := []string{"codesignal", "--format=" + format}
 				if mode == codesignalModeBaseline {
@@ -240,7 +238,7 @@ var _ = Describe("coach codesignal working tree disclosure", func() {
 				} else {
 					args = append(args, "--base", "HEAD~1")
 				}
-				stdout, stderr, exitCode := runCoachBinary(commandPath, repo, env, args...)
+				stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, args...)
 				Expect(exitCode).To(Equal(0),
 					"a failed working-tree status check must not fail the run; stderr: %s\nstdout: %s", stderr, stdout)
 				Expect(stdout).NotTo(BeEmpty())
@@ -330,8 +328,8 @@ var _ = Describe("coach codesignal working tree disclosure", func() {
 				commitGoProjectForDisclosure(repo)
 				Expect(strings.TrimSpace(gitPorcelain(repo))).To(BeEmpty())
 
-				binDir, env := installGitStatusFailureWrapper()
-				expectStatusWrapperBehavior(filepath.Join(binDir, "git"), repo)
+				corruptTheIndex(repo)
+				expectOnlyTheIndexReadsFail(repo)
 
 				args := []string{"codesignal", "--project-config", "project.json", "--format=" + format}
 				if mode == codesignalModeBaseline {
@@ -339,7 +337,7 @@ var _ = Describe("coach codesignal working tree disclosure", func() {
 				} else {
 					args = append(args, "--base", "HEAD~1")
 				}
-				stdout, stderr, exitCode := runCoachBinary(commandPath, repo, env, args...)
+				stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, args...)
 				Expect(exitCode).To(Equal(0),
 					"a failed working-tree status check must not fail the run; stderr: %s\nstdout: %s", stderr, stdout)
 				Expect(stdout).NotTo(BeEmpty())
