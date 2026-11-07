@@ -54,7 +54,7 @@ var stagedEditOffer = restoreOffer{
 var mergeConflictOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
 	cause:  projectreadiness.CauseMergeConflict,
-	text:   ". It is committed at the analyzed revision, and the index holds an unresolved merge conflict for it that a restore would discard, so none is offered; resolve the conflict with git status, then run again",
+	text:   ". It is committed at the analyzed revision, and the index holds an unresolved merge conflict for it that a restore would discard, so none is offered; resolve the conflict (git status lists the unmerged paths; edit the file and git add it), then run again",
 }
 
 // skipWorktreeOffer is for a committed policy whose index entry carries a
@@ -94,7 +94,7 @@ func stagedOnlyOffer(repoPath string, blocked bool) restoreOffer {
 var unmergedNotCommittedOffer = restoreOffer{
 	remedy: projectreadiness.RemedyNone,
 	cause:  projectreadiness.CauseMergeConflict,
-	text:   ". It is not committed, but the index holds an unresolved merge conflict for it, so Coach offers no new policy and a restore cannot bring it back; resolve the conflict with git status, then run again",
+	text:   ". It is not committed, but the index holds an unresolved merge conflict for it, so Coach offers no new policy and a restore cannot bring it back; resolve the conflict (git status lists the unmerged paths; edit the file and git add it), then run again",
 }
 
 // stagedNonFileOffer is for a policy that is not committed and whose index entry

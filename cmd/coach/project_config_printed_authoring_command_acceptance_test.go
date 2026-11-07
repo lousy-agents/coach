@@ -75,7 +75,7 @@ var _ = Describe("coach codesignal: the authoring command printed for a missing 
 		_, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--project-language", "typescript", "--no-interactive", "--project-config", "cfg/new.json", "--format=json")
 
 		Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
-		Expect(string(stderr)).To(ContainSubstring("once cfg exists at the repository root, run coach codesignal --baseline --suggest-project-config --project-language typescript --output cfg/new.json"), "stderr:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("after making sure cfg exists at the repository root, run coach codesignal --baseline --suggest-project-config --project-language typescript --output cfg/new.json"), "stderr:\n%s", stderr)
 	})
 
 })
