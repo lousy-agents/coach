@@ -11,16 +11,21 @@ import (
 // first: the version, then for a diff the merge base, then the probe. It is not a git whose version is unknown,
 // and not a question about partial clones.
 func TestRefuseMissingObjectsSaysWhenGitIsNotInstalled(t *testing.T) {
-	missing := &exec.Error{Name: "git", Err: exec.ErrNotFound}
-	run := func(string, ...string) ([]byte, error) { return nil, missing }
-	for _, scan := range []struct{ name, base string }{{"a baseline", ""}, {"a diff", "main"}} {
-		t.Run(scan.name, func(t *testing.T) {
-			err := RefuseMissingObjects(run, "repo", scan.base)
+	assertSaysGitIsNotInstalled(t, "a baseline", "")
+	assertSaysGitIsNotInstalled(t, "a diff", "main")
+}
 
-			var refusal *OperationalError
-			if !errors.As(err, &refusal) || !strings.Contains(refusal.Message, "git executable not found") || strings.Contains(refusal.Message, "git unknown") {
-				t.Errorf("RefuseMissingObjects = %v; want the message every read uses when git is not installed", err)
-			}
-		})
-	}
+func assertSaysGitIsNotInstalled(t *testing.T, scan, base string) {
+	t.Helper()
+	t.Run(scan, func(t *testing.T) {
+		missing := &exec.Error{Name: "git", Err: exec.ErrNotFound}
+		run := func(string, ...string) ([]byte, error) { return nil, missing }
+
+		err := RefuseMissingObjects(run, "repo", base)
+
+		var refusal *OperationalError
+		if !errors.As(err, &refusal) || !strings.Contains(refusal.Message, "git executable not found") || strings.Contains(refusal.Message, "git unknown") {
+			t.Errorf("RefuseMissingObjects = %v; want the message every read uses when git is not installed", err)
+		}
+	})
 }
