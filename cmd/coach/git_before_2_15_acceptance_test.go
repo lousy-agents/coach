@@ -51,6 +51,9 @@ var _ = Describe("coach codesignal: a git that cannot answer the question of its
 		Entry("a baseline scan", "codesignal", "--baseline", "--format=json", "--no-interactive"),
 		Entry("a diff scan", "codesignal", "--base", "HEAD", "--format=json", "--no-interactive"),
 		Entry("--check-project", "codesignal", "--baseline", "--check-project", "--project-language", "typescript"),
+		Entry("--prepare-compiler", "codesignal", "--baseline", "--prepare-compiler", "--project-language", "typescript", "--no-interactive"),
+		Entry("--suggest-project-config for a Go repository", "codesignal", "--baseline", "--suggest-project-config"),
+		Entry("--suggest-project-config for a TypeScript repository", "codesignal", "--baseline", "--suggest-project-config", "--project-language", "typescript", "--no-interactive"),
 	)
 })
 
