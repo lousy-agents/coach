@@ -23,9 +23,24 @@ var _ = Describe("the documents: a TypeScript policy that exists and cannot be u
 	It("says so in the CLI contract's --check-project row", func() {
 		text := documentText("docs/cli-codesignal.md")
 
-		Expect(text).To(ContainSubstring("and the scan and the `--prepare-compiler` refusal say that in the same words"))
+		Expect(text).To(ContainSubstring("`--check-project` prints the action by its kind alone, `author_policy`, with no words of its own, and it is the scan and the `--prepare-compiler` refusal that say to " + stepInWords))
 		Expect(text).To(ContainSubstring("a TypeScript scan opens no session for a policy that exists, with or without a terminal"))
 		Expect(text).NotTo(ContainSubstring("a scan on a terminal opens guided authoring and prints a replacement by itself"))
+		Expect(text).NotTo(ContainSubstring("the text of the action is to fix the policy"), "--check-project prints no such text")
+		Expect(text).NotTo(ContainSubstring("say that in the same words"))
+	})
+
+	It("holds that row to what --check-project prints: the action by its kind, with no words of its own", func() {
+		repo := newTempGitRepo()
+		commitFile(repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
+		commitFile(repo, "tsconfig.json", `{"compilerOptions":{}}`+"\n")
+		commitFile(repo, coachConfigPath, invalidPolicyText)
+
+		doc := expectCheckProject(repo)
+
+		authoring := nextActionsNamed(doc, "author_policy")
+		Expect(authoring).To(HaveLen(1), "next actions: %+v", doc.NextActions)
+		Expect(authoring[0].Detail).To(BeEmpty(), "the row of docs/cli-codesignal.md says --check-project prints the action by its kind alone; the words for getting past the policy are the scan's and --prepare-compiler's, so a detail here makes the row false")
 	})
 
 	It("says so in the config convention", func() {
