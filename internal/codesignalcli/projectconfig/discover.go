@@ -9,7 +9,7 @@ import (
 // started in a subdirectory still sees CanonicalPath. Git failures
 // are returned; they are not treated as a file-local scan.
 func Discover(dir, revision string) (Selection, error) {
-	return discoverThrough(runProjectConfigGit, dir, revision)
+	return discoverThrough(NewGitRunner(), dir, revision)
 }
 
 // discoverThrough is Discover with every git question asked of run.

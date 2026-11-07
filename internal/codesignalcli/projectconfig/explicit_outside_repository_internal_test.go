@@ -21,13 +21,13 @@ func TestWhenGitCannotFindTheRepositoryTheExplicitPolicyCheckFailsInsteadOfPassi
 		call func(dir string) error
 	}{
 		{"ExplicitOnDiskStatus", func(dir string) error {
-			status, err := ExplicitOnDiskStatus(runProjectConfigGit, dir, "HEAD", "p.json")
+			status, err := ExplicitOnDiskStatus(NewGitRunner(), dir, "HEAD", "p.json")
 			if status != nil {
 				t.Errorf("ExplicitOnDiskStatus returned the verdict %+v; an operational failure is never a verdict about the policy", status)
 			}
 			return err
 		}},
-		{"requireOnDisk", func(dir string) error { return requireOnDisk(runProjectConfigGit, dir, "p.json") }},
+		{"requireOnDisk", func(dir string) error { return requireOnDisk(NewGitRunner(), dir, "p.json") }},
 		{"LoadExplicit", func(dir string) error {
 			config, err := LoadExplicit(dir, "HEAD", "p.json")
 			if config != nil {

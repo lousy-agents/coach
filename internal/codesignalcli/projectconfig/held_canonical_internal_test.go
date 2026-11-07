@@ -22,7 +22,7 @@ func TestAStagedCopyOfTheDefaultPolicyHoldsThePathWhenNothingIsOnDisk(t *testing
 	stage(t, repo, CanonicalPath)
 	moveAside(t, repo, CanonicalPath)
 
-	held, err := heldByTheIndex(runProjectConfigGit, repo, "HEAD", Selection{Path: DefaultPath, Deprecated: true})
+	held, err := heldByTheIndex(NewGitRunner(), repo, "HEAD", Selection{Path: DefaultPath, Deprecated: true})
 
 	if err != nil || held.HeldCanonical == nil || held.HeldCanonical.PolicyCause != projectreadiness.CauseStagedCopy {
 		t.Fatalf("heldByTheIndex = %+v, %v; want the path held with the cause staged_copy", held, err)
@@ -36,7 +36,7 @@ func TestAPathNothingHoldsIsLeftFree(t *testing.T) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
 
-	held, err := heldByTheIndex(runProjectConfigGit, repo, "HEAD", Selection{Path: DefaultPath, Deprecated: true})
+	held, err := heldByTheIndex(NewGitRunner(), repo, "HEAD", Selection{Path: DefaultPath, Deprecated: true})
 
 	if err != nil || held.HeldCanonical != nil || held.CanonicalPathTaken() {
 		t.Errorf("heldByTheIndex = %+v, %v; want the path left free", held, err)

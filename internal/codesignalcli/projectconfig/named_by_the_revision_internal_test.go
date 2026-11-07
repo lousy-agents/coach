@@ -40,7 +40,7 @@ func requireCauseOnDisk(t *testing.T, prepare func(*testing.T, string), path str
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
 	prepare(t, repo)
 
-	status, err := ExplicitOnDiskStatus(runProjectConfigGit, repo, "HEAD", path)
+	status, err := ExplicitOnDiskStatus(NewGitRunner(), repo, "HEAD", path)
 
 	if err != nil || status == nil || status.PolicyCause != want {
 		t.Errorf("ExplicitOnDiskStatus(%q) = %+v, %v; want the cause %q", path, status, err, want)

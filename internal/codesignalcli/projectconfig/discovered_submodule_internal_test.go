@@ -13,7 +13,7 @@ import (
 func TestAFileAtTheDefaultPathInsideASubmoduleIsSetAsideAsTheSubmodules(t *testing.T) {
 	repo := repositoryWithASubmoduleAt(t, ".lousy-agents")
 
-	settled, err := inTheSubmodule(runProjectConfigGit, repo, Selection{UncommittedCanonical: true})
+	settled, err := inTheSubmodule(NewGitRunner(), repo, Selection{UncommittedCanonical: true})
 
 	if err != nil || settled.UncommittedCanonical || settled.UnusableCanonical == nil {
 		t.Fatalf("inTheSubmodule = %+v, %v; want the file set aside as unusable and not uncommitted", settled, err)
@@ -42,7 +42,7 @@ func TestTheMessageForAFileInsideASubmoduleNamesTheSubmoduleAndTheCause(t *testi
 func TestAFileAtTheDefaultPathWhereNoSubmoduleIsRecordedStaysUncommitted(t *testing.T) {
 	repo := repositoryWithASubmoduleAt(t, "vendor/sub")
 
-	settled, err := inTheSubmodule(runProjectConfigGit, repo, Selection{UncommittedCanonical: true})
+	settled, err := inTheSubmodule(NewGitRunner(), repo, Selection{UncommittedCanonical: true})
 
 	if err != nil || !settled.UncommittedCanonical || settled.UnusableCanonical != nil {
 		t.Errorf("inTheSubmodule = %+v, %v; want the file left as one that is not committed", settled, err)

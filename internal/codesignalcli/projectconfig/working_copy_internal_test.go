@@ -104,7 +104,7 @@ func requireTheWorkingCopy(t *testing.T, arrange func(t *testing.T, repo string)
 	repo := committedInvalidPolicy(t)
 	arrange(t, repo)
 
-	got, err := inspectWorkingCopy(runProjectConfigGit, repo, "HEAD", replacePath)
+	got, err := inspectWorkingCopy(NewGitRunner(), repo, "HEAD", replacePath)
 
 	if err != nil || got != want {
 		t.Errorf("inspectWorkingCopy = %d, %v; want %d", got, err, want)

@@ -23,7 +23,7 @@ func TestAFileThatIsGoneHasNoWorkInIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changed, err := differsOnDisk(runProjectConfigGit, repo, gitrepo.TreeEntry{Mode: "100644", SHA: strings.Repeat("0", 40)}, true, replacePath)
+	changed, err := differsOnDisk(NewGitRunner(), repo, gitrepo.TreeEntry{Mode: "100644", SHA: strings.Repeat("0", 40)}, true, replacePath)
 
 	if err != nil || changed {
 		t.Errorf("differsOnDisk = %v, %v; want a file that is gone to have no work in it", changed, err)
@@ -52,7 +52,7 @@ func TestAFileThatIsThereHasWorkInItWhenTheCommittedEntryCannotBeCompared(t *tes
 
 func requireDiffersOnDisk(t *testing.T, repo string, entry gitrepo.TreeEntry, found, want bool) {
 	t.Helper()
-	changed, err := differsOnDisk(runProjectConfigGit, repo, entry, found, "cfg/p.json")
+	changed, err := differsOnDisk(NewGitRunner(), repo, entry, found, "cfg/p.json")
 
 	if err != nil || changed != want {
 		t.Errorf("differsOnDisk = %v, %v; want %v", changed, err, want)

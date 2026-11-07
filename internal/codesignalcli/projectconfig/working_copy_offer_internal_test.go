@@ -12,7 +12,7 @@ func TestNoReplacementIsOfferedForAFileWithWorkInIt(t *testing.T) {
 	writeFile(t, repo, replacePath, validPolicy)
 	invalid := invalidError(replacePath, "HEAD", "schema decode failed")
 
-	settled := settledByTheWorkingCopy(runProjectConfigGit, repo, "HEAD", replacePath, invalid)
+	settled := settledByTheWorkingCopy(NewGitRunner(), repo, "HEAD", replacePath, invalid)
 
 	var configErr *ConfigError
 	if !asConfigError(settled, &configErr) || configErr.ReplacesPolicy() || configErr.PolicyCause != projectreadiness.CauseChangedOnDisk {
@@ -47,7 +47,7 @@ func requireTheWorkCause(t *testing.T, arrange func(t *testing.T, repo string), 
 	repo := committedInvalidPolicy(t)
 	arrange(t, repo)
 
-	settled := settledByTheWorkingCopy(runProjectConfigGit, repo, "HEAD", replacePath, invalidError(replacePath, "HEAD", "bad"))
+	settled := settledByTheWorkingCopy(NewGitRunner(), repo, "HEAD", replacePath, invalidError(replacePath, "HEAD", "bad"))
 
 	var configErr *ConfigError
 	if !asConfigError(settled, &configErr) || configErr.PolicyCause != cause || configErr.ReplacesPolicy() || !strings.Contains(configErr.Message, words) {
@@ -61,7 +61,7 @@ func TestTheReplacementIsKeptForAFileThatHasNoWorkInIt(t *testing.T) {
 	repo := committedInvalidPolicy(t)
 	invalid := invalidError(replacePath, "HEAD", "schema decode failed")
 
-	settled := settledByTheWorkingCopy(runProjectConfigGit, repo, "HEAD", replacePath, invalid)
+	settled := settledByTheWorkingCopy(NewGitRunner(), repo, "HEAD", replacePath, invalid)
 
 	if settled != error(invalid) {
 		t.Errorf("settled = %v; want the error as it was", settled)

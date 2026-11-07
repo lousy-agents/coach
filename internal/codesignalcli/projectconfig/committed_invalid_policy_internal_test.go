@@ -35,7 +35,7 @@ func requireANewPolicyInsteadOfARestore(t *testing.T, content string) {
 		t.Fatal(err)
 	}
 
-	status, err := ExplicitOnDiskStatus(runProjectConfigGit, repo, "HEAD", "cfg/p.json")
+	status, err := ExplicitOnDiskStatus(NewGitRunner(), repo, "HEAD", "cfg/p.json")
 
 	if err != nil || status == nil {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want a missing policy", status, err)
@@ -53,7 +53,7 @@ func TestAValidCommittedPolicyIsStillRestored(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	status, err := ExplicitOnDiskStatus(runProjectConfigGit, repo, "HEAD", "cfg/p.json")
+	status, err := ExplicitOnDiskStatus(NewGitRunner(), repo, "HEAD", "cfg/p.json")
 
 	if err != nil || status == nil || status.Remedy != projectreadiness.RemedyRestore {
 		t.Errorf("ExplicitOnDiskStatus = %+v, %v; want a restore", status, err)

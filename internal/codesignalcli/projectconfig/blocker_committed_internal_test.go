@@ -37,7 +37,7 @@ func requireTheBlockerAdvice(t *testing.T, commits bool, want, notWant string) {
 		t.Fatalf("write: %v", err)
 	}
 
-	status, err := ExplicitOnDiskStatus(runProjectConfigGit, repo, "HEAD", "cfg/p.json")
+	status, err := ExplicitOnDiskStatus(NewGitRunner(), repo, "HEAD", "cfg/p.json")
 
 	if err != nil || status == nil || status.Missing != MissingBlockedParent {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want a policy blocked by the file", status, err)

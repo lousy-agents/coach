@@ -10,13 +10,6 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
-// runProjectConfigGit is the bounded git read behind Load, Discover and the readiness reads. Each of them has a
-// variant that takes the runner it asks (loadThrough, discoverThrough, loadForReadinessThrough), so that a test
-// exercises a timeout or a bound failure by handing in a runner; nothing is replaced.
-func runProjectConfigGit(dir string, args ...string) ([]byte, error) {
-	return NewGitRunner()(dir, args...)
-}
-
 // LoadForReadiness reads and validates repoPath at revision
 // like Load, but keeps a git-read failure distinct from a
 // content/schema rejection instead of collapsing both into
@@ -36,7 +29,7 @@ func runProjectConfigGit(dir string, args ...string) ([]byte, error) {
 // or stderr-budget failure still reports *gitrepo.OperationalError: those indicate a
 // resource/environment condition, not a defect in the file's content.
 func LoadForReadiness(dir, revision, repoPath string) (Config, error) {
-	return loadForReadinessThrough(runProjectConfigGit, dir, revision, repoPath)
+	return loadForReadinessThrough(NewGitRunner(), dir, revision, repoPath)
 }
 
 // loadForReadinessThrough is LoadForReadiness with every git question asked of run.
@@ -72,7 +65,7 @@ func loadForReadiness(run gitrepo.Runner, dir, revision, repoPath string) (Confi
 // configuration. Git stdout/stderr, wall time, document size, and JSON
 // nesting are bounded at this boundary.
 func Load(dir, revision, repoPath string) (json.RawMessage, error) {
-	return loadThrough(runProjectConfigGit, dir, revision, repoPath)
+	return loadThrough(NewGitRunner(), dir, revision, repoPath)
 }
 
 // loadThrough is Load with every git question, the repository root of the not-found message included, asked of run. A

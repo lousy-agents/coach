@@ -28,7 +28,7 @@ var snapshotGitCommandContext = gitrepo.ReadCommandContext
 
 // runSnapshotGit is the git seam used by New and its returned
 // fs.FS. Tests may replace it to exercise timeout and bound failures without
-// hanging, mirroring projectconfig's runProjectConfigGit.
+// hanging, mirroring projectconfig's NewGitRunner.
 var runSnapshotGit = func(dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
 	return gitrepo.RunBytesBoundedWith(snapshotGitCommandContext, dir, maxStdout, maxStderr, timeout, args...)
 }

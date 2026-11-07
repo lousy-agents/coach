@@ -34,7 +34,7 @@ func requireSettledWithAFailingFilter(t *testing.T, content string, replace bool
 	withARequiredCleanFilterThatFails(t, repo)
 	writeFile(t, repo, replacePath, content)
 
-	settled := settledByTheWorkingCopy(runProjectConfigGit, repo, "HEAD", replacePath, invalidError(replacePath, "HEAD", "schema decode failed"))
+	settled := settledByTheWorkingCopy(NewGitRunner(), repo, "HEAD", replacePath, invalidError(replacePath, "HEAD", "schema decode failed"))
 
 	var configErr *ConfigError
 	if !asConfigError(settled, &configErr) || configErr.ReplacesPolicy() != replace || configErr.PolicyCause != cause {

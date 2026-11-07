@@ -43,7 +43,7 @@ func TestANewPolicyInADirectoryOutsideTheSparseCheckoutIsOfferedWithTheWayToStag
 func requireTheNote(t *testing.T, repo, path string, wantNote bool) {
 	t.Helper()
 
-	status, err := ExplicitOnDiskStatus(runProjectConfigGit, repo, "HEAD", path)
+	status, err := ExplicitOnDiskStatus(NewGitRunner(), repo, "HEAD", path)
 
 	if err != nil || status == nil {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want a missing policy", status, err)
@@ -57,7 +57,7 @@ func requireTheNote(t *testing.T, repo, path string, wantNote bool) {
 // The note says what to do if the directory is outside the checkout, and not that it is: a new
 // directory that was never in the repository looks the same from here.
 func TestTheSparseNoteIsConditionalAndNamesBothWaysOut(t *testing.T) {
-	status, err := ExplicitOnDiskStatus(runProjectConfigGit, sparseRepository(t, true), "HEAD", "cfg/zz.json")
+	status, err := ExplicitOnDiskStatus(NewGitRunner(), sparseRepository(t, true), "HEAD", "cfg/zz.json")
 
 	if err != nil || status == nil {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v", status, err)
@@ -87,7 +87,7 @@ func TestTheSparseNoteIsOnlyForAPolicyNothingCommits(t *testing.T) {
 // Whether a new policy may need git add --sparse is asked of a path nothing commits only: a committed
 // policy that the sparse checkout leaves out has its own verdict and is not told to author one.
 func TestAPolicyTheSparseCheckoutLeavesOutIsNotJudgedAsANewPolicy(t *testing.T) {
-	judgment := judgeRestore(runProjectConfigGit, sparseRepository(t, true), "HEAD", "cfg/p.json")
+	judgment := judgeRestore(NewGitRunner(), sparseRepository(t, true), "HEAD", "cfg/p.json")
 
 	if judgment.sparseNewPolicy || judgment.verdict == restoreNotCommitted {
 		t.Errorf("judgment = %+v; want the verdict of a committed policy and no sparse note for a new one", judgment)

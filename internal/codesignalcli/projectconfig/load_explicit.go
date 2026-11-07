@@ -11,7 +11,7 @@ import (
 // file that does not exist on disk even when the path is committed at the
 // analyzed revision, because an explicit policy never falls back.
 func LoadExplicit(dir, revision, repoPath string) (json.RawMessage, error) {
-	status, err := ExplicitOnDiskStatus(runProjectConfigGit, dir, revision, repoPath)
+	status, err := ExplicitOnDiskStatus(NewGitRunner(), dir, revision, repoPath)
 	if err != nil {
 		return nil, err
 	}

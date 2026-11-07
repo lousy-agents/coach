@@ -20,8 +20,8 @@ func TestAPolicyInsideATopLevelSubmoduleIsTheSubmodulesAndNotUncommitted(t *test
 func requireTheTopLevelSubmodule(t *testing.T, repo, path string) {
 	t.Helper()
 
-	submodule, err := enclosingSubmodule(runProjectConfigGit, repo, path)
-	_, cause, unanswered := UncommittedPolicy(runProjectConfigGit, repo, "HEAD", path)
+	submodule, err := enclosingSubmodule(NewGitRunner(), repo, path)
+	_, cause, unanswered := UncommittedPolicy(NewGitRunner(), repo, "HEAD", path)
 
 	if err != nil || submodule != "sub" {
 		t.Errorf("enclosingSubmodule(%q) = %q, %v; want the submodule \"sub\"", path, submodule, err)

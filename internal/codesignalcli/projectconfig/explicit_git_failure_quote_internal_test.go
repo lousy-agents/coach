@@ -24,7 +24,7 @@ func TestAGitFailureIsQuotedWithoutCoachsOwnWrapperAroundIt(t *testing.T) {
 	}
 	moveAside(t, repo, "cfg/p.json")
 
-	status, err := ExplicitOnDiskStatus(runProjectConfigGit, repo, "HEAD", "cfg/p.json")
+	status, err := ExplicitOnDiskStatus(NewGitRunner(), repo, "HEAD", "cfg/p.json")
 
 	if err != nil || status == nil || status.GitFailure == nil {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want a missing-policy error that carries the git failure", status, err)

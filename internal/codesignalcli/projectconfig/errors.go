@@ -127,7 +127,7 @@ func (e *ConfigError) FreeForANewPolicy() bool {
 	return e.AbsentFromDisk() && e.Remedy == projectreadiness.RemedyAuthor
 }
 
-// readError classifies a runProjectConfigGit failure into a
+// readError classifies a failure of the policy read into a
 // user-facing message that never surfaces raw git stderr. A
 // *gitrepo.BoundError is our own timeout/output-budget text and is
 // safe to include verbatim. Any other failure means git itself reported the

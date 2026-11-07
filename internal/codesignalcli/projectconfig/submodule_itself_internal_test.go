@@ -35,7 +35,7 @@ func requireTheSubmoduleItself(t *testing.T, checkoutPresent bool, wantKind Erro
 		}
 	}
 
-	status, err := ExplicitOnDiskStatus(runProjectConfigGit, repo, "HEAD", "vendor/sub")
+	status, err := ExplicitOnDiskStatus(NewGitRunner(), repo, "HEAD", "vendor/sub")
 
 	if err != nil || status == nil {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want a refusal", status, err)
@@ -74,7 +74,7 @@ func requireRefusedForWhatItIs(t *testing.T, arrange func(t *testing.T, repo str
 	repo := repositoryWithASubmodule(t)
 	arrange(t, repo)
 
-	status, err := ExplicitOnDiskStatus(runProjectConfigGit, repo, "HEAD", path)
+	status, err := ExplicitOnDiskStatus(NewGitRunner(), repo, "HEAD", path)
 
 	if err != nil || status == nil || string(status.PolicyCause) != cause {
 		t.Errorf("ExplicitOnDiskStatus(%q) = %+v, %v; want a refusal with cause %q", path, status, err, cause)
