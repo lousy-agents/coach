@@ -9,13 +9,13 @@ import (
 
 // unlessTheRenameIsStaged is the refusal of the case-only rename check, or nil when the index already records the typed
 // name. A nil refusal and an unanswered question are the check's own answer and pass through. For a refusal, the index
-// is asked what it holds under the typed name: one plain stage 0 file with content is a staged rename, which a commit
+// is asked what it holds under the typed name (a refusal that is itself a question git left unanswered is passed on): one plain stage 0 file with content is a staged rename, which a commit
 // records and the move the refusal offers could not (the index no longer holds the revision's spelling), so the policy
 // is left plainly uncommitted. An index that cannot be asked gets no advice, because the move is wrong if the rename is
 // staged and the commit is wrong if it is not.
 func unlessTheRenameIsStaged(run gitrepo.Runner, dir, repoPath string, refusal error) error {
 	var renamed *ConfigError
-	if !errors.As(refusal, &renamed) {
+	if !errors.As(refusal, &renamed) || renamed.GitFailure != nil {
 		return refusal
 	}
 	recorded, err := indexRecordsAsTyped(run, dir, repoPath)

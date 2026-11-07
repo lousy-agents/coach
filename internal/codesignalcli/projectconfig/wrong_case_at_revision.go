@@ -1,6 +1,7 @@
 package projectconfig
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"slices"
@@ -20,9 +21,20 @@ import (
 //
 // The refusal is a *ConfigError. It is returned as an error so that nil is the answer "nothing like it".
 //
+// The same rename is staged the same way for a policy the user named, so the same function decides it: when the
+// index already holds the path as Coach reads it, as one plain file, the user has moved the policy with git mv and
+// only the commit is left, the move the refusal prints would fail, and the answer is nil, which leaves the policy
+// plainly uncommitted. An index that cannot be asked is a question git left unanswered, as the listing is.
+//
 // It is for a policy Coach found. A path the user named is told in its own words, since the user typed it.
 func WrongCaseAtRevision(run gitrepo.Runner, dir, revision, repoPath string) error {
-	return wrongCaseOf(entriesThrough(run, dir, revision), repoPath, moveGuardFor(run, dir))
+	refusal := wrongCaseOf(entriesThrough(run, dir, revision), repoPath, moveGuardFor(run, dir))
+	settled := unlessTheRenameIsStaged(run, dir, repoPath, refusal)
+	var unanswered *gitFailure
+	if errors.As(settled, &unanswered) {
+		return unansweredQuestion(fmt.Sprintf("nothing is committed at %q, the path Coach reads for the policy", repoPath), unanswered)
+	}
+	return settled
 }
 
 func wrongCaseOf(entries revisionEntries, repoPath string, mayMove moveGuard) error {
