@@ -11,6 +11,9 @@ import (
 // on a guess.
 
 func refuseWhenReadRevisionsLackObjects(run Runner, dir, base, version string) error {
+	if err := refuseWhenTheBaseCommitIsNotHere(run, dir, base, version); err != nil {
+		return err
+	}
 	revisions := revisionsRead(run, dir, base)
 	for _, revision := range revisions {
 		missing, err := missingObjectsOf(run, dir, revision.name)
