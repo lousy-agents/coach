@@ -7,7 +7,10 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-func alsoFailingGapLine(code string, policy policyref.Ref) string {
+func alsoFailingGapLine(code string, policy policyref.Ref, rerun bool) string {
+	if !rerun {
+		return code + ": also failing"
+	}
 	return code + ": also failing, " + invocation.Command{Mode: invocation.CheckProject, Policy: policy}.Phrase("run")
 }
 
@@ -31,6 +34,11 @@ func alsoFailingGapLine(code string, policy policyref.Ref) string {
 // readiness.Gaps is already emitted in the epic's frozen next-action order,
 // so iterating it preserves that ordering rather than inventing one here.
 func AlsoFailingGapLines(readiness *projectreadiness.Result, policy policyref.Ref) []string {
+	return alsoFailingGapLines(readiness, policy, true)
+}
+
+// alsoFailingGapLines is AlsoFailingGapLines, with the rerun command left off each line when rerun is false.
+func alsoFailingGapLines(readiness *projectreadiness.Result, policy policyref.Ref, rerun bool) []string {
 	if readiness == nil {
 		return nil
 	}
@@ -41,7 +49,7 @@ func AlsoFailingGapLines(readiness *projectreadiness.Result, policy policyref.Re
 			continue
 		}
 		seen[gap.Code] = true
-		lines = append(lines, alsoFailingGapLine(gap.Code, policy))
+		lines = append(lines, alsoFailingGapLine(gap.Code, policy, rerun))
 	}
 	return lines
 }

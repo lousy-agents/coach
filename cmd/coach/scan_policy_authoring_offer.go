@@ -75,7 +75,7 @@ func printProjectConfigGapBeforeAuthoring(scanErr error, stderr *os.File) {
 
 	var withReadiness *tssetup.ProjectConfigErrorWithReadiness
 	if errors.As(scanErr, &withReadiness) {
-		for _, line := range tssetup.AlsoFailingGapLines(withReadiness.Readiness, withReadiness.Policy) {
+		for _, line := range withReadiness.AlsoFailingLines() {
 			fmt.Fprintln(stderr, line)
 		}
 	}

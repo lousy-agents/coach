@@ -85,7 +85,7 @@ func analysisErrorReportFor(err error, language string, policy policyref.Ref, ha
 	var configErrWithReadiness *tssetup.ProjectConfigErrorWithReadiness
 	if errors.As(err, &configErrWithReadiness) {
 		return classTwoReport(configErrWithReadiness.Message,
-			tssetup.AlsoFailingGapLines(configErrWithReadiness.Readiness, configErrWithReadiness.Policy),
+			configErrWithReadiness.AlsoFailingLines(),
 			authoringRemediation(configErrWithReadiness.ConfigError, policy, language, hasControllingTerminal))
 	}
 	var configErr *projectconfig.ConfigError
