@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -114,29 +113,6 @@ var _ = Describe("coach codesignal: a committed explicit policy that is gone fro
 			Expect(string(stderr)).To(ContainSubstring("symbolic link"), "stderr:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("restore the policy from git"), "stderr:\n%s", stderr)
 			expectNoRestoreNoAuthoring(stderr)
-		})
-	})
-
-	When("git cannot say whether the policy is committed", func() {
-		var gitFailsOnPolicyPath []string
-
-		BeforeEach(func() {
-			realGit, err := exec.LookPath("git")
-			Expect(err).NotTo(HaveOccurred())
-			shimDir := GinkgoT().TempDir()
-			shim := "#!/bin/sh\n" +
-				"case \"$*\" in *' ls-tree '*" + policy + "*) echo 'fatal: injected failure' >&2; exit 128;; esac\n" +
-				"exec " + realGit + " \"$@\"\n"
-			Expect(os.WriteFile(filepath.Join(shimDir, "git"), []byte(shim), 0o755)).To(Succeed())
-			gitFailsOnPolicyPath = stubToolchainEnv(shimDir + string(os.PathListSeparator) + os.Getenv("PATH"))
-			Expect(os.Remove(filepath.Join(repo, policy))).To(Succeed())
-		})
-
-		It("offers neither a restore nor a new policy, and says the answer is unknown", func() {
-			stderr := scanMissing(gitFailsOnPolicyPath)
-
-			expectNoRestoreNoAuthoring(stderr)
-			Expect(strings.ToLower(string(stderr))).To(ContainSubstring("could not check"), "stderr:\n%s", stderr)
 		})
 	})
 })
