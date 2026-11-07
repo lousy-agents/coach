@@ -2,6 +2,7 @@ package projectcheck
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -14,8 +15,9 @@ import (
 
 const packageManifestBlob = "100644 blob 0123456789012345678901234567890123456789\tpackage.json\x00"
 
-// questionsWhereOnly names the one git question that fails; every other question has an explicit answer
-// that lets a check go on: the revision resolves and package.json is committed.
+// questionsWhereOnly names the one git question that fails and answers package.json's tree entry. Any other
+// question is an error naming it, so a question that production starts to ask fails the test that did not
+// expect it, and does not succeed with empty output.
 func questionsWhereOnly(failing func(args []string) bool) func(string, ...string) ([]byte, error) {
 	return func(_ string, args ...string) ([]byte, error) {
 		switch {
@@ -24,7 +26,7 @@ func questionsWhereOnly(failing func(args []string) bool) func(string, ...string
 		case args[0] == "ls-tree" && strings.HasSuffix(args[len(args)-1], "package.json"):
 			return []byte(packageManifestBlob), nil
 		}
-		return nil, nil
+		return nil, fmt.Errorf("questionsWhereOnly: unexpected git question: %s", strings.Join(args, " "))
 	}
 }
 

@@ -2,19 +2,25 @@ package gitrepo
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
 const treeObjectName = "0123456789012345678901234567890123456789"
 
 // answeringLsTree is a git that knows the revision and prints output for the one ls-tree question about a path.
+// The object checks (cat-file) succeed, and any other question is an error that names it.
 func answeringLsTree(output string) Runner {
 	return func(_ string, args ...string) ([]byte, error) {
-		if args[0] == "ls-tree" {
+		switch args[0] {
+		case "ls-tree":
 			return []byte(output), nil
+		case "cat-file":
+			return nil, nil
 		}
-		return nil, nil
+		return nil, fmt.Errorf("answeringLsTree: unexpected git question: %s", strings.Join(args, " "))
 	}
 }
 
