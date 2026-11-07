@@ -1,6 +1,8 @@
 package gitrepo
 
 import (
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -26,30 +28,54 @@ var runWorktreeStatusGit = BoundedRunner(maxWorktreeStatusBytes, maxWorktreeStat
 // WorktreeStatus lists every changed or untracked worktree path via
 // `git status --porcelain=v1 --untracked-files=all -z`.
 func WorktreeStatus(dir string) ([]WorktreeEntry, error) {
-	supported, _ := noLazyFetchSupported(runWorktreeStatusGit, dir)
-	return worktreeStatusOf(dir, supported)
+	supported, version := noLazyFetchSupported(runWorktreeStatusGit, dir)
+	return worktreeStatusOf(dir, supported, version)
 }
 
-// worktreeStatusOf is the status for a git that can, or cannot, be told not to fetch.
-func worktreeStatusOf(dir string, canBeToldNotToFetch bool) ([]WorktreeEntry, error) {
-	output, err := runWorktreeStatusGit(dir, worktreeStatusArguments(canBeToldNotToFetch)...)
+// worktreeStatusOf is the status for a git of the given version, which can, or cannot, be told not to fetch.
+func worktreeStatusOf(dir string, canBeToldNotToFetch bool, version string) ([]WorktreeEntry, error) {
+	output, err := runWorktreeStatusGit(dir, worktreeStatusArguments(canBeToldNotToFetch, version)...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseWorktreeStatus(output), nil
 }
 
-// worktreeStatusArguments are the arguments of the status. A git that can be told not to fetch is, and
-// `git status` then starts a nested status in every populated submodule with that instruction in its environment.
-// An older git ignores the instruction, and a submodule that is a partial clone lacking objects is fetched into
-// by that nested status: the remote's transport runs, though the guard only looked at the superproject's
-// revisions. So that git does not go into submodules, and a change inside one does not show in the status.
-func worktreeStatusArguments(canBeToldNotToFetch bool) []string {
+// worktreeStatusArguments are the arguments of the status.
+//
+// A git that can be told not to fetch is, and `git status` then starts a nested status in every populated submodule
+// with that instruction in its environment. An older git ignores the instruction, and a submodule that is a partial
+// clone lacking objects is fetched into by that nested status: the remote's transport runs, though the guard only
+// looked at the superproject's revisions. So that git does not go into submodules, and a change inside one does not
+// show in the status.
+//
+// `--no-renames` keeps the status from comparing a staged deletion with a staged addition, which reads the blob of
+// each. The guard lists the objects the revisions reach, and an index can name a blob that none of them does and that
+// the repository lacks (a path reset from a fetched branch); an older git fetches it, and a current one fails the
+// whole status for it. Every path the status lists is still listed, and a staged rename is listed as its deletion and
+// its addition. The flag is git 2.18's, so a git that is older, or whose version is not known, is not given it.
+func worktreeStatusArguments(canBeToldNotToFetch bool, version string) []string {
 	arguments := []string{"status", "--porcelain=v1", "--untracked-files=all", "-z"}
+	if statusKnowsNoRenames(version) {
+		arguments = append(arguments, "--no-renames")
+	}
 	if !canBeToldNotToFetch {
 		arguments = append(arguments, "--ignore-submodules=all")
 	}
 	return arguments
+}
+
+var statusVersionPattern = regexp.MustCompile(`^(\d+)\.(\d+)`)
+
+// statusKnowsNoRenames is whether the version of git has `git status --no-renames`, which came in 2.18.
+func statusKnowsNoRenames(version string) bool {
+	match := statusVersionPattern.FindStringSubmatch(version)
+	if match == nil {
+		return false
+	}
+	major, _ := strconv.Atoi(match[1])
+	minor, _ := strconv.Atoi(match[2])
+	return major > 2 || (major == 2 && minor >= 18)
 }
 
 // ParseWorktreeStatus parses `git status --porcelain=v1 -z` output.
