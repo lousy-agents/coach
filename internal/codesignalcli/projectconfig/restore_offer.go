@@ -66,11 +66,11 @@ func stagedEditOffer(revision, repoPath string, blocked bool) restoreOffer {
 
 // mergeConflictOffer is for a committed policy whose index entry is unmerged.
 // There is no staged edit to review, and a restore would discard the conflict.
-func mergeConflictOffer(repoPath string, sides conflictSides) restoreOffer {
+func mergeConflictOffer(repoPath string, sides conflictSides, blocked bool) restoreOffer {
 	return restoreOffer{
 		remedy: projectreadiness.RemedyNone,
 		cause:  projectreadiness.CauseMergeConflict,
-		text:   ". It is committed at the analyzed revision, and the index holds an unresolved merge conflict for it that a restore would discard, so none is offered; " + resolveConflictAdvice(repoPath, sides) + ", then run again",
+		text:   ". It is committed at the analyzed revision, and the index holds an unresolved merge conflict for it that a restore would discard, so none is offered; " + resolveConflictAdvice(repoPath, sides, blocked) + ", then run again",
 	}
 }
 
@@ -108,11 +108,11 @@ func stagedOnlyOffer(repoPath string, blocked bool) restoreOffer {
 // unmergedNotCommittedOffer is for a policy that is not committed and whose index
 // entry is unmerged. git restore refuses an unmerged path, so no command is
 // printed, and a new policy would replace the conflicting work.
-func unmergedNotCommittedOffer(repoPath string, sides conflictSides) restoreOffer {
+func unmergedNotCommittedOffer(repoPath string, sides conflictSides, blocked bool) restoreOffer {
 	return restoreOffer{
 		remedy: projectreadiness.RemedyNone,
 		cause:  projectreadiness.CauseMergeConflict,
-		text:   ". It is not committed, but the index holds an unresolved merge conflict for it, so Coach offers no new policy and a restore cannot bring it back; " + resolveConflictAdvice(repoPath, sides) + ", then run again",
+		text:   ". It is not committed, but the index holds an unresolved merge conflict for it, so Coach offers no new policy and a restore cannot bring it back; " + resolveConflictAdvice(repoPath, sides, blocked) + ", then run again",
 	}
 }
 
@@ -171,7 +171,7 @@ var emptySparseOffer = restoreOffer{
 func uncommittedOfferFor(verdict restoreVerdict, repoPath string, sides conflictSides, blocked bool) (restoreOffer, bool) {
 	switch verdict {
 	case restoreUnmergedNotCommitted:
-		return unmergedNotCommittedOffer(repoPath, sides), true
+		return unmergedNotCommittedOffer(repoPath, sides, blocked), true
 	case restoreStagedNonFileNotCommitted:
 		return stagedNonFileOffer, true
 	case restoreStagedSkipWorktreeNotCommitted:
@@ -271,7 +271,7 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 	case verdict == restoreUndecidable:
 		return undecidableOffer(judgment.failure), true
 	case verdict == restoreMergeConflict:
-		return mergeConflictOffer(repoPath, judgment.conflictSides), true
+		return mergeConflictOffer(repoPath, judgment.conflictSides, blocked), true
 	case verdict == restoreDiscardsStagedEdit:
 		return stagedEditOffer(revision, repoPath, blocked), true
 	case verdict == restoreSkipWorktreeMarked:
