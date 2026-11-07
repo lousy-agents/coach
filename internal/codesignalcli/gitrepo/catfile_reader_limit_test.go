@@ -17,7 +17,7 @@ func TestRevisionFileReaderDiscardsAnObjectPastTheLimitAndStaysInStep(t *testing
 	if err != nil {
 		t.Fatalf("NewRevisionFileReader: %v", err)
 	}
-	defer func() { _ = reader.Close() }()
+	defer reader.Close()
 
 	_, tooLarge := reader.Next("fa.txt")
 	next, nextErr := reader.Next("fb.txt")
@@ -38,7 +38,7 @@ func TestRevisionFileReaderReadsAnObjectExactlyAtTheLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRevisionFileReader: %v", err)
 	}
-	defer func() { _ = reader.Close() }()
+	defer reader.Close()
 
 	content, readErr := reader.Next("fa.txt")
 

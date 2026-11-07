@@ -20,7 +20,7 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []gitre
 	if err != nil {
 		return nil, &gitrepo.OperationalError{Message: fmt.Sprintf("coach codesignal: starting git cat-file --batch failed: %s", err)}
 	}
-	defer func() { _ = reader.Close() }()
+	defer reader.Close()
 
 	var fileChanges []codesignal.FileChange
 	diagnostics := append([]codesignal.Diagnostic(nil), extraDiagnostics...)
