@@ -26,11 +26,25 @@ var runWorktreeStatusGit = BoundedRunner(maxWorktreeStatusBytes, maxWorktreeStat
 // WorktreeStatus lists every changed or untracked worktree path via
 // `git status --porcelain=v1 --untracked-files=all -z`.
 func WorktreeStatus(dir string) ([]WorktreeEntry, error) {
-	output, err := runWorktreeStatusGit(dir, "status", "--porcelain=v1", "--untracked-files=all", "-z")
+	supported, _ := noLazyFetchSupported(runWorktreeStatusGit, dir)
+	output, err := runWorktreeStatusGit(dir, worktreeStatusArguments(supported)...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseWorktreeStatus(output), nil
+}
+
+// worktreeStatusArguments are the arguments of the status. A git that can be told not to fetch is, and
+// `git status` then starts a nested status in every populated submodule with that instruction in its environment.
+// An older git ignores the instruction, and a submodule that is a partial clone lacking objects is fetched into
+// by that nested status: the remote's transport runs, though the guard only looked at the superproject's
+// revisions. So that git does not go into submodules, and a change inside one does not show in the status.
+func worktreeStatusArguments(canBeToldNotToFetch bool) []string {
+	arguments := []string{"status", "--porcelain=v1", "--untracked-files=all", "-z"}
+	if !canBeToldNotToFetch {
+		arguments = append(arguments, "--ignore-submodules=all")
+	}
+	return arguments
 }
 
 // ParseWorktreeStatus parses `git status --porcelain=v1 -z` output.
