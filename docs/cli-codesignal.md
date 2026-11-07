@@ -83,7 +83,7 @@ A policy gap with no way out always has a `cause`; `undetermined` is the word fo
 state Coach has no other word for, so a consumer never has to read a missing `cause`
 as "unknown". The values are stable: `not_committed` (a file on disk that the analyzed revision
 does not hold; commit it), `in_submodule` (the policy lies inside a submodule checkout, present or
-missing, or the analyzed revision commits the path itself as a submodule: the superproject
+missing, even when a name below the submodule differs in case from the checkout's, or the analyzed revision commits the path itself as a submodule: the superproject
 records the submodule as one commit, so the file cannot be committed here, and the way out is a
 policy this repository commits), `parent_not_directory`, `staged_edit`,
 `staged_copy` (a staged copy of a policy that was never committed),

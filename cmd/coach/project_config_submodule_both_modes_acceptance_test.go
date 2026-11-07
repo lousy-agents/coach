@@ -47,6 +47,29 @@ var _ = Describe("coach codesignal: a policy in or at a submodule, in the scan a
 		Entry("the top-level submodule itself", state{"sub", "sub", false, "project_config_invalid", "policy_invalid"}),
 	)
 
+	// The superproject records a submodule as one commit, so it holds no spelling of what is inside, and a name below
+	// the submodule that differs in case from the checkout's has no other spelling to be told apart from. The
+	// submodule decides, as it does for a name spelled as the checkout has it. Which code the scan prints follows
+	// what the file system does with the typed name, so it is not pinned here: a file system that folds case finds
+	// the file, and one that does not has none by that name.
+	DescribeTable("names the submodule, and not a difference in case, for a name below it spelled in another case",
+		func(policy string) {
+			repo := commitScannableGoRepo()
+			addSubmoduleAt(repo, "vendor/sub")
+
+			stderr := scanExplicitPolicy(repo, policy)
+			doc := expectCheckProject(repo, "--project-config", policy)
+
+			Expect(string(stderr)).To(ContainSubstring(`"vendor/sub"`), "the scan names the submodule; stderr:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("holds neither"), "the superproject holds no spelling of what is inside; stderr:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("is stored as"), "no difference in case is reported; stderr:\n%s", stderr)
+			Expect(causeOfGap(doc, "policy_missing")).To(Equal("in_submodule"), "the check's gaps: %+v", doc.Gaps)
+		},
+		Entry("a directory in another case", "vendor/sub/CFG/p.json"),
+		Entry("the file in another case", "vendor/sub/COACH.json"),
+		Entry("the directory and the file in another case", "vendor/sub/CFG/P.json"),
+	)
+
 	It("is stated in the README as the table has it: invalid while the checkout is there, missing once it is gone", func() {
 		readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
 		Expect(err).NotTo(HaveOccurred())
@@ -61,5 +84,6 @@ var _ = Describe("coach codesignal: a policy in or at a submodule, in the scan a
 		Expect(bullet).To(ContainSubstring("`project_config_invalid`"), "the code the scan prints while the checkout is there")
 		Expect(bullet).To(ContainSubstring("`project_config_missing`"), "the code the scan prints once the checkout is gone")
 		Expect(bullet).To(ContainSubstring("in_submodule"), "the cause --check-project reports")
+		Expect(bullet).To(ContainSubstring("differs in case"), "a name below the submodule in another case is the submodule's, not a case difference")
 	})
 })
