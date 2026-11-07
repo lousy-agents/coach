@@ -2,9 +2,12 @@ package projectconfig
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
@@ -75,6 +78,20 @@ func TestTheWorkingCopyOfACommittedPolicyIsToldFromTheIndexAndTheDisk(t *testing
 				t.Fatal(err)
 			}
 		}, workingCopyChanged},
+		"edited under a skip-worktree mark, which git does not look at": {func(t *testing.T, repo string) {
+			gitfixture.Git(t, repo, "update-index", "--skip-worktree", replacePath)
+			writeFile(t, repo, replacePath, validPolicy)
+		}, workingCopyChanged},
+		"edited under an assume-unchanged mark, which git does not look at": {func(t *testing.T, repo string) {
+			gitfixture.Git(t, repo, "update-index", "--assume-unchanged", replacePath)
+			writeFile(t, repo, replacePath, validPolicy)
+		}, workingCopyChanged},
+		"touched, so its stat is dirty, with the committed bytes": {func(t *testing.T, repo string) {
+			later := time.Now().Add(time.Hour)
+			if err := os.Chtimes(filepath.Join(repo, replacePath), later, later); err != nil {
+				t.Fatal(err)
+			}
+		}, workingCopyUntouched},
 		"in conflict": {func(t *testing.T, repo string) { recordAConflict(t, repo, replacePath) }, workingCopyConflicted},
 	}
 	for name, c := range cases {

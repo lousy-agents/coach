@@ -11,11 +11,36 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// A required clean filter that fails makes `git diff` fail on a file whose stat information differs from the index,
-// while the questions about the committed copy and the index entry are answered. The git is real: a comparison it
-// could not make is not read as a file with nothing in it, which a new document would then replace.
-func TestAFileWhoseCleanFilterFailsGetsNoReplacement(t *testing.T) {
-	repo := committedInvalidPolicy(t)
+// A required clean filter that fails would have made `git diff` fail on a file whose stat information differs from the
+// index. The file is compared by its bytes with the committed copy, so the filter is not run and cannot be what decides:
+// a file with a fix in it has work in it, and one that is the committed copy has none. The git is real.
+func TestAFileWhoseCleanFilterFailsIsComparedByItsBytesAndTheFilterIsNotRun(t *testing.T) {
+	cases := map[string]struct {
+		content string
+		replace bool
+		cause   projectreadiness.PolicyCause
+	}{
+		"a fix in the file":           {validPolicy, false, projectreadiness.CauseChangedOnDisk},
+		"the committed copy as it is": {`{"bogus":1}`, true, ""},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo := committedInvalidPolicy(t)
+			withARequiredCleanFilterThatFails(t, repo)
+			writeFile(t, repo, replacePath, c.content)
+
+			settled := settledByTheWorkingCopy(runProjectConfigGit, repo, "HEAD", replacePath, invalidError(replacePath, "HEAD", "schema decode failed"))
+
+			var configErr *ConfigError
+			if !asConfigError(settled, &configErr) || configErr.ReplacesPolicy() != c.replace || configErr.PolicyCause != c.cause {
+				t.Errorf("settled = %v; want replacement offered = %v and the cause %q", settled, c.replace, c.cause)
+			}
+		})
+	}
+}
+
+func withARequiredCleanFilterThatFails(t *testing.T, repo string) {
+	t.Helper()
 	attributes := filepath.Join(repo, ".git", "info", "attributes")
 	if err := os.MkdirAll(filepath.Dir(attributes), 0o755); err != nil {
 		t.Fatal(err)
@@ -25,14 +50,6 @@ func TestAFileWhoseCleanFilterFailsGetsNoReplacement(t *testing.T) {
 	}
 	gitfixture.Git(t, repo, "config", "filter.broken.clean", "exit 1")
 	gitfixture.Git(t, repo, "config", "filter.broken.required", "true")
-	writeFile(t, repo, replacePath, validPolicy)
-
-	settled := settledByTheWorkingCopy(runProjectConfigGit, repo, "HEAD", replacePath, invalidError(replacePath, "HEAD", "schema decode failed"))
-
-	var configErr *ConfigError
-	if !asConfigError(settled, &configErr) || configErr.ReplacesPolicy() || configErr.PolicyCause != projectreadiness.CauseGitUnreadable {
-		t.Errorf("settled = %v; want no replacement and the cause git_unreadable", settled)
-	}
 }
 
 // askingFor is a question named by the git subcommand and, when the subcommand is asked more than once, by a word in
@@ -44,8 +61,9 @@ func askingFor(subcommand string, containing ...string) func([]string) bool {
 }
 
 // whollyFakeGit is the whole of git for inspectWorkingCopy: it answers each question the inspection asks, with the
-// committed copy found and held by the index as it is, the repository's root where the file is, and a diff that says
-// the file differs, and fails the one question named. Any other question is a failure of the test, so nothing is left to a real git.
+// committed copy found and held by the index as it is, and the repository's root where the file is, and fails the one
+// question named. The file differs from the committed copy because its bytes do not hash to the blob it names. Any
+// other question, a diff above all, is a failure of the test, so nothing is left to a real git.
 type whollyFakeGit struct {
 	t       *testing.T
 	root    string
@@ -66,8 +84,6 @@ func (g whollyFakeGit) run(_ string, args ...string) ([]byte, error) {
 		return []byte("100644 blob 0123456789012345678901234567890123456789\t" + replacePath + "\x00"), nil
 	case "rev-parse":
 		return []byte(g.root + "\n"), nil
-	case "diff":
-		return []byte(replacePath + "\n"), nil
 	}
 	g.t.Errorf("a question the fake git does not know: git %s", strings.Join(args, " "))
 	return nil, errors.New("unexpected question")

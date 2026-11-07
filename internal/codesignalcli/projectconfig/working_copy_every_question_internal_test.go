@@ -7,8 +7,9 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// questionsOfTheInspection are the six questions inspectWorkingCopy and differsOnDisk ask git, each as the predicate
-// that makes the whole fake git fail it.
+// questionsOfTheInspection are the five questions inspectWorkingCopy and differsOnDisk ask git, each as the predicate
+// that makes the whole fake git fail it. The file is compared with the committed copy by its bytes, so git is not asked
+// for a diff, and the fake fails the test if it is.
 var questionsOfTheInspection = []struct {
 	name    string
 	failing func([]string) bool
@@ -18,7 +19,6 @@ var questionsOfTheInspection = []struct {
 	{"whether the committed blob is here", askingFor("cat-file", "0123456789012345678901234567890123456789")},
 	{"what the index holds at the path", askingFor("ls-files")},
 	{"where the repository's root is", askingFor("rev-parse")},
-	{"whether the file differs from the committed copy", askingFor("diff")},
 }
 
 // Each question git cannot answer is a failure of the inspection and not a state of the file: no replacement is

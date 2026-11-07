@@ -2,7 +2,6 @@ package projectconfig
 
 import (
 	"errors"
-	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
@@ -64,25 +63,24 @@ func inspectWorkingCopy(run gitrepo.Runner, dir, revision, repoPath string) (wor
 	case indexHoldsUnreadEntry(committed, found, entries):
 		return workingCopyStaged, nil
 	}
-	changed, err := differsOnDisk(run, dir, revision, repoPath)
+	changed, err := differsOnDisk(run, dir, committed, found, repoPath)
 	if changed {
 		return workingCopyChanged, err
 	}
 	return workingCopyUntouched, err
 }
 
-// differsOnDisk is whether the file in the working tree differs from the copy committed at revision, which git says
-// of the two as it does of any diff. A file that is gone has no work in it.
-func differsOnDisk(run gitrepo.Runner, dir, revision, repoPath string) (bool, error) {
-	exists, err := configExistsInWorktree(run, dir, repoPath)
-	if err != nil || !exists {
+// differsOnDisk is whether the file in the working tree is anything but the committed copy: its bytes are compared with
+// the blob's, read through the repository root, and git is not asked for a diff, which would refresh and write the index,
+// run the repository's hook and filter, and take no notice of a file under a skip-worktree or assume-unchanged mark. A
+// file that is gone has no work in it; a file that cannot be understood, or a committed entry that is not a regular
+// blob, is taken to have some.
+func differsOnDisk(run gitrepo.Runner, dir string, committed gitrepo.TreeEntry, found bool, repoPath string) (bool, error) {
+	root, err := gitrepo.RepositoryRootWith(run, dir)
+	if err != nil || !worktreeHolds(root, repoPath) {
 		return false, err
 	}
-	names, err := run(dir, "diff", "--name-only", "--no-ext-diff", "--no-textconv", revision, "--", ":(top,literal)"+repoPath)
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(string(names)) != "", nil
+	return !found || !isRegularFileMode(committed.Mode) || !fileHoldsTheCommittedBlob(root, repoPath, committed.SHA), nil
 }
 
 // workingCopyOffer is the way out for a file with work in it: no replacement, and how to review what is there. A name

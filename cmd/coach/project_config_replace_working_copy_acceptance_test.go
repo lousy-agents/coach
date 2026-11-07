@@ -43,6 +43,16 @@ func theUsersWorkEntries() []TableEntry {
 			gitIn(repo, "add", policy)
 			return validPolicyWithLayers
 		}, []string{"staged edit", "git diff --cached"}, "staged_edit"}),
+		Entry("a fix on disk under a skip-worktree mark, which git does not look at", usersWork{func(repo, policy string) string {
+			gitIn(repo, "update-index", "--skip-worktree", policy)
+			writeWorktreeFile(repo, policy, validPolicyWithLayers)
+			return validPolicyWithLayers
+		}, []string{"differs from the committed", "git diff"}, "changed_on_disk"}),
+		Entry("a fix on disk under an assume-unchanged mark, which git does not look at", usersWork{func(repo, policy string) string {
+			gitIn(repo, "update-index", "--assume-unchanged", policy)
+			writeWorktreeFile(repo, policy, validPolicyWithLayers)
+			return validPolicyWithLayers
+		}, []string{"differs from the committed", "git diff"}, "changed_on_disk"}),
 		Entry("an unresolved conflict", usersWork{func(repo, policy string) string {
 			stageConflicting(repo, policy, 2, 3)
 			writeWorktreeFile(repo, policy, conflictedMarkers)
