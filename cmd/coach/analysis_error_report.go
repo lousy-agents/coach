@@ -99,31 +99,6 @@ func analysisErrorReportFor(err error, language string, policy policyref.Ref, ha
 	return analysisErrorReport{lines: []string{err.Error()}, exitCode: 1}
 }
 
-// authoringRemediation is the appended line that offers a new policy as a command to run on a terminal, and
-// nothing when authoring cannot fix the error (the policy is committed and only needs restoring, or its path cannot
-// be created) or when a guided session runs instead. It writes the policy the user named when nothing is at that
-// path, so it names that path; for a document that exists and is not valid it names the scan, which can replace it.
-func authoringRemediation(configErr *projectconfig.ConfigError, policy policyref.Ref, language string, interactive bool) string {
-	if offerAuthoring(configErr, language, interactive) != authoringCommand {
-		return ""
-	}
-	if configErr.ReplacesPolicy() && language == "typescript" {
-		return tssetup.ReplacePolicyRemediation(policy)
-	}
-	return tssetup.SuggestProjectConfigRemediation(language, authoringTargetPolicy(configErr, policy))
-}
-
-// authoringTargetPolicy is the policy authoring should write: the one the user
-// named when nothing is at its path, and none otherwise. Authoring is
-// create-only, so a policy that exists and is invalid cannot be its --output
-// target; the command is offered with authoring's default location, as before.
-func authoringTargetPolicy(configErr *projectconfig.ConfigError, policy policyref.Ref) policyref.Ref {
-	if configErr.Kind == projectconfig.KindMissing || configErr.Kind == projectconfig.KindNotFound {
-		return policy
-	}
-	return policyref.Ref{}
-}
-
 // classTwoReport assembles the shape every class-2 diagnostic shares (owner
 // decision D3): the gap's own message, then any further gaps AC-SET-13
 // requires reporting alongside it, then AC-SET-9's appended remediation when

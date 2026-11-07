@@ -28,10 +28,13 @@ func TestAPathInsideTheGitDirectoryIsRefusedBeforeAnyGitIsAsked(t *testing.T) {
 // Names that only look like it are policies like any other.
 func TestAPathThatOnlyResemblesTheGitDirectoryStillNamesAPolicy(t *testing.T) {
 	for _, path := range []string{".github/p.json", ".gitignore", "docs/.gitkeep", "x.git/p.json", "my.git", "cfg/.gitlab.json", "git/p.json", ".gi/t.json"} {
-		t.Run(path, func(t *testing.T) {
-			if err := ValidatePath(path); err != nil {
-				t.Errorf("ValidatePath(%q) = %v; want a path that can name a policy", path, err)
-			}
-		})
+		t.Run(path, func(t *testing.T) { requireAPolicyPath(t, path) })
+	}
+}
+
+func requireAPolicyPath(t *testing.T, path string) {
+	t.Helper()
+	if err := ValidatePath(path); err != nil {
+		t.Errorf("ValidatePath(%q) = %v; want a path that can name a policy", path, err)
 	}
 }

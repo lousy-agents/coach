@@ -13,10 +13,13 @@ func TestTheMergeConflictOffersNameTheStepThatResolvesIt(t *testing.T) {
 		"for a policy nothing commits": unmergedNotCommittedOffer,
 	}
 	for name, offer := range offers {
-		t.Run(name, func(t *testing.T) {
-			if !strings.Contains(offer.text, "git add") || strings.Contains(offer.text, "resolve the conflict with git status") {
-				t.Errorf("offer %q; want it to send the user to resolve the conflict in the file and git add it", offer.text)
-			}
-		})
+		t.Run(name, func(t *testing.T) { requireTheStepThatResolvesIt(t, offer) })
+	}
+}
+
+func requireTheStepThatResolvesIt(t *testing.T, offer restoreOffer) {
+	t.Helper()
+	if !strings.Contains(offer.text, "git add") || strings.Contains(offer.text, "resolve the conflict with git status") {
+		t.Errorf("offer %q; want it to send the user to resolve the conflict in the file and git add it", offer.text)
 	}
 }
