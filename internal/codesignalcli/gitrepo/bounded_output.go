@@ -65,7 +65,7 @@ func finishGitBoundedRead(stdout, stderr gitPipeResult, waitErr error, ctx conte
 
 func gitWaitError(waitErr error, stderr []byte) error {
 	if len(stderr) > 0 {
-		return fmt.Errorf("%s: %s", waitErr, strings.TrimSpace(string(stderr)))
+		return fmt.Errorf("%s: %s", waitErr, TerminalSafe(strings.TrimSpace(string(stderr))))
 	}
 	return waitErr
 }

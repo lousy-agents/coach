@@ -57,7 +57,7 @@ func RefuseUnsafeLazyFetch(run Runner, dir, base string) error {
 		return gitNotFoundError()
 	}
 	if err != nil {
-		return &OperationalError{Message: fmt.Sprintf("could not tell whether this repository is a partial clone (%s), so it is not read: a partial clone's read could run its remote's transport and write objects", err), Cause: err}
+		return &OperationalError{Message: fmt.Sprintf("could not tell whether this repository is a partial clone (%s), so it is not read: a partial clone's read could run its remote's transport and write objects", TerminalSafe(err.Error())), Cause: err}
 	}
 	if !partial {
 		return nil
@@ -91,7 +91,7 @@ func lacksObjects(run Runner, dir, version string, revision readRevision, missin
 }
 
 func cannotTellWhatIsMissing(version string, cause error) error {
-	return &OperationalError{Message: fmt.Sprintf("could not tell whether this partial clone has the objects Coach reads (%s), and git %s cannot be told not to fetch missing objects, so a read could run its remote's transport and write objects; %s", cause, version, wayOut("")), Cause: cause}
+	return &OperationalError{Message: fmt.Sprintf("could not tell whether this partial clone has the objects Coach reads (%s), and git %s cannot be told not to fetch missing objects, so a read could run its remote's transport and write objects; %s", TerminalSafe(cause.Error()), version, wayOut("")), Cause: cause}
 }
 
 // wayOut is the newer git that fixes the problem, and the fetch that brings the objects in when there is
