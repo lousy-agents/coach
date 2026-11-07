@@ -1,9 +1,8 @@
 package gitrepo
 
 import (
-	"os"
+	"context"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -60,12 +59,11 @@ func TestReadObjectsAppliesTheLimitToEachObjectAndNotToTheirSum(t *testing.T) {
 // A git that stops answering ends with the wall bound and not with the process. The ceiling is the bound
 // plus the time a kill and a read of the closed pipe take, never a number chosen because it looks quick.
 func TestReadObjectsEndsWhenGitStopsAnswering(t *testing.T) {
-	repository, oids := committedBlobs(t, "x")
-	t.Setenv("PATH", gitThatStallsOnCatFile(t)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	withStreamChild(t, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, "sleep", "120") })
 	const wall = 500 * time.Millisecond
 
 	started := time.Now()
-	_, err := readObjects(repository, oids, snapshotBudget{wall: wall, object: 1 << 20}, func(string, []byte) error { return nil })
+	_, err := readObjects("", []string{"0000"}, snapshotBudget{wall: wall, object: 1 << 20}, func(string, []byte) error { return nil })
 	elapsed := time.Since(started)
 
 	if err == nil || !strings.Contains(err.Error(), "took longer than") {
@@ -74,18 +72,4 @@ func TestReadObjectsEndsWhenGitStopsAnswering(t *testing.T) {
 	if ceiling := wall + 15*time.Second; elapsed > ceiling {
 		t.Errorf("readObjects took %s against a bound of %s: the read outlived its bound", elapsed, wall)
 	}
-}
-
-func gitThatStallsOnCatFile(t *testing.T) string {
-	t.Helper()
-	real, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatalf("find git: %v", err)
-	}
-	directory := t.TempDir()
-	script := "#!/bin/sh\nfor argument in \"$@\"; do\n  if [ \"$argument\" = cat-file ]; then exec sleep 120; fi\ndone\nexec '" + real + "' \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(directory, "git"), []byte(script), 0o755); err != nil {
-		t.Fatalf("write the git that stalls: %v", err)
-	}
-	return directory
 }

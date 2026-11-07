@@ -1,10 +1,9 @@
 package gitrepo
 
 import (
+	"context"
 	"errors"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -43,32 +42,6 @@ func TestRefuseUnsafeLazyFetchQuotesWhatGitSaid(t *testing.T) {
 	}
 }
 
-func TestReadObjectsQuotesWhatCatFileSaid(t *testing.T) {
-	repository, oids := committedBlobs(t, "x")
-	directory := t.TempDir()
-	// answers one object, then fails with a message that holds a right-to-left override (bytes e2 80 ae)
-	script := "#!/bin/sh\nfor argument in \"$@\"; do\n  if [ \"$argument\" = cat-file ]; then printf '0000 blob 1\\nx\\n'; printf 'fatal: bad \\342\\200\\256name\\n' >&2; exit 128; fi\ndone\nexec " + realGit(t) + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(directory, "git"), []byte(script), 0o755); err != nil {
-		t.Fatalf("write the git: %v", err)
-	}
-	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	_, readErr := readObjects(repository, oids, snapshotBudget{wall: time.Minute, object: 1 << 20}, func(string, []byte) error { return nil })
-
-	if readErr == nil || strings.Contains(readErr.Error(), rightToLeftOverride) || !strings.Contains(readErr.Error(), "\\u202e") {
-		t.Errorf("readObjects = %v, want git's override shown as the escape \\u202e", readErr)
-	}
-}
-
-func realGit(t *testing.T) string {
-	t.Helper()
-	path, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatalf("find git: %v", err)
-	}
-	return path
-}
-
 func TestRefuseUnsafeLazyFetchQuotesWhatGitSaidWhenItCannotListWhatIsMissing(t *testing.T) {
 	run := func(_ string, args ...string) ([]byte, error) {
 		switch args[0] {
@@ -84,5 +57,17 @@ func TestRefuseUnsafeLazyFetchQuotesWhatGitSaidWhenItCannotListWhatIsMissing(t *
 
 	if err == nil || strings.Contains(err.Error(), rightToLeftOverride) || strings.Contains(err.Error(), eightBitCSI) {
 		t.Errorf("RefuseUnsafeLazyFetch = %v, want a refusal that shows git's control characters as escapes", err)
+	}
+}
+
+func TestReadObjectsQuotesWhatCatFileSaid(t *testing.T) {
+	// answers one object, then fails with a message that holds a right-to-left override (bytes e2 80 ae)
+	script := "printf '0000 blob 1\\nx\\n'; printf 'fatal: bad \\342\\200\\256name\\n' >&2; exit 128"
+	withStreamChild(t, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, "sh", "-c", script) })
+
+	_, readErr := readObjects("", []string{"0000"}, snapshotBudget{wall: time.Minute, object: 1 << 20}, func(string, []byte) error { return nil })
+
+	if readErr == nil || strings.Contains(readErr.Error(), rightToLeftOverride) || !strings.Contains(readErr.Error(), "\\u202e") {
+		t.Errorf("readObjects = %v, want git's override shown as the escape \\u202e", readErr)
 	}
 }
