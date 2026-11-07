@@ -17,13 +17,13 @@ func TestADiscoveredPolicyCommittedInAnotherCaseIsToldWhereToMoveIt(t *testing.T
 		avoid    []string
 	}{
 		{"the directory and the file differ", ".lousy-agents/coach.json", fakeRevision{"": {".Lousy-Agents"}, ".Lousy-Agents": {"Coach.json"}}.entries,
-			[]string{`the policy is committed as ".Lousy-Agents/Coach.json", but Coach reads ".lousy-agents/coach.json", so it is not read`, "rename it with mkdir -p '.lousy-agents' && git mv '.Lousy-Agents/Coach.json' '.lousy-agents/coach.json' and commit the rename"}, nil},
+			[]string{`the policy is committed as ".Lousy-Agents/Coach.json", but Coach reads ".lousy-agents/coach.json", so it is not read`, moveFromTheRoot("'.lousy-agents'", "'.Lousy-Agents/Coach.json'", "'.lousy-agents/coach.json'") + " and commit the rename"}, nil},
 		{"only the directory differs", ".lousy-agents/coach.json", fakeRevision{"": {".Lousy-Agents"}, ".Lousy-Agents": {"coach.json"}}.entries,
-			[]string{`committed as ".Lousy-Agents/coach.json"`, "mkdir -p '.lousy-agents' && git mv '.Lousy-Agents/coach.json' '.lousy-agents/coach.json'"}, nil},
+			[]string{`committed as ".Lousy-Agents/coach.json"`, moveFromTheRoot("'.lousy-agents'", "'.Lousy-Agents/coach.json'", "'.lousy-agents/coach.json'")}, nil},
 		{"only the file differs", ".lousy-agents/coach.json", fakeRevision{"": {".lousy-agents"}, ".lousy-agents": {"Coach.json"}}.entries,
-			[]string{"git mv '.lousy-agents/Coach.json' '.lousy-agents/coach.json'"}, nil},
+			[]string{moveFromTheRoot("'.lousy-agents'", "'.lousy-agents/Coach.json'", "'.lousy-agents/coach.json'")}, nil},
 		{"a policy at the root, which needs no directory", "policy.json", fakeRevision{"": {"Policy.json"}}.entries,
-			[]string{"git mv 'Policy.json' 'policy.json'"}, []string{"mkdir"}},
+			[]string{moveWithoutADirectory("'Policy.json'", "'policy.json'")}, []string{"mkdir"}},
 		{"two spellings of it", ".lousy-agents/coach.json", fakeRevision{"": {".lousy-agents"}, ".lousy-agents": {"Coach.json", "COACH.JSON"}}.entries,
 			[]string{`several spellings, ".lousy-agents/COACH.JSON", ".lousy-agents/Coach.json"`, "keep one of them at that path"}, []string{"git mv"}},
 		{"a name that cannot be shown to a terminal", "policy\x1b.json", fakeRevision{"": {"Policy\x1b.json"}}.entries,

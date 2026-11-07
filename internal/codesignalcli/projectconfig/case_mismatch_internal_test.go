@@ -38,7 +38,7 @@ func TestACaseMismatchAdvisesFromWhatTheRevisionHolds(t *testing.T) {
 		{"a directory the revision holds as the disk spells it", directoryMismatch(), fakeRevision{"": {"cfg"}, "cfg": {"p.json"}}.entries,
 			[]string{`it holds "cfg"; pass --project-config cfg/p.json`}, []string{"rename"}},
 		{"a file the revision holds as the user typed it", fileMismatch(), fakeRevision{"": {"cfg"}, "cfg": {"POLICY.json"}}.entries,
-			[]string{`it holds "cfg/POLICY.json"; rename "cfg/policy.json" back to "cfg/POLICY.json", or record the rename with git mv 'cfg/POLICY.json' 'cfg/policy.json', commit it, and pass --project-config cfg/policy.json`}, nil},
+			[]string{`it holds "cfg/POLICY.json"; rename "cfg/policy.json" back to "cfg/POLICY.json", or record the rename with ` + gitAtTheRoot + ` mv -- 'cfg/POLICY.json' 'cfg/policy.json', commit it, and pass --project-config cfg/policy.json`}, nil},
 		{"a directory the revision holds as the user typed it", directoryMismatch(), fakeRevision{"": {"CFG"}, "CFG": {"p.json"}}.entries,
 			[]string{`it holds "CFG"; rename "cfg" back to "CFG" (project_config_invalid)`}, []string{"git mv"}},
 		{"a file the revision holds in neither spelling", fileMismatch(), fakeRevision{"": {"cfg"}, "cfg": {"other.json"}}.entries,

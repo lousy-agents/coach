@@ -35,14 +35,14 @@ var _ = Describe("coach codesignal: a policy renamed in case only, on a file sys
 			stderr := scanExplicitPolicy(repo, "policies/P.json")
 
 			Expect(string(stderr)).To(ContainSubstring(`the analyzed revision holds the path as "policies/p.json"`), "stderr:\n%s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("git mv 'policies/p.json' 'policies/P.json'"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring(`git -C "$(git rev-parse --show-toplevel)" mv -- 'policies/p.json' 'policies/P.json'`), "stderr:\n%s", stderr)
 			Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "stderr:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("commit the file so it is readable"), "committing the file records nothing here:\n%s", stderr)
 		})
 
 		It("lets the scan read the policy once the printed git mv has been run and committed", func() {
 			stderr := scanExplicitPolicy(repo, "policies/P.json")
-			command := regexp.MustCompile(`git mv '[^']*' '[^']*'`).FindString(string(stderr))
+			command := regexp.MustCompile(`record the rename with (.+?) and commit it`).FindStringSubmatch(string(stderr))[1]
 			Expect(command).NotTo(BeEmpty(), "the message prints a git mv command:\n%s", stderr)
 
 			run := exec.Command("sh", "-c", command)

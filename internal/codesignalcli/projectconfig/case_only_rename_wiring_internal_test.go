@@ -33,7 +33,7 @@ func TestAnUncommittedPolicyRenamedInCaseOnlyIsToldHowToRecordTheRename(t *testi
 	if !errors.As(err, &found) {
 		t.Fatalf("LoadExplicit error = %v; want a *ConfigError", err)
 	}
-	for _, want := range []string{`the analyzed revision holds the path as "policies/p.json"`, "git mv 'policies/p.json' 'policies/P.json'"} {
+	for _, want := range []string{`the analyzed revision holds the path as "policies/p.json"`, gitAtTheRoot + " mv -- 'policies/p.json' 'policies/P.json'"} {
 		if !strings.Contains(found.Message, want) {
 			t.Errorf("message %q; want it to contain %q", found.Message, want)
 		}
