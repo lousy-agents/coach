@@ -10,12 +10,13 @@ import (
 // (sized for one small config document), these bound a whole-tree listing
 // and arbitrary tracked source files, so they are deliberately larger while
 // still finite: an oversized listing or file fails closed instead of
-// exhausting memory or hanging the CLI (issue #210).
+// exhausting memory or hanging the CLI (issue #210). They are the numbers of
+// gitrepo's budget table, which is the one place that holds them.
 const (
-	MaxListBytes         = 64 << 20 // 64 MiB: full `git ls-tree -r` path listing
-	maxSnapshotFileBytes = 32 << 20 // 32 MiB: single tracked file's content
-	maxSnapshotGitStderr = 64 << 10
-	snapshotGitTimeout   = 30 * time.Second
+	MaxListBytes         = gitrepo.RevisionListingBytes // full `git ls-tree -r` path listing
+	maxSnapshotFileBytes = gitrepo.RevisionFileBytes    // single tracked file's content
+	maxSnapshotGitStderr = gitrepo.GitStderrBytes
+	snapshotGitTimeout   = gitrepo.RevisionReadTimeout
 )
 
 // snapshotGitCommandContext builds the git child used by New's reads. It is gitrepo's own, unchanged: the
