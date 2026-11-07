@@ -3,6 +3,7 @@ package projectconfig
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
@@ -25,18 +26,43 @@ func WrongCaseAtRevision(run gitrepo.Runner, dir, revision, repoPath string) err
 }
 
 func wrongCaseOf(entries revisionEntries, repoPath string) error {
-	spelled, ambiguous, changed, err := spellingInRevision(entries, strings.Split(repoPath, "/"))
+	spellings, truncated, err := spellingsInRevision(entries, strings.Split(repoPath, "/"))
 	if err != nil {
 		return unansweredListing(fmt.Sprintf("nothing is committed at %q, the path Coach reads for the policy", repoPath), err)
 	}
-	if ambiguous != nil {
-		return wrongCaseRefusal(fmt.Sprintf("the analyzed revision holds the policy under several spellings, %s, and Coach reads %q: keep one of them at that path and remove the others", quotedList(ambiguous), repoPath))
-	}
-	if !changed {
+	spellings = slices.DeleteFunc(spellings, func(spelling string) bool { return spelling == repoPath })
+	switch len(spellings) {
+	case 0:
 		return nil
+	case 1:
+		return wrongCaseRefusal(fmt.Sprintf("the policy is committed as %q, but Coach reads %q, so it is not read: %s", spellings[0], repoPath, moveAdvice(spellings[0], repoPath)))
 	}
-	held := strings.Join(spelled, "/")
-	return wrongCaseRefusal(fmt.Sprintf("the policy is committed as %q, but Coach reads %q, so it is not read: %s", held, repoPath, moveAdvice(held, repoPath)))
+	return wrongCaseRefusal(severalSpellingsReason(spellings, truncated, repoPath))
+}
+
+// severalSpellingsReason names every spelling the revision holds, so that none stays committed unseen, and
+// prints the commands that keep one of them: it is moved to the path Coach reads, and the others leave the
+// index. They leave the index only because where a file system folds case they name the file just moved. With
+// more spellings than are named, or one that cannot be shown to a terminal, no command is printed: it would
+// leave a spelling committed or print a name it cannot show.
+func severalSpellingsReason(spellings []string, truncated bool, repoPath string) string {
+	listed := slices.Sorted(slices.Values(spellings))
+	named := quotedList(listed)
+	if truncated {
+		named += ", and more"
+	}
+	reason := fmt.Sprintf("the analyzed revision holds the policy under several spellings, %s, and Coach reads %q: keep one of them at that path and remove the others", named, repoPath)
+	keep := keptSpelling(spellings, repoPath)
+	move, movable := moveCommand(keep, repoPath)
+	others := slices.DeleteFunc(slices.Clone(listed), func(spelling string) bool { return spelling == keep })
+	if truncated || !movable {
+		return reason
+	}
+	quoted := make([]string, len(others))
+	for i, other := range others {
+		quoted[i] = shellword.Quote(other)
+	}
+	return fmt.Sprintf("%s; to keep %q, run %s && git -C \"$top\" --literal-pathspecs rm --cached -q -- %s and commit", reason, keep, move, strings.Join(quoted, " "))
 }
 
 func wrongCaseRefusal(reason string) *ConfigError {
@@ -49,12 +75,22 @@ func wrongCaseRefusal(reason string) *ConfigError {
 // the repository root, found once: the variable keeps a failure to find it from becoming a mkdir at the
 // root of the file system, because the && stops the chain.
 func moveAdvice(from, to string) string {
-	if !movable(from, to) {
+	command, ok := moveCommand(from, to)
+	if !ok {
 		return "move it to that path and commit the rename"
+	}
+	return "rename it with " + command + " and commit the rename"
+}
+
+// moveCommand is the commands that move from to to at the repository root, and false for a name that cannot
+// be shown to a terminal as it is.
+func moveCommand(from, to string) (string, bool) {
+	if !movable(from, to) {
+		return "", false
 	}
 	move := `git -C "$top" mv -- ` + shellword.Quote(from) + " " + shellword.Quote(to)
 	if directory := path.Dir(to); directory != "." {
 		move = `mkdir -p "$top"/` + shellword.Quote(directory) + " && " + move
 	}
-	return "rename it with " + `top="$(git rev-parse --show-toplevel)" && ` + move + " and commit the rename"
+	return `top="$(git rev-parse --show-toplevel)" && ` + move, true
 }
