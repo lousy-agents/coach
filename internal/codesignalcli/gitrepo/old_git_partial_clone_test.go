@@ -22,17 +22,25 @@ const olderThanTheInstruction = "2.43.0"
 // blobs of earlier commits that differ from it are not local; without one, nothing is local.
 func filteredClone(t *testing.T, source string, checkout bool) string {
 	t.Helper()
-	bare := t.TempDir() + "/bare.git"
+	clone, _ := filteredCloneAndItsBare(t, source, checkout)
+	return clone
+}
+
+// filteredCloneAndItsBare is filteredClone with the bare repository the clone was made from, so that a test can
+// add to what only the remote has.
+func filteredCloneAndItsBare(t *testing.T, source string, checkout bool) (clone, bare string) {
+	t.Helper()
+	bare = t.TempDir() + "/bare.git"
 	gitOutput(t, source, "clone", "--bare", "--quiet", source, bare)
 	gitOutput(t, bare, "config", "uploadpack.allowFilter", "true")
-	clone := t.TempDir() + "/part"
+	clone = t.TempDir() + "/part"
 	arguments := []string{"clone", "--quiet", "--filter=blob:none"}
 	if !checkout {
 		arguments = append(arguments, "--no-checkout")
 	}
 	gitOutput(t, t.TempDir(), append(arguments, "file://"+bare, clone)...)
 	gitOutput(t, clone, "remote", "set-url", "origin", "ssh://example.invalid/repo.git")
-	return clone
+	return clone, bare
 }
 
 func twoCommitSource(t *testing.T) string {
