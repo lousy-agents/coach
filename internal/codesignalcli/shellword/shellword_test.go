@@ -38,6 +38,8 @@ func TestPrintableRefusesWhatWouldReachATerminalRaw(t *testing.T) {
 		{"my policy.json", true},
 		{"naïve.json", true},
 		{"bad\x1bname.json", false},
+		{"\x1bname.json", false},
+		{"\nname.json", false},
 		{"a\nb.json", false},
 		{"my\x9bconfig.json", false},
 		{"my\u00a0policy.json", true},
