@@ -12,8 +12,7 @@ import (
 
 func TestRevisionFileReaderDiscardsAnObjectPastTheLimitAndStaysInStep(t *testing.T) {
 	repository, _ := committedBlobs(t, strings.Repeat("x", 100), "small")
-	withFileReadBudget(t, fileStreamBudget{wall: time.Minute, object: 50})
-	reader, err := NewRevisionFileReader(repository, "HEAD")
+	reader, err := newRevisionFileReader(ReadCommandContext, fileStreamBudget{wall: time.Minute, object: 50}, repository, "HEAD")
 	if err != nil {
 		t.Fatalf("NewRevisionFileReader: %v", err)
 	}
@@ -33,8 +32,7 @@ func TestRevisionFileReaderDiscardsAnObjectPastTheLimitAndStaysInStep(t *testing
 
 func TestRevisionFileReaderReadsAnObjectExactlyAtTheLimit(t *testing.T) {
 	repository, _ := committedBlobs(t, strings.Repeat("y", 50))
-	withFileReadBudget(t, fileStreamBudget{wall: time.Minute, object: 50})
-	reader, err := NewRevisionFileReader(repository, "HEAD")
+	reader, err := newRevisionFileReader(ReadCommandContext, fileStreamBudget{wall: time.Minute, object: 50}, repository, "HEAD")
 	if err != nil {
 		t.Fatalf("NewRevisionFileReader: %v", err)
 	}

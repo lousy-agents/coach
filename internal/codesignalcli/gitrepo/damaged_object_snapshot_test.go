@@ -10,11 +10,11 @@ import (
 
 // Through the stream: the child prints the answer and the error, and exits 0, as git does.
 func TestReadObjectsSeparatesADamagedObjectFromAMissingOne(t *testing.T) {
-	withStreamChild(t, func(ctx context.Context) *exec.Cmd {
+	build := streamChild(t, func(ctx context.Context) *exec.Cmd {
 		return exec.CommandContext(ctx, "sh", "-c", "printf '"+damagedObject+" missing\\n"+absentObject+" missing\\n'; echo 'error: unable to unpack "+damagedObject+" header' >&2")
 	})
 
-	outcome, err := readObjects("", []string{damagedObject, absentObject}, snapshotBudget{wall: time.Minute, object: 1 << 20}, func(string, []byte) error { return nil })
+	outcome, err := readObjectsFrom(build, "", []string{damagedObject, absentObject}, snapshotBudget{wall: time.Minute, object: 1 << 20}, func(string, []byte) error { return nil })
 
 	if err != nil || len(outcome.unreadable) != 1 || outcome.unreadable[0] != damagedObject || len(outcome.missing) != 1 || outcome.missing[0] != absentObject {
 		t.Errorf("readObjects = %+v, %v; want the damaged object unreadable and the other missing", outcome, err)
@@ -22,16 +22,16 @@ func TestReadObjectsSeparatesADamagedObjectFromAMissingOne(t *testing.T) {
 }
 
 func TestADamagedObjectEndsTheSnapshotWithTheFirstPathAndNoFetchAdvice(t *testing.T) {
-	withStreamChild(t, func(ctx context.Context) *exec.Cmd {
+	build := streamChild(t, func(ctx context.Context) *exec.Cmd {
 		return exec.CommandContext(ctx, "sh", "-c", "printf '"+damagedObject+" missing\\n'; echo 'error: unable to unpack "+damagedObject+" header' >&2")
 	})
 	entries := []snapshotEntry{{mode: "100644", oid: damagedObject, path: "cfg/p.json"}, {mode: "100644", oid: damagedObject, path: "other/p.json"}}
 
-	err := writeSnapshotWithin("", t.TempDir(), entries, 1<<20)
+	err := writeSnapshotWith(readingThrough(snapshotWriteHeldTo(snapshotObjectBytes, 1<<20), build), "", t.TempDir(), entries)
 
 	damaged, ok := err.(*ObjectsUnreadableError)
 	if !ok || damaged.Count != 1 || damaged.FirstPath != "cfg/p.json" {
-		t.Fatalf("writeSnapshotWithin = %v; want an ObjectsUnreadableError for one object whose first path is cfg/p.json", err)
+		t.Fatalf("writeSnapshotWith = %v; want an ObjectsUnreadableError for one object whose first path is cfg/p.json", err)
 	}
 	if strings.Contains(err.Error(), "fetch") || strings.Contains(err.Error(), "not in the local object store") {
 		t.Errorf("message %q offers a remedy for a missing object to a damaged one", err)

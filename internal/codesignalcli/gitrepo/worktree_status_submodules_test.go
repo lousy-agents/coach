@@ -24,12 +24,9 @@ func (r *statusRecorder) run(_ string, args ...string) ([]byte, error) {
 
 func statusAskedOn(t *testing.T, recorder *statusRecorder) []string {
 	t.Helper()
-	original := runWorktreeStatusGit
-	t.Cleanup(func() { runWorktreeStatusGit = original })
-	runWorktreeStatusGit = recorder.run
 
-	if _, err := WorktreeStatus("repo"); err != nil {
-		t.Fatalf("WorktreeStatus = %v", err)
+	if _, err := worktreeStatusBy(recorder.run, "repo"); err != nil {
+		t.Fatalf("worktreeStatusBy = %v", err)
 	}
 	return recorder.statusAsked
 }
@@ -77,13 +74,10 @@ func TestTheStatusOfAGitWhoseVersionCannotBeReadDoesNotGoIntoSubmodulesOrLookFor
 
 func TestTheStatusStillListsTheSuperprojectsPaths(t *testing.T) {
 	recorder := &statusRecorder{version: "git version 2.43.0", statusOutput: " M a.go\x00?? b.go\x00"}
-	original := runWorktreeStatusGit
-	t.Cleanup(func() { runWorktreeStatusGit = original })
-	runWorktreeStatusGit = recorder.run
 
-	entries, err := WorktreeStatus("repo")
+	entries, err := worktreeStatusBy(recorder.run, "repo")
 
 	if err != nil || len(entries) != 2 || entries[0].Path != "a.go" || entries[1].Path != "b.go" {
-		t.Errorf("WorktreeStatus = %+v, %v; want the two paths", entries, err)
+		t.Errorf("worktreeStatusBy = %+v, %v; want the two paths", entries, err)
 	}
 }

@@ -20,12 +20,12 @@ type totalCase struct {
 
 func (c totalCase) run(t *testing.T) {
 	repository, entries := snapshotOfFiles(t, c.files...)
-	withSnapshotLimits(t, oversizeObject, c.total)
+	write := snapshotWriteHeldTo(oversizeObject, c.total)
 
-	err := writeSnapshotWithin(repository, t.TempDir(), entries, c.total)
+	err := writeSnapshotWith(write, repository, t.TempDir(), entries)
 
 	if c.fails != (err != nil) || (c.fails && !strings.Contains(err.Error(), "larger than")) {
-		t.Errorf("writeSnapshotWithin = %v, want a refusal that names the total: %v", err, c.fails)
+		t.Errorf("writeSnapshotWith = %v, want a refusal that names the total: %v", err, c.fails)
 	}
 }
 
@@ -47,11 +47,10 @@ func TestAnObjectReadToDiskCountsAgainstTheTotalForEveryPathThatNamesIt(t *testi
 func TestAnObjectReadToDiskThatCannotBeWrittenEndsTheSnapshot(t *testing.T) {
 	full := errors.New("no space left on device")
 	repository, entries := snapshotOfFiles(t, namedFile{"big.go", "package big // " + strings.Repeat("b", 100)})
-	withSnapshotLimits(t, oversizeObject, snapshotTotalBytes)
-	withSnapshotFile(t, failingFile{writeErr: full})
+	write := creatingFiles(snapshotWriteHeldTo(oversizeObject, snapshotTotalBytes), failingFile{writeErr: full})
 
-	if err := writeSnapshotWithin(repository, t.TempDir(), entries, snapshotTotalBytes); !errors.Is(err, full) {
-		t.Errorf("writeSnapshotWithin = %v, want the failed write of the file", err)
+	if err := writeSnapshotWith(write, repository, t.TempDir(), entries); !errors.Is(err, full) {
+		t.Errorf("writeSnapshotWith = %v, want the failed write of the file", err)
 	}
 }
 
@@ -60,7 +59,7 @@ func TestAnObjectReadToDiskThatCannotBeWrittenEndsTheSnapshot(t *testing.T) {
 func TestACopyOfAnObjectThatFindsLessThanTheObjectHoldsIsRefused(t *testing.T) {
 	root := rootWithAFileAt(t, "a.go") // one byte
 
-	err := copySnapshotEntry(root, snapshotEntry{mode: "100644", path: "b.go"}, snapshotEntry{mode: "100644", path: "a.go"}, 100)
+	err := copySnapshotEntry(realDirectory(root), snapshotEntry{mode: "100644", path: "b.go"}, snapshotEntry{mode: "100644", path: "a.go"}, 100)
 
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Errorf("copySnapshotEntry = %v, want io.ErrUnexpectedEOF: one byte is not the hundred the object holds", err)

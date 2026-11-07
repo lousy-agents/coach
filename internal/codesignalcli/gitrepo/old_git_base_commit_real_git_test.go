@@ -21,7 +21,7 @@ func TestOnAnOldGitABaseCommitOnlyTheRemoteHasIsRefusedWithoutRunningTheTranspor
 	marker := sshMarker(t)
 	before := objectsIn(t, clone)
 
-	err := refuseWhenReadRevisionsLackObjects(RunBytes, clone, base, olderThanTheInstruction)
+	err := refuseWhenReadRevisionsLackObjects(gitBefore244, clone, base, olderThanTheInstruction)
 
 	if !strings.Contains(refusalText(err), "the commit --base names has 1 object that is not in it") || !strings.Contains(refusalText(err), base) {
 		t.Errorf("refuseWhenReadRevisionsLackObjects = %v; want the base commit refused, and named", err)
@@ -41,7 +41,7 @@ func TestTheMergeBaseQuestionFetchesTheBaseCommitOnAGitThatIgnoresTheInstruction
 	asGitBefore244(t)
 	marker := sshMarker(t)
 
-	_, _ = RunBytes(clone, "merge-base", "--", base, "HEAD")
+	_, _ = gitBefore244(clone, "merge-base", "--", base, "HEAD")
 
 	if !transportRan(marker) {
 		t.Errorf("the transport did not run: a test that asserts it did not proves nothing")
@@ -54,7 +54,7 @@ func TestOnAnOldGitABaseCommitThatIsHereGoesOnToTheMergeBaseWithoutFetching(t *t
 	marker := sshMarker(t)
 	before := objectsIn(t, clone)
 
-	err := refuseWhenReadRevisionsLackObjects(RunBytes, clone, "HEAD", olderThanTheInstruction)
+	err := refuseWhenReadRevisionsLackObjects(gitBefore244, clone, "HEAD", olderThanTheInstruction)
 
 	if err != nil || transportRan(marker) || objectsIn(t, clone) != before {
 		t.Errorf("refuseWhenReadRevisionsLackObjects = %v; want a base that is here read, with nothing run and nothing written", err)

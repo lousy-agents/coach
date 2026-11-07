@@ -21,7 +21,7 @@ func TestReadObjectsKillsGitAndReturnsTheVisitsErrorWhenTheVisitFails(t *testing
 	failure := errors.New("the visit failed")
 
 	started := time.Now()
-	_, err := readObjects(repository, oids, snapshotBudget{wall: time.Minute, object: 1 << 20}, func(string, []byte) error { return failure })
+	_, err := readObjectsOf(repository, oids, snapshotBudget{wall: time.Minute, object: 1 << 20}, func(string, []byte) error { return failure })
 	elapsed := time.Since(started)
 
 	if !errors.Is(err, failure) {
@@ -33,12 +33,12 @@ func TestReadObjectsKillsGitAndReturnsTheVisitsErrorWhenTheVisitFails(t *testing
 }
 
 func TestReadObjectsDoesNotVisitAnObjectGitSaysIsMissing(t *testing.T) {
-	withStreamChild(t, func(ctx context.Context) *exec.Cmd {
+	build := streamChild(t, func(ctx context.Context) *exec.Cmd {
 		return exec.CommandContext(ctx, "sh", "-c", "printf '0000 missing\\n1111 blob 2\\nhi\\n'")
 	})
 	var visited []string
 
-	outcome, err := readObjects("", []string{"0000", "1111"}, snapshotBudget{wall: time.Minute, object: 1 << 20}, func(oid string, content []byte) error {
+	outcome, err := readObjectsFrom(build, "", []string{"0000", "1111"}, snapshotBudget{wall: time.Minute, object: 1 << 20}, func(oid string, content []byte) error {
 		visited = append(visited, oid+"="+string(content))
 		return nil
 	})
@@ -52,13 +52,13 @@ func TestReadObjectsDoesNotVisitAnObjectGitSaysIsMissing(t *testing.T) {
 }
 
 func TestReadObjectsHandsOverAnEmptyObjectAsFoundAndEmpty(t *testing.T) {
-	withStreamChild(t, func(ctx context.Context) *exec.Cmd {
+	build := streamChild(t, func(ctx context.Context) *exec.Cmd {
 		return exec.CommandContext(ctx, "sh", "-c", "printf '0000 blob 0\\n\\n'")
 	})
 	var visited int
 	var emptyContent bool
 
-	outcome, err := readObjects("", []string{"0000"}, snapshotBudget{wall: time.Minute, object: 1 << 20}, func(_ string, content []byte) error {
+	outcome, err := readObjectsFrom(build, "", []string{"0000"}, snapshotBudget{wall: time.Minute, object: 1 << 20}, func(_ string, content []byte) error {
 		visited++
 		emptyContent = len(content) == 0
 		return nil

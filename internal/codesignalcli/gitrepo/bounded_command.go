@@ -36,12 +36,6 @@ func ReadCommandContext(ctx context.Context, dir string, args ...string) *exec.C
 	return gitCommand(ctx, dir, args...)
 }
 
-// commandContext builds the git child used by bounded reads and by the two streams (the snapshot's
-// cat-file --batch and the --baseline reader's cat-file --batch -Z). Tests replace it with a child that is
-// the whole of git for the test (a stalled one, an oversized one, a failing one), so no test runs a git that
-// is partly real and partly pretended.
-var commandContext = ReadCommandContext
-
 // RunBytesBoundedWith is the shared bounded-git-read implementation
 // behind RunBytesBounded: a wall-time limit, hard stdout/stderr caps, and
 // concurrent pipe draining. buildCmd is the child-construction seam, letting
@@ -88,11 +82,10 @@ func RunBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args ...
 }
 
 // RunBytesBounded runs git with a wall-time limit and hard caps on
-// collected stdout and stderr, building the child via the package's default
-// commandContext seam. The LimitReader stops after maxStdout+1 bytes so
+// collected stdout and stderr, building the child with ReadCommandContext. The LimitReader stops after maxStdout+1 bytes so
 // an oversized blob is detected without buffering the entire child output.
 func RunBytesBounded(dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
-	return RunBytesBoundedWith(commandContext, dir, maxStdout, maxStderr, timeout, args...)
+	return RunBytesBoundedWith(ReadCommandContext, dir, maxStdout, maxStderr, timeout, args...)
 }
 
 func (e *BoundError) Error() string { return e.message }

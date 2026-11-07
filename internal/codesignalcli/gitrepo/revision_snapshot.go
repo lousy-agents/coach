@@ -15,15 +15,16 @@ import (
 // tree with ls-tree and the objects with cat-file, neither of which converts anything, and it does not
 // depend on the version of git.
 func ExtractRevision(repositoryRoot, revision string) (string, error) {
-	return extractRevision(listSnapshotEntries, RunBytes, repositoryRoot, revision)
+	return extractRevision(defaultSnapshotWrite(), listSnapshotEntries, RunBytes, repositoryRoot, revision)
 }
 
 // snapshotLister lists the tree of a revision as the entries to write.
 type snapshotLister func(repositoryRoot, revision string) ([]snapshotEntry, error)
 
-// extractRevision is ExtractRevision with the listing of the tree and the git that words the way to fetch made
-// by the caller, so that a test can make the listing fail without a repository.
-func extractRevision(list snapshotLister, run Runner, repositoryRoot, revision string) (string, error) {
+// extractRevision is ExtractRevision with what the write is held to and done with, the listing of the tree and the git
+// that words the way to fetch made by the caller, so that a test can make the listing fail without a repository, or
+// the write of a file.
+func extractRevision(write snapshotWrite, list snapshotLister, run Runner, repositoryRoot, revision string) (string, error) {
 	entries, err := list(repositoryRoot, revision)
 	if err != nil {
 		return "", fmt.Errorf("reading source snapshot %q: %w", revision, err)
@@ -32,7 +33,7 @@ func extractRevision(list snapshotLister, run Runner, repositoryRoot, revision s
 	if err != nil {
 		return "", fmt.Errorf("creating source snapshot: %w", err)
 	}
-	if err := writeSnapshot(repositoryRoot, dir, entries); err != nil {
+	if err := writeSnapshotWith(write, repositoryRoot, dir, entries); err != nil {
 		os.RemoveAll(dir)
 		return "", fmt.Errorf("reading source snapshot %q: %w", revision, adviseOnMissingObjects(run, repositoryRoot, revision, err))
 	}

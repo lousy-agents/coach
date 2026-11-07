@@ -22,7 +22,7 @@ func TestSnapshotFilesAreWrittenWithTheModesTheTreeNames(t *testing.T) {
 	dir := root.Name()
 
 	for _, entry := range []snapshotEntry{{mode: "100644", path: "plain.txt"}, {mode: "100755", path: "run.sh"}} {
-		if err := writeSnapshotEntry(root, entry, []byte("x")); err != nil {
+		if err := writeSnapshotEntry(realDirectory(root), entry, []byte("x")); err != nil {
 			t.Fatalf("writeSnapshotEntry(%s): %v", entry.path, err)
 		}
 	}

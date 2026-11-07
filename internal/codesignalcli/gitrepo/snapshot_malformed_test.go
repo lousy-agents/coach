@@ -33,9 +33,9 @@ func TestParseSnapshotRecordRefusesWhatIsNotAnLsTreeRecord(t *testing.T) {
 }
 
 func TestListSnapshotEntriesReadsEveryRecordOfTheStream(t *testing.T) {
-	withTreeListing(t, "100644 blob abc\ta b.go\x00100755 blob def\tbin/run\x00")
+	listing := treeListing(t, "100644 blob abc\ta b.go\x00100755 blob def\tbin/run\x00")
 
-	entries, err := listSnapshotEntries("", "HEAD")
+	entries, err := listSnapshotEntriesBy(listing, "", "HEAD")
 
 	if err != nil || len(entries) != 2 || entries[0].path != "a b.go" || entries[0].oid != "abc" || entries[1].mode != "100755" {
 		t.Errorf("listSnapshotEntries = %v, %v; want the two records, with the path that holds a space", entries, err)
@@ -44,9 +44,9 @@ func TestListSnapshotEntriesReadsEveryRecordOfTheStream(t *testing.T) {
 
 // An empty record is not one `ls-tree -z` prints, and a record skipped is a path the snapshot does not hold.
 func TestListSnapshotEntriesRefusesAnEmptyRecordBetweenTwo(t *testing.T) {
-	withTreeListing(t, "100644 blob abc\ta.go\x00\x00100755 blob def\tbin/run\x00")
+	listing := treeListing(t, "100644 blob abc\ta.go\x00\x00100755 blob def\tbin/run\x00")
 
-	entries, err := listSnapshotEntries("", "HEAD")
+	entries, err := listSnapshotEntriesBy(listing, "", "HEAD")
 
 	if err == nil || entries != nil {
 		t.Errorf("listSnapshotEntries = %v, %v; want the stream refused whole", entries, err)

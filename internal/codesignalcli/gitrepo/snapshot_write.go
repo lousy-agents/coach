@@ -16,24 +16,39 @@ import (
 // scan reads, and a refusal for one it does. The files the scan reads are written first, so the total is
 // spent on them: it fails the snapshot only when those alone pass it.
 func writeSnapshot(repositoryRoot, dir string, entries []snapshotEntry) error {
-	return writeSnapshotWithin(repositoryRoot, dir, entries, snapshotTotal)
+	return writeSnapshotWith(defaultSnapshotWrite(), repositoryRoot, dir, entries)
 }
 
-// writeSnapshotWithin is writeSnapshot with a limit on what it writes in all, counting a blob once for every
-// path that names it.
-func writeSnapshotWithin(repositoryRoot, dir string, entries []snapshotEntry, total int64) error {
-	root, err := os.OpenRoot(dir)
+// snapshotWrite is what writing a snapshot is held to and done with besides the repository and the entries: the most it
+// may write in all, counting a blob once for every path that names it, the budget and the child of the git that reads
+// the objects, and how a file is created. A real snapshot gets defaultSnapshotWrite. A test hands in a small total or a small
+// budget, or a creator whose file fails, so that no package variable is replaced.
+type snapshotWrite struct {
+	total  int64
+	budget snapshotBudget
+	child  childBuilder
+	create fileCreator
+}
+
+func defaultSnapshotWrite() snapshotWrite {
+	return snapshotWrite{total: snapshotTotalBytes, budget: defaultSnapshotBudget(), child: ReadCommandContext, create: createSnapshotFile}
+}
+
+// writeSnapshotWith is writeSnapshot held to the limits, and made with the file creator, of write.
+func writeSnapshotWith(write snapshotWrite, repositoryRoot, dir string, entries []snapshotEntry) error {
+	opened, err := os.OpenRoot(dir)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = root.Close() }()
-	blobs, err := makeSubmoduleDirectories(root, entries)
+	defer func() { _ = opened.Close() }()
+	root := snapshotDir{Root: opened, create: write.create}
+	blobs, err := makeSubmoduleDirectories(opened, entries)
 	if err != nil {
 		return err
 	}
 	order, byObject := groupByObject(neededFirst(blobs))
-	writer := &snapshotWriter{root: root, byObject: byObject, total: total}
-	outcome, err := readObjectsStreaming(repositoryRoot, order, defaultSnapshotBudget, writer.write, writer.writeLarge)
+	writer := &snapshotWriter{root: root, byObject: byObject, total: write.total}
+	outcome, err := readObjects(write.child, repositoryRoot, order, write.budget, writer.write, writer.writeLarge)
 	if err != nil {
 		return err
 	}

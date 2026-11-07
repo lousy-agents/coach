@@ -9,46 +9,13 @@ import (
 	"time"
 )
 
-// withGit holds every bounded read of the package to replacement and answers each with the child that
-// answer builds from the git arguments, in place of git.
-func withGit(t *testing.T, replacement budget, answer func(ctx context.Context, args []string) *exec.Cmd) {
-	t.Helper()
-	originalBudget, originalCommand := budgetFor, commandContext
-	t.Cleanup(func() { budgetFor, commandContext = originalBudget, originalCommand })
-	budgetFor = func([]string) budget { return replacement }
-	commandContext = func(ctx context.Context, _ string, args ...string) *exec.Cmd { return answer(ctx, args) }
-}
-
-// withStreamChild replaces the git that a stream starts (the snapshot's `cat-file --batch`, the baseline
-// reader's `cat-file --batch -Z`) with a child that is the whole of git for the test: a stalled one, one that
-// leaves a child behind, one that fails. A command other than a cat-file --batch stream fails the test, so
-// the fake cannot be asked a question it does not answer, and no test runs a git that is partly real and
-// partly pretended.
-func withStreamChild(t *testing.T, child func(ctx context.Context) *exec.Cmd) {
-	t.Helper()
-	original := commandContext
-	t.Cleanup(func() { commandContext = original })
-	commandContext = func(ctx context.Context, _ string, args ...string) *exec.Cmd {
-		if len(args) < 2 || args[0] != "cat-file" || args[1] != "--batch" {
-			t.Errorf("unexpected git command %v: the fake git answers only a cat-file --batch stream", args)
-			return exec.CommandContext(ctx, "false")
-		}
-		return child(ctx)
-	}
-}
-
-func withBudget(t *testing.T, replacement budget, child func(ctx context.Context) *exec.Cmd) {
-	t.Helper()
-	withGit(t, replacement, func(ctx context.Context, _ []string) *exec.Cmd { return child(ctx) })
-}
-
 func TestRunBytesEndsAGitThatNeverAnswersAndNamesTheQuestion(t *testing.T) {
-	withBudget(t, budget{timeout: 300 * time.Millisecond, stdout: 1 << 20, stderr: 1 << 16}, func(ctx context.Context) *exec.Cmd {
+	runBytes := childRunnerHeldTo(budget{timeout: 300 * time.Millisecond, stdout: 1 << 20, stderr: 1 << 16}, func(ctx context.Context) *exec.Cmd {
 		return exec.CommandContext(ctx, "sleep", "30")
 	})
 
 	begin := time.Now()
-	_, err := RunBytes(".", "rev-parse", "HEAD")
+	_, err := runBytes(".", "rev-parse", "HEAD")
 	elapsed := time.Since(begin)
 
 	var bound *BoundError
@@ -64,13 +31,13 @@ func TestRunBytesEndsAGitThatNeverAnswersAndNamesTheQuestion(t *testing.T) {
 }
 
 func TestRunBytesRefusesWhatGitPrintsBeyondTheReadsBudget(t *testing.T) {
-	withBudget(t, budget{timeout: 10 * time.Second, stdout: 1 << 10, stderr: 1 << 16}, func(ctx context.Context) *exec.Cmd {
+	runBytes := childRunnerHeldTo(budget{timeout: 10 * time.Second, stdout: 1 << 10, stderr: 1 << 16}, func(ctx context.Context) *exec.Cmd {
 		// head itself, not a shell that starts it: when the read is stopped, the process that is killed must be
 		// the one that holds the pipe, or the pipe stays open.
 		return exec.CommandContext(ctx, "head", "-c", "100000", "/dev/zero")
 	})
 
-	_, err := RunBytes(".", "show", "HEAD:big")
+	_, err := runBytes(".", "show", "HEAD:big")
 
 	var bound *BoundError
 	if !errors.As(err, &bound) || bound.Kind != BoundStdout {
@@ -79,11 +46,11 @@ func TestRunBytesRefusesWhatGitPrintsBeyondTheReadsBudget(t *testing.T) {
 }
 
 func TestRunBytesStillReturnsWhatAnAnsweringGitPrints(t *testing.T) {
-	withBudget(t, budget{timeout: 10 * time.Second, stdout: 1 << 10, stderr: 1 << 16}, func(ctx context.Context) *exec.Cmd {
+	runBytes := childRunnerHeldTo(budget{timeout: 10 * time.Second, stdout: 1 << 10, stderr: 1 << 16}, func(ctx context.Context) *exec.Cmd {
 		return exec.CommandContext(ctx, "sh", "-c", "printf answer")
 	})
 
-	output, err := RunBytes(".", "rev-parse", "HEAD")
+	output, err := runBytes(".", "rev-parse", "HEAD")
 
 	if err != nil || string(output) != "answer" {
 		t.Errorf("RunBytes = %q, %v; want the answer", output, err)

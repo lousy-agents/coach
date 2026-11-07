@@ -36,7 +36,7 @@ func TestTheStatusForAGitBefore244DoesNotFetchIntoATreelessSubmodule(t *testing.
 	marker := sshMarker(t)
 	before := objectsIn(t, submodule)
 
-	_, err := worktreeStatusOf(superproject, false, olderThanTheInstruction)
+	_, err := worktreeStatusOf(gitBefore244, superproject, false, olderThanTheInstruction)
 
 	if err != nil || transportRan(marker) || objectsIn(t, submodule) != before {
 		t.Errorf("worktreeStatusOf = %v; want the status to go on, with no transport run and no object written", err)
@@ -49,7 +49,7 @@ func TestThePlainStatusOfAGitThatIgnoresTheInstructionFetchesIntoATreelessSubmod
 	asGitBefore244(t)
 	marker := sshMarker(t)
 
-	_, _ = worktreeStatusOf(superproject, true, "2.54.0")
+	_, _ = worktreeStatusOf(gitBefore244, superproject, true, "2.54.0")
 
 	if !transportRan(marker) {
 		t.Errorf("the transport did not run: a test that asserts it did not proves nothing")

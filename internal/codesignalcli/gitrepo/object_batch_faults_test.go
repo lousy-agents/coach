@@ -24,10 +24,10 @@ func childPrinting(t *testing.T, output string) func(ctx context.Context) *exec.
 
 func assertReadObjectsFails(t *testing.T, child func(ctx context.Context) *exec.Cmd, want string) {
 	t.Helper()
-	withStreamChild(t, child)
+	build := streamChild(t, child)
 	visited := 0
 
-	outcome, err := readObjects("", []string{"1111"}, snapshotBudget{wall: time.Minute, object: 10}, func(string, []byte) error {
+	outcome, err := readObjectsFrom(build, "", []string{"1111"}, snapshotBudget{wall: time.Minute, object: 10}, func(string, []byte) error {
 		visited++
 		return nil
 	})
@@ -58,11 +58,11 @@ func TestReadObjectsNamesWhichPartOfAnAnswerWasWrong(t *testing.T) {
 }
 
 func TestReadObjectsReportsAGitThatExitsWithAFailureAfterAWholeAnswer(t *testing.T) {
-	withStreamChild(t, func(ctx context.Context) *exec.Cmd {
+	build := streamChild(t, func(ctx context.Context) *exec.Cmd {
 		return exec.CommandContext(ctx, "sh", "-c", "printf '1111 blob 2\\nhi\\n'; echo 'fatal: bad things' >&2; exit 3")
 	})
 
-	_, err := readObjects("", []string{"1111"}, snapshotBudget{wall: time.Minute, object: 10}, func(string, []byte) error { return nil })
+	_, err := readObjectsFrom(build, "", []string{"1111"}, snapshotBudget{wall: time.Minute, object: 10}, func(string, []byte) error { return nil })
 
 	if err == nil || !strings.Contains(err.Error(), "exit status 3") || !strings.Contains(err.Error(), "fatal: bad things") {
 		t.Errorf("readObjects error = %v; want git's exit status and what it said", err)

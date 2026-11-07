@@ -69,10 +69,6 @@ const (
 	snapshotTotalBytes      = 4 << 30
 )
 
-// snapshotTotal is what writeSnapshot may write in all. It is a variable so that a test can hold a snapshot
-// to a small total; production code never assigns it.
-var snapshotTotal int64 = snapshotTotalBytes
-
 // fileStreamBudget is what the --baseline reader (one long-lived `git cat-file --batch -Z` for the whole
 // run) may use: a wall time for one request, so that the analysis between two requests is not counted, and
 // the most bytes of one file it will hold. An object past the limit is discarded from the stream and
@@ -84,9 +80,11 @@ type fileStreamBudget struct {
 	object int64
 }
 
-// fileReadBudget is a variable so that a test can hold the reader to a small one; production code never
-// assigns it.
-var fileReadBudget = fileStreamBudget{wall: metadataTimeout, object: fileBytes}
+// defaultFileReadBudget is what the --baseline reader is held to. The reader takes its budget as an argument
+// (newRevisionFileReader), so a test hands in a small one.
+func defaultFileReadBudget() fileStreamBudget {
+	return fileStreamBudget{wall: metadataTimeout, object: fileBytes}
+}
 
 // snapshotBudget is the wall time of the git process that reads a snapshot's objects, and the most bytes of
 // content one object may have.
@@ -95,7 +93,10 @@ type snapshotBudget struct {
 	object int64
 }
 
-var defaultSnapshotBudget = snapshotBudget{wall: snapshotWallTime, object: snapshotObjectBytes}
+// defaultSnapshotBudget is what a real snapshot is read under (defaultSnapshotWrite). A test hands in its own.
+func defaultSnapshotBudget() snapshotBudget {
+	return snapshotBudget{wall: snapshotWallTime, object: snapshotObjectBytes}
+}
 
 // The reads below name a budget of their own, because the subcommand does not say what they hold: a small
 // committed file that must fail closed, a status listing, the root of a worktree. They are held by a
@@ -131,10 +132,7 @@ const (
 	WorktreeRootTimeout = 10 * time.Second
 )
 
-// budgetFor is the budget of the git read that args name. It is a variable so that a test can hold a read
-// to a short one; production code never assigns it.
-var budgetFor = defaultBudgetFor
-
+// defaultBudgetFor is the budget of the git read that args name.
 func defaultBudgetFor(args []string) budget {
 	subcommand := ""
 	if len(args) > 0 {

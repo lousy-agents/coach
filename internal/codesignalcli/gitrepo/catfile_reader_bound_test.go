@@ -12,20 +12,11 @@ import (
 // The reader of a --baseline scan is one long-lived git for the whole run, fed one request at a time. Each
 // request is held to a wall time. The git here is a fake child that is the whole of git for the test.
 
-func withFileReadBudget(t *testing.T, replacement fileStreamBudget) {
-	t.Helper()
-	original := fileReadBudget
-	t.Cleanup(func() { fileReadBudget = original })
-	fileReadBudget = replacement
-}
-
 func readerOver(t *testing.T, child func(ctx context.Context) *exec.Cmd) *RevisionFileReader {
 	t.Helper()
-	withStreamChild(t, child)
-	withFileReadBudget(t, fileStreamBudget{wall: 300 * time.Millisecond, object: 1 << 20})
-	reader, err := NewRevisionFileReader("", "HEAD")
+	reader, err := newRevisionFileReader(streamChild(t, child), fileStreamBudget{wall: 300 * time.Millisecond, object: 1 << 20}, "", "HEAD")
 	if err != nil {
-		t.Fatalf("NewRevisionFileReader: %v", err)
+		t.Fatalf("newRevisionFileReader: %v", err)
 	}
 	t.Cleanup(reader.Close)
 	return reader

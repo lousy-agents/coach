@@ -27,21 +27,18 @@ type objectOutcome struct {
 // not read of an object it took is read past as well.
 type largeObjectVisit func(oid string, size int64, body io.Reader) (taken bool, err error)
 
-// readObjects asks one `git cat-file --batch` for each object in oids, in order, and hands the content of
-// every object that is there to visit. An object past the limit on one object is not handed over and not held:
-// it is reported in the outcome, and the read goes on with the next. cat-file returns the stored bytes and
+// readObjects asks one `git cat-file --batch`, started by build, for each object in oids, in order, and hands the
+// content of every object that is there to visit. An object past the limit on one object is not handed over and not
+// held: it is reported in the outcome, and the read goes on with the next. cat-file returns the stored bytes and
 // applies no filter, and with lazy fetching off (gitCommand) it says "missing" for an object a partial clone
 // has not got instead of fetching it.
-func readObjects(dir string, oids []string, budget snapshotBudget, visit func(oid string, content []byte) error) (outcome objectOutcome, err error) {
-	return readObjectsStreaming(dir, oids, budget, visit, nil)
-}
-
-// readObjectsStreaming is readObjects with a way to take an object past the limit on one object: visitLarge
-// is offered it as a stream, a chunk of it at a time, so that it is never held.
-func readObjectsStreaming(dir string, oids []string, budget snapshotBudget, visit func(oid string, content []byte) error, visitLarge largeObjectVisit) (outcome objectOutcome, err error) {
+//
+// visitLarge, when it is not nil, is a way to take an object past the limit: it is offered the object as a stream, a
+// chunk of it at a time, so that it is never held.
+func readObjects(build childBuilder, dir string, oids []string, budget snapshotBudget, visit func(oid string, content []byte) error, visitLarge largeObjectVisit) (outcome objectOutcome, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), budget.wall)
 	defer cancel()
-	cmd := commandContext(ctx, dir, "cat-file", "--batch")
+	cmd := build(ctx, dir, "cat-file", "--batch")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	// Killing git when the context ends does not end a child of git, and a child keeps the pipes open. exec

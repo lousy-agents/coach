@@ -53,9 +53,9 @@ func requireTimedOutRead(t *testing.T, err error, want string) {
 type stalledResolution struct{ stalled, want string }
 
 func (c stalledResolution) run(t *testing.T) {
-	withGit(t, budget{timeout: resolveBudgetTimeout, stdout: 1 << 20, stderr: 1 << 16}, stalledGit{c.stalled}.answer)
+	run := runnerHeldTo(budget{timeout: resolveBudgetTimeout, stdout: 1 << 20, stderr: 1 << 16}, stalledGit{c.stalled}.answer)
 
-	_, _, err := ResolveRevisions(".", "main")
+	_, _, err := resolveRevisionsBy(run, ".", "main")
 
 	requireTimedOutRead(t, err, c.want)
 }
@@ -69,9 +69,9 @@ func TestResolveRevisionsReportsTheReadThatDidNotAnswer(t *testing.T) {
 }
 
 func TestResolveBaselineRevisionReportsTheReadThatDidNotAnswer(t *testing.T) {
-	withGit(t, budget{timeout: resolveBudgetTimeout, stdout: 1 << 20, stderr: 1 << 16}, stalledGit{"rev-parse"}.answer)
+	run := runnerHeldTo(budget{timeout: resolveBudgetTimeout, stdout: 1 << 20, stderr: 1 << 16}, stalledGit{"rev-parse"}.answer)
 
-	_, err := ResolveBaselineRevision(".")
+	_, err := resolveHEAD(run, ".")
 
 	requireTimedOutRead(t, err, "git rev-parse: git execution timed out")
 }

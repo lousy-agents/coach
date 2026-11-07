@@ -19,9 +19,15 @@ import (
 // returned as it is. A git that does not answer in time is a *BoundError; one that fails is the error that names
 // the subcommand and what git said on stderr, which is held to the stderr budget of every read.
 func streamListing(dir string, wall time.Duration, args []string, visit func(record []byte) error) error {
+	return streamListingBy(ReadCommandContext, dir, wall, args, visit)
+}
+
+// streamListingBy is streamListing with the git child built by the caller, so that a test can list with a child that
+// is the whole of git for the test (one that prints a listing and exits, one that never stops, one that cannot start).
+func streamListingBy(build childBuilder, dir string, wall time.Duration, args []string, visit func(record []byte) error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wall)
 	defer cancel()
-	cmd := commandContext(ctx, dir, args...)
+	cmd := build(ctx, dir, args...)
 	stderr := &cappedWriter{limit: gitStderrBudget}
 	cmd.Stderr = stderr
 	cmd.WaitDelay = childPipeGrace

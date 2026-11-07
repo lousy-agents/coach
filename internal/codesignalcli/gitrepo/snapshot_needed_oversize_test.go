@@ -16,9 +16,9 @@ import (
 
 const oversizeObject = 50
 
-func extractedAt(t *testing.T, repository string) string {
+func extractedAt(t *testing.T, write snapshotWrite, repository string) string {
 	t.Helper()
-	dir, err := ExtractRevision(repository, "HEAD")
+	dir, err := extractedWith(write, repository)
 	if err != nil {
 		t.Fatalf("ExtractRevision = %v, want nil", err)
 	}
@@ -39,9 +39,9 @@ func TestExtractRevisionWritesInFullAFileTheScanReadsThatPassesTheLimitOnOneObje
 	goSource := "package big\n\n// " + strings.Repeat("g", 100) + "\n"
 	jsonData := `{"data":"` + strings.Repeat("j", 100) + `"}`
 	repository, _ := snapshotOfFiles(t, namedFile{"dom/big.go", goSource}, namedFile{"cfg/big.json", jsonData}, namedFile{"small.txt", "small"})
-	withSnapshotLimits(t, oversizeObject, snapshotTotalBytes)
+	write := snapshotWriteHeldTo(oversizeObject, snapshotTotalBytes)
 
-	dir := extractedAt(t, repository)
+	dir := extractedAt(t, write, repository)
 
 	for name, want := range map[string]string{"dom/big.go": goSource, "cfg/big.json": jsonData, "small.txt": "small"} {
 		if got := contentOf(t, dir, name); got != want {
@@ -55,9 +55,9 @@ func TestExtractRevisionWritesInFullAFileTheScanReadsThatPassesTheLimitOnOneObje
 func TestExtractRevisionKeepsTheStreamInStepAroundOversizeObjects(t *testing.T) {
 	big := strings.Repeat("b", 100)
 	repository, _ := snapshotOfFiles(t, namedFile{"a.go", "package a // " + big}, namedFile{"b.png", big}, namedFile{"c.go", "package c"}, namedFile{"d.go", "package d // " + big})
-	withSnapshotLimits(t, oversizeObject, snapshotTotalBytes)
+	write := snapshotWriteHeldTo(oversizeObject, snapshotTotalBytes)
 
-	dir := extractedAt(t, repository)
+	dir := extractedAt(t, write, repository)
 
 	want := map[string]string{"a.go": "package a // " + big, "c.go": "package c", "d.go": "package d // " + big, "b.png": ""}
 	for name, content := range want {
@@ -70,9 +70,9 @@ func TestExtractRevisionKeepsTheStreamInStepAroundOversizeObjects(t *testing.T) 
 func TestExtractRevisionWritesEveryPathOfAnObjectPastTheLimitThatOneOfThemNeeds(t *testing.T) {
 	source := "package same // " + strings.Repeat("s", 100)
 	repository, _ := snapshotOfFiles(t, namedFile{"a.go", source}, namedFile{"copy/b.go", source}, namedFile{"asset.png", source})
-	withSnapshotLimits(t, oversizeObject, snapshotTotalBytes)
+	write := snapshotWriteHeldTo(oversizeObject, snapshotTotalBytes)
 
-	dir := extractedAt(t, repository)
+	dir := extractedAt(t, write, repository)
 
 	for _, name := range []string{"a.go", "copy/b.go", "asset.png"} {
 		if got := contentOf(t, dir, name); got != source {
@@ -83,9 +83,9 @@ func TestExtractRevisionWritesEveryPathOfAnObjectPastTheLimitThatOneOfThemNeeds(
 
 func TestExtractRevisionStillDropsTheBytesOfAnObjectPastTheLimitThatNothingReads(t *testing.T) {
 	repository, _ := snapshotOfFiles(t, namedFile{"assets/blob.bin", strings.Repeat("x", 100)}, namedFile{"main.go", "package main"})
-	withSnapshotLimits(t, oversizeObject, snapshotTotalBytes)
+	write := snapshotWriteHeldTo(oversizeObject, snapshotTotalBytes)
 
-	dir := extractedAt(t, repository)
+	dir := extractedAt(t, write, repository)
 
 	if got := sizeOf(t, dir, "assets/blob.bin"); got != 0 {
 		t.Errorf("assets/blob.bin is %d bytes, want a zero-length file: no analyzer reads it", got)
@@ -97,9 +97,9 @@ func TestExtractRevisionStillDropsTheBytesOfAnObjectPastTheLimitThatNothingReads
 func TestExtractRevisionDoesNotWriteALinkNamedLikeASourceAsAFile(t *testing.T) {
 	repository, _ := snapshotOfFiles(t, namedFile{"main.go", "package main"})
 	gitfixture.CommitLink(t, repository, "alias.go", strings.Repeat("t", 100))
-	withSnapshotLimits(t, oversizeObject, snapshotTotalBytes)
+	write := snapshotWriteHeldTo(oversizeObject, snapshotTotalBytes)
 
-	dir := extractedAt(t, repository)
+	dir := extractedAt(t, write, repository)
 
 	if info, err := os.Lstat(filepath.Join(dir, "alias.go")); err == nil {
 		t.Errorf("alias.go exists (%s), want nothing: a link whose target is past the limit has no form to be written in", info.Mode())

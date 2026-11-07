@@ -2,7 +2,6 @@ package gitrepo
 
 import (
 	"io"
-	"os"
 )
 
 // writeLarge takes an object past the limit on one object when a path that names it is a file the scan reads:
@@ -22,7 +21,7 @@ func (w *snapshotWriter) writeLarge(oid string, size int64, body io.Reader) (tak
 
 // streamEveryPathOf writes the object to the first of its paths from the stream, and copies that file to the
 // others, so that the stream is read once.
-func streamEveryPathOf(root *os.Root, entries []snapshotEntry, size int64, body io.Reader) error {
+func streamEveryPathOf(root snapshotDir, entries []snapshotEntry, size int64, body io.Reader) error {
 	files := regularFiles(entries)
 	if len(files) == 0 {
 		return nil

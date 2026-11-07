@@ -8,9 +8,9 @@ import (
 )
 
 func TestAGitThatDoesNotAnswerInTimeIsABoundError(t *testing.T) {
-	withListingScript(t, "sleep 120")
+	stalled := listingScript("sleep 120")
 
-	err := streamListing("", 300*time.Millisecond, []string{"ls-tree"}, func([]byte) error { return nil })
+	err := streamListingBy(stalled, "", 300*time.Millisecond, []string{"ls-tree"}, func([]byte) error { return nil })
 
 	var bound *BoundError
 	if !errors.As(err, &bound) || bound.Kind != BoundTimeout || !strings.Contains(err.Error(), "git ls-tree") {
@@ -19,9 +19,9 @@ func TestAGitThatDoesNotAnswerInTimeIsABoundError(t *testing.T) {
 }
 
 func TestAGitThatFailsIsReportedWithWhatItSaidOnStderrHeldToTheBudget(t *testing.T) {
-	withListingScript(t, "printf 'whole\\000'; head -c 200000 /dev/zero | tr '\\000' 'e' >&2; exit 3")
+	failing := listingScript("printf 'whole\\000'; head -c 200000 /dev/zero | tr '\\000' 'e' >&2; exit 3")
 
-	err := streamListing("", time.Minute, []string{"ls-tree"}, func([]byte) error { return nil })
+	err := streamListingBy(failing, "", time.Minute, []string{"ls-tree"}, func([]byte) error { return nil })
 
 	if err == nil || !strings.Contains(err.Error(), "exit status 3") || !strings.Contains(err.Error(), "eeee") {
 		t.Fatalf("streamListing = %v; want git's exit status and what it said", err)

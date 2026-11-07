@@ -41,7 +41,7 @@ func TestTheStatusForAGitBefore244DoesNotFetchABlobOnlyTheIndexNames(t *testing.
 	marker := sshMarker(t)
 	before := objectsIn(t, clone)
 
-	entries, err := worktreeStatusOf(clone, false, olderThanTheInstruction)
+	entries, err := worktreeStatusOf(gitBefore244, clone, false, olderThanTheInstruction)
 
 	if err != nil || transportRan(marker) || objectsIn(t, clone) != before {
 		t.Errorf("worktreeStatusOf = %v, %v; want the status to go on, with no transport run and no object written", entries, err)
@@ -57,7 +57,7 @@ func TestTheStatusThatLooksForRenamesFetchesABlobOnlyTheIndexNames(t *testing.T)
 	asGitBefore244(t)
 	marker := sshMarker(t)
 
-	_, _ = runWorktreeStatusGit(clone, "status", "--porcelain=v1", "--untracked-files=all", "-z")
+	_, _ = gitBefore244(clone, "status", "--porcelain=v1", "--untracked-files=all", "-z")
 
 	if !transportRan(marker) {
 		t.Errorf("the transport did not run: a test that asserts it did not proves nothing")

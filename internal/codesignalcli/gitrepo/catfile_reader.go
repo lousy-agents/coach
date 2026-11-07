@@ -29,7 +29,7 @@ import (
 // Git path or a `revision:path` object identifier, so it is the only safe
 // delimiter here.
 //
-// Each request is held to fileReadBudget.wall: a git that does not answer in time is killed and its pipe
+// Each request is held to the wall time of its budget (defaultFileReadBudget): a git that does not answer in time is killed and its pipe
 // closed, and the reader answers every request after it with the same timeout, because a git that did not
 // answer will not answer the next one.
 type RevisionFileReader struct {
@@ -60,7 +60,13 @@ func (e *ObjectTooLargeError) Error() string {
 // returned as a plain error; callers in this package wrap it into an
 // *OperationalError the same way other git-executable-missing failures are.
 func NewRevisionFileReader(dir, revisionSHA string) (*RevisionFileReader, error) {
-	cmd := commandContext(context.Background(), dir, "cat-file", "--batch", "-Z")
+	return newRevisionFileReader(ReadCommandContext, defaultFileReadBudget(), dir, revisionSHA)
+}
+
+// newRevisionFileReader is NewRevisionFileReader with the git child and the budget of a request given by the caller,
+// so that a test can hold the reader to a small budget, or run it against a child that stalls.
+func newRevisionFileReader(build childBuilder, budget fileStreamBudget, dir, revisionSHA string) (*RevisionFileReader, error) {
+	cmd := build(context.Background(), dir, "cat-file", "--batch", "-Z")
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -80,7 +86,7 @@ func NewRevisionFileReader(dir, revisionSHA string) (*RevisionFileReader, error)
 		stdin:       stdin,
 		pipe:        stdout,
 		stdout:      bufio.NewReader(stdout),
-		budget:      fileReadBudget,
+		budget:      budget,
 	}, nil
 }
 

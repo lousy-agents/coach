@@ -16,7 +16,7 @@ func TestAPlaceholderIsNotWrittenForALink(t *testing.T) {
 	}
 	defer func() { _ = root.Close() }()
 
-	err = writePlaceholders(root, []snapshotEntry{{mode: modeSymlink, path: "link", oid: "1"}, {mode: "100644", path: "assets/blob.bin", oid: "1"}})
+	err = writePlaceholders(realDirectory(root), []snapshotEntry{{mode: modeSymlink, path: "link", oid: "1"}, {mode: "100644", path: "assets/blob.bin", oid: "1"}})
 
 	if err != nil {
 		t.Fatalf("writePlaceholders: %v", err)

@@ -75,9 +75,9 @@ func TestRefuseMissingObjectsQuotesWhatGitSaidWhenItCannotListWhatTheMergeBaseLa
 func TestReadObjectsQuotesWhatCatFileSaid(t *testing.T) {
 	// answers one object, then fails with a message that holds a right-to-left override (bytes e2 80 ae)
 	script := "printf '0000 blob 1\\nx\\n'; printf 'fatal: bad \\342\\200\\256name\\n' >&2; exit 128"
-	withStreamChild(t, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, "sh", "-c", script) })
+	build := streamChild(t, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, "sh", "-c", script) })
 
-	_, readErr := readObjects("", []string{"0000"}, snapshotBudget{wall: time.Minute, object: 1 << 20}, func(string, []byte) error { return nil })
+	_, readErr := readObjectsFrom(build, "", []string{"0000"}, snapshotBudget{wall: time.Minute, object: 1 << 20}, func(string, []byte) error { return nil })
 
 	if readErr == nil || strings.Contains(readErr.Error(), rightToLeftOverride) || !strings.Contains(readErr.Error(), "\\u202e") {
 		t.Errorf("readObjects = %v, want git's override shown as the escape \\u202e", readErr)

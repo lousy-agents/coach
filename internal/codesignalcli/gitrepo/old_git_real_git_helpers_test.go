@@ -9,15 +9,16 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 )
 
-// asGitBefore244 makes every git this package starts run the way a git before 2.44 runs it: it does not read the
-// instruction not to fetch. The git is the real one and the command is Coach's own; only the instruction is left
-// out, through lazyFetchInstruction, so what such a git does with an object it lacks is observed and not assumed.
-// The caller's own environment must not carry the instruction either.
+// gitBefore244 is the runner of the real git, run the way a git before 2.44 runs it: Coach's own command, without the
+// instruction not to fetch, which such a git does not read, so that what it does with an object it lacks is observed and
+// not assumed. The caller's own environment must not carry the instruction either; asGitBefore244 clears it for the test.
+func gitBefore244(dir string, args ...string) ([]byte, error) {
+	return runBytesBy(commandTold(nil), defaultBudgetFor, dir, args...)
+}
+
+// asGitBefore244 clears, for the test, the instruction not to fetch that the caller's environment may carry.
 func asGitBefore244(t *testing.T) {
 	t.Helper()
-	original := lazyFetchInstruction
-	lazyFetchInstruction = nil
-	t.Cleanup(func() { lazyFetchInstruction = original })
 	if inherited, set := os.LookupEnv("GIT_NO_LAZY_FETCH"); set {
 		t.Cleanup(func() { _ = os.Setenv("GIT_NO_LAZY_FETCH", inherited) })
 		_ = os.Unsetenv("GIT_NO_LAZY_FETCH")

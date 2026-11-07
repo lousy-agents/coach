@@ -40,8 +40,10 @@ func TestExtractRevisionIsAnErrorWhenTheListingCannotBeRead(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			withTreeListing(t, c.listing)
-			assertSnapshotRefused(t, listSnapshotEntries, nil)
+			listing := treeListing(t, c.listing)
+			assertSnapshotRefused(t, func(repositoryRoot, revision string) ([]snapshotEntry, error) {
+				return listSnapshotEntriesBy(listing, repositoryRoot, revision)
+			}, nil)
 		})
 	}
 }
@@ -51,7 +53,7 @@ func assertSnapshotRefused(t *testing.T, list snapshotLister, wantErr error) {
 	temporary := t.TempDir()
 	t.Setenv("TMPDIR", temporary)
 
-	dir, err := extractRevision(list, func(string, ...string) ([]byte, error) { return nil, errors.New("not asked") }, "repository", "HEAD")
+	dir, err := extractRevision(defaultSnapshotWrite(), list, func(string, ...string) ([]byte, error) { return nil, errors.New("not asked") }, "repository", "HEAD")
 
 	if err == nil {
 		t.Fatalf("extractRevision = %q, nil; want the listing's failure returned and no snapshot", dir)

@@ -48,7 +48,7 @@ var readSites = []readSite{
 	{"a file of the package manager at a revision", "../pkgmanager", "revision_detection.go", "BoundedRunner", []budgetArgument{{0, "CommittedFileBytes", 1 << 20, false}, {1, "GitStderrBytes", 64 << 10, false}, {2, "CommittedFileTimeout", int64(30 * time.Second), false}}},
 	{"the policy document at a revision", "../projectconfig", "git_runner.go", "BoundedRunner", []budgetArgument{{0, "CommittedFileBytes", 1 << 20, false}, {1, "GitStderrBytes", 64 << 10, false}, {2, "CommittedFileTimeout", int64(30 * time.Second), false}}},
 	{"the status of the setup residue", "../tssetup", "residue.go", "BoundedRunner", []budgetArgument{{0, "SetupResidueBytes", 1 << 20, false}, {1, "GitStderrBytes", 64 << 10, false}, {2, "SetupResidueTimeout", int64(10 * time.Second), false}}},
-	{"the listing of the tree for the snapshot", ".", "snapshot_entries.go", "streamListing", []budgetArgument{{1, "snapshotListingWallTime", 0, true}}},
+	{"the listing of the tree for the snapshot", ".", "snapshot_entries.go", "streamListingBy", []budgetArgument{{2, "snapshotListingWallTime", 0, true}}},
 	{"the listing of the tracked files", ".", "tracked_files.go", "streamListing", []budgetArgument{{1, "snapshotListingWallTime", 0, true}}},
 }
 

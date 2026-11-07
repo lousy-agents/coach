@@ -20,8 +20,13 @@ type snapshotEntry struct{ mode, oid, path string }
 // time. A tree that holds a path git would not check out is refused whole: `git archive` refused it, and skipping
 // the entry would scan a tree other than the one committed and report on it as if it were whole.
 func listSnapshotEntries(repositoryRoot, revision string) ([]snapshotEntry, error) {
+	return listSnapshotEntriesBy(ReadCommandContext, repositoryRoot, revision)
+}
+
+// listSnapshotEntriesBy is listSnapshotEntries with the git child built by the caller.
+func listSnapshotEntriesBy(build childBuilder, repositoryRoot, revision string) ([]snapshotEntry, error) {
 	var entries []snapshotEntry
-	err := streamListing(repositoryRoot, snapshotListingWallTime, []string{"ls-tree", "-r", "-z", "--full-tree", revision}, func(record []byte) error {
+	err := streamListingBy(build, repositoryRoot, snapshotListingWallTime, []string{"ls-tree", "-r", "-z", "--full-tree", revision}, func(record []byte) error {
 		entry, err := parseSnapshotRecord(string(record))
 		if err != nil {
 			return err

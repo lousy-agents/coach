@@ -21,20 +21,27 @@ const (
 	maxWorktreeStatusStderr = GitStderrBytes
 )
 
-// runWorktreeStatusGit is the git seam used by WorktreeStatus. Tests may
-// replace it to exercise timeout and bound failures without hanging.
-var runWorktreeStatusGit = BoundedRunner(maxWorktreeStatusBytes, maxWorktreeStatusStderr, WorktreeStatusTimeout)
+// worktreeStatusGit is the git every status read is made with, held to the budget of the status listing.
+func worktreeStatusGit() Runner {
+	return BoundedRunner(maxWorktreeStatusBytes, maxWorktreeStatusStderr, WorktreeStatusTimeout)
+}
 
 // WorktreeStatus lists every changed or untracked worktree path via
 // `git status --porcelain=v1 --untracked-files=all -z`.
 func WorktreeStatus(dir string) ([]WorktreeEntry, error) {
-	supported, version := noLazyFetchSupported(runWorktreeStatusGit, dir)
-	return worktreeStatusOf(dir, supported, version)
+	return worktreeStatusBy(worktreeStatusGit(), dir)
+}
+
+// worktreeStatusBy is WorktreeStatus with the git that answers given by the caller, so that a test can record the
+// questions it is asked, or hand in one that times out, without replacing anything.
+func worktreeStatusBy(run Runner, dir string) ([]WorktreeEntry, error) {
+	supported, version := noLazyFetchSupported(run, dir)
+	return worktreeStatusOf(run, dir, supported, version)
 }
 
 // worktreeStatusOf is the status for a git of the given version, which can, or cannot, be told not to fetch.
-func worktreeStatusOf(dir string, canBeToldNotToFetch bool, version string) ([]WorktreeEntry, error) {
-	output, err := runWorktreeStatusGit(dir, worktreeStatusArguments(canBeToldNotToFetch, version)...)
+func worktreeStatusOf(run Runner, dir string, canBeToldNotToFetch bool, version string) ([]WorktreeEntry, error) {
+	output, err := run(dir, worktreeStatusArguments(canBeToldNotToFetch, version)...)
 	if err != nil {
 		return nil, err
 	}

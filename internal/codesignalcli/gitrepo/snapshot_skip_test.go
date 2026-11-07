@@ -12,10 +12,10 @@ func TestWriteSnapshotKeepsTheFilesTheScanReadsAndDropsTheBytesOfTheRest(t *test
 	repository, entries := snapshotOfFiles(t, namedFile{"a.txt", strings.Repeat("a", 60)}, namedFile{"b.go", strings.Repeat("b", 60)})
 	dir := t.TempDir()
 
-	err := writeSnapshotWithin(repository, dir, entries, 100)
+	err := writeSnapshotWith(snapshotWriteHeldTo(snapshotObjectBytes, 100), repository, dir, entries)
 
 	if err != nil {
-		t.Fatalf("writeSnapshotWithin = %v, want nil: only a file nothing reads passes the total", err)
+		t.Fatalf("writeSnapshotWith = %v, want nil: only a file nothing reads passes the total", err)
 	}
 	if got := sizeOf(t, dir, "b.go"); got != 60 {
 		t.Errorf("b.go is %d bytes, want its 60: the files the scan reads are written first", got)
@@ -30,8 +30,8 @@ func TestWriteSnapshotSpendsWhatIsLeftOnTheSmallerFilesThatStillFit(t *testing.T
 	repository, entries := snapshotOfFiles(t, namedFile{"a.txt", strings.Repeat("a", 90)}, namedFile{"b.txt", strings.Repeat("b", 20)})
 	dir := t.TempDir()
 
-	if err := writeSnapshotWithin(repository, dir, entries, 80); err != nil {
-		t.Fatalf("writeSnapshotWithin = %v, want nil", err)
+	if err := writeSnapshotWith(snapshotWriteHeldTo(snapshotObjectBytes, 80), repository, dir, entries); err != nil {
+		t.Fatalf("writeSnapshotWith = %v, want nil", err)
 	}
 
 	if a, b := sizeOf(t, dir, "a.txt"), sizeOf(t, dir, "b.txt"); a != 0 || b != 20 {
@@ -41,9 +41,9 @@ func TestWriteSnapshotSpendsWhatIsLeftOnTheSmallerFilesThatStillFit(t *testing.T
 
 func TestExtractRevisionWritesAZeroLengthFileForAnObjectPastTheLimitOnOneObject(t *testing.T) {
 	repository, _ := snapshotOfFiles(t, namedFile{"big.bin", strings.Repeat("x", 100)}, namedFile{"small.txt", "small"})
-	withSnapshotLimits(t, 50, snapshotTotalBytes)
+	write := snapshotWriteHeldTo(50, snapshotTotalBytes)
 
-	dir, err := ExtractRevision(repository, "HEAD")
+	dir, err := extractedWith(write, repository)
 	if err != nil {
 		t.Fatalf("ExtractRevision = %v, want nil: an object past the limit is not a reason to refuse a scan", err)
 	}
@@ -59,9 +59,9 @@ func TestExtractRevisionWritesAZeroLengthFileForAnObjectPastTheLimitOnOneObject(
 
 func TestExtractRevisionDropsTheBytesOfAFileNothingReadsPastTheTotal(t *testing.T) {
 	repository, _ := snapshotOfFiles(t, namedFile{"a.go", strings.Repeat("a", 40)}, namedFile{"b.png", strings.Repeat("p", 40)})
-	withSnapshotLimits(t, snapshotObjectBytes, 50)
+	write := snapshotWriteHeldTo(snapshotObjectBytes, 50)
 
-	dir, err := ExtractRevision(repository, "HEAD")
+	dir, err := extractedWith(write, repository)
 	if err != nil {
 		t.Fatalf("ExtractRevision = %v, want nil", err)
 	}

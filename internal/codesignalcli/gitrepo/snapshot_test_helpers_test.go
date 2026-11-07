@@ -1,6 +1,7 @@
 package gitrepo
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,9 +33,41 @@ func sizeOf(t *testing.T, dir, name string) int64 {
 	return info.Size()
 }
 
-func withSnapshotLimits(t *testing.T, object, total int64) {
-	t.Helper()
-	originalBudget, originalTotal := defaultSnapshotBudget, snapshotTotal
-	t.Cleanup(func() { defaultSnapshotBudget, snapshotTotal = originalBudget, originalTotal })
-	defaultSnapshotBudget.object, snapshotTotal = object, total
+// snapshotWriteHeldTo is the write of a real snapshot held to object bytes for one object and total bytes in all.
+func snapshotWriteHeldTo(object, total int64) snapshotWrite {
+	write := defaultSnapshotWrite()
+	write.budget.object, write.total = object, total
+	return write
+}
+
+// creatingFiles is write with every file of the snapshot being file, whose write or close may fail as a full disk's do.
+func creatingFiles(write snapshotWrite, file io.WriteCloser) snapshotWrite {
+	write.create = creating(file)
+	return write
+}
+
+// readingThrough is write with its objects read through the git that build starts.
+func readingThrough(write snapshotWrite, build childBuilder) snapshotWrite {
+	write.child = build
+	return write
+}
+
+// creating is the file creator whose every file is file.
+func creating(file io.WriteCloser) fileCreator {
+	return func(*os.Root, string, os.FileMode) (io.WriteCloser, error) { return file, nil }
+}
+
+// directoryCreating is a directory of a snapshot below root whose every file is file.
+func directoryCreating(root *os.Root, file io.WriteCloser) snapshotDir {
+	return snapshotDir{Root: root, create: creating(file)}
+}
+
+// realDirectory is a directory of a real snapshot below root.
+func realDirectory(root *os.Root) snapshotDir {
+	return snapshotDir{Root: root, create: createSnapshotFile}
+}
+
+// extractedWith is ExtractRevision of the repository's HEAD under write.
+func extractedWith(write snapshotWrite, repository string) (string, error) {
+	return extractRevision(write, listSnapshotEntries, RunBytes, repository, "HEAD")
 }

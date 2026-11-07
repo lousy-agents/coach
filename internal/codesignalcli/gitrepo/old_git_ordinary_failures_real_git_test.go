@@ -52,8 +52,8 @@ func assertLeftToTheScanOnBothGits(t *testing.T, name string, arrange func(*test
 	t.Run(name, func(t *testing.T) {
 		directory, base := arrange(t)
 
-		old := refuseWhenReadRevisionsLackObjects(RunBytes, directory, base, olderThanTheInstruction)
-		current := RefuseMissingObjects(RunBytes, directory, base)
+		old := refuseWhenReadRevisionsLackObjects(gitBefore244, directory, base, olderThanTheInstruction)
+		current := RefuseMissingObjects(gitBefore244, directory, base)
 
 		if old != nil || current != nil {
 			t.Errorf("the guard of a git before 2.44 said %v, and of a current git %v; want neither to refuse what the scan words itself", old, current)

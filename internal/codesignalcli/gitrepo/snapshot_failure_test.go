@@ -2,7 +2,6 @@ package gitrepo
 
 import (
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,37 +17,28 @@ type failingFile struct{ writeErr, closeErr error }
 func (f failingFile) Write([]byte) (int, error) { return 0, f.writeErr }
 func (f failingFile) Close() error              { return f.closeErr }
 
-func withSnapshotFile(t *testing.T, file io.WriteCloser) {
-	t.Helper()
-	original := createSnapshotFile
-	t.Cleanup(func() { createSnapshotFile = original })
-	createSnapshotFile = func(*os.Root, string, os.FileMode) (io.WriteCloser, error) { return file, nil }
-}
-
-func writeOneFile(t *testing.T) error {
+func writeOneFile(t *testing.T, create fileCreator) error {
 	t.Helper()
 	root, err := os.OpenRoot(t.TempDir())
 	if err != nil {
 		t.Fatalf("open root: %v", err)
 	}
 	t.Cleanup(func() { _ = root.Close() })
-	return writeSnapshotEntry(root, snapshotEntry{mode: "100644", path: "a.go"}, []byte("package a"))
+	return writeSnapshotEntry(snapshotDir{Root: root, create: create}, snapshotEntry{mode: "100644", path: "a.go"}, []byte("package a"))
 }
 
 func TestWriteSnapshotEntryReturnsAWriteThatFailed(t *testing.T) {
 	full := errors.New("no space left on device")
-	withSnapshotFile(t, failingFile{writeErr: full})
 
-	if err := writeOneFile(t); !errors.Is(err, full) {
+	if err := writeOneFile(t, creating(failingFile{writeErr: full})); !errors.Is(err, full) {
 		t.Errorf("writeSnapshotEntry = %v, want the failed write: a full disk must not leave a truncated file and go on", err)
 	}
 }
 
 func TestWriteSnapshotEntryReturnsACloseThatFailed(t *testing.T) {
 	failed := errors.New("close failed")
-	withSnapshotFile(t, failingFile{closeErr: failed})
 
-	if err := writeOneFile(t); !errors.Is(err, failed) {
+	if err := writeOneFile(t, creating(failingFile{closeErr: failed})); !errors.Is(err, failed) {
 		t.Errorf("writeSnapshotEntry = %v, want the failed close", err)
 	}
 }
@@ -58,9 +48,9 @@ func TestExtractRevisionFailsAndLeavesNothingWhenAWriteFails(t *testing.T) {
 	temporary := t.TempDir()
 	t.Setenv("TMPDIR", temporary)
 	full := errors.New("no space left on device")
-	withSnapshotFile(t, failingFile{writeErr: full})
+	write := creatingFiles(defaultSnapshotWrite(), failingFile{writeErr: full})
 
-	dir, err := ExtractRevision(repository, "HEAD")
+	dir, err := extractedWith(write, repository)
 
 	if !errors.Is(err, full) || dir != "" {
 		t.Errorf("ExtractRevision = %q, %v; want the failed write and no directory", dir, err)
@@ -72,9 +62,9 @@ func TestExtractRevisionLeavesNothingInTheTemporaryDirectoryWhenThePolicyRefuses
 	repository, _ := snapshotOfFiles(t, namedFile{"a.go", strings.Repeat("a", 40)}, namedFile{"b.go", strings.Repeat("b", 40)})
 	temporary := t.TempDir()
 	t.Setenv("TMPDIR", temporary)
-	withSnapshotLimits(t, snapshotObjectBytes, 60)
+	write := snapshotWriteHeldTo(snapshotObjectBytes, 60)
 
-	if _, err := ExtractRevision(repository, "HEAD"); err == nil {
+	if _, err := extractedWith(write, repository); err == nil {
 		t.Fatal("ExtractRevision = nil, want the refusal of a snapshot past its total")
 	}
 
@@ -104,7 +94,7 @@ func TestWriteSnapshotAcceptsABlobNamedByManyPathsAtExactlyItsTotal(t *testing.T
 	repository, entries := snapshotOfFiles(t, namedFile{"a.go", strings.Repeat("a", 40)})
 	copies := append(entries, snapshotEntry{path: "b.go", mode: entries[0].mode, oid: entries[0].oid}, snapshotEntry{path: "c.go", mode: entries[0].mode, oid: entries[0].oid})
 
-	if err := writeSnapshotWithin(repository, t.TempDir(), copies, 120); err != nil {
-		t.Errorf("writeSnapshotWithin = %v, want nil: 40 bytes named by three paths is 120, once", err)
+	if err := writeSnapshotWith(snapshotWriteHeldTo(snapshotObjectBytes, 120), repository, t.TempDir(), copies); err != nil {
+		t.Errorf("writeSnapshotWith = %v, want nil: 40 bytes named by three paths is 120, once", err)
 	}
 }

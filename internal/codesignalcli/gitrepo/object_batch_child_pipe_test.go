@@ -14,13 +14,13 @@ import (
 
 func TestReadObjectsEndsAtItsBoundWhenAChildOfGitKeepsThePipesOpen(t *testing.T) {
 	// git starts a child that holds the pipes and waits for it: killing git leaves the child
-	withStreamChild(t, func(ctx context.Context) *exec.Cmd {
+	build := streamChild(t, func(ctx context.Context) *exec.Cmd {
 		return exec.CommandContext(ctx, "sh", "-c", "sleep 30 & wait; exit")
 	})
 	const wall = 500 * time.Millisecond
 
 	started := time.Now()
-	_, err := readObjects("", []string{"0000"}, snapshotBudget{wall: wall, object: 1 << 20}, func(string, []byte) error { return nil })
+	_, err := readObjectsFrom(build, "", []string{"0000"}, snapshotBudget{wall: wall, object: 1 << 20}, func(string, []byte) error { return nil })
 	elapsed := time.Since(started)
 
 	if err == nil || !strings.Contains(err.Error(), "took longer than") {

@@ -11,11 +11,9 @@ import (
 // A reader that is cut off while it discards an object past the limit says which file, and does not call it a
 // file that is too large: the answer to its request never came whole.
 func TestRevisionFileReaderNamesTheFileWhoseOversizeObjectWasCutShort(t *testing.T) {
-	withStreamChild(t, func(ctx context.Context) *exec.Cmd {
+	reader, err := newRevisionFileReader(streamChild(t, func(ctx context.Context) *exec.Cmd {
 		return exec.CommandContext(ctx, "sh", "-c", "head -c 1 >/dev/null; printf '1111 blob 99\\000abc'")
-	})
-	withFileReadBudget(t, fileStreamBudget{wall: time.Minute, object: 10})
-	reader, err := NewRevisionFileReader("", "HEAD")
+	}), fileStreamBudget{wall: time.Minute, object: 10}, "", "HEAD")
 	if err != nil {
 		t.Fatalf("NewRevisionFileReader: %v", err)
 	}
@@ -76,11 +74,9 @@ func TestRevisionFileReaderNamesWhichPartOfAnAnswerWasWrong(t *testing.T) {
 
 func assertReaderFails(t *testing.T, printed, want string) {
 	t.Helper()
-	withStreamChild(t, func(ctx context.Context) *exec.Cmd {
+	reader, err := newRevisionFileReader(streamChild(t, func(ctx context.Context) *exec.Cmd {
 		return exec.CommandContext(ctx, "sh", "-c", "head -c 1 >/dev/null; printf '"+printed+"'")
-	})
-	withFileReadBudget(t, fileStreamBudget{wall: time.Minute, object: 10})
-	reader, err := NewRevisionFileReader("", "HEAD")
+	}), fileStreamBudget{wall: time.Minute, object: 10}, "", "HEAD")
 	if err != nil {
 		t.Fatalf("NewRevisionFileReader: %v", err)
 	}
@@ -96,11 +92,9 @@ func assertReaderFails(t *testing.T, printed, want string) {
 // An empty file is a file: its object is a header with a size of zero and nothing after the NUL that ends the
 // content. A size of zero is not malformed, and the scan reports the file as empty and not as unreadable.
 func TestRevisionFileReaderReadsAnEmptyObjectAsEmptyContent(t *testing.T) {
-	withStreamChild(t, func(ctx context.Context) *exec.Cmd {
+	reader, err := newRevisionFileReader(streamChild(t, func(ctx context.Context) *exec.Cmd {
 		return exec.CommandContext(ctx, "sh", "-c", "head -c 1 >/dev/null; printf '1111 blob 0\\000\\000'")
-	})
-	withFileReadBudget(t, fileStreamBudget{wall: time.Minute, object: 10})
-	reader, err := NewRevisionFileReader("", "HEAD")
+	}), fileStreamBudget{wall: time.Minute, object: 10}, "", "HEAD")
 	if err != nil {
 		t.Fatalf("NewRevisionFileReader: %v", err)
 	}

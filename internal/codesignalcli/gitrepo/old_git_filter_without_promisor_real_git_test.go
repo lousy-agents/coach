@@ -18,7 +18,7 @@ func TestOnAnOldGitACloneWhoseRemoteHasAFilterAndPromisorFalseIsRefusedWithoutFe
 	marker := sshMarker(t)
 	before := objectsIn(t, clone)
 
-	err := refuseWhenReadRevisionsLackObjects(RunBytes, clone, "", olderThanTheInstruction)
+	err := refuseWhenReadRevisionsLackObjects(gitBefore244, clone, "", olderThanTheInstruction)
 
 	if !strings.Contains(refusalText(err), "git 2.43.0 cannot be told not to fetch missing objects") || !strings.Contains(refusalText(err), "use git 2.44 or later") {
 		t.Errorf("refuseWhenReadRevisionsLackObjects = %v; want the missing objects refused, whatever the configuration says", err)
@@ -35,7 +35,7 @@ func TestOnAnOldGitACloneThatLacksNothingIsReadWhateverItsConfiguration(t *testi
 	marker := sshMarker(t)
 	before := objectsIn(t, clone)
 
-	err := refuseWhenReadRevisionsLackObjects(RunBytes, clone, "", olderThanTheInstruction)
+	err := refuseWhenReadRevisionsLackObjects(gitBefore244, clone, "", olderThanTheInstruction)
 
 	if err != nil || transportRan(marker) || objectsIn(t, clone) != before {
 		t.Errorf("refuseWhenReadRevisionsLackObjects = %v; want the clone read, with nothing run and nothing written", err)

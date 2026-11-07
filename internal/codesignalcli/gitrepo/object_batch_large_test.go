@@ -36,13 +36,13 @@ func TestReadObjectsStreamingHandsAnObjectPastTheLimitOverAsAStreamAndNotAsConte
 	taker := &largeTaker{}
 	var visited []string
 
-	outcome, err := readObjectsStreaming(repository, oids, oversizeBudget, func(oid string, content []byte) error {
+	outcome, err := readObjects(ReadCommandContext, repository, oids, oversizeBudget, func(oid string, content []byte) error {
 		visited = append(visited, oid+"="+string(content))
 		return nil
 	}, taker.take)
 
 	if err != nil || len(outcome.tooLarge) != 0 {
-		t.Fatalf("readObjectsStreaming = %+v, %v; want an object that was taken left out of the outcome", outcome, err)
+		t.Fatalf("readObjects = %+v, %v; want an object that was taken left out of the outcome", outcome, err)
 	}
 	if len(taker.calls) != 1 || taker.calls[0] != (largeCall{oid: oids[0], size: 100, body: big}) {
 		t.Errorf("visitLarge was called with %+v, want the whole object as a stream of 100 bytes", taker.calls)
@@ -60,13 +60,13 @@ func TestReadObjectsStreamingReadsPastWhatAVisitLargeDidNotRead(t *testing.T) {
 		return true, err
 	}
 
-	_, err := readObjectsStreaming(repository, oids, oversizeBudget, func(oid string, content []byte) error {
+	_, err := readObjects(ReadCommandContext, repository, oids, oversizeBudget, func(oid string, content []byte) error {
 		visited = append(visited, string(content))
 		return nil
 	}, partial)
 
 	if err != nil || len(visited) != 1 || visited[0] != "small" {
-		t.Errorf("readObjectsStreaming = %v, visited %q; want the next object intact after a partly read one", err, visited)
+		t.Errorf("readObjects = %v, visited %q; want the next object intact after a partly read one", err, visited)
 	}
 }
 
@@ -75,13 +75,13 @@ func TestReadObjectsStreamingReportsAnObjectThatVisitLargeLeft(t *testing.T) {
 	var visited []string
 	leave := func(string, int64, io.Reader) (bool, error) { return false, nil }
 
-	outcome, err := readObjectsStreaming(repository, oids, oversizeBudget, func(oid string, content []byte) error {
+	outcome, err := readObjects(ReadCommandContext, repository, oids, oversizeBudget, func(oid string, content []byte) error {
 		visited = append(visited, string(content))
 		return nil
 	}, leave)
 
 	if err != nil || len(outcome.tooLarge) != 1 || outcome.tooLarge[0] != oids[0] || len(visited) != 1 || visited[0] != "small" {
-		t.Errorf("readObjectsStreaming = %+v, %v, visited %q; want the left object reported and the next one intact", outcome, err, visited)
+		t.Errorf("readObjects = %+v, %v, visited %q; want the left object reported and the next one intact", outcome, err, visited)
 	}
 }
 
@@ -89,25 +89,25 @@ func TestReadObjectsStreamingReturnsTheErrorOfVisitLargeAndStopsGit(t *testing.T
 	repository, oids := committedBlobs(t, strings.Repeat("x", 100), "small")
 	failure := errors.New("the write failed")
 
-	_, err := readObjectsStreaming(repository, oids, oversizeBudget, func(string, []byte) error { return nil },
+	_, err := readObjects(ReadCommandContext, repository, oids, oversizeBudget, func(string, []byte) error { return nil },
 		func(string, int64, io.Reader) (bool, error) { return true, failure })
 
 	if !errors.Is(err, failure) {
-		t.Errorf("readObjectsStreaming = %v, want the error of visitLarge", err)
+		t.Errorf("readObjects = %v, want the error of visitLarge", err)
 	}
 }
 
 // A stream that is cut inside an object is never taken for the object: the caller is told, and a file that
 // stopped short is not written as if it were whole.
 func TestAnObjectPastTheLimitThatIsCutShortEndsTheSnapshot(t *testing.T) {
-	withStreamChild(t, func(ctx context.Context) *exec.Cmd {
+	build := streamChild(t, func(ctx context.Context) *exec.Cmd {
 		return exec.CommandContext(ctx, "sh", "-c", "printf '1111 blob 100\\nonly ten b'")
 	})
-	withSnapshotLimits(t, oversizeBudget.object, snapshotTotalBytes)
+	write := readingThrough(snapshotWriteHeldTo(oversizeBudget.object, snapshotTotalBytes), build)
 
-	err := writeSnapshotWithin("", t.TempDir(), []snapshotEntry{{mode: "100644", path: "big.go", oid: "1111"}}, snapshotTotalBytes)
+	err := writeSnapshotWith(write, "", t.TempDir(), []snapshotEntry{{mode: "100644", path: "big.go", oid: "1111"}})
 
 	if err == nil {
-		t.Error("writeSnapshotWithin = nil, want the cut stream refused: ten bytes of a hundred are not the file")
+		t.Error("writeSnapshotWith = nil, want the cut stream refused: ten bytes of a hundred are not the file")
 	}
 }

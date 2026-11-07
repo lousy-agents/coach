@@ -2,12 +2,11 @@ package gitrepo
 
 import (
 	"fmt"
-	"os"
 )
 
 // snapshotWriter writes each object it is handed, within the total.
 type snapshotWriter struct {
-	root     *os.Root
+	root     snapshotDir
 	byObject map[string][]snapshotEntry
 	total    int64
 	written  int64
@@ -37,7 +36,7 @@ func (w *snapshotWriter) write(oid string, content []byte) error {
 	return writePlaceholders(w.root, entries)
 }
 
-func writeEveryPathOf(root *os.Root, entries []snapshotEntry, content []byte) error {
+func writeEveryPathOf(root snapshotDir, entries []snapshotEntry, content []byte) error {
 	for _, entry := range entries {
 		if err := writeSnapshotEntry(root, entry, content); err != nil {
 			return err
@@ -48,7 +47,7 @@ func writeEveryPathOf(root *os.Root, entries []snapshotEntry, content []byte) er
 
 // writePlaceholders writes a zero-length file at each path of a blob whose bytes are dropped. A symbolic
 // link has no such form (its content is its target), and a link is never large, so it is left out.
-func writePlaceholders(root *os.Root, entries []snapshotEntry) error {
+func writePlaceholders(root snapshotDir, entries []snapshotEntry) error {
 	for _, entry := range entries {
 		if entry.mode == modeSymlink {
 			continue

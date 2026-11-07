@@ -18,8 +18,17 @@ func Run(dir string, args ...string) (string, error) {
 // the git question. It is a *BoundError beneath the wrapping, so a caller can tell it from a git that
 // answered with a failure.
 func RunBytes(dir string, args ...string) ([]byte, error) {
-	limit := budgetFor(args)
-	output, err := RunBytesBounded(dir, limit.stdout, limit.stderr, limit.timeout, args...)
+	return runBytesBy(ReadCommandContext, defaultBudgetFor, dir, args...)
+}
+
+// budgetLookup is the budget of the git read that args name.
+type budgetLookup func(args []string) budget
+
+// runBytesBy is RunBytes with the child it starts and the budgets it holds the read to given by the caller, so
+// that a test can run a stalled or an oversized child under a short budget without replacing anything.
+func runBytesBy(build childBuilder, budgets budgetLookup, dir string, args ...string) ([]byte, error) {
+	limit := budgets(args)
+	output, err := RunBytesBoundedWith(build, dir, limit.stdout, limit.stderr, limit.timeout, args...)
 	return output, askedAbout(args, err)
 }
 
