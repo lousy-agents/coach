@@ -40,11 +40,13 @@ var _ = Describe("coach codesignal: a committed explicit policy that is gone fro
 			Expect(os.Remove(filepath.Join(repo, policy))).To(Succeed())
 		})
 
-		It("offers no restore, because it would discard the staged edit, and says so", func() {
+		It("offers no restore from the commit, because it would discard the staged edit, says so, and names the restore that keeps the edit", func() {
 			stderr := scanMissing(nil)
 
-			expectNoRestoreNoAuthoring(stderr)
-			Expect(string(stderr)).To(ContainSubstring("staged"), "the message names why no restore is offered:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("--source"), "a restore from the commit discards the edit:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "stderr:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("git restore -- ':(top,literal)"+policy+"'"), "the restore from the index keeps the edit:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("staged"), "the message names why no restore from the commit is offered:\n%s", stderr)
 			Expect(gitIn(repo, "show", ":"+policy)).To(Equal(stagedPolicy), "the staged edit is untouched")
 		})
 

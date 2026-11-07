@@ -83,7 +83,8 @@ func verdictCases() []verdictCase {
 	restoresOverEmptyEntry := func(words ...string) offerWant {
 		return offerWant{true, projectreadiness.RemedyRestoreOverEmptyEntry, "", words, true}
 	}
-	staged1, staged2 := bothWays(projectreadiness.PolicyCause("staged_edit"), "staged edit")
+	staged1 := offerWant{true, projectreadiness.RemedyNone, projectreadiness.PolicyCause("staged_edit"), []string{"staged edit", "git diff --cached", "restore it with git restore -- "}, true}
+	staged2 := offerWant{true, projectreadiness.RemedyNone, projectreadiness.PolicyCause("staged_edit"), []string{"staged edit", "move the file that blocks the path, then restore it with git restore -- "}, true}
 	link1, link2 := bothWays(projectreadiness.PolicyCause("committed_as_link"), "symbolic link")
 	sparse1, sparse2 := bothWays(projectreadiness.PolicyCause("sparse_checkout"), "sparse checkout")
 	merge1, merge2 := bothWays(projectreadiness.PolicyCause("merge_conflict"), "unresolved merge conflict")

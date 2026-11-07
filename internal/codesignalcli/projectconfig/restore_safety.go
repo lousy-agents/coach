@@ -144,5 +144,5 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 // offersRestoreCommand is whether a verdict ends in a printed restore command, which is what a
 // locked index makes fail.
 func offersRestoreCommand(verdict restoreVerdict) bool {
-	return verdict == restoreOverwritesNothing || verdict == restoreOverwritesEmptyEntry || verdict == restoreStagedNotCommitted
+	return verdict == restoreOverwritesNothing || verdict == restoreOverwritesEmptyEntry || verdict == restoreStagedNotCommitted || verdict == restoreDiscardsStagedEdit
 }
