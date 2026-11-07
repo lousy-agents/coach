@@ -21,19 +21,6 @@ func checkExplicitPolicy(dir, revision, policyPath string) (projectreadiness.Che
 	return explicitPolicyCheck(status, dir, revision, policyPath)
 }
 
-// onDiskStatus is what the working tree says about the policy path: nil for a regular file, the error that says
-// why not otherwise, and the operational error when git could not answer a question the verdict depends on.
-func onDiskStatus(dir, revision, policyPath string) (*projectconfig.ConfigError, error) {
-	status, err := projectconfig.ExplicitOnDiskStatus(runReadinessGit, dir, revision, policyPath)
-	if err != nil {
-		return nil, err
-	}
-	if status != nil && status.GitFailure != nil {
-		return nil, unansweredQuestion(policyPath, status.GitFailure)
-	}
-	return status, nil
-}
-
 // RunAfterPolicyError is Run for a caller that already holds failure, the error
 // loading policy produced. When the working tree produced that error, readiness
 // reports its verdict instead of reading the working tree a second time, so the

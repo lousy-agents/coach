@@ -66,11 +66,14 @@ func TestTheClosingInstructionSaysWhereTheCandidateGoes(t *testing.T) {
 		"a named policy missing from disk":                {configError(projectconfig.KindMissing, projectreadiness.RemedyAuthor), namedPolicyFlags("pol.json"), `save it to "pol.json" at the repository root`},
 	}
 	for name, c := range cases {
-		t.Run(name, func(t *testing.T) {
-			if got := candidateClosingInstruction(c.err, c.flags); !strings.Contains(got, c.expect) {
-				t.Errorf("candidateClosingInstruction = %q; want it to say %q", got, c.expect)
-			}
-		})
+		t.Run(name, func(t *testing.T) { requireTheClosingInstruction(t, c.err, c.flags, c.expect) })
+	}
+}
+
+func requireTheClosingInstruction(t *testing.T, err error, flags codesignalFlags, expect string) {
+	t.Helper()
+	if got := candidateClosingInstruction(err, flags); !strings.Contains(got, expect) {
+		t.Errorf("candidateClosingInstruction = %q; want it to say %q", got, expect)
 	}
 }
 

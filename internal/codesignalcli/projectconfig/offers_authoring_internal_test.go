@@ -48,10 +48,13 @@ func TestAnErrorReplacesThePolicyOnlyWhereItsDocumentIsNotValidAndANewOneFixesIt
 		"a policy found nowhere":                       {&ConfigError{Kind: KindNotFound, Remedy: projectreadiness.RemedyAuthor}, false},
 	}
 	for name, c := range cases {
-		t.Run(name, func(t *testing.T) {
-			if got := c.err.ReplacesPolicy(); got != c.want {
-				t.Errorf("ReplacesPolicy() = %v for kind %d and remedy %d, want %v", got, c.err.Kind, c.err.Remedy, c.want)
-			}
-		})
+		t.Run(name, func(t *testing.T) { requireReplacesPolicy(t, c.err, c.want) })
+	}
+}
+
+func requireReplacesPolicy(t *testing.T, err *ConfigError, want bool) {
+	t.Helper()
+	if got := err.ReplacesPolicy(); got != want {
+		t.Errorf("ReplacesPolicy() = %v for kind %d and remedy %d, want %v", got, err.Kind, err.Remedy, want)
 	}
 }
