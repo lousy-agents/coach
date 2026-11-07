@@ -270,7 +270,10 @@ except for the policy-candidate document on the guided-authoring path.
   `git mv` that moves it. It used to be ignored. See the
   [CLI contract](./docs/cli-codesignal.md#commands).
 - A policy inside a submodule checkout, or at a path the analyzed revision
-  commits as a submodule: `project_config_missing`, naming the submodule. The
+  commits as a submodule, naming the submodule: `project_config_invalid` while
+  the checkout is there (the file in it, or the submodule itself), and
+  `project_config_missing` once it is gone (`git submodule deinit`).
+  `--check-project` names the cause `in_submodule` for all of them. The
   superproject records a submodule as one commit, so the file can be neither
   restored nor committed here; name a policy this repository commits. See the
   [CLI contract](./docs/cli-codesignal.md#commands).
