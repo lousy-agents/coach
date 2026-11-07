@@ -54,14 +54,15 @@ func checkRegularFileThrough(root diskRoot, repoPath string) error {
 	return checkExactNames(root, repoPath)
 }
 
-// checkAncestors requires every parent of the policy to be a real directory.
+// checkAncestors requires every parent of the policy to be a real directory. A parent that is missing is
+// reported as missing only once the ones above it, which exist, are known to be spelled as typed.
 func checkAncestors(root diskRoot, repoPath string) error {
 	parts := strings.Split(repoPath, "/")
 	for i := 1; i < len(parts); i++ {
 		ancestor := strings.Join(parts[:i], "/")
 		info, err := root.Lstat(filepath.FromSlash(ancestor))
 		if err != nil {
-			return classifyStatError(repoPath, err)
+			return spellingOfExistingBeforeMissing(root, repoPath, i-1, classifyStatError(repoPath, err))
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			return unusableOnDiskError(repoPath, projectreadiness.CauseSymbolicLink, fmt.Sprintf("is reached through a symbolic link, %q", ancestor))
