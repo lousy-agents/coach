@@ -46,12 +46,15 @@ func TestAFileThatIsThereHasWorkInItWhenTheCommittedEntryCannotBeCompared(t *tes
 		"the entry is another object":        {gitrepo.TreeEntry{Mode: "100644", SHA: strings.Repeat("1", 40)}, true, true},
 	}
 	for name, c := range cases {
-		t.Run(name, func(t *testing.T) {
-			changed, err := differsOnDisk(runProjectConfigGit, repo, c.entry, c.found, "cfg/p.json")
+		t.Run(name, func(t *testing.T) { requireDiffersOnDisk(t, repo, c.entry, c.found, c.want) })
+	}
+}
 
-			if err != nil || changed != c.want {
-				t.Errorf("differsOnDisk = %v, %v; want %v", changed, err, c.want)
-			}
-		})
+func requireDiffersOnDisk(t *testing.T, repo string, entry gitrepo.TreeEntry, found, want bool) {
+	t.Helper()
+	changed, err := differsOnDisk(runProjectConfigGit, repo, entry, found, "cfg/p.json")
+
+	if err != nil || changed != want {
+		t.Errorf("differsOnDisk = %v, %v; want %v", changed, err, want)
 	}
 }

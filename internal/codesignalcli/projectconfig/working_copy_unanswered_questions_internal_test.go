@@ -24,18 +24,21 @@ func TestAFileWhoseCleanFilterFailsIsComparedByItsBytesAndTheFilterIsNotRun(t *t
 		"the committed copy as it is": {`{"bogus":1}`, true, ""},
 	}
 	for name, c := range cases {
-		t.Run(name, func(t *testing.T) {
-			repo := committedInvalidPolicy(t)
-			withARequiredCleanFilterThatFails(t, repo)
-			writeFile(t, repo, replacePath, c.content)
+		t.Run(name, func(t *testing.T) { requireSettledWithAFailingFilter(t, c.content, c.replace, c.cause) })
+	}
+}
 
-			settled := settledByTheWorkingCopy(runProjectConfigGit, repo, "HEAD", replacePath, invalidError(replacePath, "HEAD", "schema decode failed"))
+func requireSettledWithAFailingFilter(t *testing.T, content string, replace bool, cause projectreadiness.PolicyCause) {
+	t.Helper()
+	repo := committedInvalidPolicy(t)
+	withARequiredCleanFilterThatFails(t, repo)
+	writeFile(t, repo, replacePath, content)
 
-			var configErr *ConfigError
-			if !asConfigError(settled, &configErr) || configErr.ReplacesPolicy() != c.replace || configErr.PolicyCause != c.cause {
-				t.Errorf("settled = %v; want replacement offered = %v and the cause %q", settled, c.replace, c.cause)
-			}
-		})
+	settled := settledByTheWorkingCopy(runProjectConfigGit, repo, "HEAD", replacePath, invalidError(replacePath, "HEAD", "schema decode failed"))
+
+	var configErr *ConfigError
+	if !asConfigError(settled, &configErr) || configErr.ReplacesPolicy() != replace || configErr.PolicyCause != cause {
+		t.Errorf("settled = %v; want replacement offered = %v and the cause %q", settled, replace, cause)
 	}
 }
 
