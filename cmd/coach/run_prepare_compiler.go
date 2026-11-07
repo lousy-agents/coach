@@ -40,6 +40,7 @@ func prepareCompilerMiseTypeScript(dir string, stdin, stdout, stderr *os.File, p
 
 	readiness, err := projectcheck.Run(dir, revision, policy)
 	if err != nil {
+		err = wordBlobReadFailure(gitrepo.RunBytes, dir, err, "")
 		fmt.Fprintf(stderr, "%s: could not compute project readiness: %s\n", prepareCompilerMiseUsagePrefix, err)
 		return 3
 	}
