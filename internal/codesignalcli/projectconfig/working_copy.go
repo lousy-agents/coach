@@ -72,15 +72,19 @@ func inspectWorkingCopy(run gitrepo.Runner, dir, revision, repoPath string) (wor
 
 // differsOnDisk is whether the file in the working tree is anything but the committed copy: its bytes are compared with
 // the blob's, read through the repository root, and git is not asked for a diff, which would refresh and write the index,
-// run the repository's hook and filter, and take no notice of a file under a skip-worktree or assume-unchanged mark. A
-// file that is gone has no work in it; a file that cannot be understood, or a committed entry that is not a regular
-// blob, is taken to have some.
+// run the repository's hook and filter, and take no notice of a file under a skip-worktree or assume-unchanged mark.
+// Bytes that differ are the committed copy all the same when git's own conversion of the file for its path gives the
+// blob (a checkout that converted line endings). A file that is gone has no work in it; a file that cannot be
+// understood, or a committed entry that is not a regular blob, is taken to have some.
 func differsOnDisk(run gitrepo.Runner, dir string, committed gitrepo.TreeEntry, found bool, repoPath string) (bool, error) {
 	root, err := gitrepo.RepositoryRootWith(run, dir)
 	if err != nil || !worktreeHolds(root, repoPath) {
 		return false, err
 	}
-	return !found || !isRegularFileMode(committed.Mode) || !fileHoldsTheCommittedBlob(root, repoPath, committed.SHA), nil
+	if !found || !isRegularFileMode(committed.Mode) {
+		return true, nil
+	}
+	return !fileHoldsTheCommittedBlob(root, repoPath, committed.SHA) && !holdsTheCommittedBlobConverted(run, root, repoPath, committed.SHA), nil
 }
 
 // workingCopyOffer is the way out for a file with work in it: no replacement, and how to review what is there. A name

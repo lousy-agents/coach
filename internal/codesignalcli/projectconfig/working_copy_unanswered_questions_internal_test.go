@@ -65,8 +65,8 @@ func askingFor(subcommand string, containing ...string) func([]string) bool {
 
 // whollyFakeGit is the whole of git for inspectWorkingCopy: it answers each question the inspection asks, with the
 // committed copy found and held by the index as it is, and the repository's root where the file is, and fails the one
-// question named. The file differs from the committed copy because its bytes do not hash to the blob it names. Any
-// other question, a diff above all, is a failure of the test, so nothing is left to a real git.
+// question named. The file differs from the committed copy because neither its bytes nor its conversion hash to the
+// blob it names. Any other question, a diff above all, is a failure of the test, so nothing is left to a real git.
 type whollyFakeGit struct {
 	t       *testing.T
 	root    string
@@ -87,6 +87,10 @@ func (g whollyFakeGit) run(_ string, args ...string) ([]byte, error) {
 		return []byte("100644 blob 0123456789012345678901234567890123456789\t" + replacePath + "\x00"), nil
 	case "rev-parse":
 		return []byte(g.root + "\n"), nil
+	case "check-attr":
+		return []byte(replacePath + "\x00filter\x00unspecified\x00"), nil
+	case "hash-object":
+		return []byte(strings.Repeat("9", 40) + "\n"), nil
 	}
 	g.t.Errorf("a question the fake git does not know: git %s", strings.Join(args, " "))
 	return nil, errors.New("unexpected question")
