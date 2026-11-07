@@ -54,8 +54,9 @@ var _ = Describe("coach codesignal --check-project agrees with the scan about an
 	Describe("the uncommitted-changes warning", func() {
 		const noEffect = "had no effect on the checks above"
 
-		checkText := func(repo string) string {
-			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, pathWithoutNode(), "--baseline", "--check-project", "--project-language", "typescript", "--project-config", "del.json")
+		checkText := func(repo string, policy ...string) string {
+			named := append(policy, "del.json")[0]
+			stdout, stderr, exitCode := runCoachCheckProjectEnv(repo, pathWithoutNode(), "--baseline", "--check-project", "--project-language", "typescript", "--project-config", named)
 			ExpectWithOffset(1, exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
 			return string(stdout)
 		}
@@ -93,6 +94,20 @@ var _ = Describe("coach codesignal --check-project agrees with the scan about an
 			Expect(text).To(ContainSubstring(noEffect))
 			Expect(text).To(ContainSubstring("tsconfig.json"))
 			Expect(text).NotTo(MatchRegexp(`(?m)^\s+del\.json$`), "the explicit policy is not in the list:\n%s", text)
+		})
+
+		// The file's presence is what made the gap not_committed and not author_policy, so the check read it.
+		It("does not say an uncommitted explicit policy had no effect after naming it not_committed", func() {
+			repo := newTempGitRepo()
+			commitFile(repo, "a.txt", "x\n")
+			writeWorktreeFile(repo, "n.json", singleRootPolicyJSON)
+
+			text := checkText(repo, "n.json")
+			doc := expectCheckProject(repo, "--project-config", "n.json")
+
+			Expect(text).To(ContainSubstring("policy_missing cause=not_committed"))
+			Expect(text).NotTo(ContainSubstring(noEffect), "the check read this path from disk, so its presence had an effect:\n%s", text)
+			Expect(doc.DirtyWorktree.Paths).NotTo(ContainElement("n.json"), "the policy the check read is not listed as unread")
 		})
 	})
 

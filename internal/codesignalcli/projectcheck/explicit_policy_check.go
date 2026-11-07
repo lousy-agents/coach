@@ -83,6 +83,8 @@ func checkPolicyOnDisk(dir, revision, policyPath string) (projectreadiness.Check
 		}
 		check = check.WithCause(message, cause)
 		check.Code = codeForUncommittedCause(cause)
+		// The file's presence made the gap this one and not a missing policy to author, so the check read it.
+		check.DecidedOnDisk = true
 	}
 	return check, roots, err
 }
