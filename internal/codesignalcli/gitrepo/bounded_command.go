@@ -29,9 +29,9 @@ type BoundError struct {
 	Kind    BoundErrorKind
 }
 
-// ReadCommandContext builds a git child that starts with the arguments every
-// read of this package starts with. A caller that varies only the child's
-// environment builds on it, so its reads inherit the same hardening.
+// ReadCommandContext builds a git child that starts with the arguments and the environment every read of
+// this package starts with. A caller outside the package that needs a child (revisionfs's snapshot reads)
+// takes it as it is and does not set its Env, so all of the scan's reads see the repository alike.
 func ReadCommandContext(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	return gitCommand(ctx, dir, args...)
 }
@@ -45,8 +45,7 @@ var commandContext = ReadCommandContext
 // RunBytesBoundedWith is the shared bounded-git-read implementation
 // behind RunBytesBounded: a wall-time limit, hard stdout/stderr caps, and
 // concurrent pipe draining. buildCmd is the child-construction seam, letting
-// callers vary command/environment construction (e.g. revisionfs's
-// sanitized-environment snapshot reads) without duplicating this I/O logic.
+// a caller (or a test) supply the child without duplicating this I/O logic.
 func RunBytesBoundedWith(buildCmd func(ctx context.Context, dir string, args ...string) *exec.Cmd, dir string, maxStdout, maxStderr int64, timeout time.Duration, args ...string) ([]byte, error) {
 	if err := validateGitReadBounds(timeout, maxStdout, maxStderr); err != nil {
 		return nil, err
