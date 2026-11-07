@@ -33,14 +33,15 @@ When the working tree decides, `--check-project` marks the policy check as decid
 | Option | Effect | Verdict |
 | --- | --- | --- |
 | Revision only (the previous convention) | Reproducible from the commit. A file deleted or swapped on disk is invisible to the scan | Rejected: the user is told about a policy that is not the one in front of them |
-| Disk only | A scan of a non-HEAD revision judges the working tree, and CI on a sparse checkout cannot run | Rejected: breaks `--base` and reproducibility |
+| Disk only | A scan of a non-HEAD revision judges the working tree | Rejected: breaks `--base` and reproducibility |
 | Refuse on any dirty policy | Strictest, but turns an uncommitted edit into a hard failure, which `--check-project` and the dirty-worktree disclosure already report without one | Rejected: the disclosure exists for this |
 | Disk for existence and kind, revision for content (chosen) | Catches the file that is gone or unusable, keeps the content reproducible; discovery keeps reading the revision, and refuses a policy it holds in the wrong case or as the wrong kind of entry | Chosen |
 
 ## Consequences
 
+- A sparse checkout that leaves the explicit policy out of the working tree: the scan exits `2` (the cause is `sparse_checkout`, and the message says to add the policy's directory to the sparse checkout), where the scan before this convention read the committed copy and exited `0`. A CI job on a sparse checkout that passes `--project-config` therefore needs the policy's directory in the checkout. This is the cost the "disk only" option was also given; the chosen option has it for the path the user names, and only for that path.
 - A scan of a non-HEAD revision (`--base`) still reads the policy at that revision, but fails if the path is not a usable file on disk now. A reproducible scan of an old revision needs a checkout where the explicit path exists.
 - `--check-project` carries a `restore_policy` next action beside `author_policy`, so a policy committed and then deleted is restored rather than rewritten. A scan prints the restore command in its error message; `--check-project` prints no command, in text or in JSON, and only names the action (`restore_policy`, never executable). Coach never runs it.
 - Other lousy-agents tools adopt the same split for their own explicit flag, or state that they do not. Until one does, the convention document describes the split and the tools keep their own behavior.
 - The probe lives in `projectconfig`, which ADR-007 places in the model layer. Moving it to a driven adapter is tracked in [coach#613](https://github.com/lousy-agents/coach/issues/613).
-- `configExistsInWorktree`, used for the discovered path, still follows symbolic links without root containment. Aligning it is tracked in [coach#615](https://github.com/lousy-agents/coach/issues/615).
+- The discovered canonical path is now asked with the same probe (a regular file reached without a link that the process can open), so the scan says `project_config_unusable` where it used to say "not committed" for a directory or a link. `configExistsInWorktree` still follows symbolic links without root containment for the legacy root `project.json`. Aligning it is tracked in [coach#615](https://github.com/lousy-agents/coach/issues/615).
