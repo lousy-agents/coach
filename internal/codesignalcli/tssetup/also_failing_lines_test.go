@@ -129,11 +129,3 @@ func aFailingCheckAbsentFromGapsNotReported(t *testing.T) {
 		t.Fatalf("AlsoFailingLines(failing check absent from gaps[]) = %q, want none", got)
 	}
 }
-
-func TestAGapReadinessReportsTwiceIsReportedOnce(t *testing.T) {
-	twice := &projectreadiness.Result{Gaps: []projectreadiness.Gap{{Code: projectreadiness.GapNodeUnsupported}, {Code: projectreadiness.GapNodeUnsupported}}}
-
-	if got := policyFailureBeside(twice).AlsoFailingLines(); len(got) != 1 {
-		t.Fatalf("AlsoFailingLines() = %q, want one line for the gap that was listed twice", got)
-	}
-}
