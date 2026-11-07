@@ -47,7 +47,7 @@ func theUsersWorkEntries() []TableEntry {
 			stageConflicting(repo, policy, 2, 3)
 			writeWorktreeFile(repo, policy, conflictedMarkers)
 			return conflictedMarkers
-		}, []string{"merge conflict", "resolve the conflict markers"}, "merge_conflict"}),
+		}, []string{"merge conflict", "resolve the conflict in it, mark it resolved, and commit it"}, "merge_conflict"}),
 	}
 }
 
@@ -66,7 +66,8 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, wit
 			for _, words := range work.wantWords {
 				Expect(string(stderr)).To(ContainSubstring(words), "stderr:\n%s", stderr)
 			}
-			Expect(string(stderr)).NotTo(ContainSubstring("mv -f"), "the move would replace the work in the file:\n%s", stderr)
+			expectNoRunnableCommand(string(stderr))
+			Expect(string(stderr)).NotTo(ContainSubstring("replace the policy with it"), "a replacement would discard the work in the file:\n%s", stderr)
 			content, err := os.ReadFile(filepath.Join(repo, policy))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(content)).To(Equal(onDisk), "the user's bytes survive what Coach printed")
@@ -88,7 +89,8 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid, wit
 		_, second := scanExpectingRefusal(repo, "--project-config", policy)
 		pasteWhatCoachPrints(repo, second)
 
-		Expect(string(second)).NotTo(ContainSubstring("mv -f"), "stderr:\n%s", second)
+		expectNoRunnableCommand(string(second))
+		Expect(string(second)).NotTo(ContainSubstring("replace the policy with it"), "a replacement would discard the layers the user added:\n%s", second)
 		content, err := os.ReadFile(filepath.Join(repo, policy))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(content)).To(Equal(validPolicyWithLayers), "the layers the user added survive")

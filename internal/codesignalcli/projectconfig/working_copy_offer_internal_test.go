@@ -35,7 +35,7 @@ func TestAStagedEditAndAConflictAreToldAsSuch(t *testing.T) {
 			writeFile(t, repo, replacePath, validPolicy)
 			stage(t, repo, replacePath)
 		}, projectreadiness.CauseStagedEdit, "git diff --cached -- ':(top,literal)cfg/p.json'"},
-		"a conflict": {func(t *testing.T, repo string) { recordAConflict(t, repo, replacePath) }, projectreadiness.CauseMergeConflict, "resolve the conflict markers in it, and git add it"},
+		"a conflict": {func(t *testing.T, repo string) { recordAConflict(t, repo, replacePath) }, projectreadiness.CauseMergeConflict, "resolve the conflict in it, mark it resolved, and commit it"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) { requireTheWorkCause(t, c.arrange, c.cause, c.words) })

@@ -99,7 +99,7 @@ func workingCopyOffer(state workingCopy, revision, repoPath string) restoreOffer
 		return restoreOffer{
 			remedy: projectreadiness.RemedyNone,
 			cause:  projectreadiness.CauseMergeConflict,
-			text:   ". The index holds an unresolved merge conflict for it, and a replacement would mark it resolved with content from neither side, so none is offered; resolve the conflict markers in it, and git add it, then commit it",
+			text:   ". The index holds an unresolved merge conflict for it, and a replacement would mark it resolved with content from neither side, so none is offered; resolve the conflict in it, mark it resolved, and commit it",
 		}
 	}
 	return restoreOffer{
