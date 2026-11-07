@@ -8,6 +8,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // checkExplicitPolicy is checkPolicy for a path the user named with
@@ -33,7 +34,7 @@ func RunAfterPolicyError(dir, revision string, policy policyref.Ref, failure *pr
 // runAfterPolicyErrorBy is RunAfterPolicyError with the git that answers given by the caller.
 func runAfterPolicyErrorBy(run gitrepo.Runner, dir, revision string, policy policyref.Ref, failure *projectconfig.ConfigError) (*projectreadiness.Result, error) {
 	if !policy.JudgedOnDisk() {
-		return runBy(run, dir, revision, policy)
+		return runBy(run, tstoolchain.LocateMiseTypescriptInstall, dir, revision, policy)
 	}
 	check := func(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
 		if failure != nil && failure.FromWorkingTree {
@@ -41,7 +42,7 @@ func runAfterPolicyErrorBy(run gitrepo.Runner, dir, revision string, policy poli
 		}
 		return explicitPolicyCheck(run, nil, dir, revision, policyPath)
 	}
-	result, err := evaluate(run, dir, revision, policy, check)
+	result, err := evaluate(run, tstoolchain.LocateMiseTypescriptInstall, dir, revision, policy, check)
 	if err != nil {
 		return nil, err
 	}

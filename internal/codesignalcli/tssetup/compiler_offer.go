@@ -12,6 +12,7 @@ import (
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // CompilerSetupOfferResult is RunCompilerSetupOffer's outcome: the
@@ -131,6 +132,12 @@ type CompilerSetupOfferResult struct {
 // RunPrepareCompilerMiseSetup's own precondition: a reviewed, committed
 // policy is required before compiler setup is ever offered (AC-SET-13).
 func RunCompilerSetupOffer(ctx context.Context, dir, revision string, policy policyref.Ref, gapCode string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) CompilerSetupOfferResult {
+	return runCompilerSetupOfferWith(tstoolchain.LocateMiseTypescriptInstall, ctx, dir, revision, policy, gapCode, readiness, in, out)
+}
+
+// runCompilerSetupOfferWith is RunCompilerSetupOffer with the locator that finds the compiler mise installed given by the
+// caller: the install verifies the compiler through it, and so does the readiness recheck after it.
+func runCompilerSetupOfferWith(locate tstoolchain.MiseLocator, ctx context.Context, dir, revision string, policy policyref.Ref, gapCode string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) CompilerSetupOfferResult {
 	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
 		return CompilerSetupOfferResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy, CauseText: readiness.Checks.Policy.CauseText}
 	}
@@ -175,7 +182,7 @@ func RunCompilerSetupOffer(ctx context.Context, dir, revision string, policy pol
 	if choice == ChoiceProjectPackage {
 		return runProjectPackageSetupOffer(ctx, dir, revision, policy, projectPackageDirectory, readiness.Checks.PackageManager, out, reader)
 	}
-	return runMiseSetupOffer(ctx, dir, revision, policy, choice, out, reader)
+	return runMiseSetupOffer(locate, ctx, dir, revision, policy, choice, out, reader)
 }
 
 // menuOffersExecutableChoice reports whether menu carries at least one

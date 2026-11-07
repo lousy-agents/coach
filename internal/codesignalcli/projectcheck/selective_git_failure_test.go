@@ -12,6 +12,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 const packageManifestBlob = "100644 blob 0123456789012345678901234567890123456789\tpackage.json\x00"
@@ -153,7 +154,7 @@ func TestACommittedPolicyThatCannotBeLookedUpStopsTheRelevanceOfTheDirtyWorktree
 		return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyInvalid}, nil, nil
 	}
 
-	result, err := evaluate(run, repo, "HEAD", policyref.Named("cfg/p.json"), refused)
+	result, err := evaluate(run, tstoolchain.LocateMiseTypescriptInstall, repo, "HEAD", policyref.Named("cfg/p.json"), refused)
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) {

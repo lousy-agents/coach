@@ -55,16 +55,14 @@ func stubNodeOnPath(t *testing.T, version string) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
-// stubMiseThatInstallsTypescript makes `mise install` put the compiler where the post-install
-// recheck looks for it, as the existing install test does, and gives the flow a supported node.
-func stubMiseThatInstallsTypescript(t *testing.T) {
+// stubMiseThatInstallsTypescript makes `mise install` put the compiler where the locator it returns looks for it, which
+// is the locator the post-install recheck is given, as the existing install test does, and gives the flow a supported node.
+func stubMiseThatInstallsTypescript(t *testing.T) tstoolchain.MiseLocator {
 	t.Helper()
 	stubNodeOnPath(t, "v24.9.9")
 	installDir := notYetInstalledDir(t)
 	writeStatefulStubMiseOnPath(t, installDir, "7.0.2")
-	originalLocate := tstoolchain.LocateMiseTypescriptInstall
-	t.Cleanup(func() { tstoolchain.LocateMiseTypescriptInstall = originalLocate })
-	tstoolchain.LocateMiseTypescriptInstall = locateInstalledTypescriptUnder(installDir)
+	return locateInstalledTypescriptUnder(installDir)
 }
 
 func requirePolicyAndCompilerAfterInstall(t *testing.T, flow string, post *projectreadiness.Result) {

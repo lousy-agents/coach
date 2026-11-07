@@ -26,11 +26,10 @@ func writeFakeCompilerInstall(t *testing.T, root, version string) string {
 	return compilerDir
 }
 
-func stubMiseInstall(t *testing.T, version, compilerDir string) {
-	t.Helper()
-	original := LocateMiseTypescriptInstall
-	t.Cleanup(func() { LocateMiseTypescriptInstall = original })
-	LocateMiseTypescriptInstall = func(_ context.Context, requested string) (string, bool) {
+// miseInstalling is a locator that finds the compiler of version in compilerDir, as if mise had installed it there, and
+// nothing for any other version.
+func miseInstalling(version, compilerDir string) MiseLocator {
+	return func(_ context.Context, requested string) (string, bool) {
 		if requested == version {
 			return compilerDir, true
 		}

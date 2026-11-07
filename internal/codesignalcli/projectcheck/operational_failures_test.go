@@ -12,6 +12,7 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
+	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
 
 // aMissingPolicy is the check of a policy that is not there: it fails, and finds no roots.
@@ -39,7 +40,7 @@ func TestAFailedPolicyLeavesThePackageManagerNotChecked(t *testing.T) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "package-lock.json", `{"lockfileVersion":3,"packages":{}}`)
 
-	result, err := evaluate(readinessGit(), repo, "HEAD", policyref.Discovered(""), aMissingPolicy)
+	result, err := evaluate(readinessGit(), tstoolchain.LocateMiseTypescriptInstall, repo, "HEAD", policyref.Discovered(""), aMissingPolicy)
 
 	if err != nil || result.Checks.PackageManager.State != projectreadiness.NotChecked {
 		t.Errorf("package_manager = %+v, %v; want not_checked: no policy root justifies the worktree-root fallback", result.Checks.PackageManager, err)

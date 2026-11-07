@@ -13,14 +13,14 @@ import (
 )
 
 func TestPrepareCompilerMiseSetupRechecksTheNamedPolicyAfterTheInstall(t *testing.T) {
-	stubMiseThatInstallsTypescript(t)
+	locate := stubMiseThatInstallsTypescript(t)
 	repo, revision := namedPolicyRepo(t)
 	readiness := readinessWithPrepareCompilerAction(projectreadiness.NextAction{
 		Kind: projectreadiness.NextActionPrepareCompiler, Executable: true, Choices: []string{tstoolchain.OriginMiseProject},
 	})
 	var transcript bytes.Buffer
 
-	result := RunPrepareCompilerMiseSetup(context.Background(), repo, revision, policyref.Named(namedPolicyPath), readiness, strings.NewReader("mise_project\ninstall\n"), &transcript)
+	result := runPrepareCompilerMiseSetupWith(locate, context.Background(), repo, revision, policyref.Named(namedPolicyPath), readiness, strings.NewReader("mise_project\ninstall\n"), &transcript)
 
 	if !result.Succeeded {
 		t.Fatalf("the install did not succeed: %+v\n%s", result, transcript.String())
@@ -29,10 +29,10 @@ func TestPrepareCompilerMiseSetupRechecksTheNamedPolicyAfterTheInstall(t *testin
 }
 
 func TestCompilerSetupOfferRechecksTheNamedPolicyAfterAMiseInstall(t *testing.T) {
-	stubMiseThatInstallsTypescript(t)
+	locate := stubMiseThatInstallsTypescript(t)
 	repo, revision := namedPolicyRepo(t)
 	named := policyref.Named(namedPolicyPath)
-	before, err := projectcheck.Run(repo, revision, named)
+	before, err := projectcheck.RunWithLocator(locate, repo, revision, named)
 	if err != nil {
 		t.Fatalf("projectcheck.Run: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestCompilerSetupOfferRechecksTheNamedPolicyAfterAMiseInstall(t *testing.T)
 	}
 	var transcript bytes.Buffer
 
-	result := RunCompilerSetupOffer(context.Background(), repo, revision, named, projectreadiness.GapTypescriptCompilerMissing, before, strings.NewReader("project_mise\ninstall\n"), &transcript)
+	result := runCompilerSetupOfferWith(locate, context.Background(), repo, revision, named, projectreadiness.GapTypescriptCompilerMissing, before, strings.NewReader("project_mise\ninstall\n"), &transcript)
 
 	if !result.Succeeded {
 		t.Fatalf("the install did not succeed: %+v\n%s", result, transcript.String())
@@ -50,7 +50,7 @@ func TestCompilerSetupOfferRechecksTheNamedPolicyAfterAMiseInstall(t *testing.T)
 }
 
 func TestMiseChoicesForPrepareCompilerAreSizedAgainstTheNamedPolicysRoots(t *testing.T) {
-	stubMiseThatInstallsTypescript(t)
+	_ = stubMiseThatInstallsTypescript(t)
 	repo, revision := namedPolicyRepoWithTwoRoots(t)
 	namedRoots := []string{"packages/a", "packages/b"}
 	want := verifiedMiseChoiceKinds(tstoolchain.EvaluateMiseSetupChoices(repo, namedRoots))

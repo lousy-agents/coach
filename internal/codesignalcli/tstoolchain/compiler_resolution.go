@@ -19,7 +19,12 @@ const (
 )
 
 func ResolveCompiler(dir string, roots []string) projectreadiness.Check {
-	return compilerCheckFromAggregate(EvaluateOrigins(dir, roots))
+	return ResolveCompilerWith(LocateMiseTypescriptInstall, dir, roots)
+}
+
+// ResolveCompilerWith is ResolveCompiler with the locator that finds a compiler mise installed given by the caller.
+func ResolveCompilerWith(locate MiseLocator, dir string, roots []string) projectreadiness.Check {
+	return compilerCheckFromAggregate(EvaluateOriginsWith(locate, dir, roots))
 }
 
 const (
@@ -57,7 +62,11 @@ func compilerUnresolved(code string) *CompilerUnresolvedError {
 }
 
 func ResolveCompilerForRuntime(dir string, roots []string) (CompilerResolution, error) {
-	aggregate := EvaluateOrigins(dir, roots)
+	return resolveCompilerForRuntimeWith(LocateMiseTypescriptInstall, dir, roots)
+}
+
+func resolveCompilerForRuntimeWith(locate MiseLocator, dir string, roots []string) (CompilerResolution, error) {
+	aggregate := EvaluateOriginsWith(locate, dir, roots)
 	code, findings := compilerOutcomeFromAggregate(aggregate)
 	if code != "" {
 		return CompilerResolution{}, &CompilerUnresolvedError{Code: code, RootFindings: findings}

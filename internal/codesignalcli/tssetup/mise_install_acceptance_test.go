@@ -58,13 +58,11 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 	var (
 		originalProbeVersion func(context.Context) (string, bool)
 		originalGlobalHazard func(context.Context) bool
-		originalLocate       func(context.Context, string) (string, bool)
 	)
 
 	BeforeEach(func() {
 		originalProbeVersion = tstoolchain.ProbeMiseToolVersion
 		originalGlobalHazard = tstoolchain.ProbeMiseGlobalConfigHazard
-		originalLocate = tstoolchain.LocateMiseTypescriptInstall
 		tstoolchain.ProbeMiseToolVersion = func(context.Context) (string, bool) { return "2026.9.5 linux-x64 (2026-09-10)", true }
 		tstoolchain.ProbeMiseGlobalConfigHazard = func(context.Context) bool { return false }
 	})
@@ -72,7 +70,6 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 	AfterEach(func() {
 		tstoolchain.ProbeMiseToolVersion = originalProbeVersion
 		tstoolchain.ProbeMiseGlobalConfigHazard = originalGlobalHazard
-		tstoolchain.LocateMiseTypescriptInstall = originalLocate
 	})
 
 	Context("refuses before ever attempting install", func() {
@@ -81,7 +78,7 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 				repo := GinkgoT().TempDir()
 				Expect(os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n\n[hooks]\npostinstall = \"echo pwned\"\n"), 0o644)).To(Succeed())
 
-				result := installMiseTypescriptProject(context.Background(), repo, "7.0.2")
+				result := installMiseTypescriptProject(tstoolchain.LocateMiseTypescriptInstall, context.Background(), repo, "7.0.2")
 				Expect(result.Trusted).To(BeFalse(), "a hazardous project mise.toml must refuse before ever running mise: %+v", result)
 				Expect(result.Attempted).To(BeFalse(), "an untrusted scope must never attempt mise install: %+v", result)
 				Expect(result.Code).To(Equal(projectreadiness.GapPackageManagerConfigUnverifiable))
@@ -96,7 +93,7 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 				nonexistentTemp := filepath.Join(GinkgoT().TempDir(), "does-not-exist")
 				GinkgoT().Setenv("TMPDIR", nonexistentTemp)
 
-				result := installMiseTypescriptProject(context.Background(), repo, "7.0.2")
+				result := installMiseTypescriptProject(tstoolchain.LocateMiseTypescriptInstall, context.Background(), repo, "7.0.2")
 				Expect(result.Trusted).To(BeTrue(), "the trust gate itself never touches the working directory: %+v", result)
 				Expect(result.Attempted).To(BeFalse(), "the install subprocess must never start when insulation could not be established: %+v", result)
 				Expect(result.Observed).To(BeFalse(), "%+v", result)
@@ -113,14 +110,14 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 
 				installDir := GinkgoT().TempDir()
 				writeFakeInstalledTypescript(installDir, "7.0.2")
-				tstoolchain.LocateMiseTypescriptInstall = func(context.Context, string) (string, bool) {
+				locate := func(context.Context, string) (string, bool) {
 					return filepath.Join(installDir, "node_modules", "typescript"), true
 				}
 
 				repo := GinkgoT().TempDir()
 				Expect(os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644)).To(Succeed())
 
-				result := installMiseTypescriptProject(context.Background(), repo, "7.0.2")
+				result := installMiseTypescriptProject(locate, context.Background(), repo, "7.0.2")
 				Expect(result.Trusted).To(BeTrue(), "%+v", result)
 				Expect(result.Attempted).To(BeTrue(), "%+v", result)
 				Expect(result.Succeeded).To(BeTrue(), "expected the freshly-installed compiler to classify as eligible: %+v", result)
@@ -137,11 +134,11 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 
 				installDir := GinkgoT().TempDir()
 				writeFakeInstalledTypescript(installDir, "7.0.2")
-				tstoolchain.LocateMiseTypescriptInstall = func(context.Context, string) (string, bool) {
+				locate := func(context.Context, string) (string, bool) {
 					return filepath.Join(installDir, "node_modules", "typescript"), true
 				}
 
-				result := installMiseTypescriptGlobal(context.Background(), "7.0.2")
+				result := installMiseTypescriptGlobal(locate, context.Background(), "7.0.2")
 				Expect(result.Trusted).To(BeTrue(), "%+v", result)
 				Expect(result.Attempted).To(BeTrue(), "%+v", result)
 				Expect(result.Succeeded).To(BeTrue(), "expected the freshly-installed compiler to classify as eligible: %+v", result)
@@ -157,7 +154,7 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 				repo := GinkgoT().TempDir()
 				Expect(os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644)).To(Succeed())
 
-				result := installMiseTypescriptProject(context.Background(), repo, "7.0.2")
+				result := installMiseTypescriptProject(tstoolchain.LocateMiseTypescriptInstall, context.Background(), repo, "7.0.2")
 				Expect(result.Trusted).To(BeTrue(), "%+v", result)
 				Expect(result.Attempted).To(BeTrue(), "expected the subprocess to have actually started: %+v", result)
 				Expect(result.Observed).To(BeTrue(), "a non-zero exit is still an observed outcome -- only a timeout or output-budget overflow leaves Observed false: %+v", result)
@@ -172,14 +169,14 @@ var _ = Describe("mise npm-backend install command construction: trust gate and 
 				stubDir := writeNoOpStubMise()
 				GinkgoT().Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-				tstoolchain.LocateMiseTypescriptInstall = func(context.Context, string) (string, bool) {
+				locate := func(context.Context, string) (string, bool) {
 					return "", false
 				}
 
 				repo := GinkgoT().TempDir()
 				Expect(os.WriteFile(filepath.Join(repo, "mise.toml"), []byte("[tools]\n\"npm:typescript\" = \"7.0.2\"\n"), 0o644)).To(Succeed())
 
-				result := installMiseTypescriptProject(context.Background(), repo, "7.0.2")
+				result := installMiseTypescriptProject(locate, context.Background(), repo, "7.0.2")
 				Expect(result.Trusted).To(BeTrue(), "%+v", result)
 				Expect(result.Attempted).To(BeTrue(), "expected the subprocess to have actually started: %+v", result)
 				Expect(result.Observed).To(BeTrue(), "the stub mise exits 0 immediately, so the outcome must be observed: %+v", result)
@@ -282,7 +279,7 @@ func classifiesFreshlyInstalledCompilerEligibleNotMerely() {
 	}
 	freshMiseInstallEnv()
 
-	result := installMiseTypescriptGlobal(context.Background(), "7.0.2")
+	result := installMiseTypescriptGlobal(tstoolchain.LocateMiseTypescriptInstall, context.Background(), "7.0.2")
 	Expect(result.Trusted).To(BeTrue(), "expected the fresh, hazard-free global mise scope to be trusted: %+v", result)
 	Expect(result.Attempted).To(BeTrue(), "expected a real `mise install` subprocess to actually run: %+v", result)
 	Expect(result.Succeeded).To(BeTrue(), "a real `mise install npm:typescript@7.0.2` must classify as compilerClassEligible, not merely exit zero -- coach#328 Finding 1: mise's own default npm backend does not hoist the platform-native optionalDependency package to the top-level location classifyCompilerCandidate expects unless something completes that hoisting: %+v", result)

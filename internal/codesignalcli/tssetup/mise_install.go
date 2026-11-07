@@ -190,12 +190,12 @@ type miseInstallResult struct {
 	Class      string
 }
 
-func installMiseTypescriptProject(ctx context.Context, worktreeRoot, version string) miseInstallResult {
-	return installMiseTypescript(ctx, tstoolchain.OriginMiseProject, version, tstoolchain.EvaluateMiseProjectTrust(ctx, worktreeRoot))
+func installMiseTypescriptProject(locate tstoolchain.MiseLocator, ctx context.Context, worktreeRoot, version string) miseInstallResult {
+	return installMiseTypescript(locate, ctx, tstoolchain.OriginMiseProject, version, tstoolchain.EvaluateMiseProjectTrust(ctx, worktreeRoot))
 }
 
-func installMiseTypescriptGlobal(ctx context.Context, version string) miseInstallResult {
-	return installMiseTypescript(ctx, tstoolchain.OriginMiseGlobal, version, tstoolchain.EvaluateMiseGlobalTrust(ctx))
+func installMiseTypescriptGlobal(locate tstoolchain.MiseLocator, ctx context.Context, version string) miseInstallResult {
+	return installMiseTypescript(locate, ctx, tstoolchain.OriginMiseGlobal, version, tstoolchain.EvaluateMiseGlobalTrust(ctx))
 }
 
 // installMiseTypescript runs the frozen row's command sequence: refuse
@@ -204,7 +204,7 @@ func installMiseTypescriptGlobal(ctx context.Context, version string) miseInstal
 // tstoolchain.ClassifyCandidate against a `mise where`-backed locator to confirm
 // the installed compiler is genuinely eligible rather than merely
 // exit-code-zero.
-func installMiseTypescript(ctx context.Context, origin, version string, trust tstoolchain.MiseTrust) miseInstallResult {
+func installMiseTypescript(locate tstoolchain.MiseLocator, ctx context.Context, origin, version string, trust tstoolchain.MiseTrust) miseInstallResult {
 	if !trust.Trusted {
 		return miseInstallResult{Code: trust.Code}
 	}
@@ -219,7 +219,7 @@ func installMiseTypescript(ctx context.Context, origin, version string, trust ts
 	}
 
 	candidate := tstoolchain.ClassifyCandidate(origin, func() (string, bool) {
-		return tstoolchain.LocateMiseTypescriptInstall(ctx, version)
+		return locate(ctx, version)
 	})
 	result.Origin = candidate.Origin
 	result.Version = candidate.Version

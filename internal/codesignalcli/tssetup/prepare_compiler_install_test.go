@@ -27,15 +27,13 @@ func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 
 	writeStatefulStubMiseOnPath(t, installDir, "7.0.2")
 
-	originalLocate := tstoolchain.LocateMiseTypescriptInstall
-	defer func() { tstoolchain.LocateMiseTypescriptInstall = originalLocate }()
-	tstoolchain.LocateMiseTypescriptInstall = locateInstalledTypescriptUnder(installDir)
+	locate := locateInstalledTypescriptUnder(installDir)
 
 	repo := gitfixture.Init(t)
 	revision := gitfixture.CommitFile(t, repo, "package.json", `{"name":"example","version":"1.0.0"}`+"\n")
 	writeProjectMiseTypescriptPin(t, repo, "7.0.2")
 
-	before, err := projectcheck.Run(repo, revision, policyref.Ref{})
+	before, err := projectcheck.RunWithLocator(locate, repo, revision, policyref.Ref{})
 	if err != nil {
 		t.Fatalf("CheckProjectReadiness (before): %v", err)
 	}
@@ -48,7 +46,7 @@ func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 	})
 	var transcript bytes.Buffer
 
-	result := RunPrepareCompilerMiseSetup(context.Background(), repo, revision, policyref.Ref{}, readiness, strings.NewReader("mise_project\ninstall\n"), &transcript)
+	result := runPrepareCompilerMiseSetupWith(locate, context.Background(), repo, revision, policyref.Ref{}, readiness, strings.NewReader("mise_project\ninstall\n"), &transcript)
 
 	if !result.Trusted {
 		t.Fatalf("Trusted = false, want true: %+v transcript=%s", result, transcript.String())
@@ -72,7 +70,7 @@ func TestRunPrepareCompilerMiseSetupInstallsAndReflectsOnRerun(t *testing.T) {
 		t.Fatalf("rerun compiler version = %q, want 7.0.2", result.PostInstallReadiness.Checks.Compiler.Version)
 	}
 
-	aggregate := tstoolchain.EvaluateOrigins(repo, nil)
+	aggregate := tstoolchain.EvaluateOriginsWith(locate, repo, nil)
 	if aggregate.Winner == nil {
 		t.Fatalf("evaluateCompilerOrigins winner is nil after a successful install")
 	}

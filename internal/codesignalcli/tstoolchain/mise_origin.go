@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-func evaluateMiseProjectOrigin(dir string) originEvaluation {
+func evaluateMiseProjectOrigin(locate MiseLocator, dir string) originEvaluation {
 	data, err := os.ReadFile(filepath.Join(dir, "mise.toml"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -21,23 +21,23 @@ func evaluateMiseProjectOrigin(dir string) originEvaluation {
 	case 0:
 		return noCandidateEvaluation(OriginMiseProject, ClassUnconfigured)
 	case 1:
-		return originEvaluation{candidate: ClassifyCandidate(OriginMiseProject, miseCompilerLocator(versions[0]))}
+		return originEvaluation{candidate: ClassifyCandidate(OriginMiseProject, miseCompilerLocator(locate, versions[0]))}
 	default:
 		return originEvaluation{conflict: true}
 	}
 }
 
-func evaluateMiseGlobalOrigin() originEvaluation {
+func evaluateMiseGlobalOrigin(locate MiseLocator) originEvaluation {
 	version, found := DetectGlobalMiseTypescriptVersion(context.Background())
 	if !found || !IsExactVersion(version) {
 		return noCandidateEvaluation(OriginMiseGlobal, ClassUnconfigured)
 	}
-	return originEvaluation{candidate: ClassifyCandidate(OriginMiseGlobal, miseCompilerLocator(version))}
+	return originEvaluation{candidate: ClassifyCandidate(OriginMiseGlobal, miseCompilerLocator(locate, version))}
 }
 
-func miseCompilerLocator(version string) func() (string, bool) {
+func miseCompilerLocator(locate MiseLocator, version string) func() (string, bool) {
 	return func() (string, bool) {
-		return LocateMiseTypescriptInstall(context.Background(), version)
+		return locate(context.Background(), version)
 	}
 }
 

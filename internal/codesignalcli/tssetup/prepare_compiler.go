@@ -129,6 +129,13 @@ func (r PrepareCompilerMiseResult) NeverStarted() bool {
 // the CLI caller, before readiness is even computed, mirroring
 // runAuthorProjectConfigTypeScript/authorProjectConfigTypeScript's split.
 func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision string, policy policyref.Ref, readiness *projectreadiness.Result, in io.Reader, out io.Writer) PrepareCompilerMiseResult {
+	return runPrepareCompilerMiseSetupWith(tstoolchain.LocateMiseTypescriptInstall, ctx, dir, revision, policy, readiness, in, out)
+}
+
+// runPrepareCompilerMiseSetupWith is RunPrepareCompilerMiseSetup with the locator that finds the compiler mise installed
+// given by the caller. The install verifies the compiler through it, and the readiness recheck after the install looks
+// through it as well, so a test hands in a locator that finds the compiler where its stand-in for mise put it.
+func runPrepareCompilerMiseSetupWith(locate tstoolchain.MiseLocator, ctx context.Context, dir, revision string, policy policyref.Ref, readiness *projectreadiness.Result, in io.Reader, out io.Writer) PrepareCompilerMiseResult {
 	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
 		return PrepareCompilerMiseResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy, CauseText: readiness.Checks.Policy.CauseText}
 	}
@@ -161,7 +168,7 @@ func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision string, poli
 		return PrepareCompilerMiseResult{Cancelled: true, Choice: choice}
 	}
 
-	installed := runSelectedMiseInstall(ctx, choice, worktreeRoot, version)
+	installed := runSelectedMiseInstall(locate, ctx, choice, worktreeRoot, version)
 	resultVersion := installed.Version
 	if resultVersion == "" {
 		resultVersion = version
@@ -182,18 +189,18 @@ func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision string, poli
 		return outcome
 	}
 
-	postInstall, err := projectcheck.Run(dir, revision, policy)
+	postInstall, err := projectcheck.RunWithLocator(locate, dir, revision, policy)
 	outcome.PostInstallReadiness = postInstall
 	outcome.PostInstallReadinessError = err
 	return outcome
 }
 
-func runSelectedMiseInstall(ctx context.Context, choice, worktreeRoot, version string) miseInstallResult {
+func runSelectedMiseInstall(locate tstoolchain.MiseLocator, ctx context.Context, choice, worktreeRoot, version string) miseInstallResult {
 	switch choice {
 	case tstoolchain.OriginMiseProject:
-		return installMiseTypescriptProject(ctx, worktreeRoot, version)
+		return installMiseTypescriptProject(locate, ctx, worktreeRoot, version)
 	case tstoolchain.OriginMiseGlobal:
-		return installMiseTypescriptGlobal(ctx, version)
+		return installMiseTypescriptGlobal(locate, ctx, version)
 	default:
 		return miseInstallResult{}
 	}
