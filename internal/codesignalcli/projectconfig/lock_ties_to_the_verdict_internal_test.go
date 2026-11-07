@@ -26,11 +26,12 @@ func lockTheIndex(t *testing.T, repo string) {
 	}
 }
 
-// The lock matters only for an offer that prints a restore. A staged edit is explained as a staged edit
-// whether or not another git process holds the index, because the restore is withheld for that reason and
-// the lock changes nothing about it. Going through judgeRestore, not a hand-built judgment, is what ties
-// the lock to the verdict: a lock read for every verdict would tell a user with a staged edit to wait.
-func TestALockedIndexDoesNotReplaceTheExplanationOfAStagedEdit(t *testing.T) {
+// The lock matters for an offer that prints a restore, and a staged edit's offer prints one: the command that
+// keeps the edit is git restore from the index, which takes the index lock and fails while another git process
+// holds it. So the lock is told first, and the staged edit is explained once it is gone. Going through
+// judgeRestore, not a hand-built judgment, is what ties the lock to the verdict: a lock read for every verdict
+// would tell a user whose offer prints no command to wait.
+func TestALockedIndexIsToldBeforeAStagedEditBecauseTheCommandThatKeepsItWouldFail(t *testing.T) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
 	writeFile(t, repo, "cfg/p.json", `{"staged":true}`)
@@ -43,8 +44,8 @@ func TestALockedIndexDoesNotReplaceTheExplanationOfAStagedEdit(t *testing.T) {
 	if err != nil || status == nil {
 		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want a missing-policy error", status, err)
 	}
-	if status.PolicyCause != projectreadiness.PolicyCause("staged_edit") || !strings.Contains(status.Message, "staged edit") {
-		t.Errorf("cause %q, message %q; want the staged edit explained, not the lock", status.PolicyCause, status.Message)
+	if status.PolicyCause != projectreadiness.CauseIndexLocked || strings.Contains(status.Message, "git restore") {
+		t.Errorf("cause %q, message %q; want the lock told and no command that would fail", status.PolicyCause, status.Message)
 	}
 }
 

@@ -94,6 +94,30 @@ var _ = Describe("coach codesignal: the commands printed for a policy whose inde
 		Expect(output).To(ContainSubstring(`"roots":["staged"]`), "the command must show the staged edit:\ncommand: %s\noutput: %s", command, output)
 	})
 
+	// Reviewing the staged edit is half of it: the message also says how to keep it. git restore with no source
+	// writes what the index holds, which is the staged content and not the committed copy, and it works from a
+	// subdirectory because the pathspec is anchored at the top.
+	It("keeps the staged edit, not the committed copy, when the printed restore from the index is run from a subdirectory", func() {
+		repo := commitScannableGoRepo()
+		commitFile(repo, policy, singleRootPolicyJSON)
+		const staged = `{"schema_version":"1","roots":["staged"]}` + "\n"
+		writeWorktreeFile(repo, policy, staged)
+		gitIn(repo, "add", policy)
+		removeTree(repo, "cfg")
+		subdirectory := filepath.Join(repo, "docs", "deeper")
+		Expect(os.MkdirAll(subdirectory, 0o755)).To(Succeed())
+
+		stderr := scanExplicitPolicy(repo, policy)
+		command := regexp.MustCompile(`git restore -- '[^']+'`).FindString(string(stderr))
+		Expect(command).NotTo(BeEmpty(), "the message says how to keep the staged edit:\n%s", stderr)
+		output, exitCode := runInShell(subdirectory, command)
+
+		Expect(exitCode).To(Equal(0), "the printed command must work when pasted from a subdirectory:\ncommand: %s\noutput: %s", command, output)
+		content, err := os.ReadFile(filepath.Join(repo, policy))
+		Expect(err).NotTo(HaveOccurred(), "the command must write the file")
+		Expect(string(content)).To(Equal(staged), "the staged edit comes back, and not the committed copy %q", singleRootPolicyJSON)
+	})
+
 	// The file is gone from disk (that is why the policy is missing), so a conflict cannot be resolved by editing
 	// it. The command the message prints brings it back with its conflict markers, and both sides' content with
 	// it; git add on the missing file would record a deletion and lose the other side.

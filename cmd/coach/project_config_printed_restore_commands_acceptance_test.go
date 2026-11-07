@@ -108,13 +108,15 @@ var _ = Describe("coach codesignal: the restore command printed for a missing ex
 			removeFromDisk(repo)
 		}, true, staged),
 
-		// not restorable, because a restore would discard, recreate or fail
+		// a restore from the index keeps the staged edit, where one from the commit would discard it
 		Entry("committed with a staged edit, then deleted", func(repo string) {
 			commitFile(repo, policy, singleRootPolicyJSON)
 			Expect(os.WriteFile(filepath.Join(repo, policy), []byte(staged), 0o644)).To(Succeed())
 			gitIn(repo, "add", policy)
 			removeFromDisk(repo)
-		}, false, ""),
+		}, true, staged),
+
+		// not restorable, because a restore would discard, recreate or fail
 		Entry("committed, marked skip-worktree, then deleted", func(repo string) {
 			commitFile(repo, policy, singleRootPolicyJSON)
 			gitIn(repo, "update-index", "--skip-worktree", policy)
