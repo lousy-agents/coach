@@ -26,30 +26,15 @@ func AnalyzeBaseline(ctx context.Context, dir, revisionSHA string, files []gitre
 	diagnostics := append([]codesignal.Diagnostic(nil), extraDiagnostics...)
 
 	for _, sf := range files {
-		headBytes, err := reader.Next(sf.Path)
+		fileChange, fileDiagnostics, err := analyzeBaselineFile(ctx, analyzer, reader, sf)
 		if err != nil {
-			failure, stalled := baselineReadFailure(sf.Path, err)
-			if stalled != nil {
-				return nil, stalled
-			}
-			diagnostics = append(diagnostics, failure...)
-			coverage.FilesUnanalyzable++
-			continue
+			return nil, err
 		}
-
-		headResult, headErr := analyzer.AnalyzeBytes(ctx, semantics.FileInput{Path: sf.Path, Language: sf.Language, Content: headBytes})
-		if headErr != nil && !errors.Is(headErr, semantics.ErrSyntax) {
-			diagnostics = append(diagnostics, mapSemanticsError(sf.Path, headErr))
-			coverage.FilesUnanalyzable++
-			continue
+		diagnostics = append(diagnostics, fileDiagnostics...)
+		if fileChange != nil {
+			fileChanges = append(fileChanges, *fileChange)
 		}
-
-		fileChanges = append(fileChanges, codesignal.FileChange{Path: sf.Path, SourceScope: sf.SourceScope, Head: headResult})
-		if headResult.ParseStatus == "ok" {
-			coverage.FilesAnalyzed++
-		} else {
-			coverage.FilesUnanalyzable++
-		}
+		coverage = countedBaselineFile(coverage, fileChange)
 	}
 
 	opts := codesignal.Options{Baseline: true}
