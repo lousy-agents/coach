@@ -106,6 +106,7 @@ var _ = Describe("coach codesignal (Go): a committed policy that is invalid or o
 
 		Expect(text).To(ContainSubstring("the scan names the way for Go only: a candidate written beside the file with `--suggest-project-config --output`, with words that say to compare it with the file, replace the file with it, commit and rerun, and no command to paste; for TypeScript it appends no line"))
 		Expect(text).NotTo(ContainSubstring("the move that puts it over the file"))
+		Expect(text).To(ContainSubstring("for a TypeScript policy that exists the text of the action is to fix the policy, or move it aside and commit the move, then run guided policy authoring, as `--prepare-compiler` says in its refusal"))
 	})
 
 	It("prints no command for a name that cannot be shown", func() {

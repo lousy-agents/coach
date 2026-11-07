@@ -20,7 +20,7 @@ func TestPolicyRequiredLineNamesOnlyTheRemedyReadinessNamed(t *testing.T) {
 		{"a committed policy whose name cannot be printed is restored without a command", projectreadiness.RemedyRestore, "bad\x1bname.json",
 			[]string{"restore_policy", "from git"}, []string{"git restore", "\x1b", "author_policy"}},
 		{"a policy that was never committed is authored", projectreadiness.RemedyAuthor, "pol.json",
-			[]string{"author_policy", "guided policy authoring"}, []string{"restore_policy", "git restore"}},
+			[]string{"run guided policy authoring first (author_policy)"}, []string{"restore_policy", "git restore", "cannot be used"}},
 		{"a policy a new file cannot fix names neither", projectreadiness.RemedyNone, "pol.json",
 			[]string{"(policy_missing)", "resolve the policy path first"}, []string{"restore_policy", "author_policy", "git restore"}},
 	}
