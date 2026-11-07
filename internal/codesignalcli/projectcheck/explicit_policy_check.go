@@ -14,14 +14,24 @@ import (
 // --project-config. A scan refuses such a path unless it is a regular file on
 // disk, so readiness must not pass the committed copy of one that is not.
 func checkExplicitPolicy(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
-	status, err := projectconfig.ExplicitOnDiskStatus(runReadinessGit, dir, revision, policyPath)
+	status, err := onDiskStatus(dir, revision, policyPath)
 	if err != nil {
 		return projectreadiness.Check{}, nil, err
 	}
-	if status != nil && status.GitFailure != nil {
-		return projectreadiness.Check{}, nil, unansweredQuestion(policyPath, status.GitFailure)
-	}
 	return explicitPolicyCheck(status, dir, revision, policyPath)
+}
+
+// onDiskStatus is what the working tree says about the policy path: nil for a regular file, the error that says
+// why not otherwise, and the operational error when git could not answer a question the verdict depends on.
+func onDiskStatus(dir, revision, policyPath string) (*projectconfig.ConfigError, error) {
+	status, err := projectconfig.ExplicitOnDiskStatus(runReadinessGit, dir, revision, policyPath)
+	if err != nil {
+		return nil, err
+	}
+	if status != nil && status.GitFailure != nil {
+		return nil, unansweredQuestion(policyPath, status.GitFailure)
+	}
+	return status, nil
 }
 
 // RunAfterPolicyError is Run for a caller that already holds failure, the error
