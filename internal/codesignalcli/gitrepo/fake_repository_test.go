@@ -1,6 +1,8 @@
 package gitrepo
 
 import (
+	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -22,6 +24,8 @@ type fakeRepository struct {
 	mergeBaseErr error
 	probes       map[string]probeAnswer
 	probed       []string
+	// mergeBaseAsked is the arguments of each merge-base question, so a test can see how the base was passed.
+	mergeBaseAsked [][]string
 }
 
 func (r *fakeRepository) run(_ string, args ...string) ([]byte, error) {
@@ -31,6 +35,7 @@ func (r *fakeRepository) run(_ string, args ...string) ([]byte, error) {
 	case "config":
 		return r.answerConfig(args)
 	case "merge-base":
+		r.mergeBaseAsked = append(r.mergeBaseAsked, args)
 		return r.answerMergeBase()
 	case "rev-list":
 		return r.answerProbe(args)
@@ -43,13 +48,28 @@ func (r *fakeRepository) answerConfig(args []string) ([]byte, error) {
 		return nil, r.configErr
 	}
 	answer := r.extension
-	if strings.Contains(strings.Join(args, " "), "--get-regexp") {
-		answer = r.promisors
+	if slices.Contains(args, "--get-regexp") {
+		answer = linesMatching(r.promisors, args[len(args)-1])
 	}
 	if answer == "" {
 		return nil, exitStatusOne
 	}
 	return []byte(answer), nil
+}
+
+// linesMatching is the lines of config, each "key value", whose key matches pattern: what git config
+// --get-regexp prints, so the pattern the code hands to git is the one that is evaluated. The value is a boolean
+// and holds no space, while a remote's name in the key may.
+func linesMatching(config, pattern string) string {
+	keys := regexp.MustCompile(pattern)
+	var matching strings.Builder
+	for _, line := range strings.Split(config, "\n") {
+		at := strings.LastIndex(line, " ")
+		if at > 0 && keys.MatchString(line[:at]) {
+			matching.WriteString(line + "\n")
+		}
+	}
+	return matching.String()
 }
 
 func (r *fakeRepository) answerMergeBase() ([]byte, error) {
