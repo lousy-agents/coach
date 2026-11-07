@@ -51,6 +51,8 @@ func (f indexFake) lsFilesAnswer(args []string) ([]byte, error) {
 		return f.entriesBelow(args), f.lsFilesErr
 	case !slices.Contains(args, "-t"):
 		return nil, nil
+	case f.entryListingErr != nil:
+		return nil, f.entryListingErr
 	}
 	return []byte(strings.ReplaceAll(f.lsFiles, askedPath, pathAskedAbout(args))), f.lsFilesErr
 }

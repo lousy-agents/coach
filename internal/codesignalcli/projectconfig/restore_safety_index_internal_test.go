@@ -41,6 +41,9 @@ type indexFake struct {
 	committedContent string
 	// showErr makes reading the committed content fail.
 	showErr error
+	// entryListingErr makes only the listing of the index entry at the path (ls-files --stage -t) fail, which real
+	// git cannot do apart from the other listings of the same index.
+	entryListingErr error
 	// catFileErr makes the check that the committed object is in the object store fail.
 	catFileErr error
 }
