@@ -40,10 +40,11 @@ func commitRunningCoachInHook(directory string, args []string, commit ...string)
 	return hookRun{stdout: read("stdout"), stderr: read("stderr"), exitCode: strings.TrimSpace(string(read("exit")))}
 }
 
-// git sets GIT_DIR, GIT_INDEX_FILE and GIT_WORK_TREE for a hook, and Coach removes them: it finds the
-// repository from the directory it is started in, which for a hook is the root of the work tree, and for a
-// linked worktree is that worktree and not the repository it was added from. The index it reads is the real one.
-var _ = Describe("coach codesignal run by a pre-commit hook reads the repository it was started in", func() {
+// git sets GIT_DIR, GIT_INDEX_FILE and GIT_WORK_TREE for a hook, and Coach reads them as v0.11.0 did, so it is
+// the repository git gave the hook that it scans: for a hook that is the one in the root of the work tree, and for
+// a linked worktree that worktree and not the repository it was added from. The index is the one git gave the
+// hook as well, which for a partial commit is git's temporary index and not the repository's own.
+var _ = Describe("coach codesignal run by a pre-commit hook reads the repository git gave it", func() {
 	scanArgs := []string{"codesignal", "--baseline", "--format=json", "--no-interactive"}
 
 	It("scans HEAD of the repository, in a commit that updates the index with -a", func() {
@@ -73,7 +74,10 @@ var _ = Describe("coach codesignal run by a pre-commit hook reads the repository
 		Expect(decodeCoachReport(run.stdout).Scope.Revision).To(Equal(worktreeHead))
 	})
 
-	It("reads the real index, so a staged edit that a partial commit leaves out is still disclosed", func() {
+	// The temporary index of a partial commit is a lock file, which Coach sees as a locked index. It offers neither
+	// a restore nor a new policy, so nothing it prints could discard the staged edit that the real index holds, but
+	// it does not disclose that edit either: it reads the index git gave the hook, not the repository's own.
+	It("follows git's temporary index in a partial commit, which is locked, so it offers no restore and no new policy", func() {
 		const policy = "cfg/p.json"
 		repo := commitScannableGoRepo()
 		commitFile(repo, policy, singleRootPolicyJSON)
@@ -85,7 +89,7 @@ var _ = Describe("coach codesignal run by a pre-commit hook reads the repository
 		run := commitRunningCoachInHook(repo, []string{"codesignal", "--baseline", "--project-config", policy, "--format=json", "--no-interactive"}, "-o", "a.go", "-m", "edit")
 
 		Expect(run.exitCode).To(Equal("2"), "stdout: %s\nstderr: %s", run.stdout, run.stderr)
-		Expect(string(run.stderr)).To(ContainSubstring("the index holds a staged edit to it that a restore would discard"), "stderr:\n%s", run.stderr)
+		Expect(string(run.stderr)).To(ContainSubstring("The index is locked"), "stderr:\n%s", run.stderr)
 		Expect(string(run.stderr)).NotTo(ContainSubstring("git restore"), "that restore would discard the staged edit:\n%s", run.stderr)
 	})
 })

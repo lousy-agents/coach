@@ -21,8 +21,8 @@ import (
 // GIT_LFS_SKIP_SMUDGE=1 tells git-lfs's filter to leave a pointer file as it is and fetch nothing. No read
 // here runs a smudge filter, so it is a second line of defence for one that slips in.
 //
-// The caller's settings that change what git reads or which repository it reads are removed first (see
-// ambientGitSettings), so the answers do not depend on them.
+// The caller's pathspec modes and GIT_CONFIG are removed first (see ambientGitSettings), so the answers do not
+// depend on them. The variables that say where the repository is are left as the caller set them.
 //
 // Every spawn goes through here, so a runner added later cannot start git without them.
 func gitCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
