@@ -11,20 +11,35 @@ import (
 // on a guess.
 
 func refuseWhenReadRevisionsLackObjects(run Runner, dir, base, version string) error {
-	revisions, err := revisionsRead(run, dir, base)
-	if err != nil {
-		return cannotTellWhatIsMissing(version, err)
-	}
+	revisions := revisionsRead(run, dir, base)
 	for _, revision := range revisions {
 		missing, err := missingObjectsOf(run, dir, revision.name)
 		if err != nil {
-			return cannotTellWhatIsMissing(version, err)
+			return unansweredProbe(run, dir, version, revision, err)
 		}
 		if missing.any() {
 			return lacksObjects(run, dir, version, revision, missing, revisionNames(revisions))
 		}
 	}
 	return nil
+}
+
+// unansweredProbe is a refusal only for a revision that exists. One that does not resolve (a HEAD with no commit
+// behind it, a directory that is no repository) is a read the scan never makes: it ends on the revision and says
+// why in its own words, as it does on a git that can be told not to fetch, and a message about the version of git
+// would send the reader to upgrade it for a failure an upgrade does not touch.
+func unansweredProbe(run Runner, dir, version string, revision readRevision, cause error) error {
+	if gitSaysItNamesNothing(run, dir, revision.name) {
+		return nil
+	}
+	return cannotTellWhatIsMissing(version, cause)
+}
+
+// gitSaysItNamesNothing is whether git finishes with a failure when asked to resolve name: an unborn HEAD, or no
+// repository to resolve it in. A git that did not finish, or could not be started, says nothing about it.
+func gitSaysItNamesNothing(run Runner, dir, name string) bool {
+	_, err := run(dir, "rev-parse", "--verify", "--quiet", name)
+	return gitRanAndFailed(err)
 }
 
 // lacksObjects words the refusal. The repository is called a partial clone only when the configuration Coach
@@ -35,14 +50,6 @@ func lacksObjects(run Runner, dir, version string, revision readRevision, missin
 		subject = "this repository is a partial clone, "
 	}
 	return &OperationalError{Message: fmt.Sprintf("%sgit %s cannot be told not to fetch missing objects, and %s has %s not in it, so reading it could run its remote's transport and write objects; %s", subject, version, revision.label, missing.phrase(), wayOut(FetchAdviceFor(run, dir, names...)))}
-}
-
-func revisionNames(revisions []readRevision) []string {
-	names := make([]string, len(revisions))
-	for i, revision := range revisions {
-		names[i] = revision.name
-	}
-	return names
 }
 
 // cannotTellWhatIsMissing is the refusal for a question the probe could not answer. Every question of the guard

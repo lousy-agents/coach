@@ -18,10 +18,6 @@ func TestRefuseMissingObjectsRefusesWhenItCannotTellWhatIsMissing(t *testing.T) 
 		{"the probe fails", fakeRepository{probes: map[string]probeAnswer{"HEAD": {err: errors.New("exit status 128: fatal: bad object HEAD")}}}, "", "bad object HEAD"},
 		{"the probe runs out of time", fakeRepository{probes: map[string]probeAnswer{"HEAD": {err: &BoundError{Kind: BoundTimeout, message: "git execution timed out after 30s"}}}}, "", "timed out"},
 		{"the probe prints what is not an object id", fakeRepository{probes: map[string]probeAnswer{"HEAD": {output: "0123456789012345678901234567890123456789 a.go\n"}}}, "", "a.go"},
-		{"the merge base cannot be found", fakeRepository{mergeBaseErr: errors.New("exit status 1")}, "origin/main", "exit status 1"},
-		{"the merge base is not an object id", fakeRepository{mergeBase: "--upload-pack=x"}, "origin/main", "--upload-pack=x"},
-		{"the merge base is an object id and then more", fakeRepository{mergeBase: mergeBaseSHA + " extra"}, "origin/main", "extra"},
-		{"the merge base is an object id that is too short", fakeRepository{mergeBase: mergeBaseSHA[1:]}, "origin/main", mergeBaseSHA[1:]},
 		{"the probe prints a bare object id, which git prints only without --quiet", fakeRepository{probes: map[string]probeAnswer{"HEAD": {output: firstMissing + "\n"}}}, "", firstMissing},
 		{"the probe prints an object id that something precedes", fakeRepository{probes: map[string]probeAnswer{"HEAD": {output: "x" + missingIDs(firstMissing)}}}, "", "x?"},
 	}
