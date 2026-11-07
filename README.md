@@ -276,7 +276,9 @@ except for the policy-candidate document on the guided-authoring path.
   neither. A revision that holds exactly the typed path is read whatever
   spelling the disk shows. A file renamed in case only and never committed under
   its new name is told to record the rename with `git mv`, because `git add`
-  records nothing for it. No new policy is offered. See the [CLI contract](./docs/cli-codesignal.md#commands).
+  records nothing for it; a rename already staged with `git mv` is told to
+  commit the file, because the index holds it and the move would fail. No new
+  policy is offered. See the [CLI contract](./docs/cli-codesignal.md#commands).
 - A policy Coach discovers (no `--project-config`) that is committed in another case
   than `.lousy-agents/coach.json`: the scan is refused, `--check-project` names
   `name_case_differs` and offers no new policy, and the message prints the
