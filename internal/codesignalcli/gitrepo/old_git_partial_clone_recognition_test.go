@@ -44,7 +44,7 @@ func TestAnOlderGitRefusesWhenItCannotTellWhichObjectsAreMissing(t *testing.T) {
 
 	err := refuseWhenReadRevisionsLackObjects(RunBytes, clone, "no-such-ref", olderThanTheInstruction)
 
-	if !strings.Contains(refusalText(err), "could not tell whether this partial clone has the objects Coach reads") {
+	if !strings.Contains(refusalText(err), "could not tell whether this repository has the objects Coach reads") {
 		t.Errorf("RefuseMissingObjects = %v; want a refusal for want of an answer, not a read on a guess", err)
 	}
 }
