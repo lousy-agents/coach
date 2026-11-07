@@ -53,7 +53,7 @@ The direction is enforced at two grains.
 
 | Ring (`.lousy-agents/coach.json`) | Trees |
 | --- | --- |
-| entities | `pkg/domain`, `pkg/semantics` |
+| entities | `pkg/domain`, `pkg/semantics`, `internal/gitpath` |
 | usecases | `pkg/usecases`, `pkg/codesignal`, `internal/agentloop` |
 | adapters | `internal/adapters`, `pkg/githubingest`, `pkg/projectmodel`, `internal/codesignalcli`, `internal/coachapi`, `internal/jsbridge`, `internal/projectbridge`, `internal/authn`, `internal/authz`, `internal/modelgateway`, `internal/rubrics`, `js/semantics` |
 | app | `cmd/coach`, `cmd/coach-api`, `cmd/coach-worker`, `cmd/semantics-json`, `cmd/codesignal-report` |
