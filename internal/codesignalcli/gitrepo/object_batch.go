@@ -15,6 +15,10 @@ import (
 type objectOutcome struct {
 	missing  []string
 	tooLarge []string
+	// unreadable are the objects git said were missing and named in an error: they are in the object store and
+	// damaged. said is what git printed about them.
+	unreadable []string
+	said       string
 }
 
 // readObjects asks one `git cat-file --batch` for each object in oids, in order, and hands the content of
@@ -62,6 +66,7 @@ func readObjects(dir string, oids []string, budget snapshotBudget, visit func(oi
 	if err := cmd.Wait(); err != nil {
 		return objectOutcome{}, boundedBy(ctx, budget.wall, fmt.Errorf("git cat-file --batch: %w: %s", err, TerminalSafe(strings.TrimSpace(stderr.String()))))
 	}
+	outcome.separateUnreadable(stderr.String())
 	return outcome, nil
 }
 

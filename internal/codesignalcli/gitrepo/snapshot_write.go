@@ -40,6 +40,9 @@ func writeSnapshotWithin(repositoryRoot, dir string, entries []snapshotEntry, to
 			return err
 		}
 	}
+	if len(outcome.unreadable) > 0 {
+		return &ObjectsUnreadableError{Count: len(outcome.unreadable), FirstPath: byObject[outcome.unreadable[0]][0].path, Said: outcome.said}
+	}
 	if len(outcome.missing) > 0 {
 		return &ObjectsNotLocalError{Count: len(outcome.missing), FirstPath: byObject[outcome.missing[0]][0].path}
 	}

@@ -42,3 +42,20 @@ func (e *ObjectsNotLocalError) Error() string {
 	}
 	return message
 }
+
+// ObjectsUnreadableError is the objects of a tree that the repository's object store holds and git cannot read:
+// damaged, not missing. A fetch of what the store lacks does not replace them, so no fetch is offered; the message
+// says what git said, and the check that finds the rest of the damage.
+type ObjectsUnreadableError struct {
+	Count     int
+	FirstPath string
+	Said      string
+}
+
+func (e *ObjectsUnreadableError) Error() string {
+	count, are := fmt.Sprintf("%d objects", e.Count), "they are"
+	if e.Count == 1 {
+		count, are = "1 object", "it is"
+	}
+	return fmt.Sprintf("the revision has %s that git cannot read; %s in the object store and damaged, not missing (the first is %q); git said: %s; check the repository with git fsck and restore the damaged objects from a good copy of it", count, are, e.FirstPath, e.Said)
+}
