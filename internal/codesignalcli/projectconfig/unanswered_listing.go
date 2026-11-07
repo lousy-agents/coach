@@ -1,11 +1,5 @@
 package projectconfig
 
-import (
-	"fmt"
-
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
-)
-
 // The question the revision's listing answers: whether the analyzed revision holds a policy's path in
 // another case. A policy is not called missing, uncommitted or renamed while it is unanswered.
 const listingQuestion = "whether the analyzed revision holds it in another case"
@@ -16,9 +10,4 @@ const listingQuestion = "whether the analyzed revision holds it in another case"
 // question git could not answer, so readiness reports an operational error and not a verdict about the policy.
 func unansweredListing(subject string, cause error) *ConfigError {
 	return unansweredQuestion(subject, newGitFailure(listingQuestion, cause))
-}
-
-// unansweredQuestion is unansweredListing for any question git left unanswered.
-func unansweredQuestion(subject string, failure *gitFailure) *ConfigError {
-	return &ConfigError{Kind: KindUnreadable, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseGitUnreadable, Message: fmt.Sprintf("coach codesignal: %s (project_config_invalid): Coach could not check %s, so it gives no advice", subject, failure.describe()), GitFailure: failure}
 }
