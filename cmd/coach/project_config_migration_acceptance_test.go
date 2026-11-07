@@ -3,6 +3,8 @@
 package main
 
 import (
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,21 +107,20 @@ var _ = Describe("coach project config migration", func() {
 		})
 	})
 
-	When("the customer accepts the copy and .lousy-agents cannot be created as a directory", func() {
-		It("emits project_config_migration_failed, leaves project.json unchanged, and still exits 0 at schema 2", func() {
+	When("the customer accepts the copy and the repository cannot be written to", func() {
+		It("emits project_config_migration_failed, creates nothing, and leaves project.json unchanged", func() {
+			if os.Geteuid() == 0 {
+				Skip("root writes to a read-only directory, so this state cannot be built")
+			}
 			repo := commitDeprecatedProjectConfigRepo()
-			before := readRepoFile(repo, legacyConfigPath)
-			blocker := []byte("not a directory\n")
-			Expect(os.WriteFile(filepath.Join(repo, ".lousy-agents"), blocker, 0o644)).To(Succeed())
+			Expect(os.Chmod(repo, 0o555)).To(Succeed())
+			DeferCleanup(func() { _ = os.Chmod(repo, 0o755) })
+			before := treeOf(repo)
 
 			stdout, stderr, exitCode := runMigrationBaselineOnTerminal(repo, projectConfigMigrationEnv(), "y\n")
 
 			Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
-			Expect(readRepoFile(repo, ".lousy-agents")).To(Equal(blocker), ".lousy-agents must stay the blocker file")
-			_, statErr := os.Stat(filepath.Join(repo, coachConfigPath))
-			Expect(statErr).To(HaveOccurred(), ".lousy-agents/coach.json must not exist when the parent is a file")
-			Expect(readRepoFile(repo, legacyConfigPath)).To(Equal(before))
-
+			Expect(treeOf(repo)).To(Equal(before), "a copy that failed left the worktree as it was")
 			report := decodeCoachReport(stdout)
 			Expect(report.SchemaVersion).To(Equal("2"))
 			expectDiagnosticKind(report, "project_config_deprecated", legacyConfigPath)
@@ -130,33 +131,7 @@ var _ = Describe("coach project config migration", func() {
 		})
 	})
 
-	When("the customer accepts the copy and .lousy-agents is a symlink to a real directory", func() {
-		It("emits project_config_migration_failed, creates no coach.json in the symlink target, and leaves project.json unchanged", func() {
-			repo := commitDeprecatedProjectConfigRepo()
-			before := readRepoFile(repo, legacyConfigPath)
-			target := filepath.Join(repo, "linked-agents")
-			Expect(os.Mkdir(target, 0o755)).To(Succeed())
-			Expect(os.Symlink(target, filepath.Join(repo, ".lousy-agents"))).To(Succeed())
-
-			stdout, stderr, exitCode := runMigrationBaselineOnTerminal(repo, projectConfigMigrationEnv(), "y\n")
-
-			Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
-			linkInfo, linkErr := os.Lstat(filepath.Join(repo, ".lousy-agents"))
-			Expect(linkErr).NotTo(HaveOccurred())
-			Expect(linkInfo.Mode()&os.ModeSymlink).NotTo(Equal(os.FileMode(0)), ".lousy-agents must remain the directory symlink")
-			_, statErr := os.Stat(filepath.Join(target, "coach.json"))
-			Expect(os.IsNotExist(statErr)).To(BeTrue(), "the symlink target must not receive coach.json, stat: %v", statErr)
-			Expect(readRepoFile(repo, legacyConfigPath)).To(Equal(before))
-
-			report := decodeCoachReport(stdout)
-			Expect(report.SchemaVersion).To(Equal("2"))
-			expectDiagnosticKind(report, "project_config_deprecated", legacyConfigPath)
-			failed, ok := diagnosticFor(report, "project_config_migration_failed", coachConfigPath)
-			Expect(ok).To(BeTrue(), "diagnostics: %+v", report.Diagnostics)
-			Expect(failed.Message).To(HavePrefix("Could not copy project.json to .lousy-agents/coach.json ("))
-			Expect(failed.Message).To(HaveSuffix("). Left both files unchanged."))
-		})
-	})
+	DescribeTable("offers no copy and changes nothing, whatever the answer, when the path holds", requireNoOfferWhereThePathIsOccupied, occupiedCanonicalEntries())
 
 	When("an uncommitted .lousy-agents/coach.json already exists beside a valid committed project.json", func() {
 		It("does not prompt and does not change the existing file", func() {
@@ -227,12 +202,6 @@ var _ = Describe("coach project config migration", func() {
 	})
 })
 
-func commitDeprecatedProjectConfigRepo() string {
-	repo := commitScannableGoRepo()
-	commitFile(repo, legacyConfigPath, singleRootPolicyJSON)
-	return repo
-}
-
 func projectConfigMigrationEnv(extra ...string) []string {
 	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME")}
 	return append(env, extra...)
@@ -257,20 +226,49 @@ func expectRepoFileAbsent(repo, name string) {
 	Expect(os.IsNotExist(err)).To(BeTrue(), "expected %s to be absent, stat: %v", name, err)
 }
 
-func expectDiagnosticKind(report *codesignal.Report, kind, path string) {
-	GinkgoHelper()
-	_, ok := diagnosticFor(report, kind, path)
-	Expect(ok).To(BeTrue(), "expected diagnostic %s at %s, got %+v", kind, path, report.Diagnostics)
-}
-
-func expectNoDiagnosticKind(report *codesignal.Report, kind string) {
-	GinkgoHelper()
-	Expect(report.Diagnostics).NotTo(ContainElement(HaveField("Kind", kind)), "diagnostics: %+v", report.Diagnostics)
-}
-
 func expectMigrationSkipped(report *codesignal.Report) {
 	GinkgoHelper()
 	diag, ok := diagnosticFor(report, "project_config_migration_skipped", legacyConfigPath)
 	Expect(ok).To(BeTrue(), "diagnostics: %+v", report.Diagnostics)
 	Expect(diag.Message).To(Equal(wantProjectConfigMigrationSkippedMessage))
+}
+
+func requireNoOfferWhereThePathIsOccupied(s canonicalState) {
+	repo := commitDeprecatedProjectConfigRepo()
+	s.arrange(repo)
+	before := treeOf(repo)
+
+	stdout, stderr, exitCode := runMigrationBaselineOnTerminal(repo, projectConfigMigrationEnv(), "y\n")
+
+	Expect(exitCode).To(Equal(0), "stderr: %s\nstdout: %s", stderr, stdout)
+	Expect(string(stderr)).NotTo(ContainSubstring("Copy project.json"), "the path cannot be the policy, so there is nowhere to copy to")
+	report := decodeCoachReport(stdout)
+	expectDiagnosticKind(report, s.wantKind, coachConfigPath)
+	expectNoDiagnosticKind(report, "project_config_migration_failed")
+	expectNoDiagnosticKind(report, "project_config_migration_skipped")
+	Expect(treeOf(repo)).To(Equal(before), "answering yes changed the worktree")
+}
+
+// treeOf is every path under repo but .git with what Lstat says of it and where a link points, so that a spec can
+// see that a run changed nothing. A directory the process cannot read is listed as unreadable.
+func treeOf(repo string) map[string]string {
+	tree := map[string]string{}
+	_ = filepath.WalkDir(repo, func(full string, entry fs.DirEntry, walkErr error) error {
+		relative, _ := filepath.Rel(repo, full)
+		if relative == ".git" {
+			return filepath.SkipDir
+		}
+		tree[relative] = describeTreeEntry(full, walkErr)
+		return nil
+	})
+	return tree
+}
+
+func describeTreeEntry(full string, walkErr error) string {
+	info, err := os.Lstat(full)
+	if walkErr != nil || err != nil {
+		return "unreadable"
+	}
+	target, _ := os.Readlink(full)
+	return fmt.Sprintf("%s %d %s", info.Mode(), info.Size(), target)
 }

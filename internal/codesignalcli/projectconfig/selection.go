@@ -14,3 +14,11 @@ type Selection struct {
 	UnusableCanonical *ConfigError
 	Fatal             error
 }
+
+// CanonicalOccupiedOnDisk is whether the working tree holds anything at the default policy's path, or on the way to
+// it, that this scan did not read: a regular file that is not committed, or an entry that cannot be the policy. A
+// policy cannot be moved or copied to a path that is occupied, so whatever offers that move asks this one question
+// and cannot disagree with the diagnostic that names what stands there.
+func (s Selection) CanonicalOccupiedOnDisk() bool {
+	return s.UncommittedCanonical || s.UnusableCanonical != nil
+}

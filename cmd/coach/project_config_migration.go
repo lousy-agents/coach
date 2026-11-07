@@ -56,7 +56,7 @@ func deprecatedProjectConfigCanMigrate(dir, revision string, f codesignalFlags, 
 		return false
 	}
 	selection, err := ports.discover(dir, revision)
-	return err == nil && selection.Fatal == nil && selection.Deprecated && !selection.UncommittedCanonical
+	return err == nil && selection.Fatal == nil && selection.Deprecated && !selection.CanonicalOccupiedOnDisk()
 }
 
 func answeredYes(stdin *os.File) bool {
