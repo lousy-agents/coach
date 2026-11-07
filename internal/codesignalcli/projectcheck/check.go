@@ -5,6 +5,7 @@
 package projectcheck
 
 import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/pkgmanager"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
@@ -16,7 +17,12 @@ import (
 // at the analyzed revision, so a caller holding a discovered policy may pass it
 // as it is.
 func Run(dir, revision string, policy policyref.Ref) (*projectreadiness.Result, error) {
-	result, err := evaluate(dir, revision, policy, PolicyChecker(policy))
+	return runBy(readinessGit(), dir, revision, policy)
+}
+
+// runBy is Run with the git that answers the questions about the committed policy given by the caller.
+func runBy(run gitrepo.Runner, dir, revision string, policy policyref.Ref) (*projectreadiness.Result, error) {
+	result, err := evaluate(run, dir, revision, policy, policyCheckerBy(run, policy))
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +30,7 @@ func Run(dir, revision string, policy policyref.Ref) (*projectreadiness.Result, 
 }
 
 // evaluate is Run with the policy check chosen by the caller.
-func evaluate(dir, revision string, policy policyref.Ref, check func(dir, revision, policyPath string) (projectreadiness.Check, []string, error)) (projectreadiness.Result, error) {
+func evaluate(run gitrepo.Runner, dir, revision string, policy policyref.Ref, check func(dir, revision, policyPath string) (projectreadiness.Check, []string, error)) (projectreadiness.Result, error) {
 	policyPath, extraWarnings, err := resolveCheckPolicy(dir, revision, policy)
 	if err != nil {
 		return projectreadiness.Result{}, err
@@ -34,7 +40,7 @@ func evaluate(dir, revision string, policy policyref.Ref, check func(dir, revisi
 	if err != nil {
 		return projectreadiness.Result{}, err
 	}
-	projectShape, err := checkProjectShape(dir, revision, roots, policyCheck.State == projectreadiness.Pass)
+	projectShape, err := checkProjectShape(run, dir, revision, roots, policyCheck.State == projectreadiness.Pass)
 	if err != nil {
 		return projectreadiness.Result{}, err
 	}
@@ -56,7 +62,7 @@ func evaluate(dir, revision string, policy policyref.Ref, check func(dir, revisi
 	if policyCheck.DecidedOnDisk {
 		readFromDisk = policyPath
 	}
-	dirtyRoots, err := dirtyRelevanceRoots(dir, revision, policy, policyPath, policyCheck, roots)
+	dirtyRoots, err := dirtyRelevanceRoots(run, dir, revision, policy, policyPath, policyCheck, roots)
 	if err != nil {
 		return projectreadiness.Result{}, err
 	}

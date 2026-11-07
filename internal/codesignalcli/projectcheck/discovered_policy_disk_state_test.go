@@ -23,7 +23,7 @@ func TestACommittedDiscoveredPolicyIsJudgedFromTheRevisionWhateverIsOnDisk(t *te
 		t.Fatalf("symlink: %v", err)
 	}
 
-	check, _, err := checkDiscoveredPolicy(repo, "HEAD", projectconfig.CanonicalPath)
+	check, _, err := checkDiscoveredPolicy(readinessGit(), repo, "HEAD", projectconfig.CanonicalPath)
 
 	if err != nil || check.State != projectreadiness.Pass {
 		t.Errorf("checkDiscoveredPolicy = %+v, %v; want the committed policy to pass", check, err)
@@ -44,7 +44,7 @@ func TestAPolicyWhoseIndexCannotBeReadStopsTheCheck(t *testing.T) {
 		t.Fatalf("corrupt the index: %v", err)
 	}
 
-	check, _, err := checkExplicitPolicy(repo, "HEAD", "cfg/p.json")
+	check, _, err := checkExplicitPolicy(readinessGit(), repo, "HEAD", "cfg/p.json")
 
 	requireOperationalError(t, check, err)
 }

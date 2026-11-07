@@ -39,7 +39,7 @@ func TestAFailedPolicyLeavesThePackageManagerNotChecked(t *testing.T) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "package-lock.json", `{"lockfileVersion":3,"packages":{}}`)
 
-	result, err := evaluate(repo, "HEAD", policyref.Discovered(""), aMissingPolicy)
+	result, err := evaluate(readinessGit(), repo, "HEAD", policyref.Discovered(""), aMissingPolicy)
 
 	if err != nil || result.Checks.PackageManager.State != projectreadiness.NotChecked {
 		t.Errorf("package_manager = %+v, %v; want not_checked: no policy root justifies the worktree-root fallback", result.Checks.PackageManager, err)
@@ -66,9 +66,10 @@ func TestRunFailsWhenGitCannotSayWhatIsDirty(t *testing.T) {
 // A committed policy that is on disk but whose committed blob git cannot read is a failure of git, whichever way the
 // policy was found, and the check returns it as one and does not read it as a policy that is missing or fine.
 func TestAPolicyOnDiskWhoseCommittedBlobCannotBeReadIsAnOperationalFailure(t *testing.T) {
+	run := readinessGit()
 	checks := map[string]func(dir, revision, policyPath string) (projectreadiness.Check, []string, error){
-		"named with --project-config": checkExplicitPolicy,
-		"discovered":                  checkDiscoveredPolicy,
+		"named with --project-config": policyCheckerBy(run, policyref.Named("cfg/p.json")),
+		"discovered":                  policyCheckerBy(run, policyref.Discovered("")),
 	}
 	for how, check := range checks {
 		t.Run(how, func(t *testing.T) { requireAnOperationalFailure(t, check) })

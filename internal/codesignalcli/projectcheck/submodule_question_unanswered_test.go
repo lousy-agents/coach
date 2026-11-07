@@ -43,11 +43,9 @@ func requireOperationalWhenTheSubmoduleQuestionFails(t *testing.T, policy string
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
 	arrange(t, repo)
-	original := runReadinessGit
-	t.Cleanup(func() { runReadinessGit = original })
-	runReadinessGit = whereOnlyTheSubmoduleQuestionFails(repo)
+	run := whereOnlyTheSubmoduleQuestionFails(repo)
 
-	check, _, err := checkExplicitPolicy(repo, "HEAD", policy)
+	check, _, err := checkExplicitPolicy(run, repo, "HEAD", policy)
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) {

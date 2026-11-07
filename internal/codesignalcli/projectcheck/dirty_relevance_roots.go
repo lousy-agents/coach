@@ -1,6 +1,7 @@
 package projectcheck
 
 import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
@@ -12,10 +13,10 @@ import (
 // still say which other uncommitted paths this report did not read. When nothing
 // valid is committed at the analyzed revision there are no roots to take, and only
 // the policy path and the package and compiler metadata count.
-func dirtyRelevanceRoots(dir, revision string, policy policyref.Ref, policyPath string, policyCheck projectreadiness.Check, roots []string) ([]string, error) {
+func dirtyRelevanceRoots(run gitrepo.Runner, dir, revision string, policy policyref.Ref, policyPath string, policyCheck projectreadiness.Check, roots []string) ([]string, error) {
 	if !policy.JudgedOnDisk() || policyCheck.State == projectreadiness.Pass {
 		return roots, nil
 	}
-	_, committedRoots, err := checkPolicy(dir, revision, policyPath)
+	_, committedRoots, err := checkPolicy(run, dir, revision, policyPath)
 	return committedRoots, err
 }

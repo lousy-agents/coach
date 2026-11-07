@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -42,10 +43,12 @@ func requireNamedAs(t *testing.T, row notAFileRow, named bool) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
 	row.commit(t, repo)
-	check := checkPolicy
+	check := func(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
+		return checkPolicy(readinessGit(), dir, revision, policyPath)
+	}
 	if named {
 		writeRegularFile(t, filepath.Join(repo, nonFilePolicy))
-		check = checkExplicitPolicy
+		check = policyCheckerBy(readinessGit(), policyref.Named(nonFilePolicy))
 	}
 
 	got, roots, err := check(repo, "HEAD", nonFilePolicy)

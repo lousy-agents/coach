@@ -106,13 +106,6 @@ func theRevisionCheck(args []string) bool {
 	return args[0] == "cat-file"
 }
 
-func withReadinessGit(t *testing.T, run func(string, ...string) ([]byte, error)) {
-	t.Helper()
-	original := runReadinessGit
-	t.Cleanup(func() { runReadinessGit = original })
-	runReadinessGit = run
-}
-
 func requireOperationalError(t *testing.T, got projectreadiness.Check, err error) {
 	t.Helper()
 	var operational *gitrepo.OperationalError
@@ -125,17 +118,17 @@ func requireOperationalError(t *testing.T, got projectreadiness.Check, err error
 // every other question answered, so a step that dropped its error would go on with a zero value and report a
 // clean miss.
 func TestTheRevisionThatCannotBeVerifiedStopsTheDiscoveredPolicyCheck(t *testing.T) {
-	withReadinessGit(t, questionsWhereOnly(t, theRevisionCheck))
+	run := questionsWhereOnly(t, theRevisionCheck)
 
-	check, _, err := checkPolicy("repo", "HEAD", "cfg/p.json")
+	check, _, err := checkPolicy(run, "repo", "HEAD", "cfg/p.json")
 
 	requireOperationalError(t, check, err)
 }
 
 func TestARepositoryRootThatCannotBeFoundStopsTheNamedPolicyCheck(t *testing.T) {
-	withReadinessGit(t, questionsWhereOnly(t, theRepositoryRootLookup))
+	run := questionsWhereOnly(t, theRepositoryRootLookup)
 
-	check, _, err := checkExplicitPolicy(gitfixture.Init(t), "HEAD", "cfg/p.json")
+	check, _, err := checkExplicitPolicy(run, gitfixture.Init(t), "HEAD", "cfg/p.json")
 
 	if !errors.Is(err, errNoAnswer) {
 		t.Errorf("check = %+v, error %v; want the failed root lookup returned as it is", check, err)
@@ -150,17 +143,17 @@ func TestACommittedPolicyThatCannotBeLookedUpStopsTheRelevanceOfTheDirtyWorktree
 	const manifestBlob = "0123456789012345678901234567890123456789"
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
-	withReadinessGit(t, questionsAnsweredExactly(t, map[string]gitAnswer{
+	run := questionsAnsweredExactly(t, map[string]gitAnswer{
 		"cat-file -e HEAD^{commit}":                                 {},
 		"ls-tree -z --full-tree HEAD -- :(top,literal)package.json": {output: packageManifestBlob},
 		"cat-file -e " + manifestBlob:                               {},
 		"ls-tree -z --full-tree HEAD -- :(top,literal)cfg/p.json":   {err: errNoAnswer},
-	}))
+	})
 	refused := func(string, string, string) (projectreadiness.Check, []string, error) {
 		return projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyInvalid}, nil, nil
 	}
 
-	result, err := evaluate(repo, "HEAD", policyref.Named("cfg/p.json"), refused)
+	result, err := evaluate(run, repo, "HEAD", policyref.Named("cfg/p.json"), refused)
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) {
@@ -186,10 +179,10 @@ func TestADiscoveredPolicyCannotBeSelectedOutsideARepository(t *testing.T) {
 // nothing in it is not an answer. The policy check asks git nothing here, so the one question that fails is
 // the first one after it.
 func TestANamedPolicyReportFailsWhenAQuestionAfterThePolicyCheckCannotBeAnswered(t *testing.T) {
-	withReadinessGit(t, questionsWhereOnly(t, theRevisionCheck))
+	run := questionsWhereOnly(t, theRevisionCheck)
 	held := &projectconfig.ConfigError{Kind: projectconfig.KindMissing, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseParentNotDirectory, FromWorkingTree: true}
 
-	result, err := RunAfterPolicyError(gitfixture.Init(t), "HEAD", policyref.Named("cfg/p.json"), held)
+	result, err := runAfterPolicyErrorBy(run, gitfixture.Init(t), "HEAD", policyref.Named("cfg/p.json"), held)
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) || result != nil {

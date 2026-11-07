@@ -29,9 +29,9 @@ func aRevisionWhoseSecondTreeEntryQuestionFails() func(string, ...string) ([]byt
 // A path with no blob is missing only if nothing else is there. When the second question cannot be answered, the
 // check stops with that failure, whatever the first said: it does not offer a new policy over a directory.
 func TestAPathIsNotCalledMissingWhenOnlyTheSecondQuestionAboutItsEntryFails(t *testing.T) {
-	withReadinessGit(t, aRevisionWhoseSecondTreeEntryQuestionFails())
+	run := aRevisionWhoseSecondTreeEntryQuestionFails()
 
-	check, _, err := checkPolicy("repo", "HEAD", nonFilePolicy)
+	check, _, err := checkPolicy(run, "repo", "HEAD", nonFilePolicy)
 
 	requireOperationalError(t, check, err)
 }

@@ -24,11 +24,9 @@ func holdsNoBlobAndCannotListTheTree(_ string, args ...string) ([]byte, error) {
 // another case. When git cannot say, that is an operational error that names the question, as it is for every
 // other question git could not answer, and not a gap that offers a new policy over a file that may be there.
 func TestADiscoveredPolicyIsNotCalledMissingWhenGitCannotSayWhetherTheRevisionHoldsItInAnotherCase(t *testing.T) {
-	original := runReadinessGit
-	t.Cleanup(func() { runReadinessGit = original })
-	runReadinessGit = holdsNoBlobAndCannotListTheTree
+	run := holdsNoBlobAndCannotListTheTree
 
-	check, roots, err := checkDiscoveredPolicy("repo", "HEAD", ".lousy-agents/coach.json")
+	check, roots, err := checkDiscoveredPolicy(run, "repo", "HEAD", ".lousy-agents/coach.json")
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) || !errors.Is(operational.Cause, errListingUnreadable) {

@@ -29,17 +29,17 @@ func answeringPackageRecord(record string) func(string, ...string) ([]byte, erro
 }
 
 func TestAPackageManifestRecordCoachCannotReadStopsTheShapeCheck(t *testing.T) {
-	withReadinessGit(t, answeringPackageRecord(unreadablePackageRecord))
+	run := answeringPackageRecord(unreadablePackageRecord)
 
-	check, err := checkProjectShape("repo", "HEAD", nil, false)
+	check, err := checkProjectShape(run, "repo", "HEAD", nil, false)
 
 	requireOperationalError(t, check, err)
 }
 
 func TestAPackageManifestRecordCoachCannotReadStopsTheWalkUpFromARoot(t *testing.T) {
-	withReadinessGit(t, answeringPackageRecord(unreadablePackageRecord))
+	run := answeringPackageRecord(unreadablePackageRecord)
 
-	found, err := packageJSONExistsUnderAnyRoot("repo", "HEAD", []string{"apps/web"})
+	found, err := packageJSONExistsUnderAnyRoot(run, "repo", "HEAD", []string{"apps/web"})
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) || found {

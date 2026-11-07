@@ -13,12 +13,12 @@ import (
 // checkExplicitPolicy is checkPolicy for a path the user named with
 // --project-config. A scan refuses such a path unless it is a regular file on
 // disk, so readiness must not pass the committed copy of one that is not.
-func checkExplicitPolicy(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
-	status, err := onDiskStatus(dir, revision, policyPath)
+func checkExplicitPolicy(run gitrepo.Runner, dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
+	status, err := onDiskStatus(run, dir, revision, policyPath)
 	if err != nil {
 		return projectreadiness.Check{}, nil, err
 	}
-	return explicitPolicyCheck(status, dir, revision, policyPath)
+	return explicitPolicyCheck(run, status, dir, revision, policyPath)
 }
 
 // RunAfterPolicyError is Run for a caller that already holds failure, the error
@@ -27,16 +27,21 @@ func checkExplicitPolicy(dir, revision, policyPath string) (projectreadiness.Che
 // error and the report cannot disagree about one path. For a discovered policy,
 // and for an error the analyzed revision produced, it is Run.
 func RunAfterPolicyError(dir, revision string, policy policyref.Ref, failure *projectconfig.ConfigError) (*projectreadiness.Result, error) {
+	return runAfterPolicyErrorBy(readinessGit(), dir, revision, policy, failure)
+}
+
+// runAfterPolicyErrorBy is RunAfterPolicyError with the git that answers given by the caller.
+func runAfterPolicyErrorBy(run gitrepo.Runner, dir, revision string, policy policyref.Ref, failure *projectconfig.ConfigError) (*projectreadiness.Result, error) {
 	if !policy.JudgedOnDisk() {
-		return Run(dir, revision, policy)
+		return runBy(run, dir, revision, policy)
 	}
 	check := func(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
 		if failure != nil && failure.FromWorkingTree {
-			return explicitPolicyCheck(failure, dir, revision, policyPath)
+			return explicitPolicyCheck(run, failure, dir, revision, policyPath)
 		}
-		return explicitPolicyCheck(nil, dir, revision, policyPath)
+		return explicitPolicyCheck(run, nil, dir, revision, policyPath)
 	}
-	result, err := evaluate(dir, revision, policy, check)
+	result, err := evaluate(run, dir, revision, policy, check)
 	if err != nil {
 		return nil, err
 	}
@@ -46,9 +51,9 @@ func RunAfterPolicyError(dir, revision string, policy policyref.Ref, failure *pr
 // explicitPolicyCheck is the check for a named policy given what the working
 // tree said about it: nil for a regular file, which the analyzed revision then
 // judges, and otherwise the error that says why not.
-func explicitPolicyCheck(status *projectconfig.ConfigError, dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
+func explicitPolicyCheck(run gitrepo.Runner, status *projectconfig.ConfigError, dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
 	if status == nil {
-		return checkPolicyOnDisk(dir, revision, policyPath)
+		return checkPolicyOnDisk(run, dir, revision, policyPath)
 	}
 	code := projectreadiness.GapPolicyInvalid
 	if status.Kind == projectconfig.KindMissing {
@@ -60,11 +65,11 @@ func explicitPolicyCheck(status *projectconfig.ConfigError, dir, revision, polic
 // checkPolicyOnDisk is checkPolicy for a path that is a regular file on disk. A
 // policy missing at the revision is there on disk, so a new policy cannot be
 // written at the path and committing the file is the way out.
-func checkPolicyOnDisk(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
-	check, roots, err := checkPolicy(dir, revision, policyPath)
+func checkPolicyOnDisk(run gitrepo.Runner, dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
+	check, roots, err := checkPolicy(run, dir, revision, policyPath)
 	if err == nil && check.Code == projectreadiness.GapPolicyMissing {
 		check.Remedy = projectreadiness.RemedyNone
-		message, cause, unanswered := projectconfig.UncommittedPolicy(runReadinessGit, dir, revision, policyPath)
+		message, cause, unanswered := projectconfig.UncommittedPolicy(run, dir, revision, policyPath)
 		if unanswered != nil {
 			return projectreadiness.Check{}, nil, unansweredQuestion(policyPath, unanswered)
 		}

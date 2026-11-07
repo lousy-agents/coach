@@ -24,11 +24,9 @@ func holdsNoBlobAndCannotSayWhatElse(_ string, args ...string) ([]byte, error) {
 // A path with no blob is missing only if nothing else is there, and when git cannot say what else
 // is there the answer is an operational error, not a gap that offers a new policy over a directory.
 func TestAPathWithNoBlobIsNotCalledMissingWhenGitCannotSayWhatElseIsThere(t *testing.T) {
-	original := runReadinessGit
-	t.Cleanup(func() { runReadinessGit = original })
-	runReadinessGit = holdsNoBlobAndCannotSayWhatElse
+	run := holdsNoBlobAndCannotSayWhatElse
 
-	check, _, err := checkPolicy("repo", "HEAD", nonFilePolicy)
+	check, _, err := checkPolicy(run, "repo", "HEAD", nonFilePolicy)
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) {

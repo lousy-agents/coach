@@ -22,7 +22,7 @@ func notARepository(t *testing.T) string {
 // working tree cannot be checked at all, so the check must fail instead of
 // passing the committed copy of a file nobody looked at.
 func TestCheckExplicitPolicyFailsClosedWhenGitCannotFindTheRepository(t *testing.T) {
-	check, roots, err := checkExplicitPolicy(notARepository(t), "HEAD", "p.json")
+	check, roots, err := checkExplicitPolicy(readinessGit(), notARepository(t), "HEAD", "p.json")
 
 	if err == nil {
 		t.Fatalf("got no error and the check %+v; the policy would pass without the working tree ever being checked", check)

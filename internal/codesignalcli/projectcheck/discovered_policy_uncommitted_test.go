@@ -18,7 +18,7 @@ func TestADiscoveredPolicyOnDiskThatIsNotCommittedIsNotAGapANewPolicyFixes(t *te
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
 	writeWorktreeFile(t, repo, projectconfig.CanonicalPath, `{"mine":true}`)
 
-	check, _, err := checkDiscoveredPolicy(repo, "HEAD", projectconfig.CanonicalPath)
+	check, _, err := checkDiscoveredPolicy(readinessGit(), repo, "HEAD", projectconfig.CanonicalPath)
 
 	if err != nil || check.Code != projectreadiness.GapPolicyMissing {
 		t.Fatalf("checkDiscoveredPolicy = %+v, %v; want a policy_missing gap", check, err)
@@ -32,7 +32,7 @@ func TestADiscoveredPolicyWithNothingOnDiskIsStillAGapANewPolicyFixes(t *testing
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
 
-	check, _, err := checkDiscoveredPolicy(repo, "HEAD", projectconfig.CanonicalPath)
+	check, _, err := checkDiscoveredPolicy(readinessGit(), repo, "HEAD", projectconfig.CanonicalPath)
 
 	if err != nil || check.Code != projectreadiness.GapPolicyMissing || check.Remedy != projectreadiness.RemedyAuthor || check.PolicyCause != "" {
 		t.Errorf("checkDiscoveredPolicy = %+v, %v; want a policy_missing gap that offers a new policy and names no cause", check, err)
@@ -45,7 +45,7 @@ func TestADiscoveredPolicyUnderAFileOnDiskNamesTheFileInTheWay(t *testing.T) {
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
 	writeWorktreeFile(t, repo, ".lousy-agents", "a file in the way")
 
-	check, _, err := checkDiscoveredPolicy(repo, "HEAD", projectconfig.CanonicalPath)
+	check, _, err := checkDiscoveredPolicy(readinessGit(), repo, "HEAD", projectconfig.CanonicalPath)
 
 	if err != nil || check.Remedy != projectreadiness.RemedyNone || check.PolicyCause != projectreadiness.CauseParentNotDirectory {
 		t.Errorf("checkDiscoveredPolicy = %+v, %v; want no remedy and the cause %q", check, err, projectreadiness.CauseParentNotDirectory)
@@ -56,9 +56,9 @@ func TestADiscoveredPolicyUnderAFileOnDiskNamesTheFileInTheWay(t *testing.T) {
 func TestADiscoveredPolicyWhoseDiskStateCannotBeReadStopsTheCheck(t *testing.T) {
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
-	withReadinessGit(t, questionsWhereOnly(t, theRepositoryRootLookup))
+	run := questionsWhereOnly(t, theRepositoryRootLookup)
 
-	check, _, err := gapForDiscoveredPolicyOnDisk(repo, "HEAD", projectconfig.CanonicalPath, projectreadiness.Check{Code: projectreadiness.GapPolicyMissing})
+	check, _, err := gapForDiscoveredPolicyOnDisk(run, repo, "HEAD", projectconfig.CanonicalPath, projectreadiness.Check{Code: projectreadiness.GapPolicyMissing})
 
 	if err == nil {
 		t.Errorf("gapForDiscoveredPolicyOnDisk = %+v, nil; want the failed question returned", check)

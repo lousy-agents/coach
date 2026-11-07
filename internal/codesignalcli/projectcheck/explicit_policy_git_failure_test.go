@@ -24,7 +24,7 @@ func TestCheckExplicitPolicyOfAFileGoneFromDiskKeepsGitsOwnErrorWhenGitCannotRea
 		t.Fatal(err)
 	}
 
-	_, _, err := checkExplicitPolicy(repo, "HEAD", "cfg/p.json")
+	_, _, err := checkExplicitPolicy(readinessGit(), repo, "HEAD", "cfg/p.json")
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(err, &operational) {
