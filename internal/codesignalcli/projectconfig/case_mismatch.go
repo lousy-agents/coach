@@ -60,10 +60,8 @@ func (m caseMismatchError) Error() string {
 func adviseOnRevision(err error, repoPath string, entries revisionEntries) error {
 	var mismatch caseMismatchError
 	if errors.As(err, &mismatch) {
-		if entries != nil {
-			if held, askErr := entries.holdsPath(repoPath); askErr == nil && held {
-				return mismatch.displaced
-			}
+		if holdsAsTyped(entries, repoPath) {
+			return mismatch.displaced
 		}
 		return mismatch.config(entries)
 	}
@@ -74,6 +72,15 @@ func adviseOnRevision(err error, repoPath string, entries revisionEntries) error
 		}
 	}
 	return err
+}
+
+// holdsAsTyped is whether the revision can be asked and holds every component of the path spelled as typed.
+func holdsAsTyped(entries revisionEntries, repoPath string) bool {
+	if entries == nil {
+		return false
+	}
+	held, err := entries.holdsPath(repoPath)
+	return err == nil && held
 }
 
 // config is the refusal for the mismatch. With no way to ask the revision, or

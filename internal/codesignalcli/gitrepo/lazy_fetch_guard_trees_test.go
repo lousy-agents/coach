@@ -67,14 +67,19 @@ func TestRefuseMissingObjectsAsksOnlyAboutTheTreesOfHeadBeforeTheMergeBaseOnAGit
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			repository := modernGitPartialClone()
-
-			err := RefuseMissingObjects(repository.run, "repo", c.base)
-
-			if err != nil || !reflect.DeepEqual(repository.probed, c.want) {
-				t.Errorf("RefuseMissingObjects = %v after probing %q; want %q: blobs are not asked about, the snapshot reports the ones it needs", err, repository.probed, c.want)
-			}
+			assertOnlyHeadTreesProbed(t, c.base, c.want)
 		})
+	}
+}
+
+func assertOnlyHeadTreesProbed(t *testing.T, base string, want []string) {
+	t.Helper()
+	repository := modernGitPartialClone()
+
+	err := RefuseMissingObjects(repository.run, "repo", base)
+
+	if err != nil || !reflect.DeepEqual(repository.probed, want) {
+		t.Errorf("RefuseMissingObjects = %v after probing %q; want %q: blobs are not asked about, the snapshot reports the ones it needs", err, repository.probed, want)
 	}
 }
 
