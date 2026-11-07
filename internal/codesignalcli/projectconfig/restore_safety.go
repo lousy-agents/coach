@@ -60,6 +60,8 @@ type policyJudgment struct {
 	// indexLocked is set when a restore command would otherwise be offered while a lock file stops git
 	// from writing the index: running it would fail, so none is offered.
 	indexLocked bool
+	// conflictSides is, for a policy whose index entry is unmerged, which sides of the conflict still hold it.
+	conflictSides conflictSides
 }
 
 // gitFailure is one git call that failed while a policy path was judged.
@@ -130,7 +132,7 @@ func judgeRestore(run gitrepo.Runner, dir, revision, repoPath string) policyJudg
 		}
 	}
 	if !offersRestoreCommand(verdict) {
-		return policyJudgment{verdict: verdict, indexEntryUnread: unread, sparseNewPolicy: verdict == restoreNotCommitted && newPolicyMayNeedSparse(run, dir, repoPath)}
+		return policyJudgment{verdict: verdict, indexEntryUnread: unread, conflictSides: conflictSidesOf(staged), sparseNewPolicy: verdict == restoreNotCommitted && newPolicyMayNeedSparse(run, dir, repoPath)}
 	}
 	locked, err := indexIsLocked(run, dir)
 	if err != nil {
