@@ -73,8 +73,8 @@ func requireUnanswered(t *testing.T, failure error) {
 	}
 }
 
-// A git that cannot be asked anything, its version included, is taken for one that cannot be told not to fetch,
-// and what it holds cannot be told either, so the read is refused with git's own error kept.
+// A git that cannot be asked anything, its version included, cannot be read at all: the question of the version
+// is the first, and the refusal says that the version could not be determined, with git's own error kept.
 func TestRefuseMissingObjectsRefusesARepositoryGitCannotBeAskedAbout(t *testing.T) {
 	run := func(string, ...string) ([]byte, error) {
 		return nil, errors.New("exit status 128: fatal: bad config line 1 in file .git/config")
@@ -83,8 +83,8 @@ func TestRefuseMissingObjectsRefusesARepositoryGitCannotBeAskedAbout(t *testing.
 	err := RefuseMissingObjects(run, "repo", "")
 
 	var refusal *OperationalError
-	if !errors.As(err, &refusal) || !strings.Contains(refusal.Message, "could not tell whether this repository has the objects Coach reads") || refusal.Cause == nil {
-		t.Errorf("RefuseMissingObjects = %v; want a refusal that says it could not tell what the repository holds, and keeps git's error", err)
+	if !errors.As(err, &refusal) || !strings.Contains(refusal.Message, "could not determine the version of git") || refusal.Cause == nil {
+		t.Errorf("RefuseMissingObjects = %v; want a refusal that says the version could not be determined, and keeps git's error", err)
 	}
 }
 

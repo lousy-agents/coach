@@ -220,8 +220,8 @@ Coach runs git for every read, and passes options that only a recent git knows. 
 
 | git | what Coach uses | on an older git |
 | --- | --- | --- |
-| 2.15 | `--no-optional-locks`, passed to every git call so that a read never takes the index lock | every scan exits 1: `could not tell whether this repository has the objects Coach reads (exit status 129: error: unknown option --no-optional-locks)` |
-| 2.16 | `rev-list --missing=print` and `--filter=blob:none`, asked of every repository on a git older than 2.44 (see [what repository configuration can run](#what-repository-configuration-can-run)) | every scan exits 1 with the same message, naming `--missing=print` |
+| 2.15 | `--no-optional-locks`, passed to every git call so that a read never takes the index lock | every scan exits 1 at once, whatever the repository, because a git that does not know the option fails the question of its own version too: `could not determine the version of git (exit status 129: "unknown option: --no-optional-locks\nusage: git [--version] [--help] [-C <path>] [-c <name>=<value>]"); Coach needs git 2.16 or later` |
+| 2.16 | `rev-list --missing=print` and `--filter=blob:none`, asked of every repository on a git older than 2.44 (see [what repository configuration can run](#what-repository-configuration-can-run)) | every scan on a git older than 2.44 exits 1: `could not tell whether this repository has the objects Coach reads (`, what git said about the option, and `)`; git's words differ by version, so none are quoted here |
 | 2.18 | `git config --type=bool` | the question whether a sparse checkout is on is not answered, and a policy that is off disk says that Coach could not check it; the exit code is the same |
 | 2.42 | `git cat-file --batch -Z`, with which `--baseline` reads each file it analyzes | a `--baseline` scan exits 0 and analyzes nothing: every file gets a `head_read_failed` diagnostic |
 | 2.44 | `GIT_NO_LAZY_FETCH`, so that a read never fetches a missing object of a partial clone | a partial clone is scanned only when every object the scan reads is already there |
