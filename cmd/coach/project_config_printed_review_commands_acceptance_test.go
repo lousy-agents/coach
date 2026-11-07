@@ -36,11 +36,41 @@ func mergeConflictOver(repo, path string) {
 	commitFile(repo, path, `{"schema_version":"1","roots":["theirs"]}`+"\n")
 	gitIn(repo, "checkout", "-q", "-")
 	commitFile(repo, path, `{"schema_version":"1","roots":["ours"]}`+"\n")
-	// A merge needs a committer even when it stops on a conflict: with no identity configured (a container with no
-	// global git config) git exits 128 before it touches the files and no conflict exists.
+	mergeOther(repo)
+}
+
+// mergeOther merges the branch "other" into the current one and lets it stop on a conflict. A merge needs a
+// committer even when it stops on a conflict: with no identity configured (a container with no global git config)
+// git exits 128 before it touches the files and no conflict exists.
+func mergeOther(repo string) {
 	merge := exec.Command("git", "-C", repo, "merge", "--no-edit", "other")
 	merge.Env = commitEnv
 	_ = merge.Run() // exits 1: the conflict is the point
+}
+
+// modifyDeleteConflictOver commits path, then has one branch delete it and the other change it, and merges them.
+// Git stops with the path unmerged in the index: the base's version and the version of the side that kept the
+// file, and none for the side that deleted it. There are not two versions for conflict markers to be made from.
+func modifyDeleteConflictOver(repo, path string, headDeletes bool) {
+	commitFile(repo, path, singleRootPolicyJSON)
+	gitIn(repo, "checkout", "-q", "-b", "other")
+	if headDeletes {
+		commitFile(repo, path, `{"schema_version":"1","roots":["theirs"]}`+"\n")
+	} else {
+		removeFile(repo, path)
+	}
+	gitIn(repo, "checkout", "-q", "-")
+	if headDeletes {
+		removeFile(repo, path)
+	} else {
+		commitFile(repo, path, `{"schema_version":"1","roots":["ours"]}`+"\n")
+	}
+	mergeOther(repo)
+}
+
+// printedConflictCommands are the commands a message names for a file that one side of a merge deleted.
+func printedConflictCommands(stderr []byte) []string {
+	return regexp.MustCompile(`git (?:checkout --(?:ours|theirs)|rm) -- '[^']+'`).FindAllString(string(stderr), -1)
 }
 
 // The commands a message names for a policy whose index holds work are run as printed, because a command git
@@ -89,4 +119,81 @@ var _ = Describe("coach codesignal: the commands printed for a policy whose inde
 		Entry("a real merge conflict over a committed policy", func(repo string) { mergeConflictOver(repo, policy) }, "ours", "theirs"),
 		Entry("a conflict for a policy nothing commits", func(repo string) { stageConflicting(repo, policy, 2, 3) }, "side-2", "side-3"),
 	)
+
+	// One side deleted the file and the other changed it: the index holds the base and the side that kept the file,
+	// and git checkout --merge fails for want of the other. The message names what works, which is to keep the
+	// version that is left, or to accept the deletion, and each is run as printed.
+	type oneSideDeleted struct {
+		arrange func(repo string)
+		keep    string // the command that keeps the version that is left
+		kept    string // what that version holds
+	}
+	const policyPathspec = "':(top,literal)cfg/p.json'"
+	oneSideDeletedStates := func() []TableEntry {
+		return []TableEntry{
+			Entry("HEAD deleted a committed policy that the merged branch changed", oneSideDeleted{func(repo string) { modifyDeleteConflictOver(repo, policy, true) }, "git checkout --theirs -- " + policyPathspec, "theirs"}),
+			Entry("the merged branch deleted a committed policy that HEAD changed", oneSideDeleted{func(repo string) { modifyDeleteConflictOver(repo, policy, false) }, "git checkout --ours -- " + policyPathspec, "ours"}),
+			Entry("a policy nothing commits, kept by the merged branch", oneSideDeleted{func(repo string) { stageConflicting(repo, policy, 1, 3) }, "git checkout --theirs -- " + policyPathspec, "side-3"}),
+			Entry("a policy nothing commits, kept by HEAD", oneSideDeleted{func(repo string) { stageConflicting(repo, policy, 1, 2) }, "git checkout --ours -- " + policyPathspec, "side-2"}),
+			Entry("a policy nothing commits, added by the merged branch alone", oneSideDeleted{func(repo string) { stageConflicting(repo, policy, 3) }, "git checkout --theirs -- " + policyPathspec, "side-3"}),
+			Entry("a policy nothing commits, added by HEAD alone", oneSideDeleted{func(repo string) { stageConflicting(repo, policy, 2) }, "git checkout --ours -- " + policyPathspec, "side-2"}),
+		}
+	}
+	scanTheConflictedPolicy := func(arrange func(repo string)) (repo string, stderr []byte) {
+		repo = commitScannableGoRepo()
+		arrange(repo)
+		removeTree(repo, "cfg")
+		return repo, scanExplicitPolicy(repo, policy)
+	}
+
+	DescribeTable("names no checkout --merge, which fails, but the commands that work, for a file one side deleted",
+		func(s oneSideDeleted) {
+			_, stderr := scanTheConflictedPolicy(s.arrange)
+
+			Expect(string(stderr)).NotTo(ContainSubstring("checkout --merge"), "git cannot make conflict markers from one version:\n%s", stderr)
+			Expect(printedConflictCommands(stderr)).To(Equal([]string{s.keep, "git rm -- " + policyPathspec}), "the version that is left, or the deletion:\n%s", stderr)
+		},
+		oneSideDeletedStates(),
+	)
+
+	DescribeTable("keeps the version that is left when the printed command is run, and git add resolves the conflict",
+		func(s oneSideDeleted) {
+			repo, stderr := scanTheConflictedPolicy(s.arrange)
+			commands := printedConflictCommands(stderr)
+			Expect(commands).To(HaveLen(2), "the version that is left, and the deletion:\n%s", stderr)
+			command := commands[0]
+
+			output, exitCode := runInShell(repo, command)
+
+			Expect(exitCode).To(Equal(0), "the printed command must work when pasted at the repository root:\ncommand: %s\noutput: %s", command, output)
+			content, err := os.ReadFile(filepath.Join(repo, policy))
+			Expect(err).NotTo(HaveOccurred(), "the command must recreate the file")
+			Expect(string(content)).To(ContainSubstring(s.kept), "the version that is left is back:\n%s", content)
+			gitIn(repo, "add", "--", ":(top,literal)"+policy)
+			Expect(gitIn(repo, "ls-files", "--unmerged")).To(BeEmpty(), "git add resolves the conflict")
+		},
+		oneSideDeletedStates(),
+	)
+
+	DescribeTable("accepts the deletion when the printed command is run, and no conflict is left",
+		func(s oneSideDeleted) {
+			repo, stderr := scanTheConflictedPolicy(s.arrange)
+			commands := printedConflictCommands(stderr)
+			Expect(commands).To(HaveLen(2), "the version that is left, and the deletion:\n%s", stderr)
+			command := commands[1]
+
+			output, exitCode := runInShell(repo, command)
+
+			Expect(exitCode).To(Equal(0), "the printed command must work when pasted at the repository root:\ncommand: %s\noutput: %s", command, output)
+			Expect(gitIn(repo, "ls-files", "--unmerged")).To(BeEmpty(), "git rm resolves the conflict")
+		},
+		oneSideDeletedStates(),
+	)
+
+	It("names the deletion alone when both sides deleted the file", func() {
+		_, stderr := scanTheConflictedPolicy(func(repo string) { stageConflicting(repo, policy, 1) })
+
+		Expect(string(stderr)).NotTo(ContainSubstring("checkout"), "no side holds a version to keep:\n%s", stderr)
+		Expect(printedConflictCommands(stderr)).To(Equal([]string{"git rm -- " + policyPathspec}), "stderr:\n%s", stderr)
+	})
 })

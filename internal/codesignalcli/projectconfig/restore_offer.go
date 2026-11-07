@@ -2,7 +2,6 @@ package projectconfig
 
 import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
-	"github.com/lousy-agents/coach/internal/codesignalcli/shellword"
 )
 
 // restoreOffer is what is added to a missing policy that is committed at the
@@ -54,24 +53,12 @@ var stagedEditOffer = restoreOffer{
 
 // mergeConflictOffer is for a committed policy whose index entry is unmerged.
 // There is no staged edit to review, and a restore would discard the conflict.
-func mergeConflictOffer(repoPath string) restoreOffer {
+func mergeConflictOffer(repoPath string, sides conflictSides) restoreOffer {
 	return restoreOffer{
 		remedy: projectreadiness.RemedyNone,
 		cause:  projectreadiness.CauseMergeConflict,
-		text:   ". It is committed at the analyzed revision, and the index holds an unresolved merge conflict for it that a restore would discard, so none is offered; " + resolveConflictAdvice(repoPath) + ", then run again",
+		text:   ". It is committed at the analyzed revision, and the index holds an unresolved merge conflict for it that a restore would discard, so none is offered; " + resolveConflictAdvice(repoPath, sides) + ", then run again",
 	}
-}
-
-// resolveConflictAdvice is how to resolve a conflict in a policy that is missing from disk, which is the state a
-// message about a missing policy describes. There is no file to edit, and git add on a path that is not there
-// records a deletion and drops the other side, so the file is brought back first, with its conflict markers: git
-// checkout --merge recreates them from the three stages the index holds.
-func resolveConflictAdvice(repoPath string) string {
-	const then = ", resolve the conflict markers in it, and git add it"
-	if ValidatePath(repoPath) == nil && shellword.Printable(repoPath) {
-		return "bring the conflicted file back with git checkout --merge -- " + shellword.Quote(":(top,literal)"+repoPath) + then
-	}
-	return "bring the conflicted file back with git checkout --merge (the name has a character that is not printed here)" + then
 }
 
 // skipWorktreeOffer is for a committed policy whose index entry carries a
@@ -108,11 +95,11 @@ func stagedOnlyOffer(repoPath string, blocked bool) restoreOffer {
 // unmergedNotCommittedOffer is for a policy that is not committed and whose index
 // entry is unmerged. git restore refuses an unmerged path, so no command is
 // printed, and a new policy would replace the conflicting work.
-func unmergedNotCommittedOffer(repoPath string) restoreOffer {
+func unmergedNotCommittedOffer(repoPath string, sides conflictSides) restoreOffer {
 	return restoreOffer{
 		remedy: projectreadiness.RemedyNone,
 		cause:  projectreadiness.CauseMergeConflict,
-		text:   ". It is not committed, but the index holds an unresolved merge conflict for it, so Coach offers no new policy and a restore cannot bring it back; " + resolveConflictAdvice(repoPath) + ", then run again",
+		text:   ". It is not committed, but the index holds an unresolved merge conflict for it, so Coach offers no new policy and a restore cannot bring it back; " + resolveConflictAdvice(repoPath, sides) + ", then run again",
 	}
 }
 
@@ -168,10 +155,10 @@ var emptySparseOffer = restoreOffer{
 // uncommittedOfferFor is the offer for a policy that is not committed at the
 // analyzed revision and that the index holds in a state worth saying, and false
 // for every other verdict.
-func uncommittedOfferFor(verdict restoreVerdict, repoPath string, blocked bool) (restoreOffer, bool) {
+func uncommittedOfferFor(verdict restoreVerdict, repoPath string, sides conflictSides, blocked bool) (restoreOffer, bool) {
 	switch verdict {
 	case restoreUnmergedNotCommitted:
-		return unmergedNotCommittedOffer(repoPath), true
+		return unmergedNotCommittedOffer(repoPath, sides), true
 	case restoreStagedNonFileNotCommitted:
 		return stagedNonFileOffer, true
 	case restoreStagedSkipWorktreeNotCommitted:
@@ -262,7 +249,7 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 	if verdict == restoreNotCommitted && judgment.sparseNewPolicy && !blocked {
 		return sparseNewPolicyOffer, true
 	}
-	if offer, uncommitted := uncommittedOfferFor(verdict, repoPath, blocked); uncommitted {
+	if offer, uncommitted := uncommittedOfferFor(verdict, repoPath, judgment.conflictSides, blocked); uncommitted {
 		return offer, true
 	}
 	switch {
@@ -271,7 +258,7 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 	case verdict == restoreUndecidable:
 		return undecidableOffer(judgment.failure), true
 	case verdict == restoreMergeConflict:
-		return mergeConflictOffer(repoPath), true
+		return mergeConflictOffer(repoPath, judgment.conflictSides), true
 	case verdict == restoreDiscardsStagedEdit:
 		return stagedEditOffer, true
 	case verdict == restoreSkipWorktreeMarked:
