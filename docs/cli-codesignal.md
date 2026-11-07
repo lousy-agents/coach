@@ -134,15 +134,15 @@ holds, and what to do follows from that:
 
 A policy that Coach discovers, with no `--project-config`, is read only at `.lousy-agents/coach.json`. When nothing is committed there and the analyzed revision holds the same path in another case (`.Lousy-Agents/Coach.json`, say), the scan is refused with `project_config_invalid`, and `--check-project` reports a policy gap with the cause `name_case_differs` and no `author_policy`, because a new policy cannot be written over the one that is committed. Before, the scan ran without the policy and said nothing, which dropped its layer checks. The message names the spelling that is committed and the commands that move it, `top="$(git rev-parse --show-toplevel)" && mkdir -p "$top"/'.lousy-agents' && git -C "$top" mv -- '.Lousy-Agents/Coach.json' '.lousy-agents/coach.json'`, to be committed (the `mkdir` is for a file system that tells cases apart, where the directory does not exist under the new spelling; both run at the repository root, so they work from a subdirectory too). It holds on any file system, since the committed names are what differ. A spelling that only the working tree has is a different matter: with nothing committed at the path in any spelling, a directory a file system that folds case keeps as `.Lousy-Agents/` (untracked, or holding another tool's file) is nothing, and an untracked `.lousy-agents/Coach.json` is a file the scan names in a `name_case_differs` diagnostic and does not read; the run goes on without a policy, exit 0, and `--check-project` reports `policy_missing` with `author_policy`, as it does with nothing on disk. With several spellings committed (`.lousy-agents/Coach.json` and `.LOUSY-AGENTS/coach.json`, say) the message lists every one of them, up to 16, and prints the commands that keep one: it moves the one that needs the fewest components renamed (a file can be renamed in the index with `git mv`, a directory cannot be renamed in case only, so a spelling whose directory is already right is kept first) to the path Coach reads and takes the others out of the index with `git -C "$top" --literal-pathspecs rm --cached -q -- ...`, the index only because on a file system that folds case they name the file just moved. Past 16 spellings, or with a name that cannot be shown to a terminal, it prints no command and asks for one spelling at that path.
 
-The check covers every component of the path, and one run reports the first component
-that differs, with the advice for that component alone. When two differ (`CFG/P.json` for
-`cfg/p.json`), correcting the first leads to the message for the next, one component per run:
-the right spelling of a later component comes from the disk when it exists there and from the
-revision when only the revision holds it, and Coach does not guess between them. It also
-applies when the file is missing, and when a deeper directory is missing too: a missing policy
-under a parent spelled in another case (`Cfg/new/zz.json` where only `cfg` exists) is refused
-for that parent and is not offered a restore or a new policy, because either would write into
-the other spelling.
+The check covers every component of the path. The message names the first component that differs, and the pass
+clause names the path the revision holds in full, every component resolved against the revision in the same run: with
+`CFG/P.json` typed for a committed `cfg/p.json`, the advice is `pass --project-config cfg/p.json`, and pasting it is
+accepted, with no second correction. A later component is spelled as the revision spells it, whatever the disk shows
+for it. The pass clause names nothing when the revision does not hold the rest of the path, or holds it in more than
+one spelling, because Coach does not guess between them. It also applies when the file is missing, and when a deeper
+directory is missing too: a missing policy under a parent spelled in another case (`Cfg/new/zz.json` where only `cfg`
+exists) is refused for that parent and is not offered a restore or a new policy, because either would write into the
+other spelling.
 
 A policy that is missing from disk has no spelling on disk to compare, so the revision's
 spelling is used instead. When the revision holds the path in another case than the one
