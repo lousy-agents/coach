@@ -38,7 +38,7 @@ var _ = Describe("coach codesignal: a policy nothing commits whose index holds o
 				Expect(string(stderr)).To(ContainSubstring(words), "stderr:\n%s", stderr)
 			}
 		},
-		Entry("marked by hand", false, "empty entry", "marked skip-worktree", "git update-index --no-skip-worktree"),
+		Entry("marked by hand", false, "empty entry", "marked skip-worktree", "update-index --no-skip-worktree"),
 		Entry("left out by a sparse checkout", true, "empty entry", "sparse checkout"),
 	)
 })

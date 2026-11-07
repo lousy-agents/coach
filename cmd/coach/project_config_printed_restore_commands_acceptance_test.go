@@ -241,7 +241,7 @@ var _ = Describe("coach codesignal: the restore command printed for a missing ex
 
 		Expect(printedRestoreCommand(stderr)).To(BeEmpty(), "the mark stops a restore:\n%s", stderr)
 		Expect(string(stderr)).To(ContainSubstring("skip-worktree"), "stderr:\n%s", stderr)
-		Expect(string(stderr)).To(ContainSubstring("git update-index --no-skip-worktree"), "stderr:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring("update-index --no-skip-worktree"), "stderr:\n%s", stderr)
 		Expect(string(stderr)).NotTo(ContainSubstring("staged edit"), "an empty entry holds no edit:\n%s", stderr)
 		Expect(string(stderr)).NotTo(ContainSubstring("git diff --cached"), "git diff --cached does not show an intent-to-add entry:\n%s", stderr)
 	})

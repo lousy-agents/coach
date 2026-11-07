@@ -26,7 +26,7 @@ func TestAManualSkipWorktreeBitIsNotCalledASparseCheckout(t *testing.T) {
 	if strings.Contains(status.Message, "sparse checkout") {
 		t.Errorf("message %q; a skip-worktree bit set by hand is not a sparse checkout, and widening one would not help", status.Message)
 	}
-	if !strings.Contains(status.Message, "skip-worktree") || !strings.Contains(status.Message, "git update-index --no-skip-worktree") {
+	if !strings.Contains(status.Message, "skip-worktree") || !strings.Contains(status.Message, "update-index --no-skip-worktree") {
 		t.Errorf("message %q; want it to name the skip-worktree bit and the command that clears it", status.Message)
 	}
 }

@@ -39,7 +39,7 @@ var _ = Describe("coach codesignal: what the message says about a policy the ind
 			stderr := scanExplicitPolicy(repo, nested)
 
 			Expect(string(stderr)).To(ContainSubstring("skip-worktree"), "stderr:\n%s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("git update-index --no-skip-worktree"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("update-index --no-skip-worktree"), "stderr:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("sparse checkout"), "no sparse checkout is in use:\n%s", stderr)
 		})
 	})

@@ -9,12 +9,12 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// printedClearMarkCommand is the git update-index command a stderr prints for a skip-worktree mark,
-// without the "from the repository root" the sentence adds after it, or "" when none is printed.
+// printedClearMarkCommand is the command a stderr prints to clear a skip-worktree mark: the words after "clear the
+// mark with", up to the ", then run again" that closes the sentence, or "" when none is printed.
 func printedClearMarkCommand(stderr []byte) string {
 	for _, line := range strings.Split(string(stderr), "\n") {
-		if index := strings.Index(line, "git update-index --no-skip-worktree"); index >= 0 {
-			command, _, _ := strings.Cut(line[index:], " from the repository root")
+		if _, command, found := strings.Cut(line, "clear the mark with "); found {
+			command, _, _ = strings.Cut(command, ", then run again")
 			return strings.TrimSpace(command)
 		}
 	}
@@ -51,9 +51,11 @@ var _ = Describe("coach codesignal: the commands printed for a policy the index 
 			command := printedClearMarkCommand(stderr)
 			Expect(command).NotTo(BeEmpty(), "the mark stops a restore, so the message names how to clear it:\n%s", stderr)
 			Expect(skipWorktreeMark(repo, policy)).To(HavePrefix("S "), "the policy starts out marked")
-			output, exitCode := runInShell(repo, command)
+			subdirectory := filepath.Join(repo, "docs", "deeper")
+			Expect(os.MkdirAll(subdirectory, 0o755)).To(Succeed())
+			output, exitCode := runInShell(subdirectory, command)
 
-			Expect(exitCode).To(Equal(0), "the printed command must work when pasted at the repository root:\ncommand: %s\noutput: %s\nstderr:\n%s", command, output, stderr)
+			Expect(exitCode).To(Equal(0), "the printed command must work when pasted from a subdirectory:\ncommand: %s\noutput: %s\nstderr:\n%s", command, output, stderr)
 			Expect(skipWorktreeMark(repo, policy)).To(HavePrefix("H "), "the command must clear the mark, not set it")
 			restoreStderr := scanExplicitPolicy(repo, policy)
 			restore := printedRestoreCommand(restoreStderr)

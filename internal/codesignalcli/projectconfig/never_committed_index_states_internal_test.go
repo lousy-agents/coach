@@ -58,7 +58,7 @@ func TestAPolicyNothingCommitsThatIsStagedAsASubmoduleEntryPrintsNoRestore(t *te
 func TestAPolicyNothingCommitsThatIsStagedAndSkipWorktreeMarkedPrintsNoRestore(t *testing.T) {
 	status := explicitStatusFor(t, indexFake{uncommitted: true, lsFiles: skippedIndexLine("100644", committedBlob, "0")})
 
-	if !strings.Contains(status.Message, "skip-worktree") || !strings.Contains(status.Message, "git update-index --no-skip-worktree") {
+	if !strings.Contains(status.Message, "skip-worktree") || !strings.Contains(status.Message, "update-index --no-skip-worktree") {
 		t.Errorf("message %q; want it to name the skip-worktree mark and the command that clears it", status.Message)
 	}
 	if strings.Contains(status.Message, "git restore") {
