@@ -17,13 +17,13 @@ import (
 func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int {
 	revision, err := gitrepo.ResolveBaselineRevision(dir)
 	if err != nil {
-		return classifyAnalysisError(err, f.projectLanguage, f.namedPolicy, nonInteractiveRequested(f), stderr)
+		return classifyAnalysisError(err, f.projectLanguage, f.namedPolicy, nonInteractiveRequested(f), stderr, dir)
 	}
 
 	result, err := projectcheck.Run(dir, revision, f.namedPolicy)
 	if err != nil {
 		err = wordBlobReadFailure(gitrepo.RunBytes, dir, err, checkProjectPrefix)
-		return classifyAnalysisError(err, f.projectLanguage, f.namedPolicy, nonInteractiveRequested(f), stderr)
+		return classifyAnalysisError(err, f.projectLanguage, f.namedPolicy, nonInteractiveRequested(f), stderr, dir)
 	}
 
 	if f.format == "json" {

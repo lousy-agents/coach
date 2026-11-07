@@ -88,9 +88,9 @@ func TestThePrintedCommandCanReplaceTheFileItIsPrintedFor(t *testing.T) {
 	invalid := configError(projectconfig.KindInvalid, projectreadiness.RemedyAuthor)
 	missing := configError(projectconfig.KindMissing, projectreadiness.RemedyAuthor)
 
-	replace := authoringRemediation(invalid, policyref.Named("pol.json"), "typescript", false)
-	create := authoringRemediation(missing, policyref.Named("pol.json"), "typescript", false)
-	discovered := authoringRemediation(invalid, policyref.Ref{}, "typescript", false)
+	replace := authoringRemediation(invalid, policyref.Named("pol.json"), "typescript", false, "")
+	create := authoringRemediation(missing, policyref.Named("pol.json"), "typescript", false, "")
+	discovered := authoringRemediation(invalid, policyref.Ref{}, "typescript", false, "")
 
 	if !strings.Contains(replace, "coach codesignal --baseline --project-config pol.json --project-language typescript") || strings.Contains(replace, "--suggest-project-config") {
 		t.Errorf("remediation for an invalid named policy = %q; want the scan, not authoring", replace)
@@ -107,10 +107,10 @@ func TestNoCommandIsPrintedWhereASessionRunsOrNothingIsOffered(t *testing.T) {
 	invalid := configError(projectconfig.KindInvalid, projectreadiness.RemedyAuthor)
 	restore := configError(projectconfig.KindMissing, projectreadiness.RemedyRestore)
 
-	if got := authoringRemediation(invalid, policyref.Named("pol.json"), "typescript", true); got != "" {
+	if got := authoringRemediation(invalid, policyref.Named("pol.json"), "typescript", true, ""); got != "" {
 		t.Errorf("remediation while a session runs = %q; want none", got)
 	}
-	if got := authoringRemediation(restore, policyref.Named("pol.json"), "typescript", false); got != "" {
+	if got := authoringRemediation(restore, policyref.Named("pol.json"), "typescript", false, ""); got != "" {
 		t.Errorf("remediation for a policy a restore fixes = %q; want none", got)
 	}
 }

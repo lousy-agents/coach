@@ -43,8 +43,8 @@ import (
 // --prepare-compiler can never run -- ScanSetupOfferRemediation (R2) names
 // rerunning this same scan on a terminal instead, so that repository is
 // still told a next step rather than only the bare --check-project line.
-func classifyAnalysisError(err error, language string, policy policyref.Ref, noInteractive bool, stderr *os.File) int {
-	report := analysisErrorReportFor(err, language, policy, terminal.HasControllingTerminal(os.Stdin) && !noInteractive)
+func classifyAnalysisError(err error, language string, policy policyref.Ref, noInteractive bool, stderr *os.File, dir string) int {
+	report := analysisErrorReportFor(err, language, policy, terminal.HasControllingTerminal(os.Stdin) && !noInteractive, dir)
 	for _, line := range report.lines {
 		fmt.Fprintln(stderr, line)
 	}
@@ -63,7 +63,7 @@ type analysisErrorReport struct {
 // analysisErrorReportFor matches err against the error classes in the order
 // their wrappers require: each *WithReadiness wrapper comes before the type
 // its Unwrap would otherwise satisfy first.
-func analysisErrorReportFor(err error, language string, policy policyref.Ref, hasControllingTerminal bool) analysisErrorReport {
+func analysisErrorReportFor(err error, language string, policy policyref.Ref, hasControllingTerminal bool, dir string) analysisErrorReport {
 	var unresolvedWithReadiness *tssetup.CompilerUnresolvedErrorWithReadiness
 	if errors.As(err, &unresolvedWithReadiness) {
 		remediation := tssetup.PrepareCompilerRemediationWithReadiness(unresolvedWithReadiness.Code, unresolvedWithReadiness.Policy, unresolvedWithReadiness.Readiness)
@@ -86,11 +86,11 @@ func analysisErrorReportFor(err error, language string, policy policyref.Ref, ha
 	if errors.As(err, &configErrWithReadiness) {
 		return classTwoReport(configErrWithReadiness.Message,
 			configErrWithReadiness.AlsoFailingLines(),
-			authoringRemediation(configErrWithReadiness.ConfigError, policy, language, hasControllingTerminal))
+			authoringRemediation(configErrWithReadiness.ConfigError, policy, language, hasControllingTerminal, dir))
 	}
 	var configErr *projectconfig.ConfigError
 	if errors.As(err, &configErr) {
-		return classTwoReport(configErr.Message, nil, authoringRemediation(configErr, policy, language, hasControllingTerminal))
+		return classTwoReport(configErr.Message, nil, authoringRemediation(configErr, policy, language, hasControllingTerminal, dir))
 	}
 	var opErr *gitrepo.OperationalError
 	if errors.As(err, &opErr) {

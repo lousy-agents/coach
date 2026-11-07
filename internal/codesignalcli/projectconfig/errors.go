@@ -103,10 +103,12 @@ func (e *ConfigError) OffersAuthoring() bool {
 }
 
 // ReplacesPolicy is whether the way out is a new document at a path where one already exists: a policy the
-// revision holds whose document is not valid. Authoring creates files and refuses a target that exists, so it
-// cannot write at the path; it can only offer the candidate to be saved over the file.
+// revision holds whose document is not valid, or is over the size budget, which a smaller document fixes. The
+// size overrun is the one unreadable policy that offers authoring (a time or stderr bound offers none).
+// Authoring creates files and refuses a target that exists, so it cannot write at the path; it can only offer the
+// candidate to be saved over the file.
 func (e *ConfigError) ReplacesPolicy() bool {
-	return e.Kind == KindInvalid && e.OffersAuthoring()
+	return (e.Kind == KindInvalid || e.Kind == KindUnreadable) && e.OffersAuthoring()
 }
 
 // readError classifies a runProjectConfigGit failure into a

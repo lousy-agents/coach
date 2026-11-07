@@ -45,13 +45,17 @@ func authoringInteractive(noInteractive bool) bool {
 // authoringRemediation is the appended line that offers a new policy as a command to run on a terminal, and
 // nothing when authoring cannot fix the error (the policy is committed and only needs restoring, or its path cannot
 // be created) or when a guided session runs instead. It writes the policy the user named when nothing is at that
-// path, so it names that path; for a document that exists and is not valid it names the scan, which can replace it.
-func authoringRemediation(configErr *projectconfig.ConfigError, policy policyref.Ref, language string, interactive bool) string {
+// path, so it names that path; for a document that exists and cannot be used it names the scan, which can replace it, or
+// for Go the candidate that is written beside it and the move that replaces it.
+func authoringRemediation(configErr *projectconfig.ConfigError, policy policyref.Ref, language string, interactive bool, dir string) string {
 	if offerAuthoring(configErr, language, interactive) != authoringCommand {
 		return ""
 	}
-	if configErr.ReplacesPolicy() && language == "typescript" {
+	switch {
+	case configErr.ReplacesPolicy() && language == "typescript":
 		return tssetup.ReplacePolicyRemediation(policy)
+	case configErr.ReplacesPolicy():
+		return goReplaceRemediation(dir, policy)
 	}
 	return tssetup.SuggestProjectConfigRemediation(language, authoringTargetPolicy(configErr, policy))
 }
