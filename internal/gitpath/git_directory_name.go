@@ -1,4 +1,6 @@
-package gitrepo
+// Package gitpath holds git's rules about which paths of a tree it will check out, for every place Coach writes a
+// committed tree to disk.
+package gitpath
 
 import (
 	"fmt"
@@ -56,11 +58,11 @@ func cutFoldedPrefix(s, prefix string) (string, bool) {
 	return s[len(prefix):], true
 }
 
-// refuseUncheckablePath is the error for a path of a tree that git would not write to a file system: one with
+// RefuseUncheckable is the error for a path of a tree that git would not write to a file system: one with
 // a component that names a git directory, or that is empty, "." or "..". A snapshot that wrote such a path
 // would hold a directory git and Go's version control stamping take for a repository, whose config names
 // programs git runs.
-func refuseUncheckablePath(path string) error {
+func RefuseUncheckable(path string) error {
 	for _, component := range strings.Split(path, "/") {
 		switch {
 		case component == "" || component == "." || component == "..":

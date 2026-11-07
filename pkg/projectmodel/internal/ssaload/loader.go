@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/lousy-agents/coach/internal/gitpath"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
@@ -24,6 +25,9 @@ type Loader struct{}
 // golang.org/x/tools/go/packages (which shells out to the Go toolchain) has
 // real files to load; the caller must invoke the returned cleanup func.
 func (Loader) Materialize(snapshot fs.FS) (string, func(), error) {
+	if err := refuseUncheckablePaths(snapshot); err != nil {
+		return "", func() {}, err
+	}
 	dir, err := os.MkdirTemp("", "projectmodel-callgraph-*")
 	if err != nil {
 		return "", func() {}, err
@@ -51,6 +55,18 @@ func moduleLoadConfig(ctx context.Context, moduleDir string) packages.Config {
 		Mode:    packages.LoadSyntax,
 		Env:     append(os.Environ(), "GOTOOLCHAIN=local"),
 	}
+}
+
+// refuseUncheckablePaths is the error for a snapshot that holds a path git would not check out, as a git
+// directory: written to disk it would be a repository that git and go's version control stamping take for one,
+// whose config names programs git runs. It stops at the first such path and writes nothing.
+func refuseUncheckablePaths(snapshot fs.FS) error {
+	return fs.WalkDir(snapshot, ".", func(name string, _ fs.DirEntry, err error) error {
+		if err != nil || name == "." {
+			return err
+		}
+		return gitpath.RefuseUncheckable(name)
+	})
 }
 
 // LoadModule loads moduleDir's own packages from dir/moduleDir and builds

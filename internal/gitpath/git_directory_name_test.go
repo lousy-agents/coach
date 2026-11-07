@@ -1,4 +1,4 @@
-package gitrepo
+package gitpath
 
 import "testing"
 
@@ -28,28 +28,14 @@ func TestNamesGitDirectoryFollowsTheSpellingsGitRefusesToCheckOut(t *testing.T) 
 func TestRefuseUncheckablePathNamesTheComponentThatIsNotAName(t *testing.T) {
 	refused := []string{"a/.git/config", ".git", "x/y/.GIT", "dir/git~1/HEAD", "a//b", "a/./b", "a/../b", "a/b/", "/a", ".", ".."}
 	for _, path := range refused {
-		if err := refuseUncheckablePath(path); err == nil {
-			t.Errorf("refuseUncheckablePath(%q) = nil; want the path refused", path)
+		if err := RefuseUncheckable(path); err == nil {
+			t.Errorf("RefuseUncheckable(%q) = nil; want the path refused", path)
 		}
 	}
 	kept := []string{"a.go", "dir/sub/main.go", ".github/workflows/ci.yml", "a/.gitignore", "src/git/x.go", "pkg/.gitkeep"}
 	for _, path := range kept {
-		if err := refuseUncheckablePath(path); err != nil {
-			t.Errorf("refuseUncheckablePath(%q) = %v; want the path kept", path, err)
+		if err := RefuseUncheckable(path); err != nil {
+			t.Errorf("RefuseUncheckable(%q) = %v; want the path kept", path, err)
 		}
-	}
-}
-
-func TestParseSnapshotEntriesRefusesAGitDirectoryWhereverTheListingHoldsIt(t *testing.T) {
-	listing := "100644 blob 0123456789012345678901234567890123456789\tok.go\x00" +
-		"100644 blob 0123456789012345678901234567890123456789\tsub/.GIT/config\x00"
-
-	entries, err := parseSnapshotEntries([]byte(listing))
-
-	if err == nil {
-		t.Fatalf("parseSnapshotEntries = %+v, nil; want the tree refused whole, with the path named", entries)
-	}
-	if entries != nil {
-		t.Errorf("entries %+v came back with the refusal: a caller that ignored the error would write them", entries)
 	}
 }

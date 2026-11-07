@@ -3,6 +3,8 @@ package gitrepo
 import (
 	"fmt"
 	"strings"
+
+	"github.com/lousy-agents/coach/internal/gitpath"
 )
 
 const (
@@ -28,7 +30,7 @@ func parseSnapshotEntries(listing []byte) ([]snapshotEntry, error) {
 		if !found || len(fields) != 3 || path == "" {
 			return nil, fmt.Errorf("unexpected ls-tree entry %q", record)
 		}
-		if err := refuseUncheckablePath(path); err != nil {
+		if err := gitpath.RefuseUncheckable(path); err != nil {
 			return nil, err
 		}
 		entries = append(entries, snapshotEntry{mode: fields[0], oid: fields[2], path: path})
