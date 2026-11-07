@@ -228,10 +228,15 @@ except for the policy-candidate document on the guided-authoring path.
   and no authoring. `--check-project` names it as the `restore_policy` next
   action, with `executable: false`. Coach offers that command only when it
   overwrites nothing and git can run it. If the index holds a staged edit to the
-  policy or an unmerged entry for it, if the policy is committed as a symbolic
-  link, if a sparse checkout leaves it out of the working tree or its index entry
-  is marked skip-worktree, or if git cannot say whether it is committed or what
-  the index holds, Coach says why and offers neither a restore nor a new policy.
+  policy, the restore from the revision would discard the edit, so Coach does not
+  offer it as the default. It says why and offers no new policy, and it prints two
+  choices: the restore from the index, which keeps the edit, and, labelled as the
+  way to drop it, the restore from the revision, to drop it and bring back the
+  committed copy. If the index holds an unmerged entry for the policy, if the
+  policy is committed as a symbolic link, if a sparse checkout leaves it out of the
+  working tree or its index entry is marked skip-worktree, or if git cannot say
+  whether it is committed or what the index holds, Coach says why and offers
+  neither a restore nor a new policy.
   An index entry that holds no content does not count as an edit: the restore
   replaces it, and the message says that it brings back the committed copy,
   unless the entry is marked skip-worktree, which stops a restore and is named
