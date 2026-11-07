@@ -65,6 +65,8 @@ func TestGitCommandLeavesTheCallerWhatGitNeedsToRun(t *testing.T) {
 	kept := map[string]string{
 		"PATH": "/somewhere/bin:/usr/bin", "HOME": "/home/someone", "GIT_CONFIG_GLOBAL": "/home/someone/.gitconfig",
 		"GIT_SSH_COMMAND": "ssh -F /home/someone/ssh_config", "LANG": "C", "TMPDIR": "/var/tmp",
+		// which configuration git reads: what a container sets for safe.directory, and no system file
+		"GIT_CONFIG_PARAMETERS": "'safe.directory=*'", "GIT_CONFIG_NOSYSTEM": "1",
 	}
 	for key, value := range kept {
 		t.Setenv(key, value)
