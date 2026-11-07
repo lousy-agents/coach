@@ -19,8 +19,8 @@ var (
 // brings the file back with its conflict markers first.
 func TestTheMergeConflictOffersBringTheConflictedFileBackBeforeAskingForItToBeResolved(t *testing.T) {
 	offers := map[string]restoreOffer{
-		"over a committed policy":      mergeConflictOffer("cfg/p.json", bothSides),
-		"for a policy nothing commits": unmergedNotCommittedOffer("cfg/p.json", bothSides),
+		"over a committed policy":      mergeConflictOffer("cfg/p.json", bothSides, false),
+		"for a policy nothing commits": unmergedNotCommittedOffer("cfg/p.json", bothSides, false),
 	}
 	for name, offer := range offers {
 		t.Run(name, func(t *testing.T) { requireTheFileIsBroughtBack(t, offer) })
@@ -39,7 +39,7 @@ func requireTheFileIsBroughtBack(t *testing.T, offer restoreOffer) {
 }
 
 func TestAConflictedNameThatCannotBePrintedGetsTheStepWithoutTheCommand(t *testing.T) {
-	offer := mergeConflictOffer("cfg/p\x1b.json", bothSides)
+	offer := mergeConflictOffer("cfg/p\x1b.json", bothSides, false)
 
 	if strings.Contains(offer.text, "\x1b") || !strings.Contains(offer.text, "git checkout --merge (the name has a character that is not printed here)") {
 		t.Errorf("offer %q; want the step named and the unprintable name left out", offer.text)
@@ -66,8 +66,8 @@ func oneSideCases() []oneSideCase {
 	var cases []oneSideCase
 	for name, c := range sidesAndAdvice {
 		cases = append(cases,
-			oneSideCase{name + " over a committed policy", mergeConflictOffer("cfg/p.json", c.sides), c.want},
-			oneSideCase{name + " for a policy nothing commits", unmergedNotCommittedOffer("cfg/p.json", c.sides), c.want})
+			oneSideCase{name + " over a committed policy", mergeConflictOffer("cfg/p.json", c.sides, false), c.want},
+			oneSideCase{name + " for a policy nothing commits", unmergedNotCommittedOffer("cfg/p.json", c.sides, false), c.want})
 	}
 	return cases
 }
@@ -92,7 +92,7 @@ func requireTheAdviceAndNotCheckoutMerge(t *testing.T, c oneSideCase) {
 }
 
 func TestAFileOneSideDeletedWhoseNameCannotBePrintedGetsTheStepsWithoutTheName(t *testing.T) {
-	offer := mergeConflictOffer("cfg/p\x1b.json", onlyTheirs)
+	offer := mergeConflictOffer("cfg/p\x1b.json", onlyTheirs, false)
 
 	const unprinted = " (the name has a character that is not printed here)"
 	if strings.Contains(offer.text, "\x1b") || !strings.Contains(offer.text, "git checkout --theirs"+unprinted+" and git add it, or accept the deletion with git rm"+unprinted) {

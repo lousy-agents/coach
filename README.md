@@ -259,8 +259,11 @@ except for the policy-candidate document on the guided-authoring path.
   restore would discard it, or it is committed as a symbolic link, which the
   message says instead because a restore would recreate a link the scan refuses.
   When the policy is only staged, never committed, it says to move the file and
-  then restore the staged copy from the index. It prints no `git restore` command
-  and offers no authoring, because a restore would delete that file.
+  then restore the staged copy from the index. When the index holds an unmerged
+  entry for the policy, the `git checkout` that brings the conflicted file back
+  is named behind the step that moves the file, because the checkout would delete
+  it as well. It prints no `git restore` command and offers no authoring, because
+  a restore would delete that file.
 - A symbolic link, a directory or other file that is not a regular file, a path
   that runs through a symbolic link, a file that cannot be read, or a parent
   that cannot be searched: `project_config_invalid`, naming the reason, with no
