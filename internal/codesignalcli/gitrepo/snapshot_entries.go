@@ -23,7 +23,7 @@ func parseSnapshotEntries(listing []byte) ([]snapshotEntry, error) {
 		}
 		meta, path, found := strings.Cut(record, "\t")
 		fields := strings.Fields(meta)
-		if !found || len(fields) != 3 {
+		if !found || len(fields) != 3 || path == "" {
 			return nil, fmt.Errorf("unexpected ls-tree entry %q", record)
 		}
 		entries = append(entries, snapshotEntry{mode: fields[0], oid: fields[2], path: path})
