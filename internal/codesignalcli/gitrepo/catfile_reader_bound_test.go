@@ -27,7 +27,7 @@ func readerOver(t *testing.T, child func(ctx context.Context) *exec.Cmd) *Revisi
 	if err != nil {
 		t.Fatalf("NewRevisionFileReader: %v", err)
 	}
-	t.Cleanup(func() { _ = reader.Close() })
+	t.Cleanup(reader.Close)
 	return reader
 }
 
@@ -37,7 +37,7 @@ func TestRevisionFileReaderEndsARequestGitDoesNotAnswerAndStaysEnded(t *testing.
 	started := time.Now()
 	_, first := reader.Next("fa.txt")
 	_, second := reader.Next("fa.txt")
-	_ = reader.Close()
+	reader.Close()
 	elapsed := time.Since(started)
 
 	var bound *BoundError

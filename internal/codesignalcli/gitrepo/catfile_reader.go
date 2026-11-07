@@ -3,7 +3,6 @@ package gitrepo
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -110,14 +109,11 @@ func (r *RevisionFileReader) endStalledGit() {
 	_ = r.pipe.Close()
 }
 
-// close closes the batch process's stdin (which is what makes `git
-// cat-file --batch` exit) and waits for it to finish. It is safe to call on
-// a reader whose construction otherwise succeeded.
-func (r *RevisionFileReader) Close() error {
-	closeErr := r.stdin.Close()
-	waitErr := r.cmd.Wait()
-	if closeErr != nil && !errors.Is(closeErr, io.ErrClosedPipe) {
-		return closeErr
-	}
-	return waitErr
+// Close ends the batch process and waits for it: closing its stdin is what makes `git cat-file --batch`
+// exit. It returns nothing because nothing could act on what it would return: a git that was killed for a stall
+// or that failed mid-object has already given the reader the error that matters, and the status of one that
+// exited after its stdin closed says nothing about the files it was asked for.
+func (r *RevisionFileReader) Close() {
+	_ = r.stdin.Close()
+	_ = r.cmd.Wait()
 }

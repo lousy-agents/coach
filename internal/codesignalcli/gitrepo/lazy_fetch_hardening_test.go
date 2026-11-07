@@ -83,7 +83,7 @@ func missingBlobReads(clone, blob string) []gitRead {
 			if err != nil {
 				return err
 			}
-			defer func() { _ = reader.Close() }()
+			defer reader.Close()
 			_, err = reader.Next("cfg/p.json")
 			return err
 		}},
