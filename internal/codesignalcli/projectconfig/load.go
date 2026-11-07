@@ -33,6 +33,11 @@ var runProjectConfigGit = NewGitRunner()
 // or stderr-budget failure still reports *gitrepo.OperationalError: those indicate a
 // resource/environment condition, not a defect in the file's content.
 func LoadForReadiness(dir, revision, repoPath string) (Config, error) {
+	config, err := loadForReadiness(dir, revision, repoPath)
+	return config, settledByTheWorkingCopy(runProjectConfigGit, dir, revision, repoPath, err)
+}
+
+func loadForReadiness(dir, revision, repoPath string) (Config, error) {
 	if err := refuseReadinessRead(dir, revision, repoPath); err != nil {
 		return Config{}, err
 	}
@@ -59,6 +64,11 @@ func LoadForReadiness(dir, revision, repoPath string) (Config, error) {
 // configuration. Git stdout/stderr, wall time, document size, and JSON
 // nesting are bounded at this boundary.
 func Load(dir, revision, repoPath string) (json.RawMessage, error) {
+	data, err := loadCommittedCopy(dir, revision, repoPath)
+	return data, settledByTheWorkingCopy(runProjectConfigGit, dir, revision, repoPath, err)
+}
+
+func loadCommittedCopy(dir, revision, repoPath string) (json.RawMessage, error) {
 	if err := refuseScanRead(dir, revision, repoPath); err != nil {
 		return nil, err
 	}

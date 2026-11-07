@@ -133,3 +133,8 @@ var _ = Describe("coach codesignal (TypeScript, no terminal): a committed policy
 		Entry("named with --project-config", "pol.json", "--project-config", "pol.json"),
 	)
 })
+
+// regexpFor is the first match of the pattern in text, or "".
+func regexpFor(pattern string, text []byte) string {
+	return regexp.MustCompile(pattern).FindString(string(text))
+}

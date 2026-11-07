@@ -19,6 +19,9 @@ const (
 	CauseParentNotDirectory PolicyCause = "parent_not_directory"
 	// CauseStagedEdit is a committed policy whose index entry holds an edit.
 	CauseStagedEdit PolicyCause = "staged_edit"
+	// CauseChangedOnDisk is a committed policy that cannot be used whose copy in the working tree differs from the
+	// committed one: there is work in the file. Review it, and commit it if it is the fix.
+	CauseChangedOnDisk PolicyCause = "changed_on_disk"
 	// CauseStagedCopy is a policy that is not committed and whose index holds a copy.
 	CauseStagedCopy PolicyCause = "staged_copy"
 	// CauseStagedNotAFile is a policy that is not committed and is staged as a link
