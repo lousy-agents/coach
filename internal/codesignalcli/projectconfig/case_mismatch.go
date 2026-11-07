@@ -83,6 +83,18 @@ func holdsAsTyped(entries revisionEntries, repoPath string) bool {
 	return err == nil && held
 }
 
+// passTheRevisionsSpelling is the clause that names the path to pass: the one the revision holds in full, every
+// component resolved and not only the one the disk spelled differently, so that the advice pasted is accepted. The
+// spelling is nil, and the clause names nothing, when the revision cannot be asked, holds the path in more than one
+// spelling, or does not hold the rest of it.
+func passTheRevisionsSpelling(entries revisionEntries, repoPath string) string {
+	spelled, _, _, _ := spellingInRevision(entries, strings.Split(repoPath, "/"))
+	if spelled == nil {
+		return ""
+	}
+	return passClause("; pass", strings.Join(spelled, "/"))
+}
+
 // config is the refusal for the mismatch. With no way to ask the revision, or
 // when asking fails, it states the two spellings and gives no advice, because
 // advice built from the user's own argument can point the wrong way.
@@ -111,7 +123,7 @@ func (m caseMismatchError) revisionClause(entries revisionEntries) string {
 	case heldTyped && heldOnDisk:
 		return fmt.Sprintf(": it holds both %q and %q", typed, onDisk)
 	case heldOnDisk:
-		return fmt.Sprintf(": it holds %q%s", onDisk, passClause("; pass", m.corrected))
+		return fmt.Sprintf(": it holds %q%s", onDisk, passTheRevisionsSpelling(entries, m.repoPath))
 	case heldTyped:
 		return fmt.Sprintf(": it holds %q; rename %q back to %q%s", typed, onDisk, typed, m.recordRenameClause(typed, onDisk))
 	default:

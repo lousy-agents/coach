@@ -113,7 +113,10 @@ holds, and what to do follows from that:
 
 - The revision holds the spelling on disk and the user typed another: pass the spelling
   on disk, as in `pass --project-config cfg/p.json`. Nothing is renamed, because the
-  revision already holds that spelling.
+  revision already holds that spelling. The path passed is the one the revision holds in
+  full, every component resolved, so `CFG/P.json` is advised as `cfg/p.json` and the advice
+  pasted is accepted; where the revision does not hold the rest of the path, or holds it in
+  more than one spelling, no path is named.
 - A file on disk that is not committed under that name, where the user typed its spelling
   on disk and the revision holds the same path in another case, on a repository that
   ignores case (the file was renamed in case only and the rename was never recorded): the
