@@ -88,7 +88,9 @@ func holdsAsTyped(entries revisionEntries, repoPath string) bool {
 // advice built from the user's own argument can point the wrong way.
 func (m caseMismatchError) config(entries revisionEntries) *ConfigError {
 	reason := fmt.Sprintf("is stored as %q on disk, not %q; this filesystem ignores case, so the name resolves, but the analyzed revision tells the two spellings apart", m.onDisk, m.typed)
-	return newUnusableOnDisk(m.repoPath, projectreadiness.CauseNameCaseDiffers, reason+m.revisionClause(entries))
+	refusal := newUnusableOnDisk(m.repoPath, projectreadiness.CauseNameCaseDiffers, reason+m.revisionClause(entries))
+	refusal.SpelledOnDisk = path.Join(m.directory, m.onDisk)
+	return refusal
 }
 
 // revisionClause says which spelling the revision holds, and the one way out
