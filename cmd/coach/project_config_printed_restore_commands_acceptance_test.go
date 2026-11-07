@@ -17,7 +17,8 @@ import (
 func printedRestoreCommand(stderr []byte) string {
 	for _, line := range strings.Split(string(stderr), "\n") {
 		if index := strings.Index(line, "git restore"); index >= 0 {
-			return strings.TrimSpace(line[index:])
+			command, _, _ := strings.Cut(line[index:], "; ")
+			return strings.TrimSpace(command)
 		}
 	}
 	return ""

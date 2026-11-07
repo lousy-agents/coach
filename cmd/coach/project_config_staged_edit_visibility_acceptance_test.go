@@ -44,7 +44,7 @@ var _ = Describe("coach codesignal: a staged edit to a committed explicit policy
 			Expect(string(stderr)).To(ContainSubstring("a parent path component is not a directory"))
 			Expect(string(stderr)).To(ContainSubstring("staged edit"), "stderr:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("restore the policy from git"), "that advice discards the staged edit:\n%s", stderr)
-			Expect(string(stderr)).NotTo(ContainSubstring("--source"), "a restore from the commit discards the staged edit:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("to drop it and bring back the committed copy instead, move the file that blocks the path, then restore it with git restore --source="), "a restore from the commit is offered only as the way to drop the edit, after the file is moved:\n%s", stderr)
 			Expect(string(stderr)).To(ContainSubstring("move the file that blocks the path, then restore it with git restore -- ':(top,literal)"+nested+"'"), "the staged edit is kept by a restore from the index once the file is moved:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "stderr:\n%s", stderr)
 			Expect(gitIn(repo, "show", ":"+nested)).To(Equal(stagedPolicy), "the staged edit is untouched")

@@ -43,7 +43,8 @@ var _ = Describe("coach codesignal: a committed explicit policy that is gone fro
 		It("offers no restore from the commit, because it would discard the staged edit, says so, and names the restore that keeps the edit", func() {
 			stderr := scanMissing(nil)
 
-			Expect(string(stderr)).NotTo(ContainSubstring("--source"), "a restore from the commit discards the edit:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("to drop it and bring back the committed copy instead, restore it with git restore --source="), "a restore from the commit is offered only as the way to drop the edit:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("restore the policy from git"), "that advice discards the staged edit:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "stderr:\n%s", stderr)
 			Expect(string(stderr)).To(ContainSubstring("git restore -- ':(top,literal)"+policy+"'"), "the restore from the index keeps the edit:\n%s", stderr)
 			Expect(string(stderr)).To(ContainSubstring("staged"), "the message names why no restore from the commit is offered:\n%s", stderr)

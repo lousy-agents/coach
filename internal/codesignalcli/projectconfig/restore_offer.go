@@ -46,17 +46,19 @@ func undecidableOffer(failure *gitFailure) restoreOffer {
 // restore command resets the index entry as well, which would discard the edit,
 // and so would restoring from git after a blocking file is moved. The edit is
 // kept by restoring from the index: git restore with no source writes what the
-// index holds, the staged content and not the committed copy. The command is the
-// tail of the text, because a caller that pastes it takes everything after "restore it with ".
-func stagedEditOffer(repoPath string, blocked bool) restoreOffer {
-	keep := RestoreFromIndexAdvice(repoPath)
+// index holds, the staged content and not the committed copy. It is dropped by
+// the restore from the revision, which brings the committed copy back to both. A
+// file in the way is moved before either.
+func stagedEditOffer(revision, repoPath string, blocked bool) restoreOffer {
+	keep, drop := RestoreFromIndexAdvice(repoPath), restoreAdvice(revision, repoPath)
 	if blocked {
-		keep = "move the file that blocks the path, then " + keep
+		keep, drop = "move the file that blocks the path, then "+keep, "move the file that blocks the path, then "+drop
 	}
 	return restoreOffer{
 		remedy: projectreadiness.RemedyNone,
 		cause:  projectreadiness.CauseStagedEdit,
-		text:   ". It is committed at the analyzed revision, and the index holds a staged edit to it that a restore would discard, so none is offered; review the staged edit with git diff --cached, then run again; to keep it as it is, which writes the staged content to disk and not the committed copy, " + keep,
+		text: ". It is committed at the analyzed revision, and the index holds a staged edit to it that a restore would discard, so none is offered; review the staged edit with git diff --cached, then run again; " +
+			"to keep it as it is, which writes the staged content to disk and not the committed copy, " + keep + "; to drop it and bring back the committed copy instead, " + drop,
 	}
 }
 
@@ -269,7 +271,7 @@ func restoreOfferFor(judgment policyJudgment, revision string, found *ConfigErro
 	case verdict == restoreMergeConflict:
 		return mergeConflictOffer(repoPath, judgment.conflictSides), true
 	case verdict == restoreDiscardsStagedEdit:
-		return stagedEditOffer(repoPath, blocked), true
+		return stagedEditOffer(revision, repoPath, blocked), true
 	case verdict == restoreSkipWorktreeMarked:
 		return skipWorktreeOffer(repoPath), true
 	case verdict == restoreRecreatesLink:
