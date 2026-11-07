@@ -107,3 +107,13 @@ func assertSpellingKept(t *testing.T, spellings []string, typed, want string) {
 		t.Errorf("keptSpelling(%q, %q) = %q; want %q", spellings, typed, got, want)
 	}
 }
+
+// The refusal names up to sixteen spellings, as the docs say, and the seventeenth makes it say there are more
+// and print no command; the test names the number, so a limit changed in the code is seen.
+func TestTheRefusalNamesExactlySixteenSpellingsBeforeItSaysThereAreMore(t *testing.T) {
+	sixteen := fakeRevision{"": {".lousy-agents"}, ".lousy-agents": variantsOf("coach.json", 16)}
+	seventeen := fakeRevision{"": {".lousy-agents"}, ".lousy-agents": variantsOf("coach.json", 17)}
+
+	assertWrongCaseAdvice(t, sixteen.entries, ".lousy-agents/coach.json", []string{"several spellings", " mv -- "}, []string{"and more"})
+	assertWrongCaseAdvice(t, seventeen.entries, ".lousy-agents/coach.json", []string{"several spellings", "and more"}, []string{" mv -- "})
+}

@@ -64,3 +64,22 @@ func TestAnObjectAPartialCloneLacksIsAReadFailureThatKeepsItsType(t *testing.T) 
 		t.Errorf("message %q words the failure for a command; that is for the layer that knows which", operational.Message)
 	}
 }
+
+// The two forms say what failed in terms of the repository only: with a path, the path and the revision it was
+// read at; without one, that the revision itself could not be verified. Neither names a command of Coach's.
+func TestABlobReadErrorSaysWhichPathAndRevisionFailedAndWhy(t *testing.T) {
+	cause := errors.New("fatal: bad object")
+	cases := []struct {
+		name string
+		err  *BlobReadError
+		want string
+	}{
+		{"a path that could not be read", &BlobReadError{Revision: "abc", Path: "cfg/p.json", Cause: cause}, `"cfg/p.json" could not be read at revision "abc": fatal: bad object`},
+		{"a revision that could not be verified", &BlobReadError{Revision: "abc", Cause: cause}, `revision "abc" could not be verified: fatal: bad object`},
+	}
+	for _, c := range cases {
+		if got := c.err.Error(); got != c.want {
+			t.Errorf("%s: Error() = %q; want %q", c.name, got, c.want)
+		}
+	}
+}

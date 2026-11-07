@@ -35,6 +35,8 @@ func TestNoLazyFetchSupportedReadsTheVersionGitPrints(t *testing.T) {
 		{"a minor version compared as a number, not as text", "git version 2.9.1\n", nil, false, "2.9.1"},
 		{"a three-digit minor version", "git version 2.100.0\n", nil, true, "2.100.0"},
 		{"text that is not a version", "not git\n", nil, false, "not git"},
+		{"words before the version", "xgit version 2.50.0\n", nil, false, "xgit version 2.50.0"},
+		{"an older major version with a high minor", "git version 1.50.0\n", nil, false, "1.50.0"},
 		{"a git that cannot be asked", "", errors.New("boom"), false, "unknown"},
 	}
 	for _, c := range cases {
