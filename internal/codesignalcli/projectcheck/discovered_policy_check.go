@@ -5,10 +5,17 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// checkDiscoveredPolicy is checkPolicy for a policy Coach found, which also names a policy the revision
-// holds in another case. That is not a gap to author over: the policy is there, at a name Coach does not
-// read.
+// checkDiscoveredPolicy is checkPolicy for a policy Coach found, worded as the scan words it: the default policy, and
+// not a --project-config the user never passed.
 func checkDiscoveredPolicy(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
+	check, roots, err := discoveredPolicyCheck(dir, revision, policyPath)
+	check.CauseText = projectconfig.WordedAsTheDefaultPolicy(check.CauseText, check.PolicyCause, policyPath)
+	return check, roots, err
+}
+
+// discoveredPolicyCheck is the check, which also names a policy the revision holds in another case. That is not a gap
+// to author over: the policy is there, at a name Coach does not read.
+func discoveredPolicyCheck(dir, revision, policyPath string) (projectreadiness.Check, []string, error) {
 	check, roots, err := checkPolicy(dir, revision, policyPath)
 	if err != nil || check.Code != projectreadiness.GapPolicyMissing {
 		return check, roots, err
