@@ -29,10 +29,21 @@ func gapForDiscoveredPolicyOnDisk(dir, revision, policyPath string, missing proj
 	if err != nil {
 		return projectreadiness.Check{}, nil, err
 	}
-	if status != nil && status.Missing == projectconfig.MissingAbsent && status.PolicyCause != projectreadiness.CauseInSubmodule {
+	if leavesNoPolicyToCommit(status) {
 		return missing, nil, nil
 	}
 	return explicitPolicyCheck(status, dir, revision, policyPath)
+}
+
+// leavesNoPolicyToCommit is whether the working tree holds nothing at the discovered path that a person would
+// commit, so that the gap is the policy that is missing. That is nothing at all, and also a name the disk spells
+// in another case: this is reached only when the revision commits nothing at the path in any spelling, so there is
+// no policy for the spelling to be wrong about, and nothing to rename to.
+func leavesNoPolicyToCommit(status *projectconfig.ConfigError) bool {
+	if status == nil || status.PolicyCause == projectreadiness.CauseInSubmodule {
+		return false
+	}
+	return status.Missing == projectconfig.MissingAbsent || status.PolicyCause == projectreadiness.CauseNameCaseDiffers
 }
 
 // gapForWrongCase is the result for a discovered policy that is missing where Coach reads it: the gap that
