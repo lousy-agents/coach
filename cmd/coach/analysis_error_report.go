@@ -8,7 +8,6 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
-	"github.com/lousy-agents/coach/internal/codesignalcli/terminal"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -44,7 +43,7 @@ import (
 // rerunning this same scan on a terminal instead, so that repository is
 // still told a next step rather than only the bare --check-project line.
 func classifyAnalysisError(err error, language string, policy policyref.Ref, noInteractive bool, stderr *os.File, dir string) int {
-	report := analysisErrorReportFor(err, language, policy, terminal.HasControllingTerminal(os.Stdin) && !noInteractive, dir)
+	report := analysisErrorReportFor(err, language, policy, authoringInteractive(noInteractive), dir)
 	for _, line := range report.lines {
 		fmt.Fprintln(stderr, line)
 	}

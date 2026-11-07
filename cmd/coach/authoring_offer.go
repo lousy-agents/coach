@@ -36,10 +36,15 @@ func offerAuthoring(err error, language string, interactive bool) authoringOffer
 	return authoringCommand
 }
 
-// authoringInteractive is whether a person can answer a guided session: a controlling terminal, and no request
-// for an unattended run.
+// interactive is whether a person can answer a guided session: a controlling terminal, and no request for an
+// unattended run. It is pure, so that the decision is pinned wherever the tests run.
+func interactive(noInteractive, hasTerminal bool) bool {
+	return !noInteractive && hasTerminal
+}
+
+// authoringInteractive is interactive for the terminal this process is attached to.
 func authoringInteractive(noInteractive bool) bool {
-	return !noInteractive && terminal.HasControllingTerminal(os.Stdin)
+	return interactive(noInteractive, terminal.HasControllingTerminal(os.Stdin))
 }
 
 // authoringRemediation is the appended line that offers a new policy as a command to run on a terminal, and
