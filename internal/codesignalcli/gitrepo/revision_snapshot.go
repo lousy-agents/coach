@@ -15,17 +15,16 @@ import (
 // tree with ls-tree and the objects with cat-file, neither of which converts anything, and it does not
 // depend on the version of git.
 func ExtractRevision(repositoryRoot, revision string) (string, error) {
-	return extractRevision(RunBytes, repositoryRoot, revision)
+	return extractRevision(listSnapshotEntries, RunBytes, repositoryRoot, revision)
 }
 
-// extractRevision is ExtractRevision with the git it lists the tree and words the way to fetch through run, so
-// that a test can make the listing fail without a repository.
-func extractRevision(run Runner, repositoryRoot, revision string) (string, error) {
-	listing, err := run(repositoryRoot, "ls-tree", "-r", "-z", "--full-tree", revision)
-	if err != nil {
-		return "", fmt.Errorf("reading source snapshot %q: %w", revision, err)
-	}
-	entries, err := parseSnapshotEntries(listing)
+// snapshotLister lists the tree of a revision as the entries to write.
+type snapshotLister func(repositoryRoot, revision string) ([]snapshotEntry, error)
+
+// extractRevision is ExtractRevision with the listing of the tree and the git that words the way to fetch made
+// by the caller, so that a test can make the listing fail without a repository.
+func extractRevision(list snapshotLister, run Runner, repositoryRoot, revision string) (string, error) {
+	entries, err := list(repositoryRoot, revision)
 	if err != nil {
 		return "", fmt.Errorf("reading source snapshot %q: %w", revision, err)
 	}

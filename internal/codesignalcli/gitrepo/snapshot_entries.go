@@ -16,24 +16,33 @@ const (
 // snapshotEntry is one path of a tree: its mode, the object it names, and the path.
 type snapshotEntry struct{ mode, oid, path string }
 
-// parseSnapshotEntries reads `git ls-tree -r -z`: "<mode> <type> <object>\t<path>" ending in NUL. A tree
-// that holds a path git would not check out is refused whole: `git archive` refused it, and skipping the entry
-// would scan a tree other than the one committed and report on it as if it were whole.
-func parseSnapshotEntries(listing []byte) ([]snapshotEntry, error) {
+// listSnapshotEntries reads `git ls-tree -r -z`: "<mode> <type> <object>\t<path>" ending in NUL, a record at a
+// time. A tree that holds a path git would not check out is refused whole: `git archive` refused it, and skipping
+// the entry would scan a tree other than the one committed and report on it as if it were whole.
+func listSnapshotEntries(repositoryRoot, revision string) ([]snapshotEntry, error) {
 	var entries []snapshotEntry
-	for _, record := range strings.Split(string(listing), "\x00") {
-		if record == "" {
-			continue
+	err := streamListing(repositoryRoot, snapshotListingWallTime, []string{"ls-tree", "-r", "-z", "--full-tree", revision}, func(record []byte) error {
+		entry, err := parseSnapshotRecord(string(record))
+		if err != nil {
+			return err
 		}
-		meta, path, found := strings.Cut(record, "\t")
-		fields := strings.Fields(meta)
-		if !found || len(fields) != 3 || path == "" {
-			return nil, fmt.Errorf("unexpected ls-tree entry %q", record)
-		}
-		if err := gitpath.RefuseUncheckable(path); err != nil {
-			return nil, err
-		}
-		entries = append(entries, snapshotEntry{mode: fields[0], oid: fields[2], path: path})
+		entries = append(entries, entry)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return entries, nil
+}
+
+func parseSnapshotRecord(record string) (snapshotEntry, error) {
+	meta, path, found := strings.Cut(record, "\t")
+	fields := strings.Fields(meta)
+	if !found || len(fields) != 3 || path == "" {
+		return snapshotEntry{}, fmt.Errorf("unexpected ls-tree entry %q", record)
+	}
+	if err := gitpath.RefuseUncheckable(path); err != nil {
+		return snapshotEntry{}, err
+	}
+	return snapshotEntry{mode: fields[0], oid: fields[2], path: path}, nil
 }
