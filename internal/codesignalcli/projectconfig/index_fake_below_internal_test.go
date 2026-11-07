@@ -50,7 +50,7 @@ func (f indexFake) lsFilesAnswer(args []string) ([]byte, error) {
 	case !slices.Contains(args, "--stage"):
 		return f.entriesBelow(args), f.lsFilesErr
 	case !slices.Contains(args, "-t"):
-		return nil, nil
+		return nil, f.submoduleListingErr
 	case f.entryListingErr != nil:
 		return nil, f.entryListingErr
 	}

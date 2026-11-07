@@ -41,6 +41,8 @@ type indexFake struct {
 	committedContent string
 	// showErr makes reading the committed content fail.
 	showErr error
+	// submoduleListingErr makes only the question whether the path is a submodule (ls-files --stage, without -t) fail.
+	submoduleListingErr error
 	// entryListingErr makes only the listing of the index entry at the path (ls-files --stage -t) fail, which real
 	// git cannot do apart from the other listings of the same index.
 	entryListingErr error
