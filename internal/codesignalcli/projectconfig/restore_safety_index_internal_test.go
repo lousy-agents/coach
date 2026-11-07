@@ -41,8 +41,12 @@ type indexFake struct {
 	committedContent string
 	// showErr makes reading the committed content fail.
 	showErr error
+	// catFileErr makes the check that the committed object is in the object store fail.
+	catFileErr error
 }
 
+// run answers the questions judgeRestore asks. Any other question is an error that names it, so a question
+// production starts asking fails the test that did not expect it, and does not succeed with empty output.
 func (f indexFake) run(dir string, args ...string) ([]byte, error) {
 	switch args[0] {
 	case "rev-parse":
@@ -68,10 +72,13 @@ func (f indexFake) run(dir string, args ...string) ([]byte, error) {
 		return f.committedPolicy()
 	case "ls-files":
 		return f.lsFilesAnswer(args)
+	case "cat-file":
+		// the check that an object the tree names is in the object store: present unless a test says otherwise
+		return nil, f.catFileErr
 	case "config":
 		return f.configAnswer()
 	}
-	return nil, nil
+	return nil, errors.New("indexFake: unexpected git question: " + strings.Join(args, " "))
 }
 
 // askedPath stands for the path a listing is asked about in the canned listings below;
@@ -160,5 +167,13 @@ func TestACommittedLinkIsNamedEvenWhenAFileBlocksTheParent(t *testing.T) {
 
 	if !offered || offer != committedLinkOffer {
 		t.Errorf("restoreOfferFor = %q, %v; want the committed-link offer, because restoring the policy from git would recreate a link the scan refuses", offer.text, offered)
+	}
+}
+
+func TestTheIndexFakeFailsAQuestionNobodyListed(t *testing.T) {
+	_, err := indexFake{}.run("repo", "frobnicate", "--now")
+
+	if err == nil || !strings.Contains(err.Error(), "frobnicate --now") {
+		t.Errorf("run = %v; want an error that names the unexpected question", err)
 	}
 }
