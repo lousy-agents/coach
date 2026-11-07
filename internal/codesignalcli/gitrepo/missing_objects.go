@@ -83,7 +83,19 @@ func (m missingObjects) phrase() string {
 // listing to that one tree instead of the history behind it. `--quiet` leaves only the missing ones, so
 // anything else on the output is a git that did not do as asked, and is an error.
 func missingObjectsOf(run Runner, dir, revision string) (missingObjects, error) {
-	output, err := run(dir, "rev-list", "--objects", "--missing=print", "--no-walk", "--quiet", revision)
+	return probeMissing(run, dir, revision)
+}
+
+// treesMissingOf is missingObjectsOf for the trees alone. `--filter=blob:none` leaves the blobs out of the
+// listing, so they are not looked for and not reported, and a tree that is missing is: a clone made without
+// trees lacks the root tree, and nothing under it can be listed until it is here.
+func treesMissingOf(run Runner, dir, revision string) (missingObjects, error) {
+	return probeMissing(run, dir, revision, "--filter=blob:none")
+}
+
+func probeMissing(run Runner, dir, revision string, filter ...string) (missingObjects, error) {
+	args := append([]string{"rev-list", "--objects", "--missing=print", "--no-walk"}, filter...)
+	output, err := run(dir, append(args, "--quiet", revision)...)
 	var bound *BoundError
 	if errors.As(err, &bound) && bound.Kind == BoundStdout {
 		return missingObjects{many: true}, nil

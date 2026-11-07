@@ -38,7 +38,7 @@ var _ = Describe("coach codesignal: every file a partial clone lacks is explaine
 		Expect(stderr).To(ContainSubstring(`"package.json" could not be read at revision`), "stderr:\n%s", stderr)
 		Expect(stderr).To(ContainSubstring("its content is not in this partial clone, and Coach does not fetch objects"), "stderr:\n%s", stderr)
 		Expect(stderr).NotTo(ContainSubstring("exit status 1"), "a bare exit status tells the user nothing:\n%s", stderr)
-		batch := regexp.MustCompile(`git rev-list --objects --missing=print --no-walk \S+ \| sed -n 's/\^\?//p' \| git fetch origin [^,]*--stdin`).FindString(stderr)
+		batch := printedBatch([]byte(stderr))
 		Expect(batch).NotTo(BeEmpty(), "the message names the command that fetches the revision's files:\n%s", stderr)
 
 		paste(clone, batch)

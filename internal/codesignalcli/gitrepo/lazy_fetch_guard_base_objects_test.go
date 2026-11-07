@@ -2,7 +2,6 @@ package gitrepo
 
 import (
 	"errors"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -42,7 +41,7 @@ func assertMergeBaseRefused(t *testing.T, probe probeAnswer, words []string) {
 	if !errors.As(err, &refusal) {
 		t.Fatalf("RefuseMissingObjects = %v; want a refusal", err)
 	}
-	want := append([]string{"Coach does not fetch objects; fetch the revision's files with git rev-list --objects --missing=print --no-walk " + mergeBaseSHA, "and run again"}, words...)
+	want := append([]string{"Coach does not fetch objects; fetch the revision's files with for pass in 1 2 3 4; do ids=$({ git rev-list --objects --missing=print --no-walk " + mergeBaseSHA + "; git rev-list --objects --missing=print --no-walk HEAD; }", "and run again"}, words...)
 	for _, word := range want {
 		if !strings.Contains(err.Error(), word) {
 			t.Errorf("refusal %q does not say %q", err, word)
@@ -53,29 +52,27 @@ func assertMergeBaseRefused(t *testing.T, probe probeAnswer, words []string) {
 	}
 }
 
-func TestRefuseMissingObjectsReadsTheMergeBaseAloneOnAGitThatNeverFetches(t *testing.T) {
-	repository := modernGitPartialClone()
-
-	err := RefuseMissingObjects(repository.run, "repo", "origin/main")
-
-	want := []string{"rev-list --objects --missing=print --no-walk --quiet " + mergeBaseSHA}
-	if err != nil || !reflect.DeepEqual(repository.probed, want) {
-		t.Errorf("RefuseMissingObjects = %v after probing %q; want a diff to go ahead having asked about the merge base alone: HEAD's objects are read, and reported, by the snapshot", err, repository.probed)
-	}
-}
-
-func TestRefuseMissingObjectsAsksAboutNoMergeBaseForABaselineOrAnOrdinaryClone(t *testing.T) {
+func TestRefuseMissingObjectsAsksNothingOfAnOrdinaryClone(t *testing.T) {
 	cases := map[string]struct {
 		repository fakeRepository
 		base       string
 	}{
-		"a baseline reads HEAD alone":    {modernGitPartialClone(), ""},
 		"an ordinary clone has them all": {fakeRepository{version: currentGit, mergeBase: mergeBaseSHA}, "origin/main"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			assertNothingProbedFor(t, c.repository, c.base)
 		})
+	}
+}
+
+func TestRefuseMissingObjectsAsksAboutNoMergeBaseForABaseline(t *testing.T) {
+	repository := modernGitPartialClone()
+
+	_ = RefuseMissingObjects(repository.run, "repo", "")
+
+	for _, asked := range repository.mergeBaseAsked {
+		t.Errorf("merge-base asked with %q for a baseline, which reads HEAD alone", asked)
 	}
 }
 

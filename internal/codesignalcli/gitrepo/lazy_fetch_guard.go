@@ -47,8 +47,9 @@ func ConfigHasNoValue(err error) bool {
 // has every object; a repository that cannot be told apart from an ordinary one is refused, because reading it
 // could run its remote's transport.
 //
-// A git that can be told not to fetch never does, but a diff reads the merge base's version of every changed
-// file, which the clone may lack: that is refused too, with the command that brings the objects in.
+// A git that can be told not to fetch never does, but a clone made without trees lacks the trees of HEAD, which
+// nothing can be listed without, and a diff reads the merge base's version of every changed file, which the clone
+// may lack: both are refused, with the command that brings the objects in.
 //
 // On an older git, which ignores the instruction, a partial clone is read when every object of the
 // revisions the scan reads is already here: base is empty for a baseline, which reads HEAD, and otherwise
@@ -67,6 +68,9 @@ func RefuseMissingObjects(run Runner, dir, base string) error {
 	}
 	supported, version := noLazyFetchSupported(run, dir)
 	if supported {
+		if err := refuseWhenHeadLacksTrees(run, dir, base); err != nil {
+			return err
+		}
 		return refuseWhenTheMergeBaseLacksObjects(run, dir, base)
 	}
 	return refuseWhenReadRevisionsLackObjects(run, dir, base, version)
@@ -83,14 +87,22 @@ func refuseWhenReadRevisionsLackObjects(run Runner, dir, base, version string) e
 			return cannotTellWhatIsMissing(version, err)
 		}
 		if missing.any() {
-			return lacksObjects(run, dir, version, revision, missing)
+			return lacksObjects(run, dir, version, revision, missing, revisionNames(revisions))
 		}
 	}
 	return nil
 }
 
-func lacksObjects(run Runner, dir, version string, revision readRevision, missing missingObjects) error {
-	return &OperationalError{Message: fmt.Sprintf("this repository is a partial clone, git %s cannot be told not to fetch missing objects, and %s has %s not in it, so reading it could run its remote's transport and write objects; %s", version, revision.label, missing.phrase(), wayOut(FetchAdvice(run, dir, revision.name, "")))}
+func lacksObjects(run Runner, dir, version string, revision readRevision, missing missingObjects, names []string) error {
+	return &OperationalError{Message: fmt.Sprintf("this repository is a partial clone, git %s cannot be told not to fetch missing objects, and %s has %s not in it, so reading it could run its remote's transport and write objects; %s", version, revision.label, missing.phrase(), wayOut(FetchAdviceFor(run, dir, names...)))}
+}
+
+func revisionNames(revisions []readRevision) []string {
+	names := make([]string, len(revisions))
+	for i, revision := range revisions {
+		names[i] = revision.name
+	}
+	return names
 }
 
 func cannotTellWhatIsMissing(version string, cause error) error {

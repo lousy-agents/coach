@@ -27,7 +27,7 @@ func readFailure(cause error) error {
 // The same condition, a policy blob a partial clone lacks, is worded once. The mode only chooses the prefix.
 func TestABlobAPartialCloneLacksIsWordedOnceAndPrefixedForTheMode(t *testing.T) {
 	absent := readFailure(&gitrepo.ObjectNotLocalError{Object: "9e26dfee"})
-	tail := `"cfg/p.json" could not be read at revision "abc123": its content is not in this partial clone, and Coach does not fetch objects; fetch it with git cat-file -e 'abc123:cfg/p.json', or the revision's files with git rev-list --objects --missing=print --no-walk abc123 | sed -n 's/^?//p' | git fetch origin --no-tags --no-write-fetch-head --filter=blob:none --stdin, and run again`
+	tail := `"cfg/p.json" could not be read at revision "abc123": its content is not in this partial clone, and Coach does not fetch objects; fetch it with git cat-file -e 'abc123:cfg/p.json', or the revision's files with for pass in 1 2 3 4; do ids=$(git rev-list --objects --missing=print --no-walk abc123 | sed -n 's/^?//p'); [ -n "$ids" ] || break; printf '%s\n' "$ids" | git fetch origin --no-tags --no-write-fetch-head --filter=blob:none --stdin || break; done, and run again`
 	for _, prefix := range []string{"coach codesignal --check-project: ", "coach codesignal: "} {
 		t.Run(prefix, func(t *testing.T) {
 			assertWorded(t, absent, prefix, prefix+tail)

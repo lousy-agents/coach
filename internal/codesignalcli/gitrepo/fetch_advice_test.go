@@ -6,6 +6,13 @@ import (
 	"testing"
 )
 
+// batchOf is the batch for a listing: the passes it makes until nothing is missing. A clone made without trees
+// lists only the trees at first, and the blobs they name once the trees are here; an empty list is never given
+// to git fetch, which would read the refspecs of the remote and update refs.
+func batchOf(remote, listing string) string {
+	return "for pass in 1 2 3 4; do ids=$(" + listing + " | sed -n 's/^?//p'); [ -n \"$ids\" ] || break; printf '%s\\n' \"$ids\" | git fetch " + remote + " --no-tags --no-write-fetch-head --filter=blob:none --stdin || break; done"
+}
+
 func TestThePromisorRemoteIsNamedByEitherMarkerGitWrites(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -46,9 +53,9 @@ func TestTheFetchAdviceListsOnlyTheRevisionsOwnObjectsAndOffersTheSingleObjectFi
 		avoid      []string
 	}{
 		{"a path that can be shown", fakeRepository{promisors: promisorOrigin}, "cfg/p.json",
-			[]string{"fetch it with git cat-file -e 'abc123:cfg/p.json', or the revision's files with git rev-list --objects --missing=print --no-walk abc123 | sed -n 's/^?//p' | git fetch origin --no-tags --no-write-fetch-head --filter=blob:none --stdin, and run again"}, nil},
+			[]string{"fetch it with git cat-file -e 'abc123:cfg/p.json', or the revision's files with " + batchOf("origin", "git rev-list --objects --missing=print --no-walk abc123") + ", and run again"}, nil},
 		{"no path, as for a whole snapshot", fakeRepository{promisors: promisorOrigin}, "",
-			[]string{"fetch the revision's files with git rev-list --objects --missing=print --no-walk abc123"}, []string{"cat-file"}},
+			[]string{"fetch the revision's files with " + batchOf("origin", "git rev-list --objects --missing=print --no-walk abc123") + " and run again"}, []string{"cat-file"}},
 		{"a path that cannot be shown", fakeRepository{promisors: promisorOrigin}, "cfg/esc\x1b.json",
 			[]string{"fetch the revision's files with"}, []string{"cat-file"}},
 		{"a remote whose name a shell would read as a separator", fakeRepository{promisors: "remote.a;b.promisor true\n"}, "",
@@ -110,5 +117,27 @@ func TestTheFetchAdviceIsNotOfferedForARevisionGitWouldReadAsAnOption(t *testing
 
 	if got != "" {
 		t.Errorf("advice %q; want none: pasted, the revision would be an option to rev-list", got)
+	}
+}
+
+// The batch for several revisions lists them together, so that one paste brings in what the whole scan reads.
+func TestTheFetchAdviceForSeveralRevisionsListsThemInOneBatch(t *testing.T) {
+	repository := fakeRepository{promisors: promisorOrigin}
+
+	got := FetchAdviceFor(repository.run, "repo", "abc123", "HEAD")
+
+	want := "fetch the revision's files with " + batchOf("origin", "{ git rev-list --objects --missing=print --no-walk abc123; git rev-list --objects --missing=print --no-walk HEAD; }") + " and run again"
+	if got != want {
+		t.Errorf("advice %q; want %q", got, want)
+	}
+}
+
+func TestTheFetchAdviceForSeveralRevisionsIsWithheldWhenAnyNameCannotBePasted(t *testing.T) {
+	repository := fakeRepository{promisors: promisorOrigin}
+
+	for _, revisions := range [][]string{{"abc123", "--upload-pack=touch x"}, {"abc\x1b123", "HEAD"}} {
+		if got := FetchAdviceFor(repository.run, "repo", revisions...); got != "" {
+			t.Errorf("advice %q for %q; want none: a name git would read as an option or a terminal would act on", got, revisions)
+		}
 	}
 }
