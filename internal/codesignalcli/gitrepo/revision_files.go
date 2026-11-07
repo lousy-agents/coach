@@ -58,16 +58,16 @@ func FileExistsAtRevision(run Runner, dir, revision, repoPath string) (bool, err
 //     must also fail closed rather than report the path absent.
 func BlobEntryAtRevision(run Runner, dir, revision, repoPath string) (TreeEntry, bool, error) {
 	if _, err := run(dir, "cat-file", "-e", revision+"^{commit}"); err != nil {
-		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: revision %q could not be verified: %s", revision, err), Cause: err}
+		return TreeEntry{}, false, blobReadFailure(&BlobReadError{Revision: revision, Cause: err})
 	}
 
 	output, err := run(dir, "ls-tree", "-z", "--full-tree", revision, "--", ":(top,literal)"+repoPath)
 	if err != nil {
-		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be resolved at revision %q: %s", repoPath, revision, err), Cause: err}
+		return TreeEntry{}, false, blobReadFailure(&BlobReadError{Revision: revision, Path: repoPath, Cause: err})
 	}
 	record, found, err := readLsTreeRecord(output, repoPath)
 	if err != nil {
-		return TreeEntry{}, false, &OperationalError{Message: fmt.Sprintf("coach codesignal --check-project: %q could not be resolved at revision %q: git printed a record this version cannot read", repoPath, revision), Cause: err}
+		return TreeEntry{}, false, blobReadFailure(&BlobReadError{Revision: revision, Path: repoPath, Cause: fmt.Errorf("git printed a record this version cannot read: %w", err)})
 	}
 	if !found || record.objectType != "blob" {
 		return TreeEntry{}, false, nil
@@ -75,8 +75,13 @@ func BlobEntryAtRevision(run Runner, dir, revision, repoPath string) (TreeEntry,
 	entry := TreeEntry{Mode: record.mode, SHA: record.object}
 
 	if _, err := run(dir, "cat-file", "-e", entry.SHA); err != nil {
-		cause := classifyObjectCheck(entry.SHA, err)
-		return TreeEntry{}, false, &OperationalError{Message: unreadableBlobMessage(run, dir, revision, repoPath, cause), Cause: cause}
+		return TreeEntry{}, false, blobReadFailure(&BlobReadError{Revision: revision, Path: repoPath, Cause: classifyObjectCheck(entry.SHA, err)})
 	}
 	return entry, true, nil
+}
+
+// blobReadFailure is the operational error for a blob that could not be read. Its message is the failure in
+// the repository's terms; the typed cause is what the layer that knows the command words.
+func blobReadFailure(read *BlobReadError) error {
+	return &OperationalError{Message: read.Error(), Cause: read}
 }

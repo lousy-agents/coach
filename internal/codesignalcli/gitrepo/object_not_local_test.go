@@ -54,7 +54,7 @@ func TestAPolicyBlobThatAPartialCloneLacksIsReportedAsNotLocal(t *testing.T) {
 	if !errors.As(err, &operational) || !errors.As(operational.Cause, &absent) {
 		t.Fatalf("BlobEntryAtRevision error = %#v; want an OperationalError caused by an ObjectNotLocalError", err)
 	}
-	if strings.Contains(operational.Message, "exit status") || !strings.Contains(operational.Message, "its content is not in the local object store") {
-		t.Errorf("message %q; want Coach's words, not git's bare exit status", operational.Message)
+	if strings.Contains(operational.Message, "exit status") || !strings.Contains(operational.Message, "is not in the local object store") {
+		t.Errorf("message %q; want the object named as missing, not git's bare exit status", operational.Message)
 	}
 }

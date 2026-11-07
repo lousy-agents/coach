@@ -81,6 +81,10 @@ func newGitFailure(question string, err error) *gitFailure {
 	if errors.As(err, &operational) && operational.Cause != nil {
 		err = operational.Cause
 	}
+	var read *gitrepo.BlobReadError
+	if errors.As(err, &read) {
+		err = read.Cause
+	}
 	return &gitFailure{question: question, err: err}
 }
 

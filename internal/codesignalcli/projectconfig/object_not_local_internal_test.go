@@ -87,3 +87,20 @@ func TestAnyOtherFailureOfTheBlobCheckStillQuotesWhatGitSaid(t *testing.T) {
 		t.Errorf("failure %q; want git's own words and no claim about a partial clone", got)
 	}
 }
+
+// The adapter returns the failure typed, with the object a partial clone lacks inside a blob-read error. The
+// question that asks "whether it is committed" words it in its own framing, so it reads through that wrapper.
+func TestTheCommitQuestionReadsAMissingObjectThroughTheAdaptersBlobReadError(t *testing.T) {
+	read := &gitrepo.BlobReadError{Revision: "abc123", Path: "cfg/p.json", Cause: &gitrepo.ObjectNotLocalError{Object: "abc"}}
+	adapterError := &gitrepo.OperationalError{Message: read.Error(), Cause: read}
+
+	failure := blobCheckFailure(runnerOfRepository(true), "repo", "abc123", "cfg/p.json", adapterError)
+
+	var absent *gitrepo.ObjectNotLocalError
+	if _, stillWrapped := errors.Unwrap(failure).(*gitrepo.BlobReadError); stillWrapped || !errors.As(failure, &absent) {
+		t.Errorf("failure %v leads to %#v; want git's own error as the cause, not the adapter's wrapper, which the command line would word again", failure, errors.Unwrap(failure))
+	}
+	if got := failure.Error(); !strings.Contains(got, "could not check whether it is committed") || !strings.Contains(got, "its content is not in this partial clone") || strings.Contains(got, "could not be read at revision") {
+		t.Errorf("failure %q; want the question's own framing around the one sentence for a missing object", got)
+	}
+}
