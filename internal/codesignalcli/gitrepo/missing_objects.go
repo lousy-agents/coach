@@ -47,7 +47,16 @@ func treesMissingOf(run Runner, dir, revision string) (missingObjects, error) {
 }
 
 func probeMissing(run Runner, dir, revision string, filter ...string) (missingObjects, error) {
-	args := append([]string{"rev-list", "--objects", "--missing=print", "--no-walk"}, filter...)
+	return listMissing(run, dir, append([]string{"rev-list", "--objects", "--missing=print", "--no-walk"}, filter...), revision)
+}
+
+// commitMissingOf asks git whether the commit revision names is not local, and nothing under it: without
+// `--objects` the listing is the commit itself, so what it reads is that one object.
+func commitMissingOf(run Runner, dir, revision string) (missingObjects, error) {
+	return listMissing(run, dir, []string{"rev-list", "--missing=print", "--no-walk"}, revision)
+}
+
+func listMissing(run Runner, dir string, args []string, revision string) (missingObjects, error) {
 	output, err := run(dir, append(args, "--quiet", revision)...)
 	var bound *BoundError
 	if errors.As(err, &bound) && bound.Kind == BoundStdout {

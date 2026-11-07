@@ -24,8 +24,11 @@ type fakeRepository struct {
 	mergeBaseErr error
 	// unbornHead is a repository whose HEAD names nothing: no commits yet, or no repository at all.
 	unbornHead bool
-	probes     map[string]probeAnswer
-	probed     []string
+	// revParseErr and revParseOutput are what rev-parse --verify says of any name, when they are set.
+	revParseErr    error
+	revParseOutput string
+	probes         map[string]probeAnswer
+	probed         []string
 	// mergeBaseAsked is the arguments of each merge-base question, so a test can see how the base was passed.
 	mergeBaseAsked [][]string
 }
@@ -42,10 +45,7 @@ func (r *fakeRepository) run(_ string, args ...string) ([]byte, error) {
 	case "rev-list":
 		return r.answerProbe(args)
 	case "rev-parse":
-		if r.unbornHead {
-			return nil, exitStatus128
-		}
-		return []byte(firstMissing + "\n"), nil
+		return r.answerResolution()
 	}
 	return nil, exitStatus128
 }
@@ -115,3 +115,15 @@ const (
 	mergeBaseSHA  = "feedfacefeedfacefeedfacefeedfacefeedface"
 	sha256Missing = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 )
+
+func (r *fakeRepository) answerResolution() ([]byte, error) {
+	switch {
+	case r.revParseErr != nil:
+		return nil, r.revParseErr
+	case r.unbornHead:
+		return nil, exitStatus128
+	case r.revParseOutput != "":
+		return []byte(r.revParseOutput), nil
+	}
+	return []byte(firstMissing + "\n"), nil
+}
