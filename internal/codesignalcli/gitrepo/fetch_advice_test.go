@@ -84,7 +84,17 @@ func assertFetchAdvice(t *testing.T, repository fakeRepository, path string, wan
 func TestTheMessageForSeveralMissingObjectsCarriesTheAdvice(t *testing.T) {
 	err := &ObjectsNotLocalError{Count: 3, FirstPath: "a.go", Advice: "fetch the revision's files with X and run again"}
 
-	if got := err.Error(); !strings.Contains(got, "3 objects are not in the local object store") || !strings.HasSuffix(got, "; fetch the revision's files with X and run again") {
+	if got := err.Error(); !strings.Contains(got, "the revision has 3 objects that are not in the local object store") || !strings.HasSuffix(got, "; fetch the revision's files with X and run again") {
 		t.Errorf("Error() = %q; want the count, the first path and the advice", got)
+	}
+}
+
+func TestObjectsNotLocalErrorSaysOneObjectInTheSingular(t *testing.T) {
+	err := &ObjectsNotLocalError{Count: 1, FirstPath: "a.go"}
+
+	got := err.Error()
+
+	if strings.Contains(got, "1 objects") || !strings.Contains(got, "the revision has 1 object that is not in the local object store") {
+		t.Errorf("ObjectsNotLocalError = %q, want one object in the singular, worded as the guard words it", got)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 )
 
 const topLevelUsage = `usage: coach <command> [flags]
@@ -52,7 +51,7 @@ func runCodesignal(args []string, stdout, stderr *os.File, ports scanPorts) int 
 		return 1
 	}
 
-	if err := gitrepo.RefuseUnsafeLazyFetch(gitrepo.BoundedRunner(projectconfig.MaxBytes, projectconfig.MaxGitStderr, projectconfig.GitTimeout), dir, parsed.base); err != nil {
+	if err := gitrepo.RefuseUnsafeLazyFetch(gitrepo.RunBytes, dir, parsed.base); err != nil {
 		fmt.Fprintf(stderr, "coach codesignal: %s\n", err)
 		return 1
 	}

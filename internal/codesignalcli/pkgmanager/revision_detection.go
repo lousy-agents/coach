@@ -3,7 +3,6 @@ package pkgmanager
 import (
 	"context"
 	"path"
-	"time"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
@@ -18,9 +17,9 @@ const (
 // same as the project-config read so a hostile manifest or hung git child
 // fails closed.
 const (
-	maxPackageManagerRevisionBytes  = 1 << 20  // 1 MiB
-	maxPackageManagerRevisionStderr = 64 << 10 // 64 KiB
-	packageManagerRevisionTimeout   = 30 * time.Second
+	maxPackageManagerRevisionBytes  = gitrepo.CommittedFileBytes
+	maxPackageManagerRevisionStderr = gitrepo.GitStderrBytes
+	packageManagerRevisionTimeout   = gitrepo.CommittedFileTimeout
 )
 
 // runPackageManagerRevisionGit is the bounded git read behind

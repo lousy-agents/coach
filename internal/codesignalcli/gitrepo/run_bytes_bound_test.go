@@ -103,6 +103,7 @@ func TestEveryGitReadOnTheScanPathHasABudget(t *testing.T) {
 		{"the changed files", []string{"diff", "--name-status", "-z"}, lookup(120*second, 64<<20)},
 		{"the changed lines of one file", []string{"diff", "--unified=0", "--no-ext-diff", "--no-textconv", "a", "HEAD", "--", "x"}, lookup(30*second, 32<<20)},
 		{"one file's content", []string{"show", "x:y"}, lookup(30*second, 32<<20)},
+		{"the missing objects of a whole tree", []string{"rev-list", "--objects", "--missing=print", "--no-walk", "--quiet", "x"}, lookup(120*second, 64<<20)},
 		{"a read nobody named", []string{"something-new"}, lookup(30*second, 16<<20)},
 	}
 	for _, c := range cases {
@@ -125,5 +126,30 @@ func TestTheSnapshotStreamHasAWallTimeAnObjectSizeAndATotal(t *testing.T) {
 func TestTheBaselineReaderIsHeldToTheNumbersOfEveryOtherFileRead(t *testing.T) {
 	if fileReadBudget.wall != 30*time.Second || fileReadBudget.object != 32<<20 {
 		t.Errorf("fileReadBudget = %+v, want 30s and 32 MiB, as the show row has", fileReadBudget)
+	}
+}
+
+// The reads that name a budget of their own take their numbers from the table's file; a package aliases them
+// (projectconfig.MaxBytes is CommittedFileBytes) and this pins each one.
+func TestTheNamedReadsHoldTheirNumbersInOnePlace(t *testing.T) {
+	cases := []struct {
+		name      string
+		got, want int64
+	}{
+		{"a committed file: bytes (also a policy's size limit)", CommittedFileBytes, 1 << 20},
+		{"a committed file: seconds", int64(CommittedFileTimeout / time.Second), 30},
+		{"stderr of every named read", GitStderrBytes, 64 << 10},
+		{"git status: bytes", WorktreeStatusBytes, 16 << 20},
+		{"git status: seconds", int64(WorktreeStatusTimeout / time.Second), 30},
+		{"the setup residue status: bytes", SetupResidueBytes, 1 << 20},
+		{"the setup residue status: seconds", int64(SetupResidueTimeout / time.Second), 10},
+		{"the worktree root: bytes", WorktreeRootBytes, 4 << 10},
+		{"the worktree root: stderr", WorktreeRootStderr, 4 << 10},
+		{"the worktree root: seconds", int64(WorktreeRootTimeout / time.Second), 10},
+	}
+	for _, c := range cases {
+		if c.got != c.want {
+			t.Errorf("%s = %d, want %d", c.name, c.got, c.want)
+		}
 	}
 }

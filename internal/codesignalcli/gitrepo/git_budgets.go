@@ -84,6 +84,34 @@ type snapshotBudget struct {
 
 var defaultSnapshotBudget = snapshotBudget{wall: snapshotWallTime, object: snapshotObjectBytes}
 
+// The reads below name a budget of their own, because the subcommand does not say what they hold: a small
+// committed file that must fail closed, a status listing, the root of a worktree. They are held by a
+// BoundedRunner that the package making the read builds from these numbers, and the numbers are here so that
+// this file is the one place that holds them. A package aliases them (projectconfig.MaxBytes is
+// CommittedFileBytes), and a test pins each one.
+const (
+	// A policy document, a manifest or a lockfile at a revision. 1 MiB is the size limit of a policy document:
+	// a committed file past it fails in under a second, not after a 30 s read.
+	CommittedFileBytes   = 1 << 20
+	CommittedFileTimeout = metadataTimeout
+	// GitStderrBytes is the stderr every one of these reads keeps.
+	GitStderrBytes = gitStderrBudget
+
+	// git status of a working tree. The listing prints a line for every changed path, so it has the largest
+	// output of the named reads.
+	WorktreeStatusBytes   = 16 << 20
+	WorktreeStatusTimeout = metadataTimeout
+
+	// The status listing of one working directory in the TypeScript setup, not a whole-tree read.
+	SetupResidueBytes   = 1 << 20
+	SetupResidueTimeout = 10 * time.Second
+
+	// rev-parse --show-toplevel for the walk ceiling of nearest-package.json: one path.
+	WorktreeRootBytes   = 4 << 10
+	WorktreeRootStderr  = 4 << 10
+	WorktreeRootTimeout = 10 * time.Second
+)
+
 // budgetFor is the budget of the git read that args name. It is a variable so that a test can hold a read
 // to a short one; production code never assigns it.
 var budgetFor = defaultBudgetFor
@@ -102,6 +130,9 @@ func defaultBudgetFor(args []string) budget {
 		return budget{timeout: metadataTimeout, stdout: fileBytes, stderr: gitStderrBudget}
 	case "diff":
 		return diffBudget(args)
+	case "rev-list":
+		// the partial-clone guard lists the missing objects of a whole tree
+		return budget{timeout: diffListingTimeout, stdout: listingBytes, stderr: gitStderrBudget}
 	}
 	return budget{timeout: metadataTimeout, stdout: unnamedBytes, stderr: gitStderrBudget}
 }
