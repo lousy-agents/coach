@@ -37,14 +37,9 @@ func gapForDiscoveredPolicyOnDisk(dir, revision, policyPath string, missing proj
 
 // leavesNoPolicyToCommit is whether the working tree and the index hold nothing at the discovered path that a person
 // would commit or lose, so that the gap is the policy that is missing: the path is free for a new policy
-// (ConfigError.FreeForANewPolicy, which asks the index, a conflict, a mark and a submodule as well as the disk), and
-// also a name the disk spells in another case. That is reached only when the revision commits nothing at the path in
-// any spelling, so there is no policy for the spelling to be wrong about, and nothing to rename to.
+// (ConfigError.FreeForANewPolicy, which asks the index, a conflict, a mark and a submodule as well as the disk).
 func leavesNoPolicyToCommit(status *projectconfig.ConfigError) bool {
-	if status == nil {
-		return false
-	}
-	return status.FreeForANewPolicy() || status.PolicyCause == projectreadiness.CauseNameCaseDiffers
+	return status != nil && status.FreeForANewPolicy()
 }
 
 // gapForWrongCase is the result for a discovered policy that is missing where Coach reads it: the gap that

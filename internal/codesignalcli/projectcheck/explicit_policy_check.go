@@ -69,22 +69,10 @@ func checkPolicyOnDisk(dir, revision, policyPath string) (projectreadiness.Check
 			return projectreadiness.Check{}, nil, unansweredQuestion(policyPath, unanswered)
 		}
 		check = check.WithCause(message, cause)
-		check.Code = codeForUncommittedCause(cause)
 		// The file's presence made the gap this one and not a missing policy to author, so the check read it.
 		check.DecidedOnDisk = true
 	}
 	return check, roots, err
-}
-
-// codeForUncommittedCause is the gap code for a policy on disk that the revision does not hold. A file that
-// only needs committing is missing from the revision. A name that differs from the revision's only by case is
-// not missing: the scan refuses it as invalid (project_config_invalid), with the revision's spelling to pass, and
-// the check says the same, as it does for the same name typed with the revision's spelling.
-func codeForUncommittedCause(cause projectreadiness.PolicyCause) string {
-	if cause == projectreadiness.CauseNameCaseDiffers {
-		return projectreadiness.GapPolicyInvalid
-	}
-	return projectreadiness.GapPolicyMissing
 }
 
 // unansweredQuestion is a question about the policy that git could not answer, as readiness reports it:

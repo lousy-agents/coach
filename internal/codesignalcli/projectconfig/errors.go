@@ -66,10 +66,6 @@ type ConfigError struct {
 	// Blocker is, for a policy missing because a file stands where a directory of its path should be, that file's
 	// path. It is empty for every other error.
 	Blocker string
-	// SpelledOnDisk is, for a path that a disk folding case keeps in another spelling than the path has, the
-	// first component the disk spells otherwise, as a path from the repository root. It is empty for every other
-	// error.
-	SpelledOnDisk string
 	// Remedy is the way out the tool offers. Every constructor in this file sets
 	// it. The zero value offers nothing, so a constructor that left it unset
 	// would withhold advice, never suggest a new policy where one cannot help.

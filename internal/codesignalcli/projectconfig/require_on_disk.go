@@ -11,15 +11,15 @@ import (
 )
 
 // requireOnDisk resolves the repository-relative path against the repository
-// root, found through run like every other git read of the policy, rather than the directory the scan started in. The revision is only
-// asked about the spellings of a name the disk spells in another case. A malformed path is left
-// for Load to report, which keeps that message unchanged. It checks what is at
+// root, found through run like every other git read of the policy, rather than the directory the scan started in. A
+// malformed path is left for Load to report, which keeps that message unchanged. It checks what is at
 // the path: only a regular file reached without crossing a symbolic link that
 // the process can open passes, and a state that cannot be told apart from "the
 // file is there" is refused. It opens the file to prove it is readable but does
 // not read its bytes, so a file whose content is not a valid policy is still
-// judged from the analyzed revision.
-func requireOnDisk(run gitrepo.Runner, dir, revision, repoPath string) error {
+// judged from the analyzed revision. The spelling the disk shows for the path is not asked: the analyzed revision
+// decides what a path names.
+func requireOnDisk(run gitrepo.Runner, dir, repoPath string) error {
 	if ValidatePath(repoPath) != nil {
 		return nil
 	}
@@ -27,7 +27,7 @@ func requireOnDisk(run gitrepo.Runner, dir, revision, repoPath string) error {
 	if err != nil {
 		return err
 	}
-	return adviseOnRevision(leftToASubmodule(run, dir, repoPath, checkRegularFileUnder(root, repoPath)), repoPath, entriesThrough(run, dir, revision))
+	return checkRegularFileUnder(root, repoPath)
 }
 
 // checkRegularFileUnder walks the path through one Root handle, so a name that
@@ -41,28 +41,22 @@ func checkRegularFileUnder(rootDir, repoPath string) error {
 	return checkRegularFileThrough(osDiskRoot{root}, repoPath)
 }
 
-// checkRegularFileThrough is the check on an open root: the parents, then the entry, then the
-// spelling of every component. A missing entry is refused for the spelling of its parents first,
-// because a restore would write where the file system resolves them.
+// checkRegularFileThrough is the check on an open root: the parents, then the entry.
 func checkRegularFileThrough(root diskRoot, repoPath string) error {
 	if err := checkAncestors(root, repoPath); err != nil {
 		return err
 	}
-	if err := checkEntry(root, repoPath); err != nil {
-		return spellingBeforeMissing(root, repoPath, err)
-	}
-	return checkExactNames(root, repoPath)
+	return checkEntry(root, repoPath)
 }
 
-// checkAncestors requires every parent of the policy to be a real directory. A parent that is missing is
-// reported as missing only once the ones above it, which exist, are known to be spelled as typed.
+// checkAncestors requires every parent of the policy to be a real directory.
 func checkAncestors(root diskRoot, repoPath string) error {
 	parts := strings.Split(repoPath, "/")
 	for i := 1; i < len(parts); i++ {
 		ancestor := strings.Join(parts[:i], "/")
 		info, err := root.Lstat(filepath.FromSlash(ancestor))
 		if err != nil {
-			return spellingOfExistingBeforeMissing(root, repoPath, i-1, classifyStatError(repoPath, err))
+			return classifyStatError(repoPath, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			return unusableOnDiskError(repoPath, projectreadiness.CauseSymbolicLink, fmt.Sprintf("is reached through a symbolic link, %q", ancestor))

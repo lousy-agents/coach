@@ -29,36 +29,20 @@ func LoadExplicit(dir, revision, repoPath string) (json.RawMessage, error) {
 // that nothing has read. The error return is an operational
 // failure, never a verdict about the policy. run is the git runner that decides
 // whether the policy is committed and what the index holds for it.
+//
+// The analyzed revision is asked first whether it commits the path in another case, because that decides what the path
+// names whatever the disk shows: the answer is the same on a disk that folds case and on one that does not.
 func ExplicitOnDiskStatus(run gitrepo.Runner, dir, revision, repoPath string) (*ConfigError, error) {
-	err := requireOnDisk(run, dir, revision, repoPath)
-	if err == nil {
-		return nil, nil
+	if ValidatePath(repoPath) == nil {
+		refusal := WrongCaseAtRevision(run, dir, revision, repoPath)
+		if silence := GitSilence(refusal, "coach codesignal", repoPath); silence != nil {
+			return nil, silence
+		}
+		var respelled *ConfigError
+		if errors.As(refusal, &respelled) {
+			respelled.FromWorkingTree = true
+			return respelled, nil
+		}
 	}
-	var onDisk *ConfigError
-	if !errors.As(err, &onDisk) {
-		return nil, err
-	}
-	named, err := namedByTheRevision(run, dir, revision, repoPath, onDisk)
-	if err != nil {
-		return nil, err
-	}
-	found, err := namedForACommittedBlocker(run, dir, revision, repoPath, named)
-	if err != nil {
-		return nil, err
-	}
-	judgment := judgeRestore(run, dir, revision, repoPath)
-	judged := *found
-	judged.FromWorkingTree = true
-	judged.UnreadStagedEdit = judgment.indexEntryUnread
-	if judgment.failure != nil && found.Kind == KindMissing {
-		// A failed question changes the outcome only where an offer depends on it. For a path the
-		// working tree found unusable no offer is made, so the failure is not an operational error:
-		// UnreadStagedEdit already says the index could not be ruled out.
-		judged.GitFailure = judgment.failure
-	}
-	offer, offered := restoreOfferFor(judgment, revision, found, repoPath)
-	if !offered {
-		return &judged, nil
-	}
-	return annotated(&judged, offer), nil
+	return workingTreeStatus(run, dir, revision, repoPath)
 }

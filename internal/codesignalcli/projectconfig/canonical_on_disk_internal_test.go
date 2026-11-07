@@ -60,7 +60,7 @@ func causeOf(refusal *ConfigError) projectreadiness.PolicyCause {
 func TestTheUnusableCanonicalMessageNamesTheCauseAndSaysTheScanDidNotReadIt(t *testing.T) {
 	for _, cause := range []projectreadiness.PolicyCause{
 		projectreadiness.CauseNotARegularFile, projectreadiness.CauseSymbolicLink, projectreadiness.CauseUnreadableOnDisk,
-		projectreadiness.CauseParentNotDirectory, projectreadiness.CauseNameCaseDiffers,
+		projectreadiness.CauseParentNotDirectory,
 	} {
 		t.Run(string(cause), func(t *testing.T) { requireTheMessageNamesTheCause(t, cause) })
 	}

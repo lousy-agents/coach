@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
-	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
 func statusWhenGitFails(t *testing.T, fake indexFake) *ConfigError {
@@ -53,17 +53,23 @@ func TestATreeLookupFailureNamesTheCommitQuestionAndGitsError(t *testing.T) {
 	}
 }
 
-// The revision's own listing says whether a policy missing from disk is committed in another case. When git
-// cannot give it, the status says that question went unanswered and carries the failure, so readiness
-// reports an operational error and offers neither a new policy nor a commit.
-func TestAFailedListingOfTheRevisionNamesItsQuestionAndGitsError(t *testing.T) {
-	status := statusWhenGitFails(t, indexFake{listingErr: errors.New("boom: listing unreadable")})
+// The revision's own listing says whether the policy is committed in another case, and it is asked before the disk.
+// When git cannot give it, the run ends on that question with git's error kept, and neither a new policy nor a
+// commit is offered, since either is wrong if the policy is committed.
+func TestAFailedListingOfTheRevisionEndsTheRunWithItsQuestionAndGitsError(t *testing.T) {
+	repo := gitfixture.Init(t)
+	gitfixture.CommitFile(t, repo, "cfg/p.json", validPolicy)
+	moveAside(t, repo, "cfg/p.json")
+	cause := errors.New("boom: listing unreadable")
 
-	if !strings.Contains(status.Message, "whether the analyzed revision holds it in another case") || !strings.Contains(status.Message, "boom: listing unreadable") {
-		t.Errorf("message %q; want it to name the question that failed and carry git's error", status.Message)
+	status, err := ExplicitOnDiskStatus(indexFake{listingErr: cause}.run, repo, "HEAD", "cfg/p.json")
+
+	var operational *gitrepo.OperationalError
+	if status != nil || !errors.As(err, &operational) || !errors.Is(operational.Cause, cause) {
+		t.Fatalf("ExplicitOnDiskStatus = %+v, %v; want no verdict and the operational error of the failed listing", status, err)
 	}
-	if status.GitFailure == nil || status.PolicyCause != projectreadiness.CauseGitUnreadable || status.Remedy != projectreadiness.RemedyNone {
-		t.Errorf("status = failure %v, cause %q, remedy %v; want the failure kept, %q, and nothing offered", status.GitFailure, status.PolicyCause, status.Remedy, projectreadiness.CauseGitUnreadable)
+	if !strings.Contains(operational.Message, "whether the analyzed revision holds it in another case") || !strings.Contains(operational.Message, "boom: listing unreadable") {
+		t.Errorf("message %q; want it to name the question that failed and carry git's error", operational.Message)
 	}
 }
 

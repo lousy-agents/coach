@@ -8,85 +8,49 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// uncommittedPolicyFake answers what UncommittedPolicy asks: that the path lies in no submodule, what
-// core.ignorecase is, and what the revision's tree holds.
+// uncommittedPolicyFake is all of the git that UncommittedPolicy asks: whether the path lies in a submodule. Any other
+// question is an error that names it, so a passing test shows nothing else was asked.
 type uncommittedPolicyFake struct {
-	ignoreCase    string
-	ignoreCaseErr error
-	listingErr    error
+	submoduleErr error
+	asked        []string
 }
 
-func (f uncommittedPolicyFake) run(_ string, args ...string) ([]byte, error) {
-	switch args[0] {
-	case "ls-files":
-		return nil, nil
-	case "config":
-		return f.answerIgnoreCase()
-	case "ls-tree":
-		return nil, f.listingErr
+func (f *uncommittedPolicyFake) run(_ string, args ...string) ([]byte, error) {
+	f.asked = append(f.asked, args[0])
+	if args[0] == "ls-files" {
+		return nil, f.submoduleErr
 	}
 	return nil, errors.New("unexpected git question: " + strings.Join(args, " "))
 }
 
-func (f uncommittedPolicyFake) answerIgnoreCase() ([]byte, error) {
-	if f.ignoreCaseErr != nil {
-		return nil, f.ignoreCaseErr
-	}
-	if f.ignoreCase == "" {
-		return nil, gitSaysUnset
-	}
-	return []byte(f.ignoreCase + "\n"), nil
-}
+// Whether the revision holds the path in another case is decided before a file on disk is called uncommitted, from the
+// revision alone, so a policy that reaches this point needs only the commit: neither the revision's listing nor git's
+// settings are asked again.
+func TestAnUncommittedPolicyIsToldToCommitItAndNothingAboutCaseIsAsked(t *testing.T) {
+	fake := &uncommittedPolicyFake{}
 
-func TestAnUncommittedPolicyIsGivenNoAdviceWhenGitCannotAnswerWhetherTheRevisionHoldsItInAnotherCase(t *testing.T) {
-	cases := []struct {
-		name  string
-		fake  uncommittedPolicyFake
-		words string
-	}{
-		{"the revision cannot be listed", uncommittedPolicyFake{ignoreCase: "true", listingErr: errRevisionListing}, listingQuestion},
-		{"git cannot say whether it ignores case", uncommittedPolicyFake{ignoreCaseErr: errors.New("exit status 128: fatal: bad config line 1")}, "whether git ignores case"},
+	message, cause, err := UncommittedPolicy(fake.run, "repo", "HEAD", "policies/P.json")
+
+	if err != nil || cause != projectreadiness.CauseNotCommitted || !strings.Contains(message, "commit the file") {
+		t.Errorf("UncommittedPolicy = %q, %q, %v; want the advice to commit the file", message, cause, err)
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			assertUncommittedPolicyUnanswered(t, c.fake, c.words)
-		})
+	for _, question := range fake.asked {
+		if question != "ls-files" {
+			t.Errorf("git was asked %v; want the submodule question alone", fake.asked)
+		}
 	}
 }
 
-func assertUncommittedPolicyUnanswered(t *testing.T, fake uncommittedPolicyFake, words string) {
-	t.Helper()
+func TestAnUncommittedPolicyIsGivenNoAdviceWhenGitCannotAnswerWhetherItLiesInASubmodule(t *testing.T) {
+	fake := &uncommittedPolicyFake{submoduleErr: errors.New("exit status 128: fatal: bad index")}
 
 	message, cause, err := UncommittedPolicy(fake.run, "repo", "HEAD", "policies/P.json")
 
 	if err == nil || cause != projectreadiness.CauseGitUnreadable {
 		t.Errorf("UncommittedPolicy = cause %q, error %v; want the unanswered question, with the cause that says git could not answer", cause, err)
 	}
-	requireContains(t, message, "Coach could not check "+words, "so it gives no advice")
+	requireContains(t, message, "Coach could not check whether it lies inside a submodule", "so it gives no advice")
 	if strings.Contains(message, "commit the file") {
-		t.Errorf("message %q still tells the user to commit a file that may already be there under another case", message)
-	}
-}
-
-// An unset core.ignorecase is git's plain "no": the repository tells cases apart, and committing is right.
-func TestAnUncommittedPolicyIsToldToCommitItWhenGitSaysItDoesNotIgnoreCase(t *testing.T) {
-	cases := map[string]uncommittedPolicyFake{
-		"core.ignorecase is unset": {},
-		"core.ignorecase is false": {ignoreCase: "false"},
-	}
-	for name, fake := range cases {
-		t.Run(name, func(t *testing.T) {
-			assertToldToCommit(t, fake)
-		})
-	}
-}
-
-func assertToldToCommit(t *testing.T, fake uncommittedPolicyFake) {
-	t.Helper()
-
-	message, cause, err := UncommittedPolicy(fake.run, "repo", "HEAD", "policies/P.json")
-
-	if err != nil || cause != projectreadiness.CauseNotCommitted || !strings.Contains(message, "commit the file") {
-		t.Errorf("UncommittedPolicy = %q, %q, %v; want the advice to commit the file", message, cause, err)
+		t.Errorf("message %q still tells the user to commit a file that may not be committable", message)
 	}
 }

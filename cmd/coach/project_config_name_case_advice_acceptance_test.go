@@ -8,31 +8,40 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// What the revision commits decides how a name spelled in another case is answered, and the disk is asked only
+// whether a regular file is there: the same name is told the same on a disk that folds case and on one that does not.
 var _ = Describe("coach codesignal: the advice for a policy path spelled in another case follows what the revision holds", func() {
 	var repo string
 
 	BeforeEach(func() {
-		skipUnlessFilesystemResolvesCase()
 		repo = commitScannableGoRepo()
 	})
 
-	When("the revision holds the spelling the disk holds and the user typed another", func() {
+	When("the revision holds the policy under a spelling other than the one the user typed", func() {
 		BeforeEach(func() {
 			commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
 		})
 
-		It("tells the user to pass the file's spelling and names no rename, for a file", func() {
-			stderr := scanExplicitPolicy(repo, "cfg/P.JSON")
+		DescribeTable("the user is told what is committed and to make git record the spelling typed, in words",
+			func(typed string) {
+				stderr := scanExplicitPolicy(repo, typed)
 
-			Expect(string(stderr)).To(ContainSubstring(`it holds "cfg/p.json"; pass --project-config cfg/p.json`), "stderr:\n%s", stderr)
-			Expect(string(stderr)).NotTo(ContainSubstring("rename"), "the user only mistyped the name:\n%s", stderr)
-		})
+				Expect(string(stderr)).To(ContainSubstring(`the policy is committed as "cfg/p.json", but Coach reads "`+typed+`", so it is not read: `+makeGitRecordIt(typed)), "stderr:\n%s", stderr)
+				Expect(string(stderr)).To(ContainSubstring(moveWhatStandsThereAside(typed)), "stderr:\n%s", stderr)
+				Expect(string(stderr)).NotTo(ContainSubstring("pass --project-config"), "the spelling to name is the user's to choose, and no flag is offered in its place:\n%s", stderr)
+				expectNoRunnableCommand(string(stderr))
+			},
+			Entry("a file typed in another case", "cfg/P.JSON"),
+			Entry("a directory typed in another case", "CFG/p.json"),
+			Entry("a directory and a file typed in another case", "CFG/P.json"),
+		)
 
-		It("tells the user to pass the directory's spelling and names no rename, for a directory", func() {
-			stderr := scanExplicitPolicy(repo, "CFG/p.json")
+		It("takes the same cause in --check-project, and offers no new policy over the one that is committed", func() {
+			doc := expectCheckProject(repo, "--project-config", "CFG/P.json")
 
-			Expect(string(stderr)).To(ContainSubstring(`it holds "cfg"; pass --project-config cfg/p.json`), "stderr:\n%s", stderr)
-			Expect(string(stderr)).NotTo(ContainSubstring("rename"), "the user only mistyped the name:\n%s", stderr)
+			Expect(causeOfGap(doc, "policy_invalid")).To(Equal("name_case_differs"), "gaps: %+v", doc.Gaps)
+			_, authors := nextActionOfKind(doc, "author_policy")
+			Expect(authors).To(BeFalse(), "next actions: %+v", doc.NextActions)
 		})
 	})
 
@@ -40,6 +49,7 @@ var _ = Describe("coach codesignal: the advice for a policy path spelled in anot
 	// disk shows: git status is clean when only the case differs, and v0.11.0 read it.
 	When("the revision holds the spelling the user typed and the disk shows another", func() {
 		BeforeEach(func() {
+			skipUnlessFilesystemResolvesCase()
 			commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
 		})
 
@@ -65,43 +75,15 @@ var _ = Describe("coach codesignal: the advice for a policy path spelled in anot
 		})
 	})
 
-	// More than one component typed in another case: the path to pass is the one the revision holds in full, so the
-	// advice pasted is accepted and not refused again with a second correction.
-	When("more than one component is typed in another case", func() {
-		BeforeEach(func() {
-			commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
-		})
-
-		It("tells the user to pass the whole path the revision holds, and the advice pasted is accepted", func() {
-			stderr := scanExplicitPolicy(repo, "CFG/P.json")
-
-			Expect(string(stderr)).To(ContainSubstring(`pass --project-config cfg/p.json`), "stderr:\n%s", stderr)
-			Expect(string(stderr)).NotTo(ContainSubstring(`pass --project-config cfg/P.json`), "the revision does not hold that path:\n%s", stderr)
-			Expect(scanExplicitPolicyAccepted(repo, "cfg/p.json")).To(ContainSubstring(`"schema_version":"2"`))
-		})
-	})
-
-	When("the revision holds neither spelling", func() {
-		It("names no rename and no spelling to pass, for a file", func() {
+	When("the revision holds the policy in no spelling of the name typed", func() {
+		It("gives no case advice, whatever the disk resolves the name to", func() {
 			Expect(os.MkdirAll(filepath.Join(repo, "cfg"), 0o755)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(repo, "cfg", "p.json"), []byte(singleRootPolicyJSON), 0o644)).To(Succeed())
 
 			stderr := scanExplicitPolicy(repo, "cfg/P.JSON")
 
-			Expect(string(stderr)).To(ContainSubstring(`it holds neither "cfg/P.JSON" nor "cfg/p.json"`), "stderr:\n%s", stderr)
-			Expect(string(stderr)).NotTo(ContainSubstring("rename"), "stderr:\n%s", stderr)
-			Expect(string(stderr)).NotTo(ContainSubstring("pass --project-config"), "stderr:\n%s", stderr)
-		})
-
-		It("names no rename and no spelling to pass, for a directory", func() {
-			Expect(os.MkdirAll(filepath.Join(repo, "CFG"), 0o755)).To(Succeed())
-			Expect(os.WriteFile(filepath.Join(repo, "CFG", "p.json"), []byte(singleRootPolicyJSON), 0o644)).To(Succeed())
-
-			stderr := scanExplicitPolicy(repo, "cfg/p.json")
-
-			Expect(string(stderr)).To(ContainSubstring(`it holds neither "cfg" nor "CFG"`), "stderr:\n%s", stderr)
-			Expect(string(stderr)).NotTo(ContainSubstring("rename"), "stderr:\n%s", stderr)
-			Expect(string(stderr)).NotTo(ContainSubstring("pass --project-config"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("make git record it"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring("core.ignorecase"), "stderr:\n%s", stderr)
 		})
 	})
 })
@@ -119,7 +101,7 @@ var _ = Describe("coach codesignal: a policy missing from disk is looked up in t
 
 		stderr := scanExplicitPolicy(repo, "cfg/P.json")
 
-		Expect(string(stderr)).To(ContainSubstring(`holds it as "cfg/p.json"; pass --project-config cfg/p.json`), "stderr:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring(`committed as "cfg/p.json", but Coach reads "cfg/P.json"`), "stderr:\n%s", stderr)
 		Expect(string(stderr)).To(ContainSubstring("project_config_invalid"), "stderr:\n%s", stderr)
 		Expect(string(stderr)).NotTo(ContainSubstring("suggest-project-config"), "authoring there replaces the committed policy:\n%s", stderr)
 	})
@@ -129,7 +111,7 @@ var _ = Describe("coach codesignal: a policy missing from disk is looked up in t
 
 		stderr := scanExplicitPolicy(repo, "CFG/p.json")
 
-		Expect(string(stderr)).To(ContainSubstring(`holds it as "cfg/p.json"; pass --project-config cfg/p.json`), "stderr:\n%s", stderr)
+		Expect(string(stderr)).To(ContainSubstring(`committed as "cfg/p.json", but Coach reads "CFG/p.json"`), "stderr:\n%s", stderr)
 		Expect(string(stderr)).NotTo(ContainSubstring("suggest-project-config"), "stderr:\n%s", stderr)
 	})
 

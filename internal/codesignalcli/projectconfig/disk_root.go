@@ -6,8 +6,7 @@ import (
 )
 
 // diskRoot is what the on-disk checks use of the repository root: a stat that does not follow links,
-// and an open. It is *os.Root in production. A test gives it a file system that folds case, because the
-// checks for a name spelled in another case can only fire on one, and a Linux disk is not.
+// and an open. It is *os.Root in production.
 type diskRoot interface {
 	Lstat(name string) (fs.FileInfo, error)
 	OpenFile(name string, flag int, perm fs.FileMode) (diskFile, error)
@@ -16,7 +15,6 @@ type diskRoot interface {
 // diskFile is the part of an opened entry the checks use.
 type diskFile interface {
 	Stat() (fs.FileInfo, error)
-	Readdirnames(n int) ([]string, error)
 	Close() error
 }
 

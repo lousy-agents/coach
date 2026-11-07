@@ -31,7 +31,7 @@ func heldByTheIndex(run gitrepo.Runner, dir, revision string, selection Selectio
 	if !selection.Deprecated || selection.CanonicalPathTaken() {
 		return selection, nil
 	}
-	status, err := ExplicitOnDiskStatus(run, dir, revision, CanonicalPath)
+	status, err := workingTreeStatus(run, dir, revision, CanonicalPath)
 	if err != nil {
 		return Selection{}, err
 	}

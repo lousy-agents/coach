@@ -3,6 +3,7 @@ package projectcheck
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -44,6 +45,8 @@ func questionsWhereOnly(t reporter, failing func(args []string) bool) func(strin
 		case args[0] == "ls-tree" && strings.HasSuffix(args[len(args)-1], "package.json"):
 			return []byte(packageManifestBlob), nil
 		case args[0] == "cat-file":
+			return nil, nil
+		case theRevisionsDirectoryListing(args):
 			return nil, nil
 		}
 		return nil, fmt.Errorf("questionsWhereOnly: unexpected git question: %s", strings.Join(args, " "))
@@ -89,8 +92,14 @@ func theRepositoryRootLookup(args []string) bool {
 	return args[0] == "rev-parse" && len(args) > 1 && args[1] == "--show-toplevel"
 }
 
+// theRevisionsDirectoryListing is the question whether the revision commits a policy path in another case, which lists
+// a directory of the tree and finds it empty.
+func theRevisionsDirectoryListing(args []string) bool {
+	return args[0] == "ls-tree" && slices.Contains(args, "--name-only")
+}
+
 func theTreeLookupOfThePolicy(args []string) bool {
-	return args[0] == "ls-tree" && !strings.HasSuffix(args[len(args)-1], "package.json")
+	return args[0] == "ls-tree" && !theRevisionsDirectoryListing(args) && !strings.HasSuffix(args[len(args)-1], "package.json")
 }
 
 func theRevisionCheck(args []string) bool {

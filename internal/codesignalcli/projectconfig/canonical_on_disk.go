@@ -27,10 +27,6 @@ func selectionOfTheProbe(err error) (Selection, error) {
 	if err == nil {
 		return Selection{UncommittedCanonical: true}, nil
 	}
-	var mismatch caseMismatchError
-	if errors.As(err, &mismatch) {
-		return selectionOfASpellingOnDisk(mismatch)
-	}
 	var refusal *ConfigError
 	switch {
 	case !errors.As(err, &refusal):
@@ -41,26 +37,12 @@ func selectionOfTheProbe(err error) (Selection, error) {
 	return Selection{UnusableCanonical: refusal}, nil
 }
 
-// selectionOfASpellingOnDisk is the selection for a default policy path that a disk folding case keeps in another
-// spelling. It is asked only when the revision commits nothing at the path in any spelling, so there is no policy
-// for the spelling to be wrong about, and it never stops the scan: the explicit path's refusal says to pass or to
-// rename a spelling the revision holds, and the user passed no path. What stands under the other spelling is a
-// file that cannot be the policy, named in a diagnostic; when the policy is not there at all, the directory is
-// another tool's, or empty, and is nothing.
-func selectionOfASpellingOnDisk(mismatch caseMismatchError) (Selection, error) {
-	if mismatch.displaced != nil {
-		return selectionOfTheProbe(mismatch.displaced)
-	}
-	return Selection{UnusableCanonical: mismatch.config(nil)}, nil
-}
-
 // onDiskReasons say, for each cause the disk can give a path that cannot be the policy, what is wrong with it.
 var onDiskReasons = map[projectreadiness.PolicyCause]string{
 	projectreadiness.CauseNotARegularFile:    "it is not a regular file",
 	projectreadiness.CauseSymbolicLink:       "it is a symbolic link, or is reached through one",
 	projectreadiness.CauseUnreadableOnDisk:   "the process cannot check or read it",
 	projectreadiness.CauseParentNotDirectory: "a file stands where its directory should be",
-	projectreadiness.CauseNameCaseDiffers:    "it is spelled in another case on disk",
 }
 
 // UnusableCanonicalMessage is the scan's diagnostic for a default policy path the working tree holds something
@@ -70,8 +52,6 @@ func UnusableCanonicalMessage(refusal *ConfigError) string {
 	reason, known := onDiskReasons[refusal.PolicyCause]
 	if refusal.PolicyCause == projectreadiness.CauseInSubmodule {
 		reason = fmt.Sprintf("it lies inside the submodule %q, which this repository records as a single commit, so the file cannot be committed here", refusal.Blocker)
-	} else if refusal.PolicyCause == projectreadiness.CauseNameCaseDiffers && refusal.SpelledOnDisk != "" {
-		reason = fmt.Sprintf("the working tree has %q, which is spelled in another case", refusal.SpelledOnDisk)
 	} else if !known {
 		reason = "the working tree cannot use it"
 	}

@@ -18,6 +18,8 @@ func skipUnlessTheFileSystemFoldsCase(directory string) {
 	}
 }
 
+const uncommittedDefaultPolicy = ".lousy-agents/coach.json is in the worktree but is not committed"
+
 func writeInRepo(repo, name, content string) {
 	GinkgoHelper()
 	Expect(os.MkdirAll(filepath.Dir(filepath.Join(repo, name)), 0o755)).To(Succeed())
@@ -33,9 +35,10 @@ func scannableRepoWithTwoCommits() (repo, first string) {
 }
 
 // A policy is discovered only at .lousy-agents/coach.json. When the revision commits nothing there in any
-// spelling, a directory or a file that the disk keeps in another case is not a policy for the spelling to be
-// wrong about, and a file system that ignores case must not turn it into a refusal of every run: v0.11.0 scanned
-// without a policy, and so does this. The refusal that names a spelling is for a revision that commits one.
+// spelling, the spelling a disk shows is not a policy for a spelling to be wrong about, and a file system that ignores
+// case must not turn it into a refusal of every run: v0.11.0 scanned without a policy, and so does this. The refusal
+// that names a spelling is for a revision that commits one. The disk is only asked whether a regular file is at the
+// path, so a file that a disk folding case resolves to it is a file that is not committed, as any other is.
 var _ = Describe("coach codesignal: a default policy path the disk spells in another case, with nothing committed in any spelling", func() {
 	variants := []TableEntry{
 		Entry("an untracked directory in another case", func(repo string) {
@@ -48,7 +51,7 @@ var _ = Describe("coach codesignal: a default policy path the disk spells in ano
 		}, ""),
 		Entry("an untracked policy file in another case", func(repo string) {
 			writeInRepo(repo, ".lousy-agents/Coach.json", singleRootPolicyJSON)
-		}, ".lousy-agents/Coach.json"),
+		}, uncommittedDefaultPolicy),
 	}
 
 	DescribeTable("a baseline scan goes on without a policy",
@@ -63,10 +66,9 @@ var _ = Describe("coach codesignal: a default policy path the disk spells in ano
 			Expect(string(stderr)).NotTo(ContainSubstring("--project-config"), "the user passed none")
 			report := decodeCoachReport(stdout)
 			Expect(report.Diagnostics).NotTo(ContainElement(HaveField("Message", ContainSubstring("stored as"))))
-			if named == "" {
-				Expect(report.Diagnostics).NotTo(ContainElement(HaveField("Message", ContainSubstring("name_case_differs"))))
-			} else {
-				Expect(report.Diagnostics).To(ContainElement(HaveField("Message", And(ContainSubstring("cause=name_case_differs"), ContainSubstring(named)))))
+			Expect(report.Diagnostics).NotTo(ContainElement(HaveField("Message", ContainSubstring("name_case_differs"))))
+			if named != "" {
+				Expect(report.Diagnostics).To(ContainElement(HaveField("Message", ContainSubstring(named))))
 			}
 		},
 		variants,

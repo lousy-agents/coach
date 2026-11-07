@@ -53,8 +53,8 @@ const (
 	// CauseUnreadableOnDisk is a path the process cannot stat or read. Fix the permissions or the
 	// file system error.
 	CauseUnreadableOnDisk PolicyCause = "unreadable_on_disk"
-	// CauseNameCaseDiffers is a name that a case-folding file system resolves but the analyzed
-	// revision spells differently. Rename it to the revision's spelling.
+	// CauseNameCaseDiffers is a policy path that the analyzed revision commits only under another spelling,
+	// differing in case. Make git record it as the spelling Coach reads.
 	CauseNameCaseDiffers PolicyCause = "name_case_differs"
 	// CauseUndetermined is a state Coach has no word for.
 	CauseUndetermined PolicyCause = "undetermined"

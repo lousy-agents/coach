@@ -32,17 +32,8 @@ func assertUnansweredListing(t *testing.T, got *ConfigError, words ...string) {
 	requireContains(t, got.Message, append([]string{"Coach could not check " + listingQuestion, "unable to read tree", "so it gives no advice"}, words...)...)
 }
 
-func TestAPolicyMissingFromDiskIsNotCalledPlainlyMissingWhenTheRevisionCannotBeListed(t *testing.T) {
-	got := respelledInRevision(listingFailsWithGitsWords, "cfg/P.json")
-
-	if got == nil {
-		t.Fatal("no refusal; want one that says git could not be asked")
-	}
-	assertUnansweredListing(t, got, `--project-config "cfg/P.json" is not on disk`)
-}
-
 func TestADiscoveredPolicyIsNotCalledPlainlyMissingWhenTheRevisionCannotBeListed(t *testing.T) {
-	got := wrongCaseOf(listingFailsWithGitsWords, ".lousy-agents/coach.json", anyMove)
+	got := wrongCaseOf(listingFailsWithGitsWords, ".lousy-agents/coach.json")
 
 	assertUnansweredListing(t, configErrorOf(t, got), `nothing is committed at ".lousy-agents/coach.json"`)
 }
