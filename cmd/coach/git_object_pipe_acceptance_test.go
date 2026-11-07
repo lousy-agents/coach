@@ -34,31 +34,23 @@ var _ = Describe("coach codesignal: a named pipe where git expects the object of
 		ceiling   = readLimit + 25*time.Second
 	)
 
-	// the scope is all so that the scan does not read the whole tree for its source scope first; it is the
-	// read of the one file that this spec is about
-	It("ends a --base scan with the read of that file, naming git show", func() {
-		repo := newTempGitRepo()
-		commitFile(repo, "a.go", minimalGoSource)
-		commitFile(repo, "a.go", minimalGoSource+"\n// changed\n")
-		blockObject(repo, "a.go")
+	// The two scans wait out the same 30 seconds, so they run at once. The scope is all so that a scan does not
+	// read the whole tree for its source scope first; it is the read of the one file that this spec is about.
+	It("ends a --base scan with the read of that file, naming git show, and a --baseline scan with the request for it, naming git cat-file", func() {
+		baseRepo := newTempGitRepo()
+		commitFile(baseRepo, "a.go", minimalGoSource)
+		commitFile(baseRepo, "a.go", minimalGoSource+"\n// changed\n")
+		blockObject(baseRepo, "a.go")
+		baselineRepo := commitScannableGoRepo()
+		blockObject(baselineRepo, "a.go")
 		env := stubToolchainEnv(pathWithStubNode("v24.9.9"))
+		scans := []pipeScan{
+			{name: "--base: git show", repo: baseRepo, env: env, args: []string{"codesignal", "--base", "HEAD~1", "--scope", "all"}, wantExit: 1, question: `git show: .*timed out after 30s`},
+			{name: "--baseline: git cat-file", repo: baselineRepo, env: env, args: []string{"codesignal", "--baseline", "--scope", "all"}, wantExit: 1, question: `git cat-file: .*timed out after 30s`},
+		}
 
-		stderr, exitCode, elapsed := runCoachWithin(repo, env, 3*readLimit+20*time.Second, "codesignal", "--base", "HEAD~1", "--scope", "all")
+		results := runAtOnce(scans, 3*readLimit+20*time.Second)
 
-		Expect(elapsed).To(BeNumerically("<", ceiling), "the scan waited %s for git; stderr: %s", elapsed, stderr)
-		Expect(exitCode).To(Equal(1), "an operational failure: stderr: %s", stderr)
-		Expect(string(stderr)).To(MatchRegexp(`git show: .*timed out after 30s`))
-	})
-
-	It("ends a --baseline scan with the request for that file, naming git cat-file", func() {
-		repo := commitScannableGoRepo()
-		blockObject(repo, "a.go")
-		env := stubToolchainEnv(pathWithStubNode("v24.9.9"))
-
-		stderr, exitCode, elapsed := runCoachWithin(repo, env, 3*readLimit+20*time.Second, "codesignal", "--baseline", "--scope", "all")
-
-		Expect(elapsed).To(BeNumerically("<", ceiling), "the scan waited %s for git; stderr: %s", elapsed, stderr)
-		Expect(exitCode).To(Equal(1), "an operational failure: stderr: %s", stderr)
-		Expect(string(stderr)).To(MatchRegexp(`git cat-file: .*timed out after 30s`))
+		Expect(pipeProblems(scans, results, ceiling)).To(BeEmpty())
 	})
 })
