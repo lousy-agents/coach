@@ -25,6 +25,7 @@ Diagnostic names are `<tool>_config_*`. Coach's names today:
 
 - `project_config_deprecated`
 - `project_config_uncommitted`
+- `project_config_unusable`
 - `project_config_migration_skipped`
 - `project_config_migration_failed`
 - `project_config_invalid`

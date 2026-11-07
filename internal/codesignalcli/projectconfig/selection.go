@@ -8,5 +8,9 @@ type Selection struct {
 	Path                 string
 	Deprecated           bool
 	UncommittedCanonical bool
-	Fatal                error
+	// UnusableCanonical is why the working tree's entry at the canonical path cannot be the policy, when
+	// something is there that is not a regular file the process can read. The scan does not read it either way:
+	// a discovered policy is the revision's.
+	UnusableCanonical *ConfigError
+	Fatal             error
 }

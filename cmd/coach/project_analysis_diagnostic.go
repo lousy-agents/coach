@@ -38,6 +38,13 @@ func projectSelectionDiagnostics(selection projectconfig.Selection, revision str
 	// suppressUncommittedCanonical is set only after this invocation created
 	// .lousy-agents/coach.json. Discover runs again inside prepareProjectAnalysis
 	// and would otherwise report that new worktree file.
+	if selection.UnusableCanonical != nil {
+		diags = append(diags, codesignal.Diagnostic{
+			Kind:    "project_config_unusable",
+			Path:    projectconfig.CanonicalPath,
+			Message: projectconfig.UnusableCanonicalMessage(selection.UnusableCanonical),
+		})
+	}
 	if selection.UncommittedCanonical && !suppressUncommittedCanonical {
 		diags = append(diags, codesignal.Diagnostic{
 			Kind:    "project_config_uncommitted",
