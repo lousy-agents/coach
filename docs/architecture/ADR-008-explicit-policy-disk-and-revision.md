@@ -20,7 +20,11 @@ For an **explicit** `--project-config` only, two questions are answered from two
 1. *Is there a usable entry at the path?* The working tree answers. The path must be a regular file, reached without a symbolic link, that the process can open. Otherwise the scan exits `2`: `project_config_missing` when nothing is there, `project_config_invalid` when something unusable is.
 2. *What does the policy say?* The analyzed revision answers, as before. The file is not read from disk in this slice. Reading the bytes from disk is the later slice of [#168](https://github.com/lousy-agents/coach/issues/168).
 
-A policy found by discovery is unchanged. `.lousy-agents/coach.json` and the root `project.json` are judged at the revision, and a discovered policy deleted on disk is scanned from its committed copy.
+A policy found by discovery keeps its source: `.lousy-agents/coach.json` and the root `project.json` are judged at the revision, and a discovered policy deleted on disk is scanned from its committed copy, because nothing was named that the working tree could be asked about. Discovery did change in three ways, since it now asks the revision what is at the canonical path before it falls back to the root file or to no policy:
+
+- A canonical policy committed in another case (`.Lousy-Agents/Coach.json`) is refused: the scan exits `2` with `project_config_invalid`, and `--check-project` reports `policy_invalid` with the cause `name_case_differs`, both naming the `git mv` that moves it. Before, the scan ran without the policy and said only `project_config_uncommitted`.
+- A canonical path committed as a directory, or as anything else a policy cannot be, is refused with exit `2`. Before, the scan ran without a policy.
+- `--check-project` on a canonical policy that is on disk and not committed reports `policy_missing` with the cause `not_committed`, offers no `author_policy`, and does not count the path as a relevant change in `dirty_worktree`, because the file's presence is what decided the cause. Before, it offered `author_policy` with no cause, and authoring then refused for want of a free target. The scan is unchanged: exit `0` with `project_config_uncommitted`.
 
 When the working tree decides, `--check-project` marks the policy check as decided on disk and leaves that path out of `dirty_worktree`, because the report did read the working tree for it. The exception is a staged edit to a committed policy, or a staged entry for a policy that was never committed, that the working tree could not supply, whether the file is gone, a file stands in a parent's place, or an unusable entry took its place: nothing read that edit, so the path stays in `dirty_worktree` and no restore is offered over it. An unmerged entry for a committed policy is the same case. Only the policy's own path leaves the list: every other uncommitted path under the policy's roots still counts, and the roots of a policy the working tree refused are those of its committed copy at the analyzed revision. With no valid policy committed there are no roots, and only package and compiler metadata counts.
 
@@ -31,7 +35,7 @@ When the working tree decides, `--check-project` marks the policy check as decid
 | Revision only (the previous convention) | Reproducible from the commit. A file deleted or swapped on disk is invisible to the scan | Rejected: the user is told about a policy that is not the one in front of them |
 | Disk only | A scan of a non-HEAD revision judges the working tree, and CI on a sparse checkout cannot run | Rejected: breaks `--base` and reproducibility |
 | Refuse on any dirty policy | Strictest, but turns an uncommitted edit into a hard failure, which `--check-project` and the dirty-worktree disclosure already report without one | Rejected: the disclosure exists for this |
-| Disk for existence and kind, revision for content (chosen) | Catches the file that is gone or unusable, keeps the content reproducible, changes nothing for discovery | Chosen |
+| Disk for existence and kind, revision for content (chosen) | Catches the file that is gone or unusable, keeps the content reproducible; discovery keeps reading the revision, and refuses a policy it holds in the wrong case or as the wrong kind of entry | Chosen |
 
 ## Consequences
 
