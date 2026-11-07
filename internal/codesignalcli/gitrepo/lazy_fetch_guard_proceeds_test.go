@@ -35,7 +35,6 @@ func TestRefuseMissingObjectsAsksNoQuestionOfGitWhenTheAnswerIsAlreadyKnown(t *t
 		name       string
 		repository fakeRepository
 	}{
-		{"a git that can be told not to fetch", fakeRepository{version: currentGit, promisors: promisorOrigin}},
 		{"a repository that is not a partial clone", fakeRepository{version: oldGit}},
 	}
 	for _, c := range cases {

@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -49,14 +48,14 @@ var _ = Describe("coach codesignal: a diff in a partial clone that lacks the mer
 		clone := changedFilePartialClone()
 		_, stderr, exitCode := runCoachBinary(commandPath, clone, os.Environ(), diffArgs...)
 		Expect(exitCode).To(Equal(1), "stderr:\n%s", stderr)
-		command := regexp.MustCompile(`(git rev-list --objects[^\n]*?) and run again`).FindStringSubmatch(string(stderr))
-		Expect(command).NotTo(BeNil(), "stderr names no command:\n%s", stderr)
+		command := printedBatch(stderr)
+		Expect(command).NotTo(BeEmpty(), "stderr names no command:\n%s", stderr)
 
-		fetch := exec.Command("sh", "-c", command[1])
+		fetch := exec.Command("sh", "-c", command)
 		fetch.Dir = clone
 		fetch.Env = commitEnv
 		output, err := fetch.CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), "the printed command failed: %s\n%s", command[1], output)
+		Expect(err).NotTo(HaveOccurred(), "the printed command failed: %s\n%s", command, output)
 		stdout, stderr, exitCode := runCoachBinary(commandPath, clone, os.Environ(), diffArgs...)
 
 		Expect(exitCode).To(Equal(0), "stdout: %s\nstderr: %s", stdout, stderr)

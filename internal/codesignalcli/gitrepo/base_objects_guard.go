@@ -26,7 +26,7 @@ func refuseWhenTheMergeBaseLacksObjects(run Runner, dir, base string) error {
 	if !missing.any() {
 		return nil
 	}
-	return &OperationalError{Message: fmt.Sprintf("this repository is a partial clone, and %s has %s not in it, so the files that changed cannot be compared with their earlier versions, and Coach does not fetch objects%s", revision.label, missing.phrase(), advice(FetchAdvice(run, dir, revision.name, "")))}
+	return &OperationalError{Message: fmt.Sprintf("this repository is a partial clone, and %s has %s not in it, so the files that changed cannot be compared with their earlier versions, and Coach does not fetch objects%s", revision.label, missing.phrase(), advice(FetchAdviceFor(run, dir, revision.name, "HEAD")))}
 }
 
 func advice(fetch string) string {
@@ -34,4 +34,33 @@ func advice(fetch string) string {
 		return ""
 	}
 	return "; " + fetch
+}
+
+// refuseWhenHeadLacksTrees is the check for the trees of HEAD, which every read of the revision begins with: a
+// clone made with --filter=tree:0 has the commit and not its root tree, and `ls-tree` fails on it with "not a
+// tree object". Blobs are not asked about: the snapshot reads, and reports, the ones it needs, and a clone with
+// no checkout can be checked for a policy with only some of them. A probe that cannot be answered is left to the
+// scan, which says why HEAD cannot be read; an empty repository has no HEAD, and is not a partial clone to blame.
+//
+// For a diff the batch lists the merge base as well, which the clone made without trees lacks too: one paste then
+// brings in what both reads need.
+func refuseWhenHeadLacksTrees(run Runner, dir, base string) error {
+	missing, err := treesMissingOf(run, dir, "HEAD")
+	if err != nil || !missing.any() {
+		return nil
+	}
+	return &OperationalError{Message: fmt.Sprintf("this repository is a partial clone, and HEAD has %s not in it, so its files cannot be listed, and Coach does not fetch objects%s", missing.phrase(), advice(FetchAdviceFor(run, dir, revisionsToFetch(run, dir, base)...)))}
+}
+
+// revisionsToFetch are HEAD and, for a diff whose merge base is known, the merge base. A base that has no merge
+// base is left to the scan, which says so in its own words.
+func revisionsToFetch(run Runner, dir, base string) []string {
+	if base == "" {
+		return []string{"HEAD"}
+	}
+	mergeBase, err := mergeBaseOf(run, dir, base)
+	if err != nil {
+		return []string{"HEAD"}
+	}
+	return []string{mergeBase, "HEAD"}
 }

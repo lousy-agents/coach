@@ -16,8 +16,8 @@ func TestRefuseMissingObjectsLeavesABaseThatHasNoMergeBaseToTheScan(t *testing.T
 
 	err := RefuseMissingObjects(repository.run, "repo", "no-such-ref")
 
-	if err != nil || len(repository.probed) != 0 {
-		t.Errorf("RefuseMissingObjects = %v after probing %q; want the scan to say the base cannot be resolved", err, repository.probed)
+	if err != nil || !reflect.DeepEqual(repository.probed, []string{headTreesProbe}) {
+		t.Errorf("RefuseMissingObjects = %v after probing %q; want the scan to say the base cannot be resolved, after asking about the trees of HEAD alone", err, repository.probed)
 	}
 }
 
