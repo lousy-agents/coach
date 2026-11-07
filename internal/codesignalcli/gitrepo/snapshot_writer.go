@@ -13,15 +13,26 @@ type snapshotWriter struct {
 	written  int64
 }
 
+// spend counts size bytes against the total and reports whether they fit.
+func (w *snapshotWriter) spend(size int64) bool {
+	if w.written+size > w.total {
+		return false
+	}
+	w.written += size
+	return true
+}
+
+func (w *snapshotWriter) pastTheTotal() error {
+	return fmt.Errorf("the files the scan reads from the source snapshot are larger than %d bytes", w.total)
+}
+
 func (w *snapshotWriter) write(oid string, content []byte) error {
 	entries := w.byObject[oid]
-	size := int64(len(content)) * int64(len(entries))
-	if w.written+size <= w.total {
-		w.written += size
+	if w.spend(int64(len(content)) * int64(len(entries))) {
 		return writeEveryPathOf(w.root, entries, content)
 	}
 	if anyNeedsContent(entries) {
-		return fmt.Errorf("the files the scan reads from the source snapshot are larger than %d bytes", w.total)
+		return w.pastTheTotal()
 	}
 	return writePlaceholders(w.root, entries)
 }

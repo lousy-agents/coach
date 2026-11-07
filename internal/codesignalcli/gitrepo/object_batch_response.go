@@ -9,16 +9,18 @@ import (
 )
 
 // objectResponse is what git answered for one object: its content, or that it is missing, or that it is
-// past the limit and was discarded unread.
+// past the limit on one object, in which case its bytes are still in the stream and size says how many.
 type objectResponse struct {
 	content  []byte
+	size     int64
 	found    bool
 	tooLarge bool
 }
 
 // readObjectResponse reads "<oid> <type> <size>", the content and a newline, or "<oid> missing". An object
-// past limit is not allocated: its bytes and the newline are read past, so the next response starts where
-// the next request's answer does.
+// past limit is not allocated and its bytes are not read: they stay in reader, and the caller reads them (a
+// chunk at a time) or reads past them and the newline, so that the next response starts where the next
+// request's answer does.
 func readObjectResponse(reader *bufio.Reader, oid string, limit int64) (objectResponse, error) {
 	header, err := reader.ReadString('\n')
 	if err != nil {
@@ -36,10 +38,7 @@ func readObjectResponse(reader *bufio.Reader, oid string, limit int64) (objectRe
 		return objectResponse{}, fmt.Errorf("malformed cat-file size for %s: %q", oid, header)
 	}
 	if size > limit {
-		if _, err := io.CopyN(io.Discard, reader, size+1); err != nil {
-			return objectResponse{}, fmt.Errorf("reading past the cat-file content for %s: %w", oid, err)
-		}
-		return objectResponse{found: true, tooLarge: true}, nil
+		return objectResponse{found: true, tooLarge: true, size: size}, nil
 	}
 	content := make([]byte, size)
 	if _, err := io.ReadFull(reader, content); err != nil {
