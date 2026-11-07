@@ -201,10 +201,10 @@ coach codesignal --base main --project-config .lousy-agents/coach.json
 coach codesignal --baseline --project-config .lousy-agents/coach.json --project-language typescript
 ```
 
-Move a root `project.json` to that path:
+Move a root `project.json` to that path, from any directory of the repository:
 
 ```sh
-mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json
+top="$(git rev-parse --show-toplevel)" && mkdir -p "$top"/.lousy-agents && git -C "$top" mv -- project.json .lousy-agents/coach.json
 ```
 
 An explicit `--project-config` still reads only that path. A schema-valid root `project.json` is still read with a deprecation diagnostic until the follow-up removal ([issue #511](https://github.com/lousy-agents/coach/issues/511)). The lookup is [`.lousy-agents` config](./docs/conventions/lousy-agents-config.md).
