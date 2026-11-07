@@ -14,7 +14,7 @@ import (
 func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, headSHA, mergeBaseSHA string, sf gitrepo.SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic, error) {
 	headBytes, err := runGit(dir, "show", headSHA+":"+sf.Path)
 	if err != nil {
-		diagnostics, stalled := readFailure(sf.Path, "head", err)
+		diagnostics, stalled := readFailure(sf.Path, headSide, err)
 		return nil, diagnostics, stalled
 	}
 
