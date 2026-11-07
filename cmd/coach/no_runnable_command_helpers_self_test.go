@@ -16,11 +16,14 @@ func TestTheHelperCatchesTheCommandsThatCarryOutAStep(t *testing.T) {
 		"git --work-tree=. restore p.json", "\x1b[31mgit rm p.json\x1b[0m", "gi\x1b[1mt mv a A", "git \x1b[1mmv a A",
 	}
 	for _, command := range commands {
-		t.Run(command, func(t *testing.T) {
-			if runnableCommandIn(command) == "" {
-				t.Errorf("runnableCommandIn(%q) = none; want the command caught", command)
-			}
-		})
+		t.Run(command, func(t *testing.T) { requireTheCommandCaught(t, command) })
+	}
+}
+
+func requireTheCommandCaught(t *testing.T, command string) {
+	t.Helper()
+	if runnableCommandIn(command) == "" {
+		t.Errorf("runnableCommandIn(%q) = none; want the command caught", command)
 	}
 }
 
@@ -37,10 +40,13 @@ func TestTheHelperLeavesTheWordsOfTheAdviceAlone(t *testing.T) {
 		`the index also holds a staged edit to it, which clearing the mark leaves alone, and the next run then offers to keep it or to drop it`,
 	}
 	for _, text := range words {
-		t.Run(text[:40], func(t *testing.T) {
-			if found := runnableCommandIn(text); found != "" {
-				t.Errorf("runnableCommandIn flags %q in words that name no command", found)
-			}
-		})
+		t.Run(text[:40], func(t *testing.T) { requireTheWordsLeftAlone(t, text) })
+	}
+}
+
+func requireTheWordsLeftAlone(t *testing.T, text string) {
+	t.Helper()
+	if found := runnableCommandIn(text); found != "" {
+		t.Errorf("runnableCommandIn flags %q in words that name no command", found)
 	}
 }

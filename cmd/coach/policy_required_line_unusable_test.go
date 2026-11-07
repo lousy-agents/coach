@@ -26,13 +26,16 @@ func TestPolicyRequiredLineForAPolicyThatExistsAndCannotBeUsedSaysToFixItOrMoveI
 // would replace the work. The refusal says that, and not that the policy is to be moved aside; the order of its arms decides it.
 func TestPolicyRequiredLineForAnInvalidPolicyThatNoNewPolicyFixesSaysSo(t *testing.T) {
 	for _, path := range []string{"pol.json", ".lousy-agents/coach.json"} {
-		t.Run(path, func(t *testing.T) {
-			line := policyRequiredLine("coach codesignal", projectreadiness.GapPolicyInvalid, projectreadiness.RemedyNone, "abc123", path)
+		t.Run(path, func(t *testing.T) { requireTheNoRemedyLine(t, path) })
+	}
+}
 
-			const want = "(policy_invalid); a new policy cannot fix it, so resolve the policy path first."
-			if !strings.HasSuffix(line, want) || strings.Contains(line, "move it aside") || strings.Contains(line, "()") {
-				t.Errorf("line %q; want it to end with %q, and not to send the user to move the policy aside", line, want)
-			}
-		})
+func requireTheNoRemedyLine(t *testing.T, path string) {
+	t.Helper()
+	line := policyRequiredLine("coach codesignal", projectreadiness.GapPolicyInvalid, projectreadiness.RemedyNone, "abc123", path)
+
+	const want = "(policy_invalid); a new policy cannot fix it, so resolve the policy path first."
+	if !strings.HasSuffix(line, want) || strings.Contains(line, "move it aside") || strings.Contains(line, "()") {
+		t.Errorf("line %q; want it to end with %q, and not to send the user to move the policy aside", line, want)
 	}
 }
