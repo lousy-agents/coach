@@ -35,19 +35,27 @@ func TestAFileWhoseCleanFilterFailsGetsNoReplacement(t *testing.T) {
 	}
 }
 
+// askingFor is a question named by the git subcommand and, when the subcommand is asked more than once, by a word in
+// its arguments.
+func askingFor(subcommand string, containing ...string) func([]string) bool {
+	return func(args []string) bool {
+		return args[0] == subcommand && (len(containing) == 0 || strings.Contains(strings.Join(args, " "), containing[0]))
+	}
+}
+
 // whollyFakeGit is the whole of git for inspectWorkingCopy: it answers each question the inspection asks, with the
 // committed copy found and held by the index as it is, the repository's root where the file is, and a diff that says
 // the file differs, and fails the one question named. Any other question is a failure of the test, so nothing is left to a real git.
 type whollyFakeGit struct {
 	t       *testing.T
 	root    string
-	failing string
+	failing func(args []string) bool
 }
 
 func (g whollyFakeGit) run(_ string, args ...string) ([]byte, error) {
 	g.t.Helper()
-	if args[0] == g.failing {
-		return nil, errors.New("exit status 128: fatal: unable to read the index")
+	if g.failing != nil && g.failing(args) {
+		return nil, errors.New("exit status 128: fatal: git could not answer")
 	}
 	switch args[0] {
 	case "cat-file":
@@ -79,7 +87,7 @@ func aRootHoldingThePolicy(t *testing.T) string {
 // holds the committed entry or nothing. The inspection is that failure, and not a file that differs.
 func TestAnIndexThatCannotBeListedIsAFailureOfTheInspectionAndNotAFileThatDiffers(t *testing.T) {
 	root := aRootHoldingThePolicy(t)
-	git := whollyFakeGit{t: t, root: root, failing: "ls-files"}
+	git := whollyFakeGit{t: t, root: root, failing: askingFor("ls-files")}
 
 	state, err := inspectWorkingCopy(git.run, root, "HEAD", replacePath)
 
@@ -99,4 +107,47 @@ func TestTheFakeGitSaysTheFileDiffersWhenTheIndexCanBeListed(t *testing.T) {
 	if err != nil || state != workingCopyChanged {
 		t.Errorf("inspectWorkingCopy = %v, %v; want the file that differs", state, err)
 	}
+}
+
+// The inspection asks git six questions, and each one git cannot answer is a failure of the inspection and not a state
+// of the file: no replacement is offered and no restore is, and the message says that Coach could not check. A failure
+// read as an answer would print `mv -f` over a policy that may have been edited, or say that an index holds a staged edit
+// that it was never asked about.
+func TestEveryQuestionTheInspectionAsksIsAFailureWhenGitCannotAnswerIt(t *testing.T) {
+	for _, question := range []struct {
+		name    string
+		failing func([]string) bool
+	}{
+		{"whether the revision has a commit", askingFor("cat-file", "^{commit}")},
+		{"what the revision holds at the path", askingFor("ls-tree")},
+		{"whether the committed blob is here", askingFor("cat-file", "0123456789012345678901234567890123456789")},
+		{"what the index holds at the path", askingFor("ls-files")},
+		{"where the repository's root is", askingFor("rev-parse")},
+		{"whether the file differs from the committed copy", askingFor("diff")},
+	} {
+		assertAnUnansweredQuestionOffersNothing(t, question.name, question.failing)
+	}
+}
+
+func assertAnUnansweredQuestionOffersNothing(t *testing.T, name string, failing func([]string) bool) {
+	t.Helper()
+	t.Run(name, func(t *testing.T) {
+		root := aRootHoldingThePolicy(t)
+		git := whollyFakeGit{t: t, root: root, failing: failing}
+
+		settled := settledByTheWorkingCopy(git.run, root, "HEAD", replacePath, invalidError(replacePath, "HEAD", "schema decode failed"))
+
+		var configErr *ConfigError
+		if !asConfigError(settled, &configErr) || configErr.ReplacesPolicy() || configErr.PolicyCause != projectreadiness.CauseGitUnreadable {
+			t.Fatalf("settled = %v; want no replacement and the cause git_unreadable", settled)
+		}
+		for _, want := range []string{"could not check", "offers neither a restore nor a new policy"} {
+			if !strings.Contains(configErr.Message, want) {
+				t.Errorf("message %q does not say %q", configErr.Message, want)
+			}
+		}
+		if strings.Contains(configErr.Message, "mv -f") || strings.Contains(configErr.Message, "git restore") || strings.Contains(configErr.Message, "staged edit") {
+			t.Errorf("message %q prints a replacement or a restore, or reads the failure as a staged edit", configErr.Message)
+		}
+	})
 }
