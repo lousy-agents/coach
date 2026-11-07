@@ -14,8 +14,8 @@ type budget struct {
 	stderr  int64
 }
 
-// The numbers follow the bounds the policy and snapshot reads already run under (revisionfs: 30 s, a
-// 64 MiB listing, a 32 MiB file, 64 KiB of stderr).
+// The numbers follow the bounds the policy and snapshot reads already run under (30 s, a 64 MiB listing, a
+// 32 MiB file, 64 KiB of stderr), which revisionfs takes from here.
 const (
 	gitStderrBudget = 64 << 10
 	// A question git answers from a few files under .git: whether this is a worktree, what HEAD is, whether
@@ -97,6 +97,12 @@ const (
 	CommittedFileTimeout = metadataTimeout
 	// GitStderrBytes is the stderr every one of these reads keeps.
 	GitStderrBytes = gitStderrBudget
+
+	// The listing of a whole tree at a revision and one tracked file's content: the reads revisionfs makes
+	// to give the analyzers a revision as a file system.
+	RevisionListingBytes = listingBytes
+	RevisionFileBytes    = fileBytes
+	RevisionReadTimeout  = metadataTimeout
 
 	// git status of a working tree. The listing prints a line for every changed path, so it has the largest
 	// output of the named reads.
