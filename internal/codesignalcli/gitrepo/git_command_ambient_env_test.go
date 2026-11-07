@@ -22,6 +22,10 @@ var settingsThatChangeWhatGitReads = []string{
 	"GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
 	// which objects git reads
 	"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	// the one file `git config` reads when it is set, and no other git command does: the partial-clone check
+	// reads the repository's configuration with git config, so it would answer from a different file than the
+	// reads it protects
+	"GIT_CONFIG",
 }
 
 func TestGitCommandDropsEverySettingOfTheCallerThatChangesWhatGitReads(t *testing.T) {
