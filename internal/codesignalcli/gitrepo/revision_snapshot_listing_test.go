@@ -7,50 +7,51 @@ import (
 	"testing"
 )
 
-// listingOnly is all of git for a snapshot whose listing is the only thing it is asked: it answers the full
-// listing of the tree with what it is given and fails the test on any other question, so the error under test is
-// the one the listing made and nothing else ran.
-func listingOnly(t *testing.T, output string, failure error) Runner {
-	t.Helper()
-	return func(_ string, args ...string) ([]byte, error) {
-		if strings.Join(args, " ") == "ls-tree -r -z --full-tree HEAD" {
-			return []byte(output), failure
-		}
-		t.Errorf("git was asked %q; the fake answers only the listing", strings.Join(args, " "))
-		return nil, errors.New("not asked")
-	}
+// listingFailing is a lister whose tree cannot be listed.
+func listingFailing(failure error) snapshotLister {
+	return func(string, string) ([]snapshotEntry, error) { return nil, failure }
 }
 
 // The snapshot is the tree, so a tree that cannot be listed, or that is listed in words Coach cannot read, is an
 // error: a scan of an empty snapshot would report no findings for a repository it never read.
-func TestExtractRevisionIsAnErrorWhenTheTreeCannotBeListedOrTheListingCannotBeRead(t *testing.T) {
+func TestExtractRevisionIsAnErrorWhenTheTreeCannotBeListed(t *testing.T) {
 	boom := errors.New("fatal: simulated ls-tree failure")
-	overrun := &BoundError{Kind: BoundStdout, message: "git stdout exceeded 67108864-byte budget"}
+	overrun := &BoundError{Kind: BoundTimeout, message: "git execution timed out after 2m0s"}
 	cases := []struct {
 		name    string
-		run     func(*testing.T) Runner
-		wantErr error
+		failure error
 	}{
-		{"git fails", func(t *testing.T) Runner { return listingOnly(t, "", boom) }, boom},
-		{"git prints more than the listing may hold", func(t *testing.T) Runner { return listingOnly(t, "", overrun) }, overrun},
-		{"a record has no path", func(t *testing.T) Runner {
-			return listingOnly(t, "100644 blob 0123456789012345678901234567890123456789\x00", nil)
-		}, nil},
-		{"a record has too few fields", func(t *testing.T) Runner { return listingOnly(t, "100644 blob\tpath\x00", nil) }, nil},
+		{"git fails", boom},
+		{"git does not answer in time", overrun},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			assertSnapshotRefused(t, c.run(t), c.wantErr)
+			assertSnapshotRefused(t, listingFailing(c.failure), c.failure)
 		})
 	}
 }
 
-func assertSnapshotRefused(t *testing.T, run Runner, wantErr error) {
+// And so is a stream whose records Coach cannot read, through the real lister.
+func TestExtractRevisionIsAnErrorWhenTheListingCannotBeRead(t *testing.T) {
+	cases := []struct{ name, listing string }{
+		{"a record has no path", "100644 blob 0123456789012345678901234567890123456789\x00"},
+		{"a record has too few fields", "100644 blob\tpath\x00"},
+		{"the stream ends inside a record", "100644 blob 0123456789012345678901234567890123456789\tpath"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			withTreeListing(t, c.listing)
+			assertSnapshotRefused(t, listSnapshotEntries, nil)
+		})
+	}
+}
+
+func assertSnapshotRefused(t *testing.T, list snapshotLister, wantErr error) {
 	t.Helper()
 	temporary := t.TempDir()
 	t.Setenv("TMPDIR", temporary)
 
-	dir, err := extractRevision(run, "repository", "HEAD")
+	dir, err := extractRevision(list, func(string, ...string) ([]byte, error) { return nil, errors.New("not asked") }, "repository", "HEAD")
 
 	if err == nil {
 		t.Fatalf("extractRevision = %q, nil; want the listing's failure returned and no snapshot", dir)

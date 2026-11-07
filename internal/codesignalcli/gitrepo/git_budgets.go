@@ -41,6 +41,13 @@ const (
 //
 //   - snapshotWallTime holds the whole stream. 10 minutes is long for any repository this fits, and a git that
 //     stops answering does not hold the scan past it.
+//   - snapshotListingWallTime holds the listing of the tree that names the files. It is read as a stream, a record
+//     at a time, so it has no limit on its size: a limit would refuse the repository with the most files, and
+//     v0.11.0, which read the tree with git archive, had none. Two minutes is the bound of the other read that
+//     walks a whole tree (the listing of the missing objects, diffListingTimeout). git lists about 180 MB of
+//     records a second (a tree of 300000 files, a 41 MB listing, in 0.23 s), so it is room for a listing of
+//     twenty gigabytes, which is tens of millions of files, and a git that has not finished by then is not
+//     listing.
 //   - snapshotObjectBytes holds one object, which is what the scan keeps in memory: each object is written to
 //     disk before the next is read. 32 MiB is the limit of every other read of one file (the show row,
 //     revisionfs). The analyzers refuse source past 2 MiB and a policy past 1 MiB, so no object past it is
@@ -52,9 +59,10 @@ const (
 //     read are still written (they are written first) and the others become zero-length files; the
 //     snapshot fails only when the files the analyzers read pass it by themselves.
 const (
-	snapshotWallTime    = 10 * time.Minute
-	snapshotObjectBytes = 32 << 20
-	snapshotTotalBytes  = 4 << 30
+	snapshotListingWallTime = diffListingTimeout
+	snapshotWallTime        = 10 * time.Minute
+	snapshotObjectBytes     = 32 << 20
+	snapshotTotalBytes      = 4 << 30
 )
 
 // snapshotTotal is what writeSnapshot may write in all. It is a variable so that a test can hold a snapshot

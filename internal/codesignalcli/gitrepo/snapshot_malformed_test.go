@@ -12,13 +12,13 @@ import (
 type malformedListing struct{ name, record string }
 
 func (c malformedListing) run(t *testing.T) {
-	entries, err := parseSnapshotEntries([]byte(c.record + "\x00"))
-	if err == nil || len(entries) != 0 {
-		t.Errorf("parseSnapshotEntries(%q) = %v, %v; want an error and no entries", c.record, entries, err)
+	entry, err := parseSnapshotRecord(c.record)
+	if err == nil || entry != (snapshotEntry{}) {
+		t.Errorf("parseSnapshotRecord(%q) = %v, %v; want an error and no entry", c.record, entry, err)
 	}
 }
 
-func TestParseSnapshotEntriesRefusesWhatIsNotAnLsTreeRecord(t *testing.T) {
+func TestParseSnapshotRecordRefusesWhatIsNotAnLsTreeRecord(t *testing.T) {
 	cases := []malformedListing{
 		{"no tab", "100644 blob abc"},
 		{"only a tab", "\t"},
@@ -32,11 +32,24 @@ func TestParseSnapshotEntriesRefusesWhatIsNotAnLsTreeRecord(t *testing.T) {
 	}
 }
 
-func TestParseSnapshotEntriesReadsARecordAndSkipsTheEmptyOnesBetween(t *testing.T) {
-	entries, err := parseSnapshotEntries([]byte("100644 blob abc\ta b.go\x00\x00100755 blob def\tbin/run\x00"))
+func TestListSnapshotEntriesReadsEveryRecordOfTheStream(t *testing.T) {
+	withTreeListing(t, "100644 blob abc\ta b.go\x00100755 blob def\tbin/run\x00")
+
+	entries, err := listSnapshotEntries("", "HEAD")
 
 	if err != nil || len(entries) != 2 || entries[0].path != "a b.go" || entries[0].oid != "abc" || entries[1].mode != "100755" {
-		t.Errorf("parseSnapshotEntries = %v, %v; want the two records, with the path that holds a space", entries, err)
+		t.Errorf("listSnapshotEntries = %v, %v; want the two records, with the path that holds a space", entries, err)
+	}
+}
+
+// An empty record is not one `ls-tree -z` prints, and a record skipped is a path the snapshot does not hold.
+func TestListSnapshotEntriesRefusesAnEmptyRecordBetweenTwo(t *testing.T) {
+	withTreeListing(t, "100644 blob abc\ta.go\x00\x00100755 blob def\tbin/run\x00")
+
+	entries, err := listSnapshotEntries("", "HEAD")
+
+	if err == nil || entries != nil {
+		t.Errorf("listSnapshotEntries = %v, %v; want the stream refused whole", entries, err)
 	}
 }
 

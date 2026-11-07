@@ -16,13 +16,9 @@ func snapshotOfFiles(t *testing.T, files ...namedFile) (repository string, entri
 	for _, file := range files {
 		gitfixture.CommitFile(t, repository, file.name, file.content)
 	}
-	listing, err := RunBytes(repository, "ls-tree", "-r", "-z", "--full-tree", "HEAD")
+	entries, err := listSnapshotEntries(repository, "HEAD")
 	if err != nil {
-		t.Fatalf("ls-tree: %v", err)
-	}
-	entries, err = parseSnapshotEntries(listing)
-	if err != nil {
-		t.Fatalf("parse the listing: %v", err)
+		t.Fatalf("list the tree: %v", err)
 	}
 	return repository, entries
 }
