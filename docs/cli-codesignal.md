@@ -129,10 +129,15 @@ holds, and what to do follows from that:
 
 A policy that Coach discovers, with no `--project-config`, is read only at `.lousy-agents/coach.json`. When nothing is committed there and the analyzed revision holds the same path in another case (`.Lousy-Agents/Coach.json`, say), the scan is refused with `project_config_invalid`, and `--check-project` reports a policy gap with the cause `name_case_differs` and no `author_policy`, because a new policy cannot be written over the one that is committed. Before, the scan ran without the policy and said nothing, which dropped its layer checks. The message names the spelling that is committed and the commands that move it, `top="$(git rev-parse --show-toplevel)" && mkdir -p "$top"/'.lousy-agents' && git -C "$top" mv -- '.Lousy-Agents/Coach.json' '.lousy-agents/coach.json'`, to be committed (the `mkdir` is for a file system that tells cases apart, where the directory does not exist under the new spelling; both run at the repository root, so they work from a subdirectory too). It holds on any file system, since the committed names are what differ. With several spellings committed the message lists them and asks for one at the path Coach reads.
 
-The check covers every component of the path, and the advice is about the first component
-that differs. It also applies when the file is missing: a missing policy under a parent
-spelled in another case is refused for that parent and is not offered a restore, because
-the restore would write into the other spelling.
+The check covers every component of the path, and one run reports the first component
+that differs, with the advice for that component alone. When two differ (`CFG/P.json` for
+`cfg/p.json`), correcting the first leads to the message for the next, one component per run:
+the right spelling of a later component comes from the disk when it exists there and from the
+revision when only the revision holds it, and Coach does not guess between them. It also
+applies when the file is missing, and when a deeper directory is missing too: a missing policy
+under a parent spelled in another case (`Cfg/new/zz.json` where only `cfg` exists) is refused
+for that parent and is not offered a restore or a new policy, because either would write into
+the other spelling.
 
 A policy that is missing from disk has no spelling on disk to compare, so the revision's
 spelling is used instead. When the revision holds the path in another case than the one

@@ -21,6 +21,10 @@ func TestTheOnDiskCheckRefusesAPathTheDiskSpellsInAnotherCase(t *testing.T) {
 		{"a directory above a file spelled in another case too", []string{"CFG/P.json"}, "cfg/p.json", "cfg", "CFG"},
 		{"a directory above a file that is not there", []string{"CFG/other.json"}, "cfg/p.json", "cfg", "CFG"},
 		{"a file at the root", []string{"P.json"}, "p.json", "p.json", "P.json"},
+		{"a directory above a directory that is not there either", []string{"cfg/p.json"}, "Cfg/new/zz.json", "Cfg", "cfg"},
+		{"the same at the first level of a source tree", []string{"src/a.go"}, "SRC/new/p.json", "SRC", "src"},
+		{"a directory above two that are not there", []string{"cfg/p.json"}, "CFG/a/b/zz.json", "CFG", "cfg"},
+		{"the second directory, below one spelled as typed, with a third not there", []string{"cfg/sub/x.json"}, "cfg/SUB/new/p.json", "SUB", "sub"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -77,4 +81,24 @@ func TestAMismatchOnAFoldingDiskIsAdvisedFromTheRevision(t *testing.T) {
 	advised := adviseOnRevision(checkRegularFileThrough(disk, "cfg/POLICY.json"), "cfg/POLICY.json", revision)
 
 	assertCaseMismatchAdvice(t, configErrorOf(t, advised), []string{`it holds "cfg/policy.json"; pass --project-config cfg/policy.json`}, []string{"rename"})
+}
+
+// A missing deeper directory does not excuse a parent that exists in another case: the policy would be
+// authored where the file system resolves that parent, in a directory the scan then refuses. Where every
+// directory that exists is spelled as typed, the policy is just missing.
+func TestAMissingDirectoryBelowParentsSpelledAsTypedLeavesThePolicyMissing(t *testing.T) {
+	cases := []struct {
+		name   string
+		stored []string
+		typed  string
+	}{
+		{"one directory missing", []string{"cfg/p.json"}, "cfg/new/zz.json"},
+		{"two directories missing", []string{"cfg/p.json"}, "cfg/a/b/zz.json"},
+		{"the first directory missing", []string{"docs/x.json"}, "cfg/new/zz.json"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			assertAcceptedOrMissing(t, checkRegularFileThrough(foldingDiskHolding(c.stored...), c.typed), true)
+		})
+	}
 }
