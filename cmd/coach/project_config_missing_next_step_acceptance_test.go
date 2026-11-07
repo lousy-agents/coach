@@ -10,6 +10,13 @@ import (
 
 const suggestCommand = "--suggest-project-config"
 
+// What the message for a path under a regular file says, by whether the analyzed revision commits that file. The
+// README states the same two things, and a spec reads it for them.
+const (
+	adviceForAFileNothingCommits = "move or remove it"
+	wordingForACommittedFile     = "a file the analyzed revision commits, so the path is probably wrong"
+)
+
 var _ = Describe("coach codesignal: the next step offered after an explicit --project-config is missing", func() {
 	runScan := func(repo string, language string, policy string) (stdout, stderr []byte) {
 		args := []string{"codesignal", "--baseline", "--project-config", policy, "--format=json"}
@@ -94,7 +101,7 @@ var _ = Describe("coach codesignal: the next step offered after an explicit --pr
 
 			Expect(string(stderr)).To(ContainSubstring("a parent path component is not a directory"))
 			Expect(string(stderr)).To(ContainSubstring(`"notes"`), "the blocking component is named:\n%s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("move or remove it"), "a file nothing commits can be moved:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring(adviceForAFileNothingCommits), "a file nothing commits can be moved:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "stderr:\n%s", stderr)
 		})
 
@@ -105,9 +112,17 @@ var _ = Describe("coach codesignal: the next step offered after an explicit --pr
 
 			Expect(string(stderr)).To(ContainSubstring("a parent path component is not a directory"))
 			Expect(string(stderr)).To(ContainSubstring(`"a.go"`), "the blocking component is named:\n%s", stderr)
-			Expect(string(stderr)).To(ContainSubstring("a file the analyzed revision commits, so the path is probably wrong"), "stderr:\n%s", stderr)
-			Expect(string(stderr)).NotTo(ContainSubstring("move or remove it"), "a committed file is not advised away:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring(wordingForACommittedFile), "stderr:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring(adviceForAFileNothingCommits), "a committed file is not advised away:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring(suggestCommand), "stderr:\n%s", stderr)
+		})
+
+		It("is stated in the README as the message has it: a file nothing commits is moved or removed, a file the revision commits is not", func() {
+			bullet := readmeBullet("A path under a regular file")
+
+			Expect(bullet).To(ContainSubstring("says to "+adviceForAFileNothingCommits), "the advice for a file nothing commits")
+			Expect(bullet).To(ContainSubstring(wordingForACommittedFile), "what the message says of a file the analyzed revision commits")
+			Expect(bullet).To(ContainSubstring("no advice to "+adviceForAFileNothingCommits), "a file the revision commits is not advised away")
 		})
 
 		It("offers no authoring for a TypeScript scan either", func() {

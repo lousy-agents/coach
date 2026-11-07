@@ -245,14 +245,17 @@ except for the policy-candidate document on the guided-authoring path.
   out by a sparse checkout, because the command would fail or would recreate what
   the scan refuses. `--check-project` names neither next action.
 - A path under a regular file: `project_config_missing`. The message names the
-  file in the way and says to move or remove it, then to restore the policy from
-  git when it is committed, unless the index holds a staged edit to it, which the
-  message names instead because a restore would discard it, or it is committed as
-  a symbolic link, which the message says instead because a restore would
-  recreate a link the scan refuses. When the policy is only staged, never
-  committed, it says to move the file and then restore the staged copy from the
-  index. It prints no `git restore` command and offers no authoring, because a
-  restore would delete that file.
+  file in the way. When the analyzed revision commits that file, the message says
+  it is a file the analyzed revision commits, so the path is probably wrong, and
+  gives no advice to move or remove it, because the file is the repository's and
+  the path is what is wrong. For a file nothing commits, the message says to move
+  or remove it, then to restore the policy from git when it is committed, unless
+  the index holds a staged edit to it, which the message names instead because a
+  restore would discard it, or it is committed as a symbolic link, which the
+  message says instead because a restore would recreate a link the scan refuses.
+  When the policy is only staged, never committed, it says to move the file and
+  then restore the staged copy from the index. It prints no `git restore` command
+  and offers no authoring, because a restore would delete that file.
 - A symbolic link, a directory or other file that is not a regular file, a path
   that runs through a symbolic link, a file that cannot be read, or a parent
   that cannot be searched: `project_config_invalid`, naming the reason, with no
