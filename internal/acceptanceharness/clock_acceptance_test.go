@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -111,16 +112,12 @@ var _ = Describe("controlled clock seam", func() {
 		})
 	})
 
-	Context("when production code uses RealClock", func() {
-		It("Now() reflects the real wall clock, not a stub zero value", func() {
-			clock := acceptanceharness.RealClock{}
+	Context("when production code takes a clock.Clock", func() {
+		It("accepts a FakeClock in its place", func() {
+			start := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+			var production clock.Clock = acceptanceharness.NewFakeClock(start)
 
-			before := time.Now()
-			got := clock.Now()
-			after := time.Now()
-
-			Expect(got).To(BeTemporally(">=", before))
-			Expect(got).To(BeTemporally("<=", after.Add(time.Second)))
+			Expect(production.Now()).To(Equal(start))
 		})
 	})
 })

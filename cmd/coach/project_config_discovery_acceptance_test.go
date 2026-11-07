@@ -105,13 +105,13 @@ var _ = Describe("coach project config discovery", func() {
 			Expect(diag.Message).To(Equal("project.json at the repository root is deprecated. Coach will keep reading it until you move it to .lousy-agents/coach.json."))
 			skipped, ok := diagnosticFor(discovered, "project_config_migration_skipped", legacyConfigPath)
 			Expect(ok).To(BeTrue(), "diagnostics: %+v", discovered.Diagnostics)
-			Expect(skipped.Message).To(Equal("project.json can be moved to .lousy-agents/coach.json. Next: mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json"))
+			Expect(skipped.Message).To(Equal("project.json can be moved to .lousy-agents/coach.json. Next: top=\"$(git rev-parse --show-toplevel)\" && mkdir -p \"$top\"/.lousy-agents && git -C \"$top\" mv -- project.json .lousy-agents/coach.json"))
 
 			textStdout, textStderr, textExit := runCoachCodesignalBaselineRaw(repo)
 			Expect(textExit).To(Equal(0), "stderr: %s", textStderr)
 			Expect(string(textStdout)).To(ContainSubstring("project_config_deprecated"))
 			Expect(string(textStdout)).To(ContainSubstring("project_config_migration_skipped"))
-			Expect(string(textStdout)).To(ContainSubstring("mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json"))
+			Expect(string(textStdout)).To(ContainSubstring("top=\"$(git rev-parse --show-toplevel)\" && mkdir -p \"$top\"/.lousy-agents && git -C \"$top\" mv -- project.json .lousy-agents/coach.json"))
 		})
 
 		It("matches the explicit --project-config project.json schema_version and project_changes, without the deprecation diagnostic", func() {
@@ -143,11 +143,13 @@ var _ = Describe("coach project config discovery", func() {
 			Expect(stdout).To(BeEmpty())
 			Expect(string(stderr)).To(ContainSubstring("project_config_invalid"))
 			Expect(string(stderr)).To(ContainSubstring(coachConfigPath))
+			Expect(string(stderr)).To(ContainSubstring(`the default policy "`+coachConfigPath+`"`), "the scan found it, so the user passed nothing:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring(`--project-config "`), "a flag the user never passed is not used to name the policy:\n%s", stderr)
 		})
 	})
 
 	When("a typescript baseline scan finds a committed invalid canonical policy and a valid project.json", func() {
-		It("prints the same stderr as an explicit --project-config of that canonical file, apart from the path", func() {
+		It("prints the same stderr as an explicit --project-config of that canonical file, apart from the path and from naming the policy with --project-config", func() {
 			repo := newTempGitRepo()
 			commitFile(repo, coachConfigPath, invalidPolicyText)
 			commitFile(repo, legacyConfigPath, singleRootPolicyJSON)
@@ -164,8 +166,11 @@ var _ = Describe("coach project config discovery", func() {
 			Expect(explicitStdout).To(BeEmpty())
 			Expect(string(explicitStderr)).To(ContainSubstring("typescript_compiler_missing: also failing"), "the explicit path is the reference that already reports the masked compiler gap; stderr=%s", explicitStderr)
 
-			Expect(stderrAsideFromPolicyPath(implicitStderr, coachConfigPath)).To(Equal(stderrAsideFromPolicyPath(explicitStderr, coachConfigPath)),
+			explicitWithoutFlag := strings.ReplaceAll(string(explicitStderr), " --project-config "+coachConfigPath, "")
+			explicitAsDefault := strings.ReplaceAll(explicitWithoutFlag, `--project-config "`+coachConfigPath+`"`, `the default policy "`+coachConfigPath+`"`)
+			Expect(stderrAsideFromPolicyPath(implicitStderr, coachConfigPath)).To(Equal(stderrAsideFromPolicyPath([]byte(explicitAsDefault), coachConfigPath)),
 				"implicit stderr=%s explicit stderr=%s", implicitStderr, explicitStderr)
+			Expect(string(implicitStderr)).NotTo(ContainSubstring(`--project-config "`+coachConfigPath+`"`), "a discovered policy is not named with --project-config:\n%s", implicitStderr)
 		})
 	})
 

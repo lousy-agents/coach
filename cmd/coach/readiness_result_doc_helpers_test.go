@@ -16,6 +16,16 @@ func nextActionKinds(doc readinessResultDoc) []string {
 	return kinds
 }
 
+func nextActionsNamed(doc readinessResultDoc, kind string) []readinessNextActionDoc {
+	var named []readinessNextActionDoc
+	for _, action := range doc.NextActions {
+		if action.Kind == kind {
+			named = append(named, action)
+		}
+	}
+	return named
+}
+
 type readinessRootFindingDoc struct {
 	Root    string `json:"root"`
 	Version string `json:"version"`
@@ -55,6 +65,7 @@ type readinessResultDoc struct {
 	Gaps []struct {
 		Code               string `json:"code"`
 		PackageManagerKind string `json:"package_manager_kind"`
+		Cause              string `json:"cause"`
 	} `json:"gaps"`
 	Warnings []struct {
 		Code              string `json:"code"`

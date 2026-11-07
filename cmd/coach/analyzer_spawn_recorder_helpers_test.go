@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/shellword"
 	. "github.com/onsi/gomega"
 )
 
@@ -84,10 +85,10 @@ exec @TARGET@ "$@"
 
 func recorderScript(self, spawnDir, execTarget string) string {
 	return strings.NewReplacer(
-		"@SELF@", shellQuote(self),
+		"@SELF@", shellword.Word(self),
 		"@MARKER@", analyzerArgMarker,
-		"@SPAWNS@", shellQuote(spawnDir),
-		"@TARGET@", shellQuote(execTarget),
+		"@SPAWNS@", shellword.Word(spawnDir),
+		"@TARGET@", shellword.Word(execTarget),
 	).Replace(recorderScriptTemplate)
 }
 

@@ -7,8 +7,8 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
 	"github.com/lousy-agents/coach/internal/acceptanceharness/queueconformance"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
 	"github.com/lousy-agents/coach/internal/coachapi/queue/redisstream"
 )
@@ -40,14 +40,14 @@ var _ queueconformance.Queue = conformanceQueue{}
 func TestRedisStreamQueueConformanceAcceptance(t *testing.T) {
 	address := startRedisContainer(t)
 
-	queueconformance.Run(t, func(tb testing.TB, clock acceptanceharness.Clock) queueconformance.Queue {
+	queueconformance.Run(t, func(tb testing.TB, clock clock.Clock) queueconformance.Queue {
 		return newConformanceQueue(tb, clock, address)
 	})
 }
 
 // newConformanceQueue builds the fresh, empty Queue each conformance
 // subtest requires, closing it when the subtest ends.
-func newConformanceQueue(tb testing.TB, clock acceptanceharness.Clock, address string) queueconformance.Queue {
+func newConformanceQueue(tb testing.TB, clock clock.Clock, address string) queueconformance.Queue {
 	cfg := redisstream.Config{
 		Address: address,
 		// A unique stream+group per subtest gives Run the fresh,

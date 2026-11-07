@@ -9,7 +9,7 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 	"github.com/lousy-agents/coach/internal/coachapi/queue/redisstream"
 )
 
@@ -77,7 +77,7 @@ func waitForRedisReady(address string, timeout time.Duration) bool {
 			ConsumerGroup: "readiness-check",
 			ClaimAfter:    time.Minute,
 			DialTimeout:   500 * time.Millisecond,
-		}, acceptanceharness.RealClock{})
+		}, clock.RealClock{})
 		if err == nil {
 			_ = q.Close()
 			return true

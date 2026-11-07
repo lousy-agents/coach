@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 )
 
 var codesignalUsage = "usage: coach codesignal (--base <ref> | --baseline) [--format text|json] [--scope production|all] [--min-severity " + severityFloorsUsage() + "] [--top N] [--build-target <package>] [--project-config <path>] [--project-language go|typescript] [--no-interactive] [--fail-on-incomplete-coverage]\n   or: coach codesignal --baseline --suggest-project-config [--output <path>]\n   or: coach codesignal --baseline --suggest-project-config --project-language typescript [--output <path>] [--no-interactive]\n   or: coach codesignal --baseline --check-project --project-language typescript [--project-config <path>] [--format text|json]\n   or: coach codesignal --baseline --prepare-compiler --project-language typescript [--project-config <path>] [--no-interactive]"
@@ -12,13 +14,12 @@ type codesignalFlags struct {
 	format                   string
 	scope                    string
 	buildTarget              string
-	projectConfig            string
+	namedPolicy              policyref.Ref
 	projectLanguage          string
 	minSeverity              string
 	minSeveritySet           bool
 	top                      string
 	topSet                   bool
-	projectConfigSet         bool
 	suggestProjectConfig     bool
 	output                   string
 	outputSet                bool
@@ -55,7 +56,7 @@ func registerCodesignalFlags(flags *flag.FlagSet) codesignalFlagHolders {
 		format:                   flags.String("format", "text", "output format: text or json"),
 		scope:                    flags.String("scope", "production", "source scope: production or all"),
 		buildTarget:              flags.String("build-target", "", "Go package pattern used to determine production reachability"),
-		projectConfig:            flags.String("project-config", "", "repository-relative path to a project-analysis config at the selected revision; enables opt-in cross-module project facts"),
+		projectConfig:            flags.String("project-config", "", "repository-relative path to a project-analysis config; the file must exist on disk and its content is read at the selected revision; enables opt-in cross-module project facts"),
 		projectLanguage:          flags.String("project-language", "go", "project-analysis language: go or typescript"),
 		minSeverity:              flags.String("min-severity", "", "render only signals at or above this severity ("+severityFloorsHelp()+") and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),
 		top:                      flags.String("top", "", "render only the first N signals in report order (a positive integer, applied after --min-severity; the order puts lifecycle group first, then severity) and report how many were withheld; summary and coverage still describe the full analysis, and the exit status is unchanged"),
@@ -80,13 +81,12 @@ func codesignalFlagsFromHolders(h codesignalFlagHolders, setFlags map[string]boo
 		format:                   *h.format,
 		scope:                    *h.scope,
 		buildTarget:              *h.buildTarget,
-		projectConfig:            *h.projectConfig,
+		namedPolicy:              namedPolicyFlag(*h.projectConfig, setFlags["project-config"]),
 		projectLanguage:          *h.projectLanguage,
 		minSeverity:              *h.minSeverity,
 		minSeveritySet:           setFlags["min-severity"],
 		top:                      *h.top,
 		topSet:                   setFlags["top"],
-		projectConfigSet:         setFlags["project-config"],
 		suggestProjectConfig:     h.suggestProjectConfig.value,
 		output:                   h.output.value,
 		outputSet:                setFlags["output"],
@@ -95,4 +95,14 @@ func codesignalFlagsFromHolders(h codesignalFlagHolders, setFlags map[string]boo
 		noInteractive:            *h.noInteractive,
 		failOnIncompleteCoverage: *h.failOnIncompleteCoverage,
 	}
+}
+
+// namedPolicyFlag is the policy --project-config names, and the zero policy
+// when the flag was not passed. It is the one place a policy becomes a named
+// one: a flag passed with an empty value still names a policy, an empty one.
+func namedPolicyFlag(value string, set bool) policyref.Ref {
+	if !set {
+		return policyref.Ref{}
+	}
+	return policyref.Named(value)
 }

@@ -9,47 +9,41 @@ import (
 	"github.com/lousy-agents/coach/pkg/semantics"
 )
 
-func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, headSHA, mergeBaseSHA string, sf gitrepo.SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic) {
-	headBytes, err := gitrepo.RunBytes(dir, "show", headSHA+":"+sf.Path)
+// analyzeAddedOrModifiedFile reads and analyzes one changed file. Its error is a git that did not answer in
+// time (see readFailure); every other problem with the file is a diagnostic.
+func analyzeAddedOrModifiedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, headSHA, mergeBaseSHA string, sf gitrepo.SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic, error) {
+	headBytes, err := runGit(dir, "show", headSHA+":"+sf.Path)
 	if err != nil {
-		return nil, []codesignal.Diagnostic{readFailedDiagnostic(sf.Path, "head", err)}
+		diagnostics, stalled := readFailure(sf.Path, headSide, err)
+		return nil, diagnostics, stalled
 	}
 
 	headResult, headErr := analyzer.AnalyzeBytes(ctx, semantics.FileInput{Path: sf.Path, Language: sf.Language, Content: headBytes})
 	if headErr != nil && !errors.Is(headErr, semantics.ErrSyntax) {
-		return nil, []codesignal.Diagnostic{mapSemanticsError(sf.Path, headErr)}
+		return nil, []codesignal.Diagnostic{mapSemanticsError(sf.Path, headErr)}, nil
 	}
 
 	fc := codesignal.FileChange{Path: sf.Path, Status: sf.Status, SourceScope: sf.SourceScope, Head: headResult}
 	var diagnostics []codesignal.Diagnostic
 
 	if sf.Status == "modified" {
-		baseBytes, err := gitrepo.RunBytes(dir, "show", mergeBaseSHA+":"+sf.Path)
-		if err != nil {
-			diagnostics = append(diagnostics, readFailedDiagnostic(sf.Path, "base", err))
-		} else {
-			baseResult, baseErr := analyzer.AnalyzeBytes(ctx, semantics.FileInput{Path: sf.Path, Language: sf.Language, Content: baseBytes})
-			switch {
-			case baseErr == nil:
-				fc.Base = baseResult
-			case errors.Is(baseErr, semantics.ErrSyntax):
-				diagnostics = append(diagnostics, baseSyntaxDiagnostics(sf.Path, baseErr)...)
-			default:
-				diagnostics = append(diagnostics, codesignal.Diagnostic{
-					Path:    sf.Path,
-					Kind:    "base_analysis_failed",
-					Message: baseErr.Error(),
-				})
-			}
+		base, baseDiagnostics, stalled := analyzeModifiedBase(ctx, analyzer, dir, mergeBaseSHA, sf)
+		if stalled != nil {
+			return nil, nil, stalled
 		}
+		fc.Base = base
+		diagnostics = append(diagnostics, baseDiagnostics...)
 	}
 
-	ranges, rangeDiagnostic := computeChangedRanges(dir, mergeBaseSHA, sf.Path)
+	ranges, rangeDiagnostic, stalled := computeChangedRanges(dir, mergeBaseSHA, sf.Path)
+	if stalled != nil {
+		return nil, nil, stalled
+	}
 	if rangeDiagnostic != nil {
 		diagnostics = append(diagnostics, *rangeDiagnostic)
 	} else {
 		fc.ChangedRanges = ranges
 	}
 
-	return &fc, diagnostics
+	return &fc, diagnostics, nil
 }

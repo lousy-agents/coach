@@ -9,11 +9,9 @@ import (
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// runReadinessGit is the bounded git read behind --check-project's
-// committed-file presence checks, held to the policy document's read budget.
-var runReadinessGit = func(dir string, args ...string) ([]byte, error) {
-	return gitrepo.RunBytesBounded(dir, projectconfig.MaxBytes, projectconfig.MaxGitStderr, projectconfig.GitTimeout, args...)
-}
+// runReadinessGit is the bounded git read behind --check-project's questions about the committed policy and
+// the tree around it.
+var runReadinessGit = projectconfig.NewGitRunner()
 
 // checkProjectShape reports whether revision looks like a Node/TypeScript
 // project at all: a committed package.json at the repository root, or, once

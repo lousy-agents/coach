@@ -43,17 +43,33 @@ type DeclarationMismatch struct {
 // the frozen adapter rows run whichever binary PATH resolves (see
 // checkPackageManager).
 type Check struct {
-	State             State           `json:"state"`
-	Code              string          `json:"code,omitempty"`
-	Kind              string          `json:"kind,omitempty"`
-	Version           string          `json:"version,omitempty"`
-	ExpectedVersion   string          `json:"expected_version,omitempty"`
-	FoundVersion      string          `json:"found_version,omitempty"`
-	PinnedVersion     string          `json:"pinned_version,omitempty"`
-	SupportedVersions []string        `json:"supported_versions,omitempty"`
-	RootFindings      []RootFinding   `json:"root_findings,omitempty"`
-	Origin            string          `json:"origin,omitempty"`
-	Detail            string          `json:"detail,omitempty"`
+	State             State         `json:"state"`
+	Code              string        `json:"code,omitempty"`
+	Kind              string        `json:"kind,omitempty"`
+	Version           string        `json:"version,omitempty"`
+	ExpectedVersion   string        `json:"expected_version,omitempty"`
+	FoundVersion      string        `json:"found_version,omitempty"`
+	PinnedVersion     string        `json:"pinned_version,omitempty"`
+	SupportedVersions []string      `json:"supported_versions,omitempty"`
+	RootFindings      []RootFinding `json:"root_findings,omitempty"`
+	Origin            string        `json:"origin,omitempty"`
+	Detail            string        `json:"detail,omitempty"`
+	// DecidedOnDisk is set when the working tree, not the analyzed revision,
+	// produced this result. A change to the file it was decided from is then not
+	// one the result ignored.
+	DecidedOnDisk bool `json:"-"`
+	// Remedy is the way out of a policy gap this check found. It is the zero
+	// value, RemedyNone, for every check that is not a policy gap.
+	Remedy PolicyRemedy `json:"-"`
+	// CauseText is, for a policy gap no remedy fixes, the reason in the words the
+	// scan prints for the same policy, so a caller that cannot print the scan's own
+	// error can still say why. It is empty for every other check. PolicyCause is the
+	// same reason as a stable word.
+	CauseText string `json:"-"`
+	// PolicyCause is the same reason as a stable word, for the gap that this check
+	// becomes. It is empty whenever a remedy names what to do.
+	PolicyCause PolicyCause `json:"-"`
+
 	DeclaredVersion   string          `json:"-"`
 	DeclarationOrigin string          `json:"-"`
 	OriginFindings    []OriginFinding `json:"-"`
@@ -68,4 +84,15 @@ type Checks struct {
 	Runtime        Check `json:"runtime"`
 	Compiler       Check `json:"compiler"`
 	PackageManager Check `json:"package_manager"`
+}
+
+// WithCause is c with the reason a policy gap has no way out, as the sentence the scan prints and as
+// the stable word. A check that names a remedy keeps neither, because the remedy is the answer: it is
+// the one gate for both, so a gap never carries a cause beside an action.
+func (c Check) WithCause(text string, word PolicyCause) Check {
+	if _, named := NextActionForRemedy(c.Remedy); named {
+		return c
+	}
+	c.CauseText, c.PolicyCause = text, word
+	return c
 }

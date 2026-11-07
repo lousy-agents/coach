@@ -1,6 +1,7 @@
 package tssetup
 
 import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
@@ -27,12 +28,12 @@ func prepareCompilerNextAction(readiness *projectreadiness.Result) (projectreadi
 // makes) when it did not -- action.Choices is nil exactly when no adapter
 // rejection has restricted it yet, not when nothing is offered (see
 // restrictPrepareCompilerChoices' own contract).
-func miseChoicesForPrepareCompiler(dir, revision, configPath string, action projectreadiness.NextAction) []string {
+func miseChoicesForPrepareCompiler(dir, revision string, policy policyref.Ref, action projectreadiness.NextAction) []string {
 	if action.Choices != nil {
 		return filterMiseChoiceKinds(action.Choices)
 	}
 	var offered []string
-	for _, choice := range miseSetupChoicesForReadiness(dir, revision, configPath) {
+	for _, choice := range miseSetupChoicesForReadiness(dir, revision, policy) {
 		if choice.Verified {
 			offered = append(offered, choice.Kind)
 		}
@@ -55,20 +56,20 @@ func filterMiseChoiceKinds(choices []string) []string {
 }
 
 // miseSetupChoicesForReadiness reuses the policy path and roots
-// projectcheck.Run just checked. An empty configPath is Discover's selection.
-func miseSetupChoicesForReadiness(dir, revision, configPath string) []projectreadiness.MiseChoice {
-	roots, err := checkedPolicyRoots(dir, revision, configPath)
+// projectcheck.Run just checked. A discovered policy is the one Discover selects.
+func miseSetupChoicesForReadiness(dir, revision string, policy policyref.Ref) []projectreadiness.MiseChoice {
+	roots, err := checkedPolicyRoots(dir, revision, policy)
 	if err != nil {
 		return nil
 	}
 	return tstoolchain.EvaluateMiseSetupChoices(dir, roots)
 }
 
-func checkedPolicyRoots(dir, revision, configPath string) ([]string, error) {
-	policyPath, err := projectcheck.ResolvePolicyPath(dir, revision, configPath)
+func checkedPolicyRoots(dir, revision string, policy policyref.Ref) ([]string, error) {
+	policyPath, err := projectcheck.ResolvePolicyPath(dir, revision, policy)
 	if err != nil {
 		return nil, err
 	}
-	_, roots, err := projectcheck.CheckPolicy(dir, revision, policyPath)
+	_, roots, err := projectcheck.PolicyChecker(policy)(dir, revision, policyPath)
 	return roots, err
 }

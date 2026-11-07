@@ -5,8 +5,8 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
 	"github.com/lousy-agents/coach/internal/coachapi"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 	"github.com/lousy-agents/coach/internal/coachapi/queue"
 )
 
@@ -15,7 +15,7 @@ import (
 type Worker struct {
 	store   coachapi.WorkerJobStore
 	queue   queue.TaskQueue
-	clock   acceptanceharness.Clock
+	clock   clock.Clock
 	handler JobHandler
 	cfg     Config
 
@@ -24,8 +24,8 @@ type Worker struct {
 	reconcileGen  uint64
 }
 
-// New constructs a Worker. clock may be nil (RealClock). handler is required.
-func New(store coachapi.WorkerJobStore, q queue.TaskQueue, clock acceptanceharness.Clock, handler JobHandler, cfg Config) (*Worker, error) {
+// New constructs a Worker. source may be nil (clock.RealClock). handler is required.
+func New(store coachapi.WorkerJobStore, q queue.TaskQueue, source clock.Clock, handler JobHandler, cfg Config) (*Worker, error) {
 	if store == nil {
 		return nil, errors.New("worker: store is required")
 	}
@@ -39,8 +39,8 @@ func New(store coachapi.WorkerJobStore, q queue.TaskQueue, clock acceptanceharne
 	if err != nil {
 		return nil, err
 	}
-	if clock == nil {
-		clock = acceptanceharness.RealClock{}
+	if source == nil {
+		source = clock.RealClock{}
 	}
-	return &Worker{store: store, queue: q, clock: clock, handler: handler, cfg: cfg}, nil
+	return &Worker{store: store, queue: q, clock: source, handler: handler, cfg: cfg}, nil
 }

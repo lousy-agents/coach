@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 )
 
 // inMemoryQueue is a throwaway reference Queue implementation used only to
@@ -17,7 +17,7 @@ import (
 // import or depend on it as production code -- Baseline Task 3a's real
 // Redis Streams and SQS adapters are separate, non-test packages.
 type inMemoryQueue struct {
-	clock             acceptanceharness.Clock
+	clock             clock.Clock
 	visibilityTimeout time.Duration
 
 	mu    sync.Mutex
@@ -46,7 +46,7 @@ var (
 	errStaleClaim  = errors.New("queueconformance: claim token invalidated by reclaim")
 )
 
-func newInMemoryQueue(clock acceptanceharness.Clock, visibilityTimeout time.Duration) *inMemoryQueue {
+func newInMemoryQueue(clock clock.Clock, visibilityTimeout time.Duration) *inMemoryQueue {
 	return &inMemoryQueue{
 		clock:             clock,
 		visibilityTimeout: visibilityTimeout,

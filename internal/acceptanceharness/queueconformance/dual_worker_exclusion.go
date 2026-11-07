@@ -7,9 +7,10 @@ import (
 	"time"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 )
 
-func runDualWorkerExclusion(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Clock) Queue) {
+func runDualWorkerExclusion(t *testing.T, newQueue func(tb testing.TB, clock clock.Clock) Queue) {
 	clock := acceptanceharness.NewFakeClock(time.Unix(0, 0))
 	q := newQueue(t, clock)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

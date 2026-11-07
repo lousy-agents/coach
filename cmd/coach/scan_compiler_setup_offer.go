@@ -25,18 +25,20 @@ import (
 // here -- RunCompilerSetupOffer is where it is known that a menu will
 // actually open, and diagnosing it here would also promise choices to a
 // customer about to be told there are none.
-func runScanCompilerSetupOffer(dir string, f codesignalFlags, stdin, stdout, stderr *os.File, wrapped *tssetup.CompilerUnresolvedErrorWithReadiness, budget scanOfferBudget) int {
+func runScanCompilerSetupOffer(dir string, f codesignalFlags, stdin, stdout, stderr *os.File, wrapped *tssetup.CompilerUnresolvedErrorWithReadiness, budget scanOfferBudget, ports scanPorts) int {
 	ctx, stop := interruptibleContext()
 	defer stop()
-	result := tssetup.RunCompilerSetupOffer(ctx, dir, wrapped.Revision, wrapped.ConfigPath, wrapped.Code, wrapped.Readiness, os.Stdin, stderr)
+	result := tssetup.RunCompilerSetupOffer(ctx, dir, wrapped.Revision, wrapped.Policy, wrapped.Code, wrapped.Readiness, os.Stdin, stderr)
 
 	if shouldContinueAfterSetup(result) {
-		return runCodesignalScan(dir, f, stdin, stdout, stderr, budget.without(scanOfferCompilerSetup))
+		return runCodesignalScan(dir, f, stdin, stdout, stderr, budget.without(scanOfferCompilerSetup), ports)
 	}
 
 	if result.PolicyRequired {
 		fmt.Fprintln(stderr, wrapped.RemediationLine())
-		fmt.Fprintln(stderr, "coach codesignal: a reviewed, committed policy is required before compiler setup; run guided policy authoring first (author_policy).")
+		for _, line := range policyRequiredLines("coach codesignal", result.PolicyCode, result.PolicyRemedy, result.CauseText, wrapped.Revision, wrapped.Policy.Path) {
+			fmt.Fprintln(stderr, line)
+		}
 		return 2
 	}
 

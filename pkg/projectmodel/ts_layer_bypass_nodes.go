@@ -3,6 +3,8 @@ package projectmodel
 import (
 	"path"
 	"strings"
+
+	"github.com/lousy-agents/coach/pkg/domain"
 )
 
 func tsLayerBypassNodePositions(facts []CallFact) map[string]layerBypassNodePosition {
@@ -50,10 +52,14 @@ func tsLayerBypassNodePosition(nodeID string) (layerBypassNodePosition, bool) {
 // required layer with no route handler of its own -- the exact shape a
 // genuine layer bypass produces -- would never appear as a CallFact
 // endpoint even though real files live there.
+//
+// Membership is by file path, because a TypeScript layer prefix may name a
+// single file as well as a directory (layer rules match files, not package
+// directories); Go layers are package directories and keep the directory match.
 func tsLayerBypassRequiredLayerNodes(snapshotFiles []File, callGraphNodePositions map[string]layerBypassNodePosition, requiredLayer BypassLayer) (map[string]bool, bool) {
 	requiredLayerNodes := map[string]bool{}
 	for node, pos := range callGraphNodePositions {
-		if layerBypassContainsDir(requiredLayer, pos.Dir) {
+		if domain.AnyLayerPrefixContains(requiredLayer.Prefixes, pos.File) {
 			requiredLayerNodes[node] = true
 		}
 	}
@@ -63,7 +69,7 @@ func tsLayerBypassRequiredLayerNodes(snapshotFiles []File, callGraphNodePosition
 
 func tsLayerBypassLayerMatchesFiles(files []File, layer BypassLayer) bool {
 	for _, f := range files {
-		if layerBypassContainsDir(layer, path.Dir(f.Path)) {
+		if domain.AnyLayerPrefixContains(layer.Prefixes, f.Path) {
 			return true
 		}
 	}

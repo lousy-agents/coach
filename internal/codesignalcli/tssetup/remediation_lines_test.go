@@ -3,6 +3,8 @@ package tssetup
 import (
 	"strings"
 	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 )
 
 func TestAppendedRemediationLine(t *testing.T) {
@@ -43,7 +45,7 @@ func aGoControllingTerminalStillPrintsLineBecause(t *testing.T, line string) {
 }
 
 func typeScriptNamesGuidedAuthoringInvocationPlusNoTerminal(t *testing.T) {
-	ts := SuggestProjectConfigRemediation("typescript")
+	ts := SuggestProjectConfigRemediation("typescript", policyref.Ref{})
 	if !strings.Contains(ts, "coach codesignal --baseline --suggest-project-config --project-language typescript") {
 		t.Fatalf("SuggestProjectConfigRemediation(%q) = %q, want it to still name the guided-authoring invocation", "typescript", ts)
 	}
@@ -53,7 +55,57 @@ func typeScriptNamesGuidedAuthoringInvocationPlusNoTerminal(t *testing.T) {
 }
 
 func goOfferedOnlyNonInteractiveSuggestCommand(t *testing.T) {
-	if got, want := SuggestProjectConfigRemediation("go"), "coach codesignal --baseline --suggest-project-config"; got != want {
+	if got, want := SuggestProjectConfigRemediation("go", policyref.Ref{}), "coach codesignal --baseline --suggest-project-config"; got != want {
 		t.Fatalf("SuggestProjectConfigRemediation(%q) = %q, want %q: a go scan must never be offered the TypeScript-only guided-authoring command (AC-2)", "go", got, want)
+	}
+}
+
+const (
+	goAuthoring = "coach codesignal --baseline --suggest-project-config"
+	tsAuthoring = "coach codesignal --baseline --suggest-project-config --project-language typescript"
+)
+
+type authoringCase struct {
+	policy policyref.Ref
+	want   string
+}
+
+// A policy the user named is written where they pointed: --output names it, a
+// directory it needs is said to need to exist first, and the default location needs
+// neither.
+func TestSuggestProjectConfigRemediationForGoWritesWhereTheUserPointed(t *testing.T) {
+	cases := map[string]authoringCase{
+		"a named policy at the repository root":  {policyref.Named("new.json"), goAuthoring + " --output new.json"},
+		"a named policy in a directory":          {policyref.Named("cfg/new.json"), "after making sure cfg exists at the repository root, run " + goAuthoring + " --output cfg/new.json"},
+		"a named policy at the default location": {policyref.Named(".lousy-agents/coach.json"), goAuthoring},
+		"a policy nobody named":                  {policyref.Discovered("project.json"), goAuthoring},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) { requireRemediationEquals(t, "go", c) })
+	}
+}
+
+func TestSuggestProjectConfigRemediationForTypeScriptWritesWhereTheUserPointed(t *testing.T) {
+	cases := map[string]authoringCase{
+		"a named policy at the repository root":  {policyref.Named("new.json"), tsAuthoring + " --output new.json -- "},
+		"a named policy in a directory":          {policyref.Named("cfg/new.json"), "after making sure cfg exists at the repository root, run " + tsAuthoring + " --output cfg/new.json -- "},
+		"a named policy at the default location": {policyref.Named(".lousy-agents/coach.json"), tsAuthoring + " -- "},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) { requireRemediationContains(t, "typescript", c) })
+	}
+}
+
+func requireRemediationEquals(t *testing.T, language string, c authoringCase) {
+	t.Helper()
+	if got := SuggestProjectConfigRemediation(language, c.policy); got != c.want {
+		t.Errorf("SuggestProjectConfigRemediation(%q, %+v) = %q; want %q", language, c.policy, got, c.want)
+	}
+}
+
+func requireRemediationContains(t *testing.T, language string, c authoringCase) {
+	t.Helper()
+	if got := SuggestProjectConfigRemediation(language, c.policy); !strings.Contains(got, c.want) {
+		t.Errorf("SuggestProjectConfigRemediation(%q, %+v) = %q; want it to contain %q", language, c.policy, got, c.want)
 	}
 }

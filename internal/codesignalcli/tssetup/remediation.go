@@ -1,6 +1,8 @@
 package tssetup
 
 import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/invocation"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -32,9 +34,9 @@ func onATerminal(invocation string) string {
 // PrepareCompilerRemediation's own gapCode-only decision, matching
 // WrapCompilerUnresolvedErrorWithReadiness's contract of returning the
 // original error unchanged when readiness itself could not be computed.
-func PrepareCompilerRemediationWithReadiness(gapCode, configPath string, readiness *projectreadiness.Result) string {
+func PrepareCompilerRemediationWithReadiness(gapCode string, policy policyref.Ref, readiness *projectreadiness.Result) string {
 	if readiness == nil {
-		return PrepareCompilerRemediation(gapCode, configPath)
+		return PrepareCompilerRemediation(gapCode, policy)
 	}
 	if !gapCodeIsExecutablePrepareCompiler(gapCode) {
 		return ""
@@ -42,7 +44,7 @@ func PrepareCompilerRemediationWithReadiness(gapCode, configPath string, readine
 	if !menuOffersExecutableMiseChoice(AvailableChoices(*readiness)) {
 		return ""
 	}
-	return onATerminal(typescriptInvocation("--prepare-compiler", configPath))
+	return onATerminal(invocation.Command{Mode: invocation.PrepareCompiler, Policy: policy}.Phrase(""))
 }
 
 // PrepareCompilerRemediation names the interactive, consented mise
@@ -52,11 +54,11 @@ func PrepareCompilerRemediationWithReadiness(gapCode, configPath string, readine
 // prepare-compiler kind (e.g. node_missing, node_unsupported): Coach has no
 // setup command that fixes a runtime-boundary gap, so appending one would
 // name a command that either does nothing or targets the wrong problem.
-func PrepareCompilerRemediation(gapCode, configPath string) string {
+func PrepareCompilerRemediation(gapCode string, policy policyref.Ref) string {
 	if !gapCodeIsExecutablePrepareCompiler(gapCode) {
 		return ""
 	}
-	return onATerminal(typescriptInvocation("--prepare-compiler", configPath))
+	return onATerminal(invocation.Command{Mode: invocation.PrepareCompiler, Policy: policy}.Phrase(""))
 }
 
 // ScanSetupOfferRemediation names the interactive scan invocation itself
@@ -72,7 +74,7 @@ func PrepareCompilerRemediation(gapCode, configPath string) string {
 // it. It returns "" whenever PrepareCompilerRemediationWithReadiness would
 // already offer its own command (a verified mise choice exists too), so the
 // two remediations are never both printed for the same gap.
-func ScanSetupOfferRemediation(gapCode, configPath string, readiness *projectreadiness.Result) string {
+func ScanSetupOfferRemediation(gapCode string, policy policyref.Ref, readiness *projectreadiness.Result) string {
 	if readiness == nil || !gapCodeIsExecutablePrepareCompiler(gapCode) {
 		return ""
 	}
@@ -80,25 +82,5 @@ func ScanSetupOfferRemediation(gapCode, configPath string, readiness *projectrea
 	if !menuOffersExecutableChoice(menu) || menuOffersExecutableMiseChoice(menu) {
 		return ""
 	}
-	return onATerminal(typescriptScanInvocation(configPath) + " -- offers project-package setup")
-}
-
-// typescriptScanInvocation names the bare `coach codesignal --baseline`
-// scan itself, distinct from typescriptInvocation's own --check-project/
-// --prepare-compiler forms: R2's remediation points at rerunning the
-// original scan on a terminal, not at a standalone subcommand.
-func typescriptScanInvocation(configPath string) string {
-	invocation := "coach codesignal --baseline"
-	if configPath != "" {
-		invocation += " --project-config " + configPath
-	}
-	return invocation + " --project-language typescript"
-}
-
-func typescriptInvocation(flag, projectConfigPath string) string {
-	invocation := "coach codesignal --baseline " + flag + " --project-language typescript"
-	if projectConfigPath != "" {
-		invocation += " --project-config " + projectConfigPath
-	}
-	return invocation
+	return onATerminal(invocation.Command{Mode: invocation.Scan, Policy: policy}.Phrase("") + " -- offers project-package setup")
 }

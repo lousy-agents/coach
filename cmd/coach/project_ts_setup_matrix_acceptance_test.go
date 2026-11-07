@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
@@ -85,7 +86,7 @@ func expectPackageManagerMatrixRow(kind, version, wantCode string) {
 	GinkgoT().Setenv("PATH", packageManagerMatrixPath(kind, version))
 	repo, head := packageManagerMatrixFixture(kind)
 
-	readiness, err := projectcheck.Run(repo, head, "")
+	readiness, err := projectcheck.Run(repo, head, policyref.Ref{})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "the fixture must genuinely fail the compiler check, or the AvailableSetupChoices assertion below proves nothing")
 	Expect(readiness.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing))
@@ -152,7 +153,7 @@ var _ = Describe("checks.package_manager's frozen version-boundary matrix (SA-28
 			commitFile(repo, "package.json", `{"name":"example","version":"1.0.0","packageManager":"npm@11.19.0+sha512.48377f8478372aa1c4e47b763475b135836da82436a5700f2e5e8eb5084fc840f93c7b117eb3ad3b5f7d3194c81b6710a10d59448f6ddbcb21ac3fb672bdc003"}`+"\n")
 			head := commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
 
-			readiness, err := projectcheck.Run(repo, head, "")
+			readiness, err := projectcheck.Run(repo, head, policyref.Ref{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))
 			Expect(readiness.Checks.PackageManager.Code).To(Equal(projectreadiness.GapPackageManagerVersionUnsupported))
@@ -166,7 +167,7 @@ var _ = Describe("checks.package_manager's frozen version-boundary matrix (SA-28
 			GinkgoT().Setenv("PATH", pathWithStubNode("v24.9.9"))
 			repo, head := packageManagerMatrixFixture("yarn")
 
-			readiness, err := projectcheck.Run(repo, head, "")
+			readiness, err := projectcheck.Run(repo, head, policyref.Ref{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
 			Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))
@@ -550,7 +551,7 @@ var _ = Describe("checks.package_manager's ambiguous-lockfile and lifecycle-scri
 			commitFile(repo, "package-lock.json", `{"name":"example","lockfileVersion":3}`+"\n")
 			head := commitFile(repo, "pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
 
-			readiness, err := projectcheck.Run(repo, head, "")
+			readiness, err := projectcheck.Run(repo, head, policyref.Ref{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(readiness.Checks.Compiler.State).To(Equal(projectreadiness.Fail))
 			Expect(readiness.Checks.PackageManager.State).To(Equal(projectreadiness.Fail))

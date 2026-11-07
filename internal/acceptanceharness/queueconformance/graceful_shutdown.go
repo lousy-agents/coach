@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"github.com/lousy-agents/coach/internal/acceptanceharness"
+	"github.com/lousy-agents/coach/internal/coachapi/clock"
 )
 
-func runGracefulShutdownDoesNotLoseOrDuplicateClaim(t *testing.T, newQueue func(tb testing.TB, clock acceptanceharness.Clock) Queue) {
+func runGracefulShutdownDoesNotLoseOrDuplicateClaim(t *testing.T, newQueue func(tb testing.TB, clock clock.Clock) Queue) {
 	// This is deliberately a thin composition check, not a restatement
 	// of "kill-mid-attempt enables reclaim": it only confirms that a
 	// worker holding an active claim and simply going quiet (the

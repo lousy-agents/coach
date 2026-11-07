@@ -1,0 +1,48 @@
+# ADR-008: An Explicit Policy Path Is Judged on Disk, and Its Content Is Read at the Revision
+
+| Field | Value |
+| --- | --- |
+| Status | Accepted |
+| Date | 2026-11-04 |
+| Deciders | Repository maintainers |
+| Supersedes | The sentence "The selected file is read at the selected revision" in [`docs/conventions/lousy-agents-config.md`](../conventions/lousy-agents-config.md), for an explicit flag only |
+
+## Context
+
+Every lousy-agents tool selects its configuration by one lookup: an explicit flag, then `.lousy-agents/<tool>.json`, then a deprecated root file. The convention read the selected file at the analyzed revision, so a scan was reproducible from the commit alone.
+
+For `--project-config` that left two gaps. A path deleted from the working tree but committed at the analyzed revision was read from the commit and scanned as if nothing were wrong, so a user who had removed or replaced the file saw a report about a policy that was no longer on disk. And a path that was a symbolic link, a directory, a FIFO, or reached through a link could be committed as a different kind of entry than the one on disk, so the entry a reviewer saw and the entry the scan read were not the same thing.
+
+## Decision
+
+For an **explicit** `--project-config` only, two questions are answered from two sources:
+
+1. *Is there a usable entry at the path?* The working tree answers. The path must be a regular file, reached without a symbolic link, that the process can open. Otherwise the scan exits `2`: `project_config_missing` when nothing is there, `project_config_invalid` when something unusable is.
+2. *What does the policy say?* The analyzed revision answers, as before. The file is not read from disk in this slice. Reading the bytes from disk is the later slice of [#168](https://github.com/lousy-agents/coach/issues/168).
+
+A policy found by discovery keeps its source: `.lousy-agents/coach.json` and the root `project.json` are judged at the revision, and a discovered policy deleted on disk is scanned from its committed copy, because nothing was named that the working tree could be asked about. Discovery did change in three ways, since it now asks the revision what is at the canonical path before it falls back to the root file or to no policy:
+
+- A canonical policy committed in another case (`.Lousy-Agents/Coach.json`) is refused: the scan exits `2` with `project_config_invalid`, and `--check-project` reports `policy_invalid` with the cause `name_case_differs`, both naming the `git mv` that moves it. Before, the scan ran without the policy and said only `project_config_uncommitted`.
+- A canonical path committed as a directory, or as anything else a policy cannot be, is refused with exit `2`. Before, the scan ran without a policy.
+- `--check-project` on a canonical policy that is on disk and not committed reports `policy_missing` with the cause `not_committed`, offers no `author_policy`, and does not count the path as a relevant change in `dirty_worktree`, because the file's presence is what decided the cause. Before, it offered `author_policy` with no cause, and authoring then refused for want of a free target. The scan still exits `0` and still reads nothing from disk: it says `project_config_uncommitted` for that file, and for a canonical path the working tree holds something at that cannot be the policy (a directory, a symbolic link, a file where its directory should be, a parent the process cannot search) it says `project_config_unusable`, naming the cause `--check-project` reports for the same path (`cause=not_a_regular_file`, `symbolic_link`, `parent_not_directory`, `unreadable_on_disk`).
+
+When the working tree decides, `--check-project` marks the policy check as decided on disk and leaves that path out of `dirty_worktree`, because the report did read the working tree for it. The exception is a staged edit to a committed policy, or a staged entry for a policy that was never committed, that the working tree could not supply, whether the file is gone, a file stands in a parent's place, or an unusable entry took its place: nothing read that edit, so the path stays in `dirty_worktree`. For a committed policy with a staged edit the restore from the revision is not the default, because it would discard the edit: the message names the restore from the index that keeps the edit and, as a labelled choice, the restore from the revision to drop it and bring back the committed copy. Over a staged entry for a policy that was never committed, and over an unmerged entry for a committed policy, no restore from the revision is offered at all. Only the policy's own path leaves the list: every other uncommitted path under the policy's roots still counts, and the roots of a policy the working tree refused are those of its committed copy at the analyzed revision. With no valid policy committed there are no roots, and only package and compiler metadata counts.
+
+## Options considered
+
+| Option | Effect | Verdict |
+| --- | --- | --- |
+| Revision only (the previous convention) | Reproducible from the commit. A file deleted or swapped on disk is invisible to the scan | Rejected: the user is told about a policy that is not the one in front of them |
+| Disk only | A scan of a non-HEAD revision judges the working tree | Rejected: breaks `--base` and reproducibility |
+| Refuse on any dirty policy | Strictest, but turns an uncommitted edit into a hard failure, which `--check-project` and the dirty-worktree disclosure already report without one | Rejected: the disclosure exists for this |
+| Disk for existence and kind, revision for content (chosen) | Catches the file that is gone or unusable, keeps the content reproducible; discovery keeps reading the revision, and refuses a policy it holds in the wrong case or as the wrong kind of entry | Chosen |
+
+## Consequences
+
+- A sparse checkout that leaves the explicit policy out of the working tree: the scan exits `2` (the cause is `sparse_checkout`, and the message says to add the policy's directory to the sparse checkout), where the scan before this convention read the committed copy and exited `0`. A CI job on a sparse checkout that passes `--project-config` therefore needs the policy's directory in the checkout. This is the cost the "disk only" option was also given; the chosen option has it for the path the user names, and only for that path.
+- A scan of a non-HEAD revision (`--base`) still reads the policy at that revision, but fails if the path is not a usable file on disk now. A reproducible scan of an old revision needs a checkout where the explicit path exists.
+- `--check-project` carries a `restore_policy` next action beside `author_policy`, so a policy committed and then deleted is restored rather than rewritten. A scan prints the restore command in its error message; `--check-project` prints no command, in text or in JSON, and only names the action (`restore_policy`, never executable). Coach never runs it.
+- Other lousy-agents tools adopt the same split for their own explicit flag, or state that they do not. Until one does, the convention document describes the split and the tools keep their own behavior.
+- The probe lives in `projectconfig`, which ADR-007 places in the model layer. Moving it to a driven adapter is tracked in [coach#613](https://github.com/lousy-agents/coach/issues/613).
+- The discovered canonical path is now asked with the same probe (a regular file reached without a link that the process can open), so the scan says `project_config_unusable` where it used to say "not committed" for a directory or a link, and for a file inside a submodule at `.lousy-agents`, which cannot be committed here (cause `in_submodule`, as `--check-project` reports it, whether the checkout is there or has been removed). `configExistsInWorktree` still follows symbolic links without root containment for the legacy root `project.json`. Aligning it is tracked in [coach#615](https://github.com/lousy-agents/coach/issues/615).
+- Whether the canonical path is free for a new policy, or for project.json to be moved there, is one question: `ConfigError.FreeForANewPolicy`, true when nothing is on disk and the judgment of the path, which asks the index and the revision as well as the disk, arrives at a new policy as the remedy. `--check-project` asks it for a discovered policy as it does for one named with `--project-config`, and the migration advice asks it through `Selection.CanonicalPathTaken`, so a staged copy, a recorded conflict, a skip-worktree mark or a submodule no longer lets either offer a file or a move over what the index holds. Before, the discovered check offered `author_policy` and the scan printed the `git mv` over a staged copy, and the `git add` or move that followed replaced it.

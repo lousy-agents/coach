@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -51,7 +52,7 @@ func TestPrepareCompilerRemediationOffersOnlyExecutablePrepareCompilerGaps(t *te
 // remediationOfferProblem describes how PrepareCompilerRemediation's answer
 // for code disagrees with wantExecutable, or returns "" when it agrees.
 func remediationOfferProblem(code string, wantExecutable bool) string {
-	got := PrepareCompilerRemediation(code, "project.json")
+	got := PrepareCompilerRemediation(code, policyref.Named("project.json"))
 	switch {
 	case wantExecutable && got == "":
 		return fmt.Sprintf("PrepareCompilerRemediation(%q, ...) = \"\", want a non-empty --prepare-compiler command", code)

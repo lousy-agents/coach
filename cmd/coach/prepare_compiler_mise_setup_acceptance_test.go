@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tssetup"
@@ -36,7 +37,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, policyref.Ref{})
 
 			transcript := readStderr()
 			Expect(exitCode).To(Equal(0), "stderr: %s", transcript)
@@ -62,7 +63,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, policyref.Ref{})
 
 			Expect(exitCode).To(Equal(2))
 			Expect(readStdout()).To(BeEmpty(), "no report must ever reach stdout from this flow")
@@ -98,7 +99,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, policyref.Ref{})
 
 			Expect(exitCode).To(Equal(2))
 			Expect(readStdout()).To(BeEmpty())
@@ -151,7 +152,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, policyref.Ref{})
 
 			Expect(exitCode).To(Equal(2))
 			Expect(readStdout()).To(BeEmpty(), "no report must ever reach stdout from this flow")
@@ -189,7 +190,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 
 			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
-			before, err := projectcheck.Run(repo, revision, "")
+			before, err := projectcheck.Run(repo, revision, policyref.Ref{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(before.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "sanity: the fixture must start without a usable compiler")
 			Expect(before.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing))
@@ -200,7 +201,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, policyref.Ref{})
 
 			transcript := readStderr()
 			Expect(exitCode).To(Equal(0), "stderr: %s", transcript)
@@ -227,7 +228,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, policyref.Ref{})
 
 			transcript := readStderr()
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", readStdout(), transcript)
@@ -255,7 +256,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, policyref.Ref{})
 
 			transcript := readStderr()
 			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", readStdout(), transcript)
@@ -278,7 +279,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 				Code:    projectreadiness.GapPackageManagerConfigUnverifiable,
 			}
 
-			exitCode := reportPrepareCompilerMiseResult(result, stderrFile)
+			exitCode := reportPrepareCompilerMiseResult(result, "", "", stderrFile)
 
 			transcript := readStderr()
 			Expect(exitCode).To(Equal(2), "stderr: %s", transcript)
@@ -299,7 +300,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 
 			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
-			before, err := projectcheck.Run(repo, revision, "")
+			before, err := projectcheck.Run(repo, revision, policyref.Ref{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(before.Checks.Compiler.State).To(Equal(projectreadiness.Fail), "sanity: the fixture must start without a usable compiler")
 
@@ -309,7 +310,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdoutFile.Close()
 			defer stderrFile.Close()
 
-			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, "")
+			exitCode := prepareCompilerMiseTypeScript(repo, stdin, stdoutFile, stderrFile, policyref.Ref{})
 
 			transcript := readStderr()
 
@@ -344,7 +345,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 
 			revision, err := gitrepo.ResolveBaselineRevision(repo)
 			Expect(err).NotTo(HaveOccurred())
-			readiness, err := projectcheck.Run(repo, revision, "")
+			readiness, err := projectcheck.Run(repo, revision, policyref.Ref{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(readiness.Checks.Compiler.Code).To(Equal(projectreadiness.GapTypescriptCompilerMissing), "sanity: the fixture must start without a usable compiler")
 
@@ -356,7 +357,7 @@ var _ = Describe("coach's interim standalone prepare_compiler mise setup dispatc
 			defer stdin.Close()
 			var transcript bytes.Buffer
 
-			result := tssetup.RunPrepareCompilerMiseSetup(ctx, repo, revision, "", readiness, stdin, &transcript)
+			result := tssetup.RunPrepareCompilerMiseSetup(ctx, repo, revision, policyref.Ref{}, readiness, stdin, &transcript)
 			elapsed := time.Since(start)
 
 			Expect(elapsed).To(BeNumerically(">=", 2*time.Second), "the install must run at least as long as the supplied context deadline, not fail some unrelated, faster way, got elapsed=%s transcript=%s", elapsed, transcript.String())

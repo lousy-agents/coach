@@ -17,15 +17,6 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func hasEnvPrefix(env []string, prefix string) bool {
-	for _, entry := range env {
-		if strings.HasPrefix(entry, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
 func snapshotGroundTruthLsTree(dir, revision string) []string {
 	cmd := exec.Command("git", "-C", dir, "ls-tree", "-r", "--name-only", revision)
 	output, err := cmd.Output()
@@ -77,30 +68,6 @@ var _ = Describe("NewGoSnapshotFS", func() {
 		_, err = fs.ReadFile(fsys, "does/not/exist.go")
 		Expect(err).To(HaveOccurred())
 		Expect(errors.Is(err, fs.ErrNotExist)).To(BeTrue(), "error must satisfy errors.Is(err, fs.ErrNotExist): %v", err)
-	})
-
-	It("builds every git snapshot child with a sanitized environment, never forwarding Go-tooling or proxy variables", func() {
-		Expect(os.Setenv("GOPROXY", "http://example.invalid")).To(Succeed())
-		Expect(os.Setenv("HTTP_PROXY", "http://example.invalid")).To(Succeed())
-		Expect(os.Setenv("GOFLAGS", "-mod=mod")).To(Succeed())
-		DeferCleanup(func() {
-			os.Unsetenv("GOPROXY")
-			os.Unsetenv("HTTP_PROXY")
-			os.Unsetenv("GOFLAGS")
-		})
-
-		cmd := snapshotGitCommandContext(context.Background(), dir, "show", sha+":main.go")
-
-		Expect(hasEnvPrefix(cmd.Env, "GOPROXY=")).To(BeFalse())
-		Expect(hasEnvPrefix(cmd.Env, "HTTP_PROXY=")).To(BeFalse())
-		Expect(hasEnvPrefix(cmd.Env, "HTTPS_PROXY=")).To(BeFalse())
-		Expect(hasEnvPrefix(cmd.Env, "GOFLAGS=")).To(BeFalse())
-		Expect(hasEnvPrefix(cmd.Env, "GOPATH=")).To(BeFalse())
-		Expect(hasEnvPrefix(cmd.Env, "GO111MODULE=")).To(BeFalse())
-		Expect(hasEnvPrefix(cmd.Env, "PATH=")).To(BeTrue(), "PATH must still be forwarded so the git executable can be found")
-		Expect(cmd.Env).To(ContainElement("GIT_TERMINAL_PROMPT=0"))
-		Expect(cmd.Env).To(ContainElement("GIT_CONFIG_NOSYSTEM=1"))
-		Expect(cmd.Env).To(ContainElement("GIT_NO_LAZY_FETCH=1"), "a blobless partial-clone promisor fetch must never be allowed to reach the network")
 	})
 
 	It("stats a file's size without ever running `git show` (must not buffer blob content just to size it)", func() {

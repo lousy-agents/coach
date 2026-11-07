@@ -8,9 +8,14 @@ import (
 	"strings"
 )
 
-func runCommand(dir, name string, args ...string) ([]byte, error) {
-	command := exec.Command(name, args...)
+// runGoIn runs the go command in a directory of committed bytes. The directory is not trusted: a go.mod there
+// can name a toolchain for go to fetch and run, and a .git directory there, if one were ever written, would be
+// a repository whose config names programs git runs. So the toolchain is the one installed, whatever the
+// caller set, and the callers pass -buildvcs=false, which go would otherwise answer by running git.
+func runGoIn(dir string, args ...string) ([]byte, error) {
+	command := exec.Command("go", args...)
 	command.Dir = dir
+	command.Env = append(command.Environ(), "GOTOOLCHAIN=local")
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	output, err := command.Output()

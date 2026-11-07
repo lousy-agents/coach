@@ -1,6 +1,8 @@
 package tstoolchain
 
 import (
+	"github.com/lousy-agents/coach/internal/codesignalcli/invocation"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
@@ -10,8 +12,10 @@ import (
 // stay operational errors. RootFindings entries are repository-relative
 // policy roots, never filesystem paths.
 type CompilerUnresolvedError struct {
-	Code         string
-	ConfigPath   string
+	Code string
+	// Policy is the policy the failed run read. The remediation line names it
+	// with --project-config only when the user named it.
+	Policy       policyref.Ref
 	RootFindings []projectreadiness.RootFinding
 }
 
@@ -20,15 +24,17 @@ func (e *CompilerUnresolvedError) Error() string {
 }
 
 func (e *CompilerUnresolvedError) RemediationLine() string {
-	return gapRemediationLine(e.Code, e.ConfigPath, e.RootFindings)
+	return gapRemediationLine(e.Code, e.Policy, e.RootFindings)
 }
 
 // RuntimeUnresolvedError is a host-runtime miss (node_missing / node_unsupported).
 // It is not a CompilerUnresolvedError: the compiler-setup offer must not
 // errors.As it, because Coach has no runtime installer.
 type RuntimeUnresolvedError struct {
-	Code       string
-	ConfigPath string
+	Code string
+	// Policy is the policy the failed run read. The remediation line names it
+	// with --project-config only when the user named it.
+	Policy policyref.Ref
 }
 
 func (e *RuntimeUnresolvedError) Error() string {
@@ -36,15 +42,11 @@ func (e *RuntimeUnresolvedError) Error() string {
 }
 
 func (e *RuntimeUnresolvedError) RemediationLine() string {
-	return gapRemediationLine(e.Code, e.ConfigPath, nil)
+	return gapRemediationLine(e.Code, e.Policy, nil)
 }
 
-func gapRemediationLine(code, configPath string, findings []projectreadiness.RootFinding) string {
-	invocation := "coach codesignal --baseline --check-project --project-language typescript"
-	if configPath != "" {
-		invocation += " --project-config " + configPath
-	}
-	return code + formatRemediationRootFindings(findings) + ": run " + invocation
+func gapRemediationLine(code string, policy policyref.Ref, findings []projectreadiness.RootFinding) string {
+	return code + formatRemediationRootFindings(findings) + ": " + invocation.Command{Mode: invocation.CheckProject, Policy: policy}.Phrase("run")
 }
 
 func formatRemediationRootFindings(findings []projectreadiness.RootFinding) string {

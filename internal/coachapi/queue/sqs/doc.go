@@ -18,7 +18,7 @@
 // # Reclaim mechanism
 //
 // SQS's own visibility timeout is real, server-side wall-clock time: it does
-// not know about an injected acceptanceharness.Clock. To keep this adapter
+// not know about an injected clock.Clock. To keep this adapter
 // testable under acceptanceharness.FakeClock (required by
 // internal/acceptanceharness/queueconformance) and to behave uniformly in
 // production, Queue tracks its own claimed-but-not-yet-acknowledged
@@ -30,7 +30,7 @@
 // SQS returning ReceiptHandleIsInvalid means another path already reclaimed
 // it) so the next ReceiveMessage can redeliver it with a fresh receipt
 // handle, and forgets the stale receipt handle locally so a subsequent
-// Complete/Nack carrying it is rejected. Under acceptanceharness.RealClock
+// Complete/Nack carrying it is rejected. Under clock.RealClock
 // this coincides with SQS's own native visibility timeout; under FakeClock
 // it fires on Clock.Advance instead of real elapsed time.
 //

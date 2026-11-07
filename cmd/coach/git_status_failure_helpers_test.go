@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,13 +13,22 @@ import (
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
-func expectStatusWrapperBehavior(wrapper, repo string) {
-	status := exec.Command(wrapper, "-C", repo, "status", "--porcelain")
-	statusOut, statusErr := status.CombinedOutput()
-	ExpectWithOffset(1, statusErr).To(HaveOccurred(), "wrapper must fail git status; output: %s", statusOut)
+// corruptTheIndex overwrites the repository's index with bytes git cannot read as one. It is a fault real git
+// has: every command that reads the index (git status, git ls-files) fails, and every command that reads
+// objects and refs only (rev-parse, ls-tree, diff between two commits, show, cat-file) still works.
+func corruptTheIndex(repo string) {
+	GinkgoHelper()
+	Expect(os.WriteFile(filepath.Join(repo, ".git", "index"), []byte("not an index"), 0o644)).To(Succeed())
+}
+
+// expectOnlyTheIndexReadsFail proves the fault is the one the specs mean: git status fails, and the commands a
+// scan reads history with, run by the same git, do not.
+func expectOnlyTheIndexReadsFail(repo string) {
+	GinkgoHelper()
+	statusOut, statusErr := exec.Command("git", "-C", repo, "status", "--porcelain").CombinedOutput()
 	var exitErr *exec.ExitError
-	ExpectWithOffset(1, errors.As(statusErr, &exitErr)).To(BeTrue(), "status wrapper error: %v", statusErr)
-	ExpectWithOffset(1, exitErr.ExitCode()).NotTo(Equal(0))
+	Expect(errors.As(statusErr, &exitErr)).To(BeTrue(), "git status must fail on the corrupt index; output: %s", statusOut)
+	Expect(exitErr.ExitCode()).NotTo(Equal(0))
 
 	for _, args := range [][]string{
 		{"-C", repo, "rev-parse", "HEAD"},
@@ -29,54 +37,9 @@ func expectStatusWrapperBehavior(wrapper, repo string) {
 		{"-C", repo, "show", "HEAD:a.go"},
 		{"-C", repo, "cat-file", "-e", "HEAD"},
 	} {
-		cmd := exec.Command(wrapper, args...)
-		out, err := cmd.CombinedOutput()
-		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "wrapper must exec real git for %v: %s", args, out)
+		out, err := exec.Command("git", args...).CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), "git %v must work with the index corrupt: %s", args, out)
 	}
-}
-
-// installGitStatusFailureWrapper returns a PATH directory whose git fails
-// only when the subcommand is status. Coach invokes git as
-// "git -C <dir> <subcommand> ...", so options that precede the subcommand
-// (and "--name-status", which is a diff option) must not be treated as status.
-func installGitStatusFailureWrapper() (binDir string, env []string) {
-	realGit, err := exec.LookPath("git")
-	Expect(err).NotTo(HaveOccurred())
-
-	binDir, err = os.MkdirTemp("", "coach-git-status-wrapper-*")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(os.RemoveAll, binDir)
-
-	script := fmt.Sprintf(`#!/bin/sh
-real=%q
-prev=
-for arg in "$@"; do
-  if [ -n "$prev" ]; then
-    prev=
-    continue
-  fi
-  case "$arg" in
-    -C|-c|--git-dir|--work-tree|--namespace)
-      prev=$arg
-      continue
-      ;;
-    -*)
-      continue
-      ;;
-    status)
-      echo "git status failed" >&2
-      exit 1
-      ;;
-    *)
-      exec "$real" "$@"
-      ;;
-  esac
-done
-exec "$real" "$@"
-`, realGit)
-	Expect(os.WriteFile(filepath.Join(binDir, "git"), []byte(script), 0o755)).To(Succeed())
-	env = []string{"PATH=" + binDir, "HOME=" + os.Getenv("HOME")}
-	return binDir, env
 }
 
 func expectStatusCheckFailureDiagnostic(stdout []byte, format string) {

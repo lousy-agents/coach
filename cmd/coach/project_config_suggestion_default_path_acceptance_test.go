@@ -114,7 +114,7 @@ var _ = Describe("coach suggest project config default path", func() {
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, defaultScanPorts())
 
 			Expect(exitCode).To(Equal(0), "stderr: %s", readStderr())
 			Expect(readStdout()).NotTo(ContainSubstring(`"schema_version"`), "the candidate document must not be written to stdout when the default path is used; stdout: %s", readStdout())
@@ -142,7 +142,7 @@ var _ = Describe("coach suggest project config default path", func() {
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, defaultScanPorts())
 
 			Expect(exitCode).To(Equal(2), "stderr: %s", readStderr())
 			Expect(readStderr()).To(ContainSubstring("Select the roots to include"), "the decline must happen inside the guided session, not before it; stderr: %s", readStderr())
@@ -173,7 +173,7 @@ var _ = Describe("coach suggest project config default path", func() {
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript"}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, defaultScanPorts())
 
 			Expect(exitCode).To(Equal(2), "stderr: %s", readStderr())
 			Expect(readStderr()).To(ContainSubstring("already exists"), "stderr: %s", readStderr())
@@ -199,7 +199,7 @@ var _ = Describe("coach suggest project config default path", func() {
 			defer stderr.Close()
 
 			flags := codesignalFlags{baseline: true, suggestProjectConfig: true, projectLanguage: "typescript", output: "out.json", outputSet: true}
-			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr)
+			exitCode := authorProjectConfigTypeScript(repo, flags, stdin, stdout, stderr, defaultScanPorts())
 
 			Expect(exitCode).To(Equal(0), "stderr: %s", readStderr())
 			Expect(readStdout()).NotTo(ContainSubstring(`"schema_version"`), "stdout: %s", readStdout())

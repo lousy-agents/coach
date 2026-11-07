@@ -25,6 +25,8 @@ const (
 type Gap struct {
 	Code               string `json:"code"`
 	PackageManagerKind string `json:"package_manager_kind,omitempty"`
+	// Cause is, for a policy gap that no remedy fixes, why there is no way out.
+	Cause PolicyCause `json:"cause,omitempty"`
 }
 
 type Warning struct {

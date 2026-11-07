@@ -30,7 +30,7 @@ func TestCheckProjectShapeWalksUpToParentPackageJSONWhenPolicyPassed(t *testing.
 
 // TestCheckProjectShapeIgnoresRootsWhenPolicyNotPassed pins the
 // policyPassed guard in checkProjectShape directly, independent of whatever
-// CheckPolicy happens to return on any particular invalid-policy path:
+// checkPolicy happens to return on any particular invalid-policy path:
 // removing the `if !policyPassed` branch turns this red regardless. Without
 // a validated policy, roots is untrusted input, so a root-level manifest
 // miss reports not_checked rather than asserting an unsupported shape this

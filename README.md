@@ -36,7 +36,7 @@ Full flags and schema: [CLI contract](./docs/cli-codesignal.md).
 
 - **Languages:** Go, TypeScript, TSX. Other files get an `unsupported_language` diagnostic and are skipped.
 - **Input:** committed Git objects at the selected revision, not the dirty worktree. Uncommitted edits are invisible.
-- **Git:** `git` must be on `PATH`. No Docker, no API key, no network for the default CLI path.
+- **Git:** `git` 2.42 or later must be on `PATH`: a scan needs 2.16 to start and `--baseline` needs 2.42 to read the files it analyzes; see [git version](./docs/cli-codesignal.md#git-version). No Docker, no API key, no network for the default CLI path. In a partial clone Coach never fetches a missing object; a git older than 2.44 cannot be told that, so with it a read is made only when every object of the revisions the scan reads is already here, whatever the repository's configuration says; see [what repository configuration can run](./docs/cli-codesignal.md#what-repository-configuration-can-run).
 - **Advisory:** a completed analysis exits `0` even when it found signals. Coach does not gate merges.
 - **Absence is not a clean bill of health.** An empty signal set means no matched rule for the inputs that were analyzed. The `forbidden_imports` check reaches only imports between code inside declared layers; with `--project-config`, the report says how many project files under the configured roots sit outside every declared layer. It leaves that count out when no layers are declared, when the inputs are incomplete (for example, a project model cut short by its input budget), when a configured root holds no analyzed file, or when a TypeScript root's analyzed-file count does not match its path list.
 
@@ -68,7 +68,7 @@ Default `--scope` is `production`. `--build-target <pattern>` further limits Go 
 | Code | Meaning |
 | --- | --- |
 | `0` | Analysis completed (signals or none). Not a quality gate. |
-| `1` | Operational failure (not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O). |
+| `1` | Operational failure (not a git repo, missing `git`, unresolvable `--base`, empty repo, I/O; also `--check-project` when git cannot answer a question about an explicit `--project-config`: empty stdout, stderr names the question); and, in a partial clone, an object the clone lacks (Coach never fetches; this includes the merge base's version of a file a `--base` diff compares, and with a git older than 2.44 it is refused before anything runs). |
 | `2` | Usage or invalid `--project-config`, or a TypeScript scan that cannot resolve a supported compiler or host Node (empty stdout except the policy-candidate document on the guided-authoring path; one or more stderr lines). |
 | `3` | Required project coverage incomplete and `--fail-on-incomplete-coverage` was supplied (report still written to stdout); or `--prepare-compiler` operational failure resolving the revision or computing readiness. |
 
@@ -201,16 +201,104 @@ coach codesignal --base main --project-config .lousy-agents/coach.json
 coach codesignal --baseline --project-config .lousy-agents/coach.json --project-language typescript
 ```
 
-Move a root `project.json` to that path:
+Move a root `project.json` to that path, from any directory of the repository:
 
 ```sh
-mkdir -p .lousy-agents && git mv project.json .lousy-agents/coach.json
+top="$(git rev-parse --show-toplevel)" && mkdir -p "$top"/.lousy-agents && git -C "$top" mv -- project.json .lousy-agents/coach.json
 ```
 
 An explicit `--project-config` still reads only that path. A schema-valid root `project.json` is still read with a deprecation diagnostic until the follow-up removal ([issue #511](https://github.com/lousy-agents/coach/issues/511)). The lookup is [`.lousy-agents` config](./docs/conventions/lousy-agents-config.md).
 
-`--project-config` is read from the **analyzed revision**, not your dirty
-worktree. An uncommitted candidate is invisible to the scan. A valid config
+`--project-config` content is read from the **analyzed revision**, not your
+dirty worktree. The path itself is checked on disk first, and what is there
+decides what Coach says. Every case below exits `2`, and stdout stays empty
+except for the policy-candidate document on the guided-authoring path.
+
+- Nothing is there, the policy was never committed, and the index holds nothing
+  for it: `project_config_missing`. A Go scan then prints
+  `--suggest-project-config`; a TypeScript scan on a controlling terminal opens
+  guided authoring, and `--check-project` names `author_policy`. An index entry
+  that holds no content, made with `git add --intent-to-add` or by staging an
+  empty file, counts as nothing, unless it is marked skip-worktree: git add
+  refuses a new file at a path the mark hides, so Coach calls it an empty entry,
+  names the mark (or the sparse checkout), and offers no new policy.
+- Nothing is there but the policy is committed at the analyzed revision:
+  `project_config_missing`, with the one command that brings it back,
+  `git restore --source=<revision> --staged --worktree -- ':(top,literal)<path>'`,
+  and no authoring. `--check-project` names it as the `restore_policy` next
+  action, with `executable: false`. Coach offers that command only when it
+  overwrites nothing and git can run it. If the index holds a staged edit to the
+  policy, the restore from the revision would discard the edit, so Coach does not
+  offer it as the default. It says why and offers no new policy, and it prints two
+  choices: the restore from the index, which keeps the edit, and, labelled as the
+  way to drop it, the restore from the revision, to drop it and bring back the
+  committed copy. If the index holds an unmerged entry for the policy, if the
+  policy is committed as a symbolic link, if a sparse checkout leaves it out of the
+  working tree or its index entry is marked skip-worktree, or if git cannot say
+  whether it is committed or what the index holds, Coach says why and offers
+  neither a restore nor a new policy.
+  An index entry that holds no content does not count as an edit: the restore
+  replaces it, and the message says that it brings back the committed copy,
+  unless the entry is marked skip-worktree, which stops a restore and is named
+  instead.
+- Nothing is there and the policy was never committed, but the index holds an
+  entry for it: `project_config_missing`, and no authoring, because a new policy
+  would replace staged work. A staged regular file gets the one command that
+  brings it back from the index, `git restore -- ':(top,literal)<path>'`. Coach
+  prints no command, and says why, when the entry is unmerged, is a symbolic link
+  or another entry that is not a regular file, or is marked skip-worktree or left
+  out by a sparse checkout, because the command would fail or would recreate what
+  the scan refuses. `--check-project` names neither next action.
+- A path under a regular file: `project_config_missing`. The message names the
+  file in the way. When the analyzed revision commits that file, the message says
+  it is a file the analyzed revision commits, so the path is probably wrong, and
+  gives no advice to move or remove it, because the file is the repository's and
+  the path is what is wrong. For a file nothing commits, the message says to move
+  or remove it, then to restore the policy from git when it is committed, unless
+  the index holds a staged edit to it, which the message names instead because a
+  restore would discard it, or it is committed as a symbolic link, which the
+  message says instead because a restore would recreate a link the scan refuses.
+  When the policy is only staged, never committed, it says to move the file and
+  then restore the staged copy from the index. When the index holds an unmerged
+  entry for the policy, the `git checkout` that brings the conflicted file back
+  is named behind the step that moves the file, because the checkout would delete
+  it as well. It prints no `git restore` command and offers no authoring, because
+  a restore would delete that file.
+- A symbolic link, a directory or other file that is not a regular file, a path
+  that runs through a symbolic link, a file that cannot be read, or a parent
+  that cannot be searched: `project_config_invalid`, naming the reason, with no
+  restore and no authoring.
+- A name that differs only by case from what is on disk (on a file system that
+  ignores case) or from what the analyzed revision holds (when the file is gone
+  from disk), where the revision does not hold the spelling that was typed:
+  `project_config_invalid`. The message names both spellings and says whether to
+  pass the revision's spelling, and gives no advice when the revision holds
+  neither. A revision that holds exactly the typed path is read whatever
+  spelling the disk shows. A file renamed in case only and never committed under
+  its new name is told to record the rename with `git mv`, because `git add`
+  records nothing for it. No new policy is offered. See the [CLI contract](./docs/cli-codesignal.md#commands).
+- A policy Coach discovers (no `--project-config`) that is committed in another case
+  than `.lousy-agents/coach.json`: the scan is refused, `--check-project` names
+  `name_case_differs` and offers no new policy, and the message prints the
+  `git mv` that moves it. It used to be ignored. See the
+  [CLI contract](./docs/cli-codesignal.md#commands).
+- A policy inside a submodule checkout, or at a path the analyzed revision
+  commits as a submodule, naming the submodule: `project_config_invalid` while
+  the checkout is there (the file in it, or the submodule itself), and
+  `project_config_missing` once it is gone (`git submodule deinit`).
+  `--check-project` names the cause `in_submodule` for all of them, and so for
+  a name below the submodule that differs in case from the checkout's: the
+  superproject holds no spelling of what is inside, so Coach does not report a
+  difference in case there. The superproject records a submodule as one commit,
+  so the file can be neither restored nor committed here; name a policy this
+  repository commits. See the
+  [CLI contract](./docs/cli-codesignal.md#commands).
+
+A file that
+exists on disk but is not committed is rejected (`project_config_invalid`, with
+the instruction to commit it) until the disk-read slice of
+[#168](https://github.com/lousy-agents/coach/issues/168). Coach offers no new
+policy there, because a file already sits at the path. A valid config
 switches the report to `schema_version: "2"` and can emit
 `architecture.layer_violation`. `required_layer` can also emit
 `architecture.layer_bypass` (Go and TypeScript) on a narrow handler→SQL
@@ -240,7 +328,8 @@ status as a gate. It is not a scan. A **scan** that cannot resolve a supported
 compiler or host Node exits `2` with empty stdout except the policy-candidate
 document on the guided-authoring path, and one or more stderr lines. On a
 controlling terminal, a TypeScript scan whose `--project-config` names a
-policy that was never committed instead opens a guided-authoring session;
+policy that does not exist on disk and was never committed instead opens a
+guided-authoring session (a policy that is committed, or that the index holds, gets what the cases above describe instead);
 with `--format json` this session's exit-2 output is
 a JSON object carrying `"schema_version": "1"` and `roots`, not a CodeSignal
 report — the absent `scope`/`signals`/`coverage` keys distinguish it.

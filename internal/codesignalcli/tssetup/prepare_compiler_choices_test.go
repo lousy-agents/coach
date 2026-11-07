@@ -1,14 +1,13 @@
 package tssetup
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
 )
@@ -41,7 +40,7 @@ func TestMiseChoicesForPrepareCompilerFallsBackToVerifiedChoicesWhenActionChoice
 	}
 
 	action := projectreadiness.NextAction{Kind: projectreadiness.NextActionPrepareCompiler, Executable: true}
-	got := miseChoicesForPrepareCompiler(repo, revision, "", action)
+	got := miseChoicesForPrepareCompiler(repo, revision, policyref.Ref{}, action)
 
 	want := []string{tstoolchain.OriginMiseProject, tstoolchain.OriginMiseGlobal}
 	if len(got) != len(want) {
@@ -90,96 +89,9 @@ func TestMiseChoicesForPrepareCompilerUsesDiscoveredRootsWhenConfigPathEmpty(t *
 	}
 
 	action := projectreadiness.NextAction{Kind: projectreadiness.NextActionPrepareCompiler, Executable: true}
-	got := miseChoicesForPrepareCompiler(repo, revision, "", action)
+	got := miseChoicesForPrepareCompiler(repo, revision, policyref.Ref{}, action)
 	if !sameChoiceKinds(got, want) {
 		t.Fatalf("miseChoicesForPrepareCompiler with an empty project-config path = %#v, want %#v (EvaluateMiseSetupChoices on discovered roots %v); [.] would offer %#v", got, want, discoveredRoots, dotRoots)
-	}
-}
-
-func writePackageTypescript(t *testing.T, repo, pkg, version string) {
-	t.Helper()
-	pkgDir := filepath.Join(repo, filepath.FromSlash(pkg))
-	tsDir := filepath.Join(pkgDir, "node_modules", "typescript")
-	if err := os.MkdirAll(tsDir, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", tsDir, err)
-	}
-	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte("{\"name\":\"pkg\",\"version\":\"1.0.0\"}\n"), 0o644); err != nil {
-		t.Fatalf("write %s package.json: %v", pkg, err)
-	}
-	if err := os.WriteFile(filepath.Join(tsDir, "package.json"), []byte("{\"version\":\""+version+"\"}\n"), 0o644); err != nil {
-		t.Fatalf("write %s typescript: %v", pkg, err)
-	}
-}
-
-func verifiedMiseChoiceKinds(choices []projectreadiness.MiseChoice) []string {
-	var kinds []string
-	for _, choice := range choices {
-		if choice.Verified {
-			kinds = append(kinds, choice.Kind)
-		}
-	}
-	return kinds
-}
-
-func sameChoiceKinds(got, want []string) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func TestRunPrepareCompilerMiseSetupReportsNoChoicesOffered(t *testing.T) {
-	cases := map[string]*projectreadiness.Result{
-		"nil readiness":                nil,
-		"no next actions at all":       {Checks: projectreadiness.Checks{Policy: projectreadiness.Check{State: projectreadiness.Pass}}},
-		"prepare_compiler not present": readinessWithPrepareCompilerAction(projectreadiness.NextAction{Kind: "install_supported_runtime", Executable: false}),
-		"prepare_compiler not executable": readinessWithPrepareCompilerAction(projectreadiness.NextAction{
-			Kind: projectreadiness.NextActionPrepareCompiler, Executable: false, Choices: []string{tstoolchain.OriginMiseProject},
-		}),
-		"choices restricted to a non-mise kind only": readinessWithPrepareCompilerAction(projectreadiness.NextAction{
-			Kind: projectreadiness.NextActionPrepareCompiler, Executable: true, Choices: []string{"npm_project"},
-		}),
-	}
-
-	for name, readiness := range cases {
-		t.Run(name, func(t *testing.T) {
-			checkRunPrepareCompilerMiseSetupReports(t, readiness)
-		})
-	}
-}
-
-func checkRunPrepareCompilerMiseSetupReports(t *testing.T, readiness *projectreadiness.Result) {
-	result := RunPrepareCompilerMiseSetup(context.Background(), t.TempDir(), "HEAD", "", readiness, strings.NewReader(""), &bytes.Buffer{})
-	if !result.NoChoicesOffered {
-		t.Fatalf("NoChoicesOffered = false, want true: %+v", result)
-	}
-	if result.Cancelled || result.Attempted || result.Trusted || result.Succeeded {
-		t.Fatalf("expected every other outcome field to stay zero, got %+v", result)
-	}
-}
-
-func TestRunPrepareCompilerMiseSetupCancelsOnUnrecognizedSelection(t *testing.T) {
-	readiness := readinessWithPrepareCompilerAction(projectreadiness.NextAction{
-		Kind: projectreadiness.NextActionPrepareCompiler, Executable: true,
-		Choices: []string{tstoolchain.OriginMiseProject, tstoolchain.OriginMiseGlobal},
-	})
-	var transcript bytes.Buffer
-
-	result := RunPrepareCompilerMiseSetup(context.Background(), t.TempDir(), "HEAD", "", readiness, strings.NewReader("not-a-choice\n"), &transcript)
-
-	if !result.Cancelled {
-		t.Fatalf("Cancelled = false, want true: %+v", result)
-	}
-	if result.Attempted {
-		t.Fatalf("Attempted = true, want false: no install must ever run after a cancelled selection: %+v", result)
-	}
-	if strings.Contains(transcript.String(), "Executable: mise") {
-		t.Fatalf("transcript reached the install preview despite an unrecognized selection (no default may be assumed): %s", transcript.String())
 	}
 }
 

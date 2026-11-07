@@ -3,7 +3,6 @@ package tssetup
 import (
 	"bytes"
 	"path/filepath"
-	"time"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
@@ -32,9 +31,9 @@ func repositoryRelativeChangedPaths(dir string, changedPaths []string, residueUn
 // timeout and small output caps, since this is a status listing for a single
 // working directory, not a whole-tree read.
 const (
-	setupResidueGitTimeout   = 10 * time.Second
-	maxSetupResidueGitBytes  = 1 << 20 // 1 MiB
-	maxSetupResidueGitStderr = 64 << 10
+	setupResidueGitTimeout   = gitrepo.SetupResidueTimeout
+	maxSetupResidueGitBytes  = gitrepo.SetupResidueBytes
+	maxSetupResidueGitStderr = gitrepo.GitStderrBytes
 )
 
 // parseSetupResidueStatusPaths extracts the path from each NUL-delimited
@@ -70,9 +69,7 @@ func parseSetupResidueStatusPaths(output []byte) []string {
 // runSetupResidueGit is the bounded git read behind setupResidueChangedPaths.
 // Tests may replace it to observe exactly which git commands a setup run
 // issues.
-var runSetupResidueGit = func(dir string, args ...string) ([]byte, error) {
-	return gitrepo.RunBytesBounded(dir, maxSetupResidueGitBytes, maxSetupResidueGitStderr, setupResidueGitTimeout, args...)
-}
+var runSetupResidueGit = gitrepo.BoundedRunner(maxSetupResidueGitBytes, maxSetupResidueGitStderr, setupResidueGitTimeout)
 
 // setupResidueChangedPaths returns the untracked, modified, and gitignored
 // paths (`--ignored`, since a package-manager install typically leaves a

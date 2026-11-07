@@ -6,7 +6,6 @@ package tstoolchain
 
 import (
 	"strings"
-	"time"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
@@ -24,9 +23,9 @@ func ResolveCompiler(dir string, roots []string) projectreadiness.Check {
 }
 
 const (
-	compilerWorktreeRootTimeout   = 10 * time.Second
-	maxCompilerWorktreeRootOutput = 4 << 10
-	maxCompilerWorktreeRootStderr = 4 << 10
+	compilerWorktreeRootTimeout   = gitrepo.WorktreeRootTimeout
+	maxCompilerWorktreeRootOutput = gitrepo.WorktreeRootBytes
+	maxCompilerWorktreeRootStderr = gitrepo.WorktreeRootStderr
 )
 
 // WorktreeRoot is the walk ceiling for nearest-package.json

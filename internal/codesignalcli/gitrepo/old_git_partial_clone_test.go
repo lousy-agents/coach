@@ -1,0 +1,95 @@
+package gitrepo
+
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/internal/gitfixture"
+)
+
+// The old-git branch of the guard is called here directly, with real git and a real partial clone, and the
+// version its message names is an argument: nothing about git is replaced, so these tests prove the decision
+// (which revisions are probed, what is refused, in which words) and the probe's reading of real git output.
+// They do not prove what an old git would do with a missing object. That the probe itself fetches nothing is
+// shown by TestTheProbeFetchesNothingEvenWhenGitIsNotToldNotTo, which runs it without the instruction not to
+// fetch, and by a run on a real git 2.39.5 recorded in the checklist. The dispatch on the version, and on
+// whether the repository is a partial clone at all, is tested with fakeRepository.
+const olderThanTheInstruction = "2.43.0"
+
+// filteredClone is a clone of source made with --filter=blob:none, whose remote is a program that could not
+// answer, with or without a checkout. A checkout fetches every blob of HEAD, so HEAD lacks nothing and the
+// blobs of earlier commits that differ from it are not local; without one, nothing is local.
+func filteredClone(t *testing.T, source string, checkout bool) string {
+	t.Helper()
+	clone, _ := filteredCloneAndItsBare(t, source, checkout)
+	return clone
+}
+
+// filteredCloneAndItsBare is filteredClone with the bare repository the clone was made from, so that a test can
+// add to what only the remote has.
+func filteredCloneAndItsBare(t *testing.T, source string, checkout bool) (clone, bare string) {
+	t.Helper()
+	bare = t.TempDir() + "/bare.git"
+	gitOutput(t, source, "clone", "--bare", "--quiet", source, bare)
+	gitOutput(t, bare, "config", "uploadpack.allowFilter", "true")
+	clone = t.TempDir() + "/part"
+	arguments := []string{"clone", "--quiet", "--filter=blob:none"}
+	if !checkout {
+		arguments = append(arguments, "--no-checkout")
+	}
+	gitOutput(t, t.TempDir(), append(arguments, "file://"+bare, clone)...)
+	gitOutput(t, clone, "remote", "set-url", "origin", "ssh://example.invalid/repo.git")
+	return clone, bare
+}
+
+func twoCommitSource(t *testing.T) string {
+	t.Helper()
+	source := gitfixture.Init(t)
+	gitfixture.CommitFile(t, source, "a.go", "package a\n")
+	gitfixture.CommitFile(t, source, "cfg/p.json", "{}")
+	gitfixture.CommitFile(t, source, "a.go", "package a\n\nfunc F() {}\n")
+	return source
+}
+
+func refusalText(err error) string {
+	var refusal *OperationalError
+	if !errors.As(err, &refusal) {
+		return ""
+	}
+	return refusal.Message
+}
+
+func TestAnOlderGitReadsAPartialCloneWhoseObjectsAreAllHere(t *testing.T) {
+	clone := filteredClone(t, twoCommitSource(t), true)
+
+	if err := refuseWhenReadRevisionsLackObjects(RunBytes, clone, "", olderThanTheInstruction); err != nil {
+		t.Errorf("RefuseMissingObjects = %v; want the clone read: HEAD lacks nothing", err)
+	}
+}
+
+func TestAnOlderGitRefusesAPartialCloneThatLacksObjectsOfHead(t *testing.T) {
+	clone := filteredClone(t, twoCommitSource(t), false)
+
+	err := refuseWhenReadRevisionsLackObjects(RunBytes, clone, "", olderThanTheInstruction)
+
+	for _, want := range []string{"git 2.43.0 cannot be told not to fetch missing objects", "HEAD has 2 objects that are not in it", "git 2.44 or later", "git rev-list --objects --missing=print --no-walk HEAD"} {
+		if !strings.Contains(refusalText(err), want) {
+			t.Errorf("RefuseMissingObjects = %v; want it to say %q", err, want)
+		}
+	}
+}
+
+func TestAnOlderGitRefusesADiffWhoseMergeBaseLacksTheObjectsHeadChanged(t *testing.T) {
+	clone := filteredClone(t, twoCommitSource(t), true)
+
+	diff := refuseWhenReadRevisionsLackObjects(RunBytes, clone, "HEAD~1", olderThanTheInstruction)
+	baseline := refuseWhenReadRevisionsLackObjects(RunBytes, clone, "", olderThanTheInstruction)
+
+	if !strings.Contains(refusalText(diff), "the merge base of HEAD~1 and HEAD has 1 object that is not in it") {
+		t.Errorf("diff: RefuseMissingObjects = %v; want the merge base named with the one old version of a.go", diff)
+	}
+	if baseline != nil {
+		t.Errorf("baseline: RefuseMissingObjects = %v; want HEAD alone read", baseline)
+	}
+}

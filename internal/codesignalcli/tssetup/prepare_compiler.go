@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectcheck"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
@@ -30,6 +31,14 @@ type PrepareCompilerMiseResult struct {
 	// true. The refusal prints it (policy_invalid, policy_missing) so the
 	// customer sees which policy gap blocked setup.
 	PolicyCode string
+
+	// PolicyRemedy is the remedy readiness named for the failing policy while
+	// PolicyRequired is true: restore it, author a new one, or neither.
+	PolicyRemedy projectreadiness.PolicyRemedy
+
+	// CauseText is why no remedy fixes the failing policy, in the words the
+	// scan prints for it, while PolicyRequired is true and the remedy names none.
+	CauseText string
 
 	// NoChoicesOffered is true when the prepare_compiler next action was
 	// absent, not executable, or named no mise installation choice at all --
@@ -113,15 +122,15 @@ func (r PrepareCompilerMiseResult) NeverStarted() bool {
 // that choice, require single-use explicit confirmation, then run the
 // matching installMiseTypescriptProject/Global and, on success, rerun
 // projectcheck.Run. readiness must be the caller's already-computed
-// projectreadiness.Result for dir/revision/configPath; it is never recomputed here
+// projectreadiness.Result for dir/revision/policy; it is never recomputed here
 // except after a successful install.
 //
 // It never itself checks for a controlling terminal -- that gate belongs to
 // the CLI caller, before readiness is even computed, mirroring
 // runAuthorProjectConfigTypeScript/authorProjectConfigTypeScript's split.
-func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath string, readiness *projectreadiness.Result, in io.Reader, out io.Writer) PrepareCompilerMiseResult {
+func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision string, policy policyref.Ref, readiness *projectreadiness.Result, in io.Reader, out io.Writer) PrepareCompilerMiseResult {
 	if readiness != nil && readiness.Checks.Policy.State != projectreadiness.Pass {
-		return PrepareCompilerMiseResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code}
+		return PrepareCompilerMiseResult{PolicyRequired: true, PolicyCode: readiness.Checks.Policy.Code, PolicyRemedy: readiness.Checks.Policy.Remedy, CauseText: readiness.Checks.Policy.CauseText}
 	}
 	if code, blocking := readinessHasBlockingRuntimeGap(readiness); blocking {
 		return PrepareCompilerMiseResult{RuntimeGapCode: code}
@@ -130,7 +139,7 @@ func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath 
 	if !ok || !action.Executable {
 		return PrepareCompilerMiseResult{NoChoicesOffered: true}
 	}
-	choices := miseChoicesForPrepareCompiler(dir, revision, configPath, action)
+	choices := miseChoicesForPrepareCompiler(dir, revision, policy, action)
 	if len(choices) == 0 {
 		return PrepareCompilerMiseResult{NoChoicesOffered: true}
 	}
@@ -173,7 +182,7 @@ func RunPrepareCompilerMiseSetup(ctx context.Context, dir, revision, configPath 
 		return outcome
 	}
 
-	postInstall, err := projectcheck.Run(dir, revision, configPath)
+	postInstall, err := projectcheck.Run(dir, revision, policy)
 	outcome.PostInstallReadiness = postInstall
 	outcome.PostInstallReadinessError = err
 	return outcome
