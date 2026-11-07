@@ -54,6 +54,9 @@ func TestTheFetchAdviceListsOnlyTheRevisionsOwnObjectsAndOffersTheSingleObjectFi
 		{"a remote whose name a shell would read as a separator", fakeRepository{promisors: "remote.a;b.promisor true\n"}, "",
 			[]string{"git fetch 'a;b' --no-tags"}, nil},
 		{"a repository that is not a partial clone", fakeRepository{}, "cfg/p.json", nil, []string{"fetch"}},
+		{"a remote whose name git would read as an option", fakeRepository{promisors: "remote.--upload-pack=touch x.promisor true\n"}, "cfg/p.json",
+			nil, []string{"fetch", "upload-pack"}},
+		{"a remote named with a single dash", fakeRepository{promisors: "remote.-q.promisor true\n"}, "", nil, []string{"fetch"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -96,5 +99,16 @@ func TestObjectsNotLocalErrorSaysOneObjectInTheSingular(t *testing.T) {
 
 	if strings.Contains(got, "1 objects") || !strings.Contains(got, "the revision has 1 object that is not in the local object store") {
 		t.Errorf("ObjectsNotLocalError = %q, want one object in the singular, worded as the guard words it", got)
+	}
+}
+
+// A revision is a word git reads in the middle of the command, so one that starts with a dash would be an option.
+func TestTheFetchAdviceIsNotOfferedForARevisionGitWouldReadAsAnOption(t *testing.T) {
+	repository := fakeRepository{promisors: promisorOrigin}
+
+	got := FetchAdvice(repository.run, "repo", "--output=/tmp/x", "")
+
+	if got != "" {
+		t.Errorf("advice %q; want none: pasted, the revision would be an option to rev-list", got)
 	}
 }
