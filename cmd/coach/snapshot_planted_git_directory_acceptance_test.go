@@ -57,7 +57,7 @@ func cloneWhoseCheckoutFails(repo string) string {
 // control stamping runs git there, which runs the program a .git/config names. So the committed bytes must
 // never reach the snapshot as a git directory, in any spelling a file system or git folds to one.
 var _ = Describe("coach codesignal --build-target: a revision that commits a .git directory", func() {
-	spellings := []string{".git", ".GIT", ".Git", "git~1", ".git ", ".git.", ".g\u200cit", ".git\\config", ".git:stream"}
+	spellings := []string{".git", ".GIT", ".Git", "git~1", ".git ", ".git.", ".g\u200cit", ".git\\config", ".git:stream", ".GI\u200cT", ".\u206agit"}
 
 	DescribeTable("is refused before go runs, and the committed config never runs",
 		func(spelling string) {
@@ -80,6 +80,8 @@ var _ = Describe("coach codesignal --build-target: a revision that commits a .gi
 		Entry("with a code point HFS+ ignores", spellings[6]),
 		Entry("with a backslash after it", spellings[7]),
 		Entry("with an NTFS stream after it", spellings[8]),
+		Entry("in capitals around a code point HFS+ ignores", spellings[9]),
+		Entry("with the lowest code point of the last range HFS+ ignores", spellings[10]),
 	)
 
 	It("is refused in a clone whose checkout git refused", func() {
