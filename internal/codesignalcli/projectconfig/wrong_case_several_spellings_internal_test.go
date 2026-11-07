@@ -3,6 +3,7 @@ package projectconfig
 import (
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // moveOneAndUnstageTheRest is the printed commands for several spellings: the one to keep is moved to the path
@@ -62,20 +63,23 @@ func TestADiscoveredPolicyCommittedUnderMoreSpellingsThanTheLimitIsToldSoAndGive
 // variantsOf is count names that differ from name only by case.
 func variantsOf(name string, count int) []string {
 	variants := make([]string, 0, count)
-	for mask := 0; len(variants) < count; mask++ {
-		var variant strings.Builder
-		for i, r := range name {
-			if mask&(1<<i) != 0 {
-				variant.WriteString(strings.ToUpper(string(r)))
-				continue
-			}
-			variant.WriteRune(r)
-		}
-		if mask > 0 && variant.String() != name {
-			variants = append(variants, variant.String())
+	for mask := 1; len(variants) < count; mask++ {
+		if variant := upperCasedAt(name, mask); variant != name {
+			variants = append(variants, variant)
 		}
 	}
 	return variants
+}
+
+// upperCasedAt is name with the letters whose positions are set in mask in upper case.
+func upperCasedAt(name string, mask int) string {
+	runes := []rune(name)
+	for i := range runes {
+		if mask&(1<<i) != 0 {
+			runes[i] = unicode.ToUpper(runes[i])
+		}
+	}
+	return string(runes)
 }
 
 func TestTheSpellingKeptIsTheOneNeedingTheFewestRenamesAndTheDeepestFirstOne(t *testing.T) {
@@ -92,9 +96,14 @@ func TestTheSpellingKeptIsTheOneNeedingTheFewestRenamesAndTheDeepestFirstOne(t *
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := keptSpelling(c.spellings, c.typed); got != c.want {
-				t.Errorf("keptSpelling(%q, %q) = %q; want %q", c.spellings, c.typed, got, c.want)
-			}
+			assertSpellingKept(t, c.spellings, c.typed, c.want)
 		})
+	}
+}
+
+func assertSpellingKept(t *testing.T, spellings []string, typed, want string) {
+	t.Helper()
+	if got := keptSpelling(spellings, typed); got != want {
+		t.Errorf("keptSpelling(%q, %q) = %q; want %q", spellings, typed, got, want)
 	}
 }
