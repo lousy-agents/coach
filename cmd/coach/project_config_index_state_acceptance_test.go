@@ -9,6 +9,13 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// scanExplicitPolicyAccepted is the stdout of a baseline scan of the policy, which must exit 0.
+func scanExplicitPolicyAccepted(repo, policy string) string {
+	stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--project-config", policy, "--format=json")
+	ExpectWithOffset(1, exitCode).To(Equal(0), "stdout=%s stderr=%s", stdout, stderr)
+	return string(stdout)
+}
+
 func scanExplicitPolicy(repo, policy string) []byte {
 	stdout, stderr, exitCode := runCoachBinary(commandPath, repo, nil, "codesignal", "--baseline", "--project-config", policy, "--format=json")
 	ExpectWithOffset(1, exitCode).To(Equal(2), "stdout=%s stderr=%s", stdout, stderr)

@@ -45,6 +45,24 @@ var _ = Describe("coach codesignal: a policy committed in the wrong case is not 
 		Expect(string(stdout)).To(ContainSubstring(`"schema_version":"2"`), "the policy is now read, which turns the report into schema 2")
 	})
 
+	// On a file system that folds case, the printed mkdir -p finds the old directory and changes nothing, so the
+	// directory stays on disk as .Lousy-Agents after the move. The revision holds .lousy-agents/coach.json exactly
+	// as typed, so the explicit run reads it, as the discovered one does.
+	It("reads the moved policy by its explicit path too, whatever spelling the move left on disk", func() {
+		_, stderr, exitCode := runCoachCodesignalBaselineRaw(repo, "--format=json", "--no-interactive")
+		Expect(exitCode).To(Equal(2), "stderr: %s", stderr)
+		command := regexp.MustCompile(`rename it with (.+?) and commit the rename`).FindStringSubmatch(string(stderr))[1]
+		run := exec.Command("sh", "-c", command)
+		run.Dir = repo
+		output, err := run.CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), "the printed commands must work: %s", output)
+		gitInWithIdentity(repo, "commit", "-q", "-m", "move the policy to the path Coach reads")
+
+		Expect(scanExplicitPolicyAccepted(repo, ".lousy-agents/coach.json")).To(ContainSubstring(`"schema_version":"2"`))
+		doc := expectCheckProject(repo, "--project-config", ".lousy-agents/coach.json")
+		Expect(causeOfGap(doc, "policy_invalid")).To(Equal("no such gap"), "gaps: %+v", doc.Gaps)
+	})
+
 	It("names name_case_differs in --check-project and offers no new policy over the one that is there", func() {
 		doc := expectCheckProject(repo)
 

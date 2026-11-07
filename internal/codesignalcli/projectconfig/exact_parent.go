@@ -22,7 +22,13 @@ func spellingOfExistingBeforeMissing(root diskRoot, repoPath string, existing in
 	if !errors.As(err, &found) || found.Kind != KindMissing {
 		return err
 	}
-	if spelling := checkExactNamesThrough(root, repoPath, existing); spelling != nil {
+	spelling := checkExactNamesThrough(root, repoPath, existing)
+	var mismatch caseMismatchError
+	if errors.As(spelling, &mismatch) {
+		mismatch.displaced = err
+		return mismatch
+	}
+	if spelling != nil {
 		return spelling
 	}
 	return err
