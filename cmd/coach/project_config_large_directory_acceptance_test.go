@@ -31,17 +31,17 @@ var _ = Describe("coach codesignal: a tracked directory too large for the policy
 	checkProject := func() readinessResultDoc { return expectCheckProject(repo, "--project-config", "src") }
 
 	Context("while it is on disk", func() {
-		It("is refused by the scan as a path that is not a regular file", func() {
+		It("is refused by the scan as a path the revision commits as a directory", func() {
 			stderr := scanExplicitPolicy(repo, "src")
 
-			Expect(string(stderr)).To(ContainSubstring("not a regular file"), "stderr:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring("committed as a directory"), "stderr:\n%s", stderr)
 			Expect(string(stderr)).NotTo(ContainSubstring("could not check"), "the size of the directory is not a git failure:\n%s", stderr)
 		})
 
 		It("gives --check-project the same verdict, not an operational error", func() {
 			doc := checkProject()
 
-			Expect(causeOfGap(doc, "policy_invalid")).To(Equal("not_a_regular_file"), "gaps: %+v", doc.Gaps)
+			Expect(causeOfGap(doc, "policy_invalid")).To(Equal("directory"), "gaps: %+v", doc.Gaps)
 		})
 	})
 

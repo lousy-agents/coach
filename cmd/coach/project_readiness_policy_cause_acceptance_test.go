@@ -111,6 +111,21 @@ var causeRows = []causeRow{
 	{"files committed under the name, with a regular file on disk", "cfg", "policy_invalid", "directory", func(repo string) {
 		commitDirectoryThenWriteFile(repo, "cfg")
 	}},
+	{"files committed under the name, with the directory still on disk", "cfg", "policy_invalid", "directory", func(repo string) {
+		commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
+	}},
+	{"a policy committed as a symbolic link, with the link still on disk", "cfg/p.json", "policy_invalid", "committed_as_link", func(repo string) {
+		symlinkAt(repo, "cfg/p.json")
+		gitIn(repo, "add", "cfg/p.json")
+		gitInWithIdentity(repo, "commit", "-q", "-m", "a policy as a link")
+	}},
+	{"a name spelled as on disk after a rename that changes only its case and is not committed", "cfg/P.json", "policy_invalid", "name_case_differs", func(repo string) {
+		commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
+		Expect(os.Rename(filepath.Join(repo, "cfg", "p.json"), filepath.Join(repo, "cfg", "P.json"))).To(Succeed())
+		if _, err := os.Lstat(filepath.Join(repo, "cfg", "p.json")); err != nil {
+			Skip("this file system tells cfg/p.json and cfg/P.json apart, so the rename leaves nothing under the committed name")
+		}
+	}},
 	{"a policy staged and never committed, then deleted", "cfg/p.json", "policy_missing", "staged_copy", func(repo string) {
 		writeWorktreeFile(repo, "cfg/p.json", singleRootPolicyJSON)
 		gitIn(repo, "add", "cfg/p.json")
