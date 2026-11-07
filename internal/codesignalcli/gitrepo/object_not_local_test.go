@@ -38,8 +38,12 @@ func TestAnObjectCheckThatExitsOneIsAnObjectThatIsNotLocal(t *testing.T) {
 func assertObjectNotLocal(t *testing.T, err error, want bool) {
 	t.Helper()
 	var absent *ObjectNotLocalError
-	if got := errors.As(classifyObjectCheck("abc123", err), &absent); got != want {
+	classified := classifyObjectCheck("abc123", err)
+	if got := errors.As(classified, &absent); got != want {
 		t.Errorf("classifyObjectCheck(%v) is an ObjectNotLocalError = %v; want %v", err, got, want)
+	}
+	if !want && !errors.Is(classified, err) {
+		t.Errorf("classifyObjectCheck(%v) = %v; want git's own error back, so that its cause is kept", err, classified)
 	}
 }
 
