@@ -7,6 +7,10 @@ func selectLegacy(dir, root, revision string) (Selection, error) {
 	if err != nil {
 		return Selection{}, err
 	}
+	selection, err = inTheSubmodule(runProjectConfigGit, dir, selection)
+	if err != nil {
+		return Selection{}, err
+	}
 	if _, err := Load(dir, revision, DefaultPath); err != nil {
 		return legacyLoadFailure(selection, asDefaultPolicyError(err, DefaultPath))
 	}
