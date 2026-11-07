@@ -2,8 +2,6 @@ package projectconfig
 
 import (
 	"path"
-	"slices"
-	"sort"
 	"strings"
 )
 
@@ -56,34 +54,4 @@ func (s *spellingSearch) add(spelling string) {
 		return
 	}
 	s.found = append(s.found, spelling)
-}
-
-// keptSpelling is the spelling to keep when several are committed: the one that needs the fewest components
-// renamed to be the path Coach reads, and of those the one whose first difference is deepest, since a file
-// can be renamed in the index with git mv where a directory cannot be renamed in case only.
-func keptSpelling(spellings []string, repoPath string) string {
-	typed := strings.Split(repoPath, "/")
-	ranked := slices.Clone(spellings)
-	sort.Slice(ranked, func(i, j int) bool {
-		differing := func(spelling string) (count, first int) {
-			first = len(typed)
-			for index, part := range strings.Split(spelling, "/") {
-				if part != typed[index] {
-					count++
-					first = min(first, index)
-				}
-			}
-			return count, first
-		}
-		ci, fi := differing(ranked[i])
-		cj, fj := differing(ranked[j])
-		if ci != cj {
-			return ci < cj
-		}
-		if fi != fj {
-			return fi > fj
-		}
-		return ranked[i] < ranked[j]
-	})
-	return ranked[0]
 }

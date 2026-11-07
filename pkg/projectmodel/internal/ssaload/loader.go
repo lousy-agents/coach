@@ -43,8 +43,8 @@ func (Loader) Materialize(snapshot fs.FS) (string, func(), error) {
 // is not trusted, so go neither stamps version control information, which runs git there, nor fetches and runs
 // a toolchain that a committed go.mod names. The caller's own GOTOOLCHAIN and GOFLAGS do not change either,
 // since a flag on the command line wins over GOFLAGS and the last value of GOTOOLCHAIN wins.
-func moduleLoadConfig(ctx context.Context, moduleDir string) *packages.Config {
-	return &packages.Config{
+func moduleLoadConfig(ctx context.Context, moduleDir string) packages.Config {
+	return packages.Config{
 		Context:    ctx,
 		Dir:        moduleDir,
 		Mode:       packages.LoadSyntax,
@@ -60,7 +60,8 @@ func moduleLoadConfig(ctx context.Context, moduleDir string) *packages.Config {
 // (net/http, database/sql, reflect) on every call; StaticCallee and stdlib
 // type identity only need those packages' types, not their syntax.
 func (Loader) LoadModule(ctx context.Context, dir, moduleDir string) ([]*packages.Package, *ssa.Program, map[string]bool, error) {
-	pkgs, err := packages.Load(moduleLoadConfig(ctx, filepath.Join(dir, filepath.FromSlash(moduleDir))), "./...")
+	config := moduleLoadConfig(ctx, filepath.Join(dir, filepath.FromSlash(moduleDir)))
+	pkgs, err := packages.Load(&config, "./...")
 	if err != nil {
 		return nil, nil, nil, err
 	}

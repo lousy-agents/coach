@@ -40,31 +40,6 @@ func wrongCaseOf(entries revisionEntries, repoPath string) error {
 	return wrongCaseRefusal(severalSpellingsReason(spellings, truncated, repoPath))
 }
 
-// severalSpellingsReason names every spelling the revision holds, so that none stays committed unseen, and
-// prints the commands that keep one of them: it is moved to the path Coach reads, and the others leave the
-// index. They leave the index only because where a file system folds case they name the file just moved. With
-// more spellings than are named, or one that cannot be shown to a terminal, no command is printed: it would
-// leave a spelling committed or print a name it cannot show.
-func severalSpellingsReason(spellings []string, truncated bool, repoPath string) string {
-	listed := slices.Sorted(slices.Values(spellings))
-	named := quotedList(listed)
-	if truncated {
-		named += ", and more"
-	}
-	reason := fmt.Sprintf("the analyzed revision holds the policy under several spellings, %s, and Coach reads %q: keep one of them at that path and remove the others", named, repoPath)
-	keep := keptSpelling(spellings, repoPath)
-	move, movable := moveCommand(keep, repoPath)
-	others := slices.DeleteFunc(slices.Clone(listed), func(spelling string) bool { return spelling == keep })
-	if truncated || !movable {
-		return reason
-	}
-	quoted := make([]string, len(others))
-	for i, other := range others {
-		quoted[i] = shellword.Quote(other)
-	}
-	return fmt.Sprintf("%s; to keep %q, run %s && git -C \"$top\" --literal-pathspecs rm --cached -q -- %s and commit", reason, keep, move, strings.Join(quoted, " "))
-}
-
 func wrongCaseRefusal(reason string) *ConfigError {
 	return &ConfigError{Kind: KindInvalid, Remedy: projectreadiness.RemedyNone, PolicyCause: projectreadiness.CauseNameCaseDiffers, Message: "coach codesignal: " + reason + " (project_config_invalid)"}
 }
