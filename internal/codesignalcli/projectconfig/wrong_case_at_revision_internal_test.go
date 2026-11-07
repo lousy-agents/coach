@@ -24,8 +24,6 @@ func TestADiscoveredPolicyCommittedInAnotherCaseIsToldWhereToMoveIt(t *testing.T
 			[]string{moveFromTheRoot("'.lousy-agents'", "'.lousy-agents/Coach.json'", "'.lousy-agents/coach.json'")}, nil},
 		{"a policy at the root, which needs no directory", "policy.json", fakeRevision{"": {"Policy.json"}}.entries,
 			[]string{moveWithoutADirectory("'Policy.json'", "'policy.json'")}, []string{"mkdir"}},
-		{"two spellings of it", ".lousy-agents/coach.json", fakeRevision{"": {".lousy-agents"}, ".lousy-agents": {"Coach.json", "COACH.JSON"}}.entries,
-			[]string{`several spellings, ".lousy-agents/COACH.JSON", ".lousy-agents/Coach.json"`, "keep one of them at that path"}, []string{"git mv"}},
 		{"a name that cannot be shown to a terminal", "policy\x1b.json", fakeRevision{"": {"Policy\x1b.json"}}.entries,
 			[]string{"move it to that path and commit the rename"}, []string{"git mv", "mkdir"}},
 	}
@@ -57,6 +55,7 @@ func TestADiscoveredPolicyIsLeftAloneWhenTheRevisionHoldsNothingLikeIt(t *testin
 	}{
 		{"nothing at all", fakeRevision{}.entries},
 		{"another policy file", fakeRevision{"": {"project.json"}}.entries},
+		{"the path as Coach reads it", fakeRevision{"": {".lousy-agents"}, ".lousy-agents": {"coach.json"}}.entries},
 		{"the directory without the file", fakeRevision{"": {".lousy-agents"}, ".lousy-agents": {"other.json"}}.entries},
 	}
 	for _, c := range cases {
