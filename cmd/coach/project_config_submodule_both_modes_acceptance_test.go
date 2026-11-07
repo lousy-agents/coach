@@ -1,10 +1,6 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -71,15 +67,7 @@ var _ = Describe("coach codesignal: a policy in or at a submodule, in the scan a
 	)
 
 	It("is stated in the README as the table has it: invalid while the checkout is there, missing once it is gone", func() {
-		readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
-		Expect(err).NotTo(HaveOccurred())
-		text := strings.Join(strings.Fields(string(readme)), " ")
-		start := strings.Index(text, "A policy inside a submodule checkout")
-		Expect(start).To(BeNumerically(">=", 0), "the README no longer has the bullet on submodules")
-		bullet := text[start:]
-		if end := strings.Index(bullet, "See the [CLI contract]"); end >= 0 {
-			bullet = bullet[:end]
-		}
+		bullet := readmeBullet("A policy inside a submodule checkout")
 
 		Expect(bullet).To(ContainSubstring("`project_config_invalid`"), "the code the scan prints while the checkout is there")
 		Expect(bullet).To(ContainSubstring("`project_config_missing`"), "the code the scan prints once the checkout is gone")
