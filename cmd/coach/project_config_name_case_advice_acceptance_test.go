@@ -65,6 +65,22 @@ var _ = Describe("coach codesignal: the advice for a policy path spelled in anot
 		})
 	})
 
+	// More than one component typed in another case: the path to pass is the one the revision holds in full, so the
+	// advice pasted is accepted and not refused again with a second correction.
+	When("more than one component is typed in another case", func() {
+		BeforeEach(func() {
+			commitFile(repo, "cfg/p.json", singleRootPolicyJSON)
+		})
+
+		It("tells the user to pass the whole path the revision holds, and the advice pasted is accepted", func() {
+			stderr := scanExplicitPolicy(repo, "CFG/P.json")
+
+			Expect(string(stderr)).To(ContainSubstring(`pass --project-config cfg/p.json`), "stderr:\n%s", stderr)
+			Expect(string(stderr)).NotTo(ContainSubstring(`pass --project-config cfg/P.json`), "the revision does not hold that path:\n%s", stderr)
+			Expect(scanExplicitPolicyAccepted(repo, "cfg/p.json")).To(ContainSubstring(`"schema_version":"2"`))
+		})
+	})
+
 	When("the revision holds neither spelling", func() {
 		It("names no rename and no spelling to pass, for a file", func() {
 			Expect(os.MkdirAll(filepath.Join(repo, "cfg"), 0o755)).To(Succeed())
