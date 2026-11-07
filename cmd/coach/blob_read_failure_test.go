@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 	"testing"
@@ -95,5 +96,19 @@ func TestARevisionThatCouldNotBeVerifiedIsNeverWordedAsAPolicyBlobToFetch(t *tes
 
 	if got == nil || got.Error() != "coach codesignal: "+read.Error() || strings.Contains(got.Error(), "fetch it with") {
 		t.Errorf("worded = %v; want the neutral message behind the prefix and no fetch advice", got)
+	}
+}
+
+// A failure to read a blob is found through the wrapping the layers above the read add, not only as the cause
+// itself: a wrap later added must not drop the wording without anyone noticing.
+func TestABlobReadFailureIsWordedThroughALaterWrapOfItsCause(t *testing.T) {
+	read := &gitrepo.BlobReadError{Revision: "abc123", Path: "cfg/p.json", Cause: &gitrepo.ObjectNotLocalError{Object: "9e26dfee"}}
+	wrapped := &gitrepo.OperationalError{Message: read.Error(), Cause: fmt.Errorf("while checking the policy: %w", read)}
+
+	got := wordBlobReadFailure(remoteAnswering(false), "repo", wrapped, "coach codesignal: ")
+
+	want := `coach codesignal: "cfg/p.json" could not be read at revision "abc123": its content is not in the local object store, and Coach does not fetch objects`
+	if got == nil || got.Error() != want {
+		t.Errorf("worded = %v; want %q", got, want)
 	}
 }

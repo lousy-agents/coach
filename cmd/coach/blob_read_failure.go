@@ -23,8 +23,8 @@ func wordBlobReadFailure(run gitrepo.Runner, dir string, err error, prefix strin
 	if !errors.As(err, &operational) {
 		return err
 	}
-	read, ok := operational.Cause.(*gitrepo.BlobReadError)
-	if !ok {
+	var read *gitrepo.BlobReadError
+	if !errors.As(operational.Cause, &read) {
 		return err
 	}
 	message := operational.Message
