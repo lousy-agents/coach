@@ -42,6 +42,7 @@ func TestPrintableRefusesWhatWouldReachATerminalRaw(t *testing.T) {
 		{"my\ue000policy.json", true},
 		{"my\u200bpolicy.json", false},
 		{"my\u2028policy.json", false},
+		{"my\u2029policy.json", false},
 		{"my\u202epolicy.json", false},
 		{"del\x7fete.json", false},
 		{"tab\there.json", false},
