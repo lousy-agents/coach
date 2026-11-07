@@ -1,6 +1,9 @@
 package projectconfig
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // git on macOS lists a submodule under the precomposed spelling of its name, whichever form the name
 // was asked for in, and that is still the submodule asked about.
@@ -9,10 +12,10 @@ func TestASubmoduleListedUnderThePrecomposedNameIsTheOneAskedFor(t *testing.T) {
 	listing := "160000 " + committedBlob + " 0\tvendor/subé\x00"
 	run := func(string, ...string) ([]byte, error) { return []byte(listing), nil }
 
-	recorded, err := recordedAsSubmodule(run, "repo", decomposed)
+	recorded, err := submoduleRecordedAs(run, "repo", decomposed)
 
-	if err != nil || !recorded {
-		t.Errorf("recordedAsSubmodule = %v, %v; want the submodule git listed under the precomposed name", recorded, err)
+	if err != nil || !strings.HasPrefix(recorded, "vendor/sub") {
+		t.Errorf("submoduleRecordedAs = %q, %v; want the submodule git listed under the precomposed name", recorded, err)
 	}
 }
 
@@ -21,9 +24,9 @@ func TestASubmoduleOfAnotherNameIsNotTheOneAskedFor(t *testing.T) {
 	listing := "160000 " + committedBlob + " 0\tvendor/subè\x00"
 	run := func(string, ...string) ([]byte, error) { return []byte(listing), nil }
 
-	recorded, err := recordedAsSubmodule(run, "repo", "vendor/subé")
+	recorded, err := submoduleRecordedAs(run, "repo", "vendor/subé")
 
-	if err != nil || recorded {
-		t.Errorf("recordedAsSubmodule = %v, %v; want no: the listed name has another accent", recorded, err)
+	if err != nil || recorded != "" {
+		t.Errorf("submoduleRecordedAs = %q, %v; want none: the listed name has another accent", recorded, err)
 	}
 }

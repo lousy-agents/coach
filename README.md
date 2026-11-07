@@ -292,7 +292,10 @@ except for the policy-candidate document on the guided-authoring path.
   `--check-project` names the cause `in_submodule` for all of them, and so for
   a name below the submodule that differs in case from the checkout's: the
   superproject holds no spelling of what is inside, so Coach does not report a
-  difference in case there. The superproject records a submodule as one commit,
+  difference in case there. A name that spells the submodule's own path in
+  another case than the index records it, where git ignores case
+  (`core.ignorecase`), is inside it all the same, and the message names the
+  submodule as the index records it. The superproject records a submodule as one commit,
   so the file can be neither restored nor committed here; name a policy this
   repository commits. See the
   [CLI contract](./docs/cli-codesignal.md#commands).

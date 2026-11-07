@@ -37,41 +37,62 @@ func unansweredUncommitted(repoPath, revision string, failure *gitFailure) (stri
 	return fmt.Sprintf("coach codesignal: --project-config %q exists in the worktree but is not committed at revision %q (project_config_invalid): Coach could not check %s, so it gives no advice", repoPath, revision, failure.describe()), projectreadiness.CauseGitUnreadable, failure
 }
 
-// enclosingSubmodule is the submodule that is repoPath or whose checkout holds it, or "" when none does.
-// The superproject records a submodule as one commit, so a file inside it can never be committed there,
-// and telling the user to commit it sends them in a circle; and a path that is the submodule itself is
-// not a file at all. An error means git could not say.
+// enclosingSubmodule is the submodule that is repoPath or whose checkout holds it, named as the index records it, or
+// "" when none does. The superproject records a submodule as one commit, so a file inside it can never be committed
+// there, and telling the user to commit it sends them in a circle; and a path that is the submodule itself is not a file
+// at all. An error means git could not say.
 func enclosingSubmodule(run gitrepo.Runner, dir, repoPath string) (string, error) {
 	parts := strings.Split(repoPath, "/")
 	for i := 1; i <= len(parts); i++ {
-		candidate := strings.Join(parts[:i], "/")
-		recorded, err := recordedAsSubmodule(run, dir, candidate)
-		if err != nil || recorded {
-			return candidate, err
+		recorded, err := submoduleRecordedAs(run, dir, strings.Join(parts[:i], "/"))
+		if err != nil || recorded != "" {
+			return recorded, err
 		}
 	}
 	return "", nil
 }
 
-// recordedAsSubmodule is whether the index holds a submodule (a 160000 entry) at exactly path, a path
-// relative to the repository root. --full-name names each entry from the root as well, because git
-// prints it relative to the directory it runs in otherwise. A submodule is one entry, so a listing that
-// overruns the output budget is a directory with a great many files below it, and answers no: the
-// entries below path cannot be left out of the question, because git reads a trailing slash on a
-// submodule's path as the submodule itself.
-func recordedAsSubmodule(run gitrepo.Runner, dir, path string) (bool, error) {
-	output, err := run(dir, "ls-files", "--stage", "-z", "--full-name", "--", ":(top,literal)"+path)
+// submoduleRecordedAs is the spelling in which the index holds a submodule (a 160000 entry) at path, a path relative to
+// the repository root, or "" when it holds none. The listing matches without regard to case, and a submodule recorded
+// in the spelling asked for is preferred; one recorded in another case is the same path only where git ignores case
+// (core.ignorecase), which is asked only then, so that a repository that tells cases apart keeps `Sub` and `sub` as two
+// paths. --full-name names each entry from the root as well, because git prints it relative to the directory it runs in
+// otherwise. A submodule is one entry, so a listing that overruns the output budget is a directory with a great many
+// files below it, and answers none: the entries below path cannot be left out of the question, because git reads a
+// trailing slash on a submodule's path as the submodule itself.
+func submoduleRecordedAs(run gitrepo.Runner, dir, path string) (string, error) {
+	output, err := run(dir, "ls-files", "--stage", "-z", "--full-name", "--", ":(top,literal,icase)"+path)
 	var bound *gitrepo.BoundError
 	if errors.As(err, &bound) && bound.Kind == gitrepo.BoundStdout {
-		return false, nil
+		return "", nil
 	}
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	return slices.ContainsFunc(gitrepo.SplitNULPaths(output), func(record string) bool {
-		mode, name, found := strings.Cut(record, "\t")
-		return found && gitrepo.SamePath(name, path) && strings.HasPrefix(mode, "160000 ")
-	}), nil
+	recorded := submodulesIn(output)
+	if at := slices.IndexFunc(recorded, func(name string) bool { return gitrepo.SamePath(name, path) }); at >= 0 {
+		return recorded[at], nil
+	}
+	like := slices.IndexFunc(recorded, func(name string) bool { return strings.EqualFold(name, path) })
+	if like < 0 {
+		return "", nil
+	}
+	ignores, err := gitrepo.IgnoresCase(run, dir)
+	if err != nil || !ignores {
+		return "", err
+	}
+	return recorded[like], nil
+}
+
+// submodulesIn is the paths of the submodules (160000 entries) among the records of `git ls-files --stage -z`.
+func submodulesIn(output []byte) []string {
+	var names []string
+	for _, record := range gitrepo.SplitNULPaths(output) {
+		if mode, name, found := strings.Cut(record, "\t"); found && strings.HasPrefix(mode, "160000 ") {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // judgeInsideASubmodule is the judgment for a policy path inside a submodule, or for one that git could
