@@ -5,6 +5,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -30,5 +32,28 @@ var _ = Describe("coach codesignal (TypeScript, controlling terminal): a committ
 		Entry("found at the canonical path", ".lousy-agents/coach.json"),
 		Entry("named with --project-config", "pol.json", "--project-config", "pol.json"),
 		Entry("named with --project-config at the canonical path", ".lousy-agents/coach.json", "--project-config", ".lousy-agents/coach.json"),
+	)
+})
+
+// Where there is work in the file, a terminal opens no session that ends in a candidate to save over it: the message
+// says to review the file and commit it, as it does without a terminal.
+var _ = Describe("coach codesignal (TypeScript, controlling terminal): a committed policy that is invalid, with work in the file", func() {
+	DescribeTable("opens no guided authoring and keeps the user's bytes",
+		func(work usersWork) {
+			const policy = "pol.json"
+			repo := commitStubToolchainTypeScriptRepo(policy, invalidPolicy)
+			onDisk := work.arrange(repo, policy)
+			args := []string{"codesignal", "--baseline", "--project-language", "typescript", "--format=json", "--project-config", policy}
+
+			stdout, stderr, _, exitCode := runCoachBinaryWithControllingTerminal(commandPath, repo, stubToolchainEnv(pathWithStubNode("v24.9.9")), discoveredAuthoringSessionAnswers, args...)
+
+			Expect(exitCode).To(Equal(2), "stdout: %s stderr: %s", stdout, stderr)
+			Expect(string(stdout)).To(BeEmpty(), "no candidate is printed to save over the file; stdout: %s", stdout)
+			Expect(string(stderr)).NotTo(ContainSubstring("replacing the current file"), "stderr: %s", stderr)
+			content, err := os.ReadFile(filepath.Join(repo, policy))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(content)).To(Equal(onDisk))
+		},
+		theUsersWorkEntries(),
 	)
 })
