@@ -28,7 +28,7 @@ func boundedRead(t *testing.T, child func(ctx context.Context) *exec.Cmd, maxStd
 func TestReadFailureEndsTheScanWhenGitDoesNotAnswer(t *testing.T) {
 	err := boundedRead(t, func(ctx context.Context) *exec.Cmd { return exec.CommandContext(ctx, "sleep", "30") }, 1<<10, 200*time.Millisecond)
 
-	diagnostics, stalled := readFailure("a.go", "head", err)
+	diagnostics, stalled := readFailure("a.go", headSide, err)
 
 	var operational *gitrepo.OperationalError
 	if !errors.As(stalled, &operational) || diagnostics != nil {
@@ -36,20 +36,61 @@ func TestReadFailureEndsTheScanWhenGitDoesNotAnswer(t *testing.T) {
 	}
 }
 
-func TestReadFailureKeepsTheScanGoingForAFileGitPrintedTooMuchOf(t *testing.T) {
-	err := boundedRead(t, func(ctx context.Context) *exec.Cmd {
-		return exec.CommandContext(ctx, "head", "-c", "5000", "/dev/zero")
-	}, 1<<10, 10*time.Second)
+// tooLargeCase is one place a read can be of: the side it names and the kind a file git printed too much of gets there.
+type tooLargeCase struct {
+	name string
+	side fileSide
+	want string
+}
 
-	diagnostics, stalled := readFailure("a.go", "head", err)
+func (c tooLargeCase) run(t *testing.T) {
+	err := boundedRead(t, fiveThousandZeros.command, 1<<10, 10*time.Second)
 
-	if stalled != nil || len(diagnostics) != 1 || diagnostics[0].Kind != "head_read_failed" || diagnostics[0].Path != "a.go" {
-		t.Errorf("readFailure = %v, %v; want one head_read_failed diagnostic for a.go and no error", diagnostics, stalled)
+	diagnostics, stalled := readFailure("a.go", c.side, err)
+
+	if stalled != nil || len(diagnostics) != 1 || diagnostics[0].Kind != c.want || diagnostics[0].Path != "a.go" {
+		t.Errorf("readFailure = %v, %v; want one %s diagnostic for a.go and no error", diagnostics, stalled, c.want)
+	}
+}
+
+// childProcess is a program that stands in for git: the whole of it, so that no shell forks it.
+type childProcess struct {
+	program string
+	args    []string
+}
+
+func (c childProcess) command(ctx context.Context) *exec.Cmd {
+	return exec.CommandContext(ctx, c.program, c.args...)
+}
+
+var fiveThousandZeros = childProcess{program: "head", args: []string{"-c", "5000", "/dev/zero"}}
+
+// dd writes to stderr without a shell: a shell would fork it, and the fork would keep the pipe open on Linux.
+var fiveThousandBytesToStderr = childProcess{program: "dd", args: []string{"if=/dev/zero", "of=/dev/stderr", "bs=5000", "count=1"}}
+
+func TestReadFailureNamesAFileGitPrintedTooMuchOfAsTooLargeWhereTheAnalyzerWould(t *testing.T) {
+	cases := []tooLargeCase{
+		{"the head side of a changed file", headSide, "file_too_large"},
+		{"a removed file", removedBaseSide, "file_too_large"},
+		{"the base side of a modified file", modifiedBaseSide, "base_analysis_failed"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, c.run)
+	}
+}
+
+func TestReadFailureDoesNotCallAFileTooLargeWhenGitPrintedTooMuchToStderr(t *testing.T) {
+	err := boundedRead(t, fiveThousandBytesToStderr.command, 1<<10, 10*time.Second)
+
+	diagnostics, stalled := readFailure("a.go", headSide, err)
+
+	if stalled != nil || len(diagnostics) != 1 || diagnostics[0].Kind != "head_read_failed" {
+		t.Errorf("readFailure = %v, %v; want one head_read_failed diagnostic and no error: it was git's complaint that was too long, not the file", diagnostics, stalled)
 	}
 }
 
 func TestReadFailureKeepsTheScanGoingForAFileGitAnsweredNoFor(t *testing.T) {
-	diagnostics, stalled := readFailure("a.go", "base", errors.New("exit status 128: fatal: path 'a.go' does not exist"))
+	diagnostics, stalled := readFailure("a.go", modifiedBaseSide, errors.New("exit status 128: fatal: path 'a.go' does not exist"))
 
 	if stalled != nil || len(diagnostics) != 1 || diagnostics[0].Kind != "base_read_failed" {
 		t.Errorf("readFailure = %v, %v; want one base_read_failed diagnostic and no error", diagnostics, stalled)

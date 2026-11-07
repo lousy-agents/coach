@@ -14,7 +14,7 @@ import (
 func analyzeRemovedFile(ctx context.Context, analyzer *semantics.Analyzer, dir, mergeBaseSHA string, sf gitrepo.SelectedFile) (*codesignal.FileChange, []codesignal.Diagnostic, error) {
 	baseBytes, err := runGit(dir, "show", mergeBaseSHA+":"+sf.Path)
 	if err != nil {
-		diagnostics, stalled := readFailure(sf.Path, "base", err)
+		diagnostics, stalled := readFailure(sf.Path, removedBaseSide, err)
 		return nil, diagnostics, stalled
 	}
 

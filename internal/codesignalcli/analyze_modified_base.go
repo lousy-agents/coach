@@ -14,7 +14,7 @@ import (
 func analyzeModifiedBase(ctx context.Context, analyzer *semantics.Analyzer, dir, mergeBaseSHA string, sf gitrepo.SelectedFile) (*semantics.Result, []codesignal.Diagnostic, error) {
 	baseBytes, err := runGit(dir, "show", mergeBaseSHA+":"+sf.Path)
 	if err != nil {
-		diagnostics, stalled := readFailure(sf.Path, "base", err)
+		diagnostics, stalled := readFailure(sf.Path, modifiedBaseSide, err)
 		return nil, diagnostics, stalled
 	}
 

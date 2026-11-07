@@ -15,5 +15,5 @@ func baselineReadFailure(path string, err error) ([]codesignal.Diagnostic, error
 	if errors.As(err, &tooLarge) {
 		return []codesignal.Diagnostic{{Path: path, Kind: "file_too_large", Message: tooLarge.Error()}}, nil
 	}
-	return readFailure(path, "head", err)
+	return readFailure(path, headSide, err)
 }
