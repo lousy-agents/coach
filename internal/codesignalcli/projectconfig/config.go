@@ -7,17 +7,18 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"time"
+
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 )
 
 // Project-config boundary budgets. Config is repository-controlled input and
 // must fail closed before unbounded memory/CPU or a hung git child can stall
 // the CLI.
 const (
-	MaxBytes     = 1 << 20 // 1 MiB
+	MaxBytes     = gitrepo.CommittedFileBytes
 	maxJSONDepth = 32
-	MaxGitStderr = 64 << 10 // 64 KiB
-	GitTimeout   = 30 * time.Second
+	MaxGitStderr = gitrepo.GitStderrBytes
+	GitTimeout   = gitrepo.CommittedFileTimeout
 	// MaxLayerPrefixes bounds the sorted prefix-overlap scan so a
 	// hostile but still ≤1 MiB config cannot force quadratic validation CPU.
 	MaxLayerPrefixes = 4096

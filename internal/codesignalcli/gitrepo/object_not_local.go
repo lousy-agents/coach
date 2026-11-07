@@ -36,7 +36,7 @@ type ObjectsNotLocalError struct {
 }
 
 func (e *ObjectsNotLocalError) Error() string {
-	message := fmt.Sprintf("%d objects are not in the local object store, and Coach does not fetch objects (the first is %q)", e.Count, e.FirstPath)
+	message := fmt.Sprintf("the revision has %s not in the local object store, and Coach does not fetch objects (the first is %q)", missingObjects{count: e.Count}.phrase(), e.FirstPath)
 	if e.Advice != "" {
 		message += "; " + e.Advice
 	}

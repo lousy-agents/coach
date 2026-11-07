@@ -44,7 +44,7 @@ var pipeSites = []pipeSite{
 	{
 		name:     ".git/HEAD",
 		file:     func(repo string) string { return filepath.Join(repo, ".git", "HEAD") },
-		question: `partial clone \(git execution timed out after 30s\)`,
+		question: `partial clone \(git config: git execution timed out after 30s\)`,
 
 		suggestExit: 1,
 	},

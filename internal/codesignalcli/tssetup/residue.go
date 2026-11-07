@@ -3,7 +3,6 @@ package tssetup
 import (
 	"bytes"
 	"path/filepath"
-	"time"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/internal/codesignalcli/tstoolchain"
@@ -32,9 +31,9 @@ func repositoryRelativeChangedPaths(dir string, changedPaths []string, residueUn
 // timeout and small output caps, since this is a status listing for a single
 // working directory, not a whole-tree read.
 const (
-	setupResidueGitTimeout   = 10 * time.Second
-	maxSetupResidueGitBytes  = 1 << 20 // 1 MiB
-	maxSetupResidueGitStderr = 64 << 10
+	setupResidueGitTimeout   = gitrepo.SetupResidueTimeout
+	maxSetupResidueGitBytes  = gitrepo.SetupResidueBytes
+	maxSetupResidueGitStderr = gitrepo.GitStderrBytes
 )
 
 // parseSetupResidueStatusPaths extracts the path from each NUL-delimited

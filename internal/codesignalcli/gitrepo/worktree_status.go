@@ -2,7 +2,6 @@ package gitrepo
 
 import (
 	"strings"
-	"time"
 )
 
 type WorktreeEntry struct {
@@ -16,9 +15,8 @@ type WorktreeEntry struct {
 // CLI or exhausting memory, the same as every other git read this package
 // performs.
 const (
-	maxWorktreeStatusBytes  = 16 << 20
-	maxWorktreeStatusStderr = 64 << 10
-	WorktreeStatusTimeout   = 30 * time.Second
+	maxWorktreeStatusBytes  = WorktreeStatusBytes
+	maxWorktreeStatusStderr = GitStderrBytes
 )
 
 // runWorktreeStatusGit is the git seam used by WorktreeStatus. Tests may
