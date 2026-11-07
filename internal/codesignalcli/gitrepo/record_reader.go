@@ -30,17 +30,19 @@ func visitRecords(reader *bufio.Reader, visit func(record []byte) error) error {
 }
 
 // readRecord reads up to the next NUL into buffer and returns the record without it, io.EOF at the clean end
-// of the stream, and io.ErrUnexpectedEOF when the stream ends inside a record.
+// of the stream, and io.ErrUnexpectedEOF when the stream ends inside a record. A record of more than
+// maxListingRecordBytes is refused whatever the size of the reader's own buffer: the bound is on the record, and
+// is checked both when the buffer fills and when the NUL is found.
 func readRecord(reader *bufio.Reader, buffer []byte) ([]byte, error) {
 	for {
 		chunk, err := reader.ReadSlice(0)
 		buffer = append(buffer, chunk...)
 		switch {
 		case err == nil:
-			return buffer[:len(buffer)-1], nil
+			return withinTheBound(buffer[:len(buffer)-1])
 		case errors.Is(err, bufio.ErrBufferFull):
-			if len(buffer) > maxListingRecordBytes {
-				return nil, fmt.Errorf("a record of the listing is longer than %d bytes", maxListingRecordBytes)
+			if _, tooLong := withinTheBound(buffer); tooLong != nil {
+				return nil, tooLong
 			}
 		case errors.Is(err, io.EOF) && len(buffer) == 0:
 			return nil, io.EOF
@@ -50,4 +52,11 @@ func readRecord(reader *bufio.Reader, buffer []byte) ([]byte, error) {
 			return nil, err
 		}
 	}
+}
+
+func withinTheBound(record []byte) ([]byte, error) {
+	if len(record) > maxListingRecordBytes {
+		return nil, fmt.Errorf("a record of the listing is longer than %d bytes", maxListingRecordBytes)
+	}
+	return record, nil
 }
