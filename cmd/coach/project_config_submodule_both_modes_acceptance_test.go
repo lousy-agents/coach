@@ -16,6 +16,7 @@ import (
 // pairing is the one the README states.
 var _ = Describe("coach codesignal: a policy in or at a submodule, in the scan and in --check-project", func() {
 	type state struct {
+		submodule string
 		policy    string
 		deinit    bool
 		scanToken string // the code the scan exits 2 with
@@ -25,23 +26,25 @@ var _ = Describe("coach codesignal: a policy in or at a submodule, in the scan a
 	DescribeTable("names the submodule and one cause in both",
 		func(s state) {
 			repo := commitScannableGoRepo()
-			addSubmodule(repo)
+			addSubmoduleAt(repo, s.submodule)
 			if s.deinit {
-				gitIn(repo, "submodule", "deinit", "-f", "vendor/sub")
-				removeTree(repo, "vendor/sub")
+				gitIn(repo, "submodule", "deinit", "-f", s.submodule)
+				removeTree(repo, s.submodule)
 			}
 
 			stderr := scanExplicitPolicy(repo, s.policy)
 			doc := expectCheckProject(repo, "--project-config", s.policy)
 
 			Expect(string(stderr)).To(ContainSubstring("("+s.scanToken+")"), "the scan's code; stderr:\n%s", stderr)
-			Expect(string(stderr)).To(ContainSubstring(`"vendor/sub"`), "the scan names the submodule; stderr:\n%s", stderr)
+			Expect(string(stderr)).To(ContainSubstring(`"`+s.submodule+`"`), "the scan names the submodule; stderr:\n%s", stderr)
 			Expect(causeOfGap(doc, s.checkCode)).To(Equal("in_submodule"), "the check's gap %s; gaps: %+v", s.checkCode, doc.Gaps)
 		},
-		Entry("a file in the checkout", state{"vendor/sub/coach.json", false, "project_config_invalid", "policy_missing"}),
-		Entry("the submodule itself, its checkout there", state{"vendor/sub", false, "project_config_invalid", "policy_invalid"}),
-		Entry("a file in a checkout that was removed", state{"vendor/sub/coach.json", true, "project_config_missing", "policy_missing"}),
-		Entry("the submodule itself, its checkout removed", state{"vendor/sub", true, "project_config_missing", "policy_missing"}),
+		Entry("a file in the checkout", state{"vendor/sub", "vendor/sub/coach.json", false, "project_config_invalid", "policy_missing"}),
+		Entry("the submodule itself, its checkout there", state{"vendor/sub", "vendor/sub", false, "project_config_invalid", "policy_invalid"}),
+		Entry("a file in a checkout that was removed", state{"vendor/sub", "vendor/sub/coach.json", true, "project_config_missing", "policy_missing"}),
+		Entry("the submodule itself, its checkout removed", state{"vendor/sub", "vendor/sub", true, "project_config_missing", "policy_missing"}),
+		Entry("a file in the checkout of a submodule at the top level", state{"sub", "sub/coach.json", false, "project_config_invalid", "policy_missing"}),
+		Entry("the top-level submodule itself", state{"sub", "sub", false, "project_config_invalid", "policy_invalid"}),
 	)
 
 	It("is stated in the README as the table has it: invalid while the checkout is there, missing once it is gone", func() {

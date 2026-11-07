@@ -15,13 +15,19 @@ import (
 // repositoryWithASubmodule records a submodule at vendor/sub in the index, which is all the probe reads.
 func repositoryWithASubmodule(t *testing.T) string {
 	t.Helper()
+	return repositoryWithASubmoduleAt(t, "vendor/sub")
+}
+
+// repositoryWithASubmoduleAt records a submodule at path in the index.
+func repositoryWithASubmoduleAt(t *testing.T, path string) string {
+	t.Helper()
 	repo := gitfixture.Init(t)
 	gitfixture.CommitFile(t, repo, "a.txt", "x")
 	head, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := exec.Command("git", "-C", repo, "update-index", "--add", "--cacheinfo", "160000,"+string(head[:40])+",vendor/sub").Run(); err != nil {
+	if err := exec.Command("git", "-C", repo, "update-index", "--add", "--cacheinfo", "160000,"+string(head[:40])+","+path).Run(); err != nil {
 		t.Fatal(err)
 	}
 	return repo
