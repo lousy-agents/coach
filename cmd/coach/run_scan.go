@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	"github.com/lousy-agents/coach/internal/codesignalcli/gitrepo"
 	"github.com/lousy-agents/coach/pkg/codesignal"
 )
 
@@ -27,6 +28,7 @@ func runCodesignalScan(dir string, f codesignalFlags, stdin, stdout, stderr *os.
 		if wrapped, ok := scanShouldOfferCompilerSetup(err, noInteractive); budget.allows(scanOfferCompilerSetup) && ok {
 			return runScanCompilerSetupOffer(dir, f, stdin, stdout, stderr, wrapped, budget, ports)
 		}
+		err = wordBlobReadFailure(gitrepo.RunBytes, dir, err, scanPrefix)
 		return classifyAnalysisError(err, f.projectLanguage, f.namedPolicy, noInteractive, stderr)
 	}
 	if result := ports.optionalPreparation(dir, f, stdout, stderr); !shouldRenderAfterOptionalPreparation(result) {

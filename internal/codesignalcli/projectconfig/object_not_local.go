@@ -12,15 +12,15 @@ func blobCheckFailure(run gitrepo.Runner, dir, revision, repoPath string, err er
 	failure := newGitFailure("whether it is committed at the analyzed revision", err)
 	var absent *gitrepo.ObjectNotLocalError
 	if errors.As(failure.err, &absent) {
-		failure.words = objectNotLocalWords(run, dir, revision, repoPath)
+		failure.words = ObjectNotLocalWords(run, dir, revision, repoPath)
 	}
 	return failure
 }
 
-// objectNotLocalWords says the content is not here and that Coach does not fetch it. In a partial clone it
+// ObjectNotLocalWords is the one sentence for a policy blob that is not in the repository. It says the content is not here and that Coach does not fetch it. In a partial clone it
 // adds the way to fetch it. The single-object command is offered only for a path that names one file inside
 // the repository, since the batch fetches every file of the revision and needs no path.
-func objectNotLocalWords(run gitrepo.Runner, dir, revision, repoPath string) string {
+func ObjectNotLocalWords(run gitrepo.Runner, dir, revision, repoPath string) string {
 	if _, partialClone := gitrepo.PromisorRemote(run, dir); !partialClone {
 		return "its content is not in the local object store, and Coach does not fetch objects"
 	}

@@ -22,6 +22,7 @@ func runCheckProject(dir string, f codesignalFlags, stdout, stderr *os.File) int
 
 	result, err := projectcheck.Run(dir, revision, f.namedPolicy)
 	if err != nil {
+		err = wordBlobReadFailure(gitrepo.RunBytes, dir, err, checkProjectPrefix)
 		return classifyAnalysisError(err, f.projectLanguage, f.namedPolicy, nonInteractiveRequested(f), stderr)
 	}
 
