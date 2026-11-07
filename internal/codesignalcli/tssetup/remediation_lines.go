@@ -14,7 +14,7 @@ func alsoFailingGapLine(code string, policy policyref.Ref, rerun bool) string {
 	return code + ": also failing, " + invocation.Command{Mode: invocation.CheckProject, Policy: policy}.Phrase("run")
 }
 
-// AlsoFailingGapLines is AC-SET-13's "report all gaps" clause: one line for
+// alsoFailingGapLines is AC-SET-13's "report all gaps" clause: one line for
 // every gap readiness itself reports other than the policy failure the scan
 // has already printed as its own message.
 //
@@ -33,11 +33,8 @@ func alsoFailingGapLine(code string, policy policyref.Ref, rerun bool) string {
 //
 // readiness.Gaps is already emitted in the epic's frozen next-action order,
 // so iterating it preserves that ordering rather than inventing one here.
-func AlsoFailingGapLines(readiness *projectreadiness.Result, policy policyref.Ref) []string {
-	return alsoFailingGapLines(readiness, policy, true)
-}
-
-// alsoFailingGapLines is AlsoFailingGapLines, with the rerun command left off each line when rerun is false.
+//
+// The rerun command is left off each line when rerun is false.
 func alsoFailingGapLines(readiness *projectreadiness.Result, policy policyref.Ref, rerun bool) []string {
 	if readiness == nil {
 		return nil

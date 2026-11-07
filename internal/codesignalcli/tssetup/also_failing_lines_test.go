@@ -5,10 +5,17 @@ import (
 	"testing"
 
 	"github.com/lousy-agents/coach/internal/codesignalcli/policyref"
+	"github.com/lousy-agents/coach/internal/codesignalcli/projectconfig"
 	"github.com/lousy-agents/coach/internal/codesignalcli/projectreadiness"
 )
 
-// TestAlsoFailingGapLinesReportsEveryGapWithoutClaimingItSurvives pins
+// policyFailureBeside is the policy failure the scan prints, with the readiness computed beside it: the only
+// thing that produces the also-failing lines in a run.
+func policyFailureBeside(readiness *projectreadiness.Result) *ProjectConfigErrorWithReadiness {
+	return &ProjectConfigErrorWithReadiness{ConfigError: &projectconfig.ConfigError{}, Readiness: readiness, Policy: policyref.Named("project.json")}
+}
+
+// TestAlsoFailingLinesReportsEveryGapWithoutClaimingItSurvives pins
 // AC-SET-13's report-all-gaps clause: every non-policy gap readiness.Gaps
 // carries is reported, in readiness's own order, and the line names the
 // --check-project rerun with no hedge about whether the gap outlives the
@@ -19,7 +26,7 @@ import (
 // version is probed from the manager binary and never depends on roots,
 // and a shape finding that would have needed the guess is absent from
 // Gaps entirely rather than present and uncertain.
-func TestAlsoFailingGapLinesReportsEveryGapWithoutClaimingItSurvives(t *testing.T) {
+func TestAlsoFailingLinesReportsEveryGapWithoutClaimingItSurvives(t *testing.T) {
 	readiness := &projectreadiness.Result{
 		Checks: projectreadiness.Checks{Policy: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapPolicyMissing}},
 		Gaps: []projectreadiness.Gap{
@@ -29,20 +36,20 @@ func TestAlsoFailingGapLinesReportsEveryGapWithoutClaimingItSurvives(t *testing.
 			{Code: projectreadiness.GapPackageManagerVersionUnsupported},
 		},
 	}
-	got := AlsoFailingGapLines(readiness, policyref.Named("project.json"))
+	got := policyFailureBeside(readiness).AlsoFailingLines()
 	want := []string{projectreadiness.GapNodeUnsupported, projectreadiness.GapTypescriptCompilerMissing, projectreadiness.GapPackageManagerVersionUnsupported}
 	if len(got) != len(want) {
-		t.Fatalf("AlsoFailingGapLines() = %q, want one line for each of %q", got, want)
+		t.Fatalf("AlsoFailingLines() = %q, want one line for each of %q", got, want)
 	}
 	for i, code := range want {
 		if !strings.HasPrefix(got[i], code+":") {
-			t.Fatalf("AlsoFailingGapLines()[%d] = %q, want the %q gap in readiness's own frozen order", i, got[i], code)
+			t.Fatalf("AlsoFailingLines()[%d] = %q, want the %q gap in readiness's own frozen order", i, got[i], code)
 		}
 		if strings.Contains(got[i], "once the policy above is authored and committed") || strings.Contains(got[i], "checked without the policy's selected roots") {
-			t.Fatalf("AlsoFailingGapLines()[%d] = %q: the line must not hedge about whether the gap outlives the policy failure -- R1 already withholds any gap that guess would have produced", i, got[i])
+			t.Fatalf("AlsoFailingLines()[%d] = %q: the line must not hedge about whether the gap outlives the policy failure -- R1 already withholds any gap that guess would have produced", i, got[i])
 		}
 		if !strings.Contains(got[i], "run coach codesignal --baseline --check-project") {
-			t.Fatalf("AlsoFailingGapLines()[%d] = %q, want it to name the --check-project rerun", i, got[i])
+			t.Fatalf("AlsoFailingLines()[%d] = %q, want it to name the --check-project rerun", i, got[i])
 		}
 	}
 
@@ -51,18 +58,18 @@ func TestAlsoFailingGapLinesReportsEveryGapWithoutClaimingItSurvives(t *testing.
 }
 
 func aPolicyOnlyGapListPrintsNothingExtra(t *testing.T) {
-	if got := AlsoFailingGapLines(&projectreadiness.Result{Gaps: []projectreadiness.Gap{{Code: projectreadiness.GapPolicyMissing}}}, policyref.Named("project.json")); len(got) != 0 {
-		t.Fatalf("AlsoFailingGapLines(policy gap only) = %q, want none: the policy failure is already printed as the scan's own message", got)
+	if got := policyFailureBeside(&projectreadiness.Result{Gaps: []projectreadiness.Gap{{Code: projectreadiness.GapPolicyMissing}}}).AlsoFailingLines(); len(got) != 0 {
+		t.Fatalf("AlsoFailingLines(policy gap only) = %q, want none: the policy failure is already printed as the scan's own message", got)
 	}
 }
 
 func nilReadinessPrintsNothingExtra(t *testing.T) {
-	if got := AlsoFailingGapLines(nil, policyref.Named("project.json")); len(got) != 0 {
-		t.Fatalf("AlsoFailingGapLines(nil readiness) = %q, want none", got)
+	if got := policyFailureBeside(nil).AlsoFailingLines(); len(got) != 0 {
+		t.Fatalf("AlsoFailingLines(nil readiness) = %q, want none", got)
 	}
 }
 
-func TestAlsoFailingGapLinesFollowsReadinessGaps(t *testing.T) {
+func TestAlsoFailingLinesFollowsReadinessGaps(t *testing.T) {
 	t.Run("a shaped failing compiler is reported from gaps", aShapedFailingCompilerReportedFromGaps)
 
 	t.Run("a passing compiler with no gaps reports nothing", aPassingCompilerNoGapsReportsNothing)
@@ -81,8 +88,8 @@ func aShapedFailingCompilerReportedFromGaps(t *testing.T) {
 		Gaps: []projectreadiness.Gap{{Code: projectreadiness.GapTypescriptCompilerMissing}},
 	}
 	want := "typescript_compiler_missing: also failing, run coach codesignal --baseline --check-project --project-language typescript --project-config project.json"
-	if got := AlsoFailingGapLines(failingCompilerShaped, policyref.Named("project.json")); len(got) != 1 || got[0] != want {
-		t.Fatalf("AlsoFailingGapLines(shaped) = %q, want exactly [%q]", got, want)
+	if got := policyFailureBeside(failingCompilerShaped).AlsoFailingLines(); len(got) != 1 || got[0] != want {
+		t.Fatalf("AlsoFailingLines(shaped) = %q, want exactly [%q]", got, want)
 	}
 }
 
@@ -93,8 +100,8 @@ func aPassingCompilerNoGapsReportsNothing(t *testing.T) {
 			Compiler:     projectreadiness.Check{State: projectreadiness.Pass},
 		},
 	}
-	if got := AlsoFailingGapLines(passingCompiler, policyref.Named("project.json")); len(got) != 0 {
-		t.Fatalf("AlsoFailingGapLines(passing compiler) = %q, want none", got)
+	if got := policyFailureBeside(passingCompiler).AlsoFailingLines(); len(got) != 0 {
+		t.Fatalf("AlsoFailingLines(passing compiler) = %q, want none", got)
 	}
 }
 
@@ -106,9 +113,9 @@ func anUnsupportedRepositoryShapeStillReportsEveryGap(t *testing.T) {
 		},
 		Gaps: []projectreadiness.Gap{{Code: projectreadiness.GapUnsupportedRepositoryShape}, {Code: projectreadiness.GapTypescriptCompilerMissing}},
 	}
-	got := AlsoFailingGapLines(notShapedButGapped, policyref.Named("project.json"))
+	got := policyFailureBeside(notShapedButGapped).AlsoFailingLines()
 	if len(got) != 2 || !strings.HasPrefix(got[0], projectreadiness.GapUnsupportedRepositoryShape+":") || !strings.HasPrefix(got[1], projectreadiness.GapTypescriptCompilerMissing+":") {
-		t.Fatalf("AlsoFailingGapLines(unsupported repository shape, still gapped) = %q, want both gaps in readiness's own order", got)
+		t.Fatalf("AlsoFailingLines(unsupported repository shape, still gapped) = %q, want both gaps in readiness's own order", got)
 	}
 }
 
@@ -118,7 +125,15 @@ func aFailingCheckAbsentFromGapsNotReported(t *testing.T) {
 			Compiler: projectreadiness.Check{State: projectreadiness.Fail, Code: projectreadiness.GapTypescriptCompilerMissing},
 		},
 	}
-	if got := AlsoFailingGapLines(compilerFailingButNotInGaps, policyref.Named("project.json")); len(got) != 0 {
-		t.Fatalf("AlsoFailingGapLines(failing check absent from gaps[]) = %q, want none", got)
+	if got := policyFailureBeside(compilerFailingButNotInGaps).AlsoFailingLines(); len(got) != 0 {
+		t.Fatalf("AlsoFailingLines(failing check absent from gaps[]) = %q, want none", got)
+	}
+}
+
+func TestAGapReadinessReportsTwiceIsReportedOnce(t *testing.T) {
+	twice := &projectreadiness.Result{Gaps: []projectreadiness.Gap{{Code: projectreadiness.GapNodeUnsupported}, {Code: projectreadiness.GapNodeUnsupported}}}
+
+	if got := policyFailureBeside(twice).AlsoFailingLines(); len(got) != 1 {
+		t.Fatalf("AlsoFailingLines() = %q, want one line for the gap that was listed twice", got)
 	}
 }
